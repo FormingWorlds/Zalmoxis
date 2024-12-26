@@ -153,6 +153,10 @@ max_iterations_outer = 100
 tolerance_outer = 1e-4
 max_iterations_inner = 100
 tolerance_inner = 1e-4
+target_surface_pressure = 101325  # 1 atm, for example
+pressure_tolerance = 1e-2 # Tolerance for surface pressure matching
+max_iterations_pressure = 20  # Define the maximum iterations for pressure adjustment
+
 
 radius_guess = (3 * planet_mass / (4 * math.pi * avg_density_guess))**(1/3)
 
@@ -231,16 +235,34 @@ for outer_iter in range(max_iterations_outer):
 
             return [dMdr, dgdr, dPdr]
 
-        # Initial conditions for solve_ivp
-        y0 = [0, 0, pressure[0]]  # Initial mass, gravity, pressure at r=0
+        # Initial conditions for solve_ivp - initial pressure guess
+        pressure_guess = earth_center_pressure # or some other initial guess
+        adjustment_factor = 0.1
 
-        # Solve the ODEs using solve_ivp
-        sol = solve_ivp(coupled_odes, (radii[0], radii[-1]), y0, t_eval=radii, method='RK45')
+        for _ in range(max_iterations_pressure): # Innermost loop for pressure adjustment
 
-        # Extract mass, gravity, and pressure profiles
-        mass_enclosed = sol.y[0]
-        gravity = sol.y[1]
-        pressure = sol.y[2]
+            # Initial conditions for solve_ivp
+            y0 = [0, 0, pressure_guess]  # Initial mass, gravity, pressure at r=0
+
+            # Solve the ODEs using solve_ivp
+            sol = solve_ivp(coupled_odes, (radii[0], radii[-1]), y0, t_eval=radii, method='RK45')
+
+            # Extract mass, gravity, and pressure profiles
+            mass_enclosed = sol.y[0]
+            gravity = sol.y[1]
+            pressure = sol.y[2]
+
+            surface_pressure = pressure[-1]
+            pressure_diff = surface_pressure - target_surface_pressure
+
+            if abs(pressure_diff) < pressure_tolerance:
+                print("Surface pressure converged!")
+                break  # Exit the pressure adjustment loop
+
+            pressure_guess_previous = pressure_guess
+            pressure_guess -= pressure_diff * adjustment_factor
+            pressure_guess = 0.5 * (pressure_guess + pressure_guess_previous) # Relaxation
+            adjustment_factor *= 0.95  # Reduce adjustment factor
 
         # d. Update density based on pressure using EOS:
         for i in range(num_layers):
