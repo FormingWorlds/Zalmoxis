@@ -146,7 +146,7 @@ def calculate_density(pressure, radius, core_radius, material, radius_guess, cmb
         raise ValueError("Invalid EOS choice.")
 
 # --- Calculations ---
-num_layers = 500 # Reduced number of layers for faster computation
+num_layers = 1000 # Reduced number of layers for faster computation
 
 # Iterative Process to find Radius and Density Profile
 max_iterations_outer = 100
