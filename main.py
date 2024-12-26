@@ -16,7 +16,7 @@ core_radius_fraction = 0.545  # Core radius as a fraction of the total radius (E
 avg_density_guess = 5515  # Initial guess for average density (kg/m^3)
 
 # --- EOS Choice ---
-EOS_CHOICE = "Birch-Murnaghan"  # "Birch-Murnaghan", "Mie-Gruneisen-Debye", or "Tabulated"
+EOS_CHOICE = "Tabulated"  # "Birch-Murnaghan", "Mie-Gruneisen-Debye", or "Tabulated"
 
 # --- EOS Data and Functions ---
 
@@ -56,7 +56,7 @@ material_properties = {
         "theta0": 1100,  # Debye temperature (K)
         "V0": 1 / 4110,  # Specific volume at reference state
         "P0": 24e9,  # Reference pressure (Pa)
-        "eos_file": "mantle.txt" # Name of the file with tabulated EOS data
+        "eos_file": "src/data/eos_silicate.txt" # Name of the file with tabulated EOS data
     },
     "core": {
         # For liquid iron alloy outer core
@@ -67,7 +67,7 @@ material_properties = {
         "theta0": 1200,  # Debye temperature (K)
         "V0": 1 / 9900,  # Specific volume at reference state
         "P0": 135e9,  # Reference pressure (Pa)
-        "eos_file": "core.txt" # Name of the file with tabulated EOS data
+        "eos_file": "src/data/eos_iron.txt" # Name of the file with tabulated EOS data
     }
 }
 
@@ -146,7 +146,7 @@ def calculate_density(pressure, radius, core_radius, material, radius_guess, cmb
         raise ValueError("Invalid EOS choice.")
 
 # --- Calculations ---
-num_layers = 1000 # Reduced number of layers for faster computation
+num_layers = 500 # Reduced number of layers for faster computation
 
 # Iterative Process to find Radius and Density Profile
 max_iterations_outer = 100
@@ -245,7 +245,7 @@ for outer_iter in range(max_iterations_outer):
             y0 = [0, 0, pressure_guess]  # Initial mass, gravity, pressure at r=0
 
             # Solve the ODEs using solve_ivp
-            sol = solve_ivp(coupled_odes, (radii[0], radii[-1]), y0, t_eval=radii, method='RK45')
+            sol = solve_ivp(coupled_odes, (radii[0], radii[-1]), y0, t_eval=radii, method='RK45', dense_output=True)
 
             # Extract mass, gravity, and pressure profiles
             mass_enclosed = sol.y[0]
