@@ -56,7 +56,7 @@ material_properties = {
         "theta0": 1100,  # Debye temperature (K)
         "V0": 1 / 4110,  # Specific volume at reference state
         "P0": 24e9,  # Reference pressure (Pa)
-        "eos_file": "src/data/eos_silicate.txt" # Name of the file with tabulated EOS data
+        "eos_file": "mantle.txt" # Name of the file with tabulated EOS data
     },
     "core": {
         # For liquid iron alloy outer core
@@ -67,7 +67,7 @@ material_properties = {
         "theta0": 1200,  # Debye temperature (K)
         "V0": 1 / 9900,  # Specific volume at reference state
         "P0": 135e9,  # Reference pressure (Pa)
-        "eos_file": "src/data/eos_iron.txt" # Name of the file with tabulated EOS data
+        "eos_file": "core.txt" # Name of the file with tabulated EOS data
     }
 }
 
@@ -109,7 +109,7 @@ def calculate_density(pressure, radius, core_radius, material, radius_guess, cmb
                 data = np.loadtxt(eos_file, delimiter=',', skiprows=1)
                 pressure_data = data[:, 1] * 1e9
                 density_data = data[:, 0] * 1e3
-                interpolation_functions[eos_file] = interp1d(pressure_data, density_data, bounds_error=True, fill_value="extrapolate")
+                interpolation_functions[eos_file] = interp1d(pressure_data, density_data, bounds_error=False, fill_value="extrapolate")
 
             interpolation_function = interpolation_functions[eos_file] # Retrieve from cache
 
@@ -170,7 +170,7 @@ earth_center_density = 13000 # kg/m^3, from PREM
 for outer_iter in range(max_iterations_outer):
     start_time = time.time()
     # Define radial layers:
-    radii = np.linspace(radius_guess, 0, num_layers) # From surface to center
+    radii = np.linspace(0, radius_guess, num_layers)
     dr = radii[1] - radii[0]
 
     # Initialize arrays:
@@ -188,8 +188,7 @@ for outer_iter in range(max_iterations_outer):
     core_temp_guess = 5300
 
     # Estimate initial pressure at the center (needed for solve_ivp)
-    pressure[0] = earth_center_pressure  
-
+    pressure[0] = earth_center_pressure
 
     for i in range(num_layers):
         if radii[i] < cmb_radius:
@@ -218,56 +217,30 @@ for outer_iter in range(max_iterations_outer):
             # Calculate density at the current radius, using pressure from y
             current_density = calculate_density(pressure, radius, cmb_radius, material, radius_guess, cmb_temp_guess, core_temp_guess, EOS_CHOICE, interpolation_cache)
 
-            # Handle potential errors in density calculation, CHECK FOR NON-PHYSICAL
-            if current_density is None or current_density <= 0: # Check for non-physical density
-                print(f"Warning: Density calculation failed at radius {radius}. Using reference density.")
-                idx = np.argmin(np.abs(radii - radius))  # Find closest index to use in old_density
-                current_density = old_density[idx]        # Or directly old_density[i] because old_density has its order unchanged.
+            # Handle potential errors in density calculation
+            if current_density is None:
+                print(f"Warning: Density calculation failed at radius {radius}. Using previous density.") # Print warning only
+                current_density = old_density[np.argmin(np.abs(radii - radius))]
 
             # Calculate temperature
             temperature = calculate_temperature(radius, cmb_radius, 300, cmb_temp_guess, core_temp_guess, radius_guess)
 
-            dMdr = -4 * np.pi * radius**2 * current_density  # Negative sign for inward integration
-            dgdr = -(4 * np.pi * G * current_density - 2 * gravity / (radius + 1e-20)) if radius > 0 else 0  # Negative sign, handle r=0
-            dPdr = current_density * gravity  # No negative sign for pressure (gravity points inwards)
-
+            dMdr = 4 * np.pi * radius**2 * current_density
+            dgdr = 4 * np.pi * G * current_density - 2 * gravity / (radius + 1e-20) if radius > 0 else 0
+            dPdr = -current_density * gravity
 
             return [dMdr, dgdr, dPdr]
 
-        # Initial conditions for solve_ivp (at the surface):
-        y0 = [planet_mass, 0, earth_surface_pressure]  # Mass, gravity, pressure at r=surface     
+        # Initial conditions for solve_ivp
+        y0 = [0, 0, pressure[0]]  # Initial mass, gravity, pressure at r=0
 
-        # Sort radii in descending order *before* solve_ivp
-        radii_sorted = np.sort(radii)[::-1]  # Sort and reverse
-
-
-        # Solve the ODEs using solve_ivp (integrate inwards)
-        sol = solve_ivp(coupled_odes, (radius_guess, 0), y0, t_eval=radii_sorted, method='RK45')
-
+        # Solve the ODEs using solve_ivp
+        sol = solve_ivp(coupled_odes, (radii[0], radii[-1]), y0, t_eval=radii, method='RK45')
 
         # Extract mass, gravity, and pressure profiles
-        mass_enclosed_sol = sol.y[0]
-        gravity_sol = sol.y[1]
-        pressure_sol = sol.y[2]
-        radii_sol = sol.t  # The actual radii where the solution was evaluated
-
-        # Create interpolation functions
-        mass_interp = interp1d(radii_sol, mass_enclosed_sol, kind='cubic', fill_value="extrapolate")
-        gravity_interp = interp1d(radii_sol, gravity_sol, kind='cubic', fill_value="extrapolate")
-        pressure_interp = interp1d(radii_sol, pressure_sol, kind='cubic', fill_value="extrapolate")
-
-        # Interpolate back to the original radii grid
-        mass_enclosed = mass_interp(radii)
-        gravity = gravity_interp(radii)
-        pressure = pressure_interp(radii)
-
-        radii = np.linspace(radius_guess, 0, num_layers) # Reset radii and guarantee strict monotonic decrease
-
-        # Flip the interpolated arrays to maintain the original order (surface to center)
-        mass_enclosed = np.flip(mass_enclosed)
-        gravity = np.flip(gravity)
-        pressure = np.flip(pressure)
-        radii = np.flip(radii)
+        mass_enclosed = sol.y[0]
+        gravity = sol.y[1]
+        pressure = sol.y[2]
 
         # d. Update density based on pressure using EOS:
         for i in range(num_layers):
