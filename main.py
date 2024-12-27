@@ -16,7 +16,7 @@ core_radius_fraction = 0.545  # Core radius as a fraction of the total radius (E
 avg_density_guess = 5515  # Initial guess for average density (kg/m^3)
 
 # --- EOS Choice ---
-EOS_CHOICE = "Tabulated"  # "Birch-Murnaghan", "Mie-Gruneisen-Debye", or "Tabulated"
+EOS_CHOICE = "Birch-Murnaghan"  # "Birch-Murnaghan", "Mie-Gruneisen-Debye", or "Tabulated"
 
 # --- EOS Data and Functions ---
 
@@ -111,24 +111,8 @@ def calculate_density(pressure, radius, core_radius, material, radius_guess, cmb
                 density_data = data[:, 0] * 1e3
                 interpolation_functions[eos_file] = interp1d(pressure_data, density_data, bounds_error=False, fill_value="extrapolate")
 
-            interpolation_function = interpolation_functions[eos_file] # Retrieve from cache
-
-
-            # Hybrid approach (using cached interpolation function)
-            P_transition = 75e9
-            smoothing_range = 20e9
-
-            if pressure <= P_transition - smoothing_range / 2:
-                density = birch_murnaghan(pressure, props["P0"], props["rho0"], props["K0"], props["K0prime"], props["V0"])
-            elif pressure >= P_transition + smoothing_range / 2:
-                density = interpolation_function(pressure)  # Call to cached function
-            else:
-                density_tabulated = interpolation_function(pressure)   # Call to cached function
-                density_birch = birch_murnaghan(pressure, props["P0"], props["rho0"], props["K0"], props["K0prime"], props["V0"])
-                weight_tabulated = (pressure - (P_transition - smoothing_range / 2)) / smoothing_range
-                weight_birch = 1 - weight_tabulated
-                density = weight_birch * density_birch + weight_tabulated * density_tabulated
-
+            interpolation_function = interpolation_functions[eos_file]  # Retrieve from cache
+            density = interpolation_function(pressure)  # Call to cached function
 
             if density is None or np.isnan(density):
                 raise ValueError(f"Density calculation failed for {material} at {pressure:.2e} Pa.")
