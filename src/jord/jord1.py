@@ -16,7 +16,7 @@ core_radius_fraction = 0.545  # Core radius as a fraction of the total radius (E
 avg_density_guess = 5515  # Initial guess for average density (kg/m^3)
 
 # --- EOS Choice ---
-EOS_CHOICE = "Birch-Murnaghan"  # "Birch-Murnaghan", "Mie-Gruneisen-Debye", or "Tabulated"
+EOS_CHOICE = "Tabulated"  # "Birch-Murnaghan", "Mie-Gruneisen-Debye", or "Tabulated"
 
 # --- EOS Data and Functions ---
 
@@ -56,7 +56,7 @@ material_properties = {
         "theta0": 1100,  # Debye temperature (K)
         "V0": 1 / 4110,  # Specific volume at reference state
         "P0": 24e9,  # Reference pressure (Pa)
-        "eos_file": "src/data/eos_silicate.txt" # Name of the file with tabulated EOS data
+        "eos_file": "../data/eos_seager07_silicate.txt" # Name of the file with tabulated EOS data
     },
     "core": {
         # For liquid iron alloy outer core
@@ -67,7 +67,7 @@ material_properties = {
         "theta0": 1200,  # Debye temperature (K)
         "V0": 1 / 9900,  # Specific volume at reference state
         "P0": 135e9,  # Reference pressure (Pa)
-        "eos_file": "src/data/eos_iron.txt" # Name of the file with tabulated EOS data
+        "eos_file": "../data/eos_seager07_iron.txt" # Name of the file with tabulated EOS data
     }
 }
 
