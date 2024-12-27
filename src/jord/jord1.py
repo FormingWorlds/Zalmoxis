@@ -192,92 +192,97 @@ for outer_iter in range(max_iterations_outer):
         # Caching for density interpolation in coupled_odes
         interpolation_cache = {}  # Initialize empty cache
 
-        # Reverse the radii array to start from the surface
-        radii = np.linspace(radius_guess, 0, num_layers)
-        dr = radii[1] - radii[0]
-
-        # Initial conditions at the surface
-        surface_pressure = target_surface_pressure
-        y0 = [planet_mass, 0, surface_pressure]  # Initial mass, gravity, pressure at the surface
-
-        # Define the ODEs for mass, gravity, and pressure
+        # a. Calculate enclosed mass, gravity and pressure using 4th order Runge-Kutta:
+        # Define the ODEs for mass, gravity and pressure
         def coupled_odes(radius, y):
             mass, gravity, pressure = y
 
             if radius < cmb_radius:
                 material = "core"
             else:
-                material = "mantle"  # Assign material only once per call
-
+                material = "mantle" # Assign material only once per call
+            
             # Calculate density at the current radius, using pressure from y
             current_density = calculate_density(pressure, radius, cmb_radius, material, radius_guess, cmb_temp_guess, core_temp_guess, EOS_CHOICE, interpolation_cache)
 
             # Handle potential errors in density calculation
             if current_density is None:
-                print(f"Warning: Density calculation failed at radius {radius}. Using previous density.")  # Print warning only
+                print(f"Warning: Density calculation failed at radius {radius}. Using previous density.") # Print warning only
                 current_density = old_density[np.argmin(np.abs(radii - radius))]
 
             # Calculate temperature
             temperature = calculate_temperature(radius, cmb_radius, 300, cmb_temp_guess, core_temp_guess, radius_guess)
 
-            dMdr = -4 * np.pi * radius**2 * current_density
-            dgdr = -4 * np.pi * G * current_density + 2 * gravity / (radius + 1e-20) if radius > 0 else 0
-            dPdr = current_density * gravity
+            dMdr = 4 * np.pi * radius**2 * current_density
+            dgdr = 4 * np.pi * G * current_density - 2 * gravity / (radius + 1e-20) if radius > 0 else 0
+            dPdr = -current_density * gravity
 
             return [dMdr, dgdr, dPdr]
 
-        # Solve the ODEs using solve_ivp
-        sol = solve_ivp(coupled_odes, (radii[0], radii[-1]), y0, t_eval=radii, method='RK45', dense_output=True)
+        # Initial conditions for solve_ivp - initial pressure guess
+        pressure_guess = earth_center_pressure # or some other initial guess
+        adjustment_factor = 0.1
 
-        # Extract mass, gravity, and pressure profiles
-        mass_enclosed = sol.y[0]
-        gravity = sol.y[1]
-        pressure = sol.y[2]
+        for _ in range(max_iterations_pressure): # Innermost loop for pressure adjustment
 
-        # Ensure pressure does not become negative
-        pressure = np.maximum(pressure, 0)
+            # Initial conditions for solve_ivp
+            y0 = [0, 0, pressure_guess]  # Initial mass, gravity, pressure at r=0
 
-        # Interpolate the results to match the original num_layers
-        new_radii = np.linspace(radius_guess, 0, num_layers) # Correct interpolation range
-        mass_enclosed = interp1d(radii[:len(mass_enclosed)], mass_enclosed, kind='linear', fill_value="extrapolate")(new_radii)
-        gravity = interp1d(radii[:len(gravity)], gravity, kind='linear', fill_value="extrapolate")(new_radii)
-        pressure = interp1d(radii[:len(pressure)], pressure, kind='linear', fill_value="extrapolate")(new_radii)
+            # Solve the ODEs using solve_ivp
+            sol = solve_ivp(coupled_odes, (radii[0], radii[-1]), y0, t_eval=radii, method='RK45', dense_output=True)
 
-        # Update density based on pressure using EOS
+            # Extract mass, gravity, and pressure profiles
+            mass_enclosed = sol.y[0]
+            gravity = sol.y[1]
+            pressure = sol.y[2]
+
+            surface_pressure = pressure[-1]
+            pressure_diff = surface_pressure - target_surface_pressure
+
+            if abs(pressure_diff) < pressure_tolerance:
+                print("Surface pressure converged!")
+                break  # Exit the pressure adjustment loop
+
+            pressure_guess_previous = pressure_guess
+            pressure_guess -= pressure_diff * adjustment_factor
+            pressure_guess = 0.5 * (pressure_guess + pressure_guess_previous) # Relaxation
+            adjustment_factor *= 0.95  # Reduce adjustment factor
+
+        # d. Update density based on pressure using EOS:
         for i in range(num_layers):
-            if new_radii[i] < cmb_radius:
+            if radii[i] < cmb_radius:
                 # Core
                 material = "core"
             else:
                 # Mantle
                 material = "mantle"
 
-            new_density = calculate_density(pressure[i], new_radii[i], cmb_radius, material, radius_guess, cmb_temp_guess, core_temp_guess, EOS_CHOICE)
+            new_density = calculate_density(pressure[i], radii[i], cmb_radius, material, radius_guess, cmb_temp_guess, core_temp_guess, EOS_CHOICE)
 
             # Handle potential errors in density calculation
             if new_density is None:
-                print(f"Warning: Density calculation failed at radius {new_radii[i]}. Using previous density.")
+                print(f"Warning: Density calculation failed at radius {radii[i]}. Using previous density.")
                 new_density = old_density[i]
 
             # Calculate temperature
-            temperature[i] = calculate_temperature(new_radii[i], cmb_radius, 300, cmb_temp_guess, core_temp_guess, radius_guess)
+            temperature[i] = calculate_temperature(radii[i], cmb_radius, 300, cmb_temp_guess, core_temp_guess, radius_guess)
 
             # Relaxation
-            density[i] = 0.5 * (new_density + old_density[i])  # Use simple averaging for relaxation
+            density[i] = 0.5 * (new_density + old_density[i]) # Use simple averaging for relaxation
 
-        # Check for convergence (inner loop)
+        # Check for convergence (inner loop):
         relative_diff_inner = np.max(np.abs((density - old_density) / (old_density + 1e-20)))
         if relative_diff_inner < tolerance_inner:
             break
 
-    # Calculate total mass
+    # Calculate total mass:
     calculated_mass = mass_enclosed[-1]
 
-    # Update radius guess and core-mantle boundary
+    # Update radius guess and core-mantle boundary:
     radius_guess = radius_guess * (planet_mass / calculated_mass)**(1/3)
     cmb_radius = core_radius_fraction * radius_guess
 
-    # Check for convergence (outer loop)
+    # Check for convergence (outer loop):
     relative_diff_outer = abs((calculated_mass - planet_mass) / planet_mass)
     if relative_diff_outer < tolerance_outer:
         print(f"Outer loop (radius and cmb) converged after {outer_iter + 1} iterations.")
