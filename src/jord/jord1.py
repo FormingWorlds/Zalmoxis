@@ -18,6 +18,32 @@ avg_density_guess = 5515  # Initial guess for average density (kg/m^3)
 # --- EOS Choice ---
 EOS_CHOICE = "Tabulated"  # "Birch-Murnaghan", "Mie-Gruneisen-Debye", or "Tabulated"
 
+# --- Calculations ---
+num_layers = 100 # Reduced number of layers for faster computation
+
+# Iterative Process to find Radius and Density Profile
+max_iterations_outer = 500
+tolerance_outer = 1e-4
+max_iterations_inner = 500
+tolerance_inner = 1e-4
+target_surface_pressure = 101325  # Pa, 1 atm, for example
+pressure_tolerance = 100 # Pa, tolerance for surface pressure matching
+max_iterations_pressure = 100  # Define the maximum iterations for pressure adjustment
+
+# Initial radius guess based on mass and average
+radius_guess = (3 * planet_mass / (4 * math.pi * avg_density_guess))**(1/3)
+
+# Reference values for Earth (PREM and other sources)
+earth_radius = 6371e3  # m
+earth_cmb_radius = 3480e3  # m
+earth_surface_pressure = 101325  # Pa (1 atm)
+earth_cmb_pressure = 135e9  # Pa
+earth_center_pressure = 364e9  # Pa
+earth_surface_temperature = 288  # K (approximate average)
+earth_cmb_temperature = 4100 # K
+earth_center_temperature = 5300 # K
+earth_center_density = 13000 # kg/m^3, from PREM
+
 # --- EOS Data and Functions ---
 
 def mie_gruneisen_debye(P, P0, rho0, K0, K0prime, gamma0, theta0, V0, T):
@@ -128,32 +154,6 @@ def calculate_density(pressure, radius, core_radius, material, radius_guess, cmb
 
     else:
         raise ValueError("Invalid EOS choice.")
-
-# --- Calculations ---
-num_layers = 500 # Reduced number of layers for faster computation
-
-# Iterative Process to find Radius and Density Profile
-max_iterations_outer = 100
-tolerance_outer = 1e-4
-max_iterations_inner = 100
-tolerance_inner = 1e-4
-target_surface_pressure = 101325  # 1 atm, for example
-pressure_tolerance = 1e-2 # Tolerance for surface pressure matching
-max_iterations_pressure = 20  # Define the maximum iterations for pressure adjustment
-
-
-radius_guess = (3 * planet_mass / (4 * math.pi * avg_density_guess))**(1/3)
-
-# Reference values for Earth (PREM and other sources)
-earth_radius = 6371e3  # m
-earth_cmb_radius = 3480e3  # m
-earth_surface_pressure = 101325  # Pa (1 atm)
-earth_cmb_pressure = 135e9  # Pa
-earth_center_pressure = 364e9  # Pa
-earth_surface_temperature = 288  # K (approximate average)
-earth_cmb_temperature = 4100 # K
-earth_center_temperature = 5300 # K
-earth_center_density = 13000 # kg/m^3, from PREM
 
 for outer_iter in range(max_iterations_outer):
     start_time = time.time()
@@ -366,11 +366,10 @@ ax[3].plot(earth_cmb_temperature, earth_cmb_radius / 1e3, 'ro', label="Earth's C
 ax[3].plot(earth_center_temperature, 0, 'ro', label="Earth's Center")
 ax[3].axhline(y=earth_cmb_radius / 1e3, color='r', linestyle=':')
 
-# Save plotted data to output files
-np.savetxt("density_vs_radius.txt", np.column_stack((radii, density)), header="Radius (m)\tDensity (kg/m^3)")
-np.savetxt("gravity_vs_radius.txt", np.column_stack((radii, gravity)), header="Radius (m)\tGravity (m/s^2)")
-np.savetxt("pressure_vs_radius.txt", np.column_stack((radii, pressure)), header="Radius (m)\tPressure (Pa)")
-np.savetxt("temperature_vs_radius.txt", np.column_stack((radii, temperature)), header="Radius (m)\tTemperature (K)")
+# Combine and save plotted data to a single output file
+output_data = np.column_stack((radii, density, gravity, pressure, temperature))
+header = "Radius (m)\tDensity (kg/m^3)\tGravity (m/s^2)\tPressure (Pa)\tTemperature (K)"
+np.savetxt("planet_profile.txt", output_data, header=header)
 
 # Add legends
 for a in ax:
