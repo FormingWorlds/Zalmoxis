@@ -315,46 +315,48 @@ print(f"Average Density: {average_density:.2f} kg/m^3")
 fig, ax = plt.subplots(1, 4, figsize=(16, 6))
 
 # Density vs. Radius
-ax[0].plot(density, radii / 1e3, label="Exoplanet Model")
-ax[0].set_xlabel("Density (kg/m^3)")
+ax[0].plot(density, radii / 1e3, color='b', lw=2, label=r'Model profile')
+ax[0].axhline(y=cmb_radius / 1e3, color='b', linestyle='--', label="Model CMB")
+ax[0].set_xlabel(r'Density (kg/m$^3$)')
 ax[0].set_ylabel("Radius (km)")
-ax[0].set_title("Exoplanet Internal Structure")
-ax[0].axhline(y=cmb_radius / 1e3, color='r', linestyle='--', label="CMB")
+ax[0].set_title("Model density structure")
 ax[0].grid()
 
 # Add average density as a vertical line
-ax[0].axvline(x=average_density, color='b', linestyle='-.', label=f"Average Density = {average_density:.0f} kg/m^3")
+ax[0].axvline(x=average_density, color='b', linestyle='-.', label=f"Model average density\n = {average_density:.0f} kg/m^3")
 
 # Gravity vs. Radius
-ax[1].plot(gravity, radii / 1e3, label="Exoplanet Model")
-ax[1].set_xlabel("Gravity (m/s^2)")
+ax[1].plot(gravity, radii / 1e3, color='b', lw=2, label="Model")
+ax[1].set_xlabel(r"Gravity (m/$s^2$)")
 ax[1].set_ylabel("Radius (km)")
 ax[1].axhline(y=cmb_radius / 1e3, color='r', linestyle='--')
+ax[1].set_title("Model gravity structure")
 ax[1].grid()
 
 # Pressure vs. Radius
-ax[2].plot(pressure / 1e9, radii / 1e3, label="Exoplanet Model")
+ax[2].plot(pressure / 1e9, radii / 1e3, color='b', lw=2, label="Model")
 ax[2].set_xlabel("Pressure (GPa)")
 ax[2].set_ylabel("Radius (km)")
 ax[2].axhline(y=cmb_radius / 1e3, color='r', linestyle='--')
+ax[2].set_title("Model pressure structure")
 ax[2].grid()
 
 # Temperature vs. Radius
-ax[3].plot(temperature, radii / 1e3, label="Exoplanet Model")
+ax[3].plot(temperature, radii / 1e3, color='b', lw=2, label="Model")
 ax[3].set_xlabel("Temperature (K)")
 ax[3].set_ylabel("Radius (km)")
 ax[3].axhline(y=cmb_radius / 1e3, color='r', linestyle='--')
+ax[3].set_title("Model temperature structure")
 ax[3].grid()
 
 # Add reference Earth values to the plots
-ax[0].plot(0, earth_radius / 1e3, 'ro', label="Earth's Surface")
-ax[0].axhline(y=earth_cmb_radius / 1e3, color='r', linestyle=':', label="Earth's CMB")
-ax[0].plot(5515, earth_radius / 1e3, 'go', label='Earth Average Density')
-ax[0].plot(earth_center_density, 0, 'yo', label="Earth's Center Density")
+ax[0].axhline(y=(earth_radius/1e3), color='g', linestyle=':', label=f"Earth Surface")
+ax[0].axhline(y=earth_cmb_radius / 1e3, color='g', linestyle='--', label="Earth CMB")
+ax[0].axvline(x=5515, color='g', linestyle='-.', label=f"Earth average density\n = 5515 kg/m^3")
+ax[0].axvline(x=earth_center_density, color='g', linestyle=':', label="Earth center density")
 
-ax[1].plot(0, earth_radius / 1e3, 'ro')
-ax[1].axhline(y=earth_cmb_radius / 1e3, color='r', linestyle=':')
-ax[1].plot(9.81, earth_radius / 1e3, 'bo', label="Earth's Surface Gravity") # Surface gravity
+ax[1].axvline(x=0, color='g', linestyle=':', label="Center gravity\n"+r"= 0 $m/s^2$")
+ax[1].axvline(x=9.81, color='g', linestyle='--', label="Earth surface gravity\n"+r"= 9.81 $m/s^2$")
 
 ax[2].plot(earth_surface_pressure / 1e9, earth_radius / 1e3, 'ro')
 ax[2].plot(earth_cmb_pressure / 1e9, earth_cmb_radius / 1e3, 'ro', label="Earth's CMB")
@@ -373,7 +375,7 @@ np.savetxt("planet_profile.txt", output_data, header=header)
 
 # Add legends
 for a in ax:
-    a.legend()
+    a.legend(fontsize=8)
 
 plt.tight_layout()
 plt.show()
