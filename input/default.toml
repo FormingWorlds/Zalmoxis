@@ -24,3 +24,7 @@ pressure_tolerance      = 1000      # Pa, tolerance for surface pressure matchin
 max_iterations_pressure = 100       # Maximum iterations for pressure adjustment
 pressure_relaxation     = 0.5       # Relaxation factor for pressure adjustment
 pressure_adjustment_factor = 0.95   # Reduction factor for pressure adjustment
+
+[Output]
+data_enabled            = true      # Produces output data
+plots_enabled           = true      # Produces plots
