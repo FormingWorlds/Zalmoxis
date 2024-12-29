@@ -28,7 +28,9 @@ max_iterations_inner = 100
 tolerance_inner = 1e-4
 target_surface_pressure = 101325  # Pa, 1 atm, for example
 pressure_tolerance = 1000 # Pa, tolerance for surface pressure matching
-max_iterations_pressure = 10  # Define the maximum iterations for pressure adjustment
+max_iterations_pressure = 100  # Define the maximum iterations for pressure adjustment
+pressure_relaxation = 0.5  # Relaxation factor for pressure adjustment
+pressure_adjustment_factor = 0.95  # Reduction factor for pressure adjustment
 
 # Initial radius guess based on mass and average
 radius_guess = (3 * planet_mass / (4 * math.pi * avg_density_guess))**(1/3)
@@ -221,7 +223,7 @@ for outer_iter in range(max_iterations_outer):
 
         # Initial conditions for solve_ivp - initial pressure guess
         pressure_guess = earth_center_pressure # or some other initial guess
-        adjustment_factor = 0.1
+        adjustment_factor = pressure_adjustment_factor  # Initial adjustment factor for pressure
 
         for _ in range(max_iterations_pressure): # Innermost loop for pressure adjustment
 
