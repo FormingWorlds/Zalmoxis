@@ -22,13 +22,13 @@ EOS_CHOICE = "Tabulated"  # "Birch-Murnaghan", "Mie-Gruneisen-Debye", or "Tabula
 num_layers = 100 # Reduced number of layers for faster computation
 
 # Iterative Process to find Radius and Density Profile
-max_iterations_outer = 500
+max_iterations_outer = 100
 tolerance_outer = 1e-4
-max_iterations_inner = 500
+max_iterations_inner = 100
 tolerance_inner = 1e-4
 target_surface_pressure = 101325  # Pa, 1 atm, for example
-pressure_tolerance = 100 # Pa, tolerance for surface pressure matching
-max_iterations_pressure = 100  # Define the maximum iterations for pressure adjustment
+pressure_tolerance = 1000 # Pa, tolerance for surface pressure matching
+max_iterations_pressure = 10  # Define the maximum iterations for pressure adjustment
 
 # Initial radius guess based on mass and average
 radius_guess = (3 * planet_mass / (4 * math.pi * avg_density_guess))**(1/3)
@@ -329,7 +329,7 @@ ax[0].axvline(x=average_density, color='b', linestyle='-.', label=f"Model averag
 ax[1].plot(gravity, radii / 1e3, color='b', lw=2, label="Model")
 ax[1].set_xlabel(r"Gravity (m/$s^2$)")
 ax[1].set_ylabel("Radius (km)")
-ax[1].axhline(y=cmb_radius / 1e3, color='r', linestyle='--')
+ax[1].axhline(y=cmb_radius / 1e3, color='b', linestyle='--', label="Model CMB radius")
 ax[1].set_title("Model gravity structure")
 ax[1].grid()
 
@@ -337,7 +337,7 @@ ax[1].grid()
 ax[2].plot(pressure / 1e9, radii / 1e3, color='b', lw=2, label="Model")
 ax[2].set_xlabel("Pressure (GPa)")
 ax[2].set_ylabel("Radius (km)")
-ax[2].axhline(y=cmb_radius / 1e3, color='r', linestyle='--')
+ax[2].axhline(y=cmb_radius / 1e3, color='b', linestyle='--', label="Model CMB radius")
 ax[2].set_title("Model pressure structure")
 ax[2].grid()
 
@@ -345,28 +345,29 @@ ax[2].grid()
 ax[3].plot(temperature, radii / 1e3, color='b', lw=2, label="Model")
 ax[3].set_xlabel("Temperature (K)")
 ax[3].set_ylabel("Radius (km)")
-ax[3].axhline(y=cmb_radius / 1e3, color='r', linestyle='--')
+ax[3].axhline(y=cmb_radius / 1e3, color='b', linestyle='--', label="Model CMB radius")
 ax[3].set_title("Model temperature structure")
 ax[3].grid()
 
 # Add reference Earth values to the plots
 ax[0].axhline(y=(earth_radius/1e3), color='g', linestyle=':', label=f"Earth Surface")
-ax[0].axhline(y=earth_cmb_radius / 1e3, color='g', linestyle='--', label="Earth CMB")
+ax[0].axhline(y=earth_cmb_radius / 1e3, color='g', linestyle='--', label="Earth CMB radius")
 ax[0].axvline(x=5515, color='g', linestyle='-.', label=f"Earth average density\n = 5515 kg/m^3")
 ax[0].axvline(x=earth_center_density, color='g', linestyle=':', label="Earth center density")
 
 ax[1].axvline(x=0, color='g', linestyle=':', label="Center gravity\n"+r"= 0 $m/s^2$")
 ax[1].axvline(x=9.81, color='g', linestyle='--', label="Earth surface gravity\n"+r"= 9.81 $m/s^2$")
+ax[1].axhline(y=earth_cmb_radius / 1e3, color='g', linestyle='--', label="Earth CMB")
 
-ax[2].plot(earth_surface_pressure / 1e9, earth_radius / 1e3, 'ro')
-ax[2].plot(earth_cmb_pressure / 1e9, earth_cmb_radius / 1e3, 'ro', label="Earth's CMB")
-ax[2].plot(earth_center_pressure / 1e9, 0, 'ro', label="Earth's Center")
-ax[2].axhline(y=earth_cmb_radius / 1e3, color='r', linestyle=':')
+ax[2].axvline(x=earth_surface_pressure / 1e9, color='g', linestyle=':', label="Earth surface pressure")
+ax[2].axhline(y=earth_cmb_radius / 1e3, color='g', linestyle='--', label="Earth CMB radius")
+ax[2].axvline(x=earth_cmb_pressure / 1e9, color='g', linestyle='--', label="Earth CMB pressure")
+ax[2].axvline(x=earth_center_pressure / 1e9, color='g', linestyle='-.', label="Earth center pressure")
 
-ax[3].plot(earth_surface_temperature, earth_radius / 1e3, 'ro')
-ax[3].plot(earth_cmb_temperature, earth_cmb_radius / 1e3, 'ro', label="Earth's CMB")
-ax[3].plot(earth_center_temperature, 0, 'ro', label="Earth's Center")
-ax[3].axhline(y=earth_cmb_radius / 1e3, color='r', linestyle=':')
+ax[3].axvline(x=earth_surface_temperature , color='g', linestyle=':', label="Earth surface temperature")
+ax[3].axhline(y=earth_cmb_radius / 1e3, color='g', linestyle='--', label="Earth CMB radius")
+ax[3].axvline(x=earth_cmb_temperature , color='g', linestyle='-.', label="Earth CMB temperature")
+ax[3].axvline(x=earth_center_temperature , color='g', linestyle='--', label="Earth center temperature")
 
 # Combine and save plotted data to a single output file
 output_data = np.column_stack((radii, density, gravity, pressure, temperature))
