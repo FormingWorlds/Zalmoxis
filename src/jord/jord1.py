@@ -6,6 +6,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d
+from .constants import *
+
+# Run file via command line: python3 -m src.jord.jord1
 
 # Set the working directory to the current file
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -36,17 +39,6 @@ avg_density_guess = 5515  # kg/m^3
 
 # Initial radius guess based on mass and average
 radius_guess = (3 * planet_mass / (4 * math.pi * avg_density_guess))**(1/3)
-
-# Reference values for Earth
-earth_radius                = 6371e3    # m
-earth_cmb_radius            = 3480e3    # m
-earth_surface_pressure      = 101325    # Pa (1 atm)
-earth_cmb_pressure          = 135e9     # Pa
-earth_center_pressure       = 364e9     # Pa
-earth_surface_temperature   = 288       # K
-earth_cmb_temperature       = 4100      # K
-earth_center_temperature    = 5300      # K
-earth_center_density        = 13000     # kg/m^3
 
 # --- EOS Data and Functions ---
 
