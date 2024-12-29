@@ -1,10 +1,14 @@
 import time
 import math
 import toml
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d
+
+# Set the working directory to the current file
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 # Constants
 G = 6.67430e-11  # Gravitational constant (m^3 kg^-1 s^-2)
@@ -13,19 +17,19 @@ G = 6.67430e-11  # Gravitational constant (m^3 kg^-1 s^-2)
 config = toml.load('../../input/default.toml')
 
 # Access the parameters
-planet_mass = config['InputParameter']['planet_mass']
-core_radius_fraction = config['AssumptionsAndInitialGuesses']['core_radius_fraction']
-EOS_CHOICE = config['EOS']['choice']
-num_layers = config['Calculations']['num_layers']
-max_iterations_outer = config['IterativeProcess']['max_iterations_outer']
-tolerance_outer = config['IterativeProcess']['tolerance_outer']
-max_iterations_inner = config['IterativeProcess']['max_iterations_inner']
-tolerance_inner = config['IterativeProcess']['tolerance_inner']
-target_surface_pressure = config['PressureAdjustment']['target_surface_pressure']
-pressure_tolerance = config['PressureAdjustment']['pressure_tolerance']
-max_iterations_pressure = config['PressureAdjustment']['max_iterations_pressure']
-pressure_relaxation = config['PressureAdjustment']['pressure_relaxation']
-pressure_adjustment_factor = config['PressureAdjustment']['pressure_adjustment_factor']
+planet_mass                 = config['InputParameter']['planet_mass']
+core_radius_fraction        = config['AssumptionsAndInitialGuesses']['core_radius_fraction']
+EOS_CHOICE                  = config['EOS']['choice']
+num_layers                  = config['Calculations']['num_layers']
+max_iterations_outer        = config['IterativeProcess']['max_iterations_outer']
+tolerance_outer             = config['IterativeProcess']['tolerance_outer']
+max_iterations_inner        = config['IterativeProcess']['max_iterations_inner']
+tolerance_inner             = config['IterativeProcess']['tolerance_inner']
+target_surface_pressure     = config['PressureAdjustment']['target_surface_pressure']
+pressure_tolerance          = config['PressureAdjustment']['pressure_tolerance']
+max_iterations_pressure     = config['PressureAdjustment']['max_iterations_pressure']
+pressure_relaxation         = config['PressureAdjustment']['pressure_relaxation']
+pressure_adjustment_factor  = config['PressureAdjustment']['pressure_adjustment_factor']
 
 # Initial radius guess based on mass and average
 avg_density_guess = 5515  # kg/m^3
