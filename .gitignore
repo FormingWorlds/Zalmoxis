@@ -174,3 +174,4 @@ gravity_vs_radius.txt
 pressure_vs_radius.txt
 temperature_vs_radius.txt
 src/jord/planet_structure.txt
+src/jord/planet_profile.txt
