@@ -5,7 +5,7 @@ from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d
 from .constants import *
 
-# Run file via command line: python3 -m src.jord.jord1
+# Run file via command line: python3 -m src.jord.jord -c ../../input/default.toml
 
 # Set the working directory to the current file
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
