@@ -1,7 +1,4 @@
-import time
-import math
-import toml
-import os
+import os, sys, time, math, toml
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
@@ -16,8 +13,23 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 # Constants
 G = 6.67430e-11  # Gravitational constant (m^3 kg^-1 s^-2)
 
-# Load the configuration file
-config = toml.load('../../input/default.toml')
+# Load the configuration file either from terminal (-c flag) or default path
+if "-c" in sys.argv:
+    index = sys.argv.index("-c")
+    try:
+        config_file_path = sys.argv[index + 1]
+        config = toml.load(config_file_path)
+        print(f"Reading config file from: {config_file_path}")
+    except IndexError:
+        print("Error: -c flag provided but no config file path specified.")
+        sys.exit(1) # Exit with error code
+    except FileNotFoundError:
+        print(f"Error: Config file not found at {config_file_path}")
+        sys.exit(1)
+else:
+    config_default_path = "../../input/default.toml"
+    config = toml.load(config_default_path)
+    print(f"Reading default config file from {config_default_path}")
 
 # Access the parameters
 planet_mass                 = config['InputParameter']['planet_mass']
