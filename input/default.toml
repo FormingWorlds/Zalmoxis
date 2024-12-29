@@ -1,0 +1,26 @@
+# config.toml
+
+[InputParameter]
+planet_mass = 5.972e24  # kg (Earth mass)
+
+[AssumptionsAndInitialGuesses]
+core_radius_fraction = 0.545  # Core radius as a fraction of the total radius (Earth-like)
+
+[EOS]
+choice = "Tabulated"  # Options: "Birch-Murnaghan", "Mie-Gruneisen-Debye", "Tabulated"
+
+[Calculations]
+num_layers = 100  # Number of planet layers
+
+[IterativeProcess]
+max_iterations_outer = 100
+tolerance_outer = 1e-4
+max_iterations_inner = 100
+tolerance_inner = 1e-4
+
+[PressureAdjustment]
+target_surface_pressure = 101325  # Pa, 1 atm, for example
+pressure_tolerance = 1000  # Pa, tolerance for surface pressure matching
+max_iterations_pressure = 100  # Maximum iterations for pressure adjustment
+pressure_relaxation = 0.5  # Relaxation factor for pressure adjustment
+pressure_adjustment_factor = 0.95  # Reduction factor for pressure adjustment

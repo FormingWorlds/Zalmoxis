@@ -1,5 +1,6 @@
 import time
 import math
+import toml
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
@@ -8,43 +9,40 @@ from scipy.interpolate import interp1d
 # Constants
 G = 6.67430e-11  # Gravitational constant (m^3 kg^-1 s^-2)
 
-# --- Input Parameter ---
-planet_mass = 5.972e24  # kg (Earth mass)
+# Load the configuration file
+config = toml.load('../../input/default.toml')
 
-# --- Assumptions and Initial Guesses ---
-core_radius_fraction = 0.545  # Core radius as a fraction of the total radius (Earth-like)
-avg_density_guess = 5515  # Initial guess for average density (kg/m^3)
+# Access the parameters
+planet_mass = config['InputParameter']['planet_mass']
+core_radius_fraction = config['AssumptionsAndInitialGuesses']['core_radius_fraction']
+EOS_CHOICE = config['EOS']['choice']
+num_layers = config['Calculations']['num_layers']
+max_iterations_outer = config['IterativeProcess']['max_iterations_outer']
+tolerance_outer = config['IterativeProcess']['tolerance_outer']
+max_iterations_inner = config['IterativeProcess']['max_iterations_inner']
+tolerance_inner = config['IterativeProcess']['tolerance_inner']
+target_surface_pressure = config['PressureAdjustment']['target_surface_pressure']
+pressure_tolerance = config['PressureAdjustment']['pressure_tolerance']
+max_iterations_pressure = config['PressureAdjustment']['max_iterations_pressure']
+pressure_relaxation = config['PressureAdjustment']['pressure_relaxation']
+pressure_adjustment_factor = config['PressureAdjustment']['pressure_adjustment_factor']
 
-# --- EOS Choice ---
-EOS_CHOICE = "Tabulated"  # "Birch-Murnaghan", "Mie-Gruneisen-Debye", or "Tabulated"
-
-# --- Calculations ---
-num_layers = 100 # Reduced number of layers for faster computation
-
-# Iterative Process to find Radius and Density Profile
-max_iterations_outer = 100
-tolerance_outer = 1e-4
-max_iterations_inner = 100
-tolerance_inner = 1e-4
-target_surface_pressure = 101325  # Pa, 1 atm, for example
-pressure_tolerance = 1000 # Pa, tolerance for surface pressure matching
-max_iterations_pressure = 100  # Define the maximum iterations for pressure adjustment
-pressure_relaxation = 0.5  # Relaxation factor for pressure adjustment
-pressure_adjustment_factor = 0.95  # Reduction factor for pressure adjustment
+# Initial radius guess based on mass and average
+avg_density_guess = 5515  # kg/m^3
 
 # Initial radius guess based on mass and average
 radius_guess = (3 * planet_mass / (4 * math.pi * avg_density_guess))**(1/3)
 
-# Reference values for Earth (PREM and other sources)
-earth_radius = 6371e3  # m
-earth_cmb_radius = 3480e3  # m
-earth_surface_pressure = 101325  # Pa (1 atm)
-earth_cmb_pressure = 135e9  # Pa
-earth_center_pressure = 364e9  # Pa
-earth_surface_temperature = 288  # K (approximate average)
-earth_cmb_temperature = 4100 # K
-earth_center_temperature = 5300 # K
-earth_center_density = 13000 # kg/m^3, from PREM
+# Reference values for Earth
+earth_radius                = 6371e3    # m
+earth_cmb_radius            = 3480e3    # m
+earth_surface_pressure      = 101325    # Pa (1 atm)
+earth_cmb_pressure          = 135e9     # Pa
+earth_center_pressure       = 364e9     # Pa
+earth_surface_temperature   = 288       # K
+earth_cmb_temperature       = 4100      # K
+earth_center_temperature    = 5300      # K
+earth_center_density        = 13000     # kg/m^3
 
 # --- EOS Data and Functions ---
 
