@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d
 from .constants import *
-from .eos_functions import *
+from .eos_functions import calculate_density, calculate_temperature, birch_murnaghan, mie_gruneisen_debye
 from .eos_properties import material_properties
 
 # Run file via command line: python3 -m src.jord.jord -c ../../input/default.toml
@@ -54,52 +54,7 @@ avg_density_guess = 5515  # kg/m^3
 # Initial radius guess based on mass and average
 radius_guess = (3 * planet_mass / (4 * math.pi * avg_density_guess))**(1/3)
 
-# --- EOS Data and Functions ---
-
-
-# --- EOS Calculation ---
-def calculate_density(pressure, radius, core_radius, material, radius_guess, cmb_temp, core_temp, eos_choice, interpolation_functions={}):
-    """Calculates density with caching for tabulated EOS."""
-
-    T = calculate_temperature(radius, core_radius, 300, cmb_temp, core_temp, radius_guess)
-    props = material_properties[material]
-
-    props = material_properties[material]  # Shorthand
-
-    if eos_choice == "Mie-Gruneisen-Debye":
-        density = mie_gruneisen_debye(pressure, props["P0"], props["rho0"], props["K0"], props["K0prime"], props["gamma0"], props["theta0"], props["V0"], T)
-        return density
-    elif eos_choice == "Birch-Murnaghan":
-        density = birch_murnaghan(pressure, props["P0"], props["rho0"], props["K0"], props["K0prime"], props["V0"])
-        return density
-    elif eos_choice == "Tabulated":
-        try:
-            eos_file = props["eos_file"]
-            # Caching: Store interpolation functions for reuse
-            if eos_file not in interpolation_functions:
-                data = np.loadtxt(eos_file, delimiter=',', skiprows=1)
-                pressure_data = data[:, 1] * 1e9
-                density_data = data[:, 0] * 1e3
-                interpolation_functions[eos_file] = interp1d(pressure_data, density_data, bounds_error=False, fill_value="extrapolate")
-
-            interpolation_function = interpolation_functions[eos_file]  # Retrieve from cache
-            density = interpolation_function(pressure)  # Call to cached function
-
-            if density is None or np.isnan(density):
-                raise ValueError(f"Density calculation failed for {material} at {pressure:.2e} Pa.")
-
-            return density
-
-        except (ValueError, OSError) as e: # Catch file errors
-            print(f"Error with tabulated EOS for {material} at {pressure:.2e} Pa: {e}")
-            return None
-        except Exception as e: # Other errors
-            print(f"Unexpected error with tabulated EOS for {material} at {pressure:.2e} Pa: {e}")
-            return None
-
-    else:
-        raise ValueError("Invalid EOS choice.")
-
+# --- Iterative Solution ---
 for outer_iter in range(max_iterations_outer):
     start_time = time.time()
     # Define radial layers:
