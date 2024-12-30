@@ -5,6 +5,7 @@ from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d
 from .constants import *
 from .eos_functions import *
+from .eos_properties import material_properties
 
 # Run file via command line: python3 -m src.jord.jord -c ../../input/default.toml
 
@@ -55,46 +56,6 @@ radius_guess = (3 * planet_mass / (4 * math.pi * avg_density_guess))**(1/3)
 
 # --- EOS Data and Functions ---
 
-# --- Material Properties ---
-material_properties = {
-    "mantle": {
-        # Lower mantle properties based on bridgmanite and ferropericlase
-        "rho0": 4110,  # Reference density (kg/m^3) at 24 GPa (top of lower mantle)
-        "K0": 245e9,  # Bulk modulus (Pa)
-        "K0prime": 3.9,  # Pressure derivative of the bulk modulus
-        "gamma0": 1.5,  # Gruneisen parameter
-        "theta0": 1100,  # Debye temperature (K)
-        "V0": 1 / 4110,  # Specific volume at reference state
-        "P0": 24e9,  # Reference pressure (Pa)
-        "eos_file": "../data/eos_seager07_silicate.txt" # Name of the file with tabulated EOS data
-    },
-    "core": {
-        # For liquid iron alloy outer core
-        "rho0": 9900,  # Reference density (kg/m^3) at 135 GPa (core-mantle boundary)
-        "K0": 140e9,  # Bulk modulus (Pa)
-        "K0prime": 5.5,  # Pressure derivative of the bulk modulus
-        "gamma0": 1.5,  # Gruneisen parameter
-        "theta0": 1200,  # Debye temperature (K)
-        "V0": 1 / 9900,  # Specific volume at reference state
-        "P0": 135e9,  # Reference pressure (Pa)
-        "eos_file": "../data/eos_seager07_iron.txt" # Name of the file with tabulated EOS data
-    }
-}
-
-# --- Temperature Profile (Adiabatic) ---
-def calculate_temperature(radius, core_radius, surface_temp, cmb_temp, core_temp, radius_guess):
-    """
-    Calculates an adiabatic temperature profile.
-    """
-    if radius > core_radius:
-        # Mantle adiabat
-        temperature = surface_temp + (cmb_temp - surface_temp) * (
-            (radius_guess - radius) / (radius_guess - core_radius)
-        )**0.45
-    else:
-        # Core adiabat
-        temperature = core_temp * (1 - (radius / core_radius)**2)**0.3 + core_temp * 0.8
-    return temperature
 
 # --- EOS Calculation ---
 def calculate_density(pressure, radius, core_radius, material, radius_guess, cmb_temp, core_temp, eos_choice, interpolation_functions={}):
