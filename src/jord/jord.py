@@ -6,6 +6,7 @@ from scipy.interpolate import interp1d
 from .constants import *
 from .eos_functions import calculate_density, calculate_temperature, birch_murnaghan, mie_gruneisen_debye
 from .eos_properties import material_properties
+from .structure_model import coupled_odes
 
 # Run file via command line: python3 -m src.jord.jord -c ../../input/default.toml
 
@@ -92,33 +93,6 @@ for outer_iter in range(max_iterations_outer):
         # Caching for density interpolation in coupled_odes
         interpolation_cache = {}  # Initialize empty cache
 
-        # a. Calculate enclosed mass, gravity and pressure using 4th order Runge-Kutta:
-        # Define the ODEs for mass, gravity and pressure
-        def coupled_odes(radius, y):
-            mass, gravity, pressure = y
-
-            if radius < cmb_radius:
-                material = "core"
-            else:
-                material = "mantle" # Assign material only once per call
-            
-            # Calculate density at the current radius, using pressure from y
-            current_density = calculate_density(pressure, radius, cmb_radius, material, radius_guess, cmb_temp_guess, core_temp_guess, EOS_CHOICE, interpolation_cache)
-
-            # Handle potential errors in density calculation
-            if current_density is None:
-                print(f"Warning: Density calculation failed at radius {radius}. Using previous density.") # Print warning only
-                current_density = old_density[np.argmin(np.abs(radii - radius))]
-
-            # Calculate temperature
-            temperature = calculate_temperature(radius, cmb_radius, 300, cmb_temp_guess, core_temp_guess, radius_guess)
-
-            dMdr = 4 * np.pi * radius**2 * current_density
-            dgdr = 4 * np.pi * G * current_density - 2 * gravity / (radius + 1e-20) if radius > 0 else 0
-            dPdr = -current_density * gravity
-
-            return [dMdr, dgdr, dPdr]
-
         # Initial conditions for solve_ivp - initial pressure guess
         pressure_guess = earth_center_pressure # or some other initial guess
         adjustment_factor = pressure_adjustment_factor  # Initial adjustment factor for pressure
@@ -129,7 +103,10 @@ for outer_iter in range(max_iterations_outer):
             y0 = [0, 0, pressure_guess]  # Initial mass, gravity, pressure at r=0
 
             # Solve the ODEs using solve_ivp
-            sol = solve_ivp(coupled_odes, (radii[0], radii[-1]), y0, t_eval=radii, method='RK45', dense_output=True)
+            # sol = solve_ivp(coupled_odes, (radii[0], radii[-1]), y0, t_eval=radii, method='RK45', dense_output=True)
+            sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_radius, radius_guess, cmb_temp_guess, core_temp_guess, EOS_CHOICE, interpolation_cache), 
+                (radii[0], radii[-1]), y0, t_eval=radii, method='RK45', dense_output=True)
+
 
             # Extract mass, gravity, and pressure profiles
             mass_enclosed = sol.y[0]
