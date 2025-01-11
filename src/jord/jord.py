@@ -8,8 +8,9 @@ from .eos_functions import calculate_density, calculate_temperature, birch_murna
 from .eos_properties import material_properties
 from .structure_model import coupled_odes
 from .plots.plot_profiles import plot_planet_profile_single
+from .plots.plot_eos import plot_eos_material
 
-# Run file via command line: python3 -m src.jord.jord -c ../../input/default.toml
+# Run file via command line: python -m src.jord.jord -c ../../input/default.toml
 
 # Set the working directory to the current file
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -197,4 +198,7 @@ if data_output_enabled:
 
 # --- Plotting ---
 if plotting_enabled:
-    plot_planet_profile_single(radii, density, gravity, pressure, temperature, cmb_radius, average_density)
+    #plot_planet_profile_single(radii, density, gravity, pressure, temperature, cmb_radius, average_density) # Plot planet profile 
+    eos_data_files = ['eos_seager07_iron.txt', 'eos_seager07_silicate.txt', 'eos_seager07_water.txt']  # Example files (adjust the filenames accordingly)
+    eos_data_folder = "../../data/"  # Path to the folder where EOS data is stored
+    plot_eos_material(eos_data_files, eos_data_folder)  # Call the EOS plotting function

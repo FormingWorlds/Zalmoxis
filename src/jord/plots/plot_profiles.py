@@ -83,5 +83,5 @@ def plot_planet_profile_single(radii, density, gravity, pressure, temperature, c
         a.legend(fontsize=8)
 
     plt.tight_layout()
-    # plt.show()
+    #plt.show()
     plt.savefig("planet_profile.png")
