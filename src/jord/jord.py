@@ -198,7 +198,8 @@ if data_output_enabled:
 
 # --- Plotting ---
 if plotting_enabled:
-    #plot_planet_profile_single(radii, density, gravity, pressure, temperature, cmb_radius, average_density) # Plot planet profile 
+    plot_planet_profile_single(radii, density, gravity, pressure, temperature, cmb_radius, average_density) # Plot planet profile 
     eos_data_files = ['eos_seager07_iron.txt', 'eos_seager07_silicate.txt', 'eos_seager07_water.txt']  # Example files (adjust the filenames accordingly)
     eos_data_folder = "../../data/"  # Path to the folder where EOS data is stored
     plot_eos_material(eos_data_files, eos_data_folder)  # Call the EOS plotting function
+    #plt.show()  # Show the plots
