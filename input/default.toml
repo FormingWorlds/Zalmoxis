@@ -1,7 +1,7 @@
 # Default config file for Jord planetary structure code
 
 [InputParameter]
-planet_mass = 5.972e25              #  kg (Earth = 5.972e24)
+planet_mass = 5.972e24              #  kg (Earth = 5.972e24)
 
 [AssumptionsAndInitialGuesses]
 core_radius_fraction = 0.545        # Core radius fraction of total radius
