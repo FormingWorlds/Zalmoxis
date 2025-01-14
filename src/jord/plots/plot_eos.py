@@ -41,4 +41,4 @@ def plot_eos_material(data_files, data_folder):
 
     # Show the plot
     plt.legend()
-    plt.savefig("planet_eos.png")
+    plt.savefig("planet_eos_develop.png")
