@@ -24,7 +24,7 @@ def plot_planet_profile_single(radii, density, gravity, pressure, temperature, c
 
     # Density vs. Radius
     ax[0].plot(density, radii / 1e3, color='b', lw=2, label=r'Model profile')
-    ax[0].axhline(y=cmb_radius / 1e3, color='b', linestyle='--', label="Model CMB")
+    ax[0].axhline(y=cmb_radius / 1e3, color='b', linestyle='--', label="Model CMB radius")
     ax[0].set_xlabel(r'Density (kg/m$^3$)')
     ax[0].set_ylabel("Radius (km)")
     ax[0].set_title("Model density structure")
