@@ -21,7 +21,7 @@ def coupled_odes(radius, y, cmb_radius, radius_guess, cmb_temp_guess, core_temp_
     # Handle potential errors in density calculation
     if current_density is None:
         print(f"Warning: Density calculation failed at radius {radius}. Using previous density.") # Print warning only
-        current_density = old_density[np.argmin(np.abs(radii - radius))]
+        #current_density = old_density[np.argmin(np.abs(radii - radius))]
 
     # Calculate temperature
     temperature = calculate_temperature(radius, cmb_radius, 300, cmb_temp_guess, core_temp_guess, radius_guess)

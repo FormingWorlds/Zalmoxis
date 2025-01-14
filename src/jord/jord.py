@@ -48,6 +48,7 @@ def main():
     # Access parameters from the configuration file
     planet_mass = config['InputParameter']['planet_mass']  # Mass of the planet (kg)
     core_radius_fraction = config['AssumptionsAndInitialGuesses']['core_radius_fraction']  # Initial guess for the core radius as a fraction of the total radius
+    core_mass_fraction = config['AssumptionsAndInitialGuesses']['core_mass_fraction']  # Initial guess for the core mass as a fraction of the total mass
     EOS_CHOICE = config['EOS']['choice']  # Choice of equation of state (e.g., "Birch-Murnaghan", "Mie-Gruneisen-Debye", "Tabulated")
     num_layers = config['Calculations']['num_layers']  # Number of radial layers for calculations
 
@@ -89,8 +90,9 @@ def main():
         pressure = np.zeros(num_layers)
         temperature = np.zeros(num_layers)
 
-        # Initial density guess:
+        # Initial cmb radius and mass guesses:
         cmb_radius = core_radius_fraction * radius_guess
+        cmb_mass = core_mass_fraction * planet_mass
 
         # Initial temperature at the core-mantle boundary (CMB) and the center
         cmb_temp_guess = 4100  # Initial guess for CMB temperature (K)

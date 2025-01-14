@@ -90,29 +90,3 @@ def calculate_density(pressure, radius, core_radius, material, radius_guess, cmb
     else:
         raise ValueError("Invalid EOS choice.")
 
-
-# Define the ODEs for mass, gravity and pressure
-def coupled_odes(radius, y):
-    mass, gravity, pressure = y
-
-    if radius < cmb_radius:
-        material = "core"
-    else:
-        material = "mantle" # Assign material only once per call
-    
-    # Calculate density at the current radius, using pressure from y
-    current_density = calculate_density(pressure, radius, cmb_radius, material, radius_guess, cmb_temp_guess, core_temp_guess, EOS_CHOICE, interpolation_cache)
-
-    # Handle potential errors in density calculation
-    if current_density is None:
-        print(f"Warning: Density calculation failed at radius {radius}. Using previous density.") # Print warning only
-        current_density = old_density[np.argmin(np.abs(radii - radius))]
-
-    # Calculate temperature
-    temperature = calculate_temperature(radius, cmb_radius, 300, cmb_temp_guess, core_temp_guess, radius_guess)
-
-    dMdr = 4 * np.pi * radius**2 * current_density
-    dgdr = 4 * np.pi * G * current_density - 2 * gravity / (radius + 1e-20) if radius > 0 else 0
-    dPdr = -current_density * gravity
-
-    return [dMdr, dgdr, dPdr]
