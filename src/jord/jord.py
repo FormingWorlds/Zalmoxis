@@ -100,7 +100,8 @@ def main():
 
         # Estimate initial pressure at the center (needed for solve_ivp)
         pressure[0] = earth_center_pressure
-
+        
+        # Initial density profile guess
         for i in range(num_layers):
             if radii[i] < cmb_radius:
                 # Core (simplified initial guess)
@@ -147,9 +148,9 @@ def main():
                 pressure_guess = 0.5 * (pressure_guess + pressure_guess_previous) # Relaxation
                 adjustment_factor *= 0.95  # Reduce adjustment factor
 
-            # d. Update density based on pressure using EOS:
+            # Update density based on pressure using EOS:
             for i in range(num_layers):
-                if radii[i] < cmb_radius:
+                if mass_enclosed[i] < cmb_mass:
                     # Core
                     material = "core"
                 else:
@@ -179,7 +180,8 @@ def main():
 
         # Update radius guess and core-mantle boundary:
         radius_guess = radius_guess * (planet_mass / calculated_mass)**(1/3)
-        cmb_radius = core_radius_fraction * radius_guess
+        cmb_radius = radii[np.argmax(mass_enclosed >= cmb_mass)]
+        cmb_mass = core_mass_fraction * calculated_mass
 
         # Check for convergence (outer loop):
         relative_diff_outer = abs((calculated_mass - planet_mass) / planet_mass)

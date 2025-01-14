@@ -14,7 +14,7 @@ def coupled_odes(radius, y, cmb_radius, radius_guess, cmb_temp_guess, core_temp_
         material = "core"
     else:
         material = "mantle" # Assign material only once per call
-    
+
     # Calculate density at the current radius, using pressure from y
     current_density = calculate_density(pressure, radius, cmb_radius, material, radius_guess, cmb_temp_guess, core_temp_guess, EOS_CHOICE, interpolation_cache)
 
