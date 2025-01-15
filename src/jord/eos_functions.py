@@ -47,6 +47,7 @@ def calculate_temperature(radius, core_radius, surface_temp, cmb_temp, core_temp
         temperature = core_temp * (1 - (radius / core_radius)**2)**0.3 + core_temp * 0.8
     return temperature
 
+
 # --- EOS Calculation ---
 def calculate_density(pressure, radius, core_radius, material, radius_guess, cmb_temp, core_temp, eos_choice, interpolation_functions={}):
     """Calculates density with caching for tabulated EOS."""
