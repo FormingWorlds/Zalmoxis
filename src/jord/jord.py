@@ -76,6 +76,9 @@ def main():
     # Initial radius guess based on mass and average
     radius_guess = (3 * planet_mass / (4 * math.pi * avg_density_guess))**(1/3)
 
+    # Initial core radius guess
+    cmb_radius = core_radius_fraction * radius_guess
+
     # --- Iterative Solution ---
     for outer_iter in range(max_iterations_outer):
         start_time = time.time()
@@ -90,8 +93,7 @@ def main():
         pressure = np.zeros(num_layers)
         temperature = np.zeros(num_layers)
 
-        # Initial cmb radius and mass guesses:
-        cmb_radius = core_radius_fraction * radius_guess
+        # Initial cmb mass guess:
         cmb_mass = core_mass_fraction * planet_mass
 
         # Initial temperature at the core-mantle boundary (CMB) and the center
@@ -197,8 +199,8 @@ def main():
     planet_radius = radius_guess
 
     # --- Output ---
-    cmb_index = np.argmin(np.abs(radii - cmb_radius))
-    average_density = planet_mass / (4/3 * math.pi * planet_radius**3)
+    cmb_index = np.argmax(mass_enclosed >= cmb_mass)
+    average_density = calculated_mass / (4/3 * math.pi * planet_radius**3)
 
     print("Exoplanet Internal Structure Model (Mass Only Input, with Improved EOS)")
     print("----------------------------------------------------------------------")
