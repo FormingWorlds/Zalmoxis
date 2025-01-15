@@ -11,7 +11,7 @@ core_mass_fraction = 0.32           # Core mass fraction of total mass
 choice                  = "Tabulated"  # Options: "Birch-Murnaghan", "Mie-Gruneisen-Debye", "Tabulated"
 
 [Calculations]
-num_layers              = 100       # Number of planet layers
+num_layers              = 150       # Number of planet layers
 
 [IterativeProcess]
 max_iterations_outer    = 100
