@@ -78,6 +78,9 @@ def main():
 
     # Initial core radius guess
     cmb_radius = core_radius_fraction * radius_guess
+    
+    # Initialize temperature profile
+    temperature = np.zeros(num_layers)
 
     # --- Iterative Solution ---
     for outer_iter in range(max_iterations_outer):
@@ -91,7 +94,6 @@ def main():
         mass_enclosed = np.zeros(num_layers)
         gravity = np.zeros(num_layers)
         pressure = np.zeros(num_layers)
-        temperature = np.zeros(num_layers)
 
         # Initial cmb mass guess:
         cmb_mass = core_mass_fraction * planet_mass
@@ -129,7 +131,7 @@ def main():
 
                 # Solve the ODEs using solve_ivp
                 # sol = solve_ivp(coupled_odes, (radii[0], radii[-1]), y0, t_eval=radii, method='RK45', dense_output=True)
-                sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_radius, radius_guess, cmb_temp_guess, core_temp_guess, EOS_CHOICE, interpolation_cache), 
+                sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_radius, radius_guess, cmb_temp_guess, core_temp_guess, EOS_CHOICE, interpolation_cache, num_layers), 
                     (radii[0], radii[-1]), y0, t_eval=radii, method='RK45', dense_output=True)
 
 
@@ -166,9 +168,6 @@ def main():
                     print(f"Warning: Density calculation failed at radius {radii[i]}. Using previous density.")
                     new_density = old_density[i]
 
-                # Calculate temperature
-                temperature[i] = calculate_temperature(radii[i], cmb_radius, 300, cmb_temp_guess, core_temp_guess, radius_guess)
-
                 # Relaxation
                 density[i] = 0.5 * (new_density + old_density[i]) # Use simple averaging for relaxation
 
@@ -196,11 +195,15 @@ def main():
         if outer_iter == max_iterations_outer - 1:
             print(f"Warning: Maximum outer iterations ({max_iterations_outer}) reached. Radius and cmb may not be fully converged.")
 
+    # Final planet radius 
     planet_radius = radius_guess
 
     # --- Output ---
     cmb_index = np.argmax(mass_enclosed >= cmb_mass)
     average_density = calculated_mass / (4/3 * math.pi * planet_radius**3)
+
+    # Calculate temperature profile
+    temperature = calculate_temperature(radii, cmb_radius, 300, cmb_temp_guess, material_properties, gravity, density, material_properties["mantle"]["K0"], dr=planet_radius/num_layers)
 
     print("Exoplanet Internal Structure Model (Mass Only Input, with Improved EOS)")
     print("----------------------------------------------------------------------")
