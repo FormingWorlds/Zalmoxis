@@ -62,10 +62,11 @@ def calculate_temperature(radii, core_radius, surface_temp, cmb_temp, material_p
         # Determine the material type: mantle or core
         if radius > core_radius:
             material = "mantle"
+            gamma = material_properties[material]["gamma0"]
+
         else:
             material = "core"
-
-        gamma = material_properties[material]["gamma0"]
+            gamma = material_properties[material]["gamma0"]
 
         # Define the adiabatic gradient equation
         def adiabatic_gradient(T, radius_idx):
@@ -94,10 +95,10 @@ def calculate_density(pressure, radius, core_radius, material, radius_guess, cmb
     props = material_properties[material]  # Shorthand
 
     if eos_choice == "Mie-Gruneisen-Debye":
-        density = mie_gruneisen_debye(pressure, props["P0"], props["rho0"], props["K0"], props["K0prime"], props["gamma0"], props["theta0"], props["V0"], T)
+        density = mie_gruneisen_debye(pressure, props["P0"], props["rho0"], props["K0"], props["K0prime"], props["gamma0"], props["theta0"], props["V0"], T) #not checked
         return density
     elif eos_choice == "Birch-Murnaghan":
-        density = birch_murnaghan(pressure, props["P0"], props["rho0"], props["K0"], props["K0prime"], props["V0"])
+        density = birch_murnaghan(pressure, props["P0"], props["rho0"], props["K0"], props["K0prime"], props["V0"]) #not checked
         return density
     elif eos_choice == "Tabulated":
         try:
