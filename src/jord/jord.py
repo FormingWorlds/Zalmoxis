@@ -129,9 +129,8 @@ def main():
                 y0 = [0, 0, pressure_guess]  # Initial mass, gravity, pressure at r=0
 
                 # Solve the ODEs using solve_ivp
-                # sol = solve_ivp(coupled_odes, (radii[0], radii[-1]), y0, t_eval=radii, method='RK45', dense_output=True)
                 sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_radius, radius_guess, cmb_temp_guess, core_temp_guess, EOS_CHOICE, interpolation_cache, num_layers), 
-                    (radii[0], radii[-1]), y0, t_eval=radii, method='RK45', dense_output=True)
+                    (radii[0], radii[-1]), y0, t_eval=radii, rtol=1e-3, atol=1e-6, method='RK45', dense_output=True)
 
 
                 # Extract mass, gravity, and pressure profiles

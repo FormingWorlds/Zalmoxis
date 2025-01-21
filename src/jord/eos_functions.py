@@ -33,19 +33,6 @@ def birch_murnaghan(P, P0, rho0, K0, K0prime, V0):
 
 
 # --- Temperature Profile (Adiabatic) ---
-"""def calculate_temperature(radius, core_radius, surface_temp, cmb_temp, core_temp, radius_guess):
-    
-    Calculates an adiabatic temperature profile.
-    
-    if radius > core_radius:
-        # Mantle adiabat
-        temperature = surface_temp + (cmb_temp - surface_temp) * (
-            (radius_guess - radius) / (radius_guess - core_radius)
-        )**0.45
-    else:
-        # Core adiabat
-        temperature = core_temp * (1 - (radius / core_radius)**2)**0.3 + core_temp * 0.8
-    return temperature"""
 
 def calculate_temperature(radii, core_radius, surface_temp, cmb_temp, material_properties, gravity, density, K_s, dr):
     """
