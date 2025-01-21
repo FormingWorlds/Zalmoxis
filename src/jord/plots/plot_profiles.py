@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from ..constants import *
 
-def plot_planet_profile_single(radii, density, gravity, pressure, temperature, cmb_radius, average_density, output_filename="planet_profile.png"):
+def plot_planet_profile_single(radii, density, gravity, pressure, temperature, cmb_radius, cmb_mass, average_density, mass_enclosed, output_filename="planet_profile.png"):
     """
     Generates a plot of the planet's internal structure, including density, 
     gravity, pressure, and temperature profiles.
@@ -17,10 +17,11 @@ def plot_planet_profile_single(radii, density, gravity, pressure, temperature, c
         temperature (numpy.ndarray): Array of temperatures (K).
         cmb_radius (float): Radius of the core-mantle boundary (m).
         average_density (float): Average density of the planet (kg/m^3).
+        mass_enclosed (numpy.ndarray): Array of enclosed masses (kg).
         output_filename (str, optional): Name of the output file. Defaults to "planet_profile.png".
     """
 
-    fig, ax = plt.subplots(1, 4, figsize=(16, 6))
+    fig, ax = plt.subplots(1, 5, figsize=(16, 6))
 
     # Density vs. Radius
     ax[0].plot(radii / 1e3, density, color='b', lw=2, label=r'Model profile')
@@ -57,6 +58,14 @@ def plot_planet_profile_single(radii, density, gravity, pressure, temperature, c
     ax[3].set_title("Model temperature structure")
     ax[3].grid()
 
+    # Mass vs. Radius
+    ax[4].plot(radii / 1e3, mass_enclosed/earth_mass, color='b', lw=2, label="Model")
+    ax[4].set_xlabel("Radius (km)")
+    ax[4].set_ylabel("Mass enclosed (M$_\oplus$)")
+    ax[4].axvline(x=cmb_radius / 1e3, color='b', linestyle='--', label="Model CMB radius")
+    ax[4].set_title("Model mass enclosed structure")
+    ax[4].grid()
+
 
     # Add reference Earth values to the plots
     ax[0].axvline(x=(earth_radius/1e3), color='g', linestyle=':', label=f"Earth Surface")
@@ -77,6 +86,11 @@ def plot_planet_profile_single(radii, density, gravity, pressure, temperature, c
     ax[3].axvline(x=earth_cmb_radius / 1e3, color='g', linestyle='--', label="Earth CMB radius")
     ax[3].axhline(y=earth_cmb_temperature , color='g', linestyle='-.', label="Earth CMB temperature")
     ax[3].axhline(y=earth_center_temperature , color='g', linestyle='--', label="Earth center temperature")
+
+    ax[4].axvline(x=(earth_radius/1e3), color='g', linestyle=':', label=f"Earth Surface")
+    ax[4].axvline(x=earth_cmb_radius / 1e3, color='g', linestyle='--', label="Earth CMB radius")
+    ax[4].axhline(y=earth_mass/earth_mass, color='g', linestyle='-.', label="Earth mass")
+    ax[4].axhline(y=cmb_mass/earth_mass, color='g', linestyle='--', label="Model CMB mass")
 
     # Add legends
     for a in ax:

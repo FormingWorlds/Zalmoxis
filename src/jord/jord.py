@@ -207,7 +207,7 @@ def main():
 
     print("Exoplanet Internal Structure Model (Mass Only Input, with Improved EOS)")
     print("----------------------------------------------------------------------")
-    print(f"Planet Mass: {planet_mass:.2e} kg")
+    print(f"Calculated Planet Mass: {calculated_mass:.2e} kg")
     print(f"Planet Radius (Self-Consistently Calculated): {planet_radius:.2e} m")
     print(f"Core Radius: {cmb_radius:.2e} m")
     print(f"Mantle Density (at CMB): {density[cmb_index]:.2f} kg/m^3")
@@ -215,17 +215,18 @@ def main():
     print(f"Pressure at Core-Mantle Boundary (CMB): {pressure[cmb_index]:.2e} Pa")
     print(f"Pressure at Center: {pressure[0]:.2e} Pa")
     print(f"Average Density: {average_density:.2f} kg/m^3")
+    print(f"CMB Mass Fraction: {cmb_mass / calculated_mass:.2f}")
 
     # --- Save output data to a file ---
     if data_output_enabled:
         # Combine and save plotted data to a single output file
-        output_data = np.column_stack((radii, density, gravity, pressure, temperature))
-        header = "Radius (m)\tDensity (kg/m^3)\tGravity (m/s^2)\tPressure (Pa)\tTemperature (K)"
+        output_data = np.column_stack((radii, density, gravity, pressure, temperature, mass_enclosed))
+        header = "Radius (m)\tDensity (kg/m^3)\tGravity (m/s^2)\tPressure (Pa)\tTemperature (K)\tMass Enclosed (kg)"
         np.savetxt("planet_profile.txt", output_data, header=header)
 
     # --- Plotting ---
     if plotting_enabled:
-        plot_planet_profile_single(radii, density, gravity, pressure, temperature, cmb_radius, average_density) # Plot planet profile 
+        plot_planet_profile_single(radii, density, gravity, pressure, temperature, cmb_radius, cmb_mass, average_density, mass_enclosed) # Plot planet profile 
         eos_data_files = ['eos_seager07_iron.txt', 'eos_seager07_silicate.txt', 'eos_seager07_water.txt']  # Example files (adjust the filenames accordingly)
         eos_data_folder = "../../data/"  # Path to the folder where EOS data is stored
         plot_eos_material(eos_data_files, eos_data_folder)  # Call the EOS plotting function
