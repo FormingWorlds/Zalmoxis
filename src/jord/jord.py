@@ -149,7 +149,7 @@ def main():
 
                 pressure_guess_previous = pressure_guess
                 pressure_guess -= pressure_diff * adjustment_factor
-                pressure_guess = 0.5 * (pressure_guess + pressure_guess_previous) # Relaxation
+                pressure_guess = pressure_relaxation * (pressure_guess + pressure_guess_previous) # Relaxation
                 adjustment_factor *= 0.95  # Reduce adjustment factor
 
             # Update density based on pressure using EOS:
