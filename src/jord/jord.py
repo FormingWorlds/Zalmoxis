@@ -87,7 +87,6 @@ def main():
         start_time = time.time()
         # Define radial layers:
         radii = np.linspace(0, radius_guess, num_layers)
-        dr = radii[1] - radii[0]
 
         # Initialize arrays:
         density = np.zeros(num_layers)
