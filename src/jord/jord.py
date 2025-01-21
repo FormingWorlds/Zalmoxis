@@ -48,6 +48,7 @@ def main():
     # Access parameters from the configuration file
     planet_mass = config['InputParameter']['planet_mass']  # Mass of the planet (kg)
     core_radius_fraction = config['AssumptionsAndInitialGuesses']['core_radius_fraction']  # Initial guess for the core radius as a fraction of the total radius
+    core_mass_fraction = config['AssumptionsAndInitialGuesses']['core_mass_fraction']  # Initial guess for the core mass as a fraction of the total mass
     EOS_CHOICE = config['EOS']['choice']  # Choice of equation of state (e.g., "Birch-Murnaghan", "Mie-Gruneisen-Debye", "Tabulated")
     num_layers = config['Calculations']['num_layers']  # Number of radial layers for calculations
 
@@ -75,6 +76,12 @@ def main():
     # Initial radius guess based on mass and average
     radius_guess = (3 * planet_mass / (4 * math.pi * avg_density_guess))**(1/3)
 
+    # Initial core radius guess
+    cmb_radius = core_radius_fraction * radius_guess
+    
+    # Initialize temperature profile
+    temperature = np.zeros(num_layers)
+
     # --- Iterative Solution ---
     for outer_iter in range(max_iterations_outer):
         start_time = time.time()
@@ -87,10 +94,9 @@ def main():
         mass_enclosed = np.zeros(num_layers)
         gravity = np.zeros(num_layers)
         pressure = np.zeros(num_layers)
-        temperature = np.zeros(num_layers)
 
-        # Initial density guess:
-        cmb_radius = core_radius_fraction * radius_guess
+        # Initial cmb mass guess:
+        cmb_mass = core_mass_fraction * planet_mass
 
         # Initial temperature at the core-mantle boundary (CMB) and the center
         cmb_temp_guess = 4100  # Initial guess for CMB temperature (K)
@@ -98,7 +104,8 @@ def main():
 
         # Estimate initial pressure at the center (needed for solve_ivp)
         pressure[0] = earth_center_pressure
-
+        
+        # Initial density profile guess
         for i in range(num_layers):
             if radii[i] < cmb_radius:
                 # Core (simplified initial guess)
@@ -124,7 +131,7 @@ def main():
 
                 # Solve the ODEs using solve_ivp
                 # sol = solve_ivp(coupled_odes, (radii[0], radii[-1]), y0, t_eval=radii, method='RK45', dense_output=True)
-                sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_radius, radius_guess, cmb_temp_guess, core_temp_guess, EOS_CHOICE, interpolation_cache), 
+                sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_radius, radius_guess, cmb_temp_guess, core_temp_guess, EOS_CHOICE, interpolation_cache, num_layers), 
                     (radii[0], radii[-1]), y0, t_eval=radii, method='RK45', dense_output=True)
 
 
@@ -145,9 +152,9 @@ def main():
                 pressure_guess = 0.5 * (pressure_guess + pressure_guess_previous) # Relaxation
                 adjustment_factor *= 0.95  # Reduce adjustment factor
 
-            # d. Update density based on pressure using EOS:
+            # Update density based on pressure using EOS:
             for i in range(num_layers):
-                if radii[i] < cmb_radius:
+                if mass_enclosed[i] < cmb_mass:
                     # Core
                     material = "core"
                 else:
@@ -160,9 +167,6 @@ def main():
                 if new_density is None:
                     print(f"Warning: Density calculation failed at radius {radii[i]}. Using previous density.")
                     new_density = old_density[i]
-
-                # Calculate temperature
-                temperature[i] = calculate_temperature(radii[i], cmb_radius, 300, cmb_temp_guess, core_temp_guess, radius_guess)
 
                 # Relaxation
                 density[i] = 0.5 * (new_density + old_density[i]) # Use simple averaging for relaxation
@@ -177,7 +181,8 @@ def main():
 
         # Update radius guess and core-mantle boundary:
         radius_guess = radius_guess * (planet_mass / calculated_mass)**(1/3)
-        cmb_radius = core_radius_fraction * radius_guess
+        cmb_radius = radii[np.argmax(mass_enclosed >= cmb_mass)]
+        cmb_mass = core_mass_fraction * calculated_mass
 
         # Check for convergence (outer loop):
         relative_diff_outer = abs((calculated_mass - planet_mass) / planet_mass)
@@ -190,11 +195,15 @@ def main():
         if outer_iter == max_iterations_outer - 1:
             print(f"Warning: Maximum outer iterations ({max_iterations_outer}) reached. Radius and cmb may not be fully converged.")
 
+    # Final planet radius 
     planet_radius = radius_guess
 
     # --- Output ---
-    cmb_index = np.argmin(np.abs(radii - cmb_radius))
-    average_density = planet_mass / (4/3 * math.pi * planet_radius**3)
+    cmb_index = np.argmax(mass_enclosed >= cmb_mass)
+    average_density = calculated_mass / (4/3 * math.pi * planet_radius**3)
+
+    # Calculate temperature profile
+    temperature = calculate_temperature(radii, cmb_radius, 300, cmb_temp_guess, material_properties, gravity, density, material_properties["mantle"]["K0"], dr=planet_radius/num_layers)
 
     print("Exoplanet Internal Structure Model (Mass Only Input, with Improved EOS)")
     print("----------------------------------------------------------------------")
@@ -224,4 +233,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

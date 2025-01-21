@@ -5,12 +5,13 @@ planet_mass = 5.972e24              #  kg (Earth = 5.972e24)
 
 [AssumptionsAndInitialGuesses]
 core_radius_fraction = 0.545        # Core radius fraction of total radius
+core_mass_fraction = 0.32           # Core mass fraction of total mass
 
 [EOS]
 choice                  = "Tabulated"  # Options: "Birch-Murnaghan", "Mie-Gruneisen-Debye", "Tabulated"
 
 [Calculations]
-num_layers              = 100       # Number of planet layers
+num_layers              = 150       # Number of planet layers
 
 [IterativeProcess]
 max_iterations_outer    = 100
