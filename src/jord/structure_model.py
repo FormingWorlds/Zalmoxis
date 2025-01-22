@@ -5,18 +5,18 @@ from .eos_functions import calculate_density
 from .constants import *
 
 # Define the coupled ODEs for the structure model
-def coupled_odes(radius, y, cmb_radius, radius_guess, cmb_temp_guess, core_temp_guess, EOS_CHOICE, interpolation_cache, num_layers):
+def coupled_odes(radius, y, cmb_mass, radius_guess, EOS_CHOICE, interpolation_cache, num_layers):
     # Unpack the state vector
     mass, gravity, pressure = y
 
     # Define material based on radius
-    if radius < cmb_radius:
+    if mass < cmb_mass:
         material = "core"
     else:
         material = "mantle" # Assign material only once per call
 
     # Calculate density at the current radius, using pressure from y
-    current_density = calculate_density(pressure, radius, cmb_radius, material, radius_guess, cmb_temp_guess, core_temp_guess, EOS_CHOICE, interpolation_cache)
+    current_density = calculate_density(pressure, radius, material, radius_guess, EOS_CHOICE, interpolation_cache)
 
     # Handle potential errors in density calculation
     if current_density is None:

@@ -34,7 +34,7 @@ def birch_murnaghan(P, P0, rho0, K0, K0prime, V0):
 
 # --- Temperature Profile (Adiabatic) ---
 
-def calculate_temperature(radii, core_radius, surface_temp, cmb_temp, material_properties, gravity, density, K_s, dr):
+def calculate_temperature(radii, core_radius, surface_temp, material_properties, gravity, density, K_s, dr):
     """
     Computes the temperature profile inward from the surface using the Runge-Kutta 4th order method (RK4).
     Parameters:
@@ -86,7 +86,7 @@ def calculate_temperature(radii, core_radius, surface_temp, cmb_temp, material_p
 
 
 # --- EOS Calculation ---
-def calculate_density(pressure, radius, core_radius, material, radius_guess, cmb_temp, core_temp, eos_choice, interpolation_functions={}):
+def calculate_density(pressure, radius, material, radius_guess, eos_choice, interpolation_functions={}):
     """Calculates density with caching for tabulated EOS."""
 
     T = 0  # Temporary fix for tabulated EOS

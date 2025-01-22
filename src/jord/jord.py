@@ -97,10 +97,6 @@ def main():
         # Initial cmb mass guess:
         cmb_mass = core_mass_fraction * planet_mass
 
-        # Initial temperature at the core-mantle boundary (CMB) and the center
-        cmb_temp_guess = 4100  # Initial guess for CMB temperature (K)
-        core_temp_guess = 5300
-
         # Estimate initial pressure at the center (needed for solve_ivp)
         pressure[0] = earth_center_pressure
         
@@ -129,7 +125,7 @@ def main():
                 y0 = [0, 0, pressure_guess]  # Initial mass, gravity, pressure at r=0
 
                 # Solve the ODEs using solve_ivp
-                sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_radius, radius_guess, cmb_temp_guess, core_temp_guess, EOS_CHOICE, interpolation_cache, num_layers), 
+                sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, radius_guess, EOS_CHOICE, interpolation_cache, num_layers), 
                     (radii[0], radii[-1]), y0, t_eval=radii, rtol=1e-3, atol=1e-6, method='RK45', dense_output=True)
 
 
@@ -159,7 +155,7 @@ def main():
                     # Mantle
                     material = "mantle"
 
-                new_density = calculate_density(pressure[i], radii[i], cmb_radius, material, radius_guess, cmb_temp_guess, core_temp_guess, EOS_CHOICE)
+                new_density = calculate_density(pressure[i], radii[i], material, radius_guess, EOS_CHOICE)
 
                 # Handle potential errors in density calculation
                 if new_density is None:
@@ -201,12 +197,12 @@ def main():
     average_density = calculated_mass / (4/3 * math.pi * planet_radius**3)
 
     # Calculate temperature profile
-    temperature = calculate_temperature(radii, cmb_radius, 300, cmb_temp_guess, material_properties, gravity, density, material_properties["mantle"]["K0"], dr=planet_radius/num_layers)
+    temperature = calculate_temperature(radii, cmb_radius, 300, material_properties, gravity, density, material_properties["mantle"]["K0"], dr=planet_radius/num_layers)
 
     print("Exoplanet Internal Structure Model (Mass Only Input, with Improved EOS)")
     print("----------------------------------------------------------------------")
     print(f"Calculated Planet Mass: {calculated_mass:.2e} kg")
-    print(f"Planet Radius (Self-Consistently Calculated): {planet_radius:.2e} m")
+    print(f"Calculated Planet Radius: {planet_radius:.2e} m")
     print(f"Core Radius: {cmb_radius:.2e} m")
     print(f"Mantle Density (at CMB): {density[cmb_index]:.2f} kg/m^3")
     print(f"Core Density (at CMB): {density[cmb_index - 1]:.2f} kg/m^3")
@@ -214,6 +210,7 @@ def main():
     print(f"Pressure at Center: {pressure[0]:.2e} Pa")
     print(f"Average Density: {average_density:.2f} kg/m^3")
     print(f"CMB Mass Fraction: {cmb_mass / calculated_mass:.2f}")
+    print(f"Calculated Core Radius Fraction: {cmb_radius / planet_radius:.2f}")
 
     # --- Save output data to a file ---
     if data_output_enabled:
