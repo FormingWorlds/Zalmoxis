@@ -67,6 +67,7 @@ def main(temp_config_path=None):
     # Parameters for the iterative solution process
     max_iterations_outer = config['IterativeProcess']['max_iterations_outer']  # Maximum iterations for the outer loop (radius and CMB adjustment)
     tolerance_outer = config['IterativeProcess']['tolerance_outer']  # Convergence tolerance for the outer loop
+    tolerance_radius = config['IterativeProcess']['tolerance_radius']  # Convergence tolerance for the core radius
     max_iterations_inner = config['IterativeProcess']['max_iterations_inner']  # Maximum iterations for the inner loop (density profile)
     tolerance_inner = config['IterativeProcess']['tolerance_inner']  # Convergence tolerance for the inner loop
 
@@ -82,11 +83,14 @@ def main(temp_config_path=None):
     plotting_enabled = config['Output']['plots_enabled']  # Flag to enable plotting the results (True/False)
 
 
-    # Initial radius guess based on mass and average
+    # Initial radius guess
     radius_guess = 1000*(7030-1840*weight_iron_fraction)*(planet_mass/earth_mass)**0.282 # Initial guess for the planet radius (m) based on the scaling law in Noack et al. 2020
 
     # Initial core radius guess
     cmb_radius = core_radius_fraction * radius_guess
+
+    # Initialize previous CMB radius
+    cmb_radius_previous = cmb_radius
     
     # Initialize temperature profile
     temperature = np.zeros(num_layers)
@@ -185,13 +189,23 @@ def main(temp_config_path=None):
         # Update radius guess and core-mantle boundary:
         radius_guess = radius_guess * (planet_mass / calculated_mass)**(1/3)
         cmb_radius = radii[np.argmax(mass_enclosed >= cmb_mass)]
+        print(cmb_radius)
         cmb_mass = core_mass_fraction * calculated_mass
+        print(cmb_mass)
+        print(calculated_mass)
+
+        # Calculate relative differences
+        relative_diff_outer = abs((calculated_mass - planet_mass) / planet_mass)
+        relative_diff_radius = abs((cmb_radius - cmb_radius_previous) / cmb_radius)
 
         # Check for convergence (outer loop):
-        relative_diff_outer = abs((calculated_mass - planet_mass) / planet_mass)
-        if relative_diff_outer < tolerance_outer:
-            print(f"Outer loop (radius and cmb) converged after {outer_iter + 1} iterations.")
-            break
+        if relative_diff_outer < tolerance_outer and relative_diff_radius < tolerance_radius:
+            print(f"Outer loop (cmb radius and total mass) converged after {outer_iter + 1} iterations.")
+            break  # Both have converged
+        
+        # Update previous CMB radius
+        cmb_radius_previous = cmb_radius
+
         end_time = time.time()
         print(f"Outer iteration {outer_iter+1} took {end_time - start_time:.2f} seconds")
 

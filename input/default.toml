@@ -17,6 +17,7 @@ num_layers              = 150       # Number of planet layers
 [IterativeProcess]
 max_iterations_outer    = 100
 tolerance_outer         = 1e-4
+tolerance_radius        = 1e-4
 max_iterations_inner    = 100
 tolerance_inner         = 1e-4
 
