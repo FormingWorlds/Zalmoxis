@@ -10,9 +10,9 @@ from .structure_model import coupled_odes
 from .plots.plot_profiles import plot_planet_profile_single
 from .plots.plot_eos import plot_eos_material
 
-# Run file via command line: python -m src.jord.jord -c ../../input/default.toml
+# Run file via command line with default configuration file: python -m src.jord.jord -c ../../input/default.toml
 
-def main():
+def main(temp_config_path=None):
     
     """
     Main function to run the exoplanet internal structure model.
@@ -28,7 +28,14 @@ def main():
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
     # Load the configuration file either from terminal (-c flag) or default path
-    if "-c" in sys.argv:
+    if temp_config_path:
+        try:
+            config = toml.load(temp_config_path)
+            print(f"Reading temporary config file from: {temp_config_path}")
+        except FileNotFoundError:
+            print(f"Error: Temporary config file not found at {temp_config_path}")
+            sys.exit(1)
+    elif "-c" in sys.argv:
         index = sys.argv.index("-c")
         try:
             config_file_path = sys.argv[index + 1]
@@ -36,14 +43,18 @@ def main():
             print(f"Reading config file from: {config_file_path}")
         except IndexError:
             print("Error: -c flag provided but no config file path specified.")
-            sys.exit(1) # Exit with error code
+            sys.exit(1)  # Exit with error code
         except FileNotFoundError:
             print(f"Error: Config file not found at {config_file_path}")
             sys.exit(1)
     else:
         config_default_path = "../../input/default.toml"
-        config = toml.load(config_default_path)
-        print(f"Reading default config file from {config_default_path}")
+        try:
+            config = toml.load(config_default_path)
+            print(f"Reading default config file from {config_default_path}")
+        except FileNotFoundError:
+            print(f"Error: Default config file not found at {config_default_path}")
+            sys.exit(1)
 
     # Access parameters from the configuration file
     planet_mass = config['InputParameter']['planet_mass']  # Mass of the planet (kg)
