@@ -210,7 +210,7 @@ def main(temp_config_path=None):
     # Calculate temperature profile
     temperature = calculate_temperature(radii, cmb_radius, 300, material_properties, gravity, density, material_properties["mantle"]["K0"], dr=planet_radius/num_layers)
 
-    print("Exoplanet Internal Structure Model (Mass Only Input, with Improved EOS)")
+    print("Exoplanet Internal Structure Model (Mass Only Input)")
     print("----------------------------------------------------------------------")
     print(f"Calculated Planet Mass: {calculated_mass:.2e} kg")
     print(f"Calculated Planet Radius: {planet_radius:.2e} m")

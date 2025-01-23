@@ -18,7 +18,9 @@ def run_with_temp_config():
         config = toml.load(file)
 
     # Modify the configuration parameters as needed
-    config['InputParameter']['planet_mass'] = 5.972e25
+    config['InputParameter']['planet_mass'] = 5.972e24
+    config['Calculations']['num_layers'] = 150
+    config['PressureAdjustment']['pressure_relaxation'] = 0.5
 
     # Create a temporary configuration file
     with tempfile.NamedTemporaryFile(delete=False, mode='w', suffix='.toml') as temp_config_file:
