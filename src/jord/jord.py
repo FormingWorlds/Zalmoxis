@@ -60,6 +60,7 @@ def main(temp_config_path=None):
     planet_mass = config['InputParameter']['planet_mass']  # Mass of the planet (kg)
     core_radius_fraction = config['AssumptionsAndInitialGuesses']['core_radius_fraction']  # Initial guess for the core radius as a fraction of the total radius
     core_mass_fraction = config['AssumptionsAndInitialGuesses']['core_mass_fraction']  # Initial guess for the core mass as a fraction of the total mass
+    weight_iron_fraction = config['AssumptionsAndInitialGuesses']['weight_iron_fraction']  # Initial guess for the weight fraction of iron in the core
     EOS_CHOICE = config['EOS']['choice']  # Choice of equation of state (e.g., "Birch-Murnaghan", "Mie-Gruneisen-Debye", "Tabulated")
     num_layers = config['Calculations']['num_layers']  # Number of radial layers for calculations
 
@@ -82,10 +83,7 @@ def main(temp_config_path=None):
 
 
     # Initial radius guess based on mass and average
-    avg_density_guess = 5515  # kg/m^3
-
-    # Initial radius guess based on mass and average
-    radius_guess = (3 * planet_mass / (4 * math.pi * avg_density_guess))**(1/3)
+    radius_guess = 1000*(7030-1840*weight_iron_fraction)*(planet_mass/earth_mass)**0.282 # Initial guess for the planet radius (m) based on the scaling law in Noack et al. 2020
 
     # Initial core radius guess
     cmb_radius = core_radius_fraction * radius_guess
