@@ -33,34 +33,72 @@ def birch_murnaghan(P, P0, rho0, K0, K0prime, V0):
 
 
 # --- Temperature Profile (Adiabatic) ---
-def calculate_temperature(radius, core_radius, surface_temp, cmb_temp, core_temp, radius_guess):
+
+def calculate_temperature(radii, core_radius, surface_temp, material_properties, gravity, density, K_s, dr):
     """
-    Calculates an adiabatic temperature profile.
+    Computes the temperature profile inward from the surface using the Runge-Kutta 4th order method (RK4).
+    Parameters:
+    - radii: Array of radii (m) from the center to the surface.
+    - core_radius: Radius of core-mantle boundary (m).
+    - surface_temp: Surface temperature (K).
+    - cmb_temp: Core-mantle boundary temperature (K).
+    - material_properties: Material-specific parameters (rho, K, gamma).
+    - gravity: Array of gravitational accelerations (m/s^2) corresponding to radii.
+    - density: Array of densities (kg/m^3) corresponding to radii.
+    - K_s: Isentropic bulk modulus (Pa).
+    - dr: Step size in radial direction (meters).
+
+    Returns:
+    - temperature_profile: Array of temperatures (K) corresponding to the radii, starting from the surface.
     """
-    if radius > core_radius:
-        # Mantle adiabat
-        temperature = surface_temp + (cmb_temp - surface_temp) * (
-            (radius_guess - radius) / (radius_guess - core_radius)
-        )**0.45
-    else:
-        # Core adiabat
-        temperature = core_temp * (1 - (radius / core_radius)**2)**0.3 + core_temp * 0.8
+    # Initialize temperature profile array
+    temperature = np.zeros_like(radii)
+    temperature[-1] = surface_temp  # Surface temperature as the starting point
+
+    # Iterate inward from the surface (reverse order in the arrays)
+    for i in range(len(radii) - 1, 0, -1):
+        radius = radii[i]
+        
+        # Determine the material type: mantle or core
+        if radius > core_radius:
+            material = "mantle"
+            gamma = material_properties[material]["gamma0"]
+
+        else:
+            material = "core"
+            gamma = material_properties[material]["gamma0"]
+
+        # Define the adiabatic gradient equation
+        def adiabatic_gradient(T, radius_idx):
+            return -(density[radius_idx] * gravity[radius_idx] * gamma * T) / K_s
+
+        # Apply RK4 Method
+        current_temp = temperature[i]
+        k1 = -dr * adiabatic_gradient(current_temp, i)  # Reverse integration direction
+        k2 = -dr * adiabatic_gradient(current_temp + 0.5 * k1, i - 1)
+        k3 = -dr * adiabatic_gradient(current_temp + 0.5 * k2, i - 1)
+        k4 = -dr * adiabatic_gradient(current_temp + k3, i - 2)
+
+        # Update temperature at the previous radius
+        temperature[i - 1] = current_temp + (k1 + 2 * k2 + 2 * k3 + k4) / 6
+
     return temperature
 
+
 # --- EOS Calculation ---
-def calculate_density(pressure, radius, core_radius, material, radius_guess, cmb_temp, core_temp, eos_choice, interpolation_functions={}):
+def calculate_density(pressure, radius, material, radius_guess, eos_choice, interpolation_functions={}):
     """Calculates density with caching for tabulated EOS."""
 
-    T = calculate_temperature(radius, core_radius, 300, cmb_temp, core_temp, radius_guess)
+    T = 0  # Temporary fix for tabulated EOS
     props = material_properties[material]
 
     props = material_properties[material]  # Shorthand
 
     if eos_choice == "Mie-Gruneisen-Debye":
-        density = mie_gruneisen_debye(pressure, props["P0"], props["rho0"], props["K0"], props["K0prime"], props["gamma0"], props["theta0"], props["V0"], T)
+        density = mie_gruneisen_debye(pressure, props["P0"], props["rho0"], props["K0"], props["K0prime"], props["gamma0"], props["theta0"], props["V0"], T) #not checked
         return density
     elif eos_choice == "Birch-Murnaghan":
-        density = birch_murnaghan(pressure, props["P0"], props["rho0"], props["K0"], props["K0prime"], props["V0"])
+        density = birch_murnaghan(pressure, props["P0"], props["rho0"], props["K0"], props["K0prime"], props["V0"]) #not checked
         return density
     elif eos_choice == "Tabulated":
         try:
@@ -89,30 +127,7 @@ def calculate_density(pressure, radius, core_radius, material, radius_guess, cmb
 
     else:
         raise ValueError("Invalid EOS choice.")
-
-
-# Define the ODEs for mass, gravity and pressure
-def coupled_odes(radius, y):
-    mass, gravity, pressure = y
-
-    if radius < cmb_radius:
-        material = "core"
-    else:
-        material = "mantle" # Assign material only once per call
     
-    # Calculate density at the current radius, using pressure from y
-    current_density = calculate_density(pressure, radius, cmb_radius, material, radius_guess, cmb_temp_guess, core_temp_guess, EOS_CHOICE, interpolation_cache)
 
-    # Handle potential errors in density calculation
-    if current_density is None:
-        print(f"Warning: Density calculation failed at radius {radius}. Using previous density.") # Print warning only
-        current_density = old_density[np.argmin(np.abs(radii - radius))]
 
-    # Calculate temperature
-    temperature = calculate_temperature(radius, cmb_radius, 300, cmb_temp_guess, core_temp_guess, radius_guess)
 
-    dMdr = 4 * np.pi * radius**2 * current_density
-    dgdr = 4 * np.pi * G * current_density - 2 * gravity / (radius + 1e-20) if radius > 0 else 0
-    dPdr = -current_density * gravity
-
-    return [dMdr, dgdr, dPdr]
