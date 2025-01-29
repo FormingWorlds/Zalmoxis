@@ -1,4 +1,4 @@
-import os
+import os, sys
 import tempfile
 import toml
 import subprocess
@@ -6,7 +6,8 @@ from src.jord import jord
 
 # Run file via command line: python -m src.jord.control_config
 
-def run_with_temp_config():
+# Function to run the main function with a temporary configuration file
+def run_main_with_temp_config():
     # Set the working directory to the current file
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
@@ -18,10 +19,12 @@ def run_with_temp_config():
         config = toml.load(file)
 
     # Modify the configuration parameters as needed
-    config['InputParameter']['planet_mass'] = 5.972e24
+    config['InputParameter']['planet_mass'] = 10*5.972e24
     config['Calculations']['num_layers'] = 150
     config['PressureAdjustment']['pressure_relaxation'] = 0.5
-    config['IterativeProcess']['tolerance_outer'] = 1e-4
+    config['IterativeProcess']['tolerance_outer'] = 1e-3
+    config['IterativeProcess']['tolerance_inner'] = 1e-4
+    config['IterativeProcess']['tolerance_radius'] = 1e-3
 
     # Create a temporary configuration file
     with tempfile.NamedTemporaryFile(delete=False, mode='w', suffix='.toml') as temp_config_file:
@@ -35,4 +38,4 @@ def run_with_temp_config():
     os.remove(temp_config_path)
 
 # Run the function
-run_with_temp_config()
+run_main_with_temp_config()
