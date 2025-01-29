@@ -55,7 +55,7 @@ def choose_config_file(temp_config_path=None):
 
     return config
 
-def main(temp_config_path=None):
+def main(temp_config_path=None, id_mass=None):
     
     """
     Main function to run the exoplanet internal structure model.
@@ -253,7 +253,7 @@ def main(temp_config_path=None):
         # Combine and save plotted data to a single output file
         output_data = np.column_stack((radii, density, gravity, pressure, temperature, mass_enclosed))
         header = "Radius (m)\tDensity (kg/m^3)\tGravity (m/s^2)\tPressure (Pa)\tTemperature (K)\tMass Enclosed (kg)"
-        np.savetxt("planet_profile.txt", output_data, header=header)
+        np.savetxt(f"output_files/planet_profile{id_mass}.txt", output_data, header=header)
         # Append calculated mass and radius of the planet to a file in dedicated columns
         output_file = "calculated_planet_mass_radius.txt"
         if not os.path.exists(output_file):
@@ -266,7 +266,7 @@ def main(temp_config_path=None):
 
     # --- Plotting ---
     if plotting_enabled:
-        plot_planet_profile_single(radii, density, gravity, pressure, temperature, cmb_radius, cmb_mass, average_density, mass_enclosed) # Plot planet profile 
+        plot_planet_profile_single(radii, density, gravity, pressure, temperature, cmb_radius, cmb_mass, average_density, mass_enclosed, id_mass) # Plot planet profile 
         eos_data_files = ['eos_seager07_iron.txt', 'eos_seager07_silicate.txt', 'eos_seager07_water.txt']  # Example files (adjust the filenames accordingly)
         eos_data_folder = "../../data/"  # Path to the folder where EOS data is stored
         plot_eos_material(eos_data_files, eos_data_folder)  # Call the EOS plotting function
