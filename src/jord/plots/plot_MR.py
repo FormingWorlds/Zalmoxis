@@ -1,15 +1,19 @@
 from ..constants import *
 import matplotlib.pyplot as plt
+import os
 
 # Run file via command line: python -m src.jord.plots.plot_MR
 
 # Function to plot the mass-radius relationship of planets and compare with Earth-like Rocky (32.5% Fe+67.5% MgSiO3) planets from Zeng et al. (2019)
 def plot_mass_radius_relationship(data_file):
+    # Set the working directory to the current file
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
     # Read data from Zeng et al. (2019) for Earth-like Rocky (32.5% Fe+67.5% MgSiO3) planets
     zeng_masses = []
     zeng_radii = []
 
-    with open("/Users/flavianm2/Documents/GitHub/Jord/data/massradiusEarthlikeRockyZeng.txt", 'r') as zeng_file:
+    with open("../../../data/massradiusEarthlikeRockyZeng.txt", 'r') as zeng_file:
         next(zeng_file)  # Skip the header line
         for line in zeng_file:
             mass, radius = map(float, line.split())
@@ -38,9 +42,9 @@ def plot_mass_radius_relationship(data_file):
     ax.set_ylim(0, 2)
     ax.legend()
     ax.grid(True)
-    plt.savefig("/Users/flavianm2/Documents/GitHub/Jord/src/jord/MR_plot.png")
+    plt.savefig("../MR_plot.png")
     #plt.show()
 
 # Example usage
-data_file = '/Users/flavianm2/Documents/GitHub/Jord/src/jord/calculated_planet_mass_radius.txt'
+data_file = '../calculated_planet_mass_radius.txt'
 plot_mass_radius_relationship(data_file)
