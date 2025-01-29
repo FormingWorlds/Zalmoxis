@@ -12,18 +12,15 @@ from .plots.plot_eos import plot_eos_material
 
 # Run file via command line with default configuration file: python -m src.jord.jord -c ../../input/default.toml
 
-def main(temp_config_path=None):
-    
+# Function to choose the configuration file to run the main function
+def choose_config_file(temp_config_path=None):
     """
-    Main function to run the exoplanet internal structure model.
-
-    This function reads the configuration file, initializes parameters, and performs
-    an iterative solution to calculate the internal structure of an exoplanet based on
-    the given mass and other parameters. It outputs the calculated planet radius, core
-    radius, densities, pressures, and temperatures at various layers, and optionally
-    saves the data to a file and plots the results.
+    Function to choose the configuration file to run the main function.
+    The function will first check if a temporary configuration file is provided.
+    If not, it will check if the -c flag is provided in the command line arguments.
+    If the -c flag is provided, the function will read the configuration file path from the next argument.
+    If no temporary configuration file or -c flag is provided, the function will read the default configuration file.
     """
-
     # Set the working directory to the current file
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
@@ -56,6 +53,22 @@ def main(temp_config_path=None):
             print(f"Error: Default config file not found at {config_default_path}")
             sys.exit(1)
 
+    return config
+
+def main(temp_config_path=None):
+    
+    """
+    Main function to run the exoplanet internal structure model.
+
+    This function reads the configuration file, initializes parameters, and performs
+    an iterative solution to calculate the internal structure of an exoplanet based on
+    the given mass and other parameters. It outputs the calculated planet radius, core
+    radius, densities, pressures, and temperatures at various layers, and optionally
+    saves the data to a file and plots the results.
+    """
+
+    config = choose_config_file(temp_config_path)  # Choose the configuration file
+    
     # Access parameters from the configuration file
     planet_mass = config['InputParameter']['planet_mass']  # Mass of the planet (kg)
     core_radius_fraction = config['AssumptionsAndInitialGuesses']['core_radius_fraction']  # Initial guess for the core radius as a fraction of the total radius
@@ -241,6 +254,15 @@ def main(temp_config_path=None):
         output_data = np.column_stack((radii, density, gravity, pressure, temperature, mass_enclosed))
         header = "Radius (m)\tDensity (kg/m^3)\tGravity (m/s^2)\tPressure (Pa)\tTemperature (K)\tMass Enclosed (kg)"
         np.savetxt("planet_profile.txt", output_data, header=header)
+        # Append calculated mass and radius of the planet to a file in dedicated columns
+        output_file = "calculated_planet_mass_radius.txt"
+        if not os.path.exists(output_file):
+            header = "Calculated Mass (kg)\tCalculated Radius (m)"
+            with open(output_file, "w") as file:
+                file.write(header + "\n")
+        with open(output_file, "a") as file:
+            file.write(f"{calculated_mass}\t{planet_radius}\n")
+         
 
     # --- Plotting ---
     if plotting_enabled:
