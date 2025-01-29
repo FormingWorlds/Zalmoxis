@@ -20,7 +20,7 @@ def run_main_with_temp_config(id_mass=None):
 
     # Modify the configuration parameters as needed
     config['InputParameter']['planet_mass'] = id_mass*5.972e24
-    config['Calculations']['num_layers'] = 10000
+    config['Calculations']['num_layers'] = 150
     config['IterativeProcess']['tolerance_outer'] = 1e-3
     config['IterativeProcess']['tolerance_inner'] = 1e-4
     config['IterativeProcess']['tolerance_radius'] = 1e-3
