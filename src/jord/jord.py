@@ -152,7 +152,7 @@ def main(temp_config_path=None, id_mass=None):
 
                 # Solve the ODEs using solve_ivp
                 sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, radius_guess, EOS_CHOICE, interpolation_cache, num_layers), 
-                    (radii[0], radii[-1]), y0, t_eval=radii, rtol=1e-3, atol=1e-6, method='RK45', dense_output=True)
+                    (radii[0], radii[-1]), y0, t_eval=radii, rtol=1e-5, atol=1e-6, method='RK45', dense_output=True)
 
 
                 # Extract mass, gravity, and pressure profiles
