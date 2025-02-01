@@ -39,4 +39,10 @@ def run_main_with_temp_config(id_mass=None):
 
 # Run the function for a range of planet masses (1 to 10 Earth masses)
 for id_mass in range(1, 11):
+<<<<<<< HEAD
     run_main_with_temp_config(id_mass)
+=======
+    # Run the main function with the temporary configuration file
+    run_main_with_temp_config(id_mass)
+
+>>>>>>> allinone
