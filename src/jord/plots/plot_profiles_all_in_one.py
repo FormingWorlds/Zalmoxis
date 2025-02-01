@@ -95,10 +95,11 @@ def plot_profiles_all_in_one():
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])  # Empty array to avoid warning
     cbar = plt.colorbar(sm, ax=axs, orientation='vertical', fraction=0.02, pad=0.04)
-    cbar.set_label("(M$_\oplus$)")
+    cbar.set_label("Planet Mass (M$_\oplus$)")
 
     # Adjust layout and show plot
     #plt.tight_layout()
+    plt.suptitle("Planet Profiles Comparison")
     plt.savefig("../all_profiles_with_colorbar.png")
     #plt.show()
 
