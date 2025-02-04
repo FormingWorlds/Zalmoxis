@@ -3,6 +3,8 @@ import tempfile
 import toml
 import subprocess
 from src.jord import jord  
+from src.jord.plots.plot_MR import plot_mass_radius_relationship
+from src.jord.plots.plot_profiles_all_in_one import plot_profiles_all_in_one    
 
 # Run file via command line: python -m src.tests.MRtest
 
@@ -61,3 +63,8 @@ def run_jord(id_mass=None):
 for id_mass in range(1, 11):
     run_jord(id_mass)
 
+# Plot the mass-radius relationship for 1 to 10 Earth masses
+plot_mass_radius_relationship()
+
+# Call the function to plot the profiles of all planets in one plot
+plot_profiles_all_in_one()

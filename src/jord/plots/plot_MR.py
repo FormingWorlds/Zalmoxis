@@ -5,11 +5,9 @@ import os
 # Run file via command line: python -m src.jord.plots.plot_MR
 
 # Function to plot the mass-radius relationship of planets and compare with Earth-like Rocky (32.5% Fe+67.5% MgSiO3) planets from Zeng et al. (2019)
-def plot_mass_radius_relationship(data_file):
+def plot_mass_radius_relationship():
     """
     Plots the mass-radius relationship of planets using data from a specified file and compares it with Earth-like rocky planets data from Zeng et al. (2019).
-    Parameters:
-    data_file (str): Path to the file containing calculated planet masses and radii.
     The function performs the following steps:
     1. Sets the working directory to the current file's directory.
     2. Reads mass and radius data for Earth-like rocky planets from Zeng et al. (2019).
@@ -24,6 +22,8 @@ def plot_mass_radius_relationship(data_file):
 
     # Set the working directory to the current file
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+    data_file = '../calculated_planet_mass_radius.txt'
 
     # Read data from Zeng et al. (2019) for Earth-like Rocky (32.5% Fe+67.5% MgSiO3) planets
     zeng_masses = []
@@ -60,7 +60,5 @@ def plot_mass_radius_relationship(data_file):
     ax.grid(True)
     plt.savefig("../MR_plot.pdf")
     #plt.show()
+    plt.close(fig)
 
-# Plot the mass-radius relationship for 1 to 10 Earth masses
-data_file = '../calculated_planet_mass_radius.txt'
-plot_mass_radius_relationship(data_file)
