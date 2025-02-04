@@ -10,6 +10,33 @@ from ..constants import *
 
 # Function to plot the profiles of all planets in one plot for comparison
 def plot_profiles_all_in_one():
+    """
+    Plots various profiles (Density, Gravity, Pressure, and Mass Enclosed) for planets with different masses.
+
+    This function reads planet profile data from text files, processes the data, and generates comparative plots
+    for different planet masses. The plots include:
+    - Radius vs Density
+    - Radius vs Gravity
+    - Radius vs Pressure
+    - Radius vs Mass Enclosed
+
+    The function also adds a colorbar to indicate the planet mass for each profile.
+
+    The data files should be named in the format 'planet_profile{id_mass}.txt' and located in the '../output_files/' directory.
+    Each file should contain space-separated values with columns representing:
+    - Radius (m)
+    - Density (kg/m^3)
+    - Gravity (m/s^2)
+    - Pressure (Pa)
+    - Temperature (K)
+    - Mass Enclosed (kg)
+
+    The generated plot is saved as 'all_profiles_with_colorbar.pdf' in the parent directory.
+
+    Raises:
+        FileNotFoundError: If any of the expected data files are not found.
+
+    """
     # Set the working directory to the current file
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
@@ -99,7 +126,8 @@ def plot_profiles_all_in_one():
 
     # Adjust layout and show plot
     #plt.tight_layout()
-    plt.savefig("../all_profiles_with_colorbar.png")
+    plt.suptitle("Planet Profiles Comparison")
+    plt.savefig("../all_profiles_with_colorbar.pdf")
     #plt.show()
 
 # Call the function to plot the profiles
