@@ -18,7 +18,7 @@ def plot_planet_profile_single(radii, density, gravity, pressure, temperature, c
         cmb_radius (float): Radius of the core-mantle boundary (m).
         average_density (float): Average density of the planet (kg/m^3).
         mass_enclosed (numpy.ndarray): Array of enclosed masses (kg).
-        output_filename (str, optional): Name of the output file. Defaults to "planet_profile.png".
+        id_mass (int): Identifier for the planet mass.
     """
 
     fig, ax = plt.subplots(1, 5, figsize=(16, 6))
@@ -97,4 +97,5 @@ def plot_planet_profile_single(radii, density, gravity, pressure, temperature, c
         a.legend(fontsize=8)
 
     plt.tight_layout()
-    plt.savefig(f"output_files/planet_profile{id_mass}.png")
+    #plt.savefig(f"output_files/planet_profile{id_mass}.pdf")
+    #plt.show()

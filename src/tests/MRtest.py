@@ -4,10 +4,27 @@ import toml
 import subprocess
 from src.jord import jord  
 
-# Run file via command line: python -m src.jord.control_config
+# Run file via command line: python -m src.tests.MRtest
 
 # Function to run the main function with a temporary configuration file
-def run_main_with_temp_config(id_mass=None):
+def run_jord(id_mass=None):
+    '''
+        This function sets the working directory to the current file's directory,
+        loads a default configuration file, modifies specific configuration parameters,
+        creates a temporary configuration file, runs the main function with the temporary
+        configuration file, and then cleans up the temporary configuration file.
+
+        Parameters:
+        id_mass (float, optional): The mass of the planet in Earth masses. Defaults to None.
+
+        Raises:
+        FileNotFoundError: If the default configuration file is not found.
+        toml.TomlDecodeError: If there is an error decoding the TOML configuration file.
+        Exception: If there is an error during the execution of the main function.
+
+        Returns:
+        None
+    '''
     # Set the working directory to the current file
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
@@ -25,6 +42,9 @@ def run_main_with_temp_config(id_mass=None):
     config['IterativeProcess']['tolerance_inner'] = 1e-4
     config['IterativeProcess']['tolerance_radius'] = 1e-3
     config['IterativeProcess']['max_iterations_outer'] = 20
+    config['IterativeProcess']['relative_tolerance'] = 1e-5
+    config['IterativeProcess']['absolute_tolerance'] = 1e-6 
+
 
     # Create a temporary configuration file
     with tempfile.NamedTemporaryFile(delete=False, mode='w', suffix='.toml') as temp_config_file:
@@ -37,8 +57,7 @@ def run_main_with_temp_config(id_mass=None):
     # Clean up the temporary configuration file after running
     os.remove(temp_config_path)
 
-# Run the function for a range of planet masses (1 to 10 Earth masses)
+# Run jord for a range of planet masses (1 to 10 Earth masses)
 for id_mass in range(1, 11):
-    # Run the main function with the temporary configuration file
-    run_main_with_temp_config(id_mass)
+    run_jord(id_mass)
 

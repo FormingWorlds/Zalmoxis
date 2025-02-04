@@ -83,6 +83,8 @@ def main(temp_config_path=None, id_mass=None):
     tolerance_radius = config['IterativeProcess']['tolerance_radius']  # Convergence tolerance for the core radius
     max_iterations_inner = config['IterativeProcess']['max_iterations_inner']  # Maximum iterations for the inner loop (density profile)
     tolerance_inner = config['IterativeProcess']['tolerance_inner']  # Convergence tolerance for the inner loop
+    relative_tolerance = config['IterativeProcess']['relative_tolerance']  # Relative tolerance for integration in solve_ivp
+    absolute_tolerance = config['IterativeProcess']['absolute_tolerance']  # Absolute tolerance for integration in solve_ivp
 
     # Parameters for adjusting the surface pressure to the target value
     target_surface_pressure = config['PressureAdjustment']['target_surface_pressure']  # Target surface pressure (Pa)
@@ -152,7 +154,7 @@ def main(temp_config_path=None, id_mass=None):
 
                 # Solve the ODEs using solve_ivp
                 sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, radius_guess, EOS_CHOICE, interpolation_cache, num_layers), 
-                    (radii[0], radii[-1]), y0, t_eval=radii, rtol=1e-5, atol=1e-6, method='RK45', dense_output=True)
+                    (radii[0], radii[-1]), y0, t_eval=radii, rtol=relative_tolerance, atol=absolute_tolerance, method='RK45', dense_output=True)
 
 
                 # Extract mass, gravity, and pressure profiles
