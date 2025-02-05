@@ -129,6 +129,4 @@ def plot_profiles_all_in_one():
     plt.suptitle("Planet Profiles Comparison")
     plt.savefig("../all_profiles_with_colorbar.pdf")
     #plt.show()
-
-# Call the function to plot the profiles
-plot_profiles_all_in_one()
+    plt.close(fig)
