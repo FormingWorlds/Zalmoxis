@@ -274,5 +274,4 @@ def main(temp_config_path=None, id_mass=None):
         plot_eos_material(eos_data_files, eos_data_folder)  # Call the EOS plotting function
         #plt.show()  # Show the plots
 
-if __name__ == "__main__":
-    main()
+
