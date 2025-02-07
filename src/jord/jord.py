@@ -97,7 +97,6 @@ def main(temp_config_path=None, id_mass=None):
     data_output_enabled = config['Output']['data_enabled']  # Flag to enable saving data to a file (True/False)
     plotting_enabled = config['Output']['plots_enabled']  # Flag to enable plotting the results (True/False)
 
-
     # Initial radius guess
     radius_guess = 1000*(7030-1840*weight_iron_fraction)*(planet_mass/earth_mass)**0.282 # Initial guess for the planet radius (m) based on the scaling law in Noack et al. 2020
 

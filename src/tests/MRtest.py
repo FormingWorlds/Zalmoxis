@@ -59,12 +59,22 @@ def run_jord(id_mass=None):
     # Clean up the temporary configuration file after running
     os.remove(temp_config_path)
 
-# Run jord for a range of planet masses (1 to 10 Earth masses)
+"""# Run jord for a range of planet masses (1 to 10 Earth masses in steps of 1)
 for id_mass in range(1, 11):
     run_jord(id_mass)
 
-# Plot the mass-radius relationship for 1 to 10 Earth masses
+# Plot the mass-radius relationship for 1 to 10 Earth masses in steps of 1
 plot_mass_radius_relationship()
 
-# Call the function to plot the profiles of all planets in one plot
+# Call the function to plot the profiles of all planets in one plot for 1 to 10 Earth masses in steps of 1
+plot_profiles_all_in_one()"""
+
+# Run jord for a range of planet masses (1 to 15 Earth masses in steps of 2.5)
+for id_mass in [1, 2.5, 5, 7.5, 10, 12.5, 15]:
+    run_jord(id_mass)
+
+# Plot the mass-radius relationship for 1 to 15 Earth masses in steps of 2.5
+plot_mass_radius_relationship()
+
+# Call the function to plot the profiles of all planets in one plot for 1 to 15 Earth masses in steps of 2.5
 plot_profiles_all_in_one()

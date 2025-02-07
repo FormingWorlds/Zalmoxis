@@ -4,37 +4,14 @@ import numpy as np
 import pandas as pd
 from matplotlib import cm
 from matplotlib.colors import Normalize
-from ..constants import *
+from src.jord.constants import * 
 
-# Run file via command line: python -m src.jord.plots.plot_profiles_all_in_one
+# Run file via command line: python -m src.tests.profile_comparison_Wagner_test
 
-# Function to plot the profiles of all planets in one plot for comparison
-def plot_profiles_all_in_one():
+# Extended function to plot the profiles of all planets in one plot for comparison with Wagner et al. (2012)
+def plot_profiles_all_in_one_Wagner():
     """
-    Plots various profiles (Density, Gravity, Pressure, and Mass Enclosed) for planets with different masses.
-
-    This function reads planet profile data from text files, processes the data, and generates comparative plots
-    for different planet masses. The plots include:
-    - Radius vs Density
-    - Radius vs Gravity
-    - Radius vs Pressure
-    - Radius vs Mass Enclosed
-
-    The function also adds a colorbar to indicate the planet mass for each profile.
-
-    The data files should be named in the format 'planet_profile{id_mass}.txt' and located in the '../output_files/' directory.
-    Each file should contain space-separated values with columns representing:
-    - Radius (m)
-    - Density (kg/m^3)
-    - Gravity (m/s^2)
-    - Pressure (Pa)
-    - Temperature (K)
-    - Mass Enclosed (kg)
-
-    The generated plot is saved as 'all_profiles_with_colorbar.pdf' in the parent directory.
-
-    Raises:
-        FileNotFoundError: If any of the expected data files are not found.
+    TBC
 
     """
     # Set the working directory to the current file
@@ -46,7 +23,7 @@ def plot_profiles_all_in_one():
     # Read data from files with calculated planet profiles
     for id_mass in [1, 2.5, 5, 7.5, 10, 12.5, 15]:
         # Generate file path for each planet profile
-        file_path = f"../output_files/planet_profile{id_mass}.txt"
+        file_path = f"../jord/output_files/planet_profile{id_mass}.txt"
 
         # Check if the file exists
         if os.path.exists(file_path):
@@ -75,6 +52,27 @@ def plot_profiles_all_in_one():
         else:
             print(f"File not found: {file_path}")
 
+    # Read data from Wagner et al. (2012) for comparison
+    wagner_radii_for_densities = []
+    wagner_densities = []
+
+    with open("../../data/radiusdensityWagner.txt", 'r') as wagner_file:
+        for line in wagner_file:
+            radius, density = map(float, line.split(','))
+            wagner_radii_for_densities.append(radius*earth_radius/1000) # Convert to km
+            wagner_densities.append(density) # in kg/m^3 
+
+    wagner_radii_for_pressures = []
+    wagner_pressures = []
+
+    with open("../../data/radiuspressureWagner.txt", 'r') as wagner_file:
+        for line in wagner_file:
+            radius, pressure = map(float, line.split(','))
+            wagner_radii_for_pressures.append(radius*earth_radius/1000) # Convert to km
+            wagner_pressures.append(pressure) #in GPa
+
+
+
     # Create a colormap based on the id_mass values
     cmap = cm.inferno
     norm = Normalize(vmin=1, vmax=15)  # Normalize the id_mass range to map to colors
@@ -86,6 +84,7 @@ def plot_profiles_all_in_one():
     for data in data_list:
         color = cmap(norm(data['id_mass']))
         axs[0, 0].plot(data['radius'], data['density'], color=color)
+    axs[0, 0].scatter(wagner_radii_for_densities, wagner_densities, color='green', s=1, label='Earth-like super-Earths (Wagner et al. 2012)')
     axs[0, 0].set_xlabel("Radius (km)")
     axs[0, 0].set_ylabel("Density (kg/m$^3$)")
     axs[0, 0].set_title("Radius vs Density")
@@ -104,6 +103,7 @@ def plot_profiles_all_in_one():
     for data in data_list:
         color = cmap(norm(data['id_mass']))
         axs[1, 0].plot(data['radius'], data['pressure'], color=color)
+    axs[1, 0].scatter(wagner_radii_for_pressures, wagner_pressures, color='green', s=1, label='Earth-like super-Earths (Wagner et al. 2012)')
     axs[1, 0].set_xlabel("Radius (km)")
     axs[1, 0].set_ylabel("Pressure (GPa)")
     axs[1, 0].set_title("Radius vs Pressure")
@@ -126,7 +126,9 @@ def plot_profiles_all_in_one():
 
     # Adjust layout and show plot
     #plt.tight_layout()
-    plt.suptitle("Planet Profiles Comparison")
-    plt.savefig("../all_profiles_with_colorbar.pdf")
+    plt.suptitle("Planet Profiles Comparison with Earth-like super-Earths (Wagner et al. 2012)")
+    plt.savefig("../jord/all_profiles_with_colorbar_vs_Wagner.pdf")
     #plt.show()
     plt.close(fig)
+
+plot_profiles_all_in_one_Wagner()

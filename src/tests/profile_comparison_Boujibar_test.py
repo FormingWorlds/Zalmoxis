@@ -6,10 +6,10 @@ from matplotlib import cm
 from matplotlib.colors import Normalize
 from src.jord.constants import * 
 
-# Run file via command line: python -m src.tests.profile_comparison_test
+# Run file via command line: python -m src.tests.profile_comparison_Boujibar_test
 
 # Extended function to plot the profiles of all planets in one plot for comparison with Boujibar et al. (2020)
-def plot_profiles_all_in_one_extended():
+def plot_profiles_all_in_one_Boujibar():
     """
     TBC
 
@@ -131,4 +131,4 @@ def plot_profiles_all_in_one_extended():
     #plt.show()
     plt.close(fig)
 
-plot_profiles_all_in_one_extended()
+plot_profiles_all_in_one_Boujibar()
