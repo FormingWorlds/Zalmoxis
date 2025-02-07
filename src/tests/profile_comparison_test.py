@@ -53,15 +53,25 @@ def plot_profiles_all_in_one_extended():
             print(f"File not found: {file_path}")
 
     # Read data from Boujibar et al. (2020) for comparison
-    boujibar_radii = []
+    boujibar_radii_for_densities = []
     boujibar_densities = []
 
     with open("../../data/radiusdensityEarthBoujibar.txt", 'r') as boujibar_file:
-        next(boujibar_file)  # Skip the header line
         for line in boujibar_file:
             radius, density = map(float, line.split(','))
-            boujibar_radii.append(radius)
+            boujibar_radii_for_densities.append(radius)
             boujibar_densities.append(density * 1000) # Convert to kg/m^3 
+
+    boujibar_radii_for_pressures = []
+    boujibar_pressures = []
+
+    with open("../../data/radiuspressureEarthBoujibar.txt", 'r') as boujibar_file:
+        for line in boujibar_file:
+            radius, pressure = map(float, line.split(','))
+            boujibar_radii_for_pressures.append(radius)
+            boujibar_pressures.append(pressure) #in GPa
+
+
 
     # Create a colormap based on the id_mass values
     cmap = cm.inferno
@@ -74,7 +84,7 @@ def plot_profiles_all_in_one_extended():
     for data in data_list:
         color = cmap(norm(data['id_mass']))
         axs[0, 0].plot(data['radius'], data['density'], color=color)
-    axs[0, 0].scatter(boujibar_radii, boujibar_densities, color='green', s=1, label='Earth-like super-Earths (Boujibar et al. 2020)')
+    axs[0, 0].scatter(boujibar_radii_for_densities, boujibar_densities, color='green', s=1, label='Earth-like super-Earths (Boujibar et al. 2020)')
     axs[0, 0].set_xlabel("Radius (km)")
     axs[0, 0].set_ylabel("Density (kg/m$^3$)")
     axs[0, 0].set_title("Radius vs Density")
@@ -93,6 +103,7 @@ def plot_profiles_all_in_one_extended():
     for data in data_list:
         color = cmap(norm(data['id_mass']))
         axs[1, 0].plot(data['radius'], data['pressure'], color=color)
+    axs[1, 0].scatter(boujibar_radii_for_pressures, boujibar_pressures, color='green', s=1, label='Earth-like super-Earths (Boujibar et al. 2020)')
     axs[1, 0].set_xlabel("Radius (km)")
     axs[1, 0].set_ylabel("Pressure (GPa)")
     axs[1, 0].set_title("Radius vs Pressure")
