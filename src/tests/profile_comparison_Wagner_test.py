@@ -71,6 +71,15 @@ def plot_profiles_all_in_one_Wagner():
             wagner_radii_for_pressures.append(radius*earth_radius/1000) # Convert to km
             wagner_pressures.append(pressure) #in GPa
 
+    wagner_radii_for_gravities = []
+    wagner_gravities = []
+
+    with open("../../data/radiusgravityWagner.txt", 'r') as wagner_file:
+        for line in wagner_file:
+            radius, gravity = map(float, line.split(','))
+            wagner_radii_for_gravities.append(radius*earth_radius/1000) # Convert to km
+            wagner_gravities.append(gravity) #in GPa
+
 
 
     # Create a colormap based on the id_mass values
@@ -94,6 +103,7 @@ def plot_profiles_all_in_one_Wagner():
     for data in data_list:
         color = cmap(norm(data['id_mass']))
         axs[0, 1].plot(data['radius'], data['gravity'], color=color)
+    axs[0, 1].scatter(wagner_radii_for_gravities, wagner_gravities, color='green', s=1, label='Earth-like super-Earths (Wagner et al. 2012)')
     axs[0, 1].set_xlabel("Radius (km)")
     axs[0, 1].set_ylabel("Gravity (m/s$^2$)")
     axs[0, 1].set_title("Radius vs Gravity")
