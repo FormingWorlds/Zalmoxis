@@ -96,6 +96,10 @@ def MRtest(choice):
     elif choice == "default":
         print("No choice selected for the comparison, defaulting to 1 to 10 Earth masses simulation.")
         target_mass_array = range(1, 11)
+    elif choice == "Seager":
+        target_mass_array = [1, 5, 10, 50]
+    elif choice == "custom":
+        target_mass_array = range(1, 31)
     else:
         raise ValueError("Invalid choice. Please select 'Wagner', 'Boujibar', or 'default'.")
 

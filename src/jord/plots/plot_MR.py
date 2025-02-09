@@ -61,7 +61,7 @@ def plot_mass_radius_relationship(target_mass_array):
     ax.set_ylabel('Planet Radius (Earth Radii)')
     ax.set_title('Calculated Mass-Radius Relationship of Planets')
     ax.set_xlim(0, np.max(target_mass_array))
-    ax.set_ylim(0, 3)
+    ax.set_ylim(0, 5)
     ax.legend()
     ax.grid(True)
     plt.savefig("../MR_plot.pdf")

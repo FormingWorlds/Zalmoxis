@@ -131,6 +131,18 @@ def plot_profiles_all_in_one(target_mass_array, choice):
 
     elif choice == "default":
         pass
+    elif choice == "Seager":
+        # Read data from Seager et al. (2007) for comparison
+        seager_radii_for_densities = []
+        seager_densities = []
+
+        with open("../../../data/radiusdensitySeager.txt", 'r') as seager_file:
+            for line in seager_file:
+                radius, density = map(float, line.split(','))
+                seager_radii_for_densities.append(radius*1000) # Convert to km
+                seager_densities.append(density*1000) # Convert to kg/m^3
+    elif choice == "custom":
+        pass
     else:
         raise ValueError("Invalid choice. Please select 'Wagner', 'Boujibar', or 'default'.")
 
@@ -151,6 +163,10 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         axs[0, 0].scatter(boujibar_radii_for_densities, boujibar_densities, color='green', s=1, label='Earth-like super-Earths (Boujibar et al. 2020)')
     elif choice == "default":
         pass
+    elif choice == "Seager":
+        axs[0, 0].scatter(seager_radii_for_densities, seager_densities, color='green', s=1, label='Earth-like super-Earths (Seager et al. 2007)')           
+    elif choice == "custom":
+        pass
     axs[0, 0].set_xlabel("Radius (km)")
     axs[0, 0].set_ylabel("Density (kg/m$^3$)")
     axs[0, 0].set_title("Radius vs Density")
@@ -166,6 +182,10 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         pass
     elif choice == "default":
         pass
+    elif choice == "Seager":
+        pass
+    elif choice == "custom":
+        pass
     axs[0, 1].set_xlabel("Radius (km)")
     axs[0, 1].set_ylabel("Gravity (m/s$^2$)")
     axs[0, 1].set_title("Radius vs Gravity")
@@ -180,6 +200,10 @@ def plot_profiles_all_in_one(target_mass_array, choice):
     elif choice == "Boujibar":
         axs[1, 0].scatter(boujibar_radii_for_pressures, boujibar_pressures, color='green', s=1, label='Earth-like super-Earths (Boujibar et al. 2020)')
     elif choice == "default":
+        pass
+    elif choice == "Seager":
+        pass    
+    elif choice == "custom":
         pass
     axs[1, 0].set_xlabel("Radius (km)")
     axs[1, 0].set_ylabel("Pressure (GPa)")
