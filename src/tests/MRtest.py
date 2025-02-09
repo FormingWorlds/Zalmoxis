@@ -5,6 +5,8 @@ import subprocess
 from src.jord import jord  
 from src.jord.plots.plot_MR import plot_mass_radius_relationship
 from src.jord.plots.plot_profiles_all_in_one import plot_profiles_all_in_one    
+from concurrent.futures import ProcessPoolExecutor
+import time
 
 # Run file via command line: python -m src.tests.MRtest Wagner or python -m src.tests.MRtest Boujibar
 
@@ -63,7 +65,7 @@ def MRtest(choice):
     '''
         This function sets the working directory to the current file's directory,
         deletes the contents of the calculated_planet_mass_radius.txt file if it exists,
-        runs jord for a range of planet masses, plots the mass-radius relationship,
+        runs jord in parallel for a range of planet masses, plots the mass-radius relationship,
         and calls the function to plot the profiles of all planets in one plot.
 
         Parameters:
@@ -97,9 +99,9 @@ def MRtest(choice):
     else:
         raise ValueError("Invalid choice. Please select 'Wagner', 'Boujibar', or 'default'.")
 
-    # Run jord for a range of planet masses 
-    for id_mass in target_mass_array:
-        run_jord(id_mass)
+    # Run jord in parallel for a range of planet masses
+    with ProcessPoolExecutor() as executor:
+        executor.map(run_jord, target_mass_array)
 
     # Plot the mass-radius relationship 
     plot_mass_radius_relationship(target_mass_array)
@@ -108,9 +110,15 @@ def MRtest(choice):
     plot_profiles_all_in_one(target_mass_array, choice)
 
 if __name__ == "__main__":
+    start_time = time.time()
+    
     if len(sys.argv) != 2:
         print("Usage: python -m src.tests.MRtest <choice>")
         sys.exit(1)
     
     choice = sys.argv[1]
     MRtest(choice)
+    
+    end_time = time.time()
+    total_time = end_time - start_time
+    print(f"Total running time: {total_time:.2f} seconds")
