@@ -169,5 +169,7 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Code files
 src/jord/output_files/
-data
+/data/
