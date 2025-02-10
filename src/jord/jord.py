@@ -12,18 +12,15 @@ from .plots.plot_eos import plot_eos_material
 
 # Run file via command line with default configuration file: python -m src.jord.jord -c ../../input/default.toml
 
-def main(temp_config_path=None):
-    
+# Function to choose the configuration file to run the main function
+def choose_config_file(temp_config_path=None):
     """
-    Main function to run the exoplanet internal structure model.
-
-    This function reads the configuration file, initializes parameters, and performs
-    an iterative solution to calculate the internal structure of an exoplanet based on
-    the given mass and other parameters. It outputs the calculated planet radius, core
-    radius, densities, pressures, and temperatures at various layers, and optionally
-    saves the data to a file and plots the results.
+    Function to choose the configuration file to run the main function.
+    The function will first check if a temporary configuration file is provided.
+    If not, it will check if the -c flag is provided in the command line arguments.
+    If the -c flag is provided, the function will read the configuration file path from the next argument.
+    If no temporary configuration file or -c flag is provided, the function will read the default configuration file.
     """
-
     # Set the working directory to the current file
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
@@ -56,6 +53,22 @@ def main(temp_config_path=None):
             print(f"Error: Default config file not found at {config_default_path}")
             sys.exit(1)
 
+    return config
+
+def main(temp_config_path=None, id_mass=None):
+    
+    """
+    Main function to run the exoplanet internal structure model.
+
+    This function reads the configuration file, initializes parameters, and performs
+    an iterative solution to calculate the internal structure of an exoplanet based on
+    the given mass and other parameters. It outputs the calculated planet radius, core
+    radius, densities, pressures, and temperatures at various layers, and optionally
+    saves the data to a file and plots the results.
+    """
+
+    config = choose_config_file(temp_config_path)  # Choose the configuration file
+    
     # Access parameters from the configuration file
     planet_mass = config['InputParameter']['planet_mass']  # Mass of the planet (kg)
     core_radius_fraction = config['AssumptionsAndInitialGuesses']['core_radius_fraction']  # Initial guess for the core radius as a fraction of the total radius
@@ -70,6 +83,8 @@ def main(temp_config_path=None):
     tolerance_radius = config['IterativeProcess']['tolerance_radius']  # Convergence tolerance for the core radius
     max_iterations_inner = config['IterativeProcess']['max_iterations_inner']  # Maximum iterations for the inner loop (density profile)
     tolerance_inner = config['IterativeProcess']['tolerance_inner']  # Convergence tolerance for the inner loop
+    relative_tolerance = config['IterativeProcess']['relative_tolerance']  # Relative tolerance for integration in solve_ivp
+    absolute_tolerance = config['IterativeProcess']['absolute_tolerance']  # Absolute tolerance for integration in solve_ivp
 
     # Parameters for adjusting the surface pressure to the target value
     target_surface_pressure = config['PressureAdjustment']['target_surface_pressure']  # Target surface pressure (Pa)
@@ -81,7 +96,6 @@ def main(temp_config_path=None):
     # Output control parameters
     data_output_enabled = config['Output']['data_enabled']  # Flag to enable saving data to a file (True/False)
     plotting_enabled = config['Output']['plots_enabled']  # Flag to enable plotting the results (True/False)
-
 
     # Initial radius guess
     radius_guess = 1000*(7030-1840*weight_iron_fraction)*(planet_mass/earth_mass)**0.282 # Initial guess for the planet radius (m) based on the scaling law in Noack et al. 2020
@@ -139,7 +153,7 @@ def main(temp_config_path=None):
 
                 # Solve the ODEs using solve_ivp
                 sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, radius_guess, EOS_CHOICE, interpolation_cache, num_layers), 
-                    (radii[0], radii[-1]), y0, t_eval=radii, rtol=1e-3, atol=1e-6, method='RK45', dense_output=True)
+                    (radii[0], radii[-1]), y0, t_eval=radii, rtol=relative_tolerance, atol=absolute_tolerance, method='RK45', dense_output=True)
 
 
                 # Extract mass, gravity, and pressure profiles
@@ -240,15 +254,23 @@ def main(temp_config_path=None):
         # Combine and save plotted data to a single output file
         output_data = np.column_stack((radii, density, gravity, pressure, temperature, mass_enclosed))
         header = "Radius (m)\tDensity (kg/m^3)\tGravity (m/s^2)\tPressure (Pa)\tTemperature (K)\tMass Enclosed (kg)"
-        np.savetxt("planet_profile.txt", output_data, header=header)
+        np.savetxt(f"output_files/planet_profile{id_mass}.txt", output_data, header=header)
+        # Append calculated mass and radius of the planet to a file in dedicated columns
+        output_file = "calculated_planet_mass_radius.txt"
+        if not os.path.exists(output_file):
+            header = "Calculated Mass (kg)\tCalculated Radius (m)"
+            with open(output_file, "w") as file:
+                file.write(header + "\n")
+        with open(output_file, "a") as file:
+            file.write(f"{calculated_mass}\t{planet_radius}\n")
+         
 
     # --- Plotting ---
     if plotting_enabled:
-        plot_planet_profile_single(radii, density, gravity, pressure, temperature, cmb_radius, cmb_mass, average_density, mass_enclosed) # Plot planet profile 
+        #plot_planet_profile_single(radii, density, gravity, pressure, temperature, cmb_radius, cmb_mass, average_density, mass_enclosed, id_mass) # Plot planet profile for a single planet
         eos_data_files = ['eos_seager07_iron.txt', 'eos_seager07_silicate.txt', 'eos_seager07_water.txt']  # Example files (adjust the filenames accordingly)
         eos_data_folder = "../../data/"  # Path to the folder where EOS data is stored
         plot_eos_material(eos_data_files, eos_data_folder)  # Call the EOS plotting function
         #plt.show()  # Show the plots
 
-if __name__ == "__main__":
-    main()
+

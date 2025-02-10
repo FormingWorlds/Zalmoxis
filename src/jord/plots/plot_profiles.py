@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from ..constants import *
 
-def plot_planet_profile_single(radii, density, gravity, pressure, temperature, cmb_radius, cmb_mass, average_density, mass_enclosed, output_filename="planet_profile.png"):
+def plot_planet_profile_single(radii, density, gravity, pressure, temperature, cmb_radius, cmb_mass, average_density, mass_enclosed, id_mass):
     """
     Generates a plot of the planet's internal structure, including density, 
     gravity, pressure, and temperature profiles.
@@ -18,7 +18,7 @@ def plot_planet_profile_single(radii, density, gravity, pressure, temperature, c
         cmb_radius (float): Radius of the core-mantle boundary (m).
         average_density (float): Average density of the planet (kg/m^3).
         mass_enclosed (numpy.ndarray): Array of enclosed masses (kg).
-        output_filename (str, optional): Name of the output file. Defaults to "planet_profile.png".
+        id_mass (int): Identifier for the planet mass.
     """
 
     fig, ax = plt.subplots(1, 5, figsize=(16, 6))
@@ -97,4 +97,6 @@ def plot_planet_profile_single(radii, density, gravity, pressure, temperature, c
         a.legend(fontsize=8)
 
     plt.tight_layout()
-    plt.savefig("planet_profile.png")
+    #plt.savefig(f"output_files/planet_profile{id_mass}.pdf")
+    #plt.show()
+    plt.close(fig)

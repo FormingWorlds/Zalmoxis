@@ -6,6 +6,22 @@ from .constants import *
 
 # Define the coupled ODEs for the structure model
 def coupled_odes(radius, y, cmb_mass, radius_guess, EOS_CHOICE, interpolation_cache, num_layers):
+    """
+    Calculate the derivatives of mass, gravity, and pressure with respect to radius for a planetary model.
+
+    Parameters:
+    radius (float): The current radius at which the ODEs are evaluated.
+    y (list or array): The state vector containing mass, gravity, and pressure at the current radius.
+    cmb_mass (float): The core-mantle boundary mass.
+    radius_guess (float): An initial guess for the radius.
+    EOS_CHOICE (str): The equation of state choice for material properties.
+    interpolation_cache (dict): A cache for interpolation to speed up calculations.
+    num_layers (int): The number of layers in the planetary model.
+
+    Returns:
+    list: The derivatives of mass, gravity, and pressure with respect to radius.
+    """
+    """d"""
     # Unpack the state vector
     mass, gravity, pressure = y
 
