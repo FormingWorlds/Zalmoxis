@@ -170,4 +170,3 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 src/jord/output_files/
-src/jord/calculated_planet_mass_radius.txt
