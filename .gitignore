@@ -169,10 +169,5 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
-density_vs_radius.txt
-gravity_vs_radius.txt
-pressure_vs_radius.txt
-temperature_vs_radius.txt
-src/jord/planet_structure.txt
-src/jord/planet_profile.txt
-src/jord/planet_profile.png
+src/jord/output_files/
+src/jord/calculated_planet_mass_radius.txt
