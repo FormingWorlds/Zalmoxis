@@ -256,7 +256,7 @@ def main(temp_config_path=None, id_mass=None):
         header = "Radius (m)\tDensity (kg/m^3)\tGravity (m/s^2)\tPressure (Pa)\tTemperature (K)\tMass Enclosed (kg)"
         np.savetxt(f"output_files/planet_profile{id_mass}.txt", output_data, header=header)
         # Append calculated mass and radius of the planet to a file in dedicated columns
-        output_file = "calculated_planet_mass_radius.txt"
+        output_file = "output_files/calculated_planet_mass_radius.txt"
         if not os.path.exists(output_file):
             header = "Calculated Mass (kg)\tCalculated Radius (m)"
             with open(output_file, "w") as file:

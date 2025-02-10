@@ -29,7 +29,7 @@ def plot_mass_radius_relationship(target_mass_array):
     # Set the working directory to the current file
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-    data_file = '../calculated_planet_mass_radius.txt'
+    data_file = '../output_files/calculated_planet_mass_radius.txt'
 
     # Read data from Zeng et al. (2019) for Earth-like Rocky (32.5% Fe+67.5% MgSiO3) planets
     zeng_masses = []
