@@ -10,7 +10,7 @@ import time
 import subprocess
 import shutil
 
-# Run file via command line: python -m src.tests.MRtest Wagner or python -m src.tests.MRtest Boujibar
+# Run file via command line: python -m src.tests.MRtest Wagner/Boujibar/default/Seager/custom
 
 
 # Function to run the main function with a temporary configuration file
@@ -66,12 +66,14 @@ def run_jord(id_mass=None):
 def MRtest(choice):
     '''
         This function sets the working directory to the current file's directory,
+        checks if the data folder exists and downloads/extracts it if not,
         deletes the contents of the calculated_planet_mass_radius.txt file if it exists,
-        runs jord in parallel for a range of planet masses, plots the mass-radius relationship,
-        and calls the function to plot the profiles of all planets in one plot.
+        runs jord in parallel for a range of planet masses based on the provided choice,
+        plots the mass-radius relationship, and calls the function to plot the profiles
+        of all planets in one plot.
 
         Parameters:
-        choice (str): Choice of comparison data. Options are 'Wagner', 'Boujibar', or 'default'.
+        choice (str): Choice of comparison data. Options are 'Wagner', 'Boujibar', 'default', 'Seager', or 'custom'.
 
         Raises:
         ValueError: If an invalid choice is provided for the comparison data.
