@@ -2,15 +2,15 @@ import unittest
 import numpy as np
 import math
 import toml
-from jord.jord import calculate_temperature, calculate_density, coupled_odes, mie_gruneisen_debye, birch_murnaghan
-from jord.constants import *
+from src.zalmoxis.zalmoxis import calculate_temperature, calculate_density, coupled_odes, mie_gruneisen_debye, birch_murnaghan
+from zalmoxis.constants import *
 
-# Run this test from Jord/src/ directory with the following command:
+# Run this test from zalmoxis/src/ directory with the following command:
 # python3 -m unittest tests.test1
 
-class TestJord(unittest.TestCase):
+class Testzalmoxis(unittest.TestCase):
     """
-    Unit tests for the Jord planetary structure code.
+    Unit tests for the zalmoxis planetary structure code.
     """
 
     def setUp(self):

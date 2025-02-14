@@ -2,9 +2,9 @@ import os, sys
 import tempfile
 import toml
 import subprocess
-from src.jord import jord  
-from src.jord.plots.plot_MR import plot_mass_radius_relationship
-from src.jord.plots.plot_profiles_all_in_one import plot_profiles_all_in_one    
+from src.zalmoxis import zalmoxis  
+from src.zalmoxis.plots.plot_MR import plot_mass_radius_relationship
+from src.zalmoxis.plots.plot_profiles_all_in_one import plot_profiles_all_in_one    
 from concurrent.futures import ProcessPoolExecutor
 import time
 import subprocess
@@ -14,7 +14,7 @@ import shutil
 
 
 # Function to run the main function with a temporary configuration file
-def run_jord(id_mass=None):
+def run_zalmoxis(id_mass=None):
     '''
         This function sets the working directory to the current file's directory,
         loads a default configuration file, modifies specific configuration parameters,
@@ -58,7 +58,7 @@ def run_jord(id_mass=None):
         temp_config_path = temp_config_file.name  # Get the path to the temporary file
 
     # Run the main function with the temporary configuration file
-    jord.main(temp_config_path, id_mass)
+    zalmoxis.main(temp_config_path, id_mass)
 
     # Clean up the temporary configuration file after running
     os.remove(temp_config_path)
@@ -68,7 +68,7 @@ def MRtest(choice):
         This function sets the working directory to the current file's directory,
         checks if the data folder exists and downloads/extracts it if not,
         deletes the contents of the calculated_planet_mass_radius.txt file if it exists,
-        runs jord in parallel for a range of planet masses based on the provided choice,
+        runs zalmoxis in parallel for a range of planet masses based on the provided choice,
         plots the mass-radius relationship, and calls the function to plot the profiles
         of all planets in one plot.
 
@@ -128,7 +128,7 @@ def MRtest(choice):
         print(f"Folder '{extract_folder}' already exists. Skipping download and extraction.")
     
     # Delete the contents of the calculated_planet_mass_radius.txt file if it exists
-    calculated_file_path = '../jord/output_files/calculated_planet_mass_radius.txt'
+    calculated_file_path = '../zalmoxis/output_files/calculated_planet_mass_radius.txt'
     if os.path.exists(calculated_file_path):
         with open(calculated_file_path, 'w') as file:
             file.truncate(0)
@@ -149,9 +149,9 @@ def MRtest(choice):
     else:
         raise ValueError("Invalid choice. Please select 'Wagner', 'Boujibar', or 'default'.")
 
-    # Run jord in parallel for a range of planet masses
+    # Run zalmoxis in parallel for a range of planet masses
     with ProcessPoolExecutor() as executor:
-        executor.map(run_jord, target_mass_array)
+        executor.map(run_zalmoxis, target_mass_array)
 
     # Plot the mass-radius relationship 
     plot_mass_radius_relationship(target_mass_array)
