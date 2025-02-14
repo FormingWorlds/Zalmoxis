@@ -1,2 +1,2 @@
-# Jord
+# Zalmoxis
 Planetary interior structure model
