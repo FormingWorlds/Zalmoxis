@@ -12,7 +12,6 @@ import shutil
 
 # Run file via command line: python -m src.tests.MRtest Wagner/Boujibar/default/Seager/custom
 
-
 # Function to run the main function with a temporary configuration file
 def run_zalmoxis(id_mass=None):
     '''
@@ -45,12 +44,17 @@ def run_zalmoxis(id_mass=None):
     # Modify the configuration parameters as needed
     config['InputParameter']['planet_mass'] = id_mass*5.972e24
     config['Calculations']['num_layers'] = 150
-    config['IterativeProcess']['tolerance_outer'] = 1e-3
-    config['IterativeProcess']['tolerance_inner'] = 1e-4
-    config['IterativeProcess']['tolerance_radius'] = 1e-3
     config['IterativeProcess']['max_iterations_outer'] = 20
+    config['IterativeProcess']['tolerance_outer'] = 1e-3
+    config['IterativeProcess']['tolerance_radius'] = 1e-3
+    config['IterativeProcess']['tolerance_inner'] = 1e-4
     config['IterativeProcess']['relative_tolerance'] = 1e-5
     config['IterativeProcess']['absolute_tolerance'] = 1e-6 
+    config['PressureAdjustment']['target_surface_pressure'] = 101325 # experiment with this, default is 101325
+    config['PressureAdjustment']['pressure_tolerance'] = 1000 # experiment with this, default is 1000
+    config['PressureAdjustment']['max_iterations_pressure'] = 100 # don't change for now, default is 100
+    config['PressureAdjustment']['pressure_relaxation'] = 0.501290 # experiment with this, default is 0.5
+    config['PressureAdjustment']['pressure_adjustment_factor'] = 0.95 # experiment with this, default is 0.95
 
     # Create a temporary configuration file
     with tempfile.NamedTemporaryFile(delete=False, mode='w', suffix='.toml') as temp_config_file:
@@ -145,7 +149,7 @@ def MRtest(choice):
     elif choice == "Seager":
         target_mass_array = [1, 5, 10, 50]
     elif choice == "custom":
-        target_mass_array = range(1, 31)
+        target_mass_array = range(50, 51)
     else:
         raise ValueError("Invalid choice. Please select 'Wagner', 'Boujibar', or 'default'.")
 
