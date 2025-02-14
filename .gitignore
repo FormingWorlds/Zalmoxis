@@ -171,5 +171,5 @@ cython_debug/
 .pypirc
 
 # Code files
-src/jord/output_files/
+src/zalmoxis/output_files/*
 /data/
