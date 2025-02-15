@@ -90,15 +90,14 @@ def MRtest(choice):
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
     # Define URL, token, and paths
-    download_url = "https://files.de-1.osf.io/v1/resources/dpkjb/providers/osfstorage/67aa034e023777550617fbad"
-    access_token = "wARvp1OBy1fOvmHruw63XP4ALtBecGDrnbskSqdhODRlZlQ8YBrAzmr9GGD9uxk4DzzmoV"
+    download_url = "https://osf.io/download/tf9u5/"
     download_path = '../../data.zip'
     extract_folder = '../../data'
 
     # Check if the folder already exists
     if not os.path.exists(extract_folder):
         # Download and extract in one go
-        subprocess.run(f"curl -L -H 'Authorization: Bearer {access_token}' -o {download_path} {download_url}", shell=True, check=True)
+        subprocess.run(f"curl -L -o {download_path} {download_url}", shell=True, check=True)
         os.makedirs(extract_folder, exist_ok=True)
         subprocess.run(f"unzip {download_path} -d {extract_folder}", shell=True, check=True)
 
