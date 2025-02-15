@@ -53,7 +53,7 @@ def run_zalmoxis(id_mass=None):
     config['PressureAdjustment']['target_surface_pressure'] = 101325 # experiment with this, default is 101325
     config['PressureAdjustment']['pressure_tolerance'] = 1000 # experiment with this, default is 1000
     config['PressureAdjustment']['max_iterations_pressure'] = 100 # don't change for now, default is 100
-    config['PressureAdjustment']['pressure_relaxation'] = 0.501290 # experiment with this, default is 0.5
+    config['PressureAdjustment']['pressure_relaxation'] = 0.501925 # experiment with this, default is 0.5
     config['PressureAdjustment']['pressure_adjustment_factor'] = 0.95 # experiment with this, default is 0.95
 
     # Create a temporary configuration file
