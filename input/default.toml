@@ -1,4 +1,4 @@
-# Default config file for Jord planetary structure code
+# Default config file for Zalmoxis planetary structure code
 
 [InputParameter]
 planet_mass = 5.972e24              #  kg (Earth = 5.972e24)

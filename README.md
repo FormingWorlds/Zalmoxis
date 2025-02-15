@@ -32,59 +32,75 @@ pip install numpy matplotlib scipy toml
 ├── LICENSE
 ├── README.md
 ├── input
-│   └── default.toml
+│   └── default.toml
 └── src
     ├── __init__.py
     ├── __pycache__
-    │   └── __init__.cpython-310.pyc
-    ├── jord
-    │   ├── MR_plot.pdf
-    │   ├── __init__.py
-    │   ├── __pycache__
-    │   │   ├── __init__.cpython-310.pyc
-    │   │   ├── constants.cpython-310.pyc
-    │   │   ├── eos_functions.cpython-310.pyc
-    │   │   ├── eos_properties.cpython-310.pyc
-    │   │   ├── jord.cpython-310.pyc
-    │   │   └── structure_model.cpython-310.pyc
-    │   ├── all_profiles_with_colorbar_vs_Boujibar.pdf
-    │   ├── all_profiles_with_colorbar_vs_Seager.pdf
-    │   ├── all_profiles_with_colorbar_vs_Wagner.pdf
-    │   ├── all_profiles_with_colorbar_vs_custom.pdf
-    │   ├── all_profiles_with_colorbar_vs_default.pdf
-    │   ├── constants.py
-    │   ├── eos_functions.py
-    │   ├── eos_properties.py
-    │   ├── jord.py
-    │   ├── output_files
-    │   │   ├── calculated_planet_mass_radius.txt
-    │   │   ├── planet_profile1.txt
-    │   │   ├── planet_profile10.txt
-    │   │   ├── planet_profile12.5.txt
-    │   │   ├── planet_profile15.txt
-    │   │   ├── planet_profile2.5.txt
-    │   │   ├── planet_profile5.txt
-    │   │   └── planet_profile7.5.txt
-    │   ├── planet_eos.pdf
-    │   ├── plots
-    │   │   ├── __pycache__
-    │   │   │   ├── plot_MR.cpython-310.pyc
-    │   │   │   ├── plot_eos.cpython-310.pyc
-    │   │   │   ├── plot_profiles.cpython-310.pyc
-    │   │   │   └── plot_profiles_all_in_one.cpython-310.pyc
-    │   │   ├── plot_MR.py
-    │   │   ├── plot_eos.py
-    │   │   ├── plot_profiles.py
-    │   │   └── plot_profiles_all_in_one.py
-    │   └── structure_model.py
-    └── tests
-        ├── MRtest.py
+    │   ├── __init__.cpython-310.pyc
+    │   └── __init__.cpython-312.pyc
+    ├── tests
+    │   ├── MRtest.py
+    │   ├── __pycache__
+    │   │   ├── MRtest.cpython-310.pyc
+    │   │   └── MRtest.cpython-312.pyc
+    │   ├── benchmarks
+    │   │   └── MR-Earth.txt
+    │   ├── test1.py
+    │   └── test2.py
+    └── zalmoxis
+        ├── MR_plot.pdf
+        ├── __init__.py
         ├── __pycache__
-        │   └── MRtest.cpython-310.pyc
-        ├── benchmarks
-        │   └── MR-Earth.txt
-        ├── test1.py
-        └── test2.py
+        │   ├── __init__.cpython-310.pyc
+        │   ├── __init__.cpython-312.pyc
+        │   ├── constants.cpython-310.pyc
+        │   ├── eos_functions.cpython-310.pyc
+        │   ├── eos_properties.cpython-310.pyc
+        │   ├── lin_regr.cpython-310.pyc
+        │   ├── structure_model.cpython-310.pyc
+        │   ├── zalmoxis.cpython-310.pyc
+        │   └── zalmoxis.cpython-312.pyc
+        ├── all_profiles_with_colorbar_vs_Boujibar.pdf
+        ├── all_profiles_with_colorbar_vs_Seager.pdf
+        ├── all_profiles_with_colorbar_vs_Wagner.pdf
+        ├── all_profiles_with_colorbar_vs_custom.pdf
+        ├── all_profiles_with_colorbar_vs_default.pdf
+        ├── constants.py
+        ├── eos_functions.py
+        ├── eos_properties.py
+        ├── lin_regr.py
+        ├── output_files
+        │   ├── calculated_planet_mass_radius.txt
+        │   ├── planet_profile1.txt
+        │   ├── planet_profile10.txt
+        │   ├── planet_profile12.5.txt
+        │   ├── planet_profile14.txt
+        │   ├── planet_profile15.txt
+        │   ├── planet_profile16.txt
+        │   ├── planet_profile2.5.txt
+        │   ├── planet_profile2.txt
+        │   ├── planet_profile3.txt
+        │   ├── planet_profile4.txt
+        │   ├── planet_profile5.txt
+        │   ├── planet_profile50.txt
+        │   ├── planet_profile6.txt
+        │   ├── planet_profile7.5.txt
+        │   ├── planet_profile7.txt
+        │   ├── planet_profile8.txt
+        │   └── planet_profile9.txt
+        ├── planet_eos.pdf
+        ├── plots
+        │   ├── __pycache__
+        │   │   ├── plot_MR.cpython-310.pyc
+        │   │   ├── plot_eos.cpython-310.pyc
+        │   │   ├── plot_profiles.cpython-310.pyc
+        │   │   └── plot_profiles_all_in_one.cpython-310.pyc
+        │   ├── plot_MR.py
+        │   ├── plot_eos.py
+        │   ├── plot_profiles.py
+        │   └── plot_profiles_all_in_one.py
+        ├── structure_model.py
+        └── zalmoxis.py
 ```
 
 ## Data Download
@@ -132,12 +148,12 @@ A brief description of each data file:
 ## Usage
 Run the program via the command line:
 ```bash
-python -m src.jord.jord -c input/default.toml
+python -m src.zalmoxis.zalmoxis -c input/default.toml
 ```
 
 Alternatively, specify a different configuration file:
 ```bash
-python -m src.jord.jord -c path/to/config.toml
+python -m src.zalmoxis.zalmoxis -c path/to/config.toml
 ```
 
 ## Tests
