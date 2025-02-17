@@ -10,7 +10,7 @@ from .structure_model import coupled_odes
 from .plots.plot_profiles import plot_planet_profile_single
 from .plots.plot_eos import plot_eos_material
 
-# Run file via command line with default configuration file: python -m src.jord.jord -c ../../input/default.toml
+# Run file via command line with default configuration file: python -m src.zalmoxis.zalmoxis -c ../../input/default.toml
 
 # Function to choose the configuration file to run the main function
 def choose_config_file(temp_config_path=None):
@@ -251,12 +251,15 @@ def main(temp_config_path=None, id_mass=None):
 
     # --- Save output data to a file ---
     if data_output_enabled:
+        # Create output directory if it does not exist
+        if not os.path.exists("output_files"):
+            os.makedirs("output_files")
         # Combine and save plotted data to a single output file
         output_data = np.column_stack((radii, density, gravity, pressure, temperature, mass_enclosed))
         header = "Radius (m)\tDensity (kg/m^3)\tGravity (m/s^2)\tPressure (Pa)\tTemperature (K)\tMass Enclosed (kg)"
         np.savetxt(f"output_files/planet_profile{id_mass}.txt", output_data, header=header)
         # Append calculated mass and radius of the planet to a file in dedicated columns
-        output_file = "calculated_planet_mass_radius.txt"
+        output_file = "output_files/calculated_planet_mass_radius.txt"
         if not os.path.exists(output_file):
             header = "Calculated Mass (kg)\tCalculated Radius (m)"
             with open(output_file, "w") as file:

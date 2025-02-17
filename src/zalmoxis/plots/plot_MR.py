@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import os
 import numpy as np
 
-# Run file via command line: python -m src.jord.plots.plot_MR
+# Run file via command line: python -m src.zalmoxis.plots.plot_MR
 
 # Function to plot the mass-radius relationship of planets and compare with Earth-like Rocky (32.5% Fe+67.5% MgSiO3) planets from Zeng et al. (2019)
 def plot_mass_radius_relationship(target_mass_array):
@@ -29,7 +29,7 @@ def plot_mass_radius_relationship(target_mass_array):
     # Set the working directory to the current file
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-    data_file = '../calculated_planet_mass_radius.txt'
+    data_file = '../output_files/calculated_planet_mass_radius.txt'
 
     # Read data from Zeng et al. (2019) for Earth-like Rocky (32.5% Fe+67.5% MgSiO3) planets
     zeng_masses = []

@@ -2,13 +2,13 @@ import unittest
 import numpy as np
 import matplotlib.pyplot as plt
 import toml
-from jord.jord import main
-from jord.constants import *
+from src.zalmoxis.zalmoxis import main
+from zalmoxis.constants import *
 
-# Run this test from Jord/src/ directory with the following command:
+# Run this test from zalmoxis/src/ directory with the following command:
 # python3 -m unittest tests.test2 
 
-class TestJordVaryingMass(unittest.TestCase):
+class TestzalmoxisVaryingMass(unittest.TestCase):
 
     def setUp(self):
         """Set up for the test by loading the default config."""
@@ -16,7 +16,7 @@ class TestJordVaryingMass(unittest.TestCase):
         self.config = toml.load(config_default_path)
 
     def test_varying_planet_mass(self):
-        """Test Jord with different planet masses and plot the results."""
+        """Test zalmoxis with different planet masses and plot the results."""
 
         masses = [1, 2, 3]  # Earth masses
         results = {}

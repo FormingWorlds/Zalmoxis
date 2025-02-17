@@ -6,7 +6,7 @@ from matplotlib import cm
 from matplotlib.colors import Normalize
 from ..constants import *
 
-# Run file via command line: python -m src.jord.plots.plot_profiles_all_in_one
+# Run file via command line: python -m src.zalmoxis.plots.plot_profiles_all_in_one
 
 # Function to plot the profiles of all planets in one plot for comparison
 def plot_profiles_all_in_one(target_mass_array, choice):
