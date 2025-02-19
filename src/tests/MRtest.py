@@ -160,7 +160,7 @@ def MRtest(choice):
     elif choice == "Seager":
         target_mass_array = [1, 5, 10, 50]
     elif choice == "custom":
-        target_mass_array = range(50, 51)
+        target_mass_array = [1]
     else:
         raise ValueError("Invalid choice. Please select 'Wagner', 'Boujibar', or 'default'.")
 
