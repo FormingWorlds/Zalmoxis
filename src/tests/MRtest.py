@@ -31,6 +31,18 @@ def run_zalmoxis(id_mass=None):
         Returns:
         None
     '''
+    # Dictionary mapping id_mass to pressure_relaxation values
+    pressure_relaxation_dict = {
+        1: 0.500014,
+        2.5: 0.500202,
+        5: 0.500571,
+        7.5: 0.500945,
+        10: 0.501290,
+        12.5: 0.501620,
+        15: 0.501925,
+        50: 0.505013
+    }
+
     # Set the working directory to the current file
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
@@ -53,7 +65,7 @@ def run_zalmoxis(id_mass=None):
     config['PressureAdjustment']['target_surface_pressure'] = 101325 # experiment with this, default is 101325
     config['PressureAdjustment']['pressure_tolerance'] = 1000 # experiment with this, default is 1000
     config['PressureAdjustment']['max_iterations_pressure'] = 100 # don't change for now, default is 100
-    config['PressureAdjustment']['pressure_relaxation'] = 0.501925 # experiment with this, default is 0.5
+    config['PressureAdjustment']['pressure_relaxation'] = pressure_relaxation_dict[id_mass] # read from dictionary
     config['PressureAdjustment']['pressure_adjustment_factor'] = 0.95 # experiment with this, default is 0.95
 
     # Create a temporary configuration file
@@ -148,7 +160,7 @@ def MRtest(choice):
     elif choice == "Seager":
         target_mass_array = [1, 5, 10, 50]
     elif choice == "custom":
-        target_mass_array = range(50, 51)
+        target_mass_array = [1]
     else:
         raise ValueError("Invalid choice. Please select 'Wagner', 'Boujibar', or 'default'.")
 
