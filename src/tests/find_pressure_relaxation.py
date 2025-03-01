@@ -21,10 +21,9 @@ from src.zalmoxis import zalmoxis
 import toml
 import tempfile
 
+# Run file via command line: python -m src.tests.find_pressure_relaxation 
+
 # Modified run_zalmoxis by adding pressure_relaxation as parameter
-
-
-# Function to run the main function with a temporary configuration file
 def run_zalmoxis2(id_mass=None, pressure_relaxation=None):
     '''
         This function sets the working directory to the current file's directory,
@@ -81,27 +80,58 @@ def run_zalmoxis2(id_mass=None, pressure_relaxation=None):
     os.remove(temp_config_path)
 
 
+import numpy as np
+
 def find_ideal_pressure_relaxation(target_masses):
-    # Dictionary mapping id_mass to pressure
+    # Dictionary to store the minimum valid relaxation values
     pressure_relaxation_dict = {}
-    # Loop through each target mass
+    iteration_counts = {}  # Dictionary to store iteration count for each id_mass
+
+    # Define the search range
+    lower_bound = 0.500000
+    upper_bound = 0.506000
+    tolerance = 1e-6  # Precision requirement
+    step_size = 1e-3  # Start with a coarse step
+
     for id_mass in target_masses:
-        # Set the initial bounds for the bisection method
-        lower_bound = 0.500000
-        upper_bound = 0.510000
-        # Set the initial guess for the pressure relaxation
-        pressure_relaxation = (lower_bound + upper_bound) / 2
-        # Run the main function with the initial guess
-        run_zalmoxis2(id_mass, pressure_relaxation)
-        # Load the pressure values from the output file
-        output_path = f'../zalmoxis/output_files/planet_profile{id_mass}.txt'
-        pressure_values = np.loadtxt(output_path, usecols=(3,))
-        # Check if the pressure values are positive
-        if np.all(pressure_values > 0):
-            # If all pressure values are positive, set the pressure relaxation as the ideal value
-            pressure_relaxation_dict[id_mass] = pressure_relaxation
-        else:
+        best_pressure_relaxation = upper_bound  # Default to highest bound
+        current_pressure = lower_bound
+        iterations = 0  # Track the number of iterations
+
+        while current_pressure <= upper_bound:
+            iterations += 1  # Count each iteration
+            run_zalmoxis2(id_mass, current_pressure)
+
+            output_path = f'../zalmoxis/output_files/planet_profile{id_mass}.txt'
             
+            try:
+                pressure_values = np.loadtxt(output_path, usecols=(3,))
+            except OSError:
+                print(f"Error loading file for id_mass {id_mass}. Skipping.")
+                break  # Skip this mass if file is missing
+            
+            if np.all(pressure_values > 0):  
+                # If valid, save and refine step
+                best_pressure_relaxation = current_pressure
+                current_pressure -= step_size  # Go lower to find the minimum
+                step_size /= 2  # Reduce step size for finer search
+            else:
+                # If invalid, increase pressure
+                current_pressure += step_size
+
+            # Stop when step size is smaller than tolerance
+            if step_size < tolerance:
+                break
+
+        pressure_relaxation_dict[id_mass] = best_pressure_relaxation
+        iteration_counts[id_mass] = iterations  # Store iterations
+
+    return pressure_relaxation_dict, iteration_counts
+
+
+target_masses = [5]
+pressure_relaxation_dict = find_ideal_pressure_relaxation(target_masses)
+print(pressure_relaxation_dict)
     
     
     
