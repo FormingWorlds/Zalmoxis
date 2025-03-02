@@ -20,6 +20,7 @@ from concurrent.futures import ProcessPoolExecutor
 from src.zalmoxis import zalmoxis  
 import toml
 import tempfile
+import multiprocessing
 
 # Run file via command line: python -m src.tests.find_pressure_relaxation 
 
@@ -79,59 +80,73 @@ def run_zalmoxis2(id_mass=None, pressure_relaxation=None):
     # Clean up the temporary configuration file after running
     os.remove(temp_config_path)
 
+def find_ideal_pressure_relaxation(id_mass):
+    """
+    Uses the bisection method to find the ideal pressure relaxation value for a given planet mass.
+    """
+    # Set the working directory to the current file
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-import numpy as np
-
-def find_ideal_pressure_relaxation(target_masses):
-    # Dictionary to store the minimum valid relaxation values
-    pressure_relaxation_dict = {}
-    iteration_counts = {}  # Dictionary to store iteration count for each id_mass
-
-    # Define the search range
     lower_bound = 0.500000
-    upper_bound = 0.506000
-    tolerance = 1e-6  # Precision requirement
-    step_size = 1e-3  # Start with a coarse step
+    upper_bound = 0.505100
+    tolerance = 1e-4  # Precision requirement
+    max_iterations = 20  # Safety limit
+    
+    iterations = 0
+    best_pressure_relaxation = None
 
-    for id_mass in target_masses:
-        best_pressure_relaxation = upper_bound  # Default to highest bound
-        current_pressure = lower_bound
-        iterations = 0  # Track the number of iterations
+    while (upper_bound - lower_bound) > tolerance and iterations < max_iterations:
+        iterations += 1
+        current_pressure = (lower_bound + upper_bound) / 2
+        run_zalmoxis2(id_mass, current_pressure)
 
-        while current_pressure <= upper_bound:
-            iterations += 1  # Count each iteration
-            run_zalmoxis2(id_mass, current_pressure)
+        output_path = f'../zalmoxis/output_files/planet_profile{id_mass}.txt'
+        
+        if not os.path.exists(output_path):
+            print(f"Warning: Output file missing for mass {id_mass}. Skipping.")
+            return None, iterations
+        
+        try:
+            pressure_values = np.loadtxt(output_path, usecols=(3,))
+        except Exception as e:
+            print(f"Error loading file for id_mass {id_mass}: {e}")
+            return None, iterations
 
-            output_path = f'../zalmoxis/output_files/planet_profile{id_mass}.txt'
-            
-            try:
-                pressure_values = np.loadtxt(output_path, usecols=(3,))
-            except OSError:
-                print(f"Error loading file for id_mass {id_mass}. Skipping.")
-                break  # Skip this mass if file is missing
-            
-            if np.all(pressure_values > 0):  
-                # If valid, save and refine step
-                best_pressure_relaxation = current_pressure
-                current_pressure -= step_size  # Go lower to find the minimum
-                step_size /= 2  # Reduce step size for finer search
-            else:
-                # If invalid, increase pressure
-                current_pressure += step_size
+        if np.all(pressure_values > 0):
+            best_pressure_relaxation = current_pressure
+            upper_bound = current_pressure  # Move towards lower values
+        else:
+            lower_bound = current_pressure  # Move towards higher values
 
-            # Stop when step size is smaller than tolerance
-            if step_size < tolerance:
-                break
+    return best_pressure_relaxation, iterations
 
-        pressure_relaxation_dict[id_mass] = best_pressure_relaxation
-        iteration_counts[id_mass] = iterations  # Store iterations
+def find_ideal_pressure_relaxation_parallel(target_masses):
+    # Set the working directory to the current file
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-    return pressure_relaxation_dict, iteration_counts
+    pressure_relaxation_dict = {}
+    iteration_counts = {}
+
+    with multiprocessing.Pool() as pool:
+        results = pool.map(find_ideal_pressure_relaxation, target_masses)
+
+        for mass, result in zip(target_masses, results):
+            best_pressure_relaxation, iterations = result  # Unpack float and int
+            pressure_relaxation_dict[mass] = best_pressure_relaxation
+            iteration_counts[mass] = iterations
+
+    with open('../zalmoxis/output_files/pressure_relaxation_results.txt', 'w') as file:  # 'w' mode overwrites the file
+        file.write("Mass\tPressure Relaxation\tIterations\n")
+        for mass in target_masses:
+            pressure_relaxation = pressure_relaxation_dict.get(mass, "N/A")
+            iterations = iteration_counts.get(mass, "N/A")
+            file.write(f"{mass}\t{pressure_relaxation}\t{iterations}\n")
 
 
-target_masses = [5]
-pressure_relaxation_dict = find_ideal_pressure_relaxation(target_masses)
-print(pressure_relaxation_dict)
+if __name__ == '__main__':
+    multiprocessing.freeze_support()  
+    target_masses = range(1, 51, 1)
+    find_ideal_pressure_relaxation_parallel(target_masses)
     
     
     
