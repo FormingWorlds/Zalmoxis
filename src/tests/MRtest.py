@@ -62,11 +62,11 @@ def run_zalmoxis(id_mass=None):
     config['IterativeProcess']['tolerance_inner'] = 1e-4
     config['IterativeProcess']['relative_tolerance'] = 1e-5
     config['IterativeProcess']['absolute_tolerance'] = 1e-6 
-    config['PressureAdjustment']['target_surface_pressure'] = 101325 # experiment with this, default is 101325
-    config['PressureAdjustment']['pressure_tolerance'] = 1000 # experiment with this, default is 1000
-    config['PressureAdjustment']['max_iterations_pressure'] = 100 # don't change for now, default is 100
+    config['PressureAdjustment']['target_surface_pressure'] = 101325 
+    config['PressureAdjustment']['pressure_tolerance'] = 1000 
+    config['PressureAdjustment']['max_iterations_pressure'] = 100 
     config['PressureAdjustment']['pressure_relaxation'] = pressure_relaxation_dict[id_mass] # read from dictionary
-    config['PressureAdjustment']['pressure_adjustment_factor'] = 0.95 # experiment with this, default is 0.95
+    config['PressureAdjustment']['pressure_adjustment_factor'] = 0.95 
 
     # Create a temporary configuration file
     with tempfile.NamedTemporaryFile(delete=False, mode='w', suffix='.toml') as temp_config_file:

@@ -173,5 +173,6 @@ cython_debug/
 # Code files
 /src/zalmoxis/output_files
 /data
-/src/zalmoxis/lin_regr.py
 /src/zalmoxis/all_profiles_with_colorbar_vs_custom.pdf
+/src/zalmoxis/plots/plot_pressure_relaxation.py
+.DS_Store
