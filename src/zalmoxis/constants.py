@@ -1,5 +1,5 @@
 # Reference values for Earth
-earth_radius                = 6371e3    # m
+earth_radius                = 6386e3    # m
 earth_cmb_radius            = 3480e3    # m
 earth_surface_pressure      = 101325    # Pa (1 atm)
 earth_cmb_pressure          = 135e9     # Pa

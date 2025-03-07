@@ -31,17 +31,6 @@ def run_zalmoxis(id_mass=None):
         Returns:
         None
     '''
-    # Dictionary mapping id_mass to pressure_relaxation values
-    pressure_relaxation_dict = {
-        1: 0.500014,
-        2.5: 0.500202,
-        5: 0.500571,
-        7.5: 0.500945,
-        10: 0.501290,
-        12.5: 0.501620,
-        15: 0.501925,
-        50: 0.505013
-    }
 
     # Set the working directory to the current file
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -63,10 +52,9 @@ def run_zalmoxis(id_mass=None):
     config['IterativeProcess']['relative_tolerance'] = 1e-5
     config['IterativeProcess']['absolute_tolerance'] = 1e-6 
     config['PressureAdjustment']['target_surface_pressure'] = 101325 
-    config['PressureAdjustment']['pressure_tolerance'] = 1000 
-    config['PressureAdjustment']['max_iterations_pressure'] = 100 
-    config['PressureAdjustment']['pressure_relaxation'] = pressure_relaxation_dict[id_mass] # read from dictionary
-    config['PressureAdjustment']['pressure_adjustment_factor'] = 0.95 
+    config['PressureAdjustment']['pressure_tolerance'] = 1e11 
+    config['PressureAdjustment']['max_iterations_pressure'] = 200 
+    config['PressureAdjustment']['pressure_adjustment_factor'] = 1.1
 
     # Create a temporary configuration file
     with tempfile.NamedTemporaryFile(delete=False, mode='w', suffix='.toml') as temp_config_file:
@@ -160,7 +148,7 @@ def MRtest(choice):
     elif choice == "Seager":
         target_mass_array = [1, 5, 10, 50]
     elif choice == "custom":
-        target_mass_array = [1]
+        target_mass_array = range(1,51,1)
     else:
         raise ValueError("Invalid choice. Please select 'Wagner', 'Boujibar', or 'default'.")
 

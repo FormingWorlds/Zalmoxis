@@ -90,8 +90,7 @@ def main(temp_config_path=None, id_mass=None):
     target_surface_pressure = config['PressureAdjustment']['target_surface_pressure']  # Target surface pressure (Pa)
     pressure_tolerance = config['PressureAdjustment']['pressure_tolerance']  # Tolerance for surface pressure convergence
     max_iterations_pressure = config['PressureAdjustment']['max_iterations_pressure']  # Maximum iterations for pressure adjustment
-    pressure_relaxation = config['PressureAdjustment']['pressure_relaxation'] # Relaxation factor for pressure adjustment (currently unused, but kept for potential future use)
-    pressure_adjustment_factor = config['PressureAdjustment']['pressure_adjustment_factor']  # Adjustment factor for updating the central pressure guess
+    pressure_adjustment_factor = config['PressureAdjustment']['pressure_adjustment_factor'] # Adjustment factor for updating the central pressure guess
 
     # Output control parameters
     data_output_enabled = config['Output']['data_enabled']  # Flag to enable saving data to a file (True/False)
@@ -143,10 +142,10 @@ def main(temp_config_path=None, id_mass=None):
             interpolation_cache = {}  # Initialize empty cache
 
             # Initial conditions for solve_ivp - initial pressure guess
-            pressure_guess = earth_center_pressure # or some other initial guess
+            pressure_guess = earth_center_pressure * (planet_mass/earth_mass)**2 * (radius_guess/earth_radius)**(-4) # Initial guess for pressure at r=0 based on empirical scaling law 
             adjustment_factor = pressure_adjustment_factor  # Initial adjustment factor for pressure
 
-            for _ in range(max_iterations_pressure): # Innermost loop for pressure adjustment
+            for it in range(max_iterations_pressure): # Innermost loop for pressure adjustment
 
                 # Initial conditions for solve_ivp
                 y0 = [0, 0, pressure_guess]  # Initial mass, gravity, pressure at r=0
@@ -154,7 +153,6 @@ def main(temp_config_path=None, id_mass=None):
                 # Solve the ODEs using solve_ivp
                 sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, radius_guess, EOS_CHOICE, interpolation_cache, num_layers), 
                     (radii[0], radii[-1]), y0, t_eval=radii, rtol=relative_tolerance, atol=absolute_tolerance, method='RK45', dense_output=True)
-
 
                 # Extract mass, gravity, and pressure profiles
                 mass_enclosed = sol.y[0]
@@ -164,14 +162,11 @@ def main(temp_config_path=None, id_mass=None):
                 surface_pressure = pressure[-1]
                 pressure_diff = surface_pressure - target_surface_pressure
 
-                if abs(pressure_diff) < pressure_tolerance:
-                    print("Surface pressure converged!")
+                if abs(pressure_diff) < pressure_tolerance and np.all(pressure > 0):
+                    print("Surface pressure converged and all pressures are positive.")
                     break  # Exit the pressure adjustment loop
-
-                pressure_guess_previous = pressure_guess
+        
                 pressure_guess -= pressure_diff * adjustment_factor
-                pressure_guess = pressure_relaxation * (pressure_guess + pressure_guess_previous) # Relaxation
-                adjustment_factor *= 0.95  # Reduce adjustment factor
 
             # Update density based on pressure using EOS:
             for i in range(num_layers):
@@ -275,5 +270,6 @@ def main(temp_config_path=None, id_mass=None):
         eos_data_folder = "../../data/"  # Path to the folder where EOS data is stored
         plot_eos_material(eos_data_files, eos_data_folder)  # Call the EOS plotting function
         #plt.show()  # Show the plots
-
-
+    
+if __name__ == "__main__":
+    main()
