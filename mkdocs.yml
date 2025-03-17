@@ -10,7 +10,7 @@ nav:
   - 🔗 Issues: https://github.com/FormingWorlds/Zalmoxis/issues
 
 theme:
-  name: material
+  name: mkdocs
   palette:
     primary: black
     accent: deep orange
