@@ -1,6 +1,4 @@
-# Zalmoxis
-
-# Exoplanet Internal Structure Model
+# Zalmoxis (Exoplanet Interior Structure Model)
 
 ## Overview
 This program models the internal structure of exoplanets using an iterative numerical approach. The numerical framework solves a system of coupled ordinary differential equations (ODEs), integrating the equations of hydrostatic equilibrium, mass conservation, and gravity, including realistic material properties. Currently, existing tabulated pressure-density data are used. The model takes as input parameters the planet’s mass and core mass fraction and will integrate the relevant ODEs from the centre to the surface of the planet, checking for convergence at every iteration.The output includes planetary radius, core radius, density profiles, pressure, and temperature distributions.
@@ -12,9 +10,6 @@ This program models the internal structure of exoplanets using an iterative nume
 - Uses `solve_ivp` for numerical integration
 - Includes options for outputting data and generating plots
 
-## Installation instructions
-
-TBC
 
 ## Documentation
 
@@ -27,103 +22,18 @@ pip install numpy matplotlib scipy toml
 ```
 
 ## Repository Structure
-```
-.
-├── LICENSE
-├── README.md
-├── input
-│   └── default.toml
-└── src
-    ├── __init__.py
-    ├── __pycache__
-    │   ├── __init__.cpython-310.pyc
-    │   └── __init__.cpython-312.pyc
-    ├── tests
-    │   ├── MRtest.py
-    │   ├── __pycache__
-    │   │   ├── MRtest.cpython-310.pyc
-    │   │   └── MRtest.cpython-312.pyc
-    │   ├── benchmarks
-    │   │   └── MR-Earth.txt
-    │   ├── test1.py
-    │   └── test2.py
-    └── zalmoxis
-        ├── MR_plot.pdf
-        ├── __init__.py
-        ├── __pycache__
-        │   ├── __init__.cpython-310.pyc
-        │   ├── __init__.cpython-312.pyc
-        │   ├── constants.cpython-310.pyc
-        │   ├── eos_functions.cpython-310.pyc
-        │   ├── eos_properties.cpython-310.pyc
-        │   ├── lin_regr.cpython-310.pyc
-        │   ├── structure_model.cpython-310.pyc
-        │   ├── zalmoxis.cpython-310.pyc
-        │   └── zalmoxis.cpython-312.pyc
-        ├── all_profiles_with_colorbar_vs_Boujibar.pdf
-        ├── all_profiles_with_colorbar_vs_Seager.pdf
-        ├── all_profiles_with_colorbar_vs_Wagner.pdf
-        ├── all_profiles_with_colorbar_vs_custom.pdf
-        ├── all_profiles_with_colorbar_vs_default.pdf
-        ├── constants.py
-        ├── eos_functions.py
-        ├── eos_properties.py
-        ├── lin_regr.py
-        ├── output_files
-        │   ├── calculated_planet_mass_radius.txt
-        │   ├── planet_profile1.txt
-        │   ├── planet_profile10.txt
-        │   ├── planet_profile12.5.txt
-        │   ├── planet_profile14.txt
-        │   ├── planet_profile15.txt
-        │   ├── planet_profile16.txt
-        │   ├── planet_profile2.5.txt
-        │   ├── planet_profile2.txt
-        │   ├── planet_profile3.txt
-        │   ├── planet_profile4.txt
-        │   ├── planet_profile5.txt
-        │   ├── planet_profile50.txt
-        │   ├── planet_profile6.txt
-        │   ├── planet_profile7.5.txt
-        │   ├── planet_profile7.txt
-        │   ├── planet_profile8.txt
-        │   └── planet_profile9.txt
-        ├── planet_eos.pdf
-        ├── plots
-        │   ├── __pycache__
-        │   │   ├── plot_MR.cpython-310.pyc
-        │   │   ├── plot_eos.cpython-310.pyc
-        │   │   ├── plot_profiles.cpython-310.pyc
-        │   │   └── plot_profiles_all_in_one.cpython-310.pyc
-        │   ├── plot_MR.py
-        │   ├── plot_eos.py
-        │   ├── plot_profiles.py
-        │   └── plot_profiles_all_in_one.py
-        ├── structure_model.py
-        └── zalmoxis.py
-```
+
+```README.md```
+```data```
+```docs```
+```input```
+```setup.py```
+```src/tests/MRtest```
+```src/zalmoxis```
 
 ## Data Download
 When running `MRtest.py`, the required data files are automatically downloaded when the script is executed. 
-The following data files will be downloaded in a data folder in the main directory:
-
-```
-- `eos_seager07_iron.txt`
-- `eos_seager07_silicate.txt`
-- `eos_seager07_water.txt`
-- `massradiusEarthlikeRockyZeng.txt`
-- `radiusdensityEarthBoujibar.txt`
-- `radiusdensityMarsBoujibar.txt`
-- `radiusdensityMercuryBoujibar.txt`
-- `radiusdensitySeager.txt`
-- `radiusdensityWagner.txt`
-- `radiusgravityWagner.txt`
-- `radiuspressureEarthBoujibar.txt`
-- `radiuspressureMarsBoujibar.txt`
-- `radiuspressureMercuryBoujibar.txt`
-- `radiuspressureWagner.txt`
-- `radiustemperatureWagner.txt`
-```
+The following data files will be downloaded in a data folder in the main directory.
 
 A brief description of each data file:
 
@@ -155,10 +65,6 @@ Alternatively, specify a different configuration file:
 ```bash
 python -m src.zalmoxis.zalmoxis -c path/to/config.toml
 ```
-
-## Tests
-
-TBC
 
 ## Configuration
 The input parameters are stored in the file 'default.toml'. 
