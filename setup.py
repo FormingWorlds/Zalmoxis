@@ -5,7 +5,8 @@ setup(
     version='0.1.0',                   # Version
     packages=find_packages(),          # Automatically find all packages
     install_requires=[                 # List core dependencies
-        'some-core-package',
+        'numpy',
+        'scipy',
     ],
     extras_require={                   # Define optional dependencies
         'docs': [
