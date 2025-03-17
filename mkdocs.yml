@@ -21,9 +21,8 @@ extra_css:
 markdown_extensions:
   - admonition
   - attr_list
-  - markdown_include.include:
-      base_path: docs
   - pymdownx.extra
+  - pymdownx.snippets
   - pymdownx.arithmatex:
       generic: true
 
