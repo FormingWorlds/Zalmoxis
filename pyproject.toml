@@ -38,7 +38,7 @@ dependencies = [
 [project.urls]
 homepage = "https://github.com/FormingWorlds/Zalmoxis"
 issues = "https://github.com/FormingWorlds/Zalmoxis/issues"
-documentation = "https://fwl-zalmoxis.readthedocs.io"
+documentation = "https://zalmoxis.readthedocs.io/en/latest/"
 changelog = "https://github.com/FormingWorlds/Zalmoxis/releases"
 
 [project.optional-dependencies]
