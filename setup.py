@@ -13,6 +13,7 @@ setup(
             'mkdocs',
             'mkdocs-material',
             'mkdocstrings',
+            'markdown_include'
         ],
     },
     include_package_data=True,         # Optional: include other files like README.md, etc.
