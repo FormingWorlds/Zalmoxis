@@ -10,7 +10,6 @@ This program models the internal structure of exoplanets using an iterative nume
 - Uses `solve_ivp` for numerical integration
 - Includes options for outputting data and generating plots
 
-
 ## Documentation
 
 TBC

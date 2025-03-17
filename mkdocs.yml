@@ -10,7 +10,7 @@ nav:
   - 🔗 Issues: https://github.com/FormingWorlds/Zalmoxis/issues
 
 theme:
-  name: mkdocs
+  name: material
   palette:
     primary: black
     accent: deep orange
@@ -21,8 +21,9 @@ extra_css:
 markdown_extensions:
   - admonition
   - attr_list
+  - markdown_include.include:
+      base_path: docs
   - pymdownx.extra
-  - pymdownx.snippets
   - pymdownx.arithmatex:
       generic: true
 
