@@ -18,16 +18,17 @@ The internal structure model is based on a simplified approach using the followi
 - The pressure profile is solved using the `solve_ivp` function, which integrates the coupled ODEs for mass, gravity and pressure:
 
   $$
-  \[\frac{dM}{dr} = 4 \pi r^2 \rho\]
+  \frac{dM}{dr} = 4 \pi r^2 \rho
   $$ 
 
   $$
-  \[\frac{dg}{dr} = 4 \pi G \rho - \frac{2g}{r + 10^{-20}}, \quad \text{if } r > 0, \text{ else } 0\]
+  \frac{dg}{dr} = 4 \pi G \rho - \frac{2g}{r}
   $$
 
   $$
-  \[\frac{dP}{dr} = -\rho g\]
+  \frac{dP}{dr} = -\rho g
   $$
+  
   where \( M(r) \) is the enclosed mass within radius \( r \), \( \rho(r) \) is the local density at radius \( r \), \( g(r) \) is the gravitational acceleration at radius \( r \), \( P(r) \) is the pressure at radius \( r \), \( G \) is the gravitational constant and \( r \) is the radial coordinate from the planet's center.  
 
 - A simple scaling law is used to estimate the initial radius of the planet based on its mass.
