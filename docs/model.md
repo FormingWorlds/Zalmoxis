@@ -10,6 +10,29 @@ The `main` function runs the exoplanet interior structure model. It reads the co
 - `temp_config_path` (optional): Path to the configuration file. If not provided, the default configuration file is chosen.
 - `id_mass` (optional): Identifier for the planet mass in Earth masses.
 
+### Physical Model Description
+The internal structure model is based on a simplified approach using the following assumptions:
+
+- The core and mantle are modeled as two distinct layers with different densities.
+- The density profile is derived from the equation of state (EOS), which defines the relationship between pressure, density and temperature.
+- The pressure profile is solved using the `solve_ivp` function, which integrates the coupled ODEs for mass, gravity and pressure:
+
+  $$
+  \[\frac{dM}{dr} = 4 \pi r^2 \rho\]
+  $$ 
+
+  $$
+  \[\frac{dg}{dr} = 4 \pi G \rho - \frac{2g}{r + 10^{-20}}, \quad \text{if } r > 0, \text{ else } 0\]
+  $$
+
+  $$
+  \[\frac{dP}{dr} = -\rho g\]
+  $$
+  where \( M(r) \) is the enclosed mass within radius \( r \), \( \rho(r) \) is the local density at radius \( r \), \( g(r) \) is the gravitational acceleration at radius \( r \), \( P(r) \) is the pressure at radius \( r \), \( G \) is the gravitational constant and \( r \) is the radial coordinate from the planet's center.  
+
+- A simple scaling law is used to estimate the initial radius of the planet based on its mass.
+- The model iterates to adjust the core-mantle boundary and the density profile until the solution converges within the specified tolerance limits.
+
 ### Process Flow
 - **Configuration File Loading**
    
@@ -38,7 +61,7 @@ The `main` function runs the exoplanet interior structure model. It reads the co
 
     In the inner loop, the model iteratively adjusts the planet's density profile, using `solve_ivp` to solve the coupled ordinary differential equations (ODEs) for mass, gravity and pressure as a function of radius. For each layer, the density is recalculated based on the pressure profile and the equation of state.
 
-    In the innermost loop (pressure adjustment loop), the `solve_ivp` function is used to solve the coupled ODEs for mass, gravity and pressure. The pressure profile is adjusted iteratively to match the target surface pressure, with each adjustment made using a scaling factor.
+    In the innermost loop (pressure adjustment loop), the `solve_ivp` function is used to solve the coupled ODEs for mass, gravity and pressure. The pressure profile is adjusted iteratively to match the target surface pressure, with each adjustment made using a scaling factor. 
 
 - **Convergence Checks**
 
@@ -51,15 +74,6 @@ The `main` function runs the exoplanet interior structure model. It reads the co
 - **Output Generation**
 
     Once the solution has converged, the final mass, radius, core radius and other calculated parameters are printed. Other output parameters include the mantle density at the Core Mantle Boundary (CMB), core density at the CMB, pressure at the CMB, pressure at center, average density, CMB mass fraction and core radius fraction.
-
-### Physical Model Description
-The internal structure model is based on a simplified approach using the following assumptions:
-
-- The core and mantle are modeled as two distinct layers with different densities.
-- The density profile is derived from the equation of state (EOS), which defines the relationship between pressure, density and temperature.
-- The pressure profile is solved using the `solve_ivp` function, which integrates the coupled ODEs for mass, gravity and pressure.
-- A simple scaling law is used to estimate the initial radius of the planet based on its mass.
-- The model iterates to adjust the core-mantle boundary and the density profile until the solution converges within the specified tolerance limits.
 
 ## Other Key Functions and Equations
 
