@@ -35,13 +35,17 @@ The `main` function runs the exoplanet interior structure model. It reads the co
 - **Iterative Solution**
 
     The model iteratively adjusts the planet's radius and core-mantle boundary (CMB) radius using an outer loop. In each outer iteration, the function sets up a radial grid and initializes arrays for density, mass enclosed, gravity and pressure. The core mass is estimated and an initial guess for the pressure at the center is set. A simplified initial density profile is also assigned based on the core and mantle assumptions.
+
     In the inner loop, the model iteratively adjusts the planet's density profile, using `solve_ivp` to solve the coupled ordinary differential equations (ODEs) for mass, gravity and pressure as a function of radius. For each layer, the density is recalculated based on the pressure profile and the equation of state.
+
     In the innermost loop (pressure adjustment loop), the `solve_ivp` function is used to solve the coupled ODEs for mass, gravity and pressure. The pressure profile is adjusted iteratively to match the target surface pressure, with each adjustment made using a scaling factor.
 
 - **Convergence Checks**
 
     The outer loop checks for convergence based on the relative differences in the calculated mass and core radius.
+
     The inner loop checks for convergence based on the relative differences in the density profile.
+    
     The pressure adjustment loop also checks for convergence, ensuring that the pressure difference is within the defined tolerance and that all pressure values remain physically valid (all positive).
 
 - **Output Generation**
