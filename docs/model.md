@@ -1,20 +1,14 @@
 # Interior Structure Model
 
 ## Overview
-This document describes the main function of the exoplanet interior structure model. The model calculates the internal structure of an exoplanet based on its mass and various other parameters, including temperature, pressure, and density profiles. The solution is derived iteratively, and the model uses a simplified equation of state (EOS) for the core and mantle. The results can optionally be saved to a file and plotted for further analysis.
+The model calculates the internal structure of an exoplanet based on its mass and various other parameters, including temperature, pressure and density profiles. The solution is derived iteratively and the model currently uses a simplified equation of state (EOS) for the core and mantle (from [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346)). 
 
-## Function: `main`
-
-### Purpose
-The `main` function runs the exoplanet interior structure model. It reads the configuration file, initializes parameters, and performs an iterative solution to calculate the planet's internal structure. The function outputs various parameters such as:
-- Planet radius
-- Core radius
-- Densities at various layers
-- Pressures and temperatures at various layers
+## Main function
+The `main` function runs the exoplanet interior structure model. It reads the configuration file, initializes parameters and performs an iterative solution to calculate the planet's internal structure. The model outputs various parameters such as the calculated planet mass, planet radius, core radius, mantle density at the Core Mantle Boundary (CMB), core density at the CMB, pressure at the CMB, pressure at center, average density, CMB mass fraction and core radius fraction.
 
 ### Parameters
 - `temp_config_path` (optional): Path to the configuration file. If not provided, the default configuration file is chosen.
-- `id_mass` (optional): Identifier for the planet mass, used for output file naming.
+- `id_mass` (optional): Identifier for the planet mass in Earth masses.
 
 ### Process Overview
 1. **Configuration File Loading**:
@@ -104,18 +98,7 @@ The internal structure model of the exoplanet is based on a simplified approach 
 - **Temperature Calculation** (`calculate_temperature`):
   - The temperature profile is calculated for the planet based on the density and material properties, with the temperature increasing towards the center of the planet.
 
-## Output
-
-The model provides the following outputs:
-1. **Planet Mass**: The calculated mass of the exoplanet.
-2. **Planet Radius**: The calculated radius of the exoplanet.
-3. **Core Radius**: The radius of the core-mantle boundary.
-4. **Core and Mantle Densities**: Densities at various layers within the planet.
-5. **Pressure and Temperature**: Pressure and temperature profiles at different radii.
-
 ### Optional: Data Output and Plotting
-- The model can output the results to a text file in the "output_files" directory. The file will contain the planet's radial profile, including radius, density, gravity, pressure, temperature, and mass enclosed.
-- The model can also generate plots of the planet's profile, which can be customized as needed.
+- The model can output the results to a text file in the "output_files" directory. The file will contain the planet's radial profile, including density, gravity, pressure, temperature and mass enclosed.
+- The model can also generate plots of the planet's density, gravity, pressure and mass enclosed profiles.
 
-## Conclusion
-The `main` function provides a detailed, iterative approach to model the internal structure of an exoplanet. By adjusting parameters like mass, core radius, and pressure, the model calculates the density, pressure, and temperature profiles within the planet. This allows for the estimation of key planetary parameters, aiding in the study of exoplanetary interiors and their potential habitability.

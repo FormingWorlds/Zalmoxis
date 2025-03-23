@@ -2,6 +2,14 @@
 
 **Zalmoxis** is a program designed to model the internal structure of exoplanets using an iterative numerical approach.
 
+## Installation instructions
+
+See the [installation guide](https://zalmoxis.readthedocs.io/en/latest/installation/) for more information.
+
+## Run instructions
+
+See the [usage guide](https://zalmoxis.readthedocs.io/en/latest/usage/) for more information.
+
 ## Contributors
 
 | Name  | Email address |
