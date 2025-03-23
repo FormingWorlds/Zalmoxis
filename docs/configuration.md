@@ -9,7 +9,7 @@ The configuration file contains various parameters required to run the planetary
 ### [InputParameter]  
 Defines the basic input parameters for the planetary model.  
 
-- **planet_mass** = `5.972e24`  # kg (Earth = 5.972e24)
+- `planet_mass` - Planet mass [kg]
 
 ### [AssumptionsAndInitialGuesses]  
 Contains assumptions and initial guesses for the model’s structure.  
