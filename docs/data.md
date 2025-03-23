@@ -6,7 +6,7 @@ Earth-like rocky exoplanets, with a 32.5% Fe+67.5% MgSiO3 composition, taken fro
 
 ## Seager EOS data
 
-The following EOS data, from [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346), provide density-pressure relationships for planetary materials:  
+[Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) provide density-pressure EOS data for planetary materials:   
 
 ### Iron EOS data
 

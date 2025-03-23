@@ -4,9 +4,13 @@ repo_url: https://github.com/FormingWorlds/Zalmoxis
 
 nav:
   - Home: index.md
+  - Data: data.md
+  - Installation: installation.md
+  - Usage: usage.md
+  - Configuration: configuration.md
+  - Model Structure: model.md
   - Contributing: CONTRIBUTING.md
   - Code of Conduct: CODE_OF_CONDUCT.md
-  - Data: data.md
   - 🔗 Source code: https://github.com/FormingWorlds/Zalmoxis
   - 🔗 Issues: https://github.com/FormingWorlds/Zalmoxis/issues
 
