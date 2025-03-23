@@ -47,20 +47,15 @@ The `main` function runs the exoplanet interior structure model. It reads the co
 
 ### Physical Model Description
 The internal structure model is based on a simplified approach using the following assumptions:
+
 - The core and mantle are modeled as two distinct layers with different densities.
 - The density profile is derived from the equation of state (EOS), which defines the relationship between pressure, density and temperature.
 - The pressure profile is solved using the `solve_ivp` function, which integrates the coupled ODEs for mass, gravity and pressure.
 - A simple scaling law is used to estimate the initial radius of the planet based on its mass.
 - The model iterates to adjust the core-mantle boundary and the density profile until the solution converges within the specified tolerance limits.
 
-### Optional: Data Output and Plotting
-- The model can output the results to a text file in the "output_files" directory. The file will contain the planet's radial profile, including density, gravity, pressure, temperature and mass enclosed.
-- The model can also generate plots of the planet's density, gravity, pressure and mass enclosed profiles.
+## Other Key Functions and Equations
 
-## Key Functions and Equations
-
-- **Coupled ODEs** (`coupled_odes`):
-  The function `coupled_odes` defines the derivatives of mass, gravity and pressure with respect to radius. These equations are used to solve for the planet's internal structure.
+- **Coupled ODEs** (`coupled_odes`): Defines the derivatives of mass, gravity and pressure with respect to radius. These equations are used to solve for the planet's internal structure.
   
-- **Density Calculation** (`calculate_density`):
-  This function calculates the density at each layer based on the pressure and material properties of the core and mantle using the equation of state.\
+- **Density Calculation** (`calculate_density`): Calculates the density at each layer based on the pressure and material properties of the core and mantle using the equation of state.
