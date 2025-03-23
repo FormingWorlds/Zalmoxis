@@ -1,7 +1,7 @@
 # Interior Structure Model
 
 ## Overview
-The model calculates the internal structure of an exoplanet based on its mass and various other parameters, including temperature, pressure and density profiles. The solution is derived iteratively and the model currently uses a simplified equation of state (EOS) for the core and mantle (from [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346)). 
+The model calculates the internal structure of an exoplanet based on its mass and various other parameters, including temperature, pressure and density profiles. The solution is derived iteratively and the model currently uses a simplified equation of state (EOS) for the core and mantle from [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346). The model currently supports simulations of Earth-like exoplanets of up to 50 Earth masses.
 
 ## Main function
 The `main` function runs the exoplanet interior structure model. It reads the configuration file, initializes parameters and performs an iterative solution to calculate the planet's internal structure. The model outputs various parameters such as the calculated planet mass, planet radius, core radius, mantle density at the Core Mantle Boundary (CMB), core density at the CMB, pressure at the CMB, pressure at center, average density, CMB mass fraction and core radius fraction.
@@ -12,11 +12,22 @@ The `main` function runs the exoplanet interior structure model. It reads the co
 
 ### Process Overview
 1. **Configuration File Loading**:
-   - The function reads a configuration file that defines the initial guesses, assumptions, and iterative process parameters.
+   - The function reads a configuration file that defines the initial guesses, assumptions and iterative process parameters.
 
 2. **Initial Parameter Setup**:
-   - Initial guesses for the planet's radius, core radius, and core mass fraction are set.
-   - A simplified scaling law based on the planet's mass is used to provide an initial radius guess.
+   - The initial guess for the planet's radius is set based on the scaling law in [Noack et al. 2020](https://ui.adsabs.harvard.edu/abs/2020A%26A...638A.129N/abstract) as:
+
+   $$
+   R_p[\text{m}] = 1000 \times (7030 - 1840 \times X\_{\text{Fe}}) \times \left( \frac{M_p}{M_{\text{earth}}} \right)^{0.282}
+   $$
+    where $X\_{\text{Fe}}$ is the weight iron fraction, $M_p$ is the planet mass, $M_{\text{earth}}$ is Earth's mass
+
+   - The initial guess for the planet's core radius is set as:
+   $$
+   R\_{\text{core}} = X\_{\text{CMF}} \times R_p[\text{m}]
+   $$
+
+   where $X\_{\text{CMF}}$ is the core mass fraction and $R_p[\text{m}]$ is the guessed planet radius from above.
 
 3. **Iterative Solution**:
    - The model iteratively adjusts the planet's radius and core-mantle boundary (CMB) using an outer loop.
