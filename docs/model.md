@@ -18,16 +18,16 @@ The `main` function runs the exoplanet interior structure model. It reads the co
    - The initial guess for the planet's radius is set based on the scaling law in [Noack et al. 2020](https://ui.adsabs.harvard.edu/abs/2020A%26A...638A.129N/abstract) as:
 
    $$
-   R_p[\text{m}] = 1000 \times (7030 - 1840 \times X\_{\text{Fe}}) \times \left( \frac{M_p}{M_{\text{earth}}} \right)^{0.282}
+   R_p[\text{m}] = 1000 \times (7030 - 1840 \times X_{\text{Fe}}) \times \left( \frac{M_p}{M_{\text{Earth}}} \right)^{0.282}
    $$
-    where $X\_{\text{Fe}}$ is the weight iron fraction, $M_p$ is the planet mass, $M_{\text{earth}}$ is Earth's mass
+    where \( X_{\text{Fe}} \) is the weight iron fraction, \( M_p \) is the planet mass, \( M_{\text{Earth}} \) is Earth's mass
 
    - The initial guess for the planet's core radius is set as:
    $$
-   R\_{\text{core}} = X\_{\text{CMF}} \times R_p[\text{m}]
+   R_{\text{core}} = X_{\text{CMF}} \times R_p[\text{m}]
    $$
 
-   where $X\_{\text{CMF}}$ is the core mass fraction and $R_p[\text{m}]$ is the guessed planet radius from above.
+   where \( X_{\text{CMF}} \) is the core mass fraction and \( R_p[\text{m}] \) is the guessed planet radius from above.
 
 3. **Iterative Solution**:
    - The model iteratively adjusts the planet's radius and core-mantle boundary (CMB) using an outer loop.
