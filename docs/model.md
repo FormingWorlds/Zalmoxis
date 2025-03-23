@@ -33,16 +33,19 @@ The `main` function runs the exoplanet interior structure model. It reads the co
     where \( X_{\text{CMF}} \) is the core mass fraction and \( R_p[\text{m}] \) is the guessed planet radius from above.
 
 3. **Iterative Solution**:
+
    The model iteratively adjusts the planet's radius and core-mantle boundary (CMB) radius using an outer loop. In each outer iteration, the function sets up a radial grid and initializes arrays for density, mass enclosed, gravity and pressure. The core mass is estimated and an initial guess for the pressure at the center is set. A simplified initial density profile is also assigned based on the core and mantle assumptions.
    In the inner loop, the model iteratively adjusts the planet's density profile, using `solve_ivp` to solve the coupled ordinary differential equations (ODEs) for mass, gravity and pressure as a function of radius. For each layer, the density is recalculated based on the pressure profile and the equation of state.
    In the innermost loop (pressure adjustment loop), the `solve_ivp` function is used to solve the coupled ODEs for mass, gravity and pressure. The pressure profile is adjusted iteratively to match the target surface pressure, with each adjustment made using a scaling factor.
 
 4. **Convergence Checks**:
+
    The outer loop checks for convergence based on the relative differences in the calculated mass and core radius.
    The inner loop checks for convergence based on the relative differences in the density profile.
    The pressure adjustment loop also checks for convergence, ensuring that the pressure difference is within the defined tolerance and that all pressure values remain physically valid (all positive).
 
-6. **Output Generation**:
+5. **Output Generation**:
+
    Once the solution has converged, the final mass, radius, core radius and other calculated parameters are printed. Other output parameters include the mantle density at the Core Mantle Boundary (CMB), core density at the CMB, pressure at the CMB, pressure at center, average density, CMB mass fraction and core radius fraction.
 
 ### Physical Model Description
