@@ -1,0 +1,122 @@
+[build-system]
+requires = ["setuptools>=61.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fwl-zalmoxis"
+version = "0.1.0"
+description = "Zalmoxis (Planetary interior structure model)"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    {name = "Flavia Pascal", email = "fpascal@student.rug.nl"},
+]
+keywords = [
+    "Astronomy",
+    "Exoplanets",
+]
+license = {text = "Apache 2.0 License"}
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
+dependencies = [
+    "numpy",
+    "scipy",
+    "toml",
+    "matplotlib",
+]
+
+[project.urls]
+homepage = "https://github.com/FormingWorlds/Zalmoxis"
+issues = "https://github.com/FormingWorlds/Zalmoxis/issues"
+documentation = "https://zalmoxis.readthedocs.io/en/latest/"
+changelog = "https://github.com/FormingWorlds/Zalmoxis/releases"
+
+[project.optional-dependencies]
+develop = [
+    "bump-my-version",
+    "coverage[toml]",
+    "pip-tools",
+    "pytest >= 8.1",
+    "pre-commit",
+    "ruff",
+]
+
+docs = [
+    "markdown-include",
+    "mkdocs",
+    "mkdocs-material",
+    "mkdocstrings[python]",
+    "pymdown-extensions",
+]
+
+[tool.setuptools]
+package-dir = {"zalmoxis" = "src/zalmoxis"}
+include-package-data = true
+
+[tool.coverage.run]
+branch = true
+source = ["zalmoxis"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 96
+target-version = "py311"
+extend-exclude = ["*ipynb"]
+
+[tool.ruff.lint]
+select = [
+    "F",  # Pyflakes
+    "E",  # pycodestyle (error)
+    "W",  # pycodestyle (warning)
+    "I",  # isort
+]
+ignore = [
+    "E501", # Line too long
+]
+
+[tool.ruff.lint.isort]
+known-first-party=["zalmoxis"]
+required-imports = ["from __future__ import annotations"]
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
+
+[tool.bumpversion]
+current_version = "25.03.17"
+parse = """(?x)                      # Verbose mode
+    (?P<release>                     # The release part
+        (?:[1-9][0-9])\\.            # YY.
+        (?:1[0-2]|0[1-9])\\.         # MM.
+        (?:3[0-1]|[1-2][0-9]|0[1-9]) # DD
+    )
+    (?:\\.(?P<patch>\\d+))?         # .patch, optional
+"""
+serialize = ["{release}.{patch}", "{release}"]
+
+[[tool.bumpversion.files]]
+filename = "src/zalmoxis/__init__.py"
+search = "__version__ = '{current_version}'"
+replace = "__version__ = '{new_version}'"
+
+[[tool.bumpversion.files]]
+filename = "pyproject.toml"
+search = "version = \"{current_version}\""
+replace = "version = \"{new_version}\""
+
+[[tool.bumpversion.files]]
+filename = "CITATION.cff"
+search = "version: {current_version}"
+replace = "version: {new_version}"

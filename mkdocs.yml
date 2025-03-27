@@ -1,9 +1,14 @@
 site_name: Zalmoxis
-site_url: https://fwl-calliope.readthedocs.io
+site_url: https://zalmoxis.readthedocs.io/en/latest/
 repo_url: https://github.com/FormingWorlds/Zalmoxis
 
 nav:
   - Home: index.md
+  - Data: data.md
+  - Installation: installation.md
+  - Usage: usage.md
+  - Configuration: configuration.md
+  - Interior Structure Model: model.md
   - Contributing: CONTRIBUTING.md
   - Code of Conduct: CODE_OF_CONDUCT.md
   - 🔗 Source code: https://github.com/FormingWorlds/Zalmoxis
@@ -14,7 +19,7 @@ theme:
   palette:
     primary: black
     accent: deep orange
-
+    
 extra_css:
   - stylesheets/extra.css
 

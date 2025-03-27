@@ -195,7 +195,7 @@ def main(temp_config_path=None, id_mass=None):
         # Calculate total mass:
         calculated_mass = mass_enclosed[-1]
 
-        # Update radius guess and core-mantle boundary:
+        # Update radius guess and core-mantle boundary radius guess:
         radius_guess = radius_guess * (planet_mass / calculated_mass)**(1/3)
         cmb_radius = radii[np.argmax(mass_enclosed >= cmb_mass)]
         print(cmb_radius)
