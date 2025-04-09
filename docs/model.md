@@ -66,10 +66,10 @@ The internal structure model is based on a simplified approach using the followi
     The initial guess for the planet's pressure at the center is based on an empirical scaling law derived from the hydrostatic equilibrium equation and set as:
 
     $$
-    P_p = p_E \times \left( \frac{M_p}{M_E} \right)^{2} \times \left( \frac{R_p}{R_E} \right)^{-4}
+    P_p = P_E \times \left( \frac{M_p}{M_E} \right)^{2} \times \left( \frac{R_p}{R_E} \right)^{-4}
     $$
 
-    where \( p_E \) is Earth's pressure at the center, \( M_p \) is the planet mass, \( M_E \) is Earth's mass, \( R_p \) is the guessed planet radius and \( R_E \) is Earth's radius.
+    where \( P_E \) is Earth's pressure at the center, \( M_p \) is the planet mass, \( M_E \) is Earth's mass, \( R_p \) is the guessed planet radius and \( R_E \) is Earth's radius.
 
 - **Iterative Solution**
 
