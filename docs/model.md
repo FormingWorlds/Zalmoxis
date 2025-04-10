@@ -15,7 +15,7 @@ The internal structure model is based on a simplified approach using the followi
 
 - The core and mantle are modeled as two distinct layers with different densities.
 - The density profile is derived from the equation of state (EOS), which defines the relationship between pressure, density and temperature.
-- The pressure profile is solved using the `solve_ivp` function, which integrates the coupled ODEs for mass, gravity and pressure:
+- The pressure profile is solved using the `solve_ivp` function, which integrates the coupled ODEs for mass, gravity and pressure, starting from the center and progressing outward:
 
   $$
   \frac{dM}{dr} = 4 \pi r^2 \rho
