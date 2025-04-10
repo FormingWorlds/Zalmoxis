@@ -2,7 +2,7 @@
 
 ## Python environment
 
-You will need to install Python (>=3.10) on your system.
+You will need to install Python (>=3.12) on your system.
 
 ## Download the framework
 
@@ -11,6 +11,7 @@ You will need to install Python (>=3.10) on your system.
     ```console
     git clone https://github.com/FormingWorlds/Zalmoxis.git
     cd Zalmoxis
+    pip install -e . 
     ```
 
 2. Create a virtual environment
