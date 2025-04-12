@@ -2,7 +2,6 @@ import os, sys, time, math, toml
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
-from scipy.interpolate import interp1d
 from .constants import *
 from .eos_functions import calculate_density, calculate_temperature, birch_murnaghan, mie_gruneisen_debye
 from .eos_properties import material_properties
@@ -151,7 +150,7 @@ def main(temp_config_path=None, id_mass=None):
                 y0 = [0, 0, pressure_guess]  # Initial mass, gravity, pressure at r=0
 
                 # Solve the ODEs using solve_ivp
-                sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, radius_guess, EOS_CHOICE, interpolation_cache, num_layers), 
+                sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, radius_guess, EOS_CHOICE, interpolation_cache), 
                     (radii[0], radii[-1]), y0, t_eval=radii, rtol=relative_tolerance, atol=absolute_tolerance, method='RK45', dense_output=True)
 
                 # Extract mass, gravity, and pressure profiles
@@ -177,7 +176,7 @@ def main(temp_config_path=None, id_mass=None):
                     # Mantle
                     material = "mantle"
 
-                new_density = calculate_density(pressure[i], radii[i], material, radius_guess, EOS_CHOICE)
+                new_density = calculate_density(pressure[i], material, EOS_CHOICE)
 
                 # Handle potential errors in density calculation
                 if new_density is None:

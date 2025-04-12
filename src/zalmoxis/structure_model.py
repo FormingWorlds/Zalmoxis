@@ -5,7 +5,7 @@ from .eos_functions import calculate_density
 from .constants import *
 
 # Define the coupled ODEs for the structure model
-def coupled_odes(radius, y, cmb_mass, radius_guess, EOS_CHOICE, interpolation_cache, num_layers):
+def coupled_odes(radius, y, cmb_mass, radius_guess, EOS_CHOICE, interpolation_cache):
     """
     Calculate the derivatives of mass, gravity, and pressure with respect to radius for a planetary model.
 
@@ -32,7 +32,7 @@ def coupled_odes(radius, y, cmb_mass, radius_guess, EOS_CHOICE, interpolation_ca
         material = "mantle" # Assign material only once per call
 
     # Calculate density at the current radius, using pressure from y
-    current_density = calculate_density(pressure, radius, material, radius_guess, EOS_CHOICE, interpolation_cache)
+    current_density = calculate_density(pressure, material, EOS_CHOICE, interpolation_cache)
 
     # Handle potential errors in density calculation
     if current_density is None:

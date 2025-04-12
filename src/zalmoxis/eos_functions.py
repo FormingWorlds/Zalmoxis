@@ -86,7 +86,7 @@ def calculate_temperature(radii, core_radius, surface_temp, material_properties,
 
 
 # --- EOS Calculation ---
-def calculate_density(pressure, radius, material, radius_guess, eos_choice, interpolation_functions={}):
+def calculate_density(pressure, material, eos_choice, interpolation_functions={}):
     """Calculates density with caching for tabulated EOS."""
 
     T = 0  # Temporary fix for tabulated EOS
