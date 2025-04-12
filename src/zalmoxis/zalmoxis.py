@@ -8,6 +8,7 @@ from .eos_properties import material_properties
 from .structure_model import coupled_odes
 from .plots.plot_profiles import plot_planet_profile_single
 from .plots.plot_eos import plot_eos_material
+from .setup import download_data
 
 # Run file via command line with default configuration file: python -m src.zalmoxis.zalmoxis -c ../../input/default.toml
 
@@ -65,6 +66,8 @@ def main(temp_config_path=None, id_mass=None):
     radius, densities, pressures, and temperatures at various layers, and optionally
     saves the data to a file and plots the results.
     """
+    # Download data if not already present
+    download_data()
 
     config = choose_config_file(temp_config_path)  # Choose the configuration file
     

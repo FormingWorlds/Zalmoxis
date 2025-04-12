@@ -9,3 +9,4 @@ python -m zalmoxis -c [cfgfile]
 ```
 
 where `[cfgfile]` is typically the path to the default configuration file (`default.toml`).
+A data folder containing reference data (see [more info](https://zalmoxis.readthedocs.io/en/latest/data/) is automatically downloaded and extracted when Zalmoxis is run with this command.
