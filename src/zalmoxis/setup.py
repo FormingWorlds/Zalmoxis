@@ -3,6 +3,13 @@
 import os, shutil, subprocess
 
 def download_data():
+    """
+    Download and extract data from osf.io if the folder does not already exist.
+    The data is downloaded as a zip file and extracted to a specified folder.
+    The script also removes any __MACOSX folders and moves the contents of the inner 'data' folder to the outer 'data' folder.
+    If the folder already exists, it skips the download and extraction process.
+    It also deletes the contents of the calculated_planet_mass_radius.txt file if it exists.
+    """
     # Set the working directory to the current file
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
