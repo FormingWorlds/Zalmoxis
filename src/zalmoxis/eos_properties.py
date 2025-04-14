@@ -1,5 +1,3 @@
-import os
-
 # --- Material Properties ---
 material_properties = {
     "mantle": {

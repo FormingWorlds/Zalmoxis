@@ -2,13 +2,13 @@ import os, sys, time, math, toml
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
-from scipy.interpolate import interp1d
 from .constants import *
 from .eos_functions import calculate_density, calculate_temperature, birch_murnaghan, mie_gruneisen_debye
 from .eos_properties import material_properties
 from .structure_model import coupled_odes
 from .plots.plot_profiles import plot_planet_profile_single
 from .plots.plot_eos import plot_eos_material
+from .setup import download_data
 
 # Run file via command line with default configuration file: python -m src.zalmoxis.zalmoxis -c ../../input/default.toml
 
@@ -66,6 +66,8 @@ def main(temp_config_path=None, id_mass=None):
     radius, densities, pressures, and temperatures at various layers, and optionally
     saves the data to a file and plots the results.
     """
+    # Download data if not already present
+    download_data()
 
     config = choose_config_file(temp_config_path)  # Choose the configuration file
     
@@ -151,7 +153,7 @@ def main(temp_config_path=None, id_mass=None):
                 y0 = [0, 0, pressure_guess]  # Initial mass, gravity, pressure at r=0
 
                 # Solve the ODEs using solve_ivp
-                sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, radius_guess, EOS_CHOICE, interpolation_cache, num_layers), 
+                sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, radius_guess, EOS_CHOICE, interpolation_cache), 
                     (radii[0], radii[-1]), y0, t_eval=radii, rtol=relative_tolerance, atol=absolute_tolerance, method='RK45', dense_output=True)
 
                 # Extract mass, gravity, and pressure profiles
@@ -177,7 +179,7 @@ def main(temp_config_path=None, id_mass=None):
                     # Mantle
                     material = "mantle"
 
-                new_density = calculate_density(pressure[i], radii[i], material, radius_guess, EOS_CHOICE)
+                new_density = calculate_density(pressure[i], material, EOS_CHOICE)
 
                 # Handle potential errors in density calculation
                 if new_density is None:
@@ -271,5 +273,3 @@ def main(temp_config_path=None, id_mass=None):
         plot_eos_material(eos_data_files, eos_data_folder)  # Call the EOS plotting function
         #plt.show()  # Show the plots
     
-if __name__ == "__main__":
-    main()

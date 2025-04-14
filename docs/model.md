@@ -15,7 +15,7 @@ The internal structure model is based on a simplified approach using the followi
 
 - The core and mantle are modeled as two distinct layers with different densities.
 - The density profile is derived from the equation of state (EOS), which defines the relationship between pressure, density and temperature.
-- The pressure profile is solved using the `solve_ivp` function, which integrates the coupled ODEs for mass, gravity and pressure:
+- The pressure profile is solved using the `solve_ivp` function, which integrates the coupled ODEs for mass, gravity and pressure, starting from the center and progressing outward:
 
   $$
   \frac{dM}{dr} = 4 \pi r^2 \rho
@@ -44,17 +44,32 @@ The internal structure model is based on a simplified approach using the followi
     The initial guess for the planet's radius is set based on the scaling law in [Noack et al. 2020](https://ui.adsabs.harvard.edu/abs/2020A%26A...638A.129N/abstract) as:
 
     $$
-    R_p[\text{m}] = 1000 \times (7030 - 1840 \times X_{\text{Fe}}) \times \left( \frac{M_p}{M_{\text{Earth}}} \right)^{0.282}
+    R_p[\text{m}] = 1000 \times (7030 - 1840 \times X_{\text{Fe}}) \times \left( \frac{M_p}{M_E} \right)^{0.282}
     $$
 
-    where \( X_{\text{Fe}} \) is the weight iron fraction, \( M_p \) is the planet mass, \( M_{\text{Earth}} \) is Earth's mass.
+    where \( X_{\text{Fe}} \) is the weight iron fraction, \( M_p \) is the planet mass, \( M_E \) is Earth's mass.
 
     The initial guess for the planet's core radius is set as:
     $$
-    R_{\text{core}} = X_{\text{CMF}} \times R_p[\text{m}]
+    R_{\text{core}} = X_{\text{CRF}} \times R_p
     $$
 
-    where \( X_{\text{CMF}} \) is the core mass fraction and \( R_p[\text{m}] \) is the guessed planet radius from above.
+    where \( X_{\text{CRF}} \) is the core radius fraction and \( R_p \) is the guessed planet radius from above.
+
+    The initial guess for the planet's core mass is set as:
+    $$
+    M_{\text{core}} = X_{\text{CMF}} \times M_p
+    $$
+
+    where \( X_{\text{CMF}} \) is the core mass fraction and \( M_p \) is the planet mass.
+
+    The initial guess for the planet's pressure at the center is based on an empirical scaling law derived from the hydrostatic equilibrium equation and set as:
+
+    $$
+    P_p = P_E \times \left( \frac{M_p}{M_E} \right)^{2} \times \left( \frac{R_p}{R_E} \right)^{-4}
+    $$
+
+    where \( P_E \) is Earth's pressure at the center, \( M_p \) is the planet mass, \( M_E \) is Earth's mass, \( R_p \) is the guessed planet radius and \( R_E \) is Earth's radius.
 
 - **Iterative Solution**
 
