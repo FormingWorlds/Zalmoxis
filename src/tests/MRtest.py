@@ -83,6 +83,17 @@ def MRtest(choice):
         None
     '''  
 
+    # Set the working directory to the current file
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+    # Delete the contents of the calculated_planet_mass_radius.txt file if it exists
+    calculated_file_path = '../zalmoxis/output_files/calculated_planet_mass_radius.txt'
+    if os.path.exists(calculated_file_path):
+        with open(calculated_file_path, 'w') as file:
+            file.truncate(0)
+            header = "Calculated Mass (kg)\tCalculated Radius (m)"
+            file.write(header + "\n") 
+
     if choice == "Wagner":
         target_mass_array = [1, 2.5, 5, 7.5, 10, 12.5, 15]
     elif choice == "Boujibar":
@@ -93,7 +104,7 @@ def MRtest(choice):
     elif choice == "Seager":
         target_mass_array = [1, 5, 10, 50]
     elif choice == "custom":
-        target_mass_array = range(1,51,1)
+        target_mass_array = range(1,31,1)
     else:
         raise ValueError("Invalid choice. Please select 'Wagner', 'Boujibar', or 'default'.")
 
