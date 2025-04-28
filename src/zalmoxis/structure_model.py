@@ -5,7 +5,7 @@ from .eos_functions import calculate_density
 from .constants import *
 
 # Define the coupled ODEs for the structure model
-def coupled_odes(radius, y, cmb_mass, radius_guess, EOS_CHOICE, interpolation_cache):
+def coupled_odes(radius, y, cmb_mass, EOS_CHOICE, interpolation_cache):
     """
     Calculate the derivatives of mass, gravity, and pressure with respect to radius for a planetary model.
 
