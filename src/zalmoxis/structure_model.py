@@ -34,7 +34,7 @@ def coupled_odes(radius, y, cmb_mass, eos_choice, interpolation_cache):
 
     # Handle potential errors in density calculation
     if current_density is None:
-        print(f"Warning: Density calculation failed at radius {radius}. Using previous density.") 
+        print(f"Warning: Density calculation failed at radius {radius}") 
 
     # Define the ODEs for mass, gravity and pressure
     dMdr = 4 * np.pi * radius**2 * current_density

@@ -147,7 +147,7 @@ def main(temp_config_path=None, id_mass=None):
             pressure_guess = earth_center_pressure * (planet_mass/earth_mass)**2 * (radius_guess/earth_radius)**(-4) # Initial guess for pressure at r=0 based on empirical scaling law 
             adjustment_factor = pressure_adjustment_factor  # Initial adjustment factor for pressure
 
-            for it in range(max_iterations_pressure): # Innermost loop for pressure adjustment
+            for pressure_iter in range(max_iterations_pressure): # Innermost loop for pressure adjustment
 
                 # Initial conditions for solve_ivp
                 y0 = [0, 0, pressure_guess]  # Initial mass, gravity, pressure at r=0
