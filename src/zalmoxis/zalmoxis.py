@@ -165,7 +165,7 @@ def main(temp_config_path=None, id_mass=None):
                 pressure_diff = surface_pressure - target_surface_pressure
 
                 if abs(pressure_diff) < pressure_tolerance and np.all(pressure > 0):
-                    print("Surface pressure converged and all pressures are positive.")
+                    print(f"Surface pressure converged after {pressure_iter + 1} iterations and all pressures are positive.")
                     break  # Exit the pressure adjustment loop
         
                 pressure_guess -= pressure_diff * adjustment_factor
@@ -192,6 +192,7 @@ def main(temp_config_path=None, id_mass=None):
             # Check for convergence (inner loop):
             relative_diff_inner = np.max(np.abs((density - old_density) / (old_density + 1e-20)))
             if relative_diff_inner < tolerance_inner:
+                print(f"Inner loop converged after {inner_iter + 1} iterations.")
                 break
 
         # Calculate total mass:
