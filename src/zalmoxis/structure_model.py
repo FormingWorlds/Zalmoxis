@@ -5,7 +5,7 @@ from .eos_functions import calculate_density
 from .constants import *
 
 # Define the coupled ODEs for the structure model
-def coupled_odes(radius, y, cmb_mass, EOS_CHOICE, interpolation_cache):
+def coupled_odes(radius, y, cmb_mass, eos_choice, interpolation_cache):
     """
     Calculate the derivatives of mass, gravity, and pressure with respect to radius for a planetary model.
 
@@ -13,31 +13,28 @@ def coupled_odes(radius, y, cmb_mass, EOS_CHOICE, interpolation_cache):
     radius (float): The current radius at which the ODEs are evaluated.
     y (list or array): The state vector containing mass, gravity, and pressure at the current radius.
     cmb_mass (float): The core-mantle boundary mass.
-    radius_guess (float): An initial guess for the radius.
-    EOS_CHOICE (str): The equation of state choice for material properties.
+    eos_choice (str): The equation of state choice for material properties.
     interpolation_cache (dict): A cache for interpolation to speed up calculations.
     num_layers (int): The number of layers in the planetary model.
 
     Returns:
     list: The derivatives of mass, gravity, and pressure with respect to radius.
     """
-    """d"""
     # Unpack the state vector
     mass, gravity, pressure = y
 
-    # Define material based on radius
+    # Define material based on enclosed mass up to the core-mantle boundary
     if mass < cmb_mass:
         material = "core"
     else:
-        material = "mantle" # Assign material only once per call
+        material = "mantle" 
 
     # Calculate density at the current radius, using pressure from y
-    current_density = calculate_density(pressure, material, EOS_CHOICE, interpolation_cache)
+    current_density = calculate_density(pressure, material, eos_choice, interpolation_cache)
 
     # Handle potential errors in density calculation
     if current_density is None:
-        print(f"Warning: Density calculation failed at radius {radius}. Using previous density.") # Print warning only
-        #current_density = old_density[np.argmin(np.abs(radii - radius))]
+        print(f"Warning: Density calculation failed at radius {radius}. Using previous density.") 
 
     # Define the ODEs for mass, gravity and pressure
     dMdr = 4 * np.pi * radius**2 * current_density
