@@ -53,11 +53,3 @@ def download_data():
         os.remove(download_path)
     else:
         print(f"Folder '{extract_folder}' already exists. Skipping download and extraction.")
-
-    # Delete the contents of the calculated_planet_mass_radius.txt file if it exists
-    calculated_file_path = '../zalmoxis/output_files/calculated_planet_mass_radius.txt'
-    if os.path.exists(calculated_file_path):
-        with open(calculated_file_path, 'w') as file:
-            file.truncate(0)
-            header = "Calculated Mass (kg)\tCalculated Radius (m)"
-            file.write(header + "\n")  

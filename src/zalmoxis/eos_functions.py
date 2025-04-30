@@ -92,8 +92,6 @@ def calculate_density(pressure, material, eos_choice, interpolation_functions={}
     T = 0  # Temporary fix for tabulated EOS
     props = material_properties[material]
 
-    props = material_properties[material]  # Shorthand
-
     if eos_choice == "Mie-Gruneisen-Debye":
         density = mie_gruneisen_debye(pressure, props["P0"], props["rho0"], props["K0"], props["K0prime"], props["gamma0"], props["theta0"], props["V0"], T) #not checked
         return density
