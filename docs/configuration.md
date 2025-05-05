@@ -14,7 +14,6 @@ Defines the basic input parameters for the planetary model.
 ### `AssumptionsAndInitialGuesses`
 Contains assumptions and initial guesses for the model’s structure.  
 
-- `core_radius_fraction` - Core radius fraction of total radius.
 - `core_mass_fraction` - Core mass fraction of total mass.
 - `weight_iron_fraction` - Weight iron fraction.
 

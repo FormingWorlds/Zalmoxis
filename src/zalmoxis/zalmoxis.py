@@ -73,7 +73,6 @@ def main(temp_config_path=None, id_mass=None):
     
     # Access parameters from the configuration file
     planet_mass = config['InputParameter']['planet_mass']  # Mass of the planet (kg)
-    core_radius_fraction = config['AssumptionsAndInitialGuesses']['core_radius_fraction']  # Initial guess for the core radius as a fraction of the total radius
     core_mass_fraction = config['AssumptionsAndInitialGuesses']['core_mass_fraction']  # Initial guess for the core mass as a fraction of the total mass
     weight_iron_fraction = config['AssumptionsAndInitialGuesses']['weight_iron_fraction']  # Initial guess for the weight fraction of iron in the core
     EOS_CHOICE = config['EOS']['choice']  # Choice of equation of state (e.g., "Birch-Murnaghan", "Mie-Gruneisen-Debye", "Tabulated")
@@ -100,7 +99,7 @@ def main(temp_config_path=None, id_mass=None):
 
     # Setup initial guesses for the planet radius and core-mantle boundary radius
     radius_guess = 1000*(7030-1840*weight_iron_fraction)*(planet_mass/earth_mass)**0.282 # Initial guess for the interior planet radius [m] based on the scaling law in Noack et al. 2020
-    cmb_radius = core_radius_fraction * radius_guess # Initial guess for the core-mantle boundary radius [m]
+    cmb_radius = 0 # Initial guess for the core-mantle boundary radius [m]
     cmb_radius_previous = cmb_radius # Initial guess for the previous core-mantle boundary radius [m]
     
     # Initialize temperature profile
