@@ -147,7 +147,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         raise ValueError("Invalid choice. Please select 'Wagner', 'Boujibar', or 'default'.")
 
     # Create a colormap based on the id_mass values
-    cmap = cm.inferno
+    cmap = cm.plasma
     norm = Normalize(vmin=1, vmax=np.max(target_mass_array))  # Normalize the id_mass range to map to colors
 
     # Plot the profiles for comparison using ax method
@@ -158,13 +158,13 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         color = cmap(norm(data['id_mass']))
         axs[0, 0].plot(data['radius'], data['density'], color=color)
     if choice == "Wagner":
-        axs[0, 0].scatter(wagner_radii_for_densities, wagner_densities, color='green', s=1, label='Earth-like super-Earths (Wagner et al. 2012)')
+        axs[0, 0].scatter(wagner_radii_for_densities, wagner_densities, color='black', s=1, label='Earth-like super-Earths (Wagner et al. 2012)')
     elif choice == "Boujibar":
-        axs[0, 0].scatter(boujibar_radii_for_densities, boujibar_densities, color='green', s=1, label='Earth-like super-Earths (Boujibar et al. 2020)')
+        axs[0, 0].scatter(boujibar_radii_for_densities, boujibar_densities, color='black', s=1, label='Earth-like super-Earths (Boujibar et al. 2020)')
     elif choice == "default":
         pass
     elif choice == "Seager":
-        axs[0, 0].scatter(seager_radii_for_densities, seager_densities, color='green', s=1, label='Earth-like super-Earths (Seager et al. 2007)')           
+        axs[0, 0].scatter(seager_radii_for_densities, seager_densities, color='black', s=5, label='Earth-like super-Earths (Seager et al. 2007)', zorder=10)           
     elif choice == "custom":
         pass
     axs[0, 0].set_xlabel("Radius (km)")
@@ -177,7 +177,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         color = cmap(norm(data['id_mass']))
         axs[0, 1].plot(data['radius'], data['gravity'], color=color)
     if choice == "Wagner":
-        axs[0, 1].scatter(wagner_radii_for_gravities, wagner_gravities, color='green', s=1, label='Earth-like super-Earths (Wagner et al. 2012)')
+        axs[0, 1].scatter(wagner_radii_for_gravities, wagner_gravities, color='black', s=1, label='Earth-like super-Earths (Wagner et al. 2012)')
     elif choice == "Boujibar":
         pass
     elif choice == "default":
@@ -196,9 +196,9 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         color = cmap(norm(data['id_mass']))
         axs[1, 0].plot(data['radius'], data['pressure'], color=color)
     if choice == "Wagner":
-        axs[1, 0].scatter(wagner_radii_for_pressures, wagner_pressures, color='green', s=1, label='Earth-like super-Earths (Wagner et al. 2012)')
+        axs[1, 0].scatter(wagner_radii_for_pressures, wagner_pressures, color='black', s=1, label='Earth-like super-Earths (Wagner et al. 2012)')
     elif choice == "Boujibar":
-        axs[1, 0].scatter(boujibar_radii_for_pressures, boujibar_pressures, color='green', s=1, label='Earth-like super-Earths (Boujibar et al. 2020)')
+        axs[1, 0].scatter(boujibar_radii_for_pressures, boujibar_pressures, color='black', s=1, label='Earth-like super-Earths (Boujibar et al. 2020)')
     elif choice == "default":
         pass
     elif choice == "Seager":
