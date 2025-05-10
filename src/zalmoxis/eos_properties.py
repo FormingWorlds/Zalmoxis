@@ -2,7 +2,7 @@
 material_properties = {
     "mantle": {
         # Lower mantle properties based on bridgmanite and ferropericlase
-        "rho0": 4110,  # Reference density (kg/m^3) at 24 GPa (top of lower mantle)
+        "rho0": 4100, # From Table 1 of Seager et al. (2007) for bridgmanite
         "K0": 245e9,  # Bulk modulus (Pa)
         "K0prime": 3.9,  # Pressure derivative of the bulk modulus
         "gamma0": 1.5,  # Gruneisen parameter
@@ -13,7 +13,7 @@ material_properties = {
     },
     "core": {
         # For liquid iron alloy outer core
-        "rho0": 9900,  # Reference density (kg/m^3) at 135 GPa (core-mantle boundary)
+        "rho0": 8300,  # From Table 1 of Seager et al. (2007) for the epsilon phase of iron of Fe
         "K0": 140e9,  # Bulk modulus (Pa)
         "K0prime": 5.5,  # Pressure derivative of the bulk modulus
         "gamma0": 1.5,  # Gruneisen parameter
