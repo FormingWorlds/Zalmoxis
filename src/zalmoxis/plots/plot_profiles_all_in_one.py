@@ -136,7 +136,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         seager_radii_for_densities = []
         seager_densities = []
 
-        with open("../../../data/radiusdensitySeager.txt", 'r') as seager_file:
+        with open("../../../data/radiusdensitySeagerEarth.txt", 'r') as seager_file:
             for line in seager_file:
                 radius, density = map(float, line.split(','))
                 seager_radii_for_densities.append(radius*1000) # Convert to km

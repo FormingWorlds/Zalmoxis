@@ -23,3 +23,24 @@ material_properties = {
         "eos_file": "../../data/eos_seager07_iron.txt" # Name of the file with tabulated EOS data
     }
 }
+
+analytical_eos_Seager07_parameters = {
+    "Fe": {
+        # For Fe(alpha) phase of iron
+        "rho0": 8300.00,  # kg/m^3
+        "c": 0.00349,  # kg/m^3/Pa^n
+        "n": 0.528,  # dimensionless
+    },
+    "MgSiO3": {
+        # For MgSiO3 (perovskite) phase
+        "rho0": 4100.00,  # kg/m^3
+        "c": 0.00161,  # kg/m^3/Pa^n
+        "n": 0.541,  # dimensionless
+    },
+    "H2O": {
+        # For H2O (ice) phase
+        "rho0": 1460.00,  # kg/m^3
+        "c": 0.00311,  # kg/m^3/Pa^n
+        "n": 0.513,  # dimensionless
+    }
+}
