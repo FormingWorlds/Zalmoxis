@@ -2,11 +2,11 @@
 EOS Data and Functions
 """
 
-from .eos_properties import material_properties
+from .eos_properties import material_properties_iron_silicate_planets, material_properties_water_planets, material_properties_H_He_envelope
 from scipy.interpolate import interp1d
 import numpy as np
 
-def mie_gruneisen_debye(P, P0, rho0, K0, K0prime, gamma0, theta0, V0, T):
+'''def mie_gruneisen_debye(P, P0, rho0, K0, K0prime, gamma0, theta0, V0, T):
     """
     Calculates density from the Mie-Grüneisen-Debye EOS.
     """
@@ -18,9 +18,9 @@ def mie_gruneisen_debye(P, P0, rho0, K0, K0prime, gamma0, theta0, V0, T):
     theta = theta0 * (V / V0)**(-gamma)
     P_thermal = (gamma * rho * 8.314 * (T - 300))  # Simplified thermal pressure
 
-    return rho
+    return rho'''
 
-def birch_murnaghan(P, P0, rho0, K0, K0prime, V0):
+'''def birch_murnaghan(P, P0, rho0, K0, K0prime, V0):
     """
     Calculates density from the 3rd order Birch-Murnaghan EOS.
     """
@@ -29,10 +29,10 @@ def birch_murnaghan(P, P0, rho0, K0, K0prime, V0):
     
     density = rho0 * (V0 / V)
 
-    return density
+    return density'''
 
 
-# --- Temperature Profile (Adiabatic) ---
+'''# --- Temperature Profile (Adiabatic) ---
 
 def calculate_temperature(radii, core_radius, surface_temp, material_properties, gravity, density, K_s, dr):
     """
@@ -82,47 +82,55 @@ def calculate_temperature(radii, core_radius, surface_temp, material_properties,
         # Update temperature at the previous radius
         temperature[i - 1] = current_temp + (k1 + 2 * k2 + 2 * k3 + k4) / 6
 
-    return temperature
+    return temperature'''
 
+def get_tabulated_eos(pressure, material_dictionary, material, interpolation_functions={}):
+    """
+    Retrieves density from tabulated EOS data for a given material and choice of EOS."""
+    props = material_dictionary[material]
+    try:
+        eos_file = props["eos_file"]
+        # Caching: Store interpolation functions for reuse
+        if eos_file not in interpolation_functions:
+            data = np.loadtxt(eos_file, delimiter=',', skiprows=1)
+            pressure_data = data[:, 1] * 1e9
+            density_data = data[:, 0] * 1e3
+            interpolation_functions[eos_file] = interp1d(pressure_data, density_data, bounds_error=False, fill_value="extrapolate")
+
+        interpolation_function = interpolation_functions[eos_file]  # Retrieve from cache
+        density = interpolation_function(pressure)  # Call to cached function
+
+        if density is None or np.isnan(density):
+            raise ValueError(f"Density calculation failed for {material} at {pressure:.2e} Pa.")
+
+        return density
+
+    except (ValueError, OSError) as e: # Catch file errors
+        print(f"Error with tabulated EOS for {material} at {pressure:.2e} Pa: {e}")
+        return None
+    except Exception as e: # Other errors
+        print(f"Unexpected error with tabulated EOS for {material} at {pressure:.2e} Pa: {e}")
+        return None
+   
 
 # --- EOS Calculation ---
 def calculate_density(pressure, material, eos_choice, interpolation_functions={}):
     """Calculates density with caching for tabulated EOS."""
 
     T = 0  # Temporary fix for tabulated EOS
-    props = material_properties[material]
 
     if eos_choice == "Mie-Gruneisen-Debye":
-        density = mie_gruneisen_debye(pressure, props["P0"], props["rho0"], props["K0"], props["K0prime"], props["gamma0"], props["theta0"], props["V0"], T) #not checked
-        return density
+        #density = mie_gruneisen_debye(pressure, props["P0"], props["rho0"], props["K0"], props["K0prime"], props["gamma0"], props["theta0"], props["V0"], T) #not checked
+        pass
     elif eos_choice == "Birch-Murnaghan":
-        density = birch_murnaghan(pressure, props["P0"], props["rho0"], props["K0"], props["K0prime"], props["V0"]) #not checked
-        return density
-    elif eos_choice == "Tabulated":
-        try:
-            eos_file = props["eos_file"]
-            # Caching: Store interpolation functions for reuse
-            if eos_file not in interpolation_functions:
-                data = np.loadtxt(eos_file, delimiter=',', skiprows=1)
-                pressure_data = data[:, 1] * 1e9
-                density_data = data[:, 0] * 1e3
-                interpolation_functions[eos_file] = interp1d(pressure_data, density_data, bounds_error=False, fill_value="extrapolate")
-
-            interpolation_function = interpolation_functions[eos_file]  # Retrieve from cache
-            density = interpolation_function(pressure)  # Call to cached function
-
-            if density is None or np.isnan(density):
-                raise ValueError(f"Density calculation failed for {material} at {pressure:.2e} Pa.")
-
-            return density
-
-        except (ValueError, OSError) as e: # Catch file errors
-            print(f"Error with tabulated EOS for {material} at {pressure:.2e} Pa: {e}")
-            return None
-        except Exception as e: # Other errors
-            print(f"Unexpected error with tabulated EOS for {material} at {pressure:.2e} Pa: {e}")
-            return None
-
+        #density = birch_murnaghan(pressure, props["P0"], props["rho0"], props["K0"], props["K0prime"], props["V0"]) #not checked
+        pass
+    elif eos_choice == "Tabulated:iron/silicate":
+        return get_tabulated_eos(pressure, material_properties_iron_silicate_planets, material, interpolation_functions)
+    elif eos_choice == "Tabulated:water":
+        return get_tabulated_eos(pressure, material_properties_water_planets, material, interpolation_functions)
+    elif eos_choice == "Tabulated:H-He envelope":
+        return get_tabulated_eos(pressure, material_properties_H_He_envelope, material, interpolation_functions)
     else:
         raise ValueError("Invalid EOS choice.")
     

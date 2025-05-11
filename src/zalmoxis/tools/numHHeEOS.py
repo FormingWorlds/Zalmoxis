@@ -20,4 +20,6 @@ rho = 10**log_rho  # g/cm^3
 P = 10**log_P      # GPa
 
 # Save the extracted columns to a new file
-np.savetxt(output_file, np.column_stack((rho, P)), header="rho (g/cm^3)    P (GPa)", fmt="%.10e %.6e")
+with open(output_file, 'w') as f:
+    f.write("rho (g/cm^3),P (GPa)\n")
+    np.savetxt(f, np.column_stack((rho, P)), fmt="%.10e,%.6e", delimiter=",")

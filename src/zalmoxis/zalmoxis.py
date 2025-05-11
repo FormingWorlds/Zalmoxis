@@ -3,8 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 from .constants import *
-from .eos_functions import calculate_density, calculate_temperature, birch_murnaghan, mie_gruneisen_debye
-from .eos_properties import material_properties
+from .eos_functions import calculate_density
 from .structure_model import coupled_odes
 from .plots.plot_profiles import plot_planet_profile_single
 from .plots.plot_eos import plot_eos_material
@@ -75,7 +74,7 @@ def main(temp_config_path=None, id_mass=None):
     planet_mass = config['InputParameter']['planet_mass']  # Mass of the planet (kg)
     core_mass_fraction = config['AssumptionsAndInitialGuesses']['core_mass_fraction']  # Initial guess for the core mass as a fraction of the total mass
     weight_iron_fraction = config['AssumptionsAndInitialGuesses']['weight_iron_fraction']  # Initial guess for the weight fraction of iron in the core
-    EOS_CHOICE = config['EOS']['choice']  # Choice of equation of state (e.g., "Birch-Murnaghan", "Mie-Gruneisen-Debye", "Tabulated")
+    EOS_CHOICE = config['EOS']['choice']  # Choice of equation of state (e.g., "Birch-Murnaghan", "Mie-Gruneisen-Debye", "Tabulated:iron/silicate", "Tabulated:water", "Tabulated:H-He envelope")
     num_layers = config['Calculations']['num_layers']  # Number of radial layers for calculations
 
     # Parameters for the iterative solution process

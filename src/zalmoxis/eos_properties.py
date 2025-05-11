@@ -1,6 +1,6 @@
 # --- Material Properties for iron/silicate planets according to Seager et al. (2007) ---
 ## only rho0 and eos_file are used in the code and fact checked
-material_properties = {
+material_properties_iron_silicate_planets = {
     "mantle": {
         # Lower mantle properties based on bridgmanite and ferropericlase
         "rho0": 4100, # From Table 1 of Seager et al. (2007) for bridgmanite in kg/m^3
@@ -68,7 +68,7 @@ material_properties_water_planets = {
 }
 
 # --- Material Properties for planets with H/He gas envelopes according to Seager et al. (2007) and based on zero-temperature EOS for an H/He mixture from Chabrier_2019 ---
-material_properties_gas_envelope = {
+material_properties_H_He_envelope = {
     "core": {
         "iron_shell": {
             # Inner core layer composed of Fe
