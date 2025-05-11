@@ -128,10 +128,10 @@ def main(temp_config_path=None, id_mass=None):
         for i in range(num_layers):
             if radii[i] < cmb_radius:
                 # Core (simplified initial guess)
-                density[i] = material_properties["core"]["rho0"]
+                density[i] = 0
             else:
                 # Mantle (simplified initial guess)
-                density[i] = material_properties["mantle"]["rho0"]
+                density[i] = 0
 
         for inner_iter in range(max_iterations_inner): # Inner loop for density adjustment
             old_density = density.copy() # Store the old density for convergence check
@@ -239,7 +239,7 @@ def main(temp_config_path=None, id_mass=None):
     average_density = calculated_mass / (4/3 * math.pi * planet_radius**3)
 
     # Calculate the temperature profile 
-    temperature = calculate_temperature(radii, cmb_radius, 300, material_properties, gravity, density, material_properties["mantle"]["K0"], dr=planet_radius/num_layers)
+    #temperature = calculate_temperature(radii, cmb_radius, 300, material_properties, gravity, density, material_properties["mantle"]["K0"], dr=planet_radius/num_layers)
 
     print("Exoplanet Internal Structure Model (Mass Only Input)")
     print("----------------------------------------------------------------------")
