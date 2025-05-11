@@ -1,4 +1,5 @@
-# --- Material Properties ---
+# --- Material Properties for iron/silicate planets according to Seager et al. (2007) ---
+## only rho0 and eos_file are used in the code and fact checked
 material_properties = {
     "mantle": {
         # Lower mantle properties based on bridgmanite and ferropericlase
@@ -23,7 +24,7 @@ material_properties = {
         "eos_file": "../../data/eos_seager07_iron.txt" # Name of the file with tabulated EOS data
     }
 }
-
+# --- Parameters for the analytical EOS according to Seager et al. (2007) ---
 analytical_eos_Seager07_parameters = {
     "Fe": {
         # For Fe(alpha) phase of iron
@@ -42,5 +43,26 @@ analytical_eos_Seager07_parameters = {
         "rho0": 1460.00,  # kg/m^3
         "c": 0.00311,  # kg/m^3/Pa^n
         "n": 0.513,  # dimensionless
+    }
+}
+
+# --- Material Properties for water planets according to Seager et al. (2007) ---
+material_properties_water_planets = {
+    "mantle": {
+        "bridgmanite_shell": {
+            # Lower mantle properties based on bridgmanite
+            "rho0": 4100,  # From Table 1 of Seager et al. (2007) for bridgmanite
+            "eos_file": "../../data/eos_seager07_silicate.txt"  # Name of the file with tabulated EOS data
+        },
+        "water_ice_layer": {
+            # Outer water ice layer in ice VII phase
+            "rho0": 1460,  # From Table 1 of Seager et al. (2007) for H2O in ice VII phase
+            "eos_file": "../../data/eos_seager07_water.txt"  # Name of the file with tabulated EOS data
+        }
+    },
+    "core": {
+        # For liquid iron alloy outer core
+        "rho0": 8300,  # From Table 1 of Seager et al. (2007) for the epsilon phase of iron of Fe
+        "eos_file": "../../data/eos_seager07_iron.txt"  # Name of the file with tabulated EOS data
     }
 }
