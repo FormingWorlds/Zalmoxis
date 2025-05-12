@@ -100,8 +100,6 @@ def main(temp_config_path=None, id_mass=None):
     radius_guess = 1000*(7030-1840*weight_iron_fraction)*(planet_mass/earth_mass)**0.282 # Initial guess for the interior planet radius [m] based on the scaling law in Noack et al. 2020
     cmb_mass = 0 # Initial guess for the core-mantle boundary mass [kg]
     inner_mantle_mass = 0 # Initial guess for the inner mantle mass [kg]
-    cmb_mass_previous = cmb_mass # Initial guess for the previous core-mantle boundary mass [kg]
-    inner_mantle_mass_previous = inner_mantle_mass # Initial guess for the previous inner mantle mass [kg]
     
     # Initialize temperature profile
     temperature = np.zeros(num_layers)
@@ -123,8 +121,8 @@ def main(temp_config_path=None, id_mass=None):
         # Setup initial guess for the core-mantle boundary mass
         cmb_mass = core_mass_fraction * planet_mass
 
-        # Setup initial guess for the inner mantle mass
-        inner_mantle_mass = inner_mantle_mass_fraction * planet_mass
+        # Setup initial guess for the inner mantle boundary mass 
+        inner_mantle_mass = (core_mass_fraction + inner_mantle_mass_fraction) * planet_mass
 
         # Setup initial guess for the pressure at the center of the planet (needed for solving the ODEs)
         pressure[0] = earth_center_pressure
@@ -181,7 +179,7 @@ def main(temp_config_path=None, id_mass=None):
                     if mass_enclosed[i] < cmb_mass:
                         # Core
                         material = "core"
-                    elif mass_enclosed[i] < cmb_mass+inner_mantle_mass:
+                    elif mass_enclosed[i] < inner_mantle_mass:
                         # Inner mantle 
                         material = "bridgmanite_shell"
                     else:
@@ -192,7 +190,7 @@ def main(temp_config_path=None, id_mass=None):
                     if mass_enclosed[i] < cmb_mass:
                         # Core
                         material = "core" 
-                    elif mass_enclosed[i] < cmb_mass+inner_mantle_mass:
+                    elif mass_enclosed[i] < inner_mantle_mass:
                         # Inner mantle
                         material = "bridgmanite_layer"
                     else:
@@ -228,25 +226,24 @@ def main(temp_config_path=None, id_mass=None):
         # Update the core-mantle boundary mass based on the core mass fraction and calculated total interior mass of the planet
         cmb_mass = core_mass_fraction * calculated_mass
 
-        # Calculate relative differences of the calculated total interior mass and core-mantle boundary radius
+        # Update the inner mantle mass based on the inner mantle mass fraction and calculated total interior mass of the planet
+        inner_mantle_mass = (core_mass_fraction + inner_mantle_mass_fraction) * calculated_mass
+
+        # Calculate relative differences of the calculated total interior mass
         relative_diff_outer_mass = abs((calculated_mass - planet_mass) / planet_mass)
-        relative_diff_cmb_mass = abs((cmb_mass - cmb_mass_previous) / cmb_mass)
 
         # Check for convergence of the calculated total interior mass and core-mantle boundary radius of the planet
-        if relative_diff_outer_mass < tolerance_outer and relative_diff_cmb_mass < tolerance_outer:
-            print(f"Outer loop (cmb radius and total mass) converged after {outer_iter + 1} iterations.")
+        if relative_diff_outer_mass < tolerance_outer:
+            print(f"Outer loop (total mass) converged after {outer_iter + 1} iterations.")
             break  # Exit the outer loop
         
-        # Update previous core-mantle boundary radius for the next iteration
-        cmb_mass_previous = cmb_mass
-
         # End timing the outer loop
         end_time = time.time()
         print(f"Outer iteration {outer_iter+1} took {end_time - start_time:.2f} seconds")
 
         # Check if maximum iterations for outer loop are reached
         if outer_iter == max_iterations_outer - 1:
-            print(f"Warning: Maximum outer iterations ({max_iterations_outer}) reached. Radius and cmb may not be fully converged.")
+            print(f"Warning: Maximum outer iterations ({max_iterations_outer}) reached. Total mass may not be fully converged.")
 
     # Extract the final calculated total interior radius of the planet 
     planet_radius = radius_guess
@@ -270,7 +267,8 @@ def main(temp_config_path=None, id_mass=None):
     print(f"Pressure at Core-Mantle Boundary (CMB): {pressure[cmb_index]:.2e} Pa")
     print(f"Pressure at Center: {pressure[0]:.2e} Pa")
     print(f"Average Density: {average_density:.2f} kg/m^3")
-    print(f"CMB Mass Fraction: {cmb_mass / calculated_mass:.2f}")
+    print(f"CMB Mass Fraction: {cmb_mass / calculated_mass:.3f}")
+    print(f"Inner Mantle Mass Fraction: {(inner_mantle_mass - cmb_mass) / calculated_mass:.3f}")
     print(f"Calculated Core Radius Fraction: {cmb_radius / planet_radius:.2f}")
 
     # --- Save output data to a file ---

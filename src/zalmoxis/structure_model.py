@@ -37,7 +37,7 @@ def coupled_odes(radius, y, cmb_mass, inner_mantle_mass, EOS_CHOICE, interpolati
         if mass < cmb_mass:
             # Core
             material = "core"
-        elif mass < cmb_mass+inner_mantle_mass:
+        elif mass < inner_mantle_mass:
             # Inner mantle 
             material = "bridgmanite_shell"
         else:
@@ -48,7 +48,7 @@ def coupled_odes(radius, y, cmb_mass, inner_mantle_mass, EOS_CHOICE, interpolati
         if mass < cmb_mass:
             # Core
             material = "core" 
-        elif mass < cmb_mass+inner_mantle_mass:
+        elif mass < inner_mantle_mass:
             # Inner mantle
             material = "bridgmanite_layer"
         else:

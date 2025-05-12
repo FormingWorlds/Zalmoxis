@@ -131,20 +131,30 @@ def plot_profiles_all_in_one(target_mass_array, choice):
 
     elif choice == "default":
         pass
-    elif choice == "Seager":
-        # Read data from Seager et al. (2007) for comparison
-        seager_radii_for_densities = []
-        seager_densities = []
+    elif choice == "SeagerEarth":
+        # Read data from Seager et al. (2007) for Earth-like super-Earths
+        seagerEarth_radii_for_densities = []
+        seagerEarth_densities = []
 
-        with open("../../../data/radiusdensitySeagerEarth.txt", 'r') as seager_file:
-            for line in seager_file:
+        with open("../../../data/radiusdensitySeagerEarth.txt", 'r') as seagerEarth_file:
+            for line in seagerEarth_file:
                 radius, density = map(float, line.split(','))
-                seager_radii_for_densities.append(radius*1000) # Convert to km
-                seager_densities.append(density*1000) # Convert to kg/m^3
+                seagerEarth_radii_for_densities.append(radius*1000) # Convert to km
+                seagerEarth_densities.append(density*1000) # Convert to kg/m^3
+    elif choice == "Seagerwater":
+        # Read data from Seager et al. (2007) for water planets
+        seagerwater_radii_for_densities = []
+        seagerwater_densities = []
+
+        with open("../../../data/radiusdensitySeagerwater.txt", 'r') as seagerwater_file:
+            for line in seagerwater_file:
+                radius, density = map(float, line.split(','))
+                seagerwater_radii_for_densities.append(radius*1000) # Convert to km
+                seagerwater_densities.append(density*1000) # Convert to kg/m^3
     elif choice == "custom":
         pass
     else:
-        raise ValueError("Invalid choice. Please select 'Wagner', 'Boujibar', or 'default'.")
+        raise ValueError("Invalid choice. Please select 'Wagner', 'Boujibar', 'SeagerEarth', 'Seagerwater' or 'default'.")
 
     # Create a colormap based on the id_mass values
     cmap = cm.plasma
@@ -163,8 +173,10 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         axs[0, 0].scatter(boujibar_radii_for_densities, boujibar_densities, color='black', s=1, label='Earth-like super-Earths (Boujibar et al. 2020)')
     elif choice == "default":
         pass
-    elif choice == "Seager":
-        axs[0, 0].scatter(seager_radii_for_densities, seager_densities, color='black', s=5, label='Earth-like super-Earths (Seager et al. 2007)', zorder=10)           
+    elif choice == "SeagerEarth":
+        axs[0, 0].scatter(seagerEarth_radii_for_densities, seagerEarth_densities, color='black', s=5, label='Earth-like super-Earths (Seager et al. 2007)', zorder=10)         
+    elif choice == "Seagerwater":
+        axs[0, 0].scatter(seagerwater_radii_for_densities, seagerwater_densities, color='black', s=5, label='Earth-like super-Earths (Seager et al. 2007)', zorder=10)             
     elif choice == "custom":
         pass
     axs[0, 0].set_xlabel("Radius (km)")
@@ -182,7 +194,9 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         pass
     elif choice == "default":
         pass
-    elif choice == "Seager":
+    elif choice == "SeagerEarth":
+        pass
+    elif choice == "Seagerwater":
         pass
     elif choice == "custom":
         pass
@@ -201,8 +215,10 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         axs[1, 0].scatter(boujibar_radii_for_pressures, boujibar_pressures, color='black', s=1, label='Earth-like super-Earths (Boujibar et al. 2020)')
     elif choice == "default":
         pass
-    elif choice == "Seager":
+    elif choice == "SeagerEarth":
         pass    
+    elif choice == "Seagerwater":
+        pass
     elif choice == "custom":
         pass
     axs[1, 0].set_xlabel("Radius (km)")

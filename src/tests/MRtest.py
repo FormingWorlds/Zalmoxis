@@ -7,7 +7,7 @@ from src.zalmoxis.plots.plot_profiles_all_in_one import plot_profiles_all_in_one
 from concurrent.futures import ProcessPoolExecutor
 import time
 
-# Run file via command line: python -m src.tests.MRtest Wagner/Boujibar/default/Seager/custom
+# Run file via command line: python -m src.tests.MRtest Wagner/Boujibar/default/SeagerEarth/custom
 
 # Function to run the main function with a temporary configuration file
 def run_zalmoxis(id_mass=None):
@@ -73,7 +73,7 @@ def MRtest(choice):
         of all planets in one plot.
 
         Parameters:
-        choice (str): Choice of comparison data. Options are 'Wagner', 'Boujibar', 'default', 'Seager', or 'custom'.
+        choice (str): Choice of comparison data. Options are 'Wagner', 'Boujibar', 'default', 'SeagerEarth', or 'custom'.
 
         Raises:
         ValueError: If an invalid choice is provided for the comparison data.
@@ -100,7 +100,9 @@ def MRtest(choice):
     elif choice == "default":
         print("No choice selected for the comparison, defaulting to 1 to 10 Earth masses simulation.")
         target_mass_array = range(1, 11)
-    elif choice == "Seager":
+    elif choice == "SeagerEarth":
+        target_mass_array = [1, 5, 10, 50]
+    elif choice == "Seagerwater":
         target_mass_array = [1, 5, 10, 50]
     elif choice == "custom":
         target_mass_array = range(1,51,1)
