@@ -5,7 +5,7 @@ planet_mass = 5.972e24              #  kg (Earth = 5.972e24)
 
 [AssumptionsAndInitialGuesses]
 core_mass_fraction = 0.32           # Core mass fraction of total mass
-weight_iron_fraction = 0.35         # Weight iron fraction
+weight_iron_fraction = 0.35         # Weight iron fraction for the planet (0.35 for Earth)
 
 [EOS]
 choice                  = "Tabulated:water"  # Options: "Birch-Murnaghan", "Mie-Gruneisen-Debye", "Tabulated:iron/silicate", "Tabulated:water", "Tabulated:H-He envelope"
