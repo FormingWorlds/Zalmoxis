@@ -14,7 +14,7 @@ def download_data():
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
     # Define URL, token, and paths
-    download_url = "https://osf.io/download/823hq/"
+    download_url = "https://osf.io/download/6r43z/"
     download_path = '../../data.zip'
     extract_folder = '../../data'
 
