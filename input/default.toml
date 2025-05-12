@@ -4,29 +4,29 @@
 planet_mass = 5.972e24              #  kg (Earth = 5.972e24)
 
 [AssumptionsAndInitialGuesses]
-core_mass_fraction = 0.32           # Core mass fraction of total mass
+core_mass_fraction = 0.325           # Core mass fraction of total mass
+inner_mantle_mass_fraction = 0.485  # Inner mantle mass fraction of total mass
 weight_iron_fraction = 0.35         # Weight iron fraction for the planet (0.35 for Earth)
 
 [EOS]
-choice                  = "Tabulated:water"  # Options: "Birch-Murnaghan", "Mie-Gruneisen-Debye", "Tabulated:iron/silicate", "Tabulated:water", "Tabulated:H-He envelope"
+choice                  = "Tabulated:iron/silicate"  # Options: "Birch-Murnaghan", "Mie-Gruneisen-Debye", "Tabulated:iron/silicate", "Tabulated:water", "Tabulated:H-He envelope"
 
 [Calculations]
 num_layers              = 150       # Number of planet layers
 
 [IterativeProcess]
-max_iterations_outer    = 100      # Maximum number of iterations for the outer loop
-tolerance_outer         = 1e-4     # Convergence tolerance for the outer loop
-tolerance_radius        = 1e-4     # Convergence tolerance for the cmb radius calculation in the outer loop
+max_iterations_outer    = 20       # Maximum number of iterations for the outer loop
+tolerance_outer         = 1e-3     # Convergence tolerance for the outer loop
 max_iterations_inner    = 100      # Maximum number of iterations for the inner loop
 tolerance_inner         = 1e-4     # Convergence tolerance for the inner loop
-relative_tolerance      = 1e-3     # Relative tolerance for solve_ivp
+relative_tolerance      = 1e-5     # Relative tolerance for solve_ivp
 absolute_tolerance      = 1e-6     # Absolute tolerance for solve_ivp
 
 [PressureAdjustment]
 target_surface_pressure = 101325    # Pa, 1 atm, for example
-pressure_tolerance      = 1000      # Pa, tolerance for surface pressure matching
-max_iterations_pressure = 100       # Maximum iterations for pressure adjustment
-pressure_adjustment_factor = 0.95   # Reduction factor for pressure adjustment
+pressure_tolerance      = 1e11      # Pa, tolerance for surface pressure matching
+max_iterations_pressure = 200       # Maximum iterations for pressure adjustment
+pressure_adjustment_factor = 1.1   # Reduction factor for pressure adjustment
 
 [Output]
 data_enabled            = true      # Produces output data

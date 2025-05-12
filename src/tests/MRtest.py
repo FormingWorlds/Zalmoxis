@@ -44,7 +44,6 @@ def run_zalmoxis(id_mass=None):
     config['Calculations']['num_layers'] = 150
     config['IterativeProcess']['max_iterations_outer'] = 20
     config['IterativeProcess']['tolerance_outer'] = 1e-3
-    config['IterativeProcess']['tolerance_radius'] = 1e-3
     config['IterativeProcess']['tolerance_inner'] = 1e-4
     config['IterativeProcess']['relative_tolerance'] = 1e-5
     config['IterativeProcess']['absolute_tolerance'] = 1e-6 

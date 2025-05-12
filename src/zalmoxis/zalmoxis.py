@@ -73,6 +73,7 @@ def main(temp_config_path=None, id_mass=None):
     # Access parameters from the configuration file
     planet_mass = config['InputParameter']['planet_mass']  # Mass of the planet (kg)
     core_mass_fraction = config['AssumptionsAndInitialGuesses']['core_mass_fraction']  # Initial guess for the core mass as a fraction of the total mass
+    inner_mantle_mass_fraction = config['AssumptionsAndInitialGuesses']['inner_mantle_mass_fraction']  # Initial guess for the inner mantle mass as a fraction of the total mass
     weight_iron_fraction = config['AssumptionsAndInitialGuesses']['weight_iron_fraction']  # Initial guess for the weight fraction of iron in the core
     EOS_CHOICE = config['EOS']['choice']  # Choice of equation of state (e.g., "Birch-Murnaghan", "Mie-Gruneisen-Debye", "Tabulated:iron/silicate", "Tabulated:water", "Tabulated:H-He envelope")
     num_layers = config['Calculations']['num_layers']  # Number of radial layers for calculations
@@ -80,7 +81,6 @@ def main(temp_config_path=None, id_mass=None):
     # Parameters for the iterative solution process
     max_iterations_outer = config['IterativeProcess']['max_iterations_outer']  # Maximum iterations for the outer loop (radius and CMB adjustment)
     tolerance_outer = config['IterativeProcess']['tolerance_outer']  # Convergence tolerance for the outer loop
-    tolerance_radius = config['IterativeProcess']['tolerance_radius']  # Convergence tolerance for the core radius
     max_iterations_inner = config['IterativeProcess']['max_iterations_inner']  # Maximum iterations for the inner loop (density profile)
     tolerance_inner = config['IterativeProcess']['tolerance_inner']  # Convergence tolerance for the inner loop
     relative_tolerance = config['IterativeProcess']['relative_tolerance']  # Relative tolerance for integration in solve_ivp
@@ -96,10 +96,12 @@ def main(temp_config_path=None, id_mass=None):
     data_output_enabled = config['Output']['data_enabled']  # Flag to enable saving data to a file (True/False)
     plotting_enabled = config['Output']['plots_enabled']  # Flag to enable plotting the results (True/False)
 
-    # Setup initial guesses for the planet radius and core-mantle boundary radius
+    # Setup initial guesses for the planet radius and core-mantle boundary mass
     radius_guess = 1000*(7030-1840*weight_iron_fraction)*(planet_mass/earth_mass)**0.282 # Initial guess for the interior planet radius [m] based on the scaling law in Noack et al. 2020
-    cmb_radius = 0 # Initial guess for the core-mantle boundary radius [m]
-    cmb_radius_previous = cmb_radius # Initial guess for the previous core-mantle boundary radius [m]
+    cmb_mass = 0 # Initial guess for the core-mantle boundary mass [kg]
+    inner_mantle_mass = 0 # Initial guess for the inner mantle mass [kg]
+    cmb_mass_previous = cmb_mass # Initial guess for the previous core-mantle boundary mass [kg]
+    inner_mantle_mass_previous = inner_mantle_mass # Initial guess for the previous inner mantle mass [kg]
     
     # Initialize temperature profile
     temperature = np.zeros(num_layers)
@@ -108,6 +110,7 @@ def main(temp_config_path=None, id_mass=None):
     for outer_iter in range(max_iterations_outer): # Outer loop for radius and mass convergence
         # Start timing the outer loop
         start_time = time.time()
+
         # Setup initial guess for the radial grid based on the radius guess
         radii = np.linspace(0, radius_guess, num_layers)
 
@@ -120,17 +123,11 @@ def main(temp_config_path=None, id_mass=None):
         # Setup initial guess for the core-mantle boundary mass
         cmb_mass = core_mass_fraction * planet_mass
 
+        # Setup initial guess for the inner mantle mass
+        inner_mantle_mass = inner_mantle_mass_fraction * planet_mass
+
         # Setup initial guess for the pressure at the center of the planet (needed for solving the ODEs)
         pressure[0] = earth_center_pressure
-        
-        # Setup initial guess for the density grid
-        for i in range(num_layers):
-            if radii[i] < cmb_radius:
-                # Core (simplified initial guess)
-                density[i] = 0
-            else:
-                # Mantle (simplified initial guess)
-                density[i] = 0
 
         for inner_iter in range(max_iterations_inner): # Inner loop for density adjustment
             old_density = density.copy() # Store the old density for convergence check
@@ -147,7 +144,7 @@ def main(temp_config_path=None, id_mass=None):
                 y0 = [0, 0, pressure_guess] 
 
                 # Solve the ODEs using solve_ivp
-                sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, EOS_CHOICE, interpolation_cache), 
+                sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, inner_mantle_mass, EOS_CHOICE, interpolation_cache), 
                     (radii[0], radii[-1]), y0, t_eval=radii, rtol=relative_tolerance, atol=absolute_tolerance, method='RK45', dense_output=True)
 
                 # Extract mass, gravity, and pressure grids from the solution
@@ -165,19 +162,42 @@ def main(temp_config_path=None, id_mass=None):
                 if abs(pressure_diff) < pressure_tolerance and np.all(pressure > 0):
                     print(f"Surface pressure converged after {pressure_iter + 1} iterations and all pressures are positive.")
                     break  # Exit the pressure adjustment loop
-        
+                
                 # Update the pressure guess at the center of the planet based on the pressure difference at the surface using an adjustment factor
                 pressure_guess -= pressure_diff * pressure_adjustment_factor
 
-            # Update density grid based on the calculated pressure and mass enclosed
+            # Update density grid based on the mass enclosed within a certain mass fraction
             for i in range(num_layers):
-                # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
-                if mass_enclosed[i] < cmb_mass:
-                    # Core
-                    material = "core"
-                else:
-                    # Mantle
-                    material = "mantle"
+                if EOS_CHOICE == "Tabulated:iron/silicate":
+                    # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
+                    if mass_enclosed[i] < cmb_mass:
+                        # Core
+                        material = "core"
+                    else:
+                        # Mantle
+                        material = "mantle"
+                elif EOS_CHOICE == "Tabulated:water":
+                    # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
+                    if mass_enclosed[i] < cmb_mass:
+                        # Core
+                        material = "core"
+                    elif mass_enclosed[i] < cmb_mass+inner_mantle_mass:
+                        # Inner mantle 
+                        material = "bridgmanite_shell"
+                    else:
+                        # Outer layer
+                        material = "water_ice_layer"
+                elif EOS_CHOICE == "Tabulated:H-He envelope":
+                    # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
+                    if mass_enclosed[i] < cmb_mass:
+                        # Core
+                        material = "core" 
+                    elif mass_enclosed[i] < cmb_mass+inner_mantle_mass:
+                        # Inner mantle
+                        material = "bridgmanite_layer"
+                    else:
+                        # Outer envelope
+                        material = "H_He_envelope"
 
                 # Calculate the new density using the equation of state
                 new_density = calculate_density(pressure[i], material, EOS_CHOICE)
@@ -209,16 +229,16 @@ def main(temp_config_path=None, id_mass=None):
         cmb_mass = core_mass_fraction * calculated_mass
 
         # Calculate relative differences of the calculated total interior mass and core-mantle boundary radius
-        relative_diff_outer = abs((calculated_mass - planet_mass) / planet_mass)
-        relative_diff_radius = abs((cmb_radius - cmb_radius_previous) / cmb_radius)
+        relative_diff_outer_mass = abs((calculated_mass - planet_mass) / planet_mass)
+        relative_diff_cmb_mass = abs((cmb_mass - cmb_mass_previous) / cmb_mass)
 
         # Check for convergence of the calculated total interior mass and core-mantle boundary radius of the planet
-        if relative_diff_outer < tolerance_outer and relative_diff_radius < tolerance_radius:
+        if relative_diff_outer_mass < tolerance_outer and relative_diff_cmb_mass < tolerance_outer:
             print(f"Outer loop (cmb radius and total mass) converged after {outer_iter + 1} iterations.")
             break  # Exit the outer loop
         
         # Update previous core-mantle boundary radius for the next iteration
-        cmb_radius_previous = cmb_radius
+        cmb_mass_previous = cmb_mass
 
         # End timing the outer loop
         end_time = time.time()

@@ -117,7 +117,7 @@ def get_tabulated_eos(pressure, material_dictionary, material, interpolation_fun
 def calculate_density(pressure, material, eos_choice, interpolation_functions={}):
     """Calculates density with caching for tabulated EOS."""
 
-    T = 0  # Temporary fix for tabulated EOS
+    #T = 0  # Temporary fix for tabulated EOS
 
     if eos_choice == "Mie-Gruneisen-Debye":
         #density = mie_gruneisen_debye(pressure, props["P0"], props["rho0"], props["K0"], props["K0prime"], props["gamma0"], props["theta0"], props["V0"], T) #not checked

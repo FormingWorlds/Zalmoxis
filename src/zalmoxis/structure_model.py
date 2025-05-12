@@ -5,7 +5,7 @@ from .eos_functions import calculate_density
 from .constants import *
 
 # Define the coupled ODEs for the structure model
-def coupled_odes(radius, y, cmb_mass, eos_choice, interpolation_cache):
+def coupled_odes(radius, y, cmb_mass, inner_mantle_mass, EOS_CHOICE, interpolation_cache):
     """
     Calculate the derivatives of mass, gravity, and pressure with respect to radius for a planetary model.
 
@@ -23,14 +23,40 @@ def coupled_odes(radius, y, cmb_mass, eos_choice, interpolation_cache):
     # Unpack the state vector
     mass, gravity, pressure = y
 
-    # Define material based on enclosed mass up to the core-mantle boundary
-    if mass < cmb_mass:
-        material = "core"
-    else:
-        material = "mantle" 
+    # Define material based on enclosed mass within a certain mass fraction
+    if EOS_CHOICE == "Tabulated:iron/silicate":
+        # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
+        if mass < cmb_mass:
+            # Core
+            material = "core"
+        else:
+            # Mantle
+            material = "mantle"
+    elif EOS_CHOICE == "Tabulated:water":
+        # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
+        if mass < cmb_mass:
+            # Core
+            material = "core"
+        elif mass < cmb_mass+inner_mantle_mass:
+            # Inner mantle 
+            material = "bridgmanite_shell"
+        else:
+            # Outer layer
+            material = "water_ice_layer"
+    elif EOS_CHOICE == "Tabulated:H-He envelope":
+        # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
+        if mass < cmb_mass:
+            # Core
+            material = "core" 
+        elif mass < cmb_mass+inner_mantle_mass:
+            # Inner mantle
+            material = "bridgmanite_layer"
+        else:
+            # Outer envelope
+            material = "H_He_envelope" 
 
     # Calculate density at the current radius, using pressure from y
-    current_density = calculate_density(pressure, material, eos_choice, interpolation_cache)
+    current_density = calculate_density(pressure, material, EOS_CHOICE, interpolation_cache)
 
     # Handle potential errors in density calculation
     if current_density is None:

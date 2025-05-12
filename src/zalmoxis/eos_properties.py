@@ -1,17 +1,6 @@
 # --- Material Properties for iron/silicate planets according to Seager et al. (2007) ---
 ## only rho0 and eos_file are used in the code and fact checked
 material_properties_iron_silicate_planets = {
-    "mantle": {
-        # Lower mantle properties based on bridgmanite and ferropericlase
-        "rho0": 4100, # From Table 1 of Seager et al. (2007) for bridgmanite in kg/m^3
-        "K0": 245e9,  # Bulk modulus (Pa)
-        "K0prime": 3.9,  # Pressure derivative of the bulk modulus
-        "gamma0": 1.5,  # Gruneisen parameter
-        "theta0": 1100,  # Debye temperature (K)
-        "V0": 1 / 4110,  # Specific volume at reference state
-        "P0": 24e9,  # Reference pressure (Pa)
-        "eos_file": "../../data/eos_seager07_silicate.txt" # Name of the file with tabulated EOS data
-    },
     "core": {
         # For liquid iron alloy outer core
         "rho0": 8300,  # From Table 1 of Seager et al. (2007) for the epsilon phase of iron of Fe in kg/m^3
@@ -22,6 +11,17 @@ material_properties_iron_silicate_planets = {
         "V0": 1 / 9900,  # Specific volume at reference state
         "P0": 135e9,  # Reference pressure (Pa)
         "eos_file": "../../data/eos_seager07_iron.txt" # Name of the file with tabulated EOS data
+    },
+    "mantle": {
+        # Lower mantle properties based on bridgmanite and ferropericlase
+        "rho0": 4100, # From Table 1 of Seager et al. (2007) for bridgmanite in kg/m^3
+        "K0": 245e9,  # Bulk modulus (Pa)
+        "K0prime": 3.9,  # Pressure derivative of the bulk modulus
+        "gamma0": 1.5,  # Gruneisen parameter
+        "theta0": 1100,  # Debye temperature (K)
+        "V0": 1 / 4110,  # Specific volume at reference state
+        "P0": 24e9,  # Reference pressure (Pa)
+        "eos_file": "../../data/eos_seager07_silicate.txt" # Name of the file with tabulated EOS data
     }
 }
 # --- Parameters for the analytical EOS according to Seager et al. (2007) ---
@@ -48,40 +48,36 @@ analytical_eos_Seager07_parameters = {
 
 # --- Material Properties for water planets according to Seager et al. (2007) ---
 material_properties_water_planets = {
-    "mantle": {
-        "bridgmanite_shell": {
-            # Lower mantle properties based on bridgmanite
-            "rho0": 4100,  # From Table 1 of Seager et al. (2007) for bridgmanite in kg/m^3
-            "eos_file": "../../data/eos_seager07_silicate.txt"  # Name of the file with tabulated EOS data
-        },
-        "water_ice_layer": {
-            # Outer water ice layer in ice VII phase
-            "rho0": 1460,  # From Table 1 of Seager et al. (2007) for H2O in ice VII phase in kg/m^3
-            "eos_file": "../../data/eos_seager07_water.txt"  # Name of the file with tabulated EOS data
-        }
-    },
     "core": {
         # For liquid iron alloy outer core
         "rho0": 8300,  # From Table 1 of Seager et al. (2007) for the epsilon phase of iron of Fe in kg/m^3
         "eos_file": "../../data/eos_seager07_iron.txt"  # Name of the file with tabulated EOS data
+    },
+    "bridgmanite_shell": {
+            # Inner mantle properties based on bridgmanite
+            "rho0": 4100,  # From Table 1 of Seager et al. (2007) for bridgmanite in kg/m^3
+            "eos_file": "../../data/eos_seager07_silicate.txt"  # Name of the file with tabulated EOS data
+    },
+    "water_ice_layer": {
+        # Outer water ice layer in ice VII phase
+            "rho0": 1460,  # From Table 1 of Seager et al. (2007) for H2O in ice VII phase in kg/m^3
+            "eos_file": "../../data/eos_seager07_water.txt"  # Name of the file with tabulated EOS data
     }
 }
 
 # --- Material Properties for planets with H/He gas envelopes according to Seager et al. (2007) and based on zero-temperature EOS for an H/He mixture from Chabrier_2019 ---
 material_properties_H_He_envelope = {
     "core": {
-        "iron_shell": {
             # Inner core layer composed of Fe
             "rho0": 8300,  # From Table 1 of Seager et al. (2007) for the epsilon phase of iron of Fe in kg/m^3
             "eos_file": "../../data/eos_seager07_iron.txt"  # Name of the file with tabulated EOS data
-        },
-        "bridgmanite_layer": {
-            # Outer core layer composed of bridgmanite
+    },
+    "bridgmanite_layer": {
+        # Outer core layer composed of bridgmanite
             "rho0": 4100,  # From Table 1 of Seager et al. (2007) for bridgmanite in kg/m^3
             "eos_file": "../../data/eos_seager07_silicate.txt"  # Name of the file with tabulated EOS data
-        }
     },
-    "envelope": {
+    "H_He_envelope": {
         # Outer envelope composed of mixed H/He
         "rho0": None,  # Approximate value for H/He mixture based on Chabrier et al. (2019) in kg/m^3
         "eos_file": "../../data/eos_chabrier19_HHe.txt"  # Name of the file with tabulated EOS data
