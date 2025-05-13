@@ -185,7 +185,7 @@ def main(temp_config_path=None, id_mass=None):
                     else:
                         # Outer layer
                         material = "water_ice_layer"
-                elif EOS_CHOICE == "Tabulated:H-He envelope":
+                elif EOS_CHOICE == "Tabulated:H-He":
                     # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
                     if mass_enclosed[i] < cmb_mass:
                         # Core

@@ -104,6 +104,8 @@ def MRtest(choice):
         target_mass_array = [1, 5, 10, 50]
     elif choice == "Seagerwater":
         target_mass_array = [1, 5, 10, 50]
+    elif choice == "SeagerHHe":
+        target_mass_array = [1.2, 6, 12, 60]
     elif choice == "custom":
         target_mass_array = range(1,51,1)
     else:

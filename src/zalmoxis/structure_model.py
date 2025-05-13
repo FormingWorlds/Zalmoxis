@@ -43,7 +43,7 @@ def coupled_odes(radius, y, cmb_mass, inner_mantle_mass, EOS_CHOICE, interpolati
         else:
             # Outer layer
             material = "water_ice_layer"
-    elif EOS_CHOICE == "Tabulated:H-He envelope":
+    elif EOS_CHOICE == "Tabulated:H-He":
         # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
         if mass < cmb_mass:
             # Core

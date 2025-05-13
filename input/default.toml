@@ -4,12 +4,12 @@
 planet_mass = 5.972e24              #  kg (Earth = 5.972e24)
 
 [AssumptionsAndInitialGuesses]
-core_mass_fraction = 0.065       # Core mass fraction of total mass
-inner_mantle_mass_fraction = 0.485  # Inner mantle mass fraction of total mass
+core_mass_fraction = 0.325      # Core mass fraction of total mass
+inner_mantle_mass_fraction = 0  # Inner mantle mass fraction of total mass
 weight_iron_fraction = 0.35         # Weight iron fraction for the planet (0.35 for Earth)
 
 [EOS]
-choice                  = "Tabulated:water"  # Options: "Birch-Murnaghan", "Mie-Gruneisen-Debye", "Tabulated:iron/silicate", "Tabulated:water", "Tabulated:H-He envelope"
+choice                  = "Tabulated:iron/silicate"  # Options: "Birch-Murnaghan", "Mie-Gruneisen-Debye", "Tabulated:iron/silicate", "Tabulated:water", "Tabulated:H-He"
 
 [Calculations]
 num_layers              = 150       # Number of planet layers

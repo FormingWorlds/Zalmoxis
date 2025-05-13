@@ -129,7 +129,7 @@ def calculate_density(pressure, material, eos_choice, interpolation_functions={}
         return get_tabulated_eos(pressure, material_properties_iron_silicate_planets, material, interpolation_functions)
     elif eos_choice == "Tabulated:water":
         return get_tabulated_eos(pressure, material_properties_water_planets, material, interpolation_functions)
-    elif eos_choice == "Tabulated:H-He envelope":
+    elif eos_choice == "Tabulated:H-He":
         return get_tabulated_eos(pressure, material_properties_H_He_envelope, material, interpolation_functions)
     else:
         raise ValueError("Invalid EOS choice.")
