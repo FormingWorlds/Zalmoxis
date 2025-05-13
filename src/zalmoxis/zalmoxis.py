@@ -232,7 +232,7 @@ def main(temp_config_path=None, id_mass=None):
         # Calculate relative differences of the calculated total interior mass
         relative_diff_outer_mass = abs((calculated_mass - planet_mass) / planet_mass)
 
-        # Check for convergence of the calculated total interior mass and core-mantle boundary radius of the planet
+        # Check for convergence of the calculated total interior mass 
         if relative_diff_outer_mass < tolerance_outer:
             print(f"Outer loop (total mass) converged after {outer_iter + 1} iterations.")
             break  # Exit the outer loop
@@ -246,30 +246,30 @@ def main(temp_config_path=None, id_mass=None):
             print(f"Warning: Maximum outer iterations ({max_iterations_outer}) reached. Total mass may not be fully converged.")
 
     # Extract the final calculated total interior radius of the planet 
-    planet_radius = radius_guess
+    planet_radius = radii[-1]
 
     # Extract the index of the core-mantle boundary mass in the mass array
     cmb_index = np.argmax(mass_enclosed >= cmb_mass)
 
     # Calculate the average density of the planet using the calculated mass and radius
-    average_density = calculated_mass / (4/3 * math.pi * planet_radius**3)
+    average_density = mass_enclosed[-1] / (4/3 * math.pi * planet_radius**3)
 
     # Calculate the temperature profile 
     #temperature = calculate_temperature(radii, cmb_radius, 300, material_properties, gravity, density, material_properties["mantle"]["K0"], dr=planet_radius/num_layers)
 
     print("Exoplanet Internal Structure Model (Mass Only Input)")
     print("----------------------------------------------------------------------")
-    print(f"Calculated Planet Mass: {calculated_mass:.2e} kg")
-    print(f"Calculated Planet Radius: {planet_radius:.2e} m")
-    print(f"Core Radius: {cmb_radius:.2e} m")
+    print(f"Calculated Planet Mass: {mass_enclosed[-1]:.2e} kg")
+    print(f"Calculated Planet Radius: {radii[-1]:.2e} m")
+    print(f"Core Radius: {radii[cmb_index]:.2e} m")
     print(f"Mantle Density (at CMB): {density[cmb_index]:.2f} kg/m^3")
-    print(f"Core Density (at CMB): {density[cmb_index - 1]:.2f} kg/m^3")
+    print(f"Core Density (at CMB): {density[cmb_index- 1]:.2f} kg/m^3")
     print(f"Pressure at Core-Mantle Boundary (CMB): {pressure[cmb_index]:.2e} Pa")
     print(f"Pressure at Center: {pressure[0]:.2e} Pa")
     print(f"Average Density: {average_density:.2f} kg/m^3")
-    print(f"CMB Mass Fraction: {cmb_mass / calculated_mass:.3f}")
-    print(f"Inner Mantle Mass Fraction: {(inner_mantle_mass - cmb_mass) / calculated_mass:.3f}")
-    print(f"Calculated Core Radius Fraction: {cmb_radius / planet_radius:.2f}")
+    print(f"CMB Mass Fraction: {mass_enclosed[cmb_index] / mass_enclosed[-1]:.3f}")
+    print(f"Inner Mantle Mass Fraction: {(inner_mantle_mass - mass_enclosed[cmb_index]) / mass_enclosed[-1]:.3f}")
+    print(f"Calculated Core Radius Fraction: {radii[cmb_index] / planet_radius:.2f}")
 
     # --- Save output data to a file ---
     if data_output_enabled:
