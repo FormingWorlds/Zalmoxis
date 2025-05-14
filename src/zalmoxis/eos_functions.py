@@ -32,7 +32,7 @@ import numpy as np
     return density'''
 
 
-'''# --- Temperature Profile (Adiabatic) ---
+# --- Temperature Profile (Adiabatic) ---
 
 def calculate_temperature(radii, core_radius, surface_temp, material_properties, gravity, density, K_s, dr):
     """
@@ -82,7 +82,7 @@ def calculate_temperature(radii, core_radius, surface_temp, material_properties,
         # Update temperature at the previous radius
         temperature[i - 1] = current_temp + (k1 + 2 * k2 + 2 * k3 + k4) / 6
 
-    return temperature'''
+    return temperature
 
 def get_tabulated_eos(pressure, material_dictionary, material, interpolation_functions={}):
     """

@@ -3,7 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 from .constants import *
-from .eos_functions import calculate_density
+from .eos_functions import calculate_density, calculate_temperature
+from .eos_properties import material_properties_iron_silicate_planets
 from .structure_model import coupled_odes
 from .plots.plot_profiles import plot_planet_profile_single
 from .plots.plot_eos import plot_eos_material
@@ -255,7 +256,7 @@ def main(temp_config_path=None, id_mass=None):
     average_density = mass_enclosed[-1] / (4/3 * math.pi * planet_radius**3)
 
     # Calculate the temperature profile 
-    #temperature = calculate_temperature(radii, cmb_radius, 300, material_properties, gravity, density, material_properties["mantle"]["K0"], dr=planet_radius/num_layers)
+    temperature = calculate_temperature(radii, cmb_radius, 300, material_properties_iron_silicate_planets, gravity, density, material_properties_iron_silicate_planets["mantle"]["K0"], dr=planet_radius/num_layers)
 
     print("Exoplanet Internal Structure Model (Mass Only Input)")
     print("----------------------------------------------------------------------")
@@ -292,7 +293,7 @@ def main(temp_config_path=None, id_mass=None):
 
     # --- Plotting ---
     if plotting_enabled:
-        #plot_planet_profile_single(radii, density, gravity, pressure, temperature, cmb_radius, cmb_mass, average_density, mass_enclosed, id_mass) # Plot planet profile for a single planet
+        plot_planet_profile_single(radii, density, gravity, pressure, temperature, cmb_radius, cmb_mass, average_density, mass_enclosed, id_mass) # Plot planet profile for a single planet
         eos_data_files = ['eos_seager07_iron.txt', 'eos_seager07_silicate.txt', 'eos_seager07_water.txt']  # Example files (adjust the filenames accordingly)
         eos_data_folder = "../../data/"  # Path to the folder where EOS data is stored
         plot_eos_material(eos_data_files, eos_data_folder)  # Call the EOS plotting function
