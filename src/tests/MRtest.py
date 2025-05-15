@@ -7,7 +7,7 @@ from src.zalmoxis.plots.plot_profiles_all_in_one import plot_profiles_all_in_one
 from concurrent.futures import ProcessPoolExecutor
 import time
 
-# Run file via command line: python -m src.tests.MRtest Wagner/Boujibar/default/SeagerEarth/custom
+# Run file via command line: python -m src.tests.MRtest Wagner/Boujibar/default/SeagerEarth/Seagerwater/custom
 
 # Function to run the main function with a temporary configuration file
 def run_zalmoxis(id_mass=None):
@@ -104,8 +104,6 @@ def MRtest(choice):
         target_mass_array = [1, 5, 10, 50]
     elif choice == "Seagerwater":
         target_mass_array = [1, 5, 10, 50]
-    elif choice == "SeagerHHe":
-        target_mass_array = [1.2, 6, 12, 60]
     elif choice == "custom":
         target_mass_array = range(1,51,1)
     else:

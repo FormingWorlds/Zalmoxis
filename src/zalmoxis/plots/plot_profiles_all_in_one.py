@@ -153,8 +153,6 @@ def plot_profiles_all_in_one(target_mass_array, choice):
                 seagerwater_densities.append(density*1000) # Convert to kg/m^3
     elif choice == "custom":
         pass
-    elif choice == "SeagerHHe":
-        pass
     else:
         raise ValueError("Invalid choice. Please select 'Wagner', 'Boujibar', 'SeagerEarth', 'Seagerwater', 'SeagerHHe' or 'default'.")
 
@@ -179,8 +177,6 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         axs[0, 0].scatter(seagerEarth_radii_for_densities, seagerEarth_densities, color='black', s=5, label='Earth-like super-Earths (Seager et al. 2007)', zorder=10)         
     elif choice == "Seagerwater":
         axs[0, 0].scatter(seagerwater_radii_for_densities, seagerwater_densities, color='black', s=5, label='Water planets with iron core and silicate mantles (Seager et al. 2007)', zorder=10)    
-    elif choice == "SeagerHHe":
-        pass
     elif choice == "custom":    
         pass
     axs[0, 0].set_xlabel("Radius (km)")
@@ -202,8 +198,6 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         pass
     elif choice == "Seagerwater":
         pass
-    elif choice == "SeagerHHe":
-        pass
     elif choice == "custom":
         pass
     axs[0, 1].set_xlabel("Radius (km)")
@@ -224,8 +218,6 @@ def plot_profiles_all_in_one(target_mass_array, choice):
     elif choice == "SeagerEarth":
         pass    
     elif choice == "Seagerwater":
-        pass
-    elif choice == "SeagerHHe":
         pass
     elif choice == "custom":
         pass

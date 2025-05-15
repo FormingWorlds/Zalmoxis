@@ -34,7 +34,7 @@ import numpy as np
 
 # --- Temperature Profile (Adiabatic) ---
 
-def calculate_temperature(radii, core_radius, surface_temp, material_properties, gravity, density, K_s, dr):
+'''def calculate_temperature(radii, core_radius, surface_temp, material_properties, gravity, density, K_s, dr):
     """
     Computes the temperature profile inward from the surface using the Runge-Kutta 4th order method (RK4).
     Parameters:
@@ -82,7 +82,7 @@ def calculate_temperature(radii, core_radius, surface_temp, material_properties,
         # Update temperature at the previous radius
         temperature[i - 1] = current_temp + (k1 + 2 * k2 + 2 * k3 + k4) / 6
 
-    return temperature
+    return temperature'''
 
 def get_tabulated_eos(pressure, material_dictionary, material, interpolation_functions={}):
     """
@@ -129,8 +129,6 @@ def calculate_density(pressure, material, eos_choice, interpolation_functions={}
         return get_tabulated_eos(pressure, material_properties_iron_silicate_planets, material, interpolation_functions)
     elif eos_choice == "Tabulated:water":
         return get_tabulated_eos(pressure, material_properties_water_planets, material, interpolation_functions)
-    elif eos_choice == "Tabulated:H-He":
-        return get_tabulated_eos(pressure, material_properties_H_He_envelope, material, interpolation_functions)
     else:
         raise ValueError("Invalid EOS choice.")
     

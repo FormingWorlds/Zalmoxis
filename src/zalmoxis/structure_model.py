@@ -43,17 +43,6 @@ def coupled_odes(radius, y, cmb_mass, inner_mantle_mass, EOS_CHOICE, interpolati
         else:
             # Outer layer
             material = "water_ice_layer"
-    elif EOS_CHOICE == "Tabulated:H-He":
-        # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
-        if mass < cmb_mass:
-            # Core
-            material = "core" 
-        elif mass < inner_mantle_mass:
-            # Inner mantle
-            material = "bridgmanite_layer"
-        else:
-            # Outer envelope
-            material = "H_He_envelope" 
 
     # Calculate density at the current radius, using pressure from y
     current_density = calculate_density(pressure, material, EOS_CHOICE, interpolation_cache)

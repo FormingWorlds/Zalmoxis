@@ -9,7 +9,7 @@ inner_mantle_mass_fraction = 0  # Inner mantle mass fraction of total mass
 weight_iron_fraction = 0.35         # Weight iron fraction for the planet (0.35 for Earth)
 
 [EOS]
-choice                  = "Tabulated:iron/silicate"  # Options: "Birch-Murnaghan", "Mie-Gruneisen-Debye", "Tabulated:iron/silicate", "Tabulated:water", "Tabulated:H-He"
+choice                  = "Tabulated:iron/silicate"  # Options: "Birch-Murnaghan", "Mie-Gruneisen-Debye", "Tabulated:iron/silicate", "Tabulated:water"
 
 [Calculations]
 num_layers              = 150       # Number of planet layers
