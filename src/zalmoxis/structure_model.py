@@ -13,7 +13,8 @@ def coupled_odes(radius, y, cmb_mass, inner_mantle_mass, EOS_CHOICE, interpolati
     radius (float): The current radius at which the ODEs are evaluated.
     y (list or array): The state vector containing mass, gravity, and pressure at the current radius.
     cmb_mass (float): The core-mantle boundary mass.
-    eos_choice (str): The equation of state choice for material properties.
+    inner_mantle_mass (float): The mass of the inner mantle.
+    EOS_CHOICE (str): The equation of state choice for the material.
     interpolation_cache (dict): A cache for interpolation to speed up calculations.
     num_layers (int): The number of layers in the planetary model.
 

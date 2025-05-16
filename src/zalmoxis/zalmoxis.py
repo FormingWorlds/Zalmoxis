@@ -282,7 +282,7 @@ def main(temp_config_path=None, id_mass=None):
 
     # --- Plotting ---
     if plotting_enabled:
-        #plot_planet_profile_single(radii, density, gravity, pressure, temperature, cmb_radius, cmb_mass, average_density, mass_enclosed, id_mass) # Plot planet profile for a single planet
+        plot_planet_profile_single(radii, density, gravity, pressure, temperature, cmb_radius, cmb_mass, average_density, mass_enclosed, id_mass) # Plot planet profile for a single planet
         eos_data_files = ['eos_seager07_iron.txt', 'eos_seager07_silicate.txt', 'eos_seager07_water.txt']  # Example files (adjust the filenames accordingly)
         eos_data_folder = "../../data/"  # Path to the folder where EOS data is stored
         plot_eos_material(eos_data_files, eos_data_folder)  # Call the EOS plotting function

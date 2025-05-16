@@ -15,12 +15,13 @@ Defines the basic input parameters for the planetary model.
 Contains assumptions and initial guesses for the model’s structure.  
 
 - `core_mass_fraction` - Core mass fraction of total mass.
+- 'inner_mantle_mass_fraction' - Inner mantle mass fraction of total mass.
 - `weight_iron_fraction` - Weight iron fraction.
 
 ### `EOS`  
-Specifies the equation of state (EOS) choice for planetary material properties. The `"Tabulated"` choice uses the Seager EOS data. The `"Birch-Murnaghan"` and `"Mie-Gruneisen-Debye"` choices are under development.
+Specifies the equation of state (EOS) choice for planetary material properties. The `"Tabulated:iron/silicate"` and `"Tabulated:water"` choices use the Seager EOS data for modeling two types of planets: `"Tabulated:iron/silicate"` for super-Earths with iron cores and MgSiO3 mantles and `"Tabulated:water"` for water planets (with iron cores, silicate mantles and an outer water ice layer). The `"Birch-Murnaghan"` and `"Mie-Gruneisen-Debye"` choices are under development.
 
-- `choice` - Choices: `"Birch-Murnaghan"`, `"Mie-Gruneisen-Debye"`, `"Tabulated"`.
+- `choice` - Choices: `"Birch-Murnaghan"`, `"Mie-Gruneisen-Debye"`, `"Tabulated:iron/silicate"`, `"Tabulated:water"`.
 
 ### `Calculations`
 Defines calculation settings for the planetary model.  
