@@ -2,7 +2,7 @@
 EOS Data and Functions
 """
 
-from .eos_properties import material_properties_iron_silicate_planets, material_properties_water_planets, material_properties_H_He_envelope
+from .eos_properties import material_properties_iron_silicate_planets, material_properties_water_planets
 from scipy.interpolate import interp1d
 import numpy as np
 
