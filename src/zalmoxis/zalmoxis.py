@@ -249,8 +249,8 @@ def main(temp_config_path=None, id_mass=None):
 
     print("Exoplanet Internal Structure Model (Mass Only Input)")
     print("----------------------------------------------------------------------")
-    print(f"Calculated Planet Mass: {mass_enclosed[-1]:.2e} kg")
-    print(f"Calculated Planet Radius: {radii[-1]:.2e} m")
+    print(f"Calculated Planet Mass: {mass_enclosed[-1]:.2e} kg or {mass_enclosed[-1]/earth_mass:.2f} Earth masses")
+    print(f"Calculated Planet Radius: {radii[-1]:.2e} m or {radii[-1]/earth_radius:.2f} Earth radii")
     print(f"Core Radius: {radii[cmb_index]:.2e} m")
     print(f"Mantle Density (at CMB): {density[cmb_index]:.2f} kg/m^3")
     print(f"Core Density (at CMB): {density[cmb_index- 1]:.2f} kg/m^3")
