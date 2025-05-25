@@ -260,7 +260,7 @@ def main(temp_config_path=None, id_mass=None):
     print(f"CMB Mass Fraction: {mass_enclosed[cmb_index] / mass_enclosed[-1]:.3f}")
     print(f"Inner Mantle Mass Fraction: {(inner_mantle_mass - mass_enclosed[cmb_index]) / mass_enclosed[-1]:.3f}")
     print(f"Calculated Core Radius Fraction: {radii[cmb_index] / planet_radius:.2f}")
-    print(f"Calculated Inner Mantle Radius Fraction: {(radii[np.argmax(mass_enclosed >= cmb_mass + inner_mantle_mass)] / planet_radius):.2f}")
+    print(f"Calculated Inner Mantle Radius Fraction: {(radii[np.argmax(mass_enclosed >= inner_mantle_mass)] / planet_radius):.2f}")
 
     # --- Save output data to a file ---
     if data_output_enabled:
