@@ -18,5 +18,5 @@ You will need to install Python (>=3.12) on your system.
     git clone https://github.com/FormingWorlds/Zalmoxis.git
     cd Zalmoxis
     pip install -e . 
-    bash src/get_zalmoxis.sh
+    bash src/get_zalmoxis.sh  
     ```
