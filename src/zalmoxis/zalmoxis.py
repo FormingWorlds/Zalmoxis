@@ -8,7 +8,7 @@ from .eos_properties import material_properties_iron_silicate_planets
 from .structure_model import coupled_odes
 from .plots.plot_profiles import plot_planet_profile_single
 from .plots.plot_eos import plot_eos_material
-from .setup import download_data
+from .tools.setup_utils import download_data
 
 # Run file via command line with default configuration file: python -m src.zalmoxis.zalmoxis -c ../../input/default.toml
 
@@ -66,8 +66,6 @@ def main(temp_config_path=None, id_mass=None):
     radius, densities, pressures, and temperatures at various layers, and optionally
     saves the data to a file and plots the results.
     """
-    # Download data if not already present
-    download_data()
 
     config = choose_config_file(temp_config_path)  # Choose the configuration file
     
@@ -264,9 +262,6 @@ def main(temp_config_path=None, id_mass=None):
 
     # --- Save output data to a file ---
     if data_output_enabled:
-        # Create output directory if it does not exist
-        if not os.path.exists("output_files"):
-            os.makedirs("output_files")
         # Combine and save plotted data to a single output file
         output_data = np.column_stack((radii, density, gravity, pressure, temperature, mass_enclosed))
         header = "Radius (m)\tDensity (kg/m^3)\tGravity (m/s^2)\tPressure (Pa)\tTemperature (K)\tMass Enclosed (kg)"
