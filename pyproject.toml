@@ -52,7 +52,8 @@ develop = [
     "pytest >= 8.1",
     "pre-commit",
     "ruff",
-    "pytest-rich"
+    "pytest-rich",
+    "pytest-xdist"
 ]
 
 docs = [

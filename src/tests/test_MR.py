@@ -34,15 +34,20 @@ def run_zalmoxis(id_mass, config_type):
         config['AssumptionsAndInitialGuesses']['inner_mantle_mass_fraction'] = 0
         config['AssumptionsAndInitialGuesses']['weight_iron_fraction'] = 0.325
         config['EOS']['choice'] = "Tabulated:iron/silicate"
-        output_file = os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", "calculated_planet_mass_radius_Earth.txt")
+        #output_file = os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", "calculated_planet_mass_radius_Earth.txt")
     elif config_type == "water":
         config['AssumptionsAndInitialGuesses']['core_mass_fraction'] = 0.1625
         config['AssumptionsAndInitialGuesses']['inner_mantle_mass_fraction'] = 0.3375
         config['AssumptionsAndInitialGuesses']['weight_iron_fraction'] = 0.1625
         config['EOS']['choice'] = "Tabulated:water"
-        output_file = os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", "calculated_planet_mass_radius_water.txt")
+        #output_file = os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", "calculated_planet_mass_radius_water.txt")
     else:
         raise ValueError(f"Unknown config_type: {config_type}")
+    
+    suffix = "_rocky.txt" if config_type == "rocky" else "_water.txt"
+    with tempfile.NamedTemporaryFile(delete=False, mode='w', suffix=suffix) as temp_output_file:
+        output_file = temp_output_file.name
+
 
     with tempfile.NamedTemporaryFile(delete=False, mode='w', suffix='.toml') as temp_config_file:
         toml.dump(config, temp_config_file)
