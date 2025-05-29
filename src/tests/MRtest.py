@@ -9,6 +9,11 @@ import time
 
 # Run file via command line: python -m src.tests.MRtest Wagner/Boujibar/default/SeagerEarth/Seagerwater/custom
 
+# Read the environment variable for ZALMOXIS_ROOT
+ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
+if not ZALMOXIS_ROOT:
+    raise RuntimeError("ZALMOXIS_ROOT environment variable not set")
+
 # Function to run the main function with a temporary configuration file
 def run_zalmoxis(id_mass=None):
     '''
@@ -29,11 +34,8 @@ def run_zalmoxis(id_mass=None):
         None
     '''
 
-    # Set the working directory to the current file
-    os.chdir(os.path.dirname(os.path.abspath(__file__)))
-
     # Path to the default configuration file
-    default_config_path = '../../input/default.toml'
+    default_config_path = os.path.join(ZALMOXIS_ROOT, "input", "default.toml")
 
     # Load the default configuration
     with open(default_config_path, 'r') as file:
@@ -82,11 +84,8 @@ def MRtest(choice):
         None
     '''  
 
-    # Set the working directory to the current file
-    os.chdir(os.path.dirname(os.path.abspath(__file__)))
-
     # Delete the contents of the calculated_planet_mass_radius.txt file if it exists
-    calculated_file_path = '../zalmoxis/output_files/calculated_planet_mass_radius.txt'
+    calculated_file_path = os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", "calculated_planet_mass_radius.txt")
     if os.path.exists(calculated_file_path):
         with open(calculated_file_path, 'w') as file:
             file.truncate(0)

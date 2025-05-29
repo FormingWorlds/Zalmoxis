@@ -3,6 +3,13 @@ import numpy as np
 import os
 from ..constants import earth_center_pressure, earth_cmb_pressure
 
+# Run this file via command line: python -m src.zalmoxis.plots.plot_eos
+
+# Read the environment variable for ZALMOXIS_ROOT
+ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
+if not ZALMOXIS_ROOT:
+    raise RuntimeError("ZALMOXIS_ROOT environment variable not set")
+
 # Function to read data from a file
 def read_eos_data(filename):
     data = np.loadtxt(filename, delimiter=',', skiprows=1)
@@ -23,6 +30,9 @@ def plot_eos_material(data_files, data_folder):
     The function assumes that the data files are located in the specified data_folder.
     The function plots the data on a log-log scale and inverts the y-axis to make it downward-increasing.
     """
+    # Set the working directory to the current file
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
     custom_labels = {
     'eos_seager07_iron.txt': 'Iron',
     'eos_seager07_silicate.txt': 'Silicate',
@@ -60,6 +70,6 @@ def plot_eos_material(data_files, data_folder):
 
     # Show the plot
     ax.legend()
-    fig.savefig("planet_eos.pdf")
+    fig.savefig(os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", "planet_eos.pdf"))
     #plt.show()
     plt.close(fig)

@@ -8,6 +8,11 @@ from ..constants import *
 
 # Run file via command line: python -m src.zalmoxis.plots.plot_profiles_all_in_one
 
+# Read the environment variable for ZALMOXIS_ROOT
+ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
+if not ZALMOXIS_ROOT:
+    raise RuntimeError("ZALMOXIS_ROOT environment variable not set")
+
 # Function to plot the profiles of all planets in one plot for comparison
 def plot_profiles_all_in_one(target_mass_array, choice):
     """
@@ -244,6 +249,6 @@ def plot_profiles_all_in_one(target_mass_array, choice):
     # Adjust layout and show plot
     #plt.tight_layout()
     plt.suptitle(f"Planet Profiles Comparison ({choice})")
-    plt.savefig(f"../all_profiles_with_colorbar_vs_{choice}.pdf")
+    plt.savefig(os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", f"all_profiles_with_colorbar_vs_{choice}.pdf"))
     #plt.show()
     plt.close(fig)

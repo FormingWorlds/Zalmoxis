@@ -8,9 +8,13 @@ from .eos_properties import material_properties_iron_silicate_planets
 from .structure_model import coupled_odes
 from .plots.plot_profiles import plot_planet_profile_single
 from .plots.plot_eos import plot_eos_material
-from .tools.setup_utils import download_data
 
 # Run file via command line with default configuration file: python -m src.zalmoxis.zalmoxis -c ../../input/default.toml
+
+# Read the environment variable for ZALMOXIS_ROOT
+ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
+if not ZALMOXIS_ROOT:
+    raise RuntimeError("ZALMOXIS_ROOT environment variable not set")
 
 # Function to choose the configuration file to run the main function
 def choose_config_file(temp_config_path=None):
@@ -21,8 +25,6 @@ def choose_config_file(temp_config_path=None):
     If the -c flag is provided, the function will read the configuration file path from the next argument.
     If no temporary configuration file or -c flag is provided, the function will read the default configuration file.
     """
-    # Set the working directory to the current file
-    os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
     # Load the configuration file either from terminal (-c flag) or default path
     if temp_config_path:
@@ -45,7 +47,7 @@ def choose_config_file(temp_config_path=None):
             print(f"Error: Config file not found at {config_file_path}")
             sys.exit(1)
     else:
-        config_default_path = "../../input/default.toml"
+        config_default_path = os.path.join(ZALMOXIS_ROOT, "input", "default.toml")
         try:
             config = toml.load(config_default_path)
             print(f"Reading default config file from {config_default_path}")
@@ -55,7 +57,7 @@ def choose_config_file(temp_config_path=None):
 
     return config
 
-def main(temp_config_path=None, id_mass=None):
+def main(temp_config_path=None, id_mass=None, output_file=None):
     
     """
     Main function to run the exoplanet internal structure model.
@@ -207,9 +209,6 @@ def main(temp_config_path=None, id_mass=None):
 
         # Update the total interior radius by scaling the initial guess based on the calculated mass
         radius_guess = radius_guess * (planet_mass / calculated_mass)**(1/3)
-
-        # Update the core-mantle boundary radius based on the calculated mass grid
-        cmb_radius = radii[np.argmax(mass_enclosed >= cmb_mass)]
         
         # Update the core-mantle boundary mass based on the core mass fraction and calculated total interior mass of the planet
         cmb_mass = core_mass_fraction * calculated_mass
@@ -265,9 +264,10 @@ def main(temp_config_path=None, id_mass=None):
         # Combine and save plotted data to a single output file
         output_data = np.column_stack((radii, density, gravity, pressure, temperature, mass_enclosed))
         header = "Radius (m)\tDensity (kg/m^3)\tGravity (m/s^2)\tPressure (Pa)\tTemperature (K)\tMass Enclosed (kg)"
-        np.savetxt(f"output_files/planet_profile{id_mass}.txt", output_data, header=header)
+        np.savetxt(os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", f"planet_profile{id_mass}.txt"), output_data, header=header)
         # Append calculated mass and radius of the planet to a file in dedicated columns
-        output_file = "output_files/calculated_planet_mass_radius.txt"
+        if output_file is None:
+            output_file = os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", "calculated_planet_mass_radius.txt")
         if not os.path.exists(output_file):
             header = "Calculated Mass (kg)\tCalculated Radius (m)"
             with open(output_file, "w") as file:
@@ -280,7 +280,10 @@ def main(temp_config_path=None, id_mass=None):
     if plotting_enabled:
         #plot_planet_profile_single(radii, density, gravity, pressure, temperature, cmb_radius, cmb_mass, average_density, mass_enclosed, id_mass) # Plot planet profile for a single planet
         eos_data_files = ['eos_seager07_iron.txt', 'eos_seager07_silicate.txt', 'eos_seager07_water.txt']  # Example files (adjust the filenames accordingly)
-        eos_data_folder = "../../data/"  # Path to the folder where EOS data is stored
+        eos_data_folder = os.path.join(ZALMOXIS_ROOT, "data")
         plot_eos_material(eos_data_files, eos_data_folder)  # Call the EOS plotting function
         #plt.show()  # Show the plots
+
+if __name__ == "__main__":
+    main()
  

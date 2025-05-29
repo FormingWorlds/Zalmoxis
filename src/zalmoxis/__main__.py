@@ -1,4 +1,4 @@
-from .zalmoxis import choose_config_file, main
+from .zalmoxis import main
 
 if __name__ == "__main__":
     main()

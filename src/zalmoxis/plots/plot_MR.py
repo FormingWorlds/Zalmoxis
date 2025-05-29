@@ -5,6 +5,11 @@ import numpy as np
 
 # Run file via command line: python -m src.zalmoxis.plots.plot_MR
 
+# Read the environment variable for ZALMOXIS_ROOT
+ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
+if not ZALMOXIS_ROOT:
+    raise RuntimeError("ZALMOXIS_ROOT environment variable not set")
+
 # Function to plot the mass-radius relationship of planets and compare with Earth-like Rocky (32.5% Fe+67.5% MgSiO3) planets from Zeng et al. (2019)
 def plot_mass_radius_relationship(target_mass_array):
     """
@@ -25,7 +30,6 @@ def plot_mass_radius_relationship(target_mass_array):
     - The function assumes that the masses and radii in the input data file are in Earth masses and Earth radii, respectively.
     - The function uses the constants `earth_mass` and `earth_radius` for normalization.
     """
-
     # Set the working directory to the current file
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
@@ -82,7 +86,7 @@ def plot_mass_radius_relationship(target_mass_array):
     ax.set_ylim(0, 5)
     ax.legend()
     ax.grid(True)
-    plt.savefig("../MR_plot.pdf")
+    plt.savefig(os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", "MR_plot.pdf"))
     #plt.show()
     plt.close(fig)
 
