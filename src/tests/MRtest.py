@@ -113,7 +113,7 @@ def MRtest(choice):
         executor.map(run_zalmoxis, target_mass_array)
 
     # Plot the mass-radius relationship 
-    plot_mass_radius_relationship(target_mass_array)
+    # plot_mass_radius_relationship(target_mass_array) # works if rocky and water planets are simulated in two separate runs
 
     # Call the function to plot the profiles of all planets in one plot 
     plot_profiles_all_in_one(target_mass_array, choice)

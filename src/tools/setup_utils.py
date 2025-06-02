@@ -16,7 +16,7 @@ def download_data():
     It also deletes the contents of the calculated_planet_mass_radius.txt file if it exists.
     """
     # Define URL, token, and paths
-    download_url = "https://osf.io/download/6r43z/"
+    download_url = "https://osf.io/download/md7ka/"
     download_path = os.path.join(ZALMOXIS_ROOT, "data.zip")  # Path to save the downloaded zip file
     extract_folder = os.path.join(ZALMOXIS_ROOT, "data")  # Path to extract the data
 
