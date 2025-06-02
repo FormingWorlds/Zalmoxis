@@ -14,6 +14,14 @@ if not ZALMOXIS_ROOT:
 ])
 @pytest.mark.parametrize("mass", range(1, 51))  # 1 to 50 Earth masses
 def test_mass_radius(config_type, zeng_file, mass):
+    """
+    Test the mass-radius relationship for rocky and water planets using Zalmoxis model.
+    This test compares the model output with Zeng et al. (2019) mass-radius data.
+    Parameters:
+        config_type (str): Type of planet configuration ('rocky' or 'water').
+        zeng_file (str): Filename for Zeng et al. (2019) mass-radius data.
+        mass (int): Mass of the planet in Earth masses (1 to 50).
+    """
 
     # Load Zeng et al. (2019) mass-radius data
     zeng_masses, zeng_radii = load_zeng_curve(zeng_file)

@@ -10,6 +10,19 @@ if not ZALMOXIS_ROOT:
     raise RuntimeError("ZALMOXIS_ROOT environment variable not set")
 
 def run_zalmoxis_rocky_water(id_mass, config_type, cmf, immf):
+    """
+    Runs the Zalmoxis model for a given planet mass and configuration type (rocky or water).
+    Parameters:
+        id_mass (float): Mass of the planet in Earth masses.
+        config_type (str): Type of planet configuration ('rocky' or 'water').
+        cmf (float): Core mass fraction for water planets.
+        immf (float): Inner mantle mass fraction for water planets.
+    Returns:
+        output_file (str): Path to the output file containing mass and radius.
+        profile_output_file (str): Path to the output file containing the density profile.
+    Raises:
+        ValueError: If an unknown config_type is provided.
+    """
     # Load default config and adjust parameters per config_type and mass
     default_config_path = os.path.join(ZALMOXIS_ROOT, "input", "default.toml")
     with open(default_config_path, 'r') as file:
@@ -66,6 +79,16 @@ def run_zalmoxis_rocky_water(id_mass, config_type, cmf, immf):
     return output_file, profile_output_file
 
 def load_zeng_curve(filename):
+    """
+    Load Zeng et al. (2019) mass-radius data from a specified file.
+    Parameters:
+        filename (str): Name of the file containing Zeng et al. (2019) mass-radius data.
+    Returns:
+        masses (list): List of planet masses in Earth masses.
+        radii (list): List of planet radii in Earth radii.
+    Raises:
+        FileNotFoundError: If the specified file does not exist.
+    """
     # Load Zeng et al. (2019) mass-radius data from the specified file
     data_path = os.path.join(ZALMOXIS_ROOT, "data", filename)
     
@@ -81,6 +104,15 @@ def load_zeng_curve(filename):
     return masses, radii
 
 def load_model_output(output_file):
+    """
+    Load the mass and radius from the Zalmoxis model output file.
+    Parameters:
+        output_file (str): Path to the output file containing mass and radius.
+    Returns:
+        tuple: A tuple containing the mass in Earth masses and radius in Earth radii.
+    Raises:
+        RuntimeError: If the output file does not contain valid data.
+    """
     # Your output file should contain just one line: mass radius
     with open(output_file, 'r') as f:
         next(f)  # Skip the header line
@@ -91,6 +123,15 @@ def load_model_output(output_file):
     raise RuntimeError(f"No valid data found in {output_file}")
 
 def load_profile_output(profile_output_file):
+    """
+    Load the density profile from the Zalmoxis model output file.
+    Parameters:
+        profile_output_file (str): Path to the output file containing the density profile.
+    Returns:
+        tuple: A tuple containing two lists: radii in meters and densities in kg/m^3.
+    Raises:
+        RuntimeError: If the profile output file does not contain valid data.
+    """
     radii = []
     densities = []
     
@@ -113,6 +154,16 @@ def load_profile_output(profile_output_file):
     return radii, densities
 
 def load_Seager_data(filename):
+    """
+    Load Seager et al. (2007) radius and density data from a specified file.
+    Parameters:
+        filename (str): Name of the file containing Seager et al. (2007) radius and density data.
+    Returns:
+        data_by_mass (dict): A dictionary where keys are planet masses and values are lists of radii and densities.
+    Raises:
+        FileNotFoundError: If the specified file does not exist.
+        ValueError: If the file format is incorrect or malformed.
+    """
     # Load Seager et al. (2007) profiles: mass, radius, density per line (comma-separated)
     data_path = os.path.join(ZALMOXIS_ROOT, "data", filename)
 

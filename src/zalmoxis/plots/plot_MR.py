@@ -13,22 +13,21 @@ if not ZALMOXIS_ROOT:
 # Function to plot the mass-radius relationship of planets and compare with Earth-like Rocky (32.5% Fe+67.5% MgSiO3) planets from Zeng et al. (2019)
 def plot_mass_radius_relationship(target_mass_array):
     """
-    Plots the mass-radius relationship of planets using data from a specified file and compares it with Earth-like rocky planets data from Zeng et al. (2019).
+    Plots the mass-radius relationship of planets using data from a specified file and compares it with Earth-like rocky and water planet data from Zeng et al. (2019).
 
     Parameters:
     target_mass_array (list or array): Array of target masses for which the model is run.
 
     The function performs the following steps:
-    1. Sets the working directory to the current file's directory.
-    2. Reads mass and radius data for Earth-like rocky planets from Zeng et al. (2019).
-    3. Reads mass and radius data for model planets from the specified data file.
-    4. Plots the mass-radius relationship for both datasets.
-    5. Saves the plot as a PDF file named 'MR_plot.pdf'.
+    1. Reads mass and radius data for Earth-like rocky and water planets from Zeng et al. (2019).
+    2. Reads mass and radius data for modeled planets from output files.
+    3. Plots the mass-radius relationship for all datasets.
+    4. Saves the plot as a PDF file named 'MR_plot.pdf'.
 
-    Note:
-    - The input data file should have two columns: mass and radius, separated by whitespace.
-    - The function assumes that the masses and radii in the input data file are in Earth masses and Earth radii, respectively.
-    - The function uses the constants `earth_mass` and `earth_radius` for normalization.
+    Notes:
+    - Input data files should have two columns: mass and radius, separated by whitespace.
+    - Masses and radii in the modeled data files are normalized to Earth units using `earth_mass` and `earth_radius`.
+    - The function requires the ZALMOXIS_ROOT environment variable to be set.
     """
     # Read data from Zeng et al. (2019) for Earth-like Rocky (32.5% Fe+67.5% MgSiO3) planets
     zeng_masses_Earth = []

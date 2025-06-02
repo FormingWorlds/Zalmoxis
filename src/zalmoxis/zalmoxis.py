@@ -62,11 +62,24 @@ def main(temp_config_path=None, id_mass=None, output_file=None):
     """
     Main function to run the exoplanet internal structure model.
 
-    This function reads the configuration file, initializes parameters, and performs
-    an iterative solution to calculate the internal structure of an exoplanet based on
-    the given mass and other parameters. It outputs the calculated planet radius, core
-    radius, densities, pressures, and temperatures at various layers, and optionally
-    saves the data to a file and plots the results.
+    Reads the configuration file, initializes parameters, and performs
+    an iterative solution to calculate the internal structure of an exoplanet
+    based on the given mass and other parameters.
+
+    Outputs the calculated planet radius, core radius, densities, pressures,
+    and temperatures at various layers. Optionally saves the data to a file
+    and plots the results.
+    Parameters:
+    temp_config_path (str): Path to a temporary configuration file to override the default settings.
+    id_mass (str): Identifier for the mass of the planet, used in output file naming.
+    output_file (str): Path to the output file where calculated mass and radius will be saved.
+    Returns:
+    radii (np.ndarray): Array of radial distances from the center of the planet.
+    density (np.ndarray): Array of densities at each radial distance.
+    gravity (np.ndarray): Array of gravitational accelerations at each radial distance.
+    pressure (np.ndarray): Array of pressures at each radial distance.
+    temperature (np.ndarray): Array of temperatures at each radial distance.
+    mass_enclosed (np.ndarray): Array of enclosed mass at each radial distance.
     """
 
     config = choose_config_file(temp_config_path)  # Choose the configuration file

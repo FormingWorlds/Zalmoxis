@@ -12,6 +12,14 @@ if not ZALMOXIS_ROOT:
 
 # Function to read data from a file
 def read_eos_data(filename):
+    """
+    Reads the equation of state (EOS) data from a file.
+    Parameters:
+    filename (str): Path to the file containing EOS data.
+    Returns:
+    tuple: A tuple containing two numpy arrays: pressure (in GPa) and density (in kg/m³).
+    The file should contain two columns: density (in g/cm³) and pressure (in GPa).
+    """
     data = np.loadtxt(filename, delimiter=',', skiprows=1)
     pressure = data[:, 1]  # Assuming pressure is in the second column (GPa)
     density = data[:, 0] * 1000  # Assuming density is in the first column (g/cm³), convert to kg/m³
@@ -28,7 +36,7 @@ def plot_eos_material(data_files, data_folder):
     The function reads the EOS data from the specified files and plots the pressure-density relationship for each material.
     The data files should be CSV files with two columns: density (in g/cm³) and pressure (in GPa).
     The function assumes that the data files are located in the specified data_folder.
-    The function plots the data on a log-log scale and inverts the y-axis to make it downward-increasing.
+    The function plots the data on a log-log scale.
     """
     custom_labels = {
     'eos_seager07_iron.txt': 'Iron',

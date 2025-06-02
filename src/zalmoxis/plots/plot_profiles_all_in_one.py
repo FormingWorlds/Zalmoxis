@@ -16,7 +16,7 @@ if not ZALMOXIS_ROOT:
 # Function to plot the profiles of all planets in one plot for comparison
 def plot_profiles_all_in_one(target_mass_array, choice):
     """
-    Plots various profiles (Density, Gravity, Pressure, and Mass Enclosed) for planets with different masses.
+    Plots various planetary profiles (Density, Gravity, Pressure, and Mass Enclosed) for a set of planet masses.
 
     This function reads planet profile data from text files, processes the data, and generates comparative plots
     for different planet masses. The plots include:
@@ -25,27 +25,24 @@ def plot_profiles_all_in_one(target_mass_array, choice):
     - Radius vs Pressure
     - Radius vs Mass Enclosed
 
-    The function also adds a colorbar to indicate the planet mass for each profile.
+    Optionally, comparison data from literature (Wagner et al. 2012, Boujibar et al. 2020, Seager et al. 2007) can be overlaid.
 
     Parameters:
-    target_mass_array (list): List of planet masses to plot profiles for.
-    choice (str): Choice of comparison data. Options are 'Wagner', 'Boujibar', or 'default'.
+        target_mass_array (list or array-like): List of planet masses (in Earth masses) to plot profiles for.
+        choice (str): Choice of comparison data. Options are 'Wagner', 'Boujibar', 'SeagerEarth', 'Seagerwater', 'custom', or 'default'.
 
-    The data files should be named in the format 'planet_profile{id_mass}.txt' and located in the '../output_files/' directory.
-    Each file should contain space-separated values with columns representing:
-    - Radius (m)
-    - Density (kg/m^3)
-    - Gravity (m/s^2)
-    - Pressure (Pa)
-    - Temperature (K)
-    - Mass Enclosed (kg)
+    Data files:
+        - Planet profile files: 'planet_profile{id_mass}.txt' in the output_files directory.
+          Each file should contain space-separated columns:
+            Radius (m), Density (kg/m^3), Gravity (m/s^2), Pressure (Pa), Temperature (K), Mass Enclosed (kg)
+        - Literature comparison files are expected in the 'data' directory.
 
-    The generated plot is saved as 'all_profiles_with_colorbar_vs_{choice}.pdf' in the parent directory.
+    Output:
+        The generated plot is saved as 'all_profiles_with_colorbar_vs_{choice}.pdf' in the output_files directory.
 
     Raises:
-        FileNotFoundError: If any of the expected data files are not found.
+        RuntimeError: If the ZALMOXIS_ROOT environment variable is not set.
         ValueError: If an invalid choice is provided for the comparison data.
-
     """
     # Initialize a list to hold the data for plotting
     data_list = []  # List of dictionaries to hold data for each planet

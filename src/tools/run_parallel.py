@@ -16,23 +16,20 @@ if not ZALMOXIS_ROOT:
 
 # Function to run the main function with a temporary configuration file
 def run_zalmoxis(id_mass=None):
-    '''
-        This function sets the working directory to the current file's directory,
-        loads a default configuration file, modifies specific configuration parameters,
-        creates a temporary configuration file, runs the main function with the temporary
-        configuration file, and then cleans up the temporary configuration file.
+    """
+    Runs the zalmoxis main function with a temporary configuration file.
 
-        Parameters:
-        id_mass (float, optional): The mass of the planet in Earth masses. Defaults to None.
+    Parameters:
+        id_mass (float, optional): The mass of the planet in Earth masses.
 
-        Raises:
+    Raises:
         FileNotFoundError: If the default configuration file is not found.
         toml.TomlDecodeError: If there is an error decoding the TOML configuration file.
         Exception: If there is an error during the execution of the main function.
 
-        Returns:
+    Returns:
         None
-    '''
+    """
 
     # Path to the default configuration file
     default_config_path = os.path.join(ZALMOXIS_ROOT, "input", "default.toml")
@@ -66,23 +63,20 @@ def run_zalmoxis(id_mass=None):
     os.remove(temp_config_path)
 
 def run_zalmoxis_in_parallel(choice):
-    '''
-        This function sets the working directory to the current file's directory,
-        checks if the data folder exists and downloads/extracts it if not,
-        deletes the contents of the calculated_planet_mass_radius.txt file if it exists,
-        runs zalmoxis in parallel for a range of planet masses based on the provided choice,
-        plots the mass-radius relationship, and calls the function to plot the profiles
-        of all planets in one plot.
+    """
+    Runs zalmoxis in parallel for a range of planet masses based on the provided choice,
+    deletes the contents of the calculated_planet_mass_radius.txt file if it exists,
+    and calls the function to plot the profiles of all planets in one plot.
 
-        Parameters:
-        choice (str): Choice of comparison data. Options are 'Wagner', 'Boujibar', 'default', 'SeagerEarth', or 'custom'.
+    Parameters:
+        choice (str): Choice of comparison data. Options are 'Wagner', 'Boujibar', 'default', 'SeagerEarth', 'Seagerwater', or 'custom'.
 
-        Raises:
+    Raises:
         ValueError: If an invalid choice is provided for the comparison data.
 
-        Returns: 
+    Returns:
         None
-    '''  
+    """
 
     # Delete the contents of the calculated_planet_mass_radius.txt file if it exists
     calculated_file_path = os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", "calculated_planet_mass_radius.txt")

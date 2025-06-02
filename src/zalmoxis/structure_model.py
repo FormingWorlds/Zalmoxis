@@ -16,7 +16,6 @@ def coupled_odes(radius, y, cmb_mass, inner_mantle_mass, EOS_CHOICE, interpolati
     inner_mantle_mass (float): The mass of the inner mantle.
     EOS_CHOICE (str): The equation of state choice for the material.
     interpolation_cache (dict): A cache for interpolation to speed up calculations.
-    num_layers (int): The number of layers in the planetary model.
 
     Returns:
     list: The derivatives of mass, gravity, and pressure with respect to radius.

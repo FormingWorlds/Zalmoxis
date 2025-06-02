@@ -86,7 +86,8 @@ import numpy as np
 
 def get_tabulated_eos(pressure, material_dictionary, material, interpolation_functions={}):
     """
-    Retrieves density from tabulated EOS data for a given material and choice of EOS."""
+    Retrieves density from tabulated EOS data for a given material and choice of EOS.
+    """
     props = material_dictionary[material]
     try:
         eos_file = props["eos_file"]

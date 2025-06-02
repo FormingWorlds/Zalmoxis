@@ -15,6 +15,14 @@ if not ZALMOXIS_ROOT:
 ])
 @pytest.mark.parametrize("mass", [1, 5, 10, 50])  # 1, 5, 10, and 50 Earth masses
 def test_density_profile(config_type, seager_file, mass):
+    """
+    Test the density profile for rocky and water planets using Zalmoxis model.
+    This test compares the model output with Seager et al. (2007) density profile data.
+    Parameters:
+        config_type (str): Type of planet configuration ('rocky' or 'water').
+        seager_file (str): Filename for Seager et al. (2007) radius and density data.
+        mass (int): Mass of the planet in Earth masses (1, 5, 10, or 50).
+    """
 
     # Load Seager et al. (2007) radius and density data by mass and order them by radius
     data_by_mass = load_Seager_data(seager_file)
