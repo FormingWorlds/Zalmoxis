@@ -25,8 +25,6 @@ def plot_planet_profile_single(radii, density, gravity, pressure, temperature, c
         mass_enclosed (numpy.ndarray): Array of enclosed masses (kg).
         id_mass (int): Identifier for the planet mass.
     """
-    # Set the working directory to the current file
-    os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
     fig, ax = plt.subplots(1, 5, figsize=(16, 6))
 

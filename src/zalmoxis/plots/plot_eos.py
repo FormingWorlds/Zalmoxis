@@ -30,9 +30,6 @@ def plot_eos_material(data_files, data_folder):
     The function assumes that the data files are located in the specified data_folder.
     The function plots the data on a log-log scale and inverts the y-axis to make it downward-increasing.
     """
-    # Set the working directory to the current file
-    os.chdir(os.path.dirname(os.path.abspath(__file__)))
-
     custom_labels = {
     'eos_seager07_iron.txt': 'Iron',
     'eos_seager07_silicate.txt': 'Silicate',

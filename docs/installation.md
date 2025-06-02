@@ -20,3 +20,8 @@ You will need to install Python (>=3.12) on your system.
     pip install -e . 
     bash src/get_zalmoxis.sh  
     ```
+3. Set the environment variable
+
+    ```console
+    export ZALMOXIS_ROOT=$(pwd)
+    ```

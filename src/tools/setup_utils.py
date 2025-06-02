@@ -2,7 +2,10 @@
 
 import os, shutil, subprocess
 
-# Run file via command line: python -m src.zalmoxis.tools.setup
+# Read the environment variable for ZALMOXIS_ROOT
+ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
+if not ZALMOXIS_ROOT:
+    raise RuntimeError("ZALMOXIS_ROOT environment variable not set")
 
 def download_data():
     """
@@ -12,13 +15,10 @@ def download_data():
     If the folder already exists, it skips the download and extraction process.
     It also deletes the contents of the calculated_planet_mass_radius.txt file if it exists.
     """
-    # Set the working directory to the current file
-    os.chdir(os.path.dirname(os.path.abspath(__file__)))
-
     # Define URL, token, and paths
     download_url = "https://osf.io/download/6r43z/"
-    download_path = '../../../data.zip'
-    extract_folder = '../../../data'
+    download_path = os.path.join(ZALMOXIS_ROOT, "data.zip")  # Path to save the downloaded zip file
+    extract_folder = os.path.join(ZALMOXIS_ROOT, "data")  # Path to extract the data
 
     # Check if the folder already exists
     if not os.path.exists(extract_folder):
@@ -61,11 +61,8 @@ def create_output_files():
     Create output files directory if it does not exist.
     This directory will store the results of the calculations.
     """
-
-    # Set the working directory to the current file
-    os.chdir(os.path.dirname(os.path.abspath(__file__))) 
-
-    output_dir = '../output_files'
+    output_dir = os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files")  # Path to output files directory
+    
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
         print(f"Output files directory created at '{output_dir}'.")

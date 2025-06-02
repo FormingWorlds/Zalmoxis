@@ -283,6 +283,9 @@ def main(temp_config_path=None, id_mass=None, output_file=None):
         eos_data_folder = os.path.join(ZALMOXIS_ROOT, "data")
         plot_eos_material(eos_data_files, eos_data_folder)  # Call the EOS plotting function
         #plt.show()  # Show the plots
+    
+    # Return the calculated values for further use
+    return radii, density, gravity, pressure, temperature, mass_enclosed
 
 if __name__ == "__main__":
     main()
