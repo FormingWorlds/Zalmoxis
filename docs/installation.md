@@ -31,33 +31,41 @@ This installs Zalmoxis in editable mode, so local changes to the code are immedi
     ```console
     bash src/get_zalmoxis.sh
     ```
-    This will create inputs/ and outputs/ folders with necessary planetary data and configuration files.
+    This will create `inputs/` folder (for configuration files) and `outputs/` folder (for model results).
 
 3. Set environment variable
 
-    Zalmoxis requires the ZALMOXIS_ROOT environment variable to point to the base directory:
+    Zalmoxis requires the `ZALMOXIS_ROOT` environment variable to point to the base directory:
 
     ```console
     export ZALMOXIS_ROOT=$(pwd)
     ```
 
-    To make ZALMOXIS_ROOT available across sessions, add the above line to your shell profile file:
+    To make `ZALMOXIS_ROOT` available across sessions, add the above line to your shell profile file:
+
+    * For `bash` users:
 
     ```console
     echo "export ZALMOXIS_ROOT=$(pwd)" >> ~/.bashrc
     ```
-    for bash users
 
-    or
+    * For `zsh` users:
 
     ```console
     echo "export ZALMOXIS_ROOT=$(pwd)" >> ~/.zshrc
     ```
-    for zsh users
 
-    Then apply the changes:
+    Afterwards, reload your profile with:
+
+    * For `bash` users:
 
     ```console
-    source ~/.bashrc  # or source ~/.zshrc
+    source ~/.bashrc 
+    ```
+
+    * For `zsh` users:
+
+    ```console
+    source ~/.zshrc
     ```
 
