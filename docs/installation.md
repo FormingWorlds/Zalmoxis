@@ -31,7 +31,7 @@ This installs Zalmoxis in editable mode, so local changes to the code are immedi
     ```console
     bash src/get_zalmoxis.sh
     ```
-    This will create `inputs/` folder (for configuration files) and `outputs/` folder (for model results).
+    This will create the `data/` folder for configuration files and the `output_files/` folder in `src/zalmoxis/` for model results.
 
 3. Set environment variable
 

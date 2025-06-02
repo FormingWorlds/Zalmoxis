@@ -7,7 +7,7 @@ from src.zalmoxis.plots.plot_profiles_all_in_one import plot_profiles_all_in_one
 from concurrent.futures import ProcessPoolExecutor
 import time
 
-# Run file via command line: python -m src.tests.MRtest Wagner/Boujibar/default/SeagerEarth/Seagerwater/custom
+# Run file via command line: python -m src.tools.run_parallel Wagner/Boujibar/default/SeagerEarth/Seagerwater/custom
 
 # Read the environment variable for ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
@@ -65,7 +65,7 @@ def run_zalmoxis(id_mass=None):
     # Clean up the temporary configuration file after running
     os.remove(temp_config_path)
 
-def MRtest(choice):
+def run_zalmoxis_in_parallel(choice):
     '''
         This function sets the working directory to the current file's directory,
         checks if the data folder exists and downloads/extracts it if not,
@@ -122,11 +122,11 @@ if __name__ == "__main__":
     start_time = time.time()
     
     if len(sys.argv) != 2:
-        print("Usage: python -m src.tests.MRtest <choice>")
+        print("Usage: python -m src.tools.run_parallel <choice>")
         sys.exit(1)
     
     choice = sys.argv[1]
-    MRtest(choice)
+    run_zalmoxis_in_parallel(choice)
     
     end_time = time.time()
     total_time = end_time - start_time
