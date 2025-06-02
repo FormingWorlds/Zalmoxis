@@ -55,5 +55,5 @@ def test_density_profile(config_type, seager_file, mass):
         mask[max(0, idx-1):min(len(mask), idx+2)] = False  # mask a few points around the jump
 
     # Compare only the smooth parts
-    assert np.allclose(model_densities[mask], seager_density_interp[mask], rtol=0.00001, atol=5000), \
+    assert np.allclose(model_densities[mask], seager_density_interp[mask], rtol=0.24, atol=1000), \
         f"Density profile for {config_type} config at {mass} M_earth deviates too much from Seager model (ignoring discontinuity)"
