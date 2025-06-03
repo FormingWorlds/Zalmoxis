@@ -2,7 +2,6 @@ import os, sys
 import tempfile
 import toml
 from src.zalmoxis import zalmoxis  
-from src.zalmoxis.plots.plot_MR import plot_mass_radius_relationship
 from src.zalmoxis.plots.plot_profiles_all_in_one import plot_profiles_all_in_one    
 from concurrent.futures import ProcessPoolExecutor
 import time

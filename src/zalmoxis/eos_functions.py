@@ -6,32 +6,6 @@ from .eos_properties import material_properties_iron_silicate_planets, material_
 from scipy.interpolate import interp1d
 import numpy as np
 
-'''def mie_gruneisen_debye(P, P0, rho0, K0, K0prime, gamma0, theta0, V0, T):
-    """
-    Calculates density from the Mie-Grüneisen-Debye EOS.
-    """
-    V = V0 * (P0 / (P + P0))**(1/K0prime)
-    rho = rho0 * (V0 / V)
-
-    # Thermal pressure correction (simplified)
-    gamma = gamma0 * (V / V0)**1  # Assuming q = 1 for simplicity
-    theta = theta0 * (V / V0)**(-gamma)
-    P_thermal = (gamma * rho * 8.314 * (T - 300))  # Simplified thermal pressure
-
-    return rho'''
-
-'''def birch_murnaghan(P, P0, rho0, K0, K0prime, V0):
-    """
-    Calculates density from the 3rd order Birch-Murnaghan EOS.
-    """
-    eta = (3/2) * (K0prime - 4)
-    V = V0 * (1 + (3/4) * (K0prime - 4) * ((P - P0)/K0))**(-2/(3 * (K0prime - 4)))
-    
-    density = rho0 * (V0 / V)
-
-    return density'''
-
-
 # --- Temperature Profile (Adiabatic) ---
 
 '''def calculate_temperature(radii, core_radius, surface_temp, material_properties, gravity, density, K_s, dr):
@@ -120,13 +94,7 @@ def calculate_density(pressure, material, eos_choice, interpolation_functions={}
 
     #T = 0  # Temporary fix for tabulated EOS
 
-    if eos_choice == "Mie-Gruneisen-Debye":
-        #density = mie_gruneisen_debye(pressure, props["P0"], props["rho0"], props["K0"], props["K0prime"], props["gamma0"], props["theta0"], props["V0"], T) #not checked
-        pass
-    elif eos_choice == "Birch-Murnaghan":
-        #density = birch_murnaghan(pressure, props["P0"], props["rho0"], props["K0"], props["K0prime"], props["V0"]) #not checked
-        pass
-    elif eos_choice == "Tabulated:iron/silicate":
+    if eos_choice == "Tabulated:iron/silicate":
         return get_tabulated_eos(pressure, material_properties_iron_silicate_planets, material, interpolation_functions)
     elif eos_choice == "Tabulated:water":
         return get_tabulated_eos(pressure, material_properties_water_planets, material, interpolation_functions)

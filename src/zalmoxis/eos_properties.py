@@ -31,27 +31,6 @@ material_properties_iron_silicate_planets = {
         "eos_file": os.path.join(ZALMOXIS_ROOT, "data", "eos_seager07_silicate.txt") # Name of the file with tabulated EOS data
     }
 }
-# --- Parameters for the analytical EOS according to Seager et al. (2007) ---
-analytical_eos_Seager07_parameters = {
-    "Fe": {
-        # For Fe(alpha) phase of iron
-        "rho0": 8300.00,  # kg/m^3
-        "c": 0.00349,  # kg/m^3/Pa^n
-        "n": 0.528,  # dimensionless
-    },
-    "MgSiO3": {
-        # For MgSiO3 (perovskite) phase
-        "rho0": 4100.00,  # kg/m^3
-        "c": 0.00161,  # kg/m^3/Pa^n
-        "n": 0.541,  # dimensionless
-    },
-    "H2O": {
-        # For H2O (ice) phase
-        "rho0": 1460.00,  # kg/m^3
-        "c": 0.00311,  # kg/m^3/Pa^n
-        "n": 0.513,  # dimensionless
-    }
-}
 
 # --- Material Properties for water planets according to Seager et al. (2007) ---
 material_properties_water_planets = {

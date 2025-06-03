@@ -3,8 +3,6 @@ import matplotlib.pyplot as plt
 import os
 import numpy as np
 
-# Run file via command line: python -m src.zalmoxis.plots.plot_MR
-
 # Read the environment variable for ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
 if not ZALMOXIS_ROOT:

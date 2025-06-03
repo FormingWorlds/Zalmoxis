@@ -1,12 +1,9 @@
 import os
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 from matplotlib import cm
 from matplotlib.colors import Normalize
 from ..constants import *
-
-# Run file via command line: python -m src.zalmoxis.plots.plot_profiles_all_in_one
 
 # Read the environment variable for ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")

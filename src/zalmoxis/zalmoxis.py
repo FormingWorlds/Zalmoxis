@@ -9,7 +9,7 @@ from .structure_model import coupled_odes
 from .plots.plot_profiles import plot_planet_profile_single
 from .plots.plot_eos import plot_eos_material
 
-# Run file via command line with default configuration file: python -m src.zalmoxis.zalmoxis -c ../../input/default.toml
+# Run file via command line with default configuration file: python -m src.zalmoxis.zalmoxis -c input/default.toml
 
 # Read the environment variable for ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
@@ -89,7 +89,7 @@ def main(temp_config_path=None, id_mass=None, output_file=None):
     core_mass_fraction = config['AssumptionsAndInitialGuesses']['core_mass_fraction']  # Initial guess for the core mass as a fraction of the total mass
     inner_mantle_mass_fraction = config['AssumptionsAndInitialGuesses']['inner_mantle_mass_fraction']  # Initial guess for the inner mantle mass as a fraction of the total mass
     weight_iron_fraction = config['AssumptionsAndInitialGuesses']['weight_iron_fraction']  # Initial guess for the weight fraction of iron in the core
-    EOS_CHOICE = config['EOS']['choice']  # Choice of equation of state (e.g., "Birch-Murnaghan", "Mie-Gruneisen-Debye", "Tabulated:iron/silicate", "Tabulated:water"
+    EOS_CHOICE = config['EOS']['choice']  # Choice of equation of state ("Tabulated:iron/silicate", "Tabulated:water")
     num_layers = config['Calculations']['num_layers']  # Number of radial layers for calculations
 
     # Parameters for the iterative solution process

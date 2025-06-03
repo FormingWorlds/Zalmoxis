@@ -3,8 +3,6 @@ import numpy as np
 import os
 from ..constants import earth_center_pressure, earth_cmb_pressure
 
-# Run this file via command line: python -m src.zalmoxis.plots.plot_eos
-
 # Read the environment variable for ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
 if not ZALMOXIS_ROOT:

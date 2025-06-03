@@ -177,6 +177,7 @@ cython_debug/
 /src/zalmoxis/all_profiles_with_colorbar_vs_default.pdf
 /src/zalmoxis/plots/plot_analytical_eos_Seager07.py
 /.DS_Store
-/src/tests/MRtest.py
+/src/tests/test1.py
+/src/tests/test2.py
 
 
