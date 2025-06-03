@@ -2,21 +2,22 @@
 
 import os, shutil, subprocess
 
+# Read the environment variable for ZALMOXIS_ROOT
+ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
+if not ZALMOXIS_ROOT:
+    raise RuntimeError("ZALMOXIS_ROOT environment variable not set")
+
 def download_data():
     """
     Download and extract data from osf.io if the folder does not already exist.
     The data is downloaded as a zip file and extracted to a specified folder.
     The script also removes any __MACOSX folders and moves the contents of the inner 'data' folder to the outer 'data' folder.
     If the folder already exists, it skips the download and extraction process.
-    It also deletes the contents of the calculated_planet_mass_radius.txt file if it exists.
     """
-    # Set the working directory to the current file
-    os.chdir(os.path.dirname(os.path.abspath(__file__)))
-
     # Define URL, token, and paths
-    download_url = "https://osf.io/download/tf9u5/"
-    download_path = '../../data.zip'
-    extract_folder = '../../data'
+    download_url = "https://osf.io/download/md7ka/"
+    download_path = os.path.join(ZALMOXIS_ROOT, "data.zip")  # Path to save the downloaded zip file
+    extract_folder = os.path.join(ZALMOXIS_ROOT, "data")  # Path to extract the data
 
     # Check if the folder already exists
     if not os.path.exists(extract_folder):
@@ -53,3 +54,22 @@ def download_data():
         os.remove(download_path)
     else:
         print(f"Folder '{extract_folder}' already exists. Skipping download and extraction.")
+
+def create_output_files():
+    """
+    Create output files directory if it does not exist.
+    This directory will store the results of the calculations.
+    """
+    output_dir = os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files")  # Path to output files directory
+    
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+        print(f"Output files directory created at '{output_dir}'.")
+    else:
+        print(f"Output files directory already exists at '{output_dir}'.")
+
+if __name__ == "__main__":
+    download_data()  # Download and extract data
+    create_output_files()  # Create output files directory
+
+    print("Setup completed successfully!")

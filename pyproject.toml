@@ -52,6 +52,8 @@ develop = [
     "pytest >= 8.1",
     "pre-commit",
     "ruff",
+    "pytest-rich",
+    "pytest-xdist"
 ]
 
 docs = [
@@ -71,7 +73,10 @@ branch = true
 source = ["zalmoxis"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+minversion = "6.0"
+addopts = "-ra -v"
+testpaths = ["src/tests"]
+pythonpath = ["src"]
 
 [tool.ruff]
 line-length = 96

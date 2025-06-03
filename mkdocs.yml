@@ -6,8 +6,8 @@ nav:
   - Home: index.md
   - Data: data.md
   - Installation: installation.md
-  - Usage: usage.md
   - Configuration: configuration.md
+  - Usage: usage.md
   - Interior Structure Model: model.md
   - Contributing: CONTRIBUTING.md
   - Code of Conduct: CODE_OF_CONDUCT.md

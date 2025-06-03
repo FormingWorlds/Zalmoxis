@@ -1,13 +1,18 @@
 # This script generates a plot of the planet's internal structure, including density, gravity, pressure, and temperature profiles.
-
+import os
 import matplotlib.pyplot as plt
 import numpy as np
 from ..constants import *
 
+# Read the environment variable for ZALMOXIS_ROOT
+ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
+if not ZALMOXIS_ROOT:
+    raise RuntimeError("ZALMOXIS_ROOT environment variable not set")
+
 def plot_planet_profile_single(radii, density, gravity, pressure, temperature, cmb_radius, cmb_mass, average_density, mass_enclosed, id_mass):
     """
     Generates a plot of the planet's internal structure, including density, 
-    gravity, pressure, and temperature profiles.
+    gravity, pressure, temperature, and mass profiles.
 
     Args:
         radii (numpy.ndarray): Array of radial distances (m).
@@ -16,6 +21,7 @@ def plot_planet_profile_single(radii, density, gravity, pressure, temperature, c
         pressure (numpy.ndarray): Array of pressures (Pa).
         temperature (numpy.ndarray): Array of temperatures (K).
         cmb_radius (float): Radius of the core-mantle boundary (m).
+        cmb_mass (float): Mass enclosed within the core-mantle boundary (kg).
         average_density (float): Average density of the planet (kg/m^3).
         mass_enclosed (numpy.ndarray): Array of enclosed masses (kg).
         id_mass (int): Identifier for the planet mass.
@@ -97,6 +103,6 @@ def plot_planet_profile_single(radii, density, gravity, pressure, temperature, c
         a.legend(fontsize=8)
 
     plt.tight_layout()
-    #plt.savefig(f"output_files/planet_profile{id_mass}.pdf")
-    #plt.show()
+    #plt.savefig(os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", f"planet_profile{id_mass}.pdf"))
+    plt.show()
     plt.close(fig)

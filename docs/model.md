@@ -1,21 +1,22 @@
 # Interior Structure Model
 
 ## Overview
-The model calculates the internal structure of an exoplanet based on its mass and various other parameters, including temperature, pressure and density profiles. The solution is derived iteratively and the model currently uses a simplified equation of state (EOS) for the core and mantle from [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346). The model currently supports simulations of Earth-like exoplanets of up to 50 Earth masses.
+The model calculates the internal structure of two- or three-layered fully differentiated exoplanets based primarily on its total mass and compositional mass fractions. The internal pressure, density, gravity, and radius profiles are computed iteratively, using simplified but physically motivated equations of state (EOS) at uniform low temperature (~300 K or zero-temperature EOS) adapted from [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346). The model supports planets of up to 50 Earth masses of two types: Earth-like rocky planets with an iron core and silicate mantle and water-rich planets with an Earth-like rocky core and an outer water ice layer. 
 
 ## Main function
-The `main` function runs the exoplanet interior structure model. It reads the configuration file, initializes parameters and performs an iterative solution to calculate the planet's internal structure.
+The `main` function runs the exoplanet interior structure model. It reads the configuration file, initializes parameters and iteratively adjusts the planet's internal structure until convergence is reached.
 
 ### Parameters
 - `temp_config_path` (optional): Path to the configuration file. If not provided, the default configuration file is chosen.
 - `id_mass` (optional): Identifier for the planet mass in Earth masses.
+- `output_file` (optional): Path to the output file where calculated mass and radius will be saved. If not provided, the default output file is chosen.
 
 ### Physical Model Description
 The internal structure model is based on a simplified approach using the following assumptions:
 
-- The core and mantle are modeled as two distinct layers with different densities.
-- The density profile is derived from the equation of state (EOS), which defines the relationship between pressure, density and temperature.
-- The pressure profile is solved using the `solve_ivp` function, which integrates the coupled ODEs for mass, gravity and pressure, starting from the center and progressing outward:
+- The core, mantle, and water layer are modeled as distinct layers with different densities.
+- The density profile is derived from the equation of state (EOS), which defines the relationship between pressure and density.
+- Assuming hydrostatic and thermodynamic equilibrium, the pressure profile is solved using the `solve_ivp` function, which integrates the coupled ODEs for mass, gravity and pressure, starting from the center and progressing outward:
 
   $$
   \frac{dM}{dr} = 4 \pi r^2 \rho
@@ -30,9 +31,6 @@ The internal structure model is based on a simplified approach using the followi
   $$
   
   where \( M(r) \) is the enclosed mass within radius \( r \), \( \rho(r) \) is the local density at radius \( r \), \( g(r) \) is the gravitational acceleration at radius \( r \), \( P(r) \) is the pressure at radius \( r \), \( G \) is the gravitational constant and \( r \) is the radial coordinate from the planet's center.  
-
-- A simple scaling law is used to estimate the initial radius of the planet based on its mass.
-- The model iterates to adjust the core-mantle boundary and the density profile until the solution converges within the specified tolerance limits.
 
 ### Process Flow
 - **Configuration File Loading**
@@ -49,19 +47,19 @@ The internal structure model is based on a simplified approach using the followi
 
     where \( X_{\text{Fe}} \) is the weight iron fraction, \( M_p \) is the planet mass, \( M_E \) is Earth's mass.
 
-    The initial guess for the planet's core radius is set as:
-    $$
-    R_{\text{core}} = X_{\text{CRF}} \times R_p
-    $$
-
-    where \( X_{\text{CRF}} \) is the core radius fraction and \( R_p \) is the guessed planet radius from above.
-
     The initial guess for the planet's core mass is set as:
     $$
     M_{\text{core}} = X_{\text{CMF}} \times M_p
     $$
 
     where \( X_{\text{CMF}} \) is the core mass fraction and \( M_p \) is the planet mass.
+
+    The initial guess for the planet's mass up to the inner mantle boundary and including the core is set as:
+    $$
+    M_{\text{core+IM}} = (X_{\text{CMF}}+X_{\text{IMF}}) \times M_p
+    $$
+
+    where \( X_{\text{CMF}} \) is the core mass fraction, \( X_{\text{IMF}} \) is the inner mantle mass fraction and \( M_p \) is the planet mass.
 
     The initial guess for the planet's pressure at the center is based on an empirical scaling law derived from the hydrostatic equilibrium equation and set as:
 
@@ -73,26 +71,31 @@ The internal structure model is based on a simplified approach using the followi
 
 - **Iterative Solution**
 
-    The model iteratively adjusts the planet's radius and core-mantle boundary (CMB) radius using an outer loop. In each outer iteration, the function sets up a radial grid and initializes arrays for density, mass enclosed, gravity and pressure. The core mass is estimated and an initial guess for the pressure at the center is set. A simplified initial density profile is also assigned based on the core and mantle assumptions.
+    The model iterates through nested loops to refine mass, radius, pressure, and density profiles until convergence.
 
-    In the inner loop, the model iteratively adjusts the planet's density profile, using `solve_ivp` to solve the coupled ordinary differential equations (ODEs) for mass, gravity and pressure as a function of radius. For each layer, the density is recalculated based on the pressure profile and the equation of state.
+    Outer Loop (Mass Convergence):
+    Updates the total interior mass estimate based on current mass fraction guesses and recalculates the overall planetary radius and profile.
 
-    In the innermost loop (pressure adjustment loop), the `solve_ivp` function is used to solve the coupled ODEs for mass, gravity and pressure. The pressure profile is adjusted iteratively to match the target surface pressure, with each adjustment made using a scaling factor. 
+    Inner Loop (Density Profile Convergence):
+    For each layer and radius, recalculates the density based on the pressure profile and the suitable EOS.
+
+    Innermost Loop (Pressure Adjustment):
+    Using numerical ODE solvers (`solve_ivp`), integrates coupled hydrostatic equilibrium equations to update the pressure profile. It also adjusts central pressure to match target surface pressure, ensuring physical consistency.
 
 - **Convergence Checks**
 
-    The outer loop checks for convergence based on the relative differences in the calculated mass and core radius.
+    * The outer loop checks for convergence based on the relative differences in the calculated mass.
 
-    The inner loop checks for convergence based on the relative differences in the density profile.
+    * The inner loop checks for convergence based on the relative differences in the density profile.
     
-    The pressure adjustment loop also checks for convergence, ensuring that the pressure difference is within the defined tolerance and that all pressure values remain physically valid (all positive).
+    * The pressure adjustment loop also checks for convergence, ensuring that the pressure difference is within the defined tolerance and that all pressure values remain physically valid (all positive).
 
 - **Output Generation**
 
-    Once the solution has converged, the final mass, radius, core radius and other calculated parameters are printed. Other output parameters include the mantle density at the Core Mantle Boundary (CMB), core density at the CMB, pressure at the CMB, pressure at center, average density, CMB mass fraction and core radius fraction.
+    Once the solution has converged, the model returns the final radial profiles of gravity, pressure, density, and mass throughout the planet. In addition to these profiles, several key structural parameters are extracted, including: the core radius, mantle density at the Core Mantle Boundary (CMB), core density at the CMB, pressure at the CMB, pressure at center, average density, CMB mass fraction, core radius fraction, inner mantle mass fraction and inner mantle radius fraction.
 
 ## Other Key Functions and Equations
 
 - **Coupled ODEs** (`coupled_odes`): Defines the derivatives of mass, gravity and pressure with respect to radius. These equations are used to solve for the planet's internal structure.
   
-- **Density Calculation** (`calculate_density`): Calculates the density at each layer based on the pressure and material properties of the core and mantle using the equation of state.
+- **Density Calculation** (`calculate_density`): Assigns density at each radius by determining the layer (core, mantle, water) and applying the corresponding EOS to relate pressure and density.
