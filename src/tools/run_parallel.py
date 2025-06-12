@@ -46,7 +46,7 @@ def run_zalmoxis(id_mass=None):
     config['IterativeProcess']['relative_tolerance'] = 1e-5
     config['IterativeProcess']['absolute_tolerance'] = 1e-6 
     config['PressureAdjustment']['target_surface_pressure'] = 101325 
-    config['PressureAdjustment']['pressure_tolerance'] = 1e11 
+    config['PressureAdjustment']['pressure_tolerance'] = 1e9 
     config['PressureAdjustment']['max_iterations_pressure'] = 200 
     config['PressureAdjustment']['pressure_adjustment_factor'] = 1.1
 
