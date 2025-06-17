@@ -176,6 +176,9 @@ cython_debug/
 /src/zalmoxis/all_profiles_with_colorbar_vs_custom.pdf
 /src/zalmoxis/all_profiles_with_colorbar_vs_default.pdf
 /src/zalmoxis/plots/plot_analytical_eos_Seager07.py
+/src/zalmoxis/plots/plots_thesis.py
+/src/zalmoxis/plots/surface_properties.png
+/src/zalmoxis/plots/crystallization_time_and_melt_fraction.png
 /.DS_Store
 /src/tests/test1.py
 /src/tests/test2.py

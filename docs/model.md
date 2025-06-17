@@ -1,7 +1,7 @@
 # Interior Structure Model
 
 ## Overview
-The model calculates the internal structure of two- or three-layered fully differentiated exoplanets based primarily on its total mass and compositional mass fractions. The internal pressure, density, gravity, and radius profiles are computed iteratively, using simplified but physically motivated equations of state (EOS) at uniform low temperature (~300 K or zero-temperature EOS) adapted from [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346). The model supports planets of up to 50 Earth masses of two types: Earth-like rocky planets with an iron core and silicate mantle and water-rich planets with an Earth-like rocky core and an outer water ice layer. 
+The model calculates the internal structure of two- or three-layered fully differentiated exoplanets based primarily on its total mass and compositional mass fractions. The internal pressure, density, gravity, and radius profiles are computed iteratively, using simplified but physically motivated equations of state (EOS) at uniform low temperature (~300 K or zero-temperature EOS) adapted from [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346). The model supports planets of up to 50 Earth masses of two types: Earth-like rocky planets with an iron core and silicate mantle and water-rich planets with an Earth-like rocky interior and an outer water ice layer. 
 
 ## Main function
 The `main` function runs the exoplanet interior structure model. It reads the configuration file, initializes parameters and iteratively adjusts the planet's internal structure until convergence is reached.
