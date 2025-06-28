@@ -92,7 +92,11 @@ The internal structure model is based on a simplified approach using the followi
 
 - **Output Generation**
 
+<<<<<<< HEAD
     Once the solution has converged, the model returns the final radial profiles of gravity, pressure, density, and mass throughout the planet. In addition to these profiles, several key structural parameters are extracted, including: the core radius, mantle density at the core mantle boundary (CMB), core density at the CMB, pressure at the CMB, pressure at center, average density, CMB mass fraction, core radius fraction, inner mantle mass fraction and inner mantle radius fraction.
+=======
+    Once the solution has converged, the model returns the final radial profiles of gravity, pressure, density, and mass throughout the planet. In addition to these profiles, several key structural parameters are extracted, including: the core radius, mantle density at the Core Mantle Boundary (CMB), core density at the CMB, pressure at the CMB, pressure at center, average density, CMB mass fraction, core radius fraction, inner mantle mass fraction and inner mantle radius fraction.
+>>>>>>> main
 
 ## Other Key Functions and Equations
 
