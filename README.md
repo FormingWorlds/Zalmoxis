@@ -15,7 +15,6 @@ See the [installation guide](https://zalmoxis.readthedocs.io/en/latest/installat
 | `CODE_OF_CONDUCT.md`  | Project code of conduct                                   |
 | `LICENSE.txt`         | Project license                                           |
 | `src/zalmoxis`         | Source code for Zalmoxis                                |
-| `output_files/`             | Output folder for each model run          |
 | `input/`              | Configuration files for running the model         |
 | `docs/`		   | Documentation source files                                |
 | `src/tests/`           | Tests for the model  |

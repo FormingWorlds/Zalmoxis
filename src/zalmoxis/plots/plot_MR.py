@@ -50,7 +50,7 @@ def plot_mass_radius_relationship(target_mass_array):
     # Read data from file with calculated planet masses and radii by the model
     masses_Earth = []
     radii_Earth = []
-    with open(os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", "calculated_planet_mass_radius_Earth.txt"), 'r') as file:
+    with open(os.path.join(ZALMOXIS_ROOT, "output_files", "calculated_planet_mass_radius_Earth.txt"), 'r') as file:
         next(file)  # Skip the header line
         for line in file:
             mass, radius = map(float, line.split())
@@ -60,7 +60,7 @@ def plot_mass_radius_relationship(target_mass_array):
     # Read data from file with calculated planet masses and radii by the model
     masses_water = []
     radii_water = []
-    with open(os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", "calculated_planet_mass_radius_water.txt"), 'r') as file:
+    with open(os.path.join(ZALMOXIS_ROOT, "output_files", "calculated_planet_mass_radius_water.txt"), 'r') as file:
         next(file)  # Skip the header line
         for line in file:
             mass, radius = map(float, line.split())
@@ -80,7 +80,7 @@ def plot_mass_radius_relationship(target_mass_array):
     ax.set_ylim(0, 5)
     ax.legend()
     ax.grid(True)
-    plt.savefig(os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", "MR_plot.pdf"))
+    plt.savefig(os.path.join(ZALMOXIS_ROOT, "output_files", "MR_plot.pdf"))
     #plt.show()
     plt.close(fig)
 

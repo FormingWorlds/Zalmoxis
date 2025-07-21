@@ -1,0 +1,2 @@
+Calculated Mass (kg)	Calculated Radius (m)
+2.9848047289269578e+26	20435004.12992948

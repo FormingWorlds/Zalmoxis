@@ -73,6 +73,6 @@ def plot_eos_material(data_files, data_folder):
 
     # Show the plot
     ax.legend()
-    fig.savefig(os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", "planet_eos.pdf"))
+    fig.savefig(os.path.join(ZALMOXIS_ROOT, "output_files", "planet_eos.pdf"))
     #plt.show()
     plt.close(fig)

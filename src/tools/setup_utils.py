@@ -60,7 +60,7 @@ def create_output_files():
     Create output files directory if it does not exist.
     This directory will store the results of the calculations.
     """
-    output_dir = os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files")  # Path to output files directory
+    output_dir = os.path.join(ZALMOXIS_ROOT, "output_files")  # Path to output files directory
     
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)

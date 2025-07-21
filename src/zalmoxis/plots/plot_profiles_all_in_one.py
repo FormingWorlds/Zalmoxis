@@ -47,7 +47,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
     # Read data from files with calculated planet profiles
     for id_mass in target_mass_array:
         # Generate file path for each planet profile
-        file_path = os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", f"planet_profile{id_mass}.txt")
+        file_path = os.path.join(ZALMOXIS_ROOT, "output_files", f"planet_profile{id_mass}.txt")
 
         # Check if the file exists
         if os.path.exists(file_path):
@@ -240,6 +240,6 @@ def plot_profiles_all_in_one(target_mass_array, choice):
     # Adjust layout and show plot
     #plt.tight_layout()
     plt.suptitle(f"Planet Profiles Comparison ({choice})")
-    plt.savefig(os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", f"all_profiles_with_colorbar_vs_{choice}.pdf"))
+    plt.savefig(os.path.join(ZALMOXIS_ROOT, "output_files", f"all_profiles_with_colorbar_vs_{choice}.pdf"))
     #plt.show()
     plt.close(fig)

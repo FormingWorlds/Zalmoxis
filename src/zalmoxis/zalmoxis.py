@@ -277,10 +277,10 @@ def main(temp_config_path=None, id_mass=None, output_file=None):
         # Combine and save plotted data to a single output file
         output_data = np.column_stack((radii, density, gravity, pressure, temperature, mass_enclosed))
         header = "Radius (m)\tDensity (kg/m^3)\tGravity (m/s^2)\tPressure (Pa)\tTemperature (K)\tMass Enclosed (kg)"
-        np.savetxt(os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", f"planet_profile{id_mass}.txt"), output_data, header=header)
+        np.savetxt(os.path.join(ZALMOXIS_ROOT, "output_files", f"planet_profile{id_mass}.txt"), output_data, header=header)
         # Append calculated mass and radius of the planet to a file in dedicated columns
         if output_file is None:
-            output_file = os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", "calculated_planet_mass_radius.txt")
+            output_file = os.path.join(ZALMOXIS_ROOT, "output_files", "calculated_planet_mass_radius.txt")
         if not os.path.exists(output_file):
             header = "Calculated Mass (kg)\tCalculated Radius (m)"
             with open(output_file, "w") as file:

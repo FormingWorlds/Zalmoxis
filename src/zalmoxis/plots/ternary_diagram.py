@@ -77,7 +77,7 @@ def run_zalmoxis_for_ternary(args):
         planet_radius = max(radii)  # or radii[-1], depending on Zalmoxis' radius order
 
         # Log the composition and radius
-        custom_log_file = os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", "composition_radius_log.txt")
+        custom_log_file = os.path.join(ZALMOXIS_ROOT, "output_files", "composition_radius_log.txt")
         with open(custom_log_file, "a") as log:
             log.write(f"{core_frac:.4f}\t{mantle_frac:.4f}\t{water_frac:.4f}\t{planet_radius:.4e}\t{total_time:.4e}\n")
 
@@ -112,7 +112,7 @@ def run_ternary_grid_for_mass(planet_mass=1.0):
     print(f"Completed Zalmoxis runs for {len(args_list)} composition points.")
 
 def read_results():
-    log_path = os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", "composition_radius_log.txt")
+    log_path = os.path.join(ZALMOXIS_ROOT, "output_files", "composition_radius_log.txt")
     data = []
     with open(log_path, 'r') as file:
         for line in file:
@@ -184,7 +184,7 @@ def plot_ternary(data):
 
     plt.tight_layout()
     #plt.show()
-    plt.savefig(os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", "ternary_diagram.png"), dpi=300)
+    plt.savefig(os.path.join(ZALMOXIS_ROOT, "output_files", "ternary_diagram.png"), dpi=300)
 
 #create another ternary function that plots the time instead of radius
 def plot_ternary_time(data):
@@ -242,7 +242,7 @@ def plot_ternary_time(data):
     cbar.set_label("Total Time (s)")
 
     plt.tight_layout()
-    plt.savefig(os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", "ternary_diagram_time.png"), dpi=300)
+    plt.savefig(os.path.join(ZALMOXIS_ROOT, "output_files", "ternary_diagram_time.png"), dpi=300)
 
 if __name__ == "__main__":
     run_ternary_grid_for_mass(planet_mass=50)  # runs all models and writes the log file

@@ -78,7 +78,7 @@ def run_zalmoxis_in_parallel(choice):
     """
 
     # Delete the contents of the calculated_planet_mass_radius.txt file if it exists
-    calculated_file_path = os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", "calculated_planet_mass_radius.txt")
+    calculated_file_path = os.path.join(ZALMOXIS_ROOT, "output_files", "calculated_planet_mass_radius.txt")
     if os.path.exists(calculated_file_path):
         with open(calculated_file_path, 'w') as file:
             file.truncate(0)
