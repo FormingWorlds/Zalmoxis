@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .constants import *
+from .constants import G
 from .eos_functions import calculate_density
 
 

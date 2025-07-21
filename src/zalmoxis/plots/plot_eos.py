@@ -30,7 +30,7 @@ def plot_eos_material(data_files, data_folder):
     """
     Plots the equation of state (EOS) data for different materials.
     Parameters:
-    data_files (list): List of filenames containing the EOS data.   
+    data_files (list): List of filenames containing the EOS data.  
     data_folder (str): Path to the folder containing the data files.
 
     The function reads the EOS data from the specified files and plots the pressure-density relationship for each material.

@@ -5,7 +5,18 @@ import os
 
 import matplotlib.pyplot as plt
 
-from ..constants import *
+from ..constants import (
+    earth_center_density,
+    earth_center_pressure,
+    earth_center_temperature,
+    earth_cmb_pressure,
+    earth_cmb_radius,
+    earth_cmb_temperature,
+    earth_mass,
+    earth_radius,
+    earth_surface_pressure,
+    earth_surface_temperature,
+)
 
 # Read the environment variable for ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
@@ -14,8 +25,7 @@ if not ZALMOXIS_ROOT:
 
 def plot_planet_profile_single(radii, density, gravity, pressure, temperature, cmb_radius, cmb_mass, average_density, mass_enclosed, id_mass):
     """
-    Generates a plot of the planet's internal structure, including density, 
-    gravity, pressure, temperature, and mass profiles.
+    Generates a plot of the planet's internal structure, including density, gravity, pressure, temperature, and mass profiles.
 
     Args:
         radii (numpy.ndarray): Array of radial distances (m).

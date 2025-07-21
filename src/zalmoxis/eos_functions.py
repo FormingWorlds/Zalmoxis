@@ -37,7 +37,7 @@ from .eos_properties import (
     # Iterate inward from the surface (reverse order in the arrays)
     for i in range(len(radii) - 1, 0, -1):
         radius = radii[i]
-        
+
         # Determine the material type: mantle or core
         if radius > core_radius:
             material = "mantle"

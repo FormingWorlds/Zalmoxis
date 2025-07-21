@@ -7,7 +7,7 @@ import numpy as np
 from matplotlib import cm
 from matplotlib.colors import Normalize
 
-from ..constants import *
+from ..constants import earth_mass, earth_radius
 
 # Read the environment variable for ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")

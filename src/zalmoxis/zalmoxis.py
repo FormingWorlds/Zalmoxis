@@ -9,7 +9,7 @@ import numpy as np
 import toml
 from scipy.integrate import solve_ivp
 
-from .constants import *
+from .constants import earth_center_pressure, earth_mass, earth_radius
 from .eos_functions import calculate_density
 from .plots.plot_eos import plot_eos_material
 from .structure_model import coupled_odes
