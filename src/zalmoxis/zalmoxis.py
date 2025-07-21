@@ -304,7 +304,7 @@ def main(temp_config_path=None, id_mass=None, output_file=None):
 
     # Calculate the total time taken for the entire process
     total_time = end_time - start_time
-    
+
     # Return the calculated values for further use
     return radii, density, gravity, pressure, temperature, mass_enclosed, total_time
 
