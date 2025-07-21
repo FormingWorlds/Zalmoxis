@@ -1,3 +1,5 @@
+![CI](https://github.com/<your-username>/<your-repo-name>/actions/workflows/ci.yml/badge.svg)
+
 # Zalmoxis (Exoplanet Interior Structure Model)
 
 **Zalmoxis** is a program designed to model the internal structure of exoplanets using an iterative numerical approach.
