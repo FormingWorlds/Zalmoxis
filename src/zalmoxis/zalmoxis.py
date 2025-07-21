@@ -118,10 +118,11 @@ def main(temp_config_path=None, id_mass=None, output_file=None):
     # Initialize temperature profile
     temperature = np.zeros(num_layers)
 
+    # Time the entire process
+    start_time = time.time()
+
     # Solve the interior structure
     for outer_iter in range(max_iterations_outer): # Outer loop for radius and mass convergence
-        # Start timing the outer loop
-        start_time = time.time()
 
         # Setup initial guess for the radial grid based on the radius guess
         radii = np.linspace(0, radius_guess, num_layers)
@@ -236,14 +237,13 @@ def main(temp_config_path=None, id_mass=None, output_file=None):
         if relative_diff_outer_mass < tolerance_outer:
             print(f"Outer loop (total mass) converged after {outer_iter + 1} iterations.")
             break  # Exit the outer loop
-        
-        # End timing the outer loop
-        end_time = time.time()
-        print(f"Outer iteration {outer_iter+1} took {end_time - start_time:.2f} seconds")
 
         # Check if maximum iterations for outer loop are reached
         if outer_iter == max_iterations_outer - 1:
             print(f"Warning: Maximum outer iterations ({max_iterations_outer}) reached. Total mass may not be fully converged.")
+
+    # End timing the entire process
+    end_time = time.time()
 
     # Extract the final calculated total interior radius of the planet 
     planet_radius = radii[-1]
@@ -296,9 +296,12 @@ def main(temp_config_path=None, id_mass=None, output_file=None):
         eos_data_folder = os.path.join(ZALMOXIS_ROOT, "data")
         plot_eos_material(eos_data_files, eos_data_folder)  # Call the EOS plotting function
         #plt.show()  # Show the plots
+
+    # Calculate the total time taken for the entire process
+    total_time = end_time - start_time
     
     # Return the calculated values for further use
-    return radii, density, gravity, pressure, temperature, mass_enclosed
+    return radii, density, gravity, pressure, temperature, mass_enclosed, total_time
 
 if __name__ == "__main__":
     main()

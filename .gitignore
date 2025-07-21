@@ -179,5 +179,6 @@ cython_debug/
 /.DS_Store
 /src/tests/test1.py
 /src/tests/test2.py
+.ruff_cache/
 
 

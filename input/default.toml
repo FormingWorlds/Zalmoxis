@@ -24,7 +24,7 @@ absolute_tolerance      = 1e-6     # Absolute tolerance for solve_ivp
 
 [PressureAdjustment]
 target_surface_pressure = 101325    # Pa, 1 atm, for example
-pressure_tolerance      = 1e11      # Pa, tolerance for surface pressure matching
+pressure_tolerance      = 1e9      # Pa, tolerance for surface pressure matching
 max_iterations_pressure = 200       # Maximum iterations for pressure adjustment
 pressure_adjustment_factor = 1.1   # Reduction factor for pressure adjustment
 
