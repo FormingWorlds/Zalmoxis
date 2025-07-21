@@ -1,6 +1,10 @@
+from __future__ import annotations
+
 import os
 import tempfile
+
 import toml
+
 from src.zalmoxis import zalmoxis
 from zalmoxis.constants import earth_mass, earth_radius
 
@@ -52,7 +56,7 @@ def run_zalmoxis_rocky_water(id_mass, config_type, cmf, immf):
         config['EOS']['choice'] = "Tabulated:water"
     else:
         raise ValueError(f"Unknown config_type: {config_type}")
-    
+
     suffix = "_rocky.txt" if config_type == "rocky" else "_water.txt"
     with tempfile.NamedTemporaryFile(delete=False, mode='w', suffix=suffix) as temp_output_file:
         output_file = temp_output_file.name
@@ -91,7 +95,7 @@ def load_zeng_curve(filename):
     """
     # Load Zeng et al. (2019) mass-radius data from the specified file
     data_path = os.path.join(ZALMOXIS_ROOT, "data", filename)
-    
+
     masses = []
     radii = []
     with open(data_path, 'r') as f:
@@ -134,7 +138,7 @@ def load_profile_output(profile_output_file):
     """
     radii = []
     densities = []
-    
+
     with open(profile_output_file, 'r') as f:
         next(f)  # Skip header line
         for line in f:
@@ -150,7 +154,7 @@ def load_profile_output(profile_output_file):
 
     if not radii or not densities:
         raise RuntimeError(f"No valid data found in {profile_output_file}")
-    
+
     return radii, densities
 
 def load_Seager_data(filename):

@@ -1,4 +1,6 @@
 # Reference values for Earth
+from __future__ import annotations
+
 earth_radius                = 6386e3    # m
 earth_cmb_radius            = 3480e3    # m
 earth_surface_pressure      = 101325    # Pa (1 atm)

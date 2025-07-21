@@ -1,7 +1,10 @@
 # This script generates a plot of the planet's internal structure, including density, gravity, pressure, and temperature profiles.
+from __future__ import annotations
+
 import os
+
 import matplotlib.pyplot as plt
-import numpy as np
+
 from ..constants import *
 
 # Read the environment variable for ZALMOXIS_ROOT
@@ -67,16 +70,16 @@ def plot_planet_profile_single(radii, density, gravity, pressure, temperature, c
     # Mass vs. Radius
     ax[4].plot(radii / 1e3, mass_enclosed/earth_mass, color='b', lw=2, label="Model")
     ax[4].set_xlabel("Radius (km)")
-    ax[4].set_ylabel("Mass enclosed (M$_\oplus$)")
+    ax[4].set_ylabel(r"Mass enclosed (M$_\oplus$)")
     ax[4].axvline(x=cmb_radius / 1e3, color='b', linestyle='--', label="Model CMB radius")
     ax[4].set_title("Model mass enclosed structure")
     ax[4].grid()
 
 
     # Add reference Earth values to the plots
-    ax[0].axvline(x=(earth_radius/1e3), color='g', linestyle=':', label=f"Earth Surface")
+    ax[0].axvline(x=(earth_radius/1e3), color='g', linestyle=':', label="Earth Surface")
     ax[0].axvline(x=earth_cmb_radius / 1e3, color='g', linestyle='--', label="Earth CMB radius")
-    ax[0].axhline(y=5515, color='g', linestyle='-.', label=f"Earth average density\n = 5515 kg/m^3")
+    ax[0].axhline(y=5515, color='g', linestyle='-.', label="Earth average density\n = 5515 kg/m^3")
     ax[0].axhline(y=earth_center_density, color='g', linestyle=':', label="Earth center density")
 
     ax[1].axhline(y=0, color='g', linestyle=':', label="Center gravity\n"+r"= 0 $m/s^2$")
@@ -93,7 +96,7 @@ def plot_planet_profile_single(radii, density, gravity, pressure, temperature, c
     ax[3].axhline(y=earth_cmb_temperature , color='g', linestyle='-.', label="Earth CMB temperature")
     ax[3].axhline(y=earth_center_temperature , color='g', linestyle='--', label="Earth center temperature")
 
-    ax[4].axvline(x=(earth_radius/1e3), color='g', linestyle=':', label=f"Earth Surface")
+    ax[4].axvline(x=(earth_radius/1e3), color='g', linestyle=':', label="Earth Surface")
     ax[4].axvline(x=earth_cmb_radius / 1e3, color='g', linestyle='--', label="Earth CMB radius")
     ax[4].axhline(y=earth_mass/earth_mass, color='g', linestyle='-.', label="Earth mass")
     ax[4].axhline(y=cmb_mass/earth_mass, color='g', linestyle='--', label="Model CMB mass")

@@ -1,14 +1,16 @@
-import os, sys
-import tempfile
-import toml
-from zalmoxis import zalmoxis  
-from concurrent.futures import ProcessPoolExecutor
-import time
+from __future__ import annotations
+
 import itertools
+import os
+import tempfile
+from concurrent.futures import ProcessPoolExecutor
+
+import matplotlib.pyplot as plt
 import numpy as np
 import ternary
-import matplotlib.pyplot as plt
-import ternary
+import toml
+
+from zalmoxis import zalmoxis
 from zalmoxis.constants import earth_radius
 
 # Run file via command line: python -m src.tools.run_parallel Wagner/Boujibar/default/SeagerEarth/Seagerwater/custom
@@ -58,10 +60,10 @@ def run_zalmoxis_for_ternary(args):
     config['IterativeProcess']['tolerance_outer'] = 1e-3
     config['IterativeProcess']['tolerance_inner'] = 1e-4
     config['IterativeProcess']['relative_tolerance'] = 1e-5
-    config['IterativeProcess']['absolute_tolerance'] = 1e-6 
-    config['PressureAdjustment']['target_surface_pressure'] = 101325 
-    config['PressureAdjustment']['pressure_tolerance'] = 1e9 
-    config['PressureAdjustment']['max_iterations_pressure'] = 200 
+    config['IterativeProcess']['absolute_tolerance'] = 1e-6
+    config['PressureAdjustment']['target_surface_pressure'] = 101325
+    config['PressureAdjustment']['pressure_tolerance'] = 1e9
+    config['PressureAdjustment']['max_iterations_pressure'] = 200
     config['PressureAdjustment']['pressure_adjustment_factor'] = 1.1
 
     # Create a temporary configuration file

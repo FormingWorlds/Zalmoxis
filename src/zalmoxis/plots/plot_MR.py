@@ -1,7 +1,11 @@
-from ..constants import *
-import matplotlib.pyplot as plt
+from __future__ import annotations
+
 import os
+
+import matplotlib.pyplot as plt
 import numpy as np
+
+from ..constants import *
 
 # Read the environment variable for ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")

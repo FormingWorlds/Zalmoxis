@@ -1,8 +1,11 @@
 # This file contains the main function that solves the coupled ODEs for the structure model.
+from __future__ import annotations
 
 import numpy as np
-from .eos_functions import calculate_density
+
 from .constants import *
+from .eos_functions import calculate_density
+
 
 # Define the coupled ODEs for the structure model
 def coupled_odes(radius, y, cmb_mass, inner_mantle_mass, EOS_CHOICE, interpolation_cache):
@@ -38,7 +41,7 @@ def coupled_odes(radius, y, cmb_mass, inner_mantle_mass, EOS_CHOICE, interpolati
             # Core
             material = "core"
         elif mass < inner_mantle_mass:
-            # Inner mantle 
+            # Inner mantle
             material = "bridgmanite_shell"
         else:
             # Outer layer
@@ -49,7 +52,7 @@ def coupled_odes(radius, y, cmb_mass, inner_mantle_mass, EOS_CHOICE, interpolati
 
     # Handle potential errors in density calculation
     if current_density is None:
-        print(f"Warning: Density calculation failed at radius {radius}") 
+        print(f"Warning: Density calculation failed at radius {radius}")
 
     # Define the ODEs for mass, gravity and pressure
     dMdr = 4 * np.pi * radius**2 * current_density

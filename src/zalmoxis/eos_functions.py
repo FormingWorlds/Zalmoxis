@@ -1,10 +1,15 @@
 """
 EOS Data and Functions
 """
+from __future__ import annotations
 
-from .eos_properties import material_properties_iron_silicate_planets, material_properties_water_planets
-from scipy.interpolate import interp1d
 import numpy as np
+from scipy.interpolate import interp1d
+
+from .eos_properties import (
+    material_properties_iron_silicate_planets,
+    material_properties_water_planets,
+)
 
 # --- Temperature Profile (Adiabatic) ---
 
@@ -86,7 +91,7 @@ def get_tabulated_eos(pressure, material_dictionary, material, interpolation_fun
     except Exception as e: # Other errors
         print(f"Unexpected error with tabulated EOS for {material} at {pressure:.2e} Pa: {e}")
         return None
-   
+
 
 # --- EOS Calculation ---
 def calculate_density(pressure, material, eos_choice, interpolation_functions={}):
@@ -100,7 +105,7 @@ def calculate_density(pressure, material, eos_choice, interpolation_functions={}
         return get_tabulated_eos(pressure, material_properties_water_planets, material, interpolation_functions)
     else:
         raise ValueError("Invalid EOS choice.")
-    
+
 
 
 

@@ -1,6 +1,10 @@
+from __future__ import annotations
+
+import os
+
 import matplotlib.pyplot as plt
 import ternary
-import os
+
 from zalmoxis.constants import earth_radius
 
 # Read the environment variable for ZALMOXIS_ROOT

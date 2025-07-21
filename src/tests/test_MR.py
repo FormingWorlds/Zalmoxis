@@ -1,7 +1,11 @@
+from __future__ import annotations
+
 import os
-import pytest
+
 import numpy as np
-from tools.setup_tests import run_zalmoxis_rocky_water, load_zeng_curve, load_model_output
+import pytest
+
+from tools.setup_tests import load_model_output, load_zeng_curve, run_zalmoxis_rocky_water
 
 # Read the environment variable for ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")

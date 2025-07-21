@@ -1,8 +1,12 @@
+from __future__ import annotations
+
 import os
-import pytest
+
 import numpy as np
+import pytest
 from scipy.interpolate import interp1d
-from tools.setup_tests import run_zalmoxis_rocky_water, load_Seager_data, load_profile_output
+
+from tools.setup_tests import load_profile_output, load_Seager_data, run_zalmoxis_rocky_water
 
 # Read the environment variable for ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
@@ -35,10 +39,10 @@ def test_density_profile(config_type, seager_file, mass):
     # Run the Zalmoxis model for the specified mass and configuration type
     output_file, profile_output_file = run_zalmoxis_rocky_water(mass, config_type, cmf=0.065, immf=0.485)
 
-    # Load the model output for the density profile 
+    # Load the model output for the density profile
     model_radii, model_densities = load_profile_output(profile_output_file)
     model_radii = np.array(model_radii)/1e3  # Convert from meters to kilometers
-    model_densities = np.array(model_densities) 
+    model_densities = np.array(model_densities)
 
     # Interpolate Seager densities onto model radii
     interp_func = interp1d(seager_radii, seager_densities, bounds_error=False, fill_value="extrapolate")
