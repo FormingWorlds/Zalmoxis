@@ -93,7 +93,7 @@ def main(temp_config_path=None, id_mass=None, output_file=None):
     # Access parameters from the configuration file
     planet_mass = config['InputParameter']['planet_mass']  # Mass of the planet (kg)
     core_mass_fraction = config['AssumptionsAndInitialGuesses']['core_mass_fraction']  # Initial guess for the core mass as a fraction of the total mass
-    inner_mantle_mass_fraction = config['AssumptionsAndInitialGuesses']['inner_mantle_mass_fraction']  # Initial guess for the inner mantle mass as a fraction of the total mass
+    mantle_mass_fraction = config['AssumptionsAndInitialGuesses']['mantle_mass_fraction']  # Initial guess for the mantle mass as a fraction of the total mass
     weight_iron_fraction = config['AssumptionsAndInitialGuesses']['weight_iron_fraction']  # Initial guess for the weight fraction of iron in the core
     EOS_CHOICE = config['EOS']['choice']  # Choice of equation of state ("Tabulated:iron/silicate", "Tabulated:water")
     num_layers = config['Calculations']['num_layers']  # Number of radial layers for calculations
@@ -119,7 +119,7 @@ def main(temp_config_path=None, id_mass=None, output_file=None):
     # Setup initial guesses for the planet radius and core-mantle boundary mass
     radius_guess = 1000*(7030-1840*weight_iron_fraction)*(planet_mass/earth_mass)**0.282 # Initial guess for the interior planet radius [m] based on the scaling law in Noack et al. 2020
     cmb_mass = 0 # Initial guess for the core-mantle boundary mass [kg]
-    inner_mantle_mass = 0 # Initial guess for the inner mantle mass [kg]
+    core_mantle_mass = 0 # Initial guess for the core+mantle mass [kg]
 
     # Initialize temperature profile
     temperature = np.zeros(num_layers)
@@ -142,8 +142,8 @@ def main(temp_config_path=None, id_mass=None, output_file=None):
         # Setup initial guess for the core-mantle boundary mass
         cmb_mass = core_mass_fraction * planet_mass
 
-        # Setup initial guess for the inner mantle boundary mass
-        inner_mantle_mass = (core_mass_fraction + inner_mantle_mass_fraction) * planet_mass
+        # Setup initial guess for the core+mantle mass
+        core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * planet_mass
 
         # Setup initial guess for the pressure at the center of the planet (needed for solving the ODEs)
         pressure[0] = earth_center_pressure
@@ -163,7 +163,7 @@ def main(temp_config_path=None, id_mass=None, output_file=None):
                 y0 = [0, 0, pressure_guess]
 
                 # Solve the ODEs using solve_ivp
-                sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, inner_mantle_mass, EOS_CHOICE, interpolation_cache),
+                sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, core_mantle_mass, EOS_CHOICE, interpolation_cache),
                     (radii[0], radii[-1]), y0, t_eval=radii, rtol=relative_tolerance, atol=absolute_tolerance, method='RK45', dense_output=True)
 
                 # Extract mass, gravity, and pressure grids from the solution
@@ -200,7 +200,7 @@ def main(temp_config_path=None, id_mass=None, output_file=None):
                     if mass_enclosed[i] < cmb_mass:
                         # Core
                         material = "core"
-                    elif mass_enclosed[i] < inner_mantle_mass:
+                    elif mass_enclosed[i] < core_mantle_mass:
                         # Inner mantle
                         material = "bridgmanite_shell"
                     else:
@@ -234,7 +234,7 @@ def main(temp_config_path=None, id_mass=None, output_file=None):
         cmb_mass = core_mass_fraction * calculated_mass
 
         # Update the inner mantle mass based on the inner mantle mass fraction and calculated total interior mass of the planet
-        inner_mantle_mass = (core_mass_fraction + inner_mantle_mass_fraction) * calculated_mass
+        core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * calculated_mass
 
         # Calculate relative differences of the calculated total interior mass
         relative_diff_outer_mass = abs((calculated_mass - planet_mass) / planet_mass)
@@ -274,9 +274,9 @@ def main(temp_config_path=None, id_mass=None, output_file=None):
     print(f"Pressure at Center: {pressure[0]:.2e} Pa")
     print(f"Average Density: {average_density:.2f} kg/m^3")
     print(f"CMB Mass Fraction: {mass_enclosed[cmb_index] / mass_enclosed[-1]:.3f}")
-    print(f"Inner Mantle Mass Fraction: {(inner_mantle_mass - mass_enclosed[cmb_index]) / mass_enclosed[-1]:.3f}")
+    print(f"Core+Mantle Mass Fraction: {(core_mantle_mass - mass_enclosed[cmb_index]) / mass_enclosed[-1]:.3f}")
     print(f"Calculated Core Radius Fraction: {radii[cmb_index] / planet_radius:.2f}")
-    print(f"Calculated Inner Mantle Radius Fraction: {(radii[np.argmax(mass_enclosed >= inner_mantle_mass)] / planet_radius):.2f}")
+    print(f"Calculated Core+Mantle Radius Fraction: {(radii[np.argmax(mass_enclosed >= core_mantle_mass)] / planet_radius):.2f}")
 
     # --- Save output data to a file ---
     if data_output_enabled:

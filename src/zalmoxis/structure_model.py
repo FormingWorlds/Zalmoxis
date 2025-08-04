@@ -8,7 +8,7 @@ from .eos_functions import calculate_density
 
 
 # Define the coupled ODEs for the structure model
-def coupled_odes(radius, y, cmb_mass, inner_mantle_mass, EOS_CHOICE, interpolation_cache):
+def coupled_odes(radius, y, cmb_mass, core_mantle_mass, EOS_CHOICE, interpolation_cache):
     """
     Calculate the derivatives of mass, gravity, and pressure with respect to radius for a planetary model.
 
@@ -16,7 +16,7 @@ def coupled_odes(radius, y, cmb_mass, inner_mantle_mass, EOS_CHOICE, interpolati
     radius (float): The current radius at which the ODEs are evaluated.
     y (list or array): The state vector containing mass, gravity, and pressure at the current radius.
     cmb_mass (float): The core-mantle boundary mass.
-    inner_mantle_mass (float): The mass of the inner mantle.
+    core_mantle_mass (float): The mass of the core+mantle.
     EOS_CHOICE (str): The equation of state choice for the material.
     interpolation_cache (dict): A cache for interpolation to speed up calculations.
 
@@ -40,7 +40,7 @@ def coupled_odes(radius, y, cmb_mass, inner_mantle_mass, EOS_CHOICE, interpolati
         if mass < cmb_mass:
             # Core
             material = "core"
-        elif mass < inner_mantle_mass:
+        elif mass < core_mantle_mass:
             # Inner mantle
             material = "bridgmanite_shell"
         else:

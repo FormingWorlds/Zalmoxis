@@ -52,7 +52,7 @@ def run_zalmoxis_for_ternary(args):
     # Modify the configuration parameters as needed
     config['InputParameter']['planet_mass'] = id_mass*5.972e24
     config['AssumptionsAndInitialGuesses']['core_mass_fraction'] = core_frac # first mass fraction
-    config['AssumptionsAndInitialGuesses']['inner_mantle_mass_fraction'] = mantle_frac # second mass fraction
+    config['AssumptionsAndInitialGuesses']['mantle_mass_fraction'] = mantle_frac # second mass fraction
     config['AssumptionsAndInitialGuesses']['weight_iron_fraction'] = core_frac# must be equal to core_mass_fraction
     config['EOS']['choice'] = "Tabulated:water"
     config['Calculations']['num_layers'] = 150

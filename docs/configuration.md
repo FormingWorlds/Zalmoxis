@@ -15,7 +15,7 @@ Defines the basic input parameters for the planetary model.
 Contains assumptions and initial guesses for the model’s structure.  
 
 - `core_mass_fraction` - Core mass fraction of total mass.
-- 'inner_mantle_mass_fraction' - Inner mantle mass fraction of total mass.
+- 'mantle_mass_fraction' - Mantle mass fraction of total mass.
 - `weight_iron_fraction` - Weight iron fraction in the planet.
 
 ### `EOS`  

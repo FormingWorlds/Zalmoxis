@@ -5,7 +5,7 @@ planet_mass = 5.972e24              #  kg (Earth = 5.972e24)
 
 [AssumptionsAndInitialGuesses]
 core_mass_fraction = 0.325     # Core mass fraction of total mass
-inner_mantle_mass_fraction = 0 # Inner mantle mass fraction of total mass
+mantle_mass_fraction = 0 # Mantle mass fraction of total mass
 weight_iron_fraction = 0.325         # Weight iron fraction for the planet (0.35 for Earth)
 
 [EOS]

@@ -46,12 +46,12 @@ def run_zalmoxis_rocky_water(id_mass, config_type, cmf, immf):
 
     if config_type == "rocky":
         config['AssumptionsAndInitialGuesses']['core_mass_fraction'] = 0.325
-        config['AssumptionsAndInitialGuesses']['inner_mantle_mass_fraction'] = 0
+        config['AssumptionsAndInitialGuesses']['mantle_mass_fraction'] = 0
         config['AssumptionsAndInitialGuesses']['weight_iron_fraction'] = 0.325
         config['EOS']['choice'] = "Tabulated:iron/silicate"
     elif config_type == "water":
         config['AssumptionsAndInitialGuesses']['core_mass_fraction'] = cmf
-        config['AssumptionsAndInitialGuesses']['inner_mantle_mass_fraction'] = immf
+        config['AssumptionsAndInitialGuesses']['mantle_mass_fraction'] = immf
         config['AssumptionsAndInitialGuesses']['weight_iron_fraction'] = cmf
         config['EOS']['choice'] = "Tabulated:water"
     else:
