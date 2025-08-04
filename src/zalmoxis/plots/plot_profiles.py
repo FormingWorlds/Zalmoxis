@@ -116,7 +116,7 @@ def plot_planet_profile_single(radii, density, gravity, pressure, temperature, c
         a.legend(fontsize=8)
 
     plt.tight_layout()
-    if id_mass == None:
-        plt.savefig(os.path.join(ZALMOXIS_ROOT, "output_files", f"planet_profile.pdf"))
+    if id_mass is None:
+        plt.savefig(os.path.join(ZALMOXIS_ROOT, "output_files", "planet_profile.pdf"))
     #plt.show()
     plt.close(fig)
