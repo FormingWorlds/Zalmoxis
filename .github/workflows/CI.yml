@@ -7,7 +7,7 @@ on:
     branches: [CIworkflow]
 
 jobs:
-  quality-check:
+  Zalmoxis-check:
     runs-on: ubuntu-latest
 
     steps:
@@ -38,7 +38,7 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          pytest --cov=src --cov-report=term-missing
+          pytest -n auto --cov=src --cov-report=term-missing
 
       - name: Build documentation (MkDocs)
         run: |
