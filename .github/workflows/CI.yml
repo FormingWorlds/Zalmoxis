@@ -2,13 +2,16 @@ name: Tests for Zalmoxis
 
 on:
   push:
-    branches: [CIworkflow]
+    branches: [main]
   pull_request:
-    branches: [CIworkflow]
+    branches: [main]
 
 jobs:
   Zalmoxis-check:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
 
     steps:
       - name: Checkout repository
