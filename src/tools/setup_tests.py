@@ -69,7 +69,7 @@ def run_zalmoxis_rocky_water(id_mass, config_type, cmf, immf):
     if os.path.exists(output_file):
         os.remove(output_file)
 
-    radii, density, gravity, pressure, temperature, mass_enclosed = zalmoxis.main(temp_config_path, id_mass, output_file=output_file)
+    radii, density, gravity, pressure, temperature, mass_enclosed, total_time = zalmoxis.main(temp_config_path, id_mass, output_file=output_file)
 
     os.remove(temp_config_path)
 
