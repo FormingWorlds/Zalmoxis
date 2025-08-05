@@ -1,7 +1,9 @@
+from __future__ import annotations
+
+import os
+
 import matplotlib.pyplot as plt
 import numpy as np
-import os
-from ..constants import earth_center_pressure, earth_cmb_pressure
 
 # Read the environment variable for ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
@@ -28,7 +30,7 @@ def plot_eos_material(data_files, data_folder):
     """
     Plots the equation of state (EOS) data for different materials.
     Parameters:
-    data_files (list): List of filenames containing the EOS data.   
+    data_files (list): List of filenames containing the EOS data.
     data_folder (str): Path to the folder containing the data files.
 
     The function reads the EOS data from the specified files and plots the pressure-density relationship for each material.
@@ -73,6 +75,6 @@ def plot_eos_material(data_files, data_folder):
 
     # Show the plot
     ax.legend()
-    fig.savefig(os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", "planet_eos.pdf"))
+    fig.savefig(os.path.join(ZALMOXIS_ROOT, "output_files", "planet_eos.pdf"))
     #plt.show()
     plt.close(fig)

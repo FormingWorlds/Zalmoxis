@@ -1,6 +1,9 @@
 # Setup script for downloading and extracting data
+from __future__ import annotations
 
-import os, shutil, subprocess
+import os
+import shutil
+import subprocess
 
 # Read the environment variable for ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
@@ -60,8 +63,8 @@ def create_output_files():
     Create output files directory if it does not exist.
     This directory will store the results of the calculations.
     """
-    output_dir = os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files")  # Path to output files directory
-    
+    output_dir = os.path.join(ZALMOXIS_ROOT, "output_files")  # Path to output files directory
+
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
         print(f"Output files directory created at '{output_dir}'.")

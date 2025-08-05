@@ -1,11 +1,14 @@
 # This file contains the main function that solves the coupled ODEs for the structure model.
+from __future__ import annotations
 
 import numpy as np
+
+from .constants import G
 from .eos_functions import calculate_density
-from .constants import *
+
 
 # Define the coupled ODEs for the structure model
-def coupled_odes(radius, y, cmb_mass, inner_mantle_mass, EOS_CHOICE, interpolation_cache):
+def coupled_odes(radius, y, cmb_mass, core_mantle_mass, EOS_CHOICE, interpolation_cache):
     """
     Calculate the derivatives of mass, gravity, and pressure with respect to radius for a planetary model.
 
@@ -13,7 +16,7 @@ def coupled_odes(radius, y, cmb_mass, inner_mantle_mass, EOS_CHOICE, interpolati
     radius (float): The current radius at which the ODEs are evaluated.
     y (list or array): The state vector containing mass, gravity, and pressure at the current radius.
     cmb_mass (float): The core-mantle boundary mass.
-    inner_mantle_mass (float): The mass of the inner mantle.
+    core_mantle_mass (float): The mass of the core+mantle.
     EOS_CHOICE (str): The equation of state choice for the material.
     interpolation_cache (dict): A cache for interpolation to speed up calculations.
 
@@ -37,8 +40,8 @@ def coupled_odes(radius, y, cmb_mass, inner_mantle_mass, EOS_CHOICE, interpolati
         if mass < cmb_mass:
             # Core
             material = "core"
-        elif mass < inner_mantle_mass:
-            # Inner mantle 
+        elif mass < core_mantle_mass:
+            # Inner mantle
             material = "bridgmanite_shell"
         else:
             # Outer layer
@@ -49,7 +52,7 @@ def coupled_odes(radius, y, cmb_mass, inner_mantle_mass, EOS_CHOICE, interpolati
 
     # Handle potential errors in density calculation
     if current_density is None:
-        print(f"Warning: Density calculation failed at radius {radius}") 
+        print(f"Warning: Density calculation failed at radius {radius}")
 
     # Define the ODEs for mass, gravity and pressure
     dMdr = 4 * np.pi * radius**2 * current_density

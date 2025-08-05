@@ -1,7 +1,11 @@
+from __future__ import annotations
+
 import os
-import pytest
+
 import numpy as np
-from tools.setup_tests import run_zalmoxis_rocky_water, load_zeng_curve, load_model_output
+import pytest
+
+from tools.setup_tests import load_model_output, load_zeng_curve, run_zalmoxis_rocky_water
 
 # Read the environment variable for ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
@@ -12,7 +16,7 @@ if not ZALMOXIS_ROOT:
     ("rocky", "massradiusEarthlikeRockyZeng.txt"),
     ("water", "massradiuswaterZeng.txt"),
 ])
-@pytest.mark.parametrize("mass", range(1, 51))  # 1 to 50 Earth masses
+@pytest.mark.parametrize("mass", [1, 5, 10, 50])  # 1, 5, 10, and 50 Earth masses (keep it simple for CI tests)
 def test_mass_radius(config_type, zeng_file, mass):
     """
     Test the mass-radius relationship for rocky and water planets using Zalmoxis model.

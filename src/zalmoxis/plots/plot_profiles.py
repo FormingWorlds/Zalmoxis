@@ -1,8 +1,22 @@
 # This script generates a plot of the planet's internal structure, including density, gravity, pressure, and temperature profiles.
+from __future__ import annotations
+
 import os
+
 import matplotlib.pyplot as plt
-import numpy as np
-from ..constants import *
+
+from ..constants import (
+    earth_center_density,
+    earth_center_pressure,
+    earth_center_temperature,
+    earth_cmb_pressure,
+    earth_cmb_radius,
+    earth_cmb_temperature,
+    earth_mass,
+    earth_radius,
+    earth_surface_pressure,
+    earth_surface_temperature,
+)
 
 # Read the environment variable for ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
@@ -11,8 +25,7 @@ if not ZALMOXIS_ROOT:
 
 def plot_planet_profile_single(radii, density, gravity, pressure, temperature, cmb_radius, cmb_mass, average_density, mass_enclosed, id_mass):
     """
-    Generates a plot of the planet's internal structure, including density, 
-    gravity, pressure, temperature, and mass profiles.
+    Generates a plot of the planet's internal structure, including density, gravity, pressure, temperature, and mass profiles.
 
     Args:
         radii (numpy.ndarray): Array of radial distances (m).
@@ -67,16 +80,16 @@ def plot_planet_profile_single(radii, density, gravity, pressure, temperature, c
     # Mass vs. Radius
     ax[4].plot(radii / 1e3, mass_enclosed/earth_mass, color='b', lw=2, label="Model")
     ax[4].set_xlabel("Radius (km)")
-    ax[4].set_ylabel("Mass enclosed (M$_\oplus$)")
+    ax[4].set_ylabel(r"Mass enclosed (M$_\oplus$)")
     ax[4].axvline(x=cmb_radius / 1e3, color='b', linestyle='--', label="Model CMB radius")
     ax[4].set_title("Model mass enclosed structure")
     ax[4].grid()
 
 
     # Add reference Earth values to the plots
-    ax[0].axvline(x=(earth_radius/1e3), color='g', linestyle=':', label=f"Earth Surface")
+    ax[0].axvline(x=(earth_radius/1e3), color='g', linestyle=':', label="Earth Surface")
     ax[0].axvline(x=earth_cmb_radius / 1e3, color='g', linestyle='--', label="Earth CMB radius")
-    ax[0].axhline(y=5515, color='g', linestyle='-.', label=f"Earth average density\n = 5515 kg/m^3")
+    ax[0].axhline(y=5515, color='g', linestyle='-.', label="Earth average density\n = 5515 kg/m^3")
     ax[0].axhline(y=earth_center_density, color='g', linestyle=':', label="Earth center density")
 
     ax[1].axhline(y=0, color='g', linestyle=':', label="Center gravity\n"+r"= 0 $m/s^2$")
@@ -93,7 +106,7 @@ def plot_planet_profile_single(radii, density, gravity, pressure, temperature, c
     ax[3].axhline(y=earth_cmb_temperature , color='g', linestyle='-.', label="Earth CMB temperature")
     ax[3].axhline(y=earth_center_temperature , color='g', linestyle='--', label="Earth center temperature")
 
-    ax[4].axvline(x=(earth_radius/1e3), color='g', linestyle=':', label=f"Earth Surface")
+    ax[4].axvline(x=(earth_radius/1e3), color='g', linestyle=':', label="Earth Surface")
     ax[4].axvline(x=earth_cmb_radius / 1e3, color='g', linestyle='--', label="Earth CMB radius")
     ax[4].axhline(y=earth_mass/earth_mass, color='g', linestyle='-.', label="Earth mass")
     ax[4].axhline(y=cmb_mass/earth_mass, color='g', linestyle='--', label="Model CMB mass")
@@ -103,6 +116,7 @@ def plot_planet_profile_single(radii, density, gravity, pressure, temperature, c
         a.legend(fontsize=8)
 
     plt.tight_layout()
-    #plt.savefig(os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", f"planet_profile{id_mass}.pdf"))
-    plt.show()
+    if id_mass is None:
+        plt.savefig(os.path.join(ZALMOXIS_ROOT, "output_files", "planet_profile.pdf"))
+    #plt.show()
     plt.close(fig)

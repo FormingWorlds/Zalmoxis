@@ -171,14 +171,12 @@ cython_debug/
 .pypirc
 
 # Code files
-/src/zalmoxis/output_files
+/output_files
 /data
 /src/zalmoxis/all_profiles_with_colorbar_vs_custom.pdf
 /src/zalmoxis/all_profiles_with_colorbar_vs_default.pdf
 /src/zalmoxis/plots/plot_analytical_eos_Seager07.py
-/.DS_Store
 /src/tests/test1.py
 /src/tests/test2.py
 .ruff_cache/
-
-
+.DS_Store

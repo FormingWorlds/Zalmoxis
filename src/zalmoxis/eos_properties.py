@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 
 # Read the environment variable for ZALMOXIS_ROOT

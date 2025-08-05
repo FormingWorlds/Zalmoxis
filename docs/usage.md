@@ -17,7 +17,7 @@ To simulate a rocky exoplanet with Earth-like composition, configure the followi
 ```console
 [AssumptionsAndInitialGuesses]
 core_mass_fraction = 0.325     
-inner_mantle_mass_fraction = 0 
+mantle_mass_fraction = 0 
 weight_iron_fraction = 0.325         
 
 [EOS]
@@ -33,7 +33,7 @@ To simulate a water-rich planet:
 ```console
 [InputParameter]
 core_mass_fraction = 0.065
-inner_mantle_mass_fraction = 0.485
+mantle_mass_fraction = 0.485
 
 [EOS]
 choice = "Tabulated:water"

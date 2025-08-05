@@ -1,13 +1,19 @@
-import os, sys, time, math, toml
+from __future__ import annotations
+
+import math
+import os
+import sys
+import time
+
 import numpy as np
-import matplotlib.pyplot as plt
+import toml
 from scipy.integrate import solve_ivp
-from .constants import *
+
+from .constants import earth_center_pressure, earth_mass, earth_radius
 from .eos_functions import calculate_density
-from .eos_properties import material_properties_iron_silicate_planets
-from .structure_model import coupled_odes
-from .plots.plot_profiles import plot_planet_profile_single
 from .plots.plot_eos import plot_eos_material
+from .plots.plot_profiles import plot_planet_profile_single
+from .structure_model import coupled_odes
 
 # Run file via command line with default configuration file: python -m src.zalmoxis.zalmoxis -c input/default.toml
 
@@ -58,7 +64,7 @@ def choose_config_file(temp_config_path=None):
     return config
 
 def main(temp_config_path=None, id_mass=None, output_file=None):
-    
+
     """
     Main function to run the exoplanet internal structure model.
 
@@ -83,11 +89,11 @@ def main(temp_config_path=None, id_mass=None, output_file=None):
     """
 
     config = choose_config_file(temp_config_path)  # Choose the configuration file
-    
+
     # Access parameters from the configuration file
     planet_mass = config['InputParameter']['planet_mass']  # Mass of the planet (kg)
     core_mass_fraction = config['AssumptionsAndInitialGuesses']['core_mass_fraction']  # Initial guess for the core mass as a fraction of the total mass
-    inner_mantle_mass_fraction = config['AssumptionsAndInitialGuesses']['inner_mantle_mass_fraction']  # Initial guess for the inner mantle mass as a fraction of the total mass
+    mantle_mass_fraction = config['AssumptionsAndInitialGuesses']['mantle_mass_fraction']  # Initial guess for the mantle mass as a fraction of the total mass
     weight_iron_fraction = config['AssumptionsAndInitialGuesses']['weight_iron_fraction']  # Initial guess for the weight fraction of iron in the core
     EOS_CHOICE = config['EOS']['choice']  # Choice of equation of state ("Tabulated:iron/silicate", "Tabulated:water")
     num_layers = config['Calculations']['num_layers']  # Number of radial layers for calculations
@@ -113,8 +119,8 @@ def main(temp_config_path=None, id_mass=None, output_file=None):
     # Setup initial guesses for the planet radius and core-mantle boundary mass
     radius_guess = 1000*(7030-1840*weight_iron_fraction)*(planet_mass/earth_mass)**0.282 # Initial guess for the interior planet radius [m] based on the scaling law in Noack et al. 2020
     cmb_mass = 0 # Initial guess for the core-mantle boundary mass [kg]
-    inner_mantle_mass = 0 # Initial guess for the inner mantle mass [kg]
-    
+    core_mantle_mass = 0 # Initial guess for the core+mantle mass [kg]
+
     # Initialize temperature profile
     temperature = np.zeros(num_layers)
 
@@ -136,8 +142,8 @@ def main(temp_config_path=None, id_mass=None, output_file=None):
         # Setup initial guess for the core-mantle boundary mass
         cmb_mass = core_mass_fraction * planet_mass
 
-        # Setup initial guess for the inner mantle boundary mass 
-        inner_mantle_mass = (core_mass_fraction + inner_mantle_mass_fraction) * planet_mass
+        # Setup initial guess for the core+mantle mass
+        core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * planet_mass
 
         # Setup initial guess for the pressure at the center of the planet (needed for solving the ODEs)
         pressure[0] = earth_center_pressure
@@ -146,18 +152,18 @@ def main(temp_config_path=None, id_mass=None, output_file=None):
             old_density = density.copy() # Store the old density for convergence check
 
             # Initialize empty cache for interpolation functions for density calculations
-            interpolation_cache = {}  
+            interpolation_cache = {}
 
             # Setup initial pressure guess at the center of the planet based on empirical scaling law derived from the hydrostatic equilibrium equation
-            pressure_guess = earth_center_pressure * (planet_mass/earth_mass)**2 * (radius_guess/earth_radius)**(-4) 
+            pressure_guess = earth_center_pressure * (planet_mass/earth_mass)**2 * (radius_guess/earth_radius)**(-4)
 
             for pressure_iter in range(max_iterations_pressure): # Innermost loop for pressure adjustment
 
                 # Setup initial conditions for the mass, gravity, and pressure at the center of the planet
-                y0 = [0, 0, pressure_guess] 
+                y0 = [0, 0, pressure_guess]
 
                 # Solve the ODEs using solve_ivp
-                sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, inner_mantle_mass, EOS_CHOICE, interpolation_cache), 
+                sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, core_mantle_mass, EOS_CHOICE, interpolation_cache),
                     (radii[0], radii[-1]), y0, t_eval=radii, rtol=relative_tolerance, atol=absolute_tolerance, method='RK45', dense_output=True)
 
                 # Extract mass, gravity, and pressure grids from the solution
@@ -175,7 +181,7 @@ def main(temp_config_path=None, id_mass=None, output_file=None):
                 if abs(pressure_diff) < pressure_tolerance and np.all(pressure > 0):
                     print(f"Surface pressure converged after {pressure_iter + 1} iterations and all pressures are positive.")
                     break  # Exit the pressure adjustment loop
-                
+
                 # Update the pressure guess at the center of the planet based on the pressure difference at the surface using an adjustment factor
                 pressure_guess -= pressure_diff * pressure_adjustment_factor
 
@@ -194,8 +200,8 @@ def main(temp_config_path=None, id_mass=None, output_file=None):
                     if mass_enclosed[i] < cmb_mass:
                         # Core
                         material = "core"
-                    elif mass_enclosed[i] < inner_mantle_mass:
-                        # Inner mantle 
+                    elif mass_enclosed[i] < core_mantle_mass:
+                        # Inner mantle
                         material = "bridgmanite_shell"
                     else:
                         # Outer layer
@@ -210,30 +216,30 @@ def main(temp_config_path=None, id_mass=None, output_file=None):
                     new_density = old_density[i]
 
                 # Update the density grid with a weighted average of the new and old density
-                density[i] = 0.5 * (new_density + old_density[i]) 
+                density[i] = 0.5 * (new_density + old_density[i])
 
             # Check for convergence of density using relative difference between old and new density
             relative_diff_inner = np.max(np.abs((density - old_density) / (old_density + 1e-20)))
             if relative_diff_inner < tolerance_inner:
                 print(f"Inner loop converged after {inner_iter + 1} iterations.")
-                break # Exit the inner loop 
+                break # Exit the inner loop
 
         # Extract the calculated total interior mass of the planet from the last element of the mass array
         calculated_mass = mass_enclosed[-1]
 
         # Update the total interior radius by scaling the initial guess based on the calculated mass
         radius_guess = radius_guess * (planet_mass / calculated_mass)**(1/3)
-        
+
         # Update the core-mantle boundary mass based on the core mass fraction and calculated total interior mass of the planet
         cmb_mass = core_mass_fraction * calculated_mass
 
         # Update the inner mantle mass based on the inner mantle mass fraction and calculated total interior mass of the planet
-        inner_mantle_mass = (core_mass_fraction + inner_mantle_mass_fraction) * calculated_mass
+        core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * calculated_mass
 
         # Calculate relative differences of the calculated total interior mass
         relative_diff_outer_mass = abs((calculated_mass - planet_mass) / planet_mass)
 
-        # Check for convergence of the calculated total interior mass 
+        # Check for convergence of the calculated total interior mass
         if relative_diff_outer_mass < tolerance_outer:
             print(f"Outer loop (total mass) converged after {outer_iter + 1} iterations.")
             break  # Exit the outer loop
@@ -245,7 +251,7 @@ def main(temp_config_path=None, id_mass=None, output_file=None):
     # End timing the entire process
     end_time = time.time()
 
-    # Extract the final calculated total interior radius of the planet 
+    # Extract the final calculated total interior radius of the planet
     planet_radius = radii[-1]
 
     # Extract the index of the core-mantle boundary mass in the mass array
@@ -254,7 +260,7 @@ def main(temp_config_path=None, id_mass=None, output_file=None):
     # Calculate the average density of the planet using the calculated mass and radius
     average_density = mass_enclosed[-1] / (4/3 * math.pi * planet_radius**3)
 
-    # Calculate the temperature profile 
+    # Calculate the temperature profile
     #temperature = calculate_temperature(radii, cmb_radius, 300, material_properties_iron_silicate_planets, gravity, density, material_properties_iron_silicate_planets["mantle"]["K0"], dr=planet_radius/num_layers)
 
     print("Exoplanet Internal Structure Model (Mass Only Input)")
@@ -268,30 +274,33 @@ def main(temp_config_path=None, id_mass=None, output_file=None):
     print(f"Pressure at Center: {pressure[0]:.2e} Pa")
     print(f"Average Density: {average_density:.2f} kg/m^3")
     print(f"CMB Mass Fraction: {mass_enclosed[cmb_index] / mass_enclosed[-1]:.3f}")
-    print(f"Inner Mantle Mass Fraction: {(inner_mantle_mass - mass_enclosed[cmb_index]) / mass_enclosed[-1]:.3f}")
+    print(f"Core+Mantle Mass Fraction: {(core_mantle_mass - mass_enclosed[cmb_index]) / mass_enclosed[-1]:.3f}")
     print(f"Calculated Core Radius Fraction: {radii[cmb_index] / planet_radius:.2f}")
-    print(f"Calculated Inner Mantle Radius Fraction: {(radii[np.argmax(mass_enclosed >= inner_mantle_mass)] / planet_radius):.2f}")
+    print(f"Calculated Core+Mantle Radius Fraction: {(radii[np.argmax(mass_enclosed >= core_mantle_mass)] / planet_radius):.2f}")
 
     # --- Save output data to a file ---
     if data_output_enabled:
         # Combine and save plotted data to a single output file
         output_data = np.column_stack((radii, density, gravity, pressure, temperature, mass_enclosed))
         header = "Radius (m)\tDensity (kg/m^3)\tGravity (m/s^2)\tPressure (Pa)\tTemperature (K)\tMass Enclosed (kg)"
-        np.savetxt(os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", f"planet_profile{id_mass}.txt"), output_data, header=header)
+        if id_mass is None:
+            np.savetxt(os.path.join(ZALMOXIS_ROOT, "output_files", "planet_profile.txt"), output_data, header=header)
+        else:
+            np.savetxt(os.path.join(ZALMOXIS_ROOT, "output_files", f"planet_profile{id_mass}.txt"), output_data, header=header)
         # Append calculated mass and radius of the planet to a file in dedicated columns
         if output_file is None:
-            output_file = os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", "calculated_planet_mass_radius.txt")
+            output_file = os.path.join(ZALMOXIS_ROOT, "output_files", "calculated_planet_mass_radius.txt")
         if not os.path.exists(output_file):
             header = "Calculated Mass (kg)\tCalculated Radius (m)"
             with open(output_file, "w") as file:
                 file.write(header + "\n")
         with open(output_file, "a") as file:
             file.write(f"{calculated_mass}\t{planet_radius}\n")
-         
+
 
     # --- Plotting ---
     if plotting_enabled:
-        #plot_planet_profile_single(radii, density, gravity, pressure, temperature, cmb_radius, cmb_mass, average_density, mass_enclosed, id_mass) # Plot planet profile for a single planet
+        plot_planet_profile_single(radii, density, gravity, pressure, temperature, radii[cmb_index] / planet_radius, cmb_mass, average_density, mass_enclosed, id_mass) # Plot planet profile for a single planet
         eos_data_files = ['eos_seager07_iron.txt', 'eos_seager07_silicate.txt', 'eos_seager07_water.txt']  # Example files (adjust the filenames accordingly)
         eos_data_folder = os.path.join(ZALMOXIS_ROOT, "data")
         plot_eos_material(eos_data_files, eos_data_folder)  # Call the EOS plotting function
@@ -299,10 +308,9 @@ def main(temp_config_path=None, id_mass=None, output_file=None):
 
     # Calculate the total time taken for the entire process
     total_time = end_time - start_time
-    
+
     # Return the calculated values for further use
     return radii, density, gravity, pressure, temperature, mass_enclosed, total_time
 
 if __name__ == "__main__":
     main()
- 

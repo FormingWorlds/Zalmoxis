@@ -1,10 +1,15 @@
-import os, sys
+from __future__ import annotations
+
+import os
+import sys
 import tempfile
-import toml
-from src.zalmoxis import zalmoxis  
-from src.zalmoxis.plots.plot_profiles_all_in_one import plot_profiles_all_in_one    
-from concurrent.futures import ProcessPoolExecutor
 import time
+from concurrent.futures import ProcessPoolExecutor
+
+import toml
+
+from src.zalmoxis import zalmoxis
+from src.zalmoxis.plots.plot_profiles_all_in_one import plot_profiles_all_in_one
 
 # Run file via command line: python -m src.tools.run_parallel Wagner/Boujibar/default/SeagerEarth/Seagerwater/custom
 
@@ -44,10 +49,10 @@ def run_zalmoxis(id_mass=None):
     config['IterativeProcess']['tolerance_outer'] = 1e-3
     config['IterativeProcess']['tolerance_inner'] = 1e-4
     config['IterativeProcess']['relative_tolerance'] = 1e-5
-    config['IterativeProcess']['absolute_tolerance'] = 1e-6 
-    config['PressureAdjustment']['target_surface_pressure'] = 101325 
-    config['PressureAdjustment']['pressure_tolerance'] = 1e9 
-    config['PressureAdjustment']['max_iterations_pressure'] = 200 
+    config['IterativeProcess']['absolute_tolerance'] = 1e-6
+    config['PressureAdjustment']['target_surface_pressure'] = 101325
+    config['PressureAdjustment']['pressure_tolerance'] = 1e9
+    config['PressureAdjustment']['max_iterations_pressure'] = 200
     config['PressureAdjustment']['pressure_adjustment_factor'] = 1.1
 
     # Create a temporary configuration file
@@ -78,12 +83,12 @@ def run_zalmoxis_in_parallel(choice):
     """
 
     # Delete the contents of the calculated_planet_mass_radius.txt file if it exists
-    calculated_file_path = os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", "calculated_planet_mass_radius.txt")
+    calculated_file_path = os.path.join(ZALMOXIS_ROOT, "output_files", "calculated_planet_mass_radius.txt")
     if os.path.exists(calculated_file_path):
         with open(calculated_file_path, 'w') as file:
             file.truncate(0)
             header = "Calculated Mass (kg)\tCalculated Radius (m)"
-            file.write(header + "\n") 
+            file.write(header + "\n")
 
     if choice == "Wagner":
         target_mass_array = [1, 2.5, 5, 7.5, 10, 12.5, 15]
@@ -105,22 +110,22 @@ def run_zalmoxis_in_parallel(choice):
     with ProcessPoolExecutor() as executor:
         executor.map(run_zalmoxis, target_mass_array)
 
-    # Plot the mass-radius relationship 
+    # Plot the mass-radius relationship
     # plot_mass_radius_relationship(target_mass_array) # works if rocky and water planets are simulated in two separate runs
 
-    # Call the function to plot the profiles of all planets in one plot 
+    # Call the function to plot the profiles of all planets in one plot
     plot_profiles_all_in_one(target_mass_array, choice)
 
 if __name__ == "__main__":
     start_time = time.time()
-    
+
     if len(sys.argv) != 2:
         print("Usage: python -m src.tools.run_parallel <choice>")
         sys.exit(1)
-    
+
     choice = sys.argv[1]
     run_zalmoxis_in_parallel(choice)
-    
+
     end_time = time.time()
     total_time = end_time - start_time
     print(f"Total running time: {total_time:.2f} seconds")

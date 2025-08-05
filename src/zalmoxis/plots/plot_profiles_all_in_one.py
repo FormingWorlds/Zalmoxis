@@ -1,9 +1,13 @@
+from __future__ import annotations
+
 import os
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import cm
 from matplotlib.colors import Normalize
-from ..constants import *
+
+from ..constants import earth_mass, earth_radius
 
 # Read the environment variable for ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
@@ -47,7 +51,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
     # Read data from files with calculated planet profiles
     for id_mass in target_mass_array:
         # Generate file path for each planet profile
-        file_path = os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", f"planet_profile{id_mass}.txt")
+        file_path = os.path.join(ZALMOXIS_ROOT, "output_files", f"planet_profile{id_mass}.txt")
 
         # Check if the file exists
         if os.path.exists(file_path):
@@ -85,7 +89,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
             for line in wagner_file:
                 radius, density = map(float, line.split(','))
                 wagner_radii_for_densities.append(radius*earth_radius/1000) # Convert to km
-                wagner_densities.append(density) # in kg/m^3 
+                wagner_densities.append(density) # in kg/m^3
 
         wagner_radii_for_pressures = []
         wagner_pressures = []
@@ -114,7 +118,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
             for line in boujibar_file:
                 radius, density = map(float, line.split(','))
                 boujibar_radii_for_densities.append(radius)
-                boujibar_densities.append(density * 1000) # Convert to kg/m^3 
+                boujibar_densities.append(density * 1000) # Convert to kg/m^3
 
         boujibar_radii_for_pressures = []
         boujibar_pressures = []
@@ -170,10 +174,10 @@ def plot_profiles_all_in_one(target_mass_array, choice):
     elif choice == "default":
         pass
     elif choice == "SeagerEarth":
-        axs[0, 0].scatter(seagerEarth_radii_for_densities, seagerEarth_densities, color='black', s=5, label='Earth-like super-Earths (Seager et al. 2007)', zorder=10)         
+        axs[0, 0].scatter(seagerEarth_radii_for_densities, seagerEarth_densities, color='black', s=5, label='Earth-like super-Earths (Seager et al. 2007)', zorder=10)
     elif choice == "Seagerwater":
-        axs[0, 0].scatter(seagerwater_radii_for_densities, seagerwater_densities, color='black', s=5, label='Water planets with iron core and silicate mantles (Seager et al. 2007)', zorder=10)    
-    elif choice == "custom":    
+        axs[0, 0].scatter(seagerwater_radii_for_densities, seagerwater_densities, color='black', s=5, label='Water planets with iron core and silicate mantles (Seager et al. 2007)', zorder=10)
+    elif choice == "custom":
         pass
     axs[0, 0].set_xlabel("Radius (km)")
     axs[0, 0].set_ylabel("Density (kg/m$^3$)")
@@ -212,7 +216,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
     elif choice == "default":
         pass
     elif choice == "SeagerEarth":
-        pass    
+        pass
     elif choice == "Seagerwater":
         pass
     elif choice == "custom":
@@ -227,7 +231,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         color = cmap(norm(data['id_mass']))
         axs[1, 1].plot(data['radius'], data['mass'], color=color)
     axs[1, 1].set_xlabel("Radius (km)")
-    axs[1, 1].set_ylabel("Mass Enclosed (M$_\oplus$)")
+    axs[1, 1].set_ylabel(r"Mass Enclosed (M$_\oplus$)")
     axs[1, 1].set_title("Radius vs Mass Enclosed")
     axs[1, 1].grid()
 
@@ -235,11 +239,11 @@ def plot_profiles_all_in_one(target_mass_array, choice):
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])  # Empty array to avoid warning
     cbar = plt.colorbar(sm, ax=axs, orientation='vertical', fraction=0.02, pad=0.04)
-    cbar.set_label("Planet Mass (M$_\oplus$)")
+    cbar.set_label(r"Planet Mass (M$_\oplus$)")
 
     # Adjust layout and show plot
     #plt.tight_layout()
     plt.suptitle(f"Planet Profiles Comparison ({choice})")
-    plt.savefig(os.path.join(ZALMOXIS_ROOT, "src", "zalmoxis", "output_files", f"all_profiles_with_colorbar_vs_{choice}.pdf"))
+    plt.savefig(os.path.join(ZALMOXIS_ROOT, "output_files", f"all_profiles_with_colorbar_vs_{choice}.pdf"))
     #plt.show()
     plt.close(fig)

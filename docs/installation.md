@@ -24,15 +24,6 @@ Follow these steps to install and configure Zalmoxis:
     ```
 This installs Zalmoxis in editable mode, so local changes to the code are immediately reflected.
 
-3. Download necessary input/output files
-
-    Run the provided script to download required model files:
-
-    ```console
-    bash src/get_zalmoxis.sh
-    ```
-    This will create the `data/` folder for configuration files and the `output_files/` folder in `src/zalmoxis/` for model results.
-
 3. Set environment variable
 
     Zalmoxis requires the `ZALMOXIS_ROOT` environment variable to point to the base directory:
@@ -68,4 +59,13 @@ This installs Zalmoxis in editable mode, so local changes to the code are immedi
     ```console
     source ~/.zshrc
     ```
+
+4. Download necessary input/output files
+
+    Run the provided script to download required model files:
+
+    ```console
+    bash src/get_zalmoxis.sh
+    ```
+    This will create the `data/` folder for configuration files and the `output_files/` folder for model results.
 
