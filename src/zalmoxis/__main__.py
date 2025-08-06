@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from .zalmoxis import main
+from .zalmoxis import load_zalmoxis_config, post_processing
 
 if __name__ == "__main__":
-    main()
+    config_params = load_zalmoxis_config()
+    post_processing(config_params)

@@ -1,33 +1,33 @@
 # Default config file for Zalmoxis planetary structure code
 
 [InputParameter]
-planet_mass = 5.972e24              #  kg (Earth = 5.972e24)
+planet_mass                = 5.972e24 #  Mass of the planet (kg) (Earth = 5.972e24 kg)
 
 [AssumptionsAndInitialGuesses]
-core_mass_fraction = 0.325     # Core mass fraction of total mass
-mantle_mass_fraction = 0 # Mantle mass fraction of total mass
-weight_iron_fraction = 0.325         # Weight iron fraction for the planet (0.35 for Earth)
+core_mass_fraction         = 0.325 # Initial guess for the core mass as a fraction of the total mass
+mantle_mass_fraction       = 0 # Initial guess for the mantle mass as a fraction of the total mass
+weight_iron_fraction       = 0.325 # Initial guess for the weight fraction of iron in the core (0.35 for Earth)
 
 [EOS]
-choice                  = "Tabulated:iron/silicate"  # Options: "Tabulated:iron/silicate", "Tabulated:water"
+choice                     = "Tabulated:iron/silicate" # Choice of equation of state ("Tabulated:iron/silicate", "Tabulated:water")
 
 [Calculations]
-num_layers              = 150       # Number of planet layers
+num_layers                 = 150 # Number of planet layers
 
 [IterativeProcess]
-max_iterations_outer    = 20       # Maximum number of iterations for the outer loop
-tolerance_outer         = 1e-3     # Convergence tolerance for the outer loop
-max_iterations_inner    = 100      # Maximum number of iterations for the inner loop
-tolerance_inner         = 1e-4     # Convergence tolerance for the inner loop
-relative_tolerance      = 1e-5     # Relative tolerance for solve_ivp
-absolute_tolerance      = 1e-6     # Absolute tolerance for solve_ivp
+max_iterations_outer       = 20 # Maximum number of iterations for the outer loop
+tolerance_outer            = 1e-3 # Convergence tolerance for the outer loop
+max_iterations_inner       = 100 # Maximum number of iterations for the inner loop
+tolerance_inner            = 1e-4 # Convergence tolerance for the inner loop
+relative_tolerance         = 1e-5 # Relative tolerance for solve_ivp
+absolute_tolerance         = 1e-6 # Absolute tolerance for solve_ivp
 
 [PressureAdjustment]
-target_surface_pressure = 101325    # Pa, 1 atm, for example
-pressure_tolerance      = 1e9      # Pa, tolerance for surface pressure matching
-max_iterations_pressure = 200       # Maximum iterations for pressure adjustment
-pressure_adjustment_factor = 1.1   # Reduction factor for pressure adjustment
+target_surface_pressure    = 101325 # Target surface pressure (Pa)
+pressure_tolerance         = 1e9 # Tolerance for surface pressure convergence (Pa)
+max_iterations_pressure    = 200 # Maximum iterations for pressure adjustment loop
+pressure_adjustment_factor = 1.1 # Adjustment factor for updating the central pressure guess
 
 [Output]
-data_enabled            = true      # Produces output data
-plots_enabled           = true      # Produces plots
+data_enabled               = true # Flag to enable saving data to a file (True/False)
+plots_enabled              = true # Flag to enable plotting the results (True/False)

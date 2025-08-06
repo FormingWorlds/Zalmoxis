@@ -1,25 +1,112 @@
 from __future__ import annotations
 
+import itertools
 import os
+from concurrent.futures import ProcessPoolExecutor
+from tqdm import tqdm
 
 import matplotlib.pyplot as plt
-import ternary
+import numpy as np
+from ternary import figure
 
+from zalmoxis import zalmoxis
 from zalmoxis.constants import earth_radius
+
+# Run file via command line: python -m zalmoxis.plots.plot_ternary
 
 # Read the environment variable for ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
 if not ZALMOXIS_ROOT:
     raise RuntimeError("ZALMOXIS_ROOT environment variable not set")
 
-def read_results():
-    log_path = os.path.join(ZALMOXIS_ROOT, "output_files", "composition_radius_log.txt")
+def run_zalmoxis_for_ternary(args):
+    """
+    Runs the zalmoxis main function for a given set of core and mantle fractions,
+    and returns the core fraction, mantle fraction, and planet radius.
+    Parameters:
+        args (tuple): A tuple containing the planet mass, core fraction, and mantle fraction.
+    Returns:
+        tuple: A tuple containing the core fraction, mantle fraction, and planet radius.
+    """
+    id_mass, core_frac, mantle_frac = args
+    id_mass = float(id_mass)
+    core_frac = float(core_frac)
+    mantle_frac = float(mantle_frac)
+    water_frac = 1.0 - core_frac - mantle_frac
+
+    # Path to the default configuration file
+    default_config_path = os.path.join(ZALMOXIS_ROOT, "input", "default.toml")
+    config_params = zalmoxis.load_zalmoxis_config(default_config_path)
+
+    # Modify the configuration parameters as needed
+    config_params["planet_mass"] = id_mass * 5.972e24
+    config_params["core_mass_fraction"] = core_frac
+    config_params["mantle_mass_fraction"] = mantle_frac
+    config_params["weight_iron_fraction"] = core_frac  # must be equal to core_mass_fraction
+    config_params["EOS_CHOICE"] = "Tabulated:water"
+
+    # Run the main function 
+    try:
+        # Unpack outputs directly from Zalmoxis
+        radii, density, gravity, pressure, temperature, mass_enclosed, cmb_mass, core_mantle_mass, total_time = zalmoxis.main(config_params)
+
+        planet_radius = radii[-1] # Get the planet radius
+
+        # Log the composition and radius
+        custom_log_file = os.path.join(ZALMOXIS_ROOT, "output_files", f"composition_radius_log{id_mass}.txt")
+        with open(custom_log_file, "a") as log:
+            log.write(f"{core_frac:.4f}\t{mantle_frac:.4f}\t{water_frac:.4f}\t{planet_radius:.4e}\t{total_time:.4e}\n")
+        return (core_frac, mantle_frac, planet_radius)
+    
+    except Exception as e:
+        print(f"Failed for core: {core_frac}, mantle: {mantle_frac} -> {e}")
+        return None
+
+def generate_composition_grid(step=0.05):
+    """
+    Generates a list of valid (core_frac, mantle_frac) combinations where:
+    core_frac + mantle_frac <= 1
+    Parameters:
+        step (float): Step size for generating fractions, controls the resolution of the grid.
+    """
+    grid = []
+    fractions = np.arange(0.0, 1.01, step)
+    for core, mantle in itertools.product(fractions, repeat=2):
+        if core + mantle <= 1.0:
+            grid.append((core, mantle))
+    return grid
+
+def run_ternary_grid_for_mass(id_mass=None):
+    """
+    Run zalmoxis for a grid of core and mantle fractions for a given planet mass.
+    Parameters:
+        id_mass (float): Mass of the planet in Earth masses.
+    """
+    grid = generate_composition_grid(step=0.05)
+    args_list = [(id_mass, core, mantle) for (core, mantle) in grid]
+
+    with ProcessPoolExecutor() as executor:
+        # Wrap with tqdm for progress bar
+        results = list(tqdm(executor.map(run_zalmoxis_for_ternary, args_list), total=len(args_list)))
+
+    print(f"Completed Zalmoxis runs for {len(args_list)} composition points.")
+
+def read_results(id_mass=None):
+    """
+    Reads the results from the log file and returns a list of tuples containing
+    (core_fraction, mantle_fraction, water_fraction, radius, total_time).
+    Parameters:
+        id_mass (float): Mass of the planet in Earth masses.
+    Returns:
+        list: A list of tuples with the composition and radius data.
+    """
+    log_path = os.path.join(ZALMOXIS_ROOT, "output_files", f"composition_radius_log{id_mass}.txt")
     data = []
     with open(log_path, 'r') as file:
         for line in file:
             try:
-                core, mantle, water, radius = map(float, line.strip().split())
-                data.append((core, mantle, water, radius))
+                core, mantle, water, radius, total_time = map(float, line.strip().split())
+                data.append((core, mantle, water, radius, total_time))
             except ValueError:
                 continue  # skip malformed lines
     return data
@@ -31,22 +118,22 @@ def plot_ternary(data):
     """
 
     # Normalise radii to Earth units
-    radii_re = [radius / earth_radius for (*_, radius) in data]
+    radii_re = [radius / earth_radius for (_, _, _, radius, _) in data]
     rmin, rmax = min(radii_re), max(radii_re)
 
     # Convert fractions to percentages by multiplying by 100
-    points = [(core * 100, water * 100, mantle * 100) for (core, mantle, water, _) in data]
+    points = [(core * 100, water * 100, mantle * 100) for (core, mantle, water, _, _) in data]
 
-    # Colours mapped as before
+    # Colours mapped
     colours = [(r - rmin) / (rmax - rmin) for r in radii_re]
     colour_mapped = [plt.cm.viridis(val) for val in colours]
 
     # Set scale to 100 (percent scale)
     scale = 100.0
-    fig, tax = ternary.figure(scale=scale)
+    fig, tax = figure(scale=scale)
     tax.boundary()
     tax.gridlines(color="gray", multiple=5)  # gridlines every 10%
-
+    
     tax.scatter(points, marker='o', color=colour_mapped, s=24)
 
     # Mark the special point with an X
@@ -57,7 +144,6 @@ def plot_ternary(data):
     tax.left_axis_label("Mantle (%)", fontsize=12, offset=0.14)
     tax.right_axis_label("Water (%)", fontsize=12, offset=0.14)
     tax.bottom_axis_label("Core (%)", fontsize=12, offset=0.07)
-
 
     # Annotate the apices in percentage
     tax.annotate("100 % Core", position=(100, 0, 0), fontsize=10,
@@ -77,8 +163,7 @@ def plot_ternary(data):
     tax.clear_matplotlib_ticks()
 
     # Colour-bar (in Earth radii)
-    sm = plt.cm.ScalarMappable(cmap="viridis",
-                               norm=plt.Normalize(vmin=rmin, vmax=rmax))
+    sm = plt.cm.ScalarMappable(cmap="viridis", norm=plt.Normalize(vmin=rmin, vmax=rmax))
     sm.set_array([])
     cbar = plt.colorbar(sm, ax=tax.get_axes(), orientation='vertical')
     cbar.set_label("Radius (R⊕)")
@@ -87,7 +172,6 @@ def plot_ternary(data):
     #plt.show()
     plt.savefig(os.path.join(ZALMOXIS_ROOT, "output_files", "ternary_diagram.png"), dpi=300)
 
-#create another ternary function that plots the time instead of radius
 def plot_ternary_time(data):
     """
     Plot a ternary diagram of (core, mantle, water) mass fractions as percentages.
@@ -95,19 +179,19 @@ def plot_ternary_time(data):
     """
 
     # Extract total time values
-    total_times = [total_time for (*_, total_time) in data]
+    total_times = [total_time for (_, _, _, _, total_time) in data]
     tmin, tmax = min(total_times), max(total_times)
 
     # Convert fractions to percentages by multiplying by 100
     points = [(core * 100, water * 100, mantle * 100) for (core, mantle, water, _, _) in data]
 
-    # Colours mapped as before
+    # Colours mapped
     colours = [(t - tmin) / (tmax - tmin) for t in total_times]
     colour_mapped = [plt.cm.viridis(val) for val in colours]
 
     # Set scale to 100 (percent scale)
     scale = 100.0
-    fig, tax = ternary.figure(scale=scale)
+    fig, tax = figure(scale=scale)
     tax.boundary()
     tax.gridlines(color="gray", multiple=5)  # gridlines every 10%
 
@@ -136,8 +220,7 @@ def plot_ternary_time(data):
     tax.clear_matplotlib_ticks()
 
     # Colour-bar (in seconds)
-    sm = plt.cm.ScalarMappable(cmap="viridis",
-                               norm=plt.Normalize(vmin=tmin, vmax=tmax))
+    sm = plt.cm.ScalarMappable(cmap="viridis", norm=plt.Normalize(vmin=tmin, vmax=tmax))
     sm.set_array([])
     cbar = plt.colorbar(sm, ax=tax.get_axes(), orientation='vertical')
     cbar.set_label("Total Time (s)")
@@ -146,7 +229,7 @@ def plot_ternary_time(data):
     plt.savefig(os.path.join(ZALMOXIS_ROOT, "output_files", "ternary_diagram_time.png"), dpi=300)
 
 if __name__ == "__main__":
-    #run_ternary_grid_for_mass(planet_mass=1.0)  # runs all models and writes the log file
-    data = read_results()                       # reads the log file
-    plot_ternary(data)                          # plots the ternary diagram
+    run_ternary_grid_for_mass(id_mass=1.0)      # runs the ternary grid for the planet 
+    data = read_results(id_mass=1.0)            # reads the log file
+    plot_ternary(data)                          # plots the ternary diagram with radius
     plot_ternary_time(data)                     # plots the ternary diagram with time
