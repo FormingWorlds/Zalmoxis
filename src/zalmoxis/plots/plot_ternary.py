@@ -3,11 +3,11 @@ from __future__ import annotations
 import itertools
 import os
 from concurrent.futures import ProcessPoolExecutor
-from tqdm import tqdm
 
 import matplotlib.pyplot as plt
 import numpy as np
 from ternary import figure
+from tqdm import tqdm
 
 from zalmoxis import zalmoxis
 from zalmoxis.constants import earth_radius
@@ -45,7 +45,7 @@ def run_zalmoxis_for_ternary(args):
     config_params["weight_iron_fraction"] = core_frac  # must be equal to core_mass_fraction
     config_params["EOS_CHOICE"] = "Tabulated:water"
 
-    # Run the main function 
+    # Run the main function
     try:
         # Unpack outputs directly from Zalmoxis
         radii, density, gravity, pressure, temperature, mass_enclosed, cmb_mass, core_mantle_mass, total_time = zalmoxis.main(config_params)
@@ -57,7 +57,7 @@ def run_zalmoxis_for_ternary(args):
         with open(custom_log_file, "a") as log:
             log.write(f"{core_frac:.4f}\t{mantle_frac:.4f}\t{water_frac:.4f}\t{planet_radius:.4e}\t{total_time:.4e}\n")
         return (core_frac, mantle_frac, planet_radius)
-    
+
     except Exception as e:
         print(f"Failed for core: {core_frac}, mantle: {mantle_frac} -> {e}")
         return None
@@ -87,7 +87,9 @@ def run_ternary_grid_for_mass(id_mass=None):
 
     with ProcessPoolExecutor() as executor:
         # Wrap with tqdm for progress bar
-        results = list(tqdm(executor.map(run_zalmoxis_for_ternary, args_list), total=len(args_list)))
+        for _ in tqdm(executor.map(run_zalmoxis_for_ternary, args_list), total=len(args_list)):
+            pass
+
 
     print(f"Completed Zalmoxis runs for {len(args_list)} composition points.")
 
@@ -133,7 +135,7 @@ def plot_ternary(data):
     fig, tax = figure(scale=scale)
     tax.boundary()
     tax.gridlines(color="gray", multiple=5)  # gridlines every 10%
-    
+
     tax.scatter(points, marker='o', color=colour_mapped, s=24)
 
     # Mark the special point with an X
@@ -229,7 +231,7 @@ def plot_ternary_time(data):
     plt.savefig(os.path.join(ZALMOXIS_ROOT, "output_files", "ternary_diagram_time.png"), dpi=300)
 
 if __name__ == "__main__":
-    run_ternary_grid_for_mass(id_mass=1.0)      # runs the ternary grid for the planet 
+    run_ternary_grid_for_mass(id_mass=1.0)      # runs the ternary grid for the planet
     data = read_results(id_mass=1.0)            # reads the log file
     plot_ternary(data)                          # plots the ternary diagram with radius
     plot_ternary_time(data)                     # plots the ternary diagram with time
