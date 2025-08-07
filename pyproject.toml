@@ -33,6 +33,7 @@ dependencies = [
     "scipy",
     "toml",
     "matplotlib",
+    "ternary",
 ]
 
 [project.scripts]
