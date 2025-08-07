@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import itertools
+import logging
 import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from tqdm import tqdm
-import logging
 
 import matplotlib.pyplot as plt
 import numpy as np
 from ternary import figure
+from tqdm import tqdm
 
 from zalmoxis import zalmoxis
 from zalmoxis.constants import earth_radius
@@ -49,26 +49,25 @@ def run_zalmoxis_for_ternary(args):
     config_params["weight_iron_fraction"] = core_frac  # must be equal to core_mass_fraction
     config_params["EOS_CHOICE"] = "Tabulated:water"
 
-    # Run the main function
-    try:
-        # Unpack outputs directly from Zalmoxis
-        model_results = zalmoxis.main(config_params)
+    # Unpack outputs directly from Zalmoxis
+    model_results = zalmoxis.main(config_params)
+    converged = model_results.get("converged", False)
 
-        # Extract the results from the model output
-        radii = model_results["radii"]
-        total_time = model_results["total_time"]
+    # Check if model converged before proceeding
+    if not model_results.get("converged", False):
+        logger.warning(f"Model did not converge for core: {core_frac}, mantle: {mantle_frac}")
+        return converged
 
-        planet_radius = radii[-1] # Get the planet radius
+    # Extract the results from the model output
+    radii = model_results["radii"]
+    total_time = model_results["total_time"]
+    planet_radius = radii[-1]
 
-        # Log the composition and radius
-        custom_log_file = os.path.join(ZALMOXIS_ROOT, "output_files", f"composition_radius_log{id_mass}.txt")
-        with open(custom_log_file, "a") as log:
-            log.write(f"{core_frac:.4f}\t{mantle_frac:.4f}\t{water_frac:.4f}\t{planet_radius:.4e}\t{total_time:.4e}\n")
-        return (core_frac, mantle_frac, planet_radius)
-
-    except Exception as e:
-        logger.warning(f"Failed for core: {core_frac}, mantle: {mantle_frac} -> {e}")
-        return None
+    # Log the composition and radius only if converged
+    custom_log_file = os.path.join(ZALMOXIS_ROOT, "output_files", f"composition_radius_log{id_mass}.txt")
+    with open(custom_log_file, "a") as log:
+        log.write(f"{core_frac:.4f}\t{mantle_frac:.4f}\t{water_frac:.4f}\t{planet_radius:.4e}\t{total_time:.4e}\n")
+    return core_frac, mantle_frac, water_frac, converged
 
 def generate_composition_grid(step=0.05):
     """
@@ -90,6 +89,8 @@ def run_ternary_grid_for_mass(id_mass=None):
     showing progress with tqdm.
     Parameters:
         id_mass (float): Mass of the planet in Earth masses.
+    Returns:
+        list: A list of results from the zalmoxis runs.
     """
     grid = generate_composition_grid(step=0.05)
     args_list = [(id_mass, core, mantle) for (core, mantle) in grid]
@@ -102,6 +103,7 @@ def run_ternary_grid_for_mass(id_mass=None):
             result = future.result()
             results.append(result)
     logger.info(f"Completed Zalmoxis runs for {len(args_list)} composition points.")
+    return results
 
 def read_results(id_mass=None):
     """
@@ -256,9 +258,9 @@ def wrapper_ternary(id_mass):
     run_ternary_grid_for_mass(id_mass)
 
     # Read the results and plot the ternary diagrams
-    data = read_results(id_mass)         
-    plot_ternary(data)                  
+    data = read_results(id_mass)
+    plot_ternary(data)
     plot_ternary_time(data)
 
 if __name__ == "__main__":
-    wrapper_ternary(id_mass=1.0)  
+    wrapper_ternary(id_mass=10.0)

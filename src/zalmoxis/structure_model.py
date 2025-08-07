@@ -1,5 +1,6 @@
 # This file contains the main function that solves the coupled ODEs for the structure model.
 from __future__ import annotations
+
 import logging
 
 import numpy as np

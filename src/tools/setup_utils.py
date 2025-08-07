@@ -1,10 +1,10 @@
 # Setup script for downloading and extracting data
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import subprocess
-import logging
 
 # Read the environment variable for ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")

@@ -3,9 +3,10 @@ EOS Data and Functions
 """
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 from scipy.interpolate import interp1d
-import logging
 
 from .eos_properties import (
     material_properties_iron_silicate_planets,

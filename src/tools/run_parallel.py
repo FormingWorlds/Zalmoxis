@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
-import logging
 
 from src.zalmoxis import zalmoxis
 from src.zalmoxis.plots.plot_profiles_all_in_one import plot_profiles_all_in_one

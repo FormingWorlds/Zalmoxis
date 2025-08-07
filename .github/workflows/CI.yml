@@ -2,7 +2,6 @@ name: Tests for Zalmoxis
 
 on:
   push:
-    branches: [main]
   pull_request:
     branches: [main]
     types:

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import logging
 import math
 import os
 import sys
 import time
-import logging
 
 import numpy as np
 import toml
@@ -204,7 +204,7 @@ def main(config_params):
 
                 # Check if maximum iterations for pressure adjustment are reached
                 if pressure_iter == max_iterations_pressure - 1:
-                    logger.warning(f"Warning: Maximum pressure iterations ({max_iterations_pressure}) reached. Surface pressure may not be fully converged.")
+                    logger.warning(f"Maximum pressure iterations ({max_iterations_pressure}) reached. Surface pressure may not be fully converged.")
                     converged = False  # Set convergence flag to False if maximum iterations reached
 
             # Update density grid based on the mass enclosed within a certain mass fraction
@@ -234,7 +234,7 @@ def main(config_params):
 
                 # Handle potential errors in density calculation
                 if new_density is None:
-                    logger.warning(f"Warning: Density calculation failed at radius {radii[i]}. Using previous density.")
+                    logger.warning(f"Density calculation failed at radius {radii[i]}. Using previous density.")
                     new_density = old_density[i]
 
                 # Update the density grid with a weighted average of the new and old density
@@ -248,7 +248,7 @@ def main(config_params):
 
             # Check if maximum iterations for inner loop are reached
             if inner_iter == max_iterations_inner - 1:
-                logger.warning(f"Warning: Maximum inner iterations ({max_iterations_inner}) reached. Density may not be fully converged.")
+                logger.warning(f"Maximum inner iterations ({max_iterations_inner}) reached. Density may not be fully converged.")
                 converged = False  # Set convergence flag to False if maximum iterations reached
 
         # Extract the calculated total interior mass of the planet from the last element of the mass array
@@ -273,7 +273,7 @@ def main(config_params):
 
         # Check if maximum iterations for outer loop are reached
         if outer_iter == max_iterations_outer - 1:
-            logger.warning(f"Warning: Maximum outer iterations ({max_iterations_outer}) reached. Total mass may not be fully converged.")
+            logger.warning(f"Maximum outer iterations ({max_iterations_outer}) reached. Total mass may not be fully converged.")
             converged = False  # Set convergence flag to False if maximum iterations reached
 
     # Calculate the temperature profile
@@ -322,7 +322,7 @@ def post_processing(config_params, id_mass=None, output_file=None):
     gravity = model_results["gravity"]
     pressure = model_results["pressure"]
     temperature = model_results["temperature"]
-    mass_enclosed = model_results["mass_enclosed"]  
+    mass_enclosed = model_results["mass_enclosed"]
     cmb_mass = model_results["cmb_mass"]
     core_mantle_mass = model_results["core_mantle_mass"]
     total_time = model_results["total_time"]
