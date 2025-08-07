@@ -55,14 +55,14 @@ def run_zalmoxis_rocky_water(id_mass, config_type, cmf, immf):
         os.remove(output_file)
 
     # Run the main function and post-processing
-    radii, density, gravity, pressure, temperature, mass_enclosed, cmb_mass, core_mantle_mass, total_time = zalmoxis.main(config_params)
+    model_results = zalmoxis.main(config_params)
     zalmoxis.post_processing(config_params, id_mass, output_file=output_file)
 
     # Write profile data (radii and density) to a temporary profile file
     with tempfile.NamedTemporaryFile(delete=False, mode='w', suffix="_profile.txt") as profile_file:
         profile_output_file = profile_file.name
         profile_file.write("radius (m),density (kg/m^3)\n")
-        for r, d in zip(radii, density):
+        for r, d in zip(model_results["radii"], model_results["density"]):
             profile_file.write(f"{r},{d}\n")
 
     return output_file, profile_output_file

@@ -1,11 +1,14 @@
 # This file contains the main function that solves the coupled ODEs for the structure model.
 from __future__ import annotations
+import logging
 
 import numpy as np
 
 from .constants import G
 from .eos_functions import calculate_density
 
+# Set up logging
+logger = logging.getLogger(__name__)
 
 # Define the coupled ODEs for the structure model
 def coupled_odes(radius, y, cmb_mass, core_mantle_mass, EOS_CHOICE, interpolation_cache):
@@ -52,7 +55,7 @@ def coupled_odes(radius, y, cmb_mass, core_mantle_mass, EOS_CHOICE, interpolatio
 
     # Handle potential errors in density calculation
     if current_density is None:
-        print(f"Warning: Density calculation failed at radius {radius}")
+        logger.warning(f"Warning: Density calculation failed at radius {radius}")
 
     # Define the ODEs for mass, gravity and pressure
     dMdr = 4 * np.pi * radius**2 * current_density

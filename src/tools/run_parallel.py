@@ -4,6 +4,7 @@ import os
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
+import logging
 
 from src.zalmoxis import zalmoxis
 from src.zalmoxis.plots.plot_profiles_all_in_one import plot_profiles_all_in_one
@@ -14,6 +15,9 @@ from src.zalmoxis.plots.plot_profiles_all_in_one import plot_profiles_all_in_one
 ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
 if not ZALMOXIS_ROOT:
     raise RuntimeError("ZALMOXIS_ROOT environment variable not set")
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 def run_zalmoxis(id_mass=None):
     """
@@ -61,7 +65,7 @@ def run_zalmoxis_in_parallel(choice):
     elif choice == "Boujibar":
         target_mass_array = range(1, 11)
     elif choice == "default":
-        print("No choice selected for the comparison, defaulting to 1 to 10 Earth masses simulation.")
+        logger.info("No choice selected for the comparison, defaulting to 1 to 10 Earth masses simulation.")
         target_mass_array = range(1, 11)
     elif choice == "SeagerEarth":
         target_mass_array = [1, 5, 10, 50]
@@ -86,7 +90,7 @@ if __name__ == "__main__":
     start_time = time.time()
 
     if len(sys.argv) != 2:
-        print("Usage: python -m src.tools.run_parallel <choice>")
+        logger.info("Usage: python -m src.tools.run_parallel <choice>")
         sys.exit(1)
 
     choice = sys.argv[1]
@@ -94,4 +98,4 @@ if __name__ == "__main__":
 
     end_time = time.time()
     total_time = end_time - start_time
-    print(f"Total running time: {total_time:.2f} seconds")
+    logger.info(f"Total time for running Zalmoxis in parallel with choice '{choice}' is: {total_time:.2f} seconds")

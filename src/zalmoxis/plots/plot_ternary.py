@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import itertools
 import os
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from tqdm import tqdm
+import logging
 
 import matplotlib.pyplot as plt
 import numpy as np
 from ternary import figure
-from tqdm import tqdm
 
 from zalmoxis import zalmoxis
 from zalmoxis.constants import earth_radius
@@ -18,6 +19,9 @@ from zalmoxis.constants import earth_radius
 ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
 if not ZALMOXIS_ROOT:
     raise RuntimeError("ZALMOXIS_ROOT environment variable not set")
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 def run_zalmoxis_for_ternary(args):
     """
@@ -48,7 +52,11 @@ def run_zalmoxis_for_ternary(args):
     # Run the main function
     try:
         # Unpack outputs directly from Zalmoxis
-        radii, density, gravity, pressure, temperature, mass_enclosed, cmb_mass, core_mantle_mass, total_time = zalmoxis.main(config_params)
+        model_results = zalmoxis.main(config_params)
+
+        # Extract the results from the model output
+        radii = model_results["radii"]
+        total_time = model_results["total_time"]
 
         planet_radius = radii[-1] # Get the planet radius
 
@@ -59,7 +67,7 @@ def run_zalmoxis_for_ternary(args):
         return (core_frac, mantle_frac, planet_radius)
 
     except Exception as e:
-        print(f"Failed for core: {core_frac}, mantle: {mantle_frac} -> {e}")
+        logger.warning(f"Failed for core: {core_frac}, mantle: {mantle_frac} -> {e}")
         return None
 
 def generate_composition_grid(step=0.05):
@@ -78,7 +86,8 @@ def generate_composition_grid(step=0.05):
 
 def run_ternary_grid_for_mass(id_mass=None):
     """
-    Run zalmoxis for a grid of core and mantle fractions for a given planet mass.
+    Run zalmoxis for a grid of core and mantle fractions for a given planet mass,
+    showing progress with tqdm.
     Parameters:
         id_mass (float): Mass of the planet in Earth masses.
     """
@@ -86,12 +95,13 @@ def run_ternary_grid_for_mass(id_mass=None):
     args_list = [(id_mass, core, mantle) for (core, mantle) in grid]
 
     with ProcessPoolExecutor() as executor:
-        # Wrap with tqdm for progress bar
-        for _ in tqdm(executor.map(run_zalmoxis_for_ternary, args_list), total=len(args_list)):
-            pass
+        futures = [executor.submit(run_zalmoxis_for_ternary, args) for args in args_list]
 
-
-    print(f"Completed Zalmoxis runs for {len(args_list)} composition points.")
+        results = []
+        for future in tqdm(as_completed(futures), total=len(futures), desc=f"Processing mass {id_mass}"):
+            result = future.result()
+            results.append(result)
+    logger.info(f"Completed Zalmoxis runs for {len(args_list)} composition points.")
 
 def read_results(id_mass=None):
     """
@@ -230,8 +240,25 @@ def plot_ternary_time(data):
     plt.tight_layout()
     plt.savefig(os.path.join(ZALMOXIS_ROOT, "output_files", "ternary_diagram_time.png"), dpi=300)
 
+def wrapper_ternary(id_mass):
+    """ Wrapper function to run the ternary grid and plot the results.
+    It deletes the composition_radius_log file if it exists, runs the ternary grid for a default planet mass,
+    reads the results, and plots the ternary diagrams.
+    Parameters:
+        id_mass (float): Mass of the planet in Earth masses.
+    """
+    # Delete composition_radius_log file if it exists
+    custom_log_file = os.path.join(ZALMOXIS_ROOT, "output_files", f"composition_radius_log{id_mass}.txt")
+    if os.path.exists(custom_log_file):
+        os.remove(custom_log_file)
+
+    # Run the ternary grid for the specified planet mass
+    run_ternary_grid_for_mass(id_mass)
+
+    # Read the results and plot the ternary diagrams
+    data = read_results(id_mass)         
+    plot_ternary(data)                  
+    plot_ternary_time(data)
+
 if __name__ == "__main__":
-    run_ternary_grid_for_mass(id_mass=1.0)      # runs the ternary grid for the planet
-    data = read_results(id_mass=1.0)            # reads the log file
-    plot_ternary(data)                          # plots the ternary diagram with radius
-    plot_ternary_time(data)                     # plots the ternary diagram with time
+    wrapper_ternary(id_mass=1.0)  

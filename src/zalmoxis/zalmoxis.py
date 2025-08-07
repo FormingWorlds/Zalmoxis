@@ -4,6 +4,7 @@ import math
 import os
 import sys
 import time
+import logging
 
 import numpy as np
 import toml
@@ -22,6 +23,10 @@ ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
 if not ZALMOXIS_ROOT:
     raise RuntimeError("ZALMOXIS_ROOT environment variable not set")
 
+# Set up logging
+logging.basicConfig(filename=os.path.join(ZALMOXIS_ROOT, "output_files", "zalmoxis.log"), level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', filemode='w')
+logger = logging.getLogger(__name__)
+
 def choose_config_file(temp_config_path=None):
     """
     Function to choose the configuration file to run the main function.
@@ -35,29 +40,29 @@ def choose_config_file(temp_config_path=None):
     if temp_config_path:
         try:
             config = toml.load(temp_config_path)
-            print(f"Reading temporary config file from: {temp_config_path}")
+            logger.info(f"Reading temporary config file from: {temp_config_path}")
         except FileNotFoundError:
-            print(f"Error: Temporary config file not found at {temp_config_path}")
+            logger.error(f"Error: Temporary config file not found at {temp_config_path}")
             sys.exit(1)
     elif "-c" in sys.argv:
         index = sys.argv.index("-c")
         try:
             config_file_path = sys.argv[index + 1]
             config = toml.load(config_file_path)
-            print(f"Reading config file from: {config_file_path}")
+            logger.info(f"Reading config file from: {config_file_path}")
         except IndexError:
-            print("Error: -c flag provided but no config file path specified.")
+            logger.error("Error: -c flag provided but no config file path specified.")
             sys.exit(1)  # Exit with error code
         except FileNotFoundError:
-            print(f"Error: Config file not found at {config_file_path}")
+            logger.error(f"Error: Config file not found at {config_file_path}")
             sys.exit(1)
     else:
         config_default_path = os.path.join(ZALMOXIS_ROOT, "input", "default.toml")
         try:
             config = toml.load(config_default_path)
-            print(f"Reading default config file from {config_default_path}")
+            logger.info(f"Reading default config file from {config_default_path}")
         except FileNotFoundError:
-            print(f"Error: Default config file not found at {config_default_path}")
+            logger.info(f"Error: Default config file not found at {config_default_path}")
             sys.exit(1)
 
     return config
@@ -104,18 +109,11 @@ def main(config_params):
         config_params (dict): Dictionary containing configuration parameters for the model.
 
     Returns:
-        tuple: (
-            radii (np.ndarray): Array of radial distances from the center of the planet,
-            density (np.ndarray): Array of densities at each radial distance,
-            gravity (np.ndarray): Array of gravitational accelerations at each radial distance,
-            pressure (np.ndarray): Array of pressures at each radial distance,
-            temperature (np.ndarray): Array of temperatures at each radial distance,
-            mass_enclosed (np.ndarray): Array of enclosed mass at each radial distance,
-            cmb_mass (float): Core-mantle boundary mass,
-            core_mantle_mass (float): Core plus mantle mass,
-            total_time (float): Total computation time in seconds
-        )
+        dict: Dictionary containing the calculated radii, density, gravity, pressure, temperature, mass enclosed,
+                core-mantle boundary mass, core+mantle mass, total computation time, and convergence status of the model.
     """
+    # Initialize convergence flag for the model
+    converged = True  # Assume convergence unless proven otherwise
 
     # Unpack configuration parameters
     planet_mass = config_params["planet_mass"]
@@ -198,11 +196,16 @@ def main(config_params):
 
                 # Check for convergence of the surface pressure and overall pressure positivity
                 if abs(pressure_diff) < pressure_tolerance and np.all(pressure > 0):
-                    #print(f"Surface pressure converged after {pressure_iter + 1} iterations and all pressures are positive.")
+                    #logger.info(f"Surface pressure converged after {pressure_iter + 1} iterations and all pressures are positive.")
                     break  # Exit the pressure adjustment loop
 
                 # Update the pressure guess at the center of the planet based on the pressure difference at the surface using an adjustment factor
                 pressure_guess -= pressure_diff * pressure_adjustment_factor
+
+                # Check if maximum iterations for pressure adjustment are reached
+                if pressure_iter == max_iterations_pressure - 1:
+                    logger.warning(f"Warning: Maximum pressure iterations ({max_iterations_pressure}) reached. Surface pressure may not be fully converged.")
+                    converged = False  # Set convergence flag to False if maximum iterations reached
 
             # Update density grid based on the mass enclosed within a certain mass fraction
             for i in range(num_layers):
@@ -231,7 +234,7 @@ def main(config_params):
 
                 # Handle potential errors in density calculation
                 if new_density is None:
-                    print(f"Warning: Density calculation failed at radius {radii[i]}. Using previous density.")
+                    logger.warning(f"Warning: Density calculation failed at radius {radii[i]}. Using previous density.")
                     new_density = old_density[i]
 
                 # Update the density grid with a weighted average of the new and old density
@@ -240,8 +243,13 @@ def main(config_params):
             # Check for convergence of density using relative difference between old and new density
             relative_diff_inner = np.max(np.abs((density - old_density) / (old_density + 1e-20)))
             if relative_diff_inner < tolerance_inner:
-                #print(f"Inner loop converged after {inner_iter + 1} iterations.")
+                #logger.info(f"Inner loop converged after {inner_iter + 1} iterations.")
                 break # Exit the inner loop
+
+            # Check if maximum iterations for inner loop are reached
+            if inner_iter == max_iterations_inner - 1:
+                logger.warning(f"Warning: Maximum inner iterations ({max_iterations_inner}) reached. Density may not be fully converged.")
+                converged = False  # Set convergence flag to False if maximum iterations reached
 
         # Extract the calculated total interior mass of the planet from the last element of the mass array
         calculated_mass = mass_enclosed[-1]
@@ -260,12 +268,13 @@ def main(config_params):
 
         # Check for convergence of the calculated total interior mass
         if relative_diff_outer_mass < tolerance_outer:
-            print(f"Outer loop (total mass) converged after {outer_iter + 1} iterations.")
+            logger.info(f"Outer loop (total mass) converged after {outer_iter + 1} iterations.")
             break  # Exit the outer loop
 
         # Check if maximum iterations for outer loop are reached
         if outer_iter == max_iterations_outer - 1:
-            print(f"Warning: Maximum outer iterations ({max_iterations_outer}) reached. Total mass may not be fully converged.")
+            logger.warning(f"Warning: Maximum outer iterations ({max_iterations_outer}) reached. Total mass may not be fully converged.")
+            converged = False  # Set convergence flag to False if maximum iterations reached
 
     # Calculate the temperature profile
     #temperature = calculate_temperature(radii, cmb_radius, 300, material_properties_iron_silicate_planets, gravity, density, material_properties_iron_silicate_planets["mantle"]["K0"], dr=planet_radius/num_layers)
@@ -276,8 +285,20 @@ def main(config_params):
     # Calculate the total time taken for the entire process
     total_time = end_time - start_time
 
-    # Return the calculated values for further use
-    return radii, density, gravity, pressure, temperature, mass_enclosed, cmb_mass, core_mantle_mass, total_time
+    # Save the calculated values for further use in a dictionary
+    model_results = {
+        "radii": radii,
+        "density": density,
+        "gravity": gravity,
+        "pressure": pressure,
+        "temperature": temperature,
+        "mass_enclosed": mass_enclosed,
+        "cmb_mass": cmb_mass,
+        "core_mantle_mass": core_mantle_mass,
+        "total_time": total_time,
+        "converged": converged
+    }
+    return model_results
 
 def post_processing(config_params, id_mass=None, output_file=None):
     """
@@ -293,7 +314,18 @@ def post_processing(config_params, id_mass=None, output_file=None):
     plotting_enabled = config_params["plotting_enabled"]
 
     # Load the model output data
-    radii, density, gravity, pressure, temperature, mass_enclosed, cmb_mass, core_mantle_mass, total_time = main(config_params)
+    model_results = main(config_params)
+
+    # Extract the results from the model output
+    radii = model_results["radii"]
+    density = model_results["density"]
+    gravity = model_results["gravity"]
+    pressure = model_results["pressure"]
+    temperature = model_results["temperature"]
+    mass_enclosed = model_results["mass_enclosed"]  
+    cmb_mass = model_results["cmb_mass"]
+    core_mantle_mass = model_results["core_mantle_mass"]
+    total_time = model_results["total_time"]
 
     # Extract the index of the core-mantle boundary mass in the mass array
     cmb_index = np.argmax(mass_enclosed >= cmb_mass)
@@ -301,21 +333,21 @@ def post_processing(config_params, id_mass=None, output_file=None):
     # Calculate the average density of the planet using the calculated mass and radius
     average_density = mass_enclosed[-1] / (4/3 * math.pi * radii[-1]**3)
 
-    print("Exoplanet Internal Structure Model Results:")
-    print("----------------------------------------------------------------------")
-    print(f"Calculated Planet Mass: {mass_enclosed[-1]:.2e} kg or {mass_enclosed[-1]/earth_mass:.2f} Earth masses")
-    print(f"Calculated Planet Radius: {radii[-1]:.2e} m or {radii[-1]/earth_radius:.2f} Earth radii")
-    print(f"Core Radius: {radii[cmb_index]:.2e} m")
-    print(f"Mantle Density (at CMB): {density[cmb_index]:.2f} kg/m^3")
-    print(f"Core Density (at CMB): {density[cmb_index- 1]:.2f} kg/m^3")
-    print(f"Pressure at Core-Mantle Boundary (CMB): {pressure[cmb_index]:.2e} Pa")
-    print(f"Pressure at Center: {pressure[0]:.2e} Pa")
-    print(f"Average Density: {average_density:.2f} kg/m^3")
-    print(f"CMB Mass Fraction: {mass_enclosed[cmb_index] / mass_enclosed[-1]:.3f}")
-    print(f"Core+Mantle Mass Fraction: {(core_mantle_mass - mass_enclosed[cmb_index]) / mass_enclosed[-1]:.3f}")
-    print(f"Calculated Core Radius Fraction: {radii[cmb_index] / radii[-1]:.2f}")
-    print(f"Calculated Core+Mantle Radius Fraction: {(radii[np.argmax(mass_enclosed >= core_mantle_mass)] / radii[-1]):.2f}")
-    print(f"Total Computation Time: {total_time:.2f} seconds")
+    logger.info("Exoplanet Internal Structure Model Results:")
+    logger.info("----------------------------------------------------------------------")
+    logger.info(f"Calculated Planet Mass: {mass_enclosed[-1]:.2e} kg or {mass_enclosed[-1]/earth_mass:.2f} Earth masses")
+    logger.info(f"Calculated Planet Radius: {radii[-1]:.2e} m or {radii[-1]/earth_radius:.2f} Earth radii")
+    logger.info(f"Core Radius: {radii[cmb_index]:.2e} m")
+    logger.info(f"Mantle Density (at CMB): {density[cmb_index]:.2f} kg/m^3")
+    logger.info(f"Core Density (at CMB): {density[cmb_index- 1]:.2f} kg/m^3")
+    logger.info(f"Pressure at Core-Mantle Boundary (CMB): {pressure[cmb_index]:.2e} Pa")
+    logger.info(f"Pressure at Center: {pressure[0]:.2e} Pa")
+    logger.info(f"Average Density: {average_density:.2f} kg/m^3")
+    logger.info(f"CMB Mass Fraction: {mass_enclosed[cmb_index] / mass_enclosed[-1]:.3f}")
+    logger.info(f"Core+Mantle Mass Fraction: {(core_mantle_mass - mass_enclosed[cmb_index]) / mass_enclosed[-1]:.3f}")
+    logger.info(f"Calculated Core Radius Fraction: {radii[cmb_index] / radii[-1]:.2f}")
+    logger.info(f"Calculated Core+Mantle Radius Fraction: {(radii[np.argmax(mass_enclosed >= core_mantle_mass)] / radii[-1]):.2f}")
+    logger.info(f"Total Computation Time: {total_time:.2f} seconds")
 
     # Save output data to a file
     if data_output_enabled:

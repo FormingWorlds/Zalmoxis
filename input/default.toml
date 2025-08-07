@@ -15,7 +15,7 @@ choice                     = "Tabulated:iron/silicate" # Choice of equation of s
 num_layers                 = 150 # Number of planet layers
 
 [IterativeProcess]
-max_iterations_outer       = 20 # Maximum number of iterations for the outer loop
+max_iterations_outer       = 50 # Maximum number of iterations for the outer loop
 tolerance_outer            = 1e-3 # Convergence tolerance for the outer loop
 max_iterations_inner       = 100 # Maximum number of iterations for the inner loop
 tolerance_inner            = 1e-4 # Convergence tolerance for the inner loop

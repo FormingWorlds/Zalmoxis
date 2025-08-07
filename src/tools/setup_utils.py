@@ -4,11 +4,15 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import logging
 
 # Read the environment variable for ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
 if not ZALMOXIS_ROOT:
     raise RuntimeError("ZALMOXIS_ROOT environment variable not set")
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 def download_data():
     """
@@ -29,7 +33,7 @@ def download_data():
         os.makedirs(extract_folder, exist_ok=True)
         subprocess.run(f"unzip {download_path} -d {extract_folder}", shell=True, check=True)
 
-        print(f"Download and extraction complete! Files are in '{extract_folder}'.")
+        logger.info(f"Download and extraction complete! Files are in '{extract_folder}'.")
 
         # Remove the __MACOSX folder if it exists
         macosx_folder = os.path.join(extract_folder, '__MACOSX')
@@ -56,7 +60,7 @@ def download_data():
         # Remove the leftover 'data.zip' and 'data_folder' after extraction
         os.remove(download_path)
     else:
-        print(f"Folder '{extract_folder}' already exists. Skipping download and extraction.")
+        logger.info(f"Folder '{extract_folder}' already exists. Skipping download and extraction.")
 
 def create_output_files():
     """
@@ -67,12 +71,12 @@ def create_output_files():
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-        print(f"Output files directory created at '{output_dir}'.")
+        logger.info(f"Output files directory created at '{output_dir}'.")
     else:
-        print(f"Output files directory already exists at '{output_dir}'.")
+        logger.info(f"Output files directory already exists at '{output_dir}'.")
 
 if __name__ == "__main__":
     download_data()  # Download and extract data
     create_output_files()  # Create output files directory
 
-    print("Setup completed successfully!")
+    logger.info("Setup completed successfully!")
