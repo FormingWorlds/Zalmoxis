@@ -22,6 +22,13 @@ from .structure_model import coupled_odes
 
 # Run file via command line with default configuration file: python -m zalmoxis -c input/default.toml
 
+# Read the environment variable for ZALMOXIS_ROOT
+ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
+if not ZALMOXIS_ROOT:
+    raise RuntimeError("ZALMOXIS_ROOT environment variable not set")
+
+logger = logging.getLogger(__name__)
+
 def choose_config_file(temp_config_path=None):
     """
     Function to choose the configuration file to run the main function.
