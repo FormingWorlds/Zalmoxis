@@ -8,11 +8,6 @@ import logging
 import numpy as np
 from scipy.interpolate import interp1d
 
-from .eos_properties import (
-    material_properties_iron_silicate_planets,
-    material_properties_water_planets,
-)
-
 # Set up logging
 logger = logging.getLogger(__name__)
 
@@ -95,12 +90,13 @@ def get_tabulated_eos(pressure, material_dictionary, material, interpolation_fun
         logger.error(f"Unexpected error with tabulated EOS for {material} at {pressure:.2e} Pa: {e}")
         return None
 
-
-# --- EOS Calculation ---
-def calculate_density(pressure, material, eos_choice, interpolation_functions={}):
+def calculate_density(pressure, material_dictionaries, material, eos_choice, interpolation_functions={}):
     """Calculates density with caching for tabulated EOS."""
 
     #T = 0  # Temporary fix for tabulated EOS
+
+    # Unpack material dictionaries
+    material_properties_iron_silicate_planets, material_properties_water_planets = material_dictionaries
 
     if eos_choice == "Tabulated:iron/silicate":
         return get_tabulated_eos(pressure, material_properties_iron_silicate_planets, material, interpolation_functions)

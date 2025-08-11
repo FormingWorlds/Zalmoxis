@@ -55,7 +55,7 @@ def run_zalmoxis_rocky_water(id_mass, config_type, cmf, immf):
         os.remove(output_file)
 
     # Run the main function and post-processing
-    model_results = zalmoxis.main(config_params)
+    model_results = zalmoxis.main(config_params, material_dictionaries=zalmoxis.load_material_dictionaries())
     zalmoxis.post_processing(config_params, id_mass, output_file=output_file)
 
     # Write profile data (radii and density) to a temporary profile file

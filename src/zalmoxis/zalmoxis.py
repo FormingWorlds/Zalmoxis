@@ -12,6 +12,10 @@ from scipy.integrate import solve_ivp
 
 from .constants import earth_center_pressure, earth_mass, earth_radius
 from .eos_functions import calculate_density
+from .eos_properties import (
+    material_properties_iron_silicate_planets,
+    material_properties_water_planets,
+)
 from .plots.plot_eos import plot_eos_material
 from .plots.plot_profiles import plot_planet_profile_single
 from .structure_model import coupled_odes
@@ -97,7 +101,16 @@ def load_zalmoxis_config(temp_config_path=None):
         "plotting_enabled": config['Output']['plots_enabled']
     }
 
-def main(config_params):
+def load_material_dictionaries():
+    """
+    Loads and returns the material properties dictionaries for the Zalmoxis model.
+    Returns:
+        tuple: A tuple containing two dictionaries with material properties for iron/silicate and water planets.
+    """
+    material_dictionaries = (material_properties_iron_silicate_planets, material_properties_water_planets)
+    return material_dictionaries
+
+def main(config_params, material_dictionaries):
 
     """
     Runs the exoplanet internal structure model.
@@ -230,7 +243,7 @@ def main(config_params):
                         material = "water_ice_layer"
 
                 # Calculate the new density using the equation of state
-                new_density = calculate_density(pressure[i], material, EOS_CHOICE)
+                new_density = calculate_density(pressure[i], material_dictionaries, material, EOS_CHOICE)
 
                 # Handle potential errors in density calculation
                 if new_density is None:
@@ -314,7 +327,7 @@ def post_processing(config_params, id_mass=None, output_file=None):
     plotting_enabled = config_params["plotting_enabled"]
 
     # Load the model output data
-    model_results = main(config_params)
+    model_results = main(config_params, material_dictionaries=load_material_dictionaries())
 
     # Extract the results from the model output
     radii = model_results["radii"]

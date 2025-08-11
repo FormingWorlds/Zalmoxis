@@ -10,7 +10,7 @@ import numpy as np
 from ternary import figure
 from tqdm import tqdm
 
-from zalmoxis import zalmoxis
+from src.zalmoxis import zalmoxis
 from zalmoxis.constants import earth_radius
 
 # Run file via command line: python -m zalmoxis.plots.plot_ternary
@@ -50,7 +50,7 @@ def run_zalmoxis_for_ternary(args):
     config_params["EOS_CHOICE"] = "Tabulated:water"
 
     # Unpack outputs directly from Zalmoxis
-    model_results = zalmoxis.main(config_params)
+    model_results = zalmoxis.main(config_params, material_dictionaries=zalmoxis.load_material_dictionaries())
     converged = model_results.get("converged", False)
 
     # Check if model converged before proceeding
