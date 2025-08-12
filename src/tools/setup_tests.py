@@ -79,7 +79,7 @@ def load_zeng_curve(filename):
         FileNotFoundError: If the specified file does not exist.
     """
     # Load Zeng et al. (2019) mass-radius data from the specified file
-    data_path = os.path.join(ZALMOXIS_ROOT, "data", filename)
+    data_path = os.path.join(ZALMOXIS_ROOT, "data", "mass_radius_curves", filename)
 
     masses = []
     radii = []
@@ -154,7 +154,7 @@ def load_Seager_data(filename):
         ValueError: If the file format is incorrect or malformed.
     """
     # Load Seager et al. (2007) profiles: mass, radius, density per line (comma-separated)
-    data_path = os.path.join(ZALMOXIS_ROOT, "data", filename)
+    data_path = os.path.join(ZALMOXIS_ROOT, "data", "radial_profiles", filename)
 
     data_by_mass = {}
     with open(data_path, 'r') as f:

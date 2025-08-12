@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import logging
 import os
-import shutil
-import subprocess
+from pathlib import Path
+
+from osfclient.api import OSF
 
 # Read the environment variable for ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
@@ -14,53 +15,60 @@ if not ZALMOXIS_ROOT:
 # Set up logging
 logger = logging.getLogger(__name__)
 
-def download_data():
+def get_osf(id: str):
     """
-    Download and extract data from osf.io if the folder does not already exist.
-    The data is downloaded as a zip file and extracted to a specified folder.
-    The script also removes any __MACOSX folders and moves the contents of the inner 'data' folder to the outer 'data' folder.
-    If the folder already exists, it skips the download and extraction process.
+    Get the OSF storage for a given project ID.
+    Inputs:
+        - id: OSF project ID
+    Returns:
+        - OSF storage object for the project
     """
-    # Define URL, token, and paths
-    download_url = "https://osf.io/download/md7ka/"
-    download_path = os.path.join(ZALMOXIS_ROOT, "data.zip")  # Path to save the downloaded zip file
-    extract_folder = os.path.join(ZALMOXIS_ROOT, "data")  # Path to extract the data
+    osf = OSF()
+    project = osf.project(id)
+    return project.storage('osfstorage')
 
-    # Check if the folder already exists
-    if not os.path.exists(extract_folder):
-        # Download and extract in one go
-        subprocess.run(f"curl -L -o {download_path} {download_url}", shell=True, check=True)
-        os.makedirs(extract_folder, exist_ok=True)
-        subprocess.run(f"unzip {download_path} -d {extract_folder}", shell=True, check=True)
+def download_OSF_folder(*, storage, folders: list[str], data_dir: Path):
+    """
+    Download a specific folder in the OSF repository
 
-        logger.info(f"Download and extraction complete! Files are in '{extract_folder}'.")
+    Inputs :
+        - storage : OSF storage name
+        - folders : folder names to download
+        - data_dir : local repository where data are saved
+    """
+    for file in storage.files:
+        for folder in folders:
+            if not file.path[1:].startswith(folder):
+                continue
+            parts = file.path.split('/')[1:]
+            target = Path(data_dir, *parts)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            logger.info(f'Downloading {file.path}...')
+            with open(target, 'wb') as f:
+                file.write_to(f)
+            break
 
-        # Remove the __MACOSX folder if it exists
-        macosx_folder = os.path.join(extract_folder, '__MACOSX')
-        if os.path.exists(macosx_folder):
-            shutil.rmtree(macosx_folder)
+def download(folder: str, osf_id: str, data_dir: Path):
+    """    Download a folder from OSF and extract it to the specified data directory.
+    Inputs:
+        - folder: Name of the folder to download
+        - osf_id: OSF project ID
+        - data_dir: Directory where the data will be saved
+    """
+    # Get the target path for the folder
+    target_path = data_dir / folder
 
-        # Move the contents of the inner 'data' folder to the outer 'data' folder
-        inner_data_folder = os.path.join(extract_folder, 'data')  # Path to inner 'data' folder
-        outer_data_folder = os.path.join(extract_folder)  # Path to outer 'data' folder
+    if target_path.exists():
+        logger.info(f"Folder '{folder}' already exists in '{data_dir}'. Skipping download.")
+        return
 
-        if os.path.exists(inner_data_folder):
-            for item in os.listdir(inner_data_folder):
-                # Move each item from inner data to outer data
-                s = os.path.join(inner_data_folder, item)
-                d = os.path.join(outer_data_folder, item)
-                if os.path.isdir(s):
-                    shutil.move(s, d)
-                else:
-                    shutil.move(s, d)
+    logger.info(f"Folder '{folder}' does not exist in '{data_dir}'. Proceeding with download.")
+    logger.info(f"Downloading folder '{folder}' from OSF project '{osf_id}' to '{data_dir}'...")
 
-        # After moving the contents, remove the inner 'data' folder
-        shutil.rmtree(inner_data_folder)
+    storage = get_osf(osf_id)
+    download_OSF_folder(storage=storage, folders=[folder], data_dir=data_dir)
 
-        # Remove the leftover 'data.zip' and 'data_folder' after extraction
-        os.remove(download_path)
-    else:
-        logger.info(f"Folder '{extract_folder}' already exists. Skipping download and extraction.")
+    logger.info(f"Download of '{folder}' complete.")
 
 def create_output_files():
     """
@@ -75,8 +83,18 @@ def create_output_files():
     else:
         logger.info(f"Output files directory already exists at '{output_dir}'.")
 
-if __name__ == "__main__":
-    download_data()  # Download and extract data
-    create_output_files()  # Create output files directory
+def download_data():
+    """
+    Download and extract data for Zalmoxis.
+    This includes downloading the EOS data, radial profiles, and mass-radius curves.
+    """
+    # Download the necessary data from OSF
+    download(folder='EOS_Seager2007', osf_id='dpkjb', data_dir=Path(ZALMOXIS_ROOT, "data"))
+    download(folder='radial_profiles', osf_id='dpkjb', data_dir=Path(ZALMOXIS_ROOT, "data"))
+    download(folder='mass_radius_curves', osf_id='dpkjb', data_dir=Path(ZALMOXIS_ROOT, "data"))
 
+if __name__ == "__main__":
+    logger.info("Starting data download...")
+    download_data() # Download and extract data for Zalmoxis
+    create_output_files() # Create output files directory
     logger.info("Setup completed successfully!")

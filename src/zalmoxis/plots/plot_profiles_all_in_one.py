@@ -85,7 +85,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         wagner_radii_for_densities = []
         wagner_densities = []
 
-        with open(os.path.join(ZALMOXIS_ROOT, "data", "radiusdensityWagner.txt"), 'r') as wagner_file:
+        with open(os.path.join(ZALMOXIS_ROOT, "data", "radial_profiles", "radiusdensityWagner.txt"), 'r') as wagner_file:
             for line in wagner_file:
                 radius, density = map(float, line.split(','))
                 wagner_radii_for_densities.append(radius*earth_radius/1000) # Convert to km
@@ -94,7 +94,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         wagner_radii_for_pressures = []
         wagner_pressures = []
 
-        with open(os.path.join(ZALMOXIS_ROOT, "data", "radiuspressureWagner.txt"), 'r') as wagner_file:
+        with open(os.path.join(ZALMOXIS_ROOT, "data", "radial_profiles, "radiuspressureWagner.txt"), 'r') as wagner_file:
             for line in wagner_file:
                 radius, pressure = map(float, line.split(','))
                 wagner_radii_for_pressures.append(radius*earth_radius/1000) # Convert to km
@@ -103,7 +103,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         wagner_radii_for_gravities = []
         wagner_gravities = []
 
-        with open(os.path.join(ZALMOXIS_ROOT, "data", "radiusgravityWagner.txt"), 'r') as wagner_file:
+        with open(os.path.join(ZALMOXIS_ROOT, "data", "radial_profiles", "radiusgravityWagner.txt"), 'r') as wagner_file:
             for line in wagner_file:
                 radius, gravity = map(float, line.split(','))
                 wagner_radii_for_gravities.append(radius*earth_radius/1000) # Convert to km
@@ -114,7 +114,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         boujibar_radii_for_densities = []
         boujibar_densities = []
 
-        with open(os.path.join(ZALMOXIS_ROOT, "data", "radiusdensityEarthBoujibar.txt"), 'r') as boujibar_file:
+        with open(os.path.join(ZALMOXIS_ROOT, "data", "radial_profiles", "radiusdensityEarthBoujibar.txt"), 'r') as boujibar_file:
             for line in boujibar_file:
                 radius, density = map(float, line.split(','))
                 boujibar_radii_for_densities.append(radius)
@@ -123,7 +123,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         boujibar_radii_for_pressures = []
         boujibar_pressures = []
 
-        with open(os.path.join(ZALMOXIS_ROOT, "data", "radiuspressureEarthBoujibar.txt"), 'r') as boujibar_file:
+        with open(os.path.join(ZALMOXIS_ROOT, "data", "radial_profiles", "radiuspressureEarthBoujibar.txt"), 'r') as boujibar_file:
             for line in boujibar_file:
                 radius, pressure = map(float, line.split(','))
                 boujibar_radii_for_pressures.append(radius)
@@ -136,7 +136,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         seagerEarth_radii_for_densities = []
         seagerEarth_densities = []
 
-        with open(os.path.join(ZALMOXIS_ROOT, "data", "radiusdensitySeagerEarth.txt"), 'r') as seagerEarth_file:
+        with open(os.path.join(ZALMOXIS_ROOT, "data", "radial_profiles", "radiusdensitySeagerEarth.txt"), 'r') as seagerEarth_file:
             for line in seagerEarth_file:
                 radius, density = map(float, line.split(','))
                 seagerEarth_radii_for_densities.append(radius*1000) # Convert to km
@@ -146,7 +146,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         seagerwater_radii_for_densities = []
         seagerwater_densities = []
 
-        with open(os.path.join(ZALMOXIS_ROOT, "data", "radiusdensitySeagerwater.txt"), 'r') as seagerwater_file:
+        with open(os.path.join(ZALMOXIS_ROOT, "data", "radial_profiles", "radiusdensitySeagerwater.txt"), 'r') as seagerwater_file:
             for line in seagerwater_file:
                 radius, density = map(float, line.split(','))
                 seagerwater_radii_for_densities.append(radius*1000) # Convert to km

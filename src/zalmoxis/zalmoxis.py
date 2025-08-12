@@ -383,6 +383,6 @@ def post_processing(config_params, id_mass=None, output_file=None):
     if plotting_enabled:
         plot_planet_profile_single(radii, density, gravity, pressure, temperature, radii[np.argmax(mass_enclosed >= cmb_mass)] / radii[-1], cmb_mass, mass_enclosed[-1] / (4/3 * math.pi * radii[-1]**3), mass_enclosed, id_mass) # Plot planet profile for a single planet
         eos_data_files = ['eos_seager07_iron.txt', 'eos_seager07_silicate.txt', 'eos_seager07_water.txt']
-        eos_data_folder = os.path.join(ZALMOXIS_ROOT, "data")
+        eos_data_folder = os.path.join(ZALMOXIS_ROOT, "data", "EOS_Seager2007")
         plot_eos_material(eos_data_files, eos_data_folder)  # Plot the equation of state data for the materials used in the model
         #plt.show()
