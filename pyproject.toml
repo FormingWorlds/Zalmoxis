@@ -35,7 +35,8 @@ dependencies = [
     "matplotlib",
     "python-ternary",
     "tqdm",
-    "osfclient"
+    "osfclient", 
+    "zenodo-get"
 ]
 
 [project.scripts]
