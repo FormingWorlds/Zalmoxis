@@ -94,7 +94,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         wagner_radii_for_pressures = []
         wagner_pressures = []
 
-        with open(os.path.join(ZALMOXIS_ROOT, "data", "radial_profiles, "radiuspressureWagner.txt"), 'r') as wagner_file:
+        with open(os.path.join(ZALMOXIS_ROOT, "data", "radial_profiles", "radiuspressureWagner.txt"), 'r') as wagner_file:
             for line in wagner_file:
                 radius, pressure = map(float, line.split(','))
                 wagner_radii_for_pressures.append(radius*earth_radius/1000) # Convert to km
