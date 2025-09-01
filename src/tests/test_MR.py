@@ -13,8 +13,8 @@ if not ZALMOXIS_ROOT:
     raise RuntimeError("ZALMOXIS_ROOT environment variable not set")
 
 @pytest.mark.parametrize("config_type,zeng_file", [
-    ("rocky", "massradiusEarthlikeRockyZeng.txt"),
-    ("water", "massradiuswaterZeng.txt"),
+    ("rocky", "massradiusEarthlikeRocky.txt"),
+    ("water", "massradius_50percentH2O_300K_1mbar.txt"),
 ])
 @pytest.mark.parametrize("mass", [1, 5, 10, 50])  # 1, 5, 10, and 50 Earth masses (keep it simple for CI tests)
 def test_mass_radius(config_type, zeng_file, mass):

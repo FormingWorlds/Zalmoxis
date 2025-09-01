@@ -34,7 +34,7 @@ def plot_mass_radius_relationship(target_mass_array):
     # Read data from Zeng et al. (2019) for Earth-like Rocky (32.5% Fe+67.5% MgSiO3) planets
     zeng_masses_Earth = []
     zeng_radii_Earth = []
-    with open(os.path.join(ZALMOXIS_ROOT, "data", "massradiusEarthlikeRockyZeng.txt"), 'r') as zeng_file:
+    with open(os.path.join(ZALMOXIS_ROOT, "data", "mass_radius_curves", "massradiusEarthlikeRocky.txt"), 'r') as zeng_file:
         next(zeng_file)  # Skip the header line
         for line in zeng_file:
             mass, radius = map(float, line.split())
@@ -44,7 +44,7 @@ def plot_mass_radius_relationship(target_mass_array):
     # Read data from Zeng et al. (2019) for water planets (50 % H2O + 50% Earth-like rocky core)
     zeng_masses_water = []
     zeng_radii_water = []
-    with open(os.path.join(ZALMOXIS_ROOT, "data", "massradiuswaterZeng.txt"), 'r') as zeng_file:
+    with open(os.path.join(ZALMOXIS_ROOT, "data", "mass_radius_curves", "massradius_50percentH2O_300K_1mbar.txt"), 'r') as zeng_file:
         next(zeng_file)  # Skip the header line
         for line in zeng_file:
             mass, radius = map(float, line.split())

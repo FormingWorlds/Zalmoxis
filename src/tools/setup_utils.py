@@ -1,62 +1,139 @@
 # Setup script for downloading and extracting data
 from __future__ import annotations
 
+import logging
 import os
 import shutil
-import subprocess
+import subprocess as sp
+import tempfile
+from pathlib import Path
+
+from osfclient.api import OSF
 
 # Read the environment variable for ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
 if not ZALMOXIS_ROOT:
     raise RuntimeError("ZALMOXIS_ROOT environment variable not set")
 
-def download_data():
+# Set up logging
+logger = logging.getLogger(__name__)
+
+def get_osf(id: str):
     """
-    Download and extract data from osf.io if the folder does not already exist.
-    The data is downloaded as a zip file and extracted to a specified folder.
-    The script also removes any __MACOSX folders and moves the contents of the inner 'data' folder to the outer 'data' folder.
-    If the folder already exists, it skips the download and extraction process.
+    Get the OSF storage for a given project ID.
+    Inputs:
+        - id: OSF project ID
+    Returns:
+        - OSF storage object for the project
     """
-    # Define URL, token, and paths
-    download_url = "https://osf.io/download/md7ka/"
-    download_path = os.path.join(ZALMOXIS_ROOT, "data.zip")  # Path to save the downloaded zip file
-    extract_folder = os.path.join(ZALMOXIS_ROOT, "data")  # Path to extract the data
+    osf = OSF()
+    project = osf.project(id)
+    return project.storage('osfstorage')
 
-    # Check if the folder already exists
-    if not os.path.exists(extract_folder):
-        # Download and extract in one go
-        subprocess.run(f"curl -L -o {download_path} {download_url}", shell=True, check=True)
-        os.makedirs(extract_folder, exist_ok=True)
-        subprocess.run(f"unzip {download_path} -d {extract_folder}", shell=True, check=True)
+def download_OSF_folder(*, storage, folders: list[str], data_dir: Path):
+    """
+    Download a specific folder in the OSF repository
 
-        print(f"Download and extraction complete! Files are in '{extract_folder}'.")
+    Inputs :
+        - storage : OSF storage name
+        - folders : folder names to download
+        - data_dir : local repository where data are saved
+    """
+    for file in storage.files:
+        for folder in folders:
+            if not file.path[1:].startswith(folder):
+                continue
+            parts = file.path.split('/')[1:]
+            target = Path(data_dir, *parts)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            logger.info(f'Downloading {file.path}...')
+            with open(target, 'wb') as f:
+                file.write_to(f)
+            break
 
-        # Remove the __MACOSX folder if it exists
-        macosx_folder = os.path.join(extract_folder, '__MACOSX')
-        if os.path.exists(macosx_folder):
-            shutil.rmtree(macosx_folder)
+def download_zenodo_folder(zenodo_id: str, folder_dir: Path, keep_files: list[str] = None):
+    """
+    Download a specific Zenodo record into a specified folder.
 
-        # Move the contents of the inner 'data' folder to the outer 'data' folder
-        inner_data_folder = os.path.join(extract_folder, 'data')  # Path to inner 'data' folder
-        outer_data_folder = os.path.join(extract_folder)  # Path to outer 'data' folder
+    Parameters
+    ----------
+    zenodo_id : str
+        Zenodo record ID to download.
+    folder_dir : Path
+        Local directory where the Zenodo record (or selected files) will be saved.
+    keep_files : list[str] or None, optional
+        - None (default): Keep all files from the record.
+        - List of filenames: Only keep those files from the downloaded record.
+    """
+    # Clear target folder
+    shutil.rmtree(folder_dir, ignore_errors=True)
+    folder_dir.mkdir(parents=True, exist_ok=True)
 
-        if os.path.exists(inner_data_folder):
-            for item in os.listdir(inner_data_folder):
-                # Move each item from inner data to outer data
-                s = os.path.join(inner_data_folder, item)
-                d = os.path.join(outer_data_folder, item)
-                if os.path.isdir(s):
-                    shutil.move(s, d)
+    # Temporary folder for downloading
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+
+        # Download record into temporary folder
+        cmd = [
+            "zenodo_get", str(zenodo_id),
+            "-o", str(tmp_path)
+        ]
+        out = Path(ZALMOXIS_ROOT) / "zenodo_download.log"
+        logger.debug(f"    zenodo_get, logging to {out}")
+
+        with open(out, 'w') as hdl:
+            sp.run(cmd, check=True, stdout=hdl, stderr=hdl)
+
+        # Copy files based on keep_files filter
+        if keep_files is None:
+            logger.info("No file filter specified, keeping all files.")
+            for item in tmp_path.iterdir():
+                shutil.move(str(item), folder_dir)
+        else:
+            logger.info(f"Keeping only specified files: {keep_files}")
+            for fname in keep_files:
+                src_file = tmp_path / fname
+                if src_file.exists():
+                    shutil.move(str(src_file), folder_dir)
                 else:
-                    shutil.move(s, d)
+                    logger.warning(f"Requested file '{fname}' not found in Zenodo record {zenodo_id}.")
 
-        # After moving the contents, remove the inner 'data' folder
-        shutil.rmtree(inner_data_folder)
+def download(folder: str, zenodo_id: str, osf_id: str, data_dir: Path, keep_files: list[str] = None):
+    """    Download a folder from Zenodo or OSF and save it to the specified data directory.
+    Parameters:
+        folder (str): Name of the folder to download.
+        zenodo_id (str): Zenodo record ID to download from.
+        osf_id (str): OSF project ID to download from.
+        data_dir (Path): Local directory where the folder will be saved.
+    Raises:
+        RuntimeError: If the folder cannot be downloaded from both Zenodo and OSF.
+    """
+    # Get the target path for the folder
+    folder_dir = data_dir / folder
 
-        # Remove the leftover 'data.zip' and 'data_folder' after extraction
-        os.remove(download_path)
-    else:
-        print(f"Folder '{extract_folder}' already exists. Skipping download and extraction.")
+    if folder_dir.exists():
+        logger.info(f"Folder '{folder}' already exists in '{data_dir}'. Skipping download.")
+        return
+
+    logger.info(f"Folder '{folder}' does not exist in '{data_dir}'. Proceeding with download.")
+    logger.info(f"Downloading folder '{folder}' from OSF project '{osf_id}' to '{data_dir}'...")
+
+    # Try with Zenodo first
+    try:
+        logger.info(f"Downloading from Zenodo record '{zenodo_id}'...")
+        download_zenodo_folder(zenodo_id=zenodo_id, folder_dir=folder_dir, keep_files=keep_files)
+    except Exception as e:
+        logger.error(f"Failed to download from Zenodo: {e}")
+        logger.info("Trying to download from OSF...")
+
+        # If Zenodo fails, try with OSF
+        try:
+            logger.info(f"Downloading from OSF project '{osf_id}'...")
+            download_OSF_folder(storage=get_osf(osf_id), folders=[folder], data_dir=data_dir)
+            logger.info(f"Download of '{folder}' complete.")
+        except Exception as e:
+            logger.error(f"Failed to download from OSF: {e}")
+            raise RuntimeError(f"Failed to download folder '{folder}' from both Zenodo and OSF.")
 
 def create_output_files():
     """
@@ -67,12 +144,22 @@ def create_output_files():
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-        print(f"Output files directory created at '{output_dir}'.")
+        logger.info(f"Output files directory created at '{output_dir}'.")
     else:
-        print(f"Output files directory already exists at '{output_dir}'.")
+        logger.info(f"Output files directory already exists at '{output_dir}'.")
+
+def download_data():
+    """
+    Download and extract data for Zalmoxis.
+    This includes downloading the EOS data, radial profiles, and mass-radius curves.
+    """
+    # Download the necessary data folders
+    download(folder='EOS_Seager2007', zenodo_id=15727998, osf_id='dpkjb', data_dir=Path(ZALMOXIS_ROOT, "data"))
+    download(folder='radial_profiles', zenodo_id=16837954, osf_id='dpkjb', data_dir=Path(ZALMOXIS_ROOT, "data"))
+    download(folder='mass_radius_curves', zenodo_id=15727899, osf_id='dpkjb', data_dir=Path(ZALMOXIS_ROOT, "data"), keep_files=['massradiusEarthlikeRocky.txt', 'massradius_50percentH2O_300K_1mbar.txt'])
 
 if __name__ == "__main__":
-    download_data()  # Download and extract data
-    create_output_files()  # Create output files directory
-
-    print("Setup completed successfully!")
+    logger.info("Starting data download...")
+    download_data() # Download and extract data for Zalmoxis
+    create_output_files() # Create output files directory
+    logger.info("Setup completed successfully!")

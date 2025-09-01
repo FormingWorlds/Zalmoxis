@@ -9,7 +9,7 @@ description = "Zalmoxis (Planetary interior structure model)"
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [
-    {name = "Flavia Pascal", email = "fpascal@student.rug.nl"},
+    {name = "Flavia Pascal", email = "fpascal@astro.rug.nl"},
 ]
 keywords = [
     "Astronomy",
@@ -33,6 +33,10 @@ dependencies = [
     "scipy",
     "toml",
     "matplotlib",
+    "python-ternary",
+    "tqdm",
+    "osfclient", 
+    "zenodo-get"
 ]
 
 [project.scripts]
