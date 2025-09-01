@@ -1,4 +1,5 @@
 ![CI](https://github.com/FormingWorlds/Zalmoxis/actions/workflows/CI.yml/badge.svg)
+![PyPI](https://img.shields.io/pypi/v/fwl-zalmoxis)
 
 # Zalmoxis (Exoplanet Interior Structure Model)
 
