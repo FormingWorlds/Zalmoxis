@@ -11,7 +11,7 @@ from ternary import figure
 from tqdm import tqdm
 
 from src.zalmoxis import zalmoxis
-from zalmoxis.constants import earth_radius
+from zalmoxis.constants import earth_mass, earth_radius
 
 # Run file via command line: python -m zalmoxis.plots.plot_ternary
 
@@ -43,7 +43,7 @@ def run_zalmoxis_for_ternary(args):
     config_params = zalmoxis.load_zalmoxis_config(default_config_path)
 
     # Modify the configuration parameters as needed
-    config_params["planet_mass"] = id_mass * 5.972e24
+    config_params["planet_mass"] = id_mass * earth_mass
     config_params["core_mass_fraction"] = core_frac
     config_params["mantle_mass_fraction"] = mantle_frac
     config_params["weight_iron_fraction"] = core_frac  # must be equal to core_mass_fraction

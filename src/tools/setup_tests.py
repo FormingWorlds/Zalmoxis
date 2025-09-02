@@ -30,7 +30,7 @@ def run_zalmoxis_rocky_water(id_mass, config_type, cmf, immf):
     config_params = zalmoxis.load_zalmoxis_config(default_config_path)
 
     # Modify the configuration parameters as needed
-    config_params["planet_mass"] = id_mass * 5.972e24
+    config_params["planet_mass"] = id_mass * earth_mass
 
     if config_type == "rocky":
         config_params["core_mass_fraction"] = 0.325
