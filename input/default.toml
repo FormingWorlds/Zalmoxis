@@ -1,7 +1,7 @@
 # Default config file for Zalmoxis planetary structure code
 
 [InputParameter]
-planet_mass                = 5.972e24 #  Mass of the planet (kg) (Earth = 5.972e24 kg)
+planet_mass                = 1 # Mass of the planet (Earth masses)
 
 [AssumptionsAndInitialGuesses]
 core_mass_fraction         = 0.325 # Initial guess for the core mass as a fraction of the total mass
@@ -24,8 +24,8 @@ absolute_tolerance         = 1e-6 # Absolute tolerance for solve_ivp
 
 [PressureAdjustment]
 target_surface_pressure    = 101325 # Target surface pressure (Pa)
-pressure_tolerance         = 1e9 # Tolerance for surface pressure convergence (Pa)
-max_iterations_pressure    = 200 # Maximum iterations for pressure adjustment loop
+pressure_tolerance         = 1e6 # Tolerance for surface pressure convergence (Pa)
+max_iterations_pressure    = 500 # Maximum iterations for pressure adjustment loop
 pressure_adjustment_factor = 1.1 # Adjustment factor for updating the central pressure guess
 
 [Output]

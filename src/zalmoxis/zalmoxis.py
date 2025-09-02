@@ -79,7 +79,7 @@ def load_zalmoxis_config(temp_config_path=None):
 
     # Extract and return all relevant configuration parameters
     return {
-        "planet_mass": config['InputParameter']['planet_mass'],
+        "planet_mass": config['InputParameter']['planet_mass'] * earth_mass,  # Convert Earth masses to kg
         "core_mass_fraction": config['AssumptionsAndInitialGuesses']['core_mass_fraction'],
         "mantle_mass_fraction": config['AssumptionsAndInitialGuesses']['mantle_mass_fraction'],
         "weight_iron_fraction": config['AssumptionsAndInitialGuesses']['weight_iron_fraction'],
@@ -203,15 +203,15 @@ def main(config_params, material_dictionaries):
                 surface_pressure = pressure[-1]
 
                 # Calculate the pressure difference between the calculated surface pressure and the target surface pressure
-                pressure_diff = surface_pressure - target_surface_pressure
+                relative_pressure_diff = np.abs((surface_pressure - target_surface_pressure) / target_surface_pressure)
 
                 # Check for convergence of the surface pressure and overall pressure positivity
-                if abs(pressure_diff) < pressure_tolerance and np.all(pressure > 0):
+                if relative_pressure_diff < pressure_tolerance and np.all(pressure > 0):
                     #logger.info(f"Surface pressure converged after {pressure_iter + 1} iterations and all pressures are positive.")
                     break  # Exit the pressure adjustment loop
 
                 # Update the pressure guess at the center of the planet based on the pressure difference at the surface using an adjustment factor
-                pressure_guess -= pressure_diff * pressure_adjustment_factor
+                pressure_guess -= (surface_pressure - target_surface_pressure) * pressure_adjustment_factor
 
                 # Check if maximum iterations for pressure adjustment are reached
                 if pressure_iter == max_iterations_pressure - 1:
@@ -275,7 +275,7 @@ def main(config_params, material_dictionaries):
         core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * calculated_mass
 
         # Calculate relative differences of the calculated total interior mass
-        relative_diff_outer_mass = abs((calculated_mass - planet_mass) / planet_mass)
+        relative_diff_outer_mass = np.abs((calculated_mass - planet_mass) / planet_mass)
 
         # Check for convergence of the calculated total interior mass
         if relative_diff_outer_mass < tolerance_outer:
@@ -337,6 +337,7 @@ def post_processing(config_params, id_mass=None, output_file=None):
     cmb_mass = model_results["cmb_mass"]
     core_mantle_mass = model_results["core_mantle_mass"]
     total_time = model_results["total_time"]
+    converged = model_results["converged"]
 
     # Extract the index of the core-mantle boundary mass in the mass array
     cmb_index = np.argmax(mass_enclosed >= cmb_mass)
@@ -359,6 +360,7 @@ def post_processing(config_params, id_mass=None, output_file=None):
     logger.info(f"Calculated Core Radius Fraction: {radii[cmb_index] / radii[-1]:.2f}")
     logger.info(f"Calculated Core+Mantle Radius Fraction: {(radii[np.argmax(mass_enclosed >= core_mantle_mass)] / radii[-1]):.2f}")
     logger.info(f"Total Computation Time: {total_time:.2f} seconds")
+    logger.info(f"Convergence Status: {'Converged' if converged == True else 'Not Converged'}")
 
     # Save output data to a file
     if data_output_enabled:
