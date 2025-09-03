@@ -360,7 +360,7 @@ def post_processing(config_params, id_mass=None, output_file=None):
     logger.info(f"Calculated Core Radius Fraction: {radii[cmb_index] / radii[-1]:.2f}")
     logger.info(f"Calculated Core+Mantle Radius Fraction: {(radii[np.argmax(mass_enclosed >= core_mantle_mass)] / radii[-1]):.2f}")
     logger.info(f"Total Computation Time: {total_time:.2f} seconds")
-    logger.info(f"Convergence Status: {'Converged' if converged == True else 'Not Converged'}")
+    logger.info(f"Convergence Status: {'Converged' if converged else 'Not Converged'}")
 
     # Save output data to a file
     if data_output_enabled:
