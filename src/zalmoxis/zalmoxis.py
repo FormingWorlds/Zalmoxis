@@ -203,15 +203,15 @@ def main(config_params, material_dictionaries):
                 surface_pressure = pressure[-1]
 
                 # Calculate the pressure difference between the calculated surface pressure and the target surface pressure
-                relative_pressure_diff = np.abs((surface_pressure - target_surface_pressure) / target_surface_pressure)
+                pressure_diff = surface_pressure - target_surface_pressure
 
                 # Check for convergence of the surface pressure and overall pressure positivity
-                if relative_pressure_diff < pressure_tolerance and np.all(pressure > 0):
+                if pressure_diff < pressure_tolerance and np.all(pressure > 0):
                     #logger.info(f"Surface pressure converged after {pressure_iter + 1} iterations and all pressures are positive.")
                     break  # Exit the pressure adjustment loop
 
                 # Update the pressure guess at the center of the planet based on the pressure difference at the surface using an adjustment factor
-                pressure_guess -= (surface_pressure - target_surface_pressure) * pressure_adjustment_factor
+                pressure_guess -= pressure_diff * pressure_adjustment_factor
 
                 # Check if maximum iterations for pressure adjustment are reached
                 if pressure_iter == max_iterations_pressure - 1:

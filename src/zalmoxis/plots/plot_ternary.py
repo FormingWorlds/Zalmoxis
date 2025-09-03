@@ -124,7 +124,7 @@ def read_results(id_mass=None):
                 continue  # skip malformed lines
     return data
 
-def plot_ternary(data):
+def plot_ternary(data, id_mass):
     """
     Plot a ternary diagram of (core, mantle, water) mass fractions as percentages.
     Points are coloured by planet radius, normalised to Earth radii (R⊕).
@@ -183,9 +183,9 @@ def plot_ternary(data):
 
     plt.tight_layout()
     #plt.show()
-    plt.savefig(os.path.join(ZALMOXIS_ROOT, "output_files", "ternary_diagram.png"), dpi=300)
+    plt.savefig(os.path.join(ZALMOXIS_ROOT, "output_files", f"ternary_diagram{id_mass}.png"), dpi=300)
 
-def plot_ternary_time(data):
+def plot_ternary_time(data, id_mass):
     """
     Plot a ternary diagram of (core, mantle, water) mass fractions as percentages.
     Points are coloured by total time taken for the simulation.
@@ -239,7 +239,7 @@ def plot_ternary_time(data):
     cbar.set_label("Total Time (s)")
 
     plt.tight_layout()
-    plt.savefig(os.path.join(ZALMOXIS_ROOT, "output_files", "ternary_diagram_time.png"), dpi=300)
+    plt.savefig(os.path.join(ZALMOXIS_ROOT, "output_files", f"ternary_diagram_time{id_mass}.png"), dpi=300)
 
 def wrapper_ternary(id_mass):
     """ Wrapper function to run the ternary grid and plot the results.
@@ -258,8 +258,5 @@ def wrapper_ternary(id_mass):
 
     # Read the results and plot the ternary diagrams
     data = read_results(id_mass)
-    plot_ternary(data)
-    plot_ternary_time(data)
-
-if __name__ == "__main__":
-    wrapper_ternary(id_mass=50)
+    plot_ternary(data, id_mass)
+    plot_ternary_time(data, id_mass)
