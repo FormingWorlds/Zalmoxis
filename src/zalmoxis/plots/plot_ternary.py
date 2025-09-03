@@ -10,7 +10,7 @@ import numpy as np
 from ternary import figure
 from tqdm import tqdm
 
-from src.zalmoxis import zalmoxis
+from zalmoxis import zalmoxis
 from zalmoxis.constants import earth_mass, earth_radius
 
 # Run file via command line: python -m zalmoxis.plots.plot_ternary
@@ -33,7 +33,6 @@ def run_zalmoxis_for_ternary(args):
         tuple: A tuple containing the core fraction, mantle fraction, and planet radius.
     """
     id_mass, core_frac, mantle_frac = args
-    id_mass = float(id_mass)
     core_frac = float(core_frac)
     mantle_frac = float(mantle_frac)
     water_frac = 1.0 - core_frac - mantle_frac
@@ -263,4 +262,4 @@ def wrapper_ternary(id_mass):
     plot_ternary_time(data)
 
 if __name__ == "__main__":
-    wrapper_ternary(id_mass=10.0)
+    wrapper_ternary(id_mass=50)

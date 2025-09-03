@@ -17,7 +17,7 @@ if not ZALMOXIS_ROOT:
     ("rocky", "radiusdensitySeagerEarthbymass.txt"),
     ("water", "radiusdensitySeagerwaterbymass.txt"),
 ])
-@pytest.mark.parametrize("mass", [1, 5, 10, 50])  # 1, 5, 10, and 50 Earth masses
+@pytest.mark.parametrize("mass", [1, 5, 10, 50])  # 1, 5, 10, and 50 Earth masses (keep it simple for CI tests)
 def test_density_profile(config_type, seager_file, mass):
     """
     Test the density profile for rocky and water planets using Zalmoxis model.

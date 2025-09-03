@@ -24,7 +24,7 @@ absolute_tolerance         = 1e-6 # Absolute tolerance for solve_ivp
 
 [PressureAdjustment]
 target_surface_pressure    = 101325 # Target surface pressure (Pa)
-pressure_tolerance         = 1e6 # Tolerance for surface pressure convergence (Pa)
+pressure_tolerance         = 1e6 # Convergence tolerance for surface pressure convergence (Pa)
 max_iterations_pressure    = 500 # Maximum iterations for pressure adjustment loop
 pressure_adjustment_factor = 1.1 # Adjustment factor for updating the central pressure guess
 
