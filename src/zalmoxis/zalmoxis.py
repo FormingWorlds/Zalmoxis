@@ -124,7 +124,7 @@ def main(config_params, material_dictionaries):
                 core-mantle boundary mass, core+mantle mass, total computation time, and convergence status of the model.
     """
     # Initialize convergence flag for the model
-    converged = True  # Assume convergence unless proven otherwise
+    converged = False  # Assume not converged until proven otherwise
 
     # Unpack configuration parameters
     planet_mass = config_params["planet_mass"]
@@ -216,7 +216,6 @@ def main(config_params, material_dictionaries):
                 # Check if maximum iterations for pressure adjustment are reached
                 if pressure_iter == max_iterations_pressure - 1:
                     logger.warning(f"Maximum pressure iterations ({max_iterations_pressure}) reached. Surface pressure may not be fully converged.")
-                    converged = False  # Set convergence flag to False if maximum iterations reached
 
             # Update density grid based on the mass enclosed within a certain mass fraction
             for i in range(num_layers):
@@ -260,7 +259,6 @@ def main(config_params, material_dictionaries):
             # Check if maximum iterations for inner loop are reached
             if inner_iter == max_iterations_inner - 1:
                 logger.warning(f"Maximum inner iterations ({max_iterations_inner}) reached. Density may not be fully converged.")
-                converged = False  # Set convergence flag to False if maximum iterations reached
 
         # Extract the calculated total interior mass of the planet from the last element of the mass array
         calculated_mass = mass_enclosed[-1]
@@ -280,12 +278,12 @@ def main(config_params, material_dictionaries):
         # Check for convergence of the calculated total interior mass
         if relative_diff_outer_mass < tolerance_outer:
             logger.info(f"Outer loop (total mass) converged after {outer_iter + 1} iterations.")
+            converged = True  # Set convergence flag to True if converged
             break  # Exit the outer loop
 
         # Check if maximum iterations for outer loop are reached
         if outer_iter == max_iterations_outer - 1:
             logger.warning(f"Maximum outer iterations ({max_iterations_outer}) reached. Total mass may not be fully converged.")
-            converged = False  # Set convergence flag to False if maximum iterations reached
 
     # Calculate the temperature profile
     #temperature = calculate_temperature(radii, cmb_radius, 300, material_properties_iron_silicate_planets, gravity, density, material_properties_iron_silicate_planets["mantle"]["K0"], dr=planet_radius/num_layers)
