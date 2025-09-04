@@ -211,7 +211,7 @@ def main(config_params, material_dictionaries):
                 pressure_diff = surface_pressure - target_surface_pressure
 
                 # Check for convergence of the surface pressure and overall pressure positivity
-                if pressure_diff < pressure_tolerance and np.all(pressure > 0):
+                if np.abs(pressure_diff) < pressure_tolerance and np.all(pressure > 0):
                     verbose and logger.info(f"Surface pressure converged after {pressure_iter + 1} iterations and all pressures are positive.")
                     converged_pressure = True  # Set convergence flag for pressure to True if converged
                     break  # Exit the pressure adjustment loop
