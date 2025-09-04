@@ -11,7 +11,7 @@ ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
 if not ZALMOXIS_ROOT:
     raise RuntimeError("ZALMOXIS_ROOT environment variable not set")
 
-@pytest.mark.parametrize("mass", [1, 10])  # 1, 5, 10, and 50 Earth masses (keep it simple for CI tests)
+@pytest.mark.parametrize("mass", [1, 5, 10, 50])  # 1, 5, 10, and 50 Earth masses (keep it simple for CI tests)
 def test_all_compositions_converge(mass):
     """
     Test the convergence of the Zalmoxis model across all possible compositions
