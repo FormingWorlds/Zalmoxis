@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 
 from osfclient.api import OSF
+from tqdm import tqdm
 
 # Read the environment variable for ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
@@ -53,7 +54,7 @@ def download_OSF_folder(*, storage, folders: list[str], data_dir: Path):
 
 def download_zenodo_folder(zenodo_id: str, folder_dir: Path, keep_files: list[str] = None):
     """
-    Download a specific Zenodo record into a specified folder.
+    Download a specific Zenodo record into a specified folder and optionally keep only selected files.
 
     Parameters
     ----------
@@ -74,15 +75,19 @@ def download_zenodo_folder(zenodo_id: str, folder_dir: Path, keep_files: list[st
         tmp_path = Path(tmp_dir)
 
         # Download record into temporary folder
-        cmd = [
-            "zenodo_get", str(zenodo_id),
-            "-o", str(tmp_path)
-        ]
-        out = Path(ZALMOXIS_ROOT) / "zenodo_download.log"
-        logger.debug(f"    zenodo_get, logging to {out}")
+        cmd = ["zenodo_get", str(zenodo_id), "-o", str(tmp_path)]
+        process = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.STDOUT, text=True)
 
-        with open(out, 'w') as hdl:
-            sp.run(cmd, check=True, stdout=hdl, stderr=hdl)
+        # Use tqdm to show progress per file downloaded
+        with tqdm(desc=f"Downloading Zenodo {zenodo_id}", unit="file") as pbar:
+            for line in process.stdout:
+                # Update progress bar for each file
+                if "Downloading" in line:
+                    pbar.update(1)
+            process.wait()
+
+        if process.returncode != 0:
+            raise RuntimeError(f"zenodo_get failed with exit code {process.returncode}")
 
         # Copy files based on keep_files filter
         if keep_files is None:

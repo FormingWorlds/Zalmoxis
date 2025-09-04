@@ -316,8 +316,8 @@ def main(config_params, material_dictionaries):
         "cmb_mass": cmb_mass,
         "core_mantle_mass": core_mantle_mass,
         "total_time": total_time,
-        "converged": converged, 
-        "converged_pressure": converged_pressure, 
+        "converged": converged,
+        "converged_pressure": converged_pressure,
         "converged_density": converged_density,
         "converged_mass": converged_mass
     }
