@@ -1,7 +1,7 @@
 # Default config file for Zalmoxis planetary structure code
 
 [InputParameter]
-planet_mass                = 1 # Mass of the planet (Earth masses)
+planet_mass                = 1 # Mass of the planet (in Earth masses = 5.972e24 kg)
 
 [AssumptionsAndInitialGuesses]
 core_mass_fraction         = 0.325 # Initial guess for the core mass as a fraction of the total mass
