@@ -79,7 +79,7 @@ def load_zalmoxis_config(temp_config_path=None):
 
     # Extract and return all relevant configuration parameters
     return {
-        "planet_mass": config['InputParameter']['planet_mass'],
+        "planet_mass": config['InputParameter']['planet_mass'] * earth_mass,  # Convert Earth masses to kg
         "core_mass_fraction": config['AssumptionsAndInitialGuesses']['core_mass_fraction'],
         "mantle_mass_fraction": config['AssumptionsAndInitialGuesses']['mantle_mass_fraction'],
         "weight_iron_fraction": config['AssumptionsAndInitialGuesses']['weight_iron_fraction'],
@@ -96,7 +96,8 @@ def load_zalmoxis_config(temp_config_path=None):
         "max_iterations_pressure": config['PressureAdjustment']['max_iterations_pressure'],
         "pressure_adjustment_factor": config['PressureAdjustment']['pressure_adjustment_factor'],
         "data_output_enabled": config['Output']['data_enabled'],
-        "plotting_enabled": config['Output']['plots_enabled']
+        "plotting_enabled": config['Output']['plots_enabled'],
+        "verbose": config['Output']['verbose']
     }
 
 def load_material_dictionaries():
@@ -123,8 +124,11 @@ def main(config_params, material_dictionaries):
         dict: Dictionary containing the calculated radii, density, gravity, pressure, temperature, mass enclosed,
                 core-mantle boundary mass, core+mantle mass, total computation time, and convergence status of the model.
     """
-    # Initialize convergence flag for the model
-    converged = True  # Assume convergence unless proven otherwise
+    # Initialize convergence flags for the model
+    converged = False  # Overall convergence flag for the model, assume not converged until proven otherwise
+    converged_pressure = False  # Assume pressure not converged until proven otherwise
+    converged_density = False  # Assume density not converged until proven otherwise
+    converged_mass = False  # Assume mass not converged until proven otherwise
 
     # Unpack configuration parameters
     planet_mass = config_params["planet_mass"]
@@ -143,6 +147,7 @@ def main(config_params, material_dictionaries):
     pressure_tolerance = config_params["pressure_tolerance"]
     max_iterations_pressure = config_params["max_iterations_pressure"]
     pressure_adjustment_factor = config_params["pressure_adjustment_factor"]
+    verbose = config_params["verbose"]
 
     # Setup initial guesses for the planet radius and core-mantle boundary mass
     radius_guess = 1000*(7030-1840*weight_iron_fraction)*(planet_mass/earth_mass)**0.282 # Initial guess for the interior planet radius [m] based on the scaling law in Noack et al. 2020
@@ -206,8 +211,9 @@ def main(config_params, material_dictionaries):
                 pressure_diff = surface_pressure - target_surface_pressure
 
                 # Check for convergence of the surface pressure and overall pressure positivity
-                if abs(pressure_diff) < pressure_tolerance and np.all(pressure > 0):
-                    #logger.info(f"Surface pressure converged after {pressure_iter + 1} iterations and all pressures are positive.")
+                if np.abs(pressure_diff) < pressure_tolerance and np.all(pressure > 0):
+                    verbose and logger.info(f"Surface pressure converged after {pressure_iter + 1} iterations and all pressures are positive.")
+                    converged_pressure = True  # Set convergence flag for pressure to True if converged
                     break  # Exit the pressure adjustment loop
 
                 # Update the pressure guess at the center of the planet based on the pressure difference at the surface using an adjustment factor
@@ -215,8 +221,7 @@ def main(config_params, material_dictionaries):
 
                 # Check if maximum iterations for pressure adjustment are reached
                 if pressure_iter == max_iterations_pressure - 1:
-                    logger.warning(f"Maximum pressure iterations ({max_iterations_pressure}) reached. Surface pressure may not be fully converged.")
-                    converged = False  # Set convergence flag to False if maximum iterations reached
+                    verbose and logger.warning(f"Maximum pressure iterations ({max_iterations_pressure}) reached. Surface pressure may not be fully converged.")
 
             # Update density grid based on the mass enclosed within a certain mass fraction
             for i in range(num_layers):
@@ -245,7 +250,7 @@ def main(config_params, material_dictionaries):
 
                 # Handle potential errors in density calculation
                 if new_density is None:
-                    logger.warning(f"Density calculation failed at radius {radii[i]}. Using previous density.")
+                    verbose and logger.warning(f"Density calculation failed at radius {radii[i]}. Using previous density.")
                     new_density = old_density[i]
 
                 # Update the density grid with a weighted average of the new and old density
@@ -254,13 +259,13 @@ def main(config_params, material_dictionaries):
             # Check for convergence of density using relative difference between old and new density
             relative_diff_inner = np.max(np.abs((density - old_density) / (old_density + 1e-20)))
             if relative_diff_inner < tolerance_inner:
-                #logger.info(f"Inner loop converged after {inner_iter + 1} iterations.")
+                verbose and logger.info(f"Inner loop converged after {inner_iter + 1} iterations.")
+                converged_density = True  # Set convergence flag for density to True if converged
                 break # Exit the inner loop
 
             # Check if maximum iterations for inner loop are reached
             if inner_iter == max_iterations_inner - 1:
-                logger.warning(f"Maximum inner iterations ({max_iterations_inner}) reached. Density may not be fully converged.")
-                converged = False  # Set convergence flag to False if maximum iterations reached
+                verbose and logger.warning(f"Maximum inner iterations ({max_iterations_inner}) reached. Density may not be fully converged.")
 
         # Extract the calculated total interior mass of the planet from the last element of the mass array
         calculated_mass = mass_enclosed[-1]
@@ -275,20 +280,24 @@ def main(config_params, material_dictionaries):
         core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * calculated_mass
 
         # Calculate relative differences of the calculated total interior mass
-        relative_diff_outer_mass = abs((calculated_mass - planet_mass) / planet_mass)
+        relative_diff_outer_mass = np.abs((calculated_mass - planet_mass) / planet_mass)
 
         # Check for convergence of the calculated total interior mass
         if relative_diff_outer_mass < tolerance_outer:
             logger.info(f"Outer loop (total mass) converged after {outer_iter + 1} iterations.")
+            converged_mass = True  # Set convergence flag to True if converged
             break  # Exit the outer loop
 
         # Check if maximum iterations for outer loop are reached
         if outer_iter == max_iterations_outer - 1:
-            logger.warning(f"Maximum outer iterations ({max_iterations_outer}) reached. Total mass may not be fully converged.")
-            converged = False  # Set convergence flag to False if maximum iterations reached
+            verbose and logger.warning(f"Maximum outer iterations ({max_iterations_outer}) reached. Total mass may not be fully converged.")
 
     # Calculate the temperature profile
     #temperature = calculate_temperature(radii, cmb_radius, 300, material_properties_iron_silicate_planets, gravity, density, material_properties_iron_silicate_planets["mantle"]["K0"], dr=planet_radius/num_layers)
+
+    # Check for overall convergence of the model
+    if converged_mass and converged_density and converged_pressure:
+        converged = True
 
     # End timing the entire process
     end_time = time.time()
@@ -307,7 +316,10 @@ def main(config_params, material_dictionaries):
         "cmb_mass": cmb_mass,
         "core_mantle_mass": core_mantle_mass,
         "total_time": total_time,
-        "converged": converged
+        "converged": converged,
+        "converged_pressure": converged_pressure,
+        "converged_density": converged_density,
+        "converged_mass": converged_mass
     }
     return model_results
 
@@ -337,6 +349,10 @@ def post_processing(config_params, id_mass=None, output_file=None):
     cmb_mass = model_results["cmb_mass"]
     core_mantle_mass = model_results["core_mantle_mass"]
     total_time = model_results["total_time"]
+    converged = model_results["converged"]
+    converged_pressure = model_results["converged_pressure"]
+    converged_density = model_results["converged_density"]
+    converged_mass = model_results["converged_mass"]
 
     # Extract the index of the core-mantle boundary mass in the mass array
     cmb_index = np.argmax(mass_enclosed >= cmb_mass)
@@ -359,6 +375,7 @@ def post_processing(config_params, id_mass=None, output_file=None):
     logger.info(f"Calculated Core Radius Fraction: {radii[cmb_index] / radii[-1]:.2f}")
     logger.info(f"Calculated Core+Mantle Radius Fraction: {(radii[np.argmax(mass_enclosed >= core_mantle_mass)] / radii[-1]):.2f}")
     logger.info(f"Total Computation Time: {total_time:.2f} seconds")
+    logger.info(f"Overall Convergence Status: {converged} with Pressure: {converged_pressure}, Density: {converged_density}, Mass: {converged_mass}")
 
     # Save output data to a file
     if data_output_enabled:

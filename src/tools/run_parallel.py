@@ -8,6 +8,7 @@ from concurrent.futures import ProcessPoolExecutor
 
 from src.zalmoxis import zalmoxis
 from src.zalmoxis.plots.plot_profiles_all_in_one import plot_profiles_all_in_one
+from zalmoxis.constants import earth_mass
 
 # Run file via command line: python -m src.tools.run_parallel Wagner/Boujibar/default/SeagerEarth/Seagerwater/custom
 
@@ -31,7 +32,7 @@ def run_zalmoxis(id_mass=None):
     config_params = zalmoxis.load_zalmoxis_config(default_config_path)
 
     # Modify the configuration parameters as needed
-    config_params["planet_mass"] = id_mass * 5.972e24
+    config_params["planet_mass"] = id_mass * earth_mass
 
     # Run the main function with the temporary configuration file
     zalmoxis.post_processing(config_params, id_mass)

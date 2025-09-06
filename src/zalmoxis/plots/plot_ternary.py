@@ -10,8 +10,8 @@ import numpy as np
 from ternary import figure
 from tqdm import tqdm
 
-from src.zalmoxis import zalmoxis
-from zalmoxis.constants import earth_radius
+from zalmoxis import zalmoxis
+from zalmoxis.constants import earth_mass, earth_radius
 
 # Run file via command line: python -m zalmoxis.plots.plot_ternary
 
@@ -33,7 +33,6 @@ def run_zalmoxis_for_ternary(args):
         tuple: A tuple containing the core fraction, mantle fraction, and planet radius.
     """
     id_mass, core_frac, mantle_frac = args
-    id_mass = float(id_mass)
     core_frac = float(core_frac)
     mantle_frac = float(mantle_frac)
     water_frac = 1.0 - core_frac - mantle_frac
@@ -43,7 +42,7 @@ def run_zalmoxis_for_ternary(args):
     config_params = zalmoxis.load_zalmoxis_config(default_config_path)
 
     # Modify the configuration parameters as needed
-    config_params["planet_mass"] = id_mass * 5.972e24
+    config_params["planet_mass"] = id_mass * earth_mass
     config_params["core_mass_fraction"] = core_frac
     config_params["mantle_mass_fraction"] = mantle_frac
     config_params["weight_iron_fraction"] = core_frac  # must be equal to core_mass_fraction
@@ -125,7 +124,7 @@ def read_results(id_mass=None):
                 continue  # skip malformed lines
     return data
 
-def plot_ternary(data):
+def plot_ternary(data, id_mass):
     """
     Plot a ternary diagram of (core, mantle, water) mass fractions as percentages.
     Points are coloured by planet radius, normalised to Earth radii (R⊕).
@@ -184,9 +183,9 @@ def plot_ternary(data):
 
     plt.tight_layout()
     #plt.show()
-    plt.savefig(os.path.join(ZALMOXIS_ROOT, "output_files", "ternary_diagram.png"), dpi=300)
+    plt.savefig(os.path.join(ZALMOXIS_ROOT, "output_files", f"ternary_diagram{id_mass}.png"), dpi=300)
 
-def plot_ternary_time(data):
+def plot_ternary_time(data, id_mass):
     """
     Plot a ternary diagram of (core, mantle, water) mass fractions as percentages.
     Points are coloured by total time taken for the simulation.
@@ -240,7 +239,7 @@ def plot_ternary_time(data):
     cbar.set_label("Total Time (s)")
 
     plt.tight_layout()
-    plt.savefig(os.path.join(ZALMOXIS_ROOT, "output_files", "ternary_diagram_time.png"), dpi=300)
+    plt.savefig(os.path.join(ZALMOXIS_ROOT, "output_files", f"ternary_diagram_time{id_mass}.png"), dpi=300)
 
 def wrapper_ternary(id_mass):
     """ Wrapper function to run the ternary grid and plot the results.
@@ -259,8 +258,5 @@ def wrapper_ternary(id_mass):
 
     # Read the results and plot the ternary diagrams
     data = read_results(id_mass)
-    plot_ternary(data)
-    plot_ternary_time(data)
-
-if __name__ == "__main__":
-    wrapper_ternary(id_mass=10.0)
+    plot_ternary(data, id_mass)
+    plot_ternary_time(data, id_mass)
