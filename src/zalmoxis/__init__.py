@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-__version__ = "25.09.02"
+__version__ = "25.09.07"
 import os
 import pathlib
 
