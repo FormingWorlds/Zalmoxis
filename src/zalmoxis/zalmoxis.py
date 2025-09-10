@@ -11,8 +11,9 @@ import toml
 from scipy.integrate import solve_ivp
 
 from .constants import earth_center_pressure, earth_mass, earth_radius
-from .eos_functions import calculate_density
+from .eos_functions import calculate_density, calculate_temperature_profile_function
 from .eos_properties import (
+    material_properties_iron_silicate_melt_planets,
     material_properties_iron_silicate_planets,
     material_properties_water_planets,
 )
@@ -83,6 +84,10 @@ def load_zalmoxis_config(temp_config_path=None):
         "core_mass_fraction": config['AssumptionsAndInitialGuesses']['core_mass_fraction'],
         "mantle_mass_fraction": config['AssumptionsAndInitialGuesses']['mantle_mass_fraction'],
         "weight_iron_fraction": config['AssumptionsAndInitialGuesses']['weight_iron_fraction'],
+        "mode": config['AssumptionsAndInitialGuesses']['mode'],
+        "T_surface": config['AssumptionsAndInitialGuesses']['T_surface'],
+        "T_center": config['AssumptionsAndInitialGuesses']['T_center'],
+        "temp_profile_file": config['AssumptionsAndInitialGuesses']['profile_file'],
         "EOS_CHOICE": config['EOS']['choice'],
         "num_layers": config['Calculations']['num_layers'],
         "max_iterations_outer": config['IterativeProcess']['max_iterations_outer'],
@@ -104,9 +109,9 @@ def load_material_dictionaries():
     """
     Loads and returns the material properties dictionaries for the Zalmoxis model.
     Returns:
-        tuple: A tuple containing two dictionaries with material properties for iron/silicate and water planets.
+        tuple: A tuple containing the material properties dictionaries for iron/silicate planets and water planets.
     """
-    material_dictionaries = (material_properties_iron_silicate_planets, material_properties_water_planets)
+    material_dictionaries = (material_properties_iron_silicate_planets, material_properties_iron_silicate_melt_planets, material_properties_water_planets)
     return material_dictionaries
 
 def main(config_params, material_dictionaries):
@@ -135,6 +140,10 @@ def main(config_params, material_dictionaries):
     core_mass_fraction = config_params["core_mass_fraction"]
     mantle_mass_fraction = config_params["mantle_mass_fraction"]
     weight_iron_fraction = config_params["weight_iron_fraction"]
+    mode = config_params["mode"]
+    T_surface = config_params["T_surface"]
+    T_center = config_params["T_center"]
+    temp_profile_file = config_params["temp_profile_file"]
     EOS_CHOICE = config_params["EOS_CHOICE"]
     num_layers = config_params["num_layers"]
     max_iterations_outer = config_params["max_iterations_outer"]
@@ -154,8 +163,7 @@ def main(config_params, material_dictionaries):
     cmb_mass = 0 # Initial guess for the core-mantle boundary mass [kg]
     core_mantle_mass = 0 # Initial guess for the core+mantle mass [kg]
 
-    # Initialize temperature profile
-    temperature = np.zeros(num_layers) # Dummy initialization, will be calculated later
+    logger.info(f"Starting structure model for a {planet_mass/earth_mass} Earth masses planet with EOS '{EOS_CHOICE}'")
 
     # Time the entire process
     start_time = time.time()
@@ -166,11 +174,14 @@ def main(config_params, material_dictionaries):
         # Setup initial guess for the radial grid based on the radius guess
         radii = np.linspace(0, radius_guess, num_layers)
 
-        # Initialize arrays for mass, gravity, density, and pressure grids
+        # Initialize arrays for mass, gravity, density, pressure, and temperature grids
         density = np.zeros(num_layers)
         mass_enclosed = np.zeros(num_layers)
         gravity = np.zeros(num_layers)
         pressure = np.zeros(num_layers)
+
+        # Setup temperature profile
+        temperature_function = calculate_temperature_profile_function(radii, mode, T_surface, T_center, temp_profile_file)
 
         # Setup initial guess for the core-mantle boundary mass
         cmb_mass = core_mass_fraction * planet_mass
@@ -196,7 +207,7 @@ def main(config_params, material_dictionaries):
                 y0 = [0, 0, pressure_guess]
 
                 # Solve the ODEs using solve_ivp
-                sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, core_mantle_mass, EOS_CHOICE, interpolation_cache, material_dictionaries),
+                sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, core_mantle_mass, EOS_CHOICE, temperature_function(r), interpolation_cache, material_dictionaries),
                     (radii[0], radii[-1]), y0, t_eval=radii, rtol=relative_tolerance, atol=absolute_tolerance, method='RK45', dense_output=True)
 
                 # Extract mass, gravity, and pressure grids from the solution
@@ -233,6 +244,14 @@ def main(config_params, material_dictionaries):
                     else:
                         # Mantle
                         material = "mantle"
+                elif EOS_CHOICE == "Tabulated:iron/silicate_melt":
+                    # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
+                    if mass_enclosed[i] < cmb_mass:
+                        # Core
+                        material = "core"
+                    else:
+                        # Mantle (melted)
+                        material = "melted_mantle"
                 elif EOS_CHOICE == "Tabulated:water":
                     # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
                     if mass_enclosed[i] < cmb_mass:
@@ -240,13 +259,13 @@ def main(config_params, material_dictionaries):
                         material = "core"
                     elif mass_enclosed[i] < core_mantle_mass:
                         # Inner mantle
-                        material = "bridgmanite_shell"
+                        material = "mantle"
                     else:
                         # Outer layer
                         material = "water_ice_layer"
 
                 # Calculate the new density using the equation of state
-                new_density = calculate_density(pressure[i], material_dictionaries, material, EOS_CHOICE)
+                new_density = calculate_density(pressure[i], material_dictionaries, material, EOS_CHOICE, temperature_function(radii)[i])
 
                 # Handle potential errors in density calculation
                 if new_density is None:
@@ -292,9 +311,6 @@ def main(config_params, material_dictionaries):
         if outer_iter == max_iterations_outer - 1:
             verbose and logger.warning(f"Maximum outer iterations ({max_iterations_outer}) reached. Total mass may not be fully converged.")
 
-    # Calculate the temperature profile
-    #temperature = calculate_temperature(radii, cmb_radius, 300, material_properties_iron_silicate_planets, gravity, density, material_properties_iron_silicate_planets["mantle"]["K0"], dr=planet_radius/num_layers)
-
     # Check for overall convergence of the model
     if converged_mass and converged_density and converged_pressure:
         converged = True
@@ -311,7 +327,7 @@ def main(config_params, material_dictionaries):
         "density": density,
         "gravity": gravity,
         "pressure": pressure,
-        "temperature": temperature,
+        "temperature": temperature_function(radii),
         "mass_enclosed": mass_enclosed,
         "cmb_mass": cmb_mass,
         "core_mantle_mass": core_mantle_mass,
@@ -403,3 +419,4 @@ def post_processing(config_params, id_mass=None, output_file=None):
         eos_data_folder = os.path.join(ZALMOXIS_ROOT, "data", "EOS_Seager2007")
         plot_eos_material(eos_data_files, eos_data_folder)  # Plot the equation of state data for the materials used in the model
         #plt.show()
+

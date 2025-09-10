@@ -12,7 +12,7 @@ from .eos_functions import calculate_density
 logger = logging.getLogger(__name__)
 
 # Define the coupled ODEs for the structure model
-def coupled_odes(radius, y, cmb_mass, core_mantle_mass, EOS_CHOICE, interpolation_cache, material_dictionaries):
+def coupled_odes(radius, y, cmb_mass, core_mantle_mass, EOS_CHOICE, temperature, interpolation_cache, material_dictionaries):
     """
     Calculate the derivatives of mass, gravity, and pressure with respect to radius for a planetary model.
 
@@ -39,6 +39,14 @@ def coupled_odes(radius, y, cmb_mass, core_mantle_mass, EOS_CHOICE, interpolatio
         else:
             # Mantle
             material = "mantle"
+    elif EOS_CHOICE == "Tabulated:iron/silicate_melt":
+        # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
+        if mass < cmb_mass:
+            # Core
+            material = "core"
+        else:
+            # Mantle (melted)
+            material = "melted_mantle"
     elif EOS_CHOICE == "Tabulated:water":
         # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
         if mass < cmb_mass:
@@ -46,13 +54,16 @@ def coupled_odes(radius, y, cmb_mass, core_mantle_mass, EOS_CHOICE, interpolatio
             material = "core"
         elif mass < core_mantle_mass:
             # Inner mantle
-            material = "bridgmanite_shell"
+            material = "mantle"
         else:
             # Outer layer
             material = "water_ice_layer"
+    else:
+        raise ValueError(f"Unknown EOS_CHOICE '{EOS_CHOICE}'. "
+                         "Valid options: 'Tabulated:iron/silicate', 'Tabulated:iron/silicate_melt', 'Tabulated:water'.")
 
     # Calculate density at the current radius, using pressure from y
-    current_density = calculate_density(pressure, material_dictionaries, material, EOS_CHOICE, interpolation_cache)
+    current_density = calculate_density(pressure, material_dictionaries, material, EOS_CHOICE, temperature, interpolation_cache)
 
     # Handle potential errors in density calculation
     if current_density is None:

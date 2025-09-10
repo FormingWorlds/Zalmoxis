@@ -162,6 +162,7 @@ def download_data():
     download(folder='EOS_Seager2007', zenodo_id=15727998, osf_id='dpkjb', data_dir=Path(ZALMOXIS_ROOT, "data"))
     download(folder='radial_profiles', zenodo_id=16837954, osf_id='dpkjb', data_dir=Path(ZALMOXIS_ROOT, "data"))
     download(folder='mass_radius_curves', zenodo_id=15727899, osf_id='dpkjb', data_dir=Path(ZALMOXIS_ROOT, "data"), keep_files=['massradiusEarthlikeRocky.txt', 'massradius_50percentH2O_300K_1mbar.txt'])
+    download(folder='EOS_WolfBower2018', zenodo_id=15877424, osf_id='dpkjb', data_dir=Path(ZALMOXIS_ROOT, "data"), keep_files=['density_melt.dat', 'density_solid.dat'])
 
 if __name__ == "__main__":
     logger.info("Starting data download...")

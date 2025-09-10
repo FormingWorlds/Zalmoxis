@@ -19,9 +19,9 @@ Contains assumptions and initial guesses for the model’s structure.
 - `weight_iron_fraction` - Weight iron fraction in the planet.
 
 ### `EOS`  
-Specifies the equation of state (EOS) choice for planetary material properties. The `"Tabulated:iron/silicate"` and `"Tabulated:water"` choices use the Seager EOS data for modeling two types of planets: `"Tabulated:iron/silicate"` for super-Earths with iron cores and MgSiO3 mantles and `"Tabulated:water"` for water planets (with iron cores, silicate mantles and an outer water ice layer). 
+Specifies the equation of state (EOS) choice for planetary material properties. The `"Tabulated:iron/silicate"` and `"Tabulated:water"` choices use the [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) EOS data for modeling two types of planets: `"Tabulated:iron/silicate"` for super-Earths with iron cores and MgSiO3 mantles and `"Tabulated:water"` for water planets (with iron cores, silicate mantles and an outer water ice layer). The "Tabulated:iron/silicate_melt" option combines the [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) iron EOS for the core with the [Wolf and Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) high P-T RTpress EOS for MgSiO3 melt in the mantle, enabling the study of planets with molten silicate mantles. Unlike the [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) EOS choices, which assume a fixed 300 K reference temperature, the molten mantle EOS option explicitly depend on both pressure and temperature, requiring a temperature input when modeling planetary interiors.
 
-- `choice` - Choices: `"Tabulated:iron/silicate"`, `"Tabulated:water"`.
+- `choice` - Choices: `"Tabulated:iron/silicate"`, `"Tabulated:iron/silicate_melt"`, `"Tabulated:water"`.
 
 ### `Calculations`
 Defines calculation settings for the planetary model.  
