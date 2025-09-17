@@ -42,7 +42,7 @@ def run_zalmoxis(mass_and_core):
     id = str(f"_M{mass:0.3f}_C{core:0.3f}")
     zalmoxis.post_processing(config_params, id_mass=id)
 
-def run_zalmoxis_in_parallel(num_mass, num_core):
+def run_zalmoxis_in_parallel():
     """
     Runs zalmoxis in parallel for a range of planet masses based on the provided choice,
     deletes the contents of the calculated_planet_mass_radius.txt file if it exists,
@@ -63,8 +63,8 @@ def run_zalmoxis_in_parallel(num_mass, num_core):
             header = "Calculated Mass (kg)\tCalculated Radius (m)"
             file.write(header + "\n")
 
-    target_mass_array = np.round(np.linspace(0.5,  10.0, 10), 3)
-    target_core_array = np.round(np.linspace(0.05, 0.95, 10), 3)
+    target_mass_array = np.round(np.arange(0.2,  10.0, 11), 3)
+    target_core_array = np.round(np.arange(0.05, 0.95, 11), 3)
 
     target_array = []
     for m in target_mass_array:
@@ -84,13 +84,7 @@ def run_zalmoxis_in_parallel(num_mass, num_core):
 if __name__ == "__main__":
     start_time = time.time()
 
-    if len(sys.argv) != 3:
-        logger.info("Usage: python -m src.tools.nogit_paper <num_mass> <num_core>")
-        sys.exit(1)
-
-    num_mass = sys.argv[1]
-    num_core = sys.argv[2]
-    run_zalmoxis_in_parallel(num_mass, num_core)
+    run_zalmoxis_in_parallel()
 
     end_time = time.time()
     total_time = end_time - start_time
