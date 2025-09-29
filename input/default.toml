@@ -34,5 +34,5 @@ pressure_adjustment_factor = 1.1 # Adjustment factor for updating the central pr
 
 [Output]
 data_enabled               = true # Flag to enable saving data to a file (true/false)
-plots_enabled              = true # Flag to enable plotting the results (true/false)
+plots_enabled              = false # Flag to enable plotting the results in post_processing() (true/false)
 verbose                    = true # If true, logs detailed convergence info and warnings; if false, only essential messages are shown (true/false)

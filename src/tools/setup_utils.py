@@ -103,7 +103,7 @@ def download_zenodo_folder(zenodo_id: str, folder_dir: Path, keep_files: list[st
                 else:
                     logger.warning(f"Requested file '{fname}' not found in Zenodo record {zenodo_id}.")
 
-def download(folder: str, zenodo_id: str, osf_id: str, data_dir: Path, keep_files: list[str] = None):
+def download(folder: str, data_dir: Path, zenodo_id: str = None, osf_id: str = None, keep_files: list[str] = None):
     """    Download a folder from Zenodo or OSF and save it to the specified data directory.
     Parameters:
         folder (str): Name of the folder to download.
@@ -159,10 +159,11 @@ def download_data():
     This includes downloading the EOS data, radial profiles, and mass-radius curves.
     """
     # Download the necessary data folders
-    download(folder='EOS_Seager2007', zenodo_id=15727998, osf_id='dpkjb', data_dir=Path(ZALMOXIS_ROOT, "data"))
-    download(folder='radial_profiles', zenodo_id=16837954, osf_id='dpkjb', data_dir=Path(ZALMOXIS_ROOT, "data"))
-    download(folder='mass_radius_curves', zenodo_id=15727899, osf_id='dpkjb', data_dir=Path(ZALMOXIS_ROOT, "data"), keep_files=['massradiusEarthlikeRocky.txt', 'massradius_50percentH2O_300K_1mbar.txt'])
-    download(folder='EOS_WolfBower2018', zenodo_id=15877424, osf_id='dpkjb', data_dir=Path(ZALMOXIS_ROOT, "data"), keep_files=['density_melt.dat', 'density_solid.dat'])
+    download(folder='EOS_Seager2007', data_dir=Path(ZALMOXIS_ROOT, "data"), zenodo_id=15727998, osf_id='dpkjb')
+    download(folder='radial_profiles', data_dir=Path(ZALMOXIS_ROOT, "data"), zenodo_id=16837954, osf_id='dpkjb')
+    download(folder='mass_radius_curves', data_dir=Path(ZALMOXIS_ROOT, "data"), zenodo_id=15727899, osf_id='dpkjb', keep_files=['massradiusEarthlikeRocky.txt', 'massradius_50percentH2O_300K_1mbar.txt'])
+    download(folder='EOS_WolfBower2018', data_dir=Path(ZALMOXIS_ROOT, "data"), zenodo_id=15877424, keep_files=['density_melt.dat', 'density_solid.dat'])
+    download(folder='melting_curves_WolfBower2018', data_dir=Path(ZALMOXIS_ROOT, "data"), zenodo_id='15728072', keep_files=['liquidus.dat', 'solidus.dat'])
 
 if __name__ == "__main__":
     logger.info("Starting data download...")

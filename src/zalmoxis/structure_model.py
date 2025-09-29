@@ -22,6 +22,7 @@ def coupled_odes(radius, y, cmb_mass, core_mantle_mass, EOS_CHOICE, temperature,
     cmb_mass (float): The core-mantle boundary mass.
     core_mantle_mass (float): The mass of the core+mantle.
     EOS_CHOICE (str): The equation of state choice for the material.
+    temperature (float): The temperature at the current radius.
     interpolation_cache (dict): A cache for interpolation to speed up calculations.
 
     Returns:
