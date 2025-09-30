@@ -13,7 +13,7 @@ from scipy.integrate import solve_ivp
 from .constants import earth_center_pressure, earth_mass, earth_radius
 from .eos_functions import calculate_density, calculate_temperature_profile_function
 from .eos_properties import (
-    material_properties_iron_silicate_melt_planets,
+    material_properties_iron_Tdep_silicate_planets,
     material_properties_iron_silicate_planets,
     material_properties_water_planets,
 )
@@ -85,8 +85,8 @@ def load_zalmoxis_config(temp_config_path=None):
         "mantle_mass_fraction": config['AssumptionsAndInitialGuesses']['mantle_mass_fraction'],
         "weight_iron_fraction": config['AssumptionsAndInitialGuesses']['weight_iron_fraction'],
         "mode": config['AssumptionsAndInitialGuesses']['mode'],
-        "T_surface": config['AssumptionsAndInitialGuesses']['T_surface'],
-        "T_center": config['AssumptionsAndInitialGuesses']['T_center'],
+        "surface_temperature": config['AssumptionsAndInitialGuesses']['surface_temperature'],
+        "center_temperature": config['AssumptionsAndInitialGuesses']['center_temperature'],
         "temp_profile_file": config['AssumptionsAndInitialGuesses']['profile_file'],
         "EOS_CHOICE": config['EOS']['choice'],
         "num_layers": config['Calculations']['num_layers'],
@@ -111,7 +111,7 @@ def load_material_dictionaries():
     Returns:
         tuple: A tuple containing the material properties dictionaries for iron/silicate planets and water planets.
     """
-    material_dictionaries = (material_properties_iron_silicate_planets, material_properties_iron_silicate_melt_planets, material_properties_water_planets)
+    material_dictionaries = (material_properties_iron_silicate_planets, material_properties_iron_Tdep_silicate_planets, material_properties_water_planets)
     return material_dictionaries
 
 def main(config_params, material_dictionaries):
@@ -141,8 +141,8 @@ def main(config_params, material_dictionaries):
     mantle_mass_fraction = config_params["mantle_mass_fraction"]
     weight_iron_fraction = config_params["weight_iron_fraction"]
     mode = config_params["mode"]
-    T_surface = config_params["T_surface"]
-    T_center = config_params["T_center"]
+    surface_temperature = config_params["surface_temperature"]
+    center_temperature = config_params["center_temperature"]
     temp_profile_file = config_params["temp_profile_file"]
     EOS_CHOICE = config_params["EOS_CHOICE"]
     num_layers = config_params["num_layers"]
@@ -181,7 +181,7 @@ def main(config_params, material_dictionaries):
         pressure = np.zeros(num_layers)
 
         # Setup temperature profile
-        temperature_function = calculate_temperature_profile_function(radii, mode, T_surface, T_center, temp_profile_file)
+        temperature_function = calculate_temperature_profile_function(radii, mode, surface_temperature, center_temperature, temp_profile_file)
 
         # Setup initial guess for the core-mantle boundary mass
         cmb_mass = core_mass_fraction * planet_mass

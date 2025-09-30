@@ -93,18 +93,18 @@ def calculate_density(pressure, material_dictionaries, material, eos_choice, tem
     """
 
     # Unpack material dictionaries
-    material_properties_iron_silicate_planets, material_properties_iron_silicate_melt_planets, material_properties_water_planets = material_dictionaries
+    material_properties_iron_silicate_planets, material_properties_iron_Tdep_silicate_planets, material_properties_water_planets = material_dictionaries
 
     if eos_choice == "Tabulated:iron/silicate":
         return get_tabulated_eos(pressure, material_properties_iron_silicate_planets, material, interpolation_functions)
     elif eos_choice == "Tabulated:iron/silicate_melt":
-        return get_tabulated_eos(pressure, material_properties_iron_silicate_melt_planets, material, temperature, interpolation_functions)
+        return get_tabulated_eos(pressure, material_properties_iron_Tdep_silicate_planets, material, temperature, interpolation_functions)
     elif eos_choice == "Tabulated:water":
         return get_tabulated_eos(pressure, material_properties_water_planets, material, interpolation_functions)
     else:
         raise ValueError("Invalid EOS choice.")
 
-def calculate_temperature_profile_function(radii, mode, T_surface, T_center, temp_profile_file=None):
+def calculate_temperature_profile_function(radii, mode, surface_temperature, center_temperature, temp_profile_file=None):
     """
     Returns a callable temperature function for a planetary interior model.
 
@@ -113,12 +113,12 @@ def calculate_temperature_profile_function(radii, mode, T_surface, T_center, tem
         Radial grid of the planet [m].
     mode : str
         Temperature profile mode. Options:
-        - "isothermal": constant temperature equal to T_surface
-        - "linear": linear profile from T_center (r=0) to T_surface (r=R)
+        - "isothermal": constant temperature equal to surface_temperature
+        - "linear": linear profile from center_temperature (r=0) to surface_temperature (r=R)
         - "prescribed": read temperature profile from a text file
-    T_surface : float
+    surface_temperature : float
         Temperature at the surface [K] (used for "linear" and "isothermal")
-    T_center : float
+    center_temperature : float
         Temperature at the center [K] (used for "linear")
     temp_profile_file : str, optional
         Name of the file containing the prescribed temperature profile. Must have same length as `radii` if mode="prescribed".
@@ -130,10 +130,10 @@ def calculate_temperature_profile_function(radii, mode, T_surface, T_center, tem
     radii = np.array(radii)
 
     if mode == "isothermal":
-        return lambda r: np.full_like(r, T_surface, dtype=float)
+        return lambda r: np.full_like(r, surface_temperature, dtype=float)
 
     elif mode == "linear":
-        return lambda r: T_surface + (T_center - T_surface) * (1 - np.array(r)/radii[-1])
+        return lambda r: surface_temperature + (center_temperature - surface_temperature) * (1 - np.array(r)/radii[-1])
 
     elif mode == "prescribed":
         temp_profile_path = os.path.join(ZALMOXIS_ROOT, "input", temp_profile_file)
