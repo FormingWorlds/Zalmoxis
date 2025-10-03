@@ -40,7 +40,7 @@ def coupled_odes(radius, y, cmb_mass, core_mantle_mass, EOS_CHOICE, temperature,
         else:
             # Mantle
             material = "mantle"
-    elif EOS_CHOICE == "Tabulated:iron/silicate_melt":
+    elif EOS_CHOICE == "Tabulated:iron/Tdep_silicate":
         # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
         if mass < cmb_mass:
             # Core
@@ -61,7 +61,7 @@ def coupled_odes(radius, y, cmb_mass, core_mantle_mass, EOS_CHOICE, temperature,
             material = "water_ice_layer"
     else:
         raise ValueError(f"Unknown EOS_CHOICE '{EOS_CHOICE}'. "
-                         "Valid options: 'Tabulated:iron/silicate', 'Tabulated:iron/silicate_melt', 'Tabulated:water'.")
+                         "Valid options: 'Tabulated:iron/silicate', 'Tabulated:iron/Tdep_silicate', 'Tabulated:water'.")
 
     # Calculate density at the current radius, using pressure from y
     current_density = calculate_density(pressure, material_dictionaries, material, EOS_CHOICE, temperature, interpolation_cache)

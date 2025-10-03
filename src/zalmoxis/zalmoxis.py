@@ -244,7 +244,7 @@ def main(config_params, material_dictionaries):
                     else:
                         # Mantle
                         material = "mantle"
-                elif EOS_CHOICE == "Tabulated:iron/silicate_melt":
+                elif EOS_CHOICE == "Tabulated:iron/Tdep_silicate":
                     # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
                     if mass_enclosed[i] < cmb_mass:
                         # Core

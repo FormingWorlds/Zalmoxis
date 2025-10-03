@@ -35,7 +35,7 @@ mantle_mass_fraction = 0
 weight_iron_fraction = 0.325         
 
 [EOS]
-choice = "Tabulated:iron/silicate_melt"
+choice = "Tabulated:iron/Tdep_silicate"
 ```
 
 This configuration models a fully differentiated two-layer planet consisting of a 32.5% iron core and a molten silicate mantle by mass. With this choice of EOS, the mantle is described by MgSiO3 melt using the high P-T RTpress EOS of [Wolf and Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449), instead of the MgSiO3 EOS at 300 K from [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346), which corresponds to a solid-state mantle.

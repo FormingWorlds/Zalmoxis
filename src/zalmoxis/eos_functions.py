@@ -23,7 +23,7 @@ def get_tabulated_eos(pressure, material_dictionary, material, temperature=None,
         - pressure: Pressure at which to evaluate the EOS (in Pa)
         - material_dictionary: Dictionary containing material properties and EOS file paths
         - material: Material type (e.g., "core", "mantle", "melted_mantle", "water_ice_layer")
-        - temperature: Temperature at which to evaluate the EOS (in K), required for melted_mantle if applicable
+        - temperature: Temperature at which to evaluate the EOS (in K), if applicable
         - interpolation_functions: Cache for interpolation functions to avoid redundant loading
     Returns:
         - density: Density corresponding to the given pressure (and temperature if applicable) in kg/m^3
@@ -32,7 +32,7 @@ def get_tabulated_eos(pressure, material_dictionary, material, temperature=None,
     eos_file = props["eos_file"]
     try:
         if eos_file not in interpolation_functions:
-            if material == "melted_mantle":
+            if material == "melted_mantle" or material == "solid_mantle":
                 # Load P-T–ρ file
                 data = np.loadtxt(eos_file, delimiter="\t", skiprows=1)
                 pressures = data[:, 0] # in Pa
@@ -78,6 +78,21 @@ def get_tabulated_eos(pressure, material_dictionary, material, temperature=None,
     except Exception as e:
         logger.error(f"Unexpected error with tabulated EOS for {material} at P={pressure:.2e} Pa, T={temperature}: {e}")
         return None
+    
+def load_melting_curves(melt_file):
+    """
+    Loads melting curve data for MgSiO3 from a text file.
+    Returns:
+        - melting_curve_func: Interpolation function for melting temperature as a function of pressure.
+    """
+    try:
+        data = np.loadtxt(melt_file, comments="#")
+        pressures = data[:, 0]  # in Pa
+        temperatures = data[:, 1]  # in K
+        return pressures, temperatures
+    except Exception as e:
+        print(f"Error loading melting curve data: {e}")
+        return None, None
 
 def calculate_density(pressure, material_dictionaries, material, eos_choice, temperature, interpolation_functions={}):
     """Calculates density with caching for tabulated EOS.
@@ -85,7 +100,7 @@ def calculate_density(pressure, material_dictionaries, material, eos_choice, tem
         - pressure: Pressure at which to evaluate the EOS (in Pa)
         - material_dictionaries: Tuple of material property dictionaries
         - material: Material type (e.g., "core", "mantle", "melted_mantle", "water_ice_layer")
-        - eos_choice: Choice of EOS (e.g., "Tabulated:iron/silicate", "Tabulated:iron/silicate_melt", "Tabulated:water")
+        - eos_choice: Choice of EOS (e.g., "Tabulated:iron/silicate", "Tabulated:iron/Tdep_silicate", "Tabulated:water")
         - temperature: Temperature at which to evaluate the EOS (in K), required for melted_mantle if applicable
         - interpolation_functions: Cache for interpolation functions to avoid redundant loading
     Returns:
@@ -97,7 +112,7 @@ def calculate_density(pressure, material_dictionaries, material, eos_choice, tem
 
     if eos_choice == "Tabulated:iron/silicate":
         return get_tabulated_eos(pressure, material_properties_iron_silicate_planets, material, interpolation_functions)
-    elif eos_choice == "Tabulated:iron/silicate_melt":
+    elif eos_choice == "Tabulated:iron/Tdep_silicate":
         return get_tabulated_eos(pressure, material_properties_iron_Tdep_silicate_planets, material, temperature, interpolation_functions)
     elif eos_choice == "Tabulated:water":
         return get_tabulated_eos(pressure, material_properties_water_planets, material, interpolation_functions)

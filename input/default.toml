@@ -13,7 +13,7 @@ center_temperature         = 3000 # Central temperature (K), required for mode="
 profile_file               = "temp_profile.txt" # Filename containing a prescribed temperature profile, required for mode="prescribed"
 
 [EOS]
-choice                     = "Tabulated:iron/silicate_melt" # Choice of equation of state ("Tabulated:iron/silicate", "Tabulated:iron/silicate_melt", "Tabulated:water")
+choice                     = "Tabulated:iron/Tdep_silicate" # Choice of equation of state ("Tabulated:iron/silicate", "Tabulated:iron/Tdep_silicate", "Tabulated:water")
 
 [Calculations]
 num_layers                 = 150 # Number of planet layers
