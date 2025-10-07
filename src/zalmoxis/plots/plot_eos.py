@@ -36,7 +36,7 @@ def read_eos_WolfBower2018_data(filename):
     pressures = data[:, 0] # in Pa
     temps = data[:, 1] # in K
     densities = data[:, 2] # in kg/m^3
-    
+
     return pressures, temps, densities
 
 def plot_eos_Seager2007(data_files, data_folder):
@@ -118,7 +118,7 @@ def plot_eos_WolfBower2018(data_file, data_folder):
     #plt.show()
     plt.close(fig)
 
-if __name__ == "__main__":  
+if __name__ == "__main__":
     # Example usage
     eos_data_files = ['eos_seager07_iron.txt', 'eos_seager07_silicate.txt', 'eos_seager07_water.txt']
     eos_data_folder = os.path.join(ZALMOXIS_ROOT, "data", "EOS_Seager2007")

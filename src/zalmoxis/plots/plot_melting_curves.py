@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 
 import matplotlib.pyplot as plt
-import numpy as np
 
 from zalmoxis.eos_functions import load_melting_curves
 
@@ -28,7 +27,7 @@ def plot_melting_curves(data_files, data_folder):
     #plt.show()
     plt.close(fig)
 
-if __name__ == "__main__":  
+if __name__ == "__main__":
     melting_curve_files = ['liquidus.dat', 'solidus.dat']
     melting_curve_folder = os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_WolfBower2018")
     plot_melting_curves(melting_curve_files, melting_curve_folder)

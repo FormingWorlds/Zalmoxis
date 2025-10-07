@@ -13,8 +13,8 @@ from scipy.integrate import solve_ivp
 from .constants import earth_center_pressure, earth_mass, earth_radius
 from .eos_functions import calculate_density, calculate_temperature_profile_function
 from .eos_properties import (
-    material_properties_iron_Tdep_silicate_planets,
     material_properties_iron_silicate_planets,
+    material_properties_iron_Tdep_silicate_planets,
     material_properties_water_planets,
 )
 from .plots.plot_eos import plot_eos_Seager2007, plot_eos_WolfBower2018

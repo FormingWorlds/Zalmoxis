@@ -78,7 +78,7 @@ def get_tabulated_eos(pressure, material_dictionary, material, temperature=None,
     except Exception as e:
         logger.error(f"Unexpected error with tabulated EOS for {material} at P={pressure:.2e} Pa, T={temperature}: {e}")
         return None
-    
+
 def load_melting_curve(melt_file):
     """
     Loads melting curve data for MgSiO3 from a text file.
@@ -97,7 +97,7 @@ def load_melting_curve(melt_file):
     except Exception as e:
         print(f"Error loading melting curve data: {e}")
         return None, None
-    
+
 def get_Tdep_density(pressure, temperature, material_properties_iron_Tdep_silicate_planets, interpolation_functions={}):
     """
     Returns density for mantle material, considering temperature-dependent phase changes.
@@ -120,7 +120,7 @@ def get_Tdep_density(pressure, temperature, material_properties_iron_Tdep_silica
         # Solid phase
         rho = get_tabulated_eos(pressure, material_properties_iron_Tdep_silicate_planets, "solid_mantle", temperature, interpolation_functions)
         return rho
-    
+
     elif temperature >= T_liq:
         # Liquid phase
         rho = get_tabulated_eos(pressure, material_properties_iron_Tdep_silicate_planets, "melted_mantle", temperature, interpolation_functions)
@@ -131,7 +131,10 @@ def get_Tdep_density(pressure, temperature, material_properties_iron_Tdep_silica
         frac_melt = (temperature - T_sol) / (T_liq - T_sol)
         rho_solid = get_tabulated_eos(pressure, material_properties_iron_Tdep_silicate_planets, "solid_mantle", temperature, interpolation_functions)
         rho_liquid = get_tabulated_eos(pressure, material_properties_iron_Tdep_silicate_planets, "melted_mantle", temperature, interpolation_functions)
-        rho_mixed = (1 - frac_melt) * rho_solid + frac_melt * rho_liquid
+        
+        # Calculate mixed density by volume additivity
+        specific_volume_mixed = (frac_melt * (1 / rho_liquid) + (1 - frac_melt) * (1 / rho_solid))
+        rho_mixed = 1 / specific_volume_mixed
         return rho_mixed
 
 def calculate_density(pressure, material_dictionaries, material, eos_choice, temperature, interpolation_functions={}):
