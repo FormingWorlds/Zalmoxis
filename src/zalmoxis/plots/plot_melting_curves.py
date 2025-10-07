@@ -3,8 +3,9 @@ from __future__ import annotations
 import os
 
 import matplotlib.pyplot as plt
+import numpy as np
 
-from zalmoxis.eos_functions import load_melting_curves
+from zalmoxis.eos_functions import load_melting_curve
 
 # Read the environment variable for ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
@@ -16,13 +17,17 @@ def plot_melting_curves(data_files, data_folder):
     fig, ax = plt.subplots(figsize=(10, 6))
 
     for file in data_files:
-        pressures, temps = load_melting_curves(os.path.join(data_folder, file))
-        ax.plot(pressures / 1e9, temps, label=file.split('.')[0])
-
+        data = np.loadtxt(os.path.join(data_folder, file), comments="#")
+        pressures = data[:, 0] / 1e9  # in GPa
+        temps = data[:, 1]  # in K
+        ax.plot(pressures, temps, label=file.split('.')[0])
+        
     ax.set_xlabel('Pressure (GPa)')
     ax.set_ylabel('Temperature (K)')
     ax.set_title('Melting Curves of MgSiO3 from Wolf & Bower (2018)')
     ax.legend()
+    ax.grid()
+    plt.tight_layout()
     fig.savefig(os.path.join(ZALMOXIS_ROOT, "output_files", "melting_curves.pdf"))
     #plt.show()
     plt.close(fig)

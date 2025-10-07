@@ -60,9 +60,13 @@ def get_tabulated_eos(pressure, material_dictionary, material, temperature=None,
         interpolator = interpolation_functions[eos_file]  # Retrieve from cache
 
         # Perform interpolation
-        if material == "melted_mantle":
+        if material == "melted_mantle" or material == "solid_mantle":
             if temperature is None:
-                raise ValueError("Temperature must be provided for melted_mantle.")
+                raise ValueError("Temperature must be provided.")
+            if temperature < np.min(interpolator.grid[1]) or temperature > np.max(interpolator.grid[1]):
+                raise ValueError(f"Temperature {temperature:.2f} K is out of bounds for EOS data.")
+            if pressure < np.min(interpolator.grid[0]) or pressure > np.max(interpolator.grid[0]):
+                raise ValueError(f"Pressure {pressure:.2e} Pa is out of bounds for the EOS data.")
             density = interpolator((pressure, temperature))
         else:
             density = interpolator(pressure)
@@ -85,8 +89,7 @@ def load_melting_curve(melt_file):
     Inputs:
         - melt_file: Path to the melting curve data file
     Returns:
-        - pressures: Array of pressures (in Pa)
-        - temperatures: Array of temperatures (in K)
+        - interp_func: Interpolation function for T(P)
     """
     try:
         data = np.loadtxt(melt_file, comments="#")
@@ -96,7 +99,7 @@ def load_melting_curve(melt_file):
         return interp_func
     except Exception as e:
         print(f"Error loading melting curve data: {e}")
-        return None, None
+        return None
 
 def get_Tdep_density(pressure, temperature, material_properties_iron_Tdep_silicate_planets, interpolation_functions={}):
     """
@@ -110,8 +113,8 @@ def get_Tdep_density(pressure, temperature, material_properties_iron_Tdep_silica
         - density: Density corresponding to the given pressure and temperature in kg/m^3
     """
     # Get interpolation functions for solididus and liquidus melting curves
-    solidus_func = load_melting_curve("solidus.txt")
-    liquidus_func = load_melting_curve("liquidus.txt")
+    solidus_func = load_melting_curve(os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_WolfBower2018", "solidus.dat"))
+    liquidus_func = load_melting_curve(os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_WolfBower2018", "liquidus.dat"))
 
     T_sol = solidus_func(pressure)
     T_liq = liquidus_func(pressure)
@@ -156,7 +159,7 @@ def calculate_density(pressure, material_dictionaries, material, eos_choice, tem
     if eos_choice == "Tabulated:iron/silicate":
         return get_tabulated_eos(pressure, material_properties_iron_silicate_planets, material, interpolation_functions)
     elif eos_choice == "Tabulated:iron/Tdep_silicate":
-        return get_Tdep_density(pressure, material_properties_iron_Tdep_silicate_planets, material, temperature, interpolation_functions)
+        return get_Tdep_density(pressure, temperature, material_properties_iron_Tdep_silicate_planets, interpolation_functions)
     elif eos_choice == "Tabulated:water":
         return get_tabulated_eos(pressure, material_properties_water_planets, material, interpolation_functions)
     else:

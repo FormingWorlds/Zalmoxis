@@ -7,7 +7,7 @@ planet_mass                = 1 # Mass of the planet (in Earth masses = 5.972e24 
 core_mass_fraction         = 0.325 # Initial guess for the core mass as a fraction of the total mass
 mantle_mass_fraction       = 0 # Initial guess for the mantle mass as a fraction of the total mass
 weight_iron_fraction       = 0.325 # Initial guess for the weight fraction of iron in the core (0.35 for Earth)
-mode                       = "isothermal" # Choice of input temperature profile: "isothermal", "linear", "prescribed"
+mode                       = "linear" # Choice of input temperature profile: "isothermal", "linear", "prescribed"
 surface_temperature        = 2000 # Surface temperature (K), required for mode="isothermal" or "linear"
 center_temperature         = 3000 # Central temperature (K), required for mode="linear"
 profile_file               = "temp_profile.txt" # Filename containing a prescribed temperature profile, required for mode="prescribed"
