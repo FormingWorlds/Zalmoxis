@@ -99,7 +99,8 @@ def load_zalmoxis_config(temp_config_path=None):
         "tolerance_inner": config['IterativeProcess']['tolerance_inner'],
         "relative_tolerance": config['IterativeProcess']['relative_tolerance'],
         "absolute_tolerance": config['IterativeProcess']['absolute_tolerance'],
-        "maximum_step": config['IterativeProcess']['max_step'],
+        "maximum_step": config['IterativeProcess']['maximum_step'],
+        "adaptive_radial_fraction": config['IterativeProcess']['adaptive_radial_fraction'],
         "target_surface_pressure": config['PressureAdjustment']['target_surface_pressure'],
         "pressure_tolerance": config['PressureAdjustment']['pressure_tolerance'],
         "max_iterations_pressure": config['PressureAdjustment']['max_iterations_pressure'],
@@ -158,6 +159,7 @@ def main(config_params, material_dictionaries):
     relative_tolerance = config_params["relative_tolerance"]
     absolute_tolerance = config_params["absolute_tolerance"]
     maximum_step = config_params["maximum_step"]
+    adaptive_radial_fraction = config_params["adaptive_radial_fraction"]
     target_surface_pressure = config_params["target_surface_pressure"]
     pressure_tolerance = config_params["pressure_tolerance"]
     max_iterations_pressure = config_params["max_iterations_pressure"]
@@ -214,8 +216,8 @@ def main(config_params, material_dictionaries):
                 y0 = [0, 0, pressure_guess]
 
                 # Split the radial grid into two parts for better handling of large step sizes in solve_ivp
-                radial_split_index = int(0.9 * len(radii))
-                
+                radial_split_index = int(adaptive_radial_fraction * len(radii))
+
                 # Solve the ODEs in two parts, first part with default max_step (adaptive)
                 sol1 = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, core_mantle_mass, EOS_CHOICE, temperature_function(r), interpolation_cache, material_dictionaries),
                     (radii[0], radii[radial_split_index-1]), y0, t_eval=radii[:radial_split_index], rtol=relative_tolerance, atol=absolute_tolerance, max_step=np.inf, method='RK45', dense_output=True)
@@ -223,7 +225,7 @@ def main(config_params, material_dictionaries):
                 # Solve the ODEs in two parts, second part with user-defined max_step
                 sol2 = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, core_mantle_mass, EOS_CHOICE, temperature_function(r), interpolation_cache, material_dictionaries),
                     (radii[radial_split_index-1], radii[-1]), sol1.y[:, -1], t_eval=radii[radial_split_index-1:], rtol=relative_tolerance, atol=absolute_tolerance, max_step=maximum_step, method='RK45', dense_output=True)
-                
+
                 # Extract mass, gravity, and pressure grids from the two solutions and concatenate them
                 mass_enclosed = np.concatenate([sol1.y[0, :-1], sol2.y[0]])
                 gravity = np.concatenate([sol1.y[1, :-1], sol2.y[1]])

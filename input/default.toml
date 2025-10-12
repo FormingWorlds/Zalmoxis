@@ -25,7 +25,8 @@ max_iterations_inner       = 100 # Maximum number of iterations for the inner lo
 tolerance_inner            = 1e-4 # Convergence tolerance for the inner loop
 relative_tolerance         = 1e-5 # Relative tolerance for solve_ivp
 absolute_tolerance         = 1e-6 # Absolute tolerance for solve_ivp
-max_step                   = 310000 # Maximum integration step size for solve_ivp (m)
+maximum_step               = 310000 # Maximum integration step size for solve_ivp (m)
+adaptive_radial_fraction   = 0.9 # Fraction of the radial domain where max_step starts to be applied outwards
 
 [PressureAdjustment]
 target_surface_pressure    = 101325 # Target surface pressure (Pa)
