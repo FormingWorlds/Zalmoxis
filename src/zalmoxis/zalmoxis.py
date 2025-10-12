@@ -206,32 +206,47 @@ def main(config_params, material_dictionaries):
             interpolation_cache = {}
 
             # Setup initial pressure guess at the center of the planet based on empirical scaling law derived from the hydrostatic equilibrium equation
-            pressure_guess = (earth_center_pressure * (planet_mass/earth_mass)**2 * (radius_guess/earth_radius)**(-4))
+            pressure_guess = np.minimum((earth_center_pressure * (planet_mass/earth_mass)**2 * (radius_guess/earth_radius)**(-4)), 4e11)
 
             for pressure_iter in range(max_iterations_pressure): # Innermost loop for pressure adjustment
 
                 # Setup initial conditions for the mass, gravity, and pressure at the center of the planet
                 y0 = [0, 0, pressure_guess]
 
-                # Solve the ODEs using solve_ivp
-                sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, core_mantle_mass, EOS_CHOICE, temperature_function(r), interpolation_cache, material_dictionaries),
-                    (radii[0], radii[-1]), y0, t_eval=radii, rtol=relative_tolerance, atol=absolute_tolerance, max_step=maximum_step, method='RK45', dense_output=True)
+                # Split the radial grid into two parts for better handling of large step sizes in solve_ivp
+                radial_split_index = int(0.9 * len(radii))
+                
+                # Solve the ODEs in two parts, first part with default max_step (adaptive)
+                sol1 = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, core_mantle_mass, EOS_CHOICE, temperature_function(r), interpolation_cache, material_dictionaries),
+                    (radii[0], radii[radial_split_index-1]), y0, t_eval=radii[:radial_split_index], rtol=relative_tolerance, atol=absolute_tolerance, max_step=np.inf, method='RK45', dense_output=True)
 
-                # Extract mass, gravity, and pressure grids from the solution
-                mass_enclosed = sol.y[0]
-                gravity = sol.y[1]
-                pressure = sol.y[2]
+                # Solve the ODEs in two parts, second part with user-defined max_step
+                sol2 = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, core_mantle_mass, EOS_CHOICE, temperature_function(r), interpolation_cache, material_dictionaries),
+                    (radii[radial_split_index-1], radii[-1]), sol1.y[:, -1], t_eval=radii[radial_split_index-1:], rtol=relative_tolerance, atol=absolute_tolerance, max_step=maximum_step, method='RK45', dense_output=True)
+                
+                # Extract mass, gravity, and pressure grids from the two solutions and concatenate them
+                mass_enclosed = np.concatenate([sol1.y[0, :-1], sol2.y[0]])
+                gravity = np.concatenate([sol1.y[1, :-1], sol2.y[1]])
+                pressure = np.concatenate([sol1.y[2, :-1], sol2.y[2]])
 
                 if iteration_profiles_enabled:
+                    pressure_file = os.path.join(ZALMOXIS_ROOT, "output_files", "pressure_profiles.txt")
+                    density_file = os.path.join(ZALMOXIS_ROOT, "output_files", "density_profiles.txt")
+
+                    # Only delete the files once at the beginning of the run
+                    if outer_iter == 0 and inner_iter == 0 and pressure_iter == 0:
+                        for file_path in [pressure_file, density_file]:
+                            if os.path.exists(file_path):
+                                os.remove(file_path)
 
                     # Append current iteration's pressure profile to file
-                    with open(os.path.join(ZALMOXIS_ROOT, "output_files", "pressure_profiles.txt"), "a") as f:
+                    with open(pressure_file, "a") as f:
                         f.write(f"# Pressure iteration {pressure_iter}\n")
                         np.savetxt(f, np.column_stack((radii, pressure)), header="radius pressure", comments='')
                         f.write("\n")
 
                     # Append current iteration's density profile to file
-                    with open(os.path.join(ZALMOXIS_ROOT, "output_files", "density_profiles.txt"), "a") as f:
+                    with open(density_file, "a") as f:
                         f.write(f"# Pressure iteration {pressure_iter}\n")
                         np.savetxt(f, np.column_stack((radii, density)), header="radius density", comments='')
                         f.write("\n")

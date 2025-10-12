@@ -70,8 +70,6 @@ def coupled_odes(radius, y, cmb_mass, core_mantle_mass, EOS_CHOICE, temperature,
     if pressure <= 0 or np.isnan(pressure):
         logger.error(f"Nonphysical pressure encountered: P={pressure} Pa at radius={radius} m")
 
-    print(f"Pressure P={pressure} Pa at radius={radius} m")
-
     # Calculate density at the current radius, using pressure from y
     current_density = calculate_density(pressure, material_dictionaries, material, EOS_CHOICE, temperature, interpolation_cache)
 

@@ -7,6 +7,8 @@ ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
 if not ZALMOXIS_ROOT:
     raise RuntimeError("ZALMOXIS_ROOT environment variable not set")
 
+# Run from the root directory with: python -m src.zalmoxis.plots.plot_animated_pressure_density_profiles
+
 def create_video(pressure_filename, density_filename):
     import matplotlib.pyplot as plt
     import numpy as np
