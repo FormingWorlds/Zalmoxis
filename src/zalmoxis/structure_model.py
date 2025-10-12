@@ -46,8 +46,11 @@ def coupled_odes(radius, y, cmb_mass, core_mantle_mass, EOS_CHOICE, temperature,
             # Core
             material = "core"
         else:
-            # Mantle (melted)
-            material = "melted_mantle"
+            # Mantle, uncomment the next line to assign material based on temperature and pressure
+            material = None # placeholder to avoid material not defined error
+            #material = get_Tdep_material(pressure, temperature) #optional to assign since get_Tdep_density handles material assignment internally
+            pass
+
     elif EOS_CHOICE == "Tabulated:water":
         # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
         if mass < cmb_mass:
@@ -63,12 +66,18 @@ def coupled_odes(radius, y, cmb_mass, core_mantle_mass, EOS_CHOICE, temperature,
         raise ValueError(f"Unknown EOS_CHOICE '{EOS_CHOICE}'. "
                          "Valid options: 'Tabulated:iron/silicate', 'Tabulated:iron/Tdep_silicate', 'Tabulated:water'.")
 
+    # Check for nonphysical pressure values
+    if pressure <= 0 or np.isnan(pressure):
+        logger.error(f"Nonphysical pressure encountered: P={pressure} Pa at radius={radius} m")
+
+    print(f"Pressure P={pressure} Pa at radius={radius} m")
+
     # Calculate density at the current radius, using pressure from y
     current_density = calculate_density(pressure, material_dictionaries, material, EOS_CHOICE, temperature, interpolation_cache)
 
     # Handle potential errors in density calculation
-    if current_density is None:
-        logger.warning(f"Warning: Density calculation failed at radius {radius}")
+    if current_density is None or np.isnan(current_density):
+        logger.error(f"Density calculation failed at radius={radius}, P={pressure}")
 
     # Define the ODEs for mass, gravity and pressure
     dMdr = 4 * np.pi * radius**2 * current_density

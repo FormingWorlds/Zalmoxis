@@ -11,7 +11,10 @@ import toml
 from scipy.integrate import solve_ivp
 
 from .constants import earth_center_pressure, earth_mass, earth_radius
-from .eos_functions import calculate_density, calculate_temperature_profile_function
+from .eos_functions import (
+    calculate_density,
+    calculate_temperature_profile_function,
+)
 from .eos_properties import (
     material_properties_iron_silicate_planets,
     material_properties_iron_Tdep_silicate_planets,
@@ -96,13 +99,15 @@ def load_zalmoxis_config(temp_config_path=None):
         "tolerance_inner": config['IterativeProcess']['tolerance_inner'],
         "relative_tolerance": config['IterativeProcess']['relative_tolerance'],
         "absolute_tolerance": config['IterativeProcess']['absolute_tolerance'],
+        "maximum_step": config['IterativeProcess']['max_step'],
         "target_surface_pressure": config['PressureAdjustment']['target_surface_pressure'],
         "pressure_tolerance": config['PressureAdjustment']['pressure_tolerance'],
         "max_iterations_pressure": config['PressureAdjustment']['max_iterations_pressure'],
         "pressure_adjustment_factor": config['PressureAdjustment']['pressure_adjustment_factor'],
         "data_output_enabled": config['Output']['data_enabled'],
         "plotting_enabled": config['Output']['plots_enabled'],
-        "verbose": config['Output']['verbose']
+        "verbose": config['Output']['verbose'],
+        "iteration_profiles_enabled": config['Output']['iteration_profiles_enabled']
     }
 
 def load_material_dictionaries():
@@ -152,11 +157,13 @@ def main(config_params, material_dictionaries):
     tolerance_inner = config_params["tolerance_inner"]
     relative_tolerance = config_params["relative_tolerance"]
     absolute_tolerance = config_params["absolute_tolerance"]
+    maximum_step = config_params["maximum_step"]
     target_surface_pressure = config_params["target_surface_pressure"]
     pressure_tolerance = config_params["pressure_tolerance"]
     max_iterations_pressure = config_params["max_iterations_pressure"]
     pressure_adjustment_factor = config_params["pressure_adjustment_factor"]
     verbose = config_params["verbose"]
+    iteration_profiles_enabled = config_params["iteration_profiles_enabled"]
 
     # Setup initial guesses for the planet radius and core-mantle boundary mass
     radius_guess = 1000*(7030-1840*weight_iron_fraction)*(planet_mass/earth_mass)**0.282 # Initial guess for the interior planet radius [m] based on the scaling law in Noack et al. 2020
@@ -199,7 +206,7 @@ def main(config_params, material_dictionaries):
             interpolation_cache = {}
 
             # Setup initial pressure guess at the center of the planet based on empirical scaling law derived from the hydrostatic equilibrium equation
-            pressure_guess = earth_center_pressure * (planet_mass/earth_mass)**2 * (radius_guess/earth_radius)**(-4)
+            pressure_guess = (earth_center_pressure * (planet_mass/earth_mass)**2 * (radius_guess/earth_radius)**(-4))
 
             for pressure_iter in range(max_iterations_pressure): # Innermost loop for pressure adjustment
 
@@ -208,12 +215,26 @@ def main(config_params, material_dictionaries):
 
                 # Solve the ODEs using solve_ivp
                 sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, core_mantle_mass, EOS_CHOICE, temperature_function(r), interpolation_cache, material_dictionaries),
-                    (radii[0], radii[-1]), y0, t_eval=radii, rtol=relative_tolerance, atol=absolute_tolerance, method='RK45', dense_output=True)
+                    (radii[0], radii[-1]), y0, t_eval=radii, rtol=relative_tolerance, atol=absolute_tolerance, max_step=maximum_step, method='RK45', dense_output=True)
 
                 # Extract mass, gravity, and pressure grids from the solution
                 mass_enclosed = sol.y[0]
                 gravity = sol.y[1]
                 pressure = sol.y[2]
+
+                if iteration_profiles_enabled:
+
+                    # Append current iteration's pressure profile to file
+                    with open(os.path.join(ZALMOXIS_ROOT, "output_files", "pressure_profiles.txt"), "a") as f:
+                        f.write(f"# Pressure iteration {pressure_iter}\n")
+                        np.savetxt(f, np.column_stack((radii, pressure)), header="radius pressure", comments='')
+                        f.write("\n")
+
+                    # Append current iteration's density profile to file
+                    with open(os.path.join(ZALMOXIS_ROOT, "output_files", "density_profiles.txt"), "a") as f:
+                        f.write(f"# Pressure iteration {pressure_iter}\n")
+                        np.savetxt(f, np.column_stack((radii, density)), header="radius density", comments='')
+                        f.write("\n")
 
                 # Extract the calculated surface pressure from the last element of the pressure array
                 surface_pressure = pressure[-1]
@@ -250,8 +271,11 @@ def main(config_params, material_dictionaries):
                         # Core
                         material = "core"
                     else:
-                        # Mantle (melted)
-                        material = "melted_mantle"
+                        # Mantle, uncomment the next line to assign material based on temperature and pressure
+                        material = None # placeholder to avoid material not defined error
+                        #material = get_Tdep_material(pressure[i], float(temperature_function(radii[i]))) #optional to assign since get_Tdep_density handles material assignment internally
+                        pass
+
                 elif EOS_CHOICE == "Tabulated:water":
                     # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
                     if mass_enclosed[i] < cmb_mass:
@@ -426,4 +450,3 @@ def post_processing(config_params, id_mass=None, output_file=None):
         wolf_bower_folder = os.path.join(ZALMOXIS_ROOT, "data", "EOS_WolfBower2018")
         for wolf_bower_file in wolf_bower_files:
             plot_eos_WolfBower2018(wolf_bower_file, wolf_bower_folder)
-

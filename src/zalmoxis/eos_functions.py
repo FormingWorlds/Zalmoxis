@@ -22,7 +22,7 @@ def get_tabulated_eos(pressure, material_dictionary, material, temperature=None,
     Inputs:
         - pressure: Pressure at which to evaluate the EOS (in Pa)
         - material_dictionary: Dictionary containing material properties and EOS file paths
-        - material: Material type (e.g., "core", "mantle", "melted_mantle", "water_ice_layer")
+        - material: Material type (e.g., "core", "mantle", "water_ice_layer", "melted_mantle", "solid_mantle")
         - temperature: Temperature at which to evaluate the EOS (in K), if applicable
         - interpolation_functions: Cache for interpolation functions to avoid redundant loading
     Returns:
@@ -107,7 +107,7 @@ def get_Tdep_density(pressure, temperature, material_properties_iron_Tdep_silica
     Inputs:
         - pressure: Pressure at which to evaluate the EOS (in Pa)
         - temperature: Temperature at which to evaluate the EOS (in K)
-        - material_properties_iron_Tdep_silicate_planets: Dictionary containing temperature-dependent material properties
+        - material_properties_iron_Tdep_silicate_planets: Dictionary containing temperature-dependent material properties for temperature-dependent MgSiO3 EOS
         - interpolation_functions: Cache for interpolation functions to avoid redundant loading
     Returns:
         - density: Density corresponding to the given pressure and temperature in kg/m^3
@@ -134,18 +134,38 @@ def get_Tdep_density(pressure, temperature, material_properties_iron_Tdep_silica
         frac_melt = (temperature - T_sol) / (T_liq - T_sol)
         rho_solid = get_tabulated_eos(pressure, material_properties_iron_Tdep_silicate_planets, "solid_mantle", temperature, interpolation_functions)
         rho_liquid = get_tabulated_eos(pressure, material_properties_iron_Tdep_silicate_planets, "melted_mantle", temperature, interpolation_functions)
-        
         # Calculate mixed density by volume additivity
         specific_volume_mixed = (frac_melt * (1 / rho_liquid) + (1 - frac_melt) * (1 / rho_solid))
         rho_mixed = 1 / specific_volume_mixed
         return rho_mixed
+
+def get_Tdep_material(pressure, temperature):
+    """
+    Returns type for mantle material, considering temperature-dependent phase changes.
+    """
+    # Get interpolation functions for solididus and liquidus melting curves
+    solidus_func = load_melting_curve(os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_WolfBower2018", "solidus.dat"))
+    liquidus_func = load_melting_curve(os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_WolfBower2018", "liquidus.dat"))
+
+    T_sol = solidus_func(pressure)
+    T_liq = liquidus_func(pressure)
+
+    if temperature <= T_sol:
+        # Solid phase
+        return "solid_mantle"
+    elif temperature >= T_liq:
+        # Liquid phase
+        return "melted_mantle"
+    else:
+        # Mixed phase
+        return "mixed_mantle"
 
 def calculate_density(pressure, material_dictionaries, material, eos_choice, temperature, interpolation_functions={}):
     """Calculates density with caching for tabulated EOS.
     Inputs:
         - pressure: Pressure at which to evaluate the EOS (in Pa)
         - material_dictionaries: Tuple of material property dictionaries
-        - material: Material type (e.g., "core", "mantle", "melted_mantle", "water_ice_layer")
+        - material: Material type (e.g., "core", "mantle", "water_ice_layer", "melted_mantle", "solid_mantle" or a combination of "melted_mantle" and "solid_mantle")
         - eos_choice: Choice of EOS (e.g., "Tabulated:iron/silicate", "Tabulated:iron/Tdep_silicate", "Tabulated:water")
         - temperature: Temperature at which to evaluate the EOS (in K), if applicable
         - interpolation_functions: Cache for interpolation functions to avoid redundant loading

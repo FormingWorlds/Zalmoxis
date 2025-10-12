@@ -7,7 +7,7 @@ planet_mass                = 1 # Mass of the planet (in Earth masses = 5.972e24 
 core_mass_fraction         = 0.325 # Initial guess for the core mass as a fraction of the total mass
 mantle_mass_fraction       = 0 # Initial guess for the mantle mass as a fraction of the total mass
 weight_iron_fraction       = 0.325 # Initial guess for the weight fraction of iron in the core (0.35 for Earth)
-mode                       = "linear" # Choice of input temperature profile: "isothermal", "linear", "prescribed"
+mode                       = "isothermal" # Choice of input temperature profile: "isothermal", "linear", "prescribed"
 surface_temperature        = 2000 # Surface temperature (K), required for mode="isothermal" or "linear"
 center_temperature         = 3000 # Central temperature (K), required for mode="linear"
 profile_file               = "temp_profile.txt" # Filename containing a prescribed temperature profile, required for mode="prescribed"
@@ -25,6 +25,7 @@ max_iterations_inner       = 100 # Maximum number of iterations for the inner lo
 tolerance_inner            = 1e-4 # Convergence tolerance for the inner loop
 relative_tolerance         = 1e-5 # Relative tolerance for solve_ivp
 absolute_tolerance         = 1e-6 # Absolute tolerance for solve_ivp
+max_step                   = 390000 # Maximum integration step size for solve_ivp (m)
 
 [PressureAdjustment]
 target_surface_pressure    = 101325 # Target surface pressure (Pa)
@@ -35,4 +36,5 @@ pressure_adjustment_factor = 1.1 # Adjustment factor for updating the central pr
 [Output]
 data_enabled               = true # Flag to enable saving data to a file (true/false)
 plots_enabled              = false # Flag to enable plotting the results in post_processing() (true/false)
-verbose                    = true # If true, logs detailed convergence info and warnings; if false, only essential messages are shown (true/false)
+verbose                    = false # If true, logs detailed convergence info and warnings; if false, only essential messages are shown (true/false)
+iteration_profiles_enabled = false # If true, writes pressure and density profiles for each iteration to files (true/false)
