@@ -206,7 +206,7 @@ def calculate_temperature_profile_function(radii, mode, surface_temperature, cen
 
     Returns:
     temperature_func : callable
-        Function of radius or array of radii: temperature_func(r) -> float or np.ndarray
+        Function of radius or array of radii for temperature [K]: temperature_func(r) -> float or np.ndarray
     """
     radii = np.array(radii)
 

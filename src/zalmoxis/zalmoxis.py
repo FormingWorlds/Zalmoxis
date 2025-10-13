@@ -8,8 +8,8 @@ import time
 
 import numpy as np
 import toml
-from scipy.integrate import solve_ivp
 
+from ..tools.setup_utils import create_pressure_density_files
 from .constants import earth_center_pressure, earth_mass, earth_radius
 from .eos_functions import (
     calculate_density,
@@ -22,7 +22,7 @@ from .eos_properties import (
 )
 from .plots.plot_eos import plot_eos_Seager2007, plot_eos_WolfBower2018
 from .plots.plot_profiles import plot_planet_profile_single
-from .structure_model import coupled_odes
+from .structure_model import solve_structure
 
 # Run file via command line with default configuration file: python -m zalmoxis -c input/default.toml
 
@@ -115,7 +115,7 @@ def load_material_dictionaries():
     """
     Loads and returns the material properties dictionaries for the Zalmoxis model.
     Returns:
-        tuple: A tuple containing the material properties dictionaries for iron/silicate planets and water planets.
+        tuple: A tuple containing the material properties dictionaries for iron/silicate planets, water planets, and temperature-dependent iron/silicate planets.
     """
     material_dictionaries = (material_properties_iron_silicate_planets, material_properties_iron_Tdep_silicate_planets, material_properties_water_planets)
     return material_dictionaries
@@ -208,50 +208,21 @@ def main(config_params, material_dictionaries):
             interpolation_cache = {}
 
             # Setup initial pressure guess at the center of the planet based on empirical scaling law derived from the hydrostatic equilibrium equation
-            pressure_guess = np.minimum((earth_center_pressure * (planet_mass/earth_mass)**2 * (radius_guess/earth_radius)**(-4)), 4e11)
+            if EOS_CHOICE == "Tabulated:iron/Tdep_silicate":
+                pressure_guess = np.minimum((earth_center_pressure * (planet_mass/earth_mass)**2 * (radius_guess/earth_radius)**(-4)), 4e11)
+            else:
+                pressure_guess = (earth_center_pressure * (planet_mass/earth_mass)**2 * (radius_guess/earth_radius)**(-4))
 
             for pressure_iter in range(max_iterations_pressure): # Innermost loop for pressure adjustment
 
                 # Setup initial conditions for the mass, gravity, and pressure at the center of the planet
                 y0 = [0, 0, pressure_guess]
 
-                # Split the radial grid into two parts for better handling of large step sizes in solve_ivp
-                radial_split_index = int(adaptive_radial_fraction * len(radii))
-
-                # Solve the ODEs in two parts, first part with default max_step (adaptive)
-                sol1 = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, core_mantle_mass, EOS_CHOICE, temperature_function(r), interpolation_cache, material_dictionaries),
-                    (radii[0], radii[radial_split_index-1]), y0, t_eval=radii[:radial_split_index], rtol=relative_tolerance, atol=absolute_tolerance, max_step=np.inf, method='RK45', dense_output=True)
-
-                # Solve the ODEs in two parts, second part with user-defined max_step
-                sol2 = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, core_mantle_mass, EOS_CHOICE, temperature_function(r), interpolation_cache, material_dictionaries),
-                    (radii[radial_split_index-1], radii[-1]), sol1.y[:, -1], t_eval=radii[radial_split_index-1:], rtol=relative_tolerance, atol=absolute_tolerance, max_step=maximum_step, method='RK45', dense_output=True)
-
-                # Extract mass, gravity, and pressure grids from the two solutions and concatenate them
-                mass_enclosed = np.concatenate([sol1.y[0, :-1], sol2.y[0]])
-                gravity = np.concatenate([sol1.y[1, :-1], sol2.y[1]])
-                pressure = np.concatenate([sol1.y[2, :-1], sol2.y[2]])
+                # Solve the coupled ODEs for the planetary structure model
+                mass_enclosed, gravity, pressure = solve_structure(EOS_CHOICE, cmb_mass, core_mantle_mass, radii, adaptive_radial_fraction, relative_tolerance, absolute_tolerance, maximum_step, material_dictionaries, interpolation_cache, temperature_function, y0)
 
                 if iteration_profiles_enabled:
-                    pressure_file = os.path.join(ZALMOXIS_ROOT, "output_files", "pressure_profiles.txt")
-                    density_file = os.path.join(ZALMOXIS_ROOT, "output_files", "density_profiles.txt")
-
-                    # Only delete the files once at the beginning of the run
-                    if outer_iter == 0 and inner_iter == 0 and pressure_iter == 0:
-                        for file_path in [pressure_file, density_file]:
-                            if os.path.exists(file_path):
-                                os.remove(file_path)
-
-                    # Append current iteration's pressure profile to file
-                    with open(pressure_file, "a") as f:
-                        f.write(f"# Pressure iteration {pressure_iter}\n")
-                        np.savetxt(f, np.column_stack((radii, pressure)), header="radius pressure", comments='')
-                        f.write("\n")
-
-                    # Append current iteration's density profile to file
-                    with open(density_file, "a") as f:
-                        f.write(f"# Pressure iteration {pressure_iter}\n")
-                        np.savetxt(f, np.column_stack((radii, density)), header="radius density", comments='')
-                        f.write("\n")
+                    create_pressure_density_files(outer_iter, inner_iter, pressure_iter, radii, pressure, density)
 
                 # Extract the calculated surface pressure from the last element of the pressure array
                 surface_pressure = pressure[-1]
