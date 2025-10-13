@@ -229,4 +229,35 @@ def calculate_temperature_profile_function(radii, mode, surface_temperature, cen
     else:
         raise ValueError(f"Unknown mode '{mode}'. Valid options: 'isothermal', 'linear', 'prescribed'.")
 
+def create_pressure_density_files(outer_iter, inner_iter, pressure_iter, radii, pressure, density):
+    """
+    Create and append pressure and density profiles to output files for each pressure iteration.
+    Parameters:
+        outer_iter (int): Current outer iteration index.
+        inner_iter (int): Current inner iteration index.
+        pressure_iter (int): Current pressure iteration index.
+        radii (np.ndarray): Array of radial positions.
+        pressure (np.ndarray): Array of pressure values corresponding to the radii.
+        density (np.ndarray): Array of density values corresponding to the radii.
+    """
 
+    pressure_file = os.path.join(ZALMOXIS_ROOT, "output_files", "pressure_profiles.txt")
+    density_file = os.path.join(ZALMOXIS_ROOT, "output_files", "density_profiles.txt")
+
+    # Only delete the files once at the beginning of the run
+    if outer_iter == 0 and inner_iter == 0 and pressure_iter == 0:
+        for file_path in [pressure_file, density_file]:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+
+    # Append current iteration's pressure profile to file
+    with open(pressure_file, "a") as f:
+        f.write(f"# Pressure iteration {pressure_iter}\n")
+        np.savetxt(f, np.column_stack((radii, pressure)), header="radius pressure", comments='')
+        f.write("\n")
+
+    # Append current iteration's density profile to file
+    with open(density_file, "a") as f:
+        f.write(f"# Pressure iteration {pressure_iter}\n")
+        np.savetxt(f, np.column_stack((radii, density)), header="radius density", comments='')
+        f.write("\n")

@@ -9,11 +9,11 @@ import time
 import numpy as np
 import toml
 
-from ..tools.setup_utils import create_pressure_density_files
 from .constants import earth_center_pressure, earth_mass, earth_radius
 from .eos_functions import (
     calculate_density,
     calculate_temperature_profile_function,
+    create_pressure_density_files,
 )
 from .eos_properties import (
     material_properties_iron_silicate_planets,
