@@ -41,6 +41,7 @@ def coupled_odes(radius, y, cmb_mass, core_mantle_mass, EOS_CHOICE, interpolatio
         else:
             # Mantle
             material = "mantle"
+
     elif EOS_CHOICE == "Tabulated:iron/Tdep_silicate":
         # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
         if mass < cmb_mass:

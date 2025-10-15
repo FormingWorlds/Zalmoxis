@@ -141,24 +141,36 @@ def get_Tdep_density(pressure, temperature, material_properties_iron_Tdep_silica
 
 def get_Tdep_material(pressure, temperature):
     """
-    Returns type for mantle material, considering temperature-dependent phase changes.
+    Returns type for mantle material, considering temperature-dependent phase changes. Supports scalar and array inputs.
+    Inputs:
+        - pressure: Pressure at which to evaluate the EOS (in Pa), can be scalar or array
+        - temperature: Temperature at which to evaluate the EOS (in K), can be scalar or array
+    Returns:
+        - material: Material type ("solid_mantle", "melted_mantle", or "mixed_mantle")
     """
     # Get interpolation functions for solididus and liquidus melting curves
     solidus_func = load_melting_curve(os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_WolfBower2018", "solidus.dat"))
     liquidus_func = load_melting_curve(os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_WolfBower2018", "liquidus.dat"))
 
-    T_sol = solidus_func(pressure)
-    T_liq = liquidus_func(pressure)
+    # Define per-point evaluation
+    def evaluate_phase(P, T):
+        T_sol = solidus_func(P)
+        T_liq = liquidus_func(P)
+        if T <= T_sol:
+            return "solid_mantle"
+        elif T >= T_liq:
+            return "melted_mantle"
+        else:
+            return "mixed_mantle"
 
-    if temperature <= T_sol:
-        # Solid phase
-        return "solid_mantle"
-    elif temperature >= T_liq:
-        # Liquid phase
-        return "melted_mantle"
+    # Vectorize function for array support
+    vectorized_eval = np.vectorize(evaluate_phase, otypes=[str])
+
+    # Apply depending on input type
+    if np.isscalar(pressure) and np.isscalar(temperature):
+        return evaluate_phase(pressure, temperature)
     else:
-        # Mixed phase
-        return "mixed_mantle"
+        return vectorized_eval(pressure, temperature)
 
 def calculate_density(pressure, material_dictionaries, material, eos_choice, temperature, interpolation_functions={}):
     """Calculates density with caching for tabulated EOS.
@@ -185,14 +197,14 @@ def calculate_density(pressure, material_dictionaries, material, eos_choice, tem
     else:
         raise ValueError("Invalid EOS choice.")
 
-def calculate_temperature_profile_function(radii, mode, surface_temperature, center_temperature, temp_profile_file=None):
+def calculate_temperature_profile(radii, temperature_mode, surface_temperature, center_temperature, temp_profile_file=None):
     """
     Returns a callable temperature function for a planetary interior model.
 
     Inputs:
     radii : array_like
         Radial grid of the planet [m].
-    mode : str
+    temperature_mode : str
         Temperature profile mode. Options:
         - "isothermal": constant temperature equal to surface_temperature
         - "linear": linear profile from center_temperature (r=0) to surface_temperature (r=R)
@@ -202,7 +214,7 @@ def calculate_temperature_profile_function(radii, mode, surface_temperature, cen
     center_temperature : float
         Temperature at the center [K] (used for "linear")
     temp_profile_file : str, optional
-        Name of the file containing the prescribed temperature profile. Must have same length as `radii` if mode="prescribed".
+        Name of the file containing the prescribed temperature profile. Must have same length as `radii` if temperature_mode="prescribed".
 
     Returns:
     temperature_func : callable
@@ -210,16 +222,16 @@ def calculate_temperature_profile_function(radii, mode, surface_temperature, cen
     """
     radii = np.array(radii)
 
-    if mode == "isothermal":
+    if temperature_mode == "isothermal":
         return lambda r: np.full_like(r, surface_temperature, dtype=float)
 
-    elif mode == "linear":
+    elif temperature_mode == "linear":
         return lambda r: surface_temperature + (center_temperature - surface_temperature) * (1 - np.array(r)/radii[-1])
 
-    elif mode == "prescribed":
+    elif temperature_mode == "prescribed":
         temp_profile_path = os.path.join(ZALMOXIS_ROOT, "input", temp_profile_file)
         if temp_profile_path is None or not os.path.exists(os.path.join(ZALMOXIS_ROOT, "input", temp_profile_file)):
-            raise ValueError("Temperature profile file must be provided and exist for 'prescribed' mode.")
+            raise ValueError("Temperature profile file must be provided and exist for 'prescribed' temperature mode.")
         temp_profile = np.loadtxt(temp_profile_path)
         if len(temp_profile) != len(radii):
             raise ValueError("Temperature profile length does not match radii length.")
@@ -227,7 +239,7 @@ def calculate_temperature_profile_function(radii, mode, surface_temperature, cen
         return lambda r: np.interp(np.array(r), radii, temp_profile)
 
     else:
-        raise ValueError(f"Unknown mode '{mode}'. Valid options: 'isothermal', 'linear', 'prescribed'.")
+        raise ValueError(f"Unknown temperature mode '{temperature_mode}'. Valid options: 'isothermal', 'linear', 'prescribed'.")
 
 def create_pressure_density_files(outer_iter, inner_iter, pressure_iter, radii, pressure, density):
     """

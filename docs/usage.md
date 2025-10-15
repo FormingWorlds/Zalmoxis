@@ -24,21 +24,27 @@ weight_iron_fraction = 0.325
 choice = "Tabulated:iron/silicate"
 ```
 
-### Simulating Earth-like rocky molten exoplanets
+### Simulating Earth-like hot rocky exoplanets
 
-To simulate a rocky exoplanet with Earth-like composition but a molten mantle, configure the following parameters in the default configuration file:
+To simulate a hot rocky exoplanet with Earth-like composition but a molten or partially molten mantle, configure the following parameters in the default configuration file:
 
 ```console
 [AssumptionsAndInitialGuesses]
 core_mass_fraction = 0.325     
 mantle_mass_fraction = 0 
 weight_iron_fraction = 0.325         
+temperature_mode           = "isothermal" # Can be also "linear" or "prescribed"
+surface_temperature        = 2000 # Required for temperature_mode="isothermal" or "linear"
+center_temperature         = 3000 # Required for temperature_mode="linear"
+temperature_profile_file   = "temp_profile.txt" # Filename containing a prescribed temperature profile; must be in the `input/` directory.
 
 [EOS]
 choice = "Tabulated:iron/Tdep_silicate"
 ```
 
-This configuration models a fully differentiated two-layer planet consisting of a 32.5% iron core and a molten silicate mantle by mass. With this choice of EOS, the mantle is described by MgSiO3 melt using the high P-T RTpress EOS of [Wolf and Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449), instead of the MgSiO3 EOS at 300 K from [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346), which corresponds to a solid-state mantle.
+This configuration models a fully differentiated two-layer planet consisting of a 32.5% iron core and a MgSiO3 mantle that can be solid, partially molten, or fully molten depending on local pressure and temperature. With this choice of EOS, the mantle is described by realistic phase transitions, in contrast to the 300 K MgSiO3 EOS from [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346), which is a purely solid mantle.
+
+*Note*: The input `temperature_profile_file` must contain one column with one temperature value per radial grid point. The number of values must match the number of layers (`num_layers`) in the model.
 
 ### Simulating water-rich exoplanets
 

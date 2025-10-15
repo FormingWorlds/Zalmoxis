@@ -1,7 +1,7 @@
 # Interior Structure Model
 
 ## Overview
-The model calculates the internal structure of two- or three-layered fully differentiated exoplanets based primarily on its total mass and compositional mass fractions. The internal pressure, density, gravity, and radius profiles are computed iteratively, using simplified but physically motivated equations of state (EOS) at uniform low temperature (~300 K or zero-temperature EOS) adapted from [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346). The model supports planets of up to 50 Earth masses of two types: Earth-like rocky planets with an iron core and silicate mantle and water-rich planets with an Earth-like rocky interior and an outer water ice layer. 
+The model calculates the internal structure of two- or three-layered fully differentiated exoplanets based primarily on its total mass and compositional mass fractions. The internal pressure, density, gravity, and radius profiles are computed iteratively, using physically motivated equations of state (EOS). Earth-like rocky planets with an iron core and silicate mantle and water-rich planets with an Earth-like rocky interior and an outer water ice layer are modeled using an EOS adapted from [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) at 300 K. With this EOS, The model supports planets of up to 50 Earth masses. Alternatively, planets where the mantle may experience partial or complete melting under high temperatures are modeled using the EOS from [Wolf and Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449), which provides a temperature-dependent, phase-aware description of the mantle. This EOS allows the model to capture the transition between solid, partially molten, and fully molten states, which is critical for accurately modeling the internal structure and subsequent thermal evolution of hot rocky planets.
 
 ## Main function
 The `main` function runs the exoplanet interior structure model. It initializes parameters and iteratively adjusts the planet's internal structure until convergence is reached.
@@ -89,8 +89,14 @@ The internal structure model is based on a simplified approach using the followi
 
     Once the solution has converged, the model returns the final radial profiles of gravity, pressure, density, and mass throughout the planet. In addition to these profiles, several key structural parameters are extracted, including: the core radius, mantle density at the core mantle boundary (CMB), core density at the CMB, pressure at the CMB, pressure at center, average density, CMB mass fraction, core radius fraction, inner mantle mass fraction and inner mantle radius fraction. The model also records the total computation time and a convergence flag to indicate whether the solution successfully met the stopping criteria.
 
-## Other Key Functions and Equations
+## Other Key Functions
 
 - **Coupled ODEs** (`coupled_odes`): Defines the derivatives of mass, gravity and pressure with respect to radius. These equations are used to solve for the planet's internal structure.
-  
-- **Density Calculation** (`calculate_density`): Assigns density at each radius by determining the layer (core, mantle, water) and applying the corresponding EOS to relate pressure and density.
+
+- **Structure Solver** (`solve_structure`): Integrates the coupled ODEs for mass, gravity, and pressure across the planetary radius using `solve_ivp`. For temperature-dependent EOS (`"Tabulated:iron/Tdep_silicate"`), the radial grid is split to handle large step sizes near the surface, while for fixed-temperature EOS a single integration is performed.
+
+- **Density Calculation** (`calculate_density`): Determines the density at a given pressure (and temperature if applicable) for a specified material/layer and EOS choice.
+
+- **Temperature-Dependent Density** (`get_Tdep_density`): Computes the mantle density accounting for temperature-dependent phase changes. If the local temperature is below the solidus, the mantle is treated as solid; if above the liquidus, as fully molten. For temperatures between the solidus and liquidus (the mixed/mush phase), the density is calculated by linearly interpolating the specific volume between solid and liquid phases, giving a physically consistent partial melt density for that radial point.
+
+- **Temperature Profile** (`calculate_temperature_profile`): Returns a callable function that provides the temperature at any radius within the planet. Supports three modes: "isothermal" for a uniform temperature, "linear" for a linear gradient between the center and surface, and "prescribed" for a user-provided temperature profile loaded from a file.

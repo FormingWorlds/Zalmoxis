@@ -12,8 +12,9 @@ import toml
 from .constants import earth_center_pressure, earth_mass, earth_radius
 from .eos_functions import (
     calculate_density,
-    calculate_temperature_profile_function,
+    calculate_temperature_profile,
     create_pressure_density_files,
+    get_Tdep_material,
 )
 from .eos_properties import (
     material_properties_iron_silicate_planets,
@@ -21,6 +22,7 @@ from .eos_properties import (
     material_properties_water_planets,
 )
 from .plots.plot_eos import plot_eos_Seager2007, plot_eos_WolfBower2018
+from .plots.plot_phase_vs_radius import plot_PT_with_phases
 from .plots.plot_profiles import plot_planet_profile_single
 from .structure_model import solve_structure
 
@@ -87,10 +89,10 @@ def load_zalmoxis_config(temp_config_path=None):
         "core_mass_fraction": config['AssumptionsAndInitialGuesses']['core_mass_fraction'],
         "mantle_mass_fraction": config['AssumptionsAndInitialGuesses']['mantle_mass_fraction'],
         "weight_iron_fraction": config['AssumptionsAndInitialGuesses']['weight_iron_fraction'],
-        "mode": config['AssumptionsAndInitialGuesses']['mode'],
+        "temperature_mode": config['AssumptionsAndInitialGuesses']['temperature_mode'],
         "surface_temperature": config['AssumptionsAndInitialGuesses']['surface_temperature'],
         "center_temperature": config['AssumptionsAndInitialGuesses']['center_temperature'],
-        "temp_profile_file": config['AssumptionsAndInitialGuesses']['profile_file'],
+        "temp_profile_file": config['AssumptionsAndInitialGuesses']['temperature_profile_file'],
         "EOS_CHOICE": config['EOS']['choice'],
         "num_layers": config['Calculations']['num_layers'],
         "max_iterations_outer": config['IterativeProcess']['max_iterations_outer'],
@@ -146,7 +148,7 @@ def main(config_params, material_dictionaries):
     core_mass_fraction = config_params["core_mass_fraction"]
     mantle_mass_fraction = config_params["mantle_mass_fraction"]
     weight_iron_fraction = config_params["weight_iron_fraction"]
-    mode = config_params["mode"]
+    temperature_mode = config_params["temperature_mode"]
     surface_temperature = config_params["surface_temperature"]
     center_temperature = config_params["center_temperature"]
     temp_profile_file = config_params["temp_profile_file"]
@@ -190,7 +192,7 @@ def main(config_params, material_dictionaries):
         pressure = np.zeros(num_layers)
 
         # Setup temperature profile
-        temperature_function = calculate_temperature_profile_function(radii, mode, surface_temperature, center_temperature, temp_profile_file)
+        temperature_function = calculate_temperature_profile(radii, temperature_mode, surface_temperature, center_temperature, temp_profile_file)
 
         # Setup initial guess for the core-mantle boundary mass
         cmb_mass = core_mass_fraction * planet_mass
@@ -335,6 +337,7 @@ def main(config_params, material_dictionaries):
 
     # Save the calculated values for further use in a dictionary
     model_results = {
+        "eos_choice": EOS_CHOICE,
         "radii": radii,
         "density": density,
         "gravity": gravity,
@@ -368,6 +371,7 @@ def post_processing(config_params, id_mass=None, output_file=None):
     model_results = main(config_params, material_dictionaries=load_material_dictionaries())
 
     # Extract the results from the model output
+    eos_choice = model_results["eos_choice"]
     radii = model_results["radii"]
     density = model_results["density"]
     gravity = model_results["gravity"]
@@ -387,6 +391,16 @@ def post_processing(config_params, id_mass=None, output_file=None):
 
     # Calculate the average density of the planet using the calculated mass and radius
     average_density = mass_enclosed[-1] / (4/3 * math.pi * radii[-1]**3)
+
+    # If using temperature-dependent silicate mantle, get the mantle phases based on the pressure and temperature profiles
+    if eos_choice == "Tabulated:iron/Tdep_silicate":
+        # Extract mantle properties beyond the core-mantle boundary
+        mantle_pressures = pressure[cmb_index:]
+        mantle_temperatures = temperature[cmb_index:]
+        mantle_radii = radii[cmb_index:]
+
+        # Get the mantle phase at each radial point
+        mantle_phases = get_Tdep_material(mantle_pressures, mantle_temperatures)
 
     logger.info("Exoplanet Internal Structure Model Results:")
     logger.info("----------------------------------------------------------------------")
@@ -426,6 +440,7 @@ def post_processing(config_params, id_mass=None, output_file=None):
 
     # Plotting results
     if plotting_enabled:
+        # Plot profiles for a single planet
         plot_planet_profile_single(radii, density, gravity, pressure, temperature, radii[np.argmax(mass_enclosed >= cmb_mass)] / radii[-1], cmb_mass, mass_enclosed[-1] / (4/3 * math.pi * radii[-1]**3), mass_enclosed, id_mass) # Plot planet profile for a single planet
 
         # Plot EOS data from Seager et al. (2007) and Wolf & Bower (2018)
@@ -438,3 +453,7 @@ def post_processing(config_params, id_mass=None, output_file=None):
         wolf_bower_folder = os.path.join(ZALMOXIS_ROOT, "data", "EOS_WolfBower2018")
         for wolf_bower_file in wolf_bower_files:
             plot_eos_WolfBower2018(wolf_bower_file, wolf_bower_folder)
+
+        # If using temperature-dependent silicate mantle, plot the P-T profile with mantle phases
+        if eos_choice == "Tabulated:iron/Tdep_silicate":
+            plot_PT_with_phases(mantle_pressures, mantle_temperatures, mantle_radii, mantle_phases, radii[cmb_index])
