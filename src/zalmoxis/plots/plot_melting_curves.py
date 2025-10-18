@@ -18,10 +18,10 @@ def plot_melting_curves(data_files, data_folder):
         data = np.loadtxt(os.path.join(data_folder, file), comments="#")
         pressures = data[:, 0] / 1e9  # in GPa
         temps = data[:, 1]  # in K
-        ax.plot(pressures, temps, label=file.split('.')[0])
+        ax.plot(temps, pressures, label=file.split('.')[0])
 
-    ax.set_xlabel('Pressure (GPa)')
-    ax.set_ylabel('Temperature (K)')
+    ax.set_xlabel('Temperature (K)')
+    ax.set_ylabel('Pressure (GPa)')
     ax.set_title('Melting Curves of MgSiO3 from Wolf & Bower (2018)')
     ax.legend()
     ax.grid()

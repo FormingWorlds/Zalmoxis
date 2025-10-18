@@ -84,7 +84,7 @@ def plot_eos_Seager2007(data_files, data_folder):
     #plt.show()
     plt.close(fig)
 
-def plot_eos_WolfBower2018(data_file, data_folder):
+def plot_eos_WolfBower2018(data_file, data_folder, melting_data_folder, melting_data_files):
     """
     Plots the equation of state (EOS) data for different materials from Wolf & Bower (2018).
     Parameters:
@@ -102,12 +102,20 @@ def plot_eos_WolfBower2018(data_file, data_folder):
     pressures_gpa = pressures / 1e9 # Convert to GPa
 
     fig, ax = plt.subplots(figsize=(10, 6))
+
+    for file in melting_data_files:
+        melting_data = np.loadtxt(os.path.join(melting_data_folder, file), comments="#")
+        melting_pressures = melting_data[:, 0] / 1e9  # in GPa
+        melting_temps = melting_data[:, 1]  # in K
+        ax.plot(melting_temps, melting_pressures, label=file.split('.')[0])
+
     sc = ax.scatter(temps, pressures_gpa, c=densities, cmap="viridis", s=12, alpha=0.85)
     ax.set_xlabel("Temperature (K)")
     ax.set_ylabel("Pressure (GPa)")
     ax.set_title("Equation of State (EOS) of MgSiO3 from Wolf & Bower (2018)")
     ax.set_xlim(0, temps.max())
     ax.set_ylim(0, pressures_gpa.max())
+    ax.legend()
     cbar = plt.colorbar(sc, ax=ax)
     cbar.set_label("Density (kg/m³)")
     if data_file == 'density_melt.dat':
@@ -126,5 +134,7 @@ if __name__ == "__main__":
 
     wolf_bower_files = ['density_melt.dat', 'density_solid.dat']
     wolf_bower_folder = os.path.join(ZALMOXIS_ROOT, "data", "EOS_WolfBower2018")
+    melting_curve_files = ['liquidus.dat', 'solidus.dat']
+    melting_curve_folder = os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_WolfBower2018")
     for wolf_bower_file in wolf_bower_files:
-        plot_eos_WolfBower2018(wolf_bower_file, wolf_bower_folder)
+        plot_eos_WolfBower2018(wolf_bower_file, wolf_bower_folder, melting_curve_folder, melting_curve_files)

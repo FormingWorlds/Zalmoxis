@@ -21,7 +21,6 @@ from .eos_properties import (
     material_properties_iron_Tdep_silicate_planets,
     material_properties_water_planets,
 )
-from .plots.plot_eos import plot_eos_Seager2007, plot_eos_WolfBower2018
 from .plots.plot_phase_vs_radius import plot_PT_with_phases
 from .plots.plot_profiles import plot_planet_profile_single
 from .structure_model import solve_structure
@@ -442,17 +441,6 @@ def post_processing(config_params, id_mass=None, output_file=None):
     if plotting_enabled:
         # Plot profiles for a single planet
         plot_planet_profile_single(radii, density, gravity, pressure, temperature, radii[np.argmax(mass_enclosed >= cmb_mass)] / radii[-1], cmb_mass, mass_enclosed[-1] / (4/3 * math.pi * radii[-1]**3), mass_enclosed, id_mass) # Plot planet profile for a single planet
-
-        # Plot EOS data from Seager et al. (2007) and Wolf & Bower (2018)
-        eos_data_files = ['eos_seager07_iron.txt', 'eos_seager07_silicate.txt', 'eos_seager07_water.txt']
-        eos_data_folder = os.path.join(ZALMOXIS_ROOT, "data", "EOS_Seager2007")
-        plot_eos_Seager2007(eos_data_files, eos_data_folder)
-
-        # Plot EOS data from Wolf & Bower (2018)
-        wolf_bower_files = ['density_melt.dat', 'density_solid.dat']
-        wolf_bower_folder = os.path.join(ZALMOXIS_ROOT, "data", "EOS_WolfBower2018")
-        for wolf_bower_file in wolf_bower_files:
-            plot_eos_WolfBower2018(wolf_bower_file, wolf_bower_folder)
 
         # If using temperature-dependent silicate mantle, plot the P-T profile with mantle phases
         if eos_choice == "Tabulated:iron/Tdep_silicate":

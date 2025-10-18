@@ -97,6 +97,21 @@ The internal structure model is based on a simplified approach using the followi
 
 - **Density Calculation** (`calculate_density`): Determines the density at a given pressure (and temperature if applicable) for a specified material/layer and EOS choice.
 
-- **Temperature-Dependent Density** (`get_Tdep_density`): Computes the mantle density accounting for temperature-dependent phase changes. If the local temperature is below the solidus, the mantle is treated as solid; if above the liquidus, as fully molten. For temperatures between the solidus and liquidus (the mixed/mush phase), the density is calculated by linearly interpolating the specific volume between solid and liquid phases, giving a physically consistent partial melt density for that radial point.
+- **Temperature-Dependent Density** (`get_Tdep_density`): Computes the mantle density by accounting for temperature-dependent phase transitions. If the local temperature \( T \) is below the solidus temperature \( T_{\mathrm{sol}} \), the mantle material is considered fully solid. If \( T \) exceeds the liquidus temperature \( T_{\mathrm{liq}} \), the mantle is treated as completely molten. For temperatures between \( T_{\mathrm{sol}} \) and \( T_{\mathrm{liq}} \), corresponding to the mixed or mush phase, the density is obtained by linearly interpolating the specific volume (inverse of density) between the solid and liquid phases.
+
+    The melt fraction is defined as:
+    $$
+    f_{\mathrm{melt}} = \frac{T - T_{\mathrm{sol}}}{T_{\mathrm{liq}} - T_{\mathrm{sol}}}
+    $$
+
+    Assuming volume additivity, the mixed-phase specific volume is:
+    $$
+    \frac{1}{\rho_{\mathrm{mixed}}} = (1 - f_{\mathrm{melt}}) \frac{1}{\rho_{\mathrm{solid}}} + f_{\mathrm{melt}} \frac{1}{\rho_{\mathrm{liquid}}}
+    $$
+
+    Thus, the temperature-dependent mixed-phase density is given by:
+    $$
+    \rho_{\mathrm{mixed}} = \frac{1}{\displaystyle (1 - f_{\mathrm{melt}})\frac{1}{\rho_{\mathrm{solid}}} + f_{\mathrm{melt}}\frac{1}{\rho_{\mathrm{liquid}}}}
+    $$
 
 - **Temperature Profile** (`calculate_temperature_profile`): Returns a callable function that provides the temperature at any radius within the planet. Supports three modes: "isothermal" for a uniform temperature, "linear" for a linear gradient between the center and surface, and "prescribed" for a user-provided temperature profile loaded from a file.
