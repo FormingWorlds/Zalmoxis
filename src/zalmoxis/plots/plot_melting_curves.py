@@ -32,5 +32,5 @@ def plot_melting_curves(data_files, data_folder):
 
 if __name__ == "__main__":
     melting_curve_files = ['liquidus.dat', 'solidus.dat']
-    melting_curve_folder = os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_WolfBower2018")
+    melting_curve_folder = os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_Monteux-600")
     plot_melting_curves(melting_curve_files, melting_curve_folder)

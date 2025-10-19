@@ -97,7 +97,9 @@ The internal structure model is based on a simplified approach using the followi
 
 - **Density Calculation** (`calculate_density`): Determines the density at a given pressure (and temperature if applicable) for a specified material/layer and EOS choice.
 
-- **Temperature-Dependent Density** (`get_Tdep_density`): Computes the mantle density by accounting for temperature-dependent phase transitions. If the local temperature \( T \) is below the solidus temperature \( T_{\mathrm{sol}} \), the mantle material is considered fully solid. If \( T \) exceeds the liquidus temperature \( T_{\mathrm{liq}} \), the mantle is treated as completely molten. For temperatures between \( T_{\mathrm{sol}} \) and \( T_{\mathrm{liq}} \), corresponding to the mixed or mush phase, the density is obtained by linearly interpolating the specific volume (inverse of density) between the solid and liquid phases.
+- **Temperature-Dependent Density** (`get_Tdep_density`): Computes the mantle density by accounting for temperature-dependent phase transitions, using melting curves derived from [Monteux et al. (2016)](https://www.sciencedirect.com/science/article/pii/S0012821X16302199?via%3Dihub). In this implementation, the liquidus corresponds to Equations (11) and (13) from [Monteux et al. (2016)](https://www.sciencedirect.com/science/article/pii/S0012821X16302199?via%3Dihub), while the solidus is defined as the same liquidus curve shifted -600 K.
+
+If the local temperature \( T \) is below the solidus temperature \( T_{\mathrm{sol}} \), the mantle material is considered fully solid. If \( T \) exceeds the liquidus temperature \( T_{\mathrm{liq}} \), the mantle is treated as completely molten. For temperatures between \( T_{\mathrm{sol}} \) and \( T_{\mathrm{liq}} \), corresponding to the mixed or mush phase, the density is obtained by linearly interpolating the specific volume (inverse of density) between the solid and liquid phases.
 
     The melt fraction is defined as:
     $$

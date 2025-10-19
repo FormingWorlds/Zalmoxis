@@ -113,8 +113,8 @@ def get_Tdep_density(pressure, temperature, material_properties_iron_Tdep_silica
         - density: Density corresponding to the given pressure and temperature in kg/m^3
     """
     # Get interpolation functions for solididus and liquidus melting curves
-    solidus_func = load_melting_curve(os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_WolfBower2018", "solidus.dat"))
-    liquidus_func = load_melting_curve(os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_WolfBower2018", "liquidus.dat"))
+    solidus_func = load_melting_curve(os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_Monteux-600", "solidus.dat"))
+    liquidus_func = load_melting_curve(os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_Monteux-600", "liquidus.dat"))
 
     T_sol = solidus_func(pressure)
     T_liq = liquidus_func(pressure)
@@ -149,8 +149,8 @@ def get_Tdep_material(pressure, temperature):
         - material: Material type ("solid_mantle", "melted_mantle", or "mixed_mantle")
     """
     # Get interpolation functions for solididus and liquidus melting curves
-    solidus_func = load_melting_curve(os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_WolfBower2018", "solidus.dat"))
-    liquidus_func = load_melting_curve(os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_WolfBower2018", "liquidus.dat"))
+    solidus_func = load_melting_curve(os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_Monteux-600", "solidus.dat"))
+    liquidus_func = load_melting_curve(os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_Monteux-600", "liquidus.dat"))
 
     # Define per-point evaluation
     def evaluate_phase(P, T):

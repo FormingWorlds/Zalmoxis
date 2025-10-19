@@ -10,11 +10,11 @@ if not ZALMOXIS_ROOT:
 # Material Properties for iron/silicate planets according to Seager et al. (2007) at 300 K
 material_properties_iron_silicate_planets = {
     "core": {
-        # Iron, modeled in Seager et al. (2007) using the Vinet EOS fit to the epsilon phase of Fe and TFD theory
+        # Iron, modeled in Seager et al. (2007) using the Vinet EOS fit to the epsilon phase of Fe and DFT calculations
         "eos_file": os.path.join(ZALMOXIS_ROOT, "data", "EOS_Seager2007", "eos_seager07_iron.txt")
     },
     "mantle": {
-        # Silicate, modeled in Seager et al. (2007) using the fourth-order Birch-Murnaghan EOS fit to MgSiO3 perovskite and TFD theory
+        # Silicate, modeled in Seager et al. (2007) using the fourth-order Birch-Murnaghan EOS fit to MgSiO3 perovskite and DFT calculations
         "eos_file": os.path.join(ZALMOXIS_ROOT, "data", "EOS_Seager2007", "eos_seager07_silicate.txt")
     }
 }
@@ -22,7 +22,7 @@ material_properties_iron_silicate_planets = {
 # Material Properties for iron/silicate planets with iron EOS according to Seager et al. (2007) and silicate melt EOS according to Wolf & Bower (2018)
 material_properties_iron_Tdep_silicate_planets = {
     "core": {
-        # Iron, modeled in Seager et al. (2007) using the Vinet EOS fit to the epsilon phase of Fe and TFD theory
+        # Iron, modeled in Seager et al. (2007) using the Vinet EOS fit to the epsilon phase of Fe and DFT calculations
         "eos_file": os.path.join(ZALMOXIS_ROOT, "data", "EOS_Seager2007", "eos_seager07_iron.txt")
     },
     "melted_mantle": {
@@ -38,15 +38,15 @@ material_properties_iron_Tdep_silicate_planets = {
 # Material Properties for water planets according to Seager et al. (2007) at 300 K
 material_properties_water_planets = {
     "core": {
-        # Iron, modeled in Seager et al. (2007) using the Vinet EOS fit to the epsilon phase of Fe and TFD theory
+        # Iron, modeled in Seager et al. (2007) using the Vinet EOS fit to the epsilon phase of Fe and DFT calculations
         "eos_file": os.path.join(ZALMOXIS_ROOT, "data", "EOS_Seager2007","eos_seager07_iron.txt")
     },
     "mantle": {
-        # Silicate, modeled in Seager et al. (2007) using the fourth-order Birch-Murnaghan EOS fit to MgSiO3 perovskite and TFD theory
+        # Silicate, modeled in Seager et al. (2007) using the fourth-order Birch-Murnaghan EOS fit to MgSiO3 perovskite and DFT calculations
         "eos_file": os.path.join(ZALMOXIS_ROOT, "data", "EOS_Seager2007", "eos_seager07_silicate.txt")
     },
     "water_ice_layer": {
-        # Water ice, modeled in Seager et al. (2007) using experimental data, DFT predictions for water ice in phases VIII and X, and TFD theory.
+        # Water ice, modeled in Seager et al. (2007) using experimental data, DFT predictions for water ice in phases VIII and X, and DFT calculations.
         "eos_file": os.path.join(ZALMOXIS_ROOT, "data", "EOS_Seager2007", "eos_seager07_water.txt")
     }
 }

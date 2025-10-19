@@ -95,6 +95,7 @@ def plot_eos_WolfBower2018(data_file, data_folder, melting_data_folder, melting_
     The data files should be tab-separated files with three columns: pressure (in Pa), temperature (in K), and density (in kg/m³).
     The function assumes that the data files are located in the specified data_folder.
     The function plots the data on a log-log scale.
+    The melting curves from the specified melting_data_files are also plotted for reference.
     """
     filepath = os.path.join(data_folder, data_file)
     pressures, temps, densities = read_eos_WolfBower2018_data(filepath)
@@ -135,6 +136,6 @@ if __name__ == "__main__":
     wolf_bower_files = ['density_melt.dat', 'density_solid.dat']
     wolf_bower_folder = os.path.join(ZALMOXIS_ROOT, "data", "EOS_WolfBower2018")
     melting_curve_files = ['liquidus.dat', 'solidus.dat']
-    melting_curve_folder = os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_WolfBower2018")
+    melting_curve_folder = os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_Monteux-600")
     for wolf_bower_file in wolf_bower_files:
         plot_eos_WolfBower2018(wolf_bower_file, wolf_bower_folder, melting_curve_folder, melting_curve_files)
