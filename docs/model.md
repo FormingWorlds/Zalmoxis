@@ -99,21 +99,28 @@ The internal structure model is based on a simplified approach using the followi
 
 - **Temperature-Dependent Density** (`get_Tdep_density`): Computes the mantle density by accounting for temperature-dependent phase transitions, using melting curves derived from [Monteux et al. (2016)](https://www.sciencedirect.com/science/article/pii/S0012821X16302199?via%3Dihub). In this implementation, the liquidus corresponds to Equations (11) and (13) from [Monteux et al. (2016)](https://www.sciencedirect.com/science/article/pii/S0012821X16302199?via%3Dihub), while the solidus is defined as the same liquidus curve shifted -600 K.
 
-If the local temperature \( T \) is below the solidus temperature \( T_{\mathrm{sol}} \), the mantle material is considered fully solid. If \( T \) exceeds the liquidus temperature \( T_{\mathrm{liq}} \), the mantle is treated as completely molten. For temperatures between \( T_{\mathrm{sol}} \) and \( T_{\mathrm{liq}} \), corresponding to the mixed or mush phase, the density is obtained by linearly interpolating the specific volume (inverse of density) between the solid and liquid phases.
+If the local temperature $T$ is below the solidus temperature $T_{\mathrm{sol}}$, the mantle material is considered fully solid. If $T$ exceeds the liquidus temperature $T_{\mathrm{liq}}$, the mantle is treated as completely molten. For temperatures between $T_{\mathrm{sol}}$ and $T_{\mathrm{liq}}$, corresponding to the mixed or mush phase, the density is obtained by linearly interpolating the specific volume (inverse of density) between the solid and liquid phases.
 
-    The melt fraction is defined as:
+    The melt fraction of the mantle material is defined as:
+
     $$
-    f_{\mathrm{melt}} = \frac{T - T_{\mathrm{sol}}}{T_{\mathrm{liq}} - T_{\mathrm{sol}}}
+    f_{\text{melt}} = \frac{T - T_{\text{sol}}}{T_{\text{liq}} - T_{\text{sol}}}
     $$
+
+    where $T$ is the local temperature, $T_{\text{sol}}$ is the solidus temperature, and $T_{\text{liq}}$ is the liquidus temperature.
 
     Assuming volume additivity, the mixed-phase specific volume is:
+
     $$
-    \frac{1}{\rho_{\mathrm{mixed}}} = (1 - f_{\mathrm{melt}}) \frac{1}{\rho_{\mathrm{solid}}} + f_{\mathrm{melt}} \frac{1}{\rho_{\mathrm{liquid}}}
+    \frac{1}{\rho_{\text{mixed}}} = (1 - f_{\text{melt}}) \frac{1}{\rho_{\text{solid}}} + f_{\text{melt}} \frac{1}{\rho_{\text{liquid}}}
     $$
 
+    where $\rho_{\text{solid}}$ is the density of the solid mantle and $\rho_{\text{liquid}}$ is the density of the molten mantle.
+
     Thus, the temperature-dependent mixed-phase density is given by:
+
     $$
-    \rho_{\mathrm{mixed}} = \frac{1}{\displaystyle (1 - f_{\mathrm{melt}})\frac{1}{\rho_{\mathrm{solid}}} + f_{\mathrm{melt}}\frac{1}{\rho_{\mathrm{liquid}}}}
+    \rho_{\text{mixed}} = \frac{1}{(1 - f_{\text{melt}}) \frac{1}{\rho_{\text{solid}}} + f_{\text{melt}} \frac{1}{\rho_{\text{liquid}}}}
     $$
 
 - **Temperature Profile** (`calculate_temperature_profile`): Returns a callable function that provides the temperature at any radius within the planet. Supports three modes: "isothermal" for a uniform temperature, "linear" for a linear gradient between the center and surface, and "prescribed" for a user-provided temperature profile loaded from a file.
