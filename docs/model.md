@@ -101,26 +101,26 @@ The internal structure model is based on a simplified approach using the followi
 
 If the local temperature $T$ is below the solidus temperature $T_{\mathrm{sol}}$, the mantle material is considered fully solid. If $T$ exceeds the liquidus temperature $T_{\mathrm{liq}}$, the mantle is treated as completely molten. For temperatures between $T_{\mathrm{sol}}$ and $T_{\mathrm{liq}}$, corresponding to the mixed or mush phase, the density is obtained by linearly interpolating the specific volume (inverse of density) between the solid and liquid phases.
 
-    The melt fraction of the mantle material is defined as:
+The melt fraction of the mantle material is defined as:
 
-    $$
-    f_{\text{melt}} = \frac{T - T_{\text{sol}}}{T_{\text{liq}} - T_{\text{sol}}}
-    $$
+$$
+f_{\text{melt}} = \frac{T - T_{\text{sol}}}{T_{\text{liq}} - T_{\text{sol}}}
+$$
 
-    where $T$ is the local temperature, $T_{\text{sol}}$ is the solidus temperature, and $T_{\text{liq}}$ is the liquidus temperature.
+where $T$ is the local temperature, $T_{\text{sol}}$ is the solidus temperature, and $T_{\text{liq}}$ is the liquidus temperature.
 
-    Assuming volume additivity, the mixed-phase specific volume is:
+Assuming volume additivity, the mixed-phase specific volume is:
 
-    $$
-    \frac{1}{\rho_{\text{mixed}}} = (1 - f_{\text{melt}}) \frac{1}{\rho_{\text{solid}}} + f_{\text{melt}} \frac{1}{\rho_{\text{liquid}}}
-    $$
+$$
+\frac{1}{\rho_{\text{mixed}}} = (1 - f_{\text{melt}}) \frac{1}{\rho_{\text{solid}}} + f_{\text{melt}} \frac{1}{\rho_{\text{liquid}}}
+$$
 
-    where $\rho_{\text{solid}}$ is the density of the solid mantle and $\rho_{\text{liquid}}$ is the density of the molten mantle.
+where $\rho_{\text{solid}}$ is the density of the solid mantle and $\rho_{\text{liquid}}$ is the density of the molten mantle.
 
-    Thus, the temperature-dependent mixed-phase density is given by:
+Thus, the temperature-dependent mixed-phase density is given by:
 
-    $$
-    \rho_{\text{mixed}} = \frac{1}{(1 - f_{\text{melt}}) \frac{1}{\rho_{\text{solid}}} + f_{\text{melt}} \frac{1}{\rho_{\text{liquid}}}}
-    $$
+$$
+\rho_{\text{mixed}} = \frac{1}{(1 - f_{\text{melt}}) \frac{1}{\rho_{\text{solid}}} + f_{\text{melt}} \frac{1}{\rho_{\text{liquid}}}}
+$$
 
 - **Temperature Profile** (`calculate_temperature_profile`): Returns a callable function that provides the temperature at any radius within the planet. Supports three modes: "isothermal" for a uniform temperature, "linear" for a linear gradient between the center and surface, and "prescribed" for a user-provided temperature profile loaded from a file.
