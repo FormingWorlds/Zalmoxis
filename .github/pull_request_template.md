@@ -1,7 +1,7 @@
 ## Description
 A short summary of the changes made in this pull-request.
 
-Tag the [related issue](https://github.com/FormingWorlds/PROTEUS/issues); e.g. closes #xxx
+Tag the [related issue](https://github.com/FormingWorlds/Zalmoxis/issues); e.g. closes #xxx
 
 Include screenshots or log files if appropriate.
 
