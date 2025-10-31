@@ -27,11 +27,11 @@ material_properties_iron_Tdep_silicate_planets = {
     },
     "melted_mantle": {
         # MgSiO3 in melt state, modeled in Wolf & Bower (2018) using their developed high P–T RTpress EOS
-        "eos_file": os.path.join(ZALMOXIS_ROOT, "data", "EOS_WolfBower2018", "density_melt.dat")
+        "eos_file": os.path.join(ZALMOXIS_ROOT, "data", "EOS_WolfBower2018_1TPa", "density_melt.dat")
     },
     "solid_mantle": {
         # MgSiO3 in solid state, modeled in Wolf & Bower (2018) using their developed high P–T RTpress EOS
-        "eos_file": os.path.join(ZALMOXIS_ROOT, "data", "EOS_WolfBower2018", "density_solid.dat")
+        "eos_file": os.path.join(ZALMOXIS_ROOT, "data", "EOS_WolfBower2018_1TPa", "density_solid.dat")
     }
 }
 
