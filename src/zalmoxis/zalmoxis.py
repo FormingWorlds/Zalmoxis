@@ -41,7 +41,7 @@ def choose_config_file(temp_config_path=None):
     if temp_config_path:
         try:
             config = toml.load(temp_config_path)
-            logger.info(f"Reading temporary config file from: {temp_config_path}")
+            logger.debug(f"Reading temporary config file from: {temp_config_path}")
         except FileNotFoundError:
             logger.error(f"Error: Temporary config file not found at {temp_config_path}")
             return None
@@ -50,7 +50,7 @@ def choose_config_file(temp_config_path=None):
         try:
             config_file_path = sys.argv[index + 1]
             config = toml.load(config_file_path)
-            logger.info(f"Reading config file from: {config_file_path}")
+            logger.debug(f"Reading config file from: {config_file_path}")
         except IndexError:
             logger.error("Error: -c flag provided but no config file path specified.")
             return None
@@ -61,7 +61,7 @@ def choose_config_file(temp_config_path=None):
         config_default_path = os.path.join(ZALMOXIS_ROOT, "input", "default.toml")
         try:
             config = toml.load(config_default_path)
-            logger.info(f"Reading default config file from {config_default_path}")
+            logger.debug(f"Reading default config file from {config_default_path}")
         except FileNotFoundError:
             logger.info(f"Error: Default config file not found at {config_default_path}")
             return None

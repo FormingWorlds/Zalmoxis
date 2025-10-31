@@ -1,17 +1,15 @@
+#!/usr/bin/env python3
+# Run as `python src/tools/paper_exec.py`
 from __future__ import annotations
 
 import logging
 import os
 import numpy as np
-import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
 
-import zalmoxis
-from zalmoxis.plots.plot_profiles_all_in_one import plot_profiles_all_in_one
+import zalmoxis.zalmoxis as zalmoxis
 from zalmoxis.constants import earth_mass
-
-# Run file via command line: python -m src.tools.run_parallel Wagner/Boujibar/default/SeagerEarth/Seagerwater/custom
 
 # Read the environment variable for ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
@@ -20,7 +18,7 @@ if not ZALMOXIS_ROOT:
 
 # Set up logging
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG, format='[%(asctime)s %(levelname)s] %(message)s', datefmt='%H:%M:%S')
+logging.basicConfig(level=logging.INFO, format='[%(asctime)s %(levelname)s] %(message)s', datefmt='%H:%M:%S')
 
 def run_zalmoxis(mass_and_core):
     """
@@ -30,7 +28,6 @@ def run_zalmoxis(mass_and_core):
     # Path to the default configuration file
     default_config_path = os.path.join(ZALMOXIS_ROOT, "input", "default.toml")
     config_params = zalmoxis.load_zalmoxis_config(temp_config_path=default_config_path)
-    print(config_params)
 
     mass = mass_and_core[0]
     core = mass_and_core[1]
@@ -39,6 +36,7 @@ def run_zalmoxis(mass_and_core):
     config_params["planet_mass"]          = mass * earth_mass
     config_params["core_mass_fraction"]   = core
     config_params["weight_iron_fraction"] = core
+    config_params["verbose"] = False
 
     # Run the main function with the temporary configuration file
     id = str(f"_M{mass:0.3f}_C{core:0.3f}")
@@ -58,7 +56,9 @@ def run_zalmoxis_in_parallel():
         None
     """
 
-    logger.info("Will run in parallel")
+    workers = 15
+
+    logger.info(f"Will run in parallel with {workers} workers")
 
     # Delete the contents of the calculated_planet_mass_radius.txt file if it exists
     calculated_file_path = os.path.join(ZALMOXIS_ROOT, "output_files", "calculated_planet_mass_radius.txt")
@@ -68,8 +68,8 @@ def run_zalmoxis_in_parallel():
             header = "Calculated Mass (kg)\tCalculated Radius (m)"
             file.write(header + "\n")
 
-    target_mass_array = np.round(np.linspace(0.4,  5.1,  12), 3)
-    target_core_array = np.round(np.linspace(0.08, 0.72, 12), 3)
+    target_mass_array = np.round(np.linspace(0.4,  5.1,  4), 3)
+    target_core_array = np.round(np.linspace(0.08, 0.72, 4), 3)
 
     target_array = []
     for m in target_mass_array:
@@ -78,7 +78,7 @@ def run_zalmoxis_in_parallel():
 
     # Run zalmoxis in parallel for a range of planet masses
     logger.info("Running...")
-    with ProcessPoolExecutor() as executor:
+    with ProcessPoolExecutor(max_workers=workers) as executor:
         executor.map(run_zalmoxis, target_array)
 
     # Plot the mass-radius relationship
