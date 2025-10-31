@@ -7,8 +7,8 @@ import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
 
-from src.zalmoxis import zalmoxis
-from src.zalmoxis.plots.plot_profiles_all_in_one import plot_profiles_all_in_one
+import zalmoxis
+from zalmoxis.plots.plot_profiles_all_in_one import plot_profiles_all_in_one
 from zalmoxis.constants import earth_mass
 
 # Run file via command line: python -m src.tools.run_parallel Wagner/Boujibar/default/SeagerEarth/Seagerwater/custom
@@ -20,6 +20,7 @@ if not ZALMOXIS_ROOT:
 
 # Set up logging
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.DEBUG, format='[%(asctime)s %(levelname)s] %(message)s', datefmt='%H:%M:%S')
 
 def run_zalmoxis(mass_and_core):
     """
@@ -28,7 +29,8 @@ def run_zalmoxis(mass_and_core):
 
     # Path to the default configuration file
     default_config_path = os.path.join(ZALMOXIS_ROOT, "input", "default.toml")
-    config_params = zalmoxis.load_zalmoxis_config(default_config_path)
+    config_params = zalmoxis.load_zalmoxis_config(temp_config_path=default_config_path)
+    print(config_params)
 
     mass = mass_and_core[0]
     core = mass_and_core[1]
@@ -40,6 +42,7 @@ def run_zalmoxis(mass_and_core):
 
     # Run the main function with the temporary configuration file
     id = str(f"_M{mass:0.3f}_C{core:0.3f}")
+    zalmoxis.main(config_params, material_dictionaries=zalmoxis.load_material_dictionaries())
     zalmoxis.post_processing(config_params, id_mass=id)
 
 def run_zalmoxis_in_parallel():
@@ -55,6 +58,8 @@ def run_zalmoxis_in_parallel():
         None
     """
 
+    logger.info("Will run in parallel")
+
     # Delete the contents of the calculated_planet_mass_radius.txt file if it exists
     calculated_file_path = os.path.join(ZALMOXIS_ROOT, "output_files", "calculated_planet_mass_radius.txt")
     if os.path.exists(calculated_file_path):
@@ -63,8 +68,8 @@ def run_zalmoxis_in_parallel():
             header = "Calculated Mass (kg)\tCalculated Radius (m)"
             file.write(header + "\n")
 
-    target_mass_array = np.round(np.linspace(0.5,  10.5, 11), 3)
-    target_core_array = np.round(np.linspace(0.05, 0.95, 11), 3)
+    target_mass_array = np.round(np.linspace(0.4,  5.1,  12), 3)
+    target_core_array = np.round(np.linspace(0.08, 0.72, 12), 3)
 
     target_array = []
     for m in target_mass_array:
@@ -72,6 +77,7 @@ def run_zalmoxis_in_parallel():
             target_array.append([m,c])
 
     # Run zalmoxis in parallel for a range of planet masses
+    logger.info("Running...")
     with ProcessPoolExecutor() as executor:
         executor.map(run_zalmoxis, target_array)
 
@@ -84,6 +90,7 @@ def run_zalmoxis_in_parallel():
 if __name__ == "__main__":
     start_time = time.time()
 
+    logging.info("Direct execution")
     run_zalmoxis_in_parallel()
 
     end_time = time.time()

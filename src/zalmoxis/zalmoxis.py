@@ -37,7 +37,6 @@ def choose_config_file(temp_config_path=None):
     If the -c flag is provided, the function will read the configuration file path from the next argument.
     If no temporary configuration file or -c flag is provided, the function will read the default configuration file.
     """
-
     # Load the configuration file either from terminal (-c flag) or default path
     if temp_config_path:
         try:
@@ -45,7 +44,7 @@ def choose_config_file(temp_config_path=None):
             logger.info(f"Reading temporary config file from: {temp_config_path}")
         except FileNotFoundError:
             logger.error(f"Error: Temporary config file not found at {temp_config_path}")
-            sys.exit(1)
+            return None
     elif "-c" in sys.argv:
         index = sys.argv.index("-c")
         try:
@@ -54,10 +53,10 @@ def choose_config_file(temp_config_path=None):
             logger.info(f"Reading config file from: {config_file_path}")
         except IndexError:
             logger.error("Error: -c flag provided but no config file path specified.")
-            sys.exit(1)  # Exit with error code
+            return None
         except FileNotFoundError:
             logger.error(f"Error: Config file not found at {config_file_path}")
-            sys.exit(1)
+            return None
     else:
         config_default_path = os.path.join(ZALMOXIS_ROOT, "input", "default.toml")
         try:
@@ -65,7 +64,7 @@ def choose_config_file(temp_config_path=None):
             logger.info(f"Reading default config file from {config_default_path}")
         except FileNotFoundError:
             logger.info(f"Error: Default config file not found at {config_default_path}")
-            sys.exit(1)
+            return None
 
     return config
 
