@@ -134,7 +134,7 @@ if __name__ == "__main__":
     plot_eos_Seager2007(eos_data_files, eos_data_folder)
 
     wolf_bower_files = ['density_melt.dat', 'density_solid.dat']
-    wolf_bower_folder = os.path.join(ZALMOXIS_ROOT, "data", "EOS_WolfBower2018")
+    wolf_bower_folder = os.path.join(ZALMOXIS_ROOT, "data", "EOS_WolfBower2018_1TPa")
     melting_curve_files = ['liquidus.dat', 'solidus.dat']
     melting_curve_folder = os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_Monteux-600")
     for wolf_bower_file in wolf_bower_files:
