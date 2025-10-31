@@ -68,8 +68,8 @@ def run_zalmoxis_in_parallel():
             header = "Calculated Mass (kg)\tCalculated Radius (m)"
             file.write(header + "\n")
 
-    target_mass_array = np.round(np.linspace(0.4,  5.1,  4), 3)
-    target_core_array = np.round(np.linspace(0.08, 0.72, 4), 3)
+    target_mass_array = np.round(np.linspace(0.4,  5.1,  10), 3)
+    target_core_array = np.round(np.linspace(0.08, 0.72, 10), 3)
 
     target_array = []
     for m in target_mass_array:
