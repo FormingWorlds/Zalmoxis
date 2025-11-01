@@ -39,7 +39,7 @@ def run_zalmoxis(mass_and_core):
     config_params["verbose"] = False
 
     # Run the main function with the temporary configuration file
-    id = str(f"_M{mass:0.3f}_C{core:0.3f}")
+    id = str(f"_M{mass:0.4f}_C{core:0.4f}")
     zalmoxis.main(config_params, material_dictionaries=zalmoxis.load_material_dictionaries())
     zalmoxis.post_processing(config_params, id_mass=id)
 
@@ -56,7 +56,7 @@ def run_zalmoxis_in_parallel():
         None
     """
 
-    workers = 15
+    workers = 40
 
     logger.info(f"Will run in parallel with {workers} workers")
 
@@ -68,8 +68,12 @@ def run_zalmoxis_in_parallel():
             header = "Calculated Mass (kg)\tCalculated Radius (m)"
             file.write(header + "\n")
 
-    target_mass_array = np.round(np.linspace(0.4,  5.1,  10), 3)
-    target_core_array = np.round(np.linspace(0.08, 0.72, 10), 3)
+    target_mass_array = np.round(np.arange(0.25, 5.25,  0.25), 4)
+    target_core_array = np.round(np.arange(0.1,  0.75,  0.05), 4)
+
+    num_pts = len(target_mass_array) * len(target_core_array)
+    logger.info(f"Number of points: {num_pts}")
+    time.sleep(3.0)
 
     target_array = []
     for m in target_mass_array:
