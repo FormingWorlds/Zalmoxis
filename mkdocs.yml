@@ -11,15 +11,26 @@ nav:
   - Interior Structure Model: model.md
   - Contributing: CONTRIBUTING.md
   - Code of Conduct: CODE_OF_CONDUCT.md
-  - 🔗 Source code: https://github.com/FormingWorlds/Zalmoxis
-  - 🔗 Issues: https://github.com/FormingWorlds/Zalmoxis/issues
+  - Source code: https://github.com/FormingWorlds/Zalmoxis
+  - Issues page: https://github.com/FormingWorlds/Zalmoxis/issues
+  - 🔗 PROTEUS: https://fwl-proteus.readthedocs.io/
+  - 🔗 JANUS: https://fwl-janus.readthedocs.io/
+  - 🔗 ZEPHYRUS: https://fwl-zephyrus.readthedocs.io/
+  - 🔗 MORS: https://fwl-mors.readthedocs.io/
+  - 🔗 AGNI: https://h-nicholls.space/AGNI/
+  - 🔗 LovePy: https://github.com/nichollsh/lovepy
+  - 🔗 VULCAN: https://github.com/FormingWorlds/VULCAN
+  - 🔗 CALLIOPE: https://fwl-calliope.readthedocs.io/
+  - 🔗 Aragog: https://github.com/FormingWorlds/aragog
+  - 🔗 SPIDER: https://github.com/djbower/spider
+
 
 theme:
   name: material
   palette:
     primary: black
     accent: deep orange
-    
+
 extra_css:
   - stylesheets/extra.css
 
