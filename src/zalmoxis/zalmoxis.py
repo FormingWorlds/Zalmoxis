@@ -382,9 +382,12 @@ def post_processing(config_params, id_mass=None, output_file=None):
         output_data = np.column_stack((radii, density, gravity, pressure, temperature, mass_enclosed))
         header = "Radius (m)\tDensity (kg/m^3)\tGravity (m/s^2)\tPressure (Pa)\tTemperature (K)\tMass Enclosed (kg)"
         if id_mass is None:
-            np.savetxt(os.path.join(ZALMOXIS_ROOT, "output_files", "planet_profile.txt"), output_data, header=header)
+            fpath = os.path.join(ZALMOXIS_ROOT, "output_files", "planet_profile.txt")
         else:
-            np.savetxt(os.path.join(ZALMOXIS_ROOT, "output_files", f"planet_profile{id_mass}.txt"), output_data, header=header)
+            fpath = os.path.join(ZALMOXIS_ROOT, "output_files", f"planet_profile{id_mass}.txt")
+        logger.info(f"Saved profile to {fpath}")
+        np.savetxt(fpath, output_data, header=header)
+
         # Append calculated mass and radius of the planet to a file in dedicated columns
         if output_file is None:
             output_file = os.path.join(ZALMOXIS_ROOT, "output_files", "calculated_planet_mass_radius.txt")

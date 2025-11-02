@@ -62,13 +62,15 @@ def run_zalmoxis_in_parallel():
 
     # Delete the contents of the calculated_planet_mass_radius.txt file if it exists
     calculated_file_path = os.path.join(ZALMOXIS_ROOT, "output_files", "calculated_planet_mass_radius.txt")
+    logger.info(f"Output data file: {calculated_file_path}")
     if os.path.exists(calculated_file_path):
-        with open(calculated_file_path, 'w') as file:
-            file.truncate(0)
-            header = "Calculated Mass (kg)\tCalculated Radius (m)"
-            file.write(header + "\n")
+        os.remove(calculated_file_path)
+    with open(calculated_file_path, 'w') as file:
+        file.truncate(0)
+        header = "Calculated Mass (kg)\tCalculated Radius (m)"
+        file.write(header + "\n")
 
-    target_mass_array = np.round(np.arange(0.25, 5.25,  0.25), 4)
+    target_mass_array = np.round(np.arange(0.25, 10.25, 0.25), 4)
     target_core_array = np.round(np.arange(0.1,  0.75,  0.05), 4)
 
     num_pts = len(target_mass_array) * len(target_core_array)
