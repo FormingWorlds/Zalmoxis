@@ -175,6 +175,9 @@ def main(config_params, material_dictionaries):
 
     logger.info(f"Starting structure model for a {planet_mass/earth_mass} Earth masses planet with EOS '{EOS_CHOICE}'")
 
+    # Initialize empty cache for interpolation functions for density calculations
+    interpolation_cache = {}
+
     # Time the entire process
     start_time = time.time()
 
@@ -189,9 +192,8 @@ def main(config_params, material_dictionaries):
         mass_enclosed = np.zeros(num_layers)
         gravity = np.zeros(num_layers)
         pressure = np.zeros(num_layers)
-
-        # Setup temperature profile
         temperature_function = calculate_temperature_profile(radii, temperature_mode, surface_temperature, center_temperature, temp_profile_file)
+        temperatures = temperature_function(radii)
 
         # Setup initial guess for the core-mantle boundary mass
         cmb_mass = core_mass_fraction * planet_mass
@@ -204,9 +206,6 @@ def main(config_params, material_dictionaries):
 
         for inner_iter in range(max_iterations_inner): # Inner loop for density adjustment
             old_density = density.copy() # Store the old density for convergence check
-
-            # Initialize empty cache for interpolation functions for density calculations
-            interpolation_cache = {}
 
             # Setup initial pressure guess at the center of the planet based on empirical scaling law derived from the hydrostatic equilibrium equation
             if EOS_CHOICE == "Tabulated:iron/Tdep_silicate":
@@ -278,7 +277,7 @@ def main(config_params, material_dictionaries):
                         material = "water_ice_layer"
 
                 # Calculate the new density using the equation of state
-                new_density = calculate_density(pressure[i], material_dictionaries, material, EOS_CHOICE, temperature_function(radii)[i])
+                new_density = calculate_density(pressure[i], material_dictionaries, material, EOS_CHOICE, temperatures[i])
 
                 # Handle potential errors in density calculation
                 if new_density is None:
@@ -341,7 +340,7 @@ def main(config_params, material_dictionaries):
         "density": density,
         "gravity": gravity,
         "pressure": pressure,
-        "temperature": temperature_function(radii),
+        "temperature": temperatures,
         "mass_enclosed": mass_enclosed,
         "cmb_mass": cmb_mass,
         "core_mantle_mass": core_mantle_mass,
