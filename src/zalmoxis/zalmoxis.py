@@ -122,7 +122,7 @@ def load_material_dictionaries():
 
 def load_solidus_liquidus_functions():
     """
-    Loads and returns the solidus and liquidus functions for temperature-dependent silicate mantle.
+    Loads and returns the solidus and liquidus melting curves for temperature-dependent silicate mantle EOS.
     Returns: A tuple containing the solidus and liquidus functions.
     """
     solidus_func = load_melting_curve(os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_Monteux-600", "solidus.dat"))
