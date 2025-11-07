@@ -190,6 +190,8 @@ def main(config_params, material_dictionaries):
     # Load solidus and liquidus functions if using temperature-dependent silicate mantle EOS
     if EOS_CHOICE == "Tabulated:iron/Tdep_silicate":
         solidus_func, liquidus_func = load_solidus_liquidus_functions()
+    else:
+        solidus_func, liquidus_func = None, None
 
     # Solve the interior structure
     for outer_iter in range(max_iterations_outer): # Outer loop for radius and mass convergence

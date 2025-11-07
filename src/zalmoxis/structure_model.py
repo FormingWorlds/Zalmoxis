@@ -131,7 +131,7 @@ def solve_structure(EOS_CHOICE, cmb_mass, core_mantle_mass, radii, adaptive_radi
     else:
         # Solve the ODEs using solve_ivp
         temperature = 300 # Fixed-temperature for EOS from Seager et al. 2007
-        sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, core_mantle_mass, EOS_CHOICE, interpolation_cache, material_dictionaries, temperature),
+        sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, core_mantle_mass, EOS_CHOICE, interpolation_cache, material_dictionaries, temperature, solidus_func, liquidus_func),
         (radii[0], radii[-1]), y0, t_eval=radii, rtol=relative_tolerance, atol=absolute_tolerance, method='RK45', dense_output=True)
 
         # Extract mass, gravity, and pressure grids from the solution

@@ -101,7 +101,7 @@ def load_melting_curve(melt_file):
         print(f"Error loading melting curve data: {e}")
         return None
 
-def get_Tdep_density(pressure, temperature, material_properties_iron_Tdep_silicate_planets, solidus_func=None, liquidus_func=None, interpolation_functions={}):
+def get_Tdep_density(pressure, temperature, material_properties_iron_Tdep_silicate_planets, solidus_func, liquidus_func, interpolation_functions={}):
     """
     Returns density for mantle material, considering temperature-dependent phase changes.
     Parameters:
