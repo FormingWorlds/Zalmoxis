@@ -2,7 +2,6 @@ from __future__ import annotations
 
 __version__ = "25.09.07"
 import os
-import pathlib
 import sys
 
 # Check for ZALMOXIS_ROOT environment variable
