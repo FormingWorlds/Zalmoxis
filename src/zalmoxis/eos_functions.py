@@ -141,7 +141,7 @@ def get_Tdep_density(pressure, temperature, material_properties_iron_Tdep_silica
         rho_mixed = 1 / specific_volume_mixed
         return rho_mixed
 
-def get_Tdep_material(pressure, temperature):
+def get_Tdep_material(pressure, temperature, solidus_func, liquidus_func):
     """
     Returns type for mantle material, considering temperature-dependent phase changes. Supports scalar and array inputs.
     Parameters:
@@ -150,10 +150,6 @@ def get_Tdep_material(pressure, temperature):
     Returns:
         material: Material type ("solid_mantle", "melted_mantle", or "mixed_mantle")
     """
-    # Get interpolation functions for solididus and liquidus melting curves
-    solidus_func = load_melting_curve(os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_Monteux-600", "solidus.dat"))
-    liquidus_func = load_melting_curve(os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_Monteux-600", "liquidus.dat"))
-
     # Define per-point evaluation
     def evaluate_phase(P, T):
         T_sol = solidus_func(P)

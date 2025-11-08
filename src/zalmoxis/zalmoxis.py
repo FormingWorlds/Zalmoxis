@@ -372,7 +372,6 @@ def post_processing(config_params, id_mass=None, output_file=None):
         id_mass (str, optional): Identifier for the mass of the planet, used in output file naming.
         output_file (str, optional): Path to the output file where calculated mass and radius will be saved.
     """
-
     # Unpack configuration parameters related to output
     data_output_enabled = config_params["data_output_enabled"]
     plotting_enabled = config_params["plotting_enabled"]
@@ -409,8 +408,11 @@ def post_processing(config_params, id_mass=None, output_file=None):
         mantle_temperatures = temperature[cmb_index:]
         mantle_radii = radii[cmb_index:]
 
+        # Load solidus and liquidus functions
+        solidus_func, liquidus_func = load_solidus_liquidus_functions()
+
         # Get the mantle phase at each radial point
-        mantle_phases = get_Tdep_material(mantle_pressures, mantle_temperatures)
+        mantle_phases = get_Tdep_material(mantle_pressures, mantle_temperatures, solidus_func, liquidus_func)
 
     logger.info("Exoplanet Internal Structure Model Results:")
     logger.info("----------------------------------------------------------------------")
