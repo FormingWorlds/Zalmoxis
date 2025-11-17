@@ -15,6 +15,7 @@ from .eos_functions import (
     calculate_temperature_profile,
     create_pressure_density_files,
     get_Tdep_material,
+    load_melting_curve,
 )
 from .eos_properties import (
     material_properties_iron_silicate_planets,
@@ -77,8 +78,7 @@ def choose_config_file(temp_config_path=None):
 def load_zalmoxis_config(temp_config_path=None):
     """
     Loads and returns configuration parameters for the Zalmoxis model.
-    Returns:
-        dict: Dictionary containing all relevant configuration parameters.
+    Returns: Dictionary containing all relevant configuration parameters.
     """
     config = choose_config_file(temp_config_path) # Choose the configuration file
 
@@ -115,11 +115,20 @@ def load_zalmoxis_config(temp_config_path=None):
 def load_material_dictionaries():
     """
     Loads and returns the material properties dictionaries for the Zalmoxis model.
-    Returns:
-        tuple: A tuple containing the material properties dictionaries for iron/silicate planets, water planets, and temperature-dependent iron/silicate planets.
+    Returns: A tuple containing the material properties dictionaries for iron/silicate planets, water planets, and temperature-dependent iron/silicate planets.
     """
     material_dictionaries = (material_properties_iron_silicate_planets, material_properties_iron_Tdep_silicate_planets, material_properties_water_planets)
     return material_dictionaries
+
+def load_solidus_liquidus_functions():
+    """
+    Loads and returns the solidus and liquidus melting curves for temperature-dependent silicate mantle EOS.
+    Returns: A tuple containing the solidus and liquidus functions.
+    """
+    solidus_func = load_melting_curve(os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_Monteux-600", "solidus.dat"))
+    liquidus_func = load_melting_curve(os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_Monteux-600", "liquidus.dat"))
+
+    return solidus_func, liquidus_func
 
 def main(config_params, material_dictionaries):
 
@@ -129,12 +138,9 @@ def main(config_params, material_dictionaries):
     Iteratively adjusts the internal structure of an exoplanet based on the provided configuration parameters,
     calculating the planet's radius, core-mantle boundary, densities, pressures, and other properties.
 
-    Parameters:
-        config_params (dict): Dictionary containing configuration parameters for the model.
+    Parameters: config_params (dict): Dictionary containing configuration parameters for the model.
 
-    Returns:
-        dict: Dictionary containing the calculated radii, density, gravity, pressure, temperature, mass enclosed,
-                core-mantle boundary mass, core+mantle mass, total computation time, and convergence status of the model.
+    Returns: Dictionary containing the calculated radii, density, gravity, pressure, temperature, mass enclosed, core-mantle boundary mass, core+mantle mass, total computation time, and convergence status of the model.
     """
     # Initialize convergence flags for the model
     converged = False  # Overall convergence flag for the model, assume not converged until proven otherwise
@@ -178,6 +184,15 @@ def main(config_params, material_dictionaries):
     # Time the entire process
     start_time = time.time()
 
+    # Initialize empty cache for interpolation functions for density calculations
+    interpolation_cache = {}
+
+    # Load solidus and liquidus functions if using temperature-dependent silicate mantle EOS
+    if EOS_CHOICE == "Tabulated:iron/Tdep_silicate":
+        solidus_func, liquidus_func = load_solidus_liquidus_functions()
+    else:
+        solidus_func, liquidus_func = None, None
+
     # Solve the interior structure
     for outer_iter in range(max_iterations_outer): # Outer loop for radius and mass convergence
 
@@ -189,9 +204,8 @@ def main(config_params, material_dictionaries):
         mass_enclosed = np.zeros(num_layers)
         gravity = np.zeros(num_layers)
         pressure = np.zeros(num_layers)
-
-        # Setup temperature profile
         temperature_function = calculate_temperature_profile(radii, temperature_mode, surface_temperature, center_temperature, temp_profile_file)
+        temperatures = temperature_function(radii)
 
         # Setup initial guess for the core-mantle boundary mass
         cmb_mass = core_mass_fraction * planet_mass
@@ -205,9 +219,6 @@ def main(config_params, material_dictionaries):
         for inner_iter in range(max_iterations_inner): # Inner loop for density adjustment
             old_density = density.copy() # Store the old density for convergence check
 
-            # Initialize empty cache for interpolation functions for density calculations
-            interpolation_cache = {}
-
             # Setup initial pressure guess at the center of the planet based on empirical scaling law derived from the hydrostatic equilibrium equation
             if EOS_CHOICE == "Tabulated:iron/Tdep_silicate":
                 pressure_guess = np.minimum((earth_center_pressure * (planet_mass/earth_mass)**2 * (radius_guess/earth_radius)**(-4)), 4e11)
@@ -220,7 +231,7 @@ def main(config_params, material_dictionaries):
                 y0 = [0, 0, pressure_guess]
 
                 # Solve the coupled ODEs for the planetary structure model
-                mass_enclosed, gravity, pressure = solve_structure(EOS_CHOICE, cmb_mass, core_mantle_mass, radii, adaptive_radial_fraction, relative_tolerance, absolute_tolerance, maximum_step, material_dictionaries, interpolation_cache, temperature_function, y0)
+                mass_enclosed, gravity, pressure = solve_structure(EOS_CHOICE, cmb_mass, core_mantle_mass, radii, adaptive_radial_fraction, relative_tolerance, absolute_tolerance, maximum_step, material_dictionaries, interpolation_cache, temperature_function, y0, solidus_func, liquidus_func)
 
                 if iteration_profiles_enabled:
                     create_pressure_density_files(outer_iter, inner_iter, pressure_iter, radii, pressure, density)
@@ -278,7 +289,7 @@ def main(config_params, material_dictionaries):
                         material = "water_ice_layer"
 
                 # Calculate the new density using the equation of state
-                new_density = calculate_density(pressure[i], material_dictionaries, material, EOS_CHOICE, temperature_function(radii)[i])
+                new_density = calculate_density(pressure[i], material_dictionaries, material, EOS_CHOICE, temperatures[i], solidus_func, liquidus_func)
 
                 # Handle potential errors in density calculation
                 if new_density is None:
@@ -341,7 +352,7 @@ def main(config_params, material_dictionaries):
         "density": density,
         "gravity": gravity,
         "pressure": pressure,
-        "temperature": temperature_function(radii),
+        "temperature": temperatures,
         "mass_enclosed": mass_enclosed,
         "cmb_mass": cmb_mass,
         "core_mantle_mass": core_mantle_mass,
@@ -361,7 +372,6 @@ def post_processing(config_params, id_mass=None, output_file=None):
         id_mass (str, optional): Identifier for the mass of the planet, used in output file naming.
         output_file (str, optional): Path to the output file where calculated mass and radius will be saved.
     """
-
     # Unpack configuration parameters related to output
     data_output_enabled = config_params["data_output_enabled"]
     plotting_enabled = config_params["plotting_enabled"]
@@ -398,8 +408,11 @@ def post_processing(config_params, id_mass=None, output_file=None):
         mantle_temperatures = temperature[cmb_index:]
         mantle_radii = radii[cmb_index:]
 
+        # Load solidus and liquidus functions
+        solidus_func, liquidus_func = load_solidus_liquidus_functions()
+
         # Get the mantle phase at each radial point
-        mantle_phases = get_Tdep_material(mantle_pressures, mantle_temperatures)
+        mantle_phases = get_Tdep_material(mantle_pressures, mantle_temperatures, solidus_func, liquidus_func)
 
     logger.info("Exoplanet Internal Structure Model Results:")
     logger.info("----------------------------------------------------------------------")
