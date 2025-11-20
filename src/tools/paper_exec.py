@@ -2,6 +2,7 @@
 # Run as `python src/tools/paper_exec.py`
 from __future__ import annotations
 
+from glob import glob
 import logging
 import os
 import numpy as np
@@ -41,7 +42,7 @@ def run_zalmoxis(mass_and_core):
     # Run the main function with the temporary configuration file
     id = str(f"_M{mass:0.4f}_C{core:0.4f}")
     zalmoxis.main(config_params, material_dictionaries=zalmoxis.load_material_dictionaries())
-    zalmoxis.post_processing(config_params, id_mass=id)
+    zalmoxis.post_processing(config_params, id_mass=id, print_output=False)
 
 def run_zalmoxis_in_parallel():
     """
@@ -56,12 +57,24 @@ def run_zalmoxis_in_parallel():
         None
     """
 
-    workers = 40
+    # Parameters 
+    workers = 60
+    target_mass_array = np.round(np.arange(0.25, 10.25, 0.25), 4)
+    target_core_array = np.round(np.arange(0.1,  0.75,  0.05), 4)
 
-    logger.info(f"Will run in parallel with {workers} workers")
+
+    # Setup output 
+    output_dir = os.path.join(ZALMOXIS_ROOT, "output_files") + "/"
+    logger.info(f"Output folder: {output_dir}")
+    if not os.path.isdir(output_dir):
+        os.makedirs(output_dir)
+
+    # Delete existing profiles
+    for f in glob(output_dir + "planet_profile*.txt"):
+        os.remove(f)
 
     # Delete the contents of the calculated_planet_mass_radius.txt file if it exists
-    calculated_file_path = os.path.join(ZALMOXIS_ROOT, "output_files", "calculated_planet_mass_radius.txt")
+    calculated_file_path = os.path.join(output_dir, "calculated_planet_mass_radius.txt")
     logger.info(f"Output data file: {calculated_file_path}")
     if os.path.exists(calculated_file_path):
         os.remove(calculated_file_path)
@@ -70,10 +83,9 @@ def run_zalmoxis_in_parallel():
         header = "Calculated Mass (kg)\tCalculated Radius (m)"
         file.write(header + "\n")
 
-    target_mass_array = np.round(np.arange(0.25, 10.25, 0.25), 4)
-    target_core_array = np.round(np.arange(0.1,  0.75,  0.05), 4)
 
     num_pts = len(target_mass_array) * len(target_core_array)
+    logger.info(f"Will run in parallel with {workers} workers")
     logger.info(f"Number of points: {num_pts}")
     time.sleep(3.0)
 

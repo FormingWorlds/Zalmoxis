@@ -178,7 +178,7 @@ def main(config_params, material_dictionaries):
     cmb_mass = 0 # Initial guess for the core-mantle boundary mass [kg]
     core_mantle_mass = 0 # Initial guess for the core+mantle mass [kg]
 
-    logger.info(f"Starting structure model for a {planet_mass/earth_mass} Earth masses planet with EOS '{EOS_CHOICE}'")
+    verbose and logger.info(f"Starting structure model for a {planet_mass/earth_mass} Earth masses planet with EOS '{EOS_CHOICE}'")
 
     # Time the entire process
     start_time = time.time()
@@ -326,7 +326,7 @@ def main(config_params, material_dictionaries):
 
         # Check for convergence of the calculated total interior mass
         if relative_diff_outer_mass < tolerance_outer:
-            logger.info(f"Outer loop (total mass) converged after {outer_iter + 1} iterations.")
+            verbose and logger.info(f"Outer loop (total mass) converged after {outer_iter + 1} iterations.")
             converged_mass = True  # Set convergence flag to True if converged
             break  # Exit the outer loop
 
@@ -363,7 +363,7 @@ def main(config_params, material_dictionaries):
     }
     return model_results
 
-def post_processing(config_params, id_mass=None, output_file=None):
+def post_processing(config_params, id_mass=None, output_file=None, print_output=True):
     """
     Post-processes the results of the Zalmoxis model by saving output data to a file and plotting results.
     Parameters:
@@ -413,22 +413,23 @@ def post_processing(config_params, id_mass=None, output_file=None):
         # Get the mantle phase at each radial point
         mantle_phases = get_Tdep_material(mantle_pressures, mantle_temperatures, solidus_func, liquidus_func)
 
-    logger.info("Exoplanet Internal Structure Model Results:")
-    logger.info("----------------------------------------------------------------------")
-    logger.info(f"Calculated Planet Mass: {mass_enclosed[-1]:.2e} kg or {mass_enclosed[-1]/earth_mass:.2f} Earth masses")
-    logger.info(f"Calculated Planet Radius: {radii[-1]:.2e} m or {radii[-1]/earth_radius:.2f} Earth radii")
-    logger.info(f"Core Radius: {radii[cmb_index]:.2e} m")
-    logger.info(f"Mantle Density (at CMB): {density[cmb_index]:.2f} kg/m^3")
-    logger.info(f"Core Density (at CMB): {density[cmb_index- 1]:.2f} kg/m^3")
-    logger.info(f"Pressure at Core-Mantle Boundary (CMB): {pressure[cmb_index]:.2e} Pa")
-    logger.info(f"Pressure at Center: {pressure[0]:.2e} Pa")
-    logger.info(f"Average Density: {average_density:.2f} kg/m^3")
-    logger.info(f"CMB Mass Fraction: {mass_enclosed[cmb_index] / mass_enclosed[-1]:.3f}")
-    logger.info(f"Core+Mantle Mass Fraction: {(core_mantle_mass - mass_enclosed[cmb_index]) / mass_enclosed[-1]:.3f}")
-    logger.info(f"Calculated Core Radius Fraction: {radii[cmb_index] / radii[-1]:.2f}")
-    logger.info(f"Calculated Core+Mantle Radius Fraction: {(radii[np.argmax(mass_enclosed >= core_mantle_mass)] / radii[-1]):.2f}")
-    logger.info(f"Total Computation Time: {total_time:.2f} seconds")
-    logger.info(f"Overall Convergence Status: {converged} with Pressure: {converged_pressure}, Density: {converged_density}, Mass: {converged_mass}")
+    if print_output:
+        logger.info("Exoplanet Internal Structure Model Results:")
+        logger.info("----------------------------------------------------------------------")
+        logger.info(f"Calculated Planet Mass: {mass_enclosed[-1]:.2e} kg or {mass_enclosed[-1]/earth_mass:.2f} Earth masses")
+        logger.info(f"Calculated Planet Radius: {radii[-1]:.2e} m or {radii[-1]/earth_radius:.2f} Earth radii")
+        logger.info(f"Core Radius: {radii[cmb_index]:.2e} m")
+        logger.info(f"Mantle Density (at CMB): {density[cmb_index]:.2f} kg/m^3")
+        logger.info(f"Core Density (at CMB): {density[cmb_index- 1]:.2f} kg/m^3")
+        logger.info(f"Pressure at Core-Mantle Boundary (CMB): {pressure[cmb_index]:.2e} Pa")
+        logger.info(f"Pressure at Center: {pressure[0]:.2e} Pa")
+        logger.info(f"Average Density: {average_density:.2f} kg/m^3")
+        logger.info(f"CMB Mass Fraction: {mass_enclosed[cmb_index] / mass_enclosed[-1]:.3f}")
+        logger.info(f"Core+Mantle Mass Fraction: {(core_mantle_mass - mass_enclosed[cmb_index]) / mass_enclosed[-1]:.3f}")
+        logger.info(f"Calculated Core Radius Fraction: {radii[cmb_index] / radii[-1]:.2f}")
+        logger.info(f"Calculated Core+Mantle Radius Fraction: {(radii[np.argmax(mass_enclosed >= core_mantle_mass)] / radii[-1]):.2f}")
+        logger.info(f"Total Computation Time: {total_time:.2f} seconds")
+        logger.info(f"Overall Convergence Status: {converged} with Pressure: {converged_pressure}, Density: {converged_density}, Mass: {converged_mass}")
 
     # Save output data to a file
     if data_output_enabled:
@@ -439,7 +440,7 @@ def post_processing(config_params, id_mass=None, output_file=None):
             fpath = os.path.join(ZALMOXIS_ROOT, "output_files", "planet_profile.txt")
         else:
             fpath = os.path.join(ZALMOXIS_ROOT, "output_files", f"planet_profile{id_mass}.txt")
-        logger.info(f"Saved profile to {fpath}")
+        logger.debug(f"Saved profile to {fpath}")
         np.savetxt(fpath, output_data, header=header)
 
         # Append calculated mass and radius of the planet to a file in dedicated columns
