@@ -7,50 +7,46 @@ ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
 if not ZALMOXIS_ROOT:
     raise RuntimeError("ZALMOXIS_ROOT environment variable not set")
 
-# --- Material Properties for iron/silicate planets according to Seager et al. (2007) ---
-## only rho0 and eos_file are used in the code and fact checked
+# Material Properties for iron/silicate planets according to Seager et al. (2007) at 300 K
 material_properties_iron_silicate_planets = {
     "core": {
-        # For liquid iron alloy outer core
-        "rho0": 8300,  # From Table 1 of Seager et al. (2007) for the epsilon phase of iron of Fe in kg/m^3
-        "K0": 140e9,  # Bulk modulus (Pa)
-        "K0prime": 5.5,  # Pressure derivative of the bulk modulus
-        "gamma0": 1.5,  # Gruneisen parameter
-        "theta0": 1200,  # Debye temperature (K)
-        "V0": 1 / 9900,  # Specific volume at reference state
-        "P0": 135e9,  # Reference pressure (Pa)
-        "eos_file": os.path.join(ZALMOXIS_ROOT, "data", "EOS_Seager2007", "eos_seager07_iron.txt") # Name of the file with tabulated EOS data
+        # Iron, modeled in Seager et al. (2007) using the Vinet EOS fit to the epsilon phase of Fe and DFT calculations
+        "eos_file": os.path.join(ZALMOXIS_ROOT, "data", "EOS_Seager2007", "eos_seager07_iron.txt")
     },
     "mantle": {
-        # Lower mantle properties based on bridgmanite and ferropericlase
-        "rho0": 4100, # From Table 1 of Seager et al. (2007) for bridgmanite in kg/m^3
-        "K0": 245e9,  # Bulk modulus (Pa)
-        "K0prime": 3.9,  # Pressure derivative of the bulk modulus
-        "gamma0": 1.5,  # Gruneisen parameter
-        "theta0": 1100,  # Debye temperature (K)
-        "V0": 1 / 4110,  # Specific volume at reference state
-        "P0": 24e9,  # Reference pressure (Pa)
-        "eos_file": os.path.join(ZALMOXIS_ROOT, "data", "EOS_Seager2007", "eos_seager07_silicate.txt") # Name of the file with tabulated EOS data
+        # Silicate, modeled in Seager et al. (2007) using the fourth-order Birch-Murnaghan EOS fit to MgSiO3 perovskite and DFT calculations
+        "eos_file": os.path.join(ZALMOXIS_ROOT, "data", "EOS_Seager2007", "eos_seager07_silicate.txt")
     }
 }
 
-# --- Material Properties for water planets according to Seager et al. (2007) ---
+# Material Properties for iron/silicate planets with iron EOS according to Seager et al. (2007) and silicate melt EOS according to Wolf & Bower (2018)
+material_properties_iron_Tdep_silicate_planets = {
+    "core": {
+        # Iron, modeled in Seager et al. (2007) using the Vinet EOS fit to the epsilon phase of Fe and DFT calculations
+        "eos_file": os.path.join(ZALMOXIS_ROOT, "data", "EOS_Seager2007", "eos_seager07_iron.txt")
+    },
+    "melted_mantle": {
+        # MgSiO3 in melt state, modeled in Wolf & Bower (2018) using their developed high P–T RTpress EOS
+        "eos_file": os.path.join(ZALMOXIS_ROOT, "data", "EOS_WolfBower2018_1TPa", "density_melt.dat")
+    },
+    "solid_mantle": {
+        # MgSiO3 in solid state, modeled in Wolf & Bower (2018) using their developed high P–T RTpress EOS
+        "eos_file": os.path.join(ZALMOXIS_ROOT, "data", "EOS_WolfBower2018_1TPa", "density_solid.dat")
+    }
+}
+
+# Material Properties for water planets according to Seager et al. (2007) at 300 K
 material_properties_water_planets = {
     "core": {
-        # For liquid iron alloy outer core
-        "rho0": 8300,  # From Table 1 of Seager et al. (2007) for the epsilon phase of iron of Fe in kg/m^3
-        "eos_file": os.path.join(ZALMOXIS_ROOT, "data", "EOS_Seager2007","eos_seager07_iron.txt")  # Name of the file with tabulated EOS data
+        # Iron, modeled in Seager et al. (2007) using the Vinet EOS fit to the epsilon phase of Fe and DFT calculations
+        "eos_file": os.path.join(ZALMOXIS_ROOT, "data", "EOS_Seager2007","eos_seager07_iron.txt")
     },
-    "bridgmanite_shell": {
-            # Inner mantle properties based on bridgmanite
-            "rho0": 4100,  # From Table 1 of Seager et al. (2007) for bridgmanite in kg/m^3
-            "eos_file": os.path.join(ZALMOXIS_ROOT, "data", "EOS_Seager2007", "eos_seager07_silicate.txt")  # Name of the file with tabulated EOS data
+    "mantle": {
+        # Silicate, modeled in Seager et al. (2007) using the fourth-order Birch-Murnaghan EOS fit to MgSiO3 perovskite and DFT calculations
+        "eos_file": os.path.join(ZALMOXIS_ROOT, "data", "EOS_Seager2007", "eos_seager07_silicate.txt")
     },
     "water_ice_layer": {
-        # Outer water ice layer in ice VII phase
-            "rho0": 1460,  # From Table 1 of Seager et al. (2007) for H2O in ice VII phase in kg/m^3
-            "eos_file": os.path.join(ZALMOXIS_ROOT, "data", "EOS_Seager2007", "eos_seager07_water.txt")  # Name of the file with tabulated EOS data
+        # Water ice, modeled in Seager et al. (2007) using experimental data, DFT predictions for water ice in phases VIII and X, and DFT calculations.
+        "eos_file": os.path.join(ZALMOXIS_ROOT, "data", "EOS_Seager2007", "eos_seager07_water.txt")
     }
 }
-
-

@@ -6,10 +6,14 @@ planet_mass                = 1 # Mass of the planet (in Earth masses = 5.972e24 
 [AssumptionsAndInitialGuesses]
 core_mass_fraction         = 0.325 # Initial guess for the core mass as a fraction of the total mass
 mantle_mass_fraction       = 0 # Initial guess for the mantle mass as a fraction of the total mass
-weight_iron_fraction       = 0.325 # Initial guess for the weight fraction of iron in the core (0.35 for Earth)
+weight_iron_fraction       = 0.325 # Initial guess for the weight fraction of iron in the core (0.325 for Earth)
+temperature_mode           = "linear" # Choice of input temperature profile: "isothermal", "linear", "prescribed"
+surface_temperature        = 3500 # Surface temperature (K), required for temperature_mode="isothermal" or "linear", ignored otherwise
+center_temperature         = 6000 # Central temperature (K), required for temperature_mode="linear", ignored otherwise
+temperature_profile_file   = "temp_profile.txt" # Filename containing a prescribed temperature profile, required for temperature_mode="prescribed"
 
 [EOS]
-choice                     = "Tabulated:iron/silicate" # Choice of equation of state ("Tabulated:iron/silicate", "Tabulated:water")
+choice                     = "Tabulated:iron/Tdep_silicate" # Choice of equation of state ("Tabulated:iron/silicate", "Tabulated:iron/Tdep_silicate", "Tabulated:water")
 
 [Calculations]
 num_layers                 = 150 # Number of planet layers
@@ -21,6 +25,8 @@ max_iterations_inner       = 100 # Maximum number of iterations for the inner lo
 tolerance_inner            = 1e-4 # Convergence tolerance for the inner loop
 relative_tolerance         = 1e-5 # Relative tolerance for solve_ivp
 absolute_tolerance         = 1e-6 # Absolute tolerance for solve_ivp
+maximum_step               = 390000 # Maximum integration step size for solve_ivp (m)
+adaptive_radial_fraction   = 0.99 # Fraction (0–1) of the radial domain defining where solve_ivp transitions from adaptive integration to fixed-step integration when using the temperature-dependent `"Tabulated:iron/Tdep_silicate"` EOS
 
 [PressureAdjustment]
 target_surface_pressure    = 101325 # Target surface pressure (Pa)
@@ -29,6 +35,7 @@ max_iterations_pressure    = 200 # Maximum iterations for pressure adjustment lo
 pressure_adjustment_factor = 1.1 # Adjustment factor for updating the central pressure guess
 
 [Output]
-data_enabled               = true # Flag to enable saving data to a file (True/False)
-plots_enabled              = true # Flag to enable plotting the results (True/False)
-verbose                    = false # If true, logs detailed convergence info and warnings; if false, only essential messages are shown (True/False)
+data_enabled               = true # Flag to enable saving data to a file (true/false)
+plots_enabled              = false # Flag to enable plotting the profile results in post_processing() (true/false)
+verbose                    = false # If true, logs detailed convergence info and warnings; if false, only essential messages are shown (true/false)
+iteration_profiles_enabled = false # If true, writes pressure and density profiles for each iteration to files (true/false)

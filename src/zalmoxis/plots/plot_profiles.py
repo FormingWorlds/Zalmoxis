@@ -5,7 +5,7 @@ import os
 
 import matplotlib.pyplot as plt
 
-from ..constants import (
+from zalmoxis.constants import (
     earth_center_density,
     earth_center_pressure,
     earth_center_temperature,
