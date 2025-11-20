@@ -2,12 +2,13 @@
 # Run as `python src/tools/paper_exec.py`
 from __future__ import annotations
 
-from glob import glob
 import logging
 import os
-import numpy as np
 import time
 from concurrent.futures import ProcessPoolExecutor
+from glob import glob
+
+import numpy as np
 
 import zalmoxis.zalmoxis as zalmoxis
 from zalmoxis.constants import earth_mass
@@ -57,13 +58,13 @@ def run_zalmoxis_in_parallel():
         None
     """
 
-    # Parameters 
+    # Parameters
     workers = 60
     target_mass_array = np.round(np.arange(0.25, 10.25, 0.25), 4)
     target_core_array = np.round(np.arange(0.1,  0.75,  0.05), 4)
 
 
-    # Setup output 
+    # Setup output
     output_dir = os.path.join(ZALMOXIS_ROOT, "output_files") + "/"
     logger.info(f"Output folder: {output_dir}")
     if not os.path.isdir(output_dir):
