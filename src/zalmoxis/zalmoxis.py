@@ -221,7 +221,7 @@ def main(config_params, material_dictionaries):
 
             # Setup initial pressure guess at the center of the planet based on empirical scaling law derived from the hydrostatic equilibrium equation
             if EOS_CHOICE == "Tabulated:iron/Tdep_silicate":
-                pressure_guess = np.minimum((earth_center_pressure * (planet_mass/earth_mass)**2 * (radius_guess/earth_radius)**(-4)), 4e11)
+                pressure_guess = np.minimum((earth_center_pressure * (planet_mass/earth_mass)**2 * (radius_guess/earth_radius)**(-4)), 0.99e12)
             else:
                 pressure_guess = (earth_center_pressure * (planet_mass/earth_mass)**2 * (radius_guess/earth_radius)**(-4))
 
