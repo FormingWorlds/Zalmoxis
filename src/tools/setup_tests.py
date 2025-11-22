@@ -93,14 +93,14 @@ def run_zalmoxis_TdepEOS(id_mass):
     if not model_results.get("converged", False):
         print(f"Model did not converge for mass {id_mass} Earth masses.")
         return [(id_mass, False)]
-    
+
     # Extract the results from the model output
     radii = model_results["radii"]
     total_time = model_results["total_time"]
     planet_radius = radii[-1]
 
     # Log the mass and radius only if converged
-    custom_log_file = os.path.join(ZALMOXIS_ROOT, "output_files", f"composition_TdepEOS_mass_log.txt")
+    custom_log_file = os.path.join(ZALMOXIS_ROOT, "output_files", "composition_TdepEOS_mass_log.txt")
     with open(custom_log_file, "a") as log:
         log.write(f"{id_mass:.4f}\t{planet_radius:.4e}\t{total_time:.4e}\n")
     return [(id_mass, converged)]

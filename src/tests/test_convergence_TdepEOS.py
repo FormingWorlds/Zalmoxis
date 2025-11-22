@@ -18,7 +18,7 @@ def test_all_compositions_converge(mass):
     print(f"Running test for mass = {mass}")
 
     # Delete composition_TdepEOS_mass_log file if it exists
-    custom_log_file = os.path.join(ZALMOXIS_ROOT, "output_files", f"composition_TdepEOS_mass_log.txt")
+    custom_log_file = os.path.join(ZALMOXIS_ROOT, "output_files", "composition_TdepEOS_mass_log.txt")
     if os.path.exists(custom_log_file):
         os.remove(custom_log_file)
 
