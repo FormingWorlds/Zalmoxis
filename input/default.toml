@@ -27,6 +27,7 @@ relative_tolerance         = 1e-5 # Relative tolerance for solve_ivp
 absolute_tolerance         = 1e-6 # Absolute tolerance for solve_ivp
 maximum_step               = 250000 # Maximum integration step size for solve_ivp (m)
 adaptive_radial_fraction   = 0.98 # Fraction (0–1) of the radial domain defining where solve_ivp transitions from adaptive integration to fixed-step integration when using the temperature-dependent `"Tabulated:iron/Tdep_silicate"` EOS
+max_center_pressure_guess  = 0.99e12 # Maximum pressure guess at the center of the planet based on the "Tabulated:iron/Tdep_silicate" EOS files (Pa)
 
 [PressureAdjustment]
 target_surface_pressure    = 101325 # Target surface pressure (Pa)

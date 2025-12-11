@@ -102,6 +102,7 @@ def load_zalmoxis_config(temp_config_path=None):
         "absolute_tolerance": config['IterativeProcess']['absolute_tolerance'],
         "maximum_step": config['IterativeProcess']['maximum_step'],
         "adaptive_radial_fraction": config['IterativeProcess']['adaptive_radial_fraction'],
+        "max_center_pressure_guess": config['IterativeProcess']['max_center_pressure_guess'],
         "target_surface_pressure": config['PressureAdjustment']['target_surface_pressure'],
         "pressure_tolerance": config['PressureAdjustment']['pressure_tolerance'],
         "max_iterations_pressure": config['PressureAdjustment']['max_iterations_pressure'],
@@ -167,6 +168,7 @@ def main(config_params, material_dictionaries):
     absolute_tolerance = config_params["absolute_tolerance"]
     maximum_step = config_params["maximum_step"]
     adaptive_radial_fraction = config_params["adaptive_radial_fraction"]
+    max_center_pressure_guess = config_params["max_center_pressure_guess"]
     target_surface_pressure = config_params["target_surface_pressure"]
     pressure_tolerance = config_params["pressure_tolerance"]
     max_iterations_pressure = config_params["max_iterations_pressure"]
@@ -221,7 +223,7 @@ def main(config_params, material_dictionaries):
 
             # Setup initial pressure guess at the center of the planet based on empirical scaling law derived from the hydrostatic equilibrium equation
             if EOS_CHOICE == "Tabulated:iron/Tdep_silicate":
-                pressure_guess = np.minimum((earth_center_pressure * (planet_mass/earth_mass)**2 * (radius_guess/earth_radius)**(-4)), 0.99e12)
+                pressure_guess = np.minimum((earth_center_pressure * (planet_mass/earth_mass)**2 * (radius_guess/earth_radius)**(-4)), max_center_pressure_guess)
             else:
                 pressure_guess = (earth_center_pressure * (planet_mass/earth_mass)**2 * (radius_guess/earth_radius)**(-4))
 
