@@ -54,7 +54,7 @@ plugins:
     handlers:
       python:
         paths: [src]
-        import:
+        intersphinx:
         - https://installer.readthedocs.io/en/stable/objects.inv
         - https://numpy.org/doc/stable/objects.inv
         - https://docs.scipy.org/doc/scipy/objects.inv
