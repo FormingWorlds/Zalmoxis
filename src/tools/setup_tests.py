@@ -67,6 +67,44 @@ def run_zalmoxis_rocky_water(id_mass, config_type, cmf, immf):
 
     return output_file, profile_output_file
 
+def run_zalmoxis_TdepEOS(id_mass):
+    """
+    """
+    # Load default configuration
+    default_config_path = os.path.join(ZALMOXIS_ROOT, "input", "default.toml")
+    config_params = zalmoxis.load_zalmoxis_config(default_config_path)
+
+    # Modify the configuration parameters as needed
+    config_params["planet_mass"] = id_mass * earth_mass
+
+    # Create a temporary output file
+    with tempfile.NamedTemporaryFile(delete=False, mode='w') as temp_output_file:
+        output_file = temp_output_file.name
+
+    # Delete existing output file to start fresh
+    if os.path.exists(output_file):
+        os.remove(output_file)
+
+    # Unpack outputs directly from Zalmoxis
+    model_results = zalmoxis.main(config_params, material_dictionaries=zalmoxis.load_material_dictionaries())
+    converged = model_results.get("converged", False)
+
+    # Check if model converged before proceeding
+    if not model_results.get("converged", False):
+        print(f"Model did not converge for mass {id_mass} Earth masses.")
+        return [(id_mass, False)]
+
+    # Extract the results from the model output
+    radii = model_results["radii"]
+    total_time = model_results["total_time"]
+    planet_radius = radii[-1]
+
+    # Log the mass and radius only if converged
+    custom_log_file = os.path.join(ZALMOXIS_ROOT, "output_files", "composition_TdepEOS_mass_log.txt")
+    with open(custom_log_file, "a") as log:
+        log.write(f"{id_mass:.4f}\t{planet_radius:.4e}\t{total_time:.4e}\n")
+    return [(id_mass, converged)]
+
 def load_zeng_curve(filename):
     """
     Load Zeng et al. (2019) mass-radius data from a specified file.
