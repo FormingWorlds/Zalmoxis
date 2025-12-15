@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fwl-zalmoxis"
-version = "25.09.07"
+version = "25.12.15"
 description = "Zalmoxis (Planetary interior structure model)"
 readme = "README.md"
 requires-python = ">=3.12"
