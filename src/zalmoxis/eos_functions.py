@@ -101,6 +101,16 @@ def load_melting_curve(melt_file):
         print(f"Error loading melting curve data: {e}")
         return None
 
+def get_solidus_liquidus_functions():
+    """
+    Loads and returns the solidus and liquidus melting curves for temperature-dependent silicate mantle EOS.
+    Returns: A tuple containing the solidus and liquidus functions.
+    """
+    solidus_func = load_melting_curve(os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_Monteux-600", "solidus.dat"))
+    liquidus_func = load_melting_curve(os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_Monteux-600", "liquidus.dat"))
+
+    return solidus_func, liquidus_func
+
 def get_Tdep_density(pressure, temperature, material_properties_iron_Tdep_silicate_planets, solidus_func, liquidus_func, interpolation_functions={}):
     """
     Returns density for mantle material, considering temperature-dependent phase changes.
