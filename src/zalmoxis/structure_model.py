@@ -52,7 +52,7 @@ def coupled_odes(radius, y, cmb_mass, core_mantle_mass, EOS_CHOICE, interpolatio
             material = "core"
         else:
             # Mantle, uncomment the next line to assign material based on temperature and pressure
-            material = None # placeholder to avoid material not defined error
+            material = "mantle" # placeholder (can be melted or solid depending on T and P)
             #material = get_Tdep_material(pressure, temperature) #optional to assign since get_Tdep_density handles material assignment internally
             pass
 

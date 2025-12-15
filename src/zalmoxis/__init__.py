@@ -2,12 +2,19 @@ from __future__ import annotations
 
 __version__ = "25.09.07"
 import os
+import pathlib
 import sys
 
-# Check for ZALMOXIS_ROOT environment variable
+# Determine ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
+
+# Set ZALMOXIS_ROOT automatically if not set
 if not ZALMOXIS_ROOT:
-    sys.stderr.write(
-        "Error: ZALMOXIS_ROOT environment variable is not set. Set it explicitly to the root of the repo with: export ZALMOXIS_ROOT=$(pwd)"
-    )
+    # Infer root as parent of the package directory
+    ZALMOXIS_ROOT = str(pathlib.Path(__file__).parent.parent.resolve())
+    os.environ["ZALMOXIS_ROOT"] = ZALMOXIS_ROOT
+
+# Final check for ZALMOXIS_ROOT validity
+if not ZALMOXIS_ROOT or not pathlib.Path(ZALMOXIS_ROOT).exists():
+    sys.stderr.write("Error: ZALMOXIS_ROOT environment variable is not set. Set it explicitly to the root of the repo with: export ZALMOXIS_ROOT=$(pwd)\n")
     sys.exit(1)
