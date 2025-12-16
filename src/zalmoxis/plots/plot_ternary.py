@@ -10,8 +10,9 @@ import numpy as np
 from ternary import figure
 from tqdm import tqdm
 
-from zalmoxis import load_solidus_liquidus_functions, zalmoxis
+from zalmoxis import zalmoxis
 from zalmoxis.constants import earth_mass, earth_radius
+from zalmoxis.zalmoxis import load_solidus_liquidus_functions
 
 # Run file via command line: python -m zalmoxis.plots.plot_ternary
 
