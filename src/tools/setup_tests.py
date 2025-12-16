@@ -3,7 +3,8 @@ from __future__ import annotations
 import os
 import tempfile
 
-from src.zalmoxis import load_solidus_liquidus_functions, zalmoxis
+from src.zalmoxis import zalmoxis
+from src.zalmoxis.zalmoxis import load_solidus_liquidus_functions
 from zalmoxis.constants import earth_mass, earth_radius
 
 # Read the environment variable for ZALMOXIS_ROOT
