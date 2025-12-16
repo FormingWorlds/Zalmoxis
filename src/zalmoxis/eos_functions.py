@@ -164,12 +164,13 @@ def get_Tdep_material(pressure, temperature, solidus_func, liquidus_func):
     def evaluate_phase(P, T):
         T_sol = solidus_func(P)
         T_liq = liquidus_func(P)
-        if T <= T_sol:
+        frac_melt = (T - T_sol) / (T_liq - T_sol)
+        if frac_melt < 0.05:
             return "solid_mantle"
-        elif T >= T_liq:
-            return "melted_mantle"
-        else:
+        elif frac_melt <= 0.95:
             return "mixed_mantle"
+        else:
+            return "melted_mantle"
 
     # Vectorize function for array support
     vectorized_eval = np.vectorize(evaluate_phase, otypes=[str])
