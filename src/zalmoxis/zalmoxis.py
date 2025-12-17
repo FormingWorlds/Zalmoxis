@@ -458,7 +458,7 @@ def post_processing(config_params, id_mass=None, output_file=None):
     # Plotting results
     if plotting_enabled:
         # Plot profiles for a single planet
-        plot_planet_profile_single(radii, density, gravity, pressure, temperature, radii[np.argmax(mass_enclosed >= cmb_mass)] / radii[-1], cmb_mass, mass_enclosed[-1] / (4/3 * math.pi * radii[-1]**3), mass_enclosed, id_mass) # Plot planet profile for a single planet
+        plot_planet_profile_single(radii, density, gravity, pressure, temperature, radii[np.argmax(mass_enclosed >= cmb_mass)], cmb_mass, mass_enclosed[-1] / (4/3 * math.pi * radii[-1]**3), mass_enclosed, id_mass) # Plot planet profile for a single planet
 
         # If using temperature-dependent silicate mantle, plot the P-T profile with mantle phases
         if eos_choice == "Tabulated:iron/Tdep_silicate":
