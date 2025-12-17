@@ -220,7 +220,7 @@ def calculate_temperature_profile(radii, temperature_mode, surface_temperature, 
         - "prescribed": read temperature profile from a text file
     surface_temperature: Temperature at the surface [K] (used for "linear" and "isothermal")
     center_temperature: Temperature at the center [K] (used for "linear")
-    temp_profile_file: Name of the file containing the prescribed temperature profile. Must have same length as `radii` if temperature_mode="prescribed".
+    temp_profile_file: Name of the file containing the prescribed temperature profile from center to surface. Must have same length as `radii` if temperature_mode="prescribed".
 
     Returns:
     temperature_func: Function of radius or array of radii for temperature [K]: temperature_func(r) -> float or np.ndarray
