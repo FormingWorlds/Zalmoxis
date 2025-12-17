@@ -240,7 +240,10 @@ def main(config_params, material_dictionaries, melting_curves_functions):
                 y0 = [0, 0, pressure_guess]
 
                 # Solve the coupled ODEs for the planetary structure model
-                mass_enclosed, gravity, pressure = solve_structure(EOS_CHOICE, cmb_mass, core_mantle_mass, radii, adaptive_radial_fraction, relative_tolerance, absolute_tolerance, maximum_step, material_dictionaries, interpolation_cache, temperature_function, y0, solidus_func, liquidus_func)
+                if EOS_CHOICE == "Tabulated:iron/Tdep_silicate":
+                    mass_enclosed, gravity, pressure = solve_structure(EOS_CHOICE, cmb_mass, core_mantle_mass, radii, adaptive_radial_fraction, relative_tolerance, absolute_tolerance, maximum_step, material_dictionaries, interpolation_cache, y0, solidus_func, liquidus_func, temperature_function)
+                else:
+                    mass_enclosed, gravity, pressure = solve_structure(EOS_CHOICE, cmb_mass, core_mantle_mass, radii, adaptive_radial_fraction, relative_tolerance, absolute_tolerance, maximum_step, material_dictionaries, interpolation_cache, y0, solidus_func, liquidus_func)
 
                 if iteration_profiles_enabled:
                     create_pressure_density_files(outer_iter, inner_iter, pressure_iter, radii, pressure, density)
