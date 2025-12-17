@@ -209,8 +209,12 @@ def main(config_params, material_dictionaries, melting_curves_functions):
         mass_enclosed = np.zeros(num_layers)
         gravity = np.zeros(num_layers)
         pressure = np.zeros(num_layers)
-        temperature_function = calculate_temperature_profile(radii, temperature_mode, surface_temperature, center_temperature, temp_profile_file)
-        temperatures = temperature_function(radii)
+
+        if EOS_CHOICE == "Tabulated:iron/Tdep_silicate":
+            temperature_function = calculate_temperature_profile(radii, temperature_mode, surface_temperature, center_temperature, temp_profile_file)
+            temperatures = temperature_function(radii)
+        else:
+            temperatures = np.ones(num_layers) * 300 # Default temperature of 300 K for Seager et al. (2007) EOS
 
         # Setup initial guess for the core-mantle boundary mass
         cmb_mass = core_mass_fraction * planet_mass
