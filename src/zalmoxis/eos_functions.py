@@ -208,7 +208,7 @@ def calculate_density(pressure, material_dictionaries, material, eos_choice, tem
     else:
         raise ValueError("Invalid EOS choice.")
 
-def calculate_temperature_profile(radii, temperature_mode, surface_temperature, center_temperature, temp_profile_file=None):
+def calculate_temperature_profile(radii, temperature_mode, surface_temperature, center_temperature, input_dir, temp_profile_file=None):
     """
     Returns a callable temperature function for a planetary interior model.
 
@@ -234,8 +234,8 @@ def calculate_temperature_profile(radii, temperature_mode, surface_temperature, 
         return lambda r: surface_temperature + (center_temperature - surface_temperature) * (1 - np.array(r)/radii[-1])
 
     elif temperature_mode == "prescribed":
-        temp_profile_path = os.path.join(ZALMOXIS_ROOT, "input", temp_profile_file)
-        if temp_profile_path is None or not os.path.exists(os.path.join(ZALMOXIS_ROOT, "input", temp_profile_file)):
+        temp_profile_path = os.path.join(input_dir, temp_profile_file)
+        if temp_profile_path is None or not os.path.exists(os.path.join(input_dir, temp_profile_file)):
             raise ValueError("Temperature profile file must be provided and exist for 'prescribed' temperature mode.")
         temp_profile = np.loadtxt(temp_profile_path)
         if len(temp_profile) != len(radii):

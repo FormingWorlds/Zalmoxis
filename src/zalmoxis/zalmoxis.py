@@ -131,7 +131,7 @@ def load_solidus_liquidus_functions(EOS_CHOICE):
         melting_curves_functions = (solidus_func, liquidus_func)
         return melting_curves_functions
 
-def main(config_params, material_dictionaries, melting_curves_functions):
+def main(config_params, material_dictionaries, melting_curves_functions, input_dir):
 
     """
     Runs the exoplanet internal structure model.
@@ -211,7 +211,7 @@ def main(config_params, material_dictionaries, melting_curves_functions):
         pressure = np.zeros(num_layers)
 
         if EOS_CHOICE == "Tabulated:iron/Tdep_silicate":
-            temperature_function = calculate_temperature_profile(radii, temperature_mode, surface_temperature, center_temperature, temp_profile_file)
+            temperature_function = calculate_temperature_profile(radii, temperature_mode, surface_temperature, center_temperature, input_dir, temp_profile_file)
             temperatures = temperature_function(radii)
         else:
             temperatures = np.ones(num_layers) * 300 # Default temperature of 300 K for Seager et al. (2007) EOS
@@ -389,7 +389,7 @@ def post_processing(config_params, id_mass=None, output_file=None):
     plotting_enabled = config_params["plotting_enabled"]
 
     # Load the model output data
-    model_results = main(config_params, material_dictionaries=load_material_dictionaries(), melting_curves_functions=load_solidus_liquidus_functions(config_params["EOS_CHOICE"]))
+    model_results = main(config_params, material_dictionaries=load_material_dictionaries(), melting_curves_functions=load_solidus_liquidus_functions(config_params["EOS_CHOICE"]), input_dir=os.path.join(ZALMOXIS_ROOT, "input"))
 
     # Extract the results from the model output
     eos_choice = model_results["eos_choice"]

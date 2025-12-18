@@ -56,7 +56,7 @@ def run_zalmoxis_rocky_water(id_mass, config_type, cmf, immf):
         os.remove(output_file)
 
     # Run the main function and post-processing
-    model_results = zalmoxis.main(config_params, material_dictionaries=zalmoxis.load_material_dictionaries(), melting_curves_functions=load_solidus_liquidus_functions(config_params["EOS_CHOICE"]))
+    model_results = zalmoxis.main(config_params, material_dictionaries=zalmoxis.load_material_dictionaries(), melting_curves_functions=load_solidus_liquidus_functions(config_params["EOS_CHOICE"]), input_dir=os.path.join(ZALMOXIS_ROOT, "input"))
     zalmoxis.post_processing(config_params, id_mass, output_file=output_file)
 
     # Write profile data (radii and density) to a temporary profile file
@@ -87,7 +87,7 @@ def run_zalmoxis_TdepEOS(id_mass):
         os.remove(output_file)
 
     # Unpack outputs directly from Zalmoxis
-    model_results = zalmoxis.main(config_params, material_dictionaries=zalmoxis.load_material_dictionaries(), melting_curves_functions=load_solidus_liquidus_functions(config_params["EOS_CHOICE"]))
+    model_results = zalmoxis.main(config_params, material_dictionaries=zalmoxis.load_material_dictionaries(), melting_curves_functions=load_solidus_liquidus_functions(config_params["EOS_CHOICE"]), input_dir=os.path.join(ZALMOXIS_ROOT, "input"))
     converged = model_results.get("converged", False)
 
     # Check if model converged before proceeding
