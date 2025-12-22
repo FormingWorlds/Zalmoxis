@@ -213,13 +213,14 @@ def calculate_temperature_profile(radii, temperature_mode, surface_temperature, 
     Returns a callable temperature function for a planetary interior model.
 
     Parameters:
-        radii: Radial grid of the planet [m].
+    radii: Radial grid of the planet [m].
     temperature_mode: Temperature profile mode. Options:
         - "isothermal": constant temperature equal to surface_temperature
         - "linear": linear profile from center_temperature (r=0) to surface_temperature (r=R)
         - "prescribed": read temperature profile from a text file
     surface_temperature: Temperature at the surface [K] (used for "linear" and "isothermal")
     center_temperature: Temperature at the center [K] (used for "linear")
+    input_dir: Directory where the temperature profile file is located.
     temp_profile_file: Name of the file containing the prescribed temperature profile from center to surface. Must have same length as `radii` if temperature_mode="prescribed".
 
     Returns:

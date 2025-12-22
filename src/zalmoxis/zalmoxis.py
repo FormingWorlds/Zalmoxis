@@ -184,7 +184,7 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
     cmb_mass = 0 # Initial guess for the core-mantle boundary mass [kg]
     core_mantle_mass = 0 # Initial guess for the core+mantle mass [kg]
 
-    logger.info(f"Starting structure model for a {planet_mass/earth_mass} Earth masses planet with EOS '{EOS_CHOICE}'")
+    logger.info(f"Starting structure model for a {planet_mass/earth_mass} Earth masses planet with EOS '{EOS_CHOICE}' and temperature mode '{temperature_mode}'.")
 
     # Time the entire process
     start_time = time.time()
