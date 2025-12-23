@@ -208,7 +208,7 @@ def calculate_density(pressure, material_dictionaries, material, eos_choice, tem
     else:
         raise ValueError("Invalid EOS choice.")
 
-def calculate_temperature_profile(radii, temperature_mode, surface_temperature, center_temperature, input_dir, temp_profile_file=None):
+def calculate_temperature_profile(radii, temperature_mode, surface_temperature, center_temperature, input_dir, temp_profile_file):
     """
     Returns a callable temperature function for a planetary interior model.
 
