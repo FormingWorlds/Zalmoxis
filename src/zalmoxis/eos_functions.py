@@ -165,9 +165,9 @@ def get_Tdep_material(pressure, temperature, solidus_func, liquidus_func):
         T_sol = solidus_func(P)
         T_liq = liquidus_func(P)
         frac_melt = (T - T_sol) / (T_liq - T_sol)
-        if frac_melt < 0.05:
+        if frac_melt < 0:
             return "solid_mantle"
-        elif frac_melt <= 0.95:
+        elif frac_melt <= 1.0:
             return "mixed_mantle"
         else:
             return "melted_mantle"
