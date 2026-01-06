@@ -14,8 +14,8 @@ from .eos_functions import (
     calculate_density,
     calculate_temperature_profile,
     create_pressure_density_files,
+    get_solidus_liquidus_functions,
     get_Tdep_material,
-    load_melting_curve,
 )
 from .eos_properties import (
     material_properties_iron_silicate_planets,
@@ -121,17 +121,17 @@ def load_material_dictionaries():
     material_dictionaries = (material_properties_iron_silicate_planets, material_properties_iron_Tdep_silicate_planets, material_properties_water_planets)
     return material_dictionaries
 
-def load_solidus_liquidus_functions():
+def load_solidus_liquidus_functions(EOS_CHOICE):
     """
-    Loads and returns the solidus and liquidus melting curves for temperature-dependent silicate mantle EOS.
+    Loads and returns the solidus and liquidus functions for temperature-dependent silicate mantle EOS for the Zalmoxis model.
     Returns: A tuple containing the solidus and liquidus functions.
     """
-    solidus_func = load_melting_curve(os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_Monteux-600", "solidus.dat"))
-    liquidus_func = load_melting_curve(os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_Monteux-600", "liquidus.dat"))
+    if EOS_CHOICE == "Tabulated:iron/Tdep_silicate":
+        solidus_func, liquidus_func = get_solidus_liquidus_functions()
+        melting_curves_functions = (solidus_func, liquidus_func)
+        return melting_curves_functions
 
-    return solidus_func, liquidus_func
-
-def main(config_params, material_dictionaries):
+def main(config_params, material_dictionaries, melting_curves_functions, input_dir):
 
     """
     Runs the exoplanet internal structure model.
@@ -139,7 +139,10 @@ def main(config_params, material_dictionaries):
     Iteratively adjusts the internal structure of an exoplanet based on the provided configuration parameters,
     calculating the planet's radius, core-mantle boundary, densities, pressures, and other properties.
 
-    Parameters: config_params (dict): Dictionary containing configuration parameters for the model.
+    Parameters:
+        config_params (dict): Dictionary containing configuration parameters for the model.
+        material_dictionaries (tuple): Tuple containing the material properties dictionaries for iron/silicate planets, water planets, and temperature-dependent iron/silicate planets.
+        melting_curves_functions (tuple): Tuple containing the solidus and liquidus functions for temperature-dependent silicate mantle EOS.
 
     Returns: Dictionary containing the calculated radii, density, gravity, pressure, temperature, mass enclosed, core-mantle boundary mass, core+mantle mass, total computation time, and convergence status of the model.
     """
@@ -181,7 +184,7 @@ def main(config_params, material_dictionaries):
     cmb_mass = 0 # Initial guess for the core-mantle boundary mass [kg]
     core_mantle_mass = 0 # Initial guess for the core+mantle mass [kg]
 
-    logger.info(f"Starting structure model for a {planet_mass/earth_mass} Earth masses planet with EOS '{EOS_CHOICE}'")
+    logger.info(f"Starting structure model for a {planet_mass/earth_mass} Earth masses planet with EOS '{EOS_CHOICE}' and temperature mode '{temperature_mode}'.")
 
     # Time the entire process
     start_time = time.time()
@@ -191,7 +194,7 @@ def main(config_params, material_dictionaries):
 
     # Load solidus and liquidus functions if using temperature-dependent silicate mantle EOS
     if EOS_CHOICE == "Tabulated:iron/Tdep_silicate":
-        solidus_func, liquidus_func = load_solidus_liquidus_functions()
+        solidus_func, liquidus_func = melting_curves_functions
     else:
         solidus_func, liquidus_func = None, None
 
@@ -206,8 +209,12 @@ def main(config_params, material_dictionaries):
         mass_enclosed = np.zeros(num_layers)
         gravity = np.zeros(num_layers)
         pressure = np.zeros(num_layers)
-        temperature_function = calculate_temperature_profile(radii, temperature_mode, surface_temperature, center_temperature, temp_profile_file)
-        temperatures = temperature_function(radii)
+
+        if EOS_CHOICE == "Tabulated:iron/Tdep_silicate":
+            temperature_function = calculate_temperature_profile(radii, temperature_mode, surface_temperature, center_temperature, input_dir, temp_profile_file)
+            temperatures = temperature_function(radii)
+        else:
+            temperatures = np.ones(num_layers) * 300 # Default temperature of 300 K for Seager et al. (2007) EOS
 
         # Setup initial guess for the core-mantle boundary mass
         cmb_mass = core_mass_fraction * planet_mass
@@ -233,7 +240,10 @@ def main(config_params, material_dictionaries):
                 y0 = [0, 0, pressure_guess]
 
                 # Solve the coupled ODEs for the planetary structure model
-                mass_enclosed, gravity, pressure = solve_structure(EOS_CHOICE, cmb_mass, core_mantle_mass, radii, adaptive_radial_fraction, relative_tolerance, absolute_tolerance, maximum_step, material_dictionaries, interpolation_cache, temperature_function, y0, solidus_func, liquidus_func)
+                if EOS_CHOICE == "Tabulated:iron/Tdep_silicate":
+                    mass_enclosed, gravity, pressure = solve_structure(EOS_CHOICE, cmb_mass, core_mantle_mass, radii, adaptive_radial_fraction, relative_tolerance, absolute_tolerance, maximum_step, material_dictionaries, interpolation_cache, y0, solidus_func, liquidus_func, temperature_function)
+                else:
+                    mass_enclosed, gravity, pressure = solve_structure(EOS_CHOICE, cmb_mass, core_mantle_mass, radii, adaptive_radial_fraction, relative_tolerance, absolute_tolerance, maximum_step, material_dictionaries, interpolation_cache, y0, solidus_func, liquidus_func)
 
                 if iteration_profiles_enabled:
                     create_pressure_density_files(outer_iter, inner_iter, pressure_iter, radii, pressure, density)
@@ -379,7 +389,7 @@ def post_processing(config_params, id_mass=None, output_file=None):
     plotting_enabled = config_params["plotting_enabled"]
 
     # Load the model output data
-    model_results = main(config_params, material_dictionaries=load_material_dictionaries())
+    model_results = main(config_params, material_dictionaries=load_material_dictionaries(), melting_curves_functions=load_solidus_liquidus_functions(config_params["EOS_CHOICE"]), input_dir=os.path.join(ZALMOXIS_ROOT, "input"))
 
     # Extract the results from the model output
     eos_choice = model_results["eos_choice"]
@@ -411,7 +421,7 @@ def post_processing(config_params, id_mass=None, output_file=None):
         mantle_radii = radii[cmb_index:]
 
         # Load solidus and liquidus functions
-        solidus_func, liquidus_func = load_solidus_liquidus_functions()
+        solidus_func, liquidus_func = load_solidus_liquidus_functions(eos_choice)
 
         # Get the mantle phase at each radial point
         mantle_phases = get_Tdep_material(mantle_pressures, mantle_temperatures, solidus_func, liquidus_func)
@@ -455,7 +465,7 @@ def post_processing(config_params, id_mass=None, output_file=None):
     # Plotting results
     if plotting_enabled:
         # Plot profiles for a single planet
-        plot_planet_profile_single(radii, density, gravity, pressure, temperature, radii[np.argmax(mass_enclosed >= cmb_mass)] / radii[-1], cmb_mass, mass_enclosed[-1] / (4/3 * math.pi * radii[-1]**3), mass_enclosed, id_mass) # Plot planet profile for a single planet
+        plot_planet_profile_single(radii, density, gravity, pressure, temperature, radii[np.argmax(mass_enclosed >= cmb_mass)], cmb_mass, mass_enclosed[-1] / (4/3 * math.pi * radii[-1]**3), mass_enclosed, id_mass) # Plot planet profile for a single planet
 
         # If using temperature-dependent silicate mantle, plot the P-T profile with mantle phases
         if eos_choice == "Tabulated:iron/Tdep_silicate":

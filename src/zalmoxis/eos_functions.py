@@ -101,6 +101,16 @@ def load_melting_curve(melt_file):
         print(f"Error loading melting curve data: {e}")
         return None
 
+def get_solidus_liquidus_functions():
+    """
+    Loads and returns the solidus and liquidus melting curves for temperature-dependent silicate mantle EOS.
+    Returns: A tuple containing the solidus and liquidus functions.
+    """
+    solidus_func = load_melting_curve(os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_Monteux-600", "solidus.dat"))
+    liquidus_func = load_melting_curve(os.path.join(ZALMOXIS_ROOT, "data", "melting_curves_Monteux-600", "liquidus.dat"))
+
+    return solidus_func, liquidus_func
+
 def get_Tdep_density(pressure, temperature, material_properties_iron_Tdep_silicate_planets, solidus_func, liquidus_func, interpolation_functions={}):
     """
     Returns density for mantle material, considering temperature-dependent phase changes.
@@ -154,12 +164,13 @@ def get_Tdep_material(pressure, temperature, solidus_func, liquidus_func):
     def evaluate_phase(P, T):
         T_sol = solidus_func(P)
         T_liq = liquidus_func(P)
-        if T <= T_sol:
+        frac_melt = (T - T_sol) / (T_liq - T_sol)
+        if frac_melt < 0:
             return "solid_mantle"
-        elif T >= T_liq:
-            return "melted_mantle"
-        else:
+        elif frac_melt <= 1.0:
             return "mixed_mantle"
+        else:
+            return "melted_mantle"
 
     # Vectorize function for array support
     vectorized_eval = np.vectorize(evaluate_phase, otypes=[str])
@@ -197,19 +208,20 @@ def calculate_density(pressure, material_dictionaries, material, eos_choice, tem
     else:
         raise ValueError("Invalid EOS choice.")
 
-def calculate_temperature_profile(radii, temperature_mode, surface_temperature, center_temperature, temp_profile_file=None):
+def calculate_temperature_profile(radii, temperature_mode, surface_temperature, center_temperature, input_dir, temp_profile_file):
     """
     Returns a callable temperature function for a planetary interior model.
 
     Parameters:
-        radii: Radial grid of the planet [m].
+    radii: Radial grid of the planet [m].
     temperature_mode: Temperature profile mode. Options:
         - "isothermal": constant temperature equal to surface_temperature
         - "linear": linear profile from center_temperature (r=0) to surface_temperature (r=R)
         - "prescribed": read temperature profile from a text file
     surface_temperature: Temperature at the surface [K] (used for "linear" and "isothermal")
     center_temperature: Temperature at the center [K] (used for "linear")
-    temp_profile_file: Name of the file containing the prescribed temperature profile. Must have same length as `radii` if temperature_mode="prescribed".
+    input_dir: Directory where the temperature profile file is located.
+    temp_profile_file: Name of the file containing the prescribed temperature profile from center to surface. Must have same length as `radii` if temperature_mode="prescribed".
 
     Returns:
     temperature_func: Function of radius or array of radii for temperature [K]: temperature_func(r) -> float or np.ndarray
@@ -223,8 +235,8 @@ def calculate_temperature_profile(radii, temperature_mode, surface_temperature, 
         return lambda r: surface_temperature + (center_temperature - surface_temperature) * (1 - np.array(r)/radii[-1])
 
     elif temperature_mode == "prescribed":
-        temp_profile_path = os.path.join(ZALMOXIS_ROOT, "input", temp_profile_file)
-        if temp_profile_path is None or not os.path.exists(os.path.join(ZALMOXIS_ROOT, "input", temp_profile_file)):
+        temp_profile_path = os.path.join(input_dir, temp_profile_file)
+        if temp_profile_path is None or not os.path.exists(os.path.join(input_dir, temp_profile_file)):
             raise ValueError("Temperature profile file must be provided and exist for 'prescribed' temperature mode.")
         temp_profile = np.loadtxt(temp_profile_path)
         if len(temp_profile) != len(radii):

@@ -52,7 +52,7 @@ def coupled_odes(radius, y, cmb_mass, core_mantle_mass, EOS_CHOICE, interpolatio
             material = "core"
         else:
             # Mantle, uncomment the next line to assign material based on temperature and pressure
-            material = None # placeholder to avoid material not defined error
+            material = "mantle" # placeholder (can be melted or solid depending on T and P)
             #material = get_Tdep_material(pressure, temperature) #optional to assign since get_Tdep_density handles material assignment internally
             pass
 
@@ -90,7 +90,7 @@ def coupled_odes(radius, y, cmb_mass, core_mantle_mass, EOS_CHOICE, interpolatio
     # Return the derivatives
     return [dMdr, dgdr, dPdr]
 
-def solve_structure(EOS_CHOICE, cmb_mass, core_mantle_mass, radii, adaptive_radial_fraction, relative_tolerance, absolute_tolerance, maximum_step, material_dictionaries, interpolation_cache, temperature_function, y0, solidus_func, liquidus_func):
+def solve_structure(EOS_CHOICE, cmb_mass, core_mantle_mass, radii, adaptive_radial_fraction, relative_tolerance, absolute_tolerance, maximum_step, material_dictionaries, interpolation_cache, y0, solidus_func, liquidus_func, temperature_function=None):
     """
     Solve the coupled ODEs for the planetary structure model using scipy's solve_ivp. Handles special case for temperature-dependent EOS where the radial grid is split into two parts for better handling of large step sizes towards the surface.
     Parameters:
