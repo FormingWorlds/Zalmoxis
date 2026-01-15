@@ -44,7 +44,7 @@ zalmoxis = "zalmoxis.zalmoxis:main"
 [project.urls]
 homepage = "https://github.com/FormingWorlds/Zalmoxis"
 issues = "https://github.com/FormingWorlds/Zalmoxis/issues"
-documentation = "https://zalmoxis.readthedocs.io/en/latest/"
+documentation = "https://proteus-framework.org/Zalmoxis/"
 changelog = "https://github.com/FormingWorlds/Zalmoxis/releases"
 
 [project.optional-dependencies]
