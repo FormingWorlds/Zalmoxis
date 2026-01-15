@@ -7,7 +7,7 @@
 
 ## Installation & run instructions
 
-See the [installation guide](https://zalmoxis.readthedocs.io/en/latest/installation/) and [usage guide](https://zalmoxis.readthedocs.io/en/latest/usage/) for more information.
+See the [installation guide](https://proteus-framework.org/Zalmoxis/installation/) and [usage guide](https://proteus-framework.org/Zalmoxis/usage/) for more information.
 
 ## Repository structure
 
