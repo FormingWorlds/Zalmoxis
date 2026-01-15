@@ -20,8 +20,9 @@ nav:
   - 🔗 MORS: https://proteus-framework.org/MORS/
   - 🔗 AGNI: https://h-nicholls.space/AGNI/dev/
   - 🔗 Obliqua: https://proteus-framework.org/Obliqua/ 
-  - 🔗 VULCAN: https://proteus-framework.org/VULCAN/
+  - 🔗 VULCAN: https://github.com/FormingWorlds/VULCAN/
   - 🔗 Aragog: https://proteus-framework.org/aragog/
+  - 🔗 SPIDER: https://github.com/djbower/spider
 
 theme:
   name: material
