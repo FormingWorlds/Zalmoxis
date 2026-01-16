@@ -1,5 +1,5 @@
 site_name: Zalmoxis
-site_url: https://zalmoxis.readthedocs.io/en/latest/
+site_url: https://proteus-framework.org/Zalmoxis
 repo_url: https://github.com/FormingWorlds/Zalmoxis
 
 nav:
@@ -13,20 +13,21 @@ nav:
   - Code of Conduct: CODE_OF_CONDUCT.md
   - Source code: https://github.com/FormingWorlds/Zalmoxis
   - Issues page: https://github.com/FormingWorlds/Zalmoxis/issues
-  - 🔗 PROTEUS: https://fwl-proteus.readthedocs.io/
-  - 🔗 JANUS: https://fwl-janus.readthedocs.io/
-  - 🔗 ZEPHYRUS: https://fwl-zephyrus.readthedocs.io/
-  - 🔗 MORS: https://fwl-mors.readthedocs.io/
-  - 🔗 AGNI: https://h-nicholls.space/AGNI/
-  - 🔗 LovePy: https://github.com/nichollsh/lovepy
-  - 🔗 VULCAN: https://github.com/FormingWorlds/VULCAN
-  - 🔗 CALLIOPE: https://fwl-calliope.readthedocs.io/
-  - 🔗 Aragog: https://github.com/FormingWorlds/aragog
+  - 🔗 PROTEUS: https://proteus-framework.org/PROTEUS/
+  - 🔗 JANUS: https://proteus-framework.org/JANUS/
+  - 🔗 ZEPHYRUS: https://proteus-framework.org/ZEPHYRUS/
+  - 🔗 CALLIOPE: https://proteus-framework.org/CALLIOPE/
+  - 🔗 MORS: https://proteus-framework.org/MORS/
+  - 🔗 AGNI: https://h-nicholls.space/AGNI/dev/
+  - 🔗 Obliqua: https://proteus-framework.org/Obliqua/ 
+  - 🔗 VULCAN: https://github.com/FormingWorlds/VULCAN/
+  - 🔗 Aragog: https://proteus-framework.org/aragog/
   - 🔗 SPIDER: https://github.com/djbower/spider
-
 
 theme:
   name: material
+  favicon: assets/PROTEUS_black_on_white_logo_only.png
+  logo: assets/PROTEUS_white_on_black.png
   palette:
     primary: black
     accent: deep orange
