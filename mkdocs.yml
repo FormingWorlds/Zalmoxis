@@ -1,5 +1,5 @@
 site_name: Zalmoxis
-site_url: https://proteus-framework.org/Zalmoxis
+site_url: https://proteus-framework.org/zalmoxis
 repo_url: https://github.com/FormingWorlds/Zalmoxis
 
 nav:
@@ -20,9 +20,12 @@ nav:
   - 🔗 MORS: https://proteus-framework.org/MORS/
   - 🔗 AGNI: https://h-nicholls.space/AGNI/dev/
   - 🔗 Obliqua: https://proteus-framework.org/Obliqua/ 
-  - 🔗 VULCAN: https://github.com/FormingWorlds/VULCAN/
+  - 🔗 VULCAN: https://proteus-framework.org/VULCAN/ 
   - 🔗 Aragog: https://proteus-framework.org/aragog/
   - 🔗 SPIDER: https://github.com/djbower/spider
+  - 🔗 Atmodeller: https://atmodeller.readthedocs.io/en/latest/
+  - 🔗 FastChem: https://newstrangeworlds.github.io/FastChem/
+  - 🔗 PLATON: https://platon.readthedocs.io/en/latest/
 
 theme:
   name: material
