@@ -61,10 +61,11 @@ VALID_TABULATED_EOS = {
     'Seager2007:H2O',
 }
 
-# WolfBower2018 tables are valid up to ~1 TPa. For planets above this mass,
-# deep mantle pressures near the CMB exceed the table boundary, and the solver
-# cannot converge. Use Seager2007 EOS for higher masses.
-WOLFBOWER2018_MAX_MASS_EARTH = 2.0
+# WolfBower2018 tables are valid up to ~1 TPa. The Brent pressure solver with
+# out-of-bounds clamping handles mantle pressures exceeding the table boundary
+# for planets up to ~7 M_earth. Beyond this mass, deep-mantle pressures are far
+# enough above the table ceiling that clamped densities become unreliable.
+WOLFBOWER2018_MAX_MASS_EARTH = 7.0
 
 
 def parse_eos_config(eos_section):
@@ -335,15 +336,16 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
     # Check if any layer uses T-dependent EOS
     uses_Tdep = any(v == 'WolfBower2018:MgSiO3' for v in layer_eos_config.values() if v)
 
-    # WolfBower2018 tables are limited to ~1 TPa.  For planets above
-    # WOLFBOWER2018_MAX_MASS_EARTH, deep-mantle pressures exceed the table
-    # boundary and the solver cannot converge.
+    # WolfBower2018 tables are limited to ~1 TPa.  The Brent solver with
+    # out-of-bounds clamping handles up to ~7 M_earth, but beyond that the
+    # clamped densities diverge too far from reality to be physically meaningful.
     mass_in_earth = planet_mass / earth_mass
     if uses_Tdep and mass_in_earth > WOLFBOWER2018_MAX_MASS_EARTH:
         raise ValueError(
             f'WolfBower2018:MgSiO3 EOS is limited to planets <= '
             f'{WOLFBOWER2018_MAX_MASS_EARTH} M_earth (requested {mass_in_earth:.2f} M_earth). '
-            f'Deep-mantle pressures exceed the 1 TPa table boundary at higher masses. '
+            f'Deep-mantle pressures far exceed the 1 TPa table boundary at higher masses, '
+            f'making clamped densities unreliable. '
             f'Use Seager2007:MgSiO3 or Analytic:MgSiO3 instead.'
         )
 
