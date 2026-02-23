@@ -33,64 +33,71 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 def plot1_eos_comparison():
     """Plot 1: EOS comparison (P vs rho) for all 6 materials."""
+    # Tabulated data: open markers matching the analytic curve color
     tabulated_files = {
-        'eos_seager07_iron.txt': ('iron', 'red', 'o'),
-        'eos_seager07_silicate.txt': ('MgSiO3', 'orange', 's'),
-        'eos_seager07_water.txt': ('H2O', 'blue', '^'),
+        'eos_seager07_iron.txt': ('iron', 'o', '#d62728'),
+        'eos_seager07_silicate.txt': ('MgSiO3', 's', '#ff7f0e'),
+        'eos_seager07_water.txt': ('H2O', '^', '#1f77b4'),
     }
 
+    # Analytic curves: distinct colors, all solid for materials with tabulated data,
+    # dashed for analytic-only materials
     analytic_styles = {
-        'iron': ('red', '-'),
-        'MgSiO3': ('orange', '-'),
-        'MgFeSiO3': ('brown', '--'),
-        'H2O': ('blue', '-'),
-        'graphite': ('gray', '--'),
-        'SiC': ('green', '--'),
+        'iron': ('#d62728', '-', 2.5),  # red
+        'MgSiO3': ('#ff7f0e', '-', 2.5),  # orange
+        'MgFeSiO3': ('#8c564b', '--', 1.8),  # brown
+        'H2O': ('#1f77b4', '-', 2.5),  # blue
+        'graphite': ('#7f7f7f', '--', 1.8),  # gray
+        'SiC': ('#2ca02c', '--', 1.8),  # green
     }
 
     fig, ax = plt.subplots(figsize=(10, 7))
 
-    # Plot tabulated data as scatter points
-    data_folder = os.path.join(ZALMOXIS_ROOT, 'data', 'EOS_Seager2007')
-    for filename, (mat_key, color, marker) in tabulated_files.items():
-        filepath = os.path.join(data_folder, filename)
-        if os.path.exists(filepath):
-            data = np.loadtxt(filepath, delimiter=',', skiprows=1)
-            pressure_gpa = data[:, 1]
-            density = data[:, 0] * 1000  # g/cm^3 -> kg/m^3
-            ax.scatter(
-                pressure_gpa,
-                density,
-                color=color,
-                s=20,
-                alpha=0.5,
-                marker=marker,
-                label=f'{mat_key} (tabulated)',
-                zorder=3,
-            )
-
-    # Plot analytic curves
-    pressures_pa = np.logspace(7, 15, 500)
+    # Plot analytic curves first (underneath)
+    pressures_pa = np.logspace(7, 21, 500)
     pressures_gpa = pressures_pa / 1e9
 
     for mat_key in SEAGER2007_MATERIALS:
-        color, ls = analytic_styles[mat_key]
+        color, ls, lw = analytic_styles[mat_key]
         densities = np.array([get_analytic_density(p, mat_key) for p in pressures_pa])
         ax.plot(
             pressures_gpa,
             densities,
             color=color,
             linestyle=ls,
-            linewidth=2,
+            linewidth=lw,
             label=f'{mat_key} (analytic)',
+            zorder=2,
         )
+
+    # Plot tabulated data on top as large open markers, subsampled for clarity
+    data_folder = os.path.join(ZALMOXIS_ROOT, 'data', 'EOS_Seager2007')
+    for filename, (mat_key, marker, color) in tabulated_files.items():
+        filepath = os.path.join(data_folder, filename)
+        if os.path.exists(filepath):
+            data = np.loadtxt(filepath, delimiter=',', skiprows=1)
+            pressure_gpa = data[:, 1]
+            density = data[:, 0] * 1000  # g/cm^3 -> kg/m^3
+            # Subsample every 5th point so markers don't overlap
+            step = max(1, len(pressure_gpa) // 40)
+            ax.scatter(
+                pressure_gpa[::step],
+                density[::step],
+                facecolors='none',
+                edgecolors=color,
+                s=60,
+                linewidths=1.5,
+                marker=marker,
+                label=f'{mat_key} (tabulated)',
+                zorder=4,
+            )
 
     ax.set_xlabel('Pressure (GPa)', fontsize=13)
     ax.set_ylabel('Density (kg/m³)', fontsize=13)
     ax.set_title('Seager+2007 EOS: Tabulated vs Analytic Modified Polytrope', fontsize=14)
     ax.set_xscale('log')
     ax.set_yscale('log')
-    ax.legend(fontsize=9, ncol=2)
+    ax.legend(fontsize=9, ncol=2, loc='upper left')
     ax.grid(True, alpha=0.3)
 
     path = os.path.join(OUTPUT_DIR, 'plot1_eos_comparison.pdf')
