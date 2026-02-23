@@ -32,7 +32,7 @@ Valid EOS values:
 | `Seager2007:iron`         | Seager et al. (2007) tabulated Fe epsilon (300 K)     |
 | `Seager2007:MgSiO3`      | Seager et al. (2007) tabulated MgSiO3 perovskite (300 K) |
 | `Seager2007:H2O`         | Seager et al. (2007) tabulated water ice (300 K)      |
-| `WolfBower2018:MgSiO3`   | Wolf & Bower (2018) T-dependent MgSiO3 (melt/solid), **<= 2 M_earth** |
+| `WolfBower2018:MgSiO3`   | Wolf & Bower (2018) T-dependent MgSiO3 (melt/solid), **<= 7 M_earth** |
 | `Analytic:<material>`    | Seager et al. (2007) analytic polytrope (300 K, no data files needed) |
 
 Valid analytic materials: `iron`, `MgSiO3`, `MgFeSiO3`, `H2O`, `graphite`, `SiC`.

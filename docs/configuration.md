@@ -71,7 +71,7 @@ All EOS identifiers follow the format `<source>:<composition>`, where:
 | `Seager2007:iron` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | Fe (epsilon phase) | Fixed 300 K | Yes | Vinet EOS + DFT, tabulated $\rho(P)$. |
 | `Seager2007:MgSiO3` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | MgSiO3 perovskite | Fixed 300 K | Yes | 4th-order Birch-Murnaghan + DFT, tabulated $\rho(P)$. |
 | `Seager2007:H2O` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | Water ice (phases VII, VIII, X) | Fixed 300 K | Yes | Experimental + DFT, tabulated $\rho(P)$. |
-| `WolfBower2018:MgSiO3` | [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) | MgSiO3 (melt + solid) | T-dependent | Yes | RTpress EOS with phase-aware melting. **Limited to $\leq 2\,M_\oplus$** (table max ~1 TPa). Requires `temperature_mode` configuration. Uses [Monteux et al.](https://doi.org/10.1016/j.epsl.2016.05.010) solidus/liquidus curves. |
+| `WolfBower2018:MgSiO3` | [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) | MgSiO3 (melt + solid) | T-dependent | Yes | RTpress EOS with phase-aware melting. **Limited to $\leq 7\,M_\oplus$** (table max ~1 TPa; out-of-bounds pressures clamped). Requires `temperature_mode` configuration. Uses [Monteux et al.](https://doi.org/10.1016/j.epsl.2016.05.010) solidus/liquidus curves. |
 | `Analytic:iron` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) Table 3 | Fe (epsilon) | Fixed 300 K | No | Modified polytrope: $\rho(P) = \rho_0 + c \cdot P^n$. |
 | `Analytic:MgSiO3` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) Table 3 | MgSiO3 perovskite | Fixed 300 K | No | Modified polytrope. |
 | `Analytic:MgFeSiO3` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) Table 3 | (Mg,Fe)SiO3 | Fixed 300 K | No | Modified polytrope. |
@@ -88,7 +88,7 @@ where $\rho_0$ is the zero-pressure density, $c$ and $n$ are fitted constants. T
 **Temperature-dependent EOS.** The `WolfBower2018:MgSiO3` EOS is the only temperature-dependent option. It uses separate tabulated $\rho(P, T)$ grids for solid and melt phases, with a linear melt-fraction interpolation between the solidus and liquidus. When this EOS is assigned to any layer, the `temperature_mode`, `surface_temperature`, and `center_temperature` parameters in `[AssumptionsAndInitialGuesses]` become active.
 
 !!! warning "Mass limit for WolfBower2018"
-    The WolfBower2018 tables cover pressures up to ~1 TPa. For planets above $2\,M_\oplus$, deep-mantle pressures near the core-mantle boundary exceed this limit and the solver will raise a `ValueError`. Use `Seager2007:MgSiO3` or `Analytic:MgSiO3` for higher-mass planets.
+    The WolfBower2018 tables cover pressures up to ~1 TPa. For planets above ~2 $M_\oplus$, deep-mantle pressures begin to exceed this limit. The Brent pressure solver with out-of-bounds clamping handles this gracefully up to $7\,M_\oplus$. Beyond $7\,M_\oplus$, clamped densities become unreliable and the code raises a `ValueError`. Use `Seager2007:MgSiO3` or `Analytic:MgSiO3` for higher-mass planets.
 
 #### EOS decision guide
 
@@ -232,7 +232,7 @@ Numerical grid settings.
 
 ### `IterativeProcess`
 
-Controls the three nested iteration loops (outer mass convergence, inner density convergence, pressure adjustment) and the ODE solver tolerances.
+Controls the three nested iteration loops (outer mass convergence, inner density convergence, Brent pressure solver) and the ODE solver tolerances.
 
 | Parameter | Type | Unit | Default | Description |
 |---|---|---|---|---|
@@ -244,15 +244,15 @@ Controls the three nested iteration loops (outer mass convergence, inner density
 | `absolute_tolerance` | float | -- | 1e-6 | Absolute tolerance for `solve_ivp`. |
 | `maximum_step` | float | m | 250000 | Maximum radial step size for `solve_ivp`. |
 | `adaptive_radial_fraction` | float | -- | 0.98 | Fraction (0--1) of the radial domain where `solve_ivp` uses adaptive stepping before switching to fixed steps. Primarily relevant for the `WolfBower2018:MgSiO3` EOS near the surface. |
-| `max_center_pressure_guess` | float | Pa | 0.99e12 | Upper bound on the central pressure initial guess. Prevents the solver from overshooting when using tabulated EOS with bounded pressure ranges. Only active when `WolfBower2018:MgSiO3` is used. |
+| `max_center_pressure_guess` | float | Pa | 10e12 | Upper bound on the Brent solver's pressure bracket. Caps $P_{\mathrm{high}}$ to keep the bracket within the iron core EOS table. Only active when `WolfBower2018:MgSiO3` is used; the Seager2007 iron EOS is valid to $10^{21}$ Pa so this cap is not needed for pure-Seager runs. |
 
 #### Guidance on reasonable parameter ranges
 
 The default values work well for Earth-mass planets with the default EOS. For other configurations:
 
-- **Super-Earths (1--10 $M_\oplus$):** The defaults generally suffice. For masses above ~5 $M_\oplus$, consider tightening `tolerance_outer` to 1e-4 and increasing `num_layers` to 200--300.
+- **Super-Earths (1--10 $M_\oplus$):** The defaults generally suffice. For masses above ~5 $M_\oplus$, consider tightening `tolerance_outer` to 1e-4 and increasing `num_layers` to 200--300. The Brent pressure solver converges in 20--36 evaluations regardless of planet mass.
 - **Sub-Earths (< 1 $M_\oplus$):** May converge faster. Defaults are conservative.
-- **Temperature-dependent EOS (`WolfBower2018:MgSiO3`):** This EOS is more demanding on the solver. If convergence is slow, try reducing `maximum_step` (e.g., to 100000 m) and ensuring `adaptive_radial_fraction` is close to 1.0 (e.g., 0.98--0.99). The `max_center_pressure_guess` should remain below the maximum pressure in the tabulated data files (~1 TPa).
+- **Temperature-dependent EOS (`WolfBower2018:MgSiO3`):** Limited to $\leq 7\,M_\oplus$. If convergence is slow, try reducing `maximum_step` (e.g., to 100000 m) and ensuring `adaptive_radial_fraction` is close to 1.0 (e.g., 0.98--0.99). The `max_center_pressure_guess` caps the Brent solver's upper bracket and should be set high enough to encompass the true central pressure (default 10 TPa covers the iron core EOS range).
 - **Analytic EOS:** Convergence is typically fast and robust. Looser tolerances and fewer layers are usually sufficient for exploration.
 - **3-layer models:** Adding an ice layer increases the number of density discontinuities. Consider increasing `num_layers` to 200+ for smooth profiles.
 
@@ -260,14 +260,16 @@ The default values work well for Earth-mass planets with the default EOS. For ot
 
 ### `PressureAdjustment`
 
-Controls the iterative adjustment of the central pressure guess to match the target surface boundary condition.
+Controls the Brent root-finding solver that determines the central pressure.
+The solver finds $P_c$ such that the surface pressure after ODE integration matches the target.
+See the [model documentation](model.md#pressure-solver-brents-method) for details on the algorithm.
 
 | Parameter | Type | Unit | Default | Description |
 |---|---|---|---|---|
 | `target_surface_pressure` | float | Pa | 101325 | Target pressure at the planetary surface. Default is 1 atm. |
 | `pressure_tolerance` | float | Pa | 1e9 | Convergence criterion: the solver iterates until $\lvert P_\mathrm{surface} - P_\mathrm{target} \rvert$ falls below this value. |
-| `max_iterations_pressure` | int | -- | 200 | Maximum iterations for the pressure adjustment loop. |
-| `pressure_adjustment_factor` | float | -- | 1.1 | Multiplicative scaling factor for the central pressure correction. Values > 1 accelerate convergence but risk oscillation; values close to 1 are more stable. |
+| `max_iterations_pressure` | int | -- | 200 | Maximum number of function evaluations for the Brent solver. Typical convergence requires 20--36 evaluations. |
+| `pressure_adjustment_factor` | float | -- | 1.1 | **Deprecated.** Retained for backward compatibility. The Brent solver does not use this parameter. |
 
 ---
 
