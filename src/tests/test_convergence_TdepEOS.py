@@ -7,16 +7,12 @@ import pytest
 
 from tools.setup_tests import run_zalmoxis_TdepEOS
 
-# Read the environment variable for ZALMOXIS_ROOT
-ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
-if not ZALMOXIS_ROOT:
-    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
 
-
+@pytest.mark.integration
 @pytest.mark.parametrize(
     'mass', [1, 2]
 )  # WolfBower2018 EOS tables are limited to ~1 TPa; only valid for <= 2 M_earth
-def test_all_compositions_converge(mass):
+def test_all_compositions_converge(mass, zalmoxis_root):
     """Test that the T-dependent EOS model converges for low-mass planets.
 
     The WolfBower2018:MgSiO3 EOS tables cover pressures up to ~1 TPa,
@@ -32,7 +28,7 @@ def test_all_compositions_converge(mass):
 
     # Delete composition_TdepEOS_mass_log file if it exists
     custom_log_file = os.path.join(
-        ZALMOXIS_ROOT, 'output_files', 'composition_TdepEOS_mass_log.txt'
+        zalmoxis_root, 'output_files', 'composition_TdepEOS_mass_log.txt'
     )
     if os.path.exists(custom_log_file):
         os.remove(custom_log_file)

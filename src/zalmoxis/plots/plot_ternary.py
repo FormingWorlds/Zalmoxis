@@ -101,16 +101,17 @@ def generate_composition_grid(step=0.05):
     return grid
 
 
-def run_ternary_grid_for_mass(id_mass=None):
+def run_ternary_grid_for_mass(id_mass=None, step=0.05):
     """
     Run zalmoxis for a grid of core and mantle fractions for a given planet mass,
     showing progress with tqdm.
     Parameters:
         id_mass (float): Mass of the planet in Earth masses.
+        step (float): Grid resolution for composition fractions (default 0.05).
     Returns:
         list: A list of results from the zalmoxis runs.
     """
-    grid = generate_composition_grid(step=0.05)
+    grid = generate_composition_grid(step=step)
     args_list = [(id_mass, core, mantle) for (core, mantle) in grid]
 
     with ProcessPoolExecutor() as executor:

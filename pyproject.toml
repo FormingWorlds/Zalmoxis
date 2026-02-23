@@ -77,9 +77,14 @@ source = ["zalmoxis"]
 
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "-ra -v"
+addopts = "-ra -v -n auto --dist loadfile"
 testpaths = ["src/tests"]
 pythonpath = ["src"]
+markers = [
+    "unit: Fast unit tests (<100ms, no solver calls)",
+    "integration: Integration tests with full solver (10-60s each)",
+    "slow: Slow convergence tests (minutes, full composition grids)",
+]
 
 [tool.ruff]
 line-length = 96

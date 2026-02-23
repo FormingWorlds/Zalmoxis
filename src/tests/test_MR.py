@@ -1,18 +1,12 @@
 from __future__ import annotations
 
-import os
-
 import numpy as np
 import pytest
 
 from tools.setup_tests import load_model_output, load_zeng_curve, run_zalmoxis_rocky_water
 
-# Read the environment variable for ZALMOXIS_ROOT
-ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
-if not ZALMOXIS_ROOT:
-    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
 
-
+@pytest.mark.integration
 @pytest.mark.parametrize(
     'config_type,zeng_file',
     [

@@ -23,15 +23,10 @@ from zalmoxis.eos_analytic import (
     get_analytic_density,
 )
 
-# Read the environment variable for ZALMOXIS_ROOT
-ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
-if not ZALMOXIS_ROOT:
-    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
-
-
 ALL_MATERIALS = sorted(VALID_MATERIAL_KEYS)
 
 
+@pytest.mark.unit
 class TestAnalyticDensityBasic:
     """Basic correctness tests for get_analytic_density()."""
 
@@ -79,6 +74,7 @@ class TestAnalyticDensityBasic:
         assert rho_graphite > rho_H2O
 
 
+@pytest.mark.unit
 class TestAnalyticDensityEdgeCases:
     """Edge case and error handling tests."""
 
@@ -113,6 +109,7 @@ class TestAnalyticDensityEdgeCases:
         assert 'exceeds validity limit' in caplog.text
 
 
+@pytest.mark.unit
 class TestAnalyticVsTabulated:
     """Compare analytic EOS against tabulated data for iron, silicate, water."""
 
@@ -124,9 +121,11 @@ class TestAnalyticVsTabulated:
             ('H2O', 'eos_seager07_water.txt', 0, 1),
         ],
     )
-    def test_analytic_vs_tabulated(self, material_key, eos_file, col_density, col_pressure):
+    def test_analytic_vs_tabulated(
+        self, material_key, eos_file, col_density, col_pressure, zalmoxis_root
+    ):
         """Analytic EOS should agree with tabulated data within ~15%."""
-        data_path = os.path.join(ZALMOXIS_ROOT, 'data', 'EOS_Seager2007', eos_file)
+        data_path = os.path.join(zalmoxis_root, 'data', 'EOS_Seager2007', eos_file)
 
         data = np.loadtxt(data_path, delimiter=',', skiprows=1)
         densities_tab = data[:, col_density] * 1e3  # g/cm^3 -> kg/m^3

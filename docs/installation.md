@@ -32,6 +32,14 @@ pip install -e .
 
 This installs Zalmoxis in editable mode, so local changes to the code are immediately reflected.
 
+For development (includes pytest, pytest-xdist, ruff, coverage, and pre-commit):
+
+```console
+pip install -e ".[develop]"
+```
+
+The `[develop]` extras are required for running the test suite. See the [Testing](testing.md) page for details.
+
 ### Step 3: Set the environment variable
 
 Zalmoxis requires the `ZALMOXIS_ROOT` environment variable to point to the base directory:
@@ -111,8 +119,10 @@ conda activate proteus
 
 ### Convergence failures
 
-If the interior structure solver fails to converge, consider the following adjustments:
+The Brent pressure solver is robust and typically converges in 20--36 evaluations.
+If the solver fails to converge, consider the following:
 
+- **Bracket error** (`ValueError: f(a) and f(b) must have different signs`): The initial pressure bracket does not straddle the root. This usually means the true central pressure is outside the bracket range. Try increasing `max_center_pressure_guess` (for WolfBower2018 EOS) or check that the planet mass and composition are physically plausible.
+- **WolfBower2018 mass limit**: The `WolfBower2018:MgSiO3` EOS is limited to $\leq 7\,M_\oplus$. For higher-mass planets, use `Seager2007:MgSiO3` or `Analytic:MgSiO3` instead.
 - **Tolerance parameters**: Relax the convergence tolerance in the input configuration file. Tighter tolerances require more iterations and may not converge for extreme planetary compositions or masses.
-- **Initial guess**: Poor initial guesses for the central pressure or density can lead to divergence. Try adjusting the starting values.
 - **Physical plausibility**: Verify that the input parameters (mass, composition fractions, core/mantle fractions) are physically plausible. Unphysical configurations (e.g., negative mass fractions, zero-thickness layers) will not converge.

@@ -1,19 +1,13 @@
 from __future__ import annotations
 
-import os
-
 import numpy as np
 import pytest
 from scipy.interpolate import interp1d
 
 from tools.setup_tests import load_profile_output, load_Seager_data, run_zalmoxis_rocky_water
 
-# Read the environment variable for ZALMOXIS_ROOT
-ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
-if not ZALMOXIS_ROOT:
-    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
 
-
+@pytest.mark.integration
 @pytest.mark.parametrize(
     'config_type,seager_file',
     [
@@ -58,7 +52,7 @@ def test_density_profile(config_type, seager_file, mass):
     )
     seager_density_interp = interp_func(model_radii)
 
-    # Detect large jump in model densities (likely the core–mantle boundary)
+    # Detect large jump in model densities (likely the core\u2013mantle boundary)
     density_jumps = np.abs(np.diff(model_densities))
     jump_threshold = 2000  # Threshold for detecting a jump in density
     jump_indices = np.where(density_jumps > jump_threshold)[0]
