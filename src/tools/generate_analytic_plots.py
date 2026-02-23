@@ -196,14 +196,15 @@ def plot3_mass_radius():
     analytic_rocky_m, analytic_rocky_r = [], []
     for m in masses:
         try:
-            analytic_mats = {'core': 'iron', 'mantle': 'MgSiO3'}
             out, _ = run_zalmoxis_rocky_water(
                 m,
                 'rocky',
                 cmf=0.325,
                 immf=0,
-                eos_override='Analytic:Seager2007',
-                analytic_materials=analytic_mats,
+                layer_eos_override={
+                    'core': 'Analytic:iron',
+                    'mantle': 'Analytic:MgSiO3',
+                },
             )
             mass_out, radius_out = load_model_output(out)
             analytic_rocky_m.append(mass_out)
@@ -248,14 +249,16 @@ def plot3_mass_radius():
     analytic_water_m, analytic_water_r = [], []
     for m in masses:
         try:
-            analytic_mats = {'core': 'iron', 'mantle': 'MgSiO3', 'water_ice_layer': 'H2O'}
             out, _ = run_zalmoxis_rocky_water(
                 m,
                 'water',
                 cmf=0.065,
                 immf=0.485,
-                eos_override='Analytic:Seager2007',
-                analytic_materials=analytic_mats,
+                layer_eos_override={
+                    'core': 'Analytic:iron',
+                    'mantle': 'Analytic:MgSiO3',
+                    'ice_layer': 'Analytic:H2O',
+                },
             )
             mass_out, radius_out = load_model_output(out)
             analytic_water_m.append(mass_out)
@@ -300,14 +303,15 @@ def plot3_mass_radius():
     analytic_sic_m, analytic_sic_r = [], []
     for m in masses:
         try:
-            analytic_mats = {'core': 'iron', 'mantle': 'SiC'}
             out, _ = run_zalmoxis_rocky_water(
                 m,
                 'rocky',
                 cmf=0.325,
                 immf=0,
-                eos_override='Analytic:Seager2007',
-                analytic_materials=analytic_mats,
+                layer_eos_override={
+                    'core': 'Analytic:iron',
+                    'mantle': 'Analytic:SiC',
+                },
             )
             mass_out, radius_out = load_model_output(out)
             analytic_sic_m.append(mass_out)
@@ -350,14 +354,15 @@ def plot4_density_profiles():
     # Left panel: Earth-like rocky (iron/MgSiO3)
     ax = axes[0]
     try:
-        analytic_mats = {'core': 'iron', 'mantle': 'MgSiO3'}
         _, profile_ana = run_zalmoxis_rocky_water(
             1,
             'rocky',
             cmf=0.325,
             immf=0,
-            eos_override='Analytic:Seager2007',
-            analytic_materials=analytic_mats,
+            layer_eos_override={
+                'core': 'Analytic:iron',
+                'mantle': 'Analytic:MgSiO3',
+            },
         )
         r_ana, d_ana = load_profile_output(profile_ana)
         ax.plot(
@@ -393,14 +398,16 @@ def plot4_density_profiles():
     # Right panel: Water planet (iron/MgSiO3/H2O)
     ax = axes[1]
     try:
-        analytic_mats = {'core': 'iron', 'mantle': 'MgSiO3', 'water_ice_layer': 'H2O'}
         _, profile_ana = run_zalmoxis_rocky_water(
             1,
             'water',
             cmf=0.065,
             immf=0.485,
-            eos_override='Analytic:Seager2007',
-            analytic_materials=analytic_mats,
+            layer_eos_override={
+                'core': 'Analytic:iron',
+                'mantle': 'Analytic:MgSiO3',
+                'ice_layer': 'Analytic:H2O',
+            },
         )
         r_ana, d_ana = load_profile_output(profile_ana)
         ax.plot(

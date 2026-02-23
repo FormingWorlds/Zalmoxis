@@ -25,7 +25,7 @@ from .eos_properties import (
 )
 from .plots.plot_phase_vs_radius import plot_PT_with_phases
 from .plots.plot_profiles import plot_planet_profile_single
-from .structure_model import get_layer_material, solve_structure
+from .structure_model import get_layer_eos, solve_structure
 
 # Run file via command line with default configuration file: python -m zalmoxis -c input/default.toml
 
@@ -35,6 +35,110 @@ if not ZALMOXIS_ROOT:
     raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
 
 logger = logging.getLogger(__name__)
+
+# Mapping from legacy global EOS choice strings to per-layer config dicts
+LEGACY_EOS_MAP = {
+    'Tabulated:iron/silicate': {
+        'core': 'Seager2007:iron',
+        'mantle': 'Seager2007:MgSiO3',
+    },
+    'Tabulated:iron/Tdep_silicate': {
+        'core': 'Seager2007:iron',
+        'mantle': 'WolfBower2018:MgSiO3',
+    },
+    'Tabulated:water': {
+        'core': 'Seager2007:iron',
+        'mantle': 'Seager2007:MgSiO3',
+        'ice_layer': 'Seager2007:H2O',
+    },
+}
+
+VALID_TABULATED_EOS = {
+    'Seager2007:iron',
+    'Seager2007:MgSiO3',
+    'WolfBower2018:MgSiO3',
+    'Seager2007:H2O',
+}
+
+
+def parse_eos_config(eos_section):
+    """Parse [EOS] TOML section into per-layer EOS dict.
+
+    Supports new per-layer format (core/mantle/ice_layer fields) and legacy
+    format (choice field) for backward compatibility.
+
+    Parameters
+    ----------
+    eos_section : dict
+        The [EOS] section from the TOML config.
+
+    Returns
+    -------
+    dict
+        Per-layer EOS config, e.g.
+        {"core": "Seager2007:iron", "mantle": "WolfBower2018:MgSiO3"}.
+    """
+    # New format: per-layer fields present
+    if 'core' in eos_section:
+        layer_eos = {
+            'core': eos_section['core'],
+            'mantle': eos_section['mantle'],
+        }
+        water = eos_section.get('ice_layer', '')
+        if water:
+            layer_eos['ice_layer'] = water
+        return layer_eos
+
+    # Legacy format: expand 'choice' field
+    choice = eos_section.get('choice', '')
+    if choice in LEGACY_EOS_MAP:
+        return dict(LEGACY_EOS_MAP[choice])
+
+    if choice == 'Analytic:Seager2007':
+        layer_eos = {
+            'core': f'Analytic:{eos_section.get("core_material", "iron")}',
+            'mantle': f'Analytic:{eos_section.get("mantle_material", "MgSiO3")}',
+        }
+        water_mat = eos_section.get('water_layer_material', '')
+        if water_mat:
+            layer_eos['ice_layer'] = f'Analytic:{water_mat}'
+        return layer_eos
+
+    raise ValueError(
+        f"Unknown EOS config. Set per-layer fields (core, mantle) or legacy 'choice'. "
+        f'Got: {eos_section}'
+    )
+
+
+def validate_layer_eos(layer_eos_config):
+    """Validate all per-layer EOS strings.
+
+    Parameters
+    ----------
+    layer_eos_config : dict
+        Per-layer EOS config from parse_eos_config().
+
+    Raises
+    ------
+    ValueError
+        If any layer EOS string is invalid.
+    """
+    for layer, eos in layer_eos_config.items():
+        if eos in VALID_TABULATED_EOS:
+            continue
+        if eos.startswith('Analytic:'):
+            material_key = eos.split(':', 1)[1]
+            if material_key not in VALID_MATERIAL_KEYS:
+                raise ValueError(
+                    f"Invalid analytic material '{material_key}' for layer '{layer}'. "
+                    f'Valid keys: {sorted(VALID_MATERIAL_KEYS)}'
+                )
+            continue
+        raise ValueError(
+            f"Invalid EOS '{eos}' for layer '{layer}'. "
+            f'Valid tabulated: {sorted(VALID_TABULATED_EOS)}. '
+            f'Valid analytic: Analytic:<material> with {sorted(VALID_MATERIAL_KEYS)}.'
+        )
 
 
 def choose_config_file(temp_config_path=None):
@@ -79,16 +183,21 @@ def choose_config_file(temp_config_path=None):
 
 
 def load_zalmoxis_config(temp_config_path=None):
-    """
-    Loads and returns configuration parameters for the Zalmoxis model.
-    Returns: Dictionary containing all relevant configuration parameters.
-    """
-    config = choose_config_file(temp_config_path)  # Choose the configuration file
+    """Load and return configuration parameters for the Zalmoxis model.
 
-    # Extract and return all relevant configuration parameters
+    Returns
+    -------
+    dict
+        All relevant configuration parameters.
+    """
+    config = choose_config_file(temp_config_path)
+
+    # Parse per-layer EOS config (supports both new and legacy formats)
+    layer_eos_config = parse_eos_config(config['EOS'])
+    validate_layer_eos(layer_eos_config)
+
     return {
-        'planet_mass': config['InputParameter']['planet_mass']
-        * earth_mass,  # Convert Earth masses to kg
+        'planet_mass': config['InputParameter']['planet_mass'] * earth_mass,
         'core_mass_fraction': config['AssumptionsAndInitialGuesses']['core_mass_fraction'],
         'mantle_mass_fraction': config['AssumptionsAndInitialGuesses']['mantle_mass_fraction'],
         'weight_iron_fraction': config['AssumptionsAndInitialGuesses']['weight_iron_fraction'],
@@ -96,7 +205,7 @@ def load_zalmoxis_config(temp_config_path=None):
         'surface_temperature': config['AssumptionsAndInitialGuesses']['surface_temperature'],
         'center_temperature': config['AssumptionsAndInitialGuesses']['center_temperature'],
         'temp_profile_file': config['AssumptionsAndInitialGuesses']['temperature_profile_file'],
-        'EOS_CHOICE': config['EOS']['choice'],
+        'layer_eos_config': layer_eos_config,
         'num_layers': config['Calculations']['num_layers'],
         'max_iterations_outer': config['IterativeProcess']['max_iterations_outer'],
         'tolerance_outer': config['IterativeProcess']['tolerance_outer'],
@@ -117,16 +226,16 @@ def load_zalmoxis_config(temp_config_path=None):
         'plotting_enabled': config['Output']['plots_enabled'],
         'verbose': config['Output']['verbose'],
         'iteration_profiles_enabled': config['Output']['iteration_profiles_enabled'],
-        'analytic_core_material': config['EOS'].get('core_material', ''),
-        'analytic_mantle_material': config['EOS'].get('mantle_material', ''),
-        'analytic_water_layer_material': config['EOS'].get('water_layer_material', ''),
     }
 
 
 def load_material_dictionaries():
-    """
-    Loads and returns the material properties dictionaries for the Zalmoxis model.
-    Returns: A tuple containing the material properties dictionaries for iron/silicate planets, water planets, and temperature-dependent iron/silicate planets.
+    """Load and return the material properties dictionaries.
+
+    Returns
+    -------
+    tuple
+        (iron_silicate, iron_Tdep_silicate, water) material property dicts.
     """
     material_dictionaries = (
         material_properties_iron_silicate_planets,
@@ -136,36 +245,55 @@ def load_material_dictionaries():
     return material_dictionaries
 
 
-def load_solidus_liquidus_functions(EOS_CHOICE):
+def load_solidus_liquidus_functions(layer_eos_config):
+    """Load solidus and liquidus functions if any layer uses WolfBower2018:MgSiO3.
+
+    Parameters
+    ----------
+    layer_eos_config : dict
+        Per-layer EOS config.
+
+    Returns
+    -------
+    tuple or None
+        (solidus_func, liquidus_func) if Tdep EOS is used, else None.
     """
-    Loads and returns the solidus and liquidus functions for temperature-dependent silicate mantle EOS for the Zalmoxis model.
-    Returns: A tuple containing the solidus and liquidus functions.
-    """
-    if EOS_CHOICE == 'Tabulated:iron/Tdep_silicate':
+    uses_Tdep = any(v == 'WolfBower2018:MgSiO3' for v in layer_eos_config.values() if v)
+    if uses_Tdep:
         solidus_func, liquidus_func = get_solidus_liquidus_functions()
-        melting_curves_functions = (solidus_func, liquidus_func)
-        return melting_curves_functions
+        return (solidus_func, liquidus_func)
+    return None
 
 
 def main(config_params, material_dictionaries, melting_curves_functions, input_dir):
+    """Run the exoplanet internal structure model.
+
+    Iteratively adjusts the internal structure based on configuration parameters,
+    calculating the planet's radius, core-mantle boundary, densities, pressures,
+    and other properties.
+
+    Parameters
+    ----------
+    config_params : dict
+        Configuration parameters for the model.
+    material_dictionaries : tuple
+        Material properties dictionaries.
+    melting_curves_functions : tuple or None
+        (solidus_func, liquidus_func) for Tdep EOS, or None.
+    input_dir : str
+        Directory containing input files.
+
+    Returns
+    -------
+    dict
+        Model results including radii, density, gravity, pressure, temperature,
+        mass enclosed, convergence status, and timing.
     """
-    Runs the exoplanet internal structure model.
-
-    Iteratively adjusts the internal structure of an exoplanet based on the provided configuration parameters,
-    calculating the planet's radius, core-mantle boundary, densities, pressures, and other properties.
-
-    Parameters:
-        config_params (dict): Dictionary containing configuration parameters for the model.
-        material_dictionaries (tuple): Tuple containing the material properties dictionaries for iron/silicate planets, water planets, and temperature-dependent iron/silicate planets.
-        melting_curves_functions (tuple): Tuple containing the solidus and liquidus functions for temperature-dependent silicate mantle EOS.
-
-    Returns: Dictionary containing the calculated radii, density, gravity, pressure, temperature, mass enclosed, core-mantle boundary mass, core+mantle mass, total computation time, and convergence status of the model.
-    """
-    # Initialize convergence flags for the model
-    converged = False  # Overall convergence flag for the model, assume not converged until proven otherwise
-    converged_pressure = False  # Assume pressure not converged until proven otherwise
-    converged_density = False  # Assume density not converged until proven otherwise
-    converged_mass = False  # Assume mass not converged until proven otherwise
+    # Initialize convergence flags
+    converged = False
+    converged_pressure = False
+    converged_density = False
+    converged_mass = False
 
     # Unpack configuration parameters
     planet_mass = config_params['planet_mass']
@@ -176,7 +304,7 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
     surface_temperature = config_params['surface_temperature']
     center_temperature = config_params['center_temperature']
     temp_profile_file = config_params['temp_profile_file']
-    EOS_CHOICE = config_params['EOS_CHOICE']
+    layer_eos_config = config_params['layer_eos_config']
     num_layers = config_params['num_layers']
     max_iterations_outer = config_params['max_iterations_outer']
     tolerance_outer = config_params['tolerance_outer']
@@ -194,68 +322,42 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
     verbose = config_params['verbose']
     iteration_profiles_enabled = config_params['iteration_profiles_enabled']
 
-    # Setup initial guesses for the planet radius and core-mantle boundary mass
+    # Check if any layer uses T-dependent EOS
+    uses_Tdep = any(v == 'WolfBower2018:MgSiO3' for v in layer_eos_config.values() if v)
+
+    # Setup initial guesses
     radius_guess = (
         1000 * (7030 - 1840 * weight_iron_fraction) * (planet_mass / earth_mass) ** 0.282
-    )  # Initial guess for the interior planet radius [m] based on the scaling law in Noack et al. 2020
-    cmb_mass = 0  # Initial guess for the core-mantle boundary mass [kg]
-    core_mantle_mass = 0  # Initial guess for the core+mantle mass [kg]
+    )
+    cmb_mass = 0
+    core_mantle_mass = 0
 
     logger.info(
-        f"Starting structure model for a {planet_mass / earth_mass} Earth masses planet with EOS '{EOS_CHOICE}' and temperature mode '{temperature_mode}'."
+        f'Starting structure model for a {planet_mass / earth_mass} Earth masses planet '
+        f"with EOS config {layer_eos_config} and temperature mode '{temperature_mode}'."
     )
 
-    # Time the entire process
     start_time = time.time()
 
-    # Initialize empty cache for interpolation functions for density calculations
+    # Initialize empty cache for interpolation functions
     interpolation_cache = {}
 
-    # Load solidus and liquidus functions if using temperature-dependent silicate mantle EOS
-    if EOS_CHOICE == 'Tabulated:iron/Tdep_silicate':
+    # Load solidus and liquidus functions if using Tdep EOS
+    if uses_Tdep:
         solidus_func, liquidus_func = melting_curves_functions
     else:
         solidus_func, liquidus_func = None, None
 
-    # Build analytic materials dict for Analytic:Seager2007
-    analytic_materials = None
-    if EOS_CHOICE == 'Analytic:Seager2007':
-        core_mat = config_params.get('analytic_core_material', '')
-        mantle_mat = config_params.get('analytic_mantle_material', '')
-        water_mat = config_params.get('analytic_water_layer_material', '')
-
-        if not core_mat or not mantle_mat:
-            raise ValueError(
-                "Analytic:Seager2007 requires 'core_material' and 'mantle_material' in [EOS] config."
-            )
-
-        for key_name, key_val in [('core_material', core_mat), ('mantle_material', mantle_mat)]:
-            if key_val not in VALID_MATERIAL_KEYS:
-                raise ValueError(
-                    f"Invalid {key_name}='{key_val}'. Valid keys: {sorted(VALID_MATERIAL_KEYS)}"
-                )
-
-        analytic_materials = {'core': core_mat, 'mantle': mantle_mat}
-
-        if water_mat:
-            if water_mat not in VALID_MATERIAL_KEYS:
-                raise ValueError(
-                    f"Invalid water_layer_material='{water_mat}'. Valid keys: {sorted(VALID_MATERIAL_KEYS)}"
-                )
-            analytic_materials['water_ice_layer'] = water_mat
-
     # Solve the interior structure
-    for outer_iter in range(max_iterations_outer):  # Outer loop for radius and mass convergence
-        # Setup initial guess for the radial grid based on the radius guess
+    for outer_iter in range(max_iterations_outer):
         radii = np.linspace(0, radius_guess, num_layers)
 
-        # Initialize arrays for mass, gravity, density, pressure, and temperature grids
         density = np.zeros(num_layers)
         mass_enclosed = np.zeros(num_layers)
         gravity = np.zeros(num_layers)
         pressure = np.zeros(num_layers)
 
-        if EOS_CHOICE == 'Tabulated:iron/Tdep_silicate':
+        if uses_Tdep:
             temperature_function = calculate_temperature_profile(
                 radii,
                 temperature_mode,
@@ -266,24 +368,18 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
             )
             temperatures = temperature_function(radii)
         else:
-            temperatures = (
-                np.ones(num_layers) * 300
-            )  # Default temperature of 300 K for Seager et al. (2007) EOS
+            temperatures = np.ones(num_layers) * 300
 
-        # Setup initial guess for the core-mantle boundary mass
         cmb_mass = core_mass_fraction * planet_mass
-
-        # Setup initial guess for the core+mantle mass
         core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * planet_mass
 
-        # Setup initial guess for the pressure at the center of the planet (needed for solving the ODEs)
         pressure[0] = earth_center_pressure
 
-        for inner_iter in range(max_iterations_inner):  # Inner loop for density adjustment
-            old_density = density.copy()  # Store the old density for convergence check
+        for inner_iter in range(max_iterations_inner):
+            old_density = density.copy()
 
-            # Setup initial pressure guess at the center of the planet based on empirical scaling law derived from the hydrostatic equilibrium equation
-            if EOS_CHOICE == 'Tabulated:iron/Tdep_silicate':
+            # Setup initial pressure guess
+            if uses_Tdep:
                 pressure_guess = np.minimum(
                     (
                         earth_center_pressure
@@ -299,16 +395,13 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                     * (radius_guess / earth_radius) ** (-4)
                 )
 
-            for pressure_iter in range(
-                max_iterations_pressure
-            ):  # Innermost loop for pressure adjustment
-                # Setup initial conditions for the mass, gravity, and pressure at the center of the planet
+            for pressure_iter in range(max_iterations_pressure):
                 y0 = [0, 0, pressure_guess]
 
-                # Solve the coupled ODEs for the planetary structure model
-                if EOS_CHOICE == 'Tabulated:iron/Tdep_silicate':
+                # Solve the coupled ODEs
+                if uses_Tdep:
                     mass_enclosed, gravity, pressure = solve_structure(
-                        EOS_CHOICE,
+                        layer_eos_config,
                         cmb_mass,
                         core_mantle_mass,
                         radii,
@@ -325,7 +418,7 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                     )
                 else:
                     mass_enclosed, gravity, pressure = solve_structure(
-                        EOS_CHOICE,
+                        layer_eos_config,
                         cmb_mass,
                         core_mantle_mass,
                         radii,
@@ -338,7 +431,6 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                         y0,
                         solidus_func,
                         liquidus_func,
-                        analytic_materials=analytic_materials,
                     )
 
                 if iteration_profiles_enabled:
@@ -346,63 +438,52 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                         outer_iter, inner_iter, pressure_iter, radii, pressure, density
                     )
 
-                # Extract the calculated surface pressure from the last element of the pressure array
                 surface_pressure = pressure[-1]
-
-                # Calculate the pressure difference between the calculated surface pressure and the target surface pressure
                 pressure_diff = surface_pressure - target_surface_pressure
 
-                # Check for convergence of the surface pressure and overall pressure positivity
                 if np.abs(pressure_diff) < pressure_tolerance and np.all(pressure > 0):
                     verbose and logger.info(
-                        f'Surface pressure converged after {pressure_iter + 1} iterations and all pressures are positive.'
+                        f'Surface pressure converged after {pressure_iter + 1} iterations '
+                        'and all pressures are positive.'
                     )
-                    converged_pressure = (
-                        True  # Set convergence flag for pressure to True if converged
-                    )
-                    break  # Exit the pressure adjustment loop
+                    converged_pressure = True
+                    break
 
-                # Update the pressure guess at the center of the planet based on the pressure difference at the surface using an adjustment factor
                 pressure_guess -= pressure_diff * pressure_adjustment_factor
 
-                # Check if maximum iterations for pressure adjustment are reached
                 if pressure_iter == max_iterations_pressure - 1:
                     verbose and logger.warning(
-                        f'Maximum pressure iterations ({max_iterations_pressure}) reached. Surface pressure may not be fully converged.'
+                        f'Maximum pressure iterations ({max_iterations_pressure}) reached. '
+                        'Surface pressure may not be fully converged.'
                     )
 
-            # Update density grid based on the mass enclosed within a certain mass fraction
+            # Update density grid
             for i in range(num_layers):
-                material = get_layer_material(
+                layer_eos = get_layer_eos(
                     mass_enclosed[i],
                     cmb_mass,
                     core_mantle_mass,
-                    EOS_CHOICE,
-                    analytic_materials,
+                    layer_eos_config,
                 )
 
-                # Calculate the new density using the equation of state
                 new_density = calculate_density(
                     pressure[i],
                     material_dictionaries,
-                    material,
-                    EOS_CHOICE,
+                    layer_eos,
                     temperatures[i],
                     solidus_func,
                     liquidus_func,
                 )
 
-                # Handle potential errors in density calculation
                 if new_density is None:
                     verbose and logger.warning(
                         f'Density calculation failed at radius {radii[i]}. Using previous density.'
                     )
                     new_density = old_density[i]
 
-                # Update the density grid with a weighted average of the new and old density
                 density[i] = 0.5 * (new_density + old_density[i])
 
-            # Check for convergence of density using relative difference between old and new density
+            # Check density convergence
             relative_diff_inner = np.max(
                 np.abs((density - old_density) / (old_density + 1e-20))
             )
@@ -410,57 +491,42 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                 verbose and logger.info(
                     f'Inner loop converged after {inner_iter + 1} iterations.'
                 )
-                converged_density = (
-                    True  # Set convergence flag for density to True if converged
-                )
-                break  # Exit the inner loop
+                converged_density = True
+                break
 
-            # Check if maximum iterations for inner loop are reached
             if inner_iter == max_iterations_inner - 1:
                 verbose and logger.warning(
-                    f'Maximum inner iterations ({max_iterations_inner}) reached. Density may not be fully converged.'
+                    f'Maximum inner iterations ({max_iterations_inner}) reached. '
+                    'Density may not be fully converged.'
                 )
 
-        # Extract the calculated total interior mass of the planet from the last element of the mass array
+        # Update radius guess
         calculated_mass = mass_enclosed[-1]
-
-        # Update the total interior radius by scaling the initial guess based on the calculated mass
         radius_guess = radius_guess * (planet_mass / calculated_mass) ** (1 / 3)
-
-        # Update the core-mantle boundary mass based on the core mass fraction and calculated total interior mass of the planet
         cmb_mass = core_mass_fraction * calculated_mass
-
-        # Update the inner mantle mass based on the inner mantle mass fraction and calculated total interior mass of the planet
         core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * calculated_mass
 
-        # Calculate relative differences of the calculated total interior mass
         relative_diff_outer_mass = np.abs((calculated_mass - planet_mass) / planet_mass)
 
-        # Check for convergence of the calculated total interior mass
         if relative_diff_outer_mass < tolerance_outer:
             logger.info(f'Outer loop (total mass) converged after {outer_iter + 1} iterations.')
-            converged_mass = True  # Set convergence flag to True if converged
-            break  # Exit the outer loop
+            converged_mass = True
+            break
 
-        # Check if maximum iterations for outer loop are reached
         if outer_iter == max_iterations_outer - 1:
             verbose and logger.warning(
-                f'Maximum outer iterations ({max_iterations_outer}) reached. Total mass may not be fully converged.'
+                f'Maximum outer iterations ({max_iterations_outer}) reached. '
+                'Total mass may not be fully converged.'
             )
 
-    # Check for overall convergence of the model
     if converged_mass and converged_density and converged_pressure:
         converged = True
 
-    # End timing the entire process
     end_time = time.time()
-
-    # Calculate the total time taken for the entire process
     total_time = end_time - start_time
 
-    # Save the calculated values for further use in a dictionary
     model_results = {
-        'eos_choice': EOS_CHOICE,
+        'layer_eos_config': layer_eos_config,
         'radii': radii,
         'density': density,
         'gravity': gravity,
@@ -479,27 +545,30 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
 
 
 def post_processing(config_params, id_mass=None, output_file=None):
+    """Post-process model results by saving output data and plotting.
+
+    Parameters
+    ----------
+    config_params : dict
+        Configuration parameters for the model.
+    id_mass : str or None
+        Identifier for the planet mass, used in output file naming.
+    output_file : str or None
+        Path to the output file for calculated mass and radius.
     """
-    Post-processes the results of the Zalmoxis model by saving output data to a file and plotting results.
-    Parameters:
-        config_params (dict): Dictionary containing configuration parameters for the model.
-        id_mass (str, optional): Identifier for the mass of the planet, used in output file naming.
-        output_file (str, optional): Path to the output file where calculated mass and radius will be saved.
-    """
-    # Unpack configuration parameters related to output
     data_output_enabled = config_params['data_output_enabled']
     plotting_enabled = config_params['plotting_enabled']
 
-    # Load the model output data
+    layer_eos_config = config_params['layer_eos_config']
+
     model_results = main(
         config_params,
         material_dictionaries=load_material_dictionaries(),
-        melting_curves_functions=load_solidus_liquidus_functions(config_params['EOS_CHOICE']),
+        melting_curves_functions=load_solidus_liquidus_functions(layer_eos_config),
         input_dir=os.path.join(ZALMOXIS_ROOT, 'input'),
     )
 
-    # Extract the results from the model output
-    eos_choice = model_results['eos_choice']
+    # Extract results
     radii = model_results['radii']
     density = model_results['density']
     gravity = model_results['gravity']
@@ -514,23 +583,20 @@ def post_processing(config_params, id_mass=None, output_file=None):
     converged_density = model_results['converged_density']
     converged_mass = model_results['converged_mass']
 
-    # Extract the index of the core-mantle boundary mass in the mass array
     cmb_index = np.argmax(mass_enclosed >= cmb_mass)
 
-    # Calculate the average density of the planet using the calculated mass and radius
     average_density = mass_enclosed[-1] / (4 / 3 * math.pi * radii[-1] ** 3)
 
-    # If using temperature-dependent silicate mantle, get the mantle phases based on the pressure and temperature profiles
-    if eos_choice == 'Tabulated:iron/Tdep_silicate':
-        # Extract mantle properties beyond the core-mantle boundary
+    # Check if mantle uses Tdep EOS for phase detection
+    uses_Tdep_mantle = layer_eos_config.get('mantle') == 'WolfBower2018:MgSiO3'
+
+    if uses_Tdep_mantle:
         mantle_pressures = pressure[cmb_index:]
         mantle_temperatures = temperature[cmb_index:]
         mantle_radii = radii[cmb_index:]
 
-        # Load solidus and liquidus functions
-        solidus_func, liquidus_func = load_solidus_liquidus_functions(eos_choice)
+        solidus_func, liquidus_func = load_solidus_liquidus_functions(layer_eos_config)
 
-        # Get the mantle phase at each radial point
         mantle_phases = get_Tdep_material(
             mantle_pressures, mantle_temperatures, solidus_func, liquidus_func
         )
@@ -538,10 +604,12 @@ def post_processing(config_params, id_mass=None, output_file=None):
     logger.info('Exoplanet Internal Structure Model Results:')
     logger.info('----------------------------------------------------------------------')
     logger.info(
-        f'Calculated Planet Mass: {mass_enclosed[-1]:.2e} kg or {mass_enclosed[-1] / earth_mass:.2f} Earth masses'
+        f'Calculated Planet Mass: {mass_enclosed[-1]:.2e} kg or '
+        f'{mass_enclosed[-1] / earth_mass:.2f} Earth masses'
     )
     logger.info(
-        f'Calculated Planet Radius: {radii[-1]:.2e} m or {radii[-1] / earth_radius:.2f} Earth radii'
+        f'Calculated Planet Radius: {radii[-1]:.2e} m or '
+        f'{radii[-1] / earth_radius:.2f} Earth radii'
     )
     logger.info(f'Core Radius: {radii[cmb_index]:.2e} m')
     logger.info(f'Mantle Density (at CMB): {density[cmb_index]:.2f} kg/m^3')
@@ -551,24 +619,28 @@ def post_processing(config_params, id_mass=None, output_file=None):
     logger.info(f'Average Density: {average_density:.2f} kg/m^3')
     logger.info(f'CMB Mass Fraction: {mass_enclosed[cmb_index] / mass_enclosed[-1]:.3f}')
     logger.info(
-        f'Core+Mantle Mass Fraction: {(core_mantle_mass - mass_enclosed[cmb_index]) / mass_enclosed[-1]:.3f}'
+        f'Core+Mantle Mass Fraction: '
+        f'{(core_mantle_mass - mass_enclosed[cmb_index]) / mass_enclosed[-1]:.3f}'
     )
     logger.info(f'Calculated Core Radius Fraction: {radii[cmb_index] / radii[-1]:.2f}')
     logger.info(
-        f'Calculated Core+Mantle Radius Fraction: {(radii[np.argmax(mass_enclosed >= core_mantle_mass)] / radii[-1]):.2f}'
+        f'Calculated Core+Mantle Radius Fraction: '
+        f'{(radii[np.argmax(mass_enclosed >= core_mantle_mass)] / radii[-1]):.2f}'
     )
     logger.info(f'Total Computation Time: {total_time:.2f} seconds')
     logger.info(
-        f'Overall Convergence Status: {converged} with Pressure: {converged_pressure}, Density: {converged_density}, Mass: {converged_mass}'
+        f'Overall Convergence Status: {converged} with Pressure: {converged_pressure}, '
+        f'Density: {converged_density}, Mass: {converged_mass}'
     )
 
-    # Save output data to a file
     if data_output_enabled:
-        # Combine and save plotted data to a single output file
         output_data = np.column_stack(
             (radii, density, gravity, pressure, temperature, mass_enclosed)
         )
-        header = 'Radius (m)\tDensity (kg/m^3)\tGravity (m/s^2)\tPressure (Pa)\tTemperature (K)\tMass Enclosed (kg)'
+        header = (
+            'Radius (m)\tDensity (kg/m^3)\tGravity (m/s^2)\t'
+            'Pressure (Pa)\tTemperature (K)\tMass Enclosed (kg)'
+        )
         if id_mass is None:
             np.savetxt(
                 os.path.join(ZALMOXIS_ROOT, 'output_files', 'planet_profile.txt'),
@@ -581,7 +653,6 @@ def post_processing(config_params, id_mass=None, output_file=None):
                 output_data,
                 header=header,
             )
-        # Append calculated mass and radius of the planet to a file in dedicated columns
         if output_file is None:
             output_file = os.path.join(
                 ZALMOXIS_ROOT, 'output_files', 'calculated_planet_mass_radius.txt'
@@ -593,9 +664,7 @@ def post_processing(config_params, id_mass=None, output_file=None):
         with open(output_file, 'a') as file:
             file.write(f'{mass_enclosed[-1]}\t{radii[-1]}\n')
 
-    # Plotting results
     if plotting_enabled:
-        # Plot profiles for a single planet
         plot_planet_profile_single(
             radii,
             density,
@@ -607,10 +676,9 @@ def post_processing(config_params, id_mass=None, output_file=None):
             mass_enclosed[-1] / (4 / 3 * math.pi * radii[-1] ** 3),
             mass_enclosed,
             id_mass,
-        )  # Plot planet profile for a single planet
+        )
 
-        # If using temperature-dependent silicate mantle, plot the P-T profile with mantle phases
-        if eos_choice == 'Tabulated:iron/Tdep_silicate':
+        if uses_Tdep_mantle:
             plot_PT_with_phases(
                 mantle_pressures,
                 mantle_temperatures,

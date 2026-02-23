@@ -13,12 +13,8 @@ from .eos_functions import calculate_density
 logger = logging.getLogger(__name__)
 
 
-def get_layer_material(mass, cmb_mass, core_mantle_mass, eos_choice, analytic_materials=None):
-    """
-    Determine the material/layer label for a given enclosed mass.
-
-    For tabulated EOS choices this returns a layer label (e.g., "core", "mantle").
-    For the analytic EOS this returns the configured material key (e.g., "iron", "MgSiO3").
+def get_layer_eos(mass, cmb_mass, core_mantle_mass, layer_eos_config):
+    """Determine the per-layer EOS string based on enclosed mass (purely geometric).
 
     Parameters
     ----------
@@ -28,47 +24,21 @@ def get_layer_material(mass, cmb_mass, core_mantle_mass, eos_choice, analytic_ma
         Core-mantle boundary mass [kg].
     core_mantle_mass : float
         Core + mantle mass [kg].
-    eos_choice : str
-        EOS identifier string.
-    analytic_materials : dict or None
-        Per-layer material keys for Analytic:Seager2007.
+    layer_eos_config : dict
+        Per-layer EOS strings, e.g.
+        {"core": "Seager2007:iron", "mantle": "WolfBower2018:MgSiO3"}.
 
     Returns
     -------
     str
-        Material or layer identifier.
+        Per-layer EOS identifier for this shell.
     """
-    if eos_choice == 'Tabulated:iron/silicate':
-        return 'core' if mass < cmb_mass else 'mantle'
-
-    elif eos_choice == 'Tabulated:iron/Tdep_silicate':
-        # Layer label only; phase assignment is handled inside get_Tdep_density
-        return 'core' if mass < cmb_mass else 'mantle'
-
-    elif eos_choice == 'Tabulated:water':
-        if mass < cmb_mass:
-            return 'core'
-        elif mass < core_mantle_mass:
-            return 'mantle'
-        else:
-            return 'water_ice_layer'
-
-    elif eos_choice == 'Analytic:Seager2007':
-        if mass < cmb_mass:
-            return analytic_materials['core']
-        elif core_mantle_mass > 0 and mass < core_mantle_mass:
-            return analytic_materials['mantle']
-        elif 'water_ice_layer' in analytic_materials:
-            return analytic_materials['water_ice_layer']
-        else:
-            return analytic_materials['mantle']
-
+    if mass < cmb_mass:
+        return layer_eos_config['core']
+    elif 'ice_layer' in layer_eos_config and mass >= core_mantle_mass:
+        return layer_eos_config['ice_layer']
     else:
-        raise ValueError(
-            f"Unknown eos_choice '{eos_choice}'. "
-            "Valid options: 'Tabulated:iron/silicate', 'Tabulated:iron/Tdep_silicate', "
-            "'Tabulated:water', 'Analytic:Seager2007'."
-        )
+        return layer_eos_config['mantle']
 
 
 # Define the coupled ODEs for the structure model
@@ -77,42 +47,48 @@ def coupled_odes(
     y,
     cmb_mass,
     core_mantle_mass,
-    EOS_CHOICE,
+    layer_eos_config,
     interpolation_cache,
     material_dictionaries,
     temperature,
     solidus_func,
     liquidus_func,
-    analytic_materials=None,
 ):
-    """
-    Calculate the derivatives of mass, gravity, and pressure with respect to radius for a planetary model.
+    """Calculate derivatives of mass, gravity, and pressure w.r.t. radius.
 
-    Parameters:
-        radius (float): The current radius at which the ODEs are evaluated.
-        y (list or array): The state vector containing mass, gravity, and pressure at the current radius.
-        cmb_mass (float): The core-mantle boundary mass.
-        core_mantle_mass (float): The mass of the core+mantle.
-        EOS_CHOICE (str): The equation of state choice for the material.
-        interpolation_cache (dict): A cache for interpolation to speed up calculations.
-        material_dictionaries (dict): A tuple containing the material properties dictionaries.
-        temperature (float): The temperature at the current radius.
-        solidus_func: Interpolation function for the solidus melting curve
-        liquidus_func: Interpolation function for the liquidus melting curve
-        analytic_materials (dict or None): Per-layer material keys for Analytic:Seager2007 EOS.
-            Keys: "core", "mantle", and optionally "water_ice_layer".
-            Values: material key strings (e.g., "iron", "MgSiO3").
+    Parameters
+    ----------
+    radius : float
+        Current radius [m].
+    y : array-like
+        State vector [mass, gravity, pressure].
+    cmb_mass : float
+        Core-mantle boundary mass [kg].
+    core_mantle_mass : float
+        Core + mantle mass [kg].
+    layer_eos_config : dict
+        Per-layer EOS configuration.
+    interpolation_cache : dict
+        Cache for interpolation functions.
+    material_dictionaries : tuple
+        Material property dictionaries.
+    temperature : float
+        Temperature at current radius [K].
+    solidus_func : callable or None
+        Solidus melting curve interpolation function.
+    liquidus_func : callable or None
+        Liquidus melting curve interpolation function.
 
-    Returns:
-        list: The derivatives of mass, gravity, and pressure with respect to radius.
+    Returns
+    -------
+    list
+        Derivatives [dM/dr, dg/dr, dP/dr].
     """
     # Unpack the state vector
     mass, gravity, pressure = y
 
-    # Determine material/layer for the current enclosed mass
-    material = get_layer_material(
-        mass, cmb_mass, core_mantle_mass, EOS_CHOICE, analytic_materials
-    )
+    # Determine per-layer EOS for the current enclosed mass
+    layer_eos = get_layer_eos(mass, cmb_mass, core_mantle_mass, layer_eos_config)
 
     # Check for nonphysical pressure values
     if pressure <= 0 or np.isnan(pressure):
@@ -122,8 +98,7 @@ def coupled_odes(
     current_density = calculate_density(
         pressure,
         material_dictionaries,
-        material,
-        EOS_CHOICE,
+        layer_eos,
         temperature,
         solidus_func,
         liquidus_func,
@@ -148,7 +123,7 @@ def coupled_odes(
 
 
 def solve_structure(
-    EOS_CHOICE,
+    layer_eos_config,
     cmb_mass,
     core_mantle_mass,
     radii,
@@ -162,32 +137,54 @@ def solve_structure(
     solidus_func,
     liquidus_func,
     temperature_function=None,
-    analytic_materials=None,
 ):
-    """
-    Solve the coupled ODEs for the planetary structure model using scipy's solve_ivp. Handles special case for temperature-dependent EOS where the radial grid is split into two parts for better handling of large step sizes towards the surface.
-    Parameters:
-        EOS_CHOICE (str): Specifies the equation of state (EOS) model to use for the interior structure calculation.
-        cmb_mass (float): Mass at the core–mantle boundary [kg].
-        core_mantle_mass (float): Core+mantle mass [kg].
-        radii (numpy.ndarray): 1D array of radial grid points [m] across which the structure equations are solved.
-        adaptive_radial_fraction (float): Fraction (0–1) of the radial domain defining where the solver transitions from adaptive integration to fixed-step integration when using a temperature-dependent tabulated EOS.
-        relative_tolerance (float): Relative tolerance for solve_ivp
-        absolute_tolerance (float): Absolute tolerance for solve_ivp
-        maximum_step (float): Maximum integration step size for solve_ivp (m)
-        material_dictionaries (dict): A tuple containing the material properties dictionaries for iron/silicate planets, water planets, and temperature-dependent iron/silicate planets.
-        interpolation_cache (dict): Cache used to store interpolation functions.
-        temperature_function (callable): Function returning temperature [K] as a function of radius [m].
-        y0 (list or numpy.ndarray): Initial conditions for the mass, gravity, and pressure at the center of the planet.
-        solidus_func: Interpolation function for the solidus melting curve
-        liquidus_func: Interpolation function for the liquidus melting curve
-        analytic_materials (dict or None): Per-layer material keys for Analytic:Seager2007 EOS.
-    Returns:
-        tuple: A tuple containing three numpy arrays: mass_enclosed (kg), gravity (m/s²), and pressure (Pa) at each radial grid point.
-    """
+    """Solve the coupled ODEs for the planetary structure model.
 
-    if EOS_CHOICE == 'Tabulated:iron/Tdep_silicate':
-        # Split the radial grid into two parts for better handling of large step sizes in solve_ivp
+    Handles the special case for temperature-dependent EOS where the radial
+    grid is split into two parts for better handling of large step sizes
+    towards the surface.
+
+    Parameters
+    ----------
+    layer_eos_config : dict
+        Per-layer EOS configuration, e.g.
+        {"core": "Seager2007:iron", "mantle": "WolfBower2018:MgSiO3"}.
+    cmb_mass : float
+        Mass at the core-mantle boundary [kg].
+    core_mantle_mass : float
+        Core + mantle mass [kg].
+    radii : numpy.ndarray
+        Radial grid points [m].
+    adaptive_radial_fraction : float
+        Fraction of radial domain for adaptive-to-fixed step transition.
+    relative_tolerance : float
+        Relative tolerance for solve_ivp.
+    absolute_tolerance : float
+        Absolute tolerance for solve_ivp.
+    maximum_step : float
+        Maximum integration step size [m].
+    material_dictionaries : tuple
+        Material property dictionaries.
+    interpolation_cache : dict
+        Cache for interpolation functions.
+    y0 : array-like
+        Initial conditions [mass, gravity, pressure] at center.
+    solidus_func : callable or None
+        Solidus melting curve interpolation function.
+    liquidus_func : callable or None
+        Liquidus melting curve interpolation function.
+    temperature_function : callable or None
+        Function returning temperature [K] as function of radius [m].
+
+    Returns
+    -------
+    tuple
+        (mass_enclosed, gravity, pressure) arrays at each radial grid point.
+    """
+    uses_Tdep = any(v == 'WolfBower2018:MgSiO3' for v in layer_eos_config.values() if v)
+
+    if uses_Tdep:
+        # Split the radial grid into two parts for better handling of large step sizes
         radial_split_index = int(adaptive_radial_fraction * len(radii))
 
         # Solve the ODEs in two parts, first part with default max_step (adaptive)
@@ -197,7 +194,7 @@ def solve_structure(
                 y,
                 cmb_mass,
                 core_mantle_mass,
-                EOS_CHOICE,
+                layer_eos_config,
                 interpolation_cache,
                 material_dictionaries,
                 temperature_function(r),
@@ -213,14 +210,14 @@ def solve_structure(
             dense_output=True,
         )
 
-        # Solve the ODEs in two parts, second part with user-defined max_step
+        # Second part with user-defined max_step
         sol2 = solve_ivp(
             lambda r, y: coupled_odes(
                 r,
                 y,
                 cmb_mass,
                 core_mantle_mass,
-                EOS_CHOICE,
+                layer_eos_config,
                 interpolation_cache,
                 material_dictionaries,
                 temperature_function(r),
@@ -237,26 +234,25 @@ def solve_structure(
             dense_output=True,
         )
 
-        # Extract mass, gravity, and pressure grids from the two solutions and concatenate them
+        # Concatenate the two solutions
         mass_enclosed = np.concatenate([sol1.y[0, :-1], sol2.y[0]])
         gravity = np.concatenate([sol1.y[1, :-1], sol2.y[1]])
         pressure = np.concatenate([sol1.y[2, :-1], sol2.y[2]])
     else:
-        # Solve the ODEs using solve_ivp
-        temperature = 300  # Fixed-temperature for EOS from Seager et al. 2007
+        # Single integration with fixed temperature (300 K for Seager+2007)
+        temperature = 300
         sol = solve_ivp(
             lambda r, y: coupled_odes(
                 r,
                 y,
                 cmb_mass,
                 core_mantle_mass,
-                EOS_CHOICE,
+                layer_eos_config,
                 interpolation_cache,
                 material_dictionaries,
                 temperature,
                 solidus_func,
                 liquidus_func,
-                analytic_materials,
             ),
             (radii[0], radii[-1]),
             y0,

@@ -13,24 +13,27 @@ if not ZALMOXIS_ROOT:
     raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
 
 
-def run_zalmoxis_rocky_water(
-    id_mass, config_type, cmf, immf, eos_override=None, analytic_materials=None
-):
-    """
-    Runs the Zalmoxis model for a given planet mass and configuration type (rocky or water).
-    Parameters:
-        id_mass (float): Mass of the planet in Earth masses.
-        config_type (str): Type of planet configuration ('rocky' or 'water').
-        cmf (float): Core mass fraction for water planets.
-        immf (float): Inner mantle mass fraction for water planets.
-        eos_override (str, optional): If set, overrides the EOS choice for this run.
-        analytic_materials (dict, optional): Per-layer material keys for Analytic:Seager2007.
-            If provided, sets the corresponding config parameters.
-    Returns:
-        output_file (str): Path to the output file containing mass and radius.
-        profile_output_file (str): Path to the output file containing the density profile.
-    Raises:
-        ValueError: If an unknown config_type is provided.
+def run_zalmoxis_rocky_water(id_mass, config_type, cmf, immf, layer_eos_override=None):
+    """Run the Zalmoxis model for a given planet mass and configuration type.
+
+    Parameters
+    ----------
+    id_mass : float
+        Mass of the planet in Earth masses.
+    config_type : str
+        Type of planet configuration ('rocky' or 'water').
+    cmf : float
+        Core mass fraction.
+    immf : float
+        Inner mantle mass fraction.
+    layer_eos_override : dict or None
+        If set, overrides the per-layer EOS config for this run.
+        E.g. {"core": "Analytic:iron", "mantle": "Analytic:MgSiO3"}.
+
+    Returns
+    -------
+    tuple
+        (output_file, profile_output_file) paths.
     """
     # Load default configuration
     default_config_path = os.path.join(ZALMOXIS_ROOT, 'input', 'default.toml')
@@ -43,26 +46,25 @@ def run_zalmoxis_rocky_water(
         config_params['core_mass_fraction'] = 0.325
         config_params['mantle_mass_fraction'] = 0
         config_params['weight_iron_fraction'] = 0.325
-        config_params['EOS_CHOICE'] = 'Tabulated:iron/silicate'
+        config_params['layer_eos_config'] = {
+            'core': 'Seager2007:iron',
+            'mantle': 'Seager2007:MgSiO3',
+        }
     elif config_type == 'water':
         config_params['core_mass_fraction'] = cmf
         config_params['mantle_mass_fraction'] = immf
         config_params['weight_iron_fraction'] = cmf
-        config_params['EOS_CHOICE'] = 'Tabulated:water'
+        config_params['layer_eos_config'] = {
+            'core': 'Seager2007:iron',
+            'mantle': 'Seager2007:MgSiO3',
+            'ice_layer': 'Seager2007:H2O',
+        }
     else:
         raise ValueError(f'Unknown config_type: {config_type}')
 
-    # Apply EOS override if specified
-    if eos_override:
-        config_params['EOS_CHOICE'] = eos_override
-
-    # Apply analytic material keys if specified
-    if analytic_materials:
-        config_params['analytic_core_material'] = analytic_materials.get('core', '')
-        config_params['analytic_mantle_material'] = analytic_materials.get('mantle', '')
-        config_params['analytic_water_layer_material'] = analytic_materials.get(
-            'water_ice_layer', ''
-        )
+    # Apply layer EOS override if specified
+    if layer_eos_override:
+        config_params['layer_eos_config'] = layer_eos_override
 
     # Create a temporary output file
     suffix = '_rocky.txt' if config_type == 'rocky' else '_water.txt'
@@ -73,11 +75,13 @@ def run_zalmoxis_rocky_water(
     if os.path.exists(output_file):
         os.remove(output_file)
 
+    layer_eos_config = config_params['layer_eos_config']
+
     # Run the main function and post-processing
     model_results = zalmoxis.main(
         config_params,
         material_dictionaries=zalmoxis.load_material_dictionaries(),
-        melting_curves_functions=load_solidus_liquidus_functions(config_params['EOS_CHOICE']),
+        melting_curves_functions=load_solidus_liquidus_functions(layer_eos_config),
         input_dir=os.path.join(ZALMOXIS_ROOT, 'input'),
     )
     zalmoxis.post_processing(config_params, id_mass, output_file=output_file)
@@ -95,7 +99,18 @@ def run_zalmoxis_rocky_water(
 
 
 def run_zalmoxis_TdepEOS(id_mass):
-    """ """
+    """Run Zalmoxis with the default Tdep EOS config for a given mass.
+
+    Parameters
+    ----------
+    id_mass : float
+        Mass of the planet in Earth masses.
+
+    Returns
+    -------
+    list
+        [(id_mass, converged)] status tuple.
+    """
     # Load default configuration
     default_config_path = os.path.join(ZALMOXIS_ROOT, 'input', 'default.toml')
     config_params = zalmoxis.load_zalmoxis_config(default_config_path)
@@ -111,11 +126,13 @@ def run_zalmoxis_TdepEOS(id_mass):
     if os.path.exists(output_file):
         os.remove(output_file)
 
+    layer_eos_config = config_params['layer_eos_config']
+
     # Unpack outputs directly from Zalmoxis
     model_results = zalmoxis.main(
         config_params,
         material_dictionaries=zalmoxis.load_material_dictionaries(),
-        melting_curves_functions=load_solidus_liquidus_functions(config_params['EOS_CHOICE']),
+        melting_curves_functions=load_solidus_liquidus_functions(layer_eos_config),
         input_dir=os.path.join(ZALMOXIS_ROOT, 'input'),
     )
     converged = model_results.get('converged', False)
@@ -140,17 +157,18 @@ def run_zalmoxis_TdepEOS(id_mass):
 
 
 def load_zeng_curve(filename):
+    """Load Zeng et al. (2019) mass-radius data from a specified file.
+
+    Parameters
+    ----------
+    filename : str
+        Name of the file containing Zeng et al. (2019) mass-radius data.
+
+    Returns
+    -------
+    tuple
+        (masses, radii) lists in Earth units.
     """
-    Load Zeng et al. (2019) mass-radius data from a specified file.
-    Parameters:
-        filename (str): Name of the file containing Zeng et al. (2019) mass-radius data.
-    Returns:
-        masses (list): List of planet masses in Earth masses.
-        radii (list): List of planet radii in Earth radii.
-    Raises:
-        FileNotFoundError: If the specified file does not exist.
-    """
-    # Load Zeng et al. (2019) mass-radius data from the specified file
     data_path = os.path.join(ZALMOXIS_ROOT, 'data', 'mass_radius_curves', filename)
 
     masses = []
@@ -166,16 +184,18 @@ def load_zeng_curve(filename):
 
 
 def load_model_output(output_file):
+    """Load mass and radius from the Zalmoxis model output file.
+
+    Parameters
+    ----------
+    output_file : str
+        Path to the output file.
+
+    Returns
+    -------
+    tuple
+        (mass_earth_masses, radius_earth_radii).
     """
-    Load the mass and radius from the Zalmoxis model output file.
-    Parameters:
-        output_file (str): Path to the output file containing mass and radius.
-    Returns:
-        tuple: A tuple containing the mass in Earth masses and radius in Earth radii.
-    Raises:
-        RuntimeError: If the output file does not contain valid data.
-    """
-    # Your output file should contain just one line: mass radius
     with open(output_file, 'r') as f:
         next(f)  # Skip the header line
         for line in f:
@@ -186,14 +206,17 @@ def load_model_output(output_file):
 
 
 def load_profile_output(profile_output_file):
-    """
-    Load the density profile from the Zalmoxis model output file.
-    Parameters:
-        profile_output_file (str): Path to the output file containing the density profile.
-    Returns:
-        tuple: A tuple containing two lists: radii in meters and densities in kg/m^3.
-    Raises:
-        RuntimeError: If the profile output file does not contain valid data.
+    """Load density profile from the Zalmoxis model output file.
+
+    Parameters
+    ----------
+    profile_output_file : str
+        Path to the profile output file.
+
+    Returns
+    -------
+    tuple
+        (radii_m, densities_kgm3) lists.
     """
     radii = []
     densities = []
@@ -218,17 +241,18 @@ def load_profile_output(profile_output_file):
 
 
 def load_Seager_data(filename):
+    """Load Seager et al. (2007) radius and density data from a specified file.
+
+    Parameters
+    ----------
+    filename : str
+        Name of the file containing Seager et al. (2007) data.
+
+    Returns
+    -------
+    dict
+        Dictionary keyed by planet mass, with 'radius' and 'density' lists.
     """
-    Load Seager et al. (2007) radius and density data from a specified file.
-    Parameters:
-        filename (str): Name of the file containing Seager et al. (2007) radius and density data.
-    Returns:
-        data_by_mass (dict): A dictionary where keys are planet masses and values are lists of radii and densities.
-    Raises:
-        FileNotFoundError: If the specified file does not exist.
-        ValueError: If the file format is incorrect or malformed.
-    """
-    # Load Seager et al. (2007) profiles: mass, radius, density per line (comma-separated)
     data_path = os.path.join(ZALMOXIS_ROOT, 'data', 'radial_profiles', filename)
 
     data_by_mass = {}
@@ -238,7 +262,7 @@ def load_Seager_data(filename):
                 continue
             parts = line.strip().split(',')
             if len(parts) != 3:
-                continue  # skip malformed lines
+                continue
             mass, radius, density = map(float, parts)
             if mass not in data_by_mass:
                 data_by_mass[mass] = {'radius': [], 'density': []}

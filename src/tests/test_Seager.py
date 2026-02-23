@@ -9,15 +9,21 @@ from scipy.interpolate import interp1d
 from tools.setup_tests import load_profile_output, load_Seager_data, run_zalmoxis_rocky_water
 
 # Read the environment variable for ZALMOXIS_ROOT
-ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
+ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
 if not ZALMOXIS_ROOT:
-    raise RuntimeError("ZALMOXIS_ROOT environment variable not set")
+    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
 
-@pytest.mark.parametrize("config_type,seager_file", [
-    ("rocky", "radiusdensitySeagerEarthbymass.txt"),
-    ("water", "radiusdensitySeagerwaterbymass.txt"),
-])
-@pytest.mark.parametrize("mass", [1, 5, 10, 50])  # 1, 5, 10, and 50 Earth masses (keep it simple for CI tests)
+
+@pytest.mark.parametrize(
+    'config_type,seager_file',
+    [
+        ('rocky', 'radiusdensitySeagerEarthbymass.txt'),
+        ('water', 'radiusdensitySeagerwaterbymass.txt'),
+    ],
+)
+@pytest.mark.parametrize(
+    'mass', [1, 5, 10, 50]
+)  # 1, 5, 10, and 50 Earth masses (keep it simple for CI tests)
 def test_density_profile(config_type, seager_file, mass):
     """
     Test the density profile for rocky and water planets using Zalmoxis model.
@@ -30,22 +36,26 @@ def test_density_profile(config_type, seager_file, mass):
 
     # Load Seager et al. (2007) radius and density data by mass and order them by radius
     data_by_mass = load_Seager_data(seager_file)
-    seager_radii = np.array(data_by_mass[mass]["radius"])
-    seager_densities = np.array(data_by_mass[mass]["density"])
+    seager_radii = np.array(data_by_mass[mass]['radius'])
+    seager_densities = np.array(data_by_mass[mass]['density'])
     sorted_indices = np.argsort(seager_radii)
     seager_radii = seager_radii[sorted_indices]
     seager_densities = seager_densities[sorted_indices]
 
     # Run the Zalmoxis model for the specified mass and configuration type
-    output_file, profile_output_file = run_zalmoxis_rocky_water(mass, config_type, cmf=0.065, immf=0.485)
+    output_file, profile_output_file = run_zalmoxis_rocky_water(
+        mass, config_type, cmf=0.065, immf=0.485
+    )
 
     # Load the model output for the density profile
     model_radii, model_densities = load_profile_output(profile_output_file)
-    model_radii = np.array(model_radii)/1e3  # Convert from meters to kilometers
+    model_radii = np.array(model_radii) / 1e3  # Convert from meters to kilometers
     model_densities = np.array(model_densities)
 
     # Interpolate Seager densities onto model radii
-    interp_func = interp1d(seager_radii, seager_densities, bounds_error=False, fill_value="extrapolate")
+    interp_func = interp1d(
+        seager_radii, seager_densities, bounds_error=False, fill_value='extrapolate'
+    )
     seager_density_interp = interp_func(model_radii)
 
     # Detect large jump in model densities (likely the core–mantle boundary)
@@ -56,8 +66,13 @@ def test_density_profile(config_type, seager_file, mass):
     # Mask out radius points near the jump
     mask = np.ones_like(model_densities, dtype=bool)
     for idx in jump_indices:
-        mask[max(0, idx-1):min(len(mask), idx+2)] = False  # mask a few points around the jump
+        mask[max(0, idx - 1) : min(len(mask), idx + 2)] = (
+            False  # mask a few points around the jump
+        )
 
     # Compare only the smooth parts
-    assert np.allclose(model_densities[mask], seager_density_interp[mask], rtol=0.24, atol=1000), \
-        f"Density profile for {config_type} config at {mass} M_earth deviates too much from Seager model (ignoring discontinuity)"
+    assert np.allclose(
+        model_densities[mask], seager_density_interp[mask], rtol=0.24, atol=1000
+    ), (
+        f'Density profile for {config_type} config at {mass} M_earth deviates too much from Seager model (ignoring discontinuity)'
+    )

@@ -28,7 +28,7 @@ def get_tabulated_eos(
     Parameters:
         pressure: Pressure at which to evaluate the EOS (in Pa)
         material_dictionary: Dictionary containing material properties and EOS file paths
-        material: Material type (e.g., "core", "mantle", "water_ice_layer", "melted_mantle", "solid_mantle")
+        material: Material type (e.g., "core", "mantle", "ice_layer", "melted_mantle", "solid_mantle")
         temperature: Temperature at which to evaluate the EOS (in K), if applicable
         interpolation_functions: Cache for interpolation functions to avoid redundant loading
     Returns:
@@ -260,58 +260,70 @@ def get_Tdep_material(pressure, temperature, solidus_func, liquidus_func):
 def calculate_density(
     pressure,
     material_dictionaries,
-    material,
-    eos_choice,
+    layer_eos,
     temperature,
     solidus_func,
     liquidus_func,
     interpolation_functions={},
 ):
-    """Calculates density with caching for tabulated EOS.
-    Parameters:
-        pressure: Pressure at which to evaluate the EOS (in Pa)
-        material_dictionaries: Tuple of material property dictionaries
-        material: Material type (e.g., "core", "mantle", "water_ice_layer", "melted_mantle", "solid_mantle" or a combination of "melted_mantle" and "solid_mantle")
-        eos_choice: Choice of EOS (e.g., "Tabulated:iron/silicate", "Tabulated:iron/Tdep_silicate", "Tabulated:water")
-        temperature: Temperature at which to evaluate the EOS (in K), if applicable
-        solidus_func: Interpolation function for the solidus melting curve
-        liquidus_func: Interpolation function for the liquidus melting curve
-        interpolation_functions: Cache for interpolation functions to avoid redundant loading
-    Returns:
-        density: Density corresponding to the given pressure (and temperature if applicable) in kg/m^3
-    """
+    """Calculate density for a single layer given its per-layer EOS string.
 
-    # Unpack material dictionaries
+    Parameters
+    ----------
+    pressure : float
+        Pressure at which to evaluate the EOS (in Pa).
+    material_dictionaries : tuple
+        Tuple of material property dictionaries
+        (iron_silicate, iron_Tdep_silicate, water).
+    layer_eos : str
+        Per-layer EOS identifier, e.g. "Seager2007:iron",
+        "WolfBower2018:MgSiO3", "Analytic:iron".
+    temperature : float
+        Temperature at which to evaluate the EOS (in K).
+    solidus_func : callable or None
+        Interpolation function for the solidus melting curve.
+    liquidus_func : callable or None
+        Interpolation function for the liquidus melting curve.
+    interpolation_functions : dict
+        Cache for interpolation functions to avoid redundant loading.
+
+    Returns
+    -------
+    float or None
+        Density in kg/m^3, or None on failure.
+    """
     (
-        material_properties_iron_silicate_planets,
-        material_properties_iron_Tdep_silicate_planets,
-        material_properties_water_planets,
+        mat_iron_sil,
+        mat_Tdep,
+        mat_water,
     ) = material_dictionaries
 
-    if eos_choice == 'Tabulated:iron/silicate':
+    if layer_eos == 'Seager2007:iron':
         return get_tabulated_eos(
-            pressure,
-            material_properties_iron_silicate_planets,
-            material,
-            interpolation_functions,
+            pressure, mat_iron_sil, 'core', interpolation_functions=interpolation_functions
         )
-    elif eos_choice == 'Tabulated:iron/Tdep_silicate':
+    elif layer_eos == 'Seager2007:MgSiO3':
+        return get_tabulated_eos(
+            pressure, mat_iron_sil, 'mantle', interpolation_functions=interpolation_functions
+        )
+    elif layer_eos == 'WolfBower2018:MgSiO3':
         return get_Tdep_density(
             pressure,
             temperature,
-            material_properties_iron_Tdep_silicate_planets,
+            mat_Tdep,
             solidus_func,
             liquidus_func,
             interpolation_functions,
         )
-    elif eos_choice == 'Tabulated:water':
+    elif layer_eos == 'Seager2007:H2O':
         return get_tabulated_eos(
-            pressure, material_properties_water_planets, material, interpolation_functions
+            pressure, mat_water, 'ice_layer', interpolation_functions=interpolation_functions
         )
-    elif eos_choice == 'Analytic:Seager2007':
-        return get_analytic_density(pressure, material)
+    elif layer_eos.startswith('Analytic:'):
+        material_key = layer_eos.split(':', 1)[1]
+        return get_analytic_density(pressure, material_key)
     else:
-        raise ValueError('Invalid EOS choice.')
+        raise ValueError(f"Unknown layer EOS '{layer_eos}'.")
 
 
 def calculate_temperature_profile(
