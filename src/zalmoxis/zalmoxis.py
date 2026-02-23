@@ -8,6 +8,7 @@ import time
 
 import numpy as np
 import toml
+from scipy.optimize import brentq
 
 from .constants import earth_center_pressure, earth_mass, earth_radius
 from .eos_analytic import VALID_MATERIAL_KEYS
@@ -328,7 +329,6 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
     target_surface_pressure = config_params['target_surface_pressure']
     pressure_tolerance = config_params['pressure_tolerance']
     max_iterations_pressure = config_params['max_iterations_pressure']
-    pressure_adjustment_factor = config_params['pressure_adjustment_factor']
     verbose = config_params['verbose']
     iteration_profiles_enabled = config_params['iteration_profiles_enabled']
 
@@ -400,107 +400,112 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
         for inner_iter in range(max_iterations_inner):
             old_density = density.copy()
 
-            # Setup initial pressure guess
+            # Scaling-law estimate for central pressure
+            pressure_guess = (
+                earth_center_pressure
+                * (planet_mass / earth_mass) ** 2
+                * (radius_guess / earth_radius) ** (-4)
+            )
             if uses_Tdep:
-                pressure_guess = np.minimum(
-                    (
-                        earth_center_pressure
-                        * (planet_mass / earth_mass) ** 2
-                        * (radius_guess / earth_radius) ** (-4)
-                    ),
-                    max_center_pressure_guess,
+                pressure_guess = min(pressure_guess, max_center_pressure_guess)
+
+            # Mutable state to capture the last ODE solution from inside
+            # the residual function (brentq doesn't return intermediate
+            # results, only the root)
+            _state = {'mass_enclosed': None, 'gravity': None, 'pressure': None, 'n_evals': 0}
+
+            def _pressure_residual(p_center):
+                """Surface pressure residual f(P_c) = P_surface(P_c) - P_target.
+
+                When the ODE integration terminates early (pressure hit zero
+                before reaching the planet surface), P_center is too low and
+                the residual is negative.
+                """
+                y0 = [0, 0, p_center]
+                m, g, p = solve_structure(
+                    layer_eos_config,
+                    cmb_mass,
+                    core_mantle_mass,
+                    radii,
+                    adaptive_radial_fraction,
+                    relative_tolerance,
+                    absolute_tolerance,
+                    maximum_step,
+                    material_dictionaries,
+                    interpolation_cache,
+                    y0,
+                    solidus_func,
+                    liquidus_func,
+                    temperature_function if uses_Tdep else None,
                 )
-            else:
-                pressure_guess = (
-                    earth_center_pressure
-                    * (planet_mass / earth_mass) ** 2
-                    * (radius_guess / earth_radius) ** (-4)
-                )
-
-            # Initialize bisection brackets for pressure convergence
-            p_low = 0.1 * pressure_guess
-            p_high = 10.0 * pressure_guess
-            bracket_established = False
-
-            for pressure_iter in range(max_iterations_pressure):
-                y0 = [0, 0, pressure_guess]
-
-                # Solve the coupled ODEs
-                if uses_Tdep:
-                    mass_enclosed, gravity, pressure = solve_structure(
-                        layer_eos_config,
-                        cmb_mass,
-                        core_mantle_mass,
-                        radii,
-                        adaptive_radial_fraction,
-                        relative_tolerance,
-                        absolute_tolerance,
-                        maximum_step,
-                        material_dictionaries,
-                        interpolation_cache,
-                        y0,
-                        solidus_func,
-                        liquidus_func,
-                        temperature_function,
-                    )
-                else:
-                    mass_enclosed, gravity, pressure = solve_structure(
-                        layer_eos_config,
-                        cmb_mass,
-                        core_mantle_mass,
-                        radii,
-                        adaptive_radial_fraction,
-                        relative_tolerance,
-                        absolute_tolerance,
-                        maximum_step,
-                        material_dictionaries,
-                        interpolation_cache,
-                        y0,
-                        solidus_func,
-                        liquidus_func,
-                    )
-
                 if iteration_profiles_enabled:
                     create_pressure_density_files(
-                        outer_iter, inner_iter, pressure_iter, radii, pressure, density
+                        outer_iter, inner_iter, _state['n_evals'], radii, p, density
                     )
+                _state['mass_enclosed'] = m
+                _state['gravity'] = g
+                _state['pressure'] = p
+                _state['n_evals'] += 1
 
-                surface_pressure = pressure[-1]
-                pressure_diff = surface_pressure - target_surface_pressure
+                # Early termination: pressure reached zero before the
+                # surface (padded with zeros) → P_center is too low
+                if p[-1] <= 0:
+                    return -target_surface_pressure
 
-                if np.abs(pressure_diff) < pressure_tolerance and np.all(pressure > 0):
-                    verbose and logger.info(
-                        f'Surface pressure converged after {pressure_iter + 1} iterations '
-                        'and all pressures are positive.'
-                    )
+                return p[-1] - target_surface_pressure
+
+            # Bracket: P_center must be positive and wide enough to
+            # straddle the root (where surface P = target P)
+            p_low = max(1e6, 0.1 * pressure_guess)
+            p_high = 10.0 * pressure_guess
+            if uses_Tdep:
+                p_high = min(p_high, max_center_pressure_guess)
+
+            try:
+                p_solution, root_info = brentq(
+                    _pressure_residual,
+                    p_low,
+                    p_high,
+                    xtol=1e6,
+                    rtol=1e-10,
+                    maxiter=max_iterations_pressure,
+                    full_output=True,
+                )
+                mass_enclosed = _state['mass_enclosed']
+                gravity = _state['gravity']
+                pressure = _state['pressure']
+
+                surface_residual = abs(pressure[-1] - target_surface_pressure)
+                # Allow zero pressure at the surface: the terminal event
+                # pads truncated points with P=0, so check >= 0
+                if (
+                    root_info.converged
+                    and surface_residual < pressure_tolerance
+                    and np.min(pressure) >= 0
+                ):
                     converged_pressure = True
-                    break
-
-                # Update bisection brackets based on surface pressure error
-                if pressure_diff > 0:
-                    # Surface P too high -> center P too high
-                    p_high = pressure_guess
-                else:
-                    # Surface P too low -> center P too low
-                    p_low = pressure_guess
-
-                if p_low < p_high and p_low > 0:
-                    bracket_established = True
-
-                # Choose next pressure guess
-                if bracket_established:
-                    pressure_guess = 0.5 * (p_low + p_high)
-                else:
-                    pressure_guess -= pressure_diff * pressure_adjustment_factor
-
-                # Floor at 1e6 Pa to prevent nonphysical values
-                pressure_guess = max(pressure_guess, 1e6)
-
-                if pressure_iter == max_iterations_pressure - 1:
-                    verbose and logger.warning(
-                        f'Maximum pressure iterations ({max_iterations_pressure}) reached. '
-                        'Surface pressure may not be fully converged.'
+                    verbose and logger.info(
+                        f'Surface pressure converged after '
+                        f'{root_info.function_calls} evaluations (Brent method).'
                     )
+                else:
+                    converged_pressure = False
+                    verbose and logger.warning(
+                        f'Brent method: converged={root_info.converged}, '
+                        f'residual={surface_residual:.2e} Pa, '
+                        f'min_P={np.min(pressure):.2e} Pa.'
+                    )
+            except ValueError:
+                # f(p_low) and f(p_high) have the same sign — bracket
+                # invalid.  Use the last evaluated solution if available.
+                verbose and logger.warning(
+                    f'Could not bracket pressure root in [{p_low:.2e}, {p_high:.2e}] Pa.'
+                )
+                if _state['mass_enclosed'] is not None:
+                    mass_enclosed = _state['mass_enclosed']
+                    gravity = _state['gravity']
+                    pressure = _state['pressure']
+                converged_pressure = False
 
             # Update density grid (solve_structure may return fewer points
             # than num_layers if the ODE solver terminated early)

@@ -43,7 +43,7 @@ max_center_pressure_guess  = 10e12 # Maximum center pressure guess (Pa). Center 
 target_surface_pressure    = 101325 # Target surface pressure (Pa)
 pressure_tolerance         = 1e9 # Convergence tolerance for surface pressure convergence (Pa)
 max_iterations_pressure    = 200 # Maximum iterations for pressure adjustment loop
-pressure_adjustment_factor = 0.5 # Damped adjustment factor for pre-bracket pressure correction
+pressure_adjustment_factor = 1.1 # Deprecated: retained for backward compatibility. The Brent solver does not use this parameter.
 
 [Output]
 data_enabled               = true # Flag to enable saving data to a file (true/false)

@@ -185,6 +185,15 @@ def solve_structure(
     """
     uses_Tdep = any(v == 'WolfBower2018:MgSiO3' for v in layer_eos_config.values() if v)
 
+    # Terminal event: stop integration when pressure crosses zero.
+    # Without this, the ODE solver grinds with tiny step sizes in the
+    # zero-derivative region returned by coupled_odes() for P <= 0.
+    def _pressure_zero(r, y, *args):
+        return y[2]  # pressure component
+
+    _pressure_zero.terminal = True
+    _pressure_zero.direction = -1  # trigger on positive → negative crossing
+
     if uses_Tdep:
         # Split the radial grid into two parts for better handling of large step sizes
         radial_split_index = max(
@@ -211,7 +220,7 @@ def solve_structure(
             rtol=relative_tolerance,
             atol=absolute_tolerance,
             method='RK45',
-            dense_output=True,
+            events=_pressure_zero,
         )
 
         # Second part with user-defined max_step
@@ -235,7 +244,7 @@ def solve_structure(
             atol=absolute_tolerance,
             max_step=maximum_step,
             method='RK45',
-            dense_output=True,
+            events=_pressure_zero,
         )
 
         # Concatenate the two solutions
@@ -264,12 +273,21 @@ def solve_structure(
             rtol=relative_tolerance,
             atol=absolute_tolerance,
             method='RK45',
-            dense_output=True,
+            events=_pressure_zero,
         )
 
         # Extract mass, gravity, and pressure grids from the solution
         mass_enclosed = sol.y[0]
         gravity = sol.y[1]
         pressure = sol.y[2]
+
+    # Pad to full length if the terminal event truncated the solution
+    # (pressure reached zero before the outermost radial grid point).
+    n_target = len(radii)
+    if len(mass_enclosed) < n_target:
+        n_pad = n_target - len(mass_enclosed)
+        mass_enclosed = np.concatenate([mass_enclosed, np.full(n_pad, mass_enclosed[-1])])
+        gravity = np.concatenate([gravity, np.full(n_pad, gravity[-1])])
+        pressure = np.concatenate([pressure, np.zeros(n_pad)])
 
     return mass_enclosed, gravity, pressure
