@@ -109,9 +109,15 @@ def plot5_physical_validity():
     ax.axhspan(4000, 5500, alpha=0.1, color='orange', label='MgSiO$_3$ expected range')
     ax.legend(fontsize=8, loc='upper right')
     mono_ok = '(monotonic)' if check_monotonic(prof['density']) else '(NOT monotonic!)'
-    ax.text(0.02, 0.95, f'Center: {rho_center:.0f} kg/m$^3$\nSurface: {rho_surface:.0f} kg/m$^3$\n{mono_ok}',
-            transform=ax.transAxes, fontsize=9, va='top',
-            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+    ax.text(
+        0.02,
+        0.95,
+        f'Center: {rho_center:.0f} kg/m$^3$\nSurface: {rho_surface:.0f} kg/m$^3$\n{mono_ok}',
+        transform=ax.transAxes,
+        fontsize=9,
+        va='top',
+        bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5),
+    )
 
     # Pressure
     ax = axes[0, 1]
@@ -122,9 +128,15 @@ def plot5_physical_validity():
     p_center = prof['pressure'][0] / 1e9
     p_surface = prof['pressure'][-1] / 1e9
     mono_ok = '(monotonic)' if check_monotonic(prof['pressure']) else '(NOT monotonic!)'
-    ax.text(0.02, 0.95, f'Center: {p_center:.1f} GPa\nSurface: {p_surface:.4f} GPa\n{mono_ok}',
-            transform=ax.transAxes, fontsize=9, va='top',
-            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+    ax.text(
+        0.02,
+        0.95,
+        f'Center: {p_center:.1f} GPa\nSurface: {p_surface:.4f} GPa\n{mono_ok}',
+        transform=ax.transAxes,
+        fontsize=9,
+        va='top',
+        bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5),
+    )
 
     # Gravity
     ax = axes[1, 0]
@@ -136,9 +148,15 @@ def plot5_physical_validity():
     g_max = np.max(prof['gravity'])
     g_surface = prof['gravity'][-1]
     all_nonneg = np.all(prof['gravity'] >= 0)
-    ax.text(0.02, 0.95, f'Max: {g_max:.1f} m/s$^2$\nSurface: {g_surface:.1f} m/s$^2$\nAll non-negative: {all_nonneg}',
-            transform=ax.transAxes, fontsize=9, va='top',
-            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+    ax.text(
+        0.02,
+        0.95,
+        f'Max: {g_max:.1f} m/s$^2$\nSurface: {g_surface:.1f} m/s$^2$\nAll non-negative: {all_nonneg}',
+        transform=ax.transAxes,
+        fontsize=9,
+        va='top',
+        bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5),
+    )
 
     # Enclosed mass
     ax = axes[1, 1]
@@ -147,13 +165,26 @@ def plot5_physical_validity():
     ax.set_xlabel('Radius ($R_\\oplus$)')
     ax.set_title('Enclosed mass profile')
     ax.grid(True, alpha=0.3)
-    mono_ok = '(monotonic)' if check_monotonic(prof['mass_enclosed'], 'increasing') else '(NOT monotonic!)'
+    mono_ok = (
+        '(monotonic)'
+        if check_monotonic(prof['mass_enclosed'], 'increasing')
+        else '(NOT monotonic!)'
+    )
     m_total = prof['mass_enclosed'][-1] / earth_mass
-    ax.text(0.02, 0.95, f'Total: {m_total:.4f} $M_\\oplus$\n{mono_ok}',
-            transform=ax.transAxes, fontsize=9, va='top',
-            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+    ax.text(
+        0.02,
+        0.95,
+        f'Total: {m_total:.4f} $M_\\oplus$\n{mono_ok}',
+        transform=ax.transAxes,
+        fontsize=9,
+        va='top',
+        bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5),
+    )
 
-    fig.suptitle('Physical Validity: 1 $M_\\oplus$ Earth-like (Seager2007:iron + Seager2007:MgSiO$_3$)', fontsize=14)
+    fig.suptitle(
+        'Physical Validity: 1 $M_\\oplus$ Earth-like (Seager2007:iron + Seager2007:MgSiO$_3$)',
+        fontsize=14,
+    )
     fig.tight_layout()
 
     path = os.path.join(OUTPUT_DIR, 'plot5_physical_validity.pdf')
@@ -168,19 +199,27 @@ def plot6_mixed_eos_comparison():
     configs = {
         'Pure tabulated': {
             'eos': {'core': 'Seager2007:iron', 'mantle': 'Seager2007:MgSiO3'},
-            'color': 'black', 'ls': '-', 'lw': 2.5,
+            'color': 'black',
+            'ls': '-',
+            'lw': 2.5,
         },
         'Pure analytic': {
             'eos': {'core': 'Analytic:iron', 'mantle': 'Analytic:MgSiO3'},
-            'color': 'red', 'ls': '-', 'lw': 2,
+            'color': 'red',
+            'ls': '-',
+            'lw': 2,
         },
         'Tab core + analytic mantle': {
             'eos': {'core': 'Seager2007:iron', 'mantle': 'Analytic:MgSiO3'},
-            'color': 'blue', 'ls': '--', 'lw': 2,
+            'color': 'blue',
+            'ls': '--',
+            'lw': 2,
         },
         'Analytic core + tab mantle': {
             'eos': {'core': 'Analytic:iron', 'mantle': 'Seager2007:MgSiO3'},
-            'color': 'green', 'ls': '--', 'lw': 2,
+            'color': 'green',
+            'ls': '--',
+            'lw': 2,
         },
     }
 
@@ -192,8 +231,14 @@ def plot6_mixed_eos_comparison():
         prof = run_model(cfg['eos'])
         results[label] = prof
         r_re = prof['radii'] / earth_radius
-        ax.plot(r_re, prof['density'], color=cfg['color'], linestyle=cfg['ls'],
-                linewidth=cfg['lw'], label=label)
+        ax.plot(
+            r_re,
+            prof['density'],
+            color=cfg['color'],
+            linestyle=cfg['ls'],
+            linewidth=cfg['lw'],
+            label=label,
+        )
 
     ax.set_xlabel('Radius ($R_\\oplus$)', fontsize=13)
     ax.set_ylabel('Density (kg/m$^3$)', fontsize=13)
@@ -206,9 +251,16 @@ def plot6_mixed_eos_comparison():
     for label, prof in results.items():
         r_total = prof['radii'][-1] / earth_radius
         text_lines.append(f'{label}: R = {r_total:.4f} $R_\\oplus$')
-    ax.text(0.98, 0.95, '\n'.join(text_lines),
-            transform=ax.transAxes, fontsize=9, va='top', ha='right',
-            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+    ax.text(
+        0.98,
+        0.95,
+        '\n'.join(text_lines),
+        transform=ax.transAxes,
+        fontsize=9,
+        va='top',
+        ha='right',
+        bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5),
+    )
 
     path = os.path.join(OUTPUT_DIR, 'plot6_mixed_eos_comparison.pdf')
     fig.savefig(path, bbox_inches='tight')
@@ -223,7 +275,9 @@ def plot7_layer_boundary():
     print('  Running 3-layer mixed model...')
     prof = run_model(
         {'core': 'Seager2007:iron', 'mantle': 'Analytic:MgSiO3', 'ice_layer': 'Analytic:H2O'},
-        cmf=0.13, immf=0.485, config_type='water',
+        cmf=0.13,
+        immf=0.485,
+        config_type='water',
     )
 
     r_re = prof['radii'] / earth_radius
@@ -240,24 +294,46 @@ def plot7_layer_boundary():
     i_cmb = np.searchsorted(mass, cmb_mass)
     i_ice = np.searchsorted(mass, core_mantle_mass)
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10), gridspec_kw={'height_ratios': [2, 1]})
+    fig, (ax1, ax2) = plt.subplots(
+        2, 1, figsize=(10, 10), gridspec_kw={'height_ratios': [2, 1]}
+    )
 
     # Top panel: density profile with color-coded regions
-    ax1.fill_between(r_re[:i_cmb+1], 0, density[:i_cmb+1],
-                     alpha=0.2, color='red', label='Core (Seager2007:iron)')
-    ax1.fill_between(r_re[i_cmb:i_ice+1], 0, density[i_cmb:i_ice+1],
-                     alpha=0.2, color='orange', label='Mantle (Analytic:MgSiO$_3$)')
-    ax1.fill_between(r_re[i_ice:], 0, density[i_ice:],
-                     alpha=0.2, color='blue', label='Ice layer (Analytic:H$_2$O)')
+    ax1.fill_between(
+        r_re[: i_cmb + 1],
+        0,
+        density[: i_cmb + 1],
+        alpha=0.2,
+        color='red',
+        label='Core (Seager2007:iron)',
+    )
+    ax1.fill_between(
+        r_re[i_cmb : i_ice + 1],
+        0,
+        density[i_cmb : i_ice + 1],
+        alpha=0.2,
+        color='orange',
+        label='Mantle (Analytic:MgSiO$_3$)',
+    )
+    ax1.fill_between(
+        r_re[i_ice:],
+        0,
+        density[i_ice:],
+        alpha=0.2,
+        color='blue',
+        label='Ice layer (Analytic:H$_2$O)',
+    )
     ax1.plot(r_re, density, 'k-', linewidth=1.5)
 
     # Mark boundaries
     if i_cmb < len(r_re):
         ax1.axvline(r_re[i_cmb], color='red', linestyle=':', alpha=0.7, linewidth=1)
-        ax1.text(r_re[i_cmb], ax1.get_ylim()[1]*0.9, ' CMB', fontsize=9, color='red')
+        ax1.text(r_re[i_cmb], ax1.get_ylim()[1] * 0.9, ' CMB', fontsize=9, color='red')
     if i_ice < len(r_re):
         ax1.axvline(r_re[i_ice], color='blue', linestyle=':', alpha=0.7, linewidth=1)
-        ax1.text(r_re[i_ice], ax1.get_ylim()[1]*0.85, ' Ice boundary', fontsize=9, color='blue')
+        ax1.text(
+            r_re[i_ice], ax1.get_ylim()[1] * 0.85, ' Ice boundary', fontsize=9, color='blue'
+        )
 
     ax1.set_ylabel('Density (kg/m$^3$)', fontsize=13)
     ax1.set_title('Layer Boundary Verification: 1 $M_\\oplus$ 3-Layer Mixed EOS', fontsize=14)
@@ -276,9 +352,15 @@ def plot7_layer_boundary():
     ax2.grid(True, alpha=0.3)
 
     r_total = r_re[-1]
-    ax1.text(0.02, 0.95, f'Total radius: {r_total:.4f} $R_\\oplus$',
-             transform=ax1.transAxes, fontsize=10, va='top',
-             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+    ax1.text(
+        0.02,
+        0.95,
+        f'Total radius: {r_total:.4f} $R_\\oplus$',
+        transform=ax1.transAxes,
+        fontsize=10,
+        va='top',
+        bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5),
+    )
 
     fig.tight_layout()
 

@@ -86,12 +86,14 @@ def get_tabulated_eos(
                 raise ValueError(
                     f'Temperature {temperature:.2f} K is out of bounds for EOS data.'
                 )
-            if pressure < np.min(interpolator.grid[0]) or pressure > np.max(
-                interpolator.grid[0]
-            ):
-                raise ValueError(
-                    f'Pressure {pressure:.2e} Pa is out of bounds for the EOS data.'
+            p_min = np.min(interpolator.grid[0])
+            p_max = np.max(interpolator.grid[0])
+            if pressure < p_min or pressure > p_max:
+                logger.debug(
+                    f'Pressure {pressure:.2e} Pa out of bounds for WolfBower2018 table '
+                    f'[{p_min:.2e}, {p_max:.2e}]. Clamping to boundary.'
                 )
+                pressure = np.clip(pressure, p_min, p_max)
             density = interpolator((pressure, temperature))
         else:
             density = interpolator(pressure)

@@ -400,6 +400,11 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                     * (radius_guess / earth_radius) ** (-4)
                 )
 
+            # Initialize bisection brackets for pressure convergence
+            p_low = 0.1 * pressure_guess
+            p_high = 10.0 * pressure_guess
+            bracket_established = False
+
             for pressure_iter in range(max_iterations_pressure):
                 y0 = [0, 0, pressure_guess]
 
@@ -454,7 +459,25 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                     converged_pressure = True
                     break
 
-                pressure_guess -= pressure_diff * pressure_adjustment_factor
+                # Update bisection brackets based on surface pressure error
+                if pressure_diff > 0:
+                    # Surface P too high -> center P too high
+                    p_high = pressure_guess
+                else:
+                    # Surface P too low -> center P too low
+                    p_low = pressure_guess
+
+                if p_low < p_high and p_low > 0:
+                    bracket_established = True
+
+                # Choose next pressure guess
+                if bracket_established:
+                    pressure_guess = 0.5 * (p_low + p_high)
+                else:
+                    pressure_guess -= pressure_diff * pressure_adjustment_factor
+
+                # Floor at 1e6 Pa to prevent nonphysical values
+                pressure_guess = max(pressure_guess, 1e6)
 
                 if pressure_iter == max_iterations_pressure - 1:
                     verbose and logger.warning(

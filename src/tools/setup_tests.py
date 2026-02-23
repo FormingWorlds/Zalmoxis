@@ -109,7 +109,7 @@ def run_zalmoxis_TdepEOS(id_mass):
     Returns
     -------
     list
-        [(id_mass, converged)] status tuple.
+        [(id_mass, converged, model_results)] status tuple with full model results.
     """
     # Load default configuration
     default_config_path = os.path.join(ZALMOXIS_ROOT, 'input', 'default.toml')
@@ -138,9 +138,9 @@ def run_zalmoxis_TdepEOS(id_mass):
     converged = model_results.get('converged', False)
 
     # Check if model converged before proceeding
-    if not model_results.get('converged', False):
+    if not converged:
         print(f'Model did not converge for mass {id_mass} Earth masses.')
-        return [(id_mass, False)]
+        return [(id_mass, False, model_results)]
 
     # Extract the results from the model output
     radii = model_results['radii']
@@ -153,7 +153,7 @@ def run_zalmoxis_TdepEOS(id_mass):
     )
     with open(custom_log_file, 'a') as log:
         log.write(f'{id_mass:.4f}\t{planet_radius:.4e}\t{total_time:.4e}\n')
-    return [(id_mass, converged)]
+    return [(id_mass, converged, model_results)]
 
 
 def load_zeng_curve(filename):

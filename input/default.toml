@@ -37,13 +37,13 @@ relative_tolerance         = 1e-5 # Relative tolerance for solve_ivp
 absolute_tolerance         = 1e-6 # Absolute tolerance for solve_ivp
 maximum_step               = 250000 # Maximum integration step size for solve_ivp (m)
 adaptive_radial_fraction   = 0.98 # Fraction (0–1) of the radial domain defining where solve_ivp transitions from adaptive integration to fixed-step integration when using the temperature-dependent "WolfBower2018:MgSiO3" EOS
-max_center_pressure_guess  = 0.99e12 # Maximum pressure guess at the center of the planet based on the "WolfBower2018:MgSiO3" EOS tables (Pa)
+max_center_pressure_guess  = 10e12 # Maximum center pressure guess (Pa). Center is always iron core (Seager2007, valid to 1e21 Pa).
 
 [PressureAdjustment]
 target_surface_pressure    = 101325 # Target surface pressure (Pa)
 pressure_tolerance         = 1e9 # Convergence tolerance for surface pressure convergence (Pa)
 max_iterations_pressure    = 200 # Maximum iterations for pressure adjustment loop
-pressure_adjustment_factor = 1.1 # Adjustment factor for updating the central pressure guess
+pressure_adjustment_factor = 0.5 # Damped adjustment factor for pre-bracket pressure correction
 
 [Output]
 data_enabled               = true # Flag to enable saving data to a file (true/false)
