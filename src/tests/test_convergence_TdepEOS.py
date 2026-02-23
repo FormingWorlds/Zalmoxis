@@ -10,8 +10,8 @@ from tools.setup_tests import run_zalmoxis_TdepEOS
 
 @pytest.mark.integration
 @pytest.mark.parametrize(
-    'mass', [1, 2]
-)  # WolfBower2018 EOS tables are limited to ~1 TPa; only valid for <= 2 M_earth
+    'mass', [1, 2, 5, 7]
+)  # WolfBower2018 EOS tables valid up to ~7 M_earth with Brent solver clamping
 def test_all_compositions_converge(mass, zalmoxis_root):
     """Test that the T-dependent EOS model converges for low-mass planets.
 
@@ -75,11 +75,13 @@ def test_all_compositions_converge(mass, zalmoxis_root):
                 f'for {id_mass} M_earth'
             )
 
-        # MgSiO3 mantle density check (2000-8000 kg/m3)
+        # MgSiO3 mantle density check (2000-12000 kg/m3)
         # Mantle starts at CMB and extends to surface. Lower bound accounts
         # for molten MgSiO3 near the surface at T_surface=3500K and low P
         # (WolfBower2018 melt density ~2200 kg/m3 at surface conditions).
-        # Upper bound allows for high-pressure compressed MgSiO3 near CMB.
+        # Upper bound allows for high-pressure compressed MgSiO3 near CMB
+        # at higher masses (5-7 M_earth), where pressures approach 1 TPa
+        # and clamped WolfBower2018 densities can reach ~10000 kg/m3.
         mantle_densities = density[cmb_index:]
         if len(mantle_densities) > 0:
             mantle_nonzero = mantle_densities[mantle_densities > 0]
@@ -90,7 +92,7 @@ def test_all_compositions_converge(mass, zalmoxis_root):
                     f'Mantle density {min_mantle_rho:.0f} kg/m3 below MgSiO3 minimum (2000) '
                     f'for {id_mass} M_earth'
                 )
-                assert max_mantle_rho <= 8000, (
-                    f'Mantle density {max_mantle_rho:.0f} kg/m3 above MgSiO3 maximum (8000) '
+                assert max_mantle_rho <= 12000, (
+                    f'Mantle density {max_mantle_rho:.0f} kg/m3 above MgSiO3 maximum (12000) '
                     f'for {id_mass} M_earth'
                 )

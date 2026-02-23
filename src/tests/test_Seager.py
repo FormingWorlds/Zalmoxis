@@ -57,16 +57,17 @@ def test_density_profile(config_type, seager_file, mass):
     jump_threshold = 2000  # Threshold for detecting a jump in density
     jump_indices = np.where(density_jumps > jump_threshold)[0]
 
-    # Mask out radius points near the jump
+    # Mask out radius points near the jump.  The CMB discontinuity spans
+    # several integration steps in the model but may fall between different
+    # reference grid points, so a wider mask (±3 indices) avoids spurious
+    # failures from interpolation across the sharp density jump.
     mask = np.ones_like(model_densities, dtype=bool)
     for idx in jump_indices:
-        mask[max(0, idx - 1) : min(len(mask), idx + 2)] = (
-            False  # mask a few points around the jump
-        )
+        mask[max(0, idx - 3) : min(len(mask), idx + 4)] = False
 
     # Compare only the smooth parts
     assert np.allclose(
-        model_densities[mask], seager_density_interp[mask], rtol=0.24, atol=1000
+        model_densities[mask], seager_density_interp[mask], rtol=0.10, atol=300
     ), (
         f'Density profile for {config_type} config at {mass} M_earth deviates too much from Seager model (ignoring discontinuity)'
     )

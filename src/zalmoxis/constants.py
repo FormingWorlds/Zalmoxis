@@ -1,7 +1,9 @@
 # Reference values for Earth
 from __future__ import annotations
 
-earth_radius = 6.335439e6  # m
+earth_radius = (
+    6.335439e6  # m — volumetric mean radius used in Seager+2007 (differs from IAU 6.371e6 m)
+)
 earth_cmb_radius = 3480e3  # m
 earth_surface_pressure = 101325  # Pa (1 atm)
 earth_cmb_pressure = 135e9  # Pa

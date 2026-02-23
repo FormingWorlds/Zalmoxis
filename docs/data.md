@@ -60,7 +60,7 @@ These tables are automatically downloaded during the setup process described abo
 
 ## Analytic EOS
 
-The `"Analytic:Seager2007"` EOS option uses the analytic modified polytropic fits from Table 3 of [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346).
+The `Analytic:<material>` EOS options (e.g. `Analytic:iron`, `Analytic:MgSiO3`, `Analytic:H2O`) use the analytic modified polytropic fits from Table 3 of [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346).
 All fit parameters are hardcoded directly from the paper and **do not require any data downloads**.
 This makes the analytic EOS suitable for quick setup, CI environments, or situations where the tabulated data files are not available.
 

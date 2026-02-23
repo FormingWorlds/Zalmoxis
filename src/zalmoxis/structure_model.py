@@ -117,7 +117,11 @@ def coupled_odes(
 
     # Define the ODEs for mass, gravity and pressure
     dMdr = 4 * np.pi * radius**2 * current_density
-    dgdr = 4 * np.pi * G * current_density - 2 * gravity / (radius + 1e-20) if radius > 0 else 0
+    dgdr = (
+        4 * np.pi * G * current_density - 2 * gravity / (radius + 1e-20)
+        if radius > 0
+        else (4.0 / 3.0) * np.pi * G * current_density
+    )
     dPdr = -current_density * gravity
 
     # Return the derivatives
@@ -223,34 +227,40 @@ def solve_structure(
             events=_pressure_zero,
         )
 
-        # Second part with user-defined max_step
-        sol2 = solve_ivp(
-            lambda r, y: coupled_odes(
-                r,
-                y,
-                cmb_mass,
-                core_mantle_mass,
-                layer_eos_config,
-                interpolation_cache,
-                material_dictionaries,
-                temperature_function(r),
-                solidus_func,
-                liquidus_func,
-            ),
-            (radii[radial_split_index - 1], radii[-1]),
-            sol1.y[:, -1],
-            t_eval=radii[radial_split_index - 1 :],
-            rtol=relative_tolerance,
-            atol=absolute_tolerance,
-            max_step=maximum_step,
-            method='RK45',
-            events=_pressure_zero,
-        )
+        # If sol1 hit the terminal event (pressure reached zero), skip sol2
+        if sol1.status == 1:
+            mass_enclosed = sol1.y[0]
+            gravity = sol1.y[1]
+            pressure = sol1.y[2]
+        else:
+            # Second part with user-defined max_step
+            sol2 = solve_ivp(
+                lambda r, y: coupled_odes(
+                    r,
+                    y,
+                    cmb_mass,
+                    core_mantle_mass,
+                    layer_eos_config,
+                    interpolation_cache,
+                    material_dictionaries,
+                    temperature_function(r),
+                    solidus_func,
+                    liquidus_func,
+                ),
+                (radii[radial_split_index - 1], radii[-1]),
+                sol1.y[:, -1],
+                t_eval=radii[radial_split_index - 1 :],
+                rtol=relative_tolerance,
+                atol=absolute_tolerance,
+                max_step=maximum_step,
+                method='RK45',
+                events=_pressure_zero,
+            )
 
-        # Concatenate the two solutions
-        mass_enclosed = np.concatenate([sol1.y[0, :-1], sol2.y[0]])
-        gravity = np.concatenate([sol1.y[1, :-1], sol2.y[1]])
-        pressure = np.concatenate([sol1.y[2, :-1], sol2.y[2]])
+            # Concatenate the two solutions
+            mass_enclosed = np.concatenate([sol1.y[0, :-1], sol2.y[0]])
+            gravity = np.concatenate([sol1.y[1, :-1], sol2.y[1]])
+            pressure = np.concatenate([sol1.y[2, :-1], sol2.y[2]])
     else:
         # Single integration with fixed temperature (300 K for Seager+2007)
         temperature = 300

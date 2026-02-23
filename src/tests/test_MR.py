@@ -38,8 +38,10 @@ def test_mass_radius(config_type, zeng_file, mass):
     # Load the model output for mass and radius
     model_mass, model_radius = load_model_output(output_file)
 
-    # Interpolate Zeng radius for the model mass
-    zeng_radius_interp = np.interp(model_mass, zeng_masses, zeng_radii)
+    # Log-log interpolation of Zeng curve (matches compare_zeng2019.py)
+    zeng_radius_interp = 10 ** np.interp(
+        np.log10(model_mass), np.log10(zeng_masses), np.log10(zeng_radii)
+    )
 
     # Compare model output with Zeng et al. (2019) data
     assert np.isclose(model_radius, zeng_radius_interp, rtol=0.03), (

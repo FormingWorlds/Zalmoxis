@@ -185,7 +185,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         pass
     else:
         raise ValueError(
-            "Invalid choice. Please select 'Wagner', 'Boujibar', 'SeagerEarth', 'Seagerwater', 'SeagerHHe' or 'default'."
+            "Invalid choice. Please select 'Wagner', 'Boujibar', 'SeagerEarth', 'Seagerwater', 'custom', or 'default'."
         )
 
     # Create a colormap based on the id_mass values

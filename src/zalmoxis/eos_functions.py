@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_tabulated_eos(
-    pressure, material_dictionary, material, temperature=None, interpolation_functions={}
+    pressure, material_dictionary, material, temperature=None, interpolation_functions=None
 ):
     """
     Retrieves density from tabulated EOS data for a given material and choice of EOS.
@@ -34,6 +34,8 @@ def get_tabulated_eos(
     Returns:
         density: Density corresponding to the given pressure (and temperature if applicable) in kg/m^3
     """
+    if interpolation_functions is None:
+        interpolation_functions = {}
     props = material_dictionary[material]
     eos_file = props['eos_file']
     try:
@@ -159,7 +161,7 @@ def get_Tdep_density(
     material_properties_iron_Tdep_silicate_planets,
     solidus_func,
     liquidus_func,
-    interpolation_functions={},
+    interpolation_functions=None,
 ):
     """
     Returns density for mantle material, considering temperature-dependent phase changes.
@@ -174,13 +176,29 @@ def get_Tdep_density(
         density: Density corresponding to the given pressure and temperature in kg/m^3
     """
 
+    if interpolation_functions is None:
+        interpolation_functions = {}
+
     if solidus_func is None or liquidus_func is None:
         raise ValueError(
-            'solidus_func and liquidus_func must be provided for Tabulated:iron/Tdep_silicate EOS.'
+            'solidus_func and liquidus_func must be provided for WolfBower2018:MgSiO3 EOS.'
         )
 
     T_sol = solidus_func(pressure)
     T_liq = liquidus_func(pressure)
+
+    # Pressure outside melting curve range — default to solid phase
+    if np.isnan(T_sol) or np.isnan(T_liq):
+        logger.debug(
+            f'Melting curve undefined at P={pressure:.2e} Pa. Defaulting to solid phase.'
+        )
+        return get_tabulated_eos(
+            pressure,
+            material_properties_iron_Tdep_silicate_planets,
+            'solid_mantle',
+            temperature,
+            interpolation_functions,
+        )
 
     if temperature <= T_sol:
         # Solid phase
@@ -269,7 +287,7 @@ def calculate_density(
     temperature,
     solidus_func,
     liquidus_func,
-    interpolation_functions={},
+    interpolation_functions=None,
 ):
     """Calculate density for a single layer given its per-layer EOS string.
 
@@ -297,6 +315,9 @@ def calculate_density(
     float or None
         Density in kg/m^3, or None on failure.
     """
+    if interpolation_functions is None:
+        interpolation_functions = {}
+
     (
         mat_iron_sil,
         mat_Tdep,

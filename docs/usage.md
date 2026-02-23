@@ -98,8 +98,8 @@ mantle_mass_fraction = 0
 weight_iron_fraction = 0.325
 temperature_mode = "isothermal"
 surface_temperature = 2000
-center_temperature = 3000
-temperature_profile_file = "temp_profile.txt"
+center_temperature = 3000        # only used when temperature_mode = "linear"
+temperature_profile_file = "temp_profile.txt"  # only used when temperature_mode = "prescribed"
 
 [EOS]
 core = "Seager2007:iron"

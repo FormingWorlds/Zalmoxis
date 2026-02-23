@@ -473,9 +473,25 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                     maxiter=max_iterations_pressure,
                     full_output=True,
                 )
-                mass_enclosed = _state['mass_enclosed']
-                gravity = _state['gravity']
-                pressure = _state['pressure']
+                # Re-run solve_structure at the exact root to get clean profiles
+                # (brentq may have evaluated _state at a slightly different P)
+                y0_root = [0, 0, p_solution]
+                mass_enclosed, gravity, pressure = solve_structure(
+                    layer_eos_config,
+                    cmb_mass,
+                    core_mantle_mass,
+                    radii,
+                    adaptive_radial_fraction,
+                    relative_tolerance,
+                    absolute_tolerance,
+                    maximum_step,
+                    material_dictionaries,
+                    interpolation_cache,
+                    y0_root,
+                    solidus_func,
+                    liquidus_func,
+                    temperature_function if uses_Tdep else None,
+                )
 
                 surface_residual = abs(pressure[-1] - target_surface_pressure)
                 # Allow zero pressure at the surface: the terminal event
@@ -507,6 +523,13 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                     mass_enclosed = _state['mass_enclosed']
                     gravity = _state['gravity']
                     pressure = _state['pressure']
+                else:
+                    # No evaluations succeeded — keep profiles from previous
+                    # outer iteration (already initialised above).
+                    verbose and logger.warning(
+                        'No valid ODE solutions obtained during bracket search. '
+                        'Keeping previous profiles.'
+                    )
                 converged_pressure = False
 
             # Update density grid (solve_structure may return fewer points
@@ -526,6 +549,7 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                     temperatures[i],
                     solidus_func,
                     liquidus_func,
+                    interpolation_cache,
                 )
 
                 if new_density is None:

@@ -183,8 +183,8 @@ def plot3_mass_radius():
 
     # Try to load Zeng reference curves
     for zeng_file, label, color in [
-        ('Zeng_earthlike_rocky.txt', 'Zeng+2019 Earth-like', 'gray'),
-        ('Zeng_50percH2O.txt', 'Zeng+2019 50% H2O', 'lightblue'),
+        ('massradiusEarthlikeRocky.txt', 'Zeng+2019 Earth-like', 'gray'),
+        ('massradius_50percentH2O_300K_1mbar.txt', 'Zeng+2019 50% H2O', 'lightblue'),
     ]:
         try:
             zeng_m, zeng_r = load_zeng_curve(zeng_file)
