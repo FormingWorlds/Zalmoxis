@@ -22,15 +22,15 @@ The table below lists every data file used by Zalmoxis, organised by subdirector
 | `eos_seager07_iron.txt` | `data/EOS_Seager2007/` | CSV (rho in g/cm^3, P in GPa) | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | Fe epsilon pressure-density EOS |
 | `eos_seager07_silicate.txt` | `data/EOS_Seager2007/` | CSV (rho in g/cm^3, P in GPa) | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | MgSiO3 perovskite pressure-density EOS |
 | `eos_seager07_water.txt` | `data/EOS_Seager2007/` | CSV (rho in g/cm^3, P in GPa) | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | Water ice VII pressure-density EOS |
-| `density_melt.dat` | `data/EOS_WolfBower2018_1TPa/` | TSV (P, T, rho) | [Wolf & Bower (2018)](https://doi.org/10.3847/1538-4357/aab090) | MgSiO3 melt density EOS (up to 1 TPa) |
-| `density_solid.dat` | `data/EOS_WolfBower2018_1TPa/` | TSV (P, T, rho) | [Wolf & Bower (2018)](https://doi.org/10.3847/1538-4357/aab090) | MgSiO3 solid (bridgmanite) density EOS (up to 1 TPa) |
+| `density_melt.dat` | `data/EOS_WolfBower2018_1TPa/` | TSV (P, T, rho) | [Wolf & Bower (2018)](https://doi.org/10.1016/j.pepi.2018.02.004) | MgSiO3 melt density EOS (up to 1 TPa) |
+| `density_solid.dat` | `data/EOS_WolfBower2018_1TPa/` | TSV (P, T, rho) | [Wolf & Bower (2018)](https://doi.org/10.1016/j.pepi.2018.02.004) | MgSiO3 solid (bridgmanite) density EOS (up to 1 TPa) |
 
 ### Melting curves
 
 | File | Location | Format | Source | Description |
 |------|----------|--------|--------|-------------|
-| `solidus.dat` | `data/melting_curves_Monteux-600/` | Space-separated (P in Pa, T in K) | [Monteux et al. (2016)](https://doi.org/10.1016/j.epsl.2016.09.012) | MgSiO3 solidus curve |
-| `liquidus.dat` | `data/melting_curves_Monteux-600/` | Space-separated (P in Pa, T in K) | [Monteux et al. (2016)](https://doi.org/10.1016/j.epsl.2016.09.012) | MgSiO3 liquidus curve |
+| `solidus.dat` | `data/melting_curves_Monteux-600/` | Space-separated (P in Pa, T in K) | [Monteux et al. (2016)](https://doi.org/10.1016/j.epsl.2016.05.010) | MgSiO3 solidus curve |
+| `liquidus.dat` | `data/melting_curves_Monteux-600/` | Space-separated (P in Pa, T in K) | [Monteux et al. (2016)](https://doi.org/10.1016/j.epsl.2016.05.010) | MgSiO3 liquidus curve |
 
 ### Mass-radius curves
 
@@ -49,9 +49,9 @@ The table below lists every data file used by Zalmoxis, organised by subdirector
 | `radiusdensitySeagerwaterbymass.txt` | `data/radial_profiles/` | CSV (M, r, rho) | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | Water-world radial density profile (indexed by enclosed mass) |
 | `radiusdensityEarthBoujibar.txt` | `data/radial_profiles/` | CSV (r, rho) | [Boujibar et al. (2020)](https://doi.org/10.1029/2019JE006124) | Earth radial density profile |
 | `radiuspressureEarthBoujibar.txt` | `data/radial_profiles/` | CSV (r, P) | [Boujibar et al. (2020)](https://doi.org/10.1029/2019JE006124) | Earth radial pressure profile |
-| `radiusdensityWagner.txt` | `data/radial_profiles/` | CSV (r, rho) | [Wagner et al. (2011)](https://doi.org/10.1016/j.icarus.2011.09.026) | Earth radial density profile |
-| `radiuspressureWagner.txt` | `data/radial_profiles/` | CSV (r, P) | [Wagner et al. (2011)](https://doi.org/10.1016/j.icarus.2011.09.026) | Earth radial pressure profile |
-| `radiusgravityWagner.txt` | `data/radial_profiles/` | CSV (r, g) | [Wagner et al. (2011)](https://doi.org/10.1016/j.icarus.2011.09.026) | Earth radial gravity profile |
+| `radiusdensityWagner.txt` | `data/radial_profiles/` | CSV (r, rho) | [Wagner et al. (2011)](https://doi.org/10.1016/j.icarus.2011.05.027) | Earth radial density profile |
+| `radiuspressureWagner.txt` | `data/radial_profiles/` | CSV (r, P) | [Wagner et al. (2011)](https://doi.org/10.1016/j.icarus.2011.05.027) | Earth radial pressure profile |
+| `radiusgravityWagner.txt` | `data/radial_profiles/` | CSV (r, g) | [Wagner et al. (2011)](https://doi.org/10.1016/j.icarus.2011.05.027) | Earth radial gravity profile |
 
 ## Seager EOS data
 
