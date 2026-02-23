@@ -12,8 +12,21 @@ from .eos_functions import calculate_density
 # Set up logging
 logger = logging.getLogger(__name__)
 
+
 # Define the coupled ODEs for the structure model
-def coupled_odes(radius, y, cmb_mass, core_mantle_mass, EOS_CHOICE, interpolation_cache, material_dictionaries, temperature, solidus_func, liquidus_func):
+def coupled_odes(
+    radius,
+    y,
+    cmb_mass,
+    core_mantle_mass,
+    EOS_CHOICE,
+    interpolation_cache,
+    material_dictionaries,
+    temperature,
+    solidus_func,
+    liquidus_func,
+    analytic_materials=None,
+):
     """
     Calculate the derivatives of mass, gravity, and pressure with respect to radius for a planetary model.
 
@@ -28,6 +41,9 @@ def coupled_odes(radius, y, cmb_mass, core_mantle_mass, EOS_CHOICE, interpolatio
         temperature (float): The temperature at the current radius.
         solidus_func: Interpolation function for the solidus melting curve
         liquidus_func: Interpolation function for the liquidus melting curve
+        analytic_materials (dict or None): Per-layer material keys for Analytic:Seager2007 EOS.
+            Keys: "core", "mantle", and optionally "water_ice_layer".
+            Values: material key strings (e.g., "iron", "MgSiO3").
 
     Returns:
         list: The derivatives of mass, gravity, and pressure with respect to radius.
@@ -36,51 +52,75 @@ def coupled_odes(radius, y, cmb_mass, core_mantle_mass, EOS_CHOICE, interpolatio
     mass, gravity, pressure = y
 
     # Define material based on enclosed mass within a certain mass fraction
-    if EOS_CHOICE == "Tabulated:iron/silicate":
+    if EOS_CHOICE == 'Tabulated:iron/silicate':
         # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
         if mass < cmb_mass:
             # Core
-            material = "core"
+            material = 'core'
         else:
             # Mantle
-            material = "mantle"
+            material = 'mantle'
 
-    elif EOS_CHOICE == "Tabulated:iron/Tdep_silicate":
+    elif EOS_CHOICE == 'Tabulated:iron/Tdep_silicate':
         # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
         if mass < cmb_mass:
             # Core
-            material = "core"
+            material = 'core'
         else:
             # Mantle, uncomment the next line to assign material based on temperature and pressure
-            material = "mantle" # placeholder (can be melted or solid depending on T and P)
-            #material = get_Tdep_material(pressure, temperature) #optional to assign since get_Tdep_density handles material assignment internally
+            material = 'mantle'  # placeholder (can be melted or solid depending on T and P)
+            # material = get_Tdep_material(pressure, temperature) #optional to assign since get_Tdep_density handles material assignment internally
             pass
 
-    elif EOS_CHOICE == "Tabulated:water":
+    elif EOS_CHOICE == 'Tabulated:water':
         # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
         if mass < cmb_mass:
             # Core
-            material = "core"
+            material = 'core'
         elif mass < core_mantle_mass:
             # Inner mantle
-            material = "mantle"
+            material = 'mantle'
         else:
             # Outer layer
-            material = "water_ice_layer"
+            material = 'water_ice_layer'
+
+    elif EOS_CHOICE == 'Analytic:Seager2007':
+        # Map layer position to configured material key (e.g., "iron", "MgSiO3")
+        if mass < cmb_mass:
+            material = analytic_materials['core']
+        elif core_mantle_mass > 0 and mass < core_mantle_mass:
+            material = analytic_materials['mantle']
+        elif 'water_ice_layer' in analytic_materials:
+            material = analytic_materials['water_ice_layer']
+        else:
+            material = analytic_materials['mantle']
+
     else:
-        raise ValueError(f"Unknown EOS_CHOICE '{EOS_CHOICE}'. "
-                         "Valid options: 'Tabulated:iron/silicate', 'Tabulated:iron/Tdep_silicate', 'Tabulated:water'.")
+        raise ValueError(
+            f"Unknown EOS_CHOICE '{EOS_CHOICE}'. "
+            "Valid options: 'Tabulated:iron/silicate', 'Tabulated:iron/Tdep_silicate', "
+            "'Tabulated:water', 'Analytic:Seager2007'."
+        )
 
     # Check for nonphysical pressure values
     if pressure <= 0 or np.isnan(pressure):
-        logger.debug(f"Nonphysical pressure encountered: P={pressure} Pa at radius={radius} m")
+        logger.debug(f'Nonphysical pressure encountered: P={pressure} Pa at radius={radius} m')
 
     # Calculate density at the current radius, using pressure from y
-    current_density = calculate_density(pressure, material_dictionaries, material, EOS_CHOICE, temperature, solidus_func, liquidus_func, interpolation_cache)
+    current_density = calculate_density(
+        pressure,
+        material_dictionaries,
+        material,
+        EOS_CHOICE,
+        temperature,
+        solidus_func,
+        liquidus_func,
+        interpolation_cache,
+    )
 
     # Handle potential errors in density calculation
     if current_density is None or np.isnan(current_density):
-        logger.error(f"Density calculation failed at radius={radius}, P={pressure}")
+        logger.error(f'Density calculation failed at radius={radius}, P={pressure}')
 
     # Define the ODEs for mass, gravity and pressure
     dMdr = 4 * np.pi * radius**2 * current_density
@@ -90,7 +130,24 @@ def coupled_odes(radius, y, cmb_mass, core_mantle_mass, EOS_CHOICE, interpolatio
     # Return the derivatives
     return [dMdr, dgdr, dPdr]
 
-def solve_structure(EOS_CHOICE, cmb_mass, core_mantle_mass, radii, adaptive_radial_fraction, relative_tolerance, absolute_tolerance, maximum_step, material_dictionaries, interpolation_cache, y0, solidus_func, liquidus_func, temperature_function=None):
+
+def solve_structure(
+    EOS_CHOICE,
+    cmb_mass,
+    core_mantle_mass,
+    radii,
+    adaptive_radial_fraction,
+    relative_tolerance,
+    absolute_tolerance,
+    maximum_step,
+    material_dictionaries,
+    interpolation_cache,
+    y0,
+    solidus_func,
+    liquidus_func,
+    temperature_function=None,
+    analytic_materials=None,
+):
     """
     Solve the coupled ODEs for the planetary structure model using scipy's solve_ivp. Handles special case for temperature-dependent EOS where the radial grid is split into two parts for better handling of large step sizes towards the surface.
     Parameters:
@@ -108,21 +165,61 @@ def solve_structure(EOS_CHOICE, cmb_mass, core_mantle_mass, radii, adaptive_radi
         y0 (list or numpy.ndarray): Initial conditions for the mass, gravity, and pressure at the center of the planet.
         solidus_func: Interpolation function for the solidus melting curve
         liquidus_func: Interpolation function for the liquidus melting curve
+        analytic_materials (dict or None): Per-layer material keys for Analytic:Seager2007 EOS.
     Returns:
         tuple: A tuple containing three numpy arrays: mass_enclosed (kg), gravity (m/s²), and pressure (Pa) at each radial grid point.
-        """
+    """
 
-    if EOS_CHOICE == "Tabulated:iron/Tdep_silicate":
+    if EOS_CHOICE == 'Tabulated:iron/Tdep_silicate':
         # Split the radial grid into two parts for better handling of large step sizes in solve_ivp
         radial_split_index = int(adaptive_radial_fraction * len(radii))
 
         # Solve the ODEs in two parts, first part with default max_step (adaptive)
-        sol1 = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, core_mantle_mass, EOS_CHOICE, interpolation_cache, material_dictionaries, temperature_function(r), solidus_func, liquidus_func),
-            (radii[0], radii[radial_split_index-1]), y0, t_eval=radii[:radial_split_index], rtol=relative_tolerance, atol=absolute_tolerance, method='RK45', dense_output=True)
+        sol1 = solve_ivp(
+            lambda r, y: coupled_odes(
+                r,
+                y,
+                cmb_mass,
+                core_mantle_mass,
+                EOS_CHOICE,
+                interpolation_cache,
+                material_dictionaries,
+                temperature_function(r),
+                solidus_func,
+                liquidus_func,
+            ),
+            (radii[0], radii[radial_split_index - 1]),
+            y0,
+            t_eval=radii[:radial_split_index],
+            rtol=relative_tolerance,
+            atol=absolute_tolerance,
+            method='RK45',
+            dense_output=True,
+        )
 
         # Solve the ODEs in two parts, second part with user-defined max_step
-        sol2 = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, core_mantle_mass, EOS_CHOICE, interpolation_cache, material_dictionaries, temperature_function(r), solidus_func, liquidus_func),
-            (radii[radial_split_index-1], radii[-1]), sol1.y[:, -1], t_eval=radii[radial_split_index-1:], rtol=relative_tolerance, atol=absolute_tolerance, max_step=maximum_step, method='RK45', dense_output=True)
+        sol2 = solve_ivp(
+            lambda r, y: coupled_odes(
+                r,
+                y,
+                cmb_mass,
+                core_mantle_mass,
+                EOS_CHOICE,
+                interpolation_cache,
+                material_dictionaries,
+                temperature_function(r),
+                solidus_func,
+                liquidus_func,
+            ),
+            (radii[radial_split_index - 1], radii[-1]),
+            sol1.y[:, -1],
+            t_eval=radii[radial_split_index - 1 :],
+            rtol=relative_tolerance,
+            atol=absolute_tolerance,
+            max_step=maximum_step,
+            method='RK45',
+            dense_output=True,
+        )
 
         # Extract mass, gravity, and pressure grids from the two solutions and concatenate them
         mass_enclosed = np.concatenate([sol1.y[0, :-1], sol2.y[0]])
@@ -130,9 +227,29 @@ def solve_structure(EOS_CHOICE, cmb_mass, core_mantle_mass, radii, adaptive_radi
         pressure = np.concatenate([sol1.y[2, :-1], sol2.y[2]])
     else:
         # Solve the ODEs using solve_ivp
-        temperature = 300 # Fixed-temperature for EOS from Seager et al. 2007
-        sol = solve_ivp(lambda r, y: coupled_odes(r, y, cmb_mass, core_mantle_mass, EOS_CHOICE, interpolation_cache, material_dictionaries, temperature, solidus_func, liquidus_func),
-        (radii[0], radii[-1]), y0, t_eval=radii, rtol=relative_tolerance, atol=absolute_tolerance, method='RK45', dense_output=True)
+        temperature = 300  # Fixed-temperature for EOS from Seager et al. 2007
+        sol = solve_ivp(
+            lambda r, y: coupled_odes(
+                r,
+                y,
+                cmb_mass,
+                core_mantle_mass,
+                EOS_CHOICE,
+                interpolation_cache,
+                material_dictionaries,
+                temperature,
+                solidus_func,
+                liquidus_func,
+                analytic_materials,
+            ),
+            (radii[0], radii[-1]),
+            y0,
+            t_eval=radii,
+            rtol=relative_tolerance,
+            atol=absolute_tolerance,
+            method='RK45',
+            dense_output=True,
+        )
 
         # Extract mass, gravity, and pressure grids from the solution
         mass_enclosed = sol.y[0]

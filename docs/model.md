@@ -124,3 +124,28 @@ $$
 $$
 
 - **Temperature Profile** (`calculate_temperature_profile`): Returns a callable function that provides the temperature at any radius within the planet. Supports three modes: "isothermal" for a uniform temperature, "linear" for a linear gradient between the center and surface, and "prescribed" for a user-provided temperature profile loaded from a file.
+
+## Analytic EOS: Modified Polytrope (Seager et al. 2007)
+
+The `"Analytic:Seager2007"` EOS implements the modified polytropic fit from [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346), Table 3, Eq. 11:
+
+$$
+\rho(P) = \rho_0 + c \cdot P^n
+$$
+
+where $\rho$ is density in kg/m$^3$, $P$ is pressure in Pa, and $\rho_0$, $c$, $n$ are material-specific parameters. This analytic form approximates the full EOS, which combines low-pressure Vinet or fourth-order Birch-Murnaghan fits with high-pressure Thomas-Fermi-Dirac (TFD) theory.
+
+The fit is valid for $P < 10^{16}$ Pa, covering all planetary pressures encountered in Zalmoxis models. Accuracy is 2–5% at low ($P < 5$ GPa) and high ($P > 30$ TPa) pressures, and up to 12% at intermediate pressures where the transition between the low-pressure and TFD regimes occurs.
+
+The following 6 materials are available:
+
+| Material key | Compound | $\rho_0$ (kg/m$^3$) | $c$ (kg m$^{-3}$ Pa$^{-n}$) | $n$ |
+|---|---|---|---|---|
+| `iron` | Fe ($\epsilon$) | 8300 | 0.00349 | 0.528 |
+| `MgSiO3` | MgSiO$_3$ perovskite | 4100 | 0.00161 | 0.541 |
+| `MgFeSiO3` | (Mg,Fe)SiO$_3$ | 4260 | 0.00127 | 0.549 |
+| `H2O` | Water ice (VII/VIII/X) | 1460 | 0.00311 | 0.513 |
+| `graphite` | C (graphite) | 2250 | 0.00350 | 0.514 |
+| `SiC` | Silicon carbide | 3220 | 0.00172 | 0.537 |
+
+This EOS assumes zero/low temperature (300 K) and is appropriate for cold solid exoplanet structure models. Any of the 6 materials can be assigned to any structural layer (core, mantle, outer layer), enabling modeling of exotic compositions such as carbon planets (iron/SiC or iron/graphite) that are not available with the tabulated EOS options.

@@ -13,7 +13,18 @@ center_temperature         = 6000 # Central temperature (K), required for temper
 temperature_profile_file   = "temp_profile.txt" # Filename containing a prescribed temperature profile, required for temperature_mode="prescribed"
 
 [EOS]
-choice                     = "Tabulated:iron/Tdep_silicate" # Choice of equation of state ("Tabulated:iron/silicate", "Tabulated:iron/Tdep_silicate", "Tabulated:water")
+choice                     = "Tabulated:iron/Tdep_silicate"
+# Valid choices:
+#   "Tabulated:iron/silicate"      - Seager+2007 tabulated (300K, requires data download)
+#   "Tabulated:iron/Tdep_silicate" - Seager+2007 iron + Wolf&Bower+2018 T-dep silicate
+#   "Tabulated:water"              - Seager+2007 tabulated 3-layer (300K, requires data download)
+#   "Analytic:Seager2007"          - Seager+2007 analytic polytrope (300K, no data needed)
+#
+# For Analytic:Seager2007, configure per-layer materials below.
+# Valid materials: iron, MgSiO3, MgFeSiO3, H2O, graphite, SiC
+core_material              = "iron"
+mantle_material            = "MgSiO3"
+water_layer_material       = ""  # Leave empty for 2-layer model; set for 3-layer model
 
 [Calculations]
 num_layers                 = 150 # Number of planet layers
