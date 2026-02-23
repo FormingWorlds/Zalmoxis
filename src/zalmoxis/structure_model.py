@@ -13,6 +13,64 @@ from .eos_functions import calculate_density
 logger = logging.getLogger(__name__)
 
 
+def get_layer_material(mass, cmb_mass, core_mantle_mass, eos_choice, analytic_materials=None):
+    """
+    Determine the material/layer label for a given enclosed mass.
+
+    For tabulated EOS choices this returns a layer label (e.g., "core", "mantle").
+    For the analytic EOS this returns the configured material key (e.g., "iron", "MgSiO3").
+
+    Parameters
+    ----------
+    mass : float
+        Enclosed mass at the current radial shell [kg].
+    cmb_mass : float
+        Core-mantle boundary mass [kg].
+    core_mantle_mass : float
+        Core + mantle mass [kg].
+    eos_choice : str
+        EOS identifier string.
+    analytic_materials : dict or None
+        Per-layer material keys for Analytic:Seager2007.
+
+    Returns
+    -------
+    str
+        Material or layer identifier.
+    """
+    if eos_choice == 'Tabulated:iron/silicate':
+        return 'core' if mass < cmb_mass else 'mantle'
+
+    elif eos_choice == 'Tabulated:iron/Tdep_silicate':
+        # Layer label only; phase assignment is handled inside get_Tdep_density
+        return 'core' if mass < cmb_mass else 'mantle'
+
+    elif eos_choice == 'Tabulated:water':
+        if mass < cmb_mass:
+            return 'core'
+        elif mass < core_mantle_mass:
+            return 'mantle'
+        else:
+            return 'water_ice_layer'
+
+    elif eos_choice == 'Analytic:Seager2007':
+        if mass < cmb_mass:
+            return analytic_materials['core']
+        elif core_mantle_mass > 0 and mass < core_mantle_mass:
+            return analytic_materials['mantle']
+        elif 'water_ice_layer' in analytic_materials:
+            return analytic_materials['water_ice_layer']
+        else:
+            return analytic_materials['mantle']
+
+    else:
+        raise ValueError(
+            f"Unknown eos_choice '{eos_choice}'. "
+            "Valid options: 'Tabulated:iron/silicate', 'Tabulated:iron/Tdep_silicate', "
+            "'Tabulated:water', 'Analytic:Seager2007'."
+        )
+
+
 # Define the coupled ODEs for the structure model
 def coupled_odes(
     radius,
@@ -51,56 +109,10 @@ def coupled_odes(
     # Unpack the state vector
     mass, gravity, pressure = y
 
-    # Define material based on enclosed mass within a certain mass fraction
-    if EOS_CHOICE == 'Tabulated:iron/silicate':
-        # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
-        if mass < cmb_mass:
-            # Core
-            material = 'core'
-        else:
-            # Mantle
-            material = 'mantle'
-
-    elif EOS_CHOICE == 'Tabulated:iron/Tdep_silicate':
-        # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
-        if mass < cmb_mass:
-            # Core
-            material = 'core'
-        else:
-            # Mantle, uncomment the next line to assign material based on temperature and pressure
-            material = 'mantle'  # placeholder (can be melted or solid depending on T and P)
-            # material = get_Tdep_material(pressure, temperature) #optional to assign since get_Tdep_density handles material assignment internally
-            pass
-
-    elif EOS_CHOICE == 'Tabulated:water':
-        # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
-        if mass < cmb_mass:
-            # Core
-            material = 'core'
-        elif mass < core_mantle_mass:
-            # Inner mantle
-            material = 'mantle'
-        else:
-            # Outer layer
-            material = 'water_ice_layer'
-
-    elif EOS_CHOICE == 'Analytic:Seager2007':
-        # Map layer position to configured material key (e.g., "iron", "MgSiO3")
-        if mass < cmb_mass:
-            material = analytic_materials['core']
-        elif core_mantle_mass > 0 and mass < core_mantle_mass:
-            material = analytic_materials['mantle']
-        elif 'water_ice_layer' in analytic_materials:
-            material = analytic_materials['water_ice_layer']
-        else:
-            material = analytic_materials['mantle']
-
-    else:
-        raise ValueError(
-            f"Unknown EOS_CHOICE '{EOS_CHOICE}'. "
-            "Valid options: 'Tabulated:iron/silicate', 'Tabulated:iron/Tdep_silicate', "
-            "'Tabulated:water', 'Analytic:Seager2007'."
-        )
+    # Determine material/layer for the current enclosed mass
+    material = get_layer_material(
+        mass, cmb_mass, core_mantle_mass, EOS_CHOICE, analytic_materials
+    )
 
     # Check for nonphysical pressure values
     if pressure <= 0 or np.isnan(pressure):
@@ -118,9 +130,13 @@ def coupled_odes(
         interpolation_cache,
     )
 
-    # Handle potential errors in density calculation
+    # Guard against failed density calculation to prevent ODE solver crash
     if current_density is None or np.isnan(current_density):
-        logger.error(f'Density calculation failed at radius={radius}, P={pressure}')
+        logger.error(
+            f'Density calculation failed at radius={radius}, P={pressure}. '
+            'Returning zero derivatives to allow solver to continue.'
+        )
+        return [0.0, 0.0, 0.0]
 
     # Define the ODEs for mass, gravity and pressure
     dMdr = 4 * np.pi * radius**2 * current_density

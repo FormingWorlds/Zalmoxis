@@ -10,6 +10,8 @@ import os
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator, interp1d
 
+from .eos_analytic import get_analytic_density
+
 # Read the environment variable for ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
 if not ZALMOXIS_ROOT:
@@ -307,8 +309,6 @@ def calculate_density(
             pressure, material_properties_water_planets, material, interpolation_functions
         )
     elif eos_choice == 'Analytic:Seager2007':
-        from .eos_analytic import get_analytic_density
-
         return get_analytic_density(pressure, material)
     else:
         raise ValueError('Invalid EOS choice.')

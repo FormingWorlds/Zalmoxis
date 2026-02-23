@@ -25,7 +25,7 @@ from .eos_properties import (
 )
 from .plots.plot_phase_vs_radius import plot_PT_with_phases
 from .plots.plot_profiles import plot_planet_profile_single
-from .structure_model import solve_structure
+from .structure_model import get_layer_material, solve_structure
 
 # Run file via command line with default configuration file: python -m zalmoxis -c input/default.toml
 
@@ -373,47 +373,13 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
 
             # Update density grid based on the mass enclosed within a certain mass fraction
             for i in range(num_layers):
-                if EOS_CHOICE == 'Tabulated:iron/silicate':
-                    # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
-                    if mass_enclosed[i] < cmb_mass:
-                        # Core
-                        material = 'core'
-                    else:
-                        # Mantle
-                        material = 'mantle'
-                elif EOS_CHOICE == 'Tabulated:iron/Tdep_silicate':
-                    # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
-                    if mass_enclosed[i] < cmb_mass:
-                        # Core
-                        material = 'core'
-                    else:
-                        # Mantle, uncomment the next line to assign material based on temperature and pressure
-                        material = None  # placeholder to avoid material not defined error
-                        # material = get_Tdep_material(pressure[i], float(temperature_function(radii[i]))) #optional to assign since get_Tdep_density handles material assignment internally
-                        pass
-
-                elif EOS_CHOICE == 'Tabulated:water':
-                    # Define the material type based on the calculated enclosed mass up to the core-mantle boundary
-                    if mass_enclosed[i] < cmb_mass:
-                        # Core
-                        material = 'core'
-                    elif mass_enclosed[i] < core_mantle_mass:
-                        # Inner mantle
-                        material = 'mantle'
-                    else:
-                        # Outer layer
-                        material = 'water_ice_layer'
-
-                elif EOS_CHOICE == 'Analytic:Seager2007':
-                    # Map layer position to configured material key
-                    if mass_enclosed[i] < cmb_mass:
-                        material = analytic_materials['core']
-                    elif core_mantle_mass > 0 and mass_enclosed[i] < core_mantle_mass:
-                        material = analytic_materials['mantle']
-                    elif 'water_ice_layer' in analytic_materials:
-                        material = analytic_materials['water_ice_layer']
-                    else:
-                        material = analytic_materials['mantle']
+                material = get_layer_material(
+                    mass_enclosed[i],
+                    cmb_mass,
+                    core_mantle_mass,
+                    EOS_CHOICE,
+                    analytic_materials,
+                )
 
                 # Calculate the new density using the equation of state
                 new_density = calculate_density(
