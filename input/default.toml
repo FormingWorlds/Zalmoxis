@@ -18,7 +18,7 @@ temperature_profile_file   = "temp_profile.txt" # Filename containing a prescrib
 #   "Seager2007:iron"       - Seager+2007 tabulated Fe epsilon (300K)
 #   "Seager2007:MgSiO3"    - Seager+2007 tabulated MgSiO3 perovskite (300K)
 #   "Seager2007:H2O"       - Seager+2007 tabulated water ice (300K)
-#   "WolfBower2018:MgSiO3" - Wolf&Bower+2018 T-dependent MgSiO3 (melt/solid)
+#   "WolfBower2018:MgSiO3" - Wolf&Bower+2018 T-dependent MgSiO3 (melt/solid), limited to <= 2 M_earth
 #   "Analytic:<material>"  - Seager+2007 analytic polytrope (300K, no data needed)
 #     Valid analytic materials: iron, MgSiO3, MgFeSiO3, H2O, graphite, SiC
 core                       = "Seager2007:iron"

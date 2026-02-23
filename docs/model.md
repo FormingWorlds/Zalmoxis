@@ -57,7 +57,7 @@ Legacy global strings are still accepted via a backward-compatible mapping in `p
 | `Seager2007:iron` | Tabulated | Fe ($\epsilon$) | 300 K |
 | `Seager2007:MgSiO3` | Tabulated | MgSiO$_3$ perovskite | 300 K |
 | `Seager2007:H2O` | Tabulated | Water ice (VII/VIII/X) | 300 K |
-| `WolfBower2018:MgSiO3` | Tabulated | MgSiO$_3$ (solid + melt) | $T$-dependent |
+| `WolfBower2018:MgSiO3` | Tabulated | MgSiO$_3$ (solid + melt) | $T$-dependent ($\leq 2\,M_\oplus$) |
 | `Analytic:<material>` | Analytic fit | Any of 6 materials | 300 K |
 
 ---
@@ -103,6 +103,11 @@ $$
 This EOS is appropriate when modeling hot rocky planets whose mantles may be partially or fully molten, which is critical for accurately coupling to thermal evolution codes.
 A temperature profile (isothermal, linear, or prescribed from file) must be supplied.
 When this EOS is selected for any layer, the radial integration is split into two segments (controlled by `adaptive_radial_fraction`) to handle the steep density gradients near the surface.
+
+**Mass limit.** The WolfBower2018 tables cover pressures up to ~1 TPa.
+For planets above $2\,M_\oplus$, deep-mantle pressures near the core-mantle boundary exceed this limit.
+The code raises a `ValueError` if `WolfBower2018:MgSiO3` is used with a planet mass exceeding this threshold.
+For higher-mass planets, use `Seager2007:MgSiO3` or `Analytic:MgSiO3` instead.
 
 ### Analytic Modified Polytrope (Seager et al. 2007)
 

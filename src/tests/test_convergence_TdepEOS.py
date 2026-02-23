@@ -14,14 +14,19 @@ if not ZALMOXIS_ROOT:
 
 
 @pytest.mark.parametrize(
-    'mass', [1, 2, 3, 4, 5, 6]
-)  # 1 to 6 Earth masses (keep it simple for CI tests; works up to 6.7)
+    'mass', [1, 2]
+)  # WolfBower2018 EOS tables are limited to ~1 TPa; only valid for <= 2 M_earth
 def test_all_compositions_converge(mass):
-    """Test that the T-dependent EOS model converges for various planet masses.
+    """Test that the T-dependent EOS model converges for low-mass planets.
+
+    The WolfBower2018:MgSiO3 EOS tables cover pressures up to ~1 TPa,
+    which limits their applicability to planets <= 2 M_earth. For higher
+    masses, deep-mantle pressures near the CMB exceed the table boundary.
 
     Verifies convergence and checks that the resulting density profiles are
-    physically consistent: iron core densities in 8000-14000 kg/m3 range,
-    MgSiO3 mantle densities in 3500-7000 kg/m3 range.
+    physically consistent: iron core densities >= 8000 kg/m3 (catches the
+    old bug where MgSiO3 density was used for the core), mantle densities
+    in the expected range for T-dependent MgSiO3.
     """
     print(f'Running test for mass = {mass}')
 
@@ -78,8 +83,7 @@ def test_all_compositions_converge(mass):
         # Mantle starts at CMB and extends to surface. Lower bound accounts
         # for molten MgSiO3 near the surface at T_surface=3500K and low P
         # (WolfBower2018 melt density ~2200 kg/m3 at surface conditions).
-        # Upper bound allows for high-pressure compressed MgSiO3 near CMB
-        # of super-Earths.
+        # Upper bound allows for high-pressure compressed MgSiO3 near CMB.
         mantle_densities = density[cmb_index:]
         if len(mantle_densities) > 0:
             mantle_nonzero = mantle_densities[mantle_densities > 0]
