@@ -15,7 +15,6 @@ Saves all plots as PDF to output_files/.
 from __future__ import annotations
 
 import os
-import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -106,7 +105,7 @@ def plot5_physical_validity():
     # Annotate range check
     rho_center = prof['density'][0]
     rho_surface = prof['density'][-1]
-    ax.axhspan(12000, 14000, alpha=0.1, color='red', label=f'Fe expected range')
+    ax.axhspan(12000, 14000, alpha=0.1, color='red', label='Fe expected range')
     ax.axhspan(4000, 5500, alpha=0.1, color='orange', label='MgSiO$_3$ expected range')
     ax.legend(fontsize=8, loc='upper right')
     mono_ok = '(monotonic)' if check_monotonic(prof['density']) else '(NOT monotonic!)'
