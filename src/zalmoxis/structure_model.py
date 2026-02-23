@@ -105,13 +105,13 @@ def coupled_odes(
         interpolation_cache,
     )
 
-    # Guard against failed density calculation to prevent ODE solver crash
+    # Fail fast on invalid density — continuing with zero derivatives would
+    # silently produce non-physical profiles that pass convergence checks.
     if current_density is None or np.isnan(current_density):
-        logger.error(
-            f'Density calculation failed at radius={radius}, P={pressure}. '
-            'Returning zero derivatives to allow solver to continue.'
+        raise RuntimeError(
+            f'Density calculation failed at radius={radius:.4e} m, P={pressure:.4e} Pa, '
+            f'layer_eos={layer_eos}. Cannot continue integration.'
         )
-        return [0.0, 0.0, 0.0]
 
     # Define the ODEs for mass, gravity and pressure
     dMdr = 4 * np.pi * radius**2 * current_density
@@ -185,7 +185,9 @@ def solve_structure(
 
     if uses_Tdep:
         # Split the radial grid into two parts for better handling of large step sizes
-        radial_split_index = int(adaptive_radial_fraction * len(radii))
+        radial_split_index = max(
+            1, min(len(radii) - 1, int(adaptive_radial_fraction * len(radii)))
+        )
 
         # Solve the ODEs in two parts, first part with default max_step (adaptive)
         sol1 = solve_ivp(

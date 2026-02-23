@@ -66,9 +66,9 @@ def run_zalmoxis_for_ternary(args):
     converged = model_results.get('converged', False)
 
     # Check if model converged before proceeding
-    if not model_results.get('converged', False):
+    if not converged:
         logger.warning(f'Model did not converge for core: {core_frac}, mantle: {mantle_frac}')
-        return converged
+        return core_frac, mantle_frac, water_frac, converged
 
     # Extract the results from the model output
     radii = model_results['radii']
