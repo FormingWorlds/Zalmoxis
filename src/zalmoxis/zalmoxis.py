@@ -80,6 +80,11 @@ def parse_eos_config(eos_section):
     """
     # New format: per-layer fields present
     if 'core' in eos_section:
+        if 'mantle' not in eos_section:
+            raise ValueError(
+                "EOS config has 'core' but missing 'mantle'. "
+                "Both 'core' and 'mantle' are required."
+            )
         layer_eos = {
             'core': eos_section['core'],
             'mantle': eos_section['mantle'],

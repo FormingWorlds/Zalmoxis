@@ -363,9 +363,7 @@ def calculate_temperature_profile(
 
     elif temperature_mode == 'prescribed':
         temp_profile_path = os.path.join(input_dir, temp_profile_file)
-        if temp_profile_path is None or not os.path.exists(
-            os.path.join(input_dir, temp_profile_file)
-        ):
+        if not os.path.exists(temp_profile_path):
             raise ValueError(
                 "Temperature profile file must be provided and exist for 'prescribed' temperature mode."
             )
