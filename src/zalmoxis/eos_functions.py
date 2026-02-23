@@ -219,6 +219,9 @@ def get_Tdep_density(
             temperature,
             interpolation_functions,
         )
+        # Guard against out-of-bounds pressure returning None
+        if rho_solid is None or rho_liquid is None:
+            return None
         # Calculate mixed density by volume additivity
         specific_volume_mixed = frac_melt * (1 / rho_liquid) + (1 - frac_melt) * (1 / rho_solid)
         rho_mixed = 1 / specific_volume_mixed

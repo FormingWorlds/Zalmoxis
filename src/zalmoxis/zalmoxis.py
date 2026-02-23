@@ -462,8 +462,9 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                         'Surface pressure may not be fully converged.'
                     )
 
-            # Update density grid
-            for i in range(num_layers):
+            # Update density grid (solve_structure may return fewer points
+            # than num_layers if the ODE solver terminated early)
+            for i in range(min(num_layers, len(mass_enclosed))):
                 layer_eos = get_layer_eos(
                     mass_enclosed[i],
                     cmb_mass,

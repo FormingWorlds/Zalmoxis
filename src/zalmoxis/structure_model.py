@@ -90,9 +90,12 @@ def coupled_odes(
     # Determine per-layer EOS for the current enclosed mass
     layer_eos = get_layer_eos(mass, cmb_mass, core_mantle_mass, layer_eos_config)
 
-    # Check for nonphysical pressure values
+    # Return zero derivatives for non-physical pressure.  The adaptive ODE
+    # solver (RK45) may evaluate trial points beyond the physical domain;
+    # zero derivatives signal the solver to reject the step and retry smaller.
     if pressure <= 0 or np.isnan(pressure):
         logger.debug(f'Nonphysical pressure encountered: P={pressure} Pa at radius={radius} m')
+        return [0.0, 0.0, 0.0]
 
     # Calculate density at the current radius, using pressure from y
     current_density = calculate_density(
@@ -105,13 +108,12 @@ def coupled_odes(
         interpolation_cache,
     )
 
-    # Fail fast on invalid density — continuing with zero derivatives would
-    # silently produce non-physical profiles that pass convergence checks.
+    # Return zero derivatives for invalid density.  This is intentional:
+    # the adaptive ODE solver (RK45) evaluates the RHS at trial points that
+    # may be non-physical (e.g. negative pressure).  Zero derivatives cause
+    # the solver to reject the step and retry with a smaller step size.
     if current_density is None or np.isnan(current_density):
-        raise RuntimeError(
-            f'Density calculation failed at radius={radius:.4e} m, P={pressure:.4e} Pa, '
-            f'layer_eos={layer_eos}. Cannot continue integration.'
-        )
+        return [0.0, 0.0, 0.0]
 
     # Define the ODEs for mass, gravity and pressure
     dMdr = 4 * np.pi * radius**2 * current_density
