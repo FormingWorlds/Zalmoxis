@@ -18,7 +18,7 @@ if not ZALMOXIS_ROOT:
         'The old code accidentally used MgSiO3 density for the iron core in the '
         'Tdep EOS path, producing wrong but convergent results. With the correct '
         'iron core density (~13000 vs ~5000 kg/m³), the iterative solver needs '
-        'retuned parameters. See PR #49.'
+        'retuned parameters. See PR #49 and issue #50.'
     )
 )
 @pytest.mark.parametrize(
