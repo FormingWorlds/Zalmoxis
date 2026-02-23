@@ -127,8 +127,6 @@ class TestAnalyticVsTabulated:
     def test_analytic_vs_tabulated(self, material_key, eos_file, col_density, col_pressure):
         """Analytic EOS should agree with tabulated data within ~15%."""
         data_path = os.path.join(ZALMOXIS_ROOT, 'data', 'EOS_Seager2007', eos_file)
-        if not os.path.exists(data_path):
-            pytest.skip(f'Tabulated data file not found: {data_path}')
 
         data = np.loadtxt(data_path, delimiter=',', skiprows=1)
         densities_tab = data[:, col_density] * 1e3  # g/cm^3 -> kg/m^3

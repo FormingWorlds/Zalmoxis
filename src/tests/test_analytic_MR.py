@@ -23,13 +23,7 @@ ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
 if not ZALMOXIS_ROOT:
     raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
 
-# Check if tabulated EOS data files are available
-_tabulated_data_available = os.path.exists(
-    os.path.join(ZALMOXIS_ROOT, 'data', 'EOS_Seager2007', 'eos_seager07_iron.txt')
-)
 
-
-@pytest.mark.skipif(not _tabulated_data_available, reason='Tabulated EOS data not available')
 class TestAnalyticVsTabulatedMR:
     """Compare analytic iron/MgSiO3 mass-radius against tabulated iron/silicate."""
 
@@ -59,7 +53,6 @@ class TestAnalyticVsTabulatedMR:
         )
 
 
-@pytest.mark.skipif(not _tabulated_data_available, reason='Tabulated EOS data not available')
 class TestAnalyticWaterPlanetMR:
     """Compare analytic 3-layer iron/MgSiO3/H2O against tabulated water planets."""
 
