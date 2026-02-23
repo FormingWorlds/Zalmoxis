@@ -150,7 +150,7 @@ Because any of the six materials can be assigned to any structural layer, the an
 | `Seager2007:iron` | 0--$10^{16}$ Pa | 300 K (fixed) | ~50 $M_\oplus$ | Vinet + DFT + TFD |
 | `Seager2007:MgSiO3` | 0--$10^{16}$ Pa | 300 K (fixed) | ~50 $M_\oplus$ | 4th-order BME + DFT + TFD |
 | `Seager2007:H2O` | 0--$10^{16}$ Pa | 300 K (fixed) | ~50 $M_\oplus$ | Experimental + DFT + TFD |
-| `WolfBower2018:MgSiO3` | 0--$10^{12}$ Pa (1 TPa) | 0--16500 K | 7 $M_\oplus$ | RTpress; clamped at table edge for $P > 1$ TPa |
+| `WolfBower2018:MgSiO3` | 0--$10^{12}$ Pa (1 TPa) | 0--16500 K | 7 $M_\oplus$ | RTpress; $P$ clamped at table edge, $T$ out-of-bounds raises error |
 | `Analytic:*` | 0--$10^{16}$ Pa | 300 K (fixed) | ~50 $M_\oplus$ | 2--12% accuracy vs. tabulated |
 
 ### General limits
@@ -159,8 +159,9 @@ Because any of the six materials can be assigned to any structural layer, the an
   Below $\sim 0.1 \, M_{\oplus}$, the assumption of hydrostatic equilibrium and the EOS parameterizations become unreliable.
   Above $\sim 50 \, M_{\oplus}$, the planet enters the gas-giant regime where the absence of an H/He envelope EOS limits applicability.
 - **Pressure range:** The Seager et al. (2007) tabulated and analytic EOS are valid up to $P \sim 10^{16}$ Pa ($10^{10}$ GPa), which exceeds central pressures for all planets within the supported mass range.
-  The WolfBower2018 tables are limited to ~1 TPa; out-of-bounds pressures are clamped to the table edge (see [EOS Physics > Wolf & Bower 2018](#wolf--bower-2018-temperature-dependent-eos)).
-- **Temperature range (Wolf & Bower 2018 only):** The $P$--$T$ tables cover 0--16500 K; the code clamps at the grid boundary for out-of-range values.
+  The WolfBower2018 tables are limited to ~1 TPa; out-of-bounds pressures are clamped to the table edge (see [EOS Physics > Wolf & Bower 2018](#wolf-bower-2018-temperature-dependent-eos)).
+- **Temperature range (Wolf & Bower 2018 only):** The $P$--$T$ tables cover 0--16500 K; the code raises a `ValueError` if the requested temperature falls outside this grid.
+  Out-of-bounds *pressures* are clamped to the table edge (see above), but out-of-bounds *temperatures* are not.
   The Seager et al. (2007) EOS (both tabulated and analytic) is evaluated at a fixed 300 K and carries no temperature dependence.
 - **Composition:** All EOS assume single-component layers with sharp compositional boundaries (no mixing gradients across interfaces).
 
@@ -232,7 +233,7 @@ $$
 $$
 
 with $P_{\mathrm{low}} = \max(10^6 \, \mathrm{Pa}, \; 0.1 \, \hat{P}_c)$ and $P_{\mathrm{high}} = 10 \, \hat{P}_c$.
-When using `WolfBower2018:MgSiO3`, $P_{\mathrm{high}}$ is further capped at `max_center_pressure_guess` to remain within the iron core EOS table.
+When using `WolfBower2018:MgSiO3`, $P_{\mathrm{high}}$ is further capped at `max_center_pressure_guess` to prevent excessively high central pressures that would push deep-mantle pressures far beyond the 1 TPa WolfBower2018 table ceiling.
 
 **Terminal event.**
 Each ODE integration includes a terminal event that stops `solve_ivp` when the pressure crosses zero ($P \to 0^-$).

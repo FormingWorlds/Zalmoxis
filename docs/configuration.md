@@ -244,7 +244,7 @@ Controls the three nested iteration loops (outer mass convergence, inner density
 | `absolute_tolerance` | float | -- | 1e-6 | Absolute tolerance for `solve_ivp`. |
 | `maximum_step` | float | m | 250000 | Maximum radial step size for `solve_ivp`. |
 | `adaptive_radial_fraction` | float | -- | 0.98 | Fraction (0--1) of the radial domain where `solve_ivp` uses adaptive stepping before switching to fixed steps. Primarily relevant for the `WolfBower2018:MgSiO3` EOS near the surface. |
-| `max_center_pressure_guess` | float | Pa | 10e12 | Upper bound on the Brent solver's pressure bracket. Caps $P_{\mathrm{high}}$ to keep the bracket within the iron core EOS table. Only active when `WolfBower2018:MgSiO3` is used; the Seager2007 iron EOS is valid to $10^{21}$ Pa so this cap is not needed for pure-Seager runs. |
+| `max_center_pressure_guess` | float | Pa | 10e12 | Upper bound on the Brent solver's pressure bracket ($P_{\mathrm{high}}$). Prevents excessively high central pressures that would push deep-mantle pressures far beyond the WolfBower2018 table ceiling (~1 TPa). Only active when `WolfBower2018:MgSiO3` is used; the Seager2007 EOS tables extend to much higher pressures, so this cap is not needed for pure-Seager runs. |
 
 #### Guidance on reasonable parameter ranges
 
@@ -252,7 +252,7 @@ The default values work well for Earth-mass planets with the default EOS. For ot
 
 - **Super-Earths (1--10 $M_\oplus$):** The defaults generally suffice. For masses above ~5 $M_\oplus$, consider tightening `tolerance_outer` to 1e-4 and increasing `num_layers` to 200--300. The Brent pressure solver converges in 20--36 evaluations regardless of planet mass.
 - **Sub-Earths (< 1 $M_\oplus$):** May converge faster. Defaults are conservative.
-- **Temperature-dependent EOS (`WolfBower2018:MgSiO3`):** Limited to $\leq 7\,M_\oplus$. If convergence is slow, try reducing `maximum_step` (e.g., to 100000 m) and ensuring `adaptive_radial_fraction` is close to 1.0 (e.g., 0.98--0.99). The `max_center_pressure_guess` caps the Brent solver's upper bracket and should be set high enough to encompass the true central pressure (default 10 TPa covers the iron core EOS range).
+- **Temperature-dependent EOS (`WolfBower2018:MgSiO3`):** Limited to $\leq 7\,M_\oplus$. If convergence is slow, try reducing `maximum_step` (e.g., to 100000 m) and ensuring `adaptive_radial_fraction` is close to 1.0 (e.g., 0.98--0.99). The `max_center_pressure_guess` caps the Brent solver's upper bracket to prevent deep-mantle pressures from exceeding the WolfBower2018 table by too much. The default (10 TPa) is sufficient for planets up to 7 $M_\oplus$.
 - **Analytic EOS:** Convergence is typically fast and robust. Looser tolerances and fewer layers are usually sufficient for exploration.
 - **3-layer models:** Adding an ice layer increases the number of density discontinuities. Consider increasing `num_layers` to 200+ for smooth profiles.
 
