@@ -115,6 +115,7 @@ plugins:
           docstring_style: numpy
           docstring_options:
             ignore_init_summary: yes
+          docstring_section_style: table
           show_submodules: no
           show_source: true
           show_symbol_type_heading: True
@@ -122,7 +123,6 @@ plugins:
           show_root_toc_entry: true
           show_docstring_attributes: true
           show_root_full_path: false
-          docstring_section_style: list
           members_order: alphabetical
           merge_init_into_class: yes
           filters: ["!^_"]
