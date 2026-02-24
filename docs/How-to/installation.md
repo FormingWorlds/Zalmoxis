@@ -1,71 +1,84 @@
 # Installation
 
-## Python environment
+!!! note
+    The standard way of installing this version of Zalmoxis is within the PROTEUS Framework, as described in the [PROTEUS installation guide](https://proteus-framework.org/PROTEUS/installation.html#9-install-submodules-as-editable). 
 
-You will need to install Python (>=3.12) on your system.
+### Prerequisites
+- **Python:** >=3.12 installed
+- **pip:** available (`python -m pip --version`)
+- **Git:** only needed for the developer install (`git --version`)
+- **Internet access:** required to download necessary data
+- *(Optional)* **Conda/Anaconda/Miniconda:** only if you want to use a conda environment
 
-## Download the framework
+### 0. Optional: Conda/virtual environment
+
+Create and activate a Conda environment (requires `conda` installed):
+```bash
+conda create -n zalmoxis python=3.12 -y
+conda activate zalmoxis
+```
+
+No `conda`? create and activate a virtual environment (venv):
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
 
 Follow these steps to install and configure Zalmoxis:
 
-1. Create a virtual environment
+### 1. Clone the repository and install dependencies
 
-    ```console
-    python -m venv .venv
-    source .venv/bin/activate
-    ```
+```bash
+git clone https://github.com/FormingWorlds/Zalmoxis.git
+cd Zalmoxis
+pip install -e .   
+```
 
-2. Clone the repository and install dependencies
-
-    ```console
-    git clone https://github.com/FormingWorlds/Zalmoxis.git
-    cd Zalmoxis
-    pip install -e .   
-    ```
 This installs Zalmoxis in editable mode, so local changes to the code are immediately reflected.
 
-3. Set environment variable
+### 2. Set environment variable
 
-    Zalmoxis requires the `ZALMOXIS_ROOT` environment variable to point to the base directory:
+Zalmoxis requires the `ZALMOXIS_ROOT` environment variable to point to the base directory:
 
-    ```console
-    export ZALMOXIS_ROOT=$(pwd)
-    ```
+```bash
+export ZALMOXIS_ROOT=$(pwd)
+```
 
-    To make `ZALMOXIS_ROOT` available across sessions, add the above line to your shell profile file:
+To make `ZALMOXIS_ROOT` available across sessions, add the above line to your shell profile file:
 
-    * For `bash` users:
+* For `bash` users:
 
-    ```console
-    echo "export ZALMOXIS_ROOT=$(pwd)" >> ~/.bashrc
-    ```
+```bash
+echo "export ZALMOXIS_ROOT=$(pwd)" >> ~/.bashrc
+```
 
-    * For `zsh` users:
+* For `zsh` users:
 
-    ```console
-    echo "export ZALMOXIS_ROOT=$(pwd)" >> ~/.zshrc
-    ```
+```bash
+echo "export ZALMOXIS_ROOT=$(pwd)" >> ~/.zshrc
+```
 
-    Afterwards, reload your profile with:
+Afterwards, reload your profile with:
 
-    * For `bash` users:
+* For `bash` users:
 
-    ```console
-    source ~/.bashrc 
-    ```
+```bash
+source ~/.bashrc 
+```
 
-    * For `zsh` users:
+* For `zsh` users:
 
-    ```console
-    source ~/.zshrc
-    ```
+```bash
+source ~/.zshrc
+```
 
-4. Download necessary input/output files
+### 3. Download necessary input/output files
 
-    Run the provided script to download required model files:
+Run the provided script to download required model files:
 
-    ```console
-    bash src/get_zalmoxis.sh
-    ```
-    This will create the `data/` folder for configuration files and the `output_files/` folder for model results.
+```bash
+bash src/get_zalmoxis.sh
+```
+
+This will create the `data/` folder for configuration files and the `output_files/` folder for model results.
 
