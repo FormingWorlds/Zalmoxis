@@ -24,7 +24,7 @@ def get_tabulated_eos(pressure, material_dictionary, material, temperature=None,
     Interpolate density from tabulated EOS data.
     
     Parameters
-    ----------
+    ----------  
     pressure : float
         Pressure at which to evaluate the EOS [Pa].
     material_dictionary : dict
