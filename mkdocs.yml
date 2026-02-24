@@ -4,25 +4,40 @@ repo_url: https://github.com/FormingWorlds/Zalmoxis
 
 nav:
   - Home: index.md
-  - Data: data.md
-  - Installation: installation.md
-  - Configuration: configuration.md
-  - Usage: usage.md
-  - Interior Structure Model: model.md
-  - Contributing: CONTRIBUTING.md
-  - Code of Conduct: CODE_OF_CONDUCT.md
+  - How-to guides:
+      - Installation: How-to/installation.md
+      - Configuration: How-to/configuration.md
+      - Usage: How-to/usage.md
+
+  - Explanations:
+      - Model overview: Explanations/model.md
+
+  - Reference:
+      - API reference: Reference/api.md
+      - Data: Reference/data.md
+
+  - Community:
+      - Code of Conduct: CODE_OF_CONDUCT.md
+      - Contributing: CONTRIBUTING.md
+      - Contact: contact.md
+      - Developers: https://proteus-framework.org/people/
+
   - Source code: https://github.com/FormingWorlds/Zalmoxis
   - Issues page: https://github.com/FormingWorlds/Zalmoxis/issues
-  - 🔗 PROTEUS: https://proteus-framework.org/PROTEUS/
-  - 🔗 JANUS: https://proteus-framework.org/JANUS/
-  - 🔗 ZEPHYRUS: https://proteus-framework.org/ZEPHYRUS/
-  - 🔗 CALLIOPE: https://proteus-framework.org/CALLIOPE/
-  - 🔗 MORS: https://proteus-framework.org/MORS/
-  - 🔗 AGNI: https://h-nicholls.space/AGNI/dev/
-  - 🔗 Obliqua: https://proteus-framework.org/Obliqua/ 
-  - 🔗 VULCAN: https://github.com/FormingWorlds/VULCAN/
-  - 🔗 Aragog: https://proteus-framework.org/aragog/
-  - 🔗 SPIDER: https://github.com/djbower/spider
+  - Other PROTEUS modules:
+      - 🔗 PROTEUS: https://proteus-framework.org/PROTEUS/
+      - 🔗 MORS:  https://proteus-framework.org/MORS/
+      - 🔗 JANUS: https://proteus-framework.org/JANUS/
+      - 🔗 ZEPHYRUS: https://proteus-framework.org/ZEPHYRUS/
+      - 🔗 CALLIOPE: https://proteus-framework.org/CALLIOPE/
+      - 🔗 AGNI: https://www.h-nicholls.space/AGNI/
+      - 🔗 Obliqua: https://proteus-framework.org/Obliqua/
+      - 🔗 VULCAN: https://proteus-framework.org/VULCAN/
+      - 🔗 Aragog: https://proteus-framework.org/aragog/
+      - 🔗 SPIDER: https://proteus-framework.org/SPIDER/
+      - 🔗 Atmodeller: https://atmodeller.readthedocs.io/en/latest/
+      - 🔗 FastChem: https://newstrangeworlds.github.io/FastChem/
+      - 🔗 PLATON: https://platon.readthedocs.io/en/latest/
 
 theme:
   name: material
@@ -45,7 +60,6 @@ markdown_extensions:
       generic: true
 
 extra_javascript:
-  - https://polyfill.io/v3/polyfill.min.js?features=es6
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
 
 plugins:
