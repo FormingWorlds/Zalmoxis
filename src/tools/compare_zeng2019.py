@@ -26,8 +26,8 @@ if not ZALMOXIS_ROOT:
 # Configuration
 # ---------------------------------------------------------------------------
 
-MASSES = [0.5, 1, 2, 5, 10]  # Earth masses
-WOLFBOWER_MASSES = [0.5, 1, 2, 5]  # WolfBower2018 limited to <= 7 M_earth
+MASSES = [0.5, 1, 2, 3, 5, 7, 10]  # Earth masses
+WOLFBOWER_MASSES = [0.5, 1, 2, 3, 4, 5, 7]  # WolfBower2018 limited to <= 7 M_earth
 
 # Each composition defines EOS overrides for tabulated, analytic, and
 # (optionally) WolfBower2018 variants.
