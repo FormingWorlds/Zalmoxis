@@ -22,9 +22,9 @@ logger = logging.getLogger(__name__)
 def get_tabulated_eos(pressure, material_dictionary, material, temperature=None, interpolation_functions={}):
     """
     Interpolate density from tabulated EOS data.
-    
+
     Parameters
-    ----------  
+    ----------
     pressure : float
         Pressure at which to evaluate the EOS [Pa].
     material_dictionary : dict
