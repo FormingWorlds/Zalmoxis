@@ -13,7 +13,7 @@ nav:
       - Model overview: Explanations/model.md
 
   - Reference:
-      - API reference:
+      - API reference: 
           - Overview: Reference/api/index.md
           - Core: Reference/api/zalmoxis.zalmoxis.md
           - Constants: Reference/api/zalmoxis.constants.md
