@@ -1,0 +1,10 @@
+/* Preserve line breaks when docstrings render as plain paragraphs */
+.doc-contents p {
+    white-space: pre-wrap;
+}
+
+/* Wrap long identifiers instead of overflowing */
+.doc-contents,
+.doc-contents * {
+    overflow-wrap: anywhere;
+}

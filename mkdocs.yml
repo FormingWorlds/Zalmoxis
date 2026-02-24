@@ -13,7 +13,13 @@ nav:
       - Model overview: Explanations/model.md
 
   - Reference:
-      - API reference: Reference/api.md
+      - API reference:
+          - Overview: Reference/api/index.md
+          - Core: Reference/api/zalmoxis.zalmoxis.md
+          - Constants: Reference/api/zalmoxis.constants.md
+          - EOS functions: Reference/api/zalmoxis.eos_functions.md
+          - EOS properties: Reference/api/zalmoxis.eos_properties.md
+          - Structure model: Reference/api/zalmoxis.structure_model.md
       - Data: Reference/data.md
 
   - Community:
@@ -44,7 +50,6 @@ theme:
   custom_dir: docs/overrides
   features:
   - content.code.copy
-  - navigation.expand
 
   # Default assets (used unless overridden per palette below)
   favicon: assets/PROTEUS_black_on_white_logo_only.png
@@ -88,6 +93,7 @@ markdown_extensions:
 extra_javascript:
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
   - javascripts/header-links.js
+  - javascripts/expand.js
 
 plugins:
 - search

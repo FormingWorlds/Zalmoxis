@@ -10,4 +10,4 @@ The following curves serve as reference benchmarks for validating the Zalmoxis i
 
 ## Seager EOS data
 
-Zalmoxis makes use of the equation of state (EOS) data from [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346), which provide pressure-density relations for iron, silicate, and water ice. This data is automatically downloaded during the setup process (see Installation Step 4 of the [installation guide](https://proteus-framework.org/Zalmoxis/installation/)).
+Zalmoxis makes use of the equation of state (EOS) data from [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346), which provide pressure-density relations for iron, silicate, and water ice. This data is automatically downloaded during the setup process (see Installation Step 4 of the [installation guide](../How-to/installation.md).
