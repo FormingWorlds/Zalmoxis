@@ -1,3 +1,12 @@
+"""
+Zalmoxis top-level runner.
+
+!!! Imports
+    - **EOS**: [`zalmoxis.eos_functions`](zalmoxis.eos_functions.md) — `calculate_density`, `calculate_temperature_profile`, `create_pressure_density_files`, `get_solidus_liquidus_functions`, `get_Tdep_material`
+    - **EOS**: [`zalmoxis.eos_properties`](zalmoxis.eos_properties.md) — `material_properties_iron_silicate_planets`, `material_properties_iron_Tdep_silicate_planets`, `material_properties_water_planets`
+    - **Structure**: [`zalmoxis.structure_model`](zalmoxis.structure_model.md) — `solve_structure`
+"""
+
 from __future__ import annotations
 
 import logging
@@ -37,11 +46,23 @@ logger = logging.getLogger(__name__)
 
 def choose_config_file(temp_config_path=None):
     """
-    Function to choose the configuration file to run the main function.
-    The function will first check if a temporary configuration file is provided.
-    If not, it will check if the -c flag is provided in the command line arguments.
-    If the -c flag is provided, the function will read the configuration file path from the next argument.
-    If no temporary configuration file or -c flag is provided, the function will read the default configuration file.
+    Choose the configuration file for running Zalmoxis.
+
+    The function selects configuration in this order:
+
+    1. ``temp_config_path`` if provided
+    2. command line ``-c <path>``
+    3. default ``$ZALMOXIS_ROOT/input/default.toml``
+
+    Parameters
+    ----------
+    temp_config_path : str or os.PathLike, optional
+        Path to a temporary configuration file.
+
+    Returns
+    -------
+    dict
+        Parsed TOML configuration as a dictionary.
     """
 
     # Load the configuration file either from terminal (-c flag) or default path
@@ -77,8 +98,18 @@ def choose_config_file(temp_config_path=None):
 
 def load_zalmoxis_config(temp_config_path=None):
     """
-    Loads and returns configuration parameters for the Zalmoxis model.
-    Returns: Dictionary containing all relevant configuration parameters.
+    Load and return configuration parameters for the Zalmoxis model.
+
+    Parameters
+    ----------
+    temp_config_path : str or os.PathLike, optional
+        Path to a temporary configuration file.
+
+    Returns
+    -------
+    dict
+        Dictionary containing the configuration parameters used by the model.
+        Values are converted into internal units where applicable (e.g. mass in kg).
     """
     config = choose_config_file(temp_config_path) # Choose the configuration file
 
@@ -115,16 +146,30 @@ def load_zalmoxis_config(temp_config_path=None):
 
 def load_material_dictionaries():
     """
-    Loads and returns the material properties dictionaries for the Zalmoxis model.
-    Returns: A tuple containing the material properties dictionaries for iron/silicate planets, water planets, and temperature-dependent iron/silicate planets.
+    Load and return material property dictionaries used by the EOS routines.
+
+    Returns
+    -------
+    tuple
+        ``(iron_silicate, iron_Tdep_silicate, water)`` material dictionaries.
     """
     material_dictionaries = (material_properties_iron_silicate_planets, material_properties_iron_Tdep_silicate_planets, material_properties_water_planets)
     return material_dictionaries
 
 def load_solidus_liquidus_functions(EOS_CHOICE):
     """
-    Loads and returns the solidus and liquidus functions for temperature-dependent silicate mantle EOS for the Zalmoxis model.
-    Returns: A tuple containing the solidus and liquidus functions.
+    Load the solidus and liquidus functions for temperature-dependent mantle EOS.
+
+    Parameters
+    ----------
+    EOS_CHOICE : str
+        EOS identifier.
+
+    Returns
+    -------
+    tuple or None
+        ``(solidus_func, liquidus_func)`` if ``EOS_CHOICE`` is
+        ``"Tabulated:iron/Tdep_silicate"``, otherwise ``None``.
     """
     if EOS_CHOICE == "Tabulated:iron/Tdep_silicate":
         solidus_func, liquidus_func = get_solidus_liquidus_functions()
@@ -134,17 +179,41 @@ def load_solidus_liquidus_functions(EOS_CHOICE):
 def main(config_params, material_dictionaries, melting_curves_functions, input_dir):
 
     """
-    Runs the exoplanet internal structure model.
+    Run the exoplanet interior structure model.
 
-    Iteratively adjusts the internal structure of an exoplanet based on the provided configuration parameters,
-    calculating the planet's radius, core-mantle boundary, densities, pressures, and other properties.
+    The model iteratively adjusts the internal structure to satisfy mass, density,
+    and surface-pressure constraints, producing radial profiles of key quantities.
 
-    Parameters:
-        config_params (dict): Dictionary containing configuration parameters for the model.
-        material_dictionaries (tuple): Tuple containing the material properties dictionaries for iron/silicate planets, water planets, and temperature-dependent iron/silicate planets.
-        melting_curves_functions (tuple): Tuple containing the solidus and liquidus functions for temperature-dependent silicate mantle EOS.
+    Parameters
+    ----------
+    config_params : dict
+        Configuration parameters for the run.
+    material_dictionaries : tuple
+        Material property dictionaries used for EOS evaluation.
+    melting_curves_functions : tuple or None
+        ``(solidus_func, liquidus_func)`` for the temperature-dependent mantle EOS.
+        For other EOS choices, this may be ``None``.
+    input_dir : str or os.PathLike
+        Input directory path (e.g. used for prescribed temperature profiles).
 
-    Returns: Dictionary containing the calculated radii, density, gravity, pressure, temperature, mass enclosed, core-mantle boundary mass, core+mantle mass, total computation time, and convergence status of the model.
+    Returns
+    -------
+    dict
+        Model output including profiles and convergence information:
+
+        - ``radii`` : numpy.ndarray
+        - ``density`` : numpy.ndarray
+        - ``gravity`` : numpy.ndarray
+        - ``pressure`` : numpy.ndarray
+        - ``temperature`` : numpy.ndarray
+        - ``mass_enclosed`` : numpy.ndarray
+        - ``cmb_mass`` : float
+        - ``core_mantle_mass`` : float
+        - ``total_time`` : float
+        - ``converged`` : bool
+        - ``converged_pressure`` : bool
+        - ``converged_density`` : bool
+        - ``converged_mass`` : bool
     """
     # Initialize convergence flags for the model
     converged = False  # Overall convergence flag for the model, assume not converged until proven otherwise
@@ -378,11 +447,21 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
 
 def post_processing(config_params, id_mass=None, output_file=None):
     """
-    Post-processes the results of the Zalmoxis model by saving output data to a file and plotting results.
-    Parameters:
-        config_params (dict): Dictionary containing configuration parameters for the model.
-        id_mass (str, optional): Identifier for the mass of the planet, used in output file naming.
-        output_file (str, optional): Path to the output file where calculated mass and radius will be saved.
+    Post-process model results: write output files and generate plots.
+
+    Parameters
+    ----------
+    config_params : dict
+        Configuration parameters for the run.
+    id_mass : str, optional
+        Identifier used to disambiguate output file names.
+    output_file : str or os.PathLike, optional
+        Output file path for appending calculated mass and radius.
+
+    Returns
+    -------
+    None
+        Results are written to disk and/or plotted depending on configuration.
     """
     # Unpack configuration parameters related to output
     data_output_enabled = config_params["data_output_enabled"]
