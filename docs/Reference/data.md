@@ -1,4 +1,4 @@
-# Reference Data
+# Reference data
 
 ## Mass-radius relations
 
