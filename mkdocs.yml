@@ -69,18 +69,29 @@ plugins:
     handlers:
       python:
         paths: [src]
+        inventories:
+        - https://installer.readthedocs.io/en/stable/objects.inv
+        - https://docs.python.org/3/objects.inv
+        - https://numpy.org/doc/stable/objects.inv
+        - https://docs.scipy.org/doc/scipy/objects.inv
+        - https://pandas.pydata.org/docs/objects.inv
+        - https://matplotlib.org/stable/objects.inv
         options:
           docstring_style: numpy
           docstring_options:
             ignore_init_summary: yes
           show_submodules: no
           show_source: true
-          show_root_heading: false
+          show_symbol_type_heading: True
+          show_root_heading: true
+          show_root_toc_entry: true
+          show_docstring_attributes: true
           show_root_full_path: false
           docstring_section_style: list
           members_order: alphabetical
           merge_init_into_class: yes
           filters: ["!^_"]
+          docstring_section_style: list
 
 watch:
   - src/
