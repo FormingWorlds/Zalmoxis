@@ -291,12 +291,14 @@ def calculate_temperature_profile(radii, temperature_mode, surface_temperature, 
     """
     Build a callable temperature profile :math:`T(r)` for a planetary interior.
 
-    Supported modes
-    --------------
+    Notes
+    -----
+    Supported temperature modes:
+
     - ``"isothermal"``: constant temperature equal to ``surface_temperature``
     - ``"linear"``: linear from ``center_temperature`` at ``r=0`` to
       ``surface_temperature`` at ``r=R``
-    - ``"prescribed"``: read a temperature profile from a text file 
+    - ``"prescribed"``: read a temperature profile from a text file
 
     Parameters
     ----------
