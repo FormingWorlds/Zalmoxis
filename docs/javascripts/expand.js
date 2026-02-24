@@ -26,12 +26,12 @@
     const sidebar = document.querySelector(".md-sidebar--primary");
     if (!sidebar) return;
 
-    // Collapse everything FIRST (your existing behavior)
+    // Collapse everything first
     sidebar.querySelectorAll('input.md-nav__toggle[type="checkbox"]').forEach(cb => {
       cb.checked = false;
     });
 
-    // Expand your preferred top-level sections (Homepage defaults)
+    // Expand top-level sections (Homepage defaults)
     const items = sidebar.querySelectorAll(".md-nav__item--nested");
     items.forEach(item => {
       const titleEl = item.querySelector(":scope > label.md-nav__link, :scope > a.md-nav__link");
