@@ -1,4 +1,13 @@
-# This file contains the main function that solves the coupled ODEs for the structure model.
+"""
+Structure model ODE solver.
+
+!!! Imports
+    - **Constants**: [`zalmoxis.constants`](zalmoxis.constants.md) – `G`
+    - **EOS**: [`zalmoxis.eos_functions`](zalmoxis.eos_functions.md) — `calculate_density`
+
+This module contains the coupled ODEs and the solver wrapper used by the Zalmoxis structure model.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -15,22 +24,35 @@ logger = logging.getLogger(__name__)
 # Define the coupled ODEs for the structure model
 def coupled_odes(radius, y, cmb_mass, core_mantle_mass, EOS_CHOICE, interpolation_cache, material_dictionaries, temperature, solidus_func, liquidus_func):
     """
-    Calculate the derivatives of mass, gravity, and pressure with respect to radius for a planetary model.
+    Derivatives for the coupled planetary structure ODE system.
 
-    Parameters:
-        radius (float): The current radius at which the ODEs are evaluated.
-        y (list or array): The state vector containing mass, gravity, and pressure at the current radius.
-        cmb_mass (float): The core-mantle boundary mass.
-        core_mantle_mass (float): The mass of the core+mantle.
-        EOS_CHOICE (str): The equation of state choice for the material.
-        interpolation_cache (dict): A cache for interpolation to speed up calculations.
-        material_dictionaries (dict): A tuple containing the material properties dictionaries.
-        temperature (float): The temperature at the current radius.
-        solidus_func: Interpolation function for the solidus melting curve
-        liquidus_func: Interpolation function for the liquidus melting curve
+    Parameters
+    ----------
+    radius : float
+        Radius where the ODEs are evaluated [m].
+    y : array_like
+        State vector ``[mass, gravity, pressure]`` at ``radius``.
+    cmb_mass : float
+        Core–mantle boundary mass [kg].
+    core_mantle_mass : float
+        Core+mantle mass [kg].
+    EOS_CHOICE : str
+        EOS identifier (e.g. ``"Tabulated:iron/silicate"``).
+    interpolation_cache : dict
+        Cache for EOS interpolation functions.
+    material_dictionaries : tuple
+        Material property dictionaries.
+    temperature : float
+        Temperature at ``radius`` [K].
+    solidus_func : callable
+        Solidus melting curve ``T_sol(P)``.
+    liquidus_func : callable
+        Liquidus melting curve ``T_liq(P)``.
 
-    Returns:
-        list: The derivatives of mass, gravity, and pressure with respect to radius.
+    Returns
+    -------
+    list[float]
+        Derivatives ``[dMdr, dgdr, dPdr]``.
     """
     # Unpack the state vector
     mass, gravity, pressure = y
@@ -92,25 +114,59 @@ def coupled_odes(radius, y, cmb_mass, core_mantle_mass, EOS_CHOICE, interpolatio
 
 def solve_structure(EOS_CHOICE, cmb_mass, core_mantle_mass, radii, adaptive_radial_fraction, relative_tolerance, absolute_tolerance, maximum_step, material_dictionaries, interpolation_cache, y0, solidus_func, liquidus_func, temperature_function=None):
     """
-    Solve the coupled ODEs for the planetary structure model using scipy's solve_ivp. Handles special case for temperature-dependent EOS where the radial grid is split into two parts for better handling of large step sizes towards the surface.
-    Parameters:
-        EOS_CHOICE (str): Specifies the equation of state (EOS) model to use for the interior structure calculation.
-        cmb_mass (float): Mass at the core–mantle boundary [kg].
-        core_mantle_mass (float): Core+mantle mass [kg].
-        radii (numpy.ndarray): 1D array of radial grid points [m] across which the structure equations are solved.
-        adaptive_radial_fraction (float): Fraction (0–1) of the radial domain defining where the solver transitions from adaptive integration to fixed-step integration when using a temperature-dependent tabulated EOS.
-        relative_tolerance (float): Relative tolerance for solve_ivp
-        absolute_tolerance (float): Absolute tolerance for solve_ivp
-        maximum_step (float): Maximum integration step size for solve_ivp (m)
-        material_dictionaries (dict): A tuple containing the material properties dictionaries for iron/silicate planets, water planets, and temperature-dependent iron/silicate planets.
-        interpolation_cache (dict): Cache used to store interpolation functions.
-        temperature_function (callable): Function returning temperature [K] as a function of radius [m].
-        y0 (list or numpy.ndarray): Initial conditions for the mass, gravity, and pressure at the center of the planet.
-        solidus_func: Interpolation function for the solidus melting curve
-        liquidus_func: Interpolation function for the liquidus melting curve
-    Returns:
-        tuple: A tuple containing three numpy arrays: mass_enclosed (kg), gravity (m/s²), and pressure (Pa) at each radial grid point.
-        """
+    Solve the coupled ODEs for the planetary structure model using
+    ``scipy.integrate.solve_ivp``.
+
+    For the temperature-dependent EOS (``"Tabulated:iron/Tdep_silicate"``),
+    the radial grid is split into two integration regions to improve
+    numerical stability and control step sizes near the surface.
+
+    Parameters
+    ----------
+    EOS_CHOICE : str
+        Specifies the equation of state (EOS) model used for the interior
+        structure calculation.
+    cmb_mass : float
+        Mass at the core–mantle boundary [kg].
+    core_mantle_mass : float
+        Core+mantle mass [kg].
+    radii : numpy.ndarray
+        One-dimensional radial grid [m] across which the structure equations
+        are solved.
+    adaptive_radial_fraction : float
+        Fraction (0–1) of the radial domain defining where the solver
+        transitions from adaptive integration to fixed-step integration
+        when using a temperature-dependent EOS.
+    relative_tolerance : float
+        Relative tolerance passed to ``solve_ivp``.
+    absolute_tolerance : float
+        Absolute tolerance passed to ``solve_ivp``.
+    maximum_step : float
+        Maximum integration step size [m].
+    material_dictionaries : tuple
+        Tuple containing the material property dictionaries for iron/silicate,
+        water, and temperature-dependent silicate planets.
+    interpolation_cache : dict
+        Cache used to store interpolation functions.
+    y0 : array_like
+        Initial conditions ``[mass, gravity, pressure]`` at the planetary
+        center.
+    solidus_func : callable
+        Interpolation function for the solidus melting curve.
+    liquidus_func : callable
+        Interpolation function for the liquidus melting curve.
+    temperature_function : callable, optional
+        Function returning temperature [K] as a function of radius [m].
+
+    Returns
+    -------
+    mass_enclosed : numpy.ndarray
+        Enclosed mass profile [kg].
+    gravity : numpy.ndarray
+        Gravity profile [m/s²].
+    pressure : numpy.ndarray
+        Pressure profile [Pa].
+    """
 
     if EOS_CHOICE == "Tabulated:iron/Tdep_silicate":
         # Split the radial grid into two parts for better handling of large step sizes in solve_ivp
