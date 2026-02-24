@@ -1,6 +1,6 @@
 # API overview
 
-This is a detailed overview of Aragog's API for the user's reference. If you want to understand the underlying model, please visit the [model overview](../Explanations/model.md). 
+This is a detailed overview of Zalmoxis' API for the user's reference. If you want to understand the underlying model, please visit the [model overview](../../Explanations/model.md). 
 
 ## Project structure
 
