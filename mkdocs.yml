@@ -4,7 +4,6 @@ repo_url: https://github.com/FormingWorlds/Zalmoxis
 
 nav:
   - Home: index.md
-<<<<<<< HEAD
   - How-to guides:
       - Installation: How-to/installation.md
       - Configuration: How-to/configuration.md
@@ -29,16 +28,6 @@ nav:
       - Contact: contact.md
       - Developers: https://proteus-framework.org/people
 
-=======
-  - Data: data.md
-  - Installation: installation.md
-  - Configuration: configuration.md
-  - Usage: usage.md
-  - Testing: testing.md
-  - Interior Structure Model: model.md
-  - Contributing: CONTRIBUTING.md
-  - Code of Conduct: CODE_OF_CONDUCT.md
->>>>>>> tl/seager_analytic_eos
   - Source code: https://github.com/FormingWorlds/Zalmoxis
   - Issues page: https://github.com/FormingWorlds/Zalmoxis/issues
   - Other PROTEUS modules:
@@ -109,7 +98,6 @@ extra_javascript:
 plugins:
 - search
 - tags
-
 - mkdocstrings:
     # https://mkdocstrings.github.io/usage/
     handlers:
