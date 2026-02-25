@@ -6,9 +6,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # Read the environment variable for ZALMOXIS_ROOT
-ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
+ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
 if not ZALMOXIS_ROOT:
-    raise RuntimeError("ZALMOXIS_ROOT environment variable not set")
+    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
+
 
 def plot_PT_with_phases(pressure, temperature, radii, mantle_phases, cmb_radius):
     """
@@ -22,29 +23,32 @@ def plot_PT_with_phases(pressure, temperature, radii, mantle_phases, cmb_radius)
     """
 
     # Convert pressure to GPa and temperature to kK for readability
-    P = np.array(pressure) * 1e-9 # in GPa
-    T = np.array(temperature) / 1e3 # in kK
+    P = np.array(pressure) * 1e-9  # in GPa
+    T = np.array(temperature) / 1e3  # in kK
 
     # Create masks for each phase
-    mask_solid = np.array(mantle_phases) == "solid_mantle"
-    mask_mixed = np.array(mantle_phases) == "mixed_mantle"
-    mask_melted = np.array(mantle_phases) == "melted_mantle"
+    mask_solid = np.array(mantle_phases) == 'solid_mantle'
+    mask_mixed = np.array(mantle_phases) == 'mixed_mantle'
+    mask_melted = np.array(mantle_phases) == 'melted_mantle'
 
     # Plot setup
     fig, ax = plt.subplots(figsize=(6, 6))
-    ax.plot(T[mask_solid], P[mask_solid], color="black", lw=2, ls='solid', label="Solid mantle")
-    ax.plot(T[mask_mixed], P[mask_mixed], color="orange", lw=2, ls='dashed', label="Mixed mantle")
-    ax.plot(T[mask_melted], P[mask_melted], color="red", lw=2, ls='dotted', label="Melted mantle")
+    ax.plot(T[mask_solid], P[mask_solid], color='black', lw=2, ls='solid', label='Solid mantle')
+    ax.plot(
+        T[mask_mixed], P[mask_mixed], color='orange', lw=2, ls='dashed', label='Mixed mantle'
+    )
+    ax.plot(
+        T[mask_melted], P[mask_melted], color='red', lw=2, ls='dotted', label='Melted mantle'
+    )
     if cmb_radius is not None:
         cmb_P = P[np.argmax(radii >= cmb_radius)]
-        ax.axhline(cmb_P, color='k', linestyle='--', alpha=0.6, label="CMB")
-    ax.set_xlabel("Temperature (1000 K)")
-    ax.set_ylabel("Pressure (GPa)")
-    ax.set_title("Mantle P–T Profile with Phase Transitions")
+        ax.axhline(cmb_P, color='k', linestyle='--', alpha=0.6, label='CMB')
+    ax.set_xlabel('Temperature (1000 K)')
+    ax.set_ylabel('Pressure (GPa)')
+    ax.set_title('Mantle P–T Profile with Phase Transitions')
     ax.invert_yaxis()
     ax.legend()
     ax.grid(alpha=0.3)
     plt.tight_layout()
-    plt.savefig(os.path.join(ZALMOXIS_ROOT, "output_files", "mantle_PT_profile.pdf"))
-    #plt.show()
-
+    plt.savefig(os.path.join(ZALMOXIS_ROOT, 'output_files', 'mantle_PT_profile.pdf'))
+    # plt.show()

@@ -5,9 +5,10 @@ import os
 from zalmoxis.plots.plot_ternary import wrapper_ternary
 
 # Read the environment variable for ZALMOXIS_ROOT
-ZALMOXIS_ROOT = os.getenv("ZALMOXIS_ROOT")
+ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
 if not ZALMOXIS_ROOT:
-    raise RuntimeError("ZALMOXIS_ROOT environment variable not set")
+    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
+
 
 def run_ternary_diagrams(target_mass_array):
     """
@@ -19,5 +20,6 @@ def run_ternary_diagrams(target_mass_array):
     for id_mass in target_mass_array:
         wrapper_ternary(id_mass)
 
-if __name__ == "__main__":
+
+if __name__ == '__main__':
     run_ternary_diagrams(target_mass_array=[1, 5, 10, 50])

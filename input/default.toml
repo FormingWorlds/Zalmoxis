@@ -13,7 +13,17 @@ center_temperature         = 6000 # Central temperature (K), required for temper
 temperature_profile_file   = "temp_profile.txt" # Filename containing a prescribed temperature profile, required for temperature_mode="prescribed"
 
 [EOS]
-choice                     = "Tabulated:iron/Tdep_silicate" # Choice of equation of state ("Tabulated:iron/silicate", "Tabulated:iron/Tdep_silicate", "Tabulated:water")
+# Per-layer EOS selection. Format: "<source>:<composition>"
+# Valid values:
+#   "Seager2007:iron"       - Seager+2007 tabulated Fe epsilon (300K)
+#   "Seager2007:MgSiO3"    - Seager+2007 tabulated MgSiO3 perovskite (300K)
+#   "Seager2007:H2O"       - Seager+2007 tabulated water ice (300K)
+#   "WolfBower2018:MgSiO3" - Wolf&Bower+2018 T-dependent MgSiO3 (melt/solid), limited to <= 7 M_earth
+#   "Analytic:<material>"  - Seager+2007 analytic polytrope (300K, no data needed)
+#     Valid analytic materials: iron, MgSiO3, MgFeSiO3, H2O, graphite, SiC
+core                       = "Seager2007:iron"
+mantle                     = "WolfBower2018:MgSiO3"
+ice_layer                  = ""  # Empty = 2-layer model; set for 3-layer model
 
 [Calculations]
 num_layers                 = 150 # Number of planet layers
@@ -26,14 +36,14 @@ tolerance_inner            = 1e-4 # Convergence tolerance for the inner loop
 relative_tolerance         = 1e-5 # Relative tolerance for solve_ivp
 absolute_tolerance         = 1e-6 # Absolute tolerance for solve_ivp
 maximum_step               = 250000 # Maximum integration step size for solve_ivp (m)
-adaptive_radial_fraction   = 0.98 # Fraction (0–1) of the radial domain defining where solve_ivp transitions from adaptive integration to fixed-step integration when using the temperature-dependent `"Tabulated:iron/Tdep_silicate"` EOS
-max_center_pressure_guess  = 0.99e12 # Maximum pressure guess at the center of the planet based on the "Tabulated:iron/Tdep_silicate" EOS files (Pa)
+adaptive_radial_fraction   = 0.98 # Fraction (0–1) of the radial domain defining where solve_ivp transitions from adaptive integration to fixed-step integration when using the temperature-dependent "WolfBower2018:MgSiO3" EOS
+max_center_pressure_guess  = 10e12 # Maximum center pressure guess (Pa). Center is always iron core (Seager2007, valid to 1e21 Pa).
 
 [PressureAdjustment]
 target_surface_pressure    = 101325 # Target surface pressure (Pa)
 pressure_tolerance         = 1e9 # Convergence tolerance for surface pressure convergence (Pa)
 max_iterations_pressure    = 200 # Maximum iterations for pressure adjustment loop
-pressure_adjustment_factor = 1.1 # Adjustment factor for updating the central pressure guess
+pressure_adjustment_factor = 1.1 # Deprecated: retained for backward compatibility. The Brent solver does not use this parameter.
 
 [Output]
 data_enabled               = true # Flag to enable saving data to a file (true/false)
