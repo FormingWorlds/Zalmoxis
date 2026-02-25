@@ -8,6 +8,7 @@ nav:
       - Installation: How-to/installation.md
       - Configuration: How-to/configuration.md
       - Usage: How-to/usage.md
+      - Testing: How-to/testing.md
 
   - Explanations:
       - Model overview: Explanations/model.md
