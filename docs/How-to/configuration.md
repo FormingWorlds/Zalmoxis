@@ -262,7 +262,7 @@ The default values work well for Earth-mass planets with the default EOS. For ot
 
 Controls the Brent root-finding solver that determines the central pressure.
 The solver finds $P_c$ such that the surface pressure after ODE integration matches the target.
-See the [model documentation](model.md#pressure-solver-brents-method) for details on the algorithm.
+See the [model documentation](../Explanations/model.md#pressure-solver-brents-method) for details on the algorithm.
 
 | Parameter | Type | Unit | Default | Description |
 |---|---|---|---|---|
