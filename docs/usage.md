@@ -76,7 +76,6 @@ planet_mass = 1
 [AssumptionsAndInitialGuesses]
 core_mass_fraction = 0.325
 mantle_mass_fraction = 0
-weight_iron_fraction = 0.325
 
 [EOS]
 core = "Seager2007:iron"
@@ -95,7 +94,6 @@ planet_mass = 1
 [AssumptionsAndInitialGuesses]
 core_mass_fraction = 0.325
 mantle_mass_fraction = 0
-weight_iron_fraction = 0.325
 temperature_mode = "isothermal"
 surface_temperature = 2000
 center_temperature = 3000        # only used when temperature_mode = "linear"
@@ -120,7 +118,6 @@ planet_mass = 1
 [AssumptionsAndInitialGuesses]
 core_mass_fraction = 0.065
 mantle_mass_fraction = 0.485
-weight_iron_fraction = 0.065
 
 [EOS]
 core = "Seager2007:iron"
@@ -147,7 +144,6 @@ An analytic iron core with an analytic silicon carbide mantle.
 [AssumptionsAndInitialGuesses]
 core_mass_fraction = 0.30
 mantle_mass_fraction = 0
-weight_iron_fraction = 0.30
 
 [EOS]
 core = "Analytic:iron"
@@ -163,7 +159,6 @@ Tabulated iron core and silicate mantle with an analytic H2O outer layer.
 [AssumptionsAndInitialGuesses]
 core_mass_fraction = 0.10
 mantle_mass_fraction = 0.40
-weight_iron_fraction = 0.10
 
 [EOS]
 core = "Seager2007:iron"

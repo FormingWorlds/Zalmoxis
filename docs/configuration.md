@@ -20,9 +20,8 @@ Initial guesses and assumptions for the planetary structure.
 
 | Parameter | Type | Unit | Description |
 |---|---|---|---|
-| `core_mass_fraction` | float | -- | Core mass as a fraction of total mass. Earth: ~0.325. |
+| `core_mass_fraction` | float | -- | Core mass as a fraction of total mass. Also used in the Seager et al. (2007) scaling relation for the initial radius guess. Earth: ~0.325. |
 | `mantle_mass_fraction` | float | -- | Mantle mass as a fraction of total mass. Set to 0 for a 2-layer model where the mantle fills the remainder (1 - `core_mass_fraction`). Must be > 0 when using a 3-layer model with an ice layer. |
-| `weight_iron_fraction` | float | -- | Weight fraction of iron in the planet. Used for the initial radius guess scaling relation. Earth: ~0.325. |
 | `temperature_mode` | string | -- | Temperature profile type. One of: `"isothermal"`, `"linear"`, `"prescribed"`. See [Temperature profiles](#temperature-profiles). |
 | `surface_temperature` | float | K | Surface temperature. Used when `temperature_mode` is `"isothermal"` or `"linear"`. |
 | `center_temperature` | float | K | Central temperature. Used when `temperature_mode` is `"linear"`. |

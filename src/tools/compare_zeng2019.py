@@ -36,7 +36,6 @@ COMPOSITIONS = {
         'config_type': 'rocky',
         'cmf': 0.5,
         'immf': 0,
-        'wif': 1.0,
         'tabulated_eos': {'core': 'Seager2007:iron', 'mantle': 'Seager2007:iron'},
         'analytic_eos': {'core': 'Analytic:iron', 'mantle': 'Analytic:iron'},
         'wolfbower_eos': None,  # no MgSiO3 layer
@@ -47,7 +46,6 @@ COMPOSITIONS = {
         'config_type': 'rocky',
         'cmf': 0.5,
         'immf': 0,
-        'wif': 0.0,
         'tabulated_eos': {
             'core': 'Seager2007:MgSiO3',
             'mantle': 'Seager2007:MgSiO3',
@@ -64,7 +62,6 @@ COMPOSITIONS = {
         'config_type': 'rocky',
         'cmf': 0.325,
         'immf': 0,
-        'wif': 0.325,
         'tabulated_eos': {
             'core': 'Seager2007:iron',
             'mantle': 'Seager2007:MgSiO3',
@@ -81,7 +78,6 @@ COMPOSITIONS = {
         'config_type': 'rocky',
         'cmf': 0.5,
         'immf': 0,
-        'wif': 0.0,
         'tabulated_eos': {'core': 'Seager2007:H2O', 'mantle': 'Seager2007:H2O'},
         'analytic_eos': {'core': 'Analytic:H2O', 'mantle': 'Analytic:H2O'},
         'wolfbower_eos': None,  # no MgSiO3 layer
@@ -102,21 +98,13 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # ---------------------------------------------------------------------------
 
 
-def run_solver(id_mass, config_type, cmf, immf, wif, layer_eos_override=None):
-    """Run Zalmoxis and return (mass_earth, radius_earth).
-
-    Parameters
-    ----------
-    wif : float
-        Weight iron fraction — controls the initial radius guess.
-        Set to 1.0 for pure iron, 0.0 for iron-free compositions.
-    """
+def run_solver(id_mass, config_type, cmf, immf, layer_eos_override=None):
+    """Run Zalmoxis and return (mass_earth, radius_earth)."""
     default_config_path = os.path.join(ZALMOXIS_ROOT, 'input', 'default.toml')
     config_params = zalmoxis.load_zalmoxis_config(default_config_path)
     config_params['planet_mass'] = id_mass * earth_mass
     config_params['core_mass_fraction'] = cmf
     config_params['mantle_mass_fraction'] = immf
-    config_params['weight_iron_fraction'] = wif
 
     if config_type == 'rocky':
         config_params['layer_eos_config'] = {
@@ -207,7 +195,6 @@ for comp_name, cfg in COMPOSITIONS.items():
             config_type=cfg['config_type'],
             cmf=cfg['cmf'],
             immf=cfg['immf'],
-            wif=cfg['wif'],
             layer_eos_override=cfg['tabulated_eos'],
         )
         diff_tab = (r_tab - r_zeng) / r_zeng * 100
@@ -223,7 +210,6 @@ for comp_name, cfg in COMPOSITIONS.items():
             config_type=cfg['config_type'],
             cmf=cfg['cmf'],
             immf=cfg['immf'],
-            wif=cfg['wif'],
             layer_eos_override=cfg['analytic_eos'],
         )
         diff_ana = (r_ana - r_zeng) / r_zeng * 100
@@ -242,7 +228,6 @@ for comp_name, cfg in COMPOSITIONS.items():
                 config_type=cfg['config_type'],
                 cmf=cfg['cmf'],
                 immf=cfg['immf'],
-                wif=cfg['wif'],
                 layer_eos_override=cfg['wolfbower_eos'],
             )
             diff_wb = (r_wb - r_zeng) / r_zeng * 100

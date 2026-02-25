@@ -212,7 +212,6 @@ def load_zalmoxis_config(temp_config_path=None):
         'planet_mass': config['InputParameter']['planet_mass'] * earth_mass,
         'core_mass_fraction': config['AssumptionsAndInitialGuesses']['core_mass_fraction'],
         'mantle_mass_fraction': config['AssumptionsAndInitialGuesses']['mantle_mass_fraction'],
-        'weight_iron_fraction': config['AssumptionsAndInitialGuesses']['weight_iron_fraction'],
         'temperature_mode': config['AssumptionsAndInitialGuesses']['temperature_mode'],
         'surface_temperature': config['AssumptionsAndInitialGuesses']['surface_temperature'],
         'center_temperature': config['AssumptionsAndInitialGuesses']['center_temperature'],
@@ -311,7 +310,6 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
     planet_mass = config_params['planet_mass']
     core_mass_fraction = config_params['core_mass_fraction']
     mantle_mass_fraction = config_params['mantle_mass_fraction']
-    weight_iron_fraction = config_params['weight_iron_fraction']
     temperature_mode = config_params['temperature_mode']
     surface_temperature = config_params['surface_temperature']
     center_temperature = config_params['center_temperature']
@@ -351,7 +349,7 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
 
     # Setup initial guesses
     radius_guess = (
-        1000 * (7030 - 1840 * weight_iron_fraction) * (planet_mass / earth_mass) ** 0.282
+        1000 * (7030 - 1840 * core_mass_fraction) * (planet_mass / earth_mass) ** 0.282
     )
     cmb_mass = 0
     core_mantle_mass = 0

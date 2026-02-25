@@ -47,7 +47,6 @@ def run_zalmoxis_for_ternary(args):
     config_params['planet_mass'] = id_mass * earth_mass
     config_params['core_mass_fraction'] = core_frac
     config_params['mantle_mass_fraction'] = mantle_frac
-    config_params['weight_iron_fraction'] = core_frac  # must be equal to core_mass_fraction
     config_params['layer_eos_config'] = {
         'core': 'Seager2007:iron',
         'mantle': 'Seager2007:MgSiO3',

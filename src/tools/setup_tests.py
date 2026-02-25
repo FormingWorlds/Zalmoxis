@@ -45,7 +45,6 @@ def run_zalmoxis_rocky_water(id_mass, config_type, cmf, immf, layer_eos_override
     if config_type == 'rocky':
         config_params['core_mass_fraction'] = 0.325
         config_params['mantle_mass_fraction'] = 0
-        config_params['weight_iron_fraction'] = 0.325
         config_params['layer_eos_config'] = {
             'core': 'Seager2007:iron',
             'mantle': 'Seager2007:MgSiO3',
@@ -53,7 +52,6 @@ def run_zalmoxis_rocky_water(id_mass, config_type, cmf, immf, layer_eos_override
     elif config_type == 'water':
         config_params['core_mass_fraction'] = cmf
         config_params['mantle_mass_fraction'] = immf
-        config_params['weight_iron_fraction'] = cmf
         config_params['layer_eos_config'] = {
             'core': 'Seager2007:iron',
             'mantle': 'Seager2007:MgSiO3',

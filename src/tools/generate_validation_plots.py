@@ -46,7 +46,6 @@ def run_model(layer_eos, cmf=0.325, immf=0, config_type='rocky'):
     config_params['planet_mass'] = 1.0 * earth_mass
     config_params['core_mass_fraction'] = cmf
     config_params['mantle_mass_fraction'] = immf
-    config_params['weight_iron_fraction'] = cmf
     config_params['layer_eos_config'] = layer_eos
 
     model_results = zalmoxis.main(

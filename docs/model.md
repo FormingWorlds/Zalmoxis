@@ -179,18 +179,16 @@ The `[EOS]` section is parsed by `parse_eos_config()`, which accepts both the ne
 The initial guess for the planet radius follows the scaling law from [Noack et al. (2020)](https://ui.adsabs.harvard.edu/abs/2020A%26A...638A.129N/abstract):
 
 $$
-R_p \; [\mathrm{m}] = 1000 \times (7030 - 1840 \times X_{\mathrm{Fe}}) \times \left( \frac{M_p}{M_{\oplus}} \right)^{0.282}
+R_p \; [\mathrm{m}] = 1000 \times (7030 - 1840 \times X_{\mathrm{CMF}}) \times \left( \frac{M_p}{M_{\oplus}} \right)^{0.282}
 $$
 
-where $X_{\mathrm{Fe}}$ is the weight iron fraction, $M_p$ is the planet mass, and $M_{\oplus}$ is Earth's mass.
+where $X_{\mathrm{CMF}}$ is the core mass fraction (`core_mass_fraction`), $M_p$ is the planet mass, and $M_{\oplus}$ is Earth's mass. The original scaling law uses the planetary iron weight fraction; for a differentiated planet with a pure-iron core, this equals the core mass fraction.
 
 The initial guess for the core mass is:
 
 $$
 M_{\mathrm{core}} = X_{\mathrm{CMF}} \times M_p
 $$
-
-where $X_{\mathrm{CMF}}$ is the core mass fraction.
 
 The initial guess for the central pressure is based on an empirical scaling:
 
