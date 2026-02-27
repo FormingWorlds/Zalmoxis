@@ -9,6 +9,10 @@ from scipy.integrate import solve_ivp
 from .constants import G
 from .eos_functions import calculate_density
 
+# Temperature-dependent EOS identifiers, mirrored from zalmoxis.py to avoid
+# circular imports.  Keep in sync with TDEP_EOS_NAMES in zalmoxis.py.
+_TDEP_EOS_NAMES = {'WolfBower2018:MgSiO3', 'RTPress100TPa:MgSiO3'}
+
 # Set up logging
 logger = logging.getLogger(__name__)
 
@@ -187,7 +191,7 @@ def solve_structure(
     tuple
         (mass_enclosed, gravity, pressure) arrays at each radial grid point.
     """
-    uses_Tdep = any(v == 'WolfBower2018:MgSiO3' for v in layer_eos_config.values() if v)
+    uses_Tdep = any(v in _TDEP_EOS_NAMES for v in layer_eos_config.values() if v)
 
     # Terminal event: stop integration when pressure crosses zero.
     # Without this, the ODE solver grinds with tiny step sizes in the

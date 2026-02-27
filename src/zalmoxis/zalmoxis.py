@@ -20,6 +20,7 @@ from .eos_functions import (
     get_Tdep_material,
 )
 from .eos_properties import (
+    material_properties_iron_RTPress100TPa_silicate_planets,
     material_properties_iron_silicate_planets,
     material_properties_iron_Tdep_silicate_planets,
     material_properties_water_planets,
@@ -58,14 +59,26 @@ VALID_TABULATED_EOS = {
     'Seager2007:iron',
     'Seager2007:MgSiO3',
     'WolfBower2018:MgSiO3',
+    'RTPress100TPa:MgSiO3',
     'Seager2007:H2O',
 }
+
+# Set of all temperature-dependent EOS identifiers. Used throughout the code
+# to decide whether temperature profiles, melting curves, and split-radial
+# integration are needed.
+TDEP_EOS_NAMES = {'WolfBower2018:MgSiO3', 'RTPress100TPa:MgSiO3'}
 
 # WolfBower2018 tables are valid up to ~1 TPa. The Brent pressure solver with
 # out-of-bounds clamping handles mantle pressures exceeding the table boundary
 # for planets up to ~7 M_earth. Beyond this mass, deep-mantle pressures are far
 # enough above the table ceiling that clamped densities become unreliable.
 WOLFBOWER2018_MAX_MASS_EARTH = 7.0
+
+# RTPress100TPa melt table extends to 100 TPa, matching the Seager2007 iron
+# range. The solid table is still WolfBower2018 (1 TPa, clamped), but at high
+# temperatures the mantle is predominantly molten, so the solid table limitation
+# is less constraining. Safe up to ~50 M_earth.
+RTPRESS100TPA_MAX_MASS_EARTH = 50.0
 
 
 def parse_eos_config(eos_section):
@@ -246,18 +259,20 @@ def load_material_dictionaries():
     Returns
     -------
     tuple
-        (iron_silicate, iron_Tdep_silicate, water) material property dicts.
+        (iron_silicate, iron_Tdep_silicate, water, iron_RTPress100TPa_silicate)
+        material property dicts.
     """
     material_dictionaries = (
         material_properties_iron_silicate_planets,
         material_properties_iron_Tdep_silicate_planets,
         material_properties_water_planets,
+        material_properties_iron_RTPress100TPa_silicate_planets,
     )
     return material_dictionaries
 
 
 def load_solidus_liquidus_functions(layer_eos_config):
-    """Load solidus and liquidus functions if any layer uses WolfBower2018:MgSiO3.
+    """Load solidus and liquidus functions if any layer uses a T-dependent EOS.
 
     Parameters
     ----------
@@ -269,7 +284,7 @@ def load_solidus_liquidus_functions(layer_eos_config):
     tuple or None
         (solidus_func, liquidus_func) if Tdep EOS is used, else None.
     """
-    uses_Tdep = any(v == 'WolfBower2018:MgSiO3' for v in layer_eos_config.values() if v)
+    uses_Tdep = any(v in TDEP_EOS_NAMES for v in layer_eos_config.values() if v)
     if uses_Tdep:
         solidus_func, liquidus_func = get_solidus_liquidus_functions()
         return (solidus_func, liquidus_func)
@@ -332,20 +347,34 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
     iteration_profiles_enabled = config_params['iteration_profiles_enabled']
 
     # Check if any layer uses T-dependent EOS
-    uses_Tdep = any(v == 'WolfBower2018:MgSiO3' for v in layer_eos_config.values() if v)
+    uses_Tdep = any(v in TDEP_EOS_NAMES for v in layer_eos_config.values() if v)
 
-    # WolfBower2018 tables are limited to ~1 TPa.  The Brent solver with
-    # out-of-bounds clamping handles up to ~7 M_earth, but beyond that the
-    # clamped densities diverge too far from reality to be physically meaningful.
+    # Enforce per-EOS mass limits for T-dependent tables
     mass_in_earth = planet_mass / earth_mass
-    if uses_Tdep and mass_in_earth > WOLFBOWER2018_MAX_MASS_EARTH:
-        raise ValueError(
-            f'WolfBower2018:MgSiO3 EOS is limited to planets <= '
-            f'{WOLFBOWER2018_MAX_MASS_EARTH} M_earth (requested {mass_in_earth:.2f} M_earth). '
-            f'Deep-mantle pressures far exceed the 1 TPa table boundary at higher masses, '
-            f'making clamped densities unreliable. '
-            f'Use Seager2007:MgSiO3 or Analytic:MgSiO3 instead.'
-        )
+    if uses_Tdep:
+        tdep_eos_used = {v for v in layer_eos_config.values() if v in TDEP_EOS_NAMES}
+        for eos_name in tdep_eos_used:
+            if eos_name == 'WolfBower2018:MgSiO3':
+                max_mass = WOLFBOWER2018_MAX_MASS_EARTH
+                reason = (
+                    'Deep-mantle pressures far exceed the 1 TPa table boundary '
+                    'at higher masses, making clamped densities unreliable. '
+                    'Use RTPress100TPa:MgSiO3 for higher masses.'
+                )
+            elif eos_name == 'RTPress100TPa:MgSiO3':
+                max_mass = RTPRESS100TPA_MAX_MASS_EARTH
+                reason = (
+                    'The RTPress100TPa melt table extends to 100 TPa but '
+                    'the solid table is limited to 1 TPa.'
+                )
+            else:
+                continue
+            if mass_in_earth > max_mass:
+                raise ValueError(
+                    f'{eos_name} EOS is limited to planets <= '
+                    f'{max_mass} M_earth (requested {mass_in_earth:.2f} M_earth). '
+                    f'{reason}'
+                )
 
     # Setup initial guesses
     radius_guess = (
@@ -406,7 +435,12 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                 * (planet_mass / earth_mass) ** 2
                 * (radius_guess / earth_radius) ** (-4)
             )
-            if uses_Tdep:
+            # Cap the central pressure guess for WolfBower2018 (1 TPa table)
+            # but not for RTPress100TPa (100 TPa melt table)
+            uses_WB2018 = any(
+                v == 'WolfBower2018:MgSiO3' for v in layer_eos_config.values() if v
+            )
+            if uses_WB2018:
                 pressure_guess = min(pressure_guess, max_center_pressure_guess)
 
             # Mutable state to capture the last ODE solution from inside
@@ -458,7 +492,7 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
             # straddle the root (where surface P = target P)
             p_low = max(1e6, 0.1 * pressure_guess)
             p_high = 10.0 * pressure_guess
-            if uses_Tdep:
+            if uses_WB2018:
                 p_high = min(p_high, max_center_pressure_guess)
 
             try:
@@ -663,7 +697,7 @@ def post_processing(config_params, id_mass=None, output_file=None):
     average_density = mass_enclosed[-1] / (4 / 3 * math.pi * radii[-1] ** 3)
 
     # Check if mantle uses Tdep EOS for phase detection
-    uses_Tdep_mantle = layer_eos_config.get('mantle') == 'WolfBower2018:MgSiO3'
+    uses_Tdep_mantle = layer_eos_config.get('mantle') in TDEP_EOS_NAMES
 
     if uses_Tdep_mantle:
         mantle_pressures = pressure[cmb_index:]

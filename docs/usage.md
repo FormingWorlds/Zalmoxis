@@ -33,6 +33,7 @@ Valid EOS values:
 | `Seager2007:MgSiO3`      | Seager et al. (2007) tabulated MgSiO3 perovskite (300 K) |
 | `Seager2007:H2O`         | Seager et al. (2007) tabulated water ice (300 K)      |
 | `WolfBower2018:MgSiO3`   | Wolf & Bower (2018) RTpress T-dependent MgSiO3 (solid from [Mosenfelder et al. 2009](https://doi.org/10.1029/2008JB005900); melt), **<= 7 M_earth** |
+| `RTPress100TPa:MgSiO3`  | Extended RTpress melt (100 TPa) + WB2018 solid (1 TPa clamped), T-dependent, **<= 50 M_earth** |
 | `Analytic:<material>`    | Seager et al. (2007) analytic polytrope (300 K, no data files needed) |
 
 Valid analytic materials: `iron`, `MgSiO3`, `MgFeSiO3`, `H2O`, `graphite`, `SiC`.
@@ -45,7 +46,7 @@ The `temperature_mode` parameter in `[AssumptionsAndInitialGuesses]` controls ho
 - `"linear"`: Linear gradient from `center_temperature` (at the center) to `surface_temperature` (at the surface).
 - `"prescribed"`: Read from a file specified by `temperature_profile_file`.
 
-Temperature-dependent EOS (`WolfBower2018:MgSiO3`) requires one of these modes to be set. The 300 K tabulated and analytic EOS options ignore the temperature profile but still require valid mode settings in the config.
+Temperature-dependent EOS (`WolfBower2018:MgSiO3` or `RTPress100TPa:MgSiO3`) requires one of these modes to be set. The 300 K tabulated and analytic EOS options ignore the temperature profile but still require valid mode settings in the config.
 
 ### Temperature Profile File Format
 

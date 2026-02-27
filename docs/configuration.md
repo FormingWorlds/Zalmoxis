@@ -29,7 +29,7 @@ Initial guesses and assumptions for the planetary structure.
 
 #### Temperature profiles
 
-Temperature profiles are only relevant when using a temperature-dependent EOS (i.e., `WolfBower2018:MgSiO3`). For all other EOS choices, a fixed 300 K is assumed internally and these parameters are ignored.
+Temperature profiles are only relevant when using a temperature-dependent EOS (i.e., `WolfBower2018:MgSiO3` or `RTPress100TPa:MgSiO3`). For all other EOS choices, a fixed 300 K is assumed internally and these parameters are ignored.
 
 - **`"isothermal"`**: Constant temperature equal to `surface_temperature` at all radii.
 - **`"linear"`**: Linear interpolation from `center_temperature` at $r = 0$ to `surface_temperature` at $r = R$.
@@ -71,6 +71,7 @@ All EOS identifiers follow the format `<source>:<composition>`, where:
 | `Seager2007:MgSiO3` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | MgSiO3 perovskite | Fixed 300 K | Yes | 4th-order Birch-Murnaghan + DFT, tabulated $\rho(P)$. |
 | `Seager2007:H2O` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | Water ice (phases VII, VIII, X) | Fixed 300 K | Yes | Experimental + DFT, tabulated $\rho(P)$. |
 | `WolfBower2018:MgSiO3` | [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) | MgSiO3 (melt + solid) | T-dependent | Yes | RTpress EOS with phase-aware melting (solid EOS derived from [Mosenfelder et al. 2009](https://doi.org/10.1029/2008JB005900)). **Limited to $\leq 7\,M_\oplus$** (table max ~1 TPa; out-of-bounds pressures clamped). Requires `temperature_mode` configuration. Uses [Monteux et al.](https://doi.org/10.1016/j.epsl.2016.05.010) solidus/liquidus curves. |
+| `RTPress100TPa:MgSiO3` | Extended RTpress melt table | MgSiO3 (melt + solid) | T-dependent | Yes | Extended melt EOS to 100 TPa ($P$: $10^3$--$10^{14}$ Pa, $T$: 400--50000 K). Solid phase uses [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) table (clamped at 1 TPa). **Limited to $\leq 50\,M_\oplus$**. Requires `temperature_mode` configuration. Uses same [Monteux et al.](https://doi.org/10.1016/j.epsl.2016.05.010) solidus/liquidus curves. |
 | `Analytic:iron` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) Table 3 | Fe (epsilon) | Fixed 300 K | No | Modified polytrope: $\rho(P) = \rho_0 + c \cdot P^n$. |
 | `Analytic:MgSiO3` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) Table 3 | MgSiO3 perovskite | Fixed 300 K | No | Modified polytrope. |
 | `Analytic:MgFeSiO3` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) Table 3 | (Mg,Fe)SiO3 | Fixed 300 K | No | Modified polytrope. |
@@ -84,10 +85,12 @@ $$\rho(P) = \rho_0 + c \cdot P^n$$
 
 where $\rho_0$ is the zero-pressure density, $c$ and $n$ are fitted constants. This approximation is valid for $P < 10^{16}$ Pa and reproduces the full tabulated EOS to 2--12% accuracy across all planetary pressures. The analytic EOS requires no external data files, making it useful for quick exploration and testing.
 
-**Temperature-dependent EOS.** The `WolfBower2018:MgSiO3` EOS is the only temperature-dependent option. It uses separate tabulated $\rho(P, T)$ grids for solid (derived from [Mosenfelder et al. 2009](https://doi.org/10.1029/2008JB005900)) and melt phases, with a linear melt-fraction interpolation between the solidus and liquidus. When this EOS is assigned to any layer, the `temperature_mode`, `surface_temperature`, and `center_temperature` parameters in `[AssumptionsAndInitialGuesses]` become active.
+**Temperature-dependent EOS.** Two temperature-dependent EOS options are available: `WolfBower2018:MgSiO3` (melt table up to 1 TPa, $\leq 7\,M_\oplus$) and `RTPress100TPa:MgSiO3` (extended melt table up to 100 TPa, $\leq 50\,M_\oplus$). Both use separate tabulated $\rho(P, T)$ grids for solid and melt phases, with a linear melt-fraction interpolation between the solidus and liquidus. The `RTPress100TPa:MgSiO3` option uses the same solid table and melting curves as `WolfBower2018:MgSiO3` but extends the melt EOS to much higher pressures and temperatures, enabling modeling of super-Earths up to ~50 $M_\oplus$. When either EOS is assigned to any layer, the `temperature_mode`, `surface_temperature`, and `center_temperature` parameters in `[AssumptionsAndInitialGuesses]` become active.
 
-!!! warning "Mass limit for WolfBower2018"
-    The WolfBower2018 tables cover pressures up to ~1 TPa. For planets above ~2 $M_\oplus$, deep-mantle pressures begin to exceed this limit. The Brent pressure solver with out-of-bounds clamping handles this gracefully up to $7\,M_\oplus$. Beyond $7\,M_\oplus$, clamped densities become unreliable and the code raises a `ValueError`. Use `Seager2007:MgSiO3` or `Analytic:MgSiO3` for higher-mass planets.
+!!! warning "Mass limits for temperature-dependent EOS"
+    **WolfBower2018:MgSiO3**: Tables cover pressures up to ~1 TPa. For planets above ~2 $M_\oplus$, deep-mantle pressures begin to exceed this limit. The Brent pressure solver with out-of-bounds clamping handles this gracefully up to $7\,M_\oplus$. Beyond $7\,M_\oplus$, clamped densities become unreliable and the code raises a `ValueError`. Use `RTPress100TPa:MgSiO3` for higher-mass planets with a temperature-dependent mantle.
+
+    **RTPress100TPa:MgSiO3**: The extended melt table covers pressures up to 100 TPa, enabling modeling of super-Earths up to ~$50\,M_\oplus$. The solid-phase table remains limited to 1 TPa (clamped at boundary), but at the high temperatures typical of massive planets the mantle is predominantly molten, so this limitation is less constraining.
 
 #### EOS decision guide
 
@@ -124,6 +127,15 @@ mantle    = "WolfBower2018:MgSiO3"
 ice_layer = ""
 ```
 Requires `temperature_mode`, `surface_temperature`, and `center_temperature` to be set in `[AssumptionsAndInitialGuesses]`.
+
+**Super-Earth with extended T-dependent mantle** (iron core + RTPress100TPa silicate, 2-layer, up to 50 $M_\oplus$):
+```toml
+[EOS]
+core      = "Seager2007:iron"
+mantle    = "RTPress100TPa:MgSiO3"
+ice_layer = ""
+```
+Same temperature configuration as `WolfBower2018:MgSiO3` but with extended pressure and temperature coverage for massive rocky planets.
 
 **Mercury-like planet** (large iron core + (Mg,Fe)SiO3 mantle, analytic):
 ```toml
@@ -252,6 +264,7 @@ The default values work well for Earth-mass planets with the default EOS. For ot
 - **Super-Earths (1--10 $M_\oplus$):** The defaults generally suffice. For masses above ~5 $M_\oplus$, consider tightening `tolerance_outer` to 1e-4 and increasing `num_layers` to 200--300. The Brent pressure solver converges in 20--36 evaluations regardless of planet mass.
 - **Sub-Earths (< 1 $M_\oplus$):** May converge faster. Defaults are conservative.
 - **Temperature-dependent EOS (`WolfBower2018:MgSiO3`):** Limited to $\leq 7\,M_\oplus$. If convergence is slow, try reducing `maximum_step` (e.g., to 100000 m) and ensuring `adaptive_radial_fraction` is close to 1.0 (e.g., 0.98--0.99). The `max_center_pressure_guess` caps the Brent solver's upper bracket to prevent deep-mantle pressures from exceeding the WolfBower2018 table by too much. The default (10 TPa) is sufficient for planets up to 7 $M_\oplus$.
+- **Extended T-dependent EOS (`RTPress100TPa:MgSiO3`):** Limited to $\leq 50\,M_\oplus$. The melt table extends to 100 TPa so `max_center_pressure_guess` capping is not applied. For very massive planets (>10 $M_\oplus$), consider increasing `num_layers` to 200--300 and tightening `tolerance_outer`.
 - **Analytic EOS:** Convergence is typically fast and robust. Looser tolerances and fewer layers are usually sufficient for exploration.
 - **3-layer models:** Adding an ice layer increases the number of density discontinuities. Consider increasing `num_layers` to 200+ for smooth profiles.
 

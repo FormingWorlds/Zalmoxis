@@ -58,6 +58,7 @@ Legacy global strings are still accepted via a backward-compatible mapping in `p
 | `Seager2007:MgSiO3` | Tabulated | MgSiO$_3$ perovskite | 300 K |
 | `Seager2007:H2O` | Tabulated | Water ice (VII/VIII/X) | 300 K |
 | `WolfBower2018:MgSiO3` | Tabulated | MgSiO$_3$ (solid + melt) | $T$-dependent ($\leq 7\,M_\oplus$) |
+| `RTPress100TPa:MgSiO3` | Tabulated | MgSiO$_3$ (solid + melt) | $T$-dependent ($\leq 50\,M_\oplus$) |
 | `Analytic:<material>` | Analytic fit | Any of 6 materials | 300 K |
 
 ---
@@ -110,7 +111,21 @@ For planets above ~2 $M_\oplus$, deep-mantle pressures near the core-mantle boun
 The Brent pressure solver (see [Pressure Solver](#pressure-solver-brents-method)) with out-of-bounds pressure clamping handles this gracefully up to $7\,M_\oplus$: pressures beyond the table boundary are clamped to the table edge, returning the boundary density.
 This approximation is acceptable for planets up to ~7 $M_\oplus$, where the clamped region is a small fraction of the mantle.
 Beyond $7\,M_\oplus$, the clamped densities diverge too far from reality and the code raises a `ValueError`.
-For higher-mass planets, use `Seager2007:MgSiO3` or `Analytic:MgSiO3` instead.
+For higher-mass planets, use `RTPress100TPa:MgSiO3` (T-dependent, up to ~50 $M_\oplus$) or `Seager2007:MgSiO3` / `Analytic:MgSiO3` (300 K, up to ~50 $M_\oplus$).
+
+### RTPress100TPa Extended Melt EOS
+
+The `RTPress100TPa:MgSiO3` EOS extends the melt phase coverage from the WolfBower2018 1 TPa ceiling to 100 TPa ($P$: $10^3$--$10^{14}$ Pa, $T$: 400--50000 K).
+This enables temperature-dependent modeling of much more massive rocky planets (up to ~50 $M_\oplus$).
+
+The solid-phase EOS remains the [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) / [Mosenfelder et al. (2009)](https://doi.org/10.1029/2008JB005900) table (valid to 1 TPa, clamped at boundary).
+At the high internal temperatures typical of massive rocky planets, the mantle is predominantly molten, so the solid table limitation is less constraining than it would be for cooler planets.
+The same [Monteux et al. (2016)](https://www.sciencedirect.com/science/article/pii/S0012821X16302199) solidus/liquidus melting curves are used for phase determination.
+
+**Mass limit.** The melt table extends to 100 TPa, matching the Seager2007 iron EOS range.
+The solid table is clamped at 1 TPa, but this primarily affects cold planets where a significant fraction of the mantle is solid.
+The code allows planets up to 50 $M_\oplus$ with this EOS.
+Unlike `WolfBower2018:MgSiO3`, the central pressure is not capped by `max_center_pressure_guess` since the melt table covers the full range.
 
 ### Analytic Modified Polytrope (Seager et al. 2007)
 
@@ -152,6 +167,7 @@ Because any of the six materials can be assigned to any structural layer, the an
 | `Seager2007:MgSiO3` | 0--$10^{16}$ Pa | 300 K (fixed) | ~50 $M_\oplus$ | 4th-order BME + DFT + TFD |
 | `Seager2007:H2O` | 0--$10^{16}$ Pa | 300 K (fixed) | ~50 $M_\oplus$ | Experimental + DFT + TFD |
 | `WolfBower2018:MgSiO3` | 0--$10^{12}$ Pa (1 TPa) | 0--16500 K | 7 $M_\oplus$ | RTpress; $P$ clamped at table edge, $T$ out-of-bounds raises error |
+| `RTPress100TPa:MgSiO3` | $10^3$--$10^{14}$ Pa (100 TPa) | 400--50000 K | 50 $M_\oplus$ | Extended melt table; solid from WB2018 (clamped at 1 TPa) |
 | `Analytic:*` | 0--$10^{16}$ Pa | 300 K (fixed) | ~50 $M_\oplus$ | 2--12% accuracy vs. tabulated |
 
 ### General limits
@@ -299,8 +315,9 @@ main() ─── outer loop (radius) ─── inner loop (density) ─── br
     │                                                             │
     │                                                      ┌──────┼──────┐
     │                                                      ▼      ▼      ▼
-    │                                               Seager2007  WB2018  Analytic
-    │                                              (tabulated) (Tdep)  (polytrope)
+    │                                               Seager2007  Tdep    Analytic
+    │                                              (tabulated) (WB2018/ (polytrope)
+    │                                                          RTPress)
     ▼
 post_processing() ──► output files + plots
 ```
@@ -322,10 +339,10 @@ post_processing() ──► output files + plots
 
 - **`solve_structure()`** (`structure_model.py`): Integrates the coupled ODEs across the planetary radius using `scipy.integrate.solve_ivp` (RK45).
   Includes a terminal event that stops integration when pressure crosses zero.
-  When any layer uses `WolfBower2018:MgSiO3`, the radial grid is split into two segments for numerical stability near the surface; otherwise, a single integration pass is performed.
+  When any layer uses a temperature-dependent EOS (`WolfBower2018:MgSiO3` or `RTPress100TPa:MgSiO3`), the radial grid is split into two segments for numerical stability near the surface; otherwise, a single integration pass is performed.
   Pads output arrays to `len(radii)` if the terminal event truncates the integration.
 
-- **`calculate_density()`** (`eos_functions.py`): Dispatches the per-layer EOS string to the appropriate density calculation: tabulated lookup for `Seager2007:*`, temperature-dependent phase-aware lookup for `WolfBower2018:MgSiO3`, or direct evaluation for `Analytic:*` strings.
+- **`calculate_density()`** (`eos_functions.py`): Dispatches the per-layer EOS string to the appropriate density calculation: tabulated lookup for `Seager2007:*`, temperature-dependent phase-aware lookup for `WolfBower2018:MgSiO3` and `RTPress100TPa:MgSiO3`, or direct evaluation for `Analytic:*` strings.
 
 - **`get_Tdep_density()`** (`eos_functions.py`): Computes mantle density accounting for temperature-dependent phase transitions using the solidus/liquidus melting curves and volume-additive mixing in the mush regime.
   Guards against `None` returns from out-of-bounds table lookups.

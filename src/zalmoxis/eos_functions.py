@@ -8,7 +8,7 @@ import logging
 import os
 
 import numpy as np
-from scipy.interpolate import RegularGridInterpolator, interp1d
+from scipy.interpolate import LinearNDInterpolator, RegularGridInterpolator, interp1d
 
 from .eos_analytic import get_analytic_density
 
@@ -49,56 +49,135 @@ def get_tabulated_eos(
                 unique_pressures = np.unique(pressures)
                 unique_temps = np.unique(temps)
 
-                # Check if pressures and temps are sorted as expected
-                if not (
-                    np.all(np.diff(unique_pressures) > 0) and np.all(np.diff(unique_temps) > 0)
-                ):
-                    raise ValueError(
-                        'Pressures or temperatures are not sorted as expected in EOS file.'
+                is_regular = len(data) == len(unique_pressures) * len(unique_temps)
+
+                if is_regular:
+                    # Check if pressures and temps are sorted as expected
+                    if not (
+                        np.all(np.diff(unique_pressures) > 0)
+                        and np.all(np.diff(unique_temps) > 0)
+                    ):
+                        raise ValueError(
+                            'Pressures or temperatures are not sorted as expected in EOS file.'
+                        )
+
+                    # Reshape densities to a 2D grid for interpolation
+                    density_grid = densities.reshape(len(unique_pressures), len(unique_temps))
+
+                    # Create a RegularGridInterpolator for ρ(P,T)
+                    interpolator = RegularGridInterpolator(
+                        (unique_pressures, unique_temps),
+                        density_grid,
+                        bounds_error=False,
+                        fill_value=None,
                     )
-
-                # Reshape densities to a 2D grid for interpolation
-                density_grid = densities.reshape(len(unique_pressures), len(unique_temps))
-
-                # Create a RegularGridInterpolator for ρ(P,T)
-                interpolation_functions[eos_file] = RegularGridInterpolator(
-                    (unique_pressures, unique_temps),
-                    density_grid,
-                    bounds_error=False,
-                    fill_value=None,
-                )
+                    interpolation_functions[eos_file] = {
+                        'type': 'regular',
+                        'interp': interpolator,
+                        'p_min': unique_pressures[0],
+                        'p_max': unique_pressures[-1],
+                        't_min': unique_temps[0],
+                        't_max': unique_temps[-1],
+                    }
+                else:
+                    # Irregular grid (e.g. RTPress100TPa melt table where the
+                    # valid T range varies with P). Use scattered-data
+                    # interpolation via Delaunay triangulation.
+                    logger.info(
+                        f'EOS file {eos_file} has irregular grid '
+                        f'({len(data)} rows vs {len(unique_pressures)}×{len(unique_temps)} '
+                        f'= {len(unique_pressures) * len(unique_temps)} expected). '
+                        f'Using LinearNDInterpolator.'
+                    )
+                    # Work in log-P space for better triangulation of the
+                    # logarithmically spaced pressure axis
+                    log_pressures = np.log10(pressures)
+                    interpolator = LinearNDInterpolator(
+                        np.column_stack([log_pressures, temps]),
+                        densities,
+                    )
+                    interpolation_functions[eos_file] = {
+                        'type': 'irregular',
+                        'interp': interpolator,
+                        'p_min': unique_pressures[0],
+                        'p_max': unique_pressures[-1],
+                        't_min': unique_temps[0],
+                        't_max': unique_temps[-1],
+                        # Per-pressure T bounds for out-of-domain detection
+                        'p_tmax': {p: temps[pressures == p].max() for p in unique_pressures},
+                        'unique_pressures': unique_pressures,
+                    }
             else:
                 # Load ρ-P file
                 data = np.loadtxt(eos_file, delimiter=',', skiprows=1)
                 pressure_data = data[:, 1] * 1e9  # Convert from GPa to Pa
                 density_data = data[:, 0] * 1e3  # Convert from g/cm^3 to kg/m^3
-                interpolation_functions[eos_file] = interp1d(
-                    pressure_data, density_data, bounds_error=False, fill_value='extrapolate'
-                )
+                interpolation_functions[eos_file] = {
+                    'type': '1d',
+                    'interp': interp1d(
+                        pressure_data,
+                        density_data,
+                        bounds_error=False,
+                        fill_value='extrapolate',
+                    ),
+                }
 
-        interpolator = interpolation_functions[eos_file]  # Retrieve from cache
+        cached = interpolation_functions[eos_file]  # Retrieve from cache
 
         # Perform interpolation
         if material == 'melted_mantle' or material == 'solid_mantle':
             if temperature is None:
                 raise ValueError('Temperature must be provided.')
-            if temperature < np.min(interpolator.grid[1]) or temperature > np.max(
-                interpolator.grid[1]
-            ):
+
+            grid_type = cached['type']
+            p_min, p_max = cached['p_min'], cached['p_max']
+            t_min, t_max = cached['t_min'], cached['t_max']
+
+            # Global temperature bounds check
+            if temperature < t_min or temperature > t_max:
                 raise ValueError(
-                    f'Temperature {temperature:.2f} K is out of bounds for EOS data.'
+                    f'Temperature {temperature:.2f} K is out of bounds '
+                    f'for EOS data [{t_min:.1f}, {t_max:.1f}].'
                 )
-            p_min = np.min(interpolator.grid[0])
-            p_max = np.max(interpolator.grid[0])
+
+            # Pressure clamping (both grid types)
             if pressure < p_min or pressure > p_max:
                 logger.debug(
-                    f'Pressure {pressure:.2e} Pa out of bounds for WolfBower2018 table '
+                    f'Pressure {pressure:.2e} Pa out of bounds for EOS table '
                     f'[{p_min:.2e}, {p_max:.2e}]. Clamping to boundary.'
                 )
                 pressure = np.clip(pressure, p_min, p_max)
-            density = interpolator((pressure, temperature))
+
+            if grid_type == 'regular':
+                density = cached['interp']((pressure, temperature))
+            else:
+                # Irregular grid: check per-pressure T upper bound.
+                # Find the nearest pressure in the table to get the local T_max.
+                up = cached['unique_pressures']
+                idx = np.searchsorted(up, pressure, side='right')
+                idx = min(idx, len(up) - 1)
+                # Interpolate between the two nearest pressures' T_max
+                idx_lo = max(0, idx - 1)
+                local_tmax_lo = cached['p_tmax'][up[idx_lo]]
+                local_tmax_hi = cached['p_tmax'][up[idx]]
+                if up[idx] != up[idx_lo]:
+                    frac = (pressure - up[idx_lo]) / (up[idx] - up[idx_lo])
+                    local_tmax = local_tmax_lo + frac * (local_tmax_hi - local_tmax_lo)
+                else:
+                    local_tmax = local_tmax_lo
+
+                if temperature > local_tmax:
+                    # Clamp temperature to the local domain boundary
+                    logger.debug(
+                        f'Temperature {temperature:.1f} K exceeds local T_max '
+                        f'{local_tmax:.1f} K at P={pressure:.2e} Pa. '
+                        f'Clamping to boundary.'
+                    )
+                    temperature = local_tmax
+
+                density = cached['interp'](np.log10(pressure), temperature)
         else:
-            density = interpolator(pressure)
+            density = cached['interp'](pressure)
 
         if density is None or np.isnan(density):
             raise ValueError(
@@ -322,6 +401,7 @@ def calculate_density(
         mat_iron_sil,
         mat_Tdep,
         mat_water,
+        mat_RTPress100TPa,
     ) = material_dictionaries
 
     if layer_eos == 'Seager2007:iron':
@@ -337,6 +417,15 @@ def calculate_density(
             pressure,
             temperature,
             mat_Tdep,
+            solidus_func,
+            liquidus_func,
+            interpolation_functions,
+        )
+    elif layer_eos == 'RTPress100TPa:MgSiO3':
+        return get_Tdep_density(
+            pressure,
+            temperature,
+            mat_RTPress100TPa,
             solidus_func,
             liquidus_func,
             interpolation_functions,
