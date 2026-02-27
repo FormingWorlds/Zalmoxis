@@ -243,7 +243,7 @@ Controls the three nested iteration loops (outer mass convergence, inner density
 | `absolute_tolerance` | float | -- | 1e-6 | Absolute tolerance for `solve_ivp`. |
 | `maximum_step` | float | m | 250000 | Maximum radial step size for `solve_ivp`. |
 | `adaptive_radial_fraction` | float | -- | 0.98 | Fraction (0--1) of the radial domain where `solve_ivp` uses adaptive stepping before switching to fixed steps. Primarily relevant for the `WolfBower2018:MgSiO3` EOS near the surface. |
-| `max_center_pressure_guess` | float | Pa | 10e12 | Upper bound on the Brent solver's pressure bracket ($P_{\mathrm{high}}$). Prevents excessively high central pressures that would push deep-mantle pressures far beyond the WolfBower2018 table ceiling (~1 TPa). Only active when `WolfBower2018:MgSiO3` is used; the Seager2007 EOS tables extend to much higher pressures, so this cap is not needed for pure-Seager runs. |
+| `max_center_pressure_guess` | float | Pa | 10e12 | Upper bound on the Brent solver's pressure bracket ($P_{\mathrm{high}}$). This caps the *central* pressure (at the center of the iron core, which uses the Seager2007 EOS valid to $10^{16}$ Pa), not the mantle pressure directly. The default of 10 TPa is intentionally higher than the WolfBower2018 table ceiling (~1 TPa) because it limits the core center, not the mantle. However, higher central pressures produce higher mantle pressures at the CMB, so capping $P_c$ indirectly prevents deep-mantle pressures from exceeding the WB2018 table by too much. Only active when `WolfBower2018:MgSiO3` is used; not needed for pure-Seager runs. |
 
 #### Guidance on reasonable parameter ranges
 
