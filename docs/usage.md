@@ -14,7 +14,7 @@ To change the planet mass, edit the `[InputParameter]` section:
 
 ```toml
 [InputParameter]
-planet_mass = 5  # in Earth masses
+planet_mass = 5.0  # in Earth masses
 ```
 
 ## Configuration
@@ -32,7 +32,7 @@ Valid EOS values:
 | `Seager2007:iron`         | Seager et al. (2007) tabulated Fe epsilon (300 K)     |
 | `Seager2007:MgSiO3`      | Seager et al. (2007) tabulated MgSiO3 perovskite (300 K) |
 | `Seager2007:H2O`         | Seager et al. (2007) tabulated water ice (300 K)      |
-| `WolfBower2018:MgSiO3`   | Wolf & Bower (2018) T-dependent MgSiO3 (melt/solid), **<= 7 M_earth** |
+| `WolfBower2018:MgSiO3`   | Wolf & Bower (2018) RTpress T-dependent MgSiO3 (solid from [Mosenfelder et al. 2009](https://doi.org/10.1029/2008JB005900); melt), **<= 7 M_earth** |
 | `Analytic:<material>`    | Seager et al. (2007) analytic polytrope (300 K, no data files needed) |
 
 Valid analytic materials: `iron`, `MgSiO3`, `MgFeSiO3`, `H2O`, `graphite`, `SiC`.
@@ -71,7 +71,7 @@ A fully differentiated two-layer planet with a 32.5% iron core and a cold (300 K
 
 ```toml
 [InputParameter]
-planet_mass = 1
+planet_mass = 1.0
 
 [AssumptionsAndInitialGuesses]
 core_mass_fraction = 0.325
@@ -89,7 +89,7 @@ Same iron core, but the mantle uses the Wolf & Bower (2018) temperature-dependen
 
 ```toml
 [InputParameter]
-planet_mass = 1
+planet_mass = 1.0
 
 [AssumptionsAndInitialGuesses]
 core_mass_fraction = 0.325
@@ -113,7 +113,7 @@ A fully differentiated three-layer planet: 6.5% iron core, 48.5% silicate mantle
 
 ```toml
 [InputParameter]
-planet_mass = 1
+planet_mass = 1.0
 
 [AssumptionsAndInitialGuesses]
 core_mass_fraction = 0.065

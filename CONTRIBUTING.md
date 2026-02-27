@@ -46,6 +46,8 @@ pip install -e .[docs]
 mkdocs serve
 ```
 
+This will generate the pages and serve them on a local development server. Copy the displayed URL (typically `http://127.0.0.1:8000`) into your browser to view the documentation as you edit.
+
 You can find the documentation source in the [docs](https://github.com/FormingWorlds/Zalmoxis/tree/main/docs) directory.
 If you are adding new pages, make sure to update the listing in the [`mkdocs.yml`](https://github.com/FormingWorlds/Zalmoxis/tree/main/mkdocs.yml) under the `nav` entry.
 

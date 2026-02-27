@@ -80,6 +80,7 @@ It is appropriate for cold, fully solidified structure models.
 ### Wolf & Bower (2018) Temperature-Dependent EOS
 
 The `WolfBower2018:MgSiO3` EOS implements the RTpress (Reciprocal Transform pressure) framework from [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449), providing $\rho(P, T)$ for MgSiO$_3$ in both the solid and liquid phases.
+The solid-phase EOS is derived from [Mosenfelder et al. (2009)](https://doi.org/10.1029/2008JB005900).
 This EOS captures the thermal expansivity and compressibility of silicate mantle material over a wide $P$--$T$ range.
 
 Phase boundaries are defined using solidus and liquidus melting curves derived from [Monteux et al. (2016)](https://www.sciencedirect.com/science/article/pii/S0012821X16302199), with the solidus offset by $-600$ K from the liquidus.

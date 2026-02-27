@@ -72,7 +72,7 @@ Run the provided script to download the required equation-of-state tables and re
 bash src/get_zalmoxis.sh
 ```
 
-This creates the `data/` folder with EOS table files and the `output_files/` folder for model results.
+This downloads data into the `data/` directory within the Zalmoxis repository (not into `FWL_DATA`). When Zalmoxis is installed within PROTEUS, the data path is managed by the PROTEUS framework. The script also creates the `output_files/` folder for model results.
 
 ## Troubleshooting
 
