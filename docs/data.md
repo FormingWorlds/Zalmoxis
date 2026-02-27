@@ -22,8 +22,8 @@ The table below lists every data file used by Zalmoxis, organised by subdirector
 | `eos_seager07_iron.txt` | `data/EOS_Seager2007/` | CSV (rho in g/cm^3, P in GPa) | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | Fe epsilon pressure-density EOS |
 | `eos_seager07_silicate.txt` | `data/EOS_Seager2007/` | CSV (rho in g/cm^3, P in GPa) | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | MgSiO3 perovskite pressure-density EOS |
 | `eos_seager07_water.txt` | `data/EOS_Seager2007/` | CSV (rho in g/cm^3, P in GPa) | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | Water ice VII pressure-density EOS |
-| `density_melt.dat` | `data/EOS_WolfBower2018_1TPa/` | TSV (P, T, rho) | [Wolf & Bower (2018)](https://doi.org/10.1016/j.pepi.2018.02.004) | MgSiO3 melt density EOS (P: 0--1 TPa, T: 0--16500 K). Out-of-bounds pressures are clamped to the table edge. |
-| `density_solid.dat` | `data/EOS_WolfBower2018_1TPa/` | TSV (P, T, rho) | [Wolf & Bower (2018)](https://doi.org/10.1016/j.pepi.2018.02.004) | MgSiO3 solid (bridgmanite) density EOS, derived from [Mosenfelder et al. (2009)](https://doi.org/10.1029/2008JB005900) (P: 0--1 TPa, T: 0--16500 K). Out-of-bounds pressures are clamped to the table edge. |
+| `density_melt.dat` | `data/EOS_WolfBower2018_1TPa/` | TSV (P in Pa, T in K, rho in kg/m^3) | [Wolf & Bower (2018)](https://doi.org/10.1016/j.pepi.2018.02.004) | MgSiO3 melt density EOS (P: 0--1 TPa, T: 0--16500 K). Out-of-bounds pressures are clamped to the table edge. |
+| `density_solid.dat` | `data/EOS_WolfBower2018_1TPa/` | TSV (P in Pa, T in K, rho in kg/m^3) | [Wolf & Bower (2018)](https://doi.org/10.1016/j.pepi.2018.02.004) | MgSiO3 solid (bridgmanite) density EOS, derived from [Mosenfelder et al. (2009)](https://doi.org/10.1029/2008JB005900) (P: 0--1 TPa, T: 0--16500 K). Out-of-bounds pressures are clamped to the table edge. |
 
 ### Melting curves
 
