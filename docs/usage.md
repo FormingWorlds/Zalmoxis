@@ -191,7 +191,7 @@ These files are useful for diagnosing convergence behavior. They are overwritten
 
 ### Plots (optional)
 
-When `plots_enabled = true` in the `[Output]` section, PDF plots of the radial profiles (density, gravity, pressure, temperature) are generated automatically after each run. If the temperature-dependent mantle EOS (`WolfBower2018:MgSiO3`) is used, an additional pressure-temperature phase diagram with mantle phase information is produced.
+When `plots_enabled = true` in the `[Output]` section, PDF plots of the radial profiles (density, gravity, pressure, temperature) are generated automatically after each run. If a temperature-dependent mantle EOS (`WolfBower2018:MgSiO3` or `RTPress100TPa:MgSiO3`) is used, an additional pressure-temperature phase diagram with mantle phase information is produced.
 
 ## Running Zalmoxis in parallel for multiple masses
 

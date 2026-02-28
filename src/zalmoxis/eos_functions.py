@@ -175,7 +175,7 @@ def get_tabulated_eos(
                     )
                     temperature = local_tmax
 
-                density = cached['interp'](np.log10(pressure), temperature)
+                density = float(cached['interp']([[np.log10(pressure), temperature]])[0])
         else:
             density = cached['interp'](pressure)
 
@@ -376,7 +376,7 @@ def calculate_density(
         Pressure at which to evaluate the EOS (in Pa).
     material_dictionaries : tuple
         Tuple of material property dictionaries
-        (iron_silicate, iron_Tdep_silicate, water).
+        (iron_silicate, iron_Tdep_silicate, water, iron_RTPress100TPa_silicate).
     layer_eos : str
         Per-layer EOS identifier, e.g. "Seager2007:iron",
         "WolfBower2018:MgSiO3", "Analytic:iron".

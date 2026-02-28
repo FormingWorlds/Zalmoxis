@@ -145,7 +145,11 @@ def download(
         logger.error(f'Failed to download from Zenodo: {e}')
         logger.info('Trying to download from OSF...')
 
-        # If Zenodo fails, try with OSF
+        # If Zenodo fails, try with OSF (if an OSF ID was provided)
+        if osf_id is None:
+            raise RuntimeError(
+                f"Failed to download folder '{folder}' from Zenodo and no OSF fallback configured."
+            )
         try:
             logger.info(f"Downloading from OSF project '{osf_id}'...")
             download_OSF_folder(storage=get_osf(osf_id), folders=[folder], data_dir=data_dir)
@@ -201,6 +205,12 @@ def download_data():
         zenodo_id=15727899,
         osf_id='dpkjb',
         keep_files=['massradiusEarthlikeRocky.txt', 'massradius_50percentH2O_300K_1mbar.txt'],
+    )
+    download(
+        folder='EOS_RTPress_melt_100TPa',
+        data_dir=Path(ZALMOXIS_ROOT, 'data'),
+        zenodo_id=18812412,
+        keep_files=['density_melt.dat'],
     )
     download(
         folder='melting_curves_Monteux-600',

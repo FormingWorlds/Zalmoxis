@@ -10,7 +10,7 @@ import numpy as np
 import toml
 from scipy.optimize import brentq
 
-from .constants import earth_center_pressure, earth_mass, earth_radius
+from .constants import TDEP_EOS_NAMES, earth_center_pressure, earth_mass, earth_radius
 from .eos_analytic import VALID_MATERIAL_KEYS
 from .eos_functions import (
     calculate_density,
@@ -62,11 +62,6 @@ VALID_TABULATED_EOS = {
     'RTPress100TPa:MgSiO3',
     'Seager2007:H2O',
 }
-
-# Set of all temperature-dependent EOS identifiers. Used throughout the code
-# to decide whether temperature profiles, melting curves, and split-radial
-# integration are needed.
-TDEP_EOS_NAMES = {'WolfBower2018:MgSiO3', 'RTPress100TPa:MgSiO3'}
 
 # WolfBower2018 tables are valid up to ~1 TPa. The Brent pressure solver with
 # out-of-bounds clamping handles mantle pressures exceeding the table boundary

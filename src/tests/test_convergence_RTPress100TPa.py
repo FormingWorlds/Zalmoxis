@@ -20,6 +20,13 @@ import pytest
 from tools.setup_tests import run_zalmoxis_RTPress100TPa
 
 
+@pytest.mark.unit
+def test_RTPress100TPa_mass_limit_raises():
+    """Requesting > 50 M_earth with RTPress100TPa must raise ValueError."""
+    with pytest.raises(ValueError, match='RTPress100TPa'):
+        run_zalmoxis_RTPress100TPa(51)
+
+
 @pytest.mark.integration
 @pytest.mark.parametrize(
     'mass', [1, 5]
