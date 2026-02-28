@@ -514,6 +514,19 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
             if uses_WB2018:
                 p_high = min(p_high, max_center_pressure_guess)
 
+            # Pre-validate that the bracket straddles the root (f changes sign).
+            # Without this, brentq raises a cryptic ValueError.
+            f_low = _pressure_residual(p_low)
+            f_high = _pressure_residual(p_high)
+            if f_low * f_high > 0:
+                raise ValueError(
+                    f'Brent bracket does not straddle the root: '
+                    f'f({p_low:.2e})={f_low:.2e}, f({p_high:.2e})={f_high:.2e}. '
+                    f'The target surface pressure may be unreachable for this mass '
+                    f'and EOS combination. Try adjusting planet_mass or '
+                    f'target_surface_pressure.'
+                )
+
             try:
                 p_solution, root_info = brentq(
                     _pressure_residual,

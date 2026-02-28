@@ -204,7 +204,13 @@ def download_data():
         data_dir=Path(ZALMOXIS_ROOT, 'data'),
         zenodo_id=15727899,
         osf_id='dpkjb',
-        keep_files=['massradiusEarthlikeRocky.txt', 'massradius_50percentH2O_300K_1mbar.txt'],
+        keep_files=[
+            'massradiusEarthlikeRocky.txt',
+            'massradiusFe.txt',
+            'massradiusmgsio3.txt',
+            'massradius_50percentH2O_300K_1mbar.txt',
+            'massradius_100percentH2O_300K_1mbar.txt',
+        ],
     )
     download(
         folder='EOS_RTPress_melt_100TPa',

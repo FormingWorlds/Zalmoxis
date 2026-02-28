@@ -40,7 +40,10 @@ The table below lists every data file used by Zalmoxis, organised by subdirector
 | File | Location | Format | Source | Description |
 |------|----------|--------|--------|-------------|
 | `massradiusEarthlikeRocky.txt` | `data/mass_radius_curves/` | Space-separated (M in M_Earth, R in R_Earth) | [Zeng et al. (2019)](https://lweb.cfa.harvard.edu/~lzeng/planetmodels.html) | Earth-like rocky M-R curve (32.5% Fe + 67.5% MgSiO3) |
+| `massradiusFe.txt` | `data/mass_radius_curves/` | Space-separated (M in M_Earth, R in R_Earth) | [Zeng et al. (2019)](https://lweb.cfa.harvard.edu/~lzeng/planetmodels.html) | Pure iron M-R curve |
+| `massradiusmgsio3.txt` | `data/mass_radius_curves/` | Space-separated (M in M_Earth, R in R_Earth) | [Zeng et al. (2019)](https://lweb.cfa.harvard.edu/~lzeng/planetmodels.html) | Pure MgSiO3 M-R curve |
 | `massradius_50percentH2O_300K_1mbar.txt` | `data/mass_radius_curves/` | Space-separated (M in M_Earth, R in R_Earth) | [Zeng et al. (2019)](https://lweb.cfa.harvard.edu/~lzeng/planetmodels.html) | 50% H2O + 50% rocky M-R curve (300 K, 1 mbar surface) |
+| `massradius_100percentH2O_300K_1mbar.txt` | `data/mass_radius_curves/` | Space-separated (M in M_Earth, R in R_Earth) | [Zeng et al. (2019)](https://lweb.cfa.harvard.edu/~lzeng/planetmodels.html) | Pure H2O M-R curve (300 K, 1 mbar surface) |
 
 ### Radial profiles (validation benchmarks)
 

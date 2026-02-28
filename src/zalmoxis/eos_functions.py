@@ -179,7 +179,7 @@ def get_tabulated_eos(
         else:
             density = cached['interp'](pressure)
 
-        if density is None or np.isnan(density):
+        if density is None or not np.isfinite(density):
             raise ValueError(
                 f'Density calculation failed for {material} at P={pressure:.2e} Pa, T={temperature}.'
             )
@@ -302,7 +302,16 @@ def get_Tdep_density(
         return rho
 
     else:
-        # Mixed phase: linear melt fraction between solidus and liquidus
+        # Mixed phase: linear melt fraction between solidus and liquidus.
+        # Guard against degenerate melting curves where T_liq == T_sol.
+        if T_liq <= T_sol:
+            return get_tabulated_eos(
+                pressure,
+                material_properties_iron_Tdep_silicate_planets,
+                'melted_mantle',
+                temperature,
+                interpolation_functions,
+            )
         frac_melt = (temperature - T_sol) / (T_liq - T_sol)
         rho_solid = get_tabulated_eos(
             pressure,
@@ -341,6 +350,9 @@ def get_Tdep_material(pressure, temperature, solidus_func, liquidus_func):
     def evaluate_phase(P, T):
         T_sol = solidus_func(P)
         T_liq = liquidus_func(P)
+        # Guard against degenerate melting curves where T_liq == T_sol
+        if T_liq <= T_sol:
+            return 'melted_mantle' if T >= T_sol else 'solid_mantle'
         frac_melt = (T - T_sol) / (T_liq - T_sol)
         if frac_melt < 0:
             return 'solid_mantle'
@@ -542,6 +554,9 @@ def compute_adiabatic_temperature(
         )
 
         if layer_eos in TDEP_EOS_NAMES:
+            # Evaluate (dT/dP)_S at the current endpoint (i+1).  A midpoint
+            # rule would be more accurate, but the endpoint is sufficient
+            # for this initial-condition-quality profile.
             dtdp = get_tabulated_eos(
                 pressure[i + 1],
                 dtdp_dicts[layer_eos],
