@@ -148,12 +148,20 @@ class TestGetHeatCapacity:
 
     @staticmethod
     def _inject_cp_files(material_dicts, cp_melt_path, cp_solid_path):
-        """Add cp_file keys to the WolfBower2018 dict if not already present."""
-        mat_Tdep = material_dicts[1]
+        """Return a deep copy of material_dicts with cp_file keys added.
+
+        Uses deep copy to avoid mutating module-level globals returned
+        by ``load_material_dictionaries()``.
+        """
+        import copy
+
+        dicts = copy.deepcopy(material_dicts)
+        mat_Tdep = dicts[1]
         if 'cp_file' not in mat_Tdep.get('melted_mantle', {}):
             mat_Tdep['melted_mantle']['cp_file'] = str(cp_melt_path)
         if cp_solid_path.is_file() and 'cp_file' not in mat_Tdep.get('solid_mantle', {}):
             mat_Tdep['solid_mantle']['cp_file'] = str(cp_solid_path)
+        return dicts
 
     def test_positive_cp_for_melt_with_fwl_data(self):
         """Cp should be positive and physically reasonable for MgSiO3 melt.
@@ -169,7 +177,7 @@ class TestGetHeatCapacity:
         )
 
         material_dicts = load_material_dictionaries()
-        self._inject_cp_files(material_dicts, cp_melt, cp_solid)
+        material_dicts = self._inject_cp_files(material_dicts, cp_melt, cp_solid)
         layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'}
         melting = load_solidus_liquidus_functions(layer_eos_config)
         solidus_func, liquidus_func = melting
@@ -202,7 +210,7 @@ class TestGetHeatCapacity:
         )
 
         material_dicts = load_material_dictionaries()
-        self._inject_cp_files(material_dicts, cp_melt, cp_solid)
+        material_dicts = self._inject_cp_files(material_dicts, cp_melt, cp_solid)
         layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'}
         melting = load_solidus_liquidus_functions(layer_eos_config)
         solidus_func, liquidus_func = melting
@@ -237,7 +245,7 @@ class TestGetHeatCapacity:
         )
 
         material_dicts = load_material_dictionaries()
-        self._inject_cp_files(material_dicts, cp_melt, cp_solid)
+        material_dicts = self._inject_cp_files(material_dicts, cp_melt, cp_solid)
         layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'}
         melting = load_solidus_liquidus_functions(layer_eos_config)
         solidus_func, liquidus_func = melting
@@ -293,7 +301,7 @@ class TestGetHeatCapacity:
         from zalmoxis.zalmoxis import load_material_dictionaries
 
         material_dicts = load_material_dictionaries()
-        self._inject_cp_files(material_dicts, cp_melt, cp_solid)
+        material_dicts = self._inject_cp_files(material_dicts, cp_melt, cp_solid)
 
         cp = get_heat_capacity(
             pressure=10e9,

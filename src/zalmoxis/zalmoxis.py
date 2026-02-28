@@ -397,6 +397,13 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
     else:
         solidus_func, liquidus_func = None, None
 
+    # Storage for the previous iteration's converged profiles.
+    # Used by adiabatic mode to compute T(r) from the last P(r), g(r).
+    prev_radii = None
+    prev_pressure = None
+    prev_gravity = None
+    prev_mass_enclosed = None
+
     # Solve the interior structure
     for outer_iter in range(max_iterations_outer):
         radii = np.linspace(0, radius_guess, num_layers)
@@ -410,15 +417,14 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
             if (
                 temperature_mode == 'adiabatic'
                 and outer_iter > 0
-                and len(pressure) == num_layers
-                and np.any(pressure > 0)
+                and prev_pressure is not None
             ):
-                # Recompute adiabat from previous iteration's structure
+                # Recompute adiabat from previous iteration's converged structure
                 adiabat_T = compute_adiabatic_temperature(
-                    radii,
-                    pressure,
-                    gravity,
-                    mass_enclosed,
+                    prev_radii,
+                    prev_pressure,
+                    prev_gravity,
+                    prev_mass_enclosed,
                     surface_temperature,
                     adiabatic_cp,
                     cmb_mass,
@@ -430,10 +436,11 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                     interpolation_cache,
                 )
 
-                def temperature_function(r, _T=adiabat_T, _r=radii):
+                # Interpolate adiabat (on prev grid) onto current grid
+                def temperature_function(r, _T=adiabat_T, _r=prev_radii):
                     return np.interp(np.array(r), _r, _T)
 
-                temperatures = adiabat_T
+                temperatures = temperature_function(radii)
             else:
                 temperature_function = calculate_temperature_profile(
                     radii,
@@ -634,6 +641,12 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                     f'Maximum inner iterations ({max_iterations_inner}) reached. '
                     'Density may not be fully converged.'
                 )
+
+        # Save converged profiles for the next outer iteration's adiabat
+        prev_radii = radii.copy()
+        prev_pressure = np.asarray(pressure).copy()
+        prev_gravity = np.asarray(gravity).copy()
+        prev_mass_enclosed = np.asarray(mass_enclosed).copy()
 
         # Update radius guess
         calculated_mass = mass_enclosed[-1]

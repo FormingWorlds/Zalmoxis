@@ -622,6 +622,32 @@ def compute_thermal_expansivity(
     float
         Thermal expansivity [1/K], clamped to >= 0.
     """
+    # Stencil endpoints for centered finite differences
+    T_lo = temperature - dT
+    T_hi = temperature + dT
+
+    # Avoid straddling a phase boundary (solidus/liquidus), which would
+    # inflate alpha with the latent-heat density jump instead of smooth
+    # thermal expansion within a single phase.
+    if solidus_func is not None and liquidus_func is not None:
+        T_sol = float(solidus_func(pressure))
+        T_liq = float(liquidus_func(pressure))
+        if not (np.isnan(T_sol) or np.isnan(T_liq)):
+            if temperature <= T_sol:
+                # Solid: keep stencil below solidus
+                T_hi = min(T_hi, T_sol)
+            elif temperature >= T_liq:
+                # Melt: keep stencil above liquidus
+                T_lo = max(T_lo, T_liq)
+            else:
+                # Mixed: keep stencil between solidus and liquidus
+                T_lo = max(T_lo, T_sol)
+                T_hi = min(T_hi, T_liq)
+            # Ensure finite stencil width (at least 2 K)
+            if T_hi - T_lo < 2.0:
+                T_lo = temperature - 1.0
+                T_hi = temperature + 1.0
+
     rho = calculate_density(
         pressure,
         material_dictionaries,
@@ -635,7 +661,7 @@ def compute_thermal_expansivity(
         pressure,
         material_dictionaries,
         layer_eos,
-        temperature + dT,
+        T_hi,
         solidus_func,
         liquidus_func,
         interpolation_functions,
@@ -644,14 +670,23 @@ def compute_thermal_expansivity(
         pressure,
         material_dictionaries,
         layer_eos,
-        temperature - dT,
+        T_lo,
         solidus_func,
         liquidus_func,
         interpolation_functions,
     )
     if any(v is None for v in (rho, rho_p, rho_m)) or rho <= 0:
+        logger.warning(
+            'Thermal expansivity: density lookup failed at P=%.2e Pa, T=%.1f K '
+            '(rho=%s, rho_p=%s, rho_m=%s). Returning alpha=0.',
+            pressure,
+            temperature,
+            rho,
+            rho_p,
+            rho_m,
+        )
         return 0.0
-    alpha = -(1.0 / rho) * (rho_p - rho_m) / (2.0 * dT)
+    alpha = -(1.0 / rho) * (rho_p - rho_m) / (T_hi - T_lo)
     return max(alpha, 0.0)
 
 
@@ -720,7 +755,12 @@ def compute_adiabatic_temperature(
     T = np.zeros(n)
     T[n - 1] = surface_temperature
 
-    # Integrate from surface (index n-1) inward (decreasing index)
+    # Integrate from surface (index n-1) inward (decreasing index).
+    # Forward Euler: evaluate thermodynamic properties at the source
+    # point (i+1), not the destination (i).
+    # NOTE: No thermal boundary layer is modeled at the CMB. The adiabat
+    # transitions directly from mantle (alpha > 0) to core (alpha = 0),
+    # producing an isothermal core at the CMB temperature.
     for i in range(n - 2, -1, -1):
         layer_eos = get_layer_eos(
             mass_enclosed[i],
@@ -732,7 +772,7 @@ def compute_adiabatic_temperature(
         # Only compute alpha for T-dependent EOS layers
         if layer_eos in TDEP_EOS_NAMES:
             alpha = compute_thermal_expansivity(
-                pressure[i],
+                pressure[i + 1],
                 T[i + 1],
                 material_dictionaries,
                 layer_eos,
@@ -747,7 +787,7 @@ def compute_adiabatic_temperature(
         cp_local = Cp
         if layer_eos in TDEP_EOS_NAMES:
             cp_tab = get_heat_capacity(
-                pressure[i],
+                pressure[i + 1],
                 T[i + 1],
                 material_dictionaries,
                 layer_eos,
@@ -759,7 +799,7 @@ def compute_adiabatic_temperature(
                 cp_local = cp_tab
 
         dr = radii[i] - radii[i + 1]  # negative (going inward)
-        g = abs(gravity[i]) if i < len(gravity) else 0.0
+        g = abs(gravity[i + 1])
         T[i] = T[i + 1] - alpha * g * T[i + 1] / cp_local * dr
 
     return T
