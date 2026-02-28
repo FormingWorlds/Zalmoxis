@@ -15,6 +15,7 @@ from .eos_analytic import VALID_MATERIAL_KEYS
 from .eos_functions import (
     calculate_density,
     calculate_temperature_profile,
+    compute_adiabatic_temperature,
     create_pressure_density_files,
     get_solidus_liquidus_functions,
     get_Tdep_material,
@@ -241,6 +242,7 @@ def load_zalmoxis_config(temp_config_path=None):
         'pressure_adjustment_factor': config['PressureAdjustment'][
             'pressure_adjustment_factor'
         ],
+        'adiabatic_cp': config['AssumptionsAndInitialGuesses'].get('adiabatic_cp', 1200.0),
         'data_output_enabled': config['Output']['data_enabled'],
         'plotting_enabled': config['Output']['plots_enabled'],
         'verbose': config['Output']['verbose'],
@@ -338,6 +340,7 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
     target_surface_pressure = config_params['target_surface_pressure']
     pressure_tolerance = config_params['pressure_tolerance']
     max_iterations_pressure = config_params['max_iterations_pressure']
+    adiabatic_cp = config_params.get('adiabatic_cp', 1200.0)
     verbose = config_params['verbose']
     iteration_profiles_enabled = config_params['iteration_profiles_enabled']
 
@@ -404,15 +407,43 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
         pressure = np.zeros(num_layers)
 
         if uses_Tdep:
-            temperature_function = calculate_temperature_profile(
-                radii,
-                temperature_mode,
-                surface_temperature,
-                center_temperature,
-                input_dir,
-                temp_profile_file,
-            )
-            temperatures = temperature_function(radii)
+            if (
+                temperature_mode == 'adiabatic'
+                and outer_iter > 0
+                and len(pressure) == num_layers
+                and np.any(pressure > 0)
+            ):
+                # Recompute adiabat from previous iteration's structure
+                adiabat_T = compute_adiabatic_temperature(
+                    radii,
+                    pressure,
+                    gravity,
+                    mass_enclosed,
+                    surface_temperature,
+                    adiabatic_cp,
+                    cmb_mass,
+                    core_mantle_mass,
+                    layer_eos_config,
+                    material_dictionaries,
+                    solidus_func,
+                    liquidus_func,
+                    interpolation_cache,
+                )
+
+                def temperature_function(r, _T=adiabat_T, _r=radii):
+                    return np.interp(np.array(r), _r, _T)
+
+                temperatures = adiabat_T
+            else:
+                temperature_function = calculate_temperature_profile(
+                    radii,
+                    temperature_mode,
+                    surface_temperature,
+                    center_temperature,
+                    input_dir,
+                    temp_profile_file,
+                )
+                temperatures = temperature_function(radii)
         else:
             temperatures = np.ones(num_layers) * 300
 

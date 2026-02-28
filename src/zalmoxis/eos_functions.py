@@ -441,6 +441,166 @@ def calculate_density(
         raise ValueError(f"Unknown layer EOS '{layer_eos}'.")
 
 
+def compute_thermal_expansivity(
+    pressure,
+    temperature,
+    material_dictionaries,
+    layer_eos,
+    solidus_func,
+    liquidus_func,
+    interpolation_functions=None,
+    dT=10.0,
+):
+    """Compute thermal expansivity alpha = -(1/rho)(drho/dT)|_P via centered finite differences.
+
+    Parameters
+    ----------
+    pressure : float
+        Pressure [Pa].
+    temperature : float
+        Temperature [K].
+    material_dictionaries : tuple
+        Material property dictionaries.
+    layer_eos : str
+        Per-layer EOS identifier.
+    solidus_func : callable or None
+        Solidus melting curve interpolation function.
+    liquidus_func : callable or None
+        Liquidus melting curve interpolation function.
+    interpolation_functions : dict or None
+        Cache for interpolation functions.
+    dT : float
+        Temperature perturbation for finite differences [K].
+
+    Returns
+    -------
+    float
+        Thermal expansivity [1/K], clamped to >= 0.
+    """
+    rho = calculate_density(
+        pressure,
+        material_dictionaries,
+        layer_eos,
+        temperature,
+        solidus_func,
+        liquidus_func,
+        interpolation_functions,
+    )
+    rho_p = calculate_density(
+        pressure,
+        material_dictionaries,
+        layer_eos,
+        temperature + dT,
+        solidus_func,
+        liquidus_func,
+        interpolation_functions,
+    )
+    rho_m = calculate_density(
+        pressure,
+        material_dictionaries,
+        layer_eos,
+        temperature - dT,
+        solidus_func,
+        liquidus_func,
+        interpolation_functions,
+    )
+    if any(v is None for v in (rho, rho_p, rho_m)) or rho <= 0:
+        return 0.0
+    alpha = -(1.0 / rho) * (rho_p - rho_m) / (2.0 * dT)
+    return max(alpha, 0.0)
+
+
+def compute_adiabatic_temperature(
+    radii,
+    pressure,
+    gravity,
+    mass_enclosed,
+    surface_temperature,
+    Cp,
+    cmb_mass,
+    core_mantle_mass,
+    layer_eos_config,
+    material_dictionaries,
+    solidus_func,
+    liquidus_func,
+    interpolation_functions=None,
+):
+    """Compute adiabatic T(r) by integrating dT/dr = -alpha*g*T/Cp from surface inward.
+
+    For T-independent EOS layers (e.g. Seager2007 iron core), alpha = 0 so
+    the temperature is held constant (isothermal through the core).
+
+    Parameters
+    ----------
+    radii : np.ndarray
+        Radial grid, ascending (center to surface) [m].
+    pressure : np.ndarray
+        Pressure at each radius [Pa].
+    gravity : np.ndarray
+        Gravitational acceleration at each radius [m/s^2].
+    mass_enclosed : np.ndarray
+        Enclosed mass at each radius [kg].
+    surface_temperature : float
+        Temperature at the surface [K].
+    Cp : float
+        Isobaric heat capacity [J/(kg*K)].
+    cmb_mass : float
+        Core-mantle boundary mass [kg].
+    core_mantle_mass : float
+        Core + mantle mass [kg].
+    layer_eos_config : dict
+        Per-layer EOS config.
+    material_dictionaries : tuple
+        Material property dictionaries.
+    solidus_func : callable or None
+        Solidus melting curve function.
+    liquidus_func : callable or None
+        Liquidus melting curve function.
+    interpolation_functions : dict or None
+        Cache for interpolation functions.
+
+    Returns
+    -------
+    np.ndarray
+        Temperature at each radial point [K].
+    """
+    from .constants import TDEP_EOS_NAMES
+    from .structure_model import get_layer_eos
+
+    n = len(radii)
+    T = np.zeros(n)
+    T[n - 1] = surface_temperature
+
+    # Integrate from surface (index n-1) inward (decreasing index)
+    for i in range(n - 2, -1, -1):
+        layer_eos = get_layer_eos(
+            mass_enclosed[i],
+            cmb_mass,
+            core_mantle_mass,
+            layer_eos_config,
+        )
+
+        # Only compute alpha for T-dependent EOS layers
+        if layer_eos in TDEP_EOS_NAMES:
+            alpha = compute_thermal_expansivity(
+                pressure[i],
+                T[i + 1],
+                material_dictionaries,
+                layer_eos,
+                solidus_func,
+                liquidus_func,
+                interpolation_functions,
+            )
+        else:
+            alpha = 0.0
+
+        dr = radii[i] - radii[i + 1]  # negative (going inward)
+        g = abs(gravity[i]) if i < len(gravity) else 0.0
+        T[i] = T[i + 1] - alpha * g * T[i + 1] / Cp * dr
+
+    return T
+
+
 def calculate_temperature_profile(
     radii,
     temperature_mode,
@@ -458,6 +618,8 @@ def calculate_temperature_profile(
         - "isothermal": constant temperature equal to surface_temperature
         - "linear": linear profile from center_temperature (r=0) to surface_temperature (r=R)
         - "prescribed": read temperature profile from a text file
+        - "adiabatic": returns linear profile as initial guess; the actual
+          adiabat is computed in the main() outer loop using P(r) and g(r)
     surface_temperature: Temperature at the surface [K] (used for "linear" and "isothermal")
     center_temperature: Temperature at the center [K] (used for "linear")
     input_dir: Directory where the temperature profile file is located.
@@ -488,9 +650,17 @@ def calculate_temperature_profile(
         # Vectorized interpolation for arbitrary radius points
         return lambda r: np.interp(np.array(r), radii, temp_profile)
 
+    elif temperature_mode == 'adiabatic':
+        # Return linear profile as initial guess for the first outer iteration.
+        # The actual adiabat is computed in main() using P(r), g(r) from the solver.
+        return lambda r: surface_temperature + (center_temperature - surface_temperature) * (
+            1 - np.array(r) / radii[-1]
+        )
+
     else:
         raise ValueError(
-            f"Unknown temperature mode '{temperature_mode}'. Valid options: 'isothermal', 'linear', 'prescribed'."
+            f"Unknown temperature mode '{temperature_mode}'. "
+            f"Valid options: 'isothermal', 'linear', 'prescribed', 'adiabatic'."
         )
 
 
