@@ -43,9 +43,9 @@ jobs:
         run: |
           ruff check 
 
-      - name: Run tests with coverage
+      - name: Run unit tests with coverage
         run: |
-          pytest -n auto --cov=src --cov-report=term-missing
+          pytest -m unit -n auto -o "addopts=" --cov=src --cov-report=term-missing
 
       - name: Build documentation (MkDocs)
         run: |

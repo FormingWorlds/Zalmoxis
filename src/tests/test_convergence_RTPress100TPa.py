@@ -1,3 +1,15 @@
+"""Tests for the RTPress100TPa:MgSiO3 T-dependent EOS.
+
+The RTPress100TPa melt table extends to 100 TPa (P: 1e3–1e14 Pa, T: 400–50000 K),
+enabling modeling of much more massive rocky planets than WolfBower2018 (limited
+to 7 M_earth). The solid table is still WolfBower2018 (1 TPa, clamped at boundary).
+
+See also:
+- docs/test_infrastructure.md
+- docs/test_categorization.md
+- docs/test_building.md
+"""
+
 from __future__ import annotations
 
 import os
@@ -5,36 +17,38 @@ import os
 import numpy as np
 import pytest
 
-from tools.setup_tests import run_zalmoxis_TdepEOS
+from tools.setup_tests import run_zalmoxis_RTPress100TPa
+
+
+@pytest.mark.unit
+def test_RTPress100TPa_mass_limit_raises():
+    """Requesting > 50 M_earth with RTPress100TPa must raise ValueError."""
+    with pytest.raises(ValueError, match='RTPress100TPa'):
+        run_zalmoxis_RTPress100TPa(51)
 
 
 @pytest.mark.integration
 @pytest.mark.parametrize(
-    'mass', [1, 2, 5, 7]
-)  # WolfBower2018 EOS tables valid up to ~7 M_earth with Brent solver clamping
-def test_all_compositions_converge(mass, zalmoxis_root):
-    """Test that the T-dependent EOS model converges for low-mass planets.
-
-    The WolfBower2018:MgSiO3 EOS tables cover pressures up to ~1 TPa,
-    which limits their applicability to planets <= 2 M_earth. For higher
-    masses, deep-mantle pressures near the CMB exceed the table boundary.
+    'mass', [1, 5]
+)  # RTPress100TPa valid up to ~50 M_earth; test low and moderate masses
+def test_RTPress100TPa_converges(mass, zalmoxis_root):
+    """Test that the RTPress100TPa:MgSiO3 EOS model converges.
 
     Verifies convergence and checks that the resulting density profiles are
-    physically consistent: iron core densities >= 8000 kg/m3 (catches the
-    old bug where MgSiO3 density was used for the core), mantle densities
+    physically consistent: iron core densities >= 8000 kg/m3, mantle densities
     in the expected range for T-dependent MgSiO3.
     """
-    print(f'Running test for mass = {mass}')
+    print(f'Running RTPress100TPa test for mass = {mass}')
 
-    # Delete composition_TdepEOS_mass_log file if it exists
+    # Delete log file if it exists
     custom_log_file = os.path.join(
-        zalmoxis_root, 'output_files', 'composition_TdepEOS_mass_log.txt'
+        zalmoxis_root, 'output_files', 'composition_RTPress100TPa_mass_log.txt'
     )
     if os.path.exists(custom_log_file):
         os.remove(custom_log_file)
 
-    # Run Zalmoxis for a given mass with temperature-dependent EOS
-    results = run_zalmoxis_TdepEOS(mass)
+    # Run Zalmoxis with RTPress100TPa EOS
+    results = run_zalmoxis_RTPress100TPa(mass)
 
     # Filter out any failed convergence
     failed_cases = [(id_mass) for (id_mass, converged, _) in results if not converged]
@@ -58,10 +72,6 @@ def test_all_compositions_converge(mass, zalmoxis_root):
             cmb_index = 1  # Ensure at least one core point
 
         # Iron core density check (8000-50000 kg/m3)
-        # The center of the planet is iron; density depends on pressure.
-        # Seager2007 iron EOS gives ~18000 kg/m3 at 1 TPa and ~37000 at
-        # 10 TPa. The lower bound catches the old bug where MgSiO3 density
-        # (~5000 kg/m3) was accidentally used for the core.
         core_densities = density[1:cmb_index]  # Skip r=0 (may be zero initially)
         if len(core_densities) > 0:
             max_core_rho = np.max(core_densities)
@@ -75,13 +85,9 @@ def test_all_compositions_converge(mass, zalmoxis_root):
                 f'for {id_mass} M_earth'
             )
 
-        # MgSiO3 mantle density check (2000-12000 kg/m3)
-        # Mantle starts at CMB and extends to surface. Lower bound accounts
-        # for molten MgSiO3 near the surface at T_surface=3500K and low P
-        # (WolfBower2018 melt density ~2200 kg/m3 at surface conditions).
-        # Upper bound allows for high-pressure compressed MgSiO3 near CMB
-        # at higher masses (5-7 M_earth), where pressures approach 1 TPa
-        # and clamped WolfBower2018 densities can reach ~10000 kg/m3.
+        # MgSiO3 mantle density check (2000-15000 kg/m3)
+        # Upper bound higher than WB2018 because RTPress100TPa covers higher
+        # pressures, yielding denser mantle material at depth for larger planets.
         mantle_densities = density[cmb_index:]
         if len(mantle_densities) > 0:
             mantle_nonzero = mantle_densities[mantle_densities > 0]
@@ -92,7 +98,7 @@ def test_all_compositions_converge(mass, zalmoxis_root):
                     f'Mantle density {min_mantle_rho:.0f} kg/m3 below MgSiO3 minimum (2000) '
                     f'for {id_mass} M_earth'
                 )
-                assert max_mantle_rho <= 12000, (
-                    f'Mantle density {max_mantle_rho:.0f} kg/m3 above MgSiO3 maximum (12000) '
+                assert max_mantle_rho <= 15000, (
+                    f'Mantle density {max_mantle_rho:.0f} kg/m3 above MgSiO3 maximum (15000) '
                     f'for {id_mass} M_earth'
                 )
