@@ -441,287 +441,26 @@ def calculate_density(
         raise ValueError(f"Unknown layer EOS '{layer_eos}'.")
 
 
-def get_heat_capacity(
-    pressure,
-    temperature,
-    material_dictionaries,
-    layer_eos,
-    solidus_func,
-    liquidus_func,
-    interpolation_functions=None,
-):
-    """Get isobaric heat capacity Cp from tabulated P-T tables.
-
-    Uses the same phase-aware logic as density: solid Cp below solidus,
-    melt Cp above liquidus, linearly interpolated by melt fraction in
-    the mixed zone.
-
-    Reuses ``get_tabulated_eos()`` for interpolation by passing the
-    ``cp_file`` path as ``eos_file`` in a temporary dict.
-
-    Parameters
-    ----------
-    pressure : float
-        Pressure [Pa].
-    temperature : float
-        Temperature [K].
-    material_dictionaries : tuple
-        Material property dictionaries.
-    layer_eos : str
-        Per-layer EOS identifier (e.g. 'WolfBower2018:MgSiO3').
-    solidus_func : callable or None
-        Solidus melting curve function.
-    liquidus_func : callable or None
-        Liquidus melting curve function.
-    interpolation_functions : dict or None
-        Cache for interpolation functions.
-
-    Returns
-    -------
-    float or None
-        Cp [J/(kg*K)], or None if no Cp tables are available.
-    """
-    if interpolation_functions is None:
-        interpolation_functions = {}
-
-    (
-        _mat_iron_sil,
-        mat_Tdep,
-        _mat_water,
-        mat_RTPress100TPa,
-    ) = material_dictionaries
-
-    if layer_eos == 'WolfBower2018:MgSiO3':
-        mat = mat_Tdep
-    elif layer_eos == 'RTPress100TPa:MgSiO3':
-        mat = mat_RTPress100TPa
-    else:
-        return None
-
-    # Check if cp_file keys exist in the material dict
-    cp_melt_file = mat.get('melted_mantle', {}).get('cp_file')
-    cp_solid_file = mat.get('solid_mantle', {}).get('cp_file')
-
-    if cp_melt_file is None and cp_solid_file is None:
-        return None
-
-    # Determine phase from melting curves
-    if solidus_func is None or liquidus_func is None:
-        # No melting curves — use melt Cp if available, else solid
-        if cp_melt_file is not None:
-            return get_tabulated_eos(
-                pressure,
-                {'melted_mantle': {'eos_file': cp_melt_file}},
-                'melted_mantle',
-                temperature,
-                interpolation_functions,
-            )
-        return None
-
-    T_sol = solidus_func(pressure)
-    T_liq = liquidus_func(pressure)
-
-    # Outside melting curve range — default to solid
-    if np.isnan(T_sol) or np.isnan(T_liq):
-        if cp_solid_file is not None:
-            return get_tabulated_eos(
-                pressure,
-                {'solid_mantle': {'eos_file': cp_solid_file}},
-                'solid_mantle',
-                temperature,
-                interpolation_functions,
-            )
-        return None
-
-    if temperature <= T_sol:
-        # Solid phase
-        if cp_solid_file is not None:
-            return get_tabulated_eos(
-                pressure,
-                {'solid_mantle': {'eos_file': cp_solid_file}},
-                'solid_mantle',
-                temperature,
-                interpolation_functions,
-            )
-        return None
-
-    elif temperature >= T_liq:
-        # Liquid phase
-        if cp_melt_file is not None:
-            return get_tabulated_eos(
-                pressure,
-                {'melted_mantle': {'eos_file': cp_melt_file}},
-                'melted_mantle',
-                temperature,
-                interpolation_functions,
-            )
-        return None
-
-    else:
-        # Mixed phase: linearly interpolate Cp by melt fraction
-        frac_melt = (temperature - T_sol) / (T_liq - T_sol)
-        cp_melt = None
-        cp_solid = None
-
-        if cp_melt_file is not None:
-            cp_melt = get_tabulated_eos(
-                pressure,
-                {'melted_mantle': {'eos_file': cp_melt_file}},
-                'melted_mantle',
-                temperature,
-                interpolation_functions,
-            )
-        if cp_solid_file is not None:
-            cp_solid = get_tabulated_eos(
-                pressure,
-                {'solid_mantle': {'eos_file': cp_solid_file}},
-                'solid_mantle',
-                temperature,
-                interpolation_functions,
-            )
-
-        if cp_melt is not None and cp_solid is not None:
-            return frac_melt * cp_melt + (1 - frac_melt) * cp_solid
-        # Fall back to whichever is available
-        return cp_melt if cp_melt is not None else cp_solid
-
-
-def compute_thermal_expansivity(
-    pressure,
-    temperature,
-    material_dictionaries,
-    layer_eos,
-    solidus_func,
-    liquidus_func,
-    interpolation_functions=None,
-    dT=10.0,
-):
-    """Compute thermal expansivity alpha = -(1/rho)(drho/dT)|_P via centered finite differences.
-
-    Parameters
-    ----------
-    pressure : float
-        Pressure [Pa].
-    temperature : float
-        Temperature [K].
-    material_dictionaries : tuple
-        Material property dictionaries.
-    layer_eos : str
-        Per-layer EOS identifier.
-    solidus_func : callable or None
-        Solidus melting curve interpolation function.
-    liquidus_func : callable or None
-        Liquidus melting curve interpolation function.
-    interpolation_functions : dict or None
-        Cache for interpolation functions.
-    dT : float
-        Temperature perturbation for finite differences [K].
-
-    Returns
-    -------
-    float
-        Thermal expansivity [1/K], clamped to >= 0.
-    """
-    # Stencil endpoints for centered finite differences
-    T_lo = temperature - dT
-    T_hi = temperature + dT
-
-    # Avoid straddling a phase boundary (solidus/liquidus), which would
-    # inflate alpha with the latent-heat density jump instead of smooth
-    # thermal expansion within a single phase.
-    if solidus_func is not None and liquidus_func is not None:
-        T_sol = float(solidus_func(pressure))
-        T_liq = float(liquidus_func(pressure))
-        if not (np.isnan(T_sol) or np.isnan(T_liq)):
-            if temperature <= T_sol:
-                # Solid: keep stencil below solidus
-                T_hi = min(T_hi, T_sol)
-            elif temperature >= T_liq:
-                # Melt: keep stencil above liquidus
-                T_lo = max(T_lo, T_liq)
-            else:
-                # Mixed: keep stencil between solidus and liquidus
-                T_lo = max(T_lo, T_sol)
-                T_hi = min(T_hi, T_liq)
-            # Ensure finite stencil width (at least 2 K).  This can
-            # happen in a narrow mixed zone where T_liq - T_sol < 2*dT.
-            # Re-apply phase boundary constraints on the widened stencil
-            # to avoid re-straddling the boundary we just clamped for.
-            if T_hi - T_lo < 2.0:
-                T_lo = temperature - 1.0
-                T_hi = temperature + 1.0
-                if temperature <= T_sol:
-                    T_hi = min(T_hi, T_sol)
-                elif temperature >= T_liq:
-                    T_lo = max(T_lo, T_liq)
-                else:
-                    T_lo = max(T_lo, T_sol)
-                    T_hi = min(T_hi, T_liq)
-
-    rho = calculate_density(
-        pressure,
-        material_dictionaries,
-        layer_eos,
-        temperature,
-        solidus_func,
-        liquidus_func,
-        interpolation_functions,
-    )
-    rho_p = calculate_density(
-        pressure,
-        material_dictionaries,
-        layer_eos,
-        T_hi,
-        solidus_func,
-        liquidus_func,
-        interpolation_functions,
-    )
-    rho_m = calculate_density(
-        pressure,
-        material_dictionaries,
-        layer_eos,
-        T_lo,
-        solidus_func,
-        liquidus_func,
-        interpolation_functions,
-    )
-    if any(v is None for v in (rho, rho_p, rho_m)) or rho <= 0:
-        logger.warning(
-            'Thermal expansivity: density lookup failed at P=%.2e Pa, T=%.1f K '
-            '(rho=%s, rho_p=%s, rho_m=%s). Returning alpha=0.',
-            pressure,
-            temperature,
-            rho,
-            rho_p,
-            rho_m,
-        )
-        return 0.0
-    alpha = -(1.0 / rho) * (rho_p - rho_m) / (T_hi - T_lo)
-    return max(alpha, 0.0)
-
-
 def compute_adiabatic_temperature(
     radii,
     pressure,
-    gravity,
     mass_enclosed,
     surface_temperature,
-    Cp,
     cmb_mass,
     core_mantle_mass,
     layer_eos_config,
     material_dictionaries,
-    solidus_func,
-    liquidus_func,
     interpolation_functions=None,
 ):
-    """Compute adiabatic T(r) by integrating dT/dr = -alpha*g*T/Cp from surface inward.
+    """Compute adiabatic T(r) using native (dT/dP)_S tables from the EOS.
 
-    For T-independent EOS layers (e.g. Seager2007 iron core), alpha = 0 so
-    the temperature is held constant (isothermal through the core).
+    Integrates T[i] = T[i+1] + (dT/dP)_S · (P[i] - P[i+1]) from surface
+    inward.  The adiabatic gradient (dT/dP)_S = αT/(ρCp) is read directly
+    from the ``adiabat_grad_file`` in the melt-phase material dictionary,
+    avoiding any intermediate α or Cp computation.
 
-    When tabulated Cp(P,T) data is available in the material dictionaries
-    (``cp_file`` key), it is used instead of the constant ``Cp`` fallback.
+    For T-independent EOS layers (e.g. Seager2007 iron core), no adiabat
+    gradient table exists, so the temperature is held constant (isothermal).
 
     Parameters
     ----------
@@ -729,27 +468,19 @@ def compute_adiabatic_temperature(
         Radial grid, ascending (center to surface) [m].
     pressure : np.ndarray
         Pressure at each radius [Pa].
-    gravity : np.ndarray
-        Gravitational acceleration at each radius [m/s^2].
     mass_enclosed : np.ndarray
         Enclosed mass at each radius [kg].
     surface_temperature : float
         Temperature at the surface [K].
-    Cp : float
-        Fallback isobaric heat capacity [J/(kg*K)] used when no tabulated
-        Cp data is available for the layer EOS.
     cmb_mass : float
         Core-mantle boundary mass [kg].
     core_mantle_mass : float
         Core + mantle mass [kg].
     layer_eos_config : dict
-        Per-layer EOS config.
+        Per-layer EOS config, e.g.
+        ``{"core": "Seager2007:iron", "mantle": "WolfBower2018:MgSiO3"}``.
     material_dictionaries : tuple
         Material property dictionaries.
-    solidus_func : callable or None
-        Solidus melting curve function.
-    liquidus_func : callable or None
-        Liquidus melting curve function.
     interpolation_functions : dict or None
         Cache for interpolation functions.
 
@@ -757,20 +488,45 @@ def compute_adiabatic_temperature(
     -------
     np.ndarray
         Temperature at each radial point [K].
+
+    Raises
+    ------
+    ValueError
+        If a T-dependent mantle EOS is used but no ``adiabat_grad_file``
+        is present in the material dictionary.
     """
     from .constants import TDEP_EOS_NAMES
     from .structure_model import get_layer_eos
+
+    if interpolation_functions is None:
+        interpolation_functions = {}
+
+    # Build a wrapper dict for the dT/dP table so we can reuse get_tabulated_eos()
+    # (which handles caching, irregular grids, and bounds checking).
+    dtdp_dicts = {}
+    for eos_name, mat_idx in [('WolfBower2018:MgSiO3', 1), ('RTPress100TPa:MgSiO3', 3)]:
+        mat = material_dictionaries[mat_idx]
+        grad_file = mat.get('melted_mantle', {}).get('adiabat_grad_file')
+        if grad_file is not None:
+            dtdp_dicts[eos_name] = {'melted_mantle': {'eos_file': grad_file}}
+
+    # Verify that any T-dep EOS in the config has an adiabat gradient table
+    mantle_eos = layer_eos_config.get('mantle')
+    if mantle_eos in TDEP_EOS_NAMES and mantle_eos not in dtdp_dicts:
+        raise ValueError(
+            f"Adiabatic mode requires an 'adiabat_grad_file' in the "
+            f"melted_mantle material dictionary for EOS '{mantle_eos}'. "
+            f'Run get_zalmoxis.sh to download the required tables.'
+        )
 
     n = len(radii)
     T = np.zeros(n)
     T[n - 1] = surface_temperature
 
     # Integrate from surface (index n-1) inward (decreasing index).
-    # Forward Euler: evaluate thermodynamic properties at the source
-    # point (i+1), not the destination (i).
     # NOTE: No thermal boundary layer is modeled at the CMB. The adiabat
-    # transitions directly from mantle (alpha > 0) to core (alpha = 0),
-    # producing an isothermal core at the CMB temperature.
+    # transitions directly from mantle to core, producing an isothermal
+    # core at the CMB temperature.
     for i in range(n - 2, -1, -1):
         layer_eos = get_layer_eos(
             mass_enclosed[i],
@@ -779,38 +535,22 @@ def compute_adiabatic_temperature(
             layer_eos_config,
         )
 
-        # Only compute alpha for T-dependent EOS layers
         if layer_eos in TDEP_EOS_NAMES:
-            alpha = compute_thermal_expansivity(
+            dtdp = get_tabulated_eos(
                 pressure[i + 1],
+                dtdp_dicts[layer_eos],
+                'melted_mantle',
                 T[i + 1],
-                material_dictionaries,
-                layer_eos,
-                solidus_func,
-                liquidus_func,
                 interpolation_functions,
             )
+            if dtdp is not None and dtdp > 0:
+                dP = pressure[i] - pressure[i + 1]  # positive going inward
+                T[i] = T[i + 1] + dtdp * dP
+            else:
+                T[i] = T[i + 1]
         else:
-            alpha = 0.0
-
-        # Use tabulated Cp if available, otherwise fall back to constant
-        cp_local = Cp
-        if layer_eos in TDEP_EOS_NAMES:
-            cp_tab = get_heat_capacity(
-                pressure[i + 1],
-                T[i + 1],
-                material_dictionaries,
-                layer_eos,
-                solidus_func,
-                liquidus_func,
-                interpolation_functions,
-            )
-            if cp_tab is not None and cp_tab > 0:
-                cp_local = cp_tab
-
-        dr = radii[i] - radii[i + 1]  # negative (going inward)
-        g = abs(gravity[i + 1])
-        T[i] = T[i + 1] - alpha * g * T[i + 1] / cp_local * dr
+            # T-independent EOS (e.g. iron core): isothermal
+            T[i] = T[i + 1]
 
     return T
 

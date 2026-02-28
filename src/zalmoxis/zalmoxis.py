@@ -239,7 +239,6 @@ def load_zalmoxis_config(temp_config_path=None):
         'target_surface_pressure': config['PressureAdjustment']['target_surface_pressure'],
         'pressure_tolerance': config['PressureAdjustment']['pressure_tolerance'],
         'max_iterations_pressure': config['PressureAdjustment']['max_iterations_pressure'],
-        'adiabatic_cp': config['AssumptionsAndInitialGuesses'].get('adiabatic_cp', 1200.0),
         'data_output_enabled': config['Output']['data_enabled'],
         'plotting_enabled': config['Output']['plots_enabled'],
         'verbose': config['Output']['verbose'],
@@ -337,7 +336,6 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
     target_surface_pressure = config_params['target_surface_pressure']
     pressure_tolerance = config_params['pressure_tolerance']
     max_iterations_pressure = config_params['max_iterations_pressure']
-    adiabatic_cp = config_params.get('adiabatic_cp', 1200.0)
     verbose = config_params['verbose']
     iteration_profiles_enabled = config_params['iteration_profiles_enabled']
 
@@ -398,7 +396,6 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
     # Used by adiabatic mode to compute T(r) from the last P(r), g(r).
     prev_radii = None
     prev_pressure = None
-    prev_gravity = None
     prev_mass_enclosed = None
 
     # Solve the interior structure
@@ -411,25 +408,17 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
         pressure = np.zeros(num_layers)
 
         if uses_Tdep:
-            if (
-                temperature_mode == 'adiabatic'
-                and outer_iter > 0
-                and prev_pressure is not None
-            ):
+            if temperature_mode == 'adiabatic' and outer_iter > 0 and prev_pressure is not None:
                 # Recompute adiabat from previous iteration's converged structure
                 adiabat_T = compute_adiabatic_temperature(
                     prev_radii,
                     prev_pressure,
-                    prev_gravity,
                     prev_mass_enclosed,
                     surface_temperature,
-                    adiabatic_cp,
                     cmb_mass,
                     core_mantle_mass,
                     layer_eos_config,
                     material_dictionaries,
-                    solidus_func,
-                    liquidus_func,
                     interpolation_cache,
                 )
 
@@ -642,7 +631,6 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
         # Save converged profiles for the next outer iteration's adiabat
         prev_radii = radii.copy()
         prev_pressure = np.asarray(pressure).copy()
-        prev_gravity = np.asarray(gravity).copy()
         prev_mass_enclosed = np.asarray(mass_enclosed).copy()
 
         # Update radius guess

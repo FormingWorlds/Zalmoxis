@@ -103,7 +103,7 @@ $$
 $$
 
 This EOS is appropriate when modeling hot rocky planets whose mantles may be partially or fully molten, which is critical for accurately coupling to thermal evolution codes.
-A temperature profile (isothermal, linear, or prescribed from file) must be supplied.
+A temperature profile (isothermal, linear, prescribed from file, or adiabatic) must be supplied.
 When this EOS is selected for any layer, the radial integration is split into two segments (controlled by `adaptive_radial_fraction`) to handle the steep density gradients near the surface.
 
 **Mass limit.** The WolfBower2018 tables cover pressures up to ~1 TPa.
@@ -347,7 +347,9 @@ post_processing() ──► output files + plots
 - **`get_Tdep_density()`** (`eos_functions.py`): Computes mantle density accounting for temperature-dependent phase transitions using the solidus/liquidus melting curves and volume-additive mixing in the mush regime.
   Guards against `None` returns from out-of-bounds table lookups.
 
-- **`calculate_temperature_profile()`** (`eos_functions.py`): Returns a callable $T(r)$ for three modes: `"isothermal"` (uniform), `"linear"` (center-to-surface gradient), or `"prescribed"` (loaded from file).
+- **`calculate_temperature_profile()`** (`eos_functions.py`): Returns a callable $T(r)$ for four modes: `"isothermal"` (uniform), `"linear"` (center-to-surface gradient), `"prescribed"` (loaded from file), or `"adiabatic"` (returns a linear initial guess; the self-consistent adiabat is computed later by `compute_adiabatic_temperature()`).
+
+- **`compute_adiabatic_temperature()`** (`eos_functions.py`): Computes the adiabatic temperature profile $T(r)$ by integrating pre-tabulated $(dT/dP)_S$ gradients from the EOS. Starting at `surface_temperature`, it integrates inward shell-by-shell: $T_{i} = T_{i+1} + (dT/dP)_S \cdot \Delta P$. Only available for T-dependent EOS (`WolfBower2018:MgSiO3`, `RTPress100TPa:MgSiO3`) that provide native `adiabat_temp_grad_melt.dat` tables. For T-independent layers (e.g., the iron core), the temperature is held constant.
 
 - **`parse_eos_config()`** (`zalmoxis.py`): Parses the `[EOS]` TOML section into a per-layer dictionary.
   Handles both the new per-layer format and legacy global-string format via `LEGACY_EOS_MAP`.

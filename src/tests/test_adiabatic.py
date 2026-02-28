@@ -1,9 +1,8 @@
 """Tests for adiabatic temperature mode.
 
 Tests cover:
-- Thermal expansivity computation via finite differences
-- Heat capacity lookup from tabulated P-T data
-- Adiabatic temperature profile integration
+- Adiabatic temperature profile integration via native dT/dP tables
+- Thick-mantle divergence regression test
 - Adiabatic mode in calculate_temperature_profile()
 
 References:
@@ -19,342 +18,18 @@ import pytest
 from zalmoxis.eos_functions import (
     calculate_temperature_profile,
     compute_adiabatic_temperature,
-    compute_thermal_expansivity,
-    get_heat_capacity,
 )
 
 
 @pytest.mark.unit
-class TestComputeThermalExpansivity:
-    """Tests for compute_thermal_expansivity()."""
-
-    def test_positive_alpha_for_melt(self):
-        """Thermal expansivity should be positive for MgSiO3 melt at moderate P, T.
-
-        At 10 GPa and 3000 K, MgSiO3 melt has well-constrained EOS
-        with alpha ~ 1e-5 to 1e-4 1/K.
-        """
-        from zalmoxis.zalmoxis import (
-            load_material_dictionaries,
-            load_solidus_liquidus_functions,
-        )
-
-        material_dicts = load_material_dictionaries()
-        layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'}
-        melting = load_solidus_liquidus_functions(layer_eos_config)
-        solidus_func, liquidus_func = melting
-
-        alpha = compute_thermal_expansivity(
-            pressure=10e9,
-            temperature=3000.0,
-            material_dictionaries=material_dicts,
-            layer_eos='WolfBower2018:MgSiO3',
-            solidus_func=solidus_func,
-            liquidus_func=liquidus_func,
-        )
-        assert alpha > 0, f'Expected positive alpha for MgSiO3 melt, got {alpha}'
-        # Typical values for silicate melts: 1e-5 to 5e-4 1/K
-        assert 1e-6 < alpha < 1e-3, f'Alpha {alpha} outside expected range'
-
-    def test_zero_alpha_for_T_independent_eos(self):
-        """Thermal expansivity should be zero for T-independent EOS (Seager2007 iron).
-
-        Seager2007 iron density depends only on pressure, so drho/dT = 0.
-        """
-        from zalmoxis.zalmoxis import load_material_dictionaries
-
-        material_dicts = load_material_dictionaries()
-
-        alpha = compute_thermal_expansivity(
-            pressure=100e9,
-            temperature=4000.0,
-            material_dictionaries=material_dicts,
-            layer_eos='Seager2007:iron',
-            solidus_func=None,
-            liquidus_func=None,
-        )
-        assert alpha == pytest.approx(0.0), (
-            f'Expected zero alpha for T-independent EOS, got {alpha}'
-        )
-
-    def test_narrow_mixed_zone_fallback(self):
-        """Alpha should be finite when solidus and liquidus are < 2 K apart.
-
-        The stencil fallback (T_hi - T_lo < 2 K) re-widens to +/-1 K and
-        re-applies phase boundary constraints.  This must not produce
-        zero-width stencil or straddled-boundary artifacts.
-        """
-        from unittest.mock import MagicMock
-
-        from zalmoxis.zalmoxis import load_material_dictionaries
-
-        material_dicts = load_material_dictionaries()
-
-        # Mock solidus/liquidus 1 K apart at all pressures
-        T_mid = 3000.0
-        solidus_func = MagicMock(return_value=T_mid - 0.5)
-        liquidus_func = MagicMock(return_value=T_mid + 0.5)
-
-        alpha = compute_thermal_expansivity(
-            pressure=10e9,
-            temperature=T_mid,
-            material_dictionaries=material_dicts,
-            layer_eos='WolfBower2018:MgSiO3',
-            solidus_func=solidus_func,
-            liquidus_func=liquidus_func,
-        )
-        # Should return a finite, non-negative value (not NaN or inf)
-        assert np.isfinite(alpha), f'Expected finite alpha, got {alpha}'
-        assert alpha >= 0, f'Expected non-negative alpha, got {alpha}'
-
-
-@pytest.mark.unit
-class TestGetHeatCapacity:
-    """Tests for get_heat_capacity()."""
-
-    def test_returns_none_for_T_independent_eos(self):
-        """Cp lookup should return None for Seager2007 (no Cp tables)."""
-        from zalmoxis.zalmoxis import load_material_dictionaries
-
-        material_dicts = load_material_dictionaries()
-
-        cp = get_heat_capacity(
-            pressure=100e9,
-            temperature=4000.0,
-            material_dictionaries=material_dicts,
-            layer_eos='Seager2007:iron',
-            solidus_func=None,
-            liquidus_func=None,
-        )
-        assert cp is None, f'Expected None for T-independent EOS, got {cp}'
-
-    def test_returns_none_when_cp_files_absent(self):
-        """Cp lookup should return None when cp_file keys are missing from dicts."""
-        # Build material dicts without cp_file entries
-        from zalmoxis.eos_properties import (
-            material_properties_iron_silicate_planets,
-            material_properties_water_planets,
-        )
-
-        mat_Tdep_no_cp = {
-            'core': {'eos_file': 'dummy'},
-            'melted_mantle': {'eos_file': 'dummy'},  # no cp_file
-            'solid_mantle': {'eos_file': 'dummy'},  # no cp_file
-        }
-        dicts = (
-            material_properties_iron_silicate_planets,
-            mat_Tdep_no_cp,
-            material_properties_water_planets,
-            mat_Tdep_no_cp,
-        )
-        cp = get_heat_capacity(
-            pressure=10e9,
-            temperature=3000.0,
-            material_dictionaries=dicts,
-            layer_eos='WolfBower2018:MgSiO3',
-            solidus_func=None,
-            liquidus_func=None,
-        )
-        assert cp is None
-
-    @staticmethod
-    def _get_fwl_cp_paths():
-        """Return (cp_melt_path, cp_solid_path) from FWL_DATA, or skip."""
-        import os
-        from pathlib import Path
-
-        fwl_data = os.environ.get('FWL_DATA')
-        if not fwl_data:
-            pytest.skip('FWL_DATA not set')
-
-        wb_pt = (
-            Path(fwl_data) / 'interior_lookup_tables' / 'EOS' / 'WolfBower2018_MgSiO3' / 'P-T'
-        )
-        cp_melt = wb_pt / 'heat_capacity_melt.dat'
-        cp_solid = wb_pt / 'heat_capacity_solid.dat'
-        if not cp_melt.is_file():
-            pytest.skip('WolfBower2018 Cp melt table not found in FWL_DATA')
-        return cp_melt, cp_solid
-
-    @staticmethod
-    def _inject_cp_files(material_dicts, cp_melt_path, cp_solid_path):
-        """Return a deep copy of material_dicts with cp_file keys added.
-
-        Uses deep copy to avoid mutating module-level globals returned
-        by ``load_material_dictionaries()``.
-        """
-        import copy
-
-        dicts = copy.deepcopy(material_dicts)
-        mat_Tdep = dicts[1]
-        if 'cp_file' not in mat_Tdep.get('melted_mantle', {}):
-            mat_Tdep['melted_mantle']['cp_file'] = str(cp_melt_path)
-        if cp_solid_path.is_file() and 'cp_file' not in mat_Tdep.get('solid_mantle', {}):
-            mat_Tdep['solid_mantle']['cp_file'] = str(cp_solid_path)
-        return dicts
-
-    def test_positive_cp_for_melt_with_fwl_data(self):
-        """Cp should be positive and physically reasonable for MgSiO3 melt.
-
-        At 10 GPa and 3000 K (above liquidus ~2353 K), the melt Cp table
-        is used directly. Typical silicate melt Cp: 1000-4000 J/(kg*K).
-        """
-        cp_melt, cp_solid = self._get_fwl_cp_paths()
-
-        from zalmoxis.zalmoxis import (
-            load_material_dictionaries,
-            load_solidus_liquidus_functions,
-        )
-
-        material_dicts = load_material_dictionaries()
-        material_dicts = self._inject_cp_files(material_dicts, cp_melt, cp_solid)
-        layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'}
-        melting = load_solidus_liquidus_functions(layer_eos_config)
-        solidus_func, liquidus_func = melting
-
-        cp = get_heat_capacity(
-            pressure=10e9,
-            temperature=3000.0,
-            material_dictionaries=material_dicts,
-            layer_eos='WolfBower2018:MgSiO3',
-            solidus_func=solidus_func,
-            liquidus_func=liquidus_func,
-        )
-        assert cp is not None, 'Expected Cp value from tabulated data'
-        assert cp > 0, f'Cp must be positive, got {cp}'
-        assert 500 < cp < 10000, f'Cp {cp:.0f} J/(kg*K) outside expected range'
-
-    def test_positive_cp_for_solid_with_fwl_data(self):
-        """Cp should be positive for MgSiO3 in the solid phase.
-
-        At 10 GPa and 1500 K (below solidus ~1753 K), the solid Cp table
-        is used. Skipped if solid Cp table is not available.
-        """
-        cp_melt, cp_solid = self._get_fwl_cp_paths()
-        if not cp_solid.is_file():
-            pytest.skip('WolfBower2018 Cp solid table not found')
-
-        from zalmoxis.zalmoxis import (
-            load_material_dictionaries,
-            load_solidus_liquidus_functions,
-        )
-
-        material_dicts = load_material_dictionaries()
-        material_dicts = self._inject_cp_files(material_dicts, cp_melt, cp_solid)
-        layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'}
-        melting = load_solidus_liquidus_functions(layer_eos_config)
-        solidus_func, liquidus_func = melting
-
-        # 1500 K is below solidus (~1753 K) at 10 GPa
-        cp = get_heat_capacity(
-            pressure=10e9,
-            temperature=1500.0,
-            material_dictionaries=material_dicts,
-            layer_eos='WolfBower2018:MgSiO3',
-            solidus_func=solidus_func,
-            liquidus_func=liquidus_func,
-        )
-        assert cp is not None, 'Expected Cp from solid table'
-        assert cp > 0, f'Solid Cp must be positive, got {cp}'
-        assert 500 < cp < 10000, f'Solid Cp {cp:.0f} J/(kg*K) outside expected range'
-
-    def test_mixed_phase_cp_interpolation(self):
-        """Cp in the mixed zone should interpolate between solid and melt values.
-
-        At 10 GPa, solidus ~1753 K, liquidus ~2353 K. Testing at 2000 K
-        gives melt fraction ~0.41. The mixed Cp should be between the
-        pure solid and pure melt values.
-        """
-        cp_melt, cp_solid = self._get_fwl_cp_paths()
-        if not cp_solid.is_file():
-            pytest.skip('WolfBower2018 Cp solid table not found')
-
-        from zalmoxis.zalmoxis import (
-            load_material_dictionaries,
-            load_solidus_liquidus_functions,
-        )
-
-        material_dicts = load_material_dictionaries()
-        material_dicts = self._inject_cp_files(material_dicts, cp_melt, cp_solid)
-        layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'}
-        melting = load_solidus_liquidus_functions(layer_eos_config)
-        solidus_func, liquidus_func = melting
-
-        P = 10e9
-        T_mixed = 2000.0  # between solidus (1753 K) and liquidus (2353 K)
-        T_solid = 1500.0  # below solidus
-        T_melt = 3000.0  # above liquidus
-
-        cp_at_solid = get_heat_capacity(
-            P,
-            T_solid,
-            material_dicts,
-            'WolfBower2018:MgSiO3',
-            solidus_func,
-            liquidus_func,
-        )
-        cp_at_melt = get_heat_capacity(
-            P,
-            T_melt,
-            material_dicts,
-            'WolfBower2018:MgSiO3',
-            solidus_func,
-            liquidus_func,
-        )
-        cp_at_mixed = get_heat_capacity(
-            P,
-            T_mixed,
-            material_dicts,
-            'WolfBower2018:MgSiO3',
-            solidus_func,
-            liquidus_func,
-        )
-
-        assert all(v is not None for v in (cp_at_solid, cp_at_melt, cp_at_mixed))
-
-        # Mixed Cp should be between the two endpoint values
-        cp_lo = min(cp_at_solid, cp_at_melt)
-        cp_hi = max(cp_at_solid, cp_at_melt)
-        assert cp_lo <= cp_at_mixed <= cp_hi, (
-            f'Mixed Cp {cp_at_mixed:.0f} not between solid {cp_at_solid:.0f} '
-            f'and melt {cp_at_melt:.0f}'
-        )
-
-    def test_cp_without_melting_curves_uses_melt_table(self):
-        """When solidus_func=None and cp_file is present, should use melt Cp.
-
-        This covers the code path where no melting curves are provided
-        but Cp tables exist (e.g. for a pure-melt mantle).
-        """
-        cp_melt, cp_solid = self._get_fwl_cp_paths()
-
-        from zalmoxis.zalmoxis import load_material_dictionaries
-
-        material_dicts = load_material_dictionaries()
-        material_dicts = self._inject_cp_files(material_dicts, cp_melt, cp_solid)
-
-        cp = get_heat_capacity(
-            pressure=10e9,
-            temperature=3000.0,
-            material_dictionaries=material_dicts,
-            layer_eos='WolfBower2018:MgSiO3',
-            solidus_func=None,
-            liquidus_func=None,
-        )
-        assert cp is not None, 'Expected Cp from melt table when no melting curves'
-        assert cp > 0
-
-
-@pytest.mark.unit
 class TestComputeAdiabaticTemperature:
-    """Tests for compute_adiabatic_temperature()."""
+    """Tests for compute_adiabatic_temperature() using native dT/dP tables."""
 
     def test_surface_temperature_exact(self):
         """T at the surface should equal surface_temperature exactly."""
         n = 50
         radii = np.linspace(0, 6.371e6, n)
         pressure = np.linspace(360e9, 1e5, n)  # center to surface
-        gravity = np.full(n, 9.8)
         mass_enclosed = np.linspace(0, 5.972e24, n)
 
         T_surface = 3500.0
@@ -366,28 +41,23 @@ class TestComputeAdiabaticTemperature:
         T = compute_adiabatic_temperature(
             radii=radii,
             pressure=pressure,
-            gravity=gravity,
             mass_enclosed=mass_enclosed,
             surface_temperature=T_surface,
-            Cp=1200.0,
             cmb_mass=0.325 * 5.972e24,
             core_mantle_mass=5.972e24,
             layer_eos_config=layer_eos_config,
             material_dictionaries=material_dicts,
-            solidus_func=None,
-            liquidus_func=None,
         )
         assert T[-1] == pytest.approx(T_surface), f'Surface temperature {T[-1]} != {T_surface}'
 
     def test_isothermal_for_T_independent_eos(self):
         """For a fully T-independent EOS planet, the adiabat should be isothermal.
 
-        When alpha = 0 everywhere, dT/dr = 0, so T(r) = T_surface.
+        When no dT/dP table is available (Seager2007), T(r) = T_surface.
         """
         n = 50
         radii = np.linspace(0, 6.371e6, n)
         pressure = np.linspace(360e9, 1e5, n)
-        gravity = np.full(n, 9.8)
         mass_enclosed = np.linspace(0, 5.972e24, n)
 
         T_surface = 3500.0
@@ -399,175 +69,202 @@ class TestComputeAdiabaticTemperature:
         T = compute_adiabatic_temperature(
             radii=radii,
             pressure=pressure,
-            gravity=gravity,
             mass_enclosed=mass_enclosed,
             surface_temperature=T_surface,
-            Cp=1200.0,
             cmb_mass=0.325 * 5.972e24,
             core_mantle_mass=5.972e24,
             layer_eos_config=layer_eos_config,
             material_dictionaries=material_dicts,
-            solidus_func=None,
-            liquidus_func=None,
         )
         np.testing.assert_allclose(T, T_surface, rtol=1e-10)
-
-    def test_tabulated_cp_changes_adiabat(self):
-        """Adiabat with tabulated Cp(P,T) should differ from constant Cp=1200.
-
-        The tabulated Cp varies with P and T (typically 1000-4000 J/(kg*K)
-        for MgSiO3), so the resulting temperature profile should differ
-        from the one computed with a flat Cp=1200 J/(kg*K).
-
-        Deep-copies of the material dicts are used because
-        load_material_dictionaries() returns references to module-level
-        globals -- mutating one would affect the other.
-        """
-        import copy
-        import os
-        from pathlib import Path
-
-        fwl_data = os.environ.get('FWL_DATA')
-        if not fwl_data:
-            pytest.skip('FWL_DATA not set')
-
-        wb_pt = (
-            Path(fwl_data) / 'interior_lookup_tables' / 'EOS' / 'WolfBower2018_MgSiO3' / 'P-T'
-        )
-        cp_melt = wb_pt / 'heat_capacity_melt.dat'
-        cp_solid = wb_pt / 'heat_capacity_solid.dat'
-        if not cp_melt.is_file():
-            pytest.skip('WolfBower2018 Cp tables not found in FWL_DATA')
-
-        from zalmoxis.zalmoxis import (
-            load_material_dictionaries,
-            load_solidus_liquidus_functions,
-        )
-
-        layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'}
-        melting = load_solidus_liquidus_functions(layer_eos_config)
-        solidus_func, liquidus_func = melting
-
-        n = 100
-        radii = np.linspace(0, 6.371e6, n)
-        pressure = np.linspace(360e9, 1e5, n)
-        gravity = np.linspace(0, 9.8, n)
-        mass_enclosed = np.linspace(0, 5.972e24, n)
-        Cp_const = 1200.0
-
-        # Deep-copy to isolate the two dict sets from each other
-        dicts_no_cp = copy.deepcopy(load_material_dictionaries())
-        dicts_with_cp = copy.deepcopy(load_material_dictionaries())
-
-        # Ensure "no cp" dicts have no cp_file keys
-        for phase in ('melted_mantle', 'solid_mantle'):
-            dicts_no_cp[1].get(phase, {}).pop('cp_file', None)
-
-        # Inject cp_file keys into "with cp" dicts
-        dicts_with_cp[1]['melted_mantle']['cp_file'] = str(cp_melt)
-        if cp_solid.is_file():
-            dicts_with_cp[1]['solid_mantle']['cp_file'] = str(cp_solid)
-
-        # Run WITHOUT tabulated Cp
-        T_const = compute_adiabatic_temperature(
-            radii,
-            pressure,
-            gravity,
-            mass_enclosed,
-            surface_temperature=3500.0,
-            Cp=Cp_const,
-            cmb_mass=0.325 * 5.972e24,
-            core_mantle_mass=5.972e24,
-            layer_eos_config=layer_eos_config,
-            material_dictionaries=dicts_no_cp,
-            solidus_func=solidus_func,
-            liquidus_func=liquidus_func,
-        )
-
-        # Run WITH tabulated Cp
-        T_tab = compute_adiabatic_temperature(
-            radii,
-            pressure,
-            gravity,
-            mass_enclosed,
-            surface_temperature=3500.0,
-            Cp=Cp_const,
-            cmb_mass=0.325 * 5.972e24,
-            core_mantle_mass=5.972e24,
-            layer_eos_config=layer_eos_config,
-            material_dictionaries=dicts_with_cp,
-            solidus_func=solidus_func,
-            liquidus_func=liquidus_func,
-        )
-
-        # Surface T should be identical
-        assert T_const[-1] == pytest.approx(T_tab[-1])
-
-        # CMB temperatures should differ (tabulated Cp != 1200 everywhere)
-        cmb_idx = np.argmax(mass_enclosed >= 0.325 * 5.972e24)
-        assert T_const[cmb_idx] != pytest.approx(T_tab[cmb_idx], rel=1e-3), (
-            f'Tabulated Cp should produce a different CMB temperature '
-            f'({T_tab[cmb_idx]:.0f} K) than constant Cp ({T_const[cmb_idx]:.0f} K)'
-        )
-
-        # Typical WolfBower2018 melt Cp > 1200 J/(kg*K) → shallower gradient
-        # → lower CMB T than constant Cp=1200
-        assert T_tab[cmb_idx] < T_const[cmb_idx], (
-            f'Tabulated Cp (expected > 1200) should give lower CMB T '
-            f'({T_tab[cmb_idx]:.0f} K) than constant Cp=1200 ({T_const[cmb_idx]:.0f} K)'
-        )
-
-        # Both should still be monotonically increasing inward in the mantle
-        mantle_T_const = T_const[cmb_idx:]
-        mantle_T_tab = T_tab[cmb_idx:]
-        assert mantle_T_const[0] > mantle_T_const[-1]
-        assert mantle_T_tab[0] > mantle_T_tab[-1]
 
     def test_monotonic_increase_with_Tdep_eos(self):
         """T should increase from surface toward center for a T-dependent mantle EOS.
 
-        The adiabatic gradient dT/dr = -alpha*g*T/Cp with alpha > 0, g > 0
-        means T increases inward (decreasing r).
+        The adiabatic gradient dT/dP > 0 means T increases with pressure
+        (i.e., inward toward the center).
         """
-        from zalmoxis.zalmoxis import (
-            load_material_dictionaries,
-            load_solidus_liquidus_functions,
+        import os
+
+        grad_file = os.path.join(
+            os.environ.get('ZALMOXIS_ROOT', ''),
+            'data',
+            'EOS_WolfBower2018_1TPa',
+            'adiabat_temp_grad_melt.dat',
         )
+        if not os.path.isfile(grad_file):
+            pytest.skip('WolfBower2018 adiabat gradient table not found')
+
+        from zalmoxis.zalmoxis import load_material_dictionaries
 
         material_dicts = load_material_dictionaries()
         layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'}
-        melting = load_solidus_liquidus_functions(layer_eos_config)
-        solidus_func, liquidus_func = melting
 
         n = 100
         radii = np.linspace(0, 6.371e6, n)
         pressure = np.linspace(360e9, 1e5, n)
-        gravity = np.linspace(0, 9.8, n)
         mass_enclosed = np.linspace(0, 5.972e24, n)
 
         T = compute_adiabatic_temperature(
             radii=radii,
             pressure=pressure,
-            gravity=gravity,
             mass_enclosed=mass_enclosed,
             surface_temperature=3500.0,
-            Cp=1200.0,
             cmb_mass=0.325 * 5.972e24,
             core_mantle_mass=5.972e24,
             layer_eos_config=layer_eos_config,
             material_dictionaries=material_dicts,
-            solidus_func=solidus_func,
-            liquidus_func=liquidus_func,
         )
         # In the mantle (T-dependent EOS), T should increase inward.
-        # Mantle goes from CMB (lower index) to surface (higher index),
-        # so T should monotonically decrease from CMB to surface.
         cmb_idx = np.argmax(mass_enclosed >= 0.325 * 5.972e24)
         mantle_T = T[cmb_idx:]
         diffs = np.diff(mantle_T)
         assert np.all(diffs <= 0), (
             f'Mantle T profile is not monotonically decreasing from CMB to surface. '
             f'Max upward step: {np.max(diffs):.1f} K at index {np.argmax(diffs)}'
+        )
+
+    def test_requires_adiabat_grad_file(self):
+        """Should raise ValueError if T-dep EOS has no adiabat_grad_file."""
+        import copy
+
+        from zalmoxis.zalmoxis import load_material_dictionaries
+
+        material_dicts = copy.deepcopy(load_material_dictionaries())
+        # Remove the adiabat_grad_file key
+        material_dicts[1]['melted_mantle'].pop('adiabat_grad_file', None)
+
+        n = 50
+        radii = np.linspace(0, 6.371e6, n)
+        pressure = np.linspace(360e9, 1e5, n)
+        mass_enclosed = np.linspace(0, 5.972e24, n)
+
+        layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'}
+
+        with pytest.raises(ValueError, match='adiabat_grad_file'):
+            compute_adiabatic_temperature(
+                radii=radii,
+                pressure=pressure,
+                mass_enclosed=mass_enclosed,
+                surface_temperature=3500.0,
+                cmb_mass=0.325 * 5.972e24,
+                core_mantle_mass=5.972e24,
+                layer_eos_config=layer_eos_config,
+                material_dictionaries=material_dicts,
+            )
+
+
+@pytest.mark.unit
+class TestNoDivergenceThickMantle:
+    """Regression test for adiabat divergence with thick mantles (CMF <= 0.325).
+
+    Previously, the adiabat was computed via dT/dr = -α·g·T/Cp with
+    finite-difference α. In the mixed zone, phase-averaged density inflated
+    α by ~100× via the latent-heat density jump, causing exponential T
+    runaway through thick mantles.
+
+    The native dT/dP table approach eliminates this entirely.
+    """
+
+    def test_no_divergence_thick_mantle(self):
+        """Adiabat for an Earth-mass planet with CMF=0.325 should not diverge.
+
+        The temperature profile should contain no NaN/Inf values and
+        stay below 10,000 K for an Earth-mass planet.
+        """
+        import os
+
+        grad_file = os.path.join(
+            os.environ.get('ZALMOXIS_ROOT', ''),
+            'data',
+            'EOS_WolfBower2018_1TPa',
+            'adiabat_temp_grad_melt.dat',
+        )
+        if not os.path.isfile(grad_file):
+            pytest.skip('WolfBower2018 adiabat gradient table not found')
+
+        from zalmoxis.zalmoxis import load_material_dictionaries
+
+        material_dicts = load_material_dictionaries()
+        layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'}
+
+        # Earth-mass planet with CMF=0.325 (thick mantle ~4300 km)
+        M_earth = 5.972e24
+        R_earth = 6.371e6
+        CMF = 0.325
+
+        n = 200
+        radii = np.linspace(0, R_earth, n)
+        pressure = np.linspace(360e9, 1e5, n)
+        mass_enclosed = np.linspace(0, M_earth, n)
+
+        T = compute_adiabatic_temperature(
+            radii=radii,
+            pressure=pressure,
+            mass_enclosed=mass_enclosed,
+            surface_temperature=3500.0,
+            cmb_mass=CMF * M_earth,
+            core_mantle_mass=M_earth,
+            layer_eos_config=layer_eos_config,
+            material_dictionaries=material_dicts,
+        )
+
+        # No NaN or Inf values
+        assert np.all(np.isfinite(T)), (
+            f'Adiabat contains non-finite values: '
+            f'NaN count={np.sum(np.isnan(T))}, Inf count={np.sum(np.isinf(T))}'
+        )
+
+        # Temperature should be physically reasonable (not diverge)
+        assert np.max(T) < 10000.0, (
+            f'Adiabat T_max={np.max(T):.0f} K is unreasonably high '
+            f'(expected < 10,000 K for 1 M_earth)'
+        )
+
+    def test_no_divergence_cmf_01(self):
+        """Adiabat for CMF=0.1 (very thick mantle ~5700 km) should not diverge.
+
+        This is the most extreme case: previously diverged to 58,000,000 K.
+        """
+        import os
+
+        grad_file = os.path.join(
+            os.environ.get('ZALMOXIS_ROOT', ''),
+            'data',
+            'EOS_WolfBower2018_1TPa',
+            'adiabat_temp_grad_melt.dat',
+        )
+        if not os.path.isfile(grad_file):
+            pytest.skip('WolfBower2018 adiabat gradient table not found')
+
+        from zalmoxis.zalmoxis import load_material_dictionaries
+
+        material_dicts = load_material_dictionaries()
+        layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'}
+
+        M_earth = 5.972e24
+        R_earth = 6.371e6
+        CMF = 0.1
+
+        n = 200
+        radii = np.linspace(0, R_earth, n)
+        pressure = np.linspace(360e9, 1e5, n)
+        mass_enclosed = np.linspace(0, M_earth, n)
+
+        T = compute_adiabatic_temperature(
+            radii=radii,
+            pressure=pressure,
+            mass_enclosed=mass_enclosed,
+            surface_temperature=3500.0,
+            cmb_mass=CMF * M_earth,
+            core_mantle_mass=M_earth,
+            layer_eos_config=layer_eos_config,
+            material_dictionaries=material_dicts,
+        )
+
+        assert np.all(np.isfinite(T))
+        assert np.max(T) < 10000.0, (
+            f'CMF=0.1 adiabat T_max={np.max(T):.0f} K diverged (expected < 10,000 K)'
         )
 
 

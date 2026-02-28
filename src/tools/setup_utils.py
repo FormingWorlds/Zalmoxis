@@ -191,7 +191,7 @@ def download_data():
         folder='EOS_WolfBower2018_1TPa',
         data_dir=Path(ZALMOXIS_ROOT, 'data'),
         zenodo_id=17417017,
-        keep_files=['density_melt.dat', 'density_solid.dat'],
+        keep_files=['density_melt.dat', 'density_solid.dat', 'adiabat_temp_grad_melt.dat'],
     )
     download(
         folder='radial_profiles',
@@ -209,8 +209,8 @@ def download_data():
     download(
         folder='EOS_RTPress_melt_100TPa',
         data_dir=Path(ZALMOXIS_ROOT, 'data'),
-        zenodo_id=18812412,
-        keep_files=['density_melt.dat'],
+        zenodo_id=18819027,
+        keep_files=['density_melt.dat', 'adiabat_temp_grad_melt.dat'],
     )
     download(
         folder='melting_curves_Monteux-600',
