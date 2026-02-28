@@ -643,10 +643,20 @@ def compute_thermal_expansivity(
                 # Mixed: keep stencil between solidus and liquidus
                 T_lo = max(T_lo, T_sol)
                 T_hi = min(T_hi, T_liq)
-            # Ensure finite stencil width (at least 2 K)
+            # Ensure finite stencil width (at least 2 K).  This can
+            # happen in a narrow mixed zone where T_liq - T_sol < 2*dT.
+            # Re-apply phase boundary constraints on the widened stencil
+            # to avoid re-straddling the boundary we just clamped for.
             if T_hi - T_lo < 2.0:
                 T_lo = temperature - 1.0
                 T_hi = temperature + 1.0
+                if temperature <= T_sol:
+                    T_hi = min(T_hi, T_sol)
+                elif temperature >= T_liq:
+                    T_lo = max(T_lo, T_liq)
+                else:
+                    T_lo = max(T_lo, T_sol)
+                    T_hi = min(T_hi, T_liq)
 
     rho = calculate_density(
         pressure,

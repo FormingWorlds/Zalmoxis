@@ -239,9 +239,6 @@ def load_zalmoxis_config(temp_config_path=None):
         'target_surface_pressure': config['PressureAdjustment']['target_surface_pressure'],
         'pressure_tolerance': config['PressureAdjustment']['pressure_tolerance'],
         'max_iterations_pressure': config['PressureAdjustment']['max_iterations_pressure'],
-        'pressure_adjustment_factor': config['PressureAdjustment'][
-            'pressure_adjustment_factor'
-        ],
         'adiabatic_cp': config['AssumptionsAndInitialGuesses'].get('adiabatic_cp', 1200.0),
         'data_output_enabled': config['Output']['data_enabled'],
         'plotting_enabled': config['Output']['plots_enabled'],

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
 import os
+
+logger = logging.getLogger(__name__)
 
 # Read the environment variable for ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
@@ -58,6 +61,12 @@ material_properties_iron_Tdep_silicate_planets = {
 _rt_cp_melt = os.path.join(
     ZALMOXIS_ROOT, 'data', 'EOS_RTPress_melt_100TPa', 'heat_capacity_melt.dat'
 )
+if not os.path.isfile(_rt_cp_melt):
+    logger.warning(
+        'RTPress100TPa melt Cp table not found at %s. '
+        'Adiabatic mode will fall back to constant Cp for this EOS.',
+        _rt_cp_melt,
+    )
 material_properties_iron_RTPress100TPa_silicate_planets = {
     'core': {
         # Iron, modeled in Seager et al. (2007) using the Vinet EOS fit to the epsilon phase of Fe and DFT calculations

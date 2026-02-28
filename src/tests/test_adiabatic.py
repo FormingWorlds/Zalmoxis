@@ -77,6 +77,36 @@ class TestComputeThermalExpansivity:
             f'Expected zero alpha for T-independent EOS, got {alpha}'
         )
 
+    def test_narrow_mixed_zone_fallback(self):
+        """Alpha should be finite when solidus and liquidus are < 2 K apart.
+
+        The stencil fallback (T_hi - T_lo < 2 K) re-widens to +/-1 K and
+        re-applies phase boundary constraints.  This must not produce
+        zero-width stencil or straddled-boundary artifacts.
+        """
+        from unittest.mock import MagicMock
+
+        from zalmoxis.zalmoxis import load_material_dictionaries
+
+        material_dicts = load_material_dictionaries()
+
+        # Mock solidus/liquidus 1 K apart at all pressures
+        T_mid = 3000.0
+        solidus_func = MagicMock(return_value=T_mid - 0.5)
+        liquidus_func = MagicMock(return_value=T_mid + 0.5)
+
+        alpha = compute_thermal_expansivity(
+            pressure=10e9,
+            temperature=T_mid,
+            material_dictionaries=material_dicts,
+            layer_eos='WolfBower2018:MgSiO3',
+            solidus_func=solidus_func,
+            liquidus_func=liquidus_func,
+        )
+        # Should return a finite, non-negative value (not NaN or inf)
+        assert np.isfinite(alpha), f'Expected finite alpha, got {alpha}'
+        assert alpha >= 0, f'Expected non-negative alpha, got {alpha}'
+
 
 @pytest.mark.unit
 class TestGetHeatCapacity:
@@ -480,6 +510,13 @@ class TestComputeAdiabaticTemperature:
             f'({T_tab[cmb_idx]:.0f} K) than constant Cp ({T_const[cmb_idx]:.0f} K)'
         )
 
+        # Typical WolfBower2018 melt Cp > 1200 J/(kg*K) → shallower gradient
+        # → lower CMB T than constant Cp=1200
+        assert T_tab[cmb_idx] < T_const[cmb_idx], (
+            f'Tabulated Cp (expected > 1200) should give lower CMB T '
+            f'({T_tab[cmb_idx]:.0f} K) than constant Cp=1200 ({T_const[cmb_idx]:.0f} K)'
+        )
+
         # Both should still be monotonically increasing inward in the mantle
         mantle_T_const = T_const[cmb_idx:]
         mantle_T_tab = T_tab[cmb_idx:]
@@ -522,13 +559,15 @@ class TestComputeAdiabaticTemperature:
             solidus_func=solidus_func,
             liquidus_func=liquidus_func,
         )
-        # In the mantle (T-dependent EOS), T should increase inward
+        # In the mantle (T-dependent EOS), T should increase inward.
+        # Mantle goes from CMB (lower index) to surface (higher index),
+        # so T should monotonically decrease from CMB to surface.
         cmb_idx = np.argmax(mass_enclosed >= 0.325 * 5.972e24)
         mantle_T = T[cmb_idx:]
-        # Mantle goes from CMB (lower index) to surface (higher index)
-        # T should decrease from CMB to surface (i.e. increase going inward)
-        assert mantle_T[0] > mantle_T[-1], (
-            f'Mantle T at CMB ({mantle_T[0]:.0f} K) should be > surface ({mantle_T[-1]:.0f} K)'
+        diffs = np.diff(mantle_T)
+        assert np.all(diffs <= 0), (
+            f'Mantle T profile is not monotonically decreasing from CMB to surface. '
+            f'Max upward step: {np.max(diffs):.1f} K at index {np.argmax(diffs)}'
         )
 
 
