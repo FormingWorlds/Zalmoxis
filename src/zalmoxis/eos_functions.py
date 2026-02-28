@@ -510,9 +510,15 @@ def compute_adiabatic_temperature(
         if grad_file is not None:
             dtdp_dicts[eos_name] = {'melted_mantle': {'eos_file': grad_file}}
 
-    # Verify that any T-dep EOS in the config has an adiabat gradient table
+    # Verify that the mantle EOS supports adiabatic mode
     mantle_eos = layer_eos_config.get('mantle')
-    if mantle_eos in TDEP_EOS_NAMES and mantle_eos not in dtdp_dicts:
+    if mantle_eos not in TDEP_EOS_NAMES:
+        raise ValueError(
+            f'Adiabatic temperature mode requires a T-dependent mantle EOS '
+            f'(WolfBower2018:MgSiO3 or RTPress100TPa:MgSiO3), '
+            f"but got '{mantle_eos}'. Use 'linear' or 'isothermal' instead."
+        )
+    if mantle_eos not in dtdp_dicts:
         raise ValueError(
             f"Adiabatic mode requires an 'adiabat_grad_file' in the "
             f"melted_mantle material dictionary for EOS '{mantle_eos}'. "

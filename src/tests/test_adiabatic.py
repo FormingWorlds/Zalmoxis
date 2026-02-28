@@ -27,13 +27,24 @@ class TestComputeAdiabaticTemperature:
 
     def test_surface_temperature_exact(self):
         """T at the surface should equal surface_temperature exactly."""
+        import os
+
+        grad_file = os.path.join(
+            os.environ.get('ZALMOXIS_ROOT', ''),
+            'data',
+            'EOS_WolfBower2018_1TPa',
+            'adiabat_temp_grad_melt.dat',
+        )
+        if not os.path.isfile(grad_file):
+            pytest.skip('WolfBower2018 adiabat gradient table not found')
+
         n = 50
         radii = np.linspace(0, 6.371e6, n)
         pressure = np.linspace(360e9, 1e5, n)  # center to surface
         mass_enclosed = np.linspace(0, 5.972e24, n)
 
         T_surface = 3500.0
-        layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'Seager2007:MgSiO3'}
+        layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'}
         from zalmoxis.zalmoxis import load_material_dictionaries
 
         material_dicts = load_material_dictionaries()
@@ -50,18 +61,32 @@ class TestComputeAdiabaticTemperature:
         )
         assert T[-1] == pytest.approx(T_surface), f'Surface temperature {T[-1]} != {T_surface}'
 
-    def test_isothermal_for_T_independent_eos(self):
-        """For a fully T-independent EOS planet, the adiabat should be isothermal.
+    def test_core_is_isothermal(self):
+        """The iron core (T-independent EOS) should be isothermal.
 
-        When no dT/dP table is available (Seager2007), T(r) = T_surface.
+        Only the mantle has a dT/dP table; the core should hold T constant
+        at whatever temperature the CMB reaches.
         """
-        n = 50
+        import os
+
+        grad_file = os.path.join(
+            os.environ.get('ZALMOXIS_ROOT', ''),
+            'data',
+            'EOS_WolfBower2018_1TPa',
+            'adiabat_temp_grad_melt.dat',
+        )
+        if not os.path.isfile(grad_file):
+            pytest.skip('WolfBower2018 adiabat gradient table not found')
+
+        n = 100
         radii = np.linspace(0, 6.371e6, n)
         pressure = np.linspace(360e9, 1e5, n)
         mass_enclosed = np.linspace(0, 5.972e24, n)
 
         T_surface = 3500.0
-        layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'Seager2007:MgSiO3'}
+        CMF = 0.325
+        cmb_mass = CMF * 5.972e24
+        layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'}
         from zalmoxis.zalmoxis import load_material_dictionaries
 
         material_dicts = load_material_dictionaries()
@@ -71,12 +96,16 @@ class TestComputeAdiabaticTemperature:
             pressure=pressure,
             mass_enclosed=mass_enclosed,
             surface_temperature=T_surface,
-            cmb_mass=0.325 * 5.972e24,
+            cmb_mass=cmb_mass,
             core_mantle_mass=5.972e24,
             layer_eos_config=layer_eos_config,
             material_dictionaries=material_dicts,
         )
-        np.testing.assert_allclose(T, T_surface, rtol=1e-10)
+        # Core shells: mass_enclosed < cmb_mass
+        core_mask = mass_enclosed < cmb_mass
+        core_T = T[core_mask]
+        # All core temperatures should be identical (isothermal)
+        np.testing.assert_allclose(core_T, core_T[0], rtol=1e-10)
 
     def test_monotonic_increase_with_Tdep_eos(self):
         """T should increase from surface toward center for a T-dependent mantle EOS.
@@ -142,6 +171,31 @@ class TestComputeAdiabaticTemperature:
         layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'}
 
         with pytest.raises(ValueError, match='adiabat_grad_file'):
+            compute_adiabatic_temperature(
+                radii=radii,
+                pressure=pressure,
+                mass_enclosed=mass_enclosed,
+                surface_temperature=3500.0,
+                cmb_mass=0.325 * 5.972e24,
+                core_mantle_mass=5.972e24,
+                layer_eos_config=layer_eos_config,
+                material_dictionaries=material_dicts,
+            )
+
+    def test_rejects_T_independent_mantle_eos(self):
+        """Should raise ValueError if mantle EOS is T-independent (e.g. Seager2007)."""
+        from zalmoxis.zalmoxis import load_material_dictionaries
+
+        material_dicts = load_material_dictionaries()
+
+        n = 50
+        radii = np.linspace(0, 6.371e6, n)
+        pressure = np.linspace(360e9, 1e5, n)
+        mass_enclosed = np.linspace(0, 5.972e24, n)
+
+        layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'Seager2007:MgSiO3'}
+
+        with pytest.raises(ValueError, match='T-dependent mantle EOS'):
             compute_adiabatic_temperature(
                 radii=radii,
                 pressure=pressure,
