@@ -1,0 +1,1970 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://proteus-framework.org/Zalmoxis/model/">
+      
+      
+        <link rel="prev" href="../testing/">
+      
+      
+        <link rel="next" href="../CONTRIBUTING/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/PROTEUS_black_on_white_logo_only.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
+    
+    
+      
+        <title>Interior Structure Model - Zalmoxis</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="black" data-md-color-accent="deep-orange">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#interior-structure-model" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Zalmoxis" class="md-header__button md-logo" aria-label="Zalmoxis" data-md-component="logo">
+      
+  <img src="../assets/PROTEUS_white_on_black.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Zalmoxis
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Interior Structure Model
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/FormingWorlds/Zalmoxis" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Zalmoxis" class="md-nav__button md-logo" aria-label="Zalmoxis" data-md-component="logo">
+      
+  <img src="../assets/PROTEUS_white_on_black.png" alt="logo">
+
+    </a>
+    Zalmoxis
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/FormingWorlds/Zalmoxis" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../usage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interior Structure Model
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interior Structure Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#governing-equations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Governing Equations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#per-layer-eos-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-Layer EOS Architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Per-Layer EOS Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#configuration-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration format
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#valid-per-layer-eos-identifiers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Valid per-layer EOS identifiers
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#eos-physics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EOS Physics
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="EOS Physics">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#seager-et-al-2007-tabulated-eos" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Seager et al. (2007) Tabulated EOS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wolf-bower-2018-temperature-dependent-eos" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wolf &amp; Bower (2018) Temperature-Dependent EOS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rtpress100tpa-extended-melt-eos" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RTPress100TPa Extended Melt EOS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#analytic-modified-polytrope-seager-et-al-2007" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Analytic Modified Polytrope (Seager et al. 2007)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#validity-ranges" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Validity Ranges
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Validity Ranges">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#by-eos-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        By EOS type
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#general-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        General limits
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#process-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Process Flow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Process Flow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#configuration-loading" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Loading
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#initial-parameter-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Initial Parameter Setup
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#iterative-solution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Iterative Solution
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pressure-solver-brents-method" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pressure Solver (Brent's Method)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#convergence-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Convergence Checks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Output
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#code-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Code Architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Code Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#module-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Module overview
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#key-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key functions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-handling-in-the-ode-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error handling in the ODE system
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../CONTRIBUTING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../CODE_OF_CONDUCT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code of Conduct
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/FormingWorlds/Zalmoxis" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Source code
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/FormingWorlds/Zalmoxis/issues" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Issues page
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://proteus-framework.org/PROTEUS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🔗 PROTEUS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://proteus-framework.org/JANUS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🔗 JANUS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://proteus-framework.org/ZEPHYRUS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🔗 ZEPHYRUS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://proteus-framework.org/CALLIOPE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🔗 CALLIOPE
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://proteus-framework.org/MORS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🔗 MORS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://h-nicholls.space/AGNI/dev/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🔗 AGNI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://proteus-framework.org/Obliqua/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🔗 Obliqua
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/FormingWorlds/VULCAN/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🔗 VULCAN
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://proteus-framework.org/aragog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🔗 Aragog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/djbower/spider" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🔗 SPIDER
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#governing-equations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Governing Equations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#per-layer-eos-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-Layer EOS Architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Per-Layer EOS Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#configuration-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration format
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#valid-per-layer-eos-identifiers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Valid per-layer EOS identifiers
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#eos-physics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EOS Physics
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="EOS Physics">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#seager-et-al-2007-tabulated-eos" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Seager et al. (2007) Tabulated EOS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wolf-bower-2018-temperature-dependent-eos" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wolf &amp; Bower (2018) Temperature-Dependent EOS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rtpress100tpa-extended-melt-eos" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RTPress100TPa Extended Melt EOS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#analytic-modified-polytrope-seager-et-al-2007" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Analytic Modified Polytrope (Seager et al. 2007)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#validity-ranges" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Validity Ranges
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Validity Ranges">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#by-eos-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        By EOS type
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#general-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        General limits
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#process-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Process Flow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Process Flow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#configuration-loading" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Loading
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#initial-parameter-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Initial Parameter Setup
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#iterative-solution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Iterative Solution
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pressure-solver-brents-method" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pressure Solver (Brent's Method)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#convergence-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Convergence Checks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Output
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#code-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Code Architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Code Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#module-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Module overview
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#key-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key functions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-handling-in-the-ode-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error handling in the ODE system
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="interior-structure-model">Interior Structure Model</h1>
+<p>Zalmoxis solves the coupled ordinary differential equations (ODEs) of hydrostatic equilibrium for a differentiated planet with 2--3 compositionally distinct layers (iron core, silicate mantle, and optional water/ice envelope).
+Given a total planet mass, layer mass fractions, and a per-layer equation of state (EOS) specification, the code iteratively determines self-consistent radial profiles of pressure, density, gravity, and enclosed mass from the center to the surface.
+Three families of EOS are supported and can be mixed arbitrarily across layers: the <a href="https://iopscience.iop.org/article/10.1086/521346">Seager et al. (2007)</a> merged tabulated EOS at 300 K, the temperature-dependent <a href="https://www.sciencedirect.com/science/article/pii/S0031920117301449">Wolf &amp; Bower (2018)</a> RTpress EOS with phase-aware melt fractions, and a fast analytic modified-polytrope approximation from <a href="https://iopscience.iop.org/article/10.1086/521346">Seager et al. (2007)</a>.</p>
+<hr />
+<h2 id="governing-equations">Governing Equations</h2>
+<p>The internal structure model assumes hydrostatic and thermodynamic equilibrium within each layer.
+Starting from the center and integrating outward, the code solves the following coupled ODEs using <code>scipy.integrate.solve_ivp</code> (explicit Runge--Kutta, RK45):</p>
+<div class="arithmatex">\[
+\frac{dM}{dr} = 4 \pi r^2 \rho
+\]</div>
+<div class="arithmatex">\[
+\frac{dg}{dr} = 4 \pi G \rho - \frac{2g}{r}
+\]</div>
+<div class="arithmatex">\[
+\frac{dP}{dr} = -\rho \, g
+\]</div>
+<p>where <span class="arithmatex">\(M(r)\)</span> is the enclosed mass within radius <span class="arithmatex">\(r\)</span>, <span class="arithmatex">\(\rho(r)\)</span> is the local density, <span class="arithmatex">\(g(r)\)</span> is the gravitational acceleration, <span class="arithmatex">\(P(r)\)</span> is the pressure, and <span class="arithmatex">\(G\)</span> is the gravitational constant.</p>
+<p>The density <span class="arithmatex">\(\rho(P)\)</span> --- or <span class="arithmatex">\(\rho(P, T)\)</span> when a temperature-dependent EOS is used --- closes the system at each radial shell.</p>
+<hr />
+<h2 id="per-layer-eos-architecture">Per-Layer EOS Architecture</h2>
+<h3 id="configuration-format">Configuration format</h3>
+<p>Each structural layer is assigned its own EOS via a string of the form <code>"&lt;source&gt;:&lt;composition&gt;"</code> in the <code>[EOS]</code> section of the TOML configuration file:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[EOS]</span>
+<span class="n">core</span><span class="w">      </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;Seager2007:iron&quot;</span>
+<span class="n">mantle</span><span class="w">    </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;WolfBower2018:MgSiO3&quot;</span>
+<span class="n">ice_layer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="w">   </span><span class="c1"># empty = 2-layer model</span>
+</code></pre></div>
+<p>Layer boundaries are determined by cumulative mass fractions: a radial shell belongs to the core when <span class="arithmatex">\(M(r) &lt; M_{\mathrm{core}}\)</span>, to the mantle when <span class="arithmatex">\(M_{\mathrm{core}} \le M(r) &lt; M_{\mathrm{core}} + M_{\mathrm{mantle}}\)</span>, and to the outer ice layer (if present) otherwise.
+The function <code>get_layer_eos()</code> in <code>structure_model.py</code> maps the enclosed mass at each integration step to the appropriate per-layer EOS string, which is then dispatched to <code>calculate_density()</code>.</p>
+<p>This architecture replaced an earlier design that used a single global <code>EOS_CHOICE</code> string (e.g., <code>"Tabulated:iron/silicate"</code>) to select a fixed combination of materials for the entire planet.
+The per-layer system allows arbitrary mixing of tabulated and analytic EOS across layers --- for instance, an analytic iron core with a temperature-dependent silicate mantle --- without modifying the solver.</p>
+<p>Legacy global strings are still accepted via a backward-compatible mapping in <code>parse_eos_config()</code>.</p>
+<h3 id="valid-per-layer-eos-identifiers">Valid per-layer EOS identifiers</h3>
+<table>
+<thead>
+<tr>
+<th>Identifier</th>
+<th>Source</th>
+<th>Material</th>
+<th>Temperature</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Seager2007:iron</code></td>
+<td>Tabulated</td>
+<td>Fe (<span class="arithmatex">\(\epsilon\)</span>)</td>
+<td>300 K</td>
+</tr>
+<tr>
+<td><code>Seager2007:MgSiO3</code></td>
+<td>Tabulated</td>
+<td>MgSiO<span class="arithmatex">\(_3\)</span> perovskite</td>
+<td>300 K</td>
+</tr>
+<tr>
+<td><code>Seager2007:H2O</code></td>
+<td>Tabulated</td>
+<td>Water ice (VII/VIII/X)</td>
+<td>300 K</td>
+</tr>
+<tr>
+<td><code>WolfBower2018:MgSiO3</code></td>
+<td>Tabulated</td>
+<td>MgSiO<span class="arithmatex">\(_3\)</span> (solid + melt)</td>
+<td><span class="arithmatex">\(T\)</span>-dependent (<span class="arithmatex">\(\leq 7\,M_\oplus\)</span>)</td>
+</tr>
+<tr>
+<td><code>RTPress100TPa:MgSiO3</code></td>
+<td>Tabulated</td>
+<td>MgSiO<span class="arithmatex">\(_3\)</span> (solid + melt)</td>
+<td><span class="arithmatex">\(T\)</span>-dependent (<span class="arithmatex">\(\leq 50\,M_\oplus\)</span>)</td>
+</tr>
+<tr>
+<td><code>Analytic:&lt;material&gt;</code></td>
+<td>Analytic fit</td>
+<td>Any of 6 materials</td>
+<td>300 K</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="eos-physics">EOS Physics</h2>
+<h3 id="seager-et-al-2007-tabulated-eos">Seager et al. (2007) Tabulated EOS</h3>
+<p>The tabulated EOS from <a href="https://iopscience.iop.org/article/10.1086/521346">Seager et al. (2007)</a> provides <span class="arithmatex">\(\rho(P)\)</span> at 300 K for iron (Fe <span class="arithmatex">\(\epsilon\)</span>-phase), MgSiO<span class="arithmatex">\(_3\)</span> perovskite, and water ice.
+The tables are constructed by merging two regimes:</p>
+<ul>
+<li><strong>Low pressure</strong> (<span class="arithmatex">\(P \lesssim 200\)</span> GPa): Vinet EOS for iron, fourth-order Birch--Murnaghan EOS for MgSiO<span class="arithmatex">\(_3\)</span> and water ice, fitted to experimental data and DFT calculations.</li>
+<li><strong>High pressure</strong> (<span class="arithmatex">\(P \gtrsim 10^4\)</span> GPa): Thomas--Fermi--Dirac (TFD) theory, which becomes exact in the limit of fully ionized, degenerate electron gas.</li>
+</ul>
+<p>The two regimes are smoothly joined in the intermediate range.</p>
+<p><strong>Limitations.</strong> The tabulated EOS is evaluated at a fixed temperature of 300 K and does not account for thermal pressure, phase transitions (e.g., post-perovskite), compositional gradients, or partial melting.
+It is appropriate for cold, fully solidified structure models.</p>
+<h3 id="wolf-bower-2018-temperature-dependent-eos">Wolf &amp; Bower (2018) Temperature-Dependent EOS</h3>
+<p>The <code>WolfBower2018:MgSiO3</code> EOS implements the RTpress (Reciprocal Transform pressure) framework from <a href="https://www.sciencedirect.com/science/article/pii/S0031920117301449">Wolf &amp; Bower (2018)</a>, providing <span class="arithmatex">\(\rho(P, T)\)</span> for MgSiO<span class="arithmatex">\(_3\)</span> in both the solid and liquid phases.
+The solid-phase EOS is derived from <a href="https://doi.org/10.1029/2008JB005900">Mosenfelder et al. (2009)</a>.
+This EOS captures the thermal expansivity and compressibility of silicate mantle material over a wide <span class="arithmatex">\(P\)</span>--<span class="arithmatex">\(T\)</span> range.</p>
+<p>Phase boundaries are defined using solidus and liquidus melting curves derived from <a href="https://www.sciencedirect.com/science/article/pii/S0012821X16302199">Monteux et al. (2016)</a>, with the solidus offset by <span class="arithmatex">\(-600\)</span> K from the liquidus.
+At each radial shell, the code evaluates the local melt fraction:</p>
+<div class="arithmatex">\[
+f_{\mathrm{melt}} = \frac{T - T_{\mathrm{sol}}}{T_{\mathrm{liq}} - T_{\mathrm{sol}}}
+\]</div>
+<p>where <span class="arithmatex">\(T\)</span> is the local temperature, <span class="arithmatex">\(T_{\mathrm{sol}}\)</span> is the solidus temperature, and <span class="arithmatex">\(T_{\mathrm{liq}}\)</span> is the liquidus temperature at the local pressure.
+Three phase regimes are distinguished:</p>
+<ul>
+<li><strong>Solid</strong> (<span class="arithmatex">\(T \le T_{\mathrm{sol}}\)</span>, <span class="arithmatex">\(f_{\mathrm{melt}} \le 0\)</span>): density from the solid-state EOS table.</li>
+<li><strong>Melt</strong> (<span class="arithmatex">\(T \ge T_{\mathrm{liq}}\)</span>, <span class="arithmatex">\(f_{\mathrm{melt}} \ge 1\)</span>): density from the liquid-state EOS table.</li>
+<li><strong>Mixed / mush</strong> (<span class="arithmatex">\(T_{\mathrm{sol}} &lt; T &lt; T_{\mathrm{liq}}\)</span>): density from volume-additive interpolation between solid and liquid densities:</li>
+</ul>
+<div class="arithmatex">\[
+\rho_{\mathrm{mixed}} = \left[ (1 - f_{\mathrm{melt}}) \, \rho_{\mathrm{solid}}^{-1} + f_{\mathrm{melt}} \, \rho_{\mathrm{liquid}}^{-1} \right]^{-1}
+\]</div>
+<p>This EOS is appropriate when modeling hot rocky planets whose mantles may be partially or fully molten, which is critical for accurately coupling to thermal evolution codes.
+A temperature profile (isothermal, linear, or prescribed from file) must be supplied.
+When this EOS is selected for any layer, the radial integration is split into two segments (controlled by <code>adaptive_radial_fraction</code>) to handle the steep density gradients near the surface.</p>
+<p><strong>Mass limit.</strong> The WolfBower2018 tables cover pressures up to ~1 TPa.
+For planets above ~2 <span class="arithmatex">\(M_\oplus\)</span>, deep-mantle pressures near the core-mantle boundary begin to exceed this table ceiling.
+The Brent pressure solver (see <a href="#pressure-solver-brents-method">Pressure Solver</a>) with out-of-bounds pressure clamping handles this gracefully up to <span class="arithmatex">\(7\,M_\oplus\)</span>: pressures beyond the table boundary are clamped to the table edge, returning the boundary density.
+This approximation is acceptable for planets up to ~7 <span class="arithmatex">\(M_\oplus\)</span>, where the clamped region is a small fraction of the mantle.
+Beyond <span class="arithmatex">\(7\,M_\oplus\)</span>, the clamped densities diverge too far from reality and the code raises a <code>ValueError</code>.
+For higher-mass planets, use <code>RTPress100TPa:MgSiO3</code> (T-dependent, up to ~50 <span class="arithmatex">\(M_\oplus\)</span>) or <code>Seager2007:MgSiO3</code> / <code>Analytic:MgSiO3</code> (300 K, up to ~50 <span class="arithmatex">\(M_\oplus\)</span>).</p>
+<h3 id="rtpress100tpa-extended-melt-eos">RTPress100TPa Extended Melt EOS</h3>
+<p>The <code>RTPress100TPa:MgSiO3</code> EOS extends the melt phase coverage from the WolfBower2018 1 TPa ceiling to 100 TPa (<span class="arithmatex">\(P\)</span>: <span class="arithmatex">\(10^3\)</span>--<span class="arithmatex">\(10^{14}\)</span> Pa, <span class="arithmatex">\(T\)</span>: 400--50000 K).
+This enables temperature-dependent modeling of much more massive rocky planets (up to ~50 <span class="arithmatex">\(M_\oplus\)</span>).</p>
+<p>The solid-phase EOS remains the <a href="https://www.sciencedirect.com/science/article/pii/S0031920117301449">Wolf &amp; Bower (2018)</a> / <a href="https://doi.org/10.1029/2008JB005900">Mosenfelder et al. (2009)</a> table (valid to 1 TPa, clamped at boundary).
+At the high internal temperatures typical of massive rocky planets, the mantle is predominantly molten, so the solid table limitation is less constraining than it would be for cooler planets.
+The same <a href="https://www.sciencedirect.com/science/article/pii/S0012821X16302199">Monteux et al. (2016)</a> solidus/liquidus melting curves are used for phase determination.</p>
+<p><strong>Mass limit.</strong> The melt table extends to 100 TPa, matching the Seager2007 iron EOS range.
+The solid table is clamped at 1 TPa, but this primarily affects cold planets where a significant fraction of the mantle is solid.
+The code allows planets up to 50 <span class="arithmatex">\(M_\oplus\)</span> with this EOS.
+Unlike <code>WolfBower2018:MgSiO3</code>, the central pressure is not capped by <code>max_center_pressure_guess</code> since the melt table covers the full range.</p>
+<h3 id="analytic-modified-polytrope-seager-et-al-2007">Analytic Modified Polytrope (Seager et al. 2007)</h3>
+<p>The analytic EOS implements the modified polytropic fit from <a href="https://iopscience.iop.org/article/10.1086/521346">Seager et al. (2007)</a>, Table 3, Eq. 11:</p>
+<div class="arithmatex">\[
+\rho(P) = \rho_0 + c \cdot P^n
+\]</div>
+<p>where <span class="arithmatex">\(\rho\)</span> is density in kg/m<span class="arithmatex">\(^3\)</span>, <span class="arithmatex">\(P\)</span> is pressure in Pa, and <span class="arithmatex">\(\rho_0\)</span>, <span class="arithmatex">\(c\)</span>, <span class="arithmatex">\(n\)</span> are material-specific parameters.
+This closed-form expression approximates the full merged Vinet/BME + TFD EOS without requiring tabulated data files.</p>
+<p>Accuracy is 2--5% at low (<span class="arithmatex">\(P &lt; 5\)</span> GPa) and high (<span class="arithmatex">\(P &gt; 30\)</span> TPa) pressures, and degrades to up to 12% at intermediate pressures where the transition between the low-pressure and TFD regimes occurs.
+The fit is valid for <span class="arithmatex">\(P &lt; 10^{16}\)</span> Pa.</p>
+<p>Six materials are available:</p>
+<table>
+<thead>
+<tr>
+<th>Material key</th>
+<th>Compound</th>
+<th><span class="arithmatex">\(\rho_0\)</span> (kg/m<span class="arithmatex">\(^3\)</span>)</th>
+<th><span class="arithmatex">\(c\)</span> (kg m<span class="arithmatex">\(^{-3}\)</span> Pa<span class="arithmatex">\(^{-n}\)</span>)</th>
+<th><span class="arithmatex">\(n\)</span></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>iron</code></td>
+<td>Fe (<span class="arithmatex">\(\epsilon\)</span>)</td>
+<td>8300</td>
+<td>0.00349</td>
+<td>0.528</td>
+</tr>
+<tr>
+<td><code>MgSiO3</code></td>
+<td>MgSiO<span class="arithmatex">\(_3\)</span> perovskite</td>
+<td>4100</td>
+<td>0.00161</td>
+<td>0.541</td>
+</tr>
+<tr>
+<td><code>MgFeSiO3</code></td>
+<td>(Mg,Fe)SiO<span class="arithmatex">\(_3\)</span></td>
+<td>4260</td>
+<td>0.00127</td>
+<td>0.549</td>
+</tr>
+<tr>
+<td><code>H2O</code></td>
+<td>Water ice (VII/VIII/X)</td>
+<td>1460</td>
+<td>0.00311</td>
+<td>0.513</td>
+</tr>
+<tr>
+<td><code>graphite</code></td>
+<td>C (graphite)</td>
+<td>2250</td>
+<td>0.00350</td>
+<td>0.514</td>
+</tr>
+<tr>
+<td><code>SiC</code></td>
+<td>Silicon carbide</td>
+<td>3220</td>
+<td>0.00172</td>
+<td>0.537</td>
+</tr>
+</tbody>
+</table>
+<p>Like the Seager et al. (2007) tabulated EOS, this assumes 300 K and no phase transitions.
+Because any of the six materials can be assigned to any structural layer, the analytic EOS enables modeling of exotic compositions (e.g., carbon planets with iron/SiC or iron/graphite layers) that are not available in the tabulated data.</p>
+<hr />
+<h2 id="validity-ranges">Validity Ranges</h2>
+<h3 id="by-eos-type">By EOS type</h3>
+<table>
+<thead>
+<tr>
+<th>EOS</th>
+<th>Pressure range</th>
+<th>Temperature</th>
+<th>Max planet mass</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Seager2007:iron</code></td>
+<td>0--<span class="arithmatex">\(10^{16}\)</span> Pa</td>
+<td>300 K (fixed)</td>
+<td>~50 <span class="arithmatex">\(M_\oplus\)</span></td>
+<td>Vinet + DFT + TFD</td>
+</tr>
+<tr>
+<td><code>Seager2007:MgSiO3</code></td>
+<td>0--<span class="arithmatex">\(10^{16}\)</span> Pa</td>
+<td>300 K (fixed)</td>
+<td>~50 <span class="arithmatex">\(M_\oplus\)</span></td>
+<td>4th-order BME + DFT + TFD</td>
+</tr>
+<tr>
+<td><code>Seager2007:H2O</code></td>
+<td>0--<span class="arithmatex">\(10^{16}\)</span> Pa</td>
+<td>300 K (fixed)</td>
+<td>~50 <span class="arithmatex">\(M_\oplus\)</span></td>
+<td>Experimental + DFT + TFD</td>
+</tr>
+<tr>
+<td><code>WolfBower2018:MgSiO3</code></td>
+<td>0--<span class="arithmatex">\(10^{12}\)</span> Pa (1 TPa)</td>
+<td>0--16500 K</td>
+<td>7 <span class="arithmatex">\(M_\oplus\)</span></td>
+<td>RTpress; <span class="arithmatex">\(P\)</span> clamped at table edge, <span class="arithmatex">\(T\)</span> out-of-bounds raises error</td>
+</tr>
+<tr>
+<td><code>RTPress100TPa:MgSiO3</code></td>
+<td><span class="arithmatex">\(10^3\)</span>--<span class="arithmatex">\(10^{14}\)</span> Pa (100 TPa)</td>
+<td>400--50000 K</td>
+<td>50 <span class="arithmatex">\(M_\oplus\)</span></td>
+<td>Extended melt table; solid from WB2018 (clamped at 1 TPa)</td>
+</tr>
+<tr>
+<td><code>Analytic:*</code></td>
+<td>0--<span class="arithmatex">\(10^{16}\)</span> Pa</td>
+<td>300 K (fixed)</td>
+<td>~50 <span class="arithmatex">\(M_\oplus\)</span></td>
+<td>2--12% accuracy vs. tabulated</td>
+</tr>
+</tbody>
+</table>
+<h3 id="general-limits">General limits</h3>
+<ul>
+<li><strong>Mass range:</strong> The model is designed for rocky and water-rich planets in the range <span class="arithmatex">\(\sim 0.1\)</span>--<span class="arithmatex">\(50 \, M_{\oplus}\)</span>.
+  Below <span class="arithmatex">\(\sim 0.1 \, M_{\oplus}\)</span>, the assumption of hydrostatic equilibrium and the EOS parameterizations become unreliable.
+  Above <span class="arithmatex">\(\sim 50 \, M_{\oplus}\)</span>, the planet enters the gas-giant regime where the absence of an H/He envelope EOS limits applicability.</li>
+<li><strong>Pressure range:</strong> The Seager et al. (2007) tabulated and analytic EOS are valid up to <span class="arithmatex">\(P \sim 10^{16}\)</span> Pa (<span class="arithmatex">\(10^{10}\)</span> GPa), which exceeds central pressures for all planets within the supported mass range.
+  The WolfBower2018 tables are limited to ~1 TPa; out-of-bounds pressures are clamped to the table edge (see <a href="#wolf-bower-2018-temperature-dependent-eos">EOS Physics &gt; Wolf &amp; Bower 2018</a>).</li>
+<li><strong>Temperature range (Wolf &amp; Bower 2018 only):</strong> The <span class="arithmatex">\(P\)</span>--<span class="arithmatex">\(T\)</span> tables cover 0--16500 K; the code raises a <code>ValueError</code> if the requested temperature falls outside this grid.
+  Out-of-bounds <em>pressures</em> are clamped to the table edge (see above), but out-of-bounds <em>temperatures</em> are not.
+  The Seager et al. (2007) EOS (both tabulated and analytic) is evaluated at a fixed 300 K and carries no temperature dependence.</li>
+<li><strong>Composition:</strong> All EOS assume single-component layers with sharp compositional boundaries (no mixing gradients across interfaces).</li>
+</ul>
+<hr />
+<h2 id="process-flow">Process Flow</h2>
+<h3 id="configuration-loading">Configuration Loading</h3>
+<p>The function <code>load_zalmoxis_config()</code> reads a TOML configuration file that specifies planet mass, layer mass fractions, per-layer EOS identifiers, temperature profile settings, solver tolerances, and output options.
+The <code>[EOS]</code> section is parsed by <code>parse_eos_config()</code>, which accepts both the new per-layer format and the legacy global-string format.</p>
+<h3 id="initial-parameter-setup">Initial Parameter Setup</h3>
+<p>The initial guess for the planet radius follows the scaling law from <a href="https://ui.adsabs.harvard.edu/abs/2020A%26A...638A.129N/abstract">Noack et al. (2020)</a>:</p>
+<div class="arithmatex">\[
+R_p \; [\mathrm{m}] = 1000 \times (7030 - 1840 \times X_{\mathrm{CMF}}) \times \left( \frac{M_p}{M_{\oplus}} \right)^{0.282}
+\]</div>
+<p>where <span class="arithmatex">\(X_{\mathrm{CMF}}\)</span> is the core mass fraction (<code>core_mass_fraction</code>), <span class="arithmatex">\(M_p\)</span> is the planet mass, and <span class="arithmatex">\(M_{\oplus}\)</span> is Earth's mass. The original scaling law uses the planetary iron weight fraction; for a differentiated planet with a pure-iron core, this equals the core mass fraction.</p>
+<p>The initial guess for the core mass is:</p>
+<div class="arithmatex">\[
+M_{\mathrm{core}} = X_{\mathrm{CMF}} \times M_p
+\]</div>
+<p>The initial guess for the central pressure is based on an empirical scaling:</p>
+<div class="arithmatex">\[
+P_c = P_{c,\oplus} \times \left( \frac{M_p}{M_{\oplus}} \right)^{2} \times \left( \frac{R_p}{R_{\oplus}} \right)^{-4}
+\]</div>
+<p>where <span class="arithmatex">\(P_{c,\oplus}\)</span> is Earth's central pressure and <span class="arithmatex">\(R_{\oplus}\)</span> is Earth's radius.</p>
+<h3 id="iterative-solution">Iterative Solution</h3>
+<p>The model uses three nested convergence loops:</p>
+<ol>
+<li>
+<p><strong>Outer loop (mass convergence):</strong> Updates the total planet radius estimate by comparing the calculated total mass against the target mass and rescaling: <span class="arithmatex">\(R_p \leftarrow R_p \times (M_{\mathrm{target}} / M_{\mathrm{calculated}})^{1/3}\)</span>.</p>
+</li>
+<li>
+<p><strong>Inner loop (density profile convergence):</strong> For each radial shell, recalculates the density from the local pressure (and temperature, if applicable) using the per-layer EOS returned by <code>get_layer_eos()</code>.
+   Density updates are damped by averaging with the previous iteration.</p>
+</li>
+<li>
+<p><strong>Pressure solver (Brent's method):</strong> Finds the central pressure <span class="arithmatex">\(P_c\)</span> such that the surface pressure matches the target boundary condition. See <a href="#pressure-solver-brents-method">Pressure Solver</a> below.</p>
+</li>
+</ol>
+<h3 id="pressure-solver-brents-method">Pressure Solver (Brent's Method)</h3>
+<p>The central pressure <span class="arithmatex">\(P_c\)</span> is determined by solving a 1D root-finding problem: find <span class="arithmatex">\(P_c\)</span> such that the residual</p>
+<div class="arithmatex">\[
+f(P_c) = P_{\mathrm{surface}}(P_c) - P_{\mathrm{target}}
+\]</div>
+<p>is zero, where <span class="arithmatex">\(P_{\mathrm{surface}}(P_c)\)</span> is the surface pressure obtained by integrating the coupled ODEs from the center outward with initial condition <span class="arithmatex">\(P(r=0) = P_c\)</span>.</p>
+<p>Zalmoxis uses <a href="https://en.wikipedia.org/wiki/Brent%27s_method">Brent's method</a> (<code>scipy.optimize.brentq</code>) for this root-finding step.
+Brent's method combines bisection, secant, and inverse quadratic interpolation: it maintains a valid bracket (like bisection, guaranteeing convergence) while accelerating with superlinear methods when possible.
+This provides both robustness and speed, typically converging in 20--36 function evaluations.</p>
+<p><strong>Bracket construction.</strong>
+The initial bracket <span class="arithmatex">\([P_{\mathrm{low}}, P_{\mathrm{high}}]\)</span> is constructed around an empirical scaling-law estimate <span class="arithmatex">\(\hat{P}_c\)</span>:</p>
+<div class="arithmatex">\[
+\hat{P}_c = P_{c,\oplus} \times \left( \frac{M_p}{M_{\oplus}} \right)^{2} \times \left( \frac{R_p}{R_{\oplus}} \right)^{-4}
+\]</div>
+<p>with <span class="arithmatex">\(P_{\mathrm{low}} = \max(10^6 \, \mathrm{Pa}, \; 0.1 \, \hat{P}_c)\)</span> and <span class="arithmatex">\(P_{\mathrm{high}} = 10 \, \hat{P}_c\)</span>.
+When using <code>WolfBower2018:MgSiO3</code>, <span class="arithmatex">\(P_{\mathrm{high}}\)</span> is further capped at <code>max_center_pressure_guess</code> to prevent excessively high central pressures that would push deep-mantle pressures far beyond the 1 TPa WolfBower2018 table ceiling.</p>
+<p><strong>Terminal event.</strong>
+Each ODE integration includes a terminal event that stops <code>solve_ivp</code> when the pressure crosses zero (<span class="arithmatex">\(P \to 0^-\)</span>).
+Without this event, trial central pressures far below the true value cause the integrator to grind with vanishingly small step sizes in the zero-derivative region (where <code>coupled_odes()</code> returns <span class="arithmatex">\([0, 0, 0]\)</span> for non-physical pressure).
+The terminal event reduces evaluation time for bad guesses from minutes to milliseconds.</p>
+<p><strong>Early termination handling.</strong>
+When the terminal event fires, the ODE integration stops short of the planet surface and the solution arrays are padded with zeros.
+The residual function detects this (<span class="arithmatex">\(P_{\mathrm{surface}} \leq 0\)</span>) and returns <span class="arithmatex">\(-P_{\mathrm{target}}\)</span> --- a negative value that signals to Brent's method that <span class="arithmatex">\(P_c\)</span> is too low, maintaining a valid bracket.</p>
+<p><strong>Closure state capture.</strong>
+Since <code>brentq</code> only returns the root value (not intermediate ODE solutions), the residual function uses a mutable closure dict to capture the mass, gravity, and pressure arrays from the last evaluation.
+After convergence, these arrays are extracted for the density update step.</p>
+<h3 id="convergence-checks">Convergence Checks</h3>
+<ul>
+<li>The outer loop converges when the relative mass difference falls below <code>tolerance_outer</code>.</li>
+<li>The inner loop converges when the maximum relative density change across all shells falls below <code>tolerance_inner</code>.</li>
+<li>The pressure solver converges when (a) <code>brentq</code> reports convergence, (b) the surface pressure residual is within <code>pressure_tolerance</code> of the target, and (c) all pressures are non-negative (<span class="arithmatex">\(P \geq 0\)</span>, allowing for zero-padded surface points from the terminal event).</li>
+</ul>
+<p>The model reports overall convergence only when all three loops have converged.</p>
+<h3 id="output">Output</h3>
+<p>On convergence, the model returns radial profiles of gravity, pressure, density, temperature, and enclosed mass.
+Derived structural parameters include: core radius, CMB pressure, central pressure, average density, core mass fraction, core radius fraction, and (if applicable) mantle phase fractions.</p>
+<hr />
+<h2 id="code-architecture">Code Architecture</h2>
+<h3 id="module-overview">Module overview</h3>
+<div class="highlight"><pre><span></span><code>src/zalmoxis/
+├── zalmoxis.py          # Orchestration: config loading, iteration loops, Brent solver, output
+├── structure_model.py   # ODE system: coupled_odes(), solve_structure(), terminal events
+├── eos_functions.py     # EOS dispatch: calculate_density(), Tdep phase logic, temperature profiles
+├── eos_analytic.py      # Analytic modified polytrope: get_analytic_density()
+├── eos_properties.py    # Material property dictionaries (file paths, unit conversions)
+├── constants.py         # Physical constants (G, earth_mass, earth_radius, etc.)
+└── plots/               # Visualization (profile plots, P-T phase diagrams)
+</code></pre></div>
+<h3 id="data-flow">Data flow</h3>
+<div class="highlight"><pre><span></span><code>TOML config
+    │
+    ▼
+parse_eos_config() ──► layer_eos_config dict
+    │                   {&quot;core&quot;: &quot;Seager2007:iron&quot;, &quot;mantle&quot;: &quot;WolfBower2018:MgSiO3&quot;}
+    ▼
+main() ─── outer loop (radius) ─── inner loop (density) ─── brentq(_pressure_residual)
+    │                                                             │
+    │                                                             ▼
+    │                                                     solve_structure()
+    │                                                             │
+    │                                                             ▼
+    │                                                     solve_ivp(coupled_odes)
+    │                                                             │
+    │                                                             ▼
+    │                                                     get_layer_eos() → calculate_density()
+    │                                                             │
+    │                                                      ┌──────┼──────┐
+    │                                                      ▼      ▼      ▼
+    │                                               Seager2007  Tdep    Analytic
+    │                                              (tabulated) (WB2018/ (polytrope)
+    │                                                          RTPress)
+    ▼
+post_processing() ──► output files + plots
+</code></pre></div>
+<h3 id="key-functions">Key functions</h3>
+<ul>
+<li>
+<p><strong><code>main()</code></strong> (<code>zalmoxis.py</code>): Orchestrates the three nested convergence loops.
+  The innermost loop uses <code>scipy.optimize.brentq</code> to find the central pressure root (see <a href="#pressure-solver-brents-method">Pressure Solver</a>).</p>
+</li>
+<li>
+<p><strong><code>_pressure_residual()</code></strong> (<code>zalmoxis.py</code>, closure inside <code>main()</code>): Residual function <span class="arithmatex">\(f(P_c) = P_{\mathrm{surface}}(P_c) - P_{\mathrm{target}}\)</span> passed to <code>brentq</code>.
+  Calls <code>solve_structure()</code> for each trial <span class="arithmatex">\(P_c\)</span> and captures the ODE solution via a mutable closure dict.</p>
+</li>
+<li>
+<p><strong><code>get_layer_eos()</code></strong> (<code>structure_model.py</code>): Maps the enclosed mass at a given radial shell to the per-layer EOS string by comparing against core and core+mantle mass thresholds.
+  Purely geometric --- no EOS-type branching.</p>
+</li>
+<li>
+<p><strong><code>coupled_odes()</code></strong> (<code>structure_model.py</code>): Defines the derivatives <span class="arithmatex">\(dM/dr\)</span>, <span class="arithmatex">\(dg/dr\)</span>, <span class="arithmatex">\(dP/dr\)</span> for the ODE solver.
+  Calls <code>calculate_density()</code> at each evaluation to close the system.
+  Returns <span class="arithmatex">\([0, 0, 0]\)</span> for non-physical states (negative pressure, invalid density) to signal the adaptive solver to reject the step and retry smaller.</p>
+</li>
+<li>
+<p><strong><code>solve_structure()</code></strong> (<code>structure_model.py</code>): Integrates the coupled ODEs across the planetary radius using <code>scipy.integrate.solve_ivp</code> (RK45).
+  Includes a terminal event that stops integration when pressure crosses zero.
+  When any layer uses a temperature-dependent EOS (<code>WolfBower2018:MgSiO3</code> or <code>RTPress100TPa:MgSiO3</code>), the radial grid is split into two segments for numerical stability near the surface; otherwise, a single integration pass is performed.
+  Pads output arrays to <code>len(radii)</code> if the terminal event truncates the integration.</p>
+</li>
+<li>
+<p><strong><code>calculate_density()</code></strong> (<code>eos_functions.py</code>): Dispatches the per-layer EOS string to the appropriate density calculation: tabulated lookup for <code>Seager2007:*</code>, temperature-dependent phase-aware lookup for <code>WolfBower2018:MgSiO3</code> and <code>RTPress100TPa:MgSiO3</code>, or direct evaluation for <code>Analytic:*</code> strings.</p>
+</li>
+<li>
+<p><strong><code>get_Tdep_density()</code></strong> (<code>eos_functions.py</code>): Computes mantle density accounting for temperature-dependent phase transitions using the solidus/liquidus melting curves and volume-additive mixing in the mush regime.
+  Guards against <code>None</code> returns from out-of-bounds table lookups.</p>
+</li>
+<li>
+<p><strong><code>calculate_temperature_profile()</code></strong> (<code>eos_functions.py</code>): Returns a callable <span class="arithmatex">\(T(r)\)</span> for three modes: <code>"isothermal"</code> (uniform), <code>"linear"</code> (center-to-surface gradient), or <code>"prescribed"</code> (loaded from file).</p>
+</li>
+<li>
+<p><strong><code>parse_eos_config()</code></strong> (<code>zalmoxis.py</code>): Parses the <code>[EOS]</code> TOML section into a per-layer dictionary.
+  Handles both the new per-layer format and legacy global-string format via <code>LEGACY_EOS_MAP</code>.</p>
+</li>
+<li>
+<p><strong><code>validate_layer_eos()</code></strong> (<code>zalmoxis.py</code>): Validates that all per-layer EOS strings correspond to known tabulated or analytic options.</p>
+</li>
+</ul>
+<h3 id="error-handling-in-the-ode-system">Error handling in the ODE system</h3>
+<p>The adaptive ODE solver (RK45) evaluates the right-hand side at trial points that may be non-physical (e.g., negative pressure).
+Two mechanisms prevent crashes:</p>
+<ol>
+<li>
+<p><strong>Zero-derivative guard in <code>coupled_odes()</code>:</strong> If the pressure or density is non-physical, the function returns <span class="arithmatex">\([0, 0, 0]\)</span> instead of raising an exception.
+   This makes the local error estimate large, causing the solver to reject the trial step and retry with a smaller step size.</p>
+</li>
+<li>
+<p><strong>Terminal event in <code>solve_structure()</code>:</strong> A terminal event <code>_pressure_zero</code> stops the integration when <span class="arithmatex">\(P\)</span> crosses zero from above.
+   This prevents the solver from wasting time in the zero-derivative region and enables the Brent residual function to detect that <span class="arithmatex">\(P_c\)</span> was too low.</p>
+</li>
+</ol>
+<p>These two mechanisms work together: the zero-derivative guard handles transient non-physical trial points within valid integrations, while the terminal event handles structurally too-low central pressure guesses.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": [], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+      
+        <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    
+  </body>
+</html>
