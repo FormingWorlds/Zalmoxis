@@ -441,6 +441,151 @@ def calculate_density(
         raise ValueError(f"Unknown layer EOS '{layer_eos}'.")
 
 
+def get_heat_capacity(
+    pressure,
+    temperature,
+    material_dictionaries,
+    layer_eos,
+    solidus_func,
+    liquidus_func,
+    interpolation_functions=None,
+):
+    """Get isobaric heat capacity Cp from tabulated P-T tables.
+
+    Uses the same phase-aware logic as density: solid Cp below solidus,
+    melt Cp above liquidus, linearly interpolated by melt fraction in
+    the mixed zone.
+
+    Reuses ``get_tabulated_eos()`` for interpolation by passing the
+    ``cp_file`` path as ``eos_file`` in a temporary dict.
+
+    Parameters
+    ----------
+    pressure : float
+        Pressure [Pa].
+    temperature : float
+        Temperature [K].
+    material_dictionaries : tuple
+        Material property dictionaries.
+    layer_eos : str
+        Per-layer EOS identifier (e.g. 'WolfBower2018:MgSiO3').
+    solidus_func : callable or None
+        Solidus melting curve function.
+    liquidus_func : callable or None
+        Liquidus melting curve function.
+    interpolation_functions : dict or None
+        Cache for interpolation functions.
+
+    Returns
+    -------
+    float or None
+        Cp [J/(kg*K)], or None if no Cp tables are available.
+    """
+    if interpolation_functions is None:
+        interpolation_functions = {}
+
+    (
+        _mat_iron_sil,
+        mat_Tdep,
+        _mat_water,
+        mat_RTPress100TPa,
+    ) = material_dictionaries
+
+    if layer_eos == 'WolfBower2018:MgSiO3':
+        mat = mat_Tdep
+    elif layer_eos == 'RTPress100TPa:MgSiO3':
+        mat = mat_RTPress100TPa
+    else:
+        return None
+
+    # Check if cp_file keys exist in the material dict
+    cp_melt_file = mat.get('melted_mantle', {}).get('cp_file')
+    cp_solid_file = mat.get('solid_mantle', {}).get('cp_file')
+
+    if cp_melt_file is None and cp_solid_file is None:
+        return None
+
+    # Determine phase from melting curves
+    if solidus_func is None or liquidus_func is None:
+        # No melting curves — use melt Cp if available, else solid
+        if cp_melt_file is not None:
+            return get_tabulated_eos(
+                pressure,
+                {'melted_mantle': {'eos_file': cp_melt_file}},
+                'melted_mantle',
+                temperature,
+                interpolation_functions,
+            )
+        return None
+
+    T_sol = solidus_func(pressure)
+    T_liq = liquidus_func(pressure)
+
+    # Outside melting curve range — default to solid
+    if np.isnan(T_sol) or np.isnan(T_liq):
+        if cp_solid_file is not None:
+            return get_tabulated_eos(
+                pressure,
+                {'solid_mantle': {'eos_file': cp_solid_file}},
+                'solid_mantle',
+                temperature,
+                interpolation_functions,
+            )
+        return None
+
+    if temperature <= T_sol:
+        # Solid phase
+        if cp_solid_file is not None:
+            return get_tabulated_eos(
+                pressure,
+                {'solid_mantle': {'eos_file': cp_solid_file}},
+                'solid_mantle',
+                temperature,
+                interpolation_functions,
+            )
+        return None
+
+    elif temperature >= T_liq:
+        # Liquid phase
+        if cp_melt_file is not None:
+            return get_tabulated_eos(
+                pressure,
+                {'melted_mantle': {'eos_file': cp_melt_file}},
+                'melted_mantle',
+                temperature,
+                interpolation_functions,
+            )
+        return None
+
+    else:
+        # Mixed phase: linearly interpolate Cp by melt fraction
+        frac_melt = (temperature - T_sol) / (T_liq - T_sol)
+        cp_melt = None
+        cp_solid = None
+
+        if cp_melt_file is not None:
+            cp_melt = get_tabulated_eos(
+                pressure,
+                {'melted_mantle': {'eos_file': cp_melt_file}},
+                'melted_mantle',
+                temperature,
+                interpolation_functions,
+            )
+        if cp_solid_file is not None:
+            cp_solid = get_tabulated_eos(
+                pressure,
+                {'solid_mantle': {'eos_file': cp_solid_file}},
+                'solid_mantle',
+                temperature,
+                interpolation_functions,
+            )
+
+        if cp_melt is not None and cp_solid is not None:
+            return frac_melt * cp_melt + (1 - frac_melt) * cp_solid
+        # Fall back to whichever is available
+        return cp_melt if cp_melt is not None else cp_solid
+
+
 def compute_thermal_expansivity(
     pressure,
     temperature,
@@ -530,6 +675,9 @@ def compute_adiabatic_temperature(
     For T-independent EOS layers (e.g. Seager2007 iron core), alpha = 0 so
     the temperature is held constant (isothermal through the core).
 
+    When tabulated Cp(P,T) data is available in the material dictionaries
+    (``cp_file`` key), it is used instead of the constant ``Cp`` fallback.
+
     Parameters
     ----------
     radii : np.ndarray
@@ -543,7 +691,8 @@ def compute_adiabatic_temperature(
     surface_temperature : float
         Temperature at the surface [K].
     Cp : float
-        Isobaric heat capacity [J/(kg*K)].
+        Fallback isobaric heat capacity [J/(kg*K)] used when no tabulated
+        Cp data is available for the layer EOS.
     cmb_mass : float
         Core-mantle boundary mass [kg].
     core_mantle_mass : float
@@ -594,9 +743,24 @@ def compute_adiabatic_temperature(
         else:
             alpha = 0.0
 
+        # Use tabulated Cp if available, otherwise fall back to constant
+        cp_local = Cp
+        if layer_eos in TDEP_EOS_NAMES:
+            cp_tab = get_heat_capacity(
+                pressure[i],
+                T[i + 1],
+                material_dictionaries,
+                layer_eos,
+                solidus_func,
+                liquidus_func,
+                interpolation_functions,
+            )
+            if cp_tab is not None and cp_tab > 0:
+                cp_local = cp_tab
+
         dr = radii[i] - radii[i + 1]  # negative (going inward)
         g = abs(gravity[i]) if i < len(gravity) else 0.0
-        T[i] = T[i + 1] - alpha * g * T[i + 1] / Cp * dr
+        T[i] = T[i + 1] - alpha * g * T[i + 1] / cp_local * dr
 
     return T
 

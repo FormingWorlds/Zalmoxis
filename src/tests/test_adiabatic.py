@@ -2,6 +2,7 @@
 
 Tests cover:
 - Thermal expansivity computation via finite differences
+- Heat capacity lookup from tabulated P-T data
 - Adiabatic temperature profile integration
 - Adiabatic mode in calculate_temperature_profile()
 
@@ -19,6 +20,7 @@ from zalmoxis.eos_functions import (
     calculate_temperature_profile,
     compute_adiabatic_temperature,
     compute_thermal_expansivity,
+    get_heat_capacity,
 )
 
 
@@ -74,6 +76,112 @@ class TestComputeThermalExpansivity:
         assert alpha == pytest.approx(0.0), (
             f'Expected zero alpha for T-independent EOS, got {alpha}'
         )
+
+
+@pytest.mark.unit
+class TestGetHeatCapacity:
+    """Tests for get_heat_capacity()."""
+
+    def test_returns_none_for_T_independent_eos(self):
+        """Cp lookup should return None for Seager2007 (no Cp tables)."""
+        from zalmoxis.zalmoxis import load_material_dictionaries
+
+        material_dicts = load_material_dictionaries()
+
+        cp = get_heat_capacity(
+            pressure=100e9,
+            temperature=4000.0,
+            material_dictionaries=material_dicts,
+            layer_eos='Seager2007:iron',
+            solidus_func=None,
+            liquidus_func=None,
+        )
+        assert cp is None, f'Expected None for T-independent EOS, got {cp}'
+
+    def test_returns_none_when_cp_files_absent(self):
+        """Cp lookup should return None when cp_file keys are missing from dicts."""
+        # Build material dicts without cp_file entries
+        from zalmoxis.eos_properties import (
+            material_properties_iron_silicate_planets,
+            material_properties_water_planets,
+        )
+
+        mat_Tdep_no_cp = {
+            'core': {'eos_file': 'dummy'},
+            'melted_mantle': {'eos_file': 'dummy'},  # no cp_file
+            'solid_mantle': {'eos_file': 'dummy'},  # no cp_file
+        }
+        dicts = (
+            material_properties_iron_silicate_planets,
+            mat_Tdep_no_cp,
+            material_properties_water_planets,
+            mat_Tdep_no_cp,
+        )
+        cp = get_heat_capacity(
+            pressure=10e9,
+            temperature=3000.0,
+            material_dictionaries=dicts,
+            layer_eos='WolfBower2018:MgSiO3',
+            solidus_func=None,
+            liquidus_func=None,
+        )
+        assert cp is None
+
+    def test_positive_cp_for_melt_with_fwl_data(self):
+        """Cp should be positive and physically reasonable for MgSiO3 melt.
+
+        Only runs if FWL_DATA Cp files are available (skipped in standalone
+        Zalmoxis environments without FWL_DATA).
+        """
+        import os
+
+        fwl_data = os.environ.get('FWL_DATA')
+        if not fwl_data:
+            pytest.skip('FWL_DATA not set')
+
+        from pathlib import Path
+
+        cp_melt_path = (
+            Path(fwl_data)
+            / 'interior_lookup_tables'
+            / 'EOS'
+            / 'WolfBower2018_MgSiO3'
+            / 'P-T'
+            / 'heat_capacity_melt.dat'
+        )
+        if not cp_melt_path.is_file():
+            pytest.skip('WolfBower2018 Cp melt table not found in FWL_DATA')
+
+        from zalmoxis.zalmoxis import (
+            load_material_dictionaries,
+            load_solidus_liquidus_functions,
+        )
+
+        material_dicts = load_material_dictionaries()
+        layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'}
+        melting = load_solidus_liquidus_functions(layer_eos_config)
+        solidus_func, liquidus_func = melting
+
+        # Inject Cp file path if not already present
+        mat_Tdep = material_dicts[1]
+        if 'cp_file' not in mat_Tdep.get('melted_mantle', {}):
+            mat_Tdep['melted_mantle']['cp_file'] = str(cp_melt_path)
+        cp_solid_path = cp_melt_path.parent / 'heat_capacity_solid.dat'
+        if cp_solid_path.is_file() and 'cp_file' not in mat_Tdep.get('solid_mantle', {}):
+            mat_Tdep['solid_mantle']['cp_file'] = str(cp_solid_path)
+
+        cp = get_heat_capacity(
+            pressure=10e9,
+            temperature=3000.0,
+            material_dictionaries=material_dicts,
+            layer_eos='WolfBower2018:MgSiO3',
+            solidus_func=solidus_func,
+            liquidus_func=liquidus_func,
+        )
+        assert cp is not None, 'Expected Cp value from tabulated data'
+        assert cp > 0, f'Cp must be positive, got {cp}'
+        # Silicate Cp typically 1000–4000 J/(kg·K)
+        assert 500 < cp < 10000, f'Cp {cp:.0f} J/(kg·K) outside expected range'
 
 
 @pytest.mark.unit
