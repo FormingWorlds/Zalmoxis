@@ -398,6 +398,15 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
     prev_pressure = None
     prev_mass_enclosed = None
 
+    # Two-phase convergence for adiabatic mode:
+    # Phase 1: converge the structure using a linear T initial guess
+    #          (same as 'linear' mode — stable and robust).
+    # Phase 2: once the mass converges, switch to the dT/dP adiabat
+    #          computed from the converged P(r) and g(r), then re-converge.
+    # Without this, a half-converged P(r) produces a bad adiabat that
+    # prevents the solver from ever converging.
+    _using_adiabat = False
+
     # Solve the interior structure
     for outer_iter in range(max_iterations_outer):
         radii = np.linspace(0, radius_guess, num_layers)
@@ -408,14 +417,22 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
         pressure = np.zeros(num_layers)
 
         if uses_Tdep:
-            # Switch to adiabat only once the structure is roughly converged.
-            # A garbage P(r) profile (e.g. from a failed Brent bracket)
-            # produces a garbage adiabat that prevents convergence.
-            prev_mass_ok = (
-                prev_mass_enclosed is not None
-                and prev_mass_enclosed[-1] > 0.5 * planet_mass
-            )
-            if temperature_mode == 'adiabatic' and outer_iter > 0 and prev_mass_ok:
+            # Graduate to adiabat once mass is within tolerance.
+            # Once graduated, stay on the adiabat (don't oscillate back).
+            if not _using_adiabat and temperature_mode == 'adiabatic':
+                prev_mass_converged = (
+                    prev_mass_enclosed is not None
+                    and abs(prev_mass_enclosed[-1] - planet_mass) / planet_mass
+                    < tolerance_outer
+                )
+                if prev_mass_converged:
+                    _using_adiabat = True
+                    logger.info(
+                        f'Outer iter {outer_iter}: mass converged with linear T, '
+                        f'switching to adiabatic temperature profile.'
+                    )
+
+            if _using_adiabat and prev_pressure is not None:
                 # Recompute adiabat from previous iteration's converged structure
                 adiabat_T = compute_adiabatic_temperature(
                     prev_radii,
