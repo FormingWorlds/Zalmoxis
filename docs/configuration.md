@@ -22,9 +22,9 @@ Initial guesses and assumptions for the planetary structure.
 |---|---|---|---|
 | `core_mass_fraction` | float | -- | Core mass as a fraction of total mass. Also used in the Seager et al. (2007) scaling relation for the initial radius guess. Earth: ~0.325. |
 | `mantle_mass_fraction` | float | -- | Mantle mass as a fraction of total mass. Set to 0 for a 2-layer model where the mantle fills the remainder (1 - `core_mass_fraction`). Must be > 0 when using a 3-layer model with an ice layer. |
-| `temperature_mode` | string | -- | Temperature profile type. One of: `"isothermal"`, `"linear"`, `"prescribed"`. See [Temperature profiles](#temperature-profiles). |
-| `surface_temperature` | float | K | Surface temperature. Used when `temperature_mode` is `"isothermal"` or `"linear"`. |
-| `center_temperature` | float | K | Central temperature. Used when `temperature_mode` is `"linear"`. |
+| `temperature_mode` | string | -- | Temperature profile type. One of: `"isothermal"`, `"linear"`, `"prescribed"`, `"adiabatic"`. See [Temperature profiles](#temperature-profiles). |
+| `surface_temperature` | float | K | Surface temperature. Used when `temperature_mode` is `"isothermal"`, `"linear"`, or `"adiabatic"`. |
+| `center_temperature` | float | K | Central temperature. Used when `temperature_mode` is `"linear"` or `"adiabatic"` (initial guess). |
 | `temperature_profile_file` | string | -- | Filename (relative to `input/`) containing a prescribed radial temperature profile. Used when `temperature_mode` is `"prescribed"`. |
 
 #### Temperature profiles
@@ -34,6 +34,7 @@ Temperature profiles are only relevant when using a temperature-dependent EOS (i
 - **`"isothermal"`**: Constant temperature equal to `surface_temperature` at all radii.
 - **`"linear"`**: Linear interpolation from `center_temperature` at $r = 0$ to `surface_temperature` at $r = R$.
 - **`"prescribed"`**: Reads a temperature profile from `temperature_profile_file`. The file must contain one temperature value per line (in K), ordered from center to surface, with the same number of entries as `num_layers`.
+- **`"adiabatic"`**: Computes the adiabatic temperature profile by integrating pre-tabulated $(dT/dP)_S$ gradients from the EOS, starting at `surface_temperature` and integrating inward. The initial guess is a linear profile between `surface_temperature` and `center_temperature`. **Only available for T-dependent EOS** (`WolfBower2018:MgSiO3` or `RTPress100TPa:MgSiO3`) that provide native adiabat gradient tables. For T-independent EOS layers (e.g., `Seager2007:iron` core), temperature is held constant (isothermal) through that layer.
 
 ---
 
@@ -281,7 +282,6 @@ See the [model documentation](model.md#pressure-solver-brents-method) for detail
 | `target_surface_pressure` | float | Pa | 101325 | Target pressure at the planetary surface. Default is 1 atm. |
 | `pressure_tolerance` | float | Pa | 1e9 | Convergence criterion: the solver iterates until $\lvert P_\mathrm{surface} - P_\mathrm{target} \rvert$ falls below this value. |
 | `max_iterations_pressure` | int | -- | 200 | Maximum number of function evaluations for the Brent solver. Typical convergence requires 20--36 evaluations. |
-| `pressure_adjustment_factor` | float | -- | 1.1 | **Deprecated.** Retained for backward compatibility. The Brent solver does not use this parameter. |
 
 ---
 

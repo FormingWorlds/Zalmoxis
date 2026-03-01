@@ -15,6 +15,7 @@ from .eos_analytic import VALID_MATERIAL_KEYS
 from .eos_functions import (
     calculate_density,
     calculate_temperature_profile,
+    compute_adiabatic_temperature,
     create_pressure_density_files,
     get_solidus_liquidus_functions,
     get_Tdep_material,
@@ -238,9 +239,6 @@ def load_zalmoxis_config(temp_config_path=None):
         'target_surface_pressure': config['PressureAdjustment']['target_surface_pressure'],
         'pressure_tolerance': config['PressureAdjustment']['pressure_tolerance'],
         'max_iterations_pressure': config['PressureAdjustment']['max_iterations_pressure'],
-        'pressure_adjustment_factor': config['PressureAdjustment'][
-            'pressure_adjustment_factor'
-        ],
         'data_output_enabled': config['Output']['data_enabled'],
         'plotting_enabled': config['Output']['plots_enabled'],
         'verbose': config['Output']['verbose'],
@@ -394,6 +392,21 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
     else:
         solidus_func, liquidus_func = None, None
 
+    # Storage for the previous iteration's converged profiles.
+    # Used by adiabatic mode to compute T(r) from the last P(r) and M(r).
+    prev_radii = None
+    prev_pressure = None
+    prev_mass_enclosed = None
+
+    # Two-phase convergence for adiabatic mode:
+    # Phase 1: converge the structure using a linear T initial guess
+    #          (same as 'linear' mode — stable and robust).
+    # Phase 2: once the mass converges, switch to the dT/dP adiabat
+    #          computed from the converged P(r) and M(r), then re-converge.
+    # Without this, a half-converged P(r) produces a bad adiabat that
+    # prevents the solver from ever converging.
+    _using_adiabat = False
+
     # Solve the interior structure
     for outer_iter in range(max_iterations_outer):
         radii = np.linspace(0, radius_guess, num_layers)
@@ -404,15 +417,50 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
         pressure = np.zeros(num_layers)
 
         if uses_Tdep:
-            temperature_function = calculate_temperature_profile(
-                radii,
-                temperature_mode,
-                surface_temperature,
-                center_temperature,
-                input_dir,
-                temp_profile_file,
-            )
-            temperatures = temperature_function(radii)
+            # Graduate to adiabat once mass is within tolerance.
+            # Once graduated, stay on the adiabat (don't oscillate back).
+            if not _using_adiabat and temperature_mode == 'adiabatic':
+                prev_mass_converged = (
+                    prev_mass_enclosed is not None
+                    and abs(prev_mass_enclosed[-1] - planet_mass) / planet_mass
+                    < tolerance_outer
+                )
+                if prev_mass_converged:
+                    _using_adiabat = True
+                    logger.info(
+                        f'Outer iter {outer_iter}: mass converged with linear T, '
+                        f'switching to adiabatic temperature profile.'
+                    )
+
+            if _using_adiabat and prev_pressure is not None:
+                # Recompute adiabat from previous iteration's converged structure
+                adiabat_T = compute_adiabatic_temperature(
+                    prev_radii,
+                    prev_pressure,
+                    prev_mass_enclosed,
+                    surface_temperature,
+                    cmb_mass,
+                    core_mantle_mass,
+                    layer_eos_config,
+                    material_dictionaries,
+                    interpolation_cache,
+                )
+
+                # Interpolate adiabat (on prev grid) onto current grid
+                def temperature_function(r, _T=adiabat_T, _r=prev_radii):
+                    return np.interp(np.array(r), _r, _T)
+
+                temperatures = temperature_function(radii)
+            else:
+                temperature_function = calculate_temperature_profile(
+                    radii,
+                    temperature_mode,
+                    surface_temperature,
+                    center_temperature,
+                    input_dir,
+                    temp_profile_file,
+                )
+                temperatures = temperature_function(radii)
         else:
             temperatures = np.ones(num_layers) * 300
 
@@ -491,6 +539,17 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                 p_high = min(p_high, max_center_pressure_guess)
 
             try:
+                # Pre-validate that the bracket straddles the root.
+                # This gives a clearer error than brentq's generic ValueError,
+                # and the except handler below gracefully falls back to the
+                # last evaluated solution.
+                f_low = _pressure_residual(p_low)
+                f_high = _pressure_residual(p_high)
+                if f_low * f_high > 0:
+                    raise ValueError(
+                        f'Brent bracket does not straddle the root: '
+                        f'f({p_low:.2e})={f_low:.2e}, f({p_high:.2e})={f_high:.2e}.'
+                    )
                 p_solution, root_info = brentq(
                     _pressure_residual,
                     p_low,
@@ -604,9 +663,26 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                     'Density may not be fully converged.'
                 )
 
-        # Update radius guess
+        # Save converged profiles for the next outer iteration's adiabat
+        prev_radii = radii.copy()
+        prev_pressure = np.asarray(pressure).copy()
+        prev_mass_enclosed = np.asarray(mass_enclosed).copy()
+
+        # Update radius guess with damped scaling to prevent oscillation.
+        # The cube-root scaling is correct in direction but can overshoot
+        # wildly when calculated_mass << planet_mass, catapulting radius
+        # to unphysical values and trapping the solver in a cycle.
         calculated_mass = mass_enclosed[-1]
-        radius_guess = radius_guess * (planet_mass / calculated_mass) ** (1 / 3)
+        if calculated_mass <= 0 or not np.isfinite(calculated_mass):
+            radius_guess *= 0.8
+            verbose and logger.warning(
+                f'Outer iter {outer_iter}: calculated_mass={calculated_mass:.2e}, '
+                f'shrinking radius_guess to {radius_guess:.0f} m.'
+            )
+        else:
+            scale = (planet_mass / calculated_mass) ** (1.0 / 3.0)
+            scale = max(0.5, min(scale, 2.0))
+            radius_guess *= scale
         cmb_mass = core_mass_fraction * calculated_mass
         core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * calculated_mass
 

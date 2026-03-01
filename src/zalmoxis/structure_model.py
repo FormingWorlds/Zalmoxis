@@ -33,9 +33,13 @@ def get_layer_eos(mass, cmb_mass, core_mantle_mass, layer_eos_config):
     str
         Per-layer EOS identifier for this shell.
     """
-    if mass < cmb_mass:
+    # Use a small relative tolerance for boundary comparisons to avoid
+    # float-precision misassignment when a mesh node lands exactly at
+    # the CMB or core-mantle boundary.
+    rtol = 1e-12
+    if mass < cmb_mass * (1.0 - rtol):
         return layer_eos_config['core']
-    elif 'ice_layer' in layer_eos_config and mass >= core_mantle_mass:
+    elif 'ice_layer' in layer_eos_config and mass >= core_mantle_mass * (1.0 - rtol):
         return layer_eos_config['ice_layer']
     else:
         return layer_eos_config['mantle']
@@ -112,11 +116,14 @@ def coupled_odes(
     # the adaptive ODE solver (RK45) evaluates the RHS at trial points that
     # may be non-physical (e.g. negative pressure).  Zero derivatives cause
     # the solver to reject the step and retry with a smaller step size.
-    if current_density is None or np.isnan(current_density):
+    if current_density is None or not np.isfinite(current_density):
         return [0.0, 0.0, 0.0]
 
     # Define the ODEs for mass, gravity and pressure
     dMdr = 4 * np.pi * radius**2 * current_density
+    # At r=0 the 2g/r term is singular; use the analytic limit dg/dr = 4πGρ/3.
+    # For r>0, add a tiny offset (1e-20 m, ~1e-14 R_earth) to guard against
+    # the adaptive solver probing exactly r=0.
     dgdr = (
         4 * np.pi * G * current_density - 2 * gravity / (radius + 1e-20)
         if radius > 0

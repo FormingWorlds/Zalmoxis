@@ -179,7 +179,7 @@ def get_tabulated_eos(
         else:
             density = cached['interp'](pressure)
 
-        if density is None or np.isnan(density):
+        if density is None or not np.isfinite(density):
             raise ValueError(
                 f'Density calculation failed for {material} at P={pressure:.2e} Pa, T={temperature}.'
             )
@@ -302,7 +302,16 @@ def get_Tdep_density(
         return rho
 
     else:
-        # Mixed phase: linear melt fraction between solidus and liquidus
+        # Mixed phase: linear melt fraction between solidus and liquidus.
+        # Guard against degenerate melting curves where T_liq == T_sol.
+        if T_liq <= T_sol:
+            return get_tabulated_eos(
+                pressure,
+                material_properties_iron_Tdep_silicate_planets,
+                'melted_mantle',
+                temperature,
+                interpolation_functions,
+            )
         frac_melt = (temperature - T_sol) / (T_liq - T_sol)
         rho_solid = get_tabulated_eos(
             pressure,
@@ -341,6 +350,9 @@ def get_Tdep_material(pressure, temperature, solidus_func, liquidus_func):
     def evaluate_phase(P, T):
         T_sol = solidus_func(P)
         T_liq = liquidus_func(P)
+        # Guard against degenerate melting curves where T_liq == T_sol
+        if T_liq <= T_sol:
+            return 'melted_mantle' if T >= T_sol else 'solid_mantle'
         frac_melt = (T - T_sol) / (T_liq - T_sol)
         if frac_melt < 0:
             return 'solid_mantle'
@@ -441,6 +453,129 @@ def calculate_density(
         raise ValueError(f"Unknown layer EOS '{layer_eos}'.")
 
 
+def compute_adiabatic_temperature(
+    radii,
+    pressure,
+    mass_enclosed,
+    surface_temperature,
+    cmb_mass,
+    core_mantle_mass,
+    layer_eos_config,
+    material_dictionaries,
+    interpolation_functions=None,
+):
+    """Compute adiabatic T(r) using native (dT/dP)_S tables from the EOS.
+
+    Integrates T[i] = T[i+1] + (dT/dP)_S · (P[i] - P[i+1]) from surface
+    inward.  The adiabatic gradient (dT/dP)_S = αT/(ρCp) is read directly
+    from the ``adiabat_grad_file`` in the melt-phase material dictionary,
+    avoiding any intermediate α or Cp computation.
+
+    For T-independent EOS layers (e.g. Seager2007 iron core), no adiabat
+    gradient table exists, so the temperature is held constant (isothermal).
+
+    Parameters
+    ----------
+    radii : np.ndarray
+        Radial grid, ascending (center to surface) [m].
+    pressure : np.ndarray
+        Pressure at each radius [Pa].
+    mass_enclosed : np.ndarray
+        Enclosed mass at each radius [kg].
+    surface_temperature : float
+        Temperature at the surface [K].
+    cmb_mass : float
+        Core-mantle boundary mass [kg].
+    core_mantle_mass : float
+        Core + mantle mass [kg].
+    layer_eos_config : dict
+        Per-layer EOS config, e.g.
+        ``{"core": "Seager2007:iron", "mantle": "WolfBower2018:MgSiO3"}``.
+    material_dictionaries : tuple
+        Material property dictionaries.
+    interpolation_functions : dict or None
+        Cache for interpolation functions.
+
+    Returns
+    -------
+    np.ndarray
+        Temperature at each radial point [K].
+
+    Raises
+    ------
+    ValueError
+        If a T-dependent mantle EOS is used but no ``adiabat_grad_file``
+        is present in the material dictionary.
+    """
+    from .constants import TDEP_EOS_NAMES
+    from .structure_model import get_layer_eos
+
+    if interpolation_functions is None:
+        interpolation_functions = {}
+
+    # Build a wrapper dict for the dT/dP table so we can reuse get_tabulated_eos()
+    # (which handles caching, irregular grids, and bounds checking).
+    dtdp_dicts = {}
+    for eos_name, mat_idx in [('WolfBower2018:MgSiO3', 1), ('RTPress100TPa:MgSiO3', 3)]:
+        mat = material_dictionaries[mat_idx]
+        grad_file = mat.get('melted_mantle', {}).get('adiabat_grad_file')
+        if grad_file is not None:
+            dtdp_dicts[eos_name] = {'melted_mantle': {'eos_file': grad_file}}
+
+    # Verify that the mantle EOS supports adiabatic mode
+    mantle_eos = layer_eos_config.get('mantle')
+    if mantle_eos not in TDEP_EOS_NAMES:
+        raise ValueError(
+            f'Adiabatic temperature mode requires a T-dependent mantle EOS '
+            f'(WolfBower2018:MgSiO3 or RTPress100TPa:MgSiO3), '
+            f"but got '{mantle_eos}'. Use 'linear' or 'isothermal' instead."
+        )
+    if mantle_eos not in dtdp_dicts:
+        raise ValueError(
+            f"Adiabatic mode requires an 'adiabat_grad_file' in the "
+            f"melted_mantle material dictionary for EOS '{mantle_eos}'. "
+            f'Run get_zalmoxis.sh to download the required tables.'
+        )
+
+    n = len(radii)
+    T = np.zeros(n)
+    T[n - 1] = surface_temperature
+
+    # Integrate from surface (index n-1) inward (decreasing index).
+    # NOTE: No thermal boundary layer is modeled at the CMB. The adiabat
+    # transitions directly from mantle to core, producing an isothermal
+    # core at the CMB temperature.
+    for i in range(n - 2, -1, -1):
+        layer_eos = get_layer_eos(
+            mass_enclosed[i],
+            cmb_mass,
+            core_mantle_mass,
+            layer_eos_config,
+        )
+
+        if layer_eos in TDEP_EOS_NAMES:
+            # Evaluate (dT/dP)_S at the current endpoint (i+1).  A midpoint
+            # rule would be more accurate, but the endpoint is sufficient
+            # for this initial-condition-quality profile.
+            dtdp = get_tabulated_eos(
+                pressure[i + 1],
+                dtdp_dicts[layer_eos],
+                'melted_mantle',
+                T[i + 1],
+                interpolation_functions,
+            )
+            if dtdp is not None and dtdp > 0:
+                dP = pressure[i] - pressure[i + 1]  # positive going inward
+                T[i] = T[i + 1] + dtdp * dP
+            else:
+                T[i] = T[i + 1]
+        else:
+            # T-independent EOS (e.g. iron core): isothermal
+            T[i] = T[i + 1]
+
+    return T
+
+
 def calculate_temperature_profile(
     radii,
     temperature_mode,
@@ -458,6 +593,8 @@ def calculate_temperature_profile(
         - "isothermal": constant temperature equal to surface_temperature
         - "linear": linear profile from center_temperature (r=0) to surface_temperature (r=R)
         - "prescribed": read temperature profile from a text file
+        - "adiabatic": returns linear profile as initial guess; the actual
+          adiabat is computed in the main() outer loop using P(r) and g(r)
     surface_temperature: Temperature at the surface [K] (used for "linear" and "isothermal")
     center_temperature: Temperature at the center [K] (used for "linear")
     input_dir: Directory where the temperature profile file is located.
@@ -488,9 +625,17 @@ def calculate_temperature_profile(
         # Vectorized interpolation for arbitrary radius points
         return lambda r: np.interp(np.array(r), radii, temp_profile)
 
+    elif temperature_mode == 'adiabatic':
+        # Return linear profile as initial guess for the first outer iteration.
+        # The actual adiabat is computed in main() using P(r), g(r) from the solver.
+        return lambda r: surface_temperature + (center_temperature - surface_temperature) * (
+            1 - np.array(r) / radii[-1]
+        )
+
     else:
         raise ValueError(
-            f"Unknown temperature mode '{temperature_mode}'. Valid options: 'isothermal', 'linear', 'prescribed'."
+            f"Unknown temperature mode '{temperature_mode}'. "
+            f"Valid options: 'isothermal', 'linear', 'prescribed', 'adiabatic'."
         )
 
 
