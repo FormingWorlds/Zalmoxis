@@ -1,3 +1,14 @@
+"""
+Zalmoxis core module containing the main functions to run the exoplanet internal structure model.
+
+!!! Imports
+    - [`constants`](zalmoxis.constants.md): `TDEP_EOS_NAMES`, `earth_center_pressure`, `earth_mass`, `earth_radius`
+    - [`eos_analytic`](zalmoxis.eos_analytic.md): `VALID_MATERIAL_KEYS`
+    - [`eos_functions`](zalmoxis.eos_functions.md): `calculate_density`, `calculate_temperature_profile`, `create_pressure_density_files`,
+    - [`eos_properties`](zalmoxis.eos_properties.md): `material_properties_iron_RTPress100TPa_silicate_planets`, `material_properties_iron_silicate_planets`,
+        `material_properties_iron_Tdep_silicate_planets`, `material_properties_water_planets`
+"""
+
 from __future__ import annotations
 
 import logging
