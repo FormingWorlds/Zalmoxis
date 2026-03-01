@@ -646,7 +646,16 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
 
         # Update radius guess
         calculated_mass = mass_enclosed[-1]
-        radius_guess = radius_guess * (planet_mass / calculated_mass) ** (1 / 3)
+        if calculated_mass <= 0 or not np.isfinite(calculated_mass):
+            # Structure solver failed to produce valid mass (e.g. pressure
+            # dropped to zero near the center).  Shrink radius and retry.
+            radius_guess *= 0.8
+            logger.warning(
+                f'Outer iter {outer_iter}: calculated_mass={calculated_mass:.2e}, '
+                f'shrinking radius_guess to {radius_guess:.0f} m.'
+            )
+        else:
+            radius_guess = radius_guess * (planet_mass / calculated_mass) ** (1 / 3)
         cmb_mass = core_mass_fraction * calculated_mass
         core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * calculated_mass
 
