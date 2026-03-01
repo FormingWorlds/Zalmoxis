@@ -1,7 +1,6 @@
 site_name: Zalmoxis
-site_url: https://proteus-framework.org/Zalmoxis/
+site_url: https://proteus-framework.org/Zalmoxis
 repo_url: https://github.com/FormingWorlds/Zalmoxis
-repo_name: GitHub
 
 nav:
   - Home: index.md
@@ -15,19 +14,26 @@ nav:
       - Model overview: Explanations/model.md
 
   - Reference:
+      - API reference: 
+          - Overview: Reference/api/index.md
+          - Core: Reference/api/zalmoxis.zalmoxis.md
+          - Constants: Reference/api/zalmoxis.constants.md
+          - Analytic EOS: Reference/api/zalmoxis.eos_analytic.md
+          - EOS functions: Reference/api/zalmoxis.eos_functions.md
+          - EOS properties: Reference/api/zalmoxis.eos_properties.md
+          - Structure model: Reference/api/zalmoxis.structure_model.md
       - Data: Reference/data.md
 
   - Community:
       - Code of Conduct: Community/CODE_OF_CONDUCT.md
       - Contributing: Community/CONTRIBUTING.md
-      - Developers: https://proteus-framework.org/people
       - Contact: Community/contact.md
-      
+      - Developers: https://proteus-framework.org/people
+
   - Source code: https://github.com/FormingWorlds/Zalmoxis
   - Issues page: https://github.com/FormingWorlds/Zalmoxis/issues
-
   - Other PROTEUS modules:
-      - 🔗 PROTEUS:  https://proteus-framework.org/PROTEUS/
+      - 🔗 PROTEUS: https://proteus-framework.org/PROTEUS/
       - 🔗 MORS:  https://proteus-framework.org/MORS/
       - 🔗 JANUS: https://proteus-framework.org/JANUS/
       - 🔗 ZEPHYRUS: https://proteus-framework.org/ZEPHYRUS/
@@ -46,7 +52,6 @@ theme:
   custom_dir: docs/overrides
   features:
   - content.code.copy
-  - navigation.expand
 
   # Default assets (used unless overridden per palette below)
   favicon: assets/PROTEUS_black_on_white_logo_only.png
@@ -95,7 +100,6 @@ extra_javascript:
 plugins:
 - search
 - tags
-
 - mkdocstrings:
     # https://mkdocstrings.github.io/usage/
     handlers:
@@ -112,6 +116,7 @@ plugins:
           docstring_style: numpy
           docstring_options:
             ignore_init_summary: yes
+          docstring_section_style: table
           show_submodules: no
           show_source: true
           show_symbol_type_heading: True
@@ -119,7 +124,6 @@ plugins:
           show_root_toc_entry: true
           show_docstring_attributes: true
           show_root_full_path: false
-          docstring_section_style: list
           members_order: alphabetical
           merge_init_into_class: yes
           filters: ["!^_"]
@@ -130,5 +134,5 @@ watch:
   - src/
   - docs/
   - README.md
-  - Community/CONTRIBUTING.md
-  - Community/CODE_OF_CONDUCT.md
+  - CONTRIBUTING.md
+  - CODE_OF_CONDUCT.md
