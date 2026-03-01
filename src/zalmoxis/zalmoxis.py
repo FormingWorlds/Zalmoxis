@@ -393,7 +393,7 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
         solidus_func, liquidus_func = None, None
 
     # Storage for the previous iteration's converged profiles.
-    # Used by adiabatic mode to compute T(r) from the last P(r), g(r).
+    # Used by adiabatic mode to compute T(r) from the last P(r) and M(r).
     prev_radii = None
     prev_pressure = None
     prev_mass_enclosed = None
@@ -402,7 +402,7 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
     # Phase 1: converge the structure using a linear T initial guess
     #          (same as 'linear' mode — stable and robust).
     # Phase 2: once the mass converges, switch to the dT/dP adiabat
-    #          computed from the converged P(r) and g(r), then re-converge.
+    #          computed from the converged P(r) and M(r), then re-converge.
     # Without this, a half-converged P(r) produces a bad adiabat that
     # prevents the solver from ever converging.
     _using_adiabat = False
