@@ -175,6 +175,7 @@ def validate_layer_eos(layer_eos_config):
 def choose_config_file(temp_config_path=None):
     """
     Function to choose the configuration file to run the main function.
+    
     The function will first check if a temporary configuration file is provided.
     If not, it will check if the -c flag is provided in the command line arguments.
     If the -c flag is provided, the function will read the configuration file path from the next argument.
