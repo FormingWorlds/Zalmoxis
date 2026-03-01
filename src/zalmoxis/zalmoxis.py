@@ -408,7 +408,14 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
         pressure = np.zeros(num_layers)
 
         if uses_Tdep:
-            if temperature_mode == 'adiabatic' and outer_iter > 0 and prev_pressure is not None:
+            # Switch to adiabat only once the structure is roughly converged.
+            # A garbage P(r) profile (e.g. from a failed Brent bracket)
+            # produces a garbage adiabat that prevents convergence.
+            prev_mass_ok = (
+                prev_mass_enclosed is not None
+                and prev_mass_enclosed[-1] > 0.5 * planet_mass
+            )
+            if temperature_mode == 'adiabatic' and outer_iter > 0 and prev_mass_ok:
                 # Recompute adiabat from previous iteration's converged structure
                 adiabat_T = compute_adiabatic_temperature(
                     prev_radii,
@@ -644,18 +651,21 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
         prev_pressure = np.asarray(pressure).copy()
         prev_mass_enclosed = np.asarray(mass_enclosed).copy()
 
-        # Update radius guess
+        # Update radius guess with damped scaling to prevent oscillation.
+        # The cube-root scaling is correct in direction but can overshoot
+        # wildly when calculated_mass << planet_mass, catapulting radius
+        # to unphysical values and trapping the solver in a cycle.
         calculated_mass = mass_enclosed[-1]
         if calculated_mass <= 0 or not np.isfinite(calculated_mass):
-            # Structure solver failed to produce valid mass (e.g. pressure
-            # dropped to zero near the center).  Shrink radius and retry.
             radius_guess *= 0.8
-            logger.warning(
+            verbose and logger.warning(
                 f'Outer iter {outer_iter}: calculated_mass={calculated_mass:.2e}, '
                 f'shrinking radius_guess to {radius_guess:.0f} m.'
             )
         else:
-            radius_guess = radius_guess * (planet_mass / calculated_mass) ** (1 / 3)
+            scale = (planet_mass / calculated_mass) ** (1.0 / 3.0)
+            scale = max(0.5, min(scale, 2.0))
+            radius_guess *= scale
         cmb_mass = core_mass_fraction * calculated_mass
         core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * calculated_mass
 
