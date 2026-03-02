@@ -466,6 +466,13 @@ def compute_adiabatic_temperature(
 ):
     """Compute adiabatic T(r) using native (dT/dP)_S tables from the EOS.
 
+    This is a **standalone Zalmoxis feature** for structure calculations
+    where no external interior solver provides T(r).  In the PROTEUS-SPIDER
+    coupling, this function is NOT called because SPIDER computes its own
+    T(r) via entropy evolution.  See the comment block above ``_using_adiabat``
+    in ``zalmoxis.main()`` for details on why the adiabat gate is intentionally
+    not activated in the coupling workflow.
+
     Integrates T[i] = T[i+1] + (dT/dP)_S · (P[i] - P[i+1]) from surface
     inward.  The adiabatic gradient (dT/dP)_S = αT/(ρCp) is read directly
     from the ``adiabat_grad_file`` in the melt-phase material dictionary,

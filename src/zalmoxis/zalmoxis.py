@@ -392,19 +392,42 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
     else:
         solidus_func, liquidus_func = None, None
 
+    # --- Adiabatic temperature mode (standalone Zalmoxis only) -----------
+    #
+    # When temperature_mode='adiabatic', Zalmoxis computes a self-consistent
+    # T(r) from dT/dP adiabat tables.  This is a STANDALONE Zalmoxis feature
+    # for structure calculations where no external interior solver provides
+    # T(r).
+    #
+    # In the PROTEUS-SPIDER-Zalmoxis coupling, this mode is NOT used for
+    # thermal evolution.  SPIDER computes its own adiabatic T(r) via entropy-
+    # based evolution (T-S formalism).  Zalmoxis only provides the initial
+    # structure mesh (r, P, rho, g).  PROTEUS sets temperature_mode='adiabatic'
+    # in the config, but the convergence loop below breaks on mass convergence
+    # BEFORE the adiabat gate fires — so the structure is solved with a
+    # linear T initial guess.  This is correct: the T profile only affects
+    # the density (via T-dep EOS), and the density difference between linear T
+    # and an adiabat is small enough (~5-10%) to produce a valid mesh.  SPIDER
+    # then self-corrects T(r) through its own physics.
+    #
+    # WARNING: Do NOT prevent the mass-convergence break (line ~691) from
+    # firing in order to force the adiabat gate to activate.  Switching from
+    # a converged linear-T structure to an adiabat disrupts the converged
+    # state, and the iterative solver diverges (mass→0, radius→15 R_earth).
+    # If standalone adiabat mode is needed, the transition must be gradual
+    # (e.g., blended T) or the solver must be restructured for co-refinement.
+    # -------------------------------------------------------------------
+
     # Storage for the previous iteration's converged profiles.
     # Used by adiabatic mode to compute T(r) from the last P(r) and M(r).
     prev_radii = None
     prev_pressure = None
     prev_mass_enclosed = None
 
-    # Two-phase convergence for adiabatic mode:
-    # Phase 1: converge the structure using a linear T initial guess
-    #          (same as 'linear' mode — stable and robust).
-    # Phase 2: once the mass converges, switch to the dT/dP adiabat
-    #          computed from the converged P(r) and M(r), then re-converge.
-    # Without this, a half-converged P(r) produces a bad adiabat that
-    # prevents the solver from ever converging.
+    # Adiabat gate: activates once mass converges (see long comment above).
+    # In PROTEUS coupling, the break at line ~691 fires first, so
+    # _using_adiabat stays False and compute_adiabatic_temperature() is
+    # never called.  This is intentional.
     _using_adiabat = False
 
     # Solve the interior structure
@@ -417,8 +440,14 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
         pressure = np.zeros(num_layers)
 
         if uses_Tdep:
-            # Graduate to adiabat once mass is within tolerance.
-            # Once graduated, stay on the adiabat (don't oscillate back).
+            # ADIABAT GATE — activates compute_adiabatic_temperature() once
+            # the mass has converged with a linear T guess.  In practice,
+            # the break at the bottom of the outer loop (line ~691) fires
+            # on mass convergence BEFORE the next iteration reaches this
+            # gate, so this code path is not exercised in the PROTEUS
+            # coupling.  It exists for standalone Zalmoxis use where the
+            # adiabat would provide a better T(r) than a linear guess.
+            # See the long comment block above _using_adiabat for context.
             if not _using_adiabat and temperature_mode == 'adiabatic':
                 prev_mass_converged = (
                     prev_mass_enclosed is not None
@@ -688,6 +717,13 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
 
         relative_diff_outer_mass = np.abs((calculated_mass - planet_mass) / planet_mass)
 
+        # MASS CONVERGENCE BREAK — exits the outer loop when total mass
+        # matches the target.  This break fires before the adiabat gate
+        # at the top of the loop can activate (both check the same
+        # tolerance on successive iterations).  This is correct for the
+        # PROTEUS coupling where SPIDER handles T(r) evolution.
+        # Do NOT add conditions that skip this break — see the warning
+        # in the comment block above _using_adiabat.
         if relative_diff_outer_mass < tolerance_outer:
             logger.info(f'Outer loop (total mass) converged after {outer_iter + 1} iterations.')
             converged_mass = True
