@@ -1,6 +1,7 @@
 ::: zalmoxis.constants
     options:
-      members: false
+      members: 
+         - TDEP_EOS_NAMES
       show_source: true
 
 ## Earth reference values
