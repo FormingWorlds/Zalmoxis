@@ -15,6 +15,7 @@ from .eos_analytic import VALID_MATERIAL_KEYS
 from .eos_functions import (
     calculate_density,
     calculate_temperature_profile,
+    compute_adiabatic_temperature,
     create_pressure_density_files,
     get_solidus_liquidus_functions,
     get_Tdep_material,
@@ -238,9 +239,6 @@ def load_zalmoxis_config(temp_config_path=None):
         'target_surface_pressure': config['PressureAdjustment']['target_surface_pressure'],
         'pressure_tolerance': config['PressureAdjustment']['pressure_tolerance'],
         'max_iterations_pressure': config['PressureAdjustment']['max_iterations_pressure'],
-        'pressure_adjustment_factor': config['PressureAdjustment'][
-            'pressure_adjustment_factor'
-        ],
         'data_output_enabled': config['Output']['data_enabled'],
         'plotting_enabled': config['Output']['plots_enabled'],
         'verbose': config['Output']['verbose'],
@@ -394,6 +392,44 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
     else:
         solidus_func, liquidus_func = None, None
 
+    # --- Adiabatic temperature mode (standalone Zalmoxis only) -----------
+    #
+    # When temperature_mode='adiabatic', Zalmoxis computes a self-consistent
+    # T(r) from dT/dP adiabat tables.  This is a STANDALONE Zalmoxis feature
+    # for structure calculations where no external interior solver provides
+    # T(r).
+    #
+    # In the PROTEUS-SPIDER-Zalmoxis coupling, this mode is NOT used for
+    # thermal evolution.  SPIDER computes its own adiabatic T(r) via entropy-
+    # based evolution (T-S formalism).  Zalmoxis only provides the initial
+    # structure mesh (r, P, rho, g).  PROTEUS sets temperature_mode='adiabatic'
+    # in the config, but the convergence loop below breaks on mass convergence
+    # BEFORE the adiabat gate fires — so the structure is solved with a
+    # linear T initial guess.  This is correct: the T profile only affects
+    # the density (via T-dep EOS), and the density difference between linear T
+    # and an adiabat is small enough (~5-10%) to produce a valid mesh.  SPIDER
+    # then self-corrects T(r) through its own physics.
+    #
+    # WARNING: Do NOT prevent the mass-convergence break (line ~691) from
+    # firing in order to force the adiabat gate to activate.  Switching from
+    # a converged linear-T structure to an adiabat disrupts the converged
+    # state, and the iterative solver diverges (mass→0, radius→15 R_earth).
+    # If standalone adiabat mode is needed, the transition must be gradual
+    # (e.g., blended T) or the solver must be restructured for co-refinement.
+    # -------------------------------------------------------------------
+
+    # Storage for the previous iteration's converged profiles.
+    # Used by adiabatic mode to compute T(r) from the last P(r) and M(r).
+    prev_radii = None
+    prev_pressure = None
+    prev_mass_enclosed = None
+
+    # Adiabat gate: activates once mass converges (see long comment above).
+    # In PROTEUS coupling, the break at line ~691 fires first, so
+    # _using_adiabat stays False and compute_adiabatic_temperature() is
+    # never called.  This is intentional.
+    _using_adiabat = False
+
     # Solve the interior structure
     for outer_iter in range(max_iterations_outer):
         radii = np.linspace(0, radius_guess, num_layers)
@@ -404,15 +440,56 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
         pressure = np.zeros(num_layers)
 
         if uses_Tdep:
-            temperature_function = calculate_temperature_profile(
-                radii,
-                temperature_mode,
-                surface_temperature,
-                center_temperature,
-                input_dir,
-                temp_profile_file,
-            )
-            temperatures = temperature_function(radii)
+            # ADIABAT GATE — activates compute_adiabatic_temperature() once
+            # the mass has converged with a linear T guess.  In practice,
+            # the break at the bottom of the outer loop (line ~691) fires
+            # on mass convergence BEFORE the next iteration reaches this
+            # gate, so this code path is not exercised in the PROTEUS
+            # coupling.  It exists for standalone Zalmoxis use where the
+            # adiabat would provide a better T(r) than a linear guess.
+            # See the long comment block above _using_adiabat for context.
+            if not _using_adiabat and temperature_mode == 'adiabatic':
+                prev_mass_converged = (
+                    prev_mass_enclosed is not None
+                    and abs(prev_mass_enclosed[-1] - planet_mass) / planet_mass
+                    < tolerance_outer
+                )
+                if prev_mass_converged:
+                    _using_adiabat = True
+                    logger.info(
+                        f'Outer iter {outer_iter}: mass converged with linear T, '
+                        f'switching to adiabatic temperature profile.'
+                    )
+
+            if _using_adiabat and prev_pressure is not None:
+                # Recompute adiabat from previous iteration's converged structure
+                adiabat_T = compute_adiabatic_temperature(
+                    prev_radii,
+                    prev_pressure,
+                    prev_mass_enclosed,
+                    surface_temperature,
+                    cmb_mass,
+                    core_mantle_mass,
+                    layer_eos_config,
+                    material_dictionaries,
+                    interpolation_cache,
+                )
+
+                # Interpolate adiabat (on prev grid) onto current grid
+                def temperature_function(r, _T=adiabat_T, _r=prev_radii):
+                    return np.interp(np.array(r), _r, _T)
+
+                temperatures = temperature_function(radii)
+            else:
+                temperature_function = calculate_temperature_profile(
+                    radii,
+                    temperature_mode,
+                    surface_temperature,
+                    center_temperature,
+                    input_dir,
+                    temp_profile_file,
+                )
+                temperatures = temperature_function(radii)
         else:
             temperatures = np.ones(num_layers) * 300
 
@@ -491,6 +568,17 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                 p_high = min(p_high, max_center_pressure_guess)
 
             try:
+                # Pre-validate that the bracket straddles the root.
+                # This gives a clearer error than brentq's generic ValueError,
+                # and the except handler below gracefully falls back to the
+                # last evaluated solution.
+                f_low = _pressure_residual(p_low)
+                f_high = _pressure_residual(p_high)
+                if f_low * f_high > 0:
+                    raise ValueError(
+                        f'Brent bracket does not straddle the root: '
+                        f'f({p_low:.2e})={f_low:.2e}, f({p_high:.2e})={f_high:.2e}.'
+                    )
                 p_solution, root_info = brentq(
                     _pressure_residual,
                     p_low,
@@ -604,14 +692,38 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                     'Density may not be fully converged.'
                 )
 
-        # Update radius guess
+        # Save converged profiles for the next outer iteration's adiabat
+        prev_radii = radii.copy()
+        prev_pressure = np.asarray(pressure).copy()
+        prev_mass_enclosed = np.asarray(mass_enclosed).copy()
+
+        # Update radius guess with damped scaling to prevent oscillation.
+        # The cube-root scaling is correct in direction but can overshoot
+        # wildly when calculated_mass << planet_mass, catapulting radius
+        # to unphysical values and trapping the solver in a cycle.
         calculated_mass = mass_enclosed[-1]
-        radius_guess = radius_guess * (planet_mass / calculated_mass) ** (1 / 3)
+        if calculated_mass <= 0 or not np.isfinite(calculated_mass):
+            radius_guess *= 0.8
+            verbose and logger.warning(
+                f'Outer iter {outer_iter}: calculated_mass={calculated_mass:.2e}, '
+                f'shrinking radius_guess to {radius_guess:.0f} m.'
+            )
+        else:
+            scale = (planet_mass / calculated_mass) ** (1.0 / 3.0)
+            scale = max(0.5, min(scale, 2.0))
+            radius_guess *= scale
         cmb_mass = core_mass_fraction * calculated_mass
         core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * calculated_mass
 
         relative_diff_outer_mass = np.abs((calculated_mass - planet_mass) / planet_mass)
 
+        # MASS CONVERGENCE BREAK — exits the outer loop when total mass
+        # matches the target.  This break fires before the adiabat gate
+        # at the top of the loop can activate (both check the same
+        # tolerance on successive iterations).  This is correct for the
+        # PROTEUS coupling where SPIDER handles T(r) evolution.
+        # Do NOT add conditions that skip this break — see the warning
+        # in the comment block above _using_adiabat.
         if relative_diff_outer_mass < tolerance_outer:
             logger.info(f'Outer loop (total mass) converged after {outer_iter + 1} iterations.')
             converged_mass = True

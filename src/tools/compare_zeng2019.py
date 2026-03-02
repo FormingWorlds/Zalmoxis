@@ -86,9 +86,7 @@ COMPOSITIONS = {
     },
 }
 
-ZENG_DIR = os.path.join(
-    ZALMOXIS_ROOT, 'data', 'mass_radius_comparison_data', 'Zeng+2019_M-R_models'
-)
+ZENG_DIR = os.path.join(ZALMOXIS_ROOT, 'data', 'mass_radius_curves')
 OUTPUT_DIR = os.path.join(ZALMOXIS_ROOT, 'output_files', 'zeng_comparison')
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 

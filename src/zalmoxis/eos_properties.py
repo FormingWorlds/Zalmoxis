@@ -35,13 +35,16 @@ material_properties_iron_Tdep_silicate_planets = {
         # MgSiO3 in melt state, modeled in Wolf & Bower (2018) using their developed high P–T RTpress EOS
         'eos_file': os.path.join(
             ZALMOXIS_ROOT, 'data', 'EOS_WolfBower2018_1TPa', 'density_melt.dat'
-        )
+        ),
+        'adiabat_grad_file': os.path.join(
+            ZALMOXIS_ROOT, 'data', 'EOS_WolfBower2018_1TPa', 'adiabat_temp_grad_melt.dat'
+        ),
     },
     'solid_mantle': {
         # MgSiO3 in solid state, modeled in Wolf & Bower (2018) using their developed high P–T RTpress EOS
         'eos_file': os.path.join(
             ZALMOXIS_ROOT, 'data', 'EOS_WolfBower2018_1TPa', 'density_solid.dat'
-        )
+        ),
     },
 }
 
@@ -58,13 +61,16 @@ material_properties_iron_RTPress100TPa_silicate_planets = {
         # MgSiO3 in melt state, extended RTpress EOS table (P: 1e3–1e14 Pa, T: 400–50000 K)
         'eos_file': os.path.join(
             ZALMOXIS_ROOT, 'data', 'EOS_RTPress_melt_100TPa', 'density_melt.dat'
-        )
+        ),
+        'adiabat_grad_file': os.path.join(
+            ZALMOXIS_ROOT, 'data', 'EOS_RTPress_melt_100TPa', 'adiabat_temp_grad_melt.dat'
+        ),
     },
     'solid_mantle': {
         # MgSiO3 in solid state, from Wolf & Bower (2018) / Mosenfelder et al. (2009) (clamped at 1 TPa boundary)
         'eos_file': os.path.join(
             ZALMOXIS_ROOT, 'data', 'EOS_WolfBower2018_1TPa', 'density_solid.dat'
-        )
+        ),
     },
 }
 

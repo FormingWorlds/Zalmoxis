@@ -6,9 +6,9 @@ planet_mass                = 1 # Mass of the planet (in Earth masses = 5.972e24 
 [AssumptionsAndInitialGuesses]
 core_mass_fraction         = 0.325 # Initial guess for the core mass as a fraction of the total mass
 mantle_mass_fraction       = 0 # Initial guess for the mantle mass as a fraction of the total mass
-temperature_mode           = "linear" # Choice of input temperature profile: "isothermal", "linear", "prescribed"
-surface_temperature        = 3500 # Surface temperature (K), required for temperature_mode="isothermal" or "linear", ignored otherwise
-center_temperature         = 6000 # Central temperature (K), required for temperature_mode="linear", ignored otherwise
+temperature_mode           = "linear" # Choice of input temperature profile: "isothermal", "linear", "prescribed", "adiabatic"
+surface_temperature        = 3500 # Surface temperature (K), required for temperature_mode="isothermal", "linear", or "adiabatic", ignored otherwise
+center_temperature         = 6000 # Central temperature (K), required for temperature_mode="linear" or "adiabatic" (initial guess), ignored otherwise
 temperature_profile_file   = "temp_profile.txt" # Filename containing a prescribed temperature profile, required for temperature_mode="prescribed"
 
 [EOS]
@@ -17,8 +17,9 @@ temperature_profile_file   = "temp_profile.txt" # Filename containing a prescrib
 #   "Seager2007:iron"       - Seager+2007 tabulated Fe epsilon (300K)
 #   "Seager2007:MgSiO3"    - Seager+2007 tabulated MgSiO3 perovskite (300K)
 #   "Seager2007:H2O"       - Seager+2007 tabulated water ice (300K)
-#   "WolfBower2018:MgSiO3" - Wolf&Bower+2018 T-dependent MgSiO3 (melt/solid), limited to <= 7 M_earth
-#   "Analytic:<material>"  - Seager+2007 analytic polytrope (300K, no data needed)
+#   "WolfBower2018:MgSiO3"  - Wolf&Bower+2018 T-dependent MgSiO3 (melt/solid), limited to <= 7 M_earth
+#   "RTPress100TPa:MgSiO3"  - Extended RTpress MgSiO3 melt EOS (up to 100 TPa)
+#   "Analytic:<material>"   - Seager+2007 analytic polytrope (300K, no data needed)
 #     Valid analytic materials: iron, MgSiO3, MgFeSiO3, H2O, graphite, SiC
 core                       = "Seager2007:iron"
 mantle                     = "WolfBower2018:MgSiO3"
@@ -42,7 +43,6 @@ max_center_pressure_guess  = 10e12 # Maximum center pressure guess (Pa). Center 
 target_surface_pressure    = 101325 # Target surface pressure (Pa)
 pressure_tolerance         = 1e9 # Convergence tolerance for surface pressure convergence (Pa)
 max_iterations_pressure    = 200 # Maximum iterations for pressure adjustment loop
-pressure_adjustment_factor = 1.1 # Deprecated: retained for backward compatibility. The Brent solver does not use this parameter.
 
 [Output]
 data_enabled               = true # Flag to enable saving data to a file (true/false)

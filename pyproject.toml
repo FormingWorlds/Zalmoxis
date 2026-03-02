@@ -53,6 +53,7 @@ develop = [
     "coverage[toml]",
     "pip-tools",
     "pytest >= 8.1",
+    "pytest-cov",
     "pre-commit",
     "ruff",
     "pytest-rich",
