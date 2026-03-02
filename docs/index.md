@@ -16,9 +16,9 @@
 - [Model overview](Explanations/model.md)
 - [API reference](Reference/api/index.md)
 - [Source code](https://github.com/FormingWorlds/Zalmoxis)
-- [Contact](contact.md)
+- [Contact](Community/contact.md)
 
-If you plan to contribute to Zalmoxis, please read our [Code of Conduct](CODE_OF_CONDUCT.md) and [contributing guidelines](CONTRIBUTING.md).
+If you plan to contribute to Zalmoxis, please read our [Code of Conduct](Community/CODE_OF_CONDUCT.md) and [contributing guidelines](Community/CONTRIBUTING.md).
 If you are running into problems, please do not hesitate to raise an [Issue](https://github.com/FormingWorlds/Zalmoxis/issues).
 
 ## License
