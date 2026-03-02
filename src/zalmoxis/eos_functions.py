@@ -1,5 +1,8 @@
 """
-EOS Data and Functions
+EOS-related functions for ZALMOXIS, including loading tabulated EOS data, performing interpolation, and calculating density based on pressure and temperature.
+
+!!! Imports
+    - [`eos_analytic`](zalmoxis.eos_analytic.md): `get_analytic_density`
 """
 
 from __future__ import annotations
