@@ -6,8 +6,7 @@ Tests cover:
 - Adiabatic mode in calculate_temperature_profile()
 
 References:
-    - docs/test_infrastructure.md
-    - docs/test_categorization.md
+    - docs/testing.md
 """
 
 from __future__ import annotations
