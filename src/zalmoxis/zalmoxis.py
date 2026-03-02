@@ -689,9 +689,21 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
         relative_diff_outer_mass = np.abs((calculated_mass - planet_mass) / planet_mass)
 
         if relative_diff_outer_mass < tolerance_outer:
-            logger.info(f'Outer loop (total mass) converged after {outer_iter + 1} iterations.')
-            converged_mass = True
-            break
+            if temperature_mode == 'adiabatic' and not _using_adiabat:
+                # Mass converged with linear T — don't break yet.
+                # The gate at the top of the next iteration will switch
+                # to adiabatic mode and re-converge.
+                verbose and logger.info(
+                    f'Outer iter {outer_iter}: mass converged with linear T '
+                    f'(rdiff={relative_diff_outer_mass:.2e}), '
+                    f'continuing to activate adiabatic mode.'
+                )
+            else:
+                logger.info(
+                    f'Outer loop (total mass) converged after {outer_iter + 1} iterations.'
+                )
+                converged_mass = True
+                break
 
         if outer_iter == max_iterations_outer - 1:
             verbose and logger.warning(
