@@ -5,7 +5,7 @@
 
 **Zalmoxis** is a program designed to model the internal structure of exoplanets using an iterative numerical approach.
 
-!!! info
+!!! info "PROTEUS Framework"
     Zalmoxis is the interior structure model integrated into the PROTEUS Framework, of which the documentation can be found [here](https://proteus-framework.org/PROTEUS). 
 
 ## Getting started
