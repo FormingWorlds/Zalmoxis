@@ -5,18 +5,8 @@
 
 **Zalmoxis** is a program designed to model the internal structure of exoplanets using an iterative numerical approach.
 
-!!! info "PROTEUS Framework"
-    Zalmoxis is the interior structure model integrated into the PROTEUS Framework, of which the documentation can be found [here](https://proteus-framework.org/PROTEUS). 
-
-## Getting started
-
-- [Installation guide](How-to/installation.md)
-- [Configuration](How-to/configuration.md)
-- [Using Zalmoxis](How-to/usage.md)
-- [Model overview](Explanations/model.md)
-- [API reference](Reference/api/index.md)
-- [Source code](https://github.com/FormingWorlds/Zalmoxis)
-- [Contact](Community/contact.md)
+!!! info "PROTEUS framework"
+    Zalmoxis is the interior structure model integrated into the PROTEUS framework,  a modular Python framework that simulates the coupled evolution of the atmospheres and interiors of rocky planets and exoplanets. The documentation for PROTEUS can be found [here](https://proteus-framework.org/PROTEUS). 
 
 If you plan to contribute to Zalmoxis, please read our [Code of Conduct](Community/CODE_OF_CONDUCT.md) and [contributing guidelines](Community/CONTRIBUTING.md).
 If you are running into problems, please do not hesitate to raise an [Issue](https://github.com/FormingWorlds/Zalmoxis/issues).
