@@ -1,5 +1,9 @@
 # Getting started
 
+!!! note "Usage within the PROTEUS framework"
+    Zalmoxis is most commonly installed and used as integrated into the PROTEUS framework. Understand how to use PROTEUS [here](https://proteus-framework.org/PROTEUS). 
+
+## Quick path
 
 Here is the quickest path to getting started:
 
