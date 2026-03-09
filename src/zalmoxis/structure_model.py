@@ -1,8 +1,8 @@
 '''Main function to solve the coupled ODEs for the structure model.
 
 !!! Imports
-    - [`constants`](zalmoxis.constants.md): `TDEP_EOS_NAMES`, G
-    - [`eos_functions`](zalmoxis.eos_functions.md): `calculate_density`
+    - [`constants`](zalmoxis.constants.md): TDEP_EOS_NAMES, G
+    - [`eos_functions`](zalmoxis.eos_functions.md): calculate_density
 
 '''
 
