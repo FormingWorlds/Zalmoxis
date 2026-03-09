@@ -1,8 +1,11 @@
 """
-EOS-related functions for ZALMOXIS, including loading tabulated EOS data, performing interpolation, and calculating density based on pressure and temperature.
+EOS-related functions for ZALMOXIS, including loading tabulated EOS data,
+performing interpolation, and calculating density based on pressure and
+temperature.
 
-!!! Imports
-    - [`eos_analytic`](zalmoxis.eos_analytic.md): get_analytic_density
+Imports
+-----
+`eos_analytic`: provides `get_analytic_density`
 """
 
 from __future__ import annotations
@@ -27,15 +30,30 @@ def get_tabulated_eos(
     pressure, material_dictionary, material, temperature=None, interpolation_functions=None
 ):
     """
-    Retrieves density from tabulated EOS data for a given material and choice of EOS.
-    Parameters:
-        pressure: Pressure at which to evaluate the EOS (in Pa)
-        material_dictionary: Dictionary containing material properties and EOS file paths
-        material: Material type (e.g., "core", "mantle", "ice_layer", "melted_mantle", "solid_mantle")
-        temperature: Temperature at which to evaluate the EOS (in K), if applicable
-        interpolation_functions: Cache for interpolation functions to avoid redundant loading
-    Returns:
-        density: Density corresponding to the given pressure (and temperature if applicable) in kg/m^3
+    Retrieve density from tabulated EOS data for a given material.
+
+    Parameters
+    ----------
+    pressure : float
+        Pressure at which to evaluate the EOS, in Pa.
+    material_dictionary : dict
+        Dictionary containing material properties and EOS file paths.
+    material : str
+        Material type, for example ``"core"``, ``"mantle"``,
+        ``"ice_layer"``, ``"melted_mantle"``, or ``"solid_mantle"``.
+    temperature : float, optional
+        Temperature at which to evaluate the EOS, in K. Required for
+        temperature-dependent materials such as ``"melted_mantle"`` and
+        ``"solid_mantle"``.
+    interpolation_functions : dict, optional
+        Cache of interpolation functions used to avoid reloading and
+        rebuilding interpolators for EOS tables.
+
+    Returns
+    -------
+    float or None
+        Density in kg/m^3 if the interpolation succeeds, otherwise ``None``.
+
     """
     if interpolation_functions is None:
         interpolation_functions = {}
@@ -203,11 +221,19 @@ def get_tabulated_eos(
 
 def load_melting_curve(melt_file):
     """
-    Loads melting curve data for MgSiO3 from a text file.
-    Parameters:
-        melt_file: Path to the melting curve data file
-    Returns:
-        interp_func: Interpolation function for T(P)
+    Load a melting curve for MgSiO3 from a text file.
+
+    Parameters
+    ----------
+    melt_file : str or path-like
+        Path to the melting curve data file. The file is expected to contain
+        two columns: pressure in Pa and temperature in K.
+
+    Returns
+    -------
+    scipy.interpolate.interp1d or None
+        One-dimensional interpolation function returning temperature as a
+        function of pressure. Returns ``None`` if the file cannot be loaded.
     """
     try:
         data = np.loadtxt(melt_file, comments='#')
@@ -224,8 +250,14 @@ def load_melting_curve(melt_file):
 
 def get_solidus_liquidus_functions():
     """
-    Loads and returns the solidus and liquidus melting curves for temperature-dependent silicate mantle EOS.
-    Returns: A tuple containing the solidus and liquidus functions.
+    Load the solidus and liquidus melting curves for the silicate mantle EOS.
+
+    Returns
+    -------
+    tuple of callable
+        A tuple ``(solidus_func, liquidus_func)`` containing interpolation
+        functions for the solidus and liquidus temperatures as functions of
+        pressure.
     """
     solidus_func = load_melting_curve(
         os.path.join(ZALMOXIS_ROOT, 'data', 'melting_curves_Monteux-600', 'solidus.dat')
@@ -246,16 +278,42 @@ def get_Tdep_density(
     interpolation_functions=None,
 ):
     """
-    Returns density for mantle material, considering temperature-dependent phase changes.
-    Parameters:
-        pressure: Pressure at which to evaluate the EOS (in Pa)
-        temperature: Temperature at which to evaluate the EOS (in K)
-        material_properties_iron_Tdep_silicate_planets: Dictionary containing temperature-dependent material properties for temperature-dependent MgSiO3 EOS
-        solidus_func: Interpolation function for the solidus melting curve
-        liquidus_func: Interpolation function for the liquidus melting curve
-        interpolation_functions: Cache for interpolation functions to avoid redundant loading
-    Returns:
-        density: Density corresponding to the given pressure and temperature in kg/m^3
+    Compute mantle density for a temperature-dependent EOS with phase changes.
+
+    Parameters
+    ----------
+    pressure : float
+        Pressure at which to evaluate the EOS, in Pa.
+    temperature : float
+        Temperature at which to evaluate the EOS, in K.
+    material_properties_iron_Tdep_silicate_planets : dict
+        Dictionary containing temperature-dependent material properties for
+        the MgSiO3 EOS.
+    solidus_func : callable
+        Interpolation function for the solidus melting curve.
+    liquidus_func : callable
+        Interpolation function for the liquidus melting curve.
+    interpolation_functions : dict, optional
+        Cache of interpolation functions used to avoid redundant loading of
+        EOS tables.
+
+    Returns
+    -------
+    float or None
+        Density in kg/m^3. Returns ``None`` if the density cannot be evaluated.
+
+    Raises
+    ------
+    ValueError
+        If ``solidus_func`` or ``liquidus_func`` is not provided.
+
+    Notes
+    -----
+    The mantle phase is determined by comparing the input temperature to the
+    solidus and liquidus temperatures at the given pressure.
+
+    In the mixed-phase region, the density is computed using linear melt
+    fraction and volume additivity.
     """
 
     if interpolation_functions is None:
@@ -341,12 +399,25 @@ def get_Tdep_density(
 
 def get_Tdep_material(pressure, temperature, solidus_func, liquidus_func):
     """
-    Returns type for mantle material, considering temperature-dependent phase changes. Supports scalar and array inputs.
-    Parameters:
-        pressure: Pressure at which to evaluate the EOS (in Pa), can be scalar or array
-        temperature: Temperature at which to evaluate the EOS (in K), can be scalar or array
-    Returns:
-        material: Material type ("solid_mantle", "melted_mantle", or "mixed_mantle")
+    Determine the mantle phase for a temperature-dependent EOS.
+
+    Parameters
+    ----------
+    pressure : float or array_like
+        Pressure in Pa. May be a scalar or an array.
+    temperature : float or array_like
+        Temperature in K. May be a scalar or an array.
+    solidus_func : callable
+        Interpolation function for the solidus melting curve.
+    liquidus_func : callable
+        Interpolation function for the liquidus melting curve.
+
+    Returns
+    -------
+    str or numpy.ndarray
+        Material phase label(s). Possible values are ``"solid_mantle"``,
+        ``"mixed_mantle"``, and ``"melted_mantle"``. Returns a string for
+        scalar inputs and a NumPy array of strings for array inputs.
     """
 
     # Define per-point evaluation
@@ -383,31 +454,37 @@ def calculate_density(
     liquidus_func,
     interpolation_functions=None,
 ):
-    """Calculate density for a single layer given its per-layer EOS string.
+    """
+    Calculate density for a single layer given its EOS identifier.
 
     Parameters
     ----------
     pressure : float
-        Pressure at which to evaluate the EOS (in Pa).
+        Pressure at which to evaluate the EOS, in Pa.
     material_dictionaries : tuple
-        Tuple of material property dictionaries
-        (iron_silicate, iron_Tdep_silicate, water, iron_RTPress100TPa_silicate).
+        Tuple of material property dictionaries in the order
+        ``(iron_silicate, iron_Tdep_silicate, water, iron_RTPress100TPa_silicate)``.
     layer_eos : str
-        Per-layer EOS identifier, e.g. "Seager2007:iron",
-        "WolfBower2018:MgSiO3", "Analytic:iron".
+        Per-layer EOS identifier, for example ``"Seager2007:iron"``,
+        ``"WolfBower2018:MgSiO3"``, or ``"Analytic:iron"``.
     temperature : float
-        Temperature at which to evaluate the EOS (in K).
+        Temperature at which to evaluate the EOS, in K.
     solidus_func : callable or None
         Interpolation function for the solidus melting curve.
     liquidus_func : callable or None
         Interpolation function for the liquidus melting curve.
-    interpolation_functions : dict
-        Cache for interpolation functions to avoid redundant loading.
+    interpolation_functions : dict, optional
+        Cache of interpolation functions used to avoid redundant loading.
 
     Returns
     -------
     float or None
-        Density in kg/m^3, or None on failure.
+        Density in kg/m^3, or ``None`` on failure.
+
+    Raises
+    ------
+    ValueError
+        If ``layer_eos`` is not recognized.
     """
     if interpolation_functions is None:
         interpolation_functions = {}
@@ -467,55 +544,59 @@ def compute_adiabatic_temperature(
     material_dictionaries,
     interpolation_functions=None,
 ):
-    """Compute adiabatic T(r) using native (dT/dP)_S tables from the EOS.
-
-    This is a **standalone Zalmoxis feature** for structure calculations
-    where no external interior solver provides T(r).  In the PROTEUS-SPIDER
-    coupling, this function is NOT called because SPIDER computes its own
-    T(r) via entropy evolution.  See the comment block above ``_using_adiabat``
-    in ``zalmoxis.main()`` for details on why the adiabat gate is intentionally
-    not activated in the coupling workflow.
-
-    Integrates T[i] = T[i+1] + (dT/dP)_S · (P[i] - P[i+1]) from surface
-    inward.  The adiabatic gradient (dT/dP)_S = αT/(ρCp) is read directly
-    from the ``adiabat_grad_file`` in the melt-phase material dictionary,
-    avoiding any intermediate α or Cp computation.
-
-    For T-independent EOS layers (e.g. Seager2007 iron core), no adiabat
-    gradient table exists, so the temperature is held constant (isothermal).
+    """
+    Compute an adiabatic temperature profile using native EOS ``(dT/dP)_S`` tables.
 
     Parameters
     ----------
-    radii : np.ndarray
-        Radial grid, ascending (center to surface) [m].
-    pressure : np.ndarray
-        Pressure at each radius [Pa].
-    mass_enclosed : np.ndarray
-        Enclosed mass at each radius [kg].
+    radii : numpy.ndarray
+        Radial grid in ascending order from center to surface, in m.
+    pressure : numpy.ndarray
+        Pressure at each radius, in Pa.
+    mass_enclosed : numpy.ndarray
+        Enclosed mass at each radius, in kg.
     surface_temperature : float
-        Temperature at the surface [K].
+        Temperature at the surface, in K.
     cmb_mass : float
-        Core-mantle boundary mass [kg].
+        Core-mantle boundary mass, in kg.
     core_mantle_mass : float
-        Core + mantle mass [kg].
+        Total core-plus-mantle mass, in kg.
     layer_eos_config : dict
-        Per-layer EOS config, e.g.
+        Per-layer EOS configuration, for example
         ``{"core": "Seager2007:iron", "mantle": "WolfBower2018:MgSiO3"}``.
     material_dictionaries : tuple
-        Material property dictionaries.
-    interpolation_functions : dict or None
-        Cache for interpolation functions.
+        Tuple of material property dictionaries.
+    interpolation_functions : dict, optional
+        Cache of interpolation functions used to avoid redundant loading.
 
     Returns
     -------
-    np.ndarray
-        Temperature at each radial point [K].
+    numpy.ndarray
+        Temperature at each radial point, in K.
 
     Raises
     ------
     ValueError
-        If a T-dependent mantle EOS is used but no ``adiabat_grad_file``
-        is present in the material dictionary.
+        If adiabatic mode is requested for a mantle EOS that is not
+        temperature-dependent.
+    ValueError
+        If the selected mantle EOS requires an ``adiabat_grad_file`` but none
+        is provided.
+
+    Notes
+    -----
+    This is a standalone ZALMOXIS feature for structure calculations where no
+    external interior solver provides ``T(r)``.
+
+    In the PROTEUS-SPIDER coupling, this function is not called because SPIDER
+    computes its own temperature profile through entropy evolution.
+
+    The integration proceeds inward from the surface according to
+
+    ``T[i] = T[i+1] + (dT/dP)_S * (P[i] - P[i+1])``.
+
+    For temperature-independent EOS layers, such as a Seager (2007) iron core,
+    the temperature is held constant.
     """
     from .constants import TDEP_EOS_NAMES
     from .structure_model import get_layer_eos
@@ -595,23 +676,48 @@ def calculate_temperature_profile(
     temp_profile_file,
 ):
     """
-    Returns a callable temperature function for a planetary interior model.
+    Return a callable temperature profile for a planetary interior model.
 
-    Parameters:
-    radii: Radial grid of the planet [m].
-    temperature_mode: Temperature profile mode. Options:
-        - "isothermal": constant temperature equal to surface_temperature
-        - "linear": linear profile from center_temperature (r=0) to surface_temperature (r=R)
-        - "prescribed": read temperature profile from a text file
-        - "adiabatic": returns linear profile as initial guess; the actual
-          adiabat is computed in the main() outer loop using P(r) and g(r)
-    surface_temperature: Temperature at the surface [K] (used for "linear" and "isothermal")
-    center_temperature: Temperature at the center [K] (used for "linear")
-    input_dir: Directory where the temperature profile file is located.
-    temp_profile_file: Name of the file containing the prescribed temperature profile from center to surface. Must have same length as `radii` if temperature_mode="prescribed".
+    Parameters
+    ----------
+    radii : array_like
+        Radial grid of the planet, in m.
+    temperature_mode : {"isothermal", "linear", "prescribed", "adiabatic"}
+        Temperature profile mode.
 
-    Returns:
-    temperature_func: Function of radius or array of radii for temperature [K]: temperature_func(r) -> float or np.ndarray
+        - ``"isothermal"``: constant temperature equal to
+          ``surface_temperature``.
+        - ``"linear"``: linear profile from ``center_temperature`` at
+          ``r = 0`` to ``surface_temperature`` at the surface.
+        - ``"prescribed"``: read the temperature profile from a text file.
+        - ``"adiabatic"``: return a linear profile as an initial guess; the
+          actual adiabat is computed elsewhere in the main iteration loop.
+    surface_temperature : float
+        Temperature at the surface, in K.
+    center_temperature : float
+        Temperature at the center, in K. Used for ``"linear"`` and
+        ``"adiabatic"`` modes.
+    input_dir : str or path-like
+        Directory containing the prescribed temperature profile file.
+    temp_profile_file : str
+        Name of the file containing the prescribed temperature profile from
+        center to surface. Required when ``temperature_mode="prescribed"``.
+
+    Returns
+    -------
+    callable
+        Function of radius returning temperature in K. The callable accepts a
+        scalar or array-like radius and returns a float or NumPy array.
+
+    Raises
+    ------
+    ValueError
+        If ``temperature_mode="prescribed"`` and the file does not exist.
+    ValueError
+        If the prescribed temperature profile length does not match
+        ``radii``.
+    ValueError
+        If ``temperature_mode`` is not recognized.
     """
     radii = np.array(radii)
 
@@ -653,14 +759,26 @@ def create_pressure_density_files(
     outer_iter, inner_iter, pressure_iter, radii, pressure, density
 ):
     """
-    Create and append pressure and density profiles to output files for each pressure iteration.
-    Parameters:
-        outer_iter (int): Current outer iteration index.
-        inner_iter (int): Current inner iteration index.
-        pressure_iter (int): Current pressure iteration index.
-        radii (np.ndarray): Array of radial positions.
-        pressure (np.ndarray): Array of pressure values corresponding to the radii.
-        density (np.ndarray): Array of density values corresponding to the radii.
+    Append pressure and density profiles to output files for a given iteration.
+
+    Parameters
+    ----------
+    outer_iter : int
+        Current outer iteration index.
+    inner_iter : int
+        Current inner iteration index.
+    pressure_iter : int
+        Current pressure iteration index.
+    radii : numpy.ndarray
+        Radial positions, in m.
+    pressure : numpy.ndarray
+        Pressure values corresponding to ``radii``, in Pa.
+    density : numpy.ndarray
+        Density values corresponding to ``radii``, in kg/m^3.
+
+    Returns
+    -------
+    None
     """
 
     pressure_file = os.path.join(ZALMOXIS_ROOT, 'output_files', 'pressure_profiles.txt')
