@@ -181,6 +181,16 @@ def choose_config_file(temp_config_path=None):
     If not, it will check if the -c flag is provided in the command line arguments.
     If the -c flag is provided, the function will read the configuration file path from the next argument.
     If no temporary configuration file or -c flag is provided, the function will read the default configuration file.
+
+    Parameters
+    ----------
+    temp_config_path : str, optional
+        Path to a temporary configuration file. If provided, this file will be used instead of the default or -c specified config.  
+
+    Returns
+    -------
+    dict
+        The loaded configuration parameters from the chosen config file.
     """
 
     # Load the configuration file either from terminal (-c flag) or default path
