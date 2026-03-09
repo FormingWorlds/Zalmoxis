@@ -33,7 +33,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install .  # from pyproject.toml
-          pip install pytest pytest-cov pytest-xdist ruff mkdocs mkdocs-material markdown-include mkdocstrings[python] pymdown-extensions
+          pip install pytest pytest-cov pytest-xdist ruff zensical markdown-include mkdocstrings[python] pymdown-extensions
 
       - name: Download required input/output files
         run: |
@@ -41,12 +41,12 @@ jobs:
 
       - name: Lint with Ruff
         run: |
-          ruff check 
+          ruff check
 
       - name: Run unit tests with coverage
         run: |
           pytest -m unit -n auto -o "addopts=" --cov=src --cov-report=term-missing
 
-      - name: Build documentation (MkDocs)
+      - name: Build documentation (Zensical)
         run: |
-          mkdocs build --strict
+          zensical build --clean
