@@ -8,15 +8,15 @@
 Here is the quickest path to getting started:
 
 1. **Install Zalmoxis**  
-   Follow the installation steps and download necessary data. 
+   Follow the installation steps and download necessary data. <br>
    → [Installation guide](How-to/installation.md)
 
 2. **Configure your setup**  
-   Configure Zalmoxis before usage.  
+   Configure Zalmoxis before usage.  <br>
    → [Configuration](How-to/configuration.md)
 
 3. **Run your first workflow**  
-   Learn the basic usage patterns and common configurations.
+   Learn the basic usage patterns and common configurations. <br>
    → [Using Zalmoxis](How-to/usage.md)
 
 ---
@@ -49,7 +49,7 @@ Here is the quickest path to getting started:
 
     [Go to source code](https://github.com/FormingWorlds/Zalmoxis)
 
--   :material-alert: **Raise an issue**
+-   :material-bug: **Raise an issue**
 
     [Go to issues](https://github.com/FormingWorlds/Zalmoxis/issues)
 
