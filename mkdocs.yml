@@ -2,6 +2,8 @@ site_name: Zalmoxis
 site_url: https://proteus-framework.org/Zalmoxis
 repo_url: https://github.com/FormingWorlds/Zalmoxis
 
+copyright: '© 2023-2026 <a href="https://formingworlds.space">Forming Worlds Lab</a>'
+
 nav:
   - Home: 
       - About: index.md
@@ -123,11 +125,11 @@ extra:
       link: mailto:proteus_dev@formingworlds.space
       name: Mail PROTEUS developers
     - icon: fontawesome/brands/python
-      link: https://pypi.org/project/fwl-proteus/
-      name: PROTEUS on PyPI
+      link: https://pypi.org/project/fwl-zalmoxis/
+      name: Zalmoxis on PyPI
     - icon: fontawesome/brands/github
-      link: https://github.com/FormingWorlds/PROTEUS
-      name: PROTEUS on GitHub
+      link: https://github.com/FormingWorlds/Zalmoxis
+      name: Zalmoxis on GitHub
 
 extra_javascript:
   - javascripts/katex.js
