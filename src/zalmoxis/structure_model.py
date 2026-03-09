@@ -1,10 +1,10 @@
-'''Main function to solve the coupled ODEs for the structure model.
+"""Main function to solve the coupled ODEs for the structure model.
 
 !!! Imports
     - [`constants`](zalmoxis.constants.md): TDEP_EOS_NAMES, G
     - [`eos_functions`](zalmoxis.eos_functions.md): calculate_density
 
-'''
+"""
 
 # This file contains the main function that solves the coupled ODEs for the structure model.
 from __future__ import annotations

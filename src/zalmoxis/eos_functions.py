@@ -725,8 +725,9 @@ def calculate_temperature_profile(
         return lambda r: np.full_like(r, surface_temperature, dtype=float)
 
     elif temperature_mode == 'linear':
-        return lambda r: surface_temperature + (center_temperature - surface_temperature) * (
-            1 - np.array(r) / radii[-1]
+        return lambda r: (
+            surface_temperature
+            + (center_temperature - surface_temperature) * (1 - np.array(r) / radii[-1])
         )
 
     elif temperature_mode == 'prescribed':
@@ -744,8 +745,9 @@ def calculate_temperature_profile(
     elif temperature_mode == 'adiabatic':
         # Return linear profile as initial guess for the first outer iteration.
         # The actual adiabat is computed in main() using P(r), g(r) from the solver.
-        return lambda r: surface_temperature + (center_temperature - surface_temperature) * (
-            1 - np.array(r) / radii[-1]
+        return lambda r: (
+            surface_temperature
+            + (center_temperature - surface_temperature) * (1 - np.array(r) / radii[-1])
         )
 
     else:

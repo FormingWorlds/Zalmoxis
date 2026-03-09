@@ -1,9 +1,9 @@
 r"""
 Analytic EOS from Seager et al. (2007), Table 3, Eq. 11.
 
-Modified polytropic fit: 
+Modified polytropic fit:
 
-$$ 
+$$
 \rho(P) = \rho_0 + c \cdot P^n
 $$
 
