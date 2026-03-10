@@ -13,4 +13,4 @@ If you are running into problems, please do not hesitate to raise an [Issue](htt
 
 ## License
 
-See [the included license](LICENSE.txt).
+See [the included license](https://github.com/FormingWorlds/Zalmoxis/blob/main/LICENSE.txt).
