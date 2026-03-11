@@ -1,3 +1,16 @@
+"""
+Zalmoxis core module containing the main functions to run the exoplanet internal structure model.
+
+Imports
+-------
+- [`constants`](zalmoxis.constants.md): TDEP_EOS_NAMES, earth_center_pressure, earth_mass, earth_radius
+- [`eos_analytic`](zalmoxis.eos_analytic.md): VALID_MATERIAL_KEYS
+- [`eos_functions`](zalmoxis.eos_functions.md): calculate_density, calculate_temperature_profile, create_pressure_density_files, get_solidus_liquidus_functions, get_Tdep_material
+- [`eos_properties`](zalmoxis.eos_properties.md): material_properties_iron_RTPress100TPa_silicate_planets, material_properties_iron_silicate_planets,
+        material_properties_iron_Tdep_silicate_planets, material_properties_water_planets
+- [`structure_model`](zalmoxis.structure_model.md): get_layer_eos, solve_structure
+"""
+
 from __future__ import annotations
 
 import logging
@@ -80,6 +93,8 @@ RTPRESS100TPA_MAX_MASS_EARTH = 50.0
 def parse_eos_config(eos_section):
     """Parse [EOS] TOML section into per-layer EOS dict.
 
+    Info
+    -----
     Supports new per-layer format (core/mantle/ice_layer fields) and legacy
     format (choice field) for backward compatibility.
 
@@ -165,10 +180,23 @@ def validate_layer_eos(layer_eos_config):
 def choose_config_file(temp_config_path=None):
     """
     Function to choose the configuration file to run the main function.
+
+    Info
+    -----
     The function will first check if a temporary configuration file is provided.
     If not, it will check if the -c flag is provided in the command line arguments.
     If the -c flag is provided, the function will read the configuration file path from the next argument.
     If no temporary configuration file or -c flag is provided, the function will read the default configuration file.
+
+    Parameters
+    ----------
+    temp_config_path : str, optional
+        Path to a temporary configuration file. If provided, this file will be used instead of the default or -c specified config.
+
+    Returns
+    -------
+    dict
+        The loaded configuration parameters from the chosen config file.
     """
 
     # Load the configuration file either from terminal (-c flag) or default path

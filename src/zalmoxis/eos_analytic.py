@@ -1,9 +1,13 @@
-"""
+r"""
 Analytic EOS from Seager et al. (2007), Table 3, Eq. 11.
 
-Modified polytropic fit: rho(P) = rho_0 + c * P^n
-Valid for P < 1e16 Pa. Approximates the full merged Vinet/BME + TFD EOS
-to 2-12% accuracy for all planetary pressures.
+Modified polytropic fit:
+
+$$
+\rho(P) = \rho_0 + c \cdot P^n
+$$
+
+Valid for $P < 10^{16}$ Pa. Approximates the full merged Vinet/BME + TFD EOS to 2-12% accuracy for all planetary pressures.
 """
 
 from __future__ import annotations
