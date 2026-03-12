@@ -420,30 +420,23 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
     else:
         solidus_func, liquidus_func = None, None
 
-    # --- Adiabatic temperature mode (standalone Zalmoxis only) -----------
+    # --- Adiabatic temperature mode ----------------------------------------
     #
     # When temperature_mode='adiabatic', Zalmoxis computes a self-consistent
-    # T(r) from dT/dP adiabat tables.  This is a STANDALONE Zalmoxis feature
-    # for structure calculations where no external interior solver provides
-    # T(r).
+    # T(r) from dT/dP adiabat tables using a two-phase approach:
     #
-    # In the PROTEUS-SPIDER-Zalmoxis coupling, this mode is NOT used for
-    # thermal evolution.  SPIDER computes its own adiabatic T(r) via entropy-
-    # based evolution (T-S formalism).  Zalmoxis only provides the initial
-    # structure mesh (r, P, rho, g).  PROTEUS sets temperature_mode='adiabatic'
-    # in the config, but the convergence loop below breaks on mass convergence
-    # BEFORE the adiabat gate fires — so the structure is solved with a
-    # linear T initial guess.  This is correct: the T profile only affects
-    # the density (via T-dep EOS), and the density difference between linear T
-    # and an adiabat is small enough (~5-10%) to produce a valid mesh.  SPIDER
-    # then self-corrects T(r) through its own physics.
+    #   Phase 1: converge the structure with a linear T initial guess.
+    #   Phase 2: gradually blend in the adiabatic T profile, re-converging
+    #            the structure at each blend step.
     #
-    # WARNING: Do NOT prevent the mass-convergence break (line ~691) from
-    # firing in order to force the adiabat gate to activate.  Switching from
-    # a converged linear-T structure to an adiabat disrupts the converged
-    # state, and the iterative solver diverges (mass→0, radius→15 R_earth).
-    # If standalone adiabat mode is needed, the transition must be gradual
-    # (e.g., blended T) or the solver must be restructured for co-refinement.
+    # The blending prevents divergence that would occur from switching to the
+    # full adiabat in a single step (the density change disrupts the converged
+    # radius/mass balance).  The blend ramps linearly from 0 to 1 over
+    # several outer iterations (_ADIABAT_BLEND_STEP controls the increment).
+    #
+    # In the PROTEUS-SPIDER coupling, SPIDER provides its own T(r) via
+    # entropy evolution (T-S formalism).  The adiabat refinement here still
+    # runs and produces a more accurate initial structure mesh for SPIDER.
     # -------------------------------------------------------------------
 
     # Storage for the previous iteration's converged profiles.
@@ -452,11 +445,11 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
     prev_pressure = None
     prev_mass_enclosed = None
 
-    # Adiabat gate: activates once mass converges (see long comment above).
-    # In PROTEUS coupling, the break at line ~691 fires first, so
-    # _using_adiabat stays False and compute_adiabatic_temperature() is
-    # never called.  This is intentional.
+    # Adiabat state: _using_adiabat becomes True once mass converges with
+    # linear T.  _adiabat_blend ramps from 0 to 1 over subsequent iterations.
     _using_adiabat = False
+    _adiabat_blend = 0.0
+    _ADIABAT_BLEND_STEP = 0.5
 
     # Solve the interior structure
     for outer_iter in range(max_iterations_outer):
@@ -468,29 +461,11 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
         pressure = np.zeros(num_layers)
 
         if uses_Tdep:
-            # ADIABAT GATE — activates compute_adiabatic_temperature() once
-            # the mass has converged with a linear T guess.  In practice,
-            # the break at the bottom of the outer loop (line ~691) fires
-            # on mass convergence BEFORE the next iteration reaches this
-            # gate, so this code path is not exercised in the PROTEUS
-            # coupling.  It exists for standalone Zalmoxis use where the
-            # adiabat would provide a better T(r) than a linear guess.
-            # See the long comment block above _using_adiabat for context.
-            if not _using_adiabat and temperature_mode == 'adiabatic':
-                prev_mass_converged = (
-                    prev_mass_enclosed is not None
-                    and abs(prev_mass_enclosed[-1] - planet_mass) / planet_mass
-                    < tolerance_outer
-                )
-                if prev_mass_converged:
-                    _using_adiabat = True
-                    logger.info(
-                        f'Outer iter {outer_iter}: mass converged with linear T, '
-                        f'switching to adiabatic temperature profile.'
-                    )
-
             if _using_adiabat and prev_pressure is not None:
-                # Recompute adiabat from previous iteration's converged structure
+                # Ramp blend factor toward full adiabat
+                _adiabat_blend = min(_adiabat_blend + _ADIABAT_BLEND_STEP, 1.0)
+
+                # Compute adiabat from previous iteration's structure
                 adiabat_T = compute_adiabatic_temperature(
                     prev_radii,
                     prev_pressure,
@@ -503,11 +478,30 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                     interpolation_cache,
                 )
 
-                # Interpolate adiabat (on prev grid) onto current grid
-                def temperature_function(r, _T=adiabat_T, _r=prev_radii):
+                # Interpolate adiabat onto current grid
+                adiabat_on_grid = np.interp(radii, prev_radii, adiabat_T)
+
+                if _adiabat_blend < 1.0:
+                    # Blend with linear profile for solver stability
+                    linear_func = calculate_temperature_profile(
+                        radii, 'linear', surface_temperature,
+                        center_temperature, input_dir, temp_profile_file,
+                    )
+                    blended = (
+                        (1 - _adiabat_blend) * linear_func(radii)
+                        + _adiabat_blend * adiabat_on_grid
+                    )
+                else:
+                    blended = adiabat_on_grid
+
+                def temperature_function(r, _T=blended, _r=radii):
                     return np.interp(np.array(r), _r, _T)
 
                 temperatures = temperature_function(radii)
+                verbose and logger.info(
+                    f'Outer iter {outer_iter}: '
+                    f'adiabat blend = {_adiabat_blend:.2f}'
+                )
             else:
                 temperature_function = calculate_temperature_profile(
                     radii,
@@ -745,17 +739,24 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
 
         relative_diff_outer_mass = np.abs((calculated_mass - planet_mass) / planet_mass)
 
-        # MASS CONVERGENCE BREAK — exits the outer loop when total mass
-        # matches the target.  This break fires before the adiabat gate
-        # at the top of the loop can activate (both check the same
-        # tolerance on successive iterations).  This is correct for the
-        # PROTEUS coupling where SPIDER handles T(r) evolution.
-        # Do NOT add conditions that skip this break — see the warning
-        # in the comment block above _using_adiabat.
+        # MASS CONVERGENCE CHECK
         if relative_diff_outer_mass < tolerance_outer:
-            logger.info(f'Outer loop (total mass) converged after {outer_iter + 1} iterations.')
-            converged_mass = True
-            break
+            if temperature_mode == 'adiabatic' and _adiabat_blend < 1.0:
+                # Mass converged but adiabat not yet fully active.
+                # Activate adiabat refinement and continue iterating.
+                if not _using_adiabat:
+                    _using_adiabat = True
+                    logger.info(
+                        f'Outer iter {outer_iter}: mass converged with linear T, '
+                        f'beginning adiabatic temperature refinement.'
+                    )
+            else:
+                logger.info(
+                    f'Outer loop (total mass) converged after '
+                    f'{outer_iter + 1} iterations.'
+                )
+                converged_mass = True
+                break
 
         if outer_iter == max_iterations_outer - 1:
             verbose and logger.warning(
