@@ -74,6 +74,35 @@ material_properties_iron_RTPress100TPa_silicate_planets = {
     },
 }
 
+# Material Properties for iron/silicate planets with iron EOS according to Seager et al. (2007)
+# and PALEOS MgSiO3 EOS (solid + liquid tables from Zenodo 18924171, P: 1 bar–100 TPa)
+material_properties_iron_PALEOS_silicate_planets = {
+    'core': {
+        # Iron, modeled in Seager et al. (2007) using the Vinet EOS fit to the epsilon phase of Fe and DFT calculations
+        'eos_file': os.path.join(
+            ZALMOXIS_ROOT, 'data', 'EOS_Seager2007', 'eos_seager07_iron.txt'
+        )
+    },
+    'melted_mantle': {
+        'eos_file': os.path.join(
+            ZALMOXIS_ROOT,
+            'data',
+            'EOS_PALEOS_MgSiO3',
+            'paleos_mgsio3_tables_pt_proteus_liquid.dat',
+        ),
+        'format': 'paleos',
+    },
+    'solid_mantle': {
+        'eos_file': os.path.join(
+            ZALMOXIS_ROOT,
+            'data',
+            'EOS_PALEOS_MgSiO3',
+            'paleos_mgsio3_tables_pt_proteus_solid.dat',
+        ),
+        'format': 'paleos',
+    },
+}
+
 # Material Properties for water planets according to Seager et al. (2007) at 300 K
 material_properties_water_planets = {
     'core': {

@@ -6,8 +6,8 @@ Imports
 - [`constants`](zalmoxis.constants.md): TDEP_EOS_NAMES, earth_center_pressure, earth_mass, earth_radius
 - [`eos_analytic`](zalmoxis.eos_analytic.md): VALID_MATERIAL_KEYS
 - [`eos_functions`](zalmoxis.eos_functions.md): calculate_density, calculate_temperature_profile, create_pressure_density_files, get_solidus_liquidus_functions, get_Tdep_material
-- [`eos_properties`](zalmoxis.eos_properties.md): material_properties_iron_RTPress100TPa_silicate_planets, material_properties_iron_silicate_planets,
-        material_properties_iron_Tdep_silicate_planets, material_properties_water_planets
+- [`eos_properties`](zalmoxis.eos_properties.md): material_properties_iron_PALEOS_silicate_planets, material_properties_iron_RTPress100TPa_silicate_planets,
+        material_properties_iron_silicate_planets, material_properties_iron_Tdep_silicate_planets, material_properties_water_planets
 - [`structure_model`](zalmoxis.structure_model.md): get_layer_eos, solve_structure
 """
 
@@ -34,6 +34,7 @@ from .eos_functions import (
     get_Tdep_material,
 )
 from .eos_properties import (
+    material_properties_iron_PALEOS_silicate_planets,
     material_properties_iron_RTPress100TPa_silicate_planets,
     material_properties_iron_silicate_planets,
     material_properties_iron_Tdep_silicate_planets,
@@ -74,6 +75,7 @@ VALID_TABULATED_EOS = {
     'Seager2007:MgSiO3',
     'WolfBower2018:MgSiO3',
     'RTPress100TPa:MgSiO3',
+    'PALEOS:MgSiO3',
     'Seager2007:H2O',
 }
 
@@ -88,6 +90,10 @@ WOLFBOWER2018_MAX_MASS_EARTH = 7.0
 # temperatures the mantle is predominantly molten, so the solid table limitation
 # is less constraining. Safe up to ~50 M_earth.
 RTPRESS100TPA_MAX_MASS_EARTH = 50.0
+
+# PALEOS MgSiO3 tables extend to 100 TPa for both solid and liquid phases.
+# Safe up to ~50 M_earth (same pressure ceiling as RTPress100TPa).
+PALEOS_MAX_MASS_EARTH = 50.0
 
 
 def parse_eos_config(eos_section):
@@ -280,14 +286,15 @@ def load_material_dictionaries():
     Returns
     -------
     tuple
-        (iron_silicate, iron_Tdep_silicate, water, iron_RTPress100TPa_silicate)
-        material property dicts.
+        (iron_silicate, iron_Tdep_silicate, water, iron_RTPress100TPa_silicate,
+         iron_PALEOS_silicate) material property dicts.
     """
     material_dictionaries = (
         material_properties_iron_silicate_planets,
         material_properties_iron_Tdep_silicate_planets,
         material_properties_water_planets,
         material_properties_iron_RTPress100TPa_silicate_planets,
+        material_properties_iron_PALEOS_silicate_planets,
     )
     return material_dictionaries
 
@@ -388,6 +395,12 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                     'The RTPress100TPa melt table extends to 100 TPa but '
                     'the solid table is limited to 1 TPa.'
                 )
+            elif eos_name == 'PALEOS:MgSiO3':
+                max_mass = PALEOS_MAX_MASS_EARTH
+                reason = (
+                    'The PALEOS MgSiO3 tables extend to 100 TPa for both '
+                    'solid and liquid phases.'
+                )
             else:
                 continue
             if mass_in_earth > max_mass:
@@ -420,30 +433,23 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
     else:
         solidus_func, liquidus_func = None, None
 
-    # --- Adiabatic temperature mode (standalone Zalmoxis only) -----------
+    # --- Adiabatic temperature mode (standalone Zalmoxis) ----------------
     #
     # When temperature_mode='adiabatic', Zalmoxis computes a self-consistent
-    # T(r) from dT/dP adiabat tables.  This is a STANDALONE Zalmoxis feature
-    # for structure calculations where no external interior solver provides
-    # T(r).
+    # T(r) from EOS adiabat gradient tables. The transition from the initial
+    # linear-T guess to the full adiabat is GRADUAL via a blending parameter:
     #
-    # In the PROTEUS-SPIDER-Zalmoxis coupling, this mode is NOT used for
-    # thermal evolution.  SPIDER computes its own adiabatic T(r) via entropy-
-    # based evolution (T-S formalism).  Zalmoxis only provides the initial
-    # structure mesh (r, P, rho, g).  PROTEUS sets temperature_mode='adiabatic'
-    # in the config, but the convergence loop below breaks on mass convergence
-    # BEFORE the adiabat gate fires — so the structure is solved with a
-    # linear T initial guess.  This is correct: the T profile only affects
-    # the density (via T-dep EOS), and the density difference between linear T
-    # and an adiabat is small enough (~5-10%) to produce a valid mesh.  SPIDER
-    # then self-corrects T(r) through its own physics.
+    #   blend = 0.0   (iteration 0: pure linear T)
+    #   blend = 0.5   (first post-convergence iteration: half adiabat)
+    #   blend = 1.0   (second post-convergence iteration: full adiabat)
     #
-    # WARNING: Do NOT prevent the mass-convergence break (line ~691) from
-    # firing in order to force the adiabat gate to activate.  Switching from
-    # a converged linear-T structure to an adiabat disrupts the converged
-    # state, and the iterative solver diverges (mass→0, radius→15 R_earth).
-    # If standalone adiabat mode is needed, the transition must be gradual
-    # (e.g., blended T) or the solver must be restructured for co-refinement.
+    # This blending prevents the solver from diverging when the temperature
+    # profile changes abruptly from linear to adiabatic.
+    #
+    # In the PROTEUS-SPIDER coupling, temperature_mode is typically
+    # 'adiabatic' in the config, but the blend never activates because
+    # the initial linear-T structure converges and the mass break fires
+    # with blend=0. This is correct: SPIDER provides its own T(r).
     # -------------------------------------------------------------------
 
     # Storage for the previous iteration's converged profiles.
@@ -452,11 +458,10 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
     prev_pressure = None
     prev_mass_enclosed = None
 
-    # Adiabat gate: activates once mass converges (see long comment above).
-    # In PROTEUS coupling, the break at line ~691 fires first, so
-    # _using_adiabat stays False and compute_adiabatic_temperature() is
-    # never called.  This is intentional.
+    # Adiabat blending state.
     _using_adiabat = False
+    _adiabat_blend = 0.0
+    _ADIABAT_BLEND_STEP = 0.5
 
     # Solve the interior structure
     for outer_iter in range(max_iterations_outer):
@@ -468,28 +473,23 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
         pressure = np.zeros(num_layers)
 
         if uses_Tdep:
-            # ADIABAT GATE — activates compute_adiabatic_temperature() once
-            # the mass has converged with a linear T guess.  In practice,
-            # the break at the bottom of the outer loop (line ~691) fires
-            # on mass convergence BEFORE the next iteration reaches this
-            # gate, so this code path is not exercised in the PROTEUS
-            # coupling.  It exists for standalone Zalmoxis use where the
-            # adiabat would provide a better T(r) than a linear guess.
-            # See the long comment block above _using_adiabat for context.
-            if not _using_adiabat and temperature_mode == 'adiabatic':
-                prev_mass_converged = (
-                    prev_mass_enclosed is not None
-                    and abs(prev_mass_enclosed[-1] - planet_mass) / planet_mass
-                    < tolerance_outer
-                )
-                if prev_mass_converged:
-                    _using_adiabat = True
-                    logger.info(
-                        f'Outer iter {outer_iter}: mass converged with linear T, '
-                        f'switching to adiabatic temperature profile.'
-                    )
+            # Compute the linear (initial guess) temperature profile
+            linear_temperature_function = calculate_temperature_profile(
+                radii,
+                'linear',
+                surface_temperature,
+                center_temperature,
+                input_dir,
+                temp_profile_file,
+            )
 
             if _using_adiabat and prev_pressure is not None:
+                # Bump blend toward full adiabat
+                _adiabat_blend = min(1.0, _adiabat_blend + _ADIABAT_BLEND_STEP)
+                verbose and logger.info(
+                    f'Outer iter {outer_iter}: adiabat blend = {_adiabat_blend:.2f}'
+                )
+
                 # Recompute adiabat from previous iteration's converged structure
                 adiabat_T = compute_adiabatic_temperature(
                     prev_radii,
@@ -501,22 +501,25 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                     layer_eos_config,
                     material_dictionaries,
                     interpolation_cache,
+                    solidus_func,
+                    liquidus_func,
                 )
 
-                # Interpolate adiabat (on prev grid) onto current grid
-                def temperature_function(r, _T=adiabat_T, _r=prev_radii):
+                T_linear = linear_temperature_function(radii)
+                T_adiabat = np.interp(radii, prev_radii, adiabat_T)
+
+                if _adiabat_blend < 1.0:
+                    temperatures = (
+                        1.0 - _adiabat_blend
+                    ) * T_linear + _adiabat_blend * T_adiabat
+                else:
+                    temperatures = T_adiabat
+
+                # Build a callable for the ODE solver
+                def temperature_function(r, _T=temperatures, _r=radii):
                     return np.interp(np.array(r), _r, _T)
-
-                temperatures = temperature_function(radii)
             else:
-                temperature_function = calculate_temperature_profile(
-                    radii,
-                    temperature_mode,
-                    surface_temperature,
-                    center_temperature,
-                    input_dir,
-                    temp_profile_file,
-                )
+                temperature_function = linear_temperature_function
                 temperatures = temperature_function(radii)
         else:
             temperatures = np.ones(num_layers) * 300
@@ -745,14 +748,21 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
 
         relative_diff_outer_mass = np.abs((calculated_mass - planet_mass) / planet_mass)
 
-        # MASS CONVERGENCE BREAK — exits the outer loop when total mass
-        # matches the target.  This break fires before the adiabat gate
-        # at the top of the loop can activate (both check the same
-        # tolerance on successive iterations).  This is correct for the
-        # PROTEUS coupling where SPIDER handles T(r) evolution.
-        # Do NOT add conditions that skip this break — see the warning
-        # in the comment block above _using_adiabat.
+        # MASS CONVERGENCE CHECK
+        # When temperature_mode='adiabatic' and the blend has not yet reached
+        # 1.0, mass convergence triggers the adiabat transition instead of
+        # breaking. The blend ramps 0 -> 0.5 -> 1.0 over successive mass
+        # convergences, preventing solver divergence.
         if relative_diff_outer_mass < tolerance_outer:
+            if temperature_mode == 'adiabatic' and _adiabat_blend < 1.0:
+                if not _using_adiabat:
+                    _using_adiabat = True
+                    logger.info(
+                        f'Outer iter {outer_iter}: mass converged with linear T, '
+                        f'activating adiabat blend.'
+                    )
+                # Continue iterating to let the blend ramp up
+                continue
             logger.info(f'Outer loop (total mass) converged after {outer_iter + 1} iterations.')
             converged_mass = True
             break

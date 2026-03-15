@@ -224,6 +224,15 @@ def download_data():
         zenodo_id=15728138,
         keep_files=['liquidus.dat', 'solidus.dat'],
     )
+    download(
+        folder='EOS_PALEOS_MgSiO3',
+        data_dir=Path(ZALMOXIS_ROOT, 'data'),
+        zenodo_id=18924171,
+        keep_files=[
+            'paleos_mgsio3_tables_pt_proteus_solid.dat',
+            'paleos_mgsio3_tables_pt_proteus_liquid.dat',
+        ],
+    )
 
 
 if __name__ == '__main__':
