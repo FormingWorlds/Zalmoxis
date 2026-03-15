@@ -14,7 +14,12 @@ import logging
 import os
 
 import numpy as np
-from scipy.interpolate import LinearNDInterpolator, RegularGridInterpolator, interp1d
+from scipy.interpolate import (
+    LinearNDInterpolator,
+    NearestNDInterpolator,
+    RegularGridInterpolator,
+    interp1d,
+)
 
 from .eos_analytic import get_analytic_density
 
@@ -102,15 +107,86 @@ def load_paleos_table(eos_file):
         fill_value=np.nan,
     )
 
+    # Per-pressure valid T bounds for per-cell clamping.
+    # At each pressure row, find the min and max log10(T) with finite density.
+    # This lets us clamp queries into the valid domain when the grid has NaN
+    # holes in the corners (e.g. high T at low P in the liquid table).
+    logt_valid_min = np.full(n_p, np.nan)
+    logt_valid_max = np.full(n_p, np.nan)
+    for ip in range(n_p):
+        finite_mask = np.isfinite(density_grid[ip, :])
+        if finite_mask.any():
+            valid_indices = np.where(finite_mask)[0]
+            logt_valid_min[ip] = unique_log_t[valid_indices[0]]
+            logt_valid_max[ip] = unique_log_t[valid_indices[-1]]
+
+    # Nearest-neighbor fallback interpolators built from valid cells only.
+    # Used when bilinear interpolation returns NaN near the ragged domain
+    # boundary (a valid cell neighboring a NaN cell poisons bilinear output).
+    valid_cells = np.isfinite(density_grid)
+    ip_valid, it_valid = np.where(valid_cells)
+    coords_valid = np.column_stack([unique_log_p[ip_valid], unique_log_t[it_valid]])
+
+    density_nn = NearestNDInterpolator(coords_valid, density_grid[valid_cells])
+    nabla_ad_nn = NearestNDInterpolator(
+        coords_valid[np.isfinite(nabla_ad_grid[valid_cells])],
+        nabla_ad_grid[valid_cells][np.isfinite(nabla_ad_grid[valid_cells])],
+    )
+
     return {
         'type': 'paleos',
         'density_interp': density_interp,
         'nabla_ad_interp': nabla_ad_interp,
+        'density_nn': density_nn,
+        'nabla_ad_nn': nabla_ad_nn,
         'p_min': 10.0 ** unique_log_p[0],
         'p_max': 10.0 ** unique_log_p[-1],
         't_min': 10.0 ** unique_log_t[0],
         't_max': 10.0 ** unique_log_t[-1],
+        'unique_log_p': unique_log_p,
+        'logt_valid_min': logt_valid_min,
+        'logt_valid_max': logt_valid_max,
     }
+
+
+# Track whether the per-cell clamping warning has been issued for each file,
+# to avoid flooding the log with repeated messages.
+_paleos_clamp_warned = set()
+
+
+def _paleos_clamp_temperature(log_p, log_t, cached):
+    """Clamp log10(T) to the per-pressure valid range of a PALEOS table.
+
+    Parameters
+    ----------
+    log_p : float
+        log10 of pressure in Pa (already clamped to table bounds).
+    log_t : float
+        log10 of temperature in K.
+    cached : dict
+        PALEOS cache entry from ``load_paleos_table()``.
+
+    Returns
+    -------
+    float
+        Clamped log10(T), guaranteed to fall within the valid data region
+        at the given pressure.
+    bool
+        True if clamping was applied, False if the original value was valid.
+    """
+    ulp = cached['unique_log_p']
+    lt_min = cached['logt_valid_min']
+    lt_max = cached['logt_valid_max']
+
+    # Interpolate per-pressure T bounds at the query pressure
+    local_tmin = float(np.interp(log_p, ulp, lt_min))
+    local_tmax = float(np.interp(log_p, ulp, lt_max))
+
+    if log_t < local_tmin:
+        return local_tmin, True
+    elif log_t > local_tmax:
+        return local_tmax, True
+    return log_t, False
 
 
 def get_tabulated_eos(
@@ -242,23 +318,38 @@ def get_tabulated_eos(
             if temperature is None:
                 raise ValueError('Temperature must be provided.')
             p_min, p_max = cached['p_min'], cached['p_max']
-            t_min, t_max = cached['t_min'], cached['t_max']
 
-            # Clamp pressure and temperature to table bounds
+            # Clamp pressure to global bounds
             if pressure < p_min or pressure > p_max:
                 logger.debug(
                     f'PALEOS: Pressure {pressure:.2e} Pa out of bounds '
                     f'[{p_min:.2e}, {p_max:.2e}]. Clamping.'
                 )
                 pressure = np.clip(pressure, p_min, p_max)
-            if temperature < t_min:
-                temperature = t_min
-            elif temperature > t_max:
-                temperature = t_max
 
-            density = float(
-                cached['density_interp']((np.log10(pressure), np.log10(temperature)))
-            )
+            log_p = np.log10(pressure)
+            log_t = np.log10(max(temperature, 1.0))  # guard log10(0)
+
+            # Per-cell clamping: restrict T to the valid data range at this P
+            log_t_clamped, was_clamped = _paleos_clamp_temperature(log_p, log_t, cached)
+            if was_clamped and eos_file not in _paleos_clamp_warned:
+                _paleos_clamp_warned.add(eos_file)
+                t_orig = temperature
+                t_new = 10.0**log_t_clamped
+                logger.warning(
+                    f'PALEOS per-cell clamping active for {os.path.basename(eos_file)}: '
+                    f'T={t_orig:.0f} K clamped to {t_new:.0f} K at P={pressure:.2e} Pa. '
+                    f'The table has no valid data at this (P,T). '
+                    f'Density values near the table boundary may be inaccurate.'
+                )
+
+            density = float(cached['density_interp']((log_p, log_t_clamped)))
+
+            # Nearest-neighbor fallback: bilinear interpolation returns NaN
+            # when a valid cell neighbors a NaN cell near the ragged domain
+            # boundary. Fall back to the nearest valid grid cell.
+            if not np.isfinite(density):
+                density = float(cached['density_nn']((log_p, log_t_clamped)))
         elif material == 'melted_mantle' or material == 'solid_mantle':
             if temperature is None:
                 raise ValueError('Temperature must be provided.')
@@ -687,13 +778,29 @@ def _get_paleos_nabla_ad(pressure, temperature, material_dict, phase, interpolat
 
     cached = interpolation_functions[eos_file]
     p_min, p_max = cached['p_min'], cached['p_max']
-    t_min, t_max = cached['t_min'], cached['t_max']
 
-    # Clamp to table bounds
+    # Clamp pressure to global bounds
     p_clamped = np.clip(pressure, p_min, p_max)
-    t_clamped = np.clip(temperature, t_min, t_max)
+    log_p = np.log10(p_clamped)
+    log_t = np.log10(max(temperature, 1.0))
 
-    val = float(cached['nabla_ad_interp']((np.log10(p_clamped), np.log10(t_clamped))))
+    # Per-cell clamping: restrict T to the valid data range at this P
+    log_t_clamped, was_clamped = _paleos_clamp_temperature(log_p, log_t, cached)
+    if was_clamped and eos_file not in _paleos_clamp_warned:
+        _paleos_clamp_warned.add(eos_file)
+        logger.warning(
+            f'PALEOS per-cell clamping active for nabla_ad in '
+            f'{os.path.basename(eos_file)}: '
+            f'T={temperature:.0f} K clamped to {10.0**log_t_clamped:.0f} K '
+            f'at P={pressure:.2e} Pa.'
+        )
+
+    val = float(cached['nabla_ad_interp']((log_p, log_t_clamped)))
+
+    # Nearest-neighbor fallback for ragged boundary
+    if not np.isfinite(val):
+        val = float(cached['nabla_ad_nn']((log_p, log_t_clamped)))
+
     if np.isfinite(val):
         return val
     return None
