@@ -195,8 +195,10 @@ def stixrude14_solidus(P):
 
     T_solidus = T_liquidus * (1 - ln(x0))^{-1}
 
-    With x0 = 0.79 this reproduces the experimentally measured solidus
-    of 4100 K at 140 GPa (Fiquet et al. 2010).
+    With x0 = 0.79 this gives ~4370 K at 140 GPa, approximately
+    consistent with the experimentally measured solidus of an Earth-like
+    mantle composition (~4100 K at 140 GPa, Fiquet et al. 2010). The
+    ~270 K offset is within the uncertainty of the cryoscopic model.
 
     Parameters
     ----------

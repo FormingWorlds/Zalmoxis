@@ -69,7 +69,11 @@ def _run_paleos(mass_earth, temperature_mode='linear'):
     model_results = zalmoxis.main(
         config_params,
         material_dictionaries=zalmoxis.load_material_dictionaries(),
-        melting_curves_functions=load_solidus_liquidus_functions(layer_eos_config),
+        melting_curves_functions=load_solidus_liquidus_functions(
+            layer_eos_config,
+            config_params.get('rock_solidus', 'Stixrude14-solidus'),
+            config_params.get('rock_liquidus', 'Stixrude14-liquidus'),
+        ),
         input_dir=os.path.join(root, 'input'),
     )
     return model_results

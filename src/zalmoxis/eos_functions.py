@@ -182,6 +182,11 @@ def _paleos_clamp_temperature(log_p, log_t, cached):
     local_tmin = float(np.interp(log_p, ulp, lt_min))
     local_tmax = float(np.interp(log_p, ulp, lt_max))
 
+    # Guard: if the pressure is near an all-NaN row, the interpolated
+    # bounds are NaN. Return unclamped and let the NN fallback handle it.
+    if not (np.isfinite(local_tmin) and np.isfinite(local_tmax)):
+        return log_t, False
+
     if log_t < local_tmin:
         return local_tmin, True
     elif log_t > local_tmax:
@@ -944,6 +949,10 @@ def compute_adiabatic_temperature(
         )
 
         if layer_eos in TDEP_EOS_NAMES:
+            # Forward Euler step evaluated at the outboard point (i+1).
+            # First-order accurate; may show minor T artifacts near the
+            # solidus/liquidus where nabla_ad changes rapidly. A midpoint
+            # rule would improve accuracy but is not implemented yet.
             P_eval = pressure[i + 1]
             T_eval = T[i + 1]
             dP = pressure[i] - pressure[i + 1]  # positive going inward

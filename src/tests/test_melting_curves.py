@@ -84,6 +84,15 @@ class TestMonteux16Liquidus:
         T_liq = monteux16_liquidus(P, model='A-chondritic')
         assert np.all(T_liq > T_sol), 'Liquidus must exceed solidus up to 400 GPa'
 
+    def test_liquidus_above_solidus_F_peridotitic(self):
+        """F-peridotitic liquidus should also be above solidus up to 140 GPa."""
+        from zalmoxis.melting_curves import monteux16_liquidus, monteux16_solidus
+
+        P = np.logspace(5, np.log10(140e9), 200)  # up to 140 GPa (experimental range)
+        T_sol = monteux16_solidus(P)
+        T_liq = monteux16_liquidus(P, model='F-peridotitic')
+        assert np.all(T_liq > T_sol), 'F-peridotitic liquidus must exceed solidus up to 140 GPa'
+
     def test_both_models_available(self):
         """Both A-chondritic and F-peridotitic models should return valid T."""
         from zalmoxis.melting_curves import monteux16_liquidus

@@ -492,10 +492,18 @@ class TestAdiabaticBlendMechanism:
     """Tests for the adiabat blend convergence loop (0 -> 0.5 -> 1.0)."""
 
     def test_blend_step_constant(self):
-        """The blend step should be 0.5 (transitions: 0 -> 0.5 -> 1.0)."""
-        # Verify the constant value is set correctly in the module
-        # This is a design invariant: two extra iterations after mass convergence
-        assert 0.5 == pytest.approx(0.5)
+        """The blend step should be 0.5 (transitions: 0 -> 0.5 -> 1.0).
+
+        The blend step is a local variable inside main(), not directly
+        importable. This test verifies the design invariant by checking
+        the source code text.
+        """
+        import inspect
+
+        from zalmoxis.zalmoxis import main
+
+        source = inspect.getsource(main)
+        assert '_ADIABAT_BLEND_STEP = 0.5' in source
 
     def test_blend_state_variables_default(self):
         """Blend state should initialize to 0.0 (pure linear T)."""
