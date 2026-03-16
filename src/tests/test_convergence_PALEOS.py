@@ -1,7 +1,9 @@
 """Integration tests for the PALEOS:MgSiO3 EOS convergence.
 
-Tests that the full solver converges with PALEOS tables and that
-adiabatic mode produces different results from linear mode.
+Tests that the full solver converges with PALEOS tables for both linear
+and adiabatic temperature modes across a range of planetary masses.
+The adiabatic mode uses T(P) parameterization to avoid PALEOS table
+NaN gaps during the Brent pressure solver's bracket search.
 
 See also:
 - docs/test_infrastructure.md
@@ -73,6 +75,9 @@ def _run_paleos(mass_earth, temperature_mode='linear'):
     return model_results
 
 
+# ── Linear mode convergence ────────────────────────────────────────────
+
+
 @pytest.mark.integration
 def test_PALEOS_converges_1Mearth():
     """PALEOS:MgSiO3 should converge for a 1 M_earth planet (linear T mode)."""
@@ -83,7 +88,6 @@ def test_PALEOS_converges_1Mearth():
 
     assert results['converged'], 'PALEOS model did not converge for 1 M_earth'
 
-    # Radius should be close to Earth (0.8-1.2 R_earth for iron+MgSiO3)
     R = results['radii'][-1] / earth_radius
     assert 0.8 < R < 1.3, f'PALEOS 1 M_earth radius {R:.3f} R_earth out of expected range'
 
@@ -100,6 +104,9 @@ def test_PALEOS_converges_5Mearth():
 
     R = results['radii'][-1] / earth_radius
     assert 1.2 < R < 2.0, f'PALEOS 5 M_earth radius {R:.3f} R_earth out of expected range'
+
+
+# ── Adiabatic mode: issue #55 fix ─────────────────────────────────────
 
 
 @pytest.mark.integration
@@ -124,7 +131,6 @@ def test_PALEOS_adiabatic_differs_from_linear():
     T_center_linear = results_linear['temperature'][0]
     T_center_adiabatic = results_adiabatic['temperature'][0]
 
-    # Radii should differ (adiabat changes density via T-dep EOS)
     R_diff = abs(R_adiabatic - R_linear) / R_linear
     assert R_diff > 1e-4, (
         f'Adiabatic and linear radii are too similar: '
@@ -133,7 +139,6 @@ def test_PALEOS_adiabatic_differs_from_linear():
         f'relative diff={R_diff:.2e}'
     )
 
-    # Center temperatures should differ significantly
     T_diff = abs(T_center_adiabatic - T_center_linear)
     assert T_diff > 10, (
         f'Adiabatic and linear center temperatures too similar: '
@@ -152,12 +157,62 @@ def test_PALEOS_adiabatic_physically_reasonable():
 
     T = results['temperature']
 
-    # No NaN or Inf
     assert np.all(np.isfinite(T)), 'Temperature profile has non-finite values'
-
-    # Center temperature should be higher than surface (adiabat goes up inward)
     assert T[0] > T[-1], f'Center T ({T[0]:.0f} K) should exceed surface T ({T[-1]:.0f} K)'
-
-    # Center temperature should be reasonable for 1 M_earth
     assert T[0] < 15000, f'Center temperature {T[0]:.0f} K unreasonably high'
     assert T[0] > 3000, f'Center temperature {T[0]:.0f} K unreasonably low'
+
+
+# ── Higher-mass adiabatic convergence (T(P) parameterization) ──────────
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize('mass', [3, 5, 10])
+def test_PALEOS_adiabatic_high_mass_converges(mass):
+    """PALEOS adiabatic mode should converge for higher-mass planets.
+
+    Regression test for the T(P) parameterization fix. Previously, the
+    Brent pressure solver's bracket search created unphysical (low P, high T)
+    queries that hit NaN gaps in the PALEOS tables, causing 14%+ mass errors
+    and non-convergence for planets above ~2.8 M_earth.
+    """
+    if not _paleos_data_available():
+        pytest.skip('PALEOS data files not found')
+
+    results = _run_paleos(float(mass), temperature_mode='adiabatic')
+
+    assert results['converged'], f'PALEOS adiabatic did not converge for {mass} M_earth'
+
+    R = results['radii'][-1] / earth_radius
+    T = results['temperature']
+    M_calc = results['mass_enclosed'][-1]
+    mass_error = abs(M_calc - mass * earth_mass) / (mass * earth_mass)
+
+    # Mass error should be < 1% (the tolerance_outer is 0.3%)
+    assert mass_error < 0.01, f'{mass} M_earth mass error {mass_error * 100:.2f}% exceeds 1%'
+
+    # Physical checks
+    assert np.all(np.isfinite(T)), f'{mass} M_earth has non-finite T values'
+    assert T[0] > T[-1], f'{mass} M_earth center T should exceed surface T'
+
+    # Radius should be in a reasonable range
+    assert 0.5 < R < 3.0, f'{mass} M_earth radius {R:.3f} R_earth out of range'
+
+
+@pytest.mark.integration
+def test_PALEOS_adiabatic_radius_increases_with_mass():
+    """Planet radius should increase with mass for Earth-like composition."""
+    if not _paleos_data_available():
+        pytest.skip('PALEOS data files not found')
+
+    radii = []
+    for mass in [1.0, 5.0, 10.0]:
+        results = _run_paleos(mass, temperature_mode='adiabatic')
+        assert results['converged'], f'{mass} M_earth did not converge'
+        radii.append(results['radii'][-1])
+
+    for i in range(1, len(radii)):
+        assert radii[i] > radii[i - 1], (
+            f'Radius did not increase: R({[1, 5, 10][i - 1]})={radii[i - 1] / earth_radius:.3f} '
+            f'>= R({[1, 5, 10][i]})={radii[i] / earth_radius:.3f}'
+        )

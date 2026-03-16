@@ -59,6 +59,7 @@ Legacy global strings are still accepted via a backward-compatible mapping in `p
 | `Seager2007:H2O` | Tabulated | Water ice (VII/VIII/X) | 300 K |
 | `WolfBower2018:MgSiO3` | Tabulated | MgSiO$_3$ (solid + melt) | $T$-dependent ($\leq 7\,M_\oplus$) |
 | `RTPress100TPa:MgSiO3` | Tabulated | MgSiO$_3$ (solid + melt) | $T$-dependent ($\leq 50\,M_\oplus$) |
+| `PALEOS:MgSiO3` | Tabulated | MgSiO$_3$ (solid + liquid) | $T$-dependent ($\leq 50\,M_\oplus$), includes $\nabla_{\mathrm{ad}}$ |
 | `Analytic:<material>` | Analytic fit | Any of 6 materials | 300 K |
 
 ---
@@ -127,6 +128,30 @@ The solid table is clamped at 1 TPa, but this primarily affects cold planets whe
 The code allows planets up to 50 $M_\oplus$ with this EOS.
 Unlike `WolfBower2018:MgSiO3`, the central pressure is not capped by `max_center_pressure_guess` since the melt table covers the full range.
 
+### PALEOS MgSiO3 EOS
+
+The `PALEOS:MgSiO3` EOS provides separate solid and liquid MgSiO$_3$ tables from the PALEOS thermodynamic database (Zenodo record 18924171).
+Each table contains 10 columns in SI units: $P$, $T$, $\rho$, $u$, $s$, $c_p$, $c_v$, $\alpha$, $\nabla_{\mathrm{ad}}$, and phase identifier.
+The grid is log-uniform in both $P$ (1 bar to 100 TPa) and $T$ (300 K to 100,000 K) with 150 points per decade.
+
+Unlike WolfBower2018 and RTPress100TPa, the PALEOS tables include the dimensionless adiabatic gradient $\nabla_{\mathrm{ad}} = (d \ln T / d \ln P)_S$ for both solid and liquid phases.
+This enables a phase-aware adiabatic temperature profile:
+
+- Below the solidus: $\nabla_{\mathrm{ad}}$ from the solid table.
+- Above the liquidus: $\nabla_{\mathrm{ad}}$ from the liquid table.
+- In the mushy zone: melt-fraction-weighted average $(1 - \phi) \nabla_{\mathrm{ad,solid}} + \phi \, \nabla_{\mathrm{ad,liquid}}$.
+
+The adiabatic gradient is converted to $dT/dP = \nabla_{\mathrm{ad}} \cdot T / P$ for integration from the surface inward.
+
+**Grid coverage.** The PALEOS tables have missing cells at corners of the $P$--$T$ domain where the thermodynamic solver did not converge (solid table: 75% filled, liquid table: 53% filled).
+Per-cell temperature clamping restricts queries to the valid data range at each pressure, and a nearest-neighbor fallback handles remaining NaN results near the ragged domain boundary.
+In adiabatic mode, the temperature is parameterized as $T(P)$ rather than $T(r)$, ensuring that the Brent pressure solver always evaluates thermodynamically consistent $(P, T)$ pairs within the valid table domain.
+
+**Melting curves.** Phase routing uses configurable solidus and liquidus curves (see [Melting curve selection](../How-to/configuration.md#melting-curve-selection)).
+The default analytic Monteux+2016 curves are defined for all pressures, eliminating the NaN-at-boundary issue of the legacy tabulated curves.
+
+**Mass limit.** Both solid and liquid tables extend to 100 TPa, supporting planets up to ~50 $M_\oplus$.
+
 ### Analytic Modified Polytrope (Seager et al. 2007)
 
 The analytic EOS implements the modified polytropic fit from [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346), Table 3, Eq. 11:
@@ -168,6 +193,7 @@ Because any of the six materials can be assigned to any structural layer, the an
 | `Seager2007:H2O` | 0--$10^{16}$ Pa | 300 K (fixed) | ~50 $M_\oplus$ | Experimental + DFT + TFD |
 | `WolfBower2018:MgSiO3` | 0--$10^{12}$ Pa (1 TPa) | 0--16500 K | 7 $M_\oplus$ | RTpress; $P$ clamped at table edge, $T$ out-of-bounds raises error |
 | `RTPress100TPa:MgSiO3` | $10^3$--$10^{14}$ Pa (100 TPa) | 400--50000 K | 50 $M_\oplus$ | Extended melt table; solid from WB2018 (clamped at 1 TPa) |
+| `PALEOS:MgSiO3` | 1 bar--100 TPa | 300--100000 K | 50 $M_\oplus$ | Solid + liquid with $\nabla_{\mathrm{ad}}$; 75%/53% grid fill |
 | `Analytic:*` | 0--$10^{16}$ Pa | 300 K (fixed) | ~50 $M_\oplus$ | 2--12% accuracy vs. tabulated |
 
 ### General limits

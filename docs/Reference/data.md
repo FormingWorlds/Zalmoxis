@@ -27,6 +27,8 @@ The table below lists every data file used by Zalmoxis, organised by subdirector
 | `adiabat_temp_grad_melt.dat` | `data/EOS_WolfBower2018_1TPa/` | TSV (P in Pa, T in K, dT/dP in K/Pa) | [Wolf & Bower (2018)](https://doi.org/10.1016/j.pepi.2018.02.004) | MgSiO3 melt adiabatic temperature gradient $(dT/dP)_S$ (P: 0--1 TPa, T: 0--16500 K). Used for `"adiabatic"` temperature mode. |
 | `density_melt.dat` | `data/EOS_RTPress_melt_100TPa/` | TSV (P in Pa, T in K, rho in kg/m^3) | Extended RTpress melt table | MgSiO3 melt density EOS extended to 100 TPa (P: 1e3--1e14 Pa, T: 400--50000 K). Used by `RTPress100TPa:MgSiO3`. Solid phase uses the WolfBower2018 table above. |
 | `adiabat_temp_grad_melt.dat` | `data/EOS_RTPress_melt_100TPa/` | TSV (P in Pa, T in K, dT/dP in K/Pa) | Extended RTpress melt table | MgSiO3 melt adiabatic temperature gradient $(dT/dP)_S$ extended to 100 TPa (P: 1e3--1e14 Pa, T: 400--50000 K). Used for `"adiabatic"` temperature mode with `RTPress100TPa:MgSiO3`. |
+| `paleos_mgsio3_tables_pt_proteus_solid.dat` | `data/EOS_PALEOS_MgSiO3/` | Space-separated, 10 columns (P, T, rho, u, s, cp, cv, alpha, nabla_ad, phase_id) | PALEOS (Zenodo 18924171) | MgSiO3 solid-phase EOS with adiabatic gradient (P: 1 bar--100 TPa, T: 300 K--max(T_liquidus), 150 ppd log-uniform grid, 75% filled). |
+| `paleos_mgsio3_tables_pt_proteus_liquid.dat` | `data/EOS_PALEOS_MgSiO3/` | Space-separated, 10 columns (same as solid) | PALEOS (Zenodo 18924171) | MgSiO3 liquid-phase EOS with adiabatic gradient (P: 1 bar--100 TPa, T: min(T_solidus)--100000 K, 150 ppd log-uniform grid, 53% filled). |
 
 ### Melting curves
 
@@ -40,10 +42,7 @@ The table below lists every data file used by Zalmoxis, organised by subdirector
 | File | Location | Format | Source | Description |
 |------|----------|--------|--------|-------------|
 | `massradiusEarthlikeRocky.txt` | `data/mass_radius_curves/` | Space-separated (M in M_Earth, R in R_Earth) | [Zeng et al. (2019)](https://lweb.cfa.harvard.edu/~lzeng/planetmodels.html) | Earth-like rocky M-R curve (32.5% Fe + 67.5% MgSiO3) |
-| `massradiusFe.txt` | `data/mass_radius_curves/` | Space-separated (M in M_Earth, R in R_Earth) | [Zeng et al. (2019)](https://lweb.cfa.harvard.edu/~lzeng/planetmodels.html) | Pure iron M-R curve |
-| `massradiusmgsio3.txt` | `data/mass_radius_curves/` | Space-separated (M in M_Earth, R in R_Earth) | [Zeng et al. (2019)](https://lweb.cfa.harvard.edu/~lzeng/planetmodels.html) | Pure MgSiO3 M-R curve |
 | `massradius_50percentH2O_300K_1mbar.txt` | `data/mass_radius_curves/` | Space-separated (M in M_Earth, R in R_Earth) | [Zeng et al. (2019)](https://lweb.cfa.harvard.edu/~lzeng/planetmodels.html) | 50% H2O + 50% rocky M-R curve (300 K, 1 mbar surface) |
-| `massradius_100percentH2O_300K_1mbar.txt` | `data/mass_radius_curves/` | Space-separated (M in M_Earth, R in R_Earth) | [Zeng et al. (2019)](https://lweb.cfa.harvard.edu/~lzeng/planetmodels.html) | Pure H2O M-R curve (300 K, 1 mbar surface) |
 
 ### Radial profiles (validation benchmarks)
 
