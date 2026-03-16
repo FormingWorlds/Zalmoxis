@@ -178,6 +178,7 @@ cython_debug/
 /src/zalmoxis/plots/plot_analytical_eos_Seager07.py
 /src/tests/test1.py
 /src/tests/test2.py
+/src/tests/output/
 .ruff_cache/
 .DS_Store
 /input/temp_profile.txt
