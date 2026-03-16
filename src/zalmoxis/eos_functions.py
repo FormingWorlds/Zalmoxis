@@ -452,25 +452,28 @@ def load_melting_curve(melt_file):
         return None
 
 
-def get_solidus_liquidus_functions():
-    """
-    Load the solidus and liquidus melting curves for the silicate mantle EOS.
+def get_solidus_liquidus_functions(
+    solidus_id='Monteux16-solidus', liquidus_id='Monteux16-liquidus-A-chondritic'
+):
+    """Load solidus and liquidus melting curves by config identifier.
+
+    Delegates to :func:`zalmoxis.melting_curves.get_solidus_liquidus_functions`.
+
+    Parameters
+    ----------
+    solidus_id : str
+        Solidus curve identifier.
+    liquidus_id : str
+        Liquidus curve identifier.
 
     Returns
     -------
     tuple of callable
-        A tuple ``(solidus_func, liquidus_func)`` containing interpolation
-        functions for the solidus and liquidus temperatures as functions of
-        pressure.
+        ``(solidus_func, liquidus_func)``
     """
-    solidus_func = load_melting_curve(
-        os.path.join(ZALMOXIS_ROOT, 'data', 'melting_curves_Monteux-600', 'solidus.dat')
-    )
-    liquidus_func = load_melting_curve(
-        os.path.join(ZALMOXIS_ROOT, 'data', 'melting_curves_Monteux-600', 'liquidus.dat')
-    )
+    from .melting_curves import get_solidus_liquidus_functions as _get
 
-    return solidus_func, liquidus_func
+    return _get(solidus_id, liquidus_id)
 
 
 def get_Tdep_density(

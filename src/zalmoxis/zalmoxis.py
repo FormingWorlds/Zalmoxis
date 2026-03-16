@@ -251,6 +251,11 @@ def load_zalmoxis_config(temp_config_path=None):
     layer_eos_config = parse_eos_config(config['EOS'])
     validate_layer_eos(layer_eos_config)
 
+    # Melting curve config (defaults for backward compat with old TOML files)
+    eos_section = config['EOS']
+    rock_solidus = eos_section.get('rock_solidus', 'Monteux16-solidus')
+    rock_liquidus = eos_section.get('rock_liquidus', 'Monteux16-liquidus-A-chondritic')
+
     return {
         'planet_mass': config['InputParameter']['planet_mass'] * earth_mass,
         'core_mass_fraction': config['AssumptionsAndInitialGuesses']['core_mass_fraction'],
@@ -260,6 +265,8 @@ def load_zalmoxis_config(temp_config_path=None):
         'center_temperature': config['AssumptionsAndInitialGuesses']['center_temperature'],
         'temp_profile_file': config['AssumptionsAndInitialGuesses']['temperature_profile_file'],
         'layer_eos_config': layer_eos_config,
+        'rock_solidus': rock_solidus,
+        'rock_liquidus': rock_liquidus,
         'num_layers': config['Calculations']['num_layers'],
         'max_iterations_outer': config['IterativeProcess']['max_iterations_outer'],
         'tolerance_outer': config['IterativeProcess']['tolerance_outer'],
@@ -299,13 +306,21 @@ def load_material_dictionaries():
     return material_dictionaries
 
 
-def load_solidus_liquidus_functions(layer_eos_config):
+def load_solidus_liquidus_functions(
+    layer_eos_config,
+    solidus_id='Monteux16-solidus',
+    liquidus_id='Monteux16-liquidus-A-chondritic',
+):
     """Load solidus and liquidus functions if any layer uses a T-dependent EOS.
 
     Parameters
     ----------
     layer_eos_config : dict
         Per-layer EOS config.
+    solidus_id : str
+        Solidus melting curve identifier.
+    liquidus_id : str
+        Liquidus melting curve identifier.
 
     Returns
     -------
@@ -314,7 +329,7 @@ def load_solidus_liquidus_functions(layer_eos_config):
     """
     uses_Tdep = any(v in TDEP_EOS_NAMES for v in layer_eos_config.values() if v)
     if uses_Tdep:
-        solidus_func, liquidus_func = get_solidus_liquidus_functions()
+        solidus_func, liquidus_func = get_solidus_liquidus_functions(solidus_id, liquidus_id)
         return (solidus_func, liquidus_func)
     return None
 
@@ -814,11 +829,15 @@ def post_processing(config_params, id_mass=None, output_file=None):
     plotting_enabled = config_params['plotting_enabled']
 
     layer_eos_config = config_params['layer_eos_config']
+    solidus_id = config_params.get('rock_solidus', 'Monteux16-solidus')
+    liquidus_id = config_params.get('rock_liquidus', 'Monteux16-liquidus-A-chondritic')
 
     model_results = main(
         config_params,
         material_dictionaries=load_material_dictionaries(),
-        melting_curves_functions=load_solidus_liquidus_functions(layer_eos_config),
+        melting_curves_functions=load_solidus_liquidus_functions(
+            layer_eos_config, solidus_id, liquidus_id
+        ),
         input_dir=os.path.join(ZALMOXIS_ROOT, 'input'),
     )
 
@@ -849,7 +868,9 @@ def post_processing(config_params, id_mass=None, output_file=None):
         mantle_temperatures = temperature[cmb_index:]
         mantle_radii = radii[cmb_index:]
 
-        solidus_func, liquidus_func = load_solidus_liquidus_functions(layer_eos_config)
+        solidus_func, liquidus_func = load_solidus_liquidus_functions(
+            layer_eos_config, solidus_id, liquidus_id
+        )
 
         mantle_phases = get_Tdep_material(
             mantle_pressures, mantle_temperatures, solidus_func, liquidus_func

@@ -26,6 +26,17 @@ core                       = "Seager2007:iron"
 mantle                     = "WolfBower2018:MgSiO3"
 ice_layer                  = ""  # Empty = 2-layer model; set for 3-layer model
 
+# Melting curve selection for T-dependent mantle EOS (solidus/liquidus)
+# Valid rock_solidus values:
+#   "Monteux16-solidus"         - Monteux+2016 Eqs. 10/12 (analytic, all P, default)
+#   "Monteux600-solidus-tabulated"        - Tabulated with fixed 600 K gap (legacy, P <= 999 GPa)
+# Valid rock_liquidus values:
+#   "Monteux16-liquidus-A-chondritic"    - Monteux+2016 Eq. 11/13 A-chondritic (default)
+#   "Monteux16-liquidus-F-peridotitic"   - Monteux+2016 Eq. 11/13 F-peridotitic
+#   "Monteux600-liquidus-tabulated"      - Tabulated with fixed 600 K gap (legacy, P <= 999 GPa)
+rock_solidus               = "Monteux16-solidus"
+rock_liquidus              = "Monteux16-liquidus-A-chondritic"
+
 [Calculations]
 num_layers                 = 150 # Number of planet layers
 
