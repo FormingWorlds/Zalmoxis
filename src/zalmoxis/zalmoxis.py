@@ -412,6 +412,75 @@ def validate_config(config_params):
                 "rock_liquidus = 'Monteux16-liquidus-A-chondritic'."
             )
 
+    # ── Multi-material mixing checks ────────────────────────────────
+    for layer, eos_str in layer_eos_config.items():
+        mixture = parse_layer_components(eos_str)
+
+        # Fraction validation
+        if len(mixture.components) > 1:
+            for i, frac in enumerate(mixture.fractions):
+                if frac < 0:
+                    raise ValueError(
+                        f'Negative mass fraction {frac} for component '
+                        f"'{mixture.components[i]}' in layer '{layer}'."
+                    )
+            total = sum(mixture.fractions)
+            if abs(total - 1.0) > 1e-4:
+                raise ValueError(
+                    f"Mass fractions in layer '{layer}' sum to {total:.6f}, "
+                    f'not 1.0. Components: {mixture.components}, '
+                    f'fractions: {mixture.fractions}.'
+                )
+
+        # Warn about mixing T-dependent and T-independent EOS
+        tdep_comps_in_layer = [c for c in mixture.components if c in TDEP_EOS_NAMES]
+        tindep_comps = [c for c in mixture.components if c not in TDEP_EOS_NAMES]
+        if tdep_comps_in_layer and tindep_comps:
+            # Only warn for non-Analytic T-independent components
+            tindep_tabulated = [c for c in tindep_comps if not c.startswith('Analytic:')]
+            if tindep_tabulated:
+                logger.warning(
+                    f"Layer '{layer}' mixes T-dependent EOS "
+                    f'({tdep_comps_in_layer}) with T-independent EOS '
+                    f'({tindep_tabulated}). The T-independent components '
+                    f'will use a fixed 300 K internally, which may be '
+                    f'inconsistent with the adiabatic temperature profile.'
+                )
+
+    # ── EOS-layer compatibility ─────────────────────────────────────
+    # Core should use iron-type EOS
+    core_eos = layer_eos_config.get('core', '')
+    core_mix = parse_layer_components(core_eos) if core_eos else None
+    if core_mix:
+        iron_keywords = {'iron', 'Fe'}
+        for comp in core_mix.components:
+            comp_material = comp.split(':')[-1] if ':' in comp else comp
+            if not any(kw in comp_material for kw in iron_keywords):
+                if not comp.startswith('Analytic:'):
+                    logger.warning(
+                        f"Core EOS component '{comp}' does not appear to be "
+                        f'an iron EOS. Core is typically iron (Fe). '
+                        f'Proceeding anyway.'
+                    )
+
+    # H2O as mantle component at high T is physically questionable
+    if temperature_mode == 'adiabatic':
+        for layer in ('mantle', 'core'):
+            eos_str = layer_eos_config.get(layer, '')
+            if not eos_str:
+                continue
+            mix = parse_layer_components(eos_str)
+            h2o_in_layer = any('H2O' in c for c in mix.components)
+            if h2o_in_layer and surface_temp > 2000:
+                h2o_frac = sum(f for c, f in zip(mix.components, mix.fractions) if 'H2O' in c)
+                if h2o_frac > 0.3:
+                    logger.warning(
+                        f"Layer '{layer}' has {h2o_frac * 100:.0f}% H2O at "
+                        f'T_surf={surface_temp} K. At high temperatures, '
+                        f'water is supercritical vapor, which may cause '
+                        f'convergence difficulties or unphysically large radii.'
+                    )
+
 
 def choose_config_file(temp_config_path=None):
     """

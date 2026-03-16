@@ -48,6 +48,12 @@ The function `get_layer_eos()` in `structure_model.py` maps the enclosed mass at
 This architecture replaced an earlier design that used a single global `EOS_CHOICE` string (e.g., `"Tabulated:iron/silicate"`) to select a fixed combination of materials for the entire planet.
 The per-layer system allows arbitrary mixing of tabulated and analytic EOS across layers --- for instance, an analytic iron core with a temperature-dependent silicate mantle --- without modifying the solver.
 
+Each layer can also contain multiple materials mixed by volume additivity.
+The config format uses `+` to combine materials with mass fractions: `"PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15"`.
+Density is computed via the harmonic mean $\rho_{\mathrm{mix}} = \left( \sum_i w_i / \rho_i \right)^{-1}$, where $w_i$ are mass fractions and each component's density is evaluated independently at local $(P, T)$.
+For adiabatic mode, $\nabla_{\mathrm{ad}}$ is mass-fraction-weighted across components.
+In the PROTEUS ecosystem, mixing fractions are set by CALLIOPE (solubility model) or PROTEUS (volatile trapping in the mantle) at runtime via `LayerMixture.update_fractions()`.
+
 Legacy global strings are still accepted via a backward-compatible mapping in `parse_eos_config()`.
 
 ### Valid per-layer EOS identifiers

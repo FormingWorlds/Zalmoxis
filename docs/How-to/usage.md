@@ -42,6 +42,8 @@ Valid EOS values:
 
 Valid analytic materials: `iron`, `MgSiO3`, `MgFeSiO3`, `H2O`, `graphite`, `SiC`.
 
+**Multi-material mixing:** Multiple EOS can be combined in a single layer using `+` with mass fractions: `mantle = "PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15"`. Density is volume-additive (harmonic mean). See [configuration guide](configuration.md#multi-material-mixing) for details.
+
 ### Temperature Modes
 
 The `temperature_mode` parameter in `[AssumptionsAndInitialGuesses]` controls how the internal temperature profile is computed:

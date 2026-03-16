@@ -64,6 +64,31 @@ All EOS identifiers follow the format `<source>:<composition>`, where:
 - **`<source>`** identifies the data source or method: `Seager2007` (tabulated), `WolfBower2018` (tabulated, temperature-dependent), `RTPress100TPa` (extended T-dependent melt table), `PALEOS-2phase` (T-dependent with separate solid/liquid tables), `PALEOS` (unified T-dependent table with all stable phases), or `Analytic` (closed-form fit, no data files needed).
 - **`<composition>`** identifies the material: `iron`, `MgSiO3`, `MgFeSiO3`, `H2O`, `graphite`, `SiC`.
 
+#### Multi-material mixing
+
+A single layer can contain multiple materials mixed by volume additivity. Use `+` to combine materials with mass fractions:
+
+```toml
+mantle = "PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15"
+```
+
+Rules:
+
+- Components are separated by `+`.
+- Each component uses the format `<source>:<composition>:<mass_fraction>`.
+- If the fraction is omitted (single-material backward compat), it defaults to 1.0.
+- Mass fractions must sum to 1.0 (automatically normalized if not).
+- Any EOS type can be mixed with any other (tabulated + analytic, T-dependent + T-independent).
+- Density is computed via harmonic mean (volume additivity): $\rho_{\mathrm{mix}} = \left( \sum_i w_i / \rho_i \right)^{-1}$.
+- For adiabatic mode, $\nabla_{\mathrm{ad}}$ is mass-fraction-weighted across components.
+- Mixing fractions can be updated at runtime by PROTEUS/CALLIOPE without re-parsing the config.
+
+!!! warning "Mixing T-dependent with T-independent EOS"
+    Mixing a T-dependent EOS (e.g., `PALEOS:MgSiO3`) with a T-independent EOS (e.g., `Seager2007:H2O`) in the same layer is allowed but physically inconsistent: the T-independent component uses a fixed 300 K internally while the T-dependent component uses the adiabatic temperature. A warning is logged when this occurs.
+
+!!! warning "High H2O fraction at high temperature"
+    Water above ~2000 K is supercritical vapor, not a condensed phase. Large H2O fractions (> 30%) in the mantle at high surface temperatures may cause convergence difficulties or unphysically large radii.
+
 #### Available EOS options
 
 | EOS string | Source | Composition | Temperature | Data files required | Notes |
@@ -226,6 +251,20 @@ mantle            = "PALEOS:MgSiO3"
 ice_layer         = "PALEOS:H2O"
 mushy_zone_factor = 1.0
 ```
+
+**Hydrated mantle** (iron core + mixed silicate-water mantle, volume-additive):
+```toml
+[AssumptionsAndInitialGuesses]
+temperature_mode      = "adiabatic"
+surface_temperature   = 2000
+center_temperature    = 6000
+
+[EOS]
+core      = "PALEOS:iron"
+mantle    = "PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15"
+ice_layer = ""
+```
+The mantle is 85% MgSiO$_3$ and 15% H$_2$O by mass, mixed at each $(P, T)$ via harmonic-mean density. Each component's phase (solid/liquid) is evaluated independently from the PALEOS table.
 
 **Mercury-like planet** (large iron core + (Mg,Fe)SiO3 mantle, analytic):
 ```toml
