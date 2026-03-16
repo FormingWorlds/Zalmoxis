@@ -1280,6 +1280,15 @@ def compute_adiabatic_temperature(
         T_eval = T[i + 1]
         dP = pressure[i] - pressure[i + 1]
 
+        # Skip adiabat step when pressure is below the EOS table minimum
+        # (~1 bar = 1e5 Pa). At very low P, dT/dP = nabla_ad * T/P diverges
+        # because T/P becomes huge. This prevents runaway temperatures in
+        # the outermost low-pressure shells (common in 3-layer models where
+        # the surface pressure can be far below 1 bar).
+        if P_eval < 1e5 or pressure[i] < 1e5:
+            T[i] = T[i + 1]
+            continue
+
         # Determine dT/dP based on the EOS type
         layer_mat = material_dictionaries.get(layer_eos, {})
         dtdp = None
