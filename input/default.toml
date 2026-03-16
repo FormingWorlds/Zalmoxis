@@ -7,7 +7,7 @@ planet_mass                = 1 # Mass of the planet (in Earth masses = 5.972e24 
 core_mass_fraction         = 0.325 # Initial guess for the core mass as a fraction of the total mass
 mantle_mass_fraction       = 0 # Initial guess for the mantle mass as a fraction of the total mass
 temperature_mode           = "linear" # Choice of input temperature profile: "isothermal", "linear", "prescribed", "adiabatic"
-surface_temperature        = 3500 # Surface temperature (K), required for temperature_mode="isothermal", "linear", or "adiabatic", ignored otherwise
+surface_temperature        = 3000 # Surface temperature (K), required for temperature_mode="isothermal", "linear", or "adiabatic", ignored otherwise
 center_temperature         = 6000 # Central temperature (K), required for temperature_mode="linear" or "adiabatic" (initial guess), ignored otherwise
 temperature_profile_file   = "temp_profile.txt" # Filename containing a prescribed temperature profile, required for temperature_mode="prescribed"
 
@@ -15,15 +15,15 @@ temperature_profile_file   = "temp_profile.txt" # Filename containing a prescrib
 # Per-layer EOS selection. Format: "<source>:<composition>"
 # Valid values:
 #   "Seager2007:iron"       - Seager+2007 tabulated Fe epsilon (300K)
-#   "Seager2007:MgSiO3"    - Seager+2007 tabulated MgSiO3 perovskite (300K)
-#   "Seager2007:H2O"       - Seager+2007 tabulated water ice (300K)
+#   "Seager2007:MgSiO3"     - Seager+2007 tabulated MgSiO3 perovskite (300K)
+#   "Seager2007:H2O"        - Seager+2007 tabulated water ice (300K)
 #   "WolfBower2018:MgSiO3"  - Wolf&Bower+2018 T-dependent MgSiO3 (melt/solid), limited to <= 7 M_earth
 #   "RTPress100TPa:MgSiO3"  - Extended RTpress MgSiO3 melt EOS (up to 100 TPa)
-#   "PALEOS-2phase:MgSiO3"         - PALEOS MgSiO3 solid+liquid EOS with nabla_ad (up to 100 TPa)
+#   "PALEOS-2phase:MgSiO3"  - PALEOS MgSiO3 solid+liquid EOS with nabla_ad (up to 100 TPa)
 #   "Analytic:<material>"   - Seager+2007 analytic polytrope (300K, no data needed)
 #     Valid analytic materials: iron, MgSiO3, MgFeSiO3, H2O, graphite, SiC
 core                       = "Seager2007:iron"
-mantle                     = "WolfBower2018:MgSiO3"
+mantle                     = "PALEOS-2phase:MgSiO3"
 ice_layer                  = ""  # Empty = 2-layer model; set for 3-layer model
 
 # Melting curve selection for T-dependent mantle EOS (solidus/liquidus)
@@ -36,8 +36,8 @@ ice_layer                  = ""  # Empty = 2-layer model; set for 3-layer model
 #   "Monteux16-liquidus-F-peridotitic"   - Monteux+2016 Eq. 11/13 F-peridotitic
 #   "Stixrude14-liquidus"               - Stixrude 2014 Eq. 1.9 (power law, all P, default)
 #   "Monteux600-liquidus-tabulated"      - Tabulated with fixed 600 K gap (legacy, P <= 999 GPa)
-rock_solidus               = "Stixrude14-solidus"
-rock_liquidus              = "Stixrude14-liquidus"
+rock_solidus               = "Monteux16-solidus"
+rock_liquidus              = "Monteux16-liquidus-A-chondritic"
 
 [Calculations]
 num_layers                 = 150 # Number of planet layers
