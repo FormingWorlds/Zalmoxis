@@ -33,13 +33,7 @@ from .eos_functions import (
     get_solidus_liquidus_functions,
     get_Tdep_material,
 )
-from .eos_properties import (
-    material_properties_iron_PALEOS_silicate_planets,
-    material_properties_iron_RTPress100TPa_silicate_planets,
-    material_properties_iron_silicate_planets,
-    material_properties_iron_Tdep_silicate_planets,
-    material_properties_water_planets,
-)
+from .eos_properties import EOS_REGISTRY
 from .plots.plot_phase_vs_radius import plot_PT_with_phases
 from .plots.plot_profiles import plot_planet_profile_single
 from .structure_model import get_layer_eos, solve_structure
@@ -77,6 +71,9 @@ VALID_TABULATED_EOS = {
     'RTPress100TPa:MgSiO3',
     'PALEOS-2phase:MgSiO3',
     'Seager2007:H2O',
+    'PALEOS:iron',
+    'PALEOS:MgSiO3',
+    'PALEOS:H2O',
 }
 
 # WolfBower2018 tables are valid up to ~1 TPa. The Brent pressure solver with
@@ -94,6 +91,9 @@ RTPRESS100TPA_MAX_MASS_EARTH = 50.0
 # PALEOS MgSiO3 tables extend to 100 TPa for both solid and liquid phases.
 # Safe up to ~50 M_earth (same pressure ceiling as RTPress100TPa).
 PALEOS_MAX_MASS_EARTH = 50.0
+
+# Unified PALEOS tables (iron, MgSiO3, H2O) extend to 100 TPa.
+PALEOS_UNIFIED_MAX_MASS_EARTH = 50.0
 
 
 def parse_eos_config(eos_section):
@@ -255,6 +255,7 @@ def load_zalmoxis_config(temp_config_path=None):
     eos_section = config['EOS']
     rock_solidus = eos_section.get('rock_solidus', 'Stixrude14-solidus')
     rock_liquidus = eos_section.get('rock_liquidus', 'Stixrude14-liquidus')
+    mushy_zone_factor = eos_section.get('mushy_zone_factor', 1.0)
 
     return {
         'planet_mass': config['InputParameter']['planet_mass'] * earth_mass,
@@ -267,6 +268,7 @@ def load_zalmoxis_config(temp_config_path=None):
         'layer_eos_config': layer_eos_config,
         'rock_solidus': rock_solidus,
         'rock_liquidus': rock_liquidus,
+        'mushy_zone_factor': mushy_zone_factor,
         'num_layers': config['Calculations']['num_layers'],
         'max_iterations_outer': config['IterativeProcess']['max_iterations_outer'],
         'tolerance_outer': config['IterativeProcess']['tolerance_outer'],
@@ -292,18 +294,21 @@ def load_material_dictionaries():
 
     Returns
     -------
-    tuple
-        (iron_silicate, iron_Tdep_silicate, water, iron_RTPress100TPa_silicate,
-         iron_PALEOS_silicate) material property dicts.
+    dict
+        EOS registry keyed by EOS identifier string (e.g.
+        ``"Seager2007:iron"``, ``"PALEOS:MgSiO3"``).
     """
-    material_dictionaries = (
-        material_properties_iron_silicate_planets,
-        material_properties_iron_Tdep_silicate_planets,
-        material_properties_water_planets,
-        material_properties_iron_RTPress100TPa_silicate_planets,
-        material_properties_iron_PALEOS_silicate_planets,
-    )
-    return material_dictionaries
+    return dict(EOS_REGISTRY)
+
+
+# EOS names that need external melting curves for solid/liquid phase routing.
+# Unified PALEOS tables do not need external melting curves (phase boundary
+# is extracted from the table's phase column).
+_NEEDS_MELTING_CURVES = {
+    'WolfBower2018:MgSiO3',
+    'RTPress100TPa:MgSiO3',
+    'PALEOS-2phase:MgSiO3',
+}
 
 
 def load_solidus_liquidus_functions(
@@ -311,7 +316,11 @@ def load_solidus_liquidus_functions(
     solidus_id='Stixrude14-solidus',
     liquidus_id='Stixrude14-liquidus',
 ):
-    """Load solidus and liquidus functions if any layer uses a T-dependent EOS.
+    """Load solidus and liquidus functions if any layer uses an EOS that needs them.
+
+    Unified PALEOS tables (PALEOS:iron, PALEOS:MgSiO3, PALEOS:H2O) are
+    T-dependent but derive their phase boundary from the table itself, so
+    they do not need external melting curves.
 
     Parameters
     ----------
@@ -325,10 +334,10 @@ def load_solidus_liquidus_functions(
     Returns
     -------
     tuple or None
-        (solidus_func, liquidus_func) if Tdep EOS is used, else None.
+        (solidus_func, liquidus_func) if needed, else None.
     """
-    uses_Tdep = any(v in TDEP_EOS_NAMES for v in layer_eos_config.values() if v)
-    if uses_Tdep:
+    needs_curves = any(v in _NEEDS_MELTING_CURVES for v in layer_eos_config.values() if v)
+    if needs_curves:
         solidus_func, liquidus_func = get_solidus_liquidus_functions(solidus_id, liquidus_id)
         return (solidus_func, liquidus_func)
     return None
@@ -345,10 +354,10 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
     ----------
     config_params : dict
         Configuration parameters for the model.
-    material_dictionaries : tuple
-        Material properties dictionaries.
+    material_dictionaries : dict
+        EOS registry dict keyed by EOS identifier string.
     melting_curves_functions : tuple or None
-        (solidus_func, liquidus_func) for Tdep EOS, or None.
+        (solidus_func, liquidus_func) for EOS that need external melting curves, or None.
     input_dir : str
         Directory containing input files.
 
@@ -388,6 +397,7 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
     max_iterations_pressure = config_params['max_iterations_pressure']
     verbose = config_params['verbose']
     iteration_profiles_enabled = config_params['iteration_profiles_enabled']
+    mushy_zone_factor = config_params.get('mushy_zone_factor', 1.0)
 
     # Check if any layer uses T-dependent EOS
     uses_Tdep = any(v in TDEP_EOS_NAMES for v in layer_eos_config.values() if v)
@@ -416,6 +426,9 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                     'The PALEOS MgSiO3 tables extend to 100 TPa for both '
                     'solid and liquid phases.'
                 )
+            elif eos_name in ('PALEOS:iron', 'PALEOS:MgSiO3', 'PALEOS:H2O'):
+                max_mass = PALEOS_UNIFIED_MAX_MASS_EARTH
+                reason = 'The unified PALEOS tables extend to 100 TPa (P: 1 bar to 100 TPa).'
             else:
                 continue
             if mass_in_earth > max_mass:
@@ -442,8 +455,10 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
     # Initialize empty cache for interpolation functions
     interpolation_cache = {}
 
-    # Load solidus and liquidus functions if using Tdep EOS
-    if uses_Tdep:
+    # Load solidus and liquidus functions if the caller provided them.
+    # Unified PALEOS tables don't need external melting curves, so
+    # melting_curves_functions may be None even when uses_Tdep is True.
+    if melting_curves_functions is not None:
         solidus_func, liquidus_func = melting_curves_functions
     else:
         solidus_func, liquidus_func = None, None
@@ -519,6 +534,7 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                     interpolation_cache,
                     solidus_func,
                     liquidus_func,
+                    mushy_zone_factor,
                 )
 
                 # Build T(P) interpolator from the previous iteration's
@@ -747,6 +763,7 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                     solidus_func,
                     liquidus_func,
                     interpolation_cache,
+                    mushy_zone_factor,
                 )
 
                 if new_density is None:

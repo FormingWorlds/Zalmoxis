@@ -27,14 +27,25 @@ temperature_profile_file   = "temp_profile.txt" # Prescribed T(r) file (center t
 #   WolfBower2018:MgSiO3     T-dependent MgSiO3 melt+solid (up to 1 TPa, <= 7 M_earth)
 #   RTPress100TPa:MgSiO3     T-dependent extended melt EOS (up to 100 TPa, <= 50 M_earth)
 #   PALEOS-2phase:MgSiO3     T-dependent solid+liquid with nabla_ad (up to 100 TPa, <= 50 M_earth)
+#   PALEOS:iron              Unified PALEOS iron (5 phases, up to 100 TPa, <= 50 M_earth)
+#   PALEOS:MgSiO3            Unified PALEOS MgSiO3 (6 phases, up to 100 TPa, <= 50 M_earth)
+#   PALEOS:H2O               Unified PALEOS water (7 EOS, up to 100 TPa, <= 50 M_earth)
 #   Analytic:<material>      Seager+2007 analytic polytrope, 300 K, no data files needed
 #                            Materials: iron, MgSiO3, MgFeSiO3, H2O, graphite, SiC
-core                       = "Seager2007:iron"
-mantle                     = "PALEOS-2phase:MgSiO3"
+core                       = "PALEOS:iron"
+mantle                     = "PALEOS:MgSiO3"
 ice_layer                  = "" 		# Empty = 2-layer model; set to an EOS string for 3-layer model
 
+# Mushy zone factor for unified PALEOS tables.
+# Controls the width of the artificial mushy (mixed solid+liquid) zone.
+#   1.0 = no mushy zone (sharp phase boundary from table, solidus = liquidus)
+#   <1.0 = solidus at this fraction of the extracted liquidus T
+#   0.8 = similar to Stixrude14 cryoscopic depression (x0=0.79)
+mushy_zone_factor          = 1.0
+
 # Melting curves for phase routing in T-dependent mantle EOS.
-# Only relevant when mantle uses a T-dependent EOS (WolfBower2018, RTPress100TPa, PALEOS-2phase).
+# Only relevant for WolfBower2018, RTPress100TPa, and PALEOS-2phase.
+# Unified PALEOS tables derive phase boundaries from the table itself.
 # Solidus options:
 #   Monteux16-solidus                    Monteux+2016 Eqs. 10/12 (piecewise, valid to ~500 GPa)
 #   Stixrude14-solidus                   Stixrude 2014 Eq. 1.9+1.10 (power law, valid at all P)

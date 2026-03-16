@@ -161,8 +161,8 @@ class TestComputeAdiabaticTemperature:
         from zalmoxis.zalmoxis import load_material_dictionaries
 
         material_dicts = copy.deepcopy(load_material_dictionaries())
-        # Remove the adiabat_grad_file key
-        material_dicts[1]['melted_mantle'].pop('adiabat_grad_file', None)
+        # Remove the adiabat_grad_file key from WolfBower2018 melted_mantle
+        material_dicts['WolfBower2018:MgSiO3']['melted_mantle'].pop('adiabat_grad_file', None)
 
         n = 50
         radii = np.linspace(0, 6.371e6, n)
@@ -196,7 +196,7 @@ class TestComputeAdiabaticTemperature:
 
         layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'Seager2007:MgSiO3'}
 
-        with pytest.raises(ValueError, match='T-dependent mantle EOS'):
+        with pytest.raises(ValueError, match='T-dependent EOS'):
             compute_adiabatic_temperature(
                 radii=radii,
                 pressure=pressure,

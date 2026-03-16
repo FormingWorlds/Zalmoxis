@@ -82,8 +82,8 @@ def coupled_odes(
         Per-layer EOS configuration.
     interpolation_cache : dict
         Cache for interpolation functions.
-    material_dictionaries : tuple
-        Material property dictionaries.
+    material_dictionaries : dict
+        EOS registry dict keyed by EOS identifier string.
     temperature : float
         Temperature at current radius [K].
     solidus_func : callable or None
@@ -184,8 +184,8 @@ def solve_structure(
         Absolute tolerance for solve_ivp.
     maximum_step : float
         Maximum integration step size [m].
-    material_dictionaries : tuple
-        Material property dictionaries.
+    material_dictionaries : dict
+        EOS registry dict keyed by EOS identifier string.
     interpolation_cache : dict
         Cache for interpolation functions.
     y0 : array-like

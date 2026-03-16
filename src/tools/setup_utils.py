@@ -233,6 +233,25 @@ def download_data():
             'paleos_mgsio3_tables_pt_proteus_liquid.dat',
         ],
     )
+    # Unified PALEOS tables (Zenodo 19000316): iron, MgSiO3, H2O
+    download(
+        folder='EOS_PALEOS_iron',
+        data_dir=Path(ZALMOXIS_ROOT, 'data'),
+        zenodo_id=19000316,
+        keep_files=['paleos_iron_eos_table_pt.dat'],
+    )
+    download(
+        folder='EOS_PALEOS_MgSiO3_unified',
+        data_dir=Path(ZALMOXIS_ROOT, 'data'),
+        zenodo_id=19000316,
+        keep_files=['paleos_mgsio3_eos_table_pt.dat'],
+    )
+    download(
+        folder='EOS_PALEOS_H2O',
+        data_dir=Path(ZALMOXIS_ROOT, 'data'),
+        zenodo_id=19000316,
+        keep_files=['paleos_water_eos_table_pt.dat'],
+    )
 
 
 if __name__ == '__main__':
