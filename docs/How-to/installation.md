@@ -9,7 +9,7 @@
 - **Python**: 3.12 (recommended; matches the PROTEUS framework requirement)
 - **Conda**: [miniforge](https://github.com/conda-forge/miniforge) (macOS) or [miniconda](https://docs.anaconda.com/miniconda/) (Linux) for environment management
 - **Git**: for cloning the repository
-- **Disk space**: approximately 500 MB for tabulated EOS data files
+- **Disk space**: approximately 800 MB for tabulated EOS data files (including ~270 MB for unified PALEOS tables)
 
 ## Installation steps
 
@@ -123,6 +123,6 @@ The Brent pressure solver is robust and typically converges in 20--36 evaluation
 If the solver fails to converge, consider the following:
 
 - **Bracket error** (`ValueError: f(a) and f(b) must have different signs`): The initial pressure bracket does not straddle the root. This usually means the true central pressure is outside the bracket range. Try increasing `max_center_pressure_guess` (for WolfBower2018 EOS) or check that the planet mass and composition are physically plausible.
-- **WolfBower2018 mass limit**: The `WolfBower2018:MgSiO3` EOS is limited to $\leq 7\,M_\oplus$. For higher-mass planets, use `Seager2007:MgSiO3` or `Analytic:MgSiO3` instead.
+- **WolfBower2018 mass limit**: The `WolfBower2018:MgSiO3` EOS is limited to $\leq 7\,M_\oplus$. For higher-mass planets, use `PALEOS:MgSiO3`, `RTPress100TPa:MgSiO3`, `Seager2007:MgSiO3`, or `Analytic:MgSiO3` instead.
 - **Tolerance parameters**: Relax the convergence tolerance in the input configuration file. Tighter tolerances require more iterations and may not converge for extreme planetary compositions or masses.
 - **Physical plausibility**: Verify that the input parameters (mass, composition fractions, core/mantle fractions) are physically plausible. Unphysical configurations (e.g., negative mass fractions, zero-thickness layers) will not converge.

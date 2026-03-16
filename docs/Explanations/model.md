@@ -2,7 +2,7 @@
 
 Zalmoxis solves the coupled ordinary differential equations (ODEs) of hydrostatic equilibrium for a differentiated planet with 2--3 compositionally distinct layers (iron core, silicate mantle, and optional water/ice envelope).
 Given a total planet mass, layer mass fractions, and a per-layer equation of state (EOS) specification, the code iteratively determines self-consistent radial profiles of pressure, density, gravity, and enclosed mass from the center to the surface.
-Several EOS families are supported and can be mixed arbitrarily across layers: the [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) merged tabulated EOS at 300 K, the temperature-dependent [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) RTpress EOS (including the extended 100 TPa melt table), the PALEOS two-phase MgSiO$_3$ EOS with adiabatic gradient, and a fast analytic modified-polytrope approximation from [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346).
+Several EOS families are supported and can be mixed arbitrarily across layers: the [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) merged tabulated EOS at 300 K, the temperature-dependent [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) RTpress EOS (including the extended 100 TPa melt table), the PALEOS two-phase MgSiO$_3$ EOS with adiabatic gradient, the unified PALEOS tables for iron, MgSiO$_3$, and H$_2$O (providing all stable phases in a single file per material), and a fast analytic modified-polytrope approximation from [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346).
 
 ---
 
@@ -37,8 +37,8 @@ Each structural layer is assigned its own EOS via a string of the form `"<source
 
 ```toml
 [EOS]
-core      = "Seager2007:iron"
-mantle    = "PALEOS-2phase:MgSiO3"
+core      = "PALEOS:iron"
+mantle    = "PALEOS:MgSiO3"
 ice_layer = ""   # empty = 2-layer model
 ```
 
@@ -60,6 +60,9 @@ Legacy global strings are still accepted via a backward-compatible mapping in `p
 | `WolfBower2018:MgSiO3` | Tabulated | MgSiO$_3$ (solid + melt) | $T$-dependent ($\leq 7\,M_\oplus$) |
 | `RTPress100TPa:MgSiO3` | Tabulated | MgSiO$_3$ (solid + melt) | $T$-dependent ($\leq 50\,M_\oplus$) |
 | `PALEOS-2phase:MgSiO3` | Tabulated | MgSiO$_3$ (solid + liquid) | $T$-dependent ($\leq 50\,M_\oplus$), includes $\nabla_{\mathrm{ad}}$ |
+| `PALEOS:iron` | Unified table | Fe (5 phases) | $T$-dependent ($\leq 50\,M_\oplus$), includes $\nabla_{\mathrm{ad}}$ |
+| `PALEOS:MgSiO3` | Unified table | MgSiO$_3$ (6 phases) | $T$-dependent ($\leq 50\,M_\oplus$), includes $\nabla_{\mathrm{ad}}$ |
+| `PALEOS:H2O` | Unified table | H$_2$O (7 EOS) | $T$-dependent ($\leq 50\,M_\oplus$), includes $\nabla_{\mathrm{ad}}$ |
 | `Analytic:<material>` | Analytic fit | Any of 6 materials | 300 K |
 
 ---
@@ -152,6 +155,31 @@ The default analytic Monteux+2016 curves are defined for all pressures, eliminat
 
 **Mass limit.** Both solid and liquid tables extend to 100 TPa, supporting planets up to ~50 $M_\oplus$.
 
+### Unified PALEOS Tables (Iron, MgSiO3, H2O)
+
+The unified PALEOS tables (`PALEOS:iron`, `PALEOS:MgSiO3`, `PALEOS:H2O`) from Zenodo record 19000316 represent the next generation of the PALEOS EOS.
+Each material is contained in a single file with all stable phases: iron has 5 phases (alpha-bcc, delta-bcc, gamma-fcc, epsilon-hcp, liquid), MgSiO$_3$ has 6 phases (3 pyroxene polymorphs, bridgmanite, postperovskite, liquid), and H$_2$O has 7 EOS (ice Ih through X, liquid, vapor, superionic).
+
+The format is the same 10-column layout as PALEOS-2phase ($P$, $T$, $\rho$, $u$, $s$, $c_p$, $c_v$, $\alpha$, $\nabla_{\mathrm{ad}}$, phase), but the `phase` column now encodes the thermodynamically stable phase at each $(P, T)$ grid point.
+The grid is log-uniform with 150 points per decade in both $P$ (1 bar to 100 TPa) and $T$ (300 to 100,000 K for iron and MgSiO$_3$; 100 to 100,000 K for H$_2$O).
+
+**Key architectural difference from PALEOS-2phase.** Instead of splitting the EOS into separate solid and liquid files and routing through an external melting curve, the unified table contains all phases in one file.
+The density at any $(P, T)$ is obtained by a single interpolation on the table, which already provides the stable-phase value.
+No external solidus/liquidus curves are needed.
+
+**Phase boundary extraction.** At load time, the code extracts the liquidus boundary from the phase column: for each pressure row, the lowest temperature where the phase is `liquid` defines the liquidus.
+This extracted boundary serves as the basis for an optional mushy zone controlled by the `mushy_zone_factor` parameter:
+
+- $f = 1.0$ (default): no mushy zone; the density comes directly from the table (sharp phase transition).
+- $f < 1.0$: a synthetic solidus is defined at $T_{\mathrm{sol}} = f \times T_{\mathrm{liq}}$. Between $T_{\mathrm{sol}}$ and $T_{\mathrm{liq}}$, density is volume-averaged between solid-side and liquid-side table values using the same melt-fraction formula as for PALEOS-2phase.
+
+**T-dependent iron core.** With `PALEOS:iron`, the iron core becomes temperature-dependent for the first time in Zalmoxis.
+In adiabatic mode, the core follows its own adiabat using $\nabla_{\mathrm{ad}}$ from the iron table, instead of being isothermal at the CMB temperature.
+
+**Grid coverage.** The unified tables have the same per-cell clamping and nearest-neighbor fallback infrastructure as the PALEOS-2phase tables, handling NaN gaps at domain corners transparently.
+
+**Mass limit.** All three tables extend to 100 TPa, supporting planets up to ~50 $M_\oplus$.
+
 ### Analytic Modified Polytrope (Seager et al. 2007)
 
 The analytic EOS implements the modified polytropic fit from [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346), Table 3, Eq. 11:
@@ -194,6 +222,9 @@ Because any of the six materials can be assigned to any structural layer, the an
 | `WolfBower2018:MgSiO3` | 0--$10^{12}$ Pa (1 TPa) | 0--16500 K | 7 $M_\oplus$ | RTpress; $P$ clamped at table edge, $T$ out-of-bounds raises error |
 | `RTPress100TPa:MgSiO3` | $10^3$--$10^{14}$ Pa (100 TPa) | 400--50000 K | 50 $M_\oplus$ | Extended melt table; solid from WB2018 (clamped at 1 TPa) |
 | `PALEOS-2phase:MgSiO3` | 1 bar--100 TPa | 300--100000 K | 50 $M_\oplus$ | Solid + liquid with $\nabla_{\mathrm{ad}}$; 75%/53% grid fill |
+| `PALEOS:iron` | 1 bar--100 TPa | 300--100000 K | 50 $M_\oplus$ | Unified 5-phase Fe with $\nabla_{\mathrm{ad}}$ |
+| `PALEOS:MgSiO3` | 1 bar--100 TPa | 300--100000 K | 50 $M_\oplus$ | Unified 6-phase MgSiO$_3$ with $\nabla_{\mathrm{ad}}$ |
+| `PALEOS:H2O` | 1 bar--100 TPa | 100--100000 K | 50 $M_\oplus$ | Unified 7-EOS H$_2$O with $\nabla_{\mathrm{ad}}$ |
 | `Analytic:*` | 0--$10^{16}$ Pa | 300 K (fixed) | ~50 $M_\oplus$ | 2--12% accuracy vs. tabulated |
 
 ### General limits

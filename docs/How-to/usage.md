@@ -8,7 +8,7 @@ Run an Earth-like rocky planet with the default configuration:
 python -m zalmoxis -c input/default.toml
 ```
 
-This uses the default `input/default.toml`, which models a 1 Earth-mass, two-layer planet (iron core + temperature-dependent PALEOS-2phase MgSiO3 mantle at 3000 K surface temperature). Output files are written to the `output_files/` directory. The PALEOS data files must be downloaded first (see [installation](installation.md)).
+This uses the default `input/default.toml`, which models a 1 Earth-mass, two-layer planet (PALEOS iron core + PALEOS MgSiO$_3$ mantle at 3000 K surface temperature with adiabatic temperature mode). Output files are written to the `output_files/` directory. The PALEOS data files must be downloaded first (see [installation](installation.md)).
 
 To change the planet mass, edit the `[InputParameter]` section:
 
@@ -35,6 +35,9 @@ Valid EOS values:
 | `WolfBower2018:MgSiO3`   | Wolf & Bower (2018) RTpress T-dependent MgSiO3 (solid from [Mosenfelder et al. 2009](https://doi.org/10.1029/2008JB005900); melt), **<= 7 M_earth** |
 | `RTPress100TPa:MgSiO3`  | Extended RTpress melt (100 TPa) + WB2018 solid (1 TPa clamped), T-dependent, **<= 50 M_earth** |
 | `PALEOS-2phase:MgSiO3`  | PALEOS solid+liquid EOS with $\nabla_{\mathrm{ad}}$, T-dependent, **<= 50 M_earth** |
+| `PALEOS:iron`            | Unified PALEOS Fe (5 phases), T-dependent, **<= 50 M_earth** |
+| `PALEOS:MgSiO3`          | Unified PALEOS MgSiO$_3$ (6 phases), T-dependent, **<= 50 M_earth** |
+| `PALEOS:H2O`             | Unified PALEOS H$_2$O (7 EOS), T-dependent, **<= 50 M_earth** |
 | `Analytic:<material>`    | Seager et al. (2007) analytic polytrope (300 K, no data files needed) |
 
 Valid analytic materials: `iron`, `MgSiO3`, `MgFeSiO3`, `H2O`, `graphite`, `SiC`.
@@ -47,7 +50,7 @@ The `temperature_mode` parameter in `[AssumptionsAndInitialGuesses]` controls ho
 - `"linear"`: Linear gradient from `center_temperature` (at the center) to `surface_temperature` (at the surface).
 - `"prescribed"`: Read from a file specified by `temperature_profile_file`.
 
-Temperature-dependent EOS (`WolfBower2018:MgSiO3`, `RTPress100TPa:MgSiO3`, or `PALEOS-2phase:MgSiO3`) requires one of these modes to be set. The `"adiabatic"` mode is additionally available: it computes a self-consistent adiabatic temperature profile from the EOS gradient tables. The 300 K tabulated and analytic EOS options ignore the temperature profile but still require valid mode settings in the config.
+Temperature-dependent EOS (any entry in `TDEP_EOS_NAMES`, including `WolfBower2018:MgSiO3`, `RTPress100TPa:MgSiO3`, `PALEOS-2phase:MgSiO3`, `PALEOS:iron`, `PALEOS:MgSiO3`, `PALEOS:H2O`) requires one of these modes to be set. The `"adiabatic"` mode is additionally available: it computes a self-consistent adiabatic temperature profile from the EOS gradient tables. The 300 K tabulated and analytic EOS options ignore the temperature profile but still require valid mode settings in the config.
 
 ### Temperature Profile File Format
 
@@ -192,7 +195,7 @@ These files are useful for diagnosing convergence behavior. They are overwritten
 
 ### Plots (optional)
 
-When `plots_enabled = true` in the `[Output]` section, PDF plots of the radial profiles (density, gravity, pressure, temperature) are generated automatically after each run. If a temperature-dependent mantle EOS (`WolfBower2018:MgSiO3`, `RTPress100TPa:MgSiO3`, or `PALEOS-2phase:MgSiO3`) is used, an additional pressure-temperature phase diagram with mantle phase information is produced.
+When `plots_enabled = true` in the `[Output]` section, PDF plots of the radial profiles (density, gravity, pressure, temperature) are generated automatically after each run. If a temperature-dependent mantle EOS is used (any EOS in `TDEP_EOS_NAMES`), an additional pressure-temperature phase diagram with mantle phase information is produced.
 
 ## Running Zalmoxis in parallel for multiple masses
 
