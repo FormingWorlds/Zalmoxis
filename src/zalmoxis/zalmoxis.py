@@ -920,10 +920,12 @@ def post_processing(config_params, id_mass=None, output_file=None):
 
     average_density = mass_enclosed[-1] / (4 / 3 * math.pi * radii[-1] ** 3)
 
-    # Check if mantle uses Tdep EOS for phase detection
-    uses_Tdep_mantle = layer_eos_config.get('mantle') in TDEP_EOS_NAMES
+    # Check if mantle uses a Tdep EOS that needs external melting curves
+    # for phase detection. Unified PALEOS tables derive phases from the
+    # table itself and do not need (or support) get_Tdep_material().
+    uses_phase_detection = layer_eos_config.get('mantle') in _NEEDS_MELTING_CURVES
 
-    if uses_Tdep_mantle:
+    if uses_phase_detection:
         mantle_pressures = pressure[cmb_index:]
         mantle_temperatures = temperature[cmb_index:]
         mantle_radii = radii[cmb_index:]
@@ -1013,7 +1015,7 @@ def post_processing(config_params, id_mass=None, output_file=None):
             id_mass,
         )
 
-        if uses_Tdep_mantle:
+        if uses_phase_detection:
             plot_PT_with_phases(
                 mantle_pressures,
                 mantle_temperatures,

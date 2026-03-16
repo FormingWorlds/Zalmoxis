@@ -199,7 +199,7 @@ def load_paleos_unified_table(eos_file):
     temps = temps[valid]
     densities = densities[valid]
     nabla_ad = nabla_ad[valid]
-    phase_strings = phase_strings[valid]
+    phase_strings = np.char.strip(phase_strings[valid])
 
     # Work in log10 space
     log_p = np.log10(pressures)
@@ -887,8 +887,17 @@ def get_paleos_unified_density(
                 density = float(cached['density_nn']((log_p, log_t_clamped)))
             return density if np.isfinite(density) else None
 
-        # Mushy zone: interpolate liquidus T at this P
-        log_t_liq = float(np.interp(log_p, cached['liquidus_log_p'], cached['liquidus_log_t']))
+        # Mushy zone: interpolate liquidus T at this P.
+        # If query pressure is outside the liquidus coverage (e.g. at
+        # pressures where no liquid phase exists), fall back to direct lookup.
+        liq_lp = cached['liquidus_log_p']
+        if log_p < liq_lp[0] or log_p > liq_lp[-1]:
+            density = float(cached['density_interp']((log_p, log_t_clamped)))
+            if not np.isfinite(density):
+                density = float(cached['density_nn']((log_p, log_t_clamped)))
+            return density if np.isfinite(density) else None
+
+        log_t_liq = float(np.interp(log_p, liq_lp, cached['liquidus_log_t']))
         T_liq = 10.0**log_t_liq
         T_sol = T_liq * mushy_zone_factor
         log_t_sol = np.log10(max(T_sol, 1.0))
@@ -1222,11 +1231,12 @@ def compute_adiabatic_temperature(
     mantle_eos = layer_eos_config.get('mantle')
 
     # Determine which EOS types are in use for adiabat computation
-    use_paleos_2phase = mantle_eos == 'PALEOS-2phase:MgSiO3'
+    use_paleos_2phase = 'PALEOS-2phase:MgSiO3' in tdep_eos_used
 
-    # Preload PALEOS-2phase material dict if needed
-    if use_paleos_2phase:
-        mat_PALEOS_2ph = material_dictionaries.get('PALEOS-2phase:MgSiO3')
+    # Preload PALEOS-2phase material dict if needed (for any layer, not just mantle)
+    mat_PALEOS_2ph = (
+        material_dictionaries.get('PALEOS-2phase:MgSiO3') if use_paleos_2phase else None
+    )
 
     # Build WolfBower/RTPress dT/dP wrapper dicts
     dtdp_dicts = {}
@@ -1275,7 +1285,13 @@ def compute_adiabatic_temperature(
         dtdp = None
 
         if layer_mat.get('format') == 'paleos_unified':
-            # Unified PALEOS: nabla_ad directly from the table
+            # Unified PALEOS: nabla_ad directly from the table.
+            # NOTE: when mushy_zone_factor < 1.0, the density is volume-averaged
+            # in the mushy zone but nabla_ad is not weighted. This is a known
+            # simplification; implementing mushy-zone weighting for nabla_ad
+            # would require the same liquidus extraction logic as the density
+            # lookup. For the default mushy_zone_factor=1.0 (sharp boundary),
+            # this is exact.
             nabla = _get_paleos_unified_nabla_ad(
                 P_eval, T_eval, layer_mat, interpolation_functions
             )
