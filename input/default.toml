@@ -43,23 +43,23 @@ rock_liquidus              = "Monteux16-liquidus-A-chondritic"
 num_layers                 = 150 # Number of planet layers
 
 [IterativeProcess]
-max_iterations_outer       = 100 # Maximum number of iterations for the outer loop
-tolerance_outer            = 3e-3 # Convergence tolerance for the outer loop
-max_iterations_inner       = 100 # Maximum number of iterations for the inner loop
-tolerance_inner            = 1e-4 # Convergence tolerance for the inner loop
-relative_tolerance         = 1e-5 # Relative tolerance for solve_ivp
-absolute_tolerance         = 1e-6 # Absolute tolerance for solve_ivp
-maximum_step               = 250000 # Maximum integration step size for solve_ivp (m)
-adaptive_radial_fraction   = 0.98 # Fraction (0–1) of the radial domain defining where solve_ivp transitions from adaptive integration to fixed-step integration when using the temperature-dependent "WolfBower2018:MgSiO3" EOS
-max_center_pressure_guess  = 10e12 # Maximum center pressure guess (Pa). Center is always iron core (Seager2007, valid to 1e21 Pa).
+max_iterations_outer       = 100 		# Maximum number of iterations for the outer loop
+tolerance_outer            = 3e-3 		# Convergence tolerance for the outer loop
+max_iterations_inner       = 100 		# Maximum number of iterations for the inner loop
+tolerance_inner            = 1e-4 		# Convergence tolerance for the inner loop
+relative_tolerance         = 1e-5 		# Relative tolerance for solve_ivp
+absolute_tolerance         = 1e-6 		# Absolute tolerance for solve_ivp
+maximum_step               = 250000 	# Maximum integration step size for solve_ivp (m)
+adaptive_radial_fraction   = 0.98 		# Fraction (0–1) of the radial domain defining where solve_ivp transitions from adaptive integration to fixed-step integration when using the temperature-dependent "WolfBower2018:MgSiO3" EOS
+max_center_pressure_guess  = 10e12 		# Maximum center pressure guess (Pa). Center is always iron core (Seager2007, valid to 1e21 Pa).
 
 [PressureAdjustment]
-target_surface_pressure    = 101325 # Target surface pressure (Pa)
-pressure_tolerance         = 1e9 # Convergence tolerance for surface pressure convergence (Pa)
-max_iterations_pressure    = 200 # Maximum iterations for pressure adjustment loop
+target_surface_pressure    = 101325 	# Target surface pressure (Pa)
+pressure_tolerance         = 1e9 		# Convergence tolerance for surface pressure convergence (Pa)
+max_iterations_pressure    = 200 		# Maximum iterations for pressure adjustment loop
 
 [Output]
-data_enabled               = true # Flag to enable saving data to a file (true/false)
-plots_enabled              = false # Flag to enable plotting the profile results in post_processing() (true/false)
-verbose                    = false # If true, logs detailed convergence info and warnings; if false, only essential messages are shown (true/false)
-iteration_profiles_enabled = false # If true, writes pressure and density profiles for each iteration to files (true/false)
+data_enabled               = true 		# Flag to enable saving data to a file (true/false)
+plots_enabled              = false 		# Flag to enable plotting the profile results in post_processing() (true/false)
+verbose                    = false 		# If true, logs detailed convergence info and warnings; if false, only essential messages are shown (true/false)
+iteration_profiles_enabled = false 		# If true, writes pressure and density profiles for each iteration to files (true/false)
