@@ -9,11 +9,11 @@ planet_mass                = 1 			# Planet mass (M_earth)
 # ── Structure assumptions ──────────────────────────────────────────────
 
 [AssumptionsAndInitialGuesses]
-core_mass_fraction         = 0.325 		# Core mass fraction (Earth: ~0.325)
-mantle_mass_fraction       = 0 			# Mantle mass fraction (0 = fills remainder; >0 for 3-layer models with ice)
-temperature_mode           = "linear" 	# Temperature profile: "isothermal", "linear", "prescribed", "adiabatic"
-surface_temperature        = 3000 		# Surface temperature (K); used by isothermal, linear, adiabatic modes
-center_temperature         = 6000 		# Center temperature (K); used by linear and adiabatic (initial guess) modes
+core_mass_fraction         = 0.325 				# Core mass fraction (Earth: ~0.325)
+mantle_mass_fraction       = 0 					# Mantle mass fraction (0 = fills remainder; >0 for 3-layer models with ice)
+temperature_mode           = "adiabatic" 		# Temperature profile: "isothermal", "linear", "prescribed", "adiabatic"
+surface_temperature        = 3000 				# Surface temperature (K); used by isothermal, linear, adiabatic modes
+center_temperature         = 6000 				# Center temperature (K); used by linear and adiabatic (initial guess) modes
 temperature_profile_file   = "temp_profile.txt" # Prescribed T(r) file (center to surface); used by prescribed mode only
 
 # ── Equation of state ──────────────────────────────────────────────────
