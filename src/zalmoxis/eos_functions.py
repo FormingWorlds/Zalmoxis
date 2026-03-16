@@ -674,7 +674,7 @@ def calculate_density(
         iron_PALEOS_silicate)``.
     layer_eos : str
         Per-layer EOS identifier, for example ``"Seager2007:iron"``,
-        ``"WolfBower2018:MgSiO3"``, ``"PALEOS:MgSiO3"``, or ``"Analytic:iron"``.
+        ``"WolfBower2018:MgSiO3"``, ``"PALEOS-2phase:MgSiO3"``, or ``"Analytic:iron"``.
     temperature : float
         Temperature at which to evaluate the EOS, in K.
     solidus_func : callable or None
@@ -731,7 +731,7 @@ def calculate_density(
             liquidus_func,
             interpolation_functions,
         )
-    elif layer_eos == 'PALEOS:MgSiO3':
+    elif layer_eos == 'PALEOS-2phase:MgSiO3':
         return get_Tdep_density(
             pressure,
             temperature,
@@ -901,11 +901,11 @@ def compute_adiabatic_temperature(
     if mantle_eos not in TDEP_EOS_NAMES:
         raise ValueError(
             f'Adiabatic temperature mode requires a T-dependent mantle EOS '
-            f'(WolfBower2018:MgSiO3, RTPress100TPa:MgSiO3, or PALEOS:MgSiO3), '
+            f'(WolfBower2018:MgSiO3, RTPress100TPa:MgSiO3, or PALEOS-2phase:MgSiO3), '
             f"but got '{mantle_eos}'. Use 'linear' or 'isothermal' instead."
         )
 
-    use_paleos = mantle_eos == 'PALEOS:MgSiO3'
+    use_paleos = mantle_eos == 'PALEOS-2phase:MgSiO3'
 
     if use_paleos:
         # PALEOS provides nabla_ad directly in the table; no separate grad file needed.

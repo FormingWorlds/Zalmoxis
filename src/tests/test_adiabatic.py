@@ -389,7 +389,7 @@ class TestPALEOSAdiabaticProfile:
 
         material_dicts = load_material_dictionaries()
         solidus_func, liquidus_func = get_solidus_liquidus_functions()
-        layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'PALEOS:MgSiO3'}
+        layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'PALEOS-2phase:MgSiO3'}
 
         n = 50
         radii = np.linspace(0, 6.371e6, n)
@@ -421,7 +421,7 @@ class TestPALEOSAdiabaticProfile:
 
         material_dicts = load_material_dictionaries()
         solidus_func, liquidus_func = get_solidus_liquidus_functions()
-        layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'PALEOS:MgSiO3'}
+        layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'PALEOS-2phase:MgSiO3'}
 
         n = 100
         radii = np.linspace(0, 6.371e6, n)
@@ -458,7 +458,7 @@ class TestPALEOSAdiabaticProfile:
 
         material_dicts = load_material_dictionaries()
         solidus_func, liquidus_func = get_solidus_liquidus_functions()
-        layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'PALEOS:MgSiO3'}
+        layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'PALEOS-2phase:MgSiO3'}
 
         n = 100
         radii = np.linspace(0, 6.371e6, n)

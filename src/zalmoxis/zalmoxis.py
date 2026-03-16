@@ -75,7 +75,7 @@ VALID_TABULATED_EOS = {
     'Seager2007:MgSiO3',
     'WolfBower2018:MgSiO3',
     'RTPress100TPa:MgSiO3',
-    'PALEOS:MgSiO3',
+    'PALEOS-2phase:MgSiO3',
     'Seager2007:H2O',
 }
 
@@ -410,7 +410,7 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                     'The RTPress100TPa melt table extends to 100 TPa but '
                     'the solid table is limited to 1 TPa.'
                 )
-            elif eos_name == 'PALEOS:MgSiO3':
+            elif eos_name == 'PALEOS-2phase:MgSiO3':
                 max_mass = PALEOS_MAX_MASS_EARTH
                 reason = (
                     'The PALEOS MgSiO3 tables extend to 100 TPa for both '

@@ -217,7 +217,7 @@ def run_zalmoxis_RTPress100TPa(id_mass):
 
 
 def run_zalmoxis_PALEOS(id_mass, temperature_mode='linear'):
-    """Run Zalmoxis with PALEOS:MgSiO3 mantle EOS for a given mass.
+    """Run Zalmoxis with PALEOS-2phase:MgSiO3 mantle EOS for a given mass.
 
     Parameters
     ----------
@@ -239,7 +239,7 @@ def run_zalmoxis_PALEOS(id_mass, temperature_mode='linear'):
     config_params['planet_mass'] = id_mass * earth_mass
     config_params['layer_eos_config'] = {
         'core': 'Seager2007:iron',
-        'mantle': 'PALEOS:MgSiO3',
+        'mantle': 'PALEOS-2phase:MgSiO3',
     }
     config_params['temperature_mode'] = temperature_mode
 

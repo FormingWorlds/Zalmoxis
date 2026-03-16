@@ -79,7 +79,7 @@ def run_adiabatic(mass_earth):
     config['temperature_mode'] = 'adiabatic'
     config['surface_temperature'] = 3500.0
     config['center_temperature'] = 6000.0
-    config['layer_eos_config'] = {'core': 'Seager2007:iron', 'mantle': 'PALEOS:MgSiO3'}
+    config['layer_eos_config'] = {'core': 'Seager2007:iron', 'mantle': 'PALEOS-2phase:MgSiO3'}
     config['data_output_enabled'] = False
     config['plotting_enabled'] = False
     config['verbose'] = False

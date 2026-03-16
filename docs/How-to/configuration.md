@@ -29,12 +29,12 @@ Initial guesses and assumptions for the planetary structure.
 
 #### Temperature profiles
 
-Temperature profiles are only relevant when using a temperature-dependent EOS (i.e., `WolfBower2018:MgSiO3`, `RTPress100TPa:MgSiO3`, or `PALEOS:MgSiO3`). For all other EOS choices, a fixed 300 K is assumed internally and these parameters are ignored.
+Temperature profiles are only relevant when using a temperature-dependent EOS (i.e., `WolfBower2018:MgSiO3`, `RTPress100TPa:MgSiO3`, or `PALEOS-2phase:MgSiO3`). For all other EOS choices, a fixed 300 K is assumed internally and these parameters are ignored.
 
 - **`"isothermal"`**: Constant temperature equal to `surface_temperature` at all radii.
 - **`"linear"`**: Linear interpolation from `center_temperature` at $r = 0$ to `surface_temperature` at $r = R$.
 - **`"prescribed"`**: Reads a temperature profile from `temperature_profile_file`. The file must contain one temperature value per line (in K), ordered from center to surface, with the same number of entries as `num_layers`.
-- **`"adiabatic"`**: Computes the adiabatic temperature profile by integrating adiabatic gradients from the EOS, starting at `surface_temperature` and integrating inward. The initial guess is a linear profile between `surface_temperature` and `center_temperature`. **Only available for T-dependent EOS** (`WolfBower2018:MgSiO3`, `RTPress100TPa:MgSiO3`, or `PALEOS:MgSiO3`). For `WolfBower2018` and `RTPress100TPa`, pre-tabulated $(dT/dP)_S$ gradient files are used. For `PALEOS`, the dimensionless adiabatic gradient $\nabla_{\mathrm{ad}}$ is read from the table and converted via $dT/dP = \nabla_{\mathrm{ad}} \cdot T/P$, with phase-aware weighting (solid/mixed/liquid) using the configured solidus and liquidus curves. The adiabat is parameterized as $T(P)$ internally, ensuring thermodynamic consistency during the Brent pressure solver's bracket search. For T-independent EOS layers (e.g., `Seager2007:iron` core), temperature is held constant (isothermal) through that layer.
+- **`"adiabatic"`**: Computes the adiabatic temperature profile by integrating adiabatic gradients from the EOS, starting at `surface_temperature` and integrating inward. The initial guess is a linear profile between `surface_temperature` and `center_temperature`. **Only available for T-dependent EOS** (`WolfBower2018:MgSiO3`, `RTPress100TPa:MgSiO3`, or `PALEOS-2phase:MgSiO3`). For `WolfBower2018` and `RTPress100TPa`, pre-tabulated $(dT/dP)_S$ gradient files are used. For `PALEOS`, the dimensionless adiabatic gradient $\nabla_{\mathrm{ad}}$ is read from the table and converted via $dT/dP = \nabla_{\mathrm{ad}} \cdot T/P$, with phase-aware weighting (solid/mixed/liquid) using the configured solidus and liquidus curves. The adiabat is parameterized as $T(P)$ internally, ensuring thermodynamic consistency during the Brent pressure solver's bracket search. For T-independent EOS layers (e.g., `Seager2007:iron` core), temperature is held constant (isothermal) through that layer.
 
 ---
 
@@ -73,7 +73,7 @@ All EOS identifiers follow the format `<source>:<composition>`, where:
 | `Seager2007:H2O` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | Water ice (phases VII, VIII, X) | Fixed 300 K | Yes | Experimental + DFT, tabulated $\rho(P)$. |
 | `WolfBower2018:MgSiO3` | [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) | MgSiO3 (melt + solid) | T-dependent | Yes | RTpress EOS with phase-aware melting (solid EOS derived from [Mosenfelder et al. 2009](https://doi.org/10.1029/2008JB005900)). **Limited to $\leq 7\,M_\oplus$** (table max ~1 TPa; out-of-bounds pressures clamped). Requires `temperature_mode` configuration. Uses [Monteux et al.](https://doi.org/10.1016/j.epsl.2016.05.010) solidus/liquidus curves. |
 | `RTPress100TPa:MgSiO3` | Extended RTpress melt table | MgSiO3 (melt + solid) | T-dependent | Yes | Extended melt EOS to 100 TPa ($P$: $10^3$--$10^{14}$ Pa, $T$: 400--50000 K). Solid phase uses [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) table (clamped at 1 TPa). **Limited to $\leq 50\,M_\oplus$**. Requires `temperature_mode` configuration. |
-| `PALEOS:MgSiO3` | PALEOS (Zenodo 18924171) | MgSiO3 (solid + liquid) | T-dependent | Yes | Separate solid and liquid tables providing density and $\nabla_{\mathrm{ad}}$ (P: 1 bar--100 TPa, T: 300--100000 K, 150 ppd log-uniform grid). Enables phase-aware adiabatic temperature profiles using nabla_ad from both phases. **Limited to $\leq 50\,M_\oplus$**. Requires `temperature_mode` configuration. |
+| `PALEOS-2phase:MgSiO3` | PALEOS (Zenodo 18924171) | MgSiO3 (solid + liquid) | T-dependent | Yes | Separate solid and liquid tables providing density and $\nabla_{\mathrm{ad}}$ (P: 1 bar--100 TPa, T: 300--100000 K, 150 ppd log-uniform grid). Enables phase-aware adiabatic temperature profiles using nabla_ad from both phases. **Limited to $\leq 50\,M_\oplus$**. Requires `temperature_mode` configuration. |
 | `Analytic:iron` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) Table 3 | Fe (epsilon) | Fixed 300 K | No | Modified polytrope: $\rho(P) = \rho_0 + c \cdot P^n$. |
 | `Analytic:MgSiO3` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) Table 3 | MgSiO3 perovskite | Fixed 300 K | No | Modified polytrope. |
 | `Analytic:MgFeSiO3` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) Table 3 | (Mg,Fe)SiO3 | Fixed 300 K | No | Modified polytrope. |
@@ -87,7 +87,7 @@ $$\rho(P) = \rho_0 + c \cdot P^n$$
 
 where $\rho_0$ is the zero-pressure density, $c$ and $n$ are fitted constants. This approximation is valid for $P < 10^{16}$ Pa and reproduces the full tabulated EOS to 2--12% accuracy across all planetary pressures. The analytic EOS requires no external data files, making it useful for quick exploration and testing.
 
-**Temperature-dependent EOS.** Three temperature-dependent EOS options are available: `WolfBower2018:MgSiO3` (melt table up to 1 TPa, $\leq 7\,M_\oplus$), `RTPress100TPa:MgSiO3` (extended melt table up to 100 TPa, $\leq 50\,M_\oplus$), and `PALEOS:MgSiO3` (solid + liquid tables with $\nabla_{\mathrm{ad}}$, up to 100 TPa, $\leq 50\,M_\oplus$). All use separate $\rho(P, T)$ grids for solid and melt phases, with a linear melt-fraction interpolation between the solidus and liquidus. `PALEOS:MgSiO3` additionally provides the dimensionless adiabatic gradient $\nabla_{\mathrm{ad}}$ for both solid and liquid, enabling phase-aware adiabatic temperature profiles. When any T-dependent EOS is assigned to any layer, the `temperature_mode`, `surface_temperature`, and `center_temperature` parameters in `[AssumptionsAndInitialGuesses]` become active.
+**Temperature-dependent EOS.** Three temperature-dependent EOS options are available: `WolfBower2018:MgSiO3` (melt table up to 1 TPa, $\leq 7\,M_\oplus$), `RTPress100TPa:MgSiO3` (extended melt table up to 100 TPa, $\leq 50\,M_\oplus$), and `PALEOS-2phase:MgSiO3` (solid + liquid tables with $\nabla_{\mathrm{ad}}$, up to 100 TPa, $\leq 50\,M_\oplus$). All use separate $\rho(P, T)$ grids for solid and melt phases, with a linear melt-fraction interpolation between the solidus and liquidus. `PALEOS-2phase:MgSiO3` additionally provides the dimensionless adiabatic gradient $\nabla_{\mathrm{ad}}$ for both solid and liquid, enabling phase-aware adiabatic temperature profiles. When any T-dependent EOS is assigned to any layer, the `temperature_mode`, `surface_temperature`, and `center_temperature` parameters in `[AssumptionsAndInitialGuesses]` become active.
 
 #### Melting curve selection
 
@@ -115,7 +115,7 @@ The analytic Monteux+2016 curves (default) are defined for all pressures and eli
 
     **RTPress100TPa:MgSiO3**: The extended melt table covers pressures up to 100 TPa, enabling modeling of super-Earths up to ~$50\,M_\oplus$. The solid-phase table remains limited to 1 TPa (clamped at boundary), but at the high temperatures typical of massive planets the mantle is predominantly molten, so this limitation is less constraining.
 
-    **PALEOS:MgSiO3**: Both solid and liquid tables extend to 100 TPa, limited to $\leq 50\,M_\oplus$. The tables have NaN gaps at certain (P, T) corners where the thermodynamic solver did not converge (53% fill for liquid, 75% for solid). Per-cell temperature clamping with nearest-neighbor fallback handles these gaps transparently. In adiabatic mode, the T(P) parameterization ensures the Brent pressure solver never queries outside the valid domain.
+    **PALEOS-2phase:MgSiO3**: Both solid and liquid tables extend to 100 TPa, limited to $\leq 50\,M_\oplus$. The tables have NaN gaps at certain (P, T) corners where the thermodynamic solver did not converge (53% fill for liquid, 75% for solid). Per-cell temperature clamping with nearest-neighbor fallback handles these gaps transparently. In adiabatic mode, the T(P) parameterization ensures the Brent pressure solver never queries outside the valid domain.
 
 #### EOS decision guide
 
@@ -171,7 +171,7 @@ center_temperature    = 6000
 
 [EOS]
 core           = "Seager2007:iron"
-mantle         = "PALEOS:MgSiO3"
+mantle         = "PALEOS-2phase:MgSiO3"
 ice_layer      = ""
 rock_solidus   = "Monteux16-solidus"
 rock_liquidus  = "Monteux16-liquidus-A-chondritic"

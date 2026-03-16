@@ -1,4 +1,4 @@
-"""Tests for the PALEOS:MgSiO3 EOS integration.
+"""Tests for the PALEOS-2phase:MgSiO3 EOS integration.
 
 Tests cover:
 - PALEOS table loading (grid reconstruction, interpolator creation)
@@ -33,27 +33,27 @@ def _paleos_data_available():
 
 @pytest.mark.unit
 class TestPALEOSRegistration:
-    """Verify PALEOS:MgSiO3 is registered in the EOS lookup tables."""
+    """Verify PALEOS-2phase:MgSiO3 is registered in the EOS lookup tables."""
 
     def test_in_valid_tabulated_eos(self):
-        """PALEOS:MgSiO3 should be in VALID_TABULATED_EOS."""
+        """PALEOS-2phase:MgSiO3 should be in VALID_TABULATED_EOS."""
         from zalmoxis.zalmoxis import VALID_TABULATED_EOS
 
-        assert 'PALEOS:MgSiO3' in VALID_TABULATED_EOS
+        assert 'PALEOS-2phase:MgSiO3' in VALID_TABULATED_EOS
 
     def test_in_tdep_eos_names(self):
-        """PALEOS:MgSiO3 should be in TDEP_EOS_NAMES."""
+        """PALEOS-2phase:MgSiO3 should be in TDEP_EOS_NAMES."""
         from zalmoxis.constants import TDEP_EOS_NAMES
 
-        assert 'PALEOS:MgSiO3' in TDEP_EOS_NAMES
+        assert 'PALEOS-2phase:MgSiO3' in TDEP_EOS_NAMES
 
 
 @pytest.mark.unit
 class TestPALEOSMassLimit:
-    """Mass limit enforcement for PALEOS:MgSiO3."""
+    """Mass limit enforcement for PALEOS-2phase:MgSiO3."""
 
     def test_mass_limit_raises(self):
-        """Requesting > 50 M_earth with PALEOS:MgSiO3 must raise ValueError."""
+        """Requesting > 50 M_earth with PALEOS-2phase:MgSiO3 must raise ValueError."""
         from zalmoxis.constants import earth_mass
         from zalmoxis.zalmoxis import (
             load_material_dictionaries,
@@ -61,7 +61,7 @@ class TestPALEOSMassLimit:
             main,
         )
 
-        layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'PALEOS:MgSiO3'}
+        layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'PALEOS-2phase:MgSiO3'}
         config_params = {
             'planet_mass': 51.0 * earth_mass,
             'core_mass_fraction': 0.325,

@@ -1,4 +1,4 @@
-"""Integration tests for the PALEOS:MgSiO3 EOS convergence.
+"""Integration tests for the PALEOS-2phase:MgSiO3 EOS convergence.
 
 Tests that the full solver converges with PALEOS tables for both linear
 and adiabatic temperature modes across a range of planetary masses.
@@ -33,7 +33,7 @@ def _paleos_data_available():
 
 
 def _run_paleos(mass_earth, temperature_mode='linear'):
-    """Run Zalmoxis with PALEOS:MgSiO3 EOS for a given mass.
+    """Run Zalmoxis with PALEOS-2phase:MgSiO3 EOS for a given mass.
 
     Parameters
     ----------
@@ -57,7 +57,7 @@ def _run_paleos(mass_earth, temperature_mode='linear'):
     config_params['planet_mass'] = mass_earth * earth_mass
     config_params['layer_eos_config'] = {
         'core': 'Seager2007:iron',
-        'mantle': 'PALEOS:MgSiO3',
+        'mantle': 'PALEOS-2phase:MgSiO3',
     }
     config_params['temperature_mode'] = temperature_mode
     config_params['data_output_enabled'] = False
@@ -80,7 +80,7 @@ def _run_paleos(mass_earth, temperature_mode='linear'):
 
 @pytest.mark.integration
 def test_PALEOS_converges_1Mearth():
-    """PALEOS:MgSiO3 should converge for a 1 M_earth planet (linear T mode)."""
+    """PALEOS-2phase:MgSiO3 should converge for a 1 M_earth planet (linear T mode)."""
     if not _paleos_data_available():
         pytest.skip('PALEOS data files not found')
 
@@ -94,7 +94,7 @@ def test_PALEOS_converges_1Mearth():
 
 @pytest.mark.integration
 def test_PALEOS_converges_5Mearth():
-    """PALEOS:MgSiO3 should converge for a 5 M_earth super-Earth."""
+    """PALEOS-2phase:MgSiO3 should converge for a 5 M_earth super-Earth."""
     if not _paleos_data_available():
         pytest.skip('PALEOS data files not found')
 
