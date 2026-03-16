@@ -1,22 +1,30 @@
 """Melting curve functions for the mantle EOS phase routing.
 
-Provides analytic solidus and liquidus curves from Monteux et al. (2016,
-EPSL 448, 140-149), as well as a dispatcher that loads tabulated or analytic
-curves by config identifier string.
+Provides analytic solidus and liquidus curves from:
+
+- Monteux et al. (2016, EPSL 448, 140-149): piecewise Simon-Glatzel fits
+  (Eqs. 10-13). Valid up to ~400-500 GPa.
+- Stixrude (2014, Phil. Trans. R. Soc. A 372, 20130076): Simon-like power
+  laws fitted to Lindemann melting theory and experiments (Eqs. 1.9-1.10).
+  Valid over the full super-Earth pressure range.
 
 Available identifiers
 ---------------------
 Solidus:
     ``'Monteux16-solidus'``
-        Analytic: Eqs. 10 (P <= 20 GPa) and 12 (P > 20 GPa).
+        Monteux+2016 Eqs. 10/12, piecewise (P <= 20 GPa / P > 20 GPa).
+    ``'Stixrude14-solidus'``
+        Stixrude (2014) Eq. 1.9 + cryoscopic Eq. 1.10 with x0=0.79.
     ``'Monteux600-solidus-tabulated'``
         Tabulated: ``melting_curves_Monteux-600/solidus.dat``.
 
 Liquidus:
     ``'Monteux16-liquidus-A-chondritic'``
-        Analytic: Eqs. 11 (P <= 20 GPa) and 13 A-chondritic (P > 20 GPa).
+        Monteux+2016 Eqs. 11/13 A-chondritic.
     ``'Monteux16-liquidus-F-peridotitic'``
-        Analytic: Eqs. 11 (P <= 20 GPa) and 13 F-peridotitic (P > 20 GPa).
+        Monteux+2016 Eqs. 11/13 F-peridotitic.
+    ``'Stixrude14-liquidus'``
+        Stixrude (2014) Eq. 1.9: pure MgSiO3 Simon-like power law.
     ``'Monteux600-liquidus-tabulated'``
         Tabulated: ``melting_curves_Monteux-600/liquidus.dat``.
 """
@@ -38,10 +46,11 @@ if not ZALMOXIS_ROOT:
 
 # ── Valid identifiers ──────────────────────────────────────────────────
 
-VALID_SOLIDUS = {'Monteux16-solidus', 'Monteux600-solidus-tabulated'}
+VALID_SOLIDUS = {'Monteux16-solidus', 'Stixrude14-solidus', 'Monteux600-solidus-tabulated'}
 VALID_LIQUIDUS = {
     'Monteux16-liquidus-A-chondritic',
     'Monteux16-liquidus-F-peridotitic',
+    'Stixrude14-liquidus',
     'Monteux600-liquidus-tabulated',
 }
 
@@ -135,6 +144,73 @@ def monteux16_liquidus(P, model='A-chondritic'):
     return float(T[0]) if np.ndim(P) == 0 else T
 
 
+# ── Stixrude (2014) melting curves (Eqs. 1.9-1.10) ────────────────────
+
+# Reference pressure and temperature for the silicate liquidus (Eq. 1.9)
+_STIX14_T_REF = 5400.0  # K, MgSiO3 liquidus at P_ref
+_STIX14_P_REF = 140.0e9  # Pa (140 GPa)
+_STIX14_EXPONENT = 0.480
+
+# Cryoscopic depression factor for Earth-like mantle solidus (Eq. 1.10)
+# x0 = 0.79 (mole fraction of pure MgSiO3 in Earth-like mantle)
+# depression = (1 - ln(x0))^{-1} = (1 - ln(0.79))^{-1}
+_STIX14_X0_ROCK = 0.79
+_STIX14_CRYO_FACTOR = 1.0 / (1.0 - np.log(_STIX14_X0_ROCK))  # ~0.809
+
+
+def stixrude14_liquidus(P):
+    """Silicate (MgSiO3) liquidus from Stixrude (2014) Eq. 1.9.
+
+    Simon-like power law fitted to Lindemann melting theory:
+    T_rock = 5400 K * (P / 140 GPa)^0.480
+
+    Defined for all P > 0. At P = 0, returns 0 K (extrapolation).
+
+    Parameters
+    ----------
+    P : float or array-like
+        Pressure in Pa (must be >= 0).
+
+    Returns
+    -------
+    float or ndarray
+        Liquidus temperature in K.
+    """
+    P_arr = np.atleast_1d(np.asarray(P, dtype=float))
+    # Guard P=0: the power law gives 0 K at P=0
+    T = np.where(
+        P_arr > 0,
+        _STIX14_T_REF * (P_arr / _STIX14_P_REF) ** _STIX14_EXPONENT,
+        0.0,
+    )
+    return float(T[0]) if np.ndim(P) == 0 else T
+
+
+def stixrude14_solidus(P):
+    """Silicate solidus from Stixrude (2014) Eqs. 1.9 + 1.10.
+
+    The solidus is the pure-substance liquidus (Eq. 1.9) depressed by
+    the cryoscopic equation (Eq. 1.10) with x0 = 0.79 (mole fraction
+    of pure MgSiO3 in an Earth-like mantle composition):
+
+    T_solidus = T_liquidus * (1 - ln(x0))^{-1}
+
+    With x0 = 0.79 this reproduces the experimentally measured solidus
+    of 4100 K at 140 GPa (Fiquet et al. 2010).
+
+    Parameters
+    ----------
+    P : float or array-like
+        Pressure in Pa (must be >= 0).
+
+    Returns
+    -------
+    float or ndarray
+        Solidus temperature in K.
+    """
+    return stixrude14_liquidus(P) * _STIX14_CRYO_FACTOR
+
+
 # ── Tabulated melting curves ───────────────────────────────────────────
 
 
@@ -198,6 +274,12 @@ def get_melting_curve_function(curve_id):
 
         return _liq
 
+    elif curve_id == 'Stixrude14-solidus':
+        return stixrude14_solidus
+
+    elif curve_id == 'Stixrude14-liquidus':
+        return stixrude14_liquidus
+
     elif curve_id == 'Monteux600-solidus-tabulated':
         return _load_tabulated_curve(
             os.path.join(ZALMOXIS_ROOT, 'data', 'melting_curves_Monteux-600', 'solidus.dat')
@@ -214,8 +296,8 @@ def get_melting_curve_function(curve_id):
 
 
 def get_solidus_liquidus_functions(
-    solidus_id='Monteux16-solidus',
-    liquidus_id='Monteux16-liquidus-A-chondritic',
+    solidus_id='Stixrude14-solidus',
+    liquidus_id='Stixrude14-liquidus',
 ):
     """Load solidus and liquidus functions by config identifier.
 

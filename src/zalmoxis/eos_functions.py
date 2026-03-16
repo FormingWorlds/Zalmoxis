@@ -453,7 +453,7 @@ def load_melting_curve(melt_file):
 
 
 def get_solidus_liquidus_functions(
-    solidus_id='Monteux16-solidus', liquidus_id='Monteux16-liquidus-A-chondritic'
+    solidus_id='Stixrude14-solidus', liquidus_id='Stixrude14-liquidus'
 ):
     """Load solidus and liquidus melting curves by config identifier.
 

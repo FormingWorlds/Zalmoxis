@@ -253,8 +253,8 @@ def load_zalmoxis_config(temp_config_path=None):
 
     # Melting curve config (defaults for backward compat with old TOML files)
     eos_section = config['EOS']
-    rock_solidus = eos_section.get('rock_solidus', 'Monteux16-solidus')
-    rock_liquidus = eos_section.get('rock_liquidus', 'Monteux16-liquidus-A-chondritic')
+    rock_solidus = eos_section.get('rock_solidus', 'Stixrude14-solidus')
+    rock_liquidus = eos_section.get('rock_liquidus', 'Stixrude14-liquidus')
 
     return {
         'planet_mass': config['InputParameter']['planet_mass'] * earth_mass,
@@ -308,8 +308,8 @@ def load_material_dictionaries():
 
 def load_solidus_liquidus_functions(
     layer_eos_config,
-    solidus_id='Monteux16-solidus',
-    liquidus_id='Monteux16-liquidus-A-chondritic',
+    solidus_id='Stixrude14-solidus',
+    liquidus_id='Stixrude14-liquidus',
 ):
     """Load solidus and liquidus functions if any layer uses a T-dependent EOS.
 
@@ -872,8 +872,8 @@ def post_processing(config_params, id_mass=None, output_file=None):
     plotting_enabled = config_params['plotting_enabled']
 
     layer_eos_config = config_params['layer_eos_config']
-    solidus_id = config_params.get('rock_solidus', 'Monteux16-solidus')
-    liquidus_id = config_params.get('rock_liquidus', 'Monteux16-liquidus-A-chondritic')
+    solidus_id = config_params.get('rock_solidus', 'Stixrude14-solidus')
+    liquidus_id = config_params.get('rock_liquidus', 'Stixrude14-liquidus')
 
     model_results = main(
         config_params,
