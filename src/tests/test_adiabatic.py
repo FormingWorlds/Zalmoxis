@@ -20,6 +20,7 @@ from zalmoxis.eos_functions import (
     calculate_temperature_profile,
     compute_adiabatic_temperature,
 )
+from zalmoxis.mixing import parse_all_layer_mixtures
 
 
 @pytest.mark.unit
@@ -57,7 +58,7 @@ class TestComputeAdiabaticTemperature:
             surface_temperature=T_surface,
             cmb_mass=0.325 * 5.972e24,
             core_mantle_mass=5.972e24,
-            layer_eos_config=layer_eos_config,
+            layer_mixtures=parse_all_layer_mixtures(layer_eos_config),
             material_dictionaries=material_dicts,
         )
         assert T[-1] == pytest.approx(T_surface), f'Surface temperature {T[-1]} != {T_surface}'
@@ -99,7 +100,7 @@ class TestComputeAdiabaticTemperature:
             surface_temperature=T_surface,
             cmb_mass=cmb_mass,
             core_mantle_mass=5.972e24,
-            layer_eos_config=layer_eos_config,
+            layer_mixtures=parse_all_layer_mixtures(layer_eos_config),
             material_dictionaries=material_dicts,
         )
         # Core shells: mass_enclosed < cmb_mass
@@ -142,7 +143,7 @@ class TestComputeAdiabaticTemperature:
             surface_temperature=3500.0,
             cmb_mass=0.325 * 5.972e24,
             core_mantle_mass=5.972e24,
-            layer_eos_config=layer_eos_config,
+            layer_mixtures=parse_all_layer_mixtures(layer_eos_config),
             material_dictionaries=material_dicts,
         )
         # In the mantle (T-dependent EOS), T should increase inward.
@@ -154,8 +155,13 @@ class TestComputeAdiabaticTemperature:
             f'Max upward step: {np.max(diffs):.1f} K at index {np.argmax(diffs)}'
         )
 
-    def test_requires_adiabat_grad_file(self):
-        """Should raise ValueError if T-dep EOS has no adiabat_grad_file."""
+    def test_missing_adiabat_grad_file_holds_T_constant(self):
+        """If adiabat_grad_file is missing, T should be held constant (isothermal).
+
+        The mixing-based adiabat gracefully degrades: if nabla_ad cannot be
+        computed for a component, it returns None and the temperature is held
+        constant at that shell (rather than raising ValueError).
+        """
         import copy
 
         from zalmoxis.zalmoxis import load_material_dictionaries
@@ -171,17 +177,18 @@ class TestComputeAdiabaticTemperature:
 
         layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'}
 
-        with pytest.raises(ValueError, match='adiabat_grad_file'):
-            compute_adiabatic_temperature(
-                radii=radii,
-                pressure=pressure,
-                mass_enclosed=mass_enclosed,
-                surface_temperature=3500.0,
-                cmb_mass=0.325 * 5.972e24,
-                core_mantle_mass=5.972e24,
-                layer_eos_config=layer_eos_config,
-                material_dictionaries=material_dicts,
-            )
+        T = compute_adiabatic_temperature(
+            radii=radii,
+            pressure=pressure,
+            mass_enclosed=mass_enclosed,
+            surface_temperature=3500.0,
+            cmb_mass=0.325 * 5.972e24,
+            core_mantle_mass=5.972e24,
+            layer_mixtures=parse_all_layer_mixtures(layer_eos_config),
+            material_dictionaries=material_dicts,
+        )
+        # Without gradient data, T should be isothermal at surface_temperature
+        np.testing.assert_allclose(T, 3500.0, rtol=1e-10)
 
     def test_rejects_T_independent_mantle_eos(self):
         """Should raise ValueError if mantle EOS is T-independent (e.g. Seager2007)."""
@@ -204,7 +211,7 @@ class TestComputeAdiabaticTemperature:
                 surface_temperature=3500.0,
                 cmb_mass=0.325 * 5.972e24,
                 core_mantle_mass=5.972e24,
-                layer_eos_config=layer_eos_config,
+                layer_mixtures=parse_all_layer_mixtures(layer_eos_config),
                 material_dictionaries=material_dicts,
             )
 
@@ -260,7 +267,7 @@ class TestNoDivergenceThickMantle:
             surface_temperature=3500.0,
             cmb_mass=CMF * M_earth,
             core_mantle_mass=M_earth,
-            layer_eos_config=layer_eos_config,
+            layer_mixtures=parse_all_layer_mixtures(layer_eos_config),
             material_dictionaries=material_dicts,
         )
 
@@ -313,7 +320,7 @@ class TestNoDivergenceThickMantle:
             surface_temperature=3500.0,
             cmb_mass=CMF * M_earth,
             core_mantle_mass=M_earth,
-            layer_eos_config=layer_eos_config,
+            layer_mixtures=parse_all_layer_mixtures(layer_eos_config),
             material_dictionaries=material_dicts,
         )
 
@@ -404,7 +411,7 @@ class TestPALEOSAdiabaticProfile:
             surface_temperature=T_surface,
             cmb_mass=0.325 * 5.972e24,
             core_mantle_mass=5.972e24,
-            layer_eos_config=layer_eos_config,
+            layer_mixtures=parse_all_layer_mixtures(layer_eos_config),
             material_dictionaries=material_dicts,
             solidus_func=solidus_func,
             liquidus_func=liquidus_func,
@@ -435,7 +442,7 @@ class TestPALEOSAdiabaticProfile:
             surface_temperature=3500.0,
             cmb_mass=0.325 * 5.972e24,
             core_mantle_mass=5.972e24,
-            layer_eos_config=layer_eos_config,
+            layer_mixtures=parse_all_layer_mixtures(layer_eos_config),
             material_dictionaries=material_dicts,
             solidus_func=solidus_func,
             liquidus_func=liquidus_func,
@@ -472,7 +479,7 @@ class TestPALEOSAdiabaticProfile:
             surface_temperature=3500.0,
             cmb_mass=0.325 * 5.972e24,
             core_mantle_mass=5.972e24,
-            layer_eos_config=layer_eos_config,
+            layer_mixtures=parse_all_layer_mixtures(layer_eos_config),
             material_dictionaries=material_dicts,
             solidus_func=solidus_func,
             liquidus_func=liquidus_func,

@@ -1135,7 +1135,7 @@ def compute_adiabatic_temperature(
     surface_temperature,
     cmb_mass,
     core_mantle_mass,
-    layer_eos_config,
+    layer_mixtures,
     material_dictionaries,
     interpolation_functions=None,
     solidus_func=None,
@@ -1145,11 +1145,9 @@ def compute_adiabatic_temperature(
     """
     Compute an adiabatic temperature profile using native EOS gradient tables.
 
-    For WolfBower2018 and RTPress100TPa, uses ``(dT/dP)_S`` tables (liquid
-    phase only). For PALEOS-2phase, uses ``nabla_ad`` from both solid and
-    liquid tables with melt-fraction weighting. For unified PALEOS tables
-    (PALEOS:iron, PALEOS:MgSiO3, PALEOS:H2O), uses ``nabla_ad`` directly
-    from the single table.
+    Supports single-material and multi-material (volume-additive) layers.
+    For multi-material layers, nabla_ad is mass-fraction-weighted across
+    components.
 
     Parameters
     ----------
@@ -1165,19 +1163,16 @@ def compute_adiabatic_temperature(
         Core-mantle boundary mass, in kg.
     core_mantle_mass : float
         Total core-plus-mantle mass, in kg.
-    layer_eos_config : dict
-        Per-layer EOS configuration, for example
-        ``{"core": "PALEOS:iron", "mantle": "PALEOS:MgSiO3"}``.
+    layer_mixtures : dict
+        Per-layer LayerMixture objects.
     material_dictionaries : dict
         EOS registry dict keyed by EOS identifier string.
     interpolation_functions : dict, optional
         Cache of interpolation functions used to avoid redundant loading.
     solidus_func : callable, optional
-        Interpolation function for the solidus melting curve. Required for
-        PALEOS-2phase phase-aware adiabat.
+        Interpolation function for the solidus melting curve.
     liquidus_func : callable, optional
-        Interpolation function for the liquidus melting curve. Required for
-        PALEOS-2phase phase-aware adiabat.
+        Interpolation function for the liquidus melting curve.
     mushy_zone_factor : float, optional
         Cryoscopic depression factor for unified PALEOS tables. Default 1.0.
 
@@ -1185,94 +1180,35 @@ def compute_adiabatic_temperature(
     -------
     numpy.ndarray
         Temperature at each radial point, in K.
-
-    Raises
-    ------
-    ValueError
-        If adiabatic mode is requested but no layer uses a T-dependent EOS.
-    ValueError
-        If the selected mantle EOS requires an ``adiabat_grad_file`` but none
-        is provided (WolfBower2018/RTPress only).
-
-    Notes
-    -----
-    This is a standalone ZALMOXIS feature for structure calculations where no
-    external interior solver provides ``T(r)``.
-
-    In the PROTEUS-SPIDER coupling, this function is not called because SPIDER
-    computes its own temperature profile through entropy evolution.
-
-    The integration proceeds inward from the surface according to
-
-    ``T[i] = T[i+1] + (dT/dP)_S * (P[i] - P[i+1])``.
-
-    For PALEOS, ``(dT/dP)_S = nabla_ad * T / P``, where nabla_ad is the
-    dimensionless adiabatic gradient read from the PALEOS tables.
-
-    For temperature-independent EOS layers, such as a Seager (2007) iron core,
-    the temperature is held constant.
     """
-    from .constants import TDEP_EOS_NAMES
+    from .mixing import get_mixed_nabla_ad
     from .structure_model import get_layer_eos
 
     if interpolation_functions is None:
         interpolation_functions = {}
 
-    # Check which layer EOS values are T-dependent
-    tdep_eos_used = {v for v in layer_eos_config.values() if v in TDEP_EOS_NAMES}
+    from .mixing import any_component_is_tdep
 
-    if not tdep_eos_used:
+    if not any_component_is_tdep(layer_mixtures):
         raise ValueError(
-            f'Adiabatic temperature mode requires at least one T-dependent EOS '
-            f'in the layer config, but none found in {layer_eos_config}. '
-            f"Use 'linear' or 'isothermal' instead."
+            'Adiabatic temperature mode requires at least one T-dependent EOS '
+            'layer, but none found. '
+            "Use 'linear' or 'isothermal' instead."
         )
-
-    mantle_eos = layer_eos_config.get('mantle')
-
-    # Determine which EOS types are in use for adiabat computation
-    use_paleos_2phase = 'PALEOS-2phase:MgSiO3' in tdep_eos_used
-
-    # Preload PALEOS-2phase material dict if needed (for any layer, not just mantle)
-    mat_PALEOS_2ph = (
-        material_dictionaries.get('PALEOS-2phase:MgSiO3') if use_paleos_2phase else None
-    )
-
-    # Build WolfBower/RTPress dT/dP wrapper dicts
-    dtdp_dicts = {}
-    for eos_name in ('WolfBower2018:MgSiO3', 'RTPress100TPa:MgSiO3'):
-        mat = material_dictionaries.get(eos_name, {})
-        grad_file = mat.get('melted_mantle', {}).get('adiabat_grad_file')
-        if grad_file is not None:
-            dtdp_dicts[eos_name] = {'melted_mantle': {'eos_file': grad_file}}
-
-    # Validate that non-unified T-dep EOS have their required data
-    if mantle_eos in ('WolfBower2018:MgSiO3', 'RTPress100TPa:MgSiO3'):
-        if mantle_eos not in dtdp_dicts:
-            raise ValueError(
-                f"Adiabatic mode requires an 'adiabat_grad_file' in the "
-                f"melted_mantle material dictionary for EOS '{mantle_eos}'. "
-                f'Run get_zalmoxis.sh to download the required tables.'
-            )
 
     n = len(radii)
     T = np.zeros(n)
     T[n - 1] = surface_temperature
 
-    # Integrate from surface (index n-1) inward (decreasing index).
-    # NOTE: No thermal boundary layer is modeled at the CMB. The adiabat
-    # transitions directly from mantle to core, producing an isothermal
-    # core at the CMB temperature (unless the core EOS is also T-dependent).
     for i in range(n - 2, -1, -1):
-        layer_eos = get_layer_eos(
+        mixture = get_layer_eos(
             mass_enclosed[i],
             cmb_mass,
             core_mantle_mass,
-            layer_eos_config,
+            layer_mixtures,
         )
 
-        if layer_eos not in TDEP_EOS_NAMES:
-            # T-independent EOS: isothermal
+        if not mixture.has_tdep():
             T[i] = T[i + 1]
             continue
 
@@ -1280,53 +1216,24 @@ def compute_adiabatic_temperature(
         T_eval = T[i + 1]
         dP = pressure[i] - pressure[i + 1]
 
-        # Skip adiabat step when pressure is below the EOS table minimum
-        # (~1 bar = 1e5 Pa). At very low P, dT/dP = nabla_ad * T/P diverges
-        # because T/P becomes huge. This prevents runaway temperatures in
-        # the outermost low-pressure shells (common in 3-layer models where
-        # the surface pressure can be far below 1 bar).
+        # Skip at very low P to prevent T/P divergence
         if P_eval < 1e5 or pressure[i] < 1e5:
             T[i] = T[i + 1]
             continue
 
-        # Determine dT/dP based on the EOS type
-        layer_mat = material_dictionaries.get(layer_eos, {})
-        dtdp = None
+        # Get nabla_ad (handles single and multi-component mixtures)
+        nabla = get_mixed_nabla_ad(
+            P_eval,
+            T_eval,
+            mixture,
+            material_dictionaries,
+            interpolation_functions,
+            solidus_func,
+            liquidus_func,
+        )
 
-        if layer_mat.get('format') == 'paleos_unified':
-            # Unified PALEOS: nabla_ad directly from the table.
-            # NOTE: when mushy_zone_factor < 1.0, the density is volume-averaged
-            # in the mushy zone but nabla_ad is not weighted. This is a known
-            # simplification; implementing mushy-zone weighting for nabla_ad
-            # would require the same liquidus extraction logic as the density
-            # lookup. For the default mushy_zone_factor=1.0 (sharp boundary),
-            # this is exact.
-            nabla = _get_paleos_unified_nabla_ad(
-                P_eval, T_eval, layer_mat, interpolation_functions
-            )
-            if nabla is not None and nabla > 0 and P_eval > 0 and T_eval > 0:
-                dtdp = nabla * T_eval / P_eval
-
-        elif layer_eos == 'PALEOS-2phase:MgSiO3':
-            dtdp = _compute_paleos_dtdp(
-                P_eval,
-                T_eval,
-                mat_PALEOS_2ph,
-                solidus_func,
-                liquidus_func,
-                interpolation_functions,
-            )
-
-        elif layer_eos in dtdp_dicts:
-            dtdp = get_tabulated_eos(
-                P_eval,
-                dtdp_dicts[layer_eos],
-                'melted_mantle',
-                T_eval,
-                interpolation_functions,
-            )
-
-        if dtdp is not None and dtdp > 0:
+        if nabla is not None and nabla > 0 and P_eval > 0 and T_eval > 0:
+            dtdp = nabla * T_eval / P_eval
             T[i] = T_eval + dtdp * dP
         else:
             T[i] = T_eval

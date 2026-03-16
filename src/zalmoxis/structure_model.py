@@ -1,8 +1,8 @@
 """Main function to solve the coupled ODEs for the structure model.
 
 !!! Imports
-    - [`constants`](zalmoxis.constants.md): TDEP_EOS_NAMES, G
-    - [`eos_functions`](zalmoxis.eos_functions.md): calculate_density
+    - [`constants`](zalmoxis.constants.md): G
+    - [`mixing`](zalmoxis.mixing.md): LayerMixture, calculate_mixed_density, any_component_is_tdep
 
 """
 
@@ -14,15 +14,15 @@ import logging
 import numpy as np
 from scipy.integrate import solve_ivp
 
-from .constants import TDEP_EOS_NAMES, G
-from .eos_functions import calculate_density
+from .constants import G
+from .mixing import any_component_is_tdep, calculate_mixed_density
 
 # Set up logging
 logger = logging.getLogger(__name__)
 
 
-def get_layer_eos(mass, cmb_mass, core_mantle_mass, layer_eos_config):
-    """Determine the per-layer EOS string based on enclosed mass (purely geometric).
+def get_layer_eos(mass, cmb_mass, core_mantle_mass, layer_mixtures):
+    """Determine the per-layer mixture based on enclosed mass (purely geometric).
 
     Parameters
     ----------
@@ -32,25 +32,25 @@ def get_layer_eos(mass, cmb_mass, core_mantle_mass, layer_eos_config):
         Core-mantle boundary mass [kg].
     core_mantle_mass : float
         Core + mantle mass [kg].
-    layer_eos_config : dict
-        Per-layer EOS strings, e.g.
-        {"core": "Seager2007:iron", "mantle": "WolfBower2018:MgSiO3"}.
+    layer_mixtures : dict
+        Per-layer LayerMixture objects, e.g.
+        ``{"core": LayerMixture(...), "mantle": LayerMixture(...)}``.
 
     Returns
     -------
-    str
-        Per-layer EOS identifier for this shell.
+    LayerMixture
+        Mixture for this shell.
     """
     # Use a small relative tolerance for boundary comparisons to avoid
     # float-precision misassignment when a mesh node lands exactly at
     # the CMB or core-mantle boundary.
     rtol = 1e-12
     if mass < cmb_mass * (1.0 - rtol):
-        return layer_eos_config['core']
-    elif 'ice_layer' in layer_eos_config and mass >= core_mantle_mass * (1.0 - rtol):
-        return layer_eos_config['ice_layer']
+        return layer_mixtures['core']
+    elif 'ice_layer' in layer_mixtures and mass >= core_mantle_mass * (1.0 - rtol):
+        return layer_mixtures['ice_layer']
     else:
-        return layer_eos_config['mantle']
+        return layer_mixtures['mantle']
 
 
 # Define the coupled ODEs for the structure model
@@ -59,12 +59,13 @@ def coupled_odes(
     y,
     cmb_mass,
     core_mantle_mass,
-    layer_eos_config,
+    layer_mixtures,
     interpolation_cache,
     material_dictionaries,
     temperature,
     solidus_func,
     liquidus_func,
+    mushy_zone_factor=1.0,
 ):
     """Calculate derivatives of mass, gravity, and pressure w.r.t. radius.
 
@@ -78,8 +79,8 @@ def coupled_odes(
         Core-mantle boundary mass [kg].
     core_mantle_mass : float
         Core + mantle mass [kg].
-    layer_eos_config : dict
-        Per-layer EOS configuration.
+    layer_mixtures : dict
+        Per-layer LayerMixture objects.
     interpolation_cache : dict
         Cache for interpolation functions.
     material_dictionaries : dict
@@ -90,6 +91,8 @@ def coupled_odes(
         Solidus melting curve interpolation function.
     liquidus_func : callable or None
         Liquidus melting curve interpolation function.
+    mushy_zone_factor : float
+        Mushy zone factor for unified PALEOS tables.
 
     Returns
     -------
@@ -99,8 +102,8 @@ def coupled_odes(
     # Unpack the state vector
     mass, gravity, pressure = y
 
-    # Determine per-layer EOS for the current enclosed mass
-    layer_eos = get_layer_eos(mass, cmb_mass, core_mantle_mass, layer_eos_config)
+    # Determine per-layer mixture for the current enclosed mass
+    mixture = get_layer_eos(mass, cmb_mass, core_mantle_mass, layer_mixtures)
 
     # Return zero derivatives for non-physical pressure.  The adaptive ODE
     # solver (RK45) may evaluate trial points beyond the physical domain;
@@ -110,14 +113,15 @@ def coupled_odes(
         return [0.0, 0.0, 0.0]
 
     # Calculate density at the current radius, using pressure from y
-    current_density = calculate_density(
+    current_density = calculate_mixed_density(
         pressure,
-        material_dictionaries,
-        layer_eos,
         temperature,
+        mixture,
+        material_dictionaries,
         solidus_func,
         liquidus_func,
         interpolation_cache,
+        mushy_zone_factor,
     )
 
     # Return zero derivatives for invalid density.  This is intentional:
@@ -144,7 +148,7 @@ def coupled_odes(
 
 
 def solve_structure(
-    layer_eos_config,
+    layer_mixtures,
     cmb_mass,
     core_mantle_mass,
     radii,
@@ -158,6 +162,7 @@ def solve_structure(
     solidus_func,
     liquidus_func,
     temperature_function=None,
+    mushy_zone_factor=1.0,
 ):
     """Solve the coupled ODEs for the planetary structure model.
 
@@ -167,9 +172,9 @@ def solve_structure(
 
     Parameters
     ----------
-    layer_eos_config : dict
-        Per-layer EOS configuration, e.g.
-        {"core": "Seager2007:iron", "mantle": "WolfBower2018:MgSiO3"}.
+    layer_mixtures : dict
+        Per-layer LayerMixture objects, e.g.
+        ``{"core": LayerMixture(...), "mantle": LayerMixture(...)}``.
     cmb_mass : float
         Mass at the core-mantle boundary [kg].
     core_mantle_mass : float
@@ -198,13 +203,15 @@ def solve_structure(
         Function returning temperature [K]. Signature: ``f(r, P) -> T``
         where ``r`` is radius in m and ``P`` is pressure in Pa. For
         non-adiabatic modes the pressure argument is ignored.
+    mushy_zone_factor : float
+        Mushy zone factor for unified PALEOS tables.
 
     Returns
     -------
     tuple
         (mass_enclosed, gravity, pressure) arrays at each radial grid point.
     """
-    uses_Tdep = any(v in TDEP_EOS_NAMES for v in layer_eos_config.values() if v)
+    uses_Tdep = any_component_is_tdep(layer_mixtures)
 
     # Terminal event: stop integration when pressure crosses zero.
     # Without this, the ODE solver grinds with tiny step sizes in the
@@ -215,6 +222,21 @@ def solve_structure(
     _pressure_zero.terminal = True
     _pressure_zero.direction = -1  # trigger on positive → negative crossing
 
+    def _ode_rhs(r, y):
+        return coupled_odes(
+            r,
+            y,
+            cmb_mass,
+            core_mantle_mass,
+            layer_mixtures,
+            interpolation_cache,
+            material_dictionaries,
+            temperature_function(r, y[2]) if temperature_function else 300,
+            solidus_func,
+            liquidus_func,
+            mushy_zone_factor,
+        )
+
     if uses_Tdep:
         # Split the radial grid into two parts for better handling of large step sizes
         radial_split_index = max(
@@ -223,18 +245,7 @@ def solve_structure(
 
         # Solve the ODEs in two parts, first part with default max_step (adaptive)
         sol1 = solve_ivp(
-            lambda r, y: coupled_odes(
-                r,
-                y,
-                cmb_mass,
-                core_mantle_mass,
-                layer_eos_config,
-                interpolation_cache,
-                material_dictionaries,
-                temperature_function(r, y[2]),
-                solidus_func,
-                liquidus_func,
-            ),
+            _ode_rhs,
             (radii[0], radii[radial_split_index - 1]),
             y0,
             t_eval=radii[:radial_split_index],
@@ -252,18 +263,7 @@ def solve_structure(
         else:
             # Second part with user-defined max_step
             sol2 = solve_ivp(
-                lambda r, y: coupled_odes(
-                    r,
-                    y,
-                    cmb_mass,
-                    core_mantle_mass,
-                    layer_eos_config,
-                    interpolation_cache,
-                    material_dictionaries,
-                    temperature_function(r, y[2]),
-                    solidus_func,
-                    liquidus_func,
-                ),
+                _ode_rhs,
                 (radii[radial_split_index - 1], radii[-1]),
                 sol1.y[:, -1],
                 t_eval=radii[radial_split_index - 1 :],
@@ -280,20 +280,8 @@ def solve_structure(
             pressure = np.concatenate([sol1.y[2, :-1], sol2.y[2]])
     else:
         # Single integration with fixed temperature (300 K for Seager+2007)
-        temperature = 300
         sol = solve_ivp(
-            lambda r, y: coupled_odes(
-                r,
-                y,
-                cmb_mass,
-                core_mantle_mass,
-                layer_eos_config,
-                interpolation_cache,
-                material_dictionaries,
-                temperature,
-                solidus_func,
-                liquidus_func,
-            ),
+            _ode_rhs,
             (radii[0], radii[-1]),
             y0,
             t_eval=radii,

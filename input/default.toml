@@ -32,6 +32,11 @@ temperature_profile_file   = "temp_profile.txt" # Prescribed T(r) file (center t
 #   PALEOS:H2O               Unified PALEOS water (7 EOS, up to 100 TPa, <= 50 M_earth)
 #   Analytic:<material>      Seager+2007 analytic polytrope, 300 K, no data files needed
 #                            Materials: iron, MgSiO3, MgFeSiO3, H2O, graphite, SiC
+#
+# Multi-material mixing: use "+" to combine materials with mass fractions.
+# Example: mantle = "PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15"
+# Fractions must sum to 1.0. Each component is evaluated independently at (P,T),
+# and densities are mixed via harmonic mean (volume additivity).
 core                       = "PALEOS:iron"
 mantle                     = "PALEOS:MgSiO3"
 ice_layer                  = "" 		# Empty = 2-layer model; set to an EOS string for 3-layer model
