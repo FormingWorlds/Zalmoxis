@@ -49,7 +49,7 @@ post_processing() ──► output files + plots
 ## Key functions
 
 - **`main()`** (`zalmoxis.py`): Orchestrates the three nested convergence loops.
-  The innermost loop uses `scipy.optimize.brentq` to find the central pressure root (see [Pressure Solver](#pressure-solver-brents-method)).
+  The innermost loop uses `scipy.optimize.brentq` to find the central pressure root (see [Pressure Solver](process_flow.md#pressure-solver-brents-method)).
 
 - **`_pressure_residual()`** (`zalmoxis.py`, closure inside `main()`): Residual function $f(P_c) = P_{\mathrm{surface}}(P_c) - P_{\mathrm{target}}$ passed to `brentq`.
   Calls `solve_structure()` for each trial $P_c$ and captures the ODE solution via a mutable closure dict.

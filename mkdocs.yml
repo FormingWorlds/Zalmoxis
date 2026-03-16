@@ -28,6 +28,7 @@ nav:
           - Analytic EOS: Reference/api/zalmoxis.eos_analytic.md
           - EOS functions: Reference/api/zalmoxis.eos_functions.md
           - EOS properties: Reference/api/zalmoxis.eos_properties.md
+          - Melting curves: Reference/api/zalmoxis.melting_curves.md
           - Structure model: Reference/api/zalmoxis.structure_model.md
       - Data: Reference/data.md
 

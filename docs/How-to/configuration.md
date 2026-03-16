@@ -61,7 +61,7 @@ ice_layer = ""  # Empty string = 2-layer model
 
 All EOS identifiers follow the format `<source>:<composition>`, where:
 
-- **`<source>`** identifies the data source or method: `Seager2007` (tabulated), `WolfBower2018` (tabulated, temperature-dependent), `RTPress100TPa` (extended T-dependent melt table), `PALEOS` (T-dependent with adiabatic gradient), or `Analytic` (closed-form fit, no data files needed).
+- **`<source>`** identifies the data source or method: `Seager2007` (tabulated), `WolfBower2018` (tabulated, temperature-dependent), `RTPress100TPa` (extended T-dependent melt table), `PALEOS-2phase` (T-dependent with adiabatic gradient), or `Analytic` (closed-form fit, no data files needed).
 - **`<composition>`** identifies the material: `iron`, `MgSiO3`, `MgFeSiO3`, `H2O`, `graphite`, `SiC`.
 
 #### Available EOS options
@@ -317,7 +317,7 @@ The default values work well for Earth-mass planets with the default EOS. For ot
 
 Controls the Brent root-finding solver that determines the central pressure.
 The solver finds $P_c$ such that the surface pressure after ODE integration matches the target.
-See the [model documentation](../Explanations/model.md#pressure-solver-brents-method) for details on the algorithm.
+See the [process flow documentation](../Explanations/process_flow.md#pressure-solver-brents-method) for details on the algorithm.
 
 | Parameter | Type | Unit | Default | Description |
 |---|---|---|---|---|

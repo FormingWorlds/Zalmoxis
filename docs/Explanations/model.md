@@ -2,7 +2,7 @@
 
 Zalmoxis solves the coupled ordinary differential equations (ODEs) of hydrostatic equilibrium for a differentiated planet with 2--3 compositionally distinct layers (iron core, silicate mantle, and optional water/ice envelope).
 Given a total planet mass, layer mass fractions, and a per-layer equation of state (EOS) specification, the code iteratively determines self-consistent radial profiles of pressure, density, gravity, and enclosed mass from the center to the surface.
-Three families of EOS are supported and can be mixed arbitrarily across layers: the [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) merged tabulated EOS at 300 K, the temperature-dependent [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) RTpress EOS with phase-aware melt fractions, and a fast analytic modified-polytrope approximation from [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346).
+Several EOS families are supported and can be mixed arbitrarily across layers: the [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) merged tabulated EOS at 300 K, the temperature-dependent [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) RTpress EOS (including the extended 100 TPa melt table), the PALEOS two-phase MgSiO$_3$ EOS with adiabatic gradient, and a fast analytic modified-polytrope approximation from [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346).
 
 ---
 
@@ -109,7 +109,7 @@ When this EOS is selected for any layer, the radial integration is split into tw
 
 **Mass limit.** The WolfBower2018 tables cover pressures up to ~1 TPa.
 For planets above ~2 $M_\oplus$, deep-mantle pressures near the core-mantle boundary begin to exceed this table ceiling.
-The Brent pressure solver (see [Pressure Solver](#pressure-solver-brents-method)) with out-of-bounds pressure clamping handles this gracefully up to $7\,M_\oplus$: pressures beyond the table boundary are clamped to the table edge, returning the boundary density.
+The Brent pressure solver (see [Pressure Solver](process_flow.md#pressure-solver-brents-method)) with out-of-bounds pressure clamping handles this gracefully up to $7\,M_\oplus$: pressures beyond the table boundary are clamped to the table edge, returning the boundary density.
 This approximation is acceptable for planets up to ~7 $M_\oplus$, where the clamped region is a small fraction of the mantle.
 Beyond $7\,M_\oplus$, the clamped densities diverge too far from reality and the code raises a `ValueError`.
 For higher-mass planets, use `RTPress100TPa:MgSiO3` or `PALEOS-2phase:MgSiO3` (T-dependent, up to ~50 $M_\oplus$) or `Seager2007:MgSiO3` / `Analytic:MgSiO3` (300 K, up to ~50 $M_\oplus$).

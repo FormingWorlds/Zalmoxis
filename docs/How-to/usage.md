@@ -8,7 +8,7 @@ Run an Earth-like rocky planet with the default configuration:
 python -m zalmoxis -c input/default.toml
 ```
 
-This uses the default `input/default.toml`, which models a 1 Earth-mass, two-layer planet (iron core + MgSiO3 mantle). Output files are written to the `output_files/` directory.
+This uses the default `input/default.toml`, which models a 1 Earth-mass, two-layer planet (iron core + temperature-dependent PALEOS-2phase MgSiO3 mantle at 3000 K surface temperature). Output files are written to the `output_files/` directory. The PALEOS data files must be downloaded first (see [installation](installation.md)).
 
 To change the planet mass, edit the `[InputParameter]` section:
 
