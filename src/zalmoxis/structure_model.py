@@ -195,7 +195,9 @@ def solve_structure(
     liquidus_func : callable or None
         Liquidus melting curve interpolation function.
     temperature_function : callable or None
-        Function returning temperature [K] as function of radius [m].
+        Function returning temperature [K]. Signature: ``f(r, P) -> T``
+        where ``r`` is radius in m and ``P`` is pressure in Pa. For
+        non-adiabatic modes the pressure argument is ignored.
 
     Returns
     -------
@@ -229,7 +231,7 @@ def solve_structure(
                 layer_eos_config,
                 interpolation_cache,
                 material_dictionaries,
-                temperature_function(r),
+                temperature_function(r, y[2]),
                 solidus_func,
                 liquidus_func,
             ),
@@ -258,7 +260,7 @@ def solve_structure(
                     layer_eos_config,
                     interpolation_cache,
                     material_dictionaries,
-                    temperature_function(r),
+                    temperature_function(r, y[2]),
                     solidus_func,
                     liquidus_func,
                 ),

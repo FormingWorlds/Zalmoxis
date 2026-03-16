@@ -488,8 +488,9 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
         pressure = np.zeros(num_layers)
 
         if uses_Tdep:
-            # Compute the linear (initial guess) temperature profile
-            linear_temperature_function = calculate_temperature_profile(
+            # Compute the linear (initial guess) temperature profile.
+            # This is a function of radius only; wrap it to accept (r, P).
+            _linear_tf = calculate_temperature_profile(
                 radii,
                 'linear',
                 surface_temperature,
@@ -520,22 +521,54 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                     liquidus_func,
                 )
 
-                T_linear = linear_temperature_function(radii)
-                T_adiabat = np.interp(radii, prev_radii, adiabat_T)
+                # Build T(P) interpolator from the previous iteration's
+                # pressure profile.  This ensures that during the Brent
+                # bracket search, the adiabatic temperature tracks the
+                # ODE's actual pressure rather than a fixed radial mapping.
+                # This prevents unphysical (low P, high T) queries that
+                # hit NaN gaps in the PALEOS tables.
+                _sort = np.argsort(prev_pressure)
+                _P_sorted = prev_pressure[_sort]
+                _T_sorted = adiabat_T[_sort]
+                # Remove P <= 0 entries (surface padding)
+                _valid = _P_sorted > 0
+                _P_sorted = _P_sorted[_valid]
+                _T_sorted = _T_sorted[_valid]
+                _logP_sorted = np.log10(_P_sorted)
 
                 if _adiabat_blend < 1.0:
-                    temperatures = (
-                        1.0 - _adiabat_blend
-                    ) * T_linear + _adiabat_blend * T_adiabat
-                else:
-                    temperatures = T_adiabat
+                    _blend = _adiabat_blend
 
-                # Build a callable for the ODE solver
-                def temperature_function(r, _T=temperatures, _r=radii):
-                    return np.interp(np.array(r), _r, _T)
+                    def temperature_function(
+                        r, P, _b=_blend, _lp=_logP_sorted, _ts=_T_sorted, _ltf=_linear_tf
+                    ):
+                        T_lin = _ltf(r)
+                        if P <= 0:
+                            return T_lin
+                        T_adi = float(np.interp(np.log10(P), _lp, _ts))
+                        return (1.0 - _b) * T_lin + _b * T_adi
+
+                else:
+
+                    def temperature_function(r, P, _lp=_logP_sorted, _ts=_T_sorted):
+                        if P <= 0:
+                            return surface_temperature
+                        return float(np.interp(np.log10(P), _lp, _ts))
+
+                # Pre-compute temperatures array for the density update loop
+                # (uses the converged pressure from the previous iteration)
+                temperatures = np.array(
+                    [
+                        temperature_function(radii[i], prev_pressure[i])
+                        for i in range(num_layers)
+                    ]
+                )
             else:
-                temperature_function = linear_temperature_function
-                temperatures = temperature_function(radii)
+
+                def temperature_function(r, P, _tf=_linear_tf):
+                    return _tf(r)
+
+                temperatures = _linear_tf(radii)
         else:
             temperatures = np.ones(num_layers) * 300
 
@@ -703,11 +736,14 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                     layer_eos_config,
                 )
 
+                # Use T(r, P) with the actual converged pressure so
+                # temperature is consistent with the ODE solution.
+                T_i = temperature_function(radii[i], pressure[i]) if uses_Tdep else 300
                 new_density = calculate_density(
                     pressure[i],
                     material_dictionaries,
                     layer_eos,
-                    temperatures[i],
+                    T_i,
                     solidus_func,
                     liquidus_func,
                     interpolation_cache,
@@ -737,6 +773,13 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                     f'Maximum inner iterations ({max_iterations_inner}) reached. '
                     'Density may not be fully converged.'
                 )
+
+        # Recompute the temperatures array from the converged pressure profile
+        # so model_results['temperature'] reflects actual T(P), not the pre-Brent estimate.
+        if uses_Tdep:
+            temperatures = np.array(
+                [temperature_function(radii[i], pressure[i]) for i in range(num_layers)]
+            )
 
         # Save converged profiles for the next outer iteration's adiabat
         prev_radii = radii.copy()
