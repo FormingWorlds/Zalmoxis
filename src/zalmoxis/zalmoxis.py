@@ -183,6 +183,225 @@ def validate_layer_eos(layer_eos_config):
         )
 
 
+def validate_config(config_params):
+    """Validate all configuration parameters for physical and logical consistency.
+
+    Checks parameter types, ranges, and cross-parameter constraints. Raises
+    ValueError with a clear message explaining the problem and how to fix it,
+    rather than letting the solver produce incorrect results.
+
+    Parameters
+    ----------
+    config_params : dict
+        Configuration parameters from load_zalmoxis_config().
+
+    Raises
+    ------
+    ValueError
+        If any parameter is invalid or parameters are incompatible.
+    """
+    # ── Planet mass ──────────────────────────────────────────────────
+    planet_mass = config_params['planet_mass']
+    if planet_mass <= 0:
+        raise ValueError(
+            f'planet_mass must be positive, got {planet_mass / earth_mass:.4f} M_earth. '
+            f'Set planet_mass > 0 in [InputParameter].'
+        )
+
+    # ── Mass fractions ──────────────────────────────────────────────
+    cmf = config_params['core_mass_fraction']
+    mmf = config_params['mantle_mass_fraction']
+    layer_eos_config = config_params['layer_eos_config']
+
+    if cmf <= 0 or cmf > 1:
+        raise ValueError(
+            f'core_mass_fraction must be in (0, 1], got {cmf}. '
+            f'A planet requires a nonzero core.'
+        )
+
+    if mmf < 0 or mmf >= 1:
+        raise ValueError(
+            f'mantle_mass_fraction must be in [0, 1), got {mmf}. '
+            f'Use 0 for a 2-layer model where the mantle fills the remainder.'
+        )
+
+    if cmf + mmf > 1.0:
+        raise ValueError(
+            f'core_mass_fraction ({cmf}) + mantle_mass_fraction ({mmf}) = {cmf + mmf} > 1.0. '
+            f'The sum of mass fractions cannot exceed 1.'
+        )
+
+    # 3-layer model requires mantle_mass_fraction > 0
+    has_ice = 'ice_layer' in layer_eos_config
+    if has_ice and mmf <= 0:
+        raise ValueError(
+            f'3-layer model (ice_layer = "{layer_eos_config["ice_layer"]}") requires '
+            f'mantle_mass_fraction > 0, but got {mmf}. '
+            f'Set mantle_mass_fraction > 0 in [AssumptionsAndInitialGuesses], '
+            f'or remove ice_layer from [EOS] for a 2-layer model.'
+        )
+
+    if not has_ice and mmf > 0:
+        raise ValueError(
+            f'mantle_mass_fraction = {mmf} > 0 but no ice_layer EOS is set. '
+            f'For a 2-layer model, set mantle_mass_fraction = 0 '
+            f'(mantle fills the remainder 1 - core_mass_fraction). '
+            f'For a 3-layer model, set ice_layer to a valid EOS string.'
+        )
+
+    # ── Temperature parameters ──────────────────────────────────────
+    temperature_mode = config_params['temperature_mode']
+    valid_modes = ('isothermal', 'linear', 'prescribed', 'adiabatic')
+    if temperature_mode not in valid_modes:
+        raise ValueError(
+            f"Unknown temperature_mode '{temperature_mode}'. Valid options: {valid_modes}."
+        )
+
+    surface_temp = config_params['surface_temperature']
+    center_temp = config_params['center_temperature']
+
+    if surface_temp <= 0:
+        raise ValueError(
+            f'surface_temperature must be positive, got {surface_temp} K. '
+            f'Temperatures must be in Kelvin.'
+        )
+
+    if temperature_mode in ('linear', 'adiabatic') and center_temp <= 0:
+        raise ValueError(
+            f"center_temperature must be positive for '{temperature_mode}' mode, "
+            f'got {center_temp} K. Temperatures must be in Kelvin.'
+        )
+
+    if temperature_mode == 'linear' and center_temp <= surface_temp:
+        logger.warning(
+            f'center_temperature ({center_temp} K) <= surface_temperature ({surface_temp} K) '
+            f'in linear mode. The temperature gradient will be zero or negative '
+            f'(temperature decreases inward). This is physically unusual.'
+        )
+
+    # Adiabatic mode requires at least one T-dependent EOS layer
+    uses_Tdep = any(v in TDEP_EOS_NAMES for v in layer_eos_config.values() if v)
+    if temperature_mode == 'adiabatic' and not uses_Tdep:
+        raise ValueError(
+            f'Adiabatic temperature mode requires at least one T-dependent EOS layer, '
+            f'but none found in {layer_eos_config}. '
+            f'T-dependent EOS options: {sorted(TDEP_EOS_NAMES)}. '
+            f"Use 'isothermal' or 'linear' mode with T-independent EOS."
+        )
+
+    # ── Mushy zone factor ───────────────────────────────────────────
+    mushy_zone_factor = config_params.get('mushy_zone_factor', 1.0)
+
+    if mushy_zone_factor < 0 or mushy_zone_factor > 1.0:
+        raise ValueError(
+            f'mushy_zone_factor must be in [0, 1.0], got {mushy_zone_factor}. '
+            f'1.0 = no mushy zone (sharp phase boundary). '
+            f'< 1.0 = solidus at this fraction of the liquidus temperature.'
+        )
+
+    if mushy_zone_factor < 0.7:
+        raise ValueError(
+            f'mushy_zone_factor = {mushy_zone_factor} is below the minimum of 0.7. '
+            f'Values below 0.7 produce unphysically wide mushy zones that can '
+            f'cause solver instabilities. Use a value in [0.7, 1.0].'
+        )
+
+    # mushy_zone_factor < 1.0 only makes sense with unified PALEOS tables
+    has_unified_paleos = any(
+        v in ('PALEOS:iron', 'PALEOS:MgSiO3', 'PALEOS:H2O')
+        for v in layer_eos_config.values()
+        if v
+    )
+    if mushy_zone_factor < 1.0 and not has_unified_paleos:
+        raise ValueError(
+            f'mushy_zone_factor = {mushy_zone_factor} < 1.0 but no unified PALEOS '
+            f'EOS is configured. The mushy zone factor only applies to unified '
+            f'PALEOS tables (PALEOS:iron, PALEOS:MgSiO3, PALEOS:H2O). '
+            f'For PALEOS-2phase or WolfBower2018, phase routing is controlled '
+            f'by the rock_solidus/rock_liquidus melting curves instead.'
+        )
+
+    # ── Numerical parameters ────────────────────────────────────────
+    num_layers = config_params['num_layers']
+    if num_layers < 10:
+        raise ValueError(
+            f'num_layers must be >= 10, got {num_layers}. '
+            f'Fewer than 10 radial grid points cannot resolve the structure.'
+        )
+
+    if num_layers > 10000:
+        raise ValueError(
+            f'num_layers = {num_layers} is excessively large. '
+            f'Values above 10000 cause very slow convergence with no accuracy gain. '
+            f'Typical values: 100-500.'
+        )
+
+    arf = config_params['adaptive_radial_fraction']
+    if arf <= 0 or arf >= 1:
+        raise ValueError(
+            f'adaptive_radial_fraction must be in (0, 1), got {arf}. '
+            f'Typical value: 0.98. This fraction of the radial domain uses '
+            f'adaptive ODE stepping; the remainder uses fixed steps.'
+        )
+
+    # ── Solver tolerances ───────────────────────────────────────────
+    for param, name in [
+        ('tolerance_outer', 'tolerance_outer'),
+        ('tolerance_inner', 'tolerance_inner'),
+        ('relative_tolerance', 'relative_tolerance'),
+        ('absolute_tolerance', 'absolute_tolerance'),
+    ]:
+        val = config_params[param]
+        if val <= 0:
+            raise ValueError(f'{name} must be positive, got {val}.')
+
+    for param, name in [
+        ('max_iterations_outer', 'max_iterations_outer'),
+        ('max_iterations_inner', 'max_iterations_inner'),
+        ('max_iterations_pressure', 'max_iterations_pressure'),
+    ]:
+        val = config_params[param]
+        if val < 1:
+            raise ValueError(f'{name} must be >= 1, got {val}.')
+
+    maximum_step = config_params['maximum_step']
+    if maximum_step <= 0:
+        raise ValueError(
+            f'maximum_step must be positive, got {maximum_step} m. '
+            f'This is the max radial step size for the ODE integrator.'
+        )
+
+    # ── Pressure solver ─────────────────────────────────────────────
+    target_sp = config_params['target_surface_pressure']
+    if target_sp < 0:
+        raise ValueError(
+            f'target_surface_pressure must be >= 0, got {target_sp} Pa. '
+            f'Default is 101325 Pa (1 atm).'
+        )
+
+    ptol = config_params['pressure_tolerance']
+    if ptol <= 0:
+        raise ValueError(f'pressure_tolerance must be positive, got {ptol} Pa.')
+
+    max_pcg = config_params['max_center_pressure_guess']
+    if max_pcg <= 0:
+        raise ValueError(f'max_center_pressure_guess must be positive, got {max_pcg} Pa.')
+
+    # ── EOS-specific cross-checks ───────────────────────────────────
+    # Melting curves only needed for EOS that use external phase routing
+    needs_curves = any(v in _NEEDS_MELTING_CURVES for v in layer_eos_config.values() if v)
+    if needs_curves:
+        rock_solidus = config_params.get('rock_solidus', '')
+        rock_liquidus = config_params.get('rock_liquidus', '')
+        if not rock_solidus or not rock_liquidus:
+            raise ValueError(
+                'The configured EOS requires melting curves for phase routing, '
+                'but rock_solidus or rock_liquidus is empty. '
+                "Set both in [EOS]. Example: rock_solidus = 'Monteux16-solidus', "
+                "rock_liquidus = 'Monteux16-liquidus-A-chondritic'."
+            )
+
+
 def choose_config_file(temp_config_path=None):
     """
     Function to choose the configuration file to run the main function.
@@ -257,7 +476,7 @@ def load_zalmoxis_config(temp_config_path=None):
     rock_liquidus = eos_section.get('rock_liquidus', 'Stixrude14-liquidus')
     mushy_zone_factor = eos_section.get('mushy_zone_factor', 1.0)
 
-    return {
+    config_params = {
         'planet_mass': config['InputParameter']['planet_mass'] * earth_mass,
         'core_mass_fraction': config['AssumptionsAndInitialGuesses']['core_mass_fraction'],
         'mantle_mass_fraction': config['AssumptionsAndInitialGuesses']['mantle_mass_fraction'],
@@ -287,6 +506,11 @@ def load_zalmoxis_config(temp_config_path=None):
         'verbose': config['Output']['verbose'],
         'iteration_profiles_enabled': config['Output']['iteration_profiles_enabled'],
     }
+
+    # Validate all parameters for physical and logical consistency
+    validate_config(config_params)
+
+    return config_params
 
 
 def load_material_dictionaries():
