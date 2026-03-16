@@ -38,7 +38,7 @@ Each structural layer is assigned its own EOS via a string of the form `"<source
 ```toml
 [EOS]
 core      = "Seager2007:iron"
-mantle    = "WolfBower2018:MgSiO3"
+mantle    = "PALEOS-2phase:MgSiO3"
 ice_layer = ""   # empty = 2-layer model
 ```
 
@@ -112,7 +112,7 @@ For planets above ~2 $M_\oplus$, deep-mantle pressures near the core-mantle boun
 The Brent pressure solver (see [Pressure Solver](#pressure-solver-brents-method)) with out-of-bounds pressure clamping handles this gracefully up to $7\,M_\oplus$: pressures beyond the table boundary are clamped to the table edge, returning the boundary density.
 This approximation is acceptable for planets up to ~7 $M_\oplus$, where the clamped region is a small fraction of the mantle.
 Beyond $7\,M_\oplus$, the clamped densities diverge too far from reality and the code raises a `ValueError`.
-For higher-mass planets, use `RTPress100TPa:MgSiO3` (T-dependent, up to ~50 $M_\oplus$) or `Seager2007:MgSiO3` / `Analytic:MgSiO3` (300 K, up to ~50 $M_\oplus$).
+For higher-mass planets, use `RTPress100TPa:MgSiO3` or `PALEOS-2phase:MgSiO3` (T-dependent, up to ~50 $M_\oplus$) or `Seager2007:MgSiO3` / `Analytic:MgSiO3` (300 K, up to ~50 $M_\oplus$).
 
 ### RTPress100TPa Extended Melt EOS
 

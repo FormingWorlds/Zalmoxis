@@ -32,10 +32,24 @@ The table below lists every data file used by Zalmoxis, organised by subdirector
 
 ### Melting curves
 
+**Tabulated** (downloaded data files):
+
 | File | Location | Format | Source | Description |
 |------|----------|--------|--------|-------------|
-| `solidus.dat` | `data/melting_curves_Monteux-600/` | Space-separated (P in Pa, T in K) | [Monteux et al. (2016)](https://doi.org/10.1016/j.epsl.2016.05.010) | MgSiO3 solidus curve (offset: solidus = liquidus − 600 K) |
-| `liquidus.dat` | `data/melting_curves_Monteux-600/` | Space-separated (P in Pa, T in K) | [Monteux et al. (2016)](https://doi.org/10.1016/j.epsl.2016.05.010) | MgSiO3 liquidus curve |
+| `solidus.dat` | `data/melting_curves_Monteux-600/` | Space-separated (P in Pa, T in K) | [Monteux et al. (2016)](https://doi.org/10.1016/j.epsl.2016.05.010) | MgSiO3 solidus curve (offset: solidus = liquidus - 600 K). Legacy; selected via `rock_solidus = "Monteux600-solidus-tabulated"`. |
+| `liquidus.dat` | `data/melting_curves_Monteux-600/` | Space-separated (P in Pa, T in K) | [Monteux et al. (2016)](https://doi.org/10.1016/j.epsl.2016.05.010) | MgSiO3 liquidus curve. Legacy; selected via `rock_liquidus = "Monteux600-liquidus-tabulated"`. |
+
+**Analytic** (hardcoded, no data files needed):
+
+| Identifier | Source | Description |
+|------------|--------|-------------|
+| `Monteux16-solidus` | [Monteux et al. (2016)](https://doi.org/10.1016/j.epsl.2016.05.010) Eqs. 10/12 | Piecewise Simon-Glatzel solidus, valid to ~500 GPa. |
+| `Monteux16-liquidus-A-chondritic` | [Monteux et al. (2016)](https://doi.org/10.1016/j.epsl.2016.05.010) Eqs. 11/13 | A-chondritic liquidus, valid to ~500 GPa. |
+| `Monteux16-liquidus-F-peridotitic` | [Monteux et al. (2016)](https://doi.org/10.1016/j.epsl.2016.05.010) Eqs. 11/13 | F-peridotitic liquidus, valid to ~660 GPa. |
+| `Stixrude14-solidus` | [Stixrude (2014)](https://doi.org/10.1098/rsta.2013.0076) Eqs. 1.9+1.10 | Simon-like power law with cryoscopic depression ($x_0 = 0.79$). Valid at all $P$. |
+| `Stixrude14-liquidus` | [Stixrude (2014)](https://doi.org/10.1098/rsta.2013.0076) Eq. 1.9 | Pure MgSiO$_3$ Simon-like power law. Valid at all $P$. |
+
+See [configuration guide](../How-to/configuration.md#melting-curve-selection) for usage.
 
 ### Mass-radius curves
 

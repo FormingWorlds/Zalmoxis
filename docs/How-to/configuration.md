@@ -102,16 +102,18 @@ The `rock_solidus` and `rock_liquidus` fields control which melting curves are u
 
 | Identifier | Type | Source | Notes |
 |---|---|---|---|
-| `Monteux16-solidus` | Analytic | [Monteux et al. (2016)](https://doi.org/10.1016/j.epsl.2016.05.010) Eqs. 10/12 | Default. Defined for all $P \geq 0$. |
-| `Monteux16-liquidus-A-chondritic` | Analytic | [Monteux et al. (2016)](https://doi.org/10.1016/j.epsl.2016.05.010) Eqs. 11/13 | Default. A-chondritic composition. |
-| `Monteux16-liquidus-F-peridotitic` | Analytic | [Monteux et al. (2016)](https://doi.org/10.1016/j.epsl.2016.05.010) Eqs. 11/13 | F-peridotitic composition. |
+| `Monteux16-solidus` | Analytic | [Monteux et al. (2016)](https://doi.org/10.1016/j.epsl.2016.05.010) Eqs. 10/12 | Default. Piecewise Simon-Glatzel, valid to ~500 GPa. |
+| `Stixrude14-solidus` | Analytic | [Stixrude (2014)](https://doi.org/10.1098/rsta.2013.0076) Eqs. 1.9+1.10 | Power law with cryoscopic depression ($x_0 = 0.79$). Valid at all $P$. |
+| `Monteux16-liquidus-A-chondritic` | Analytic | [Monteux et al. (2016)](https://doi.org/10.1016/j.epsl.2016.05.010) Eqs. 11/13 | Default. A-chondritic composition. Valid to ~500 GPa. |
+| `Monteux16-liquidus-F-peridotitic` | Analytic | [Monteux et al. (2016)](https://doi.org/10.1016/j.epsl.2016.05.010) Eqs. 11/13 | F-peridotitic composition. Valid to ~660 GPa. |
+| `Stixrude14-liquidus` | Analytic | [Stixrude (2014)](https://doi.org/10.1098/rsta.2013.0076) Eq. 1.9 | Simon-like power law for pure MgSiO$_3$. Valid at all $P$. Liquidus always above solidus (constant ratio). |
 | `Monteux600-solidus-tabulated` | Tabulated | Monteux et al. (2016) with fixed 600 K gap | Legacy. Returns NaN outside table range ($P > 999$ GPa). |
 | `Monteux600-liquidus-tabulated` | Tabulated | Monteux et al. (2016) with fixed 600 K gap | Legacy. Returns NaN outside table range. |
 
-The analytic Monteux+2016 curves (default) are defined for all pressures and eliminate the NaN-at-boundary issue that affected the tabulated curves. Old TOML files without `rock_solidus`/`rock_liquidus` fields automatically use the analytic defaults.
+The Monteux+2016 piecewise parameterization has a solidus/liquidus crossing above ~500 GPa (beyond the experimental calibration range). The Stixrude (2014) power laws avoid this issue entirely: the cryoscopic depression produces a constant solidus/liquidus ratio, guaranteeing liquidus > solidus at all pressures. Old TOML files without `rock_solidus`/`rock_liquidus` fields use the Stixrude14 defaults.
 
 !!! warning "Mass limits for temperature-dependent EOS"
-    **WolfBower2018:MgSiO3**: Tables cover pressures up to ~1 TPa. For planets above ~2 $M_\oplus$, deep-mantle pressures begin to exceed this limit. The Brent pressure solver with out-of-bounds clamping handles this gracefully up to $7\,M_\oplus$. Beyond $7\,M_\oplus$, clamped densities become unreliable and the code raises a `ValueError`. Use `RTPress100TPa:MgSiO3` for higher-mass planets with a temperature-dependent mantle.
+    **WolfBower2018:MgSiO3**: Tables cover pressures up to ~1 TPa. For planets above ~2 $M_\oplus$, deep-mantle pressures begin to exceed this limit. The Brent pressure solver with out-of-bounds clamping handles this gracefully up to $7\,M_\oplus$. Beyond $7\,M_\oplus$, clamped densities become unreliable and the code raises a `ValueError`. Use `RTPress100TPa:MgSiO3` or `PALEOS-2phase:MgSiO3` for higher-mass planets with a temperature-dependent mantle.
 
     **RTPress100TPa:MgSiO3**: The extended melt table covers pressures up to 100 TPa, enabling modeling of super-Earths up to ~$50\,M_\oplus$. The solid-phase table remains limited to 1 TPa (clamped at boundary), but at the high temperatures typical of massive planets the mantle is predominantly molten, so this limitation is less constraining.
 
@@ -166,7 +168,7 @@ Same temperature configuration as `WolfBower2018:MgSiO3` but with extended press
 ```toml
 [AssumptionsAndInitialGuesses]
 temperature_mode      = "adiabatic"
-surface_temperature   = 3500
+surface_temperature   = 3000
 center_temperature    = 6000
 
 [EOS]
@@ -295,7 +297,7 @@ Controls the three nested iteration loops (outer mass convergence, inner density
 | `relative_tolerance` | float | -- | 1e-5 | Relative tolerance for `solve_ivp` (ODE integrator). |
 | `absolute_tolerance` | float | -- | 1e-6 | Absolute tolerance for `solve_ivp`. |
 | `maximum_step` | float | m | 250000 | Maximum radial step size for `solve_ivp`. |
-| `adaptive_radial_fraction` | float | -- | 0.98 | Fraction (0--1) of the radial domain where `solve_ivp` uses adaptive stepping before switching to fixed steps. Primarily relevant for the `WolfBower2018:MgSiO3` EOS near the surface. |
+| `adaptive_radial_fraction` | float | -- | 0.98 | Fraction (0--1) of the radial domain where `solve_ivp` uses adaptive stepping before switching to fixed steps. Active for all T-dependent EOS (`WolfBower2018:MgSiO3`, `RTPress100TPa:MgSiO3`, `PALEOS-2phase:MgSiO3`). |
 | `max_center_pressure_guess` | float | Pa | 10e12 | Upper bound on the Brent solver's pressure bracket ($P_{\mathrm{high}}$). This caps the *central* pressure (at the center of the iron core, which uses the Seager2007 EOS valid to $10^{16}$ Pa), not the mantle pressure directly. The default of 10 TPa is intentionally higher than the WolfBower2018 table ceiling (~1 TPa) because it limits the core center, not the mantle. However, higher central pressures produce higher mantle pressures at the CMB, so capping $P_c$ indirectly prevents deep-mantle pressures from exceeding the WB2018 table by too much. Only active when `WolfBower2018:MgSiO3` is used; not needed for pure-Seager runs. |
 
 #### Guidance on reasonable parameter ranges

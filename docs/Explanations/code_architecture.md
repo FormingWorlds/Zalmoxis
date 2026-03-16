@@ -9,6 +9,7 @@ src/zalmoxis/
 ├── eos_functions.py     # EOS dispatch: calculate_density(), Tdep phase logic, temperature profiles
 ├── eos_analytic.py      # Analytic modified polytrope: get_analytic_density()
 ├── eos_properties.py    # Material property dictionaries (file paths, unit conversions)
+├── melting_curves.py    # Solidus/liquidus curves (Monteux+2016, Stixrude 2014, tabulated)
 ├── constants.py         # Physical constants (G, earth_mass, earth_radius, etc.)
 └── plots/               # Visualization (profile plots, P-T phase diagrams)
 ```
@@ -22,7 +23,7 @@ TOML config
     │
     ▼
 parse_eos_config() ──► layer_eos_config dict
-    │                   {"core": "Seager2007:iron", "mantle": "WolfBower2018:MgSiO3"}
+    │                   {"core": "Seager2007:iron", "mantle": "PALEOS-2phase:MgSiO3"}
     ▼
 main() ─── outer loop (radius) ─── inner loop (density) ─── brentq(_pressure_residual)
     │                                                             │
@@ -37,9 +38,10 @@ main() ─── outer loop (radius) ─── inner loop (density) ─── br
     │                                                             │
     │                                                      ┌──────┼──────┐
     │                                                      ▼      ▼      ▼
-    │                                               Seager2007  Tdep    Analytic
-    │                                              (tabulated) (WB2018/ (polytrope)
-    │                                                          RTPress)
+    │                                               Seager2007  Tdep       Analytic
+    │                                              (tabulated) (WB2018/   (polytrope)
+    │                                                          RTPress/
+    │                                                          PALEOS)
     ▼
 post_processing() ──► output files + plots
 ```
@@ -61,17 +63,17 @@ post_processing() ──► output files + plots
 
 - **`solve_structure()`** (`structure_model.py`): Integrates the coupled ODEs across the planetary radius using `scipy.integrate.solve_ivp` (RK45).
   Includes a terminal event that stops integration when pressure crosses zero.
-  When any layer uses a temperature-dependent EOS (`WolfBower2018:MgSiO3` or `RTPress100TPa:MgSiO3`), the radial grid is split into two segments for numerical stability near the surface; otherwise, a single integration pass is performed.
+  When any layer uses a temperature-dependent EOS (`WolfBower2018:MgSiO3`, `RTPress100TPa:MgSiO3`, or `PALEOS-2phase:MgSiO3`), the radial grid is split into two segments for numerical stability near the surface; otherwise, a single integration pass is performed.
   Pads output arrays to `len(radii)` if the terminal event truncates the integration.
 
-- **`calculate_density()`** (`eos_functions.py`): Dispatches the per-layer EOS string to the appropriate density calculation: tabulated lookup for `Seager2007:*`, temperature-dependent phase-aware lookup for `WolfBower2018:MgSiO3` and `RTPress100TPa:MgSiO3`, or direct evaluation for `Analytic:*` strings.
+- **`calculate_density()`** (`eos_functions.py`): Dispatches the per-layer EOS string to the appropriate density calculation: tabulated lookup for `Seager2007:*`, temperature-dependent phase-aware lookup for `WolfBower2018:MgSiO3`, `RTPress100TPa:MgSiO3`, and `PALEOS-2phase:MgSiO3`, or direct evaluation for `Analytic:*` strings.
 
 - **`get_Tdep_density()`** (`eos_functions.py`): Computes mantle density accounting for temperature-dependent phase transitions using the solidus/liquidus melting curves and volume-additive mixing in the mush regime.
   Guards against `None` returns from out-of-bounds table lookups.
 
-- **`calculate_temperature_profile()`** (`eos_functions.py`): Returns a callable $T(r)$ for four modes: `"isothermal"` (uniform), `"linear"` (center-to-surface gradient), `"prescribed"` (loaded from file), or `"adiabatic"` (returns a linear initial guess; the self-consistent adiabat is computed later by `compute_adiabatic_temperature()`).
+- **`calculate_temperature_profile()`** (`eos_functions.py`): Returns a callable $T(r)$ for four modes: `"isothermal"` (uniform), `"linear"` (center-to-surface gradient), `"prescribed"` (loaded from file), or `"adiabatic"` (returns a linear initial guess; the self-consistent adiabat is computed later by `compute_adiabatic_temperature()`). In the ODE solver, the temperature function signature is $T(r, P)$: the $P$ argument is used by the adiabatic mode ($T(P)$ parameterization) and ignored by all other modes.
 
-- **`compute_adiabatic_temperature()`** (`eos_functions.py`): Computes the adiabatic temperature profile $T(r)$ by integrating pre-tabulated $(dT/dP)_S$ gradients from the EOS. Starting at `surface_temperature`, it integrates inward shell-by-shell: $T_{i} = T_{i+1} + (dT/dP)_S \cdot \Delta P$. Only available for T-dependent EOS (`WolfBower2018:MgSiO3`, `RTPress100TPa:MgSiO3`) that provide native `adiabat_temp_grad_melt.dat` tables. For T-independent layers (e.g., the iron core), the temperature is held constant.
+- **`compute_adiabatic_temperature()`** (`eos_functions.py`): Computes the adiabatic temperature profile by integrating EOS gradients from the surface inward: $T_{i} = T_{i+1} + (dT/dP)_S \cdot \Delta P$. For `WolfBower2018:MgSiO3` and `RTPress100TPa:MgSiO3`, uses pre-tabulated $(dT/dP)_S$ from `adiabat_temp_grad_melt.dat`. For `PALEOS-2phase:MgSiO3`, uses the dimensionless $\nabla_{\mathrm{ad}}$ from the table with phase-aware weighting (solid/mixed/liquid via solidus/liquidus curves). In the main convergence loop, the adiabat is parameterized as $T(P)$ (not $T(r)$) to ensure thermodynamic consistency during the Brent pressure solver's bracket search. For T-independent layers (e.g., the iron core), the temperature is held constant.
 
 - **`parse_eos_config()`** (`zalmoxis.py`): Parses the `[EOS]` TOML section into a per-layer dictionary.
   Handles both the new per-layer format and legacy global-string format via `LEGACY_EOS_MAP`.
