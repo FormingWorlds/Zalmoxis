@@ -352,7 +352,7 @@ def get_mixed_nabla_ad(
             solidus_func,
             liquidus_func,
         )
-        if nabla is not None and nabla > 0:
+        if nabla is not None and np.isfinite(nabla) and nabla >= 0:
             weighted_sum += w_i * nabla
             weight_total += w_i
 

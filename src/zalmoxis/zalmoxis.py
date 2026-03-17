@@ -951,9 +951,7 @@ def main(
             )
             # Cap the central pressure guess for WolfBower2018 (1 TPa table)
             # but not for RTPress100TPa (100 TPa melt table)
-            uses_WB2018 = any(
-                v == 'WolfBower2018:MgSiO3' for v in layer_eos_config.values() if v
-            )
+            uses_WB2018 = 'WolfBower2018:MgSiO3' in all_comps
             if uses_WB2018:
                 pressure_guess = min(pressure_guess, max_center_pressure_guess)
 
@@ -1272,7 +1270,12 @@ def post_processing(config_params, id_mass=None, output_file=None):
     # Check if mantle uses a Tdep EOS that needs external melting curves
     # for phase detection. Unified PALEOS tables derive phases from the
     # table itself and do not need (or support) get_Tdep_material().
-    uses_phase_detection = layer_eos_config.get('mantle') in _NEEDS_MELTING_CURVES
+    mantle_str = layer_eos_config.get('mantle', '')
+    if mantle_str:
+        _mantle_mix = parse_layer_components(mantle_str)
+        uses_phase_detection = bool(set(_mantle_mix.components) & _NEEDS_MELTING_CURVES)
+    else:
+        uses_phase_detection = False
 
     if uses_phase_detection:
         mantle_pressures = pressure[cmb_index:]
