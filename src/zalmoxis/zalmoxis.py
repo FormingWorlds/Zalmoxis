@@ -812,7 +812,23 @@ def main(
     # Adiabat blending state.
     _using_adiabat = False
     _adiabat_blend = 0.0
-    _ADIABAT_BLEND_STEP = 0.5
+    _ADIABAT_BLEND_STEP = 0.25
+
+    # For adiabatic mode, cap the initial center_temperature guess to
+    # prevent the linear-T initial profile from being far above the
+    # actual adiabat. A typical rocky planet adiabat at 1 M_earth has
+    # T_center ~ 3 * T_surface. If center_temperature >> this, the
+    # blend from linear to adiabat causes a huge density perturbation
+    # that destabilizes convergence. This is conservative (adiabats
+    # can be steeper for massive planets), so we use 5 * T_surface.
+    if temperature_mode == 'adiabatic':
+        max_reasonable_T_center = max(5.0 * surface_temperature, 3000.0)
+        if center_temperature > max_reasonable_T_center:
+            center_temperature = max_reasonable_T_center
+            verbose and logger.info(
+                f'Adiabatic mode: capped center_temperature initial guess '
+                f'to {center_temperature:.0f} K (5x surface or 3000 K).'
+            )
 
     # Solve the interior structure
     for outer_iter in range(max_iterations_outer):
@@ -873,6 +889,14 @@ def main(
                 _T_sorted = _T_sorted[_valid]
                 _logP_sorted = np.log10(_P_sorted)
 
+                # Clamp adiabat T to a physically reasonable range.
+                # np.interp flat-extrapolates at the edges, but the Brent
+                # solver may query at extreme P values far beyond the
+                # converged profile, producing huge T. Cap at 100,000 K
+                # (PALEOS table maximum) and floor at 100 K.
+                _T_MAX_CLAMP = 100000.0
+                _T_MIN_CLAMP = 100.0
+
                 if _adiabat_blend < 1.0:
                     _blend = _adiabat_blend
 
@@ -883,6 +907,7 @@ def main(
                         if P <= 0:
                             return T_lin
                         T_adi = float(np.interp(np.log10(P), _lp, _ts))
+                        T_adi = max(_T_MIN_CLAMP, min(T_adi, _T_MAX_CLAMP))
                         return (1.0 - _b) * T_lin + _b * T_adi
 
                 else:
@@ -890,7 +915,8 @@ def main(
                     def temperature_function(r, P, _lp=_logP_sorted, _ts=_T_sorted):
                         if P <= 0:
                             return surface_temperature
-                        return float(np.interp(np.log10(P), _lp, _ts))
+                        T_val = float(np.interp(np.log10(P), _lp, _ts))
+                        return max(_T_MIN_CLAMP, min(T_val, _T_MAX_CLAMP))
 
                 # Pre-compute temperatures array for the density update loop
                 # (uses the converged pressure from the previous iteration)

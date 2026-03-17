@@ -1234,7 +1234,13 @@ def compute_adiabatic_temperature(
 
         if nabla is not None and nabla > 0 and P_eval > 0 and T_eval > 0:
             dtdp = nabla * T_eval / P_eval
-            T[i] = T_eval + dtdp * dP
+            T_new = T_eval + dtdp * dP
+            # Cap temperature to the PALEOS table maximum (100,000 K).
+            # Without this cap, numerical noise at low P or in mixed
+            # compositions can cause runaway T during the adiabat
+            # integration, which then pollutes the T(P) interpolator
+            # and prevents the Brent solver from bracketing.
+            T[i] = min(T_new, 100000.0)
         else:
             T[i] = T_eval
 

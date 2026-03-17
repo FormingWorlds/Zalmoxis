@@ -510,7 +510,7 @@ class TestAdiabaticBlendMechanism:
         from zalmoxis.zalmoxis import main
 
         source = inspect.getsource(main)
-        assert '_ADIABAT_BLEND_STEP = 0.5' in source
+        assert '_ADIABAT_BLEND_STEP = 0.25' in source
 
     def test_blend_state_variables_default(self):
         """Blend state should initialize to 0.0 (pure linear T)."""
