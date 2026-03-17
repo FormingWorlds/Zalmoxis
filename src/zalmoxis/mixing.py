@@ -42,6 +42,17 @@ class LayerMixture:
     components: list[str] = field(default_factory=list)
     fractions: list[float] = field(default_factory=list)
 
+    def __post_init__(self):
+        if len(self.components) != len(self.fractions):
+            raise ValueError(
+                f'LayerMixture: components ({len(self.components)}) and '
+                f'fractions ({len(self.fractions)}) must have the same length.'
+            )
+        if len(self.components) > 1:
+            total = sum(self.fractions)
+            if abs(total - 1.0) > 1e-6:
+                raise ValueError(f'LayerMixture: fractions sum to {total:.6f}, not 1.0.')
+
     def is_single(self) -> bool:
         """True if this mixture contains exactly one component."""
         return len(self.components) == 1
