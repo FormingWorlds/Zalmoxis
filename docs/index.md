@@ -1,4 +1,5 @@
 ![CI](https://github.com/FormingWorlds/Zalmoxis/actions/workflows/CI.yml/badge.svg)
+[![codecov](https://codecov.io/gh/FormingWorlds/Zalmoxis/graph/badge.svg)](https://codecov.io/gh/FormingWorlds/Zalmoxis)
 
 # Zalmoxis (Exoplanet Interior Structure Model)
 
