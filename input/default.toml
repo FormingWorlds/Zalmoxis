@@ -54,6 +54,7 @@ condensed_rho_scale        = 50.0   # kg/m^3 — sigmoid transition width
 
 # Mushy zone factor for unified PALEOS tables.
 # Controls the width of the artificial mushy (mixed solid+liquid) zone.
+# Valid range: [0.7, 1.0]. Values below 0.7 are rejected (unphysical).
 #   1.0 = no mushy zone (sharp phase boundary from table, solidus = liquidus)
 #   <1.0 = solidus at this fraction of the extracted liquidus T
 #   0.8 = similar to Stixrude14 cryoscopic depression (x0=0.79)

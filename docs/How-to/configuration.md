@@ -80,7 +80,7 @@ Rules:
 - Mass fractions must sum to 1.0 (automatically normalized if not).
 - Any EOS type can be mixed with any other (tabulated + analytic, T-dependent + T-independent).
 - Density is computed via a **phase-aware suppressed harmonic mean**: each component is weighted by a smooth sigmoid function of its density before entering the harmonic mean. This prevents non-condensed volatiles (vapor, supercritical gas) from dominating the mixture. See the [mixing documentation](../Explanations/mixing.md) for the physics.
-- For all-condensed mixtures (all components with $\rho > 500$ kg/m$^3$), the suppressed result is numerically identical to the standard harmonic mean.
+- For mixtures where all components are well above the sigmoid center (iron at $\rho > 7000$, MgSiO$_3$ at $\rho > 2500$ kg/m$^3$), the suppression is negligible and the result is identical to the standard harmonic mean.
 - For adiabatic mode, $\nabla_{\mathrm{ad}}$ uses the same sigmoid-weighted average across components.
 - Mixing fractions can be updated at runtime by PROTEUS/CALLIOPE without re-parsing the config.
 
@@ -127,7 +127,7 @@ When any T-dependent EOS is assigned to any layer, the `temperature_mode`, `surf
 
 | Field | Required | Default | Description |
 |---|---|---|---|
-| `mushy_zone_factor` | No | `1.0` | Cryoscopic depression factor for unified PALEOS tables. Controls the width of the artificial mushy (mixed solid+liquid) zone below the liquidus extracted from the table. `1.0` = no mushy zone (sharp phase boundary). `< 1.0` = solidus at this fraction of the liquidus temperature ($T_\mathrm{sol} = T_\mathrm{liq} \times f$). E.g., `0.8` gives a mushy zone similar to the Stixrude (2014) cryoscopic depression. In the mushy zone, density is volume-averaged between solid-side and liquid-side table values. Only relevant for `PALEOS:iron`, `PALEOS:MgSiO3`, `PALEOS:H2O`. |
+| `mushy_zone_factor` | No | `1.0` | Cryoscopic depression factor for unified PALEOS tables. Controls the width of the artificial mushy (mixed solid+liquid) zone below the liquidus extracted from the table. Valid range: [0.7, 1.0]. `1.0` = no mushy zone (sharp phase boundary). `< 1.0` = solidus at this fraction of the liquidus temperature ($T_\mathrm{sol} = T_\mathrm{liq} \times f$). E.g., `0.8` gives a mushy zone similar to the Stixrude (2014) cryoscopic depression. Values below 0.7 are rejected (unphysically wide mushy zones cause solver instabilities). In the mushy zone, density is volume-averaged between solid-side and liquid-side table values. Only relevant for `PALEOS:iron`, `PALEOS:MgSiO3`, `PALEOS:H2O`. |
 
 #### Phase-aware mixing parameters (multi-material only)
 
@@ -138,7 +138,7 @@ See the [mixing documentation](../Explanations/mixing.md) for the physics.
 | Field | Required | Default | Unit | Description |
 |---|---|---|---|---|
 | `condensed_rho_min` | No | `322.0` | kg/m$^3$ | Sigmoid center density, set to the H$_2$O critical density (322 kg/m$^3$ at 647 K, 22.1 MPa). Components with density well below this are progressively excluded from the harmonic mean. Must be adjusted for other volatiles: CO$_2$ ~470, NH$_3$ ~225, He ~70, H$_2$ ~30 kg/m$^3$. Currently only H$_2$O has gas-phase data in the EOS tables, so the default is appropriate for all existing configurations. |
-| `condensed_rho_scale` | No | `50.0` | kg/m$^3$ | Sigmoid transition width. Smaller values produce a sharper cutoff; larger values a more gradual transition. The sigmoid goes from $\sigma = 0.02$ to $\sigma = 0.98$ over a density range of approximately $4 \times$ `condensed_rho_scale`. |
+| `condensed_rho_scale` | No | `50.0` | kg/m$^3$ | Sigmoid transition width. Smaller values produce a sharper cutoff; larger values a more gradual transition. The sigmoid goes from $\sigma = 0.02$ to $\sigma = 0.98$ over a density range of approximately $8 \times$ `condensed_rho_scale`. |
 
 Both parameters must be positive. The validation rejects non-positive values at config load time.
 
@@ -148,8 +148,8 @@ The `rock_solidus` and `rock_liquidus` fields control which melting curves are u
 
 | Field | Required | Default | Description |
 |---|---|---|---|
-| `rock_solidus` | No | `"Monteux16-solidus"` | Solidus melting curve identifier. |
-| `rock_liquidus` | No | `"Monteux16-liquidus-A-chondritic"` | Liquidus melting curve identifier. |
+| `rock_solidus` | No | `"Monteux16-solidus"` | Solidus melting curve identifier. The `default.toml` sets Monteux16; if the key is absent, the code falls back to `"Stixrude14-solidus"` for backward compatibility with old TOML files. |
+| `rock_liquidus` | No | `"Monteux16-liquidus-A-chondritic"` | Liquidus melting curve identifier. Same fallback logic: absent key defaults to `"Stixrude14-liquidus"`. |
 
 **Available melting curves:**
 

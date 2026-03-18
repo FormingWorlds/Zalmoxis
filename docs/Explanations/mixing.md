@@ -71,16 +71,16 @@ The default parameters are calibrated for H$_2$O:
 | Parameter | Default | Physical meaning |
 |---|---|---|
 | `condensed_rho_min` | 322 kg/m$^3$ | Sigmoid center = H$_2$O critical density (647 K, 22.1 MPa) |
-| `condensed_rho_scale` | 50 kg/m$^3$ | Transition width; $\sigma$ goes from 0.02 to 0.98 over a range of about 200 kg/m$^3$ |
+| `condensed_rho_scale` | 50 kg/m$^3$ | Transition width; $\sigma$ goes from 0.02 to 0.98 over a range of about 390 kg/m$^3$ (~8$\times$ the scale) |
 
 Behavior at representative densities:
 
 | Density (kg/m$^3$) | Phase example | $\sigma$ |
 |---|---|---|
-| 10 | H$_2$O vapor at 1 bar, 3000 K | 0.003 |
-| 100 | H$_2$O low-density supercritical | 0.018 |
+| 10 | H$_2$O vapor at 1 bar, 3000 K | 0.002 |
+| 100 | H$_2$O low-density supercritical | 0.012 |
 | 322 | H$_2$O critical density (sigmoid center) | 0.500 |
-| 500 | Dense supercritical H$_2$O | 0.982 |
+| 500 | Dense supercritical H$_2$O | 0.972 |
 | 1000 | Liquid H$_2$O at high $P$ | 1.000 |
 | 4000 | MgSiO$_3$ | 1.000 |
 | 13000 | Fe | 1.000 |
