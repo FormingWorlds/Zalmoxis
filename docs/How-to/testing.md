@@ -20,7 +20,7 @@ Tests are categorized with markers that reflect their runtime and purpose:
 
 | Marker | Tests | Runtime | What it validates |
 |---|---|---|---|
-| `unit` | 165 | < 2 s | EOS functions, edge cases, analytic vs. tabulated consistency, mixing, config validation, melting curves, PALEOS loading, adiabatic profiles. No solver calls. |
+| `unit` | 174 | < 2 s | EOS functions, edge cases, analytic vs. tabulated consistency, mixing, config validation, melting curves, PALEOS loading, adiabatic profiles. No solver calls. |
 | `integration` | 41 | ~10 to 20 min | Full solver runs: mass-radius relations, density profiles, analytic vs. tabulated MR, T-dependent EOS convergence, PALEOS convergence, RTPress100TPa mass limits. |
 | `slow` | 2 | ~30+ min | Ternary composition grid sweep across core/mantle/water fractions. |
 
@@ -37,7 +37,7 @@ pytest -m "unit or integration"  # All except slow
 ### All tests
 
 ```console
-pytest                        # Runs all ~208 tests in parallel
+pytest                        # Runs all ~217 tests in parallel
 ```
 
 The default configuration (`pyproject.toml`) includes `-n auto --dist loadfile`, which distributes test files across CPU cores for parallel execution via pytest-xdist.

@@ -66,7 +66,7 @@ These files are useful for diagnosing convergence behavior. They are overwritten
 
 ### Plots (optional)
 
-When `plots_enabled = true` in the `[Output]` section, PDF plots of the radial profiles (density, gravity, pressure, temperature) are generated automatically after each run. If a temperature-dependent mantle EOS is used (any EOS in `TDEP_EOS_NAMES`), an additional pressure-temperature phase diagram with mantle phase information is produced.
+When `plots_enabled = true` in the `[Output]` section, PDF plots of the radial profiles (density, gravity, pressure, temperature) are generated automatically after each run. If a temperature-dependent mantle EOS is used (any PALEOS, WolfBower2018, or RTPress100TPa EOS), an additional pressure-temperature phase diagram with mantle phase information is produced.
 
 ## Running multiple masses in parallel
 

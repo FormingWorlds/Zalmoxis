@@ -496,10 +496,10 @@ class TestPALEOSAdiabaticProfile:
 
 @pytest.mark.unit
 class TestAdiabaticBlendMechanism:
-    """Tests for the adiabat blend convergence loop (0 -> 0.5 -> 1.0)."""
+    """Tests for the adiabat blend convergence loop (0 -> 0.25 -> 0.5 -> 0.75 -> 1.0)."""
 
     def test_blend_step_constant(self):
-        """The blend step should be 0.5 (transitions: 0 -> 0.5 -> 1.0).
+        """The blend step should be 0.25 (transitions: 0 -> 0.25 -> 0.5 -> 0.75 -> 1.0).
 
         The blend step is a local variable inside main(), not directly
         importable. This test verifies the design invariant by checking
