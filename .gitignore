@@ -182,3 +182,8 @@ cython_debug/
 .ruff_cache/
 .DS_Store
 /input/temp_profile.txt
+
+# Validation grid generated files
+/tools/validation_grid/configs/
+/tools/validation_grid/results/
+/tools/validation_grid/plots/
