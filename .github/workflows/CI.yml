@@ -1,4 +1,4 @@
-name: Tests for Zalmoxis
+name: Zalmoxis tests
 
 on:
   push:
