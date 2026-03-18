@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .constants import TDEP_EOS_NAMES
+from .constants import CONDENSED_RHO_MIN_DEFAULT, CONDENSED_RHO_SCALE_DEFAULT, TDEP_EOS_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -217,6 +217,32 @@ def any_component_is_tdep(
     return any(mix.has_tdep() for mix in layer_mixtures.values())
 
 
+def _condensed_weight(
+    rho, rho_min=CONDENSED_RHO_MIN_DEFAULT, rho_scale=CONDENSED_RHO_SCALE_DEFAULT
+):
+    """Smooth sigmoid weight: 1 for dense (condensed), ~0 for light (vapor).
+
+    Used in multi-component mixtures to suppress gas-like contributions
+    to the harmonic-mean density and nabla_ad. Single-component layers
+    are not affected (they bypass this function via the fast path).
+
+    Parameters
+    ----------
+    rho : float
+        Component density in kg/m^3.
+    rho_min : float
+        Sigmoid center in kg/m^3. Default 300 (near H2O critical density).
+    rho_scale : float
+        Sigmoid transition width in kg/m^3. Default 50.
+
+    Returns
+    -------
+    float
+        Weight in [0, 1]. ~1 for condensed phases, ~0 for vapor.
+    """
+    return 1.0 / (1.0 + np.exp(-(rho - rho_min) / rho_scale))
+
+
 def calculate_mixed_density(
     pressure,
     temperature,
@@ -226,12 +252,16 @@ def calculate_mixed_density(
     liquidus_func,
     interpolation_functions,
     mushy_zone_factor=1.0,
+    condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
+    condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
 ):
     """Compute volume-additive mixed density for a layer mixture.
 
     For a single component, delegates directly to ``calculate_density()``.
     For multiple components, evaluates each independently at (P, T) and
-    returns the harmonic mean: ``rho_mix = (sum w_i / rho_i)^{-1}``.
+    returns a suppressed harmonic mean where each component is weighted
+    by a sigmoid function of its density. This prevents non-condensed
+    volatiles (vapor, supercritical gas) from dominating the mixture.
 
     Parameters
     ----------
@@ -251,15 +281,19 @@ def calculate_mixed_density(
         Interpolation cache.
     mushy_zone_factor : float
         Mushy zone factor for unified PALEOS.
+    condensed_rho_min : float
+        Sigmoid center for phase-aware suppression (kg/m^3).
+    condensed_rho_scale : float
+        Sigmoid width for phase-aware suppression (kg/m^3).
 
     Returns
     -------
     float or None
-        Mixed density in kg/m^3, or None if any component fails.
+        Mixed density in kg/m^3, or None if all components are gas-like.
     """
     from .eos_functions import calculate_density
 
-    # Fast path: single component
+    # Fast path: single component (no suppression)
     if mixture.is_single():
         return calculate_density(
             pressure,
@@ -272,7 +306,8 @@ def calculate_mixed_density(
             mushy_zone_factor,
         )
 
-    # Multi-component harmonic mean
+    # Multi-component suppressed harmonic mean
+    w_eff_sum = 0.0
     inv_rho_sum = 0.0
     for eos_name, w_i in zip(mixture.components, mixture.fractions):
         if w_i <= 0:
@@ -289,11 +324,16 @@ def calculate_mixed_density(
         )
         if rho_i is None or not np.isfinite(rho_i) or rho_i <= 0:
             return None
-        inv_rho_sum += w_i / rho_i
+        sigma_i = _condensed_weight(rho_i, condensed_rho_min, condensed_rho_scale)
+        w_eff = w_i * sigma_i
+        if w_eff <= 0:
+            continue
+        w_eff_sum += w_eff
+        inv_rho_sum += w_eff / rho_i
 
-    if inv_rho_sum <= 0:
+    if w_eff_sum <= 0 or inv_rho_sum <= 0:
         return None
-    return 1.0 / inv_rho_sum
+    return w_eff_sum / inv_rho_sum
 
 
 def get_mixed_nabla_ad(
@@ -304,11 +344,17 @@ def get_mixed_nabla_ad(
     interpolation_functions,
     solidus_func=None,
     liquidus_func=None,
+    mushy_zone_factor=1.0,
+    condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
+    condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
 ):
     """Compute mass-fraction-weighted nabla_ad for a mixture.
 
     For a single component, returns that component's nabla_ad directly.
-    For multiple components, returns ``sum(w_i * nabla_ad_i)``.
+    For multiple components, computes a weighted average where each
+    component's contribution is scaled by the same sigmoid suppression
+    used for density. This prevents vapor-phase components from
+    contributing their (typically large) nabla_ad to the mixture.
 
     Components that do not support nabla_ad (e.g., Seager2007) are skipped
     and their fraction is redistributed among T-dependent components.
@@ -329,12 +375,19 @@ def get_mixed_nabla_ad(
         Solidus function (for PALEOS-2phase).
     liquidus_func : callable or None
         Liquidus function (for PALEOS-2phase).
+    mushy_zone_factor : float
+        Mushy zone factor for unified PALEOS tables.
+    condensed_rho_min : float
+        Sigmoid center for phase-aware suppression (kg/m^3).
+    condensed_rho_scale : float
+        Sigmoid width for phase-aware suppression (kg/m^3).
 
     Returns
     -------
     float or None
         Dimensionless adiabatic gradient, or None if no component provides it.
     """
+    from .eos_functions import calculate_density
 
     if mixture.is_single():
         return _nabla_ad_for_component(
@@ -347,12 +400,30 @@ def get_mixed_nabla_ad(
             liquidus_func,
         )
 
-    # Multi-component weighted average
+    # Multi-component weighted average with condensed-phase suppression
     weighted_sum = 0.0
     weight_total = 0.0
 
     for eos_name, w_i in zip(mixture.components, mixture.fractions):
         if w_i <= 0:
+            continue
+        # Compute density to determine condensed-phase weight
+        rho_i = calculate_density(
+            pressure,
+            material_dictionaries,
+            eos_name,
+            temperature,
+            solidus_func,
+            liquidus_func,
+            interpolation_functions,
+            mushy_zone_factor,
+        )
+        if rho_i is not None and np.isfinite(rho_i) and rho_i > 0:
+            sigma_i = _condensed_weight(rho_i, condensed_rho_min, condensed_rho_scale)
+        else:
+            sigma_i = 0.0
+        w_eff = w_i * sigma_i
+        if w_eff <= 0:
             continue
         nabla = _nabla_ad_for_component(
             eos_name,
@@ -364,8 +435,8 @@ def get_mixed_nabla_ad(
             liquidus_func,
         )
         if nabla is not None and np.isfinite(nabla) and nabla >= 0:
-            weighted_sum += w_i * nabla
-            weight_total += w_i
+            weighted_sum += w_eff * nabla
+            weight_total += w_eff
 
     if weight_total <= 0:
         return None

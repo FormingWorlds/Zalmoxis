@@ -332,6 +332,24 @@ def validate_config(config_params):
             f'by the rock_solidus/rock_liquidus melting curves instead.'
         )
 
+    # ── Condensed-phase suppression ─────────────────────────────────
+    condensed_rho_min = config_params.get('condensed_rho_min', 300.0)
+    condensed_rho_scale = config_params.get('condensed_rho_scale', 50.0)
+
+    if condensed_rho_min <= 0:
+        raise ValueError(
+            f'condensed_rho_min must be positive, got {condensed_rho_min} kg/m^3. '
+            f'This is the sigmoid center for phase-aware mixing suppression. '
+            f'Typical value: 300 (near H2O critical density 322 kg/m^3).'
+        )
+
+    if condensed_rho_scale <= 0:
+        raise ValueError(
+            f'condensed_rho_scale must be positive, got {condensed_rho_scale} kg/m^3. '
+            f'This is the sigmoid width for phase-aware mixing suppression. '
+            f'Typical value: 50 kg/m^3.'
+        )
+
     # ── Numerical parameters ────────────────────────────────────────
     num_layers = config_params['num_layers']
     if num_layers < 10:
@@ -555,6 +573,8 @@ def load_zalmoxis_config(temp_config_path=None):
     rock_solidus = eos_section.get('rock_solidus', 'Stixrude14-solidus')
     rock_liquidus = eos_section.get('rock_liquidus', 'Stixrude14-liquidus')
     mushy_zone_factor = eos_section.get('mushy_zone_factor', 1.0)
+    condensed_rho_min = eos_section.get('condensed_rho_min', 300.0)
+    condensed_rho_scale = eos_section.get('condensed_rho_scale', 50.0)
 
     config_params = {
         'planet_mass': config['InputParameter']['planet_mass'] * earth_mass,
@@ -568,6 +588,8 @@ def load_zalmoxis_config(temp_config_path=None):
         'rock_solidus': rock_solidus,
         'rock_liquidus': rock_liquidus,
         'mushy_zone_factor': mushy_zone_factor,
+        'condensed_rho_min': condensed_rho_min,
+        'condensed_rho_scale': condensed_rho_scale,
         'num_layers': config['Calculations']['num_layers'],
         'max_iterations_outer': config['IterativeProcess']['max_iterations_outer'],
         'tolerance_outer': config['IterativeProcess']['tolerance_outer'],
@@ -712,6 +734,8 @@ def main(
     verbose = config_params['verbose']
     iteration_profiles_enabled = config_params['iteration_profiles_enabled']
     mushy_zone_factor = config_params.get('mushy_zone_factor', 1.0)
+    condensed_rho_min = config_params.get('condensed_rho_min', 300.0)
+    condensed_rho_scale = config_params.get('condensed_rho_scale', 50.0)
 
     # Parse layer mixtures if not provided externally (PROTEUS/CALLIOPE)
     if layer_mixtures is None:
@@ -872,6 +896,8 @@ def main(
                     solidus_func,
                     liquidus_func,
                     mushy_zone_factor,
+                    condensed_rho_min,
+                    condensed_rho_scale,
                 )
 
                 # Build T(P) interpolator from the previous iteration's
@@ -984,6 +1010,8 @@ def main(
                     liquidus_func,
                     temperature_function if uses_Tdep else None,
                     mushy_zone_factor,
+                    condensed_rho_min,
+                    condensed_rho_scale,
                 )
                 if iteration_profiles_enabled:
                     create_pressure_density_files(
@@ -1048,6 +1076,8 @@ def main(
                     liquidus_func,
                     temperature_function if uses_Tdep else None,
                     mushy_zone_factor,
+                    condensed_rho_min,
+                    condensed_rho_scale,
                 )
 
                 surface_residual = abs(pressure[-1] - target_surface_pressure)
@@ -1111,6 +1141,8 @@ def main(
                     liquidus_func,
                     interpolation_cache,
                     mushy_zone_factor,
+                    condensed_rho_min,
+                    condensed_rho_scale,
                 )
 
                 if new_density is None:

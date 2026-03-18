@@ -1141,6 +1141,8 @@ def compute_adiabatic_temperature(
     solidus_func=None,
     liquidus_func=None,
     mushy_zone_factor=1.0,
+    condensed_rho_min=300.0,
+    condensed_rho_scale=50.0,
 ):
     """
     Compute an adiabatic temperature profile using native EOS gradient tables.
@@ -1175,6 +1177,10 @@ def compute_adiabatic_temperature(
         Interpolation function for the liquidus melting curve.
     mushy_zone_factor : float, optional
         Cryoscopic depression factor for unified PALEOS tables. Default 1.0.
+    condensed_rho_min : float, optional
+        Sigmoid center for phase-aware suppression (kg/m^3). Default 300.
+    condensed_rho_scale : float, optional
+        Sigmoid width for phase-aware suppression (kg/m^3). Default 50.
 
     Returns
     -------
@@ -1230,6 +1236,9 @@ def compute_adiabatic_temperature(
             interpolation_functions,
             solidus_func,
             liquidus_func,
+            mushy_zone_factor,
+            condensed_rho_min,
+            condensed_rho_scale,
         )
 
         if nabla is not None and nabla > 0 and P_eval > 0 and T_eval > 0:

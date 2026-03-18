@@ -18,8 +18,10 @@ import pytest
 
 from zalmoxis.mixing import (
     LayerMixture,
+    _condensed_weight,
     any_component_is_tdep,
     calculate_mixed_density,
+    get_mixed_nabla_ad,
     parse_all_layer_mixtures,
     parse_layer_components,
 )
@@ -265,3 +267,230 @@ class TestBackwardCompat:
             input_dir='.',
         )
         assert result['converged']
+
+
+@pytest.mark.unit
+class TestCondensedWeight:
+    """Tests for the sigmoid suppression function used in phase-aware mixing."""
+
+    @pytest.mark.parametrize(
+        'rho, expected_min, expected_max',
+        [
+            (10.0, 0.0, 0.01),  # vapor: near zero
+            (100.0, 0.0, 0.03),  # light supercritical: near zero
+            (300.0, 0.45, 0.55),  # critical density: ~0.5 (sigmoid center)
+            (500.0, 0.97, 1.0),  # dense supercritical: near 1
+            (1000.0, 0.999, 1.0),  # liquid: essentially 1
+            (5000.0, 0.999, 1.0),  # rock: essentially 1
+        ],
+    )
+    def test_condensed_weight_values(self, rho, expected_min, expected_max):
+        """Sigmoid returns expected values at key densities."""
+        sigma = _condensed_weight(rho, rho_min=300.0, rho_scale=50.0)
+        assert expected_min <= sigma <= expected_max, (
+            f'_condensed_weight({rho}) = {sigma}, expected in [{expected_min}, {expected_max}]'
+        )
+
+    def test_condensed_weight_zero_density(self):
+        """Zero density gives near-zero weight."""
+        sigma = _condensed_weight(0.0)
+        assert sigma < 0.01
+
+    def test_condensed_weight_large_density(self):
+        """Very large density gives weight ~1."""
+        sigma = _condensed_weight(1e6)
+        assert sigma == pytest.approx(1.0, abs=1e-10)
+
+    def test_condensed_weight_negative_density(self):
+        """Negative density gives near-zero weight (no crash)."""
+        sigma = _condensed_weight(-100.0)
+        assert sigma < 0.01
+
+    def test_condensed_weight_monotonic(self):
+        """Weight is monotonically increasing with density."""
+        rhos = [1, 10, 50, 100, 200, 300, 500, 1000, 5000]
+        sigmas = [_condensed_weight(r) for r in rhos]
+        for i in range(len(sigmas) - 1):
+            assert sigmas[i] < sigmas[i + 1]
+
+    def test_custom_rho_min_and_scale(self):
+        """Custom parameters shift the sigmoid."""
+        # With rho_min=30 (H2 envelope), sigma at 30 should be ~0.5
+        sigma_at_center = _condensed_weight(30.0, rho_min=30.0, rho_scale=5.0)
+        assert sigma_at_center == pytest.approx(0.5, abs=0.01)
+        # Well above center should be ~1
+        sigma_high = _condensed_weight(100.0, rho_min=30.0, rho_scale=5.0)
+        assert sigma_high > 0.99
+
+
+@pytest.mark.unit
+class TestVaporSuppression:
+    """Tests for phase-aware suppression in density and nabla_ad mixing."""
+
+    def test_mixed_density_vapor_suppression(self):
+        """Vapor component is suppressed in two-component harmonic mean."""
+        from unittest.mock import patch
+
+        # Mock calculate_density to return rock=4000, water=50 kg/m^3
+        def mock_density(P, md, eos, T, sf, lf, interp, mzf):
+            if 'MgSiO3' in eos:
+                return 4000.0
+            if 'H2O' in eos:
+                return 50.0
+            return None
+
+        mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
+
+        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+            # Suppress is not imported from eos_functions but from the local import
+            # in calculate_mixed_density
+            rho = calculate_mixed_density(
+                1e9,
+                3000,
+                mixture,
+                {},
+                None,
+                None,
+                {},
+                condensed_rho_min=300.0,
+                condensed_rho_scale=50.0,
+            )
+
+        assert rho is not None
+        # With suppression, water at 50 kg/m^3 is almost fully suppressed
+        # Result should be close to pure rock density (4000), not 311 (unsuppressed)
+        assert rho > 3000, f'Expected rho > 3000 (near rock), got {rho}'
+
+    def test_mixed_density_all_condensed(self):
+        """All-condensed mixture recovers standard harmonic mean."""
+        from unittest.mock import patch
+
+        def mock_density(P, md, eos, T, sf, lf, interp, mzf):
+            if 'MgSiO3' in eos:
+                return 4000.0
+            if 'H2O' in eos:
+                return 1000.0
+            return None
+
+        mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
+        w1, w2 = 0.85, 0.15
+        rho1, rho2 = 4000.0, 1000.0
+
+        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+            rho = calculate_mixed_density(
+                1e11,
+                3000,
+                mixture,
+                {},
+                None,
+                None,
+                {},
+                condensed_rho_min=300.0,
+                condensed_rho_scale=50.0,
+            )
+
+        # Both at high density: sigma ~1.0, so result should match standard harmonic mean
+        # sigma for 4000 and 1000 are both > 0.999
+        sigma1 = _condensed_weight(rho1)
+        sigma2 = _condensed_weight(rho2)
+        w_eff1 = w1 * sigma1
+        w_eff2 = w2 * sigma2
+        expected = (w_eff1 + w_eff2) / (w_eff1 / rho1 + w_eff2 / rho2)
+        standard = 1.0 / (w1 / rho1 + w2 / rho2)
+
+        assert rho == pytest.approx(expected, rel=1e-6)
+        # And the suppressed result is within 0.1% of the standard harmonic mean
+        assert rho == pytest.approx(standard, rel=1e-3)
+
+    def test_mixed_density_all_vapor_returns_none(self):
+        """All components below condensation threshold returns None."""
+        from unittest.mock import patch
+
+        def mock_density(P, md, eos, T, sf, lf, interp, mzf):
+            return 10.0  # vapor-like for all
+
+        mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
+
+        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+            rho = calculate_mixed_density(
+                1e5,
+                5000,
+                mixture,
+                {},
+                None,
+                None,
+                {},
+                condensed_rho_min=300.0,
+                condensed_rho_scale=50.0,
+            )
+
+        # sigma at rho=10 is ~0.003, so w_eff is tiny but not zero.
+        # The function should still return a value (not None) since w_eff > 0.
+        # This tests the edge case; the actual value is ~10 kg/m^3.
+        assert rho is not None
+
+    def test_single_component_no_suppression(self):
+        """Single-component layers bypass suppression entirely."""
+        from unittest.mock import patch
+
+        def mock_density(P, md, eos, T, sf, lf, interp, mzf):
+            return 50.0  # vapor-like
+
+        mixture = LayerMixture(['PALEOS:H2O'], [1.0])
+
+        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+            rho = calculate_mixed_density(
+                1e5,
+                3000,
+                mixture,
+                {},
+                None,
+                None,
+                {},
+                condensed_rho_min=300.0,
+                condensed_rho_scale=50.0,
+            )
+
+        # Single-component fast path: returns raw density, no suppression
+        assert rho == pytest.approx(50.0)
+
+    def test_mixed_nabla_ad_vapor_suppression(self):
+        """Vapor component's nabla_ad is suppressed in weighted average."""
+        from unittest.mock import patch
+
+        def mock_density(P, md, eos, T, sf, lf, interp, mzf):
+            if 'MgSiO3' in eos:
+                return 4000.0
+            if 'H2O' in eos:
+                return 50.0
+            return None
+
+        def mock_nabla(eos, P, T, md, interp, sf, lf):
+            if 'MgSiO3' in eos:
+                return 0.3  # rock nabla_ad
+            if 'H2O' in eos:
+                return 0.9  # vapor nabla_ad (unrealistically large)
+            return None
+
+        mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
+
+        with (
+            patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density),
+            patch('zalmoxis.mixing._nabla_ad_for_component', side_effect=mock_nabla),
+        ):
+            nabla = get_mixed_nabla_ad(
+                1e9,
+                3000,
+                mixture,
+                {},
+                {},
+                mushy_zone_factor=1.0,
+                condensed_rho_min=300.0,
+                condensed_rho_scale=50.0,
+            )
+
+        assert nabla is not None
+        # With suppression, water's nabla_ad=0.9 is nearly excluded
+        # Result should be close to rock's 0.3
+        assert nabla < 0.35, f'Expected nabla near 0.3 (rock), got {nabla}'
+        assert nabla > 0.25

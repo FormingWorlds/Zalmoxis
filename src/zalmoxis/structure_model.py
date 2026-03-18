@@ -66,6 +66,8 @@ def coupled_odes(
     solidus_func,
     liquidus_func,
     mushy_zone_factor=1.0,
+    condensed_rho_min=300.0,
+    condensed_rho_scale=50.0,
 ):
     """Calculate derivatives of mass, gravity, and pressure w.r.t. radius.
 
@@ -93,6 +95,10 @@ def coupled_odes(
         Liquidus melting curve interpolation function.
     mushy_zone_factor : float
         Mushy zone factor for unified PALEOS tables.
+    condensed_rho_min : float
+        Sigmoid center for phase-aware suppression (kg/m^3).
+    condensed_rho_scale : float
+        Sigmoid width for phase-aware suppression (kg/m^3).
 
     Returns
     -------
@@ -122,6 +128,8 @@ def coupled_odes(
         liquidus_func,
         interpolation_cache,
         mushy_zone_factor,
+        condensed_rho_min,
+        condensed_rho_scale,
     )
 
     # Return zero derivatives for invalid density.  This is intentional:
@@ -163,6 +171,8 @@ def solve_structure(
     liquidus_func,
     temperature_function=None,
     mushy_zone_factor=1.0,
+    condensed_rho_min=300.0,
+    condensed_rho_scale=50.0,
 ):
     """Solve the coupled ODEs for the planetary structure model.
 
@@ -205,6 +215,10 @@ def solve_structure(
         non-adiabatic modes the pressure argument is ignored.
     mushy_zone_factor : float
         Mushy zone factor for unified PALEOS tables.
+    condensed_rho_min : float
+        Sigmoid center for phase-aware suppression (kg/m^3).
+    condensed_rho_scale : float
+        Sigmoid width for phase-aware suppression (kg/m^3).
 
     Returns
     -------
@@ -235,6 +249,8 @@ def solve_structure(
             solidus_func,
             liquidus_func,
             mushy_zone_factor,
+            condensed_rho_min,
+            condensed_rho_scale,
         )
 
     if uses_Tdep:

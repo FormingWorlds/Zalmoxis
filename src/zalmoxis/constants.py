@@ -27,5 +27,14 @@ TDEP_EOS_NAMES = {
     'PALEOS:H2O',
 }
 
+# Phase-aware mixing: smooth density suppression defaults.
+# Components with density below the sigmoid center are progressively
+# excluded from the harmonic-mean density, preventing non-condensed
+# volatiles (vapor, supercritical gas) from dominating the mixture.
+CONDENSED_RHO_MIN_DEFAULT = (
+    300.0  # kg/m^3, sigmoid center (near H2O critical density 322 kg/m^3)
+)
+CONDENSED_RHO_SCALE_DEFAULT = 50.0  # kg/m^3, sigmoid transition width
+
 # Other constants
 G = 6.67428e-11  # Gravitational constant (m^3 kg^-1 s^-2)
