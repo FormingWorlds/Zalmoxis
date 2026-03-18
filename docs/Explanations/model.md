@@ -2,7 +2,17 @@
 
 Zalmoxis solves the coupled ordinary differential equations (ODEs) of hydrostatic equilibrium for a differentiated planet with 2--3 compositionally distinct layers (iron core, silicate mantle, and optional water/ice envelope).
 Given a total planet mass, layer mass fractions, and a per-layer equation of state (EOS) specification, the code iteratively determines self-consistent radial profiles of pressure, density, gravity, and enclosed mass from the center to the surface.
-Several EOS families are supported and can be mixed arbitrarily across layers: the [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) merged tabulated EOS at 300 K, the temperature-dependent [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) RTpress EOS (including the extended 100 TPa melt table), the PALEOS two-phase MgSiO$_3$ EOS with adiabatic gradient, the unified PALEOS tables for iron, MgSiO$_3$, and H$_2$O (providing all stable phases in a single file per material), and a fast analytic modified-polytrope approximation from [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346).
+
+Several EOS families are supported (see [Equations of State](eos_physics.md) for detailed physics):
+
+- [Seager et al. (2007)](eos_physics.md#seager-et-al-2007-tabulated-eos): merged tabulated EOS at 300 K
+- [Wolf & Bower (2018)](eos_physics.md#wolf-bower-2018-temperature-dependent-eos): temperature-dependent RTpress EOS
+- [RTPress100TPa](eos_physics.md#rtpress100tpa-extended-melt-eos): extended melt table to 100 TPa
+- [PALEOS-2phase](eos_physics.md#paleos-mgsio3-eos): separate solid/liquid tables with $\nabla_{\mathrm{ad}}$
+- [Unified PALEOS](eos_physics.md#unified-paleos-tables-iron-mgsio3-h2o): all stable phases in a single file per material
+- [Analytic polytrope](eos_physics.md#analytic-modified-polytrope-seager-et-al-2007): fast closed-form approximation
+
+Layers can contain [multiple materials mixed by volume additivity](mixing.md), with phase-aware suppression of non-condensed volatiles.
 
 ---
 
@@ -50,7 +60,7 @@ The per-layer system allows arbitrary mixing of tabulated and analytic EOS acros
 
 Each layer can also contain multiple materials mixed by volume additivity.
 The config format uses `+` to combine materials with mass fractions: `"PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15"`.
-See [Multi-material mixing with phase-aware suppression](#multi-material-mixing-with-phase-aware-suppression) below for the full mixing model, including the phase-aware density suppression that prevents non-condensed volatiles from dominating the mixture.
+See the [multi-material mixing](mixing.md) page for the full mixing model, including the phase-aware density suppression that prevents non-condensed volatiles from dominating the mixture.
 In the PROTEUS ecosystem, mixing fractions are set by CALLIOPE (solubility model) or PROTEUS (volatile trapping in the mantle) at runtime via `LayerMixture.update_fractions()`.
 
 Legacy global strings are still accepted via a backward-compatible mapping in `parse_eos_config()`.
@@ -70,253 +80,7 @@ Legacy global strings are still accepted via a backward-compatible mapping in `p
 | `PALEOS:H2O` | Unified table | H$_2$O (7 EOS) | $T$-dependent ($\leq 50\,M_\oplus$), includes $\nabla_{\mathrm{ad}}$ |
 | `Analytic:<material>` | Analytic fit | Any of 6 materials | 300 K |
 
----
-
-## EOS Physics
-
-### Seager et al. (2007) Tabulated EOS
-
-The tabulated EOS from [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) provides $\rho(P)$ at 300 K for iron (Fe $\epsilon$-phase), MgSiO$_3$ perovskite, and water ice.
-The tables are constructed by merging two regimes:
-
-- **Low pressure** ($P \lesssim 200$ GPa): Vinet EOS for iron, fourth-order Birch--Murnaghan EOS for MgSiO$_3$ and water ice, fitted to experimental data and DFT calculations.
-- **High pressure** ($P \gtrsim 10^4$ GPa): Thomas--Fermi--Dirac (TFD) theory, which becomes exact in the limit of fully ionized, degenerate electron gas.
-
-The two regimes are smoothly joined in the intermediate range.
-
-**Limitations.** The tabulated EOS is evaluated at a fixed temperature of 300 K and does not account for thermal pressure, phase transitions (e.g., post-perovskite), compositional gradients, or partial melting.
-It is appropriate for cold, fully solidified structure models.
-
-### Wolf & Bower (2018) Temperature-Dependent EOS
-
-The `WolfBower2018:MgSiO3` EOS implements the RTpress (Reciprocal Transform pressure) framework from [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449), providing $\rho(P, T)$ for MgSiO$_3$ in both the solid and liquid phases.
-The solid-phase EOS is derived from [Mosenfelder et al. (2009)](https://doi.org/10.1029/2008JB005900).
-This EOS captures the thermal expansivity and compressibility of silicate mantle material over a wide $P$--$T$ range.
-
-Phase boundaries are defined using solidus and liquidus melting curves derived from [Monteux et al. (2016)](https://www.sciencedirect.com/science/article/pii/S0012821X16302199), with the solidus offset by $-600$ K from the liquidus.
-At each radial shell, the code evaluates the local melt fraction:
-
-$$
-f_{\mathrm{melt}} = \frac{T - T_{\mathrm{sol}}}{T_{\mathrm{liq}} - T_{\mathrm{sol}}}
-$$
-
-where $T$ is the local temperature, $T_{\mathrm{sol}}$ is the solidus temperature, and $T_{\mathrm{liq}}$ is the liquidus temperature at the local pressure.
-Three phase regimes are distinguished:
-
-- **Solid** ($T \le T_{\mathrm{sol}}$, $f_{\mathrm{melt}} \le 0$): density from the solid-state EOS table.
-- **Melt** ($T \ge T_{\mathrm{liq}}$, $f_{\mathrm{melt}} \ge 1$): density from the liquid-state EOS table.
-- **Mixed / mush** ($T_{\mathrm{sol}} < T < T_{\mathrm{liq}}$): density from volume-additive interpolation between solid and liquid densities:
-
-$$
-\rho_{\mathrm{mixed}} = \left[ (1 - f_{\mathrm{melt}}) \, \rho_{\mathrm{solid}}^{-1} + f_{\mathrm{melt}} \, \rho_{\mathrm{liquid}}^{-1} \right]^{-1}
-$$
-
-This EOS is appropriate when modeling hot rocky planets whose mantles may be partially or fully molten, which is critical for accurately coupling to thermal evolution codes.
-A temperature profile (isothermal, linear, prescribed from file, or adiabatic) must be supplied.
-When this EOS is selected for any layer, the radial integration is split into two segments (controlled by `adaptive_radial_fraction`) to handle the steep density gradients near the surface.
-
-**Mass limit.** The WolfBower2018 tables cover pressures up to ~1 TPa.
-For planets above ~2 $M_\oplus$, deep-mantle pressures near the core-mantle boundary begin to exceed this table ceiling.
-The Brent pressure solver (see [Pressure Solver](process_flow.md#pressure-solver-brents-method)) with out-of-bounds pressure clamping handles this gracefully up to $7\,M_\oplus$: pressures beyond the table boundary are clamped to the table edge, returning the boundary density.
-This approximation is acceptable for planets up to ~7 $M_\oplus$, where the clamped region is a small fraction of the mantle.
-Beyond $7\,M_\oplus$, the clamped densities diverge too far from reality and the code raises a `ValueError`.
-For higher-mass planets, use `RTPress100TPa:MgSiO3` or `PALEOS-2phase:MgSiO3` (T-dependent, up to ~50 $M_\oplus$) or `Seager2007:MgSiO3` / `Analytic:MgSiO3` (300 K, up to ~50 $M_\oplus$).
-
-### RTPress100TPa Extended Melt EOS
-
-The `RTPress100TPa:MgSiO3` EOS extends the melt phase coverage from the WolfBower2018 1 TPa ceiling to 100 TPa ($P$: $10^3$--$10^{14}$ Pa, $T$: 400--50000 K).
-This enables temperature-dependent modeling of much more massive rocky planets (up to ~50 $M_\oplus$).
-
-The solid-phase EOS remains the [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) / [Mosenfelder et al. (2009)](https://doi.org/10.1029/2008JB005900) table (valid to 1 TPa, clamped at boundary).
-At the high internal temperatures typical of massive rocky planets, the mantle is predominantly molten, so the solid table limitation is less constraining than it would be for cooler planets.
-The same [Monteux et al. (2016)](https://www.sciencedirect.com/science/article/pii/S0012821X16302199) solidus/liquidus melting curves are used for phase determination.
-
-**Mass limit.** The melt table extends to 100 TPa, matching the Seager2007 iron EOS range.
-The solid table is clamped at 1 TPa, but this primarily affects cold planets where a significant fraction of the mantle is solid.
-The code allows planets up to 50 $M_\oplus$ with this EOS.
-Unlike `WolfBower2018:MgSiO3`, the central pressure is not capped by `max_center_pressure_guess` since the melt table covers the full range.
-
-### PALEOS MgSiO3 EOS
-
-The `PALEOS-2phase:MgSiO3` EOS provides separate solid and liquid MgSiO$_3$ tables from the PALEOS thermodynamic database (Zenodo record 18924171).
-Each table contains 10 columns in SI units: $P$, $T$, $\rho$, $u$, $s$, $c_p$, $c_v$, $\alpha$, $\nabla_{\mathrm{ad}}$, and phase identifier.
-The grid is log-uniform in both $P$ (1 bar to 100 TPa) and $T$ (300 K to 100,000 K) with 150 points per decade.
-
-Unlike WolfBower2018 and RTPress100TPa, the PALEOS tables include the dimensionless adiabatic gradient $\nabla_{\mathrm{ad}} = (d \ln T / d \ln P)_S$ for both solid and liquid phases.
-This enables a phase-aware adiabatic temperature profile:
-
-- Below the solidus: $\nabla_{\mathrm{ad}}$ from the solid table.
-- Above the liquidus: $\nabla_{\mathrm{ad}}$ from the liquid table.
-- In the mushy zone: melt-fraction-weighted average $(1 - \phi) \nabla_{\mathrm{ad,solid}} + \phi \, \nabla_{\mathrm{ad,liquid}}$.
-
-The adiabatic gradient is converted to $dT/dP = \nabla_{\mathrm{ad}} \cdot T / P$ for integration from the surface inward.
-
-**Grid coverage.** The PALEOS tables have missing cells at corners of the $P$--$T$ domain where the thermodynamic solver did not converge (solid table: 75% filled, liquid table: 53% filled).
-Per-cell temperature clamping restricts queries to the valid data range at each pressure, and a nearest-neighbor fallback handles remaining NaN results near the ragged domain boundary.
-In adiabatic mode, the temperature is parameterized as $T(P)$ rather than $T(r)$, ensuring that the Brent pressure solver always evaluates thermodynamically consistent $(P, T)$ pairs within the valid table domain.
-
-**Melting curves.** Phase routing uses configurable solidus and liquidus curves (see [Melting curve selection](../How-to/configuration.md#melting-curve-selection)).
-The default analytic Monteux+2016 curves are defined for all pressures, eliminating the NaN-at-boundary issue of the legacy tabulated curves.
-
-**Mass limit.** Both solid and liquid tables extend to 100 TPa, supporting planets up to ~50 $M_\oplus$.
-
-### Unified PALEOS Tables (Iron, MgSiO3, H2O)
-
-The unified PALEOS tables (`PALEOS:iron`, `PALEOS:MgSiO3`, `PALEOS:H2O`) from Zenodo record 19000316 represent the next generation of the PALEOS EOS.
-Each material is contained in a single file with all stable phases: iron has 5 phases (alpha-bcc, delta-bcc, gamma-fcc, epsilon-hcp, liquid), MgSiO$_3$ has 6 phases (3 pyroxene polymorphs, bridgmanite, postperovskite, liquid), and H$_2$O has 7 EOS (ice Ih through X, liquid, vapor, superionic).
-
-The format is the same 10-column layout as PALEOS-2phase ($P$, $T$, $\rho$, $u$, $s$, $c_p$, $c_v$, $\alpha$, $\nabla_{\mathrm{ad}}$, phase), but the `phase` column now encodes the thermodynamically stable phase at each $(P, T)$ grid point.
-The grid is log-uniform with 150 points per decade in both $P$ (1 bar to 100 TPa) and $T$ (300 to 100,000 K for iron and MgSiO$_3$; 100 to 100,000 K for H$_2$O).
-
-**Key architectural difference from PALEOS-2phase.** Instead of splitting the EOS into separate solid and liquid files and routing through an external melting curve, the unified table contains all phases in one file.
-The density at any $(P, T)$ is obtained by a single interpolation on the table, which already provides the stable-phase value.
-No external solidus/liquidus curves are needed.
-
-**Phase boundary extraction.** At load time, the code extracts the liquidus boundary from the phase column: for each pressure row, the lowest temperature where the phase is `liquid` defines the liquidus.
-This extracted boundary serves as the basis for an optional mushy zone controlled by the `mushy_zone_factor` parameter:
-
-- $f = 1.0$ (default): no mushy zone; the density comes directly from the table (sharp phase transition).
-- $f < 1.0$: a synthetic solidus is defined at $T_{\mathrm{sol}} = f \times T_{\mathrm{liq}}$. Between $T_{\mathrm{sol}}$ and $T_{\mathrm{liq}}$, density is volume-averaged between solid-side and liquid-side table values using the same melt-fraction formula as for PALEOS-2phase.
-
-**T-dependent iron core.** With `PALEOS:iron`, the iron core becomes temperature-dependent for the first time in Zalmoxis.
-In adiabatic mode, the core follows its own adiabat using $\nabla_{\mathrm{ad}}$ from the iron table, instead of being isothermal at the CMB temperature.
-
-**Grid coverage.** The unified tables have the same per-cell clamping and nearest-neighbor fallback infrastructure as the PALEOS-2phase tables, handling NaN gaps at domain corners transparently.
-
-**Mass limit.** All three tables extend to 100 TPa, supporting planets up to ~50 $M_\oplus$.
-
-### Analytic Modified Polytrope (Seager et al. 2007)
-
-The analytic EOS implements the modified polytropic fit from [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346), Table 3, Eq. 11:
-
-$$
-\rho(P) = \rho_0 + c \cdot P^n
-$$
-
-where $\rho$ is density in kg/m$^3$, $P$ is pressure in Pa, and $\rho_0$, $c$, $n$ are material-specific parameters.
-This closed-form expression approximates the full merged Vinet/BME + TFD EOS without requiring tabulated data files.
-
-Accuracy is 2--5% at low ($P < 5$ GPa) and high ($P > 30$ TPa) pressures, and degrades to up to 12% at intermediate pressures where the transition between the low-pressure and TFD regimes occurs.
-The fit is valid for $P < 10^{16}$ Pa.
-
-Six materials are available:
-
-| Material key | Compound | $\rho_0$ (kg/m$^3$) | $c$ (kg m$^{-3}$ Pa$^{-n}$) | $n$ |
-|---|---|---|---|---|
-| `iron` | Fe ($\epsilon$) | 8300 | 0.00349 | 0.528 |
-| `MgSiO3` | MgSiO$_3$ perovskite | 4100 | 0.00161 | 0.541 |
-| `MgFeSiO3` | (Mg,Fe)SiO$_3$ | 4260 | 0.00127 | 0.549 |
-| `H2O` | Water ice (VII/VIII/X) | 1460 | 0.00311 | 0.513 |
-| `graphite` | C (graphite) | 2250 | 0.00350 | 0.514 |
-| `SiC` | Silicon carbide | 3220 | 0.00172 | 0.537 |
-
-Like the Seager et al. (2007) tabulated EOS, this assumes 300 K and no phase transitions.
-Because any of the six materials can be assigned to any structural layer, the analytic EOS enables modeling of exotic compositions (e.g., carbon planets with iron/SiC or iron/graphite layers) that are not available in the tabulated data.
-
----
-
-## Multi-Material Mixing with Phase-Aware Suppression
-
-### Volume-additive mixing
-
-When a layer contains multiple materials (e.g., `"PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15"`), the density at each radial shell is computed from the individual component densities at the local $(P, T)$.
-Single-component layers use the component's density directly with no mixing overhead.
-
-For multi-component layers, the standard volume-additive (ideal mixing) harmonic mean is:
-
-$$
-\rho_{\mathrm{mix}} = \left( \sum_i \frac{w_i}{\rho_i} \right)^{-1}
-$$
-
-where $w_i$ are mass fractions and $\rho_i(P, T)$ is each component's density evaluated independently from its own EOS table.
-This assumes that partial specific volumes add linearly (no excess volume of mixing).
-
-### The vapor-dominance problem
-
-The harmonic mean is dominated by the lightest component: even a small mass fraction of a low-density material can reduce $\rho_{\mathrm{mix}}$ dramatically.
-At high temperatures and low pressures (near the planetary surface), H$_2$O transitions from condensed phases (liquid, ice) to vapor or low-density supercritical fluid with $\rho \sim 10$--$100$ kg/m$^3$.
-In a rock-water mixture with 85% MgSiO$_3$ ($\rho \sim 4000$ kg/m$^3$) and 15% H$_2$O ($\rho \sim 50$ kg/m$^3$), the standard harmonic mean gives $\rho_{\mathrm{mix}} \approx 311$ kg/m$^3$, far below the rock density that should dominate structurally.
-The low-density vapor effectively inflates the planet's radius, producing non-physical results (e.g., $R \sim 24\,R_\oplus$ for a 10 $M_\oplus$ planet that should be $R \sim 2\,R_\oplus$).
-
-Iron ($\rho > 7000$ kg/m$^3$) and MgSiO$_3$ ($\rho > 2500$ kg/m$^3$) exist only in condensed phases within the PALEOS tables and never trigger this problem.
-Only H$_2$O (and, in future, other volatiles like CO$_2$, NH$_3$, H$_2$, He) has gas-phase states in the EOS tables.
-
-### Smooth density suppression (Strategy E)
-
-To prevent non-condensed volatiles from dominating the harmonic mean, each component's contribution is weighted by a smooth sigmoid function of its density:
-
-$$
-\sigma_i = \frac{1}{1 + \exp\!\left( -\frac{\rho_i - \rho_{\mathrm{min}}}{\rho_{\mathrm{scale}}} \right)}
-$$
-
-where $\rho_{\mathrm{min}}$ is the sigmoid center and $\rho_{\mathrm{scale}}$ controls the transition width.
-The suppressed harmonic mean becomes:
-
-$$
-\rho_{\mathrm{mix}} = \frac{\sum_i w_i \, \sigma_i}{\sum_i w_i \, \sigma_i / \rho_i}
-$$
-
-This formulation has two key properties:
-
-1. **When all $\sigma_i \approx 1$** (all components condensed), the expression reduces exactly to the standard harmonic mean.
-   For iron ($\rho > 7000$) and MgSiO$_3$ ($\rho > 2500$), the sigmoid returns $\sigma \approx 1.0$ to machine precision, so existing single-material and all-condensed configurations produce numerically identical results.
-
-2. **When $\sigma_i \to 0$** (component is vapor-like), both the numerator and denominator lose the $i$-th term proportionally, and the component drops out smoothly.
-   There is no discontinuity, which is important for the adaptive ODE solver (RK45) that requires smooth right-hand-side functions.
-
-The same sigmoid weighting is applied to the adiabatic gradient $\nabla_{\mathrm{ad}}$: components that are suppressed in the density calculation are also suppressed in the temperature profile calculation, maintaining internal consistency.
-
-### Sigmoid parameters
-
-The default parameters are calibrated for H$_2$O:
-
-| Parameter | Default | Physical meaning |
-|---|---|---|
-| `condensed_rho_min` | 300 kg/m$^3$ | Sigmoid center, near H$_2$O critical density (322 kg/m$^3$ at 647 K, 22.1 MPa) |
-| `condensed_rho_scale` | 50 kg/m$^3$ | Transition width; $\sigma$ goes from 0.02 to 0.98 over a range of about 200 kg/m$^3$ |
-
-Behavior at representative densities:
-
-| Density (kg/m$^3$) | Phase example | $\sigma$ |
-|---|---|---|
-| 10 | H$_2$O vapor at 1 bar, 3000 K | 0.003 |
-| 100 | H$_2$O low-density supercritical | 0.018 |
-| 300 | Near critical density | 0.500 |
-| 500 | Dense supercritical H$_2$O | 0.982 |
-| 1000 | Liquid H$_2$O at high $P$ | 1.000 |
-| 4000 | MgSiO$_3$ | 1.000 |
-| 13000 | Fe | 1.000 |
-
-The defaults are appropriate for H$_2$O, the only volatile with gas-phase data in the current EOS tables.
-Once other volatiles are added, $\rho_{\mathrm{min}}$ must be adjusted per material (CO$_2$: ~470, NH$_3$: ~225, He: ~70, H$_2$: ~30 kg/m$^3$).
-Both parameters are user-configurable in the `[EOS]` section of the TOML file.
-
-### Physical interpretation and known limitations
-
-The suppressed harmonic mean is a pragmatic approximation, not a thermodynamically rigorous mixing model.
-Several limitations should be understood when interpreting results:
-
-**Mass non-conservation.**
-When a component is suppressed ($\sigma \to 0$), its mass is excluded from the structural density calculation.
-This is equivalent to treating vapor-phase volatiles as having negligible structural contribution, effectively discarding their mass from the hydrostatic equilibrium.
-The approximation is valid when the suppressed fraction is small and the vapor does not contribute meaningfully to hydrostatic support.
-For a mantle with 15% H$_2$O by mass, suppression primarily affects the outermost shells where pressure is low enough for H$_2$O to be vapor-like; at depth, the H$_2$O is condensed and fully included.
-
-**Temperature profile consistency.**
-The same suppression is applied to $\nabla_{\mathrm{ad}}$: when a component is suppressed in the density, its adiabatic gradient is also suppressed.
-This means the temperature profile ignores the thermodynamic contribution of vapor-phase volatiles.
-In reality, vapor affects heat transport and the temperature gradient.
-This approximation is self-consistent within the model (the density and temperature calculations "see" the same effective mixture) but differs from the physical situation where vapor is present and thermodynamically active.
-
-**No sharp phase boundary.**
-Unlike approaches that classify each EOS grid cell as "condensed" or "non-condensed" using phase labels, the sigmoid operates on density alone.
-This avoids ambiguity in the supercritical regime, where phase labels like "supercritical" span a wide range of densities: supercritical H$_2$O at 10 GPa and 3000 K has $\rho \sim 1200$--$1400$ kg/m$^3$ (dense, liquid-like, correctly included), while supercritical H$_2$O at 1 bar and 3000 K has $\rho \sim 1$ kg/m$^3$ (gas-like, correctly suppressed).
-A density-based criterion handles this naturally without consulting phase tables.
-
-**Sub-Neptune extension.**
-The sigmoid framework is forward-compatible with miscible sub-Neptune interiors (e.g., [Young et al. 2024, 2025](https://doi.org/10.48550/arXiv.2407.12917)), where rock-water composition varies continuously with depth.
-Future extensions can replace the fixed sigmoid parameters with per-component values or physics-based miscibility weights from DFT-MD calculations, and add depth-dependent fractions via the `LayerMixture.update_fractions()` interface.
-Non-ideal mixing corrections (excess volume) can be introduced in `calculate_mixed_density()` without changing the upstream solver code.
+See [Equations of State](eos_physics.md) for detailed physics of each EOS family.
 
 ---
 
@@ -343,8 +107,8 @@ Non-ideal mixing corrections (excess volume) can be introduced in `calculate_mix
   Below $\sim 0.1 \, M_{\oplus}$, the assumption of hydrostatic equilibrium and the EOS parameterizations become unreliable.
   Above $\sim 50 \, M_{\oplus}$, the planet enters the gas-giant regime where the absence of an H/He envelope EOS limits applicability.
 - **Pressure range:** The Seager et al. (2007) tabulated and analytic EOS are valid up to $P \sim 10^{16}$ Pa ($10^{10}$ GPa), which exceeds central pressures for all planets within the supported mass range.
-  The WolfBower2018 tables are limited to ~1 TPa; out-of-bounds pressures are clamped to the table edge (see [EOS Physics > Wolf & Bower 2018](#wolf-bower-2018-temperature-dependent-eos)).
+  The WolfBower2018 tables are limited to ~1 TPa; out-of-bounds pressures are clamped to the table edge (see [EOS Physics > Wolf & Bower 2018](eos_physics.md#wolf-bower-2018-temperature-dependent-eos)).
 - **Temperature range (Wolf & Bower 2018 only):** The $P$--$T$ tables cover 0--16500 K; the code raises a `ValueError` if the requested temperature falls outside this grid.
   Out-of-bounds *pressures* are clamped to the table edge (see above), but out-of-bounds *temperatures* are not.
   The Seager et al. (2007) EOS (both tabulated and analytic) is evaluated at a fixed 300 K and carries no temperature dependence.
-- **Composition:** Multi-material volume-additive mixing is supported within layers (see [Multi-material mixing](#multi-material-mixing-with-phase-aware-suppression)). Layer boundaries (core/mantle/ice) remain sharp. Non-condensed volatile components are smoothly suppressed to prevent unphysical density deflation.
+- **Composition:** Multi-material volume-additive mixing is supported within layers (see [Multi-material mixing](mixing.md)). Layer boundaries (core/mantle/ice) remain sharp. Non-condensed volatile components are smoothly suppressed to prevent unphysical density deflation.

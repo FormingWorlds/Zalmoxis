@@ -17,6 +17,8 @@ nav:
 
   - Explanations:
       - Model overview: Explanations/model.md
+      - Equations of state: Explanations/eos_physics.md
+      - Multi-material mixing: Explanations/mixing.md
       - Process flow: Explanations/process_flow.md
       - Code architecture: Explanations/code_architecture.md
 

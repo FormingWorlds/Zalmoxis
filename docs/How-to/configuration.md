@@ -79,7 +79,7 @@ Rules:
 - If the fraction is omitted (single-material backward compat), it defaults to 1.0.
 - Mass fractions must sum to 1.0 (automatically normalized if not).
 - Any EOS type can be mixed with any other (tabulated + analytic, T-dependent + T-independent).
-- Density is computed via a **phase-aware suppressed harmonic mean**: each component is weighted by a smooth sigmoid function of its density before entering the harmonic mean. This prevents non-condensed volatiles (vapor, supercritical gas) from dominating the mixture. See the [model documentation](../Explanations/model.md#multi-material-mixing-with-phase-aware-suppression) for the physics.
+- Density is computed via a **phase-aware suppressed harmonic mean**: each component is weighted by a smooth sigmoid function of its density before entering the harmonic mean. This prevents non-condensed volatiles (vapor, supercritical gas) from dominating the mixture. See the [mixing documentation](../Explanations/mixing.md) for the physics.
 - For all-condensed mixtures (all components with $\rho > 500$ kg/m$^3$), the suppressed result is numerically identical to the standard harmonic mean.
 - For adiabatic mode, $\nabla_{\mathrm{ad}}$ uses the same sigmoid-weighted average across components.
 - Mixing fractions can be updated at runtime by PROTEUS/CALLIOPE without re-parsing the config.
@@ -133,7 +133,7 @@ When any T-dependent EOS is assigned to any layer, the `temperature_mode`, `surf
 
 These parameters control the smooth sigmoid suppression that prevents non-condensed volatile components from dominating the harmonic-mean density in multi-material layers.
 They have no effect on single-material layers.
-See the [model documentation](../Explanations/model.md#multi-material-mixing-with-phase-aware-suppression) for the physics.
+See the [mixing documentation](../Explanations/mixing.md) for the physics.
 
 | Field | Required | Default | Unit | Description |
 |---|---|---|---|---|
