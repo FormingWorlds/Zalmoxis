@@ -45,10 +45,10 @@ ice_layer                  = "" 		# Empty = 2-layer model; set to an EOS string 
 # Components with density below the sigmoid center are progressively excluded
 # from the harmonic mean, preventing non-condensed volatiles (vapor, supercritical)
 # from dominating the mixture. Only active for multi-component layers.
-# WARNING: The default (300 kg/m^3) is calibrated for H2O near its critical
-# density (322 kg/m^3). For other volatiles, this MUST be adjusted:
+# The default (300 kg/m^3) is calibrated for H2O, the only volatile with
+# gas-phase data in the current EOS tables. Once other volatiles (CO2, NH3,
+# H2, He) are added, this must be adjusted per material:
 #   H2O ~300, CO2 ~470, NH3 ~225, He ~70, H2 ~30 kg/m^3
-# Using the H2O default with H2 or He will suppress all hydrogen/helium states.
 condensed_rho_min          = 300.0  # kg/m^3 — sigmoid center (H2O default; material-specific!)
 condensed_rho_scale        = 50.0   # kg/m^3 — sigmoid transition width
 
