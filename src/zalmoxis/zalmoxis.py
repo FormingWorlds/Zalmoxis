@@ -1146,9 +1146,16 @@ def main(
                 )
 
                 if new_density is None:
-                    verbose and logger.warning(
-                        f'Density calculation failed at radius {radii[i]}. Using previous density.'
-                    )
+                    if not mixture.is_single():
+                        verbose and logger.warning(
+                            f'All mixture components suppressed at r={radii[i]:.0f} m, '
+                            f'P={pressure[i]:.2e} Pa. Using previous density.'
+                        )
+                    else:
+                        verbose and logger.warning(
+                            f'Density lookup failed at r={radii[i]:.0f} m, '
+                            f'P={pressure[i]:.2e} Pa. Using previous density.'
+                        )
                     new_density = old_density[i]
 
                 density[i] = 0.5 * (new_density + old_density[i])

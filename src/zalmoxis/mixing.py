@@ -264,6 +264,16 @@ def calculate_mixed_density(
     by a sigmoid function of its density. This prevents non-condensed
     volatiles (vapor, supercritical gas) from dominating the mixture.
 
+    Notes
+    -----
+    The suppressed harmonic mean does not conserve mass: when a component
+    is suppressed (sigma near 0), its mass is excluded from the structural
+    calculation. This is physically equivalent to treating vapor-phase
+    volatiles as having negligible structural contribution. The
+    approximation is valid when suppressed components are at low density
+    (vapor/gas) and do not contribute meaningfully to hydrostatic support.
+    For a future physics-based treatment, replace with a miscibility model.
+
     Parameters
     ----------
     pressure : float
@@ -387,6 +397,20 @@ def get_mixed_nabla_ad(
     -------
     float or None
         Dimensionless adiabatic gradient, or None if no component provides it.
+
+    Notes
+    -----
+    For multi-component mixtures, this calls ``calculate_density()`` per
+    component to obtain the sigmoid weight. This is a separate EOS
+    evaluation from the one in ``calculate_mixed_density()``. Since PALEOS
+    tables are pure functions of (P, T), the values are identical, but the
+    double call has a performance cost. A future optimization could pass
+    pre-computed per-component densities.
+
+    Suppressing a vapor component's nabla_ad means the temperature profile
+    ignores the volatile. This is consistent with the density suppression
+    (both treat the vapor as structurally absent) but differs from reality
+    where vapor affects heat transport. This is a known limitation.
     """
     from .eos_functions import calculate_density
 
