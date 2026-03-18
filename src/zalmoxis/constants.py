@@ -31,9 +31,7 @@ TDEP_EOS_NAMES = {
 # Components with density below the sigmoid center are progressively
 # excluded from the harmonic-mean density, preventing non-condensed
 # volatiles (vapor, supercritical gas) from dominating the mixture.
-CONDENSED_RHO_MIN_DEFAULT = (
-    300.0  # kg/m^3, sigmoid center (near H2O critical density 322 kg/m^3)
-)
+CONDENSED_RHO_MIN_DEFAULT = 322.0  # kg/m^3, sigmoid center = H2O critical density
 CONDENSED_RHO_SCALE_DEFAULT = 50.0  # kg/m^3, sigmoid transition width
 
 # Other constants

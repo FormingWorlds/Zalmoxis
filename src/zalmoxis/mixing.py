@@ -231,7 +231,7 @@ def _condensed_weight(
     rho : float
         Component density in kg/m^3.
     rho_min : float
-        Sigmoid center in kg/m^3. Default 300 (near H2O critical density).
+        Sigmoid center in kg/m^3. Default 322 (H2O critical density).
     rho_scale : float
         Sigmoid transition width in kg/m^3. Default 50. Must be positive;
         zero produces NaN at rho=rho_min (validated at config load time).

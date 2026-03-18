@@ -66,7 +66,7 @@ def coupled_odes(
     solidus_func,
     liquidus_func,
     mushy_zone_factor=1.0,
-    condensed_rho_min=300.0,
+    condensed_rho_min=322.0,
     condensed_rho_scale=50.0,
 ):
     """Calculate derivatives of mass, gravity, and pressure w.r.t. radius.
@@ -171,7 +171,7 @@ def solve_structure(
     liquidus_func,
     temperature_function=None,
     mushy_zone_factor=1.0,
-    condensed_rho_min=300.0,
+    condensed_rho_min=322.0,
     condensed_rho_scale=50.0,
 ):
     """Solve the coupled ODEs for the planetary structure model.

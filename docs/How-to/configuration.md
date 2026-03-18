@@ -137,7 +137,7 @@ See the [mixing documentation](../Explanations/mixing.md) for the physics.
 
 | Field | Required | Default | Unit | Description |
 |---|---|---|---|---|
-| `condensed_rho_min` | No | `300.0` | kg/m$^3$ | Sigmoid center density. Components with density well below this are progressively excluded from the harmonic mean. The default is calibrated for H$_2$O (critical density 322 kg/m$^3$). Must be adjusted for other volatiles: CO$_2$ ~470, NH$_3$ ~225, He ~70, H$_2$ ~30 kg/m$^3$. Currently only H$_2$O has gas-phase data in the EOS tables, so the default is appropriate for all existing configurations. |
+| `condensed_rho_min` | No | `322.0` | kg/m$^3$ | Sigmoid center density, set to the H$_2$O critical density (322 kg/m$^3$ at 647 K, 22.1 MPa). Components with density well below this are progressively excluded from the harmonic mean. Must be adjusted for other volatiles: CO$_2$ ~470, NH$_3$ ~225, He ~70, H$_2$ ~30 kg/m$^3$. Currently only H$_2$O has gas-phase data in the EOS tables, so the default is appropriate for all existing configurations. |
 | `condensed_rho_scale` | No | `50.0` | kg/m$^3$ | Sigmoid transition width. Smaller values produce a sharper cutoff; larger values a more gradual transition. The sigmoid goes from $\sigma = 0.02$ to $\sigma = 0.98$ over a density range of approximately $4 \times$ `condensed_rho_scale`. |
 
 Both parameters must be positive. The validation rejects non-positive values at config load time.

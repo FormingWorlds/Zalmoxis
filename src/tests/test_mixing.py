@@ -359,7 +359,7 @@ class TestVaporSuppression:
                 None,
                 None,
                 {},
-                condensed_rho_min=300.0,
+                condensed_rho_min=322.0,
                 condensed_rho_scale=50.0,
             )
 
@@ -392,7 +392,7 @@ class TestVaporSuppression:
                 None,
                 None,
                 {},
-                condensed_rho_min=300.0,
+                condensed_rho_min=322.0,
                 condensed_rho_scale=50.0,
             )
 
@@ -427,7 +427,7 @@ class TestVaporSuppression:
                 None,
                 None,
                 {},
-                condensed_rho_min=300.0,
+                condensed_rho_min=322.0,
                 condensed_rho_scale=50.0,
             )
 
@@ -454,7 +454,7 @@ class TestVaporSuppression:
                 None,
                 None,
                 {},
-                condensed_rho_min=300.0,
+                condensed_rho_min=322.0,
                 condensed_rho_scale=50.0,
             )
 
@@ -492,7 +492,7 @@ class TestVaporSuppression:
                 {},
                 {},
                 mushy_zone_factor=1.0,
-                condensed_rho_min=300.0,
+                condensed_rho_min=322.0,
                 condensed_rho_scale=50.0,
             )
 
