@@ -183,7 +183,5 @@ cython_debug/
 .DS_Store
 /input/temp_profile.txt
 
-# Validation grid generated files
-/tools/validation_grid/configs/
-/tools/validation_grid/results/
-/tools/validation_grid/plots/
+# Validation grid (scripts, configs, results, plots)
+/tools/validation_grid/
