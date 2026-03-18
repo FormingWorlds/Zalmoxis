@@ -21,6 +21,7 @@ from scipy.interpolate import (
     interp1d,
 )
 
+from .constants import CONDENSED_RHO_MIN_DEFAULT, CONDENSED_RHO_SCALE_DEFAULT
 from .eos_analytic import get_analytic_density
 
 # Read the environment variable for ZALMOXIS_ROOT
@@ -1141,8 +1142,8 @@ def compute_adiabatic_temperature(
     solidus_func=None,
     liquidus_func=None,
     mushy_zone_factor=1.0,
-    condensed_rho_min=322.0,
-    condensed_rho_scale=50.0,
+    condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
+    condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
 ):
     """
     Compute an adiabatic temperature profile using native EOS gradient tables.

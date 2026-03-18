@@ -14,7 +14,7 @@ import logging
 import numpy as np
 from scipy.integrate import solve_ivp
 
-from .constants import G
+from .constants import CONDENSED_RHO_MIN_DEFAULT, CONDENSED_RHO_SCALE_DEFAULT, G
 from .mixing import any_component_is_tdep, calculate_mixed_density
 
 # Set up logging
@@ -66,8 +66,8 @@ def coupled_odes(
     solidus_func,
     liquidus_func,
     mushy_zone_factor=1.0,
-    condensed_rho_min=322.0,
-    condensed_rho_scale=50.0,
+    condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
+    condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
 ):
     """Calculate derivatives of mass, gravity, and pressure w.r.t. radius.
 
@@ -171,8 +171,8 @@ def solve_structure(
     liquidus_func,
     temperature_function=None,
     mushy_zone_factor=1.0,
-    condensed_rho_min=322.0,
-    condensed_rho_scale=50.0,
+    condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
+    condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
 ):
     """Solve the coupled ODEs for the planetary structure model.
 

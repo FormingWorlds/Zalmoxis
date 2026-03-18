@@ -43,15 +43,16 @@ class LayerMixture:
     fractions: list[float] = field(default_factory=list)
 
     def __post_init__(self):
+        if len(self.components) == 0:
+            raise ValueError('LayerMixture: must have at least one component.')
         if len(self.components) != len(self.fractions):
             raise ValueError(
                 f'LayerMixture: components ({len(self.components)}) and '
                 f'fractions ({len(self.fractions)}) must have the same length.'
             )
-        if len(self.components) > 1:
-            total = sum(self.fractions)
-            if abs(total - 1.0) > 1e-6:
-                raise ValueError(f'LayerMixture: fractions sum to {total:.6f}, not 1.0.')
+        total = sum(self.fractions)
+        if abs(total - 1.0) > 1e-6:
+            raise ValueError(f'LayerMixture: fractions sum to {total:.6f}, not 1.0.')
 
     def is_single(self) -> bool:
         """True if this mixture contains exactly one component."""
@@ -488,9 +489,28 @@ def _nabla_ad_for_component(
 
     Routes to the appropriate lookup based on EOS type.
 
+    Parameters
+    ----------
+    eos_name : str
+        EOS identifier string (e.g. ``"PALEOS:MgSiO3"``).
+    pressure : float
+        Pressure in Pa.
+    temperature : float
+        Temperature in K.
+    material_dictionaries : dict
+        EOS registry.
+    interpolation_functions : dict
+        Interpolation cache.
+    solidus_func : callable or None
+        Solidus function (for PALEOS-2phase). None for other EOS types.
+    liquidus_func : callable or None
+        Liquidus function (for PALEOS-2phase). None for other EOS types.
+
     Returns
     -------
     float or None
+        Dimensionless adiabatic gradient, or None if the EOS does not
+        support nabla_ad (e.g. Seager2007, Analytic).
     """
     from .eos_functions import (
         _compute_paleos_dtdp,

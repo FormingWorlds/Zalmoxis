@@ -51,8 +51,12 @@ class TestParseLayerComponents:
         assert sum(m.fractions) == pytest.approx(1.0)
 
     def test_normalization_warning(self, caplog):
-        m = parse_layer_components('PALEOS:MgSiO3:0.8+PALEOS:H2O:0.1')
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger='zalmoxis.mixing'):
+            m = parse_layer_components('PALEOS:MgSiO3:0.8+PALEOS:H2O:0.1')
         assert sum(m.fractions) == pytest.approx(1.0)
+        assert 'normalizing' in caplog.text.lower()
 
     def test_empty_string_raises(self):
         with pytest.raises(ValueError, match='Empty'):
@@ -109,6 +113,22 @@ class TestLayerMixture:
         m = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.8, 0.2])
         with pytest.raises(ValueError, match='non-negative'):
             m.update_fractions([1.5, -0.5])
+
+    def test_post_init_empty_components(self):
+        with pytest.raises(ValueError, match='at least one'):
+            LayerMixture([], [])
+
+    def test_post_init_mismatched_lengths(self):
+        with pytest.raises(ValueError, match='same length'):
+            LayerMixture(['PALEOS:iron'], [0.5, 0.5])
+
+    def test_post_init_bad_fraction_sum(self):
+        with pytest.raises(ValueError, match='sum to'):
+            LayerMixture(['PALEOS:iron', 'PALEOS:MgSiO3'], [0.4, 0.4])
+
+    def test_post_init_single_bad_fraction(self):
+        with pytest.raises(ValueError, match='sum to'):
+            LayerMixture(['PALEOS:iron'], [0.5])
 
 
 @pytest.mark.unit
