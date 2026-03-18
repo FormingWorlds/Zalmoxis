@@ -490,9 +490,10 @@ class TestMusyZoneFactorConfig:
         try:
             parsed = load_zalmoxis_config(tmp_path)
             assert parsed['mushy_zone_factor'] == pytest.approx(0.8)
-            # Per-EOS dict should inherit the global default
+            # Per-EOS dict: configured materials inherit global default,
+            # unconfigured materials default to 1.0 (no mushy zone)
             assert parsed['mushy_zone_factors']['PALEOS:iron'] == pytest.approx(0.8)
             assert parsed['mushy_zone_factors']['PALEOS:MgSiO3'] == pytest.approx(0.8)
-            assert parsed['mushy_zone_factors']['PALEOS:H2O'] == pytest.approx(0.8)
+            assert parsed['mushy_zone_factors']['PALEOS:H2O'] == pytest.approx(1.0)
         finally:
             os.unlink(tmp_path)

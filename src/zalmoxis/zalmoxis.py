@@ -611,13 +611,25 @@ def load_zalmoxis_config(temp_config_path=None):
     condensed_rho_min = eos_section.get('condensed_rho_min', CONDENSED_RHO_MIN_DEFAULT)
     condensed_rho_scale = eos_section.get('condensed_rho_scale', CONDENSED_RHO_SCALE_DEFAULT)
 
-    # Build per-EOS mushy_zone_factors dict. Start from the global default,
-    # then apply per-material overrides if present in the TOML.
-    mushy_zone_factors = {
-        'PALEOS:iron': eos_section.get('mushy_zone_factor_iron', mushy_zone_factor),
-        'PALEOS:MgSiO3': eos_section.get('mushy_zone_factor_MgSiO3', mushy_zone_factor),
-        'PALEOS:H2O': eos_section.get('mushy_zone_factor_H2O', mushy_zone_factor),
+    # Build per-EOS mushy_zone_factors dict. Only include materials that are
+    # actually configured in a layer; unused materials default to 1.0 so that
+    # a global mushy_zone_factor < 1.0 does not trigger the validation check
+    # for materials absent from the model.
+    _paleos_materials = {
+        'PALEOS:iron': 'mushy_zone_factor_iron',
+        'PALEOS:MgSiO3': 'mushy_zone_factor_MgSiO3',
+        'PALEOS:H2O': 'mushy_zone_factor_H2O',
     }
+    # Collect all EOS component strings from all layers
+    _all_eos_strings = ' '.join(v for v in layer_eos_config.values() if v)
+    mushy_zone_factors = {}
+    for paleos_name, toml_key in _paleos_materials.items():
+        if paleos_name in _all_eos_strings:
+            # Material is in use: apply per-material override or global default
+            mushy_zone_factors[paleos_name] = eos_section.get(toml_key, mushy_zone_factor)
+        else:
+            # Material not in use: default to 1.0 (no mushy zone)
+            mushy_zone_factors[paleos_name] = eos_section.get(toml_key, 1.0)
 
     config_params = {
         'planet_mass': config['InputParameter']['planet_mass'] * earth_mass,
