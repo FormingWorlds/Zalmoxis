@@ -47,6 +47,8 @@ def _get_mushy_zone_factor(eos_name, mushy_zone_factors):
     float
         Mushy zone factor for this EOS. Always 1.0 for non-PALEOS EOS.
     """
+    if eos_name not in _PALEOS_UNIFIED_NAMES:
+        return 1.0
     if mushy_zone_factors is None:
         return 1.0
     if isinstance(mushy_zone_factors, (int, float)):

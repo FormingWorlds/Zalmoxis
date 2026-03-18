@@ -348,10 +348,6 @@ def validate_config(config_params):
     }
     for eos_name, config_key in _eos_to_key.items():
         mzf = mushy_zone_factors.get(eos_name, 1.0)
-        # Skip validation for entries that equal the global default
-        # (inherited, not explicitly overridden per material).
-        if mzf == mushy_zone_factor:
-            continue
         if mzf < 0 or mzf > 1.0:
             raise ValueError(
                 f'{config_key} must be in [0, 1.0], got {mzf}. '
