@@ -98,11 +98,11 @@ Rules:
 | `Seager2007:MgSiO3` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | MgSiO3 perovskite | Fixed 300 K | Yes | 4th-order Birch-Murnaghan + DFT, tabulated $\rho(P)$. |
 | `Seager2007:H2O` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | Water ice (phases VII, VIII, X) | Fixed 300 K | Yes | Experimental + DFT, tabulated $\rho(P)$. |
 | `WolfBower2018:MgSiO3` | [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) | MgSiO3 (melt + solid) | T-dependent | Yes | RTpress EOS with phase-aware melting (solid EOS derived from [Mosenfelder et al. 2009](https://doi.org/10.1029/2008JB005900)). **Limited to $\leq 7\,M_\oplus$** (table max ~1 TPa; out-of-bounds pressures clamped). Requires `temperature_mode` configuration. Uses [Monteux et al.](https://doi.org/10.1016/j.epsl.2016.05.010) solidus/liquidus curves. |
-| `RTPress100TPa:MgSiO3` | Extended RTpress melt table | MgSiO3 (melt + solid) | T-dependent | Yes | Extended melt EOS to 100 TPa ($P$: $10^3$--$10^{14}$ Pa, $T$: 400--50000 K). Solid phase uses [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) table (clamped at 1 TPa). **Limited to $\leq 50\,M_\oplus$**. Requires `temperature_mode` configuration. |
-| `PALEOS-2phase:MgSiO3` | PALEOS (Zenodo 18924171) | MgSiO3 (solid + liquid) | T-dependent | Yes | Separate solid and liquid tables providing density and $\nabla_{\mathrm{ad}}$ (P: 1 bar--100 TPa, T: 300--100000 K, 150 ppd log-uniform grid). Enables phase-aware adiabatic temperature profiles using nabla_ad from both phases. **Limited to $\leq 50\,M_\oplus$**. Requires `temperature_mode` configuration. |
-| `PALEOS:iron` | PALEOS (Zenodo 19000316) | Fe (5 phases) | T-dependent | Yes | Unified single-file table with all stable Fe phases (alpha-bcc, delta-bcc, gamma-fcc, epsilon-hcp, liquid). P: 1 bar--100 TPa, T: 300--100000 K. Phase boundary encoded in table. **Limited to $\leq 50\,M_\oplus$**. Enables T-dependent core with its own adiabat. |
-| `PALEOS:MgSiO3` | PALEOS (Zenodo 19000316) | MgSiO3 (6 phases) | T-dependent | Yes | Unified single-file table with all stable MgSiO3 phases (3 pyroxene, bridgmanite, postperovskite, liquid). P: 1 bar--100 TPa, T: 300--100000 K. Phase boundary encoded in table. **Limited to $\leq 50\,M_\oplus$**. |
-| `PALEOS:H2O` | PALEOS (Zenodo 19000316) | H2O (7 EOS) | T-dependent | Yes | Unified single-file table with all stable H2O phases (ice Ih--X, liquid, vapor, superionic). P: 1 bar--100 TPa, T: 100--100000 K. Phase boundary encoded in table. **Limited to $\leq 50\,M_\oplus$**. Use as `ice_layer` for 3-layer models. |
+| `RTPress100TPa:MgSiO3` | Extended RTpress melt table | MgSiO3 (melt + solid) | T-dependent | Yes | Extended melt EOS to 100 TPa ($P$: $10^3$ to $10^{14}$ Pa, $T$: 400 to 50000 K). Solid phase uses [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) table (clamped at 1 TPa). **Limited to $\leq 50\,M_\oplus$**. Requires `temperature_mode` configuration. |
+| `PALEOS-2phase:MgSiO3` | PALEOS (Zenodo 18924171) | MgSiO3 (solid + liquid) | T-dependent | Yes | Separate solid and liquid tables providing density and $\nabla_{\mathrm{ad}}$ (P: 1 bar to 100 TPa, T: 300 to 100000 K, 150 ppd log-uniform grid). Enables phase-aware adiabatic temperature profiles using nabla_ad from both phases. **Limited to $\leq 50\,M_\oplus$**. Requires `temperature_mode` configuration. |
+| `PALEOS:iron` | PALEOS (Zenodo 19000316) | Fe (5 phases) | T-dependent | Yes | Unified single-file table with all stable Fe phases (alpha-bcc, delta-bcc, gamma-fcc, epsilon-hcp, liquid). P: 1 bar to 100 TPa, T: 300 to 100000 K. Phase boundary encoded in table. **Limited to $\leq 50\,M_\oplus$**. Enables T-dependent core with its own adiabat. |
+| `PALEOS:MgSiO3` | PALEOS (Zenodo 19000316) | MgSiO3 (6 phases) | T-dependent | Yes | Unified single-file table with all stable MgSiO3 phases (3 pyroxene, bridgmanite, postperovskite, liquid). P: 1 bar to 100 TPa, T: 300 to 100000 K. Phase boundary encoded in table. **Limited to $\leq 50\,M_\oplus$**. |
+| `PALEOS:H2O` | PALEOS (Zenodo 19000316) | H2O (7 EOS) | T-dependent | Yes | Unified single-file table with all stable H2O phases (ice Ih to X, liquid, vapor, superionic). P: 1 bar to 100 TPa, T: 100 to 100000 K. Phase boundary encoded in table. **Limited to $\leq 50\,M_\oplus$**. Use as `ice_layer` for 3-layer models. |
 | `Analytic:iron` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) Table 3 | Fe (epsilon) | Fixed 300 K | No | Modified polytrope: $\rho(P) = \rho_0 + c \cdot P^n$. |
 | `Analytic:MgSiO3` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) Table 3 | MgSiO3 perovskite | Fixed 300 K | No | Modified polytrope. |
 | `Analytic:MgFeSiO3` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) Table 3 | (Mg,Fe)SiO3 | Fixed 300 K | No | Modified polytrope. |
@@ -114,7 +114,7 @@ Rules:
 
 $$\rho(P) = \rho_0 + c \cdot P^n$$
 
-where $\rho_0$ is the zero-pressure density, $c$ and $n$ are fitted constants. This approximation is valid for $P < 10^{16}$ Pa and reproduces the full tabulated EOS to 2--12% accuracy across all planetary pressures. The analytic EOS requires no external data files, making it useful for quick exploration and testing.
+where $\rho_0$ is the zero-pressure density, $c$ and $n$ are fitted constants. This approximation is valid for $P < 10^{16}$ Pa and reproduces the full tabulated EOS to 2 to 12% accuracy across all planetary pressures. The analytic EOS requires no external data files, making it useful for quick exploration and testing.
 
 **Temperature-dependent EOS.** Two families of T-dependent EOS are available:
 
@@ -174,68 +174,11 @@ The Monteux+2016 piecewise parameterization has a solidus/liquidus crossing abov
 
     **Unified PALEOS** (`PALEOS:iron`, `PALEOS:MgSiO3`, `PALEOS:H2O`): All extend to 100 TPa, limited to $\leq 50\,M_\oplus$. These are unified single-file tables that contain all stable phases for each material. The phase boundary is extracted from the table's phase column at load time. The same per-cell clamping and nearest-neighbor fallback apply. `PALEOS:iron` makes the iron core T-dependent for the first time, following its own adiabat.
 
-#### EOS decision guide
-
-**Use tabulated EOS** (`Seager2007:*`, `WolfBower2018:*`) when:
-
-- Accuracy matters (e.g., comparison with published mass-radius relations).
-- Data files are available (downloaded via `get_data.sh` or equivalent).
-- Temperature-dependent phase behavior is needed (mantle melting).
-
-**Use analytic EOS** (`Analytic:*`) when:
-
-- Running quick parameter sweeps or exploratory calculations.
-- Data files are not yet downloaded or not available.
-- Exotic compositions are needed (graphite, SiC, MgFeSiO3) that have no tabulated counterpart.
-- Testing or debugging the structure solver.
-
-**Mixing tabulated and analytic EOS** across layers is fully supported. For example, a tabulated iron core with an analytic silicate mantle is a valid configuration.
+For guidance on when to use tabulated vs. analytic EOS, see the [EOS physics explanation](../Explanations/eos_physics.md).
 
 #### Configuration examples
 
-**Earth-like planet** (iron core + silicate mantle, 2-layer):
-```toml
-[EOS]
-core      = "Seager2007:iron"
-mantle    = "Seager2007:MgSiO3"
-ice_layer = ""
-```
-
-**Earth-like with temperature-dependent mantle** (iron core + T-dependent silicate, 2-layer):
-```toml
-[EOS]
-core      = "Seager2007:iron"
-mantle    = "WolfBower2018:MgSiO3"
-ice_layer = ""
-```
-Requires `temperature_mode`, `surface_temperature`, and `center_temperature` to be set in `[AssumptionsAndInitialGuesses]`.
-
-**Super-Earth with extended T-dependent mantle** (iron core + RTPress100TPa silicate, 2-layer, up to 50 $M_\oplus$):
-```toml
-[EOS]
-core      = "Seager2007:iron"
-mantle    = "RTPress100TPa:MgSiO3"
-ice_layer = ""
-```
-Same temperature configuration as `WolfBower2018:MgSiO3` but with extended pressure and temperature coverage for massive rocky planets.
-
-**Super-Earth with PALEOS adiabatic profile** (iron core + PALEOS silicate, adiabatic T, up to 50 $M_\oplus$):
-```toml
-[AssumptionsAndInitialGuesses]
-temperature_mode      = "adiabatic"
-surface_temperature   = 3000
-center_temperature    = 6000
-
-[EOS]
-core           = "Seager2007:iron"
-mantle         = "PALEOS-2phase:MgSiO3"
-ice_layer      = ""
-rock_solidus   = "Monteux16-solidus"
-rock_liquidus  = "Monteux16-liquidus-A-chondritic"
-```
-PALEOS provides both density and $\nabla_{\mathrm{ad}}$ for solid and liquid phases, enabling phase-aware adiabatic temperature profiles without external gradient tables.
-
-**Full PALEOS adiabatic planet** (T-dependent core + mantle, unified tables):
+**1. Full PALEOS adiabatic planet (recommended)**: T-dependent core + mantle with unified tables. This is the default configuration.
 ```toml
 [AssumptionsAndInitialGuesses]
 temperature_mode      = "adiabatic"
@@ -248,9 +191,9 @@ mantle            = "PALEOS:MgSiO3"
 ice_layer         = ""
 mushy_zone_factor = 1.0   # 1.0 = sharp phase boundary from table
 ```
-With `PALEOS:iron`, the iron core follows its own adiabat using $\nabla_{\mathrm{ad}}$ from the iron table. No external melting curves are needed.
+The iron core follows its own adiabat using $\nabla_{\mathrm{ad}}$ from the iron table. No external melting curves are needed.
 
-**3-layer water world with PALEOS** (T-dependent core + mantle + ice):
+**2. 3-layer water world with PALEOS** (T-dependent core + mantle + ice):
 ```toml
 [AssumptionsAndInitialGuesses]
 core_mass_fraction   = 0.25
@@ -266,7 +209,7 @@ ice_layer         = "PALEOS:H2O"
 mushy_zone_factor = 1.0
 ```
 
-**Hydrated mantle** (iron core + mixed silicate-water mantle, phase-aware mixing):
+**3. Hydrated mantle** (iron core + mixed silicate-water mantle, phase-aware mixing):
 ```toml
 [AssumptionsAndInitialGuesses]
 temperature_mode      = "adiabatic"
@@ -277,24 +220,29 @@ center_temperature    = 6000
 core                = "PALEOS:iron"
 mantle              = "PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15"
 ice_layer           = ""
-condensed_rho_min   = 300.0   # H2O default; adjust for other volatiles
+condensed_rho_min   = 322.0   # H2O critical density; adjust for other volatiles
 condensed_rho_scale = 50.0
 ```
 The mantle is 85% MgSiO$_3$ and 15% H$_2$O by mass. Each component's density and phase are evaluated independently from the PALEOS table. At depth (high $P$), both components are condensed and mixed via the standard harmonic mean. Near the surface (low $P$), H$_2$O transitions to vapor/supercritical gas and is smoothly suppressed by the sigmoid weighting, preventing unphysical radius inflation.
 
-**Mercury-like planet** (large iron core + (Mg,Fe)SiO3 mantle, analytic):
+**4. Earth-like rocky planet** (Seager cold model, iron core + silicate mantle, 2-layer):
 ```toml
-[AssumptionsAndInitialGuesses]
-core_mass_fraction = 0.68
-# ...
-
 [EOS]
-core      = "Analytic:iron"
-mantle    = "Analytic:MgFeSiO3"
+core      = "Seager2007:iron"
+mantle    = "Seager2007:MgSiO3"
 ice_layer = ""
 ```
 
-**Water world** (iron core + silicate mantle + water ice layer, 3-layer):
+**5. Hot rocky planet** (Wolf & Bower T-dependent mantle, 2-layer):
+```toml
+[EOS]
+core      = "Seager2007:iron"
+mantle    = "WolfBower2018:MgSiO3"
+ice_layer = ""
+```
+Requires `temperature_mode`, `surface_temperature`, and `center_temperature` to be set in `[AssumptionsAndInitialGuesses]`.
+
+**6. Water-rich planet** (3-layer Seager model, iron core + silicate mantle + water ice):
 ```toml
 [AssumptionsAndInitialGuesses]
 core_mass_fraction   = 0.25
@@ -308,7 +256,7 @@ ice_layer = "Seager2007:H2O"
 ```
 Note: `mantle_mass_fraction` must be > 0 for a 3-layer model.
 
-**Carbon planet** (iron core + SiC mantle):
+**7. Carbon planet / exotic compositions** (iron core + SiC or graphite mantle):
 ```toml
 [EOS]
 core      = "Analytic:iron"
@@ -316,23 +264,18 @@ mantle    = "Analytic:SiC"
 ice_layer = ""
 ```
 
-**Carbon planet with graphite mantle**:
-```toml
-[EOS]
-core      = "Analytic:iron"
-mantle    = "Analytic:graphite"
-ice_layer = ""
-```
+Other exotic mantles: `Analytic:graphite`, `Analytic:MgFeSiO3`.
 
-**Mixed-EOS model** (tabulated core + analytic mantle):
+**8. Mixed-EOS model** (tabulated core + analytic mantle):
 ```toml
 [EOS]
 core      = "Seager2007:iron"
 mantle    = "Analytic:MgSiO3"
 ice_layer = ""
 ```
+Mixing tabulated and analytic EOS across layers is fully supported.
 
-**Pure iron sphere** (single-composition, core fills entire planet):
+**9. Pure iron sphere** (single-composition edge case, core fills entire planet):
 ```toml
 [AssumptionsAndInitialGuesses]
 core_mass_fraction   = 1.0
@@ -399,17 +342,17 @@ Controls the three nested iteration loops (outer mass convergence, inner density
 | `relative_tolerance` | float | -- | 1e-5 | Relative tolerance for `solve_ivp` (ODE integrator). |
 | `absolute_tolerance` | float | -- | 1e-6 | Absolute tolerance for `solve_ivp`. |
 | `maximum_step` | float | m | 250000 | Maximum radial step size for `solve_ivp`. |
-| `adaptive_radial_fraction` | float | -- | 0.98 | Fraction (0--1) of the radial domain where `solve_ivp` uses adaptive stepping before switching to fixed steps. Active for all T-dependent EOS. |
+| `adaptive_radial_fraction` | float | -- | 0.98 | Fraction (0 to 1) of the radial domain where `solve_ivp` uses adaptive stepping before switching to fixed steps. Active for all T-dependent EOS. |
 | `max_center_pressure_guess` | float | Pa | 10e12 | Upper bound on the Brent solver's pressure bracket ($P_{\mathrm{high}}$). This caps the *central* pressure (at the center of the iron core, which uses the Seager2007 EOS valid to $10^{16}$ Pa), not the mantle pressure directly. The default of 10 TPa is intentionally higher than the WolfBower2018 table ceiling (~1 TPa) because it limits the core center, not the mantle. However, higher central pressures produce higher mantle pressures at the CMB, so capping $P_c$ indirectly prevents deep-mantle pressures from exceeding the WB2018 table by too much. Only active when `WolfBower2018:MgSiO3` is used; not needed for pure-Seager runs. |
 
 #### Guidance on reasonable parameter ranges
 
 The default values work well for Earth-mass planets with the default EOS. For other configurations:
 
-- **Super-Earths (1--10 $M_\oplus$):** The defaults generally suffice. For masses above ~5 $M_\oplus$, consider tightening `tolerance_outer` to 1e-4 and increasing `num_layers` to 200--300. The Brent pressure solver converges in 20--36 evaluations regardless of planet mass.
+- **Super-Earths (1 to 10 $M_\oplus$):** The defaults generally suffice. For masses above ~5 $M_\oplus$, consider tightening `tolerance_outer` to 1e-4 and increasing `num_layers` to 200 to 300. The Brent pressure solver converges in 20 to 36 evaluations regardless of planet mass.
 - **Sub-Earths (< 1 $M_\oplus$):** May converge faster. Defaults are conservative.
-- **Temperature-dependent EOS (`WolfBower2018:MgSiO3`):** Limited to $\leq 7\,M_\oplus$. If convergence is slow, try reducing `maximum_step` (e.g., to 100000 m) and ensuring `adaptive_radial_fraction` is close to 1.0 (e.g., 0.98--0.99). The `max_center_pressure_guess` caps the Brent solver's upper bracket to prevent deep-mantle pressures from exceeding the WolfBower2018 table by too much. The default (10 TPa) is sufficient for planets up to 7 $M_\oplus$.
-- **Extended T-dependent EOS (`RTPress100TPa:MgSiO3`):** Limited to $\leq 50\,M_\oplus$. The melt table extends to 100 TPa so `max_center_pressure_guess` capping is not applied. For very massive planets (>10 $M_\oplus$), consider increasing `num_layers` to 200--300 and tightening `tolerance_outer`.
+- **Temperature-dependent EOS (`WolfBower2018:MgSiO3`):** Limited to $\leq 7\,M_\oplus$. If convergence is slow, try reducing `maximum_step` (e.g., to 100000 m) and ensuring `adaptive_radial_fraction` is close to 1.0 (e.g., 0.98 to 0.99). The `max_center_pressure_guess` caps the Brent solver's upper bracket to prevent deep-mantle pressures from exceeding the WolfBower2018 table by too much. The default (10 TPa) is sufficient for planets up to 7 $M_\oplus$.
+- **Extended T-dependent EOS (`RTPress100TPa:MgSiO3`):** Limited to $\leq 50\,M_\oplus$. The melt table extends to 100 TPa so `max_center_pressure_guess` capping is not applied. For very massive planets (>10 $M_\oplus$), consider increasing `num_layers` to 200 to 300 and tightening `tolerance_outer`.
 - **Analytic EOS:** Convergence is typically fast and robust. Looser tolerances and fewer layers are usually sufficient for exploration.
 - **3-layer models:** Adding an ice layer increases the number of density discontinuities. Consider increasing `num_layers` to 200+ for smooth profiles.
 
@@ -425,7 +368,7 @@ See the [process flow documentation](../Explanations/process_flow.md#pressure-so
 |---|---|---|---|---|
 | `target_surface_pressure` | float | Pa | 101325 | Target pressure at the planetary surface. Default is 1 atm. |
 | `pressure_tolerance` | float | Pa | 1e9 | Convergence criterion: the solver iterates until $\lvert P_\mathrm{surface} - P_\mathrm{target} \rvert$ falls below this value. |
-| `max_iterations_pressure` | int | -- | 200 | Maximum number of function evaluations for the Brent solver. Typical convergence requires 20--36 evaluations. |
+| `max_iterations_pressure` | int | -- | 200 | Maximum number of function evaluations for the Brent solver. Typical convergence requires 20 to 36 evaluations. |
 
 ---
 

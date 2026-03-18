@@ -119,7 +119,7 @@ conda activate proteus
 
 ### Convergence failures
 
-The Brent pressure solver is robust and typically converges in 20--36 evaluations.
+The Brent pressure solver is robust and typically converges in 20 to 36 evaluations.
 If the solver fails to converge, consider the following:
 
 - **Bracket error** (`ValueError: f(a) and f(b) must have different signs`): The initial pressure bracket does not straddle the root. This usually means the true central pressure is outside the bracket range. Try increasing `max_center_pressure_guess` (for WolfBower2018 EOS) or check that the planet mass and composition are physically plausible.

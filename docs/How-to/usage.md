@@ -1,179 +1,48 @@
 # Usage
 
-## Quick Start
+## Quick start
 
-Run an Earth-like rocky planet with the default configuration:
+Run the default configuration (1 Earth-mass planet with a PALEOS iron core and MgSiO3 mantle):
 
 ```console
 python -m zalmoxis -c input/default.toml
 ```
 
-This uses the default `input/default.toml`, which models a 1 Earth-mass, two-layer planet (PALEOS iron core + PALEOS MgSiO$_3$ mantle at 3000 K surface temperature with adiabatic temperature mode). Output files are written to the `output_files/` directory. The PALEOS data files must be downloaded first (see [installation](installation.md)).
+Output files appear in `output_files/`. The PALEOS data files must be downloaded first (see [installation](installation.md)).
 
-To change the planet mass, edit the `[InputParameter]` section:
+## What happens when you run Zalmoxis
+
+Zalmoxis computes the internal structure of a planet. Given a total mass and composition (which layers the planet has, and what each layer is made of), it finds the radial profiles of pressure, density, gravity, and temperature from the center to the surface. The result is a self-consistent model of the planet's interior: how big it is, where the core-mantle boundary sits, and how conditions change with depth.
+
+For the mathematical details of how the solver works, see the [process flow](../Explanations/process_flow.md) explanation.
+
+## Modifying the configuration
+
+All input parameters live in a single TOML file. To change the planet mass, for example, open `input/default.toml` and edit the `[InputParameter]` section.
+
+Before:
+
+```toml
+[InputParameter]
+planet_mass = 1.0  # in Earth masses
+```
+
+After (5 Earth-mass super-Earth):
 
 ```toml
 [InputParameter]
 planet_mass = 5.0  # in Earth masses
 ```
 
-## Configuration
+Then re-run:
 
-The full configuration is specified in a TOML file. The key sections are described below. See `input/default.toml` for all available parameters and their defaults.
-
-### EOS Configuration
-
-Each layer's equation of state is set independently in the `[EOS]` section. The format is `"<source>:<composition>"` for each layer. Set `ice_layer` to an empty string (or omit it) for a two-layer model; set it to a valid EOS string for a three-layer model.
-
-Valid EOS values:
-
-| EOS string               | Description                                           |
-|---------------------------|-------------------------------------------------------|
-| `Seager2007:iron`         | Seager et al. (2007) tabulated Fe epsilon (300 K)     |
-| `Seager2007:MgSiO3`      | Seager et al. (2007) tabulated MgSiO3 perovskite (300 K) |
-| `Seager2007:H2O`         | Seager et al. (2007) tabulated water ice (300 K)      |
-| `WolfBower2018:MgSiO3`   | Wolf & Bower (2018) RTpress T-dependent MgSiO3 (solid from [Mosenfelder et al. 2009](https://doi.org/10.1029/2008JB005900); melt), **<= 7 M_earth** |
-| `RTPress100TPa:MgSiO3`  | Extended RTpress melt (100 TPa) + WB2018 solid (1 TPa clamped), T-dependent, **<= 50 M_earth** |
-| `PALEOS-2phase:MgSiO3`  | PALEOS solid+liquid EOS with $\nabla_{\mathrm{ad}}$, T-dependent, **<= 50 M_earth** |
-| `PALEOS:iron`            | Unified PALEOS Fe (5 phases), T-dependent, **<= 50 M_earth** |
-| `PALEOS:MgSiO3`          | Unified PALEOS MgSiO$_3$ (6 phases), T-dependent, **<= 50 M_earth** |
-| `PALEOS:H2O`             | Unified PALEOS H$_2$O (7 EOS), T-dependent, **<= 50 M_earth** |
-| `Analytic:<material>`    | Seager et al. (2007) analytic polytrope (300 K, no data files needed) |
-
-Valid analytic materials: `iron`, `MgSiO3`, `MgFeSiO3`, `H2O`, `graphite`, `SiC`.
-
-**Multi-material mixing:** Multiple EOS can be combined in a single layer using `+` with mass fractions: `mantle = "PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15"`. Density is volume-additive (harmonic mean). See [configuration guide](configuration.md#multi-material-mixing) for details.
-
-### Temperature Modes
-
-The `temperature_mode` parameter in `[AssumptionsAndInitialGuesses]` controls how the internal temperature profile is computed:
-
-- `"isothermal"`: Constant temperature equal to `surface_temperature` throughout the planet.
-- `"linear"`: Linear gradient from `center_temperature` (at the center) to `surface_temperature` (at the surface).
-- `"prescribed"`: Read from a file specified by `temperature_profile_file`.
-
-Temperature-dependent EOS (any entry in `TDEP_EOS_NAMES`, including `WolfBower2018:MgSiO3`, `RTPress100TPa:MgSiO3`, `PALEOS-2phase:MgSiO3`, `PALEOS:iron`, `PALEOS:MgSiO3`, `PALEOS:H2O`) requires one of these modes to be set. The `"adiabatic"` mode is additionally available: it computes a self-consistent adiabatic temperature profile from the EOS gradient tables. The 300 K tabulated and analytic EOS options ignore the temperature profile but still require valid mode settings in the config.
-
-### Temperature Profile File Format
-
-When using `temperature_mode = "prescribed"`, the file specified by `temperature_profile_file` must be a plain text file with one column of temperature values (in K), one value per radial grid point, ordered from the planet center to the surface. The number of values must equal `num_layers` in the `[Calculations]` section.
-
-Example for `num_layers = 5`:
-
-```
-6000.0
-5500.0
-4500.0
-3200.0
-2000.0
+```console
+python -m zalmoxis -c input/default.toml
 ```
 
-The file must be placed in the `input/` directory.
+For the full list of parameters (EOS selection, temperature modes, solver settings, output options), see the [configuration reference](configuration.md).
 
-## Example Configurations
-
-### Earth-like rocky planet
-
-A fully differentiated two-layer planet with a 32.5% iron core and a cold (300 K) MgSiO3 perovskite mantle, following [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346).
-
-```toml
-[InputParameter]
-planet_mass = 1.0
-
-[AssumptionsAndInitialGuesses]
-core_mass_fraction = 0.325
-mantle_mass_fraction = 0
-
-[EOS]
-core = "Seager2007:iron"
-mantle = "Seager2007:MgSiO3"
-ice_layer = ""
-```
-
-### Hot rocky planet (temperature-dependent mantle)
-
-Same iron core, but the mantle uses the Wolf & Bower (2018) temperature-dependent MgSiO3 EOS. The mantle can be solid, partially molten, or fully molten depending on local pressure and temperature. This is in contrast to the 300 K EOS from Seager et al. (2007), which represents a purely solid mantle.
-
-```toml
-[InputParameter]
-planet_mass = 1.0
-
-[AssumptionsAndInitialGuesses]
-core_mass_fraction = 0.325
-mantle_mass_fraction = 0
-temperature_mode = "isothermal"
-surface_temperature = 2000
-center_temperature = 3000        # only used when temperature_mode = "linear"
-temperature_profile_file = "temp_profile.txt"  # only used when temperature_mode = "prescribed"
-
-[EOS]
-core = "Seager2007:iron"
-mantle = "WolfBower2018:MgSiO3"
-ice_layer = ""
-```
-
-For a linear temperature gradient, set `temperature_mode = "linear"` and specify both `surface_temperature` and `center_temperature`. For a custom profile from file, set `temperature_mode = "prescribed"` and provide the file name in `temperature_profile_file`.
-
-### Water-rich planet
-
-A fully differentiated three-layer planet: 6.5% iron core, 48.5% silicate mantle, and 45% outer water-ice layer by mass.
-
-```toml
-[InputParameter]
-planet_mass = 1.0
-
-[AssumptionsAndInitialGuesses]
-core_mass_fraction = 0.065
-mantle_mass_fraction = 0.485
-
-[EOS]
-core = "Seager2007:iron"
-mantle = "Seager2007:MgSiO3"
-ice_layer = "Seager2007:H2O"
-```
-
-### Mixed EOS: tabulated core + analytic mantle
-
-Tabulated iron core with an analytic Seager et al. (2007) silicate mantle. The analytic EOS requires no data files and uses a modified polytropic fit accurate to 2--12% for all planetary pressures.
-
-```toml
-[EOS]
-core = "Seager2007:iron"
-mantle = "Analytic:MgSiO3"
-ice_layer = ""
-```
-
-### Carbon planet
-
-An analytic iron core with an analytic silicon carbide mantle.
-
-```toml
-[AssumptionsAndInitialGuesses]
-core_mass_fraction = 0.30
-mantle_mass_fraction = 0
-
-[EOS]
-core = "Analytic:iron"
-mantle = "Analytic:SiC"
-ice_layer = ""
-```
-
-### Water world with tabulated core and mantle
-
-Tabulated iron core and silicate mantle with an analytic H2O outer layer.
-
-```toml
-[AssumptionsAndInitialGuesses]
-core_mass_fraction = 0.10
-mantle_mass_fraction = 0.40
-
-[EOS]
-core = "Seager2007:iron"
-mantle = "Seager2007:MgSiO3"
-ice_layer = "Analytic:H2O"
-```
-
-## Output Description
+## Output files
 
 All output files are written to the `output_files/` directory.
 
@@ -199,7 +68,7 @@ These files are useful for diagnosing convergence behavior. They are overwritten
 
 When `plots_enabled = true` in the `[Output]` section, PDF plots of the radial profiles (density, gravity, pressure, temperature) are generated automatically after each run. If a temperature-dependent mantle EOS is used (any EOS in `TDEP_EOS_NAMES`), an additional pressure-temperature phase diagram with mantle phase information is produced.
 
-## Running Zalmoxis in parallel for multiple masses
+## Running multiple masses in parallel
 
 To run Zalmoxis over a range of planetary masses in parallel, use the `run_parallel.py` utility:
 
