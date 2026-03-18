@@ -334,6 +334,11 @@ def calculate_mixed_density(
             mushy_zone_factor,
         )
         if rho_i is None or not np.isfinite(rho_i) or rho_i <= 0:
+            # Abort the entire mixture rather than skipping this component.
+            # A None from calculate_density indicates an EOS table coverage
+            # gap, not a vapor-phase state (vapor has low but finite density).
+            # Treating it as suppressed (continue) would silently hide table
+            # errors. The Picard loop falls back to old_density for this shell.
             return None
         sigma_i = _condensed_weight(rho_i, condensed_rho_min, condensed_rho_scale)
         w_eff = w_i * sigma_i

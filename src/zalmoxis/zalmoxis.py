@@ -23,7 +23,14 @@ import numpy as np
 import toml
 from scipy.optimize import brentq
 
-from .constants import TDEP_EOS_NAMES, earth_center_pressure, earth_mass, earth_radius
+from .constants import (
+    CONDENSED_RHO_MIN_DEFAULT,
+    CONDENSED_RHO_SCALE_DEFAULT,
+    TDEP_EOS_NAMES,
+    earth_center_pressure,
+    earth_mass,
+    earth_radius,
+)
 from .eos_analytic import VALID_MATERIAL_KEYS
 from .eos_functions import (
     calculate_temperature_profile,
@@ -333,8 +340,8 @@ def validate_config(config_params):
         )
 
     # ── Condensed-phase suppression ─────────────────────────────────
-    condensed_rho_min = config_params.get('condensed_rho_min', 300.0)
-    condensed_rho_scale = config_params.get('condensed_rho_scale', 50.0)
+    condensed_rho_min = config_params.get('condensed_rho_min', CONDENSED_RHO_MIN_DEFAULT)
+    condensed_rho_scale = config_params.get('condensed_rho_scale', CONDENSED_RHO_SCALE_DEFAULT)
 
     if condensed_rho_min <= 0:
         raise ValueError(
@@ -573,8 +580,8 @@ def load_zalmoxis_config(temp_config_path=None):
     rock_solidus = eos_section.get('rock_solidus', 'Stixrude14-solidus')
     rock_liquidus = eos_section.get('rock_liquidus', 'Stixrude14-liquidus')
     mushy_zone_factor = eos_section.get('mushy_zone_factor', 1.0)
-    condensed_rho_min = eos_section.get('condensed_rho_min', 300.0)
-    condensed_rho_scale = eos_section.get('condensed_rho_scale', 50.0)
+    condensed_rho_min = eos_section.get('condensed_rho_min', CONDENSED_RHO_MIN_DEFAULT)
+    condensed_rho_scale = eos_section.get('condensed_rho_scale', CONDENSED_RHO_SCALE_DEFAULT)
 
     config_params = {
         'planet_mass': config['InputParameter']['planet_mass'] * earth_mass,
@@ -734,8 +741,8 @@ def main(
     verbose = config_params['verbose']
     iteration_profiles_enabled = config_params['iteration_profiles_enabled']
     mushy_zone_factor = config_params.get('mushy_zone_factor', 1.0)
-    condensed_rho_min = config_params.get('condensed_rho_min', 300.0)
-    condensed_rho_scale = config_params.get('condensed_rho_scale', 50.0)
+    condensed_rho_min = config_params.get('condensed_rho_min', CONDENSED_RHO_MIN_DEFAULT)
+    condensed_rho_scale = config_params.get('condensed_rho_scale', CONDENSED_RHO_SCALE_DEFAULT)
 
     # Parse layer mixtures if not provided externally (PROTEUS/CALLIOPE)
     if layer_mixtures is None:
