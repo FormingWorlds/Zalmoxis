@@ -218,10 +218,23 @@ def validate_config(config_params):
     """
     # ── Planet mass ──────────────────────────────────────────────────
     planet_mass = config_params['planet_mass']
+    planet_mass_mearth = planet_mass / earth_mass
     if planet_mass <= 0:
         raise ValueError(
-            f'planet_mass must be positive, got {planet_mass / earth_mass:.4f} M_earth. '
+            f'planet_mass must be positive, got {planet_mass_mearth:.4f} M_earth. '
             f'Set planet_mass > 0 in [InputParameter].'
+        )
+
+    if planet_mass_mearth < 0.1:
+        logger.warning(
+            f'planet_mass = {planet_mass_mearth:.4f} M_earth is below the validated '
+            f'range (0.1-50 M_earth). Results may be unreliable at very low masses.'
+        )
+    if planet_mass_mearth > 50:
+        logger.warning(
+            f'planet_mass = {planet_mass_mearth:.1f} M_earth exceeds the validated '
+            f'range (0.1-50 M_earth). PALEOS tables extend to 100 TPa '
+            f'(~50 M_earth). Beyond this, EOS extrapolation may be unreliable.'
         )
 
     # ── Mass fractions ──────────────────────────────────────────────
@@ -265,6 +278,27 @@ def validate_config(config_params):
             f'For a 3-layer model, set ice_layer to a valid EOS string.'
         )
 
+    # 3-layer models with H2O ice at high surface temperature
+    if has_ice:
+        ice_eos = layer_eos_config.get('ice_layer', '')
+        ice_has_h2o = 'H2O' in ice_eos
+        temperature_mode_raw = config_params['temperature_mode']
+        surface_temp_raw = config_params['surface_temperature']
+        if ice_has_h2o and temperature_mode_raw != 'isothermal' and surface_temp_raw >= 647:
+            ice_frac = 1.0 - cmf - mmf
+            raise ValueError(
+                f'3-layer model with H2O ice layer at surface_temperature = '
+                f'{surface_temp_raw} K >= 647 K (H2O critical point). '
+                f'Pure H2O at T >= T_crit is vapor/supercritical at low pressure '
+                f'and cannot support a hydrostatic ice shell. '
+                f'The solver will diverge to unphysical radii '
+                f'(ice fraction = {ice_frac:.1%}). '
+                f'Options: (1) use isothermal mode with T_surf < 647 K for '
+                f'3-layer models, or (2) represent water as a mixing component '
+                f'in the mantle (e.g., mantle = "PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15") '
+                f'where the phase-aware suppression handles the vapor phase.'
+            )
+
     # ── Temperature parameters ──────────────────────────────────────
     temperature_mode = config_params['temperature_mode']
     valid_modes = ('isothermal', 'linear', 'prescribed', 'adiabatic')
@@ -280,6 +314,13 @@ def validate_config(config_params):
         raise ValueError(
             f'surface_temperature must be positive, got {surface_temp} K. '
             f'Temperatures must be in Kelvin.'
+        )
+
+    if surface_temp > 5000:
+        logger.warning(
+            f'surface_temperature = {surface_temp} K exceeds the validated range '
+            f'(300-5000 K). The PALEOS tables extend to 100,000 K, but the '
+            f'adiabatic solver has only been validated up to 5000 K surface temperature.'
         )
 
     if temperature_mode in ('linear', 'adiabatic') and center_temp <= 0:
@@ -516,23 +557,24 @@ def validate_config(config_params):
                         f'Proceeding anyway.'
                     )
 
-    # H2O as mantle component at high T is physically questionable
-    if temperature_mode == 'adiabatic':
-        for layer in ('mantle', 'core'):
-            eos_str = layer_eos_config.get(layer, '')
-            if not eos_str:
-                continue
-            mix = parse_layer_components(eos_str)
-            h2o_in_layer = any('H2O' in c for c in mix.components)
-            if h2o_in_layer and surface_temp > 2000:
-                h2o_frac = sum(f for c, f in zip(mix.components, mix.fractions) if 'H2O' in c)
-                if h2o_frac > 0.3:
-                    logger.warning(
-                        f"Layer '{layer}' has {h2o_frac * 100:.0f}% H2O at "
-                        f'T_surf={surface_temp} K. At high temperatures, '
-                        f'water is supercritical vapor, which may cause '
-                        f'convergence difficulties or unphysically large radii.'
-                    )
+    # H2O mixing fraction checks
+    for layer in ('mantle', 'core'):
+        eos_str = layer_eos_config.get(layer, '')
+        if not eos_str:
+            continue
+        mix = parse_layer_components(eos_str)
+        h2o_in_layer = any('H2O' in c for c in mix.components)
+        if not h2o_in_layer:
+            continue
+        h2o_frac = sum(f for c, f in zip(mix.components, mix.fractions) if 'H2O' in c)
+        if h2o_frac > 0.30:
+            logger.warning(
+                f"Layer '{layer}' has {h2o_frac * 100:.0f}% H2O, which exceeds "
+                f'the validated range (0-30%). The solver has been tested up to '
+                f'30% H2O by mass. Higher fractions may converge but are not '
+                f'validated. Consider using a 3-layer model with a separate '
+                f'ice layer for water-dominated compositions.'
+            )
 
 
 def choose_config_file(temp_config_path=None):

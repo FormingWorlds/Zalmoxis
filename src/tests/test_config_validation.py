@@ -340,6 +340,67 @@ class TestValidConfigPasses:
         )
 
     def test_three_layer_passes(self):
+        """3-layer model with H2O ice requires T_surf < 647 K."""
+        from zalmoxis.zalmoxis import validate_config
+
+        validate_config(
+            _make_config(
+                core_mass_fraction=0.25,
+                mantle_mass_fraction=0.50,
+                temperature_mode='isothermal',
+                surface_temperature=300.0,
+                layer_eos_config={
+                    'core': 'PALEOS:iron',
+                    'mantle': 'PALEOS:MgSiO3',
+                    'ice_layer': 'PALEOS:H2O',
+                },
+            )
+        )
+
+
+@pytest.mark.unit
+class TestThreeLayerIceTemperature:
+    """Three-layer H2O ice models must have T_surf < 647 K."""
+
+    def test_ice_layer_at_high_t_raises(self):
+        """H2O ice at T >= 647 K (critical point) should raise ValueError."""
+        from zalmoxis.zalmoxis import validate_config
+
+        with pytest.raises(ValueError, match='H2O critical point'):
+            validate_config(
+                _make_config(
+                    core_mass_fraction=0.25,
+                    mantle_mass_fraction=0.50,
+                    temperature_mode='adiabatic',
+                    surface_temperature=1000.0,
+                    layer_eos_config={
+                        'core': 'PALEOS:iron',
+                        'mantle': 'PALEOS:MgSiO3',
+                        'ice_layer': 'PALEOS:H2O',
+                    },
+                )
+            )
+
+    def test_ice_layer_isothermal_cold_passes(self):
+        """H2O ice at isothermal 300 K should pass."""
+        from zalmoxis.zalmoxis import validate_config
+
+        validate_config(
+            _make_config(
+                core_mass_fraction=0.25,
+                mantle_mass_fraction=0.50,
+                temperature_mode='isothermal',
+                surface_temperature=300.0,
+                layer_eos_config={
+                    'core': 'PALEOS:iron',
+                    'mantle': 'PALEOS:MgSiO3',
+                    'ice_layer': 'PALEOS:H2O',
+                },
+            )
+        )
+
+    def test_non_h2o_ice_at_high_t_passes(self):
+        """Non-H2O ice layer at high T should not trigger the H2O check."""
         from zalmoxis.zalmoxis import validate_config
 
         validate_config(
@@ -349,7 +410,7 @@ class TestValidConfigPasses:
                 layer_eos_config={
                     'core': 'PALEOS:iron',
                     'mantle': 'PALEOS:MgSiO3',
-                    'ice_layer': 'PALEOS:H2O',
+                    'ice_layer': 'Seager2007:MgSiO3',
                 },
             )
         )

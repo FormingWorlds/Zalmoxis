@@ -10,22 +10,22 @@ The configuration file defines all parameters needed to run the planetary interi
 
 Defines the basic input for the planetary model.
 
-| Parameter | Type | Unit | Description |
-|---|---|---|---|
-| `planet_mass` | float | Earth masses | Total planet mass ($M_\oplus = 5.972 \times 10^{24}$ kg). |
+| Parameter | Type | Unit | Validated range | Description |
+|---|---|---|---|---|
+| `planet_mass` | float | Earth masses | 0.1 to 50 | Total planet mass ($M_\oplus = 5.972 \times 10^{24}$ kg). The solver has been validated across this range with all EOS options. PALEOS tables extend to 100 TPa, which corresponds to ~50 $M_\oplus$ central pressure. Masses outside this range produce a warning. |
 
 ### `AssumptionsAndInitialGuesses`
 
 Initial guesses and assumptions for the planetary structure.
 
-| Parameter | Type | Unit | Description |
-|---|---|---|---|
-| `core_mass_fraction` | float | -- | Core mass as a fraction of total mass. Also used in the Seager et al. (2007) scaling relation for the initial radius guess. Earth: ~0.325. |
-| `mantle_mass_fraction` | float | -- | Mantle mass as a fraction of total mass. Set to 0 for a 2-layer model where the mantle fills the remainder (1 - `core_mass_fraction`). Must be > 0 when using a 3-layer model with an ice layer. |
-| `temperature_mode` | string | -- | Temperature profile type. One of: `"isothermal"`, `"linear"`, `"prescribed"`, `"adiabatic"`. See [Temperature profiles](#temperature-profiles). |
-| `surface_temperature` | float | K | Surface temperature. Used when `temperature_mode` is `"isothermal"`, `"linear"`, or `"adiabatic"`. |
-| `center_temperature` | float | K | Central temperature. Used when `temperature_mode` is `"linear"` or `"adiabatic"` (initial guess). |
-| `temperature_profile_file` | string | -- | Filename (relative to `input/`) containing a prescribed radial temperature profile. Used when `temperature_mode` is `"prescribed"`. |
+| Parameter | Type | Unit | Validated range | Description |
+|---|---|---|---|---|
+| `core_mass_fraction` | float | -- | 0.01 to 0.999 | Core mass as a fraction of total mass. Also used in the Seager et al. (2007) scaling relation for the initial radius guess. Earth: ~0.325. Extreme values (pure iron at 0.999, pure rock at 0.01) converge. |
+| `mantle_mass_fraction` | float | -- | 0 to 0.99 | Mantle mass as a fraction of total mass. Set to 0 for a 2-layer model where the mantle fills the remainder (1 - `core_mass_fraction`). Must be > 0 when using a 3-layer model with an ice layer. |
+| `temperature_mode` | string | -- | -- | Temperature profile type. One of: `"isothermal"`, `"linear"`, `"prescribed"`, `"adiabatic"`. See [Temperature profiles](#temperature-profiles). |
+| `surface_temperature` | float | K | 300 to 5000 | Surface temperature. Used when `temperature_mode` is `"isothermal"`, `"linear"`, or `"adiabatic"`. Validated across 300-5000 K for all compositions. Values above 5000 K produce a warning. |
+| `center_temperature` | float | K | -- | Central temperature. Used when `temperature_mode` is `"linear"` or `"adiabatic"` (initial guess). The adiabat solver determines the actual center temperature self-consistently. |
+| `temperature_profile_file` | string | -- | -- | Filename (relative to `input/`) containing a prescribed radial temperature profile. Used when `temperature_mode` is `"prescribed"`. |
 
 #### Temperature profiles
 
@@ -209,7 +209,7 @@ The iron core follows its own adiabat using $\nabla_{\mathrm{ad}}$ from the iron
 core_mass_fraction   = 0.25
 mantle_mass_fraction = 0.50
 temperature_mode     = "adiabatic"
-surface_temperature  = 300
+surface_temperature  = 300       # Must be < 647 K for H2O ice layer
 center_temperature   = 6000
 
 [EOS]
@@ -218,6 +218,7 @@ mantle            = "PALEOS:MgSiO3"
 ice_layer         = "PALEOS:H2O"
 mushy_zone_factor = 1.0
 ```
+Note: `surface_temperature` must be below 647 K (H$_2$O critical point) for three-layer models with H$_2$O ice. At higher temperatures, use multi-material mixing in the mantle instead (see example 3).
 
 **3. Hydrated mantle** (iron core + mixed silicate-water mantle, phase-aware mixing):
 ```toml
@@ -298,6 +299,31 @@ mantle    = "Analytic:iron"
 ice_layer = ""
 ```
 Both `core` and `mantle` must be set even for a single-composition model. The mantle EOS is still evaluated but occupies zero mass.
+
+#### Validated parameter ranges
+
+The solver has been systematically tested across 293 configurations spanning 9 test suites. The table below summarizes the validated ranges where convergence is reliable:
+
+| Parameter | Validated range | Notes |
+|---|---|---|
+| Planet mass | 0.1 to 50 $M_\oplus$ | All standard compositions converge. EOS-specific limits apply (WolfBower2018 $\leq 7\,M_\oplus$, all others $\leq 50\,M_\oplus$). |
+| Core mass fraction | 0.01 to 0.999 | Extreme values (pure iron, pure rock) converge at isothermal 300 K. |
+| H$_2$O mixing fraction | 0 to 30% by mass | In mantle, using multi-material format. All fractions converge at 2000-3000 K surface temperature. Fractions above 30% produce a warning. |
+| Surface temperature | 300 to 5000 K | All compositions converge. 300 K uses isothermal mode; 1000-5000 K uses adiabatic mode. |
+| Mushy zone factor | 0.7 to 1.0 | Per-material overrides validated independently. Values below 0.7 are rejected. |
+| Three-layer ice fraction | any | **Only with $T_\mathrm{surf} < 647$ K** (H$_2$O critical point). See warning below. |
+
+!!! danger "Three-layer models require cold surfaces"
+    Three-layer models with an H$_2$O ice layer (`ice_layer = "PALEOS:H2O"`) are only valid when `surface_temperature` is below the H$_2$O critical temperature (647 K). At higher temperatures, H$_2$O is vapor or supercritical gas at the surface, not condensed ice. The solver will reject configurations with H$_2$O ice layers at $T_\mathrm{surf} \geq 647$ K.
+
+    To model water-bearing planets at high surface temperatures (magma ocean stage), represent water as a **mixing component in the mantle** instead:
+    ```toml
+    mantle = "PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15"
+    ```
+    The phase-aware suppression automatically handles the vapor-to-condensed transition with depth. This is the recommended approach for PROTEUS coupled simulations during the hot phase.
+
+!!! note "Density-inverted architectures"
+    Configurations where a lighter material sits below a denser one (e.g., `core = "PALEOS:MgSiO3"`, `mantle = "PALEOS:iron"`) are physically unstable and fail pressure convergence. The Brent solver cannot bracket 1 atm surface pressure for these configurations. Mass and density converge, but the surface pressure boundary condition cannot be satisfied.
 
 #### Legacy configuration (backward compatibility)
 
