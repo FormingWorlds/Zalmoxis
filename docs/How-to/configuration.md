@@ -127,7 +127,17 @@ When any T-dependent EOS is assigned to any layer, the `temperature_mode`, `surf
 
 | Field | Required | Default | Description |
 |---|---|---|---|
-| `mushy_zone_factor` | No | `1.0` | Cryoscopic depression factor for unified PALEOS tables. Controls the width of the artificial mushy (mixed solid+liquid) zone below the liquidus extracted from the table. Valid range: [0.7, 1.0]. `1.0` = no mushy zone (sharp phase boundary). `< 1.0` = solidus at this fraction of the liquidus temperature ($T_\mathrm{sol} = T_\mathrm{liq} \times f$). E.g., `0.8` gives a mushy zone similar to the Stixrude (2014) cryoscopic depression. Values below 0.7 are rejected (unphysically wide mushy zones cause solver instabilities). In the mushy zone, density is volume-averaged between solid-side and liquid-side table values. Only relevant for `PALEOS:iron`, `PALEOS:MgSiO3`, `PALEOS:H2O`. |
+| `mushy_zone_factor` | No | `1.0` | Global default cryoscopic depression factor for all unified PALEOS tables. Controls the width of the artificial mushy (mixed solid+liquid) zone below the liquidus extracted from the table. Valid range: [0.7, 1.0]. `1.0` = no mushy zone (sharp phase boundary). `< 1.0` = solidus at this fraction of the liquidus temperature ($T_\mathrm{sol} = T_\mathrm{liq} \times f$). E.g., `0.8` gives a mushy zone similar to the Stixrude (2014) cryoscopic depression. Values below 0.7 are rejected (unphysically wide mushy zones cause solver instabilities). In the mushy zone, density is volume-averaged between solid-side and liquid-side table values. Only relevant for `PALEOS:iron`, `PALEOS:MgSiO3`, `PALEOS:H2O`. |
+| `mushy_zone_factor_iron` | No | global value | Per-material override for `PALEOS:iron`. Same range and semantics as `mushy_zone_factor`. Only validated when `PALEOS:iron` is configured. |
+| `mushy_zone_factor_MgSiO3` | No | global value | Per-material override for `PALEOS:MgSiO3`. |
+| `mushy_zone_factor_H2O` | No | global value | Per-material override for `PALEOS:H2O`. |
+
+Per-material overrides take precedence over the global default. If a per-material key is absent, the global `mushy_zone_factor` is used for that material. This allows independent control of phase boundary widths, for example using a wider mushy zone for silicate (`0.8`) while keeping a sharp boundary for iron (`1.0`):
+
+```toml
+mushy_zone_factor          = 1.0   # global default
+mushy_zone_factor_MgSiO3   = 0.8   # wider mushy zone for silicate only
+```
 
 #### Phase-aware mixing parameters (multi-material only)
 

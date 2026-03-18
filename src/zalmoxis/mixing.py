@@ -26,6 +26,33 @@ from .constants import CONDENSED_RHO_MIN_DEFAULT, CONDENSED_RHO_SCALE_DEFAULT, T
 
 logger = logging.getLogger(__name__)
 
+# All unified PALEOS EOS names that support mushy_zone_factor
+_PALEOS_UNIFIED_NAMES = frozenset({'PALEOS:iron', 'PALEOS:MgSiO3', 'PALEOS:H2O'})
+
+
+def _get_mushy_zone_factor(eos_name, mushy_zone_factors):
+    """Look up the mushy zone factor for a specific EOS.
+
+    Parameters
+    ----------
+    eos_name : str
+        EOS identifier string, e.g. ``"PALEOS:iron"``.
+    mushy_zone_factors : dict or float or None
+        Per-EOS mushy zone factors. If a dict, looks up by ``eos_name``
+        and falls back to 1.0 for missing keys. If a float, returns
+        that value directly (backward compat). If None, returns 1.0.
+
+    Returns
+    -------
+    float
+        Mushy zone factor for this EOS. Always 1.0 for non-PALEOS EOS.
+    """
+    if mushy_zone_factors is None:
+        return 1.0
+    if isinstance(mushy_zone_factors, (int, float)):
+        return float(mushy_zone_factors)
+    return mushy_zone_factors.get(eos_name, 1.0)
+
 
 @dataclass
 class LayerMixture:
@@ -253,7 +280,7 @@ def calculate_mixed_density(
     solidus_func,
     liquidus_func,
     interpolation_functions,
-    mushy_zone_factor=1.0,
+    mushy_zone_factors=None,
     condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
     condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
 ):
@@ -291,8 +318,9 @@ def calculate_mixed_density(
         Liquidus melting curve function.
     interpolation_functions : dict
         Interpolation cache.
-    mushy_zone_factor : float
-        Mushy zone factor for unified PALEOS.
+    mushy_zone_factors : dict or float or None
+        Per-EOS mushy zone factors. Dict keyed by EOS name, a single
+        float (applied to all), or None (default 1.0 for all).
     condensed_rho_min : float
         Sigmoid center for phase-aware suppression (kg/m^3).
     condensed_rho_scale : float
@@ -307,6 +335,7 @@ def calculate_mixed_density(
 
     # Fast path: single component (no suppression)
     if mixture.is_single():
+        mzf = _get_mushy_zone_factor(mixture.components[0], mushy_zone_factors)
         return calculate_density(
             pressure,
             material_dictionaries,
@@ -315,7 +344,7 @@ def calculate_mixed_density(
             solidus_func,
             liquidus_func,
             interpolation_functions,
-            mushy_zone_factor,
+            mzf,
         )
 
     # Multi-component suppressed harmonic mean
@@ -324,6 +353,7 @@ def calculate_mixed_density(
     for eos_name, w_i in zip(mixture.components, mixture.fractions):
         if w_i <= 0:
             continue
+        mzf = _get_mushy_zone_factor(eos_name, mushy_zone_factors)
         rho_i = calculate_density(
             pressure,
             material_dictionaries,
@@ -332,7 +362,7 @@ def calculate_mixed_density(
             solidus_func,
             liquidus_func,
             interpolation_functions,
-            mushy_zone_factor,
+            mzf,
         )
         if rho_i is None or not np.isfinite(rho_i) or rho_i <= 0:
             # Abort the entire mixture rather than skipping this component.
@@ -361,7 +391,7 @@ def get_mixed_nabla_ad(
     interpolation_functions,
     solidus_func=None,
     liquidus_func=None,
-    mushy_zone_factor=1.0,
+    mushy_zone_factors=None,
     condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
     condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
 ):
@@ -392,8 +422,9 @@ def get_mixed_nabla_ad(
         Solidus function (for PALEOS-2phase).
     liquidus_func : callable or None
         Liquidus function (for PALEOS-2phase).
-    mushy_zone_factor : float
-        Mushy zone factor for unified PALEOS tables.
+    mushy_zone_factors : dict or float or None
+        Per-EOS mushy zone factors. Dict keyed by EOS name, a single
+        float (applied to all), or None (default 1.0 for all).
     condensed_rho_min : float
         Sigmoid center for phase-aware suppression (kg/m^3).
     condensed_rho_scale : float
@@ -439,6 +470,7 @@ def get_mixed_nabla_ad(
         if w_i <= 0:
             continue
         # Compute density to determine condensed-phase weight
+        mzf = _get_mushy_zone_factor(eos_name, mushy_zone_factors)
         rho_i = calculate_density(
             pressure,
             material_dictionaries,
@@ -447,7 +479,7 @@ def get_mixed_nabla_ad(
             solidus_func,
             liquidus_func,
             interpolation_functions,
-            mushy_zone_factor,
+            mzf,
         )
         if rho_i is not None and np.isfinite(rho_i) and rho_i > 0:
             sigma_i = _condensed_weight(rho_i, condensed_rho_min, condensed_rho_scale)

@@ -339,6 +339,38 @@ def validate_config(config_params):
             f'by the rock_solidus/rock_liquidus melting curves instead.'
         )
 
+    # ── Per-EOS mushy zone factors ──────────────────────────────────
+    mushy_zone_factors = config_params.get('mushy_zone_factors', {})
+    _eos_to_key = {
+        'PALEOS:iron': 'mushy_zone_factor_iron',
+        'PALEOS:MgSiO3': 'mushy_zone_factor_MgSiO3',
+        'PALEOS:H2O': 'mushy_zone_factor_H2O',
+    }
+    for eos_name, config_key in _eos_to_key.items():
+        mzf = mushy_zone_factors.get(eos_name, 1.0)
+        # Skip validation for entries that equal the global default
+        # (inherited, not explicitly overridden per material).
+        if mzf == mushy_zone_factor:
+            continue
+        if mzf < 0 or mzf > 1.0:
+            raise ValueError(
+                f'{config_key} must be in [0, 1.0], got {mzf}. '
+                f'1.0 = no mushy zone. '
+                f'< 1.0 = solidus at this fraction of the liquidus temperature.'
+            )
+        if mzf < 0.7:
+            raise ValueError(
+                f'{config_key} = {mzf} is below the minimum of 0.7. '
+                f'Values below 0.7 produce unphysically wide mushy zones that can '
+                f'cause solver instabilities. Use a value in [0.7, 1.0].'
+            )
+        if mzf < 1.0 and eos_name not in all_components:
+            raise ValueError(
+                f'{config_key} = {mzf} < 1.0 but {eos_name} is not configured '
+                f'in any layer. Per-material mushy zone overrides only apply '
+                f'to materials that are actually used.'
+            )
+
     # ── Condensed-phase suppression ─────────────────────────────────
     condensed_rho_min = config_params.get('condensed_rho_min', CONDENSED_RHO_MIN_DEFAULT)
     condensed_rho_scale = config_params.get('condensed_rho_scale', CONDENSED_RHO_SCALE_DEFAULT)
@@ -583,6 +615,14 @@ def load_zalmoxis_config(temp_config_path=None):
     condensed_rho_min = eos_section.get('condensed_rho_min', CONDENSED_RHO_MIN_DEFAULT)
     condensed_rho_scale = eos_section.get('condensed_rho_scale', CONDENSED_RHO_SCALE_DEFAULT)
 
+    # Build per-EOS mushy_zone_factors dict. Start from the global default,
+    # then apply per-material overrides if present in the TOML.
+    mushy_zone_factors = {
+        'PALEOS:iron': eos_section.get('mushy_zone_factor_iron', mushy_zone_factor),
+        'PALEOS:MgSiO3': eos_section.get('mushy_zone_factor_MgSiO3', mushy_zone_factor),
+        'PALEOS:H2O': eos_section.get('mushy_zone_factor_H2O', mushy_zone_factor),
+    }
+
     config_params = {
         'planet_mass': config['InputParameter']['planet_mass'] * earth_mass,
         'core_mass_fraction': config['AssumptionsAndInitialGuesses']['core_mass_fraction'],
@@ -595,6 +635,7 @@ def load_zalmoxis_config(temp_config_path=None):
         'rock_solidus': rock_solidus,
         'rock_liquidus': rock_liquidus,
         'mushy_zone_factor': mushy_zone_factor,
+        'mushy_zone_factors': mushy_zone_factors,
         'condensed_rho_min': condensed_rho_min,
         'condensed_rho_scale': condensed_rho_scale,
         'num_layers': config['Calculations']['num_layers'],
@@ -740,7 +781,19 @@ def main(
     max_iterations_pressure = config_params['max_iterations_pressure']
     verbose = config_params['verbose']
     iteration_profiles_enabled = config_params['iteration_profiles_enabled']
-    mushy_zone_factor = config_params.get('mushy_zone_factor', 1.0)
+    # Build per-EOS mushy_zone_factors dict. Prefer the dict if present
+    # (set by load_zalmoxis_config). Fall back to building one from the
+    # single float for backward compat with callers that only set the
+    # global 'mushy_zone_factor' key.
+    if 'mushy_zone_factors' in config_params:
+        mushy_zone_factors = config_params['mushy_zone_factors']
+    else:
+        _global_mzf = config_params.get('mushy_zone_factor', 1.0)
+        mushy_zone_factors = {
+            'PALEOS:iron': _global_mzf,
+            'PALEOS:MgSiO3': _global_mzf,
+            'PALEOS:H2O': _global_mzf,
+        }
     condensed_rho_min = config_params.get('condensed_rho_min', CONDENSED_RHO_MIN_DEFAULT)
     condensed_rho_scale = config_params.get('condensed_rho_scale', CONDENSED_RHO_SCALE_DEFAULT)
 
@@ -902,7 +955,7 @@ def main(
                     interpolation_cache,
                     solidus_func,
                     liquidus_func,
-                    mushy_zone_factor,
+                    mushy_zone_factors,
                     condensed_rho_min,
                     condensed_rho_scale,
                 )
@@ -1016,7 +1069,7 @@ def main(
                     solidus_func,
                     liquidus_func,
                     temperature_function if uses_Tdep else None,
-                    mushy_zone_factor,
+                    mushy_zone_factors,
                     condensed_rho_min,
                     condensed_rho_scale,
                 )
@@ -1082,7 +1135,7 @@ def main(
                     solidus_func,
                     liquidus_func,
                     temperature_function if uses_Tdep else None,
-                    mushy_zone_factor,
+                    mushy_zone_factors,
                     condensed_rho_min,
                     condensed_rho_scale,
                 )
@@ -1147,7 +1200,7 @@ def main(
                     solidus_func,
                     liquidus_func,
                     interpolation_cache,
-                    mushy_zone_factor,
+                    mushy_zone_factors,
                     condensed_rho_min,
                     condensed_rho_scale,
                 )

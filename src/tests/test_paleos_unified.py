@@ -428,6 +428,10 @@ class TestMusyZoneFactorConfig:
         try:
             parsed = load_zalmoxis_config(tmp_path)
             assert parsed['mushy_zone_factor'] == pytest.approx(1.0)
+            # Per-EOS dict should all be 1.0
+            assert parsed['mushy_zone_factors']['PALEOS:iron'] == pytest.approx(1.0)
+            assert parsed['mushy_zone_factors']['PALEOS:MgSiO3'] == pytest.approx(1.0)
+            assert parsed['mushy_zone_factors']['PALEOS:H2O'] == pytest.approx(1.0)
         finally:
             os.unlink(tmp_path)
 
@@ -486,5 +490,9 @@ class TestMusyZoneFactorConfig:
         try:
             parsed = load_zalmoxis_config(tmp_path)
             assert parsed['mushy_zone_factor'] == pytest.approx(0.8)
+            # Per-EOS dict should inherit the global default
+            assert parsed['mushy_zone_factors']['PALEOS:iron'] == pytest.approx(0.8)
+            assert parsed['mushy_zone_factors']['PALEOS:MgSiO3'] == pytest.approx(0.8)
+            assert parsed['mushy_zone_factors']['PALEOS:H2O'] == pytest.approx(0.8)
         finally:
             os.unlink(tmp_path)

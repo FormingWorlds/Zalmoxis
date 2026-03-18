@@ -511,7 +511,7 @@ class TestVaporSuppression:
                 mixture,
                 {},
                 {},
-                mushy_zone_factor=1.0,
+                mushy_zone_factors=None,
                 condensed_rho_min=322.0,
                 condensed_rho_scale=50.0,
             )
@@ -521,3 +521,151 @@ class TestVaporSuppression:
         # Result should be close to rock's 0.3
         assert nabla < 0.35, f'Expected nabla near 0.3 (rock), got {nabla}'
         assert nabla > 0.25
+
+
+@pytest.mark.unit
+class TestPerEosMushyZoneFactors:
+    """Tests for per-EOS mushy_zone_factors dispatch."""
+
+    def test_different_factors_per_component(self):
+        """Each component receives its own mushy_zone_factor from the dict."""
+        from unittest.mock import patch
+
+        received_mzf = {}
+
+        def mock_density(P, md, eos, T, sf, lf, interp, mzf):
+            received_mzf[eos] = mzf
+            if 'MgSiO3' in eos:
+                return 4000.0
+            if 'H2O' in eos:
+                return 1000.0
+            return None
+
+        mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
+        factors = {'PALEOS:MgSiO3': 0.8, 'PALEOS:H2O': 0.9}
+
+        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+            calculate_mixed_density(
+                1e11,
+                3000,
+                mixture,
+                {},
+                None,
+                None,
+                {},
+                mushy_zone_factors=factors,
+            )
+
+        assert received_mzf['PALEOS:MgSiO3'] == pytest.approx(0.8)
+        assert received_mzf['PALEOS:H2O'] == pytest.approx(0.9)
+
+    def test_single_component_gets_its_factor(self):
+        """Single-component mixture looks up the correct per-EOS factor."""
+        from unittest.mock import patch
+
+        received_mzf = {}
+
+        def mock_density(P, md, eos, T, sf, lf, interp, mzf):
+            received_mzf[eos] = mzf
+            return 5000.0
+
+        mixture = LayerMixture(['PALEOS:iron'], [1.0])
+        factors = {'PALEOS:iron': 0.75, 'PALEOS:MgSiO3': 0.8}
+
+        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+            calculate_mixed_density(
+                1e11,
+                3000,
+                mixture,
+                {},
+                None,
+                None,
+                {},
+                mushy_zone_factors=factors,
+            )
+
+        assert received_mzf['PALEOS:iron'] == pytest.approx(0.75)
+
+    def test_missing_key_defaults_to_one(self):
+        """EOS name not in the dict defaults to mushy_zone_factor=1.0."""
+        from unittest.mock import patch
+
+        received_mzf = {}
+
+        def mock_density(P, md, eos, T, sf, lf, interp, mzf):
+            received_mzf[eos] = mzf
+            return 5000.0
+
+        mixture = LayerMixture(['Seager2007:iron'], [1.0])
+        factors = {'PALEOS:MgSiO3': 0.8}
+
+        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+            calculate_mixed_density(
+                1e11,
+                300,
+                mixture,
+                {},
+                None,
+                None,
+                {},
+                mushy_zone_factors=factors,
+            )
+
+        assert received_mzf['Seager2007:iron'] == pytest.approx(1.0)
+
+    def test_none_defaults_to_one(self):
+        """mushy_zone_factors=None gives 1.0 for all components."""
+        from unittest.mock import patch
+
+        received_mzf = {}
+
+        def mock_density(P, md, eos, T, sf, lf, interp, mzf):
+            received_mzf[eos] = mzf
+            return 5000.0
+
+        mixture = LayerMixture(['PALEOS:iron'], [1.0])
+
+        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+            calculate_mixed_density(
+                1e11,
+                3000,
+                mixture,
+                {},
+                None,
+                None,
+                {},
+                mushy_zone_factors=None,
+            )
+
+        assert received_mzf['PALEOS:iron'] == pytest.approx(1.0)
+
+    def test_float_backward_compat(self):
+        """A float mushy_zone_factors is applied to all components."""
+        from unittest.mock import patch
+
+        received_mzf = {}
+
+        def mock_density(P, md, eos, T, sf, lf, interp, mzf):
+            received_mzf[eos] = mzf
+            if 'MgSiO3' in eos:
+                return 4000.0
+            if 'H2O' in eos:
+                return 1000.0
+            return None
+
+        mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
+
+        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+            calculate_mixed_density(
+                1e11,
+                3000,
+                mixture,
+                {},
+                None,
+                None,
+                {},
+                mushy_zone_factors=0.85,
+            )
+
+        assert received_mzf['PALEOS:MgSiO3'] == pytest.approx(0.85)
+        assert received_mzf['PALEOS:H2O'] == pytest.approx(0.85)

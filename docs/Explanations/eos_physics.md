@@ -19,10 +19,12 @@ No external solidus/liquidus curves or separate solid/liquid files are needed.
 This eliminates the phase-routing complexity required by the two-phase and WolfBower EOS families.
 
 **Phase boundary extraction.** At load time, the code extracts the liquidus boundary from the phase column: for each pressure row, the lowest temperature where the phase is `liquid` defines the liquidus.
-This extracted boundary serves as the basis for an optional mushy zone controlled by the `mushy_zone_factor` parameter:
+This extracted boundary serves as the basis for an optional mushy zone controlled by the `mushy_zone_factor` parameter (global default) or per-material overrides (`mushy_zone_factor_iron`, `mushy_zone_factor_MgSiO3`, `mushy_zone_factor_H2O`):
 
 - $f = 1.0$ (default): no mushy zone; the density comes directly from the table (sharp phase transition).
 - $f < 1.0$: a synthetic solidus is defined at $T_{\mathrm{sol}} = f \times T_{\mathrm{liq}}$. Between $T_{\mathrm{sol}}$ and $T_{\mathrm{liq}}$, density is volume-averaged between solid-side and liquid-side table values.
+
+Each PALEOS material can have its own mushy zone width. Per-material overrides take precedence over the global default. This is useful when mixing materials with different phase transition characteristics (e.g., a wider mushy zone for MgSiO$_3$ with a sharp boundary for iron).
 
 **Adiabatic gradient.** All three tables include the dimensionless adiabatic gradient $\nabla_{\mathrm{ad}} = (d \ln T / d \ln P)_S$.
 In adiabatic mode, the temperature profile is computed by integrating $dT/dP = \nabla_{\mathrm{ad}} \cdot T / P$ from the surface inward.

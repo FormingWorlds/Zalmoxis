@@ -1141,7 +1141,7 @@ def compute_adiabatic_temperature(
     interpolation_functions=None,
     solidus_func=None,
     liquidus_func=None,
-    mushy_zone_factor=1.0,
+    mushy_zone_factors=None,
     condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
     condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
 ):
@@ -1176,8 +1176,9 @@ def compute_adiabatic_temperature(
         Interpolation function for the solidus melting curve.
     liquidus_func : callable, optional
         Interpolation function for the liquidus melting curve.
-    mushy_zone_factor : float, optional
-        Cryoscopic depression factor for unified PALEOS tables. Default 1.0.
+    mushy_zone_factors : dict or float or None, optional
+        Per-EOS mushy zone factors. Dict keyed by EOS name, a single
+        float (applied to all), or None (default 1.0 for all).
     condensed_rho_min : float, optional
         Sigmoid center for phase-aware suppression (kg/m^3). Default 300.
     condensed_rho_scale : float, optional
@@ -1237,7 +1238,7 @@ def compute_adiabatic_temperature(
             interpolation_functions,
             solidus_func,
             liquidus_func,
-            mushy_zone_factor,
+            mushy_zone_factors,
             condensed_rho_min,
             condensed_rho_scale,
         )

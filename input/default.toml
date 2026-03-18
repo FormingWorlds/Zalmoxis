@@ -52,13 +52,19 @@ ice_layer                  = "" 		# Empty = 2-layer model; set to an EOS string 
 condensed_rho_min          = 322.0  # kg/m^3 — sigmoid center = H2O critical density (material-specific!)
 condensed_rho_scale        = 50.0   # kg/m^3 — sigmoid transition width
 
-# Mushy zone factor for unified PALEOS tables.
+# Mushy zone factor for unified PALEOS tables (global default).
 # Controls the width of the artificial mushy (mixed solid+liquid) zone.
 # Valid range: [0.7, 1.0]. Values below 0.7 are rejected (unphysical).
 #   1.0 = no mushy zone (sharp phase boundary from table, solidus = liquidus)
 #   <1.0 = solidus at this fraction of the extracted liquidus T
 #   0.8 = similar to Stixrude14 cryoscopic depression (x0=0.79)
 mushy_zone_factor          = 1.0
+# Per-material overrides (optional). If omitted, the global value above
+# is used for all PALEOS materials. Only relevant when the corresponding
+# EOS is configured in a layer.
+# mushy_zone_factor_iron     = 1.0    # override for PALEOS:iron
+# mushy_zone_factor_MgSiO3   = 1.0    # override for PALEOS:MgSiO3
+# mushy_zone_factor_H2O      = 1.0    # override for PALEOS:H2O
 
 # Melting curves for phase routing in T-dependent mantle EOS.
 # Only relevant for WolfBower2018, RTPress100TPa, and PALEOS-2phase.

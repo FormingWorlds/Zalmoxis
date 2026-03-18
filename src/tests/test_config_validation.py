@@ -214,6 +214,72 @@ class TestMushyZoneValidation:
 
 
 @pytest.mark.unit
+class TestPerEosMushyZoneValidation:
+    def test_per_eos_factor_above_one_raises(self):
+        """Per-material factor > 1.0 should raise."""
+        from zalmoxis.zalmoxis import validate_config
+
+        # mushy_zone_factor=0.9 (global) so per-material 1.5 differs and is validated
+        with pytest.raises(ValueError, match='mushy_zone_factor_iron must be in'):
+            validate_config(
+                _make_config(
+                    mushy_zone_factor=0.9,
+                    mushy_zone_factors={
+                        'PALEOS:iron': 1.5,
+                        'PALEOS:MgSiO3': 0.9,
+                        'PALEOS:H2O': 0.9,
+                    },
+                )
+            )
+
+    def test_per_eos_factor_below_minimum_raises(self):
+        """Per-material factor below 0.7 should raise."""
+        from zalmoxis.zalmoxis import validate_config
+
+        with pytest.raises(ValueError, match='mushy_zone_factor_MgSiO3 = 0.5 is below'):
+            validate_config(
+                _make_config(
+                    mushy_zone_factors={
+                        'PALEOS:iron': 1.0,
+                        'PALEOS:MgSiO3': 0.5,
+                        'PALEOS:H2O': 1.0,
+                    },
+                )
+            )
+
+    def test_per_eos_factor_unused_material_raises(self):
+        """Override for unconfigured material should raise."""
+        from zalmoxis.zalmoxis import validate_config
+
+        # Default config has PALEOS:iron + PALEOS:MgSiO3, not PALEOS:H2O.
+        # Global default is 1.0, so PALEOS:H2O=0.8 is an explicit override.
+        with pytest.raises(ValueError, match='PALEOS:H2O is not configured'):
+            validate_config(
+                _make_config(
+                    mushy_zone_factors={
+                        'PALEOS:iron': 1.0,
+                        'PALEOS:MgSiO3': 1.0,
+                        'PALEOS:H2O': 0.8,
+                    },
+                )
+            )
+
+    def test_per_eos_valid_passes(self):
+        """Different valid factors for configured materials should pass."""
+        from zalmoxis.zalmoxis import validate_config
+
+        validate_config(
+            _make_config(
+                mushy_zone_factors={
+                    'PALEOS:iron': 0.9,
+                    'PALEOS:MgSiO3': 0.8,
+                    'PALEOS:H2O': 1.0,
+                },
+            )
+        )
+
+
+@pytest.mark.unit
 class TestNumericalParameterValidation:
     def test_num_layers_too_small_raises(self):
         from zalmoxis.zalmoxis import validate_config

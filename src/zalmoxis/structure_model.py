@@ -65,7 +65,7 @@ def coupled_odes(
     temperature,
     solidus_func,
     liquidus_func,
-    mushy_zone_factor=1.0,
+    mushy_zone_factors=None,
     condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
     condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
 ):
@@ -93,8 +93,9 @@ def coupled_odes(
         Solidus melting curve interpolation function.
     liquidus_func : callable or None
         Liquidus melting curve interpolation function.
-    mushy_zone_factor : float
-        Mushy zone factor for unified PALEOS tables.
+    mushy_zone_factors : dict or float or None
+        Per-EOS mushy zone factors. Dict keyed by EOS name, a single
+        float (applied to all), or None (default 1.0 for all).
     condensed_rho_min : float
         Sigmoid center for phase-aware suppression (kg/m^3).
     condensed_rho_scale : float
@@ -127,7 +128,7 @@ def coupled_odes(
         solidus_func,
         liquidus_func,
         interpolation_cache,
-        mushy_zone_factor,
+        mushy_zone_factors,
         condensed_rho_min,
         condensed_rho_scale,
     )
@@ -170,7 +171,7 @@ def solve_structure(
     solidus_func,
     liquidus_func,
     temperature_function=None,
-    mushy_zone_factor=1.0,
+    mushy_zone_factors=None,
     condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
     condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
 ):
@@ -213,8 +214,9 @@ def solve_structure(
         Function returning temperature [K]. Signature: ``f(r, P) -> T``
         where ``r`` is radius in m and ``P`` is pressure in Pa. For
         non-adiabatic modes the pressure argument is ignored.
-    mushy_zone_factor : float
-        Mushy zone factor for unified PALEOS tables.
+    mushy_zone_factors : dict or float or None
+        Per-EOS mushy zone factors. Dict keyed by EOS name, a single
+        float (applied to all), or None (default 1.0 for all).
     condensed_rho_min : float
         Sigmoid center for phase-aware suppression (kg/m^3).
     condensed_rho_scale : float
@@ -248,7 +250,7 @@ def solve_structure(
             temperature_function(r, y[2]) if temperature_function else 300,
             solidus_func,
             liquidus_func,
-            mushy_zone_factor,
+            mushy_zone_factors,
             condensed_rho_min,
             condensed_rho_scale,
         )
