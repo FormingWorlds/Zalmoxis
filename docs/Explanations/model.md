@@ -5,12 +5,12 @@ Given a total planet mass, layer mass fractions, and a per-layer equation of sta
 
 Several EOS families are supported (see [Equations of State](eos_physics.md) for detailed physics):
 
+- **[PALEOS](eos_physics.md#paleos-iron-mgsio3-h2o)** (recommended): all stable phases per material in a single file, $T$-dependent with $\nabla_{\mathrm{ad}}$, up to 50 $M_\oplus$
+- [PALEOS-2phase](eos_physics.md#paleos-2phase-mgsio3-only): earlier variant with separate solid/liquid tables (MgSiO$_3$ only)
 - [Seager et al. (2007)](eos_physics.md#seager-et-al-2007-tabulated-eos): merged tabulated EOS at 300 K
-- [Wolf & Bower (2018)](eos_physics.md#wolf-bower-2018-temperature-dependent-eos): temperature-dependent RTpress EOS
+- [Wolf & Bower (2018)](eos_physics.md#wolf-bower-2018-temperature-dependent-eos): temperature-dependent RTpress EOS ($\leq 7\,M_\oplus$)
 - [RTPress100TPa](eos_physics.md#rtpress100tpa-extended-melt-eos): extended melt table to 100 TPa
-- [PALEOS-2phase](eos_physics.md#paleos-mgsio3-eos): separate solid/liquid tables with $\nabla_{\mathrm{ad}}$
-- [Unified PALEOS](eos_physics.md#unified-paleos-tables-iron-mgsio3-h2o): all stable phases in a single file per material
-- [Analytic polytrope](eos_physics.md#analytic-modified-polytrope-seager-et-al-2007): fast closed-form approximation
+- [Analytic polytrope](eos_physics.md#analytic-modified-polytrope-seager-et-al-2007): fast closed-form approximation, no data files
 
 Layers can contain [multiple materials mixed by volume additivity](mixing.md), with phase-aware suppression of non-condensed volatiles.
 
@@ -69,15 +69,15 @@ Legacy global strings are still accepted via a backward-compatible mapping in `p
 
 | Identifier | Source | Material | Temperature |
 |---|---|---|---|
+| **`PALEOS:iron`** | **PALEOS** | **Fe (5 phases)** | **$T$-dependent ($\leq 50\,M_\oplus$), includes $\nabla_{\mathrm{ad}}$** |
+| **`PALEOS:MgSiO3`** | **PALEOS** | **MgSiO$_3$ (6 phases)** | **$T$-dependent ($\leq 50\,M_\oplus$), includes $\nabla_{\mathrm{ad}}$** |
+| **`PALEOS:H2O`** | **PALEOS** | **H$_2$O (7 EOS)** | **$T$-dependent ($\leq 50\,M_\oplus$), includes $\nabla_{\mathrm{ad}}$** |
+| `PALEOS-2phase:MgSiO3` | PALEOS (2-phase variant) | MgSiO$_3$ (solid + liquid) | $T$-dependent ($\leq 50\,M_\oplus$), includes $\nabla_{\mathrm{ad}}$ |
 | `Seager2007:iron` | Tabulated | Fe ($\epsilon$) | 300 K |
 | `Seager2007:MgSiO3` | Tabulated | MgSiO$_3$ perovskite | 300 K |
 | `Seager2007:H2O` | Tabulated | Water ice (VII/VIII/X) | 300 K |
 | `WolfBower2018:MgSiO3` | Tabulated | MgSiO$_3$ (solid + melt) | $T$-dependent ($\leq 7\,M_\oplus$) |
 | `RTPress100TPa:MgSiO3` | Tabulated | MgSiO$_3$ (solid + melt) | $T$-dependent ($\leq 50\,M_\oplus$) |
-| `PALEOS-2phase:MgSiO3` | Tabulated | MgSiO$_3$ (solid + liquid) | $T$-dependent ($\leq 50\,M_\oplus$), includes $\nabla_{\mathrm{ad}}$ |
-| `PALEOS:iron` | Unified table | Fe (5 phases) | $T$-dependent ($\leq 50\,M_\oplus$), includes $\nabla_{\mathrm{ad}}$ |
-| `PALEOS:MgSiO3` | Unified table | MgSiO$_3$ (6 phases) | $T$-dependent ($\leq 50\,M_\oplus$), includes $\nabla_{\mathrm{ad}}$ |
-| `PALEOS:H2O` | Unified table | H$_2$O (7 EOS) | $T$-dependent ($\leq 50\,M_\oplus$), includes $\nabla_{\mathrm{ad}}$ |
 | `Analytic:<material>` | Analytic fit | Any of 6 materials | 300 K |
 
 See [Equations of State](eos_physics.md) for detailed physics of each EOS family.
