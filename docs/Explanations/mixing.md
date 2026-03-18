@@ -120,7 +120,7 @@ A density-based criterion handles this naturally without consulting phase tables
 
 ## Extension to volatile-rich and sub-Neptune interiors
 
-The sigmoid framework is forward-compatible with miscible sub-Neptune interiors (e.g., [Young et al. 2024](https://doi.org/10.3847/PSJ/ad8c40), [2025](https://arxiv.org/abs/2507.00947)), where rock-volatile composition varies continuously with depth.
+The sigmoid framework is forward-compatible with miscible sub-Neptune interiors (e.g., [Young et al. 2024](https://ui.adsabs.harvard.edu/abs/2024PSJ.....5..268Y/abstract), [2025](https://ui.adsabs.harvard.edu/abs/2025PSJ.....6..251Y/abstract)), where rock-volatile composition varies continuously with depth.
 Future extensions can:
 
 - Replace the fixed sigmoid parameters with per-component values or physics-based miscibility weights from DFT-MD calculations.
