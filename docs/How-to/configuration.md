@@ -79,15 +79,16 @@ Rules:
 - If the fraction is omitted (single-material backward compat), it defaults to 1.0.
 - Mass fractions must sum to 1.0 (automatically normalized if not).
 - Any EOS type can be mixed with any other (tabulated + analytic, T-dependent + T-independent).
-- Density is computed via harmonic mean (volume additivity): $\rho_{\mathrm{mix}} = \left( \sum_i w_i / \rho_i \right)^{-1}$.
-- For adiabatic mode, $\nabla_{\mathrm{ad}}$ is mass-fraction-weighted across components.
+- Density is computed via a **phase-aware suppressed harmonic mean**: each component is weighted by a smooth sigmoid function of its density before entering the harmonic mean. This prevents non-condensed volatiles (vapor, supercritical gas) from dominating the mixture. See the [model documentation](../Explanations/model.md#multi-material-mixing-with-phase-aware-suppression) for the physics.
+- For all-condensed mixtures (all components with $\rho > 500$ kg/m$^3$), the suppressed result is numerically identical to the standard harmonic mean.
+- For adiabatic mode, $\nabla_{\mathrm{ad}}$ uses the same sigmoid-weighted average across components.
 - Mixing fractions can be updated at runtime by PROTEUS/CALLIOPE without re-parsing the config.
 
 !!! warning "Mixing T-dependent with T-independent EOS"
     Mixing a T-dependent EOS (e.g., `PALEOS:MgSiO3`) with a T-independent EOS (e.g., `Seager2007:H2O`) in the same layer is allowed but physically inconsistent: the T-independent component uses a fixed 300 K internally while the T-dependent component uses the adiabatic temperature. A warning is logged when this occurs.
 
-!!! warning "High H2O fraction at high temperature"
-    Water above ~2000 K is supercritical vapor, not a condensed phase. Large H2O fractions (> 30%) in the mantle at high surface temperatures may cause convergence difficulties or unphysically large radii.
+!!! note "Phase-aware suppression of non-condensed volatiles"
+    At high surface temperatures ($T_\mathrm{surf} > 2000$ K), H$_2$O in the mantle may be in vapor or low-density supercritical phase near the surface. The phase-aware suppression automatically excludes these low-density states from the structural density calculation, preventing unphysically inflated radii. The suppression is controlled by `condensed_rho_min` and `condensed_rho_scale` (see [Phase-aware mixing parameters](#phase-aware-mixing-parameters-multi-material-only) below).
 
 #### Available EOS options
 
@@ -127,6 +128,19 @@ When any T-dependent EOS is assigned to any layer, the `temperature_mode`, `surf
 | Field | Required | Default | Description |
 |---|---|---|---|
 | `mushy_zone_factor` | No | `1.0` | Cryoscopic depression factor for unified PALEOS tables. Controls the width of the artificial mushy (mixed solid+liquid) zone below the liquidus extracted from the table. `1.0` = no mushy zone (sharp phase boundary). `< 1.0` = solidus at this fraction of the liquidus temperature ($T_\mathrm{sol} = T_\mathrm{liq} \times f$). E.g., `0.8` gives a mushy zone similar to the Stixrude (2014) cryoscopic depression. In the mushy zone, density is volume-averaged between solid-side and liquid-side table values. Only relevant for `PALEOS:iron`, `PALEOS:MgSiO3`, `PALEOS:H2O`. |
+
+#### Phase-aware mixing parameters (multi-material only)
+
+These parameters control the smooth sigmoid suppression that prevents non-condensed volatile components from dominating the harmonic-mean density in multi-material layers.
+They have no effect on single-material layers.
+See the [model documentation](../Explanations/model.md#multi-material-mixing-with-phase-aware-suppression) for the physics.
+
+| Field | Required | Default | Unit | Description |
+|---|---|---|---|---|
+| `condensed_rho_min` | No | `300.0` | kg/m$^3$ | Sigmoid center density. Components with density well below this are progressively excluded from the harmonic mean. The default is calibrated for H$_2$O (critical density 322 kg/m$^3$). Must be adjusted for other volatiles: CO$_2$ ~470, NH$_3$ ~225, He ~70, H$_2$ ~30 kg/m$^3$. Currently only H$_2$O has gas-phase data in the EOS tables, so the default is appropriate for all existing configurations. |
+| `condensed_rho_scale` | No | `50.0` | kg/m$^3$ | Sigmoid transition width. Smaller values produce a sharper cutoff; larger values a more gradual transition. The sigmoid goes from $\sigma = 0.02$ to $\sigma = 0.98$ over a density range of approximately $4 \times$ `condensed_rho_scale`. |
+
+Both parameters must be positive. The validation rejects non-positive values at config load time.
 
 #### Melting curve selection
 
@@ -252,7 +266,7 @@ ice_layer         = "PALEOS:H2O"
 mushy_zone_factor = 1.0
 ```
 
-**Hydrated mantle** (iron core + mixed silicate-water mantle, volume-additive):
+**Hydrated mantle** (iron core + mixed silicate-water mantle, phase-aware mixing):
 ```toml
 [AssumptionsAndInitialGuesses]
 temperature_mode      = "adiabatic"
@@ -260,11 +274,13 @@ surface_temperature   = 2000
 center_temperature    = 6000
 
 [EOS]
-core      = "PALEOS:iron"
-mantle    = "PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15"
-ice_layer = ""
+core                = "PALEOS:iron"
+mantle              = "PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15"
+ice_layer           = ""
+condensed_rho_min   = 300.0   # H2O default; adjust for other volatiles
+condensed_rho_scale = 50.0
 ```
-The mantle is 85% MgSiO$_3$ and 15% H$_2$O by mass, mixed at each $(P, T)$ via harmonic-mean density. Each component's phase (solid/liquid) is evaluated independently from the PALEOS table.
+The mantle is 85% MgSiO$_3$ and 15% H$_2$O by mass. Each component's density and phase are evaluated independently from the PALEOS table. At depth (high $P$), both components are condensed and mixed via the standard harmonic mean. Near the surface (low $P$), H$_2$O transitions to vapor/supercritical gas and is smoothly suppressed by the sigmoid weighting, preventing unphysical radius inflation.
 
 **Mercury-like planet** (large iron core + (Mg,Fe)SiO3 mantle, analytic):
 ```toml

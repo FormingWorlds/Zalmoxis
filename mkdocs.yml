@@ -29,6 +29,7 @@ nav:
           - EOS functions: Reference/api/zalmoxis.eos_functions.md
           - EOS properties: Reference/api/zalmoxis.eos_properties.md
           - Melting curves: Reference/api/zalmoxis.melting_curves.md
+          - Mixing: Reference/api/zalmoxis.mixing.md
           - Structure model: Reference/api/zalmoxis.structure_model.md
       - Data: Reference/data.md
 

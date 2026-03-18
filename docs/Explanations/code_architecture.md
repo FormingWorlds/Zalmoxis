@@ -9,6 +9,7 @@ src/zalmoxis/
 ├── eos_functions.py     # EOS dispatch: calculate_density(), Tdep phase logic, temperature profiles
 ├── eos_analytic.py      # Analytic modified polytrope: get_analytic_density()
 ├── eos_properties.py    # EOS registry: material property dicts keyed by EOS identifier
+├── mixing.py            # Multi-material mixing: LayerMixture, phase-aware density/nabla_ad
 ├── melting_curves.py    # Solidus/liquidus curves (Monteux+2016, Stixrude 2014, tabulated)
 ├── constants.py         # Physical constants (G, earth_mass, earth_radius, etc.)
 └── plots/               # Visualization (profile plots, P-T phase diagrams)
@@ -34,7 +35,14 @@ main() ─── outer loop (radius) ─── inner loop (density) ─── br
     │                                                     solve_ivp(coupled_odes)
     │                                                             │
     │                                                             ▼
-    │                                                     get_layer_eos() → calculate_density()
+    │                                               get_layer_eos() → calculate_mixed_density()
+    │                                                             │
+    │                                                  ┌──────────┼──────────┐
+    │                                                  ▼          ▼          ▼
+    │                                            per-component    sigmoid    harmonic
+    │                                            density via      weighting  mean with
+    │                                            calculate_       (_condensed effective
+    │                                            density()        _weight)   weights
     │                                                             │
     │                                                  ┌──────────┼──────────┐
     │                                                  ▼          ▼          ▼
@@ -75,6 +83,18 @@ post_processing() ──► output files + plots
 - **`calculate_temperature_profile()`** (`eos_functions.py`): Returns a callable $T(r)$ for four modes: `"isothermal"` (uniform), `"linear"` (center-to-surface gradient), `"prescribed"` (loaded from file), or `"adiabatic"` (returns a linear initial guess; the self-consistent adiabat is computed later by `compute_adiabatic_temperature()`). In the ODE solver, the temperature function signature is $T(r, P)$: the $P$ argument is used by the adiabatic mode ($T(P)$ parameterization) and ignored by all other modes.
 
 - **`compute_adiabatic_temperature()`** (`eos_functions.py`): Computes the adiabatic temperature profile by integrating EOS gradients from the surface inward: $T_{i} = T_{i+1} + (dT/dP)_S \cdot \Delta P$. For `WolfBower2018:MgSiO3` and `RTPress100TPa:MgSiO3`, uses pre-tabulated $(dT/dP)_S$ from `adiabat_temp_grad_melt.dat`. For `PALEOS-2phase:MgSiO3`, uses the dimensionless $\nabla_{\mathrm{ad}}$ from the table with phase-aware weighting (solid/mixed/liquid via solidus/liquidus curves). For unified PALEOS tables (`PALEOS:iron`, `PALEOS:MgSiO3`, `PALEOS:H2O`), reads $\nabla_{\mathrm{ad}}$ directly from the single table. With `PALEOS:iron`, the iron core follows its own adiabat instead of being isothermal. In the main convergence loop, the adiabat is parameterized as $T(P)$ (not $T(r)$) to ensure thermodynamic consistency during the Brent pressure solver's bracket search. For T-independent layers (e.g., `Seager2007:iron`), the temperature is held constant.
+
+- **`calculate_mixed_density()`** (`mixing.py`): Computes the suppressed harmonic-mean density for a layer mixture.
+  Single-component layers use a fast path that bypasses suppression entirely.
+  For multi-component layers, each component's density is evaluated via `calculate_density()`, then weighted by `_condensed_weight()` before entering the harmonic mean.
+
+- **`get_mixed_nabla_ad()`** (`mixing.py`): Computes the sigmoid-weighted average adiabatic gradient for a mixture, using the same suppression as density.
+
+- **`_condensed_weight()`** (`mixing.py`): Sigmoid suppression function $\sigma(\rho) = 1/(1 + \exp(-(\rho - \rho_{\min})/\rho_{\mathrm{scale}}))$.
+  Returns ~1 for condensed phases, ~0 for vapor.
+
+- **`LayerMixture`** (`mixing.py`): Dataclass holding a layer's EOS components and mass fractions.
+  Supports runtime fraction updates from PROTEUS/CALLIOPE via `update_fractions()`.
 
 - **`parse_eos_config()`** (`zalmoxis.py`): Parses the `[EOS]` TOML section into a per-layer dictionary.
   Handles both the new per-layer format and legacy global-string format via `LEGACY_EOS_MAP`.
