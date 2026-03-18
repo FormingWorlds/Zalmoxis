@@ -187,7 +187,12 @@ class TestCalculateMixedDensity:
         assert rho_mixed == pytest.approx(rho_direct)
 
     def test_two_component_harmonic_mean(self):
-        """Two Seager components produce harmonic-mean density."""
+        """Two Seager components produce harmonic-mean density.
+
+        All-condensed limit: both iron (~12000 kg/m^3) and silicate (~5000 kg/m^3)
+        are far above the sigmoid center (300 kg/m^3), so sigma ~1.0 to float64
+        precision. The suppressed harmonic mean exactly recovers the standard one.
+        """
         if not _seager_data_available():
             pytest.skip('Seager data not found')
 
@@ -341,9 +346,11 @@ class TestVaporSuppression:
 
         mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
 
+        # calculate_density is imported inside the function body in mixing.py
+        # to break a circular import. Patching 'zalmoxis.eos_functions.calculate_density'
+        # works because the deferred import re-reads from the module's attribute dict,
+        # which is already replaced by the patch.
         with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
-            # Suppress is not imported from eos_functions but from the local import
-            # in calculate_mixed_density
             rho = calculate_mixed_density(
                 1e9,
                 3000,
@@ -402,8 +409,8 @@ class TestVaporSuppression:
         # And the suppressed result is within 0.1% of the standard harmonic mean
         assert rho == pytest.approx(standard, rel=1e-3)
 
-    def test_mixed_density_all_vapor_returns_none(self):
-        """All components below condensation threshold returns None."""
+    def test_mixed_density_all_vapor_returns_small_density(self):
+        """All components below condensation threshold return heavily suppressed density."""
         from unittest.mock import patch
 
         def mock_density(P, md, eos, T, sf, lf, interp, mzf):
