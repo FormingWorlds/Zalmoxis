@@ -19,10 +19,10 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# Determine paths
+# Determine paths (use absolute paths; SLURM copies scripts to spool dirs)
 # ---------------------------------------------------------------------------
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+REPO_ROOT="$HOME/PROTEUS/Zalmoxis"
+SCRIPT_DIR="${REPO_ROOT}/tools/validation_grid"
 
 # Suite name from first argument (or from re-submission via SUITE_NAME env var)
 SUITE_NAME="${1:-${SUITE_NAME:-}}"
