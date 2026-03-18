@@ -16,7 +16,7 @@ The grid is log-uniform with 150 points per decade in both $P$ (1 bar to 100 TPa
 
 **Single-table architecture.** The density at any $(P, T)$ is obtained by a single interpolation on the table, which already provides the stable-phase value.
 No external solidus/liquidus curves or separate solid/liquid files are needed.
-This eliminates the phase-routing complexity of earlier EOS families.
+This eliminates the phase-routing complexity required by the two-phase and WolfBower EOS families.
 
 **Phase boundary extraction.** At load time, the code extracts the liquidus boundary from the phase column: for each pressure row, the lowest temperature where the phase is `liquid` defines the liquidus.
 This extracted boundary serves as the basis for an optional mushy zone controlled by the `mushy_zone_factor` parameter:
@@ -28,7 +28,7 @@ This extracted boundary serves as the basis for an optional mushy zone controlle
 In adiabatic mode, the temperature profile is computed by integrating $dT/dP = \nabla_{\mathrm{ad}} \cdot T / P$ from the surface inward.
 Each material follows its own adiabat: with `PALEOS:iron`, the iron core is temperature-dependent and follows its own adiabat using $\nabla_{\mathrm{ad}}$ from the iron table, instead of being isothermal at the CMB temperature.
 
-**Grid coverage.** Some cells at corners of the $P$--$T$ domain are missing where the thermodynamic solver did not converge.
+**Grid coverage.** Some cells at corners of the $P$-$T$ domain are missing where the thermodynamic solver did not converge.
 Per-cell temperature clamping restricts queries to the valid data range at each pressure, and a nearest-neighbor fallback handles remaining NaN results near the ragged domain boundary.
 In adiabatic mode, the temperature is parameterized as $T(P)$ rather than $T(r)$, ensuring that the Brent pressure solver always evaluates thermodynamically consistent $(P, T)$ pairs within the valid table domain.
 
@@ -38,10 +38,10 @@ In adiabatic mode, the temperature is parameterized as $T(P)$ rather than $T(r)$
 
 ### PALEOS-2phase (MgSiO3 only)
 
-The `PALEOS-2phase:MgSiO3` EOS is an earlier variant of the PALEOS database (Zenodo record 18924171) that provides MgSiO$_3$ as separate solid and liquid table files.
-The table format and grid structure are identical to the unified tables.
+The `PALEOS-2phase:MgSiO3` EOS provides MgSiO$_3$ as separate solid and liquid table files (Zenodo record 18924171).
+The table format and grid structure are identical to the main PALEOS tables.
 
-Unlike the unified PALEOS tables, `PALEOS-2phase` requires external melting curves for phase routing.
+Unlike the main PALEOS tables, `PALEOS-2phase` requires external melting curves for phase routing.
 Configurable solidus and liquidus curves (see [Melting curve selection](../How-to/configuration.md#melting-curve-selection)) determine the phase at each $(P, T)$:
 
 - Below the solidus: $\nabla_{\mathrm{ad}}$ from the solid table.
@@ -54,8 +54,8 @@ The default analytic Monteux+2016 curves are defined for all pressures, eliminat
 
 **Mass limit.** Both solid and liquid tables extend to 100 TPa, supporting planets up to ~50 $M_\oplus$.
 
-**When to use.** The unified `PALEOS:MgSiO3` is preferred for new work.
-Use `PALEOS-2phase:MgSiO3` only if you need explicit control over the solidus/liquidus curves independently of the table's internal phase boundary.
+**When to use.** `PALEOS:MgSiO3` is the default and recommended choice.
+Use `PALEOS-2phase:MgSiO3` when you need explicit control over the solidus/liquidus curves independently of the table's internal phase boundary.
 
 ---
 
@@ -68,8 +68,8 @@ The following EOS families predate the PALEOS tables. They remain fully supporte
 The tabulated EOS from [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) provides $\rho(P)$ at 300 K for iron (Fe $\epsilon$-phase), MgSiO$_3$ perovskite, and water ice.
 The tables are constructed by merging two regimes:
 
-- **Low pressure** ($P \lesssim 200$ GPa): Vinet EOS for iron, fourth-order Birch--Murnaghan EOS for MgSiO$_3$ and water ice, fitted to experimental data and DFT calculations.
-- **High pressure** ($P \gtrsim 10^4$ GPa): Thomas--Fermi--Dirac (TFD) theory, which becomes exact in the limit of fully ionized, degenerate electron gas.
+- **Low pressure** ($P \lesssim 200$ GPa): Vinet EOS for iron, fourth-order Birch-Murnaghan EOS for MgSiO$_3$ and water ice, fitted to experimental data and DFT calculations.
+- **High pressure** ($P \gtrsim 10^4$ GPa): Thomas-Fermi-Dirac (TFD) theory, which becomes exact in the limit of fully ionized, degenerate electron gas.
 
 The two regimes are smoothly joined in the intermediate range.
 
@@ -105,7 +105,7 @@ Use PALEOS or RTPress100TPa for higher-mass planets.
 
 ### RTPress100TPa Extended Melt EOS
 
-The `RTPress100TPa:MgSiO3` EOS extends the WolfBower2018 melt phase coverage from 1 TPa to 100 TPa ($P$: $10^3$--$10^{14}$ Pa, $T$: 400--50000 K), enabling temperature-dependent modeling up to ~50 $M_\oplus$.
+The `RTPress100TPa:MgSiO3` EOS extends the WolfBower2018 melt phase coverage from 1 TPa to 100 TPa ($P$: $10^3$ to $10^{14}$ Pa, $T$: 400 to 50,000 K), enabling temperature-dependent modeling up to ~50 $M_\oplus$.
 
 The solid-phase EOS remains the [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) table (valid to 1 TPa, clamped at boundary).
 At the high internal temperatures typical of massive rocky planets, the mantle is predominantly molten, so the solid table limitation is less constraining.
@@ -123,7 +123,7 @@ $$
 
 where $\rho$ is density in kg/m$^3$, $P$ is pressure in Pa, and $\rho_0$, $c$, $n$ are material-specific parameters.
 This closed-form expression approximates the full merged Vinet/BME + TFD EOS without requiring tabulated data files.
-Accuracy is 2--12% across all planetary pressures.
+Accuracy is 2 to 12% across all planetary pressures.
 The fit is valid for $P < 10^{16}$ Pa.
 
 Six materials are available:

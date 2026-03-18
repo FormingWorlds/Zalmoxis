@@ -53,7 +53,7 @@ is zero, where $P_{\mathrm{surface}}(P_c)$ is the surface pressure obtained by i
 
 Zalmoxis uses [Brent's method](https://en.wikipedia.org/wiki/Brent%27s_method) (`scipy.optimize.brentq`) for this root-finding step.
 Brent's method combines bisection, secant, and inverse quadratic interpolation: it maintains a valid bracket (like bisection, guaranteeing convergence) while accelerating with superlinear methods when possible.
-This provides both robustness and speed, typically converging in 20--36 function evaluations.
+This provides both robustness and speed, typically converging in 20 to 36 function evaluations.
 
 **Bracket construction.**
 The initial bracket $[P_{\mathrm{low}}, P_{\mathrm{high}}]$ is constructed around an empirical scaling-law estimate $\hat{P}_c$:
@@ -72,7 +72,7 @@ The terminal event reduces evaluation time for bad guesses from minutes to milli
 
 **Early termination handling.**
 When the terminal event fires, the ODE integration stops short of the planet surface and the solution arrays are padded with zeros.
-The residual function detects this ($P_{\mathrm{surface}} \leq 0$) and returns $-P_{\mathrm{target}}$ --- a negative value that signals to Brent's method that $P_c$ is too low, maintaining a valid bracket.
+The residual function detects this ($P_{\mathrm{surface}} \leq 0$) and returns $-P_{\mathrm{target}}$ (a negative value that signals to Brent's method that $P_c$ is too low), maintaining a valid bracket.
 
 **Closure state capture.**
 Since `brentq` only returns the root value (not intermediate ODE solutions), the residual function uses a mutable closure dict to capture the mass, gravity, and pressure arrays from the last evaluation.

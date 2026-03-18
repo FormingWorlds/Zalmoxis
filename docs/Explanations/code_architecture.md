@@ -64,7 +64,7 @@ post_processing() ──► output files + plots
   Calls `solve_structure()` for each trial $P_c$ and captures the ODE solution via a mutable closure dict.
 
 - **`get_layer_eos()`** (`structure_model.py`): Maps the enclosed mass at a given radial shell to the per-layer EOS string by comparing against core and core+mantle mass thresholds.
-  Purely geometric --- no EOS-type branching.
+  Purely geometric; no EOS-type branching.
 
 - **`coupled_odes()`** (`structure_model.py`): Defines the derivatives $dM/dr$, $dg/dr$, $dP/dr$ for the ODE solver.
   Calls `calculate_density()` at each evaluation to close the system.
