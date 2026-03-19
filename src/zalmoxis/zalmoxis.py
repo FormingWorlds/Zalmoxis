@@ -41,6 +41,7 @@ from .eos_functions import (
 )
 from .eos_properties import EOS_REGISTRY
 from .mixing import (
+    BINODAL_T_SCALE_DEFAULT,
     any_component_is_tdep,
     calculate_mixed_density,
     parse_all_layer_mixtures,
@@ -86,6 +87,7 @@ VALID_TABULATED_EOS = {
     'PALEOS:iron',
     'PALEOS:MgSiO3',
     'PALEOS:H2O',
+    'Chabrier:H',
 }
 
 # WolfBower2018 tables are valid up to ~1 TPa. The Brent pressure solver with
@@ -426,6 +428,14 @@ def validate_config(config_params):
             f'Typical value: 50 kg/m^3.'
         )
 
+    binodal_T_scale = config_params.get('binodal_T_scale', BINODAL_T_SCALE_DEFAULT)
+    if binodal_T_scale <= 0:
+        raise ValueError(
+            f'binodal_T_scale must be positive, got {binodal_T_scale} K. '
+            f'This is the sigmoid width for H2 miscibility suppression. '
+            f'Typical value: 50 K.'
+        )
+
     # ── Numerical parameters ────────────────────────────────────────
     num_layers = config_params['num_layers']
     if num_layers < 10:
@@ -652,6 +662,7 @@ def load_zalmoxis_config(temp_config_path=None):
     mushy_zone_factor = eos_section.get('mushy_zone_factor', 1.0)
     condensed_rho_min = eos_section.get('condensed_rho_min', CONDENSED_RHO_MIN_DEFAULT)
     condensed_rho_scale = eos_section.get('condensed_rho_scale', CONDENSED_RHO_SCALE_DEFAULT)
+    binodal_T_scale = eos_section.get('binodal_T_scale', BINODAL_T_SCALE_DEFAULT)
 
     # Build per-EOS mushy_zone_factors dict. Only include materials that are
     # actually configured in a layer; unused materials default to 1.0 so that
@@ -688,6 +699,7 @@ def load_zalmoxis_config(temp_config_path=None):
         'mushy_zone_factors': mushy_zone_factors,
         'condensed_rho_min': condensed_rho_min,
         'condensed_rho_scale': condensed_rho_scale,
+        'binodal_T_scale': binodal_T_scale,
         'num_layers': config['Calculations']['num_layers'],
         'max_iterations_outer': config['IterativeProcess']['max_iterations_outer'],
         'tolerance_outer': config['IterativeProcess']['tolerance_outer'],
@@ -846,6 +858,7 @@ def main(
         }
     condensed_rho_min = config_params.get('condensed_rho_min', CONDENSED_RHO_MIN_DEFAULT)
     condensed_rho_scale = config_params.get('condensed_rho_scale', CONDENSED_RHO_SCALE_DEFAULT)
+    binodal_T_scale = config_params.get('binodal_T_scale', BINODAL_T_SCALE_DEFAULT)
 
     # Parse layer mixtures if not provided externally (PROTEUS/CALLIOPE)
     if layer_mixtures is None:
@@ -884,6 +897,12 @@ def main(
             elif eos_name in ('PALEOS:iron', 'PALEOS:MgSiO3', 'PALEOS:H2O'):
                 max_mass = PALEOS_UNIFIED_MAX_MASS_EARTH
                 reason = 'The unified PALEOS tables extend to 100 TPa (P: 1 bar to 100 TPa).'
+            elif eos_name == 'Chabrier:H':
+                max_mass = PALEOS_UNIFIED_MAX_MASS_EARTH
+                reason = (
+                    'The Chabrier H table extends to 10^22 Pa but '
+                    'has only been validated up to ~50 M_earth.'
+                )
             else:
                 continue
             if mass_in_earth > max_mass:
@@ -1008,6 +1027,7 @@ def main(
                     mushy_zone_factors,
                     condensed_rho_min,
                     condensed_rho_scale,
+                    binodal_T_scale,
                 )
 
                 # Build T(P) interpolator from the previous iteration's
@@ -1122,6 +1142,7 @@ def main(
                     mushy_zone_factors,
                     condensed_rho_min,
                     condensed_rho_scale,
+                    binodal_T_scale,
                 )
                 if iteration_profiles_enabled:
                     create_pressure_density_files(
@@ -1188,6 +1209,7 @@ def main(
                     mushy_zone_factors,
                     condensed_rho_min,
                     condensed_rho_scale,
+                    binodal_T_scale,
                 )
 
                 surface_residual = abs(pressure[-1] - target_surface_pressure)
@@ -1253,6 +1275,7 @@ def main(
                     mushy_zone_factors,
                     condensed_rho_min,
                     condensed_rho_scale,
+                    binodal_T_scale,
                 )
 
                 if new_density is None:

@@ -27,7 +27,23 @@ from .constants import CONDENSED_RHO_MIN_DEFAULT, CONDENSED_RHO_SCALE_DEFAULT, T
 logger = logging.getLogger(__name__)
 
 # All unified PALEOS EOS names that support mushy_zone_factor
-_PALEOS_UNIFIED_NAMES = frozenset({'PALEOS:iron', 'PALEOS:MgSiO3', 'PALEOS:H2O'})
+_PALEOS_UNIFIED_NAMES = frozenset({'PALEOS:iron', 'PALEOS:MgSiO3', 'PALEOS:H2O', 'Chabrier:H'})
+
+# Component-type sets for binodal matching
+_SILICATE_EOS_NAMES = frozenset(
+    {
+        'PALEOS:MgSiO3',
+        'WolfBower2018:MgSiO3',
+        'RTPress100TPa:MgSiO3',
+        'PALEOS-2phase:MgSiO3',
+    }
+)
+_H2_EOS_NAMES = frozenset({'Chabrier:H'})
+_H2O_EOS_NAMES = frozenset({'PALEOS:H2O', 'Seager2007:H2O'})
+
+# Default binodal sigmoid width (K). Controls the smooth transition at
+# the miscibility boundary. 50 K gives a ~200 K transition zone.
+BINODAL_T_SCALE_DEFAULT = 50.0
 
 
 def _get_mushy_zone_factor(eos_name, mushy_zone_factors):
@@ -274,6 +290,60 @@ def _condensed_weight(
     return 1.0 / (1.0 + np.exp(-(rho - rho_min) / rho_scale))
 
 
+def _binodal_factor(eos_name, w_i, mixture, pressure, temperature, T_scale):
+    """Compute combined binodal suppression for an H2 component.
+
+    Checks the H2 component against all relevant partner components
+    in the mixture:
+
+    - H2 + silicate (MgSiO3): Rogers+2025 binodal
+    - H2 + H2O: Gupta+2025 critical curve
+
+    Returns the minimum (most restrictive) suppression weight across
+    all applicable binodals. For non-H2 components, returns 1.0.
+
+    Parameters
+    ----------
+    eos_name : str
+        EOS identifier of the component being evaluated.
+    w_i : float
+        Mass fraction of the component.
+    mixture : LayerMixture
+        Full layer mixture (needed to identify partner components).
+    pressure : float
+        Pressure in Pa.
+    temperature : float
+        Temperature in K.
+    T_scale : float
+        Binodal sigmoid width in K.
+
+    Returns
+    -------
+    float
+        Suppression weight in [0, 1]. 1.0 if no binodal applies.
+    """
+    if eos_name not in _H2_EOS_NAMES:
+        return 1.0
+
+    from .binodal import gupta2025_suppression_weight, rogers2025_suppression_weight
+
+    sigma = 1.0
+    for partner, w_p in zip(mixture.components, mixture.fractions):
+        if w_p <= 0:
+            continue
+        if partner in _SILICATE_EOS_NAMES:
+            sigma = min(
+                sigma,
+                rogers2025_suppression_weight(pressure, temperature, w_i, w_p, T_scale),
+            )
+        if partner in _H2O_EOS_NAMES:
+            sigma = min(
+                sigma,
+                gupta2025_suppression_weight(pressure, temperature, w_i, w_p, T_scale),
+            )
+    return sigma
+
+
 def calculate_mixed_density(
     pressure,
     temperature,
@@ -285,14 +355,21 @@ def calculate_mixed_density(
     mushy_zone_factors=None,
     condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
     condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
+    binodal_T_scale=BINODAL_T_SCALE_DEFAULT,
 ):
     """Compute volume-additive mixed density for a layer mixture.
 
     For a single component, delegates directly to ``calculate_density()``.
     For multiple components, evaluates each independently at (P, T) and
     returns a suppressed harmonic mean where each component is weighted
-    by a sigmoid function of its density. This prevents non-condensed
-    volatiles (vapor, supercritical gas) from dominating the mixture.
+    by the product of:
+
+    1. A density-based sigmoid (``_condensed_weight``): suppresses
+       gas-like components by density.
+    2. A binodal sigmoid (``_binodal_factor``): suppresses H2 when it
+       is thermodynamically immiscible with its partner (below the
+       binodal temperature). Only applies to H2 components in mixtures
+       with silicate or water.
 
     Notes
     -----
@@ -302,7 +379,6 @@ def calculate_mixed_density(
     volatiles as having negligible structural contribution. The
     approximation is valid when suppressed components are at low density
     (vapor/gas) and do not contribute meaningfully to hydrostatic support.
-    For a future physics-based treatment, replace with a miscibility model.
 
     Parameters
     ----------
@@ -327,6 +403,9 @@ def calculate_mixed_density(
         Sigmoid center for phase-aware suppression (kg/m^3).
     condensed_rho_scale : float
         Sigmoid width for phase-aware suppression (kg/m^3).
+    binodal_T_scale : float
+        Binodal sigmoid width in K. Controls the smooth transition at
+        the miscibility boundary. Default 50 K.
 
     Returns
     -------
@@ -374,6 +453,9 @@ def calculate_mixed_density(
             # errors. The Picard loop falls back to old_density for this shell.
             return None
         sigma_i = _condensed_weight(rho_i, condensed_rho_min, condensed_rho_scale)
+        sigma_i *= _binodal_factor(
+            eos_name, w_i, mixture, pressure, temperature, binodal_T_scale
+        )
         w_eff = w_i * sigma_i
         if w_eff <= 0:
             continue
@@ -396,6 +478,7 @@ def get_mixed_nabla_ad(
     mushy_zone_factors=None,
     condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
     condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
+    binodal_T_scale=BINODAL_T_SCALE_DEFAULT,
 ):
     """Compute mass-fraction-weighted nabla_ad for a mixture.
 
@@ -485,6 +568,9 @@ def get_mixed_nabla_ad(
         )
         if rho_i is not None and np.isfinite(rho_i) and rho_i > 0:
             sigma_i = _condensed_weight(rho_i, condensed_rho_min, condensed_rho_scale)
+            sigma_i *= _binodal_factor(
+                eos_name, w_i, mixture, pressure, temperature, binodal_T_scale
+            )
         else:
             sigma_i = 0.0
         w_eff = w_i * sigma_i

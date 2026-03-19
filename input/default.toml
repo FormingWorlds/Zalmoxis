@@ -30,11 +30,13 @@ temperature_profile_file   = "temp_profile.txt" # Prescribed T(r) file (center t
 #   PALEOS:iron              Unified PALEOS iron (5 phases, up to 100 TPa, <= 50 M_earth)
 #   PALEOS:MgSiO3            Unified PALEOS MgSiO3 (6 phases, up to 100 TPa, <= 50 M_earth)
 #   PALEOS:H2O               Unified PALEOS water (7 EOS, up to 100 TPa, <= 50 M_earth)
+#   Chabrier:H               Chabrier+2019/2021 pure H2 (T=100-10^8 K, P=1 Pa-10^22 Pa)
 #   Analytic:<material>      Seager+2007 analytic polytrope, 300 K, no data files needed
 #                            Materials: iron, MgSiO3, MgFeSiO3, H2O, graphite, SiC
 #
 # Multi-material mixing: use "+" to combine materials with mass fractions.
 # Example: mantle = "PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15"
+# Sub-Neptune: mantle = "PALEOS:MgSiO3:0.97+Chabrier:H:0.03"
 # Fractions must sum to 1.0. Each component is evaluated independently at (P,T),
 # and densities are mixed via harmonic mean (volume additivity).
 # H2O mixing validated up to 30% by mass at 0.1-50 M_earth, 300-5000 K.
@@ -52,6 +54,13 @@ ice_layer                  = "" 		# Empty = 2-layer model; set to an EOS string 
 #   H2O ~322, CO2 ~470, NH3 ~225, He ~70, H2 ~30 kg/m^3
 condensed_rho_min          = 322.0  # kg/m^3 — sigmoid center = H2O critical density (material-specific!)
 condensed_rho_scale        = 50.0   # kg/m^3 — sigmoid transition width
+
+# Binodal (miscibility) suppression for H2-containing mixtures.
+# When Chabrier:H is mixed with silicate or water, the H2-silicate binodal
+# (Rogers+2025) and H2-H2O critical curve (Gupta+2025) determine where
+# H2 is miscible. Below the binodal T, H2 is suppressed from the harmonic mean.
+# For sub-Neptune models, set condensed_rho_min = 30.0 and condensed_rho_scale = 10.0.
+binodal_T_scale            = 50.0   # K — binodal sigmoid width (~200 K transition zone)
 
 # Mushy zone factor for unified PALEOS tables (global default).
 # Controls the width of the artificial mushy (mixed solid+liquid) zone.

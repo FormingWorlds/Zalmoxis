@@ -128,6 +128,13 @@ EOS_REGISTRY = {
     'PALEOS:iron': _paleos_iron,
     'PALEOS:MgSiO3': _paleos_mgsio3,
     'PALEOS:H2O': _paleos_h2o,
+    # Chabrier+2019/2021 H/He tables (PALEOS-compatible 10-column format)
+    'Chabrier:H': {
+        'eos_file': os.path.join(
+            ZALMOXIS_ROOT, 'data', 'EOS_Chabrier2021_HHe', 'chabrier2021_H.dat'
+        ),
+        'format': 'paleos_unified',
+    },
 }
 
 # ── Legacy tuple-indexed material dictionaries ───────────────────────

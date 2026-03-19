@@ -15,7 +15,7 @@ import numpy as np
 from scipy.integrate import solve_ivp
 
 from .constants import CONDENSED_RHO_MIN_DEFAULT, CONDENSED_RHO_SCALE_DEFAULT, G
-from .mixing import any_component_is_tdep, calculate_mixed_density
+from .mixing import BINODAL_T_SCALE_DEFAULT, any_component_is_tdep, calculate_mixed_density
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -68,6 +68,7 @@ def coupled_odes(
     mushy_zone_factors=None,
     condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
     condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
+    binodal_T_scale=BINODAL_T_SCALE_DEFAULT,
 ):
     """Calculate derivatives of mass, gravity, and pressure w.r.t. radius.
 
@@ -100,6 +101,8 @@ def coupled_odes(
         Sigmoid center for phase-aware suppression (kg/m^3).
     condensed_rho_scale : float
         Sigmoid width for phase-aware suppression (kg/m^3).
+    binodal_T_scale : float
+        Binodal sigmoid width in K for H2 miscibility suppression.
 
     Returns
     -------
@@ -131,6 +134,7 @@ def coupled_odes(
         mushy_zone_factors,
         condensed_rho_min,
         condensed_rho_scale,
+        binodal_T_scale,
     )
 
     # Return zero derivatives for invalid density.  This is intentional:
@@ -174,6 +178,7 @@ def solve_structure(
     mushy_zone_factors=None,
     condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
     condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
+    binodal_T_scale=BINODAL_T_SCALE_DEFAULT,
 ):
     """Solve the coupled ODEs for the planetary structure model.
 
@@ -221,6 +226,8 @@ def solve_structure(
         Sigmoid center for phase-aware suppression (kg/m^3).
     condensed_rho_scale : float
         Sigmoid width for phase-aware suppression (kg/m^3).
+    binodal_T_scale : float
+        Binodal sigmoid width in K for H2 miscibility suppression.
 
     Returns
     -------
@@ -253,6 +260,7 @@ def solve_structure(
             mushy_zone_factors,
             condensed_rho_min,
             condensed_rho_scale,
+            binodal_T_scale,
         )
 
     if uses_Tdep:

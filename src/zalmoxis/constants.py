@@ -25,6 +25,7 @@ TDEP_EOS_NAMES = {
     'PALEOS:iron',
     'PALEOS:MgSiO3',
     'PALEOS:H2O',
+    'Chabrier:H',
 }
 
 # Phase-aware mixing: smooth density suppression defaults.

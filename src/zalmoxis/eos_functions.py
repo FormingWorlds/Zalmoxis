@@ -1144,6 +1144,7 @@ def compute_adiabatic_temperature(
     mushy_zone_factors=None,
     condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
     condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
+    binodal_T_scale=50.0,
 ):
     """
     Compute an adiabatic temperature profile using native EOS gradient tables.
@@ -1183,6 +1184,9 @@ def compute_adiabatic_temperature(
         Sigmoid center for phase-aware suppression (kg/m^3). Default 300.
     condensed_rho_scale : float, optional
         Sigmoid width for phase-aware suppression (kg/m^3). Default 50.
+    binodal_T_scale : float, optional
+        Binodal sigmoid width in K for H2 miscibility suppression.
+        Default 50.
 
     Returns
     -------
@@ -1241,6 +1245,7 @@ def compute_adiabatic_temperature(
             mushy_zone_factors,
             condensed_rho_min,
             condensed_rho_scale,
+            binodal_T_scale,
         )
 
         if nabla is not None and nabla > 0 and P_eval > 0 and T_eval > 0:
