@@ -356,3 +356,73 @@ class TestMixingWithH2:
 
         # Single-component fast path: returns raw density, no suppression
         assert rho == pytest.approx(200.0)
+
+    def test_per_component_rho_min_H2_H2O(self):
+        """H2+H2O mixture: each component uses its own critical density.
+
+        H2O at 100 kg/m^3 is below its critical density (322) and should
+        be suppressed. H2 at 100 kg/m^3 is above its critical density (30)
+        and should NOT be suppressed. With a single global rho_min=30,
+        both would pass; with per-component values, only H2 passes.
+        """
+        from unittest.mock import patch
+
+        from zalmoxis.mixing import LayerMixture, calculate_mixed_density
+
+        def mock_density(P, md, eos, T, sf, lf, interp, mzf):
+            if 'H2O' in eos:
+                return 100.0  # below H2O critical (322), above H2 critical (30)
+            if 'Chabrier' in eos:
+                return 100.0  # above H2 critical (30)
+            return None
+
+        mixture = LayerMixture(['PALEOS:H2O', 'Chabrier:H'], [0.90, 0.10])
+
+        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+            rho = calculate_mixed_density(
+                1e9,
+                5000,  # above both binodals
+                mixture,
+                {},
+                None,
+                None,
+                {},
+                condensed_rho_min=322.0,  # global default
+            )
+
+        # H2O at 100 kg/m^3: per-component rho_min=322, sigma ~ 0.01 (suppressed)
+        # H2 at 100 kg/m^3: per-component rho_min=30, sigma ~ 1.0 (not suppressed)
+        # Result should be dominated by H2 (the unsuppressed component)
+        assert rho is not None
+        assert rho == pytest.approx(100.0, rel=0.1)
+
+    def test_per_component_rho_min_both_dense(self):
+        """When both H2 and H2O are dense, both participate."""
+        from unittest.mock import patch
+
+        from zalmoxis.mixing import LayerMixture, calculate_mixed_density
+
+        def mock_density(P, md, eos, T, sf, lf, interp, mzf):
+            if 'H2O' in eos:
+                return 1000.0  # well above H2O critical (322)
+            if 'Chabrier' in eos:
+                return 500.0  # well above H2 critical (30)
+            return None
+
+        mixture = LayerMixture(['PALEOS:H2O', 'Chabrier:H'], [0.90, 0.10])
+
+        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+            rho = calculate_mixed_density(
+                1e10,
+                5000,
+                mixture,
+                {},
+                None,
+                None,
+                {},
+            )
+
+        # Both above their critical densities: standard harmonic mean
+        # rho_mix = 1 / (0.9/1000 + 0.1/500) = 1 / 0.0011 = 909
+        assert rho is not None
+        assert rho == pytest.approx(909.0, rel=0.02)

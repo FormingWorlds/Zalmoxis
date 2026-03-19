@@ -45,6 +45,23 @@ _H2O_EOS_NAMES = frozenset({'PALEOS:H2O', 'Seager2007:H2O'})
 # the miscibility boundary. 50 K gives a ~200 K transition zone.
 BINODAL_T_SCALE_DEFAULT = 50.0
 
+# Per-component condensed_rho_min defaults (kg/m^3).
+# The sigmoid center for phase-aware suppression is the critical density
+# of each volatile. Components not listed here use the global default
+# (CONDENSED_RHO_MIN_DEFAULT = 322 kg/m^3, the H2O critical density).
+# These are physical constants, not user-tunable parameters.
+_COMPONENT_RHO_MIN = {
+    'Chabrier:H': 30.0,  # H2 critical density ~31 kg/m^3
+    'PALEOS:H2O': 322.0,  # H2O critical density
+    'Seager2007:H2O': 322.0,
+}
+
+# Per-component condensed_rho_scale defaults (kg/m^3).
+# Narrower transitions for lighter volatiles.
+_COMPONENT_RHO_SCALE = {
+    'Chabrier:H': 10.0,  # narrow transition for H2
+}
+
 
 def _get_mushy_zone_factor(eos_name, mushy_zone_factors):
     """Look up the mushy zone factor for a specific EOS.
@@ -452,7 +469,11 @@ def calculate_mixed_density(
             # Treating it as suppressed (continue) would silently hide table
             # errors. The Picard loop falls back to old_density for this shell.
             return None
-        sigma_i = _condensed_weight(rho_i, condensed_rho_min, condensed_rho_scale)
+        # Per-component sigmoid center and width: each volatile has its own
+        # critical density. Fall back to the global config value if not listed.
+        rho_min_i = _COMPONENT_RHO_MIN.get(eos_name, condensed_rho_min)
+        rho_scale_i = _COMPONENT_RHO_SCALE.get(eos_name, condensed_rho_scale)
+        sigma_i = _condensed_weight(rho_i, rho_min_i, rho_scale_i)
         sigma_i *= _binodal_factor(
             eos_name, w_i, mixture, pressure, temperature, binodal_T_scale
         )
@@ -567,7 +588,9 @@ def get_mixed_nabla_ad(
             mzf,
         )
         if rho_i is not None and np.isfinite(rho_i) and rho_i > 0:
-            sigma_i = _condensed_weight(rho_i, condensed_rho_min, condensed_rho_scale)
+            rho_min_i = _COMPONENT_RHO_MIN.get(eos_name, condensed_rho_min)
+            rho_scale_i = _COMPONENT_RHO_SCALE.get(eos_name, condensed_rho_scale)
+            sigma_i = _condensed_weight(rho_i, rho_min_i, rho_scale_i)
             sigma_i *= _binodal_factor(
                 eos_name, w_i, mixture, pressure, temperature, binodal_T_scale
             )
