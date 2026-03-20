@@ -15,7 +15,7 @@ Zalmoxis computes self-consistent radial profiles of density, pressure, temperat
 
 - **Multiple EOS families**: [PALEOS](https://github.com/maraattia/PALEOS) unified tables (iron, MgSiO3, H2O), Chabrier H2 for sub-Neptune interiors, Wolf & Bower 2018, Seager 2007, and analytic polytropes
 - **Multi-material mixing**: volume-additive harmonic mean with per-component phase-aware suppression
-- **H2 miscibility**: binodal suppression models for H2-silicate ([Rogers+2025](https://doi.org/10.1093/mnras/staf1940)) and H2-H2O ([Gupta+2025](https://doi.org/10.3847/2041-8213/adb631))
+- **H2 miscibility**: binodal suppression models for H2-silicate and H2-H2O phase boundaries
 - **Temperature modes**: adiabatic (self-consistent), isothermal, linear, or prescribed profiles
 - **Parameter grids**: sweep any combination of input parameters via [TOML grid files](https://proteus-framework.org/Zalmoxis/How-to/usage.html#running-parameter-grids)
 
