@@ -253,6 +253,18 @@ def plot_planet_profile_single(
             seen.append(p)
     if patches:
         ax.legend(handles=patches, fontsize=9, loc='center left')
+    else:
+        ax.text(
+            0.5,
+            0.5,
+            'Phase data not available\nfor this EOS',
+            transform=ax.transAxes,
+            ha='center',
+            va='center',
+            fontsize=11,
+            color='#9ca3af',
+            style='italic',
+        )
     ax.set_xlabel(r'Radius ($R_\oplus$)', fontsize=11)
     ax.set_title('Phase State', fontsize=12, fontweight='bold')
     ax.set_xlim(xlim)
