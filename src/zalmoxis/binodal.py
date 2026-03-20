@@ -145,19 +145,22 @@ def rogers2025_binodal_temperature(x_H2, P_GPa):
         # At P > 35 GPa, T_c < 0: always miscible
         return 0.0
 
-    if x_H2 <= _R25_XC:
-        # Ascending branch (Eq. A7)
-        arg = _R25_ALPHA_3 * (x_H2 - _R25_ALPHA_4)
-        # Clamp to prevent overflow
-        arg = max(min(arg, 500.0), -500.0)
-        denom = (1.0 + _R25_ALPHA_2 * np.exp(-arg)) ** (1.0 / _R25_ALPHA_5)
-        return T_c / denom
-    else:
-        # Descending branch (Eq. A10)
-        arg = _R25_BETA_3 * (x_H2 - _R25_BETA_4)
-        arg = max(min(arg, 500.0), -500.0)
-        denom = (1.0 + _R25_BETA_2 * np.exp(-arg)) ** (1.0 / _R25_BETA_5)
-        return T_c / denom
+    # Evaluate both branches and take the minimum (lower envelope).
+    # The ascending branch rises from x=0 toward T_c; the descending
+    # branch falls from T_c toward x=1. Their natural crossing defines
+    # the binodal peak. Using min() avoids the artificial kink that a
+    # hard if/else cutoff at x_c would produce.
+    arg_asc = _R25_ALPHA_3 * (x_H2 - _R25_ALPHA_4)
+    arg_asc = max(min(arg_asc, 500.0), -500.0)
+    denom_asc = (1.0 + _R25_ALPHA_2 * np.exp(-arg_asc)) ** (1.0 / _R25_ALPHA_5)
+    T_asc = T_c / denom_asc
+
+    arg_desc = _R25_BETA_3 * (x_H2 - _R25_BETA_4)
+    arg_desc = max(min(arg_desc, 500.0), -500.0)
+    denom_desc = (1.0 + _R25_BETA_2 * np.exp(-arg_desc)) ** (1.0 / _R25_BETA_5)
+    T_desc = T_c / denom_desc
+
+    return min(T_asc, T_desc)
 
 
 def rogers2025_suppression_weight(P_Pa, T_K, w_H2, w_sil, T_scale=50.0):
