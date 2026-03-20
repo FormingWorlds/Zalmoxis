@@ -33,6 +33,8 @@ Stixrude & Gilmore (2025), Icarus 432, 116401.
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 from scipy.optimize import brentq
 
@@ -152,12 +154,12 @@ def rogers2025_binodal_temperature(x_H2, P_GPa):
     # hard if/else cutoff at x_c would produce.
     arg_asc = _R25_ALPHA_3 * (x_H2 - _R25_ALPHA_4)
     arg_asc = max(min(arg_asc, 500.0), -500.0)
-    denom_asc = (1.0 + _R25_ALPHA_2 * np.exp(-arg_asc)) ** (1.0 / _R25_ALPHA_5)
+    denom_asc = (1.0 + _R25_ALPHA_2 * math.exp(-arg_asc)) ** (1.0 / _R25_ALPHA_5)
     T_asc = T_c / denom_asc
 
     arg_desc = _R25_BETA_3 * (x_H2 - _R25_BETA_4)
     arg_desc = max(min(arg_desc, 500.0), -500.0)
-    denom_desc = (1.0 + _R25_BETA_2 * np.exp(-arg_desc)) ** (1.0 / _R25_BETA_5)
+    denom_desc = (1.0 + _R25_BETA_2 * math.exp(-arg_desc)) ** (1.0 / _R25_BETA_5)
     T_desc = T_c / denom_desc
 
     return min(T_asc, T_desc)
@@ -205,7 +207,7 @@ def rogers2025_suppression_weight(P_Pa, T_K, w_H2, w_sil, T_scale=50.0):
 
     arg = (T_K - T_binodal) / T_scale
     arg = max(min(arg, 500.0), -500.0)
-    return 1.0 / (1.0 + np.exp(-arg))
+    return 1.0 / (1.0 + math.exp(-arg))
 
 
 # ═════════════════════════════════════════════════════════════════════
@@ -347,21 +349,15 @@ def gupta2025_critical_pressure(T):
     return numerator / W_V
 
 
-def gupta2025_critical_temperature(P_GPa, T_bounds=(200.0, 6000.0)):
-    """Critical temperature at given pressure (inverse of P_c(T)).
-
-    Finds T such that P_c(T) = P via root finding on the ascending
-    branch of the critical curve. P_c(T) has a singularity near
-    T ~ 6130 K where W_V crosses zero; the search is limited to
-    T < 6000 K to avoid this.
+def _gupta2025_critical_temperature_brentq(P_GPa, T_bounds=(300.0, 6000.0)):
+    """Critical temperature via root finding (internal, use the fast version).
 
     Parameters
     ----------
     P_GPa : float
         Pressure in GPa.
     T_bounds : tuple of float
-        Search interval for temperature in K. Default (200, 6000).
-        The upper bound should stay below the W_V singularity (~6130 K).
+        Search interval for temperature in K.
 
     Returns
     -------
@@ -372,7 +368,6 @@ def gupta2025_critical_temperature(P_GPa, T_bounds=(200.0, 6000.0)):
     def residual(T):
         return gupta2025_critical_pressure(T) - P_GPa
 
-    # Check bracket
     f_lo = residual(T_bounds[0])
     f_hi = residual(T_bounds[1])
 
@@ -380,10 +375,59 @@ def gupta2025_critical_temperature(P_GPa, T_bounds=(200.0, 6000.0)):
         return None
 
     try:
-        T_c = brentq(residual, T_bounds[0], T_bounds[1], xtol=1.0, rtol=1e-8)
-        return T_c
+        return brentq(residual, T_bounds[0], T_bounds[1], xtol=1.0, rtol=1e-8)
     except ValueError:
         return None
+
+
+# ── Precomputed T_crit(P) lookup table ───────────────────────────────
+# gupta2025_critical_temperature is called per ODE step (~150,000 times
+# per structure solve). The brentq root finder is too expensive for this.
+# Precompute T_crit on a log-spaced pressure grid at import time and
+# interpolate in the hot path. The table build costs ~2000 brentq calls
+# once; each subsequent lookup is a single np.interp.
+_G25_TCRIT_LOG_P = np.linspace(-3.0, 3.5, 2000)  # log10(P/GPa): 1 MPa to ~3 TPa
+_G25_TCRIT_VALS = np.full(2000, np.nan)
+for _i, _logp in enumerate(_G25_TCRIT_LOG_P):
+    _tc = _gupta2025_critical_temperature_brentq(10.0**_logp)
+    if _tc is not None:
+        _G25_TCRIT_VALS[_i] = _tc
+# Fill NaN edges with boundary values for safe extrapolation
+_valid = np.isfinite(_G25_TCRIT_VALS)
+if np.any(_valid):
+    _first = np.argmax(_valid)
+    _last = len(_valid) - 1 - np.argmax(_valid[::-1])
+    _G25_TCRIT_VALS[:_first] = _G25_TCRIT_VALS[_first]
+    _G25_TCRIT_VALS[_last + 1 :] = _G25_TCRIT_VALS[_last]
+
+
+def gupta2025_critical_temperature(P_GPa, T_bounds=(300.0, 6000.0)):
+    """Critical temperature at given pressure (inverse of P_c(T)).
+
+    Uses a precomputed interpolation table for speed. Falls back to
+    brentq for pressures outside the table range.
+
+    Parameters
+    ----------
+    P_GPa : float
+        Pressure in GPa.
+    T_bounds : tuple of float
+        Search interval for brentq fallback. Default (300, 6000).
+
+    Returns
+    -------
+    float or None
+        Critical temperature in K, or None if no root exists.
+    """
+    if P_GPa <= 0:
+        return None
+    log_p = math.log10(P_GPa)
+    if _G25_TCRIT_LOG_P[0] <= log_p <= _G25_TCRIT_LOG_P[-1]:
+        T_c = float(np.interp(log_p, _G25_TCRIT_LOG_P, _G25_TCRIT_VALS))
+        if np.isfinite(T_c):
+            return T_c
+    # Fallback for out-of-range pressures
+    return _gupta2025_critical_temperature_brentq(P_GPa, T_bounds)
 
 
 def gupta2025_coexistence_compositions(T, P_GPa):
@@ -498,9 +542,17 @@ def gupta2025_suppression_weight(P_Pa, T_K, w_H2, w_H2O, T_scale=50.0):
     if w_H2 <= 0 or w_H2O <= 0:
         return 1.0
 
+    # The Gupta+2025 model is parameterized for T >= 300 K.
+    # At lower T, the W_V and lambda terms diverge (1/T^2 dependence),
+    # producing unphysical critical temperatures. Return 0 (immiscible)
+    # as a safe default: at T < 300 K, H2 and H2O are certainly phase-
+    # separated.
+    if T_K < 300.0:
+        return 0.0
+
     P_GPa = P_Pa * 1e-9
 
-    # The critical temperature at this pressure
+    # The critical temperature at this pressure (fast interpolated lookup)
     T_crit = gupta2025_critical_temperature(P_GPa)
 
     if T_crit is None:
@@ -512,4 +564,4 @@ def gupta2025_suppression_weight(P_Pa, T_K, w_H2, w_H2O, T_scale=50.0):
 
     arg = (T_K - T_crit) / T_scale
     arg = max(min(arg, 500.0), -500.0)
-    return 1.0 / (1.0 + np.exp(-arg))
+    return 1.0 / (1.0 + math.exp(-arg))

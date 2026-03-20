@@ -12,6 +12,7 @@ Imports
 -------
 - ``eos_functions``: ``calculate_density``, ``_get_paleos_unified_nabla_ad``,
   ``_get_paleos_nabla_ad``, ``_compute_paleos_dtdp``
+- ``binodal``: ``rogers2025_suppression_weight``, ``gupta2025_suppression_weight``
 - ``constants``: ``TDEP_EOS_NAMES``
 """
 
@@ -22,6 +23,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from .binodal import gupta2025_suppression_weight, rogers2025_suppression_weight
 from .constants import CONDENSED_RHO_MIN_DEFAULT, CONDENSED_RHO_SCALE_DEFAULT, TDEP_EOS_NAMES
 
 logger = logging.getLogger(__name__)
@@ -342,8 +344,6 @@ def _binodal_factor(eos_name, w_i, mixture, pressure, temperature, T_scale):
     if eos_name not in _H2_EOS_NAMES:
         return 1.0
 
-    from .binodal import gupta2025_suppression_weight, rogers2025_suppression_weight
-
     sigma = 1.0
     for partner, w_p in zip(mixture.components, mixture.fractions):
         if w_p <= 0:
@@ -535,6 +535,9 @@ def get_mixed_nabla_ad(
         Sigmoid center for phase-aware suppression (kg/m^3).
     condensed_rho_scale : float
         Sigmoid width for phase-aware suppression (kg/m^3).
+    binodal_T_scale : float
+        Binodal sigmoid width in K for H2 miscibility suppression.
+        Default 50 K.
 
     Returns
     -------

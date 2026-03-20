@@ -1181,7 +1181,7 @@ def compute_adiabatic_temperature(
         Per-EOS mushy zone factors. Dict keyed by EOS name, a single
         float (applied to all), or None (default 1.0 for all).
     condensed_rho_min : float, optional
-        Sigmoid center for phase-aware suppression (kg/m^3). Default 300.
+        Sigmoid center for phase-aware suppression (kg/m^3). Default 322.
     condensed_rho_scale : float, optional
         Sigmoid width for phase-aware suppression (kg/m^3). Default 50.
     binodal_T_scale : float, optional
@@ -1248,7 +1248,7 @@ def compute_adiabatic_temperature(
             binodal_T_scale,
         )
 
-        if nabla is not None and nabla > 0 and P_eval > 0 and T_eval > 0:
+        if nabla is not None and nabla > 0 and P_eval > 0 and T_eval > 0 and dP > 0:
             dtdp = nabla * T_eval / P_eval
             T_new = T_eval + dtdp * dP
             # Cap temperature to the PALEOS table maximum (100,000 K).

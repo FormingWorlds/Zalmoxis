@@ -1398,8 +1398,21 @@ def main(
 
     if i_surf > 10:
         # Compute density gradient in the outer mantle.
-        # Use the last 20 shells before the surface edge.
-        n_check = min(20, i_surf - 5)
+        # Use the last 20 shells before the surface edge, but do not
+        # cross layer boundaries (CMB, ice-layer transition) where
+        # real density jumps exist.
+        # Find outermost layer boundary by detecting large density
+        # ratios (> 1.5x) walking inward from surface.
+        i_layer_base = max(0, i_surf - 40)
+        for _k in range(i_surf - 1, i_layer_base, -1):
+            if density[_k] > 0 and density[_k + 1] > 0:
+                ratio = density[_k] / density[_k + 1]
+                if ratio > 1.5 or ratio < 1.0 / 1.5:
+                    i_layer_base = _k + 1
+                    break
+        n_check = min(20, i_surf - i_layer_base)
+        if n_check < 6:
+            n_check = min(20, i_surf - 5)
         i_start = i_surf - n_check
         grads = np.diff(density[i_start : i_surf + 1])
         # Find where the gradient suddenly changes
