@@ -66,7 +66,25 @@ These files are useful for diagnosing convergence behavior. They are overwritten
 
 ### Plots (optional)
 
-When `plots_enabled = true` in the `[Output]` section, PDF plots of the radial profiles (density, gravity, pressure, temperature) are generated automatically after each run. If a temperature-dependent mantle EOS is used (any PALEOS, WolfBower2018, or RTPress100TPa EOS), an additional pressure-temperature phase diagram with mantle phase information is produced.
+When `plots_enabled = true` in the `[Output]` section, Zalmoxis automatically generates profile plots after each run. To enable:
+
+```toml
+[Output]
+plots_enabled = true
+```
+
+This produces a four-panel figure showing the radial profiles of density, pressure, gravity, and temperature from the center to the surface:
+
+![Example profile plot](../img/example_profile_plot.png)
+
+**Example**: 1 $M_\oplus$ planet with a PALEOS iron core and MgSiO$_3$ mantle at $T_s$ = 3000 K (adiabatic mode). The dashed vertical line marks the core-mantle boundary (CMB) at ~0.5 $R_\oplus$.
+
+- **Density** (top left): drops from ~14,000 kg/m$^3$ at the center (iron core) to ~3,000 kg/m$^3$ at the surface (silicate mantle). The sharp step at the CMB reflects the iron-to-silicate transition.
+- **Pressure** (top right): decreases monotonically from ~350 GPa at the center to 1 atm at the surface, on a logarithmic scale.
+- **Gravity** (bottom left): rises through the core (as enclosed mass grows faster than $r^2$), peaks near the CMB at ~10 m/s$^2$, and stays roughly constant through the mantle.
+- **Temperature** (bottom right): follows the adiabatic gradient from 3000 K at the surface to ~8000 K at the center. The steeper gradient in the iron core reflects iron's different $\nabla_{\mathrm{ad}}$.
+
+If a temperature-dependent mantle EOS is used (any PALEOS, WolfBower2018, or RTPress100TPa EOS), an additional pressure-temperature phase diagram with mantle phase information is produced.
 
 ## Running multiple masses in parallel
 
