@@ -19,6 +19,7 @@ Imports
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -306,7 +307,9 @@ def _condensed_weight(
     float
         Weight in [0, 1]. ~1 for condensed phases, ~0 for vapor.
     """
-    return 1.0 / (1.0 + np.exp(-(rho - rho_min) / rho_scale))
+    arg = -(rho - rho_min) / rho_scale
+    arg = max(min(arg, 500.0), -500.0)
+    return 1.0 / (1.0 + math.exp(arg))
 
 
 def _binodal_factor(eos_name, w_i, mixture, pressure, temperature, T_scale):
