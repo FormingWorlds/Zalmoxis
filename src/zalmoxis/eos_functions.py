@@ -282,6 +282,24 @@ def load_paleos_unified_table(eos_file):
     dlog_p = (unique_log_p[-1] - unique_log_p[0]) / (n_p - 1) if n_p > 1 else 1.0
     dlog_t = (unique_log_t[-1] - unique_log_t[0]) / (n_t - 1) if n_t > 1 else 1.0
 
+    # Verify grid is log-uniform (required for O(1) bilinear interpolation)
+    if n_p > 2:
+        p_spacings = np.diff(unique_log_p)
+        if not np.allclose(p_spacings, dlog_p, rtol=1e-3):
+            logger.warning(
+                f'P grid is not log-uniform: spacing range '
+                f'[{p_spacings.min():.6f}, {p_spacings.max():.6f}] '
+                f'vs mean {dlog_p:.6f}. Bilinear interpolation may be inaccurate.'
+            )
+    if n_t > 2:
+        t_spacings = np.diff(unique_log_t)
+        if not np.allclose(t_spacings, dlog_t, rtol=1e-3):
+            logger.warning(
+                f'T grid is not log-uniform: spacing range '
+                f'[{t_spacings.min():.6f}, {t_spacings.max():.6f}] '
+                f'vs mean {dlog_t:.6f}. Bilinear interpolation may be inaccurate.'
+            )
+
     return {
         'type': 'paleos_unified',
         'density_interp': density_interp,
@@ -314,12 +332,13 @@ def load_paleos_unified_table(eos_file):
 
 
 def _fast_bilinear(log_p, log_t, grid, cached):
-    """O(1) bilinear interpolation on a log-uniform grid.
+    """O(1) bilinear interpolation on a nominally log-uniform grid.
 
     Replaces scipy's RegularGridInterpolator for scalar lookups. The
-    index computation is O(1) arithmetic instead of binary search,
-    eliminating ~36s of scipy overhead per run (``_prepare_xi``,
-    ``_find_indices``, ``_find_out_of_bounds``).
+    index computation uses O(1) arithmetic with a rounding correction
+    to handle floating-point spacing jitter in the grid axes, then
+    computes the fractional position from the actual stored grid
+    coordinates for exact interpolation.
 
     Parameters
     ----------
@@ -330,26 +349,58 @@ def _fast_bilinear(log_p, log_t, grid, cached):
     grid : numpy.ndarray
         2D array of values (density or nabla_ad), shape (n_p, n_t).
     cached : dict
-        Cache entry with grid metadata (logp_min, dlog_p, etc.).
+        Cache entry with grid metadata (logp_min, dlog_p, unique_log_p,
+        unique_log_t, etc.).
 
     Returns
     -------
     float
         Interpolated value. NaN if any corner is NaN.
     """
-    # O(1) index computation for log-uniform grid
+    # Guard: grids with fewer than 2 points cannot be interpolated
+    if cached['n_p'] < 2 or cached['n_t'] < 2:
+        return grid[0, 0]
+
+    ulp = cached['unique_log_p']
+    ult = cached['unique_log_t']
+    n_p = cached['n_p']
+    n_t = cached['n_t']
+
+    # O(1) index estimation for nominally log-uniform grid.
+    # Use round() to get the nearest node, then determine the lower
+    # bounding index. This handles floating-point spacing jitter that
+    # causes int() to land on the wrong cell.
     fp = (log_p - cached['logp_min']) / cached['dlog_p']
     ft = (log_t - cached['logt_min']) / cached['dlog_t']
 
-    # Integer indices (clamped to valid range)
-    ip = int(fp)
-    it = int(ft)
-    ip = max(0, min(ip, cached['n_p'] - 2))
-    it = max(0, min(it, cached['n_t'] - 2))
+    # Nearest node via rounding, then find lower bounding index
+    ip_near = min(max(int(fp + 0.5), 0), n_p - 1)
+    it_near = min(max(int(ft + 0.5), 0), n_t - 1)
 
-    # Fractional parts
-    dp = fp - ip
-    dt = ft - it
+    # Determine lower bounding index: if the query is below the
+    # nearest node, step back by one
+    if ip_near > 0 and log_p < ulp[ip_near]:
+        ip = ip_near - 1
+    else:
+        ip = ip_near
+    ip = max(0, min(ip, n_p - 2))
+
+    if it_near > 0 and log_t < ult[it_near]:
+        it = it_near - 1
+    else:
+        it = it_near
+    it = max(0, min(it, n_t - 2))
+
+    # Fractional parts computed from actual grid coordinates
+    span_p = ulp[ip + 1] - ulp[ip]
+    span_t = ult[it + 1] - ult[it]
+
+    dp = (log_p - ulp[ip]) / span_p if span_p > 0 else 0.0
+    dt = (log_t - ult[it]) / span_t if span_t > 0 else 0.0
+
+    # Clamp to [0, 1] for boundary safety
+    dp = max(0.0, min(dp, 1.0))
+    dt = max(0.0, min(dt, 1.0))
 
     # Four corner values
     v00 = grid[ip, it]

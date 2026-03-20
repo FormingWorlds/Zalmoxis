@@ -405,6 +405,15 @@ if np.any(_valid):
     _last = len(_valid) - 1 - np.argmax(_valid[::-1])
     _G25_TCRIT_VALS[:_first] = _G25_TCRIT_VALS[_first]
     _G25_TCRIT_VALS[_last + 1 :] = _G25_TCRIT_VALS[_last]
+else:
+    import warnings
+
+    warnings.warn(
+        'Gupta+2025 T_crit(P) table: all brentq solves failed. '
+        'H2-H2O binodal suppression will be disabled (H2 treated as '
+        'always miscible with H2O). Check binodal parameter values.',
+        stacklevel=1,
+    )
 
 
 def gupta2025_critical_temperature(P_GPa, T_bounds=(300.0, 6000.0)):
