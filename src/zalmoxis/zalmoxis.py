@@ -1253,7 +1253,15 @@ def main(
 
             # Update density grid (solve_structure may return fewer points
             # than num_layers if the ODE solver terminated early)
+            last_valid_density = None
             for i in range(min(num_layers, len(mass_enclosed))):
+                # Zero-pressure shells (padded by solve_structure after the
+                # terminal event) have no physical density. Set to zero and
+                # skip the EOS lookup to avoid surface artifacts.
+                if pressure[i] <= 0:
+                    density[i] = 0.0
+                    continue
+
                 mixture = get_layer_eos(
                     mass_enclosed[i],
                     cmb_mass,
@@ -1279,19 +1287,17 @@ def main(
                 )
 
                 if new_density is None:
-                    if not mixture.is_single():
-                        verbose and logger.warning(
-                            f'All mixture components suppressed at r={radii[i]:.0f} m, '
-                            f'P={pressure[i]:.2e} Pa. Using previous density.'
-                        )
+                    # Use last valid density from a deeper shell rather than
+                    # a stale value from a previous iteration. This prevents
+                    # surface oscillations when the EOS table edge produces
+                    # unreliable lookups at very low pressure.
+                    if last_valid_density is not None:
+                        new_density = last_valid_density
                     else:
-                        verbose and logger.warning(
-                            f'Density lookup failed at r={radii[i]:.0f} m, '
-                            f'P={pressure[i]:.2e} Pa. Using previous density.'
-                        )
-                    new_density = old_density[i]
+                        new_density = old_density[i]
 
                 density[i] = 0.5 * (new_density + old_density[i])
+                last_valid_density = density[i]
 
             # Check density convergence
             relative_diff_inner = np.max(
@@ -1372,6 +1378,48 @@ def main(
 
     end_time = time.time()
     total_time = end_time - start_time
+
+    # Clean up surface artifacts. The Picard iteration can produce
+    # density jumps at the outermost shells where the pressure drops
+    # rapidly and the EOS lookup is sensitive to small P changes.
+    # Detect shells where the density gradient suddenly steepens
+    # (more than 3x the running average) and replace them with a
+    # linear extrapolation from the smooth interior.
+    pressure = np.asarray(pressure)
+    density = np.asarray(density)
+
+    # Zero out padded (P=0) shells
+    density[pressure <= 0] = 0.0
+
+    # Find the last shell with positive density
+    i_surf = len(density) - 1
+    while i_surf > 0 and density[i_surf] <= 0:
+        i_surf -= 1
+
+    if i_surf > 10:
+        # Compute density gradient in the outer mantle.
+        # Use the last 20 shells before the surface edge.
+        n_check = min(20, i_surf - 5)
+        i_start = i_surf - n_check
+        grads = np.diff(density[i_start : i_surf + 1])
+        # Find where the gradient suddenly changes
+        # (the smooth interior has nearly constant negative gradient).
+        if len(grads) > 5:
+            median_grad = np.median(grads[: n_check // 2])
+            if median_grad < 0:  # density decreasing outward (normal)
+                for j in range(len(grads)):
+                    i_global = i_start + j + 1
+                    # Catch both sudden drops (3x steeper) and sudden
+                    # increases (sign reversal). Both indicate the Picard
+                    # iteration produced unreliable density at the surface.
+                    is_sudden_drop = grads[j] < 3 * median_grad
+                    is_sudden_rise = grads[j] > 0 and abs(grads[j]) > abs(median_grad)
+                    if is_sudden_drop or is_sudden_rise:
+                        # Extrapolate linearly from the smooth region
+                        for k in range(i_global, i_surf + 1):
+                            extrap = density[i_global - 1] + median_grad * (k - i_global + 1)
+                            density[k] = max(extrap, 0.0)
+                        break
 
     model_results = {
         'layer_eos_config': layer_eos_config,
