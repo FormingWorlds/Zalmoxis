@@ -32,6 +32,11 @@ The table below lists every data file used by Zalmoxis, organised by subdirector
 | `paleos_iron_eos_table_pt.dat` | `data/EOS_PALEOS_iron/` | Space-separated, 10 columns (P, T, rho, u, s, cp, cv, alpha, nabla_ad, phase) | PALEOS (Zenodo 19000316) | Unified Fe EOS, 5 stable phases (alpha-bcc, delta-bcc, gamma-fcc, epsilon-hcp, liquid). P: 1 bar--100 TPa, T: 300--100000 K. 75.5 MB. |
 | `paleos_mgsio3_eos_table_pt.dat` | `data/EOS_PALEOS_MgSiO3_unified/` | Space-separated, 10 columns (same as iron) | PALEOS (Zenodo 19000316) | Unified MgSiO3 EOS, 6 stable phases (3 pyroxene, bridgmanite, postperovskite, liquid). P: 1 bar--100 TPa, T: 300--100000 K. 48.8 MB. |
 | `paleos_water_eos_table_pt.dat` | `data/EOS_PALEOS_H2O/` | Space-separated, 10 columns (same as iron) | PALEOS (Zenodo 19000316) | Unified H2O EOS, 7 EOS (ice Ih--X, liquid, vapor, superionic). P: 1 bar--100 TPa, T: 100--100000 K. 147.3 MB. |
+| `chabrier2021_H.dat` | `data/EOS_Chabrier2021_HHe/` | Space-separated, 10 columns (P, T, rho, u, s, cp, cv, alpha, nabla_ad, phase_id) | [Chabrier et al. (2019)](https://doi.org/10.3847/1538-4357/aaf99f), [Chabrier & Debras (2021)](https://doi.org/10.3847/1538-4357/ac1f72) | Pure H$_2$ EOS (molecular, atomic, ionized). Grid: 121 x 441 (logT, logP), T: 100--$10^8$ K, P: 1 Pa--$10^{22}$ Pa. Registered as `Chabrier:H`. |
+| `chabrier2021_HE.dat` | `data/EOS_Chabrier2021_HHe/` | Same as above | Same | Pure He EOS. Not registered (available for future use). |
+| `chabrier2021_HHe_Y0275.dat` | `data/EOS_Chabrier2021_HHe/` | Same as above | Same | H/He mixture at $Y = 0.275$. Not registered (available for future use). |
+| `chabrier2021_HHe_Y0292.dat` | `data/EOS_Chabrier2021_HHe/` | Same as above | Same | H/He mixture at $Y = 0.292$. Not registered (available for future use). |
+| `chabrier2021_HHe_Y0297.dat` | `data/EOS_Chabrier2021_HHe/` | Same as above | Same | H/He mixture at $Y = 0.297$. Not registered (available for future use). |
 
 ### Melting curves
 
@@ -51,6 +56,7 @@ The table below lists every data file used by Zalmoxis, organised by subdirector
 | `Monteux16-liquidus-F-peridotitic` | [Monteux et al. (2016)](https://doi.org/10.1016/j.epsl.2016.05.010) Eqs. 11/13 | F-peridotitic liquidus, valid to ~660 GPa. |
 | `Stixrude14-solidus` | [Stixrude (2014)](https://doi.org/10.1098/rsta.2013.0076) Eqs. 1.9+1.10 | Simon-like power law with cryoscopic depression ($x_0 = 0.79$). Valid at all $P$. |
 | `Stixrude14-liquidus` | [Stixrude (2014)](https://doi.org/10.1098/rsta.2013.0076) Eq. 1.9 | Pure MgSiO$_3$ Simon-like power law. Valid at all $P$. |
+| `PALEOS-liquidus` | [Belonoshko et al. (2005)](https://doi.org/10.1103/PhysRevB.72.104107) / [Fei et al. (2021)](https://doi.org/10.1103/PhysRevLett.127.135701) | Piecewise Simon-Glatzel liquidus matching the unified PALEOS MgSiO$_3$ table. Valid at all $P$. |
 
 See [configuration guide](../How-to/configuration.md#melting-curve-selection) for usage.
 

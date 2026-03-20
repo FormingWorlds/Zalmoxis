@@ -58,7 +58,7 @@ The binodal defines the phase boundary in $(T, P, x_{\mathrm{H_2}})$ space betwe
 - **Above the binodal**: a single miscible supercritical phase where H$_2$ and MgSiO$_3$ mix at the molecular level.
 - **Below the binodal**: two immiscible phases (H$_2$-rich gas and silicate-rich melt) that separate gravitationally.
 
-The binodal temperature is piecewise, with an ascending branch (small $x_{\mathrm{H_2}}$) and a descending branch (large $x_{\mathrm{H_2}}$), meeting at the critical mole fraction $x_c = 0.739$.
+The binodal temperature is computed from two generalized logistic branches: an ascending branch (small $x_{\mathrm{H_2}}$, rising toward $T_c$) and a descending branch (large $x_{\mathrm{H_2}}$, falling from $T_c$). Their natural crossing occurs near the critical mole fraction $x_c \approx 0.739$. The implementation evaluates both branches at every composition and takes the minimum, $T_b = \min(T_{\mathrm{asc}}, T_{\mathrm{desc}})$, which produces a smooth peak without an artificial kink at $x_c$.
 
 ### Pressure dependence
 

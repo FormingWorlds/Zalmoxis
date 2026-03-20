@@ -352,9 +352,16 @@ The solver has been systematically tested across 293 configurations spanning 9 t
 | Planet mass | 0.1 to 50 $M_\oplus$ | All standard compositions converge. EOS-specific limits apply (WolfBower2018 $\leq 7\,M_\oplus$, all others $\leq 50\,M_\oplus$). |
 | Core mass fraction | 0.01 to 0.999 | Extreme values (pure iron, pure rock) converge at isothermal 300 K. |
 | H$_2$O mixing fraction | 0 to 30% by mass | In mantle, using multi-material format. All fractions converge at 2000-3000 K surface temperature. Fractions above 30% produce a warning. |
+| H$_2$ mixing fraction | 0 to 20% by mass | In mantle via `Chabrier:H`. Fractions above 20% produce a warning. Pure `Chabrier:H` mantle (without a condensed partner) is rejected. |
 | Surface temperature | 300 to 5000 K | All compositions converge. 300 K uses isothermal mode; 1000-5000 K uses adiabatic mode. |
 | Mushy zone factor | 0.7 to 1.0 | Per-material overrides validated independently. Values below 0.7 are rejected. |
 | Three-layer ice fraction | any | **Only with $T_\mathrm{surf} < 647$ K** (H$_2$O critical point). See warning below. |
+
+!!! warning "H$_2$O-dominated mantles"
+    Mantles with more than 50% H$_2$O by mass and no silicate component are rejected in adiabatic and linear temperature modes. At these temperatures, H$_2$O is vapor at surface pressure and cannot support hydrostatic structure in the volume-additive mixing model. Options: add a silicate component, use a 3-layer model with a separate ice layer, or use isothermal mode with $T < 647$ K.
+
+!!! warning "Pure Chabrier:H mantle"
+    A mantle consisting entirely of `Chabrier:H` (100% H$_2$) is rejected. H$_2$ is a gas at surface pressure and cannot form a condensed layer on its own. Use H$_2$ as a mixing component in a silicate mantle, e.g., `mantle = "PALEOS:MgSiO3:0.97+Chabrier:H:0.03"`.
 
 !!! danger "Three-layer models require cold surfaces"
     Three-layer models with an H$_2$O ice layer (`ice_layer = "PALEOS:H2O"`) are only valid when `surface_temperature` is below the H$_2$O critical temperature (647 K). At higher temperatures, H$_2$O is vapor or supercritical gas at the surface, not condensed ice. The solver will reject configurations with H$_2$O ice layers at $T_\mathrm{surf} \geq 647$ K.

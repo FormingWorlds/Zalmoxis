@@ -76,6 +76,7 @@ In the PROTEUS ecosystem, mixing fractions are set by CALLIOPE (solubility model
 | `Seager2007:H2O` | Tabulated | Water ice (VII/VIII/X) | 300 K |
 | `WolfBower2018:MgSiO3` | Tabulated | MgSiO$_3$ (solid + melt) | $T$-dependent ($\leq 7\,M_\oplus$) |
 | `RTPress100TPa:MgSiO3` | Tabulated | MgSiO$_3$ (solid + melt) | $T$-dependent ($\leq 50\,M_\oplus$) |
+| `Chabrier:H` | Chabrier+2019/2021 | Pure H$_2$ (molecular, atomic, ionized) | $T$-dependent, $\nabla_{\mathrm{ad}}$ |
 | `Analytic:<material>` | Analytic fit | Any of 6 materials | 300 K |
 
 See [Equations of State](eos_physics.md) for detailed physics of each EOS family.
@@ -97,13 +98,14 @@ See [Equations of State](eos_physics.md) for detailed physics of each EOS family
 | `PALEOS:iron` | 1 bar to 100 TPa | 300 to 100,000 K | 50 $M_\oplus$ | Unified 5-phase Fe with $\nabla_{\mathrm{ad}}$ |
 | `PALEOS:MgSiO3` | 1 bar to 100 TPa | 300 to 100,000 K | 50 $M_\oplus$ | Unified 6-phase MgSiO$_3$ with $\nabla_{\mathrm{ad}}$ |
 | `PALEOS:H2O` | 1 bar to 100 TPa | 100 to 100,000 K | 50 $M_\oplus$ | Unified 7-EOS H$_2$O with $\nabla_{\mathrm{ad}}$ |
+| `Chabrier:H` | 1 Pa to $10^{22}$ Pa | 100 to $10^8$ K | -- | Pure H$_2$; use as mixing component only |
 | `Analytic:*` | 0 to $10^{16}$ Pa | 300 K (fixed) | ~50 $M_\oplus$ | 2 to 12% accuracy vs. tabulated |
 
 ### General limits
 
 - **Mass range:** The model is designed for rocky and water-rich planets in the range $\sim 0.1$ to $50 \, M_{\oplus}$.
   Below $\sim 0.1 \, M_{\oplus}$, the assumption of hydrostatic equilibrium and the EOS parameterizations become unreliable.
-  Above $\sim 50 \, M_{\oplus}$, the planet enters the gas-giant regime where the absence of an H/He envelope EOS limits applicability.
+  Above $\sim 50 \, M_{\oplus}$, the planet enters the gas-giant regime. The `Chabrier:H` EOS supports dissolved H$_2$ as a mixing component in the mantle, but Zalmoxis does not model a free H/He envelope as a separate structural layer.
 - **Pressure range:** The Seager et al. (2007) tabulated and analytic EOS are valid up to $P \sim 10^{16}$ Pa ($10^{10}$ GPa), which exceeds central pressures for all planets within the supported mass range.
   The WolfBower2018 tables are limited to ~1 TPa; out-of-bounds pressures are clamped to the table edge (see [EOS Physics > Wolf & Bower 2018](eos_physics.md#wolf-bower-2018-temperature-dependent-eos)).
 - **Temperature range (Wolf & Bower 2018 only):** The $P$-$T$ tables cover 0 to 16500 K; the code raises a `ValueError` if the requested temperature falls outside this grid.

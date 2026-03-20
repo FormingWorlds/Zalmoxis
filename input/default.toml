@@ -59,7 +59,8 @@ condensed_rho_scale        = 50.0   # kg/m^3 — sigmoid transition width
 # When Chabrier:H is mixed with silicate or water, the H2-silicate binodal
 # (Rogers+2025) and H2-H2O critical curve (Gupta+2025) determine where
 # H2 is miscible. Below the binodal T, H2 is suppressed from the harmonic mean.
-# For sub-Neptune models, set condensed_rho_min = 30.0 and condensed_rho_scale = 10.0.
+# Per-component condensed_rho_min/scale for H2 (30/10 kg/m^3) are set
+# automatically by the code; no manual config change needed for sub-Neptunes.
 binodal_T_scale            = 50.0   # K — binodal sigmoid width (~200 K transition zone)
 
 # Mushy zone factor for unified PALEOS tables (global default).
@@ -87,6 +88,7 @@ mushy_zone_factor          = 1.0
 #   Monteux16-liquidus-A-chondritic      Monteux+2016 Eq. 11/13, A-chondritic composition
 #   Monteux16-liquidus-F-peridotitic     Monteux+2016 Eq. 11/13, F-peridotitic composition
 #   Stixrude14-liquidus                  Stixrude 2014 Eq. 1.9 (power law, valid at all P)
+#   PALEOS-liquidus                      Belonoshko+2005/Fei+2021 piecewise Simon-Glatzel
 #   Monteux600-liquidus-tabulated        Legacy tabulated (P <= 999 GPa, NaN outside)
 rock_solidus               = "Monteux16-solidus"
 rock_liquidus              = "Monteux16-liquidus-A-chondritic"
