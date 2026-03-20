@@ -277,6 +277,11 @@ def load_paleos_unified_table(eos_file):
     liquidus_log_p = np.array(liquidus_log_p)
     liquidus_log_t = np.array(liquidus_log_t)
 
+    # Precompute grid spacing for O(1) bilinear interpolation.
+    # Both PALEOS and Chabrier grids are log-uniform (constant dlogP, dlogT).
+    dlog_p = (unique_log_p[-1] - unique_log_p[0]) / (n_p - 1) if n_p > 1 else 1.0
+    dlog_t = (unique_log_t[-1] - unique_log_t[0]) / (n_t - 1) if n_t > 1 else 1.0
+
     return {
         'type': 'paleos_unified',
         'density_interp': density_interp,
@@ -288,12 +293,72 @@ def load_paleos_unified_table(eos_file):
         't_min': 10.0 ** unique_log_t[0],
         't_max': 10.0 ** unique_log_t[-1],
         'unique_log_p': unique_log_p,
+        'unique_log_t': unique_log_t,
         'logt_valid_min': logt_valid_min,
         'logt_valid_max': logt_valid_max,
         'liquidus_log_p': liquidus_log_p,
         'liquidus_log_t': liquidus_log_t,
         'phase_grid': phase_grid,
+        # Fast bilinear interpolation data
+        'density_grid': density_grid,
+        'nabla_ad_grid': nabla_ad_grid,
+        'logp_min': unique_log_p[0],
+        'logp_max': unique_log_p[-1],
+        'logt_min': unique_log_t[0],
+        'logt_max': unique_log_t[-1],
+        'dlog_p': dlog_p,
+        'dlog_t': dlog_t,
+        'n_p': n_p,
+        'n_t': n_t,
     }
+
+
+def _fast_bilinear(log_p, log_t, grid, cached):
+    """O(1) bilinear interpolation on a log-uniform grid.
+
+    Replaces scipy's RegularGridInterpolator for scalar lookups. The
+    index computation is O(1) arithmetic instead of binary search,
+    eliminating ~36s of scipy overhead per run (``_prepare_xi``,
+    ``_find_indices``, ``_find_out_of_bounds``).
+
+    Parameters
+    ----------
+    log_p : float
+        log10 of pressure, already clamped to grid bounds.
+    log_t : float
+        log10 of temperature, already clamped to valid range.
+    grid : numpy.ndarray
+        2D array of values (density or nabla_ad), shape (n_p, n_t).
+    cached : dict
+        Cache entry with grid metadata (logp_min, dlog_p, etc.).
+
+    Returns
+    -------
+    float
+        Interpolated value. NaN if any corner is NaN.
+    """
+    # O(1) index computation for log-uniform grid
+    fp = (log_p - cached['logp_min']) / cached['dlog_p']
+    ft = (log_t - cached['logt_min']) / cached['dlog_t']
+
+    # Integer indices (clamped to valid range)
+    ip = int(fp)
+    it = int(ft)
+    ip = max(0, min(ip, cached['n_p'] - 2))
+    it = max(0, min(it, cached['n_t'] - 2))
+
+    # Fractional parts
+    dp = fp - ip
+    dt = ft - it
+
+    # Four corner values
+    v00 = grid[ip, it]
+    v01 = grid[ip, it + 1]
+    v10 = grid[ip + 1, it]
+    v11 = grid[ip + 1, it + 1]
+
+    # Bilinear interpolation
+    return v00 * (1 - dp) * (1 - dt) + v01 * (1 - dp) * dt + v10 * dp * (1 - dt) + v11 * dp * dt
 
 
 # Track whether the per-cell clamping warning has been issued for each file,
@@ -495,7 +560,7 @@ def get_tabulated_eos(
                     f'Density values near the table boundary may be inaccurate.'
                 )
 
-            density = float(cached['density_interp']((log_p, log_t_clamped)))
+            density = _fast_bilinear(log_p, log_t_clamped, cached['density_grid'], cached)
 
             # Nearest-neighbor fallback: bilinear interpolation returns NaN
             # when a valid cell neighbors a NaN cell near the ragged domain
@@ -882,8 +947,8 @@ def get_paleos_unified_density(
             )
 
         if mushy_zone_factor >= 1.0 or len(cached['liquidus_log_p']) == 0:
-            # Direct lookup: no mushy zone
-            density = float(cached['density_interp']((log_p, log_t_clamped)))
+            # Direct lookup: no mushy zone (fast bilinear path)
+            density = _fast_bilinear(log_p, log_t_clamped, cached['density_grid'], cached)
             if not np.isfinite(density):
                 density = float(cached['density_nn']((log_p, log_t_clamped)))
             return density if np.isfinite(density) else None
@@ -893,7 +958,7 @@ def get_paleos_unified_density(
         # pressures where no liquid phase exists), fall back to direct lookup.
         liq_lp = cached['liquidus_log_p']
         if log_p < liq_lp[0] or log_p > liq_lp[-1]:
-            density = float(cached['density_interp']((log_p, log_t_clamped)))
+            density = _fast_bilinear(log_p, log_t_clamped, cached['density_grid'], cached)
             if not np.isfinite(density):
                 density = float(cached['density_nn']((log_p, log_t_clamped)))
             return density if np.isfinite(density) else None
@@ -905,14 +970,14 @@ def get_paleos_unified_density(
 
         if temperature >= T_liq:
             # Above liquidus: direct lookup
-            density = float(cached['density_interp']((log_p, log_t_clamped)))
+            density = _fast_bilinear(log_p, log_t_clamped, cached['density_grid'], cached)
             if not np.isfinite(density):
                 density = float(cached['density_nn']((log_p, log_t_clamped)))
             return density if np.isfinite(density) else None
 
         if temperature <= T_sol:
             # Below solidus: direct lookup
-            density = float(cached['density_interp']((log_p, log_t_clamped)))
+            density = _fast_bilinear(log_p, log_t_clamped, cached['density_grid'], cached)
             if not np.isfinite(density):
                 density = float(cached['density_nn']((log_p, log_t_clamped)))
             return density if np.isfinite(density) else None
@@ -922,13 +987,13 @@ def get_paleos_unified_density(
 
         # Solid-side: density at T_sol
         log_t_sol_c, _ = _paleos_clamp_temperature(log_p, log_t_sol, cached)
-        rho_sol = float(cached['density_interp']((log_p, log_t_sol_c)))
+        rho_sol = _fast_bilinear(log_p, log_t_sol_c, cached['density_grid'], cached)
         if not np.isfinite(rho_sol):
             rho_sol = float(cached['density_nn']((log_p, log_t_sol_c)))
 
         # Liquid-side: density at T_liq
         log_t_liq_c, _ = _paleos_clamp_temperature(log_p, log_t_liq, cached)
-        rho_liq = float(cached['density_interp']((log_p, log_t_liq_c)))
+        rho_liq = _fast_bilinear(log_p, log_t_liq_c, cached['density_grid'], cached)
         if not np.isfinite(rho_liq):
             rho_liq = float(cached['density_nn']((log_p, log_t_liq_c)))
 
@@ -1099,7 +1164,7 @@ def _get_paleos_unified_nabla_ad(pressure, temperature, material_dict, interpola
             f'at P={pressure:.2e} Pa.'
         )
 
-    val = float(cached['nabla_ad_interp']((log_p, log_t_clamped)))
+    val = _fast_bilinear(log_p, log_t_clamped, cached['nabla_ad_grid'], cached)
     if not np.isfinite(val):
         val = float(cached['nabla_ad_nn']((log_p, log_t_clamped)))
 
