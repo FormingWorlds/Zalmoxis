@@ -586,6 +586,66 @@ def validate_config(config_params):
                 f'ice layer for water-dominated compositions.'
             )
 
+    # ── H2O-dominated mantle at low temperature ─────────────────────
+    # H2O is vapor/supercritical at surface pressure when T > 647 K,
+    # and the volume-additive mixing model cannot handle an all-vapor
+    # mantle. Reject H2O-dominated mantles at adiabatic T_surf where
+    # the solver will diverge.
+    for layer in ('mantle',):
+        eos_str = layer_eos_config.get(layer, '')
+        if not eos_str:
+            continue
+        mix = parse_layer_components(eos_str)
+        h2o_frac = sum(f for c, f in zip(mix.components, mix.fractions) if 'H2O' in c)
+        has_silicate = any(
+            c
+            in {
+                'PALEOS:MgSiO3',
+                'WolfBower2018:MgSiO3',
+                'RTPress100TPa:MgSiO3',
+                'PALEOS-2phase:MgSiO3',
+            }
+            for c in mix.components
+        )
+        if h2o_frac > 0.5 and not has_silicate and temperature_mode != 'isothermal':
+            raise ValueError(
+                f'Mantle is {h2o_frac * 100:.0f}% H2O with no silicate component. '
+                f'At adiabatic/linear temperatures, H2O is vapor at surface '
+                f'pressure and cannot support hydrostatic structure in the '
+                f'volume-additive mixing model. Options: (1) add a silicate '
+                f'component (e.g., "PALEOS:MgSiO3:0.50+PALEOS:H2O:0.50"), '
+                f'(2) use a 3-layer model with a separate ice layer, or '
+                f'(3) use isothermal mode with T < 647 K.'
+            )
+
+    # ── Pure Chabrier:H mantle (no condensed anchor) ────────────────
+    for layer in ('mantle',):
+        eos_str = layer_eos_config.get(layer, '')
+        if not eos_str:
+            continue
+        mix = parse_layer_components(eos_str)
+        if mix.is_single() and mix.components[0] == 'Chabrier:H':
+            raise ValueError(
+                'Pure Chabrier:H mantle is not supported. H2 is a gas at '
+                'surface pressure and cannot form a condensed layer on its '
+                'own. Use H2 as a mixing component in a silicate mantle, '
+                'e.g., mantle = "PALEOS:MgSiO3:0.97+Chabrier:H:0.03".'
+            )
+
+    # ── H2 fraction warnings ───────────────────────────────────────
+    for layer in ('mantle',):
+        eos_str = layer_eos_config.get(layer, '')
+        if not eos_str:
+            continue
+        mix = parse_layer_components(eos_str)
+        h2_frac = sum(f for c, f in zip(mix.components, mix.fractions) if c == 'Chabrier:H')
+        if h2_frac > 0.20:
+            logger.warning(
+                f"Layer '{layer}' has {h2_frac * 100:.0f}% H2 by mass. "
+                f'The solver has been validated up to 20% H2. Higher '
+                f'fractions may converge but are outside the tested range.'
+            )
+
 
 def choose_config_file(temp_config_path=None):
     """
