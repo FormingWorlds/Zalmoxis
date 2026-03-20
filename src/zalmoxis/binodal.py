@@ -565,6 +565,13 @@ def gupta2025_suppression_weight(P_Pa, T_K, w_H2, w_H2O, T_scale=50.0):
         # Could not find a critical temperature: assume miscible
         return 1.0
 
+    # Floor at the H2O critical temperature (647 K). Below this, H2O
+    # condenses to liquid/ice and the Margules Gibbs model (fitted to
+    # supercritical DFT-MD data) is not valid. H2 and condensed H2O
+    # are always immiscible, so the floor ensures correct suppression
+    # for cold sub-Neptune models with condensed water layers.
+    T_crit = max(T_crit, 647.0)
+
     if T_scale <= 0:
         return 1.0 if T_K >= T_crit else 0.0
 
