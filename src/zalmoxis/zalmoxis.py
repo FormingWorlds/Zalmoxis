@@ -43,13 +43,13 @@ from .eos_properties import EOS_REGISTRY
 from .mixing import (
     BINODAL_T_SCALE_DEFAULT,
     any_component_is_tdep,
-    calculate_mixed_density,
+    calculate_mixed_density_batch,
     parse_all_layer_mixtures,
     parse_layer_components,
 )
 from .plots.plot_phase_vs_radius import plot_PT_with_phases
 from .plots.plot_profiles import plot_planet_profile_single
-from .structure_model import get_layer_eos, solve_structure
+from .structure_model import solve_structure
 
 # Run file via command line with default configuration file: python -m zalmoxis -c input/default.toml
 
@@ -1251,31 +1251,52 @@ def main(
                     )
                 converged_pressure = False
 
-            # Update density grid (solve_structure may return fewer points
-            # than num_layers if the ODE solver terminated early)
-            last_valid_density = None
-            for i in range(min(num_layers, len(mass_enclosed))):
-                # Zero-pressure shells (padded by solve_structure after the
-                # terminal event) have no physical density. Set to zero and
-                # skip the EOS lookup to avoid surface artifacts.
-                if pressure[i] <= 0:
-                    density[i] = 0.0
-                    continue
+            # Update density grid using vectorized EOS lookups.
+            # Partition shells by layer (all shells in a layer share one EOS),
+            # then batch-call calculate_mixed_density_batch per layer.
+            n_valid = min(num_layers, len(mass_enclosed))
+            new_density = np.full(num_layers, np.nan)
 
-                mixture = get_layer_eos(
-                    mass_enclosed[i],
-                    cmb_mass,
-                    core_mantle_mass,
-                    layer_mixtures,
+            # Zero-pressure shells get zero density
+            p_valid = pressure[:n_valid] > 0
+
+            # Compute temperatures for valid shells
+            if uses_Tdep:
+                T_arr = np.array(
+                    [
+                        temperature_function(radii[i], pressure[i])
+                        for i in range(n_valid)
+                        if p_valid[i]
+                    ]
                 )
+            else:
+                T_arr = np.full(int(np.sum(p_valid)), 300.0)
 
-                # Use T(r, P) with the actual converged pressure so
-                # temperature is consistent with the ODE solution.
-                T_i = temperature_function(radii[i], pressure[i]) if uses_Tdep else 300
-                new_density = calculate_mixed_density(
-                    pressure[i],
-                    T_i,
-                    mixture,
+            # Partition shells by layer using mass boundaries
+            valid_indices = np.where(p_valid[:n_valid])[0]
+            m_valid = mass_enclosed[valid_indices]
+            rtol = 1e-12
+            in_core = m_valid < cmb_mass * (1.0 - rtol)
+            in_ice = ('ice_layer' in layer_mixtures) & (
+                m_valid >= core_mantle_mass * (1.0 - rtol)
+            )
+            in_mantle = ~in_core & ~in_ice
+
+            for layer_name, mask in [
+                ('core', in_core),
+                ('mantle', in_mantle),
+                ('ice_layer', in_ice),
+            ]:
+                if not np.any(mask) or layer_name not in layer_mixtures:
+                    continue
+                idx = valid_indices[mask]
+                mix = layer_mixtures[layer_name]
+                rho_batch = calculate_mixed_density_batch(
+                    pressure[idx],
+                    T_arr[np.where(mask)[0]]
+                    if len(T_arr) == len(valid_indices)
+                    else T_arr[mask],
+                    mix,
                     material_dictionaries,
                     solidus_func,
                     liquidus_func,
@@ -1285,19 +1306,20 @@ def main(
                     condensed_rho_scale,
                     binodal_T_scale,
                 )
+                new_density[idx] = rho_batch
 
-                if new_density is None:
-                    # Use last valid density from a deeper shell rather than
-                    # a stale value from a previous iteration. This prevents
-                    # surface oscillations when the EOS table edge produces
-                    # unreliable lookups at very low pressure.
-                    if last_valid_density is not None:
-                        new_density = last_valid_density
-                    else:
-                        new_density = old_density[i]
+            # Fill NaN entries with last valid density (walking outward)
+            last_valid = None
+            for i in range(n_valid):
+                if not p_valid[i]:
+                    new_density[i] = 0.0
+                elif np.isnan(new_density[i]):
+                    new_density[i] = last_valid if last_valid is not None else old_density[i]
+                else:
+                    last_valid = new_density[i]
 
-                density[i] = 0.5 * (new_density + old_density[i])
-                last_valid_density = density[i]
+            # Picard blend
+            density[:n_valid] = 0.5 * (new_density[:n_valid] + old_density[:n_valid])
 
             # Check density convergence
             relative_diff_inner = np.max(

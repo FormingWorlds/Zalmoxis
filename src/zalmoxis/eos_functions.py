@@ -947,6 +947,74 @@ def get_paleos_unified_density(
         return None
 
 
+def get_paleos_unified_density_batch(
+    pressures, temperatures, material_dict, mushy_zone_factor, interpolation_functions
+):
+    """Vectorized density lookup from a unified PALEOS table.
+
+    Parameters
+    ----------
+    pressures : numpy.ndarray
+        1D array of pressures in Pa.
+    temperatures : numpy.ndarray
+        1D array of temperatures in K.
+    material_dict : dict
+        Material properties dict with 'eos_file' and 'format' keys.
+    mushy_zone_factor : float
+        Cryoscopic depression factor. 1.0 = no mushy zone.
+    interpolation_functions : dict
+        Shared interpolation cache.
+
+    Returns
+    -------
+    numpy.ndarray
+        1D array of densities in kg/m^3. NaN where lookup fails.
+    """
+    eos_file = material_dict['eos_file']
+    cached = _ensure_unified_cache(eos_file, interpolation_functions)
+
+    n = len(pressures)
+    p_clamped = np.clip(pressures, cached['p_min'], cached['p_max'])
+    log_p = np.log10(p_clamped)
+    log_t = np.log10(np.maximum(temperatures, 1.0))
+
+    # Per-cell clamping (vectorized)
+    ulp = cached['unique_log_p']
+    lt_min = cached['logt_valid_min']
+    lt_max = cached['logt_valid_max']
+    local_tmin = np.interp(log_p, ulp, lt_min)
+    local_tmax = np.interp(log_p, ulp, lt_max)
+
+    valid_bounds = np.isfinite(local_tmin) & np.isfinite(local_tmax)
+    log_t_clamped = log_t.copy()
+    log_t_clamped = np.where(valid_bounds & (log_t < local_tmin), local_tmin, log_t_clamped)
+    log_t_clamped = np.where(valid_bounds & (log_t > local_tmax), local_tmax, log_t_clamped)
+
+    if mushy_zone_factor >= 1.0 or len(cached['liquidus_log_p']) == 0:
+        # Direct lookup: batch interpolation
+        pts = np.column_stack([log_p, log_t_clamped])
+        result = cached['density_interp'](pts)
+        # NN fallback for NaN entries
+        nan_mask = ~np.isfinite(result)
+        if np.any(nan_mask):
+            result[nan_mask] = cached['density_nn'](pts[nan_mask])
+        return result
+
+    # Mushy zone path: compute per-element
+    # This is less common (only when mushy_zone_factor < 1.0 with liquidus data)
+    result = np.full(n, np.nan)
+    for i in range(n):
+        val = get_paleos_unified_density(
+            pressures[i],
+            temperatures[i],
+            material_dict,
+            mushy_zone_factor,
+            interpolation_functions,
+        )
+        result[i] = val if val is not None else np.nan
+    return result
+
+
 def _get_paleos_unified_nabla_ad(pressure, temperature, material_dict, interpolation_functions):
     """Look up nabla_ad from a unified PALEOS cache entry.
 
@@ -1069,6 +1137,72 @@ def calculate_density(
             )
 
     raise ValueError(f"Cannot determine layer key for EOS '{layer_eos}'.")
+
+
+def calculate_density_batch(
+    pressures,
+    temperatures,
+    material_dictionaries,
+    layer_eos,
+    solidus_func,
+    liquidus_func,
+    interpolation_functions,
+    mushy_zone_factor=1.0,
+):
+    """Vectorized density lookup for a batch of (P, T) points sharing one EOS.
+
+    For unified PALEOS tables, uses the vectorized interpolator path.
+    For other EOS types, falls back to scalar calculate_density per point.
+
+    Parameters
+    ----------
+    pressures : numpy.ndarray
+        1D array of pressures in Pa.
+    temperatures : numpy.ndarray
+        1D array of temperatures in K.
+    material_dictionaries : dict
+        EOS registry.
+    layer_eos : str
+        EOS identifier string.
+    solidus_func : callable or None
+        Solidus melting curve function.
+    liquidus_func : callable or None
+        Liquidus melting curve function.
+    interpolation_functions : dict
+        Interpolation cache.
+    mushy_zone_factor : float
+        Cryoscopic depression factor.
+
+    Returns
+    -------
+    numpy.ndarray
+        1D array of densities in kg/m^3. NaN where lookup fails.
+    """
+    if interpolation_functions is None:
+        interpolation_functions = {}
+
+    mat = material_dictionaries.get(layer_eos)
+    if mat is not None and mat.get('format') == 'paleos_unified':
+        return get_paleos_unified_density_batch(
+            pressures, temperatures, mat, mushy_zone_factor, interpolation_functions
+        )
+
+    # Fallback: scalar loop for non-unified EOS types
+    n = len(pressures)
+    result = np.full(n, np.nan)
+    for i in range(n):
+        val = calculate_density(
+            pressures[i],
+            material_dictionaries,
+            layer_eos,
+            temperatures[i],
+            solidus_func,
+            liquidus_func,
+            interpolation_functions,
+            mushy_zone_factor,
+        )
+        result[i] = val if val is not None else np.nan
+    return result
 
 
 def _get_paleos_nabla_ad(pressure, temperature, material_dict, phase, interpolation_functions):

@@ -312,6 +312,27 @@ def _condensed_weight(
     return 1.0 / (1.0 + math.exp(arg))
 
 
+def _condensed_weight_batch(rho_arr, rho_min, rho_scale):
+    """Vectorized sigmoid weight for arrays of densities.
+
+    Parameters
+    ----------
+    rho_arr : numpy.ndarray
+        1D array of densities in kg/m^3.
+    rho_min : float
+        Sigmoid center in kg/m^3.
+    rho_scale : float
+        Sigmoid width in kg/m^3.
+
+    Returns
+    -------
+    numpy.ndarray
+        1D array of weights in [0, 1].
+    """
+    arg = np.clip(-(rho_arr - rho_min) / rho_scale, -500.0, 500.0)
+    return 1.0 / (1.0 + np.exp(arg))
+
+
 def _binodal_factor(eos_name, w_i, mixture, pressure, temperature, T_scale):
     """Compute combined binodal suppression for an H2 component.
 
@@ -489,6 +510,126 @@ def calculate_mixed_density(
     if w_eff_sum <= 0 or inv_rho_sum <= 0:
         return None
     return w_eff_sum / inv_rho_sum
+
+
+def calculate_mixed_density_batch(
+    pressures,
+    temperatures,
+    mixture,
+    material_dictionaries,
+    solidus_func,
+    liquidus_func,
+    interpolation_functions,
+    mushy_zone_factors=None,
+    condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
+    condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
+    binodal_T_scale=BINODAL_T_SCALE_DEFAULT,
+):
+    """Vectorized mixed density for a batch of (P, T) points in one layer.
+
+    Parameters
+    ----------
+    pressures : numpy.ndarray
+        1D array of pressures in Pa.
+    temperatures : numpy.ndarray
+        1D array of temperatures in K.
+    mixture : LayerMixture
+        Layer mixture specification (same for all points in the batch).
+    material_dictionaries : dict
+        EOS registry.
+    solidus_func : callable or None
+        Solidus melting curve function.
+    liquidus_func : callable or None
+        Liquidus melting curve function.
+    interpolation_functions : dict
+        Interpolation cache.
+    mushy_zone_factors : dict or float or None
+        Per-EOS mushy zone factors.
+    condensed_rho_min : float
+        Global sigmoid center fallback (kg/m^3).
+    condensed_rho_scale : float
+        Global sigmoid width fallback (kg/m^3).
+    binodal_T_scale : float
+        Binodal sigmoid width in K.
+
+    Returns
+    -------
+    numpy.ndarray
+        1D array of densities in kg/m^3. NaN where lookup fails or all
+        components are suppressed.
+    """
+    from .eos_functions import calculate_density_batch
+
+    n = len(pressures)
+
+    # Fast path: single component (no suppression)
+    if mixture.is_single():
+        mzf = _get_mushy_zone_factor(mixture.components[0], mushy_zone_factors)
+        return calculate_density_batch(
+            pressures,
+            temperatures,
+            material_dictionaries,
+            mixture.components[0],
+            solidus_func,
+            liquidus_func,
+            interpolation_functions,
+            mzf,
+        )
+
+    # Multi-component: evaluate each component, then suppressed harmonic mean
+    w_eff_sum = np.zeros(n)
+    inv_rho_sum = np.zeros(n)
+    any_invalid = np.zeros(n, dtype=bool)
+
+    for eos_name, w_i in zip(mixture.components, mixture.fractions):
+        if w_i <= 0:
+            continue
+        mzf = _get_mushy_zone_factor(eos_name, mushy_zone_factors)
+        rho_i = calculate_density_batch(
+            pressures,
+            temperatures,
+            material_dictionaries,
+            eos_name,
+            solidus_func,
+            liquidus_func,
+            interpolation_functions,
+            mzf,
+        )
+        # Mark shells where any component has invalid density
+        bad = ~np.isfinite(rho_i) | (rho_i <= 0)
+        any_invalid |= bad
+
+        # Per-component sigmoid
+        rho_min_i = _COMPONENT_RHO_MIN.get(eos_name, condensed_rho_min)
+        rho_scale_i = _COMPONENT_RHO_SCALE.get(eos_name, condensed_rho_scale)
+        sigma_i = _condensed_weight_batch(np.where(bad, 1.0, rho_i), rho_min_i, rho_scale_i)
+
+        # Binodal suppression (scalar per shell, only for H2 components)
+        if eos_name in _H2_EOS_NAMES:
+            for j in range(n):
+                if not bad[j]:
+                    sigma_i[j] *= _binodal_factor(
+                        eos_name,
+                        w_i,
+                        mixture,
+                        pressures[j],
+                        temperatures[j],
+                        binodal_T_scale,
+                    )
+
+        w_eff = w_i * sigma_i
+        w_eff = np.where(bad, 0.0, w_eff)
+
+        ok = w_eff > 0
+        w_eff_sum += np.where(ok, w_eff, 0.0)
+        inv_rho_sum += np.where(ok, w_eff / np.where(ok, rho_i, 1.0), 0.0)
+
+    result = np.where(
+        (w_eff_sum > 0) & (inv_rho_sum > 0) & ~any_invalid,
+        w_eff_sum / np.where(inv_rho_sum > 0, inv_rho_sum, 1.0),
+        np.nan,
+    )
+    return result
 
 
 def get_mixed_nabla_ad(
