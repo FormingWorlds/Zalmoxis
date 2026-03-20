@@ -31,11 +31,13 @@ ZALMOXIS_ROOT = os.environ.get(
 )
 sys.path.insert(0, os.path.join(ZALMOXIS_ROOT, 'src'))
 
-from zalmoxis import zalmoxis as zal
-from zalmoxis.constants import earth_mass, earth_radius
-from zalmoxis.eos_functions import get_solidus_liquidus_functions
-from zalmoxis.zalmoxis import load_material_dictionaries, load_solidus_liquidus_functions
-
+from zalmoxis import zalmoxis as zal  # noqa: E402
+from zalmoxis.constants import earth_mass, earth_radius  # noqa: E402
+from zalmoxis.eos_functions import get_solidus_liquidus_functions  # noqa: E402
+from zalmoxis.zalmoxis import (  # noqa: E402
+    load_material_dictionaries,
+    load_solidus_liquidus_functions,
+)
 
 # ── Configuration ──────────────────────────────────────────────────────
 # Adiabatic mode works for <= 2 M_earth; above that the PALEOS liquid
@@ -142,7 +144,9 @@ def main():
                     label=f'{mass:.1f} M$_\\oplus$',
                 )
             else:
-                ax1.plot([], [], color=CMAP_MASS[i], ls='-', lw=2.2, label=f'{mass:.1f} (failed)')
+                ax1.plot(
+                    [], [], color=CMAP_MASS[i], ls='-', lw=2.2, label=f'{mass:.1f} (failed)'
+                )
         else:
             ax1.plot(
                 T_lin,
@@ -160,7 +164,9 @@ def main():
     ax1.set_ylim(5e-2, 5e4)
     ax1.set_xlim(2000, 8000)
     ax1.invert_yaxis()
-    ax1.set_title('PALEOS MgSiO3: T-P profiles (solid = adiabatic, dashed = linear)', fontsize=11)
+    ax1.set_title(
+        'PALEOS MgSiO3: T-P profiles (solid = adiabatic, dashed = linear)', fontsize=11
+    )
     ax1.legend(fontsize=8.5, loc='upper left', ncol=2)
     ax1.grid(True, which='both', alpha=0.3)
     fig1.tight_layout()
