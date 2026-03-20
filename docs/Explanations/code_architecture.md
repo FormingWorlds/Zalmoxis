@@ -6,11 +6,12 @@
 src/zalmoxis/
 ├── zalmoxis.py          # Orchestration: config loading, iteration loops, Brent solver, output
 ├── structure_model.py   # ODE system: coupled_odes(), solve_structure(), terminal events
-├── eos_functions.py     # EOS dispatch: calculate_density(), Tdep phase logic, temperature profiles
+├── eos_functions.py     # EOS dispatch: calculate_density(), fast bilinear interp, batch lookups
 ├── eos_analytic.py      # Analytic modified polytrope: get_analytic_density()
 ├── eos_properties.py    # EOS registry: material property dicts keyed by EOS identifier
 ├── mixing.py            # Multi-material mixing: LayerMixture, phase-aware density/nabla_ad
-├── melting_curves.py    # Solidus/liquidus curves (Monteux+2016, Stixrude 2014, tabulated)
+├── binodal.py           # H2 miscibility: Rogers+2025 (H2-MgSiO3), Gupta+2025 (H2-H2O)
+├── melting_curves.py    # Solidus/liquidus curves (Monteux+2016, Stixrude 2014, PALEOS, tabulated)
 ├── constants.py         # Physical constants (G, earth_mass, earth_radius, etc.)
 └── plots/               # Visualization (profile plots, P-T phase diagrams)
 ```
@@ -94,6 +95,12 @@ post_processing() ──► output files + plots
   Returns ~1 for condensed phases, ~0 for vapor.
 
 - **`_binodal_factor()`** (`mixing.py`): Computes the binodal (miscibility) suppression for H$_2$ components. Evaluates Rogers+2025 (H$_2$-MgSiO$_3$) and/or Gupta+2025 (H$_2$-H$_2$O) binodal models from `binodal.py`. Returns the minimum (most restrictive) suppression weight across all applicable partner materials. Non-H$_2$ components return 1.0.
+
+- **`calculate_mixed_density_batch()`** (`mixing.py`): Vectorized version of `calculate_mixed_density()` for the Picard density update loop. Evaluates all shells in a layer with a single batch interpolator call instead of per-shell scalar calls.
+
+- **`_fast_bilinear()`** (`eos_functions.py`): O(1) bilinear interpolation on log-uniform PALEOS/Chabrier grids. Replaces scipy's `RegularGridInterpolator` for scalar lookups, eliminating per-call Python overhead. Falls back to nearest-neighbor for NaN boundary cells.
+
+- **`calculate_density_batch()`** (`eos_functions.py`): Vectorized density lookup for a batch of (P, T) points sharing one EOS. Uses `get_paleos_unified_density_batch()` for PALEOS/Chabrier tables; falls back to scalar loop for other EOS types.
 
 - **`LayerMixture`** (`mixing.py`): Dataclass holding a layer's EOS components and mass fractions.
   Supports runtime fraction updates from PROTEUS/CALLIOPE via `update_fractions()`.
