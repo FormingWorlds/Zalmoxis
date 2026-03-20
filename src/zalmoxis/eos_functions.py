@@ -973,7 +973,6 @@ def get_paleos_unified_density_batch(
     eos_file = material_dict['eos_file']
     cached = _ensure_unified_cache(eos_file, interpolation_functions)
 
-    n = len(pressures)
     p_clamped = np.clip(pressures, cached['p_min'], cached['p_max'])
     log_p = np.log10(p_clamped)
     log_t = np.log10(np.maximum(temperatures, 1.0))
@@ -1000,18 +999,67 @@ def get_paleos_unified_density_batch(
             result[nan_mask] = cached['density_nn'](pts[nan_mask])
         return result
 
-    # Mushy zone path: compute per-element
-    # This is less common (only when mushy_zone_factor < 1.0 with liquidus data)
-    result = np.full(n, np.nan)
-    for i in range(n):
-        val = get_paleos_unified_density(
-            pressures[i],
-            temperatures[i],
-            material_dict,
-            mushy_zone_factor,
-            interpolation_functions,
+    # Mushy zone path (vectorized).
+    # Compute T_liq from the PALEOS analytic melting curve rather than
+    # interpolating the extracted liquidus grid. This is faster and avoids
+    # branching per-element for the "outside liquidus coverage" case.
+    from .melting_curves import paleos_liquidus
+
+    T_liq = paleos_liquidus(pressures)
+    T_sol = T_liq * mushy_zone_factor
+    log_t_sol = np.log10(np.maximum(T_sol, 1.0))
+    log_t_liq = np.log10(np.maximum(T_liq, 1.0))
+
+    # Classify shells: above liquidus, below solidus, or in mushy zone
+    above = temperatures >= T_liq
+    below = temperatures <= T_sol
+    mushy = ~above & ~below
+
+    # Direct lookup for above-liquidus and below-solidus shells
+    pts = np.column_stack([log_p, log_t_clamped])
+    result = cached['density_interp'](pts)
+    nan_mask = ~np.isfinite(result)
+    if np.any(nan_mask):
+        result[nan_mask] = cached['density_nn'](pts[nan_mask])
+
+    # Mushy zone shells: volume-average between solid-side and liquid-side
+    if np.any(mushy):
+        m_idx = np.where(mushy)[0]
+        phi = (temperatures[m_idx] - T_sol[m_idx]) / (T_liq[m_idx] - T_sol[m_idx])
+
+        # Solid-side density at T_sol
+        log_t_sol_c = log_t_sol[m_idx].copy()
+        sol_tmin = np.interp(log_p[m_idx], ulp, lt_min)
+        sol_tmax = np.interp(log_p[m_idx], ulp, lt_max)
+        sol_valid = np.isfinite(sol_tmin) & np.isfinite(sol_tmax)
+        log_t_sol_c = np.where(sol_valid & (log_t_sol_c < sol_tmin), sol_tmin, log_t_sol_c)
+        log_t_sol_c = np.where(sol_valid & (log_t_sol_c > sol_tmax), sol_tmax, log_t_sol_c)
+        pts_sol = np.column_stack([log_p[m_idx], log_t_sol_c])
+        rho_sol = cached['density_interp'](pts_sol)
+        nn_sol = ~np.isfinite(rho_sol)
+        if np.any(nn_sol):
+            rho_sol[nn_sol] = cached['density_nn'](pts_sol[nn_sol])
+
+        # Liquid-side density at T_liq
+        log_t_liq_c = log_t_liq[m_idx].copy()
+        liq_tmin = np.interp(log_p[m_idx], ulp, lt_min)
+        liq_tmax = np.interp(log_p[m_idx], ulp, lt_max)
+        liq_valid = np.isfinite(liq_tmin) & np.isfinite(liq_tmax)
+        log_t_liq_c = np.where(liq_valid & (log_t_liq_c < liq_tmin), liq_tmin, log_t_liq_c)
+        log_t_liq_c = np.where(liq_valid & (log_t_liq_c > liq_tmax), liq_tmax, log_t_liq_c)
+        pts_liq = np.column_stack([log_p[m_idx], log_t_liq_c])
+        rho_liq = cached['density_interp'](pts_liq)
+        nn_liq = ~np.isfinite(rho_liq)
+        if np.any(nn_liq):
+            rho_liq[nn_liq] = cached['density_nn'](pts_liq[nn_liq])
+
+        # Volume additivity
+        both_ok = np.isfinite(rho_sol) & np.isfinite(rho_liq) & (rho_sol > 0) & (rho_liq > 0)
+        spec_vol = phi * (1.0 / np.where(both_ok, rho_liq, 1.0)) + (1.0 - phi) * (
+            1.0 / np.where(both_ok, rho_sol, 1.0)
         )
-        result[i] = val if val is not None else np.nan
+        result[m_idx] = np.where(both_ok, 1.0 / spec_vol, np.nan)
+
     return result
 
 

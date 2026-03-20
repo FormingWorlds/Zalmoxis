@@ -25,6 +25,10 @@ Liquidus:
         Monteux+2016 Eqs. 11/13 F-peridotitic.
     ``'Stixrude14-liquidus'``
         Stixrude (2014) Eq. 1.9: pure MgSiO3 Simon-like power law.
+    ``'PALEOS-liquidus'``
+        PALEOS MgSiO3 melting curve: Belonoshko+2005 (P < 2.55 GPa) /
+        Fei+2021 (P >= 2.55 GPa). Consistent with the PALEOS unified
+        EOS table phase boundaries.
     ``'Monteux600-liquidus-tabulated'``
         Tabulated: ``melting_curves_Monteux-600/liquidus.dat``.
 """
@@ -51,6 +55,7 @@ VALID_LIQUIDUS = {
     'Monteux16-liquidus-A-chondritic',
     'Monteux16-liquidus-F-peridotitic',
     'Stixrude14-liquidus',
+    'PALEOS-liquidus',
     'Monteux600-liquidus-tabulated',
 }
 
@@ -213,6 +218,50 @@ def stixrude14_solidus(P):
     return stixrude14_liquidus(P) * _STIX14_CRYO_FACTOR
 
 
+# ── PALEOS MgSiO3 melting curve (Belonoshko+05 / Fei+21) ─────────────
+#
+# Piecewise Simon-Glatzel fit used by the PALEOS unified EOS tables:
+# - P < P0: Belonoshko et al. (2005, PRB 72, 104107)
+# - P >= P0: Fei et al. (2021, PRL 127, 135701)
+# The crossover pressure P0 is determined numerically to ensure continuity.
+
+_PALEOS_P0_GPA = 2.551686137257537  # GPa, crossover pressure
+
+
+def paleos_liquidus(P):
+    """PALEOS MgSiO3 liquidus from Belonoshko+2005 / Fei+2021.
+
+    Piecewise Simon-Glatzel fit:
+
+    - P < 2.55 GPa: T = 1831 * (1 + P/4.6)^0.33  (Belonoshko+2005)
+    - P >= 2.55 GPa: T = 6000 * (P/140)^0.26      (Fei+2021)
+
+    This is the melting curve used internally by the PALEOS unified EOS
+    tables. Using it for the mushy zone calculation ensures consistency
+    between the table's phase boundaries and the derived solidus.
+
+    Parameters
+    ----------
+    P : float or array-like
+        Pressure in Pa (must be >= 0).
+
+    Returns
+    -------
+    float or ndarray
+        Liquidus temperature in K.
+    """
+    P_arr = np.atleast_1d(np.asarray(P, dtype=float))
+    P_GPa = P_arr * 1e-9
+    T = np.where(
+        P_GPa < _PALEOS_P0_GPA,
+        1831.0 * (1.0 + P_GPa / 4.6) ** 0.33,
+        6000.0 * (P_GPa / 140.0) ** 0.26,
+    )
+    # Guard P=0: avoid 0^0.26 = NaN
+    T = np.where(P_arr > 0, T, 0.0)
+    return float(T[0]) if np.ndim(P) == 0 else T
+
+
 # ── Tabulated melting curves ───────────────────────────────────────────
 
 
@@ -281,6 +330,9 @@ def get_melting_curve_function(curve_id):
 
     elif curve_id == 'Stixrude14-liquidus':
         return stixrude14_liquidus
+
+    elif curve_id == 'PALEOS-liquidus':
+        return paleos_liquidus
 
     elif curve_id == 'Monteux600-solidus-tabulated':
         return _load_tabulated_curve(
