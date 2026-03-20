@@ -134,6 +134,10 @@ def load_paleos_table(eos_file):
         nabla_ad_grid[valid_cells][np.isfinite(nabla_ad_grid[valid_cells])],
     )
 
+    # Precompute grid spacing for O(1) bilinear interpolation.
+    dlog_p = (unique_log_p[-1] - unique_log_p[0]) / (n_p - 1) if n_p > 1 else 1.0
+    dlog_t = (unique_log_t[-1] - unique_log_t[0]) / (n_t - 1) if n_t > 1 else 1.0
+
     return {
         'type': 'paleos',
         'density_interp': density_interp,
@@ -145,8 +149,20 @@ def load_paleos_table(eos_file):
         't_min': 10.0 ** unique_log_t[0],
         't_max': 10.0 ** unique_log_t[-1],
         'unique_log_p': unique_log_p,
+        'unique_log_t': unique_log_t,
         'logt_valid_min': logt_valid_min,
         'logt_valid_max': logt_valid_max,
+        # Fast bilinear interpolation data
+        'density_grid': density_grid,
+        'nabla_ad_grid': nabla_ad_grid,
+        'logp_min': unique_log_p[0],
+        'logp_max': unique_log_p[-1],
+        'logt_min': unique_log_t[0],
+        'logt_max': unique_log_t[-1],
+        'dlog_p': dlog_p,
+        'dlog_t': dlog_t,
+        'n_p': n_p,
+        'n_t': n_t,
     }
 
 
