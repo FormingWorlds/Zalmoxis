@@ -503,6 +503,7 @@ def get_mixed_nabla_ad(
     condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
     condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
     binodal_T_scale=BINODAL_T_SCALE_DEFAULT,
+    precomputed_densities=None,
 ):
     """Compute mass-fraction-weighted nabla_ad for a mixture.
 
@@ -541,6 +542,11 @@ def get_mixed_nabla_ad(
     binodal_T_scale : float
         Binodal sigmoid width in K for H2 miscibility suppression.
         Default 50 K.
+    precomputed_densities : dict or None
+        Optional pre-computed per-component densities, keyed by EOS name.
+        When provided, skips the ``calculate_density()`` call for the
+        sigmoid weight computation, avoiding redundant EOS table lookups
+        when density was already computed in ``calculate_mixed_density()``.
 
     Returns
     -------
@@ -549,13 +555,6 @@ def get_mixed_nabla_ad(
 
     Notes
     -----
-    For multi-component mixtures, this calls ``calculate_density()`` per
-    component to obtain the sigmoid weight. This is a separate EOS
-    evaluation from the one in ``calculate_mixed_density()``. Since PALEOS
-    tables are pure functions of (P, T), the values are identical, but the
-    double call has a performance cost. A future optimization could pass
-    pre-computed per-component densities.
-
     Suppressing a vapor component's nabla_ad means the temperature profile
     ignores the volatile. This is consistent with the density suppression
     (both treat the vapor as structurally absent) but differs from reality
@@ -581,18 +580,21 @@ def get_mixed_nabla_ad(
     for eos_name, w_i in zip(mixture.components, mixture.fractions):
         if w_i <= 0:
             continue
-        # Compute density to determine condensed-phase weight
-        mzf = _get_mushy_zone_factor(eos_name, mushy_zone_factors)
-        rho_i = calculate_density(
-            pressure,
-            material_dictionaries,
-            eos_name,
-            temperature,
-            solidus_func,
-            liquidus_func,
-            interpolation_functions,
-            mzf,
-        )
+        # Use pre-computed density if available, otherwise compute it
+        if precomputed_densities is not None and eos_name in precomputed_densities:
+            rho_i = precomputed_densities[eos_name]
+        else:
+            mzf = _get_mushy_zone_factor(eos_name, mushy_zone_factors)
+            rho_i = calculate_density(
+                pressure,
+                material_dictionaries,
+                eos_name,
+                temperature,
+                solidus_func,
+                liquidus_func,
+                interpolation_functions,
+                mzf,
+            )
         if rho_i is not None and np.isfinite(rho_i) and rho_i > 0:
             rho_min_i = _COMPONENT_RHO_MIN.get(eos_name, condensed_rho_min)
             rho_scale_i = _COMPONENT_RHO_SCALE.get(eos_name, condensed_rho_scale)
