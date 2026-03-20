@@ -159,8 +159,8 @@ Both parameters must be positive. The validation rejects non-positive values at 
 When `Chabrier:H` is mixed with silicate or water components, an additional binodal (miscibility) suppression determines whether H$_2$ participates in the harmonic mean at each $(P, T)$ point.
 Two independent binodal models are evaluated automatically:
 
-- **H$_2$-MgSiO$_3$**: [Rogers, Young & Schlichting (2025)](https://doi.org/10.1093/mnras/stae2268) analytic binodal fit.
-- **H$_2$-H$_2$O**: [Gupta, Stixrude & Schlichting (2025)](https://doi.org/10.3847/2041-8213/adb8f5) Gibbs free energy model.
+- **H$_2$-MgSiO$_3$**: [Rogers, Young & Schlichting (2025)](https://doi.org/10.1093/mnras/staf1940) analytic binodal fit.
+- **H$_2$-H$_2$O**: [Gupta, Stixrude & Schlichting (2025)](https://doi.org/10.3847/2041-8213/adb631) Gibbs free energy model.
 
 Above the binodal temperature, H$_2$ is miscible with its partner and participates fully in the density calculation.
 Below the binodal, H$_2$ is suppressed via a smooth sigmoid transition.

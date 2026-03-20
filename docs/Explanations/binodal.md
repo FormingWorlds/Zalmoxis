@@ -43,13 +43,17 @@ The `binodal_T_scale` parameter (default 50 K) controls the transition width.
 When multiple binodal models apply (H$_2$ mixed with both silicate and water), the most restrictive suppression weight (the minimum) is used.
 For non-H$_2$ components, $\sigma_{\mathrm{binodal}} = 1$ always.
 
+![Suppression weight behavior](../img/suppression_weights.png)
+
+**Left**: the density-based sigmoid $\sigma_{\mathrm{density}}(\rho)$ for H$_2$ (center at 30 kg/m$^3$). At low density (gas-like), H$_2$ is excluded from the harmonic mean. **Center**: the binodal sigmoid $\sigma_{\mathrm{binodal}}(T)$ at fixed pressure, showing the transition from immiscible (below $T_b$) to miscible (above $T_b$) for three `binodal_T_scale` values. **Right**: the combined weight $\sigma_{\mathrm{total}}$ along a representative planetary adiabat. At depth (high P), both conditions are met and H$_2$ participates fully. Near the surface, either low density or the binodal transition suppresses H$_2$.
+
 ---
 
 ## Rogers+2025: H$_2$-MgSiO$_3$ binodal
 
 ### Source
 
-[Rogers, Young & Schlichting (2025)](https://doi.org/10.1093/mnras/stae2268), MNRAS 544, 3496. Analytic fit to the binodal temperature $T_b(x_{\mathrm{H_2}}, P)$ from Eqs. A1-A11. Based on DFT-MD calculations of H$_2$-MgSiO$_3$ miscibility from [Gilmore & Stixrude (2025)](https://doi.org/10.1038/s41586-024-08509-7) and asymmetric Margules parameters from [Stixrude & Gilmore (2025)](https://doi.org/10.1016/j.icarus.2025.116401).
+[Rogers, Young & Schlichting (2025)](https://doi.org/10.1093/mnras/staf1940), MNRAS 544, 3496. Analytic fit to the binodal temperature $T_b(x_{\mathrm{H_2}}, P)$ from Eqs. A1-A11. Based on DFT-MD calculations of H$_2$-MgSiO$_3$ miscibility from [Gilmore & Stixrude (2026)](https://doi.org/10.1038/s41586-025-09970-4) and asymmetric Margules parameters from [Gilmore & Stixrude (2026)](https://doi.org/10.1038/s41586-025-09970-4).
 
 ### Physics
 
@@ -92,7 +96,7 @@ The function `rogers2025_binodal_temperature(x_H2, P_GPa)` returns the binodal t
 
 ### Source
 
-[Gupta, Stixrude & Schlichting (2025)](https://doi.org/10.3847/2041-8213/adb8f5), ApJL 982, L35. Gibbs free energy model with asymmetric Margules mixing parameters (Eqs. A2-A9, Table 1).
+[Gupta, Stixrude & Schlichting (2025)](https://doi.org/10.3847/2041-8213/adb631), ApJL 982, L35. Gibbs free energy model with asymmetric Margules mixing parameters (Eqs. A2-A9, Table 1).
 
 ### Physics
 

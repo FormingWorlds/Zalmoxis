@@ -19,16 +19,13 @@ This module has no dependencies on the rest of Zalmoxis (pure thermodynamics).
 References
 ----------
 Rogers, Young & Schlichting (2025), MNRAS 544, 3496.
-    H2-MgSiO3 miscibility: doi:10.1093/mnras/stae2268
+    H2-MgSiO3 miscibility: doi:10.1093/mnras/staf1940
 
 Gupta, Stixrude & Schlichting (2025), ApJL 982, L35.
-    H2-H2O miscibility: doi:10.3847/2041-8213/adb8f5
+    H2-H2O miscibility: doi:10.3847/2041-8213/adb631
 
-Gilmore & Stixrude (2025), Nature 650, 60.
-    DFT-MD source for H2-MgSiO3 Gibbs parameters.
-
-Stixrude & Gilmore (2025), Icarus 432, 116401.
-    Margules parameters for H2-MgSiO3.
+Gilmore & Stixrude (2026), Nature 650, 60.
+    DFT-MD source for H2-MgSiO3 miscibility and Margules parameters.
 """
 
 from __future__ import annotations
