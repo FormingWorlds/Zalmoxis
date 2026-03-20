@@ -1680,6 +1680,7 @@ def post_processing(config_params, id_mass=None, output_file=None):
             mass_enclosed[-1] / (4 / 3 * math.pi * radii[-1] ** 3),
             mass_enclosed,
             id_mass,
+            layer_eos_config=layer_eos_config,
         )
 
         if uses_phase_detection:

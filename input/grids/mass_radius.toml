@@ -1,0 +1,11 @@
+# Mass-radius curve: sweep planet mass at fixed composition
+# Produces a 7-point mass-radius relation for a rocky Earth-like planet
+
+[base]
+config = "input/default.toml"
+
+[sweep]
+planet_mass = [0.5, 1.0, 2.0, 3.0, 5.0, 7.0, 10.0]
+
+[output]
+dir = "output_files/grid_mass_radius"

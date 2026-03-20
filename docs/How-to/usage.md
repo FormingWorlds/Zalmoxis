@@ -73,34 +73,114 @@ When `plots_enabled = true` in the `[Output]` section, Zalmoxis automatically ge
 plots_enabled = true
 ```
 
-This produces a four-panel figure showing the radial profiles of density, pressure, gravity, and temperature from the center to the surface:
+This produces a six-panel figure showing the radial profiles of density, pressure, temperature, gravity, phase state, and mass enclosed:
 
 ![Example profile plot](../img/example_profile_plot.png)
 
-**Example**: 1 $M_\oplus$ planet with a PALEOS iron core and MgSiO$_3$ mantle at $T_s$ = 3000 K (adiabatic mode). The dashed vertical line marks the core-mantle boundary (CMB) at ~0.5 $R_\oplus$.
+**Example**: 1 $M_\oplus$ planet with a PALEOS iron core and MgSiO$_3$ mantle at $T_s$ = 3000 K (adiabatic mode). The dashed vertical line marks the core-mantle boundary (CMB).
 
 - **Density** (top left): drops from ~14,000 kg/m$^3$ at the center (iron core) to ~3,000 kg/m$^3$ at the surface (silicate mantle). The sharp step at the CMB reflects the iron-to-silicate transition.
-- **Pressure** (top right): decreases monotonically from ~350 GPa at the center to 1 atm at the surface, on a logarithmic scale.
+- **Pressure** (top center): decreases monotonically from ~350 GPa at the center to 1 atm at the surface, on a logarithmic scale.
+- **Temperature** (top right): follows the adiabatic gradient from 3000 K at the surface to ~8000 K at the center. The steeper gradient in the iron core reflects iron's different $\nabla_{\mathrm{ad}}$.
 - **Gravity** (bottom left): rises through the core (as enclosed mass grows faster than $r^2$), peaks near the CMB at ~10 m/s$^2$, and stays roughly constant through the mantle.
-- **Temperature** (bottom right): follows the adiabatic gradient from 3000 K at the surface to ~8000 K at the center. The steeper gradient in the iron core reflects iron's different $\nabla_{\mathrm{ad}}$.
+- **Phase state** (bottom center): colored bars showing the thermodynamically stable phase at each depth, read from the PALEOS table's phase column. Liquid iron in the core (at 3000 K surface temperature), bridgmanite (solid MgSiO$_3$) in the mantle, with a thin liquid layer near the surface.
+- **Mass enclosed** (bottom right): enclosed mass as a function of radius. The CMB is visible as the kink where the slope changes from the dense core to the lighter mantle.
 
-If a temperature-dependent mantle EOS is used (any PALEOS, WolfBower2018, or RTPress100TPa EOS), an additional pressure-temperature phase diagram with mantle phase information is produced.
+## Running parameter grids
 
-## Running multiple masses in parallel
-
-To run Zalmoxis over a range of planetary masses in parallel, use the `run_parallel.py` utility:
+To sweep over any combination of parameters, use the grid runner with a TOML specification file:
 
 ```console
-python -m src.tools.run_parallel [choice]
+python -m src.tools.run_grid <grid.toml> -j <workers>
 ```
 
-where `[choice]` specifies the set of planetary masses to simulate. The available options are:
+The `-j` flag sets the number of parallel workers (default: 1, serial execution).
 
-* `Wagner`: 7 rocky planets with masses of 1, 2.5, 5, 7.5, 10, 12.5, and 15 Earth masses, following [Wagner et al. (2012)](https://www.aanda.org/articles/aa/full_html/2012/05/aa18441-11/aa18441-11.html).
-* `Boujibar`: Integer masses from 1 to 10 Earth masses, following [Boujibar et al. (2020)](https://ui.adsabs.harvard.edu/abs/2020JGRE..12506124B/abstract).
-* `default`: Masses from 1 to 10 Earth masses in unit steps. Fallback if no option is provided.
-* `SeagerEarth`: Masses of 1, 5, 10, and 50 Earth masses, following [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346). Use with the Earth-like rocky planet configuration.
-* `Seagerwater`: Same masses as `SeagerEarth`. Use with the water-rich planet configuration.
-* `custom`: Integer masses from 1 to 50 Earth masses, for generating high-resolution mass-radius curves.
+### Grid TOML format
 
-All parallel runs read from `input/default.toml` and override the planet mass for each run. Each mass produces its own `planet_profile{mass}.txt` file, and all results are collected in `calculated_planet_mass_radius.txt`.
+A grid TOML file has three sections:
+
+```toml
+[base]
+config = "input/default.toml"  # base config (relative to ZALMOXIS_ROOT)
+
+[sweep]
+# Each key is a parameter name, each value is a list to sweep over.
+# The runner generates the Cartesian product of all sweep parameters.
+planet_mass = [0.5, 1.0, 3.0, 5.0, 10.0]
+surface_temperature = [1000, 2000, 3000]
+
+[output]
+dir = "output_files/grid_results"  # output directory (relative to ZALMOXIS_ROOT)
+```
+
+The available sweep parameter names and their mapping to TOML config sections are:
+
+| Sweep parameter | Config section | Config key |
+|---|---|---|
+| `planet_mass` | `[InputParameter]` | `planet_mass` |
+| `core_mass_fraction` | `[AssumptionsAndInitialGuesses]` | `core_mass_fraction` |
+| `mantle_mass_fraction` | `[AssumptionsAndInitialGuesses]` | `mantle_mass_fraction` |
+| `temperature_mode` | `[AssumptionsAndInitialGuesses]` | `temperature_mode` |
+| `surface_temperature` | `[AssumptionsAndInitialGuesses]` | `surface_temperature` |
+| `center_temperature` | `[AssumptionsAndInitialGuesses]` | `center_temperature` |
+| `core` | `[EOS]` | `core` |
+| `mantle` | `[EOS]` | `mantle` |
+| `ice_layer` | `[EOS]` | `ice_layer` |
+| `condensed_rho_min` | `[EOS]` | `condensed_rho_min` |
+| `condensed_rho_scale` | `[EOS]` | `condensed_rho_scale` |
+| `binodal_T_scale` | `[EOS]` | `binodal_T_scale` |
+| `mushy_zone_factor` | `[EOS]` | `mushy_zone_factor` |
+| `rock_solidus` | `[EOS]` | `rock_solidus` |
+| `rock_liquidus` | `[EOS]` | `rock_liquidus` |
+| `num_layers` | `[Calculations]` | `num_layers` |
+
+### Example: mass-radius curve
+
+Sweep planet mass to build a mass-radius relation for rocky planets (file: `input/grids/mass_radius.toml`):
+
+```toml
+[base]
+config = "input/default.toml"
+
+[sweep]
+planet_mass = [0.5, 1.0, 2.0, 3.0, 5.0, 7.0, 10.0]
+
+[output]
+dir = "output_files/grid_mass_radius"
+```
+
+Run with 2 workers:
+
+```console
+python -m src.tools.run_grid input/grids/mass_radius.toml -j 2
+```
+
+### Example: H$_2$ mixing grid
+
+Sweep planet mass, mantle composition, and surface temperature to explore the effect of dissolved hydrogen on planet radius (file: `input/grids/h2_mixing.toml`):
+
+```toml
+[base]
+config = "input/default.toml"
+
+[sweep]
+planet_mass = [1.0, 3.0, 5.0, 10.0]
+mantle = ["PALEOS:MgSiO3", "PALEOS:MgSiO3:0.97+Chabrier:H:0.03", "PALEOS:MgSiO3:0.90+Chabrier:H:0.10"]
+surface_temperature = [2000, 3000]
+
+[output]
+dir = "output_files/grid_h2_mixing"
+```
+
+This produces 4 x 3 x 2 = 24 models.
+
+### Output
+
+Each grid run produces:
+
+- **`grid_summary.csv`**: One row per model with columns for all sweep parameters, calculated radius (R_earth), mass (M_earth), convergence flags, wall time, and any error messages.
+- **Per-run JSON files**: Individual `<label>.json` files with the same information, named by the parameter combination.
+
+Plotting and per-profile data output are disabled during grid runs for speed. To generate plots for specific parameter combinations, run them individually with `plots_enabled = true`.
+
