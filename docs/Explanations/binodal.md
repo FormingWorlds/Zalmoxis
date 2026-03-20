@@ -64,6 +64,10 @@ The binodal defines the phase boundary in $(T, P, x_{\mathrm{H_2}})$ space betwe
 
 The binodal temperature is computed from two generalized logistic branches: an ascending branch (small $x_{\mathrm{H_2}}$, rising toward $T_c$) and a descending branch (large $x_{\mathrm{H_2}}$, falling from $T_c$). Their natural crossing occurs near the critical mole fraction $x_c \approx 0.739$. The implementation evaluates both branches at every composition and takes the minimum, $T_b = \min(T_{\mathrm{asc}}, T_{\mathrm{desc}})$, which produces a smooth peak without an artificial kink at $x_c$.
 
+![Rogers+2025 binodal](../img/rogers2025_binodal.png)
+
+Binodal temperature $T_b$ as a function of H$_2$ mole fraction at seven pressures (0.5 to 30 GPa). The binodal drops with increasing pressure: at high P, H$_2$ and MgSiO$_3$ are compressed together and miscibility is easier. At P > 35 GPa, $T_c < 0$ and the system is always miscible. The peak near $x_c = 0.739$ (5.4% H$_2$ by mass) is the most difficult composition to mix.
+
 ### Pressure dependence
 
 The critical temperature $T_c$ at the binodal peak decreases linearly with pressure:
@@ -113,6 +117,10 @@ W = W_H - T \cdot W_S + P \cdot W_V(T)
 $$
 
 The critical pressure $P_c(T)$ above which the system is always single-phase is given by Eq. A8. The critical temperature at a given pressure is obtained by inverting this relationship.
+
+![Gupta+2025 critical curve](../img/gupta2025_critical_curve.png)
+
+Critical temperature $T_c(P)$ for the H$_2$-H$_2$O system. Below and to the right of the curve (shaded), the system separates into two immiscible phases. Above and to the left, it forms a single homogeneous fluid. The red dotted line marks the 647 K floor imposed by the H$_2$O critical point. Note the opposite pressure dependence compared to H$_2$-MgSiO$_3$: higher pressure makes H$_2$-H$_2$O mixing *harder*, because the positive volume of mixing favors phase separation under compression.
 
 ### The 647 K floor
 
