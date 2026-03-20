@@ -10,6 +10,7 @@ Several EOS families are supported (see [Equations of State](eos_physics.md) for
 - [Seager et al. (2007)](eos_physics.md#seager-et-al-2007-tabulated-eos): merged tabulated EOS at 300 K
 - [Wolf & Bower (2018)](eos_physics.md#wolf-bower-2018-temperature-dependent-eos): temperature-dependent RTpress EOS ($\leq 7\,M_\oplus$)
 - [RTPress100TPa](eos_physics.md#rtpress100tpa-extended-melt-eos): extended melt table to 100 TPa
+- [Chabrier H/He](eos_physics.md#chabrier-hhe-pure-h2): pure H$_2$ EOS for sub-Neptune interiors (use as mixing component)
 - [Analytic polytrope](eos_physics.md#analytic-modified-polytrope-seager-et-al-2007): fast closed-form approximation, no data files
 
 Layers can contain [multiple materials mixed by volume additivity](mixing.md), with phase-aware suppression of non-condensed volatiles.

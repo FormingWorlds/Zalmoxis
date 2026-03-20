@@ -40,7 +40,7 @@ In adiabatic mode, the temperature is parameterized as $T(P)$ rather than $T(r)$
 
 ## Chabrier H/He (Pure H$_2$)
 
-The `Chabrier:H` EOS provides temperature- and pressure-dependent properties for pure molecular hydrogen from the DirEOS2021 tables of [Chabrier et al. (2019, ApJ 872, 51)](https://doi.org/10.3847/1538-4357/aaf99f) and [Chabrier & Debras (2021, ApJ 917, 4)](https://doi.org/10.3847/1538-4357/ac1f72).
+The `Chabrier:H` EOS provides temperature- and pressure-dependent properties for pure molecular hydrogen from the DirEOS2021 tables of [Chabrier et al. (2019, ApJ 872, 51)](https://doi.org/10.3847/1538-4357/aaf99f) and [Chabrier & Debras (2021, ApJ 917, 4)](https://doi.org/10.3847/1538-4357/abfc48).
 The table covers all H$_2$ regimes: molecular, dissociated atomic, and ionized.
 
 **Grid.** 121 $\times$ 441 points ($\log T$, $\log P$): $T = 100$ to $10^8$ K, $P = 1$ Pa to $10^{22}$ Pa (53,361 grid points).
