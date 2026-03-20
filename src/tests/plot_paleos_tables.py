@@ -27,10 +27,13 @@ ZALMOXIS_ROOT = os.environ.get(
 )
 sys.path.insert(0, os.path.join(ZALMOXIS_ROOT, 'src'))
 
-from zalmoxis import zalmoxis as zal
-from zalmoxis.constants import earth_mass, earth_radius
-from zalmoxis.eos_functions import get_solidus_liquidus_functions
-from zalmoxis.zalmoxis import load_material_dictionaries, load_solidus_liquidus_functions
+from zalmoxis import zalmoxis as zal  # noqa: E402
+from zalmoxis.constants import earth_mass, earth_radius  # noqa: E402
+from zalmoxis.eos_functions import get_solidus_liquidus_functions  # noqa: E402
+from zalmoxis.zalmoxis import (  # noqa: E402
+    load_material_dictionaries,
+    load_solidus_liquidus_functions,
+)
 
 OUTPUT_DIR = os.path.join(ZALMOXIS_ROOT, 'output_files')
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -96,8 +99,17 @@ def run_adiabatic(mass_earth):
 
 
 def plot_table_pair(
-    field_name, solid_grid, liquid_grid, ulogP_s, ulogT_s, ulogP_l, ulogT_l,
-    solidus_func, liquidus_func, adiabat_results, fname,
+    field_name,
+    solid_grid,
+    liquid_grid,
+    ulogP_s,
+    ulogT_s,
+    ulogP_l,
+    ulogT_l,
+    solidus_func,
+    liquidus_func,
+    adiabat_results,
+    fname,
 ):
     """Plot solid + liquid table side by side with melting curves and adiabats."""
     fig, (ax_s, ax_l) = plt.subplots(1, 2, figsize=(16, 8), sharey=True)
@@ -123,24 +135,32 @@ def plot_table_pair(
         # Build pixel edges from cell centers
         dlogT = np.diff(ulogT)
         dlogP = np.diff(ulogP)
-        T_edges = np.concatenate([
-            [ulogT[0] - dlogT[0] / 2],
-            (ulogT[:-1] + ulogT[1:]) / 2,
-            [ulogT[-1] + dlogT[-1] / 2],
-        ])
-        P_edges = np.concatenate([
-            [ulogP[0] - dlogP[0] / 2],
-            (ulogP[:-1] + ulogP[1:]) / 2,
-            [ulogP[-1] + dlogP[-1] / 2],
-        ])
+        T_edges = np.concatenate(
+            [
+                [ulogT[0] - dlogT[0] / 2],
+                (ulogT[:-1] + ulogT[1:]) / 2,
+                [ulogT[-1] + dlogT[-1] / 2],
+            ]
+        )
+        P_edges = np.concatenate(
+            [
+                [ulogP[0] - dlogP[0] / 2],
+                (ulogP[:-1] + ulogP[1:]) / 2,
+                [ulogP[-1] + dlogP[-1] / 2],
+            ]
+        )
 
         T_edges_K = 10.0**T_edges
         P_edges_GPa = 10.0**P_edges / 1e9
 
         im = ax.pcolormesh(
-            T_edges_K, P_edges_GPa, grid,
-            vmin=vmin, vmax=vmax,
-            cmap='viridis', shading='flat',
+            T_edges_K,
+            P_edges_GPa,
+            grid,
+            vmin=vmin,
+            vmax=vmax,
+            cmap='viridis',
+            shading='flat',
         )
 
         # Melting curves
@@ -162,9 +182,12 @@ def plot_table_pair(
             if not conv:
                 lbl += ' (no conv.)'
             ax.plot(
-                T_adi, P_adi,
+                T_adi,
+                P_adi,
                 color=colors_adi[idx % len(colors_adi)],
-                ls=style, lw=2, label=lbl,
+                ls=style,
+                lw=2,
+                label=lbl,
             )
 
         ax.set_xscale('log')
@@ -212,16 +235,30 @@ def main():
         adiabat_results[mass] = res
 
     plot_table_pair(
-        'density', rho_s, rho_l,
-        ulogP_s, ulogT_s, ulogP_l, ulogT_l,
-        solidus_func, liquidus_func, adiabat_results,
+        'density',
+        rho_s,
+        rho_l,
+        ulogP_s,
+        ulogT_s,
+        ulogP_l,
+        ulogT_l,
+        solidus_func,
+        liquidus_func,
+        adiabat_results,
         os.path.join(OUTPUT_DIR, 'paleos_tables_density.png'),
     )
 
     plot_table_pair(
-        'nabla_ad', nabla_s, nabla_l,
-        ulogP_s, ulogT_s, ulogP_l, ulogT_l,
-        solidus_func, liquidus_func, adiabat_results,
+        'nabla_ad',
+        nabla_s,
+        nabla_l,
+        ulogP_s,
+        ulogT_s,
+        ulogP_l,
+        ulogT_l,
+        solidus_func,
+        liquidus_func,
+        adiabat_results,
         os.path.join(OUTPUT_DIR, 'paleos_tables_nabla_ad.png'),
     )
 

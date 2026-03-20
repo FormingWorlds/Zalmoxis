@@ -26,6 +26,7 @@ from __future__ import annotations
 import os
 
 import matplotlib
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
@@ -37,6 +38,7 @@ P_TRANSITION = 20.0e9  # 20 GPa
 # ---------------------------------------------------------------------------
 # Eq. 10-12: Solidus
 # ---------------------------------------------------------------------------
+
 
 def _solidus_low(P: np.ndarray) -> np.ndarray:
     """Solidus for P <= 20 GPa (Herzberg & Zhang 1996, Eq. 10).
@@ -98,6 +100,7 @@ def solidus(P: float | np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------------------
 # Eq. 11, 13: Liquidus
 # ---------------------------------------------------------------------------
+
 
 def _liquidus_low(P: np.ndarray) -> np.ndarray:
     """Liquidus for P <= 20 GPa (Herzberg & Zhang 1996, Eq. 11).
@@ -169,6 +172,7 @@ def liquidus(P: float | np.ndarray, model: str = 'A-chondritic') -> np.ndarray:
 # Convenience: both curves at once
 # ---------------------------------------------------------------------------
 
+
 def melting_curves(
     P: float | np.ndarray, model: str = 'A-chondritic'
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -192,6 +196,7 @@ def melting_curves(
 # ---------------------------------------------------------------------------
 # Plotting
 # ---------------------------------------------------------------------------
+
 
 def _load_existing_table(filepath):
     """Load an existing tabulated melting curve (P [Pa], T [K])."""
@@ -273,12 +278,20 @@ def plot_melting_curves(output_dir: str | None = None):
         mask_sol = tab_P_sol <= 140e9
         mask_liq = tab_P_liq <= 140e9
         ax.plot(
-            tab_P_sol[mask_sol] / 1e9, tab_T_sol[mask_sol],
-            'g--', lw=2, alpha=0.7, label='Solidus (Zalmoxis table)',
+            tab_P_sol[mask_sol] / 1e9,
+            tab_T_sol[mask_sol],
+            'g--',
+            lw=2,
+            alpha=0.7,
+            label='Solidus (Zalmoxis table)',
         )
         ax.plot(
-            tab_P_liq[mask_liq] / 1e9, tab_T_liq[mask_liq],
-            'r--', lw=2, alpha=0.7, label='Liquidus (Zalmoxis table)',
+            tab_P_liq[mask_liq] / 1e9,
+            tab_T_liq[mask_liq],
+            'r--',
+            lw=2,
+            alpha=0.7,
+            label='Liquidus (Zalmoxis table)',
         )
 
         # analytic (A-chondritic)
@@ -289,9 +302,7 @@ def plot_melting_curves(output_dir: str | None = None):
         ax.axvline(20, color='grey', ls=':', lw=0.8, alpha=0.6)
         ax.set_xlabel('Pressure [GPa]', fontsize=12)
         ax.set_ylabel('Temperature [K]', fontsize=12)
-        ax.set_title(
-            'Monteux+2016 analytic vs. existing Zalmoxis melting curves', fontsize=12
-        )
+        ax.set_title('Monteux+2016 analytic vs. existing Zalmoxis melting curves', fontsize=12)
         ax.legend(fontsize=9, loc='upper left')
         ax.set_xlim(0, 140)
         ax.grid(True, alpha=0.3)
@@ -301,7 +312,7 @@ def plot_melting_curves(output_dir: str | None = None):
         fig2.savefig(fname2, dpi=200, bbox_inches='tight')
         print(f'Saved: {fname2}')
     else:
-        print(f'Warning: existing table files not found, skipping comparison plot.')
+        print('Warning: existing table files not found, skipping comparison plot.')
 
     print('Done.')
 

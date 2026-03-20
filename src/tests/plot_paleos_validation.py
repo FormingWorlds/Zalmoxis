@@ -26,9 +26,12 @@ ZALMOXIS_ROOT = os.environ.get(
 )
 sys.path.insert(0, os.path.join(ZALMOXIS_ROOT, 'src'))
 
-from zalmoxis import zalmoxis as zal
-from zalmoxis.constants import earth_mass, earth_radius
-from zalmoxis.zalmoxis import load_material_dictionaries, load_solidus_liquidus_functions
+from zalmoxis import zalmoxis as zal  # noqa: E402
+from zalmoxis.constants import earth_mass, earth_radius  # noqa: E402
+from zalmoxis.zalmoxis import (  # noqa: E402
+    load_material_dictionaries,
+    load_solidus_liquidus_functions,
+)
 
 OUTPUT_DIR = os.path.join(ZALMOXIS_ROOT, 'output_files')
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -133,7 +136,7 @@ def main():
 
     # Melting curves (Monteux16 analytic, the new default)
     # Clip to the valid range where liquidus > solidus (~490 GPa for A-chondritic)
-    from zalmoxis.melting_curves import monteux16_solidus, monteux16_liquidus
+    from zalmoxis.melting_curves import monteux16_liquidus, monteux16_solidus
 
     P_melt = np.logspace(5, 13.5, 1000)
     T_sol_all = monteux16_solidus(P_melt)

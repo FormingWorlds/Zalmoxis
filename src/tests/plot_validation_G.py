@@ -45,13 +45,12 @@ src_dir = os.path.join(ZALMOXIS_ROOT, 'src')
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
-from zalmoxis import zalmoxis as zal
-from zalmoxis.constants import TDEP_EOS_NAMES, earth_mass, earth_radius
-from zalmoxis.eos_functions import (
-    compute_adiabatic_temperature,
+from zalmoxis import zalmoxis as zal  # noqa: E402
+from zalmoxis.constants import earth_mass, earth_radius  # noqa: E402
+from zalmoxis.eos_functions import (  # noqa: E402
     get_solidus_liquidus_functions,
 )
-from zalmoxis.zalmoxis import (
+from zalmoxis.zalmoxis import (  # noqa: E402
     load_material_dictionaries,
     load_solidus_liquidus_functions,
 )
@@ -199,7 +198,7 @@ def plot_G6():
         m_earth = res['mass_enclosed'][-1] / earth_mass
         rocky_results.append((m_earth, r_earth))
         if not res.get('converged', False):
-            print(f'      WARNING: did not converge')
+            print('      WARNING: did not converge')
 
     # Collect Zalmoxis M-R points for water worlds
     print('  Running water M-R sweep...')
@@ -220,7 +219,7 @@ def plot_G6():
         m_earth = res['mass_enclosed'][-1] / earth_mass
         water_results.append((m_earth, r_earth))
         if not res.get('converged', False):
-            print(f'      WARNING: did not converge')
+            print('      WARNING: did not converge')
 
     # Load Zeng+2019 reference curves
     zeng_rocky_m, zeng_rocky_r = load_zeng_curve('massradiusEarthlikeRocky.txt')
@@ -441,7 +440,6 @@ def plot_G8():
 
         radii_lin = np.array(res_lin['radii'])
         temperature_lin = np.array(res_lin['temperature'])
-        pressure_lin = np.array(res_lin['pressure'])
 
         # Find CMB index
         cmb_idx = np.argmax(mass_enclosed >= cmb_mass)
