@@ -21,7 +21,7 @@ References
 Rogers, Young & Schlichting (2025), MNRAS 544, 3496.
     H2-MgSiO3 miscibility: doi:10.1093/mnras/stae2268
 
-Gupta, Kovacevic, Mazevet (2025), ApJL 982, L35.
+Gupta, Stixrude & Schlichting (2025), ApJL 982, L35.
     H2-H2O miscibility: doi:10.3847/2041-8213/adb8f5
 
 Gilmore & Stixrude (2025), Nature 650, 60.
@@ -86,9 +86,11 @@ def mass_to_mole_fraction(w_1, w_2, mu_1, mu_2):
 # Critical mole fraction (Eq. A4)
 _R25_XC = 0.73913
 
-# T_c parameters (Eq. A3): T_c = E * (1 - P/D), where P in GPa
+# T_c parameters (Eq. A3): T_c = E * (1 + P/D), where D = -35 GPa.
+# Equivalently T_c = E * (1 - P/35). T_c decreases with P, reaching
+# zero at P = 35 GPa (always miscible above this pressure).
 _R25_E = 4223.0  # K
-_R25_D = -35.0  # GPa (negative, so T_c increases as P decreases)
+_R25_D = -35.0  # GPa
 
 # Generalized logistic parameters for ascending branch (x < x_c)
 # Eq. A7: T_asc(x) = T_c / (1 + alpha_2 * exp(-alpha_3 * (x - alpha_4)))^(1/alpha_5)
@@ -246,7 +248,11 @@ def _gupta2025_W_V(T):
 def _gupta2025_lambda(T):
     """T-dependent asymmetry parameter (Eq. A6).
 
-    lambda = lambda_1 + lambda_2 / (T/T_0)^2
+    lambda = lambda_1 + lambda_2 / (T/T_0)
+
+    Note: first power of (T/T_0), not squared. W_V (Eq. A5) uses the
+    square; lambda does not. See Gupta, Stixrude & Schlichting (2025),
+    ApJL 982, L35, Eq. A6.
 
     Parameters
     ----------
@@ -259,7 +265,7 @@ def _gupta2025_lambda(T):
         Asymmetry parameter (dimensionless).
     """
     ratio = T / _G25_T0
-    return _G25_LAMBDA1 + _G25_LAMBDA2 / (ratio * ratio)
+    return _G25_LAMBDA1 + _G25_LAMBDA2 / ratio
 
 
 def _gupta2025_W(T, P_GPa):
