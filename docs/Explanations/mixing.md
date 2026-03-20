@@ -85,9 +85,20 @@ Behavior at representative densities:
 | 4000 | MgSiO$_3$ | 1.000 |
 | 13000 | Fe | 1.000 |
 
-The defaults are appropriate for H$_2$O, the only volatile with gas-phase data in the current EOS tables.
-Once other volatiles are added, $\rho_{\mathrm{min}}$ must be adjusted per material (CO$_2$: ~470, NH$_3$: ~225, He: ~70, H$_2$: ~30 kg/m$^3$).
-Both parameters are user-configurable in the `[EOS]` section of the TOML file (see [configuration](../How-to/configuration.md#phase-aware-mixing-parameters-multi-material-only)).
+For H$_2$O, the defaults are appropriate.
+For other volatiles, the code sets per-component values automatically (see table below).
+The global `condensed_rho_min` and `condensed_rho_scale` parameters in the TOML config serve as fallbacks for any component not in the internal lookup table.
+
+### Per-component defaults
+
+| EOS component | `condensed_rho_min` (kg/m$^3$) | `condensed_rho_scale` (kg/m$^3$) | Physical basis |
+|---|---|---|---|
+| `Chabrier:H` | 30 | 10 | H$_2$ critical density (~31 kg/m$^3$). Narrow transition because the condensed/gas boundary is sharp. |
+| `PALEOS:H2O` | 322 | 50 (global) | H$_2$O critical density (647 K, 22.1 MPa). |
+| `Seager2007:H2O` | 322 | 50 (global) | Same as above. |
+| All others | global config value | global config value | Iron and MgSiO$_3$ always have $\rho > 2500$ kg/m$^3$; the sigmoid returns $\sigma \approx 1.0$ to machine precision. |
+
+Both the global fallback parameters are user-configurable in the `[EOS]` section of the TOML file (see [configuration](../How-to/configuration.md#phase-aware-mixing-parameters-multi-material-only)).
 
 ---
 
@@ -118,11 +129,54 @@ A density-based criterion handles this naturally without consulting phase tables
 
 ---
 
-## Extension to volatile-rich and sub-Neptune interiors
+## Binodal (miscibility) suppression for sub-Neptune interiors
 
-The sigmoid framework is forward-compatible with miscible sub-Neptune interiors (e.g., [Young et al. 2024](https://ui.adsabs.harvard.edu/abs/2024PSJ.....5..268Y/abstract), [2025](https://ui.adsabs.harvard.edu/abs/2025PSJ.....6..251Y/abstract)), where rock-volatile composition varies continuously with depth.
-Future extensions can:
+When H$_2$ is mixed with silicate or water (e.g., `"PALEOS:MgSiO3:0.97+Chabrier:H:0.03"`), a density-based sigmoid alone is insufficient.
+H$_2$ may be dense enough to pass the density sigmoid (especially at high pressures), yet still be thermodynamically immiscible with its partner material below the miscibility boundary (the binodal).
+A second sigmoid, based on the binodal temperature, determines whether H$_2$ participates in the structural density.
 
-- Replace the fixed sigmoid parameters with per-component values or physics-based miscibility weights from DFT-MD calculations.
-- Add depth-dependent fractions via the `LayerMixture.update_fractions()` interface (already supported).
-- Introduce non-ideal mixing corrections (excess volume) in `calculate_mixed_density()` without changing the upstream solver code.
+The total suppression weight for an H$_2$ component is the product of both sigmoids:
+
+$$
+\sigma_{\mathrm{total}} = \sigma_{\mathrm{density}} \times \sigma_{\mathrm{binodal}}
+$$
+
+where $\sigma_{\mathrm{density}}$ is the density-based sigmoid described above, and $\sigma_{\mathrm{binodal}}$ is the binodal (miscibility) sigmoid.
+When the temperature is above the binodal, $\sigma_{\mathrm{binodal}} \approx 1$ and H$_2$ is included.
+When below, $\sigma_{\mathrm{binodal}} \to 0$ and H$_2$ is excluded.
+The transition is smooth, controlled by the `binodal_T_scale` parameter (default 50 K, giving a ~200 K transition zone).
+
+Two independent binodal models are available. Both are evaluated automatically when `Chabrier:H` is present in a mixture. The most restrictive (lowest) suppression weight wins.
+For the full physics, see the [binodal documentation](binodal.md).
+
+### H$_2$-MgSiO$_3$ miscibility: Rogers+2025
+
+The H$_2$-MgSiO$_3$ binodal from [Rogers, Young & Schlichting (2025, MNRAS 544, 3496)](https://doi.org/10.1093/mnras/stae2268) defines the phase boundary between a miscible supercritical fluid (above) and immiscible gas + melt (below).
+The binodal temperature varies with H$_2$ mole fraction and pressure:
+
+- At 1 GPa, the peak binodal temperature is ~4100 K (at the critical mole fraction $x_c = 0.74$).
+- At 10 GPa, it drops to ~3000 K (higher pressure promotes mixing).
+- Above 35 GPa, H$_2$ and MgSiO$_3$ are always miscible ($T_c \leq 0$).
+
+This model applies when `Chabrier:H` coexists with any MgSiO$_3$ EOS in the same layer.
+
+### H$_2$-H$_2$O miscibility: Gupta+2025
+
+The H$_2$-H$_2$O critical curve from [Gupta, Stixrude & Schlichting (2025, ApJL 982, L35)](https://doi.org/10.3847/2041-8213/adb8f5) uses an asymmetric Margules Gibbs free energy model.
+The critical temperature depends on pressure (via the interaction parameter $W(T, P)$).
+
+A floor of 647 K is imposed on the critical temperature.
+Below 647 K, H$_2$O condenses to liquid or ice, and the Margules model (fitted to supercritical DFT-MD data) is not valid.
+H$_2$ and condensed H$_2$O are always immiscible, so the floor ensures correct suppression for cold sub-Neptune models with condensed water layers.
+
+This model applies when `Chabrier:H` coexists with any H$_2$O EOS in the same layer.
+
+---
+
+## Future extensions
+
+The mixing framework supports several planned extensions without requiring changes to the upstream solver code:
+
+- Depth-dependent fractions via the `LayerMixture.update_fractions()` interface (already supported for PROTEUS/CALLIOPE coupling).
+- Non-ideal mixing corrections (excess volume) in `calculate_mixed_density()`.
+- Additional volatile EOS (He, CO$_2$, NH$_3$) with their own per-component sigmoid parameters.

@@ -29,7 +29,7 @@ Initial guesses and assumptions for the planetary structure.
 
 #### Temperature profiles
 
-Temperature profiles are only relevant when using a temperature-dependent EOS (i.e., `WolfBower2018:MgSiO3`, `RTPress100TPa:MgSiO3`, `PALEOS-2phase:MgSiO3`, `PALEOS:iron`, `PALEOS:MgSiO3`, or `PALEOS:H2O`). For all other EOS choices, a fixed 300 K is assumed internally and these parameters are ignored.
+Temperature profiles are only relevant when using a temperature-dependent EOS (i.e., `WolfBower2018:MgSiO3`, `RTPress100TPa:MgSiO3`, `PALEOS-2phase:MgSiO3`, `PALEOS:iron`, `PALEOS:MgSiO3`, `PALEOS:H2O`, or `Chabrier:H`). For all other EOS choices, a fixed 300 K is assumed internally and these parameters are ignored.
 
 - **`"isothermal"`**: Constant temperature equal to `surface_temperature` at all radii.
 - **`"linear"`**: Linear interpolation from `center_temperature` at $r = 0$ to `surface_temperature` at $r = R$.
@@ -103,6 +103,7 @@ Rules:
 | `PALEOS:iron` | PALEOS (Zenodo 19000316) | Fe (5 phases) | T-dependent | Yes | Unified single-file table with all stable Fe phases (alpha-bcc, delta-bcc, gamma-fcc, epsilon-hcp, liquid). P: 1 bar to 100 TPa, T: 300 to 100000 K. Phase boundary encoded in table. **Limited to $\leq 50\,M_\oplus$**. Enables T-dependent core with its own adiabat. |
 | `PALEOS:MgSiO3` | PALEOS (Zenodo 19000316) | MgSiO3 (6 phases) | T-dependent | Yes | Unified single-file table with all stable MgSiO3 phases (3 pyroxene, bridgmanite, postperovskite, liquid). P: 1 bar to 100 TPa, T: 300 to 100000 K. Phase boundary encoded in table. **Limited to $\leq 50\,M_\oplus$**. |
 | `PALEOS:H2O` | PALEOS (Zenodo 19000316) | H2O (7 EOS) | T-dependent | Yes | Unified single-file table with all stable H2O phases (ice Ih to X, liquid, vapor, superionic). P: 1 bar to 100 TPa, T: 100 to 100000 K. Phase boundary encoded in table. **Limited to $\leq 50\,M_\oplus$**. Use as `ice_layer` for 3-layer models. |
+| `Chabrier:H` | [Chabrier et al. (2019)](https://doi.org/10.3847/1538-4357/aaf99f), [Chabrier & Debras (2021)](https://doi.org/10.3847/1538-4357/ac1f72) | Pure H$_2$ (molecular, atomic, ionized) | T-dependent | Yes | DirEOS2021 table for pure hydrogen. Grid: 121 $\times$ 441 ($\log T$, $\log P$), $T = 100$ to $10^8$ K, $P = 1$ Pa to $10^{22}$ Pa. Provides $\rho$, $\nabla_{\mathrm{ad}}$, $c_p$, $c_v$, $\alpha$, and phase identifier. Loaded through the same `paleos_unified` reader. Use as a mixing component in the mantle (e.g., `"PALEOS:MgSiO3:0.97+Chabrier:H:0.03"`) for sub-Neptune interiors. **No standalone mass limit** (pressure range far exceeds any planet). In H$_2$ dissociation zones ($T \sim 3000$ to $30000$ K), $\nabla_{\mathrm{ad}}$ is clamped at 0.100 in the source tables. |
 | `Analytic:iron` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) Table 3 | Fe (epsilon) | Fixed 300 K | No | Modified polytrope: $\rho(P) = \rho_0 + c \cdot P^n$. |
 | `Analytic:MgSiO3` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) Table 3 | MgSiO3 perovskite | Fixed 300 K | No | Modified polytrope. |
 | `Analytic:MgFeSiO3` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) Table 3 | (Mg,Fe)SiO3 | Fixed 300 K | No | Modified polytrope. |
@@ -116,10 +117,11 @@ $$\rho(P) = \rho_0 + c \cdot P^n$$
 
 where $\rho_0$ is the zero-pressure density, $c$ and $n$ are fitted constants. This approximation is valid for $P < 10^{16}$ Pa and reproduces the full tabulated EOS to 2 to 12% accuracy across all planetary pressures. The analytic EOS requires no external data files, making it useful for quick exploration and testing.
 
-**Temperature-dependent EOS.** Two families of T-dependent EOS are available:
+**Temperature-dependent EOS.** Three families of T-dependent EOS are available:
 
 1. **Separate solid/liquid tables** (`WolfBower2018:MgSiO3`, `RTPress100TPa:MgSiO3`, `PALEOS-2phase:MgSiO3`): use separate $\rho(P, T)$ grids for solid and melt phases, with linear melt-fraction interpolation between external solidus and liquidus melting curves.
 2. **Unified PALEOS tables** (`PALEOS:iron`, `PALEOS:MgSiO3`, `PALEOS:H2O`): single file per material containing all stable phases. The thermodynamically stable phase at each $(P, T)$ is encoded in the table, and the phase boundary (liquidus) is extracted automatically. No external melting curves needed. A configurable `mushy_zone_factor` controls the width of an artificial mushy zone below the liquidus.
+3. **Chabrier H/He tables** (`Chabrier:H`): DirEOS2021 tables from [Chabrier et al. (2019)](https://doi.org/10.3847/1538-4357/aaf99f) and [Chabrier & Debras (2021)](https://doi.org/10.3847/1538-4357/ac1f72). Same 10-column format as unified PALEOS. Intended for use as a mixing component in sub-Neptune mantles, combined with binodal (miscibility) suppression.
 
 When any T-dependent EOS is assigned to any layer, the `temperature_mode`, `surface_temperature`, and `center_temperature` parameters in `[AssumptionsAndInitialGuesses]` become active.
 
@@ -147,10 +149,29 @@ See the [mixing documentation](../Explanations/mixing.md) for the physics.
 
 | Field | Required | Default | Unit | Description |
 |---|---|---|---|---|
-| `condensed_rho_min` | No | `322.0` | kg/m$^3$ | Sigmoid center density, set to the H$_2$O critical density (322 kg/m$^3$ at 647 K, 22.1 MPa). Components with density well below this are progressively excluded from the harmonic mean. Must be adjusted for other volatiles: CO$_2$ ~470, NH$_3$ ~225, He ~70, H$_2$ ~30 kg/m$^3$. Currently only H$_2$O has gas-phase data in the EOS tables, so the default is appropriate for all existing configurations. |
+| `condensed_rho_min` | No | `322.0` | kg/m$^3$ | Sigmoid center density. The default is the H$_2$O critical density (322 kg/m$^3$ at 647 K, 22.1 MPa). Components with density well below this are progressively excluded from the harmonic mean. For `Chabrier:H`, the code uses a per-component value of 30 kg/m$^3$ automatically (the H$_2$ critical density), so this global setting does not need to be changed for sub-Neptune models. For future volatiles (CO$_2$ ~470, NH$_3$ ~225, He ~70), this parameter serves as the fallback. |
 | `condensed_rho_scale` | No | `50.0` | kg/m$^3$ | Sigmoid transition width. Smaller values produce a sharper cutoff; larger values a more gradual transition. The sigmoid goes from $\sigma = 0.02$ to $\sigma = 0.98$ over a density range of approximately $8 \times$ `condensed_rho_scale`. |
 
 Both parameters must be positive. The validation rejects non-positive values at config load time.
+
+#### Binodal (miscibility) suppression parameters (H2-containing mixtures only)
+
+When `Chabrier:H` is mixed with silicate or water components, an additional binodal (miscibility) suppression determines whether H$_2$ participates in the harmonic mean at each $(P, T)$ point.
+Two independent binodal models are evaluated automatically:
+
+- **H$_2$-MgSiO$_3$**: [Rogers, Young & Schlichting (2025)](https://doi.org/10.1093/mnras/stae2268) analytic binodal fit.
+- **H$_2$-H$_2$O**: [Gupta, Stixrude & Schlichting (2025)](https://doi.org/10.3847/2041-8213/adb8f5) Gibbs free energy model.
+
+Above the binodal temperature, H$_2$ is miscible with its partner and participates fully in the density calculation.
+Below the binodal, H$_2$ is suppressed via a smooth sigmoid transition.
+See the [binodal physics documentation](../Explanations/binodal.md) for details.
+
+| Field | Required | Default | Unit | Description |
+|---|---|---|---|---|
+| `binodal_T_scale` | No | `50.0` | K | Sigmoid width for binodal suppression. Controls how sharply H$_2$ is excluded below the miscibility boundary. With the default of 50 K, the sigmoid goes from $\sigma = 0.02$ to $\sigma = 0.98$ over a temperature range of approximately 400 K. Smaller values produce a sharper transition. Has no effect on layers without `Chabrier:H` components. |
+
+!!! note "Per-component density suppression"
+    When `Chabrier:H` is present in a mixture, the density-based sigmoid (controlled by `condensed_rho_min` and `condensed_rho_scale`) and the binodal sigmoid are combined multiplicatively: $\sigma_{\mathrm{total}} = \sigma_{\mathrm{density}} \times \sigma_{\mathrm{binodal}}$. H$_2$ uses a per-component `condensed_rho_min` of 30 kg/m$^3$ (near the H$_2$ critical density) and `condensed_rho_scale` of 10 kg/m$^3$ internally, regardless of the global config values. The global `condensed_rho_min` and `condensed_rho_scale` still apply to other volatile components (e.g., H$_2$O at 322 kg/m$^3$) in the same mixture.
 
 #### Melting curve selection
 
@@ -170,6 +191,7 @@ The `rock_solidus` and `rock_liquidus` fields control which melting curves are u
 | `Monteux16-liquidus-A-chondritic` | Analytic | [Monteux et al. (2016)](https://doi.org/10.1016/j.epsl.2016.05.010) Eqs. 11/13 | Default. A-chondritic composition. Valid to ~500 GPa. |
 | `Monteux16-liquidus-F-peridotitic` | Analytic | [Monteux et al. (2016)](https://doi.org/10.1016/j.epsl.2016.05.010) Eqs. 11/13 | F-peridotitic composition. Valid to ~660 GPa. |
 | `Stixrude14-liquidus` | Analytic | [Stixrude (2014)](https://doi.org/10.1098/rsta.2013.0076) Eq. 1.9 | Simon-like power law for pure MgSiO$_3$. Valid at all $P$. Liquidus always above solidus (constant ratio). |
+| `PALEOS-liquidus` | Analytic | [Belonoshko et al. (2005)](https://doi.org/10.1103/PhysRevB.72.104107) / [Fei et al. (2021)](https://doi.org/10.1103/PhysRevLett.127.135701) | Piecewise Simon-Glatzel fit: Belonoshko+2005 ($P < 2.55$ GPa) / Fei+2021 ($P \geq 2.55$ GPa). This is the melting curve used internally by the PALEOS unified MgSiO$_3$ table. Use it with `PALEOS-2phase:MgSiO3` for consistency with the unified table's phase boundary. Valid at all $P$. |
 | `Monteux600-solidus-tabulated` | Tabulated | Monteux et al. (2016) with fixed 600 K gap | Legacy. Returns NaN outside table range ($P > 999$ GPa). |
 | `Monteux600-liquidus-tabulated` | Tabulated | Monteux et al. (2016) with fixed 600 K gap | Legacy. Returns NaN outside table range. |
 
@@ -236,7 +258,28 @@ condensed_rho_scale = 50.0
 ```
 The mantle is 85% MgSiO$_3$ and 15% H$_2$O by mass. Each component's density and phase are evaluated independently from the PALEOS table. At depth (high $P$), both components are condensed and mixed via the standard harmonic mean. Near the surface (low $P$), H$_2$O transitions to vapor/supercritical gas and is smoothly suppressed by the sigmoid weighting, preventing unphysical radius inflation.
 
-**4. Earth-like rocky planet** (Seager cold model, iron core + silicate mantle, 2-layer):
+**4. Sub-Neptune with dissolved H$_2$** (iron core + mixed silicate-H$_2$ mantle, binodal suppression):
+```toml
+[InputParameter]
+planet_mass               = 5
+
+[AssumptionsAndInitialGuesses]
+core_mass_fraction        = 0.25
+temperature_mode          = "adiabatic"
+surface_temperature       = 2000
+center_temperature        = 10000
+
+[EOS]
+core                = "PALEOS:iron"
+mantle              = "PALEOS:MgSiO3:0.97+Chabrier:H:0.03"
+ice_layer           = ""
+condensed_rho_min   = 322.0    # still needed for any H2O components in other layers
+condensed_rho_scale = 50.0
+binodal_T_scale     = 50.0     # H2-silicate miscibility sigmoid width (K)
+```
+The mantle is 97% MgSiO$_3$ and 3% H$_2$ by mass, representing a sub-Neptune with a miscible interior where H$_2$ is dissolved into the magma. The [Rogers+2025 binodal model](../Explanations/binodal.md) determines the miscibility boundary: above the binodal temperature (~4000 K at 1 GPa, decreasing to ~3000 K at 10 GPa), H$_2$ is miscible and contributes to the structural density. Below the binodal, H$_2$ is phase-separated and smoothly excluded. The per-component `condensed_rho_min` for H$_2$ (30 kg/m$^3$) is set automatically.
+
+**5. Earth-like rocky planet** (Seager cold model, iron core + silicate mantle, 2-layer):
 ```toml
 [EOS]
 core      = "Seager2007:iron"
@@ -244,7 +287,7 @@ mantle    = "Seager2007:MgSiO3"
 ice_layer = ""
 ```
 
-**5. Hot rocky planet** (Wolf & Bower T-dependent mantle, 2-layer):
+**6. Hot rocky planet** (Wolf & Bower T-dependent mantle, 2-layer):
 ```toml
 [EOS]
 core      = "Seager2007:iron"
@@ -253,7 +296,7 @@ ice_layer = ""
 ```
 Requires `temperature_mode`, `surface_temperature`, and `center_temperature` to be set in `[AssumptionsAndInitialGuesses]`.
 
-**6. Water-rich planet** (3-layer Seager model, iron core + silicate mantle + water ice):
+**7. Water-rich planet** (3-layer Seager model, iron core + silicate mantle + water ice):
 ```toml
 [AssumptionsAndInitialGuesses]
 core_mass_fraction   = 0.25
@@ -267,7 +310,7 @@ ice_layer = "Seager2007:H2O"
 ```
 Note: `mantle_mass_fraction` must be > 0 for a 3-layer model.
 
-**7. Carbon planet / exotic compositions** (iron core + SiC or graphite mantle):
+**8. Carbon planet / exotic compositions** (iron core + SiC or graphite mantle):
 ```toml
 [EOS]
 core      = "Analytic:iron"
@@ -277,7 +320,7 @@ ice_layer = ""
 
 Other exotic mantles: `Analytic:graphite`, `Analytic:MgFeSiO3`.
 
-**8. Mixed-EOS model** (tabulated core + analytic mantle):
+**9. Mixed-EOS model** (tabulated core + analytic mantle):
 ```toml
 [EOS]
 core      = "Seager2007:iron"
@@ -286,7 +329,7 @@ ice_layer = ""
 ```
 Mixing tabulated and analytic EOS across layers is fully supported.
 
-**9. Pure iron sphere** (single-composition edge case, core fills entire planet):
+**10. Pure iron sphere** (single-composition edge case, core fills entire planet):
 ```toml
 [AssumptionsAndInitialGuesses]
 core_mass_fraction   = 1.0

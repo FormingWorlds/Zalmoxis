@@ -38,6 +38,36 @@ In adiabatic mode, the temperature is parameterized as $T(P)$ rather than $T(r)$
 
 ---
 
+## Chabrier H/He (Pure H$_2$)
+
+The `Chabrier:H` EOS provides temperature- and pressure-dependent properties for pure molecular hydrogen from the DirEOS2021 tables of [Chabrier et al. (2019, ApJ 872, 51)](https://doi.org/10.3847/1538-4357/aaf99f) and [Chabrier & Debras (2021, ApJ 917, 4)](https://doi.org/10.3847/1538-4357/ac1f72).
+The table covers all H$_2$ regimes: molecular, dissociated atomic, and ionized.
+
+**Grid.** 121 $\times$ 441 points ($\log T$, $\log P$): $T = 100$ to $10^8$ K, $P = 1$ Pa to $10^{22}$ Pa (53,361 grid points).
+
+**Format.** Converted to the same 10-column PALEOS-compatible format (P, T, $\rho$, $u$, $s$, $c_p$, $c_v$, $\alpha$, $\nabla_{\mathrm{ad}}$, phase_id) and loaded through the same `paleos_unified` reader.
+The derivations are:
+
+- $\alpha$ (thermal expansivity): exact from the table.
+- $c_p$: derived as $P \alpha / (\rho \, \nabla_{\mathrm{ad}})$.
+- $c_v$: from the Mayer relation.
+
+**$\nabla_{\mathrm{ad}}$ clamping.** In the H$_2$ dissociation zone ($T \sim 3000$ to $30{,}000$ K, $P \sim 0.1$ to $1000$ GPa), the source tables clamp $\nabla_{\mathrm{ad}}$ at a floor of 0.100.
+This affects 17.6% of H table grid points.
+The clamping makes $c_p$ unreliable in this region (it is derived from $\nabla_{\mathrm{ad}}$), but Zalmoxis uses $\nabla_{\mathrm{ad}}$ directly for adiabat integration, so this limitation does not affect the structure solver.
+
+**Negative $\alpha$ and $c_p$.** Approximately 30% of the physical domain has negative thermal expansivity ($\alpha < 0$) and consequently negative $c_p$.
+These are physical: H$_2$ contracts upon heating in regions where dissociation or ionization absorb enthalpy faster than thermal expansion adds volume.
+Zalmoxis uses $\nabla_{\mathrm{ad}}$ for adiabat integration and $\rho(P, T)$ for structure, so negative $c_p$ does not affect the solver.
+
+**Intended use.** `Chabrier:H` is designed as a mixing component in sub-Neptune mantle layers (e.g., `"PALEOS:MgSiO3:0.97+Chabrier:H:0.03"`), not as a standalone layer EOS.
+When mixed with silicate or water, [binodal (miscibility) suppression](binodal.md) determines whether the H$_2$ component participates in the structural density at each $(P, T)$ point.
+
+**Additional tables.** The data directory also contains tables for pure He and three H/He mixtures at different helium mass fractions ($Y = 0.275, 0.292, 0.297$).
+These are not currently registered in the EOS registry but are available for future use.
+
+---
+
 ### PALEOS-2phase (MgSiO3 only)
 
 The `PALEOS-2phase:MgSiO3` EOS provides MgSiO$_3$ as separate solid and liquid table files ([Zenodo record 18924171](https://zenodo.org/records/18924171)).

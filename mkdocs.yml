@@ -19,6 +19,7 @@ nav:
       - Model overview: Explanations/model.md
       - Equations of state: Explanations/eos_physics.md
       - Multi-material mixing: Explanations/mixing.md
+      - Binodal suppression: Explanations/binodal.md
       - Process flow: Explanations/process_flow.md
       - Code architecture: Explanations/code_architecture.md
 
@@ -32,6 +33,7 @@ nav:
           - EOS properties: Reference/api/zalmoxis.eos_properties.md
           - Melting curves: Reference/api/zalmoxis.melting_curves.md
           - Mixing: Reference/api/zalmoxis.mixing.md
+          - Binodal: Reference/api/zalmoxis.binodal.md
           - Structure model: Reference/api/zalmoxis.structure_model.md
       - Data: Reference/data.md
 

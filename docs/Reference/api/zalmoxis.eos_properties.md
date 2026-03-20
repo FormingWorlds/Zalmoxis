@@ -63,3 +63,13 @@ The `EOS_REGISTRY` is a flat dict mapping EOS identifier strings to material pro
 | `PALEOS:H2O` | `data/EOS_PALEOS_H2O/paleos_water_eos_table_pt.dat` | H2O, 7 EOS (ice Ih-X, liquid, vapor, superionic). Format: `paleos_unified`. |
 
 Unified tables derive their phase boundary from the `phase` column at load time. No external melting curves needed. The `mushy_zone_factor` config parameter controls an optional artificial mushy zone below the extracted liquidus.
+
+---
+
+### Chabrier+2019/2021 (pure H2, T-dependent)
+
+| EOS identifier | EOS file | Description |
+|---|---|---|
+| `Chabrier:H` | `data/EOS_Chabrier2021_HHe/chabrier2021_H.dat` | Pure H$_2$ (molecular, atomic, ionized). DirEOS2021 table from [Chabrier et al. (2019)](https://doi.org/10.3847/1538-4357/aaf99f) / [Chabrier & Debras (2021)](https://doi.org/10.3847/1538-4357/ac1f72). Grid: 121 $\times$ 441 ($\log T$, $\log P$), $T = 100$ to $10^8$ K, $P = 1$ Pa to $10^{22}$ Pa. Format: `paleos_unified`. Loaded through the same reader as unified PALEOS tables. |
+
+Additional tables are available in the same data directory (`chabrier2021_HE.dat`, `chabrier2021_HHe_Y0275.dat`, etc.) but are not registered in the EOS registry. Only pure H$_2$ is currently used.
