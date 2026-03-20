@@ -44,16 +44,43 @@ For the full list of parameters (EOS selection, temperature modes, solver settin
 
 ## Output files
 
-All output files are written to the `output_files/` directory.
+All output files are written to the `output_files/` directory (created automatically on first run). The directory structure looks like:
+
+```
+output_files/
+├── planet_profile.txt            # radial profiles (single run)
+├── planet_profile5.0.txt         # radial profiles (batch run, mass in filename)
+├── calculated_planet_mass_radius.txt  # summary: mass and radius per run
+├── planet_profile.png            # 6-panel structure plot (if plots_enabled)
+├── grid_results/                 # grid runner output (if using run_grid)
+│   ├── grid_summary.csv
+│   └── *.json
+└── pressure_profiles.txt         # iteration diagnostics (if enabled)
+```
 
 ### Profile files
 
-- **`planet_profile.txt`**: Full radial profile for a single-mass run. Columns: radius (m), density (kg/m^3), gravity (m/s^2), pressure (Pa), temperature (K), mass enclosed (kg).
-- **`planet_profile{mass}.txt`**: Same format, but with the planet mass (in Earth masses) appended to the filename. Produced by parallel batch runs to distinguish between different masses.
+When `data_enabled = true` (the default), the solver writes radial profiles as tab-separated text:
+
+- **`planet_profile.txt`**: Full radial profile for a single-mass run.
+- **`planet_profile{mass}.txt`**: Same format, with the planet mass (in Earth masses) appended. Produced by batch runs to distinguish between different masses.
+
+The columns are:
+
+| Column | Unit | Description |
+|--------|------|-------------|
+| `radius` | m | Distance from the planet center |
+| `density` | kg/m$^3$ | Local density |
+| `gravity` | m/s$^2$ | Local gravitational acceleration |
+| `pressure` | Pa | Local pressure |
+| `temperature` | K | Local temperature |
+| `mass_enclosed` | kg | Total mass enclosed within this radius |
+
+The first row is the center (r = 0) and the last row is the surface. Shells beyond the planet surface (where the ODE terminal event fired) are padded with zeros.
 
 ### Summary file
 
-- **`calculated_planet_mass_radius.txt`**: Two-column summary (calculated mass in kg, calculated radius in m). Each row corresponds to one completed simulation. Appended across successive runs.
+- **`calculated_planet_mass_radius.txt`**: Two-column summary (calculated mass in kg, calculated radius in m). Each row corresponds to one completed simulation. Appended across successive runs, so multiple runs accumulate in one file.
 
 ### Iteration profiles (optional)
 
@@ -62,7 +89,7 @@ When `iteration_profiles_enabled = true` in the `[Output]` section:
 - **`pressure_profiles.txt`**: Pressure vs. radius for every iteration of the pressure adjustment loop.
 - **`density_profiles.txt`**: Density vs. radius for every iteration.
 
-These files are useful for diagnosing convergence behavior. They are overwritten at the start of each new run.
+These files are useful for diagnosing convergence behavior. They grow large quickly and are overwritten at the start of each new run. Leave disabled for production runs.
 
 ### Plots (optional)
 
