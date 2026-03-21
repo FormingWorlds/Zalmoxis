@@ -69,7 +69,9 @@ _PHASE_PRETTY = {
 }
 
 
-def _lookup_phases(radii, pressure, density, temperature, mass_enclosed, layer_eos_config):
+def _lookup_phases(
+    radii, pressure, density, temperature, mass_enclosed, layer_eos_config, cmb_mass
+):
     """Look up the PALEOS phase at each radial shell.
 
     Parameters
@@ -80,6 +82,8 @@ def _lookup_phases(radii, pressure, density, temperature, mass_enclosed, layer_e
         Profile arrays.
     layer_eos_config : dict
         Per-layer EOS config dict.
+    cmb_mass : float
+        Mass enclosed at the core-mantle boundary in kg.
 
     Returns
     -------
@@ -99,11 +103,6 @@ def _lookup_phases(radii, pressure, density, temperature, mass_enclosed, layer_e
     # Get primary component for each layer
     core_primary = parse_layer_components(core_eos).primary() if core_eos else None
     mantle_primary = parse_layer_components(mantle_eos).primary() if mantle_eos else None
-    # Find CMB mass
-    total_mass = mass_enclosed[-1]
-    # Read core_mass_fraction from mass profile (first shell where mass starts growing)
-    # Use the midpoint between min and max density as a heuristic for CMB
-    cmb_mass_est = 0.325 * total_mass  # default
 
     for i in range(len(radii)):
         P, T = pressure[i], temperature[i]
@@ -112,7 +111,7 @@ def _lookup_phases(radii, pressure, density, temperature, mass_enclosed, layer_e
             continue
 
         # Determine which EOS this shell uses
-        if mass_enclosed[i] < cmb_mass_est:
+        if mass_enclosed[i] < cmb_mass:
             eos_name = core_primary
         else:
             eos_name = mantle_primary
@@ -190,7 +189,7 @@ def plot_planet_profile_single(
     # Phase lookup
     if layer_eos_config is not None:
         phase_labels = _lookup_phases(
-            radii, pressure, density, temperature, mass_enclosed, layer_eos_config
+            radii, pressure, density, temperature, mass_enclosed, layer_eos_config, cmb_mass
         )
     else:
         phase_labels = ['unknown'] * len(radii)
