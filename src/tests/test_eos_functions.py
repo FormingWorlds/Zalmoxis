@@ -1421,6 +1421,89 @@ class TestGetPaleosUnifiedDensityBatch:
         result = get_paleos_unified_density_batch(np.array([]), np.array([]), mat, 1.0, cache)
         assert len(result) == 0
 
+    def test_batch_iron_mushy_zone(self):
+        """Iron mushy zone uses iron liquidus, not MgSiO3."""
+        if not _paleos_unified_data_available():
+            pytest.skip('Unified PALEOS data not found')
+
+        from zalmoxis.eos_functions import get_paleos_unified_density_batch
+        from zalmoxis.eos_properties import EOS_REGISTRY
+
+        mat = EOS_REGISTRY['PALEOS:iron']
+        pressures = np.array([50e9, 100e9, 200e9, 300e9])
+        temperatures = np.array([3000.0, 4000.0, 5000.0, 6000.0])
+
+        cache = {}
+        result = get_paleos_unified_density_batch(pressures, temperatures, mat, 0.8, cache)
+        assert len(result) == 4
+        assert all(np.isfinite(result))
+        # Iron densities should be well above silicate (~8000+ kg/m3)
+        assert all(r > 7000.0 for r in result)
+
+    def test_batch_h2o_mushy_zone(self):
+        """H2O mushy zone uses H2O liquidus, not MgSiO3."""
+        if not _paleos_unified_data_available():
+            pytest.skip('Unified PALEOS data not found')
+
+        from zalmoxis.eos_functions import get_paleos_unified_density_batch
+        from zalmoxis.eos_properties import EOS_REGISTRY
+
+        mat = EOS_REGISTRY['PALEOS:H2O']
+        # Use pressures/temperatures near the H2O melting curve
+        pressures = np.array([1e9, 5e9, 10e9])
+        temperatures = np.array([500.0, 800.0, 1200.0])
+
+        cache = {}
+        result = get_paleos_unified_density_batch(pressures, temperatures, mat, 0.8, cache)
+        assert len(result) == 3
+        assert all(np.isfinite(result))
+
+    @pytest.mark.parametrize('eos_key', ['PALEOS:iron', 'PALEOS:MgSiO3', 'PALEOS:H2O'])
+    def test_batch_vs_scalar_mushy_consistency(self, eos_key):
+        """Batch and scalar paths must agree for mushy zone densities."""
+        if not _paleos_unified_data_available():
+            pytest.skip('Unified PALEOS data not found')
+
+        from zalmoxis.eos_functions import (
+            get_paleos_unified_density,
+            get_paleos_unified_density_batch,
+        )
+        from zalmoxis.eos_properties import EOS_REGISTRY
+
+        mat = EOS_REGISTRY[eos_key]
+        mushy_factor = 0.8
+
+        # Choose P/T ranges appropriate for each material
+        if eos_key == 'PALEOS:iron':
+            pressures = np.array([50e9, 100e9, 200e9, 300e9])
+            temperatures = np.array([3000.0, 4000.0, 5000.0, 6000.0])
+        elif eos_key == 'PALEOS:MgSiO3':
+            pressures = np.array([50e9, 100e9, 200e9])
+            temperatures = np.array([3000.0, 4000.0, 5000.0])
+        else:  # H2O
+            pressures = np.array([1e9, 5e9, 10e9])
+            temperatures = np.array([500.0, 800.0, 1200.0])
+
+        cache = {}
+
+        # Scalar path (one at a time)
+        scalar_results = []
+        for p, t in zip(pressures, temperatures):
+            rho = get_paleos_unified_density(float(p), float(t), mat, mushy_factor, cache)
+            scalar_results.append(rho)
+
+        # Batch path
+        batch_results = get_paleos_unified_density_batch(
+            pressures, temperatures, mat, mushy_factor, cache
+        )
+
+        for i, (s, b) in enumerate(zip(scalar_results, batch_results)):
+            assert s is not None, f'Scalar returned None at index {i}'
+            assert np.isfinite(b), f'Batch returned non-finite at index {i}'
+            assert b == pytest.approx(
+                s, rel=1e-6
+            ), f'{eos_key} index {i}: scalar={s:.6f}, batch={b:.6f}'
+
 
 # =====================================================================
 # RTPress100TPa irregular grid path tests

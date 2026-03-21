@@ -1132,18 +1132,25 @@ def get_paleos_unified_density_batch(
         return result
 
     # Mushy zone path (vectorized).
-    # Compute T_liq from the PALEOS analytic melting curve rather than
-    # interpolating the extracted liquidus grid. This is faster and avoids
-    # branching per-element for the "outside liquidus coverage" case.
-    from .melting_curves import paleos_liquidus
+    # Use the material's own extracted liquidus (from phase column), not the
+    # hardcoded MgSiO3 analytic curve. Each unified table stores its liquidus
+    # boundary in cached['liquidus_log_p'] / cached['liquidus_log_t'].
+    liq_lp = cached['liquidus_log_p']
+    liq_lt = cached['liquidus_log_t']
 
-    T_liq = paleos_liquidus(pressures)
+    # Points outside liquidus pressure coverage -> direct lookup (no mushy zone)
+    in_coverage = (log_p >= liq_lp[0]) & (log_p <= liq_lp[-1])
+
+    # Interpolate T_liq from cached per-material grid (log-space)
+    log_t_liq = np.interp(log_p, liq_lp, liq_lt)
+    T_liq = 10.0**log_t_liq
     T_sol = T_liq * mushy_zone_factor
     log_t_sol = np.log10(np.maximum(T_sol, 1.0))
     log_t_liq = np.log10(np.maximum(T_liq, 1.0))
 
-    # Classify shells: above liquidus, below solidus, or in mushy zone
-    above = temperatures >= T_liq
+    # Classify shells: above liquidus, below solidus, or in mushy zone.
+    # Out-of-coverage points are treated as above-liquidus (direct lookup).
+    above = (temperatures >= T_liq) | ~in_coverage
     below = temperatures <= T_sol
     mushy = ~above & ~below
 
