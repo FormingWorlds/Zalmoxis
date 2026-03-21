@@ -39,20 +39,29 @@ ruff format src/ tests/
 
 The documentation is written in [markdown](https://www.markdownguide.org/basic-syntax/) and built with [Zensical](https://zensical.org/docs/get-started/), a modern static site generator compatible with mkdocs, used across the PROTEUS ecosystem.
 
-To serve the documentation locally:
+Install the docs dependencies once:
 
 ```console
 pip install -e ".[docs]"
+```
+
+To preview the documentation locally with live reload (auto-rebuilds and refreshes the browser on every file change):
+
+```console
 zensical serve
 ```
 
-This will build the pages and serve them on a local development server. Open the displayed URL (typically `http://127.0.0.1:8000`) in your browser to view the documentation as you edit. To build without serving:
+This serves at `http://127.0.0.1:8000` by default. Use `-a 127.0.0.1:<port>` for a different port. The `serve` command handles building internally; there is no need to run `build` first. To open the browser automatically, add `--open`.
+
+To produce a static build without serving (e.g., for CI):
 
 ```console
 zensical build --clean
 ```
 
-Do not use `mkdocs serve` or `mkdocs build` directly; Zensical wraps mkdocs with additional features and the raw commands may fail on theme or icon resolution.
+The `--clean` flag clears the `site/` cache before building.
+
+**Do not use `mkdocs serve` or `mkdocs build` directly.** Zensical replaces mkdocs with its own build pipeline. The raw mkdocs commands may fail on theme or icon resolution. Similarly, do not run `zensical build` before `zensical serve`, as `serve` manages its own build and a stale `site/` directory from a prior `build` can cause caching issues.
 
 You can find the documentation source in the [docs](https://github.com/FormingWorlds/Zalmoxis/tree/main/docs) directory.
 If you are adding new pages, make sure to update the listing in the [`mkdocs.yml`](https://github.com/FormingWorlds/Zalmoxis/tree/main/mkdocs.yml) under the `nav` entry.
