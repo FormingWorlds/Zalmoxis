@@ -503,13 +503,9 @@ class TestCalculateDensity:
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         cache = {}
-        rho1 = calculate_density(
-            100e9, EOS_REGISTRY, 'Seager2007:iron', 300, None, None, cache
-        )
+        rho1 = calculate_density(100e9, EOS_REGISTRY, 'Seager2007:iron', 300, None, None, cache)
         assert len(cache) == 1
-        rho2 = calculate_density(
-            200e9, EOS_REGISTRY, 'Seager2007:iron', 300, None, None, cache
-        )
+        rho2 = calculate_density(200e9, EOS_REGISTRY, 'Seager2007:iron', 300, None, None, cache)
         assert len(cache) == 1  # Same file, no reload
         assert rho2 > rho1  # Higher pressure -> higher density
 
@@ -616,8 +612,11 @@ class TestGetTdepDensity:
         from zalmoxis.eos_properties import material_properties_iron_Tdep_silicate_planets
 
         # Melting curves that always return NaN
-        nan_sf = lambda P: np.nan
-        nan_lf = lambda P: np.nan
+        def nan_sf(P):
+            return np.nan
+
+        def nan_lf(P):
+            return np.nan
 
         rho = get_Tdep_density(
             50e9, 3000, material_properties_iron_Tdep_silicate_planets, nan_sf, nan_lf
@@ -634,8 +633,11 @@ class TestGetTdepDensity:
         from zalmoxis.eos_properties import material_properties_iron_Tdep_silicate_planets
 
         # T_liq <= T_sol at all pressures (degenerate)
-        sf = lambda P: 5000.0
-        lf = lambda P: 4000.0  # Lower than solidus
+        def sf(P):
+            return 5000.0
+
+        def lf(P):
+            return 4000.0  # Lower than solidus
 
         rho = get_Tdep_density(
             50e9, 4500, material_properties_iron_Tdep_silicate_planets, sf, lf
@@ -657,8 +659,12 @@ class TestGetTdepMaterial:
         """Temperature below solidus returns 'solid_mantle'."""
         from zalmoxis.eos_functions import get_Tdep_material
 
-        sf = lambda P: 3000.0
-        lf = lambda P: 5000.0
+        def sf(P):
+            return 3000.0
+
+        def lf(P):
+            return 5000.0
+
         result = get_Tdep_material(100e9, 2000, sf, lf)
         assert result == 'solid_mantle'
 
@@ -666,8 +672,12 @@ class TestGetTdepMaterial:
         """Temperature above liquidus returns 'melted_mantle'."""
         from zalmoxis.eos_functions import get_Tdep_material
 
-        sf = lambda P: 3000.0
-        lf = lambda P: 5000.0
+        def sf(P):
+            return 3000.0
+
+        def lf(P):
+            return 5000.0
+
         result = get_Tdep_material(100e9, 6000, sf, lf)
         assert result == 'melted_mantle'
 
@@ -675,8 +685,12 @@ class TestGetTdepMaterial:
         """Temperature between solidus and liquidus returns 'mixed_mantle'."""
         from zalmoxis.eos_functions import get_Tdep_material
 
-        sf = lambda P: 3000.0
-        lf = lambda P: 5000.0
+        def sf(P):
+            return 3000.0
+
+        def lf(P):
+            return 5000.0
+
         result = get_Tdep_material(100e9, 4000, sf, lf)
         assert result == 'mixed_mantle'
 
@@ -684,8 +698,12 @@ class TestGetTdepMaterial:
         """When T_liq <= T_sol and T >= T_sol, returns 'melted_mantle'."""
         from zalmoxis.eos_functions import get_Tdep_material
 
-        sf = lambda P: 5000.0
-        lf = lambda P: 4000.0
+        def sf(P):
+            return 5000.0
+
+        def lf(P):
+            return 4000.0
+
         result = get_Tdep_material(100e9, 5000, sf, lf)
         assert result == 'melted_mantle'
 
@@ -693,8 +711,12 @@ class TestGetTdepMaterial:
         """When T_liq <= T_sol and T < T_sol, returns 'solid_mantle'."""
         from zalmoxis.eos_functions import get_Tdep_material
 
-        sf = lambda P: 5000.0
-        lf = lambda P: 4000.0
+        def sf(P):
+            return 5000.0
+
+        def lf(P):
+            return 4000.0
+
         result = get_Tdep_material(100e9, 3000, sf, lf)
         assert result == 'solid_mantle'
 
@@ -702,8 +724,11 @@ class TestGetTdepMaterial:
         """Vectorized evaluation with arrays of P and T."""
         from zalmoxis.eos_functions import get_Tdep_material
 
-        sf = lambda P: 3000.0
-        lf = lambda P: 5000.0
+        def sf(P):
+            return 3000.0
+
+        def lf(P):
+            return 5000.0
 
         P = np.array([100e9, 100e9, 100e9])
         T = np.array([2000, 4000, 6000])
@@ -777,9 +802,7 @@ class TestLoadPaleosUnifiedTable:
     def test_h2o_table(self):
         """Load PALEOS:H2O unified table."""
         root = os.environ.get('ZALMOXIS_ROOT', '')
-        h2o_file = os.path.join(
-            root, 'data', 'EOS_PALEOS_H2O', 'paleos_water_eos_table_pt.dat'
-        )
+        h2o_file = os.path.join(root, 'data', 'EOS_PALEOS_H2O', 'paleos_water_eos_table_pt.dat')
         if not os.path.isfile(h2o_file):
             pytest.skip('PALEOS H2O data not found')
 
@@ -1035,8 +1058,13 @@ class TestComputePaleosDtdp:
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['PALEOS-2phase:MgSiO3']
-        sf = lambda P: 8000.0  # Very high solidus so T=3000 is solid
-        lf = lambda P: 10000.0
+
+        def sf(P):
+            return 8000.0  # Very high solidus so T=3000 is solid
+
+        def lf(P):
+            return 10000.0
+
         cache = {}
 
         dtdp = _compute_paleos_dtdp(100e9, 3000, mat, sf, lf, cache)
@@ -1058,8 +1086,13 @@ class TestComputePaleosDtdp:
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['PALEOS-2phase:MgSiO3']
-        sf = lambda P: np.nan
-        lf = lambda P: np.nan
+
+        def sf(P):
+            return np.nan
+
+        def lf(P):
+            return np.nan
+
         cache = {}
 
         dtdp = _compute_paleos_dtdp(100e9, 3000, mat, sf, lf, cache)
@@ -1101,9 +1134,14 @@ class TestComputePaleosDtdp:
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['PALEOS-2phase:MgSiO3']
+
         # Set solidus and liquidus to bracket 4000 K
-        sf = lambda P: 3000.0
-        lf = lambda P: 5000.0
+        def sf(P):
+            return 3000.0
+
+        def lf(P):
+            return 5000.0
+
         cache = {}
 
         dtdp = _compute_paleos_dtdp(100e9, 4000, mat, sf, lf, cache)
@@ -1174,8 +1212,12 @@ class TestCalculateTemperatureProfile:
         try:
             with pytest.raises(ValueError, match='length does not match'):
                 calculate_temperature_profile(
-                    radii, 'prescribed', 300, 6000, os.path.dirname(tmp_path),
-                    os.path.basename(tmp_path)
+                    radii,
+                    'prescribed',
+                    300,
+                    6000,
+                    os.path.dirname(tmp_path),
+                    os.path.basename(tmp_path),
                 )
         finally:
             os.unlink(tmp_path)
@@ -1194,8 +1236,12 @@ class TestCalculateTemperatureProfile:
 
         try:
             T_func = calculate_temperature_profile(
-                radii, 'prescribed', 300, 6000, os.path.dirname(tmp_path),
-                os.path.basename(tmp_path)
+                radii,
+                'prescribed',
+                300,
+                6000,
+                os.path.dirname(tmp_path),
+                os.path.basename(tmp_path),
             )
             T_out = T_func(radii)
             np.testing.assert_allclose(T_out, T_profile, atol=1e-6)
@@ -1372,9 +1418,7 @@ class TestGetPaleosUnifiedDensityBatch:
 
         mat = EOS_REGISTRY['PALEOS:iron']
         cache = {}
-        result = get_paleos_unified_density_batch(
-            np.array([]), np.array([]), mat, 1.0, cache
-        )
+        result = get_paleos_unified_density_batch(np.array([]), np.array([]), mat, 1.0, cache)
         assert len(result) == 0
 
 
