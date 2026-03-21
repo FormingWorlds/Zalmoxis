@@ -37,16 +37,22 @@ ruff format src/ tests/
 
 ### Building the documentation
 
-The documentation is written in [markdown](https://www.markdownguide.org/basic-syntax/), and uses [mkdocs](https://www.mkdocs.org/) to generate the pages.
+The documentation is written in [markdown](https://www.markdownguide.org/basic-syntax/) and built with [Zensical](https://github.com/FormingWorlds/zensical), a wrapper around mkdocs used across the PROTEUS ecosystem.
 
-To build the documentation for yourself in editable mode:
+To serve the documentation locally:
 
 ```console
-pip install -e .[docs]
-mkdocs serve
+pip install -e ".[docs]"
+zensical serve
 ```
 
-This will generate the pages and serve them on a local development server. Copy the displayed URL (typically `http://127.0.0.1:8000`) into your browser to view the documentation as you edit.
+This will build the pages and serve them on a local development server. Open the displayed URL (typically `http://127.0.0.1:8000`) in your browser to view the documentation as you edit. To build without serving:
+
+```console
+zensical build --clean
+```
+
+Do not use `mkdocs serve` or `mkdocs build` directly; Zensical wraps mkdocs with additional features and the raw commands may fail on theme or icon resolution.
 
 You can find the documentation source in the [docs](https://github.com/FormingWorlds/Zalmoxis/tree/main/docs) directory.
 If you are adding new pages, make sure to update the listing in the [`mkdocs.yml`](https://github.com/FormingWorlds/Zalmoxis/tree/main/mkdocs.yml) under the `nav` entry.
