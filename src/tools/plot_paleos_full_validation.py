@@ -9,7 +9,7 @@ Generates diagnostic plots for visual inspection:
 6. mushy_zone_factor comparison: factor=1.0 vs 0.8
 
 Usage:
-    python -m src.tests.plot_paleos_full_validation
+    python -m src.tools.plot_paleos_full_validation
 """
 
 from __future__ import annotations

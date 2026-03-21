@@ -1508,7 +1508,7 @@ def compute_adiabatic_temperature(
         Temperature at each radial point, in K.
     """
     from .mixing import get_mixed_nabla_ad
-    from .structure_model import get_layer_eos
+    from .structure_model import get_layer_mixture
 
     if interpolation_functions is None:
         interpolation_functions = {}
@@ -1527,7 +1527,7 @@ def compute_adiabatic_temperature(
     T[n - 1] = surface_temperature
 
     for i in range(n - 2, -1, -1):
-        mixture = get_layer_eos(
+        mixture = get_layer_mixture(
             mass_enclosed[i],
             cmb_mass,
             core_mantle_mass,

@@ -2,7 +2,7 @@
 curves and adiabatic T-P profiles overlaid.
 
 Run from the Zalmoxis root:
-    python src/tests/plot_paleos_tables.py
+    python src/tools/plot_paleos_tables.py
 
 Produces:
     output_files/paleos_tables_density.png

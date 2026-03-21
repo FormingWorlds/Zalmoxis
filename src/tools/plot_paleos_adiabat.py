@@ -1,7 +1,7 @@
 """Plot T-P and rho-P profiles for PALEOS-2phase:MgSiO3 adiabatic mode at various masses.
 
 Run from the Zalmoxis root:
-    python src/tests/plot_paleos_adiabat.py
+    python src/tools/plot_paleos_adiabat.py
 
 Produces three figures:
     output_files/paleos_adiabat_TP.png

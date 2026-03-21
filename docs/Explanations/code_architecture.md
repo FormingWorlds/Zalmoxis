@@ -36,7 +36,7 @@ main() ─── outer loop (radius) ─── inner loop (density) ─── br
     │                                                     solve_ivp(coupled_odes)
     │                                                             │
     │                                                             ▼
-    │                                               get_layer_eos() → calculate_mixed_density()
+    │                                               get_layer_mixture() → calculate_mixed_density()
     │                                                             │
     │                                                  ┌──────────┼──────────┐
     │                                                  ▼          ▼          ▼
@@ -64,7 +64,7 @@ post_processing() ──► output files + plots
 - **`_pressure_residual()`** (`zalmoxis.py`, closure inside `main()`): Residual function $f(P_c) = P_{\mathrm{surface}}(P_c) - P_{\mathrm{target}}$ passed to `brentq`.
   Calls `solve_structure()` for each trial $P_c$ and captures the ODE solution via a mutable closure dict.
 
-- **`get_layer_eos()`** (`structure_model.py`): Maps the enclosed mass at a given radial shell to the per-layer EOS string by comparing against core and core+mantle mass thresholds.
+- **`get_layer_mixture()`** (`structure_model.py`): Maps the enclosed mass at a given radial shell to the per-layer EOS string by comparing against core and core+mantle mass thresholds.
   Purely geometric; no EOS-type branching.
 
 - **`coupled_odes()`** (`structure_model.py`): Defines the derivatives $dM/dr$, $dg/dr$, $dP/dr$ for the ODE solver.

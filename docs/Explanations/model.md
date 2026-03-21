@@ -54,7 +54,7 @@ ice_layer = ""   # empty = 2-layer model
 ```
 
 Layer boundaries are determined by cumulative mass fractions: a radial shell belongs to the core when $M(r) < M_{\mathrm{core}}$, to the mantle when $M_{\mathrm{core}} \le M(r) < M_{\mathrm{core}} + M_{\mathrm{mantle}}$, and to the outer ice layer (if present) otherwise.
-The function `get_layer_eos()` in `structure_model.py` maps the enclosed mass at each integration step to the appropriate per-layer EOS string, which is then dispatched to `calculate_density()`.
+The function `get_layer_mixture()` in `structure_model.py` maps the enclosed mass at each integration step to the appropriate per-layer EOS string, which is then dispatched to `calculate_density()`.
 
 The per-layer system allows arbitrary mixing of tabulated and analytic EOS across layers (for instance, an analytic iron core with a temperature-dependent silicate mantle) without modifying the solver.
 A legacy global-string format is still accepted for backward compatibility via `parse_eos_config()`.

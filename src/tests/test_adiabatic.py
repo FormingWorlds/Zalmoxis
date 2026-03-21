@@ -511,10 +511,3 @@ class TestAdiabaticBlendMechanism:
 
         source = inspect.getsource(main)
         assert '_ADIABAT_BLEND_STEP = 0.25' in source
-
-    def test_blend_state_variables_default(self):
-        """Blend state should initialize to 0.0 (pure linear T)."""
-        # This tests the initial condition of the blend.
-        # We verify indirectly: the first iteration always uses linear T.
-        # Direct test: run a single iteration and check that T matches linear.
-        pass  # Covered by test_adiabatic_returns_linear_initial_guess above

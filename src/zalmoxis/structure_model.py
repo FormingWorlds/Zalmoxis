@@ -21,7 +21,7 @@ from .mixing import BINODAL_T_SCALE_DEFAULT, any_component_is_tdep, calculate_mi
 logger = logging.getLogger(__name__)
 
 
-def get_layer_eos(mass, cmb_mass, core_mantle_mass, layer_mixtures):
+def get_layer_mixture(mass, cmb_mass, core_mantle_mass, layer_mixtures):
     """Determine the per-layer mixture based on enclosed mass (purely geometric).
 
     Parameters
@@ -113,7 +113,7 @@ def coupled_odes(
     mass, gravity, pressure = y
 
     # Determine per-layer mixture for the current enclosed mass
-    mixture = get_layer_eos(mass, cmb_mass, core_mantle_mass, layer_mixtures)
+    mixture = get_layer_mixture(mass, cmb_mass, core_mantle_mass, layer_mixtures)
 
     # Return zero derivatives for non-physical pressure.  The adaptive ODE
     # solver (RK45) may evaluate trial points beyond the physical domain;

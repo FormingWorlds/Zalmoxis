@@ -8,7 +8,7 @@ Imports
 - [`eos_functions`](zalmoxis.eos_functions.md): calculate_density, calculate_temperature_profile, create_pressure_density_files, get_solidus_liquidus_functions, get_Tdep_material
 - [`eos_properties`](zalmoxis.eos_properties.md): material_properties_iron_PALEOS_silicate_planets, material_properties_iron_RTPress100TPa_silicate_planets,
         material_properties_iron_silicate_planets, material_properties_iron_Tdep_silicate_planets, material_properties_water_planets
-- [`structure_model`](zalmoxis.structure_model.md): get_layer_eos, solve_structure
+- [`structure_model`](zalmoxis.structure_model.md): get_layer_mixture, solve_structure
 """
 
 from __future__ import annotations
