@@ -152,26 +152,24 @@ Known limitations
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 import numpy as np
-
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 # Chabrier grid parameters (from README)
-N_T = 121       # isotherms: logT = 2.0 to 8.0, step 0.05
-N_P = 441       # pressures: logP(GPa) = -9.0 to 13.0, step 0.05
-DLOG = 0.05     # uniform step in both log10(T) and log10(P)
+N_T = 121  # isotherms: logT = 2.0 to 8.0, step 0.05
+N_P = 441  # pressures: logP(GPa) = -9.0 to 13.0, step 0.05
+DLOG = 0.05  # uniform step in both log10(T) and log10(P)
 
 # grad_ad floor in the Chabrier tables (H2 dissociation zone)
 GRAD_AD_FLOOR = 0.100
 
 # Astrophysically relevant domain boundaries
-LOGP_MIN_PHYS = -7.0   # 100 Pa — below this, table values may be unphysical
-LOGT_MAX_PHYS = 5.5    # 316000 K — above this, relativistic effects
+LOGP_MIN_PHYS = -7.0  # 100 Pa — below this, table values may be unphysical
+LOGT_MAX_PHYS = 5.5  # 316000 K — above this, relativistic effects
 
 
 def load_chabrier_table(filepath: str) -> dict:
@@ -190,7 +188,7 @@ def load_chabrier_table(filepath: str) -> dict:
     """
     data = np.loadtxt(filepath)
     assert data.shape == (N_T * N_P, 10), (
-        f"Expected {N_T * N_P} rows x 10 cols, got {data.shape}"
+        f'Expected {N_T * N_P} rows x 10 cols, got {data.shape}'
     )
     return {
         'logT': data[:, 0],
@@ -220,9 +218,9 @@ def convert_units(raw: dict) -> dict:
         SI quantities: T (K), P (Pa), rho (kg/m^3), u (J/kg), s (J/kg/K),
         plus the original log-derivative columns and grad_ad.
     """
-    T = 10.0 ** raw['logT']                          # K
-    P = 10.0 ** raw['logP_GPa'] * 1.0e9              # GPa -> Pa
-    rho = 10.0 ** raw['logrho_gcc'] * 1.0e3           # g/cm^3 -> kg/m^3
+    T = 10.0 ** raw['logT']  # K
+    P = 10.0 ** raw['logP_GPa'] * 1.0e9  # GPa -> Pa
+    rho = 10.0 ** raw['logrho_gcc'] * 1.0e3  # g/cm^3 -> kg/m^3
 
     # U and S are stored as log10 in the physical regime,
     # but may have unphysical values at table corners.
@@ -237,8 +235,8 @@ def convert_units(raw: dict) -> dict:
     # Safe conversion: only where values are plausible as log10
     safe_U = physical & (np.abs(raw['logU_MJkg']) < 20)
     safe_S = physical & (np.abs(raw['logS_MJkgK']) < 20)
-    u[safe_U] = 10.0 ** raw['logU_MJkg'][safe_U] * 1.0e6      # MJ/kg -> J/kg
-    s[safe_S] = 10.0 ** raw['logS_MJkgK'][safe_S] * 1.0e6      # MJ/(kg K) -> J/(kg K)
+    u[safe_U] = 10.0 ** raw['logU_MJkg'][safe_U] * 1.0e6  # MJ/kg -> J/kg
+    s[safe_S] = 10.0 ** raw['logS_MJkgK'][safe_S] * 1.0e6  # MJ/(kg K) -> J/(kg K)
 
     return {
         'T': T,
@@ -381,7 +379,11 @@ def derive_thermodynamic_quantities(si: dict) -> dict:
     phase_id[dissociating] = 'dissociating'
 
     # Flag unreliable derived quantities
-    bad_cv = np.isfinite(cv) & np.isfinite(cp) & ((cv <= 0) | (cp / np.where(cv > 0, cv, np.nan) > 3.0))
+    bad_cv = (
+        np.isfinite(cv)
+        & np.isfinite(cp)
+        & ((cv <= 0) | (cp / np.where(cv > 0, cv, np.nan) > 3.0))
+    )
     phase_id[bad_cv & si['physical']] = np.char.add(
         phase_id[bad_cv & si['physical']], ':cv_unreliable'
     )
@@ -410,33 +412,33 @@ def write_paleos_format(si: dict, outpath: str, material_label: str) -> None:
 
     # Material-specific CAUTION text for the nabla_ad floor
     if material_label == 'HE':
-        caution_zone = "He ionization/condensation zone"
+        caution_zone = 'He ionization/condensation zone'
     elif material_label.startswith('HHe'):
-        caution_zone = "H2 dissociation / He ionization zone"
+        caution_zone = 'H2 dissociation / He ionization zone'
     else:
-        caution_zone = "H2 dissociation zone"
+        caution_zone = 'H2 dissociation zone'
 
     header_lines = [
-        f"# Chabrier+2019/2021 {material_label} EOS in PALEOS-compatible format",
-        "#",
-        "# Source: Chabrier, Mazevet & Soubiran (2019), ApJ 872, 51",
-        "#         https://doi.org/10.3847/1538-4357/aaf99f",
-        "#         Chabrier & Debras (2021), ApJ 917, 4",
-        "#         https://doi.org/10.3847/1538-4357/abfc48",
-        "#",
-        f"# Converted from DirEOS2021/TABLE_{material_label}_TP_v1",
-        f"# Grid: {N_T} isotherms x {N_P} pressures = {N_T * N_P} points",
-        f"# T range: {10**2.0:.0f} to {10**8.0:.0e} K",
-        f"# P range: {10**(-9.0)*1e9:.0e} to {10**13.0*1e9:.0e} Pa",
-        "#",
-        "# Columns directly from table: P, T, rho, u, s, nabla_ad",
-        "# Derived columns: cp, cv, alpha (see convert_chabrier_to_paleos.py docstring)",
-        "#",
-        f"# CAUTION: cp is unreliable where nabla_ad = 0.100 ({caution_zone},",
+        f'# Chabrier+2019/2021 {material_label} EOS in PALEOS-compatible format',
+        '#',
+        '# Source: Chabrier, Mazevet & Soubiran (2019), ApJ 872, 51',
+        '#         https://doi.org/10.3847/1538-4357/aaf99f',
+        '#         Chabrier & Debras (2021), ApJ 917, 4',
+        '#         https://doi.org/10.3847/1538-4357/abfc48',
+        '#',
+        f'# Converted from DirEOS2021/TABLE_{material_label}_TP_v1',
+        f'# Grid: {N_T} isotherms x {N_P} pressures = {N_T * N_P} points',
+        f'# T range: {10**2.0:.0f} to {10**8.0:.0e} K',
+        f'# P range: {10 ** (-9.0) * 1e9:.0e} to {10**13.0 * 1e9:.0e} Pa',
+        '#',
+        '# Columns directly from table: P, T, rho, u, s, nabla_ad',
+        '# Derived columns: cp, cv, alpha (see convert_chabrier_to_paleos.py docstring)',
+        '#',
+        f'# CAUTION: cp is unreliable where nabla_ad = 0.100 ({caution_zone},',
         "# phase_id = 'dissociating'). cv may be negative near phase transitions.",
         "# Points outside the astrophysical validity domain have phase_id = 'unphysical'.",
-        "#",
-        "# P[Pa]  T[K]  rho[kg/m3]  u[J/kg]  s[J/(kgK)]  cp[J/(kgK)]  cv[J/(kgK)]  alpha[1/K]  nabla_ad  phase_id",
+        '#',
+        '# P[Pa]  T[K]  rho[kg/m3]  u[J/kg]  s[J/(kgK)]  cp[J/(kgK)]  cv[J/(kgK)]  alpha[1/K]  nabla_ad  phase_id',
     ]
 
     with open(outpath, 'w') as f:
@@ -444,20 +446,20 @@ def write_paleos_format(si: dict, outpath: str, material_label: str) -> None:
             f.write(line + '\n')
 
         for i in range(n):
-            p_str = f"{si['P'][i]:.6e}"
-            t_str = f"{si['T'][i]:.2f}"
-            rho_str = f"{si['rho'][i]:.6e}"
-            u_str = f"{si['u'][i]:.6e}" if np.isfinite(si['u'][i]) else "NaN"
-            s_str = f"{si['s'][i]:.6e}" if np.isfinite(si['s'][i]) else "NaN"
-            cp_str = f"{si['cp'][i]:.6e}" if np.isfinite(si['cp'][i]) else "NaN"
-            cv_str = f"{si['cv'][i]:.6e}" if np.isfinite(si['cv'][i]) else "NaN"
-            alpha_str = f"{si['alpha'][i]:.6e}" if np.isfinite(si['alpha'][i]) else "NaN"
-            nabla_str = f"{si['grad_ad'][i]:.6f}"
+            p_str = f'{si["P"][i]:.6e}'
+            t_str = f'{si["T"][i]:.2f}'
+            rho_str = f'{si["rho"][i]:.6e}'
+            u_str = f'{si["u"][i]:.6e}' if np.isfinite(si['u'][i]) else 'NaN'
+            s_str = f'{si["s"][i]:.6e}' if np.isfinite(si['s'][i]) else 'NaN'
+            cp_str = f'{si["cp"][i]:.6e}' if np.isfinite(si['cp'][i]) else 'NaN'
+            cv_str = f'{si["cv"][i]:.6e}' if np.isfinite(si['cv'][i]) else 'NaN'
+            alpha_str = f'{si["alpha"][i]:.6e}' if np.isfinite(si['alpha'][i]) else 'NaN'
+            nabla_str = f'{si["grad_ad"][i]:.6f}'
             phase_str = si['phase_id'][i]
 
             f.write(
-                f"{p_str}  {t_str}  {rho_str}  {u_str}  {s_str}  "
-                f"{cp_str}  {cv_str}  {alpha_str}  {nabla_str}  {phase_str}\n"
+                f'{p_str}  {t_str}  {rho_str}  {u_str}  {s_str}  '
+                f'{cp_str}  {cv_str}  {alpha_str}  {nabla_str}  {phase_str}\n'
             )
 
 
@@ -475,9 +477,9 @@ def print_verification(si: dict) -> None:
     logT = si['logT']
     logP = si['logP_GPa']
 
-    print("=" * 70)
-    print("VERIFICATION REPORT")
-    print("=" * 70)
+    print('=' * 70)
+    print('VERIFICATION REPORT')
+    print('=' * 70)
 
     # Self-consistency: nabla_ad = P*alpha/(rho*cp) vs table
     nabla_derived = np.where(
@@ -487,45 +489,47 @@ def print_verification(si: dict) -> None:
     )
     valid = physical & np.isfinite(nabla_derived) & (grad_ad > 0.01)
     err = np.abs(nabla_derived[valid] - grad_ad[valid]) / grad_ad[valid]
-    print(f"\n1. nabla_ad self-consistency ({valid.sum()} points):")
-    print(f"   Median relative error: {np.median(err):.4e}")
-    print(f"   This should be ~0 (it's circular by construction from Path B).")
+    print(f'\n1. nabla_ad self-consistency ({valid.sum()} points):')
+    print(f'   Median relative error: {np.median(err):.4e}')
+    print("   This should be ~0 (it's circular by construction from Path B).")
 
     # Cross-check: cp from grad_ad vs cp from entropy
     both = (
         physical
-        & np.isfinite(cp) & (cp > 0)
-        & np.isfinite(cp_entropy) & (cp_entropy > 0)
+        & np.isfinite(cp)
+        & (cp > 0)
+        & np.isfinite(cp_entropy)
+        & (cp_entropy > 0)
         & (np.abs(grad_ad - GRAD_AD_FLOOR) > 0.001)  # exclude clamped points
     )
     if both.sum() > 0:
         ratio = cp[both] / cp_entropy[both]
-        print(f"\n2. cp cross-check: Path B (grad_ad) vs Path A (entropy)")
-        print(f"   Points compared: {both.sum()}")
-        print(f"   Median ratio: {np.median(ratio):.6f} (ideal: 1.0)")
+        print('\n2. cp cross-check: Path B (grad_ad) vs Path A (entropy)')
+        print(f'   Points compared: {both.sum()}')
+        print(f'   Median ratio: {np.median(ratio):.6f} (ideal: 1.0)')
         pct_close = (np.abs(ratio - 1) < 0.01).sum() / both.sum() * 100
-        print(f"   Within 1%%: {pct_close:.1f}%")
+        print(f'   Within 1%%: {pct_close:.1f}%')
 
     # Ideal gas check
     mask_ig = (np.abs(logT - 3.0) < 0.03) & (np.abs(logP - (-3.0)) < 0.03)
     if mask_ig.any():
         i = np.where(mask_ig)[0][0]
         R_H2 = 8.314 / 0.002016
-        print(f"\n3. Ideal gas check at T=1000 K, P=1 MPa:")
-        print(f"   alpha  = {alpha[i]:.4e} (ideal: {1/T[i]:.4e})")
-        print(f"   cp     = {cp[i]:.0f} J/kg/K (ideal H2 7/2 R/M: {3.5*R_H2:.0f})")
-        print(f"   cv     = {cv[i]:.0f} J/kg/K (ideal H2 5/2 R/M: {2.5*R_H2:.0f})")
-        print(f"   cp/cv  = {cp[i]/cv[i]:.4f} (ideal diatomic: {7/5:.4f})")
+        print('\n3. Ideal gas check at T=1000 K, P=1 MPa:')
+        print(f'   alpha  = {alpha[i]:.4e} (ideal: {1 / T[i]:.4e})')
+        print(f'   cp     = {cp[i]:.0f} J/kg/K (ideal H2 7/2 R/M: {3.5 * R_H2:.0f})')
+        print(f'   cv     = {cv[i]:.0f} J/kg/K (ideal H2 5/2 R/M: {2.5 * R_H2:.0f})')
+        print(f'   cp/cv  = {cp[i] / cv[i]:.4f} (ideal diatomic: {7 / 5:.4f})')
 
     # Phase statistics
-    print(f"\n4. Phase identification:")
+    print('\n4. Phase identification:')
     for phase in ['molecular', 'dissociating', 'atomic', 'unphysical']:
         n = np.sum(np.char.startswith(si['phase_id'], phase))
-        print(f"   {phase}: {n} ({n/len(T)*100:.1f}%)")
+        print(f'   {phase}: {n} ({n / len(T) * 100:.1f}%)')
 
     # Flag statistics
     n_cv_bad = np.sum(np.char.find(si['phase_id'], 'cv_unreliable') >= 0)
-    print(f"   cv_unreliable flag: {n_cv_bad} ({n_cv_bad/len(T)*100:.1f}%)")
+    print(f'   cv_unreliable flag: {n_cv_bad} ({n_cv_bad / len(T) * 100:.1f}%)')
 
     print()
 
@@ -538,7 +542,8 @@ def main():
         help='Path to DirEOS2021 directory',
     )
     parser.add_argument(
-        '-o', '--output-dir',
+        '-o',
+        '--output-dir',
         default='.',
         help='Output directory (default: current directory)',
     )
@@ -552,34 +557,46 @@ def main():
     tables = [
         ('TABLE_H_TP_v1', 'H', 'Pure hydrogen (Chabrier+2019)'),
         ('TABLE_HE_TP_v1', 'HE', 'Pure helium (Chabrier+2019)'),
-        ('TABLE_H_TP_effective', 'H_effective',
-         'Effective H for non-IVL mixing (Chabrier+Debras 2021). '
-         'DO NOT use as a standalone pure H EOS.'),
-        ('TABLEEOS_2021_TP_Y0275_v1', 'HHe_Y0275',
-         'H/He mixture Y=0.275 (Chabrier+Debras 2021)'),
-        ('TABLEEOS_2021_TP_Y0292_v1', 'HHe_Y0292',
-         'H/He mixture Y=0.292 (Chabrier+Debras 2021)'),
-        ('TABLEEOS_2021_TP_Y0297_v1', 'HHe_Y0297',
-         'H/He mixture Y=0.297 (Chabrier+Debras 2021)'),
+        (
+            'TABLE_H_TP_effective',
+            'H_effective',
+            'Effective H for non-IVL mixing (Chabrier+Debras 2021). '
+            'DO NOT use as a standalone pure H EOS.',
+        ),
+        (
+            'TABLEEOS_2021_TP_Y0275_v1',
+            'HHe_Y0275',
+            'H/He mixture Y=0.275 (Chabrier+Debras 2021)',
+        ),
+        (
+            'TABLEEOS_2021_TP_Y0292_v1',
+            'HHe_Y0292',
+            'H/He mixture Y=0.292 (Chabrier+Debras 2021)',
+        ),
+        (
+            'TABLEEOS_2021_TP_Y0297_v1',
+            'HHe_Y0297',
+            'H/He mixture Y=0.297 (Chabrier+Debras 2021)',
+        ),
     ]
 
     for filename, label, description in tables:
         filepath = input_dir / filename
         if not filepath.exists():
-            print(f"Skipping {filename} (not found)")
+            print(f'Skipping {filename} (not found)')
             continue
 
-        print(f"\n{'='*70}")
-        print(f"Converting {filename} ({description})")
-        print(f"{'='*70}")
+        print(f'\n{"=" * 70}')
+        print(f'Converting {filename} ({description})')
+        print(f'{"=" * 70}')
 
         raw = load_chabrier_table(str(filepath))
         si = convert_units(raw)
         si = derive_thermodynamic_quantities(si)
 
-        outpath = output_dir / f"chabrier2021_{label}.dat"
+        outpath = output_dir / f'chabrier2021_{label}.dat'
         write_paleos_format(si, str(outpath), label)
-        print(f"Written to {outpath}")
+        print(f'Written to {outpath}')
 
         print_verification(si)
 
