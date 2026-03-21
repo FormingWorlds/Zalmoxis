@@ -22,7 +22,7 @@ Tests are categorized with markers that reflect their runtime and purpose:
 
 | Marker | Tests | Runtime | What it validates |
 |---|---|---|---|
-| `unit` | 174 | < 2 s | EOS functions, edge cases, analytic vs. tabulated consistency, mixing, config validation, melting curves, PALEOS loading, adiabatic profiles. No solver calls. |
+| `unit` | 425 | < 5 min | EOS functions, edge cases, analytic vs. tabulated consistency, mixing, binodal suppression, config validation, melting curves, PALEOS loading, adiabatic profiles, profile plotting. No solver calls. |
 | `integration` | 41 | ~10 to 20 min | Full solver runs: mass-radius relations, density profiles, analytic vs. tabulated MR, T-dependent EOS convergence, PALEOS convergence, RTPress100TPa mass limits. |
 | `slow` | 2 | ~30+ min | Ternary composition grid sweep across core/mantle/water fractions. |
 
@@ -39,7 +39,7 @@ pytest -m "unit or integration"  # All except slow
 ### All tests
 
 ```console
-pytest                        # Runs all ~217 tests in parallel
+pytest                        # Runs all ~468 tests in parallel
 ```
 
 The default configuration (`pyproject.toml`) includes `-n auto --dist loadfile`, which distributes test files across CPU cores for parallel execution via pytest-xdist.
@@ -64,15 +64,19 @@ This overrides the default `-n auto` flag.
 
 ### Unit tests
 
-Validates EOS functions, configuration parsing, mixing logic, melting curves, PALEOS table loading, and adiabatic profiles without invoking the planetary structure solver:
+Validates EOS functions, configuration parsing, mixing logic, binodal suppression, melting curves, PALEOS table loading, adiabatic profiles, and profile plotting without invoking the planetary structure solver:
 
 - **Analytic EOS** (`test_analytic_eos.py`): zero-pressure limit, monotonicity, iron at Earth-center pressure, cross-material density ordering, edge cases (invalid material, negative/zero/NaN pressure), analytic vs. tabulated comparison.
-- **Mixing** (`test_mixing.py`): multi-material parsing, harmonic mean density, nabla_ad weighted average, sigmoid suppression of non-condensed volatiles.
+- **EOS functions** (`test_eos_functions.py`): fast bilinear interpolation, batch density and nabla_ad lookups, WB2018 and RTPress100TPa EOS paths, temperature profile modes, melting curve loading, PALEOS unified cache, solidus/liquidus functions.
+- **Mixing** (`test_mixing.py`): multi-material parsing, harmonic mean density, batch density calculation, nabla_ad weighted average, sigmoid suppression of non-condensed volatiles, binodal factor computation, condensed weight batch, per-component nabla_ad routing.
+- **Binodal** (`test_binodal.py`): Rogers+2025 and Gupta+2025 binodal suppression, coexistence compositions, Gibbs mixing, critical temperature/pressure curves, mass-to-mole fraction conversion, edge cases.
 - **Config validation** (`test_config_validation.py`): mass fraction checks, temperature parameter validation, mushy zone factor bounds, EOS compatibility.
-- **Melting curves** (`test_melting_curves.py`): Monteux and Stixrude solidus/liquidus, per-cell clamping behavior.
+- **Zalmoxis core** (`test_zalmoxis_unit.py`): EOS config parsing (new and legacy formats), layer EOS validation, condensed phase parameter validation, multi-material fraction checks, H2O/H2 mixing validation, melting curve cross-checks, pressure solver parameters, tolerance parameters, material dictionary loading, solidus/liquidus function loading, surface density smoothing, post-processing computations.
+- **Melting curves** (`test_melting_curves.py`): Monteux and Stixrude solidus/liquidus, PALEOS-liquidus (Belonoshko/Fei), per-cell clamping behavior.
 - **PALEOS 2-phase** (`test_paleos.py`): table registration, loading, density lookup, nabla_ad lookup.
 - **PALEOS unified** (`test_paleos_unified.py`): unified table registration, loading, density, mushy zone interpolation.
 - **Adiabatic profiles** (`test_adiabatic.py`): surface temperature anchoring, monotonicity, blend convergence.
+- **Profile plotting** (`test_plot_profiles.py`): smoke tests for the 6-panel profile plot with and without phase lookup, filename variants.
 
 ### Integration tests
 
@@ -109,12 +113,16 @@ The step size is configurable via `run_ternary_grid_for_mass(mass, step=...)`. T
 src/tests/
 ├── conftest.py                        # Shared fixtures (env validation, solver cache)
 ├── test_analytic_eos.py               # Unit: analytic EOS correctness and edge cases
-├── test_mixing.py                     # Unit: multi-material mixing (parsing, density, nabla_ad, suppression)
+├── test_eos_functions.py              # Unit: EOS functions (bilinear, batch, T-dep, melting curves)
+├── test_mixing.py                     # Unit: multi-material mixing (parsing, density, nabla_ad, suppression, batch)
+├── test_binodal.py                    # Unit: binodal suppression (Rogers+2025, Gupta+2025, coexistence, Gibbs)
 ├── test_config_validation.py          # Unit: config validation (mass fractions, temperature, mushy zone, EOS compat)
-├── test_melting_curves.py             # Unit: melting curves (Monteux, Stixrude, per-cell clamping)
+├── test_zalmoxis_unit.py              # Unit: core solver helpers (EOS config parsing, validation, smoothing, post-processing)
+├── test_melting_curves.py             # Unit: melting curves (Monteux, Stixrude, PALEOS-liquidus, per-cell clamping)
 ├── test_paleos.py                     # Unit: PALEOS 2-phase (registration, loading, density, nabla_ad)
 ├── test_paleos_unified.py             # Unit: unified PALEOS (registration, loading, density, mushy zone)
 ├── test_adiabatic.py                  # Unit: adiabatic temperature profiles (surface T, monotonicity, blend)
+├── test_plot_profiles.py              # Unit: profile plotting (6-panel figure, phase lookup, filename variants)
 ├── test_analytic_MR.py                # Integration: analytic vs. tabulated MR
 ├── test_MR.py                         # Integration: mass-radius vs. Zeng (2019)
 ├── test_Seager.py                     # Integration: density profiles vs. Seager (2007)
