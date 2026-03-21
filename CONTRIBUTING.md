@@ -26,7 +26,7 @@ pytest                  # all tests in parallel
 
 Run `pytest -m unit` as a fast feedback loop during development. The full suite runs automatically on PRs.
 
-When adding or modifying code, add or update tests in `src/tests/` to match. See the [Testing documentation](https://proteus-framework.org/Zalmoxis/testing/) for the full guide on markers, fixtures, and test structure.
+When adding or modifying code, add or update tests in `src/tests/` to match. See the [Testing documentation](https://proteus-framework.org/Zalmoxis/How-to/testing.html) for the full guide on markers, fixtures, and test structure.
 
 ### Linting
 
@@ -37,7 +37,7 @@ ruff format src/ tests/
 
 ### Building the documentation
 
-The documentation is written in [markdown](https://www.markdownguide.org/basic-syntax/) and built with [Zensical](https://github.com/FormingWorlds/zensical), a wrapper around mkdocs used across the PROTEUS ecosystem.
+The documentation is written in [markdown](https://www.markdownguide.org/basic-syntax/) and built with [Zensical](https://zensical.org/docs/get-started/), a modern static site generator compatible with mkdocs, used across the PROTEUS ecosystem.
 
 To serve the documentation locally:
 
