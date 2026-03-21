@@ -74,6 +74,16 @@ bash src/get_zalmoxis.sh
 
 This downloads data into the `data/` directory within the Zalmoxis repository (not into `FWL_DATA`). When Zalmoxis is installed within PROTEUS, the data path is managed by the PROTEUS framework. The script also creates the `output_files/` folder for model results.
 
+### Step 5: Run your first simulation
+
+Run the default configuration (1 Earth-mass planet with a PALEOS iron core and MgSiO3 mantle):
+
+```console
+python -m zalmoxis -c input/default.toml
+```
+
+Output files are written to `output_files/`. See the [usage guide](usage.md) for an explanation of the output files and how to modify the configuration, or the [parameter grids guide](grids.md) for running parameter sweeps.
+
 ## Troubleshooting
 
 ### `ZALMOXIS_ROOT` not set

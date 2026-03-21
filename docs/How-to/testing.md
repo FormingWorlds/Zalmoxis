@@ -1,5 +1,7 @@
 # Testing
 
+[![codecov](https://codecov.io/gh/FormingWorlds/Zalmoxis/graph/badge.svg)](https://codecov.io/gh/FormingWorlds/Zalmoxis)
+
 Zalmoxis uses [pytest](https://docs.pytest.org/) with [pytest-xdist](https://pytest-xdist.readthedocs.io/) for parallel execution. Tests are organized by speed and purpose into three categories using pytest markers.
 
 ## Prerequisites

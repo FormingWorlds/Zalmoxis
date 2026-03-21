@@ -1,0 +1,12 @@
+# Mass-temperature grid: sweep planet mass and surface temperature
+# Explores the thermal expansion effect on planet radius
+
+[base]
+config = "input/default.toml"
+
+[sweep]
+planet_mass = [0.5, 1.0, 3.0, 5.0, 10.0]
+surface_temperature = [1000, 2000, 3000, 4000]
+
+[output]
+dir = "output_files/grid_mass_temperature"

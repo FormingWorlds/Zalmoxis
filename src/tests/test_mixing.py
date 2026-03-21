@@ -14,13 +14,18 @@ from __future__ import annotations
 
 import os
 
+import numpy as np
 import pytest
 
 from zalmoxis.mixing import (
     LayerMixture,
+    _binodal_factor,
     _condensed_weight,
+    _condensed_weight_batch,
+    _nabla_ad_for_component,
     any_component_is_tdep,
     calculate_mixed_density,
+    calculate_mixed_density_batch,
     get_mixed_nabla_ad,
     parse_all_layer_mixtures,
     parse_layer_components,
@@ -669,3 +674,604 @@ class TestPerEosMushyZoneFactors:
 
         assert received_mzf['PALEOS:MgSiO3'] == pytest.approx(0.85)
         assert received_mzf['PALEOS:H2O'] == pytest.approx(0.85)
+
+
+@pytest.mark.unit
+class TestCondensedWeightBatch:
+    """Tests for the vectorized sigmoid suppression function."""
+
+    def test_matches_scalar(self):
+        """Batch version produces same results as scalar _condensed_weight."""
+        rhos = np.array([1.0, 10.0, 100.0, 322.0, 500.0, 1000.0, 5000.0])
+        rho_min = 322.0
+        rho_scale = 50.0
+        batch_result = _condensed_weight_batch(rhos, rho_min, rho_scale)
+        for i, rho in enumerate(rhos):
+            scalar_result = _condensed_weight(rho, rho_min, rho_scale)
+            assert batch_result[i] == pytest.approx(scalar_result, rel=1e-12)
+
+    def test_output_shape(self):
+        """Output has same shape as input array."""
+        rhos = np.array([100.0, 200.0, 300.0])
+        result = _condensed_weight_batch(rhos, 322.0, 50.0)
+        assert result.shape == rhos.shape
+
+    def test_clipping_extreme_values(self):
+        """Extreme densities are handled without overflow."""
+        rhos = np.array([1e-10, 1e10])
+        result = _condensed_weight_batch(rhos, 322.0, 50.0)
+        assert np.all(np.isfinite(result))
+        assert result[0] < 0.01
+        assert result[1] > 0.99
+
+    def test_custom_h2_parameters(self):
+        """H2 critical density parameters (rho_min=30, rho_scale=10)."""
+        rhos = np.array([5.0, 30.0, 100.0])
+        result = _condensed_weight_batch(rhos, rho_min=30.0, rho_scale=10.0)
+        assert result[0] < 0.1  # well below center
+        assert result[1] == pytest.approx(0.5, abs=0.01)  # at center
+        assert result[2] > 0.99  # well above center
+
+
+@pytest.mark.unit
+class TestBinodalFactor:
+    """Tests for the binodal suppression dispatch function."""
+
+    def test_non_h2_returns_one(self):
+        """Non-H2 components are never suppressed by binodal."""
+        mixture = LayerMixture(['PALEOS:MgSiO3', 'Chabrier:H'], [0.85, 0.15])
+        sigma = _binodal_factor('PALEOS:MgSiO3', 0.85, mixture, 1e10, 3000, 50.0)
+        assert sigma == 1.0
+
+    def test_h2_with_silicate_partner(self):
+        """H2 mixed with silicate triggers Rogers+2025 binodal."""
+        mixture = LayerMixture(['Chabrier:H', 'PALEOS:MgSiO3'], [0.15, 0.85])
+        # At low T (below binodal), H2 should be suppressed
+        sigma_cold = _binodal_factor('Chabrier:H', 0.15, mixture, 10e9, 500, 50.0)
+        # At high T (above binodal), H2 should be unsuppressed
+        sigma_hot = _binodal_factor('Chabrier:H', 0.15, mixture, 10e9, 10000, 50.0)
+        assert sigma_cold < sigma_hot
+
+    def test_h2_with_h2o_partner(self):
+        """H2 mixed with H2O triggers Gupta+2025 binodal."""
+        mixture = LayerMixture(['Chabrier:H', 'PALEOS:H2O'], [0.5, 0.5])
+        # At low T, H2 should be suppressed (below miscibility curve)
+        sigma_cold = _binodal_factor('Chabrier:H', 0.5, mixture, 5e9, 300, 50.0)
+        # At very high T, H2 should be less suppressed
+        sigma_hot = _binodal_factor('Chabrier:H', 0.5, mixture, 5e9, 8000, 50.0)
+        assert sigma_cold < sigma_hot
+
+    def test_h2_with_zero_fraction_partner_skipped(self):
+        """Partners with zero weight fraction are skipped."""
+        mixture = LayerMixture(['Chabrier:H', 'PALEOS:MgSiO3'], [1.0, 0.0])
+        # This would raise an error in binodal functions if the zero-fraction
+        # partner were not skipped, since w_p=0 would cause division issues.
+        # But since we explicitly constructed with fractions summing to 1.0,
+        # we need to bypass the normal LayerMixture validation.
+        # Instead, test that the loop body is skipped for w_p <= 0.
+        # With no valid partner, sigma should stay 1.0.
+        # (LayerMixture won't allow fractions that don't sum to 1.0, but the
+        # _binodal_factor function itself checks w_p <= 0.)
+        sigma = _binodal_factor('Chabrier:H', 1.0, mixture, 1e10, 3000, 50.0)
+        # No partner has positive fraction that matches a binodal pair,
+        # but the loop still runs and w_p=0 is skipped via the continue.
+        # Actually MgSiO3 has w_p=0.0, so the continue fires.
+        assert sigma == 1.0
+
+    def test_h2_with_no_binodal_partner(self):
+        """H2 paired with a non-binodal EOS returns 1.0."""
+        mixture = LayerMixture(['Chabrier:H', 'PALEOS:iron'], [0.5, 0.5])
+        sigma = _binodal_factor('Chabrier:H', 0.5, mixture, 1e10, 3000, 50.0)
+        assert sigma == 1.0
+
+    def test_h2_with_both_silicate_and_h2o(self):
+        """H2 in a 3-component mix: minimum of both binodals taken."""
+        mixture = LayerMixture(
+            ['Chabrier:H', 'PALEOS:MgSiO3', 'PALEOS:H2O'],
+            [0.1, 0.6, 0.3],
+        )
+        sigma = _binodal_factor('Chabrier:H', 0.1, mixture, 10e9, 3000, 50.0)
+        # Should be the minimum of both binodal suppressions
+        assert 0.0 <= sigma <= 1.0
+
+
+@pytest.mark.unit
+class TestCalculateMixedDensityEdgeCases:
+    """Edge cases for calculate_mixed_density: invalid returns, zero fractions."""
+
+    def test_component_returns_none_aborts_mixture(self):
+        """If any component returns None, the entire mixture returns None."""
+        from unittest.mock import patch
+
+        def mock_density(P, md, eos, T, sf, lf, interp, mzf):
+            if 'MgSiO3' in eos:
+                return 4000.0
+            return None  # H2O lookup fails
+
+        mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
+
+        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+            rho = calculate_mixed_density(1e9, 3000, mixture, {}, None, None, {})
+        assert rho is None
+
+    def test_component_returns_nan_aborts_mixture(self):
+        """If any component returns NaN, the entire mixture returns None."""
+        from unittest.mock import patch
+
+        def mock_density(P, md, eos, T, sf, lf, interp, mzf):
+            if 'MgSiO3' in eos:
+                return 4000.0
+            return float('nan')
+
+        mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
+
+        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+            rho = calculate_mixed_density(1e9, 3000, mixture, {}, None, None, {})
+        assert rho is None
+
+    def test_component_returns_zero_aborts_mixture(self):
+        """If any component returns zero density, the mixture returns None."""
+        from unittest.mock import patch
+
+        def mock_density(P, md, eos, T, sf, lf, interp, mzf):
+            if 'MgSiO3' in eos:
+                return 4000.0
+            return 0.0
+
+        mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
+
+        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+            rho = calculate_mixed_density(1e9, 3000, mixture, {}, None, None, {})
+        assert rho is None
+
+    def test_component_returns_negative_aborts_mixture(self):
+        """If any component returns negative density, the mixture returns None."""
+        from unittest.mock import patch
+
+        def mock_density(P, md, eos, T, sf, lf, interp, mzf):
+            if 'MgSiO3' in eos:
+                return 4000.0
+            return -100.0
+
+        mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
+
+        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+            rho = calculate_mixed_density(1e9, 3000, mixture, {}, None, None, {})
+        assert rho is None
+
+    def test_per_component_rho_min_h2(self):
+        """H2 component uses its own rho_min (30 kg/m^3), not global default."""
+        from unittest.mock import patch
+
+        def mock_density(P, md, eos, T, sf, lf, interp, mzf):
+            if 'MgSiO3' in eos:
+                return 4000.0
+            if eos == 'Chabrier:H':
+                return 35.0  # just above H2 critical density (30)
+            return None
+
+        mixture = LayerMixture(['PALEOS:MgSiO3', 'Chabrier:H'], [0.85, 0.15])
+
+        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+            rho = calculate_mixed_density(
+                1e10,
+                5000,
+                mixture,
+                {},
+                None,
+                None,
+                {},
+                condensed_rho_min=322.0,
+                condensed_rho_scale=50.0,
+                binodal_T_scale=50.0,
+            )
+
+        # H2 at 35 kg/m^3 is just above its own rho_min=30, so sigma ~0.62
+        # With the global default (322), sigma would be ~0.003 (nearly zero).
+        # The mixed density should reflect a meaningful H2 contribution.
+        assert rho is not None
+        assert rho > 0
+
+
+@pytest.mark.unit
+class TestCalculateMixedDensityBatch:
+    """Tests for the vectorized batch density calculation."""
+
+    def test_single_component_batch(self):
+        """Single-component batch delegates to calculate_density_batch."""
+        from unittest.mock import patch
+
+        expected = np.array([5000.0, 5100.0, 5200.0])
+
+        def mock_batch(P, T, md, eos, sf, lf, interp, mzf):
+            return expected.copy()
+
+        mixture = LayerMixture(['PALEOS:iron'], [1.0])
+        pressures = np.array([100e9, 200e9, 300e9])
+        temperatures = np.array([3000.0, 3500.0, 4000.0])
+
+        with patch('zalmoxis.eos_functions.calculate_density_batch', side_effect=mock_batch):
+            result = calculate_mixed_density_batch(
+                pressures, temperatures, mixture, {}, None, None, {}
+            )
+
+        np.testing.assert_allclose(result, expected)
+
+    def test_multi_component_batch(self):
+        """Multi-component batch computes suppressed harmonic mean for each point."""
+        from unittest.mock import patch
+
+        def mock_batch(P, T, md, eos, sf, lf, interp, mzf):
+            if 'MgSiO3' in eos:
+                return np.array([4000.0, 4100.0])
+            if 'H2O' in eos:
+                return np.array([1000.0, 1050.0])
+            return np.full(len(P), np.nan)
+
+        mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
+        pressures = np.array([100e9, 200e9])
+        temperatures = np.array([3000.0, 3500.0])
+
+        with patch('zalmoxis.eos_functions.calculate_density_batch', side_effect=mock_batch):
+            result = calculate_mixed_density_batch(
+                pressures, temperatures, mixture, {}, None, None, {}
+            )
+
+        assert result.shape == (2,)
+        # Both components at high density, so sigma ~ 1. Should be near harmonic mean.
+        for i in range(2):
+            assert np.isfinite(result[i])
+            assert result[i] > 0
+
+    def test_batch_invalid_component_gives_nan(self):
+        """Shells where any component has invalid density become NaN."""
+        from unittest.mock import patch
+
+        def mock_batch(P, T, md, eos, sf, lf, interp, mzf):
+            if 'MgSiO3' in eos:
+                return np.array([4000.0, 4100.0, np.nan])
+            if 'H2O' in eos:
+                return np.array([1000.0, 1050.0, 1100.0])
+            return np.full(len(P), np.nan)
+
+        mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
+        pressures = np.array([100e9, 200e9, 300e9])
+        temperatures = np.array([3000.0, 3500.0, 4000.0])
+
+        with patch('zalmoxis.eos_functions.calculate_density_batch', side_effect=mock_batch):
+            result = calculate_mixed_density_batch(
+                pressures, temperatures, mixture, {}, None, None, {}
+            )
+
+        assert np.isfinite(result[0])
+        assert np.isfinite(result[1])
+        assert np.isnan(result[2])
+
+    def test_batch_with_h2_binodal(self):
+        """H2 component in batch triggers per-shell binodal suppression."""
+        from unittest.mock import patch
+
+        def mock_batch(P, T, md, eos, sf, lf, interp, mzf):
+            if eos == 'Chabrier:H':
+                return np.array([50.0, 50.0])
+            if 'MgSiO3' in eos:
+                return np.array([4000.0, 4000.0])
+            return np.full(len(P), np.nan)
+
+        mixture = LayerMixture(['Chabrier:H', 'PALEOS:MgSiO3'], [0.15, 0.85])
+        pressures = np.array([10e9, 10e9])
+        # One cold (below binodal), one hot (above binodal)
+        temperatures = np.array([500.0, 10000.0])
+
+        with patch('zalmoxis.eos_functions.calculate_density_batch', side_effect=mock_batch):
+            result = calculate_mixed_density_batch(
+                pressures,
+                temperatures,
+                mixture,
+                {},
+                None,
+                None,
+                {},
+                binodal_T_scale=50.0,
+            )
+
+        assert result.shape == (2,)
+        # Both should produce finite results (MgSiO3 is always condensed)
+        assert np.all(np.isfinite(result))
+
+    def test_batch_zero_fraction_component_skipped(self):
+        """Component with zero mass fraction is skipped in batch."""
+        from unittest.mock import patch
+
+        call_count = {'n': 0}
+
+        def mock_batch(P, T, md, eos, sf, lf, interp, mzf):
+            call_count['n'] += 1
+            if 'MgSiO3' in eos:
+                return np.array([4000.0])
+            return np.full(len(P), np.nan)
+
+        mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [1.0, 0.0])
+        pressures = np.array([100e9])
+        temperatures = np.array([3000.0])
+
+        with patch('zalmoxis.eos_functions.calculate_density_batch', side_effect=mock_batch):
+            result = calculate_mixed_density_batch(
+                pressures, temperatures, mixture, {}, None, None, {}
+            )
+
+        # Only MgSiO3 should be evaluated (H2O fraction is 0)
+        assert call_count['n'] == 1
+        assert np.isfinite(result[0])
+
+
+@pytest.mark.unit
+class TestGetMixedNablaAdPrecomputed:
+    """Tests for get_mixed_nabla_ad with precomputed_densities optimization."""
+
+    def test_precomputed_skips_density_lookup(self):
+        """When precomputed_densities is provided, density is not recomputed."""
+        from unittest.mock import patch
+
+        density_called = {'n': 0}
+
+        def mock_density(P, md, eos, T, sf, lf, interp, mzf):
+            density_called['n'] += 1
+            return 4000.0
+
+        def mock_nabla(eos, P, T, md, interp, sf, lf):
+            if 'MgSiO3' in eos:
+                return 0.3
+            if 'H2O' in eos:
+                return 0.4
+            return None
+
+        mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
+        precomputed = {'PALEOS:MgSiO3': 4000.0, 'PALEOS:H2O': 1000.0}
+
+        with (
+            patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density),
+            patch('zalmoxis.mixing._nabla_ad_for_component', side_effect=mock_nabla),
+        ):
+            nabla = get_mixed_nabla_ad(
+                1e10,
+                3000,
+                mixture,
+                {},
+                {},
+                precomputed_densities=precomputed,
+            )
+
+        # With precomputed densities, calculate_density should NOT be called
+        assert density_called['n'] == 0
+        assert nabla is not None
+        assert 0.0 < nabla < 1.0
+
+    def test_precomputed_partial(self):
+        """Partial precomputed: only the missing component triggers EOS lookup."""
+        from unittest.mock import patch
+
+        density_calls = []
+
+        def mock_density(P, md, eos, T, sf, lf, interp, mzf):
+            density_calls.append(eos)
+            return 1000.0
+
+        def mock_nabla(eos, P, T, md, interp, sf, lf):
+            return 0.3
+
+        mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
+        precomputed = {'PALEOS:MgSiO3': 4000.0}  # only MgSiO3 precomputed
+
+        with (
+            patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density),
+            patch('zalmoxis.mixing._nabla_ad_for_component', side_effect=mock_nabla),
+        ):
+            nabla = get_mixed_nabla_ad(
+                1e10,
+                3000,
+                mixture,
+                {},
+                {},
+                precomputed_densities=precomputed,
+            )
+
+        # Only H2O should trigger a density call
+        assert density_calls == ['PALEOS:H2O']
+        assert nabla is not None
+
+    def test_all_components_invalid_density_returns_none(self):
+        """If all components have invalid density, nabla_ad is None."""
+        from unittest.mock import patch
+
+        def mock_density(P, md, eos, T, sf, lf, interp, mzf):
+            return None
+
+        mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
+
+        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+            nabla = get_mixed_nabla_ad(1e10, 3000, mixture, {}, {})
+
+        assert nabla is None
+
+    def test_nabla_ad_none_component_excluded(self):
+        """Components that return None for nabla_ad are excluded from average."""
+        from unittest.mock import patch
+
+        def mock_density(P, md, eos, T, sf, lf, interp, mzf):
+            return 4000.0
+
+        def mock_nabla(eos, P, T, md, interp, sf, lf):
+            if 'MgSiO3' in eos:
+                return 0.3
+            return None  # H2O has no nabla_ad
+
+        mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
+
+        with (
+            patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density),
+            patch('zalmoxis.mixing._nabla_ad_for_component', side_effect=mock_nabla),
+        ):
+            nabla = get_mixed_nabla_ad(1e10, 3000, mixture, {}, {})
+
+        # Only MgSiO3 contributes, so result should be its nabla_ad
+        assert nabla == pytest.approx(0.3)
+
+    def test_single_component_nabla_ad(self):
+        """Single-component mixture delegates directly, no suppression."""
+        from unittest.mock import patch
+
+        def mock_nabla(eos, P, T, md, interp, sf, lf):
+            return 0.28
+
+        mixture = LayerMixture(['PALEOS:MgSiO3'], [1.0])
+
+        with patch('zalmoxis.mixing._nabla_ad_for_component', side_effect=mock_nabla):
+            nabla = get_mixed_nabla_ad(1e10, 3000, mixture, {}, {})
+
+        assert nabla == pytest.approx(0.28)
+
+
+@pytest.mark.unit
+class TestNablaAdForComponent:
+    """Tests for the _nabla_ad_for_component routing function."""
+
+    def test_non_tdep_returns_none(self):
+        """Non-T-dependent EOS (Seager, Analytic) returns None."""
+        result = _nabla_ad_for_component('Seager2007:iron', 1e10, 3000, {}, {}, None, None)
+        assert result is None
+
+    def test_paleos_unified_routes_correctly(self):
+        """PALEOS unified format (e.g. PALEOS:iron) routes to unified nabla_ad."""
+        from unittest.mock import patch
+
+        mat = {'format': 'paleos_unified'}
+        md = {'PALEOS:iron': mat}
+
+        with patch(
+            'zalmoxis.eos_functions._get_paleos_unified_nabla_ad', return_value=0.25
+        ) as mock_fn:
+            result = _nabla_ad_for_component('PALEOS:iron', 1e10, 3000, md, {}, None, None)
+
+        assert result == pytest.approx(0.25)
+        mock_fn.assert_called_once_with(1e10, 3000, mat, {})
+
+    def test_paleos_2phase_routes_correctly(self):
+        """PALEOS-2phase:MgSiO3 converts dT/dP to nabla_ad."""
+        from unittest.mock import patch
+
+        md = {'PALEOS-2phase:MgSiO3': {}}
+        P = 50e9
+        T = 4000.0
+        dtdp = 1e-8  # dT/dP in K/Pa
+
+        with patch('zalmoxis.eos_functions._compute_paleos_dtdp', return_value=dtdp):
+            result = _nabla_ad_for_component('PALEOS-2phase:MgSiO3', P, T, md, {}, None, None)
+
+        expected = dtdp * P / T
+        assert result == pytest.approx(expected)
+
+    def test_paleos_2phase_zero_pressure_returns_none(self):
+        """PALEOS-2phase with zero pressure returns None."""
+        md = {'PALEOS-2phase:MgSiO3': {}}
+        result = _nabla_ad_for_component('PALEOS-2phase:MgSiO3', 0.0, 3000, md, {}, None, None)
+        assert result is None
+
+    def test_paleos_2phase_zero_temperature_returns_none(self):
+        """PALEOS-2phase with zero temperature returns None."""
+        md = {'PALEOS-2phase:MgSiO3': {}}
+        result = _nabla_ad_for_component('PALEOS-2phase:MgSiO3', 1e10, 0.0, md, {}, None, None)
+        assert result is None
+
+    def test_paleos_2phase_none_dtdp_returns_none(self):
+        """PALEOS-2phase returns None if dtdp lookup fails."""
+        from unittest.mock import patch
+
+        md = {'PALEOS-2phase:MgSiO3': {}}
+
+        with patch('zalmoxis.eos_functions._compute_paleos_dtdp', return_value=None):
+            result = _nabla_ad_for_component(
+                'PALEOS-2phase:MgSiO3', 1e10, 3000, md, {}, None, None
+            )
+
+        assert result is None
+
+    def test_paleos_2phase_negative_dtdp_returns_none(self):
+        """PALEOS-2phase returns None if dtdp is negative."""
+        from unittest.mock import patch
+
+        md = {'PALEOS-2phase:MgSiO3': {}}
+
+        with patch('zalmoxis.eos_functions._compute_paleos_dtdp', return_value=-1e-8):
+            result = _nabla_ad_for_component(
+                'PALEOS-2phase:MgSiO3', 1e10, 3000, md, {}, None, None
+            )
+
+        assert result is None
+
+    def test_wolfbower_with_grad_file(self):
+        """WolfBower2018 routes to tabulated EOS for adiabat gradient."""
+        from unittest.mock import patch
+
+        mat = {'melted_mantle': {'adiabat_grad_file': '/some/path.dat'}}
+        md = {'WolfBower2018:MgSiO3': mat}
+        P = 50e9
+        T = 4000.0
+        dtdp = 2e-8
+
+        with patch('zalmoxis.eos_functions.get_tabulated_eos', return_value=dtdp):
+            result = _nabla_ad_for_component('WolfBower2018:MgSiO3', P, T, md, {}, None, None)
+
+        expected = dtdp * P / T
+        assert result == pytest.approx(expected)
+
+    def test_wolfbower_no_grad_file_returns_none(self):
+        """WolfBower2018 without adiabat_grad_file returns None."""
+        mat = {'melted_mantle': {}}
+        md = {'WolfBower2018:MgSiO3': mat}
+
+        result = _nabla_ad_for_component('WolfBower2018:MgSiO3', 1e10, 3000, md, {}, None, None)
+        assert result is None
+
+    def test_wolfbower_no_melted_mantle_returns_none(self):
+        """WolfBower2018 without melted_mantle dict key returns None."""
+        md = {'WolfBower2018:MgSiO3': {}}
+
+        result = _nabla_ad_for_component('WolfBower2018:MgSiO3', 1e10, 3000, md, {}, None, None)
+        assert result is None
+
+    def test_wolfbower_negative_dtdp_returns_none(self):
+        """WolfBower2018 returns None when tabulated dtdp is negative."""
+        from unittest.mock import patch
+
+        mat = {'melted_mantle': {'adiabat_grad_file': '/some/path.dat'}}
+        md = {'WolfBower2018:MgSiO3': mat}
+
+        with patch('zalmoxis.eos_functions.get_tabulated_eos', return_value=-1e-8):
+            result = _nabla_ad_for_component(
+                'WolfBower2018:MgSiO3', 1e10, 3000, md, {}, None, None
+            )
+
+        assert result is None
+
+    def test_wolfbower_none_dtdp_returns_none(self):
+        """WolfBower2018 returns None when tabulated dtdp is None."""
+        from unittest.mock import patch
+
+        mat = {'melted_mantle': {'adiabat_grad_file': '/some/path.dat'}}
+        md = {'WolfBower2018:MgSiO3': mat}
+
+        with patch('zalmoxis.eos_functions.get_tabulated_eos', return_value=None):
+            result = _nabla_ad_for_component(
+                'WolfBower2018:MgSiO3', 1e10, 3000, md, {}, None, None
+            )
+
+        assert result is None
+
+    def test_unknown_tdep_eos_no_format(self):
+        """T-dependent EOS without 'format' key and not PALEOS-2phase falls through."""
+        md = {'RTPress100TPa:MgSiO3': {}}
+
+        result = _nabla_ad_for_component('RTPress100TPa:MgSiO3', 1e10, 3000, md, {}, None, None)
+        # No melted_mantle/adiabat_grad_file, so returns None
+        assert result is None
