@@ -66,13 +66,12 @@ The `--clean` flag clears the `site/` cache before building.
 You can find the documentation source in the [docs](https://github.com/FormingWorlds/Zalmoxis/tree/main/docs) directory.
 If you are adding new pages, make sure to update the listing in the [`mkdocs.yml`](https://github.com/FormingWorlds/Zalmoxis/tree/main/mkdocs.yml) under the `nav` entry.
 
-**Live reload caveat for root-level files.** Some pages (`CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `README.md`) live at the repository root and are included into the docs via `markdown_include` directives in `docs/Community/`. Zensical's live reload watches `docs/` and `src/` but may not detect changes to these root-level files. If you edit a root-level markdown file and the browser does not update, restart the server:
+**Live reload caveat for root-level files.** Some pages (`CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `README.md`) live at the repository root and are included into the docs via `markdown_include` directives in `docs/Community/`. Zensical's live reload does not detect changes to these included root-level files. If you edit one and the browser does not update, stop the server (Ctrl+C) and restart with a clean build:
 
 ```console
-# Kill the running server (Ctrl+C), then:
-rm -rf site/
+zensical build --clean
 zensical serve
 ```
 
-Removing `site/` ensures no stale cache interferes with the rebuild.
+The `build --clean` step forces Zensical to re-resolve all `markdown_include` directives. Without it, `serve` may use a stale internal cache even if `site/` was deleted.
 
