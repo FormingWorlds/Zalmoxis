@@ -586,3 +586,244 @@ def gupta2025_suppression_weight(P_Pa, T_K, w_H2, w_H2O, T_scale=50.0):
     arg = (T_K - T_crit) / T_scale
     arg = max(min(arg, 500.0), -500.0)
     return 1.0 / (1.0 + math.exp(-arg))
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Young+2025: Ternary MgSiO3-Fe-H2 phase diagram (PSJ 6:251)
+# ═════════════════════════════════════════════════════════════════════
+
+# Molar masses for the ternary system
+MU_FE = 55.845e-3  # kg/mol (iron)
+
+# Binary join interaction parameters from Young+2025 and references therein.
+# Subregular solution model: G_excess = (L_ij*x_i + L_ji*x_j) * x_i * x_j
+# with T,P dependence: * (1 - T/tau + P/pi)
+
+# MgSiO3-H2 (CB join): Gilmore & Stixrude (2025), Nature 650, 60
+_Y25_L_CB = 62000.0  # J/mol
+_Y25_L_BC = -4950.0  # J/mol
+_Y25_TAU_CB = 4800.0  # K
+_Y25_PI_CB = -35.0  # GPa
+
+# Fe-H2 (AB join): Young+2025 Eq. 4
+# L_AB = 138,000 - 9500*P(GPa), L_BA = 17,000 - 9500*P(GPa)
+_Y25_L_AB_0 = 138000.0  # J/mol (at P=0)
+_Y25_L_BA_0 = 17000.0  # J/mol (at P=0)
+_Y25_L_AB_P = -9500.0  # J/(mol GPa)
+
+# MgSiO3-Fe (CA join): Insixiengmay & Stixrude (2025)
+# Regular solution: L_AC = L_CA = 240,000 - 28*T + 1116*P(GPa)
+_Y25_L_AC_0 = 240000.0  # J/mol (at T=0, P=0)
+_Y25_L_AC_T = -28.0  # J/(mol K)
+_Y25_L_AC_P = 1116.0  # J/(mol GPa)
+
+# Ternary interaction parameter (unknown, set to zero)
+_Y25_L_ABC = 0.0  # J/mol
+
+
+def _y25_L_AB(P_GPa):
+    """Fe-H2 interaction parameter L_AB (Young+2025 Eq. 4).
+
+    Parameters
+    ----------
+    P_GPa : float
+        Pressure in GPa.
+
+    Returns
+    -------
+    float
+        L_AB in J/mol.
+    """
+    return _Y25_L_AB_0 + _Y25_L_AB_P * P_GPa
+
+
+def _y25_L_BA(P_GPa):
+    """Fe-H2 interaction parameter L_BA (Young+2025 Eq. 4).
+
+    Parameters
+    ----------
+    P_GPa : float
+        Pressure in GPa.
+
+    Returns
+    -------
+    float
+        L_BA in J/mol.
+    """
+    return _Y25_L_BA_0 + _Y25_L_AB_P * P_GPa
+
+
+def _y25_L_AC(T, P_GPa):
+    """MgSiO3-Fe interaction parameter (Insixiengmay & Stixrude 2025).
+
+    Regular solution: L_AC = L_CA = 240,000 - 28*T + 1116*P.
+
+    Parameters
+    ----------
+    T : float
+        Temperature in K.
+    P_GPa : float
+        Pressure in GPa.
+
+    Returns
+    -------
+    float
+        L_AC = L_CA in J/mol.
+    """
+    return _Y25_L_AC_0 + _Y25_L_AC_T * T + _Y25_L_AC_P * P_GPa
+
+
+def ternary_gibbs_mixing(x_A, x_B, T, P_GPa):
+    """Gibbs free energy of mixing for the MgSiO3-Fe-H2 ternary system.
+
+    Uses the Muggianu-Jacob projection (Young+2025 Eq. 6) to construct
+    the ternary Gibbs surface from three binary joins.
+
+    Components: A = Fe, B = H2, C = MgSiO3 (x_C = 1 - x_A - x_B).
+
+    Parameters
+    ----------
+    x_A : float
+        Mole fraction of Fe.
+    x_B : float
+        Mole fraction of H2.
+    T : float
+        Temperature in K.
+    P_GPa : float
+        Pressure in GPa.
+
+    Returns
+    -------
+    float
+        Gibbs free energy of mixing in J/mol. Returns 0 for pure
+        endmembers or invalid compositions.
+    """
+    x_C = 1.0 - x_A - x_B
+    if x_A < 0 or x_B < 0 or x_C < 0:
+        return 0.0
+    if x_A > 1 or x_B > 1 or x_C > 1:
+        return 0.0
+
+    # Ideal entropy of mixing
+    G_ideal = 0.0
+    if x_A > 0:
+        G_ideal += x_A * math.log(x_A)
+    if x_B > 0:
+        G_ideal += x_B * math.log(x_B)
+    if x_C > 0:
+        G_ideal += x_C * math.log(x_C)
+    G_ideal *= R_GAS * T
+
+    # T,P dependence factor for the CB and AB joins
+    # Factor = (1 - T/tau + P/pi)
+    tp_factor_CB = 1.0 - T / _Y25_TAU_CB + P_GPa / _Y25_PI_CB
+
+    # Excess Gibbs energy from Muggianu-Jacob projection (Eq. 6)
+    # Each binary join contributes via the subregular form:
+    # G_ij = (L_ij * nu_i + L_ji * nu_j) * nu_i * nu_j
+    # where nu_i = 0.5*(1 + x_i - x_j) is the Muggianu projection
+
+    # Muggianu-Jacob projection: for a subregular binary i-j with
+    # G_excess = (L_ij*x_j + L_ji*x_i) * x_i * x_j, the ternary
+    # projection replaces x_i -> nu_i = 0.5*(1 + x_i - x_j) in the
+    # L coefficients but keeps x_i * x_j for the weighting.
+    # Convention: L_ij multiplies x_j (the SECOND subscript).
+
+    # AB join (Fe-H2)
+    nu_A_AB = 0.5 * (1.0 + x_A - x_B)
+    nu_B_AB = 0.5 * (1.0 + x_B - x_A)
+    L_AB = _y25_L_AB(P_GPa)
+    L_BA = _y25_L_BA(P_GPa)
+    G_AB = (L_AB * nu_B_AB + L_BA * nu_A_AB) * x_A * x_B * tp_factor_CB
+
+    # BC join (H2-MgSiO3)
+    nu_B_BC = 0.5 * (1.0 + x_B - x_C)
+    nu_C_BC = 0.5 * (1.0 + x_C - x_B)
+    G_BC = (_Y25_L_BC * nu_C_BC + _Y25_L_CB * nu_B_BC) * x_B * x_C * tp_factor_CB
+
+    # CA join (MgSiO3-Fe): regular solution (L_CA = L_AC), with its
+    # own T,P dependence already in the parameter (not via tau/pi)
+    L_CA = _y25_L_AC(T, P_GPa)
+    G_CA = L_CA * x_C * x_A
+
+    # Ternary term (L_ABC = 0)
+    G_ABC = _Y25_L_ABC * x_A * x_B * x_C
+
+    return G_ideal + G_AB + G_BC + G_CA + G_ABC
+
+
+def ternary_gibbs_hessian_det(x_A, x_B, T, P_GPa, dx=1e-6):
+    """Determinant of the Hessian of the ternary Gibbs free energy.
+
+    The spinodal is defined by det(H) = 0 (Young+2025 Eq. 7).
+    Negative det(H) indicates spontaneous decomposition into two phases.
+
+    Parameters
+    ----------
+    x_A : float
+        Mole fraction of Fe.
+    x_B : float
+        Mole fraction of H2.
+    T : float
+        Temperature in K.
+    P_GPa : float
+        Pressure in GPa.
+    dx : float
+        Step size for numerical second derivatives.
+
+    Returns
+    -------
+    float
+        Determinant of the 2x2 Hessian matrix. Negative = two-phase
+        (inside spinodal), positive = single-phase (outside spinodal).
+    """
+    G = ternary_gibbs_mixing
+
+    # Second derivatives via central finite differences
+    G0 = G(x_A, x_B, T, P_GPa)
+
+    # d2G/dx_A^2
+    d2G_AA = (G(x_A + dx, x_B, T, P_GPa) - 2 * G0 + G(x_A - dx, x_B, T, P_GPa)) / (
+        dx * dx
+    )
+
+    # d2G/dx_B^2
+    d2G_BB = (G(x_A, x_B + dx, T, P_GPa) - 2 * G0 + G(x_A, x_B - dx, T, P_GPa)) / (
+        dx * dx
+    )
+
+    # d2G/dx_A dx_B
+    d2G_AB = (
+        G(x_A + dx, x_B + dx, T, P_GPa)
+        - G(x_A + dx, x_B - dx, T, P_GPa)
+        - G(x_A - dx, x_B + dx, T, P_GPa)
+        + G(x_A - dx, x_B - dx, T, P_GPa)
+    ) / (4 * dx * dx)
+
+    return d2G_AA * d2G_BB - d2G_AB * d2G_AB
+
+
+def ternary_is_single_phase(x_A, x_B, T, P_GPa):
+    """Check if a ternary composition is in the single-phase region.
+
+    Uses the spinodal criterion: positive Hessian determinant means
+    the free energy surface is convex (single phase stable).
+
+    Parameters
+    ----------
+    x_A : float
+        Mole fraction of Fe.
+    x_B : float
+        Mole fraction of H2.
+    T : float
+        Temperature in K.
+    P_GPa : float
+        Pressure in GPa.
+
+    Returns
+    -------
+    bool
+        True if single-phase (outside spinodal), False if two-phase
+        or metastable (inside spinodal).
+    """
+    return ternary_gibbs_hessian_det(x_A, x_B, T, P_GPa) > 0
