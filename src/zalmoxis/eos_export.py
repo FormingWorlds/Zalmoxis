@@ -461,8 +461,10 @@ def generate_spider_eos_tables(
     alpha_interp = _build_interpolator(log_p_grid, log_t_grid, table['alpha'])
     nad_interp = _build_interpolator(log_p_grid, log_t_grid, table['nabla_ad'])
 
-    # Output pressure grid (log-spaced)
-    P_out = np.logspace(np.log10(P_range[0]), np.log10(P_range[1]), n_P)
+    # Output pressure grid. SPIDER's Interp2d assumes uniform spacing
+    # for the P (x) coordinate: indx = floor((P - P_min) / dP). Log-spaced
+    # pressure causes indx to overflow for large P and segfault SPIDER.
+    P_out = np.linspace(P_range[0], P_range[1], n_P)
 
     # For each pressure, determine the entropy range for solid and melt phases
     # by scanning T from T_min to T_solidus (solid) and T_liquidus to T_max (melt)
