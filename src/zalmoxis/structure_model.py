@@ -15,7 +15,12 @@ import numpy as np
 from scipy.integrate import solve_ivp
 
 from .constants import CONDENSED_RHO_MIN_DEFAULT, CONDENSED_RHO_SCALE_DEFAULT, G
-from .mixing import BINODAL_T_SCALE_DEFAULT, any_component_is_tdep, calculate_mixed_density
+from .mixing import (
+    BINODAL_T_SCALE_DEFAULT,
+    any_component_is_tdep,
+    calculate_mixed_density,
+    compute_melt_fraction,
+)
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -69,6 +74,7 @@ def coupled_odes(
     condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
     condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
     binodal_T_scale=BINODAL_T_SCALE_DEFAULT,
+    volatile_profile=None,
 ):
     """Calculate derivatives of mass, gravity, and pressure w.r.t. radius.
 
@@ -103,6 +109,10 @@ def coupled_odes(
         Sigmoid width for phase-aware suppression (kg/m^3).
     binodal_T_scale : float
         Binodal sigmoid width in K for H2 miscibility suppression.
+    volatile_profile : VolatileProfile or None
+        If provided, volatile mass fractions are blended using the local
+        melt fraction phi(P, T) at each integration step. Only applied
+        to the mantle layer.
 
     Returns
     -------
@@ -122,20 +132,43 @@ def coupled_odes(
         logger.debug(f'Nonphysical pressure encountered: P={pressure} Pa at radius={radius} m')
         return [0.0, 0.0, 0.0]
 
-    # Calculate density at the current radius, using pressure from y
-    current_density = calculate_mixed_density(
-        pressure,
-        temperature,
-        mixture,
-        material_dictionaries,
-        solidus_func,
-        liquidus_func,
-        interpolation_cache,
-        mushy_zone_factors,
-        condensed_rho_min,
-        condensed_rho_scale,
-        binodal_T_scale,
-    )
+    # Apply phi(r)-dependent volatile blending for the mantle layer.
+    # Save and restore the mixture's fractions to avoid side effects.
+    # Use try/finally to guarantee restoration even if density calc raises.
+    saved_fractions = None
+    if (
+        volatile_profile is not None
+        and mixture is layer_mixtures.get('mantle')
+        and len(mixture.components) > 1
+    ):
+        phi = compute_melt_fraction(pressure, temperature, solidus_func, liquidus_func)
+        saved_fractions = mixture.fractions[:]
+        if volatile_profile.global_miscibility and volatile_profile.x_interior:
+            mixture.fractions = volatile_profile.apply_to_mixture_with_binodal(
+                mixture, phi, pressure, temperature
+            )
+        else:
+            mixture.fractions = volatile_profile.apply_to_mixture(mixture, phi)
+
+    try:
+        # Calculate density at the current radius, using pressure from y
+        current_density = calculate_mixed_density(
+            pressure,
+            temperature,
+            mixture,
+            material_dictionaries,
+            solidus_func,
+            liquidus_func,
+            interpolation_cache,
+            mushy_zone_factors,
+            condensed_rho_min,
+            condensed_rho_scale,
+            binodal_T_scale,
+        )
+    finally:
+        # Restore original fractions
+        if saved_fractions is not None:
+            mixture.fractions = saved_fractions
 
     # Return zero derivatives for invalid density.  This is intentional:
     # the adaptive ODE solver (RK45) evaluates the RHS at trial points that
@@ -179,6 +212,7 @@ def solve_structure(
     condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
     condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
     binodal_T_scale=BINODAL_T_SCALE_DEFAULT,
+    volatile_profile=None,
 ):
     """Solve the coupled ODEs for the planetary structure model.
 
@@ -228,6 +262,9 @@ def solve_structure(
         Sigmoid width for phase-aware suppression (kg/m^3).
     binodal_T_scale : float
         Binodal sigmoid width in K for H2 miscibility suppression.
+    volatile_profile : VolatileProfile or None
+        If provided, mantle volatile fractions are blended at each radius
+        using the local melt fraction phi(P, T).
 
     Returns
     -------
@@ -261,6 +298,7 @@ def solve_structure(
             condensed_rho_min,
             condensed_rho_scale,
             binodal_T_scale,
+            volatile_profile,
         )
 
     if uses_Tdep:
