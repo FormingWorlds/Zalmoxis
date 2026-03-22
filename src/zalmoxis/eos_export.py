@@ -638,7 +638,13 @@ def generate_spider_eos_tables(
                 result['rho'][js, ip] = float(rho_interp(pt))
                 result['cp'][js, ip] = float(cp_interp(pt))
                 result['alpha'][js, ip] = float(alpha_interp(pt))
-                result['nabla_ad'][js, ip] = float(nad_interp(pt))
+                # Convert dimensionless nabla_ad = d ln T / d ln P to
+                # dT/dP_s [K/Pa] for SPIDER: dT/dP_s = nabla_ad * T / P
+                nad_val = float(nad_interp(pt))
+                if P_Pa > 0 and np.isfinite(nad_val):
+                    result['nabla_ad'][js, ip] = nad_val * T_found / P_Pa
+                else:
+                    result['nabla_ad'][js, ip] = 0.0
                 n_filled += 1
 
         fill_frac = n_filled / n_total if n_total > 0 else 0
@@ -704,7 +710,7 @@ def generate_spider_eos_tables(
             'temperature': 1000.0,  # K
             'cp': 1000.0,  # J/(kg*K)
             'alpha': 1e-5,  # 1/K
-            'nabla_ad': 1.0,  # dimensionless
+            'nabla_ad': 1e-9,  # K/Pa (dT/dP_s, converted from dimensionless nabla_ad)
         }
         spider_names = {
             'rho': 'density',
