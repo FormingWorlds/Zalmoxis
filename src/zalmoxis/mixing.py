@@ -24,7 +24,11 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .binodal import gupta2025_suppression_weight, rogers2025_suppression_weight
+from .binodal import (
+    gupta2025_suppression_weight,
+    rogers2025_suppression_weight,
+    ternary_suppression_weight,
+)
 from .constants import CONDENSED_RHO_MIN_DEFAULT, CONDENSED_RHO_SCALE_DEFAULT, TDEP_EOS_NAMES
 
 logger = logging.getLogger(__name__)
@@ -43,6 +47,7 @@ _SILICATE_EOS_NAMES = frozenset(
 )
 _H2_EOS_NAMES = frozenset({'Chabrier:H'})
 _H2O_EOS_NAMES = frozenset({'PALEOS:H2O', 'Seager2007:H2O'})
+_FE_EOS_NAMES = frozenset({'PALEOS:iron', 'Seager2007:iron'})
 
 # Default binodal sigmoid width (K). Controls the smooth transition at
 # the miscibility boundary. 50 K gives a ~200 K transition zone.
@@ -643,7 +648,8 @@ def _binodal_factor(eos_name, w_i, mixture, pressure, temperature, T_scale):
     Checks the H2 component against all relevant partner components
     in the mixture:
 
-    - H2 + silicate (MgSiO3): Rogers+2025 binodal
+    - H2 + silicate (MgSiO3) + Fe: Young+2025 ternary (if all three present)
+    - H2 + silicate (MgSiO3): Rogers+2025 binodal (binary fallback)
     - H2 + H2O: Gupta+2025 critical curve
 
     Returns the minimum (most restrictive) suppression weight across
@@ -672,20 +678,42 @@ def _binodal_factor(eos_name, w_i, mixture, pressure, temperature, T_scale):
     if eos_name not in _H2_EOS_NAMES:
         return 1.0
 
-    sigma = 1.0
+    # Collect partner mass fractions
+    w_sil = 0.0
+    w_fe = 0.0
+    w_h2o = 0.0
     for partner, w_p in zip(mixture.components, mixture.fractions):
         if w_p <= 0:
             continue
         if partner in _SILICATE_EOS_NAMES:
-            sigma = min(
-                sigma,
-                rogers2025_suppression_weight(pressure, temperature, w_i, w_p, T_scale),
-            )
+            w_sil += w_p
+        if partner in _FE_EOS_NAMES:
+            w_fe += w_p
         if partner in _H2O_EOS_NAMES:
-            sigma = min(
-                sigma,
-                gupta2025_suppression_weight(pressure, temperature, w_i, w_p, T_scale),
-            )
+            w_h2o += w_p
+
+    sigma = 1.0
+
+    # Ternary: Fe + MgSiO3 + H2 (Young+2025)
+    if w_fe > 0 and w_sil > 0:
+        sigma = min(
+            sigma,
+            ternary_suppression_weight(pressure, temperature, w_fe, w_i, w_sil, T_scale),
+        )
+    elif w_sil > 0:
+        # Binary fallback: H2 + MgSiO3 (Rogers+2025)
+        sigma = min(
+            sigma,
+            rogers2025_suppression_weight(pressure, temperature, w_i, w_sil, T_scale),
+        )
+
+    # H2 + H2O (Gupta+2025) - independent of the silicate/Fe binodal
+    if w_h2o > 0:
+        sigma = min(
+            sigma,
+            gupta2025_suppression_weight(pressure, temperature, w_i, w_h2o, T_scale),
+        )
+
     return sigma
 
 

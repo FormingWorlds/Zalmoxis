@@ -827,3 +827,188 @@ def ternary_is_single_phase(x_A, x_B, T, P_GPa):
         or metastable (inside spinodal).
     """
     return ternary_gibbs_hessian_det(x_A, x_B, T, P_GPa) > 0
+
+
+def ternary_binodal_convex_hull(T, P_GPa, n_grid=200):
+    """Compute the ternary binodal via convex hull at given T, P.
+
+    Evaluates the Gibbs free energy of mixing on a triangular grid
+    in ternary composition space. The lower convex hull of the free
+    energy surface identifies coexisting phase compositions (binodal
+    points) where the common tangent plane touches the surface.
+
+    Parameters
+    ----------
+    T : float
+        Temperature in K.
+    P_GPa : float
+        Pressure in GPa.
+    n_grid : int
+        Number of grid points per edge of the ternary simplex.
+        Total grid points ~ n_grid^2 / 2.
+
+    Returns
+    -------
+    dict
+        Keys:
+
+        - ``'x_A'``: 1D array of Fe mole fractions on the grid
+        - ``'x_B'``: 1D array of H2 mole fractions on the grid
+        - ``'G'``: 1D array of Gibbs free energy values [J/mol]
+        - ``'is_two_phase'``: bool array, True where convex hull
+          indicates two-phase coexistence
+        - ``'hull_G'``: 1D array of convex hull G values (lower
+          envelope). Where hull_G < G, the composition is metastable
+          or unstable.
+        - ``'n_two_phase'``: number of two-phase grid points
+    """
+    from scipy.spatial import ConvexHull
+
+    # Generate triangular grid in the ternary simplex
+    x_A_list = []
+    x_B_list = []
+    G_list = []
+
+    step = 1.0 / n_grid
+    for i in range(n_grid + 1):
+        for j in range(n_grid + 1 - i):
+            x_A = i * step
+            x_B = j * step
+            x_C = 1.0 - x_A - x_B
+            if x_C < -1e-10:
+                continue
+            x_C = max(0.0, x_C)
+            G = ternary_gibbs_mixing(x_A, x_B, T, P_GPa)
+            x_A_list.append(x_A)
+            x_B_list.append(x_B)
+            G_list.append(G)
+
+    x_A_arr = np.array(x_A_list)
+    x_B_arr = np.array(x_B_list)
+    G_arr = np.array(G_list)
+    n_pts = len(G_arr)
+
+    if n_pts < 4:
+        return {
+            'x_A': x_A_arr,
+            'x_B': x_B_arr,
+            'G': G_arr,
+            'is_two_phase': np.zeros(n_pts, dtype=bool),
+            'hull_G': G_arr.copy(),
+            'n_two_phase': 0,
+        }
+
+    # Build 3D point cloud: (x_A, x_B, G) and compute lower convex hull.
+    # The lower hull facets are those whose outward normal has a negative
+    # z-component (pointing downward in G direction).
+    points_3d = np.column_stack([x_A_arr, x_B_arr, G_arr])
+
+    try:
+        hull = ConvexHull(points_3d)
+    except Exception:
+        return {
+            'x_A': x_A_arr,
+            'x_B': x_B_arr,
+            'G': G_arr,
+            'is_two_phase': np.zeros(n_pts, dtype=bool),
+            'hull_G': G_arr.copy(),
+            'n_two_phase': 0,
+        }
+
+    # Identify lower hull facets: outward normal z-component < 0
+    lower_facet_indices = set()
+    for simplex, eq in zip(hull.simplices, hull.equations):
+        if eq[2] < 0:  # Normal z-component < 0 = downward-facing
+            for idx in simplex:
+                lower_facet_indices.add(idx)
+
+    # For each grid point, compute the lower hull G value by
+    # interpolating the lower hull facets
+    hull_G = G_arr.copy()
+    is_two_phase = np.zeros(n_pts, dtype=bool)
+
+    for simplex, eq in zip(hull.simplices, hull.equations):
+        if eq[2] >= 0:
+            continue
+        # Lower facet: G = -(eq[0]*xA + eq[1]*xB + eq[3]) / eq[2]
+        for i in range(n_pts):
+            G_hull_i = -(eq[0] * x_A_arr[i] + eq[1] * x_B_arr[i] + eq[3]) / eq[2]
+            if G_hull_i < hull_G[i]:
+                hull_G[i] = G_hull_i
+
+    # Two-phase region: where the hull G is significantly below the
+    # actual G (the composition would decompose)
+    tol = 1.0  # J/mol tolerance
+    is_two_phase = (G_arr - hull_G) > tol
+
+    return {
+        'x_A': x_A_arr,
+        'x_B': x_B_arr,
+        'G': G_arr,
+        'is_two_phase': is_two_phase,
+        'hull_G': hull_G,
+        'n_two_phase': int(np.sum(is_two_phase)),
+    }
+
+
+def ternary_suppression_weight(P_Pa, T_K, w_Fe, w_H2, w_sil, T_scale=50.0):
+    """Sigmoid suppression weight for ternary MgSiO3-Fe-H2 miscibility.
+
+    Evaluates whether the ternary composition at (T, P) is in the
+    single-phase or two-phase region using the spinodal criterion,
+    and returns a smooth sigmoid weight.
+
+    Parameters
+    ----------
+    P_Pa : float
+        Pressure in Pa.
+    T_K : float
+        Temperature in K.
+    w_Fe : float
+        Mass fraction of Fe.
+    w_H2 : float
+        Mass fraction of H2.
+    w_sil : float
+        Mass fraction of MgSiO3.
+    T_scale : float
+        Not used for temperature-based sigmoid here; instead the
+        weight is based on the Hessian determinant sign.
+
+    Returns
+    -------
+    float
+        Weight in [0, 1]. ~1 if single-phase (miscible), ~0 if
+        two-phase (immiscible).
+    """
+    if w_Fe <= 0 and w_H2 <= 0:
+        return 1.0  # Pure silicate: no phase separation
+    if w_sil <= 0 and w_Fe <= 0:
+        return 1.0  # Pure H2: no phase separation
+    if w_sil <= 0 and w_H2 <= 0:
+        return 1.0  # Pure Fe: no phase separation
+
+    # Convert mass fractions to mole fractions
+    n_Fe = w_Fe / MU_FE if MU_FE > 0 else 0.0
+    n_H2 = w_H2 / MU_H2 if MU_H2 > 0 else 0.0
+    n_sil = w_sil / MU_MGSIO3 if MU_MGSIO3 > 0 else 0.0
+    n_total = n_Fe + n_H2 + n_sil
+    if n_total <= 0:
+        return 1.0
+
+    x_Fe = n_Fe / n_total
+    x_H2 = n_H2 / n_total
+    P_GPa = P_Pa * 1e-9
+
+    # Use spinodal (Hessian determinant) as the criterion.
+    # Positive det = single-phase, negative = two-phase.
+    det = ternary_gibbs_hessian_det(x_Fe, x_H2, T_K, P_GPa)
+
+    # Smooth sigmoid based on det. Scale by RT^2 to make the
+    # transition width independent of temperature.
+    det_scale = (R_GAS * T_K) ** 2 * 0.1  # Characteristic scale
+    if det_scale <= 0:
+        return 1.0 if det > 0 else 0.0
+
+    arg = det / det_scale
+    arg = max(min(arg, 500.0), -500.0)
+    return 1.0 / (1.0 + math.exp(-arg))
