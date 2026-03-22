@@ -742,3 +742,124 @@ def generate_spider_eos_tables(
         'melt': melt_grids,
         'output_dir': str(output_dir) if output_dir else None,
     }
+
+
+# ── Aragog P-T format table generation ─────────────────────────────
+
+
+def generate_aragog_pt_tables(
+    eos_file,
+    solidus_func,
+    liquidus_func,
+    P_range=(1e5, 200e9),
+    n_P=1000,
+    n_T=1000,
+    output_dir=None,
+):
+    """Generate Aragog-format P-T lookup tables from a PALEOS unified table.
+
+    Splits the PALEOS P-T table into separate solid-phase and melt-phase
+    files for density, heat capacity, and thermal expansivity. Each file
+    has 3 columns (pressure, temperature, value) in tab-separated format
+    with a 1-line header, matching the format Aragog reads from
+    ``interior_lookup_tables/EOS/dynamic/<eos_dir>/P-T/``.
+
+    Parameters
+    ----------
+    eos_file : str or Path
+        Path to the PALEOS unified EOS table.
+    solidus_func : callable
+        P [Pa] -> T_solidus [K].
+    liquidus_func : callable
+        P [Pa] -> T_liquidus [K].
+    P_range : tuple of float
+        (P_min, P_max) in Pa.
+    n_P : int
+        Number of pressure points.
+    n_T : int
+        Number of temperature points.
+    output_dir : str or Path or None
+        Directory for output files. Creates it if needed.
+
+    Returns
+    -------
+    dict or None
+        Keys: ``'output_dir'``, ``'properties'`` list. None if eos_file
+        not found.
+    """
+    table = load_paleos_all_properties(eos_file)
+    if table is None:
+        return None
+
+    log_p_grid = table['unique_log_p']
+    log_t_grid = table['unique_log_t']
+
+    # Build interpolators
+    rho_interp = _build_interpolator(log_p_grid, log_t_grid, table['rho'])
+    cp_interp = _build_interpolator(log_p_grid, log_t_grid, table['cp'])
+    alpha_interp = _build_interpolator(log_p_grid, log_t_grid, table['alpha'])
+
+    # P and T grids (linear, matching WB2018 format)
+    P_arr = np.linspace(P_range[0], P_range[1], n_P)
+    T_arr = np.linspace(max(table['t_min'], 300.0), min(table['t_max'], 1e5), n_T)
+
+    # File names use short form (density, heat_capacity, thermal_exp) to
+    # match the existing WB2018 file names that Aragog's PROTEUS wrapper
+    # references. The header column name (3rd column) must match Aragog's
+    # _ScalingsParameters attribute name for nondimensionalization.
+    properties = {
+        'density': ('density', rho_interp),
+        'heat_capacity': ('heat_capacity', cp_interp),
+        'thermal_exp': ('thermal_expansivity', alpha_interp),
+    }
+
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Precompute melting curves on the P grid for phase filtering
+    T_sol_arr = np.array([solidus_func(P) for P in P_arr])
+    T_liq_arr = np.array([liquidus_func(P) for P in P_arr])
+
+    # Build full P-T meshgrid for vectorized interpolation
+    PP, TT = np.meshgrid(P_arr, T_arr, indexing='ij')  # (n_P, n_T)
+    logPP = np.log10(np.maximum(PP, 1.0))
+    logTT = np.log10(np.maximum(TT, 1.0))
+    pts = np.column_stack([logPP.ravel(), logTT.ravel()])
+
+    for file_name, (header_name, interp) in properties.items():
+        # Evaluate property on full grid (vectorized)
+        vals = interp(pts).reshape(PP.shape)
+        vals = np.where(np.isfinite(vals) & (vals > 0), vals, 1e-15)
+
+        for phase, phase_filter in [('melt', 'above_liquidus'), ('solid', 'below_solidus')]:
+            rows_P = []
+            rows_T = []
+            rows_V = []
+
+            for ip in range(len(P_arr)):
+                T_sol = T_sol_arr[ip]
+                T_liq = T_liq_arr[ip]
+
+                for it in range(len(T_arr)):
+                    T = T_arr[it]
+                    if phase_filter == 'above_liquidus' and T < T_liq:
+                        continue
+                    if phase_filter == 'below_solidus' and T > T_sol:
+                        continue
+                    rows_P.append(PP[ip, it])
+                    rows_T.append(TT[ip, it])
+                    rows_V.append(vals[ip, it])
+
+            if output_dir is not None and rows_P:
+                fname = output_dir / f'{file_name}_{phase}.dat'
+                data_out = np.column_stack([rows_P, rows_T, rows_V])
+                with open(fname, 'w') as f:
+                    f.write(f'#pressure\ttemperature\t{header_name}\n')
+                    np.savetxt(f, data_out, fmt='%.10e', delimiter='\t')
+                logger.info('Wrote %s (%d rows)', fname, len(rows_P))
+
+    return {
+        'output_dir': str(output_dir) if output_dir else None,
+        'properties': list(properties.keys()),
+    }
