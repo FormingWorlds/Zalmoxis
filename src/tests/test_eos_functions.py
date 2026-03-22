@@ -1500,9 +1500,9 @@ class TestGetPaleosUnifiedDensityBatch:
         for i, (s, b) in enumerate(zip(scalar_results, batch_results)):
             assert s is not None, f'Scalar returned None at index {i}'
             assert np.isfinite(b), f'Batch returned non-finite at index {i}'
-            assert b == pytest.approx(
-                s, rel=1e-6
-            ), f'{eos_key} index {i}: scalar={s:.6f}, batch={b:.6f}'
+            assert b == pytest.approx(s, rel=1e-6), (
+                f'{eos_key} index {i}: scalar={s:.6f}, batch={b:.6f}'
+            )
 
 
 # =====================================================================

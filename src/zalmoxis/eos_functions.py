@@ -642,12 +642,16 @@ def get_tabulated_eos(
             p_min, p_max = cached['p_min'], cached['p_max']
             t_min, t_max = cached['t_min'], cached['t_max']
 
-            # Global temperature bounds check
+            # Global temperature bounds check: clamp instead of raising
+            # to allow the ODE solver to handle out-of-range gracefully.
+            # This is critical for high-mass planets (>2 M_earth) where
+            # the WolfBower2018 table (1 TPa max) is exceeded at the CMB.
             if temperature < t_min or temperature > t_max:
-                raise ValueError(
-                    f'Temperature {temperature:.2f} K is out of bounds '
-                    f'for EOS data [{t_min:.1f}, {t_max:.1f}].'
+                logger.debug(
+                    f'Temperature {temperature:.2f} K out of bounds '
+                    f'for EOS data [{t_min:.1f}, {t_max:.1f}]. Clamping.'
                 )
+                temperature = np.clip(temperature, t_min, t_max)
 
             # Pressure clamping (both grid types)
             if pressure < p_min or pressure > p_max:

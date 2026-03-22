@@ -188,8 +188,10 @@ def rogers2025_suppression_weight(P_Pa, T_K, w_H2, w_sil, T_scale=50.0):
     float
         Weight in [0, 1].
     """
-    if w_H2 <= 0 or w_sil <= 0:
-        return 1.0
+    if w_H2 <= 0:
+        return 1.0  # No H2 present: fully miscible (no suppression)
+    if w_sil <= 0:
+        return 0.0  # No silicate melt: H2 cannot dissolve
 
     x_H2 = mass_to_mole_fraction(w_H2, w_sil, MU_H2, MU_MGSIO3)
     P_GPa = P_Pa * 1e-9
