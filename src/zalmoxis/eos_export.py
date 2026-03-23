@@ -260,6 +260,47 @@ def generate_spider_phase_boundaries(
     S_sol_valid = S_solidus[valid]
     S_liq_valid = S_liquidus[valid]
 
+    # Smooth S(P) phase boundaries. The PALEOS entropy surface has fine
+    # structure that produces wild dS/dP oscillations (100+ sign changes)
+    # when sampled along the liquidus T(P). These oscillations produce
+    # extreme mixing fluxes that crash SPIDER's CVode solver.
+    #
+    # Fix: fit a monotonic PCHIP spline through the S(P) data, using a
+    # coarsened version (every Nth point) to eliminate oscillations, then
+    # evaluate on the full P grid. PCHIP preserves monotonicity.
+    if n_valid > 10:
+        from scipy.interpolate import PchipInterpolator
+
+        # Coarsen to ~20 anchor points to remove oscillations
+        n_anchor = min(20, n_valid)
+        indices = np.linspace(0, n_valid - 1, n_anchor, dtype=int)
+
+        log_P_anchors = np.log10(P_valid[indices])
+        S_sol_anchors = S_sol_valid[indices]
+        S_liq_anchors = S_liq_valid[indices]
+
+        # PCHIP interpolation on coarsened anchors -> smooth curve
+        sol_pchip = PchipInterpolator(log_P_anchors, S_sol_anchors)
+        liq_pchip = PchipInterpolator(log_P_anchors, S_liq_anchors)
+
+        S_sol_smooth = sol_pchip(np.log10(P_valid))
+        S_liq_smooth = liq_pchip(np.log10(P_valid))
+
+        # Log improvement
+        dliq_raw = np.diff(S_liq_valid)
+        dliq_smooth = np.diff(S_liq_smooth)
+        n_raw = np.sum((dliq_raw[:-1] > 0) != (dliq_raw[1:] > 0))
+        n_smooth = np.sum((dliq_smooth[:-1] > 0) != (dliq_smooth[1:] > 0))
+        logger.info(
+            'Smoothed phase boundaries (PCHIP, %d anchors): '
+            'liquidus dS/dP sign changes %d -> %d',
+            n_anchor,
+            n_raw,
+            n_smooth,
+        )
+        S_sol_valid = S_sol_smooth
+        S_liq_valid = S_liq_smooth
+
     # Write files
     solidus_path = None
     liquidus_path = None
