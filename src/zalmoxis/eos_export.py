@@ -843,6 +843,7 @@ def generate_aragog_pt_tables(
     rho_interp = _build_interpolator(log_p_grid, log_t_grid, table['rho'])
     cp_interp = _build_interpolator(log_p_grid, log_t_grid, table['cp'])
     alpha_interp = _build_interpolator(log_p_grid, log_t_grid, table['alpha'])
+    s_interp = _build_interpolator(log_p_grid, log_t_grid, table['s'])
 
     # P and T grids (linear, matching WB2018 format)
     P_arr = np.linspace(P_range[0], P_range[1], n_P)
@@ -856,6 +857,7 @@ def generate_aragog_pt_tables(
         'density': ('density', rho_interp),
         'heat_capacity': ('heat_capacity', cp_interp),
         'thermal_exp': ('thermal_expansivity', alpha_interp),
+        'entropy': ('entropy', s_interp),
     }
 
     if output_dir is not None:
@@ -897,4 +899,134 @@ def generate_aragog_pt_tables(
     return {
         'output_dir': str(output_dir) if output_dir else None,
         'properties': list(properties.keys()),
+    }
+
+
+def compute_entropy_adiabat(
+    eos_file,
+    T_surface,
+    P_surface=1e5,
+    P_cmb=135e9,
+    n_points=500,
+    solidus_func=None,
+    liquidus_func=None,
+):
+    """Compute an entropy-conserving adiabatic T(P) profile from PALEOS.
+
+    Starting from T_surface at P_surface, computes the target entropy
+    S_target = S(P_surface, T_surface) and then inverts S(P, T) = S_target
+    at each pressure to find T. This correctly handles phase boundaries
+    (solidus/liquidus) where the Clausius-Clapeyron slope differs from
+    the single-phase adiabatic gradient.
+
+    Parameters
+    ----------
+    eos_file : str or Path
+        Path to the PALEOS unified EOS table.
+    T_surface : float
+        Surface temperature [K].
+    P_surface : float
+        Surface pressure [Pa].
+    P_cmb : float
+        CMB pressure [Pa].
+    n_points : int
+        Number of pressure points in the profile.
+    solidus_func : callable or None
+        P [Pa] -> T_solidus [K]. If provided, used for mixed-phase entropy.
+    liquidus_func : callable or None
+        P [Pa] -> T_liquidus [K]. If provided, used for mixed-phase entropy.
+
+    Returns
+    -------
+    dict
+        Keys: ``'P'`` [Pa], ``'T'`` [K], ``'S_target'`` [J/(kg*K)],
+        ``'S_profile'`` [J/(kg*K)] (entropy at each point for verification).
+    """
+    from scipy.optimize import brentq
+
+    table = load_paleos_all_properties(eos_file)
+    if table is None:
+        raise FileNotFoundError(f'PALEOS table not found: {eos_file}')
+
+    log_p_grid = table['unique_log_p']
+    log_t_grid = table['unique_log_t']
+    s_interp = _build_interpolator(log_p_grid, log_t_grid, table['s'])
+
+    def entropy_single_phase(P, T):
+        """Evaluate single-phase entropy from PALEOS."""
+        pt = np.array([[np.log10(max(P, 1.0)), np.log10(max(T, 300.0))]])
+        return float(s_interp(pt).item())
+
+    def entropy_total(P, T):
+        """Evaluate total entropy including mixed-phase contribution.
+
+        In the mushy zone, S = phi * S_liq(P, T_liq) + (1-phi) * S_sol(P, T_sol)
+        where phi = (T - T_sol) / (T_liq - T_sol).
+        """
+        if solidus_func is not None and liquidus_func is not None:
+            T_sol = solidus_func(P)
+            T_liq = liquidus_func(P)
+            if T_sol < T < T_liq and T_liq > T_sol:
+                phi = (T - T_sol) / (T_liq - T_sol)
+                S_sol = entropy_single_phase(P, T_sol)
+                S_liq = entropy_single_phase(P, T_liq)
+                return phi * S_liq + (1 - phi) * S_sol
+        return entropy_single_phase(P, T)
+
+    # Compute target entropy at the surface
+    S_target = entropy_total(P_surface, T_surface)
+    logger.info(
+        'Entropy adiabat: T_surf=%.1f K, P_surf=%.2e Pa, S_target=%.2f J/(kg*K)',
+        T_surface, P_surface, S_target,
+    )
+
+    # Build pressure grid (log-spaced for better resolution at low P)
+    P_grid = np.logspace(
+        np.log10(P_surface * 1.001), np.log10(P_cmb * 0.999), n_points
+    )
+    T_profile = np.zeros(n_points)
+    S_profile = np.zeros(n_points)
+
+    T_prev = T_surface
+    for i, P_i in enumerate(P_grid):
+        def residual(T_cand):
+            return entropy_total(P_i, T_cand) - S_target
+
+        # Bracket: expand around previous T
+        T_lo = T_prev * 0.8
+        T_hi = T_prev * 2.0
+        s_lo = residual(T_lo)
+        s_hi = residual(T_hi)
+
+        n_expand = 0
+        while s_lo * s_hi > 0 and n_expand < 20:
+            if s_lo > 0:
+                T_lo *= 0.5
+                s_lo = residual(T_lo)
+            else:
+                T_hi *= 2.0
+                s_hi = residual(T_hi)
+            n_expand += 1
+
+        if s_lo * s_hi > 0:
+            logger.warning(
+                'Could not bracket S root at P=%.2e Pa. Using previous T.', P_i
+            )
+            T_profile[i] = T_prev
+        else:
+            T_profile[i] = brentq(residual, T_lo, T_hi, rtol=1e-10)
+
+        S_profile[i] = entropy_total(P_i, T_profile[i])
+        T_prev = T_profile[i]
+
+    S_drift = abs(S_profile[-1] - S_target) / abs(S_target) * 100
+    logger.info(
+        'Entropy adiabat: T_cmb=%.1f K, S_drift=%.4f%%', T_profile[-1], S_drift
+    )
+
+    return {
+        'P': P_grid,
+        'T': T_profile,
+        'S_target': S_target,
+        'S_profile': S_profile,
     }
