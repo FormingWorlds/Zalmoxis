@@ -229,7 +229,7 @@ def main():
         style='italic',
     )
     ax.text(
-        40,
+        25,
         0.5,
         'H$_2$\nincluded',
         fontsize=8,
