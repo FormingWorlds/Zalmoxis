@@ -18,11 +18,14 @@ The grid is log-uniform with 150 points per decade in both $P$ (1 bar to 100 TPa
 No external solidus/liquidus curves or separate solid/liquid files are needed.
 This eliminates the phase-routing complexity required by the two-phase and WolfBower EOS families.
 
-**Phase boundary extraction.** At load time, the code extracts the liquidus boundary from the phase column: for each pressure row, the lowest temperature where the phase is `liquid` defines the liquidus.
-This extracted boundary serves as the basis for an optional mushy zone controlled by the `mushy_zone_factor` parameter (global default) or per-material overrides (`mushy_zone_factor_iron`, `mushy_zone_factor_MgSiO3`, `mushy_zone_factor_H2O`):
+**Phase boundary.** The PALEOS MgSiO$_3$ liquidus has a well-defined analytic functional form: a piecewise Simon-Glatzel fit using [Belonoshko et al. (2005)](https://doi.org/10.1103/PhysRevB.72.104102) below 2.55 GPa and [Fei et al. (2021)](https://doi.org/10.1029/2020JB021321) above, with the crossover pressure chosen for continuity.
+This analytic liquidus is implemented as `paleos_liquidus(P)` in `melting_curves.py` and is used in the vectorized density and $\nabla_{\mathrm{ad}}$ code paths.
+At load time, the code also extracts a discrete liquidus boundary from the phase column (for each pressure row, the lowest temperature where the phase is `liquid`); this serves as a consistency reference and is used in the scalar code path.
 
-- $f = 1.0$ (default): no mushy zone; the density comes directly from the table (sharp phase transition).
-- $f < 1.0$: a synthetic solidus is defined at $T_{\mathrm{sol}} = f \times T_{\mathrm{liq}}$. Between $T_{\mathrm{sol}}$ and $T_{\mathrm{liq}}$, density is volume-averaged between solid-side and liquid-side table values.
+The liquidus serves as the basis for an optional mushy zone controlled by the `mushy_zone_factor` parameter (global default) or per-material overrides (`mushy_zone_factor_iron`, `mushy_zone_factor_MgSiO3`, `mushy_zone_factor_H2O`):
+
+- $f = 1.0$ (default): no mushy zone; the density and $\nabla_{\mathrm{ad}}$ come directly from the table (sharp phase transition).
+- $f < 1.0$: a synthetic solidus is defined at $T_{\mathrm{sol}} = f \times T_{\mathrm{liq}}$. Between $T_{\mathrm{sol}}$ and $T_{\mathrm{liq}}$, density is computed from volume-additive mixing of specific volumes (density inverses) between the solid-side value at $T_{\mathrm{sol}}$ and the liquid-side value at $T_{\mathrm{liq}}$, weighted by the melt fraction $\phi = (T - T_{\mathrm{sol}}) / (T_{\mathrm{liq}} - T_{\mathrm{sol}})$. The adiabatic gradient $\nabla_{\mathrm{ad}}$ is linearly interpolated between the solid and liquid values with the same melt fraction.
 
 Each PALEOS material can have its own mushy zone width. Per-material overrides take precedence over the global default. This is useful when mixing materials with different phase transition characteristics (e.g., a wider mushy zone for MgSiO$_3$ with a sharp boundary for iron).
 
@@ -74,11 +77,12 @@ The `PALEOS-2phase:MgSiO3` EOS provides MgSiO$_3$ as separate solid and liquid t
 The table format and grid structure are identical to the main PALEOS tables.
 
 Unlike the main PALEOS tables, `PALEOS-2phase` requires external melting curves for phase routing.
-Configurable solidus and liquidus curves (see [Melting curve selection](../How-to/configuration.md#melting-curve-selection)) determine the phase at each $(P, T)$:
+Configurable solidus and liquidus curves (see [Melting curve selection](../How-to/configuration.md#melting-curve-selection)) determine the phase at each $(P, T)$.
+Both density and $\nabla_{\mathrm{ad}}$ follow the same three-regime structure:
 
-- Below the solidus: $\nabla_{\mathrm{ad}}$ from the solid table.
-- Above the liquidus: $\nabla_{\mathrm{ad}}$ from the liquid table.
-- In the mushy zone: melt-fraction-weighted average $(1 - \phi) \nabla_{\mathrm{ad,solid}} + \phi \, \nabla_{\mathrm{ad,liquid}}$.
+- **Below the solidus** ($T \le T_{\mathrm{sol}}$): density and $\nabla_{\mathrm{ad}}$ from the solid table.
+- **Above the liquidus** ($T \ge T_{\mathrm{liq}}$): density and $\nabla_{\mathrm{ad}}$ from the liquid table.
+- **Mushy zone** ($T_{\mathrm{sol}} < T < T_{\mathrm{liq}}$): density from volume-additive mixing of specific volumes (density inverses) evaluated at the solidus and liquidus temperatures respectively, weighted by $\phi = (T - T_{\mathrm{sol}}) / (T_{\mathrm{liq}} - T_{\mathrm{sol}})$. The adiabatic gradient is a melt-fraction-weighted average: $(1 - \phi) \nabla_{\mathrm{ad,solid}} + \phi \, \nabla_{\mathrm{ad,liquid}}$.
 
 The default analytic Monteux+2016 curves are defined for all pressures, eliminating the NaN-at-boundary issue of the legacy tabulated curves.
 
@@ -124,7 +128,7 @@ Three phase regimes are distinguished:
 
 - **Solid** ($T \le T_{\mathrm{sol}}$, $f_{\mathrm{melt}} \le 0$): density from the solid-state EOS table.
 - **Melt** ($T \ge T_{\mathrm{liq}}$, $f_{\mathrm{melt}} \ge 1$): density from the liquid-state EOS table.
-- **Mixed / mush** ($T_{\mathrm{sol}} < T < T_{\mathrm{liq}}$): density from volume-additive interpolation between solid and liquid densities:
+- **Mixed / mush** ($T_{\mathrm{sol}} < T < T_{\mathrm{liq}}$): the solid-side density is evaluated at $(P, T_{\mathrm{sol}})$ and the liquid-side density at $(P, T_{\mathrm{liq}})$. The mixed density is computed from volume-additive mixing of their specific volumes (density inverses), weighted by melt fraction:
 
 $$
 \rho_{\mathrm{mixed}} = \left[ (1 - f_{\mathrm{melt}}) \, \rho_{\mathrm{solid}}^{-1} + f_{\mathrm{melt}} \, \rho_{\mathrm{liquid}}^{-1} \right]^{-1}

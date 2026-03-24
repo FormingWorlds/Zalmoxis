@@ -114,12 +114,24 @@ This is equivalent to treating vapor-phase volatiles as having negligible struct
 The approximation is valid when the suppressed fraction is small and the vapor does not contribute meaningfully to hydrostatic support.
 For a mantle with 15% H$_2$O by mass, suppression primarily affects the outermost shells where pressure is low enough for H$_2$O to be vapor-like; at depth, the H$_2$O is condensed and fully included.
 
+**Warning:** For configurations with large volatile mass fractions (e.g., > 30% H$_2$O or > 10% H$_2$), a substantial fraction of the input mass may be suppressed from the structure, leading to a planet whose structural mass is significantly less than the sum of the layer mass fractions times the total mass.
+Users should verify that the suppressed mass fraction is acceptably small for their science case.
+A future improvement could cap the volatile fraction at the input stage or redistribute suppressed mass across condensed components.
+
 ### Temperature profile consistency
 
 The same suppression is applied to $\nabla_{\mathrm{ad}}$: when a component is suppressed in the density, its adiabatic gradient is also suppressed.
 This means the temperature profile ignores the thermodynamic contribution of vapor-phase volatiles.
 In reality, vapor affects heat transport and the temperature gradient.
 This approximation is self-consistent within the model (the density and temperature calculations "see" the same effective mixture) but differs from the physical situation where vapor is present and thermodynamically active.
+
+### Adiabatic gradient mixing
+
+The mixed $\nabla_{\mathrm{ad}}$ is computed as a suppression-weighted linear combination of the component adiabatic gradients.
+This is a simplification: even for ideal mixing, the true adiabatic coefficient of a multi-component system should be derived from the total entropy $S = \sum_i \chi_i S_i + S_{\mathrm{mix}}$ and its partial derivatives with respect to $P$ and $T$ ([Kempton et al. 2023, ApJ 953, 57, Appendix B](https://doi.org/10.3847/1538-4357/ace10d)).
+The nonlinearity arises from the mixing entropy term and composition-dependent partial derivatives, and can produce deviations of hundreds of kelvin in deep temperature profiles for atmospheric gas mixtures.
+In the context of Zalmoxis, this primarily affects layers that mix condensed materials (e.g., silicate + dissolved H$_2$) via additive volumes, which is a different thermodynamic regime from the atmospheric gas mixtures (additive partial pressures) treated by Kempton et al.
+The linear approximation is standard in interior structure solvers for condensed-phase mixtures, but users should be aware that it does not capture composition-dependent corrections to the temperature gradient.
 
 ### Density-based criterion avoids phase-label ambiguity
 
@@ -154,9 +166,9 @@ For the full physics, see the [binodal documentation](binodal.md).
 The H$_2$-MgSiO$_3$ binodal from [Rogers, Young & Schlichting (2025, MNRAS 544, 3496)](https://doi.org/10.1093/mnras/staf1940) defines the phase boundary between a miscible supercritical fluid (above) and immiscible gas + melt (below).
 The binodal temperature varies with H$_2$ mole fraction and pressure:
 
-- At 1 GPa, the peak binodal temperature is ~4100 K (at the critical mole fraction $x_c = 0.74$).
+- At 1 GPa, the peak binodal temperature is ~4100 K (at the critical mole fraction $x_\mathrm{c} = 0.74$).
 - At 10 GPa, it drops to ~3000 K (higher pressure promotes mixing).
-- Above 35 GPa, H$_2$ and MgSiO$_3$ are always miscible ($T_c \leq 0$).
+- Above 35 GPa, H$_2$ and MgSiO$_3$ are always miscible ($T_\mathrm{c} \leq 0$).
 
 This model applies when `Chabrier:H` coexists with any MgSiO$_3$ EOS in the same layer.
 
@@ -179,4 +191,5 @@ The mixing framework supports several planned extensions without requiring chang
 
 - Depth-dependent fractions via the `LayerMixture.update_fractions()` interface (already supported for PROTEUS/CALLIOPE coupling).
 - Non-ideal mixing corrections (excess volume) in `calculate_mixed_density()`.
+- H$_2$O-MgSiO$_3$ binodal suppression, once a generalizable miscibility model for this system becomes available.
 - Additional volatile EOS (He, CO$_2$, NH$_3$) with their own per-component sigmoid parameters.

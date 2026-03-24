@@ -28,44 +28,68 @@ _LINE_COLORS = {
 }
 
 # Phase colors (pastel, matching PALEOS phase_id strings)
+# Ambiguous phases (liquid, vapour, supercritical) are tagged with the
+# material name by _lookup_phases, e.g. "liquid:iron", "liquid:MgSiO3".
 _PHASE_COLORS = {
     # Iron phases
     'solid-epsilon-hcp': '#93c5fd',
     'solid-gamma-fcc': '#bfdbfe',
     'solid-delta-bcc': '#dbeafe',
     'solid-alpha-bcc': '#eff6ff',
+    'liquid:iron': '#fca5a5',
     # MgSiO3 phases
     'solid-brg': '#fdba74',
     'solid-ppv': '#fb923c',
     'solid-lpcen': '#bbf7d0',
     'solid-hpcen': '#86efac',
     'solid-en': '#4ade80',
+    'liquid:MgSiO3': '#f9a8d4',
     # H2O phases
     'solid-ice-Ih': '#e0f2fe',
     'solid-ice-VII': '#bae6fd',
     'solid-ice-X': '#7dd3fc',
+    'liquid:H2O': '#fda4af',
+    'vapour:H2O': '#fef3c7',
+    'supercritical:H2O': '#fde68a',
+    # Fallbacks for untagged phases
+    'liquid': '#fca5a5',
     'vapour': '#fef3c7',
     'supercritical': '#fde68a',
-    # Shared
-    'liquid': '#fca5a5',
 }
+
+# Material short names for EOS identifiers
+_MATERIAL_SHORT = {
+    'PALEOS:iron': 'iron',
+    'PALEOS:MgSiO3': 'MgSiO3',
+    'PALEOS:H2O': 'H2O',
+    'Chabrier:H': 'H2',
+}
+
+# Phases that are ambiguous across materials and need material tagging
+_AMBIGUOUS_PHASES = {'liquid', 'vapour', 'supercritical'}
 
 _PHASE_PRETTY = {
     'solid-epsilon-hcp': 'Fe epsilon-hcp',
     'solid-gamma-fcc': 'Fe gamma-fcc',
     'solid-delta-bcc': 'Fe delta-bcc',
     'solid-alpha-bcc': 'Fe alpha-bcc',
+    'liquid:iron': 'Liquid Fe',
     'solid-brg': 'Bridgmanite',
     'solid-ppv': 'Postperovskite',
     'solid-lpcen': 'LP clinoenstatite',
     'solid-hpcen': 'HP clinoenstatite',
     'solid-en': 'Enstatite',
+    'liquid:MgSiO3': r'Liquid MgSiO$_3$',
     'solid-ice-Ih': 'Ice Ih',
     'solid-ice-VII': 'Ice VII',
     'solid-ice-X': 'Ice X',
+    'liquid:H2O': r'Liquid H$_2$O',
+    'vapour:H2O': r'H$_2$O vapour',
+    'supercritical:H2O': r'Supercritical H$_2$O',
+    # Fallbacks
+    'liquid': 'Liquid',
     'vapour': 'Vapour',
     'supercritical': 'Supercritical',
-    'liquid': 'Liquid',
 }
 
 
@@ -130,8 +154,15 @@ def _lookup_phases(
         log_t = np.log10(max(T, 1.0))
         ip = int(np.argmin(np.abs(cached['unique_log_p'] - log_p)))
         it = int(np.argmin(np.abs(cached['unique_log_t'] - log_t)))
-        phase = cached['phase_grid'][ip, it]
-        phase_labels.append(str(phase) if phase else 'unknown')
+        phase = str(cached['phase_grid'][ip, it]) if cached['phase_grid'][ip, it] else 'unknown'
+
+        # Tag ambiguous phases with material name for legend clarity
+        if phase in _AMBIGUOUS_PHASES:
+            mat_short = _MATERIAL_SHORT.get(eos_name, '')
+            if mat_short:
+                phase = f'{phase}:{mat_short}'
+
+        phase_labels.append(phase)
 
     return phase_labels
 

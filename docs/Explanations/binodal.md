@@ -32,10 +32,10 @@ $$
 where:
 
 - $\sigma_{\mathrm{density}}$ is the density-based sigmoid with per-component parameters (`condensed_rho_min` = 30 kg/m$^3$, `condensed_rho_scale` = 10 kg/m$^3$ for H$_2$).
-- $\sigma_{\mathrm{binodal}}$ is the temperature-based sigmoid centered on the binodal temperature $T_b(P)$:
+- $\sigma_{\mathrm{binodal}}$ is the temperature-based sigmoid centered on the binodal temperature $T_\mathrm{b}(P)$:
 
 $$
-\sigma_{\mathrm{binodal}} = \frac{1}{1 + \exp\!\left( -\frac{T - T_b}{T_{\mathrm{scale}}} \right)}
+\sigma_{\mathrm{binodal}} = \frac{1}{1 + \exp\!\left( -\frac{T - T_\mathrm{b}}{T_{\mathrm{scale}}} \right)}
 $$
 
 The `binodal_T_scale` parameter (default 50 K) controls the transition width.
@@ -45,7 +45,7 @@ For non-H$_2$ components, $\sigma_{\mathrm{binodal}} = 1$ always.
 
 ![Suppression weight behavior](../img/suppression_weights.png)
 
-**Left**: the density-based sigmoid $\sigma_{\mathrm{density}}(\rho)$ for H$_2$ (center at 30 kg/m$^3$). At low density (gas-like), H$_2$ is excluded from the harmonic mean. **Center**: the binodal sigmoid $\sigma_{\mathrm{binodal}}(T)$ at fixed pressure, showing the transition from immiscible (below $T_b$) to miscible (above $T_b$) for three `binodal_T_scale` values. **Right**: the combined weight $\sigma_{\mathrm{total}}$ along a representative planetary adiabat. At depth (high P), both conditions are met and H$_2$ participates fully. Near the surface, either low density or the binodal transition suppresses H$_2$.
+**Left**: the density-based sigmoid $\sigma_{\mathrm{density}}(\rho)$ for H$_2$ (center at 30 kg/m$^3$). At low density (gas-like), H$_2$ is excluded from the harmonic mean. **Center**: the binodal sigmoid $\sigma_{\mathrm{binodal}}(T)$ at fixed pressure, showing the transition from immiscible (below $T_\mathrm{b}$) to miscible (above $T_\mathrm{b}$) for three `binodal_T_scale` values. **Right**: the combined weight $\sigma_{\mathrm{total}}$ along a representative planetary adiabat. At depth (high P), both conditions are met and H$_2$ participates fully. Near the surface, either low density or the binodal transition suppresses H$_2$.
 
 ---
 
@@ -53,7 +53,7 @@ For non-H$_2$ components, $\sigma_{\mathrm{binodal}} = 1$ always.
 
 ### Source
 
-[Rogers, Young & Schlichting (2025)](https://doi.org/10.1093/mnras/staf1940), MNRAS 544, 3496. Analytic fit to the binodal temperature $T_b(x_{\mathrm{H_2}}, P)$ from Eqs. A1-A11. Based on DFT-MD calculations of H$_2$-MgSiO$_3$ miscibility from [Gilmore & Stixrude (2026)](https://doi.org/10.1038/s41586-025-09970-4) and asymmetric Margules parameters from [Gilmore & Stixrude (2026)](https://doi.org/10.1038/s41586-025-09970-4).
+[Rogers, Young & Schlichting (2025)](https://doi.org/10.1093/mnras/staf1940), MNRAS 544, 3496. Analytic fit to the binodal temperature $T_\mathrm{b}(x_{\mathrm{H_2}}, P)$ from Eqs. A1-A11. Based on DFT-MD calculations of H$_2$-MgSiO$_3$ miscibility from [Gilmore & Stixrude (2026)](https://doi.org/10.1038/s41586-025-09970-4) and asymmetric Margules parameters from [Gilmore & Stixrude (2026)](https://doi.org/10.1038/s41586-025-09970-4).
 
 ### Physics
 
@@ -62,21 +62,21 @@ The binodal defines the phase boundary in $(T, P, x_{\mathrm{H_2}})$ space betwe
 - **Above the binodal**: a single miscible supercritical phase where H$_2$ and MgSiO$_3$ mix at the molecular level.
 - **Below the binodal**: two immiscible phases (H$_2$-rich gas and silicate-rich melt) that separate gravitationally.
 
-The binodal temperature is computed from two generalized logistic branches: an ascending branch (small $x_{\mathrm{H_2}}$, rising toward $T_c$) and a descending branch (large $x_{\mathrm{H_2}}$, falling from $T_c$). Their natural crossing occurs near the critical mole fraction $x_c \approx 0.739$. The implementation evaluates both branches at every composition and takes the minimum, $T_b = \min(T_{\mathrm{asc}}, T_{\mathrm{desc}})$, which produces a smooth peak without an artificial kink at $x_c$.
+The binodal temperature is computed from two generalized logistic branches: an ascending branch (small $x_{\mathrm{H_2}}$, rising toward $T_\mathrm{c}$) and a descending branch (large $x_{\mathrm{H_2}}$, falling from $T_\mathrm{c}$). Their natural crossing occurs near the critical mole fraction $x_\mathrm{c} \approx 0.739$. The implementation evaluates both branches at every composition and takes the minimum, $T_\mathrm{b} = \min(T_{\mathrm{asc}}, T_{\mathrm{desc}})$, which produces a smooth peak without an artificial kink at $x_\mathrm{c}$.
 
 ![Rogers+2025 binodal](../img/rogers2025_binodal.png)
 
-Binodal temperature $T_b$ as a function of H$_2$ mole fraction at seven pressures (0.5 to 30 GPa). The binodal drops with increasing pressure: at high P, H$_2$ and MgSiO$_3$ are compressed together and miscibility is easier. At P > 35 GPa, $T_c < 0$ and the system is always miscible. The peak near $x_c = 0.739$ (5.4% H$_2$ by mass) is the most difficult composition to mix.
+Binodal temperature $T_\mathrm{b}$ as a function of H$_2$ mole fraction at seven pressures (0.5 to 30 GPa). The binodal drops with increasing pressure: at high P, H$_2$ and MgSiO$_3$ are compressed together and miscibility is easier. At P > 35 GPa, $T_\mathrm{c} < 0$ and the system is always miscible. The peak near $x_\mathrm{c} = 0.739$ (5.4% H$_2$ by mass) is the most difficult composition to mix.
 
 ### Pressure dependence
 
-The critical temperature $T_c$ at the binodal peak decreases linearly with pressure:
+The critical temperature $T_\mathrm{c}$ at the binodal peak decreases linearly with pressure:
 
 $$
-T_c(P) = 4223 \times \left(1 - \frac{P}{35\,\mathrm{GPa}}\right) \; \mathrm{K}
+T_\mathrm{c}(P) = 4223 \times \left(1 - \frac{P}{35\,\mathrm{GPa}}\right) \; \mathrm{K}
 $$
 
-| Pressure | Peak $T_b$ | Interpretation |
+| Pressure | Peak $T_\mathrm{b}$ | Interpretation |
 |---|---|---|
 | 1 GPa | ~4100 K | Shallow mantle: H$_2$ miscible only at very high $T$ |
 | 10 GPa | ~3020 K | Mid-mantle: miscibility requires moderate $T$ |
@@ -116,11 +116,11 @@ $$
 W = W_H - T \cdot W_S + P \cdot W_V(T)
 $$
 
-The critical pressure $P_c(T)$ above which the system is always single-phase is given by Eq. A8. The critical temperature at a given pressure is obtained by inverting this relationship.
+The critical pressure $P_\mathrm{c}(T)$ above which the system is always single-phase is given by Eq. A8. The critical temperature at a given pressure is obtained by inverting this relationship.
 
 ![Gupta+2025 critical curve](../img/gupta2025_critical_curve.png)
 
-Critical temperature $T_c(P)$ for the H$_2$-H$_2$O system. Below and to the right of the curve (shaded), the system separates into two immiscible phases. Above and to the left, it forms a single homogeneous fluid. The red dotted line marks the 647 K floor imposed by the H$_2$O critical point. Note the opposite pressure dependence compared to H$_2$-MgSiO$_3$: higher pressure makes H$_2$-H$_2$O mixing *harder*, because the positive volume of mixing favors phase separation under compression.
+Critical temperature $T_\mathrm{c}(P)$ for the H$_2$-H$_2$O system. Below and to the right of the curve (shaded), the system separates into two immiscible phases. Above and to the left, it forms a single homogeneous fluid. The red dotted line marks the 647 K floor imposed by the H$_2$O critical point. Note the opposite pressure dependence compared to H$_2$-MgSiO$_3$: higher pressure makes H$_2$-H$_2$O mixing *harder*, because the positive volume of mixing favors phase separation under compression.
 
 ### The 647 K floor
 
@@ -133,7 +133,7 @@ A floor of 647 K is imposed on the critical temperature returned by the model. I
 
 ### Performance
 
-The critical temperature $T_c(P)$ is needed at every ODE step (~150,000 evaluations per structure solve). Rather than calling the Brent root finder each time, a lookup table of 2000 log-spaced pressure points from 1 MPa to ~3 TPa is precomputed at module import time. Each subsequent evaluation is a single `np.interp` call, falling back to Brent only for out-of-range pressures.
+The critical temperature $T_\mathrm{c}(P)$ is needed at every ODE step (~150,000 evaluations per structure solve). Rather than calling the Brent root finder each time, a lookup table of 2000 log-spaced pressure points from 1 MPa to ~3 TPa is precomputed at module import time. Each subsequent evaluation is a single `np.interp` call, falling back to Brent only for out-of-range pressures.
 
 ### Implementation
 
