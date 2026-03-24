@@ -902,6 +902,108 @@ def generate_aragog_pt_tables(
     }
 
 
+def generate_aragog_pt_tables_2phase(
+    solid_eos_file,
+    liquid_eos_file,
+    P_range=(1e5, 200e9),
+    n_P=1000,
+    n_T=1000,
+    output_dir=None,
+):
+    """Generate Aragog-format P-T lookup tables from PALEOS 2-phase tables.
+
+    Unlike ``generate_aragog_pt_tables`` (which uses the unified table and
+    writes identical solid/melt files), this function reads from separate
+    solid-phase and liquid-phase PALEOS tables. Each Aragog output file
+    contains the correct phase-specific properties, giving clean values
+    at the solidus and liquidus without interpolation across the melting
+    curve discontinuity.
+
+    This is essential for:
+    - Correct Delta_S = S_liq(T_liq) - S_sol(T_sol) in the mixing flux
+    - Entropy-conserving adiabatic IC via S(P,T) inversion
+    - Matching SPIDER's entropy-based formulation
+
+    Parameters
+    ----------
+    solid_eos_file : str or Path
+        Path to the PALEOS solid-phase table (10-column format).
+    liquid_eos_file : str or Path
+        Path to the PALEOS liquid-phase table (10-column format).
+    P_range : tuple of float
+        (P_min, P_max) in Pa.
+    n_P : int
+        Number of pressure points.
+    n_T : int
+        Number of temperature points.
+    output_dir : str or Path or None
+        Directory for output files.
+
+    Returns
+    -------
+    dict or None
+        Keys: ``'output_dir'``, ``'properties'`` list.
+    """
+    solid_table = load_paleos_all_properties(solid_eos_file)
+    liquid_table = load_paleos_all_properties(liquid_eos_file)
+    if solid_table is None or liquid_table is None:
+        return None
+
+    # Properties to export: (file_name_stem, header_column_name)
+    prop_map = {
+        'density': 'density',
+        'heat_capacity': 'heat_capacity',
+        'thermal_exp': 'thermal_expansivity',
+        'entropy': 'entropy',
+    }
+    # Map file stems to PALEOS table column names
+    paleos_keys = {
+        'density': 'rho',
+        'heat_capacity': 'cp',
+        'thermal_exp': 'alpha',
+        'entropy': 's',
+    }
+
+    # P and T grids
+    P_arr = np.linspace(P_range[0], P_range[1], n_P)
+    T_min = max(solid_table['t_min'], liquid_table['t_min'], 300.0)
+    T_max = min(solid_table['t_max'], liquid_table['t_max'], 1e5)
+    T_arr = np.linspace(T_min, T_max, n_T)
+
+    PP, TT = np.meshgrid(P_arr, T_arr, indexing='ij')
+    logPP = np.log10(np.maximum(PP, 1.0))
+    logTT = np.log10(np.maximum(TT, 1.0))
+    pts = np.column_stack([logPP.ravel(), logTT.ravel()])
+
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+    for file_stem, header_name in prop_map.items():
+        paleos_key = paleos_keys[file_stem]
+
+        for phase_tag, table in [('solid', solid_table), ('melt', liquid_table)]:
+            interp = _build_interpolator(
+                table['unique_log_p'], table['unique_log_t'], table[paleos_key]
+            )
+            vals = interp(pts).reshape(PP.shape)
+            vals = np.where(np.isfinite(vals) & (vals > 0), vals, 1e-15)
+
+            data_out = np.column_stack([PP.ravel(), TT.ravel(), vals.ravel()])
+
+            if output_dir is not None:
+                fname = output_dir / f'{file_stem}_{phase_tag}.dat'
+                with open(fname, 'w') as f:
+                    f.write(f'#pressure\ttemperature\t{header_name}\n')
+                    np.savetxt(f, data_out, fmt='%.10e', delimiter='\t')
+                logger.info('Wrote %s (%d rows)', fname, len(data_out))
+
+    return {
+        'output_dir': str(output_dir) if output_dir else None,
+        'properties': list(prop_map.keys()),
+    }
+
+
 def compute_entropy_adiabat(
     eos_file,
     T_surface,
@@ -910,6 +1012,8 @@ def compute_entropy_adiabat(
     n_points=500,
     solidus_func=None,
     liquidus_func=None,
+    solid_eos_file=None,
+    liquid_eos_file=None,
 ):
     """Compute an entropy-conserving adiabatic T(P) profile from PALEOS.
 
@@ -919,10 +1023,17 @@ def compute_entropy_adiabat(
     (solidus/liquidus) where the Clausius-Clapeyron slope differs from
     the single-phase adiabatic gradient.
 
+    When ``solid_eos_file`` and ``liquid_eos_file`` are provided (2-phase
+    PALEOS tables), uses phase-specific entropy values for the mushy zone.
+    This gives clean Delta_S without interpolation across the melting curve
+    discontinuity. Falls back to the unified table if 2-phase tables are
+    not provided.
+
     Parameters
     ----------
     eos_file : str or Path
-        Path to the PALEOS unified EOS table.
+        Path to the PALEOS unified EOS table (used for single-phase regions
+        and as fallback).
     T_surface : float
         Surface temperature [K].
     P_surface : float
@@ -932,9 +1043,14 @@ def compute_entropy_adiabat(
     n_points : int
         Number of pressure points in the profile.
     solidus_func : callable or None
-        P [Pa] -> T_solidus [K]. If provided, used for mixed-phase entropy.
+        P [Pa] -> T_solidus [K]. Required for mixed-phase entropy.
     liquidus_func : callable or None
-        P [Pa] -> T_liquidus [K]. If provided, used for mixed-phase entropy.
+        P [Pa] -> T_liquidus [K]. Required for mixed-phase entropy.
+    solid_eos_file : str or Path or None
+        Path to PALEOS solid-phase table. When provided with
+        ``liquid_eos_file``, uses phase-specific entropy.
+    liquid_eos_file : str or Path or None
+        Path to PALEOS liquid-phase table.
 
     Returns
     -------
@@ -952,6 +1068,21 @@ def compute_entropy_adiabat(
     log_t_grid = table['unique_log_t']
     s_interp = _build_interpolator(log_p_grid, log_t_grid, table['s'])
 
+    # Build phase-specific entropy interpolators if 2-phase tables available
+    s_solid_interp = None
+    s_liquid_interp = None
+    if solid_eos_file and liquid_eos_file:
+        solid_tab = load_paleos_all_properties(solid_eos_file)
+        liquid_tab = load_paleos_all_properties(liquid_eos_file)
+        if solid_tab is not None and liquid_tab is not None:
+            s_solid_interp = _build_interpolator(
+                solid_tab['unique_log_p'], solid_tab['unique_log_t'], solid_tab['s']
+            )
+            s_liquid_interp = _build_interpolator(
+                liquid_tab['unique_log_p'], liquid_tab['unique_log_t'], liquid_tab['s']
+            )
+            logger.info('Using PALEOS-2phase tables for entropy adiabat')
+
     def entropy_single_phase(P, T):
         """Evaluate single-phase entropy from PALEOS."""
         pt = np.array([[np.log10(max(P, 1.0)), np.log10(max(T, 300.0))]])
@@ -960,16 +1091,23 @@ def compute_entropy_adiabat(
     def entropy_total(P, T):
         """Evaluate total entropy including mixed-phase contribution.
 
-        In the mushy zone, S = phi * S_liq(P, T_liq) + (1-phi) * S_sol(P, T_sol)
-        where phi = (T - T_sol) / (T_liq - T_sol).
+        In the mushy zone, S = phi * S_liq(P, T_liq) + (1-phi) * S_sol(P, T_sol).
+        Uses phase-specific tables when available for clean values at
+        the solidus/liquidus.
         """
         if solidus_func is not None and liquidus_func is not None:
             T_sol = solidus_func(P)
             T_liq = liquidus_func(P)
             if T_sol < T < T_liq and T_liq > T_sol:
                 phi = (T - T_sol) / (T_liq - T_sol)
-                S_sol = entropy_single_phase(P, T_sol)
-                S_liq = entropy_single_phase(P, T_liq)
+                pt_sol = np.array([[np.log10(max(P, 1.0)), np.log10(max(T_sol, 300.0))]])
+                pt_liq = np.array([[np.log10(max(P, 1.0)), np.log10(max(T_liq, 300.0))]])
+                if s_solid_interp is not None and s_liquid_interp is not None:
+                    S_sol = float(s_solid_interp(pt_sol).item())
+                    S_liq = float(s_liquid_interp(pt_liq).item())
+                else:
+                    S_sol = float(s_interp(pt_sol).item())
+                    S_liq = float(s_interp(pt_liq).item())
                 return phi * S_liq + (1 - phi) * S_sol
         return entropy_single_phase(P, T)
 
