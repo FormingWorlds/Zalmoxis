@@ -167,6 +167,8 @@ def generate_spider_phase_boundaries(
     P_range=(1e5, 200e9),
     n_P=1000,
     output_dir=None,
+    solid_eos_file=None,
+    liquid_eos_file=None,
 ):
     """Generate SPIDER S(P) phase boundary files from T(P) melting curves.
 
@@ -203,10 +205,27 @@ def generate_spider_phase_boundaries(
         - ``'solidus_path'``: path to written solidus file (or None)
         - ``'liquidus_path'``: path to written liquidus file (or None)
     """
-    # Load PALEOS table and build entropy interpolator
+    # Load PALEOS table and build entropy interpolators.
+    # When 2-phase tables are provided, use phase-specific entropy to
+    # avoid interpolation across the melting curve discontinuity.
     logger.info('Loading PALEOS table for phase boundary generation: %s', eos_file)
     table = load_paleos_all_properties(eos_file)
     s_interp = _build_interpolator(table['unique_log_p'], table['unique_log_t'], table['s'])
+
+    # Phase-specific entropy interpolators (if 2-phase tables provided)
+    s_sol_interp = s_interp  # default: use unified table for both
+    s_liq_interp = s_interp
+    if solid_eos_file and liquid_eos_file:
+        solid_tab = load_paleos_all_properties(solid_eos_file)
+        liquid_tab = load_paleos_all_properties(liquid_eos_file)
+        if solid_tab is not None and liquid_tab is not None:
+            s_sol_interp = _build_interpolator(
+                solid_tab['unique_log_p'], solid_tab['unique_log_t'], solid_tab['s']
+            )
+            s_liq_interp = _build_interpolator(
+                liquid_tab['unique_log_p'], liquid_tab['unique_log_t'], liquid_tab['s']
+            )
+            logger.info('Using 2-phase PALEOS tables for phase boundary entropy')
 
     # Build log-spaced pressure grid
     P_grid = np.logspace(np.log10(P_range[0]), np.log10(P_range[1]), n_P)
@@ -216,18 +235,19 @@ def generate_spider_phase_boundaries(
     T_sol = np.atleast_1d(solidus_func(P_grid))
     T_liq = np.atleast_1d(liquidus_func(P_grid))
 
-    # Look up entropy at (P, T_solidus) and (P, T_liquidus)
+    # Look up entropy at (P, T_solidus) from solid table
+    # and at (P, T_liquidus) from liquid table
     S_solidus = np.full(n_P, np.nan)
     S_liquidus = np.full(n_P, np.nan)
 
     for i in range(n_P):
         if np.isnan(T_sol[i]) or T_sol[i] <= 0:
             continue
-        S_solidus[i] = float(s_interp((log_P[i], np.log10(T_sol[i]))))
+        S_solidus[i] = float(s_sol_interp((log_P[i], np.log10(T_sol[i]))))
 
         if np.isnan(T_liq[i]) or T_liq[i] <= 0:
             continue
-        S_liquidus[i] = float(s_interp((log_P[i], np.log10(T_liq[i]))))
+        S_liquidus[i] = float(s_liq_interp((log_P[i], np.log10(T_liq[i]))))
 
     # Filter to valid points
     valid = np.isfinite(S_solidus) & np.isfinite(S_liquidus)
@@ -449,6 +469,8 @@ def generate_spider_eos_tables(
     n_P=150,
     n_S=150,
     output_dir=None,
+    solid_eos_file=None,
+    liquid_eos_file=None,
 ):
     """Generate full SPIDER P-S EOS lookup tables from a PALEOS unified table.
 
@@ -495,12 +517,29 @@ def generate_spider_eos_tables(
     log_p_grid = table['unique_log_p']
     log_t_grid = table['unique_log_t']
 
-    # Build interpolators for all needed properties
+    # Build interpolators for all needed properties from unified table
     s_interp = _build_interpolator(log_p_grid, log_t_grid, table['s'])
     rho_interp = _build_interpolator(log_p_grid, log_t_grid, table['rho'])
     cp_interp = _build_interpolator(log_p_grid, log_t_grid, table['cp'])
     alpha_interp = _build_interpolator(log_p_grid, log_t_grid, table['alpha'])
     nad_interp = _build_interpolator(log_p_grid, log_t_grid, table['nabla_ad'])
+
+    # When 2-phase tables are available, use phase-specific interpolators
+    # for entropy-range determination and S→T inversion. This ensures SPIDER
+    # and Aragog use the same entropy values at the phase boundaries.
+    s_solid_interp = s_interp
+    s_melt_interp = s_interp
+    if solid_eos_file and liquid_eos_file:
+        solid_tab = load_paleos_all_properties(solid_eos_file)
+        liquid_tab = load_paleos_all_properties(liquid_eos_file)
+        if solid_tab is not None and liquid_tab is not None:
+            s_solid_interp = _build_interpolator(
+                solid_tab['unique_log_p'], solid_tab['unique_log_t'], solid_tab['s']
+            )
+            s_melt_interp = _build_interpolator(
+                liquid_tab['unique_log_p'], liquid_tab['unique_log_t'], liquid_tab['s']
+            )
+            logger.info('Using 2-phase PALEOS tables for SPIDER S ranges')
 
     # Output pressure grid. SPIDER's Interp2d assumes uniform spacing
     # for the P (x) coordinate: indx = floor((P - P_min) / dP). Log-spaced
@@ -529,7 +568,7 @@ def generate_spider_eos_tables(
         if T_sol > T_lo:
             T_solid_range = np.linspace(T_lo, T_sol, n_T_sample)
             for T in T_solid_range:
-                S_val = float(s_interp((np.log10(P_Pa), np.log10(T))))
+                S_val = float(s_solid_interp((np.log10(P_Pa), np.log10(T))))
                 if np.isfinite(S_val):
                     S_min_solid[ip] = min(S_min_solid[ip], S_val)
                     S_max_solid[ip] = max(S_max_solid[ip], S_val)
@@ -539,7 +578,7 @@ def generate_spider_eos_tables(
         if T_liq < T_hi:
             T_melt_range = np.linspace(T_liq, T_hi, n_T_sample)
             for T in T_melt_range:
-                S_val = float(s_interp((np.log10(P_Pa), np.log10(T))))
+                S_val = float(s_melt_interp((np.log10(P_Pa), np.log10(T))))
                 if np.isfinite(S_val):
                     S_min_melt[ip] = min(S_min_melt[ip], S_val)
                     S_max_melt[ip] = max(S_max_melt[ip], S_val)
