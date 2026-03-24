@@ -964,11 +964,25 @@ def generate_aragog_pt_tables_2phase(
         'entropy': 's',
     }
 
-    # P and T grids
+    # P and T grids (intersection of solid and liquid T ranges)
     P_arr = np.linspace(P_range[0], P_range[1], n_P)
     T_min = max(solid_table['t_min'], liquid_table['t_min'], 300.0)
     T_max = min(solid_table['t_max'], liquid_table['t_max'], 1e5)
     T_arr = np.linspace(T_min, T_max, n_T)
+
+    logger.info(
+        '2-phase table T intersection: [%.0f, %.0f] K '
+        '(solid: [%.0f, %.0f], liquid: [%.0f, %.0f])',
+        T_min, T_max,
+        solid_table['t_min'], solid_table['t_max'],
+        liquid_table['t_min'], liquid_table['t_max'],
+    )
+    if T_max < 6000:
+        logger.warning(
+            '2-phase T_max=%.0f K is below typical CMB temperatures for '
+            'super-Earths. Entropy and density lookups above this T will '
+            'be extrapolated.', T_max,
+        )
 
     PP, TT = np.meshgrid(P_arr, T_arr, indexing='ij')
     logPP = np.log10(np.maximum(PP, 1.0))
