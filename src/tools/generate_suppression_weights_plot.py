@@ -158,15 +158,45 @@ def main():
     ax.set_ylim(-0.05, 1.1)
     ax.grid(alpha=0.15)
 
-    # ── Right panel: combined weight along a planetary adiabat ──
+    # ── Right panel: combined weight along a 5 ME sub-Neptune adiabat ──
     ax = axes[2]
-    # Synthetic adiabat: P from 0.01 to 50 GPa, T roughly following an adiabat
-    P_GPa = np.logspace(-2, 1.7, 500)
-    P_Pa = P_GPa * 1e9
-    # Rough adiabat: T ~ 2000 * (P/1)^0.3
-    T_adiabat = 2000.0 * (P_GPa / 1.0) ** 0.3
-    # H2 density along this adiabat (ideal gas approximation for illustration)
-    # rho ~ P * mu / (R * T), mu_H2 = 2e-3 kg/mol, R = 8.314
+
+    # Build an extended P-T adiabat that spans from the atmosphere (1 bar)
+    # through the mantle to the CMB. The real Zalmoxis profile starts at
+    # ~3 GPa (mantle surface); we extend downward to show the density
+    # sigmoid transition that happens at ~0.01 GPa.
+    #
+    # Use real profile data where available, extrapolate at low P.
+    profile_path = os.path.join(ZALMOXIS_ROOT, 'output_files', 'subneptune_profile.npz')
+    if os.path.exists(profile_path):
+        data = np.load(profile_path)
+        P_real = data['P'][data['P'] > 1e6]  # > 0.01 bar
+        T_real = data['T'][data['P'] > 1e6]
+        # Surface T from the model
+        T_surf = T_real[-1] if len(T_real) > 0 else 3000.0
+    else:
+        P_real = np.array([])
+        T_real = np.array([])
+        T_surf = 3000.0
+
+    # Extend to low P with an isothermal-to-adiabatic extrapolation
+    P_low = np.logspace(5, 9, 200)  # 1 bar to 10 GPa
+    T_low = T_surf * np.ones_like(P_low)  # roughly isothermal upper atm
+
+    # Combine and sort by P (ascending)
+    P_Pa = np.concatenate([P_low, P_real])
+    T_adiabat = np.concatenate([T_low, T_real])
+    sort_idx = np.argsort(P_Pa)
+    P_Pa = P_Pa[sort_idx]
+    T_adiabat = T_adiabat[sort_idx]
+    # Remove duplicates
+    _, unique_idx = np.unique(P_Pa, return_index=True)
+    P_Pa = P_Pa[unique_idx]
+    T_adiabat = T_adiabat[unique_idx]
+
+    P_GPa = P_Pa * 1e-9
+
+    # H2 density (ideal gas approximation: rho = P * mu / (R * T))
     rho_H2 = P_Pa * 2e-3 / (8.314 * T_adiabat)
 
     sigma_density = density_sigmoid(rho_H2, H2_RHO_MIN, H2_RHO_SCALE)
@@ -183,7 +213,7 @@ def main():
         sigma_density,
         '--',
         color='#2563eb',
-        lw=1.5,
+        lw=2,
         label=r'$\sigma_{\mathrm{density}}$',
     )
     ax.plot(
@@ -191,30 +221,47 @@ def main():
         sigma_binodal,
         '--',
         color='#f59e0b',
-        lw=1.5,
+        lw=2,
         label=r'$\sigma_{\mathrm{binodal}}$',
     )
     ax.plot(P_GPa, sigma_total, 'k-', lw=2.5, label=r'$\sigma_{\mathrm{total}}$')
 
-    # Region annotation
-    partial_mask = (sigma_total > 0.02) & (sigma_total < 0.98)
-    if np.any(partial_mask):
-        idx = np.where(partial_mask)[0]
+    # Annotate the density transition
+    partial_d = (sigma_density > 0.05) & (sigma_density < 0.95)
+    if np.any(partial_d):
+        idx = np.where(partial_d)[0]
         mid = idx[len(idx) // 2]
         ax.annotate(
-            r'H$_2$ partial suppression',
-            xy=(P_GPa[mid], sigma_total[mid]),
-            xytext=(P_GPa[mid] * 0.15, sigma_total[mid] + 0.15),
+            r'$\rho$ threshold',
+            xy=(P_GPa[mid], sigma_density[mid]),
+            xytext=(P_GPa[mid] * 5, 0.25),
             fontsize=9,
-            ha='center',
-            arrowprops=dict(arrowstyle='->', color='#475569', lw=1),
+            ha='left',
+            arrowprops=dict(arrowstyle='->', color='#2563eb', lw=1),
+        )
+
+    # Annotate the binodal transition
+    partial_b = (sigma_binodal > 0.05) & (sigma_binodal < 0.95)
+    if np.any(partial_b):
+        idx = np.where(partial_b)[0]
+        mid = idx[len(idx) // 2]
+        ax.annotate(
+            'miscibility\nboundary',
+            xy=(P_GPa[mid], sigma_binodal[mid]),
+            xytext=(P_GPa[mid] * 3, 0.65),
+            fontsize=9,
+            ha='left',
+            arrowprops=dict(arrowstyle='->', color='#f59e0b', lw=1),
         )
 
     ax.set_xscale('log')
     ax.set_xlabel('Pressure (GPa)', fontsize=11)
     ax.set_ylabel('Suppression weight', fontsize=12)
-    ax.set_title(r'$\sigma_{\mathrm{total}}$ along a planetary adiabat', fontsize=11)
-    ax.legend(fontsize=9, loc='upper left')
+    ax.set_title(
+        r'$\sigma_{\mathrm{total}}$ along a 5 $M_\oplus$ adiabat (3% H$_2$)',
+        fontsize=11,
+    )
+    ax.legend(fontsize=9, loc='center right')
     ax.set_ylim(-0.05, 1.1)
     ax.grid(alpha=0.15)
 
