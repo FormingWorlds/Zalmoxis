@@ -31,6 +31,15 @@ if not ZALMOXIS_ROOT:
 
 logger = logging.getLogger(__name__)
 
+# Phase-boundary guard offset (K).  When evaluating endpoint properties in
+# the mushy zone, solid-side queries are clamped to at most T_melt - dT and
+# liquid-side to at least T_melt + dT.  This prevents cross-phase lookups
+# when external solidus/liquidus curves disagree with PALEOS's own melting
+# curve at high pressures (plausible for super-Earth conditions).
+_DT_PHASE_GUARD = 1.0
+
+_paleos_phase_guard_warned = set()
+
 
 def load_paleos_table(eos_file):
     """Load a PALEOS MgSiO3 table and build RegularGridInterpolator objects.
@@ -1030,10 +1039,43 @@ def get_paleos_unified_density(
                 density = float(cached['density_nn']((log_p, log_t_clamped)))
             return density if np.isfinite(density) else None
 
-        log_t_liq = float(np.interp(log_p, liq_lp, cached['liquidus_log_t']))
-        T_liq = 10.0**log_t_liq
+        # PALEOS's own melting curve at this pressure
+        log_t_melt = float(np.interp(log_p, liq_lp, cached['liquidus_log_t']))
+        T_melt = 10.0**log_t_melt
+
+        # Derive mushy zone boundaries (currently from PALEOS liquidus,
+        # but may come from external melting curves in future).
+        T_liq = T_melt
         T_sol = T_liq * mushy_zone_factor
+
+        # Clamp endpoints against PALEOS's internal phase boundary so that
+        # solid-side queries never land on the liquid side and vice versa.
+        # The guard offset (_DT_PHASE_GUARD) always shifts T_liq up and may
+        # shift T_sol down; only warn when the clamp corrects a genuine
+        # cross-boundary incursion (T_sol above T_melt or T_liq below it).
+        sol_crossed = T_sol > T_melt
+        liq_crossed = T_liq < T_melt
+        T_sol = min(T_sol, T_melt - _DT_PHASE_GUARD)
+        T_liq = max(T_liq, T_melt + _DT_PHASE_GUARD)
+
+        if (sol_crossed or liq_crossed):
+            if eos_file not in _paleos_phase_guard_warned:
+                _paleos_phase_guard_warned.add(eos_file)
+                logger.warning(
+                    'Mushy zone endpoints crossed PALEOS melting curve '
+                    'for %s at P=%.2e Pa (T_melt=%.1f K): '
+                    'T_sol=%.1f K %s, T_liq=%.1f K %s. '
+                    'Clamped to safe side.',
+                    os.path.basename(eos_file),
+                    pressure,
+                    T_melt,
+                    T_sol,
+                    '(was above T_melt)' if sol_crossed else '(ok)',
+                    T_liq,
+                    '(was below T_melt)' if liq_crossed else '(ok)',
+                )
         log_t_sol = np.log10(max(T_sol, 1.0))
+        log_t_liq = np.log10(T_liq)
 
         if temperature >= T_liq:
             # Above liquidus: direct lookup
@@ -1132,13 +1174,22 @@ def get_paleos_unified_density_batch(
         return result
 
     # Mushy zone path (vectorized).
-    # Compute T_liq from the PALEOS analytic melting curve rather than
+    # Compute T_melt from the PALEOS analytic melting curve rather than
     # interpolating the extracted liquidus grid. This is faster and avoids
     # branching per-element for the "outside liquidus coverage" case.
     from .melting_curves import paleos_liquidus
 
-    T_liq = paleos_liquidus(pressures)
+    T_melt = paleos_liquidus(pressures)
+
+    # Derive mushy zone boundaries (currently from PALEOS liquidus,
+    # but may come from external melting curves in future).
+    T_liq = T_melt.copy()
     T_sol = T_liq * mushy_zone_factor
+
+    # Clamp endpoints against PALEOS's own melting curve
+    T_sol = np.minimum(T_sol, T_melt - _DT_PHASE_GUARD)
+    T_liq = np.maximum(T_liq, T_melt + _DT_PHASE_GUARD)
+
     log_t_sol = np.log10(np.maximum(T_sol, 1.0))
     log_t_liq = np.log10(np.maximum(T_liq, 1.0))
 
