@@ -2,6 +2,8 @@
 
 Tests cover:
 - Adiabatic temperature profile integration via native dT/dP tables
+- PALEOS phase-aware adiabat (solid + liquid nabla_ad)
+- Adiabat blend convergence (0 -> 0.5 -> 1.0 transition)
 - Thick-mantle divergence regression test
 - Adiabatic mode in calculate_temperature_profile()
 
@@ -18,6 +20,7 @@ from zalmoxis.eos_functions import (
     calculate_temperature_profile,
     compute_adiabatic_temperature,
 )
+from zalmoxis.mixing import parse_all_layer_mixtures
 
 
 @pytest.mark.unit
@@ -55,7 +58,7 @@ class TestComputeAdiabaticTemperature:
             surface_temperature=T_surface,
             cmb_mass=0.325 * 5.972e24,
             core_mantle_mass=5.972e24,
-            layer_eos_config=layer_eos_config,
+            layer_mixtures=parse_all_layer_mixtures(layer_eos_config),
             material_dictionaries=material_dicts,
         )
         assert T[-1] == pytest.approx(T_surface), f'Surface temperature {T[-1]} != {T_surface}'
@@ -97,7 +100,7 @@ class TestComputeAdiabaticTemperature:
             surface_temperature=T_surface,
             cmb_mass=cmb_mass,
             core_mantle_mass=5.972e24,
-            layer_eos_config=layer_eos_config,
+            layer_mixtures=parse_all_layer_mixtures(layer_eos_config),
             material_dictionaries=material_dicts,
         )
         # Core shells: mass_enclosed < cmb_mass
@@ -140,7 +143,7 @@ class TestComputeAdiabaticTemperature:
             surface_temperature=3500.0,
             cmb_mass=0.325 * 5.972e24,
             core_mantle_mass=5.972e24,
-            layer_eos_config=layer_eos_config,
+            layer_mixtures=parse_all_layer_mixtures(layer_eos_config),
             material_dictionaries=material_dicts,
         )
         # In the mantle (T-dependent EOS), T should increase inward.
@@ -152,15 +155,20 @@ class TestComputeAdiabaticTemperature:
             f'Max upward step: {np.max(diffs):.1f} K at index {np.argmax(diffs)}'
         )
 
-    def test_requires_adiabat_grad_file(self):
-        """Should raise ValueError if T-dep EOS has no adiabat_grad_file."""
+    def test_missing_adiabat_grad_file_holds_T_constant(self):
+        """If adiabat_grad_file is missing, T should be held constant (isothermal).
+
+        The mixing-based adiabat gracefully degrades: if nabla_ad cannot be
+        computed for a component, it returns None and the temperature is held
+        constant at that shell (rather than raising ValueError).
+        """
         import copy
 
         from zalmoxis.zalmoxis import load_material_dictionaries
 
         material_dicts = copy.deepcopy(load_material_dictionaries())
-        # Remove the adiabat_grad_file key
-        material_dicts[1]['melted_mantle'].pop('adiabat_grad_file', None)
+        # Remove the adiabat_grad_file key from WolfBower2018 melted_mantle
+        material_dicts['WolfBower2018:MgSiO3']['melted_mantle'].pop('adiabat_grad_file', None)
 
         n = 50
         radii = np.linspace(0, 6.371e6, n)
@@ -169,17 +177,18 @@ class TestComputeAdiabaticTemperature:
 
         layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'}
 
-        with pytest.raises(ValueError, match='adiabat_grad_file'):
-            compute_adiabatic_temperature(
-                radii=radii,
-                pressure=pressure,
-                mass_enclosed=mass_enclosed,
-                surface_temperature=3500.0,
-                cmb_mass=0.325 * 5.972e24,
-                core_mantle_mass=5.972e24,
-                layer_eos_config=layer_eos_config,
-                material_dictionaries=material_dicts,
-            )
+        T = compute_adiabatic_temperature(
+            radii=radii,
+            pressure=pressure,
+            mass_enclosed=mass_enclosed,
+            surface_temperature=3500.0,
+            cmb_mass=0.325 * 5.972e24,
+            core_mantle_mass=5.972e24,
+            layer_mixtures=parse_all_layer_mixtures(layer_eos_config),
+            material_dictionaries=material_dicts,
+        )
+        # Without gradient data, T should be isothermal at surface_temperature
+        np.testing.assert_allclose(T, 3500.0, rtol=1e-10)
 
     def test_rejects_T_independent_mantle_eos(self):
         """Should raise ValueError if mantle EOS is T-independent (e.g. Seager2007)."""
@@ -194,7 +203,7 @@ class TestComputeAdiabaticTemperature:
 
         layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'Seager2007:MgSiO3'}
 
-        with pytest.raises(ValueError, match='T-dependent mantle EOS'):
+        with pytest.raises(ValueError, match='T-dependent EOS'):
             compute_adiabatic_temperature(
                 radii=radii,
                 pressure=pressure,
@@ -202,7 +211,7 @@ class TestComputeAdiabaticTemperature:
                 surface_temperature=3500.0,
                 cmb_mass=0.325 * 5.972e24,
                 core_mantle_mass=5.972e24,
-                layer_eos_config=layer_eos_config,
+                layer_mixtures=parse_all_layer_mixtures(layer_eos_config),
                 material_dictionaries=material_dicts,
             )
 
@@ -258,7 +267,7 @@ class TestNoDivergenceThickMantle:
             surface_temperature=3500.0,
             cmb_mass=CMF * M_earth,
             core_mantle_mass=M_earth,
-            layer_eos_config=layer_eos_config,
+            layer_mixtures=parse_all_layer_mixtures(layer_eos_config),
             material_dictionaries=material_dicts,
         )
 
@@ -311,7 +320,7 @@ class TestNoDivergenceThickMantle:
             surface_temperature=3500.0,
             cmb_mass=CMF * M_earth,
             core_mantle_mass=M_earth,
-            layer_eos_config=layer_eos_config,
+            layer_mixtures=parse_all_layer_mixtures(layer_eos_config),
             material_dictionaries=material_dicts,
         )
 
@@ -357,3 +366,148 @@ class TestCalculateTemperatureProfileAdiabatic:
                 input_dir='.',
                 temp_profile_file=None,
             )
+
+
+def _paleos_data_available():
+    """Check if PALEOS data files are available."""
+    import os
+
+    root = os.environ.get('ZALMOXIS_ROOT', '')
+    solid = os.path.join(
+        root, 'data', 'EOS_PALEOS_MgSiO3', 'paleos_mgsio3_tables_pt_proteus_solid.dat'
+    )
+    liquid = os.path.join(
+        root, 'data', 'EOS_PALEOS_MgSiO3', 'paleos_mgsio3_tables_pt_proteus_liquid.dat'
+    )
+    return os.path.isfile(solid) and os.path.isfile(liquid)
+
+
+@pytest.mark.unit
+class TestPALEOSAdiabaticProfile:
+    """Tests for PALEOS phase-aware adiabat using nabla_ad from solid and liquid tables."""
+
+    def test_paleos_adiabat_surface_temperature(self):
+        """T at the surface should equal surface_temperature for PALEOS adiabat."""
+        if not _paleos_data_available():
+            pytest.skip('PALEOS data files not found')
+
+        from zalmoxis.eos_functions import get_solidus_liquidus_functions
+        from zalmoxis.zalmoxis import load_material_dictionaries
+
+        material_dicts = load_material_dictionaries()
+        solidus_func, liquidus_func = get_solidus_liquidus_functions()
+        layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'PALEOS-2phase:MgSiO3'}
+
+        n = 50
+        radii = np.linspace(0, 6.371e6, n)
+        pressure = np.linspace(360e9, 1e5, n)
+        mass_enclosed = np.linspace(0, 5.972e24, n)
+        T_surface = 3500.0
+
+        T = compute_adiabatic_temperature(
+            radii=radii,
+            pressure=pressure,
+            mass_enclosed=mass_enclosed,
+            surface_temperature=T_surface,
+            cmb_mass=0.325 * 5.972e24,
+            core_mantle_mass=5.972e24,
+            layer_mixtures=parse_all_layer_mixtures(layer_eos_config),
+            material_dictionaries=material_dicts,
+            solidus_func=solidus_func,
+            liquidus_func=liquidus_func,
+        )
+        assert T[-1] == pytest.approx(T_surface)
+
+    def test_paleos_adiabat_no_nans(self):
+        """PALEOS adiabat should contain no NaN or Inf values."""
+        if not _paleos_data_available():
+            pytest.skip('PALEOS data files not found')
+
+        from zalmoxis.eos_functions import get_solidus_liquidus_functions
+        from zalmoxis.zalmoxis import load_material_dictionaries
+
+        material_dicts = load_material_dictionaries()
+        solidus_func, liquidus_func = get_solidus_liquidus_functions()
+        layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'PALEOS-2phase:MgSiO3'}
+
+        n = 100
+        radii = np.linspace(0, 6.371e6, n)
+        pressure = np.linspace(360e9, 1e5, n)
+        mass_enclosed = np.linspace(0, 5.972e24, n)
+
+        T = compute_adiabatic_temperature(
+            radii=radii,
+            pressure=pressure,
+            mass_enclosed=mass_enclosed,
+            surface_temperature=3500.0,
+            cmb_mass=0.325 * 5.972e24,
+            core_mantle_mass=5.972e24,
+            layer_mixtures=parse_all_layer_mixtures(layer_eos_config),
+            material_dictionaries=material_dicts,
+            solidus_func=solidus_func,
+            liquidus_func=liquidus_func,
+        )
+
+        assert np.all(np.isfinite(T)), (
+            f'PALEOS adiabat has non-finite values: '
+            f'NaN={np.sum(np.isnan(T))}, Inf={np.sum(np.isinf(T))}'
+        )
+        # Should stay below 10,000 K for 1 M_earth
+        assert np.max(T) < 10000.0, f'PALEOS adiabat T_max={np.max(T):.0f} K too high'
+
+    def test_paleos_adiabat_monotonic_mantle(self):
+        """PALEOS mantle adiabat should increase monotonically toward the center."""
+        if not _paleos_data_available():
+            pytest.skip('PALEOS data files not found')
+
+        from zalmoxis.eos_functions import get_solidus_liquidus_functions
+        from zalmoxis.zalmoxis import load_material_dictionaries
+
+        material_dicts = load_material_dictionaries()
+        solidus_func, liquidus_func = get_solidus_liquidus_functions()
+        layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'PALEOS-2phase:MgSiO3'}
+
+        n = 100
+        radii = np.linspace(0, 6.371e6, n)
+        pressure = np.linspace(360e9, 1e5, n)
+        mass_enclosed = np.linspace(0, 5.972e24, n)
+
+        T = compute_adiabatic_temperature(
+            radii=radii,
+            pressure=pressure,
+            mass_enclosed=mass_enclosed,
+            surface_temperature=3500.0,
+            cmb_mass=0.325 * 5.972e24,
+            core_mantle_mass=5.972e24,
+            layer_mixtures=parse_all_layer_mixtures(layer_eos_config),
+            material_dictionaries=material_dicts,
+            solidus_func=solidus_func,
+            liquidus_func=liquidus_func,
+        )
+        # Mantle T should decrease from center toward surface (radii ascending)
+        cmb_idx = np.argmax(mass_enclosed >= 0.325 * 5.972e24)
+        mantle_T = T[cmb_idx:]
+        diffs = np.diff(mantle_T)
+        assert np.all(diffs <= 0), (
+            f'PALEOS mantle T not monotonically decreasing. '
+            f'Max upward step: {np.max(diffs):.1f} K'
+        )
+
+
+@pytest.mark.unit
+class TestAdiabaticBlendMechanism:
+    """Tests for the adiabat blend convergence loop (0 -> 0.25 -> 0.5 -> 0.75 -> 1.0)."""
+
+    def test_blend_step_constant(self):
+        """The blend step should be 0.25 (transitions: 0 -> 0.25 -> 0.5 -> 0.75 -> 1.0).
+
+        The blend step is a local variable inside main(), not directly
+        importable. This test verifies the design invariant by checking
+        the source code text.
+        """
+        import inspect
+
+        from zalmoxis.zalmoxis import main
+
+        source = inspect.getsource(main)
+        assert '_ADIABAT_BLEND_STEP = 0.25' in source

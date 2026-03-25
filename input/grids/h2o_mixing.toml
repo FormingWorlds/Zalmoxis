@@ -1,0 +1,13 @@
+# H2O mixing grid: sweep planet mass and mantle water content
+# Explores the effect of water on planet radius
+
+[base]
+config = "input/default.toml"
+
+[sweep]
+planet_mass = [1.0, 3.0, 5.0, 10.0]
+mantle = ["PALEOS:MgSiO3", "PALEOS:MgSiO3:0.90+PALEOS:H2O:0.10", "PALEOS:MgSiO3:0.50+PALEOS:H2O:0.50"]
+surface_temperature = [2000, 3000]
+
+[output]
+dir = "output_files/grid_h2o_mixing"

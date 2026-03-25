@@ -6,9 +6,9 @@ Imports
 - [`constants`](zalmoxis.constants.md): TDEP_EOS_NAMES, earth_center_pressure, earth_mass, earth_radius
 - [`eos_analytic`](zalmoxis.eos_analytic.md): VALID_MATERIAL_KEYS
 - [`eos_functions`](zalmoxis.eos_functions.md): calculate_density, calculate_temperature_profile, create_pressure_density_files, get_solidus_liquidus_functions, get_Tdep_material
-- [`eos_properties`](zalmoxis.eos_properties.md): material_properties_iron_RTPress100TPa_silicate_planets, material_properties_iron_silicate_planets,
-        material_properties_iron_Tdep_silicate_planets, material_properties_water_planets
-- [`structure_model`](zalmoxis.structure_model.md): get_layer_eos, solve_structure
+- [`eos_properties`](zalmoxis.eos_properties.md): material_properties_iron_PALEOS_silicate_planets, material_properties_iron_RTPress100TPa_silicate_planets,
+        material_properties_iron_silicate_planets, material_properties_iron_Tdep_silicate_planets, material_properties_water_planets
+- [`structure_model`](zalmoxis.structure_model.md): get_layer_mixture, solve_structure
 """
 
 from __future__ import annotations
@@ -23,25 +23,33 @@ import numpy as np
 import toml
 from scipy.optimize import brentq
 
-from .constants import TDEP_EOS_NAMES, earth_center_pressure, earth_mass, earth_radius
+from .constants import (
+    CONDENSED_RHO_MIN_DEFAULT,
+    CONDENSED_RHO_SCALE_DEFAULT,
+    TDEP_EOS_NAMES,
+    earth_center_pressure,
+    earth_mass,
+    earth_radius,
+)
 from .eos_analytic import VALID_MATERIAL_KEYS
 from .eos_functions import (
-    calculate_density,
     calculate_temperature_profile,
     compute_adiabatic_temperature,
     create_pressure_density_files,
     get_solidus_liquidus_functions,
     get_Tdep_material,
 )
-from .eos_properties import (
-    material_properties_iron_RTPress100TPa_silicate_planets,
-    material_properties_iron_silicate_planets,
-    material_properties_iron_Tdep_silicate_planets,
-    material_properties_water_planets,
+from .eos_properties import EOS_REGISTRY
+from .mixing import (
+    BINODAL_T_SCALE_DEFAULT,
+    any_component_is_tdep,
+    calculate_mixed_density_batch,
+    parse_all_layer_mixtures,
+    parse_layer_components,
 )
 from .plots.plot_phase_vs_radius import plot_PT_with_phases
 from .plots.plot_profiles import plot_planet_profile_single
-from .structure_model import get_layer_eos, solve_structure
+from .structure_model import solve_structure
 
 # Run file via command line with default configuration file: python -m zalmoxis -c input/default.toml
 
@@ -74,7 +82,12 @@ VALID_TABULATED_EOS = {
     'Seager2007:MgSiO3',
     'WolfBower2018:MgSiO3',
     'RTPress100TPa:MgSiO3',
+    'PALEOS-2phase:MgSiO3',
     'Seager2007:H2O',
+    'PALEOS:iron',
+    'PALEOS:MgSiO3',
+    'PALEOS:H2O',
+    'Chabrier:H',
 }
 
 # WolfBower2018 tables are valid up to ~1 TPa. The Brent pressure solver with
@@ -88,6 +101,13 @@ WOLFBOWER2018_MAX_MASS_EARTH = 7.0
 # temperatures the mantle is predominantly molten, so the solid table limitation
 # is less constraining. Safe up to ~50 M_earth.
 RTPRESS100TPA_MAX_MASS_EARTH = 50.0
+
+# PALEOS MgSiO3 tables extend to 100 TPa for both solid and liquid phases.
+# Safe up to ~50 M_earth (same pressure ceiling as RTPress100TPa).
+PALEOS_MAX_MASS_EARTH = 50.0
+
+# Unified PALEOS tables (iron, MgSiO3, H2O) extend to 100 TPa.
+PALEOS_UNIFIED_MAX_MASS_EARTH = 50.0
 
 
 def parse_eos_config(eos_section):
@@ -147,7 +167,7 @@ def parse_eos_config(eos_section):
 
 
 def validate_layer_eos(layer_eos_config):
-    """Validate all per-layer EOS strings.
+    """Validate all per-layer EOS strings, including multi-material mixtures.
 
     Parameters
     ----------
@@ -157,24 +177,474 @@ def validate_layer_eos(layer_eos_config):
     Raises
     ------
     ValueError
-        If any layer EOS string is invalid.
+        If any layer EOS string or component is invalid.
     """
-    for layer, eos in layer_eos_config.items():
-        if eos in VALID_TABULATED_EOS:
-            continue
-        if eos.startswith('Analytic:'):
-            material_key = eos.split(':', 1)[1]
-            if material_key not in VALID_MATERIAL_KEYS:
-                raise ValueError(
-                    f"Invalid analytic material '{material_key}' for layer '{layer}'. "
-                    f'Valid keys: {sorted(VALID_MATERIAL_KEYS)}'
-                )
-            continue
+    for layer, eos_str in layer_eos_config.items():
+        mixture = parse_layer_components(eos_str)
+        for comp in mixture.components:
+            if comp in VALID_TABULATED_EOS:
+                continue
+            if comp.startswith('Analytic:'):
+                material_key = comp.split(':', 1)[1]
+                if material_key not in VALID_MATERIAL_KEYS:
+                    raise ValueError(
+                        f"Invalid analytic material '{material_key}' "
+                        f"in layer '{layer}'. "
+                        f'Valid keys: {sorted(VALID_MATERIAL_KEYS)}'
+                    )
+                continue
+            raise ValueError(
+                f"Invalid EOS component '{comp}' in layer '{layer}'. "
+                f'Valid tabulated: {sorted(VALID_TABULATED_EOS)}. '
+                f'Valid analytic: Analytic:<material> with '
+                f'{sorted(VALID_MATERIAL_KEYS)}.'
+            )
+
+
+def validate_config(config_params):
+    """Validate all configuration parameters for physical and logical consistency.
+
+    Checks parameter types, ranges, and cross-parameter constraints. Raises
+    ValueError with a clear message explaining the problem and how to fix it,
+    rather than letting the solver produce incorrect results.
+
+    Parameters
+    ----------
+    config_params : dict
+        Configuration parameters from load_zalmoxis_config().
+
+    Raises
+    ------
+    ValueError
+        If any parameter is invalid or parameters are incompatible.
+    """
+    # ── Planet mass ──────────────────────────────────────────────────
+    planet_mass = config_params['planet_mass']
+    planet_mass_mearth = planet_mass / earth_mass
+    if planet_mass <= 0:
         raise ValueError(
-            f"Invalid EOS '{eos}' for layer '{layer}'. "
-            f'Valid tabulated: {sorted(VALID_TABULATED_EOS)}. '
-            f'Valid analytic: Analytic:<material> with {sorted(VALID_MATERIAL_KEYS)}.'
+            f'planet_mass must be positive, got {planet_mass_mearth:.4f} M_earth. '
+            f'Set planet_mass > 0 in [InputParameter].'
         )
+
+    if planet_mass_mearth < 0.1:
+        logger.warning(
+            f'planet_mass = {planet_mass_mearth:.4f} M_earth is below the validated '
+            f'range (0.1-50 M_earth). Results may be unreliable at very low masses.'
+        )
+    if planet_mass_mearth > 50:
+        logger.warning(
+            f'planet_mass = {planet_mass_mearth:.1f} M_earth exceeds the validated '
+            f'range (0.1-50 M_earth). PALEOS tables extend to 100 TPa '
+            f'(~50 M_earth). Beyond this, EOS extrapolation may be unreliable.'
+        )
+
+    # ── Mass fractions ──────────────────────────────────────────────
+    cmf = config_params['core_mass_fraction']
+    mmf = config_params['mantle_mass_fraction']
+    layer_eos_config = config_params['layer_eos_config']
+
+    if cmf <= 0 or cmf > 1:
+        raise ValueError(
+            f'core_mass_fraction must be in (0, 1], got {cmf}. '
+            f'A planet requires a nonzero core.'
+        )
+
+    if mmf < 0 or mmf >= 1:
+        raise ValueError(
+            f'mantle_mass_fraction must be in [0, 1), got {mmf}. '
+            f'Use 0 for a 2-layer model where the mantle fills the remainder.'
+        )
+
+    if cmf + mmf > 1.0:
+        raise ValueError(
+            f'core_mass_fraction ({cmf}) + mantle_mass_fraction ({mmf}) = {cmf + mmf} > 1.0. '
+            f'The sum of mass fractions cannot exceed 1.'
+        )
+
+    # 3-layer model requires mantle_mass_fraction > 0
+    has_ice = 'ice_layer' in layer_eos_config
+    if has_ice and mmf <= 0:
+        raise ValueError(
+            f'3-layer model (ice_layer = "{layer_eos_config["ice_layer"]}") requires '
+            f'mantle_mass_fraction > 0, but got {mmf}. '
+            f'Set mantle_mass_fraction > 0 in [AssumptionsAndInitialGuesses], '
+            f'or remove ice_layer from [EOS] for a 2-layer model.'
+        )
+
+    if not has_ice and mmf > 0:
+        raise ValueError(
+            f'mantle_mass_fraction = {mmf} > 0 but no ice_layer EOS is set. '
+            f'For a 2-layer model, set mantle_mass_fraction = 0 '
+            f'(mantle fills the remainder 1 - core_mass_fraction). '
+            f'For a 3-layer model, set ice_layer to a valid EOS string.'
+        )
+
+    # 3-layer models with H2O ice at high surface temperature
+    if has_ice:
+        ice_eos = layer_eos_config.get('ice_layer', '')
+        ice_has_h2o = 'H2O' in ice_eos
+        temperature_mode_raw = config_params['temperature_mode']
+        surface_temp_raw = config_params['surface_temperature']
+        if ice_has_h2o and temperature_mode_raw != 'isothermal' and surface_temp_raw >= 647:
+            ice_frac = 1.0 - cmf - mmf
+            raise ValueError(
+                f'3-layer model with H2O ice layer at surface_temperature = '
+                f'{surface_temp_raw} K >= 647 K (H2O critical point). '
+                f'Pure H2O at T >= T_crit is vapor/supercritical at low pressure '
+                f'and cannot support a hydrostatic ice shell. '
+                f'The solver will diverge to unphysical radii '
+                f'(ice fraction = {ice_frac:.1%}). '
+                f'Options: (1) use isothermal mode with T_surf < 647 K for '
+                f'3-layer models, or (2) represent water as a mixing component '
+                f'in the mantle (e.g., mantle = "PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15") '
+                f'where the phase-aware suppression handles the vapor phase.'
+            )
+
+    # ── Temperature parameters ──────────────────────────────────────
+    temperature_mode = config_params['temperature_mode']
+    valid_modes = ('isothermal', 'linear', 'prescribed', 'adiabatic')
+    if temperature_mode not in valid_modes:
+        raise ValueError(
+            f"Unknown temperature_mode '{temperature_mode}'. Valid options: {valid_modes}."
+        )
+
+    surface_temp = config_params['surface_temperature']
+    center_temp = config_params['center_temperature']
+
+    if surface_temp <= 0:
+        raise ValueError(
+            f'surface_temperature must be positive, got {surface_temp} K. '
+            f'Temperatures must be in Kelvin.'
+        )
+
+    if surface_temp > 5000:
+        logger.warning(
+            f'surface_temperature = {surface_temp} K exceeds the validated range '
+            f'(300-5000 K). The PALEOS tables extend to 100,000 K, but the '
+            f'adiabatic solver has only been validated up to 5000 K surface temperature.'
+        )
+
+    if temperature_mode in ('linear', 'adiabatic') and center_temp <= 0:
+        raise ValueError(
+            f"center_temperature must be positive for '{temperature_mode}' mode, "
+            f'got {center_temp} K. Temperatures must be in Kelvin.'
+        )
+
+    if temperature_mode == 'linear' and center_temp <= surface_temp:
+        logger.warning(
+            f'center_temperature ({center_temp} K) <= surface_temperature ({surface_temp} K) '
+            f'in linear mode. The temperature gradient will be zero or negative '
+            f'(temperature decreases inward). This is physically unusual.'
+        )
+
+    # Adiabatic mode requires at least one T-dependent EOS component
+    all_components = set()
+    for v in layer_eos_config.values():
+        if v:
+            m = parse_layer_components(v)
+            all_components.update(m.components)
+    uses_Tdep = bool(all_components & TDEP_EOS_NAMES)
+
+    if temperature_mode == 'adiabatic' and not uses_Tdep:
+        raise ValueError(
+            f'Adiabatic temperature mode requires at least one T-dependent EOS layer, '
+            f'but none found in {layer_eos_config}. '
+            f'T-dependent EOS options: {sorted(TDEP_EOS_NAMES)}. '
+            f"Use 'isothermal' or 'linear' mode with T-independent EOS."
+        )
+
+    # ── Mushy zone factor ───────────────────────────────────────────
+    mushy_zone_factor = config_params.get('mushy_zone_factor', 1.0)
+
+    if mushy_zone_factor < 0 or mushy_zone_factor > 1.0:
+        raise ValueError(
+            f'mushy_zone_factor must be in [0, 1.0], got {mushy_zone_factor}. '
+            f'1.0 = no mushy zone (sharp phase boundary). '
+            f'< 1.0 = solidus at this fraction of the liquidus temperature.'
+        )
+
+    if mushy_zone_factor < 0.7:
+        raise ValueError(
+            f'mushy_zone_factor = {mushy_zone_factor} is below the minimum of 0.7. '
+            f'Values below 0.7 produce unphysically wide mushy zones that can '
+            f'cause solver instabilities. Use a value in [0.7, 1.0].'
+        )
+
+    # mushy_zone_factor < 1.0 only makes sense with unified PALEOS tables
+    has_unified_paleos = bool(all_components & {'PALEOS:iron', 'PALEOS:MgSiO3', 'PALEOS:H2O'})
+    if mushy_zone_factor < 1.0 and not has_unified_paleos:
+        raise ValueError(
+            f'mushy_zone_factor = {mushy_zone_factor} < 1.0 but no unified PALEOS '
+            f'EOS is configured. The mushy zone factor only applies to unified '
+            f'PALEOS tables (PALEOS:iron, PALEOS:MgSiO3, PALEOS:H2O). '
+            f'For PALEOS-2phase or WolfBower2018, phase routing is controlled '
+            f'by the rock_solidus/rock_liquidus melting curves instead.'
+        )
+
+    # ── Per-EOS mushy zone factors ──────────────────────────────────
+    mushy_zone_factors = config_params.get('mushy_zone_factors', {})
+    _eos_to_key = {
+        'PALEOS:iron': 'mushy_zone_factor_iron',
+        'PALEOS:MgSiO3': 'mushy_zone_factor_MgSiO3',
+        'PALEOS:H2O': 'mushy_zone_factor_H2O',
+    }
+    for eos_name, config_key in _eos_to_key.items():
+        mzf = mushy_zone_factors.get(eos_name, 1.0)
+        if mzf < 0 or mzf > 1.0:
+            raise ValueError(
+                f'{config_key} must be in [0, 1.0], got {mzf}. '
+                f'1.0 = no mushy zone. '
+                f'< 1.0 = solidus at this fraction of the liquidus temperature.'
+            )
+        if mzf < 0.7:
+            raise ValueError(
+                f'{config_key} = {mzf} is below the minimum of 0.7. '
+                f'Values below 0.7 produce unphysically wide mushy zones that can '
+                f'cause solver instabilities. Use a value in [0.7, 1.0].'
+            )
+        if mzf < 1.0 and eos_name not in all_components:
+            raise ValueError(
+                f'{config_key} = {mzf} < 1.0 but {eos_name} is not configured '
+                f'in any layer. Per-material mushy zone overrides only apply '
+                f'to materials that are actually used.'
+            )
+
+    # ── Condensed-phase suppression ─────────────────────────────────
+    condensed_rho_min = config_params.get('condensed_rho_min', CONDENSED_RHO_MIN_DEFAULT)
+    condensed_rho_scale = config_params.get('condensed_rho_scale', CONDENSED_RHO_SCALE_DEFAULT)
+
+    if condensed_rho_min <= 0:
+        raise ValueError(
+            f'condensed_rho_min must be positive, got {condensed_rho_min} kg/m^3. '
+            f'This is the sigmoid center for phase-aware mixing suppression. '
+            f'Typical value: 300 (near H2O critical density 322 kg/m^3).'
+        )
+
+    if condensed_rho_scale <= 0:
+        raise ValueError(
+            f'condensed_rho_scale must be positive, got {condensed_rho_scale} kg/m^3. '
+            f'This is the sigmoid width for phase-aware mixing suppression. '
+            f'Typical value: 50 kg/m^3.'
+        )
+
+    binodal_T_scale = config_params.get('binodal_T_scale', BINODAL_T_SCALE_DEFAULT)
+    if binodal_T_scale <= 0:
+        raise ValueError(
+            f'binodal_T_scale must be positive, got {binodal_T_scale} K. '
+            f'This is the sigmoid width for H2 miscibility suppression. '
+            f'Typical value: 50 K.'
+        )
+
+    # ── Numerical parameters ────────────────────────────────────────
+    num_layers = config_params['num_layers']
+    if num_layers < 10:
+        raise ValueError(
+            f'num_layers must be >= 10, got {num_layers}. '
+            f'Fewer than 10 radial grid points cannot resolve the structure.'
+        )
+
+    if num_layers > 10000:
+        raise ValueError(
+            f'num_layers = {num_layers} is excessively large. '
+            f'Values above 10000 cause very slow convergence with no accuracy gain. '
+            f'Typical values: 100-500.'
+        )
+
+    arf = config_params['adaptive_radial_fraction']
+    if arf <= 0 or arf >= 1:
+        raise ValueError(
+            f'adaptive_radial_fraction must be in (0, 1), got {arf}. '
+            f'Typical value: 0.98. This fraction of the radial domain uses '
+            f'adaptive ODE stepping; the remainder uses fixed steps.'
+        )
+
+    # ── Solver tolerances ───────────────────────────────────────────
+    for param, name in [
+        ('tolerance_outer', 'tolerance_outer'),
+        ('tolerance_inner', 'tolerance_inner'),
+        ('relative_tolerance', 'relative_tolerance'),
+        ('absolute_tolerance', 'absolute_tolerance'),
+    ]:
+        val = config_params[param]
+        if val <= 0:
+            raise ValueError(f'{name} must be positive, got {val}.')
+
+    for param, name in [
+        ('max_iterations_outer', 'max_iterations_outer'),
+        ('max_iterations_inner', 'max_iterations_inner'),
+        ('max_iterations_pressure', 'max_iterations_pressure'),
+    ]:
+        val = config_params[param]
+        if val < 1:
+            raise ValueError(f'{name} must be >= 1, got {val}.')
+
+    maximum_step = config_params['maximum_step']
+    if maximum_step <= 0:
+        raise ValueError(
+            f'maximum_step must be positive, got {maximum_step} m. '
+            f'This is the max radial step size for the ODE integrator.'
+        )
+
+    # ── Pressure solver ─────────────────────────────────────────────
+    target_sp = config_params['target_surface_pressure']
+    if target_sp < 0:
+        raise ValueError(
+            f'target_surface_pressure must be >= 0, got {target_sp} Pa. '
+            f'Default is 101325 Pa (1 atm).'
+        )
+
+    ptol = config_params['pressure_tolerance']
+    if ptol <= 0:
+        raise ValueError(f'pressure_tolerance must be positive, got {ptol} Pa.')
+
+    max_pcg = config_params['max_center_pressure_guess']
+    if max_pcg <= 0:
+        raise ValueError(f'max_center_pressure_guess must be positive, got {max_pcg} Pa.')
+
+    # ── EOS-specific cross-checks ───────────────────────────────────
+    # Melting curves only needed for EOS that use external phase routing
+    needs_mc = bool(all_components & _NEEDS_MELTING_CURVES)
+    if needs_mc:
+        rock_solidus = config_params.get('rock_solidus', '')
+        rock_liquidus = config_params.get('rock_liquidus', '')
+        if not rock_solidus or not rock_liquidus:
+            raise ValueError(
+                'The configured EOS requires melting curves for phase routing, '
+                'but rock_solidus or rock_liquidus is empty. '
+                "Set both in [EOS]. Example: rock_solidus = 'Monteux16-solidus', "
+                "rock_liquidus = 'Monteux16-liquidus-A-chondritic'."
+            )
+
+    # ── Multi-material mixing checks ────────────────────────────────
+    for layer, eos_str in layer_eos_config.items():
+        mixture = parse_layer_components(eos_str)
+
+        # Fraction validation
+        if len(mixture.components) > 1:
+            for i, frac in enumerate(mixture.fractions):
+                if frac < 0:
+                    raise ValueError(
+                        f'Negative mass fraction {frac} for component '
+                        f"'{mixture.components[i]}' in layer '{layer}'."
+                    )
+            total = sum(mixture.fractions)
+            if abs(total - 1.0) > 1e-4:
+                raise ValueError(
+                    f"Mass fractions in layer '{layer}' sum to {total:.6f}, "
+                    f'not 1.0. Components: {mixture.components}, '
+                    f'fractions: {mixture.fractions}.'
+                )
+
+        # Warn about mixing T-dependent and T-independent EOS
+        tdep_comps_in_layer = [c for c in mixture.components if c in TDEP_EOS_NAMES]
+        tindep_comps = [c for c in mixture.components if c not in TDEP_EOS_NAMES]
+        if tdep_comps_in_layer and tindep_comps:
+            # Only warn for non-Analytic T-independent components
+            tindep_tabulated = [c for c in tindep_comps if not c.startswith('Analytic:')]
+            if tindep_tabulated:
+                logger.warning(
+                    f"Layer '{layer}' mixes T-dependent EOS "
+                    f'({tdep_comps_in_layer}) with T-independent EOS '
+                    f'({tindep_tabulated}). The T-independent components '
+                    f'will use a fixed 300 K internally, which may be '
+                    f'inconsistent with the adiabatic temperature profile.'
+                )
+
+    # ── EOS-layer compatibility ─────────────────────────────────────
+    # Core should use iron-type EOS
+    core_eos = layer_eos_config.get('core', '')
+    core_mix = parse_layer_components(core_eos) if core_eos else None
+    if core_mix:
+        iron_keywords = {'iron', 'Fe'}
+        for comp in core_mix.components:
+            comp_material = comp.split(':')[-1] if ':' in comp else comp
+            if not any(kw in comp_material for kw in iron_keywords):
+                if not comp.startswith('Analytic:'):
+                    logger.warning(
+                        f"Core EOS component '{comp}' does not appear to be "
+                        f'an iron EOS. Core is typically iron (Fe). '
+                        f'Proceeding anyway.'
+                    )
+
+    # H2O mixing fraction checks
+    for layer in ('mantle', 'core'):
+        eos_str = layer_eos_config.get(layer, '')
+        if not eos_str:
+            continue
+        mix = parse_layer_components(eos_str)
+        h2o_in_layer = any('H2O' in c for c in mix.components)
+        if not h2o_in_layer:
+            continue
+        h2o_frac = sum(f for c, f in zip(mix.components, mix.fractions) if 'H2O' in c)
+        if h2o_frac > 0.30:
+            logger.warning(
+                f"Layer '{layer}' has {h2o_frac * 100:.0f}% H2O, which exceeds "
+                f'the validated range (0-30%). The solver has been tested up to '
+                f'30% H2O by mass. Higher fractions may converge but are not '
+                f'validated. Consider using a 3-layer model with a separate '
+                f'ice layer for water-dominated compositions.'
+            )
+
+    # ── H2O-dominated mantle at low temperature ─────────────────────
+    # H2O is vapor/supercritical at surface pressure when T > 647 K,
+    # and the volume-additive mixing model cannot handle an all-vapor
+    # mantle. Reject H2O-dominated mantles at adiabatic T_surf where
+    # the solver will diverge.
+    for layer in ('mantle',):
+        eos_str = layer_eos_config.get(layer, '')
+        if not eos_str:
+            continue
+        mix = parse_layer_components(eos_str)
+        h2o_frac = sum(f for c, f in zip(mix.components, mix.fractions) if 'H2O' in c)
+        has_silicate = any(
+            c
+            in {
+                'PALEOS:MgSiO3',
+                'WolfBower2018:MgSiO3',
+                'RTPress100TPa:MgSiO3',
+                'PALEOS-2phase:MgSiO3',
+            }
+            for c in mix.components
+        )
+        if h2o_frac > 0.5 and not has_silicate and temperature_mode != 'isothermal':
+            raise ValueError(
+                f'Mantle is {h2o_frac * 100:.0f}% H2O with no silicate component. '
+                f'At adiabatic/linear temperatures, H2O is vapor at surface '
+                f'pressure and cannot support hydrostatic structure in the '
+                f'volume-additive mixing model. Options: (1) add a silicate '
+                f'component (e.g., "PALEOS:MgSiO3:0.50+PALEOS:H2O:0.50"), '
+                f'(2) use a 3-layer model with a separate ice layer, or '
+                f'(3) use isothermal mode with T < 647 K.'
+            )
+
+    # ── Pure Chabrier:H mantle (no condensed anchor) ────────────────
+    for layer in ('mantle',):
+        eos_str = layer_eos_config.get(layer, '')
+        if not eos_str:
+            continue
+        mix = parse_layer_components(eos_str)
+        if mix.is_single() and mix.components[0] == 'Chabrier:H':
+            raise ValueError(
+                'Pure Chabrier:H mantle is not supported. H2 is a gas at '
+                'surface pressure and cannot form a condensed layer on its '
+                'own. Use H2 as a mixing component in a silicate mantle, '
+                'e.g., mantle = "PALEOS:MgSiO3:0.97+Chabrier:H:0.03".'
+            )
+
+    # ── H2 fraction warnings ───────────────────────────────────────
+    for layer in ('mantle',):
+        eos_str = layer_eos_config.get(layer, '')
+        if not eos_str:
+            continue
+        mix = parse_layer_components(eos_str)
+        h2_frac = sum(f for c, f in zip(mix.components, mix.fractions) if c == 'Chabrier:H')
+        if h2_frac > 0.20:
+            logger.warning(
+                f"Layer '{layer}' has {h2_frac * 100:.0f}% H2 by mass. "
+                f'The solver has been validated up to 20% H2. Higher '
+                f'fractions may converge but are outside the tested range.'
+            )
 
 
 def choose_config_file(temp_config_path=None):
@@ -245,7 +715,36 @@ def load_zalmoxis_config(temp_config_path=None):
     layer_eos_config = parse_eos_config(config['EOS'])
     validate_layer_eos(layer_eos_config)
 
-    return {
+    # Melting curve config (defaults for backward compat with old TOML files)
+    eos_section = config['EOS']
+    rock_solidus = eos_section.get('rock_solidus', 'Stixrude14-solidus')
+    rock_liquidus = eos_section.get('rock_liquidus', 'Stixrude14-liquidus')
+    mushy_zone_factor = eos_section.get('mushy_zone_factor', 1.0)
+    condensed_rho_min = eos_section.get('condensed_rho_min', CONDENSED_RHO_MIN_DEFAULT)
+    condensed_rho_scale = eos_section.get('condensed_rho_scale', CONDENSED_RHO_SCALE_DEFAULT)
+    binodal_T_scale = eos_section.get('binodal_T_scale', BINODAL_T_SCALE_DEFAULT)
+
+    # Build per-EOS mushy_zone_factors dict. Only include materials that are
+    # actually configured in a layer; unused materials default to 1.0 so that
+    # a global mushy_zone_factor < 1.0 does not trigger the validation check
+    # for materials absent from the model.
+    _paleos_materials = {
+        'PALEOS:iron': 'mushy_zone_factor_iron',
+        'PALEOS:MgSiO3': 'mushy_zone_factor_MgSiO3',
+        'PALEOS:H2O': 'mushy_zone_factor_H2O',
+    }
+    # Collect all EOS component strings from all layers
+    _all_eos_strings = ' '.join(v for v in layer_eos_config.values() if v)
+    mushy_zone_factors = {}
+    for paleos_name, toml_key in _paleos_materials.items():
+        if paleos_name in _all_eos_strings:
+            # Material is in use: apply per-material override or global default
+            mushy_zone_factors[paleos_name] = eos_section.get(toml_key, mushy_zone_factor)
+        else:
+            # Material not in use: default to 1.0 (no mushy zone)
+            mushy_zone_factors[paleos_name] = eos_section.get(toml_key, 1.0)
+
+    config_params = {
         'planet_mass': config['InputParameter']['planet_mass'] * earth_mass,
         'core_mass_fraction': config['AssumptionsAndInitialGuesses']['core_mass_fraction'],
         'mantle_mass_fraction': config['AssumptionsAndInitialGuesses']['mantle_mass_fraction'],
@@ -254,6 +753,13 @@ def load_zalmoxis_config(temp_config_path=None):
         'center_temperature': config['AssumptionsAndInitialGuesses']['center_temperature'],
         'temp_profile_file': config['AssumptionsAndInitialGuesses']['temperature_profile_file'],
         'layer_eos_config': layer_eos_config,
+        'rock_solidus': rock_solidus,
+        'rock_liquidus': rock_liquidus,
+        'mushy_zone_factor': mushy_zone_factor,
+        'mushy_zone_factors': mushy_zone_factors,
+        'condensed_rho_min': condensed_rho_min,
+        'condensed_rho_scale': condensed_rho_scale,
+        'binodal_T_scale': binodal_T_scale,
         'num_layers': config['Calculations']['num_layers'],
         'max_iterations_outer': config['IterativeProcess']['max_iterations_outer'],
         'tolerance_outer': config['IterativeProcess']['tolerance_outer'],
@@ -273,62 +779,93 @@ def load_zalmoxis_config(temp_config_path=None):
         'iteration_profiles_enabled': config['Output']['iteration_profiles_enabled'],
     }
 
+    # Validate all parameters for physical and logical consistency
+    validate_config(config_params)
+
+    return config_params
+
 
 def load_material_dictionaries():
     """Load and return the material properties dictionaries.
 
     Returns
     -------
-    tuple
-        (iron_silicate, iron_Tdep_silicate, water, iron_RTPress100TPa_silicate)
-        material property dicts.
+    dict
+        EOS registry keyed by EOS identifier string (e.g.
+        ``"Seager2007:iron"``, ``"PALEOS:MgSiO3"``).
     """
-    material_dictionaries = (
-        material_properties_iron_silicate_planets,
-        material_properties_iron_Tdep_silicate_planets,
-        material_properties_water_planets,
-        material_properties_iron_RTPress100TPa_silicate_planets,
-    )
-    return material_dictionaries
+    return dict(EOS_REGISTRY)
 
 
-def load_solidus_liquidus_functions(layer_eos_config):
-    """Load solidus and liquidus functions if any layer uses a T-dependent EOS.
+# EOS names that need external melting curves for solid/liquid phase routing.
+# Unified PALEOS tables do not need external melting curves (phase boundary
+# is extracted from the table's phase column).
+_NEEDS_MELTING_CURVES = {
+    'WolfBower2018:MgSiO3',
+    'RTPress100TPa:MgSiO3',
+    'PALEOS-2phase:MgSiO3',
+}
+
+
+def load_solidus_liquidus_functions(
+    layer_eos_config,
+    solidus_id='Stixrude14-solidus',
+    liquidus_id='Stixrude14-liquidus',
+):
+    """Load solidus and liquidus functions if any layer uses an EOS that needs them.
+
+    Unified PALEOS tables (PALEOS:iron, PALEOS:MgSiO3, PALEOS:H2O) are
+    T-dependent but derive their phase boundary from the table itself, so
+    they do not need external melting curves.
 
     Parameters
     ----------
     layer_eos_config : dict
         Per-layer EOS config.
+    solidus_id : str
+        Solidus melting curve identifier.
+    liquidus_id : str
+        Liquidus melting curve identifier.
 
     Returns
     -------
     tuple or None
-        (solidus_func, liquidus_func) if Tdep EOS is used, else None.
+        (solidus_func, liquidus_func) if needed, else None.
     """
-    uses_Tdep = any(v in TDEP_EOS_NAMES for v in layer_eos_config.values() if v)
-    if uses_Tdep:
-        solidus_func, liquidus_func = get_solidus_liquidus_functions()
+    all_comps = set()
+    for v in layer_eos_config.values():
+        if v:
+            m = parse_layer_components(v)
+            all_comps.update(m.components)
+    if all_comps & _NEEDS_MELTING_CURVES:
+        solidus_func, liquidus_func = get_solidus_liquidus_functions(solidus_id, liquidus_id)
         return (solidus_func, liquidus_func)
     return None
 
 
-def main(config_params, material_dictionaries, melting_curves_functions, input_dir):
+def main(
+    config_params,
+    material_dictionaries,
+    melting_curves_functions,
+    input_dir,
+    layer_mixtures=None,
+):
     """Run the exoplanet internal structure model.
-
-    Iteratively adjusts the internal structure based on configuration parameters,
-    calculating the planet's radius, core-mantle boundary, densities, pressures,
-    and other properties.
 
     Parameters
     ----------
     config_params : dict
         Configuration parameters for the model.
-    material_dictionaries : tuple
-        Material properties dictionaries.
+    material_dictionaries : dict
+        EOS registry dict keyed by EOS identifier string.
     melting_curves_functions : tuple or None
-        (solidus_func, liquidus_func) for Tdep EOS, or None.
+        (solidus_func, liquidus_func) for EOS needing external melting curves.
     input_dir : str
         Directory containing input files.
+    layer_mixtures : dict or None, optional
+        Per-layer LayerMixture objects. If None, parsed from
+        ``config_params['layer_eos_config']``. PROTEUS/CALLIOPE can provide
+        pre-built mixtures with runtime-updated fractions.
 
     Returns
     -------
@@ -366,15 +903,38 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
     max_iterations_pressure = config_params['max_iterations_pressure']
     verbose = config_params['verbose']
     iteration_profiles_enabled = config_params['iteration_profiles_enabled']
+    # Build per-EOS mushy_zone_factors dict. Prefer the dict if present
+    # (set by load_zalmoxis_config). Fall back to building one from the
+    # single float for backward compat with callers that only set the
+    # global 'mushy_zone_factor' key.
+    if 'mushy_zone_factors' in config_params:
+        mushy_zone_factors = config_params['mushy_zone_factors']
+    else:
+        _global_mzf = config_params.get('mushy_zone_factor', 1.0)
+        mushy_zone_factors = {
+            'PALEOS:iron': _global_mzf,
+            'PALEOS:MgSiO3': _global_mzf,
+            'PALEOS:H2O': _global_mzf,
+        }
+    condensed_rho_min = config_params.get('condensed_rho_min', CONDENSED_RHO_MIN_DEFAULT)
+    condensed_rho_scale = config_params.get('condensed_rho_scale', CONDENSED_RHO_SCALE_DEFAULT)
+    binodal_T_scale = config_params.get('binodal_T_scale', BINODAL_T_SCALE_DEFAULT)
 
-    # Check if any layer uses T-dependent EOS
-    uses_Tdep = any(v in TDEP_EOS_NAMES for v in layer_eos_config.values() if v)
+    # Parse layer mixtures if not provided externally (PROTEUS/CALLIOPE)
+    if layer_mixtures is None:
+        layer_mixtures = parse_all_layer_mixtures(layer_eos_config)
+
+    # Check if any component in any layer uses T-dependent EOS
+    uses_Tdep = any_component_is_tdep(layer_mixtures)
 
     # Enforce per-EOS mass limits for T-dependent tables
     mass_in_earth = planet_mass / earth_mass
-    if uses_Tdep:
-        tdep_eos_used = {v for v in layer_eos_config.values() if v in TDEP_EOS_NAMES}
-        for eos_name in tdep_eos_used:
+    all_comps = set()
+    for mix in layer_mixtures.values():
+        all_comps.update(mix.components)
+    tdep_comps = all_comps & TDEP_EOS_NAMES
+    if tdep_comps:
+        for eos_name in tdep_comps:
             if eos_name == 'WolfBower2018:MgSiO3':
                 max_mass = WOLFBOWER2018_MAX_MASS_EARTH
                 reason = (
@@ -387,6 +947,21 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                 reason = (
                     'The RTPress100TPa melt table extends to 100 TPa but '
                     'the solid table is limited to 1 TPa.'
+                )
+            elif eos_name == 'PALEOS-2phase:MgSiO3':
+                max_mass = PALEOS_MAX_MASS_EARTH
+                reason = (
+                    'The PALEOS MgSiO3 tables extend to 100 TPa for both '
+                    'solid and liquid phases.'
+                )
+            elif eos_name in ('PALEOS:iron', 'PALEOS:MgSiO3', 'PALEOS:H2O'):
+                max_mass = PALEOS_UNIFIED_MAX_MASS_EARTH
+                reason = 'The unified PALEOS tables extend to 100 TPa (P: 1 bar to 100 TPa).'
+            elif eos_name == 'Chabrier:H':
+                max_mass = PALEOS_UNIFIED_MAX_MASS_EARTH
+                reason = (
+                    'The Chabrier H table extends to 10^22 Pa but '
+                    'has only been validated up to ~50 M_earth.'
                 )
             else:
                 continue
@@ -414,36 +989,31 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
     # Initialize empty cache for interpolation functions
     interpolation_cache = {}
 
-    # Load solidus and liquidus functions if using Tdep EOS
-    if uses_Tdep:
+    # Load solidus and liquidus functions if the caller provided them.
+    # Unified PALEOS tables don't need external melting curves, so
+    # melting_curves_functions may be None even when uses_Tdep is True.
+    if melting_curves_functions is not None:
         solidus_func, liquidus_func = melting_curves_functions
     else:
         solidus_func, liquidus_func = None, None
 
-    # --- Adiabatic temperature mode (standalone Zalmoxis only) -----------
+    # --- Adiabatic temperature mode (standalone Zalmoxis) ----------------
     #
     # When temperature_mode='adiabatic', Zalmoxis computes a self-consistent
-    # T(r) from dT/dP adiabat tables.  This is a STANDALONE Zalmoxis feature
-    # for structure calculations where no external interior solver provides
-    # T(r).
+    # T(r) from EOS adiabat gradient tables. The transition from the initial
+    # linear-T guess to the full adiabat is GRADUAL via a blending parameter:
     #
-    # In the PROTEUS-SPIDER-Zalmoxis coupling, this mode is NOT used for
-    # thermal evolution.  SPIDER computes its own adiabatic T(r) via entropy-
-    # based evolution (T-S formalism).  Zalmoxis only provides the initial
-    # structure mesh (r, P, rho, g).  PROTEUS sets temperature_mode='adiabatic'
-    # in the config, but the convergence loop below breaks on mass convergence
-    # BEFORE the adiabat gate fires — so the structure is solved with a
-    # linear T initial guess.  This is correct: the T profile only affects
-    # the density (via T-dep EOS), and the density difference between linear T
-    # and an adiabat is small enough (~5-10%) to produce a valid mesh.  SPIDER
-    # then self-corrects T(r) through its own physics.
+    #   blend = 0.0   (iteration 0: pure linear T)
+    #   blend = 0.5   (first post-convergence iteration: half adiabat)
+    #   blend = 1.0   (second post-convergence iteration: full adiabat)
     #
-    # WARNING: Do NOT prevent the mass-convergence break (line ~691) from
-    # firing in order to force the adiabat gate to activate.  Switching from
-    # a converged linear-T structure to an adiabat disrupts the converged
-    # state, and the iterative solver diverges (mass→0, radius→15 R_earth).
-    # If standalone adiabat mode is needed, the transition must be gradual
-    # (e.g., blended T) or the solver must be restructured for co-refinement.
+    # This blending prevents the solver from diverging when the temperature
+    # profile changes abruptly from linear to adiabatic.
+    #
+    # In the PROTEUS-SPIDER coupling, temperature_mode is typically
+    # 'adiabatic' in the config, but the blend never activates because
+    # the initial linear-T structure converges and the mass break fires
+    # with blend=0. This is correct: SPIDER provides its own T(r).
     # -------------------------------------------------------------------
 
     # Storage for the previous iteration's converged profiles.
@@ -452,11 +1022,26 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
     prev_pressure = None
     prev_mass_enclosed = None
 
-    # Adiabat gate: activates once mass converges (see long comment above).
-    # In PROTEUS coupling, the break at line ~691 fires first, so
-    # _using_adiabat stays False and compute_adiabatic_temperature() is
-    # never called.  This is intentional.
+    # Adiabat blending state.
     _using_adiabat = False
+    _adiabat_blend = 0.0
+    _ADIABAT_BLEND_STEP = 0.25
+
+    # For adiabatic mode, cap the initial center_temperature guess to
+    # prevent the linear-T initial profile from being far above the
+    # actual adiabat. A typical rocky planet adiabat at 1 M_earth has
+    # T_center ~ 3 * T_surface. If center_temperature >> this, the
+    # blend from linear to adiabat causes a huge density perturbation
+    # that destabilizes convergence. This is conservative (adiabats
+    # can be steeper for massive planets), so we use 5 * T_surface.
+    if temperature_mode == 'adiabatic':
+        max_reasonable_T_center = max(5.0 * surface_temperature, 3000.0)
+        if center_temperature > max_reasonable_T_center:
+            center_temperature = max_reasonable_T_center
+            verbose and logger.info(
+                f'Adiabatic mode: capped center_temperature initial guess '
+                f'to {center_temperature:.0f} K (5x surface or 3000 K).'
+            )
 
     # Solve the interior structure
     for outer_iter in range(max_iterations_outer):
@@ -468,28 +1053,24 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
         pressure = np.zeros(num_layers)
 
         if uses_Tdep:
-            # ADIABAT GATE — activates compute_adiabatic_temperature() once
-            # the mass has converged with a linear T guess.  In practice,
-            # the break at the bottom of the outer loop (line ~691) fires
-            # on mass convergence BEFORE the next iteration reaches this
-            # gate, so this code path is not exercised in the PROTEUS
-            # coupling.  It exists for standalone Zalmoxis use where the
-            # adiabat would provide a better T(r) than a linear guess.
-            # See the long comment block above _using_adiabat for context.
-            if not _using_adiabat and temperature_mode == 'adiabatic':
-                prev_mass_converged = (
-                    prev_mass_enclosed is not None
-                    and abs(prev_mass_enclosed[-1] - planet_mass) / planet_mass
-                    < tolerance_outer
-                )
-                if prev_mass_converged:
-                    _using_adiabat = True
-                    logger.info(
-                        f'Outer iter {outer_iter}: mass converged with linear T, '
-                        f'switching to adiabatic temperature profile.'
-                    )
+            # Compute the linear (initial guess) temperature profile.
+            # This is a function of radius only; wrap it to accept (r, P).
+            _linear_tf = calculate_temperature_profile(
+                radii,
+                'linear',
+                surface_temperature,
+                center_temperature,
+                input_dir,
+                temp_profile_file,
+            )
 
             if _using_adiabat and prev_pressure is not None:
+                # Bump blend toward full adiabat
+                _adiabat_blend = min(1.0, _adiabat_blend + _ADIABAT_BLEND_STEP)
+                verbose and logger.info(
+                    f'Outer iter {outer_iter}: adiabat blend = {_adiabat_blend:.2f}'
+                )
+
                 # Recompute adiabat from previous iteration's converged structure
                 adiabat_T = compute_adiabatic_temperature(
                     prev_radii,
@@ -498,26 +1079,75 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                     surface_temperature,
                     cmb_mass,
                     core_mantle_mass,
-                    layer_eos_config,
+                    layer_mixtures,
                     material_dictionaries,
                     interpolation_cache,
+                    solidus_func,
+                    liquidus_func,
+                    mushy_zone_factors,
+                    condensed_rho_min,
+                    condensed_rho_scale,
+                    binodal_T_scale,
                 )
 
-                # Interpolate adiabat (on prev grid) onto current grid
-                def temperature_function(r, _T=adiabat_T, _r=prev_radii):
-                    return np.interp(np.array(r), _r, _T)
+                # Build T(P) interpolator from the previous iteration's
+                # pressure profile.  This ensures that during the Brent
+                # bracket search, the adiabatic temperature tracks the
+                # ODE's actual pressure rather than a fixed radial mapping.
+                # This prevents unphysical (low P, high T) queries that
+                # hit NaN gaps in the PALEOS tables.
+                _sort = np.argsort(prev_pressure)
+                _P_sorted = prev_pressure[_sort]
+                _T_sorted = adiabat_T[_sort]
+                # Remove P <= 0 entries (surface padding)
+                _valid = _P_sorted > 0
+                _P_sorted = _P_sorted[_valid]
+                _T_sorted = _T_sorted[_valid]
+                _logP_sorted = np.log10(_P_sorted)
 
-                temperatures = temperature_function(radii)
+                # Clamp adiabat T to a physically reasonable range.
+                # np.interp flat-extrapolates at the edges, but the Brent
+                # solver may query at extreme P values far beyond the
+                # converged profile, producing huge T. Cap at 100,000 K
+                # (PALEOS table maximum) and floor at 100 K.
+                _T_MAX_CLAMP = 100000.0
+                _T_MIN_CLAMP = 100.0
+
+                if _adiabat_blend < 1.0:
+                    _blend = _adiabat_blend
+
+                    def temperature_function(
+                        r, P, _b=_blend, _lp=_logP_sorted, _ts=_T_sorted, _ltf=_linear_tf
+                    ):
+                        T_lin = _ltf(r)
+                        if P <= 0:
+                            return T_lin
+                        T_adi = float(np.interp(np.log10(P), _lp, _ts))
+                        T_adi = max(_T_MIN_CLAMP, min(T_adi, _T_MAX_CLAMP))
+                        return (1.0 - _b) * T_lin + _b * T_adi
+
+                else:
+
+                    def temperature_function(r, P, _lp=_logP_sorted, _ts=_T_sorted):
+                        if P <= 0:
+                            return surface_temperature
+                        T_val = float(np.interp(np.log10(P), _lp, _ts))
+                        return max(_T_MIN_CLAMP, min(T_val, _T_MAX_CLAMP))
+
+                # Pre-compute temperatures array for the density update loop
+                # (uses the converged pressure from the previous iteration)
+                temperatures = np.array(
+                    [
+                        temperature_function(radii[i], prev_pressure[i])
+                        for i in range(num_layers)
+                    ]
+                )
             else:
-                temperature_function = calculate_temperature_profile(
-                    radii,
-                    temperature_mode,
-                    surface_temperature,
-                    center_temperature,
-                    input_dir,
-                    temp_profile_file,
-                )
-                temperatures = temperature_function(radii)
+
+                def temperature_function(r, P, _tf=_linear_tf):
+                    return _tf(r)
+
+                temperatures = _linear_tf(radii)
         else:
             temperatures = np.ones(num_layers) * 300
 
@@ -537,9 +1167,7 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
             )
             # Cap the central pressure guess for WolfBower2018 (1 TPa table)
             # but not for RTPress100TPa (100 TPa melt table)
-            uses_WB2018 = any(
-                v == 'WolfBower2018:MgSiO3' for v in layer_eos_config.values() if v
-            )
+            uses_WB2018 = 'WolfBower2018:MgSiO3' in all_comps
             if uses_WB2018:
                 pressure_guess = min(pressure_guess, max_center_pressure_guess)
 
@@ -557,7 +1185,7 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                 """
                 y0 = [0, 0, p_center]
                 m, g, p = solve_structure(
-                    layer_eos_config,
+                    layer_mixtures,
                     cmb_mass,
                     core_mantle_mass,
                     radii,
@@ -571,6 +1199,10 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                     solidus_func,
                     liquidus_func,
                     temperature_function if uses_Tdep else None,
+                    mushy_zone_factors,
+                    condensed_rho_min,
+                    condensed_rho_scale,
+                    binodal_T_scale,
                 )
                 if iteration_profiles_enabled:
                     create_pressure_density_files(
@@ -620,7 +1252,7 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                 # (brentq may have evaluated _state at a slightly different P)
                 y0_root = [0, 0, p_solution]
                 mass_enclosed, gravity, pressure = solve_structure(
-                    layer_eos_config,
+                    layer_mixtures,
                     cmb_mass,
                     core_mantle_mass,
                     radii,
@@ -634,6 +1266,10 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                     solidus_func,
                     liquidus_func,
                     temperature_function if uses_Tdep else None,
+                    mushy_zone_factors,
+                    condensed_rho_min,
+                    condensed_rho_scale,
+                    binodal_T_scale,
                 )
 
                 surface_residual = abs(pressure[-1] - target_surface_pressure)
@@ -675,33 +1311,75 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                     )
                 converged_pressure = False
 
-            # Update density grid (solve_structure may return fewer points
-            # than num_layers if the ODE solver terminated early)
-            for i in range(min(num_layers, len(mass_enclosed))):
-                layer_eos = get_layer_eos(
-                    mass_enclosed[i],
-                    cmb_mass,
-                    core_mantle_mass,
-                    layer_eos_config,
-                )
+            # Update density grid using vectorized EOS lookups.
+            # Partition shells by layer (all shells in a layer share one EOS),
+            # then batch-call calculate_mixed_density_batch per layer.
+            n_valid = min(num_layers, len(mass_enclosed))
+            new_density = np.full(num_layers, np.nan)
 
-                new_density = calculate_density(
-                    pressure[i],
+            # Zero-pressure shells get zero density
+            p_valid = pressure[:n_valid] > 0
+
+            # Compute temperatures for valid shells
+            if uses_Tdep:
+                T_arr = np.array(
+                    [
+                        temperature_function(radii[i], pressure[i])
+                        for i in range(n_valid)
+                        if p_valid[i]
+                    ]
+                )
+            else:
+                T_arr = np.full(int(np.sum(p_valid)), 300.0)
+
+            # Partition shells by layer using mass boundaries
+            valid_indices = np.where(p_valid[:n_valid])[0]
+            m_valid = mass_enclosed[valid_indices]
+            rtol = 1e-12
+            in_core = m_valid < cmb_mass * (1.0 - rtol)
+            in_ice = ('ice_layer' in layer_mixtures) & (
+                m_valid >= core_mantle_mass * (1.0 - rtol)
+            )
+            in_mantle = ~in_core & ~in_ice
+
+            for layer_name, mask in [
+                ('core', in_core),
+                ('mantle', in_mantle),
+                ('ice_layer', in_ice),
+            ]:
+                if not np.any(mask) or layer_name not in layer_mixtures:
+                    continue
+                idx = valid_indices[mask]
+                mix = layer_mixtures[layer_name]
+                rho_batch = calculate_mixed_density_batch(
+                    pressure[idx],
+                    T_arr[np.where(mask)[0]]
+                    if len(T_arr) == len(valid_indices)
+                    else T_arr[mask],
+                    mix,
                     material_dictionaries,
-                    layer_eos,
-                    temperatures[i],
                     solidus_func,
                     liquidus_func,
                     interpolation_cache,
+                    mushy_zone_factors,
+                    condensed_rho_min,
+                    condensed_rho_scale,
+                    binodal_T_scale,
                 )
+                new_density[idx] = rho_batch
 
-                if new_density is None:
-                    verbose and logger.warning(
-                        f'Density calculation failed at radius {radii[i]}. Using previous density.'
-                    )
-                    new_density = old_density[i]
+            # Fill NaN entries with last valid density (walking outward)
+            last_valid = None
+            for i in range(n_valid):
+                if not p_valid[i]:
+                    new_density[i] = 0.0
+                elif np.isnan(new_density[i]):
+                    new_density[i] = last_valid if last_valid is not None else old_density[i]
+                else:
+                    last_valid = new_density[i]
 
-                density[i] = 0.5 * (new_density + old_density[i])
+            # Picard blend
+            density[:n_valid] = 0.5 * (new_density[:n_valid] + old_density[:n_valid])
 
             # Check density convergence
             relative_diff_inner = np.max(
@@ -719,6 +1397,13 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
                     f'Maximum inner iterations ({max_iterations_inner}) reached. '
                     'Density may not be fully converged.'
                 )
+
+        # Recompute the temperatures array from the converged pressure profile
+        # so model_results['temperature'] reflects actual T(P), not the pre-Brent estimate.
+        if uses_Tdep:
+            temperatures = np.array(
+                [temperature_function(radii[i], pressure[i]) for i in range(num_layers)]
+            )
 
         # Save converged profiles for the next outer iteration's adiabat
         prev_radii = radii.copy()
@@ -745,14 +1430,21 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
 
         relative_diff_outer_mass = np.abs((calculated_mass - planet_mass) / planet_mass)
 
-        # MASS CONVERGENCE BREAK — exits the outer loop when total mass
-        # matches the target.  This break fires before the adiabat gate
-        # at the top of the loop can activate (both check the same
-        # tolerance on successive iterations).  This is correct for the
-        # PROTEUS coupling where SPIDER handles T(r) evolution.
-        # Do NOT add conditions that skip this break — see the warning
-        # in the comment block above _using_adiabat.
+        # MASS CONVERGENCE CHECK
+        # When temperature_mode='adiabatic' and the blend has not yet reached
+        # 1.0, mass convergence triggers the adiabat transition instead of
+        # breaking. The blend ramps 0 -> 0.5 -> 1.0 over successive mass
+        # convergences, preventing solver divergence.
         if relative_diff_outer_mass < tolerance_outer:
+            if temperature_mode == 'adiabatic' and _adiabat_blend < 1.0:
+                if not _using_adiabat:
+                    _using_adiabat = True
+                    logger.info(
+                        f'Outer iter {outer_iter}: mass converged with linear T, '
+                        f'activating adiabat blend.'
+                    )
+                # Continue iterating to let the blend ramp up
+                continue
             logger.info(f'Outer loop (total mass) converged after {outer_iter + 1} iterations.')
             converged_mass = True
             break
@@ -768,6 +1460,61 @@ def main(config_params, material_dictionaries, melting_curves_functions, input_d
 
     end_time = time.time()
     total_time = end_time - start_time
+
+    # Clean up surface artifacts. The Picard iteration can produce
+    # density jumps at the outermost shells where the pressure drops
+    # rapidly and the EOS lookup is sensitive to small P changes.
+    # Detect shells where the density gradient suddenly steepens
+    # (more than 3x the running average) and replace them with a
+    # linear extrapolation from the smooth interior.
+    pressure = np.asarray(pressure)
+    density = np.asarray(density)
+
+    # Zero out padded (P=0) shells
+    density[pressure <= 0] = 0.0
+
+    # Find the last shell with positive density
+    i_surf = len(density) - 1
+    while i_surf > 0 and density[i_surf] <= 0:
+        i_surf -= 1
+
+    if i_surf > 10:
+        # Compute density gradient in the outer mantle.
+        # Use the last 20 shells before the surface edge, but do not
+        # cross layer boundaries (CMB, ice-layer transition) where
+        # real density jumps exist.
+        # Find outermost layer boundary by detecting large density
+        # ratios (> 1.5x) walking inward from surface.
+        i_layer_base = max(0, i_surf - 40)
+        for _k in range(i_surf - 1, i_layer_base, -1):
+            if density[_k] > 0 and density[_k + 1] > 0:
+                ratio = density[_k] / density[_k + 1]
+                if ratio > 1.5 or ratio < 1.0 / 1.5:
+                    i_layer_base = _k + 1
+                    break
+        n_check = min(20, i_surf - i_layer_base)
+        if n_check < 6:
+            n_check = min(20, i_surf - 5)
+        i_start = i_surf - n_check
+        grads = np.diff(density[i_start : i_surf + 1])
+        # Find where the gradient suddenly changes
+        # (the smooth interior has nearly constant negative gradient).
+        if len(grads) > 5:
+            median_grad = np.median(grads[: n_check // 2])
+            if median_grad < 0:  # density decreasing outward (normal)
+                for j in range(len(grads)):
+                    i_global = i_start + j + 1
+                    # Catch both sudden drops (3x steeper) and sudden
+                    # increases (sign reversal). Both indicate the Picard
+                    # iteration produced unreliable density at the surface.
+                    is_sudden_drop = grads[j] < 3 * median_grad
+                    is_sudden_rise = grads[j] > 0 and abs(grads[j]) > abs(median_grad)
+                    if is_sudden_drop or is_sudden_rise:
+                        # Extrapolate linearly from the smooth region
+                        for k in range(i_global, i_surf + 1):
+                            extrap = density[i_global - 1] + median_grad * (k - i_global + 1)
+                            density[k] = max(extrap, 0.0)
+                        break
 
     model_results = {
         'layer_eos_config': layer_eos_config,
@@ -804,11 +1551,15 @@ def post_processing(config_params, id_mass=None, output_file=None):
     plotting_enabled = config_params['plotting_enabled']
 
     layer_eos_config = config_params['layer_eos_config']
+    solidus_id = config_params.get('rock_solidus', 'Stixrude14-solidus')
+    liquidus_id = config_params.get('rock_liquidus', 'Stixrude14-liquidus')
 
     model_results = main(
         config_params,
         material_dictionaries=load_material_dictionaries(),
-        melting_curves_functions=load_solidus_liquidus_functions(layer_eos_config),
+        melting_curves_functions=load_solidus_liquidus_functions(
+            layer_eos_config, solidus_id, liquidus_id
+        ),
         input_dir=os.path.join(ZALMOXIS_ROOT, 'input'),
     )
 
@@ -831,15 +1582,24 @@ def post_processing(config_params, id_mass=None, output_file=None):
 
     average_density = mass_enclosed[-1] / (4 / 3 * math.pi * radii[-1] ** 3)
 
-    # Check if mantle uses Tdep EOS for phase detection
-    uses_Tdep_mantle = layer_eos_config.get('mantle') in TDEP_EOS_NAMES
+    # Check if mantle uses a Tdep EOS that needs external melting curves
+    # for phase detection. Unified PALEOS tables derive phases from the
+    # table itself and do not need (or support) get_Tdep_material().
+    mantle_str = layer_eos_config.get('mantle', '')
+    if mantle_str:
+        _mantle_mix = parse_layer_components(mantle_str)
+        uses_phase_detection = bool(set(_mantle_mix.components) & _NEEDS_MELTING_CURVES)
+    else:
+        uses_phase_detection = False
 
-    if uses_Tdep_mantle:
+    if uses_phase_detection:
         mantle_pressures = pressure[cmb_index:]
         mantle_temperatures = temperature[cmb_index:]
         mantle_radii = radii[cmb_index:]
 
-        solidus_func, liquidus_func = load_solidus_liquidus_functions(layer_eos_config)
+        solidus_func, liquidus_func = load_solidus_liquidus_functions(
+            layer_eos_config, solidus_id, liquidus_id
+        )
 
         mantle_phases = get_Tdep_material(
             mantle_pressures, mantle_temperatures, solidus_func, liquidus_func
@@ -920,9 +1680,10 @@ def post_processing(config_params, id_mass=None, output_file=None):
             mass_enclosed[-1] / (4 / 3 * math.pi * radii[-1] ** 3),
             mass_enclosed,
             id_mass,
+            layer_eos_config=layer_eos_config,
         )
 
-        if uses_Tdep_mantle:
+        if uses_phase_detection:
             plot_PT_with_phases(
                 mantle_pressures,
                 mantle_temperatures,

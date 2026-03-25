@@ -11,6 +11,9 @@ src/zalmoxis/
 ├── eos_functions.py     # EOS dispatch: calculate_density(), Tdep phase logic, temperature profiles
 ├── eos_analytic.py      # Analytic modified polytrope: get_analytic_density()
 ├── eos_properties.py    # Material property dictionaries (file paths, unit conversions)
+├── melting_curves.py    # Solidus/liquidus curves (Monteux+2016, Stixrude 2014, PALEOS, tabulated)
+├── mixing.py            # Multi-material mixing (harmonic mean, sigmoid suppression)
+├── binodal.py           # H2-silicate and H2-H2O miscibility models (Rogers+2025, Gupta+2025)
 ├── constants.py         # Physical constants (G, earth_mass, earth_radius, etc.)
 └── plots/               # Visualization (profile plots, P-T phase diagrams)
 ```
@@ -25,6 +28,11 @@ src/zalmoxis/
 - [`zalmoxis.eos_analytic`](zalmoxis.eos_analytic.md)
 - [`zalmoxis.eos_functions`](zalmoxis.eos_functions.md)
 - [`zalmoxis.eos_properties`](zalmoxis.eos_properties.md)
+- [`zalmoxis.melting_curves`](zalmoxis.melting_curves.md)
+
+### Mixing
+- [`zalmoxis.mixing`](zalmoxis.mixing.md)
+- [`zalmoxis.binodal`](zalmoxis.binodal.md)
 
 ### Constants
 - [`zalmoxis.constants`](zalmoxis.constants.md)

@@ -14,8 +14,14 @@ import logging
 import os
 
 import numpy as np
-from scipy.interpolate import LinearNDInterpolator, RegularGridInterpolator, interp1d
+from scipy.interpolate import (
+    LinearNDInterpolator,
+    NearestNDInterpolator,
+    RegularGridInterpolator,
+    interp1d,
+)
 
+from .constants import CONDENSED_RHO_MIN_DEFAULT, CONDENSED_RHO_SCALE_DEFAULT
 from .eos_analytic import get_analytic_density
 
 # Read the environment variable for ZALMOXIS_ROOT
@@ -24,6 +30,456 @@ if not ZALMOXIS_ROOT:
     raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
 
 logger = logging.getLogger(__name__)
+
+# Phase-boundary guard offset (K).  When evaluating endpoint properties in
+# the mushy zone, solid-side queries are clamped to at most T_melt - dT and
+# liquid-side to at least T_melt + dT.  This prevents cross-phase lookups
+# when external solidus/liquidus curves disagree with PALEOS's own melting
+# curve at high pressures (plausible for super-Earth conditions).
+_DT_PHASE_GUARD = 1.0
+
+_paleos_phase_guard_warned = set()
+
+
+def load_paleos_table(eos_file):
+    """Load a PALEOS MgSiO3 table and build RegularGridInterpolator objects.
+
+    The PALEOS tables have 10 columns (SI units):
+    P, T, rho, u, s, cp, cv, alpha, nabla_ad, phase_id(string).
+    The grid is log-uniform in both P and T with 150 points per decade.
+    Some grid cells are missing (unconverged corners), filled with NaN.
+    A P=0 row may exist and is excluded for log interpolation.
+
+    Parameters
+    ----------
+    eos_file : str
+        Path to the PALEOS table file.
+
+    Returns
+    -------
+    dict
+        Cache entry with keys:
+        - ``'type'``: ``'paleos'``
+        - ``'density_interp'``: RegularGridInterpolator for rho(log10P, log10T)
+        - ``'nabla_ad_interp'``: RegularGridInterpolator for nabla_ad(log10P, log10T)
+        - ``'p_min'``, ``'p_max'``: pressure bounds in Pa
+        - ``'t_min'``, ``'t_max'``: temperature bounds in K
+    """
+    # Read only numeric columns (0-8), skipping the string phase_id column (9)
+    data = np.genfromtxt(eos_file, usecols=range(9), comments='#')
+
+    pressures = data[:, 0]
+    temps = data[:, 1]
+    densities = data[:, 2]
+    nabla_ad = data[:, 8]
+
+    # Filter out P=0 rows (log10(0) is undefined)
+    valid = pressures > 0
+    pressures = pressures[valid]
+    temps = temps[valid]
+    densities = densities[valid]
+    nabla_ad = nabla_ad[valid]
+
+    # Work in log10 space for the grid axes
+    log_p = np.log10(pressures)
+    log_t = np.log10(temps)
+
+    unique_log_p = np.unique(log_p)
+    unique_log_t = np.unique(log_t)
+
+    n_p = len(unique_log_p)
+    n_t = len(unique_log_t)
+
+    # Build 2D grids filled with NaN for missing cells
+    density_grid = np.full((n_p, n_t), np.nan)
+    nabla_ad_grid = np.full((n_p, n_t), np.nan)
+
+    # Map log_p and log_t values to grid indices
+    p_idx_map = {v: i for i, v in enumerate(unique_log_p)}
+    t_idx_map = {v: i for i, v in enumerate(unique_log_t)}
+
+    for k in range(len(pressures)):
+        ip = p_idx_map[log_p[k]]
+        it = t_idx_map[log_t[k]]
+        density_grid[ip, it] = densities[k]
+        nabla_ad_grid[ip, it] = nabla_ad[k]
+
+    density_interp = RegularGridInterpolator(
+        (unique_log_p, unique_log_t),
+        density_grid,
+        bounds_error=False,
+        fill_value=np.nan,
+    )
+    nabla_ad_interp = RegularGridInterpolator(
+        (unique_log_p, unique_log_t),
+        nabla_ad_grid,
+        bounds_error=False,
+        fill_value=np.nan,
+    )
+
+    # Per-pressure valid T bounds for per-cell clamping.
+    # At each pressure row, find the min and max log10(T) with finite density.
+    # This lets us clamp queries into the valid domain when the grid has NaN
+    # holes in the corners (e.g. high T at low P in the liquid table).
+    logt_valid_min = np.full(n_p, np.nan)
+    logt_valid_max = np.full(n_p, np.nan)
+    for ip in range(n_p):
+        finite_mask = np.isfinite(density_grid[ip, :])
+        if finite_mask.any():
+            valid_indices = np.where(finite_mask)[0]
+            logt_valid_min[ip] = unique_log_t[valid_indices[0]]
+            logt_valid_max[ip] = unique_log_t[valid_indices[-1]]
+
+    # Nearest-neighbor fallback interpolators built from valid cells only.
+    # Used when bilinear interpolation returns NaN near the ragged domain
+    # boundary (a valid cell neighboring a NaN cell poisons bilinear output).
+    valid_cells = np.isfinite(density_grid)
+    ip_valid, it_valid = np.where(valid_cells)
+    coords_valid = np.column_stack([unique_log_p[ip_valid], unique_log_t[it_valid]])
+
+    density_nn = NearestNDInterpolator(coords_valid, density_grid[valid_cells])
+    nabla_ad_nn = NearestNDInterpolator(
+        coords_valid[np.isfinite(nabla_ad_grid[valid_cells])],
+        nabla_ad_grid[valid_cells][np.isfinite(nabla_ad_grid[valid_cells])],
+    )
+
+    # Precompute grid spacing for O(1) bilinear interpolation.
+    dlog_p = (unique_log_p[-1] - unique_log_p[0]) / (n_p - 1) if n_p > 1 else 1.0
+    dlog_t = (unique_log_t[-1] - unique_log_t[0]) / (n_t - 1) if n_t > 1 else 1.0
+
+    return {
+        'type': 'paleos',
+        'density_interp': density_interp,
+        'nabla_ad_interp': nabla_ad_interp,
+        'density_nn': density_nn,
+        'nabla_ad_nn': nabla_ad_nn,
+        'p_min': 10.0 ** unique_log_p[0],
+        'p_max': 10.0 ** unique_log_p[-1],
+        't_min': 10.0 ** unique_log_t[0],
+        't_max': 10.0 ** unique_log_t[-1],
+        'unique_log_p': unique_log_p,
+        'unique_log_t': unique_log_t,
+        'logt_valid_min': logt_valid_min,
+        'logt_valid_max': logt_valid_max,
+        # Fast bilinear interpolation data
+        'density_grid': density_grid,
+        'nabla_ad_grid': nabla_ad_grid,
+        'logp_min': unique_log_p[0],
+        'logp_max': unique_log_p[-1],
+        'logt_min': unique_log_t[0],
+        'logt_max': unique_log_t[-1],
+        'dlog_p': dlog_p,
+        'dlog_t': dlog_t,
+        'n_p': n_p,
+        'n_t': n_t,
+    }
+
+
+def load_paleos_unified_table(eos_file):
+    """Load a unified PALEOS table (single file per material) and build interpolators.
+
+    The unified tables use the same 10-column format as the 2-phase tables
+    (P, T, rho, u, s, cp, cv, alpha, nabla_ad, phase_id) but contain all
+    stable phases for a material in a single file. The thermodynamically
+    stable phase at each (P, T) is encoded in the phase column.
+
+    In addition to density and nabla_ad interpolators, this function
+    extracts the liquidus boundary from the phase column: for each pressure
+    row, it finds the lowest temperature where the phase is 'liquid'.
+
+    Parameters
+    ----------
+    eos_file : str
+        Path to the unified PALEOS table file.
+
+    Returns
+    -------
+    dict
+        Cache entry with keys:
+        - ``'type'``: ``'paleos_unified'``
+        - ``'density_interp'``: RegularGridInterpolator for rho(log10P, log10T)
+        - ``'nabla_ad_interp'``: RegularGridInterpolator for nabla_ad(log10P, log10T)
+        - ``'density_nn'``, ``'nabla_ad_nn'``: NearestNDInterpolator fallbacks
+        - ``'p_min'``, ``'p_max'``: pressure bounds in Pa
+        - ``'t_min'``, ``'t_max'``: temperature bounds in K
+        - ``'unique_log_p'``: unique log10(P) grid values
+        - ``'logt_valid_min'``, ``'logt_valid_max'``: per-pressure T bounds
+        - ``'liquidus_log_p'``: log10(P) array for the extracted liquidus
+        - ``'liquidus_log_t'``: log10(T_liquidus) array at each pressure
+        - ``'phase_grid'``: 2D string array of phase identifiers
+    """
+    # Read numeric columns (0-8)
+    data_numeric = np.genfromtxt(eos_file, usecols=range(9), comments='#')
+
+    # Read phase column (9) as strings
+    phase_strings = np.genfromtxt(eos_file, usecols=(9,), dtype=str, comments='#')
+
+    pressures = data_numeric[:, 0]
+    temps = data_numeric[:, 1]
+    densities = data_numeric[:, 2]
+    nabla_ad = data_numeric[:, 8]
+
+    # Filter out P=0 rows
+    valid = pressures > 0
+    pressures = pressures[valid]
+    temps = temps[valid]
+    densities = densities[valid]
+    nabla_ad = nabla_ad[valid]
+    phase_strings = np.char.strip(phase_strings[valid])
+
+    # Work in log10 space
+    log_p = np.log10(pressures)
+    log_t = np.log10(temps)
+
+    unique_log_p = np.unique(log_p)
+    unique_log_t = np.unique(log_t)
+
+    n_p = len(unique_log_p)
+    n_t = len(unique_log_t)
+
+    # Build 2D grids
+    density_grid = np.full((n_p, n_t), np.nan)
+    nabla_ad_grid = np.full((n_p, n_t), np.nan)
+    phase_grid = np.full((n_p, n_t), '', dtype=object)
+
+    p_idx_map = {v: i for i, v in enumerate(unique_log_p)}
+    t_idx_map = {v: i for i, v in enumerate(unique_log_t)}
+
+    for k in range(len(pressures)):
+        ip = p_idx_map[log_p[k]]
+        it = t_idx_map[log_t[k]]
+        density_grid[ip, it] = densities[k]
+        nabla_ad_grid[ip, it] = nabla_ad[k]
+        phase_grid[ip, it] = phase_strings[k]
+
+    density_interp = RegularGridInterpolator(
+        (unique_log_p, unique_log_t),
+        density_grid,
+        bounds_error=False,
+        fill_value=np.nan,
+    )
+    nabla_ad_interp = RegularGridInterpolator(
+        (unique_log_p, unique_log_t),
+        nabla_ad_grid,
+        bounds_error=False,
+        fill_value=np.nan,
+    )
+
+    # Per-pressure valid T bounds
+    logt_valid_min = np.full(n_p, np.nan)
+    logt_valid_max = np.full(n_p, np.nan)
+    for ip in range(n_p):
+        finite_mask = np.isfinite(density_grid[ip, :])
+        if finite_mask.any():
+            valid_indices = np.where(finite_mask)[0]
+            logt_valid_min[ip] = unique_log_t[valid_indices[0]]
+            logt_valid_max[ip] = unique_log_t[valid_indices[-1]]
+
+    # Nearest-neighbor fallback interpolators
+    valid_cells = np.isfinite(density_grid)
+    ip_valid, it_valid = np.where(valid_cells)
+    coords_valid = np.column_stack([unique_log_p[ip_valid], unique_log_t[it_valid]])
+
+    density_nn = NearestNDInterpolator(coords_valid, density_grid[valid_cells])
+
+    nabla_valid = np.isfinite(nabla_ad_grid[valid_cells])
+    nabla_ad_nn = NearestNDInterpolator(
+        coords_valid[nabla_valid],
+        nabla_ad_grid[valid_cells][nabla_valid],
+    )
+
+    # Extract liquidus boundary from the phase column.
+    # For each pressure row, find the lowest T where phase == 'liquid'.
+    liquidus_log_p = []
+    liquidus_log_t = []
+    for ip in range(n_p):
+        liquid_mask = phase_grid[ip, :] == 'liquid'
+        if liquid_mask.any():
+            first_liquid_idx = np.where(liquid_mask)[0][0]
+            liquidus_log_p.append(unique_log_p[ip])
+            liquidus_log_t.append(unique_log_t[first_liquid_idx])
+
+    liquidus_log_p = np.array(liquidus_log_p)
+    liquidus_log_t = np.array(liquidus_log_t)
+
+    # Precompute grid spacing for O(1) bilinear interpolation.
+    # Both PALEOS and Chabrier grids are log-uniform (constant dlogP, dlogT).
+    dlog_p = (unique_log_p[-1] - unique_log_p[0]) / (n_p - 1) if n_p > 1 else 1.0
+    dlog_t = (unique_log_t[-1] - unique_log_t[0]) / (n_t - 1) if n_t > 1 else 1.0
+
+    # Verify grid is log-uniform (required for O(1) bilinear interpolation)
+    if n_p > 2:
+        p_spacings = np.diff(unique_log_p)
+        if not np.allclose(p_spacings, dlog_p, rtol=1e-3):
+            logger.warning(
+                f'P grid is not log-uniform: spacing range '
+                f'[{p_spacings.min():.6f}, {p_spacings.max():.6f}] '
+                f'vs mean {dlog_p:.6f}. Bilinear interpolation may be inaccurate.'
+            )
+    if n_t > 2:
+        t_spacings = np.diff(unique_log_t)
+        if not np.allclose(t_spacings, dlog_t, rtol=1e-3):
+            logger.warning(
+                f'T grid is not log-uniform: spacing range '
+                f'[{t_spacings.min():.6f}, {t_spacings.max():.6f}] '
+                f'vs mean {dlog_t:.6f}. Bilinear interpolation may be inaccurate.'
+            )
+
+    return {
+        'type': 'paleos_unified',
+        'density_interp': density_interp,
+        'nabla_ad_interp': nabla_ad_interp,
+        'density_nn': density_nn,
+        'nabla_ad_nn': nabla_ad_nn,
+        'p_min': 10.0 ** unique_log_p[0],
+        'p_max': 10.0 ** unique_log_p[-1],
+        't_min': 10.0 ** unique_log_t[0],
+        't_max': 10.0 ** unique_log_t[-1],
+        'unique_log_p': unique_log_p,
+        'unique_log_t': unique_log_t,
+        'logt_valid_min': logt_valid_min,
+        'logt_valid_max': logt_valid_max,
+        'liquidus_log_p': liquidus_log_p,
+        'liquidus_log_t': liquidus_log_t,
+        'phase_grid': phase_grid,
+        # Fast bilinear interpolation data
+        'density_grid': density_grid,
+        'nabla_ad_grid': nabla_ad_grid,
+        'logp_min': unique_log_p[0],
+        'logp_max': unique_log_p[-1],
+        'logt_min': unique_log_t[0],
+        'logt_max': unique_log_t[-1],
+        'dlog_p': dlog_p,
+        'dlog_t': dlog_t,
+        'n_p': n_p,
+        'n_t': n_t,
+    }
+
+
+def _fast_bilinear(log_p, log_t, grid, cached):
+    """O(1) bilinear interpolation on a nominally log-uniform grid.
+
+    Replaces scipy's RegularGridInterpolator for scalar lookups. The
+    index computation uses O(1) arithmetic with a rounding correction
+    to handle floating-point spacing jitter in the grid axes, then
+    computes the fractional position from the actual stored grid
+    coordinates for exact interpolation.
+
+    Parameters
+    ----------
+    log_p : float
+        log10 of pressure, already clamped to grid bounds.
+    log_t : float
+        log10 of temperature, already clamped to valid range.
+    grid : numpy.ndarray
+        2D array of values (density or nabla_ad), shape (n_p, n_t).
+    cached : dict
+        Cache entry with grid metadata (logp_min, dlog_p, unique_log_p,
+        unique_log_t, etc.).
+
+    Returns
+    -------
+    float
+        Interpolated value. NaN if any corner is NaN.
+    """
+    # Guard: grids with fewer than 2 points cannot be interpolated
+    if cached['n_p'] < 2 or cached['n_t'] < 2:
+        return grid[0, 0]
+
+    ulp = cached['unique_log_p']
+    ult = cached['unique_log_t']
+    n_p = cached['n_p']
+    n_t = cached['n_t']
+
+    # O(1) index estimation for nominally log-uniform grid.
+    # Use round() to get the nearest node, then determine the lower
+    # bounding index. This handles floating-point spacing jitter that
+    # causes int() to land on the wrong cell.
+    fp = (log_p - cached['logp_min']) / cached['dlog_p']
+    ft = (log_t - cached['logt_min']) / cached['dlog_t']
+
+    # Nearest node via rounding, then find lower bounding index
+    ip_near = min(max(int(fp + 0.5), 0), n_p - 1)
+    it_near = min(max(int(ft + 0.5), 0), n_t - 1)
+
+    # Determine lower bounding index: if the query is below the
+    # nearest node, step back by one
+    if ip_near > 0 and log_p < ulp[ip_near]:
+        ip = ip_near - 1
+    else:
+        ip = ip_near
+    ip = max(0, min(ip, n_p - 2))
+
+    if it_near > 0 and log_t < ult[it_near]:
+        it = it_near - 1
+    else:
+        it = it_near
+    it = max(0, min(it, n_t - 2))
+
+    # Fractional parts computed from actual grid coordinates
+    span_p = ulp[ip + 1] - ulp[ip]
+    span_t = ult[it + 1] - ult[it]
+
+    dp = (log_p - ulp[ip]) / span_p if span_p > 0 else 0.0
+    dt = (log_t - ult[it]) / span_t if span_t > 0 else 0.0
+
+    # Clamp to [0, 1] for boundary safety
+    dp = max(0.0, min(dp, 1.0))
+    dt = max(0.0, min(dt, 1.0))
+
+    # Four corner values
+    v00 = grid[ip, it]
+    v01 = grid[ip, it + 1]
+    v10 = grid[ip + 1, it]
+    v11 = grid[ip + 1, it + 1]
+
+    # Bilinear interpolation
+    return v00 * (1 - dp) * (1 - dt) + v01 * (1 - dp) * dt + v10 * dp * (1 - dt) + v11 * dp * dt
+
+
+# Track whether the per-cell clamping warning has been issued for each file,
+# to avoid flooding the log with repeated messages.
+_paleos_clamp_warned = set()
+
+
+def _paleos_clamp_temperature(log_p, log_t, cached):
+    """Clamp log10(T) to the per-pressure valid range of a PALEOS table.
+
+    Parameters
+    ----------
+    log_p : float
+        log10 of pressure in Pa (already clamped to table bounds).
+    log_t : float
+        log10 of temperature in K.
+    cached : dict
+        PALEOS cache entry from ``load_paleos_table()``.
+
+    Returns
+    -------
+    float
+        Clamped log10(T), guaranteed to fall within the valid data region
+        at the given pressure.
+    bool
+        True if clamping was applied, False if the original value was valid.
+    """
+    ulp = cached['unique_log_p']
+    lt_min = cached['logt_valid_min']
+    lt_max = cached['logt_valid_max']
+
+    # Interpolate per-pressure T bounds at the query pressure
+    local_tmin = float(np.interp(log_p, ulp, lt_min))
+    local_tmax = float(np.interp(log_p, ulp, lt_max))
+
+    # Guard: if the pressure is near an all-NaN row, the interpolated
+    # bounds are NaN. Return unclamped and let the NN fallback handle it.
+    if not (np.isfinite(local_tmin) and np.isfinite(local_tmax)):
+        return log_t, False
+
+    if log_t < local_tmin:
+        return local_tmin, True
+    elif log_t > local_tmax:
+        return local_tmax, True
+    return log_t, False
 
 
 def get_tabulated_eos(
@@ -59,9 +515,13 @@ def get_tabulated_eos(
         interpolation_functions = {}
     props = material_dictionary[material]
     eos_file = props['eos_file']
+    is_paleos = props.get('format') == 'paleos'
     try:
         if eos_file not in interpolation_functions:
-            if material == 'melted_mantle' or material == 'solid_mantle':
+            if is_paleos:
+                # PALEOS 10-column format with log-log grid
+                interpolation_functions[eos_file] = load_paleos_table(eos_file)
+            elif material == 'melted_mantle' or material == 'solid_mantle':
                 # Load P-T–ρ file
                 data = np.loadtxt(eos_file, delimiter='\t', skiprows=1)
                 pressures = data[:, 0]  # in Pa
@@ -146,7 +606,44 @@ def get_tabulated_eos(
         cached = interpolation_functions[eos_file]  # Retrieve from cache
 
         # Perform interpolation
-        if material == 'melted_mantle' or material == 'solid_mantle':
+        if cached['type'] == 'paleos':
+            # PALEOS: interpolate in log10(P)-log10(T) space
+            if temperature is None:
+                raise ValueError('Temperature must be provided.')
+            p_min, p_max = cached['p_min'], cached['p_max']
+
+            # Clamp pressure to global bounds
+            if pressure < p_min or pressure > p_max:
+                logger.debug(
+                    f'PALEOS: Pressure {pressure:.2e} Pa out of bounds '
+                    f'[{p_min:.2e}, {p_max:.2e}]. Clamping.'
+                )
+                pressure = np.clip(pressure, p_min, p_max)
+
+            log_p = np.log10(pressure)
+            log_t = np.log10(max(temperature, 1.0))  # guard log10(0)
+
+            # Per-cell clamping: restrict T to the valid data range at this P
+            log_t_clamped, was_clamped = _paleos_clamp_temperature(log_p, log_t, cached)
+            if was_clamped and eos_file not in _paleos_clamp_warned:
+                _paleos_clamp_warned.add(eos_file)
+                t_orig = temperature
+                t_new = 10.0**log_t_clamped
+                logger.warning(
+                    f'PALEOS per-cell clamping active for {os.path.basename(eos_file)}: '
+                    f'T={t_orig:.0f} K clamped to {t_new:.0f} K at P={pressure:.2e} Pa. '
+                    f'The table has no valid data at this (P,T). '
+                    f'Density values near the table boundary may be inaccurate.'
+                )
+
+            density = _fast_bilinear(log_p, log_t_clamped, cached['density_grid'], cached)
+
+            # Nearest-neighbor fallback: bilinear interpolation returns NaN
+            # when a valid cell neighbors a NaN cell near the ragged domain
+            # boundary. Fall back to the nearest valid grid cell.
+            if not np.isfinite(density):
+                density = float(cached['density_nn']((log_p, log_t_clamped)))
+        elif material == 'melted_mantle' or material == 'solid_mantle':
             if temperature is None:
                 raise ValueError('Temperature must be provided.')
 
@@ -248,25 +745,28 @@ def load_melting_curve(melt_file):
         return None
 
 
-def get_solidus_liquidus_functions():
-    """
-    Load the solidus and liquidus melting curves for the silicate mantle EOS.
+def get_solidus_liquidus_functions(
+    solidus_id='Stixrude14-solidus', liquidus_id='Stixrude14-liquidus'
+):
+    """Load solidus and liquidus melting curves by config identifier.
+
+    Delegates to :func:`zalmoxis.melting_curves.get_solidus_liquidus_functions`.
+
+    Parameters
+    ----------
+    solidus_id : str
+        Solidus curve identifier.
+    liquidus_id : str
+        Liquidus curve identifier.
 
     Returns
     -------
     tuple of callable
-        A tuple ``(solidus_func, liquidus_func)`` containing interpolation
-        functions for the solidus and liquidus temperatures as functions of
-        pressure.
+        ``(solidus_func, liquidus_func)``
     """
-    solidus_func = load_melting_curve(
-        os.path.join(ZALMOXIS_ROOT, 'data', 'melting_curves_Monteux-600', 'solidus.dat')
-    )
-    liquidus_func = load_melting_curve(
-        os.path.join(ZALMOXIS_ROOT, 'data', 'melting_curves_Monteux-600', 'liquidus.dat')
-    )
+    from .melting_curves import get_solidus_liquidus_functions as _get
 
-    return solidus_func, liquidus_func
+    return _get(solidus_id, liquidus_id)
 
 
 def get_Tdep_density(
@@ -445,6 +945,350 @@ def get_Tdep_material(pressure, temperature, solidus_func, liquidus_func):
         return vectorized_eval(pressure, temperature)
 
 
+def _ensure_unified_cache(eos_file, interpolation_functions):
+    """Ensure a unified PALEOS table is loaded into the interpolation cache.
+
+    Parameters
+    ----------
+    eos_file : str
+        Path to the unified PALEOS table file.
+    interpolation_functions : dict
+        Shared interpolation cache.
+
+    Returns
+    -------
+    dict
+        The cache entry for this file.
+    """
+    if eos_file not in interpolation_functions:
+        interpolation_functions[eos_file] = load_paleos_unified_table(eos_file)
+    return interpolation_functions[eos_file]
+
+
+def get_paleos_unified_density(
+    pressure, temperature, material_dict, mushy_zone_factor, interpolation_functions
+):
+    """Look up density from a unified PALEOS table.
+
+    When ``mushy_zone_factor == 1.0`` (no mushy zone), the density is read
+    directly from the table (the stable phase at each (P, T) is already
+    encoded). When ``mushy_zone_factor < 1.0``, a synthetic solidus is
+    derived as ``T_sol = T_liq * mushy_zone_factor`` and the density in the
+    mushy zone is volume-averaged between the solid-side and liquid-side
+    table values.
+
+    Parameters
+    ----------
+    pressure : float
+        Pressure in Pa.
+    temperature : float
+        Temperature in K.
+    material_dict : dict
+        Material properties dict with 'eos_file' and 'format' keys.
+    mushy_zone_factor : float
+        Cryoscopic depression factor. 1.0 = no mushy zone (sharp boundary).
+        < 1.0 = solidus at this fraction of the extracted liquidus.
+    interpolation_functions : dict
+        Shared interpolation cache.
+
+    Returns
+    -------
+    float or None
+        Density in kg/m^3, or None on failure.
+    """
+    eos_file = material_dict['eos_file']
+    try:
+        cached = _ensure_unified_cache(eos_file, interpolation_functions)
+
+        p_min, p_max = cached['p_min'], cached['p_max']
+        if pressure < p_min or pressure > p_max:
+            logger.debug(
+                f'PALEOS unified: P={pressure:.2e} Pa out of bounds '
+                f'[{p_min:.2e}, {p_max:.2e}]. Clamping.'
+            )
+            pressure = np.clip(pressure, p_min, p_max)
+
+        log_p = np.log10(pressure)
+        log_t = np.log10(max(temperature, 1.0))
+
+        # Per-cell clamping
+        log_t_clamped, was_clamped = _paleos_clamp_temperature(log_p, log_t, cached)
+        if was_clamped and eos_file not in _paleos_clamp_warned:
+            _paleos_clamp_warned.add(eos_file)
+            logger.warning(
+                f'PALEOS unified per-cell clamping active for '
+                f'{os.path.basename(eos_file)}: '
+                f'T={temperature:.0f} K clamped to {10.0**log_t_clamped:.0f} K '
+                f'at P={pressure:.2e} Pa.'
+            )
+
+        if mushy_zone_factor >= 1.0 or len(cached['liquidus_log_p']) == 0:
+            # Direct lookup: no mushy zone (fast bilinear path)
+            density = _fast_bilinear(log_p, log_t_clamped, cached['density_grid'], cached)
+            if not np.isfinite(density):
+                density = float(cached['density_nn']((log_p, log_t_clamped)))
+            return density if np.isfinite(density) else None
+
+        # Mushy zone: interpolate liquidus T at this P.
+        # If query pressure is outside the liquidus coverage (e.g. at
+        # pressures where no liquid phase exists), fall back to direct lookup.
+        liq_lp = cached['liquidus_log_p']
+        if log_p < liq_lp[0] or log_p > liq_lp[-1]:
+            density = _fast_bilinear(log_p, log_t_clamped, cached['density_grid'], cached)
+            if not np.isfinite(density):
+                density = float(cached['density_nn']((log_p, log_t_clamped)))
+            return density if np.isfinite(density) else None
+
+        # PALEOS's own melting curve at this pressure
+        log_t_melt = float(np.interp(log_p, liq_lp, cached['liquidus_log_t']))
+        T_melt = 10.0**log_t_melt
+
+        # Derive mushy zone boundaries (currently from PALEOS liquidus,
+        # but may come from external melting curves in future).
+        T_liq = T_melt
+        T_sol = T_liq * mushy_zone_factor
+
+        # Clamp endpoints against PALEOS's internal phase boundary so that
+        # solid-side queries never land on the liquid side and vice versa.
+        # The guard offset (_DT_PHASE_GUARD) always shifts T_liq up and may
+        # shift T_sol down; only warn when the clamp corrects a genuine
+        # cross-boundary incursion (T_sol above T_melt or T_liq below it).
+        sol_crossed = T_sol > T_melt
+        liq_crossed = T_liq < T_melt
+        T_sol = min(T_sol, T_melt - _DT_PHASE_GUARD)
+        T_liq = max(T_liq, T_melt + _DT_PHASE_GUARD)
+
+        if (sol_crossed or liq_crossed):
+            if eos_file not in _paleos_phase_guard_warned:
+                _paleos_phase_guard_warned.add(eos_file)
+                logger.warning(
+                    'Mushy zone endpoints crossed PALEOS melting curve '
+                    'for %s at P=%.2e Pa (T_melt=%.1f K): '
+                    'T_sol=%.1f K %s, T_liq=%.1f K %s. '
+                    'Clamped to safe side.',
+                    os.path.basename(eos_file),
+                    pressure,
+                    T_melt,
+                    T_sol,
+                    '(was above T_melt)' if sol_crossed else '(ok)',
+                    T_liq,
+                    '(was below T_melt)' if liq_crossed else '(ok)',
+                )
+        log_t_sol = np.log10(max(T_sol, 1.0))
+        log_t_liq = np.log10(T_liq)
+
+        if temperature >= T_liq:
+            # Above liquidus: direct lookup
+            density = _fast_bilinear(log_p, log_t_clamped, cached['density_grid'], cached)
+            if not np.isfinite(density):
+                density = float(cached['density_nn']((log_p, log_t_clamped)))
+            return density if np.isfinite(density) else None
+
+        if temperature <= T_sol:
+            # Below solidus: direct lookup
+            density = _fast_bilinear(log_p, log_t_clamped, cached['density_grid'], cached)
+            if not np.isfinite(density):
+                density = float(cached['density_nn']((log_p, log_t_clamped)))
+            return density if np.isfinite(density) else None
+
+        # In mushy zone: volume-average between solid-side and liquid-side
+        phi = (temperature - T_sol) / (T_liq - T_sol)
+
+        # Solid-side: density at T_sol
+        log_t_sol_c, _ = _paleos_clamp_temperature(log_p, log_t_sol, cached)
+        rho_sol = _fast_bilinear(log_p, log_t_sol_c, cached['density_grid'], cached)
+        if not np.isfinite(rho_sol):
+            rho_sol = float(cached['density_nn']((log_p, log_t_sol_c)))
+
+        # Liquid-side: density at T_liq
+        log_t_liq_c, _ = _paleos_clamp_temperature(log_p, log_t_liq, cached)
+        rho_liq = _fast_bilinear(log_p, log_t_liq_c, cached['density_grid'], cached)
+        if not np.isfinite(rho_liq):
+            rho_liq = float(cached['density_nn']((log_p, log_t_liq_c)))
+
+        if not (np.isfinite(rho_sol) and np.isfinite(rho_liq)):
+            return None
+
+        # Volume additivity
+        specific_volume = phi * (1.0 / rho_liq) + (1.0 - phi) * (1.0 / rho_sol)
+        return 1.0 / specific_volume
+
+    except Exception as e:
+        logger.error(
+            f'Error in PALEOS unified density at P={pressure:.2e} Pa, '
+            f'T={temperature:.1f} K: {e}'
+        )
+        return None
+
+
+def get_paleos_unified_density_batch(
+    pressures, temperatures, material_dict, mushy_zone_factor, interpolation_functions
+):
+    """Vectorized density lookup from a unified PALEOS table.
+
+    Parameters
+    ----------
+    pressures : numpy.ndarray
+        1D array of pressures in Pa.
+    temperatures : numpy.ndarray
+        1D array of temperatures in K.
+    material_dict : dict
+        Material properties dict with 'eos_file' and 'format' keys.
+    mushy_zone_factor : float
+        Cryoscopic depression factor. 1.0 = no mushy zone.
+    interpolation_functions : dict
+        Shared interpolation cache.
+
+    Returns
+    -------
+    numpy.ndarray
+        1D array of densities in kg/m^3. NaN where lookup fails.
+    """
+    eos_file = material_dict['eos_file']
+    cached = _ensure_unified_cache(eos_file, interpolation_functions)
+
+    p_clamped = np.clip(pressures, cached['p_min'], cached['p_max'])
+    log_p = np.log10(p_clamped)
+    log_t = np.log10(np.maximum(temperatures, 1.0))
+
+    # Per-cell clamping (vectorized)
+    ulp = cached['unique_log_p']
+    lt_min = cached['logt_valid_min']
+    lt_max = cached['logt_valid_max']
+    local_tmin = np.interp(log_p, ulp, lt_min)
+    local_tmax = np.interp(log_p, ulp, lt_max)
+
+    valid_bounds = np.isfinite(local_tmin) & np.isfinite(local_tmax)
+    log_t_clamped = log_t.copy()
+    log_t_clamped = np.where(valid_bounds & (log_t < local_tmin), local_tmin, log_t_clamped)
+    log_t_clamped = np.where(valid_bounds & (log_t > local_tmax), local_tmax, log_t_clamped)
+
+    if mushy_zone_factor >= 1.0 or len(cached['liquidus_log_p']) == 0:
+        # Direct lookup: batch interpolation
+        pts = np.column_stack([log_p, log_t_clamped])
+        result = cached['density_interp'](pts)
+        # NN fallback for NaN entries
+        nan_mask = ~np.isfinite(result)
+        if np.any(nan_mask):
+            result[nan_mask] = cached['density_nn'](pts[nan_mask])
+        return result
+
+    # Mushy zone path (vectorized).
+    # Compute T_melt from the PALEOS analytic melting curve rather than
+    # interpolating the extracted liquidus grid. This is faster and avoids
+    # branching per-element for the "outside liquidus coverage" case.
+    from .melting_curves import paleos_liquidus
+
+    T_melt = paleos_liquidus(pressures)
+
+    # Derive mushy zone boundaries (currently from PALEOS liquidus,
+    # but may come from external melting curves in future).
+    T_liq = T_melt.copy()
+    T_sol = T_liq * mushy_zone_factor
+
+    # Clamp endpoints against PALEOS's own melting curve
+    T_sol = np.minimum(T_sol, T_melt - _DT_PHASE_GUARD)
+    T_liq = np.maximum(T_liq, T_melt + _DT_PHASE_GUARD)
+
+    log_t_sol = np.log10(np.maximum(T_sol, 1.0))
+    log_t_liq = np.log10(np.maximum(T_liq, 1.0))
+
+    # Classify shells: above liquidus, below solidus, or in mushy zone
+    above = temperatures >= T_liq
+    below = temperatures <= T_sol
+    mushy = ~above & ~below
+
+    # Direct lookup for above-liquidus and below-solidus shells
+    pts = np.column_stack([log_p, log_t_clamped])
+    result = cached['density_interp'](pts)
+    nan_mask = ~np.isfinite(result)
+    if np.any(nan_mask):
+        result[nan_mask] = cached['density_nn'](pts[nan_mask])
+
+    # Mushy zone shells: volume-average between solid-side and liquid-side
+    if np.any(mushy):
+        m_idx = np.where(mushy)[0]
+        phi = (temperatures[m_idx] - T_sol[m_idx]) / (T_liq[m_idx] - T_sol[m_idx])
+
+        # Solid-side density at T_sol
+        log_t_sol_c = log_t_sol[m_idx].copy()
+        sol_tmin = np.interp(log_p[m_idx], ulp, lt_min)
+        sol_tmax = np.interp(log_p[m_idx], ulp, lt_max)
+        sol_valid = np.isfinite(sol_tmin) & np.isfinite(sol_tmax)
+        log_t_sol_c = np.where(sol_valid & (log_t_sol_c < sol_tmin), sol_tmin, log_t_sol_c)
+        log_t_sol_c = np.where(sol_valid & (log_t_sol_c > sol_tmax), sol_tmax, log_t_sol_c)
+        pts_sol = np.column_stack([log_p[m_idx], log_t_sol_c])
+        rho_sol = cached['density_interp'](pts_sol)
+        nn_sol = ~np.isfinite(rho_sol)
+        if np.any(nn_sol):
+            rho_sol[nn_sol] = cached['density_nn'](pts_sol[nn_sol])
+
+        # Liquid-side density at T_liq
+        log_t_liq_c = log_t_liq[m_idx].copy()
+        liq_tmin = np.interp(log_p[m_idx], ulp, lt_min)
+        liq_tmax = np.interp(log_p[m_idx], ulp, lt_max)
+        liq_valid = np.isfinite(liq_tmin) & np.isfinite(liq_tmax)
+        log_t_liq_c = np.where(liq_valid & (log_t_liq_c < liq_tmin), liq_tmin, log_t_liq_c)
+        log_t_liq_c = np.where(liq_valid & (log_t_liq_c > liq_tmax), liq_tmax, log_t_liq_c)
+        pts_liq = np.column_stack([log_p[m_idx], log_t_liq_c])
+        rho_liq = cached['density_interp'](pts_liq)
+        nn_liq = ~np.isfinite(rho_liq)
+        if np.any(nn_liq):
+            rho_liq[nn_liq] = cached['density_nn'](pts_liq[nn_liq])
+
+        # Volume additivity
+        both_ok = np.isfinite(rho_sol) & np.isfinite(rho_liq) & (rho_sol > 0) & (rho_liq > 0)
+        spec_vol = phi * (1.0 / np.where(both_ok, rho_liq, 1.0)) + (1.0 - phi) * (
+            1.0 / np.where(both_ok, rho_sol, 1.0)
+        )
+        result[m_idx] = np.where(both_ok, 1.0 / spec_vol, np.nan)
+
+    return result
+
+
+def _get_paleos_unified_nabla_ad(pressure, temperature, material_dict, interpolation_functions):
+    """Look up nabla_ad from a unified PALEOS cache entry.
+
+    Parameters
+    ----------
+    pressure : float
+        Pressure in Pa.
+    temperature : float
+        Temperature in K.
+    material_dict : dict
+        Material properties dict with 'eos_file' key.
+    interpolation_functions : dict
+        Shared interpolation cache.
+
+    Returns
+    -------
+    float or None
+        Dimensionless adiabatic gradient, or None if lookup fails.
+    """
+    eos_file = material_dict['eos_file']
+    cached = _ensure_unified_cache(eos_file, interpolation_functions)
+
+    p_clamped = np.clip(pressure, cached['p_min'], cached['p_max'])
+    log_p = np.log10(p_clamped)
+    log_t = np.log10(max(temperature, 1.0))
+
+    log_t_clamped, was_clamped = _paleos_clamp_temperature(log_p, log_t, cached)
+    if was_clamped and eos_file not in _paleos_clamp_warned:
+        _paleos_clamp_warned.add(eos_file)
+        logger.warning(
+            f'PALEOS unified per-cell clamping active for nabla_ad in '
+            f'{os.path.basename(eos_file)}: '
+            f'T={temperature:.0f} K clamped to {10.0**log_t_clamped:.0f} K '
+            f'at P={pressure:.2e} Pa.'
+        )
+
+    val = _fast_bilinear(log_p, log_t_clamped, cached['nabla_ad_grid'], cached)
+    if not np.isfinite(val):
+        val = float(cached['nabla_ad_nn']((log_p, log_t_clamped)))
+
+    return val if np.isfinite(val) else None
+
+
 def calculate_density(
     pressure,
     material_dictionaries,
@@ -453,6 +1297,7 @@ def calculate_density(
     solidus_func,
     liquidus_func,
     interpolation_functions=None,
+    mushy_zone_factor=1.0,
 ):
     """
     Calculate density for a single layer given its EOS identifier.
@@ -461,12 +1306,12 @@ def calculate_density(
     ----------
     pressure : float
         Pressure at which to evaluate the EOS, in Pa.
-    material_dictionaries : tuple
-        Tuple of material property dictionaries in the order
-        ``(iron_silicate, iron_Tdep_silicate, water, iron_RTPress100TPa_silicate)``.
+    material_dictionaries : dict
+        EOS registry dict keyed by EOS identifier string
+        (from ``eos_properties.EOS_REGISTRY``).
     layer_eos : str
         Per-layer EOS identifier, for example ``"Seager2007:iron"``,
-        ``"WolfBower2018:MgSiO3"``, or ``"Analytic:iron"``.
+        ``"WolfBower2018:MgSiO3"``, ``"PALEOS:iron"``, or ``"Analytic:iron"``.
     temperature : float
         Temperature at which to evaluate the EOS, in K.
     solidus_func : callable or None
@@ -475,6 +1320,9 @@ def calculate_density(
         Interpolation function for the liquidus melting curve.
     interpolation_functions : dict, optional
         Cache of interpolation functions used to avoid redundant loading.
+    mushy_zone_factor : float, optional
+        Cryoscopic depression factor for unified PALEOS tables. 1.0 = no
+        mushy zone (sharp boundary from table). Default 1.0.
 
     Returns
     -------
@@ -489,48 +1337,161 @@ def calculate_density(
     if interpolation_functions is None:
         interpolation_functions = {}
 
-    (
-        mat_iron_sil,
-        mat_Tdep,
-        mat_water,
-        mat_RTPress100TPa,
-    ) = material_dictionaries
-
-    if layer_eos == 'Seager2007:iron':
-        return get_tabulated_eos(
-            pressure, mat_iron_sil, 'core', interpolation_functions=interpolation_functions
-        )
-    elif layer_eos == 'Seager2007:MgSiO3':
-        return get_tabulated_eos(
-            pressure, mat_iron_sil, 'mantle', interpolation_functions=interpolation_functions
-        )
-    elif layer_eos == 'WolfBower2018:MgSiO3':
-        return get_Tdep_density(
-            pressure,
-            temperature,
-            mat_Tdep,
-            solidus_func,
-            liquidus_func,
-            interpolation_functions,
-        )
-    elif layer_eos == 'RTPress100TPa:MgSiO3':
-        return get_Tdep_density(
-            pressure,
-            temperature,
-            mat_RTPress100TPa,
-            solidus_func,
-            liquidus_func,
-            interpolation_functions,
-        )
-    elif layer_eos == 'Seager2007:H2O':
-        return get_tabulated_eos(
-            pressure, mat_water, 'ice_layer', interpolation_functions=interpolation_functions
-        )
-    elif layer_eos.startswith('Analytic:'):
+    # Analytic EOS: no material dict needed
+    if layer_eos.startswith('Analytic:'):
         material_key = layer_eos.split(':', 1)[1]
         return get_analytic_density(pressure, material_key)
-    else:
+
+    # Look up material properties from the registry
+    mat = material_dictionaries.get(layer_eos)
+    if mat is None:
         raise ValueError(f"Unknown layer EOS '{layer_eos}'.")
+
+    # Unified PALEOS tables (single file per material, all phases included)
+    if mat.get('format') == 'paleos_unified':
+        return get_paleos_unified_density(
+            pressure, temperature, mat, mushy_zone_factor, interpolation_functions
+        )
+
+    # T-dependent EOS with separate solid/liquid tables (WB2018, RTPress, PALEOS-2phase)
+    if 'melted_mantle' in mat:
+        return get_Tdep_density(
+            pressure, temperature, mat, solidus_func, liquidus_func, interpolation_functions
+        )
+
+    # Seager2007 static EOS (1D P-rho tables)
+    # Determine the layer key from the material dict
+    for layer_key in ('core', 'mantle', 'ice_layer'):
+        if layer_key in mat:
+            return get_tabulated_eos(
+                pressure, mat, layer_key, interpolation_functions=interpolation_functions
+            )
+
+    raise ValueError(f"Cannot determine layer key for EOS '{layer_eos}'.")
+
+
+def calculate_density_batch(
+    pressures,
+    temperatures,
+    material_dictionaries,
+    layer_eos,
+    solidus_func,
+    liquidus_func,
+    interpolation_functions,
+    mushy_zone_factor=1.0,
+):
+    """Vectorized density lookup for a batch of (P, T) points sharing one EOS.
+
+    For unified PALEOS tables, uses the vectorized interpolator path.
+    For other EOS types, falls back to scalar calculate_density per point.
+
+    Parameters
+    ----------
+    pressures : numpy.ndarray
+        1D array of pressures in Pa.
+    temperatures : numpy.ndarray
+        1D array of temperatures in K.
+    material_dictionaries : dict
+        EOS registry.
+    layer_eos : str
+        EOS identifier string.
+    solidus_func : callable or None
+        Solidus melting curve function.
+    liquidus_func : callable or None
+        Liquidus melting curve function.
+    interpolation_functions : dict
+        Interpolation cache.
+    mushy_zone_factor : float
+        Cryoscopic depression factor.
+
+    Returns
+    -------
+    numpy.ndarray
+        1D array of densities in kg/m^3. NaN where lookup fails.
+    """
+    if interpolation_functions is None:
+        interpolation_functions = {}
+
+    mat = material_dictionaries.get(layer_eos)
+    if mat is not None and mat.get('format') == 'paleos_unified':
+        return get_paleos_unified_density_batch(
+            pressures, temperatures, mat, mushy_zone_factor, interpolation_functions
+        )
+
+    # Fallback: scalar loop for non-unified EOS types
+    n = len(pressures)
+    result = np.full(n, np.nan)
+    for i in range(n):
+        val = calculate_density(
+            pressures[i],
+            material_dictionaries,
+            layer_eos,
+            temperatures[i],
+            solidus_func,
+            liquidus_func,
+            interpolation_functions,
+            mushy_zone_factor,
+        )
+        result[i] = val if val is not None else np.nan
+    return result
+
+
+def _get_paleos_nabla_ad(pressure, temperature, material_dict, phase, interpolation_functions):
+    """Look up nabla_ad from a PALEOS cache entry.
+
+    Parameters
+    ----------
+    pressure : float
+        Pressure in Pa.
+    temperature : float
+        Temperature in K.
+    material_dict : dict
+        Material properties dict (e.g. ``material_properties_iron_PALEOS_silicate_planets``).
+    phase : str
+        ``'solid_mantle'`` or ``'melted_mantle'``.
+    interpolation_functions : dict
+        Shared interpolation cache.
+
+    Returns
+    -------
+    float or None
+        Dimensionless adiabatic gradient nabla_ad, or None if lookup fails.
+    """
+    props = material_dict[phase]
+    eos_file = props['eos_file']
+
+    # Ensure the PALEOS table is loaded into the cache
+    if eos_file not in interpolation_functions:
+        interpolation_functions[eos_file] = load_paleos_table(eos_file)
+
+    cached = interpolation_functions[eos_file]
+    p_min, p_max = cached['p_min'], cached['p_max']
+
+    # Clamp pressure to global bounds
+    p_clamped = np.clip(pressure, p_min, p_max)
+    log_p = np.log10(p_clamped)
+    log_t = np.log10(max(temperature, 1.0))
+
+    # Per-cell clamping: restrict T to the valid data range at this P
+    log_t_clamped, was_clamped = _paleos_clamp_temperature(log_p, log_t, cached)
+    if was_clamped and eos_file not in _paleos_clamp_warned:
+        _paleos_clamp_warned.add(eos_file)
+        logger.warning(
+            f'PALEOS per-cell clamping active for nabla_ad in '
+            f'{os.path.basename(eos_file)}: '
+            f'T={temperature:.0f} K clamped to {10.0**log_t_clamped:.0f} K '
+            f'at P={pressure:.2e} Pa.'
+        )
+
+    val = float(cached['nabla_ad_interp']((log_p, log_t_clamped)))
+
+    # Nearest-neighbor fallback for ragged boundary
+    if not np.isfinite(val):
+        val = float(cached['nabla_ad_nn']((log_p, log_t_clamped)))
+
+    if np.isfinite(val):
+        return val
+    return None
 
 
 def compute_adiabatic_temperature(
@@ -540,12 +1501,22 @@ def compute_adiabatic_temperature(
     surface_temperature,
     cmb_mass,
     core_mantle_mass,
-    layer_eos_config,
+    layer_mixtures,
     material_dictionaries,
     interpolation_functions=None,
+    solidus_func=None,
+    liquidus_func=None,
+    mushy_zone_factors=None,
+    condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
+    condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
+    binodal_T_scale=50.0,
 ):
     """
-    Compute an adiabatic temperature profile using native EOS ``(dT/dP)_S`` tables.
+    Compute an adiabatic temperature profile using native EOS gradient tables.
+
+    Supports single-material and multi-material (volume-additive) layers.
+    For multi-material layers, nabla_ad is mass-fraction-weighted across
+    components.
 
     Parameters
     ----------
@@ -561,110 +1532,176 @@ def compute_adiabatic_temperature(
         Core-mantle boundary mass, in kg.
     core_mantle_mass : float
         Total core-plus-mantle mass, in kg.
-    layer_eos_config : dict
-        Per-layer EOS configuration, for example
-        ``{"core": "Seager2007:iron", "mantle": "WolfBower2018:MgSiO3"}``.
-    material_dictionaries : tuple
-        Tuple of material property dictionaries.
+    layer_mixtures : dict
+        Per-layer LayerMixture objects.
+    material_dictionaries : dict
+        EOS registry dict keyed by EOS identifier string.
     interpolation_functions : dict, optional
         Cache of interpolation functions used to avoid redundant loading.
+    solidus_func : callable, optional
+        Interpolation function for the solidus melting curve.
+    liquidus_func : callable, optional
+        Interpolation function for the liquidus melting curve.
+    mushy_zone_factors : dict or float or None, optional
+        Per-EOS mushy zone factors. Dict keyed by EOS name, a single
+        float (applied to all), or None (default 1.0 for all).
+    condensed_rho_min : float, optional
+        Sigmoid center for phase-aware suppression (kg/m^3). Default 322.
+    condensed_rho_scale : float, optional
+        Sigmoid width for phase-aware suppression (kg/m^3). Default 50.
+    binodal_T_scale : float, optional
+        Binodal sigmoid width in K for H2 miscibility suppression.
+        Default 50.
 
     Returns
     -------
     numpy.ndarray
         Temperature at each radial point, in K.
-
-    Raises
-    ------
-    ValueError
-        If adiabatic mode is requested for a mantle EOS that is not
-        temperature-dependent.
-    ValueError
-        If the selected mantle EOS requires an ``adiabat_grad_file`` but none
-        is provided.
-
-    Notes
-    -----
-    This is a standalone ZALMOXIS feature for structure calculations where no
-    external interior solver provides ``T(r)``.
-
-    In the PROTEUS-SPIDER coupling, this function is not called because SPIDER
-    computes its own temperature profile through entropy evolution.
-
-    The integration proceeds inward from the surface according to
-
-    ``T[i] = T[i+1] + (dT/dP)_S * (P[i] - P[i+1])``.
-
-    For temperature-independent EOS layers, such as a Seager (2007) iron core,
-    the temperature is held constant.
     """
-    from .constants import TDEP_EOS_NAMES
-    from .structure_model import get_layer_eos
+    from .mixing import get_mixed_nabla_ad
+    from .structure_model import get_layer_mixture
 
     if interpolation_functions is None:
         interpolation_functions = {}
 
-    # Build a wrapper dict for the dT/dP table so we can reuse get_tabulated_eos()
-    # (which handles caching, irregular grids, and bounds checking).
-    dtdp_dicts = {}
-    for eos_name, mat_idx in [('WolfBower2018:MgSiO3', 1), ('RTPress100TPa:MgSiO3', 3)]:
-        mat = material_dictionaries[mat_idx]
-        grad_file = mat.get('melted_mantle', {}).get('adiabat_grad_file')
-        if grad_file is not None:
-            dtdp_dicts[eos_name] = {'melted_mantle': {'eos_file': grad_file}}
+    from .mixing import any_component_is_tdep
 
-    # Verify that the mantle EOS supports adiabatic mode
-    mantle_eos = layer_eos_config.get('mantle')
-    if mantle_eos not in TDEP_EOS_NAMES:
+    if not any_component_is_tdep(layer_mixtures):
         raise ValueError(
-            f'Adiabatic temperature mode requires a T-dependent mantle EOS '
-            f'(WolfBower2018:MgSiO3 or RTPress100TPa:MgSiO3), '
-            f"but got '{mantle_eos}'. Use 'linear' or 'isothermal' instead."
-        )
-    if mantle_eos not in dtdp_dicts:
-        raise ValueError(
-            f"Adiabatic mode requires an 'adiabat_grad_file' in the "
-            f"melted_mantle material dictionary for EOS '{mantle_eos}'. "
-            f'Run get_zalmoxis.sh to download the required tables.'
+            'Adiabatic temperature mode requires at least one T-dependent EOS '
+            'layer, but none found. '
+            "Use 'linear' or 'isothermal' instead."
         )
 
     n = len(radii)
     T = np.zeros(n)
     T[n - 1] = surface_temperature
 
-    # Integrate from surface (index n-1) inward (decreasing index).
-    # NOTE: No thermal boundary layer is modeled at the CMB. The adiabat
-    # transitions directly from mantle to core, producing an isothermal
-    # core at the CMB temperature.
     for i in range(n - 2, -1, -1):
-        layer_eos = get_layer_eos(
+        mixture = get_layer_mixture(
             mass_enclosed[i],
             cmb_mass,
             core_mantle_mass,
-            layer_eos_config,
+            layer_mixtures,
         )
 
-        if layer_eos in TDEP_EOS_NAMES:
-            # Evaluate (dT/dP)_S at the current endpoint (i+1).  A midpoint
-            # rule would be more accurate, but the endpoint is sufficient
-            # for this initial-condition-quality profile.
-            dtdp = get_tabulated_eos(
-                pressure[i + 1],
-                dtdp_dicts[layer_eos],
-                'melted_mantle',
-                T[i + 1],
-                interpolation_functions,
-            )
-            if dtdp is not None and dtdp > 0:
-                dP = pressure[i] - pressure[i + 1]  # positive going inward
-                T[i] = T[i + 1] + dtdp * dP
-            else:
-                T[i] = T[i + 1]
-        else:
-            # T-independent EOS (e.g. iron core): isothermal
+        if not mixture.has_tdep():
             T[i] = T[i + 1]
+            continue
+
+        P_eval = pressure[i + 1]
+        T_eval = T[i + 1]
+        dP = pressure[i] - pressure[i + 1]
+
+        # Skip at very low P to prevent T/P divergence
+        if P_eval < 1e5 or pressure[i] < 1e5:
+            T[i] = T[i + 1]
+            continue
+
+        # Get nabla_ad (handles single and multi-component mixtures)
+        nabla = get_mixed_nabla_ad(
+            P_eval,
+            T_eval,
+            mixture,
+            material_dictionaries,
+            interpolation_functions,
+            solidus_func,
+            liquidus_func,
+            mushy_zone_factors,
+            condensed_rho_min,
+            condensed_rho_scale,
+            binodal_T_scale,
+        )
+
+        if nabla is not None and nabla > 0 and P_eval > 0 and T_eval > 0 and dP > 0:
+            dtdp = nabla * T_eval / P_eval
+            T_new = T_eval + dtdp * dP
+            # Cap temperature to the PALEOS table maximum (100,000 K).
+            # Without this cap, numerical noise at low P or in mixed
+            # compositions can cause runaway T during the adiabat
+            # integration, which then pollutes the T(P) interpolator
+            # and prevents the Brent solver from bracketing.
+            T[i] = min(T_new, 100000.0)
+        else:
+            T[i] = T_eval
 
     return T
+
+
+def _compute_paleos_dtdp(
+    pressure, temperature, mat_PALEOS, solidus_func, liquidus_func, interpolation_functions
+):
+    """Compute dT/dP from PALEOS nabla_ad with phase-aware weighting.
+
+    Uses solid nabla_ad below solidus, liquid nabla_ad above liquidus,
+    and melt-fraction-weighted average in the mushy zone.
+
+    Parameters
+    ----------
+    pressure : float
+        Pressure in Pa.
+    temperature : float
+        Temperature in K.
+    mat_PALEOS : dict
+        PALEOS material properties dict.
+    solidus_func : callable or None
+        Solidus melting curve interpolation function.
+    liquidus_func : callable or None
+        Liquidus melting curve interpolation function.
+    interpolation_functions : dict
+        Shared interpolation cache.
+
+    Returns
+    -------
+    float or None
+        dT/dP in K/Pa, or None if lookup fails.
+    """
+    if pressure <= 0 or temperature <= 0:
+        return None
+
+    # Determine phase
+    T_sol = solidus_func(pressure) if solidus_func is not None else np.nan
+    T_liq = liquidus_func(pressure) if liquidus_func is not None else np.nan
+
+    if np.isnan(T_sol) or np.isnan(T_liq) or T_liq <= T_sol:
+        # Outside melting curve range or degenerate: use solid table
+        nabla = _get_paleos_nabla_ad(
+            pressure, temperature, mat_PALEOS, 'solid_mantle', interpolation_functions
+        )
+    elif temperature <= T_sol:
+        # Solid phase
+        nabla = _get_paleos_nabla_ad(
+            pressure, temperature, mat_PALEOS, 'solid_mantle', interpolation_functions
+        )
+    elif temperature >= T_liq:
+        # Liquid phase
+        nabla = _get_paleos_nabla_ad(
+            pressure, temperature, mat_PALEOS, 'melted_mantle', interpolation_functions
+        )
+    else:
+        # Mixed phase: melt-fraction-weighted nabla_ad
+        phi = (temperature - T_sol) / (T_liq - T_sol)
+        nabla_solid = _get_paleos_nabla_ad(
+            pressure, temperature, mat_PALEOS, 'solid_mantle', interpolation_functions
+        )
+        nabla_liquid = _get_paleos_nabla_ad(
+            pressure, temperature, mat_PALEOS, 'melted_mantle', interpolation_functions
+        )
+        if nabla_solid is None and nabla_liquid is None:
+            return None
+        # Fall back to whichever is available if one is None
+        if nabla_solid is None:
+            nabla = nabla_liquid
+        elif nabla_liquid is None:
+            nabla = nabla_solid
+        else:
+            nabla = (1.0 - phi) * nabla_solid + phi * nabla_liquid
+
+    if nabla is None or nabla <= 0:
+        return None
+
+    # Convert: dT/dP = nabla_ad * T / P
+    return nabla * temperature / pressure
 
 
 def calculate_temperature_profile(

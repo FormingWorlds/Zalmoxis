@@ -18,7 +18,22 @@ earth_mass = 5.972e24  # kg
 # Temperature-dependent EOS identifiers.  Used throughout the code to decide
 # whether temperature profiles, melting curves, and split-radial integration
 # are needed.
-TDEP_EOS_NAMES = {'WolfBower2018:MgSiO3', 'RTPress100TPa:MgSiO3'}
+TDEP_EOS_NAMES = {
+    'WolfBower2018:MgSiO3',
+    'RTPress100TPa:MgSiO3',
+    'PALEOS-2phase:MgSiO3',
+    'PALEOS:iron',
+    'PALEOS:MgSiO3',
+    'PALEOS:H2O',
+    'Chabrier:H',
+}
+
+# Phase-aware mixing: smooth density suppression defaults.
+# Components with density below the sigmoid center are progressively
+# excluded from the harmonic-mean density, preventing non-condensed
+# volatiles (vapor, supercritical gas) from dominating the mixture.
+CONDENSED_RHO_MIN_DEFAULT = 322.0  # kg/m^3, sigmoid center = H2O critical density
+CONDENSED_RHO_SCALE_DEFAULT = 50.0  # kg/m^3, sigmoid transition width
 
 # Other constants
 G = 6.67428e-11  # Gravitational constant (m^3 kg^-1 s^-2)

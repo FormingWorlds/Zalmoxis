@@ -1,27 +1,170 @@
-# This script generates a plot of the planet's internal structure, including density, gravity, pressure, and temperature profiles.
+"""Planet interior structure profile plots.
+
+Generates a 6-panel figure showing density, pressure, temperature,
+gravity, phase state, and mass enclosed as a function of radius.
+"""
+
 from __future__ import annotations
 
 import os
 
 import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.patches import Patch
 
-from zalmoxis.constants import (
-    earth_center_density,
-    earth_center_pressure,
-    earth_center_temperature,
-    earth_cmb_pressure,
-    earth_cmb_radius,
-    earth_cmb_temperature,
-    earth_mass,
-    earth_radius,
-    earth_surface_pressure,
-    earth_surface_temperature,
-)
+from zalmoxis.constants import earth_mass, earth_radius
 
-# Read the environment variable for ZALMOXIS_ROOT
 ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
 if not ZALMOXIS_ROOT:
     raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
+
+# Soft pastel colors for profile lines
+_LINE_COLORS = {
+    'density': '#60a5fa',
+    'pressure': '#f87171',
+    'gravity': '#4ade80',
+    'temperature': '#c084fc',
+    'mass': '#22d3ee',
+}
+
+# Phase colors (pastel, matching PALEOS phase_id strings)
+# Ambiguous phases (liquid, vapour, supercritical) are tagged with the
+# material name by _lookup_phases, e.g. "liquid:iron", "liquid:MgSiO3".
+_PHASE_COLORS = {
+    # Iron phases
+    'solid-epsilon-hcp': '#93c5fd',
+    'solid-gamma-fcc': '#bfdbfe',
+    'solid-delta-bcc': '#dbeafe',
+    'solid-alpha-bcc': '#eff6ff',
+    'liquid:iron': '#fca5a5',
+    # MgSiO3 phases
+    'solid-brg': '#fdba74',
+    'solid-ppv': '#fb923c',
+    'solid-lpcen': '#bbf7d0',
+    'solid-hpcen': '#86efac',
+    'solid-en': '#4ade80',
+    'liquid:MgSiO3': '#f9a8d4',
+    # H2O phases
+    'solid-ice-Ih': '#e0f2fe',
+    'solid-ice-VII': '#bae6fd',
+    'solid-ice-X': '#7dd3fc',
+    'liquid:H2O': '#fda4af',
+    'vapour:H2O': '#fef3c7',
+    'supercritical:H2O': '#fde68a',
+    # Fallbacks for untagged phases
+    'liquid': '#fca5a5',
+    'vapour': '#fef3c7',
+    'supercritical': '#fde68a',
+}
+
+# Material short names for EOS identifiers
+_MATERIAL_SHORT = {
+    'PALEOS:iron': 'iron',
+    'PALEOS:MgSiO3': 'MgSiO3',
+    'PALEOS:H2O': 'H2O',
+    'Chabrier:H': 'H2',
+}
+
+# Phases that are ambiguous across materials and need material tagging
+_AMBIGUOUS_PHASES = {'liquid', 'vapour', 'supercritical'}
+
+_PHASE_PRETTY = {
+    'solid-epsilon-hcp': 'Fe epsilon-hcp',
+    'solid-gamma-fcc': 'Fe gamma-fcc',
+    'solid-delta-bcc': 'Fe delta-bcc',
+    'solid-alpha-bcc': 'Fe alpha-bcc',
+    'liquid:iron': 'Liquid Fe',
+    'solid-brg': 'Bridgmanite',
+    'solid-ppv': 'Postperovskite',
+    'solid-lpcen': 'LP clinoenstatite',
+    'solid-hpcen': 'HP clinoenstatite',
+    'solid-en': 'Enstatite',
+    'liquid:MgSiO3': r'Liquid MgSiO$_3$',
+    'solid-ice-Ih': 'Ice Ih',
+    'solid-ice-VII': 'Ice VII',
+    'solid-ice-X': 'Ice X',
+    'liquid:H2O': r'Liquid H$_2$O',
+    'vapour:H2O': r'H$_2$O vapour',
+    'supercritical:H2O': r'Supercritical H$_2$O',
+    # Fallbacks
+    'liquid': 'Liquid',
+    'vapour': 'Vapour',
+    'supercritical': 'Supercritical',
+}
+
+
+def _lookup_phases(
+    radii, pressure, density, temperature, mass_enclosed, layer_eos_config, cmb_mass
+):
+    """Look up the PALEOS phase at each radial shell.
+
+    Parameters
+    ----------
+    radii : numpy.ndarray
+        Radial grid in m.
+    pressure, density, temperature, mass_enclosed : numpy.ndarray
+        Profile arrays.
+    layer_eos_config : dict
+        Per-layer EOS config dict.
+    cmb_mass : float
+        Mass enclosed at the core-mantle boundary in kg.
+
+    Returns
+    -------
+    list of str
+        Phase label at each shell.
+    """
+    from zalmoxis.eos_functions import _ensure_unified_cache
+    from zalmoxis.eos_properties import EOS_REGISTRY
+    from zalmoxis.mixing import parse_layer_components
+
+    interp_cache = {}
+    phase_labels = []
+
+    # Determine which EOS each layer uses (primary component)
+    core_eos = layer_eos_config.get('core', '')
+    mantle_eos = layer_eos_config.get('mantle', '')
+    # Get primary component for each layer
+    core_primary = parse_layer_components(core_eos).primary() if core_eos else None
+    mantle_primary = parse_layer_components(mantle_eos).primary() if mantle_eos else None
+
+    for i in range(len(radii)):
+        P, T = pressure[i], temperature[i]
+        if P <= 0 or density[i] <= 0:
+            phase_labels.append('none')
+            continue
+
+        # Determine which EOS this shell uses
+        if mass_enclosed[i] < cmb_mass:
+            eos_name = core_primary
+        else:
+            eos_name = mantle_primary
+
+        if eos_name is None or eos_name not in EOS_REGISTRY:
+            phase_labels.append('unknown')
+            continue
+
+        mat = EOS_REGISTRY[eos_name]
+        if mat.get('format') != 'paleos_unified':
+            phase_labels.append('unknown')
+            continue
+
+        cached = _ensure_unified_cache(mat['eos_file'], interp_cache)
+        log_p = np.log10(np.clip(P, cached['p_min'], cached['p_max']))
+        log_t = np.log10(max(T, 1.0))
+        ip = int(np.argmin(np.abs(cached['unique_log_p'] - log_p)))
+        it = int(np.argmin(np.abs(cached['unique_log_t'] - log_t)))
+        phase = str(cached['phase_grid'][ip, it]) if cached['phase_grid'][ip, it] else 'unknown'
+
+        # Tag ambiguous phases with material name for legend clarity
+        if phase in _AMBIGUOUS_PHASES:
+            mat_short = _MATERIAL_SHORT.get(eos_name, '')
+            if mat_short:
+                phase = f'{phase}:{mat_short}'
+
+        phase_labels.append(phase)
+
+    return phase_labels
 
 
 def plot_planet_profile_single(
@@ -35,122 +178,149 @@ def plot_planet_profile_single(
     average_density,
     mass_enclosed,
     id_mass,
+    layer_eos_config=None,
 ):
+    """Generate a 6-panel interior structure plot.
+
+    Panels: density, pressure, temperature (top row);
+    gravity, phase state, mass enclosed (bottom row).
+
+    Parameters
+    ----------
+    radii : numpy.ndarray
+        Radial grid in m.
+    density : numpy.ndarray
+        Density profile in kg/m^3.
+    gravity : numpy.ndarray
+        Gravity profile in m/s^2.
+    pressure : numpy.ndarray
+        Pressure profile in Pa.
+    temperature : numpy.ndarray
+        Temperature profile in K.
+    cmb_radius : float
+        Core-mantle boundary radius in m.
+    cmb_mass : float
+        Mass enclosed at CMB in kg.
+    average_density : float
+        Average planet density in kg/m^3.
+    mass_enclosed : numpy.ndarray
+        Enclosed mass profile in kg.
+    id_mass : int or None
+        Planet mass identifier for filename.
+    layer_eos_config : dict or None
+        Per-layer EOS config for phase lookup. If None, phase panel
+        shows "unknown" throughout.
     """
-    Generates a plot of the planet's internal structure, including density, gravity, pressure, temperature, and mass profiles.
+    radii_re = radii / earth_radius
+    cmb_r = cmb_radius / earth_radius
+    R_earth_val = radii[-1] / earth_radius
+    M_earth_val = mass_enclosed[-1] / earth_mass
+    xlim = (0, R_earth_val * 1.02)
 
-    Args:
-        radii (numpy.ndarray): Array of radial distances (m).
-        density (numpy.ndarray): Array of densities (kg/m^3).
-        gravity (numpy.ndarray): Array of gravitational accelerations (m/s^2).
-        pressure (numpy.ndarray): Array of pressures (Pa).
-        temperature (numpy.ndarray): Array of temperatures (K).
-        cmb_radius (float): Radius of the core-mantle boundary (m).
-        cmb_mass (float): Mass enclosed within the core-mantle boundary (kg).
-        average_density (float): Average density of the planet (kg/m^3).
-        mass_enclosed (numpy.ndarray): Array of enclosed masses (kg).
-        id_mass (int): Identifier for the planet mass.
-    """
+    # Phase lookup
+    if layer_eos_config is not None:
+        phase_labels = _lookup_phases(
+            radii, pressure, density, temperature, mass_enclosed, layer_eos_config, cmb_mass
+        )
+    else:
+        phase_labels = ['unknown'] * len(radii)
 
-    fig, ax = plt.subplots(1, 5, figsize=(16, 6))
+    fig, axes = plt.subplots(2, 3, figsize=(15, 9))
 
-    # Density vs. Radius
-    ax[0].plot(radii / 1e3, density, color='b', lw=2, label=r'Model profile')
-    ax[0].axvline(x=cmb_radius / 1e3, color='b', linestyle='--', label='Model CMB radius')
-    ax[0].set_xlabel('Radius (km)')
-    ax[0].set_ylabel(r'Density (kg/m$^3$)')
-    ax[0].set_title('Model density structure')
-    ax[0].grid()
+    def add_cmb(ax):
+        ax.axvline(cmb_r, color='#cbd5e1', ls='--', lw=1)
 
-    # Add average density as a vertical line
-    ax[0].axhline(
-        y=average_density,
-        color='b',
-        linestyle='-.',
-        label=f'Model average density\n = {average_density:.0f} kg/m^3',
+    # Density
+    ax = axes[0, 0]
+    ax.plot(radii_re, density / 1000, color=_LINE_COLORS['density'], lw=2)
+    add_cmb(ax)
+    ax.set_ylabel(r'Density (10$^3$ kg m$^{-3}$)', fontsize=11)
+    ax.set_title('Density', fontsize=12, fontweight='bold')
+    ax.set_xlim(xlim)
+    ax.grid(alpha=0.15)
+
+    # Pressure
+    ax = axes[0, 1]
+    ax.semilogy(radii_re, pressure / 1e9, color=_LINE_COLORS['pressure'], lw=2)
+    add_cmb(ax)
+    ax.set_ylabel('Pressure (GPa)', fontsize=11)
+    ax.set_title('Pressure', fontsize=12, fontweight='bold')
+    ax.set_xlim(xlim)
+    ax.grid(alpha=0.15)
+
+    # Temperature
+    ax = axes[0, 2]
+    ax.plot(radii_re, temperature, color=_LINE_COLORS['temperature'], lw=2)
+    add_cmb(ax)
+    ax.set_ylabel('Temperature (K)', fontsize=11)
+    ax.set_title('Temperature', fontsize=12, fontweight='bold')
+    ax.set_xlim(xlim)
+    ax.grid(alpha=0.15)
+
+    # Gravity
+    ax = axes[1, 0]
+    ax.plot(radii_re, gravity, color=_LINE_COLORS['gravity'], lw=2)
+    add_cmb(ax)
+    ax.set_ylabel(r'Gravity (m s$^{-2}$)', fontsize=11)
+    ax.set_xlabel(r'Radius ($R_\oplus$)', fontsize=11)
+    ax.set_title('Gravity', fontsize=12, fontweight='bold')
+    ax.set_xlim(xlim)
+    ax.grid(alpha=0.15)
+
+    # Phase state
+    ax = axes[1, 1]
+    for i in range(len(radii_re) - 1):
+        c = _PHASE_COLORS.get(phase_labels[i], '#f3f4f6')
+        ax.axvspan(radii_re[i], radii_re[i + 1], color=c, alpha=0.5, lw=0)
+    add_cmb(ax)
+    patches = []
+    seen = []
+    for p in phase_labels:
+        if p not in seen and p in _PHASE_COLORS:
+            patches.append(
+                Patch(color=_PHASE_COLORS[p], alpha=0.5, label=_PHASE_PRETTY.get(p, p))
+            )
+            seen.append(p)
+    if patches:
+        ax.legend(handles=patches, fontsize=9, loc='center left')
+    else:
+        ax.text(
+            0.5,
+            0.5,
+            'Phase data not available\nfor this EOS',
+            transform=ax.transAxes,
+            ha='center',
+            va='center',
+            fontsize=11,
+            color='#9ca3af',
+            style='italic',
+        )
+    ax.set_xlabel(r'Radius ($R_\oplus$)', fontsize=11)
+    ax.set_title('Phase State', fontsize=12, fontweight='bold')
+    ax.set_xlim(xlim)
+    ax.set_yticks([])
+
+    # Mass enclosed
+    ax = axes[1, 2]
+    ax.plot(radii_re, mass_enclosed / earth_mass, color=_LINE_COLORS['mass'], lw=2)
+    add_cmb(ax)
+    ax.set_ylabel(r'Mass enclosed ($M_\oplus$)', fontsize=11)
+    ax.set_xlabel(r'Radius ($R_\oplus$)', fontsize=11)
+    ax.set_title('Mass Enclosed', fontsize=12, fontweight='bold')
+    ax.set_xlim(xlim)
+    ax.grid(alpha=0.15)
+
+    fig.suptitle(
+        rf'{M_earth_val:.2f} $M_\oplus$,  '
+        rf'R = {R_earth_val:.3f} $R_\oplus$,  '
+        rf'$\bar{{\rho}}$ = {average_density:.0f} kg m$^{{-3}}$',
+        fontsize=13,
+        y=0.99,
     )
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
 
-    # Gravity vs. Radius
-    ax[1].plot(radii / 1e3, gravity, color='b', lw=2, label='Model')
-    ax[1].set_xlabel('Radius (km)')
-    ax[1].set_ylabel(r'Gravity (m/$s^2$)')
-    ax[1].axvline(x=cmb_radius / 1e3, color='b', linestyle='--', label='Model CMB radius')
-    ax[1].set_title('Model gravity structure')
-    ax[1].grid()
-
-    # Pressure vs. Radius
-    ax[2].plot(radii / 1e3, pressure / 1e9, color='b', lw=2, label='Model')
-    ax[2].set_xlabel('Radius (km)')
-    ax[2].set_ylabel('Pressure (GPa)')
-    ax[2].axvline(x=cmb_radius / 1e3, color='b', linestyle='--', label='Model CMB radius')
-    ax[2].set_title('Model pressure structure')
-    ax[2].grid()
-
-    # Temperature vs. Radius
-    ax[3].plot(radii / 1e3, temperature, color='b', lw=2, label='Model')
-    ax[3].set_xlabel('Radius (km)')
-    ax[3].set_ylabel('Temperature (K)')
-    ax[3].axvline(x=cmb_radius / 1e3, color='b', linestyle='--', label='Model CMB radius')
-    ax[3].set_title('Model temperature structure')
-    ax[3].grid()
-
-    # Mass vs. Radius
-    ax[4].plot(radii / 1e3, mass_enclosed / earth_mass, color='b', lw=2, label='Model')
-    ax[4].set_xlabel('Radius (km)')
-    ax[4].set_ylabel(r'Mass enclosed (M$_\oplus$)')
-    ax[4].axvline(x=cmb_radius / 1e3, color='b', linestyle='--', label='Model CMB radius')
-    ax[4].set_title('Model mass enclosed structure')
-    ax[4].grid()
-
-    # Add reference Earth values to the plots
-    ax[0].axvline(x=(earth_radius / 1e3), color='g', linestyle=':', label='Earth Surface')
-    ax[0].axvline(x=earth_cmb_radius / 1e3, color='g', linestyle='--', label='Earth CMB radius')
-    ax[0].axhline(
-        y=5515, color='g', linestyle='-.', label='Earth average density\n = 5515 kg/m^3'
+    fname = 'planet_profile.png' if id_mass is None else f'planet_profile{id_mass}.png'
+    fig.savefig(
+        os.path.join(ZALMOXIS_ROOT, 'output_files', fname), dpi=200, bbox_inches='tight'
     )
-    ax[0].axhline(
-        y=earth_center_density, color='g', linestyle=':', label='Earth center density'
-    )
-
-    ax[1].axhline(y=0, color='g', linestyle=':', label='Center gravity\n' + r'= 0 $m/s^2$')
-    ax[1].axhline(
-        y=9.81, color='g', linestyle='--', label='Earth surface gravity\n' + r'= 9.81 $m/s^2$'
-    )
-    ax[1].axvline(x=earth_cmb_radius / 1e3, color='g', linestyle='--', label='Earth CMB')
-
-    ax[2].axhline(
-        y=earth_surface_pressure / 1e9, color='g', linestyle=':', label='Earth surface pressure'
-    )
-    ax[2].axvline(x=earth_cmb_radius / 1e3, color='g', linestyle='--', label='Earth CMB radius')
-    ax[2].axhline(
-        y=earth_cmb_pressure / 1e9, color='g', linestyle='--', label='Earth CMB pressure'
-    )
-    ax[2].axhline(
-        y=earth_center_pressure / 1e9, color='g', linestyle='-.', label='Earth center pressure'
-    )
-
-    ax[3].axhline(
-        y=earth_surface_temperature, color='g', linestyle=':', label='Earth surface temperature'
-    )
-    ax[3].axvline(x=earth_cmb_radius / 1e3, color='g', linestyle='--', label='Earth CMB radius')
-    ax[3].axhline(
-        y=earth_cmb_temperature, color='g', linestyle='-.', label='Earth CMB temperature'
-    )
-    ax[3].axhline(
-        y=earth_center_temperature, color='g', linestyle='--', label='Earth center temperature'
-    )
-
-    ax[4].axvline(x=(earth_radius / 1e3), color='g', linestyle=':', label='Earth Surface')
-    ax[4].axvline(x=earth_cmb_radius / 1e3, color='g', linestyle='--', label='Earth CMB radius')
-    ax[4].axhline(y=earth_mass / earth_mass, color='g', linestyle='-.', label='Earth mass')
-    ax[4].axhline(y=cmb_mass / earth_mass, color='g', linestyle='--', label='Model CMB mass')
-
-    # Add legends
-    for a in ax:
-        a.legend(fontsize=8)
-
-    plt.tight_layout()
-    if id_mass is None:
-        plt.savefig(os.path.join(ZALMOXIS_ROOT, 'output_files', 'planet_profile.pdf'))
-    # plt.show()
     plt.close(fig)

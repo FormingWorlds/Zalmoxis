@@ -161,6 +161,64 @@ def download(
             )
 
 
+def download_zenodo_tarball(zenodo_id: str, folder_dir: Path):
+    """Download and extract a tarball from a Zenodo record.
+
+    Some Zenodo records contain a single .tar.gz file instead of individual
+    files. This function downloads the tarball and extracts it.
+
+    Parameters
+    ----------
+    zenodo_id : str
+        Zenodo record ID.
+    folder_dir : Path
+        Target directory. The tarball is expected to contain a single
+        top-level directory whose contents will be placed here.
+    """
+    folder_dir.mkdir(parents=True, exist_ok=True)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+
+        cmd = ['zenodo_get', str(zenodo_id), '-o', str(tmp_path)]
+        process = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.STDOUT, text=True)
+
+        with tqdm(desc=f'Downloading Zenodo {zenodo_id}', unit='file') as pbar:
+            for line in process.stdout:
+                if 'Downloading' in line:
+                    pbar.update(1)
+            process.wait()
+
+        if process.returncode != 0:
+            raise RuntimeError(f'zenodo_get failed with exit code {process.returncode}')
+
+        # Find and extract tarball
+        import tarfile
+
+        tarballs = list(tmp_path.glob('*.tar.gz'))
+        if not tarballs:
+            raise RuntimeError(f'No .tar.gz found in Zenodo record {zenodo_id}')
+
+        with tarfile.open(tarballs[0], 'r:gz') as tar:
+            tar.extractall(path=tmp_path, filter='data')
+
+        # Move extracted directory contents to target, skipping macOS
+        # resource forks (._* files) and __MACOSX directories
+        extracted_dirs = [d for d in tmp_path.iterdir() if d.is_dir() and d.name != '__MACOSX']
+        if extracted_dirs:
+            src_dir = extracted_dirs[0]
+            for item in src_dir.iterdir():
+                if item.name.startswith('._') or item.name == '.DS_Store':
+                    continue
+                dest = folder_dir / item.name
+                if dest.exists():
+                    if dest.is_dir():
+                        shutil.rmtree(dest)
+                    else:
+                        dest.unlink()
+                shutil.move(str(item), folder_dir)
+
+
 def create_output_files():
     """
     Create output files directory if it does not exist.
@@ -224,6 +282,41 @@ def download_data():
         zenodo_id=15728138,
         keep_files=['liquidus.dat', 'solidus.dat'],
     )
+    download(
+        folder='EOS_PALEOS_MgSiO3',
+        data_dir=Path(ZALMOXIS_ROOT, 'data'),
+        zenodo_id=18924171,
+        keep_files=[
+            'paleos_mgsio3_tables_pt_proteus_solid.dat',
+            'paleos_mgsio3_tables_pt_proteus_liquid.dat',
+        ],
+    )
+    # Unified PALEOS tables (Zenodo 19000316): iron, MgSiO3, H2O
+    download(
+        folder='EOS_PALEOS_iron',
+        data_dir=Path(ZALMOXIS_ROOT, 'data'),
+        zenodo_id=19000316,
+        keep_files=['paleos_iron_eos_table_pt.dat'],
+    )
+    download(
+        folder='EOS_PALEOS_MgSiO3_unified',
+        data_dir=Path(ZALMOXIS_ROOT, 'data'),
+        zenodo_id=19000316,
+        keep_files=['paleos_mgsio3_eos_table_pt.dat'],
+    )
+    download(
+        folder='EOS_PALEOS_H2O',
+        data_dir=Path(ZALMOXIS_ROOT, 'data'),
+        zenodo_id=19000316,
+        keep_files=['paleos_water_eos_table_pt.dat'],
+    )
+    # Chabrier+2019/2021 H/He EOS (Zenodo 19135021): tarball with 5 tables
+    chabrier_dir = Path(ZALMOXIS_ROOT, 'data', 'EOS_Chabrier2021_HHe')
+    if not chabrier_dir.exists():
+        logger.info('Downloading Chabrier H/He EOS from Zenodo 19135021...')
+        download_zenodo_tarball(zenodo_id='19135021', folder_dir=chabrier_dir)
+    else:
+        logger.info("Folder 'EOS_Chabrier2021_HHe' already exists. Skipping download.")
 
 
 if __name__ == '__main__':

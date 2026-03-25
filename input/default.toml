@@ -1,51 +1,129 @@
-# Default config file for Zalmoxis planetary structure code
+# Zalmoxis default configuration
+# Full parameter documentation: https://proteus-framework.org/Zalmoxis/How-to/configuration.html
+
+# ── Planet properties ──────────────────────────────────────────────────
 
 [InputParameter]
-planet_mass                = 1 # Mass of the planet (in Earth masses = 5.972e24 kg)
+planet_mass                = 1 			# Planet mass (M_earth); validated range: 0.1-50
+
+# ── Structure assumptions ──────────────────────────────────────────────
 
 [AssumptionsAndInitialGuesses]
-core_mass_fraction         = 0.325 # Initial guess for the core mass as a fraction of the total mass
-mantle_mass_fraction       = 0 # Initial guess for the mantle mass as a fraction of the total mass
-temperature_mode           = "linear" # Choice of input temperature profile: "isothermal", "linear", "prescribed", "adiabatic"
-surface_temperature        = 3500 # Surface temperature (K), required for temperature_mode="isothermal", "linear", or "adiabatic", ignored otherwise
-center_temperature         = 6000 # Central temperature (K), required for temperature_mode="linear" or "adiabatic" (initial guess), ignored otherwise
-temperature_profile_file   = "temp_profile.txt" # Filename containing a prescribed temperature profile, required for temperature_mode="prescribed"
+core_mass_fraction         = 0.325 				# Core mass fraction (Earth: ~0.325); validated range: 0.01-0.999
+mantle_mass_fraction       = 0 					# Mantle mass fraction (0 = fills remainder; >0 for 3-layer models with ice)
+temperature_mode           = "adiabatic" 		# Temperature profile: "isothermal", "linear", "prescribed", "adiabatic"
+surface_temperature        = 3000 				# Surface temperature (K); validated range: 300-5000
+center_temperature         = 6000 				# Center temperature (K); used by linear and adiabatic (initial guess) modes
+temperature_profile_file   = "temp_profile.txt" # Prescribed T(r) file (center to surface); used by prescribed mode only
+
+# ── Equation of state ──────────────────────────────────────────────────
 
 [EOS]
-# Per-layer EOS selection. Format: "<source>:<composition>"
-# Valid values:
-#   "Seager2007:iron"       - Seager+2007 tabulated Fe epsilon (300K)
-#   "Seager2007:MgSiO3"    - Seager+2007 tabulated MgSiO3 perovskite (300K)
-#   "Seager2007:H2O"       - Seager+2007 tabulated water ice (300K)
-#   "WolfBower2018:MgSiO3"  - Wolf&Bower+2018 T-dependent MgSiO3 (melt/solid), limited to <= 7 M_earth
-#   "RTPress100TPa:MgSiO3"  - Extended RTpress MgSiO3 melt EOS (up to 100 TPa)
-#   "Analytic:<material>"   - Seager+2007 analytic polytrope (300K, no data needed)
-#     Valid analytic materials: iron, MgSiO3, MgFeSiO3, H2O, graphite, SiC
-core                       = "Seager2007:iron"
-mantle                     = "WolfBower2018:MgSiO3"
-ice_layer                  = ""  # Empty = 2-layer model; set for 3-layer model
+# Per-layer EOS. Format: "<source>:<composition>"
+# Available options:
+#   Seager2007:iron          Tabulated Fe epsilon, 300 K
+#   Seager2007:MgSiO3        Tabulated MgSiO3 perovskite, 300 K
+#   Seager2007:H2O           Tabulated water ice, 300 K
+#   WolfBower2018:MgSiO3     T-dependent MgSiO3 melt+solid (up to 1 TPa, <= 7 M_earth)
+#   RTPress100TPa:MgSiO3     T-dependent extended melt EOS (up to 100 TPa, <= 50 M_earth)
+#   PALEOS-2phase:MgSiO3     T-dependent solid+liquid with nabla_ad (up to 100 TPa, <= 50 M_earth)
+#   PALEOS:iron              Unified PALEOS iron (5 phases, up to 100 TPa, <= 50 M_earth)
+#   PALEOS:MgSiO3            Unified PALEOS MgSiO3 (6 phases, up to 100 TPa, <= 50 M_earth)
+#   PALEOS:H2O               Unified PALEOS water (7 EOS, up to 100 TPa, <= 50 M_earth)
+#   Chabrier:H               Chabrier+2019/2021 pure H2 (T=100-10^8 K, P=1 Pa-10^22 Pa)
+#   Analytic:<material>      Seager+2007 analytic polytrope, 300 K, no data files needed
+#                            Materials: iron, MgSiO3, MgFeSiO3, H2O, graphite, SiC
+#
+# Multi-material mixing: use "+" to combine materials with mass fractions.
+# Example: mantle = "PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15"
+# Sub-Neptune: mantle = "PALEOS:MgSiO3:0.97+Chabrier:H:0.03"
+# Fractions must sum to 1.0. Each component is evaluated independently at (P,T),
+# and densities are mixed via harmonic mean (volume additivity).
+# H2O mixing validated up to 30% by mass at 0.1-50 M_earth, 300-5000 K.
+core                       = "PALEOS:iron"
+mantle                     = "PALEOS:MgSiO3"
+ice_layer                  = "" 		# Empty = 2-layer model; set to an EOS string for 3-layer model
+
+# Phase-aware mixing: smooth density suppression for multi-material layers.
+# Components with density below the sigmoid center are progressively excluded
+# from the harmonic mean, preventing non-condensed volatiles (vapor, supercritical)
+# from dominating the mixture. Only active for multi-component layers.
+# The default (322 kg/m^3) is the H2O critical density, the only volatile with
+# gas-phase data in the current EOS tables. Once other volatiles (CO2, NH3,
+# H2, He) are added, this must be adjusted per material:
+#   H2O ~322, CO2 ~470, NH3 ~225, He ~70, H2 ~30 kg/m^3
+condensed_rho_min          = 322.0  # kg/m^3 — sigmoid center = H2O critical density (material-specific!)
+condensed_rho_scale        = 50.0   # kg/m^3 — sigmoid transition width
+
+# Binodal (miscibility) suppression for H2-containing mixtures.
+# When Chabrier:H is mixed with silicate or water, the H2-silicate binodal
+# (Rogers+2025) and H2-H2O critical curve (Gupta+2025) determine where
+# H2 is miscible. Below the binodal T, H2 is suppressed from the harmonic mean.
+# Per-component condensed_rho_min/scale for H2 (30/10 kg/m^3) are set
+# automatically by the code; no manual config change needed for sub-Neptunes.
+binodal_T_scale            = 50.0   # K — binodal sigmoid width (~200 K transition zone)
+
+# Mushy zone factor for unified PALEOS tables (global default).
+# Controls the width of the artificial mushy (mixed solid+liquid) zone.
+# Valid range: [0.7, 1.0]. Values below 0.7 are rejected (unphysical).
+#   1.0 = no mushy zone (sharp phase boundary from table, solidus = liquidus)
+#   <1.0 = solidus at this fraction of the extracted liquidus T
+#   0.8 = similar to Stixrude14 cryoscopic depression (x0=0.79)
+mushy_zone_factor          = 1.0
+# Per-material overrides (optional). If omitted, the global value above
+# is used for all PALEOS materials. Only relevant when the corresponding
+# EOS is configured in a layer.
+# mushy_zone_factor_iron     = 1.0    # override for PALEOS:iron
+# mushy_zone_factor_MgSiO3   = 1.0    # override for PALEOS:MgSiO3
+# mushy_zone_factor_H2O      = 1.0    # override for PALEOS:H2O
+
+# Melting curves for phase routing in T-dependent mantle EOS.
+# Only relevant for WolfBower2018, RTPress100TPa, and PALEOS-2phase.
+# Unified PALEOS tables derive phase boundaries from the table itself.
+# Solidus options:
+#   Monteux16-solidus                    Monteux+2016 Eqs. 10/12 (piecewise, valid to ~500 GPa)
+#   Stixrude14-solidus                   Stixrude 2014 Eq. 1.9+1.10 (power law, valid at all P)
+#   Monteux600-solidus-tabulated         Legacy tabulated (P <= 999 GPa, NaN outside)
+# Liquidus options:
+#   Monteux16-liquidus-A-chondritic      Monteux+2016 Eq. 11/13, A-chondritic composition
+#   Monteux16-liquidus-F-peridotitic     Monteux+2016 Eq. 11/13, F-peridotitic composition
+#   Stixrude14-liquidus                  Stixrude 2014 Eq. 1.9 (power law, valid at all P)
+#   PALEOS-liquidus                      Belonoshko+2005/Fei+2021 piecewise Simon-Glatzel
+#   Monteux600-liquidus-tabulated        Legacy tabulated (P <= 999 GPa, NaN outside)
+rock_solidus               = "Monteux16-solidus"
+rock_liquidus              = "Monteux16-liquidus-A-chondritic"
+
+# ── Numerical grid ─────────────────────────────────────────────────────
 
 [Calculations]
-num_layers                 = 150 # Number of planet layers
+num_layers                 = 150 		# Number of radial grid points
+
+# ── Solver settings ────────────────────────────────────────────────────
 
 [IterativeProcess]
-max_iterations_outer       = 100 # Maximum number of iterations for the outer loop
-tolerance_outer            = 3e-3 # Convergence tolerance for the outer loop
-max_iterations_inner       = 100 # Maximum number of iterations for the inner loop
-tolerance_inner            = 1e-4 # Convergence tolerance for the inner loop
-relative_tolerance         = 1e-5 # Relative tolerance for solve_ivp
-absolute_tolerance         = 1e-6 # Absolute tolerance for solve_ivp
-maximum_step               = 250000 # Maximum integration step size for solve_ivp (m)
-adaptive_radial_fraction   = 0.98 # Fraction (0–1) of the radial domain defining where solve_ivp transitions from adaptive integration to fixed-step integration when using the temperature-dependent "WolfBower2018:MgSiO3" EOS
-max_center_pressure_guess  = 10e12 # Maximum center pressure guess (Pa). Center is always iron core (Seager2007, valid to 1e21 Pa).
+max_iterations_outer       = 100 		# Max iterations for outer loop (total mass convergence)
+tolerance_outer            = 3e-3 		# Relative tolerance for outer loop (|M_calc - M_target| / M_target)
+max_iterations_inner       = 100 		# Max iterations for inner loop (density convergence)
+tolerance_inner            = 1e-4 		# Relative tolerance for inner loop density convergence
+relative_tolerance         = 1e-5 		# Relative tolerance for ODE integrator (solve_ivp)
+absolute_tolerance         = 1e-6 		# Absolute tolerance for ODE integrator (solve_ivp)
+maximum_step               = 250000 	# Max radial step size for ODE integrator (m)
+adaptive_radial_fraction   = 0.98 		# Fraction (0-1) of radial domain using adaptive ODE stepping;
+										# remainder uses fixed steps. Relevant for all T-dependent EOS.
+max_center_pressure_guess  = 10e12 		# Upper bound on Brent bracket for center pressure (Pa);
+										# only active for WolfBower2018 (caps core P to limit mantle P).
+
+# ── Pressure solver ────────────────────────────────────────────────────
 
 [PressureAdjustment]
-target_surface_pressure    = 101325 # Target surface pressure (Pa)
-pressure_tolerance         = 1e9 # Convergence tolerance for surface pressure convergence (Pa)
-max_iterations_pressure    = 200 # Maximum iterations for pressure adjustment loop
+target_surface_pressure    = 101325 	# Target surface pressure (Pa); default 1 atm
+pressure_tolerance         = 1e9 		# Convergence criterion: |P_surface - P_target| (Pa)
+max_iterations_pressure    = 200 		# Max Brent solver evaluations (typically converges in 20-36)
+
+# ── Output ─────────────────────────────────────────────────────────────
 
 [Output]
-data_enabled               = true # Flag to enable saving data to a file (true/false)
-plots_enabled              = false # Flag to enable plotting the profile results in post_processing() (true/false)
-verbose                    = false # If true, logs detailed convergence info and warnings; if false, only essential messages are shown (true/false)
-iteration_profiles_enabled = false # If true, writes pressure and density profiles for each iteration to files (true/false)
+data_enabled               = true 		# Write radial profiles to output_files/
+plots_enabled              = false 		# Generate profile plots after the run
+verbose                    = false 		# Log detailed convergence diagnostics
+iteration_profiles_enabled = false 		# Write P and rho profiles for every iteration (large output)
