@@ -849,6 +849,7 @@ def _nabla_ad_for_component(
     return None
 
 
+@dataclass
 class VolatileProfile:
     """Per-phase volatile mass fractions for phi(r)-weighted blending.
 

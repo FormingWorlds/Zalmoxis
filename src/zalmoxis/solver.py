@@ -50,6 +50,7 @@ def main(
     melting_curves_functions,
     input_dir,
     layer_mixtures=None,
+    volatile_profile=None,
 ):
     """Run the exoplanet internal structure model.
 
