@@ -1,35 +1,35 @@
-"""Backward-compatible re-exports from the eos package.
+"""EOS package for Zalmoxis.
 
-All functions that used to live in this monolithic module have been split
-into ``zalmoxis.eos.*`` submodules. This file re-exports every public and
-private symbol so that existing imports continue to work unchanged.
+Re-exports all public and private functions from the submodules so that
+``from zalmoxis.eos import calculate_density`` works identically to the
+old monolithic ``eos_functions.py``.
 """
 
 from __future__ import annotations
 
-from .eos.dispatch import calculate_density, calculate_density_batch
-from .eos.interpolation import (
+from .dispatch import calculate_density, calculate_density_batch
+from .interpolation import (
     _ensure_unified_cache,
     _fast_bilinear,
     _paleos_clamp_temperature,
     load_paleos_table,
     load_paleos_unified_table,
 )
-from .eos.output import create_pressure_density_files
-from .eos.paleos import (
+from .output import create_pressure_density_files
+from .paleos import (
     _get_paleos_unified_nabla_ad,
     get_paleos_unified_density,
     get_paleos_unified_density_batch,
 )
-from .eos.seager import get_tabulated_eos
-from .eos.tdep import (
+from .seager import get_tabulated_eos
+from .tdep import (
     _get_paleos_nabla_ad,
     get_solidus_liquidus_functions,
     get_Tdep_density,
     get_Tdep_material,
     load_melting_curve,
 )
-from .eos.temperature import (
+from .temperature import (
     _compute_paleos_dtdp,
     calculate_temperature_profile,
     compute_adiabatic_temperature,
