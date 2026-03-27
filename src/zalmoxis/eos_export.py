@@ -517,7 +517,8 @@ def generate_spider_eos_tables(
     log_p_grid = table['unique_log_p']
     log_t_grid = table['unique_log_t']
 
-    # Build interpolators for all needed properties from unified table
+    # Build interpolators for all needed properties.
+    # Default: unified table for everything.
     s_interp = _build_interpolator(log_p_grid, log_t_grid, table['s'])
     rho_interp = _build_interpolator(log_p_grid, log_t_grid, table['rho'])
     cp_interp = _build_interpolator(log_p_grid, log_t_grid, table['cp'])
@@ -525,21 +526,42 @@ def generate_spider_eos_tables(
     nad_interp = _build_interpolator(log_p_grid, log_t_grid, table['nabla_ad'])
 
     # When 2-phase tables are available, use phase-specific interpolators
-    # for entropy-range determination and S→T inversion. This ensures SPIDER
-    # and Aragog use the same entropy values at the phase boundaries.
+    # for ALL lookups (entropy, density, cp, alpha, nabla_ad), not just
+    # entropy ranges. This avoids interpolation artifacts across the
+    # thermodynamically inconsistent melting curve in the unified table,
+    # and ensures SPIDER uses the same phase-specific properties as Aragog.
     s_solid_interp = s_interp
     s_melt_interp = s_interp
+    # Phase-specific property interpolators (default to unified)
+    rho_solid_interp = rho_interp
+    rho_melt_interp = rho_interp
+    cp_solid_interp = cp_interp
+    cp_melt_interp = cp_interp
+    alpha_solid_interp = alpha_interp
+    alpha_melt_interp = alpha_interp
+    nad_solid_interp = nad_interp
+    nad_melt_interp = nad_interp
+
     if solid_eos_file and liquid_eos_file:
         solid_tab = load_paleos_all_properties(solid_eos_file)
         liquid_tab = load_paleos_all_properties(liquid_eos_file)
         if solid_tab is not None and liquid_tab is not None:
-            s_solid_interp = _build_interpolator(
-                solid_tab['unique_log_p'], solid_tab['unique_log_t'], solid_tab['s']
-            )
-            s_melt_interp = _build_interpolator(
-                liquid_tab['unique_log_p'], liquid_tab['unique_log_t'], liquid_tab['s']
-            )
-            logger.info('Using 2-phase PALEOS tables for SPIDER S ranges')
+            sol_lp = solid_tab['unique_log_p']
+            sol_lt = solid_tab['unique_log_t']
+            liq_lp = liquid_tab['unique_log_p']
+            liq_lt = liquid_tab['unique_log_t']
+
+            s_solid_interp = _build_interpolator(sol_lp, sol_lt, solid_tab['s'])
+            s_melt_interp = _build_interpolator(liq_lp, liq_lt, liquid_tab['s'])
+            rho_solid_interp = _build_interpolator(sol_lp, sol_lt, solid_tab['rho'])
+            rho_melt_interp = _build_interpolator(liq_lp, liq_lt, liquid_tab['rho'])
+            cp_solid_interp = _build_interpolator(sol_lp, sol_lt, solid_tab['cp'])
+            cp_melt_interp = _build_interpolator(liq_lp, liq_lt, liquid_tab['cp'])
+            alpha_solid_interp = _build_interpolator(sol_lp, sol_lt, solid_tab['alpha'])
+            alpha_melt_interp = _build_interpolator(liq_lp, liq_lt, liquid_tab['alpha'])
+            nad_solid_interp = _build_interpolator(sol_lp, sol_lt, solid_tab['nabla_ad'])
+            nad_melt_interp = _build_interpolator(liq_lp, liq_lt, liquid_tab['nabla_ad'])
+            logger.info('Using 2-phase PALEOS tables for SPIDER (all properties)')
 
     # Output pressure grid. SPIDER's Interp2d assumes uniform spacing
     # for the P (x) coordinate: indx = floor((P - P_min) / dP). Log-spaced
@@ -631,7 +653,11 @@ def generate_spider_eos_tables(
     # Inversion: at fixed P, S(T) is monotonically increasing, so we
     # can use a simple bisection over the T range.
 
-    def _fill_phase_grid(P_grid, S_grid, T_lo_func, T_hi_func, phase_name):
+    def _fill_phase_grid(
+        P_grid, S_grid, T_lo_func, T_hi_func, phase_name,
+        s_phase_interp, rho_phase_interp, cp_phase_interp,
+        alpha_phase_interp, nad_phase_interp,
+    ):
         """Fill 2D grids for a single phase by inverting S(P,T) -> T(P,S).
 
         Parameters
@@ -644,6 +670,9 @@ def generate_spider_eos_tables(
             P [Pa] -> T_max for this phase
         phase_name : str
             'solid' or 'melt', for logging.
+        s_phase_interp, rho_phase_interp, cp_phase_interp,
+        alpha_phase_interp, nad_phase_interp : callable
+            Phase-specific interpolators for S(logP,logT) -> value.
 
         Returns
         -------
@@ -678,12 +707,12 @@ def generate_spider_eos_tables(
             # Narrow T bounds to the valid data region at this pressure.
             # The PALEOS table has NaN entries at extreme temperatures, so
             # we search inward from both ends to find the last valid T.
-            T_lo_valid, T_hi_valid = _find_valid_T_bounds(logP, T_lo, T_hi, s_interp)
+            T_lo_valid, T_hi_valid = _find_valid_T_bounds(logP, T_lo, T_hi, s_phase_interp)
             if T_lo_valid is None:
                 continue
 
-            Sa = float(s_interp((logP, np.log10(T_lo_valid))))
-            Sb = float(s_interp((logP, np.log10(T_hi_valid))))
+            Sa = float(s_phase_interp((logP, np.log10(T_lo_valid))))
+            Sb = float(s_phase_interp((logP, np.log10(T_hi_valid))))
 
             if np.isnan(Sa) or np.isnan(Sb):
                 continue
@@ -700,7 +729,7 @@ def generate_spider_eos_tables(
                 # Bisection (40 iterations gives ~1e-12 relative precision)
                 for _ in range(40):
                     Tm = 0.5 * (Ta_bs + Tb_bs)
-                    Sm = float(s_interp((logP, np.log10(Tm))))
+                    Sm = float(s_phase_interp((logP, np.log10(Tm))))
                     if np.isnan(Sm):
                         break
                     if Sm < S_target:
@@ -715,12 +744,12 @@ def generate_spider_eos_tables(
                 pt = (logP, logT)
 
                 result['temperature'][js, ip] = T_found
-                result['rho'][js, ip] = float(rho_interp(pt))
-                result['cp'][js, ip] = float(cp_interp(pt))
-                result['alpha'][js, ip] = float(alpha_interp(pt))
+                result['rho'][js, ip] = float(rho_phase_interp(pt))
+                result['cp'][js, ip] = float(cp_phase_interp(pt))
+                result['alpha'][js, ip] = float(alpha_phase_interp(pt))
                 # Convert dimensionless nabla_ad = d ln T / d ln P to
                 # dT/dP_s [K/Pa] for SPIDER: dT/dP_s = nabla_ad * T / P
-                nad_val = float(nad_interp(pt))
+                nad_val = float(nad_phase_interp(pt))
                 if P_Pa > 0 and np.isfinite(nad_val):
                     result['nabla_ad'][js, ip] = nad_val * T_found / P_Pa
                 else:
@@ -747,6 +776,11 @@ def generate_spider_eos_tables(
         _T_lo_solid,
         solidus_func,
         'solid',
+        s_phase_interp=s_solid_interp,
+        rho_phase_interp=rho_solid_interp,
+        cp_phase_interp=cp_solid_interp,
+        alpha_phase_interp=alpha_solid_interp,
+        nad_phase_interp=nad_solid_interp,
     )
 
     # Fill melt phase grids
@@ -759,6 +793,11 @@ def generate_spider_eos_tables(
         liquidus_func,
         _T_hi_melt,
         'melt',
+        s_phase_interp=s_melt_interp,
+        rho_phase_interp=rho_melt_interp,
+        cp_phase_interp=cp_melt_interp,
+        alpha_phase_interp=alpha_melt_interp,
+        nad_phase_interp=nad_melt_interp,
     )
 
     # Fill NaN cells by nearest-neighbor extrapolation. SPIDER does
