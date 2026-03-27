@@ -8,7 +8,7 @@ Run the default configuration (1 Earth-mass planet with a PALEOS iron core and M
 python -m zalmoxis -c input/default.toml
 ```
 
-Output files appear in `output_files/`. The PALEOS data files must be downloaded first (see [installation](installation.md)).
+Output files appear in `output/`. The PALEOS data files must be downloaded first (see [installation](installation.md)).
 
 ## What happens when you run Zalmoxis
 
@@ -44,10 +44,10 @@ For the full list of parameters (EOS selection, temperature modes, solver settin
 
 ## Output files
 
-All output files are written to the `output_files/` directory (created automatically on first run). The directory structure looks like:
+All output files are written to the `output/` directory (created automatically on first run). The directory structure looks like:
 
 ```
-output_files/
+output/
 ├── planet_profile.txt            # radial profiles (single run)
 ├── planet_profile5.0.txt         # radial profiles (batch run, mass in filename)
 ├── calculated_planet_mass_radius.txt  # summary: mass and radius per run

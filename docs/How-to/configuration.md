@@ -464,7 +464,7 @@ Controls what the model writes after a run.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `data_enabled` | bool | true | Write the computed radial profiles (radius, density, gravity, pressure, temperature, enclosed mass) to a text file in `output_files/`. |
+| `data_enabled` | bool | true | Write the computed radial profiles (radius, density, gravity, pressure, temperature, enclosed mass) to a text file in `output/`. |
 | `plots_enabled` | bool | false | Generate profile plots after the run. |
 | `verbose` | bool | false | Log detailed convergence diagnostics and warnings. When false, only essential messages (final results, errors) are shown. |
 | `iteration_profiles_enabled` | bool | false | Write pressure and density profiles for every iteration to files. Useful for debugging convergence behavior; produces large output. |

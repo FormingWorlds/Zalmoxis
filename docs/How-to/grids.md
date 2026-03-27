@@ -3,7 +3,7 @@
 To sweep over any combination of parameters, use the grid runner with a TOML specification file:
 
 ```console
-python -m src.tools.run_grid <grid.toml> -j <workers>
+python -m tools.grids.run_grid <grid.toml> -j <workers>
 ```
 
 The `-j` flag sets the number of parallel workers (default: 1, serial execution).
@@ -23,7 +23,7 @@ planet_mass = [0.5, 1.0, 3.0, 5.0, 10.0]
 surface_temperature = [1000, 2000, 3000]
 
 [output]
-dir = "output_files/grid_results"  # output directory (relative to ZALMOXIS_ROOT)
+dir = "output/grid_results"  # output directory (relative to ZALMOXIS_ROOT)
 ```
 
 The available sweep parameter names and their mapping to TOML config sections are:
@@ -59,13 +59,13 @@ config = "input/default.toml"
 planet_mass = [0.5, 1.0, 2.0, 3.0, 5.0, 7.0, 10.0]
 
 [output]
-dir = "output_files/grid_mass_radius"
+dir = "output/grid_mass_radius"
 ```
 
 Run with 2 workers:
 
 ```console
-python -m src.tools.run_grid input/grids/mass_radius.toml -j 2
+python -m tools.grids.run_grid input/grids/mass_radius.toml -j 2
 ```
 
 The resulting mass-radius relation for a PALEOS iron core + MgSiO3 mantle planet (32.5% core mass fraction, adiabatic temperature at $T_s$ = 3000 K):
@@ -86,7 +86,7 @@ mantle = ["PALEOS:MgSiO3", "PALEOS:MgSiO3:0.97+Chabrier:H:0.03", "PALEOS:MgSiO3:
 surface_temperature = [2000, 3000]
 
 [output]
-dir = "output_files/grid_h2_mixing"
+dir = "output/grid_h2_mixing"
 ```
 
 This produces 4 x 3 x 2 = 24 models. Plotting with `--single-panel` shows how dissolved hydrogen inflates the radius at fixed mass:
@@ -109,7 +109,7 @@ mantle = ["PALEOS:MgSiO3", "PALEOS:MgSiO3:0.90+PALEOS:H2O:0.10", "PALEOS:MgSiO3:
 surface_temperature = [2000, 3000]
 
 [output]
-dir = "output_files/grid_h2o_mixing"
+dir = "output/grid_h2o_mixing"
 ```
 
 This produces 4 x 3 x 2 = 24 models. Plotting with `--single-panel` shows the radius increase from water in the mantle:
@@ -129,7 +129,7 @@ planet_mass = [0.5, 1.0, 3.0, 5.0, 10.0]
 surface_temperature = [1000, 2000, 3000, 4000]
 
 [output]
-dir = "output_files/grid_mass_temperature"
+dir = "output/grid_mass_temperature"
 ```
 
 This produces 5 x 4 = 20 models. Plotting with `--single-panel` overlays all temperature curves on one panel:
@@ -152,13 +152,13 @@ Plotting and per-profile data output are disabled during grid runs for speed. To
 Use `plot_grid` to visualize the results from a grid run:
 
 ```console
-python -m src.tools.plot_grid output_files/grid_mass_radius
+python -m tools.grids.plot_grid output/grid_mass_radius
 ```
 
 This reads the `grid_summary.csv` in the given directory and produces a mass-radius diagram by default. You can also pass the CSV path directly:
 
 ```console
-python -m src.tools.plot_grid output_files/grid_mass_radius/grid_summary.csv
+python -m tools.grids.plot_grid output/grid_mass_radius/grid_summary.csv
 ```
 
 ### Choosing axes
@@ -166,7 +166,7 @@ python -m src.tools.plot_grid output_files/grid_mass_radius/grid_summary.csv
 Any column in the CSV can be used as the x- or y-axis:
 
 ```console
-python -m src.tools.plot_grid output_files/grid_results -x surface_temperature -y R_earth
+python -m tools.grids.plot_grid output/grid_results -x surface_temperature -y R_earth
 ```
 
 Available columns include all sweep parameters (`planet_mass`, `surface_temperature`, `core_mass_fraction`, etc.) and computed outputs (`R_earth`, `M_earth`, `time_s`).
@@ -177,19 +177,19 @@ When the grid sweeps two or more parameters, the plotter automatically groups by
 
 ```console
 # 2D grid (mass x surface_temperature): one subplot per surface_temperature
-python -m src.tools.plot_grid output_files/grid_results
+python -m tools.grids.plot_grid output/grid_results
 ```
 
 To override which parameter is used for grouping:
 
 ```console
-python -m src.tools.plot_grid output_files/grid_results -g mantle
+python -m tools.grids.plot_grid output/grid_results -g mantle
 ```
 
 To put all groups on a single panel with a color-coded legend instead of subplots:
 
 ```console
-python -m src.tools.plot_grid output_files/grid_results --single-panel
+python -m tools.grids.plot_grid output/grid_results --single-panel
 ```
 
 ### Unconverged runs
@@ -201,7 +201,7 @@ Runs that did not converge are shown as X-shaped markers (with a separate legend
 By default, the figure is saved in the same directory as the CSV with a descriptive filename (e.g., `grid_R_earth_vs_planet_mass.png`). To specify a different output path:
 
 ```console
-python -m src.tools.plot_grid output_files/grid_results -o my_plot.png
+python -m tools.grids.plot_grid output/grid_results -o my_plot.png
 ```
 
 ### Python API
@@ -209,14 +209,14 @@ python -m src.tools.plot_grid output_files/grid_results -o my_plot.png
 The plotting function can also be called directly from Python (e.g., in a Jupyter notebook or IDE):
 
 ```python
-from src.tools.plot_grid import plot_grid_summary
+from tools.grids.plot_grid import plot_grid_summary
 
 # Default mass-radius plot
-plot_grid_summary("output_files/grid_mass_radius")
+plot_grid_summary("output/grid_mass_radius")
 
 # Custom axes, single panel
 plot_grid_summary(
-    "output_files/grid_results",
+    "output/grid_results",
     x="surface_temperature",
     y="R_earth",
     group_by="mantle",
@@ -228,7 +228,7 @@ plot_grid_summary(
 ### Full CLI reference
 
 ```
-python -m src.tools.plot_grid <path> [-x COLUMN] [-y COLUMN] [-g PARAM]
+python -m tools.grids.plot_grid <path> [-x COLUMN] [-y COLUMN] [-g PARAM]
                                [--single-panel] [-o FILE] [--dpi N]
 ```
 

@@ -82,7 +82,7 @@ Run the default configuration (1 Earth-mass planet with a PALEOS iron core and M
 python -m zalmoxis -c input/default.toml
 ```
 
-Output files are written to `output_files/`. See the [usage guide](usage.md) for an explanation of the output files and how to modify the configuration, or the [parameter grids guide](grids.md) for running parameter sweeps.
+Output files are written to `output/`. See the [usage guide](usage.md) for an explanation of the output files and how to modify the configuration, or the [parameter grids guide](grids.md) for running parameter sweeps.
 
 ## Troubleshooting
 
