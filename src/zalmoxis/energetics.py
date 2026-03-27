@@ -4,12 +4,12 @@ Computes the self-consistent initial temperature profile of a rocky
 planet from its structure, following White & Li (2025, JGRP) and
 Boujibar et al. (2020, JGRP). The initial CMB temperature is:
 
-    T_CMB = T_i + f_a * U_d / (M * C) + f_d * (U_d - U_u) / (M * C)
+    T_CMB = T_i + f_a * U_u / (M * C) + f_d * (U_d - U_u) / (M * C)
 
-where U_d is the gravitational binding energy of the differentiated
-planet, U_u is the binding energy of a hypothetical undifferentiated
-(homogeneous) planet of the same mass, and f_a, f_d are heat retention
-efficiencies for accretion and differentiation respectively.
+where U_u is the gravitational binding energy of the undifferentiated
+(homogeneous) planet (= energy of accretion), U_d is the binding energy
+of the differentiated planet (iron core + silicate mantle), and f_a, f_d
+are heat retention efficiencies for accretion and differentiation.
 
 References
 ----------
@@ -198,8 +198,10 @@ def initial_thermal_state(
     # Mass-weighted average specific heat
     C_avg = core_mass_fraction * C_iron + (1.0 - core_mass_fraction) * C_silicate
 
-    # Temperature increments
-    Delta_T_G = f_accretion * U_d / (total_mass * C_avg)
+    # Temperature increments (White+Li 2025 Eq. 3, 5):
+    # Accretion heats the UNDIFFERENTIATED body (energy = U_u).
+    # Differentiation releases ADDITIONAL energy (U_d - U_u) from core formation.
+    Delta_T_G = f_accretion * U_u / (total_mass * C_avg)
     Delta_T_D = f_differentiation * differentiation_energy(U_d, U_u) / (total_mass * C_avg)
 
     # CMB temperature
@@ -222,6 +224,15 @@ def initial_thermal_state(
         if P_mantle[i] > 0:
             T = T + nad * T / P_mantle[i] * dP
     T_surface = T
+
+    # Validate: surface must be cooler than CMB (adiabatic gradient is positive)
+    if T_surface > T_cmb:
+        logger.warning(
+            'T_surface (%.0f K) > T_cmb (%.0f K): adiabatic integration '
+            'produced unphysical result. Clamping T_surface to T_cmb.',
+            T_surface, T_cmb,
+        )
+        T_surface = T_cmb
 
     # Determine core state from iron melting curve at CMB pressure
     P_cmb = float(pressure[cmb_index])
