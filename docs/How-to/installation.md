@@ -89,10 +89,11 @@ Output files are written to `output/`. See the [usage guide](usage.md) for an ex
 ### `ZALMOXIS_ROOT` not set
 
 ```
-RuntimeError: ZALMOXIS_ROOT environment variable not set
+RuntimeError: ZALMOXIS_ROOT environment variable is not set and could not be
+auto-detected. Set it explicitly: export ZALMOXIS_ROOT=/path/to/Zalmoxis
 ```
 
-This error occurs when the `ZALMOXIS_ROOT` environment variable is not defined in your current shell session. Set it to the root of the Zalmoxis repository:
+This error occurs when auto-detection of the repository root fails and the `ZALMOXIS_ROOT` environment variable is not defined. Set it to the root of the Zalmoxis repository:
 
 ```console
 export ZALMOXIS_ROOT=/path/to/Zalmoxis
