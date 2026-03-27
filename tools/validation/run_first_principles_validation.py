@@ -110,7 +110,8 @@ def _two_layer_central_pressure(rho_core, rho_mantle, R_cmb, R_total, M_cmb):
 def _run_analytic_eos_solver(mass_earth, cmf=0.325, mmf=0, num_layers=200,
                              relative_tolerance=1e-8, absolute_tolerance=1e-10):
     """Run full Zalmoxis solver with Analytic EOS."""
-    from zalmoxis.config import load_material_dictionaries, main
+    from zalmoxis.config import load_material_dictionaries
+    from zalmoxis.solver import main
 
     layer_eos = {'core': 'Analytic:iron', 'mantle': 'Analytic:MgSiO3'}
     config_params = {
@@ -140,7 +141,9 @@ def _run_analytic_eos_solver(mass_earth, cmf=0.325, mmf=0, num_layers=200,
         'verbose': False, 'iteration_profiles_enabled': False,
     }
 
-    input_dir = os.path.join(os.environ['ZALMOXIS_ROOT'], 'input')
+    from zalmoxis import get_zalmoxis_root
+
+    input_dir = os.path.join(get_zalmoxis_root(), 'input')
     return main(config_params, load_material_dictionaries(), None, input_dir)
 
 

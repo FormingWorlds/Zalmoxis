@@ -23,6 +23,7 @@ nav:
       - Binodal suppression: Explanations/binodal.md
       - Process flow: Explanations/process_flow.md
       - Code architecture: Explanations/code_architecture.md
+      - First-principles verification: Explanations/verification.md
 
   - Reference:
       - API reference:
