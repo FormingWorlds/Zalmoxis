@@ -32,6 +32,8 @@ $$
 
 where $M(r)$ is the enclosed mass, $g(r)$ is gravitational acceleration, $P(r)$ is pressure, and $\rho(r)$ is density. These are integrated outward from the center ($r = 0$) with initial conditions $M(0) = 0$, $g(0) = 0$, $P(0) = P_c$.
 
+Note that the gravity equation is singular at $r = 0$ due to the $2g/r$ term. L'Hopital's rule gives the analytic limit $dg/dr|_{r=0} = \frac{4}{3}\pi G \rho_c$, which the code handles as a special case (`structure_model.py`, line 155).
+
 The system is closed by an equation of state $\rho = \rho(P, T)$, but for verification purposes we either fix $\rho$ to a constant (Tests 1-4) or use the Seager et al. (2007) analytic polytrope $\rho(P) = \rho_0 + c P^n$ (Tests 5-7), both of which eliminate any dependence on tabulated EOS data.
 
 ---
@@ -194,7 +196,7 @@ Running the uniform-density sphere at $N = 25, 50, 100, 200, 400, 800$ with `rto
 
 ![Grid convergence](../img/verification/grid_convergence.png)
 
-Both mass and pressure errors reach machine precision ($\sim 10^{-15}$) at $N \ge 100$. For this smooth (polynomial) density function, RK45 achieves its theoretical fourth-order local accuracy well within modest grid sizes. The rapid convergence confirms that the grid is not the bottleneck for accuracy; the ODE solver tolerance is.
+Mass errors reach machine precision ($\sim 10^{-15}$) at $N \ge 100$; pressure errors reach $\sim 10^{-12}$ (limited by the cumulative integration of the hydrostatic equation). For this smooth (polynomial) density function, RK45 achieves its theoretical fourth-order local accuracy well within modest grid sizes. The rapid convergence confirms that the grid is not the bottleneck for accuracy; the ODE solver tolerance is.
 
 For the full solver (including Picard iteration and Brent root-finding), the planet radius at $N = 200$ and $N = 400$ agrees to $< 1\%$, demonstrating that the full solver chain is also grid-independent at typical resolutions.
 
