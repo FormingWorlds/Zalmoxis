@@ -149,17 +149,18 @@ def _run_analytic_eos_solver(mass_earth, cmf=0.325, mmf=0, num_layers=200,
 # ============================================================================
 
 plt.rcParams.update({
-    'font.size': 12,
-    'axes.labelsize': 13,
-    'axes.titlesize': 14,
-    'legend.fontsize': 11,
-    'xtick.labelsize': 11,
-    'ytick.labelsize': 11,
-    'lines.linewidth': 2.0,
-    'lines.markersize': 7,
-    'figure.titlesize': 15,
+    'font.size': 16,
+    'axes.labelsize': 17,
+    'axes.titlesize': 18,
+    'legend.fontsize': 14,
+    'xtick.labelsize': 14,
+    'ytick.labelsize': 14,
+    'lines.linewidth': 2.5,
+    'lines.markersize': 9,
+    'figure.titlesize': 19,
     'savefig.bbox': 'tight',
-    'savefig.pad_inches': 0.08,
+    'savefig.pad_inches': 0.1,
+    'savefig.dpi': 150,
 })
 
 
@@ -177,7 +178,7 @@ def plot_uniform_sphere(outdir):
 
     r_km = radii / 1e3
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5.5))
 
     # Mass
     axes[0].plot(r_km, mass, 'b-', label='Numerical', linewidth=2)
@@ -250,7 +251,7 @@ def plot_two_layer_sphere(outdir):
 
     r_km = radii / 1e3
 
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5.5))
     axes[0].plot(r_km, mass, 'b-', label='Numerical', linewidth=2)
     axes[0].plot(r_km, M_ex, 'r--', label='Analytic', linewidth=2)
     axes[0].axvline(R_cmb / 1e3, color='gray', linestyle=':', label='CMB')
@@ -287,7 +288,7 @@ def plot_earth_benchmark(outdir):
     P = results['pressure']
     valid = P > 0
 
-    fig, axes = plt.subplots(2, 2, figsize=(11, 9))
+    fig, axes = plt.subplots(2, 2, figsize=(14, 11))
 
     axes[0, 0].plot(r_km[valid], results['density'][valid], 'b-', linewidth=2)
     axes[0, 0].set_xlabel('Radius [km]')
@@ -341,7 +342,7 @@ def plot_grid_convergence(outdir):
         mass_errors.append(np.max(np.abs(mass[1:] - M_ex[1:]) / M_ex[1:]))
         pressure_errors.append(np.max(np.abs(pressure[valid] - P_ex[valid]) / P_ex[valid]))
 
-    fig, ax = plt.subplots(figsize=(7, 5))
+    fig, ax = plt.subplots(figsize=(8, 6))
     ax.loglog(resolutions, mass_errors, 'bo-', label='Mass error', linewidth=2)
     ax.loglog(resolutions, pressure_errors, 'rs-', label='Pressure error', linewidth=2)
     ax.set_xlabel('Number of radial grid points')
@@ -377,7 +378,7 @@ def plot_mr_scaling(outdir):
     coeffs = np.polyfit(log_m, log_r, 1)
     alpha = coeffs[0]
 
-    fig, ax = plt.subplots(figsize=(7, 5))
+    fig, ax = plt.subplots(figsize=(8, 6))
     ax.loglog(masses_arr, radii_arr, 'bo', markersize=8, label='Zalmoxis (Analytic EOS)')
 
     m_fit = np.logspace(np.log10(0.3), np.log10(10), 50)
@@ -411,7 +412,7 @@ def plot_cmf_sweep(outdir):
         except Exception as e:
             logger.warning(f'  CMF={cmf} failed: {e}')
 
-    fig, ax = plt.subplots(figsize=(7, 5))
+    fig, ax = plt.subplots(figsize=(8, 6))
     ax.plot(valid_cmfs, radii_earth, 'bo-', markersize=6, linewidth=2)
     ax.set_xlabel('Core mass fraction')
     ax.set_ylabel(r'Radius [$R_\oplus$]')
@@ -433,7 +434,7 @@ def plot_conservation_diagnostics(outdir):
     r_km = radii / 1e3
     valid = pressure > 0
 
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5.5))
 
     # Gauss residual: g - GM/r^2
     idx = np.where(valid)[0]
