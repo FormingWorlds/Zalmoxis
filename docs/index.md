@@ -3,9 +3,9 @@
 
 # Zalmoxis
 
-**Zalmoxis** is a standalone exoplanet interior structure model that computes self-consistent radial profiles of density, pressure, temperature, gravity, and phase state for differentiated rocky planets and sub-Neptunes from 0.1 to 50 Earth masses.
-Given a total mass, layer composition, and temperature mode, it iteratively solves the coupled hydrostatic equilibrium equations to determine the planet's radius and internal structure.
-Zalmoxis works as an independent tool for mass-radius modelling and parameter studies, and also serves as the interior structure module within the [PROTEUS](https://proteus-framework.org/PROTEUS) coupled atmosphere-interior evolution framework.
+**Zalmoxis** is the interior structure solver of the [PROTEUS](https://proteus-framework.org/PROTEUS) coupled atmosphere-interior evolution framework, and also works fully self-consistently as an independent tool for mass-radius modelling and parameter studies.
+It resolves the planet from its center to the surface, computing self-consistent radial profiles of density, pressure, temperature, gravity, and phase state for differentiated rocky planets and sub-Neptunes from 0.1 to 50 Earth masses.
+Given a total mass, layer composition, and temperature mode, Zalmoxis iteratively solves the coupled hydrostatic equilibrium equations to determine the planet's radius and internal structure up to the interior-atmosphere boundary.
 
 To get started, see the [Getting Started guide](getting_started.md).
 
