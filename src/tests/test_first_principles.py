@@ -274,7 +274,9 @@ def _run_analytic_eos_solver(mass_earth, cmf=0.325, mmf=0, num_layers=200,
         'iteration_profiles_enabled': False,
     }
 
-    input_dir = os.path.join(os.environ['ZALMOXIS_ROOT'], 'input')
+    from zalmoxis import get_zalmoxis_root
+
+    input_dir = os.path.join(get_zalmoxis_root(), 'input')
     mat_dicts = load_material_dictionaries()
 
     results = main(
