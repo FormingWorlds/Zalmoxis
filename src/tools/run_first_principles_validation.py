@@ -145,6 +145,25 @@ def _run_analytic_eos_solver(mass_earth, cmf=0.325, mmf=0, num_layers=200,
 
 
 # ============================================================================
+# Plot style (paper-ready: larger labels, thicker lines)
+# ============================================================================
+
+plt.rcParams.update({
+    'font.size': 12,
+    'axes.labelsize': 13,
+    'axes.titlesize': 14,
+    'legend.fontsize': 11,
+    'xtick.labelsize': 11,
+    'ytick.labelsize': 11,
+    'lines.linewidth': 2.0,
+    'lines.markersize': 7,
+    'figure.titlesize': 15,
+    'savefig.bbox': 'tight',
+    'savefig.pad_inches': 0.08,
+})
+
+
+# ============================================================================
 # Plot functions
 # ============================================================================
 
@@ -158,19 +177,19 @@ def plot_uniform_sphere(outdir):
 
     r_km = radii / 1e3
 
-    fig, axes = plt.subplots(1, 3, figsize=(14, 4))
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
 
     # Mass
-    axes[0].plot(r_km, mass, 'b-', label='Numerical', linewidth=1.5)
-    axes[0].plot(r_km, M_ex, 'r--', label='Analytic', linewidth=1.5)
+    axes[0].plot(r_km, mass, 'b-', label='Numerical', linewidth=2)
+    axes[0].plot(r_km, M_ex, 'r--', label='Analytic', linewidth=2)
     axes[0].set_xlabel('Radius [km]')
     axes[0].set_ylabel('Enclosed mass [kg]')
     axes[0].set_title('(a) M(r)')
     axes[0].legend()
 
     # Gravity
-    axes[1].plot(r_km, gravity, 'b-', label='Numerical', linewidth=1.5)
-    axes[1].plot(r_km, g_ex, 'r--', label='Analytic', linewidth=1.5)
+    axes[1].plot(r_km, gravity, 'b-', label='Numerical', linewidth=2)
+    axes[1].plot(r_km, g_ex, 'r--', label='Analytic', linewidth=2)
     axes[1].set_xlabel('Radius [km]')
     axes[1].set_ylabel('Gravity [m/s$^2$]')
     axes[1].set_title('(b) g(r)')
@@ -178,14 +197,14 @@ def plot_uniform_sphere(outdir):
 
     # Pressure
     valid = pressure > 0
-    axes[2].plot(r_km[valid], pressure[valid] / 1e9, 'b-', label='Numerical', linewidth=1.5)
-    axes[2].plot(r_km[valid], P_ex[valid] / 1e9, 'r--', label='Analytic', linewidth=1.5)
+    axes[2].plot(r_km[valid], pressure[valid] / 1e9, 'b-', label='Numerical', linewidth=2)
+    axes[2].plot(r_km[valid], P_ex[valid] / 1e9, 'r--', label='Analytic', linewidth=2)
     axes[2].set_xlabel('Radius [km]')
     axes[2].set_ylabel('Pressure [GPa]')
     axes[2].set_title('(c) P(r)')
     axes[2].legend()
 
-    fig.suptitle(r'Uniform-density sphere ($\rho$ = 5000 kg/m$^3$)', fontsize=13)
+    fig.suptitle(r'Uniform-density sphere ($\rho$ = 5000 kg/m$^3$)')
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, 'uniform_sphere_profiles.pdf'))
     plt.close(fig)
@@ -231,9 +250,9 @@ def plot_two_layer_sphere(outdir):
 
     r_km = radii / 1e3
 
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
-    axes[0].plot(r_km, mass, 'b-', label='Numerical', linewidth=1.5)
-    axes[0].plot(r_km, M_ex, 'r--', label='Analytic', linewidth=1.5)
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
+    axes[0].plot(r_km, mass, 'b-', label='Numerical', linewidth=2)
+    axes[0].plot(r_km, M_ex, 'r--', label='Analytic', linewidth=2)
     axes[0].axvline(R_cmb / 1e3, color='gray', linestyle=':', label='CMB')
     axes[0].set_xlabel('Radius [km]')
     axes[0].set_ylabel('Enclosed mass [kg]')
@@ -242,8 +261,8 @@ def plot_two_layer_sphere(outdir):
 
     g_gauss = np.zeros(N)
     g_gauss[1:] = G * mass[1:] / radii[1:]**2
-    axes[1].plot(r_km, gravity, 'b-', label='Numerical g(r)', linewidth=1.5)
-    axes[1].plot(r_km[1:], g_gauss[1:], 'r--', label='G M(r) / r$^2$', linewidth=1.5)
+    axes[1].plot(r_km, gravity, 'b-', label='Numerical g(r)', linewidth=2)
+    axes[1].plot(r_km[1:], g_gauss[1:], 'r--', label='G M(r) / r$^2$', linewidth=2)
     axes[1].axvline(R_cmb / 1e3, color='gray', linestyle=':', label='CMB')
     axes[1].set_xlabel('Radius [km]')
     axes[1].set_ylabel('Gravity [m/s$^2$]')
@@ -252,7 +271,6 @@ def plot_two_layer_sphere(outdir):
 
     fig.suptitle(
         r'Two-layer sphere ($\rho_c$ = 13000, $\rho_m$ = 4000 kg/m$^3$, CMF = 0.325)',
-        fontsize=13,
     )
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, 'two_layer_sphere.pdf'))
@@ -269,26 +287,26 @@ def plot_earth_benchmark(outdir):
     P = results['pressure']
     valid = P > 0
 
-    fig, axes = plt.subplots(2, 2, figsize=(10, 8))
+    fig, axes = plt.subplots(2, 2, figsize=(11, 9))
 
-    axes[0, 0].plot(r_km[valid], results['density'][valid], 'b-', linewidth=1.5)
+    axes[0, 0].plot(r_km[valid], results['density'][valid], 'b-', linewidth=2)
     axes[0, 0].set_xlabel('Radius [km]')
     axes[0, 0].set_ylabel(r'Density [kg/m$^3$]')
     axes[0, 0].set_title(r'(a) $\rho$(r)')
 
-    axes[0, 1].plot(r_km[valid], P[valid] / 1e9, 'b-', linewidth=1.5)
+    axes[0, 1].plot(r_km[valid], P[valid] / 1e9, 'b-', linewidth=2)
     axes[0, 1].set_xlabel('Radius [km]')
     axes[0, 1].set_ylabel('Pressure [GPa]')
     axes[0, 1].set_title('(b) P(r)')
 
-    axes[1, 0].plot(r_km[valid], results['gravity'][valid], 'b-', linewidth=1.5)
+    axes[1, 0].plot(r_km[valid], results['gravity'][valid], 'b-', linewidth=2)
     axes[1, 0].axhline(9.81, color='gray', linestyle=':', label='9.81 m/s$^2$')
     axes[1, 0].set_xlabel('Radius [km]')
     axes[1, 0].set_ylabel('Gravity [m/s$^2$]')
     axes[1, 0].set_title('(c) g(r)')
     axes[1, 0].legend()
 
-    axes[1, 1].plot(r_km[valid], results['mass_enclosed'][valid] / earth_mass, 'b-', linewidth=1.5)
+    axes[1, 1].plot(r_km[valid], results['mass_enclosed'][valid] / earth_mass, 'b-', linewidth=2)
     axes[1, 1].axhline(1.0, color='gray', linestyle=':', label=r'1 $M_\oplus$')
     axes[1, 1].set_xlabel('Radius [km]')
     axes[1, 1].set_ylabel(r'Enclosed mass [$M_\oplus$]')
@@ -301,7 +319,6 @@ def plot_earth_benchmark(outdir):
         f'Earth benchmark: R = {R_planet_km:.0f} km '
         f'({results["radii"][-1] / earth_radius:.3f} $R_\\oplus$), '
         f'$P_c$ = {P_c_GPa:.0f} GPa',
-        fontsize=13,
     )
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, 'earth_benchmark.pdf'))
@@ -324,9 +341,9 @@ def plot_grid_convergence(outdir):
         mass_errors.append(np.max(np.abs(mass[1:] - M_ex[1:]) / M_ex[1:]))
         pressure_errors.append(np.max(np.abs(pressure[valid] - P_ex[valid]) / P_ex[valid]))
 
-    fig, ax = plt.subplots(figsize=(6, 4))
-    ax.loglog(resolutions, mass_errors, 'bo-', label='Mass error', linewidth=1.5)
-    ax.loglog(resolutions, pressure_errors, 'rs-', label='Pressure error', linewidth=1.5)
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.loglog(resolutions, mass_errors, 'bo-', label='Mass error', linewidth=2)
+    ax.loglog(resolutions, pressure_errors, 'rs-', label='Pressure error', linewidth=2)
     ax.set_xlabel('Number of radial grid points')
     ax.set_ylabel('Max relative error')
     ax.set_title('Grid convergence (uniform-density sphere, rtol=1e-10)')
@@ -360,12 +377,12 @@ def plot_mr_scaling(outdir):
     coeffs = np.polyfit(log_m, log_r, 1)
     alpha = coeffs[0]
 
-    fig, ax = plt.subplots(figsize=(6, 4))
+    fig, ax = plt.subplots(figsize=(7, 5))
     ax.loglog(masses_arr, radii_arr, 'bo', markersize=8, label='Zalmoxis (Analytic EOS)')
 
     m_fit = np.logspace(np.log10(0.3), np.log10(10), 50)
     r_fit = 10**np.polyval(coeffs, np.log10(m_fit))
-    ax.loglog(m_fit, r_fit, 'r--', label=f'Fit: R $\\propto$ M$^{{{alpha:.3f}}}$', linewidth=1.5)
+    ax.loglog(m_fit, r_fit, 'r--', label=f'Fit: R $\\propto$ M$^{{{alpha:.3f}}}$', linewidth=2)
 
     ax.set_xlabel(r'Mass [$M_\oplus$]')
     ax.set_ylabel(r'Radius [$R_\oplus$]')
@@ -394,8 +411,8 @@ def plot_cmf_sweep(outdir):
         except Exception as e:
             logger.warning(f'  CMF={cmf} failed: {e}')
 
-    fig, ax = plt.subplots(figsize=(6, 4))
-    ax.plot(valid_cmfs, radii_earth, 'bo-', markersize=6, linewidth=1.5)
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(valid_cmfs, radii_earth, 'bo-', markersize=6, linewidth=2)
     ax.set_xlabel('Core mass fraction')
     ax.set_ylabel(r'Radius [$R_\oplus$]')
     ax.set_title(r'1 $M_\oplus$ planet: radius vs core mass fraction')
@@ -416,14 +433,14 @@ def plot_conservation_diagnostics(outdir):
     r_km = radii / 1e3
     valid = pressure > 0
 
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
 
     # Gauss residual: g - GM/r^2
     idx = np.where(valid)[0]
     idx = idx[idx > 2]  # skip near-origin
     g_gauss = G * mass[idx] / radii[idx]**2
     gauss_residual = np.abs(gravity[idx] - g_gauss) / g_gauss
-    axes[0].semilogy(r_km[idx], gauss_residual, 'b-', linewidth=1)
+    axes[0].semilogy(r_km[idx], gauss_residual, 'b-', linewidth=2)
     axes[0].set_xlabel('Radius [km]')
     axes[0].set_ylabel('Relative residual |g - GM/r$^2$| / (GM/r$^2$)')
     axes[0].set_title("(a) Gauss's law residual")
@@ -438,13 +455,13 @@ def plot_conservation_diagnostics(outdir):
     P_scale = (2.0 / 3.0) * math.pi * G * rho**2 * R
     rel_hydro = np.abs(hydro_residual) / P_scale
 
-    axes[1].semilogy(r_km[interior], rel_hydro, 'b-', linewidth=1)
+    axes[1].semilogy(r_km[interior], rel_hydro, 'b-', linewidth=2)
     axes[1].set_xlabel('Radius [km]')
     axes[1].set_ylabel('Relative residual |dP/dr + $\\rho$g| / P$_{\\rm scale}$')
     axes[1].set_title('(b) Hydrostatic balance residual')
     axes[1].grid(True, alpha=0.3)
 
-    fig.suptitle(r'Conservation diagnostics (uniform sphere, $\rho$ = 5000 kg/m$^3$)', fontsize=13)
+    fig.suptitle(r'Conservation diagnostics (uniform sphere, $\rho$ = 5000 kg/m$^3$)')
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, 'conservation_diagnostics.pdf'))
     plt.close(fig)
