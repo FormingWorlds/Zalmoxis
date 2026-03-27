@@ -7,7 +7,8 @@
 It resolves the planet from its center to the surface, computing self-consistent radial profiles of density, pressure, temperature, gravity, and phase state for differentiated rocky planets and sub-Neptunes from 0.1 to 50 Earth masses.
 Given a total mass, layer composition, and temperature mode, Zalmoxis iteratively solves the coupled hydrostatic equilibrium equations to determine the planet's radius and internal structure up to the interior-atmosphere boundary.
 
-To get started, see the [Getting Started guide](getting_started.md).
+!!! tip "New to Zalmoxis?"
+    See the **[Getting Started guide](getting_started.md)** for installation, first run, and basic usage.
 
 ## Features
 
