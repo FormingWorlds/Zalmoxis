@@ -1,7 +1,7 @@
 # Installation
 
 !!! note "Installation within the PROTEUS framework"
-    The standard way of installing Zalmoxis is within the [PROTEUS framework](https://proteus-framework.org/PROTEUS/), as described in the [PROTEUS installation guide](https://proteus-framework.org/PROTEUS/installation.html). When installed as part of PROTEUS, Zalmoxis is set up automatically alongside all other modules. The standalone instructions below are only needed if you want to use Zalmoxis independently of PROTEUS.
+    The standard way of installing Zalmoxis is within the [PROTEUS framework](https://proteus-framework.org/PROTEUS/), as described in the [PROTEUS installation guide](https://proteus-framework.org/PROTEUS/How-to/installation.html). When installed as part of PROTEUS, Zalmoxis is set up automatically alongside all other modules. The standalone instructions below are only needed if you want to use Zalmoxis independently of PROTEUS.
 
 ## Prerequisites
 
