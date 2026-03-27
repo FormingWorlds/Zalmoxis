@@ -739,3 +739,207 @@ def main(
         'converged_mass': converged_mass,
     }
     return model_results
+
+
+def solve_miscible_interior(
+    config_params,
+    material_dictionaries,
+    melting_curves_functions,
+    input_dir,
+    layer_mixtures=None,
+    volatile_profile=None,
+    h2_mass_targets=None,
+    max_iterations=10,
+    mass_tolerance=0.01,
+):
+    """Run Zalmoxis with mass-conservation iteration for binodal-controlled species.
+
+    Wraps ``main()`` in an outer loop that adjusts the interior mass fractions
+    (``volatile_profile.x_interior``) for each binodal-controlled species until
+    the radially integrated mass of each species matches the target.
+
+    Parameters
+    ----------
+    config_params : dict
+        Configuration parameters for the model.
+    material_dictionaries : dict
+        EOS registry dict keyed by EOS identifier string.
+    melting_curves_functions : tuple or None
+        (solidus_func, liquidus_func) for EOS needing external melting curves.
+    input_dir : str
+        Directory containing input files.
+    layer_mixtures : dict or None, optional
+        Per-layer LayerMixture objects.
+    volatile_profile : VolatileProfile or None, optional
+        Must have ``global_miscibility = True`` and ``x_interior`` set with
+        initial guesses.
+    h2_mass_targets : dict or None
+        Target masses for binodal-controlled species in kg, keyed by EOS name.
+        Example: ``{"Chabrier:H": 1.5e22, "PALEOS:H2O": 3e23}``.
+        If None or empty, runs ``main()`` once without iteration.
+    max_iterations : int
+        Maximum iterations for the mass conservation loop.
+    mass_tolerance : float
+        Relative mass tolerance for convergence. Default 0.01 (1%).
+
+    Returns
+    -------
+    dict
+        Model results from ``main()`` plus additional keys:
+
+        - ``solvus_radius``: radius where binodal is crossed [m], or None
+        - ``solvus_temperature``: temperature at solvus [K], or None
+        - ``solvus_pressure``: pressure at solvus [Pa], or None
+        - ``x_interior_converged``: converged interior mass fractions dict
+        - ``h2_mass_integrated``: integrated masses of binodal species [kg]
+        - ``miscibility_converged``: True if mass conservation converged
+        - ``miscibility_iterations``: number of iterations used
+    """
+    # No iteration needed if no targets
+    if (
+        volatile_profile is None
+        or not volatile_profile.global_miscibility
+        or not h2_mass_targets
+    ):
+        result = main(
+            config_params,
+            material_dictionaries,
+            melting_curves_functions,
+            input_dir,
+            layer_mixtures,
+            volatile_profile,
+        )
+        result['solvus_radius'] = None
+        result['solvus_temperature'] = None
+        result['solvus_pressure'] = None
+        result['x_interior_converged'] = {}
+        result['h2_mass_integrated'] = {}
+        result['miscibility_converged'] = True
+        result['miscibility_iterations'] = 0
+        return result
+
+    species_list = list(h2_mass_targets.keys())
+    misc_converged = False
+    result = None
+
+    for iteration in range(max_iterations):
+        # Run Zalmoxis structure solve
+        result = main(
+            config_params,
+            material_dictionaries,
+            melting_curves_functions,
+            input_dir,
+            layer_mixtures,
+            volatile_profile,
+        )
+
+        if not result.get('converged', False):
+            logger.warning(
+                'Miscibility iteration %d: Zalmoxis did not converge. '
+                'Skipping mass conservation check.',
+                iteration,
+            )
+            break
+
+        radii = result['radii']
+        density = result['density']
+        pressure = result['pressure']
+        temperature = result['temperature']
+
+        # Integrate mass of each binodal-controlled species
+        # M_species = integral(w_species(r) * rho(r) * 4*pi*r^2 dr)
+        # over shells where species is above the binodal
+        integrated_masses = {}
+        solvus_info = {'radius': None, 'temperature': None, 'pressure': None}
+
+        for species in species_list:
+            x_int = volatile_profile.x_interior.get(species, 0.0)
+            m_species = 0.0
+            solvus_found = False
+
+            for i in range(len(radii) - 1):
+                r_mid = 0.5 * (radii[i] + radii[i + 1])
+                dr = radii[i + 1] - radii[i]
+                rho_mid = 0.5 * (density[i] + density[i + 1])
+                P_mid = 0.5 * (pressure[i] + pressure[i + 1])
+                T_mid = 0.5 * (temperature[i] + temperature[i + 1])
+
+                if rho_mid <= 0 or P_mid <= 0 or dr <= 0:
+                    continue
+
+                # Check if this shell is above the binodal
+                if volatile_profile._is_above_binodal(species, P_mid, T_mid):
+                    shell_mass = rho_mid * 4.0 * np.pi * r_mid**2 * dr
+                    m_species += x_int * shell_mass
+                elif not solvus_found:
+                    # First shell below binodal (scanning outward from center):
+                    # this is the solvus crossing
+                    solvus_found = True
+                    if species == 'Chabrier:H':
+                        solvus_info['radius'] = r_mid
+                        solvus_info['temperature'] = T_mid
+                        solvus_info['pressure'] = P_mid
+
+            integrated_masses[species] = m_species
+
+        # Check convergence
+        all_converged = True
+        for species in species_list:
+            target = h2_mass_targets[species]
+            if target <= 0:
+                continue
+            integrated = integrated_masses.get(species, 0.0)
+            rel_error = abs(integrated - target) / target
+            logger.info(
+                'Miscibility iter %d: %s integrated=%.3e kg, ' 'target=%.3e kg, rel_error=%.4f',
+                iteration,
+                species,
+                integrated,
+                target,
+                rel_error,
+            )
+            if rel_error > mass_tolerance:
+                all_converged = False
+                # Update x_interior using secant-like scaling:
+                # new_x = old_x * (target / integrated)
+                old_x = volatile_profile.x_interior.get(species, 0.01)
+                if integrated > 0:
+                    new_x = old_x * (target / integrated)
+                else:
+                    # No mass integrated: double the guess
+                    new_x = old_x * 2.0
+                # Clamp to physical range
+                new_x = max(1e-6, min(0.5, new_x))
+                volatile_profile.x_interior[species] = new_x
+                logger.info(
+                    'Miscibility iter %d: %s x_interior %.6f -> %.6f',
+                    iteration,
+                    species,
+                    old_x,
+                    new_x,
+                )
+
+        if all_converged:
+            misc_converged = True
+            logger.info('Miscibility converged after %d iterations.', iteration + 1)
+            break
+
+    if not misc_converged:
+        logger.warning(
+            'Miscibility mass conservation did not converge after %d '
+            'iterations. Proceeding with current x_interior values.',
+            max_iterations,
+        )
+
+    # Add solvus and convergence info to results
+    result['solvus_radius'] = solvus_info['radius']
+    result['solvus_temperature'] = solvus_info['temperature']
+    result['solvus_pressure'] = solvus_info['pressure']
+    result['x_interior_converged'] = dict(volatile_profile.x_interior)
+    result['h2_mass_integrated'] = integrated_masses
+    result['miscibility_converged'] = misc_converged
+    result['miscibility_iterations'] = iteration + 1
+
+    return result
+
+
