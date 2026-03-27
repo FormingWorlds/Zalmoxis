@@ -15,6 +15,7 @@ nav:
       - Usage: How-to/usage.md
       - Parameter grids: How-to/grids.md
       - Testing: How-to/testing.md
+      - Releasing: How-to/releasing.md
 
   - Explanations:
       - Model overview: Explanations/model.md
