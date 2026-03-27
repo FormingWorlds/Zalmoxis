@@ -10,7 +10,7 @@ if __name__ == '__main__':
     root = get_zalmoxis_root()
 
     logging.basicConfig(
-        filename=os.path.join(root, 'output_files', 'zalmoxis.log'),
+        filename=os.path.join(root, 'output', 'zalmoxis.log'),
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s',
         filemode='w',

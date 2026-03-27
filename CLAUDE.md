@@ -16,7 +16,7 @@ When installed within PROTEUS, see also `../CLAUDE.md` for ecosystem-wide guidel
 
 - `ZALMOXIS_ROOT` env var must be set to the repo root. Tests and imports fail without it.
 - EOS data lives in `data/` (downloaded via `bash src/get_zalmoxis.sh`)
-- Output goes to `output_files/` (gitignored)
+- Output goes to `output/` (gitignored)
 
 ## Project layout
 

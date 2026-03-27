@@ -132,21 +132,21 @@ def post_processing(config_params, id_mass=None, output_file=None):
         )
         if id_mass is None:
             np.savetxt(
-                os.path.join(get_zalmoxis_root(), 'output_files', 'planet_profile.txt'),
+                os.path.join(get_zalmoxis_root(), 'output', 'planet_profile.txt'),
                 output_data,
                 header=header,
             )
         else:
             np.savetxt(
                 os.path.join(
-                    get_zalmoxis_root(), 'output_files', f'planet_profile{id_mass}.txt'
+                    get_zalmoxis_root(), 'output', f'planet_profile{id_mass}.txt'
                 ),
                 output_data,
                 header=header,
             )
         if output_file is None:
             output_file = os.path.join(
-                get_zalmoxis_root(), 'output_files', 'calculated_planet_mass_radius.txt'
+                get_zalmoxis_root(), 'output', 'calculated_planet_mass_radius.txt'
             )
         if not os.path.exists(output_file):
             header = 'Calculated Mass (kg)\tCalculated Radius (m)'

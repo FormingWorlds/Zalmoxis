@@ -37,8 +37,8 @@ def create_pressure_density_files(
     None
     """
 
-    pressure_file = os.path.join(get_zalmoxis_root(), 'output_files', 'pressure_profiles.txt')
-    density_file = os.path.join(get_zalmoxis_root(), 'output_files', 'density_profiles.txt')
+    pressure_file = os.path.join(get_zalmoxis_root(), 'output', 'pressure_profiles.txt')
+    density_file = os.path.join(get_zalmoxis_root(), 'output', 'density_profiles.txt')
 
     # Only delete the files once at the beginning of the run
     if outer_iter == 0 and inner_iter == 0 and pressure_iter == 0:

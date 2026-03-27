@@ -37,7 +37,7 @@ jobs:
 
       - name: Download required input/output files
         run: |
-          bash src/get_zalmoxis.sh
+          bash tools/setup/get_zalmoxis.sh
 
       - name: Lint with Ruff
         run: |

@@ -171,6 +171,7 @@ cython_debug/
 .pypirc
 
 # Code files
+/output
 /output_files
 /data
 /src/zalmoxis/all_profiles_with_colorbar_vs_custom.pdf
