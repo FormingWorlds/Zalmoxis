@@ -277,8 +277,15 @@ def iron_melting_anzellini13(P):
 
     Composite Simon-Glatzel law matching the PALEOS iron phase diagram:
 
-    - Below 98.5 GPa (gamma-Fe / liquid): Eq. 2
-    - Above 98.5 GPa (epsilon-Fe / liquid): Eq. 3
+    - Below 98.5 GPa (gamma-Fe / liquid): Eq. 2 from Anzellini+2013
+    - Above 98.5 GPa (epsilon-Fe / liquid): Eq. 3 from Anzellini+2013
+
+    Note: the gamma-Fe branch is parameterized relative to (P0=5.2 GPa,
+    T0=1991 K). Below P0, the formula extrapolates to lower temperatures
+    (non-physical: melting should increase with P). For P < 1 GPa, this
+    function clamps to the 1 atm melting point of pure iron (1811 K).
+    The epsilon-Fe branch (P > 98.5 GPa) is the relevant one for
+    planetary cores.
 
     Parameters
     ----------
@@ -301,12 +308,16 @@ def iron_melting_anzellini13(P):
     T0 = 1991.0  # Reference temperature [K]
     Pt_GPa = 98.5  # Triple point pressure [GPa]
     Tt = 3712.0  # Triple point temperature [K]
+    T_1atm = 1811.0  # 1 atm melting point of pure iron [K]
 
     T = np.where(
         P_GPa < Pt_GPa,
         T0 * ((P_GPa - P0_GPa) / 27.39 + 1.0) ** (1.0 / 2.38),
         Tt * ((P_GPa - Pt_GPa) / 161.2 + 1.0) ** (1.0 / 1.72),
     )
+    # Clamp to 1 atm melting point for low pressures where the
+    # Simon-Glatzel extrapolation is non-physical
+    T = np.maximum(T, T_1atm)
     return float(T[0]) if np.ndim(P) == 0 else T
 
 

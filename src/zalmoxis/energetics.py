@@ -220,7 +220,11 @@ def initial_thermal_state(
         if nabla_ad_func is not None:
             nad = nabla_ad_func(P_mantle[i], T)
         else:
-            nad = 0.3  # approximate for silicate melt
+            # Approximate nabla_ad for MgSiO3 melt at mid-mantle conditions.
+            # Stixrude (2014) gives nabla_ad ~ 0.2-0.4 for liquid MgSiO3
+            # across the 0-140 GPa range. 0.3 is a reasonable mid-range value.
+            # For production runs, PROTEUS provides nabla_ad from the EOS tables.
+            nad = 0.3
         if P_mantle[i] > 0:
             T = T + nad * T / P_mantle[i] * dP
     T_surface = T
