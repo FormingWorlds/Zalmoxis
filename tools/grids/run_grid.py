@@ -43,7 +43,6 @@ from zalmoxis.config import (
 )
 from zalmoxis.solver import main
 
-# get_zalmoxis_root() is validated at import by src.zalmoxis.zalmoxis
 from zalmoxis import get_zalmoxis_root
 
 logger = logging.getLogger(__name__)
