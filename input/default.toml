@@ -123,7 +123,7 @@ max_iterations_pressure    = 200 		# Max Brent solver evaluations (typically con
 # ── Output ─────────────────────────────────────────────────────────────
 
 [Output]
-data_enabled               = true 		# Write radial profiles to output_files/
+data_enabled               = true 		# Write radial profiles to output/
 plots_enabled              = false 		# Generate profile plots after the run
 verbose                    = false 		# Log detailed convergence diagnostics
 iteration_profiles_enabled = false 		# Write P and rho profiles for every iteration (large output)

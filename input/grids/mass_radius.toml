@@ -8,4 +8,4 @@ config = "input/default.toml"
 planet_mass = [0.5, 1.0, 2.0, 3.0, 5.0, 7.0, 10.0]
 
 [output]
-dir = "output_files/grid_mass_radius"
+dir = "output/grid_mass_radius"

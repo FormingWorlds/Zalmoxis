@@ -5,11 +5,11 @@
 All tabulated data files are downloaded automatically by running the setup script from the repository root:
 
 ```bash
-bash src/get_zalmoxis.sh
+bash tools/setup/get_zalmoxis.sh
 ```
 
-This invokes `src/setup_zalmoxis.py`, which downloads and extracts the required data into the `data/` directory.
-See Installation Step 4 of the [installation guide](https://proteus-framework.org/Zalmoxis/installation/) for details.
+This invokes `tools/setup/setup_zalmoxis.py`, which downloads and extracts the required data into the `data/` directory.
+See Installation Step 4 of the [installation guide](../How-to/installation.md) for details.
 
 ## Data inventory
 

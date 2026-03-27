@@ -10,4 +10,4 @@ mantle = ["PALEOS:MgSiO3", "PALEOS:MgSiO3:0.97+Chabrier:H:0.03", "PALEOS:MgSiO3:
 surface_temperature = [2000, 3000]
 
 [output]
-dir = "output_files/grid_h2_mixing"
+dir = "output/grid_h2_mixing"
