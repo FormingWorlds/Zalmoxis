@@ -115,9 +115,13 @@ def coupled_odes(
     # Determine per-layer mixture for the current enclosed mass
     mixture = get_layer_mixture(mass, cmb_mass, core_mantle_mass, layer_mixtures)
 
-    # Return zero derivatives for non-physical pressure.  The adaptive ODE
-    # solver (RK45) may evaluate trial points beyond the physical domain;
-    # zero derivatives signal the solver to reject the step and retry smaller.
+    # Return zero derivatives for non-physical pressure.  When the RHS
+    # returns zeros, the ODE state freezes (mass, gravity, pressure stop
+    # changing).  The terminal event (_pressure_zero, direction=-1) then
+    # fires when pressure crosses zero, stopping the integration.
+    # Note: zero derivatives do NOT cause RK45 to reject the step; the
+    # solver accepts them and advances with frozen state until the
+    # terminal event triggers.
     if pressure <= 0 or np.isnan(pressure):
         logger.debug(f'Nonphysical pressure encountered: P={pressure} Pa at radius={radius} m')
         return [0.0, 0.0, 0.0]
@@ -137,20 +141,19 @@ def coupled_odes(
         binodal_T_scale,
     )
 
-    # Return zero derivatives for invalid density.  This is intentional:
-    # the adaptive ODE solver (RK45) evaluates the RHS at trial points that
-    # may be non-physical (e.g. negative pressure).  Zero derivatives cause
-    # the solver to reject the step and retry with a smaller step size.
+    # Return zero derivatives for invalid density.  The ODE state freezes
+    # and the terminal event stops integration when pressure crosses zero.
+    # This handles EOS lookup failures (None return) and NaN densities
+    # from out-of-bounds table queries.
     if current_density is None or not np.isfinite(current_density):
         return [0.0, 0.0, 0.0]
 
     # Define the ODEs for mass, gravity and pressure
     dMdr = 4 * np.pi * radius**2 * current_density
-    # At r=0 the 2g/r term is singular; use the analytic limit dg/dr = 4πGρ/3.
-    # For r>0, add a tiny offset (1e-20 m, ~1e-14 R_earth) to guard against
-    # the adaptive solver probing exactly r=0.
+    # At r=0 the 2g/r term is singular; use the analytic limit dg/dr = 4πGρ/3
+    # (L'Hopital on g(r) = GM(r)/r^2 with M ~ r^3 near the center).
     dgdr = (
-        4 * np.pi * G * current_density - 2 * gravity / (radius + 1e-20)
+        4 * np.pi * G * current_density - 2 * gravity / radius
         if radius > 0
         else (4.0 / 3.0) * np.pi * G * current_density
     )

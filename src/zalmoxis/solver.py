@@ -246,6 +246,11 @@ def main(
 
     # Solve the interior structure
     for outer_iter in range(max_iterations_outer):
+        # Reset per-iteration convergence flags (prevent stale True from
+        # a previous outer iteration masking failure in the current one).
+        converged_pressure = False
+        converged_density = False
+
         radii = np.linspace(0, radius_guess, num_layers)
 
         density = np.zeros(num_layers)
