@@ -10,8 +10,8 @@ Provides:
 
 Imports
 -------
-- ``eos_functions``: ``calculate_density``, ``_get_paleos_unified_nabla_ad``,
-  ``_get_paleos_nabla_ad``, ``_compute_paleos_dtdp``
+- ``eos``: ``calculate_density``, ``calculate_density_batch``,
+  ``_get_paleos_unified_nabla_ad``, ``_compute_paleos_dtdp``, ``get_tabulated_eos``
 - ``binodal``: ``rogers2025_suppression_weight``, ``gupta2025_suppression_weight``
 - ``constants``: ``TDEP_EOS_NAMES``
 """

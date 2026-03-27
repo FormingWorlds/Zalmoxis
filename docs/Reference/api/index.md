@@ -20,7 +20,6 @@ src/zalmoxis/
 │   └── output.py         # Profile file writing
 ├── eos_analytic.py       # Analytic modified polytrope
 ├── eos_properties.py     # Lazy EOS_REGISTRY
-├── eos_export.py         # EOS table generation for SPIDER/Aragog
 ├── mixing.py             # Multi-material mixing, LayerMixture
 ├── melting_curves.py     # Solidus/liquidus curves
 ├── binodal.py            # H2 miscibility models

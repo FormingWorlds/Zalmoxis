@@ -8,10 +8,10 @@ Usage
 -----
 From the terminal::
 
-    python -m src.tools.plot_grid output/grid_mass_radius
-    python -m src.tools.plot_grid output/grid_mass_radius/grid_summary.csv
-    python -m src.tools.plot_grid grid_summary.csv -x surface_temperature -y R_earth
-    python -m src.tools.plot_grid grid_summary.csv --single-panel
+    python -m tools.grids.plot_grid output/grid_mass_radius
+    python -m tools.grids.plot_grid output/grid_mass_radius/grid_summary.csv
+    python -m tools.grids.plot_grid grid_summary.csv -x surface_temperature -y R_earth
+    python -m tools.grids.plot_grid grid_summary.csv --single-panel
 
 The script is also importable and runnable from an IDE: call
 ``plot_grid_summary()`` directly.

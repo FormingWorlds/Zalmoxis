@@ -106,7 +106,7 @@ If you added the variable to your shell profile (Step 3) but still see the error
 FileNotFoundError: [Errno 2] No such file or directory: '.../data/EOS_Seager2007/...'
 ```
 
-This error indicates that the tabulated EOS data files have not been downloaded. Run `bash src/get_zalmoxis.sh` from the Zalmoxis root directory to complete Step 4.
+This error indicates that the tabulated EOS data files have not been downloaded. Run `bash tools/setup/get_zalmoxis.sh` from the Zalmoxis root directory to complete Step 4.
 
 ### Import errors
 

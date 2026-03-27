@@ -6,7 +6,7 @@ a CSV summary.
 
 Usage
 -----
-    python -m src.tools.run_grid grid.toml -j 4
+    python -m tools.grids.run_grid grid.toml -j 4
 
 The grid TOML has three sections:
 

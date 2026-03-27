@@ -39,7 +39,7 @@ dependencies = [
 ]
 
 [project.scripts]
-zalmoxis = "zalmoxis.zalmoxis:main"
+zalmoxis = "zalmoxis.solver:main"
 
 [project.urls]
 homepage = "https://github.com/FormingWorlds/Zalmoxis"

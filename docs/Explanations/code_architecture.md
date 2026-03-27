@@ -21,7 +21,6 @@ Zalmoxis/
 │   │   └── output.py         # Pressure/density profile file writing
 │   ├── eos_analytic.py       # Seager+2007 analytic polytrope (6 materials)
 │   ├── eos_properties.py     # Lazy EOS_REGISTRY (paths built on first access)
-│   ├── eos_export.py         # P-S EOS table generation for SPIDER/Aragog
 │   ├── mixing.py             # Multi-component mixing, LayerMixture, suppression
 │   ├── melting_curves.py     # Solidus/liquidus functions
 │   ├── binodal.py            # H2-MgSiO3 and H2-H2O miscibility models
@@ -102,7 +101,6 @@ All public functions are re-exported via `eos/__init__.py`, so `from zalmoxis.eo
 |--------|---------|
 | `eos_analytic.py` | Seager+2007 analytic modified polytrope: $\rho(P) = \rho_0 + c P^n$ for 6 materials |
 | `eos_properties.py` | Lazy `EOS_REGISTRY` mapping EOS identifiers to data file paths (built on first access) |
-| `eos_export.py` | Generates EOS tables in formats required by SPIDER and Aragog |
 | `mixing.py` | `LayerMixture` dataclass, multi-material harmonic-mean density with phase-aware suppression |
 | `binodal.py` | H2-silicate and H2-H2O miscibility models (Rogers+2025, Gupta+2025) |
 | `melting_curves.py` | Solidus/liquidus curve loading and interpolation |
@@ -151,7 +149,7 @@ post_processing() ──► output files + plots (output.py)
 
 Two key resources are initialized lazily (on first access, not at import time):
 
-1. **`ZALMOXIS_ROOT`**: Resolved by `get_zalmoxis_root()` in `__init__.py`. Auto-detects from the package file path; falls back to the `ZALMOXIS_ROOT` environment variable. This allows the package to be imported without the env var being set (required for unit tests that mock the EOS).
+1. **`ZALMOXIS_ROOT`**: Resolved by `get_zalmoxis_root()` in `__init__.py`. Checks the `ZALMOXIS_ROOT` environment variable first; if not set, auto-detects from the package file path. This allows the package to be imported without the env var being set (required for unit tests that mock the EOS).
 
 2. **`EOS_REGISTRY`**: Data file paths in `eos_properties.py` are constructed on first dict access via a `_LazyRegistry` wrapper, not at module load time. This prevents import-time crashes when EOS data files are not yet downloaded.
 

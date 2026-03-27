@@ -39,7 +39,6 @@ Zalmoxis/
       output.py           # Pressure/density profile file writing
     eos_analytic.py       # Seager+2007 analytic polytrope (6 materials)
     eos_properties.py     # Lazy EOS_REGISTRY (paths built on first access)
-    eos_export.py         # P-S EOS table generation for SPIDER/Aragog
     mixing.py             # Multi-component mixing, LayerMixture, suppression
     melting_curves.py     # Solidus/liquidus functions
     binodal.py            # H2-MgSiO3 and H2-H2O miscibility models
