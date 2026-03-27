@@ -170,6 +170,9 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
+# Generated version file (setuptools-scm)
+src/zalmoxis/_version.py
+
 # Code files
 /output
 /output_files
