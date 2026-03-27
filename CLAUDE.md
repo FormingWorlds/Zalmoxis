@@ -8,37 +8,80 @@ When installed within PROTEUS, see also `../CLAUDE.md` for ecosystem-wide guidel
 - `python -m zalmoxis -c input/default.toml` - Run default config
 - `python -m pytest -o "addopts=" -m unit` - Run unit tests (override xdist parallel default)
 - `python -m pytest -o "addopts=" --cov=src/zalmoxis --cov-report=term-missing` - Coverage
-- `ruff check --fix src/ && ruff format src/` - Lint and format
-- `python -m src.tools.run_grid <grid.toml> -j <workers>` - Run parameter grid
-- `python -m src.tools.plot_grid <dir_or_csv>` - Plot grid results
+- `ruff check --fix src/ tests/ tools/ && ruff format src/ tests/ tools/` - Lint and format
+- `python -m tools.grids.run_grid <grid.toml> -j <workers>` - Run parameter grid
+- `python -m tools.grids.plot_grid <dir_or_csv>` - Plot grid results
 
 ## Environment
 
-- `ZALMOXIS_ROOT` env var must be set to the repo root. Tests and imports fail without it.
-- EOS data lives in `data/` (downloaded via `bash src/get_zalmoxis.sh`)
+- `ZALMOXIS_ROOT` is resolved lazily via `get_zalmoxis_root()` in `__init__.py`. Auto-detects from package location; set explicitly with `export ZALMOXIS_ROOT=$(pwd)` if needed.
+- EOS data lives in `data/` (downloaded via `bash tools/setup/get_zalmoxis.sh`)
 - Output goes to `output/` (gitignored)
 
 ## Project layout
 
-- `src/zalmoxis/` - Main package (solver, EOS, mixing, binodal, plotting)
-- `src/tests/` - All tests (unit, integration, slow markers)
-- `src/tools/` - Standalone scripts (run_grid, plot_grid, setup_tests, converters)
-- `input/` - TOML configs and grid specs
-- `docs/` - Zensical docs (see below)
+```
+Zalmoxis/
+  src/zalmoxis/           # Core package (installed via pip)
+    __init__.py           # get_zalmoxis_root() (lazy), __version__
+    config.py             # Config parsing, validation, EOS/melting setup
+    solver.py             # main() solver loop (3 nested iterations)
+    output.py             # post_processing(), file output
+    structure_model.py    # ODE system (dM/dr, dg/dr, dP/dr), solve_structure()
+    eos/                  # EOS package, organized by family
+      __init__.py         # Re-exports all public functions
+      interpolation.py    # Shared grid builders, bilinear interp, table loaders
+      seager.py           # Seager2007 tabulated 1D P-rho lookups
+      paleos.py           # Unified PALEOS density + nabla_ad, mushy zone
+      tdep.py             # T-dependent EOS, melting curves, phase routing
+      dispatch.py         # calculate_density/batch (main entry points)
+      temperature.py      # Adiabat computation, T profiles
+      output.py           # Pressure/density profile file writing
+    eos_analytic.py       # Seager+2007 analytic polytrope (6 materials)
+    eos_properties.py     # Lazy EOS_REGISTRY (paths built on first access)
+    eos_export.py         # P-S EOS table generation for SPIDER/Aragog
+    mixing.py             # Multi-component mixing, LayerMixture, suppression
+    melting_curves.py     # Solidus/liquidus functions
+    binodal.py            # H2-MgSiO3 and H2-H2O miscibility models
+    constants.py          # Physical constants (G, earth_mass, earth_radius)
+  tests/                  # Test suite (at repo root)
+  tools/                  # Standalone scripts (at repo root)
+    setup/                # Test fixtures, data download
+    validation/           # First-principles verification
+    benchmarks/           # EOS benchmarks
+    grids/                # Parameter sweep runners
+    converters/           # EOS format conversion
+    plots/                # Visualization scripts
+  input/                  # TOML configs and grid specs
+  data/                   # EOS tables (gitignored, ~600 MB)
+  output/                 # Generated outputs (gitignored)
+  docs/                   # Zensical documentation
+```
 
 ## Solver architecture
 
 Three nested loops: structure ODE (innermost) -> density Picard iteration -> mass-radius outer loop.
-Main entry: `zalmoxis.py:main()`. Key modules: `eos_functions.py` (EOS lookups), `mixing.py` (multi-material),
+Main entry: `solver.py:main()`. Key modules: `eos/dispatch.py` (EOS density lookups), `mixing.py` (multi-material),
 `binodal.py` (H2 phase suppression), `structure_model.py` (ODE system), `melting_curves.py`.
+
+## Import conventions
+
+No backward-compatibility shims. All imports are direct to the actual module:
+- `from zalmoxis.solver import main`
+- `from zalmoxis.config import load_zalmoxis_config, validate_config`
+- `from zalmoxis.output import post_processing`
+- `from zalmoxis.eos import calculate_density, load_paleos_unified_table`
+- `from zalmoxis.mixing import LayerMixture`
+- `from zalmoxis import get_zalmoxis_root`
 
 ## Testing
 
-- 425 unit tests, 41 integration, 2 slow (468 total)
-- Unit tests: `pytest -o "addopts=" -m unit` (~5 min with EOS loading)
+- 435 unit tests, ~40 integration, 4 slow (~480 total)
+- Unit tests: `pytest -o "addopts=" -m unit` (~1.5 min)
 - The `-o "addopts="` override is needed because pyproject.toml defaults include `-n auto --dist loadfile`
 - Use `@pytest.mark.unit` on all new unit tests
 - Use `pytest.approx` for float comparisons, never `==`
+- First-principles verification: `tests/test_first_principles.py` (25 tests, analytic solutions)
 
 ## Documentation (Zensical)
 

@@ -42,7 +42,7 @@ The `[develop]` extras are required for running the test suite. See the [Testing
 
 ### Step 3: Set the environment variable
 
-Zalmoxis requires the `ZALMOXIS_ROOT` environment variable to point to the base directory:
+Zalmoxis auto-detects its root directory from the package installation path. If auto-detection fails (e.g., non-standard installation layout), set the environment variable explicitly:
 
 ```console
 export ZALMOXIS_ROOT=$(pwd)
@@ -69,10 +69,10 @@ source ~/.zshrc
 Run the provided script to download the required equation-of-state tables and reference data:
 
 ```console
-bash src/get_zalmoxis.sh
+bash tools/setup/get_zalmoxis.sh
 ```
 
-This downloads data into the `data/` directory within the Zalmoxis repository (not into `FWL_DATA`). When Zalmoxis is installed within PROTEUS, the data path is managed by the PROTEUS framework. The script also creates the `output_files/` folder for model results.
+This downloads data into the `data/` directory within the Zalmoxis repository (not into `FWL_DATA`). When Zalmoxis is installed within PROTEUS, the data path is managed by the PROTEUS framework. The script also creates the `output/` folder for model results.
 
 ### Step 5: Run your first simulation
 

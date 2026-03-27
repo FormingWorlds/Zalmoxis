@@ -1,22 +1,112 @@
 # Code Architecture
 
-## Module overview
+## Repository layout
 
 ```
-src/zalmoxis/
-├── zalmoxis.py          # Orchestration: config loading, iteration loops, Brent solver, output
-├── structure_model.py   # ODE system: coupled_odes(), solve_structure(), terminal events
-├── eos_functions.py     # EOS dispatch: calculate_density(), fast bilinear interp, batch lookups
-├── eos_analytic.py      # Analytic modified polytrope: get_analytic_density()
-├── eos_properties.py    # EOS registry: material property dicts keyed by EOS identifier
-├── mixing.py            # Multi-material mixing: LayerMixture, phase-aware density/nabla_ad
-├── binodal.py           # H2 miscibility: Rogers+2025 (H2-MgSiO3), Gupta+2025 (H2-H2O)
-├── melting_curves.py    # Solidus/liquidus curves (Monteux+2016, Stixrude 2014, PALEOS, tabulated)
-├── constants.py         # Physical constants (G, earth_mass, earth_radius, etc.)
-└── plots/               # Visualization (profile plots, P-T phase diagrams)
+Zalmoxis/
+├── src/zalmoxis/             # Core package (installed via pip)
+│   ├── __init__.py           # get_zalmoxis_root() (lazy), __version__
+│   ├── config.py             # Config parsing, validation, EOS/melting setup
+│   ├── solver.py             # main() solver loop (3 nested iterations)
+│   ├── output.py             # post_processing(), file output
+│   ├── structure_model.py    # ODE system (dM/dr, dg/dr, dP/dr), solve_structure()
+│   ├── eos/                  # EOS package, organized by family
+│   │   ├── __init__.py       # Re-exports all public functions
+│   │   ├── interpolation.py  # Shared grid builders, bilinear interp, table loaders
+│   │   ├── seager.py         # Seager2007 tabulated 1D P-rho lookups
+│   │   ├── paleos.py         # Unified PALEOS density + nabla_ad, mushy zone
+│   │   ├── tdep.py           # T-dependent EOS, melting curves, phase routing
+│   │   ├── dispatch.py       # calculate_density/batch (main entry points)
+│   │   ├── temperature.py    # Adiabat computation, T profiles
+│   │   └── output.py         # Pressure/density profile file writing
+│   ├── eos_analytic.py       # Seager+2007 analytic polytrope (6 materials)
+│   ├── eos_properties.py     # Lazy EOS_REGISTRY (paths built on first access)
+│   ├── eos_export.py         # P-S EOS table generation for SPIDER/Aragog
+│   ├── mixing.py             # Multi-component mixing, LayerMixture, suppression
+│   ├── melting_curves.py     # Solidus/liquidus functions
+│   ├── binodal.py            # H2-MgSiO3 and H2-H2O miscibility models
+│   └── constants.py          # Physical constants (G, earth_mass, earth_radius)
+├── tests/                    # Test suite
+├── tools/                    # Standalone scripts
+│   ├── setup/                # Test fixtures, data download
+│   ├── validation/           # First-principles verification
+│   ├── benchmarks/           # EOS benchmarks
+│   ├── grids/                # Parameter sweep runners
+│   ├── converters/           # EOS format conversion
+│   └── plots/                # Visualization scripts
+├── input/                    # TOML configs and grid specs
+├── data/                     # EOS tables (gitignored, ~600 MB)
+├── output/                   # Generated outputs (gitignored)
+└── docs/                     # Zensical documentation
 ```
 
-See the [API reference](../Reference/api/index.md) for a detailed API overview.
+See the [API reference](../Reference/api/index.md) for detailed function-level documentation.
+
+## Package modules
+
+The core package (`src/zalmoxis/`) is organized by responsibility:
+
+### Configuration (`config.py`)
+
+Handles TOML configuration loading, EOS config parsing (new per-layer format and legacy global-string format), comprehensive parameter validation, material dictionary loading, and melting curve setup.
+
+Key functions:
+
+- **`load_zalmoxis_config()`**: Reads a TOML file and returns a validated config dict.
+- **`parse_eos_config()`**: Converts the `[EOS]` section into a per-layer dictionary.
+- **`validate_config()`**: Validates all parameters for physical and logical consistency.
+- **`load_material_dictionaries()`**: Returns the `EOS_REGISTRY` dict.
+- **`load_solidus_liquidus_functions()`**: Returns melting curve callables if needed by the EOS.
+
+### Solver (`solver.py`)
+
+Contains the `main()` function that implements the three nested iterative procedures:
+
+1. **Outermost: Mass-radius convergence.** Adjusts the planet radius until $M(R) = M_p$ using damped cube-root scaling clamped to $[0.5, 2.0]$.
+2. **Middle: Density Picard iteration.** Alternates between solving the ODE (for new P) and evaluating the EOS (for new $\rho$), using 0.5 damping.
+3. **Innermost: Brent root-finding.** Finds the central pressure $P_c$ such that $P(R) = P_{\mathrm{target}}$ via `scipy.optimize.brentq`.
+
+Each Brent evaluation calls `solve_structure()` from `structure_model.py` to integrate the hydrostatic equilibrium ODEs.
+
+### Output (`output.py`)
+
+The `post_processing()` function runs the solver, writes radial profile data and mass-radius results to files, and optionally generates plots. Plot imports are deferred (inside the `if plotting_enabled:` block) so the core package does not depend on matplotlib at import time.
+
+### Structure model (`structure_model.py`)
+
+Defines the coupled ODEs and integrates them:
+
+- **`coupled_odes()`**: Returns $[dM/dr, dg/dr, dP/dr]$ for a given $(r, M, g, P)$ state. Calls `calculate_mixed_density()` for the density closure. Returns $[0, 0, 0]$ for non-physical states.
+- **`solve_structure()`**: Integrates the ODEs via `scipy.integrate.solve_ivp` (RK45) with a terminal event at $P = 0$.
+- **`get_layer_mixture()`**: Maps enclosed mass to the per-layer EOS by comparing against core and core+mantle mass thresholds.
+
+### EOS package (`eos/`)
+
+The equation-of-state code is organized by EOS family:
+
+| Module | Purpose |
+|--------|---------|
+| `eos/interpolation.py` | Shared grid-building, `_fast_bilinear()` O(1) lookup, PALEOS table loaders, temperature clamping |
+| `eos/seager.py` | Seager2007 tabulated 1D $\rho(P)$ lookups |
+| `eos/paleos.py` | Unified PALEOS density and $\nabla_{\mathrm{ad}}$, mushy zone interpolation |
+| `eos/tdep.py` | Temperature-dependent EOS (WolfBower2018, RTPress, PALEOS-2phase), melting curves |
+| `eos/dispatch.py` | `calculate_density()` and `calculate_density_batch()` entry points that dispatch to the right EOS |
+| `eos/temperature.py` | Adiabatic temperature profiles, $dT/dP$ computation |
+| `eos/output.py` | Pressure/density profile file writing |
+
+All public functions are re-exported via `eos/__init__.py`, so `from zalmoxis.eos import calculate_density` works.
+
+### Other modules
+
+| Module | Purpose |
+|--------|---------|
+| `eos_analytic.py` | Seager+2007 analytic modified polytrope: $\rho(P) = \rho_0 + c P^n$ for 6 materials |
+| `eos_properties.py` | Lazy `EOS_REGISTRY` mapping EOS identifiers to data file paths (built on first access) |
+| `eos_export.py` | Generates EOS tables in formats required by SPIDER and Aragog |
+| `mixing.py` | `LayerMixture` dataclass, multi-material harmonic-mean density with phase-aware suppression |
+| `binodal.py` | H2-silicate and H2-H2O miscibility models (Rogers+2025, Gupta+2025) |
+| `melting_curves.py` | Solidus/liquidus curve loading and interpolation |
+| `constants.py` | Physical constants (`G`, `earth_mass`, `earth_radius`, `TDEP_EOS_NAMES`) |
 
 ## Data flow
 
@@ -24,91 +114,46 @@ See the [API reference](../Reference/api/index.md) for a detailed API overview.
 TOML config
     │
     ▼
-parse_eos_config() ──► layer_eos_config dict
-    │                   {"core": "Seager2007:iron", "mantle": "PALEOS-2phase:MgSiO3"}
+load_zalmoxis_config() ──► config dict (config.py)
+    │
     ▼
 main() ─── outer loop (radius) ─── inner loop (density) ─── brentq(_pressure_residual)
-    │                                                             │
-    │                                                             ▼
-    │                                                     solve_structure()
-    │                                                             │
-    │                                                             ▼
-    │                                                     solve_ivp(coupled_odes)
-    │                                                             │
-    │                                                             ▼
+    │       (solver.py)                                              │
+    │                                                                ▼
+    │                                                        solve_structure()
+    │                                                        (structure_model.py)
+    │                                                                │
+    │                                                                ▼
+    │                                                        solve_ivp(coupled_odes)
+    │                                                                │
+    │                                                                ▼
     │                                               get_layer_mixture() → calculate_mixed_density()
-    │                                                             │
-    │                                                  ┌──────────┼──────────┐
-    │                                                  ▼          ▼          ▼
-    │                                            per-component    sigmoid    harmonic
-    │                                            density via      weighting  mean with
-    │                                            calculate_       (_condensed effective
-    │                                            density()        _weight)   weights
-    │                                                             │
-    │                                                  ┌──────────┼──────────┐
-    │                                                  ▼          ▼          ▼
-    │                                            Seager2007   T-dependent  Analytic
-    │                                           (tabulated)  (WB2018/     (polytrope)
-    │                                                        RTPress/
-    │                                                        PALEOS-2phase/
-    │                                                        PALEOS unified)
+    │                                                                │         (mixing.py)
+    │                                                     ┌──────────┼──────────┐
+    │                                                     ▼          ▼          ▼
+    │                                               per-component    sigmoid    harmonic
+    │                                               density via      weighting  mean with
+    │                                               calculate_       (_condensed effective
+    │                                               density()        _weight)   weights
+    │                                               (eos/dispatch.py)
+    │                                                     │
+    │                                          ┌──────────┼──────────┐
+    │                                          ▼          ▼          ▼
+    │                                    Seager2007   T-dependent  Analytic
+    │                                   (eos/        (eos/tdep.py (eos_
+    │                                    seager.py)   eos/         analytic.py)
+    │                                                 paleos.py)
     ▼
-post_processing() ──► output files + plots
+post_processing() ──► output files + plots (output.py)
 ```
 
-## Key functions
+## Lazy initialization
 
-- **`main()`** (`zalmoxis.py`): Orchestrates the three nested convergence loops.
-  The innermost loop uses `scipy.optimize.brentq` to find the central pressure root (see [Pressure Solver](process_flow.md#pressure-solver-brents-method)).
+Two key resources are initialized lazily (on first access, not at import time):
 
-- **`_pressure_residual()`** (`zalmoxis.py`, closure inside `main()`): Residual function $f(P_c) = P_{\mathrm{surface}}(P_c) - P_{\mathrm{target}}$ passed to `brentq`.
-  Calls `solve_structure()` for each trial $P_c$ and captures the ODE solution via a mutable closure dict.
+1. **`ZALMOXIS_ROOT`**: Resolved by `get_zalmoxis_root()` in `__init__.py`. Auto-detects from the package file path; falls back to the `ZALMOXIS_ROOT` environment variable. This allows the package to be imported without the env var being set (required for unit tests that mock the EOS).
 
-- **`get_layer_mixture()`** (`structure_model.py`): Maps the enclosed mass at a given radial shell to the per-layer EOS string by comparing against core and core+mantle mass thresholds.
-  Purely geometric; no EOS-type branching.
-
-- **`coupled_odes()`** (`structure_model.py`): Defines the derivatives $dM/dr$, $dg/dr$, $dP/dr$ for the ODE solver.
-  Calls `calculate_density()` at each evaluation to close the system.
-  Returns $[0, 0, 0]$ for non-physical states (negative pressure, invalid density) to signal the adaptive solver to reject the step and retry smaller.
-
-- **`solve_structure()`** (`structure_model.py`): Integrates the coupled ODEs across the planetary radius using `scipy.integrate.solve_ivp` (RK45).
-  Includes a terminal event that stops integration when pressure crosses zero.
-  When any layer uses a temperature-dependent EOS (any entry in `TDEP_EOS_NAMES`), the radial grid is split into two segments for numerical stability near the surface; otherwise, a single integration pass is performed.
-  Pads output arrays to `len(radii)` if the terminal event truncates the integration.
-
-- **`calculate_density()`** (`eos_functions.py`): Dispatches the per-layer EOS string to the appropriate density calculation via the `EOS_REGISTRY` dict. Three dispatch paths: unified PALEOS tables (single-file, format `paleos_unified`), T-dependent EOS with separate solid/liquid tables (`WolfBower2018`, `RTPress100TPa`, `PALEOS-2phase`), Seager2007 static tables, or direct evaluation for `Analytic:*` strings.
-
-- **`get_Tdep_density()`** (`eos_functions.py`): Computes mantle density accounting for temperature-dependent phase transitions using the solidus/liquidus melting curves and volume-additive mixing in the mush regime.
-  Guards against `None` returns from out-of-bounds table lookups.
-
-- **`calculate_temperature_profile()`** (`eos_functions.py`): Returns a callable $T(r)$ for four modes: `"isothermal"` (uniform), `"linear"` (center-to-surface gradient), `"prescribed"` (loaded from file), or `"adiabatic"` (returns a linear initial guess; the self-consistent adiabat is computed later by `compute_adiabatic_temperature()`). In the ODE solver, the temperature function signature is $T(r, P)$: the $P$ argument is used by the adiabatic mode ($T(P)$ parameterization) and ignored by all other modes.
-
-- **`compute_adiabatic_temperature()`** (`eos_functions.py`): Computes the adiabatic temperature profile by integrating EOS gradients from the surface inward: $T_{i} = T_{i+1} + (dT/dP)_S \cdot \Delta P$. For `WolfBower2018:MgSiO3` and `RTPress100TPa:MgSiO3`, uses pre-tabulated $(dT/dP)_S$ from `adiabat_temp_grad_melt.dat`. For `PALEOS-2phase:MgSiO3`, uses the dimensionless $\nabla_{\mathrm{ad}}$ from the table with phase-aware weighting (solid/mixed/liquid via solidus/liquidus curves). For unified PALEOS tables (`PALEOS:iron`, `PALEOS:MgSiO3`, `PALEOS:H2O`) and `Chabrier:H`, reads $\nabla_{\mathrm{ad}}$ directly from the single table. With `PALEOS:iron`, the iron core follows its own adiabat instead of being isothermal. In the main convergence loop, the adiabat is parameterized as $T(P)$ (not $T(r)$) to ensure thermodynamic consistency during the Brent pressure solver's bracket search. For T-independent layers (e.g., `Seager2007:iron`), the temperature is held constant.
-
-- **`calculate_mixed_density()`** (`mixing.py`): Computes the suppressed harmonic-mean density for a layer mixture.
-  Single-component layers use a fast path that bypasses suppression entirely.
-  For multi-component layers, each component's density is evaluated via `calculate_density()`, then weighted by `_condensed_weight()` before entering the harmonic mean.
-
-- **`get_mixed_nabla_ad()`** (`mixing.py`): Computes the sigmoid-weighted average adiabatic gradient for a mixture, using the same suppression as density.
-
-- **`_condensed_weight()`** (`mixing.py`): Sigmoid suppression function $\sigma(\rho) = 1/(1 + \exp(-(\rho - \rho_{\min})/\rho_{\mathrm{scale}}))$.
-  Returns ~1 for condensed phases, ~0 for vapor.
-
-- **`_binodal_factor()`** (`mixing.py`): Computes the binodal (miscibility) suppression for H$_2$ components. Evaluates Rogers+2025 (H$_2$-MgSiO$_3$) and/or Gupta+2025 (H$_2$-H$_2$O) binodal models from `binodal.py`. Returns the minimum (most restrictive) suppression weight across all applicable partner materials. Non-H$_2$ components return 1.0.
-
-- **`calculate_mixed_density_batch()`** (`mixing.py`): Vectorized version of `calculate_mixed_density()` for the Picard density update loop. Evaluates all shells in a layer with a single batch interpolator call instead of per-shell scalar calls.
-
-- **`_fast_bilinear()`** (`eos_functions.py`): O(1) bilinear interpolation on log-uniform PALEOS/Chabrier grids. Replaces scipy's `RegularGridInterpolator` for scalar lookups, eliminating per-call Python overhead. Falls back to nearest-neighbor for NaN boundary cells.
-
-- **`calculate_density_batch()`** (`eos_functions.py`): Vectorized density lookup for a batch of (P, T) points sharing one EOS. Uses `get_paleos_unified_density_batch()` for PALEOS/Chabrier tables; falls back to scalar loop for other EOS types.
-
-- **`LayerMixture`** (`mixing.py`): Dataclass holding a layer's EOS components and mass fractions.
-  Supports runtime fraction updates from PROTEUS/CALLIOPE via `update_fractions()`.
-
-- **`parse_eos_config()`** (`zalmoxis.py`): Parses the `[EOS]` TOML section into a per-layer dictionary.
-  Handles both the new per-layer format and legacy global-string format via `LEGACY_EOS_MAP`.
-
-- **`validate_layer_eos()`** (`zalmoxis.py`): Validates that all per-layer EOS strings correspond to known tabulated or analytic options.
+2. **`EOS_REGISTRY`**: Data file paths in `eos_properties.py` are constructed on first dict access via a `_LazyRegistry` wrapper, not at module load time. This prevents import-time crashes when EOS data files are not yet downloaded.
 
 ## Error handling in the ODE system
 

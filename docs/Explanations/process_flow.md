@@ -2,8 +2,8 @@
 
 ## Configuration Loading
 
-The function `load_zalmoxis_config()` reads a TOML configuration file that specifies planet mass, layer mass fractions, per-layer EOS identifiers, temperature profile settings, solver tolerances, and output options.
-The `[EOS]` section is parsed by `parse_eos_config()`, which accepts both the new per-layer format and the legacy global-string format.
+The function `load_zalmoxis_config()` (in `config.py`) reads a TOML configuration file that specifies planet mass, layer mass fractions, per-layer EOS identifiers, temperature profile settings, solver tolerances, and output options.
+The `[EOS]` section is parsed by `parse_eos_config()` (also in `config.py`), which accepts both the new per-layer format and the legacy global-string format.
 
 ## Initial Parameter Setup
 

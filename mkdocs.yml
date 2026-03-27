@@ -27,15 +27,17 @@ nav:
   - Reference:
       - API reference:
           - Overview: Reference/api/index.md
-          - Core: Reference/api/zalmoxis.zalmoxis.md
-          - Constants: Reference/api/zalmoxis.constants.md
+          - Config: Reference/api/zalmoxis.config.md
+          - Solver: Reference/api/zalmoxis.solver.md
+          - Output: Reference/api/zalmoxis.output.md
+          - Structure model: Reference/api/zalmoxis.structure_model.md
+          - EOS package: Reference/api/zalmoxis.eos.md
           - Analytic EOS: Reference/api/zalmoxis.eos_analytic.md
-          - EOS functions: Reference/api/zalmoxis.eos_functions.md
           - EOS properties: Reference/api/zalmoxis.eos_properties.md
           - Melting curves: Reference/api/zalmoxis.melting_curves.md
           - Mixing: Reference/api/zalmoxis.mixing.md
           - Binodal: Reference/api/zalmoxis.binodal.md
-          - Structure model: Reference/api/zalmoxis.structure_model.md
+          - Constants: Reference/api/zalmoxis.constants.md
       - Data: Reference/data.md
 
   - Community:
