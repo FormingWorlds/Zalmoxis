@@ -201,8 +201,8 @@ class TestCalculateMixedDensity:
         if not _seager_data_available():
             pytest.skip('Seager data not found')
 
-        from zalmoxis.eos_functions import calculate_density
-        from zalmoxis.zalmoxis import load_material_dictionaries
+        from zalmoxis.eos import calculate_density
+        from zalmoxis.config import load_material_dictionaries
 
         md = load_material_dictionaries()
         mixture = LayerMixture(['Seager2007:iron'], [1.0])
@@ -221,8 +221,8 @@ class TestCalculateMixedDensity:
         if not _seager_data_available():
             pytest.skip('Seager data not found')
 
-        from zalmoxis.eos_functions import calculate_density
-        from zalmoxis.zalmoxis import load_material_dictionaries
+        from zalmoxis.eos import calculate_density
+        from zalmoxis.config import load_material_dictionaries
 
         md = load_material_dictionaries()
         P = 100e9
@@ -240,7 +240,7 @@ class TestCalculateMixedDensity:
 
     def test_analytic_mixing(self):
         """Analytic EOS components can be mixed."""
-        from zalmoxis.zalmoxis import load_material_dictionaries
+        from zalmoxis.config import load_material_dictionaries
 
         md = load_material_dictionaries()
         mixture = LayerMixture(['Analytic:iron', 'Analytic:MgSiO3'], [0.5, 0.5])
@@ -257,7 +257,8 @@ class TestBackwardCompat:
             pytest.skip('PALEOS data not found')
 
         from zalmoxis.constants import earth_mass
-        from zalmoxis.zalmoxis import load_material_dictionaries, main
+        from zalmoxis.config import load_material_dictionaries
+        from zalmoxis.solver import main
 
         config = {
             'planet_mass': 1.0 * earth_mass,
@@ -372,10 +373,10 @@ class TestVaporSuppression:
         mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
 
         # calculate_density is imported inside the function body in mixing.py
-        # to break a circular import. Patching 'zalmoxis.eos_functions.calculate_density'
+        # to break a circular import. Patching 'zalmoxis.eos.calculate_density'
         # works because the deferred import re-reads from the module's attribute dict,
         # which is already replaced by the patch.
-        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+        with patch('zalmoxis.eos.calculate_density', side_effect=mock_density):
             rho = calculate_mixed_density(
                 1e9,
                 3000,
@@ -408,7 +409,7 @@ class TestVaporSuppression:
         w1, w2 = 0.85, 0.15
         rho1, rho2 = 4000.0, 1000.0
 
-        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+        with patch('zalmoxis.eos.calculate_density', side_effect=mock_density):
             rho = calculate_mixed_density(
                 1e11,
                 3000,
@@ -443,7 +444,7 @@ class TestVaporSuppression:
 
         mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
 
-        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+        with patch('zalmoxis.eos.calculate_density', side_effect=mock_density):
             rho = calculate_mixed_density(
                 1e5,
                 5000,
@@ -470,7 +471,7 @@ class TestVaporSuppression:
 
         mixture = LayerMixture(['PALEOS:H2O'], [1.0])
 
-        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+        with patch('zalmoxis.eos.calculate_density', side_effect=mock_density):
             rho = calculate_mixed_density(
                 1e5,
                 3000,
@@ -507,7 +508,7 @@ class TestVaporSuppression:
         mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
 
         with (
-            patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density),
+            patch('zalmoxis.eos.calculate_density', side_effect=mock_density),
             patch('zalmoxis.mixing._nabla_ad_for_component', side_effect=mock_nabla),
         ):
             nabla = get_mixed_nabla_ad(
@@ -549,7 +550,7 @@ class TestPerEosMushyZoneFactors:
         mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
         factors = {'PALEOS:MgSiO3': 0.8, 'PALEOS:H2O': 0.9}
 
-        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+        with patch('zalmoxis.eos.calculate_density', side_effect=mock_density):
             calculate_mixed_density(
                 1e11,
                 3000,
@@ -577,7 +578,7 @@ class TestPerEosMushyZoneFactors:
         mixture = LayerMixture(['PALEOS:iron'], [1.0])
         factors = {'PALEOS:iron': 0.75, 'PALEOS:MgSiO3': 0.8}
 
-        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+        with patch('zalmoxis.eos.calculate_density', side_effect=mock_density):
             calculate_mixed_density(
                 1e11,
                 3000,
@@ -604,7 +605,7 @@ class TestPerEosMushyZoneFactors:
         mixture = LayerMixture(['Seager2007:iron'], [1.0])
         factors = {'PALEOS:MgSiO3': 0.8}
 
-        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+        with patch('zalmoxis.eos.calculate_density', side_effect=mock_density):
             calculate_mixed_density(
                 1e11,
                 300,
@@ -630,7 +631,7 @@ class TestPerEosMushyZoneFactors:
 
         mixture = LayerMixture(['PALEOS:iron'], [1.0])
 
-        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+        with patch('zalmoxis.eos.calculate_density', side_effect=mock_density):
             calculate_mixed_density(
                 1e11,
                 3000,
@@ -660,7 +661,7 @@ class TestPerEosMushyZoneFactors:
 
         mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
 
-        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+        with patch('zalmoxis.eos.calculate_density', side_effect=mock_density):
             calculate_mixed_density(
                 1e11,
                 3000,
@@ -790,7 +791,7 @@ class TestCalculateMixedDensityEdgeCases:
 
         mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
 
-        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+        with patch('zalmoxis.eos.calculate_density', side_effect=mock_density):
             rho = calculate_mixed_density(1e9, 3000, mixture, {}, None, None, {})
         assert rho is None
 
@@ -805,7 +806,7 @@ class TestCalculateMixedDensityEdgeCases:
 
         mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
 
-        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+        with patch('zalmoxis.eos.calculate_density', side_effect=mock_density):
             rho = calculate_mixed_density(1e9, 3000, mixture, {}, None, None, {})
         assert rho is None
 
@@ -820,7 +821,7 @@ class TestCalculateMixedDensityEdgeCases:
 
         mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
 
-        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+        with patch('zalmoxis.eos.calculate_density', side_effect=mock_density):
             rho = calculate_mixed_density(1e9, 3000, mixture, {}, None, None, {})
         assert rho is None
 
@@ -835,7 +836,7 @@ class TestCalculateMixedDensityEdgeCases:
 
         mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
 
-        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+        with patch('zalmoxis.eos.calculate_density', side_effect=mock_density):
             rho = calculate_mixed_density(1e9, 3000, mixture, {}, None, None, {})
         assert rho is None
 
@@ -852,7 +853,7 @@ class TestCalculateMixedDensityEdgeCases:
 
         mixture = LayerMixture(['PALEOS:MgSiO3', 'Chabrier:H'], [0.85, 0.15])
 
-        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+        with patch('zalmoxis.eos.calculate_density', side_effect=mock_density):
             rho = calculate_mixed_density(
                 1e10,
                 5000,
@@ -890,7 +891,7 @@ class TestCalculateMixedDensityBatch:
         pressures = np.array([100e9, 200e9, 300e9])
         temperatures = np.array([3000.0, 3500.0, 4000.0])
 
-        with patch('zalmoxis.eos_functions.calculate_density_batch', side_effect=mock_batch):
+        with patch('zalmoxis.eos.calculate_density_batch', side_effect=mock_batch):
             result = calculate_mixed_density_batch(
                 pressures, temperatures, mixture, {}, None, None, {}
             )
@@ -912,7 +913,7 @@ class TestCalculateMixedDensityBatch:
         pressures = np.array([100e9, 200e9])
         temperatures = np.array([3000.0, 3500.0])
 
-        with patch('zalmoxis.eos_functions.calculate_density_batch', side_effect=mock_batch):
+        with patch('zalmoxis.eos.calculate_density_batch', side_effect=mock_batch):
             result = calculate_mixed_density_batch(
                 pressures, temperatures, mixture, {}, None, None, {}
             )
@@ -938,7 +939,7 @@ class TestCalculateMixedDensityBatch:
         pressures = np.array([100e9, 200e9, 300e9])
         temperatures = np.array([3000.0, 3500.0, 4000.0])
 
-        with patch('zalmoxis.eos_functions.calculate_density_batch', side_effect=mock_batch):
+        with patch('zalmoxis.eos.calculate_density_batch', side_effect=mock_batch):
             result = calculate_mixed_density_batch(
                 pressures, temperatures, mixture, {}, None, None, {}
             )
@@ -963,7 +964,7 @@ class TestCalculateMixedDensityBatch:
         # One cold (below binodal), one hot (above binodal)
         temperatures = np.array([500.0, 10000.0])
 
-        with patch('zalmoxis.eos_functions.calculate_density_batch', side_effect=mock_batch):
+        with patch('zalmoxis.eos.calculate_density_batch', side_effect=mock_batch):
             result = calculate_mixed_density_batch(
                 pressures,
                 temperatures,
@@ -995,7 +996,7 @@ class TestCalculateMixedDensityBatch:
         pressures = np.array([100e9])
         temperatures = np.array([3000.0])
 
-        with patch('zalmoxis.eos_functions.calculate_density_batch', side_effect=mock_batch):
+        with patch('zalmoxis.eos.calculate_density_batch', side_effect=mock_batch):
             result = calculate_mixed_density_batch(
                 pressures, temperatures, mixture, {}, None, None, {}
             )
@@ -1030,7 +1031,7 @@ class TestGetMixedNablaAdPrecomputed:
         precomputed = {'PALEOS:MgSiO3': 4000.0, 'PALEOS:H2O': 1000.0}
 
         with (
-            patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density),
+            patch('zalmoxis.eos.calculate_density', side_effect=mock_density),
             patch('zalmoxis.mixing._nabla_ad_for_component', side_effect=mock_nabla),
         ):
             nabla = get_mixed_nabla_ad(
@@ -1064,7 +1065,7 @@ class TestGetMixedNablaAdPrecomputed:
         precomputed = {'PALEOS:MgSiO3': 4000.0}  # only MgSiO3 precomputed
 
         with (
-            patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density),
+            patch('zalmoxis.eos.calculate_density', side_effect=mock_density),
             patch('zalmoxis.mixing._nabla_ad_for_component', side_effect=mock_nabla),
         ):
             nabla = get_mixed_nabla_ad(
@@ -1089,7 +1090,7 @@ class TestGetMixedNablaAdPrecomputed:
 
         mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
 
-        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+        with patch('zalmoxis.eos.calculate_density', side_effect=mock_density):
             nabla = get_mixed_nabla_ad(1e10, 3000, mixture, {}, {})
 
         assert nabla is None
@@ -1109,7 +1110,7 @@ class TestGetMixedNablaAdPrecomputed:
         mixture = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.85, 0.15])
 
         with (
-            patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density),
+            patch('zalmoxis.eos.calculate_density', side_effect=mock_density),
             patch('zalmoxis.mixing._nabla_ad_for_component', side_effect=mock_nabla),
         ):
             nabla = get_mixed_nabla_ad(1e10, 3000, mixture, {}, {})
@@ -1149,7 +1150,7 @@ class TestNablaAdForComponent:
         md = {'PALEOS:iron': mat}
 
         with patch(
-            'zalmoxis.eos_functions._get_paleos_unified_nabla_ad', return_value=0.25
+            'zalmoxis.eos._get_paleos_unified_nabla_ad', return_value=0.25
         ) as mock_fn:
             result = _nabla_ad_for_component('PALEOS:iron', 1e10, 3000, md, {}, None, None)
 
@@ -1165,7 +1166,7 @@ class TestNablaAdForComponent:
         T = 4000.0
         dtdp = 1e-8  # dT/dP in K/Pa
 
-        with patch('zalmoxis.eos_functions._compute_paleos_dtdp', return_value=dtdp):
+        with patch('zalmoxis.eos._compute_paleos_dtdp', return_value=dtdp):
             result = _nabla_ad_for_component('PALEOS-2phase:MgSiO3', P, T, md, {}, None, None)
 
         expected = dtdp * P / T
@@ -1189,7 +1190,7 @@ class TestNablaAdForComponent:
 
         md = {'PALEOS-2phase:MgSiO3': {}}
 
-        with patch('zalmoxis.eos_functions._compute_paleos_dtdp', return_value=None):
+        with patch('zalmoxis.eos._compute_paleos_dtdp', return_value=None):
             result = _nabla_ad_for_component(
                 'PALEOS-2phase:MgSiO3', 1e10, 3000, md, {}, None, None
             )
@@ -1202,7 +1203,7 @@ class TestNablaAdForComponent:
 
         md = {'PALEOS-2phase:MgSiO3': {}}
 
-        with patch('zalmoxis.eos_functions._compute_paleos_dtdp', return_value=-1e-8):
+        with patch('zalmoxis.eos._compute_paleos_dtdp', return_value=-1e-8):
             result = _nabla_ad_for_component(
                 'PALEOS-2phase:MgSiO3', 1e10, 3000, md, {}, None, None
             )
@@ -1219,7 +1220,7 @@ class TestNablaAdForComponent:
         T = 4000.0
         dtdp = 2e-8
 
-        with patch('zalmoxis.eos_functions.get_tabulated_eos', return_value=dtdp):
+        with patch('zalmoxis.eos.get_tabulated_eos', return_value=dtdp):
             result = _nabla_ad_for_component('WolfBower2018:MgSiO3', P, T, md, {}, None, None)
 
         expected = dtdp * P / T
@@ -1247,7 +1248,7 @@ class TestNablaAdForComponent:
         mat = {'melted_mantle': {'adiabat_grad_file': '/some/path.dat'}}
         md = {'WolfBower2018:MgSiO3': mat}
 
-        with patch('zalmoxis.eos_functions.get_tabulated_eos', return_value=-1e-8):
+        with patch('zalmoxis.eos.get_tabulated_eos', return_value=-1e-8):
             result = _nabla_ad_for_component(
                 'WolfBower2018:MgSiO3', 1e10, 3000, md, {}, None, None
             )
@@ -1261,7 +1262,7 @@ class TestNablaAdForComponent:
         mat = {'melted_mantle': {'adiabat_grad_file': '/some/path.dat'}}
         md = {'WolfBower2018:MgSiO3': mat}
 
-        with patch('zalmoxis.eos_functions.get_tabulated_eos', return_value=None):
+        with patch('zalmoxis.eos.get_tabulated_eos', return_value=None):
             result = _nabla_ad_for_component(
                 'WolfBower2018:MgSiO3', 1e10, 3000, md, {}, None, None
             )

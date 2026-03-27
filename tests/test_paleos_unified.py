@@ -38,17 +38,17 @@ class TestUnifiedPALEOSRegistration:
     """Verify unified PALEOS identifiers are registered in lookup tables."""
 
     def test_iron_in_valid_tabulated_eos(self):
-        from zalmoxis.zalmoxis import VALID_TABULATED_EOS
+        from zalmoxis.config import VALID_TABULATED_EOS
 
         assert 'PALEOS:iron' in VALID_TABULATED_EOS
 
     def test_mgsio3_in_valid_tabulated_eos(self):
-        from zalmoxis.zalmoxis import VALID_TABULATED_EOS
+        from zalmoxis.config import VALID_TABULATED_EOS
 
         assert 'PALEOS:MgSiO3' in VALID_TABULATED_EOS
 
     def test_h2o_in_valid_tabulated_eos(self):
-        from zalmoxis.zalmoxis import VALID_TABULATED_EOS
+        from zalmoxis.config import VALID_TABULATED_EOS
 
         assert 'PALEOS:H2O' in VALID_TABULATED_EOS
 
@@ -73,13 +73,13 @@ class TestDictBasedMaterialDictionaries:
     """Verify that load_material_dictionaries returns a dict (not tuple)."""
 
     def test_returns_dict(self):
-        from zalmoxis.zalmoxis import load_material_dictionaries
+        from zalmoxis.config import load_material_dictionaries
 
         md = load_material_dictionaries()
         assert isinstance(md, dict), f'Expected dict, got {type(md)}'
 
     def test_contains_all_eos(self):
-        from zalmoxis.zalmoxis import VALID_TABULATED_EOS, load_material_dictionaries
+        from zalmoxis.config import VALID_TABULATED_EOS, load_material_dictionaries
 
         md = load_material_dictionaries()
         for eos_name in VALID_TABULATED_EOS:
@@ -87,7 +87,7 @@ class TestDictBasedMaterialDictionaries:
 
     def test_backward_compat_seager_iron(self):
         """Seager2007:iron should still have a 'core' sub-dict."""
-        from zalmoxis.zalmoxis import load_material_dictionaries
+        from zalmoxis.config import load_material_dictionaries
 
         md = load_material_dictionaries()
         mat = md['Seager2007:iron']
@@ -96,7 +96,7 @@ class TestDictBasedMaterialDictionaries:
 
     def test_backward_compat_wb2018(self):
         """WolfBower2018:MgSiO3 should still have melted_mantle and solid_mantle."""
-        from zalmoxis.zalmoxis import load_material_dictionaries
+        from zalmoxis.config import load_material_dictionaries
 
         md = load_material_dictionaries()
         mat = md['WolfBower2018:MgSiO3']
@@ -112,7 +112,7 @@ class TestLoadUnifiedTable:
         if not _paleos_unified_data_available():
             pytest.skip('Unified PALEOS data not found')
 
-        from zalmoxis.eos_functions import load_paleos_unified_table
+        from zalmoxis.eos import load_paleos_unified_table
 
         root = os.environ['ZALMOXIS_ROOT']
         iron_file = os.path.join(
@@ -134,7 +134,7 @@ class TestLoadUnifiedTable:
         if not _paleos_unified_data_available():
             pytest.skip('Unified PALEOS data not found')
 
-        from zalmoxis.eos_functions import load_paleos_unified_table
+        from zalmoxis.eos import load_paleos_unified_table
 
         root = os.environ['ZALMOXIS_ROOT']
         iron_file = os.path.join(
@@ -151,7 +151,7 @@ class TestLoadUnifiedTable:
         if not _paleos_unified_data_available():
             pytest.skip('Unified PALEOS data not found')
 
-        from zalmoxis.eos_functions import load_paleos_unified_table
+        from zalmoxis.eos import load_paleos_unified_table
 
         root = os.environ['ZALMOXIS_ROOT']
         mgsio3_file = os.path.join(
@@ -172,7 +172,7 @@ class TestUnifiedDensityLookup:
         if not _paleos_unified_data_available():
             pytest.skip('Unified PALEOS data not found')
 
-        from zalmoxis.eos_functions import get_paleos_unified_density
+        from zalmoxis.eos import get_paleos_unified_density
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['PALEOS:MgSiO3']
@@ -189,7 +189,7 @@ class TestUnifiedDensityLookup:
         if not _paleos_unified_data_available():
             pytest.skip('Unified PALEOS data not found')
 
-        from zalmoxis.eos_functions import get_paleos_unified_density
+        from zalmoxis.eos import get_paleos_unified_density
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['PALEOS:iron']
@@ -209,7 +209,7 @@ class TestUnifiedDensityLookup:
         if not _paleos_unified_data_available():
             pytest.skip('Unified PALEOS data not found')
 
-        from zalmoxis.eos_functions import get_paleos_unified_density, load_paleos_unified_table
+        from zalmoxis.eos import get_paleos_unified_density, load_paleos_unified_table
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['PALEOS:MgSiO3']
@@ -253,7 +253,7 @@ class TestUnifiedNablaAd:
         if not _paleos_unified_data_available():
             pytest.skip('Unified PALEOS data not found')
 
-        from zalmoxis.eos_functions import _get_paleos_unified_nabla_ad
+        from zalmoxis.eos import _get_paleos_unified_nabla_ad
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['PALEOS:iron']
@@ -269,7 +269,7 @@ class TestUnifiedNablaAd:
         if not _paleos_unified_data_available():
             pytest.skip('Unified PALEOS data not found')
 
-        from zalmoxis.eos_functions import _get_paleos_unified_nabla_ad
+        from zalmoxis.eos import _get_paleos_unified_nabla_ad
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['PALEOS:MgSiO3']
@@ -290,7 +290,8 @@ class TestUnifiedMassLimit:
     def test_mass_limit_raises_at_51(self):
         """Requesting > 50 M_earth with unified PALEOS must raise ValueError."""
         from zalmoxis.constants import earth_mass
-        from zalmoxis.zalmoxis import load_material_dictionaries, main
+        from zalmoxis.config import load_material_dictionaries
+        from zalmoxis.solver import main
 
         config = {
             'planet_mass': 51.0 * earth_mass,
@@ -335,8 +336,8 @@ class TestCalculateDensityDictDispatch:
 
     def test_seager_iron_via_dict(self):
         """Seager2007:iron density at 300 GPa should be ~13000 kg/m^3 (Earth center)."""
-        from zalmoxis.eos_functions import calculate_density
-        from zalmoxis.zalmoxis import load_material_dictionaries
+        from zalmoxis.eos import calculate_density
+        from zalmoxis.config import load_material_dictionaries
 
         # Seager2007 data may not be present
         root = os.environ.get('ZALMOXIS_ROOT', '')
@@ -351,8 +352,8 @@ class TestCalculateDensityDictDispatch:
 
     def test_analytic_via_dict(self):
         """Analytic:iron should work with dict dispatch."""
-        from zalmoxis.eos_functions import calculate_density
-        from zalmoxis.zalmoxis import load_material_dictionaries
+        from zalmoxis.eos import calculate_density
+        from zalmoxis.config import load_material_dictionaries
 
         md = load_material_dictionaries()
         rho = calculate_density(300e9, md, 'Analytic:iron', 300, None, None)
@@ -361,8 +362,8 @@ class TestCalculateDensityDictDispatch:
 
     def test_unknown_eos_raises(self):
         """Unknown EOS should raise ValueError."""
-        from zalmoxis.eos_functions import calculate_density
-        from zalmoxis.zalmoxis import load_material_dictionaries
+        from zalmoxis.eos import calculate_density
+        from zalmoxis.config import load_material_dictionaries
 
         md = load_material_dictionaries()
         with pytest.raises(ValueError, match='Unknown'):
@@ -379,7 +380,7 @@ class TestMusyZoneFactorConfig:
 
         import toml
 
-        from zalmoxis.zalmoxis import load_zalmoxis_config
+        from zalmoxis.config import load_zalmoxis_config
 
         # Create a minimal config file
         config = {
@@ -441,7 +442,7 @@ class TestMusyZoneFactorConfig:
 
         import toml
 
-        from zalmoxis.zalmoxis import load_zalmoxis_config
+        from zalmoxis.config import load_zalmoxis_config
 
         config = {
             'InputParameter': {'planet_mass': 1.0},

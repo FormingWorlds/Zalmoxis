@@ -31,7 +31,7 @@ logging.basicConfig(
     datefmt='%H:%M:%S',
 )
 logger = logging.getLogger('phase_regimes')
-logging.getLogger('zalmoxis.eos_functions').setLevel(logging.WARNING)
+logging.getLogger('zalmoxis.eos').setLevel(logging.WARNING)
 logging.getLogger('zalmoxis.zalmoxis').setLevel(logging.WARNING)
 
 ZALMOXIS_ROOT = os.environ.get('ZALMOXIS_ROOT')
@@ -40,14 +40,14 @@ if not ZALMOXIS_ROOT:
     sys.exit(1)
 
 from zalmoxis.constants import earth_mass, earth_radius  # noqa: E402
-from zalmoxis.eos_functions import load_paleos_unified_table  # noqa: E402
+from zalmoxis.eos import load_paleos_unified_table  # noqa: E402
 from zalmoxis.eos_properties import EOS_REGISTRY  # noqa: E402
-from zalmoxis.zalmoxis import (  # noqa: E402
+from zalmoxis.config import (
     load_material_dictionaries,
     load_solidus_liquidus_functions,
     load_zalmoxis_config,
-    main,
 )
+from zalmoxis.solver import main
 
 OUTPUT_DIR = os.path.join(ZALMOXIS_ROOT, 'output', 'benchmark_phase_regimes')
 os.makedirs(OUTPUT_DIR, exist_ok=True)

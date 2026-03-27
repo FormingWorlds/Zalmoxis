@@ -16,7 +16,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from zalmoxis.eos_functions import (
+from zalmoxis.eos import (
     calculate_temperature_profile,
     compute_adiabatic_temperature,
 )
@@ -47,7 +47,7 @@ class TestComputeAdiabaticTemperature:
 
         T_surface = 3500.0
         layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'}
-        from zalmoxis.zalmoxis import load_material_dictionaries
+        from zalmoxis.config import load_material_dictionaries
 
         material_dicts = load_material_dictionaries()
 
@@ -89,7 +89,7 @@ class TestComputeAdiabaticTemperature:
         CMF = 0.325
         cmb_mass = CMF * 5.972e24
         layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'}
-        from zalmoxis.zalmoxis import load_material_dictionaries
+        from zalmoxis.config import load_material_dictionaries
 
         material_dicts = load_material_dictionaries()
 
@@ -126,7 +126,7 @@ class TestComputeAdiabaticTemperature:
         if not os.path.isfile(grad_file):
             pytest.skip('WolfBower2018 adiabat gradient table not found')
 
-        from zalmoxis.zalmoxis import load_material_dictionaries
+        from zalmoxis.config import load_material_dictionaries
 
         material_dicts = load_material_dictionaries()
         layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'}
@@ -164,7 +164,7 @@ class TestComputeAdiabaticTemperature:
         """
         import copy
 
-        from zalmoxis.zalmoxis import load_material_dictionaries
+        from zalmoxis.config import load_material_dictionaries
 
         material_dicts = copy.deepcopy(load_material_dictionaries())
         # Remove the adiabat_grad_file key from WolfBower2018 melted_mantle
@@ -192,7 +192,7 @@ class TestComputeAdiabaticTemperature:
 
     def test_rejects_T_independent_mantle_eos(self):
         """Should raise ValueError if mantle EOS is T-independent (e.g. Seager2007)."""
-        from zalmoxis.zalmoxis import load_material_dictionaries
+        from zalmoxis.config import load_material_dictionaries
 
         material_dicts = load_material_dictionaries()
 
@@ -245,7 +245,7 @@ class TestNoDivergenceThickMantle:
         if not os.path.isfile(grad_file):
             pytest.skip('WolfBower2018 adiabat gradient table not found')
 
-        from zalmoxis.zalmoxis import load_material_dictionaries
+        from zalmoxis.config import load_material_dictionaries
 
         material_dicts = load_material_dictionaries()
         layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'}
@@ -299,7 +299,7 @@ class TestNoDivergenceThickMantle:
         if not os.path.isfile(grad_file):
             pytest.skip('WolfBower2018 adiabat gradient table not found')
 
-        from zalmoxis.zalmoxis import load_material_dictionaries
+        from zalmoxis.config import load_material_dictionaries
 
         material_dicts = load_material_dictionaries()
         layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'}
@@ -391,8 +391,8 @@ class TestPALEOSAdiabaticProfile:
         if not _paleos_data_available():
             pytest.skip('PALEOS data files not found')
 
-        from zalmoxis.eos_functions import get_solidus_liquidus_functions
-        from zalmoxis.zalmoxis import load_material_dictionaries
+        from zalmoxis.eos import get_solidus_liquidus_functions
+        from zalmoxis.config import load_material_dictionaries
 
         material_dicts = load_material_dictionaries()
         solidus_func, liquidus_func = get_solidus_liquidus_functions()
@@ -423,8 +423,8 @@ class TestPALEOSAdiabaticProfile:
         if not _paleos_data_available():
             pytest.skip('PALEOS data files not found')
 
-        from zalmoxis.eos_functions import get_solidus_liquidus_functions
-        from zalmoxis.zalmoxis import load_material_dictionaries
+        from zalmoxis.eos import get_solidus_liquidus_functions
+        from zalmoxis.config import load_material_dictionaries
 
         material_dicts = load_material_dictionaries()
         solidus_func, liquidus_func = get_solidus_liquidus_functions()
@@ -460,8 +460,8 @@ class TestPALEOSAdiabaticProfile:
         if not _paleos_data_available():
             pytest.skip('PALEOS data files not found')
 
-        from zalmoxis.eos_functions import get_solidus_liquidus_functions
-        from zalmoxis.zalmoxis import load_material_dictionaries
+        from zalmoxis.eos import get_solidus_liquidus_functions
+        from zalmoxis.config import load_material_dictionaries
 
         material_dicts = load_material_dictionaries()
         solidus_func, liquidus_func = get_solidus_liquidus_functions()
@@ -507,7 +507,7 @@ class TestAdiabaticBlendMechanism:
         """
         import inspect
 
-        from zalmoxis.zalmoxis import main
+        from zalmoxis.solver import main
 
         source = inspect.getsource(main)
         assert '_ADIABAT_BLEND_STEP = 0.25' in source

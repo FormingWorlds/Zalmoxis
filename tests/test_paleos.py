@@ -37,7 +37,7 @@ class TestPALEOSRegistration:
 
     def test_in_valid_tabulated_eos(self):
         """PALEOS-2phase:MgSiO3 should be in VALID_TABULATED_EOS."""
-        from zalmoxis.zalmoxis import VALID_TABULATED_EOS
+        from zalmoxis.config import VALID_TABULATED_EOS
 
         assert 'PALEOS-2phase:MgSiO3' in VALID_TABULATED_EOS
 
@@ -55,11 +55,12 @@ class TestPALEOSMassLimit:
     def test_mass_limit_raises(self):
         """Requesting > 50 M_earth with PALEOS-2phase:MgSiO3 must raise ValueError."""
         from zalmoxis.constants import earth_mass
-        from zalmoxis.zalmoxis import (
+        from zalmoxis.config import (
             load_material_dictionaries,
             load_solidus_liquidus_functions,
-            main,
+            load_zalmoxis_config,
         )
+        from zalmoxis.solver import main
 
         layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'PALEOS-2phase:MgSiO3'}
         config_params = {
@@ -102,7 +103,7 @@ class TestPALEOSMassLimit:
 
         We only test that the mass limit check passes, not full convergence.
         """
-        from zalmoxis.zalmoxis import PALEOS_MAX_MASS_EARTH
+        from zalmoxis.config import PALEOS_MAX_MASS_EARTH
 
         assert PALEOS_MAX_MASS_EARTH >= 50.0
 
@@ -116,7 +117,7 @@ class TestLoadPALEOSTable:
         if not _paleos_data_available():
             pytest.skip('PALEOS data files not found')
 
-        from zalmoxis.eos_functions import load_paleos_table
+        from zalmoxis.eos import load_paleos_table
 
         root = os.environ['ZALMOXIS_ROOT']
         solid_file = os.path.join(
@@ -137,7 +138,7 @@ class TestLoadPALEOSTable:
         if not _paleos_data_available():
             pytest.skip('PALEOS data files not found')
 
-        from zalmoxis.eos_functions import load_paleos_table
+        from zalmoxis.eos import load_paleos_table
 
         root = os.environ['ZALMOXIS_ROOT']
         liquid_file = os.path.join(
@@ -158,7 +159,7 @@ class TestPALEOSDensityInterpolation:
         if not _paleos_data_available():
             pytest.skip('PALEOS data files not found')
 
-        from zalmoxis.eos_functions import load_paleos_table
+        from zalmoxis.eos import load_paleos_table
 
         root = os.environ['ZALMOXIS_ROOT']
         liquid_file = os.path.join(
@@ -180,7 +181,7 @@ class TestPALEOSDensityInterpolation:
         if not _paleos_data_available():
             pytest.skip('PALEOS data files not found')
 
-        from zalmoxis.eos_functions import load_paleos_table
+        from zalmoxis.eos import load_paleos_table
 
         root = os.environ['ZALMOXIS_ROOT']
         solid_file = os.path.join(
@@ -214,7 +215,7 @@ class TestPALEOSNablaAdInterpolation:
         if not _paleos_data_available():
             pytest.skip('PALEOS data files not found')
 
-        from zalmoxis.eos_functions import load_paleos_table
+        from zalmoxis.eos import load_paleos_table
 
         root = os.environ['ZALMOXIS_ROOT']
         liquid_file = os.path.join(
@@ -236,7 +237,7 @@ class TestPALEOSNablaAdInterpolation:
         if not _paleos_data_available():
             pytest.skip('PALEOS data files not found')
 
-        from zalmoxis.eos_functions import load_paleos_table
+        from zalmoxis.eos import load_paleos_table
 
         root = os.environ['ZALMOXIS_ROOT']
         liquid_file = os.path.join(

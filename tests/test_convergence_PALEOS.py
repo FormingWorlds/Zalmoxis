@@ -47,12 +47,17 @@ def _run_paleos(mass_earth, temperature_mode='linear'):
     dict
         Model results dictionary.
     """
-    from src.zalmoxis import zalmoxis
-    from zalmoxis.zalmoxis import load_solidus_liquidus_functions
+    from zalmoxis import get_zalmoxis_root
+    from zalmoxis.config import (
+        load_material_dictionaries,
+        load_solidus_liquidus_functions,
+        load_zalmoxis_config,
+    )
+    from zalmoxis.solver import main
 
-    root = os.environ['ZALMOXIS_ROOT']
+    root = get_zalmoxis_root()
     default_config_path = os.path.join(root, 'input', 'default.toml')
-    config_params = zalmoxis.load_zalmoxis_config(default_config_path)
+    config_params = load_zalmoxis_config(default_config_path)
 
     config_params['planet_mass'] = mass_earth * earth_mass
     config_params['layer_eos_config'] = {
@@ -66,9 +71,9 @@ def _run_paleos(mass_earth, temperature_mode='linear'):
 
     layer_eos_config = config_params['layer_eos_config']
 
-    model_results = zalmoxis.main(
+    model_results = main(
         config_params,
-        material_dictionaries=zalmoxis.load_material_dictionaries(),
+        material_dictionaries=load_material_dictionaries(),
         melting_curves_functions=load_solidus_liquidus_functions(
             layer_eos_config,
             config_params.get('rock_solidus', 'Stixrude14-solidus'),

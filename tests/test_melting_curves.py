@@ -197,7 +197,7 @@ class TestPerCellClamping:
         if not os.path.isfile(liq_file):
             pytest.skip('PALEOS data not found')
 
-        from zalmoxis.eos_functions import load_paleos_table
+        from zalmoxis.eos import load_paleos_table
 
         cache = load_paleos_table(liq_file)
         assert 'logt_valid_min' in cache
@@ -220,7 +220,7 @@ class TestPerCellClamping:
         if not os.path.isfile(liq_file):
             pytest.skip('PALEOS data not found')
 
-        from zalmoxis.eos_functions import load_paleos_table
+        from zalmoxis.eos import load_paleos_table
 
         cache = load_paleos_table(liq_file)
 

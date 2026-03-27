@@ -35,13 +35,13 @@ from multiprocessing import Pool
 
 import toml
 
-from src.zalmoxis.constants import earth_mass, earth_radius
-from src.zalmoxis.zalmoxis import (
+from zalmoxis.constants import earth_mass, earth_radius
+from zalmoxis.config import (
     load_material_dictionaries,
     load_solidus_liquidus_functions,
     load_zalmoxis_config,
-    main,
 )
+from zalmoxis.solver import main
 
 # get_zalmoxis_root() is validated at import by src.zalmoxis.zalmoxis
 from zalmoxis import get_zalmoxis_root

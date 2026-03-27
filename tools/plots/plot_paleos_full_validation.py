@@ -31,13 +31,13 @@ if not ZALMOXIS_ROOT:
     sys.exit(1)
 
 from zalmoxis.constants import earth_mass, earth_radius  # noqa: E402
-from zalmoxis.eos_functions import load_paleos_unified_table  # noqa: E402
-from zalmoxis.zalmoxis import (  # noqa: E402
+from zalmoxis.eos import load_paleos_unified_table  # noqa: E402
+from zalmoxis.config import (
     load_material_dictionaries,
     load_solidus_liquidus_functions,
     load_zalmoxis_config,
-    main,
 )
+from zalmoxis.solver import main
 
 OUTPUT_DIR = os.path.join(ZALMOXIS_ROOT, 'output', 'paleos_full_validation')
 os.makedirs(OUTPUT_DIR, exist_ok=True)

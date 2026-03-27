@@ -229,7 +229,7 @@ def _run_analytic_eos_solver(mass_earth, cmf=0.325, mmf=0, num_layers=200,
     """
     import os
 
-    from zalmoxis.zalmoxis import load_material_dictionaries, main
+    from zalmoxis.config import load_material_dictionaries, main
 
     layer_eos = {'core': 'Analytic:iron', 'mantle': 'Analytic:MgSiO3'}
     if mmf > 0:

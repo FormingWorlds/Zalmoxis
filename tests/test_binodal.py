@@ -288,7 +288,7 @@ class TestMixingWithH2:
 
         mixture = LayerMixture(['PALEOS:MgSiO3', 'Chabrier:H'], [0.97, 0.03])
 
-        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+        with patch('zalmoxis.eos.calculate_density', side_effect=mock_density):
             rho = calculate_mixed_density(
                 1e9,
                 6000,  # well above binodal
@@ -322,7 +322,7 @@ class TestMixingWithH2:
 
         mixture = LayerMixture(['PALEOS:MgSiO3', 'Chabrier:H'], [0.97, 0.03])
 
-        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+        with patch('zalmoxis.eos.calculate_density', side_effect=mock_density):
             rho = calculate_mixed_density(
                 1e9,
                 1000,  # well below binodal
@@ -350,7 +350,7 @@ class TestMixingWithH2:
 
         mixture = LayerMixture(['Chabrier:H'], [1.0])
 
-        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+        with patch('zalmoxis.eos.calculate_density', side_effect=mock_density):
             rho = calculate_mixed_density(
                 1e9, 3000, mixture, {}, None, None, {}, condensed_rho_min=30.0
             )
@@ -379,7 +379,7 @@ class TestMixingWithH2:
 
         mixture = LayerMixture(['PALEOS:H2O', 'Chabrier:H'], [0.90, 0.10])
 
-        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+        with patch('zalmoxis.eos.calculate_density', side_effect=mock_density):
             rho = calculate_mixed_density(
                 1e9,
                 5000,  # above both binodals
@@ -412,7 +412,7 @@ class TestMixingWithH2:
 
         mixture = LayerMixture(['PALEOS:H2O', 'Chabrier:H'], [0.90, 0.10])
 
-        with patch('zalmoxis.eos_functions.calculate_density', side_effect=mock_density):
+        with patch('zalmoxis.eos.calculate_density', side_effect=mock_density):
             rho = calculate_mixed_density(
                 1e10,
                 5000,

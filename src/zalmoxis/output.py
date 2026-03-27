@@ -11,7 +11,7 @@ import numpy as np
 from . import get_zalmoxis_root
 from .config import _NEEDS_MELTING_CURVES
 from .constants import earth_mass, earth_radius
-from .eos_functions import get_Tdep_material
+from .eos import get_Tdep_material
 from .mixing import parse_layer_components
 
 logger = logging.getLogger(__name__)

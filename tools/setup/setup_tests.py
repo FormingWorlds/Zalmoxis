@@ -3,10 +3,15 @@ from __future__ import annotations
 import os
 import tempfile
 
-from src.zalmoxis import zalmoxis
-from src.zalmoxis.zalmoxis import load_solidus_liquidus_functions
 from zalmoxis import get_zalmoxis_root
+from zalmoxis.config import (
+    load_material_dictionaries,
+    load_solidus_liquidus_functions,
+    load_zalmoxis_config,
+)
 from zalmoxis.constants import earth_mass, earth_radius
+from zalmoxis.output import post_processing
+from zalmoxis.solver import main
 
 
 def run_zalmoxis_rocky_water(id_mass, config_type, cmf, immf, layer_eos_override=None):
@@ -33,7 +38,7 @@ def run_zalmoxis_rocky_water(id_mass, config_type, cmf, immf, layer_eos_override
     """
     # Load default configuration
     default_config_path = os.path.join(get_zalmoxis_root(), 'input', 'default.toml')
-    config_params = zalmoxis.load_zalmoxis_config(default_config_path)
+    config_params = load_zalmoxis_config(default_config_path)
 
     # Modify the configuration parameters as needed
     config_params['planet_mass'] = id_mass * earth_mass
@@ -72,13 +77,13 @@ def run_zalmoxis_rocky_water(id_mass, config_type, cmf, immf, layer_eos_override
     layer_eos_config = config_params['layer_eos_config']
 
     # Run the main function and post-processing
-    model_results = zalmoxis.main(
+    model_results = main(
         config_params,
-        material_dictionaries=zalmoxis.load_material_dictionaries(),
+        material_dictionaries=load_material_dictionaries(),
         melting_curves_functions=load_solidus_liquidus_functions(layer_eos_config),
         input_dir=os.path.join(get_zalmoxis_root(), 'input'),
     )
-    zalmoxis.post_processing(config_params, id_mass, output_file=output_file)
+    post_processing(config_params, id_mass, output_file=output_file)
 
     # Write profile data (radii and density) to a temporary profile file
     with tempfile.NamedTemporaryFile(
@@ -107,7 +112,7 @@ def run_zalmoxis_TdepEOS(id_mass):
     """
     # Load default configuration
     default_config_path = os.path.join(get_zalmoxis_root(), 'input', 'default.toml')
-    config_params = zalmoxis.load_zalmoxis_config(default_config_path)
+    config_params = load_zalmoxis_config(default_config_path)
 
     # Modify the configuration parameters as needed
     config_params['planet_mass'] = id_mass * earth_mass
@@ -123,9 +128,9 @@ def run_zalmoxis_TdepEOS(id_mass):
     layer_eos_config = config_params['layer_eos_config']
 
     # Unpack outputs directly from Zalmoxis
-    model_results = zalmoxis.main(
+    model_results = main(
         config_params,
-        material_dictionaries=zalmoxis.load_material_dictionaries(),
+        material_dictionaries=load_material_dictionaries(),
         melting_curves_functions=load_solidus_liquidus_functions(layer_eos_config),
         input_dir=os.path.join(get_zalmoxis_root(), 'input'),
     )
@@ -165,7 +170,7 @@ def run_zalmoxis_RTPress100TPa(id_mass):
     """
     # Load default configuration
     default_config_path = os.path.join(get_zalmoxis_root(), 'input', 'default.toml')
-    config_params = zalmoxis.load_zalmoxis_config(default_config_path)
+    config_params = load_zalmoxis_config(default_config_path)
 
     # Modify the configuration parameters as needed
     config_params['planet_mass'] = id_mass * earth_mass
@@ -185,9 +190,9 @@ def run_zalmoxis_RTPress100TPa(id_mass):
     layer_eos_config = config_params['layer_eos_config']
 
     # Unpack outputs directly from Zalmoxis
-    model_results = zalmoxis.main(
+    model_results = main(
         config_params,
-        material_dictionaries=zalmoxis.load_material_dictionaries(),
+        material_dictionaries=load_material_dictionaries(),
         melting_curves_functions=load_solidus_liquidus_functions(layer_eos_config),
         input_dir=os.path.join(get_zalmoxis_root(), 'input'),
     )
@@ -229,7 +234,7 @@ def run_zalmoxis_PALEOS(id_mass, temperature_mode='linear'):
     """
     # Load default configuration
     default_config_path = os.path.join(get_zalmoxis_root(), 'input', 'default.toml')
-    config_params = zalmoxis.load_zalmoxis_config(default_config_path)
+    config_params = load_zalmoxis_config(default_config_path)
 
     # Modify the configuration parameters as needed
     config_params['planet_mass'] = id_mass * earth_mass
@@ -250,9 +255,9 @@ def run_zalmoxis_PALEOS(id_mass, temperature_mode='linear'):
     layer_eos_config = config_params['layer_eos_config']
 
     # Unpack outputs directly from Zalmoxis
-    model_results = zalmoxis.main(
+    model_results = main(
         config_params,
-        material_dictionaries=zalmoxis.load_material_dictionaries(),
+        material_dictionaries=load_material_dictionaries(),
         melting_curves_functions=load_solidus_liquidus_functions(layer_eos_config),
         input_dir=os.path.join(get_zalmoxis_root(), 'input'),
     )

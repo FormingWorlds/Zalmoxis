@@ -111,7 +111,7 @@ def _lookup_phases(
     list of str
         Phase label at each shell.
     """
-    from zalmoxis.eos_functions import _ensure_unified_cache
+    from zalmoxis.eos import _ensure_unified_cache
     from zalmoxis.eos_properties import EOS_REGISTRY
     from zalmoxis.mixing import parse_layer_components
 

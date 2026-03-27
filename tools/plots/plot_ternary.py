@@ -14,7 +14,7 @@ from tqdm import tqdm
 # Read the environment variable for get_zalmoxis_root()
 from zalmoxis import get_zalmoxis_root, zalmoxis
 from zalmoxis.constants import earth_mass, earth_radius
-from zalmoxis.zalmoxis import load_solidus_liquidus_functions
+from zalmoxis.config import load_solidus_liquidus_functions
 
 # Set up logging
 logger = logging.getLogger(__name__)

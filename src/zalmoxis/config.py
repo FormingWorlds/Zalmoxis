@@ -20,7 +20,7 @@ from .constants import (
     earth_mass,
 )
 from .eos_analytic import VALID_MATERIAL_KEYS
-from .eos_functions import get_solidus_liquidus_functions
+from .eos import get_solidus_liquidus_functions
 from .eos_properties import EOS_REGISTRY
 from .mixing import (
     BINODAL_T_SCALE_DEFAULT,

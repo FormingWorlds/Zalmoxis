@@ -28,7 +28,7 @@ from .constants import (
     earth_mass,
     earth_radius,
 )
-from .eos_functions import (
+from .eos import (
     calculate_temperature_profile,
     compute_adiabatic_temperature,
     create_pressure_density_files,

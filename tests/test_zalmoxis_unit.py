@@ -71,7 +71,7 @@ class TestParseEosConfig:
 
     def test_new_format_core_mantle(self):
         """New per-layer format with core and mantle."""
-        from zalmoxis.zalmoxis import parse_eos_config
+        from zalmoxis.config import parse_eos_config
 
         section = {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'}
         result = parse_eos_config(section)
@@ -79,7 +79,7 @@ class TestParseEosConfig:
 
     def test_new_format_with_ice_layer(self):
         """New format with ice_layer included."""
-        from zalmoxis.zalmoxis import parse_eos_config
+        from zalmoxis.config import parse_eos_config
 
         section = {
             'core': 'PALEOS:iron',
@@ -95,7 +95,7 @@ class TestParseEosConfig:
 
     def test_new_format_empty_ice_layer_excluded(self):
         """Empty ice_layer string should not appear in result."""
-        from zalmoxis.zalmoxis import parse_eos_config
+        from zalmoxis.config import parse_eos_config
 
         section = {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3', 'ice_layer': ''}
         result = parse_eos_config(section)
@@ -103,28 +103,28 @@ class TestParseEosConfig:
 
     def test_new_format_missing_mantle_raises(self):
         """Core without mantle should raise ValueError."""
-        from zalmoxis.zalmoxis import parse_eos_config
+        from zalmoxis.config import parse_eos_config
 
         with pytest.raises(ValueError, match="missing 'mantle'"):
             parse_eos_config({'core': 'PALEOS:iron'})
 
     def test_legacy_tabulated_iron_silicate(self):
         """Legacy choice 'Tabulated:iron/silicate' maps to Seager2007."""
-        from zalmoxis.zalmoxis import parse_eos_config
+        from zalmoxis.config import parse_eos_config
 
         result = parse_eos_config({'choice': 'Tabulated:iron/silicate'})
         assert result == {'core': 'Seager2007:iron', 'mantle': 'Seager2007:MgSiO3'}
 
     def test_legacy_tabulated_iron_tdep_silicate(self):
         """Legacy choice 'Tabulated:iron/Tdep_silicate' maps to WolfBower2018."""
-        from zalmoxis.zalmoxis import parse_eos_config
+        from zalmoxis.config import parse_eos_config
 
         result = parse_eos_config({'choice': 'Tabulated:iron/Tdep_silicate'})
         assert result == {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'}
 
     def test_legacy_tabulated_water(self):
         """Legacy choice 'Tabulated:water' maps to 3-layer Seager2007."""
-        from zalmoxis.zalmoxis import parse_eos_config
+        from zalmoxis.config import parse_eos_config
 
         result = parse_eos_config({'choice': 'Tabulated:water'})
         assert result == {
@@ -135,7 +135,7 @@ class TestParseEosConfig:
 
     def test_legacy_analytic_seager2007(self):
         """Legacy choice 'Analytic:Seager2007' builds analytic per-layer config."""
-        from zalmoxis.zalmoxis import parse_eos_config
+        from zalmoxis.config import parse_eos_config
 
         result = parse_eos_config(
             {
@@ -148,7 +148,7 @@ class TestParseEosConfig:
 
     def test_legacy_analytic_with_water_layer(self):
         """Legacy analytic with water_layer_material creates ice_layer."""
-        from zalmoxis.zalmoxis import parse_eos_config
+        from zalmoxis.config import parse_eos_config
 
         result = parse_eos_config(
             {
@@ -162,21 +162,21 @@ class TestParseEosConfig:
 
     def test_legacy_analytic_defaults(self):
         """Legacy analytic without materials uses defaults (iron, MgSiO3)."""
-        from zalmoxis.zalmoxis import parse_eos_config
+        from zalmoxis.config import parse_eos_config
 
         result = parse_eos_config({'choice': 'Analytic:Seager2007'})
         assert result == {'core': 'Analytic:iron', 'mantle': 'Analytic:MgSiO3'}
 
     def test_unknown_config_raises(self):
         """Completely unknown EOS config raises ValueError."""
-        from zalmoxis.zalmoxis import parse_eos_config
+        from zalmoxis.config import parse_eos_config
 
         with pytest.raises(ValueError, match='Unknown EOS config'):
             parse_eos_config({'choice': 'NonExistentEOS'})
 
     def test_empty_section_raises(self):
         """Empty dict with no core or choice raises ValueError."""
-        from zalmoxis.zalmoxis import parse_eos_config
+        from zalmoxis.config import parse_eos_config
 
         with pytest.raises(ValueError, match='Unknown EOS config'):
             parse_eos_config({})
@@ -191,33 +191,33 @@ class TestValidateLayerEos:
 
     def test_valid_tabulated_eos(self):
         """Valid tabulated EOS strings should pass."""
-        from zalmoxis.zalmoxis import validate_layer_eos
+        from zalmoxis.config import validate_layer_eos
 
         validate_layer_eos({'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'})
 
     def test_valid_analytic_eos(self):
         """Valid analytic EOS strings should pass."""
-        from zalmoxis.zalmoxis import validate_layer_eos
+        from zalmoxis.config import validate_layer_eos
 
         validate_layer_eos({'core': 'Analytic:iron', 'mantle': 'Analytic:MgSiO3'})
 
     def test_invalid_analytic_material_raises(self):
         """Invalid analytic material key should raise ValueError."""
-        from zalmoxis.zalmoxis import validate_layer_eos
+        from zalmoxis.config import validate_layer_eos
 
         with pytest.raises(ValueError, match='Invalid analytic material'):
             validate_layer_eos({'core': 'Analytic:unobtanium', 'mantle': 'PALEOS:MgSiO3'})
 
     def test_invalid_tabulated_eos_raises(self):
         """Completely invalid EOS component should raise ValueError."""
-        from zalmoxis.zalmoxis import validate_layer_eos
+        from zalmoxis.config import validate_layer_eos
 
         with pytest.raises(ValueError, match='Invalid EOS component'):
             validate_layer_eos({'core': 'FakeEOS:stuff', 'mantle': 'PALEOS:MgSiO3'})
 
     def test_multi_material_mixture_valid(self):
         """Multi-material mixture string should validate each component."""
-        from zalmoxis.zalmoxis import validate_layer_eos
+        from zalmoxis.config import validate_layer_eos
 
         validate_layer_eos(
             {
@@ -228,7 +228,7 @@ class TestValidateLayerEos:
 
     def test_chabrier_h_valid(self):
         """Chabrier:H is a valid tabulated EOS."""
-        from zalmoxis.zalmoxis import validate_layer_eos
+        from zalmoxis.config import validate_layer_eos
 
         validate_layer_eos(
             {
@@ -246,44 +246,44 @@ class TestValidateCondensedPhaseParams:
     """Tests for condensed_rho_min, condensed_rho_scale, and binodal_T_scale validation."""
 
     def test_negative_condensed_rho_min_raises(self):
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         with pytest.raises(ValueError, match='condensed_rho_min must be positive'):
             validate_config(_make_config(condensed_rho_min=-10))
 
     def test_zero_condensed_rho_min_raises(self):
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         with pytest.raises(ValueError, match='condensed_rho_min must be positive'):
             validate_config(_make_config(condensed_rho_min=0))
 
     def test_negative_condensed_rho_scale_raises(self):
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         with pytest.raises(ValueError, match='condensed_rho_scale must be positive'):
             validate_config(_make_config(condensed_rho_scale=-5))
 
     def test_zero_condensed_rho_scale_raises(self):
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         with pytest.raises(ValueError, match='condensed_rho_scale must be positive'):
             validate_config(_make_config(condensed_rho_scale=0))
 
     def test_negative_binodal_T_scale_raises(self):
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         with pytest.raises(ValueError, match='binodal_T_scale must be positive'):
             validate_config(_make_config(binodal_T_scale=-1))
 
     def test_zero_binodal_T_scale_raises(self):
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         with pytest.raises(ValueError, match='binodal_T_scale must be positive'):
             validate_config(_make_config(binodal_T_scale=0))
 
     def test_valid_condensed_params_pass(self):
         """Valid condensed-phase params should not raise."""
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         validate_config(
             _make_config(
@@ -302,7 +302,7 @@ class TestValidateMultiMaterialMixing:
     """Tests for multi-material fraction validation in validate_config."""
 
     def test_negative_mass_fraction_raises(self):
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         with pytest.raises(ValueError, match='Negative mass fraction'):
             validate_config(
@@ -316,7 +316,7 @@ class TestValidateMultiMaterialMixing:
 
     def test_fractions_not_summing_to_one_normalized(self, caplog):
         """Fractions that don't sum to 1 are auto-normalized with a warning."""
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         # parse_layer_components normalizes fractions with a warning rather than raising.
         # Verify the warning is logged and validation still passes.
@@ -341,7 +341,7 @@ class TestValidateH2ODominatedMantle:
 
     def test_h2o_dominated_mantle_no_silicate_raises(self):
         """Mantle with >50% H2O and no silicate in non-isothermal mode should raise."""
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         with pytest.raises(ValueError, match='H2O with no silicate'):
             validate_config(
@@ -355,7 +355,7 @@ class TestValidateH2ODominatedMantle:
 
     def test_h2o_dominated_mantle_isothermal_passes(self):
         """H2O-dominated mantle in isothermal mode should pass."""
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         validate_config(
             _make_config(
@@ -370,7 +370,7 @@ class TestValidateH2ODominatedMantle:
 
     def test_h2o_with_silicate_passes(self):
         """H2O mixed with silicate should pass even at >50%."""
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         validate_config(
             _make_config(
@@ -390,7 +390,7 @@ class TestValidatePureChabrierMantle:
     """Tests for pure Chabrier:H mantle rejection."""
 
     def test_pure_chabrier_h_mantle_raises(self):
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         with pytest.raises(ValueError, match='Pure Chabrier:H mantle'):
             validate_config(
@@ -411,7 +411,7 @@ class TestValidateMeltingCurvesCrossCheck:
     """Tests for the melting-curves-required cross-check."""
 
     def test_wolfbower_without_melting_curves_raises(self):
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         with pytest.raises(ValueError, match='melting curves'):
             validate_config(
@@ -427,7 +427,7 @@ class TestValidateMeltingCurvesCrossCheck:
             )
 
     def test_wolfbower_with_melting_curves_passes(self):
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         validate_config(
             _make_config(
@@ -450,31 +450,31 @@ class TestValidatePressureSolverParams:
     """Tests for target_surface_pressure, pressure_tolerance, max_center_pressure_guess."""
 
     def test_negative_target_surface_pressure_raises(self):
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         with pytest.raises(ValueError, match='target_surface_pressure must be >= 0'):
             validate_config(_make_config(target_surface_pressure=-1))
 
     def test_zero_target_surface_pressure_passes(self):
         """Zero surface pressure (vacuum boundary) should pass."""
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         validate_config(_make_config(target_surface_pressure=0))
 
     def test_negative_pressure_tolerance_raises(self):
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         with pytest.raises(ValueError, match='pressure_tolerance must be positive'):
             validate_config(_make_config(pressure_tolerance=-1e9))
 
     def test_negative_max_center_pressure_guess_raises(self):
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         with pytest.raises(ValueError, match='max_center_pressure_guess must be positive'):
             validate_config(_make_config(max_center_pressure_guess=-1e12))
 
     def test_zero_max_iterations_pressure_raises(self):
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         with pytest.raises(ValueError, match='max_iterations_pressure must be >= 1'):
             validate_config(_make_config(max_iterations_pressure=0))
@@ -488,25 +488,25 @@ class TestValidateToleranceParams:
     """Tests for solver tolerance validation."""
 
     def test_negative_tolerance_inner_raises(self):
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         with pytest.raises(ValueError, match='tolerance_inner must be positive'):
             validate_config(_make_config(tolerance_inner=-1e-4))
 
     def test_negative_relative_tolerance_raises(self):
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         with pytest.raises(ValueError, match='relative_tolerance must be positive'):
             validate_config(_make_config(relative_tolerance=-1e-5))
 
     def test_negative_absolute_tolerance_raises(self):
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         with pytest.raises(ValueError, match='absolute_tolerance must be positive'):
             validate_config(_make_config(absolute_tolerance=-1e-6))
 
     def test_zero_max_iterations_inner_raises(self):
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         with pytest.raises(ValueError, match='max_iterations_inner must be >= 1'):
             validate_config(_make_config(max_iterations_inner=0))
@@ -520,28 +520,28 @@ class TestLoadMaterialDictionaries:
     """Tests for load_material_dictionaries()."""
 
     def test_returns_dict(self):
-        from zalmoxis.zalmoxis import load_material_dictionaries
+        from zalmoxis.config import load_material_dictionaries
 
         result = load_material_dictionaries()
         assert isinstance(result, dict)
 
     def test_contains_seager_iron(self):
         """Registry should contain Seager2007:iron."""
-        from zalmoxis.zalmoxis import load_material_dictionaries
+        from zalmoxis.config import load_material_dictionaries
 
         result = load_material_dictionaries()
         assert 'Seager2007:iron' in result
 
     def test_contains_seager_mgsio3(self):
         """Registry should contain Seager2007:MgSiO3."""
-        from zalmoxis.zalmoxis import load_material_dictionaries
+        from zalmoxis.config import load_material_dictionaries
 
         result = load_material_dictionaries()
         assert 'Seager2007:MgSiO3' in result
 
     def test_seager_iron_has_expected_structure(self):
         """Each registry entry should be a dict with EOS metadata."""
-        from zalmoxis.zalmoxis import load_material_dictionaries
+        from zalmoxis.config import load_material_dictionaries
 
         result = load_material_dictionaries()
         entry = result['Seager2007:iron']
@@ -558,7 +558,7 @@ class TestLoadSolidusLiquidusFunctions:
 
     def test_returns_none_for_paleos_unified(self):
         """Unified PALEOS tables do not need external melting curves."""
-        from zalmoxis.zalmoxis import load_solidus_liquidus_functions
+        from zalmoxis.config import load_solidus_liquidus_functions
 
         result = load_solidus_liquidus_functions(
             {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
@@ -567,7 +567,7 @@ class TestLoadSolidusLiquidusFunctions:
 
     def test_returns_none_for_seager(self):
         """Seager2007 (T-independent) does not need melting curves."""
-        from zalmoxis.zalmoxis import load_solidus_liquidus_functions
+        from zalmoxis.config import load_solidus_liquidus_functions
 
         result = load_solidus_liquidus_functions(
             {'core': 'Seager2007:iron', 'mantle': 'Seager2007:MgSiO3'},
@@ -576,7 +576,7 @@ class TestLoadSolidusLiquidusFunctions:
 
     def test_returns_callables_for_wolfbower(self):
         """WolfBower2018 needs external melting curves."""
-        from zalmoxis.zalmoxis import load_solidus_liquidus_functions
+        from zalmoxis.config import load_solidus_liquidus_functions
 
         result = load_solidus_liquidus_functions(
             {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'},
@@ -590,7 +590,7 @@ class TestLoadSolidusLiquidusFunctions:
 
     def test_returns_callables_for_paleos_2phase(self):
         """PALEOS-2phase:MgSiO3 needs external melting curves."""
-        from zalmoxis.zalmoxis import load_solidus_liquidus_functions
+        from zalmoxis.config import load_solidus_liquidus_functions
 
         result = load_solidus_liquidus_functions(
             {'core': 'Seager2007:iron', 'mantle': 'PALEOS-2phase:MgSiO3'},
@@ -604,7 +604,7 @@ class TestLoadSolidusLiquidusFunctions:
 
     def test_melting_curve_evaluates(self):
         """Returned melting curve functions should accept a pressure and return temperature."""
-        from zalmoxis.zalmoxis import load_solidus_liquidus_functions
+        from zalmoxis.config import load_solidus_liquidus_functions
 
         result = load_solidus_liquidus_functions(
             {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'},
@@ -629,7 +629,7 @@ class TestChooseConfigFile:
 
     def test_loads_from_path(self):
         """Should load a TOML file from an explicit path."""
-        from zalmoxis.zalmoxis import choose_config_file
+        from zalmoxis.config import choose_config_file
 
         root = os.environ.get('ZALMOXIS_ROOT', '')
         config_path = os.path.join(root, 'input', 'default.toml')
@@ -643,7 +643,7 @@ class TestChooseConfigFile:
 
     def test_nonexistent_path_exits(self):
         """Non-existent temp config path should exit."""
-        from zalmoxis.zalmoxis import choose_config_file
+        from zalmoxis.config import choose_config_file
 
         with pytest.raises(SystemExit):
             choose_config_file('/nonexistent/path/config.toml')
@@ -838,7 +838,7 @@ class TestValidateConfigMassWarnings:
 
     def test_low_mass_warning(self, caplog):
         """Planet mass below 0.1 M_earth should log a warning."""
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         with caplog.at_level('WARNING'):
             validate_config(_make_config(planet_mass=0.05 * earth_mass))
@@ -846,7 +846,7 @@ class TestValidateConfigMassWarnings:
 
     def test_high_mass_warning(self, caplog):
         """Planet mass above 50 M_earth should log a warning."""
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         with caplog.at_level('WARNING'):
             validate_config(_make_config(planet_mass=60 * earth_mass))
@@ -862,7 +862,7 @@ class TestValidateEosLayerCompatibility:
 
     def test_non_iron_core_warning(self, caplog):
         """Core with non-iron EOS should log a warning."""
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         with caplog.at_level('WARNING'):
             validate_config(
@@ -885,7 +885,7 @@ class TestLegacyEosMap:
     """Tests for the LEGACY_EOS_MAP constant."""
 
     def test_contains_all_legacy_choices(self):
-        from zalmoxis.zalmoxis import LEGACY_EOS_MAP
+        from zalmoxis.config import LEGACY_EOS_MAP
 
         assert 'Tabulated:iron/silicate' in LEGACY_EOS_MAP
         assert 'Tabulated:iron/Tdep_silicate' in LEGACY_EOS_MAP
@@ -893,7 +893,7 @@ class TestLegacyEosMap:
 
     def test_legacy_map_is_immutable_via_copy(self):
         """parse_eos_config returns a copy, not the original dict."""
-        from zalmoxis.zalmoxis import LEGACY_EOS_MAP, parse_eos_config
+        from zalmoxis.config import LEGACY_EOS_MAP, parse_eos_config
 
         result = parse_eos_config({'choice': 'Tabulated:iron/silicate'})
         result['core'] = 'MODIFIED'
@@ -909,7 +909,7 @@ class TestValidTabulatedEos:
     """Tests for the VALID_TABULATED_EOS set."""
 
     def test_contains_expected_entries(self):
-        from zalmoxis.zalmoxis import VALID_TABULATED_EOS
+        from zalmoxis.config import VALID_TABULATED_EOS
 
         expected = {
             'Seager2007:iron',
@@ -931,17 +931,17 @@ class TestNeedsMeltingCurves:
     """Tests for the _NEEDS_MELTING_CURVES set."""
 
     def test_wolfbower_needs_melting_curves(self):
-        from zalmoxis.zalmoxis import _NEEDS_MELTING_CURVES
+        from zalmoxis.config import _NEEDS_MELTING_CURVES
 
         assert 'WolfBower2018:MgSiO3' in _NEEDS_MELTING_CURVES
 
     def test_paleos_2phase_needs_melting_curves(self):
-        from zalmoxis.zalmoxis import _NEEDS_MELTING_CURVES
+        from zalmoxis.config import _NEEDS_MELTING_CURVES
 
         assert 'PALEOS-2phase:MgSiO3' in _NEEDS_MELTING_CURVES
 
     def test_paleos_unified_does_not_need(self):
-        from zalmoxis.zalmoxis import _NEEDS_MELTING_CURVES
+        from zalmoxis.config import _NEEDS_MELTING_CURVES
 
         assert 'PALEOS:iron' not in _NEEDS_MELTING_CURVES
         assert 'PALEOS:MgSiO3' not in _NEEDS_MELTING_CURVES
@@ -955,22 +955,22 @@ class TestMassLimitConstants:
     """Tests for EOS-specific mass limit constants."""
 
     def test_wolfbower_limit(self):
-        from zalmoxis.zalmoxis import WOLFBOWER2018_MAX_MASS_EARTH
+        from zalmoxis.config import WOLFBOWER2018_MAX_MASS_EARTH
 
         assert WOLFBOWER2018_MAX_MASS_EARTH == pytest.approx(7.0)
 
     def test_rtpress_limit(self):
-        from zalmoxis.zalmoxis import RTPRESS100TPA_MAX_MASS_EARTH
+        from zalmoxis.config import RTPRESS100TPA_MAX_MASS_EARTH
 
         assert RTPRESS100TPA_MAX_MASS_EARTH == pytest.approx(50.0)
 
     def test_paleos_limit(self):
-        from zalmoxis.zalmoxis import PALEOS_MAX_MASS_EARTH
+        from zalmoxis.config import PALEOS_MAX_MASS_EARTH
 
         assert PALEOS_MAX_MASS_EARTH == pytest.approx(50.0)
 
     def test_paleos_unified_limit(self):
-        from zalmoxis.zalmoxis import PALEOS_UNIFIED_MAX_MASS_EARTH
+        from zalmoxis.config import PALEOS_UNIFIED_MAX_MASS_EARTH
 
         assert PALEOS_UNIFIED_MAX_MASS_EARTH == pytest.approx(50.0)
 
@@ -984,7 +984,7 @@ class TestValidateCenterTemperature:
 
     def test_center_temp_zero_linear_raises(self):
         """center_temperature <= 0 in linear mode should raise."""
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         with pytest.raises(ValueError, match='center_temperature must be positive'):
             validate_config(
@@ -1002,7 +1002,7 @@ class TestValidateCenterTemperature:
 
     def test_center_temp_zero_adiabatic_raises(self):
         """center_temperature <= 0 in adiabatic mode should raise."""
-        from zalmoxis.zalmoxis import validate_config
+        from zalmoxis.config import validate_config
 
         with pytest.raises(ValueError, match='center_temperature must be positive'):
             validate_config(

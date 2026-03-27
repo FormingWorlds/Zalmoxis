@@ -109,7 +109,7 @@ class TestFastBilinear:
 
     def test_at_grid_nodes(self):
         """Interpolation at grid nodes should return exact grid values."""
-        from zalmoxis.eos_functions import _fast_bilinear
+        from zalmoxis.eos import _fast_bilinear
 
         cached, grid = self._make_synthetic_cache()
         for i, lp in enumerate(cached['unique_log_p']):
@@ -119,7 +119,7 @@ class TestFastBilinear:
 
     def test_at_midpoints(self):
         """Midpoint between grid nodes: bilinear = exact for f(p,t) = p + t."""
-        from zalmoxis.eos_functions import _fast_bilinear
+        from zalmoxis.eos import _fast_bilinear
 
         cached, grid = self._make_synthetic_cache()
         ulp = cached['unique_log_p']
@@ -135,7 +135,7 @@ class TestFastBilinear:
 
     def test_clamping_below_bounds(self):
         """Query below grid minimum should be clamped (dp=0, dt=0)."""
-        from zalmoxis.eos_functions import _fast_bilinear
+        from zalmoxis.eos import _fast_bilinear
 
         cached, grid = self._make_synthetic_cache()
         result = _fast_bilinear(7.0, 1.0, grid, cached)
@@ -144,7 +144,7 @@ class TestFastBilinear:
 
     def test_clamping_above_bounds(self):
         """Query above grid maximum should be clamped (dp=1, dt=1)."""
-        from zalmoxis.eos_functions import _fast_bilinear
+        from zalmoxis.eos import _fast_bilinear
 
         cached, grid = self._make_synthetic_cache()
         result = _fast_bilinear(13.0, 6.0, grid, cached)
@@ -153,7 +153,7 @@ class TestFastBilinear:
 
     def test_nan_corner_returns_nan(self):
         """If any corner value is NaN, bilinear returns NaN."""
-        from zalmoxis.eos_functions import _fast_bilinear
+        from zalmoxis.eos import _fast_bilinear
 
         cached, grid = self._make_synthetic_cache()
         grid[1, 1] = np.nan  # poison one corner
@@ -167,7 +167,7 @@ class TestFastBilinear:
 
     def test_small_grid_n1(self):
         """Grid with n_p < 2 returns the single value directly."""
-        from zalmoxis.eos_functions import _fast_bilinear
+        from zalmoxis.eos import _fast_bilinear
 
         cached = {
             'unique_log_p': np.array([10.0]),
@@ -188,7 +188,7 @@ class TestFastBilinear:
         """Compare _fast_bilinear to scipy RegularGridInterpolator on a realistic grid."""
         from scipy.interpolate import RegularGridInterpolator
 
-        from zalmoxis.eos_functions import _fast_bilinear
+        from zalmoxis.eos import _fast_bilinear
 
         # Create a 10x10 grid with a nonlinear function
         n_p, n_t = 10, 10
@@ -237,7 +237,7 @@ class TestPaleosClampTemperature:
 
     def test_no_clamp_in_valid_range(self):
         """Query within valid T range returns unchanged value."""
-        from zalmoxis.eos_functions import _paleos_clamp_temperature
+        from zalmoxis.eos import _paleos_clamp_temperature
 
         cached = {
             'unique_log_p': np.array([8.0, 9.0, 10.0]),
@@ -250,7 +250,7 @@ class TestPaleosClampTemperature:
 
     def test_clamp_below_min(self):
         """Query below valid T range is clamped to local minimum."""
-        from zalmoxis.eos_functions import _paleos_clamp_temperature
+        from zalmoxis.eos import _paleos_clamp_temperature
 
         cached = {
             'unique_log_p': np.array([8.0, 9.0, 10.0]),
@@ -263,7 +263,7 @@ class TestPaleosClampTemperature:
 
     def test_clamp_above_max(self):
         """Query above valid T range is clamped to local maximum."""
-        from zalmoxis.eos_functions import _paleos_clamp_temperature
+        from zalmoxis.eos import _paleos_clamp_temperature
 
         cached = {
             'unique_log_p': np.array([8.0, 9.0, 10.0]),
@@ -276,7 +276,7 @@ class TestPaleosClampTemperature:
 
     def test_nan_bounds_no_clamp(self):
         """If interpolated bounds are NaN (all-NaN row), no clamping is applied."""
-        from zalmoxis.eos_functions import _paleos_clamp_temperature
+        from zalmoxis.eos import _paleos_clamp_temperature
 
         cached = {
             'unique_log_p': np.array([8.0, 9.0, 10.0]),
@@ -302,7 +302,7 @@ class TestEnsureUnifiedCache:
         if not _paleos_unified_data_available():
             pytest.skip('Unified PALEOS data not found')
 
-        from zalmoxis.eos_functions import _ensure_unified_cache
+        from zalmoxis.eos import _ensure_unified_cache
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         eos_file = EOS_REGISTRY['PALEOS:iron']['eos_file']
@@ -320,7 +320,7 @@ class TestEnsureUnifiedCache:
         if not _paleos_unified_data_available():
             pytest.skip('Unified PALEOS data not found')
 
-        from zalmoxis.eos_functions import _ensure_unified_cache
+        from zalmoxis.eos import _ensure_unified_cache
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         eos_file = EOS_REGISTRY['PALEOS:MgSiO3']['eos_file']
@@ -346,7 +346,7 @@ class TestCalculateDensity:
         if not _seager_data_available():
             pytest.skip('Seager data not found')
 
-        from zalmoxis.eos_functions import calculate_density
+        from zalmoxis.eos import calculate_density
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         rho = calculate_density(300e9, EOS_REGISTRY, 'Seager2007:iron', 300, None, None)
@@ -358,7 +358,7 @@ class TestCalculateDensity:
         if not _seager_data_available():
             pytest.skip('Seager data not found')
 
-        from zalmoxis.eos_functions import calculate_density
+        from zalmoxis.eos import calculate_density
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         rho = calculate_density(100e9, EOS_REGISTRY, 'Seager2007:MgSiO3', 300, None, None)
@@ -370,7 +370,7 @@ class TestCalculateDensity:
         if not _seager_data_available():
             pytest.skip('Seager data not found')
 
-        from zalmoxis.eos_functions import calculate_density
+        from zalmoxis.eos import calculate_density
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         root = os.environ.get('ZALMOXIS_ROOT', '')
@@ -384,7 +384,7 @@ class TestCalculateDensity:
 
     def test_analytic_iron(self):
         """Analytic:iron should return a positive density."""
-        from zalmoxis.eos_functions import calculate_density
+        from zalmoxis.eos import calculate_density
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         rho = calculate_density(100e9, EOS_REGISTRY, 'Analytic:iron', 300, None, None)
@@ -393,7 +393,7 @@ class TestCalculateDensity:
 
     def test_analytic_mgsio3(self):
         """Analytic:MgSiO3 should return a positive density."""
-        from zalmoxis.eos_functions import calculate_density
+        from zalmoxis.eos import calculate_density
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         rho = calculate_density(100e9, EOS_REGISTRY, 'Analytic:MgSiO3', 300, None, None)
@@ -402,7 +402,7 @@ class TestCalculateDensity:
 
     def test_unknown_eos_raises(self):
         """Unknown EOS identifier should raise ValueError."""
-        from zalmoxis.eos_functions import calculate_density
+        from zalmoxis.eos import calculate_density
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         with pytest.raises(ValueError, match='Unknown'):
@@ -413,7 +413,7 @@ class TestCalculateDensity:
         if not _wb2018_data_available():
             pytest.skip('WB2018 data not found')
 
-        from zalmoxis.eos_functions import calculate_density, get_solidus_liquidus_functions
+        from zalmoxis.eos import calculate_density, get_solidus_liquidus_functions
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         sf, lf = get_solidus_liquidus_functions()
@@ -427,7 +427,7 @@ class TestCalculateDensity:
         if not _wb2018_data_available():
             pytest.skip('WB2018 data not found')
 
-        from zalmoxis.eos_functions import calculate_density, get_solidus_liquidus_functions
+        from zalmoxis.eos import calculate_density, get_solidus_liquidus_functions
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         sf, lf = get_solidus_liquidus_functions()
@@ -442,7 +442,7 @@ class TestCalculateDensity:
         if not _wb2018_data_available():
             pytest.skip('WB2018 data not found')
 
-        from zalmoxis.eos_functions import calculate_density, get_solidus_liquidus_functions
+        from zalmoxis.eos import calculate_density, get_solidus_liquidus_functions
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         sf, lf = get_solidus_liquidus_functions()
@@ -461,7 +461,7 @@ class TestCalculateDensity:
         if not _paleos_unified_data_available():
             pytest.skip('Unified PALEOS data not found')
 
-        from zalmoxis.eos_functions import calculate_density
+        from zalmoxis.eos import calculate_density
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         rho = calculate_density(100e9, EOS_REGISTRY, 'PALEOS:iron', 4000, None, None)
@@ -473,7 +473,7 @@ class TestCalculateDensity:
         if not _chabrier_data_available():
             pytest.skip('Chabrier H data not found')
 
-        from zalmoxis.eos_functions import calculate_density
+        from zalmoxis.eos import calculate_density
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         rho = calculate_density(10e9, EOS_REGISTRY, 'Chabrier:H', 5000, None, None)
@@ -485,7 +485,7 @@ class TestCalculateDensity:
         if not _paleos_unified_data_available():
             pytest.skip('Unified PALEOS data not found')
 
-        from zalmoxis.eos_functions import calculate_density
+        from zalmoxis.eos import calculate_density
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         rho = calculate_density(
@@ -499,7 +499,7 @@ class TestCalculateDensity:
         if not _seager_data_available():
             pytest.skip('Seager data not found')
 
-        from zalmoxis.eos_functions import calculate_density
+        from zalmoxis.eos import calculate_density
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         cache = {}
@@ -524,7 +524,7 @@ class TestCalculateDensityBatch:
         if not _paleos_unified_data_available():
             pytest.skip('Unified PALEOS data not found')
 
-        from zalmoxis.eos_functions import calculate_density, calculate_density_batch
+        from zalmoxis.eos import calculate_density, calculate_density_batch
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         pressures = np.array([50e9, 100e9, 200e9, 300e9])
@@ -550,7 +550,7 @@ class TestCalculateDensityBatch:
         if not _seager_data_available():
             pytest.skip('Seager data not found')
 
-        from zalmoxis.eos_functions import calculate_density_batch
+        from zalmoxis.eos import calculate_density_batch
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         pressures = np.array([100e9, 200e9, 300e9])
@@ -571,7 +571,7 @@ class TestCalculateDensityBatch:
         if not _seager_data_available():
             pytest.skip('Seager data not found')
 
-        from zalmoxis.eos_functions import calculate_density_batch
+        from zalmoxis.eos import calculate_density_batch
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         pressures = np.array([100e9])
@@ -595,7 +595,7 @@ class TestGetTdepDensity:
 
     def test_missing_solidus_func_raises(self):
         """Calling without solidus/liquidus functions raises ValueError."""
-        from zalmoxis.eos_functions import get_Tdep_density
+        from zalmoxis.eos import get_Tdep_density
         from zalmoxis.eos_properties import material_properties_iron_Tdep_silicate_planets
 
         with pytest.raises(ValueError, match='solidus_func'):
@@ -608,7 +608,7 @@ class TestGetTdepDensity:
         if not _wb2018_data_available():
             pytest.skip('WB2018 data not found')
 
-        from zalmoxis.eos_functions import get_Tdep_density
+        from zalmoxis.eos import get_Tdep_density
         from zalmoxis.eos_properties import material_properties_iron_Tdep_silicate_planets
 
         # Melting curves that always return NaN
@@ -629,7 +629,7 @@ class TestGetTdepDensity:
         if not _wb2018_data_available():
             pytest.skip('WB2018 data not found')
 
-        from zalmoxis.eos_functions import get_Tdep_density
+        from zalmoxis.eos import get_Tdep_density
         from zalmoxis.eos_properties import material_properties_iron_Tdep_silicate_planets
 
         # T_liq <= T_sol at all pressures (degenerate)
@@ -657,7 +657,7 @@ class TestGetTdepMaterial:
 
     def test_solid_phase(self):
         """Temperature below solidus returns 'solid_mantle'."""
-        from zalmoxis.eos_functions import get_Tdep_material
+        from zalmoxis.eos import get_Tdep_material
 
         def sf(P):
             return 3000.0
@@ -670,7 +670,7 @@ class TestGetTdepMaterial:
 
     def test_melted_phase(self):
         """Temperature above liquidus returns 'melted_mantle'."""
-        from zalmoxis.eos_functions import get_Tdep_material
+        from zalmoxis.eos import get_Tdep_material
 
         def sf(P):
             return 3000.0
@@ -683,7 +683,7 @@ class TestGetTdepMaterial:
 
     def test_mixed_phase(self):
         """Temperature between solidus and liquidus returns 'mixed_mantle'."""
-        from zalmoxis.eos_functions import get_Tdep_material
+        from zalmoxis.eos import get_Tdep_material
 
         def sf(P):
             return 3000.0
@@ -696,7 +696,7 @@ class TestGetTdepMaterial:
 
     def test_degenerate_melting_curve_above(self):
         """When T_liq <= T_sol and T >= T_sol, returns 'melted_mantle'."""
-        from zalmoxis.eos_functions import get_Tdep_material
+        from zalmoxis.eos import get_Tdep_material
 
         def sf(P):
             return 5000.0
@@ -709,7 +709,7 @@ class TestGetTdepMaterial:
 
     def test_degenerate_melting_curve_below(self):
         """When T_liq <= T_sol and T < T_sol, returns 'solid_mantle'."""
-        from zalmoxis.eos_functions import get_Tdep_material
+        from zalmoxis.eos import get_Tdep_material
 
         def sf(P):
             return 5000.0
@@ -722,7 +722,7 @@ class TestGetTdepMaterial:
 
     def test_vectorized(self):
         """Vectorized evaluation with arrays of P and T."""
-        from zalmoxis.eos_functions import get_Tdep_material
+        from zalmoxis.eos import get_Tdep_material
 
         def sf(P):
             return 3000.0
@@ -757,7 +757,7 @@ class TestLoadPaleosTable:
         if not os.path.isfile(solid_file):
             pytest.skip('PALEOS 2-phase solid data not found')
 
-        from zalmoxis.eos_functions import load_paleos_table
+        from zalmoxis.eos import load_paleos_table
 
         cache = load_paleos_table(solid_file)
         assert cache['type'] == 'paleos'
@@ -781,7 +781,7 @@ class TestLoadPaleosTable:
         if not os.path.isfile(solid_file):
             pytest.skip('PALEOS 2-phase solid data not found')
 
-        from zalmoxis.eos_functions import load_paleos_table
+        from zalmoxis.eos import load_paleos_table
 
         cache = load_paleos_table(solid_file)
         assert 'dlog_p' in cache
@@ -806,7 +806,7 @@ class TestLoadPaleosUnifiedTable:
         if not os.path.isfile(h2o_file):
             pytest.skip('PALEOS H2O data not found')
 
-        from zalmoxis.eos_functions import load_paleos_unified_table
+        from zalmoxis.eos import load_paleos_unified_table
 
         cache = load_paleos_unified_table(h2o_file)
         assert cache['type'] == 'paleos_unified'
@@ -821,7 +821,7 @@ class TestLoadPaleosUnifiedTable:
         if not _chabrier_data_available():
             pytest.skip('Chabrier data not found')
 
-        from zalmoxis.eos_functions import load_paleos_unified_table
+        from zalmoxis.eos import load_paleos_unified_table
 
         root = os.environ.get('ZALMOXIS_ROOT', '')
         h_file = os.path.join(root, 'data', 'EOS_Chabrier2021_HHe', 'chabrier2021_H.dat')
@@ -846,7 +846,7 @@ class TestGetTabulatedEos:
         if not _seager_data_available():
             pytest.skip('Seager data not found')
 
-        from zalmoxis.eos_functions import get_tabulated_eos
+        from zalmoxis.eos import get_tabulated_eos
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['Seager2007:iron']
@@ -863,7 +863,7 @@ class TestGetTabulatedEos:
         if not os.path.isfile(solid_file):
             pytest.skip('PALEOS 2-phase data not found')
 
-        from zalmoxis.eos_functions import get_tabulated_eos
+        from zalmoxis.eos import get_tabulated_eos
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['PALEOS-2phase:MgSiO3']
@@ -880,7 +880,7 @@ class TestGetTabulatedEos:
         if not os.path.isfile(solid_file):
             pytest.skip('PALEOS 2-phase data not found')
 
-        from zalmoxis.eos_functions import get_tabulated_eos
+        from zalmoxis.eos import get_tabulated_eos
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['PALEOS-2phase:MgSiO3']
@@ -893,7 +893,7 @@ class TestGetTabulatedEos:
         if not _wb2018_data_available():
             pytest.skip('WB2018 data not found')
 
-        from zalmoxis.eos_functions import get_tabulated_eos
+        from zalmoxis.eos import get_tabulated_eos
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['WolfBower2018:MgSiO3']
@@ -906,7 +906,7 @@ class TestGetTabulatedEos:
         if not _wb2018_data_available():
             pytest.skip('WB2018 data not found')
 
-        from zalmoxis.eos_functions import get_tabulated_eos
+        from zalmoxis.eos import get_tabulated_eos
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['WolfBower2018:MgSiO3']
@@ -919,7 +919,7 @@ class TestGetTabulatedEos:
         if not _rtpress_data_available():
             pytest.skip('RTPress100TPa data not found')
 
-        from zalmoxis.eos_functions import get_tabulated_eos
+        from zalmoxis.eos import get_tabulated_eos
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['RTPress100TPa:MgSiO3']
@@ -932,7 +932,7 @@ class TestGetTabulatedEos:
         if not _wb2018_data_available():
             pytest.skip('WB2018 data not found')
 
-        from zalmoxis.eos_functions import get_tabulated_eos
+        from zalmoxis.eos import get_tabulated_eos
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['WolfBower2018:MgSiO3']
@@ -944,7 +944,7 @@ class TestGetTabulatedEos:
         if not _seager_data_available():
             pytest.skip('Seager data not found')
 
-        from zalmoxis.eos_functions import get_tabulated_eos
+        from zalmoxis.eos import get_tabulated_eos
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['Seager2007:iron']
@@ -968,7 +968,7 @@ class TestGetPaleosUnifiedNablaAd:
         if not _paleos_unified_data_available():
             pytest.skip('Unified PALEOS data not found')
 
-        from zalmoxis.eos_functions import _get_paleos_unified_nabla_ad
+        from zalmoxis.eos import _get_paleos_unified_nabla_ad
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['PALEOS:MgSiO3']
@@ -983,7 +983,7 @@ class TestGetPaleosUnifiedNablaAd:
         if not _paleos_unified_data_available():
             pytest.skip('Unified PALEOS data not found')
 
-        from zalmoxis.eos_functions import _get_paleos_unified_nabla_ad
+        from zalmoxis.eos import _get_paleos_unified_nabla_ad
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['PALEOS:iron']
@@ -1011,7 +1011,7 @@ class TestGetPaleosNablaAd:
         if not os.path.isfile(solid_file):
             pytest.skip('PALEOS 2-phase data not found')
 
-        from zalmoxis.eos_functions import _get_paleos_nabla_ad
+        from zalmoxis.eos import _get_paleos_nabla_ad
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['PALEOS-2phase:MgSiO3']
@@ -1033,14 +1033,14 @@ class TestComputePaleosDtdp:
 
     def test_returns_none_for_zero_pressure(self):
         """Zero pressure returns None."""
-        from zalmoxis.eos_functions import _compute_paleos_dtdp
+        from zalmoxis.eos import _compute_paleos_dtdp
 
         result = _compute_paleos_dtdp(0, 3000, {}, None, None, {})
         assert result is None
 
     def test_returns_none_for_zero_temperature(self):
         """Zero temperature returns None."""
-        from zalmoxis.eos_functions import _compute_paleos_dtdp
+        from zalmoxis.eos import _compute_paleos_dtdp
 
         result = _compute_paleos_dtdp(100e9, 0, {}, None, None, {})
         assert result is None
@@ -1054,7 +1054,7 @@ class TestComputePaleosDtdp:
         if not os.path.isfile(solid_file):
             pytest.skip('PALEOS 2-phase data not found')
 
-        from zalmoxis.eos_functions import _compute_paleos_dtdp
+        from zalmoxis.eos import _compute_paleos_dtdp
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['PALEOS-2phase:MgSiO3']
@@ -1082,7 +1082,7 @@ class TestComputePaleosDtdp:
         if not os.path.isfile(solid_file):
             pytest.skip('PALEOS 2-phase data not found')
 
-        from zalmoxis.eos_functions import _compute_paleos_dtdp
+        from zalmoxis.eos import _compute_paleos_dtdp
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['PALEOS-2phase:MgSiO3']
@@ -1108,7 +1108,7 @@ class TestComputePaleosDtdp:
         if not os.path.isfile(solid_file):
             pytest.skip('PALEOS 2-phase data not found')
 
-        from zalmoxis.eos_functions import _compute_paleos_dtdp
+        from zalmoxis.eos import _compute_paleos_dtdp
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['PALEOS-2phase:MgSiO3']
@@ -1130,7 +1130,7 @@ class TestComputePaleosDtdp:
         if not (os.path.isfile(solid_file) and os.path.isfile(liquid_file)):
             pytest.skip('PALEOS 2-phase data not found')
 
-        from zalmoxis.eos_functions import _compute_paleos_dtdp
+        from zalmoxis.eos import _compute_paleos_dtdp
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['PALEOS-2phase:MgSiO3']
@@ -1160,7 +1160,7 @@ class TestCalculateTemperatureProfile:
 
     def test_isothermal(self):
         """Isothermal mode returns constant temperature."""
-        from zalmoxis.eos_functions import calculate_temperature_profile
+        from zalmoxis.eos import calculate_temperature_profile
 
         radii = np.linspace(0, 6e6, 100)
         T_func = calculate_temperature_profile(radii, 'isothermal', 300, 6000, '.', '')
@@ -1169,7 +1169,7 @@ class TestCalculateTemperatureProfile:
 
     def test_linear(self):
         """Linear mode returns center_T at r=0, surface_T at r_max."""
-        from zalmoxis.eos_functions import calculate_temperature_profile
+        from zalmoxis.eos import calculate_temperature_profile
 
         radii = np.linspace(0, 6e6, 100)
         T_func = calculate_temperature_profile(radii, 'linear', 300, 6000, '.', '')
@@ -1179,7 +1179,7 @@ class TestCalculateTemperatureProfile:
 
     def test_adiabatic_returns_linear_guess(self):
         """Adiabatic mode returns linear profile as initial guess."""
-        from zalmoxis.eos_functions import calculate_temperature_profile
+        from zalmoxis.eos import calculate_temperature_profile
 
         radii = np.linspace(0, 6e6, 100)
         T_func = calculate_temperature_profile(radii, 'adiabatic', 300, 6000, '.', '')
@@ -1189,7 +1189,7 @@ class TestCalculateTemperatureProfile:
 
     def test_prescribed_missing_file_raises(self):
         """Prescribed mode with nonexistent file raises ValueError."""
-        from zalmoxis.eos_functions import calculate_temperature_profile
+        from zalmoxis.eos import calculate_temperature_profile
 
         radii = np.linspace(0, 6e6, 100)
         with pytest.raises(ValueError, match='must be provided'):
@@ -1199,7 +1199,7 @@ class TestCalculateTemperatureProfile:
 
     def test_prescribed_length_mismatch_raises(self):
         """Prescribed mode with wrong-length profile raises ValueError."""
-        from zalmoxis.eos_functions import calculate_temperature_profile
+        from zalmoxis.eos import calculate_temperature_profile
 
         radii = np.linspace(0, 6e6, 10)
         # Create a temp file with wrong number of lines
@@ -1224,7 +1224,7 @@ class TestCalculateTemperatureProfile:
 
     def test_prescribed_valid(self):
         """Prescribed mode with valid file returns interpolated temperatures."""
-        from zalmoxis.eos_functions import calculate_temperature_profile
+        from zalmoxis.eos import calculate_temperature_profile
 
         radii = np.linspace(0, 6e6, 10)
         T_profile = np.linspace(6000, 300, 10)
@@ -1250,7 +1250,7 @@ class TestCalculateTemperatureProfile:
 
     def test_unknown_mode_raises(self):
         """Unknown temperature mode raises ValueError."""
-        from zalmoxis.eos_functions import calculate_temperature_profile
+        from zalmoxis.eos import calculate_temperature_profile
 
         radii = np.linspace(0, 6e6, 100)
         with pytest.raises(ValueError, match='Unknown temperature mode'):
@@ -1268,7 +1268,7 @@ class TestLoadMeltingCurve:
 
     def test_loads_valid_file(self):
         """Should return an interpolation function from a valid file."""
-        from zalmoxis.eos_functions import load_melting_curve
+        from zalmoxis.eos import load_melting_curve
 
         # Create a synthetic melting curve file
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
@@ -1289,7 +1289,7 @@ class TestLoadMeltingCurve:
 
     def test_nonexistent_file_returns_none(self):
         """Nonexistent file returns None."""
-        from zalmoxis.eos_functions import load_melting_curve
+        from zalmoxis.eos import load_melting_curve
 
         result = load_melting_curve('/tmp/this_file_does_not_exist_at_all.dat')
         assert result is None
@@ -1306,7 +1306,7 @@ class TestCreatePressureDensityFiles:
 
     def test_creates_files(self):
         """Should create pressure and density profile files."""
-        from zalmoxis.eos_functions import create_pressure_density_files
+        from zalmoxis.eos import create_pressure_density_files
 
         radii = np.array([0, 1e6, 2e6, 3e6])
         pressure = np.array([300e9, 200e9, 100e9, 1e5])
@@ -1349,7 +1349,7 @@ class TestGetSolidusLiquidusFunctions:
 
     def test_default_stixrude14(self):
         """Default Stixrude14 melting curves return valid functions."""
-        from zalmoxis.eos_functions import get_solidus_liquidus_functions
+        from zalmoxis.eos import get_solidus_liquidus_functions
 
         sf, lf = get_solidus_liquidus_functions()
         assert callable(sf)
@@ -1376,7 +1376,7 @@ class TestGetPaleosUnifiedDensityBatch:
         if not _paleos_unified_data_available():
             pytest.skip('Unified PALEOS data not found')
 
-        from zalmoxis.eos_functions import get_paleos_unified_density_batch
+        from zalmoxis.eos import get_paleos_unified_density_batch
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['PALEOS:iron']
@@ -1396,7 +1396,7 @@ class TestGetPaleosUnifiedDensityBatch:
         if not _paleos_unified_data_available():
             pytest.skip('Unified PALEOS data not found')
 
-        from zalmoxis.eos_functions import get_paleos_unified_density_batch
+        from zalmoxis.eos import get_paleos_unified_density_batch
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['PALEOS:MgSiO3']
@@ -1413,7 +1413,7 @@ class TestGetPaleosUnifiedDensityBatch:
         if not _paleos_unified_data_available():
             pytest.skip('Unified PALEOS data not found')
 
-        from zalmoxis.eos_functions import get_paleos_unified_density_batch
+        from zalmoxis.eos import get_paleos_unified_density_batch
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['PALEOS:iron']
@@ -1436,7 +1436,7 @@ class TestRTPress100TPa:
         if not (_rtpress_data_available() and _seager_data_available()):
             pytest.skip('RTPress100TPa or Seager data not found')
 
-        from zalmoxis.eos_functions import calculate_density, get_solidus_liquidus_functions
+        from zalmoxis.eos import calculate_density, get_solidus_liquidus_functions
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         sf, lf = get_solidus_liquidus_functions()
@@ -1450,7 +1450,7 @@ class TestRTPress100TPa:
         if not (_rtpress_data_available() and _wb2018_data_available()):
             pytest.skip('RTPress or WB2018 data not found')
 
-        from zalmoxis.eos_functions import calculate_density, get_solidus_liquidus_functions
+        from zalmoxis.eos import calculate_density, get_solidus_liquidus_functions
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         sf, lf = get_solidus_liquidus_functions()
@@ -1463,7 +1463,7 @@ class TestRTPress100TPa:
         if not (_rtpress_data_available() and _seager_data_available()):
             pytest.skip('RTPress data not found')
 
-        from zalmoxis.eos_functions import get_tabulated_eos
+        from zalmoxis.eos import get_tabulated_eos
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         mat = EOS_REGISTRY['RTPress100TPa:MgSiO3']

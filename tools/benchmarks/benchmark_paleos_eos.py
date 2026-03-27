@@ -41,7 +41,7 @@ logging.basicConfig(
 logger = logging.getLogger('benchmark_paleos')
 
 # Suppress verbose EOS loader messages
-logging.getLogger('zalmoxis.eos_functions').setLevel(logging.WARNING)
+logging.getLogger('zalmoxis.eos').setLevel(logging.WARNING)
 logging.getLogger('zalmoxis.zalmoxis').setLevel(logging.WARNING)
 
 # ── Ensure ZALMOXIS_ROOT is set ──────────────────────────────────────
@@ -54,17 +54,17 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
 from zalmoxis.constants import earth_mass, earth_radius  # noqa: E402
-from zalmoxis.eos_functions import load_paleos_unified_table  # noqa: E402
+from zalmoxis.eos import load_paleos_unified_table  # noqa: E402
 from zalmoxis.melting_curves import (  # noqa: E402
     monteux16_liquidus,
     monteux16_solidus,
 )
-from zalmoxis.zalmoxis import (  # noqa: E402
+from zalmoxis.config import (
     load_material_dictionaries,
     load_solidus_liquidus_functions,
     load_zalmoxis_config,
-    main,
 )
+from zalmoxis.solver import main
 
 # ── Constants ────────────────────────────────────────────────────────
 OUTPUT_DIR = os.path.join(ZALMOXIS_ROOT, 'output', 'benchmark_paleos')

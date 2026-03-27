@@ -453,7 +453,7 @@ def calculate_mixed_density(
     float or None
         Mixed density in kg/m^3, or None if all components are gas-like.
     """
-    from .eos_functions import calculate_density
+    from .eos import calculate_density
 
     # Fast path: single component (no suppression)
     if mixture.is_single():
@@ -558,7 +558,7 @@ def calculate_mixed_density_batch(
         1D array of densities in kg/m^3. NaN where lookup fails or all
         components are suppressed.
     """
-    from .eos_functions import calculate_density_batch
+    from .eos import calculate_density_batch
 
     n = len(pressures)
 
@@ -701,7 +701,7 @@ def get_mixed_nabla_ad(
     (both treat the vapor as structurally absent) but differs from reality
     where vapor affects heat transport. This is a known limitation.
     """
-    from .eos_functions import calculate_density
+    from .eos import calculate_density
 
     if mixture.is_single():
         return _nabla_ad_for_component(
@@ -804,7 +804,7 @@ def _nabla_ad_for_component(
         Dimensionless adiabatic gradient, or None if the EOS does not
         support nabla_ad (e.g. Seager2007, Analytic).
     """
-    from .eos_functions import (
+    from .eos import (
         _compute_paleos_dtdp,
         _get_paleos_unified_nabla_ad,
     )
@@ -835,7 +835,7 @@ def _nabla_ad_for_component(
 
     # WolfBower2018 / RTPress100TPa: use adiabat_grad_file
     # These provide dT/dP, not nabla_ad. Convert.
-    from .eos_functions import get_tabulated_eos
+    from .eos import get_tabulated_eos
 
     grad_file = mat.get('melted_mantle', {}).get('adiabat_grad_file')
     if grad_file is None:
