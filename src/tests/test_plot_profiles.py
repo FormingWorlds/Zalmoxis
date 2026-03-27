@@ -78,7 +78,7 @@ class TestPlotPlanetProfileSingle:
         fallback italic text instead of colored patches.
         """
         import zalmoxis
-        import zalmoxis.plots.plot_profiles as mod
+        import tools.plots.plot_profiles as mod
         monkeypatch.setattr(zalmoxis, '_zalmoxis_root', str(tmp_path))
         os.makedirs(tmp_path / 'output_files', exist_ok=True)
 
@@ -96,7 +96,7 @@ class TestPlotPlanetProfileSingle:
     def test_profile_plot_with_id_mass(self, tmp_path, monkeypatch):
         """Filename includes id_mass when it is not None."""
         import zalmoxis
-        import zalmoxis.plots.plot_profiles as mod
+        import tools.plots.plot_profiles as mod
         monkeypatch.setattr(zalmoxis, '_zalmoxis_root', str(tmp_path))
         os.makedirs(tmp_path / 'output_files', exist_ok=True)
 
@@ -117,7 +117,7 @@ class TestPlotPlanetProfileSingle:
         (covers the 'if patches' path and Patch construction).
         """
         import zalmoxis
-        import zalmoxis.plots.plot_profiles as mod
+        import tools.plots.plot_profiles as mod
         monkeypatch.setattr(zalmoxis, '_zalmoxis_root', str(tmp_path))
         os.makedirs(tmp_path / 'output_files', exist_ok=True)
 

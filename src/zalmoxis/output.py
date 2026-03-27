@@ -156,8 +156,8 @@ def post_processing(config_params, id_mass=None, output_file=None):
             file.write(f'{mass_enclosed[-1]}\t{radii[-1]}\n')
 
     if plotting_enabled:
-        from .plots.plot_phase_vs_radius import plot_PT_with_phases
-        from .plots.plot_profiles import plot_planet_profile_single
+        from tools.plots.plot_phase_vs_radius import plot_PT_with_phases
+        from tools.plots.plot_profiles import plot_planet_profile_single
 
         plot_planet_profile_single(
             radii,
