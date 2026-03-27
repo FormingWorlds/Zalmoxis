@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from scipy.interpolate import interp1d
-from tools.setup_tests import load_profile_output, load_Seager_data, run_zalmoxis_rocky_water
+from tools.setup.setup_tests import load_profile_output, load_Seager_data, run_zalmoxis_rocky_water
 
 
 @pytest.mark.integration

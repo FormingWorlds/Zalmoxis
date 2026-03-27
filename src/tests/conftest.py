@@ -42,7 +42,7 @@ def cached_solver():
     callable
         Same signature as run_zalmoxis_rocky_water, with transparent caching.
     """
-    from tools.setup_tests import run_zalmoxis_rocky_water
+    from tools.setup.setup_tests import run_zalmoxis_rocky_water
 
     _cache = {}
 

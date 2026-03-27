@@ -14,7 +14,7 @@ References:
 from __future__ import annotations
 
 import pytest
-from tools.setup_tests import load_model_output
+from tools.setup.setup_tests import load_model_output
 
 
 @pytest.mark.integration

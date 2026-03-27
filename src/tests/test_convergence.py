@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from zalmoxis.plots.plot_ternary import run_ternary_grid_for_mass
+from tools.plots.plot_ternary import run_ternary_grid_for_mass
 
 
 @pytest.mark.slow
