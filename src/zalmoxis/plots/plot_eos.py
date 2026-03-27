@@ -5,10 +5,8 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 
-# Read the environment variable for ZALMOXIS_ROOT
-ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
-if not ZALMOXIS_ROOT:
-    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
+# Read the environment variable for get_zalmoxis_root()
+from zalmoxis import get_zalmoxis_root
 
 
 def read_eos_data(filename):
@@ -85,7 +83,7 @@ def plot_eos_Seager2007(data_files, data_folder):
     ax.set_xscale('log')
     ax.set_yscale('log')
     ax.legend()
-    fig.savefig(os.path.join(ZALMOXIS_ROOT, 'output_files', 'planet_eos_Seager2007.pdf'))
+    fig.savefig(os.path.join(get_zalmoxis_root(), 'output_files', 'planet_eos_Seager2007.pdf'))
     # plt.show()
     plt.close(fig)
 
@@ -130,7 +128,7 @@ def plot_eos_WolfBower2018(data_file, data_folder, melting_data_folder, melting_
     elif data_file == 'density_solid.dat':
         label = 'MgSiO3 solid'
     fig.savefig(
-        os.path.join(ZALMOXIS_ROOT, 'output_files', f'planet_eos_WolfBower2018_{label}.pdf')
+        os.path.join(get_zalmoxis_root(), 'output_files', f'planet_eos_WolfBower2018_{label}.pdf')
     )
     # plt.show()
     plt.close(fig)
@@ -143,13 +141,13 @@ if __name__ == '__main__':
         'eos_seager07_silicate.txt',
         'eos_seager07_water.txt',
     ]
-    eos_data_folder = os.path.join(ZALMOXIS_ROOT, 'data', 'EOS_Seager2007')
+    eos_data_folder = os.path.join(get_zalmoxis_root(), 'data', 'EOS_Seager2007')
     plot_eos_Seager2007(eos_data_files, eos_data_folder)
 
     wolf_bower_files = ['density_melt.dat', 'density_solid.dat']
-    wolf_bower_folder = os.path.join(ZALMOXIS_ROOT, 'data', 'EOS_WolfBower2018_1TPa')
+    wolf_bower_folder = os.path.join(get_zalmoxis_root(), 'data', 'EOS_WolfBower2018_1TPa')
     melting_curve_files = ['liquidus.dat', 'solidus.dat']
-    melting_curve_folder = os.path.join(ZALMOXIS_ROOT, 'data', 'melting_curves_Monteux-600')
+    melting_curve_folder = os.path.join(get_zalmoxis_root(), 'data', 'melting_curves_Monteux-600')
     for wolf_bower_file in wolf_bower_files:
         plot_eos_WolfBower2018(
             wolf_bower_file, wolf_bower_folder, melting_curve_folder, melting_curve_files

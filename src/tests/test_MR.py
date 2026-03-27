@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from tools.setup_tests import load_model_output, load_zeng_curve, run_zalmoxis_rocky_water
 
 

@@ -6,7 +6,7 @@ Creates docs/img/suppression_weights.png showing:
   Right:  combined sigma_total along a representative planetary adiabat
 
 Usage:
-    ZALMOXIS_ROOT=/path/to/Zalmoxis python -m src.tools.generate_suppression_weights_plot
+    get_zalmoxis_root()=/path/to/Zalmoxis python -m src.tools.generate_suppression_weights_plot
 """
 
 from __future__ import annotations
@@ -16,9 +16,7 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 
-ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
-if not ZALMOXIS_ROOT:
-    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
+from zalmoxis import get_zalmoxis_root
 
 # ── H2 density sigmoid parameters ──
 H2_RHO_MIN = 30.0  # kg/m^3
@@ -257,7 +255,7 @@ def main():
         y=1.02,
     )
     fig.tight_layout()
-    outpath = os.path.join(ZALMOXIS_ROOT, 'docs', 'img', 'suppression_weights.png')
+    outpath = os.path.join(get_zalmoxis_root(), 'docs', 'img', 'suppression_weights.png')
     fig.savefig(outpath, dpi=200, bbox_inches='tight')
     plt.close(fig)
     print(f'Saved: {outpath}')

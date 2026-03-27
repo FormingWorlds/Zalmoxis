@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import os
 
-# Read the environment variable for ZALMOXIS_ROOT
-ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
-if not ZALMOXIS_ROOT:
-    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
+# Read the environment variable for get_zalmoxis_root()
+from zalmoxis import get_zalmoxis_root
 
 # Run from the root directory with: python -m src.zalmoxis.plots.plot_animated_pressure_density_profiles
 
@@ -93,7 +91,7 @@ def create_video(pressure_filename, density_filename):
         ani = FuncAnimation(fig, update, frames=len(p_all), init_func=init, blit=True)
 
         ani.save(
-            os.path.join(ZALMOXIS_ROOT, 'output_files', 'pressure_evolution.mp4'),
+            os.path.join(get_zalmoxis_root(), 'output_files', 'pressure_evolution.mp4'),
             writer='ffmpeg',
             fps=2,
         )
@@ -121,7 +119,7 @@ def create_video(pressure_filename, density_filename):
         ani = FuncAnimation(fig, update, frames=len(d_all), init_func=init, blit=True)
 
         ani.save(
-            os.path.join(ZALMOXIS_ROOT, 'output_files', 'density_evolution.mp4'),
+            os.path.join(get_zalmoxis_root(), 'output_files', 'density_evolution.mp4'),
             writer='ffmpeg',
             fps=2,
         )
@@ -138,7 +136,7 @@ def create_video(pressure_filename, density_filename):
 
 
 if __name__ == '__main__':
-    pressure_filename = os.path.join(ZALMOXIS_ROOT, 'output_files', 'pressure_profiles.txt')
-    density_filename = os.path.join(ZALMOXIS_ROOT, 'output_files', 'density_profiles.txt')
+    pressure_filename = os.path.join(get_zalmoxis_root(), 'output_files', 'pressure_profiles.txt')
+    density_filename = os.path.join(get_zalmoxis_root(), 'output_files', 'density_profiles.txt')
 
     create_video(pressure_filename=pressure_filename, density_filename=density_filename)

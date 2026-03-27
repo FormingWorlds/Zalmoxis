@@ -21,13 +21,10 @@ import numpy as np
 # Ensure src is on the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+from zalmoxis import get_zalmoxis_root
 from zalmoxis.eos_analytic import SEAGER2007_MATERIALS, get_analytic_density
 
-ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
-if not ZALMOXIS_ROOT:
-    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
-
-OUTPUT_DIR = os.path.join(ZALMOXIS_ROOT, 'output_files')
+OUTPUT_DIR = os.path.join(get_zalmoxis_root(), 'output_files')
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
@@ -71,7 +68,7 @@ def plot1_eos_comparison():
         )
 
     # Plot tabulated data on top as large open markers, subsampled for clarity
-    data_folder = os.path.join(ZALMOXIS_ROOT, 'data', 'EOS_Seager2007')
+    data_folder = os.path.join(get_zalmoxis_root(), 'data', 'EOS_Seager2007')
     for filename, (mat_key, marker, color) in tabulated_files.items():
         filepath = os.path.join(data_folder, filename)
         if os.path.exists(filepath):
@@ -119,7 +116,7 @@ def plot2_density_residuals():
 
     fig, ax = plt.subplots(figsize=(10, 5))
 
-    data_folder = os.path.join(ZALMOXIS_ROOT, 'data', 'EOS_Seager2007')
+    data_folder = os.path.join(get_zalmoxis_root(), 'data', 'EOS_Seager2007')
     has_data = False
 
     for mat_key, filename in tabulated_files.items():
@@ -347,6 +344,7 @@ def plot3_mass_radius():
 def plot4_density_profiles():
     """Plot 4: Interior density profiles for 1 M_earth."""
     from tools.setup_tests import load_profile_output, run_zalmoxis_rocky_water
+
     from zalmoxis.constants import earth_radius
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))

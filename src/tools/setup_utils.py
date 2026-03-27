@@ -11,10 +11,8 @@ from pathlib import Path
 from osfclient.api import OSF
 from tqdm import tqdm
 
-# Read the environment variable for ZALMOXIS_ROOT
-ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
-if not ZALMOXIS_ROOT:
-    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
+# Read the environment variable for get_zalmoxis_root()
+from zalmoxis import get_zalmoxis_root
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -224,7 +222,7 @@ def create_output_files():
     Create output files directory if it does not exist.
     This directory will store the results of the calculations.
     """
-    output_dir = os.path.join(ZALMOXIS_ROOT, 'output_files')  # Path to output files directory
+    output_dir = os.path.join(get_zalmoxis_root(), 'output_files')  # Path to output files directory
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -241,25 +239,25 @@ def download_data():
     # Download the necessary data folders
     download(
         folder='EOS_Seager2007',
-        data_dir=Path(ZALMOXIS_ROOT, 'data'),
+        data_dir=Path(get_zalmoxis_root(), 'data'),
         zenodo_id=15727998,
         osf_id='dpkjb',
     )
     download(
         folder='EOS_WolfBower2018_1TPa',
-        data_dir=Path(ZALMOXIS_ROOT, 'data'),
+        data_dir=Path(get_zalmoxis_root(), 'data'),
         zenodo_id=17417017,
         keep_files=['density_melt.dat', 'density_solid.dat', 'adiabat_temp_grad_melt.dat'],
     )
     download(
         folder='radial_profiles',
-        data_dir=Path(ZALMOXIS_ROOT, 'data'),
+        data_dir=Path(get_zalmoxis_root(), 'data'),
         zenodo_id=16837954,
         osf_id='dpkjb',
     )
     download(
         folder='mass_radius_curves',
-        data_dir=Path(ZALMOXIS_ROOT, 'data'),
+        data_dir=Path(get_zalmoxis_root(), 'data'),
         zenodo_id=15727899,
         osf_id='dpkjb',
         keep_files=[
@@ -272,19 +270,19 @@ def download_data():
     )
     download(
         folder='EOS_RTPress_melt_100TPa',
-        data_dir=Path(ZALMOXIS_ROOT, 'data'),
+        data_dir=Path(get_zalmoxis_root(), 'data'),
         zenodo_id=18819027,
         keep_files=['density_melt.dat', 'adiabat_temp_grad_melt.dat'],
     )
     download(
         folder='melting_curves_Monteux-600',
-        data_dir=Path(ZALMOXIS_ROOT, 'data'),
+        data_dir=Path(get_zalmoxis_root(), 'data'),
         zenodo_id=15728138,
         keep_files=['liquidus.dat', 'solidus.dat'],
     )
     download(
         folder='EOS_PALEOS_MgSiO3',
-        data_dir=Path(ZALMOXIS_ROOT, 'data'),
+        data_dir=Path(get_zalmoxis_root(), 'data'),
         zenodo_id=18924171,
         keep_files=[
             'paleos_mgsio3_tables_pt_proteus_solid.dat',
@@ -294,24 +292,24 @@ def download_data():
     # Unified PALEOS tables (Zenodo 19000316): iron, MgSiO3, H2O
     download(
         folder='EOS_PALEOS_iron',
-        data_dir=Path(ZALMOXIS_ROOT, 'data'),
+        data_dir=Path(get_zalmoxis_root(), 'data'),
         zenodo_id=19000316,
         keep_files=['paleos_iron_eos_table_pt.dat'],
     )
     download(
         folder='EOS_PALEOS_MgSiO3_unified',
-        data_dir=Path(ZALMOXIS_ROOT, 'data'),
+        data_dir=Path(get_zalmoxis_root(), 'data'),
         zenodo_id=19000316,
         keep_files=['paleos_mgsio3_eos_table_pt.dat'],
     )
     download(
         folder='EOS_PALEOS_H2O',
-        data_dir=Path(ZALMOXIS_ROOT, 'data'),
+        data_dir=Path(get_zalmoxis_root(), 'data'),
         zenodo_id=19000316,
         keep_files=['paleos_water_eos_table_pt.dat'],
     )
     # Chabrier+2019/2021 H/He EOS (Zenodo 19135021): tarball with 5 tables
-    chabrier_dir = Path(ZALMOXIS_ROOT, 'data', 'EOS_Chabrier2021_HHe')
+    chabrier_dir = Path(get_zalmoxis_root(), 'data', 'EOS_Chabrier2021_HHe')
     if not chabrier_dir.exists():
         logger.info('Downloading Chabrier H/He EOS from Zenodo 19135021...')
         download_zenodo_tarball(zenodo_id='19135021', folder_dir=chabrier_dir)

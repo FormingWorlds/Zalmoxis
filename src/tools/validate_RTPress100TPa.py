@@ -24,25 +24,22 @@ from src.zalmoxis.zalmoxis import (
     load_zalmoxis_config,
     main,
 )
+from zalmoxis import get_zalmoxis_root
 from zalmoxis.constants import earth_mass, earth_radius
 
-ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
-if not ZALMOXIS_ROOT:
-    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
-
-OUTPUT_DIR = os.path.join(ZALMOXIS_ROOT, 'output_files')
+OUTPUT_DIR = os.path.join(get_zalmoxis_root(), 'output_files')
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
 def run_model(mass_earth, eos_config):
     """Run Zalmoxis for a given mass and EOS config, return results dict or None."""
-    config = load_zalmoxis_config(os.path.join(ZALMOXIS_ROOT, 'input', 'default.toml'))
+    config = load_zalmoxis_config(os.path.join(get_zalmoxis_root(), 'input', 'default.toml'))
     config['planet_mass'] = mass_earth * earth_mass
     config['layer_eos_config'] = eos_config
 
     mat = load_material_dictionaries()
     melt = load_solidus_liquidus_functions(eos_config)
-    input_dir = os.path.join(ZALMOXIS_ROOT, 'input')
+    input_dir = os.path.join(get_zalmoxis_root(), 'input')
 
     results = main(config, mat, melt, input_dir)
     if not results['converged']:

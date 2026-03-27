@@ -1,7 +1,7 @@
 """Shared test fixtures for the Zalmoxis test suite.
 
 Provides session-scoped fixtures for common resources:
-- ZALMOXIS_ROOT validation and access
+- ZALMOXIS_ROOT validation and access (lazy, skips for pure-math unit tests)
 - Cached planetary structure solver to avoid redundant runs
 
 References:
@@ -11,24 +11,23 @@ References:
 
 from __future__ import annotations
 
-import os
-
 import pytest
-
-from tools.setup_tests import run_zalmoxis_rocky_water
-
-
-@pytest.fixture(scope='session', autouse=True)
-def _validate_environment():
-    """Validate required environment variables at session start."""
-    if not os.getenv('ZALMOXIS_ROOT'):
-        pytest.exit('ZALMOXIS_ROOT environment variable not set', returncode=1)
 
 
 @pytest.fixture(scope='session')
 def zalmoxis_root():
-    """Root directory of the Zalmoxis repository."""
-    return os.environ['ZALMOXIS_ROOT']
+    """Root directory of the Zalmoxis repository.
+
+    Resolved lazily via get_zalmoxis_root(). Skips the test session
+    if the root cannot be determined (ZALMOXIS_ROOT not set and
+    auto-detection fails).
+    """
+    from zalmoxis import get_zalmoxis_root
+
+    try:
+        return get_zalmoxis_root()
+    except RuntimeError:
+        pytest.skip('ZALMOXIS_ROOT not set and auto-detection failed')
 
 
 @pytest.fixture(scope='session')
@@ -43,6 +42,8 @@ def cached_solver():
     callable
         Same signature as run_zalmoxis_rocky_water, with transparent caching.
     """
+    from tools.setup_tests import run_zalmoxis_rocky_water
+
     _cache = {}
 
     def _run(mass, config_type, cmf, immf, layer_eos_override=None):

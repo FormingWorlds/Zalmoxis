@@ -10,16 +10,11 @@ import numpy as np
 from ternary import figure
 from tqdm import tqdm
 
-from zalmoxis import zalmoxis
+# Run file via command line: python -m zalmoxis.plots.plot_ternary
+# Read the environment variable for get_zalmoxis_root()
+from zalmoxis import get_zalmoxis_root, zalmoxis
 from zalmoxis.constants import earth_mass, earth_radius
 from zalmoxis.zalmoxis import load_solidus_liquidus_functions
-
-# Run file via command line: python -m zalmoxis.plots.plot_ternary
-
-# Read the environment variable for ZALMOXIS_ROOT
-ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
-if not ZALMOXIS_ROOT:
-    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -40,7 +35,7 @@ def run_zalmoxis_for_ternary(args):
     water_frac = 1.0 - core_frac - mantle_frac
 
     # Path to the default configuration file
-    default_config_path = os.path.join(ZALMOXIS_ROOT, 'input', 'default.toml')
+    default_config_path = os.path.join(get_zalmoxis_root(), 'input', 'default.toml')
     config_params = zalmoxis.load_zalmoxis_config(default_config_path)
 
     # Modify the configuration parameters as needed
@@ -60,7 +55,7 @@ def run_zalmoxis_for_ternary(args):
         melting_curves_functions=load_solidus_liquidus_functions(
             config_params['layer_eos_config']
         ),
-        input_dir=os.path.join(ZALMOXIS_ROOT, 'input'),
+        input_dir=os.path.join(get_zalmoxis_root(), 'input'),
     )
     converged = model_results.get('converged', False)
 
@@ -76,7 +71,7 @@ def run_zalmoxis_for_ternary(args):
 
     # Log the composition and radius only if converged
     custom_log_file = os.path.join(
-        ZALMOXIS_ROOT, 'output_files', f'composition_radius_log{id_mass}.txt'
+        get_zalmoxis_root(), 'output_files', f'composition_radius_log{id_mass}.txt'
     )
     with open(custom_log_file, 'a') as log:
         log.write(
@@ -136,7 +131,7 @@ def read_results(id_mass=None):
         list: A list of tuples with the composition and radius data.
     """
     log_path = os.path.join(
-        ZALMOXIS_ROOT, 'output_files', f'composition_radius_log{id_mass}.txt'
+        get_zalmoxis_root(), 'output_files', f'composition_radius_log{id_mass}.txt'
     )
     data = []
     with open(log_path, 'r') as file:
@@ -232,7 +227,7 @@ def plot_ternary(data, id_mass):
     plt.tight_layout()
     # plt.show()
     plt.savefig(
-        os.path.join(ZALMOXIS_ROOT, 'output_files', f'ternary_diagram{id_mass}.png'), dpi=300
+        os.path.join(get_zalmoxis_root(), 'output_files', f'ternary_diagram{id_mass}.png'), dpi=300
     )
 
 
@@ -307,7 +302,7 @@ def plot_ternary_time(data, id_mass):
 
     plt.tight_layout()
     plt.savefig(
-        os.path.join(ZALMOXIS_ROOT, 'output_files', f'ternary_diagram_time{id_mass}.png'),
+        os.path.join(get_zalmoxis_root(), 'output_files', f'ternary_diagram_time{id_mass}.png'),
         dpi=300,
     )
 
@@ -321,7 +316,7 @@ def wrapper_ternary(id_mass):
     """
     # Delete composition_radius_log file if it exists
     custom_log_file = os.path.join(
-        ZALMOXIS_ROOT, 'output_files', f'composition_radius_log{id_mass}.txt'
+        get_zalmoxis_root(), 'output_files', f'composition_radius_log{id_mass}.txt'
     )
     if os.path.exists(custom_log_file):
         os.remove(custom_log_file)

@@ -19,13 +19,10 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 
+from zalmoxis import get_zalmoxis_root
 from zalmoxis.constants import earth_mass, earth_radius
 
-ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
-if not ZALMOXIS_ROOT:
-    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
-
-OUTPUT_DIR = os.path.join(ZALMOXIS_ROOT, 'output_files')
+OUTPUT_DIR = os.path.join(get_zalmoxis_root(), 'output_files')
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
@@ -41,7 +38,7 @@ def run_model(layer_eos, cmf=0.325, immf=0, config_type='rocky'):
     from src.zalmoxis import zalmoxis
     from src.zalmoxis.zalmoxis import load_solidus_liquidus_functions
 
-    default_config_path = os.path.join(ZALMOXIS_ROOT, 'input', 'default.toml')
+    default_config_path = os.path.join(get_zalmoxis_root(), 'input', 'default.toml')
     config_params = zalmoxis.load_zalmoxis_config(default_config_path)
     config_params['planet_mass'] = 1.0 * earth_mass
     config_params['core_mass_fraction'] = cmf
@@ -52,7 +49,7 @@ def run_model(layer_eos, cmf=0.325, immf=0, config_type='rocky'):
         config_params,
         material_dictionaries=zalmoxis.load_material_dictionaries(),
         melting_curves_functions=load_solidus_liquidus_functions(layer_eos),
-        input_dir=os.path.join(ZALMOXIS_ROOT, 'input'),
+        input_dir=os.path.join(get_zalmoxis_root(), 'input'),
     )
 
     return {

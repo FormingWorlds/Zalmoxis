@@ -41,12 +41,9 @@ import os
 import numpy as np
 from scipy.interpolate import interp1d
 
+from . import get_zalmoxis_root
+
 logger = logging.getLogger(__name__)
-
-ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
-if not ZALMOXIS_ROOT:
-    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
-
 
 # ── Valid identifiers ──────────────────────────────────────────────────
 
@@ -336,12 +333,12 @@ def get_melting_curve_function(curve_id):
 
     elif curve_id == 'Monteux600-solidus-tabulated':
         return _load_tabulated_curve(
-            os.path.join(ZALMOXIS_ROOT, 'data', 'melting_curves_Monteux-600', 'solidus.dat')
+            os.path.join(get_zalmoxis_root(), 'data', 'melting_curves_Monteux-600', 'solidus.dat')
         )
 
     elif curve_id == 'Monteux600-liquidus-tabulated':
         return _load_tabulated_curve(
-            os.path.join(ZALMOXIS_ROOT, 'data', 'melting_curves_Monteux-600', 'liquidus.dat')
+            os.path.join(get_zalmoxis_root(), 'data', 'melting_curves_Monteux-600', 'liquidus.dat')
         )
 
     else:

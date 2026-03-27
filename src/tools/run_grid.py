@@ -11,7 +11,7 @@ Usage
 The grid TOML has three sections:
 
     [base]
-    config = "input/default.toml"   # base config (relative to ZALMOXIS_ROOT)
+    config = "input/default.toml"   # base config (relative to get_zalmoxis_root())
 
     [sweep]
     planet_mass = [0.5, 1.0, 3.0]
@@ -43,8 +43,8 @@ from src.zalmoxis.zalmoxis import (
     main,
 )
 
-# ZALMOXIS_ROOT is validated at import by src.zalmoxis.zalmoxis
-ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT', '')
+# get_zalmoxis_root() is validated at import by src.zalmoxis.zalmoxis
+from zalmoxis import get_zalmoxis_root
 
 logger = logging.getLogger(__name__)
 
@@ -93,13 +93,13 @@ def load_grid_config(grid_toml_path):
     """
     grid = toml.load(grid_toml_path)
 
-    # Base config path (relative to ZALMOXIS_ROOT)
+    # Base config path (relative to get_zalmoxis_root())
     base_rel = grid['base']['config']
-    base_config_path = os.path.join(ZALMOXIS_ROOT, base_rel)
+    base_config_path = os.path.join(get_zalmoxis_root(), base_rel)
     if not os.path.isfile(base_config_path):
         raise FileNotFoundError(
             f'Base config not found: {base_config_path} '
-            f"(from '{base_rel}' relative to ZALMOXIS_ROOT={ZALMOXIS_ROOT})"
+            f"(from '{base_rel}' relative to get_zalmoxis_root()={get_zalmoxis_root()})"
         )
 
     # Sweep parameters
@@ -115,9 +115,9 @@ def load_grid_config(grid_toml_path):
                 f"Sweep parameter '{name}' must be a list, got {type(sweeps[name]).__name__}"
             )
 
-    # Output directory (relative to ZALMOXIS_ROOT)
+    # Output directory (relative to get_zalmoxis_root())
     output_rel = grid.get('output', {}).get('dir', 'output_files/grid_results')
-    output_dir = os.path.join(ZALMOXIS_ROOT, output_rel)
+    output_dir = os.path.join(get_zalmoxis_root(), output_rel)
 
     return base_config_path, sweeps, output_dir
 
@@ -239,7 +239,7 @@ def run_single(args):
             config_params,
             material_dictionaries=material_dicts,
             melting_curves_functions=melting_curves,
-            input_dir=os.path.join(ZALMOXIS_ROOT, 'input'),
+            input_dir=os.path.join(get_zalmoxis_root(), 'input'),
         )
 
         result['R_earth'] = model_results['radii'][-1] / earth_radius

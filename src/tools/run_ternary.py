@@ -1,13 +1,7 @@
 from __future__ import annotations
 
-import os
-
+# Read the environment variable for get_zalmoxis_root()
 from zalmoxis.plots.plot_ternary import wrapper_ternary
-
-# Read the environment variable for ZALMOXIS_ROOT
-ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
-if not ZALMOXIS_ROOT:
-    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
 
 
 def run_ternary_diagrams(target_mass_array):

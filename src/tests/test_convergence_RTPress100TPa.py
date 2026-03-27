@@ -16,7 +16,6 @@ import os
 
 import numpy as np
 import pytest
-
 from tools.setup_tests import run_zalmoxis_RTPress100TPa
 
 

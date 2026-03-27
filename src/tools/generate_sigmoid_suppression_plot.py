@@ -4,7 +4,7 @@ Creates docs/img/sigmoid_suppression.png showing the condensed weight
 sigma as a function of component density, with annotated reference points.
 
 Usage:
-    ZALMOXIS_ROOT=/path/to/Zalmoxis python -m src.tools.generate_sigmoid_suppression_plot
+    get_zalmoxis_root()=/path/to/Zalmoxis python -m src.tools.generate_sigmoid_suppression_plot
 """
 
 from __future__ import annotations
@@ -14,9 +14,7 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 
-ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
-if not ZALMOXIS_ROOT:
-    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
+from zalmoxis import get_zalmoxis_root
 
 # Sigmoid parameters (H2O defaults)
 RHO_MIN = 322.0  # kg/m^3, H2O critical density
@@ -117,7 +115,7 @@ def main():
     ax.tick_params(labelsize=10)
 
     fig.tight_layout()
-    outpath = os.path.join(ZALMOXIS_ROOT, 'docs', 'img', 'sigmoid_suppression.png')
+    outpath = os.path.join(get_zalmoxis_root(), 'docs', 'img', 'sigmoid_suppression.png')
     fig.savefig(outpath, dpi=200, bbox_inches='tight')
     plt.close(fig)
     print(f'Saved: {outpath}')

@@ -8,14 +8,11 @@ from concurrent.futures import ProcessPoolExecutor
 
 from src.zalmoxis import zalmoxis
 from src.zalmoxis.plots.plot_profiles_all_in_one import plot_profiles_all_in_one
-from zalmoxis.constants import earth_mass
 
 # Run file via command line: python -m src.tools.run_parallel Wagner/Boujibar/default/SeagerEarth/Seagerwater/custom
-
-# Read the environment variable for ZALMOXIS_ROOT
-ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
-if not ZALMOXIS_ROOT:
-    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
+# Read the environment variable for get_zalmoxis_root()
+from zalmoxis import get_zalmoxis_root
+from zalmoxis.constants import earth_mass
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -29,7 +26,7 @@ def run_zalmoxis(id_mass=None):
     """
 
     # Path to the default configuration file
-    default_config_path = os.path.join(ZALMOXIS_ROOT, 'input', 'default.toml')
+    default_config_path = os.path.join(get_zalmoxis_root(), 'input', 'default.toml')
     config_params = zalmoxis.load_zalmoxis_config(default_config_path)
 
     # Modify the configuration parameters as needed
@@ -57,7 +54,7 @@ def run_zalmoxis_in_parallel(choice):
 
     # Delete the contents of the calculated_planet_mass_radius.txt file if it exists
     calculated_file_path = os.path.join(
-        ZALMOXIS_ROOT, 'output_files', 'calculated_planet_mass_radius.txt'
+        get_zalmoxis_root(), 'output_files', 'calculated_planet_mass_radius.txt'
     )
     if os.path.exists(calculated_file_path):
         with open(calculated_file_path, 'w') as file:

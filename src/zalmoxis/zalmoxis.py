@@ -23,6 +23,8 @@ import numpy as np
 import toml
 from scipy.optimize import brentq
 
+# Run file via command line with default configuration file: python -m zalmoxis -c input/default.toml
+from . import get_zalmoxis_root
 from .constants import (
     CONDENSED_RHO_MIN_DEFAULT,
     CONDENSED_RHO_SCALE_DEFAULT,
@@ -50,13 +52,6 @@ from .mixing import (
 from .plots.plot_phase_vs_radius import plot_PT_with_phases
 from .plots.plot_profiles import plot_planet_profile_single
 from .structure_model import solve_structure
-
-# Run file via command line with default configuration file: python -m zalmoxis -c input/default.toml
-
-# Read the environment variable for ZALMOXIS_ROOT
-ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
-if not ZALMOXIS_ROOT:
-    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
 
 logger = logging.getLogger(__name__)
 
@@ -690,7 +685,7 @@ def choose_config_file(temp_config_path=None):
             logger.error(f'Error: Config file not found at {config_file_path}')
             sys.exit(1)
     else:
-        config_default_path = os.path.join(ZALMOXIS_ROOT, 'input', 'default.toml')
+        config_default_path = os.path.join(get_zalmoxis_root(), 'input', 'default.toml')
         try:
             config = toml.load(config_default_path)
             logger.info(f'Reading default config file from {config_default_path}')
@@ -1560,7 +1555,7 @@ def post_processing(config_params, id_mass=None, output_file=None):
         melting_curves_functions=load_solidus_liquidus_functions(
             layer_eos_config, solidus_id, liquidus_id
         ),
-        input_dir=os.path.join(ZALMOXIS_ROOT, 'input'),
+        input_dir=os.path.join(get_zalmoxis_root(), 'input'),
     )
 
     # Extract results
@@ -1647,19 +1642,19 @@ def post_processing(config_params, id_mass=None, output_file=None):
         )
         if id_mass is None:
             np.savetxt(
-                os.path.join(ZALMOXIS_ROOT, 'output_files', 'planet_profile.txt'),
+                os.path.join(get_zalmoxis_root(), 'output_files', 'planet_profile.txt'),
                 output_data,
                 header=header,
             )
         else:
             np.savetxt(
-                os.path.join(ZALMOXIS_ROOT, 'output_files', f'planet_profile{id_mass}.txt'),
+                os.path.join(get_zalmoxis_root(), 'output_files', f'planet_profile{id_mass}.txt'),
                 output_data,
                 header=header,
             )
         if output_file is None:
             output_file = os.path.join(
-                ZALMOXIS_ROOT, 'output_files', 'calculated_planet_mass_radius.txt'
+                get_zalmoxis_root(), 'output_files', 'calculated_planet_mass_radius.txt'
             )
         if not os.path.exists(output_file):
             header = 'Calculated Mass (kg)\tCalculated Radius (m)'

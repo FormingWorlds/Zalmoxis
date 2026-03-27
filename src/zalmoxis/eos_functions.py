@@ -21,13 +21,9 @@ from scipy.interpolate import (
     interp1d,
 )
 
+from . import get_zalmoxis_root
 from .constants import CONDENSED_RHO_MIN_DEFAULT, CONDENSED_RHO_SCALE_DEFAULT
 from .eos_analytic import get_analytic_density
-
-# Read the environment variable for ZALMOXIS_ROOT
-ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
-if not ZALMOXIS_ROOT:
-    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
 
 logger = logging.getLogger(__name__)
 
@@ -1820,8 +1816,8 @@ def create_pressure_density_files(
     None
     """
 
-    pressure_file = os.path.join(ZALMOXIS_ROOT, 'output_files', 'pressure_profiles.txt')
-    density_file = os.path.join(ZALMOXIS_ROOT, 'output_files', 'density_profiles.txt')
+    pressure_file = os.path.join(get_zalmoxis_root(), 'output_files', 'pressure_profiles.txt')
+    density_file = os.path.join(get_zalmoxis_root(), 'output_files', 'density_profiles.txt')
 
     # Only delete the files once at the beginning of the run
     if outer_iter == 0 and inner_iter == 0 and pressure_iter == 0:

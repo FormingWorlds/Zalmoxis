@@ -5,12 +5,9 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 
+# Read the environment variable for get_zalmoxis_root()
+from zalmoxis import get_zalmoxis_root
 from zalmoxis.constants import earth_mass, earth_radius
-
-# Read the environment variable for ZALMOXIS_ROOT
-ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
-if not ZALMOXIS_ROOT:
-    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
 
 
 # Function to plot the mass-radius relationship of planets and compare with Earth-like Rocky (32.5% Fe+67.5% MgSiO3) planets from Zeng et al. (2019)
@@ -30,14 +27,14 @@ def plot_mass_radius_relationship(target_mass_array):
     Notes:
     - Input data files should have two columns: mass and radius, separated by whitespace.
     - Masses and radii in the modeled data files are normalized to Earth units using `earth_mass` and `earth_radius`.
-    - The function requires the ZALMOXIS_ROOT environment variable to be set.
+    - The function requires the get_zalmoxis_root() environment variable to be set.
     """
     # Read data from Zeng et al. (2019) for Earth-like Rocky (32.5% Fe+67.5% MgSiO3) planets
     zeng_masses_Earth = []
     zeng_radii_Earth = []
     with open(
         os.path.join(
-            ZALMOXIS_ROOT, 'data', 'mass_radius_curves', 'massradiusEarthlikeRocky.txt'
+            get_zalmoxis_root(), 'data', 'mass_radius_curves', 'massradiusEarthlikeRocky.txt'
         ),
         'r',
     ) as zeng_file:
@@ -52,7 +49,7 @@ def plot_mass_radius_relationship(target_mass_array):
     zeng_radii_water = []
     with open(
         os.path.join(
-            ZALMOXIS_ROOT,
+            get_zalmoxis_root(),
             'data',
             'mass_radius_curves',
             'massradius_50percentH2O_300K_1mbar.txt',
@@ -69,7 +66,7 @@ def plot_mass_radius_relationship(target_mass_array):
     masses_Earth = []
     radii_Earth = []
     with open(
-        os.path.join(ZALMOXIS_ROOT, 'output_files', 'calculated_planet_mass_radius_Earth.txt'),
+        os.path.join(get_zalmoxis_root(), 'output_files', 'calculated_planet_mass_radius_Earth.txt'),
         'r',
     ) as file:
         next(file)  # Skip the header line
@@ -82,7 +79,7 @@ def plot_mass_radius_relationship(target_mass_array):
     masses_water = []
     radii_water = []
     with open(
-        os.path.join(ZALMOXIS_ROOT, 'output_files', 'calculated_planet_mass_radius_water.txt'),
+        os.path.join(get_zalmoxis_root(), 'output_files', 'calculated_planet_mass_radius_water.txt'),
         'r',
     ) as file:
         next(file)  # Skip the header line
@@ -114,6 +111,6 @@ def plot_mass_radius_relationship(target_mass_array):
     ax.set_ylim(0, 5)
     ax.legend()
     ax.grid(True)
-    plt.savefig(os.path.join(ZALMOXIS_ROOT, 'output_files', 'MR_plot.pdf'))
+    plt.savefig(os.path.join(get_zalmoxis_root(), 'output_files', 'MR_plot.pdf'))
     # plt.show()
     plt.close(fig)

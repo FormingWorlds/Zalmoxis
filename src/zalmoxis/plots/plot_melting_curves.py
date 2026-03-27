@@ -5,10 +5,8 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 
-# Read the environment variable for ZALMOXIS_ROOT
-ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
-if not ZALMOXIS_ROOT:
-    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
+# Read the environment variable for get_zalmoxis_root()
+from zalmoxis import get_zalmoxis_root
 
 
 def plot_melting_curves(data_files, data_folder):
@@ -26,12 +24,12 @@ def plot_melting_curves(data_files, data_folder):
     ax.legend()
     ax.grid()
     plt.tight_layout()
-    fig.savefig(os.path.join(ZALMOXIS_ROOT, 'output_files', 'melting_curves.pdf'))
+    fig.savefig(os.path.join(get_zalmoxis_root(), 'output_files', 'melting_curves.pdf'))
     # plt.show()
     plt.close(fig)
 
 
 if __name__ == '__main__':
     melting_curve_files = ['liquidus.dat', 'solidus.dat']
-    melting_curve_folder = os.path.join(ZALMOXIS_ROOT, 'data', 'melting_curves_Monteux-600')
+    melting_curve_folder = os.path.join(get_zalmoxis_root(), 'data', 'melting_curves_Monteux-600')
     plot_melting_curves(melting_curve_files, melting_curve_folder)

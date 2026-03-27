@@ -7,12 +7,9 @@ import numpy as np
 from matplotlib import cm
 from matplotlib.colors import Normalize
 
+# Read the environment variable for get_zalmoxis_root()
+from zalmoxis import get_zalmoxis_root
 from zalmoxis.constants import earth_mass, earth_radius
-
-# Read the environment variable for ZALMOXIS_ROOT
-ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
-if not ZALMOXIS_ROOT:
-    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
 
 
 # Function to plot the profiles of all planets in one plot for comparison
@@ -43,7 +40,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         The generated plot is saved as 'all_profiles_with_colorbar_vs_{choice}.pdf' in the output_files directory.
 
     Raises:
-        RuntimeError: If the ZALMOXIS_ROOT environment variable is not set.
+        RuntimeError: If the get_zalmoxis_root() environment variable is not set.
         ValueError: If an invalid choice is provided for the comparison data.
     """
     # Initialize a list to hold the data for plotting
@@ -52,7 +49,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
     # Read data from files with calculated planet profiles
     for id_mass in target_mass_array:
         # Generate file path for each planet profile
-        file_path = os.path.join(ZALMOXIS_ROOT, 'output_files', f'planet_profile{id_mass}.txt')
+        file_path = os.path.join(get_zalmoxis_root(), 'output_files', f'planet_profile{id_mass}.txt')
 
         # Check if the file exists
         if os.path.exists(file_path):
@@ -87,7 +84,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         wagner_densities = []
 
         with open(
-            os.path.join(ZALMOXIS_ROOT, 'data', 'radial_profiles', 'radiusdensityWagner.txt'),
+            os.path.join(get_zalmoxis_root(), 'data', 'radial_profiles', 'radiusdensityWagner.txt'),
             'r',
         ) as wagner_file:
             for line in wagner_file:
@@ -99,7 +96,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         wagner_pressures = []
 
         with open(
-            os.path.join(ZALMOXIS_ROOT, 'data', 'radial_profiles', 'radiuspressureWagner.txt'),
+            os.path.join(get_zalmoxis_root(), 'data', 'radial_profiles', 'radiuspressureWagner.txt'),
             'r',
         ) as wagner_file:
             for line in wagner_file:
@@ -111,7 +108,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         wagner_gravities = []
 
         with open(
-            os.path.join(ZALMOXIS_ROOT, 'data', 'radial_profiles', 'radiusgravityWagner.txt'),
+            os.path.join(get_zalmoxis_root(), 'data', 'radial_profiles', 'radiusgravityWagner.txt'),
             'r',
         ) as wagner_file:
             for line in wagner_file:
@@ -126,7 +123,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
 
         with open(
             os.path.join(
-                ZALMOXIS_ROOT, 'data', 'radial_profiles', 'radiusdensityEarthBoujibar.txt'
+                get_zalmoxis_root(), 'data', 'radial_profiles', 'radiusdensityEarthBoujibar.txt'
             ),
             'r',
         ) as boujibar_file:
@@ -140,7 +137,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
 
         with open(
             os.path.join(
-                ZALMOXIS_ROOT, 'data', 'radial_profiles', 'radiuspressureEarthBoujibar.txt'
+                get_zalmoxis_root(), 'data', 'radial_profiles', 'radiuspressureEarthBoujibar.txt'
             ),
             'r',
         ) as boujibar_file:
@@ -158,7 +155,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
 
         with open(
             os.path.join(
-                ZALMOXIS_ROOT, 'data', 'radial_profiles', 'radiusdensitySeagerEarth.txt'
+                get_zalmoxis_root(), 'data', 'radial_profiles', 'radiusdensitySeagerEarth.txt'
             ),
             'r',
         ) as seagerEarth_file:
@@ -173,7 +170,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
 
         with open(
             os.path.join(
-                ZALMOXIS_ROOT, 'data', 'radial_profiles', 'radiusdensitySeagerwater.txt'
+                get_zalmoxis_root(), 'data', 'radial_profiles', 'radiusdensitySeagerwater.txt'
             ),
             'r',
         ) as seagerwater_file:
@@ -324,7 +321,7 @@ def plot_profiles_all_in_one(target_mass_array, choice):
     plt.suptitle(f'Planet Profiles Comparison ({choice})')
     plt.savefig(
         os.path.join(
-            ZALMOXIS_ROOT, 'output_files', f'all_profiles_with_colorbar_vs_{choice}.pdf'
+            get_zalmoxis_root(), 'output_files', f'all_profiles_with_colorbar_vs_{choice}.pdf'
         )
     )
     # plt.show()

@@ -5,12 +5,8 @@ import tempfile
 
 from src.zalmoxis import zalmoxis
 from src.zalmoxis.zalmoxis import load_solidus_liquidus_functions
+from zalmoxis import get_zalmoxis_root
 from zalmoxis.constants import earth_mass, earth_radius
-
-# Read the environment variable for ZALMOXIS_ROOT
-ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
-if not ZALMOXIS_ROOT:
-    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
 
 
 def run_zalmoxis_rocky_water(id_mass, config_type, cmf, immf, layer_eos_override=None):
@@ -36,7 +32,7 @@ def run_zalmoxis_rocky_water(id_mass, config_type, cmf, immf, layer_eos_override
         (output_file, profile_output_file) paths.
     """
     # Load default configuration
-    default_config_path = os.path.join(ZALMOXIS_ROOT, 'input', 'default.toml')
+    default_config_path = os.path.join(get_zalmoxis_root(), 'input', 'default.toml')
     config_params = zalmoxis.load_zalmoxis_config(default_config_path)
 
     # Modify the configuration parameters as needed
@@ -80,7 +76,7 @@ def run_zalmoxis_rocky_water(id_mass, config_type, cmf, immf, layer_eos_override
         config_params,
         material_dictionaries=zalmoxis.load_material_dictionaries(),
         melting_curves_functions=load_solidus_liquidus_functions(layer_eos_config),
-        input_dir=os.path.join(ZALMOXIS_ROOT, 'input'),
+        input_dir=os.path.join(get_zalmoxis_root(), 'input'),
     )
     zalmoxis.post_processing(config_params, id_mass, output_file=output_file)
 
@@ -110,7 +106,7 @@ def run_zalmoxis_TdepEOS(id_mass):
         [(id_mass, converged, model_results)] status tuple with full model results.
     """
     # Load default configuration
-    default_config_path = os.path.join(ZALMOXIS_ROOT, 'input', 'default.toml')
+    default_config_path = os.path.join(get_zalmoxis_root(), 'input', 'default.toml')
     config_params = zalmoxis.load_zalmoxis_config(default_config_path)
 
     # Modify the configuration parameters as needed
@@ -131,7 +127,7 @@ def run_zalmoxis_TdepEOS(id_mass):
         config_params,
         material_dictionaries=zalmoxis.load_material_dictionaries(),
         melting_curves_functions=load_solidus_liquidus_functions(layer_eos_config),
-        input_dir=os.path.join(ZALMOXIS_ROOT, 'input'),
+        input_dir=os.path.join(get_zalmoxis_root(), 'input'),
     )
     converged = model_results.get('converged', False)
 
@@ -147,7 +143,7 @@ def run_zalmoxis_TdepEOS(id_mass):
 
     # Log the mass and radius only if converged
     custom_log_file = os.path.join(
-        ZALMOXIS_ROOT, 'output_files', 'composition_TdepEOS_mass_log.txt'
+        get_zalmoxis_root(), 'output_files', 'composition_TdepEOS_mass_log.txt'
     )
     with open(custom_log_file, 'a') as log:
         log.write(f'{id_mass:.4f}\t{planet_radius:.4e}\t{total_time:.4e}\n')
@@ -168,7 +164,7 @@ def run_zalmoxis_RTPress100TPa(id_mass):
         [(id_mass, converged, model_results)] status tuple with full model results.
     """
     # Load default configuration
-    default_config_path = os.path.join(ZALMOXIS_ROOT, 'input', 'default.toml')
+    default_config_path = os.path.join(get_zalmoxis_root(), 'input', 'default.toml')
     config_params = zalmoxis.load_zalmoxis_config(default_config_path)
 
     # Modify the configuration parameters as needed
@@ -193,7 +189,7 @@ def run_zalmoxis_RTPress100TPa(id_mass):
         config_params,
         material_dictionaries=zalmoxis.load_material_dictionaries(),
         melting_curves_functions=load_solidus_liquidus_functions(layer_eos_config),
-        input_dir=os.path.join(ZALMOXIS_ROOT, 'input'),
+        input_dir=os.path.join(get_zalmoxis_root(), 'input'),
     )
     converged = model_results.get('converged', False)
 
@@ -209,7 +205,7 @@ def run_zalmoxis_RTPress100TPa(id_mass):
 
     # Log the mass and radius only if converged
     custom_log_file = os.path.join(
-        ZALMOXIS_ROOT, 'output_files', 'composition_RTPress100TPa_mass_log.txt'
+        get_zalmoxis_root(), 'output_files', 'composition_RTPress100TPa_mass_log.txt'
     )
     with open(custom_log_file, 'a') as log:
         log.write(f'{id_mass:.4f}\t{planet_radius:.4e}\t{total_time:.4e}\n')
@@ -232,7 +228,7 @@ def run_zalmoxis_PALEOS(id_mass, temperature_mode='linear'):
         [(id_mass, converged, model_results)] status tuple with full model results.
     """
     # Load default configuration
-    default_config_path = os.path.join(ZALMOXIS_ROOT, 'input', 'default.toml')
+    default_config_path = os.path.join(get_zalmoxis_root(), 'input', 'default.toml')
     config_params = zalmoxis.load_zalmoxis_config(default_config_path)
 
     # Modify the configuration parameters as needed
@@ -258,7 +254,7 @@ def run_zalmoxis_PALEOS(id_mass, temperature_mode='linear'):
         config_params,
         material_dictionaries=zalmoxis.load_material_dictionaries(),
         melting_curves_functions=load_solidus_liquidus_functions(layer_eos_config),
-        input_dir=os.path.join(ZALMOXIS_ROOT, 'input'),
+        input_dir=os.path.join(get_zalmoxis_root(), 'input'),
     )
     converged = model_results.get('converged', False)
 
@@ -271,7 +267,7 @@ def run_zalmoxis_PALEOS(id_mass, temperature_mode='linear'):
     planet_radius = radii[-1]
 
     custom_log_file = os.path.join(
-        ZALMOXIS_ROOT, 'output_files', 'composition_PALEOS_mass_log.txt'
+        get_zalmoxis_root(), 'output_files', 'composition_PALEOS_mass_log.txt'
     )
     with open(custom_log_file, 'a') as log:
         log.write(f'{id_mass:.4f}\t{planet_radius:.4e}\t{total_time:.4e}\n')
@@ -291,7 +287,7 @@ def load_zeng_curve(filename):
     tuple
         (masses, radii) lists in Earth units.
     """
-    data_path = os.path.join(ZALMOXIS_ROOT, 'data', 'mass_radius_curves', filename)
+    data_path = os.path.join(get_zalmoxis_root(), 'data', 'mass_radius_curves', filename)
 
     masses = []
     radii = []
@@ -375,7 +371,7 @@ def load_Seager_data(filename):
     dict
         Dictionary keyed by planet mass, with 'radius' and 'density' lists.
     """
-    data_path = os.path.join(ZALMOXIS_ROOT, 'data', 'radial_profiles', filename)
+    data_path = os.path.join(get_zalmoxis_root(), 'data', 'radial_profiles', filename)
 
     data_by_mass = {}
     with open(data_path, 'r') as f:
