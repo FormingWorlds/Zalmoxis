@@ -128,12 +128,17 @@ def differentiation_energy(U_differentiated, U_undifferentiated):
     return U_differentiated - U_undifferentiated
 
 
-def _gruneisen_adiabat_step(P_curr, P_next, T, gamma=1.3, K0=130e9, Kprime=4.0):
+def _gruneisen_adiabat_step(P_curr, P_next, T, gamma=1.3, K0=250e9, Kprime=4.0):
     """Single step of the Gruneisen adiabat: dT/dP = gamma * T / K(P).
 
     Uses K(P) = K0 + P * K' (linear bulk modulus). This is the
     formulation used by White & Li (2025) Eq. 6-7. It gives
     ~2-5 K/GPa for silicate mantle conditions.
+
+    Default K0 = 250 GPa is a bulk lower-mantle average (perovskite
+    K0=261 GPa from Fei+2021, post-perovskite K0=324 GPa from
+    Sakai+2016, weighted toward the dominant perovskite phase).
+    Upper mantle peridotite (K0~130 GPa) gives too-steep adiabats.
 
     Parameters
     ----------
@@ -142,9 +147,9 @@ def _gruneisen_adiabat_step(P_curr, P_next, T, gamma=1.3, K0=130e9, Kprime=4.0):
     T : float
         Current temperature [K].
     gamma : float
-        Gruneisen parameter. Default 1.3 (typical silicate melt).
+        Gruneisen parameter. Default 1.3 (typical silicate).
     K0 : float
-        Bulk modulus at zero pressure [Pa]. Default 130 GPa.
+        Bulk modulus at zero pressure [Pa]. Default 250 GPa.
     Kprime : float
         Pressure derivative of bulk modulus. Default 4.0.
 
