@@ -325,10 +325,11 @@ class TestEarthBenchmark:
     def test_temperature_ranges(self):
         """For Earth mass/radius/CMF, temperatures should be physically plausible.
 
-        With f_a=0.04, f_d=0.50:
+        With f_a=0.04, f_d=0.50 and Dulong-Petit C_p (White+Li defaults):
         - Delta_T_G should be ~1000-2000 K
         - Delta_T_D should be ~1000-3000 K
-        - T_CMB should be ~3000-6000 K
+        - T_CMB should be ~3000-8000 K (includes adiabatic term)
+        - Delta_T_ad should be positive (adiabatic heating at depth)
         """
         model = _make_synthetic_model_results(
             n_points=500,
@@ -346,9 +347,7 @@ class TestEarthBenchmark:
             f_differentiation=0.50,
         )
 
-        # Temperature increments: White+Li (2025) gives ~1000-2000 K for
-        # accretion and ~1000-2500 K for differentiation at Earth params.
-        # Tightened from original ±10x to ±2x of expected values.
+        # Temperature increments
         assert 500.0 < result['Delta_T_accretion'] < 3000.0, (
             f'Delta_T_G = {result["Delta_T_accretion"]:.0f} K, expected 500-3000 K'
         )
@@ -356,23 +355,35 @@ class TestEarthBenchmark:
             f'Delta_T_D = {result["Delta_T_differentiation"]:.0f} K, expected 200-3000 K'
         )
 
-        # CMB temperature: tightened from [2000, 8000] to [2000, 6000] K
-        assert 2000.0 < result['T_cmb'] < 6000.0, (
-            f'T_CMB = {result["T_cmb"]:.0f} K, expected 2000-6000 K'
+        # Adiabatic gradient term must be positive and physically reasonable
+        assert result['Delta_T_adiabat'] > 0, (
+            f'Delta_T_ad = {result["Delta_T_adiabat"]:.0f} K, must be positive'
+        )
+        assert result['Delta_T_adiabat'] < 5000.0, (
+            f'Delta_T_ad = {result["Delta_T_adiabat"]:.0f} K, unreasonably large'
         )
 
-        # T_surface must be less than T_cmb (adiabatic gradient is positive)
-        assert result['T_surface'] <= result['T_cmb'], (
-            f'T_surface ({result["T_surface"]:.0f}) > T_cmb ({result["T_cmb"]:.0f})'
+        # T_CMB = T_surface + Delta_T_ad (White+Li Eq. 2 structure)
+        assert result['T_cmb'] == pytest.approx(
+            result['T_surface'] + result['Delta_T_adiabat'], rel=1e-10
         )
 
-        # Accretion uses U_u (undifferentiated), not U_d: verify consistency
-        C = 0.32 * 840.0 + 0.68 * 1200.0
-        M = result['U_differentiated'] / result['Delta_T_accretion'] * 0.04  # infer M
-        # The above is a circular check; instead verify the formula directly:
-        expected_DT_G = 0.04 * result['U_undifferentiated'] / (model['mass_enclosed'][-1] * C)
-        assert abs(result['Delta_T_accretion'] - expected_DT_G) / expected_DT_G < 0.01, (
-            f'Accretion term uses wrong energy: got {result["Delta_T_accretion"]:.0f} K, '
+        # CMB temperature: includes adiabatic term, so higher than bulk heating
+        assert 3000.0 < result['T_cmb'] < 8000.0, (
+            f'T_CMB = {result["T_cmb"]:.0f} K, expected 3000-8000 K'
+        )
+
+        # T_surface must be less than T_cmb
+        assert result['T_surface'] < result['T_cmb'], (
+            f'T_surface ({result["T_surface"]:.0f}) >= T_cmb ({result["T_cmb"]:.0f})'
+        )
+
+        # Verify accretion formula: Delta_T_G = f_a * U_u / (M * C_avg)
+        expected_DT_G = 0.04 * result['U_undifferentiated'] / (
+            model['mass_enclosed'][-1] * result['C_avg']
+        )
+        assert result['Delta_T_accretion'] == pytest.approx(expected_DT_G, rel=1e-10), (
+            f'Accretion term: got {result["Delta_T_accretion"]:.0f} K, '
             f'expected {expected_DT_G:.0f} K from U_u'
         )
 
