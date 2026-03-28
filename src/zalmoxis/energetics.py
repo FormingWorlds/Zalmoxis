@@ -121,6 +121,8 @@ def initial_thermal_state(
     C_silicate: float = 1200.0,
     iron_melting_func: callable | None = None,
     nabla_ad_func: callable | None = None,
+    cp_iron_func: callable | None = None,
+    cp_silicate_func: callable | None = None,
 ) -> dict:
     """Compute the initial thermal state of a rocky planet.
 
@@ -146,8 +148,10 @@ def initial_thermal_state(
         Default 0.50 (White & Li 2025).
     C_iron : float
         Specific heat capacity of iron [J kg^-1 K^-1]. Default 840.
+        Used as constant fallback when ``cp_iron_func`` is None.
     C_silicate : float
         Specific heat capacity of silicate [J kg^-1 K^-1]. Default 1200.
+        Used as constant fallback when ``cp_silicate_func`` is None.
     iron_melting_func : callable or None
         Function f(P [Pa]) -> T_melt [K] for the iron melting curve.
         If None, uses ``iron_melting_anzellini13`` from
@@ -156,6 +160,13 @@ def initial_thermal_state(
         Function f(P [Pa], T [K]) -> nabla_ad (dimensionless adiabatic
         gradient d ln T / d ln P). If None, uses constant 0.3 with a
         warning.
+    cp_iron_func : callable or None
+        Function f(P [Pa], T [K]) -> C_p [J kg^-1 K^-1] for iron.
+        If provided, C_p is integrated over the core shells to compute
+        a mass-weighted average instead of using the constant ``C_iron``.
+    cp_silicate_func : callable or None
+        Function f(P [Pa], T [K]) -> C_p [J kg^-1 K^-1] for silicate.
+        If provided, C_p is integrated over the mantle shells.
 
     Returns
     -------
@@ -168,6 +179,8 @@ def initial_thermal_state(
         - 'Delta_T_accretion' : float, temperature rise from accretion [K]
         - 'Delta_T_differentiation' : float, temperature rise from differentiation [K]
         - 'C_avg' : float, mass-weighted average specific heat [J kg^-1 K^-1]
+        - 'C_iron_avg' : float, average iron C_p [J kg^-1 K^-1]
+        - 'C_silicate_avg' : float, average silicate C_p [J kg^-1 K^-1]
         - 'core_state' : str, 'liquid', 'solid', or 'partial'
     """
     # Import default iron melting curve if none provided
@@ -195,8 +208,73 @@ def initial_thermal_state(
     U_d = gravitational_binding_energy(radii, mass_enclosed)
     U_u = gravitational_binding_energy_uniform(total_mass, total_radius)
 
-    # Mass-weighted average specific heat
-    C_avg = core_mass_fraction * C_iron + (1.0 - core_mass_fraction) * C_silicate
+    # Find CMB index (closest mass_enclosed to cmb_mass)
+    cmb_mass = float(model_results['cmb_mass'])
+    cmb_index = int(np.argmin(np.abs(mass_enclosed - cmb_mass)))
+
+    # Mass-weighted average specific heat.
+    # When cp_iron_func / cp_silicate_func are provided, integrate C_p(P, T)
+    # over the radial shells weighted by shell mass. This accounts for the
+    # pressure and temperature dependence of C_p from the EOS tables.
+    # The temperature estimate uses a rough adiabat: T(r) ~ T_cmb_est *
+    # (P(r) / P_cmb)^nabla_ad, where T_cmb_est is a first-pass estimate.
+    if cp_iron_func is not None or cp_silicate_func is not None:
+        # First-pass T_CMB estimate using constant C_p (for T profile estimate)
+        C_avg_const = core_mass_fraction * C_iron + (1.0 - core_mass_fraction) * C_silicate
+        _dT_G_est = f_accretion * U_u / (total_mass * C_avg_const)
+        _dT_D_est = f_differentiation * differentiation_energy(U_d, U_u) / (total_mass * C_avg_const)
+        T_cmb_est = T_radiative_eq + _dT_G_est + _dT_D_est
+
+        # Rough temperature profile for C_p evaluation:
+        # Core: isothermal at T_cmb_est
+        # Mantle: adiabatic from T_cmb_est to surface
+        P_cmb = float(pressure[cmb_index])
+        T_profile = np.full_like(radii, T_cmb_est)
+        if P_cmb > 0:
+            for i in range(cmb_index, len(radii)):
+                P_i = max(float(pressure[i]), 1e3)
+                nad = 0.3 if nabla_ad_func is None else nabla_ad_func(P_i, T_profile[max(i - 1, cmb_index)])
+                T_profile[i] = T_cmb_est * (P_i / P_cmb) ** nad
+
+        # Shell masses (dm = M[i+1] - M[i])
+        dm = np.diff(mass_enclosed)
+
+        # Integrate C_p * dm for core and mantle separately
+        C_iron_sum, M_core_sum = 0.0, 0.0
+        C_sil_sum, M_mantle_sum = 0.0, 0.0
+
+        for i in range(len(dm)):
+            P_i = max(float(pressure[i]), 1e3)
+            T_i = float(T_profile[i])
+            dm_i = float(dm[i])
+            if dm_i <= 0:
+                continue
+
+            if i < cmb_index:
+                # Core shell
+                cp_i = cp_iron_func(P_i, T_i) if cp_iron_func is not None else C_iron
+                C_iron_sum += cp_i * dm_i
+                M_core_sum += dm_i
+            else:
+                # Mantle shell
+                cp_i = cp_silicate_func(P_i, T_i) if cp_silicate_func is not None else C_silicate
+                C_sil_sum += cp_i * dm_i
+                M_mantle_sum += dm_i
+
+        C_iron_avg = C_iron_sum / M_core_sum if M_core_sum > 0 else C_iron
+        C_sil_avg = C_sil_sum / M_mantle_sum if M_mantle_sum > 0 else C_silicate
+        C_avg = (C_iron_sum + C_sil_sum) / (M_core_sum + M_mantle_sum)
+
+        logger.info(
+            'Mass-weighted C_p: C_Fe_avg=%.0f, C_sil_avg=%.0f, C_avg=%.0f J/kg/K '
+            '(T_cmb_est=%.0f K for T profile)',
+            C_iron_avg, C_sil_avg, C_avg, T_cmb_est,
+        )
+    else:
+        # Constant C_p (White+Li 2025 / Boujibar+2020 default)
+        C_avg = core_mass_fraction * C_iron + (1.0 - core_mass_fraction) * C_silicate
+        C_iron_avg = C_iron
+        C_sil_avg = C_silicate
 
     # Temperature increments (White+Li 2025 Eq. 3, 5):
     # Accretion heats the UNDIFFERENTIATED body (energy = U_u).
@@ -206,10 +284,6 @@ def initial_thermal_state(
 
     # CMB temperature
     T_cmb = T_radiative_eq + Delta_T_G + Delta_T_D
-
-    # Find CMB index (closest mass_enclosed to cmb_mass)
-    cmb_mass = float(model_results['cmb_mass'])
-    cmb_index = int(np.argmin(np.abs(mass_enclosed - cmb_mass)))
 
     # Compute surface temperature via adiabatic integration from CMB outward
     # Pressure decreases from CMB to surface
@@ -262,5 +336,7 @@ def initial_thermal_state(
         'Delta_T_accretion': Delta_T_G,
         'Delta_T_differentiation': Delta_T_D,
         'C_avg': C_avg,
+        'C_iron_avg': C_iron_avg,
+        'C_silicate_avg': C_sil_avg,
         'core_state': core_state,
     }
