@@ -23,7 +23,7 @@ import logging
 import warnings
 
 import numpy as np
-from scipy.constants import G
+from .constants import G
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ def gravitational_binding_energy(radii, mass_enclosed):
     integrand = G * m / r
 
     # Trapezoidal integration over enclosed mass
-    U = np.trapz(integrand, m)
+    U = np.trapezoid(integrand, m)
 
     return float(abs(U))
 
@@ -227,14 +227,15 @@ def initial_thermal_state(
 
         # Rough temperature profile for C_p evaluation:
         # Core: isothermal at T_cmb_est
-        # Mantle: adiabatic from T_cmb_est to surface
+        # Mantle: adiabatic from T_cmb_est to surface using log-stepping
         P_cmb = float(pressure[cmb_index])
         T_profile = np.full_like(radii, T_cmb_est)
         if P_cmb > 0:
-            for i in range(cmb_index, len(radii)):
+            for i in range(cmb_index + 1, len(radii)):
+                P_prev = max(float(pressure[i - 1]), 1e3)
                 P_i = max(float(pressure[i]), 1e3)
-                nad = 0.3 if nabla_ad_func is None else nabla_ad_func(P_i, T_profile[max(i - 1, cmb_index)])
-                T_profile[i] = T_cmb_est * (P_i / P_cmb) ** nad
+                nad = 0.3 if nabla_ad_func is None else nabla_ad_func(P_prev, T_profile[i - 1])
+                T_profile[i] = T_profile[i - 1] * (P_i / P_prev) ** nad
 
         # Shell masses (dm = M[i+1] - M[i])
         dm = np.diff(mass_enclosed)
@@ -285,22 +286,21 @@ def initial_thermal_state(
     # CMB temperature
     T_cmb = T_radiative_eq + Delta_T_G + Delta_T_D
 
-    # Compute surface temperature via adiabatic integration from CMB outward
-    # Pressure decreases from CMB to surface
+    # Compute surface temperature via adiabatic integration from CMB outward.
+    # Uses the log-stepping formula T_new = T * (P_new/P_old)^nabla_ad,
+    # which is exact for constant nabla_ad and stable for any step size.
+    # The forward Euler alternative (T += nad*T/P*dP) is catastrophically
+    # unstable when P drops by orders of magnitude near the surface.
     P_mantle = pressure[cmb_index:]
     T = T_cmb
     for i in range(len(P_mantle) - 1):
-        dP = P_mantle[i + 1] - P_mantle[i]  # negative (decreasing outward)
+        if P_mantle[i] <= 0 or P_mantle[i + 1] <= 0:
+            continue
         if nabla_ad_func is not None:
             nad = nabla_ad_func(P_mantle[i], T)
         else:
-            # Approximate nabla_ad for MgSiO3 melt at mid-mantle conditions.
-            # Stixrude (2014) gives nabla_ad ~ 0.2-0.4 for liquid MgSiO3
-            # across the 0-140 GPa range. 0.3 is a reasonable mid-range value.
-            # For production runs, PROTEUS provides nabla_ad from the EOS tables.
             nad = 0.3
-        if P_mantle[i] > 0:
-            T = T + nad * T / P_mantle[i] * dP
+        T = T * (P_mantle[i + 1] / P_mantle[i]) ** nad
     T_surface = T
 
     # Validate: surface must be cooler than CMB (adiabatic gradient is positive)
