@@ -1,15 +1,23 @@
 """Gravitational energy and initial thermal state computation.
 
 Computes the self-consistent initial temperature profile of a rocky
-planet from its structure, following White & Li (2025, JGRP) and
-Boujibar et al. (2020, JGRP). The initial CMB temperature is:
+planet from its structure, following White & Li (2025, JGRP). The
+initial CMB temperature is:
 
     T_CMB = T_i + f_a * U_u / (M * C) + f_d * (U_d - U_u) / (M * C)
 
-where U_u is the gravitational binding energy of the undifferentiated
-(homogeneous) planet (= energy of accretion), U_d is the binding energy
-of the differentiated planet (iron core + silicate mantle), and f_a, f_d
-are heat retention efficiencies for accretion and differentiation.
+where U_u = 3 G M^2 / (5 R) is the gravitational binding energy of the
+undifferentiated (homogeneous) planet (= energy of accretion), U_d is
+the binding energy of the differentiated planet (iron core + silicate
+mantle), and f_a, f_d are heat retention efficiencies for accretion and
+differentiation.
+
+Note on Boujibar et al. (2020): their formulation uses the surface
+gravitational potential E_grav = G M^2 / R (not the binding energy
+3 G M^2 / (5 R)), so their f_a values are a factor 5/3 smaller for
+equivalent heating. The two formulations are not interchangeable:
+f_a = 0.04 here (White & Li) corresponds to ~0.024 in Boujibar's
+convention.
 
 References
 ----------
@@ -181,7 +189,7 @@ def initial_thermal_state(
         - 'C_avg' : float, mass-weighted average specific heat [J kg^-1 K^-1]
         - 'C_iron_avg' : float, average iron C_p [J kg^-1 K^-1]
         - 'C_silicate_avg' : float, average silicate C_p [J kg^-1 K^-1]
-        - 'core_state' : str, 'liquid', 'solid', or 'partial'
+        - 'core_state' : str, 'liquid', 'solid', 'partial', or 'none'
     """
     # Import default iron melting curve if none provided
     if iron_melting_func is None:
@@ -272,7 +280,7 @@ def initial_thermal_state(
             C_iron_avg, C_sil_avg, C_avg, T_cmb_est,
         )
     else:
-        # Constant C_p (White+Li 2025 / Boujibar+2020 default)
+        # Constant C_p (White+Li 2025 default values)
         C_avg = core_mass_fraction * C_iron + (1.0 - core_mass_fraction) * C_silicate
         C_iron_avg = C_iron
         C_sil_avg = C_silicate
@@ -294,13 +302,13 @@ def initial_thermal_state(
     P_mantle = pressure[cmb_index:]
     T = T_cmb
     for i in range(len(P_mantle) - 1):
-        if P_mantle[i] <= 0 or P_mantle[i + 1] <= 0:
-            continue
+        P_curr = max(float(P_mantle[i]), 1e3)
+        P_next = max(float(P_mantle[i + 1]), 1e3)
         if nabla_ad_func is not None:
-            nad = nabla_ad_func(P_mantle[i], T)
+            nad = nabla_ad_func(P_curr, T)
         else:
             nad = 0.3
-        T = T * (P_mantle[i + 1] / P_mantle[i]) ** nad
+        T = T * (P_next / P_curr) ** nad
     T_surface = T
 
     # Validate: surface must be cooler than CMB (adiabatic gradient is positive)
@@ -313,15 +321,18 @@ def initial_thermal_state(
         T_surface = T_cmb
 
     # Determine core state from iron melting curve at CMB pressure
-    P_cmb = float(pressure[cmb_index])
-    T_melt_cmb = iron_melting_func(P_cmb)
-
-    if T_cmb > 1.05 * T_melt_cmb:
-        core_state = 'liquid'
-    elif T_cmb < 0.95 * T_melt_cmb:
-        core_state = 'solid'
+    if core_mass_fraction <= 0:
+        core_state = 'none'
     else:
-        core_state = 'partial'
+        P_cmb = float(pressure[cmb_index])
+        T_melt_cmb = iron_melting_func(P_cmb)
+
+        if T_cmb > 1.05 * T_melt_cmb:
+            core_state = 'liquid'
+        elif T_cmb < 0.95 * T_melt_cmb:
+            core_state = 'solid'
+        else:
+            core_state = 'partial'
 
     logger.info(
         f'Initial thermal state: T_CMB={T_cmb:.0f} K, T_surface={T_surface:.0f} K, '

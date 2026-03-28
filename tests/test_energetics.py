@@ -392,6 +392,17 @@ class TestEarthBenchmark:
 
         assert result['core_state'] in {'liquid', 'solid', 'partial'}
 
+    def test_coreless_planet(self):
+        """CMF=0 should return core_state='none' without calling melting curve."""
+        model = _make_synthetic_model_results(n_points=200, cmf=0.01)
+        # Override cmb_mass to 0 for a truly coreless planet
+        model['cmb_mass'] = 0.0
+
+        result = initial_thermal_state(model, core_mass_fraction=0.0)
+
+        assert result['core_state'] == 'none'
+        assert result['T_cmb'] > 0
+
     def test_energy_scaling_with_mass(self):
         """Binding energy should increase with planet mass.
 
