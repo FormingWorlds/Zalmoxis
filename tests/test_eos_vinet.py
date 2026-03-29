@@ -1,0 +1,192 @@
+"""Unit tests for the Vinet (Rose-Vinet) equation of state.
+
+Tests cover:
+- Zero-pressure density equals rho_0 (with thermal correction)
+- Density increases monotonically with pressure
+- Agreement with Seager+2007 analytic EOS within expected bounds
+- Specific reference values from the literature
+- Edge cases (NaN, negative pressure)
+- Root-finding convergence at extreme pressures
+
+References:
+    Smith, R. F. et al. (2018). Nature Astronomy, 2, 452-458.
+    Fei, Y. et al. (2021). Phys. Rev. Lett., 127, 080501.
+    Boujibar, A. et al. (2020). JGRP, 125, e2019JE006124.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from zalmoxis.eos_vinet import (
+    VINET_MATERIALS,
+    _vinet_pressure,
+    get_vinet_density,
+)
+
+
+@pytest.mark.unit
+class TestVinetPressure:
+    """Tests for the forward Vinet pressure function."""
+
+    def test_zero_at_f_equals_one(self):
+        """P(f=1) = 0 (zero-pressure reference state)."""
+        K_0 = 165e9
+        eta = 1.5 * (4.9 - 1)
+        assert _vinet_pressure(1.0, K_0, eta) == 0.0
+
+    def test_positive_for_compression(self):
+        """P(f<1) > 0 (compressed state)."""
+        K_0 = 165e9
+        eta = 1.5 * (4.9 - 1)
+        assert _vinet_pressure(0.9, K_0, eta) > 0
+        assert _vinet_pressure(0.5, K_0, eta) > 0
+
+    def test_monotonic_with_compression(self):
+        """Pressure increases monotonically as f decreases (more compression)."""
+        K_0 = 261e9
+        eta = 1.5 * (4.0 - 1)
+        f_values = np.linspace(0.3, 0.99, 100)
+        P_values = [_vinet_pressure(f, K_0, eta) for f in f_values]
+        # f decreasing = more compressed = higher P
+        assert all(P_values[i] >= P_values[i + 1] for i in range(len(P_values) - 1))
+
+
+@pytest.mark.unit
+class TestVinetDensity:
+    """Tests for the inverse Vinet density function."""
+
+    def test_zero_pressure_returns_rho0(self):
+        """At P=0, density should be rho_0 * thermal_correction."""
+        for key, mat in VINET_MATERIALS.items():
+            rho = get_vinet_density(0.0, key)
+            expected = mat['rho_0'] * mat['thermal_correction']
+            assert rho == pytest.approx(expected, rel=1e-10), (
+                f'{key}: rho(0) = {rho}, expected {expected}'
+            )
+
+    def test_negative_pressure_returns_rho0(self):
+        """Negative pressure should return zero-pressure density."""
+        rho = get_vinet_density(-1e9, 'iron')
+        expected = VINET_MATERIALS['iron']['rho_0'] * 0.875
+        assert rho == pytest.approx(expected, rel=1e-10)
+
+    def test_nan_returns_none(self):
+        """NaN pressure should return None."""
+        assert get_vinet_density(float('nan'), 'iron') is None
+
+    def test_density_increases_with_pressure(self):
+        """Density must increase monotonically with pressure."""
+        pressures = np.logspace(8, 14, 50)  # 0.1 GPa to 100 TPa
+        for key in ('iron', 'MgSiO3'):
+            densities = [get_vinet_density(float(P), key) for P in pressures]
+            assert all(d is not None for d in densities), f'{key}: got None'
+            assert all(densities[i] <= densities[i + 1]
+                       for i in range(len(densities) - 1)), (
+                f'{key}: density not monotonically increasing'
+            )
+
+    def test_iron_at_earth_cmb(self):
+        """Iron density at 135 GPa should be ~12000-14000 kg/m³.
+
+        Earth's outer core density from PREM is ~12000-13000 kg/m³.
+        With 12.5% thermal correction, the 300 K Vinet density is
+        ~13500, reduced to ~11800 by thermal correction.
+        """
+        rho = get_vinet_density(135e9, 'iron')
+        assert 10000 < rho < 15000, f'Iron at 135 GPa: {rho:.0f} kg/m³'
+
+    def test_mgsio3_at_earth_cmb(self):
+        """MgSiO3 density at 135 GPa should be ~5000-6000 kg/m³.
+
+        PREM lower mantle density near CMB is ~5500 kg/m³.
+        """
+        rho = get_vinet_density(135e9, 'MgSiO3')
+        assert 4500 < rho < 7000, f'MgSiO3 at 135 GPa: {rho:.0f} kg/m³'
+
+    def test_iron_thermal_correction(self):
+        """Iron density should be 12.5% lower than raw Vinet at any P > 0.
+
+        The thermal_correction = 0.875 applies uniformly.
+        """
+        P = 200e9
+        rho_corrected = get_vinet_density(P, 'iron')
+
+        # Compute raw (uncorrected) density
+        mat = VINET_MATERIALS['iron']
+        rho_0 = mat['rho_0']
+        K_0 = mat['K_0']
+        K_prime = mat['K_prime']
+        eta = 1.5 * (K_prime - 1)
+        from scipy.optimize import brentq
+
+        def res(f):
+            return _vinet_pressure(f, K_0, eta) - P
+
+        f = brentq(res, 0.01, 0.9999)
+        rho_raw = rho_0 / f**3
+
+        assert rho_corrected == pytest.approx(rho_raw * 0.875, rel=1e-8)
+
+    def test_unknown_material_raises(self):
+        """Unknown material key should raise ValueError."""
+        with pytest.raises(ValueError, match='Unknown Vinet material'):
+            get_vinet_density(1e9, 'unobtanium')
+
+    def test_extreme_pressure(self):
+        """Density at 1000 TPa should still converge."""
+        rho = get_vinet_density(1e15, 'iron')
+        assert rho is not None
+        assert rho > 30000  # heavily compressed
+
+    def test_roundtrip_consistency(self):
+        """Forward P(rho) and inverse rho(P) should be consistent.
+
+        Compute P from a known f, then recover rho from that P, and
+        check that rho matches rho_0 / f^3 * thermal.
+        """
+        mat = VINET_MATERIALS['MgSiO3']
+        f_test = 0.85  # moderate compression
+        eta = 1.5 * (mat['K_prime'] - 1)
+        P = _vinet_pressure(f_test, mat['K_0'], eta)
+        rho_expected = mat['rho_0'] / f_test**3 * mat['thermal_correction']
+        rho_computed = get_vinet_density(P, 'MgSiO3')
+        assert rho_computed == pytest.approx(rho_expected, rel=1e-8)
+
+
+@pytest.mark.unit
+class TestVinetVsSeager:
+    """Compare Vinet and Seager EOS at overlapping pressures."""
+
+    def test_iron_within_30_percent(self):
+        """Vinet and Seager iron should agree within ~30% at 0-500 GPa.
+
+        They use different parameterizations and the Vinet includes a
+        12.5% thermal correction, so exact agreement is not expected.
+        """
+        from zalmoxis.eos_analytic import get_analytic_density
+
+        pressures = np.logspace(9, 11.7, 20)  # 1 GPa to 500 GPa
+        for P in pressures:
+            rho_v = get_vinet_density(float(P), 'iron')
+            rho_s = get_analytic_density(float(P), 'iron')
+            rel_diff = abs(rho_v - rho_s) / rho_s
+            assert rel_diff < 0.30, (
+                f'At P={P/1e9:.0f} GPa: Vinet={rho_v:.0f}, '
+                f'Seager={rho_s:.0f}, diff={rel_diff:.1%}'
+            )
+
+    def test_mgsio3_within_20_percent(self):
+        """Vinet and Seager MgSiO3 should agree within ~20% at 0-500 GPa."""
+        from zalmoxis.eos_analytic import get_analytic_density
+
+        pressures = np.logspace(9, 11.7, 20)
+        for P in pressures:
+            rho_v = get_vinet_density(float(P), 'MgSiO3')
+            rho_s = get_analytic_density(float(P), 'MgSiO3')
+            rel_diff = abs(rho_v - rho_s) / rho_s
+            assert rel_diff < 0.20, (
+                f'At P={P/1e9:.0f} GPa: Vinet={rho_v:.0f}, '
+                f'Seager={rho_s:.0f}, diff={rel_diff:.1%}'
+            )

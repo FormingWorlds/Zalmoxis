@@ -11,6 +11,7 @@ import logging
 import numpy as np
 
 from ..eos_analytic import get_analytic_density
+from ..eos_vinet import get_vinet_density
 from .paleos import get_paleos_unified_density, get_paleos_unified_density_batch
 from .seager import get_tabulated_eos
 from .tdep import get_Tdep_density
@@ -69,6 +70,11 @@ def calculate_density(
     if layer_eos.startswith('Analytic:'):
         material_key = layer_eos.split(':', 1)[1]
         return get_analytic_density(pressure, material_key)
+
+    # Vinet (Rose-Vinet) EOS: no material dict needed
+    if layer_eos.startswith('Vinet:'):
+        material_key = layer_eos.split(':', 1)[1]
+        return get_vinet_density(pressure, material_key)
 
     # Look up material properties from the registry
     mat = material_dictionaries.get(layer_eos)

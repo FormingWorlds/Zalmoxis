@@ -20,6 +20,7 @@ from .constants import (
     earth_mass,
 )
 from .eos_analytic import VALID_MATERIAL_KEYS
+from .eos_vinet import VALID_VINET_KEYS
 from .eos import get_solidus_liquidus_functions
 from .eos_properties import EOS_REGISTRY
 from .mixing import (
@@ -162,11 +163,22 @@ def validate_layer_eos(layer_eos_config):
                         f'Valid keys: {sorted(VALID_MATERIAL_KEYS)}'
                     )
                 continue
+            if comp.startswith('Vinet:'):
+                material_key = comp.split(':', 1)[1]
+                if material_key not in VALID_VINET_KEYS:
+                    raise ValueError(
+                        f"Invalid Vinet material '{material_key}' "
+                        f"in layer '{layer}'. "
+                        f'Valid keys: {sorted(VALID_VINET_KEYS)}'
+                    )
+                continue
             raise ValueError(
                 f"Invalid EOS component '{comp}' in layer '{layer}'. "
                 f'Valid tabulated: {sorted(VALID_TABULATED_EOS)}. '
                 f'Valid analytic: Analytic:<material> with '
-                f'{sorted(VALID_MATERIAL_KEYS)}.'
+                f'{sorted(VALID_MATERIAL_KEYS)}. '
+                f'Valid Vinet: Vinet:<material> with '
+                f'{sorted(VALID_VINET_KEYS)}.'
             )
 
 
@@ -510,7 +522,8 @@ def validate_config(config_params):
         tindep_comps = [c for c in mixture.components if c not in TDEP_EOS_NAMES]
         if tdep_comps_in_layer and tindep_comps:
             # Only warn for non-Analytic T-independent components
-            tindep_tabulated = [c for c in tindep_comps if not c.startswith('Analytic:')]
+            tindep_tabulated = [c for c in tindep_comps
+                                if not c.startswith('Analytic:') and not c.startswith('Vinet:')]
             if tindep_tabulated:
                 logger.warning(
                     f"Layer '{layer}' mixes T-dependent EOS "
@@ -529,7 +542,7 @@ def validate_config(config_params):
         for comp in core_mix.components:
             comp_material = comp.split(':')[-1] if ':' in comp else comp
             if not any(kw in comp_material for kw in iron_keywords):
-                if not comp.startswith('Analytic:'):
+                if not comp.startswith('Analytic:') and not comp.startswith('Vinet:'):
                     logger.warning(
                         f"Core EOS component '{comp}' does not appear to be "
                         f'an iron EOS. Core is typically iron (Fe). '
