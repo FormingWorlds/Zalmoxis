@@ -232,10 +232,11 @@ def initial_thermal_state(
     C_silicate: float = 1250.0,
     iron_melting_func: callable | None = None,
     nabla_ad_func: callable | None = None,
+    nabla_ad_iron_func: callable | None = None,
     cp_iron_func: callable | None = None,
     cp_silicate_func: callable | None = None,
 ) -> dict:
-    """Compute the initial thermal state of a rocky planet.
+    """Compute the initial thermal state and temperature profile.
 
     Follows White & Li (2025) Eq. 2:
         T_CMB = T_eq + Delta_T_G + Delta_T_D + Delta_T_ad
@@ -244,11 +245,13 @@ def initial_thermal_state(
     accretion and differentiation, and Delta_T_ad is the adiabatic
     temperature increase from the surface to the CMB depth.
 
-    The surface temperature is:
-        T_surface = T_eq + Delta_T_G + Delta_T_D
-
-    which is the average heated temperature (the adiabat anchored at
-    T_CMB decreases back to this value at the surface).
+    Also computes the full adiabatic T(r) profile for initializing
+    interior evolution solvers (SPIDER, Aragog). The profile is:
+    - Core (r < R_CMB): adiabat inward from T_CMB using iron nabla_ad
+      (or isothermal if nabla_ad_iron_func is None)
+    - Mantle (r > R_CMB): adiabat outward from T_CMB using silicate
+      nabla_ad (PALEOS or Gruneisen fallback)
+    T_surface is the temperature at the top of the adiabat (r = R).
 
     Parameters
     ----------
@@ -279,9 +282,11 @@ def initial_thermal_state(
         If None, uses ``iron_melting_anzellini13`` from
         ``zalmoxis.melting_curves``.
     nabla_ad_func : callable or None
-        Function f(P [Pa], T [K]) -> nabla_ad (dimensionless adiabatic
-        gradient d ln T / d ln P). If None, uses constant 0.3 with a
-        warning.
+        Function f(P [Pa], T [K]) -> nabla_ad for the mantle (silicate).
+        If None, uses Gruneisen fallback (gamma=1.3, K0=250 GPa, K'=4).
+    nabla_ad_iron_func : callable or None
+        Function f(P [Pa], T [K]) -> nabla_ad for the core (iron).
+        If None, the core is set to isothermal at T_CMB.
     cp_iron_func : callable or None
         Function f(P [Pa], T [K]) -> C_p [J kg^-1 K^-1] for iron.
         If provided, C_p is integrated over the core shells to compute
@@ -295,7 +300,11 @@ def initial_thermal_state(
     dict
         Keys:
         - 'T_cmb' : float, CMB temperature [K]
-        - 'T_surface' : float, surface temperature [K]
+        - 'T_surface' : float, surface temperature from adiabat [K]
+        - 'T_bulk_avg' : float, bulk average heating T_eq + DT_G + DT_D [K]
+        - 'T_profile' : ndarray, T(r) at each Zalmoxis grid point [K]
+        - 'radii' : ndarray, radial grid [m] (from model_results)
+        - 'pressure' : ndarray, pressure profile [Pa]
         - 'U_differentiated' : float, binding energy of real planet [J]
         - 'U_undifferentiated' : float, binding energy of uniform planet [J]
         - 'Delta_T_accretion' : float, temperature rise from accretion [K]
@@ -417,22 +426,18 @@ def initial_thermal_state(
     Delta_T_G = f_accretion * U_u / (total_mass * C_avg)
     Delta_T_D = f_differentiation * differentiation_energy(U_d, U_u) / (total_mass * C_avg)
 
-    # Average heated temperature (surface temperature)
-    # This is the bulk temperature after gravitational heating.
-    T_avg = T_radiative_eq + Delta_T_G + Delta_T_D
-    T_surface = T_avg
+    # Bulk average heating temperature (diagnostic, not a physical surface T)
+    T_bulk_avg = T_radiative_eq + Delta_T_G + Delta_T_D
 
-    # Adiabatic temperature increase from surface to CMB (White+Li Eq. 6-7).
-    # Integrate d(ln T)/d(ln P) = nabla_ad inward from P_surface to P_CMB.
-    # The mantle pressure profile goes from cmb_index (high P) to surface
-    # (low P). We reverse it to integrate from surface inward.
+    # ── Compute T_CMB via adiabatic integration ──────────────────────
+    # Integrate the mantle adiabat inward from T_bulk_avg at the surface
+    # to get T_CMB. The adiabat increases temperature with depth.
     P_mantle = pressure[cmb_index:]  # CMB to surface (decreasing P)
     P_surface_to_cmb = P_mantle[::-1]  # surface to CMB (increasing P)
 
-    T_at_cmb = _integrate_adiabat(P_surface_to_cmb, T_avg, nabla_ad_func)
-    Delta_T_ad = T_at_cmb - T_avg
+    T_at_cmb = _integrate_adiabat(P_surface_to_cmb, T_bulk_avg, nabla_ad_func)
+    Delta_T_ad = T_at_cmb - T_bulk_avg
 
-    # Ensure Delta_T_ad is non-negative (adiabat always increases inward)
     if Delta_T_ad < 0:
         logger.warning(
             'Delta_T_ad = %.0f K (negative): adiabat integration produced '
@@ -441,10 +446,46 @@ def initial_thermal_state(
         )
         Delta_T_ad = 0.0
 
-    # CMB temperature (White+Li 2025 Eq. 2)
-    T_cmb = T_avg + Delta_T_ad
+    T_cmb = T_bulk_avg + Delta_T_ad
 
-    # Determine core state from iron melting curve at CMB pressure
+    # ── Build full T(r) profile ──────────────────────────────────────
+    # Mantle: integrate adiabat OUTWARD from T_CMB to surface.
+    # Core: integrate adiabat INWARD from T_CMB to center (or isothermal).
+    T_profile = np.full_like(radii, T_cmb)
+
+    # Mantle adiabat: CMB -> surface (decreasing P, decreasing T)
+    if cmb_index < len(radii) - 1:
+        T = T_cmb
+        for i in range(cmb_index, len(radii) - 1):
+            P_curr = max(float(pressure[i]), 1e3)
+            P_next = max(float(pressure[i + 1]), 1e3)
+            if nabla_ad_func is not None:
+                nad = nabla_ad_func(P_curr, T)
+                T_nabla = T * (P_next / P_curr) ** nad
+                T_grun = _gruneisen_adiabat_step(P_curr, P_next, T)
+                if abs(T_nabla - T) > 1.5 * abs(T_grun - T) + 1.0:
+                    T = T_grun
+                else:
+                    T = T_nabla
+            else:
+                T = _gruneisen_adiabat_step(P_curr, P_next, T)
+            T_profile[i + 1] = T
+
+    # Core adiabat: CMB -> center (increasing P inward, increasing T)
+    if cmb_index > 0:
+        if nabla_ad_iron_func is not None:
+            T = T_cmb
+            for i in range(cmb_index, 0, -1):
+                P_curr = max(float(pressure[i]), 1e3)
+                P_next = max(float(pressure[i - 1]), 1e3)
+                nad = nabla_ad_iron_func(P_curr, T)
+                T = T * (P_next / P_curr) ** nad
+                T_profile[i - 1] = T
+        # else: core stays isothermal at T_CMB (already set)
+
+    T_surface = float(T_profile[-1])
+
+    # ── Core state detection ─────────────────────────────────────────
     if core_mass_fraction <= 0:
         core_state = 'none'
     else:
@@ -461,13 +502,17 @@ def initial_thermal_state(
     logger.info(
         f'Initial thermal state: T_CMB={T_cmb:.0f} K (DT_G={Delta_T_G:.0f}, '
         f'DT_D={Delta_T_D:.0f}, DT_ad={Delta_T_ad:.0f}), '
-        f'T_surface={T_surface:.0f} K, core_state={core_state}, '
-        f'U_d={U_d:.3e} J, U_u={U_u:.3e} J'
+        f'T_surface={T_surface:.0f} K, T_bulk_avg={T_bulk_avg:.0f} K, '
+        f'core_state={core_state}, U_d={U_d:.3e} J, U_u={U_u:.3e} J'
     )
 
     return {
         'T_cmb': T_cmb,
         'T_surface': T_surface,
+        'T_bulk_avg': T_bulk_avg,
+        'T_profile': T_profile,
+        'radii': radii,
+        'pressure': pressure,
         'U_differentiated': U_d,
         'U_undifferentiated': U_u,
         'Delta_T_accretion': Delta_T_G,

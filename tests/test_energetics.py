@@ -363,9 +363,9 @@ class TestEarthBenchmark:
             f'Delta_T_ad = {result["Delta_T_adiabat"]:.0f} K, unreasonably large'
         )
 
-        # T_CMB = T_surface + Delta_T_ad (White+Li Eq. 2 structure)
+        # T_CMB = T_bulk_avg + Delta_T_ad (White+Li Eq. 2 structure)
         assert result['T_cmb'] == pytest.approx(
-            result['T_surface'] + result['Delta_T_adiabat'], rel=1e-10
+            result['T_bulk_avg'] + result['Delta_T_adiabat'], rel=1e-10
         )
 
         # CMB temperature: includes adiabatic term, so higher than bulk heating
@@ -373,10 +373,20 @@ class TestEarthBenchmark:
             f'T_CMB = {result["T_cmb"]:.0f} K, expected 3000-8000 K'
         )
 
-        # T_surface must be less than T_cmb
+        # T_surface (from adiabat) must be less than T_cmb
         assert result['T_surface'] < result['T_cmb'], (
             f'T_surface ({result["T_surface"]:.0f}) >= T_cmb ({result["T_cmb"]:.0f})'
         )
+
+        # T_profile must exist and have correct shape
+        assert 'T_profile' in result
+        assert len(result['T_profile']) == len(result['radii'])
+        # Profile must be monotonically decreasing from center to surface
+        # (adiabat: T decreases outward)
+        T_prof = result['T_profile']
+        # Core is isothermal (no iron nabla_ad provided), mantle decreases
+        assert T_prof[0] == pytest.approx(result['T_cmb'], rel=0.01)
+        assert T_prof[-1] == pytest.approx(result['T_surface'], rel=1e-10)
 
         # Verify accretion formula: Delta_T_G = f_a * U_u / (M * C_avg)
         expected_DT_G = 0.04 * result['U_undifferentiated'] / (
