@@ -17,9 +17,12 @@ differentiated planet, and f_a, f_d are heat retention efficiencies.
 The gravitational heating terms give the average temperature rise of
 the whole planet. The adiabatic term corrects from the average to the
 actual CMB temperature, which is hotter than the average because
-adiabatic compression raises temperature at depth. The surface
-temperature is then T_CMB minus the adiabatic temperature drop across
-the mantle, i.e. T_surface = T_eq + Delta_T_G + Delta_T_D.
+adiabatic compression raises temperature at depth.
+
+The post-accretion surface temperature T_surf_accr = T_eq + DT_G + DT_D
+is the temperature at the top of the convecting mantle adiabat,
+before atmospheric equilibration. PROTEUS uses this as the initial
+condition; the atmosphere module then equilibrates the surface.
 
 Boujibar et al. (2020) use a related but different framework: their
 accretional energy is the surface gravitational potential GM/R per
@@ -251,7 +254,9 @@ def initial_thermal_state(
       (or isothermal if nabla_ad_iron_func is None)
     - Mantle (r > R_CMB): adiabat outward from T_CMB using silicate
       nabla_ad (PALEOS or Gruneisen fallback)
-    T_surface is the temperature at the top of the adiabat (r = R).
+    T_surf_accr = T_profile[-1] is the post-accretion surface
+    temperature (top of the mantle adiabat), used as the initial
+    condition for PROTEUS before atmospheric equilibration.
 
     Parameters
     ----------
@@ -300,8 +305,10 @@ def initial_thermal_state(
     dict
         Keys:
         - 'T_cmb' : float, CMB temperature [K]
-        - 'T_surface' : float, surface temperature from adiabat [K]
-        - 'T_bulk_avg' : float, bulk average heating T_eq + DT_G + DT_D [K]
+        - 'T_surf_accr' : float, post-accretion surface temperature [K]
+          (= T_eq + DT_G + DT_D = top of mantle adiabat). This is the
+          initial condition for PROTEUS; the atmosphere module then
+          equilibrates the surface with the interior.
         - 'T_profile' : ndarray, T(r) at each Zalmoxis grid point [K]
         - 'radii' : ndarray, radial grid [m] (from model_results)
         - 'pressure' : ndarray, pressure profile [Pa]
@@ -426,17 +433,20 @@ def initial_thermal_state(
     Delta_T_G = f_accretion * U_u / (total_mass * C_avg)
     Delta_T_D = f_differentiation * differentiation_energy(U_d, U_u) / (total_mass * C_avg)
 
-    # Bulk average heating temperature (diagnostic, not a physical surface T)
-    T_bulk_avg = T_radiative_eq + Delta_T_G + Delta_T_D
+    # Surface temperature after accretion: the temperature at the top
+    # of the convecting mantle adiabat, before atmospheric equilibration.
+    # Equals T_eq + DT_G + DT_D (bulk gravitational heating).
+    # PROTEUS uses this as the initial condition; the atmosphere module
+    # then equilibrates the surface with the interior.
+    T_surf_accr = T_radiative_eq + Delta_T_G + Delta_T_D
 
     # ── Compute T_CMB via adiabatic integration ──────────────────────
-    # Integrate the mantle adiabat inward from T_bulk_avg at the surface
-    # to get T_CMB. The adiabat increases temperature with depth.
+    # Integrate the mantle adiabat inward from T_surf_accr to get T_CMB.
     P_mantle = pressure[cmb_index:]  # CMB to surface (decreasing P)
     P_surface_to_cmb = P_mantle[::-1]  # surface to CMB (increasing P)
 
-    T_at_cmb = _integrate_adiabat(P_surface_to_cmb, T_bulk_avg, nabla_ad_func)
-    Delta_T_ad = T_at_cmb - T_bulk_avg
+    T_at_cmb = _integrate_adiabat(P_surface_to_cmb, T_surf_accr, nabla_ad_func)
+    Delta_T_ad = T_at_cmb - T_surf_accr
 
     if Delta_T_ad < 0:
         logger.warning(
@@ -446,7 +456,7 @@ def initial_thermal_state(
         )
         Delta_T_ad = 0.0
 
-    T_cmb = T_bulk_avg + Delta_T_ad
+    T_cmb = T_surf_accr + Delta_T_ad
 
     # ── Build full T(r) profile ──────────────────────────────────────
     # Mantle: integrate adiabat OUTWARD from T_CMB to surface.
@@ -483,7 +493,9 @@ def initial_thermal_state(
                 T_profile[i - 1] = T
         # else: core stays isothermal at T_CMB (already set)
 
-    T_surface = float(T_profile[-1])
+    # T at the top of the adiabat = T_surf_accr by construction
+    # (the outward adiabat from T_CMB is the inverse of the inward integration)
+    T_surf_accr_check = float(T_profile[-1])
 
     # ── Core state detection ─────────────────────────────────────────
     if core_mass_fraction <= 0:
@@ -502,14 +514,13 @@ def initial_thermal_state(
     logger.info(
         f'Initial thermal state: T_CMB={T_cmb:.0f} K (DT_G={Delta_T_G:.0f}, '
         f'DT_D={Delta_T_D:.0f}, DT_ad={Delta_T_ad:.0f}), '
-        f'T_surface={T_surface:.0f} K, T_bulk_avg={T_bulk_avg:.0f} K, '
+        f'T_surf_accr={T_surf_accr:.0f} K, '
         f'core_state={core_state}, U_d={U_d:.3e} J, U_u={U_u:.3e} J'
     )
 
     return {
         'T_cmb': T_cmb,
-        'T_surface': T_surface,
-        'T_bulk_avg': T_bulk_avg,
+        'T_surf_accr': T_surf_accr,
         'T_profile': T_profile,
         'radii': radii,
         'pressure': pressure,
