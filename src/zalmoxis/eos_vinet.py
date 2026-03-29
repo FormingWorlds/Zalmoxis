@@ -49,17 +49,46 @@ logger = logging.getLogger(__name__)
 
 VINET_MATERIALS: dict[str, dict] = {
     # Iron (solid, 300 K) - Boujibar+2020 Table 1 (citing Smith+2018)
-    # Note: Boujibar's adopted values (8160/165/4.9) differ slightly from
-    # Smith+2018's own Vinet fit (8219/177.7/4.51). White+Li reference
-    # Smith+2018 but do not state their exact parameters.
+    # Note: Boujibar's adopted values (8160/165/4.9) differ from
+    # Smith+2018's own Vinet fit (8219/177.7/4.51).
     # With White+Li thermal+light-element correction (12.5% reduction)
     'iron': {
         'rho_0': 8160.0,       # kg/m³
         'K_0': 165.0e9,        # Pa
         'K_prime': 4.9,
         'thermal_correction': 0.875,  # (1 - 0.125)
-        'description': 'Fe epsilon (Boujibar+2020 Table 1, after Smith+2018), '
+        'description': 'Fe epsilon (Boujibar+2020 Table 1), '
                        '12.5% thermal correction (White+Li 2025)',
+    },
+    # Iron (solid, 300 K) - Smith+2018 original Vinet fit
+    # From Smith et al. (2018) Nature Astronomy 2, 452-458
+    # These are the parameters White+Li likely reference directly.
+    'iron_smith2018': {
+        'rho_0': 8219.0,       # kg/m³
+        'K_0': 177.7e9,        # Pa
+        'K_prime': 4.51,
+        'thermal_correction': 0.875,
+        'description': 'Fe epsilon (Smith+2018 Vinet fit), '
+                       '12.5% thermal correction (White+Li 2025)',
+    },
+    # Iron - White+Li (2025) code (github.com/wnate1373/superEarth)
+    # Uses ambient iron density (7874), K_0=162.5, K'=5.5 with 12.5% correction.
+    # These are the EXACT parameters from their dif_constR.m.
+    'iron_whiteli': {
+        'rho_0': 7874.0,       # kg/m³ (ambient alpha-iron)
+        'K_0': 162.5e9,        # Pa
+        'K_prime': 5.5,
+        'thermal_correction': 0.875,
+        'description': 'Fe (White+Li 2025 code, dif_constR.m)',
+    },
+    # MgSiO3 - White+Li (2025) code (differentiated model)
+    # rho_0=4103, K_0=265.5, K'=4.16 from their dif_constR.m
+    'MgSiO3_whiteli': {
+        'rho_0': 4103.0,
+        'K_0': 265.5e9,
+        'K_prime': 4.16,
+        'thermal_correction': 1.0,
+        'description': 'MgSiO3 (White+Li 2025 code, dif_constR.m)',
     },
     # Iron (liquid, Fe-7Si alloy) - Wicks+2018
     'iron_liquid': {
@@ -69,13 +98,24 @@ VINET_MATERIALS: dict[str, dict] = {
         'thermal_correction': 1.0,  # already liquid properties
         'description': 'Fe-7Si liquid (Wicks+2018)',
     },
-    # MgSiO3 perovskite (bridgmanite) - Fei+2021 / Boujibar+2020 Table 1
+    # MgSiO3 perovskite (bridgmanite) - Fei+2021 (Nature Comm. 12:876)
+    # Optimized Vinet parameters from shock compression to 1254 GPa.
+    # These are the parameters White+Li (2025) use for their structure model.
     'MgSiO3': {
+        'rho_0': 4176.0,       # kg/m³ (Fei+2021 p.5)
+        'K_0': 265.5e9,        # Pa (Fei+2021 p.5)
+        'K_prime': 4.16,       # (Fei+2021 p.5)
+        'thermal_correction': 1.0,  # thermal effects cancel (White+Li p.3)
+        'description': 'MgSiO3 bridgmanite (Fei+2021, shock to 1254 GPa)',
+    },
+    # MgSiO3 perovskite - Boujibar+2020 Table 1 (pre-Fei+2021 values)
+    # From Dorfman+2013 and Lundin+2008, used in Boujibar's structure model.
+    'MgSiO3_boujibar': {
         'rho_0': 4109.0,
         'K_0': 261.0e9,
         'K_prime': 4.0,
-        'thermal_correction': 1.0,  # thermal effects cancel (White+Li p.3)
-        'description': 'MgSiO3 perovskite (Fei+2021, Boujibar+2020)',
+        'thermal_correction': 1.0,
+        'description': 'MgSiO3 perovskite (Boujibar+2020 Table 1, Dorfman+2013/Lundin+2008)',
     },
     # MgSiO3 post-perovskite - Sakai+2016 / Boujibar+2020 Table 1
     'MgSiO3_ppv': {

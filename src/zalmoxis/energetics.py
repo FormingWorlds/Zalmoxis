@@ -81,7 +81,9 @@ def gravitational_binding_energy(radii, mass_enclosed):
     integrand = G * m / r
 
     # Trapezoidal integration over enclosed mass
-    U = np.trapezoid(integrand, m)
+    # np.trapezoid (numpy >= 2.0) or np.trapz (numpy < 2.0)
+    _trapz = getattr(np, 'trapezoid', np.trapz)
+    U = _trapz(integrand, m)
 
     return float(abs(U))
 
