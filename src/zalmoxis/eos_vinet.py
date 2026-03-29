@@ -48,14 +48,18 @@ logger = logging.getLogger(__name__)
 # light elements 6.5%). MgSiO3: thermal effects cancel (+3%, -3%).
 
 VINET_MATERIALS: dict[str, dict] = {
-    # Iron (solid, 300 K) - Smith+2018
+    # Iron (solid, 300 K) - Boujibar+2020 Table 1 (citing Smith+2018)
+    # Note: Boujibar's adopted values (8160/165/4.9) differ slightly from
+    # Smith+2018's own Vinet fit (8219/177.7/4.51). White+Li reference
+    # Smith+2018 but do not state their exact parameters.
     # With White+Li thermal+light-element correction (12.5% reduction)
     'iron': {
         'rho_0': 8160.0,       # kg/m³
         'K_0': 165.0e9,        # Pa
         'K_prime': 4.9,
         'thermal_correction': 0.875,  # (1 - 0.125)
-        'description': 'Fe epsilon (Smith+2018), 12.5% thermal correction (White+Li 2025)',
+        'description': 'Fe epsilon (Boujibar+2020 Table 1, after Smith+2018), '
+                       '12.5% thermal correction (White+Li 2025)',
     },
     # Iron (liquid, Fe-7Si alloy) - Wicks+2018
     'iron_liquid': {
@@ -103,7 +107,7 @@ def _vinet_pressure(f, K_0, eta):
     Parameters
     ----------
     f : float
-        Eulerian strain parameter, f = (V/V_0)^(1/3) = (rho_0/rho)^(1/3).
+        Vinet linear compression parameter, f = (V/V_0)^(1/3) = (rho_0/rho)^(1/3).
         f = 1 at zero pressure, f -> 0 at infinite compression.
     K_0 : float
         Zero-pressure isothermal bulk modulus [Pa].

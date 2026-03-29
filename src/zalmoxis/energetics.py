@@ -131,14 +131,15 @@ def differentiation_energy(U_differentiated, U_undifferentiated):
 def _gruneisen_adiabat_step(P_curr, P_next, T, gamma=1.3, K0=250e9, Kprime=4.0):
     """Single step of the Gruneisen adiabat: dT/dP = gamma * T / K(P).
 
-    Uses K(P) = K0 + P * K' (linear bulk modulus). This is the
-    formulation used by White & Li (2025) Eq. 6-7. It gives
-    ~2-5 K/GPa for silicate mantle conditions.
+    For linear K(P) = K0 + P * K', the exact solution is:
+        T_next = T * (K(P_next) / K(P_curr))^(gamma / K')
+
+    This is the formulation used by White & Li (2025) Eq. 6-7.
+    It gives ~2-5 K/GPa for silicate mantle conditions.
 
     Default K0 = 250 GPa is a bulk lower-mantle average (perovskite
     K0=261 GPa from Fei+2021, post-perovskite K0=324 GPa from
     Sakai+2016, weighted toward the dominant perovskite phase).
-    Upper mantle peridotite (K0~130 GPa) gives too-steep adiabats.
 
     Parameters
     ----------
@@ -158,9 +159,10 @@ def _gruneisen_adiabat_step(P_curr, P_next, T, gamma=1.3, K0=250e9, Kprime=4.0):
     float
         Temperature at P_next [K].
     """
-    dP = P_next - P_curr
-    K_mid = K0 + 0.5 * (P_curr + P_next) * Kprime
-    return T * np.exp(gamma * dP / K_mid)
+    # Exact analytical solution for linear K(P) = K0 + P*K'
+    K_curr = K0 + P_curr * Kprime
+    K_next = K0 + P_next * Kprime
+    return T * (K_next / K_curr) ** (gamma / Kprime)
 
 
 def _integrate_adiabat(pressure_profile, T_anchor, nabla_ad_func):
@@ -171,7 +173,7 @@ def _integrate_adiabat(pressure_profile, T_anchor, nabla_ad_func):
 
     When nabla_ad_func is None, uses the Gruneisen parameter
     formulation dT/dP = gamma * T / K(P) with default silicate
-    parameters (gamma=1.3, K0=130 GPa, K'=4), following White & Li
+    parameters (gamma=1.3, K0=250 GPa, K'=4), following White & Li
     (2025) Eq. 6-7. This gives ~2-5 K/GPa, unlike constant
     nabla_ad = 0.3 which diverges over large pressure ranges.
 
@@ -301,8 +303,9 @@ def initial_thermal_state(
 
     if nabla_ad_func is None:
         warnings.warn(
-            'No nabla_ad_func provided; using constant nabla_ad = 0.3. '
-            'This is a rough approximation for silicate melt.',
+            'No nabla_ad_func provided; using Gruneisen adiabat fallback '
+            '(gamma=1.3, K0=250 GPa, K\'=4). Accurate at ~1 M_Earth; '
+            'use PALEOS nabla_ad for super-Earths.',
             stacklevel=2,
         )
 
@@ -341,15 +344,20 @@ def initial_thermal_state(
 
         # Rough temperature profile for C_p evaluation:
         # Core: isothermal at T_cmb_est
-        # Mantle: adiabatic from T_cmb_est to surface using log-stepping
+        # Mantle: adiabatic from T_cmb_est to surface
         P_cmb_val = float(pressure[cmb_index])
         T_profile = np.full_like(radii, T_cmb_est)
         if P_cmb_val > 0:
             for i in range(cmb_index + 1, len(radii)):
-                P_prev = max(float(pressure[i - 1]), 1e3)
-                P_i = max(float(pressure[i]), 1e3)
-                nad = 0.3 if nabla_ad_func is None else nabla_ad_func(P_prev, T_profile[i - 1])
-                T_profile[i] = T_profile[i - 1] * (P_i / P_prev) ** nad
+                if nabla_ad_func is not None:
+                    P_prev = max(float(pressure[i - 1]), 1e3)
+                    P_i = max(float(pressure[i]), 1e3)
+                    nad = nabla_ad_func(P_prev, T_profile[i - 1])
+                    T_profile[i] = T_profile[i - 1] * (P_i / P_prev) ** nad
+                else:
+                    T_profile[i] = _gruneisen_adiabat_step(
+                        float(pressure[i - 1]), float(pressure[i]), T_profile[i - 1]
+                    )
 
         # Shell masses (dm = M[i+1] - M[i])
         dm = np.diff(mass_enclosed)

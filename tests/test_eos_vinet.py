@@ -156,29 +156,132 @@ class TestVinetDensity:
 
 
 @pytest.mark.unit
+class TestVinetBulkModulus:
+    """Verify the Vinet EOS recovers K_0 and K_0' at zero pressure."""
+
+    def test_K0_recovery(self):
+        """Bulk modulus at P=0 should equal K_0 for all materials.
+
+        K = -V dP/dV. At P=0 (f=1), K = K_0 by definition.
+        Check via finite difference: K ~ -V * Delta_P / Delta_V.
+        """
+        for key, mat in VINET_MATERIALS.items():
+            K_0 = mat['K_0']
+            rho_0 = mat['rho_0']
+            # Small pressure step
+            dP = 1e6  # 1 MPa
+            rho_at_dP = get_vinet_density(dP, key)
+            # K = rho * dP / drho (isothermal)
+            drho = rho_at_dP / mat['thermal_correction'] - rho_0
+            K_numerical = rho_0 * dP / drho if drho > 0 else float('inf')
+            assert K_numerical == pytest.approx(K_0, rel=0.01), (
+                f'{key}: K_numerical={K_numerical/1e9:.1f} GPa, '
+                f'K_0={K_0/1e9:.1f} GPa'
+            )
+
+    def test_Kprime_recovery(self):
+        """K' at P=0 should equal K_0' for all materials.
+
+        K' = dK/dP. Check via finite difference on two small pressures.
+        """
+        for key, mat in VINET_MATERIALS.items():
+            K_prime_expected = mat['K_prime']
+            rho_0 = mat['rho_0']
+            tc = mat['thermal_correction']
+
+            P1, P2 = 0.5e9, 1.5e9  # 0.5 and 1.5 GPa
+            dP_step = 1e6
+
+            rho1 = get_vinet_density(P1, key) / tc
+            rho1p = get_vinet_density(P1 + dP_step, key) / tc
+            K1 = rho1 * dP_step / (rho1p - rho1)
+
+            rho2 = get_vinet_density(P2, key) / tc
+            rho2p = get_vinet_density(P2 + dP_step, key) / tc
+            K2 = rho2 * dP_step / (rho2p - rho2)
+
+            K_prime_numerical = (K2 - K1) / (P2 - P1)
+            assert K_prime_numerical == pytest.approx(K_prime_expected, rel=0.05), (
+                f'{key}: K\'_numerical={K_prime_numerical:.2f}, '
+                f'K\'_expected={K_prime_expected:.2f}'
+            )
+
+
+@pytest.mark.unit
+class TestVinetAllMaterials:
+    """Verify all registered materials produce sensible densities."""
+
+    def test_ppv_denser_than_pv(self):
+        """Post-perovskite should be denser than perovskite at same P."""
+        for P in [100e9, 200e9, 500e9]:
+            rho_pv = get_vinet_density(P, 'MgSiO3')
+            rho_ppv = get_vinet_density(P, 'MgSiO3_ppv')
+            assert rho_ppv > rho_pv, (
+                f'At {P/1e9:.0f} GPa: ppv={rho_ppv:.0f} should > pv={rho_pv:.0f}'
+            )
+
+    def test_iron_liquid_less_dense_than_solid(self):
+        """Liquid iron should be less dense than solid at same P."""
+        for P in [100e9, 200e9, 350e9]:
+            rho_s = get_vinet_density(P, 'iron')
+            rho_l = get_vinet_density(P, 'iron_liquid')
+            # Solid has thermal correction (0.875), liquid doesn't, so
+            # corrected solid may be less dense than liquid.
+            # But uncorrected solid (rho_s/0.875) should be denser than liquid.
+            rho_s_raw = rho_s / 0.875
+            assert rho_s_raw > rho_l, (
+                f'At {P/1e9:.0f} GPa: solid_raw={rho_s_raw:.0f} '
+                f'should > liquid={rho_l:.0f}'
+            )
+
+    def test_peridotite_monotonic(self):
+        """Peridotite density increases with pressure."""
+        pressures = np.logspace(8, 12, 20)
+        densities = [get_vinet_density(float(P), 'peridotite') for P in pressures]
+        assert all(d is not None for d in densities)
+        assert all(densities[i] <= densities[i + 1]
+                   for i in range(len(densities) - 1))
+
+    def test_continuity_at_zero(self):
+        """Density at very small P should be close to rho_0 * thermal."""
+        for key, mat in VINET_MATERIALS.items():
+            rho_0_eff = mat['rho_0'] * mat['thermal_correction']
+            rho_small = get_vinet_density(1.0, key)  # 1 Pa
+            assert abs(rho_small - rho_0_eff) / rho_0_eff < 1e-6, (
+                f'{key}: rho(1 Pa)={rho_small:.2f}, rho_0*tc={rho_0_eff:.2f}'
+            )
+
+
+@pytest.mark.unit
 class TestVinetVsSeager:
-    """Compare Vinet and Seager EOS at overlapping pressures."""
+    """Compare Vinet and Seager EOS at overlapping pressures.
 
-    def test_iron_within_30_percent(self):
-        """Vinet and Seager iron should agree within ~30% at 0-500 GPa.
+    Seager+2007 is a modified polytrope fitted to Thomas-Fermi-Dirac
+    calculations. Vinet is a finite-strain EOS fitted to static
+    compression experiments. They parameterize different physics, so
+    agreement is approximate (10-20%).
+    """
 
-        They use different parameterizations and the Vinet includes a
-        12.5% thermal correction, so exact agreement is not expected.
+    def test_iron_within_20_percent(self):
+        """Vinet and Seager iron should agree within 20% at 1-500 GPa.
+
+        The Vinet includes a 12.5% thermal correction that accounts
+        for most of the difference.
         """
         from zalmoxis.eos_analytic import get_analytic_density
 
-        pressures = np.logspace(9, 11.7, 20)  # 1 GPa to 500 GPa
+        pressures = np.logspace(9, 11.7, 20)
         for P in pressures:
             rho_v = get_vinet_density(float(P), 'iron')
             rho_s = get_analytic_density(float(P), 'iron')
             rel_diff = abs(rho_v - rho_s) / rho_s
-            assert rel_diff < 0.30, (
+            assert rel_diff < 0.20, (
                 f'At P={P/1e9:.0f} GPa: Vinet={rho_v:.0f}, '
                 f'Seager={rho_s:.0f}, diff={rel_diff:.1%}'
             )
 
-    def test_mgsio3_within_20_percent(self):
-        """Vinet and Seager MgSiO3 should agree within ~20% at 0-500 GPa."""
+    def test_mgsio3_within_15_percent(self):
+        """Vinet and Seager MgSiO3 should agree within 15% at 1-500 GPa."""
         from zalmoxis.eos_analytic import get_analytic_density
 
         pressures = np.logspace(9, 11.7, 20)
@@ -186,7 +289,7 @@ class TestVinetVsSeager:
             rho_v = get_vinet_density(float(P), 'MgSiO3')
             rho_s = get_analytic_density(float(P), 'MgSiO3')
             rel_diff = abs(rho_v - rho_s) / rho_s
-            assert rel_diff < 0.20, (
+            assert rel_diff < 0.15, (
                 f'At P={P/1e9:.0f} GPa: Vinet={rho_v:.0f}, '
                 f'Seager={rho_s:.0f}, diff={rel_diff:.1%}'
             )
