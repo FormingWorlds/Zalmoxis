@@ -199,12 +199,21 @@ def _integrate_adiabat(pressure_profile, T_anchor, nabla_ad_func):
     T = T_anchor
 
     if nabla_ad_func is not None:
-        # PALEOS or user-provided nabla_ad: log-stepping
+        # PALEOS or user-provided nabla_ad: log-stepping with Gruneisen cap.
+        # When nabla_ad_func returns its fallback (e.g. 0.3 outside table),
+        # the log-stepping T*(P2/P1)^0.3 can diverge over large dP. Cap each
+        # step so it never exceeds the Gruneisen prediction by more than 50%.
         for i in range(len(P) - 1):
             P_curr = max(float(P[i]), 1e3)
             P_next = max(float(P[i + 1]), 1e3)
             nad = nabla_ad_func(P_curr, T)
-            T = T * (P_next / P_curr) ** nad
+            T_nabla = T * (P_next / P_curr) ** nad
+            T_grun = _gruneisen_adiabat_step(P_curr, P_next, T)
+            # Use nabla_ad result unless it exceeds Gruneisen by >50%
+            if abs(T_nabla - T) > 1.5 * abs(T_grun - T) + 1.0:
+                T = T_grun
+            else:
+                T = T_nabla
     else:
         # Gruneisen parameter fallback (White+Li 2025 Eq. 6-7)
         for i in range(len(P) - 1):
