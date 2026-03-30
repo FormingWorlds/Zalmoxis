@@ -371,7 +371,7 @@ def _load_tabulated_curve(filepath):
     pressures = data[:, 0]
     temperatures = data[:, 1]
     return interp1d(
-        pressures, temperatures, kind='cubic', bounds_error=False, fill_value=np.nan
+        pressures, temperatures, kind='linear', bounds_error=False, fill_value=np.nan
     )
 
 

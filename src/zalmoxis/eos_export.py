@@ -130,7 +130,6 @@ def _build_interpolator(unique_log_p, unique_log_t, grid):
     return RegularGridInterpolator(
         (unique_log_p, unique_log_t),
         grid,
-        method='cubic',
         bounds_error=False,
         fill_value=np.nan,
     )
