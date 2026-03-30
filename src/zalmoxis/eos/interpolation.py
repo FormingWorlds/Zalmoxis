@@ -87,12 +87,14 @@ def load_paleos_table(eos_file):
     density_interp = RegularGridInterpolator(
         (unique_log_p, unique_log_t),
         density_grid,
+        method='cubic',
         bounds_error=False,
         fill_value=np.nan,
     )
     nabla_ad_interp = RegularGridInterpolator(
         (unique_log_p, unique_log_t),
         nabla_ad_grid,
+        method='cubic',
         bounds_error=False,
         fill_value=np.nan,
     )
@@ -235,12 +237,14 @@ def load_paleos_unified_table(eos_file):
     density_interp = RegularGridInterpolator(
         (unique_log_p, unique_log_t),
         density_grid,
+        method='cubic',
         bounds_error=False,
         fill_value=np.nan,
     )
     nabla_ad_interp = RegularGridInterpolator(
         (unique_log_p, unique_log_t),
         nabla_ad_grid,
+        method='cubic',
         bounds_error=False,
         fill_value=np.nan,
     )

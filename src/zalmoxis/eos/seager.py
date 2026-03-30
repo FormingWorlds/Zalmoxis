@@ -92,6 +92,7 @@ def get_tabulated_eos(
                     interpolator = RegularGridInterpolator(
                         (unique_pressures, unique_temps),
                         density_grid,
+                        method='cubic',
                         bounds_error=False,
                         fill_value=None,
                     )

@@ -44,7 +44,7 @@ def load_melting_curve(melt_file):
         pressures = data[:, 0]  # in Pa
         temperatures = data[:, 1]  # in K
         interp_func = interp1d(
-            pressures, temperatures, kind='linear', bounds_error=False, fill_value=np.nan
+            pressures, temperatures, kind='cubic', bounds_error=False, fill_value=np.nan
         )
         return interp_func
     except Exception as e:
