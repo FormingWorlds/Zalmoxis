@@ -127,6 +127,7 @@ def main(
     input_dir,
     layer_mixtures=None,
     volatile_profile=None,
+    temperature_function=None,
 ):
     """Run the exoplanet internal structure model with automatic retry.
 
@@ -153,6 +154,13 @@ def main(
     volatile_profile : VolatileProfile or None, optional
         Volatile profile for binodal-aware structure. Passed through to
         ``_solve()`` but not used directly by the retry logic.
+    temperature_function : callable or None, optional
+        External temperature function with signature ``f(r, P) -> T``
+        where ``r`` is radius in m, ``P`` is pressure in Pa, and ``T``
+        is temperature in K. When provided, bypasses the internal
+        temperature mode dispatch (isothermal/linear/prescribed/adiabatic).
+        Used by PROTEUS to pass SPIDER/Aragog T(r) profiles directly
+        in memory.
 
     Returns
     -------
@@ -167,6 +175,7 @@ def main(
         input_dir,
         layer_mixtures=layer_mixtures,
         volatile_profile=volatile_profile,
+        temperature_function=temperature_function,
     )
 
     if not result['converged']:
@@ -205,6 +214,7 @@ def main(
             input_dir,
             layer_mixtures=layer_mixtures,
             volatile_profile=volatile_profile,
+            temperature_function=temperature_function,
         )
 
         if not result['converged']:
@@ -223,6 +233,7 @@ def _solve(
     input_dir,
     layer_mixtures=None,
     volatile_profile=None,
+    temperature_function=None,
 ):
     """Internal solver: single attempt at the structure solve.
 
@@ -239,6 +250,9 @@ def _solve(
         Directory containing input files.
     layer_mixtures : dict or None, optional
         Per-layer LayerMixture objects.
+    temperature_function : callable or None, optional
+        External temperature function ``f(r, P) -> T``. When provided,
+        bypasses internal temperature mode dispatch and adiabat blending.
 
     Returns
     -------
@@ -452,7 +466,18 @@ def _solve(
         gravity = np.zeros(num_layers)
         pressure = np.zeros(num_layers)
 
-        if uses_Tdep:
+        if temperature_function is not None:
+            # External T(r,P) provided (e.g. from SPIDER/Aragog in memory).
+            # Skip internal mode dispatch and adiabat blending entirely.
+            _ext_tf = temperature_function  # avoid shadowing in nested defs
+
+            def _temperature_func(r, P, _f=_ext_tf):
+                return _f(r, P)
+
+            temperatures = np.array(
+                [_temperature_func(radii[i], pressure[i]) for i in range(num_layers)]
+            )
+        elif uses_Tdep:
             # Compute the linear (initial guess) temperature profile.
             # This is a function of radius only; wrap it to accept (r, P).
             _linear_tf = calculate_temperature_profile(
@@ -516,7 +541,7 @@ def _solve(
                 if _adiabat_blend < 1.0:
                     _blend = _adiabat_blend
 
-                    def temperature_function(
+                    def _temperature_func(
                         r, P, _b=_blend, _lp=_logP_sorted, _ts=_T_sorted, _ltf=_linear_tf
                     ):
                         T_lin = _ltf(r)
@@ -528,7 +553,7 @@ def _solve(
 
                 else:
 
-                    def temperature_function(r, P, _lp=_logP_sorted, _ts=_T_sorted):
+                    def _temperature_func(r, P, _lp=_logP_sorted, _ts=_T_sorted):
                         if P <= 0:
                             return surface_temperature
                         T_val = float(np.interp(np.log10(P), _lp, _ts))
@@ -538,17 +563,18 @@ def _solve(
                 # (uses the converged pressure from the previous iteration)
                 temperatures = np.array(
                     [
-                        temperature_function(radii[i], prev_pressure[i])
+                        _temperature_func(radii[i], prev_pressure[i])
                         for i in range(num_layers)
                     ]
                 )
             else:
 
-                def temperature_function(r, P, _tf=_linear_tf):
+                def _temperature_func(r, P, _tf=_linear_tf):
                     return _tf(r)
 
                 temperatures = _linear_tf(radii)
         else:
+            _temperature_func = None
             temperatures = np.ones(num_layers) * 300
 
         cmb_mass = core_mass_fraction * planet_mass
@@ -598,7 +624,7 @@ def _solve(
                     y0,
                     solidus_func,
                     liquidus_func,
-                    temperature_function if uses_Tdep else None,
+                    _temperature_func,
                     mushy_zone_factors,
                     condensed_rho_min,
                     condensed_rho_scale,
@@ -665,7 +691,7 @@ def _solve(
                     y0_root,
                     solidus_func,
                     liquidus_func,
-                    temperature_function if uses_Tdep else None,
+                    _temperature_func,
                     mushy_zone_factors,
                     condensed_rho_min,
                     condensed_rho_scale,
@@ -721,10 +747,10 @@ def _solve(
             p_valid = pressure[:n_valid] > 0
 
             # Compute temperatures for valid shells
-            if uses_Tdep:
+            if _temperature_func is not None:
                 T_arr = np.array(
                     [
-                        temperature_function(radii[i], pressure[i])
+                        _temperature_func(radii[i], pressure[i])
                         for i in range(n_valid)
                         if p_valid[i]
                     ]
@@ -800,9 +826,9 @@ def _solve(
 
         # Recompute the temperatures array from the converged pressure profile
         # so model_results['temperature'] reflects actual T(P), not the pre-Brent estimate.
-        if uses_Tdep:
+        if _temperature_func is not None:
             temperatures = np.array(
-                [temperature_function(radii[i], pressure[i]) for i in range(num_layers)]
+                [_temperature_func(radii[i], pressure[i]) for i in range(num_layers)]
             )
 
         # Save converged profiles for the next outer iteration's adiabat
@@ -942,6 +968,7 @@ def solve_miscible_interior(
     input_dir,
     layer_mixtures=None,
     volatile_profile=None,
+    temperature_function=None,
     h2_mass_targets=None,
     max_iterations=10,
     mass_tolerance=0.01,
@@ -1002,6 +1029,7 @@ def solve_miscible_interior(
             input_dir,
             layer_mixtures,
             volatile_profile,
+            temperature_function=temperature_function,
         )
         result['solvus_radius'] = None
         result['solvus_temperature'] = None
@@ -1025,6 +1053,7 @@ def solve_miscible_interior(
             input_dir,
             layer_mixtures,
             volatile_profile,
+            temperature_function=temperature_function,
         )
 
         if not result.get('converged', False):
