@@ -4,10 +4,16 @@ Contains the main() function that implements the three nested iterative
 procedures: mass-radius convergence (outer), Picard density iteration
 (middle), and Brent root-finding on central pressure with RK45 ODE
 integration (inner).
+
+Numerical solver parameters (tolerances, iteration limits, step sizes)
+are set internally via `_default_solver_params()` with mass-adaptive
+scaling. Callers do not need to provide them. If a first solve attempt
+fails to converge, `main()` automatically retries with tighter settings.
 """
 
 from __future__ import annotations
 
+import copy
 import logging
 import time
 
@@ -44,6 +50,75 @@ from .structure_model import solve_structure
 logger = logging.getLogger(__name__)
 
 
+def _default_solver_params(planet_mass):
+    """Compute default numerical solver parameters with mass-adaptive scaling.
+
+    Parameters
+    ----------
+    planet_mass : float
+        Planet mass in kg.
+
+    Returns
+    -------
+    dict
+        Numerical solver parameters. Keys match what `_solve()` expects.
+    """
+    mass_in_earth = planet_mass / earth_mass
+
+    # Estimated planet radius from mass-radius scaling (Seager+2007)
+    r_est = earth_radius * mass_in_earth**0.282
+
+    # Estimated central pressure from scaling law
+    p_center_est = earth_center_pressure * mass_in_earth**0.87
+
+    # Ensure ~5 steps in the outer 2% of the radial domain
+    maximum_step = r_est * 0.004
+
+    # Brent bracket cap: 10x the estimated central pressure.
+    # Only active for WolfBower2018 in _solve(), but set for all cases.
+    max_center_pressure_guess = 10.0 * p_center_est
+
+    return {
+        'max_iterations_outer': 50,
+        'tolerance_outer': 1e-3,
+        'max_iterations_inner': 50,
+        'tolerance_inner': 1e-4,
+        'relative_tolerance': 1e-5,
+        'absolute_tolerance': 1e-6,
+        'maximum_step': maximum_step,
+        'adaptive_radial_fraction': 0.98,
+        'max_center_pressure_guess': max_center_pressure_guess,
+        'pressure_tolerance': 1e9,
+        'max_iterations_pressure': 100,
+    }
+
+
+def _tighten_solver_params(params):
+    """Return a copy of solver params with tighter settings for retry.
+
+    Parameters
+    ----------
+    params : dict
+        Original solver parameters.
+
+    Returns
+    -------
+    dict
+        Tightened parameters: doubled iteration counts, 10x tighter
+        tolerances, halved maximum step.
+    """
+    tightened = dict(params)
+    tightened['max_iterations_outer'] = params['max_iterations_outer'] * 2
+    tightened['max_iterations_inner'] = params['max_iterations_inner'] * 2
+    tightened['max_iterations_pressure'] = params['max_iterations_pressure'] * 2
+    tightened['tolerance_outer'] = params['tolerance_outer'] * 0.1
+    tightened['tolerance_inner'] = params['tolerance_inner'] * 0.1
+    tightened['relative_tolerance'] = params['relative_tolerance'] * 0.1
+    tightened['absolute_tolerance'] = params['absolute_tolerance'] * 0.1
+    tightened['maximum_step'] = params['maximum_step'] * 0.5
+    return tightened
+
+
 def main(
     config_params,
     material_dictionaries,
@@ -52,12 +127,18 @@ def main(
     layer_mixtures=None,
     volatile_profile=None,
 ):
-    """Run the exoplanet internal structure model.
+    """Run the exoplanet internal structure model with automatic retry.
+
+    Calls `_solve()` with mass-adaptive default parameters. If the first
+    attempt does not converge, automatically retries once with tighter
+    tolerances and doubled iteration limits.
 
     Parameters
     ----------
     config_params : dict
-        Configuration parameters for the model.
+        Configuration parameters for the model. Numerical solver
+        parameters (tolerances, iteration limits, step sizes) are
+        optional; sensible mass-adaptive defaults are used when absent.
     material_dictionaries : dict
         EOS registry dict keyed by EOS identifier string.
     melting_curves_functions : tuple or None
@@ -75,13 +156,94 @@ def main(
         Model results including radii, density, gravity, pressure, temperature,
         mass enclosed, convergence status, and timing.
     """
+    result = _solve(
+        config_params,
+        material_dictionaries,
+        melting_curves_functions,
+        input_dir,
+        layer_mixtures=layer_mixtures,
+        volatile_profile=volatile_profile,
+    )
+
+    if not result['converged']:
+        # Build tightened params for retry
+        planet_mass = config_params['planet_mass']
+        defaults = _default_solver_params(planet_mass)
+        # Merge: explicit caller values override defaults
+        effective = dict(defaults)
+        for key in defaults:
+            if key in config_params:
+                effective[key] = config_params[key]
+        tightened = _tighten_solver_params(effective)
+
+        logger.warning(
+            'Structure solve did not converge (mass=%s, density=%s, pressure=%s). '
+            'Retrying with tighter parameters.',
+            result.get('converged_mass', False),
+            result.get('converged_density', False),
+            result.get('converged_pressure', False),
+        )
+
+        # Seed retry with the first attempt's radius estimate
+        retry_params = copy.copy(config_params)
+        retry_params.update(tightened)
+        if 'radii' in result and result['radii'] is not None and len(result['radii']) > 0:
+            retry_params['_initial_radius_guess'] = result['radii'][-1]
+
+        result = _solve(
+            retry_params,
+            material_dictionaries,
+            melting_curves_functions,
+            input_dir,
+            layer_mixtures=layer_mixtures,
+            volatile_profile=volatile_profile,
+        )
+
+        if not result['converged']:
+            logger.warning(
+                'Structure solve did not converge after retry. '
+                'Returning best result with converged=False.'
+            )
+
+    return result
+
+
+def _solve(
+    config_params,
+    material_dictionaries,
+    melting_curves_functions,
+    input_dir,
+    layer_mixtures=None,
+    volatile_profile=None,
+):
+    """Internal solver: single attempt at the structure solve.
+
+    Parameters
+    ----------
+    config_params : dict
+        Configuration parameters. Numerical solver params are optional;
+        mass-adaptive defaults are used when absent.
+    material_dictionaries : dict
+        EOS registry dict keyed by EOS identifier string.
+    melting_curves_functions : tuple or None
+        (solidus_func, liquidus_func) for EOS needing external melting curves.
+    input_dir : str
+        Directory containing input files.
+    layer_mixtures : dict or None, optional
+        Per-layer LayerMixture objects.
+
+    Returns
+    -------
+    dict
+        Model results including convergence status.
+    """
     # Initialize convergence flags
     converged = False
     converged_pressure = False
     converged_density = False
     converged_mass = False
 
-    # Unpack configuration parameters
+    # Unpack physics parameters (required)
     planet_mass = config_params['planet_mass']
     core_mass_fraction = config_params['core_mass_fraction']
     mantle_mass_fraction = config_params['mantle_mass_fraction']
@@ -91,20 +253,40 @@ def main(
     temp_profile_file = config_params['temp_profile_file']
     layer_eos_config = config_params['layer_eos_config']
     num_layers = config_params['num_layers']
-    max_iterations_outer = config_params['max_iterations_outer']
-    tolerance_outer = config_params['tolerance_outer']
-    max_iterations_inner = config_params['max_iterations_inner']
-    tolerance_inner = config_params['tolerance_inner']
-    relative_tolerance = config_params['relative_tolerance']
-    absolute_tolerance = config_params['absolute_tolerance']
-    maximum_step = config_params['maximum_step']
-    adaptive_radial_fraction = config_params['adaptive_radial_fraction']
-    max_center_pressure_guess = config_params['max_center_pressure_guess']
     target_surface_pressure = config_params['target_surface_pressure']
-    pressure_tolerance = config_params['pressure_tolerance']
-    max_iterations_pressure = config_params['max_iterations_pressure']
-    verbose = config_params['verbose']
-    iteration_profiles_enabled = config_params['iteration_profiles_enabled']
+
+    # Unpack numerical solver parameters (optional, with mass-adaptive defaults)
+    defaults = _default_solver_params(planet_mass)
+    max_iterations_outer = config_params.get(
+        'max_iterations_outer', defaults['max_iterations_outer']
+    )
+    tolerance_outer = config_params.get('tolerance_outer', defaults['tolerance_outer'])
+    max_iterations_inner = config_params.get(
+        'max_iterations_inner', defaults['max_iterations_inner']
+    )
+    tolerance_inner = config_params.get('tolerance_inner', defaults['tolerance_inner'])
+    relative_tolerance = config_params.get(
+        'relative_tolerance', defaults['relative_tolerance']
+    )
+    absolute_tolerance = config_params.get(
+        'absolute_tolerance', defaults['absolute_tolerance']
+    )
+    maximum_step = config_params.get('maximum_step', defaults['maximum_step'])
+    adaptive_radial_fraction = config_params.get(
+        'adaptive_radial_fraction', defaults['adaptive_radial_fraction']
+    )
+    max_center_pressure_guess = config_params.get(
+        'max_center_pressure_guess', defaults['max_center_pressure_guess']
+    )
+    pressure_tolerance = config_params.get(
+        'pressure_tolerance', defaults['pressure_tolerance']
+    )
+    max_iterations_pressure = config_params.get(
+        'max_iterations_pressure', defaults['max_iterations_pressure']
+    )
+    # Optional initial radius guess from a previous failed attempt
+    initial_radius_guess = config_params.get('_initial_radius_guess', None)
+
     # Build per-EOS mushy_zone_factors dict. Prefer the dict if present
     # (set by load_zalmoxis_config). Fall back to building one from the
     # single float for backward compat with callers that only set the
@@ -175,9 +357,12 @@ def main(
                 )
 
     # Setup initial guesses
-    radius_guess = (
-        1000 * (7030 - 1840 * core_mass_fraction) * (planet_mass / earth_mass) ** 0.282
-    )
+    if initial_radius_guess is not None:
+        radius_guess = initial_radius_guess
+    else:
+        radius_guess = (
+            1000 * (7030 - 1840 * core_mass_fraction) * (planet_mass / earth_mass) ** 0.282
+        )
     cmb_mass = 0
     core_mantle_mass = 0
 
@@ -240,9 +425,9 @@ def main(
         max_reasonable_T_center = max(5.0 * surface_temperature, 3000.0)
         if center_temperature > max_reasonable_T_center:
             center_temperature = max_reasonable_T_center
-            verbose and logger.info(
-                f'Adiabatic mode: capped center_temperature initial guess '
-                f'to {center_temperature:.0f} K (5x surface or 3000 K).'
+            logger.debug(
+                'Adiabatic mode: capped center_temperature initial guess '
+                'to %.0f K (5x surface or 3000 K).', center_temperature,
             )
 
     # Solve the interior structure
@@ -274,8 +459,8 @@ def main(
             if _using_adiabat and prev_pressure is not None:
                 # Bump blend toward full adiabat
                 _adiabat_blend = min(1.0, _adiabat_blend + _ADIABAT_BLEND_STEP)
-                verbose and logger.info(
-                    f'Outer iter {outer_iter}: adiabat blend = {_adiabat_blend:.2f}'
+                logger.debug(
+                    'Outer iter %d: adiabat blend = %.2f', outer_iter, _adiabat_blend,
                 )
 
                 # Recompute adiabat from previous iteration's converged structure
@@ -411,7 +596,7 @@ def main(
                     condensed_rho_scale,
                     binodal_T_scale,
                 )
-                if iteration_profiles_enabled:
+                if logger.isEnabledFor(logging.DEBUG):
                     create_pressure_density_files(
                         outer_iter, inner_iter, _state['n_evals'], radii, p, density
                     )
@@ -488,22 +673,22 @@ def main(
                     and np.min(pressure) >= 0
                 ):
                     converged_pressure = True
-                    verbose and logger.info(
-                        f'Surface pressure converged after '
-                        f'{root_info.function_calls} evaluations (Brent method).'
+                    logger.debug(
+                        'Surface pressure converged after '
+                        '%d evaluations (Brent method).', root_info.function_calls,
                     )
                 else:
                     converged_pressure = False
-                    verbose and logger.warning(
-                        f'Brent method: converged={root_info.converged}, '
-                        f'residual={surface_residual:.2e} Pa, '
-                        f'min_P={np.min(pressure):.2e} Pa.'
+                    logger.debug(
+                        'Brent method: converged=%s, residual=%.2e Pa, min_P=%.2e Pa.',
+                        root_info.converged, surface_residual, np.min(pressure),
                     )
             except ValueError:
                 # f(p_low) and f(p_high) have the same sign — bracket
                 # invalid.  Use the last evaluated solution if available.
-                verbose and logger.warning(
-                    f'Could not bracket pressure root in [{p_low:.2e}, {p_high:.2e}] Pa.'
+                logger.debug(
+                    'Could not bracket pressure root in [%.2e, %.2e] Pa.',
+                    p_low, p_high,
                 )
                 if _state['mass_enclosed'] is not None:
                     mass_enclosed = _state['mass_enclosed']
@@ -512,7 +697,7 @@ def main(
                 else:
                     # No evaluations succeeded — keep profiles from previous
                     # outer iteration (already initialised above).
-                    verbose and logger.warning(
+                    logger.debug(
                         'No valid ODE solutions obtained during bracket search. '
                         'Keeping previous profiles.'
                     )
@@ -593,16 +778,16 @@ def main(
                 np.abs((density - old_density) / (old_density + 1e-20))
             )
             if relative_diff_inner < tolerance_inner:
-                verbose and logger.info(
-                    f'Inner loop converged after {inner_iter + 1} iterations.'
+                logger.debug(
+                    'Inner loop converged after %d iterations.', inner_iter + 1,
                 )
                 converged_density = True
                 break
 
             if inner_iter == max_iterations_inner - 1:
-                verbose and logger.warning(
-                    f'Maximum inner iterations ({max_iterations_inner}) reached. '
-                    'Density may not be fully converged.'
+                logger.debug(
+                    'Maximum inner iterations (%d) reached. '
+                    'Density may not be fully converged.', max_iterations_inner,
                 )
 
         # Recompute the temperatures array from the converged pressure profile
@@ -624,9 +809,9 @@ def main(
         calculated_mass = mass_enclosed[-1]
         if calculated_mass <= 0 or not np.isfinite(calculated_mass):
             radius_guess *= 0.8
-            verbose and logger.warning(
-                f'Outer iter {outer_iter}: calculated_mass={calculated_mass:.2e}, '
-                f'shrinking radius_guess to {radius_guess:.0f} m.'
+            logger.debug(
+                'Outer iter %d: calculated_mass=%.2e, shrinking radius_guess to %.0f m.',
+                outer_iter, calculated_mass, radius_guess,
             )
         else:
             scale = (planet_mass / calculated_mass) ** (1.0 / 3.0)
@@ -657,9 +842,9 @@ def main(
             break
 
         if outer_iter == max_iterations_outer - 1:
-            verbose and logger.warning(
-                f'Maximum outer iterations ({max_iterations_outer}) reached. '
-                'Total mass may not be fully converged.'
+            logger.debug(
+                'Maximum outer iterations (%d) reached. '
+                'Total mass may not be fully converged.', max_iterations_outer,
             )
 
     if converged_mass and converged_density and converged_pressure:

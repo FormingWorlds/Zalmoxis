@@ -73,22 +73,9 @@ class TestPALEOSMassLimit:
             'temp_profile_file': '',
             'layer_eos_config': layer_eos_config,
             'num_layers': 50,
-            'max_iterations_outer': 10,
-            'tolerance_outer': 3e-3,
-            'max_iterations_inner': 10,
-            'tolerance_inner': 1e-4,
-            'relative_tolerance': 1e-5,
-            'absolute_tolerance': 1e-6,
-            'maximum_step': 250000,
-            'adaptive_radial_fraction': 0.98,
-            'max_center_pressure_guess': 10e12,
             'target_surface_pressure': 101325,
-            'pressure_tolerance': 1e9,
-            'max_iterations_pressure': 50,
             'data_output_enabled': False,
             'plotting_enabled': False,
-            'verbose': False,
-            'iteration_profiles_enabled': False,
         }
         with pytest.raises(ValueError, match='PALEOS'):
             main(

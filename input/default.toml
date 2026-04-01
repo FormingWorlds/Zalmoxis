@@ -99,31 +99,23 @@ rock_liquidus              = "Monteux16-liquidus-A-chondritic"
 num_layers                 = 150 		# Number of radial grid points
 
 # ── Solver settings ────────────────────────────────────────────────────
-
-[IterativeProcess]
-max_iterations_outer       = 100 		# Max iterations for outer loop (total mass convergence)
-tolerance_outer            = 3e-3 		# Relative tolerance for outer loop (|M_calc - M_target| / M_target)
-max_iterations_inner       = 100 		# Max iterations for inner loop (density convergence)
-tolerance_inner            = 1e-4 		# Relative tolerance for inner loop density convergence
-relative_tolerance         = 1e-5 		# Relative tolerance for ODE integrator (solve_ivp)
-absolute_tolerance         = 1e-6 		# Absolute tolerance for ODE integrator (solve_ivp)
-maximum_step               = 250000 	# Max radial step size for ODE integrator (m)
-adaptive_radial_fraction   = 0.98 		# Fraction (0-1) of radial domain using adaptive ODE stepping;
-										# remainder uses fixed steps. Relevant for all T-dependent EOS.
-max_center_pressure_guess  = 10e12 		# Upper bound on Brent bracket for center pressure (Pa);
-										# only active for WolfBower2018 (caps core P to limit mantle P).
+# Numerical solver parameters (tolerances, iteration limits, step sizes)
+# are set automatically with mass-adaptive defaults inside the solver.
+# Override only if needed for debugging or specific convergence tuning.
+# To override, add an [IterativeProcess] section with any subset of:
+#   max_iterations_outer, tolerance_outer, max_iterations_inner,
+#   tolerance_inner, relative_tolerance, absolute_tolerance,
+#   maximum_step, adaptive_radial_fraction, max_center_pressure_guess
+# and/or add to [PressureAdjustment]:
+#   pressure_tolerance, max_iterations_pressure
 
 # ── Pressure solver ────────────────────────────────────────────────────
 
 [PressureAdjustment]
 target_surface_pressure    = 101325 	# Target surface pressure (Pa); default 1 atm
-pressure_tolerance         = 1e9 		# Convergence criterion: |P_surface - P_target| (Pa)
-max_iterations_pressure    = 200 		# Max Brent solver evaluations (typically converges in 20-36)
 
 # ── Output ─────────────────────────────────────────────────────────────
 
 [Output]
 data_enabled               = true 		# Write radial profiles to output/
 plots_enabled              = false 		# Generate profile plots after the run
-verbose                    = false 		# Log detailed convergence diagnostics
-iteration_profiles_enabled = false 		# Write P and rho profiles for every iteration (large output)

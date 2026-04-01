@@ -67,7 +67,6 @@ def _run_paleos(mass_earth, temperature_mode='linear'):
     config_params['temperature_mode'] = temperature_mode
     config_params['data_output_enabled'] = False
     config_params['plotting_enabled'] = False
-    config_params['verbose'] = False
 
     layer_eos_config = config_params['layer_eos_config']
 

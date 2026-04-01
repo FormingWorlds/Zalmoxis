@@ -432,40 +432,40 @@ def validate_config(config_params):
             f'Typical values: 100-500.'
         )
 
-    arf = config_params['adaptive_radial_fraction']
-    if arf <= 0 or arf >= 1:
-        raise ValueError(
-            f'adaptive_radial_fraction must be in (0, 1), got {arf}. '
-            f'Typical value: 0.98. This fraction of the radial domain uses '
-            f'adaptive ODE stepping; the remainder uses fixed steps.'
-        )
+    # ── Numerical solver params (optional, validated only if provided) ──
+    # These parameters have mass-adaptive defaults inside solver._solve().
+    # When provided explicitly, validate that they are physically sensible.
 
-    # ── Solver tolerances ───────────────────────────────────────────
-    for param, name in [
-        ('tolerance_outer', 'tolerance_outer'),
-        ('tolerance_inner', 'tolerance_inner'),
-        ('relative_tolerance', 'relative_tolerance'),
-        ('absolute_tolerance', 'absolute_tolerance'),
-    ]:
-        val = config_params[param]
-        if val <= 0:
-            raise ValueError(f'{name} must be positive, got {val}.')
+    if 'adaptive_radial_fraction' in config_params:
+        arf = config_params['adaptive_radial_fraction']
+        if arf <= 0 or arf >= 1:
+            raise ValueError(
+                f'adaptive_radial_fraction must be in (0, 1), got {arf}. '
+                f'Typical value: 0.98. This fraction of the radial domain uses '
+                f'adaptive ODE stepping; the remainder uses fixed steps.'
+            )
 
-    for param, name in [
-        ('max_iterations_outer', 'max_iterations_outer'),
-        ('max_iterations_inner', 'max_iterations_inner'),
-        ('max_iterations_pressure', 'max_iterations_pressure'),
-    ]:
-        val = config_params[param]
-        if val < 1:
-            raise ValueError(f'{name} must be >= 1, got {val}.')
+    for param in ('tolerance_outer', 'tolerance_inner',
+                  'relative_tolerance', 'absolute_tolerance'):
+        if param in config_params:
+            val = config_params[param]
+            if val <= 0:
+                raise ValueError(f'{param} must be positive, got {val}.')
 
-    maximum_step = config_params['maximum_step']
-    if maximum_step <= 0:
-        raise ValueError(
-            f'maximum_step must be positive, got {maximum_step} m. '
-            f'This is the max radial step size for the ODE integrator.'
-        )
+    for param in ('max_iterations_outer', 'max_iterations_inner',
+                  'max_iterations_pressure'):
+        if param in config_params:
+            val = config_params[param]
+            if val < 1:
+                raise ValueError(f'{param} must be >= 1, got {val}.')
+
+    if 'maximum_step' in config_params:
+        maximum_step = config_params['maximum_step']
+        if maximum_step <= 0:
+            raise ValueError(
+                f'maximum_step must be positive, got {maximum_step} m. '
+                f'This is the max radial step size for the ODE integrator.'
+            )
 
     # ── Pressure solver ─────────────────────────────────────────────
     target_sp = config_params['target_surface_pressure']
@@ -475,13 +475,17 @@ def validate_config(config_params):
             f'Default is 101325 Pa (1 atm).'
         )
 
-    ptol = config_params['pressure_tolerance']
-    if ptol <= 0:
-        raise ValueError(f'pressure_tolerance must be positive, got {ptol} Pa.')
+    if 'pressure_tolerance' in config_params:
+        ptol = config_params['pressure_tolerance']
+        if ptol <= 0:
+            raise ValueError(f'pressure_tolerance must be positive, got {ptol} Pa.')
 
-    max_pcg = config_params['max_center_pressure_guess']
-    if max_pcg <= 0:
-        raise ValueError(f'max_center_pressure_guess must be positive, got {max_pcg} Pa.')
+    if 'max_center_pressure_guess' in config_params:
+        max_pcg = config_params['max_center_pressure_guess']
+        if max_pcg <= 0:
+            raise ValueError(
+                f'max_center_pressure_guess must be positive, got {max_pcg} Pa.'
+            )
 
     # ── EOS-specific cross-checks ───────────────────────────────────
     # Melting curves only needed for EOS that use external phase routing
@@ -743,23 +747,29 @@ def load_zalmoxis_config(temp_config_path=None):
         'condensed_rho_scale': condensed_rho_scale,
         'binodal_T_scale': binodal_T_scale,
         'num_layers': config['Calculations']['num_layers'],
-        'max_iterations_outer': config['IterativeProcess']['max_iterations_outer'],
-        'tolerance_outer': config['IterativeProcess']['tolerance_outer'],
-        'max_iterations_inner': config['IterativeProcess']['max_iterations_inner'],
-        'tolerance_inner': config['IterativeProcess']['tolerance_inner'],
-        'relative_tolerance': config['IterativeProcess']['relative_tolerance'],
-        'absolute_tolerance': config['IterativeProcess']['absolute_tolerance'],
-        'maximum_step': config['IterativeProcess']['maximum_step'],
-        'adaptive_radial_fraction': config['IterativeProcess']['adaptive_radial_fraction'],
-        'max_center_pressure_guess': config['IterativeProcess']['max_center_pressure_guess'],
         'target_surface_pressure': config['PressureAdjustment']['target_surface_pressure'],
-        'pressure_tolerance': config['PressureAdjustment']['pressure_tolerance'],
-        'max_iterations_pressure': config['PressureAdjustment']['max_iterations_pressure'],
-        'data_output_enabled': config['Output']['data_enabled'],
-        'plotting_enabled': config['Output']['plots_enabled'],
-        'verbose': config['Output']['verbose'],
-        'iteration_profiles_enabled': config['Output']['iteration_profiles_enabled'],
+        'data_output_enabled': config['Output'].get('data_enabled', True),
+        'plotting_enabled': config['Output'].get('plots_enabled', False),
     }
+
+    # Numerical solver params are optional in the TOML. If present, include
+    # them so they override the mass-adaptive defaults in solver._solve().
+    _iter = config.get('IterativeProcess', {})
+    _pres = config.get('PressureAdjustment', {})
+    _optional_iter_keys = [
+        'max_iterations_outer', 'tolerance_outer',
+        'max_iterations_inner', 'tolerance_inner',
+        'relative_tolerance', 'absolute_tolerance',
+        'maximum_step', 'adaptive_radial_fraction',
+        'max_center_pressure_guess',
+    ]
+    for key in _optional_iter_keys:
+        if key in _iter:
+            config_params[key] = _iter[key]
+    _optional_pres_keys = ['pressure_tolerance', 'max_iterations_pressure']
+    for key in _optional_pres_keys:
+        if key in _pres:
+            config_params[key] = _pres[key]
 
     # Validate all parameters for physical and logical consistency
     validate_config(config_params)
