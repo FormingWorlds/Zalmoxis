@@ -63,7 +63,7 @@ def _default_solver_params(planet_mass):
     dict
         Numerical solver parameters. Keys match what `_solve()` expects.
     """
-    mass_in_earth = planet_mass / earth_mass
+    mass_in_earth = max(planet_mass, 0.01 * earth_mass) / earth_mass
 
     # Estimated planet radius from mass-radius scaling (Seager+2007)
     r_est = earth_radius * mass_in_earth**0.282
@@ -116,6 +116,7 @@ def _tighten_solver_params(params):
     tightened['relative_tolerance'] = params['relative_tolerance'] * 0.1
     tightened['absolute_tolerance'] = params['absolute_tolerance'] * 0.1
     tightened['maximum_step'] = params['maximum_step'] * 0.5
+    tightened['pressure_tolerance'] = params['pressure_tolerance'] * 0.1
     return tightened
 
 
@@ -149,6 +150,9 @@ def main(
         Per-layer LayerMixture objects. If None, parsed from
         ``config_params['layer_eos_config']``. PROTEUS/CALLIOPE can provide
         pre-built mixtures with runtime-updated fractions.
+    volatile_profile : VolatileProfile or None, optional
+        Volatile profile for binodal-aware structure. Passed through to
+        ``_solve()`` but not used directly by the retry logic.
 
     Returns
     -------
@@ -184,11 +188,15 @@ def main(
             result.get('converged_pressure', False),
         )
 
-        # Seed retry with the first attempt's radius estimate
+        # Seed retry with the first attempt's radius estimate, if plausible
         retry_params = copy.copy(config_params)
         retry_params.update(tightened)
         if 'radii' in result and result['radii'] is not None and len(result['radii']) > 0:
-            retry_params['_initial_radius_guess'] = result['radii'][-1]
+            r_last = result['radii'][-1]
+            mass_in_earth = max(planet_mass, 0.01 * earth_mass) / earth_mass
+            r_seager = earth_radius * mass_in_earth**0.282
+            if np.isfinite(r_last) and r_last > 0 and 0.2 * r_seager < r_last < 5.0 * r_seager:
+                retry_params['_initial_radius_guess'] = r_last
 
         result = _solve(
             retry_params,

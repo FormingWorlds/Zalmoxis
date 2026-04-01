@@ -747,7 +747,9 @@ def load_zalmoxis_config(temp_config_path=None):
         'condensed_rho_scale': condensed_rho_scale,
         'binodal_T_scale': binodal_T_scale,
         'num_layers': config['Calculations']['num_layers'],
-        'target_surface_pressure': config['PressureAdjustment']['target_surface_pressure'],
+        'target_surface_pressure': config.get('PressureAdjustment', {}).get(
+            'target_surface_pressure', 101325,
+        ),
         'data_output_enabled': config['Output'].get('data_enabled', True),
         'plotting_enabled': config['Output'].get('plots_enabled', False),
     }

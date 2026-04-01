@@ -84,12 +84,12 @@ The first row is the center (r = 0) and the last row is the surface. Shells beyo
 
 ### Iteration profiles (optional)
 
-When `iteration_profiles_enabled = true` in the `[Output]` section:
+When the Python logging level is set to `DEBUG`, the solver writes per-iteration profiles:
 
 - **`pressure_profiles.txt`**: Pressure vs. radius for every iteration of the pressure adjustment loop.
 - **`density_profiles.txt`**: Density vs. radius for every iteration.
 
-These files are useful for diagnosing convergence behavior. They grow large quickly and are overwritten at the start of each new run. Leave disabled for production runs.
+Enable with `logging.getLogger('zalmoxis').setLevel(logging.DEBUG)`. These files are useful for diagnosing convergence behavior. They grow large quickly and are overwritten at the start of each new run.
 
 ### Plots (optional)
 

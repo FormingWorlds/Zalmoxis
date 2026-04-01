@@ -507,7 +507,7 @@ class TestAdiabaticBlendMechanism:
         """
         import inspect
 
-        from zalmoxis.solver import main
+        from zalmoxis.solver import _solve
 
-        source = inspect.getsource(main)
+        source = inspect.getsource(_solve)
         assert '_ADIABAT_BLEND_STEP = 0.25' in source
