@@ -575,8 +575,11 @@ def generate_spider_eos_tables(
     S_min_melt = np.full(n_P, np.inf)
     S_max_melt = np.full(n_P, -np.inf)
 
-    # Sample T finely to determine S ranges
+    # Sample T finely to determine S ranges (vectorized per pressure)
     n_T_sample = 500
+    T_lo_global = max(table['t_min'], 300.0)
+    T_hi_global = min(table['t_max'], 1e5)
+
     for ip in range(n_P):
         P_Pa = P_out[ip]
         T_sol = solidus_func(P_Pa)
@@ -585,25 +588,27 @@ def generate_spider_eos_tables(
         if np.isnan(T_sol) or np.isnan(T_liq) or T_sol <= 0 or T_liq <= 0:
             continue
 
-        # Solid phase: T from T_min to T_solidus
-        T_lo = max(table['t_min'], 300.0)
-        if T_sol > T_lo:
-            T_solid_range = np.linspace(T_lo, T_sol, n_T_sample)
-            for T in T_solid_range:
-                S_val = float(s_solid_interp((np.log10(P_Pa), np.log10(T))))
-                if np.isfinite(S_val):
-                    S_min_solid[ip] = min(S_min_solid[ip], S_val)
-                    S_max_solid[ip] = max(S_max_solid[ip], S_val)
+        logP = np.log10(P_Pa)
 
-        # Melt phase: T from T_liquidus to T_max
-        T_hi = min(table['t_max'], 1e5)
-        if T_liq < T_hi:
-            T_melt_range = np.linspace(T_liq, T_hi, n_T_sample)
-            for T in T_melt_range:
-                S_val = float(s_melt_interp((np.log10(P_Pa), np.log10(T))))
-                if np.isfinite(S_val):
-                    S_min_melt[ip] = min(S_min_melt[ip], S_val)
-                    S_max_melt[ip] = max(S_max_melt[ip], S_val)
+        # Solid phase: vectorized S lookup over T range
+        if T_sol > T_lo_global:
+            T_arr = np.linspace(T_lo_global, T_sol, n_T_sample)
+            pts = np.column_stack([np.full(n_T_sample, logP), np.log10(T_arr)])
+            S_arr = s_solid_interp(pts)
+            finite = np.isfinite(S_arr)
+            if finite.any():
+                S_min_solid[ip] = np.min(S_arr[finite])
+                S_max_solid[ip] = np.max(S_arr[finite])
+
+        # Melt phase: vectorized S lookup over T range
+        if T_liq < T_hi_global:
+            T_arr = np.linspace(T_liq, T_hi_global, n_T_sample)
+            pts = np.column_stack([np.full(n_T_sample, logP), np.log10(T_arr)])
+            S_arr = s_melt_interp(pts)
+            finite = np.isfinite(S_arr)
+            if finite.any():
+                S_min_melt[ip] = np.min(S_arr[finite])
+                S_max_melt[ip] = np.max(S_arr[finite])
 
     # Build global S ranges for each phase
     valid_solid = np.isfinite(S_min_solid) & np.isfinite(S_max_solid)
@@ -704,9 +709,6 @@ def generate_spider_eos_tables(
             if T_lo >= T_hi:
                 continue
 
-            # Narrow T bounds to the valid data region at this pressure.
-            # The PALEOS table has NaN entries at extreme temperatures, so
-            # we search inward from both ends to find the last valid T.
             T_lo_valid, T_hi_valid = _find_valid_T_bounds(logP, T_lo, T_hi, s_phase_interp)
             if T_lo_valid is None:
                 continue
@@ -717,44 +719,45 @@ def generate_spider_eos_tables(
             if np.isnan(Sa) or np.isnan(Sb):
                 continue
 
-            for js in range(nS_out):
-                S_target = S_grid[js]
+            S_lo, S_hi = min(Sa, Sb), max(Sa, Sb)
 
-                if S_target < min(Sa, Sb) or S_target > max(Sa, Sb):
-                    continue
+            # Vectorized bisection: invert S(P,T) -> T for all S values at once
+            valid_s = (S_grid >= S_lo) & (S_grid <= S_hi)
+            idx_s = np.where(valid_s)[0]
+            if len(idx_s) == 0:
+                continue
 
-                # Bisect to find T such that S(P, T) = S_target
-                Ta_bs, Tb_bs = T_lo_valid, T_hi_valid
+            S_batch = S_grid[idx_s]
+            Ta_arr = np.full(len(idx_s), T_lo_valid)
+            Tb_arr = np.full(len(idx_s), T_hi_valid)
 
-                # Bisection (40 iterations gives ~1e-12 relative precision)
-                for _ in range(40):
-                    Tm = 0.5 * (Ta_bs + Tb_bs)
-                    Sm = float(s_phase_interp((logP, np.log10(Tm))))
-                    if np.isnan(Sm):
-                        break
-                    if Sm < S_target:
-                        Ta_bs = Tm
-                    else:
-                        Tb_bs = Tm
-                    if abs(Tb_bs - Ta_bs) < 0.01:  # 0.01 K precision
-                        break
+            for _ in range(40):
+                Tm_arr = 0.5 * (Ta_arr + Tb_arr)
+                logT_arr = np.log10(Tm_arr)
+                pts_arr = np.column_stack([np.full(len(idx_s), logP), logT_arr])
+                Sm_arr = s_phase_interp(pts_arr)
 
-                T_found = 0.5 * (Ta_bs + Tb_bs)
-                logT = np.log10(T_found)
-                pt = (logP, logT)
+                below = Sm_arr < S_batch
+                Ta_arr = np.where(below, Tm_arr, Ta_arr)
+                Tb_arr = np.where(below, Tb_arr, Tm_arr)
 
-                result['temperature'][js, ip] = T_found
-                result['rho'][js, ip] = float(rho_phase_interp(pt))
-                result['cp'][js, ip] = float(cp_phase_interp(pt))
-                result['alpha'][js, ip] = float(alpha_phase_interp(pt))
-                # Convert dimensionless nabla_ad = d ln T / d ln P to
-                # dT/dP_s [K/Pa] for SPIDER: dT/dP_s = nabla_ad * T / P
-                nad_val = float(nad_phase_interp(pt))
-                if P_Pa > 0 and np.isfinite(nad_val):
-                    result['nabla_ad'][js, ip] = nad_val * T_found / P_Pa
-                else:
-                    result['nabla_ad'][js, ip] = 0.0
-                n_filled += 1
+                if np.max(Tb_arr - Ta_arr) < 0.01:
+                    break
+
+            T_found = 0.5 * (Ta_arr + Tb_arr)
+            logT_arr = np.log10(T_found)
+            pts = np.column_stack([np.full(len(idx_s), logP), logT_arr])
+
+            result['temperature'][idx_s, ip] = T_found
+            result['rho'][idx_s, ip] = rho_phase_interp(pts)
+            result['cp'][idx_s, ip] = cp_phase_interp(pts)
+            result['alpha'][idx_s, ip] = alpha_phase_interp(pts)
+            nad_vals = nad_phase_interp(pts)
+            if P_Pa > 0:
+                result['nabla_ad'][idx_s, ip] = np.where(
+                    np.isfinite(nad_vals), nad_vals * T_found / P_Pa, 0.0
+                )
+            n_filled += len(idx_s)
 
         fill_frac = n_filled / n_total if n_total > 0 else 0
         logger.info(
