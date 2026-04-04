@@ -524,6 +524,7 @@ def calculate_mixed_density_batch(
     condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
     condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
     binodal_T_scale=BINODAL_T_SCALE_DEFAULT,
+    frozen_sigma=None,
 ):
     """Vectorized mixed density for a batch of (P, T) points in one layer.
 
@@ -551,6 +552,11 @@ def calculate_mixed_density_batch(
         Global sigmoid width fallback (kg/m^3).
     binodal_T_scale : float
         Binodal sigmoid width in K.
+    frozen_sigma : dict or None
+        Pre-computed per-component sigmoid weights (keyed by EOS name,
+        values are 1D arrays of shape (n,)). When provided, overrides
+        the sigmoid computation to stabilize the Picard density iteration
+        for volatile-extended mantles.
 
     Returns
     -------
@@ -599,23 +605,26 @@ def calculate_mixed_density_batch(
         bad = ~np.isfinite(rho_i) | (rho_i <= 0)
         any_invalid |= bad
 
-        # Per-component sigmoid
-        rho_min_i = _COMPONENT_RHO_MIN.get(eos_name, condensed_rho_min)
-        rho_scale_i = _COMPONENT_RHO_SCALE.get(eos_name, condensed_rho_scale)
-        sigma_i = _condensed_weight_batch(np.where(bad, 1.0, rho_i), rho_min_i, rho_scale_i)
+        # Per-component sigmoid (use frozen weights if provided)
+        if frozen_sigma is not None and eos_name in frozen_sigma:
+            sigma_i = frozen_sigma[eos_name].copy()
+        else:
+            rho_min_i = _COMPONENT_RHO_MIN.get(eos_name, condensed_rho_min)
+            rho_scale_i = _COMPONENT_RHO_SCALE.get(eos_name, condensed_rho_scale)
+            sigma_i = _condensed_weight_batch(np.where(bad, 1.0, rho_i), rho_min_i, rho_scale_i)
 
-        # Binodal suppression (scalar per shell, only for H2 components)
-        if eos_name in _H2_EOS_NAMES:
-            for j in range(n):
-                if not bad[j]:
-                    sigma_i[j] *= _binodal_factor(
-                        eos_name,
-                        w_i,
-                        mixture,
-                        pressures[j],
-                        temperatures[j],
-                        binodal_T_scale,
-                    )
+            # Binodal suppression (scalar per shell, only for H2 components)
+            if eos_name in _H2_EOS_NAMES:
+                for j in range(n):
+                    if not bad[j]:
+                        sigma_i[j] *= _binodal_factor(
+                            eos_name,
+                            w_i,
+                            mixture,
+                            pressures[j],
+                            temperatures[j],
+                            binodal_T_scale,
+                        )
 
         w_eff = w_i * sigma_i
         w_eff = np.where(bad, 0.0, w_eff)

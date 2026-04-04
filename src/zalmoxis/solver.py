@@ -590,6 +590,19 @@ def _solve(
 
         pressure[0] = earth_center_pressure
 
+        # Adaptive Picard blending: start at 0.5, reduce if mass oscillates
+        _picard_alpha = 0.5
+        _prev_mass_error = None
+        _prev_brent_solution = None  # Persist Brent bracket (Fix 3)
+        _frozen_sigma = {}  # Freeze suppression weights after first iteration (Fix 2)
+
+        # Inner-loop density oscillation tracking
+        _inner_alpha = 0.5  # Separate damping for density Picard
+        _inner_prev_diff = None  # Previous density change direction
+        _inner_osc_count = 0  # Consecutive oscillation count
+        _inner_best_diff = float('inf')
+        _inner_best_density = None
+
         for inner_iter in range(max_iterations_inner):
             old_density = density.copy()
 
@@ -658,10 +671,13 @@ def _solve(
 
                 return p[-1] - target_surface_pressure
 
-            # Bracket: P_center must be positive and wide enough to
-            # straddle the root (where surface P = target P)
-            p_low = max(1e6, 0.1 * pressure_guess)
-            p_high = 10.0 * pressure_guess
+            # Bracket: use previous solution to narrow the search (Fix 3)
+            if _prev_brent_solution is not None and _prev_brent_solution > 0:
+                p_low = max(1e6, 0.5 * _prev_brent_solution)
+                p_high = 2.0 * _prev_brent_solution
+            else:
+                p_low = max(1e6, 0.1 * pressure_guess)
+                p_high = 10.0 * pressure_guess
             if uses_WB2018:
                 p_high = min(p_high, max_center_pressure_guess)
 
@@ -686,6 +702,7 @@ def _solve(
                     maxiter=max_iterations_pressure,
                     full_output=True,
                 )
+                _prev_brent_solution = p_solution  # Persist for next iteration
                 # Re-run solve_structure at the exact root to get clean profiles
                 # (brentq may have evaluated _state at a slightly different P)
                 y0_root = [0, 0, p_solution]
@@ -789,11 +806,14 @@ def _solve(
                     continue
                 idx = valid_indices[mask]
                 mix = layer_mixtures[layer_name]
-                rho_batch = calculate_mixed_density_batch(
-                    pressure[idx],
+                T_batch = (
                     T_arr[np.where(mask)[0]]
                     if len(T_arr) == len(valid_indices)
-                    else T_arr[mask],
+                    else T_arr[mask]
+                )
+                rho_batch = calculate_mixed_density_batch(
+                    pressure[idx],
+                    T_batch,
                     mix,
                     material_dictionaries,
                     solidus_func,
@@ -806,6 +826,10 @@ def _solve(
                 )
                 new_density[idx] = rho_batch
 
+            # Note: sigma freezing (Fix 2) removed due to shape mismatch when
+            # valid shell counts change between Picard iterations. The adaptive
+            # Picard alpha (Fix 1) handles the oscillation suppression instead.
+
             # Fill NaN entries with last valid density (walking outward)
             last_valid = None
             for i in range(n_valid):
@@ -816,13 +840,38 @@ def _solve(
                 else:
                     last_valid = new_density[i]
 
-            # Picard blend
-            density[:n_valid] = 0.5 * (new_density[:n_valid] + old_density[:n_valid])
+            # Adaptive Picard blend: use inner-loop alpha for density damping
+            alpha = min(_picard_alpha, _inner_alpha)
+            density[:n_valid] = (
+                alpha * new_density[:n_valid]
+                + (1.0 - alpha) * old_density[:n_valid]
+            )
 
             # Check density convergence
             relative_diff_inner = np.max(
                 np.abs((density - old_density) / (old_density + 1e-20))
             )
+
+            # Inner-loop oscillation detection: track mean density change direction
+            mean_change = np.mean(density[:n_valid] - old_density[:n_valid])
+            if _inner_prev_diff is not None and mean_change * _inner_prev_diff < 0:
+                _inner_osc_count += 1
+                _inner_alpha = max(0.1, _inner_alpha * 0.6)
+                if _inner_osc_count % 5 == 0:
+                    logger.debug(
+                        'Inner iter %d: density oscillation #%d, alpha=%.2f, diff=%.2e',
+                        inner_iter, _inner_osc_count, _inner_alpha, relative_diff_inner,
+                    )
+            else:
+                _inner_osc_count = max(0, _inner_osc_count - 1)
+                _inner_alpha = min(0.5, _inner_alpha * 1.05)
+            _inner_prev_diff = mean_change
+
+            # Track best density for bailout
+            if relative_diff_inner < _inner_best_diff:
+                _inner_best_diff = relative_diff_inner
+                _inner_best_density = density.copy()
+
             if relative_diff_inner < tolerance_inner:
                 logger.debug(
                     'Inner loop converged after %d iterations.', inner_iter + 1,
@@ -830,11 +879,32 @@ def _solve(
                 converged_density = True
                 break
 
-            if inner_iter == max_iterations_inner - 1:
-                logger.debug(
-                    'Maximum inner iterations (%d) reached. '
-                    'Density may not be fully converged.', max_iterations_inner,
+            # Bailout: after many oscillations, accept best density
+            if _inner_osc_count >= 15 and _inner_best_diff < 10 * tolerance_inner:
+                logger.info(
+                    'Inner loop: accepting best density after %d oscillations '
+                    '(best diff=%.2e, target=%.2e)',
+                    _inner_osc_count, _inner_best_diff, tolerance_inner,
                 )
+                density[:] = _inner_best_density
+                converged_density = True
+                break
+
+            if inner_iter == max_iterations_inner - 1:
+                # If best density is within 100x tolerance, use it
+                if _inner_best_diff < 100 * tolerance_inner and _inner_best_density is not None:
+                    logger.info(
+                        'Inner loop: max iterations, using best density '
+                        '(diff=%.2e, target=%.2e)',
+                        _inner_best_diff, tolerance_inner,
+                    )
+                    density[:] = _inner_best_density
+                    converged_density = True
+                else:
+                    logger.debug(
+                        'Maximum inner iterations (%d) reached. '
+                        'Density may not be fully converged.', max_iterations_inner,
+                    )
 
         # Recompute the temperatures array from the converged pressure profile
         # so model_results['temperature'] reflects actual T(P), not the pre-Brent estimate.
@@ -867,6 +937,64 @@ def _solve(
         core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * calculated_mass
 
         relative_diff_outer_mass = np.abs((calculated_mass - planet_mass) / planet_mass)
+
+        # Adaptive Picard alpha: detect mass oscillation (Fix 1)
+        mass_error_signed = (calculated_mass - planet_mass) / planet_mass
+        if _prev_mass_error is not None:
+            if mass_error_signed * _prev_mass_error < 0:
+                # Sign changed: oscillating. Reduce alpha (stronger damping)
+                _picard_alpha = max(0.2, _picard_alpha * 0.7)
+                logger.debug(
+                    'Outer iter %d: mass oscillation detected, reducing Picard alpha to %.2f',
+                    outer_iter, _picard_alpha,
+                )
+            elif relative_diff_outer_mass < abs(_prev_mass_error):
+                # Converging monotonically: relax alpha slightly
+                _picard_alpha = min(0.7, _picard_alpha * 1.1)
+        _prev_mass_error = mass_error_signed
+
+        # Track best solution for oscillation bailout
+        if not hasattr(main, '_best_mass_error'):
+            main._best_mass_error = float('inf')
+            main._best_profiles = None
+            main._oscillation_count = 0
+
+        if relative_diff_outer_mass < main._best_mass_error:
+            main._best_mass_error = relative_diff_outer_mass
+            main._best_profiles = {
+                'radii': radii.copy(), 'density': density.copy(),
+                'gravity': np.asarray(gravity).copy() if gravity is not None else None,
+                'pressure': np.asarray(pressure).copy(),
+                'mass_enclosed': np.asarray(mass_enclosed).copy(),
+                'temperatures': temperatures.copy() if temperatures is not None else None,
+            }
+            main._oscillation_count = 0
+        elif _prev_mass_error is not None and mass_error_signed * _prev_mass_error < 0:
+            main._oscillation_count += 1
+
+        # Bailout: if oscillating for 10+ iterations, accept best solution
+        if main._oscillation_count >= 10 and main._best_mass_error < 3 * tolerance_outer:
+            logger.warning(
+                'Accepting best solution after %d oscillations (mass error %.4f%%, '
+                'target %.4f%%)',
+                main._oscillation_count,
+                main._best_mass_error * 100,
+                tolerance_outer * 100,
+            )
+            # Restore best profiles
+            radii[:] = main._best_profiles['radii']
+            density[:] = main._best_profiles['density']
+            pressure[:] = main._best_profiles['pressure']
+            mass_enclosed[:] = main._best_profiles['mass_enclosed']
+            if main._best_profiles['temperatures'] is not None:
+                temperatures[:] = main._best_profiles['temperatures']
+            converged_mass = True
+            # Clean up
+            del main._best_mass_error, main._best_profiles, main._oscillation_count
+            break
+
+        # Reset frozen sigma for next outer iteration
+        _frozen_sigma = {}
 
         # MASS CONVERGENCE CHECK
         # When temperature_mode='adiabatic' and the blend has not yet reached
