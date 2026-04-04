@@ -769,39 +769,36 @@ def generate_spider_eos_tables(
         )
         return result
 
-    # Fill solid phase grids
+    # Fill solid and melt phase grids in parallel (independent computations)
     def _T_lo_solid(P):
         return max(table['t_min'], 300.0)
 
-    solid_grids = _fill_phase_grid(
-        P_out,
-        S_solid_grid,
-        _T_lo_solid,
-        solidus_func,
-        'solid',
-        s_phase_interp=s_solid_interp,
-        rho_phase_interp=rho_solid_interp,
-        cp_phase_interp=cp_solid_interp,
-        alpha_phase_interp=alpha_solid_interp,
-        nad_phase_interp=nad_solid_interp,
-    )
-
-    # Fill melt phase grids
     def _T_hi_melt(P):
         return min(table['t_max'], 1e5)
 
-    melt_grids = _fill_phase_grid(
-        P_out,
-        S_melt_grid,
-        liquidus_func,
-        _T_hi_melt,
-        'melt',
-        s_phase_interp=s_melt_interp,
-        rho_phase_interp=rho_melt_interp,
-        cp_phase_interp=cp_melt_interp,
-        alpha_phase_interp=alpha_melt_interp,
-        nad_phase_interp=nad_melt_interp,
-    )
+    from concurrent.futures import ThreadPoolExecutor
+
+    def _fill_solid():
+        return _fill_phase_grid(
+            P_out, S_solid_grid, _T_lo_solid, solidus_func, 'solid',
+            s_phase_interp=s_solid_interp, rho_phase_interp=rho_solid_interp,
+            cp_phase_interp=cp_solid_interp, alpha_phase_interp=alpha_solid_interp,
+            nad_phase_interp=nad_solid_interp,
+        )
+
+    def _fill_melt():
+        return _fill_phase_grid(
+            P_out, S_melt_grid, liquidus_func, _T_hi_melt, 'melt',
+            s_phase_interp=s_melt_interp, rho_phase_interp=rho_melt_interp,
+            cp_phase_interp=cp_melt_interp, alpha_phase_interp=alpha_melt_interp,
+            nad_phase_interp=nad_melt_interp,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        fut_solid = pool.submit(_fill_solid)
+        fut_melt = pool.submit(_fill_melt)
+        solid_grids = fut_solid.result()
+        melt_grids = fut_melt.result()
 
     # Fill NaN cells by nearest-neighbor extrapolation. SPIDER does
     # not handle NaN in its lookup tables.

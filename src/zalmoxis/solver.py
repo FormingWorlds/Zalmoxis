@@ -133,6 +133,7 @@ def main(
     layer_mixtures=None,
     volatile_profile=None,
     temperature_function=None,
+    p_center_hint=None,
 ):
     """Run the exoplanet internal structure model with automatic retry.
 
@@ -181,6 +182,7 @@ def main(
         layer_mixtures=layer_mixtures,
         volatile_profile=volatile_profile,
         temperature_function=temperature_function,
+        p_center_hint=p_center_hint,
     )
 
     if not result['converged']:
@@ -239,6 +241,7 @@ def _solve(
     layer_mixtures=None,
     volatile_profile=None,
     temperature_function=None,
+    p_center_hint=None,
 ):
     """Internal solver: single attempt at the structure solve.
 
@@ -590,12 +593,16 @@ def _solve(
         for inner_iter in range(max_iterations_inner):
             old_density = density.copy()
 
-            # Scaling-law estimate for central pressure
-            pressure_guess = (
-                earth_center_pressure
-                * (planet_mass / earth_mass) ** 2
-                * (radius_guess / earth_radius) ** (-4)
-            )
+            # Central pressure estimate: use cached hint if available,
+            # otherwise fall back to scaling law
+            if p_center_hint is not None and p_center_hint > 0:
+                pressure_guess = p_center_hint
+            else:
+                pressure_guess = (
+                    earth_center_pressure
+                    * (planet_mass / earth_mass) ** 2
+                    * (radius_guess / earth_radius) ** (-4)
+                )
             # Cap the central pressure guess for WolfBower2018 (1 TPa table)
             # but not for RTPress100TPa (100 TPa melt table)
             uses_WB2018 = 'WolfBower2018:MgSiO3' in all_comps
@@ -962,6 +969,7 @@ def _solve(
         'converged_pressure': converged_pressure,
         'converged_density': converged_density,
         'converged_mass': converged_mass,
+        'p_center': pressure[0] if len(pressure) > 0 else None,
     }
     return model_results
 
