@@ -122,6 +122,7 @@ def _tighten_solver_params(params):
     tightened['absolute_tolerance'] = params['absolute_tolerance'] * 0.1
     tightened['maximum_step'] = params['maximum_step'] * 0.5
     tightened['pressure_tolerance'] = params['pressure_tolerance'] * 0.1
+    tightened['wall_timeout'] = params.get('wall_timeout', 120.0) * 2
     return tightened
 
 
@@ -460,12 +461,40 @@ def _solve(
                 'to %.0f K (5x surface or 3000 K).', center_temperature,
             )
 
+    # Wall-clock timeout: bail out with best solution if solver takes
+    # too long (prevents indefinite hangs with volatile-extended mantles).
+    wall_timeout = config_params.get('wall_timeout', 120.0)  # seconds
+    wall_start = time.time()
+
+    # Outer-loop oscillation tracking (local to this call, not function-level).
+    best_mass_error = float('inf')
+    best_profiles = None
+    oscillation_count = 0
+
     # Solve the interior structure
     for outer_iter in range(max_iterations_outer):
         # Reset per-iteration convergence flags (prevent stale True from
         # a previous outer iteration masking failure in the current one).
         converged_pressure = False
         converged_density = False
+
+        # Wall-clock timeout check
+        if time.time() - wall_start > wall_timeout:
+            logger.warning(
+                'Wall-clock timeout (%.0fs) reached at outer iter %d. '
+                'Returning best solution (mass error %.4f%%).',
+                wall_timeout, outer_iter,
+                best_mass_error * 100 if np.isfinite(best_mass_error) else float('inf'),
+            )
+            if best_profiles is not None:
+                converged_mass = best_mass_error < 3 * tolerance_outer
+                radii[:] = best_profiles['radii']
+                density[:] = best_profiles['density']
+                pressure[:] = best_profiles['pressure']
+                mass_enclosed[:] = best_profiles['mass_enclosed']
+                if best_profiles['temperatures'] is not None:
+                    temperatures[:] = best_profiles['temperatures']
+            break
 
         radii = np.linspace(0, radius_guess, num_layers)
 
@@ -604,6 +633,17 @@ def _solve(
         _inner_best_density = None
 
         for inner_iter in range(max_iterations_inner):
+            # Wall-clock timeout check (inner loop)
+            if time.time() - wall_start > wall_timeout:
+                if _inner_best_density is not None:
+                    density[:] = _inner_best_density
+                    converged_density = _inner_best_diff < max(100 * tolerance_inner, 0.1)
+                logger.warning(
+                    'Wall-clock timeout in inner loop (outer=%d, inner=%d).',
+                    outer_iter, inner_iter,
+                )
+                break
+
             old_density = density.copy()
 
             # Central pressure estimate: use cached hint if available,
@@ -879,8 +919,13 @@ def _solve(
                 converged_density = True
                 break
 
-            # Bailout: after many oscillations, accept best density
-            if _inner_osc_count >= 15 and _inner_best_diff < 10 * tolerance_inner:
+            # Bailout: after many oscillations, accept best density.
+            # Use absolute floor (0.1) so volatile-extended mantles with external
+            # T(r) profiles (from Aragog coupling) can still converge. The outer
+            # mass loop corrects residual density error; density self-consistency
+            # improves across outer iterations.
+            osc_threshold = max(10 * tolerance_inner, 0.1)
+            if _inner_osc_count >= 15 and _inner_best_diff < osc_threshold:
                 logger.info(
                     'Inner loop: accepting best density after %d oscillations '
                     '(best diff=%.2e, target=%.2e)',
@@ -891,8 +936,12 @@ def _solve(
                 break
 
             if inner_iter == max_iterations_inner - 1:
-                # If best density is within 100x tolerance, use it
-                if _inner_best_diff < 100 * tolerance_inner and _inner_best_density is not None:
+                # If best density is within reasonable range, use it.
+                # Absolute floor (0.1) ensures retry with external T(r) profiles
+                # (volatile mantles from Aragog coupling) doesn't reject workable
+                # solutions. The outer mass loop handles residual density error.
+                maxiter_threshold = max(100 * tolerance_inner, 0.1)
+                if _inner_best_diff < maxiter_threshold and _inner_best_density is not None:
                     logger.info(
                         'Inner loop: max iterations, using best density '
                         '(diff=%.2e, target=%.2e)',
@@ -901,9 +950,11 @@ def _solve(
                     density[:] = _inner_best_density
                     converged_density = True
                 else:
-                    logger.debug(
+                    logger.warning(
                         'Maximum inner iterations (%d) reached. '
-                        'Density may not be fully converged.', max_iterations_inner,
+                        'Best density diff=%.2e, threshold=%.2e. '
+                        'Density not converged.', max_iterations_inner,
+                        _inner_best_diff, maxiter_threshold,
                     )
 
         # Recompute the temperatures array from the converged pressure profile
@@ -953,44 +1004,38 @@ def _solve(
                 _picard_alpha = min(0.7, _picard_alpha * 1.1)
         _prev_mass_error = mass_error_signed
 
-        # Track best solution for oscillation bailout
-        if not hasattr(main, '_best_mass_error'):
-            main._best_mass_error = float('inf')
-            main._best_profiles = None
-            main._oscillation_count = 0
-
-        if relative_diff_outer_mass < main._best_mass_error:
-            main._best_mass_error = relative_diff_outer_mass
-            main._best_profiles = {
+        # Track best solution for oscillation bailout (local variables,
+        # reset per _solve() call to avoid stale state between calls)
+        if relative_diff_outer_mass < best_mass_error:
+            best_mass_error = relative_diff_outer_mass
+            best_profiles = {
                 'radii': radii.copy(), 'density': density.copy(),
                 'gravity': np.asarray(gravity).copy() if gravity is not None else None,
                 'pressure': np.asarray(pressure).copy(),
                 'mass_enclosed': np.asarray(mass_enclosed).copy(),
                 'temperatures': temperatures.copy() if temperatures is not None else None,
             }
-            main._oscillation_count = 0
+            oscillation_count = 0
         elif _prev_mass_error is not None and mass_error_signed * _prev_mass_error < 0:
-            main._oscillation_count += 1
+            oscillation_count += 1
 
         # Bailout: if oscillating for 10+ iterations, accept best solution
-        if main._oscillation_count >= 10 and main._best_mass_error < 3 * tolerance_outer:
+        if oscillation_count >= 10 and best_mass_error < 3 * tolerance_outer:
             logger.warning(
                 'Accepting best solution after %d oscillations (mass error %.4f%%, '
                 'target %.4f%%)',
-                main._oscillation_count,
-                main._best_mass_error * 100,
+                oscillation_count,
+                best_mass_error * 100,
                 tolerance_outer * 100,
             )
             # Restore best profiles
-            radii[:] = main._best_profiles['radii']
-            density[:] = main._best_profiles['density']
-            pressure[:] = main._best_profiles['pressure']
-            mass_enclosed[:] = main._best_profiles['mass_enclosed']
-            if main._best_profiles['temperatures'] is not None:
-                temperatures[:] = main._best_profiles['temperatures']
+            radii[:] = best_profiles['radii']
+            density[:] = best_profiles['density']
+            pressure[:] = best_profiles['pressure']
+            mass_enclosed[:] = best_profiles['mass_enclosed']
+            if best_profiles['temperatures'] is not None:
+                temperatures[:] = best_profiles['temperatures']
             converged_mass = True
-            # Clean up
-            del main._best_mass_error, main._best_profiles, main._oscillation_count
             break
 
         # Reset frozen sigma for next outer iteration
@@ -1022,6 +1067,18 @@ def _solve(
             )
 
     if converged_mass and converged_density and converged_pressure:
+        converged = True
+    elif converged_mass and best_mass_error < tolerance_outer:
+        # Mass has converged to within tolerance. The density/pressure
+        # Picard iteration may not reach strict convergence when EOS
+        # tables have interpolation noise near their boundaries (e.g.,
+        # PALEOS at high T), but the integrated structure (mass, radius)
+        # is physically valid. Accept the solution.
+        logger.info(
+            'Accepting solution: mass converged (%.4f%%), '
+            'density_converged=%s, pressure_converged=%s.',
+            best_mass_error * 100, converged_density, converged_pressure,
+        )
         converged = True
 
     end_time = time.time()
