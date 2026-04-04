@@ -463,7 +463,7 @@ def _solve(
 
     # Wall-clock timeout: bail out with best solution if solver takes
     # too long (prevents indefinite hangs with volatile-extended mantles).
-    wall_timeout = config_params.get('wall_timeout', 120.0)  # seconds
+    wall_timeout = config_params.get('wall_timeout', 300.0)  # seconds
     wall_start = time.time()
 
     # Outer-loop oscillation tracking (local to this call, not function-level).
