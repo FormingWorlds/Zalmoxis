@@ -14,6 +14,7 @@ import numpy as np
 from .interpolation import (
     _ensure_unified_cache,
     _fast_bilinear,
+    fast_bilinear_batch,
     _paleos_clamp_temperature,
     _paleos_clamp_warned,
 )
@@ -229,13 +230,13 @@ def get_paleos_unified_density_batch(
     log_t_clamped = np.where(valid_bounds & (log_t > local_tmax), local_tmax, log_t_clamped)
 
     if mushy_zone_factor >= 1.0 or len(cached['liquidus_log_p']) == 0:
-        # Direct lookup: batch interpolation
-        pts = np.column_stack([log_p, log_t_clamped])
-        result = cached['density_interp'](pts)
+        # Direct lookup: fast vectorized bilinear interpolation
+        result = fast_bilinear_batch(log_p, log_t_clamped, cached['density_grid'], cached)
         # NN fallback for NaN entries
         nan_mask = ~np.isfinite(result)
         if np.any(nan_mask):
-            result[nan_mask] = cached['density_nn'](pts[nan_mask])
+            pts_nn = np.column_stack([log_p[nan_mask], log_t_clamped[nan_mask]])
+            result[nan_mask] = cached['density_nn'](pts_nn)
         return result
 
     # Mushy zone path (vectorized).
@@ -264,11 +265,11 @@ def get_paleos_unified_density_batch(
     mushy = ~above & ~below
 
     # Direct lookup for above-liquidus and below-solidus shells
-    pts = np.column_stack([log_p, log_t_clamped])
-    result = cached['density_interp'](pts)
+    result = fast_bilinear_batch(log_p, log_t_clamped, cached['density_grid'], cached)
     nan_mask = ~np.isfinite(result)
     if np.any(nan_mask):
-        result[nan_mask] = cached['density_nn'](pts[nan_mask])
+        pts_nn = np.column_stack([log_p[nan_mask], log_t_clamped[nan_mask]])
+        result[nan_mask] = cached['density_nn'](pts_nn)
 
     # Mushy zone shells: volume-average between solid-side and liquid-side
     if np.any(mushy):
@@ -282,11 +283,11 @@ def get_paleos_unified_density_batch(
         sol_valid = np.isfinite(sol_tmin) & np.isfinite(sol_tmax)
         log_t_sol_c = np.where(sol_valid & (log_t_sol_c < sol_tmin), sol_tmin, log_t_sol_c)
         log_t_sol_c = np.where(sol_valid & (log_t_sol_c > sol_tmax), sol_tmax, log_t_sol_c)
-        pts_sol = np.column_stack([log_p[m_idx], log_t_sol_c])
-        rho_sol = cached['density_interp'](pts_sol)
+        rho_sol = fast_bilinear_batch(log_p[m_idx], log_t_sol_c, cached['density_grid'], cached)
         nn_sol = ~np.isfinite(rho_sol)
         if np.any(nn_sol):
-            rho_sol[nn_sol] = cached['density_nn'](pts_sol[nn_sol])
+            pts_sol_nn = np.column_stack([log_p[m_idx][nn_sol], log_t_sol_c[nn_sol]])
+            rho_sol[nn_sol] = cached['density_nn'](pts_sol_nn)
 
         # Liquid-side density at T_liq
         log_t_liq_c = log_t_liq[m_idx].copy()
@@ -295,11 +296,11 @@ def get_paleos_unified_density_batch(
         liq_valid = np.isfinite(liq_tmin) & np.isfinite(liq_tmax)
         log_t_liq_c = np.where(liq_valid & (log_t_liq_c < liq_tmin), liq_tmin, log_t_liq_c)
         log_t_liq_c = np.where(liq_valid & (log_t_liq_c > liq_tmax), liq_tmax, log_t_liq_c)
-        pts_liq = np.column_stack([log_p[m_idx], log_t_liq_c])
-        rho_liq = cached['density_interp'](pts_liq)
+        rho_liq = fast_bilinear_batch(log_p[m_idx], log_t_liq_c, cached['density_grid'], cached)
         nn_liq = ~np.isfinite(rho_liq)
         if np.any(nn_liq):
-            rho_liq[nn_liq] = cached['density_nn'](pts_liq[nn_liq])
+            pts_liq_nn = np.column_stack([log_p[m_idx][nn_liq], log_t_liq_c[nn_liq]])
+            rho_liq[nn_liq] = cached['density_nn'](pts_liq_nn)
 
         # Volume additivity
         both_ok = np.isfinite(rho_sol) & np.isfinite(rho_liq) & (rho_sol > 0) & (rho_liq > 0)
