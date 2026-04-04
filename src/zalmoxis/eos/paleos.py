@@ -67,15 +67,13 @@ def get_paleos_unified_density(
         cached = _ensure_unified_cache(eos_file, interpolation_functions)
 
         p_min, p_max = cached['p_min'], cached['p_max']
-        if pressure < p_min or pressure > p_max:
-            logger.debug(
-                f'PALEOS unified: P={pressure:.2e} Pa out of bounds '
-                f'[{p_min:.2e}, {p_max:.2e}]. Clamping.'
-            )
-            pressure = np.clip(pressure, p_min, p_max)
+        if pressure < p_min:
+            pressure = p_min
+        elif pressure > p_max:
+            pressure = p_max
 
         log_p = np.log10(pressure)
-        log_t = np.log10(max(temperature, 1.0))
+        log_t = np.log10(temperature if temperature > 1.0 else 1.0)
 
         # Per-cell clamping
         log_t_clamped, was_clamped = _paleos_clamp_temperature(log_p, log_t, cached)
@@ -91,9 +89,9 @@ def get_paleos_unified_density(
         if mushy_zone_factor >= 1.0 or len(cached['liquidus_log_p']) == 0:
             # Direct lookup: no mushy zone (fast bilinear path)
             density = _fast_bilinear(log_p, log_t_clamped, cached['density_grid'], cached)
-            if not np.isfinite(density):
+            if density != density:  # fast NaN check (NaN != NaN)
                 density = float(cached['density_nn']((log_p, log_t_clamped)))
-            return density if np.isfinite(density) else None
+            return density if density == density else None
 
         # Mushy zone: interpolate liquidus T at this P.
         # If query pressure is outside the liquidus coverage (e.g. at

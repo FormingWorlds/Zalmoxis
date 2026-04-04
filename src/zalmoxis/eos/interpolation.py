@@ -347,13 +347,10 @@ def load_paleos_unified_table(eos_file):
 
 
 def _fast_bilinear(log_p, log_t, grid, cached):
-    """O(1) bilinear interpolation on a nominally log-uniform grid.
+    """O(1) bilinear interpolation on a log-uniform grid (scalar).
 
-    Replaces scipy's RegularGridInterpolator for scalar lookups. The
-    index computation uses O(1) arithmetic with a rounding correction
-    to handle floating-point spacing jitter in the grid axes, then
-    computes the fractional position from the actual stored grid
-    coordinates for exact interpolation.
+    Optimized for the hot path: called ~2M times per structure solve.
+    Uses direct floor indexing (no rounding, no max/min builtins).
 
     Parameters
     ----------
@@ -362,69 +359,55 @@ def _fast_bilinear(log_p, log_t, grid, cached):
     log_t : float
         log10 of temperature, already clamped to valid range.
     grid : numpy.ndarray
-        2D array of values (density or nabla_ad), shape (n_p, n_t).
+        2D array of values, shape (n_p, n_t).
     cached : dict
-        Cache entry with grid metadata (logp_min, dlog_p, unique_log_p,
-        unique_log_t, etc.).
+        Cache entry with grid metadata.
 
     Returns
     -------
     float
         Interpolated value. NaN if any corner is NaN.
     """
-    # Guard: grids with fewer than 2 points cannot be interpolated
-    if cached['n_p'] < 2 or cached['n_t'] < 2:
+    n_p_m2 = cached['n_p'] - 2
+    n_t_m2 = cached['n_t'] - 2
+
+    if n_p_m2 < 0 or n_t_m2 < 0:
         return grid[0, 0]
 
-    ulp = cached['unique_log_p']
-    ult = cached['unique_log_t']
-    n_p = cached['n_p']
-    n_t = cached['n_t']
-
-    # O(1) index estimation for nominally log-uniform grid.
-    # Use round() to get the nearest node, then determine the lower
-    # bounding index. This handles floating-point spacing jitter that
-    # causes int() to land on the wrong cell.
+    # O(1) lower-bound index via floor division
     fp = (log_p - cached['logp_min']) / cached['dlog_p']
     ft = (log_t - cached['logt_min']) / cached['dlog_t']
 
-    # Nearest node via rounding, then find lower bounding index
-    ip_near = min(max(int(fp + 0.5), 0), n_p - 1)
-    it_near = min(max(int(ft + 0.5), 0), n_t - 1)
+    ip = int(fp)
+    it = int(ft)
 
-    # Determine lower bounding index: if the query is below the
-    # nearest node, step back by one
-    if ip_near > 0 and log_p < ulp[ip_near]:
-        ip = ip_near - 1
-    else:
-        ip = ip_near
-    ip = max(0, min(ip, n_p - 2))
+    # Clamp to valid range without max/min builtins
+    if ip < 0:
+        ip = 0
+    elif ip > n_p_m2:
+        ip = n_p_m2
+    if it < 0:
+        it = 0
+    elif it > n_t_m2:
+        it = n_t_m2
 
-    if it_near > 0 and log_t < ult[it_near]:
-        it = it_near - 1
-    else:
-        it = it_near
-    it = max(0, min(it, n_t - 2))
+    # Fractional position within cell
+    dp = fp - ip
+    dt = ft - it
+    if dp < 0.0:
+        dp = 0.0
+    elif dp > 1.0:
+        dp = 1.0
+    if dt < 0.0:
+        dt = 0.0
+    elif dt > 1.0:
+        dt = 1.0
 
-    # Fractional parts computed from actual grid coordinates
-    span_p = ulp[ip + 1] - ulp[ip]
-    span_t = ult[it + 1] - ult[it]
-
-    dp = (log_p - ulp[ip]) / span_p if span_p > 0 else 0.0
-    dt = (log_t - ult[it]) / span_t if span_t > 0 else 0.0
-
-    # Clamp to [0, 1] for boundary safety
-    dp = max(0.0, min(dp, 1.0))
-    dt = max(0.0, min(dt, 1.0))
-
-    # Four corner values
-    v00 = grid[ip, it]
-    v01 = grid[ip, it + 1]
-    v10 = grid[ip + 1, it]
-    v11 = grid[ip + 1, it + 1]
-
-    # Bilinear interpolation
-    return v00 * (1 - dp) * (1 - dt) + v01 * (1 - dp) * dt + v10 * dp * (1 - dt) + v11 * dp * dt
+    # Bilinear blend
+    omdp = 1.0 - dp
+    omdt = 1.0 - dt
+    return (grid[ip, it] * omdp * omdt + grid[ip, it + 1] * omdp * dt
+            + grid[ip + 1, it] * dp * omdt + grid[ip + 1, it + 1] * dp * dt)
 
 
 def fast_bilinear_batch(log_p_arr, log_t_arr, grid, cached):
@@ -494,6 +477,10 @@ def fast_bilinear_batch(log_p_arr, log_t_arr, grid, cached):
 def _paleos_clamp_temperature(log_p, log_t, cached):
     """Clamp log10(T) to the per-pressure valid range of a PALEOS table.
 
+    Uses O(1) index computation on the log-uniform pressure grid instead
+    of np.interp (which does binary search on 1000+ elements). This is
+    called millions of times in the scalar ODE path.
+
     Parameters
     ----------
     log_p : float
@@ -501,27 +488,42 @@ def _paleos_clamp_temperature(log_p, log_t, cached):
     log_t : float
         log10 of temperature in K.
     cached : dict
-        PALEOS cache entry from ``load_paleos_table()``.
+        PALEOS cache entry.
 
     Returns
     -------
     float
-        Clamped log10(T), guaranteed to fall within the valid data region
-        at the given pressure.
+        Clamped log10(T).
     bool
-        True if clamping was applied, False if the original value was valid.
+        True if clamping was applied.
     """
-    ulp = cached['unique_log_p']
     lt_min = cached['logt_valid_min']
     lt_max = cached['logt_valid_max']
 
-    # Interpolate per-pressure T bounds at the query pressure
-    local_tmin = float(np.interp(log_p, ulp, lt_min))
-    local_tmax = float(np.interp(log_p, ulp, lt_max))
+    # O(1) path for log-uniform grids (has dlog_p metadata)
+    if 'dlog_p' in cached:
+        fp = (log_p - cached['logp_min']) / cached['dlog_p']
+        n_p_m1 = cached['n_p'] - 2
+        ip = int(fp)
+        if ip < 0:
+            ip = 0
+        elif ip > n_p_m1:
+            ip = n_p_m1
+        frac = fp - ip
+        if frac < 0.0:
+            frac = 0.0
+        elif frac > 1.0:
+            frac = 1.0
+        local_tmin = lt_min[ip] + frac * (lt_min[ip + 1] - lt_min[ip])
+        local_tmax = lt_max[ip] + frac * (lt_max[ip + 1] - lt_max[ip])
+    else:
+        # Fallback for legacy/test cache dicts without grid metadata
+        ulp = cached['unique_log_p']
+        local_tmin = float(np.interp(log_p, ulp, lt_min))
+        local_tmax = float(np.interp(log_p, ulp, lt_max))
 
-    # Guard: if the pressure is near an all-NaN row, the interpolated
-    # bounds are NaN. Return unclamped and let the NN fallback handle it.
-    if not (np.isfinite(local_tmin) and np.isfinite(local_tmax)):
+    # Guard: NaN bounds near table edges
+    if not (local_tmin == local_tmin and local_tmax == local_tmax):  # fast NaN check
         return log_t, False
 
     if log_t < local_tmin:
