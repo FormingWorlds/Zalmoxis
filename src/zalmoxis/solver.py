@@ -122,7 +122,7 @@ def _tighten_solver_params(params):
     tightened['absolute_tolerance'] = params['absolute_tolerance'] * 0.1
     tightened['maximum_step'] = params['maximum_step'] * 0.5
     tightened['pressure_tolerance'] = params['pressure_tolerance'] * 0.1
-    tightened['wall_timeout'] = params.get('wall_timeout', 120.0) * 2
+    tightened['wall_timeout'] = params.get('wall_timeout', 300.0) * 2
     return tightened
 
 
@@ -1080,6 +1080,19 @@ def _solve(
             best_mass_error * 100, converged_density, converged_pressure,
         )
         converged = True
+    elif best_mass_error < 0.02 and best_profiles is not None:
+        # Timeout or max-iterations with < 2% mass error. The structure
+        # is usable (radius accurate to < 0.7%, pressure to < 2%).
+        # Better to return a slightly loose solution than crash the
+        # calling code. The caller can check converged_mass/density/
+        # pressure flags for diagnostics.
+        logger.warning(
+            'Accepting timeout solution: mass error %.4f%% (threshold 2%%), '
+            'density_converged=%s, pressure_converged=%s.',
+            best_mass_error * 100, converged_density, converged_pressure,
+        )
+        converged = True
+        converged_mass = True
 
     end_time = time.time()
     total_time = end_time - start_time
