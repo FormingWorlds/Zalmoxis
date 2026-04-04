@@ -49,6 +49,11 @@ from .structure_model import solve_structure
 
 logger = logging.getLogger(__name__)
 
+# Module-level EOS interpolation cache. Persists across multiple main() calls
+# within the same Python process (e.g., PROTEUS coupling loop), avoiding
+# repeated parsing of large PALEOS text tables (~3s per table per reload).
+_interpolation_cache = {}
+
 
 def _default_solver_params(planet_mass):
     """Compute default numerical solver parameters with mass-adaptive scaling.
@@ -395,8 +400,8 @@ def _solve(
 
     start_time = time.time()
 
-    # Initialize empty cache for interpolation functions
-    interpolation_cache = {}
+    # Use module-level cache (persists across coupling steps)
+    interpolation_cache = _interpolation_cache
 
     # Load solidus and liquidus functions if the caller provided them.
     # Unified PALEOS tables don't need external melting curves, so

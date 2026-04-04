@@ -188,11 +188,21 @@ def load_paleos_unified_table(eos_file):
         - ``'liquidus_log_t'``: log10(T_liquidus) array at each pressure
         - ``'phase_grid'``: 2D string array of phase identifiers
     """
-    # Read numeric columns (0-8)
-    data_numeric = np.genfromtxt(eos_file, usecols=range(9), comments='#')
+    # Single-pass read: parse numeric columns and phase string together.
+    # Avoids the 2x penalty of calling genfromtxt twice on 50-140 MB files.
+    numeric_rows = []
+    phase_list = []
+    with open(eos_file) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            parts = line.split()
+            numeric_rows.append([float(x) for x in parts[:9]])
+            phase_list.append(parts[9] if len(parts) > 9 else '')
 
-    # Read phase column (9) as strings
-    phase_strings = np.genfromtxt(eos_file, usecols=(9,), dtype=str, comments='#')
+    data_numeric = np.array(numeric_rows)
+    phase_strings = np.array(phase_list, dtype=str)
 
     pressures = data_numeric[:, 0]
     temps = data_numeric[:, 1]
@@ -460,6 +470,9 @@ def _paleos_clamp_temperature(log_p, log_t, cached):
 def _ensure_unified_cache(eos_file, interpolation_functions):
     """Ensure a unified PALEOS table is loaded into the interpolation cache.
 
+    Tries loading from a binary pickle cache first (fast), then falls back
+    to the text table (slow). Saves a pickle cache after the first text load.
+
     Parameters
     ----------
     eos_file : str
@@ -473,5 +486,22 @@ def _ensure_unified_cache(eos_file, interpolation_functions):
         The cache entry for this file.
     """
     if eos_file not in interpolation_functions:
-        interpolation_functions[eos_file] = load_paleos_unified_table(eos_file)
+        import pickle
+
+        cache_path = eos_file.replace('.dat', '.pkl')
+        try:
+            with open(cache_path, 'rb') as f:
+                interpolation_functions[eos_file] = pickle.load(f)
+            logger.debug('Loaded PALEOS cache from %s', cache_path)
+        except (FileNotFoundError, EOFError, pickle.UnpicklingError):
+            logger.info('Loading PALEOS table from text: %s', eos_file)
+            interpolation_functions[eos_file] = load_paleos_unified_table(eos_file)
+            # Save binary cache for next time
+            try:
+                with open(cache_path, 'wb') as f:
+                    pickle.dump(interpolation_functions[eos_file], f, protocol=4)
+                logger.info('Saved PALEOS binary cache: %s', cache_path)
+            except OSError:
+                logger.debug('Could not save cache to %s', cache_path)
+
     return interpolation_functions[eos_file]
