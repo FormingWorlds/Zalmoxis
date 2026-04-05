@@ -240,6 +240,7 @@ def main(
             layer_mixtures=layer_mixtures,
             volatile_profile=volatile_profile,
             temperature_function=temperature_function,
+            p_center_hint=p_center_hint,
             initial_density=retry_density,
             initial_radii=retry_radii,
         )
@@ -496,6 +497,16 @@ def _solve(
     best_mass_error = float('inf')
     best_profiles = None
     oscillation_count = 0
+
+    # Initialize arrays to safe defaults. These are overwritten on the
+    # first outer iteration, but must exist in case the wall-clock timeout
+    # fires at iteration 0 (before the arrays are assigned in the loop).
+    radii = np.linspace(0, radius_guess, num_layers)
+    density = np.zeros(num_layers)
+    mass_enclosed = np.zeros(num_layers)
+    gravity = np.zeros(num_layers)
+    pressure = np.zeros(num_layers)
+    temperatures = np.full(num_layers, surface_temperature)
 
     # Solve the interior structure
     for outer_iter in range(max_iterations_outer):
