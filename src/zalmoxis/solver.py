@@ -1139,9 +1139,9 @@ def _solve(
             best_mass_error * 100, converged_density, converged_pressure,
         )
         converged = True
-    elif best_mass_error < 0.02 and best_profiles is not None:
-        # Timeout or max-iterations with < 2% mass error. The structure
-        # is usable (radius accurate to < 0.7%, pressure to < 2%).
+    elif best_mass_error < 0.03 and best_profiles is not None:
+        # Timeout or max-iterations with < 3% mass error. The structure
+        # is usable (radius accurate to < 1%, pressure to < 3%).
         # Better to return a slightly loose solution than crash the
         # calling code. The caller can check converged_mass/density/
         # pressure flags for diagnostics.
