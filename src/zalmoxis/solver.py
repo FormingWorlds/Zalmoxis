@@ -135,6 +135,8 @@ def main(
     volatile_profile=None,
     temperature_function=None,
     p_center_hint=None,
+    initial_density=None,
+    initial_radii=None,
 ):
     """Run the exoplanet internal structure model with automatic retry.
 
@@ -168,6 +170,13 @@ def main(
         temperature mode dispatch (isothermal/linear/prescribed/adiabatic).
         Used by PROTEUS to pass SPIDER/Aragog T(r) profiles directly
         in memory.
+    initial_density : numpy.ndarray or None, optional
+        Density profile from a previous solve, used to seed the Picard
+        iteration. Must be paired with ``initial_radii``. Interpolated
+        onto the current radial grid. Dramatically accelerates convergence
+        when the structure changes incrementally between coupling steps.
+    initial_radii : numpy.ndarray or None, optional
+        Radial grid corresponding to ``initial_density``.
 
     Returns
     -------
@@ -184,6 +193,8 @@ def main(
         volatile_profile=volatile_profile,
         temperature_function=temperature_function,
         p_center_hint=p_center_hint,
+        initial_density=initial_density,
+        initial_radii=initial_radii,
     )
 
     if not result['converged']:
@@ -205,15 +216,21 @@ def main(
             result.get('converged_pressure', False),
         )
 
-        # Seed retry with the first attempt's radius estimate, if plausible
+        # Seed retry with the first attempt's results
         retry_params = copy.copy(config_params)
         retry_params.update(tightened)
+        retry_density = None
+        retry_radii = None
         if 'radii' in result and result['radii'] is not None and len(result['radii']) > 0:
             r_last = result['radii'][-1]
             mass_in_earth = max(planet_mass, 0.01 * earth_mass) / earth_mass
             r_seager = earth_radius * mass_in_earth**0.282
             if np.isfinite(r_last) and r_last > 0 and 0.2 * r_seager < r_last < 5.0 * r_seager:
                 retry_params['_initial_radius_guess'] = r_last
+            # Use first attempt's density as seed for retry
+            if result.get('density') is not None and np.any(result['density'] > 0):
+                retry_density = result['density']
+                retry_radii = result['radii']
 
         result = _solve(
             retry_params,
@@ -223,6 +240,8 @@ def main(
             layer_mixtures=layer_mixtures,
             volatile_profile=volatile_profile,
             temperature_function=temperature_function,
+            initial_density=retry_density,
+            initial_radii=retry_radii,
         )
 
         if not result['converged']:
@@ -243,6 +262,8 @@ def _solve(
     volatile_profile=None,
     temperature_function=None,
     p_center_hint=None,
+    initial_density=None,
+    initial_radii=None,
 ):
     """Internal solver: single attempt at the structure solve.
 
@@ -262,6 +283,11 @@ def _solve(
     temperature_function : callable or None, optional
         External temperature function ``f(r, P) -> T``. When provided,
         bypasses internal temperature mode dispatch and adiabat blending.
+    initial_density : numpy.ndarray or None, optional
+        Density seed from a previous solve. Interpolated onto the current
+        radial grid to accelerate Picard convergence.
+    initial_radii : numpy.ndarray or None, optional
+        Radial grid corresponding to ``initial_density``.
 
     Returns
     -------
@@ -498,10 +524,43 @@ def _solve(
 
         radii = np.linspace(0, radius_guess, num_layers)
 
-        density = np.zeros(num_layers)
         mass_enclosed = np.zeros(num_layers)
         gravity = np.zeros(num_layers)
         pressure = np.zeros(num_layers)
+
+        # Density seeding: interpolate previous density onto current grid.
+        # Only seed on the first outer iteration; subsequent iterations use
+        # the Picard-updated density from the previous outer iteration.
+        if (
+            outer_iter == 0
+            and initial_density is not None
+            and initial_radii is not None
+            and len(initial_density) > 1
+            and np.any(initial_density > 0)
+        ):
+            # Linear interpolation onto new grid, clamped to [0, max_old]
+            valid = initial_density > 0
+            if np.sum(valid) > 1:
+                density = np.interp(
+                    radii,
+                    initial_radii[valid],
+                    initial_density[valid],
+                    left=initial_density[valid][0],
+                    right=0.0,
+                )
+                # Zero out shells beyond the old surface radius
+                density[radii > initial_radii[valid][-1] * 1.05] = 0.0
+                logger.info(
+                    'Density seeded from previous solve: '
+                    'rho_mean=%.0f kg/m^3, %d/%d shells seeded.',
+                    np.mean(density[density > 0]),
+                    np.sum(density > 0),
+                    num_layers,
+                )
+            else:
+                density = np.zeros(num_layers)
+        else:
+            density = np.zeros(num_layers)
 
         if temperature_function is not None:
             # External T(r,P) provided (e.g. from SPIDER/Aragog in memory).
