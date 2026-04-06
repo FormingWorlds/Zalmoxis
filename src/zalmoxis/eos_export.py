@@ -659,9 +659,16 @@ def generate_spider_eos_tables(
     # can use a simple bisection over the T range.
 
     def _fill_phase_grid(
-        P_grid, S_grid, T_lo_func, T_hi_func, phase_name,
-        s_phase_interp, rho_phase_interp, cp_phase_interp,
-        alpha_phase_interp, nad_phase_interp,
+        P_grid,
+        S_grid,
+        T_lo_func,
+        T_hi_func,
+        phase_name,
+        s_phase_interp,
+        rho_phase_interp,
+        cp_phase_interp,
+        alpha_phase_interp,
+        nad_phase_interp,
     ):
         """Fill 2D grids for a single phase by inverting S(P,T) -> T(P,S).
 
@@ -780,17 +787,29 @@ def generate_spider_eos_tables(
 
     def _fill_solid():
         return _fill_phase_grid(
-            P_out, S_solid_grid, _T_lo_solid, solidus_func, 'solid',
-            s_phase_interp=s_solid_interp, rho_phase_interp=rho_solid_interp,
-            cp_phase_interp=cp_solid_interp, alpha_phase_interp=alpha_solid_interp,
+            P_out,
+            S_solid_grid,
+            _T_lo_solid,
+            solidus_func,
+            'solid',
+            s_phase_interp=s_solid_interp,
+            rho_phase_interp=rho_solid_interp,
+            cp_phase_interp=cp_solid_interp,
+            alpha_phase_interp=alpha_solid_interp,
             nad_phase_interp=nad_solid_interp,
         )
 
     def _fill_melt():
         return _fill_phase_grid(
-            P_out, S_melt_grid, liquidus_func, _T_hi_melt, 'melt',
-            s_phase_interp=s_melt_interp, rho_phase_interp=rho_melt_interp,
-            cp_phase_interp=cp_melt_interp, alpha_phase_interp=alpha_melt_interp,
+            P_out,
+            S_melt_grid,
+            liquidus_func,
+            _T_hi_melt,
+            'melt',
+            s_phase_interp=s_melt_interp,
+            rho_phase_interp=rho_melt_interp,
+            cp_phase_interp=cp_melt_interp,
+            alpha_phase_interp=alpha_melt_interp,
             nad_phase_interp=nad_melt_interp,
         )
 
@@ -1051,15 +1070,19 @@ def generate_aragog_pt_tables_2phase(
     logger.info(
         '2-phase table T intersection: [%.0f, %.0f] K '
         '(solid: [%.0f, %.0f], liquid: [%.0f, %.0f])',
-        T_min, T_max,
-        solid_table['t_min'], solid_table['t_max'],
-        liquid_table['t_min'], liquid_table['t_max'],
+        T_min,
+        T_max,
+        solid_table['t_min'],
+        solid_table['t_max'],
+        liquid_table['t_min'],
+        liquid_table['t_max'],
     )
     if T_max < 6000:
         logger.warning(
             '2-phase T_max=%.0f K is below typical CMB temperatures for '
             'super-Earths. Entropy and density lookups above this T will '
-            'be extrapolated.', T_max,
+            'be extrapolated.',
+            T_max,
         )
 
     PP, TT = np.meshgrid(P_arr, T_arr, indexing='ij')
@@ -1093,6 +1116,134 @@ def generate_aragog_pt_tables_2phase(
     return {
         'output_dir': str(output_dir) if output_dir else None,
         'properties': list(prop_map.keys()),
+    }
+
+
+def compute_surface_entropy(
+    eos_file,
+    T_surface,
+    P_surface=1e5,
+    solidus_func=None,
+    liquidus_func=None,
+    solid_eos_file=None,
+    liquid_eos_file=None,
+):
+    """Compute the entropy of a single (P, T) point using PALEOS tables.
+
+    Thin wrapper that performs just the surface-entropy lookup used to
+    initialise an isentropic adiabat, without integrating the full T(P)
+    profile down to the CMB. Needed by the entropy-IC cross-check paths
+    (``AragogRunner._verify_entropy_ic`` and
+    ``common._verify_initial_entropy``) which only need the scalar
+    ``S(P_surface, T_surface)`` for comparison against the primary
+    ``EntropyEOS.invert_temperature`` inversion.
+
+    The full ``compute_entropy_adiabat`` routine integrates an adiabat
+    from the surface to P_cmb and during bracket expansion can reach
+    (P_surface, 2*T_surface) tuples that land in the PALEOS "low-P
+    high-T" non-converged region (~100% NaN at P<1e7 Pa, T>5000 K for
+    MgSiO3 liquid). That region is physically vapour/plasma which the
+    liquid EOS fit does not cover. Since the cross-check only needs
+    entropy at the surface, this helper avoids the problematic bracket
+    expansion entirely.
+
+    Parameters
+    ----------
+    eos_file : str or Path
+        Path to the PALEOS unified EOS table (used when 2-phase tables
+        are not provided).
+    T_surface : float
+        Surface temperature [K].
+    P_surface : float
+        Surface pressure [Pa]. Default 1 bar = 1e5 Pa.
+    solidus_func, liquidus_func : callable or None
+        Optional T_solidus(P) and T_liquidus(P) functions. Used only when
+        (P_surface, T_surface) falls inside the mushy zone, in which
+        case S is computed via phase-weighted blending.
+    solid_eos_file, liquid_eos_file : str or Path or None
+        Optional PALEOS 2-phase tables. When provided and the point is
+        inside the mushy zone, phase-specific entropy values are used
+        instead of the unified-table lookup. Avoids the Clausius-
+        Clapeyron inconsistency at the melting curve.
+
+    Returns
+    -------
+    dict
+        Keys:
+            ``'S_target'`` : float
+                Entropy at (P_surface, T_surface) [J/(kg*K)].
+            ``'P_surface'`` : float (echoed back).
+            ``'T_surface'`` : float (echoed back).
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``eos_file`` cannot be loaded.
+    ValueError
+        If the entropy lookup at (P_surface, T_surface) returns NaN.
+        This is a genuine out-of-table call (rare at surface conditions)
+        and indicates a config mismatch or a corrupt table.
+    """
+    table = load_paleos_all_properties(eos_file)
+    if table is None:
+        raise FileNotFoundError(f'PALEOS table not found: {eos_file}')
+
+    s_interp = _build_interpolator(table['unique_log_p'], table['unique_log_t'], table['s'])
+
+    s_solid_interp = None
+    s_liquid_interp = None
+    if solid_eos_file and liquid_eos_file:
+        solid_tab = load_paleos_all_properties(solid_eos_file)
+        liquid_tab = load_paleos_all_properties(liquid_eos_file)
+        if solid_tab is not None and liquid_tab is not None:
+            s_solid_interp = _build_interpolator(
+                solid_tab['unique_log_p'], solid_tab['unique_log_t'], solid_tab['s']
+            )
+            s_liquid_interp = _build_interpolator(
+                liquid_tab['unique_log_p'], liquid_tab['unique_log_t'], liquid_tab['s']
+            )
+
+    def _lookup_unified(P, T):
+        pt = np.array([[np.log10(max(P, 1.0)), np.log10(max(T, 300.0))]])
+        return float(s_interp(pt).item())
+
+    def _lookup_phase_weighted(P, T):
+        if solidus_func is not None and liquidus_func is not None:
+            T_sol = solidus_func(P)
+            T_liq = liquidus_func(P)
+            if T_sol < T < T_liq and T_liq > T_sol:
+                phi = (T - T_sol) / (T_liq - T_sol)
+                pt_sol = np.array([[np.log10(max(P, 1.0)), np.log10(max(T_sol, 300.0))]])
+                pt_liq = np.array([[np.log10(max(P, 1.0)), np.log10(max(T_liq, 300.0))]])
+                if s_solid_interp is not None and s_liquid_interp is not None:
+                    S_sol = float(s_solid_interp(pt_sol).item())
+                    S_liq = float(s_liquid_interp(pt_liq).item())
+                else:
+                    S_sol = float(s_interp(pt_sol).item())
+                    S_liq = float(s_interp(pt_liq).item())
+                return phi * S_liq + (1 - phi) * S_sol
+        return _lookup_unified(P, T)
+
+    S_target = _lookup_phase_weighted(P_surface, T_surface)
+
+    if not np.isfinite(S_target):
+        raise ValueError(
+            f'PALEOS entropy lookup at (P={P_surface:.2e} Pa, '
+            f'T={T_surface:.1f} K) returned NaN. This should not happen '
+            f'at surface conditions. Check eos_file={eos_file}.'
+        )
+
+    logger.info(
+        'Surface entropy: T_surf=%.1f K, P_surf=%.2e Pa, S_target=%.2f J/(kg*K)',
+        T_surface,
+        P_surface,
+        S_target,
+    )
+
+    return {
+        'S_target': S_target,
+        'P_surface': float(P_surface),
+        'T_surface': float(T_surface),
     }
 
 
@@ -1207,30 +1358,52 @@ def compute_entropy_adiabat(
     S_target = entropy_total(P_surface, T_surface)
     logger.info(
         'Entropy adiabat: T_surf=%.1f K, P_surf=%.2e Pa, S_target=%.2f J/(kg*K)',
-        T_surface, P_surface, S_target,
+        T_surface,
+        P_surface,
+        S_target,
     )
 
     # Build pressure grid (log-spaced for better resolution at low P)
-    P_grid = np.logspace(
-        np.log10(P_surface * 1.001), np.log10(P_cmb * 0.999), n_points
-    )
+    P_grid = np.logspace(np.log10(P_surface * 1.001), np.log10(P_cmb * 0.999), n_points)
     T_profile = np.zeros(n_points)
     S_profile = np.zeros(n_points)
 
     T_prev = T_surface
+    n_nan_bracket = 0
     for i, P_i in enumerate(P_grid):
+
         def residual(T_cand):
             return entropy_total(P_i, T_cand) - S_target
 
-        # Bracket: expand around previous T
+        # Bracket: expand around previous T. If either endpoint lands
+        # in a non-converged PALEOS cell (NaN), shrink it toward T_prev
+        # rather than expanding, because the PALEOS tables have a 100%
+        # NaN region at low P / high T (MgSiO3 vapour regime). Expanding
+        # into that region propagates NaN into brentq and crashes the
+        # whole run (was a historical bug: `NaN > 0` is False, `NaN *
+        # NaN > 0` is False, so the bracket-expansion loop exited
+        # immediately with NaN endpoints).
         T_lo = T_prev * 0.8
         T_hi = T_prev * 2.0
         s_lo = residual(T_lo)
         s_hi = residual(T_hi)
 
         n_expand = 0
-        while s_lo * s_hi > 0 and n_expand < 20:
-            if s_lo > 0:
+        while (
+            not np.isfinite(s_lo) or not np.isfinite(s_hi) or s_lo * s_hi > 0
+        ) and n_expand < 30:
+            if not np.isfinite(s_lo):
+                # Shrink T_lo back toward T_prev instead of expanding
+                T_lo = 0.5 * (T_lo + T_prev)
+                s_lo = residual(T_lo)
+            elif not np.isfinite(s_hi):
+                # Shrink T_hi back toward T_prev instead of expanding.
+                # This is the critical case: at P=P_surface the default
+                # T_hi = 2*T_surface can land in the vapour/plasma region
+                # where the PALEOS liquid table has no data.
+                T_hi = 0.5 * (T_hi + T_prev)
+                s_hi = residual(T_hi)
+            elif s_lo > 0:
                 T_lo *= 0.5
                 s_lo = residual(T_lo)
             else:
@@ -1238,9 +1411,16 @@ def compute_entropy_adiabat(
                 s_hi = residual(T_hi)
             n_expand += 1
 
-        if s_lo * s_hi > 0:
+        bracket_ok = np.isfinite(s_lo) and np.isfinite(s_hi) and s_lo * s_hi <= 0
+        if not bracket_ok:
+            n_nan_bracket += 1
             logger.warning(
-                'Could not bracket S root at P=%.2e Pa. Using previous T.', P_i
+                'Could not bracket S root at P=%.2e Pa '
+                '(s_lo=%s, s_hi=%s). Using previous T=%.1f K.',
+                P_i,
+                s_lo,
+                s_hi,
+                T_prev,
             )
             T_profile[i] = T_prev
         else:
@@ -1249,10 +1429,17 @@ def compute_entropy_adiabat(
         S_profile[i] = entropy_total(P_i, T_profile[i])
         T_prev = T_profile[i]
 
+    if n_nan_bracket > 0:
+        logger.warning(
+            'Entropy adiabat: %d/%d bracket-expansion failures due to '
+            'PALEOS non-converged cells. Profile may be flat in those '
+            'regions; treat with caution.',
+            n_nan_bracket,
+            n_points,
+        )
+
     S_drift = abs(S_profile[-1] - S_target) / abs(S_target) * 100
-    logger.info(
-        'Entropy adiabat: T_cmb=%.1f K, S_drift=%.4f%%', T_profile[-1], S_drift
-    )
+    logger.info('Entropy adiabat: T_cmb=%.1f K, S_drift=%.4f%%', T_profile[-1], S_drift)
 
     return {
         'P': P_grid,
