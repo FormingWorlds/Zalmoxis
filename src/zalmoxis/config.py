@@ -284,7 +284,7 @@ def validate_config(config_params):
 
     # ── Temperature parameters ──────────────────────────────────────
     temperature_mode = config_params['temperature_mode']
-    valid_modes = ('isothermal', 'linear', 'prescribed', 'adiabatic')
+    valid_modes = ('isothermal', 'linear', 'prescribed', 'adiabatic', 'adiabatic_from_cmb')
     if temperature_mode not in valid_modes:
         raise ValueError(
             f"Unknown temperature_mode '{temperature_mode}'. Valid options: {valid_modes}."
@@ -306,11 +306,19 @@ def validate_config(config_params):
             f'adiabatic solver has only been validated up to 5000 K surface temperature.'
         )
 
-    if temperature_mode in ('linear', 'adiabatic') and center_temp <= 0:
+    if temperature_mode in ('linear', 'adiabatic', 'adiabatic_from_cmb') and center_temp <= 0:
         raise ValueError(
             f"center_temperature must be positive for '{temperature_mode}' mode, "
             f'got {center_temp} K. Temperatures must be in Kelvin.'
         )
+
+    if temperature_mode == 'adiabatic_from_cmb':
+        cmb_temp = config_params.get('cmb_temperature', 0)
+        if cmb_temp <= 0:
+            raise ValueError(
+                "cmb_temperature must be positive (in K) for 'adiabatic_from_cmb' mode, "
+                f'got {cmb_temp}. Set planet.tcmb_init in PROTEUS config.'
+            )
 
     if temperature_mode == 'linear' and center_temp <= surface_temp:
         logger.warning(
@@ -327,9 +335,9 @@ def validate_config(config_params):
             all_components.update(m.components)
     uses_Tdep = bool(all_components & TDEP_EOS_NAMES)
 
-    if temperature_mode == 'adiabatic' and not uses_Tdep:
+    if temperature_mode in ('adiabatic', 'adiabatic_from_cmb') and not uses_Tdep:
         raise ValueError(
-            f'Adiabatic temperature mode requires at least one T-dependent EOS layer, '
+            f"'{temperature_mode}' temperature mode requires at least one T-dependent EOS layer, "
             f'but none found in {layer_eos_config}. '
             f'T-dependent EOS options: {sorted(TDEP_EOS_NAMES)}. '
             f"Use 'isothermal' or 'linear' mode with T-independent EOS."

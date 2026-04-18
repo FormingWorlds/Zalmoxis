@@ -308,6 +308,7 @@ def _solve(
     temperature_mode = config_params['temperature_mode']
     surface_temperature = config_params['surface_temperature']
     center_temperature = config_params['center_temperature']
+    cmb_temperature = config_params.get('cmb_temperature', None)
     temp_profile_file = config_params['temp_profile_file']
     layer_eos_config = config_params['layer_eos_config']
     num_layers = config_params['num_layers']
@@ -479,7 +480,7 @@ def _solve(
     # blend from linear to adiabat causes a huge density perturbation
     # that destabilizes convergence. This is conservative (adiabats
     # can be steeper for massive planets), so we use 5 * T_surface.
-    if temperature_mode == 'adiabatic':
+    if temperature_mode in ('adiabatic', 'adiabatic_from_cmb'):
         max_reasonable_T_center = max(5.0 * surface_temperature, 3000.0)
         if center_temperature > max_reasonable_T_center:
             center_temperature = max_reasonable_T_center
@@ -587,13 +588,20 @@ def _solve(
         elif uses_Tdep:
             # Compute the linear (initial guess) temperature profile.
             # This is a function of radius only; wrap it to accept (r, P).
+            # For 'adiabatic_from_cmb', pass cmb_temperature so the linear
+            # seed anchors at the CMB value rather than center_temperature,
+            # giving the first density iteration a more realistic mantle T.
+            _linear_mode = (
+                'adiabatic_from_cmb' if temperature_mode == 'adiabatic_from_cmb' else 'linear'
+            )
             _linear_tf = calculate_temperature_profile(
                 radii,
-                'linear',
+                _linear_mode,
                 surface_temperature,
                 center_temperature,
                 input_dir,
                 temp_profile_file,
+                cmb_temperature=cmb_temperature,
             )
 
             if _using_adiabat and prev_pressure is not None:
@@ -603,7 +611,11 @@ def _solve(
                     'Outer iter %d: adiabat blend = %.2f', outer_iter, _adiabat_blend,
                 )
 
-                # Recompute adiabat from previous iteration's converged structure
+                # Recompute adiabat from previous iteration's converged
+                # structure. For 'adiabatic_from_cmb', anchor at the CMB
+                # and integrate outward; otherwise anchor at the surface
+                # and integrate inward (original behaviour).
+                _anchor = 'cmb' if temperature_mode == 'adiabatic_from_cmb' else 'surface'
                 adiabat_T = compute_adiabatic_temperature(
                     prev_radii,
                     prev_pressure,
@@ -620,6 +632,8 @@ def _solve(
                     condensed_rho_min,
                     condensed_rho_scale,
                     binodal_T_scale,
+                    anchor=_anchor,
+                    cmb_temperature=cmb_temperature,
                 )
 
                 # Build T(P) interpolator from the previous iteration's
@@ -1117,7 +1131,7 @@ def _solve(
         # breaking. The blend ramps 0 -> 0.5 -> 1.0 over successive mass
         # convergences, preventing solver divergence.
         if relative_diff_outer_mass < tolerance_outer:
-            if temperature_mode == 'adiabatic' and _adiabat_blend < 1.0:
+            if temperature_mode in ('adiabatic', 'adiabatic_from_cmb') and _adiabat_blend < 1.0:
                 if not _using_adiabat:
                     _using_adiabat = True
                     logger.info(

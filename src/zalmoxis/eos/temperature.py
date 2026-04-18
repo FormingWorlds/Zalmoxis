@@ -34,6 +34,8 @@ def compute_adiabatic_temperature(
     condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
     condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
     binodal_T_scale=50.0,
+    anchor='surface',
+    cmb_temperature=None,
 ):
     """Compute an adiabatic temperature profile using native EOS gradient tables.
 
@@ -50,7 +52,9 @@ def compute_adiabatic_temperature(
     mass_enclosed : numpy.ndarray
         Enclosed mass at each radius, in kg.
     surface_temperature : float
-        Temperature at the surface, in K.
+        Temperature at the surface, in K. Used as the anchor when
+        ``anchor='surface'``; carried through as-is for the core when
+        ``anchor='cmb'`` (no integration is done below the CMB).
     cmb_mass : float
         Core-mantle boundary mass, in kg.
     core_mantle_mass : float
@@ -75,6 +79,18 @@ def compute_adiabatic_temperature(
     binodal_T_scale : float, optional
         Binodal sigmoid width in K for H2 miscibility suppression.
         Default 50.
+    anchor : {'surface', 'cmb'}, optional
+        Where the adiabat is anchored. ``'surface'`` (default) anchors
+        ``T[n-1] = surface_temperature`` and integrates inward to the
+        center, the original behaviour. ``'cmb'`` anchors
+        ``T[i_cmb] = cmb_temperature`` at the first mantle shell and
+        integrates outward to the surface (mantle only); shells below
+        the CMB carry the surface anchor through, since the core
+        adiabat is decoupled and the energetics solver computes T_core
+        independently.
+    cmb_temperature : float, optional
+        Temperature at the core-mantle boundary, in K. Required when
+        ``anchor='cmb'``.
 
     Returns
     -------
@@ -98,6 +114,70 @@ def compute_adiabatic_temperature(
 
     n = len(radii)
     T = np.zeros(n)
+
+    if anchor == 'cmb':
+        if cmb_temperature is None or cmb_temperature <= 0:
+            raise ValueError(
+                "anchor='cmb' requires a positive cmb_temperature, got "
+                f'{cmb_temperature}.'
+            )
+
+        # Find the first mantle shell (index where mass_enclosed >= cmb_mass).
+        cmb_index = int(np.searchsorted(mass_enclosed, cmb_mass))
+        cmb_index = max(1, min(cmb_index, n - 1))
+
+        # Carry the surface anchor through the core (no integration);
+        # the energetics solver handles T_core via core_heatcap and the
+        # Bower+2018 adiabatic ratio. Anchor the mantle at CMB.
+        T[:cmb_index] = surface_temperature
+        T[cmb_index] = cmb_temperature
+
+        # Integrate upward from CMB to surface (i = cmb_index .. n-1).
+        for i in range(cmb_index + 1, n):
+            mixture = get_layer_mixture(
+                mass_enclosed[i],
+                cmb_mass,
+                core_mantle_mass,
+                layer_mixtures,
+            )
+
+            if not mixture.has_tdep():
+                T[i] = T[i - 1]
+                continue
+
+            P_eval = pressure[i - 1]
+            T_eval = T[i - 1]
+            dP = pressure[i] - pressure[i - 1]  # negative going outward
+
+            if P_eval < 1e5 or pressure[i] < 1e5:
+                T[i] = T[i - 1]
+                continue
+
+            nabla = get_mixed_nabla_ad(
+                P_eval,
+                T_eval,
+                mixture,
+                material_dictionaries,
+                interpolation_functions,
+                solidus_func,
+                liquidus_func,
+                mushy_zone_factors,
+                condensed_rho_min,
+                condensed_rho_scale,
+                binodal_T_scale,
+            )
+
+            if nabla is not None and nabla > 0 and P_eval > 0 and T_eval > 0 and dP < 0:
+                dtdp = nabla * T_eval / P_eval
+                T_new = T_eval + dtdp * dP  # dP<0 => T cools outward
+                T[i] = max(min(T_new, 100000.0), 100.0)
+            else:
+                T[i] = T_eval
+
+        return T
+
+    # anchor == 'surface' (original behaviour): integrate inward from
+    # T[n-1] = surface_temperature to the center.
     T[n - 1] = surface_temperature
 
     for i in range(n - 2, -1, -1):
@@ -234,6 +314,7 @@ def calculate_temperature_profile(
     center_temperature,
     input_dir,
     temp_profile_file,
+    cmb_temperature=None,
 ):
     """Return a callable temperature profile for a planetary interior model.
 
@@ -241,7 +322,7 @@ def calculate_temperature_profile(
     ----------
     radii : array_like
         Radial grid of the planet, in m.
-    temperature_mode : {"isothermal", "linear", "prescribed", "adiabatic"}
+    temperature_mode : {"isothermal", "linear", "prescribed", "adiabatic", "adiabatic_from_cmb"}
         Temperature profile mode.
 
         - ``"isothermal"``: constant temperature equal to
@@ -250,12 +331,23 @@ def calculate_temperature_profile(
           ``r = 0`` to ``surface_temperature`` at the surface.
         - ``"prescribed"``: read the temperature profile from a text file.
         - ``"adiabatic"``: return a linear profile as an initial guess; the
-          actual adiabat is computed elsewhere in the main iteration loop.
+          actual adiabat is computed elsewhere in the main iteration loop
+          and is anchored at ``surface_temperature``.
+        - ``"adiabatic_from_cmb"``: same as ``"adiabatic"`` but the actual
+          adiabat (computed elsewhere) is anchored at ``cmb_temperature``
+          at the core-mantle boundary and integrated outward to the
+          surface. The initial guess returned here is still linear, with
+          ``cmb_temperature`` used as the deep anchor in place of
+          ``center_temperature`` so the first density iteration sees a
+          reasonable mantle T(r).
     surface_temperature : float
         Temperature at the surface, in K.
     center_temperature : float
         Temperature at the center, in K. Used for ``"linear"`` and
         ``"adiabatic"`` modes.
+    cmb_temperature : float, optional
+        Temperature at the core-mantle boundary, in K. Required for
+        ``"adiabatic_from_cmb"`` mode; ignored otherwise.
     input_dir : str or path-like
         Directory containing the prescribed temperature profile file.
     temp_profile_file : str
@@ -309,8 +401,25 @@ def calculate_temperature_profile(
             + (center_temperature - surface_temperature) * (1 - np.array(r) / radii[-1])
         )
 
+    elif temperature_mode == 'adiabatic_from_cmb':
+        # Initial guess: linear from surface to a deep anchor that uses
+        # cmb_temperature when provided (otherwise falls back to
+        # center_temperature). The CMB index is unknown at this point in
+        # the solve, so anchor at r=0 with the CMB value as a safe
+        # over-estimate; the actual upward adiabat from CMB is computed in
+        # main() once the converged structure exposes the CMB index.
+        deep_anchor = (
+            cmb_temperature if cmb_temperature is not None and cmb_temperature > 0
+            else center_temperature
+        )
+        return lambda r: (
+            surface_temperature
+            + (deep_anchor - surface_temperature) * (1 - np.array(r) / radii[-1])
+        )
+
     else:
         raise ValueError(
             f"Unknown temperature mode '{temperature_mode}'. "
-            f"Valid options: 'isothermal', 'linear', 'prescribed', 'adiabatic'."
+            f"Valid options: 'isothermal', 'linear', 'prescribed', 'adiabatic', "
+            f"'adiabatic_from_cmb'."
         )
