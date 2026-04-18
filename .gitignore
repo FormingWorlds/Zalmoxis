@@ -189,3 +189,6 @@ src/zalmoxis/_version.py
 
 # Validation grid (scripts, configs, results, plots)
 /tools/validation_grid/
+
+# Runtime-tabulated PALEOS-API EoS cache (generated, SHA-keyed)
+/data/EOS_PALEOS_API/

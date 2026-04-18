@@ -83,6 +83,51 @@ def _build_registry() -> dict:
         'format': 'paleos_unified',
     }
 
+    # ── PALEOS-API live-tabulated (runtime producer, SHA-keyed cache) ───
+    # Registry entries carry the grid spec only; the dispatch layer calls
+    # paleos_api_cache.resolve_paleos_api_* to materialise ``eos_file`` on
+    # demand (cache hit is cheap; cold cache triggers a generator run
+    # parallelised across os.cpu_count()). GridSpec defaults use
+    # DEFAULT_PTS_PER_DECADE = 600 (4x Zenodo-shipped resolution).
+    from .eos.paleos_api import (
+        make_default_grid_h2o,
+        make_default_grid_iron,
+        make_default_grid_mgsio3,
+    )
+    _paleos_api_iron = {
+        'format': 'paleos_api',
+        'material': 'iron',
+        'grid_spec': make_default_grid_iron(),
+    }
+    _paleos_api_mgsio3 = {
+        'format': 'paleos_api',
+        'material': 'mgsio3',
+        'grid_spec': make_default_grid_mgsio3(),
+    }
+    _paleos_api_h2o = {
+        'format': 'paleos_api',
+        'material': 'h2o',
+        'grid_spec': make_default_grid_h2o(),
+        # h2o_table_path resolved by the dispatch helper if None (uses
+        # PALEOS's packaged AQUA table).
+        'h2o_table_path': None,
+    }
+    # 2-phase MgSiO3 live-tabulated: used by Aragog via eos_export so that
+    # SPIDER P-S tables come from phase-specific endpoints rather than
+    # from interpolation across the melting curve.
+    _paleos_api_2ph_mgsio3_melted = {
+        'format': 'paleos_api_2phase',
+        'material': 'mgsio3',
+        'side': 'liquid',
+        'grid_spec': make_default_grid_mgsio3(),
+    }
+    _paleos_api_2ph_mgsio3_solid = {
+        'format': 'paleos_api_2phase',
+        'material': 'mgsio3',
+        'side': 'solid',
+        'grid_spec': make_default_grid_mgsio3(),
+    }
+
     # ═════════════════════════════════════════════════════════════════════
     # EOS_REGISTRY: flat dict keyed by EOS identifier string.
     # Each value is a dict describing the layer properties needed by
@@ -126,6 +171,16 @@ def _build_registry() -> dict:
         'PALEOS:iron': _paleos_iron,
         'PALEOS:MgSiO3': _paleos_mgsio3,
         'PALEOS:H2O': _paleos_h2o,
+        # PALEOS-API live-tabulated (dispatch materialises cached .dat on first use)
+        'PALEOS-API:iron': _paleos_api_iron,
+        'PALEOS-API:MgSiO3': _paleos_api_mgsio3,
+        'PALEOS-API:H2O': _paleos_api_h2o,
+        # PALEOS-API 2-phase MgSiO3 (same solid/liquid split as PALEOS-2phase)
+        'PALEOS-API-2phase:MgSiO3': {
+            'core': _seager_iron,
+            'melted_mantle': _paleos_api_2ph_mgsio3_melted,
+            'solid_mantle': _paleos_api_2ph_mgsio3_solid,
+        },
         # Chabrier+2019/2021 H/He tables (PALEOS-compatible 10-column format)
         'Chabrier:H': {
             'eos_file': os.path.join(root, 'data', 'EOS_Chabrier2021_HHe', 'chabrier2021_H.dat'),

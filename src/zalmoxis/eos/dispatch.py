@@ -19,6 +19,23 @@ from .tdep import get_Tdep_density
 logger = logging.getLogger(__name__)
 
 
+def _is_paleos_api(mat: dict) -> bool:
+    """Return True if ``mat`` (or any of its 2-phase sub-dicts) is paleos_api.
+
+    Detection here must NOT import paleos_api_cache — the resolver call is
+    deferred to the call site so the import stays lazy. This matters: the
+    cache module pulls in ``paleos_api`` which pulls in PALEOS; paying that
+    import cost on every non-PALEOS-API density query would be wasteful.
+    """
+    if mat.get('format') in ('paleos_api', 'paleos_api_2phase'):
+        return True
+    for sub_key in ('solid_mantle', 'melted_mantle'):
+        sub = mat.get(sub_key)
+        if isinstance(sub, dict) and sub.get('format') == 'paleos_api_2phase':
+            return True
+    return False
+
+
 def calculate_density(
     pressure,
     material_dictionaries,
@@ -80,6 +97,13 @@ def calculate_density(
     mat = material_dictionaries.get(layer_eos)
     if mat is None:
         raise ValueError(f"Unknown layer EOS '{layer_eos}'.")
+
+    # PALEOS-API live tabulation: rewrite the entry in place on first access
+    # so the remaining dispatch goes through the normal paleos_unified / paleos
+    # code paths. Cheap after the first call (resolves to a plain dict access).
+    if _is_paleos_api(mat):
+        from .paleos_api_cache import resolve_registry_entry
+        resolve_registry_entry(mat)
 
     # Unified PALEOS tables (single file per material, all phases included)
     if mat.get('format') == 'paleos_unified':
@@ -147,6 +171,9 @@ def calculate_density_batch(
         interpolation_functions = {}
 
     mat = material_dictionaries.get(layer_eos)
+    if mat is not None and _is_paleos_api(mat):
+        from .paleos_api_cache import resolve_registry_entry
+        resolve_registry_entry(mat)
     if mat is not None and mat.get('format') == 'paleos_unified':
         return get_paleos_unified_density_batch(
             pressures, temperatures, mat, mushy_zone_factor, interpolation_functions

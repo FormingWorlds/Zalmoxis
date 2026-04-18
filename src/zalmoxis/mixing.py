@@ -823,10 +823,17 @@ def _nabla_ad_for_component(
 
     mat = material_dictionaries.get(eos_name, {})
 
+    # PALEOS-API live tabulation: materialise cached .dat on first touch so the
+    # downstream format==paleos_unified / paleos branches apply unchanged.
+    from .eos.dispatch import _is_paleos_api
+    if _is_paleos_api(mat):
+        from .eos.paleos_api_cache import resolve_registry_entry
+        resolve_registry_entry(mat)
+
     if mat.get('format') == 'paleos_unified':
         return _get_paleos_unified_nabla_ad(pressure, temperature, mat, interpolation_functions)
 
-    if eos_name == 'PALEOS-2phase:MgSiO3':
+    if eos_name == 'PALEOS-2phase:MgSiO3' or eos_name == 'PALEOS-API-2phase:MgSiO3':
         # Convert dT/dP back to nabla_ad = (dT/dP) * P / T
         if pressure <= 0 or temperature <= 0:
             return None
