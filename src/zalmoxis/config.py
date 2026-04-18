@@ -19,10 +19,10 @@ from .constants import (
     TDEP_EOS_NAMES,
     earth_mass,
 )
-from .eos_analytic import VALID_MATERIAL_KEYS
-from .eos_vinet import VALID_VINET_KEYS
 from .eos import get_solidus_liquidus_functions
+from .eos_analytic import VALID_MATERIAL_KEYS
 from .eos_properties import EOS_REGISTRY
+from .eos_vinet import VALID_VINET_KEYS
 from .mixing import (
     BINODAL_T_SCALE_DEFAULT,
     parse_layer_components,

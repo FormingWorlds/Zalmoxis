@@ -43,6 +43,7 @@ import logging
 import warnings
 
 import numpy as np
+
 from .constants import G
 
 logger = logging.getLogger(__name__)

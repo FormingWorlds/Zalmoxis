@@ -14,9 +14,9 @@ import numpy as np
 from .interpolation import (
     _ensure_unified_cache,
     _fast_bilinear,
-    fast_bilinear_batch,
     _paleos_clamp_temperature,
     _paleos_clamp_warned,
+    fast_bilinear_batch,
 )
 
 logger = logging.getLogger(__name__)
