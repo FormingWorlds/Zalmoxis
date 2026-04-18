@@ -238,9 +238,12 @@ def _resolve_2phase_in_place(outer_mat: dict) -> None:
             'PALEOS-API 2-phase entry must have both solid_mantle and melted_mantle'
         )
     grid = solid_dict['grid_spec']
-    if liquid_dict.get('grid_spec') is not grid:
-        # Not strictly required, but guards against an entry that silently
-        # mixes grids between solid and liquid sides.
+    if liquid_dict.get('grid_spec') != grid:
+        # Value-equality check (GridSpec is frozen dataclass). Guards against
+        # an entry that silently mixes grids between solid and liquid sides;
+        # does not require object identity, so two independent
+        # ``make_default_grid_mgsio3()`` calls (e.g. from the registry) are
+        # accepted as long as the spec tuples match.
         raise ValueError(
             'PALEOS-API 2-phase solid_mantle and melted_mantle must share a GridSpec'
         )
