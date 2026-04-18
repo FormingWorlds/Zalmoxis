@@ -108,7 +108,12 @@ class GridSpec:
 # bilinear interp enough resolution to resolve phase boundaries and minimize
 # coupling-loop interpolation noise. Cold-cache cost (~1 h with 16-core ProcessPool
 # on Mac Studio, one-time per PALEOS SHA) is amortized across every subsequent run.
-DEFAULT_PTS_PER_DECADE = 600
+#
+# Override for sanity-check runs via ``ZALMOXIS_PALEOS_API_PTS_PER_DECADE``
+# (e.g. = 150 to match the shipped Zenodo grid for fast A.6 comparisons).
+# Must be set before the first import of this module; ``make_grid_at_resolution``
+# captures this as a default arg at def time.
+DEFAULT_PTS_PER_DECADE = int(_os.environ.get('ZALMOXIS_PALEOS_API_PTS_PER_DECADE', '600'))
 
 
 def _n_points_per_decade(lo: float, hi: float, pts_per_decade: int) -> int:
