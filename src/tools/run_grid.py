@@ -19,6 +19,31 @@ The grid TOML has three sections:
 
     [output]
     dir = "output_files/grid_results"
+    save_profiles = true   # optional; write full radial profile per grid point
+
+Outputs
+-------
+For every grid point the runner always writes:
+
+- ``grid_summary.csv``: one row per run with the sweep parameters, the final
+  planet mass and radius, convergence flags, wall time, and any error.
+- ``<label>.json``: the same summary as a per-run JSON file.
+
+When ``save_profiles = true`` in the grid TOML (default ``false``), the runner
+additionally writes ``<label>.npz`` per grid point with the full radial
+structure (radius, density, gravity, pressure, temperature, mass enclosed),
+the CMB and core+mantle mass diagnostics, the ``converged`` flag, and the
+per-layer EOS / melting-curve identifiers the solver actually used
+(``core_eos``, ``mantle_eos``, ``ice_layer_eos``, ``rock_solidus_id``,
+``rock_liquidus_id``). This lets downstream tools plot pressure, density,
+gravity, and temperature profiles and overlay the correct reference curves
+without rerunning the sweep.
+
+Archives are written for non-converged grid points too (for debugging), but
+in that case ``radii[-1]`` and ``mass_enclosed[-1]`` are the last Picard
+iterate, not the planet's converged structure, and ``density`` may contain
+NaN or zero in failed / padded shells. Filter on ``converged == True``
+before plotting.
 """
 
 from __future__ import annotations
@@ -33,6 +58,7 @@ import tempfile
 import time
 from multiprocessing import Pool
 
+import numpy as np
 import toml
 
 from src.zalmoxis.constants import earth_mass, earth_radius
@@ -90,6 +116,10 @@ def load_grid_config(grid_toml_path):
         Mapping of sweep parameter names to their value lists.
     output_dir : str
         Absolute path to the output directory for this grid.
+    save_profiles : bool
+        Whether to write the full radial profile (``<label>.npz``) per grid
+        point. Reads ``[output].save_profiles`` from the grid TOML, default
+        ``False``.
     """
     grid = toml.load(grid_toml_path)
 
@@ -116,10 +146,21 @@ def load_grid_config(grid_toml_path):
             )
 
     # Output directory (relative to ZALMOXIS_ROOT)
-    output_rel = grid.get('output', {}).get('dir', 'output_files/grid_results')
+    output_section = grid.get('output', {})
+    output_rel = output_section.get('dir', 'output_files/grid_results')
     output_dir = os.path.join(ZALMOXIS_ROOT, output_rel)
 
-    return base_config_path, sweeps, output_dir
+    # Optional: per-grid-point radial profile dump (off by default).
+    # Require a real TOML bool so a stray quoted "false" string does not
+    # silently evaluate as truthy.
+    save_profiles = output_section.get('save_profiles', False)
+    if not isinstance(save_profiles, bool):
+        raise TypeError(
+            f'[output].save_profiles must be a bool, got '
+            f'{type(save_profiles).__name__} ({save_profiles!r})'
+        )
+
+    return base_config_path, sweeps, output_dir, save_profiles
 
 
 # ---------------------------------------------------------------------------
@@ -194,9 +235,16 @@ def run_single(args):
     Parameters
     ----------
     args : tuple
-        (label, config_path, output_dir) where label identifies the run,
-        config_path is the temporary TOML file, and output_dir is where
-        to write per-run results.
+        ``(label, config_path, output_dir, save_profiles)`` where ``label``
+        identifies the run, ``config_path`` is the temporary TOML file,
+        ``output_dir`` is where to write per-run results, and
+        ``save_profiles`` toggles dumping the full radial profile to
+        ``<label>.npz`` (arrays: ``radii``, ``density``, ``gravity``,
+        ``pressure``, ``temperature``, ``mass_enclosed``; scalars:
+        ``cmb_mass``, ``core_mantle_mass``, ``converged``). Archives are
+        written for non-converged points too; their ``radii[-1]`` and
+        ``mass_enclosed[-1]`` are the last Picard iterate, and ``density``
+        can contain NaN or zero in failed / padded shells.
 
     Returns
     -------
@@ -205,7 +253,7 @@ def run_single(args):
         converged_pressure, converged_density, converged_mass, time_s.
         On failure, includes an 'error' key.
     """
-    label, config_path, output_dir = args
+    label, config_path, output_dir, save_profiles = args
 
     t0 = time.time()
     result = {
@@ -223,7 +271,9 @@ def run_single(args):
     try:
         config_params = load_zalmoxis_config(config_path)
 
-        # Disable data output (we collect results programmatically)
+        # Disable per-run text output and plotting; the grid runner collects
+        # summary results programmatically and (optionally) writes profiles
+        # itself as compressed .npz below.
         config_params['data_output_enabled'] = False
         config_params['plotting_enabled'] = False
 
@@ -265,6 +315,56 @@ def run_single(args):
                 indent=2,
             )
 
+        # Optional: persist the full radial profile so users can plot
+        # pressure, density, gravity, and temperature vs. radius (or any
+        # two of them against each other) without re-running the sweep.
+        # SI units throughout: m, kg/m^3, m/s^2, Pa, K, kg.
+        #
+        # Non-converged grid points are saved too (useful for debugging),
+        # but in that case radii[-1] and mass_enclosed[-1] reflect the
+        # last Picard iterate, not the planet's converged structure, and
+        # density can contain NaN or zero in failed / padded shells.
+        # The `converged` scalar is embedded in the archive so downstream
+        # users can filter without cross-referencing grid_summary.csv.
+        #
+        # The EOS and melting-curve identifiers are embedded so plotting
+        # tools know which solidus/liquidus the solver actually used
+        # (rather than guessing from defaults).
+        if save_profiles:
+            layer_eos = config_params.get('layer_eos_config') or {}
+            npz_path = os.path.join(output_dir, f'{label}.npz')
+            # Wrap the archive write so an I/O failure (disk full,
+            # permissions, etc.) does not silently contradict the
+            # per-run JSON summary written below: log a warning and
+            # record the failure on the result dict so it also surfaces
+            # in grid_summary.csv.
+            try:
+                np.savez_compressed(
+                    npz_path,
+                    radii=model_results['radii'],
+                    density=model_results['density'],
+                    gravity=model_results['gravity'],
+                    pressure=model_results['pressure'],
+                    temperature=model_results['temperature'],
+                    mass_enclosed=model_results['mass_enclosed'],
+                    cmb_mass=model_results['cmb_mass'],
+                    core_mantle_mass=model_results['core_mantle_mass'],
+                    converged=np.bool_(model_results['converged']),
+                    core_eos=np.str_(layer_eos.get('core', '')),
+                    mantle_eos=np.str_(layer_eos.get('mantle', '')),
+                    ice_layer_eos=np.str_(layer_eos.get('ice_layer', '')),
+                    rock_solidus_id=np.str_(config_params.get('rock_solidus', '')),
+                    rock_liquidus_id=np.str_(config_params.get('rock_liquidus', '')),
+                )
+            except OSError as profile_error:
+                logger.warning(
+                    "Failed to write optional profile archive %s for run '%s': %s",
+                    npz_path,
+                    label,
+                    profile_error,
+                )
+                result['error'] = f'profile write failed: {profile_error}'
+
     except Exception as e:
         result['error'] = str(e)
         logger.error(f"Run '{label}' failed: {e}")
@@ -286,6 +386,15 @@ def run_single(args):
 def run_grid(grid_toml_path, n_workers=1):
     """Run the full parameter grid and write a CSV summary.
 
+    Per-run outputs (always written): ``grid_summary.csv`` plus a
+    ``<label>.json`` file per grid point. When the grid TOML sets
+    ``[output].save_profiles = true`` the runner additionally writes
+    ``<label>.npz`` containing the full radial profile (radius, density,
+    gravity, pressure, temperature, mass enclosed) for each grid point,
+    including non-converged ones. Non-converged / failed profiles may
+    contain padded or invalid shell values, so filter on
+    ``converged == True`` before plotting or analysis.
+
     Parameters
     ----------
     grid_toml_path : str
@@ -300,7 +409,7 @@ def run_grid(grid_toml_path, n_workers=1):
     """
     t0 = time.time()
 
-    base_config_path, sweeps, output_dir = load_grid_config(grid_toml_path)
+    base_config_path, sweeps, output_dir, save_profiles = load_grid_config(grid_toml_path)
     os.makedirs(output_dir, exist_ok=True)
 
     # Report grid size
@@ -308,9 +417,10 @@ def run_grid(grid_toml_path, n_workers=1):
     print('=' * 72)
     print('Zalmoxis parameter grid')
     print('=' * 72)
-    print(f'  Base config: {base_config_path}')
-    print(f'  Output dir:  {output_dir}')
-    print(f'  Workers:     {n_workers}')
+    print(f'  Base config:   {base_config_path}')
+    print(f'  Output dir:    {output_dir}')
+    print(f'  Workers:       {n_workers}')
+    print(f'  Save profiles: {save_profiles}')
     print()
     print('  Sweep parameters:')
     for name in sorted(sweeps.keys()):
@@ -326,7 +436,9 @@ def run_grid(grid_toml_path, n_workers=1):
     assert len(configs) == n_total
 
     # Prepare arguments for run_single
-    run_args = [(label, config_path, output_dir) for label, config_path in configs]
+    run_args = [
+        (label, config_path, output_dir, save_profiles) for label, config_path in configs
+    ]
 
     # Run in parallel
     if n_workers > 1:
