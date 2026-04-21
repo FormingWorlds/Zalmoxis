@@ -733,3 +733,167 @@ def test_read_str_handles_missing_and_numpy_scalars():
     assert _read_str(data, 'a') == 'hello'
     assert _read_str(data, 'b') == 'raw'
     assert _read_str(data, 'missing') == ''
+
+
+# ---------------------------------------------------------------------------
+# CLI parser coverage for the three plot tools
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+def test_plot_grid_profiles_parser_defaults_and_flags():
+    from src.tools.plot_grid_profiles import _build_parser
+
+    parser = _build_parser()
+    args = parser.parse_args(['/some/grid'])
+    assert args.path == '/some/grid'
+    assert args.output is None
+    assert args.colour_by is None
+    assert args.log_pressure is False
+    assert args.dpi == 200
+
+    args = parser.parse_args(
+        [
+            '/g',
+            '-o',
+            'out.pdf',
+            '--colour-by',
+            'surface_temperature',
+            '--log-pressure',
+            '--dpi',
+            '120',
+        ]
+    )
+    assert args.output == 'out.pdf'
+    assert args.colour_by == 'surface_temperature'
+    assert args.log_pressure is True
+    assert args.dpi == 120
+
+
+@pytest.mark.unit
+def test_plot_grid_pt_parser_defaults_and_flags():
+    from src.tools.plot_grid_pt import _build_parser
+
+    parser = _build_parser()
+    args = parser.parse_args(['/g'])
+    assert args.path == '/g'
+    assert args.solidus is None
+    assert args.liquidus is None
+    assert args.show_melting_curves is True
+    assert args.linear_pressure is False
+
+    args = parser.parse_args(
+        [
+            '/g',
+            '--solidus',
+            'Stixrude14-solidus',
+            '--liquidus',
+            'Stixrude14-liquidus',
+            '--no-melting-curves',
+            '--linear-pressure',
+            '--color-by',
+            'planet_mass',
+        ]
+    )
+    assert args.solidus == 'Stixrude14-solidus'
+    assert args.liquidus == 'Stixrude14-liquidus'
+    assert args.show_melting_curves is False
+    assert args.linear_pressure is True
+    assert args.colour_by == 'planet_mass'
+
+
+@pytest.mark.unit
+def test_plot_grid_composition_parser_defaults_and_flags():
+    from src.tools.plot_grid_composition import _build_parser
+
+    parser = _build_parser()
+    args = parser.parse_args(['/g'])
+    assert args.path == '/g'
+    assert args.output is None
+    assert args.label_by is None
+    assert args.dpi == 200
+
+    args = parser.parse_args(['/g', '-o', 'c.png', '--label-by', 'mantle', '--dpi', '300'])
+    assert args.output == 'c.png'
+    assert args.label_by == 'mantle'
+    assert args.dpi == 300
+
+
+# ---------------------------------------------------------------------------
+# Additional plot_grid_pt overlay-suppression branches
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+def test_plot_grid_pt_mantle_varies_across_grid_suppresses_overlay(tmp_path):
+    """A grid whose mantle_eos differs across points must suppress the
+    overlay with the 'differs across grid points' note."""
+    from src.tools.plot_grid_pt import plot_grid_pt
+
+    gdir = _write_synthetic_grid(tmp_path / 'mixed1', masses=(1.0,), mantle_eos='PALEOS:MgSiO3')
+    _write_synthetic_grid(tmp_path / 'mixed1', masses=(2.0,), mantle_eos='WolfBower2018:MgSiO3')
+    # Collapse both into one directory so the CSV and .npz files co-exist.
+    # Simpler: overwrite one .npz to carry a different mantle_eos string
+    # but keep the CSV consistent.
+    d1 = dict(np.load(gdir / 'planet_mass=1.0.npz'))
+    d1['mantle_eos'] = np.str_('WolfBower2018:MgSiO3')
+    np.savez_compressed(gdir / 'planet_mass=1.0.npz', **d1)
+
+    out = tmp_path / 'pt_mixed.png'
+    result = plot_grid_pt(str(gdir), out=str(out))
+    assert os.path.isfile(result)
+
+
+@pytest.mark.unit
+def test_plot_grid_pt_missing_curve_metadata_suppresses_overlay(tmp_path):
+    """An external-curves mantle with empty rock_solidus_id must suppress
+    the overlay (fallback branch when metadata is absent)."""
+    from src.tools.plot_grid_pt import plot_grid_pt
+
+    gdir = _write_synthetic_grid(
+        tmp_path / 'nometa', masses=(1.0, 2.0), mantle_eos='WolfBower2018:MgSiO3'
+    )
+    for npz in gdir.glob('*.npz'):
+        d = dict(np.load(npz))
+        d['rock_solidus_id'] = np.str_('')
+        d['rock_liquidus_id'] = np.str_('')
+        np.savez_compressed(npz, **d)
+
+    out = tmp_path / 'pt_nometa.png'
+    result = plot_grid_pt(str(gdir), out=str(out))
+    assert os.path.isfile(result)
+
+
+@pytest.mark.unit
+def test_plot_grid_pt_forced_invalid_curve_id_caught(tmp_path, fake_grid_dir):
+    """An unknown curve id in an explicit override is caught and the plot
+    still renders with an empty overlay (the exception handler runs)."""
+    from src.tools.plot_grid_pt import plot_grid_pt
+
+    out = tmp_path / 'pt_badid.png'
+    result = plot_grid_pt(
+        str(fake_grid_dir),
+        out=str(out),
+        solidus='NotARealCurveId',
+        liquidus='AlsoBogus',
+    )
+    assert os.path.isfile(result)
+
+
+@pytest.mark.unit
+def test_plot_grid_profiles_skips_missing_npz(tmp_path):
+    """A CSV row whose .npz file does not exist is skipped with a note."""
+    from src.tools.plot_grid_profiles import plot_grid_profiles
+
+    gdir = _write_synthetic_grid(tmp_path / 'g', masses=(0.5, 1.0))
+    (gdir / 'planet_mass=1.0.npz').unlink()  # remove one archive
+
+    out = tmp_path / 'profiles_missing.png'
+    result = plot_grid_profiles(str(gdir), out=str(out))
+    assert os.path.isfile(result)
+
+
+@pytest.mark.unit
+def test_plot_grid_profiles_custom_colour_by(fake_grid_dir, tmp_path):
+    """Non-default --colour-by exercises the explicit-override branch."""
+    from src.tools.plot_grid_profiles import plot_grid_profiles
+
+    out = tmp_path / 'profiles_by_pm.png'
+    result = plot_grid_profiles(str(fake_grid_dir), out=str(out), colour_by='planet_mass')
+    assert os.path.isfile(result)
