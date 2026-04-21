@@ -24,6 +24,7 @@ surface_temperature = [1000, 2000, 3000]
 
 [output]
 dir = "output_files/grid_results"  # output directory (relative to ZALMOXIS_ROOT)
+save_profiles = true               # optional (default false); see Output section
 ```
 
 The available sweep parameter names and their mapping to TOML config sections are:
@@ -60,6 +61,7 @@ planet_mass = [0.5, 1.0, 2.0, 3.0, 5.0, 7.0, 10.0]
 
 [output]
 dir = "output_files/grid_mass_radius"
+save_profiles = true
 ```
 
 Run with 2 workers:
@@ -87,6 +89,7 @@ surface_temperature = [2000, 3000]
 
 [output]
 dir = "output_files/grid_h2_mixing"
+save_profiles = true
 ```
 
 This produces 4 x 3 x 2 = 24 models. Plotting with `--single-panel` shows how dissolved hydrogen inflates the radius at fixed mass:
@@ -110,6 +113,7 @@ surface_temperature = [2000, 3000]
 
 [output]
 dir = "output_files/grid_h2o_mixing"
+save_profiles = true
 ```
 
 This produces 4 x 3 x 2 = 24 models. Plotting with `--single-panel` shows the radius increase from water in the mantle:
@@ -130,6 +134,7 @@ surface_temperature = [1000, 2000, 3000, 4000]
 
 [output]
 dir = "output_files/grid_mass_temperature"
+save_profiles = true
 ```
 
 This produces 5 x 4 = 20 models. Plotting with `--single-panel` overlays all temperature curves on one panel:
@@ -143,9 +148,31 @@ Higher surface temperatures lead to larger radii through thermal expansion. The 
 Each grid run produces:
 
 - **`grid_summary.csv`**: One row per model with columns for all sweep parameters, calculated radius (R_earth), mass (M_earth), convergence flags, wall time, and any error messages.
-- **Per-run JSON files**: Individual `<label>.json` files with the same information, named by the parameter combination.
+- **Per-run JSON files**: Individual `<label>.json` files with the same summary information, named by the parameter combination.
+- **Per-run profile files** (optional, `[output].save_profiles = true`, default `false`): `<label>.npz` files containing the full radial structure of each grid point. Each archive stores six profile arrays (`radii`, `density`, `gravity`, `pressure`, `temperature`, `mass_enclosed`), two scalar mass diagnostics (`cmb_mass`, `core_mantle_mass`), and the `converged` boolean. All quantities are in SI units (m, kg/m³, m/s², Pa, K, kg).
 
-Plotting and per-profile data output are disabled during grid runs for speed. To generate plots for specific parameter combinations, run them individually with `plots_enabled = true`.
+    Archives are written for non-converged grid points too (useful for debugging), but `radii[-1]` and `mass_enclosed[-1]` in those cases are the last Picard iterate, not the planet's converged structure, and `density` can contain NaN or zero in failed or padded shells. Filter on `converged == True` before plotting.
+
+Plotting is always disabled during grid runs for speed. To generate the per-planet matplotlib plots for a specific parameter combination, run that case individually (`python -m zalmoxis -c <cfg>.toml`) with `plots_enabled = true`.
+
+### Loading saved profiles
+
+Each `<label>.npz` is a plain NumPy archive. To plot pressure vs. radius for a grid point labelled `planet_mass=3.0`:
+
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+
+data = np.load("output_files/grid_mass_radius/planet_mass=3.0.npz")
+if not bool(data["converged"]):
+    raise RuntimeError("grid point did not converge, profile is not physical")
+plt.plot(data["radii"] / 1e3, data["pressure"] / 1e9)  # km, GPa
+plt.xlabel("Radius [km]")
+plt.ylabel("Pressure [GPa]")
+plt.show()
+```
+
+Typical file sizes are a few tens of kB per grid point (compressed), so 1000-point sweeps stay under a few hundred MB. Set `save_profiles = false` (or omit the key) if you only need the summary CSV.
 
 ## Plotting grid results
 
@@ -241,3 +268,109 @@ python -m src.tools.plot_grid <path> [-x COLUMN] [-y COLUMN] [-g PARAM]
 | `--single-panel` | off | All groups on one panel |
 | `-o` | auto | Output file path |
 | `--dpi` | 200 | Figure resolution |
+
+## Plotting saved radial profiles
+
+When the grid was run with `[output].save_profiles = true`, two companion tools read the per-grid-point `.npz` archives and produce figures that are complementary to the scalar M-R plots from `plot_grid`.
+
+### `plot_grid_profiles`: radial-profile overlay (2x2)
+
+Overlays density, pressure, temperature, and gravity vs. radius across every converged grid point, coloured by the primary sweep parameter. The natural companion to the `plot_grid` M-R diagram for answering "how does the interior change across the sweep?".
+
+```console
+python -m src.tools.plot_grid_profiles output_files/grid_mass_radius
+python -m src.tools.plot_grid_profiles output_files/grid_mass_radius -o profiles.pdf
+python -m src.tools.plot_grid_profiles output_files/grid_mass_radius --colour-by surface_temperature --log-pressure
+```
+
+Default output: `<grid_dir>/profiles_vs_radius.pdf`. Non-converged grid points and points without a saved `.npz` are skipped with a note on stdout. Full CLI:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `path` | (required) | Grid output directory or `grid_summary.csv` path |
+| `-o`, `--output` | `profiles_vs_radius.pdf` | Output file (extension selects format) |
+| `--colour-by` | first numeric sweep parameter | Sweep parameter used for line colour |
+| `--log-pressure` | off | Logarithmic pressure y-axis |
+| `--dpi` | 200 | Raster DPI (ignored for vector formats) |
+
+Python API:
+
+```python
+from src.tools.plot_grid_profiles import plot_grid_profiles
+
+plot_grid_profiles("output_files/grid_mass_radius")  # default: profiles_vs_radius.pdf
+plot_grid_profiles("output_files/grid_h2_mixing", colour_by="surface_temperature")
+```
+
+### `plot_grid_pt`: interior pressure-temperature trajectories
+
+Plots the full interior (P, T) trajectory of every converged grid point as one line, coloured by the primary sweep parameter. Pressure is log-scaled by default. The core-mantle boundary of each trajectory is marked with a black-edged dot. The tool reads EOS and melting-curve metadata embedded in each `.npz` and overlays mantle solidus and liquidus curves **only when the solver actually used external curves** (`WolfBower2018:MgSiO3`, `RTPress100TPa:MgSiO3`, `PALEOS-2phase:MgSiO3`). For unified PALEOS tables (e.g., `PALEOS:MgSiO3`), where the phase boundary is embedded in the EOS table itself, the overlay is suppressed by default and a short note is printed on the figure explaining why. Use `--solidus` / `--liquidus` to force a specific overlay for visual comparison.
+
+Useful for diagnosing which EOS phase regimes the sweep traverses and for sanity-checking that interior conditions stay inside the pressure/temperature range covered by the selected tables.
+
+```console
+python -m src.tools.plot_grid_pt output_files/grid_mass_radius
+python -m src.tools.plot_grid_pt output_files/grid_mass_radius -o pt.pdf
+python -m src.tools.plot_grid_pt output_files/grid_mass_radius --linear-pressure
+python -m src.tools.plot_grid_pt output_files/grid_mass_radius \
+    --solidus Stixrude14-solidus --liquidus Stixrude14-liquidus
+python -m src.tools.plot_grid_pt output_files/grid_mass_radius --no-melting-curves
+```
+
+Default output: `<grid_dir>/pt_trajectories.pdf`. Full CLI:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `path` | (required) | Grid output directory or `grid_summary.csv` path |
+| `-o`, `--output` | `pt_trajectories.pdf` | Output file (extension selects format) |
+| `--colour-by` | first numeric sweep parameter | Sweep parameter used for line colour |
+| `--linear-pressure` | off | Linear pressure y-axis (default is log) |
+| `--solidus` | auto-detect from `.npz` | Force a solidus curve id (`zalmoxis.melting_curves`) |
+| `--liquidus` | auto-detect from `.npz` | Force a liquidus curve id |
+| `--no-melting-curves` | off | Disable the solidus/liquidus overlay entirely |
+| `--dpi` | 200 | Raster DPI (ignored for vector formats) |
+
+The metadata fields the tool reads (`mantle_eos`, `rock_solidus_id`, `rock_liquidus_id`) are written by `run_grid` when `save_profiles = true`. If a grid was run before this metadata was added, the overlay is suppressed with a note pointing to the fix (re-run the grid).
+
+Python API:
+
+```python
+from src.tools.plot_grid_pt import plot_grid_pt
+
+plot_grid_pt("output_files/grid_mass_radius")  # default: pt_trajectories.pdf
+plot_grid_pt(
+    "output_files/grid_mass_radius",
+    solidus="Stixrude14-solidus",
+    liquidus="Stixrude14-liquidus",
+)
+```
+
+### `plot_grid_composition`: layer composition bars
+
+Draws two horizontal stacked-bar panels: core / mantle / ice fractions **by mass** on the left, and **by radius** on the right, one bar per converged grid point. Core and mantle are always shown; the ice / envelope segment appears only for 3-layer runs (or when the mantle mass fraction plus ice layer add up to less than the total). Bars are sorted numerically by the labelling sweep parameter so the ordering is intuitive.
+
+Useful for seeing at a glance how a composition sweep reshapes the layering (`h2_mixing`, `h2o_mixing` grids) or how self-compression shifts the core radius fraction at fixed composition (`mass_radius`, `mass_temperature` grids).
+
+```console
+python -m src.tools.plot_grid_composition output_files/grid_mass_radius
+python -m src.tools.plot_grid_composition output_files/grid_h2_mixing --label-by mantle
+python -m src.tools.plot_grid_composition output_files/grid_mass_radius -o composition.pdf
+```
+
+Default output: `<grid_dir>/composition.pdf`. Full CLI:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `path` | (required) | Grid output directory or `grid_summary.csv` path |
+| `-o`, `--output` | `composition.pdf` | Output file (extension selects format) |
+| `--label-by` | first sweep parameter | Sweep parameter whose value labels each bar |
+| `--dpi` | 200 | Raster DPI (ignored for vector formats) |
+
+Python API:
+
+```python
+from src.tools.plot_grid_composition import plot_grid_composition
+
+plot_grid_composition("output_files/grid_mass_radius")
+plot_grid_composition("output_files/grid_h2_mixing", label_by="mantle")
+```
