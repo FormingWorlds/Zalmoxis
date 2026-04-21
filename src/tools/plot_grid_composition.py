@@ -99,10 +99,18 @@ def _converged(row):
 
 
 def _load_profile(grid_dir, label):
+    """Load a profile archive into a plain dict, closing the NpzFile.
+
+    Keeping the ``np.load(...)`` handle open for the lifetime of the
+    caller leaks one file descriptor per grid point; on 1000+ point
+    sweeps that can exhaust the process limit. Copy arrays into memory
+    and let the context manager close the archive immediately.
+    """
     npz_path = os.path.join(grid_dir, f'{label}.npz')
     if not os.path.isfile(npz_path):
         return None
-    return np.load(npz_path)
+    with np.load(npz_path) as data:
+        return {key: np.array(data[key], copy=True) for key in data.files}
 
 
 def _choose_label_param(sweep_params, explicit=None):
@@ -141,10 +149,16 @@ def _layer_fractions(data):
     if M_total <= 0 or R_total <= 0:
         return None
 
-    # Detect 2-layer (no ice) by checking whether core_mantle_mass equals
-    # the core mass within numerical tolerance. The alternative would be
-    # to inspect the run config, which is not stored in the .npz.
-    is_two_layer = abs(cm_mass - cmb_mass) < 1e-3 * M_total
+    # Detect 2-layer (no ice) from explicit metadata when available, so a
+    # thin-but-non-zero mantle in a 3-layer run is not misclassified as
+    # 2-layer. Fall back to the numerical heuristic only for legacy
+    # archives predating the metadata addition.
+    if 'ice_layer_eos' in data:
+        raw_ice = data['ice_layer_eos']
+        ice_eos = str(raw_ice.item() if hasattr(raw_ice, 'item') else raw_ice).strip()
+        is_two_layer = ice_eos == ''
+    else:
+        is_two_layer = abs(cm_mass - cmb_mass) < 1e-3 * M_total
 
     # Mass fractions, clamped to [0, 1] to guard against tiny Picard residuals.
     f_core_m = max(0.0, min(1.0, cmb_mass / M_total))

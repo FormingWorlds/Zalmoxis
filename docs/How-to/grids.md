@@ -271,7 +271,7 @@ python -m src.tools.plot_grid <path> [-x COLUMN] [-y COLUMN] [-g PARAM]
 
 ## Plotting saved radial profiles
 
-When the grid was run with `[output].save_profiles = true`, two companion tools read the per-grid-point `.npz` archives and produce figures that are complementary to the scalar M-R plots from `plot_grid`.
+When the grid was run with `[output].save_profiles = true`, three companion tools read the per-grid-point `.npz` archives and produce figures that are complementary to the scalar M-R plots from `plot_grid`.
 
 ### `plot_grid_profiles`: radial-profile overlay (2x2)
 

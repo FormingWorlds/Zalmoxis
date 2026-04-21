@@ -150,8 +150,15 @@ def load_grid_config(grid_toml_path):
     output_rel = output_section.get('dir', 'output_files/grid_results')
     output_dir = os.path.join(ZALMOXIS_ROOT, output_rel)
 
-    # Optional: per-grid-point radial profile dump (off by default)
-    save_profiles = bool(output_section.get('save_profiles', False))
+    # Optional: per-grid-point radial profile dump (off by default).
+    # Require a real TOML bool so a stray quoted "false" string does not
+    # silently evaluate as truthy.
+    save_profiles = output_section.get('save_profiles', False)
+    if not isinstance(save_profiles, bool):
+        raise TypeError(
+            f'[output].save_profiles must be a bool, got '
+            f'{type(save_profiles).__name__} ({save_profiles!r})'
+        )
 
     return base_config_path, sweeps, output_dir, save_profiles
 
@@ -326,23 +333,37 @@ def run_single(args):
         if save_profiles:
             layer_eos = config_params.get('layer_eos_config') or {}
             npz_path = os.path.join(output_dir, f'{label}.npz')
-            np.savez_compressed(
-                npz_path,
-                radii=model_results['radii'],
-                density=model_results['density'],
-                gravity=model_results['gravity'],
-                pressure=model_results['pressure'],
-                temperature=model_results['temperature'],
-                mass_enclosed=model_results['mass_enclosed'],
-                cmb_mass=model_results['cmb_mass'],
-                core_mantle_mass=model_results['core_mantle_mass'],
-                converged=np.bool_(model_results['converged']),
-                core_eos=np.str_(layer_eos.get('core', '')),
-                mantle_eos=np.str_(layer_eos.get('mantle', '')),
-                ice_layer_eos=np.str_(layer_eos.get('ice_layer', '')),
-                rock_solidus_id=np.str_(config_params.get('rock_solidus', '')),
-                rock_liquidus_id=np.str_(config_params.get('rock_liquidus', '')),
-            )
+            # Wrap the archive write so an I/O failure (disk full,
+            # permissions, etc.) does not silently contradict the
+            # per-run JSON summary written below: log a warning and
+            # record the failure on the result dict so it also surfaces
+            # in grid_summary.csv.
+            try:
+                np.savez_compressed(
+                    npz_path,
+                    radii=model_results['radii'],
+                    density=model_results['density'],
+                    gravity=model_results['gravity'],
+                    pressure=model_results['pressure'],
+                    temperature=model_results['temperature'],
+                    mass_enclosed=model_results['mass_enclosed'],
+                    cmb_mass=model_results['cmb_mass'],
+                    core_mantle_mass=model_results['core_mantle_mass'],
+                    converged=np.bool_(model_results['converged']),
+                    core_eos=np.str_(layer_eos.get('core', '')),
+                    mantle_eos=np.str_(layer_eos.get('mantle', '')),
+                    ice_layer_eos=np.str_(layer_eos.get('ice_layer', '')),
+                    rock_solidus_id=np.str_(config_params.get('rock_solidus', '')),
+                    rock_liquidus_id=np.str_(config_params.get('rock_liquidus', '')),
+                )
+            except OSError as profile_error:
+                logger.warning(
+                    "Failed to write optional profile archive %s for run '%s': %s",
+                    npz_path,
+                    label,
+                    profile_error,
+                )
+                result['error'] = f'profile write failed: {profile_error}'
 
     except Exception as e:
         result['error'] = str(e)
@@ -369,8 +390,10 @@ def run_grid(grid_toml_path, n_workers=1):
     ``<label>.json`` file per grid point. When the grid TOML sets
     ``[output].save_profiles = true`` the runner additionally writes
     ``<label>.npz`` containing the full radial profile (radius, density,
-    gravity, pressure, temperature, mass enclosed) for each converged grid
-    point.
+    gravity, pressure, temperature, mass enclosed) for each grid point,
+    including non-converged ones. Non-converged / failed profiles may
+    contain padded or invalid shell values, so filter on
+    ``converged == True`` before plotting or analysis.
 
     Parameters
     ----------

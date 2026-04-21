@@ -99,6 +99,50 @@ def test_layer_fractions_three_layer():
 
 
 @pytest.mark.unit
+def test_layer_fractions_thin_mantle_three_layer_uses_metadata():
+    """A valid 3-layer run with a tiny but nonzero mantle fraction (below
+    the old 1e-3 numerical tolerance) must be classified as 3-layer when
+    ice_layer_eos metadata is present, so the ice segment renders
+    correctly. Regression guard for bot review comment #2."""
+    from src.tools.plot_grid_composition import _layer_fractions
+
+    M_total = 1.0e24
+    R_total = 6.0e6
+    # f_core = 0.325, f_cm = 0.3255 -> mantle = 5e-4, ice = 0.6745
+    # This is well inside the old tolerance |cm - core| < 1e-3 * M_total.
+    data = _synthetic_profile(M_total, R_total, f_core=0.325, f_cm=0.3255)
+    # Explicit metadata: non-empty ice_layer_eos flags a 3-layer run.
+    data['ice_layer_eos'] = np.array('Seager2007:H2O')
+
+    fracs = _layer_fractions(data)
+    core_m, mantle_m, ice_m = fracs['mass']
+
+    assert core_m == pytest.approx(0.325, abs=1e-6)
+    assert mantle_m == pytest.approx(5e-4, abs=1e-6)
+    assert ice_m == pytest.approx(0.6745, abs=1e-6)
+    assert ice_m > 0.0  # THE point of this test: ice segment is not suppressed
+
+
+@pytest.mark.unit
+def test_layer_fractions_two_layer_metadata_overrides_tolerance():
+    """With empty ``ice_layer_eos`` metadata, the run is a 2-layer planet
+    regardless of the numerical relationship between cmb_mass and
+    core_mantle_mass."""
+    from src.tools.plot_grid_composition import _layer_fractions
+
+    M_total = 1.0e24
+    R_total = 6.0e6
+    data = _synthetic_profile(M_total, R_total, f_core=0.325, f_cm=0.325)
+    data['ice_layer_eos'] = np.array('')
+
+    fracs = _layer_fractions(data)
+    core_m, mantle_m, ice_m = fracs['mass']
+
+    assert ice_m == pytest.approx(0.0, abs=1e-12)
+    assert mantle_m == pytest.approx(0.675, abs=1e-6)
+
+
+@pytest.mark.unit
 def test_layer_fractions_rejects_zero_mass():
     """A grid point with zero total mass or radius returns None."""
     from src.tools.plot_grid_composition import _layer_fractions
@@ -143,13 +187,15 @@ def test_mantle_uses_external_curves(mantle_eos, expected):
 
 
 @pytest.mark.unit
-def test_mantle_external_curves_matches_zalmoxis_source():
-    """The plot-tool list is an independent copy; regression guard against
-    the two getting out of sync."""
+def test_mantle_external_curves_is_solver_source():
+    """The plot tool now imports the solver's set directly (same
+    ``src.zalmoxis.zalmoxis`` path used by ``run_grid.py``); assert the
+    object identity so a future re-introduction of a local copy fails
+    this test."""
     from src.tools.plot_grid_pt import _EOS_USES_EXTERNAL_CURVES
     from src.zalmoxis.zalmoxis import _NEEDS_MELTING_CURVES
 
-    assert _EOS_USES_EXTERNAL_CURVES == _NEEDS_MELTING_CURVES
+    assert _EOS_USES_EXTERNAL_CURVES is _NEEDS_MELTING_CURVES
 
 
 # ---------------------------------------------------------------------------

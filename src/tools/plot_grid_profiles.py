@@ -118,10 +118,18 @@ def _converged(row):
 
 
 def _load_profile(grid_dir, label):
+    """Load a profile archive into a plain dict, closing the NpzFile.
+
+    Keeping the ``np.load(...)`` handle open for the lifetime of the
+    caller leaks one file descriptor per grid point; on 1000+ point
+    sweeps that can exhaust the process limit. Copy arrays into memory
+    and let the context manager close the archive immediately.
+    """
     npz_path = os.path.join(grid_dir, f'{label}.npz')
     if not os.path.isfile(npz_path):
         return None
-    return np.load(npz_path)
+    with np.load(npz_path) as data:
+        return {key: np.array(data[key], copy=True) for key in data.files}
 
 
 # ---------------------------------------------------------------------------
@@ -214,7 +222,14 @@ def plot_grid_profiles(
         col = _colour(c_val, idx)
         for ax, key, scale, _, _ in panels:
             y = np.asarray(data[key]) * scale
-            ax.plot(r_km, y, color=col, lw=1.2)
+            # Log axes cannot render P <= 0; padded surface shells can
+            # hit exactly zero. Mask those so matplotlib does not warn
+            # and leave the rest of the trajectory plotted cleanly.
+            if key == 'pressure' and log_pressure:
+                mask = y > 0
+                ax.plot(r_km[mask], y[mask], color=col, lw=1.2)
+            else:
+                ax.plot(r_km, y, color=col, lw=1.2)
 
     for ax, _, _, ylabel, tag in panels:
         ax.set_xlabel('Radius (km)')

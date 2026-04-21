@@ -49,6 +49,14 @@ import numpy as np
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import LogNorm, Normalize
 
+# EOS components for which the solver uses *external* solidus / liquidus
+# curves. Unified PALEOS tables encode the phase boundary in the table
+# itself and are NOT in this set. Imported directly from the solver so
+# the two cannot drift out of sync. Uses the same ``src.zalmoxis.*``
+# import path that ``run_grid.py`` uses, so this resolves identically
+# whether invoked via ``python -m src.tools.plot_grid_pt`` or via pytest.
+from src.zalmoxis.zalmoxis import _NEEDS_MELTING_CURVES as _EOS_USES_EXTERNAL_CURVES
+
 # ---------------------------------------------------------------------------
 # Constants (kept in sync with src/tools/plot_grid_profiles.py)
 # ---------------------------------------------------------------------------
@@ -75,16 +83,6 @@ _AXIS_LABELS = {
     'num_layers': 'Number of radial layers',
     'condensed_rho_min': r'Condensed $\rho_\mathrm{min}$ (kg m$^{-3}$)',
     'mushy_zone_factor': 'Mushy zone factor',
-}
-
-# EOS components for which the solver uses *external* solidus / liquidus
-# curves. Unified PALEOS tables encode the phase boundary in the table
-# itself and are NOT in this set. Kept in sync with
-# ``src/zalmoxis/zalmoxis.py::_NEEDS_MELTING_CURVES``.
-_EOS_USES_EXTERNAL_CURVES = {
-    'WolfBower2018:MgSiO3',
-    'RTPress100TPa:MgSiO3',
-    'PALEOS-2phase:MgSiO3',
 }
 
 
@@ -139,15 +137,23 @@ def _converged(row):
 
 
 def _load_profile(grid_dir, label):
+    """Load a profile archive into a plain dict, closing the NpzFile.
+
+    Keeping the ``np.load(...)`` handle open for the lifetime of the
+    caller leaks one file descriptor per grid point; on 1000+ point
+    sweeps that can exhaust the process limit. Copy arrays into memory
+    and let the context manager close the archive immediately.
+    """
     npz_path = os.path.join(grid_dir, f'{label}.npz')
     if not os.path.isfile(npz_path):
         return None
-    return np.load(npz_path)
+    with np.load(npz_path) as data:
+        return {key: np.array(data[key], copy=True) for key in data.files}
 
 
 def _read_str(data, key):
-    """Return a stored string field from a .npz, or an empty string if absent."""
-    if key not in data.files:
+    """Return a stored string field from a profile dict, or '' if absent."""
+    if key not in data:
         return ''
     value = data[key]
     try:
