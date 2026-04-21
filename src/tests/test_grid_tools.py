@@ -1,21 +1,17 @@
-"""Unit tests for the grid-runner output contract and plot-helper logic.
+"""Unit tests for the grid-runner output contract and the plot tools.
 
-These tests do not run the Zalmoxis solver. They exercise the pure helper
-functions in ``src/tools/plot_grid_composition.py`` and
-``src/tools/plot_grid_pt.py``, and the .npz serialisation contract in
-``src/tools/run_grid.py`` by monkeypatching the solver call with a
-synthetic ``model_results`` payload.
+These tests do not run the Zalmoxis solver. They exercise:
 
-Covers:
-
-- ``plot_grid_composition._layer_fractions``: 2-layer vs. 3-layer logic,
-  including the Zalmoxis convention where ``core_mantle_mass == cmb_mass``
-  for runs with ``mantle_mass_fraction = 0``.
-- ``plot_grid_pt._mantle_uses_external_curves``: decision policy must
-  stay in sync with ``_NEEDS_MELTING_CURVES`` in ``src/zalmoxis/zalmoxis.py``.
-- ``run_grid.run_single``: when ``save_profiles`` is true the archive is
-  written with exactly the expected 14 keys and the metadata the solver
-  used (no external curves invented).
+- The pure helper functions in the three plot tools
+  (``_resolve_grid_dir``, ``_load_summary``, ``_detect_sweep_params``,
+  ``_try_float``, ``_choose_colour_param``, ``_read_str``,
+  ``_mantle_uses_external_curves``, ``_layer_fractions``).
+- The full main functions (``plot_grid_profiles``, ``plot_grid_pt``,
+  ``plot_grid_composition``) end-to-end, by building a minimal
+  synthetic grid directory (CSV + ``.npz`` files) in ``tmp_path`` and
+  asserting each tool writes its output image.
+- The ``run_grid.run_single`` serialisation contract by monkeypatching
+  the solver call with a synthetic ``model_results`` payload.
 """
 
 from __future__ import annotations
@@ -345,3 +341,395 @@ def test_run_single_no_profiles_when_disabled(tmp_path, monkeypatch):
     assert result['error'] is None
     assert os.path.isfile(os.path.join(out_dir, f'{label}.json'))
     assert not os.path.exists(os.path.join(out_dir, f'{label}.npz'))
+
+
+@pytest.mark.unit
+def test_load_grid_config_rejects_non_bool_save_profiles(tmp_path, monkeypatch):
+    """Guard against the quoted 'false' footgun: save_profiles must be
+    a real TOML bool, otherwise load_grid_config raises TypeError."""
+    import src.tools.run_grid as rg
+
+    monkeypatch.setattr(rg, 'ZALMOXIS_ROOT', str(tmp_path))
+    base = tmp_path / 'input'
+    base.mkdir()
+    (base / 'default.toml').write_text('# base config')
+    grid = tmp_path / 'bad.toml'
+    grid.write_text(
+        '[base]\nconfig = "input/default.toml"\n'
+        '[sweep]\nplanet_mass = [1.0]\n'
+        '[output]\ndir = "output_files/bad"\nsave_profiles = "false"\n'
+    )
+    with pytest.raises(TypeError, match='save_profiles must be a bool'):
+        rg.load_grid_config(str(grid))
+
+
+@pytest.mark.unit
+def test_load_grid_config_happy_path(tmp_path, monkeypatch):
+    """Well-formed grid TOML with save_profiles=true returns the 4-tuple
+    (base_config_path, sweeps, output_dir, save_profiles) correctly."""
+    import src.tools.run_grid as rg
+
+    monkeypatch.setattr(rg, 'ZALMOXIS_ROOT', str(tmp_path))
+    base = tmp_path / 'input'
+    base.mkdir()
+    (base / 'default.toml').write_text('# base config')
+    grid = tmp_path / 'ok.toml'
+    grid.write_text(
+        '[base]\nconfig = "input/default.toml"\n'
+        '[sweep]\nplanet_mass = [0.5, 1.0]\n'
+        '[output]\ndir = "output_files/ok"\nsave_profiles = true\n'
+    )
+    base_cfg, sweeps, out_dir, save = rg.load_grid_config(str(grid))
+    assert base_cfg.endswith('default.toml')
+    assert sweeps == {'planet_mass': [0.5, 1.0]}
+    assert out_dir.endswith('output_files/ok')
+    assert save is True
+
+
+@pytest.mark.unit
+def test_load_grid_config_unknown_sweep_param(tmp_path, monkeypatch):
+    """An unknown sweep parameter name is rejected at load time."""
+    import src.tools.run_grid as rg
+
+    monkeypatch.setattr(rg, 'ZALMOXIS_ROOT', str(tmp_path))
+    base = tmp_path / 'input'
+    base.mkdir()
+    (base / 'default.toml').write_text('# base config')
+    grid = tmp_path / 'bad_param.toml'
+    grid.write_text(
+        '[base]\nconfig = "input/default.toml"\n'
+        '[sweep]\nwizardry = [1, 2]\n'
+        '[output]\ndir = "out"\n'
+    )
+    with pytest.raises(ValueError, match='Unknown sweep parameter'):
+        rg.load_grid_config(str(grid))
+
+
+@pytest.mark.unit
+def test_run_single_profile_write_failure_reports_error(tmp_path, monkeypatch):
+    """When np.savez_compressed raises OSError, run_single logs a warning
+    and populates result['error'] so the failure surfaces in
+    grid_summary.csv (fix for bot review #3)."""
+    import src.tools.run_grid as rg
+    from src.tools.run_grid import run_single
+
+    _install_fake_solver(monkeypatch)
+
+    # Make np.savez_compressed blow up inside run_single.
+    def _raise(*_args, **_kwargs):
+        raise OSError('simulated disk full')
+
+    monkeypatch.setattr(rg.np, 'savez_compressed', _raise)
+
+    cfg = tempfile.NamedTemporaryFile(mode='w', suffix='.toml', delete=False, dir=tmp_path)
+    cfg.write('# fake config\n')
+    cfg.close()
+
+    label = 'planet_mass=1.0'
+    out_dir = str(tmp_path / 'grid_out')
+    result = run_single((label, cfg.name, out_dir, True))
+
+    assert result['error'] is not None
+    assert 'profile write failed' in result['error']
+    assert 'simulated disk full' in result['error']
+
+
+# ---------------------------------------------------------------------------
+# End-to-end tests for the three plot tools
+# ---------------------------------------------------------------------------
+def _write_synthetic_grid(gdir, masses=(0.5, 1.0, 2.0), mantle_eos='PALEOS:MgSiO3'):
+    """Create a tiny grid_summary.csv + <label>.npz set in gdir.
+
+    Lets the plot tools run end-to-end with no solver and no real EOS data.
+    """
+    import csv
+
+    gdir.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        'label',
+        'planet_mass',
+        'R_earth',
+        'M_earth',
+        'converged',
+        'converged_pressure',
+        'converged_density',
+        'converged_mass',
+        'time_s',
+        'error',
+    ]
+    with open(gdir / 'grid_summary.csv', 'w', newline='') as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames)
+        writer.writeheader()
+        for m in masses:
+            writer.writerow(
+                {
+                    'label': f'planet_mass={m}',
+                    'planet_mass': m,
+                    'R_earth': m**0.27,
+                    'M_earth': m,
+                    'converged': 'True',
+                    'converged_pressure': 'True',
+                    'converged_density': 'True',
+                    'converged_mass': 'True',
+                    'time_s': 10.0,
+                    'error': '',
+                }
+            )
+
+    n = 20
+    M_earth = 5.972e24
+    R_earth = 6.371e6
+    for m in masses:
+        np.savez_compressed(
+            gdir / f'planet_mass={m}.npz',
+            radii=np.linspace(0.0, R_earth * m**0.27, n),
+            density=np.linspace(12000.0, 3000.0, n),
+            pressure=np.linspace(3e11 * m, 1e5, n),
+            temperature=np.linspace(6000.0 * m**0.2, 3000.0, n),
+            gravity=np.linspace(0.0, 10.0 * m**0.5, n),
+            mass_enclosed=np.linspace(0.0, M_earth * m, n),
+            cmb_mass=np.array(0.325 * M_earth * m),
+            core_mantle_mass=np.array(0.325 * M_earth * m),  # 2-layer
+            converged=np.bool_(True),
+            core_eos=np.str_('PALEOS:iron'),
+            mantle_eos=np.str_(mantle_eos),
+            ice_layer_eos=np.str_(''),
+            rock_solidus_id=np.str_('Monteux16-solidus'),
+            rock_liquidus_id=np.str_('Monteux16-liquidus-A-chondritic'),
+        )
+    return gdir
+
+
+@pytest.fixture
+def fake_grid_dir(tmp_path):
+    return _write_synthetic_grid(tmp_path / 'grid')
+
+
+@pytest.fixture
+def fake_grid_dir_external_curves(tmp_path):
+    """Synthetic grid whose mantle EOS triggers the external-curves overlay."""
+    return _write_synthetic_grid(tmp_path / 'grid_wb', mantle_eos='WolfBower2018:MgSiO3')
+
+
+@pytest.mark.unit
+def test_plot_grid_profiles_end_to_end(fake_grid_dir, tmp_path):
+    from src.tools.plot_grid_profiles import plot_grid_profiles
+
+    out = tmp_path / 'profiles.png'
+    result = plot_grid_profiles(str(fake_grid_dir), out=str(out))
+    assert os.path.isfile(result)
+    assert os.path.getsize(result) > 1000  # non-empty image
+
+
+@pytest.mark.unit
+def test_plot_grid_profiles_log_pressure_masks_zero(fake_grid_dir, tmp_path):
+    """log_pressure=True exercises the P>0 mask branch (fix for bot #5)."""
+    from src.tools.plot_grid_profiles import plot_grid_profiles
+
+    # Overwrite one of the .npz files so its surface shell has P == 0.
+    label = 'planet_mass=1.0'
+    old = dict(np.load(fake_grid_dir / f'{label}.npz'))
+    old['pressure'][-1] = 0.0
+    np.savez_compressed(fake_grid_dir / f'{label}.npz', **old)
+
+    out = tmp_path / 'profiles_log.png'
+    result = plot_grid_profiles(str(fake_grid_dir), out=str(out), log_pressure=True)
+    assert os.path.isfile(result)
+
+
+@pytest.mark.unit
+def test_plot_grid_pt_end_to_end_no_overlay(fake_grid_dir, tmp_path):
+    """PALEOS:MgSiO3 mantle: overlay is auto-suppressed with a note."""
+    from src.tools.plot_grid_pt import plot_grid_pt
+
+    out = tmp_path / 'pt.png'
+    result = plot_grid_pt(str(fake_grid_dir), out=str(out))
+    assert os.path.isfile(result)
+
+
+@pytest.mark.unit
+def test_plot_grid_pt_no_melting_curves_flag(fake_grid_dir, tmp_path):
+    """show_melting_curves=False short-circuits the overlay branch."""
+    from src.tools.plot_grid_pt import plot_grid_pt
+
+    out = tmp_path / 'pt_bare.png'
+    result = plot_grid_pt(str(fake_grid_dir), out=str(out), show_melting_curves=False)
+    assert os.path.isfile(result)
+
+
+@pytest.mark.unit
+def test_plot_grid_pt_overlay_from_metadata(fake_grid_dir_external_curves, tmp_path):
+    """WolfBower2018:MgSiO3 mantle: overlay is loaded from the stored
+    rock_solidus_id / rock_liquidus_id and drawn."""
+    from src.tools.plot_grid_pt import plot_grid_pt
+
+    out = tmp_path / 'pt_wb.png'
+    result = plot_grid_pt(str(fake_grid_dir_external_curves), out=str(out))
+    assert os.path.isfile(result)
+
+
+@pytest.mark.unit
+def test_plot_grid_pt_forced_overlay(fake_grid_dir, tmp_path):
+    """Explicit --solidus / --liquidus override the auto-suppression."""
+    from src.tools.plot_grid_pt import plot_grid_pt
+
+    out = tmp_path / 'pt_forced.png'
+    result = plot_grid_pt(
+        str(fake_grid_dir),
+        out=str(out),
+        solidus='Stixrude14-solidus',
+        liquidus='Stixrude14-liquidus',
+    )
+    assert os.path.isfile(result)
+
+
+@pytest.mark.unit
+def test_plot_grid_pt_linear_pressure(fake_grid_dir, tmp_path):
+    from src.tools.plot_grid_pt import plot_grid_pt
+
+    out = tmp_path / 'pt_linear.png'
+    result = plot_grid_pt(str(fake_grid_dir), out=str(out), linear_pressure=True)
+    assert os.path.isfile(result)
+
+
+@pytest.mark.unit
+def test_plot_grid_composition_end_to_end(fake_grid_dir, tmp_path):
+    from src.tools.plot_grid_composition import plot_grid_composition
+
+    out = tmp_path / 'comp.png'
+    result = plot_grid_composition(str(fake_grid_dir), out=str(out))
+    assert os.path.isfile(result)
+    assert os.path.getsize(result) > 1000
+
+
+@pytest.mark.unit
+def test_plot_tools_skip_non_converged(fake_grid_dir, tmp_path):
+    """A row marked converged=False must be skipped by all three tools."""
+    csv_path = fake_grid_dir / 'grid_summary.csv'
+    lines = csv_path.read_text().splitlines()
+    header = lines[0]
+    new_lines = [header]
+    for line in lines[1:]:
+        parts = line.split(',')
+        if parts[0] == 'planet_mass=1.0':
+            parts[4] = 'False'  # 'converged' column
+        new_lines.append(','.join(parts))
+    csv_path.write_text('\n'.join(new_lines) + '\n')
+
+    from src.tools.plot_grid_composition import plot_grid_composition
+    from src.tools.plot_grid_profiles import plot_grid_profiles
+    from src.tools.plot_grid_pt import plot_grid_pt
+
+    assert os.path.isfile(plot_grid_profiles(str(fake_grid_dir), out=str(tmp_path / 'p.png')))
+    assert os.path.isfile(plot_grid_pt(str(fake_grid_dir), out=str(tmp_path / 'pt.png')))
+    assert os.path.isfile(
+        plot_grid_composition(str(fake_grid_dir), out=str(tmp_path / 'c.png'))
+    )
+
+
+@pytest.mark.unit
+def test_plot_grid_profiles_default_output_path(fake_grid_dir):
+    """When out is None the tool writes <grid_dir>/profiles_vs_radius.pdf."""
+    from src.tools.plot_grid_profiles import plot_grid_profiles
+
+    result = plot_grid_profiles(str(fake_grid_dir))
+    assert os.path.basename(result) == 'profiles_vs_radius.pdf'
+    assert os.path.isfile(result)
+
+
+# ---------------------------------------------------------------------------
+# Helper-function tests
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+def test_resolve_grid_dir_accepts_directory(fake_grid_dir):
+    from src.tools.plot_grid_profiles import _resolve_grid_dir
+
+    assert _resolve_grid_dir(str(fake_grid_dir)) == str(fake_grid_dir)
+
+
+@pytest.mark.unit
+def test_resolve_grid_dir_accepts_csv_path(fake_grid_dir):
+    from src.tools.plot_grid_profiles import _resolve_grid_dir
+
+    csv_path = str(fake_grid_dir / 'grid_summary.csv')
+    resolved = _resolve_grid_dir(csv_path)
+    assert os.path.basename(resolved) == os.path.basename(str(fake_grid_dir))
+
+
+@pytest.mark.unit
+def test_resolve_grid_dir_rejects_other_files(tmp_path):
+    from src.tools.plot_grid_profiles import _resolve_grid_dir
+
+    bogus = tmp_path / 'note.txt'
+    bogus.write_text('hi')
+    with pytest.raises(ValueError):
+        _resolve_grid_dir(str(bogus))
+
+
+@pytest.mark.unit
+def test_load_summary_missing_csv(tmp_path):
+    from src.tools.plot_grid_profiles import _load_summary
+
+    empty = tmp_path / 'empty'
+    empty.mkdir()
+    with pytest.raises(FileNotFoundError):
+        _load_summary(str(empty))
+
+
+@pytest.mark.unit
+def test_try_float_behaviour():
+    from src.tools.plot_grid_profiles import _try_float
+
+    assert _try_float('1.5') == 1.5
+    assert _try_float('0') == 0.0
+    assert _try_float('') is None
+    assert _try_float('abc') is None
+    assert _try_float(None) is None
+
+
+@pytest.mark.unit
+def test_detect_sweep_params_strips_fixed_columns():
+    from src.tools.plot_grid_profiles import _detect_sweep_params
+
+    rows = [
+        {
+            'label': 'x',
+            'planet_mass': '1.0',
+            'mantle': 'PALEOS:MgSiO3',
+            'R_earth': '1.0',
+            'M_earth': '1.0',
+            'converged': 'True',
+            'converged_pressure': 'True',
+            'converged_density': 'True',
+            'converged_mass': 'True',
+            'time_s': '1',
+            'error': '',
+        }
+    ]
+    assert _detect_sweep_params(rows) == ['mantle', 'planet_mass']
+
+
+@pytest.mark.unit
+def test_choose_colour_param_rejects_invalid_override():
+    from src.tools.plot_grid_profiles import _choose_colour_param
+
+    with pytest.raises(ValueError):
+        _choose_colour_param(['planet_mass'], [{'planet_mass': '1.0'}], 'nope')
+
+
+@pytest.mark.unit
+def test_choose_colour_param_prefers_numeric():
+    from src.tools.plot_grid_profiles import _choose_colour_param
+
+    rows = [{'mantle': 'PALEOS:MgSiO3', 'planet_mass': '1.0'}]
+    assert _choose_colour_param(['mantle', 'planet_mass'], rows) == 'planet_mass'
+
+
+@pytest.mark.unit
+def test_read_str_handles_missing_and_numpy_scalars():
+    from src.tools.plot_grid_pt import _read_str
+
+    data = {'a': np.str_('hello'), 'b': 'raw'}
+    assert _read_str(data, 'a') == 'hello'
+    assert _read_str(data, 'b') == 'raw'
+    assert _read_str(data, 'missing') == ''
