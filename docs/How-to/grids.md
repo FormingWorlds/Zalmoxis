@@ -283,6 +283,10 @@ python -m src.tools.plot_grid_profiles output_files/grid_mass_radius -o profiles
 python -m src.tools.plot_grid_profiles output_files/grid_mass_radius --colour-by surface_temperature --log-pressure
 ```
 
+Example output on the `mass_radius` grid: density, pressure, temperature, and gravity profiles overlaid across seven planet masses from 0.5 to 10 M_⊕. Panel (a) shows the core-mantle density step; panel (d) shows gravity peaking near the CMB as expected for a differentiated body.
+
+![Grid radial profiles](../img/grid_profiles_vs_radius.png)
+
 Default output: `<grid_dir>/profiles_vs_radius.pdf`. Non-converged grid points and points without a saved `.npz` are skipped with a note on stdout. Full CLI:
 
 | Flag | Default | Description |
@@ -316,6 +320,10 @@ python -m src.tools.plot_grid_pt output_files/grid_mass_radius \
     --solidus Stixrude14-solidus --liquidus Stixrude14-liquidus
 python -m src.tools.plot_grid_pt output_files/grid_mass_radius --no-melting-curves
 ```
+
+Example output on the `mass_radius` grid (default, auto-detect): because the mantle EOS is `PALEOS:MgSiO3` (unified table), the overlay is suppressed and a note is printed on the figure. The CMB marker of each trajectory grows to higher pressure and temperature with planet mass.
+
+![Grid P-T trajectories](../img/grid_pt_trajectories.png)
 
 Default output: `<grid_dir>/pt_trajectories.pdf`. Full CLI:
 
@@ -356,6 +364,10 @@ python -m src.tools.plot_grid_composition output_files/grid_mass_radius
 python -m src.tools.plot_grid_composition output_files/grid_h2_mixing --label-by mantle
 python -m src.tools.plot_grid_composition output_files/grid_mass_radius -o composition.pdf
 ```
+
+Example output on the `mass_radius` grid: panel (a) confirms the core mass fraction is fixed at 0.325 across the sweep (matches the config); panel (b) shows the core *radius* fraction shrinking from ~0.52 at 0.5 M_⊕ to ~0.49 at 10 M_⊕, a signature of iron self-compression being stiffer than silicate self-compression at high pressure.
+
+![Grid composition bars](../img/grid_composition.png)
 
 Default output: `<grid_dir>/composition.pdf`. Full CLI:
 
