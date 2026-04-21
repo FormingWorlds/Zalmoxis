@@ -321,6 +321,50 @@ def generate_spider_phase_boundaries(
         S_sol_valid = S_sol_smooth
         S_liq_valid = S_liq_smooth
 
+    # Stage 1c.4 super-Earth fix (2026-04-21): enforce non-decreasing
+    # S_solidus(P) and S_liquidus(P) via cumulative maximum.
+    #
+    # Motivation. When P_max is raised above ~200 GPa to cover super-Earth
+    # mantles, both phase-boundary entropies show a peak near 175-200 GPa
+    # and decrease thereafter. The peak is a feature of the WB2018 liquid
+    # EOS entropy lookup at (P, T_liq(P)): at high P the density
+    # contribution to S dominates and S(P, T_liq(P)) flattens and then
+    # decreases, even though T_liq(P) is strictly monotone in P via
+    # Belonoshko+2005 / Fei+2021.
+    #
+    # The lever rule Phi = (S_node - S_sol) / (S_liq - S_sol) becomes
+    # nearly singular near the peak, because dS_liq/dP goes through zero
+    # there. A fully-molten IC with S_node comparable to S_liq_peak ends
+    # up with a narrow mushy band at ~175 GPa where Phi ~ 0.995, and the
+    # resulting RHS is stiff enough that CVODE collapses to micro-year
+    # timesteps and hits its 100k-step cap. Observed on the first 5 M_E
+    # dry CHILI full runs at P_max=950 GPa
+    # (see stage1c_5me_super_earth_progress memory for the full trace).
+    #
+    # Fix. Apply np.maximum.accumulate (from low P to high P) to both
+    # arrays. Below the peak nothing changes (the arrays are already
+    # monotone there). Above the peak the entropy is pinned to the peak
+    # value, which is the defensible choice for a lever-rule consumer:
+    # anything at least as hot as the peak should register as fully
+    # liquid, and the flat tail removes the near-singular derivative.
+    if n_valid > 1:
+        S_sol_before = S_sol_valid.copy()
+        S_liq_before = S_liq_valid.copy()
+        S_sol_valid = np.maximum.accumulate(S_sol_valid)
+        S_liq_valid = np.maximum.accumulate(S_liq_valid)
+        n_sol_clipped = int(np.sum(S_sol_valid > S_sol_before + 1e-6))
+        n_liq_clipped = int(np.sum(S_liq_valid > S_liq_before + 1e-6))
+        if n_sol_clipped > 0 or n_liq_clipped > 0:
+            logger.info(
+                'Monotonised phase boundaries (cumulative max): %d solidus '
+                'points clipped, %d liquidus points clipped; peaks at '
+                'S_sol=%.1f J/kg/K and S_liq=%.1f J/kg/K',
+                n_sol_clipped,
+                n_liq_clipped,
+                float(S_sol_valid[-1]),
+                float(S_liq_valid[-1]),
+            )
+
     # Write files
     solidus_path = None
     liquidus_path = None
