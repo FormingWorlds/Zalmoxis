@@ -1,0 +1,48 @@
+# Zalmoxis-only structure-solve test at 5 M_Earth, matching the 1 M_Earth
+# Run B (chili_dry_coupled_v3f_1c_full) interior_struct config as closely as
+# possible. Purpose: confirm PALEOS-2phase MgSiO3 + PALEOS:iron structure
+# converges at 5 M_Earth before committing to a full PROTEUS CHILI run.
+#
+# Usage (from ~/git/PROTEUS/Zalmoxis, with conda env `proteus` active):
+#   python -m zalmoxis -c input/test_5me_structure.toml
+#
+# Pass criteria:
+#   - solver.main reports mass error < 1 % at convergence
+#   - outer iteration count < 15
+#   - no NaN in the radial profiles written under output/
+#   - T(r) >= T_liquidus(r) at every node  (fully-molten IC)
+
+[InputParameter]
+planet_mass                = 5
+
+[AssumptionsAndInitialGuesses]
+core_mass_fraction         = 0.325
+mantle_mass_fraction       = 0
+temperature_mode           = "adiabatic"
+surface_temperature        = 3830
+center_temperature         = 10000
+temperature_profile_file   = "temp_profile.txt"
+
+[EOS]
+core                       = "PALEOS:iron"
+mantle                     = "PALEOS-2phase:MgSiO3"
+ice_layer                  = ""
+
+condensed_rho_min          = 322.0
+condensed_rho_scale        = 50.0
+binodal_T_scale            = 50.0
+
+mushy_zone_factor          = 0.8
+
+rock_solidus               = "Monteux16-solidus"
+rock_liquidus              = "PALEOS-liquidus"
+
+[Calculations]
+num_layers                 = 150
+
+[PressureAdjustment]
+target_surface_pressure    = 35660000
+
+[Output]
+data_enabled               = true
+plots_enabled              = true
