@@ -100,10 +100,16 @@ def calculate_density(
 
     # PALEOS-API live tabulation: rewrite the entry in place on first access
     # so the remaining dispatch goes through the normal paleos_unified / paleos
-    # code paths. Cheap after the first call (resolves to a plain dict access).
-    if _is_paleos_api(mat):
-        from .paleos_api_cache import resolve_registry_entry
-        resolve_registry_entry(mat)
+    # code paths. A sticky `_api_resolved` flag short-circuits the full
+    # `_is_paleos_api(mat)` dispatch chain on every subsequent RHS call.
+    # Without the flag, `_is_paleos_api` was observed in cProfile to take
+    # ~18 s (~24.9M calls) of a single standalone main() call's 300 s wall
+    # (see session_2026_04_23_zalmoxis_cprofile_ground_truth.md).
+    if '_api_resolved' not in mat:
+        if _is_paleos_api(mat):
+            from .paleos_api_cache import resolve_registry_entry
+            resolve_registry_entry(mat)
+        mat['_api_resolved'] = True
 
     # Unified PALEOS tables (single file per material, all phases included)
     if mat.get('format') == 'paleos_unified':
@@ -171,9 +177,12 @@ def calculate_density_batch(
         interpolation_functions = {}
 
     mat = material_dictionaries.get(layer_eos)
-    if mat is not None and _is_paleos_api(mat):
-        from .paleos_api_cache import resolve_registry_entry
-        resolve_registry_entry(mat)
+    # See calculate_density for the _api_resolved sticky-flag rationale.
+    if mat is not None and '_api_resolved' not in mat:
+        if _is_paleos_api(mat):
+            from .paleos_api_cache import resolve_registry_entry
+            resolve_registry_entry(mat)
+        mat['_api_resolved'] = True
     if mat is not None and mat.get('format') == 'paleos_unified':
         return get_paleos_unified_density_batch(
             pressures, temperatures, mat, mushy_zone_factor, interpolation_functions
