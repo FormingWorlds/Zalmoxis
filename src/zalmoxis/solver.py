@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import math
 import time
 
 import numpy as np
@@ -668,7 +669,8 @@ def _solve(
                         T_lin = _ltf(r)
                         if P <= 0:
                             return T_lin
-                        T_adi = float(np.interp(np.log10(P), _lp, _ts))
+                        # W5: math.log10 avoids numpy scalar dispatch (~1 us/call)
+                        T_adi = float(np.interp(math.log10(P), _lp, _ts))
                         T_adi = max(_T_MIN_CLAMP, min(T_adi, _T_MAX_CLAMP))
                         return (1.0 - _b) * T_lin + _b * T_adi
 
@@ -677,7 +679,8 @@ def _solve(
                     def _temperature_func(r, P, _lp=_logP_sorted, _ts=_T_sorted):
                         if P <= 0:
                             return surface_temperature
-                        T_val = float(np.interp(np.log10(P), _lp, _ts))
+                        # W5: math.log10 avoids numpy scalar dispatch (~1 us/call)
+                        T_val = float(np.interp(math.log10(P), _lp, _ts))
                         return max(_T_MIN_CLAMP, min(T_val, _T_MAX_CLAMP))
 
                 # Pre-compute temperatures array for the density update loop

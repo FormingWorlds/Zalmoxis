@@ -7,6 +7,7 @@ are encoded in one file with a phase column.
 from __future__ import annotations
 
 import logging
+import math
 import os
 
 import numpy as np
@@ -72,8 +73,11 @@ def get_paleos_unified_density(
         elif pressure > p_max:
             pressure = p_max
 
-        log_p = np.log10(pressure)
-        log_t = np.log10(temperature if temperature > 1.0 else 1.0)
+        # W5: math.log10 for scalar input avoids ~1 us/call of numpy-dispatch
+        # overhead vs np.log10. Same IEEE-754 result for a Python float input
+        # (both ultimately call the same libc log10).
+        log_p = math.log10(pressure)
+        log_t = math.log10(temperature if temperature > 1.0 else 1.0)
 
         # Per-cell clamping
         log_t_clamped, was_clamped = _paleos_clamp_temperature(log_p, log_t, cached)
@@ -138,8 +142,8 @@ def get_paleos_unified_density(
                     T_liq,
                     '(was below T_melt)' if liq_crossed else '(ok)',
                 )
-        log_t_sol = np.log10(max(T_sol, 1.0))
-        log_t_liq = np.log10(T_liq)
+        log_t_sol = math.log10(max(T_sol, 1.0))
+        log_t_liq = math.log10(T_liq)
 
         if temperature >= T_liq:
             # Above liquidus: direct lookup
