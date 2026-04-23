@@ -156,6 +156,12 @@ def main_cli():
     args = parser.parse_args()
 
     config_params = load_zalmoxis_config(args.config)
+    # Override wall_timeout: the solver's 300 s default is a sanity cap,
+    # not a performance target. Under that cap PALEOS-2phase Stage 1b runs
+    # bail out with a "best solution" rather than true convergence, which
+    # makes bench results non-comparable between commits. Set 1 h here so
+    # runs actually converge.
+    config_params['wall_timeout'] = 3600.0
     layer_eos_config = config_params['layer_eos_config']
     mat_dicts = load_material_dictionaries()
     melt_funcs = load_solidus_liquidus_functions(

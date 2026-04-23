@@ -4,9 +4,11 @@
 #   python -m tools.benchmarks.bench_performance --config=input/bench_performance.toml \
 #       --baseline=tests/data/bench_performance_baseline.npz
 #
-# Matches Stage 1b production use in PROTEUS (1 M_E, PALEOS-2phase:MgSiO3 mantle,
-# num_layers=150, mushy_zone_factor=0.80). Fixed for reproducibility across the
-# per-call speedup commits on tl/interior-refactor-performance.
+# Uses the mantle EOS from Stage 1b production (PALEOS-2phase:MgSiO3 with
+# mushy_zone_factor=0.80) to exercise the same hot paths as PROTEUS.
+# Numerical solver params intentionally left unset so solver._default_solver_params()
+# chooses mass-adaptive defaults. This keeps the bench aligned with
+# production calls rather than a hand-tuned tighter regime.
 
 [InputParameter]
 planet_mass                = 1
@@ -30,14 +32,6 @@ mushy_zone_factor          = 0.80
 
 [Calculations]
 num_layers                 = 150
-
-[IterativeProcess]
-max_iterations_outer       = 100
-max_iterations_inner       = 300
-tolerance_outer            = 3.0e-3
-tolerance_inner            = 1.0e-4
-relative_tolerance         = 1.0e-7
-absolute_tolerance         = 1.0e-4
 
 [Output]
 data_output_enabled        = false
