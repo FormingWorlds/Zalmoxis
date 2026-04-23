@@ -35,7 +35,9 @@ dependencies = [
     "python-ternary",
     "tqdm",
     "osfclient",
-    "zenodo-get"
+    "zenodo-get",
+    "jax>=0.4.38",
+    "diffrax>=0.7"
 ]
 
 [project.scripts]

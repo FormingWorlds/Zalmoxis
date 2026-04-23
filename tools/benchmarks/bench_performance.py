@@ -135,6 +135,25 @@ def compare(baseline, current, tolerance):
             else:
                 report[k] = f"PASS (max_rel={max_rel:.3e})"
 
+        elif tolerance == 'solver-tolerance':
+            # For JIT / solver-method swaps where FP ordering legitimately
+            # differs. Tolerance matches Zalmoxis's own solver rtol (1e-5)
+            # scaled by ~10x to allow Picard-loop FP accumulation; any
+            # larger drift is a real physics difference.
+            with np.errstate(divide='ignore', invalid='ignore'):
+                rel = np.abs(b - c) / np.maximum(np.abs(b), 1e-30)
+                max_rel = float(np.nan_to_num(rel, nan=0.0, posinf=0.0).max())
+            threshold = 1e-4
+            ok = max_rel <= threshold
+            if not ok:
+                report[k] = (
+                    f"FAIL solver-tolerance: max_rel={max_rel:.3e} "
+                    f"(want <={threshold:.0e})"
+                )
+                all_ok = False
+            else:
+                report[k] = f"PASS (max_rel={max_rel:.3e})"
+
         else:
             raise ValueError(f"Unknown tolerance policy: {tolerance}")
 
@@ -150,7 +169,8 @@ def main_cli():
                         help='Path to write the current-run .npz.')
     parser.add_argument('--save-baseline', action='store_true',
                         help='Write --out as new baseline and skip compare.')
-    parser.add_argument('--tolerance', choices=['pure-refactor', 'table-prebake'],
+    parser.add_argument('--tolerance',
+                        choices=['pure-refactor', 'table-prebake', 'solver-tolerance'],
                         default='pure-refactor')
     parser.add_argument('--n-runs', type=int, default=3,
                         help='Number of timing runs (output captured on last run).')
