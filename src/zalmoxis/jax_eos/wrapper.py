@@ -33,6 +33,10 @@ from .solver import solve_structure_jax
 _CALL_COUNT = 0
 _TOTAL_WALL = 0.0
 _DEBUG = bool(_os.environ.get('ZALMOXIS_JAX_DEBUG'))
+# Phase timing buckets for deep profiling. Populated when
+# ZALMOXIS_JAX_PROFILE=1 is set.
+_PROFILE = bool(_os.environ.get('ZALMOXIS_JAX_PROFILE'))
+_PHASE_TIMES = {'cache_extract': 0.0, 'adiabat_tab': 0.0, 'jit_solve': 0.0, 'other': 0.0}
 
 
 def _extract_sub_args(cached, prefix):
@@ -117,6 +121,8 @@ def solve_structure_via_jax(
     from ..eos.interpolation import _ensure_unified_cache
     from ..eos.seager import get_tabulated_eos
 
+    _p_t0 = _time.perf_counter() if _PROFILE else 0.0
+
     radii_arr = np.asarray(radii, dtype=float)
 
     # Core cache: paleos_unified (load via _ensure_unified_cache)
@@ -167,14 +173,40 @@ def solve_structure_via_jax(
         else:
             core_mzf = float(mushy_zone_factors)
 
-    # Adiabat tabulation. If no temperature_function, use constant 3000 K.
+    if _PROFILE:
+        _PHASE_TIMES['cache_extract'] += _time.perf_counter() - _p_t0
+        _p_t0 = _time.perf_counter()
+
+    # Adiabat tabulation. The temperature_function changes between outer
+    # Picard iterations (blend, converged density update) but is CONSTANT
+    # across brentq evals within one inner iteration. Cache the tabulation
+    # by id(temperature_function) in interpolation_cache so the 4000-point
+    # np.interp sweep only runs once per outer iter, not per brentq call.
+    # Empirical: removes ~5 ms/call * 5000 calls ~ 25 s of the JAX total
+    # (cProfile 2026-04-23).
     if temperature_function is None:
         T_logP_grid = np.linspace(5.0, 13.0, 4)
         T_values = np.full(4, 3000.0)
         T_surface = 3000.0
     else:
-        T_logP_grid, T_values = _tabulate_adiabat(radii_arr, temperature_function)
-        T_surface = float(temperature_function(float(radii_arr[-1]), 1e5))
+        _adia_cache = interpolation_cache.setdefault('_jax_adiabat_cache', {})
+        _key = id(temperature_function)
+        _entry = _adia_cache.get(_key)
+        if _entry is None:
+            _T_logP_grid, _T_values = _tabulate_adiabat(radii_arr, temperature_function)
+            _T_surface = float(temperature_function(float(radii_arr[-1]), 1e5))
+            _entry = (_T_logP_grid, _T_values, _T_surface)
+            # Cap cache size so stale closures don't accumulate across
+            # many outer iters (rare in practice; the _solve() control
+            # flow creates ~10-20 distinct _temperature_func objects).
+            if len(_adia_cache) > 64:
+                _adia_cache.pop(next(iter(_adia_cache)))
+            _adia_cache[_key] = _entry
+        T_logP_grid, T_values, T_surface = _entry
+
+    if _PROFILE:
+        _PHASE_TIMES['adiabat_tab'] += _time.perf_counter() - _p_t0
+        _p_t0 = _time.perf_counter()
 
     # Stixrude14 params (hardcoded to module constants; matches what the
     # numpy path uses for this config).
@@ -213,6 +245,23 @@ def solve_structure_via_jax(
     )
     ys = np.asarray(ys)
     _dt = _time.perf_counter() - _t0
+
+    if _PROFILE:
+        _PHASE_TIMES['jit_solve'] += _dt
+        # Report cumulative every 200 calls
+        if _CALL_COUNT % 200 == 0:
+            total = sum(_PHASE_TIMES.values())
+            print(
+                f'[jax_profile] {_CALL_COUNT} calls | '
+                f'cache_extract={_PHASE_TIMES["cache_extract"]:.2f}s '
+                f'({100*_PHASE_TIMES["cache_extract"]/max(total,1e-9):.1f}%) | '
+                f'adiabat_tab={_PHASE_TIMES["adiabat_tab"]:.2f}s '
+                f'({100*_PHASE_TIMES["adiabat_tab"]/max(total,1e-9):.1f}%) | '
+                f'jit_solve={_PHASE_TIMES["jit_solve"]:.2f}s '
+                f'({100*_PHASE_TIMES["jit_solve"]/max(total,1e-9):.1f}%) | '
+                f'total={total:.2f}s',
+                flush=True,
+            )
     _TOTAL_WALL += _dt
     if _DEBUG and (_CALL_COUNT <= 5 or _CALL_COUNT % 100 == 0):
         print(f'[jax_wrapper] call {_CALL_COUNT}: {_dt*1000:.1f} ms, cumulative '
