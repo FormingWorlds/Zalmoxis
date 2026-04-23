@@ -188,6 +188,13 @@ def stixrude14_liquidus(P):
     float or ndarray
         Liquidus temperature in K.
     """
+    # W2: scalar fast path. Skip np.atleast_1d / np.asarray / np.where
+    # dispatch overhead for scalar P. The solver's RHS calls this per-cell
+    # and per-step; cProfile 2026-04-23 showed 12.7 M calls / 57 s self
+    # (6.3 % of a single solve). Scalar math is identical to the array
+    # np.where branch for P > 0 and the P == 0 branch for P == 0.
+    if isinstance(P, (int, float, np.floating, np.integer)):
+        return _STIX14_T_REF * (P / _STIX14_P_REF) ** _STIX14_EXPONENT if P > 0 else 0.0
     P_arr = np.atleast_1d(np.asarray(P, dtype=float))
     # Guard P=0: the power law gives 0 K at P=0
     T = np.where(
