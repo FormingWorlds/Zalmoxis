@@ -143,19 +143,24 @@ def coupled_odes_jax(
     # Layer selection
     rho = jnp.where(mass < cmb_mass, rho_core, rho_mantle)
 
-    # Numpy's coupled_odes returns zeros when P<=0 or density non-finite
-    # to freeze the state until the terminal event fires. Mirror that.
-    valid = (pressure > 0) & jnp.isfinite(rho)
-    rho = jnp.where(valid, rho, 1.0)  # placeholder; output is zeroed below
+    # Match numpy's coupled_odes: return zeros when the EOS produces
+    # a non-finite density (out-of-table T clamp, PALEOS edge case).
+    # This mirrors structure_model.coupled_odes line 148 and is what
+    # the test_jax_rhs_parity test filters out (both_nonzero mask).
+    # Note: unlike the prior implementation, we DO NOT freeze on
+    # pressure <= 0. That freeze prevented diffrax.Event from seeing
+    # the pressure-zero downcrossing. Event-based termination now
+    # handles P<=0 instead.
+    rho_finite = jnp.isfinite(rho)
+    rho_safe = jnp.where(rho_finite, rho, 1.0)
 
     # Standard structure ODEs
-    dMdr = 4.0 * jnp.pi * radius ** 2 * rho
+    dMdr = 4.0 * jnp.pi * radius ** 2 * rho_safe
     # At r=0, dgdr singular; use analytic limit dg/dr = 4 pi G rho / 3
-    dgdr_gen = 4.0 * jnp.pi * G * rho - 2.0 * gravity / jnp.where(radius > 0, radius, 1.0)
-    dgdr_r0 = (4.0 / 3.0) * jnp.pi * G * rho
+    dgdr_gen = 4.0 * jnp.pi * G * rho_safe - 2.0 * gravity / jnp.where(radius > 0, radius, 1.0)
+    dgdr_r0 = (4.0 / 3.0) * jnp.pi * G * rho_safe
     dgdr = jnp.where(radius > 0, dgdr_gen, dgdr_r0)
-    dPdr = -rho * gravity
+    dPdr = -rho_safe * gravity
 
-    # Zero derivatives if invalid (freeze state for terminal event)
     zero3 = jnp.zeros(3, dtype=dMdr.dtype)
-    return jnp.where(valid, jnp.stack([dMdr, dgdr, dPdr]), zero3)
+    return jnp.where(rho_finite, jnp.stack([dMdr, dgdr, dPdr]), zero3)

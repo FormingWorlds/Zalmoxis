@@ -269,4 +269,19 @@ def solve_structure_via_jax(
     mass_enclosed = ys[:, 0]
     gravity = ys[:, 1]
     pressure = ys[:, 2]
+
+    # Pressure-zero terminal event post-processing. When the event fires
+    # mid-grid, diffrax returns `inf` for all saveat entries past the
+    # crossing (verified 2026-04-23). We replace those with the numpy
+    # contract: mass/gravity carry the last valid value, pressure is
+    # padded to 0. Matches structure_model.solve_structure's final pad.
+    post_event = ~np.isfinite(pressure)
+    if np.any(post_event):
+        valid_idx = np.flatnonzero(~post_event)
+        if valid_idx.size > 0:
+            last_M = mass_enclosed[valid_idx[-1]]
+            last_g = gravity[valid_idx[-1]]
+            mass_enclosed = np.where(post_event, last_M, mass_enclosed)
+            gravity = np.where(post_event, last_g, gravity)
+            pressure = np.where(post_event, 0.0, pressure)
     return mass_enclosed, gravity, pressure
