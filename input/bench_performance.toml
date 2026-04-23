@@ -1,0 +1,47 @@
+# Reproducible performance-baseline config for the Zalmoxis speedup plan.
+#
+# Usage:
+#   python -m tools.benchmarks.bench_performance --config=input/bench_performance.toml \
+#       --baseline=tests/data/bench_performance_baseline.npz
+#
+# Matches Stage 1b production use in PROTEUS (1 M_E, PALEOS-2phase:MgSiO3 mantle,
+# num_layers=150, mushy_zone_factor=0.80). Fixed for reproducibility across the
+# per-call speedup commits on tl/interior-refactor-performance.
+
+[InputParameter]
+planet_mass                = 1
+
+[AssumptionsAndInitialGuesses]
+core_mass_fraction         = 0.325
+mantle_mass_fraction       = 0
+temperature_mode           = "adiabatic"
+surface_temperature        = 3000
+center_temperature         = 6000
+temperature_profile_file   = "temp_profile.txt"
+
+[EOS]
+core                       = "PALEOS:iron"
+mantle                     = "PALEOS-2phase:MgSiO3"
+ice_layer                  = ""
+condensed_rho_min          = 322.0
+condensed_rho_scale        = 50.0
+binodal_T_scale            = 50.0
+mushy_zone_factor          = 0.80
+
+[Calculations]
+num_layers                 = 150
+
+[IterativeProcess]
+max_iterations_outer       = 100
+max_iterations_inner       = 300
+tolerance_outer            = 3.0e-3
+tolerance_inner            = 1.0e-4
+relative_tolerance         = 1.0e-7
+absolute_tolerance         = 1.0e-4
+
+[Output]
+data_output_enabled        = false
+plotting_enabled           = false
+verbose                    = false
+plot_filename              = "struct.png"
+data_filename              = "struct.dat"
