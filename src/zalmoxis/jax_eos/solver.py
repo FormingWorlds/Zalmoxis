@@ -26,6 +26,53 @@ import jax.numpy as jnp
 from .rhs import coupled_odes_jax
 
 
+def _build_diffeqsolve_jit():
+    """Build a jitted diffeqsolve closure, imported lazily.
+
+    Must be top-level so jax.jit can cache the compiled kernel across
+    wrapper calls. Closure over diffrax so the numpy-path import cost
+    stays zero.
+    """
+    import diffrax
+
+    def _ode_rhs(t, y, args):
+        return coupled_odes_jax(t, y, **args)
+
+    term = diffrax.ODETerm(_ode_rhs)
+    solver = diffrax.Tsit5()
+
+    @jax.jit
+    def _solve(radii, y0, rtol, atol, rhs_args):
+        controller = diffrax.PIDController(rtol=rtol, atol=atol)
+        saveat = diffrax.SaveAt(ts=radii)
+        sol = diffrax.diffeqsolve(
+            term,
+            solver,
+            t0=radii[0],
+            t1=radii[-1],
+            dt0=radii[1] - radii[0],
+            y0=y0,
+            saveat=saveat,
+            stepsize_controller=controller,
+            args=rhs_args,
+            max_steps=200000,
+            throw=False,
+        )
+        return sol.ys
+
+    return _solve
+
+
+_SOLVE_CACHE = None
+
+
+def _get_solve():
+    global _SOLVE_CACHE
+    if _SOLVE_CACHE is None:
+        _SOLVE_CACHE = _build_diffeqsolve_jit()
+    return _SOLVE_CACHE
+
+
 def solve_structure_jax(
     radii,
     y0,
@@ -46,36 +93,18 @@ def solve_structure_jax(
         default (1e-5 / 1e-6).
     **rhs_kwargs :
         All the cache + adiabat + Stixrude14 parameters that
-        coupled_odes_jax needs. Passed through unchanged.
+        coupled_odes_jax needs. Passed through as a dict pytree.
 
     Returns
     -------
     ys : array of shape (n_layers, 3)
         State [M, g, P] at each radii.
     """
-    # Local imports to keep the numpy-path cost low at module load.
-    import diffrax
-
-    def _ode_rhs(t, y, args):
-        # args is the pytree dict of cache data; unpack via kwargs
-        return coupled_odes_jax(t, y, **args)
-
-    term = diffrax.ODETerm(_ode_rhs)
-    solver = diffrax.Tsit5()
-    controller = diffrax.PIDController(rtol=rtol, atol=atol)
-    saveat = diffrax.SaveAt(ts=radii)
-
-    sol = diffrax.diffeqsolve(
-        term,
-        solver,
-        t0=float(radii[0]),
-        t1=float(radii[-1]),
-        dt0=float(radii[1] - radii[0]) if len(radii) > 1 else 1.0,
-        y0=jnp.asarray(y0),
-        saveat=saveat,
-        stepsize_controller=controller,
-        args=rhs_kwargs,
-        max_steps=200000,
-        throw=False,  # match scipy's behaviour: return best-effort on failure
+    solve = _get_solve()
+    return solve(
+        jnp.asarray(radii, dtype=jnp.float64),
+        jnp.asarray(y0, dtype=jnp.float64),
+        jnp.asarray(rtol, dtype=jnp.float64),
+        jnp.asarray(atol, dtype=jnp.float64),
+        rhs_kwargs,
     )
-    return sol.ys

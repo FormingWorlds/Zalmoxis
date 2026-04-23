@@ -363,6 +363,11 @@ def _solve(
     condensed_rho_min = config_params.get('condensed_rho_min', CONDENSED_RHO_MIN_DEFAULT)
     condensed_rho_scale = config_params.get('condensed_rho_scale', CONDENSED_RHO_SCALE_DEFAULT)
     binodal_T_scale = config_params.get('binodal_T_scale', BINODAL_T_SCALE_DEFAULT)
+    # JAX fast path: when True, solve_structure dispatches to the diffrax-
+    # based implementation (jax_eos/wrapper.py) inside the Picard loop.
+    # Supported configs: 2-layer single-component (Stage-1b PROTEUS).
+    # Unsupported configs fall back to the numpy path automatically.
+    use_jax = bool(config_params.get('use_jax', False))
 
     # Parse layer mixtures if not provided externally (PROTEUS/CALLIOPE)
     if layer_mixtures is None:
@@ -781,6 +786,7 @@ def _solve(
                     condensed_rho_min,
                     condensed_rho_scale,
                     binodal_T_scale,
+                    use_jax=use_jax,
                 )
                 if logger.isEnabledFor(logging.DEBUG):
                     create_pressure_density_files(
@@ -852,6 +858,7 @@ def _solve(
                     condensed_rho_min,
                     condensed_rho_scale,
                     binodal_T_scale,
+                    use_jax=use_jax,
                 )
 
                 surface_residual = abs(pressure[-1] - target_surface_pressure)

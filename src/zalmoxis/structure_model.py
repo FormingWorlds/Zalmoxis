@@ -182,6 +182,7 @@ def solve_structure(
     condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
     condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
     binodal_T_scale=BINODAL_T_SCALE_DEFAULT,
+    use_jax=False,
 ):
     """Solve the coupled ODEs for the planetary structure model.
 
@@ -237,6 +238,39 @@ def solve_structure(
     tuple
         (mass_enclosed, gravity, pressure) arrays at each radial grid point.
     """
+    # JAX fast path — dispatch to the diffrax-based implementation when
+    # requested. Falls back to numpy path on any ValueError (unsupported
+    # config: 3-layer ice, multi-component mixing, non-PALEOS-2phase
+    # mantle, etc.). Logged at debug; callers observe the same return
+    # contract either way.
+    if use_jax:
+        try:
+            from .jax_eos.wrapper import solve_structure_via_jax
+            return solve_structure_via_jax(
+                layer_mixtures=layer_mixtures,
+                cmb_mass=cmb_mass,
+                core_mantle_mass=core_mantle_mass,
+                radii=radii,
+                adaptive_radial_fraction=adaptive_radial_fraction,
+                relative_tolerance=relative_tolerance,
+                absolute_tolerance=absolute_tolerance,
+                maximum_step=maximum_step,
+                material_dictionaries=material_dictionaries,
+                interpolation_cache=interpolation_cache,
+                y0=y0,
+                solidus_func=solidus_func,
+                liquidus_func=liquidus_func,
+                temperature_function=temperature_function,
+                mushy_zone_factors=mushy_zone_factors,
+                condensed_rho_min=condensed_rho_min,
+                condensed_rho_scale=condensed_rho_scale,
+                binodal_T_scale=binodal_T_scale,
+            )
+        except ValueError as exc:
+            logger.warning(
+                'JAX solve_structure fell back to numpy path: %s', exc,
+            )
+
     uses_Tdep = any_component_is_tdep(layer_mixtures)
 
     # Terminal event: stop integration when pressure crosses zero.

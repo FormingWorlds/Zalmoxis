@@ -174,6 +174,9 @@ def main_cli():
                         default='pure-refactor')
     parser.add_argument('--n-runs', type=int, default=3,
                         help='Number of timing runs (output captured on last run).')
+    parser.add_argument('--use-jax', action='store_true',
+                        help='Route the structure ODE through the JAX+diffrax path '
+                             '(config_params["use_jax"]=True).')
     args = parser.parse_args()
 
     config_params = load_zalmoxis_config(args.config)
@@ -183,6 +186,9 @@ def main_cli():
     # makes bench results non-comparable between commits. Set 1 h here so
     # runs actually converge.
     config_params['wall_timeout'] = 3600.0
+    if args.use_jax:
+        config_params['use_jax'] = True
+        print("[bench] use_jax=True (routing structure ODE via diffrax)")
     layer_eos_config = config_params['layer_eos_config']
     mat_dicts = load_material_dictionaries()
     melt_funcs = load_solidus_liquidus_functions(

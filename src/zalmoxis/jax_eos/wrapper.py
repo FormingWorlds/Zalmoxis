@@ -23,9 +23,16 @@ flat-array extraction.
 """
 from __future__ import annotations
 
+import os as _os
+import time as _time
+
 import numpy as np
 
 from .solver import solve_structure_jax
+
+_CALL_COUNT = 0
+_TOTAL_WALL = 0.0
+_DEBUG = bool(_os.environ.get('ZALMOXIS_JAX_DEBUG'))
 
 
 def _extract_sub_args(cached, prefix):
@@ -195,6 +202,9 @@ def solve_structure_via_jax(
     jax_args.update(_extract_sub_args(liq_cached, 'liq'))
     jax_args.update(stix)
 
+    global _CALL_COUNT, _TOTAL_WALL
+    _CALL_COUNT += 1
+    _t0 = _time.perf_counter()
     ys = solve_structure_jax(
         radii_arr, np.asarray(y0, dtype=float),
         rtol=float(relative_tolerance),
@@ -202,6 +212,11 @@ def solve_structure_via_jax(
         **jax_args,
     )
     ys = np.asarray(ys)
+    _dt = _time.perf_counter() - _t0
+    _TOTAL_WALL += _dt
+    if _DEBUG and (_CALL_COUNT <= 5 or _CALL_COUNT % 100 == 0):
+        print(f'[jax_wrapper] call {_CALL_COUNT}: {_dt*1000:.1f} ms, cumulative '
+              f'{_TOTAL_WALL:.2f} s', flush=True)
     mass_enclosed = ys[:, 0]
     gravity = ys[:, 1]
     pressure = ys[:, 2]
