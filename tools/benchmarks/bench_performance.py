@@ -177,6 +177,11 @@ def main_cli():
     parser.add_argument('--use-jax', action='store_true',
                         help='Route the structure ODE through the JAX+diffrax path '
                              '(config_params["use_jax"]=True).')
+    parser.add_argument('--use-anderson', action='store_true',
+                        help='Enable Anderson acceleration on the density Picard '
+                             'loop (config_params["use_anderson"]=True).')
+    parser.add_argument('--anderson-m-max', type=int, default=5,
+                        help='Anderson history window (default: 5).')
     args = parser.parse_args()
 
     config_params = load_zalmoxis_config(args.config)
@@ -189,6 +194,10 @@ def main_cli():
     if args.use_jax:
         config_params['use_jax'] = True
         print("[bench] use_jax=True (routing structure ODE via diffrax)")
+    if args.use_anderson:
+        config_params['use_anderson'] = True
+        config_params['anderson_m_max'] = args.anderson_m_max
+        print(f"[bench] use_anderson=True (m_max={args.anderson_m_max})")
     layer_eos_config = config_params['layer_eos_config']
     mat_dicts = load_material_dictionaries()
     melt_funcs = load_solidus_liquidus_functions(

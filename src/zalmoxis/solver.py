@@ -56,6 +56,68 @@ logger = logging.getLogger(__name__)
 _interpolation_cache = {}
 
 
+def _anderson_mix(x_hist, f_hist, x_k, f_k, m_max=5, beta=1.0):
+    """Type-II Anderson mixing step for a fixed-point iteration.
+
+    Given history of iterates ``x_hist`` (list of 1-D ``np.ndarray``, each
+    the density profile from a previous Picard iter) and residuals
+    ``f_hist`` (same length, with ``f_i = g(x_i) - x_i``), plus the
+    current iterate ``x_k`` and its residual ``f_k``, compute the next
+    iterate by least-squares-combining previous residuals.
+
+    Anderson Type-II update (following Walker & Ni 2011 Eq. 5):
+        F_k = [f_k - f_{k-m}, ..., f_k - f_{k-1}]
+        X_k = [x_k - x_{k-m}, ..., x_k - x_{k-1}]
+        gamma_k = argmin_gamma || f_k - F_k gamma ||_2  (least squares)
+        x_{k+1} = x_k + beta * f_k - (X_k + beta * F_k) gamma_k
+
+    Returns the next iterate, or ``None`` if Anderson fails
+    (matrix singular, non-finite result, too-short history). Caller
+    must fall back to damped Picard when None is returned.
+
+    Notes
+    -----
+    - ``m_max`` is the maximum history window (typically 3-5 for
+      convergence problems in R^n). More history = more accelerative
+      but also more risk of ill-conditioning.
+    - beta=1.0 is Anderson without additional damping. beta<1.0 mixes
+      Anderson with the plain residual step (conservative).
+    """
+    if len(f_hist) < 1 or len(x_hist) != len(f_hist):
+        return None
+
+    m = min(len(f_hist), m_max - 1)
+    x_list = list(x_hist[-m:]) + [x_k]
+    f_list = list(f_hist[-m:]) + [f_k]
+
+    # Build delta columns (columns m: each col = f_k - f_{k-i}, X analogously)
+    F_cols = []
+    X_cols = []
+    for i in range(m):
+        F_cols.append(f_list[-1] - f_list[i])
+        X_cols.append(x_list[-1] - x_list[i])
+    F = np.column_stack(F_cols)
+    X = np.column_stack(X_cols)
+
+    # Early bail on non-finite inputs. LAPACK lstsq prints DLASCL warnings
+    # on NaN/Inf and would still return (we always check isfinite on the
+    # result), but checking up front avoids the spurious warning spam.
+    if not (np.all(np.isfinite(F)) and np.all(np.isfinite(f_k))):
+        return None
+
+    # Least-squares: gamma = argmin || F gamma - f_k ||_2
+    try:
+        gamma, *_ = np.linalg.lstsq(F, f_k, rcond=None)
+    except np.linalg.LinAlgError:
+        return None
+
+    x_next = x_k + beta * f_k - (X + beta * F) @ gamma
+
+    if not np.all(np.isfinite(x_next)):
+        return None
+    return x_next
+
+
 def _default_solver_params(planet_mass):
     """Compute default numerical solver parameters with mass-adaptive scaling.
 
@@ -368,6 +430,13 @@ def _solve(
     # Supported configs: 2-layer single-component (Stage-1b PROTEUS).
     # Unsupported configs fall back to the numpy path automatically.
     use_jax = bool(config_params.get('use_jax', False))
+    # Anderson acceleration for the density Picard loop: when True,
+    # replaces the damped fixed-point update (density = alpha * new + (1-alpha) * old)
+    # with a Walker & Ni 2011 Type-II Anderson step that least-squares-combines
+    # previous residuals. Falls back to damped Picard on numerical failure or
+    # when history is shorter than one step.
+    use_anderson = bool(config_params.get('use_anderson', False))
+    anderson_m_max = int(config_params.get('anderson_m_max', 5))
 
     # Parse layer mixtures if not provided externally (PROTEUS/CALLIOPE)
     if layer_mixtures is None:
@@ -724,6 +793,13 @@ def _solve(
         _inner_best_diff = float('inf')
         _inner_best_density = None
 
+        # Anderson acceleration history (only used when use_anderson=True).
+        # Cleared on (a) shape change (n_valid changes between iters) and
+        # (b) inner-loop oscillation (signals that current residual landscape
+        # is not locally linear; damped Picard is safer until things settle).
+        _anderson_x_hist = []
+        _anderson_f_hist = []
+
         for inner_iter in range(max_iterations_inner):
             # Wall-clock timeout check (inner loop)
             if time.time() - wall_start > wall_timeout:
@@ -976,10 +1052,40 @@ def _solve(
 
             # Adaptive Picard blend: use inner-loop alpha for density damping
             alpha = min(_picard_alpha, _inner_alpha)
-            density[:n_valid] = (
-                alpha * new_density[:n_valid]
-                + (1.0 - alpha) * old_density[:n_valid]
-            )
+
+            # Anderson acceleration attempt (opt-in via use_anderson).
+            # Residual f_k = g(x_k) - x_k = new_density - old_density.
+            # Clear history on shape change (n_valid differs from last iter).
+            x_next_anderson = None
+            if use_anderson:
+                if _anderson_x_hist and len(_anderson_x_hist[-1]) != n_valid:
+                    _anderson_x_hist.clear()
+                    _anderson_f_hist.clear()
+                f_k = new_density[:n_valid] - old_density[:n_valid]
+                x_next_anderson = _anderson_mix(
+                    _anderson_x_hist,
+                    _anderson_f_hist,
+                    old_density[:n_valid],
+                    f_k,
+                    m_max=anderson_m_max,
+                    beta=1.0,
+                )
+                # Always push the current (x_k, f_k) pair to history,
+                # regardless of whether the Anderson step itself succeeded,
+                # so the next iter has fresh data.
+                _anderson_x_hist.append(old_density[:n_valid].copy())
+                _anderson_f_hist.append(f_k.copy())
+                if len(_anderson_x_hist) > anderson_m_max:
+                    _anderson_x_hist.pop(0)
+                    _anderson_f_hist.pop(0)
+
+            if x_next_anderson is not None:
+                density[:n_valid] = x_next_anderson
+            else:
+                density[:n_valid] = (
+                    alpha * new_density[:n_valid]
+                    + (1.0 - alpha) * old_density[:n_valid]
+                )
 
             # Check density convergence
             relative_diff_inner = np.max(
@@ -996,6 +1102,12 @@ def _solve(
                         'Inner iter %d: density oscillation #%d, alpha=%.2f, diff=%.2e',
                         inner_iter, _inner_osc_count, _inner_alpha, relative_diff_inner,
                     )
+                # Oscillation = local residual landscape not well-approximated
+                # by the affine model Anderson assumes. Drop history and let
+                # damped Picard take over until things settle.
+                if use_anderson:
+                    _anderson_x_hist.clear()
+                    _anderson_f_hist.clear()
             else:
                 _inner_osc_count = max(0, _inner_osc_count - 1)
                 _inner_alpha = min(0.5, _inner_alpha * 1.05)
