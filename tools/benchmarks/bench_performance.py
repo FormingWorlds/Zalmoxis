@@ -61,12 +61,13 @@ PROFILE_KEYS = (
 SCALAR_KEYS = (
     'cmb_mass',
     'core_mantle_mass',
-    'total_time',
     'converged',
     'converged_pressure',
     'converged_density',
     'converged_mass',
 )
+# total_time is the solver's own wall-clock measurement; not a physics output.
+# Excluded from pure-refactor comparison (varies run-to-run by ~100 ms).
 
 
 def run_once(config_params, mat_dicts, melt_funcs, input_dir):
