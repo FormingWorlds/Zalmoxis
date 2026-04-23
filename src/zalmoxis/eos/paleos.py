@@ -158,14 +158,60 @@ def get_paleos_unified_density(
         # In mushy zone: volume-average between solid-side and liquid-side
         phi = (temperature - T_sol) / (T_liq - T_sol)
 
+        # W3: compute per-P clamp bounds ONCE (inline) rather than calling
+        # _paleos_clamp_temperature twice (once for T_sol, once for T_liq) —
+        # both clamps share the same log_p, so ip/frac/local_tmin/local_tmax
+        # are identical. This saves ~2 function calls + dict-lookups per
+        # mushy-zone RHS call (~37M operations per 900 s solve per cProfile
+        # 2026-04-23; _paleos_clamp_temperature was 6.5% of self time).
+        # Math is identical to _paleos_clamp_temperature; output bit-matches.
+        _lt_min = cached['logt_valid_min']
+        _lt_max = cached['logt_valid_max']
+        if 'dlog_p' in cached:
+            _fp = (log_p - cached['logp_min']) / cached['dlog_p']
+            _n_p_m1 = cached['n_p'] - 2
+            _ip = int(_fp)
+            if _ip < 0:
+                _ip = 0
+            elif _ip > _n_p_m1:
+                _ip = _n_p_m1
+            _frac = _fp - _ip
+            if _frac < 0.0:
+                _frac = 0.0
+            elif _frac > 1.0:
+                _frac = 1.0
+            _local_tmin = _lt_min[_ip] + _frac * (_lt_min[_ip + 1] - _lt_min[_ip])
+            _local_tmax = _lt_max[_ip] + _frac * (_lt_max[_ip + 1] - _lt_max[_ip])
+        else:
+            _ulp = cached['unique_log_p']
+            _local_tmin = float(np.interp(log_p, _ulp, _lt_min))
+            _local_tmax = float(np.interp(log_p, _ulp, _lt_max))
+
+        # NaN-bound fallback matches _paleos_clamp_temperature's contract:
+        # if bounds are NaN near table edges, return the input log_t unclamped.
+        if _local_tmin == _local_tmin and _local_tmax == _local_tmax:
+            if log_t_sol < _local_tmin:
+                log_t_sol_c = _local_tmin
+            elif log_t_sol > _local_tmax:
+                log_t_sol_c = _local_tmax
+            else:
+                log_t_sol_c = log_t_sol
+            if log_t_liq < _local_tmin:
+                log_t_liq_c = _local_tmin
+            elif log_t_liq > _local_tmax:
+                log_t_liq_c = _local_tmax
+            else:
+                log_t_liq_c = log_t_liq
+        else:
+            log_t_sol_c = log_t_sol
+            log_t_liq_c = log_t_liq
+
         # Solid-side: density at T_sol
-        log_t_sol_c, _ = _paleos_clamp_temperature(log_p, log_t_sol, cached)
         rho_sol = _fast_bilinear(log_p, log_t_sol_c, cached['density_grid'], cached)
         if not np.isfinite(rho_sol):
             rho_sol = float(cached['density_nn']((log_p, log_t_sol_c)))
 
         # Liquid-side: density at T_liq
-        log_t_liq_c, _ = _paleos_clamp_temperature(log_p, log_t_liq, cached)
         rho_liq = _fast_bilinear(log_p, log_t_liq_c, cached['density_grid'], cached)
         if not np.isfinite(rho_liq):
             rho_liq = float(cached['density_nn']((log_p, log_t_liq_c)))
