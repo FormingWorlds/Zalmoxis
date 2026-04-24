@@ -32,7 +32,7 @@ def test_solve_structure_jax_parity_vs_scipy():
 
     setup = _stage1b_setup()
     cfg = setup['config_params']
-    T_logP_grid = setup['T_logP_grid']
+    T_logP_grid = setup['T_axis_grid']
     T_values = setup['T_values']
 
     layer_mixtures = {

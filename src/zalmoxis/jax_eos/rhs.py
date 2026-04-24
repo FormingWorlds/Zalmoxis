@@ -15,11 +15,31 @@ In JAX this becomes: evaluate BOTH density functions, select the right
 one with jnp.where. Both evaluations are cheap compiled kernels, so the
 wasted work is small and the branching is trace-friendly.
 
-Temperature is supplied via a pre-tabulated (log_P, T) array built by
-the caller each Picard iteration (matching numpy's _temperature_func
-closure). At query time we do jnp.interp on log10(P).
+Temperature lookup supports two axis conventions, selected by the
+``T_axis_is_radius`` static flag:
+
+  * ``False`` (default) — ``T_axis_grid`` is ``log10(P)`` and T comes
+    from ``jnp.interp(log10(pressure), T_axis_grid, T_values)``. This
+    matches Zalmoxis' internal adiabat path, where T along a column
+    tracks P strongly and weakly depends on r. The wrapper builds the
+    table via ``_tabulate_adiabat`` at a fixed ``r_mid`` across a
+    log-uniform P grid.
+  * ``True`` — ``T_axis_grid`` is a radial grid and T comes from
+    ``jnp.interp(radius, T_axis_grid, T_values)``. Needed for callers
+    whose temperature profile is genuinely r-indexed and P-ignored
+    (e.g. PROTEUS' ``update_structure_from_interior``, where the
+    closure interpolates SPIDER/Aragog's T(r) staggered grid). The
+    P-indexed tabulation collapses to a constant for such callers,
+    which wrecks the ODE (see
+    ``tools/benchmarks/bench_coupled_tempfunc.py`` for the
+    reproducer).
+
+The two modes live in the same jitted function; JAX emits a separate
+compiled variant per flag value.
 """
 from __future__ import annotations
+
+from functools import partial
 
 import jax
 import jax.numpy as jnp
@@ -28,15 +48,15 @@ from .paleos import get_paleos_unified_density_jax
 from .tdep import get_tdep_density_jax
 
 
-@jax.jit
+@partial(jax.jit, static_argnames=('T_axis_is_radius',))
 def coupled_odes_jax(
     radius: jnp.ndarray,
     y: jnp.ndarray,          # shape (3,): [mass, gravity, pressure]
     cmb_mass: float,
-    # --- temperature lookup (pre-tabulated log_P -> T) ---
-    T_logP_grid: jnp.ndarray,  # monotone increasing log10(P)
-    T_values: jnp.ndarray,     # matching T values
-    T_surface: float,          # fallback when P <= 0
+    # --- temperature lookup (see module docstring for axis conventions) ---
+    T_axis_grid: jnp.ndarray,  # monotone increasing: log10(P) OR radius
+    T_values: jnp.ndarray,     # matching T values on the axis grid
+    T_surface: float,          # fallback when P <= 0 (P-indexed mode only)
     # --- core (paleos_unified) table ---
     mushy_zone_factor_core: jnp.ndarray,
     core_density_grid: jnp.ndarray,
@@ -96,15 +116,25 @@ def coupled_odes_jax(
     stix_cryo_factor: float = 0.8086,  # matches melting_curves._STIX14_CRYO_FACTOR
     # physical constant G (SI)
     G: float = 6.6743e-11,
+    # Temperature-axis convention (static, selects P- vs r-indexed branch).
+    # Kept at the end of the signature so older callers that rely on the
+    # positional order of the EOS-cache args are not affected.
+    T_axis_is_radius: bool = False,
 ):
     """Return dy/dr = [dM/dr, dg/dr, dP/dr] at (radius, y)."""
     mass, gravity, pressure = y[0], y[1], y[2]
 
-    # Temperature at this (r, P). Matches numpy _temperature_func closure
-    # (fallback to surface T when P <= 0, log10 via jnp).
-    log_p_for_T = jnp.log10(jnp.maximum(pressure, 1.0))
-    T_interp = jnp.interp(log_p_for_T, T_logP_grid, T_values)
-    temperature = jnp.where(pressure > 0, T_interp, T_surface)
+    # Temperature at this (r, P). Two axis conventions — see module docstring.
+    # P-indexed: interp on log10(max(P, 1)), fall back to T_surface for P<=0.
+    # R-indexed: interp directly on radius. The P<=0 fallback is not needed
+    # because the r-grid covers the full column from CMB to surface; any
+    # overshoot beyond r[-1] is clamped by ``jnp.interp`` at the endpoint T.
+    if T_axis_is_radius:
+        temperature = jnp.interp(radius, T_axis_grid, T_values)
+    else:
+        log_p_for_T = jnp.log10(jnp.maximum(pressure, 1.0))
+        T_interp = jnp.interp(log_p_for_T, T_axis_grid, T_values)
+        temperature = jnp.where(pressure > 0, T_interp, T_surface)
 
     # Melting curves at this pressure via analytic Stixrude14 power law
     # (exact; avoids pre-tabulation interp error ~O(1e-5)).

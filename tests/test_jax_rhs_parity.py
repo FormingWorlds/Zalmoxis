@@ -97,7 +97,7 @@ def _stage1b_setup():
 
     jax_args = {
         'cmb_mass': float(cmb_mass),
-        'T_logP_grid': T_logP_grid,
+        'T_axis_grid': T_logP_grid,
         'T_values': T_values,
         'T_surface': 3000.0,
         'mushy_zone_factor_core': 1.0,  # PALEOS:iron: no mushy (uses table's own phase)
@@ -137,7 +137,7 @@ def _stage1b_setup():
         'liq_func': liq_func,
         'cmb_mass': cmb_mass,
         'jax_args': jax_args,
-        'T_logP_grid': T_logP_grid,
+        'T_axis_grid': T_logP_grid,
         'T_values': T_values,
     }
 
@@ -151,7 +151,7 @@ def test_coupled_odes_jax_parity():
 
     setup = _stage1b_setup()
     cfg = setup['config_params']
-    T_logP_grid = setup['T_logP_grid']
+    T_logP_grid = setup['T_axis_grid']
     T_values = setup['T_values']
 
     # Numpy side uses LayerMixture + material_dictionaries

@@ -31,18 +31,24 @@ import jax.numpy as jnp
 from .rhs import coupled_odes_jax
 
 
-def _build_diffeqsolve_jit():
-    """Build a jitted diffeqsolve closure, imported lazily.
+def _build_diffeqsolve_jit(T_axis_is_radius: bool):
+    """Build a jitted diffeqsolve closure for one axis convention.
 
     Must be top-level so jax.jit can cache the compiled kernel across
     wrapper calls. Closure over diffrax so the numpy-path import cost
-    stays zero.
+    stays zero. ``T_axis_is_radius`` is closed over (not a traced arg)
+    so the corresponding branch of ``coupled_odes_jax`` is specialised
+    at compile time. A separate compiled variant is cached per flag
+    value in ``_SOLVE_CACHE`` below.
     """
     import diffrax
     import optimistix as optx
 
     def _ode_rhs(t, y, args):
-        return coupled_odes_jax(t, y, **args)
+        # T_axis_is_radius is closed over (not in args) so it stays
+        # static for JIT; this keeps coupled_odes_jax single-variant
+        # per _solve closure.
+        return coupled_odes_jax(t, y, T_axis_is_radius=T_axis_is_radius, **args)
 
     def _pressure_cond(t, y, args, **kwargs):
         # Event fires when pressure crosses zero. direction=False tells
@@ -87,14 +93,14 @@ def _build_diffeqsolve_jit():
     return _solve
 
 
-_SOLVE_CACHE = None
+# Separate compiled closure per temperature-axis convention.
+_SOLVE_CACHE: dict[bool, object] = {}
 
 
-def _get_solve():
-    global _SOLVE_CACHE
-    if _SOLVE_CACHE is None:
-        _SOLVE_CACHE = _build_diffeqsolve_jit()
-    return _SOLVE_CACHE
+def _get_solve(T_axis_is_radius: bool):
+    if T_axis_is_radius not in _SOLVE_CACHE:
+        _SOLVE_CACHE[T_axis_is_radius] = _build_diffeqsolve_jit(T_axis_is_radius)
+    return _SOLVE_CACHE[T_axis_is_radius]
 
 
 def solve_structure_jax(
@@ -102,6 +108,7 @@ def solve_structure_jax(
     y0,
     rtol=1e-5,
     atol=1e-6,
+    T_axis_is_radius: bool = False,
     **rhs_kwargs,
 ):
     """Integrate the structure ODE from radii[0] to radii[-1].
@@ -115,6 +122,11 @@ def solve_structure_jax(
     rtol, atol : float
         diffrax PIDController tolerances. Match scipy RK45 defaults by
         default (1e-5 / 1e-6).
+    T_axis_is_radius : bool
+        Selects the temperature-axis convention consumed by
+        ``coupled_odes_jax``. False (default): ``T_axis_grid`` is
+        ``log10(P)``. True: ``T_axis_grid`` is a radial grid. Routes to
+        a separately-compiled diffeqsolve variant.
     **rhs_kwargs :
         All the cache + adiabat + Stixrude14 parameters that
         coupled_odes_jax needs. Passed through as a dict pytree.
@@ -124,7 +136,7 @@ def solve_structure_jax(
     ys : array of shape (n_layers, 3)
         State [M, g, P] at each radii.
     """
-    solve = _get_solve()
+    solve = _get_solve(T_axis_is_radius)
     return solve(
         jnp.asarray(radii, dtype=jnp.float64),
         jnp.asarray(y0, dtype=jnp.float64),

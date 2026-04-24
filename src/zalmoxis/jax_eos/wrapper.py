@@ -107,6 +107,7 @@ def solve_structure_via_jax(
     solidus_func,               # used to extract Stixrude14 params
     liquidus_func,              # used to extract Stixrude14 params
     temperature_function=None,
+    temperature_arrays=None,    # (r_arr, T_arr): r-indexed T profile
     mushy_zone_factors=None,
     condensed_rho_min=None,     # ignored (JAX path assumes no multi-component mixing)
     condensed_rho_scale=None,
@@ -116,6 +117,34 @@ def solve_structure_via_jax(
 
     Returns (mass_enclosed, gravity, pressure) numpy arrays on the
     ``radii`` grid, matching numpy's solve_structure output contract.
+
+    Temperature input
+    -----------------
+    One (and only one) of ``temperature_arrays`` and
+    ``temperature_function`` should carry the T profile:
+
+    * ``temperature_arrays = (r_arr, T_arr)`` — explicit r-indexed T
+      profile. The JAX RHS interpolates T directly on radius
+      (``T_axis_is_radius=True``). Use this when the caller's T is
+      naturally a function of r alone (e.g. PROTEUS'
+      ``update_structure_from_interior``, which hands Zalmoxis a
+      closure over SPIDER/Aragog's T(r) staggered grid — that closure
+      ignores P and cannot be meaningfully tabulated on a log-P axis;
+      see ``tools/benchmarks/bench_coupled_tempfunc.py`` for the
+      reproducer).
+
+    * ``temperature_function(r, P) -> T`` — a Python callable. The
+      wrapper samples it on a 4000-point log-P axis at
+      ``r_mid = 0.5 * (radii[0] + radii[-1])``, caches the result by
+      ``id(temperature_function)``, and the RHS interpolates on
+      ``log10(P)``. This matches Zalmoxis' internal adiabat path where
+      T along a column tracks P strongly and weakly depends on r.
+
+    If neither is provided, the RHS uses a constant 3000 K fallback
+    (bench idealisation only; not physically meaningful for real
+    structure solves).
+
+    Providing both is rejected to avoid ambiguity.
     """
     from .. import melting_curves as mc
     from ..eos.interpolation import _ensure_unified_cache
@@ -177,18 +206,43 @@ def solve_structure_via_jax(
         _PHASE_TIMES['cache_extract'] += _time.perf_counter() - _p_t0
         _p_t0 = _time.perf_counter()
 
-    # Adiabat tabulation. The temperature_function changes between outer
-    # Picard iterations (blend, converged density update) but is CONSTANT
-    # across brentq evals within one inner iteration. Cache the tabulation
-    # by id(temperature_function) in interpolation_cache so the 4000-point
-    # np.interp sweep only runs once per outer iter, not per brentq call.
-    # Empirical: removes ~5 ms/call * 5000 calls ~ 25 s of the JAX total
-    # (cProfile 2026-04-23).
-    if temperature_function is None:
-        T_logP_grid = np.linspace(5.0, 13.0, 4)
+    # Temperature-profile setup. Two paths (see function docstring for
+    # when to use which):
+    #   1. temperature_arrays=(r_arr, T_arr): r-indexed. Used by PROTEUS.
+    #   2. temperature_function callable:      P-indexed. Used by bench.
+    # When both are provided, temperature_arrays wins. Zalmoxis' inner
+    # solver loop always constructs an internal `_temperature_func`
+    # (linear guess / adiabat blend) even when the caller hands in
+    # r-indexed arrays, so rejecting the pair would force every caller
+    # to monkey-patch solver.py; we just let arrays take precedence.
+    if temperature_arrays is not None:
+        _r_arr, _T_arr = temperature_arrays
+        T_axis_grid = np.asarray(_r_arr, dtype=float)
+        T_values = np.asarray(_T_arr, dtype=float)
+        if T_axis_grid.shape != T_values.shape or T_axis_grid.ndim != 1:
+            raise ValueError(
+                'temperature_arrays must be two 1-D arrays of equal length, '
+                f'got shapes {T_axis_grid.shape} and {T_values.shape}.'
+            )
+        # T_surface is unused in the r-indexed RHS branch (jnp.interp
+        # clamps at the endpoint T), but passed through for signature
+        # compatibility with the P-indexed branch.
+        T_surface = float(T_values[-1])
+        T_axis_is_radius = True
+    elif temperature_function is None:
+        T_axis_grid = np.linspace(5.0, 13.0, 4)
         T_values = np.full(4, 3000.0)
         T_surface = 3000.0
+        T_axis_is_radius = False
     else:
+        # P-indexed path. The temperature_function changes between outer
+        # Picard iterations (blend, converged density update) but is
+        # CONSTANT across brentq evals within one inner iteration. Cache
+        # the tabulation by id(temperature_function) in
+        # interpolation_cache so the 4000-point np.interp sweep only
+        # runs once per outer iter, not per brentq call. Empirical:
+        # removes ~5 ms/call * 5000 calls ~ 25 s of the JAX total
+        # (cProfile 2026-04-23).
         _adia_cache = interpolation_cache.setdefault('_jax_adiabat_cache', {})
         _key = id(temperature_function)
         _entry = _adia_cache.get(_key)
@@ -202,7 +256,8 @@ def solve_structure_via_jax(
             if len(_adia_cache) > 64:
                 _adia_cache.pop(next(iter(_adia_cache)))
             _adia_cache[_key] = _entry
-        T_logP_grid, T_values, T_surface = _entry
+        T_axis_grid, T_values, T_surface = _entry
+        T_axis_is_radius = False
 
     if _PROFILE:
         _PHASE_TIMES['adiabat_tab'] += _time.perf_counter() - _p_t0
@@ -222,7 +277,7 @@ def solve_structure_via_jax(
 
     jax_args = {
         'cmb_mass': float(cmb_mass),
-        'T_logP_grid': T_logP_grid,
+        'T_axis_grid': T_axis_grid,
         'T_values': T_values,
         'T_surface': T_surface,
         'mushy_zone_factor_core': core_mzf,
@@ -241,6 +296,7 @@ def solve_structure_via_jax(
         radii_arr, np.asarray(y0, dtype=float),
         rtol=float(relative_tolerance),
         atol=float(absolute_tolerance),
+        T_axis_is_radius=T_axis_is_radius,
         **jax_args,
     )
     ys = np.asarray(ys)

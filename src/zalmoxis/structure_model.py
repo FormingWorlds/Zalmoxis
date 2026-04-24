@@ -183,6 +183,7 @@ def solve_structure(
     condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
     binodal_T_scale=BINODAL_T_SCALE_DEFAULT,
     use_jax=False,
+    temperature_arrays=None,
 ):
     """Solve the coupled ODEs for the planetary structure model.
 
@@ -223,6 +224,11 @@ def solve_structure(
         Function returning temperature [K]. Signature: ``f(r, P) -> T``
         where ``r`` is radius in m and ``P`` is pressure in Pa. For
         non-adiabatic modes the pressure argument is ignored.
+    temperature_arrays : tuple[ndarray, ndarray] or None
+        Optional ``(r_arr, T_arr)`` for an explicit r-indexed T profile.
+        Only consumed by the JAX path (``use_jax=True``); the numpy path
+        still uses ``temperature_function``. See ``jax_eos.wrapper``
+        docstring for when to prefer this over the callable form.
     mushy_zone_factors : dict or float or None
         Per-EOS mushy zone factors. Dict keyed by EOS name, a single
         float (applied to all), or None (default 1.0 for all).
@@ -261,6 +267,7 @@ def solve_structure(
                 solidus_func=solidus_func,
                 liquidus_func=liquidus_func,
                 temperature_function=temperature_function,
+                temperature_arrays=temperature_arrays,
                 mushy_zone_factors=mushy_zone_factors,
                 condensed_rho_min=condensed_rho_min,
                 condensed_rho_scale=condensed_rho_scale,

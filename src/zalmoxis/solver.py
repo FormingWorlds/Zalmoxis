@@ -197,6 +197,7 @@ def main(
     layer_mixtures=None,
     volatile_profile=None,
     temperature_function=None,
+    temperature_arrays=None,
     p_center_hint=None,
     initial_density=None,
     initial_radii=None,
@@ -233,6 +234,14 @@ def main(
         temperature mode dispatch (isothermal/linear/prescribed/adiabatic).
         Used by PROTEUS to pass SPIDER/Aragog T(r) profiles directly
         in memory.
+    temperature_arrays : tuple[ndarray, ndarray] or None, optional
+        Explicit r-indexed T profile ``(r_arr, T_arr)``. Only consumed
+        by the JAX path (``config_params['use_jax']=True``). Preferred
+        over ``temperature_function`` when the caller's T is naturally
+        r-indexed (e.g. SPIDER/Aragog-coupled runs): the P-indexed
+        tabulation inside ``jax_eos.wrapper`` collapses to a constant
+        for P-ignoring callables and breaks convergence. See
+        ``tools/benchmarks/bench_coupled_tempfunc.py``.
     initial_density : numpy.ndarray or None, optional
         Density profile from a previous solve, used to seed the Picard
         iteration. Must be paired with ``initial_radii``. Interpolated
@@ -255,6 +264,7 @@ def main(
         layer_mixtures=layer_mixtures,
         volatile_profile=volatile_profile,
         temperature_function=temperature_function,
+        temperature_arrays=temperature_arrays,
         p_center_hint=p_center_hint,
         initial_density=initial_density,
         initial_radii=initial_radii,
@@ -303,6 +313,7 @@ def main(
             layer_mixtures=layer_mixtures,
             volatile_profile=volatile_profile,
             temperature_function=temperature_function,
+            temperature_arrays=temperature_arrays,
             p_center_hint=p_center_hint,
             initial_density=retry_density,
             initial_radii=retry_radii,
@@ -325,6 +336,7 @@ def _solve(
     layer_mixtures=None,
     volatile_profile=None,
     temperature_function=None,
+    temperature_arrays=None,
     p_center_hint=None,
     initial_density=None,
     initial_radii=None,
@@ -863,6 +875,7 @@ def _solve(
                     condensed_rho_scale,
                     binodal_T_scale,
                     use_jax=use_jax,
+                    temperature_arrays=temperature_arrays,
                 )
                 if logger.isEnabledFor(logging.DEBUG):
                     create_pressure_density_files(
@@ -935,6 +948,7 @@ def _solve(
                     condensed_rho_scale,
                     binodal_T_scale,
                     use_jax=use_jax,
+                    temperature_arrays=temperature_arrays,
                 )
 
                 surface_residual = abs(pressure[-1] - target_surface_pressure)
@@ -1386,6 +1400,7 @@ def solve_miscible_interior(
     layer_mixtures=None,
     volatile_profile=None,
     temperature_function=None,
+    temperature_arrays=None,
     h2_mass_targets=None,
     max_iterations=10,
     mass_tolerance=0.01,
@@ -1447,6 +1462,7 @@ def solve_miscible_interior(
             layer_mixtures,
             volatile_profile,
             temperature_function=temperature_function,
+            temperature_arrays=temperature_arrays,
         )
         result['solvus_radius'] = None
         result['solvus_temperature'] = None
@@ -1471,6 +1487,7 @@ def solve_miscible_interior(
             layer_mixtures,
             volatile_profile,
             temperature_function=temperature_function,
+            temperature_arrays=temperature_arrays,
         )
 
         if not result.get('converged', False):
