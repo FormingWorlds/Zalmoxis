@@ -299,7 +299,12 @@ def solve_structure_via_jax(
         T_axis_is_radius=T_axis_is_radius,
         **jax_args,
     )
-    ys = np.asarray(ys)
+    # np.array (not np.asarray) forces a writable copy. np.asarray on a
+    # jnp.ndarray yields a read-only view of the JAX buffer, which breaks
+    # downstream `pressure[:] = ...`-style writes in solver._solve (e.g.
+    # the wall-timeout handler at solver.py:614-622 writing best_profiles
+    # back into the working arrays).
+    ys = np.array(ys)
     _dt = _time.perf_counter() - _t0
 
     if _PROFILE:
