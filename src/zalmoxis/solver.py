@@ -613,12 +613,20 @@ def _solve(
             )
             if best_profiles is not None:
                 converged_mass = best_mass_error < 3 * tolerance_outer
-                radii[:] = best_profiles['radii']
-                density[:] = best_profiles['density']
-                pressure[:] = best_profiles['pressure']
-                mass_enclosed[:] = best_profiles['mass_enclosed']
+                # Fresh writable copies: `pressure` / `mass_enclosed`
+                # carry over from the previous outer iter and may be
+                # read-only views of JAX buffers (jax_eos/wrapper.py
+                # returns np.asarray(...) for speed; the host-device
+                # sync penalty of a writable np.array on every solve
+                # is 1 ms/call ~ 88 s/main() in coupled PROTEUS).
+                # Converting only on the rare timeout path keeps the
+                # hot loop fast.
+                radii = np.array(best_profiles['radii'])
+                density = np.array(best_profiles['density'])
+                pressure = np.array(best_profiles['pressure'])
+                mass_enclosed = np.array(best_profiles['mass_enclosed'])
                 if best_profiles['temperatures'] is not None:
-                    temperatures[:] = best_profiles['temperatures']
+                    temperatures = np.array(best_profiles['temperatures'])
             break
 
         radii = np.linspace(0, radius_guess, num_layers)
@@ -1248,13 +1256,16 @@ def _solve(
                 best_mass_error * 100,
                 tolerance_outer * 100,
             )
-            # Restore best profiles
-            radii[:] = best_profiles['radii']
-            density[:] = best_profiles['density']
-            pressure[:] = best_profiles['pressure']
-            mass_enclosed[:] = best_profiles['mass_enclosed']
+            # Restore best profiles. Fresh writable copies — pressure
+            # and mass_enclosed may be read-only views of JAX buffers
+            # from prior solve_structure returns (see wrapper.py note
+            # on np.asarray vs np.array cost).
+            radii = np.array(best_profiles['radii'])
+            density = np.array(best_profiles['density'])
+            pressure = np.array(best_profiles['pressure'])
+            mass_enclosed = np.array(best_profiles['mass_enclosed'])
             if best_profiles['temperatures'] is not None:
-                temperatures[:] = best_profiles['temperatures']
+                temperatures = np.array(best_profiles['temperatures'])
             converged_mass = True
             break
 

@@ -40,11 +40,24 @@ _PHASE_TIMES = {'cache_extract': 0.0, 'adiabat_tab': 0.0, 'jit_solve': 0.0, 'oth
 
 
 def _extract_sub_args(cached, prefix):
-    """Flatten a paleos/paleos_unified cache entry into jax kwargs."""
-    return {
-        f'{prefix}_density_grid': np.asarray(cached['density_grid']),
-        f'{prefix}_unique_log_p': np.asarray(cached['unique_log_p']),
-        f'{prefix}_unique_log_t': np.asarray(cached['unique_log_t']),
+    """Flatten a paleos/paleos_unified cache entry into jax kwargs.
+
+    Caches the extracted dict on the cache entry itself so we only build
+    it once per (cached_id, prefix) pair. The hot-path inner Picard loop
+    calls solve_structure_via_jax thousands of times per main(); without
+    this cache the np.asarray + dict-allocation overhead alone hit 16.7 s
+    of a 23.5 s no-Anderson real-CHILI bench (cProfile 2026-04-25).
+    """
+    cache_key = f'_jax_sub_args::{prefix}'
+    cached_args = cached.get(cache_key)
+    if cached_args is not None:
+        return cached_args
+    # _ensure_unified_cache and seager.get_tabulated_eos already store
+    # numpy arrays for these fields; np.asarray here is redundant.
+    out = {
+        f'{prefix}_density_grid': cached['density_grid'],
+        f'{prefix}_unique_log_p': cached['unique_log_p'],
+        f'{prefix}_unique_log_t': cached['unique_log_t'],
         f'{prefix}_logp_min': float(cached['logp_min']),
         f'{prefix}_logt_min': float(cached['logt_min']),
         f'{prefix}_dlog_p': float(cached['dlog_p']),
@@ -53,22 +66,33 @@ def _extract_sub_args(cached, prefix):
         f'{prefix}_n_t': int(cached['n_t']),
         f'{prefix}_p_min': float(cached['p_min']),
         f'{prefix}_p_max': float(cached['p_max']),
-        f'{prefix}_lt_min_per_p': np.asarray(cached['logt_valid_min']),
-        f'{prefix}_lt_max_per_p': np.asarray(cached['logt_valid_max']),
+        f'{prefix}_lt_min_per_p': cached['logt_valid_min'],
+        f'{prefix}_lt_max_per_p': cached['logt_valid_max'],
     }
+    cached[cache_key] = out
+    return out
 
 
 def _extract_liquidus(cached, prefix='core'):
-    """Flatten liquidus curve data for paleos_unified tables."""
+    """Flatten liquidus curve data for paleos_unified tables.
+
+    Cached on the cache entry itself for the same reason as _extract_sub_args.
+    """
+    cache_key = f'_jax_liquidus::{prefix}'
+    cached_args = cached.get(cache_key)
+    if cached_args is not None:
+        return cached_args
     liq_lp = np.asarray(cached.get('liquidus_log_p', []), dtype=float)
     liq_lt = np.asarray(cached.get('liquidus_log_t', []), dtype=float)
-    return {
+    out = {
         f'{prefix}_liquidus_log_p': liq_lp,
         f'{prefix}_liquidus_log_t': liq_lt,
         f'{prefix}_liquidus_min_log_p': float(liq_lp[0]) if len(liq_lp) else 0.0,
         f'{prefix}_liquidus_max_log_p': float(liq_lp[-1]) if len(liq_lp) else 0.0,
         f'{prefix}_has_liquidus_f': 1.0 if len(liq_lp) else 0.0,
     }
+    cached[cache_key] = out
+    return out
 
 
 def _tabulate_adiabat(radii, temperature_function, n_pts=4000):

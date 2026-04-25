@@ -264,6 +264,22 @@ def paleos_liquidus(P):
     float or ndarray
         Liquidus temperature in K.
     """
+    # Scalar fast path: in the numpy density Picard loop this function is
+    # called once per cell per inner iteration on scalar P; the np.atleast_1d
+    # / np.asarray / np.where / float() machinery dominates the trivial
+    # piecewise-power-law math. cProfile on a real CHILI T(r) profile
+    # (1565485_int.nc, no-Anderson) showed paleos_liquidus self-time +
+    # numpy.asarray overhead together at ~73% of the 100 s solve. Branching
+    # on scalar P first cuts that to ~ones of seconds.
+    if isinstance(P, (int, float)) or (hasattr(P, 'ndim') and P.ndim == 0):
+        Pf = float(P)
+        if Pf <= 0.0:
+            return 0.0
+        P_GPa = Pf * 1e-9
+        if P_GPa < _PALEOS_P0_GPA:
+            return 1831.0 * (1.0 + P_GPa / 4.6) ** 0.33
+        return 6000.0 * (P_GPa / 140.0) ** 0.26
+
     P_arr = np.atleast_1d(np.asarray(P, dtype=float))
     P_GPa = P_arr * 1e-9
     T = np.where(
@@ -273,7 +289,7 @@ def paleos_liquidus(P):
     )
     # Guard P=0: avoid 0^0.26 = NaN
     T = np.where(P_arr > 0, T, 0.0)
-    return float(T[0]) if np.ndim(P) == 0 else T
+    return T
 
 
 # ── Iron melting curves ────────────────────────────────────────────────
