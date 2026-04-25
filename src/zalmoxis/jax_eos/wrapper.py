@@ -38,6 +38,11 @@ _DEBUG = bool(_os.environ.get('ZALMOXIS_JAX_DEBUG'))
 _PROFILE = bool(_os.environ.get('ZALMOXIS_JAX_PROFILE'))
 _PHASE_TIMES = {'cache_extract': 0.0, 'adiabat_tab': 0.0, 'jit_solve': 0.0, 'other': 0.0}
 
+# Cache the mantle melting-curve tabulation on a shared log-P axis,
+# keyed by (id(solidus_func), id(liquidus_func)). See the rebuild
+# branch in solve_structure_via_jax for the rationale and cost numbers.
+_MELT_TABLE_CACHE: dict = {}
+
 
 def _extract_sub_args(cached, prefix):
     """Flatten a paleos/paleos_unified cache entry into jax kwargs.
@@ -307,26 +312,45 @@ def solve_structure_via_jax(
     # ``solidus_func = liquidus_func * mushy_zone_factor`` flows through
     # unchanged because the wrapper just samples whatever solidus_func
     # returns.
-    n_melt = 256
-    log_p_axis = np.linspace(np.log10(1e8), np.log10(5e12), n_melt)
-    p_axis = 10.0 ** log_p_axis
-    T_liq_samples = np.array(
-        [float(liquidus_func(P)) for P in p_axis], dtype=float
-    )
-    T_sol_samples = np.array(
-        [float(solidus_func(P)) for P in p_axis], dtype=float
-    )
-
-    # Pass index parameters for O(1) regular-grid lookup in the RHS.
-    melt_log_p_min = float(log_p_axis[0])
-    melt_dlog_p = float(log_p_axis[1] - log_p_axis[0])
-    melt_curves = {
-        'melt_log_p_min': melt_log_p_min,
-        'melt_dlog_p': melt_dlog_p,
-        'melt_n': int(n_melt),
-        'log_T_liq_table': np.ascontiguousarray(np.log10(T_liq_samples), dtype=np.float64),
-        'log_T_sol_table': np.ascontiguousarray(np.log10(T_sol_samples), dtype=np.float64),
-    }
+    # Cache the melting-curve tabulation by (id(solidus_func), id(liquidus_func)).
+    # The samples depend ONLY on the curve functions, so they are constant
+    # across all solve_structure_via_jax calls within a single main() (and
+    # across all main() calls that re-use the same closure pair). The
+    # solver's outer Picard loop calls this wrapper ~5500 times per main()
+    # on real CHILI T(r); without this cache we re-tabulate 256 × 2 = 512
+    # melting-curve evaluations per call (~2.9M paleos_liquidus calls per
+    # main()) and re-allocate / re-log10 / re-ascontiguousarray them every
+    # time. cProfile 2026-04-25 attributed ~16 s of a 22.7 s real-CHILI
+    # solve to this rebuild path. Cache key uses object id; the dict cap
+    # prevents unbounded growth from unique-per-call closures (rare).
+    _melt_cache = _MELT_TABLE_CACHE
+    _key = (id(solidus_func), id(liquidus_func))
+    _entry = _melt_cache.get(_key)
+    if _entry is None:
+        n_melt = 256
+        log_p_axis = np.linspace(np.log10(1e8), np.log10(5e12), n_melt)
+        p_axis = 10.0 ** log_p_axis
+        T_liq_samples = np.array(
+            [float(liquidus_func(P)) for P in p_axis], dtype=float
+        )
+        T_sol_samples = np.array(
+            [float(solidus_func(P)) for P in p_axis], dtype=float
+        )
+        _entry = {
+            'melt_log_p_min': float(log_p_axis[0]),
+            'melt_dlog_p': float(log_p_axis[1] - log_p_axis[0]),
+            'melt_n': int(n_melt),
+            'log_T_liq_table': np.ascontiguousarray(
+                np.log10(T_liq_samples), dtype=np.float64,
+            ),
+            'log_T_sol_table': np.ascontiguousarray(
+                np.log10(T_sol_samples), dtype=np.float64,
+            ),
+        }
+        if len(_melt_cache) > 64:
+            _melt_cache.pop(next(iter(_melt_cache)))
+        _melt_cache[_key] = _entry
+    melt_curves = _entry
 
     # Physical constant G matching numpy path
     from ..constants import G
