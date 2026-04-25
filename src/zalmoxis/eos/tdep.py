@@ -179,7 +179,15 @@ def get_Tdep_density(
                 temperature,
                 interpolation_functions,
             )
-        frac_melt = (temperature - T_sol) / (T_liq - T_sol)
+        # Smoothstep ramp s = x*x*(3 - 2*x) replaces the linear melt
+        # fraction so d(1/rho)/dT vanishes at T=T_sol and T=T_liq,
+        # eliminating the lever-rule kink that drives inner Picard
+        # plateau on hot mushy profiles. Midpoint s(0.5)=0.5 = linear,
+        # so the in-mushy density profile is preserved away from the
+        # boundaries. Mirror change in jax_eos/tdep.py for parity.
+        frac_melt_raw = (temperature - T_sol) / (T_liq - T_sol)
+        x = max(0.0, min(1.0, frac_melt_raw))
+        frac_melt = x * x * (3.0 - 2.0 * x)
         rho_solid = get_tabulated_eos(
             pressure,
             material_properties_iron_Tdep_silicate_planets,

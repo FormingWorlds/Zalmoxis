@@ -110,7 +110,20 @@ def get_tdep_density_jax(
     # Guard against degenerate melting curves where T_liq <= T_sol: then
     # numpy falls back to pure-liquid. We preserve that behaviour.
     safe_dT = jnp.where(T_liq > T_sol, T_liq - T_sol, 1.0)
-    frac_melt = (temperature - T_sol) / safe_dT
+    frac_melt_raw = (temperature - T_sol) / safe_dT
+    # Smoothstep ramp on the mushy-zone melt fraction. Linear frac_melt
+    # gives a slope discontinuity in 1/rho at T=T_sol and T=T_liq because
+    # d(1/rho)/dT inside the lever rule is (1/rho_liq - 1/rho_sol)/(T_liq -
+    # T_sol) (constant) while outside it is the small thermal-expansion
+    # slope of the pure-phase EOS. The kink causes inner Picard plateau
+    # at diff~0.1 on hot mushy profiles. Smoothstep s = x*x*(3 - 2*x)
+    # has ds/dx = 0 at x=0 and x=1, so the lever rule's slope vanishes
+    # at the boundaries, eliminating the kink while preserving the
+    # midpoint value (s(0.5) = 0.5 = linear). frac_melt_raw is clipped
+    # to [0,1] before the polynomial; outside the mushy zone the
+    # selection below picks pure-phase rho so the value here is unused.
+    x = jnp.clip(frac_melt_raw, 0.0, 1.0)
+    frac_melt = x * x * (3.0 - 2.0 * x)
     specific_volume = frac_melt * (1.0 / rho_liquid) + (1.0 - frac_melt) * (1.0 / rho_solid)
     rho_mixed = 1.0 / specific_volume
 
