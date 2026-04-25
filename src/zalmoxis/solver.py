@@ -813,16 +813,21 @@ def _solve(
         _inner_best_diff = float('inf')
         _inner_best_density = None
         # Stuck-bail counter: how many inner iters since the best
-        # max-residual last improved. On hot fully-molten profiles the
-        # existing 15-oscillation early-bail at line ~1156 doesn't fire
-        # because best_diff stays > 0.1; the loop then runs all 100
-        # inner iters per outer iter, multiplying the JAX call count.
-        # On a real CHILI iter 23869 (hot, T_surf=2820K) cProfile this
-        # was 7900+ inner iters per main(), each ~120 ms, totalling 949 s.
-        # Bail after _STUCK_BAIL_LIMIT iters of no improvement; the
-        # outer mass-radius loop iterates the structure to recover.
+        # max-residual last improved by at least _STUCK_REL_IMPROVE
+        # (5%). On hot fully-molten profiles the existing 15-oscillation
+        # early-bail at line ~1156 doesn't fire because best_diff stays
+        # > 0.1, AND a strict "any improvement" stuck counter doesn't
+        # work either because Picard makes slow incremental progress
+        # (each iter trims best_diff by < 1%). The relative-improvement
+        # criterion counts a marginal step toward best_diff as "stuck."
+        # On a real CHILI iter 23869 (hot, T_surf=2820K) cProfile pre-
+        # bail showed 7900+ inner iters per main() totalling 949 s; with
+        # this bail the outer mass-radius loop iterates the structure
+        # to recover convergence on the next outer pass.
         _inner_stuck_count = 0
-        _STUCK_BAIL_LIMIT = 25
+        _inner_last_breakthrough_diff = float('inf')
+        _STUCK_BAIL_LIMIT = 15
+        _STUCK_REL_IMPROVE = 0.05  # need 5% drop to reset counter
 
         # Anderson acceleration history (only used when use_anderson=True).
         # Cleared on (a) shape change (n_valid changes between iters) and
@@ -1146,11 +1151,17 @@ def _solve(
                 _inner_alpha = min(0.5, _inner_alpha * 1.05)
             _inner_prev_diff = mean_change
 
-            # Track best density for bailout. Increment stuck counter
-            # if we did NOT improve, reset on improvement.
+            # Track best density for bailout. Reset stuck counter only
+            # on a "breakthrough" improvement (5% relative drop from the
+            # last breakthrough). Marginal trim improvements still update
+            # best_diff but do NOT reset the stuck counter — this is what
+            # lets the bail fire on hot profiles where Picard slowly
+            # creeps toward 0.1 over 100 iters but never breaks through.
             if relative_diff_inner < _inner_best_diff:
                 _inner_best_diff = relative_diff_inner
                 _inner_best_density = density.copy()
+            if relative_diff_inner < (1.0 - _STUCK_REL_IMPROVE) * _inner_last_breakthrough_diff:
+                _inner_last_breakthrough_diff = relative_diff_inner
                 _inner_stuck_count = 0
             else:
                 _inner_stuck_count += 1
