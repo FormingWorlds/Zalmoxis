@@ -104,19 +104,24 @@ def coupled_odes_jax(
     liq_p_max: float,
     liq_lt_min_per_p: jnp.ndarray,
     liq_lt_max_per_p: jnp.ndarray,
-    # Mantle liquidus tabulated on a log10(P [Pa]) axis. The wrapper
-    # samples ``liquidus_func`` (PALEOS-liquidus or Stixrude14-liquidus)
-    # on a 1-D grid and passes (axis, table) here so the RHS uses the
-    # SAME T_liq formula numpy uses (numpy goes through liquidus_func
-    # directly inside calculate_mixed_density). Linear jnp.interp on the
-    # log-P axis is exact at the sample points and ≤ 0.05 % off the
-    # piecewise-analytic PALEOS-liquidus between samples.
-    T_liq_log_p_axis: jnp.ndarray = None,  # type: ignore[assignment]
-    T_liq_table: jnp.ndarray = None,       # type: ignore[assignment]
-    # Solidus = liquidus * mushy_zone_factor (matches numpy convention
-    # for both PALEOS and Stix14 setups: PROTEUS builds the solidus as
-    # ``liquidus_func * mushy_zone_factor`` in proteus.interior_struct.zalmoxis).
-    mushy_zone_factor_mantle: float = 0.8086,
+    # Mantle liquidus and solidus tabulated on a UNIFORM log10(P [Pa])
+    # axis as ``log10(T)`` values. The wrapper samples
+    # ``log10(liquidus_func(P))`` and ``log10(solidus_func(P))`` on the
+    # same regular grid (log_p_min + i * dlog_p, i = 0..N-1) and passes
+    # the index parameters here so the RHS does an O(1) regular-grid
+    # lookup (no binary search) — matches the pre-fix Stix14 inlined
+    # power law in cost while keeping full liquidus generality. The
+    # pattern mirrors paleos.get_paleos_unified_density_jax which uses
+    # the same (log_p_min, dlog_p, n) trick. Linear interp on
+    # (log_P, log_T) is bit-exact for any single power law T = A*P^B
+    # and ≤1e-7 off the piecewise PALEOS-liquidus at the kink.
+    # Tabulating BOTH curves (vs T_sol = T_liq * mzf) supports
+    # independently-defined solidus/liquidus pairs.
+    melt_log_p_min: float = 8.0,    # log10(P_min)
+    melt_dlog_p: float = 0.0,       # log10(P) sample spacing
+    melt_n: int = 0,                # number of samples
+    log_T_liq_table: jnp.ndarray = None,   # type: ignore[assignment]
+    log_T_sol_table: jnp.ndarray = None,   # type: ignore[assignment]
     # physical constant G (SI)
     G: float = 6.6743e-11,
     # Temperature-axis convention (static, selects P- vs r-indexed branch).
@@ -139,17 +144,26 @@ def coupled_odes_jax(
         T_interp = jnp.interp(log_p_for_T, T_axis_grid, T_values)
         temperature = jnp.where(pressure > 0, T_interp, T_surface)
 
-    # Melting curves at this pressure via tabulated liquidus_func
-    # (matches numpy: numpy calls liquidus_func(P) directly inside
-    # calculate_mixed_density). The wrapper samples liquidus_func on a
-    # log-P axis at JIT-build time. PALEOS-liquidus is piecewise
-    # Simon-Glatzel, NOT a single power law; the previous Stixrude14
-    # hardcode disagreed with PALEOS-liquidus by 14-50 % across the
-    # mantle pressure range.
-    log_p_for_liq = jnp.log10(jnp.maximum(pressure, 1.0))
-    T_liq_interp = jnp.interp(log_p_for_liq, T_liq_log_p_axis, T_liq_table)
+    # Melting curves at this pressure: O(1) regular-grid lookup on
+    # log_T tables (see arg comments above for the rationale). Compute
+    # the float index, clip into [0, N-2], and linearly interp the two
+    # bracketing samples. This avoids the O(log N) binary search
+    # jnp.interp would do, matching the cost of the pre-fix Stix14
+    # inlined power law.
+    log_p_for_melt = jnp.log10(jnp.maximum(pressure, 1.0))
+    melt_idx_f = (log_p_for_melt - melt_log_p_min) / melt_dlog_p
+    melt_i = jnp.clip(jnp.floor(melt_idx_f).astype(jnp.int32), 0, melt_n - 2)
+    melt_frac = melt_idx_f - melt_i.astype(log_p_for_melt.dtype)
+    log_T_liq_lo = log_T_liq_table[melt_i]
+    log_T_liq_hi = log_T_liq_table[melt_i + 1]
+    log_T_sol_lo = log_T_sol_table[melt_i]
+    log_T_sol_hi = log_T_sol_table[melt_i + 1]
+    log_T_liq = (1.0 - melt_frac) * log_T_liq_lo + melt_frac * log_T_liq_hi
+    log_T_sol = (1.0 - melt_frac) * log_T_sol_lo + melt_frac * log_T_sol_hi
+    T_liq_interp = 10.0 ** log_T_liq
+    T_sol_interp = 10.0 ** log_T_sol
     T_liq = jnp.where(pressure > 0, T_liq_interp, 0.0)
-    T_sol = T_liq * mushy_zone_factor_mantle
+    T_sol = jnp.where(pressure > 0, T_sol_interp, 0.0)
 
     # Core density (paleos_unified)
     rho_core = get_paleos_unified_density_jax(

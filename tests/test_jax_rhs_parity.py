@@ -61,18 +61,20 @@ def _stage1b_setup():
         config_params.get('rock_liquidus', 'Stixrude14-liquidus'),
     )
 
-    # Tabulated mantle liquidus on a log-P axis. The JAX RHS now uses
-    # jnp.interp(log10(P), T_liq_log_p_axis, T_liq_table) to match the
-    # numpy path's liquidus_func(P) directly. T_sol = T_liq * mzf, where
-    # mzf is the solidus/liquidus ratio (matches PROTEUS' convention of
-    # building solidus_func = liquidus_func * mushy_zone_factor).
-    _liq_log_p_axis = np.linspace(np.log10(1e8), np.log10(5e12), 256)
-    _liq_p_axis = 10.0 ** _liq_log_p_axis
-    _liq_table = np.array(
-        [float(liq_func(P)) for P in _liq_p_axis], dtype=float
-    )
-    _P_mid = 1e11
-    _mzf_mantle = float(sol_func(_P_mid)) / float(liq_func(_P_mid))
+    # Tabulated mantle melting curves on a shared log-P axis, sampled
+    # in log-T. The JAX RHS uses jnp.interp(log10(P), axis,
+    # log_T_*_table) and exponentiates to recover T. Linear interp on
+    # (log_P, log_T) is bit-exact for any single Simon-Glatzel power
+    # law, so 256 samples reproduce Stix14 solidus/liquidus to machine
+    # precision.
+    _melt_log_p_axis = np.linspace(np.log10(1e8), np.log10(5e12), 256)
+    _melt_p_axis = 10.0 ** _melt_log_p_axis
+    _log_T_liq_table = np.log10(np.array(
+        [float(liq_func(P)) for P in _melt_p_axis], dtype=float
+    ))
+    _log_T_sol_table = np.log10(np.array(
+        [float(sol_func(P)) for P in _melt_p_axis], dtype=float
+    ))
 
     # Adiabatic T(P) for this parity test: simple linear adiabat in log-P
     # matching a typical Stage-1b profile. Resolution fine enough that
@@ -122,9 +124,11 @@ def _stage1b_setup():
     # Mantle sub-table args
     jax_args.update(extract_args(sol_cached, 'sol'))
     jax_args.update(extract_args(liq_cached, 'liq'))
-    jax_args['T_liq_log_p_axis'] = _liq_log_p_axis
-    jax_args['T_liq_table'] = _liq_table
-    jax_args['mushy_zone_factor_mantle'] = _mzf_mantle
+    jax_args['melt_log_p_min'] = float(_melt_log_p_axis[0])
+    jax_args['melt_dlog_p'] = float(_melt_log_p_axis[1] - _melt_log_p_axis[0])
+    jax_args['melt_n'] = int(len(_melt_log_p_axis))
+    jax_args['log_T_liq_table'] = _log_T_liq_table
+    jax_args['log_T_sol_table'] = _log_T_sol_table
     # Zalmoxis's G constant (6.67428e-11) differs from CODATA 2018 (6.6743e-11)
     # at ~3e-6 relative; that mismatch propagates into dg/dr which has a
     # (4 pi G rho - 2 g/r) cancellation, amplifying the G error by ~100x.

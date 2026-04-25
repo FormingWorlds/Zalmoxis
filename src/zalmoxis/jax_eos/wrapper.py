@@ -263,35 +263,45 @@ def solve_structure_via_jax(
         _PHASE_TIMES['adiabat_tab'] += _time.perf_counter() - _p_t0
         _p_t0 = _time.perf_counter()
 
-    # Liquidus tabulation on a log-P axis. Numpy goes through
-    # liquidus_func(P) inside calculate_mixed_density; previously the
-    # JAX RHS used a hardcoded Stix14 power law that disagreed with
+    # Mantle melting-curve tabulation on a shared log-P axis, sampled
+    # in log-T. Numpy calls liquidus_func(P) and solidus_func(P)
+    # directly inside calculate_mixed_density; previously the JAX RHS
+    # used a hardcoded Stix14 power law that disagreed with
     # PALEOS-liquidus by 14-50 % (root cause of the +2.3 % R_outer
     # parity gap, see scripts/single_shot_ode_parity.py commit 9d275c7c).
-    # The mantle pressure range is ~1e8 - 5e12 Pa; 256 log-uniform
-    # samples give ≤0.05 % linear-interp error against the piecewise
-    # analytic PALEOS-liquidus.
-    n_liq = 256
-    log_p_axis = np.linspace(np.log10(1e8), np.log10(5e12), n_liq)
+    # Sampling log10(liquidus_func) and log10(solidus_func) on a
+    # log-P axis (rather than T directly) makes linear interp bit-exact
+    # for any Simon-Glatzel power law T = A*P^B, since log T is linear
+    # in log P; piecewise power laws (PALEOS-liquidus) are also exact
+    # except at the kink where the residual is ≤1e-7. This keeps N
+    # small (256) so the JIT compile and per-call cost stay short.
+    # Tabulating BOTH curves (rather than ``T_sol = T_liq * mzf``)
+    # preserves generality: any (solidus, liquidus) pair the caller
+    # passes via ``melting_curves_functions`` works, including
+    # independently-tabulated pairs (e.g. Monteux600 solidus + liquidus)
+    # where T_sol/T_liq varies with P. PROTEUS' usual convention of
+    # ``solidus_func = liquidus_func * mushy_zone_factor`` flows through
+    # unchanged because the wrapper just samples whatever solidus_func
+    # returns.
+    n_melt = 256
+    log_p_axis = np.linspace(np.log10(1e8), np.log10(5e12), n_melt)
     p_axis = 10.0 ** log_p_axis
     T_liq_samples = np.array(
         [float(liquidus_func(P)) for P in p_axis], dtype=float
     )
-    # Solidus convention: PROTEUS builds solidus_func = liquidus_func * mzf
-    # (see proteus/interior_struct/zalmoxis.py:598 _make_derived_solidus).
-    # mzf is read from config.interior_struct.zalmoxis.mushy_zone_factor.
-    # The parity probe uses mzf=0.8; for the standard Stage-1b Stix14 setup
-    # this matches melting_curves._STIX14_CRYO_FACTOR ≈ 0.8086. Use the
-    # solidus_func/liquidus_func ratio at a mid-range pressure as the
-    # authoritative mzf (covers both Stix14 and PALEOS users without
-    # hardcoding either).
-    P_mid = 1e11  # 100 GPa, mid-mantle
-    mzf_mantle = float(solidus_func(P_mid)) / float(liquidus_func(P_mid))
+    T_sol_samples = np.array(
+        [float(solidus_func(P)) for P in p_axis], dtype=float
+    )
 
-    liquidus = {
-        'T_liq_log_p_axis': np.ascontiguousarray(log_p_axis, dtype=np.float64),
-        'T_liq_table': np.ascontiguousarray(T_liq_samples, dtype=np.float64),
-        'mushy_zone_factor_mantle': mzf_mantle,
+    # Pass index parameters for O(1) regular-grid lookup in the RHS.
+    melt_log_p_min = float(log_p_axis[0])
+    melt_dlog_p = float(log_p_axis[1] - log_p_axis[0])
+    melt_curves = {
+        'melt_log_p_min': melt_log_p_min,
+        'melt_dlog_p': melt_dlog_p,
+        'melt_n': int(n_melt),
+        'log_T_liq_table': np.ascontiguousarray(np.log10(T_liq_samples), dtype=np.float64),
+        'log_T_sol_table': np.ascontiguousarray(np.log10(T_sol_samples), dtype=np.float64),
     }
 
     # Physical constant G matching numpy path
@@ -309,7 +319,7 @@ def solve_structure_via_jax(
     jax_args.update(_extract_liquidus(core_cached, 'core'))
     jax_args.update(_extract_sub_args(sol_cached, 'sol'))
     jax_args.update(_extract_sub_args(liq_cached, 'liq'))
-    jax_args.update(liquidus)
+    jax_args.update(melt_curves)
 
     global _CALL_COUNT, _TOTAL_WALL
     _CALL_COUNT += 1
