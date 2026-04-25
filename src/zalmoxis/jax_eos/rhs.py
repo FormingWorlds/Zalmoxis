@@ -104,16 +104,19 @@ def coupled_odes_jax(
     liq_p_max: float,
     liq_lt_min_per_p: jnp.ndarray,
     liq_lt_max_per_p: jnp.ndarray,
-    # Stixrude14 melting-curve parameters (analytic power law, exact).
-    # T_liq(P) = stix_T_ref * (P/stix_P_ref)^stix_exponent
-    # T_sol(P) = T_liq(P) * stix_cryo_factor
-    # For the standard Stage-1b Stixrude14 setup these are provided by the
-    # caller from melting_curves.py; pre-tabulated grids introduce linear-
-    # interp error ~O(1e-5) that drifts the RHS above parity tolerance.
-    stix_T_ref: float = 5400.0,
-    stix_P_ref: float = 140e9,
-    stix_exponent: float = 0.480,
-    stix_cryo_factor: float = 0.8086,  # matches melting_curves._STIX14_CRYO_FACTOR
+    # Mantle liquidus tabulated on a log10(P [Pa]) axis. The wrapper
+    # samples ``liquidus_func`` (PALEOS-liquidus or Stixrude14-liquidus)
+    # on a 1-D grid and passes (axis, table) here so the RHS uses the
+    # SAME T_liq formula numpy uses (numpy goes through liquidus_func
+    # directly inside calculate_mixed_density). Linear jnp.interp on the
+    # log-P axis is exact at the sample points and ≤ 0.05 % off the
+    # piecewise-analytic PALEOS-liquidus between samples.
+    T_liq_log_p_axis: jnp.ndarray = None,  # type: ignore[assignment]
+    T_liq_table: jnp.ndarray = None,       # type: ignore[assignment]
+    # Solidus = liquidus * mushy_zone_factor (matches numpy convention
+    # for both PALEOS and Stix14 setups: PROTEUS builds the solidus as
+    # ``liquidus_func * mushy_zone_factor`` in proteus.interior_struct.zalmoxis).
+    mushy_zone_factor_mantle: float = 0.8086,
     # physical constant G (SI)
     G: float = 6.6743e-11,
     # Temperature-axis convention (static, selects P- vs r-indexed branch).
@@ -136,14 +139,17 @@ def coupled_odes_jax(
         T_interp = jnp.interp(log_p_for_T, T_axis_grid, T_values)
         temperature = jnp.where(pressure > 0, T_interp, T_surface)
 
-    # Melting curves at this pressure via analytic Stixrude14 power law
-    # (exact; avoids pre-tabulation interp error ~O(1e-5)).
-    T_liq = jnp.where(
-        pressure > 0,
-        stix_T_ref * (pressure / stix_P_ref) ** stix_exponent,
-        0.0,
-    )
-    T_sol = T_liq * stix_cryo_factor
+    # Melting curves at this pressure via tabulated liquidus_func
+    # (matches numpy: numpy calls liquidus_func(P) directly inside
+    # calculate_mixed_density). The wrapper samples liquidus_func on a
+    # log-P axis at JIT-build time. PALEOS-liquidus is piecewise
+    # Simon-Glatzel, NOT a single power law; the previous Stixrude14
+    # hardcode disagreed with PALEOS-liquidus by 14-50 % across the
+    # mantle pressure range.
+    log_p_for_liq = jnp.log10(jnp.maximum(pressure, 1.0))
+    T_liq_interp = jnp.interp(log_p_for_liq, T_liq_log_p_axis, T_liq_table)
+    T_liq = jnp.where(pressure > 0, T_liq_interp, 0.0)
+    T_sol = T_liq * mushy_zone_factor_mantle
 
     # Core density (paleos_unified)
     rho_core = get_paleos_unified_density_jax(

@@ -263,13 +263,35 @@ def solve_structure_via_jax(
         _PHASE_TIMES['adiabat_tab'] += _time.perf_counter() - _p_t0
         _p_t0 = _time.perf_counter()
 
-    # Stixrude14 params (hardcoded to module constants; matches what the
-    # numpy path uses for this config).
-    stix = {
-        'stix_T_ref': mc._STIX14_T_REF,
-        'stix_P_ref': mc._STIX14_P_REF,
-        'stix_exponent': mc._STIX14_EXPONENT,
-        'stix_cryo_factor': mc._STIX14_CRYO_FACTOR,
+    # Liquidus tabulation on a log-P axis. Numpy goes through
+    # liquidus_func(P) inside calculate_mixed_density; previously the
+    # JAX RHS used a hardcoded Stix14 power law that disagreed with
+    # PALEOS-liquidus by 14-50 % (root cause of the +2.3 % R_outer
+    # parity gap, see scripts/single_shot_ode_parity.py commit 9d275c7c).
+    # The mantle pressure range is ~1e8 - 5e12 Pa; 256 log-uniform
+    # samples give ≤0.05 % linear-interp error against the piecewise
+    # analytic PALEOS-liquidus.
+    n_liq = 256
+    log_p_axis = np.linspace(np.log10(1e8), np.log10(5e12), n_liq)
+    p_axis = 10.0 ** log_p_axis
+    T_liq_samples = np.array(
+        [float(liquidus_func(P)) for P in p_axis], dtype=float
+    )
+    # Solidus convention: PROTEUS builds solidus_func = liquidus_func * mzf
+    # (see proteus/interior_struct/zalmoxis.py:598 _make_derived_solidus).
+    # mzf is read from config.interior_struct.zalmoxis.mushy_zone_factor.
+    # The parity probe uses mzf=0.8; for the standard Stage-1b Stix14 setup
+    # this matches melting_curves._STIX14_CRYO_FACTOR ≈ 0.8086. Use the
+    # solidus_func/liquidus_func ratio at a mid-range pressure as the
+    # authoritative mzf (covers both Stix14 and PALEOS users without
+    # hardcoding either).
+    P_mid = 1e11  # 100 GPa, mid-mantle
+    mzf_mantle = float(solidus_func(P_mid)) / float(liquidus_func(P_mid))
+
+    liquidus = {
+        'T_liq_log_p_axis': np.ascontiguousarray(log_p_axis, dtype=np.float64),
+        'T_liq_table': np.ascontiguousarray(T_liq_samples, dtype=np.float64),
+        'mushy_zone_factor_mantle': mzf_mantle,
     }
 
     # Physical constant G matching numpy path
@@ -287,7 +309,7 @@ def solve_structure_via_jax(
     jax_args.update(_extract_liquidus(core_cached, 'core'))
     jax_args.update(_extract_sub_args(sol_cached, 'sol'))
     jax_args.update(_extract_sub_args(liq_cached, 'liq'))
-    jax_args.update(stix)
+    jax_args.update(liquidus)
 
     global _CALL_COUNT, _TOTAL_WALL
     _CALL_COUNT += 1
@@ -299,12 +321,15 @@ def solve_structure_via_jax(
         T_axis_is_radius=T_axis_is_radius,
         **jax_args,
     )
-    # np.array (not np.asarray) forces a writable copy. np.asarray on a
-    # jnp.ndarray yields a read-only view of the JAX buffer, which breaks
-    # downstream `pressure[:] = ...`-style writes in solver._solve (e.g.
-    # the wall-timeout handler at solver.py:614-622 writing best_profiles
-    # back into the working arrays).
-    ys = np.array(ys)
+    # np.asarray on a jnp.ndarray yields a read-only view of the JAX
+    # buffer; np.array would copy (writable) but adds a ~1 ms host-device
+    # sync per call, which dominates in coupled PROTEUS (75k calls per
+    # main() -> ~88 s of pure sync, 57 % of wall, see
+    # session_2026_04_24_scaffolding_gap_investigation.md). Keep this
+    # cheap; callers that need to write to the return must take their
+    # own writable copy at the write site. The one known write site
+    # (solver._solve wall-timeout handler, line 614-622) now does so.
+    ys = np.asarray(ys)
     _dt = _time.perf_counter() - _t0
 
     if _PROFILE:

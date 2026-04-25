@@ -61,12 +61,18 @@ def _stage1b_setup():
         config_params.get('rock_liquidus', 'Stixrude14-liquidus'),
     )
 
-    # Stixrude14 analytic parameters (matches melting_curves.py module-level
-    # constants; passed as kwargs to the JAX RHS so it computes the
-    # melting curves exactly via power law).
-    from zalmoxis.melting_curves import (
-        _STIX14_T_REF, _STIX14_P_REF, _STIX14_EXPONENT, _STIX14_CRYO_FACTOR,
+    # Tabulated mantle liquidus on a log-P axis. The JAX RHS now uses
+    # jnp.interp(log10(P), T_liq_log_p_axis, T_liq_table) to match the
+    # numpy path's liquidus_func(P) directly. T_sol = T_liq * mzf, where
+    # mzf is the solidus/liquidus ratio (matches PROTEUS' convention of
+    # building solidus_func = liquidus_func * mushy_zone_factor).
+    _liq_log_p_axis = np.linspace(np.log10(1e8), np.log10(5e12), 256)
+    _liq_p_axis = 10.0 ** _liq_log_p_axis
+    _liq_table = np.array(
+        [float(liq_func(P)) for P in _liq_p_axis], dtype=float
     )
+    _P_mid = 1e11
+    _mzf_mantle = float(sol_func(_P_mid)) / float(liq_func(_P_mid))
 
     # Adiabatic T(P) for this parity test: simple linear adiabat in log-P
     # matching a typical Stage-1b profile. Resolution fine enough that
@@ -116,10 +122,9 @@ def _stage1b_setup():
     # Mantle sub-table args
     jax_args.update(extract_args(sol_cached, 'sol'))
     jax_args.update(extract_args(liq_cached, 'liq'))
-    jax_args['stix_T_ref'] = _STIX14_T_REF
-    jax_args['stix_P_ref'] = _STIX14_P_REF
-    jax_args['stix_exponent'] = _STIX14_EXPONENT
-    jax_args['stix_cryo_factor'] = _STIX14_CRYO_FACTOR
+    jax_args['T_liq_log_p_axis'] = _liq_log_p_axis
+    jax_args['T_liq_table'] = _liq_table
+    jax_args['mushy_zone_factor_mantle'] = _mzf_mantle
     # Zalmoxis's G constant (6.67428e-11) differs from CODATA 2018 (6.6743e-11)
     # at ~3e-6 relative; that mismatch propagates into dg/dr which has a
     # (4 pi G rho - 2 g/r) cancellation, amplifying the G error by ~100x.
