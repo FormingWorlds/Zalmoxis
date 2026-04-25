@@ -812,6 +812,17 @@ def _solve(
         _inner_osc_count = 0  # Consecutive oscillation count
         _inner_best_diff = float('inf')
         _inner_best_density = None
+        # Stuck-bail counter: how many inner iters since the best
+        # max-residual last improved. On hot fully-molten profiles the
+        # existing 15-oscillation early-bail at line ~1156 doesn't fire
+        # because best_diff stays > 0.1; the loop then runs all 100
+        # inner iters per outer iter, multiplying the JAX call count.
+        # On a real CHILI iter 23869 (hot, T_surf=2820K) cProfile this
+        # was 7900+ inner iters per main(), each ~120 ms, totalling 949 s.
+        # Bail after _STUCK_BAIL_LIMIT iters of no improvement; the
+        # outer mass-radius loop iterates the structure to recover.
+        _inner_stuck_count = 0
+        _STUCK_BAIL_LIMIT = 25
 
         # Anderson acceleration history (only used when use_anderson=True).
         # Cleared on (a) shape change (n_valid changes between iters) and
@@ -1135,16 +1146,39 @@ def _solve(
                 _inner_alpha = min(0.5, _inner_alpha * 1.05)
             _inner_prev_diff = mean_change
 
-            # Track best density for bailout
+            # Track best density for bailout. Increment stuck counter
+            # if we did NOT improve, reset on improvement.
             if relative_diff_inner < _inner_best_diff:
                 _inner_best_diff = relative_diff_inner
                 _inner_best_density = density.copy()
+                _inner_stuck_count = 0
+            else:
+                _inner_stuck_count += 1
 
             if relative_diff_inner < tolerance_inner:
                 logger.debug(
                     'Inner loop converged after %d iterations.', inner_iter + 1,
                 )
                 converged_density = True
+                break
+
+            # Stuck-bail: no improvement in best max-residual for too
+            # many iters. Hot fully-molten T(r) profiles (early CHILI
+            # coupled iters) drive Picard into a state where best_diff
+            # plateaus above 0.1 (so the oscillation-bail below cannot
+            # fire) and the loop runs all 100 inner iters per outer.
+            # Bailing after no improvement saves the bulk of the wall.
+            if (
+                _inner_stuck_count >= _STUCK_BAIL_LIMIT
+                and _inner_best_density is not None
+            ):
+                logger.info(
+                    'Inner loop: stuck-bail after %d iters w/o improvement '
+                    '(best diff=%.2e, target=%.2e). Outer loop will iterate.',
+                    _inner_stuck_count, _inner_best_diff, tolerance_inner,
+                )
+                density[:] = _inner_best_density
+                converged_density = _inner_best_diff < max(100 * tolerance_inner, 0.1)
                 break
 
             # Bailout: after many oscillations, accept best density.
