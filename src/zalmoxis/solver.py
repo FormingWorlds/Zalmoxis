@@ -270,6 +270,38 @@ def main(
         initial_radii=initial_radii,
     )
 
+    # Skip retry when the first attempt is "good enough": density and
+    # pressure converged, mass error within `_RETRY_SKIP_MASS_ERR`. On
+    # hot fully-molten T(r) profiles (early CHILI coupled iters) the
+    # retry path doubles every iteration cap and wall_timeout, takes
+    # 600+ s, and routinely lands at the SAME or SLIGHTLY-WORSE mass
+    # error as the first attempt. Empirical (live no-Anderson bench
+    # iters from chili_dry_coupled_stage2_ab_postfix_b_noanderson):
+    #   - iter 23869 first attempt mass err <5%, retry 600s, ends at 2.6%
+    #   - iter 27657 first attempt mass err >5%, retry 600s timeout,
+    #     ends at 3.37% (still > 3%, would still trigger retry on
+    #     subsequent calls!) -- retry is genuinely useless here.
+    # Threshold 7% catches both. The outer mass-radius loop will
+    # converge across PROTEUS iters anyway; one resolve ending at 5-7%
+    # mass error is fine when the next resolve corrects it.
+    _RETRY_SKIP_MASS_ERR = 0.07
+    _first_mass_err = result.get('best_mass_error')
+    _retry_skipped = (
+        not result['converged']
+        and result.get('converged_density', False)
+        and result.get('converged_pressure', False)
+        and _first_mass_err is not None
+        and _first_mass_err < _RETRY_SKIP_MASS_ERR
+    )
+    if _retry_skipped:
+        logger.info(
+            'Skipping retry: density and pressure converged, mass error '
+            '%.4f%% < %.2f%% threshold. Accepting first-attempt solution.',
+            _first_mass_err * 100, _RETRY_SKIP_MASS_ERR * 100,
+        )
+        result['converged'] = True
+        result['converged_mass'] = True
+
     if not result['converged']:
         # Build tightened params for retry
         planet_mass = config_params['planet_mass']
@@ -1443,6 +1475,7 @@ def _solve(
         'converged_pressure': converged_pressure,
         'converged_density': converged_density,
         'converged_mass': converged_mass,
+        'best_mass_error': float(best_mass_error) if np.isfinite(best_mass_error) else None,
         'p_center': pressure[0] if len(pressure) > 0 else None,
     }
     return model_results
