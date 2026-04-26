@@ -158,7 +158,16 @@ def _default_solver_params(planet_mass):
         'max_center_pressure_guess': max_center_pressure_guess,
         'pressure_tolerance': 1e9,
         'max_iterations_pressure': 100,
+        # Outer mass-radius solver: 'picard' (damped fixed-point, default,
+        # historically used) or 'newton' (Newton + brentq bracketing).
+        # Newton was introduced 2026-04-26 (T2.1) to escape the basin
+        # attractor in damped Picard's R-search on hot fully-molten
+        # mantle profiles. See session_2026_04_26_t2_1a_newton_prototype.md.
+        'outer_solver': 'picard',
     }
+
+
+_VALID_OUTER_SOLVERS = ('picard', 'newton')
 
 
 def _tighten_solver_params(params):
@@ -256,6 +265,30 @@ def main(
         Model results including radii, density, gravity, pressure, temperature,
         mass enclosed, convergence status, and timing.
     """
+    # Validate outer-solver choice. Default is 'picard' (the damped
+    # fixed-point loop inside `_solve()`); 'newton' dispatches to
+    # `_solve_newton_outer()` (T2.1).
+    outer_solver = config_params.get('outer_solver', 'picard')
+    if outer_solver not in _VALID_OUTER_SOLVERS:
+        raise ValueError(
+            f"outer_solver must be one of {_VALID_OUTER_SOLVERS!r}, "
+            f"got {outer_solver!r}."
+        )
+    if outer_solver == 'newton':
+        return _solve_newton_outer(
+            config_params,
+            material_dictionaries,
+            melting_curves_functions,
+            input_dir,
+            layer_mixtures=layer_mixtures,
+            volatile_profile=volatile_profile,
+            temperature_function=temperature_function,
+            temperature_arrays=temperature_arrays,
+            p_center_hint=p_center_hint,
+            initial_density=initial_density,
+            initial_radii=initial_radii,
+        )
+
     result = _solve(
         config_params,
         material_dictionaries,
@@ -358,6 +391,50 @@ def main(
             )
 
     return result
+
+
+def _solve_newton_outer(
+    config_params,
+    material_dictionaries,
+    melting_curves_functions,
+    input_dir,
+    layer_mixtures=None,
+    volatile_profile=None,
+    temperature_function=None,
+    temperature_arrays=None,
+    p_center_hint=None,
+    initial_density=None,
+    initial_radii=None,
+):
+    """Newton + brentq bracketing outer mass-radius loop (T2.1).
+
+    Replaces the damped-Picard outer loop in ``_solve()`` with a Newton
+    iteration on ``f(R) = M(R) - M_target``, with brentq bracketing
+    fall-back when the local derivative misbehaves. The inner Picard
+    density loop is untouched: each Newton step calls ``_solve()`` with
+    ``max_iterations_outer=1`` and a forced ``_initial_radius_guess``.
+
+    The script-level prototype (T2.1a) validated 12/12 G4 starts
+    converging to ``dM/M < 1e-4`` in 3-6 outer iters, including the
+    3 starts that fail with damped Picard (basin attractor 11-13 % off).
+    See ``session_2026_04_26_t2_1a_newton_prototype.md`` for the data.
+
+    Parameters
+    ----------
+    Same as :func:`main`. ``config_params['outer_solver']`` must be
+    ``'newton'`` to dispatch here.
+
+    Returns
+    -------
+    dict
+        Same shape as ``_solve()`` for caller compatibility.
+    """
+    raise NotImplementedError(
+        'Newton outer solver is plumbed (T2.1b) but the iteration body '
+        'has not yet been ported from the prototype. Land T2.1c next. '
+        'See scripts/probe_zalmoxis_newton_prototype.py for the validated '
+        'algorithm.'
+    )
 
 
 def _solve(
