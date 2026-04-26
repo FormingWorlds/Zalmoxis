@@ -949,27 +949,57 @@ def _solve(
 
                 return p[-1] - target_surface_pressure
 
-            # Bracket: use previous solution to narrow the search (Fix 3)
+            # Bracket: use previous solution to narrow the search (Fix 3).
+            # If the narrow bracket from the previous solve does not
+            # straddle the root (e.g. when Aragog hands a hot-shifted T(r)
+            # that pushes the new root outside [0.5, 2.0] x P_prev),
+            # widen progressively before falling back. Each widened
+            # attempt costs one extra _pressure_residual call (= one
+            # solve_structure). 2026-04-26: added to harden coupled-run
+            # robustness on hot fully-molten profiles.
             if _prev_brent_solution is not None and _prev_brent_solution > 0:
-                p_low = max(1e6, 0.5 * _prev_brent_solution)
-                p_high = 2.0 * _prev_brent_solution
+                bracket_attempts = [
+                    (max(1e6, 0.5 * _prev_brent_solution), 2.0 * _prev_brent_solution),
+                    (max(1e6, 0.1 * _prev_brent_solution), 10.0 * _prev_brent_solution),
+                    (max(1e6, 0.01 * _prev_brent_solution), 100.0 * _prev_brent_solution),
+                ]
             else:
-                p_low = max(1e6, 0.1 * pressure_guess)
-                p_high = 10.0 * pressure_guess
+                bracket_attempts = [
+                    (max(1e6, 0.1 * pressure_guess), 10.0 * pressure_guess),
+                    (max(1e6, 0.01 * pressure_guess), 100.0 * pressure_guess),
+                ]
             if uses_WB2018:
-                p_high = min(p_high, max_center_pressure_guess)
+                bracket_attempts = [
+                    (lo, min(hi, max_center_pressure_guess))
+                    for lo, hi in bracket_attempts
+                ]
 
             try:
                 # Pre-validate that the bracket straddles the root.
                 # This gives a clearer error than brentq's generic ValueError,
                 # and the except handler below gracefully falls back to the
                 # last evaluated solution.
-                f_low = _pressure_residual(p_low)
-                f_high = _pressure_residual(p_high)
-                if f_low * f_high > 0:
+                p_low = p_high = None
+                f_low = f_high = None
+                for _bi, (_pl, _ph) in enumerate(bracket_attempts):
+                    _fl = _pressure_residual(_pl)
+                    _fh = _pressure_residual(_ph)
+                    if _fl * _fh <= 0:
+                        p_low, p_high = _pl, _ph
+                        f_low, f_high = _fl, _fh
+                        if _bi > 0:
+                            logger.debug(
+                                'Bracket widened to [%.2e, %.2e] Pa on attempt %d',
+                                _pl, _ph, _bi + 1,
+                            )
+                        break
+                if p_low is None:
+                    _last_pl, _last_ph = bracket_attempts[-1]
                     raise ValueError(
-                        f'Brent bracket does not straddle the root: '
-                        f'f({p_low:.2e})={f_low:.2e}, f({p_high:.2e})={f_high:.2e}.'
+                        f'Brent bracket does not straddle the root after '
+                        f'{len(bracket_attempts)} widening attempts: '
+                        f'final f({_last_pl:.2e})={_fl:.2e}, '
+                        f'f({_last_ph:.2e})={_fh:.2e}.'
                     )
                 p_solution, root_info = brentq(
                     _pressure_residual,
