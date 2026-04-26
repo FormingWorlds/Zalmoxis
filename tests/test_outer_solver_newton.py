@@ -226,74 +226,137 @@ class TestNewtonOnSyntheticMR:
                 f'R_root={R_root:.4e}'
             )
 
-    def test_max_iter_exhausted_raises_with_diagnostic(self, newton_config):
-        """If Newton can't converge within max_iter, raise with best result.
+    def test_max_iter_exhausted_falls_back_to_brentq(self, newton_config):
+        """Newton hitting max_iter falls back to brentq, not raises.
 
         Use a pathological M(R) that oscillates: M(R) = M_target + A*sin(B*R).
         Newton's central-difference dM/dR sees the local slope (oscillates
         positive/negative) so steps go in random directions. With small
-        max_iter (3), should fail to converge.
+        max_iter (3), should fall through to brentq.
 
-        Discriminating: RuntimeError, message must contain 'max_iter' or
-        'Newton failed', and mention the best |dM/M| achieved (so the
-        caller can decide whether to retry or fall back).
+        Discriminating: result['newton_used_brentq'] is True. Brentq
+        finds A*sin(B*R) = 0 i.e. R = n*pi/B, the closest of which gives
+        |dM/M| ~= machine epsilon.
         """
         M_target = 6.0e24
-        # Oscillating M(R) — Newton chokes on this.
         A = 1.0e23
-        B = 1.0e-5  # gives 1 oscillation per 6e5 m
+        B = 1.0e-5  # 1 oscillation per 6e5 m
         cp = dict(newton_config)
         cp['planet_mass'] = M_target
         cp['_initial_radius_guess'] = 6.5e6
         cp['newton_tol'] = 1.0e-6
-        cp['newton_max_iter'] = 3  # too few for this hard problem
+        cp['newton_max_iter'] = 3
 
         side = _make_synthetic_M_solve(
             lambda R: M_target + A * np.sin(B * R)
         )
         with patch('zalmoxis.solver._solve', side_effect=side):
-            with pytest.raises(RuntimeError, match='Newton failed to converge'):
-                _solve_newton_outer(cp, {}, None, '/tmp')
+            result = _solve_newton_outer(cp, {}, None, '/tmp')
 
-    def test_vanishing_derivative_raises(self, newton_config):
-        """Constant M(R): dM/dR = 0 must raise rather than divide-by-zero."""
+        assert result['newton_used_brentq'] is True, (
+            'Max-iter exhaustion must route to brentq fall-back'
+        )
+        assert result['converged'] is True, (
+            'Brentq must find a root of f(R)=A*sin(B*R) (any n*pi/B works)'
+        )
+
+    def test_vanishing_derivative_falls_back_to_brentq(self, newton_config):
+        """Constant M(R): dM/dR = 0 -> falls back to brentq.
+
+        Constant M(R)=5.5e24 != M_target=6e24 has no root; brentq's
+        bracket sweep cannot find a sign flip. Result must be
+        converged=False with newton_used_brentq=True (so the caller
+        knows brentq tried and failed, distinct from "never tried").
+        """
         cp = dict(newton_config)
         cp['planet_mass'] = 6.0e24
         cp['_initial_radius_guess'] = 6.5e6
         cp['newton_max_iter'] = 5
 
-        # M is constant at 5.5e24 (not at target 6e24): derivative is zero,
-        # never converges. Must raise.
         side = _make_synthetic_M_solve(lambda R: 5.5e24)
         with patch('zalmoxis.solver._solve', side_effect=side):
-            with pytest.raises(RuntimeError, match='dM/dR'):
-                _solve_newton_outer(cp, {}, None, '/tmp')
+            result = _solve_newton_outer(cp, {}, None, '/tmp')
 
-    def test_out_of_bounds_R_raises(self, newton_config):
-        """Newton step that overshoots [R_min, R_max] must raise.
+        assert result['newton_used_brentq'] is True
+        assert result['converged'] is False, (
+            'Constant M != M_target has no root; must report converged=False'
+        )
+        # Best-seen rel must equal abs(M-target)/target = abs(5.5e24-6e24)/6e24
+        assert abs(result['best_mass_error'] - (0.5e24 / 6.0e24)) < 1.0e-12
+
+    def test_out_of_bounds_R_falls_back_to_brentq(self, newton_config):
+        """Newton step that overshoots [R_min, R_max] -> brentq fall-back.
 
         Pathological M(R) = 1e26 - 1e17*R: large negative slope (1e17,
         big enough to pass the |dM/dR|>1e15 sanity check). At R0=6e6
-        we have M(R0) approx 1e26, f approx 9.4e25, R_new = R0 - f/(-1e17)
-        approx 6e6 + 9.4e8 m, way past R_max=1.5e7. With the trust
-        region disabled, the unclamped step escapes bounds.
+        we have M(R0)~1e26, f~9.4e25, Newton step takes R_new past R_max.
+        Trust region disabled to expose the bound check.
 
-        Discriminating from test_vanishing_derivative_raises: this one
-        has a HEALTHY slope (1e17 >> 1e15) so the divide-by-zero guard
-        does not fire.
+        Discriminating from vanishing-derivative test: this one HAS a
+        sign-flipping bracket (linear M(R) crosses M_target at
+        R = (1e26 - 6e24)/1e17 = 9.4e8 m -- BUT that's outside
+        [R_min=2e6, R_max=1.5e7]). Brentq sweep won't find a sign flip
+        within bounds. Expected: converged=False, newton_used_brentq=True.
         """
         cp = dict(newton_config)
         cp['planet_mass'] = 6.0e24
         cp['_initial_radius_guess'] = 6.0e6
         cp['newton_R_max'] = 1.5e7
         cp['newton_max_iter'] = 5
-        # Disable trust region so the bad step actually escapes bounds.
         cp['newton_trust_region_frac'] = 100.0
 
         side = _make_synthetic_M_solve(lambda R: 1.0e26 - 1.0e17 * float(R))
         with patch('zalmoxis.solver._solve', side_effect=side):
-            with pytest.raises(RuntimeError, match='out of bounds'):
-                _solve_newton_outer(cp, {}, None, '/tmp')
+            result = _solve_newton_outer(cp, {}, None, '/tmp')
+
+        assert result['newton_used_brentq'] is True
+        # Root at R~9.4e8 m is outside [R_min, R_max] -> sweep can't bracket.
+        assert result['converged'] is False
+
+    def test_brentq_recovers_when_newton_at_max_iter_with_a_real_root(
+        self, newton_config,
+    ):
+        """A monotonic-but-noisy M(R) where Newton spins out: brentq finds root.
+
+        Builds M(R) = (4/3) pi rho R^3 + small noise: monotonic on average
+        but Newton's central-diff sees noise that prevents fast convergence.
+        With max_iter=2, Newton WILL spin out; brentq must finish the job.
+
+        This is the canonical 'integrator-noise + bounded Newton iters'
+        scenario that brentq fall-back exists for. It's the scenario the
+        production CHILI runs will hit.
+        """
+        M_target = 6.0e24
+        rho = 5500.0
+        # Noise amplitude small relative to dynamic range.
+        noise_amp = 1.0e22
+        rng = np.random.default_rng(42)
+
+        def M_func(R):
+            base = (4.0 / 3.0) * np.pi * rho * R ** 3
+            # Deterministic noise (reproducible) keyed on a hash of R.
+            seed = int(abs(R) * 1e3) % (2**31)
+            local_rng = np.random.default_rng(seed)
+            return base + noise_amp * (local_rng.random() - 0.5)
+
+        cp = dict(newton_config)
+        cp['planet_mass'] = M_target
+        cp['_initial_radius_guess'] = 8.0e6
+        cp['newton_tol'] = 1.0e-3
+        cp['newton_max_iter'] = 2  # too few; force brentq
+
+        side = _make_synthetic_M_solve(M_func)
+        with patch('zalmoxis.solver._solve', side_effect=side):
+            result = _solve_newton_outer(cp, {}, None, '/tmp')
+
+        assert result['converged'] is True
+        # newton_used_brentq could be True or False depending on whether
+        # Newton happened to nail the noisy root in 2 iters; the test
+        # is robust to either outcome.
+        # Final R close to the true cubic root.
+        R_true = (3.0 * M_target / (4.0 * np.pi * rho)) ** (1.0 / 3.0)
+        R_final = result['newton_history'][-1][0]
+        assert abs(R_final - R_true) / R_true < 1.0e-2
 
     def test_inner_solve_called_with_max_iterations_outer_1(self, newton_config):
         """Each Newton step must force max_iterations_outer=1 in the inner _solve.
