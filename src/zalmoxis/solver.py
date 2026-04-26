@@ -418,6 +418,7 @@ _NEWTON_REQUIRED_REL_TOL = 1.0e-7
 def _brentq_fallback_outer(
     R_current, M_target, eval_M_at_R, history,
     *, R_min, R_max, tol, start_time, last_result,
+    n_newton_iter=None,
 ):
     """Brentq fall-back for the Newton outer mass-radius loop (T2.1d).
 
@@ -513,7 +514,8 @@ def _brentq_fallback_outer(
         if abs(f0) / M_target < tol:
             # Lucky: R_current is already at the root.
             return _attach_newton_bookkeeping(
-                last_result, history, start_time, used_brentq=True,
+                last_result, history, start_time, used_brentq=True, tol=tol,
+                n_newton_iter=n_newton_iter,
             )
         if f0 > 0:
             # M too large -> shrink R.
@@ -562,17 +564,47 @@ def _brentq_fallback_outer(
         result['converged_mass'] = bool(best_rel < tol)
         result['best_mass_error'] = float(best_rel)
         result['total_time'] = time.time() - start_time
-        result['newton_n_iter'] = len(history)
+        result['newton_n_iter'] = (
+            int(n_newton_iter) if n_newton_iter is not None else len(history)
+        )
         result['newton_history'] = history
         result['newton_used_brentq'] = True
         return result
 
     # Step 3: brentq.
+    # Guard against degenerate bracket (R_lo == R_hi or near-equal) which
+    # would make brentq raise ValueError. This can happen if Newton's
+    # trust region clamped two consecutive iterations to the same R.
+    if R_hi - R_lo < 1.0:  # less than 1 m of width is degenerate
+        logger.warning(
+            'Brentq: bracket width %.3e m too narrow; returning best-seen '
+            '(converged=False).', R_hi - R_lo,
+        )
+        best_idx = int(np.argmin([h[2] for h in history])) if history else 0
+        best_R, best_M, best_rel = history[best_idx]
+        result = dict(last_result) if last_result else {}
+        result['converged'] = bool(best_rel < tol)
+        result['converged_mass'] = bool(best_rel < tol)
+        result['best_mass_error'] = float(best_rel)
+        result['total_time'] = time.time() - start_time
+        result['newton_n_iter'] = (
+            int(n_newton_iter) if n_newton_iter is not None else len(history)
+        )
+        result['newton_history'] = history
+        result['newton_used_brentq'] = True
+        return result
+
     # Estimate |dM/dR| from bracket endpoints to set xtol such that
-    # the returned R yields M within `tol` of M_target.
-    M_lo_seen = next(h[1] for h in history if h[0] == R_lo)
-    M_hi_seen = next(h[1] for h in history if h[0] == R_hi)
-    dMdR_est = abs((M_hi_seen - M_lo_seen) / (R_hi - R_lo))
+    # the returned R yields M within `tol` of M_target. Lookup is by
+    # value (history may carry float64 entries from sorted()); next()
+    # raises StopIteration if the value drifted, so default to a safe
+    # Earth-scale slope rather than crashing.
+    try:
+        M_lo_seen = next(h[1] for h in history if h[0] == R_lo)
+        M_hi_seen = next(h[1] for h in history if h[0] == R_hi)
+        dMdR_est = abs((M_hi_seen - M_lo_seen) / (R_hi - R_lo))
+    except (StopIteration, ZeroDivisionError):
+        dMdR_est = 1.0e18  # Earth-scale fallback
     if dMdR_est <= 0 or not np.isfinite(dMdR_est):
         dMdR_est = 1.0e18  # Earth-scale fallback
     xtol_target = max(1.0, 0.5 * tol * M_target / dMdR_est)
@@ -587,7 +619,32 @@ def _brentq_fallback_outer(
         history.append((float(R_query), float(M_q), abs(M_q - M_target) / M_target))
         return float(M_q - M_target)
 
-    R_root = brentq(_f, R_lo, R_hi, xtol=xtol_target, rtol=tol)
+    # Guard the brentq call: ValueError ('f(a) and f(b) must have
+    # different signs') can fire if the cached M values at R_lo/R_hi
+    # got stale (e.g. the inner Picard converged to a different fixed
+    # point on a re-eval). Return best-seen on any brentq failure
+    # rather than letting the exception propagate.
+    try:
+        R_root = brentq(_f, R_lo, R_hi, xtol=xtol_target, rtol=tol)
+    except (ValueError, RuntimeError) as exc:
+        logger.warning(
+            'Brentq raised %s: %s. Returning best-seen (converged=False).',
+            type(exc).__name__, exc,
+        )
+        best_idx = int(np.argmin([h[2] for h in history])) if history else 0
+        best_R, best_M, best_rel = history[best_idx]
+        result = dict(last_result) if last_result else {}
+        result['converged'] = bool(best_rel < tol)
+        result['converged_mass'] = bool(best_rel < tol)
+        result['best_mass_error'] = float(best_rel)
+        result['total_time'] = time.time() - start_time
+        result['newton_n_iter'] = (
+            int(n_newton_iter) if n_newton_iter is not None else len(history)
+        )
+        result['newton_history'] = history
+        result['newton_used_brentq'] = True
+        return result
+
     # Final eval at the converged root for the returned profiles.
     M_root, last_result = eval_M_at_R(R_root)
     rel = abs(M_root - M_target) / M_target
@@ -608,16 +665,39 @@ def _brentq_fallback_outer(
 
 
 def _attach_newton_bookkeeping(last_result, history, start_time,
-                               *, used_brentq=False):
-    """Decorate an inner-Picard result dict with Newton-outer metadata."""
+                               *, used_brentq=False, tol=None,
+                               n_newton_iter=None):
+    """Decorate an inner-Picard result dict with Newton-outer metadata.
+
+    Convergence is determined by comparing the LAST history entry's
+    relative mass error against ``tol`` if supplied. Without ``tol``,
+    converged=True is set unconditionally (legacy behaviour for
+    callers that pre-checked). New callers should always pass ``tol``
+    so a misroute through this helper does not silently flag a
+    non-converged result as converged.
+
+    ``n_newton_iter`` is the number of completed outer Newton steps
+    (NOT the length of ``history``: history also stores +/-dR side
+    evaluations and any brentq probes). Defaults to ``len(history)``
+    only for legacy callers.
+    """
     result = dict(last_result) if last_result else {}
     if history:
-        rel = history[-1][2]
-        result['converged'] = True
-        result['converged_mass'] = True
-        result['best_mass_error'] = float(rel)
+        # Use the BEST (lowest-rel) history entry rather than the last,
+        # because +/-dR side-evaluations may have appended after the
+        # main R-step on this iter, masking actual convergence.
+        best_rel = min(h[2] for h in history)
+        if tol is None:
+            converged = True
+        else:
+            converged = bool(best_rel < tol)
+        result['converged'] = converged
+        result['converged_mass'] = converged
+        result['best_mass_error'] = float(best_rel)
     result['total_time'] = time.time() - start_time
-    result['newton_n_iter'] = len(history)
+    result['newton_n_iter'] = (
+        int(n_newton_iter) if n_newton_iter is not None else len(history)
+    )
     result['newton_history'] = history
     result['newton_used_brentq'] = bool(used_brentq)
     return result
@@ -766,6 +846,7 @@ def _solve_newton_outer(
 
     # ----- Newton iteration -----
     history = []  # list of (R, M, |f|/M_target) per outer iter
+    side_evals = []  # +/-dR evaluations, only for brentq bracket reuse
     last_result = None
 
     start_time = time.time()
@@ -785,6 +866,7 @@ def _solve_newton_outer(
                 R, M_target, _M_at_R, history,
                 R_min=R_min, R_max=R_max, tol=tol,
                 start_time=start_time, last_result=last_result,
+                n_newton_iter=k,
             )
         f_k = M_k - M_target
         rel = abs(f_k) / M_target
@@ -799,22 +881,36 @@ def _solve_newton_outer(
                 k + 1, rel, tol,
             )
             return _attach_newton_bookkeeping(
-                last_result, history, start_time, used_brentq=False,
+                last_result, history, start_time, used_brentq=False, tol=tol,
+                n_newton_iter=k + 1,
             )
 
         # Central-difference dM/dR.
         dR = dR_rel * R
         M_plus, _ = _M_at_R(R + dR)
         M_minus, _ = _M_at_R(R - dR)
+        # Record FINITE +/-dR evals into a side list for brentq's
+        # history-bracket reuse, but NOT into ``history`` itself: that
+        # list is one-entry-per-Newton-step (damping logic at line ~946
+        # and ``newton_n_iter`` both depend on that invariant).
+        if np.isfinite(M_plus):
+            side_evals.append(
+                (float(R + dR), float(M_plus), abs(M_plus - M_target) / M_target)
+            )
+        if np.isfinite(M_minus):
+            side_evals.append(
+                (float(R - dR), float(M_minus), abs(M_minus - M_target) / M_target)
+            )
         if not (np.isfinite(M_plus) and np.isfinite(M_minus)):
             logger.info(
                 'Newton iter %d: M(R+/-dR) not finite at R=%.4e; '
                 'falling back to brentq.', k, R,
             )
             return _brentq_fallback_outer(
-                R, M_target, _M_at_R, history,
+                R, M_target, _M_at_R, history + side_evals,
                 R_min=R_min, R_max=R_max, tol=tol,
                 start_time=start_time, last_result=last_result,
+                n_newton_iter=k,
             )
         dMdR = (M_plus - M_minus) / (2.0 * dR)
 
@@ -826,9 +922,10 @@ def _solve_newton_outer(
                 'falling back to brentq.', k, dMdR,
             )
             return _brentq_fallback_outer(
-                R, M_target, _M_at_R, history,
+                R, M_target, _M_at_R, history + side_evals,
                 R_min=R_min, R_max=R_max, tol=tol,
                 start_time=start_time, last_result=last_result,
+                n_newton_iter=k + 1,
             )
 
         R_new = R - f_k / dMdR
@@ -840,9 +937,10 @@ def _solve_newton_outer(
                 'falling back to brentq.', k, R_new, R_min, R_max,
             )
             return _brentq_fallback_outer(
-                R, M_target, _M_at_R, history,
+                R, M_target, _M_at_R, history + side_evals,
                 R_min=R_min, R_max=R_max, tol=tol,
                 start_time=start_time, last_result=last_result,
+                n_newton_iter=k + 1,
             )
 
         # Trust-region: cap step.
@@ -875,9 +973,10 @@ def _solve_newton_outer(
         max_iter, min(h[2] for h in history),
     )
     return _brentq_fallback_outer(
-        R, M_target, _M_at_R, history,
+        R, M_target, _M_at_R, history + side_evals,
         R_min=R_min, R_max=R_max, tol=tol,
         start_time=start_time, last_result=last_result,
+        n_newton_iter=max_iter,
     )
 
 
