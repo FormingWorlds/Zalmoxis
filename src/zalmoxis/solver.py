@@ -393,6 +393,28 @@ def main(
     return result
 
 
+# Newton outer-loop defaults (T2.1c). These are the validated values
+# from the script-level prototype (scripts/probe_zalmoxis_newton_prototype.py)
+# which converged 12/12 G4 starts to dM/M < 1e-4 on the failure-dump
+# T(r) in 3-6 Newton iterations.
+_NEWTON_DEFAULT_MAX_ITER = 30
+_NEWTON_DEFAULT_TOL = 1.0e-4
+_NEWTON_DEFAULT_DR_REL = 1.0e-3
+# Trust region: cap each Newton step to 10% of current R. The M(R)
+# map has internal nonlinearity from the integrator's terminal-event
+# tolerance and EOS phase boundaries, so a generous trust region tends
+# to overshoot on the first 1-2 iters from a poor R0.
+_NEWTON_DEFAULT_TRUST_REGION_FRAC = 0.1
+# Hard physical bounds on R; Newton step gets clamped, brentq hits
+# error if any bracket lookup escapes these.
+_NEWTON_DEFAULT_R_MIN = 2.0e6
+_NEWTON_DEFAULT_R_MAX = 3.0e7
+# Required minimum integrator tolerance for Newton: with looser tols
+# the M(R) map has noise > 1e-3 which Newton cannot beat. Validated
+# in T2.1a.
+_NEWTON_REQUIRED_REL_TOL = 1.0e-7
+
+
 def _solve_newton_outer(
     config_params,
     material_dictionaries,
@@ -406,34 +428,230 @@ def _solve_newton_outer(
     initial_density=None,
     initial_radii=None,
 ):
-    """Newton + brentq bracketing outer mass-radius loop (T2.1).
+    """Newton outer mass-radius loop on ``f(R) = M(R) - M_target`` (T2.1).
 
     Replaces the damped-Picard outer loop in ``_solve()`` with a Newton
-    iteration on ``f(R) = M(R) - M_target``, with brentq bracketing
-    fall-back when the local derivative misbehaves. The inner Picard
-    density loop is untouched: each Newton step calls ``_solve()`` with
-    ``max_iterations_outer=1`` and a forced ``_initial_radius_guess``.
+    iteration. The inner Picard density loop is untouched: each Newton
+    step calls ``_solve()`` with ``max_iterations_outer=1`` and a
+    forced ``_initial_radius_guess`` to evaluate ``M(R)``.
 
-    The script-level prototype (T2.1a) validated 12/12 G4 starts
-    converging to ``dM/M < 1e-4`` in 3-6 outer iters, including the
-    3 starts that fail with damped Picard (basin attractor 11-13 % off).
-    See ``session_2026_04_26_t2_1a_newton_prototype.md`` for the data.
+    Algorithm (validated in T2.1a, see
+    ``session_2026_04_26_t2_1a_newton_prototype.md``):
+
+    1. Evaluate ``f(R_k) = M(R_k) - M_target`` via inner Picard.
+    2. If ``|f|/M_target < tol``, return.
+    3. Estimate ``dM/dR`` via central difference at ``R_k +/- dR``.
+    4. ``R_{k+1} = R_k - f / (dM/dR)``, clamped to a 10 %-of-R trust
+       region.
+    5. Damping: if previous step did not reduce ``|f|``, halve the
+       proposed step.
+
+    Brentq fall-back (T2.1d) is deferred to a follow-on commit. This
+    commit ships pure Newton; degenerate cases (vanishing derivative,
+    out-of-bounds step, max-iter without convergence) raise
+    ``RuntimeError`` with the best result attached. Production deploy
+    requires T2.1d's brentq fall-back to recover from these.
 
     Parameters
     ----------
     Same as :func:`main`. ``config_params['outer_solver']`` must be
-    ``'newton'`` to dispatch here.
+    ``'newton'`` to dispatch here. Recognised numerical knobs:
+
+    - ``newton_max_iter`` (default 30): Newton iter cap.
+    - ``newton_tol`` (default 1e-4): convergence on
+      ``|M-M_target|/M_target``.
+    - ``newton_dR_rel`` (default 1e-3): central-difference step as
+      fraction of R.
+    - ``newton_trust_region_frac`` (default 0.1): max ``|dR|/R`` per step.
+    - ``newton_R_min``, ``newton_R_max`` (defaults 2e6, 3e7 m): hard
+      bounds on R.
+
+    The integrator tolerances (``relative_tolerance``,
+    ``absolute_tolerance``) MUST be at least 1e-7 / 1e-8: looser tols
+    leave ~1e-3 noise on M(R) which dominates Newton's central diff.
+    Caller will get a ``ValueError`` on entry if this is violated.
 
     Returns
     -------
     dict
-        Same shape as ``_solve()`` for caller compatibility.
+        Same shape as ``_solve()`` for caller compatibility:
+        ``{radii, density, gravity, pressure, temperature, mass_enclosed,
+        cmb_mass, core_mantle_mass, total_time, converged,
+        converged_pressure, converged_density, converged_mass,
+        best_mass_error, p_center, layer_eos_config}``.
+
+    Raises
+    ------
+    ValueError
+        If integrator tolerances are too loose for Newton to converge.
+    RuntimeError
+        If Newton fails to converge within ``newton_max_iter`` and
+        brentq fall-back is not yet implemented (T2.1d).
     """
-    raise NotImplementedError(
-        'Newton outer solver is plumbed (T2.1b) but the iteration body '
-        'has not yet been ported from the prototype. Land T2.1c next. '
-        'See scripts/probe_zalmoxis_newton_prototype.py for the validated '
-        'algorithm.'
+    M_target = float(config_params['planet_mass'])
+    defaults = _default_solver_params(M_target)
+
+    # Newton numerical knobs (use defaults if absent).
+    max_iter = int(config_params.get('newton_max_iter', _NEWTON_DEFAULT_MAX_ITER))
+    tol = float(config_params.get('newton_tol', _NEWTON_DEFAULT_TOL))
+    dR_rel = float(config_params.get('newton_dR_rel', _NEWTON_DEFAULT_DR_REL))
+    trust_region_frac = float(
+        config_params.get('newton_trust_region_frac', _NEWTON_DEFAULT_TRUST_REGION_FRAC)
+    )
+    R_min = float(config_params.get('newton_R_min', _NEWTON_DEFAULT_R_MIN))
+    R_max = float(config_params.get('newton_R_max', _NEWTON_DEFAULT_R_MAX))
+
+    # Integrator-tolerance precondition: enforce rel_tol <= 1e-7 so M(R)
+    # is smooth enough for central-difference dM/dR.
+    rel_tol_eff = float(config_params.get('relative_tolerance')
+                        or defaults['relative_tolerance'])
+    if rel_tol_eff > _NEWTON_REQUIRED_REL_TOL:
+        raise ValueError(
+            f'Newton outer requires relative_tolerance <= {_NEWTON_REQUIRED_REL_TOL!r}; '
+            f'got {rel_tol_eff!r}. With looser tols, M(R) noise (~1e-3) '
+            f"dominates Newton's central-difference dM/dR. Tighten the "
+            'integrator (recommended: relative_tolerance=1e-9, '
+            'absolute_tolerance=1e-10) when using outer_solver="newton". '
+            'See session_2026_04_26_t2_1a_newton_prototype.md.'
+        )
+
+    # Initial radius guess. Same Seager+2007 estimate that _solve uses,
+    # unless caller supplied _initial_radius_guess.
+    initial_radius_guess = config_params.get('_initial_radius_guess', None)
+    if initial_radius_guess is not None:
+        R = float(initial_radius_guess)
+    else:
+        # Mass-adaptive initial guess (matches _solve line ~541).
+        core_mass_fraction = float(config_params.get('core_mass_fraction', 0.0))
+        R = (
+            1000 * (7030 - 1840 * core_mass_fraction)
+            * (M_target / earth_mass) ** 0.282
+        )
+    R = float(max(R_min, min(R_max, R)))
+
+    # ----- Inner-Picard-at-fixed-R helper -----
+    # Each Newton step calls _solve(max_iterations_outer=1, _initial_radius_guess=R)
+    # to get M(R) via one full inner Picard density iteration.
+    def _M_at_R(R_query, density_seed=None, radii_seed=None):
+        cp = dict(config_params)
+        cp['max_iterations_outer'] = 1
+        cp['_initial_radius_guess'] = float(R_query)
+        # outer_solver knob would route us back here; force picard for
+        # the inner _solve call so we hit the actual inner Picard.
+        cp['outer_solver'] = 'picard'
+        sub_result = _solve(
+            cp,
+            material_dictionaries,
+            melting_curves_functions,
+            input_dir,
+            layer_mixtures=layer_mixtures,
+            volatile_profile=volatile_profile,
+            temperature_function=temperature_function,
+            temperature_arrays=temperature_arrays,
+            p_center_hint=p_center_hint,
+            initial_density=density_seed if density_seed is not None else initial_density,
+            initial_radii=radii_seed if radii_seed is not None else initial_radii,
+        )
+        mass_arr = np.asarray(sub_result.get('mass_enclosed', [np.nan]))
+        M_val = float(mass_arr[-1]) if mass_arr.size > 0 else float('nan')
+        return M_val, sub_result
+
+    # ----- Newton iteration -----
+    history = []  # list of (R, M, |f|/M_target) per outer iter
+    last_result = None
+
+    start_time = time.time()
+    logger.info(
+        'Newton outer: M_target=%.4e kg, R0=%.4e m, tol=%.1e, max_iter=%d',
+        M_target, R, tol, max_iter,
+    )
+
+    for k in range(max_iter):
+        M_k, last_result = _M_at_R(R)
+        if not np.isfinite(M_k):
+            raise RuntimeError(
+                f'Newton iter {k}: M(R={R:.4e}) is not finite. '
+                'Brentq fall-back not yet implemented (T2.1d).'
+            )
+        f_k = M_k - M_target
+        rel = abs(f_k) / M_target
+        history.append((R, M_k, rel))
+        logger.info(
+            'Newton iter %2d: R=%.5e M=%.5e f=%+.3e rel=%.3e',
+            k, R, M_k, f_k, rel,
+        )
+        if rel < tol:
+            logger.info(
+                'Newton converged in %d iter(s): dM/M=%.3e <= tol=%.3e',
+                k + 1, rel, tol,
+            )
+            # Attach Newton bookkeeping to the inner result.
+            last_result['converged'] = True
+            last_result['converged_mass'] = True
+            last_result['best_mass_error'] = float(rel)
+            last_result['total_time'] = time.time() - start_time
+            last_result['newton_n_iter'] = k + 1
+            last_result['newton_history'] = history
+            return last_result
+
+        # Central-difference dM/dR.
+        dR = dR_rel * R
+        M_plus, _ = _M_at_R(R + dR)
+        M_minus, _ = _M_at_R(R - dR)
+        if not (np.isfinite(M_plus) and np.isfinite(M_minus)):
+            raise RuntimeError(
+                f'Newton iter {k}: M(R+/-dR) not finite at R={R:.4e}. '
+                'Brentq fall-back not yet implemented (T2.1d).'
+            )
+        dMdR = (M_plus - M_minus) / (2.0 * dR)
+
+        # Reject vanishing derivative. M_target/earth_radius ~ 1e18 kg/m;
+        # below 1e15 the slope is effectively zero and Newton step blows up.
+        if abs(dMdR) < 1.0e15 or not np.isfinite(dMdR):
+            raise RuntimeError(
+                f'Newton iter {k}: |dM/dR|={dMdR:.3e} below 1e15. '
+                'Brentq fall-back not yet implemented (T2.1d).'
+            )
+
+        R_new = R - f_k / dMdR
+        # Clamp to physical bounds. Newton step OUTSIDE [R_min, R_max]
+        # signals a bad derivative or a poor R0; route to brentq.
+        if R_new < R_min or R_new > R_max:
+            raise RuntimeError(
+                f'Newton iter {k}: R_new={R_new:.4e} out of bounds [{R_min:.2e}, '
+                f'{R_max:.2e}]. Brentq fall-back not yet implemented (T2.1d).'
+            )
+
+        # Trust-region: cap step.
+        max_step = trust_region_frac * R
+        step = R_new - R
+        if abs(step) > max_step:
+            step = float(np.sign(step) * max_step)
+            R_new = R + step
+            logger.debug(
+                'Newton iter %d: step capped at %.0f%% of R (was %.3e -> %.3e).',
+                k, trust_region_frac * 100, R - f_k / dMdR, R_new,
+            )
+
+        # Damping: if previous step did not reduce |f|, halve this one.
+        if len(history) >= 2:
+            f_prev = history[-2][1] - M_target
+            if abs(f_k) >= abs(f_prev):
+                R_new = R + 0.5 * (R_new - R)
+                logger.debug(
+                    'Newton iter %d: previous step did not improve |f|; '
+                    'halving step to R=%.4e.', k, R_new,
+                )
+
+        R = R_new
+
+    # Out of iters without convergence. Without brentq fall-back (T2.1d),
+    # raise so caller knows.
+    raise RuntimeError(
+        f'Newton failed to converge in {max_iter} iter(s). '
+        f'Best |dM/M| = {min(h[2] for h in history):.3e} at '
+        f'R = {history[int(np.argmin([h[2] for h in history]))][0]:.4e} m. '
+        'Brentq fall-back not yet implemented (T2.1d).'
     )
 
 

@@ -157,17 +157,22 @@ def test_newton_dispatches_to_solve_newton_outer(minimal_config):
     assert result is sentinel
 
 
-def test_newton_stub_raises_not_implemented(minimal_config):
-    """Until T2.1c lands, _solve_newton_outer() must fail loudly.
+def test_newton_rejects_loose_integrator_tolerance(minimal_config):
+    """Newton requires relative_tolerance <= 1e-7.
 
-    Discriminating: NotImplementedError, not generic Exception. The
-    error message must mention T2.1c so a reader can find the next
-    step.
+    The script-level prototype (T2.1a) showed that Zalmoxis' default
+    integrator tolerances (1e-5 / 1e-6) leave M(R) noise of ~1e-3
+    which swamps Newton's central-difference dM/dR. The function must
+    fail loudly at entry rather than silently producing garbage.
+
+    Discriminating: ValueError (not generic Exception); message
+    mentions both 'relative_tolerance' and 'newton' so a reader can
+    diagnose without running the iteration.
     """
     cp = dict(minimal_config)
     cp['outer_solver'] = 'newton'
-    # Don't mock _solve_newton_outer here: we want the real stub to fire.
-    with pytest.raises(NotImplementedError, match='T2.1c'):
+    cp['relative_tolerance'] = 1.0e-5  # default, too loose
+    with pytest.raises(ValueError, match='relative_tolerance'):
         main(
             cp, material_dictionaries={}, melting_curves_functions=None,
             input_dir='/tmp',
