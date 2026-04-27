@@ -268,12 +268,50 @@ def main(
     # Validate outer-solver choice. Default is 'picard' (the damped
     # fixed-point loop inside `_solve()`); 'newton' dispatches to
     # `_solve_newton_outer()` (T2.1).
+    outer_solver_explicit = 'outer_solver' in config_params
     outer_solver = config_params.get('outer_solver', 'picard')
     if outer_solver not in _VALID_OUTER_SOLVERS:
         raise ValueError(
             f"outer_solver must be one of {_VALID_OUTER_SOLVERS!r}, "
             f"got {outer_solver!r}."
         )
+
+    # Advisory: when outer_solver is implicitly picard AND the profile
+    # is hot fully-molten (T_surf > 3000 K) or super-Earth scale
+    # (planet_mass > 2 M_E), log a one-line INFO suggesting Newton.
+    # T2.1 (2026-04-26) demonstrated a basin attractor in damped Picard's
+    # outer mass-radius loop on hot fully-molten profiles; T2.3
+    # (2026-04-27) confirmed Newton + brentq is robust across 1-10 M_E.
+    # The Zalmoxis-internal default stays at picard for backward compat
+    # (flipping it would break ~18 standalone unit tests on Newton's
+    # tighter tol precondition); this advisory points users at the
+    # better choice without forcing it.
+    if not outer_solver_explicit:
+        _planet_mass = float(config_params.get('planet_mass') or 0.0)
+        _surface_temperature = float(
+            config_params.get('surface_temperature') or 0.0
+        )
+        _is_hot = _surface_temperature > 3000.0
+        _is_massive = _planet_mass > 2.0 * earth_mass
+        if _is_hot or _is_massive:
+            _trigger = []
+            if _is_massive:
+                _trigger.append(
+                    f'planet_mass={_planet_mass / earth_mass:.2f} M_E > 2 M_E'
+                )
+            if _is_hot:
+                _trigger.append(
+                    f'surface_temperature={_surface_temperature:.0f} K > 3000 K'
+                )
+            logger.info(
+                "Zalmoxis using outer_solver='picard' (default). "
+                "For this regime (%s), 'newton' is recommended: damped "
+                "Picard has a known basin attractor on hot fully-molten "
+                "and super-Earth profiles (see T2.1, T2.3 validation, "
+                "2026-04-26/27). Set outer_solver='newton' in your "
+                'config to opt in. This advisory does not change behaviour.',
+                ', '.join(_trigger),
+            )
     if outer_solver == 'newton':
         return _solve_newton_outer(
             config_params,
