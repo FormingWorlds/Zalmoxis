@@ -1168,7 +1168,7 @@ def _solve(
                     'The RTPress100TPa melt table extends to 100 TPa but '
                     'the solid table is limited to 1 TPa.'
                 )
-            elif eos_name == 'PALEOS-2phase:MgSiO3':
+            elif eos_name in ('PALEOS-2phase:MgSiO3', 'PALEOS-2phase:MgSiO3-highres'):
                 max_mass = PALEOS_MAX_MASS_EARTH
                 reason = (
                     'The PALEOS MgSiO3 tables extend to 100 TPa for both '

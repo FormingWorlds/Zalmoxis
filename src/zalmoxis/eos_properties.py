@@ -49,7 +49,12 @@ def _build_registry() -> dict:
         ),
     }
 
-    # ── PALEOS-2phase MgSiO3 (solid + liquid, Zenodo 18924171) ──────────
+    # ── PALEOS-2phase MgSiO3 (solid + liquid, Zenodo 19680050) ──────────
+    # Zenodo 19680050 (2026-04-27) is the new ecosystem-wide PALEOS
+    # MgSiO3 reference. It ships two resolutions: 150 pts/decade
+    # (default, ~80 MB) and 600 pts/decade (highres, ~1.3 GB).
+    # PROTEUS default is the 150-res variant; the highres variant is
+    # opt-in via 'PALEOS-2phase:MgSiO3-highres' for sensitivity tests.
     _paleos2ph_melted = {
         'eos_file': os.path.join(
             root, 'data', 'EOS_PALEOS_MgSiO3', 'paleos_mgsio3_tables_pt_proteus_liquid.dat'
@@ -59,6 +64,20 @@ def _build_registry() -> dict:
     _paleos2ph_solid = {
         'eos_file': os.path.join(
             root, 'data', 'EOS_PALEOS_MgSiO3', 'paleos_mgsio3_tables_pt_proteus_solid.dat'
+        ),
+        'format': 'paleos',
+    }
+    _paleos2ph_melted_highres = {
+        'eos_file': os.path.join(
+            root, 'data', 'EOS_PALEOS_MgSiO3',
+            'paleos_mgsio3_tables_pt_proteus_liquid_highres.dat',
+        ),
+        'format': 'paleos',
+    }
+    _paleos2ph_solid_highres = {
+        'eos_file': os.path.join(
+            root, 'data', 'EOS_PALEOS_MgSiO3',
+            'paleos_mgsio3_tables_pt_proteus_solid_highres.dat',
         ),
         'format': 'paleos',
     }
@@ -161,11 +180,18 @@ def _build_registry() -> dict:
             'melted_mantle': _rtpress_melted,
             'solid_mantle': _wb2018_solid,
         },
-        # PALEOS-2phase MgSiO3 (separate solid/liquid tables)
+        # PALEOS-2phase MgSiO3 (separate solid/liquid tables, Zenodo 19680050).
+        # Default = 150 pts/decade. The -highres variant uses the same
+        # registry shape, swapped to 600-pts/decade table files.
         'PALEOS-2phase:MgSiO3': {
             'core': _seager_iron,
             'melted_mantle': _paleos2ph_melted,
             'solid_mantle': _paleos2ph_solid,
+        },
+        'PALEOS-2phase:MgSiO3-highres': {
+            'core': _seager_iron,
+            'melted_mantle': _paleos2ph_melted_highres,
+            'solid_mantle': _paleos2ph_solid_highres,
         },
         # PALEOS unified tables (single file per material)
         'PALEOS:iron': _paleos_iron,

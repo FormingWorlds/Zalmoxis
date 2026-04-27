@@ -22,6 +22,7 @@ TDEP_EOS_NAMES = {
     'WolfBower2018:MgSiO3',
     'RTPress100TPa:MgSiO3',
     'PALEOS-2phase:MgSiO3',
+    'PALEOS-2phase:MgSiO3-highres',
     'PALEOS:iron',
     'PALEOS:MgSiO3',
     'PALEOS:H2O',

@@ -39,6 +39,7 @@ _SILICATE_EOS_NAMES = frozenset(
         'WolfBower2018:MgSiO3',
         'RTPress100TPa:MgSiO3',
         'PALEOS-2phase:MgSiO3',
+        'PALEOS-2phase:MgSiO3-highres',
     }
 )
 _H2_EOS_NAMES = frozenset({'Chabrier:H'})
@@ -833,7 +834,11 @@ def _nabla_ad_for_component(
     if mat.get('format') == 'paleos_unified':
         return _get_paleos_unified_nabla_ad(pressure, temperature, mat, interpolation_functions)
 
-    if eos_name == 'PALEOS-2phase:MgSiO3' or eos_name == 'PALEOS-API-2phase:MgSiO3':
+    if eos_name in (
+        'PALEOS-2phase:MgSiO3',
+        'PALEOS-2phase:MgSiO3-highres',
+        'PALEOS-API-2phase:MgSiO3',
+    ):
         # Convert dT/dP back to nabla_ad = (dT/dP) * P / T
         if pressure <= 0 or temperature <= 0:
             return None

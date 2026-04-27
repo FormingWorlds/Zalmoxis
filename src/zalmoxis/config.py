@@ -53,6 +53,7 @@ VALID_TABULATED_EOS = {
     'WolfBower2018:MgSiO3',
     'RTPress100TPa:MgSiO3',
     'PALEOS-2phase:MgSiO3',
+    'PALEOS-2phase:MgSiO3-highres',
     'Seager2007:H2O',
     'PALEOS:iron',
     'PALEOS:MgSiO3',
@@ -598,6 +599,7 @@ def validate_config(config_params):
                 'WolfBower2018:MgSiO3',
                 'RTPress100TPa:MgSiO3',
                 'PALEOS-2phase:MgSiO3',
+                'PALEOS-2phase:MgSiO3-highres',
             }
             for c in mix.components
         )
@@ -806,6 +808,7 @@ _NEEDS_MELTING_CURVES = {
     'WolfBower2018:MgSiO3',
     'RTPress100TPa:MgSiO3',
     'PALEOS-2phase:MgSiO3',
+    'PALEOS-2phase:MgSiO3-highres',
 }
 
 
