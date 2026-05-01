@@ -1,5 +1,11 @@
 # Configuration file
 
+!!! info "Standalone vs PROTEUS-coupled mode"
+    This page documents the TOML schema used by **standalone** Zalmoxis (`python -m zalmoxis`).
+    Inside the PROTEUS framework, none of the sections below (`[InputParameter]`, `[AssumptionsAndInitialGuesses]`, `[EOS]`, `[Calculations]`, `[IterativeProcess]`, `[PressureAdjustment]`, `[Output]`) are read.
+    PROTEUS configures Zalmoxis through its own `[interior_struct]` and `[interior_struct.zalmoxis]` blocks; see [Coupling to PROTEUS](proteus_coupling.md).
+    The EOS-identifier table below (`PALEOS:iron`, `WolfBower2018:MgSiO3`, etc.) is still authoritative for both modes; only the surrounding TOML scaffolding differs.
+
 Zalmoxis uses [TOML](https://toml.io/en/) to structure its configuration file. The default is `default.toml` in the `input/` directory.
 
 The configuration file defines all parameters needed to run the planetary interior structure model: planet properties, equation of state (EOS) selection for each structural layer, numerical solver settings, and output options. The sections below document each parameter.

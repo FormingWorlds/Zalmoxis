@@ -1,5 +1,11 @@
 # Usage
 
+!!! info "Standalone vs PROTEUS-coupled mode"
+    This page documents **standalone** Zalmoxis use (`python -m zalmoxis -c <config>.toml`).
+    When Zalmoxis is driven from inside the PROTEUS framework, none of the TOML sections shown here are read.
+    PROTEUS reads its own `[interior_struct.zalmoxis]` block and calls `zalmoxis.solver.main()` directly.
+    For the PROTEUS recipe, see [Coupling to PROTEUS](proteus_coupling.md).
+
 ## Quick start
 
 Run the default configuration (1 Earth-mass planet with a PALEOS iron core and MgSiO3 mantle):
