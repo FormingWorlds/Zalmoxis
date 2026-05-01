@@ -69,7 +69,7 @@ The function `load_zalmoxis_configuration(config, hf_row)` in `proteus/interior_
 | `surface_temperature` | `config.planet.tsurf_init` | Initial guess for the adiabat. |
 | `cmb_temperature` | from `config.planet.tcmb_init` *or* derived for `liquidus_super` | See [IC anchors](#initial-condition-anchors). |
 | `center_temperature` | `config.planet.tcenter_init` | Initial guess. The solver re-derives self-consistently. |
-| `layer_eos_config` | `core_eos`, `mantle_eos`, `ice_layer_eos` | Extended at runtime with volatile EOS (Chabrier:H, PALEOS:H2O) when `dry_mantle = false`. |
+| `layer_eos_config` | `core_eos`, `mantle_eos`, `ice_layer_eos` | Extended at runtime with volatile EOS (Chabrier:H, PALEOS:H2O) when `dry_mantle = false`. Default `dry_mantle = true` keeps the configured layer EOS unchanged. |
 | `mushy_zone_factor` | `config.interior_struct.zalmoxis.mushy_zone_factor` | $T_\mathrm{sol} = T_\mathrm{liq} \cdot f$. |
 | `num_layers` | `config.interior_struct.zalmoxis.num_levels` | |
 | `target_surface_pressure` | `hf_row['P_surf'] * 1e5` when finite and positive; otherwise fallback from `config.planet.gas_prs` | Atmospheric BC for the structure solve. The fallback path floors at 1 atm and caps at 1 GPa; the direct path passes the helpfile value through unchanged. |
@@ -97,12 +97,12 @@ where $T_\mathrm{liq}^\mathrm{Fei2021}$ is the Belonoshko+2005 / Fei+2021 piecew
 
 Why this matters: a surface-anchored adiabat gets the deep-mantle $T$ wrong by hundreds of K when the surface $T$ is uncertain (atmospheres at 2000 to 3500 K), but the deep-mantle $T_\mathrm{cmb}$ is well-constrained by the liquidus + a physical excess. Anchoring upward fixes the well-known quantity and lets the surface $T$ float to whatever the radiative balance demands.
 
-### NL20 mass-aware fallback
+### Mass-aware fallback for first-call $P_\mathrm{cmb}$
 
-On the very first call, before Zalmoxis has populated `hf_row['P_cmb']`, the wrapper estimates $P_\mathrm{cmb}$ from a Noack & Lasbleis (2020) mass-aware scaling:
+On the very first call, before Zalmoxis has populated `hf_row['P_cmb']`, the wrapper estimates $P_\mathrm{cmb}$ from the Noack & Lasbleis (2020) mass-aware scaling:
 
 $$
-P_\mathrm{cmb}^\mathrm{NL20} = f(M_p, X_\mathrm{CMF}, \mathrm{mode})
+P_\mathrm{cmb}^{\mathrm{NL20}} = f(M_p, X_\mathrm{CMF}, \mathrm{mode})
 $$
 
 The mass-aware fallback keeps super-Earth ICs anchored at the right deep-mantle temperature (an Earth-only fixed value would bias the iter-0 $T_\mathrm{cmb}$ at 5 $M_\oplus$ by ~2800 K). After one round-trip through Zalmoxis, the converged $P_\mathrm{cmb}$ replaces the fallback estimate.
@@ -170,7 +170,7 @@ Two contracts must hold at the file handover boundary:
 
 The 5e-2 tolerance is loose because two legitimate noise sources stack:
 
-- The integrator-method gap: Zalmoxis's `mass_enclosed` comes from RK45 with sub-grid substepping, while the schema check re-integrates by trapezoidal shell-sum on the written grid. ~0.8 to 2.0% on stiff CHILI density profiles.
+- The integrator-method gap: Zalmoxis's `mass_enclosed` comes from RK45 with sub-grid substepping, while the schema check re-integrates by trapezoidal shell-sum on the written grid. ~0.8 to 2.0% on stiff coupled density profiles.
 - Mesh blending: when the per-call radius shift exceeds `mesh_max_shift`, `blend_mesh_files` post-modifies `zalmoxis_output.dat` to cap the shift but does not update `hf_row` scalars. With $\alpha < 1$ blending, the file's integrated mass drifts up to 5% from the unblended `hf_row['M_int']`.
 
 The tight mass-conservation contract (<0.1%) lives at a different level: in the wrapper's mass-anchor check on `hf_row['M_int'] / hf_row['M_int_target']`. The schema check at the file boundary catches column-swap, truncation, and byte-flip corruption, not numerical mass drift.
@@ -181,7 +181,7 @@ The tight mass-conservation contract (<0.1%) lives at a different level: in the 
 
 ## Volatile profile coupling
 
-When `dry_mantle = false` (default), each Zalmoxis re-solve builds a `VolatileProfile` from the dissolved-volatile masses in `hf_row`:
+When `dry_mantle = false`, each Zalmoxis re-solve builds a `VolatileProfile` from the dissolved-volatile masses in `hf_row`:
 
 ```python
 volatile_profile.w_liquid = {'PALEOS:H2O': X_H2O_liquid, 'Chabrier:H': X_H2_liquid, ...}
@@ -196,7 +196,7 @@ The wrapper then *extends* the configured mantle EOS string with placeholder fra
 
 Inside Zalmoxis, `LayerMixture` mixes per-component density via the phase-aware suppressed harmonic mean ([mixing](mixing.md)). At each radial shell, the volatile profile re-evaluates the per-phase mass fractions weighted by $\phi(r)$ (melt fraction from the phase routing). This produces a $\phi$-aware structural density that smoothly transitions from a wet liquid mantle to a drier solid mantle as the planet crystallises.
 
-Setting `dry_mantle = true` skips `build_volatile_profile()` entirely. The structure is then determined by the canonical solid + liquid mantle tables alone, regardless of dissolved inventory. Useful for Stage 1 phase-aware coupling diagnostics where you want to isolate the volatile contribution from other physics.
+The default setting `dry_mantle = true` skips `build_volatile_profile()` entirely. The structure is then determined by the canonical solid + liquid mantle tables alone, regardless of dissolved inventory. This is the production setting for paper runs and for cleanly-decoupled module comparisons; it isolates the volatile contribution to the structure from all other physics.
 
 ---
 
@@ -227,7 +227,7 @@ Newton requires tighter integrator tolerances than Picard: the default `relative
 
 ## JAX path and `temperature_arrays`
 
-Zalmoxis has an opt-in JAX + diffrax structure path (`use_jax = true`) plus an Anderson Type-II Picard accelerator (`use_anderson = true`). Both default off for bit-identical reproduction of the numpy path.
+Zalmoxis runs the structure solve through a JAX + diffrax path by default (`use_jax = true`), with an opt-in Anderson Type-II Picard accelerator (`use_anderson = true`). The numpy path is selectable via `use_jax = false` for bit-identical reproduction of the legacy trajectory or on systems without a JAX-compatible backend.
 
 The JAX path has a known subtlety in coupled mode. The wrapper detects two argument styles for an external T(r):
 

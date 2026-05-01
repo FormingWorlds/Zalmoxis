@@ -51,7 +51,7 @@ The two pages dedicated to PROTEUS coupling are:
 
 -   :material-book-open-variant: **Theory of the coupling**
 
-    Per-iteration control flow with diagram, the dict the wrapper passes to `zalmoxis.solver.main()`, the Fei+2021-anchored `liquidus_super` IC and the NL20 mass-aware super-Earth fallback, the `zalmoxis_output.dat` schema contract, volatile-profile $\phi(r)$ blending, why Newton replaced damped Picard as default, the JAX path subtleties.
+    Per-iteration control flow with diagram, the dict the wrapper passes to `zalmoxis.solver.main()`, the Fei+2021-anchored `liquidus_super` IC and the Noack & Lasbleis (2020) mass-aware super-Earth fallback, the `zalmoxis_output.dat` schema contract, volatile-profile $\phi(r)$ blending, the Newton outer-solver default, the JAX path subtleties.
 
     [Go to the explainer](Explanations/proteus_coupling.md)
 

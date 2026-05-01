@@ -7,7 +7,7 @@ PROTEUS bypasses Zalmoxis's own TOML sections (`[InputParameter]`, `[Assumptions
 For the theory behind this design, see [Coupling to PROTEUS (theory)](../Explanations/proteus_coupling.md).
 
 !!! info "Audience"
-    This guide assumes you already have a working PROTEUS install (see the [PROTEUS docs](https://proteus-framework.org/PROTEUS)) and a CHILI-style coupled config for atmosphere + interior + outgassing.
+    This guide assumes you already have a working PROTEUS install (see the [PROTEUS docs](https://proteus-framework.org/PROTEUS)) and a coupled atmosphere + interior + outgassing config.
     If you are running Zalmoxis on its own, ignore this page and follow [Usage](usage.md).
 
 ---
@@ -33,7 +33,7 @@ mantle_mass_fraction = 0.0     # 0 for PALEOS or Seager 2-layer; > 0 for 3-layer
 num_levels      = 150
 ```
 
-This is sufficient for an Earth-mass coupled CHILI run. The other `[interior_struct.zalmoxis]` keys default to validated production values; tune them only if you hit a specific issue.
+This is sufficient for an Earth-mass coupled run. The other `[interior_struct.zalmoxis]` keys default to validated production values; tune them only if you hit a specific issue.
 
 !!! tip "Picking EOS"
     For paper-quality runs, use `PALEOS:iron` + `PALEOS:MgSiO3` (unified tables, $T$-dependent core, valid to 50 $M_\oplus$).
@@ -51,7 +51,7 @@ Inside PROTEUS, the IC selection is governed by `[planet].temperature_mode`, **n
 | `"adiabatic_from_cmb"` | `adiabatic_from_cmb` (CMB-anchored) | Default. Integrates the adiabat upward from `tcmb_init` at the converged $R_\mathrm{cmb}$. |
 | `"liquidus_super"` | `adiabatic_from_cmb` (CMB-anchored, $T_\mathrm{cmb}$ from liquidus) | Recommended for hot magma-ocean ICs. Anchors $T_\mathrm{cmb} = T_\mathrm{liq}(P_\mathrm{cmb}) + \Delta T_\mathrm{super}$ from the Fei+2021 liquidus. |
 | `"adiabatic"` | `adiabatic` (surface-anchored) | Surface-anchored adiabat. Pairs with `[planet].tsurf_init` and `[planet].tcenter_init`. |
-| `"isentropic"` | `adiabatic` (mapped) | CHILI protocol. Energetics consumes `ini_entropy`; Zalmoxis T-profile is used only for the structure solve. |
+| `"isentropic"` | `adiabatic` (mapped) | Energetics consumes `ini_entropy`; Zalmoxis T-profile is used only for the structure solve. |
 | `"accretion"` | `adiabatic` (mapped) | White & Li accretion thermal state. Energetics computes its own T(r) post-structure. |
 | `"isothermal"`, `"linear"`, `"prescribed"` | unchanged | Diagnostics only. Not for production coupled runs. |
 
@@ -119,7 +119,7 @@ update_stale_ceiling   = 2.5e4   # stale-aware ceiling [yr]; default 25 kyr
 
 A re-solve fires when *any* of these conditions is satisfied AND the time since last call exceeds `update_min_interval`. Set `update_stale_ceiling = 0` to disable the stale-aware ceiling.
 
-The defaults are tuned for 1 to 10 $M_\oplus$ CHILI runs. For very long evolutions (Gyr) where structure barely changes, raise `update_dphi_abs` to 0.1 and `update_dtmagma_frac` to 0.1 to cut wall time. For numerical-fragility investigations, set `update_min_interval` to your timestep so Zalmoxis fires every step.
+The defaults are tuned for 1 to 10 $M_\oplus$ coupled runs. For very long evolutions (Gyr) where structure barely changes, raise `update_dphi_abs` to 0.1 and `update_dtmagma_frac` to 0.1 to cut wall time. For numerical-fragility investigations, set `update_min_interval` to your timestep so Zalmoxis fires every step.
 
 ---
 
@@ -133,7 +133,7 @@ mesh_max_shift             = 0.05    # max fractional R shift per Zalmoxis call 
 mesh_convergence_interval  = 10.0    # iterations between full mesh re-converges [yr]
 ```
 
-A `mesh_max_shift = 0.05` keeps the Aragog initial-condition reload safely within the entropy-table interpolation domain in 99%+ of CHILI runs.
+A `mesh_max_shift = 0.05` keeps the Aragog initial-condition reload safely within the entropy-table interpolation domain in 99%+ of coupled runs.
 
 ---
 
@@ -143,11 +143,11 @@ This toggle controls whether dissolved volatiles enter the Zalmoxis density mixi
 
 ```toml
 [interior_struct.zalmoxis]
-dry_mantle = false   # default; set true for Stage 1 phase-aware coupling
+dry_mantle = true    # default; structure ignores dissolved-volatile mass
 ```
 
-- `dry_mantle = false` (default): the mantle EOS is extended at runtime with Chabrier:H and PALEOS:H2O components, weighted by $\phi(r)$ from the volatile profile.
-- `dry_mantle = true`: structure is solved against the canonical solid + liquid mantle tables alone. Volatile partitioning still happens in CALLIOPE, but it does not feed back into structure. Use this for Stage 1 cleanly-decoupled comparisons or when an EOS-mixing instability obscures another diagnostic.
+- `dry_mantle = true` (default): structure is solved against the canonical solid + liquid mantle tables alone. Volatile partitioning still happens in the outgassing module, but it does not feed back into structure. This is the production setting for paper runs and for cleanly-decoupled module comparisons.
+- `dry_mantle = false`: the mantle EOS is extended at runtime with Chabrier:H and PALEOS:H2O components, weighted by $\phi(r)$ from the volatile profile. Use this when you specifically want phase-aware volatile mixing in the structure; expect a wall-time cost from the volatile-extended EOS.
 
 ---
 
@@ -167,12 +167,12 @@ The defaults are validated against SPIDER's tolerance for table sparsity. Halvin
 
 ## JAX structure path
 
-Zalmoxis has an opt-in JAX + diffrax path for the structure solve, plus an Anderson Type-II Picard accelerator. Both default off for bit-identical behaviour with the numpy path.
+Zalmoxis runs the structure solve through a JAX + diffrax path by default, with an opt-in Anderson Type-II Picard accelerator. The numpy path is selectable for bit-identical reproduction of the legacy trajectory or on systems without a JAX-compatible backend.
 
 ```toml
 [interior_struct.zalmoxis]
-use_jax       = false
-use_anderson  = false
+use_jax       = true     # default
+use_anderson  = false    # default
 ```
 
 In coupled mode, the wrapper auto-disables `use_jax` and `use_anderson` for any Zalmoxis call where neither a `temperature_function` nor a `temperature_arrays` argument is supplied (initialisation and equilibration calls), because the JAX RHS path collapses on P-ignoring callables. See the [JAX path explainer](../Explanations/proteus_coupling.md#jax-path-and-temperature-arrays) for why.
@@ -192,7 +192,7 @@ Do not enable by default; it carries a small per-step cost. Use only when you ob
 
 ---
 
-## Worked example: Stage 4 super-Earth coupled CHILI
+## Worked example: super-Earth coupled run
 
 ```toml
 [planet]
