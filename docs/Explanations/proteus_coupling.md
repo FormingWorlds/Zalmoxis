@@ -256,9 +256,22 @@ Use sparingly: the flag has a small per-step cost (XLA fast-math disabled). Most
 
 ## Cross-references
 
+### In this site
+
 - [PROTEUS coupling how-to](../How-to/proteus_coupling.md) — TOML recipe and parameter reference.
 - [Process flow](process_flow.md) — Zalmoxis's internal three-loop solver.
 - [Code architecture](code_architecture.md) — Zalmoxis package layout.
 - [Equations of state](eos_physics.md) — PALEOS unified tables and the EOS dispatch model.
 - [Multi-material mixing](mixing.md) — phase-aware suppressed harmonic mean used inside the volatile-profile path.
+
+### PROTEUS-side reference (mkdocstrings, single source of truth)
+
+The wrapper itself lives in the PROTEUS repository, not in Zalmoxis. Symbol-level API documentation is rendered directly from the PROTEUS source:
+
+- [`proteus.interior_struct.zalmoxis`](https://proteus-framework.org/PROTEUS/Reference/api/interior_struct_zalmoxis.html) — the wrapper. `zalmoxis_solver`, `load_zalmoxis_configuration`, `validate_zalmoxis_output_schema`, `build_volatile_profile`, and helpers.
+- [`proteus.config._struct`](https://proteus-framework.org/PROTEUS/Reference/api/config_struct.html) — the attrs schema for `[interior_struct]` and `[interior_struct.zalmoxis]`. Every TOML key from the [coupling how-to](../How-to/proteus_coupling.md) maps to a field here.
+- [`proteus.interior_energetics.wrapper.equilibrate_initial_state`](https://proteus-framework.org/PROTEUS/Reference/api/interior_energetics_wrapper.html) — the pre-main-loop CALLIOPE + Zalmoxis convergence loop.
+
+### External
+
 - [PROTEUS framework documentation](https://proteus-framework.org/PROTEUS).
