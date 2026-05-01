@@ -18,7 +18,7 @@ The grid is log-uniform with 150 points per decade in both $P$ (1 bar to 100 TPa
 No external solidus/liquidus curves or separate solid/liquid files are needed.
 This eliminates the phase-routing complexity required by the two-phase and WolfBower EOS families.
 
-**Phase boundary.** The PALEOS MgSiO$_3$ liquidus has a well-defined analytic functional form: a piecewise Simon-Glatzel fit using [Belonoshko et al. (2005)](https://doi.org/10.1103/PhysRevB.72.104102) below 2.55 GPa and [Fei et al. (2021)](https://doi.org/10.1029/2020JB021321) above, with the crossover pressure chosen for continuity.
+**Phase boundary.** The PALEOS MgSiO$_3$ liquidus has a well-defined analytic functional form: a piecewise Simon-Glatzel fit using [Belonoshko et al. (2005)](https://doi.org/10.1103/PhysRevB.72.104107) below 2.55 GPa and [Fei et al. (2021)](https://doi.org/10.1103/PhysRevLett.127.135701) above, with the crossover pressure chosen for continuity.
 This analytic liquidus is implemented as `paleos_liquidus(P)` in `melting_curves.py` and is used in the vectorized density and $\nabla_{\mathrm{ad}}$ code paths.
 At load time, the code also extracts a discrete liquidus boundary from the phase column (for each pressure row, the lowest temperature where the phase is `liquid`); this serves as a consistency reference and is used in the scalar code path.
 
@@ -73,7 +73,7 @@ These are not currently registered in the EOS registry but are available for fut
 
 ### PALEOS-2phase (MgSiO3 only)
 
-The `PALEOS-2phase:MgSiO3` EOS provides MgSiO$_3$ as separate solid and liquid table files ([Zenodo record 18924171](https://zenodo.org/records/18924171)).
+The `PALEOS-2phase:MgSiO3` EOS provides MgSiO$_3$ as separate solid and liquid table files ([Zenodo record 19680050](https://zenodo.org/records/19680050), v1.1.0).
 The table format and grid structure are identical to the main PALEOS tables.
 
 Unlike the main PALEOS tables, `PALEOS-2phase` requires external melting curves for phase routing.

@@ -29,7 +29,7 @@ core_eos        = "PALEOS:iron"
 mantle_eos      = "PALEOS:MgSiO3"
 ice_layer_eos   = "none"       # "none" for 2-layer, or e.g. "PALEOS:H2O"
 mushy_zone_factor = 0.8        # cryoscopic depression in [0.7, 1.0]
-mantle_mass_fraction = 0.0     # 0 for 2-layer, > 0 for 3-layer
+mantle_mass_fraction = 0.0     # 0 for PALEOS or Seager 2-layer; > 0 for 3-layer or WolfBower2018/RTPress100TPa mantle
 num_levels      = 150
 ```
 
@@ -37,7 +37,7 @@ This is sufficient for an Earth-mass coupled CHILI run. The other `[interior_str
 
 !!! tip "Picking EOS"
     For paper-quality runs, use `PALEOS:iron` + `PALEOS:MgSiO3` (unified tables, $T$-dependent core, valid to 50 $M_\oplus$).
-    The legacy `Seager2007:*` and `WolfBower2018:MgSiO3` choices are still supported for sensitivity tests and SPIDER parity comparisons.
+    The `Seager2007:*` and `WolfBower2018:MgSiO3` choices are supported for sensitivity tests and SPIDER parity comparisons.
     See [Configuration](configuration.md#available-eos-options) for the full table; the same identifiers apply in coupled mode.
 
 ---
@@ -48,21 +48,21 @@ Inside PROTEUS, the IC selection is governed by `[planet].temperature_mode`, **n
 
 | `[planet].temperature_mode` | Zalmoxis structure-solve mode | When to use |
 |---|---|---|
-| `"adiabatic"` | `adiabatic` (surface-anchored) | Generic. Pairs with `[planet].tsurf_init` and `[planet].tcenter_init`. |
+| `"adiabatic_from_cmb"` | `adiabatic_from_cmb` (CMB-anchored) | Default. Integrates the adiabat upward from `tcmb_init` at the converged $R_\mathrm{cmb}$. |
+| `"liquidus_super"` | `adiabatic_from_cmb` (CMB-anchored, $T_\mathrm{cmb}$ from liquidus) | Recommended for hot magma-ocean ICs. Anchors $T_\mathrm{cmb} = T_\mathrm{liq}(P_\mathrm{cmb}) + \Delta T_\mathrm{super}$ from the Fei+2021 liquidus. |
+| `"adiabatic"` | `adiabatic` (surface-anchored) | Surface-anchored adiabat. Pairs with `[planet].tsurf_init` and `[planet].tcenter_init`. |
 | `"isentropic"` | `adiabatic` (mapped) | CHILI protocol. Energetics consumes `ini_entropy`; Zalmoxis T-profile is used only for the structure solve. |
 | `"accretion"` | `adiabatic` (mapped) | White & Li accretion thermal state. Energetics computes its own T(r) post-structure. |
-| `"liquidus_super"` | `adiabatic_from_cmb` (CMB-anchored) | Hot magma-ocean ICs. Anchors $T_\mathrm{cmb} = T_\mathrm{liq}(P_\mathrm{cmb}) + \Delta T_\mathrm{super}$ from the Fei+2021 liquidus. Recommended for Stage 4+ super-Earth runs. |
 | `"isothermal"`, `"linear"`, `"prescribed"` | unchanged | Diagnostics only. Not for production coupled runs. |
 
-For `liquidus_super`, set `[planet].delta_T_super` (typically 100 to 500 K). On the very first call, before Zalmoxis has populated `hf_row['P_cmb']`, the wrapper falls back to a Noack & Lasbleis (2020) mass-aware $P_\mathrm{cmb}$ estimate so super-Earth runs anchor correctly instead of locking to the legacy 135 GPa Earth value. After one round-trip the fallback is replaced by the converged Zalmoxis $P_\mathrm{cmb}$.
+For `liquidus_super`, set `[planet].delta_T_super` (default 500 K, validated `>= 0`). The `tsurf_init` and `tcenter_init` fields are ignored under `liquidus_super`: the adiabat is set by $T_\mathrm{liq}(P_\mathrm{cmb}) + \Delta T_\mathrm{super}$ at the CMB and integrated upward. Before Zalmoxis has populated `hf_row['P_cmb']` on the first call, the wrapper estimates $P_\mathrm{cmb}$ from a Noack & Lasbleis (2020) mass-aware scaling so super-Earth runs anchor at the correct deep-mantle pressure rather than at an Earth-only value. After one round-trip the converged Zalmoxis $P_\mathrm{cmb}$ replaces the estimate.
 
 ```toml
 [planet]
 mass_tot            = 5.0
-tsurf_init          = 3000
-tcenter_init        = 9000
 temperature_mode    = "liquidus_super"
-delta_T_super       = 200
+delta_T_super       = 200       # K above the Fei+2021 liquidus at P_cmb
+# tsurf_init / tcenter_init are ignored under liquidus_super
 ```
 
 See [the IC anchors theory section](../Explanations/proteus_coupling.md#initial-condition-anchors) for the derivation.
@@ -71,7 +71,7 @@ See [the IC anchors theory section](../Explanations/proteus_coupling.md#initial-
 
 ## Outer mass-radius solver (`outer_solver`)
 
-Zalmoxis's outer loop adjusts the planet radius until $M(R) = M_\mathrm{target}$. Two solvers are available; the PROTEUS default flipped to **Newton** in T2.3 (2026-04-27) after sweep validation across 1, 3, 5, and 10 $M_\oplus$ dry CHILI configurations.
+Zalmoxis's outer loop adjusts the planet radius until $M(R) = M_\mathrm{target}$. Two solvers are available; **Newton** is the default.
 
 ```toml
 [interior_struct.zalmoxis]
@@ -81,9 +81,9 @@ outer_solver = "newton"   # "newton" (default) or "picard"
 | Solver | When it is the right choice | Cost |
 |---|---|---|
 | `"newton"` | Default for all production runs. Required for hot fully-molten profiles (super-Earths at IW+4) where damped Picard hits a basin attractor and stalls. | Auto-tightens integrator tolerances to `relative_tolerance=1e-9`, `absolute_tolerance=1e-10`. ~1.2 to 2x slower per call than Picard but converges where Picard fails. |
-| `"picard"` | Bit-reproducibility comparison runs against pre-T2.1 builds. Earth-mass cool runs converge identically. | Default integrator tolerances (rel=1e-5, abs=1e-6). |
+| `"picard"` | Earth-mass cool runs; comparison runs that must match the historic Picard fixed-point trajectory. | Default integrator tolerances (rel=1e-5, abs=1e-6). |
 
-Do not set Newton's tolerances directly unless you know what you are doing. The wrapper only forwards the Newton block (`newton_max_iter`, `newton_tol`, `newton_relative_tolerance`, `newton_absolute_tolerance`) when `outer_solver = "newton"`, so a Picard run sees a bit-identical config dict to pre-T2.1 builds.
+Do not set Newton's tolerances directly unless you know what you are doing. The wrapper only forwards the Newton block (`newton_max_iter`, `newton_tol`, `newton_relative_tolerance`, `newton_absolute_tolerance`) when `outer_solver = "newton"`, so a Picard run sees an unchanged config dict.
 
 ---
 
@@ -114,10 +114,10 @@ update_interval        = 1e9     # max time between calls [yr]; default 1 Gyr (e
 update_min_interval    = 0       # min time between calls [yr]; default 0 (no floor)
 update_dtmagma_frac    = 0.05    # re-solve if |dT_magma/T_magma| > 5%
 update_dphi_abs        = 0.05    # re-solve if |dPhi| > 0.05
-update_stale_ceiling   = 2.5e4   # T1.5 stale-aware ceiling [yr]; default 25 kyr
+update_stale_ceiling   = 2.5e4   # stale-aware ceiling [yr]; default 25 kyr
 ```
 
-A re-solve fires when *any* of these conditions is satisfied AND the time since last call exceeds `update_min_interval`. Set `update_stale_ceiling = 0` for legacy behaviour without staleness.
+A re-solve fires when *any* of these conditions is satisfied AND the time since last call exceeds `update_min_interval`. Set `update_stale_ceiling = 0` to disable the stale-aware ceiling.
 
 The defaults are tuned for 1 to 10 $M_\oplus$ CHILI runs. For very long evolutions (Gyr) where structure barely changes, raise `update_dphi_abs` to 0.1 and `update_dtmagma_frac` to 0.1 to cut wall time. For numerical-fragility investigations, set `update_min_interval` to your timestep so Zalmoxis fires every step.
 
@@ -188,7 +188,7 @@ nohup proteus start -c <cfg.toml> --offline --deterministic \
     > output/<run>/launch.log 2>&1 & disown
 ```
 
-Do not enable by default; it carries a small per-step cost. Use only when you observe noise-floor floating-point divergence between launches of the same config (Stage 4.4 atmodeller-vs-CALLIOPE diagnostics, see the [Coupling explainer §determinism](../Explanations/proteus_coupling.md#determinism-and-the-deterministic-flag)).
+Do not enable by default; it carries a small per-step cost. Use only when you observe noise-floor floating-point divergence between launches of the same config. Background and mechanism in the [Coupling explainer §determinism](../Explanations/proteus_coupling.md#determinism-and-the-deterministic-flag).
 
 ---
 
@@ -226,7 +226,7 @@ module = "aragog"
 # ...
 
 [interior_energetics.aragog]
-dilatation = true   # paper-line default since 2026-04-30
+dilatation = true   # PdV from gravitational separation (Aragog only)
 ```
 
 Run with:
@@ -244,7 +244,7 @@ For numerically fragile anchors (wet 1 $M_\oplus$ at IW+4, reduced 1 $M_\oplus$ 
 - **Setting `[InputParameter]` in a PROTEUS config does nothing.** Those keys are read only by `python -m zalmoxis`. PROTEUS reads its own `[planet]` and `[interior_struct.zalmoxis]` blocks.
 - **Using `core_frac_mode = "mass"` with `module = "spider"` fails validation.** Mass-mode core fractions require Zalmoxis. SPIDER only accepts radius-mode.
 - **Picard convergence stalls at high mass + hot.** Switch to `outer_solver = "newton"` (already default). If still failing on a Newton run, check the helpfile for $\Delta T_\mathrm{cmb}$ noise patterns; a `--deterministic` rerun may be needed.
-- **`mantle_mass_fraction != 0` for a 2-layer model.** For 2-layer models without ice and without a $T$-dependent mantle EOS, set `mantle_mass_fraction = 0` so the solver derives it as `1 - core_frac`.
+- **`mantle_mass_fraction != 0` rejected by the validator.** Only the `WolfBower2018:MgSiO3` and `RTPress100TPa:MgSiO3` mantle EOS prefixes (legacy 2-phase tables) require a non-zero `mantle_mass_fraction`. For PALEOS, PALEOS-2phase, Seager2007, or analytic mantles in a 2-layer model, set `mantle_mass_fraction = 0` so the solver derives it as `1 - core_frac`. 3-layer models with an ice layer also require `mantle_mass_fraction > 0`.
 - **Equilibration warns "did not converge after 15 iterations".** Usually a sign that CALLIOPE is oscillating. Inspect $\Delta P/P$ trace; if it is dropping but slowly, raise `equilibrate_max_iter`. If it is non-monotonic, check the volatile inventory.
 
 For the why behind these, see the [Coupling to PROTEUS theory page](../Explanations/proteus_coupling.md).

@@ -72,8 +72,8 @@ The function `load_zalmoxis_configuration(config, hf_row)` in `proteus/interior_
 | `layer_eos_config` | `core_eos`, `mantle_eos`, `ice_layer_eos` | Extended at runtime with volatile EOS (Chabrier:H, PALEOS:H2O) when `dry_mantle = false`. |
 | `mushy_zone_factor` | `config.interior_struct.zalmoxis.mushy_zone_factor` | $T_\mathrm{sol} = T_\mathrm{liq} \cdot f$. |
 | `num_layers` | `config.interior_struct.zalmoxis.num_levels` | |
-| `target_surface_pressure` | `hf_row['P_surf'] * 1e5` *or* fallback from `config.planet.gas_prs` | Atmospheric BC for the structure solve. Floors at 1 atm, caps at 1 GPa on the first call. |
-| `outer_solver` | `config.interior_struct.zalmoxis.outer_solver` | Default `"newton"` since T2.3 (2026-04-27). |
+| `target_surface_pressure` | `hf_row['P_surf'] * 1e5` when finite and positive; otherwise fallback from `config.planet.gas_prs` | Atmospheric BC for the structure solve. The fallback path floors at 1 atm and caps at 1 GPa; the direct path passes the helpfile value through unchanged. |
+| `outer_solver` | `config.interior_struct.zalmoxis.outer_solver` | Default `"newton"`. |
 | `tolerance_outer`, `tolerance_inner`, `max_iterations_*` | `config.interior_struct.zalmoxis.solver_*` | Newton path auto-overrides `relative_tolerance` to 1e-9. |
 | `use_jax`, `use_anderson` | `config.interior_struct.zalmoxis.use_*` | Auto-disabled for calls without a `temperature_function` (init / equilibration). |
 
@@ -83,7 +83,7 @@ This dict is rebuilt every call: PROTEUS does not mutate the shared `Config` obj
 
 ## Initial-condition anchors
 
-A coupled run's first iteration is the hardest. The structure solve and the energetics initial entropy must agree on $T(r)$, $P(r)$, $R_\mathrm{cmb}$ and $M_\mathrm{core}$ before SPIDER or Aragog takes its first time step. PROTEUS supports four IC modes; the most physically grounded for hot magma ocean ICs is `liquidus_super`, added in the `tl/interior-refactor` work.
+A coupled run's first iteration is the hardest. The structure solve and the energetics initial entropy must agree on $T(r)$, $P(r)$, $R_\mathrm{cmb}$ and $M_\mathrm{core}$ before SPIDER or Aragog takes its first time step. PROTEUS supports four IC modes; the most physically grounded for hot magma ocean ICs is `liquidus_super`.
 
 ### `liquidus_super` mode
 
@@ -105,7 +105,7 @@ $$
 P_\mathrm{cmb}^\mathrm{NL20} = f(M_p, X_\mathrm{CMF}, \mathrm{mode})
 $$
 
-This replaces the legacy hardcoded 135 GPa Earth value (PROTEUS commit `6e76832f`). Without the fix, super-Earth ICs were biased by 1500 to 2800 K at iter 0 (the 5 $M_\oplus$ T_cmb anchor went from 6444 K to 9271 K after the fix, a +2827 K correction). After one round-trip through Zalmoxis, the converged $P_\mathrm{cmb}$ replaces the fallback estimate.
+The mass-aware fallback keeps super-Earth ICs anchored at the right deep-mantle temperature (an Earth-only fixed value would bias the iter-0 $T_\mathrm{cmb}$ at 5 $M_\oplus$ by ~2800 K). After one round-trip through Zalmoxis, the converged $P_\mathrm{cmb}$ replaces the fallback estimate.
 
 ### Other modes
 
@@ -149,11 +149,11 @@ fire_resolve = (
         (time_since_last >= update_interval)            # ceiling
      OR (|dT_magma| / T_magma >= update_dtmagma_frac)   # composition / thermal change
      OR (|dphi_basic| >= update_dphi_abs)               # phase change
-     OR (time_since_successful >= update_stale_ceiling) # T1.5 stale-aware ceiling
+     OR (time_since_successful >= update_stale_ceiling) # stale-aware ceiling
 ) AND (time_since_last >= update_min_interval)          # floor
 ```
 
-The stale-aware ceiling (`update_stale_ceiling`, default 25 kyr) is the addition most users notice: it forces a re-solve after 25 kyr even if neither of the dynamical triggers fired, because a fall-back path that returned the cached structure can stretch the time-since-call beyond what the physical triggers would have caught. Without staleness, the cached structure could be 100+ kyr stale on a slow run.
+The stale-aware ceiling (`update_stale_ceiling`, default 25 kyr) forces a re-solve after that interval even if none of the dynamical triggers fired, because a fall-back path that returned the cached structure can stretch the time-since-call beyond what the physical triggers would catch. Without staleness, a slow run can carry a 100+ kyr stale cached structure.
 
 The triggers fire even during init-loops, but `equilibrate_initial_state` calls Zalmoxis directly and bypasses the gating logic.
 
@@ -171,9 +171,9 @@ Two contracts must hold at the file handover boundary:
 The 5e-2 tolerance is loose because two legitimate noise sources stack:
 
 - The integrator-method gap: Zalmoxis's `mass_enclosed` comes from RK45 with sub-grid substepping, while the schema check re-integrates by trapezoidal shell-sum on the written grid. ~0.8 to 2.0% on stiff CHILI density profiles.
-- Mesh blending: when the per-call radius shift exceeds `mesh_max_shift`, `blend_mesh_files` post-modifies `zalmoxis_output.dat` to cap the shift, but does NOT update `hf_row` scalars (T2.5, known latent bug). With $\alpha < 1$ blending, the file's integrated mass drifts up to 5% from the unblended `hf_row['M_int']`.
+- Mesh blending: when the per-call radius shift exceeds `mesh_max_shift`, `blend_mesh_files` post-modifies `zalmoxis_output.dat` to cap the shift but does not update `hf_row` scalars. With $\alpha < 1$ blending, the file's integrated mass drifts up to 5% from the unblended `hf_row['M_int']`.
 
-The tight mass-conservation contract (<0.1%) lives at a different level: in the wrapper's mass-anchor check on `hf_row['M_int'] / hf_row['M_int_target']` (T1.2). The schema check at the file boundary catches column-swap, truncation, and byte-flip corruption, not numerical mass drift.
+The tight mass-conservation contract (<0.1%) lives at a different level: in the wrapper's mass-anchor check on `hf_row['M_int'] / hf_row['M_int_target']`. The schema check at the file boundary catches column-swap, truncation, and byte-flip corruption, not numerical mass drift.
 
 `validate_zalmoxis_output_schema()` in `proteus/interior_struct/zalmoxis.py` enforces both contracts on every Zalmoxis write.
 
@@ -209,17 +209,19 @@ The two-stage derivation:
 1. `generate_spider_eos_tables` reads the configured PALEOS solid + liquid P-T tables and uses the active liquidus to derive a P-S table by integrating $dS = (C_p / T) dT - \alpha / \rho \, dP$ along isentropes.
 2. `generate_spider_phase_boundaries` derives `solidus_P-S.dat` and `liquidus_P-S.dat` from the configured P-T melting file (Monteux+2016, PALEOS-Fei2021, etc.) by inverting $T(P, S) \to S$ at the melting curve.
 
-The single source of truth for melting curves is the PROTEUS-side `[interior_struct].melting_dir`. PROTEUS commit `45ec94f3` (v2.1) closed a previous bookkeeping gap where SPIDER runs were silently using byte-copies of the WB+2018 distribution P-S tables instead of tables derived from the configured P-T file. The resolution `lookup_nP=1350`, `lookup_nS=280` is calibrated against SPIDER's spline tolerance; halving cuts table-gen wall by ~3x but introduces visible interpolation artifacts in the SPIDER adiabat.
+The single source of truth for melting curves is the PROTEUS-side `[interior_struct].melting_dir`; both the P-T tables consumed at runtime and the P-S tables derived for SPIDER come from this directory. The resolution `lookup_nP=1350`, `lookup_nS=280` is calibrated against SPIDER's spline tolerance; halving cuts table-gen wall by ~3x but introduces visible interpolation artifacts in the SPIDER adiabat.
 
 ---
 
-## Newton outer solver: why it became the default
+## Newton outer solver
 
-Zalmoxis's outer mass-radius loop has historically been a damped fixed-point (Picard) iteration: $R_{n+1} = R_n \cdot (M_\mathrm{target} / M_n)^{1/3}$, clamped to $[0.5, 2.0]$ and damped by 0.5. This converges robustly for cool Earth-mass planets but suffers from a basin attractor on hot fully-molten profiles: Newton-Raphson-style oscillations around the true $R$ that damped Picard cannot escape.
+Zalmoxis offers two outer mass-radius solvers, `picard` and `newton`, with `newton` as the default.
 
-The T2.1 work (2026-04-26) added a Newton + brentq outer solver that uses a central-difference $dM/dR$ estimate to step toward the root. T2.3 (2026-04-27) flipped the default from `picard` to `newton` after a 4-mass dry CHILI sweep validated 12/12 G4 starts converging to $\Delta M / M < 1e-4$, including the 3 starts that fail with damped Picard's basin attractor.
+The Picard path is a damped fixed-point iteration: $R_{n+1} = R_n \cdot (M_\mathrm{target} / M_n)^{1/3}$, clamped to $[0.5, 2.0]$ and damped by 0.5. It converges robustly on cool Earth-mass planets but can hit a basin attractor on hot fully-molten profiles, where the fixed-point iteration oscillates around the true $R$ without escaping.
 
-Newton requires tighter integrator tolerances than Picard. The default `relative_tolerance = 1e-5` produces ~1e-3 noise in $M(R)$ that swamps Newton's central-difference $dM/dR$ estimate. The wrapper auto-applies `relative_tolerance = 1e-9` and `absolute_tolerance = 1e-10` whenever `outer_solver = "newton"` is selected, only forwarding the Newton block to Zalmoxis when the Newton path is active. Pre-T2.1 Picard runs see a bit-identical config dict.
+The Newton path uses a central-difference $dM/dR$ estimate combined with brentq bracketing on $f(R) = M(R) - M_\mathrm{target}$. It converges on the hot-profile cases that trap Picard.
+
+Newton requires tighter integrator tolerances than Picard: the default `relative_tolerance = 1e-5` produces ~1e-3 noise in $M(R)$ that swamps the central-difference $dM/dR$ estimate. The wrapper auto-applies `relative_tolerance = 1e-9` and `absolute_tolerance = 1e-10` whenever `outer_solver = "newton"` is selected, and only forwards the Newton-specific knobs to Zalmoxis when the Newton path is active, so a Picard run sees an unchanged config dict.
 
 ---
 
@@ -231,24 +233,24 @@ The JAX path has a known subtlety in coupled mode. The wrapper detects two argum
 
 | Style | Coupled-mode caller | JAX behaviour |
 |---|---|---|
-| `temperature_function: f(r, P) -> T` (callable) | `equilibrate_initial_state` and PROTEUS init | JAX RHS path collapses (Zalmoxis `aa3d0b8`): the callable is P-ignoring, which the JAX P-indexed adiabat tabulation cannot interpolate. |
+| `temperature_function: f(r, P) -> T` (callable) | `equilibrate_initial_state` and PROTEUS init | JAX RHS path collapses on a P-ignoring callable, because the JAX P-indexed adiabat tabulation cannot interpolate it. |
 | `temperature_arrays: (r_arr, T_arr)` | Main loop's `update_structure_from_interior` | r-indexed JAX RHS path, no collapse. |
 
-For init / equilibration calls (which only have a callable), the wrapper auto-disables `use_jax` and `use_anderson` and falls back to the numpy path. The one-time cost (~70 s each, 2 to 4 calls) is negligible against a 3 to 4 h full run. For main-loop calls (which have arrays), the JAX path is active.
+For init / equilibration calls, only a callable is available. The wrapper auto-disables `use_jax` and `use_anderson` for those calls and falls back to the numpy path. The one-time cost (~70 s each, 2 to 4 calls) is negligible against a 3 to 4 h full run. For main-loop calls, arrays are available and the JAX path is active.
 
-Additional subtlety: even on the JAX path, do NOT pass a callable when arrays are available. The numpy Picard density update inside `_solve` uses the callable for per-node temperature lookup, which trips the same PALEOS phase-boundary clamps and forces ~75x more inner Picard iterations. Verified 2026-04-24: bench-inside-PROTEUS BENCH-config = 5.9 s, PROTEUS-config-with-function = 156 s, PROTEUS-config-without-function = 2 s.
+When `temperature_arrays` is supplied, the wrapper does not also pass `temperature_function` even though both kwargs are accepted by Zalmoxis's solver. The numpy Picard density update inside `_solve` uses the callable for per-node temperature lookup, which trips PALEOS phase-boundary clamps and forces ~75x more inner Picard iterations. Dropping the callable lets Zalmoxis use its internal linear T profile for Picard while the JAX integration uses the accurate array-based T(r).
 
 ---
 
 ## Determinism and the `--deterministic` flag
 
-The `tl/interior-refactor` Stage 4.4 paper-line work surfaced a class of failures where the same config produced different results across runs: numerical-fragility cases where ~1e-7 floating-point noise in row 6 of the helpfile compounds through Aragog's tight tolerances and lands the solver on a wrong P-S branch by iter 10 to 15.
+Coupled runs occasionally hit a class of numerical-fragility failures where the same config produces different results across launches: ~1e-7 floating-point noise in early helpfile rows compounds through Aragog's tight tolerances and lands the solver on a wrong P-S branch within ~15 iterations.
 
-PROTEUS already pins BLAS thread counts at `cli.py` import time (`OMP_NUM_THREADS=1`, `MKL_NUM_THREADS=1`, `OPENBLAS_NUM_THREADS=1`, `NUMEXPR_NUM_THREADS=1`, `VECLIB_MAXIMUM_THREADS=1`), but BLAS is not the only source of reduction-order non-determinism. JAX/XLA has its own threading model independent of OPENBLAS.
+PROTEUS pins BLAS thread counts at `cli.py` import time (`OMP_NUM_THREADS=1`, `MKL_NUM_THREADS=1`, `OPENBLAS_NUM_THREADS=1`, `NUMEXPR_NUM_THREADS=1`, `VECLIB_MAXIMUM_THREADS=1`). BLAS is not the only source of reduction-order non-determinism: JAX/XLA has its own threading model independent of OpenBLAS.
 
-The new `--deterministic` flag (PROTEUS commit `586960a3`) intercepts the argument in raw `sys.argv` *before* any heavy imports, sets `JAX_ENABLE_X64=1` and `XLA_FLAGS=--xla_cpu_enable_fast_math=false`, and self-re-execs once. A sentinel env var prevents infinite re-exec.
+The `--deterministic` flag intercepts itself in raw `sys.argv` *before* any heavy imports, sets `JAX_ENABLE_X64=1` and `XLA_FLAGS=--xla_cpu_enable_fast_math=false`, and self-re-execs once. A sentinel env var prevents infinite re-exec.
 
-In Stage 4.4 falsification tests (2026-04-30), `--deterministic` did not rescue the A2 wet 1 $M_\oplus$ atmodeller anchor, indicating that *that particular* failure has a deeper cause (parallel-sweep-vs-solo launch context). But the flag remains useful infrastructure for any other config showing noise-floor divergence between launches. Solo runs are bit-identical with or without the flag; the flag matters when the JAX layer hits a kernel-dispatch non-determinism that BLAS pinning alone does not catch.
+The flag matters when the JAX layer hits a kernel-dispatch non-determinism that BLAS pinning alone does not catch. Solo runs are bit-identical with or without the flag for configs where the JAX layer is already deterministic; the flag is intended for configs that show noise-floor divergence between launches.
 
 Use sparingly: the flag has a small per-step cost (XLA fast-math disabled). Most coupled runs converge cleanly without it.
 
