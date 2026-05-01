@@ -754,15 +754,14 @@ def _solve_newton_outer(
     initial_density=None,
     initial_radii=None,
 ):
-    """Newton outer mass-radius loop on ``f(R) = M(R) - M_target`` (T2.1).
+    """Newton outer mass-radius loop on ``f(R) = M(R) - M_target``.
 
     Replaces the damped-Picard outer loop in ``_solve()`` with a Newton
     iteration. The inner Picard density loop is untouched: each Newton
     step calls ``_solve()`` with ``max_iterations_outer=1`` and a
     forced ``_initial_radius_guess`` to evaluate ``M(R)``.
 
-    Algorithm (validated in T2.1a, see
-    ``session_2026_04_26_t2_1a_newton_prototype.md``):
+    Algorithm:
 
     1. Evaluate ``f(R_k) = M(R_k) - M_target`` via inner Picard.
     2. If ``|f|/M_target < tol``, return.
@@ -772,11 +771,11 @@ def _solve_newton_outer(
     5. Damping: if previous step did not reduce ``|f|``, halve the
        proposed step.
 
-    Brentq fall-back (T2.1d) is deferred to a follow-on commit. This
-    commit ships pure Newton; degenerate cases (vanishing derivative,
-    out-of-bounds step, max-iter without convergence) raise
-    ``RuntimeError`` with the best result attached. Production deploy
-    requires T2.1d's brentq fall-back to recover from these.
+    Degenerate cases (vanishing derivative, out-of-bounds step,
+    max-iter without convergence) hand off to ``_brentq_fallback_outer``,
+    which brackets the root via bisection and converges scipy's
+    ``brentq`` on it. The Newton path raises ``RuntimeError`` only when
+    both Newton and the brentq fall-back fail.
 
     Parameters
     ----------
@@ -811,8 +810,7 @@ def _solve_newton_outer(
     ValueError
         If integrator tolerances are too loose for Newton to converge.
     RuntimeError
-        If Newton fails to converge within ``newton_max_iter`` and
-        brentq fall-back is not yet implemented (T2.1d).
+        If both Newton and the brentq fall-back fail to converge.
     """
     M_target = float(config_params['planet_mass'])
     defaults = _default_solver_params(M_target)
