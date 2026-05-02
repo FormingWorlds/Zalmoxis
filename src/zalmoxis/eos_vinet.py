@@ -53,30 +53,30 @@ VINET_MATERIALS: dict[str, dict] = {
     # Smith+2018's own Vinet fit (8219/177.7/4.51).
     # With White+Li thermal+light-element correction (12.5% reduction)
     'iron': {
-        'rho_0': 8160.0,       # kg/m³
-        'K_0': 165.0e9,        # Pa
+        'rho_0': 8160.0,  # kg/m³
+        'K_0': 165.0e9,  # Pa
         'K_prime': 4.9,
         'thermal_correction': 0.875,  # (1 - 0.125)
         'description': 'Fe epsilon (Boujibar+2020 Table 1), '
-                       '12.5% thermal correction (White+Li 2025)',
+        '12.5% thermal correction (White+Li 2025)',
     },
     # Iron (solid, 300 K) - Smith+2018 original Vinet fit
     # From Smith et al. (2018) Nature Astronomy 2, 452-458
     # These are the parameters White+Li likely reference directly.
     'iron_smith2018': {
-        'rho_0': 8219.0,       # kg/m³
-        'K_0': 177.7e9,        # Pa
+        'rho_0': 8219.0,  # kg/m³
+        'K_0': 177.7e9,  # Pa
         'K_prime': 4.51,
         'thermal_correction': 0.875,
         'description': 'Fe epsilon (Smith+2018 Vinet fit), '
-                       '12.5% thermal correction (White+Li 2025)',
+        '12.5% thermal correction (White+Li 2025)',
     },
     # Iron - White+Li (2025) code (github.com/wnate1373/superEarth)
     # Uses ambient iron density (7874), K_0=162.5, K'=5.5 with 12.5% correction.
     # These are the EXACT parameters from their dif_constR.m.
     'iron_whiteli': {
-        'rho_0': 7874.0,       # kg/m³ (ambient alpha-iron)
-        'K_0': 162.5e9,        # Pa
+        'rho_0': 7874.0,  # kg/m³ (ambient alpha-iron)
+        'K_0': 162.5e9,  # Pa
         'K_prime': 5.5,
         'thermal_correction': 0.875,
         'description': 'Fe (White+Li 2025 code, dif_constR.m)',
@@ -102,9 +102,9 @@ VINET_MATERIALS: dict[str, dict] = {
     # Optimized Vinet parameters from shock compression to 1254 GPa.
     # These are the parameters White+Li (2025) use for their structure model.
     'MgSiO3': {
-        'rho_0': 4176.0,       # kg/m³ (Fei+2021 p.5)
-        'K_0': 265.5e9,        # Pa (Fei+2021 p.5)
-        'K_prime': 4.16,       # (Fei+2021 p.5)
+        'rho_0': 4176.0,  # kg/m³ (Fei+2021 p.5)
+        'K_0': 265.5e9,  # Pa (Fei+2021 p.5)
+        'K_prime': 4.16,  # (Fei+2021 p.5)
         'thermal_correction': 1.0,  # thermal effects cancel (White+Li p.3)
         'description': 'MgSiO3 bridgmanite (Fei+2021, shock to 1254 GPa)',
     },
@@ -163,7 +163,7 @@ def _vinet_pressure(f, K_0, eta):
         return 0.0
     if f <= 0.0:
         return np.inf
-    return 3.0 * K_0 * f**(-2) * (1.0 - f) * np.exp(eta * (1.0 - f))
+    return 3.0 * K_0 * f ** (-2) * (1.0 - f) * np.exp(eta * (1.0 - f))
 
 
 def get_vinet_density(pressure: float, material_key: str) -> float | None:
@@ -188,8 +188,7 @@ def get_vinet_density(pressure: float, material_key: str) -> float | None:
     """
     if material_key not in VINET_MATERIALS:
         raise ValueError(
-            f"Unknown Vinet material '{material_key}'. "
-            f"Valid keys: {sorted(VALID_VINET_KEYS)}"
+            f"Unknown Vinet material '{material_key}'. Valid keys: {sorted(VALID_VINET_KEYS)}"
         )
 
     if np.isnan(pressure):
@@ -206,9 +205,10 @@ def get_vinet_density(pressure: float, material_key: str) -> float | None:
 
     if pressure > P_MAX_VINET:
         logger.warning(
-            'Pressure %.2e Pa exceeds Vinet validity limit %.2e Pa '
-            'for material %s. Clamping.',
-            pressure, P_MAX_VINET, material_key,
+            'Pressure %.2e Pa exceeds Vinet validity limit %.2e Pa for material %s. Clamping.',
+            pressure,
+            P_MAX_VINET,
+            material_key,
         )
         pressure = P_MAX_VINET
 
@@ -235,10 +235,11 @@ def get_vinet_density(pressure: float, material_key: str) -> float | None:
         f_solution = brentq(residual, f_min, 1.0 - 1e-12, xtol=1e-14, rtol=1e-12)
     except ValueError:
         logger.warning(
-            'Vinet root-finding failed for P=%.2e Pa, material=%s. '
-            'Bracket: [%.4e, %.4e].',
-            pressure, material_key,
-            residual(f_min), residual(1.0 - 1e-12),
+            'Vinet root-finding failed for P=%.2e Pa, material=%s. Bracket: [%.4e, %.4e].',
+            pressure,
+            material_key,
+            residual(f_min),
+            residual(1.0 - 1e-12),
         )
         return None
 

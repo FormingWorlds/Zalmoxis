@@ -50,11 +50,11 @@ def _build_registry() -> dict:
     }
 
     # ── PALEOS-2phase MgSiO3 (solid + liquid, Zenodo 19680050) ──────────
-    # Zenodo 19680050 (2026-04-27) is the new ecosystem-wide PALEOS
-    # MgSiO3 reference. It ships two resolutions: 150 pts/decade
-    # (default, ~80 MB) and 600 pts/decade (highres, ~1.3 GB).
-    # PROTEUS default is the 150-res variant; the highres variant is
-    # opt-in via 'PALEOS-2phase:MgSiO3-highres' for sensitivity tests.
+    # Ecosystem-wide PALEOS MgSiO3 reference. Ships two resolutions:
+    # 150 pts/decade (default, ~80 MB) and 600 pts/decade (highres,
+    # ~1.3 GB). PROTEUS default is the 150-res variant; the highres
+    # variant is opt-in via 'PALEOS-2phase:MgSiO3-highres' for
+    # sensitivity tests.
     _paleos2ph_melted = {
         'eos_file': os.path.join(
             root, 'data', 'EOS_PALEOS_MgSiO3', 'paleos_mgsio3_tables_pt_proteus_liquid.dat'
@@ -69,14 +69,18 @@ def _build_registry() -> dict:
     }
     _paleos2ph_melted_highres = {
         'eos_file': os.path.join(
-            root, 'data', 'EOS_PALEOS_MgSiO3',
+            root,
+            'data',
+            'EOS_PALEOS_MgSiO3',
             'paleos_mgsio3_tables_pt_proteus_liquid_highres.dat',
         ),
         'format': 'paleos',
     }
     _paleos2ph_solid_highres = {
         'eos_file': os.path.join(
-            root, 'data', 'EOS_PALEOS_MgSiO3',
+            root,
+            'data',
+            'EOS_PALEOS_MgSiO3',
             'paleos_mgsio3_tables_pt_proteus_solid_highres.dat',
         ),
         'format': 'paleos',
@@ -113,6 +117,7 @@ def _build_registry() -> dict:
         make_default_grid_iron,
         make_default_grid_mgsio3,
     )
+
     _paleos_api_iron = {
         'format': 'paleos_api',
         'material': 'iron',
@@ -209,7 +214,9 @@ def _build_registry() -> dict:
         },
         # Chabrier+2019/2021 H/He tables (PALEOS-compatible 10-column format)
         'Chabrier:H': {
-            'eos_file': os.path.join(root, 'data', 'EOS_Chabrier2021_HHe', 'chabrier2021_H.dat'),
+            'eos_file': os.path.join(
+                root, 'data', 'EOS_Chabrier2021_HHe', 'chabrier2021_H.dat'
+            ),
             'format': 'paleos_unified',
         },
     }

@@ -26,6 +26,7 @@ is NOT ported — the JAX path returns NaN, which the caller must check
 and fall back to numpy for. On Stage-1b-equivalent configs with
 well-covered PALEOS tables, NaN returns are not expected.
 """
+
 from __future__ import annotations
 
 import jax
@@ -43,9 +44,9 @@ def get_paleos_unified_density_jax(
     temperature: jnp.ndarray,
     mushy_zone_factor: jnp.ndarray,
     # --- cached table arrays (extracted once from the numpy cache dict) ---
-    density_grid: jnp.ndarray,       # (n_p, n_t)
-    unique_log_p: jnp.ndarray,       # (n_p,)
-    unique_log_t: jnp.ndarray,       # (n_t,)
+    density_grid: jnp.ndarray,  # (n_p, n_t)
+    unique_log_p: jnp.ndarray,  # (n_p,)
+    unique_log_t: jnp.ndarray,  # (n_t,)
     logp_min: float,
     logt_min: float,
     dlog_p: float,
@@ -54,13 +55,13 @@ def get_paleos_unified_density_jax(
     n_t: int,
     p_min: float,
     p_max: float,
-    lt_min_per_p: jnp.ndarray,       # (n_p,) per-P valid log_t min
-    lt_max_per_p: jnp.ndarray,       # (n_p,) per-P valid log_t max
-    liquidus_log_p: jnp.ndarray,     # (n_liq,) — the liquidus curve in log_p
-    liquidus_log_t: jnp.ndarray,     # (n_liq,) — matching log_t
-    liquidus_min_log_p: float,       # liquidus_log_p[0] as scalar
-    liquidus_max_log_p: float,       # liquidus_log_p[-1] as scalar
-    has_liquidus_f: jnp.ndarray,     # 1.0 if liquidus data present, else 0.0
+    lt_min_per_p: jnp.ndarray,  # (n_p,) per-P valid log_t min
+    lt_max_per_p: jnp.ndarray,  # (n_p,) per-P valid log_t max
+    liquidus_log_p: jnp.ndarray,  # (n_liq,) — the liquidus curve in log_p
+    liquidus_log_t: jnp.ndarray,  # (n_liq,) — matching log_t
+    liquidus_min_log_p: float,  # liquidus_log_p[0] as scalar
+    liquidus_max_log_p: float,  # liquidus_log_p[-1] as scalar
+    has_liquidus_f: jnp.ndarray,  # 1.0 if liquidus data present, else 0.0
 ):
     """Return PALEOS-unified density at (pressure, temperature) in kg/m^3.
 
@@ -75,14 +76,29 @@ def get_paleos_unified_density_jax(
 
     # Initial per-cell clamp of query log_t
     log_t_clamped = paleos_clamp_temperature_jax(
-        log_p, log_t, lt_min_per_p, lt_max_per_p, logp_min, dlog_p, n_p,
+        log_p,
+        log_t,
+        lt_min_per_p,
+        lt_max_per_p,
+        logp_min,
+        dlog_p,
+        n_p,
     )
 
     # Direct lookup at (log_p, log_t_clamped): used when no mushy zone,
     # or P outside liquidus coverage, or T above/below the mushy range.
     rho_direct = fast_bilinear_jax(
-        log_p, log_t_clamped, density_grid, unique_log_p, unique_log_t,
-        logp_min, logt_min, dlog_p, dlog_t, n_p, n_t,
+        log_p,
+        log_t_clamped,
+        density_grid,
+        unique_log_p,
+        unique_log_t,
+        logp_min,
+        logt_min,
+        dlog_p,
+        dlog_t,
+        n_p,
+        n_t,
     )
 
     # Mushy zone applies only if factor < 1 AND table has liquidus data.
@@ -92,7 +108,7 @@ def get_paleos_unified_density_jax(
 
     # Liquidus T at this pressure (from the stored liquidus curve; 1D interp)
     log_t_melt = jnp.interp(log_p, liquidus_log_p, liquidus_log_t)
-    T_melt = 10.0 ** log_t_melt
+    T_melt = 10.0**log_t_melt
     T_liq = jnp.maximum(T_melt, T_melt + _DT_PHASE_GUARD)
     T_sol_raw = T_melt * mushy_zone_factor
     T_sol = jnp.minimum(T_sol_raw, T_melt - _DT_PHASE_GUARD)
@@ -107,21 +123,35 @@ def get_paleos_unified_density_jax(
     local_tmax = lt_max_per_p[ip] + frac * (lt_max_per_p[ip + 1] - lt_max_per_p[ip])
     bounds_ok = jnp.isfinite(local_tmin) & jnp.isfinite(local_tmax)
 
-    log_t_sol_c = jnp.where(
-        bounds_ok, jnp.clip(log_t_sol, local_tmin, local_tmax), log_t_sol
-    )
-    log_t_liq_c = jnp.where(
-        bounds_ok, jnp.clip(log_t_liq, local_tmin, local_tmax), log_t_liq
-    )
+    log_t_sol_c = jnp.where(bounds_ok, jnp.clip(log_t_sol, local_tmin, local_tmax), log_t_sol)
+    log_t_liq_c = jnp.where(bounds_ok, jnp.clip(log_t_liq, local_tmin, local_tmax), log_t_liq)
 
     # Bilinear at solidus and liquidus edges
     rho_sol = fast_bilinear_jax(
-        log_p, log_t_sol_c, density_grid, unique_log_p, unique_log_t,
-        logp_min, logt_min, dlog_p, dlog_t, n_p, n_t,
+        log_p,
+        log_t_sol_c,
+        density_grid,
+        unique_log_p,
+        unique_log_t,
+        logp_min,
+        logt_min,
+        dlog_p,
+        dlog_t,
+        n_p,
+        n_t,
     )
     rho_liq = fast_bilinear_jax(
-        log_p, log_t_liq_c, density_grid, unique_log_p, unique_log_t,
-        logp_min, logt_min, dlog_p, dlog_t, n_p, n_t,
+        log_p,
+        log_t_liq_c,
+        density_grid,
+        unique_log_p,
+        unique_log_t,
+        logp_min,
+        logt_min,
+        dlog_p,
+        dlog_t,
+        n_p,
+        n_t,
     )
 
     # Volume-averaged density in mushy zone: 1 / (phi/rho_liq + (1-phi)/rho_sol)

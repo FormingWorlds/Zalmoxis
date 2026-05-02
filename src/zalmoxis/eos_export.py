@@ -5,11 +5,11 @@ tables and 1D phase boundaries. Zalmoxis and the PALEOS unified tables
 use pressure-temperature (P-T) coordinates. This module converts
 between the two coordinate systems.
 
-Phase boundary conversion (Phase 1B):
+Phase boundary conversion:
     T(P) melting curves -> S(P) phase boundaries via direct PALEOS
     S(P,T) lookup. No inversion needed.
 
-Full EOS table generation (Phase 1A):
+Full EOS table generation:
     PALEOS P-T tables -> SPIDER P-S tables for density, temperature,
     heat capacity, thermal expansion, and adiabatic gradient, split
     into separate solid and melt files.
@@ -157,7 +157,7 @@ def _fill_nan_nearest(grid):
     grid[mask] = grid[tuple(indices[:, mask])]
 
 
-# ── Phase boundary generation (Phase 1B) ────────────────────────────
+# ── Phase boundary generation ───────────────────────────────────────
 
 
 def generate_spider_phase_boundaries(
@@ -321,8 +321,8 @@ def generate_spider_phase_boundaries(
         S_sol_valid = S_sol_smooth
         S_liq_valid = S_liq_smooth
 
-    # Stage 1c.4 super-Earth fix (2026-04-21): enforce non-decreasing
-    # S_solidus(P) and S_liquidus(P) via cumulative maximum.
+    # Enforce non-decreasing S_solidus(P) and S_liquidus(P) via
+    # cumulative maximum (super-Earth pressure range fix).
     #
     # Motivation. When P_max is raised above ~200 GPa to cover super-Earth
     # mantles, both phase-boundary entropies show a peak near 175-200 GPa
@@ -466,7 +466,7 @@ def _write_spider_2d(
                 f.write(f'{P_nd[i]:.18e} {S_nd[j]:.18e} {Q_nd[j, i]:.18e}\n')
 
 
-# ── Full EOS table generation (Phase 1A) ────────────────────────────
+# ── Full EOS table generation ───────────────────────────────────────
 
 
 def _find_valid_T_bounds(logP, T_lo, T_hi, s_interp, n_probe=50):

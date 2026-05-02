@@ -338,9 +338,9 @@ class TestFullSolveAnderson:
     @pytest.mark.skipif(
         os.environ.get('CI') == 'true',
         reason='wall-time perf assertion unreliable on shared CI runners '
-        '(macOS arm64 CI saw Anderson 1.43x slower than baseline on '
-        '2026-05-02 due to runner noise; local Stage-1b bench shows '
-        '~2-3x faster). Run locally to exercise.',
+        '(observed Anderson 1.43x slower than baseline on macOS arm64 CI '
+        'due to runner noise; local bench shows ~2-3x faster). '
+        'Run locally to exercise.',
     )
     def test_anderson_is_faster(self, baseline, anderson):
         """Coarse performance smoke check: Anderson should not be slower

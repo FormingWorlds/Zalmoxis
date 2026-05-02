@@ -138,9 +138,7 @@ def post_processing(config_params, id_mass=None, output_file=None):
             )
         else:
             np.savetxt(
-                os.path.join(
-                    get_zalmoxis_root(), 'output', f'planet_profile{id_mass}.txt'
-                ),
+                os.path.join(get_zalmoxis_root(), 'output', f'planet_profile{id_mass}.txt'),
                 output_data,
                 header=header,
             )

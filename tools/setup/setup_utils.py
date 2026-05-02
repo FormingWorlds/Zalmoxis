@@ -280,12 +280,12 @@ def download_data():
         zenodo_id=15728138,
         keep_files=['liquidus.dat', 'solidus.dat'],
     )
-    # Zenodo 19680050: new ecosystem-wide PALEOS MgSiO3 2-phase reference,
-    # supersedes the prior 18924171 record (2026-04-27). Ships two
-    # resolutions: 150 pts/decade (default, ~80 MB) and 600 pts/decade
-    # (highres, ~1.3 GB) for both solid and liquid tables. PROTEUS
-    # default is 150 (matches PALEOS-2phase:MgSiO3 registry); 600 is
-    # selectable via PALEOS-2phase:MgSiO3-highres for sensitivity tests.
+    # Zenodo 19680050: ecosystem-wide PALEOS MgSiO3 2-phase reference,
+    # supersedes the prior 18924171 record. Ships two resolutions:
+    # 150 pts/decade (default, ~80 MB) and 600 pts/decade (highres,
+    # ~1.3 GB) for both solid and liquid tables. PROTEUS default is
+    # 150 (matches PALEOS-2phase:MgSiO3 registry); 600 is selectable
+    # via PALEOS-2phase:MgSiO3-highres for sensitivity tests.
     download(
         folder='EOS_PALEOS_MgSiO3',
         data_dir=Path(get_zalmoxis_root(), 'data'),

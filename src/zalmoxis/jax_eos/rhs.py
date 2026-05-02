@@ -37,6 +37,7 @@ Temperature lookup supports two axis conventions, selected by the
 The two modes live in the same jitted function; JAX emits a separate
 compiled variant per flag value.
 """
+
 from __future__ import annotations
 
 from functools import partial
@@ -51,12 +52,12 @@ from .tdep import get_tdep_density_jax
 @partial(jax.jit, static_argnames=('T_axis_is_radius',))
 def coupled_odes_jax(
     radius: jnp.ndarray,
-    y: jnp.ndarray,          # shape (3,): [mass, gravity, pressure]
+    y: jnp.ndarray,  # shape (3,): [mass, gravity, pressure]
     cmb_mass: float,
     # --- temperature lookup (see module docstring for axis conventions) ---
     T_axis_grid: jnp.ndarray,  # monotone increasing: log10(P) OR radius
-    T_values: jnp.ndarray,     # matching T values on the axis grid
-    T_surface: float,          # fallback when P <= 0 (P-indexed mode only)
+    T_values: jnp.ndarray,  # matching T values on the axis grid
+    T_surface: float,  # fallback when P <= 0 (P-indexed mode only)
     # --- core (paleos_unified) table ---
     mushy_zone_factor_core: jnp.ndarray,
     core_density_grid: jnp.ndarray,
@@ -117,11 +118,11 @@ def coupled_odes_jax(
     # and ≤1e-7 off the piecewise PALEOS-liquidus at the kink.
     # Tabulating BOTH curves (vs T_sol = T_liq * mzf) supports
     # independently-defined solidus/liquidus pairs.
-    melt_log_p_min: float = 8.0,    # log10(P_min)
-    melt_dlog_p: float = 0.0,       # log10(P) sample spacing
-    melt_n: int = 0,                # number of samples
-    log_T_liq_table: jnp.ndarray = None,   # type: ignore[assignment]
-    log_T_sol_table: jnp.ndarray = None,   # type: ignore[assignment]
+    melt_log_p_min: float = 8.0,  # log10(P_min)
+    melt_dlog_p: float = 0.0,  # log10(P) sample spacing
+    melt_n: int = 0,  # number of samples
+    log_T_liq_table: jnp.ndarray = None,  # type: ignore[assignment]
+    log_T_sol_table: jnp.ndarray = None,  # type: ignore[assignment]
     # physical constant G (SI)
     G: float = 6.6743e-11,
     # Temperature-axis convention (static, selects P- vs r-indexed branch).
@@ -160,34 +161,68 @@ def coupled_odes_jax(
     log_T_sol_hi = log_T_sol_table[melt_i + 1]
     log_T_liq = (1.0 - melt_frac) * log_T_liq_lo + melt_frac * log_T_liq_hi
     log_T_sol = (1.0 - melt_frac) * log_T_sol_lo + melt_frac * log_T_sol_hi
-    T_liq_interp = 10.0 ** log_T_liq
-    T_sol_interp = 10.0 ** log_T_sol
+    T_liq_interp = 10.0**log_T_liq
+    T_sol_interp = 10.0**log_T_sol
     T_liq = jnp.where(pressure > 0, T_liq_interp, 0.0)
     T_sol = jnp.where(pressure > 0, T_sol_interp, 0.0)
 
     # Core density (paleos_unified)
     rho_core = get_paleos_unified_density_jax(
-        pressure, temperature, mushy_zone_factor_core,
-        core_density_grid, core_unique_log_p, core_unique_log_t,
-        core_logp_min, core_logt_min, core_dlog_p, core_dlog_t,
-        core_n_p, core_n_t, core_p_min, core_p_max,
-        core_lt_min_per_p, core_lt_max_per_p,
-        core_liquidus_log_p, core_liquidus_log_t,
-        core_liquidus_min_log_p, core_liquidus_max_log_p,
+        pressure,
+        temperature,
+        mushy_zone_factor_core,
+        core_density_grid,
+        core_unique_log_p,
+        core_unique_log_t,
+        core_logp_min,
+        core_logt_min,
+        core_dlog_p,
+        core_dlog_t,
+        core_n_p,
+        core_n_t,
+        core_p_min,
+        core_p_max,
+        core_lt_min_per_p,
+        core_lt_max_per_p,
+        core_liquidus_log_p,
+        core_liquidus_log_t,
+        core_liquidus_min_log_p,
+        core_liquidus_max_log_p,
         core_has_liquidus_f,
     )
 
     # Mantle density (Tdep 2-phase)
     rho_mantle = get_tdep_density_jax(
-        pressure, temperature, T_sol, T_liq,
-        sol_density_grid, sol_unique_log_p, sol_unique_log_t,
-        sol_logp_min, sol_logt_min, sol_dlog_p, sol_dlog_t,
-        sol_n_p, sol_n_t, sol_p_min, sol_p_max,
-        sol_lt_min_per_p, sol_lt_max_per_p,
-        liq_density_grid, liq_unique_log_p, liq_unique_log_t,
-        liq_logp_min, liq_logt_min, liq_dlog_p, liq_dlog_t,
-        liq_n_p, liq_n_t, liq_p_min, liq_p_max,
-        liq_lt_min_per_p, liq_lt_max_per_p,
+        pressure,
+        temperature,
+        T_sol,
+        T_liq,
+        sol_density_grid,
+        sol_unique_log_p,
+        sol_unique_log_t,
+        sol_logp_min,
+        sol_logt_min,
+        sol_dlog_p,
+        sol_dlog_t,
+        sol_n_p,
+        sol_n_t,
+        sol_p_min,
+        sol_p_max,
+        sol_lt_min_per_p,
+        sol_lt_max_per_p,
+        liq_density_grid,
+        liq_unique_log_p,
+        liq_unique_log_t,
+        liq_logp_min,
+        liq_logt_min,
+        liq_dlog_p,
+        liq_dlog_t,
+        liq_n_p,
+        liq_n_t,
+        liq_p_min,
+        liq_p_max,
+        liq_lt_min_per_p,
+        liq_lt_max_per_p,
     )
 
     # Layer selection
@@ -205,7 +240,7 @@ def coupled_odes_jax(
     rho_safe = jnp.where(rho_finite, rho, 1.0)
 
     # Standard structure ODEs
-    dMdr = 4.0 * jnp.pi * radius ** 2 * rho_safe
+    dMdr = 4.0 * jnp.pi * radius**2 * rho_safe
     # At r=0, dgdr singular; use analytic limit dg/dr = 4 pi G rho / 3
     dgdr_gen = 4.0 * jnp.pi * G * rho_safe - 2.0 * gravity / jnp.where(radius > 0, radius, 1.0)
     dgdr_r0 = (4.0 / 3.0) * jnp.pi * G * rho_safe

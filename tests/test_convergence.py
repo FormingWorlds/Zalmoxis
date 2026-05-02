@@ -21,9 +21,7 @@ def test_all_compositions_converge(mass, zalmoxis_root):
     print(f'Running test for mass = {mass}')
 
     # Delete composition_radius_log file if it exists
-    custom_log_file = os.path.join(
-        zalmoxis_root, 'output', f'composition_radius_log{mass}.txt'
-    )
+    custom_log_file = os.path.join(zalmoxis_root, 'output', f'composition_radius_log{mass}.txt')
     if os.path.exists(custom_log_file):
         os.remove(custom_log_file)
 

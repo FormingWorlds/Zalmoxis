@@ -158,11 +158,10 @@ def _default_solver_params(planet_mass):
         'max_center_pressure_guess': max_center_pressure_guess,
         'pressure_tolerance': 1e9,
         'max_iterations_pressure': 100,
-        # Outer mass-radius solver: 'picard' (damped fixed-point, default,
-        # historically used) or 'newton' (Newton + brentq bracketing).
-        # Newton was introduced 2026-04-26 (T2.1) to escape the basin
-        # attractor in damped Picard's R-search on hot fully-molten
-        # mantle profiles. See session_2026_04_26_t2_1a_newton_prototype.md.
+        # Outer mass-radius solver: 'picard' (damped fixed-point, default)
+        # or 'newton' (Newton + brentq bracketing). 'newton' is required
+        # to escape the basin attractor that damped Picard's R-search
+        # falls into on hot fully-molten mantle profiles.
         'outer_solver': 'picard',
     }
 
@@ -267,7 +266,7 @@ def main(
     """
     # Validate outer-solver choice. Default is 'picard' (the damped
     # fixed-point loop inside `_solve()`); 'newton' dispatches to
-    # `_solve_newton_outer()` (T2.1).
+    # `_solve_newton_outer()`.
     outer_solver_explicit = 'outer_solver' in config_params
     outer_solver = config_params.get('outer_solver', 'picard')
     if outer_solver not in _VALID_OUTER_SOLVERS:
@@ -278,13 +277,11 @@ def main(
     # Advisory: when outer_solver is implicitly picard AND the profile
     # is hot fully-molten (T_surf > 3000 K) or super-Earth scale
     # (planet_mass > 2 M_E), log a one-line INFO suggesting Newton.
-    # T2.1 (2026-04-26) demonstrated a basin attractor in damped Picard's
-    # outer mass-radius loop on hot fully-molten profiles; T2.3
-    # (2026-04-27) confirmed Newton + brentq is robust across 1-10 M_E.
-    # The Zalmoxis-internal default stays at picard for backward compat
-    # (flipping it would break ~18 standalone unit tests on Newton's
-    # tighter tol precondition); this advisory points users at the
-    # better choice without forcing it.
+    # Damped Picard has a basin attractor on hot fully-molten and
+    # super-Earth-scale profiles where the outer R-search oscillates
+    # without converging; Newton + brentq is robust across 1-10 M_E.
+    # The default stays at picard so that opting into Newton (which
+    # requires tighter integrator tolerances) is an explicit user choice.
     if not outer_solver_explicit:
         _planet_mass = float(config_params.get('planet_mass') or 0.0)
         _surface_temperature = float(config_params.get('surface_temperature') or 0.0)
@@ -300,9 +297,9 @@ def main(
                 "Zalmoxis using outer_solver='picard' (default). "
                 "For this regime (%s), 'newton' is recommended: damped "
                 'Picard has a known basin attractor on hot fully-molten '
-                'and super-Earth profiles (see T2.1, T2.3 validation, '
-                "2026-04-26/27). Set outer_solver='newton' in your "
-                'config to opt in. This advisory does not change behaviour.',
+                "and super-Earth profiles. Set outer_solver='newton' "
+                'in your config to opt in. This advisory does not '
+                'change behaviour.',
                 ', '.join(_trigger),
             )
     if outer_solver == 'newton':
@@ -425,10 +422,10 @@ def main(
     return result
 
 
-# Newton outer-loop defaults (T2.1c). These are the validated values
-# from the script-level prototype (scripts/probe_zalmoxis_newton_prototype.py)
-# which converged 12/12 G4 starts to dM/M < 1e-4 on the failure-dump
-# T(r) in 3-6 Newton iterations.
+# Newton outer-loop defaults: 3-6 Newton iterations are typically
+# enough to converge dM/M to <= _NEWTON_DEFAULT_TOL on hot fully-molten
+# profiles, with a 30-iter ceiling to bound the worst case before
+# brentq fall-back kicks in.
 _NEWTON_DEFAULT_MAX_ITER = 30
 _NEWTON_DEFAULT_TOL = 1.0e-4
 _NEWTON_DEFAULT_DR_REL = 1.0e-3
@@ -442,8 +439,7 @@ _NEWTON_DEFAULT_TRUST_REGION_FRAC = 0.1
 _NEWTON_DEFAULT_R_MIN = 2.0e6
 _NEWTON_DEFAULT_R_MAX = 3.0e7
 # Required minimum integrator tolerance for Newton: with looser tols
-# the M(R) map has noise > 1e-3 which Newton cannot beat. Validated
-# in T2.1a.
+# the M(R) map has noise > 1e-3 which Newton cannot beat.
 _NEWTON_REQUIRED_REL_TOL = 1.0e-7
 
 
@@ -460,7 +456,7 @@ def _brentq_fallback_outer(
     last_result,
     n_newton_iter=None,
 ):
-    """Brentq fall-back for the Newton outer mass-radius loop (T2.1d).
+    """Brentq fall-back for the Newton outer mass-radius loop.
 
     Builds a sign-flipping bracket ``[R_lo, R_hi]`` for
     ``f(R) = M(R) - M_target`` and runs ``scipy.optimize.brentq`` to
@@ -479,10 +475,9 @@ def _brentq_fallback_outer(
        M-error within ``tol`` of M_target.
 
     Used when Newton diverges (vanishing dM/dR, out-of-bounds step,
-    or max_iter exhausted). The script-level prototype (T2.1a) saw
-    brentq fall-back never fire on the failure-dump T(r) when
-    integrator tolerances were tight, but it remains as a safety
-    net for hard regimes.
+    or max_iter exhausted). With tight integrator tolerances Newton
+    converges directly and brentq never fires; the fall-back exists
+    as a safety net for hard regimes.
 
     Parameters
     ----------
@@ -848,8 +843,7 @@ def _solve_newton_outer(
             f'got {rel_tol_eff!r}. With looser tols, M(R) noise (~1e-3) '
             f"dominates Newton's central-difference dM/dR. Tighten the "
             'integrator (recommended: relative_tolerance=1e-9, '
-            'absolute_tolerance=1e-10) when using outer_solver="newton". '
-            'See session_2026_04_26_t2_1a_newton_prototype.md.'
+            'absolute_tolerance=1e-10) when using outer_solver="newton".'
         )
 
     # Initial radius guess. Same Seager+2007 estimate that _solve uses,
@@ -1564,8 +1558,8 @@ def _solve(
         # Adaptive Picard blending: start at 0.5, reduce if mass oscillates
         _picard_alpha = 0.5
         _prev_mass_error = None
-        _prev_brent_solution = None  # Persist Brent bracket (Fix 3)
-        _frozen_sigma = {}  # Freeze suppression weights after first iteration (Fix 2)
+        _prev_brent_solution = None  # Persist Brent bracket across outer iterations
+        _frozen_sigma = {}  # Reserved for suppression-weight freezing (currently unused)
 
         # Inner-loop density oscillation tracking
         _inner_alpha = 0.5  # Separate damping for density Picard
@@ -1580,11 +1574,8 @@ def _solve(
         # > 0.1, AND a strict "any improvement" stuck counter doesn't
         # work either because Picard makes slow incremental progress
         # (each iter trims best_diff by < 1%). The relative-improvement
-        # criterion counts a marginal step toward best_diff as "stuck."
-        # On a real CHILI iter 23869 (hot, T_surf=2820K) cProfile pre-
-        # bail showed 7900+ inner iters per main() totalling 949 s; with
-        # this bail the outer mass-radius loop iterates the structure
-        # to recover convergence on the next outer pass.
+        # criterion counts a marginal step toward best_diff as "stuck"
+        # so the outer mass-radius loop can iterate to recover.
         _inner_stuck_count = 0
         _inner_last_breakthrough_diff = float('inf')
         _STUCK_BAIL_LIMIT = 15
@@ -1679,14 +1670,13 @@ def _solve(
 
                 return p[-1] - target_surface_pressure
 
-            # Bracket: use previous solution to narrow the search (Fix 3).
+            # Bracket: use previous solution to narrow the search.
             # If the narrow bracket from the previous solve does not
             # straddle the root (e.g. when Aragog hands a hot-shifted T(r)
             # that pushes the new root outside [0.5, 2.0] x P_prev),
             # widen progressively before falling back. Each widened
             # attempt costs one extra _pressure_residual call (= one
-            # solve_structure). 2026-04-26: added to harden coupled-run
-            # robustness on hot fully-molten profiles.
+            # solve_structure).
             if _prev_brent_solution is not None and _prev_brent_solution > 0:
                 bracket_attempts = [
                     (max(1e6, 0.5 * _prev_brent_solution), 2.0 * _prev_brent_solution),
@@ -1868,9 +1858,10 @@ def _solve(
                 )
                 new_density[idx] = rho_batch
 
-            # Note: sigma freezing (Fix 2) removed due to shape mismatch when
-            # valid shell counts change between Picard iterations. The adaptive
-            # Picard alpha (Fix 1) handles the oscillation suppression instead.
+            # Suppression-weight freezing was tried earlier but produced
+            # shape-mismatch errors when the valid-shell count changes
+            # between Picard iterations. Adaptive Picard alpha handles
+            # the oscillation suppression instead.
 
             # Fill NaN entries with last valid density (walking outward)
             last_valid = None
@@ -2065,7 +2056,7 @@ def _solve(
 
         relative_diff_outer_mass = np.abs((calculated_mass - planet_mass) / planet_mass)
 
-        # Adaptive Picard alpha: detect mass oscillation (Fix 1)
+        # Adaptive Picard alpha: detect mass oscillation
         mass_error_signed = (calculated_mass - planet_mass) / planet_mass
         if _prev_mass_error is not None:
             if mass_error_signed * _prev_mass_error < 0:

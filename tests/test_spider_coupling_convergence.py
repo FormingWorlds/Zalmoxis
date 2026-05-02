@@ -1,32 +1,28 @@
 """Regression tests for the SPIDER-coupling failure regime.
 
-Phase 6 of the Zalmoxis robustness-hardening plan. Pins the behaviour
-that Phase 1 (density seeding) + Phase 4 (structure fallback) shipped
-to handle the failure mode discovered in the Habrok validation matrix
-(2026-04-05): SPIDER's entropy formulation produces steep adiabatic
-T(r) gradients (5000 K centre to 1800 K surface) within a few coupling
-steps, and these gradients straddle the silicate solidus-liquidus
-transition where the PALEOS density jumps 5-15%. Plain damped Picard
-diverges; the hardening fixes (density seeding from the previous
-structure, Newton outer solver, retry-then-fallback) restore
-convergence.
+Pins the behaviour of the robustness fixes (density seeding from the
+previous structure, Newton outer solver, retry-then-fallback) that
+recovered convergence on the failure mode SPIDER's entropy formulation
+exposes: steep adiabatic T(r) gradients (5000 K centre to 1800 K
+surface) form within a few coupling steps and straddle the silicate
+solidus-liquidus transition, where PALEOS density jumps 5-15%. Plain
+damped Picard diverges in that regime.
 
 Three behaviours tested:
 
 1. **Steep T(r) profile converges** (SPIDER-like, 5000 K → 1800 K).
-   This is the regime that broke 68/90 cases pre-hardening.
+   The regime that broke a large fraction of cases pre-hardening.
 2. **Flat T(r) profile converges** (Aragog-like, ~4400 K).
-   The regime that worked even before hardening; this is the negative
-   control that confirms the fix did not regress the easy case.
+   The regime that worked even before hardening; negative control
+   that confirms the fix did not regress the easy case.
 3. **Density seeding accelerates the Picard loop**: second Zalmoxis
    call with `initial_density` from the first call must reach the
-   same answer in fewer Picard iterations and lower wall time. This
-   is the load-bearing assertion behind Phase 1 of the plan.
+   same answer in fewer Picard iterations and lower wall time.
 
 Tests use Newton outer-solver to keep wall under ~30 s per solve
-(Picard would take 60-90 s and may basin-attractor on the steep
-profile per the T2.1 memo). PALEOS data is required; tests skip
-cleanly when absent (CI without data download).
+(Picard would take 60-90 s and may hit the basin attractor on the
+steep profile). PALEOS data is required; tests skip cleanly when
+absent (CI without data download).
 """
 
 from __future__ import annotations
@@ -102,8 +98,7 @@ def _make_config(*, planet_mass_kg: float, num_layers: int = 50):
         'target_surface_pressure': 101325,
         'data_output_enabled': False,
         'plotting_enabled': False,
-        # Newton outer to avoid the Picard basin attractor on hot profiles
-        # (memory: chili_earth_spider_sweep + T2.1 / T2.3 verification 2026-04-27).
+        # Newton outer to avoid the Picard basin attractor on hot profiles.
         'outer_solver': 'newton',
         'relative_tolerance': 1.0e-9,
         'absolute_tolerance': 1.0e-10,
@@ -147,11 +142,11 @@ class TestSpiderCouplingConvergence:
     def test_steep_spider_T_profile_converges_at_1ME(self, materials):
         """Steep 5000 K -> 1800 K SPIDER-like T(r) at 1 M_Earth must converge.
 
-        This is the failure regime from Habrok 2026-04-05: the gradient
-        spans the silicate mushy zone where rho jumps ~10% across the
-        solidus-liquidus boundary. Pre-hardening, plain Picard diverged
-        at iter ~10-15. With Newton + Phase 1+4 hardening, must
-        converge to mass-error < 5e-3 within wall_timeout.
+        This is a failure regime where the gradient spans the silicate
+        mushy zone and rho jumps ~10% across the solidus-liquidus
+        boundary. Plain Picard diverges at iter ~10-15 in this regime.
+        With Newton + the density-seeding / structure-fallback fixes,
+        the solver must converge to mass-error < 5e-3 within wall_timeout.
 
         Asserts:
           (1) converged is True (mass + pressure + density)
@@ -219,11 +214,10 @@ class TestSpiderCouplingConvergence:
         either converge faster (fewer Picard iters / lower wall time)
         or at minimum produce the same converged structure.
 
-        This is the load-bearing assertion behind Phase 1 of the
-        robustness-hardening plan: pre-hardening, every Zalmoxis call
-        starts the Picard loop from `density = np.zeros`, and the
-        50-80% Picard-iteration overhead per call accumulates into
-        the SPIDER coupling failure mode.
+        This is the load-bearing assertion behind density seeding:
+        without it every Zalmoxis call starts the Picard loop from
+        `density = np.zeros`, and the 50-80% Picard-iteration overhead
+        per call accumulates into the SPIDER coupling failure mode.
 
         The wall-time speedup is environment-dependent and not always
         observable on a single solve; we therefore assert (a) both
@@ -283,9 +277,8 @@ class TestSpiderCouplingMassSweep:
 
     Marked `slow` because the 5 M_E end-to-end solve takes ~3-4 minutes
     even with Newton + num_layers=50. The 10 M_Earth super-Earth case
-    is intentionally omitted (per the chili_earth_spider_sweep memo,
-    10 M_E with PALEOS takes 1.8 h wall on production). Run via
-    `pytest -m slow` to exercise the super-Earth coverage.
+    is intentionally omitted (10 M_E with PALEOS takes ~1.8 h wall in
+    production). Run via `pytest -m slow` to exercise the coverage.
     """
 
     @pytest.fixture(scope='class')
@@ -302,14 +295,14 @@ class TestSpiderCouplingMassSweep:
 
         Edge cases:
           - 1 M_E: baseline rocky planet, tightest atmospheric coupling
-          - 5 M_E: super-Earth regime, where Newton outer was made the
-            default (memo 2026-04-27); deep-mantle pressures hit the
-            high-P EOS extrapolation regime
+          - 5 M_E: super-Earth regime where Newton outer is required;
+            deep-mantle pressures hit the high-P EOS extrapolation
+            regime
         """
         from zalmoxis.solver import main
 
         config = _make_config(planet_mass_kg=M_earth * _earth_mass_kg())
-        # R guess scaling: rocky-planet R ~ M^0.27 (memo 2026-04-27 T2.3).
+        # R guess scaling: rocky-planet R ~ M^0.27.
         R_guess = 6.4e6 * (M_earth) ** 0.27
         T_factory = _spider_like_profile(T_centre=5000.0, T_surface=1800.0)
         T_func = T_factory(R_planet=R_guess)
@@ -326,7 +319,7 @@ class TestSpiderCouplingMassSweep:
             f'{M_earth} M_E with steep SPIDER T(r) failed to converge'
         )
         assert result['best_mass_error'] < 5.0e-3
-        # R scaling sanity: Earth ~6.4 Mm, super-Earth-5 ~10 Mm (memo).
+        # R scaling sanity: Earth ~6.4 Mm, super-Earth-5 ~10 Mm.
         R_actual = float(result['radii'][-1])
         assert R_guess * 0.7 < R_actual < R_guess * 1.4, (
             f'{M_earth} M_E R={R_actual:.3e} m far from guess {R_guess:.3e}'

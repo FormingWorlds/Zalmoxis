@@ -118,8 +118,7 @@ def compute_adiabatic_temperature(
     if anchor == 'cmb':
         if cmb_temperature is None or cmb_temperature <= 0:
             raise ValueError(
-                "anchor='cmb' requires a positive cmb_temperature, got "
-                f'{cmb_temperature}.'
+                f"anchor='cmb' requires a positive cmb_temperature, got {cmb_temperature}."
             )
 
         # Find the first mantle shell (index where mass_enclosed >= cmb_mass).
@@ -409,7 +408,8 @@ def calculate_temperature_profile(
         # over-estimate; the actual upward adiabat from CMB is computed in
         # main() once the converged structure exposes the CMB index.
         deep_anchor = (
-            cmb_temperature if cmb_temperature is not None and cmb_temperature > 0
+            cmb_temperature
+            if cmb_temperature is not None and cmb_temperature > 0
             else center_temperature
         )
         return lambda r: (

@@ -19,6 +19,7 @@ and all downstream density/pressure/temperature calculations lose ~1e-7
 relative precision versus the numpy reference, far above the parity
 tolerance (rtol <= 1e-12) we require for kernel-level parity.
 """
+
 from __future__ import annotations
 
 # Enable double-precision in JAX. Must happen before any jax.numpy op.

@@ -1,4 +1,4 @@
-"""Tests for the Newton outer mass-radius loop (T2.1c).
+"""Tests for the Newton outer mass-radius loop.
 
 Two layers:
 

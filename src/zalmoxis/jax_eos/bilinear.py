@@ -15,6 +15,7 @@ Parity: these must produce outputs matching their numpy counterparts to
 within FP-rounding precision (rtol ~ 1e-15) on the same inputs — JIT
 may reorder some operations but the math is identical.
 """
+
 from __future__ import annotations
 
 import jax

@@ -454,15 +454,18 @@ def validate_config(config_params):
                 f'adaptive ODE stepping; the remainder uses fixed steps.'
             )
 
-    for param in ('tolerance_outer', 'tolerance_inner',
-                  'relative_tolerance', 'absolute_tolerance'):
+    for param in (
+        'tolerance_outer',
+        'tolerance_inner',
+        'relative_tolerance',
+        'absolute_tolerance',
+    ):
         if param in config_params:
             val = config_params[param]
             if val <= 0:
                 raise ValueError(f'{param} must be positive, got {val}.')
 
-    for param in ('max_iterations_outer', 'max_iterations_inner',
-                  'max_iterations_pressure'):
+    for param in ('max_iterations_outer', 'max_iterations_inner', 'max_iterations_pressure'):
         if param in config_params:
             val = config_params[param]
             if val < 1:
@@ -492,9 +495,7 @@ def validate_config(config_params):
     if 'max_center_pressure_guess' in config_params:
         max_pcg = config_params['max_center_pressure_guess']
         if max_pcg <= 0:
-            raise ValueError(
-                f'max_center_pressure_guess must be positive, got {max_pcg} Pa.'
-            )
+            raise ValueError(f'max_center_pressure_guess must be positive, got {max_pcg} Pa.')
 
     # ── EOS-specific cross-checks ───────────────────────────────────
     # Melting curves only needed for EOS that use external phase routing
@@ -535,8 +536,11 @@ def validate_config(config_params):
         tindep_comps = [c for c in mixture.components if c not in TDEP_EOS_NAMES]
         if tdep_comps_in_layer and tindep_comps:
             # Only warn for non-Analytic T-independent components
-            tindep_tabulated = [c for c in tindep_comps
-                                if not c.startswith('Analytic:') and not c.startswith('Vinet:')]
+            tindep_tabulated = [
+                c
+                for c in tindep_comps
+                if not c.startswith('Analytic:') and not c.startswith('Vinet:')
+            ]
             if tindep_tabulated:
                 logger.warning(
                     f"Layer '{layer}' mixes T-dependent EOS "
@@ -758,7 +762,8 @@ def load_zalmoxis_config(temp_config_path=None):
         'binodal_T_scale': binodal_T_scale,
         'num_layers': config['Calculations']['num_layers'],
         'target_surface_pressure': config.get('PressureAdjustment', {}).get(
-            'target_surface_pressure', 101325,
+            'target_surface_pressure',
+            101325,
         ),
         'data_output_enabled': config['Output'].get('data_enabled', True),
         'plotting_enabled': config['Output'].get('plots_enabled', False),
@@ -769,10 +774,14 @@ def load_zalmoxis_config(temp_config_path=None):
     _iter = config.get('IterativeProcess', {})
     _pres = config.get('PressureAdjustment', {})
     _optional_iter_keys = [
-        'max_iterations_outer', 'tolerance_outer',
-        'max_iterations_inner', 'tolerance_inner',
-        'relative_tolerance', 'absolute_tolerance',
-        'maximum_step', 'adaptive_radial_fraction',
+        'max_iterations_outer',
+        'tolerance_outer',
+        'max_iterations_inner',
+        'tolerance_inner',
+        'relative_tolerance',
+        'absolute_tolerance',
+        'maximum_step',
+        'adaptive_radial_fraction',
         'max_center_pressure_guess',
     ]
     for key in _optional_iter_keys:

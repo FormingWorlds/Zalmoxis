@@ -252,6 +252,7 @@ def solve_structure(
     if use_jax:
         try:
             from .jax_eos.wrapper import solve_structure_via_jax
+
             return solve_structure_via_jax(
                 layer_mixtures=layer_mixtures,
                 cmb_mass=cmb_mass,
@@ -275,7 +276,8 @@ def solve_structure(
             )
         except ValueError as exc:
             logger.warning(
-                'JAX solve_structure fell back to numpy path: %s', exc,
+                'JAX solve_structure fell back to numpy path: %s',
+                exc,
             )
 
     uses_Tdep = any_component_is_tdep(layer_mixtures)

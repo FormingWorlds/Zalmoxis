@@ -51,8 +51,8 @@ def _extract_sub_args(cached, prefix):
     Caches the extracted dict on the cache entry itself so we only build
     it once per (cached_id, prefix) pair. The hot-path inner Picard loop
     calls solve_structure_via_jax thousands of times per main(); without
-    this cache the np.asarray + dict-allocation overhead alone hit 16.7 s
-    of a 23.5 s no-Anderson real-CHILI bench (cProfile 2026-04-25).
+    this cache the np.asarray + dict-allocation overhead dominates in
+    coupled runs (~70 % of wall on the no-Anderson coupled bench).
     """
     cache_key = f'_jax_sub_args::{prefix}'
     cached_args = cached.get(cache_key)
@@ -270,8 +270,7 @@ def solve_structure_via_jax(
         # the tabulation by id(temperature_function) in
         # interpolation_cache so the 4000-point np.interp sweep only
         # runs once per outer iter, not per brentq call. Empirical:
-        # removes ~5 ms/call * 5000 calls ~ 25 s of the JAX total
-        # (cProfile 2026-04-23).
+        # removes ~5 ms/call * 5000 calls ~ 25 s of the JAX total.
         _adia_cache = interpolation_cache.setdefault('_jax_adiabat_cache', {})
         _key = id(temperature_function)
         _entry = _adia_cache.get(_key)
@@ -316,13 +315,12 @@ def solve_structure_via_jax(
     # The samples depend ONLY on the curve functions, so they are constant
     # across all solve_structure_via_jax calls within a single main() (and
     # across all main() calls that re-use the same closure pair). The
-    # solver's outer Picard loop calls this wrapper ~5500 times per main()
-    # on real CHILI T(r); without this cache we re-tabulate 256 × 2 = 512
-    # melting-curve evaluations per call (~2.9M paleos_liquidus calls per
-    # main()) and re-allocate / re-log10 / re-ascontiguousarray them every
-    # time. cProfile 2026-04-25 attributed ~16 s of a 22.7 s real-CHILI
-    # solve to this rebuild path. Cache key uses object id; the dict cap
-    # prevents unbounded growth from unique-per-call closures (rare).
+    # solver's outer Picard loop calls this wrapper thousands of times per
+    # main(); without this cache we re-tabulate 256 x 2 = 512 melting-curve
+    # evaluations per call and re-allocate / re-log10 / re-ascontiguousarray
+    # them every time, which previously dominated coupled-solve wall time.
+    # Cache key uses object id; the dict cap prevents unbounded growth from
+    # unique-per-call closures (rare).
     _melt_cache = _MELT_TABLE_CACHE
     _key = (id(solidus_func), id(liquidus_func))
     _entry = _melt_cache.get(_key)
@@ -380,12 +378,11 @@ def solve_structure_via_jax(
     )
     # np.asarray on a jnp.ndarray yields a read-only view of the JAX
     # buffer; np.array would copy (writable) but adds a ~1 ms host-device
-    # sync per call, which dominates in coupled PROTEUS (75k calls per
-    # main() -> ~88 s of pure sync, 57 % of wall, see
-    # session_2026_04_24_scaffolding_gap_investigation.md). Keep this
-    # cheap; callers that need to write to the return must take their
-    # own writable copy at the write site. The one known write site
-    # (solver._solve wall-timeout handler, line 614-622) now does so.
+    # sync per call, which dominates in coupled PROTEUS where the wrapper
+    # is called tens of thousands of times per main(). Keep this cheap;
+    # callers that need to write to the return must take their own
+    # writable copy at the write site. The one known write site (solver.
+    # _solve wall-timeout handler) does so.
     ys = np.asarray(ys)
     _dt = _time.perf_counter() - _t0
 
@@ -418,9 +415,9 @@ def solve_structure_via_jax(
 
     # Pressure-zero terminal event post-processing. When the event fires
     # mid-grid, diffrax returns `inf` for all saveat entries past the
-    # crossing (verified 2026-04-23). We replace those with the numpy
-    # contract: mass/gravity carry the last valid value, pressure is
-    # padded to 0. Matches structure_model.solve_structure's final pad.
+    # crossing. We replace those with the numpy contract: mass/gravity
+    # carry the last valid value, pressure is padded to 0. Matches
+    # structure_model.solve_structure's final pad.
     post_event = ~np.isfinite(pressure)
     if np.any(post_event):
         valid_idx = np.flatnonzero(~post_event)

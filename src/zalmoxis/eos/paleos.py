@@ -126,7 +126,7 @@ def get_paleos_unified_density(
         T_sol = min(T_sol, T_melt - _DT_PHASE_GUARD)
         T_liq = max(T_liq, T_melt + _DT_PHASE_GUARD)
 
-        if (sol_crossed or liq_crossed):
+        if sol_crossed or liq_crossed:
             if eos_file not in _paleos_phase_guard_warned:
                 _paleos_phase_guard_warned.add(eos_file)
                 logger.warning(
@@ -162,13 +162,12 @@ def get_paleos_unified_density(
         # In mushy zone: volume-average between solid-side and liquid-side
         phi = (temperature - T_sol) / (T_liq - T_sol)
 
-        # W3: compute per-P clamp bounds ONCE (inline) rather than calling
+        # Compute per-P clamp bounds ONCE (inline) rather than calling
         # _paleos_clamp_temperature twice (once for T_sol, once for T_liq) —
         # both clamps share the same log_p, so ip/frac/local_tmin/local_tmax
-        # are identical. This saves ~2 function calls + dict-lookups per
-        # mushy-zone RHS call (~37M operations per 900 s solve per cProfile
-        # 2026-04-23; _paleos_clamp_temperature was 6.5% of self time).
-        # Math is identical to _paleos_clamp_temperature; output bit-matches.
+        # are identical. This saves 2 function calls + dict-lookups per
+        # mushy-zone RHS call. Math is identical to _paleos_clamp_temperature;
+        # output bit-matches.
         _lt_min = cached['logt_valid_min']
         _lt_max = cached['logt_valid_max']
         if 'dlog_p' in cached:

@@ -827,8 +827,10 @@ def _nabla_ad_for_component(
     # PALEOS-API live tabulation: materialise cached .dat on first touch so the
     # downstream format==paleos_unified / paleos branches apply unchanged.
     from .eos.dispatch import _is_paleos_api
+
     if _is_paleos_api(mat):
         from .eos.paleos_api_cache import resolve_registry_entry
+
         resolve_registry_entry(mat)
 
     if mat.get('format') == 'paleos_unified':
@@ -1195,5 +1197,3 @@ def _parse_single_component(s: str) -> tuple[str, float]:
         except ValueError:
             pass
     return s.strip(), 1.0
-
-

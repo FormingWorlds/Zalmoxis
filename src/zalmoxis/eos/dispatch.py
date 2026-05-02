@@ -101,13 +101,13 @@ def calculate_density(
     # PALEOS-API live tabulation: rewrite the entry in place on first access
     # so the remaining dispatch goes through the normal paleos_unified / paleos
     # code paths. A sticky `_api_resolved` flag short-circuits the full
-    # `_is_paleos_api(mat)` dispatch chain on every subsequent RHS call.
-    # Without the flag, `_is_paleos_api` was observed in cProfile to take
-    # ~18 s (~24.9M calls) of a single standalone main() call's 300 s wall
-    # (see session_2026_04_23_zalmoxis_cprofile_ground_truth.md).
+    # `_is_paleos_api(mat)` dispatch chain on every subsequent RHS call;
+    # without it the dispatch check itself dominated the standalone solve
+    # (~25M calls per main(), ~6 % of self time in cProfile).
     if '_api_resolved' not in mat:
         if _is_paleos_api(mat):
             from .paleos_api_cache import resolve_registry_entry
+
             resolve_registry_entry(mat)
         mat['_api_resolved'] = True
 
@@ -181,6 +181,7 @@ def calculate_density_batch(
     if mat is not None and '_api_resolved' not in mat:
         if _is_paleos_api(mat):
             from .paleos_api_cache import resolve_registry_entry
+
             resolve_registry_entry(mat)
         mat['_api_resolved'] = True
     if mat is not None and mat.get('format') == 'paleos_unified':

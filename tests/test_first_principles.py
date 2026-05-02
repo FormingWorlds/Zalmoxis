@@ -45,10 +45,12 @@ def _make_constant_density_mock(rho):
     callable
         Mock function with same signature as calculate_mixed_density.
     """
+
     def _mock(pressure, temperature, mixture, *args, **kwargs):
         if pressure <= 0 or np.isnan(pressure):
             return None
         return rho
+
     return _mock
 
 
@@ -69,6 +71,7 @@ def _make_two_layer_density_mock(rho_core, rho_mantle, cmb_mass):
     callable
         Mock function that returns rho_core for mass < cmb_mass, else rho_mantle.
     """
+
     # The mock receives the mixture object which knows its layer, but we need
     # to track enclosed mass. Since calculate_mixed_density doesn't receive
     # the mass directly, we use the layer_mixture's component names to dispatch.
@@ -78,6 +81,7 @@ def _make_two_layer_density_mock(rho_core, rho_mantle, cmb_mass):
         if mixture.components[0] == 'mock:core':
             return rho_core
         return rho_mantle
+
     return _mock
 
 
@@ -196,15 +200,21 @@ def _two_layer_central_pressure(rho_core, rho_mantle, R_cmb, R_total, M_cmb):
         else:
             M_fine[i] = M_cmb + (4.0 / 3.0) * math.pi * rho_mantle * (r**3 - R_cmb**3)
     g_fine = np.zeros(n_fine)
-    g_fine[1:] = G * M_fine[1:] / r_fine[1:]**2
+    g_fine[1:] = G * M_fine[1:] / r_fine[1:] ** 2
 
     # P_center = integral_0^R rho(r) g(r) dr (since P(R) = 0)
     integrand = rho_fine * g_fine
     return float(np.trapezoid(integrand, r_fine))
 
 
-def _run_analytic_eos_solver(mass_earth, cmf=0.325, mmf=0, num_layers=200,
-                             relative_tolerance=1e-8, absolute_tolerance=1e-10):
+def _run_analytic_eos_solver(
+    mass_earth,
+    cmf=0.325,
+    mmf=0,
+    num_layers=200,
+    relative_tolerance=1e-8,
+    absolute_tolerance=1e-10,
+):
     """Run the full Zalmoxis solver with Analytic EOS.
 
     Parameters
@@ -297,7 +307,9 @@ class TestUniformDensitySphere:
         M_exact, _, _ = _analytic_uniform_sphere(self.RHO, self.R, self.P_CENTER, radii)
         # Skip r=0 (both are zero, ratio undefined)
         np.testing.assert_allclose(
-            mass[1:], M_exact[1:], rtol=1e-6,
+            mass[1:],
+            M_exact[1:],
+            rtol=1e-6,
             err_msg='Enclosed mass deviates from (4/3) pi rho r^3',
         )
 
@@ -306,7 +318,9 @@ class TestUniformDensitySphere:
         radii, _, gravity, _ = _solve_uniform_sphere(self.RHO, self.R, self.P_CENTER, self.N)
         _, g_exact, _ = _analytic_uniform_sphere(self.RHO, self.R, self.P_CENTER, radii)
         np.testing.assert_allclose(
-            gravity[1:], g_exact[1:], rtol=1e-6,
+            gravity[1:],
+            g_exact[1:],
+            rtol=1e-6,
             err_msg='Gravity deviates from (4/3) pi G rho r',
         )
 
@@ -317,14 +331,19 @@ class TestUniformDensitySphere:
         # Only compare where P > 0 (terminal event may truncate)
         valid = pressure > 0
         np.testing.assert_allclose(
-            pressure[valid], P_exact[valid], rtol=1e-6,
+            pressure[valid],
+            P_exact[valid],
+            rtol=1e-6,
             err_msg='Pressure deviates from P_c - (2/3) pi G rho^2 r^2',
         )
 
     def test_central_boundary_conditions(self):
         """Initial conditions: M(0) = 0, g(0) = 0, P(0) = P_center."""
         radii, mass, gravity, pressure = _solve_uniform_sphere(
-            self.RHO, self.R, self.P_CENTER, self.N,
+            self.RHO,
+            self.R,
+            self.P_CENTER,
+            self.N,
         )
         assert mass[0] == 0.0
         assert gravity[0] == 0.0
@@ -337,8 +356,7 @@ class TestUniformDensitySphere:
         dgdr_numerical = (gravity[2] - gravity[0]) / (radii[2] - radii[0])
         dgdr_exact = (4.0 / 3.0) * math.pi * G * self.RHO
         assert dgdr_numerical == pytest.approx(dgdr_exact, rel=1e-4), (
-            f'dg/dr at center: numerical={dgdr_numerical:.6e}, '
-            f'exact={dgdr_exact:.6e}'
+            f'dg/dr at center: numerical={dgdr_numerical:.6e}, exact={dgdr_exact:.6e}'
         )
 
     def test_pressure_monotonically_decreasing(self):
@@ -368,7 +386,9 @@ class TestGaussLaw:
         g = gravity[2:]
         g_gauss = G * M / r**2
         np.testing.assert_allclose(
-            g, g_gauss, rtol=1e-5,
+            g,
+            g_gauss,
+            rtol=1e-5,
             err_msg='Gravity deviates from Gauss law g = GM/r^2',
         )
 
@@ -437,7 +457,9 @@ class TestTwoLayerSphere:
         mantle_mix = LayerMixture(components=['mock:mantle'], fractions=[1.0])
         layer_mixtures = {'core': core_mix, 'mantle': mantle_mix}
         mock_fn = _make_two_layer_density_mock(
-            TestTwoLayerSphere.RHO_CORE, TestTwoLayerSphere.RHO_MANTLE, cmb_mass,
+            TestTwoLayerSphere.RHO_CORE,
+            TestTwoLayerSphere.RHO_MANTLE,
+            cmb_mass,
         )
 
         with patch('zalmoxis.structure_model.calculate_mixed_density', mock_fn):
@@ -472,7 +494,9 @@ class TestTwoLayerSphere:
                 )
 
         np.testing.assert_allclose(
-            mass[1:], M_exact[1:], rtol=1e-5,
+            mass[1:],
+            M_exact[1:],
+            rtol=1e-5,
             err_msg='Two-layer mass profile deviates from analytic formula',
         )
 
@@ -483,7 +507,9 @@ class TestTwoLayerSphere:
         r = radii[3:]
         g_gauss = G * mass[3:] / r**2
         np.testing.assert_allclose(
-            gravity[3:], g_gauss, rtol=1e-4,
+            gravity[3:],
+            g_gauss,
+            rtol=1e-4,
             err_msg='Gauss law violation in two-layer sphere',
         )
 
@@ -514,8 +540,7 @@ class TestGravitationalBindingEnergy:
         E_analytic = -(3.0 / 5.0) * G * M_total**2 / R
 
         assert E_numerical == pytest.approx(E_analytic, rel=0.01), (
-            f'Binding energy: numerical={E_numerical:.4e} J, '
-            f'analytic={E_analytic:.4e} J'
+            f'Binding energy: numerical={E_numerical:.4e} J, analytic={E_analytic:.4e} J'
         )
 
 
@@ -586,8 +611,7 @@ class TestMassRadiusScaling:
         alpha = coeffs[0]
 
         assert alpha == pytest.approx(0.27, abs=0.04), (
-            f'M-R scaling exponent alpha = {alpha:.3f}, '
-            f'expected ~0.27 +/- 0.04 (Seager+2007)'
+            f'M-R scaling exponent alpha = {alpha:.3f}, expected ~0.27 +/- 0.04 (Seager+2007)'
         )
 
 
@@ -703,9 +727,11 @@ class TestConservationLaws:
         idx = np.where(valid)[0]
         idx = idx[idx > 5]
 
-        g_gauss = G * mass[idx] / radii[idx]**2
+        g_gauss = G * mass[idx] / radii[idx] ** 2
         np.testing.assert_allclose(
-            gravity[idx], g_gauss, rtol=1e-3,
+            gravity[idx],
+            g_gauss,
+            rtol=1e-3,
             err_msg='Gauss law violation in full solver output',
         )
 
@@ -751,9 +777,7 @@ class TestGridConvergence:
                 )
 
         # At the finest grid, error should be well below solver tolerance
-        assert errors[-1] < 1e-8, (
-            f'ODE mass error at N=400: {errors[-1]:.2e}, expected < 1e-8'
-        )
+        assert errors[-1] < 1e-8, f'ODE mass error at N=400: {errors[-1]:.2e}, expected < 1e-8'
 
     def test_pressure_error_decreases_with_grid(self):
         """Max relative error in P(r) must decrease with increasing N."""

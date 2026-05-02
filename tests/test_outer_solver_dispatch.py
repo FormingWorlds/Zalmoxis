@@ -1,7 +1,7 @@
-"""Tests for the outer-solver dispatch knob (T2.1b).
+"""Tests for the outer-solver dispatch knob.
 
-Covers the plumbing only; the Newton iteration body itself (T2.1c) is
-tested in ``test_outer_solver_newton.py`` once landed.
+Covers the plumbing only; the Newton iteration body itself is tested
+in ``test_outer_solver_newton.py``.
 
 Three angles:
 
@@ -19,6 +19,7 @@ Three angles:
     ``_solve_newton_outer()`` (currently raises NotImplementedError;
     the test asserts the raise happens, not what's inside).
 """
+
 from __future__ import annotations
 
 from unittest.mock import patch
@@ -68,13 +69,14 @@ def minimal_config():
 def test_default_dispatches_to_picard(minimal_config):
     """When 'outer_solver' is absent, _solve() (Picard) is called."""
     sentinel = {'converged': True, 'mass_enclosed': [1.0e24], 'radii': [6.4e6]}
-    with patch(
-        'zalmoxis.solver._solve', return_value=sentinel
-    ) as mock_solve, patch(
-        'zalmoxis.solver._solve_newton_outer'
-    ) as mock_newton:
+    with (
+        patch('zalmoxis.solver._solve', return_value=sentinel) as mock_solve,
+        patch('zalmoxis.solver._solve_newton_outer') as mock_newton,
+    ):
         result = main(
-            minimal_config, material_dictionaries={}, melting_curves_functions=None,
+            minimal_config,
+            material_dictionaries={},
+            melting_curves_functions=None,
             input_dir='/tmp',
         )
     assert mock_solve.called, '_solve() must be called when outer_solver absent'
@@ -89,11 +91,10 @@ def test_explicit_picard_dispatches_to_picard(minimal_config):
     cp = dict(minimal_config)
     cp['outer_solver'] = 'picard'
     sentinel = {'converged': True, 'mass_enclosed': [1.0e24], 'radii': [6.4e6]}
-    with patch(
-        'zalmoxis.solver._solve', return_value=sentinel
-    ) as mock_solve, patch(
-        'zalmoxis.solver._solve_newton_outer'
-    ) as mock_newton:
+    with (
+        patch('zalmoxis.solver._solve', return_value=sentinel) as mock_solve,
+        patch('zalmoxis.solver._solve_newton_outer') as mock_newton,
+    ):
         main(cp, material_dictionaries={}, melting_curves_functions=None, input_dir='/tmp')
     assert mock_solve.called
     assert not mock_newton.called
@@ -143,13 +144,14 @@ def test_newton_dispatches_to_solve_newton_outer(minimal_config):
     cp = dict(minimal_config)
     cp['outer_solver'] = 'newton'
     sentinel = {'converged': True, 'mass_enclosed': [1.0e24], 'radii': [6.4e6]}
-    with patch(
-        'zalmoxis.solver._solve_newton_outer', return_value=sentinel
-    ) as mock_newton, patch(
-        'zalmoxis.solver._solve'
-    ) as mock_solve:
+    with (
+        patch('zalmoxis.solver._solve_newton_outer', return_value=sentinel) as mock_newton,
+        patch('zalmoxis.solver._solve') as mock_solve,
+    ):
         result = main(
-            cp, material_dictionaries={}, melting_curves_functions=None,
+            cp,
+            material_dictionaries={},
+            melting_curves_functions=None,
             input_dir='/tmp',
         )
     assert mock_newton.called, '_solve_newton_outer() must be called for newton path'
@@ -160,10 +162,10 @@ def test_newton_dispatches_to_solve_newton_outer(minimal_config):
 def test_newton_rejects_loose_integrator_tolerance(minimal_config):
     """Newton requires relative_tolerance <= 1e-7.
 
-    The script-level prototype (T2.1a) showed that Zalmoxis' default
-    integrator tolerances (1e-5 / 1e-6) leave M(R) noise of ~1e-3
-    which swamps Newton's central-difference dM/dR. The function must
-    fail loudly at entry rather than silently producing garbage.
+    Zalmoxis' default integrator tolerances (1e-5 / 1e-6) leave M(R)
+    noise of ~1e-3 which swamps Newton's central-difference dM/dR.
+    The function must fail loudly at entry rather than silently
+    producing garbage.
 
     Discriminating: ValueError (not generic Exception); message
     mentions both 'relative_tolerance' and 'newton' so a reader can
@@ -174,7 +176,9 @@ def test_newton_rejects_loose_integrator_tolerance(minimal_config):
     cp['relative_tolerance'] = 1.0e-5  # default, too loose
     with pytest.raises(ValueError, match='relative_tolerance'):
         main(
-            cp, material_dictionaries={}, melting_curves_functions=None,
+            cp,
+            material_dictionaries={},
+            melting_curves_functions=None,
             input_dir='/tmp',
         )
 
@@ -222,11 +226,11 @@ def test_default_solver_params_outer_solver_consistent_across_masses():
 # value).
 #
 # Threshold rationale:
-# - planet_mass > 2 M_E: T2.3 (2026-04-27) showed the basin attractor
-#   recurs across 1, 3, 5, 10 M_E for hot ICs; 2 M_E is a conservative
-#   boundary above which Picard is most likely to need rescue.
-# - surface_temperature > 3000 K: hot fully-molten regime where T2.1
-#   (2026-04-26) demonstrated the failure mode in coupled CHILI runs.
+# - planet_mass > 2 M_E: the basin attractor recurs across 1, 3, 5,
+#   10 M_E for hot ICs; 2 M_E is a conservative boundary above which
+#   Picard is most likely to need rescue.
+# - surface_temperature > 3000 K: hot fully-molten regime where the
+#   failure mode is observed in coupled runs.
 
 # Earth mass in kg, matches zalmoxis.constants.earth_mass to 4 sig figs;
 # tests don't import the constant to keep the test file self-contained.
@@ -248,16 +252,14 @@ def test_advisory_fires_on_super_earth(minimal_config, caplog):
     cp['planet_mass'] = 3.0 * _EARTH_MASS_KG  # 3 M_E
     # surface_temperature stays at fixture default 1500 K (cool)
     sentinel = _patch_solvers_to_sentinel()
-    with caplog.at_level('INFO', logger='zalmoxis.solver'), patch(
-        'zalmoxis.solver._solve', return_value=sentinel
+    with (
+        caplog.at_level('INFO', logger='zalmoxis.solver'),
+        patch('zalmoxis.solver._solve', return_value=sentinel),
     ):
-        main(cp, material_dictionaries={}, melting_curves_functions=None,
-             input_dir='/tmp')
+        main(cp, material_dictionaries={}, melting_curves_functions=None, input_dir='/tmp')
     msgs = [r.getMessage() for r in caplog.records if r.levelname == 'INFO']
     advisory = [m for m in msgs if "outer_solver='newton'" in m]
-    assert len(advisory) == 1, (
-        f'expected exactly 1 advisory, got {len(advisory)}: {advisory}'
-    )
+    assert len(advisory) == 1, f'expected exactly 1 advisory, got {len(advisory)}: {advisory}'
     # Discriminating: the message must name the *triggering* condition,
     # not just emit a generic suggestion.
     assert 'planet_mass' in advisory[0]
@@ -272,11 +274,11 @@ def test_advisory_fires_on_hot_surface(minimal_config, caplog):
     # planet_mass stays at fixture default 1 M_E (light)
     cp['surface_temperature'] = 3500.0  # hot fully-molten
     sentinel = _patch_solvers_to_sentinel()
-    with caplog.at_level('INFO', logger='zalmoxis.solver'), patch(
-        'zalmoxis.solver._solve', return_value=sentinel
+    with (
+        caplog.at_level('INFO', logger='zalmoxis.solver'),
+        patch('zalmoxis.solver._solve', return_value=sentinel),
     ):
-        main(cp, material_dictionaries={}, melting_curves_functions=None,
-             input_dir='/tmp')
+        main(cp, material_dictionaries={}, melting_curves_functions=None, input_dir='/tmp')
     msgs = [r.getMessage() for r in caplog.records if r.levelname == 'INFO']
     advisory = [m for m in msgs if "outer_solver='newton'" in m]
     assert len(advisory) == 1
@@ -291,11 +293,11 @@ def test_advisory_fires_on_both_triggers_and_lists_both(minimal_config, caplog):
     cp['planet_mass'] = 5.0 * _EARTH_MASS_KG
     cp['surface_temperature'] = 4000.0
     sentinel = _patch_solvers_to_sentinel()
-    with caplog.at_level('INFO', logger='zalmoxis.solver'), patch(
-        'zalmoxis.solver._solve', return_value=sentinel
+    with (
+        caplog.at_level('INFO', logger='zalmoxis.solver'),
+        patch('zalmoxis.solver._solve', return_value=sentinel),
     ):
-        main(cp, material_dictionaries={}, melting_curves_functions=None,
-             input_dir='/tmp')
+        main(cp, material_dictionaries={}, melting_curves_functions=None, input_dir='/tmp')
     msgs = [r.getMessage() for r in caplog.records if r.levelname == 'INFO']
     advisory = [m for m in msgs if "outer_solver='newton'" in m]
     assert len(advisory) == 1
@@ -308,22 +310,23 @@ def test_advisory_fires_on_both_triggers_and_lists_both(minimal_config, caplog):
 def test_advisory_silent_on_earth_like(minimal_config, caplog):
     """1 M_E + 1500 K (fixture defaults) -> no advisory."""
     sentinel = _patch_solvers_to_sentinel()
-    with caplog.at_level('INFO', logger='zalmoxis.solver'), patch(
-        'zalmoxis.solver._solve', return_value=sentinel
+    with (
+        caplog.at_level('INFO', logger='zalmoxis.solver'),
+        patch('zalmoxis.solver._solve', return_value=sentinel),
     ):
-        main(minimal_config, material_dictionaries={},
-             melting_curves_functions=None, input_dir='/tmp')
+        main(
+            minimal_config,
+            material_dictionaries={},
+            melting_curves_functions=None,
+            input_dir='/tmp',
+        )
     msgs = [r.getMessage() for r in caplog.records if r.levelname == 'INFO']
     advisory = [m for m in msgs if "outer_solver='newton'" in m]
-    assert advisory == [], (
-        f'no advisory expected for 1 M_E + 1500 K profile, got {advisory}'
-    )
+    assert advisory == [], f'no advisory expected for 1 M_E + 1500 K profile, got {advisory}'
 
 
 @pytest.mark.parametrize('outer_solver_value', ['picard', 'newton'])
-def test_advisory_silent_when_outer_solver_explicit(
-    minimal_config, caplog, outer_solver_value
-):
+def test_advisory_silent_when_outer_solver_explicit(minimal_config, caplog, outer_solver_value):
     """Explicit outer_solver (either value) suppresses the advisory.
 
     Discriminating: explicit 'picard' must also suppress, even though the
@@ -340,16 +343,16 @@ def test_advisory_silent_when_outer_solver_explicit(
         cp['relative_tolerance'] = 1.0e-9
         cp['absolute_tolerance'] = 1.0e-10
     sentinel = _patch_solvers_to_sentinel()
-    with caplog.at_level('INFO', logger='zalmoxis.solver'), patch(
-        'zalmoxis.solver._solve', return_value=sentinel
-    ), patch('zalmoxis.solver._solve_newton_outer', return_value=sentinel):
-        main(cp, material_dictionaries={}, melting_curves_functions=None,
-             input_dir='/tmp')
+    with (
+        caplog.at_level('INFO', logger='zalmoxis.solver'),
+        patch('zalmoxis.solver._solve', return_value=sentinel),
+        patch('zalmoxis.solver._solve_newton_outer', return_value=sentinel),
+    ):
+        main(cp, material_dictionaries={}, melting_curves_functions=None, input_dir='/tmp')
     msgs = [r.getMessage() for r in caplog.records if r.levelname == 'INFO']
     advisory = [m for m in msgs if "outer_solver='newton'" in m]
     assert advisory == [], (
-        f"explicit outer_solver={outer_solver_value!r} must suppress "
-        f'advisory, got {advisory}'
+        f'explicit outer_solver={outer_solver_value!r} must suppress advisory, got {advisory}'
     )
 
 
@@ -358,18 +361,18 @@ def test_advisory_boundary_2_M_E_and_3000_K_silent(minimal_config, caplog):
     must NOT fire.
 
     Discriminating: this catches an off-by-one in the threshold (>= vs >).
-    Picard works fine at exactly 2 M_E in the T2.3 sweep envelope (the
-    basin attractor is a structural feature beyond the boundary).
+    Picard works fine at exactly 2 M_E; the basin attractor is a
+    structural feature beyond the boundary.
     """
     cp = dict(minimal_config)
     cp['planet_mass'] = 2.0 * _EARTH_MASS_KG  # exactly at threshold
-    cp['surface_temperature'] = 3000.0       # exactly at threshold
+    cp['surface_temperature'] = 3000.0  # exactly at threshold
     sentinel = _patch_solvers_to_sentinel()
-    with caplog.at_level('INFO', logger='zalmoxis.solver'), patch(
-        'zalmoxis.solver._solve', return_value=sentinel
+    with (
+        caplog.at_level('INFO', logger='zalmoxis.solver'),
+        patch('zalmoxis.solver._solve', return_value=sentinel),
     ):
-        main(cp, material_dictionaries={}, melting_curves_functions=None,
-             input_dir='/tmp')
+        main(cp, material_dictionaries={}, melting_curves_functions=None, input_dir='/tmp')
     msgs = [r.getMessage() for r in caplog.records if r.levelname == 'INFO']
     advisory = [m for m in msgs if "outer_solver='newton'" in m]
     assert advisory == []
@@ -386,14 +389,14 @@ def test_advisory_handles_missing_keys_gracefully(minimal_config, caplog):
     cp.pop('planet_mass', None)
     cp.pop('surface_temperature', None)
     sentinel = _patch_solvers_to_sentinel()
-    with caplog.at_level('INFO', logger='zalmoxis.solver'), patch(
-        'zalmoxis.solver._solve', return_value=sentinel
+    with (
+        caplog.at_level('INFO', logger='zalmoxis.solver'),
+        patch('zalmoxis.solver._solve', return_value=sentinel),
     ):
         # Note: missing planet_mass would crash deeper in main(); we
         # patch _solve to short-circuit. The dispatch / advisory block
         # itself must not raise.
-        main(cp, material_dictionaries={}, melting_curves_functions=None,
-             input_dir='/tmp')
+        main(cp, material_dictionaries={}, melting_curves_functions=None, input_dir='/tmp')
     msgs = [r.getMessage() for r in caplog.records if r.levelname == 'INFO']
     advisory = [m for m in msgs if "outer_solver='newton'" in m]
     assert advisory == []

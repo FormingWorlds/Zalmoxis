@@ -84,7 +84,9 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         wagner_densities = []
 
         with open(
-            os.path.join(get_zalmoxis_root(), 'data', 'radial_profiles', 'radiusdensityWagner.txt'),
+            os.path.join(
+                get_zalmoxis_root(), 'data', 'radial_profiles', 'radiusdensityWagner.txt'
+            ),
             'r',
         ) as wagner_file:
             for line in wagner_file:
@@ -96,7 +98,9 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         wagner_pressures = []
 
         with open(
-            os.path.join(get_zalmoxis_root(), 'data', 'radial_profiles', 'radiuspressureWagner.txt'),
+            os.path.join(
+                get_zalmoxis_root(), 'data', 'radial_profiles', 'radiuspressureWagner.txt'
+            ),
             'r',
         ) as wagner_file:
             for line in wagner_file:
@@ -108,7 +112,9 @@ def plot_profiles_all_in_one(target_mass_array, choice):
         wagner_gravities = []
 
         with open(
-            os.path.join(get_zalmoxis_root(), 'data', 'radial_profiles', 'radiusgravityWagner.txt'),
+            os.path.join(
+                get_zalmoxis_root(), 'data', 'radial_profiles', 'radiusgravityWagner.txt'
+            ),
             'r',
         ) as wagner_file:
             for line in wagner_file:
@@ -137,7 +143,10 @@ def plot_profiles_all_in_one(target_mass_array, choice):
 
         with open(
             os.path.join(
-                get_zalmoxis_root(), 'data', 'radial_profiles', 'radiuspressureEarthBoujibar.txt'
+                get_zalmoxis_root(),
+                'data',
+                'radial_profiles',
+                'radiuspressureEarthBoujibar.txt',
             ),
             'r',
         ) as boujibar_file:

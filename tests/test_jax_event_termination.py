@@ -188,13 +188,9 @@ class TestEventTermination:
         paths can pad different numbers of outer shells to P=0
         depending on where the diffrax Event vs scipy boundary check
         terminates the ODE; comparing density (or any other field)
-        across mismatched padded regions produces spurious 10-50%
-        drift even when the physics agrees to 1e-4 (e.g. macOS arm64
-        2026-05-02 cf92197 CI: cmb_mass agreed to 1.3e-3 while
-        density 'drift' was 4.5e-1, entirely from one path padding
-        a shell where the other still had ~6000 kg/m^3).
-        Mask any shell where either path padded P=0 before the
-        compare.
+        across mismatched padded regions produces spurious 10-50 %
+        drift even when the physics agrees to 1e-4. Mask any shell
+        where either path padded P=0 before the compare.
         """
         self._skip_if_partial(numpy_result, jax_event_result)
 
@@ -219,10 +215,9 @@ class TestEventTermination:
         # Density is excluded from the strict bound: it is an EOS lookup
         # at (P, T), not integrated state. The EOS table is steep at low
         # pressure, so the outermost live shell can have rho drifts of
-        # 30-50% even when P, T, M, g, r all agree to <2e-3 (mac arm64
-        # 2026-05-02: rho_drift = 4.5e-1 at the boundary while every
-        # other field was <1.4e-3). The integrated state fully constrains
-        # the comparison; density is a derived diagnostic.
+        # 30-50 % even when P, T, M, g, r all agree to <2e-3. The
+        # integrated state fully constrains the comparison; density is
+        # a derived diagnostic.
         drifts = {}
         for k in ('radii', 'mass_enclosed', 'gravity', 'pressure', 'temperature'):
             drifts[k] = scaled_drift(numpy_result[k], jax_event_result[k], live)

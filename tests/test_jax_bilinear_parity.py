@@ -6,6 +6,7 @@ synthetic cached table dict with realistic shape, queries both
 implementations at random (log_p, log_t) points, and asserts element-
 wise relative error <= 1e-12 (a few ULPs of float64).
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -27,8 +28,11 @@ def test_fast_bilinear_parity_vs_numpy():
     unique_log_p = np.linspace(logp_min, logp_max, n_p)
     unique_log_t = np.linspace(logt_min, logt_max, n_t)
     # Smooth synthetic density surface: rho(P, T) = A * P^alpha * T^-beta
-    grid = 4000.0 * (10.0 ** unique_log_p[:, None]) ** 0.15 \
-                  * (10.0 ** unique_log_t[None, :]) ** (-0.05)
+    grid = (
+        4000.0
+        * (10.0 ** unique_log_p[:, None]) ** 0.15
+        * (10.0 ** unique_log_t[None, :]) ** (-0.05)
+    )
 
     dlog_p = (logp_max - logp_min) / (n_p - 1)
     dlog_t = (logt_max - logt_min) / (n_t - 1)
@@ -48,22 +52,31 @@ def test_fast_bilinear_parity_vs_numpy():
     q_lp = rng.uniform(logp_min, logp_max, 500)
     q_lt = rng.uniform(logt_min, logt_max, 500)
 
-    numpy_vals = np.array(
-        [_fast_bilinear(q_lp[i], q_lt[i], grid, cached) for i in range(500)]
-    )
+    numpy_vals = np.array([_fast_bilinear(q_lp[i], q_lt[i], grid, cached) for i in range(500)])
     jax_vals = np.array(
         [
-            float(fast_bilinear_jax(
-                q_lp[i], q_lt[i], grid, unique_log_p, unique_log_t,
-                logp_min, logt_min, dlog_p, dlog_t, n_p, n_t,
-            ))
+            float(
+                fast_bilinear_jax(
+                    q_lp[i],
+                    q_lt[i],
+                    grid,
+                    unique_log_p,
+                    unique_log_t,
+                    logp_min,
+                    logt_min,
+                    dlog_p,
+                    dlog_t,
+                    n_p,
+                    n_t,
+                )
+            )
             for i in range(500)
         ]
     )
 
     max_rel = np.max(np.abs(numpy_vals - jax_vals) / np.maximum(np.abs(numpy_vals), 1e-30))
     # JIT reorders add/mul associativity; ULP-scale differences are expected
-    assert max_rel <= 1e-12, f"bilinear parity failed: max_rel={max_rel:.3e}"
+    assert max_rel <= 1e-12, f'bilinear parity failed: max_rel={max_rel:.3e}'
 
 
 @pytest.mark.unit
@@ -94,24 +107,34 @@ def test_paleos_clamp_temperature_parity_vs_numpy():
 
     # Mix of in-range, below-range, above-range query points
     q_lp = rng.uniform(logp_min, logp_max, 500)
-    q_lt = np.concatenate([
-        rng.uniform(1.5, 5.0, 250),   # some out-of-range
-        rng.uniform(2.2, 4.4, 250),   # most in-range
-    ])
+    q_lt = np.concatenate(
+        [
+            rng.uniform(1.5, 5.0, 250),  # some out-of-range
+            rng.uniform(2.2, 4.4, 250),  # most in-range
+        ]
+    )
 
-    numpy_clamped = np.array([
-        _paleos_clamp_temperature(q_lp[i], q_lt[i], cached)[0]
-        for i in range(500)
-    ])
-    jax_clamped = np.array([
-        float(paleos_clamp_temperature_jax(
-            q_lp[i], q_lt[i], lt_min, lt_max, logp_min, dlog_p, n_p,
-        ))
-        for i in range(500)
-    ])
+    numpy_clamped = np.array(
+        [_paleos_clamp_temperature(q_lp[i], q_lt[i], cached)[0] for i in range(500)]
+    )
+    jax_clamped = np.array(
+        [
+            float(
+                paleos_clamp_temperature_jax(
+                    q_lp[i],
+                    q_lt[i],
+                    lt_min,
+                    lt_max,
+                    logp_min,
+                    dlog_p,
+                    n_p,
+                )
+            )
+            for i in range(500)
+        ]
+    )
 
     max_rel = np.max(
-        np.abs(numpy_clamped - jax_clamped)
-        / np.maximum(np.abs(numpy_clamped), 1e-30)
+        np.abs(numpy_clamped - jax_clamped) / np.maximum(np.abs(numpy_clamped), 1e-30)
     )
-    assert max_rel <= 1e-12, f"clamp parity failed: max_rel={max_rel:.3e}"
+    assert max_rel <= 1e-12, f'clamp parity failed: max_rel={max_rel:.3e}'

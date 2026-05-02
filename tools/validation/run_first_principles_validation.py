@@ -45,21 +45,25 @@ logger = logging.getLogger(__name__)
 
 def _make_constant_density_mock(rho):
     """Return a mock calculate_mixed_density that always returns rho."""
+
     def _mock(pressure, temperature, mixture, *args, **kwargs):
         if pressure <= 0 or np.isnan(pressure):
             return None
         return rho
+
     return _mock
 
 
 def _make_two_layer_density_mock(rho_core, rho_mantle, cmb_mass):
     """Return a density mock dispatching on layer via component name."""
+
     def _mock(pressure, temperature, mixture, *args, **kwargs):
         if pressure <= 0 or np.isnan(pressure):
             return None
         if mixture.components[0] == 'mock:core':
             return rho_core
         return rho_mantle
+
     return _mock
 
 
@@ -72,12 +76,18 @@ def _solve_uniform_sphere(rho, R, P_center, num_layers=300):
     with patch('zalmoxis.structure_model.calculate_mixed_density', mock_fn):
         mass, gravity, pressure = solve_structure(
             layer_mixtures=layer_mixtures,
-            cmb_mass=1e30, core_mantle_mass=1e30,
-            radii=radii, adaptive_radial_fraction=0.98,
-            relative_tolerance=1e-10, absolute_tolerance=1e-12,
-            maximum_step=R / 10, material_dictionaries={},
-            interpolation_cache={}, y0=[0, 0, P_center],
-            solidus_func=None, liquidus_func=None,
+            cmb_mass=1e30,
+            core_mantle_mass=1e30,
+            radii=radii,
+            adaptive_radial_fraction=0.98,
+            relative_tolerance=1e-10,
+            absolute_tolerance=1e-12,
+            maximum_step=R / 10,
+            material_dictionaries={},
+            interpolation_cache={},
+            y0=[0, 0, P_center],
+            solidus_func=None,
+            liquidus_func=None,
         )
     return radii, mass, gravity, pressure
 
@@ -103,12 +113,18 @@ def _two_layer_central_pressure(rho_core, rho_mantle, R_cmb, R_total, M_cmb):
         else:
             M_fine[i] = M_cmb + (4.0 / 3.0) * math.pi * rho_mantle * (r**3 - R_cmb**3)
     g_fine = np.zeros(n_fine)
-    g_fine[1:] = G * M_fine[1:] / r_fine[1:]**2
+    g_fine[1:] = G * M_fine[1:] / r_fine[1:] ** 2
     return float(np.trapezoid(rho_fine * g_fine, r_fine))
 
 
-def _run_analytic_eos_solver(mass_earth, cmf=0.325, mmf=0, num_layers=200,
-                             relative_tolerance=1e-8, absolute_tolerance=1e-10):
+def _run_analytic_eos_solver(
+    mass_earth,
+    cmf=0.325,
+    mmf=0,
+    num_layers=200,
+    relative_tolerance=1e-8,
+    absolute_tolerance=1e-10,
+):
     """Run full Zalmoxis solver with Analytic EOS."""
     from zalmoxis.config import load_material_dictionaries
     from zalmoxis.solver import main
@@ -119,26 +135,34 @@ def _run_analytic_eos_solver(mass_earth, cmf=0.325, mmf=0, num_layers=200,
         'core_mass_fraction': cmf,
         'mantle_mass_fraction': mmf,
         'temperature_mode': 'isothermal',
-        'surface_temperature': 300, 'center_temperature': 5000,
+        'surface_temperature': 300,
+        'center_temperature': 5000,
         'temp_profile_file': '',
         'layer_eos_config': layer_eos,
         'rock_solidus': 'Stixrude14-solidus',
         'rock_liquidus': 'Stixrude14-liquidus',
         'mushy_zone_factor': 1.0,
         'mushy_zone_factors': {'PALEOS:iron': 1.0, 'PALEOS:MgSiO3': 1.0, 'PALEOS:H2O': 1.0},
-        'condensed_rho_min': 322.0, 'condensed_rho_scale': 50.0, 'binodal_T_scale': 50.0,
+        'condensed_rho_min': 322.0,
+        'condensed_rho_scale': 50.0,
+        'binodal_T_scale': 50.0,
         'num_layers': num_layers,
-        'max_iterations_outer': 100, 'tolerance_outer': 3e-3,
-        'max_iterations_inner': 100, 'tolerance_inner': 1e-4,
+        'max_iterations_outer': 100,
+        'tolerance_outer': 3e-3,
+        'max_iterations_inner': 100,
+        'tolerance_inner': 1e-4,
         'relative_tolerance': relative_tolerance,
         'absolute_tolerance': absolute_tolerance,
-        'maximum_step': 250000, 'adaptive_radial_fraction': 0.98,
+        'maximum_step': 250000,
+        'adaptive_radial_fraction': 0.98,
         'max_center_pressure_guess': 10e12,
         'target_surface_pressure': 101325,
         'pressure_tolerance': 1e9,
         'max_iterations_pressure': 200,
-        'data_output_enabled': False, 'plotting_enabled': False,
-        'verbose': False, 'iteration_profiles_enabled': False,
+        'data_output_enabled': False,
+        'plotting_enabled': False,
+        'verbose': False,
+        'iteration_profiles_enabled': False,
     }
 
     from zalmoxis import get_zalmoxis_root
@@ -151,20 +175,22 @@ def _run_analytic_eos_solver(mass_earth, cmf=0.325, mmf=0, num_layers=200,
 # Plot style (paper-ready: larger labels, thicker lines)
 # ============================================================================
 
-plt.rcParams.update({
-    'font.size': 16,
-    'axes.labelsize': 17,
-    'axes.titlesize': 18,
-    'legend.fontsize': 14,
-    'xtick.labelsize': 14,
-    'ytick.labelsize': 14,
-    'lines.linewidth': 2.5,
-    'lines.markersize': 9,
-    'figure.titlesize': 19,
-    'savefig.bbox': 'tight',
-    'savefig.pad_inches': 0.1,
-    'savefig.dpi': 150,
-})
+plt.rcParams.update(
+    {
+        'font.size': 16,
+        'axes.labelsize': 17,
+        'axes.titlesize': 18,
+        'legend.fontsize': 14,
+        'xtick.labelsize': 14,
+        'ytick.labelsize': 14,
+        'lines.linewidth': 2.5,
+        'lines.markersize': 9,
+        'figure.titlesize': 19,
+        'savefig.bbox': 'tight',
+        'savefig.pad_inches': 0.1,
+        'savefig.dpi': 150,
+    }
+)
 
 
 # ============================================================================
@@ -236,12 +262,18 @@ def plot_two_layer_sphere(outdir):
     with patch('zalmoxis.structure_model.calculate_mixed_density', mock_fn):
         mass, gravity, pressure = solve_structure(
             layer_mixtures={'core': core_mix, 'mantle': mantle_mix},
-            cmb_mass=cmb_mass, core_mantle_mass=M_total,
-            radii=radii, adaptive_radial_fraction=0.98,
-            relative_tolerance=1e-10, absolute_tolerance=1e-12,
-            maximum_step=R_total / 10, material_dictionaries={},
-            interpolation_cache={}, y0=[0, 0, P_center],
-            solidus_func=None, liquidus_func=None,
+            cmb_mass=cmb_mass,
+            core_mantle_mass=M_total,
+            radii=radii,
+            adaptive_radial_fraction=0.98,
+            relative_tolerance=1e-10,
+            absolute_tolerance=1e-12,
+            maximum_step=R_total / 10,
+            material_dictionaries={},
+            interpolation_cache={},
+            y0=[0, 0, P_center],
+            solidus_func=None,
+            liquidus_func=None,
         )
 
     # Analytic
@@ -264,7 +296,7 @@ def plot_two_layer_sphere(outdir):
     axes[0].legend()
 
     g_gauss = np.zeros(N)
-    g_gauss[1:] = G * mass[1:] / radii[1:]**2
+    g_gauss[1:] = G * mass[1:] / radii[1:] ** 2
     axes[1].plot(r_km, gravity, 'b-', label='Numerical g(r)', linewidth=2)
     axes[1].plot(r_km[1:], g_gauss[1:], 'r--', label='G M(r) / r$^2$', linewidth=2)
     axes[1].axvline(R_cmb / 1e3, color='gray', linestyle=':', label='CMB')
@@ -310,7 +342,9 @@ def plot_earth_benchmark(outdir):
     axes[1, 0].set_title('(c) g(r)')
     axes[1, 0].legend()
 
-    axes[1, 1].plot(r_km[valid], results['mass_enclosed'][valid] / earth_mass, 'b-', linewidth=2)
+    axes[1, 1].plot(
+        r_km[valid], results['mass_enclosed'][valid] / earth_mass, 'b-', linewidth=2
+    )
     axes[1, 1].axhline(1.0, color='gray', linestyle=':', label=r'1 $M_\oplus$')
     axes[1, 1].set_xlabel('Radius [km]')
     axes[1, 1].set_ylabel(r'Enclosed mass [$M_\oplus$]')
@@ -327,7 +361,9 @@ def plot_earth_benchmark(outdir):
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, 'earth_benchmark.pdf'))
     plt.close(fig)
-    logger.info(f'  Saved earth_benchmark.pdf (R = {R_planet_km:.0f} km, P_c = {P_c_GPa:.0f} GPa)')
+    logger.info(
+        f'  Saved earth_benchmark.pdf (R = {R_planet_km:.0f} km, P_c = {P_c_GPa:.0f} GPa)'
+    )
 
 
 def plot_grid_convergence(outdir):
@@ -372,7 +408,7 @@ def plot_mr_scaling(outdir):
             continue
         radii_earth.append(results['radii'][-1] / earth_radius)
 
-    masses_arr = np.array(masses[:len(radii_earth)])
+    masses_arr = np.array(masses[: len(radii_earth)])
     radii_arr = np.array(radii_earth)
 
     # Fit power law
@@ -385,7 +421,7 @@ def plot_mr_scaling(outdir):
     ax.loglog(masses_arr, radii_arr, 'bo', markersize=8, label='Zalmoxis (Analytic EOS)')
 
     m_fit = np.logspace(np.log10(0.3), np.log10(10), 50)
-    r_fit = 10**np.polyval(coeffs, np.log10(m_fit))
+    r_fit = 10 ** np.polyval(coeffs, np.log10(m_fit))
     ax.loglog(m_fit, r_fit, 'r--', label=f'Fit: R $\\propto$ M$^{{{alpha:.3f}}}$', linewidth=2)
 
     ax.set_xlabel(r'Mass [$M_\oplus$]')
@@ -442,7 +478,7 @@ def plot_conservation_diagnostics(outdir):
     # Gauss residual: g - GM/r^2
     idx = np.where(valid)[0]
     idx = idx[idx > 2]  # skip near-origin
-    g_gauss = G * mass[idx] / radii[idx]**2
+    g_gauss = G * mass[idx] / radii[idx] ** 2
     gauss_residual = np.abs(gravity[idx] - g_gauss) / g_gauss
     axes[0].semilogy(r_km[idx], gauss_residual, 'b-', linewidth=2)
     axes[0].set_xlabel('Radius [km]')
@@ -481,7 +517,8 @@ def main():
     """Run all validation plots."""
     parser = argparse.ArgumentParser(description='Zalmoxis first-principles validation')
     parser.add_argument(
-        '--outdir', default=None,
+        '--outdir',
+        default=None,
         help='Output directory for plots (default: output/first_principles_validation/)',
     )
     args = parser.parse_args()

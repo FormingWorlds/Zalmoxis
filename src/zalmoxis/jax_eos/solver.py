@@ -23,6 +23,7 @@ its RHS when P<=0 so the state is bounded even if the integrator
 briefly overshoots into negative P between step and event-localize.
 The event itself provides the physics-faithful termination.
 """
+
 from __future__ import annotations
 
 import jax

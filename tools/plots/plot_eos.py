@@ -147,7 +147,9 @@ if __name__ == '__main__':
     wolf_bower_files = ['density_melt.dat', 'density_solid.dat']
     wolf_bower_folder = os.path.join(get_zalmoxis_root(), 'data', 'EOS_WolfBower2018_1TPa')
     melting_curve_files = ['liquidus.dat', 'solidus.dat']
-    melting_curve_folder = os.path.join(get_zalmoxis_root(), 'data', 'melting_curves_Monteux-600')
+    melting_curve_folder = os.path.join(
+        get_zalmoxis_root(), 'data', 'melting_curves_Monteux-600'
+    )
     for wolf_bower_file in wolf_bower_files:
         plot_eos_WolfBower2018(
             wolf_bower_file, wolf_bower_folder, melting_curve_folder, melting_curve_files

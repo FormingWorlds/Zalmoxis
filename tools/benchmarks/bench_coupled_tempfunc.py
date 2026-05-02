@@ -39,6 +39,7 @@ Usage
         --config=input/bench_performance.toml --use-jax --use-anderson \
         --n-runs=3 --mode=rotating --use-temperature-arrays
 """
+
 from __future__ import annotations
 
 import argparse
@@ -122,21 +123,35 @@ def main_cli():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', required=True)
     parser.add_argument('--n-runs', type=int, default=3)
-    parser.add_argument('--mode', choices=('none', 'static', 'rotating'),
-                        default='rotating',
-                        help='Closure pattern across runs. See module docstring.')
+    parser.add_argument(
+        '--mode',
+        choices=('none', 'static', 'rotating'),
+        default='rotating',
+        help='Closure pattern across runs. See module docstring.',
+    )
     parser.add_argument('--use-jax', action='store_true')
     parser.add_argument('--use-anderson', action='store_true')
     parser.add_argument('--anderson-m-max', type=int, default=5)
-    parser.add_argument('--t-surface', type=float, default=3830.0,
-                        help='Surface T for constructed temperature profile (K). '
-                             'Default matches CHILI Earth config.')
-    parser.add_argument('--t-cmb', type=float, default=5500.0,
-                        help='CMB-anchor T (K). Default is a mid-evolution value.')
-    parser.add_argument('--use-temperature-arrays', action='store_true',
-                        help='Route T profile through the r-indexed '
-                             '(r_arr, T_arr) kwarg instead of a callable. '
-                             'Exercises the JAX RHS r-indexed branch.')
+    parser.add_argument(
+        '--t-surface',
+        type=float,
+        default=3830.0,
+        help='Surface T for constructed temperature profile (K). '
+        'Default matches CHILI Earth config.',
+    )
+    parser.add_argument(
+        '--t-cmb',
+        type=float,
+        default=5500.0,
+        help='CMB-anchor T (K). Default is a mid-evolution value.',
+    )
+    parser.add_argument(
+        '--use-temperature-arrays',
+        action='store_true',
+        help='Route T profile through the r-indexed '
+        '(r_arr, T_arr) kwarg instead of a callable. '
+        'Exercises the JAX RHS r-indexed branch.',
+    )
     args = parser.parse_args()
 
     config_params = load_zalmoxis_config(args.config)
@@ -164,10 +179,14 @@ def main_cli():
     r_cmb_nom = 3.46e6
     r_surf_nom = 7.06e6
 
-    print(f"[bench-coupled] mode={args.mode} n_runs={args.n_runs} "
-          f"use_jax={args.use_jax} use_anderson={args.use_anderson}")
-    print(f"[bench-coupled] nominal r_cmb={r_cmb_nom:.2e} m, r_surf={r_surf_nom:.2e} m, "
-          f"T_surf={args.t_surface} K, T_cmb={args.t_cmb} K")
+    print(
+        f'[bench-coupled] mode={args.mode} n_runs={args.n_runs} '
+        f'use_jax={args.use_jax} use_anderson={args.use_anderson}'
+    )
+    print(
+        f'[bench-coupled] nominal r_cmb={r_cmb_nom:.2e} m, r_surf={r_surf_nom:.2e} m, '
+        f'T_surf={args.t_surface} K, T_cmb={args.t_cmb} K'
+    )
 
     # Pre-build the static (r, T) arrays once (used by mode=static).
     _r0, _T0 = build_r_T_arrays(r_cmb_nom, r_surf_nom, args.t_surface, args.t_cmb)
@@ -189,7 +208,10 @@ def main_cli():
             # structure updates (a few K change per call).
             dT = -20.0 * i
             _r, _T = build_r_T_arrays(
-                r_cmb_nom, r_surf_nom, args.t_surface + dT, args.t_cmb + dT,
+                r_cmb_nom,
+                r_surf_nom,
+                args.t_surface + dT,
+                args.t_cmb + dT,
             )
             if args.use_temperature_arrays:
                 tarr = (_r, _T)
@@ -199,19 +221,25 @@ def main_cli():
             raise AssertionError(args.mode)
 
         wall, result = run_once(
-            config_params, mat_dicts, melt_funcs, _input_dir,
-            temperature_function=tf, temperature_arrays=tarr,
+            config_params,
+            mat_dicts,
+            melt_funcs,
+            _input_dir,
+            temperature_function=tf,
+            temperature_arrays=tarr,
         )
         walls.append(wall)
-        print(f"run {i + 1}/{args.n_runs}: wall = {wall:.2f} s "
-              f"(converged={result.get('converged', False)})")
+        print(
+            f'run {i + 1}/{args.n_runs}: wall = {wall:.2f} s '
+            f'(converged={result.get("converged", False)})'
+        )
 
     walls_arr = np.array(walls)
     print(
-        f"\n[bench-coupled] wall mean = {walls_arr.mean():.2f} s, "
-        f"min = {walls_arr.min():.2f} s, "
-        f"max = {walls_arr.max():.2f} s, "
-        f"std = {walls_arr.std():.2f} s"
+        f'\n[bench-coupled] wall mean = {walls_arr.mean():.2f} s, '
+        f'min = {walls_arr.min():.2f} s, '
+        f'max = {walls_arr.max():.2f} s, '
+        f'std = {walls_arr.std():.2f} s'
     )
 
 

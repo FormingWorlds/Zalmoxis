@@ -42,6 +42,7 @@ _CACHE_DIR_NAME = 'EOS_PALEOS_API'
 def _cache_root() -> Path:
     """Resolve the on-disk cache root under ``$ZALMOXIS_ROOT/data/``."""
     from .. import get_zalmoxis_root
+
     return Path(get_zalmoxis_root()) / 'data' / _CACHE_DIR_NAME
 
 
@@ -149,9 +150,7 @@ def resolve_paleos_api_2phase_mgsio3(
     solid = _cache_root() / f'2phase_solid_{sha_s}_{grid_s}.dat'
     liquid = _cache_root() / f'2phase_liquid_{sha_s}_{grid_s}.dat'
 
-    if (not force
-            and _header_sha_matches(solid, sha)
-            and _header_sha_matches(liquid, sha)):
+    if not force and _header_sha_matches(solid, sha) and _header_sha_matches(liquid, sha):
         logger.debug('paleos_api_cache 2-phase hit: %s, %s', solid, liquid)
         return solid, liquid
 

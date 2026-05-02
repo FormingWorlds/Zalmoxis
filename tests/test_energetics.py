@@ -389,8 +389,8 @@ class TestEarthBenchmark:
         assert T_prof[-1] == pytest.approx(result['T_surf_accr'], rel=0.01)
 
         # Verify accretion formula: Delta_T_G = f_a * U_u / (M * C_avg)
-        expected_DT_G = 0.04 * result['U_undifferentiated'] / (
-            model['mass_enclosed'][-1] * result['C_avg']
+        expected_DT_G = (
+            0.04 * result['U_undifferentiated'] / (model['mass_enclosed'][-1] * result['C_avg'])
         )
         assert result['Delta_T_accretion'] == pytest.approx(expected_DT_G, rel=1e-10), (
             f'Accretion term: got {result["Delta_T_accretion"]:.0f} K, '

@@ -406,8 +406,12 @@ def _fast_bilinear(log_p, log_t, grid, cached):
     # Bilinear blend
     omdp = 1.0 - dp
     omdt = 1.0 - dt
-    return (grid[ip, it] * omdp * omdt + grid[ip, it + 1] * omdp * dt
-            + grid[ip + 1, it] * dp * omdt + grid[ip + 1, it + 1] * dp * dt)
+    return (
+        grid[ip, it] * omdp * omdt
+        + grid[ip, it + 1] * omdp * dt
+        + grid[ip + 1, it] * dp * omdt
+        + grid[ip + 1, it + 1] * dp * dt
+    )
 
 
 def fast_bilinear_batch(log_p_arr, log_t_arr, grid, cached):
