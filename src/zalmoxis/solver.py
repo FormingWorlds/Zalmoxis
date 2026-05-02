@@ -1369,17 +1369,16 @@ def _solve(
                 [_temperature_func(radii[i], pressure[i]) for i in range(num_layers)]
             )
         elif uses_Tdep:
-            # Compute the linear (initial guess) temperature profile.
-            # This is a function of radius only; wrap it to accept (r, P).
-            # For 'adiabatic_from_cmb', pass cmb_temperature so the linear
-            # seed anchors at the CMB value rather than center_temperature,
-            # giving the first density iteration a more realistic mantle T.
-            _linear_mode = (
-                'adiabatic_from_cmb' if temperature_mode == 'adiabatic_from_cmb' else 'linear'
-            )
+            # Build the radial temperature profile. For 'adiabatic' and
+            # 'adiabatic_from_cmb' this is the linear initial guess; the
+            # actual adiabat is computed and blended in below once the
+            # first outer iteration has converged. For 'isothermal',
+            # 'linear', and 'prescribed' it is the final T(r) used by
+            # the density solve. cmb_temperature is forwarded for the
+            # 'adiabatic_from_cmb' anchor.
             _linear_tf = calculate_temperature_profile(
                 radii,
-                _linear_mode,
+                temperature_mode,
                 surface_temperature,
                 center_temperature,
                 input_dir,
@@ -1480,8 +1479,24 @@ def _solve(
 
                 temperatures = _linear_tf(radii)
         else:
+            # T-independent EOS path: density does not depend on T, so the
+            # solver does not need a _temperature_func. We still emit T(r)
+            # in the output, honouring the configured temperature_mode so
+            # the user sees the requested profile rather than a hardcoded
+            # 300 K placeholder. Adiabatic modes fall back to the linear
+            # initial guess returned by calculate_temperature_profile, since
+            # there is no T-dependent EOS to integrate an adiabat against.
             _temperature_func = None
-            temperatures = np.ones(num_layers) * 300
+            _output_tf = calculate_temperature_profile(
+                radii,
+                temperature_mode,
+                surface_temperature,
+                center_temperature,
+                input_dir,
+                temp_profile_file,
+                cmb_temperature=cmb_temperature,
+            )
+            temperatures = np.asarray(_output_tf(radii), dtype=float)
 
         cmb_mass = core_mass_fraction * planet_mass
         core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * planet_mass
