@@ -163,22 +163,41 @@ class TestEventTermination:
 
     def test_profile_drift_at_solver_tolerance(self, numpy_result, jax_event_result):
         """Profile drift between numpy and JAX+Event paths must be
-        at solver-tolerance. Previously (with the freeze-based hack
-        and no Event) pressure drift could peak at 1e25 relative due
-        to the outer-shell numerical-zero ratio. With Event+pad that
-        collapses to ~5e-4.
+        at solver-tolerance on the LIVE (interior) shells. The two
+        paths can pad different numbers of outer shells to P=0
+        depending on where the diffrax Event vs scipy boundary check
+        terminates the ODE; comparing density (or any other field)
+        across mismatched padded regions produces spurious 10-50%
+        drift even when the physics agrees to 1e-4 (e.g. macOS arm64
+        2026-05-02 cf92197 CI: cmb_mass agreed to 1.3e-3 while
+        density 'drift' was 4.5e-1, entirely from one path padding
+        a shell where the other still had ~6000 kg/m^3).
+        Mask any shell where either path padded P=0 before the
+        compare.
         """
 
-        def scaled_drift(a, b):
-            a_arr = np.asarray(a)
-            b_arr = np.asarray(b)
+        # Live mask: keep only shells where BOTH paths report P > 0.
+        # Padded shells (P==0) carry whatever the implementation chose
+        # to stamp there (numpy: 0; JAX+Event: last-valid carry-over)
+        # and are not directly comparable.
+        P_np = np.asarray(numpy_result['pressure'])
+        P_jx = np.asarray(jax_event_result['pressure'])
+        live = (P_np > 0) & (P_jx > 0)
+        assert live.sum() >= 10, (
+            f'too few live shells to compare ({live.sum()}); '
+            'one of the paths padded almost the whole grid'
+        )
+
+        def scaled_drift(a, b, mask):
+            a_arr = np.asarray(a)[mask]
+            b_arr = np.asarray(b)[mask]
             scale = max(np.abs(a_arr).max(), 1e-30)
             return float(np.abs(a_arr - b_arr).max() / scale)
 
         drifts = {}
         for k in ('radii', 'mass_enclosed', 'gravity', 'pressure', 'temperature', 'density'):
-            drifts[k] = scaled_drift(numpy_result[k], jax_event_result[k])
-            print(f'  {k:15s}  scaled drift = {drifts[k]:.3e}')
+            drifts[k] = scaled_drift(numpy_result[k], jax_event_result[k], live)
+            print(f'  {k:15s}  scaled drift = {drifts[k]:.3e}  ({live.sum()}/{len(live)} live)')
 
         # 2e-3 bound: scipy-RK45 rtol=1e-5 and Tsit5 rtol=1e-5 with
         # different dense-output polynomials produce O(1e-4 to 5e-4)
@@ -188,7 +207,7 @@ class TestEventTermination:
         # 2e-3 gives ~50% headroom over the highest observed drift
         # while still catching 5x+ regressions.
         for k, d in drifts.items():
-            assert d <= 2e-3, f'{k} drift {d:.3e} > 2e-3'
+            assert d <= 2e-3, f'{k} drift {d:.3e} > 2e-3 (on {live.sum()} live shells)'
 
     def test_scalar_endpoints_at_solver_tolerance(self, numpy_result, jax_event_result):
         """Planet-level scalars (R_planet, M_planet, cmb_mass) must
