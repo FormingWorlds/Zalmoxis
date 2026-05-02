@@ -21,6 +21,7 @@ Caches are stored in the numpy interpolation_cache dict with a key
 '_jax_extracted' so repeated calls within one _solve() reuse the
 flat-array extraction.
 """
+
 from __future__ import annotations
 
 import os as _os
@@ -107,17 +108,15 @@ def _tabulate_adiabat(radii, temperature_function, n_pts=4000):
     the expected physical range. Uses a log-uniform grid.
     """
     # Cover 1 bar to 10 TPa, wider than any current PROTEUS config
-    log_p_min = 5.0   # log10(1 bar)
+    log_p_min = 5.0  # log10(1 bar)
     log_p_max = 13.0  # log10(10 TPa)
     log_p_grid = np.linspace(log_p_min, log_p_max, n_pts)
-    P_grid = 10.0 ** log_p_grid
+    P_grid = 10.0**log_p_grid
     # temperature_function is (r, P) -> T. For adiabatic mode T is
     # ~independent of r, so we sample at the median radius. For the
     # degenerate linear-T fallback this is fine too.
     r_mid = 0.5 * (float(radii[0]) + float(radii[-1]))
-    T_values = np.array(
-        [float(temperature_function(r_mid, P)) for P in P_grid], dtype=float
-    )
+    T_values = np.array([float(temperature_function(r_mid, P)) for P in P_grid], dtype=float)
     return log_p_grid, T_values
 
 
@@ -126,19 +125,19 @@ def solve_structure_via_jax(
     cmb_mass,
     core_mantle_mass,
     radii,
-    adaptive_radial_fraction,   # unused in JAX path (Tsit5 adaptive internal)
+    adaptive_radial_fraction,  # unused in JAX path (Tsit5 adaptive internal)
     relative_tolerance,
     absolute_tolerance,
-    maximum_step,               # unused in JAX path for now
+    maximum_step,  # unused in JAX path for now
     material_dictionaries,
     interpolation_cache,
     y0,
-    solidus_func,               # used to extract Stixrude14 params
-    liquidus_func,              # used to extract Stixrude14 params
+    solidus_func,  # used to extract Stixrude14 params
+    liquidus_func,  # used to extract Stixrude14 params
     temperature_function=None,
-    temperature_arrays=None,    # (r_arr, T_arr): r-indexed T profile
+    temperature_arrays=None,  # (r_arr, T_arr): r-indexed T profile
     mushy_zone_factors=None,
-    condensed_rho_min=None,     # ignored (JAX path assumes no multi-component mixing)
+    condensed_rho_min=None,  # ignored (JAX path assumes no multi-component mixing)
     condensed_rho_scale=None,
     binodal_T_scale=None,
 ):
@@ -188,15 +187,16 @@ def solve_structure_via_jax(
     core_mat = material_dictionaries[core_eos]
     # Resolve PALEOS-API lazily if needed (matches numpy dispatch)
     from ..eos.dispatch import _is_paleos_api
+
     if '_api_resolved' not in core_mat:
         if _is_paleos_api(core_mat):
             from ..eos.paleos_api_cache import resolve_registry_entry
+
             resolve_registry_entry(core_mat)
         core_mat['_api_resolved'] = True
     if core_mat.get('format') != 'paleos_unified':
         raise ValueError(
-            f"JAX path requires paleos_unified core, got format "
-            f"{core_mat.get('format')!r}"
+            f'JAX path requires paleos_unified core, got format {core_mat.get("format")!r}'
         )
     core_cached = _ensure_unified_cache(core_mat['eos_file'], interpolation_cache)
 
@@ -207,11 +207,12 @@ def solve_structure_via_jax(
     if '_api_resolved' not in mantle_mat:
         if _is_paleos_api(mantle_mat):
             from ..eos.paleos_api_cache import resolve_registry_entry
+
             resolve_registry_entry(mantle_mat)
         mantle_mat['_api_resolved'] = True
     if 'melted_mantle' not in mantle_mat or 'solid_mantle' not in mantle_mat:
         raise ValueError(
-            "JAX path requires PALEOS-2phase mantle with solid_mantle+melted_mantle"
+            'JAX path requires PALEOS-2phase mantle with solid_mantle+melted_mantle'
         )
     # Lazy-load both sub-tables via numpy's get_tabulated_eos
     _ = get_tabulated_eos(1e10, mantle_mat, 'solid_mantle', 3000.0, interpolation_cache)
@@ -328,22 +329,20 @@ def solve_structure_via_jax(
     if _entry is None:
         n_melt = 256
         log_p_axis = np.linspace(np.log10(1e8), np.log10(5e12), n_melt)
-        p_axis = 10.0 ** log_p_axis
-        T_liq_samples = np.array(
-            [float(liquidus_func(P)) for P in p_axis], dtype=float
-        )
-        T_sol_samples = np.array(
-            [float(solidus_func(P)) for P in p_axis], dtype=float
-        )
+        p_axis = 10.0**log_p_axis
+        T_liq_samples = np.array([float(liquidus_func(P)) for P in p_axis], dtype=float)
+        T_sol_samples = np.array([float(solidus_func(P)) for P in p_axis], dtype=float)
         _entry = {
             'melt_log_p_min': float(log_p_axis[0]),
             'melt_dlog_p': float(log_p_axis[1] - log_p_axis[0]),
             'melt_n': int(n_melt),
             'log_T_liq_table': np.ascontiguousarray(
-                np.log10(T_liq_samples), dtype=np.float64,
+                np.log10(T_liq_samples),
+                dtype=np.float64,
             ),
             'log_T_sol_table': np.ascontiguousarray(
-                np.log10(T_sol_samples), dtype=np.float64,
+                np.log10(T_sol_samples),
+                dtype=np.float64,
             ),
         }
         if len(_melt_cache) > 64:
@@ -372,7 +371,8 @@ def solve_structure_via_jax(
     _CALL_COUNT += 1
     _t0 = _time.perf_counter()
     ys = solve_structure_jax(
-        radii_arr, np.asarray(y0, dtype=float),
+        radii_arr,
+        np.asarray(y0, dtype=float),
         rtol=float(relative_tolerance),
         atol=float(absolute_tolerance),
         T_axis_is_radius=T_axis_is_radius,
@@ -397,18 +397,21 @@ def solve_structure_via_jax(
             print(
                 f'[jax_profile] {_CALL_COUNT} calls | '
                 f'cache_extract={_PHASE_TIMES["cache_extract"]:.2f}s '
-                f'({100*_PHASE_TIMES["cache_extract"]/max(total,1e-9):.1f}%) | '
+                f'({100 * _PHASE_TIMES["cache_extract"] / max(total, 1e-9):.1f}%) | '
                 f'adiabat_tab={_PHASE_TIMES["adiabat_tab"]:.2f}s '
-                f'({100*_PHASE_TIMES["adiabat_tab"]/max(total,1e-9):.1f}%) | '
+                f'({100 * _PHASE_TIMES["adiabat_tab"] / max(total, 1e-9):.1f}%) | '
                 f'jit_solve={_PHASE_TIMES["jit_solve"]:.2f}s '
-                f'({100*_PHASE_TIMES["jit_solve"]/max(total,1e-9):.1f}%) | '
+                f'({100 * _PHASE_TIMES["jit_solve"] / max(total, 1e-9):.1f}%) | '
                 f'total={total:.2f}s',
                 flush=True,
             )
     _TOTAL_WALL += _dt
     if _DEBUG and (_CALL_COUNT <= 5 or _CALL_COUNT % 100 == 0):
-        print(f'[jax_wrapper] call {_CALL_COUNT}: {_dt*1000:.1f} ms, cumulative '
-              f'{_TOTAL_WALL:.2f} s', flush=True)
+        print(
+            f'[jax_wrapper] call {_CALL_COUNT}: {_dt * 1000:.1f} ms, cumulative '
+            f'{_TOTAL_WALL:.2f} s',
+            flush=True,
+        )
     mass_enclosed = ys[:, 0]
     gravity = ys[:, 1]
     pressure = ys[:, 2]

@@ -28,6 +28,7 @@ Validate after a refactor commit:
 
 The script exits non-zero on validation failure, suitable for pre-commit gating.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -107,7 +108,7 @@ def compare(baseline, current, tolerance):
         b = baseline[k]
         c = current[k]
         if b.shape != c.shape:
-            report[k] = f"shape mismatch: baseline {b.shape} vs current {c.shape}"
+            report[k] = f'shape mismatch: baseline {b.shape} vs current {c.shape}'
             all_ok = False
             continue
 
@@ -116,12 +117,12 @@ def compare(baseline, current, tolerance):
             if not ok:
                 diff = np.abs(b - c)
                 report[k] = (
-                    f"FAIL pure-refactor: max|delta|={float(diff.max()):.3e} "
-                    f"(want bit-identical)"
+                    f'FAIL pure-refactor: max|delta|={float(diff.max()):.3e} '
+                    f'(want bit-identical)'
                 )
                 all_ok = False
             else:
-                report[k] = "PASS (bit-identical)"
+                report[k] = 'PASS (bit-identical)'
 
         elif tolerance == 'table-prebake':
             with np.errstate(divide='ignore', invalid='ignore'):
@@ -129,10 +130,10 @@ def compare(baseline, current, tolerance):
                 max_rel = float(np.nan_to_num(rel, nan=0.0, posinf=0.0).max())
             ok = max_rel <= 1e-10
             if not ok:
-                report[k] = f"FAIL table-prebake: max_rel={max_rel:.3e} (want <=1e-10)"
+                report[k] = f'FAIL table-prebake: max_rel={max_rel:.3e} (want <=1e-10)'
                 all_ok = False
             else:
-                report[k] = f"PASS (max_rel={max_rel:.3e})"
+                report[k] = f'PASS (max_rel={max_rel:.3e})'
 
         elif tolerance == 'solver-tolerance':
             # For JIT / solver-method swaps where FP ordering legitimately
@@ -146,15 +147,14 @@ def compare(baseline, current, tolerance):
             ok = max_rel <= threshold
             if not ok:
                 report[k] = (
-                    f"FAIL solver-tolerance: max_rel={max_rel:.3e} "
-                    f"(want <={threshold:.0e})"
+                    f'FAIL solver-tolerance: max_rel={max_rel:.3e} (want <={threshold:.0e})'
                 )
                 all_ok = False
             else:
-                report[k] = f"PASS (max_rel={max_rel:.3e})"
+                report[k] = f'PASS (max_rel={max_rel:.3e})'
 
         else:
-            raise ValueError(f"Unknown tolerance policy: {tolerance}")
+            raise ValueError(f'Unknown tolerance policy: {tolerance}')
 
     return all_ok, report
 
@@ -162,25 +162,41 @@ def compare(baseline, current, tolerance):
 def main_cli():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', required=True)
-    parser.add_argument('--baseline', default=None,
-                        help='Path to baseline .npz (compare to it).')
-    parser.add_argument('--out', default=None,
-                        help='Path to write the current-run .npz.')
-    parser.add_argument('--save-baseline', action='store_true',
-                        help='Write --out as new baseline and skip compare.')
-    parser.add_argument('--tolerance',
-                        choices=['pure-refactor', 'table-prebake', 'solver-tolerance'],
-                        default='pure-refactor')
-    parser.add_argument('--n-runs', type=int, default=3,
-                        help='Number of timing runs (output captured on last run).')
-    parser.add_argument('--use-jax', action='store_true',
-                        help='Route the structure ODE through the JAX+diffrax path '
-                             '(config_params["use_jax"]=True).')
-    parser.add_argument('--use-anderson', action='store_true',
-                        help='Enable Anderson acceleration on the density Picard '
-                             'loop (config_params["use_anderson"]=True).')
-    parser.add_argument('--anderson-m-max', type=int, default=5,
-                        help='Anderson history window (default: 5).')
+    parser.add_argument(
+        '--baseline', default=None, help='Path to baseline .npz (compare to it).'
+    )
+    parser.add_argument('--out', default=None, help='Path to write the current-run .npz.')
+    parser.add_argument(
+        '--save-baseline',
+        action='store_true',
+        help='Write --out as new baseline and skip compare.',
+    )
+    parser.add_argument(
+        '--tolerance',
+        choices=['pure-refactor', 'table-prebake', 'solver-tolerance'],
+        default='pure-refactor',
+    )
+    parser.add_argument(
+        '--n-runs',
+        type=int,
+        default=3,
+        help='Number of timing runs (output captured on last run).',
+    )
+    parser.add_argument(
+        '--use-jax',
+        action='store_true',
+        help='Route the structure ODE through the JAX+diffrax path '
+        '(config_params["use_jax"]=True).',
+    )
+    parser.add_argument(
+        '--use-anderson',
+        action='store_true',
+        help='Enable Anderson acceleration on the density Picard '
+        'loop (config_params["use_anderson"]=True).',
+    )
+    parser.add_argument(
+        '--anderson-m-max', type=int, default=5, help='Anderson history window (default: 5).'
+    )
     args = parser.parse_args()
 
     config_params = load_zalmoxis_config(args.config)
@@ -192,11 +208,11 @@ def main_cli():
     config_params['wall_timeout'] = 3600.0
     if args.use_jax:
         config_params['use_jax'] = True
-        print("[bench] use_jax=True (routing structure ODE via diffrax)")
+        print('[bench] use_jax=True (routing structure ODE via diffrax)')
     if args.use_anderson:
         config_params['use_anderson'] = True
         config_params['anderson_m_max'] = args.anderson_m_max
-        print(f"[bench] use_anderson=True (m_max={args.anderson_m_max})")
+        print(f'[bench] use_anderson=True (m_max={args.anderson_m_max})')
     layer_eos_config = config_params['layer_eos_config']
     mat_dicts = load_material_dictionaries()
     melt_funcs = load_solidus_liquidus_functions(
@@ -213,39 +229,43 @@ def main_cli():
     for i in range(args.n_runs):
         wall, result = run_once(config_params, mat_dicts, melt_funcs, _input_dir)
         walls.append(wall)
-        print(f"run {i + 1}/{args.n_runs}: wall = {wall:.2f} s "
-              f"(converged={result.get('converged', False)})")
+        print(
+            f'run {i + 1}/{args.n_runs}: wall = {wall:.2f} s '
+            f'(converged={result.get("converged", False)})'
+        )
 
     walls_arr = np.array(walls)
-    print(f"\nwall mean = {walls_arr.mean():.2f} s, "
-          f"min = {walls_arr.min():.2f} s, "
-          f"max = {walls_arr.max():.2f} s, "
-          f"std = {walls_arr.std():.2f} s")
+    print(
+        f'\nwall mean = {walls_arr.mean():.2f} s, '
+        f'min = {walls_arr.min():.2f} s, '
+        f'max = {walls_arr.max():.2f} s, '
+        f'std = {walls_arr.std():.2f} s'
+    )
 
     current = extract_output(result)
 
     if args.out:
         os.makedirs(os.path.dirname(args.out) or '.', exist_ok=True)
         np.savez(args.out, **current)
-        print(f"wrote current output: {args.out}")
+        print(f'wrote current output: {args.out}')
 
     if args.save_baseline:
         if args.out is None:
-            print("error: --save-baseline requires --out", file=sys.stderr)
+            print('error: --save-baseline requires --out', file=sys.stderr)
             sys.exit(2)
-        print("SAVED as baseline; no comparison performed.")
+        print('SAVED as baseline; no comparison performed.')
         sys.exit(0)
 
     if args.baseline:
         baseline = dict(np.load(args.baseline))
         ok, report = compare(baseline, current, args.tolerance)
-        print("\n=== per-key comparison ({}) ===".format(args.tolerance))
+        print('\n=== per-key comparison ({}) ==='.format(args.tolerance))
         for k, v in report.items():
-            print(f"  {k:25s}  {v}")
+            print(f'  {k:25s}  {v}')
         if not ok:
-            print("\nFAIL: results drifted beyond tolerance.", file=sys.stderr)
+            print('\nFAIL: results drifted beyond tolerance.', file=sys.stderr)
             sys.exit(1)
-        print("\nPASS: all keys within tolerance.")
+        print('\nPASS: all keys within tolerance.')
 
     sys.exit(0)
 

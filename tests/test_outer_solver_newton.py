@@ -15,6 +15,7 @@ Two layers:
 Fast tier (1) is the regression layer; tier (2) is the validation
 layer that mirrors what production will use.
 """
+
 from __future__ import annotations
 
 import os
@@ -49,6 +50,7 @@ def _make_synthetic_M_solve(M_func):
     callable
         side_effect for unittest.mock.patch on ``_solve``.
     """
+
     def _side(config_params, *args, **kwargs):
         R = float(config_params['_initial_radius_guess'])
         M = float(M_func(R))
@@ -70,6 +72,7 @@ def _make_synthetic_M_solve(M_func):
             'p_center': 1e11,
             'layer_eos_config': config_params['layer_eos_config'],
         }
+
     return _side
 
 
@@ -133,8 +136,7 @@ class TestNewtonOnSyntheticMR:
 
         assert result['converged'] is True
         assert result['newton_n_iter'] <= 3, (
-            f'Linear M(R) should converge in <=3 iters, '
-            f'got {result["newton_n_iter"]}'
+            f'Linear M(R) should converge in <=3 iters, got {result["newton_n_iter"]}'
         )
         assert result['best_mass_error'] < 1.0e-6
         # Check the trajectory monotonically reduces |f|
@@ -163,9 +165,7 @@ class TestNewtonOnSyntheticMR:
         cp['newton_tol'] = 1.0e-6
         cp['newton_max_iter'] = 8
 
-        side = _make_synthetic_M_solve(
-            lambda R: (4.0 / 3.0) * np.pi * rho * R ** 3
-        )
+        side = _make_synthetic_M_solve(lambda R: (4.0 / 3.0) * np.pi * rho * R**3)
         with patch('zalmoxis.solver._solve', side_effect=side):
             result = _solve_newton_outer(cp, {}, None, '/tmp')
 
@@ -207,9 +207,7 @@ class TestNewtonOnSyntheticMR:
         cp['newton_tol'] = 1.0e-5
         cp['newton_max_iter'] = 8
 
-        side = _make_synthetic_M_solve(
-            lambda R: M_target * (R / R_root) ** 3
-        )
+        side = _make_synthetic_M_solve(lambda R: M_target * (R / R_root) ** 3)
         with patch('zalmoxis.solver._solve', side_effect=side):
             result = _solve_newton_outer(cp, {}, None, '/tmp')
 
@@ -247,9 +245,7 @@ class TestNewtonOnSyntheticMR:
         cp['newton_tol'] = 1.0e-6
         cp['newton_max_iter'] = 3
 
-        side = _make_synthetic_M_solve(
-            lambda R: M_target + A * np.sin(B * R)
-        )
+        side = _make_synthetic_M_solve(lambda R: M_target + A * np.sin(B * R))
         with patch('zalmoxis.solver._solve', side_effect=side):
             result = _solve_newton_outer(cp, {}, None, '/tmp')
 
@@ -314,7 +310,8 @@ class TestNewtonOnSyntheticMR:
         assert result['converged'] is False
 
     def test_brentq_recovers_when_newton_at_max_iter_with_a_real_root(
-        self, newton_config,
+        self,
+        newton_config,
     ):
         """A monotonic-but-noisy M(R) where Newton spins out: brentq finds root.
 
@@ -332,7 +329,7 @@ class TestNewtonOnSyntheticMR:
         noise_amp = 1.0e22
 
         def M_func(R):
-            base = (4.0 / 3.0) * np.pi * rho * R ** 3
+            base = (4.0 / 3.0) * np.pi * rho * R**3
             # Deterministic noise (reproducible) keyed on a hash of R.
             seed = int(abs(R) * 1e3) % (2**31)
             local_rng = np.random.default_rng(seed)
@@ -371,9 +368,7 @@ class TestNewtonOnSyntheticMR:
         cp['newton_tol'] = 1.0e-3
         cp['newton_max_iter'] = 4
 
-        side = _make_synthetic_M_solve(
-            lambda R: 6.0e24 * (R / 6.5e6) ** 3
-        )
+        side = _make_synthetic_M_solve(lambda R: 6.0e24 * (R / 6.5e6) ** 3)
         with patch('zalmoxis.solver._solve', side_effect=side) as mock_solve:
             _solve_newton_outer(cp, {}, None, '/tmp')
 
@@ -398,9 +393,7 @@ class TestNewtonOnSyntheticMR:
         cp['newton_tol'] = 1.0e-5
         cp['newton_max_iter'] = 8
 
-        side = _make_synthetic_M_solve(
-            lambda R: 6.0e24 * (R / 7.0e6) ** 3
-        )
+        side = _make_synthetic_M_solve(lambda R: 6.0e24 * (R / 7.0e6) ** 3)
         with patch('zalmoxis.solver._solve', side_effect=side):
             result = _solve_newton_outer(cp, {}, None, '/tmp')
 
@@ -463,7 +456,9 @@ class TestNewtonEndToEndEarthLike:
 
         cfg_path = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
-            '..', 'input', 'default.toml',
+            '..',
+            'input',
+            'default.toml',
         )
         if not os.path.exists(cfg_path):
             pytest.skip(f'default.toml not at {cfg_path}')
@@ -487,6 +482,7 @@ class TestNewtonEndToEndEarthLike:
             cp.get('rock_liquidus', 'Stixrude14-liquidus'),
         )
         import zalmoxis as _zal
+
         input_dir = os.path.normpath(
             os.path.join(os.path.dirname(_zal.__file__), '..', '..', 'input')
         )
@@ -502,6 +498,4 @@ class TestNewtonEndToEndEarthLike:
         )
         # Sanity: R within Earth-like range.
         R_final = result['radii'][-1]
-        assert 5.0e6 < R_final < 8.0e6, (
-            f'Final R = {R_final:.4e} m outside Earth-like range'
-        )
+        assert 5.0e6 < R_final < 8.0e6, f'Final R = {R_final:.4e} m outside Earth-like range'

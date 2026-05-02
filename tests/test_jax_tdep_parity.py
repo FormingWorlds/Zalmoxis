@@ -7,6 +7,7 @@ below-solidus, in-mushy, and above-liquidus regions.
 
 Requires max_rel <= 1e-8 — FP-rounding precision on float64.
 """
+
 from __future__ import annotations
 
 import os
@@ -40,6 +41,7 @@ def _load_stage1b_mantle():
 
     # Resolve the sub-table file paths via the PALEOS-API shim if needed
     from zalmoxis.eos.paleos_api_cache import resolve_registry_entry
+
     resolve_registry_entry(mat)
 
     sol_file = mat['solid_mantle']['eos_file']
@@ -109,9 +111,15 @@ def test_get_tdep_density_parity_vs_numpy():
         T_liq = float(liq_func(q_p[i]))
         nv = get_Tdep_density(q_p[i], q_t[i], mat, sol_func, liq_func, interp_cache)
         numpy_vals.append(nv if nv is not None else np.nan)
-        jv = float(get_tdep_density_jax(
-            q_p[i], q_t[i], T_sol, T_liq, **jax_args,
-        ))
+        jv = float(
+            get_tdep_density_jax(
+                q_p[i],
+                q_t[i],
+                T_sol,
+                T_liq,
+                **jax_args,
+            )
+        )
         jax_vals.append(jv)
     numpy_vals = np.asarray(numpy_vals)
     jax_vals = np.asarray(jax_vals)
@@ -122,12 +130,13 @@ def test_get_tdep_density_parity_vs_numpy():
 
     with np.errstate(divide='ignore', invalid='ignore'):
         rel = np.abs(numpy_vals[both_finite] - jax_vals[both_finite]) / np.maximum(
-            np.abs(numpy_vals[both_finite]), 1e-30,
+            np.abs(numpy_vals[both_finite]),
+            1e-30,
         )
     max_rel = float(rel.max()) if rel.size > 0 else 0.0
     print(
-        f"n_pts_finite={int(both_finite.sum())}/400, "
-        f"nan_mismatch={nan_mismatch_count}, max_rel={max_rel:.3e}"
+        f'n_pts_finite={int(both_finite.sum())}/400, '
+        f'nan_mismatch={nan_mismatch_count}, max_rel={max_rel:.3e}'
     )
 
-    assert max_rel <= 1e-8, f"Tdep parity failed: max_rel={max_rel:.3e} (want <=1e-8)"
+    assert max_rel <= 1e-8, f'Tdep parity failed: max_rel={max_rel:.3e} (want <=1e-8)'

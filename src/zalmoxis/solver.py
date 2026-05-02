@@ -272,8 +272,7 @@ def main(
     outer_solver = config_params.get('outer_solver', 'picard')
     if outer_solver not in _VALID_OUTER_SOLVERS:
         raise ValueError(
-            f"outer_solver must be one of {_VALID_OUTER_SOLVERS!r}, "
-            f"got {outer_solver!r}."
+            f'outer_solver must be one of {_VALID_OUTER_SOLVERS!r}, got {outer_solver!r}.'
         )
 
     # Advisory: when outer_solver is implicitly picard AND the profile
@@ -288,26 +287,20 @@ def main(
     # better choice without forcing it.
     if not outer_solver_explicit:
         _planet_mass = float(config_params.get('planet_mass') or 0.0)
-        _surface_temperature = float(
-            config_params.get('surface_temperature') or 0.0
-        )
+        _surface_temperature = float(config_params.get('surface_temperature') or 0.0)
         _is_hot = _surface_temperature > 3000.0
         _is_massive = _planet_mass > 2.0 * earth_mass
         if _is_hot or _is_massive:
             _trigger = []
             if _is_massive:
-                _trigger.append(
-                    f'planet_mass={_planet_mass / earth_mass:.2f} M_E > 2 M_E'
-                )
+                _trigger.append(f'planet_mass={_planet_mass / earth_mass:.2f} M_E > 2 M_E')
             if _is_hot:
-                _trigger.append(
-                    f'surface_temperature={_surface_temperature:.0f} K > 3000 K'
-                )
+                _trigger.append(f'surface_temperature={_surface_temperature:.0f} K > 3000 K')
             logger.info(
                 "Zalmoxis using outer_solver='picard' (default). "
                 "For this regime (%s), 'newton' is recommended: damped "
-                "Picard has a known basin attractor on hot fully-molten "
-                "and super-Earth profiles (see T2.1, T2.3 validation, "
+                'Picard has a known basin attractor on hot fully-molten '
+                'and super-Earth profiles (see T2.1, T2.3 validation, '
                 "2026-04-26/27). Set outer_solver='newton' in your "
                 'config to opt in. This advisory does not change behaviour.',
                 ', '.join(_trigger),
@@ -368,7 +361,8 @@ def main(
         logger.info(
             'Skipping retry: density and pressure converged, mass error '
             '%.4f%% < %.2f%% threshold. Accepting first-attempt solution.',
-            _first_mass_err * 100, _RETRY_SKIP_MASS_ERR * 100,
+            _first_mass_err * 100,
+            _RETRY_SKIP_MASS_ERR * 100,
         )
         result['converged'] = True
         result['converged_mass'] = True
@@ -454,8 +448,16 @@ _NEWTON_REQUIRED_REL_TOL = 1.0e-7
 
 
 def _brentq_fallback_outer(
-    R_current, M_target, eval_M_at_R, history,
-    *, R_min, R_max, tol, start_time, last_result,
+    R_current,
+    M_target,
+    eval_M_at_R,
+    history,
+    *,
+    R_min,
+    R_max,
+    tol,
+    start_time,
+    last_result,
     n_newton_iter=None,
 ):
     """Brentq fall-back for the Newton outer mass-radius loop (T2.1d).
@@ -532,19 +534,22 @@ def _brentq_fallback_outer(
         logger.info(
             'Brentq: reusing Newton-history bracket [%.4e, %.4e] '
             '(width %.3e m, no extra evals).',
-            R_lo, R_hi, R_hi - R_lo,
+            R_lo,
+            R_hi,
+            R_hi - R_lo,
         )
     else:
         # Step 2: sweep outward from R_current.
         logger.info(
             'Brentq: searching bracket from R=%.4e in [%.3e, %.3e]',
-            R_current, R_min, R_max,
+            R_current,
+            R_min,
+            R_max,
         )
         M_at_current, _ = eval_M_at_R(R_current)
         if not np.isfinite(M_at_current):
             raise RuntimeError(
-                f'Brentq fall-back: M(R={R_current:.4e}) is not finite. '
-                'Cannot recover.'
+                f'Brentq fall-back: M(R={R_current:.4e}) is not finite. Cannot recover.'
             )
         f0 = M_at_current - M_target
         # Record so step-3 lookup can find M at R_current.
@@ -552,7 +557,11 @@ def _brentq_fallback_outer(
         if abs(f0) / M_target < tol:
             # Lucky: R_current is already at the root.
             return _attach_newton_bookkeeping(
-                last_result, history, start_time, used_brentq=True, tol=tol,
+                last_result,
+                history,
+                start_time,
+                used_brentq=True,
+                tol=tol,
                 n_newton_iter=n_newton_iter,
             )
         if f0 > 0:
@@ -563,9 +572,7 @@ def _brentq_fallback_outer(
                 if not np.isfinite(M_test):
                     R_test *= 0.5
                     continue
-                history.append(
-                    (R_test, M_test, abs(M_test - M_target) / M_target)
-                )
+                history.append((R_test, M_test, abs(M_test - M_target) / M_target))
                 if M_test - M_target < 0:
                     R_lo, R_hi = R_test, R_current
                     break
@@ -578,9 +585,7 @@ def _brentq_fallback_outer(
                 if not np.isfinite(M_test):
                     R_test *= 1.3
                     continue
-                history.append(
-                    (R_test, M_test, abs(M_test - M_target) / M_target)
-                )
+                history.append((R_test, M_test, abs(M_test - M_target) / M_target))
                 if M_test - M_target > 0:
                     R_lo, R_hi = R_current, R_test
                     break
@@ -595,7 +600,11 @@ def _brentq_fallback_outer(
         logger.warning(
             'Brentq: no sign-flipping bracket in [%.2e, %.2e]; returning '
             'best-seen R=%.4e M=%.4e rel=%.3e (converged=False).',
-            R_min, R_max, best_R, best_M, best_rel,
+            R_min,
+            R_max,
+            best_R,
+            best_M,
+            best_rel,
         )
         result = dict(last_result) if last_result else {}
         result['converged'] = False
@@ -615,8 +624,8 @@ def _brentq_fallback_outer(
     # trust region clamped two consecutive iterations to the same R.
     if R_hi - R_lo < 1.0:  # less than 1 m of width is degenerate
         logger.warning(
-            'Brentq: bracket width %.3e m too narrow; returning best-seen '
-            '(converged=False).', R_hi - R_lo,
+            'Brentq: bracket width %.3e m too narrow; returning best-seen (converged=False).',
+            R_hi - R_lo,
         )
         best_idx = int(np.argmin([h[2] for h in history])) if history else 0
         best_R, best_M, best_rel = history[best_idx]
@@ -648,7 +657,9 @@ def _brentq_fallback_outer(
     xtol_target = max(1.0, 0.5 * tol * M_target / dMdR_est)
     logger.info(
         'Brentq: xtol=%.2e m (|dM/dR| est=%.2e kg/m), rtol=%.2e',
-        xtol_target, dMdR_est, tol,
+        xtol_target,
+        dMdR_est,
+        tol,
     )
 
     # Closure for brentq: side-effects history.
@@ -667,7 +678,8 @@ def _brentq_fallback_outer(
     except (ValueError, RuntimeError) as exc:
         logger.warning(
             'Brentq raised %s: %s. Returning best-seen (converged=False).',
-            type(exc).__name__, exc,
+            type(exc).__name__,
+            exc,
         )
         best_idx = int(np.argmin([h[2] for h in history])) if history else 0
         best_R, best_M, best_rel = history[best_idx]
@@ -689,7 +701,9 @@ def _brentq_fallback_outer(
     history.append((float(R_root), float(M_root), rel))
     logger.info(
         'Brentq converged: R=%.5e M=%.5e dM/M=%.3e',
-        R_root, M_root, rel,
+        R_root,
+        M_root,
+        rel,
     )
     result = dict(last_result) if last_result else {}
     result['converged'] = bool(rel < tol)
@@ -702,9 +716,9 @@ def _brentq_fallback_outer(
     return result
 
 
-def _attach_newton_bookkeeping(last_result, history, start_time,
-                               *, used_brentq=False, tol=None,
-                               n_newton_iter=None):
+def _attach_newton_bookkeeping(
+    last_result, history, start_time, *, used_brentq=False, tol=None, n_newton_iter=None
+):
     """Decorate an inner-Picard result dict with Newton-outer metadata.
 
     Convergence is determined by comparing the LAST history entry's
@@ -733,9 +747,7 @@ def _attach_newton_bookkeeping(last_result, history, start_time,
         result['converged_mass'] = converged
         result['best_mass_error'] = float(best_rel)
     result['total_time'] = time.time() - start_time
-    result['newton_n_iter'] = (
-        int(n_newton_iter) if n_newton_iter is not None else len(history)
-    )
+    result['newton_n_iter'] = int(n_newton_iter) if n_newton_iter is not None else len(history)
     result['newton_history'] = history
     result['newton_used_brentq'] = bool(used_brentq)
     return result
@@ -827,8 +839,9 @@ def _solve_newton_outer(
 
     # Integrator-tolerance precondition: enforce rel_tol <= 1e-7 so M(R)
     # is smooth enough for central-difference dM/dR.
-    rel_tol_eff = float(config_params.get('relative_tolerance')
-                        or defaults['relative_tolerance'])
+    rel_tol_eff = float(
+        config_params.get('relative_tolerance') or defaults['relative_tolerance']
+    )
     if rel_tol_eff > _NEWTON_REQUIRED_REL_TOL:
         raise ValueError(
             f'Newton outer requires relative_tolerance <= {_NEWTON_REQUIRED_REL_TOL!r}; '
@@ -847,10 +860,7 @@ def _solve_newton_outer(
     else:
         # Mass-adaptive initial guess (matches _solve line ~541).
         core_mass_fraction = float(config_params.get('core_mass_fraction', 0.0))
-        R = (
-            1000 * (7030 - 1840 * core_mass_fraction)
-            * (M_target / earth_mass) ** 0.282
-        )
+        R = 1000 * (7030 - 1840 * core_mass_fraction) * (M_target / earth_mass) ** 0.282
     R = float(max(R_min, min(R_max, R)))
 
     # ----- Inner-Picard-at-fixed-R helper -----
@@ -888,7 +898,10 @@ def _solve_newton_outer(
     start_time = time.time()
     logger.info(
         'Newton outer: M_target=%.4e kg, R0=%.4e m, tol=%.1e, max_iter=%d',
-        M_target, R, tol, max_iter,
+        M_target,
+        R,
+        tol,
+        max_iter,
     )
 
     for k in range(max_iter):
@@ -896,12 +909,19 @@ def _solve_newton_outer(
         if not np.isfinite(M_k):
             logger.warning(
                 'Newton iter %d: M(R=%.4e) not finite; falling back to brentq.',
-                k, R,
+                k,
+                R,
             )
             return _brentq_fallback_outer(
-                R, M_target, _M_at_R, history,
-                R_min=R_min, R_max=R_max, tol=tol,
-                start_time=start_time, last_result=last_result,
+                R,
+                M_target,
+                _M_at_R,
+                history,
+                R_min=R_min,
+                R_max=R_max,
+                tol=tol,
+                start_time=start_time,
+                last_result=last_result,
                 n_newton_iter=k,
             )
         f_k = M_k - M_target
@@ -909,15 +929,25 @@ def _solve_newton_outer(
         history.append((R, M_k, rel))
         logger.info(
             'Newton iter %2d: R=%.5e M=%.5e f=%+.3e rel=%.3e',
-            k, R, M_k, f_k, rel,
+            k,
+            R,
+            M_k,
+            f_k,
+            rel,
         )
         if rel < tol:
             logger.info(
                 'Newton converged in %d iter(s): dM/M=%.3e <= tol=%.3e',
-                k + 1, rel, tol,
+                k + 1,
+                rel,
+                tol,
             )
             return _attach_newton_bookkeeping(
-                last_result, history, start_time, used_brentq=False, tol=tol,
+                last_result,
+                history,
+                start_time,
+                used_brentq=False,
+                tol=tol,
                 n_newton_iter=k + 1,
             )
 
@@ -930,22 +960,27 @@ def _solve_newton_outer(
         # list is one-entry-per-Newton-step (damping logic at line ~946
         # and ``newton_n_iter`` both depend on that invariant).
         if np.isfinite(M_plus):
-            side_evals.append(
-                (float(R + dR), float(M_plus), abs(M_plus - M_target) / M_target)
-            )
+            side_evals.append((float(R + dR), float(M_plus), abs(M_plus - M_target) / M_target))
         if np.isfinite(M_minus):
             side_evals.append(
                 (float(R - dR), float(M_minus), abs(M_minus - M_target) / M_target)
             )
         if not (np.isfinite(M_plus) and np.isfinite(M_minus)):
             logger.info(
-                'Newton iter %d: M(R+/-dR) not finite at R=%.4e; '
-                'falling back to brentq.', k, R,
+                'Newton iter %d: M(R+/-dR) not finite at R=%.4e; falling back to brentq.',
+                k,
+                R,
             )
             return _brentq_fallback_outer(
-                R, M_target, _M_at_R, history + side_evals,
-                R_min=R_min, R_max=R_max, tol=tol,
-                start_time=start_time, last_result=last_result,
+                R,
+                M_target,
+                _M_at_R,
+                history + side_evals,
+                R_min=R_min,
+                R_max=R_max,
+                tol=tol,
+                start_time=start_time,
+                last_result=last_result,
                 n_newton_iter=k,
             )
         dMdR = (M_plus - M_minus) / (2.0 * dR)
@@ -954,13 +989,20 @@ def _solve_newton_outer(
         # below 1e15 the slope is effectively zero and Newton step blows up.
         if abs(dMdR) < 1.0e15 or not np.isfinite(dMdR):
             logger.info(
-                'Newton iter %d: |dM/dR|=%.3e below 1e15 threshold; '
-                'falling back to brentq.', k, dMdR,
+                'Newton iter %d: |dM/dR|=%.3e below 1e15 threshold; falling back to brentq.',
+                k,
+                dMdR,
             )
             return _brentq_fallback_outer(
-                R, M_target, _M_at_R, history + side_evals,
-                R_min=R_min, R_max=R_max, tol=tol,
-                start_time=start_time, last_result=last_result,
+                R,
+                M_target,
+                _M_at_R,
+                history + side_evals,
+                R_min=R_min,
+                R_max=R_max,
+                tol=tol,
+                start_time=start_time,
+                last_result=last_result,
                 n_newton_iter=k + 1,
             )
 
@@ -970,12 +1012,22 @@ def _solve_newton_outer(
         if R_new < R_min or R_new > R_max:
             logger.info(
                 'Newton iter %d: R_new=%.4e out of bounds [%.2e, %.2e]; '
-                'falling back to brentq.', k, R_new, R_min, R_max,
+                'falling back to brentq.',
+                k,
+                R_new,
+                R_min,
+                R_max,
             )
             return _brentq_fallback_outer(
-                R, M_target, _M_at_R, history + side_evals,
-                R_min=R_min, R_max=R_max, tol=tol,
-                start_time=start_time, last_result=last_result,
+                R,
+                M_target,
+                _M_at_R,
+                history + side_evals,
+                R_min=R_min,
+                R_max=R_max,
+                tol=tol,
+                start_time=start_time,
+                last_result=last_result,
                 n_newton_iter=k + 1,
             )
 
@@ -987,7 +1039,10 @@ def _solve_newton_outer(
             R_new = R + step
             logger.debug(
                 'Newton iter %d: step capped at %.0f%% of R (was %.3e -> %.3e).',
-                k, trust_region_frac * 100, R - f_k / dMdR, R_new,
+                k,
+                trust_region_frac * 100,
+                R - f_k / dMdR,
+                R_new,
             )
 
         # Damping: if previous step did not reduce |f|, halve this one.
@@ -997,21 +1052,29 @@ def _solve_newton_outer(
                 R_new = R + 0.5 * (R_new - R)
                 logger.debug(
                     'Newton iter %d: previous step did not improve |f|; '
-                    'halving step to R=%.4e.', k, R_new,
+                    'halving step to R=%.4e.',
+                    k,
+                    R_new,
                 )
 
         R = R_new
 
     # Out of iters without convergence. Hand off to brentq.
     logger.info(
-        'Newton hit max_iter=%d without converging (best |dM/M|=%.3e); '
-        'falling back to brentq.',
-        max_iter, min(h[2] for h in history),
+        'Newton hit max_iter=%d without converging (best |dM/M|=%.3e); falling back to brentq.',
+        max_iter,
+        min(h[2] for h in history),
     )
     return _brentq_fallback_outer(
-        R, M_target, _M_at_R, history + side_evals,
-        R_min=R_min, R_max=R_max, tol=tol,
-        start_time=start_time, last_result=last_result,
+        R,
+        M_target,
+        _M_at_R,
+        history + side_evals,
+        R_min=R_min,
+        R_max=R_max,
+        tol=tol,
+        start_time=start_time,
+        last_result=last_result,
         n_newton_iter=max_iter,
     )
 
@@ -1087,12 +1150,8 @@ def _solve(
         'max_iterations_inner', defaults['max_iterations_inner']
     )
     tolerance_inner = config_params.get('tolerance_inner', defaults['tolerance_inner'])
-    relative_tolerance = config_params.get(
-        'relative_tolerance', defaults['relative_tolerance']
-    )
-    absolute_tolerance = config_params.get(
-        'absolute_tolerance', defaults['absolute_tolerance']
-    )
+    relative_tolerance = config_params.get('relative_tolerance', defaults['relative_tolerance'])
+    absolute_tolerance = config_params.get('absolute_tolerance', defaults['absolute_tolerance'])
     maximum_step = config_params.get('maximum_step', defaults['maximum_step'])
     adaptive_radial_fraction = config_params.get(
         'adaptive_radial_fraction', defaults['adaptive_radial_fraction']
@@ -1100,9 +1159,7 @@ def _solve(
     max_center_pressure_guess = config_params.get(
         'max_center_pressure_guess', defaults['max_center_pressure_guess']
     )
-    pressure_tolerance = config_params.get(
-        'pressure_tolerance', defaults['pressure_tolerance']
-    )
+    pressure_tolerance = config_params.get('pressure_tolerance', defaults['pressure_tolerance'])
     max_iterations_pressure = config_params.get(
         'max_iterations_pressure', defaults['max_iterations_pressure']
     )
@@ -1261,7 +1318,8 @@ def _solve(
             center_temperature = max_reasonable_T_center
             logger.debug(
                 'Adiabatic mode: capped center_temperature initial guess '
-                'to %.0f K (5x surface or 3000 K).', center_temperature,
+                'to %.0f K (5x surface or 3000 K).',
+                center_temperature,
             )
 
     # Wall-clock timeout: bail out with best solution if solver takes
@@ -1296,7 +1354,8 @@ def _solve(
             logger.warning(
                 'Wall-clock timeout (%.0fs) reached at outer iter %d. '
                 'Returning best solution (mass error %.4f%%).',
-                wall_timeout, outer_iter,
+                wall_timeout,
+                outer_iter,
                 best_mass_error * 100 if np.isfinite(best_mass_error) else float('inf'),
             )
             if best_profiles is not None:
@@ -1390,7 +1449,9 @@ def _solve(
                 # Bump blend toward full adiabat
                 _adiabat_blend = min(1.0, _adiabat_blend + _ADIABAT_BLEND_STEP)
                 logger.debug(
-                    'Outer iter %d: adiabat blend = %.2f', outer_iter, _adiabat_blend,
+                    'Outer iter %d: adiabat blend = %.2f',
+                    outer_iter,
+                    _adiabat_blend,
                 )
 
                 # Recompute adiabat from previous iteration's converged
@@ -1467,10 +1528,7 @@ def _solve(
                 # Pre-compute temperatures array for the density update loop
                 # (uses the converged pressure from the previous iteration)
                 temperatures = np.array(
-                    [
-                        _temperature_func(radii[i], prev_pressure[i])
-                        for i in range(num_layers)
-                    ]
+                    [_temperature_func(radii[i], prev_pressure[i]) for i in range(num_layers)]
                 )
             else:
 
@@ -1547,7 +1605,8 @@ def _solve(
                     converged_density = _inner_best_diff < max(100 * tolerance_inner, 0.1)
                 logger.warning(
                     'Wall-clock timeout in inner loop (outer=%d, inner=%d).',
-                    outer_iter, inner_iter,
+                    outer_iter,
+                    inner_iter,
                 )
                 break
 
@@ -1641,8 +1700,7 @@ def _solve(
                 ]
             if uses_WB2018:
                 bracket_attempts = [
-                    (lo, min(hi, max_center_pressure_guess))
-                    for lo, hi in bracket_attempts
+                    (lo, min(hi, max_center_pressure_guess)) for lo, hi in bracket_attempts
                 ]
 
             try:
@@ -1659,7 +1717,9 @@ def _solve(
                         if _bi > 0:
                             logger.debug(
                                 'Bracket widened to [%.2e, %.2e] Pa on attempt %d',
-                                _pl, _ph, _bi + 1,
+                                _pl,
+                                _ph,
+                                _bi + 1,
                             )
                         break
                 if p_low is None:
@@ -1716,21 +1776,24 @@ def _solve(
                 ):
                     converged_pressure = True
                     logger.debug(
-                        'Surface pressure converged after '
-                        '%d evaluations (Brent method).', root_info.function_calls,
+                        'Surface pressure converged after %d evaluations (Brent method).',
+                        root_info.function_calls,
                     )
                 else:
                     converged_pressure = False
                     logger.debug(
                         'Brent method: converged=%s, residual=%.2e Pa, min_P=%.2e Pa.',
-                        root_info.converged, surface_residual, np.min(pressure),
+                        root_info.converged,
+                        surface_residual,
+                        np.min(pressure),
                     )
             except ValueError:
                 # f(p_low) and f(p_high) have the same sign — bracket
                 # invalid.  Use the last evaluated solution if available.
                 logger.debug(
                     'Could not bracket pressure root in [%.2e, %.2e] Pa.',
-                    p_low, p_high,
+                    p_low,
+                    p_high,
                 )
                 if _state['mass_enclosed'] is not None:
                     mass_enclosed = _state['mass_enclosed']
@@ -1852,8 +1915,7 @@ def _solve(
                 density[:n_valid] = x_next_anderson
             else:
                 density[:n_valid] = (
-                    alpha * new_density[:n_valid]
-                    + (1.0 - alpha) * old_density[:n_valid]
+                    alpha * new_density[:n_valid] + (1.0 - alpha) * old_density[:n_valid]
                 )
 
             # Check density convergence
@@ -1869,7 +1931,10 @@ def _solve(
                 if _inner_osc_count % 5 == 0:
                     logger.debug(
                         'Inner iter %d: density oscillation #%d, alpha=%.2f, diff=%.2e',
-                        inner_iter, _inner_osc_count, _inner_alpha, relative_diff_inner,
+                        inner_iter,
+                        _inner_osc_count,
+                        _inner_alpha,
+                        relative_diff_inner,
                     )
                 # Oscillation = local residual landscape not well-approximated
                 # by the affine model Anderson assumes. Drop history and let
@@ -1899,7 +1964,8 @@ def _solve(
 
             if relative_diff_inner < tolerance_inner:
                 logger.debug(
-                    'Inner loop converged after %d iterations.', inner_iter + 1,
+                    'Inner loop converged after %d iterations.',
+                    inner_iter + 1,
                 )
                 converged_density = True
                 break
@@ -1910,14 +1976,13 @@ def _solve(
             # plateaus above 0.1 (so the oscillation-bail below cannot
             # fire) and the loop runs all 100 inner iters per outer.
             # Bailing after no improvement saves the bulk of the wall.
-            if (
-                _inner_stuck_count >= _STUCK_BAIL_LIMIT
-                and _inner_best_density is not None
-            ):
+            if _inner_stuck_count >= _STUCK_BAIL_LIMIT and _inner_best_density is not None:
                 logger.info(
                     'Inner loop: stuck-bail after %d iters w/o improvement '
                     '(best diff=%.2e, target=%.2e). Outer loop will iterate.',
-                    _inner_stuck_count, _inner_best_diff, tolerance_inner,
+                    _inner_stuck_count,
+                    _inner_best_diff,
+                    tolerance_inner,
                 )
                 density[:] = _inner_best_density
                 converged_density = _inner_best_diff < max(100 * tolerance_inner, 0.1)
@@ -1933,7 +1998,9 @@ def _solve(
                 logger.info(
                     'Inner loop: accepting best density after %d oscillations '
                     '(best diff=%.2e, target=%.2e)',
-                    _inner_osc_count, _inner_best_diff, tolerance_inner,
+                    _inner_osc_count,
+                    _inner_best_diff,
+                    tolerance_inner,
                 )
                 density[:] = _inner_best_density
                 converged_density = True
@@ -1949,7 +2016,8 @@ def _solve(
                     logger.info(
                         'Inner loop: max iterations, using best density '
                         '(diff=%.2e, target=%.2e)',
-                        _inner_best_diff, tolerance_inner,
+                        _inner_best_diff,
+                        tolerance_inner,
                     )
                     density[:] = _inner_best_density
                     converged_density = True
@@ -1957,8 +2025,10 @@ def _solve(
                     logger.warning(
                         'Maximum inner iterations (%d) reached. '
                         'Best density diff=%.2e, threshold=%.2e. '
-                        'Density not converged.', max_iterations_inner,
-                        _inner_best_diff, maxiter_threshold,
+                        'Density not converged.',
+                        max_iterations_inner,
+                        _inner_best_diff,
+                        maxiter_threshold,
                     )
 
         # Recompute the temperatures array from the converged pressure profile
@@ -1982,7 +2052,9 @@ def _solve(
             radius_guess *= 0.8
             logger.debug(
                 'Outer iter %d: calculated_mass=%.2e, shrinking radius_guess to %.0f m.',
-                outer_iter, calculated_mass, radius_guess,
+                outer_iter,
+                calculated_mass,
+                radius_guess,
             )
         else:
             scale = (planet_mass / calculated_mass) ** (1.0 / 3.0)
@@ -2001,7 +2073,8 @@ def _solve(
                 _picard_alpha = max(0.2, _picard_alpha * 0.7)
                 logger.debug(
                     'Outer iter %d: mass oscillation detected, reducing Picard alpha to %.2f',
-                    outer_iter, _picard_alpha,
+                    outer_iter,
+                    _picard_alpha,
                 )
             elif relative_diff_outer_mass < abs(_prev_mass_error):
                 # Converging monotonically: relax alpha slightly
@@ -2013,7 +2086,8 @@ def _solve(
         if relative_diff_outer_mass < best_mass_error:
             best_mass_error = relative_diff_outer_mass
             best_profiles = {
-                'radii': radii.copy(), 'density': density.copy(),
+                'radii': radii.copy(),
+                'density': density.copy(),
                 'gravity': np.asarray(gravity).copy() if gravity is not None else None,
                 'pressure': np.asarray(pressure).copy(),
                 'mass_enclosed': np.asarray(mass_enclosed).copy(),
@@ -2069,8 +2143,8 @@ def _solve(
 
         if outer_iter == max_iterations_outer - 1:
             logger.debug(
-                'Maximum outer iterations (%d) reached. '
-                'Total mass may not be fully converged.', max_iterations_outer,
+                'Maximum outer iterations (%d) reached. Total mass may not be fully converged.',
+                max_iterations_outer,
             )
 
     if converged_mass and converged_density and converged_pressure:
@@ -2084,7 +2158,9 @@ def _solve(
         logger.info(
             'Accepting solution: mass converged (%.4f%%), '
             'density_converged=%s, pressure_converged=%s.',
-            best_mass_error * 100, converged_density, converged_pressure,
+            best_mass_error * 100,
+            converged_density,
+            converged_pressure,
         )
         converged = True
     elif best_mass_error < 0.03 and best_profiles is not None:
@@ -2096,7 +2172,9 @@ def _solve(
         logger.warning(
             'Accepting timeout solution: mass error %.4f%% (threshold 2%%), '
             'density_converged=%s, pressure_converged=%s.',
-            best_mass_error * 100, converged_density, converged_pressure,
+            best_mass_error * 100,
+            converged_density,
+            converged_pressure,
         )
         converged = True
         converged_mass = True
@@ -2336,7 +2414,7 @@ def solve_miscible_interior(
             integrated = integrated_masses.get(species, 0.0)
             rel_error = abs(integrated - target) / target
             logger.info(
-                'Miscibility iter %d: %s integrated=%.3e kg, ' 'target=%.3e kg, rel_error=%.4f',
+                'Miscibility iter %d: %s integrated=%.3e kg, target=%.3e kg, rel_error=%.4f',
                 iteration,
                 species,
                 integrated,
@@ -2386,5 +2464,3 @@ def solve_miscible_interior(
     result['miscibility_iterations'] = iteration + 1
 
     return result
-
-

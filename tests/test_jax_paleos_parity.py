@@ -6,6 +6,7 @@ table's valid range (below solidus, within mushy zone, above liquidus).
 Requires max_rel <= 1e-8 — FP-rounding precision, since both implementations
 do the same float64 arithmetic.
 """
+
 from __future__ import annotations
 
 import os
@@ -106,18 +107,29 @@ def test_get_paleos_unified_density_parity_vs_numpy():
 
     max_rel_observed = 0.0
     for mzf in mushy_zone_factors:
-        numpy_vals = np.array([
-            get_paleos_unified_density(q_p[i], q_t[i], mat_dict, mzf, interp_cache)
-            if not np.isnan(q_p[i]) else np.nan
-            for i in range(600)
-        ], dtype=float)
+        numpy_vals = np.array(
+            [
+                get_paleos_unified_density(q_p[i], q_t[i], mat_dict, mzf, interp_cache)
+                if not np.isnan(q_p[i])
+                else np.nan
+                for i in range(600)
+            ],
+            dtype=float,
+        )
 
-        jax_vals = np.array([
-            float(get_paleos_unified_density_jax(
-                q_p[i], q_t[i], mzf, **jax_args,
-            ))
-            for i in range(600)
-        ])
+        jax_vals = np.array(
+            [
+                float(
+                    get_paleos_unified_density_jax(
+                        q_p[i],
+                        q_t[i],
+                        mzf,
+                        **jax_args,
+                    )
+                )
+                for i in range(600)
+            ]
+        )
 
         # Only compare where both are finite (numpy may return None for
         # edge cases; jax returns NaN in the same spots).
@@ -130,14 +142,16 @@ def test_get_paleos_unified_density_parity_vs_numpy():
 
         with np.errstate(divide='ignore', invalid='ignore'):
             rel = np.abs(numpy_vals[both_finite] - jax_vals[both_finite]) / np.maximum(
-                np.abs(numpy_vals[both_finite]), 1e-30,
+                np.abs(numpy_vals[both_finite]),
+                1e-30,
             )
         max_rel = float(rel.max()) if rel.size > 0 else 0.0
         max_rel_observed = max(max_rel_observed, max_rel)
-        print(f"  mzf={mzf}: n_pts={both_finite.sum()}, max_rel={max_rel:.3e}, "
-              f"nan_mismatch={nan_mismatch_count}/600")
+        print(
+            f'  mzf={mzf}: n_pts={both_finite.sum()}, max_rel={max_rel:.3e}, '
+            f'nan_mismatch={nan_mismatch_count}/600'
+        )
 
     assert max_rel_observed <= 1e-8, (
-        f"PALEOS-density parity failed: max_rel={max_rel_observed:.3e} "
-        f"(want <= 1e-8)"
+        f'PALEOS-density parity failed: max_rel={max_rel_observed:.3e} (want <= 1e-8)'
     )

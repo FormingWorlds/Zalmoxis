@@ -125,7 +125,10 @@ def _n_points_per_decade(lo: float, hi: float, pts_per_decade: int) -> int:
 
 
 def make_grid_at_resolution(
-    p_lo: float, p_hi: float, t_lo: float, t_hi: float,
+    p_lo: float,
+    p_hi: float,
+    t_lo: float,
+    t_hi: float,
     pts_per_decade: int = DEFAULT_PTS_PER_DECADE,
 ) -> GridSpec:
     """Build a ``GridSpec`` with a uniform log-log resolution.
@@ -141,8 +144,12 @@ def make_grid_at_resolution(
         ``DEFAULT_PTS_PER_DECADE`` = 600 (4x the shipped Zenodo resolution).
     """
     return GridSpec(
-        p_lo=p_lo, p_hi=p_hi, n_p=_n_points_per_decade(p_lo, p_hi, pts_per_decade),
-        t_lo=t_lo, t_hi=t_hi, n_t=_n_points_per_decade(t_lo, t_hi, pts_per_decade),
+        p_lo=p_lo,
+        p_hi=p_hi,
+        n_p=_n_points_per_decade(p_lo, p_hi, pts_per_decade),
+        t_lo=t_lo,
+        t_hi=t_hi,
+        n_t=_n_points_per_decade(t_lo, t_hi, pts_per_decade),
     )
 
 
@@ -198,8 +205,16 @@ def paleos_installed_sha() -> str:
     return f'version-{getattr(_paleos, "__version__", "unknown")}'
 
 
-def _write_header(f, material: str, kind: str, grid: GridSpec, paleos_sha: str,
-                  n_valid: int, n_skipped: int, extra_lines=None):
+def _write_header(
+    f,
+    material: str,
+    kind: str,
+    grid: GridSpec,
+    paleos_sha: str,
+    n_valid: int,
+    n_skipped: int,
+    extra_lines=None,
+):
     """Emit the commented header block. Matches shipped-table conventions."""
     timestamp = _dt.datetime.now(_dt.timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
     f.write('# ' + '=' * 78 + '\n')
@@ -210,16 +225,18 @@ def _write_header(f, material: str, kind: str, grid: GridSpec, paleos_sha: str,
     f.write(f'# PALEOS_SHA: {paleos_sha}\n')
     f.write(f'# grid_hash: {grid.hash_short()}\n')
     f.write(f'# generated: {timestamp}\n#\n')
-    f.write(f'# P grid: {grid.n_p} pts log-uniform in '
-            f'[{grid.p_lo:.8e}, {grid.p_hi:.8e}] Pa\n')
-    f.write(f'# T grid: {grid.n_t} pts log-uniform in '
-            f'[{grid.t_lo:.8e}, {grid.t_hi:.8e}] K\n')
+    f.write(f'# P grid: {grid.n_p} pts log-uniform in [{grid.p_lo:.8e}, {grid.p_hi:.8e}] Pa\n')
+    f.write(f'# T grid: {grid.n_t} pts log-uniform in [{grid.t_lo:.8e}, {grid.t_hi:.8e}] K\n')
     f.write(f'# Grid size: {grid.n_p} x {grid.n_t} = {grid.n_p * grid.n_t} points\n')
     f.write(f'#            ({n_valid} valid / {n_skipped} skipped due to non-convergence)\n#\n')
-    f.write('# Columns: P[Pa] T[K] rho[kg/m^3] u[J/kg] s[J/(kg K)] '
-            'cp[J/(kg K)] cv[J/(kg K)] alpha[1/K] nabla_ad[-] phase\n')
-    f.write('# Interpolation: bilinear in (log10 P, log10 T); '
-            'NaNs mark non-converged cells, consumer uses NN fallback.\n')
+    f.write(
+        '# Columns: P[Pa] T[K] rho[kg/m^3] u[J/kg] s[J/(kg K)] '
+        'cp[J/(kg K)] cv[J/(kg K)] alpha[1/K] nabla_ad[-] phase\n'
+    )
+    f.write(
+        '# Interpolation: bilinear in (log10 P, log10 T); '
+        'NaNs mark non-converged cells, consumer uses NN fallback.\n'
+    )
     if extra_lines:
         for line in extra_lines:
             f.write(f'# {line}\n')
@@ -253,14 +270,17 @@ def _worker_init(material: str, h2o_table_path: str | None = None):
     """
     if material == 'iron':
         from paleos.iron_eos import IronEoS
+
         _WORKER_EOS['unified'] = IronEoS()
     elif material == 'mgsio3':
         from paleos.mgsio3_eos import MgSiO3EoS, Wolf18
+
         _WORKER_EOS['unified'] = MgSiO3EoS()
         _WORKER_EOS['wolf18'] = Wolf18()
         _WORKER_EOS['phase_map'] = _WORKER_EOS['unified']._phase_eos_map
     elif material == 'h2o':
         from paleos.water_eos import WaterEoS
+
         _WORKER_EOS['unified'] = (
             WaterEoS() if h2o_table_path is None else WaterEoS(table_path=h2o_table_path)
         )
@@ -348,12 +368,12 @@ def _evaluate_eos(eos, P: float, T: float):
     bit us in the first smoke test.
     """
     try:
-        rho      = float(eos.density(P, T))
-        u        = float(eos.specific_internal_energy(P, T))
-        s        = float(eos.specific_entropy(P, T))
-        cp       = float(eos.isobaric_heat_capacity(P, T))
-        cv       = float(eos.isochoric_heat_capacity(P, T))
-        alpha    = float(eos.thermal_expansion(P, T))
+        rho = float(eos.density(P, T))
+        u = float(eos.specific_internal_energy(P, T))
+        s = float(eos.specific_entropy(P, T))
+        cp = float(eos.isobaric_heat_capacity(P, T))
+        cv = float(eos.isochoric_heat_capacity(P, T))
+        alpha = float(eos.thermal_expansion(P, T))
         nabla_ad = float(eos.adiabatic_gradient(P, T))
     except (RuntimeError, ValueError):
         return _NAN_PROPS
@@ -416,9 +436,7 @@ def generate_paleos_api_unified_table(
     if grid.p_lo <= 0:
         raise ValueError('GridSpec.p_lo must be > 0 (log spacing)')
     if material not in _HUMAN_MATERIAL:
-        raise ValueError(
-            f"material must be one of 'iron', 'mgsio3', 'h2o'; got {material!r}"
-        )
+        raise ValueError(f"material must be one of 'iron', 'mgsio3', 'h2o'; got {material!r}")
 
     human_material = _HUMAN_MATERIAL[material]
     n_workers = _resolve_n_workers(n_workers)
@@ -461,7 +479,11 @@ def generate_paleos_api_unified_table(
             if log_every and (n_done % log_every == 0):
                 logger.info(
                     'paleos_api %s unified: %d / %d P rows done (valid=%d skipped=%d)',
-                    human_material, n_done, grid.n_p, n_valid, n_skipped,
+                    human_material,
+                    n_done,
+                    grid.n_p,
+                    n_valid,
+                    n_skipped,
                 )
     finally:
         if n_workers > 1:
@@ -469,20 +491,35 @@ def generate_paleos_api_unified_table(
             pool.join()
 
     with open(tmp_path, 'w') as f:
-        _write_header(f, human_material, 'unified (stable-phase)', grid, sha,
-                      n_valid=n_valid, n_skipped=n_skipped)
+        _write_header(
+            f,
+            human_material,
+            'unified (stable-phase)',
+            grid,
+            sha,
+            n_valid=n_valid,
+            n_skipped=n_skipped,
+        )
         for i in range(grid.n_p):
             f.write(rows_by_i[i])
     _os.replace(tmp_path, out_path)
 
-    logger.info('paleos_api %s unified: wrote %s (valid=%d skipped=%d sha=%s n_workers=%d)',
-                human_material, out_path, n_valid, n_skipped, sha[:10], n_workers)
+    logger.info(
+        'paleos_api %s unified: wrote %s (valid=%d skipped=%d sha=%s n_workers=%d)',
+        human_material,
+        out_path,
+        n_valid,
+        n_skipped,
+        sha[:10],
+        n_workers,
+    )
     return {'n_valid': n_valid, 'n_skipped': n_skipped, 'sha': sha}
 
 
 # ---------------------------------------------------------------------------
 # 2-phase MgSiO3 generator: matches the shipped paleos_mgsio3_tables_pt_proteus_*
 # ---------------------------------------------------------------------------
+
 
 def _get_mgsio3_solid_phase(P: float, T: float) -> str:
     """Pick the solid polymorph at (P, T), ignoring the melting curve.
@@ -611,7 +648,12 @@ def generate_paleos_api_2phase_mgsio3_tables(
                 logger.info(
                     'paleos_api MgSiO3 2-phase: %d / %d P rows done '
                     '(solid valid=%d skipped=%d | liquid valid=%d skipped=%d)',
-                    n_done, grid.n_p, n_valid_s, n_skip_s, n_valid_l, n_skip_l,
+                    n_done,
+                    grid.n_p,
+                    n_valid_s,
+                    n_skip_s,
+                    n_valid_l,
+                    n_skip_l,
                 )
     finally:
         if n_workers > 1:
@@ -620,8 +662,13 @@ def generate_paleos_api_2phase_mgsio3_tables(
 
     with open(tmp_solid, 'w') as f:
         _write_header(
-            f, 'MgSiO3', 'solid (metastable extension above liquidus)',
-            grid, sha, n_valid=n_valid_s, n_skipped=n_skip_s,
+            f,
+            'MgSiO3',
+            'solid (metastable extension above liquidus)',
+            grid,
+            sha,
+            n_valid=n_valid_s,
+            n_skipped=n_skip_s,
             extra_lines=[
                 'Solid polymorph picked by _get_mgsio3_solid_phase; melting-curve test suppressed.',
                 'Phase column is the polymorph label even if (P, T) is above the liquidus.',
@@ -633,8 +680,13 @@ def generate_paleos_api_2phase_mgsio3_tables(
 
     with open(tmp_liquid, 'w') as f:
         _write_header(
-            f, 'MgSiO3', 'liquid (Wolf18, metastable extension below solidus)',
-            grid, sha, n_valid=n_valid_l, n_skipped=n_skip_l,
+            f,
+            'MgSiO3',
+            'liquid (Wolf18, metastable extension below solidus)',
+            grid,
+            sha,
+            n_valid=n_valid_l,
+            n_skipped=n_skip_l,
             extra_lines=[
                 'Wolf18 RTpress evaluated everywhere; phase column is always "liquid".',
             ],
@@ -646,11 +698,17 @@ def generate_paleos_api_2phase_mgsio3_tables(
     logger.info(
         'paleos_api MgSiO3 2-phase: wrote %s (valid=%d/%d) and %s (valid=%d/%d) '
         'sha=%s n_workers=%d',
-        out_solid, n_valid_s, grid.n_p * grid.n_t,
-        out_liquid, n_valid_l, grid.n_p * grid.n_t, sha[:10], n_workers,
+        out_solid,
+        n_valid_s,
+        grid.n_p * grid.n_t,
+        out_liquid,
+        n_valid_l,
+        grid.n_p * grid.n_t,
+        sha[:10],
+        n_workers,
     )
     return {
-        'solid':  {'n_valid': n_valid_s, 'n_skipped': n_skip_s, 'path': str(out_solid)},
+        'solid': {'n_valid': n_valid_s, 'n_skipped': n_skip_s, 'path': str(out_solid)},
         'liquid': {'n_valid': n_valid_l, 'n_skipped': n_skip_l, 'path': str(out_liquid)},
         'sha': sha,
     }

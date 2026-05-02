@@ -15,6 +15,7 @@ Covers:
     own ``_temperature_func`` for density updates, so rejecting the
     pair would force callers to monkey-patch).
 """
+
 from __future__ import annotations
 
 import os
@@ -86,7 +87,10 @@ def test_jax_anderson_converges_with_temperature_arrays():
 
     r_arr, T_arr, _, _ = _chili_like_profile()
     result = main(
-        cp, mat, mf, _INPUT_DIR,
+        cp,
+        mat,
+        mf,
+        _INPUT_DIR,
         temperature_arrays=(r_arr, T_arr),
     )
 
@@ -178,7 +182,10 @@ def test_arrays_override_function_when_both_passed():
         return 99.0
 
     result = main(
-        cp, mat, mf, _INPUT_DIR,
+        cp,
+        mat,
+        mf,
+        _INPUT_DIR,
         temperature_function=tf,
         temperature_arrays=(r_arr, T_arr),
     )

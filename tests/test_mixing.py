@@ -1136,9 +1136,7 @@ class TestNablaAdForComponent:
         mat = {'format': 'paleos_unified'}
         md = {'PALEOS:iron': mat}
 
-        with patch(
-            'zalmoxis.eos._get_paleos_unified_nabla_ad', return_value=0.25
-        ) as mock_fn:
+        with patch('zalmoxis.eos._get_paleos_unified_nabla_ad', return_value=0.25) as mock_fn:
             result = _nabla_ad_for_component('PALEOS:iron', 1e10, 3000, md, {}, None, None)
 
         assert result == pytest.approx(0.25)

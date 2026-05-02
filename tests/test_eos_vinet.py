@@ -82,8 +82,7 @@ class TestVinetDensity:
         for key in ('iron', 'MgSiO3'):
             densities = [get_vinet_density(float(P), key) for P in pressures]
             assert all(d is not None for d in densities), f'{key}: got None'
-            assert all(densities[i] <= densities[i + 1]
-                       for i in range(len(densities) - 1)), (
+            assert all(densities[i] <= densities[i + 1] for i in range(len(densities) - 1)), (
                 f'{key}: density not monotonically increasing'
             )
 
@@ -175,8 +174,7 @@ class TestVinetBulkModulus:
             drho = rho_at_dP / mat['thermal_correction'] - rho_0
             K_numerical = rho_0 * dP / drho if drho > 0 else float('inf')
             assert K_numerical == pytest.approx(K_0, rel=0.01), (
-                f'{key}: K_numerical={K_numerical/1e9:.1f} GPa, '
-                f'K_0={K_0/1e9:.1f} GPa'
+                f'{key}: K_numerical={K_numerical / 1e9:.1f} GPa, K_0={K_0 / 1e9:.1f} GPa'
             )
 
     def test_Kprime_recovery(self):
@@ -201,8 +199,8 @@ class TestVinetBulkModulus:
 
             K_prime_numerical = (K2 - K1) / (P2 - P1)
             assert K_prime_numerical == pytest.approx(K_prime_expected, rel=0.05), (
-                f'{key}: K\'_numerical={K_prime_numerical:.2f}, '
-                f'K\'_expected={K_prime_expected:.2f}'
+                f"{key}: K'_numerical={K_prime_numerical:.2f}, "
+                f"K'_expected={K_prime_expected:.2f}"
             )
 
 
@@ -216,7 +214,7 @@ class TestVinetAllMaterials:
             rho_pv = get_vinet_density(P, 'MgSiO3')
             rho_ppv = get_vinet_density(P, 'MgSiO3_ppv')
             assert rho_ppv > rho_pv, (
-                f'At {P/1e9:.0f} GPa: ppv={rho_ppv:.0f} should > pv={rho_pv:.0f}'
+                f'At {P / 1e9:.0f} GPa: ppv={rho_ppv:.0f} should > pv={rho_pv:.0f}'
             )
 
     def test_iron_liquid_less_dense_than_solid(self):
@@ -229,8 +227,7 @@ class TestVinetAllMaterials:
             # But uncorrected solid (rho_s/0.875) should be denser than liquid.
             rho_s_raw = rho_s / 0.875
             assert rho_s_raw > rho_l, (
-                f'At {P/1e9:.0f} GPa: solid_raw={rho_s_raw:.0f} '
-                f'should > liquid={rho_l:.0f}'
+                f'At {P / 1e9:.0f} GPa: solid_raw={rho_s_raw:.0f} should > liquid={rho_l:.0f}'
             )
 
     def test_peridotite_monotonic(self):
@@ -238,8 +235,7 @@ class TestVinetAllMaterials:
         pressures = np.logspace(8, 12, 20)
         densities = [get_vinet_density(float(P), 'peridotite') for P in pressures]
         assert all(d is not None for d in densities)
-        assert all(densities[i] <= densities[i + 1]
-                   for i in range(len(densities) - 1))
+        assert all(densities[i] <= densities[i + 1] for i in range(len(densities) - 1))
 
     def test_continuity_at_zero(self):
         """Density at very small P should be close to rho_0 * thermal."""
@@ -275,7 +271,7 @@ class TestVinetVsSeager:
             rho_s = get_analytic_density(float(P), 'iron')
             rel_diff = abs(rho_v - rho_s) / rho_s
             assert rel_diff < 0.20, (
-                f'At P={P/1e9:.0f} GPa: Vinet={rho_v:.0f}, '
+                f'At P={P / 1e9:.0f} GPa: Vinet={rho_v:.0f}, '
                 f'Seager={rho_s:.0f}, diff={rel_diff:.1%}'
             )
 
@@ -289,6 +285,6 @@ class TestVinetVsSeager:
             rho_s = get_analytic_density(float(P), 'MgSiO3')
             rel_diff = abs(rho_v - rho_s) / rho_s
             assert rel_diff < 0.15, (
-                f'At P={P/1e9:.0f} GPa: Vinet={rho_v:.0f}, '
+                f'At P={P / 1e9:.0f} GPa: Vinet={rho_v:.0f}, '
                 f'Seager={rho_s:.0f}, diff={rel_diff:.1%}'
             )

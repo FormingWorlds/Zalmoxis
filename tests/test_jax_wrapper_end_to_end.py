@@ -4,6 +4,7 @@ Uses the exact same call signature as zalmoxis.structure_model.solve_structure,
 so the wrapper is a drop-in replacement. Compares the full output arrays
 (mass, gravity, pressure) on the radii grid.
 """
+
 from __future__ import annotations
 
 import os
@@ -76,12 +77,14 @@ def test_solve_structure_via_jax_end_to_end_parity():
     M_drift = float(rel(mass_np[valid], mass_jx[valid]).max())
     g_drift = float(rel(g_np[valid], g_jx[valid]).max())
     P_drift = float(rel(P_np[valid], P_jx[valid]).max())
-    print(f"end-to-end profile max drifts: M={M_drift:.3e} g={g_drift:.3e} P={P_drift:.3e}")
-    print(f"outer: M rel={rel(mass_np[-1], mass_jx[-1]):.3e}  "
-          f"g rel={rel(g_np[-1], g_jx[-1]):.3e}  "
-          f"P rel={rel(P_np[-1], P_jx[-1]):.3e}")
+    print(f'end-to-end profile max drifts: M={M_drift:.3e} g={g_drift:.3e} P={P_drift:.3e}')
+    print(
+        f'outer: M rel={rel(mass_np[-1], mass_jx[-1]):.3e}  '
+        f'g rel={rel(g_np[-1], g_jx[-1]):.3e}  '
+        f'P rel={rel(P_np[-1], P_jx[-1]):.3e}'
+    )
 
     # Solver-tolerance bar
-    assert M_drift <= 1e-3, f"mass drift {M_drift:.3e} > 1e-3"
-    assert g_drift <= 1e-3, f"gravity drift {g_drift:.3e} > 1e-3"
-    assert P_drift <= 1e-2, f"pressure drift {P_drift:.3e} > 1e-2"
+    assert M_drift <= 1e-3, f'mass drift {M_drift:.3e} > 1e-3'
+    assert g_drift <= 1e-3, f'gravity drift {g_drift:.3e} > 1e-3'
+    assert P_drift <= 1e-2, f'pressure drift {P_drift:.3e} > 1e-2'

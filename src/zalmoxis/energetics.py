@@ -332,7 +332,7 @@ def initial_thermal_state(
     if nabla_ad_func is None:
         warnings.warn(
             'No nabla_ad_func provided; using Gruneisen adiabat fallback '
-            '(gamma=1.3, K0=250 GPa, K\'=4). Accurate at ~1 M_Earth; '
+            "(gamma=1.3, K0=250 GPa, K'=4). Accurate at ~1 M_Earth; "
             'use PALEOS nabla_ad for super-Earths.',
             stacklevel=2,
         )
@@ -362,7 +362,9 @@ def initial_thermal_state(
         # First-pass T_CMB estimate using constant C_p
         C_avg_const = core_mass_fraction * C_iron + (1.0 - core_mass_fraction) * C_silicate
         _dT_G_est = f_accretion * U_u / (total_mass * C_avg_const)
-        _dT_D_est = f_differentiation * differentiation_energy(U_d, U_u) / (total_mass * C_avg_const)
+        _dT_D_est = (
+            f_differentiation * differentiation_energy(U_d, U_u) / (total_mass * C_avg_const)
+        )
         # Include rough adiabatic correction for first-pass estimate
         P_mantle_est = pressure[cmb_index:]
         _dT_ad_est = _integrate_adiabat(
@@ -408,7 +410,9 @@ def initial_thermal_state(
                 M_core_sum += dm_i
             else:
                 # Mantle shell
-                cp_i = cp_silicate_func(P_i, T_i) if cp_silicate_func is not None else C_silicate
+                cp_i = (
+                    cp_silicate_func(P_i, T_i) if cp_silicate_func is not None else C_silicate
+                )
                 C_sil_sum += cp_i * dm_i
                 M_mantle_sum += dm_i
 
@@ -419,7 +423,10 @@ def initial_thermal_state(
         logger.info(
             'Mass-weighted C_p: C_Fe_avg=%.0f, C_sil_avg=%.0f, C_avg=%.0f J/kg/K '
             '(T_cmb_est=%.0f K for T profile)',
-            C_iron_avg, C_sil_avg, C_avg, T_cmb_est,
+            C_iron_avg,
+            C_sil_avg,
+            C_avg,
+            T_cmb_est,
         )
     else:
         # Constant C_p (White+Li 2025 Dulong-Petit defaults)

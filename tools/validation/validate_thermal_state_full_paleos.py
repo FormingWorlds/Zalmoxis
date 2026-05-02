@@ -37,27 +37,41 @@ CMF = 0.32
 F_D = 0.50
 T_EQ = 255.0
 
-plt.rcParams.update({
-    'font.size': 14, 'axes.labelsize': 15, 'axes.titlesize': 16,
-    'legend.fontsize': 11, 'xtick.labelsize': 12, 'ytick.labelsize': 12,
-    'lines.linewidth': 2.5, 'lines.markersize': 8,
-    'savefig.bbox': 'tight', 'savefig.dpi': 200,
-})
+plt.rcParams.update(
+    {
+        'font.size': 14,
+        'axes.labelsize': 15,
+        'axes.titlesize': 16,
+        'legend.fontsize': 11,
+        'xtick.labelsize': 12,
+        'ytick.labelsize': 12,
+        'lines.linewidth': 2.5,
+        'lines.markersize': 8,
+        'savefig.bbox': 'tight',
+        'savefig.dpi': 200,
+    }
+)
 
 
 # ── PALEOS helpers ───────────────────────────────────────────────────
+
 
 def build_paleos_cp_func(material='MgSiO3'):
     """Build a C_p(P, T) interpolator from a PALEOS unified table."""
     from scipy.interpolate import LinearNDInterpolator
 
     if material == 'MgSiO3':
-        eos_file = os.path.join(get_zalmoxis_root(), 'data',
-            'EOS_PALEOS_MgSiO3_unified', 'paleos_mgsio3_eos_table_pt.dat')
+        eos_file = os.path.join(
+            get_zalmoxis_root(),
+            'data',
+            'EOS_PALEOS_MgSiO3_unified',
+            'paleos_mgsio3_eos_table_pt.dat',
+        )
         fallback = 1200.0
     elif material == 'iron':
-        eos_file = os.path.join(get_zalmoxis_root(), 'data',
-            'EOS_PALEOS_iron', 'paleos_iron_eos_table_pt.dat')
+        eos_file = os.path.join(
+            get_zalmoxis_root(), 'data', 'EOS_PALEOS_iron', 'paleos_iron_eos_table_pt.dat'
+        )
         fallback = 840.0
     else:
         return None
@@ -89,8 +103,13 @@ def build_paleos_cp_func(material='MgSiO3'):
 def build_paleos_nabla_ad():
     """Build nabla_ad(P, T) from PALEOS MgSiO3 unified table."""
     from zalmoxis.eos.interpolation import load_paleos_unified_table
-    eos_file = os.path.join(get_zalmoxis_root(), 'data',
-        'EOS_PALEOS_MgSiO3_unified', 'paleos_mgsio3_eos_table_pt.dat')
+
+    eos_file = os.path.join(
+        get_zalmoxis_root(),
+        'data',
+        'EOS_PALEOS_MgSiO3_unified',
+        'paleos_mgsio3_eos_table_pt.dat',
+    )
     cache = load_paleos_unified_table(eos_file)
 
     def func(P_Pa, T_K):
@@ -105,17 +124,23 @@ def build_paleos_nabla_ad():
         except Exception:
             pass
         return 0.3
+
     return func
 
 
 def get_paleos_cp_at_conditions(P_Pa, T_K, material='MgSiO3'):
     """Query PALEOS C_p at specific (P, T) conditions."""
     if material == 'MgSiO3':
-        path = os.path.join(get_zalmoxis_root(), 'data',
-            'EOS_PALEOS_MgSiO3_unified', 'paleos_mgsio3_eos_table_pt.dat')
+        path = os.path.join(
+            get_zalmoxis_root(),
+            'data',
+            'EOS_PALEOS_MgSiO3_unified',
+            'paleos_mgsio3_eos_table_pt.dat',
+        )
     elif material == 'iron':
-        path = os.path.join(get_zalmoxis_root(), 'data',
-            'EOS_PALEOS_iron', 'paleos_iron_eos_table_pt.dat')
+        path = os.path.join(
+            get_zalmoxis_root(), 'data', 'EOS_PALEOS_iron', 'paleos_iron_eos_table_pt.dat'
+        )
     else:
         return None
 
@@ -131,11 +156,12 @@ def get_paleos_cp_at_conditions(P_Pa, T_K, material='MgSiO3'):
     lp = np.log10(P[valid])
     lt = np.log10(T[valid])
     cp_v = cp[valid]
-    dist = (lp - math.log10(max(P_Pa, 1.0)))**2 + (lt - math.log10(max(T_K, 1.0)))**2
+    dist = (lp - math.log10(max(P_Pa, 1.0))) ** 2 + (lt - math.log10(max(T_K, 1.0))) ** 2
     return float(cp_v[np.argmin(dist)])
 
 
 # ── Solvers ──────────────────────────────────────────────────────────
+
 
 def run_seager_constant(mass_earth, f_a=0.04):
     """Tier 1: Seager structure + constant properties."""
@@ -143,8 +169,9 @@ def run_seager_constant(mass_earth, f_a=0.04):
     res = _run(config)
     if res is None:
         return None
-    th = initial_thermal_state(res, CMF, T_radiative_eq=T_EQ,
-                               f_accretion=f_a, f_differentiation=F_D)
+    th = initial_thermal_state(
+        res, CMF, T_radiative_eq=T_EQ, f_accretion=f_a, f_differentiation=F_D
+    )
     return {'res': res, 'th': th, 'label': 'Seager + const'}
 
 
@@ -154,25 +181,40 @@ def run_seager_paleos_nabla(mass_earth, nabla_func, f_a=0.04):
     res = _run(config)
     if res is None:
         return None
-    th = initial_thermal_state(res, CMF, T_radiative_eq=T_EQ,
-                               f_accretion=f_a, f_differentiation=F_D,
-                               nabla_ad_func=nabla_func)
+    th = initial_thermal_state(
+        res,
+        CMF,
+        T_radiative_eq=T_EQ,
+        f_accretion=f_a,
+        f_differentiation=F_D,
+        nabla_ad_func=nabla_func,
+    )
     return {'res': res, 'th': th, 'label': 'Seager + PALEOS ∇ad'}
 
 
 def run_full_paleos(mass_earth, nabla_func, cp_fe_func, cp_sil_func, f_a=0.04):
     """Tier 3: PALEOS structure + PALEOS nabla_ad + mass-weighted PALEOS C_p."""
-    config = _base_config(mass_earth, {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
-                          temp_mode='linear', T_surf=3000, T_center=6000)
+    config = _base_config(
+        mass_earth,
+        {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
+        temp_mode='linear',
+        T_surf=3000,
+        T_center=6000,
+    )
     res = _run(config)
     if res is None:
         return None
 
-    th = initial_thermal_state(res, CMF, T_radiative_eq=T_EQ,
-                               f_accretion=f_a, f_differentiation=F_D,
-                               nabla_ad_func=nabla_func,
-                               cp_iron_func=cp_fe_func,
-                               cp_silicate_func=cp_sil_func)
+    th = initial_thermal_state(
+        res,
+        CMF,
+        T_radiative_eq=T_EQ,
+        f_accretion=f_a,
+        f_differentiation=F_D,
+        nabla_ad_func=nabla_func,
+        cp_iron_func=cp_fe_func,
+        cp_silicate_func=cp_sil_func,
+    )
     return {'res': res, 'th': th, 'label': 'PALEOS (full)'}
 
 
@@ -200,6 +242,7 @@ def _run(config):
 
 # ── Main ─────────────────────────────────────────────────────────────
 
+
 def main():
     print('Building PALEOS nabla_ad and C_p interpolators...')
     nabla_func = build_paleos_nabla_ad()
@@ -221,15 +264,21 @@ def main():
 
         if r1:
             tier1.append({'mass': m, **r1['th']})
-            print(f'    Tier 1 (Seager+const):     T_CMB={r1["th"]["T_cmb"]:.0f}, T_surf={r1["th"]["T_surface"]:.0f}')
+            print(
+                f'    Tier 1 (Seager+const):     T_CMB={r1["th"]["T_cmb"]:.0f}, T_surf={r1["th"]["T_surface"]:.0f}'
+            )
         if r2:
             tier2.append({'mass': m, **r2['th']})
-            print(f'    Tier 2 (Seager+PALEOS∇):   T_CMB={r2["th"]["T_cmb"]:.0f}, T_surf={r2["th"]["T_surface"]:.0f}')
+            print(
+                f'    Tier 2 (Seager+PALEOS∇):   T_CMB={r2["th"]["T_cmb"]:.0f}, T_surf={r2["th"]["T_surface"]:.0f}'
+            )
         if r3:
             tier3.append({'mass': m, **r3['th']})
             C_info = f'C_Fe_avg={r3["th"].get("C_iron_avg", 0):.0f}, C_sil_avg={r3["th"].get("C_silicate_avg", 0):.0f}'
             C_info = f'C_Fe_avg={r3["th"].get("C_iron_avg", 0):.0f}, C_sil_avg={r3["th"].get("C_silicate_avg", 0):.0f}'
-            print(f'    Tier 3 (full PALEOS):      T_CMB={r3["th"]["T_cmb"]:.0f}, T_surf={r3["th"]["T_surface"]:.0f} ({C_info})')
+            print(
+                f'    Tier 3 (full PALEOS):      T_CMB={r3["th"]["T_cmb"]:.0f}, T_surf={r3["th"]["T_surface"]:.0f} ({C_info})'
+            )
 
     # ── Plot: Three-tier comparison ──────────────────────────────────
     fig, axes = plt.subplots(1, 2, figsize=(15, 6))
@@ -240,15 +289,24 @@ def main():
         (tier3, '#228833', 's', '-', r'PALEOS structure + $\nabla_\mathrm{ad}$ + $C_p$'),
     ]:
         masses = [d['mass'] for d in data]
-        axes[0].plot(masses, [d['T_cmb'] for d in data], f'{marker}{ls}', color=color, label=label)
-        axes[1].plot(masses, [d['T_surface'] for d in data], f'{marker}{ls}', color=color, label=label)
+        axes[0].plot(
+            masses, [d['T_cmb'] for d in data], f'{marker}{ls}', color=color, label=label
+        )
+        axes[1].plot(
+            masses, [d['T_surface'] for d in data], f'{marker}{ls}', color=color, label=label
+        )
 
     # Iron melting reference
     from zalmoxis.melting_curves import iron_melting_anzellini13
+
     if tier3:
-        axes[0].plot([d['mass'] for d in tier1],
-                     [iron_melting_anzellini13(d.get('P_cmb', 135e9)) for d in tier1],
-                     'k--', linewidth=1.5, label='Fe melting (Anzellini)')
+        axes[0].plot(
+            [d['mass'] for d in tier1],
+            [iron_melting_anzellini13(d.get('P_cmb', 135e9)) for d in tier1],
+            'k--',
+            linewidth=1.5,
+            label='Fe melting (Anzellini)',
+        )
 
     axes[0].set_xlabel(r'Planet mass [$M_\oplus$]')
     axes[0].set_ylabel(r'$T_\mathrm{CMB}$ [K]')
@@ -288,10 +346,20 @@ def main():
     for i, f_a in enumerate(F_A_VALUES):
         d = fa_results[f_a]
         masses = [x['mass'] for x in d]
-        axes[0].plot(masses, [x['T_cmb'] for x in d], f'{markers[i]}-',
-                     color=colors[i], label=f'$f_a = {f_a}$')
-        axes[1].plot(masses, [x['T_surface'] for x in d], f'{markers[i]}-',
-                     color=colors[i], label=f'$f_a = {f_a}$')
+        axes[0].plot(
+            masses,
+            [x['T_cmb'] for x in d],
+            f'{markers[i]}-',
+            color=colors[i],
+            label=f'$f_a = {f_a}$',
+        )
+        axes[1].plot(
+            masses,
+            [x['T_surface'] for x in d],
+            f'{markers[i]}-',
+            color=colors[i],
+            label=f'$f_a = {f_a}$',
+        )
 
     axes[0].set_xlabel(r'Planet mass [$M_\oplus$]')
     axes[0].set_ylabel(r'$T_\mathrm{CMB}$ [K]')
@@ -306,7 +374,8 @@ def main():
 
     fig.suptitle(
         r'$f_a$ sensitivity: full PALEOS (structure + $\nabla_\mathrm{ad}$ + $C_p$), '
-        r'$f_c=0.32$, $f_d=0.50$')
+        r'$f_c=0.32$, $f_d=0.50$'
+    )
     fig.tight_layout()
     fname = os.path.join(OUTPUT_DIR, 'thermal_state_fa_full_paleos.pdf')
     fig.savefig(fname)
@@ -316,16 +385,20 @@ def main():
 
     # ── Summary table ────────────────────────────────────────────────
     print('\n' + '=' * 110)
-    print(f'{"M/ME":>5}  {"T1_CMB":>7}  {"T1_surf":>8}  {"T2_CMB":>7}  {"T2_surf":>8}  '
-          f'{"T3_CMB":>7}  {"T3_surf":>8}  {"C_fe_avg":>8}  {"C_sil_avg":>9}  {"core3":>7}')
+    print(
+        f'{"M/ME":>5}  {"T1_CMB":>7}  {"T1_surf":>8}  {"T2_CMB":>7}  {"T2_surf":>8}  '
+        f'{"T3_CMB":>7}  {"T3_surf":>8}  {"C_fe_avg":>8}  {"C_sil_avg":>9}  {"core3":>7}'
+    )
     print('-' * 110)
     for i in range(min(len(tier1), len(tier2), len(tier3))):
         t1, t2, t3 = tier1[i], tier2[i], tier3[i]
-        print(f'{t1["mass"]:5.1f}  {t1["T_cmb"]:7.0f}  {t1["T_surface"]:8.0f}  '
-              f'{t2["T_cmb"]:7.0f}  {t2["T_surface"]:8.0f}  '
-              f'{t3["T_cmb"]:7.0f}  {t3["T_surface"]:8.0f}  '
-              f'{t3.get("C_iron_avg", 0):8.0f}  {t3.get("C_silicate_avg", 0):9.0f}  '
-              f'{t3["core_state"]:>7}')
+        print(
+            f'{t1["mass"]:5.1f}  {t1["T_cmb"]:7.0f}  {t1["T_surface"]:8.0f}  '
+            f'{t2["T_cmb"]:7.0f}  {t2["T_surface"]:8.0f}  '
+            f'{t3["T_cmb"]:7.0f}  {t3["T_surface"]:8.0f}  '
+            f'{t3.get("C_iron_avg", 0):8.0f}  {t3.get("C_silicate_avg", 0):9.0f}  '
+            f'{t3["core_state"]:>7}'
+        )
     print('=' * 110)
 
     # ── White+Li 2025 Fig. 3 reproduction ────────────────────────────
@@ -355,9 +428,15 @@ def main():
         config = _base_config(m, {'core': 'Analytic:iron', 'mantle': 'Analytic:MgSiO3'})
         res = _run(config)
         if res:
-            th_bj = initial_thermal_state(res, CMF, T_radiative_eq=T_EQ,
-                                          f_accretion=BJ_F_A, f_differentiation=BJ_F_D,
-                                          C_iron=BJ_C_FE, C_silicate=BJ_C_SIL)
+            th_bj = initial_thermal_state(
+                res,
+                CMF,
+                T_radiative_eq=T_EQ,
+                f_accretion=BJ_F_A,
+                f_differentiation=BJ_F_D,
+                C_iron=BJ_C_FE,
+                C_silicate=BJ_C_SIL,
+            )
             bj_data.append({'mass': m, **th_bj})
 
         # Full PALEOS with White+Li f_a/f_d
@@ -378,19 +457,47 @@ def main():
 
     # Panel (a): T_CMB comparison
     ax = axes[0]
-    ax.plot(masses_wl, [d['T_cmb'] for d in wl_data], 'o-', color='#4477AA',
-            label=f'White+Li params ($f_a$={WL_F_A}, const $C_p$)')
-    ax.plot(masses_bj, [d['T_cmb'] for d in bj_data], '^-', color='#EE6677',
-            label=f'Boujibar params ($f_a$={BJ_F_A}, const $C_p$)')
+    ax.plot(
+        masses_wl,
+        [d['T_cmb'] for d in wl_data],
+        'o-',
+        color='#4477AA',
+        label=f'White+Li params ($f_a$={WL_F_A}, const $C_p$)',
+    )
+    ax.plot(
+        masses_bj,
+        [d['T_cmb'] for d in bj_data],
+        '^-',
+        color='#EE6677',
+        label=f'Boujibar params ($f_a$={BJ_F_A}, const $C_p$)',
+    )
     m_ref = np.linspace(0.5, 5, 50)
-    ax.plot(m_ref, boujibar_poly(m_ref), ':', color='#EE6677', linewidth=1.5,
-            label='Boujibar+2020 polynomial')
-    ax.plot(masses_pl, [d['T_cmb'] for d in paleos_data_wl], 's-', color='#228833',
-            label=f'Full PALEOS ($f_a$={WL_F_A}, PALEOS $C_p$+$\\nabla_{{ad}}$)')
+    ax.plot(
+        m_ref,
+        boujibar_poly(m_ref),
+        ':',
+        color='#EE6677',
+        linewidth=1.5,
+        label='Boujibar+2020 polynomial',
+    )
+    ax.plot(
+        masses_pl,
+        [d['T_cmb'] for d in paleos_data_wl],
+        's-',
+        color='#228833',
+        label=f'Full PALEOS ($f_a$={WL_F_A}, PALEOS $C_p$+$\\nabla_{{ad}}$)',
+    )
 
     from zalmoxis.melting_curves import iron_melting_anzellini13
-    ax.plot(m_ref, [iron_melting_anzellini13(135e9 * m**2) for m in m_ref],
-            'k--', linewidth=1, alpha=0.5, label='Fe melting (rough)')
+
+    ax.plot(
+        m_ref,
+        [iron_melting_anzellini13(135e9 * m**2) for m in m_ref],
+        'k--',
+        linewidth=1,
+        alpha=0.5,
+        label='Fe melting (rough)',
+    )
 
     ax.set_xlabel(r'Planet mass [$M_\oplus$]')
     ax.set_ylabel(r'$T_\mathrm{CMB}$ [K]')
@@ -400,12 +507,27 @@ def main():
 
     # Panel (b): T_surface comparison
     ax = axes[1]
-    ax.plot(masses_wl, [d['T_surface'] for d in wl_data], 'o-', color='#4477AA',
-            label=f'White+Li ($f_a$={WL_F_A}, const)')
-    ax.plot(masses_bj, [d['T_surface'] for d in bj_data], '^-', color='#EE6677',
-            label=f'Boujibar ($f_a$={BJ_F_A}, const)')
-    ax.plot(masses_pl, [d['T_surface'] for d in paleos_data_wl], 's-', color='#228833',
-            label=f'Full PALEOS ($f_a$={WL_F_A})')
+    ax.plot(
+        masses_wl,
+        [d['T_surface'] for d in wl_data],
+        'o-',
+        color='#4477AA',
+        label=f'White+Li ($f_a$={WL_F_A}, const)',
+    )
+    ax.plot(
+        masses_bj,
+        [d['T_surface'] for d in bj_data],
+        '^-',
+        color='#EE6677',
+        label=f'Boujibar ($f_a$={BJ_F_A}, const)',
+    )
+    ax.plot(
+        masses_pl,
+        [d['T_surface'] for d in paleos_data_wl],
+        's-',
+        color='#228833',
+        label=f'Full PALEOS ($f_a$={WL_F_A})',
+    )
     ax.axhline(1400, color='orange', ls=':', lw=1.5, label='Solidus')
     ax.set_xlabel(r'Planet mass [$M_\oplus$]')
     ax.set_ylabel(r'$T_\mathrm{surf}$ [K]')
@@ -425,15 +547,19 @@ def main():
 
     # Print comparison table
     print('\n' + '=' * 90)
-    print(f'{"M/ME":>5}  {"WL_CMB":>7}  {"WL_surf":>8}  {"BJ_CMB":>7}  {"BJ_surf":>8}  '
-          f'{"PAL_CMB":>8}  {"PAL_surf":>9}  {"BJ_poly":>8}')
+    print(
+        f'{"M/ME":>5}  {"WL_CMB":>7}  {"WL_surf":>8}  {"BJ_CMB":>7}  {"BJ_surf":>8}  '
+        f'{"PAL_CMB":>8}  {"PAL_surf":>9}  {"BJ_poly":>8}'
+    )
     print('-' * 90)
     for i in range(min(len(wl_data), len(bj_data), len(paleos_data_wl))):
         w, b, p = wl_data[i], bj_data[i], paleos_data_wl[i]
         bp = boujibar_poly(w['mass'])
-        print(f'{w["mass"]:5.1f}  {w["T_cmb"]:7.0f}  {w["T_surface"]:8.0f}  '
-              f'{b["T_cmb"]:7.0f}  {b["T_surface"]:8.0f}  '
-              f'{p["T_cmb"]:8.0f}  {p["T_surface"]:9.0f}  {bp:8.0f}')
+        print(
+            f'{w["mass"]:5.1f}  {w["T_cmb"]:7.0f}  {w["T_surface"]:8.0f}  '
+            f'{b["T_cmb"]:7.0f}  {b["T_surface"]:8.0f}  '
+            f'{p["T_cmb"]:8.0f}  {p["T_surface"]:9.0f}  {bp:8.0f}'
+        )
     print('=' * 90)
 
     print(f'\nAll output in: {OUTPUT_DIR}')

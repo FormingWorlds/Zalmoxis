@@ -79,6 +79,7 @@ class TestPlotPlanetProfileSingle:
         """
         import tools.plots.plot_profiles as mod
         import zalmoxis
+
         monkeypatch.setattr(zalmoxis, '_zalmoxis_root', str(tmp_path))
         os.makedirs(tmp_path / 'output', exist_ok=True)
 
@@ -97,6 +98,7 @@ class TestPlotPlanetProfileSingle:
         """Filename includes id_mass when it is not None."""
         import tools.plots.plot_profiles as mod
         import zalmoxis
+
         monkeypatch.setattr(zalmoxis, '_zalmoxis_root', str(tmp_path))
         os.makedirs(tmp_path / 'output', exist_ok=True)
 
@@ -118,6 +120,7 @@ class TestPlotPlanetProfileSingle:
         """
         import tools.plots.plot_profiles as mod
         import zalmoxis
+
         monkeypatch.setattr(zalmoxis, '_zalmoxis_root', str(tmp_path))
         os.makedirs(tmp_path / 'output', exist_ok=True)
 

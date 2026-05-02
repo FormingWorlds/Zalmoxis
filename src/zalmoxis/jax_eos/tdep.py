@@ -14,6 +14,7 @@ NaN-fallback (numpy's density_nn KDTree) is NOT ported. On the Stage-1b
 P-T envelope the fallback is not exercised (verified via Step 2 parity
 tests).
 """
+
 from __future__ import annotations
 
 import jax
@@ -24,19 +25,42 @@ from .bilinear import fast_bilinear_jax, paleos_clamp_temperature_jax
 
 @jax.jit
 def _bilinear_with_clamp_jax(
-    log_p, log_t,
-    density_grid, unique_log_p, unique_log_t,
-    logp_min, logt_min, dlog_p, dlog_t,
-    n_p, n_t,
-    lt_min_per_p, lt_max_per_p,
+    log_p,
+    log_t,
+    density_grid,
+    unique_log_p,
+    unique_log_t,
+    logp_min,
+    logt_min,
+    dlog_p,
+    dlog_t,
+    n_p,
+    n_t,
+    lt_min_per_p,
+    lt_max_per_p,
 ):
     """Per-cell-clamped bilinear, shared between solid/melt sub-tables."""
     log_t_c = paleos_clamp_temperature_jax(
-        log_p, log_t, lt_min_per_p, lt_max_per_p, logp_min, dlog_p, n_p,
+        log_p,
+        log_t,
+        lt_min_per_p,
+        lt_max_per_p,
+        logp_min,
+        dlog_p,
+        n_p,
     )
     return fast_bilinear_jax(
-        log_p, log_t_c, density_grid, unique_log_p, unique_log_t,
-        logp_min, logt_min, dlog_p, dlog_t, n_p, n_t,
+        log_p,
+        log_t_c,
+        density_grid,
+        unique_log_p,
+        unique_log_t,
+        logp_min,
+        logt_min,
+        dlog_p,
+        dlog_t,
+        n_p,
+        n_t,
     )
 
 
@@ -44,8 +68,8 @@ def _bilinear_with_clamp_jax(
 def get_tdep_density_jax(
     pressure: jnp.ndarray,
     temperature: jnp.ndarray,
-    T_sol: jnp.ndarray,          # solidus_func(P) — from external melting curve
-    T_liq: jnp.ndarray,          # liquidus_func(P)
+    T_sol: jnp.ndarray,  # solidus_func(P) — from external melting curve
+    T_liq: jnp.ndarray,  # liquidus_func(P)
     # --- solid-side table (indexed with _s suffix) ---
     sol_density_grid: jnp.ndarray,
     sol_unique_log_p: jnp.ndarray,
@@ -92,18 +116,34 @@ def get_tdep_density_jax(
     log_t = jnp.log10(jnp.where(temperature > 1.0, temperature, 1.0))
 
     rho_solid = _bilinear_with_clamp_jax(
-        log_p_s, log_t,
-        sol_density_grid, sol_unique_log_p, sol_unique_log_t,
-        sol_logp_min, sol_logt_min, sol_dlog_p, sol_dlog_t,
-        sol_n_p, sol_n_t,
-        sol_lt_min_per_p, sol_lt_max_per_p,
+        log_p_s,
+        log_t,
+        sol_density_grid,
+        sol_unique_log_p,
+        sol_unique_log_t,
+        sol_logp_min,
+        sol_logt_min,
+        sol_dlog_p,
+        sol_dlog_t,
+        sol_n_p,
+        sol_n_t,
+        sol_lt_min_per_p,
+        sol_lt_max_per_p,
     )
     rho_liquid = _bilinear_with_clamp_jax(
-        log_p_l, log_t,
-        liq_density_grid, liq_unique_log_p, liq_unique_log_t,
-        liq_logp_min, liq_logt_min, liq_dlog_p, liq_dlog_t,
-        liq_n_p, liq_n_t,
-        liq_lt_min_per_p, liq_lt_max_per_p,
+        log_p_l,
+        log_t,
+        liq_density_grid,
+        liq_unique_log_p,
+        liq_unique_log_t,
+        liq_logp_min,
+        liq_logt_min,
+        liq_dlog_p,
+        liq_dlog_t,
+        liq_n_p,
+        liq_n_t,
+        liq_lt_min_per_p,
+        liq_lt_max_per_p,
     )
 
     # Volume-averaged density in mushy zone.

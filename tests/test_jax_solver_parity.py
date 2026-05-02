@@ -9,6 +9,7 @@ tolerance (rtol=1e-5, atol=1e-6 used here).
 Accept solver-tolerance drift: max_rel <= 1e-4 on mass_enclosed,
 gravity, pressure at the outer node.
 """
+
 from __future__ import annotations
 
 import os as _os
@@ -87,17 +88,25 @@ def test_solve_structure_jax_parity_vs_scipy():
     def rel(a, b):
         return np.abs(a - b) / np.maximum(np.abs(a), 1e-30)
 
-    print(f"M(R)  numpy={mass_np[-1]:.4e}  jax={mass_jax[-1]:.4e}  rel={rel(mass_np[-1], mass_jax[-1]):.3e}")
-    print(f"g(R)  numpy={gravity_np[-1]:.4e}  jax={gravity_jax[-1]:.4e}  rel={rel(gravity_np[-1], gravity_jax[-1]):.3e}")
-    print(f"P(R)  numpy={pressure_np[-1]:.4e}  jax={pressure_jax[-1]:.4e}  rel={rel(pressure_np[-1], pressure_jax[-1]):.3e}")
+    print(
+        f'M(R)  numpy={mass_np[-1]:.4e}  jax={mass_jax[-1]:.4e}  rel={rel(mass_np[-1], mass_jax[-1]):.3e}'
+    )
+    print(
+        f'g(R)  numpy={gravity_np[-1]:.4e}  jax={gravity_jax[-1]:.4e}  rel={rel(gravity_np[-1], gravity_jax[-1]):.3e}'
+    )
+    print(
+        f'P(R)  numpy={pressure_np[-1]:.4e}  jax={pressure_jax[-1]:.4e}  rel={rel(pressure_np[-1], pressure_jax[-1]):.3e}'
+    )
 
     # Also check profiles at intermediate nodes (skip any frozen zero-P trailing)
     valid = (pressure_np > 0) & (pressure_jax > 0)
     max_rel_mass = float(rel(mass_np[valid], mass_jax[valid]).max()) if valid.any() else 0.0
     max_rel_g = float(rel(gravity_np[valid], gravity_jax[valid]).max()) if valid.any() else 0.0
-    max_rel_P = float(rel(pressure_np[valid], pressure_jax[valid]).max()) if valid.any() else 0.0
+    max_rel_P = (
+        float(rel(pressure_np[valid], pressure_jax[valid]).max()) if valid.any() else 0.0
+    )
 
-    print(f"profile max_rel: M={max_rel_mass:.3e}  g={max_rel_g:.3e}  P={max_rel_P:.3e}")
+    print(f'profile max_rel: M={max_rel_mass:.3e}  g={max_rel_g:.3e}  P={max_rel_P:.3e}')
 
     # Pass bar. Outer-node (what the Picard/brentq loops converge to) must
     # agree at ~1e-4. Intermediate-node profiles are solver-interpolation
@@ -106,9 +115,9 @@ def test_solve_structure_jax_parity_vs_scipy():
     outer_M_rel = float(rel(mass_np[-1], mass_jax[-1]))
     outer_g_rel = float(rel(gravity_np[-1], gravity_jax[-1]))
     outer_P_rel = float(rel(pressure_np[-1], pressure_jax[-1]))
-    assert outer_M_rel <= 1e-4, f"outer M drift {outer_M_rel:.3e} > 1e-4"
-    assert outer_g_rel <= 1e-4, f"outer g drift {outer_g_rel:.3e} > 1e-4"
-    assert outer_P_rel <= 1e-2, f"outer P drift {outer_P_rel:.3e} > 1e-2"
-    assert max_rel_mass <= 1e-3, f"mass profile drift {max_rel_mass:.3e} > 1e-3"
-    assert max_rel_P <= 1e-2, f"pressure profile drift {max_rel_P:.3e} > 1e-2"
-    assert max_rel_g <= 1e-3, f"gravity profile drift {max_rel_g:.3e} > 1e-3"
+    assert outer_M_rel <= 1e-4, f'outer M drift {outer_M_rel:.3e} > 1e-4'
+    assert outer_g_rel <= 1e-4, f'outer g drift {outer_g_rel:.3e} > 1e-4'
+    assert outer_P_rel <= 1e-2, f'outer P drift {outer_P_rel:.3e} > 1e-2'
+    assert max_rel_mass <= 1e-3, f'mass profile drift {max_rel_mass:.3e} > 1e-3'
+    assert max_rel_P <= 1e-2, f'pressure profile drift {max_rel_P:.3e} > 1e-2'
+    assert max_rel_g <= 1e-3, f'gravity profile drift {max_rel_g:.3e} > 1e-3'

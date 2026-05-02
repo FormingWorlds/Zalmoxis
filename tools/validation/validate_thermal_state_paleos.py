@@ -47,12 +47,20 @@ F_DIFF = 0.50
 T_EQ = 255.0
 
 # Style
-plt.rcParams.update({
-    'font.size': 14, 'axes.labelsize': 15, 'axes.titlesize': 16,
-    'legend.fontsize': 12, 'xtick.labelsize': 12, 'ytick.labelsize': 12,
-    'lines.linewidth': 2.5, 'lines.markersize': 8,
-    'savefig.bbox': 'tight', 'savefig.dpi': 200,
-})
+plt.rcParams.update(
+    {
+        'font.size': 14,
+        'axes.labelsize': 15,
+        'axes.titlesize': 16,
+        'legend.fontsize': 12,
+        'xtick.labelsize': 12,
+        'ytick.labelsize': 12,
+        'lines.linewidth': 2.5,
+        'lines.markersize': 8,
+        'savefig.bbox': 'tight',
+        'savefig.dpi': 200,
+    }
+)
 
 
 def build_paleos_nabla_ad():
@@ -60,7 +68,9 @@ def build_paleos_nabla_ad():
     from zalmoxis.eos.interpolation import load_paleos_unified_table
 
     eos_file = os.path.join(
-        get_zalmoxis_root(), 'data', 'EOS_PALEOS_MgSiO3_unified',
+        get_zalmoxis_root(),
+        'data',
+        'EOS_PALEOS_MgSiO3_unified',
         'paleos_mgsio3_eos_table_pt.dat',
     )
     if not os.path.isfile(eos_file):
@@ -72,6 +82,7 @@ def build_paleos_nabla_ad():
     def nabla_ad_paleos(P_Pa, T_K):
         """Query PALEOS nabla_ad at (P, T)."""
         import math
+
         if P_Pa <= 0 or T_K <= 0:
             return 0.3
         log_p = math.log10(P_Pa)
@@ -94,7 +105,9 @@ def build_paleos_cp():
     """Build a cp(P, T) function from the PALEOS MgSiO3 unified table."""
 
     eos_file = os.path.join(
-        get_zalmoxis_root(), 'data', 'EOS_PALEOS_MgSiO3_unified',
+        get_zalmoxis_root(),
+        'data',
+        'EOS_PALEOS_MgSiO3_unified',
         'paleos_mgsio3_eos_table_pt.dat',
     )
     if not os.path.isfile(eos_file):
@@ -112,10 +125,12 @@ def build_paleos_cp():
     cp = cp_vals[valid]
 
     from scipy.interpolate import LinearNDInterpolator
+
     interp = LinearNDInterpolator(list(zip(log_p, log_t)), cp)
 
     def cp_paleos(P_Pa, T_K):
         import math
+
         if P_Pa <= 0 or T_K <= 0:
             return 1200.0
         lp = math.log10(P_Pa)
@@ -148,7 +163,11 @@ def run_seager(mass_earth):
         return None, None
 
     thermal = initial_thermal_state(
-        results, CMF, T_radiative_eq=T_EQ, f_accretion=F_ACC, f_differentiation=F_DIFF,
+        results,
+        CMF,
+        T_radiative_eq=T_EQ,
+        f_accretion=F_ACC,
+        f_differentiation=F_DIFF,
     )
     return results, thermal
 
@@ -174,7 +193,11 @@ def run_paleos(mass_earth, nabla_ad_func, cp_func=None):
 
     # Use PALEOS-derived nabla_ad for the adiabat integration
     thermal = initial_thermal_state(
-        results, CMF, T_radiative_eq=T_EQ, f_accretion=F_ACC, f_differentiation=F_DIFF,
+        results,
+        CMF,
+        T_radiative_eq=T_EQ,
+        f_accretion=F_ACC,
+        f_differentiation=F_DIFF,
         nabla_ad_func=nabla_ad_func,
     )
     return results, thermal
@@ -189,7 +212,10 @@ def boujibar2020_tcmb(m):
 def monteux2016_solidus(P_GPa):
     """Monteux+2016 silicate solidus (approximate, for reference)."""
     from zalmoxis.melting_curves import get_solidus_liquidus_functions
-    sol, _ = get_solidus_liquidus_functions('Monteux16-solidus', 'Monteux16-liquidus-A-chondritic')
+
+    sol, _ = get_solidus_liquidus_functions(
+        'Monteux16-solidus', 'Monteux16-liquidus-A-chondritic'
+    )
     return sol(P_GPa * 1e9)
 
 
@@ -211,20 +237,30 @@ def main():
         res_p, th_p = run_paleos(m, nabla_ad_paleos)
 
         if th_s is not None:
-            seager_data.append({
-                'mass': m, 'R': res_s['radii'][-1] / earth_radius,
-                **th_s,
-            })
-            print(f'    Seager: T_CMB={th_s["T_cmb"]:.0f} K, T_surf={th_s["T_surface"]:.0f} K, '
-                  f'core={th_s["core_state"]}')
+            seager_data.append(
+                {
+                    'mass': m,
+                    'R': res_s['radii'][-1] / earth_radius,
+                    **th_s,
+                }
+            )
+            print(
+                f'    Seager: T_CMB={th_s["T_cmb"]:.0f} K, T_surf={th_s["T_surface"]:.0f} K, '
+                f'core={th_s["core_state"]}'
+            )
 
         if th_p is not None:
-            paleos_data.append({
-                'mass': m, 'R': res_p['radii'][-1] / earth_radius,
-                **th_p,
-            })
-            print(f'    PALEOS: T_CMB={th_p["T_cmb"]:.0f} K, T_surf={th_p["T_surface"]:.0f} K, '
-                  f'core={th_p["core_state"]}')
+            paleos_data.append(
+                {
+                    'mass': m,
+                    'R': res_p['radii'][-1] / earth_radius,
+                    **th_p,
+                }
+            )
+            print(
+                f'    PALEOS: T_CMB={th_p["T_cmb"]:.0f} K, T_surf={th_p["T_surface"]:.0f} K, '
+                f'core={th_p["core_state"]}'
+            )
 
     # ── Plot 1: Reproduce White & Li 2025 Fig. 3 style ──────────────
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
@@ -238,18 +274,54 @@ def main():
 
     # Panel (a): T_CMB and T_surface vs mass
     ax = axes[0]
-    ax.plot(masses_s, T_cmb_s, 'o-', color='#4477AA', label=r'$T_\mathrm{CMB}$ (constant $\nabla_\mathrm{ad}=0.3$)')
-    ax.plot(masses_p, T_cmb_p, 's--', color='#228833', label=r'$T_\mathrm{CMB}$ (PALEOS $\nabla_\mathrm{ad}$)')
-    ax.plot(masses_s, T_surf_s, 'o-', color='#EE6677', label=r'$T_\mathrm{surf}$ (constant $\nabla_\mathrm{ad}=0.3$)')
-    ax.plot(masses_p, T_surf_p, 's--', color='#AA3377', label=r'$T_\mathrm{surf}$ (PALEOS $\nabla_\mathrm{ad}$)')
+    ax.plot(
+        masses_s,
+        T_cmb_s,
+        'o-',
+        color='#4477AA',
+        label=r'$T_\mathrm{CMB}$ (constant $\nabla_\mathrm{ad}=0.3$)',
+    )
+    ax.plot(
+        masses_p,
+        T_cmb_p,
+        's--',
+        color='#228833',
+        label=r'$T_\mathrm{CMB}$ (PALEOS $\nabla_\mathrm{ad}$)',
+    )
+    ax.plot(
+        masses_s,
+        T_surf_s,
+        'o-',
+        color='#EE6677',
+        label=r'$T_\mathrm{surf}$ (constant $\nabla_\mathrm{ad}=0.3$)',
+    )
+    ax.plot(
+        masses_p,
+        T_surf_p,
+        's--',
+        color='#AA3377',
+        label=r'$T_\mathrm{surf}$ (PALEOS $\nabla_\mathrm{ad}$)',
+    )
 
     # Boujibar+2020 reference
     m_ref = np.linspace(0.5, 5, 50)
-    ax.plot(m_ref, boujibar2020_tcmb(m_ref), ':', color='gray', linewidth=1.5,
-            label='Boujibar+2020 $T_\\mathrm{CMB}$')
+    ax.plot(
+        m_ref,
+        boujibar2020_tcmb(m_ref),
+        ':',
+        color='gray',
+        linewidth=1.5,
+        label='Boujibar+2020 $T_\\mathrm{CMB}$',
+    )
 
     # Solidus reference line at 0 GPa (surface)
-    ax.axhline(1400, color='orange', linestyle=':', linewidth=1, label='Approx. solidus ($T \\approx 1400$ K)')
+    ax.axhline(
+        1400,
+        color='orange',
+        linestyle=':',
+        linewidth=1,
+        label='Approx. solidus ($T \\approx 1400$ K)',
+    )
 
     ax.set_xlabel(r'Planet mass [$M_\oplus$]')
     ax.set_ylabel('Temperature [K]')
@@ -259,8 +331,13 @@ def main():
 
     # Panel (b): Temperature difference (PALEOS - Seager)
     ax = axes[1]
-    dT_cmb = [paleos_data[i]['T_cmb'] - seager_data[i]['T_cmb'] for i in range(len(seager_data))]
-    dT_surf = [paleos_data[i]['T_surface'] - seager_data[i]['T_surface'] for i in range(len(seager_data))]
+    dT_cmb = [
+        paleos_data[i]['T_cmb'] - seager_data[i]['T_cmb'] for i in range(len(seager_data))
+    ]
+    dT_surf = [
+        paleos_data[i]['T_surface'] - seager_data[i]['T_surface']
+        for i in range(len(seager_data))
+    ]
     ax.plot(masses_s, dT_cmb, 'o-', color='#4477AA', label=r'$\Delta T_\mathrm{CMB}$')
     ax.plot(masses_s, dT_surf, 's-', color='#EE6677', label=r'$\Delta T_\mathrm{surf}$')
     ax.axhline(0, color='gray', linestyle='-', linewidth=0.5)
@@ -291,8 +368,13 @@ def main():
     ax = axes[0]
     ax.semilogy(masses_s, U_d_s, 'o-', color='#228833', label='$U_d$ (differentiated)')
     ax.semilogy(masses_s, U_u_s, 's-', color='#CCBB44', label='$U_u$ (undifferentiated)')
-    ax.semilogy(masses_s, [U_d_s[i] - U_u_s[i] for i in range(len(masses_s))],
-                '^-', color='#AA3377', label=r'$\Delta E_D = U_d - U_u$')
+    ax.semilogy(
+        masses_s,
+        [U_d_s[i] - U_u_s[i] for i in range(len(masses_s))],
+        '^-',
+        color='#AA3377',
+        label=r'$\Delta E_D = U_d - U_u$',
+    )
     ax.set_xlabel(r'Planet mass [$M_\oplus$]')
     ax.set_ylabel('Energy [J]')
     ax.set_title('(a) Gravitational energy budget')
@@ -300,9 +382,16 @@ def main():
 
     ax = axes[1]
     ax.plot(masses_s, dT_acc_s, 'o-', color='#4477AA', label=r'$\Delta T_\mathrm{accretion}$')
-    ax.plot(masses_s, dT_diff_s, 's-', color='#EE6677', label=r'$\Delta T_\mathrm{differentiation}$')
-    ax.plot(masses_s, [dT_acc_s[i] + dT_diff_s[i] for i in range(len(masses_s))],
-            '^-', color='#228833', label=r'$\Delta T_\mathrm{total}$')
+    ax.plot(
+        masses_s, dT_diff_s, 's-', color='#EE6677', label=r'$\Delta T_\mathrm{differentiation}$'
+    )
+    ax.plot(
+        masses_s,
+        [dT_acc_s[i] + dT_diff_s[i] for i in range(len(masses_s))],
+        '^-',
+        color='#228833',
+        label=r'$\Delta T_\mathrm{total}$',
+    )
     ax.set_xlabel(r'Planet mass [$M_\oplus$]')
     ax.set_ylabel(r'$\Delta T$ [K]')
     ax.set_title('(b) Temperature increments')
@@ -322,30 +411,38 @@ def main():
     # ── Save raw data ────────────────────────────────────────────────
     fname_data = os.path.join(OUTPUT_DIR, 'thermal_state_comparison_data.txt')
     with open(fname_data, 'w') as f:
-        f.write('# M_earth  R_earth  T_CMB_seager  T_surf_seager  T_CMB_paleos  T_surf_paleos  '
-                'U_d  U_u  Delta_E_D  C_avg  core_state_seager  core_state_paleos\n')
+        f.write(
+            '# M_earth  R_earth  T_CMB_seager  T_surf_seager  T_CMB_paleos  T_surf_paleos  '
+            'U_d  U_u  Delta_E_D  C_avg  core_state_seager  core_state_paleos\n'
+        )
         for i in range(len(seager_data)):
             s = seager_data[i]
             p = paleos_data[i]
-            f.write(f'{s["mass"]:.1f}  {s["R"]:.4f}  {s["T_cmb"]:.1f}  {s["T_surface"]:.1f}  '
-                    f'{p["T_cmb"]:.1f}  {p["T_surface"]:.1f}  '
-                    f'{s["U_differentiated"]:.4e}  {s["U_undifferentiated"]:.4e}  '
-                    f'{s["U_differentiated"] - s["U_undifferentiated"]:.4e}  '
-                    f'{s["C_avg"]:.1f}  {s["core_state"]}  {p["core_state"]}\n')
+            f.write(
+                f'{s["mass"]:.1f}  {s["R"]:.4f}  {s["T_cmb"]:.1f}  {s["T_surface"]:.1f}  '
+                f'{p["T_cmb"]:.1f}  {p["T_surface"]:.1f}  '
+                f'{s["U_differentiated"]:.4e}  {s["U_undifferentiated"]:.4e}  '
+                f'{s["U_differentiated"] - s["U_undifferentiated"]:.4e}  '
+                f'{s["C_avg"]:.1f}  {s["core_state"]}  {p["core_state"]}\n'
+            )
     print(f'Saved: {fname_data}')
 
     # ── Summary table ────────────────────────────────────────────────
     print('\n' + '=' * 90)
-    print(f'{"M/ME":>5}  {"R/RE":>6}  {"T_CMB_s":>8}  {"T_surf_s":>9}  '
-          f'{"T_CMB_p":>8}  {"T_surf_p":>9}  {"dT_surf":>8}  {"core_s":>7}  {"core_p":>7}')
+    print(
+        f'{"M/ME":>5}  {"R/RE":>6}  {"T_CMB_s":>8}  {"T_surf_s":>9}  '
+        f'{"T_CMB_p":>8}  {"T_surf_p":>9}  {"dT_surf":>8}  {"core_s":>7}  {"core_p":>7}'
+    )
     print('-' * 90)
     for i in range(len(seager_data)):
         s = seager_data[i]
         p = paleos_data[i]
         dt = p['T_surface'] - s['T_surface']
-        print(f'{s["mass"]:5.1f}  {s["R"]:6.3f}  {s["T_cmb"]:8.0f}  {s["T_surface"]:9.0f}  '
-              f'{p["T_cmb"]:8.0f}  {p["T_surface"]:9.0f}  {dt:8.0f}  '
-              f'{s["core_state"]:>7}  {p["core_state"]:>7}')
+        print(
+            f'{s["mass"]:5.1f}  {s["R"]:6.3f}  {s["T_cmb"]:8.0f}  {s["T_surface"]:9.0f}  '
+            f'{p["T_cmb"]:8.0f}  {p["T_surface"]:9.0f}  {dt:8.0f}  '
+            f'{s["core_state"]:>7}  {p["core_state"]:>7}'
+        )
     print('=' * 90)
 
     # Flag the 1 M_Earth issue
@@ -353,7 +450,9 @@ def main():
         if abs(d['mass'] - 1.0) < 0.01:
             print(f'\n** 1 M_Earth: T_surface = {d["T_surface"]:.0f} K (Seager)')
             if d['T_surface'] < 1400:
-                print('   -> Below solidus (~1400 K): surface accretes SOLID, not as magma ocean')
+                print(
+                    '   -> Below solidus (~1400 K): surface accretes SOLID, not as magma ocean'
+                )
             break
 
     print(f'\nAll output in: {OUTPUT_DIR}')

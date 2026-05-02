@@ -7,6 +7,7 @@ core and mantle cells, and compare dy/dr at rtol <= 1e-6. The RHS
 output depends on bilinear interps plus pure arithmetic, so FP-
 rounding precision should hold.
 """
+
 from __future__ import annotations
 
 import os
@@ -69,13 +70,13 @@ def _stage1b_setup():
     # law, so 256 samples reproduce Stix14 solidus/liquidus to machine
     # precision.
     _melt_log_p_axis = np.linspace(np.log10(1e8), np.log10(5e12), 256)
-    _melt_p_axis = 10.0 ** _melt_log_p_axis
-    _log_T_liq_table = np.log10(np.array(
-        [float(liq_func(P)) for P in _melt_p_axis], dtype=float
-    ))
-    _log_T_sol_table = np.log10(np.array(
-        [float(sol_func(P)) for P in _melt_p_axis], dtype=float
-    ))
+    _melt_p_axis = 10.0**_melt_log_p_axis
+    _log_T_liq_table = np.log10(
+        np.array([float(liq_func(P)) for P in _melt_p_axis], dtype=float)
+    )
+    _log_T_sol_table = np.log10(
+        np.array([float(sol_func(P)) for P in _melt_p_axis], dtype=float)
+    )
 
     # Adiabatic T(P) for this parity test: simple linear adiabat in log-P
     # matching a typical Stage-1b profile. Resolution fine enough that
@@ -134,6 +135,7 @@ def _stage1b_setup():
     # at ~3e-6 relative; that mismatch propagates into dg/dr which has a
     # (4 pi G rho - 2 g/r) cancellation, amplifying the G error by ~100x.
     from zalmoxis.constants import G
+
     jax_args['G'] = G
 
     return {
@@ -141,8 +143,7 @@ def _stage1b_setup():
         'core_mat': core_mat,
         'mantle_mat': mantle_mat,
         'interp_cache': interp_cache,
-        'mushy_zone_factors': {'PALEOS:iron': 1.0, 'PALEOS:MgSiO3': 1.0,
-                               'PALEOS:H2O': 1.0},
+        'mushy_zone_factors': {'PALEOS:iron': 1.0, 'PALEOS:MgSiO3': 1.0, 'PALEOS:H2O': 1.0},
         'sol_func': sol_func,
         'liq_func': liq_func,
         'cmb_mass': cmb_mass,
@@ -201,9 +202,10 @@ def test_coupled_odes_jax_parity():
         # Numpy
         temperature = numpy_temp(r, P)
         nv = coupled_odes(
-            r, y,
-            cmb_mass,                         # cmb_mass
-            cmb_mass + 0.675 * M_planet,       # core_mantle_mass (no ice layer)
+            r,
+            y,
+            cmb_mass,  # cmb_mass
+            cmb_mass + 0.675 * M_planet,  # core_mantle_mass (no ice layer)
             layer_mixtures,
             setup['interp_cache'],
             mat_dicts,
@@ -228,10 +230,11 @@ def test_coupled_odes_jax_parity():
 
     with np.errstate(divide='ignore', invalid='ignore'):
         rel = np.abs(numpy_dydr[both_nonzero] - jax_dydr[both_nonzero]) / np.maximum(
-            np.abs(numpy_dydr[both_nonzero]), 1e-30,
+            np.abs(numpy_dydr[both_nonzero]),
+            1e-30,
         )
     max_rel = float(rel.max()) if rel.size > 0 else 0.0
-    print(f"n_both={n_both}/200, max_rel={max_rel:.3e}")
+    print(f'n_both={n_both}/200, max_rel={max_rel:.3e}')
 
     # Diagnostic for bad points
     if max_rel > 1e-6:
@@ -241,10 +244,12 @@ def test_coupled_odes_jax_parity():
         orig_indices = np.where(both_nonzero)[0]
         orig_i = int(orig_indices[worst_idx])
         r_, M_, g_, P_, T_, is_core = query_info[orig_i]
-        print(f"  worst original idx={orig_i}")
-        print(f"    r={r_:.3e}, M={M_:.3e}, g={g_:.3e}, P={P_:.3e}, T={T_:.3f}, is_core={is_core}")
-        print(f"    numpy_dydr={numpy_dydr[orig_i]}")
-        print(f"    jax_dydr={jax_dydr[orig_i]}")
-        print(f"    rel={rel[worst_idx]}")
+        print(f'  worst original idx={orig_i}')
+        print(
+            f'    r={r_:.3e}, M={M_:.3e}, g={g_:.3e}, P={P_:.3e}, T={T_:.3f}, is_core={is_core}'
+        )
+        print(f'    numpy_dydr={numpy_dydr[orig_i]}')
+        print(f'    jax_dydr={jax_dydr[orig_i]}')
+        print(f'    rel={rel[worst_idx]}')
 
-    assert max_rel <= 1e-6, f"RHS parity failed: max_rel={max_rel:.3e} (want <=1e-6)"
+    assert max_rel <= 1e-6, f'RHS parity failed: max_rel={max_rel:.3e} (want <=1e-6)'

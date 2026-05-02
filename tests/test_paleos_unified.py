@@ -385,8 +385,7 @@ class TestMusyZoneFactorConfig:
                 'mantle': 'Seager2007:MgSiO3',
             },
             'Calculations': {'num_layers': 50},
-            'IterativeProcess': {
-            },
+            'IterativeProcess': {},
             'PressureAdjustment': {
                 'target_surface_pressure': 101325,
             },
@@ -434,8 +433,7 @@ class TestMusyZoneFactorConfig:
                 'mushy_zone_factor': 0.8,
             },
             'Calculations': {'num_layers': 50},
-            'IterativeProcess': {
-            },
+            'IterativeProcess': {},
             'PressureAdjustment': {
                 'target_surface_pressure': 101325,
             },
