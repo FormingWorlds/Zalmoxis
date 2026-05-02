@@ -135,13 +135,14 @@ def get_tdep_density_jax(
 
     is_below_sol = temperature <= T_sol
     is_above_liq = temperature >= T_liq
-    is_mushy = (~is_below_sol) & (~is_above_liq) & liq_above_sol
+    # Mushy zone is the implicit fall-through of the jnp.where below: not
+    # is_below_sol AND not is_above_liq AND liq_above_sol → rho_mixed.
 
     # Selection:
     #   if not melt_curve_valid: rho_solid
     #   elif is_above_liq OR (not liq_above_sol AND not is_below_sol): rho_liquid
     #   elif is_below_sol: rho_solid
-    #   else: rho_mixed
+    #   else: rho_mixed (the implicit mushy branch)
     rho = jnp.where(
         ~melt_curve_valid,
         rho_solid,

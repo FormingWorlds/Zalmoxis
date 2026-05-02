@@ -35,15 +35,14 @@ from multiprocessing import Pool
 
 import toml
 
-from zalmoxis.constants import earth_mass, earth_radius
+from zalmoxis import get_zalmoxis_root
 from zalmoxis.config import (
     load_material_dictionaries,
     load_solidus_liquidus_functions,
     load_zalmoxis_config,
 )
+from zalmoxis.constants import earth_mass, earth_radius
 from zalmoxis.solver import main
-
-from zalmoxis import get_zalmoxis_root
 
 logger = logging.getLogger(__name__)
 

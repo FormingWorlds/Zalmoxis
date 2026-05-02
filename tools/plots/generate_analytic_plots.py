@@ -344,7 +344,6 @@ def plot3_mass_radius():
 def plot4_density_profiles():
     """Plot 4: Interior density profiles for 1 M_earth."""
     from tools.setup_tests import load_profile_output, run_zalmoxis_rocky_water
-
     from zalmoxis.constants import earth_radius
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))

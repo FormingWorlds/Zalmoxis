@@ -206,7 +206,7 @@ def _write_header(f, material: str, kind: str, grid: GridSpec, paleos_sha: str,
     f.write(f'# PALEOS {material} EoS Lookup Table — PROTEUS (live-generated)\n')
     f.write('# ' + '=' * 78 + '\n#\n')
     f.write(f'# Kind: {kind}\n')
-    f.write(f'# Generator: zalmoxis.eos.paleos_api\n')
+    f.write('# Generator: zalmoxis.eos.paleos_api\n')
     f.write(f'# PALEOS_SHA: {paleos_sha}\n')
     f.write(f'# grid_hash: {grid.hash_short()}\n')
     f.write(f'# generated: {timestamp}\n#\n')
@@ -498,11 +498,11 @@ def _get_mgsio3_solid_phase(P: float, T: float) -> str:
     """
     # Import lazily so the module stays optional-dependency clean.
     from paleos.mgsio3_eos import (
+        _P_HPCEN_BRG,
         P_brg_ppv,
         P_en_hpcen,
         P_lpcen_en,
         P_lpcen_hpcen,
-        _P_HPCEN_BRG,
     )
 
     if P >= P_brg_ppv(T):

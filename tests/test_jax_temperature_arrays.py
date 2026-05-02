@@ -32,7 +32,6 @@ from zalmoxis.config import (  # noqa: E402
 )
 from zalmoxis.solver import main  # noqa: E402
 
-
 _CONFIG = os.path.normpath(
     os.path.join(
         os.path.dirname(os.path.abspath(__file__)),

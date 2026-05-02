@@ -201,8 +201,8 @@ class TestCalculateMixedDensity:
         if not _seager_data_available():
             pytest.skip('Seager data not found')
 
-        from zalmoxis.eos import calculate_density
         from zalmoxis.config import load_material_dictionaries
+        from zalmoxis.eos import calculate_density
 
         md = load_material_dictionaries()
         mixture = LayerMixture(['Seager2007:iron'], [1.0])
@@ -221,8 +221,8 @@ class TestCalculateMixedDensity:
         if not _seager_data_available():
             pytest.skip('Seager data not found')
 
-        from zalmoxis.eos import calculate_density
         from zalmoxis.config import load_material_dictionaries
+        from zalmoxis.eos import calculate_density
 
         md = load_material_dictionaries()
         P = 100e9
@@ -256,8 +256,8 @@ class TestBackwardCompat:
         if not _paleos_data_available():
             pytest.skip('PALEOS data not found')
 
-        from zalmoxis.constants import earth_mass
         from zalmoxis.config import load_material_dictionaries
+        from zalmoxis.constants import earth_mass
         from zalmoxis.solver import main
 
         config = {

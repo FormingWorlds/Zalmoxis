@@ -23,8 +23,9 @@ def _load_stage1b_mantle():
     trigger both loads by querying once from each phase.
     """
     from zalmoxis.config import (
-        load_zalmoxis_config, load_material_dictionaries,
+        load_material_dictionaries,
         load_solidus_liquidus_functions,
+        load_zalmoxis_config,
     )
     from zalmoxis.eos.seager import get_tabulated_eos
 

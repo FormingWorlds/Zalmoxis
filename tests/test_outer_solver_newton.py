@@ -330,7 +330,6 @@ class TestNewtonOnSyntheticMR:
         rho = 5500.0
         # Noise amplitude small relative to dynamic range.
         noise_amp = 1.0e22
-        rng = np.random.default_rng(42)
 
         def M_func(R):
             base = (4.0 / 3.0) * np.pi * rho * R ** 3

@@ -289,8 +289,8 @@ class TestUnifiedMassLimit:
 
     def test_mass_limit_raises_at_51(self):
         """Requesting > 50 M_earth with unified PALEOS must raise ValueError."""
-        from zalmoxis.constants import earth_mass
         from zalmoxis.config import load_material_dictionaries
+        from zalmoxis.constants import earth_mass
         from zalmoxis.solver import main
 
         config = {
@@ -323,8 +323,8 @@ class TestCalculateDensityDictDispatch:
 
     def test_seager_iron_via_dict(self):
         """Seager2007:iron density at 300 GPa should be ~13000 kg/m^3 (Earth center)."""
-        from zalmoxis.eos import calculate_density
         from zalmoxis.config import load_material_dictionaries
+        from zalmoxis.eos import calculate_density
 
         # Seager2007 data may not be present
         root = os.environ.get('ZALMOXIS_ROOT', '')
@@ -339,8 +339,8 @@ class TestCalculateDensityDictDispatch:
 
     def test_analytic_via_dict(self):
         """Analytic:iron should work with dict dispatch."""
-        from zalmoxis.eos import calculate_density
         from zalmoxis.config import load_material_dictionaries
+        from zalmoxis.eos import calculate_density
 
         md = load_material_dictionaries()
         rho = calculate_density(300e9, md, 'Analytic:iron', 300, None, None)
@@ -349,8 +349,8 @@ class TestCalculateDensityDictDispatch:
 
     def test_unknown_eos_raises(self):
         """Unknown EOS should raise ValueError."""
-        from zalmoxis.eos import calculate_density
         from zalmoxis.config import load_material_dictionaries
+        from zalmoxis.eos import calculate_density
 
         md = load_material_dictionaries()
         with pytest.raises(ValueError, match='Unknown'):

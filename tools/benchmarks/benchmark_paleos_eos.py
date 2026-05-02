@@ -53,18 +53,18 @@ if not ZALMOXIS_ROOT:
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
+from zalmoxis.config import (  # noqa: E402
+    load_material_dictionaries,
+    load_solidus_liquidus_functions,
+    load_zalmoxis_config,
+)
 from zalmoxis.constants import earth_mass, earth_radius  # noqa: E402
 from zalmoxis.eos import load_paleos_unified_table  # noqa: E402
 from zalmoxis.melting_curves import (  # noqa: E402
     monteux16_liquidus,
     monteux16_solidus,
 )
-from zalmoxis.config import (
-    load_material_dictionaries,
-    load_solidus_liquidus_functions,
-    load_zalmoxis_config,
-)
-from zalmoxis.solver import main
+from zalmoxis.solver import main  # noqa: E402
 
 # ── Constants ────────────────────────────────────────────────────────
 OUTPUT_DIR = os.path.join(ZALMOXIS_ROOT, 'output', 'benchmark_paleos')

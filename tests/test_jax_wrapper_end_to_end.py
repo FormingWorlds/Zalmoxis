@@ -19,9 +19,9 @@ from test_jax_rhs_parity import _stage1b_setup  # noqa: E402
 @pytest.mark.unit
 def test_solve_structure_via_jax_end_to_end_parity():
     """Wrapper produces (mass, gravity, pressure) matching numpy path."""
-    from zalmoxis.structure_model import solve_structure
-    from zalmoxis.mixing import LayerMixture
     from zalmoxis.jax_eos.wrapper import solve_structure_via_jax
+    from zalmoxis.mixing import LayerMixture
+    from zalmoxis.structure_model import solve_structure
 
     setup = _stage1b_setup()
     cfg = setup['config_params']

@@ -40,14 +40,13 @@ import numpy as np
 # Resolve zalmoxis imports
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src'))
 
+import zalmoxis as _zal
 from zalmoxis.config import (
-    load_zalmoxis_config,
     load_material_dictionaries,
     load_solidus_liquidus_functions,
+    load_zalmoxis_config,
 )
 from zalmoxis.solver import main
-import zalmoxis as _zal
-
 
 PROFILE_KEYS = (
     'radii',

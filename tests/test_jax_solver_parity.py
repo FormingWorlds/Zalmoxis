@@ -11,14 +11,14 @@ gravity, pressure at the outer node.
 """
 from __future__ import annotations
 
-import os
+import os as _os
+
+# Re-use the Stage-1b RHS-test setup helper
+import sys
 
 import numpy as np
 import pytest
 
-# Re-use the Stage-1b RHS-test setup helper
-import sys
-import os as _os
 sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
 from test_jax_rhs_parity import _stage1b_setup  # noqa: E402
 
@@ -26,9 +26,9 @@ from test_jax_rhs_parity import _stage1b_setup  # noqa: E402
 @pytest.mark.unit
 def test_solve_structure_jax_parity_vs_scipy():
     """diffrax Tsit5 matches scipy RK45 on the structure ODE to solver tol."""
-    from zalmoxis.structure_model import solve_structure
-    from zalmoxis.mixing import LayerMixture
     from zalmoxis.jax_eos.solver import solve_structure_jax
+    from zalmoxis.mixing import LayerMixture
+    from zalmoxis.structure_model import solve_structure
 
     setup = _stage1b_setup()
     cfg = setup['config_params']

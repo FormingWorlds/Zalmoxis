@@ -54,12 +54,11 @@ class TestPALEOSMassLimit:
 
     def test_mass_limit_raises(self):
         """Requesting > 50 M_earth with PALEOS-2phase:MgSiO3 must raise ValueError."""
-        from zalmoxis.constants import earth_mass
         from zalmoxis.config import (
             load_material_dictionaries,
             load_solidus_liquidus_functions,
-            load_zalmoxis_config,
         )
+        from zalmoxis.constants import earth_mass
         from zalmoxis.solver import main
 
         layer_eos_config = {'core': 'Seager2007:iron', 'mantle': 'PALEOS-2phase:MgSiO3'}

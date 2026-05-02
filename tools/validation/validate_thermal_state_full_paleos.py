@@ -15,6 +15,7 @@ import os
 import sys
 
 import matplotlib
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
@@ -24,7 +25,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 from zalmoxis import get_zalmoxis_root
 from zalmoxis.config import load_material_dictionaries, load_zalmoxis_config
-from zalmoxis.constants import earth_mass, earth_radius
+from zalmoxis.constants import earth_mass
 from zalmoxis.energetics import initial_thermal_state
 from zalmoxis.solver import main as zalmoxis_main
 
@@ -119,7 +120,6 @@ def get_paleos_cp_at_conditions(P_Pa, T_K, material='MgSiO3'):
         return None
 
     data = np.genfromtxt(path, usecols=range(9), comments='#')
-    phase_str = np.genfromtxt(path, usecols=(9,), dtype=str, comments='#')
     P, T, cp = data[:, 0], data[:, 1], data[:, 5]
 
     # Filter: positive P, finite cp, condensed phases only (exclude vapor/supercritical
@@ -333,11 +333,10 @@ def main():
     # to reproduce their results, then compare with full PALEOS
     print('\n=== White+Li 2025 Fig. 3 reproduction ===')
 
-    # White+Li parameters
+    # White+Li parameters (only f_a is currently consumed by the
+    # const-C_p reproduction; f_d / C_p constants are documented in
+    # White+Li 2025 Table 2 but the comparison plots don't pass them).
     WL_F_A = 0.04
-    WL_F_D = 0.50
-    WL_C_FE = 840.0
-    WL_C_SIL = 1200.0
 
     # Boujibar parameters for comparison
     BJ_F_A = 0.40

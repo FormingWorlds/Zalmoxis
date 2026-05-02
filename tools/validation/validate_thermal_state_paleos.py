@@ -29,11 +29,8 @@ from zalmoxis import get_zalmoxis_root
 from zalmoxis.config import load_material_dictionaries, load_zalmoxis_config
 from zalmoxis.constants import earth_mass, earth_radius
 from zalmoxis.energetics import (
-    gravitational_binding_energy,
-    gravitational_binding_energy_uniform,
     initial_thermal_state,
 )
-from zalmoxis.melting_curves import iron_melting_anzellini13
 from zalmoxis.solver import main as zalmoxis_main
 
 # ── Output ───────────────────────────────────────────────────────────
@@ -95,7 +92,6 @@ def build_paleos_nabla_ad():
 
 def build_paleos_cp():
     """Build a cp(P, T) function from the PALEOS MgSiO3 unified table."""
-    from zalmoxis.eos.interpolation import load_paleos_unified_table
 
     eos_file = os.path.join(
         get_zalmoxis_root(), 'data', 'EOS_PALEOS_MgSiO3_unified',
@@ -251,9 +247,6 @@ def main():
     m_ref = np.linspace(0.5, 5, 50)
     ax.plot(m_ref, boujibar2020_tcmb(m_ref), ':', color='gray', linewidth=1.5,
             label='Boujibar+2020 $T_\\mathrm{CMB}$')
-
-    # Iron melting at CMB pressure for reference
-    P_cmb_s = [seager_data[i].get('P_cmb', None) for i in range(len(seager_data))]
 
     # Solidus reference line at 0 GPa (surface)
     ax.axhline(1400, color='orange', linestyle=':', linewidth=1, label='Approx. solidus ($T \\approx 1400$ K)')

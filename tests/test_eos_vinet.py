@@ -186,7 +186,6 @@ class TestVinetBulkModulus:
         """
         for key, mat in VINET_MATERIALS.items():
             K_prime_expected = mat['K_prime']
-            rho_0 = mat['rho_0']
             tc = mat['thermal_correction']
 
             P1, P2 = 0.5e9, 1.5e9  # 0.5 and 1.5 GPa

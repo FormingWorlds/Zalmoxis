@@ -30,14 +30,14 @@ if not ZALMOXIS_ROOT:
     print('Error: ZALMOXIS_ROOT environment variable not set.')
     sys.exit(1)
 
-from zalmoxis.constants import earth_mass, earth_radius  # noqa: E402
-from zalmoxis.eos import load_paleos_unified_table  # noqa: E402
-from zalmoxis.config import (
+from zalmoxis.config import (  # noqa: E402
     load_material_dictionaries,
     load_solidus_liquidus_functions,
     load_zalmoxis_config,
 )
-from zalmoxis.solver import main
+from zalmoxis.constants import earth_mass, earth_radius  # noqa: E402
+from zalmoxis.eos import load_paleos_unified_table  # noqa: E402
+from zalmoxis.solver import main  # noqa: E402
 
 OUTPUT_DIR = os.path.join(ZALMOXIS_ROOT, 'output', 'paleos_full_validation')
 os.makedirs(OUTPUT_DIR, exist_ok=True)

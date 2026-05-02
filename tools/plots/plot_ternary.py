@@ -13,8 +13,8 @@ from tqdm import tqdm
 # Run file via command line: python -m zalmoxis.plots.plot_ternary
 # Read the environment variable for get_zalmoxis_root()
 from zalmoxis import get_zalmoxis_root, zalmoxis
-from zalmoxis.constants import earth_mass, earth_radius
 from zalmoxis.config import load_solidus_liquidus_functions
+from zalmoxis.constants import earth_mass, earth_radius
 
 # Set up logging
 logger = logging.getLogger(__name__)

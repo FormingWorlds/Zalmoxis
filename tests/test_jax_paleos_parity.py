@@ -16,7 +16,7 @@ import pytest
 
 def _load_stage1b_cache():
     """Load a Stage-1b PALEOS-2phase melt table via the numpy code path."""
-    from zalmoxis.config import load_zalmoxis_config, load_material_dictionaries
+    from zalmoxis.config import load_material_dictionaries, load_zalmoxis_config
     from zalmoxis.eos.interpolation import _ensure_unified_cache
 
     here = os.path.dirname(os.path.abspath(__file__))

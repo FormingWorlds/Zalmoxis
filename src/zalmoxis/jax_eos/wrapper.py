@@ -175,7 +175,6 @@ def solve_structure_via_jax(
 
     Providing both is rejected to avoid ambiguity.
     """
-    from .. import melting_curves as mc
     from ..eos.interpolation import _ensure_unified_cache
     from ..eos.seager import get_tabulated_eos
 

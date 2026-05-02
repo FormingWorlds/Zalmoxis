@@ -494,9 +494,8 @@ def initial_thermal_state(
                 T_profile[i - 1] = T
         # else: core stays isothermal at T_CMB (already set)
 
-    # T at the top of the adiabat = T_surf_accr by construction
-    # (the outward adiabat from T_CMB is the inverse of the inward integration)
-    T_surf_accr_check = float(T_profile[-1])
+    # T at the top of the adiabat = T_surf_accr by construction:
+    # the outward adiabat from T_CMB is the inverse of the inward integration.
 
     # ── Core state detection ─────────────────────────────────────────
     if core_mass_fraction <= 0:

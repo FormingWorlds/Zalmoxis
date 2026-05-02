@@ -77,8 +77,8 @@ class TestPlotPlanetProfileSingle:
         All phase labels become 'unknown', so the phase panel shows the
         fallback italic text instead of colored patches.
         """
-        import zalmoxis
         import tools.plots.plot_profiles as mod
+        import zalmoxis
         monkeypatch.setattr(zalmoxis, '_zalmoxis_root', str(tmp_path))
         os.makedirs(tmp_path / 'output', exist_ok=True)
 
@@ -95,8 +95,8 @@ class TestPlotPlanetProfileSingle:
 
     def test_profile_plot_with_id_mass(self, tmp_path, monkeypatch):
         """Filename includes id_mass when it is not None."""
-        import zalmoxis
         import tools.plots.plot_profiles as mod
+        import zalmoxis
         monkeypatch.setattr(zalmoxis, '_zalmoxis_root', str(tmp_path))
         os.makedirs(tmp_path / 'output', exist_ok=True)
 
@@ -116,8 +116,8 @@ class TestPlotPlanetProfileSingle:
         Uses two distinct phases so the legend-patch branch is taken
         (covers the 'if patches' path and Patch construction).
         """
-        import zalmoxis
         import tools.plots.plot_profiles as mod
+        import zalmoxis
         monkeypatch.setattr(zalmoxis, '_zalmoxis_root', str(tmp_path))
         os.makedirs(tmp_path / 'output', exist_ok=True)
 

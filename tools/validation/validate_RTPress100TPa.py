@@ -18,14 +18,14 @@ import numpy as np
 # Ensure imports work from repo root
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
+from zalmoxis import get_zalmoxis_root
 from zalmoxis.config import (
     load_material_dictionaries,
     load_solidus_liquidus_functions,
     load_zalmoxis_config,
 )
-from zalmoxis.solver import main
-from zalmoxis import get_zalmoxis_root
 from zalmoxis.constants import earth_mass, earth_radius
+from zalmoxis.solver import main
 
 OUTPUT_DIR = os.path.join(get_zalmoxis_root(), 'output')
 os.makedirs(OUTPUT_DIR, exist_ok=True)

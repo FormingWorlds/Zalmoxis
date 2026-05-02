@@ -15,8 +15,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from zalmoxis import zalmoxis
-from zalmoxis.constants import earth_mass, earth_radius
 from zalmoxis.config import load_solidus_liquidus_functions
+from zalmoxis.constants import earth_mass, earth_radius
 
 ZALMOXIS_ROOT = os.environ.get('ZALMOXIS_ROOT')
 if not ZALMOXIS_ROOT:

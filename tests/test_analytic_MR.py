@@ -14,6 +14,7 @@ References:
 from __future__ import annotations
 
 import pytest
+
 from tools.setup.setup_tests import load_model_output
 
 

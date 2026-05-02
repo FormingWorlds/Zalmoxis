@@ -18,8 +18,9 @@ import pytest
 def _stage1b_setup():
     """Load mantle + core caches + melting curves + adiabat; build jax_args."""
     from zalmoxis.config import (
-        load_zalmoxis_config, load_material_dictionaries,
+        load_material_dictionaries,
         load_solidus_liquidus_functions,
+        load_zalmoxis_config,
     )
     from zalmoxis.eos.interpolation import _ensure_unified_cache
     from zalmoxis.eos.paleos_api_cache import resolve_registry_entry
@@ -154,9 +155,9 @@ def _stage1b_setup():
 @pytest.mark.unit
 def test_coupled_odes_jax_parity():
     """JAX coupled_odes matches numpy on 2-layer Stage-1b config."""
-    from zalmoxis.structure_model import coupled_odes
-    from zalmoxis.mixing import LayerMixture
     from zalmoxis.jax_eos.rhs import coupled_odes_jax
+    from zalmoxis.mixing import LayerMixture
+    from zalmoxis.structure_model import coupled_odes
 
     setup = _stage1b_setup()
     cfg = setup['config_params']

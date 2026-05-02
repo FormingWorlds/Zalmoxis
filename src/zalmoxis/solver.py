@@ -1651,13 +1651,11 @@ def _solve(
                 # and the except handler below gracefully falls back to the
                 # last evaluated solution.
                 p_low = p_high = None
-                f_low = f_high = None
                 for _bi, (_pl, _ph) in enumerate(bracket_attempts):
                     _fl = _pressure_residual(_pl)
                     _fh = _pressure_residual(_ph)
                     if _fl * _fh <= 0:
                         p_low, p_high = _pl, _ph
-                        f_low, f_high = _fl, _fh
                         if _bi > 0:
                             logger.debug(
                                 'Bracket widened to [%.2e, %.2e] Pa on attempt %d',

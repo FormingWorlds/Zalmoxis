@@ -391,8 +391,8 @@ class TestPALEOSAdiabaticProfile:
         if not _paleos_data_available():
             pytest.skip('PALEOS data files not found')
 
-        from zalmoxis.eos import get_solidus_liquidus_functions
         from zalmoxis.config import load_material_dictionaries
+        from zalmoxis.eos import get_solidus_liquidus_functions
 
         material_dicts = load_material_dictionaries()
         solidus_func, liquidus_func = get_solidus_liquidus_functions()
@@ -423,8 +423,8 @@ class TestPALEOSAdiabaticProfile:
         if not _paleos_data_available():
             pytest.skip('PALEOS data files not found')
 
-        from zalmoxis.eos import get_solidus_liquidus_functions
         from zalmoxis.config import load_material_dictionaries
+        from zalmoxis.eos import get_solidus_liquidus_functions
 
         material_dicts = load_material_dictionaries()
         solidus_func, liquidus_func = get_solidus_liquidus_functions()
@@ -460,8 +460,8 @@ class TestPALEOSAdiabaticProfile:
         if not _paleos_data_available():
             pytest.skip('PALEOS data files not found')
 
-        from zalmoxis.eos import get_solidus_liquidus_functions
         from zalmoxis.config import load_material_dictionaries
+        from zalmoxis.eos import get_solidus_liquidus_functions
 
         material_dicts = load_material_dictionaries()
         solidus_func, liquidus_func = get_solidus_liquidus_functions()
