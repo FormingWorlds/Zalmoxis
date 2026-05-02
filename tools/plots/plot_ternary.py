@@ -12,9 +12,14 @@ from tqdm import tqdm
 
 # Run file via command line: python -m zalmoxis.plots.plot_ternary
 # Read the environment variable for get_zalmoxis_root()
-from zalmoxis import get_zalmoxis_root, zalmoxis
-from zalmoxis.config import load_solidus_liquidus_functions
+from zalmoxis import get_zalmoxis_root
+from zalmoxis.config import (
+    load_material_dictionaries,
+    load_solidus_liquidus_functions,
+    load_zalmoxis_config,
+)
 from zalmoxis.constants import earth_mass, earth_radius
+from zalmoxis.solver import main as zalmoxis_main
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -36,7 +41,7 @@ def run_zalmoxis_for_ternary(args):
 
     # Path to the default configuration file
     default_config_path = os.path.join(get_zalmoxis_root(), 'input', 'default.toml')
-    config_params = zalmoxis.load_zalmoxis_config(default_config_path)
+    config_params = load_zalmoxis_config(default_config_path)
 
     # Modify the configuration parameters as needed
     config_params['planet_mass'] = id_mass * earth_mass
@@ -49,9 +54,9 @@ def run_zalmoxis_for_ternary(args):
     }
 
     # Unpack outputs directly from Zalmoxis
-    model_results = zalmoxis.main(
+    model_results = zalmoxis_main(
         config_params,
-        material_dictionaries=zalmoxis.load_material_dictionaries(),
+        material_dictionaries=load_material_dictionaries(),
         melting_curves_functions=load_solidus_liquidus_functions(
             config_params['layer_eos_config']
         ),

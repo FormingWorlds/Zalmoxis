@@ -84,10 +84,15 @@ def gravitational_binding_energy(radii, mass_enclosed):
     # Integrand: G * m / r
     integrand = G * m / r
 
-    # Trapezoidal integration over enclosed mass
-    # np.trapezoid (numpy >= 2.0) or np.trapz (numpy < 2.0)
-    _trapz = getattr(np, 'trapezoid', np.trapz)
-    U = _trapz(integrand, m)
+    # Trapezoidal integration over enclosed mass.
+    # numpy 2.0 renamed `trapz` to `trapezoid` and removed the old name in
+    # 2.x; the legacy `getattr(np, 'trapezoid', np.trapz)` fallback breaks
+    # on numpy 2.x because the default arg is evaluated eagerly and
+    # `np.trapz` no longer exists. Branch on availability instead.
+    if hasattr(np, 'trapezoid'):
+        U = np.trapezoid(integrand, m)
+    else:
+        U = np.trapz(integrand, m)  # numpy < 2.0
 
     return float(abs(U))
 
