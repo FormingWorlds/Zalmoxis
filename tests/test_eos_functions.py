@@ -1256,6 +1256,54 @@ class TestCalculateTemperatureProfile:
         with pytest.raises(ValueError, match='Unknown temperature mode'):
             calculate_temperature_profile(radii, 'invalid_mode', 300, 6000, '.', '')
 
+    def test_adiabatic_from_cmb_with_cmb_temperature(self):
+        """``'adiabatic_from_cmb'`` with a positive ``cmb_temperature``
+        anchors the linear initial-guess profile at ``cmb_temperature``
+        at r=0 (deep anchor), not at ``center_temperature``."""
+        from zalmoxis.eos import calculate_temperature_profile
+
+        radii = np.linspace(0, 6e6, 100)
+        T_func = calculate_temperature_profile(
+            radii,
+            'adiabatic_from_cmb',
+            surface_temperature=300,
+            center_temperature=8000,  # should be IGNORED when cmb_temperature is set
+            input_dir='.',
+            temp_profile_file='',
+            cmb_temperature=4500,
+        )
+        T = T_func(radii)
+        # Deep anchor at r=0 must equal cmb_temperature, not
+        # center_temperature.
+        assert T[0] == pytest.approx(4500.0)
+        assert T[-1] == pytest.approx(300.0)
+        # Profile must be linear (monotonic with constant slope).
+        slopes = np.diff(T) / np.diff(radii)
+        assert np.allclose(slopes, slopes[0], rtol=1e-10)
+
+    def test_adiabatic_from_cmb_falls_back_to_center_temperature(self):
+        """When ``cmb_temperature`` is None or non-positive, the deep
+        anchor falls back to ``center_temperature``. Boundary cases:
+        None, 0, and a negative value all trigger the fallback."""
+        from zalmoxis.eos import calculate_temperature_profile
+
+        radii = np.linspace(0, 6e6, 50)
+        for invalid_cmb_T in (None, 0.0, -100.0):
+            T_func = calculate_temperature_profile(
+                radii,
+                'adiabatic_from_cmb',
+                surface_temperature=300,
+                center_temperature=6000,
+                input_dir='.',
+                temp_profile_file='',
+                cmb_temperature=invalid_cmb_T,
+            )
+            T = T_func(radii)
+            assert T[0] == pytest.approx(6000.0), (
+                f'cmb_temperature={invalid_cmb_T} should fall back to center_temperature'
+            )
+            assert T[-1] == pytest.approx(300.0)
+
 
 # =====================================================================
 # load_melting_curve tests
