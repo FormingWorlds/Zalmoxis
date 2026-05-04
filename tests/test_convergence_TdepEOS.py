@@ -13,11 +13,14 @@ from tools.setup.setup_tests import run_zalmoxis_TdepEOS
     'mass', [1, 2, 5, 7]
 )  # WolfBower2018 EOS tables valid up to ~7 M_earth with Brent solver clamping
 def test_all_compositions_converge(mass, zalmoxis_root):
-    """Test that the T-dependent EOS model converges for low-mass planets.
+    """Test that the T-dependent EOS model converges across 1-7 M_earth.
 
-    The WolfBower2018:MgSiO3 EOS tables cover pressures up to ~1 TPa,
-    which limits their applicability to planets <= 2 M_earth. For higher
-    masses, deep-mantle pressures near the CMB exceed the table boundary.
+    The WolfBower2018:MgSiO3 EOS tables natively cover up to ~1 TPa
+    (sufficient for ~2 M_earth). For higher masses, deep-mantle pressures
+    near the CMB exceed the table boundary; the Brent surface-pressure
+    solver clamps to the table edge so the structure still converges.
+    Density-range bounds below allow for clamped WolfBower2018 values
+    near the CMB at 5-7 M_earth.
 
     Verifies convergence and checks that the resulting density profiles are
     physically consistent: iron core densities >= 8000 kg/m3 (catches the

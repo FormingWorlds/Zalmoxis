@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-# Read the environment variable for get_zalmoxis_root()
-from zalmoxis.plots.plot_ternary import wrapper_ternary
+from tools.plots.plot_ternary import wrapper_ternary
 
 
 def run_ternary_diagrams(target_mass_array):

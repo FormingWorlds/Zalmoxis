@@ -44,12 +44,9 @@ from __future__ import annotations
 
 import argparse
 import os
-import sys
 import time
 
 import numpy as np
-
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src'))
 
 import zalmoxis as _zal
 from zalmoxis.config import (

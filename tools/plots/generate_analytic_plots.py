@@ -172,7 +172,11 @@ def plot2_density_residuals():
 
 def plot3_mass_radius():
     """Plot 3: Mass-radius comparison (analytic vs tabulated)."""
-    from tools.setup_tests import load_model_output, load_zeng_curve, run_zalmoxis_rocky_water
+    from tools.setup.setup_tests import (
+        load_model_output,
+        load_zeng_curve,
+        run_zalmoxis_rocky_water,
+    )
 
     masses = [0.5, 1, 2, 3, 5, 7, 10, 15, 20, 30, 50]
 
@@ -343,8 +347,7 @@ def plot3_mass_radius():
 
 def plot4_density_profiles():
     """Plot 4: Interior density profiles for 1 M_earth."""
-    from tools.setup_tests import load_profile_output, run_zalmoxis_rocky_water
-
+    from tools.setup.setup_tests import load_profile_output, run_zalmoxis_rocky_water
     from zalmoxis.constants import earth_radius
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))

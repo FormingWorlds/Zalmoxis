@@ -14,9 +14,13 @@ import sys
 import matplotlib.pyplot as plt
 import numpy as np
 
-from zalmoxis import zalmoxis
-from zalmoxis.config import load_solidus_liquidus_functions
+from zalmoxis.config import (
+    load_material_dictionaries,
+    load_solidus_liquidus_functions,
+    load_zalmoxis_config,
+)
 from zalmoxis.constants import earth_mass, earth_radius
+from zalmoxis.solver import main as zalmoxis_main
 
 ZALMOXIS_ROOT = os.environ.get('ZALMOXIS_ROOT')
 if not ZALMOXIS_ROOT:
@@ -99,7 +103,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 def run_solver(id_mass, config_type, cmf, immf, layer_eos_override=None):
     """Run Zalmoxis and return (mass_earth, radius_earth)."""
     default_config_path = os.path.join(ZALMOXIS_ROOT, 'input', 'default.toml')
-    config_params = zalmoxis.load_zalmoxis_config(default_config_path)
+    config_params = load_zalmoxis_config(default_config_path)
     config_params['planet_mass'] = id_mass * earth_mass
     config_params['core_mass_fraction'] = cmf
     config_params['mantle_mass_fraction'] = immf
@@ -122,9 +126,9 @@ def run_solver(id_mass, config_type, cmf, immf, layer_eos_override=None):
     config_params['verbose'] = False
 
     layer_eos_config = config_params['layer_eos_config']
-    model_results = zalmoxis.main(
+    model_results = zalmoxis_main(
         config_params,
-        material_dictionaries=zalmoxis.load_material_dictionaries(),
+        material_dictionaries=load_material_dictionaries(),
         melting_curves_functions=load_solidus_liquidus_functions(layer_eos_config),
         input_dir=os.path.join(ZALMOXIS_ROOT, 'input'),
     )

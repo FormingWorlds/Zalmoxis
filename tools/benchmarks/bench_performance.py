@@ -38,9 +38,6 @@ import time
 
 import numpy as np
 
-# Resolve zalmoxis imports
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src'))
-
 import zalmoxis as _zal
 from zalmoxis.config import (
     load_material_dictionaries,
