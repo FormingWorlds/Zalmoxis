@@ -1253,8 +1253,14 @@ def compute_surface_entropy(
 
     def _lookup_phase_weighted(P, T):
         if solidus_func is not None and liquidus_func is not None:
-            T_sol = solidus_func(P)
-            T_liq = liquidus_func(P)
+            # Coerce to scalar floats: ``solidus_func`` / ``liquidus_func`` may
+            # return 1-element ndarrays from a vectorised callable, which would
+            # break the chained comparison and the array constructor below.
+            # Going via ``.item()`` accepts scalars and 1-element arrays but
+            # raises on truly multi-element input, which is the right contract
+            # for a single-point lookup.
+            T_sol = float(np.asarray(solidus_func(P)).item())
+            T_liq = float(np.asarray(liquidus_func(P)).item())
             if T_sol < T < T_liq and T_liq > T_sol:
                 phi = (T - T_sol) / (T_liq - T_sol)
                 pt_sol = np.array([[np.log10(max(P, 1.0)), np.log10(max(T_sol, 300.0))]])
@@ -1383,8 +1389,14 @@ def compute_entropy_adiabat(
         the solidus/liquidus.
         """
         if solidus_func is not None and liquidus_func is not None:
-            T_sol = solidus_func(P)
-            T_liq = liquidus_func(P)
+            # Coerce to scalar floats: ``solidus_func`` / ``liquidus_func`` may
+            # return 1-element ndarrays from a vectorised callable, which would
+            # break the chained comparison and the array constructor below.
+            # Going via ``.item()`` accepts scalars and 1-element arrays but
+            # raises on truly multi-element input, which is the right contract
+            # for a single-point lookup.
+            T_sol = float(np.asarray(solidus_func(P)).item())
+            T_liq = float(np.asarray(liquidus_func(P)).item())
             if T_sol < T < T_liq and T_liq > T_sol:
                 phi = (T - T_sol) / (T_liq - T_sol)
                 pt_sol = np.array([[np.log10(max(P, 1.0)), np.log10(max(T_sol, 300.0))]])

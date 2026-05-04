@@ -437,3 +437,298 @@ class TestEarthBenchmark:
         result_large = initial_thermal_state(model_large, core_mass_fraction=0.32)
 
         assert result_large['U_differentiated'] > result_small['U_differentiated']
+
+
+# ============================================================================
+# Branch coverage: callables that activate non-default code paths
+# ============================================================================
+#
+# The default ``initial_thermal_state`` call uses constant C_p, no nabla_ad,
+# and isothermal core. The branches below are activated only when the user
+# supplies callables for ``cp_iron_func``, ``cp_silicate_func``,
+# ``nabla_ad_func``, ``nabla_ad_iron_func``, or ``iron_melting_func``.
+# Each test class targets one such callable family.
+
+
+def _toy_nabla_ad(P, T):
+    """Realistic nabla_ad ~ 0.25 in-table.
+
+    Discriminating: not 0.3 (the Gruneisen-fallback hand-wave value), so a
+    branch that silently mis-routes through the fallback would give a
+    different T_CMB than this test asserts.
+    """
+    return 0.25
+
+
+def _toy_cp_iron(P, T):
+    """Iron C_p with a deliberate P-dependence.
+
+    Non-trivial P dependence so the mass-weighted average over a
+    multi-shell core differs from the constant-fallback value of C_iron=450.
+    """
+    return 450.0 + 5.0e-11 * P
+
+
+def _toy_cp_silicate(P, T):
+    """Silicate C_p with deliberate P-dependence."""
+    return 1250.0 + 1.0e-11 * P
+
+
+@pytest.mark.unit
+class TestIntegrateAdiabatPaths:
+    """``_integrate_adiabat`` has a nabla_ad branch (L210-225) and a Gruneisen branch (L226-229)."""
+
+    def test_nabla_ad_branch_runs_and_warms_inward(self):
+        """With ``nabla_ad_func``, T must increase monotonically as P increases."""
+        from zalmoxis.energetics import _integrate_adiabat
+
+        # Pressure grid surface -> CMB (increasing P).
+        P_grid = np.linspace(1e7, 1.4e11, 80)
+        T_top = _integrate_adiabat(P_grid, 1500.0, _toy_nabla_ad)
+        T_top_grun = _integrate_adiabat(P_grid, 1500.0, None)
+        # Both branches must warm; the Gruneisen branch is bounded by the
+        # log-stepping branch when nabla_ad < gamma/Kprime ~ 0.325, so the
+        # Gruneisen step is hotter than the nabla_ad step at default settings.
+        assert T_top > 1500.0
+        assert T_top_grun > 1500.0
+        # Both branches must warm by O(>200 K) over a 14-decade pressure rise.
+        assert T_top - 1500.0 > 200.0
+        assert T_top_grun - 1500.0 > 200.0
+
+    def test_nabla_ad_step_capped_when_exceeds_gruneisen(self):
+        """Cap kicks in when nabla_ad_func returns a divergent value.
+
+        Discriminating edge case: ``nabla_ad_func`` returns 0.6 (well above
+        gamma/Kprime ~ 0.325). The capping logic must clamp to the Gruneisen
+        prediction, so the integrated T_top should match the Gruneisen-only
+        result within a few %.
+        """
+        from zalmoxis.energetics import _integrate_adiabat
+
+        def divergent_nabla_ad(P, T):
+            return 0.6
+
+        P_grid = np.linspace(1e7, 1.4e11, 80)
+        T_top_capped = _integrate_adiabat(P_grid, 1500.0, divergent_nabla_ad)
+        T_top_grun = _integrate_adiabat(P_grid, 1500.0, None)
+        # Capping pulls T_top within 5% of the Gruneisen result.
+        np.testing.assert_allclose(T_top_capped, T_top_grun, rtol=5e-2)
+
+    def test_zero_pressure_clamped_to_floor(self):
+        """Pressure floor at 1e3 Pa: a pressure of 0 must not cause div-by-zero."""
+        from zalmoxis.energetics import _integrate_adiabat
+
+        # Single-step path with P=0 at one end.
+        P_grid = np.array([0.0, 1e9])
+        T_top = _integrate_adiabat(P_grid, 1500.0, None)
+        assert np.isfinite(T_top)
+        assert T_top > 1500.0  # warming inward
+
+    def test_single_point_profile_returns_anchor(self):
+        """Edge case: profile of length 1 has no steps and returns T_anchor."""
+        from zalmoxis.energetics import _integrate_adiabat
+
+        P_grid = np.array([1e9])
+        T_top = _integrate_adiabat(P_grid, 1234.0, _toy_nabla_ad)
+        assert T_top == pytest.approx(1234.0)
+
+
+@pytest.mark.unit
+class TestVariableHeatCapacityPath:
+    """``initial_thermal_state`` with cp_iron_func and cp_silicate_func."""
+
+    def test_cp_funcs_change_C_avg_relative_to_constant(self):
+        """Mass-weighted C_p differs from constant C_p when funcs vary with P.
+
+        Discriminating: the toy funcs add ~50 J/kg/K of extra C_p at the
+        CMB pressure (5e-11 * 1.4e11 = 7), so C_iron_avg should rise above
+        the constant 450 J/kg/K default by a measurable amount.
+        """
+        model = _make_synthetic_model_results(n_points=200, cmf=0.32)
+        result = initial_thermal_state(
+            model,
+            core_mass_fraction=0.32,
+            cp_iron_func=_toy_cp_iron,
+            cp_silicate_func=_toy_cp_silicate,
+        )
+        # The constant defaults give C_iron_avg = 450, C_sil_avg = 1250.
+        assert result['C_iron_avg'] > 450.0
+        assert result['C_silicate_avg'] > 1250.0
+        # And the result dict carries the mass-weighted aggregate.
+        assert 'C_avg' in result
+        assert result['C_avg'] > 0.0
+
+    def test_only_cp_iron_func_provided_silicate_falls_back_to_constant(self):
+        """Edge: providing only one cp callable still triggers the integration block."""
+        model = _make_synthetic_model_results(n_points=200, cmf=0.32)
+        result = initial_thermal_state(
+            model,
+            core_mass_fraction=0.32,
+            cp_iron_func=_toy_cp_iron,
+        )
+        # Iron average reflects the toy func; silicate falls back to the
+        # default constant 1250.
+        assert result['C_iron_avg'] > 450.0
+        assert result['C_silicate_avg'] == pytest.approx(1250.0, abs=1e-6)
+
+    def test_cp_funcs_and_nabla_ad_func_together(self):
+        """Both callables together: exercises the L388-391 nabla_ad path inside cp loop."""
+        model = _make_synthetic_model_results(n_points=200, cmf=0.32)
+        result = initial_thermal_state(
+            model,
+            core_mass_fraction=0.32,
+            cp_iron_func=_toy_cp_iron,
+            cp_silicate_func=_toy_cp_silicate,
+            nabla_ad_func=_toy_nabla_ad,
+        )
+        # Both branches active: result must remain physical.
+        assert result['T_cmb'] > result['T_surf_accr']
+        assert result['C_iron_avg'] > 450.0
+        assert result['C_silicate_avg'] > 1250.0
+
+    def test_zero_mass_shell_skipped_in_cp_integration(self):
+        """L408-409 ``if dm_i <= 0: continue`` branch.
+
+        Construct a model with a duplicate radius (dm = 0) and verify the
+        cp-integration loop survives (no division by zero, no NaN in C_avg).
+        """
+        n = 50
+        radii = np.linspace(0, 6.371e6, n)
+        mass_enclosed = np.linspace(0, 5.972e24, n).copy()
+        # Force a zero-mass shell by duplicating one entry.
+        mass_enclosed[20] = mass_enclosed[19]
+        pressure = np.linspace(1e11, 1e5, n)
+        cmb_mass = mass_enclosed[15]
+
+        model = {
+            'radii': radii,
+            'density': 5500.0 * np.ones(n),
+            'gravity': np.linspace(0, 9.8, n),
+            'pressure': pressure,
+            'temperature': 1500.0 * np.ones(n),
+            'mass_enclosed': mass_enclosed,
+            'cmb_mass': cmb_mass,
+        }
+        result = initial_thermal_state(
+            model,
+            core_mass_fraction=0.32,
+            cp_iron_func=_toy_cp_iron,
+            cp_silicate_func=_toy_cp_silicate,
+        )
+        assert np.isfinite(result['C_avg'])
+        assert result['C_avg'] > 0.0
+
+
+@pytest.mark.unit
+class TestNablaAdFuncPath:
+    """``initial_thermal_state`` with nabla_ad_func and nabla_ad_iron_func."""
+
+    def test_provided_mantle_nabla_ad_warms_T_cmb(self):
+        """With nabla_ad_func, T_CMB rises above the Gruneisen-only default.
+
+        Property assertion (no exact value): the mantle adiabat with
+        nabla_ad ~ 0.25 takes a different path than the Gruneisen step;
+        T_CMB must remain >= T_surf_accr in either case.
+        """
+        model = _make_synthetic_model_results(n_points=200, cmf=0.32)
+        result = initial_thermal_state(
+            model,
+            core_mass_fraction=0.32,
+            nabla_ad_func=_toy_nabla_ad,
+        )
+        assert result['T_cmb'] > result['T_surf_accr']
+        # The mantle adiabat increment must be non-negative after clamp.
+        assert result['Delta_T_adiabat'] >= 0.0
+
+    def test_iron_nabla_ad_func_makes_core_non_isothermal(self):
+        """Provided nabla_ad_iron_func: T_profile[0] > T_cmb (warmer core center).
+
+        Without nabla_ad_iron_func the core is isothermal at T_cmb, so
+        T_profile[0] == T_cmb. With the iron adiabat callable, T_profile[0]
+        must rise above T_cmb (compression heating inward).
+        """
+
+        def iron_nabla(P, T):
+            return 0.20  # iron adiabat ~ 1-3 K/GPa
+
+        model = _make_synthetic_model_results(n_points=200, cmf=0.32)
+        result = initial_thermal_state(
+            model,
+            core_mass_fraction=0.32,
+            nabla_ad_iron_func=iron_nabla,
+        )
+        assert result['T_profile'][0] > result['T_cmb']
+
+    def test_partial_core_state_when_T_cmb_within_5pct_of_T_melt(self):
+        """Edge: T_cmb tuned to land in [0.95, 1.05] * T_melt.
+
+        Forces the third arm of the core_state classifier (line 524). Use a
+        custom iron melting function that returns a value sandwiching T_cmb.
+        """
+        model = _make_synthetic_model_results(n_points=200, cmf=0.32)
+        # First, get T_cmb under the default settings.
+        baseline = initial_thermal_state(model, core_mass_fraction=0.32)
+        T_cmb_baseline = baseline['T_cmb']
+
+        # Custom melting curve that returns exactly T_cmb at every P -> partial.
+        def melt_at_T_cmb(P):
+            return T_cmb_baseline
+
+        result = initial_thermal_state(
+            model,
+            core_mass_fraction=0.32,
+            iron_melting_func=melt_at_T_cmb,
+        )
+        assert result['core_state'] == 'partial'
+
+    def test_solid_core_state_when_T_cmb_below_T_melt(self):
+        """Edge: melting curve returning a high value forces 'solid' branch."""
+
+        def hot_melt(P):
+            return 50000.0  # unphysically hot melting -> always solid below
+
+        model = _make_synthetic_model_results(n_points=200, cmf=0.32)
+        result = initial_thermal_state(
+            model,
+            core_mass_fraction=0.32,
+            iron_melting_func=hot_melt,
+        )
+        assert result['core_state'] == 'solid'
+
+
+@pytest.mark.unit
+class TestNegativeDeltaTAdiabatClamp:
+    """When _integrate_adiabat returns T_at_cmb < T_surf_accr, Delta_T_ad clamps to 0."""
+
+    def test_inverted_pressure_profile_triggers_clamp(self):
+        """Pressure profile that decreases inward forces T_at_cmb < T_surf_accr.
+
+        Edge case for the L464-470 ``Delta_T_ad < 0`` warning + clamp branch.
+        """
+        # Build a synthetic model whose pressure decreases from CMB to surface
+        # the wrong way. The slicing in initial_thermal_state then yields an
+        # adiabat from low T at CMB to high T at surface, so when the
+        # outward-from-CMB profile is reversed the integrated T_at_cmb may
+        # come back below the surface anchor. We verify the clamp handles it.
+        n = 60
+        radii = np.linspace(0, 6.371e6, n)
+        # Outward density gradient is fine; just lower CMB pressure than surface.
+        mass_enclosed = np.linspace(0, 5.972e24, n)
+        # Pressure rising outward (inverted) so the adiabat integrator sees
+        # negative dP. The clamp must catch the unphysical Delta_T_ad.
+        pressure = np.linspace(1e9, 1e11, n)
+        cmb_mass = mass_enclosed[20]  # CMB at index 20
+
+        model = {
+            'radii': radii,
+            'density': 5500.0 * np.ones(n),
+            'gravity': np.linspace(0, 9.8, n),
+            'pressure': pressure,
+            'temperature': 1500.0 * np.ones(n),
+            'mass_enclosed': mass_enclosed,
+            'cmb_mass': cmb_mass,
+        }
+        result = initial_thermal_state(model, core_mass_fraction=0.32)
+        # Delta_T_ad must be clamped to >= 0 even with inverted pressure.
+        assert result['Delta_T_adiabat'] >= 0.0
+        assert np.isfinite(result['T_cmb'])

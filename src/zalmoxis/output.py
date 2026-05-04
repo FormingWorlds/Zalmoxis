@@ -63,7 +63,11 @@ def post_processing(config_params, id_mass=None, output_file=None):
     converged_density = model_results['converged_density']
     converged_mass = model_results['converged_mass']
 
-    cmb_index = np.argmax(mass_enclosed >= cmb_mass)
+    # Floor the CMB index at 1 so ``density[cmb_index - 1]`` (used for the
+    # core-side density log line) does not silently wrap to ``density[-1]``
+    # (the surface) when ``cmb_mass <= mass_enclosed[0]`` (e.g. coreless
+    # configs where np.argmax returns 0).
+    cmb_index = max(1, int(np.argmax(mass_enclosed >= cmb_mass)))
 
     average_density = mass_enclosed[-1] / (4 / 3 * math.pi * radii[-1] ** 3)
 
@@ -107,8 +111,13 @@ def post_processing(config_params, id_mass=None, output_file=None):
     logger.info(f'Pressure at Center: {pressure[0]:.2e} Pa')
     logger.info(f'Average Density: {average_density:.2f} kg/m^3')
     logger.info(f'CMB Mass Fraction: {mass_enclosed[cmb_index] / mass_enclosed[-1]:.3f}')
+    # ``core_mantle_mass = (cmf + mmf) * M_total`` is the cumulative mass at
+    # the top of the mantle layer, and ``mass_enclosed[cmb_index]`` is the
+    # core mass. The difference is therefore the mantle-layer mass alone,
+    # not ``core + mantle``. (For 2-layer configs with ``mmf = 0`` the
+    # mantle fills the remainder and this prints 0.000 by convention.)
     logger.info(
-        f'Core+Mantle Mass Fraction: '
+        f'Mantle Mass Fraction: '
         f'{(core_mantle_mass - mass_enclosed[cmb_index]) / mass_enclosed[-1]:.3f}'
     )
     logger.info(f'Calculated Core Radius Fraction: {radii[cmb_index] / radii[-1]:.2f}')
