@@ -17,7 +17,6 @@ import pytest
 from tests._paleos_helpers import _paleos_data_available, _run_paleos
 from zalmoxis.constants import earth_radius
 
-
 # ── Linear mode convergence ────────────────────────────────────────────
 
 
