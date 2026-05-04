@@ -288,3 +288,108 @@ class TestVinetVsSeager:
                 f'At P={P / 1e9:.0f} GPa: Vinet={rho_v:.0f}, '
                 f'Seager={rho_s:.0f}, diff={rel_diff:.1%}'
             )
+
+
+@pytest.mark.unit
+class TestVinetEdgeCases:
+    """Anti-happy-path coverage for the Vinet boundary branches and
+    extreme-pressure / failure-recovery paths.
+
+    Each test exercises a specific line range that the standard
+    happy-path tests above do not reach:
+
+    * ``_vinet_pressure(f<=0)`` returns ``np.inf`` (compression beyond
+      the physical bracket).
+    * ``get_vinet_density`` clamps pressures above ``P_MAX_VINET`` and
+      logs a warning.
+    * The ``P_target < P(f~1)`` short-circuit returns ``rho_0 * thermal``.
+    * The ``residual(f_min) < 0`` branch widens the bracket to f=0.001
+      for ultra-high pressure.
+    * The ``brentq`` ``ValueError`` fallback returns ``None`` when no
+      root is found within the bracket.
+    """
+
+    def test_pressure_at_f_zero_is_inf(self):
+        """``_vinet_pressure(f=0)`` must return ``np.inf`` (the f<=0 branch)."""
+        K_0 = 165e9
+        eta = 1.5 * (4.9 - 1)
+        assert _vinet_pressure(0.0, K_0, eta) == np.inf
+        # Negative f is also treated as the singular f<=0 case
+        assert _vinet_pressure(-0.1, K_0, eta) == np.inf
+
+    def test_pressure_above_max_vinet_clamped_with_warning(self, caplog):
+        """Pressure above ``P_MAX_VINET`` must be clamped and a warning logged."""
+        from zalmoxis.eos_vinet import P_MAX_VINET
+
+        # 100x P_MAX_VINET = absolutely beyond physical validity
+        with caplog.at_level('WARNING', logger='zalmoxis.eos_vinet'):
+            rho = get_vinet_density(P_MAX_VINET * 100, 'iron')
+
+        assert any('exceeds Vinet validity limit' in rec.message for rec in caplog.records)
+        # Density at clamped P_MAX_VINET should still be finite
+        assert rho is not None and np.isfinite(rho) and rho > 0
+
+    def test_unknown_material_raises(self):
+        """Material key outside ``VINET_MATERIALS`` must raise ``ValueError``."""
+        with pytest.raises(ValueError, match='Unknown Vinet material'):
+            get_vinet_density(1e10, 'unobtainium')
+
+    def test_extreme_compression_widens_bracket(self, monkeypatch):
+        """The ``residual(f_min=0.01) < 0`` branch widens the bracket to
+        f=0.001 only when ``P_target > P_vinet(f=0.01)``. For all
+        registered materials this requires P > ~5e17 Pa, well above the
+        ``P_MAX_VINET = 1e16`` clamp. We therefore raise ``P_MAX_VINET``
+        to expose this branch and verify the solve still converges with
+        the widened bracket."""
+        from zalmoxis import eos_vinet
+
+        # Lift the clamp so the wide-bracket branch becomes reachable.
+        monkeypatch.setattr(eos_vinet, 'P_MAX_VINET', 1e19)
+
+        # Iron at 5e18 Pa: P_vinet(f=0.01) ~ 1.6e18 Pa, so residual at
+        # f=0.01 is negative and the f_min = 0.001 widening fires.
+        rho = get_vinet_density(5e18, 'iron')
+        assert rho is not None and np.isfinite(rho)
+        # At this extreme compression rho >> rho_0
+        assert rho > 100 * VINET_MATERIALS['iron']['rho_0']
+
+    def test_tiny_positive_pressure_short_circuit(self):
+        """For P_target so small that residual(f near 1) > 0 (i.e.
+        P below what the ``f = 1 - 1e-12`` evaluation produces), the
+        function returns rho_0 * thermal directly (line 228). The
+        crossover pressure is roughly ``3 * K_0 * 1e-12``, i.e. sub-Pa
+        for all registered materials."""
+        # 1e-3 Pa is well below the residual(1-1e-12) crossover for
+        # every registered material (K_0 >= 125 GPa, threshold ~0.4 Pa).
+        rho = get_vinet_density(1e-3, 'iron')
+        expected = (
+            VINET_MATERIALS['iron']['rho_0'] * VINET_MATERIALS['iron']['thermal_correction']
+        )
+        assert rho == pytest.approx(expected, rel=1e-12)
+
+    def test_pressure_below_zero_short_circuit(self):
+        """Pressure <= 0 returns rho_0 * thermal_correction immediately."""
+        rho_neg = get_vinet_density(-1e9, 'iron')
+        rho_zero = get_vinet_density(0.0, 'iron')
+        # Both should equal rho_0 * thermal_correction (no compression).
+        expected = (
+            VINET_MATERIALS['iron']['rho_0'] * VINET_MATERIALS['iron']['thermal_correction']
+        )
+        assert rho_neg == pytest.approx(expected, rel=1e-12)
+        assert rho_zero == pytest.approx(expected, rel=1e-12)
+
+    def test_nan_pressure_returns_none(self):
+        """NaN pressure input must return ``None`` cleanly."""
+        assert get_vinet_density(float('nan'), 'iron') is None
+
+    def test_brentq_fallback_returns_none_when_no_root(self, monkeypatch):
+        """When ``brentq`` raises ``ValueError`` (degenerate bracket),
+        ``get_vinet_density`` must return ``None`` and log a warning."""
+        from zalmoxis import eos_vinet
+
+        def fake_brentq(*args, **kwargs):
+            raise ValueError('synthetic: residual same sign at both bracket endpoints')
+
+        monkeypatch.setattr(eos_vinet, 'brentq', fake_brentq)
+        rho = get_vinet_density(1e11, 'iron')
+        assert rho is None
