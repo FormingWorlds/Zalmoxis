@@ -10,3 +10,4 @@ surface_temperature = [1000, 2000, 3000, 4000]
 
 [output]
 dir = "output/grid_mass_temperature"
+save_profiles = true  # write <label>.npz radial profile per grid point (default: false)
