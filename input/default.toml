@@ -46,13 +46,19 @@ ice_layer                  = "" 		# Empty = 2-layer model; set to an EOS string 
 
 # Phase-aware mixing: smooth density suppression for multi-material layers.
 # Components with density below the sigmoid center are progressively excluded
-# from the harmonic mean, preventing non-condensed volatiles (vapor, supercritical)
-# from dominating the mixture. Only active for multi-component layers.
-# The default (322 kg/m^3) is the H2O critical density, the only volatile with
-# gas-phase data in the current EOS tables. Once other volatiles (CO2, NH3,
-# H2, He) are added, this must be adjusted per material:
+# from the harmonic mean, preventing non-condensed volatiles (vapor,
+# supercritical) from dominating the mixture. Only active for multi-component
+# layers.
+#
+# Both currently-supported volatiles (H2O via PALEOS, H2 via Chabrier) carry
+# gas-phase data, and per-component critical-density overrides are applied
+# automatically by zalmoxis.mixing (Chabrier:H -> 30 kg/m^3, PALEOS:H2O ->
+# 322 kg/m^3). The global value below is the fallback used for any volatile
+# that is not in that override table; it is set to the H2O critical density
+# (322 kg/m^3) so legacy configs that mix H2O without using PALEOS:H2O still
+# behave sensibly. Reference critical densities for future additions:
 #   H2O ~322, CO2 ~470, NH3 ~225, He ~70, H2 ~30 kg/m^3
-condensed_rho_min          = 322.0  # kg/m^3 — sigmoid center = H2O critical density (material-specific!)
+condensed_rho_min          = 322.0  # kg/m^3 — fallback critical density (per-component overrides in mixing.py)
 condensed_rho_scale        = 50.0   # kg/m^3 — sigmoid transition width
 
 # Binodal (miscibility) suppression for H2-containing mixtures.
