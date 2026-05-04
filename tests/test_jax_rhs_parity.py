@@ -28,7 +28,7 @@ def _stage1b_setup():
     from zalmoxis.eos.seager import get_tabulated_eos
 
     here = os.path.dirname(os.path.abspath(__file__))
-    cfg = os.path.join(here, '..', 'input', 'bench_performance.toml')
+    cfg = os.path.join(here, 'data', 'bench_performance.toml')
     config_params = load_zalmoxis_config(cfg)
     mat_dicts = load_material_dictionaries()
     layer_cfg = config_params['layer_eos_config']

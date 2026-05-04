@@ -21,7 +21,7 @@
 #   tests/test_jax_event_termination.py          - JAX surface-event parity
 #
 # Usage:
-#   python -m tools.benchmarks.bench_performance --config=input/bench_performance.toml \
+#   python -m tools.benchmarks.bench_performance --config=tests/data/bench_performance.toml \
 #       --baseline=tests/data/bench_performance_baseline.npz
 #
 # Numerical solver params are intentionally left unset so

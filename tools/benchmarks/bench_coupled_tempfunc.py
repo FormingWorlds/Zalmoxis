@@ -36,7 +36,7 @@ to prefer this form.
 Usage
 -----
     ZALMOXIS_JAX_PROFILE=1 python -m tools.benchmarks.bench_coupled_tempfunc \
-        --config=input/bench_performance.toml --use-jax --use-anderson \
+        --config=tests/data/bench_performance.toml --use-jax --use-anderson \
         --n-runs=3 --mode=rotating --use-temperature-arrays
 """
 

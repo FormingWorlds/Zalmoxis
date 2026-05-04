@@ -183,8 +183,7 @@ def _run_main_once(use_anderson):
 
     cfg_path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
-        '..',
-        'input',
+        'data',
         'bench_performance.toml',
     )
     if not os.path.exists(cfg_path):

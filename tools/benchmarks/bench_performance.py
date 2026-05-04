@@ -12,13 +12,13 @@ Usage
 -----
 Save baseline after commit 0:
     python -m tools.benchmarks.bench_performance \
-        --config=input/bench_performance.toml \
+        --config=tests/data/bench_performance.toml \
         --out=tests/data/bench_performance_baseline.npz \
         --save-baseline
 
 Validate after a refactor commit:
     python -m tools.benchmarks.bench_performance \
-        --config=input/bench_performance.toml \
+        --config=tests/data/bench_performance.toml \
         --baseline=tests/data/bench_performance_baseline.npz \
         --out=/tmp/bench_performance_latest.npz \
         --tolerance=pure-refactor

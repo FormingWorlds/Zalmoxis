@@ -21,7 +21,7 @@ def _load_stage1b_cache():
     from zalmoxis.eos.interpolation import _ensure_unified_cache
 
     here = os.path.dirname(os.path.abspath(__file__))
-    cfg = os.path.join(here, '..', 'input', 'bench_performance.toml')
+    cfg = os.path.join(here, 'data', 'bench_performance.toml')
     config_params = load_zalmoxis_config(cfg)
     mat_dicts = load_material_dictionaries()
 
