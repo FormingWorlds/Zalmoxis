@@ -4,10 +4,11 @@ The RTPress100TPa melt table extends to 100 TPa (P: 1e3–1e14 Pa, T: 400–5000
 enabling modeling of much more massive rocky planets than WolfBower2018 (limited
 to 7 M_earth). The solid table is still WolfBower2018 (1 TPa, clamped at boundary).
 
-See also:
-- docs/test_infrastructure.md
-- docs/test_categorization.md
-- docs/test_building.md
+The convergence cases are marked ``slow`` rather than ``integration`` because
+the irregular-grid melt table forces ``LinearNDInterpolator`` queries that
+make the adiabat-blend phase ~5x slower than the regular-grid PALEOS path,
+and RTPress100TPa is not on the production PROTEUS code path. The mass-limit
+guard is still ``unit`` so it runs in the default CI suite.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ def test_RTPress100TPa_mass_limit_raises():
         run_zalmoxis_RTPress100TPa(51)
 
 
-@pytest.mark.integration
+@pytest.mark.slow
 @pytest.mark.parametrize(
     'mass', [1, 5]
 )  # RTPress100TPa valid up to ~50 M_earth; test low and moderate masses

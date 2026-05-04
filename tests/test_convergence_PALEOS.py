@@ -1,86 +1,21 @@
-"""Integration tests for the PALEOS-2phase:MgSiO3 EOS convergence.
+"""Integration tests for the PALEOS-2phase:MgSiO3 EOS at <= 5 M_earth.
 
-Tests that the full solver converges with PALEOS tables for both linear
-and adiabatic temperature modes across a range of planetary masses.
-The adiabatic mode uses T(P) parameterization to avoid PALEOS table
-NaN gaps during the Brent pressure solver's bracket search.
+The light convergence checks live here; the heavy adiabatic mass scan
+(3-10 M_earth) is in ``test_convergence_PALEOS_high_mass.py`` so xdist's
+``--dist loadfile`` runs the two tiers on different workers.
 
-See also:
-- docs/test_infrastructure.md
-- docs/test_categorization.md
+Linear and adiabatic modes are both exercised. Adiabatic uses T(P)
+parameterisation to avoid PALEOS table NaN gaps in the Brent pressure
+solver's bracket search.
 """
 
 from __future__ import annotations
 
-import os
-
 import numpy as np
 import pytest
 
-from zalmoxis.constants import earth_mass, earth_radius
-
-
-def _paleos_data_available():
-    """Check if PALEOS data files are available."""
-    root = os.environ.get('ZALMOXIS_ROOT', '')
-    solid = os.path.join(
-        root, 'data', 'EOS_PALEOS_MgSiO3', 'paleos_mgsio3_tables_pt_proteus_solid.dat'
-    )
-    liquid = os.path.join(
-        root, 'data', 'EOS_PALEOS_MgSiO3', 'paleos_mgsio3_tables_pt_proteus_liquid.dat'
-    )
-    return os.path.isfile(solid) and os.path.isfile(liquid)
-
-
-def _run_paleos(mass_earth, temperature_mode='linear'):
-    """Run Zalmoxis with PALEOS-2phase:MgSiO3 EOS for a given mass.
-
-    Parameters
-    ----------
-    mass_earth : float
-        Planet mass in Earth masses.
-    temperature_mode : str
-        Temperature mode ('linear' or 'adiabatic').
-
-    Returns
-    -------
-    dict
-        Model results dictionary.
-    """
-    from zalmoxis import get_zalmoxis_root
-    from zalmoxis.config import (
-        load_material_dictionaries,
-        load_solidus_liquidus_functions,
-        load_zalmoxis_config,
-    )
-    from zalmoxis.solver import main
-
-    root = get_zalmoxis_root()
-    default_config_path = os.path.join(root, 'input', 'default.toml')
-    config_params = load_zalmoxis_config(default_config_path)
-
-    config_params['planet_mass'] = mass_earth * earth_mass
-    config_params['layer_eos_config'] = {
-        'core': 'Seager2007:iron',
-        'mantle': 'PALEOS-2phase:MgSiO3',
-    }
-    config_params['temperature_mode'] = temperature_mode
-    config_params['data_output_enabled'] = False
-    config_params['plotting_enabled'] = False
-
-    layer_eos_config = config_params['layer_eos_config']
-
-    model_results = main(
-        config_params,
-        material_dictionaries=load_material_dictionaries(),
-        melting_curves_functions=load_solidus_liquidus_functions(
-            layer_eos_config,
-            config_params.get('rock_solidus', 'Stixrude14-solidus'),
-            config_params.get('rock_liquidus', 'Stixrude14-liquidus'),
-        ),
-        input_dir=os.path.join(root, 'input'),
-    )
-    return model_results
+from tests._paleos_helpers import _paleos_data_available, _run_paleos
+from zalmoxis.constants import earth_radius
 
 
 # ── Linear mode convergence ────────────────────────────────────────────
@@ -169,58 +104,3 @@ def test_PALEOS_adiabatic_physically_reasonable():
     assert T[0] > T[-1], f'Center T ({T[0]:.0f} K) should exceed surface T ({T[-1]:.0f} K)'
     assert T[0] < 15000, f'Center temperature {T[0]:.0f} K unreasonably high'
     assert T[0] > 3000, f'Center temperature {T[0]:.0f} K unreasonably low'
-
-
-# ── Higher-mass adiabatic convergence (T(P) parameterization) ──────────
-
-
-@pytest.mark.integration
-@pytest.mark.parametrize('mass', [3, 5, 10])
-def test_PALEOS_adiabatic_high_mass_converges(mass):
-    """PALEOS adiabatic mode should converge for higher-mass planets.
-
-    Regression test for the T(P) parameterization fix. Previously, the
-    Brent pressure solver's bracket search created unphysical (low P, high T)
-    queries that hit NaN gaps in the PALEOS tables, causing 14%+ mass errors
-    and non-convergence for planets above ~2.8 M_earth.
-    """
-    if not _paleos_data_available():
-        pytest.skip('PALEOS data files not found')
-
-    results = _run_paleos(float(mass), temperature_mode='adiabatic')
-
-    assert results['converged'], f'PALEOS adiabatic did not converge for {mass} M_earth'
-
-    R = results['radii'][-1] / earth_radius
-    T = results['temperature']
-    M_calc = results['mass_enclosed'][-1]
-    mass_error = abs(M_calc - mass * earth_mass) / (mass * earth_mass)
-
-    # Mass error should be < 1% (the tolerance_outer is 0.3%)
-    assert mass_error < 0.01, f'{mass} M_earth mass error {mass_error * 100:.2f}% exceeds 1%'
-
-    # Physical checks
-    assert np.all(np.isfinite(T)), f'{mass} M_earth has non-finite T values'
-    assert T[0] > T[-1], f'{mass} M_earth center T should exceed surface T'
-
-    # Radius should be in a reasonable range
-    assert 0.5 < R < 3.0, f'{mass} M_earth radius {R:.3f} R_earth out of range'
-
-
-@pytest.mark.integration
-def test_PALEOS_adiabatic_radius_increases_with_mass():
-    """Planet radius should increase with mass for Earth-like composition."""
-    if not _paleos_data_available():
-        pytest.skip('PALEOS data files not found')
-
-    radii = []
-    for mass in [1.0, 5.0, 10.0]:
-        results = _run_paleos(mass, temperature_mode='adiabatic')
-        assert results['converged'], f'{mass} M_earth did not converge'
-        radii.append(results['radii'][-1])
-
-    for i in range(1, len(radii)):
-        assert radii[i] > radii[i - 1], (
-            f'Radius did not increase: R({[1, 5, 10][i - 1]})={radii[i - 1] / earth_radius:.3f} '
-            f'>= R({[1, 5, 10][i]})={radii[i] / earth_radius:.3f}'
-        )

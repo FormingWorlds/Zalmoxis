@@ -18,6 +18,7 @@ References:
 from __future__ import annotations
 
 import math
+from functools import lru_cache
 from unittest.mock import patch
 
 import numpy as np
@@ -207,6 +208,7 @@ def _two_layer_central_pressure(rho_core, rho_mantle, R_cmb, R_total, M_cmb):
     return float(np.trapezoid(integrand, r_fine))
 
 
+@lru_cache(maxsize=64)
 def _run_analytic_eos_solver(
     mass_earth,
     cmf=0.325,
@@ -216,6 +218,10 @@ def _run_analytic_eos_solver(
     absolute_tolerance=1e-10,
 ):
     """Run the full Zalmoxis solver with Analytic EOS.
+
+    Cached by argument tuple so multiple tests asserting different invariants
+    on the same (mass, cmf, mmf, grid, tol) configuration share one solver
+    run. Test code only reads the result dict, never mutates it.
 
     Parameters
     ----------
