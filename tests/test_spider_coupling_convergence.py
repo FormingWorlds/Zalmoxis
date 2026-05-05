@@ -115,9 +115,19 @@ def _earth_mass_kg() -> float:
 
 
 @pytest.mark.unit
+@pytest.mark.slow
 class TestSpiderCouplingConvergence:
     """Solver must converge for the SPIDER-like and Aragog-like T(r) regimes
     that motivated the robustness-hardening work.
+
+    Tagged ``slow`` because the three regression tests in this class
+    (test_density_seeding_accelerates_second_call, test_flat_aragog_T_profile_converges_at_1ME,
+    test_steep_spider_T_profile_converges_at_1ME) sum to ~370s of solver
+    wall: they each run a full Picard solve over PALEOS-unified at
+    1 M_earth, including a second call for the seeding case. Default
+    CI ``pytest -m "unit and not slow"`` excludes them; the smaller
+    ``TestSpiderCouplingMassSweep`` already-slow class covers the
+    multi-mass sweep.
     """
 
     @pytest.fixture(scope='class')
