@@ -250,9 +250,16 @@ class TestCalculateMixedDensity:
 
 
 @pytest.mark.unit
+@pytest.mark.slow
 class TestBackwardCompat:
     def test_main_without_layer_mixtures(self):
-        """main() with layer_mixtures=None should auto-parse from config."""
+        """main() with layer_mixtures=None should auto-parse from config.
+
+        Slow because it runs a full PALEOS structure solve (~13s) just
+        to exercise the auto-parse code path. The config-side
+        equivalents in test_config_loaders.py already validate the
+        auto-parse without invoking the solver.
+        """
         if not _paleos_data_available():
             pytest.skip('PALEOS data not found')
 
