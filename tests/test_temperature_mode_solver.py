@@ -72,8 +72,15 @@ def _base_config(*, T_surf: float, T_center: float, mode: str, eos_pair: tuple[s
 
 
 @pytest.mark.unit
+@pytest.mark.slow
 class TestIsothermalTdepEOS:
-    """Isothermal mode with PALEOS (T-dependent) must produce a flat T(r)."""
+    """Isothermal mode with PALEOS (T-dependent) must produce a flat T(r).
+
+    Tagged ``slow``: each test runs a full isothermal Picard solve over
+    the unified PALEOS table at 1 M_earth (~12-16s); the four-test
+    class is ~55s of CI wall. Default ``pytest -m "unit and not slow"``
+    excludes; full sweep available via ``pytest -m slow``.
+    """
 
     @pytest.fixture(scope='class')
     def materials(self):
@@ -174,8 +181,14 @@ class TestIsothermalTdepEOS:
 
 
 @pytest.mark.unit
+@pytest.mark.slow
 class TestIsothermalTindepEOS:
-    """Seager2007 (T-independent) must honour ``surface_temperature``."""
+    """Seager2007 (T-independent) must honour ``surface_temperature``.
+
+    Tagged ``slow`` for the same reason as TestIsothermalTdepEOS: each
+    test runs a full Picard solve at 1 M_earth, contributing ~13s
+    each. Default CI ``pytest -m "unit and not slow"`` excludes.
+    """
 
     @pytest.fixture(scope='class')
     def materials(self):
