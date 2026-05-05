@@ -159,29 +159,6 @@ class LayerMixture:
         return any(c in TDEP_EOS_NAMES for c in self.components)
 
 
-def _parse_single_component(s: str) -> tuple[str, float]:
-    """Parse one component string into (eos_name, fraction).
-
-    Examples
-    --------
-    >>> _parse_single_component("PALEOS:MgSiO3:0.85")
-    ('PALEOS:MgSiO3', 0.85)
-    >>> _parse_single_component("PALEOS:iron")
-    ('PALEOS:iron', 1.0)
-    >>> _parse_single_component("Analytic:SiC")
-    ('Analytic:SiC', 1.0)
-    """
-    parts = s.strip().split(':')
-    if len(parts) >= 3:
-        try:
-            frac = float(parts[-1])
-            eos_name = ':'.join(parts[:-1])
-            return eos_name, frac
-        except ValueError:
-            pass
-    return s.strip(), 1.0
-
-
 def parse_layer_components(config_value: str) -> LayerMixture:
     """Parse a layer EOS config string into a LayerMixture.
 
