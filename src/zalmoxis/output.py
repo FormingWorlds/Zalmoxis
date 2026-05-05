@@ -147,15 +147,22 @@ def post_processing(config_params, id_mass=None, output_file=None, model_results
             'Radius (m)\tDensity (kg/m^3)\tGravity (m/s^2)\t'
             'Pressure (Pa)\tTemperature (K)\tMass Enclosed (kg)'
         )
+        # Ensure the output directory exists. Local dev workstations
+        # typically have it from prior runs, but a fresh CI runner does
+        # not, and np.savetxt's writability probe fails there with
+        # FileNotFoundError. Creating it here keeps the writers
+        # independent of caller setup.
+        output_dir = os.path.join(get_zalmoxis_root(), 'output')
+        os.makedirs(output_dir, exist_ok=True)
         if id_mass is None:
             np.savetxt(
-                os.path.join(get_zalmoxis_root(), 'output', 'planet_profile.txt'),
+                os.path.join(output_dir, 'planet_profile.txt'),
                 output_data,
                 header=header,
             )
         else:
             np.savetxt(
-                os.path.join(get_zalmoxis_root(), 'output', f'planet_profile{id_mass}.txt'),
+                os.path.join(output_dir, f'planet_profile{id_mass}.txt'),
                 output_data,
                 header=header,
             )
