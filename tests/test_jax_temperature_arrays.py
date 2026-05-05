@@ -71,6 +71,7 @@ def _load_fixtures():
 
 
 @pytest.mark.unit
+@pytest.mark.slow
 def test_jax_anderson_converges_with_temperature_arrays():
     """JAX+Anderson must converge at CHILI params using temperature_arrays.
 
