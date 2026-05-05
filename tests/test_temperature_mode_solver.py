@@ -71,7 +71,6 @@ def _base_config(*, T_surf: float, T_center: float, mode: str, eos_pair: tuple[s
     }
 
 
-@pytest.mark.unit
 @pytest.mark.slow
 class TestIsothermalTdepEOS:
     """Isothermal mode with PALEOS (T-dependent) must produce a flat T(r).
@@ -180,7 +179,6 @@ class TestIsothermalTdepEOS:
         assert np.all(np.diff(T) < 0), 'linear T(r) must decrease monotonically'
 
 
-@pytest.mark.unit
 @pytest.mark.slow
 class TestIsothermalTindepEOS:
     """Seager2007 (T-independent) must honour ``surface_temperature``.

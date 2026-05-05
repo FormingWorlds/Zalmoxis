@@ -70,7 +70,6 @@ def _load_fixtures():
     return cp, mat, mf
 
 
-@pytest.mark.unit
 @pytest.mark.slow
 def test_jax_anderson_converges_with_temperature_arrays():
     """JAX+Anderson must converge at CHILI params using temperature_arrays.
@@ -105,7 +104,6 @@ def test_jax_anderson_converges_with_temperature_arrays():
     assert 6.0e6 < R < 8.0e6, f'unphysical planet radius {R:.3e} m'
 
 
-@pytest.mark.unit
 @pytest.mark.slow
 @pytest.mark.timeout(600)
 def test_parity_numpy_function_vs_jax_arrays():
@@ -160,7 +158,6 @@ def test_parity_numpy_function_vs_jax_arrays():
     assert g_np == pytest.approx(g_jx, rel=1e-3)
 
 
-@pytest.mark.unit
 @pytest.mark.slow
 def test_arrays_override_function_when_both_passed():
     """When both kwargs are provided, temperature_arrays wins silently.

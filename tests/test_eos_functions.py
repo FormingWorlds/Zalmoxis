@@ -1481,7 +1481,6 @@ class TestGetPaleosUnifiedDensityBatch:
 # =====================================================================
 
 
-@pytest.mark.unit
 @pytest.mark.slow
 class TestRTPress100TPa:
     """Tests for RTPress100TPa EOS path (irregular grid with LinearNDInterpolator).

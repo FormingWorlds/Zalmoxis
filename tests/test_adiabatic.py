@@ -382,7 +382,6 @@ def _paleos_data_available():
     return os.path.isfile(solid) and os.path.isfile(liquid)
 
 
-@pytest.mark.unit
 @pytest.mark.slow
 class TestPALEOSAdiabaticProfile:
     """Tests for PALEOS phase-aware adiabat using nabla_ad from solid and liquid tables.

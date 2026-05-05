@@ -268,7 +268,6 @@ class TestCalculateMixedDensity:
         assert rho > 0
 
 
-@pytest.mark.unit
 @pytest.mark.slow
 class TestBackwardCompat:
     def test_main_without_layer_mixtures(self):

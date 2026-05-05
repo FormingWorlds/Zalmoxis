@@ -114,7 +114,6 @@ def _earth_mass_kg() -> float:
     return float(earth_mass)
 
 
-@pytest.mark.unit
 @pytest.mark.slow
 class TestSpiderCouplingConvergence:
     """Solver must converge for the SPIDER-like and Aragog-like T(r) regimes
