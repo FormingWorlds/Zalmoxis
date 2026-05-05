@@ -326,6 +326,42 @@ class TestBatchPath:
         rho = get_paleos_unified_density_batch(ps, ts, s['mat'], 1.0, s['cache'])
         assert np.all(np.isfinite(rho))
 
+    def test_batch_mushy_actually_in_mushy_zone(self, synthetic_cache):
+        """At P=1e10 Pa the PALEOS liquidus is ~2940 K. With mushy_zone_factor
+        0.5 the solidus drops to ~1470 K. Pick T values squarely between
+        them so the batch path takes the mushy branch (lines 322-357 in
+        paleos.py: phi computation + solid-side and liquid-side bilinear
+        lookups + volume-additive average), which the prior 'mushy' test
+        did not actually exercise (its T values fell above the liquidus)."""
+        s = synthetic_cache
+        # paleos_liquidus(P) at P=1e10 Pa = 10 GPa: T_liq = 6000*(10/140)^0.26
+        # ≈ 2940 K; with mzf=0.5, T_sol ≈ 1470 K. Target T=2200 K.
+        ps = np.array([1e10, 1e10, 1e10, 1e10])
+        ts = np.array([2000.0, 2200.0, 2500.0, 2700.0])
+        rho = get_paleos_unified_density_batch(ps, ts, s['mat'], 0.5, s['cache'])
+        # The mushy branch returns the volume-additive average
+        # 1 / (phi/rho_liq + (1-phi)/rho_sol). All four shells should be
+        # finite and physically reasonable.
+        assert np.all(np.isfinite(rho))
+        assert np.all(rho > 1000)
+        assert np.all(rho < 20000)
+        # Density should be monotonically decreasing in T at fixed P (mushy
+        # zone interpolates from cold->hot, and the synthetic table has
+        # weakly negative dT slope; the volume-average preserves this).
+        assert np.all(np.diff(rho) <= 0)
+
+    def test_batch_mushy_with_nan_falls_back_to_nn(self, synthetic_cache_with_nan):
+        """In the mushy batch branch, if the (T_sol, T_liq) bilinear
+        evaluations land on NaN cells, the NN fallback is invoked
+        (the ``nn_sol`` / ``nn_liq`` path inside the batch mushy block)."""
+        s = synthetic_cache_with_nan
+        # Place the query at the corner where the synthetic cache has NaN
+        ps = np.array([10.0 ** s['entry']['logp_min']])
+        # Pick T inside the mushy zone for that pressure
+        ts = np.array([2000.0])
+        rho = get_paleos_unified_density_batch(ps, ts, s['mat'], 0.5, s['cache'])
+        assert np.all(np.isfinite(rho))
+
 
 class TestPerCellClampLogger:
     """The per-cell ``T`` clamp emits a one-shot warning per file."""
