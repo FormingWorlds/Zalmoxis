@@ -914,8 +914,14 @@ class TestGetTabulatedEos:
         assert rho is not None
         assert rho > 0
 
+    @pytest.mark.slow
     def test_rtpress_irregular_grid(self):
-        """RTPress100TPa melted_mantle (irregular grid) via get_tabulated_eos."""
+        """RTPress100TPa melted_mantle (irregular grid) via get_tabulated_eos.
+
+        Slow because the LinearNDInterpolator construction over the RTPress
+        irregular table is ~80s; default CI ``pytest -m "unit and not
+        slow"`` excludes it.
+        """
         if not _rtpress_data_available():
             pytest.skip('RTPress100TPa data not found')
 
@@ -1476,8 +1482,17 @@ class TestGetPaleosUnifiedDensityBatch:
 
 
 @pytest.mark.unit
+@pytest.mark.slow
 class TestRTPress100TPa:
-    """Tests for RTPress100TPa EOS path (irregular grid with LinearNDInterpolator)."""
+    """Tests for RTPress100TPa EOS path (irregular grid with LinearNDInterpolator).
+
+    Tagged ``slow`` because every test in this class triggers a
+    LinearNDInterpolator construction over a ~50 TPa irregular grid
+    (~75-80s each on a workstation). Default CI ``pytest -m "unit and
+    not slow"`` excludes them; the unit-grade
+    ``test_RTPress100TPa_mass_limit_raises`` guard in
+    ``test_convergence_RTPress100TPa.py`` keeps the bare contract on CI.
+    """
 
     def test_rtpress_density_calculation(self):
         """RTPress100TPa:MgSiO3 density via calculate_density."""
