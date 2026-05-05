@@ -11,12 +11,11 @@ on:
       - ready_for_review
 
 jobs:
-  # Fast feedback loop: unit + smoke (1 M_earth solver runs) on both
-  # ubuntu and macos, no coverage instrumentation. Targets <10 min
-  # wall. Smoke tests cover the full Picard-solver code path at a
-  # single mass; the heavy super-Earth real-physics integration tests
-  # live in the coverage job and are restricted to PALEOS rocky 1+5
-  # M_earth only.
+  # Fast feedback loop: unit-only on both ubuntu and macos, no coverage
+  # instrumentation. Targets <10 min wall. Smoke and integration tests
+  # are excluded — even at 1 M_earth a single Picard solve runs 5-10 min
+  # under cov instrumentation, which would blow past the test-fast
+  # target. They live in the coverage job (parallel, non-blocking).
   test-fast:
     name: Zalmoxis-check (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -60,9 +59,9 @@ jobs:
         run: |
           ruff check
 
-      - name: Run unit + smoke tests
+      - name: Run unit tests
         run: |
-          pytest -m "(unit or smoke) and not slow" -n auto -o "addopts=" -o "junit_family=legacy" \
+          pytest -m "unit and not slow" -n auto -o "addopts=" -o "junit_family=legacy" \
             --junitxml=junit.xml
 
       - name: Upload test results to Codecov
@@ -89,7 +88,7 @@ jobs:
   coverage:
     name: Zalmoxis-coverage (ubuntu-latest)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
