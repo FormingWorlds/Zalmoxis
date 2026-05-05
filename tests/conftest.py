@@ -13,6 +13,16 @@ from __future__ import annotations
 
 import pytest
 
+from tests import _paleos_mock
+
+# Install the in-process ``paleos`` mock at conftest collection time, before
+# ``tests/test_paleos_api.py`` (or anything else) imports
+# ``zalmoxis.eos.paleos_api``. The mock is a no-op when the real PALEOS
+# package is importable; on CI runners where it is not, the mock injects
+# the minimum surface the producer exercises so the 60+ tests in
+# ``test_paleos_api.py`` run on every push instead of being skipped.
+_paleos_mock.install_if_missing()
+
 
 @pytest.fixture(scope='session')
 def zalmoxis_root():

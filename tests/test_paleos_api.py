@@ -27,13 +27,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-# Skip the whole module when the upstream PALEOS package is not installed
-# (CI environment does not vendor it, but local developer machines do).
-# Tests in this file exercise paleos-backed code paths via paleos_api;
-# they cannot run meaningfully without the package.
-pytest.importorskip('paleos', reason='PALEOS package not installed in this environment')
-
-from zalmoxis.eos import paleos_api  # noqa: E402
+# ``paleos`` is provided by the upstream package on local developer machines
+# and by ``tests/_paleos_mock.py`` (installed via conftest) elsewhere. Either
+# way it is in ``sys.modules`` by the time this file is collected.
+from zalmoxis.eos import paleos_api
 
 pytestmark = pytest.mark.unit
 
