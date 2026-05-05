@@ -235,3 +235,67 @@ class TestPerCellClamping:
         assert np.isnan(rho_linear), 'Expected NaN from linear interp at (8 GPa, 7000 K)'
         assert np.isfinite(rho_nn), f'NN fallback returned non-finite: {rho_nn}'
         assert rho_nn > 1000, f'NN density {rho_nn:.0f} unreasonably low'
+
+
+@pytest.mark.unit
+class TestPaleosLiquidusScalarBranches:
+    """Two scalar fast-path branches in ``paleos_liquidus``."""
+
+    def test_zero_pressure_returns_zero(self):
+        """``P <= 0`` short-circuits to 0.0, skipping the power-law math."""
+        from zalmoxis.melting_curves import paleos_liquidus
+
+        assert paleos_liquidus(0.0) == 0.0
+        assert paleos_liquidus(-1.0) == 0.0
+
+    def test_low_pressure_branch(self):
+        """``P_GPa < _PALEOS_P0_GPA`` uses the low-P power law (1831 * (1 + P/4.6)^0.33)."""
+        from zalmoxis.melting_curves import paleos_liquidus
+
+        # _PALEOS_P0_GPA is the crossover; pick well below
+        T = paleos_liquidus(1e9)  # 1 GPa, low-P branch
+        # At 1 GPa: T = 1831 * (1 + 1/4.6)^0.33 ~ 1831 * 1.067 ~ 1955 K
+        assert 1900 < T < 2010
+
+    def test_high_pressure_branch(self):
+        """High pressure uses the second power law (6000 * (P/140)^0.26)."""
+        from zalmoxis.melting_curves import paleos_liquidus
+
+        T = paleos_liquidus(140e9)  # 140 GPa anchor
+        assert T == pytest.approx(6000.0, rel=1e-6)
+
+    def test_array_input_branch(self):
+        """Array input takes the vectorized np.where branch (already mostly
+        covered, exercised here to keep the scalar/array partition intact)."""
+        from zalmoxis.melting_curves import paleos_liquidus
+
+        T = paleos_liquidus(np.array([1e9, 50e9, 200e9]))
+        assert isinstance(T, np.ndarray)
+        assert T.shape == (3,)
+        assert np.all(np.isfinite(T))
+
+
+@pytest.mark.unit
+class TestIronMeltingCurveDispatch:
+    """Dispatcher branches for the two iron melting curves."""
+
+    def test_anzellini13_iron_returns_callable(self):
+        """``get_melting_curve_function('Anzellini13-iron')`` returns a
+        callable that produces a finite K at a sample pressure."""
+        from zalmoxis.melting_curves import get_melting_curve_function
+
+        f = get_melting_curve_function('Anzellini13-iron')
+        T = f(100e9)
+        assert callable(f)
+        assert np.isfinite(T)
+        assert 3000 < T < 8000  # rough plausibility for 100 GPa iron
+
+    def test_sinmyo19_iron_returns_callable(self):
+        """Same for ``Sinmyo19-iron``: returns the live function pointer."""
+        from zalmoxis.melting_curves import get_melting_curve_function
+
+        f = get_melting_curve_function('Sinmyo19-iron')
+        T = f(100e9)
+        assert callable(f)
+        assert np.isfinite(T)
+        assert 3000 < T < 8000
