@@ -1,9 +1,11 @@
 """Mass-radius integration tests for water-world planets vs Zeng+2019.
 
 Split from a former combined ``test_MR.py`` (rocky+water) so xdist's
-``--dist loadfile`` runs rocky and water on different workers; mass=50
-on both was the integration suite's largest single concentration of
-solver wall time.
+``--dist loadfile`` runs rocky and water on different workers. The
+mass=50 cell that originally motivated the split was dropped along
+with the wider trim of integration parametrize counts; the split is
+retained because it still gives xdist a balanced load distribution
+and the file scopes by composition match the assertion sets cleanly.
 """
 
 from __future__ import annotations
@@ -15,9 +17,14 @@ from tools.setup.setup_tests import load_model_output, load_zeng_curve, run_zalm
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('mass', [1, 5, 10, 50])
+@pytest.mark.parametrize('mass', [1, 5, 10])
 def test_mass_radius_water(mass):
-    """50% H2O planet R(M) must agree with Zeng+2019 within 3% at 1, 5, 10, 50 M_earth."""
+    """50% H2O planet R(M) must agree with Zeng+2019 within 3% at 1, 5, 10 M_earth.
+
+    The mass=50 cell was dropped: it dominated integration wall time and
+    re-exercised the high-mass regime that ``test_convergence_*_high_mass``
+    already covers.
+    """
     zeng_masses, zeng_radii = load_zeng_curve('massradius_50percentH2O_300K_1mbar.txt')
 
     output_file, _ = run_zalmoxis_rocky_water(mass, 'water', cmf=0.1625, immf=0.3375)

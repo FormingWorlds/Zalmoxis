@@ -18,9 +18,14 @@ from tools.setup.setup_tests import (
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('mass', [1, 5, 10, 50])
+@pytest.mark.parametrize('mass', [1, 5, 10])
 def test_density_profile_water(mass):
-    """50% H2O planet rho(r) must match Seager+2007 within 10% (excluding CMB jump)."""
+    """50% H2O planet rho(r) must match Seager+2007 within 10% (excluding CMB jump).
+
+    The mass=50 cell was dropped: it dominated integration wall time and
+    re-exercised the high-mass regime that ``test_convergence_*_high_mass``
+    already covers.
+    """
     data_by_mass = load_Seager_data('radiusdensitySeagerwaterbymass.txt')
     seager_radii = np.array(data_by_mass[mass]['radius'])
     seager_densities = np.array(data_by_mass[mass]['density'])

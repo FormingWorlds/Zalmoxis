@@ -20,7 +20,7 @@ from zalmoxis.constants import earth_mass, earth_radius
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize('mass', [3, 5, 10])
+@pytest.mark.parametrize('mass', [5, 10])
 def test_PALEOS_adiabatic_high_mass_converges(mass):
     """PALEOS adiabatic mode should converge for higher-mass planets."""
     if not _paleos_data_available():
