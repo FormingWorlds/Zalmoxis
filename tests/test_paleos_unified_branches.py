@@ -348,6 +348,112 @@ class TestPerCellClampLogger:
         assert n_second == n_first  # second call did not add a new record
 
 
+class TestMushyZoneNanFallback:
+    """NaN cells inside the mushy-zone solid/liquid lookups are recovered by
+    nearest-neighbor or surface as None when both sides fail."""
+
+    def test_nan_at_solid_side_recovers(self, synthetic_cache_with_nan):
+        """A query in the mushy band with NaN at the solid-side grid point
+        falls back via density_nn for that side, then volume-averages."""
+
+        s = synthetic_cache_with_nan
+        # Liquidus: pick T_liq=4000K at our query log_p, so mushy band is
+        # T_sol = 0.6 * 4000 = 2400 K to T_liq = 4000 K. Our NaN is at
+        # corner (logp=9, logt=3) -> P=1e9, T=1000 K, well below mushy.
+        # We can't easily trigger NaN at the mushy lookups with this fixture
+        # alone; instead, build a mushy-friendly liquidus and put NaN where
+        # the solid-side query lands.
+        s['entry']['liquidus_log_p'] = np.linspace(9.0, 12.0, 8)
+        s['entry']['liquidus_log_t'] = np.full(8, np.log10(4000.0))
+        # Place NaN near the solid-side query point (T_sol ~ 0.6*4000 = 2400)
+        # The grid has log_t in [3.0, 4.0]; log10(2400) ~ 3.38
+        s['entry']['density_grid'][2, 2] = np.nan  # near (logp~10, logt~3.43)
+        rho = get_paleos_unified_density(
+            10**10.0,  # logp = 10
+            3000.0,  # in mushy zone (between 2400 and 4000)
+            s['mat'],
+            mushy_zone_factor=0.6,
+            interpolation_functions=s['cache'],
+        )
+        assert rho is not None and np.isfinite(rho)
+
+    def test_below_solidus_in_mushy_mode(self, synthetic_cache):
+        """``temperature <= T_sol`` in mushy mode takes the below-solidus
+        direct-lookup branch (line 155-160), distinct from the no-mushy-zone
+        guard at the top of the function."""
+
+        s = synthetic_cache
+        # Force liquidus T = 5000 K at our query pressure
+        s['entry']['liquidus_log_p'] = np.linspace(9.0, 12.0, 8)
+        s['entry']['liquidus_log_t'] = np.full(8, np.log10(5000.0))
+        # mushy_zone_factor = 0.5 -> T_sol = 2500 K. Query at T = 1500 K
+        # is below T_sol, takes the below-solidus branch.
+        rho = get_paleos_unified_density(
+            10**10.0,
+            1500.0,
+            s['mat'],
+            mushy_zone_factor=0.5,
+            interpolation_functions=s['cache'],
+        )
+        assert rho is not None and np.isfinite(rho)
+
+    def test_mushy_clamp_to_local_tmax(self, synthetic_cache):
+        """When the synthetic liquidus pushes T_liq above the per-pressure
+        ``logt_valid_max``, the clamp branch at lines 202-205 fires."""
+
+        s = synthetic_cache
+        # Tighten the per-P upper bound below liquidus log_t
+        s['entry']['liquidus_log_p'] = np.linspace(9.0, 12.0, 8)
+        s['entry']['liquidus_log_t'] = np.full(8, np.log10(8000.0))  # above logt_max
+        s['entry']['logt_valid_max'] = np.full(8, np.log10(6000.0))
+        rho = get_paleos_unified_density(
+            10**10.0,
+            5000.0,
+            s['mat'],
+            mushy_zone_factor=0.5,
+            interpolation_functions=s['cache'],
+        )
+        assert rho is not None and np.isfinite(rho)
+
+    def test_mushy_clamp_to_local_tmin(self, synthetic_cache):
+        """When the synthetic solidus pushes T_sol below the per-pressure
+        ``logt_valid_min``, the clamp branch at lines 196-197 fires."""
+
+        s = synthetic_cache
+        s['entry']['liquidus_log_p'] = np.linspace(9.0, 12.0, 8)
+        s['entry']['liquidus_log_t'] = np.full(8, np.log10(4000.0))
+        # Raise the per-P lower bound above the solidus log_t (T_sol = 2000)
+        s['entry']['logt_valid_min'] = np.full(8, np.log10(2500.0))
+        rho = get_paleos_unified_density(
+            10**10.0,
+            3000.0,
+            s['mat'],
+            mushy_zone_factor=0.5,  # T_sol = 0.5 * 4000 = 2000 < 2500
+            interpolation_functions=s['cache'],
+        )
+        assert rho is not None and np.isfinite(rho)
+
+    def test_nan_bound_fallback(self, synthetic_cache):
+        """When ``logt_valid_min`` has NaN at the local pressure, the clamp
+        falls through unchanged (lines 209-210)."""
+
+        s = synthetic_cache
+        s['entry']['liquidus_log_p'] = np.linspace(9.0, 12.0, 8)
+        s['entry']['liquidus_log_t'] = np.full(8, np.log10(4000.0))
+        # Inject NaN at the logt_valid_min entry adjacent to query pressure
+        s['entry']['logt_valid_min'] = np.full(8, np.nan)
+        s['entry']['logt_valid_max'] = np.full(8, np.nan)
+        rho = get_paleos_unified_density(
+            10**10.0,
+            3000.0,
+            s['mat'],
+            mushy_zone_factor=0.5,
+            interpolation_functions=s['cache'],
+        )
+        # Should still return a finite value via NN fallback
+        assert rho is not None and np.isfinite(rho)
+
+
 class TestNablaAdScalar:
     """Scalar nabla_ad lookup wraps the same clamp/lookup pattern."""
 
