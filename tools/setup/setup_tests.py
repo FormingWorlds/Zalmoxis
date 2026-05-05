@@ -76,14 +76,22 @@ def run_zalmoxis_rocky_water(id_mass, config_type, cmf, immf, layer_eos_override
 
     layer_eos_config = config_params['layer_eos_config']
 
-    # Run the main function and post-processing
+    # Run the main function once and reuse the result for post-processing.
+    # Without ``model_results=``, ``post_processing`` re-runs ``main()``
+    # internally — the helper would then pay the full Picard solve twice
+    # per test (~doubles smoke wall time).
     model_results = main(
         config_params,
         material_dictionaries=load_material_dictionaries(),
         melting_curves_functions=load_solidus_liquidus_functions(layer_eos_config),
         input_dir=os.path.join(get_zalmoxis_root(), 'input'),
     )
-    post_processing(config_params, id_mass, output_file=output_file)
+    post_processing(
+        config_params,
+        id_mass,
+        output_file=output_file,
+        model_results=model_results,
+    )
 
     # Write profile data (radii and density) to a temporary profile file
     with tempfile.NamedTemporaryFile(

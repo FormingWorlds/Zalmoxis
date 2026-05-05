@@ -17,7 +17,7 @@ from .mixing import parse_layer_components
 logger = logging.getLogger(__name__)
 
 
-def post_processing(config_params, id_mass=None, output_file=None):
+def post_processing(config_params, id_mass=None, output_file=None, model_results=None):
     """Post-process model results by saving output data and plotting.
 
     Parameters
@@ -28,25 +28,33 @@ def post_processing(config_params, id_mass=None, output_file=None):
         Identifier for the planet mass, used in output file naming.
     output_file : str or None
         Path to the output file for calculated mass and radius.
+    model_results : dict or None
+        Pre-computed solver output. When provided, ``post_processing``
+        skips its internal ``main()`` call (avoiding a redundant solve)
+        and writes output / plots directly from the supplied results.
+        Test helpers and benchmark drivers that already ran ``main()``
+        themselves should pass it here; the CLI keeps the implicit-call
+        path for back-compat.
     """
-    from .config import load_material_dictionaries, load_solidus_liquidus_functions
-    from .solver import main
-
-    data_output_enabled = config_params['data_output_enabled']
-    plotting_enabled = config_params['plotting_enabled']
-
     layer_eos_config = config_params['layer_eos_config']
     solidus_id = config_params.get('rock_solidus', 'Stixrude14-solidus')
     liquidus_id = config_params.get('rock_liquidus', 'Stixrude14-liquidus')
 
-    model_results = main(
-        config_params,
-        material_dictionaries=load_material_dictionaries(),
-        melting_curves_functions=load_solidus_liquidus_functions(
-            layer_eos_config, solidus_id, liquidus_id
-        ),
-        input_dir=os.path.join(get_zalmoxis_root(), 'input'),
-    )
+    data_output_enabled = config_params['data_output_enabled']
+    plotting_enabled = config_params['plotting_enabled']
+
+    if model_results is None:
+        from .config import load_material_dictionaries, load_solidus_liquidus_functions
+        from .solver import main
+
+        model_results = main(
+            config_params,
+            material_dictionaries=load_material_dictionaries(),
+            melting_curves_functions=load_solidus_liquidus_functions(
+                layer_eos_config, solidus_id, liquidus_id
+            ),
+            input_dir=os.path.join(get_zalmoxis_root(), 'input'),
+        )
 
     # Extract results
     radii = model_results['radii']

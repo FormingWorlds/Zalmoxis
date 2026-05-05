@@ -2114,12 +2114,26 @@ def _solve(
         _frozen_sigma = {}
 
         # MASS CONVERGENCE CHECK
-        # When temperature_mode='adiabatic' and the blend has not yet reached
-        # 1.0, mass convergence triggers the adiabat transition instead of
-        # breaking. The blend ramps 0 -> 0.5 -> 1.0 over successive mass
-        # convergences, preventing solver divergence.
+        # When temperature_mode='adiabatic' and the EOS is T-dependent, the
+        # mass converging with linear-T triggers the adiabat blend ramp:
+        # _adiabat_blend goes 0 -> 0.25 -> 0.5 -> 0.75 -> 1.0 over four
+        # successive outer iterations, each recomputing the structure with
+        # progressively more adiabat in the T-func. This prevents the
+        # T-dependent density field from diverging when switching abruptly
+        # from linear to adiabat T.
+        # For T-INDEPENDENT EOS (Seager+2007, Analytic, Vinet) the density
+        # does not depend on T at all, so the blend ramp does no useful work
+        # — the recomputed structure is identical at every blend step. Skip
+        # the ramp in that case and break immediately on mass convergence;
+        # the T output for T-independent EOS in adiabatic mode falls back to
+        # the linear profile (see the T-independent branch around the
+        # _temperature_func construction).
         if relative_diff_outer_mass < tolerance_outer:
-            if temperature_mode in ('adiabatic', 'adiabatic_from_cmb') and _adiabat_blend < 1.0:
+            if (
+                temperature_mode in ('adiabatic', 'adiabatic_from_cmb')
+                and _adiabat_blend < 1.0
+                and uses_Tdep
+            ):
                 if not _using_adiabat:
                     _using_adiabat = True
                     logger.info(
