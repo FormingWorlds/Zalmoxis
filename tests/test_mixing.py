@@ -72,6 +72,25 @@ class TestParseLayerComponents:
         assert m.is_single()
         assert m.components[0] == 'Seager2007:iron'
 
+    def test_three_part_eos_with_non_float_last_segment(self):
+        """``X:Y:Z`` where Z is not a fraction is treated as a 3-segment EOS
+        name with implicit fraction 1.0. Exercises the ValueError-pass branch
+        in ``_parse_single_component``."""
+        m = parse_layer_components('PALEOS:MgSiO3:phaseA')
+        # Whole string kept as the EOS name; default fraction 1.0
+        assert m.components == ['PALEOS:MgSiO3:phaseA']
+        assert m.fractions == [1.0]
+
+    def test_empty_component_in_multi_raises(self):
+        """Empty segment between '+' delimiters raises ValueError."""
+        with pytest.raises(ValueError, match='Empty EOS name'):
+            parse_layer_components('PALEOS:MgSiO3:0.5++PALEOS:H2O:0.5')
+
+    def test_negative_fraction_raises(self):
+        """A negative numeric fraction in a multi-component config raises."""
+        with pytest.raises(ValueError, match='Negative mass fraction'):
+            parse_layer_components('PALEOS:MgSiO3:0.7+PALEOS:H2O:-0.3')
+
 
 @pytest.mark.unit
 class TestLayerMixture:
