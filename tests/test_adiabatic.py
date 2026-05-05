@@ -383,8 +383,16 @@ def _paleos_data_available():
 
 
 @pytest.mark.unit
+@pytest.mark.slow
 class TestPALEOSAdiabaticProfile:
-    """Tests for PALEOS phase-aware adiabat using nabla_ad from solid and liquid tables."""
+    """Tests for PALEOS phase-aware adiabat using nabla_ad from solid and liquid tables.
+
+    Tagged ``slow``: each test rebuilds the full PALEOS adiabat
+    profile across many radii (~2 s each on a fast Mac, projected
+    ~10-15 s each on cold CI with cov instrumentation). The fast
+    PALEOS adiabat behaviour is covered by the smaller tests in
+    ``TestComputeAdiabaticTemperatureCmbAnchor``.
+    """
 
     def test_paleos_adiabat_surface_temperature(self):
         """T at the surface should equal surface_temperature for PALEOS adiabat."""
