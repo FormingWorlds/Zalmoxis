@@ -105,6 +105,7 @@ def test_jax_anderson_converges_with_temperature_arrays():
 
 
 @pytest.mark.unit
+@pytest.mark.slow
 @pytest.mark.timeout(600)
 def test_parity_numpy_function_vs_jax_arrays():
     """Numpy+temperature_function vs JAX+Anderson+temperature_arrays agree.
@@ -159,6 +160,7 @@ def test_parity_numpy_function_vs_jax_arrays():
 
 
 @pytest.mark.unit
+@pytest.mark.slow
 def test_arrays_override_function_when_both_passed():
     """When both kwargs are provided, temperature_arrays wins silently.
 
