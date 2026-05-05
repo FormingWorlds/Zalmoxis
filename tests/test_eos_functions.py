@@ -914,25 +914,6 @@ class TestGetTabulatedEos:
         assert rho is not None
         assert rho > 0
 
-    @pytest.mark.slow
-    def test_rtpress_irregular_grid(self):
-        """RTPress100TPa melted_mantle (irregular grid) via get_tabulated_eos.
-
-        Slow because the LinearNDInterpolator construction over the RTPress
-        irregular table is ~80s; default CI ``pytest -m "unit and not
-        slow"`` excludes it.
-        """
-        if not _rtpress_data_available():
-            pytest.skip('RTPress100TPa data not found')
-
-        from zalmoxis.eos import get_tabulated_eos
-        from zalmoxis.eos_properties import EOS_REGISTRY
-
-        mat = EOS_REGISTRY['RTPress100TPa:MgSiO3']
-        rho = get_tabulated_eos(50e9, mat, 'melted_mantle', temperature=5000)
-        assert rho is not None
-        assert rho > 0
-
     def test_melted_mantle_requires_temperature(self):
         """melted_mantle without temperature should return None."""
         if not _wb2018_data_available():
@@ -1531,5 +1512,23 @@ class TestRTPress100TPa:
         mat = EOS_REGISTRY['RTPress100TPa:MgSiO3']
         # Use a temperature within the melt table range
         rho = get_tabulated_eos(1e13, mat, 'melted_mantle', temperature=5000)
+        assert rho is not None
+        assert rho > 0
+
+    def test_rtpress_irregular_grid(self):
+        """RTPress100TPa melted_mantle (irregular grid) via get_tabulated_eos.
+
+        Moderate-pressure variant of ``test_rtpress_high_pressure`` that
+        exercises the same get_tabulated_eos dispatch over the RTPress
+        irregular grid at 50 GPa instead of 10 TPa.
+        """
+        if not _rtpress_data_available():
+            pytest.skip('RTPress100TPa data not found')
+
+        from zalmoxis.eos import get_tabulated_eos
+        from zalmoxis.eos_properties import EOS_REGISTRY
+
+        mat = EOS_REGISTRY['RTPress100TPa:MgSiO3']
+        rho = get_tabulated_eos(50e9, mat, 'melted_mantle', temperature=5000)
         assert rho is not None
         assert rho > 0
