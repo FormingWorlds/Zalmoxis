@@ -77,7 +77,6 @@ def _extract_jax_args(cached):
 
 
 @pytest.mark.unit
-@pytest.mark.slow
 def test_get_paleos_unified_density_parity_vs_numpy():
     """JAX PALEOS density matches numpy across P, T, and mushy_zone_factor."""
     from zalmoxis.eos.paleos import get_paleos_unified_density

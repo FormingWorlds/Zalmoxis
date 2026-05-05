@@ -18,7 +18,6 @@ from test_jax_rhs_parity import _stage1b_setup  # noqa: E402
 
 
 @pytest.mark.unit
-@pytest.mark.slow
 def test_solve_structure_via_jax_end_to_end_parity():
     """Wrapper produces (mass, gravity, pressure) matching numpy path."""
     from zalmoxis.jax_eos.wrapper import solve_structure_via_jax

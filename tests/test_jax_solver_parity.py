@@ -25,7 +25,6 @@ from test_jax_rhs_parity import _stage1b_setup  # noqa: E402
 
 
 @pytest.mark.unit
-@pytest.mark.slow
 def test_solve_structure_jax_parity_vs_scipy():
     """diffrax Tsit5 matches scipy RK45 on the structure ODE to solver tol."""
     from zalmoxis.jax_eos.solver import solve_structure_jax

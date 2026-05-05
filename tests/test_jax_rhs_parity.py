@@ -154,7 +154,6 @@ def _stage1b_setup():
 
 
 @pytest.mark.unit
-@pytest.mark.slow
 def test_coupled_odes_jax_parity():
     """JAX coupled_odes matches numpy on 2-layer Stage-1b config."""
     from zalmoxis.jax_eos.rhs import coupled_odes_jax

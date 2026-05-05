@@ -85,7 +85,6 @@ def _extract_sub_args(cached, prefix):
 
 
 @pytest.mark.unit
-@pytest.mark.slow
 def test_get_tdep_density_parity_vs_numpy():
     """JAX PALEOS-2phase density matches numpy across (P, T) query points."""
     from zalmoxis.eos.tdep import get_Tdep_density
