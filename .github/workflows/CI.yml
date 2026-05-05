@@ -10,12 +10,13 @@ on:
       - synchronize
       - ready_for_review
 
+# Push and PR CI: unit tests only, on ubuntu + macos. Targets <5 min
+# wall. Smoke and integration tests (full Picard solves) live in the
+# scheduled nightly workflow ``Nightly`` instead — running them on
+# every push burns ~30-60 min CI time per commit and gives no
+# additional bug-finding signal that the unit suite doesn't already
+# cover.
 jobs:
-  # Fast feedback loop: unit-only on both ubuntu and macos, no coverage
-  # instrumentation. Targets <10 min wall. Smoke and integration tests
-  # are excluded — even at 1 M_earth a single Picard solve runs 5-10 min
-  # under cov instrumentation, which would blow past the test-fast
-  # target. They live in the coverage job (parallel, non-blocking).
   test-fast:
     name: Zalmoxis-check (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -41,7 +42,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install .  # from pyproject.toml
-          pip install pytest pytest-xdist ruff zensical markdown-include mkdocstrings[python] pymdown-extensions
+          pip install pytest pytest-xdist pytest-cov ruff zensical markdown-include mkdocstrings[python] pymdown-extensions
 
       - name: Cache Zalmoxis EOS data
         id: cache-zalmoxis-data
@@ -59,10 +60,11 @@ jobs:
         run: |
           ruff check
 
-      - name: Run unit tests
+      - name: Run unit tests with coverage
         run: |
           pytest -m "unit and not slow" -n auto -o "addopts=" -o "junit_family=legacy" \
-            --junitxml=junit.xml
+            --junitxml=junit.xml \
+            --cov=zalmoxis --cov-report=xml
 
       - name: Upload test results to Codecov
         if: ${{ !cancelled() }}
@@ -72,65 +74,15 @@ jobs:
           slug: FormingWorlds/Zalmoxis
           files: junit.xml
 
-      - name: Build documentation (Zensical)
-        run: |
-          zensical build --clean
-
-  # Coverage job: unit + smoke + integration tests with coverage
-  # instrumentation. Runs in parallel with test-fast so it never blocks
-  # PR feedback. Ubuntu-only because Codecov ingests one report per
-  # push and Ubuntu/macOS coverage is nearly identical.
-  #
-  # The integration set is now restricted to two real-physics PALEOS
-  # rocky cases (1 + 5 M_earth) per the 2026-05-05 CI-trim pass; the
-  # rest of the prior integration tests were demoted to ``smoke`` (1
-  # M_earth only) to bring the cov-job wall back under 25 min.
-  coverage:
-    name: Zalmoxis-coverage (ubuntu-latest)
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12.9"
-
-      - name: Set ZALMOXIS_ROOT environment variable
-        run: echo "ZALMOXIS_ROOT=$GITHUB_WORKSPACE" >> $GITHUB_ENV
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install .
-          pip install pytest pytest-cov pytest-xdist
-
-      - name: Cache Zalmoxis EOS data
-        id: cache-zalmoxis-data
-        uses: actions/cache@v4
-        with:
-          path: data
-          key: zalmoxis-data-${{ runner.os }}-${{ hashFiles('tools/setup/get_zalmoxis.sh', 'tools/setup/setup_zalmoxis.py', 'tools/setup/setup_utils.py') }}
-
-      - name: Download required input/output files
-        if: steps.cache-zalmoxis-data.outputs.cache-hit != 'true'
-        run: |
-          bash tools/setup/get_zalmoxis.sh
-
-      - name: Run unit + smoke + integration tests with coverage
-        run: |
-          pytest -m "(unit or smoke or integration) and not slow" -n auto -o "addopts=" \
-            --cov=zalmoxis --cov-report=term-missing --cov-report=xml
-
       - name: Upload coverage to Codecov
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.os == 'ubuntu-latest' }}
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: FormingWorlds/Zalmoxis
           files: coverage.xml
           fail_ci_if_error: false
+
+      - name: Build documentation (Zensical)
+        run: |
+          zensical build --clean

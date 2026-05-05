@@ -1,0 +1,68 @@
+name: Zalmoxis nightly
+
+on:
+  schedule:
+    # 02:00 UTC daily. CRON syntax is in UTC; 02:00 UTC is roughly
+    # 03:00 / 04:00 CET (DST-dependent). Adjust the hour if you'd
+    # rather pin to a specific local time.
+    - cron: "0 2 * * *"
+  # Manual trigger for ad-hoc runs (e.g. before cutting a release).
+  workflow_dispatch:
+
+# Nightly: smoke + integration tests (full Picard solves) with coverage
+# instrumentation. Targets <60 min wall. Excluded from push and PR CI
+# because each smoke or integration test runs a full Zalmoxis solver
+# call (5-10 min on a 2-vCPU runner under cov instrumentation) and
+# burning that on every push gives no bug-finding signal that the
+# unit suite doesn't already cover.
+jobs:
+  nightly:
+    name: Zalmoxis-nightly (ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.9"
+
+      - name: Set ZALMOXIS_ROOT environment variable
+        run: echo "ZALMOXIS_ROOT=$GITHUB_WORKSPACE" >> $GITHUB_ENV
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+          pip install pytest pytest-cov pytest-xdist
+
+      - name: Cache Zalmoxis EOS data
+        id: cache-zalmoxis-data
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: zalmoxis-data-${{ runner.os }}-${{ hashFiles('tools/setup/get_zalmoxis.sh', 'tools/setup/setup_zalmoxis.py', 'tools/setup/setup_utils.py') }}
+
+      - name: Download required input/output files
+        if: steps.cache-zalmoxis-data.outputs.cache-hit != 'true'
+        run: |
+          bash tools/setup/get_zalmoxis.sh
+
+      - name: Run smoke + integration tests with coverage
+        run: |
+          pytest -m "(smoke or integration) and not slow" -n auto -o "addopts=" \
+            --cov=zalmoxis --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: FormingWorlds/Zalmoxis
+          files: coverage.xml
+          flags: nightly
+          fail_ci_if_error: false
