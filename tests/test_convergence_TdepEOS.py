@@ -89,7 +89,7 @@ def _check_TdepEOS_results(mass, results):
                 )
 
 
-@pytest.mark.integration
+@pytest.mark.smoke
 def test_TdepEOS_converges_1Mearth(zalmoxis_root):
     """Default-CI regression check: T-dependent EOS converges at 1 M_earth.
 

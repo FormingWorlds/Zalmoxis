@@ -1,13 +1,11 @@
-"""High-mass adiabatic PALEOS-2phase:MgSiO3 convergence (3-10 M_earth).
+"""Smoke tests for high-mass adiabatic PALEOS-2phase:MgSiO3 convergence.
 
-Split out from ``test_convergence_PALEOS.py`` so xdist's
-``--dist loadfile`` runs this heavy block on its own worker; the
-single-worker wall otherwise dominated the integration suite.
-
-Regression tests for the T(P) parameterisation fix. Previously, the
-Brent pressure solver's bracket search created unphysical (low P, high T)
-queries that hit NaN gaps in the PALEOS tables, causing 14%+ mass errors
-and non-convergence above ~2.8 M_earth.
+Demoted from ``integration`` to ``smoke`` and trimmed in the 2026-05-05
+CI-trim pass: only the 5 M_earth adiabatic case is retained from the
+prior [5, 10] parametrize. The integration tier (PALEOS rocky linear
+1+5 M_earth) covers the published-reference comparison; this file
+catches regressions in the T(P) parameterisation fix without re-paying
+the 10 M_earth wall-time hit.
 """
 
 from __future__ import annotations
@@ -19,10 +17,10 @@ from tests._paleos_helpers import _paleos_data_available, _run_paleos
 from zalmoxis.constants import earth_mass, earth_radius
 
 
-@pytest.mark.integration
-@pytest.mark.parametrize('mass', [5, 10])
-def test_PALEOS_adiabatic_high_mass_converges(mass):
-    """PALEOS adiabatic mode should converge for higher-mass planets."""
+@pytest.mark.smoke
+def test_PALEOS_adiabatic_5Mearth_converges():
+    """PALEOS adiabatic mode should converge for a 5 M_earth super-Earth."""
+    mass = 5
     if not _paleos_data_available():
         pytest.skip('PALEOS data files not found')
 
@@ -46,25 +44,23 @@ def test_PALEOS_adiabatic_high_mass_converges(mass):
     assert 0.5 < R < 3.0, f'{mass} M_earth radius {R:.3f} R_earth out of range'
 
 
-@pytest.mark.integration
+@pytest.mark.smoke
 def test_PALEOS_adiabatic_radius_increases_with_mass():
     """Planet radius should increase with mass for Earth-like composition.
 
-    Co-located with ``test_PALEOS_adiabatic_high_mass_converges`` so the
-    5 and 10 M_earth solver runs land in the same lru_cache and this test
-    only adds the 1 M_earth call as fresh work.
+    Trimmed to compare 1 and 5 M_earth (10 M_earth dropped in 2026-05-05
+    CI-trim pass).
     """
     if not _paleos_data_available():
         pytest.skip('PALEOS data files not found')
 
     radii = []
-    for mass in [1.0, 5.0, 10.0]:
+    for mass in [1.0, 5.0]:
         results = _run_paleos(mass, temperature_mode='adiabatic')
         assert results['converged'], f'{mass} M_earth did not converge'
         radii.append(results['radii'][-1])
 
-    for i in range(1, len(radii)):
-        assert radii[i] > radii[i - 1], (
-            f'Radius did not increase: R({[1, 5, 10][i - 1]})={radii[i - 1] / earth_radius:.3f} '
-            f'>= R({[1, 5, 10][i]})={radii[i] / earth_radius:.3f}'
-        )
+    assert radii[1] > radii[0], (
+        f'Radius did not increase: R(1)={radii[0] / earth_radius:.3f} '
+        f'>= R(5)={radii[1] / earth_radius:.3f}'
+    )

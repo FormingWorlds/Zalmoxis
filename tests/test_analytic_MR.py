@@ -1,9 +1,9 @@
-"""
-Integration tests for the Seager+2007 analytic EOS with the full Zalmoxis solver.
+"""Smoke tests for the Seager+2007 analytic EOS path through the full solver.
 
-Tests mass-radius relations for various material combinations including
-Earth-like, water-world, and carbon planet configurations. Also tests
-per-layer mixed EOS (tabulated + analytic).
+Demoted from ``integration`` to ``smoke`` and trimmed to a single mass
+in the 2026-05-05 CI-trim pass: keeps the analytic-EOS code path
+exercised at 1 M_earth (rocky, water, carbon, mixed-EOS variants)
+without the 5/10 M_earth wall-time cost.
 
 References:
     - Seager et al. (2007), ApJ 669:1279
@@ -18,11 +18,11 @@ import pytest
 from tools.setup.setup_tests import load_model_output
 
 
-@pytest.mark.integration
+@pytest.mark.smoke
 class TestAnalyticVsTabulatedMR:
     """Compare analytic iron/MgSiO3 mass-radius against tabulated iron/silicate."""
 
-    @pytest.mark.parametrize('mass', [1, 5, 10])
+    @pytest.mark.parametrize('mass', [1])
     def test_rocky_planet_radius_agreement(self, mass, cached_solver):
         """Analytic iron/MgSiO3 should produce radii within ~5% of tabulated iron/silicate."""
         # Run tabulated
@@ -46,11 +46,11 @@ class TestAnalyticVsTabulatedMR:
         )
 
 
-@pytest.mark.integration
+@pytest.mark.smoke
 class TestAnalyticWaterPlanetMR:
     """Compare analytic 3-layer iron/MgSiO3/H2O against tabulated water planets."""
 
-    @pytest.mark.parametrize('mass', [1, 5, 10])
+    @pytest.mark.parametrize('mass', [1])
     def test_water_planet_radius_agreement(self, mass, cached_solver):
         """Analytic iron/MgSiO3/H2O should produce radii within ~5% of tabulated water."""
         # Run tabulated water
@@ -78,7 +78,7 @@ class TestAnalyticWaterPlanetMR:
         )
 
 
-@pytest.mark.integration
+@pytest.mark.smoke
 class TestExoticPlanetConvergence:
     """Test convergence for exotic material combinations only possible with the analytic EOS."""
 
@@ -112,11 +112,11 @@ class TestExoticPlanetConvergence:
         )
 
 
-@pytest.mark.integration
+@pytest.mark.smoke
 class TestMixedEOS:
     """Test per-layer mixing of tabulated and analytic EOS."""
 
-    @pytest.mark.parametrize('mass', [1, 5, 10])
+    @pytest.mark.parametrize('mass', [1])
     def test_tabulated_core_analytic_mantle(self, mass, cached_solver):
         """Seager2007:iron core + Analytic:MgSiO3 mantle should converge
         and produce radii within ~5% of pure tabulated."""

@@ -88,7 +88,8 @@ testpaths = ["tests"]
 pythonpath = ["src", "."]
 markers = [
     "unit: Fast unit tests (<100ms, no solver calls)",
-    "integration: Integration tests with full solver (10-60s each)",
+    "smoke: Single-mass solver runs that exercise the full code path with relaxed cost (1 M_earth only)",
+    "integration: Real-physics integration tests against published references (PALEOS rocky 1 + 5 M_earth)",
     "slow: Slow convergence tests (minutes, full composition grids)",
 ]
 

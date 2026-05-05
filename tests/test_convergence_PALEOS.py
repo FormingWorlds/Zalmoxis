@@ -51,7 +51,7 @@ def test_PALEOS_converges_5Mearth():
 # ── Adiabatic mode: issue #55 fix ─────────────────────────────────────
 
 
-@pytest.mark.integration
+@pytest.mark.smoke
 def test_PALEOS_adiabatic_differs_from_linear():
     """Adiabatic mode should produce different R and T_center than linear mode.
 
@@ -88,7 +88,7 @@ def test_PALEOS_adiabatic_differs_from_linear():
     )
 
 
-@pytest.mark.integration
+@pytest.mark.smoke
 def test_PALEOS_adiabatic_physically_reasonable():
     """Adiabatic T profile from PALEOS should have physically reasonable properties."""
     if not _paleos_data_available():

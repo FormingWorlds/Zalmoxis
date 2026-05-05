@@ -555,7 +555,7 @@ class TestGravitationalBindingEnergy:
 # ============================================================================
 
 
-@pytest.mark.integration
+@pytest.mark.smoke
 class TestEarthBenchmark:
     """Verify the full solver against known Earth properties using Analytic EOS."""
 
@@ -597,7 +597,7 @@ class TestEarthBenchmark:
         )
 
 
-@pytest.mark.integration
+@pytest.mark.smoke
 class TestMassRadiusScaling:
     """Verify the mass-radius scaling exponent against Seager+2007."""
 
@@ -621,7 +621,7 @@ class TestMassRadiusScaling:
         )
 
 
-@pytest.mark.integration
+@pytest.mark.smoke
 class TestCMFMonotonicity:
     """Radius must decrease monotonically with increasing core mass fraction."""
 
@@ -641,7 +641,7 @@ class TestCMFMonotonicity:
             )
 
 
-@pytest.mark.integration
+@pytest.mark.smoke
 class TestPureIronPlanet:
     """Verify a pure iron planet (CMF=1.0) against Seager+2007."""
 
@@ -659,7 +659,7 @@ class TestPureIronPlanet:
         )
 
 
-@pytest.mark.integration
+@pytest.mark.smoke
 class TestConservationLaws:
     """Verify mass conservation and surface pressure boundary condition."""
 

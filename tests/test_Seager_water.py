@@ -1,7 +1,7 @@
-"""Density-profile integration tests for water-world planets vs Seager+2007.
+"""Smoke test for water-world density profile vs Seager+2007 at 1 M_earth.
 
-Split from a former combined ``test_Seager.py`` (rocky+water) so xdist's
-``--dist loadfile`` runs rocky and water on different workers.
+Demoted from ``integration`` to ``smoke`` and trimmed to a single mass
+in the 2026-05-05 CI-trim pass.
 """
 
 from __future__ import annotations
@@ -17,15 +17,10 @@ from tools.setup.setup_tests import (
 )
 
 
-@pytest.mark.integration
-@pytest.mark.parametrize('mass', [1, 5, 10])
-def test_density_profile_water(mass):
-    """50% H2O planet rho(r) must match Seager+2007 within 10% (excluding CMB jump).
-
-    The mass=50 cell was dropped: it dominated integration wall time and
-    re-exercised the high-mass regime that ``test_convergence_*_high_mass``
-    already covers.
-    """
+@pytest.mark.smoke
+def test_density_profile_water():
+    """50 % H2O planet rho(r) must match Seager+2007 within 10 % at 1 M_earth (excluding CMB jump)."""
+    mass = 1
     data_by_mass = load_Seager_data('radiusdensitySeagerwaterbymass.txt')
     seager_radii = np.array(data_by_mass[mass]['radius'])
     seager_densities = np.array(data_by_mass[mass]['density'])

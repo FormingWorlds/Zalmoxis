@@ -11,11 +11,12 @@ on:
       - ready_for_review
 
 jobs:
-  # Fast feedback loop: unit-and-not-slow on both ubuntu and macos, no
-  # coverage instrumentation. Coverage adds ~5-10x wall on cold CI even
-  # when the underlying tests run in seconds locally; running cov on a
-  # separate parallel job keeps push CI under 10 min for green/red
-  # signal while preserving full coverage uploads.
+  # Fast feedback loop: unit + smoke (1 M_earth solver runs) on both
+  # ubuntu and macos, no coverage instrumentation. Targets <10 min
+  # wall. Smoke tests cover the full Picard-solver code path at a
+  # single mass; the heavy super-Earth real-physics integration tests
+  # live in the coverage job and are restricted to PALEOS rocky 1+5
+  # M_earth only.
   test-fast:
     name: Zalmoxis-check (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -59,9 +60,9 @@ jobs:
         run: |
           ruff check
 
-      - name: Run unit tests
+      - name: Run unit + smoke tests
         run: |
-          pytest -m "unit and not slow" -n auto -o "addopts=" -o "junit_family=legacy" \
+          pytest -m "(unit or smoke) and not slow" -n auto -o "addopts=" -o "junit_family=legacy" \
             --junitxml=junit.xml
 
       - name: Upload test results to Codecov
@@ -76,16 +77,19 @@ jobs:
         run: |
           zensical build --clean
 
-  # Coverage job: unit-only with coverage instrumentation. Runs in
-  # parallel with test-fast so it never blocks PR feedback. Ubuntu-only
-  # because Codecov ingests one report per push and Ubuntu/macOS
-  # coverage is nearly identical. Integration tests intentionally
-  # excluded: under cov instrumentation + 2-vCPU runner they extend
-  # the cov job past 90 min; their solver.py contribution is uploaded
-  # by the integration-coverage job below.
+  # Coverage job: unit + smoke + integration tests with coverage
+  # instrumentation. Runs in parallel with test-fast so it never blocks
+  # PR feedback. Ubuntu-only because Codecov ingests one report per
+  # push and Ubuntu/macOS coverage is nearly identical.
+  #
+  # The integration set is now restricted to two real-physics PALEOS
+  # rocky cases (1 + 5 M_earth) per the 2026-05-05 CI-trim pass; the
+  # rest of the prior integration tests were demoted to ``smoke`` (1
+  # M_earth only) to bring the cov-job wall back under 25 min.
   coverage:
     name: Zalmoxis-coverage (ubuntu-latest)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -118,9 +122,9 @@ jobs:
         run: |
           bash tools/setup/get_zalmoxis.sh
 
-      - name: Run unit tests with coverage
+      - name: Run unit + smoke + integration tests with coverage
         run: |
-          pytest -m "unit and not slow" -n auto -o "addopts=" \
+          pytest -m "(unit or smoke or integration) and not slow" -n auto -o "addopts=" \
             --cov=zalmoxis --cov-report=term-missing --cov-report=xml
 
       - name: Upload coverage to Codecov
@@ -130,62 +134,4 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: FormingWorlds/Zalmoxis
           files: coverage.xml
-          flags: unit
-          fail_ci_if_error: false
-
-  # Integration coverage: separate job so integration tests don't
-  # extend the unit-cov job past the cov instrumentation + 2-vCPU
-  # ceiling. Codecov merges flag-tagged uploads, so this lifts solver.py
-  # from ~35 % to ~80 % without ballooning the unit-cov job. Runs
-  # entirely in parallel with test-fast and unit-cov; doesn't block PR
-  # feedback. Allowed to take longer (up to ~60 min wall).
-  integration-coverage:
-    name: Zalmoxis-integration-cov (ubuntu-latest)
-    runs-on: ubuntu-latest
-    timeout-minutes: 75
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12.9"
-
-      - name: Set ZALMOXIS_ROOT environment variable
-        run: echo "ZALMOXIS_ROOT=$GITHUB_WORKSPACE" >> $GITHUB_ENV
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install .
-          pip install pytest pytest-cov pytest-xdist
-
-      - name: Cache Zalmoxis EOS data
-        id: cache-zalmoxis-data
-        uses: actions/cache@v4
-        with:
-          path: data
-          key: zalmoxis-data-${{ runner.os }}-${{ hashFiles('tools/setup/get_zalmoxis.sh', 'tools/setup/setup_zalmoxis.py', 'tools/setup/setup_utils.py') }}
-
-      - name: Download required input/output files
-        if: steps.cache-zalmoxis-data.outputs.cache-hit != 'true'
-        run: |
-          bash tools/setup/get_zalmoxis.sh
-
-      - name: Run integration tests with coverage
-        run: |
-          pytest -m "integration and not slow" -n auto -o "addopts=" \
-            --cov=zalmoxis --cov-report=term-missing --cov-report=xml
-
-      - name: Upload integration coverage to Codecov
-        if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          slug: FormingWorlds/Zalmoxis
-          files: coverage.xml
-          flags: integration
           fail_ci_if_error: false
