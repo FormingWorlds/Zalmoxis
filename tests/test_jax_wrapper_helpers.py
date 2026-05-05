@@ -204,3 +204,86 @@ class TestTabulateAdiabat:
         radii = np.linspace(0.0, 6.371e6, 50)
         _, T_values = _tabulate_adiabat(radii, temperature_function, n_pts=20)
         np.testing.assert_allclose(T_values, 2500.0, rtol=1e-12)
+
+
+# ---------------------------------------------------------------------------
+# solve_structure_via_jax pre-JIT format-rejection raises
+# ---------------------------------------------------------------------------
+
+
+class _FakeMixture:
+    """Minimum LayerMixture surface for the wrapper's `core_lm.components[0]`."""
+
+    def __init__(self, eos_id):
+        self.components = [eos_id]
+
+
+class TestSolveStructureViaJaxFormatChecks:
+    """Pre-JIT-solve raises in ``solve_structure_via_jax``.
+
+    The wrapper rejects a non-paleos_unified core or a mantle that lacks
+    the 2-phase sub-tables before instantiating any caches or calling
+    diffrax. These guards keep PROTEUS' coupled run from silently routing
+    a Tdep / Seager / Stixrude config through the JAX path (where the
+    specialised RHS would either crash or return junk) — they are the
+    only typed contract enforcement on the JAX side.
+    """
+
+    @staticmethod
+    def _common_args(*, core_format='paleos_unified'):
+        """Smallest valid arg set that reaches the format check.
+
+        ``core_mat`` carries the parametrised format so a wrong value
+        triggers the line-198 ValueError before any cache is built. The
+        rest is dummy data the wrapper does not read until past the raise.
+        """
+        from zalmoxis.jax_eos.wrapper import solve_structure_via_jax
+
+        radii = np.linspace(0.0, 6.371e6, 5)
+        layer_mixtures = {
+            'core': _FakeMixture('Tdep:iron'),
+            'mantle': _FakeMixture('Tdep:MgSiO3'),
+        }
+        material_dictionaries = {
+            'Tdep:iron': {'format': core_format, 'eos_file': '/dev/null'},
+            'Tdep:MgSiO3': {'format': 'paleos_unified', 'eos_file': '/dev/null'},
+        }
+        kwargs = dict(
+            cmb_mass=0.325 * 5.972e24,
+            core_mantle_mass=5.972e24,
+            radii=radii,
+            adaptive_radial_fraction=1.0,
+            relative_tolerance=1e-6,
+            absolute_tolerance=1e-6,
+            maximum_step=1.0,
+            material_dictionaries=material_dictionaries,
+            interpolation_cache={},
+            y0=[0.0, 0.0, 360e9],
+            solidus_func=lambda P: 1500.0,
+            liquidus_func=lambda P: 4500.0,
+        )
+        return solve_structure_via_jax, layer_mixtures, kwargs
+
+    def test_non_paleos_unified_core_format_raises_value_error(self):
+        """A core material whose format is not ``paleos_unified`` is rejected.
+
+        Discriminating: passes ``'Tdep'`` (a real Zalmoxis format) so the
+        guard is exercised against a plausible mis-routing rather than a
+        nonsense string. The error message must contain the offending
+        format token so the operator can find it in logs.
+        """
+        solve, layer_mixtures, kwargs = self._common_args(core_format='Tdep')
+        with pytest.raises(ValueError, match='paleos_unified'):
+            solve(layer_mixtures=layer_mixtures, **kwargs)
+
+    def test_unknown_core_format_string_is_rejected(self):
+        """Edge: an obviously-unknown format string still trips the same raise.
+
+        Anti-happy-path: empty string + arbitrary token both must raise,
+        so the guard is `format != 'paleos_unified'` (strict equality)
+        rather than substring or whitelist drift.
+        """
+        for bad_format in ('', 'unknown_format', 'PALEOS_UNIFIED'):
+            solve, layer_mixtures, kwargs = self._common_args(core_format=bad_format)
+            with pytest.raises(ValueError, match='paleos_unified'):
+                solve(layer_mixtures=layer_mixtures, **kwargs)
