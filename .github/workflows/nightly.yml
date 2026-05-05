@@ -11,6 +11,12 @@ on:
   # ``gh workflow run "Zalmoxis nightly" -r <branch>``).
   workflow_dispatch:
 
+# Least-privilege token: only read access to the repo contents.
+# Coverage upload uses the CODECOV_TOKEN secret directly, not the
+# default GITHUB_TOKEN.
+permissions:
+  contents: read
+
 # Nightly: full test suite (unit + integration, plus smoke tier on
 # branches that define it) with coverage instrumentation. Targets
 # <60 min wall. Excluded from push and PR CI because each integration
@@ -25,8 +31,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
