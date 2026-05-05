@@ -1,5 +1,11 @@
 """Smoke test for water-world density profile vs Seager+2007 at 1 M_earth.
 
+Kept separate from ``test_MR_water`` because the two reference datasets
+assume different compositions: Zeng+2019 "50 % H2O" is at cmf=0.1625,
+immf=0.3375 (= 50 % water by mass), while Seager+2007's water density
+curve was published at cmf=0.065, immf=0.485 (~45 % water). Each test
+exercises the composition appropriate to its reference dataset.
+
 Demoted from ``integration`` to ``smoke`` and trimmed to a single mass
 in the 2026-05-05 CI-trim pass.
 """
@@ -13,13 +19,12 @@ from scipy.interpolate import interp1d
 from tools.setup.setup_tests import (
     load_profile_output,
     load_Seager_data,
-    run_zalmoxis_rocky_water,
 )
 
 
 @pytest.mark.smoke
-def test_density_profile_water():
-    """50 % H2O planet rho(r) must match Seager+2007 within 10 % at 1 M_earth (excluding CMB jump)."""
+def test_density_profile_water(cached_solver):
+    """Seager-composition water planet rho(r) within 10 % of Seager+2007 at 1 M_earth."""
     mass = 1
     data_by_mass = load_Seager_data('radiusdensitySeagerwaterbymass.txt')
     seager_radii = np.array(data_by_mass[mass]['radius'])
@@ -28,7 +33,7 @@ def test_density_profile_water():
     seager_radii = seager_radii[sorted_indices]
     seager_densities = seager_densities[sorted_indices]
 
-    _, profile_output_file = run_zalmoxis_rocky_water(mass, 'water', cmf=0.065, immf=0.485)
+    _, profile_output_file = cached_solver(mass, 'water', cmf=0.065, immf=0.485)
 
     model_radii, model_densities = load_profile_output(profile_output_file)
     model_radii = np.array(model_radii) / 1e3  # m -> km

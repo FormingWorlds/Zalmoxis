@@ -53,7 +53,8 @@ class TestAnalyticWaterPlanetMR:
     @pytest.mark.parametrize('mass', [1])
     def test_water_planet_radius_agreement(self, mass, cached_solver):
         """Analytic iron/MgSiO3/H2O should produce radii within ~5% of tabulated water."""
-        # Run tabulated water
+        # cmf=0.065, immf=0.485 matches the Seager-water composition used by
+        # ``test_Seager_water``; one cached tabulated solve serves both files.
         output_tab, _ = cached_solver(mass, 'water', cmf=0.065, immf=0.485)
         mass_tab, radius_tab = load_model_output(output_tab)
 
