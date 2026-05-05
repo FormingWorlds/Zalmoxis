@@ -86,11 +86,18 @@ def _data_available():
     return os.path.isdir(data_dir) and os.listdir(data_dir)
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(not _data_available(), reason='EOS data not staged locally')
 class TestEventTermination:
     """Event-termination regression on the full bench_performance path.
 
     Each solve is ~20-30 s; class-scoped fixtures keep to two runs.
+
+    Marked slow because the class-scoped fixture's first test
+    (test_both_converge) absorbs ~72s of setup wall on its first call
+    even with the lru_cache helpers, dominating the rest of the unit
+    suite. Default CI runs ``pytest -m "unit and not slow"`` skips it;
+    full validation via ``pytest -m slow`` keeps it covered.
     """
 
     @pytest.fixture(scope='class')
