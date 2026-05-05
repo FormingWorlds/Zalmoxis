@@ -37,7 +37,20 @@ jobs:
           pip install .  # from pyproject.toml
           pip install pytest pytest-cov pytest-xdist ruff zensical markdown-include mkdocstrings[python] pymdown-extensions
 
+      # PALEOS / WolfBower2018 / Seager2007 EOS tables (~600 MB) are
+      # downloaded by tools/setup/get_zalmoxis.sh from Zenodo. The
+      # download itself is ~2-2.5 min on every CI run; cache it keyed
+      # on the script + setup_utils content so the cache is invalidated
+      # automatically when the table set or download logic changes.
+      - name: Cache Zalmoxis EOS data
+        id: cache-zalmoxis-data
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: zalmoxis-data-${{ runner.os }}-${{ hashFiles('tools/setup/get_zalmoxis.sh', 'tools/setup/setup_zalmoxis.py', 'tools/setup/setup_utils.py') }}
+
       - name: Download required input/output files
+        if: steps.cache-zalmoxis-data.outputs.cache-hit != 'true'
         run: |
           bash tools/setup/get_zalmoxis.sh
 
@@ -45,9 +58,13 @@ jobs:
         run: |
           ruff check
 
+      # Default CI runs only the fast unit tier (``unit and not slow``).
+      # The slow tier is exercised by a dedicated nightly workflow or
+      # via manual ``pytest -m slow`` locally; it covers the heavier
+      # parity / convergence tests that take 50-300s each.
       - name: Run unit tests with coverage
         run: |
-          pytest -m unit -n auto -o "addopts=" -o "junit_family=legacy" \
+          pytest -m "unit and not slow" -n auto -o "addopts=" -o "junit_family=legacy" \
             --cov=zalmoxis --cov-report=term-missing --cov-report=xml \
             --junitxml=junit.xml
 
