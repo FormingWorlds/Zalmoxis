@@ -231,6 +231,7 @@ def _data_available():
     return os.path.isdir(data_dir) and os.listdir(data_dir)
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(not _data_available(), reason='EOS data not staged locally')
 class TestFullSolveAnderson:
     """Stage-1b-scale full-solve parity.
@@ -238,6 +239,10 @@ class TestFullSolveAnderson:
     These run zalmoxis.solver.main() twice on the same config. Each
     solve is ~30-60 s on a workstation; the class is skipped if EOS
     data is absent (CI without data-download).
+
+    Tagged ``slow`` so default CI ``pytest -m "unit and not slow"``
+    excludes the ~70s of class-fixture setup. The cheaper helpers in
+    ``TestAndersonMixHelper`` above keep covering the unit-grade math.
     """
 
     @pytest.fixture(scope='class')
