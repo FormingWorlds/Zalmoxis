@@ -511,3 +511,282 @@ class TestAdiabaticBlendMechanism:
 
         source = inspect.getsource(_solve)
         assert '_ADIABAT_BLEND_STEP = 0.25' in source
+
+
+# ---------------------------------------------------------------------------
+# compute_adiabatic_temperature(anchor='cmb', ...) — outward integration
+# ---------------------------------------------------------------------------
+
+
+class _StubTdepMixture:
+    """Minimal LayerMixture-like stub: ``has_tdep()`` is True (mantle-like)."""
+
+    def has_tdep(self):
+        return True
+
+
+class _StubInertMixture:
+    """Mixture stub with ``has_tdep()`` returning False (e.g. core-like)."""
+
+    def has_tdep(self):
+        return False
+
+
+@pytest.mark.unit
+class TestComputeAdiabaticTemperatureCmbAnchor:
+    """Tests for ``compute_adiabatic_temperature(anchor='cmb', cmb_temperature=...)``.
+
+    These exercise the outward-integration block (mantle from CMB to surface)
+    that is invoked by ``main()`` once the converged structure exposes the
+    CMB index. Existing tests in this file cover only the default
+    ``anchor='surface'`` path. Stubs replace ``get_layer_mixture`` and
+    ``get_mixed_nabla_ad`` so the integration logic is exercised
+    deterministically without requiring the WolfBower2018 EOS data file.
+
+    Coverage targets ``src/zalmoxis/eos/temperature.py`` lines 118-176:
+    the ``if anchor == 'cmb':`` branch, the cmb_temperature validation,
+    the cmb_index lookup, the core carry-through, and the upward integration
+    loop including the low-pressure short-circuit and the
+    nabla<=0 / dP>=0 ``else`` branch.
+    """
+
+    @staticmethod
+    def _patch_helpers(monkeypatch, *, mixture, nabla):
+        """Replace the in-function imports with stubs at the module level.
+
+        ``compute_adiabatic_temperature`` does ``from ..mixing import
+        get_mixed_nabla_ad`` and ``from ..structure_model import
+        get_layer_mixture`` lazily inside its body, so the patch must hit
+        the source modules' attribute table (Python's ``from`` re-fetches
+        on each call).
+
+        ``any_component_is_tdep`` is patched to return True so the early
+        ValueError is bypassed; the stubbed mixture's ``has_tdep()``
+        already covers the per-shell branch.
+        """
+        import zalmoxis.mixing as _mix
+        import zalmoxis.structure_model as _struct
+
+        monkeypatch.setattr(_struct, 'get_layer_mixture', lambda *a, **k: mixture)
+        monkeypatch.setattr(_mix, 'get_mixed_nabla_ad', lambda *a, **k: nabla)
+        monkeypatch.setattr(_mix, 'any_component_is_tdep', lambda *a, **k: True)
+
+    def test_anchor_cmb_pins_temperature_at_cmb_index(self, monkeypatch):
+        """``T[cmb_index] == cmb_temperature`` exactly; ``T[i<cmb_index] == surface_temperature``.
+
+        Discriminating: pinning the wrong shell index (off-by-one in
+        ``searchsorted``) would surface as a CMB-temperature mismatch.
+        """
+        self._patch_helpers(monkeypatch, mixture=_StubTdepMixture(), nabla=0.3)
+        n = 21
+        radii = np.linspace(0.0, 6.371e6, n)
+        # Pressure monotonically decreases from center to surface.
+        pressure = np.linspace(360e9, 1e6, n)
+        mass_enclosed = np.linspace(0.0, 5.972e24, n)
+        cmb_mass = 0.325 * 5.972e24
+
+        T = compute_adiabatic_temperature(
+            radii=radii,
+            pressure=pressure,
+            mass_enclosed=mass_enclosed,
+            surface_temperature=2500.0,
+            cmb_mass=cmb_mass,
+            core_mantle_mass=5.972e24,
+            layer_mixtures={'core': _StubInertMixture(), 'mantle': _StubTdepMixture()},
+            material_dictionaries={},
+            anchor='cmb',
+            cmb_temperature=4500.0,
+        )
+
+        cmb_index = int(np.searchsorted(mass_enclosed, cmb_mass))
+        cmb_index = max(1, min(cmb_index, n - 1))
+        assert T[cmb_index] == pytest.approx(4500.0)
+        # All shells strictly below cmb_index carry the surface anchor.
+        np.testing.assert_allclose(T[:cmb_index], 2500.0, rtol=0, atol=1e-12)
+        # Mantle shells above the CMB are positive and finite.
+        assert np.all(T[cmb_index:] > 0)
+        assert np.all(np.isfinite(T))
+
+    def test_anchor_cmb_cools_outward_from_cmb_to_surface(self, monkeypatch):
+        """In the cooling regime (positive nabla, decreasing P outward), mantle T
+        is monotonically non-increasing from CMB to surface.
+
+        Discriminating: a wrong sign on ``dtdp * dP`` (heating instead of
+        cooling outward) would flip monotonicity and fail.
+        """
+        self._patch_helpers(monkeypatch, mixture=_StubTdepMixture(), nabla=0.3)
+        n = 30
+        radii = np.linspace(0.0, 6.371e6, n)
+        pressure = np.linspace(360e9, 1e6, n)
+        mass_enclosed = np.linspace(0.0, 5.972e24, n)
+        cmb_mass = 0.325 * 5.972e24
+
+        T = compute_adiabatic_temperature(
+            radii=radii,
+            pressure=pressure,
+            mass_enclosed=mass_enclosed,
+            surface_temperature=2500.0,
+            cmb_mass=cmb_mass,
+            core_mantle_mass=5.972e24,
+            layer_mixtures={'core': _StubInertMixture(), 'mantle': _StubTdepMixture()},
+            material_dictionaries={},
+            anchor='cmb',
+            cmb_temperature=4500.0,
+        )
+
+        cmb_index = int(np.searchsorted(mass_enclosed, cmb_mass))
+        cmb_index = max(1, min(cmb_index, n - 1))
+        mantle_T = T[cmb_index:]
+        # CMB shell hotter than surface shell.
+        assert mantle_T[0] > mantle_T[-1]
+        # Monotone non-increasing across the mantle.
+        assert np.all(np.diff(mantle_T) <= 0)
+        # Adiabat clamp at the upper bound: T must stay <= 100000 K and >= 100 K.
+        assert mantle_T.min() >= 100.0
+        assert mantle_T.max() <= 100000.0
+
+    @pytest.mark.parametrize('bad_cmb_T', [None, 0.0, -100.0, -1e-6])
+    def test_anchor_cmb_requires_positive_cmb_temperature(self, monkeypatch, bad_cmb_T):
+        """``anchor='cmb'`` with a missing or non-positive ``cmb_temperature`` raises.
+
+        Edge case + physically unreasonable input: includes None (missing),
+        0 (boundary), small negative (numerical), and large negative
+        (physically meaningless).
+        """
+        self._patch_helpers(monkeypatch, mixture=_StubTdepMixture(), nabla=0.3)
+        n = 5
+        radii = np.linspace(0.0, 6.371e6, n)
+        pressure = np.linspace(360e9, 1e5, n)
+        mass_enclosed = np.linspace(0.0, 5.972e24, n)
+
+        with pytest.raises(ValueError, match='cmb_temperature'):
+            compute_adiabatic_temperature(
+                radii=radii,
+                pressure=pressure,
+                mass_enclosed=mass_enclosed,
+                surface_temperature=2500.0,
+                cmb_mass=0.325 * 5.972e24,
+                core_mantle_mass=5.972e24,
+                layer_mixtures={'mantle': _StubTdepMixture()},
+                material_dictionaries={},
+                anchor='cmb',
+                cmb_temperature=bad_cmb_T,
+            )
+
+    def test_anchor_cmb_short_circuits_at_low_pressure_shells(self, monkeypatch):
+        """When the local or next-shell pressure is below 1e5 Pa, T is held constant.
+
+        Discriminating: the adiabat scaling ``T*nabla/P`` blows up at low P;
+        the short-circuit at lines 151-153 is what prevents NaN propagation
+        in the upper atmosphere. Place the second-to-last shell below 1e5
+        Pa and verify T[n-1] (computed with P_eval = pressure[n-2] < 1e5)
+        falls back to T[n-2] rather than integrating with the divergent
+        ratio.
+        """
+        self._patch_helpers(monkeypatch, mixture=_StubTdepMixture(), nabla=0.3)
+        n = 6
+        radii = np.linspace(0.0, 6.371e6, n)
+        # Drop into the low-P short-circuit at the surface boundary.
+        pressure = np.array([360e9, 100e9, 30e9, 10e9, 1e3, 1e2])
+        mass_enclosed = np.linspace(0.0, 5.972e24, n)
+        cmb_mass = 0.05 * 5.972e24  # cmb_index falls early in the array
+
+        T = compute_adiabatic_temperature(
+            radii=radii,
+            pressure=pressure,
+            mass_enclosed=mass_enclosed,
+            surface_temperature=2500.0,
+            cmb_mass=cmb_mass,
+            core_mantle_mass=5.972e24,
+            layer_mixtures={'mantle': _StubTdepMixture()},
+            material_dictionaries={},
+            anchor='cmb',
+            cmb_temperature=4500.0,
+        )
+
+        # The shell whose own pressure is below 1e5 Pa must inherit the prior
+        # shell's temperature, not integrate ``T_eval * nabla / P_eval`` which
+        # would diverge or overflow the [100, 100000] clamp.
+        assert T[-1] == pytest.approx(T[-2])
+        assert np.all(np.isfinite(T))
+
+    def test_anchor_cmb_holds_temperature_when_dp_is_nonnegative(self, monkeypatch):
+        """When ``dP >= 0`` (non-monotone pressure), the integrator's ``else``
+        branch holds T at the prior shell value rather than integrating.
+
+        Discriminating: passes a deliberately non-monotone pressure profile
+        (a single uphill step in the mantle) and verifies the integrator
+        does NOT step T forward at that shell. Without the dP<0 guard at
+        line 169, the integrator would still apply the formula and produce
+        a heating step in the wrong direction.
+        """
+        self._patch_helpers(monkeypatch, mixture=_StubTdepMixture(), nabla=0.3)
+        n = 6
+        radii = np.linspace(0.0, 6.371e6, n)
+        # All pressures stay above 1e5 (no low-P short-circuit). Index 4 has
+        # pressure[4] > pressure[3], producing dP > 0 at i=4.
+        pressure = np.array([360e9, 100e9, 30e9, 10e9, 50e9, 1e7])
+        mass_enclosed = np.linspace(0.0, 5.972e24, n)
+        cmb_mass = 0.05 * 5.972e24  # cmb_index = 1
+
+        T = compute_adiabatic_temperature(
+            radii=radii,
+            pressure=pressure,
+            mass_enclosed=mass_enclosed,
+            surface_temperature=2500.0,
+            cmb_mass=cmb_mass,
+            core_mantle_mass=5.972e24,
+            layer_mixtures={'mantle': _StubTdepMixture()},
+            material_dictionaries={},
+            anchor='cmb',
+            cmb_temperature=4500.0,
+        )
+
+        # At i=4, dP = pressure[4] - pressure[3] = +40 GPa > 0 -> T held.
+        assert T[4] == pytest.approx(T[3])
+
+    def test_anchor_cmb_skips_non_tdep_mantle_shell(self, monkeypatch):
+        """A mantle shell whose mixture lacks tdep components carries T forward.
+
+        Edge case: the per-shell ``if not mixture.has_tdep()`` branch
+        (lines 143-145) fires when a shell maps to a layer without tdep
+        components. Stubs ``get_layer_mixture`` to return an inert mixture
+        for the second mantle shell and verifies T is held there.
+        """
+        import zalmoxis.mixing as _mix
+        import zalmoxis.structure_model as _struct
+
+        # Distinguish shells: mantle index 3 returns inert mixture; everything
+        # else is tdep. Stub get_layer_mixture by mass_enclosed; here the
+        # caller's mass_enclosed[i] uniquely identifies index i.
+        n = 6
+        radii = np.linspace(0.0, 6.371e6, n)
+        pressure = np.linspace(360e9, 1e6, n)
+        mass_enclosed = np.linspace(0.0, 5.972e24, n)
+        cmb_mass = 0.05 * 5.972e24
+        target_mass = mass_enclosed[3]
+
+        def stub_layer_mixture(m_at_i, *args, **kwargs):  # noqa: ARG001
+            if m_at_i == target_mass:
+                return _StubInertMixture()
+            return _StubTdepMixture()
+
+        monkeypatch.setattr(_struct, 'get_layer_mixture', stub_layer_mixture)
+        monkeypatch.setattr(_mix, 'get_mixed_nabla_ad', lambda *a, **k: 0.3)
+        monkeypatch.setattr(_mix, 'any_component_is_tdep', lambda *a, **k: True)
+
+        T = compute_adiabatic_temperature(
+            radii=radii,
+            pressure=pressure,
+            mass_enclosed=mass_enclosed,
+            surface_temperature=2500.0,
+            cmb_mass=cmb_mass,
+            core_mantle_mass=5.972e24,
+            layer_mixtures={'mantle': _StubTdepMixture()},
+            material_dictionaries={},
+            anchor='cmb',
+            cmb_temperature=4500.0,
+        )
+
+        # Shell 3 inherits shell 2's temperature unchanged.
+        assert T[3] == pytest.approx(T[2])
