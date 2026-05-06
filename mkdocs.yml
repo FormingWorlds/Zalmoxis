@@ -15,7 +15,8 @@ nav:
       - Usage: How-to/usage.md
       - Parameter grids: How-to/grids.md
       - Coupling to PROTEUS: How-to/proteus_coupling.md
-      - Testing: How-to/testing.md
+      - Testing suite: How-to/testing.md
+      - Build tests: How-to/build_tests.md
       - Releasing: How-to/releasing.md
 
   - Tutorials:
