@@ -1,9 +1,9 @@
 """Smoke tests for the Seager+2007 analytic EOS path through the full solver.
 
-Demoted from ``integration`` to ``smoke`` and trimmed to a single mass
-in the 2026-05-05 CI-trim pass: keeps the analytic-EOS code path
-exercised at 1 M_earth (rocky, water, carbon, mixed-EOS variants)
-without the 5/10 M_earth wall-time cost.
+Exercises the analytic-EOS code path at 1 M_earth across the rocky,
+water, carbon, and mixed-EOS variants. Higher-mass coverage of the
+same path is the integration tier's job; this file keeps the smoke
+tier's wall-time bounded.
 
 References:
     - Seager et al. (2007), ApJ 669:1279

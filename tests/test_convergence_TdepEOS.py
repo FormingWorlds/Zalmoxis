@@ -52,8 +52,8 @@ def _check_TdepEOS_results(mass, results):
             cmb_index = 1  # Ensure at least one core point
 
         # Iron core density check (8000-50000 kg/m^3). Lower bound catches
-        # the old bug where MgSiO3 density (~5000 kg/m^3) was accidentally
-        # used for the core. Upper bound covers compressed iron at ~10 TPa.
+        # MgSiO3 density (~5000 kg/m^3) accidentally being used for the core.
+        # Upper bound covers compressed iron at ~10 TPa.
         core_densities = density[1:cmb_index]
         if len(core_densities) > 0:
             max_core_rho = np.max(core_densities)

@@ -50,7 +50,7 @@ def test_PALEOS_converges_5Mearth():
     assert 1.2 < R < 2.0, f'PALEOS 5 M_earth radius {R:.3f} R_earth out of expected range'
 
 
-# ── Adiabatic mode: issue #55 fix ─────────────────────────────────────
+# ── Adiabatic mode ─────────────────────────────────────────────────────
 
 
 @pytest.mark.smoke
@@ -59,19 +59,17 @@ def test_PALEOS_converges_5Mearth():
     reason=(
         'Adiabat blend ramp does not apply on ubuntu x86_64 with the same '
         'config that produces R_diff~5e-3 / T_center_diff~1300 K on macOS '
-        'arm64. T_center stays byte-identical at the linear initial guess '
-        '(6000 K) and R_diff collapses to ~1.5e-5. Pre-existing platform '
-        'divergence in the adiabat-blend code path, masked until smoke '
-        'tier moved to ubuntu nightly. Track separately; until fixed, '
-        'this test runs on macOS only (local dev + future macOS smoke CI).'
+        'arm64: T_center stays byte-identical at the linear initial guess '
+        '(6000 K) and R_diff collapses to ~1.5e-5. Platform divergence '
+        'in the adiabat-blend code path; runs on macOS only until resolved.'
     ),
 )
 def test_PALEOS_adiabatic_differs_from_linear():
     """Adiabatic mode should produce different R and T_center than linear mode.
 
-    This is the key test for issue #55: previously adiabatic mode gave
-    identical results to linear because the convergence loop broke before
-    the adiabat could activate.
+    Guards against a regression where the convergence loop breaks before
+    the adiabat activates and adiabatic results collapse onto the linear
+    initial guess.
     """
     if not _paleos_data_available():
         pytest.skip('PALEOS data files not found')

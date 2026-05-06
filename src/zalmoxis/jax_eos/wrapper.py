@@ -128,12 +128,12 @@ def solve_structure_via_jax(
     adaptive_radial_fraction,  # unused in JAX path (Tsit5 adaptive internal)
     relative_tolerance,
     absolute_tolerance,
-    maximum_step,  # unused in JAX path for now
+    maximum_step,  # unused in JAX path
     material_dictionaries,
     interpolation_cache,
     y0,
-    solidus_func,  # used to extract Stixrude14 params
-    liquidus_func,  # used to extract Stixrude14 params
+    solidus_func,
+    liquidus_func,
     temperature_function=None,
     temperature_arrays=None,  # (r_arr, T_arr): r-indexed T profile
     mushy_zone_factors=None,
@@ -292,17 +292,12 @@ def solve_structure_via_jax(
         _p_t0 = _time.perf_counter()
 
     # Mantle melting-curve tabulation on a shared log-P axis, sampled
-    # in log-T. Numpy calls liquidus_func(P) and solidus_func(P)
-    # directly inside calculate_mixed_density; previously the JAX RHS
-    # used a hardcoded Stix14 power law that disagreed with
-    # PALEOS-liquidus by 14-50 % (root cause of the +2.3 % R_outer
-    # parity gap, see scripts/single_shot_ode_parity.py commit 9d275c7c).
-    # Sampling log10(liquidus_func) and log10(solidus_func) on a
-    # log-P axis (rather than T directly) makes linear interp bit-exact
-    # for any Simon-Glatzel power law T = A*P^B, since log T is linear
-    # in log P; piecewise power laws (PALEOS-liquidus) are also exact
-    # except at the kink where the residual is ≤1e-7. This keeps N
-    # small (256) so the JIT compile and per-call cost stay short.
+    # in log-T. We sample log10(liquidus_func) and log10(solidus_func)
+    # on a log-P axis (rather than T directly) so linear interp is
+    # bit-exact for any Simon-Glatzel power law T = A*P^B (log T is
+    # linear in log P); piecewise power laws (PALEOS-liquidus) are also
+    # exact except at the kink where the residual is <=1e-7. This keeps
+    # N small (256) so the JIT compile and per-call cost stay short.
     # Tabulating BOTH curves (rather than ``T_sol = T_liq * mzf``)
     # preserves generality: any (solidus, liquidus) pair the caller
     # passes via ``melting_curves_functions`` works, including
@@ -314,11 +309,10 @@ def solve_structure_via_jax(
     # Cache the melting-curve tabulation by (id(solidus_func), id(liquidus_func)).
     # The samples depend ONLY on the curve functions, so they are constant
     # across all solve_structure_via_jax calls within a single main() (and
-    # across all main() calls that re-use the same closure pair). The
-    # solver's outer Picard loop calls this wrapper thousands of times per
-    # main(); without this cache we re-tabulate 256 x 2 = 512 melting-curve
-    # evaluations per call and re-allocate / re-log10 / re-ascontiguousarray
-    # them every time, which previously dominated coupled-solve wall time.
+    # across all main() calls that re-use the same closure pair). Without
+    # this cache we re-tabulate 256 x 2 = 512 melting-curve evaluations
+    # per call and re-allocate / re-log10 / re-ascontiguousarray every
+    # time, which dominates coupled-solve wall time.
     # Cache key uses object id; the dict cap prevents unbounded growth from
     # unique-per-call closures (rare).
     _melt_cache = _MELT_TABLE_CACHE

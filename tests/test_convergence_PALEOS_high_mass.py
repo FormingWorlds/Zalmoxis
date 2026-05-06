@@ -1,11 +1,9 @@
 """Smoke tests for high-mass adiabatic PALEOS-2phase:MgSiO3 convergence.
 
-Demoted from ``integration`` to ``smoke`` and trimmed in the 2026-05-05
-CI-trim pass: only the 5 M_earth adiabatic case is retained from the
-prior [5, 10] parametrize. The integration tier (PALEOS rocky linear
-1+5 M_earth) covers the published-reference comparison; this file
-catches regressions in the T(P) parameterisation fix without re-paying
-the 10 M_earth wall-time hit.
+Covers only the 5 M_earth adiabatic case at smoke tier. The integration
+tier (PALEOS rocky linear 1+5 M_earth) handles the published-reference
+comparison; this file is the regression guard on the T(P)
+parameterisation at high mass without paying the 10 M_earth wall-time.
 """
 
 from __future__ import annotations
@@ -48,8 +46,7 @@ def test_PALEOS_adiabatic_5Mearth_converges():
 def test_PALEOS_adiabatic_radius_increases_with_mass():
     """Planet radius should increase with mass for Earth-like composition.
 
-    Trimmed to compare 1 and 5 M_earth (10 M_earth dropped in 2026-05-05
-    CI-trim pass).
+    Compares 1 vs 5 M_earth; 10 M_earth lives in the integration tier.
     """
     if not _paleos_data_available():
         pytest.skip('PALEOS data files not found')

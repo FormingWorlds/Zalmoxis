@@ -69,8 +69,7 @@ class TestGetLayerMixture:
 
     def test_ice_layer_returned_above_cmm(self, three_layer_mixtures):
         """Mass at or above ``core_mantle_mass`` returns the ice mixture
-        when ``ice_layer`` is configured. This is the previously-uncovered
-        branch."""
+        when ``ice_layer`` is configured."""
         m = get_layer_mixture(
             mass=5e23,  # above core_mantle=4e23
             cmb_mass=2e23,

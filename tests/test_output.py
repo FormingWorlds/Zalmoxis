@@ -619,11 +619,11 @@ class TestPostProcessingLogLines:
     ):
         """``cmb_mass <= mass_enclosed[0]`` must not log surface density as core.
 
-        Regression: prior to the fix, ``cmb_index = np.argmax(...)`` returned
-        0 for a coreless / very-low-cmb-mass profile, and ``density[cmb_index
-        - 1]`` silently wrapped to ``density[-1]`` (the surface). The floor
-        ``max(1, ...)`` guarantees ``density[cmb_index - 1]`` is the centre
-        density (or near-centre), not the surface.
+        Without the floor, ``cmb_index = np.argmax(...)`` returns 0 for a
+        coreless / very-low-cmb-mass profile and ``density[cmb_index - 1]``
+        wraps to ``density[-1]`` (the surface). The floor ``max(1, ...)``
+        guarantees ``density[cmb_index - 1]`` is the centre density (or
+        near-centre), not the surface.
         """
         n = 60
         radii = np.linspace(0.0, 6.371e6, n)

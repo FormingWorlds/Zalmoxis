@@ -151,8 +151,8 @@ def _layer_fractions(data):
 
     # Detect 2-layer (no ice) from explicit metadata when available, so a
     # thin-but-non-zero mantle in a 3-layer run is not misclassified as
-    # 2-layer. Fall back to the numerical heuristic only for legacy
-    # archives predating the metadata addition.
+    # 2-layer. Fall back to the numerical heuristic for archives without
+    # the ``ice_layer_eos`` field.
     if 'ice_layer_eos' in data:
         raw_ice = data['ice_layer_eos']
         ice_eos = str(raw_ice.item() if hasattr(raw_ice, 'item') else raw_ice).strip()

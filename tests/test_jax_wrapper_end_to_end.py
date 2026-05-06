@@ -26,8 +26,8 @@ def test_solve_structure_via_jax_end_to_end_parity():
 
     setup = _stage1b_setup()
     cfg = setup['config_params']
-    # Key was renamed `T_logP_grid` -> `T_axis_grid` in test_jax_rhs_parity.py
-    # to match the JAX wrapper's accessor name; mirror the rename here.
+    # ``setup['T_axis_grid']`` is a log10(P) axis; the local name keeps
+    # the explicit ``T_logP_grid`` framing for the numpy interp closure.
     T_logP_grid = setup['T_axis_grid']
     T_values = setup['T_values']
 

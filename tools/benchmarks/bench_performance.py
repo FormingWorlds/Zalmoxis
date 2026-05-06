@@ -1,7 +1,7 @@
 #!/usr/bin/env python
-"""Performance-validation bench for the Zalmoxis speedup plan.
+"""Performance-validation bench for Zalmoxis.
 
-For every commit on `tl/interior-refactor-performance`, run this to:
+Run this to:
   1. Time 3 standalone `zalmoxis.solver.main()` calls on the reference config.
   2. Save output profiles (radii, mass_enclosed, gravity, pressure, density,
      temperature) to a .npz.

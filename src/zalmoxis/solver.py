@@ -336,13 +336,7 @@ def main(
     # hot fully-molten T(r) profiles (early CHILI coupled iters) the
     # retry path doubles every iteration cap and wall_timeout, takes
     # 600+ s, and routinely lands at the SAME or SLIGHTLY-WORSE mass
-    # error as the first attempt. Empirical (live no-Anderson bench
-    # iters from chili_dry_coupled_stage2_ab_postfix_b_noanderson):
-    #   - iter 23869 first attempt mass err <5%, retry 600s, ends at 2.6%
-    #   - iter 27657 first attempt mass err >5%, retry 600s timeout,
-    #     ends at 3.37% (still > 3%, would still trigger retry on
-    #     subsequent calls!) -- retry is genuinely useless here.
-    # Threshold 7% catches both. The outer mass-radius loop will
+    # error as the first attempt. The outer mass-radius loop will
     # converge across PROTEUS iters anyway; one resolve ending at 5-7%
     # mass error is fine when the next resolve corrects it.
     _RETRY_SKIP_MASS_ERR = 0.07
@@ -1178,7 +1172,7 @@ def _solve(
     binodal_T_scale = config_params.get('binodal_T_scale', BINODAL_T_SCALE_DEFAULT)
     # JAX fast path: when True, solve_structure dispatches to the diffrax-
     # based implementation (jax_eos/wrapper.py) inside the Picard loop.
-    # Supported configs: 2-layer single-component (Stage-1b PROTEUS).
+    # Supported configs: 2-layer single-component.
     # Unsupported configs fall back to the numpy path automatically.
     use_jax = bool(config_params.get('use_jax', False))
     # Anderson acceleration for the density Picard loop: when True,
@@ -1559,7 +1553,7 @@ def _solve(
         _picard_alpha = 0.5
         _prev_mass_error = None
         _prev_brent_solution = None  # Persist Brent bracket across outer iterations
-        _frozen_sigma = {}  # Reserved for suppression-weight freezing (currently unused)
+        _frozen_sigma = {}  # Reserved for suppression-weight freezing
 
         # Inner-loop density oscillation tracking
         _inner_alpha = 0.5  # Separate damping for density Picard
@@ -1857,11 +1851,6 @@ def _solve(
                     binodal_T_scale,
                 )
                 new_density[idx] = rho_batch
-
-            # Suppression-weight freezing was tried earlier but produced
-            # shape-mismatch errors when the valid-shell count changes
-            # between Picard iterations. Adaptive Picard alpha handles
-            # the oscillation suppression instead.
 
             # Fill NaN entries with last valid density (walking outward)
             last_valid = None

@@ -406,9 +406,8 @@ def main():
     # to reproduce their results, then compare with full PALEOS
     print('\n=== White+Li 2025 Fig. 3 reproduction ===')
 
-    # White+Li parameters (only f_a is currently consumed by the
-    # const-C_p reproduction; f_d / C_p constants are documented in
-    # White+Li 2025 Table 2 but the comparison plots don't pass them).
+    # White+Li 2025 Table 2 parameters; the const-C_p reproduction here
+    # consumes only f_a (f_d and C_p constants are not passed through).
     WL_F_A = 0.04
 
     # Boujibar parameters for comparison

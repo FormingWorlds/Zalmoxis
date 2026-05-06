@@ -19,8 +19,8 @@ Two entry points:
   ``liquid_eos_file`` so that mushy-zone mixing uses phase-specific
   endpoints rather than interpolating across the melting curve.
 
-Cache / registry wiring is handled by ``paleos_api_cache.py`` (A.2) and the
-``PALEOS-API:*`` registry entries (A.3). This module contains pure producers
+Cache / registry wiring is handled by ``paleos_api_cache.py`` and the
+``PALEOS-API:*`` registry entries. This module contains pure producers
 only; no cache logic lives here.
 
 Design notes
@@ -28,10 +28,10 @@ Design notes
 The 2-phase solid-side picker reaches into PALEOS internals
 (``_phase_eos_map``, the phase-boundary functions, ``_P_HPCEN_BRG``). These
 are not a committed public API. The PALEOS SHA is recorded in the output
-header so any upstream rename is caught by a cache-key miss. Stage B.5 of
-``zalmoxis-paleos-api-eos.md`` tracks the upstream contribution of a public
-``get_mgsio3_solid_phase`` + ``generate_twophase_pt_tables`` helper; at that
-point the internals access here collapses to one public call.
+header so any upstream rename is caught by a cache-key miss. Once a public
+``get_mgsio3_solid_phase`` + ``generate_twophase_pt_tables`` helper is
+contributed upstream, the internals access here collapses to one public
+call.
 """
 
 from __future__ import annotations
@@ -104,13 +104,14 @@ class GridSpec:
 
 
 # Shipped Zenodo tables are 150 pts/decade (see paleos_mgsio3_tables_pt_proteus_solid.dat
-# header). PROTEUS-A default is 4x denser on each axis (16x grid size) to give
-# bilinear interp enough resolution to resolve phase boundaries and minimize
-# coupling-loop interpolation noise. Cold-cache cost (~1 h with 16-core ProcessPool
-# on Mac Studio, one-time per PALEOS SHA) is amortized across every subsequent run.
+# header). The Zalmoxis default is 4x denser on each axis (16x grid size) to
+# give bilinear interp enough resolution to resolve phase boundaries and
+# minimize coupling-loop interpolation noise. Cold-cache cost (~1 h with a
+# 16-core ProcessPool, one-time per PALEOS SHA) is amortized across every
+# subsequent run.
 #
 # Override for sanity-check runs via ``ZALMOXIS_PALEOS_API_PTS_PER_DECADE``
-# (e.g. = 150 to match the shipped Zenodo grid for fast A.6 comparisons).
+# (e.g. = 150 to match the shipped Zenodo grid).
 # Must be set before the first import of this module; ``make_grid_at_resolution``
 # captures this as a default arg at def time.
 DEFAULT_PTS_PER_DECADE = int(_os.environ.get('ZALMOXIS_PALEOS_API_PTS_PER_DECADE', '600'))
@@ -180,8 +181,8 @@ def make_default_grid_h2o() -> GridSpec:
 def paleos_installed_sha() -> str:
     """Return the git SHA of the installed PALEOS checkout, or ``'unknown'``.
 
-    PALEOS does not expose ``__commit_sha__`` yet (Stage B.3). We fall back
-    to ``git rev-parse HEAD`` against the directory holding ``paleos``.
+    PALEOS does not expose ``__commit_sha__``; we fall back to
+    ``git rev-parse HEAD`` against the directory holding ``paleos``.
     If both fail, we use ``paleos.__version__`` as a coarse identifier.
     """
     try:
@@ -530,8 +531,8 @@ def _get_mgsio3_solid_phase(P: float, T: float) -> str:
     label even above the liquidus. This is what produces the metastable
     solid-side extension the shipped 2-phase table contains.
 
-    Stage B.5 would move this into PALEOS as a public ``get_mgsio3_solid_phase``
-    helper; this in-Zalmoxis replica is the MVP stand-in.
+    Once PALEOS exposes a public ``get_mgsio3_solid_phase`` helper this
+    in-Zalmoxis replica can be retired.
     """
     # Import lazily so the module stays optional-dependency clean.
     from paleos.mgsio3_eos import (

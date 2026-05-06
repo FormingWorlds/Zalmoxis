@@ -268,10 +268,8 @@ def paleos_liquidus(P):
     # Scalar fast path: in the numpy density Picard loop this function is
     # called once per cell per inner iteration on scalar P; the np.atleast_1d
     # / np.asarray / np.where / float() machinery dominates the trivial
-    # piecewise-power-law math. cProfile on a real CHILI T(r) profile
-    # (1565485_int.nc, no-Anderson) showed paleos_liquidus self-time +
-    # numpy.asarray overhead together at ~73% of the 100 s solve. Branching
-    # on scalar P first cuts that to ~ones of seconds.
+    # piecewise-power-law math. Branching on scalar P first keeps the
+    # per-call overhead negligible relative to a real CHILI solve.
     if isinstance(P, (int, float)) or (hasattr(P, 'ndim') and P.ndim == 0):
         Pf = float(P)
         if Pf <= 0.0:

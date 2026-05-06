@@ -445,7 +445,7 @@ def main():
         )
     print('=' * 90)
 
-    # Flag the 1 M_Earth issue
+    # Diagnostic for the 1 M_Earth case (sub-solidus surface T)
     for d in seager_data:
         if abs(d['mass'] - 1.0) < 0.01:
             print(f'\n** 1 M_Earth: T_surface = {d["T_surface"]:.0f} K (Seager)')

@@ -1,20 +1,20 @@
 """Regression tests for the SPIDER-coupling failure regime.
 
-Pins the behaviour of the robustness fixes (density seeding from the
-previous structure, Newton outer solver, retry-then-fallback) that
-recovered convergence on the failure mode SPIDER's entropy formulation
-exposes: steep adiabatic T(r) gradients (5000 K centre to 1800 K
-surface) form within a few coupling steps and straddle the silicate
-solidus-liquidus transition, where PALEOS density jumps 5-15%. Plain
-damped Picard diverges in that regime.
+Pins the behaviour of three robustness mechanisms (density seeding
+from the previous structure, Newton outer solver, retry-then-fallback)
+on the failure mode SPIDER's entropy formulation exposes: steep
+adiabatic T(r) gradients (5000 K centre to 1800 K surface) form
+within a few coupling steps and straddle the silicate solidus-liquidus
+transition, where PALEOS density jumps 5-15%. Plain damped Picard
+diverges in that regime.
 
 Three behaviours tested:
 
 1. **Steep T(r) profile converges** (SPIDER-like, 5000 K → 1800 K).
-   The regime that broke a large fraction of cases pre-hardening.
+   The regime that requires the robustness mechanisms.
 2. **Flat T(r) profile converges** (Aragog-like, ~4400 K).
-   The regime that worked even before hardening; negative control
-   that confirms the fix did not regress the easy case.
+   Negative control on the easy regime, ensuring the robustness
+   mechanisms do not regress it.
 3. **Density seeding accelerates the Picard loop**: second Zalmoxis
    call with `initial_density` from the first call must reach the
    same answer in fewer Picard iterations and lower wall time.
@@ -198,8 +198,8 @@ class TestSpiderCouplingConvergence:
     def test_flat_aragog_T_profile_converges_at_1ME(self, materials):
         """Flat ~4400 K Aragog-like T(r) at 1 M_Earth must converge.
 
-        Negative control: this is the regime that worked even before
-        the hardening. Confirms the fix did not regress the easy case.
+        Negative control on the easy regime: ensures the SPIDER-failure
+        robustness mechanisms do not regress flat T(r) convergence.
         Asserts the same invariants as the steep test.
         """
         config = _make_config(planet_mass_kg=1.0 * _earth_mass_kg())

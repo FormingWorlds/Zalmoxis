@@ -2,10 +2,9 @@
 
 One test, one solve: cross-verifies both the mass-radius relation
 against Zeng+2019 and the density profile against Seager+2007 from
-a single 1-M_earth rocky Seager solve. The two reference checks were
-previously split across ``test_MR_rocky`` and ``test_Seager_rocky``;
-they exercised identical solver state, so they were merged in the
-2026-05-05 CI-trim pass to avoid testing the same code path twice.
+a single 1-M_earth rocky Seager solve. The Zeng and Seager checks
+share identical solver state so they live in one test to avoid
+re-paying the solve cost.
 """
 
 from __future__ import annotations

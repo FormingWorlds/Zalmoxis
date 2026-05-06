@@ -74,11 +74,10 @@ def _load_fixtures():
 def test_jax_anderson_converges_with_temperature_arrays():
     """JAX+Anderson must converge at CHILI params using temperature_arrays.
 
-    Before this fix, the JAX wrapper's P-indexed tabulation collapsed
-    for P-ignoring callables (T sampled at r_mid becomes constant), so
-    the ODE saw a flat 4665 K column and the brentq outer loop never
-    bracketed. ``temperature_arrays`` swaps the RHS to an r-indexed
-    axis and restores convergence.
+    With a P-indexed tabulation and a P-ignoring callable, T sampled at
+    r_mid is constant, the ODE sees a flat ~4665 K column, and the
+    brentq outer loop fails to bracket. ``temperature_arrays`` swaps
+    the RHS to an r-indexed axis so the column is non-degenerate.
     """
     cp, mat, mf = _load_fixtures()
     cp['use_jax'] = True

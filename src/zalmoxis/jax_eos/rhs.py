@@ -232,10 +232,9 @@ def coupled_odes_jax(
     # a non-finite density (out-of-table T clamp, PALEOS edge case).
     # This mirrors structure_model.coupled_odes line 148 and is what
     # the test_jax_rhs_parity test filters out (both_nonzero mask).
-    # Note: unlike the prior implementation, we DO NOT freeze on
-    # pressure <= 0. That freeze prevented diffrax.Event from seeing
-    # the pressure-zero downcrossing. Event-based termination now
-    # handles P<=0 instead.
+    # We do NOT freeze on pressure <= 0 here because that would prevent
+    # diffrax.Event from seeing the pressure-zero downcrossing;
+    # event-based termination handles P<=0 instead.
     rho_finite = jnp.isfinite(rho)
     rho_safe = jnp.where(rho_finite, rho, 1.0)
 

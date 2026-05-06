@@ -1,10 +1,9 @@
 """In-process mock of the upstream ``paleos`` package for CI test environments.
 
-The CI runner does not vendor the upstream PALEOS Python package; before this
-module existed, ``tests/test_paleos_api.py`` carried a module-level
-``pytest.importorskip('paleos')`` that skipped 67 tests on every push, dragging
-``src/zalmoxis/eos/paleos_api.py`` coverage down to 16% on CI even though the
-local developer machines (with PALEOS installed) reported >95%.
+The CI runner does not vendor the upstream PALEOS Python package, so without
+this mock ``tests/test_paleos_api.py`` would skip on every CI push and drag
+``src/zalmoxis/eos/paleos_api.py`` coverage on CI well below the >95 % the
+PALEOS-installed developer machines see.
 
 This mock injects a minimal ``paleos`` package into ``sys.modules`` whenever
 the real package cannot be imported. The injection happens once per process
@@ -37,9 +36,6 @@ References
 ----------
 - ``src/zalmoxis/eos/paleos_api.py``: the consumer.
 - ``tests/test_paleos_api.py``: the tests.
-- handover note ``handover_2026_05_05_zalmoxis_test_speedup.md``, §"Path to
-  95%": this mock recovers the ~13 percentage points of CI coverage that
-  the importorskip line was costing.
 """
 
 from __future__ import annotations

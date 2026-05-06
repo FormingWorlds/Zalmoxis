@@ -22,7 +22,7 @@ Plots generated
 
 See also
 --------
-- ``src/tests/plot_paleos_full_validation.py``: earlier validation script
+- ``tools/plots/plot_paleos_full_validation.py``: PALEOS validation plots
 - ``docs/Reference/data.md``: EOS data file inventory
 """
 

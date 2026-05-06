@@ -1,17 +1,13 @@
 #!/usr/bin/env python
 """PROTEUS-mimic bench: new ``temperature_function`` closure per ``main()`` call.
 
-Why this bench exists
----------------------
-``bench_performance.py`` runs ``main()`` three times without a
-``temperature_function``, so the JAX wrapper exercises the 3000-K fallback at
-``jax_eos/wrapper.py:_tabulate_adiabat`` and never touches the adiabat cache.
 In the PROTEUS coupled loop, ``update_structure_from_interior`` hands a fresh
 closure to Zalmoxis on every structure update, with a slightly different
-``T(r)`` each time. That stresses a path the existing benches never touch.
+``T(r)`` each time. ``bench_performance.py`` runs ``main()`` without a
+``temperature_function``, so the JAX wrapper exercises the 3000-K fallback at
+``jax_eos/wrapper.py:_tabulate_adiabat`` and never touches the adiabat cache.
 
-This script reproduces that stress standalone, so we can decide where the
-per-call wall time in PROTEUS actually goes before touching code. Use the
+This script reproduces the per-call closure stress standalone. Use the
 ``ZALMOXIS_JAX_PROFILE=1`` env var to see the phase breakdown
 (``cache_extract`` / ``adiabat_tab`` / ``jit_solve`` / ``other``) that
 ``jax_eos/wrapper.py`` emits every 200 calls; in this bench that emission

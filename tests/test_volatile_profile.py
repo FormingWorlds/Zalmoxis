@@ -1,10 +1,9 @@
 """Tests for ``zalmoxis.mixing.VolatileProfile`` and ``compute_melt_fraction``.
 
-Both routines are PR #59 additions and arrive uncovered by the existing
-``tests/test_mixing.py``. This file targets the entire ``VolatileProfile``
-class API (``blend``, ``apply_to_mixture``, ``blend_with_binodal``,
-``apply_to_mixture_with_binodal``, ``_is_above_binodal``) plus the
-``compute_melt_fraction`` helper.
+Targets the entire ``VolatileProfile`` class API (``blend``,
+``apply_to_mixture``, ``blend_with_binodal``, ``apply_to_mixture_with_binodal``,
+``_is_above_binodal``) plus the ``compute_melt_fraction`` helper, neither
+of which is exercised by ``tests/test_mixing.py``.
 
 Anti-happy-path discipline: every test class includes at least one edge
 case (phi at 0/1, missing keys, primary component not appearing in either

@@ -151,10 +151,9 @@ class TestIsothermalTdepEOS:
         np.testing.assert_allclose(T, T_iso, rtol=0, atol=1e-9)
 
     def test_linear_mode_reaches_configured_endpoints(self, materials):
-        """Regression check for the patch: linear mode must still produce
-        a strictly decreasing linear T(r) from ``center_temperature`` at
-        ``r=0`` to ``surface_temperature`` at ``r=R``. This pins the
-        path that was correct before the fix and stayed correct after.
+        """Linear mode must produce a strictly decreasing linear T(r) from
+        ``center_temperature`` at ``r=0`` to ``surface_temperature`` at
+        ``r=R``.
         """
         from zalmoxis.solver import main
 
@@ -197,12 +196,13 @@ class TestIsothermalTindepEOS:
         return load_material_dictionaries()
 
     def test_T_column_equals_surface_not_hardcoded_300(self, materials):
-        """Output T(r) reflects ``surface_temperature``, not the legacy 300 K.
+        """Output T(r) must reflect ``surface_temperature``, not a hardcoded
+        300 K fallback.
 
         The Seager2007 EOS is T-independent so the structure (rho, P, R)
-        is unchanged by this fix; only the T column was wrong. We pin
-        ``T[r] = surface_temperature`` and use a discriminator that the
-        old hardcoded ``np.ones * 300`` would fail.
+        does not depend on the T column; the assertion pins
+        ``T[r] = surface_temperature`` at a discriminator value that
+        ``np.ones * 300`` would fail.
         """
         from zalmoxis.solver import main
 
@@ -224,8 +224,8 @@ class TestIsothermalTindepEOS:
         T = np.asarray(result['temperature'], dtype=float)
         assert np.all(T > 0)
         np.testing.assert_allclose(T, T_iso, rtol=0, atol=1e-9)
-        # Discriminator: the legacy bug wrote 300 K regardless of input.
+        # Discriminator against a hardcoded 300 K fallback in the T-indep branch.
         assert abs(T[0] - 300.0) > 100, (
-            f'T[0]={T[0]:.1f} K close to legacy hardcoded 300 K; the '
+            f'T[0]={T[0]:.1f} K close to hardcoded 300 K; the '
             'T-indep else branch is still ignoring surface_temperature.'
         )

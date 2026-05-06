@@ -1,18 +1,16 @@
 """JAX-native T-dependent EOS density with solid+liquid sub-tables.
 
-Port of ``zalmoxis.eos.tdep.get_Tdep_density`` for PALEOS-2phase (the
-Stage-1b mantle). Uses two PALEOS-format tables (solid-side and melt-
-side); in the mushy zone, density is a volume-average of per-table
-bilinear lookups.
+Port of ``zalmoxis.eos.tdep.get_Tdep_density`` for PALEOS-2phase. Uses
+two PALEOS-format tables (solid-side and melt-side); in the mushy zone,
+density is a volume-average of per-table bilinear lookups.
 
 Each sub-table query is a simple bilinear (no mushy-zone-within-table
-logic — the inter-table mix IS the mushy logic). We reuse
+logic, the inter-table mix IS the mushy logic). We reuse
 ``fast_bilinear_jax`` + ``paleos_clamp_temperature_jax`` from the
 bilinear kernel module.
 
-NaN-fallback (numpy's density_nn KDTree) is NOT ported. On the Stage-1b
-P-T envelope the fallback is not exercised (verified via Step 2 parity
-tests).
+NaN-fallback (numpy's density_nn KDTree) is NOT ported. On the
+PALEOS-2phase P-T envelope the fallback is not exercised.
 """
 
 from __future__ import annotations

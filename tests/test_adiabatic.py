@@ -220,12 +220,11 @@ class TestComputeAdiabaticTemperature:
 class TestNoDivergenceThickMantle:
     """Regression test for adiabat divergence with thick mantles (CMF <= 0.325).
 
-    Previously, the adiabat was computed via dT/dr = -α·g·T/Cp with
-    finite-difference α. In the mixed zone, phase-averaged density inflated
-    α by ~100× via the latent-heat density jump, causing exponential T
-    runaway through thick mantles.
-
-    The native dT/dP table approach eliminates this entirely.
+    A dT/dr = -α·g·T/Cp formulation with finite-difference α is unstable
+    here: in the mixed zone, phase-averaged density inflates α by ~100×
+    through the latent-heat density jump, driving exponential T runaway
+    across a thick mantle. The native dT/dP table path used by
+    ``compute_adiabatic_temperature`` avoids this.
     """
 
     def test_no_divergence_thick_mantle(self):
@@ -286,7 +285,8 @@ class TestNoDivergenceThickMantle:
     def test_no_divergence_cmf_01(self):
         """Adiabat for CMF=0.1 (very thick mantle ~5700 km) should not diverge.
 
-        This is the most extreme case: previously diverged to 58,000,000 K.
+        Most extreme case: the unstable α-based formulation diverges to
+        ~6e7 K here, so the assertion T_max < 10000 K is a strong guard.
         """
         import os
 

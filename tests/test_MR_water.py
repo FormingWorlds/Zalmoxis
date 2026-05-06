@@ -5,9 +5,6 @@ assume different compositions: Zeng+2019 "50 % H2O" is at cmf=0.1625,
 immf=0.3375 (= 50 % water by mass), while Seager+2007's water density
 curve was published at a different composition. Each test exercises the
 composition appropriate to its reference dataset.
-
-Demoted from ``integration`` to ``smoke`` and trimmed to a single mass
-in the 2026-05-05 CI-trim pass.
 """
 
 from __future__ import annotations

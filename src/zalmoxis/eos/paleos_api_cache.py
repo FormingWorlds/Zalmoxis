@@ -16,9 +16,9 @@ the generated file's header, so:
 2. An existing file whose header SHA does not match the currently installed
    PALEOS → regenerate (caught by `_header_sha_matches`).
 
-The SHA guard is the backstop for Stage B (upstream PALEOS changes):
-renaming `_phase_eos_map` or a boundary function on upstream will produce
-a different SHA even if the on-disk file still exists.
+The SHA guard is the backstop for upstream PALEOS changes:
+renaming ``_phase_eos_map`` or a boundary function on upstream will
+produce a different SHA even if the on-disk file still exists.
 """
 
 from __future__ import annotations

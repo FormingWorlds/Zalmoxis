@@ -6,10 +6,10 @@ performance-critical EOS kernels. The numpy implementations in
 within solver-tolerance (rtol <= 1e-4 on all physics fields).
 
 Module layout mirrors the numpy side:
-    bilinear    — fast_bilinear_jax, paleos_clamp_temperature_jax (Step 1)
-    paleos      — get_paleos_unified_density_jax (Step 2, WIP)
-    rhs         — coupled_odes_jax RHS (Step 3, WIP)
-    solver      — diffrax-based solve_structure replacement (Step 4, WIP)
+    bilinear    — fast_bilinear_jax, paleos_clamp_temperature_jax
+    paleos      — get_paleos_unified_density_jax
+    rhs         — coupled_odes_jax RHS
+    solver      — diffrax-based solve_structure replacement
 
 The JAX path is gated behind the ``use_jax`` entry in ``config_params``;
 when ``use_jax`` is False (the default) the numpy path is used unchanged.

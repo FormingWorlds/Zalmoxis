@@ -9,8 +9,8 @@ Verifies:
   (2) The wrapper's post-event padding handler produces no `inf`
       or `NaN` in the returned arrays.
   (3) Physics drift between the JAX+Event path and the numpy path
-      is at solver-tolerance (profile drift ~5e-4, previously ~1e-3
-      with the freeze-based hack and 1e25 ratio-artifact on pressure).
+      stays at solver tolerance (profile drift ~5e-4, no 1e25-scale
+      ratio artifact on pressure).
 
 Uses the full `zalmoxis.solver.main()` path (not an isolated
 solve_structure call) because the pressure-zero event only fires

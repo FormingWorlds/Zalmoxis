@@ -337,9 +337,8 @@ def generate_spider_phase_boundaries(
     # there. A fully-molten IC with S_node comparable to S_liq_peak ends
     # up with a narrow mushy band at ~175 GPa where Phi ~ 0.995, and the
     # resulting RHS is stiff enough that CVODE collapses to micro-year
-    # timesteps and hits its 100k-step cap. Observed on the first 5 M_E
-    # dry CHILI full runs at P_max=950 GPa
-    # (see stage1c_5me_super_earth_progress memory for the full trace).
+    # timesteps and hits its 100k-step cap at the 5 M_E super-Earth scale
+    # with P_max ~ 950 GPa.
     #
     # Fix. Apply np.maximum.accumulate (from low P to high P) to both
     # arrays. Below the peak nothing changes (the arrays are already
@@ -1435,10 +1434,8 @@ def compute_entropy_adiabat(
         # in a non-converged PALEOS cell (NaN), shrink it toward T_prev
         # rather than expanding, because the PALEOS tables have a 100%
         # NaN region at low P / high T (MgSiO3 vapour regime). Expanding
-        # into that region propagates NaN into brentq and crashes the
-        # whole run (was a historical bug: `NaN > 0` is False, `NaN *
-        # NaN > 0` is False, so the bracket-expansion loop exited
-        # immediately with NaN endpoints).
+        # into that region propagates NaN into brentq via the standard
+        # `NaN > 0 == False` pitfall and crashes the whole run.
         T_lo = T_prev * 0.8
         T_hi = T_prev * 2.0
         s_lo = residual(T_lo)
