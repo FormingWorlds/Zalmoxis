@@ -1,6 +1,6 @@
 """Plot radial interior profiles from a Zalmoxis parameter grid.
 
-Reads the ``<label>.npz`` files produced by ``run_grid`` when
+Reads the ``<label>.csv`` files produced by ``run_grid`` when
 ``[output].save_profiles = true`` and overlays density, pressure,
 temperature, and gravity vs. radius across all converged grid points,
 coloured by the primary sweep parameter.
@@ -116,19 +116,7 @@ def _converged(row):
     return str(row.get('converged', '')).strip().lower() == 'true'
 
 
-def _load_profile(grid_dir, label):
-    """Load a profile archive into a plain dict, closing the NpzFile.
-
-    Keeping the ``np.load(...)`` handle open for the lifetime of the
-    caller leaks one file descriptor per grid point; on 1000+ point
-    sweeps that can exhaust the process limit. Copy arrays into memory
-    and let the context manager close the archive immediately.
-    """
-    npz_path = os.path.join(grid_dir, f'{label}.npz')
-    if not os.path.isfile(npz_path):
-        return None
-    with np.load(npz_path) as data:
-        return {key: np.array(data[key], copy=True) for key in data.files}
+from tools.plots._grid_io import load_profile as _load_profile
 
 
 # ---------------------------------------------------------------------------
@@ -175,14 +163,14 @@ def plot_grid_profiles(
             continue
         data = _load_profile(grid_dir, label)
         if data is None:
-            skipped.append((label, 'missing .npz (run with save_profiles = true)'))
+            skipped.append((label, 'missing .csv (run with save_profiles = true)'))
             continue
         c_val = _try_float(row.get(colour_param))
         profiles.append((label, row, data, c_val))
 
     if not profiles:
         raise RuntimeError(
-            f'No converged profiles with saved .npz files found in {grid_dir}. '
+            f'No converged profiles with saved .csv files found in {grid_dir}. '
             f'Re-run run_grid with [output].save_profiles = true.'
         )
 

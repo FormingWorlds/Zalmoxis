@@ -1,6 +1,6 @@
 """Plot pressure-temperature trajectories from a Zalmoxis parameter grid.
 
-Reads the ``<label>.npz`` files produced by ``run_grid`` when
+Reads the ``<label>.csv`` files produced by ``run_grid`` when
 ``[output].save_profiles = true`` and plots the interior (P, T)
 trajectory of each converged grid point as one line, coloured by the
 primary sweep parameter. Useful for diagnosing which phase regimes a
@@ -16,12 +16,12 @@ dotted lines, but only when the mantle EOS actually used by the run
 takes external melting curves (``WolfBower2018:MgSiO3``,
 ``RTPress100TPa:MgSiO3``, ``PALEOS-2phase:MgSiO3``). For those runs the
 curves match whatever ``rock_solidus`` / ``rock_liquidus`` the solver
-was given, read from metadata embedded in the ``.npz``. For unified
-PALEOS tables, where the phase boundary is embedded in the table itself
-rather than an external curve, the overlay is suppressed by default and
-a note is printed. Explicit CLI flags ``--solidus`` / ``--liquidus``
-force a specific overlay regardless, and ``--no-melting-curves``
-disables the overlay entirely.
+was given, read from metadata embedded in the ``.csv`` comment header.
+For unified PALEOS tables, where the phase boundary is embedded in the
+table itself rather than an external curve, the overlay is suppressed
+by default and a note is printed. Explicit CLI flags ``--solidus`` /
+``--liquidus`` force a specific overlay regardless, and
+``--no-melting-curves`` disables the overlay entirely.
 
 Usage
 -----
@@ -136,19 +136,7 @@ def _converged(row):
     return str(row.get('converged', '')).strip().lower() == 'true'
 
 
-def _load_profile(grid_dir, label):
-    """Load a profile archive into a plain dict, closing the NpzFile.
-
-    Keeping the ``np.load(...)`` handle open for the lifetime of the
-    caller leaks one file descriptor per grid point; on 1000+ point
-    sweeps that can exhaust the process limit. Copy arrays into memory
-    and let the context manager close the archive immediately.
-    """
-    npz_path = os.path.join(grid_dir, f'{label}.npz')
-    if not os.path.isfile(npz_path):
-        return None
-    with np.load(npz_path) as data:
-        return {key: np.array(data[key], copy=True) for key in data.files}
+from tools.plots._grid_io import load_profile as _load_profile
 
 
 def _read_str(data, key):
@@ -216,8 +204,8 @@ def plot_grid_pt(
     solidus : str, optional
         Force a specific solidus identifier (from
         ``zalmoxis.melting_curves``). When ``None`` the tool reads
-        ``rock_solidus_id`` from the ``.npz`` metadata and overlays
-        only if the mantle EOS is one that uses external curves.
+        ``rock_solidus_id`` from the ``.csv`` metadata header and
+        overlays only if the mantle EOS is one that uses external curves.
     liquidus : str, optional
         Force a specific liquidus identifier; same auto-detection
         rules as ``solidus``.
@@ -240,14 +228,14 @@ def plot_grid_pt(
             continue
         data = _load_profile(grid_dir, label)
         if data is None:
-            skipped.append((label, 'missing .npz (run with save_profiles = true)'))
+            skipped.append((label, 'missing .csv (run with save_profiles = true)'))
             continue
         c_val = _try_float(row.get(colour_param))
         profiles.append((label, row, data, c_val))
 
     if not profiles:
         raise RuntimeError(
-            f'No converged profiles with saved .npz files found in {grid_dir}. '
+            f'No converged profiles with saved .csv files found in {grid_dir}. '
             f'Re-run run_grid with [output].save_profiles = true.'
         )
 
@@ -367,7 +355,7 @@ def plot_grid_pt(
             if not chosen_solidus or not chosen_liquidus:
                 overlay_note = (
                     'missing rock_solidus_id / rock_liquidus_id metadata in '
-                    '.npz (pre-metadata grid run?); no overlay.'
+                    '.csv (pre-metadata grid run?); no overlay.'
                 )
                 chosen_solidus = chosen_liquidus = None
                 overlay_reason = None
@@ -540,7 +528,7 @@ def _build_parser():
         help=(
             'Force a specific solidus identifier (from zalmoxis.melting_curves) '
             'regardless of what the solver used. Default: auto-detect from '
-            '.npz metadata; overlay only if the mantle EOS uses external curves.'
+            '.csv metadata; overlay only if the mantle EOS uses external curves.'
         ),
     )
     parser.add_argument(

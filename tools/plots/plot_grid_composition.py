@@ -1,6 +1,6 @@
 """Plot layer composition (core / mantle / ice) across a Zalmoxis parameter grid.
 
-Reads the ``<label>.npz`` files produced by ``run_grid`` when
+Reads the ``<label>.csv`` files produced by ``run_grid`` when
 ``[output].save_profiles = true`` and draws two horizontal stacked-bar
 panels: mass fractions on the left and radius fractions on the right,
 one bar per converged grid point.
@@ -98,19 +98,7 @@ def _converged(row):
     return str(row.get('converged', '')).strip().lower() == 'true'
 
 
-def _load_profile(grid_dir, label):
-    """Load a profile archive into a plain dict, closing the NpzFile.
-
-    Keeping the ``np.load(...)`` handle open for the lifetime of the
-    caller leaks one file descriptor per grid point; on 1000+ point
-    sweeps that can exhaust the process limit. Copy arrays into memory
-    and let the context manager close the archive immediately.
-    """
-    npz_path = os.path.join(grid_dir, f'{label}.npz')
-    if not os.path.isfile(npz_path):
-        return None
-    with np.load(npz_path) as data:
-        return {key: np.array(data[key], copy=True) for key in data.files}
+from tools.plots._grid_io import load_profile as _load_profile
 
 
 def _choose_label_param(sweep_params, explicit=None):
@@ -247,7 +235,7 @@ def plot_grid_composition(
             continue
         data = _load_profile(grid_dir, label)
         if data is None:
-            skipped.append((label, 'missing .npz (run with save_profiles = true)'))
+            skipped.append((label, 'missing .csv (run with save_profiles = true)'))
             continue
         fracs = _layer_fractions(data)
         if fracs is None:
@@ -256,7 +244,7 @@ def plot_grid_composition(
         entries.append((row.get(label_param, label), row, fracs))
 
     if not entries:
-        raise RuntimeError(f'No converged profiles with saved .npz files found in {grid_dir}.')
+        raise RuntimeError(f'No converged profiles with saved .csv files found in {grid_dir}.')
 
     # Sort by the numeric label value when possible so bars stack in a
     # natural reading order (bottom = smallest).

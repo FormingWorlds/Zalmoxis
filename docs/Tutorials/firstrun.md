@@ -231,7 +231,7 @@ Outputs land in `output/grid_firstrun/`:
 
 - `grid_summary.csv`: one row per grid point with the sweep parameters, the converged mass and radius, the convergence flags, and the wall time;
 - `<label>.json`: per-run summary mirroring the CSV row;
-- `<label>.npz`: per-run radial profile (because `save_profiles = true`).
+- `<label>.csv`: per-run radial profile (because `save_profiles = true`); a six-column body with SI-unit columns plus a `# key: value` comment header that records the EOS strings, melting-curve ids, and convergence flag.
 
 Filter to converged rows (`converged == True`) and overlay the three radii on the Zeng+2019 curve to check that you reproduce the expected shallow $R \propto M^{0.27}$ slope for rocky bodies in this mass range.
 The `tools/grids/plot_grid.py` helper does this for you:

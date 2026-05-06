@@ -145,30 +145,30 @@ Each grid run produces:
 
 - **`grid_summary.csv`**: One row per model with columns for all sweep parameters, calculated radius (R_earth), mass (M_earth), convergence flags, wall time, and any error messages.
 - **Per-run JSON files**: Individual `<label>.json` files with the same summary information, named by the parameter combination.
-- **Per-run profile files** (optional, `[output].save_profiles = true`, default `false`): `<label>.npz` files containing the full radial structure of each grid point. Each archive stores six profile arrays (`radii`, `density`, `gravity`, `pressure`, `temperature`, `mass_enclosed`), two scalar mass diagnostics (`cmb_mass`, `core_mantle_mass`), and the `converged` boolean. The per-layer EOS and melting-curve identifiers (`core_eos`, `mantle_eos`, `ice_layer_eos`, `rock_solidus_id`, `rock_liquidus_id`) are also embedded so plotting tools can reconstruct the solver's setup. All quantities are in SI units (m, kg/m³, m/s², Pa, K, kg).
+- **Per-run profile files** (optional, `[output].save_profiles = true`, default `false`): `<label>.csv` files containing the full radial structure of each grid point. Each CSV has a six-column body (`radius_m`, `density_kg_m3`, `gravity_m_s2`, `pressure_Pa`, `temperature_K`, `mass_enclosed_kg`, all in SI units) and a `# key: value` comment header carrying the scalar mass diagnostics (`cmb_mass`, `core_mantle_mass`), the `converged` flag, the run label, and the per-layer EOS and melting-curve identifiers (`core_eos`, `mantle_eos`, `ice_layer_eos`, `rock_solidus_id`, `rock_liquidus_id`).
 
-    Archives are written for non-converged grid points too (useful for debugging), but `radii[-1]` and `mass_enclosed[-1]` in those cases are the last Picard iterate, not the planet's converged structure, and `density` can contain NaN or zero in failed or padded shells. Filter on `converged == True` before plotting.
+    CSVs are written for non-converged grid points too (useful for debugging), but the last row of `radius_m` and `mass_enclosed_kg` in those cases is the last Picard iterate, not the planet's converged structure, and `density_kg_m3` can contain NaN or zero in failed or padded shells. Filter on `converged == True` before plotting.
 
 Plotting is always disabled during grid runs for speed. To generate the per-planet matplotlib plots for a specific parameter combination, run that case individually (`python -m zalmoxis -c <cfg>.toml`) with `plots_enabled = true`.
 
 ### Loading saved profiles
 
-Each `<label>.npz` is a plain NumPy archive. To plot pressure vs. radius for a grid point labelled `planet_mass=3.0`:
+Each `<label>.csv` opens directly in any spreadsheet or text editor; the `# key: value` header lines are ignored by `pandas.read_csv(..., comment='#')` and by `numpy.loadtxt(..., comments='#')`. To plot pressure vs. radius for a grid point labelled `planet_mass=3.0`:
 
 ```python
-import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 
-data = np.load("output/grid_mass_radius/planet_mass=3.0.npz")
-if not bool(data["converged"]):
-    raise RuntimeError("grid point did not converge, profile is not physical")
-plt.plot(data["radii"] / 1e3, data["pressure"] / 1e9)  # km, GPa
-plt.xlabel("Radius [km]")
-plt.ylabel("Pressure [GPa]")
+df = pd.read_csv('output/grid_mass_radius/planet_mass=3.0.csv', comment='#')
+plt.plot(df['radius_m'] / 1e3, df['pressure_Pa'] / 1e9)  # km, GPa
+plt.xlabel('Radius [km]')
+plt.ylabel('Pressure [GPa]')
 plt.show()
 ```
 
-Typical file sizes are a few tens of kB per grid point (compressed), so 1000-point sweeps stay under a few hundred MB. Set `save_profiles = false` (or omit the key) if you only need the summary CSV.
+The `converged` flag and other metadata sit in the comment header; the bundled `tools.plots._grid_io.load_profile(grid_dir, label)` helper parses both halves into a single dict if you need programmatic access.
+
+Typical file sizes are a few tens of kB per grid point (uncompressed text), so 1000-point sweeps stay under a few hundred MB. Set `save_profiles = false` (or omit the key) if you only need the summary CSV.
 
 ## Plotting grid results
 
@@ -267,7 +267,7 @@ python -m tools.grids.plot_grid <path> [-x COLUMN] [-y COLUMN] [-g PARAM]
 
 ## Plotting saved radial profiles
 
-When the grid was run with `[output].save_profiles = true`, three companion tools read the per-grid-point `.npz` archives and produce figures that are complementary to the scalar M-R plots from `plot_grid`.
+When the grid was run with `[output].save_profiles = true`, three companion tools read the per-grid-point `.csv` profiles and produce figures that are complementary to the scalar M-R plots from `plot_grid`.
 
 ### `plot_grid_profiles`: radial-profile overlay (2x2)
 
@@ -279,7 +279,7 @@ python -m tools.plots.plot_grid_profiles output/grid_mass_radius -o profiles.pdf
 python -m tools.plots.plot_grid_profiles output/grid_mass_radius --colour-by surface_temperature --log-pressure
 ```
 
-Default output: `<grid_dir>/profiles_vs_radius.pdf`. Non-converged grid points and points without a saved `.npz` are skipped with a note on stdout. Full CLI:
+Default output: `<grid_dir>/profiles_vs_radius.pdf`. Non-converged grid points and points without a saved profile CSV are skipped with a note on stdout. Full CLI:
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -300,7 +300,7 @@ plot_grid_profiles("output/grid_h2_mixing", colour_by="surface_temperature")
 
 ### `plot_grid_pt`: interior pressure-temperature trajectories
 
-Plots the full interior (P, T) trajectory of every converged grid point as one line, coloured by the primary sweep parameter. Pressure is log-scaled by default. The core-mantle boundary of each trajectory is marked with a black-edged dot. The tool reads EOS and melting-curve metadata embedded in each `.npz` and overlays mantle solidus and liquidus curves **only when the solver actually used external curves** (`WolfBower2018:MgSiO3`, `RTPress100TPa:MgSiO3`, `PALEOS-2phase:MgSiO3`). For unified PALEOS tables (e.g., `PALEOS:MgSiO3`), where the phase boundary is embedded in the EOS table itself, the overlay is suppressed by default and a short note is printed on the figure explaining why. Use `--solidus` / `--liquidus` to force a specific overlay for visual comparison.
+Plots the full interior (P, T) trajectory of every converged grid point as one line, coloured by the primary sweep parameter. Pressure is log-scaled by default. The core-mantle boundary of each trajectory is marked with a black-edged dot. The tool reads EOS and melting-curve metadata from each profile CSV's comment header and overlays mantle solidus and liquidus curves **only when the solver actually used external curves** (`WolfBower2018:MgSiO3`, `RTPress100TPa:MgSiO3`, `PALEOS-2phase:MgSiO3`). For unified PALEOS tables (e.g., `PALEOS:MgSiO3`), where the phase boundary is embedded in the EOS table itself, the overlay is suppressed by default and a short note is printed on the figure explaining why. Use `--solidus` / `--liquidus` to force a specific overlay for visual comparison.
 
 Useful for diagnosing which EOS phase regimes the sweep traverses and for sanity-checking that interior conditions stay inside the pressure/temperature range covered by the selected tables.
 
@@ -321,12 +321,12 @@ Default output: `<grid_dir>/pt_trajectories.pdf`. Full CLI:
 | `-o`, `--output` | `pt_trajectories.pdf` | Output file (extension selects format) |
 | `--colour-by` | first numeric sweep parameter | Sweep parameter used for line colour |
 | `--linear-pressure` | off | Linear pressure y-axis (default is log) |
-| `--solidus` | auto-detect from `.npz` | Force a solidus curve id (`zalmoxis.melting_curves`) |
-| `--liquidus` | auto-detect from `.npz` | Force a liquidus curve id |
+| `--solidus` | auto-detect from CSV header | Force a solidus curve id (`zalmoxis.melting_curves`) |
+| `--liquidus` | auto-detect from CSV header | Force a liquidus curve id |
 | `--no-melting-curves` | off | Disable the solidus/liquidus overlay entirely |
 | `--dpi` | 200 | Raster DPI (ignored for vector formats) |
 
-The metadata fields the tool reads (`mantle_eos`, `rock_solidus_id`, `rock_liquidus_id`) are written by `run_grid` when `save_profiles = true`. If a grid was run before this metadata was added, the overlay is suppressed with a note pointing to the fix (re-run the grid).
+The metadata fields the tool reads (`mantle_eos`, `rock_solidus_id`, `rock_liquidus_id`) are written into the CSV comment header by `run_grid` when `save_profiles = true`. If a grid was run with an older format that omits this metadata, the overlay is suppressed with a note pointing to the fix (re-run the grid).
 
 Python API:
 

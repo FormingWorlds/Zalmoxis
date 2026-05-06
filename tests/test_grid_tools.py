@@ -8,8 +8,9 @@ These tests do not run the Zalmoxis solver. They exercise:
   ``_mantle_uses_external_curves``, ``_layer_fractions``).
 - The full main functions (``plot_grid_profiles``, ``plot_grid_pt``,
   ``plot_grid_composition``) end-to-end, by building a minimal
-  synthetic grid directory (CSV + ``.npz`` files) in ``tmp_path`` and
-  asserting each tool writes its output image.
+  synthetic grid directory (``grid_summary.csv`` + per-cell
+  ``<label>.csv`` profile files) in ``tmp_path`` and asserting each
+  tool writes its output image.
 - The ``run_grid.run_single`` serialisation contract by monkeypatching
   the solver call with a synthetic ``model_results`` payload.
 """
@@ -165,13 +166,18 @@ def test_mantle_external_curves_is_solver_source():
 # ---------------------------------------------------------------------------
 # run_grid.run_single: serialisation contract
 # ---------------------------------------------------------------------------
-_EXPECTED_NPZ_KEYS = {
+# Six radial-profile arrays that must appear as columns in the per-cell
+# CSV body, plus eight metadata fields that must appear in the comment
+# header. ``label`` is added to the metadata header by the writer.
+_EXPECTED_PROFILE_KEYS = {
     'radii',
     'density',
     'gravity',
     'pressure',
     'temperature',
     'mass_enclosed',
+}
+_EXPECTED_METADATA_KEYS = {
     'cmb_mass',
     'core_mantle_mass',
     'converged',
@@ -180,6 +186,7 @@ _EXPECTED_NPZ_KEYS = {
     'ice_layer_eos',
     'rock_solidus_id',
     'rock_liquidus_id',
+    'label',
 }
 
 
@@ -244,10 +251,11 @@ def _install_fake_solver(monkeypatch):
     monkeypatch.setattr(rg, 'main', lambda *_args, **_kwargs: _fake_model_results())
 
 
-def test_run_single_writes_npz_with_expected_keys(tmp_path, monkeypatch):
-    """save_profiles=True: the .npz must contain exactly the 14 keys the
-    plot tools depend on, in the expected dtypes."""
+def test_run_single_writes_csv_with_expected_keys(tmp_path, monkeypatch):
+    """save_profiles=True: the .csv must contain the six profile columns
+    in its body and the eight metadata fields in its comment header."""
     from tools.grids.run_grid import run_single
+    from tools.plots._grid_io import load_profile
 
     _install_fake_solver(monkeypatch)
 
@@ -271,27 +279,41 @@ def test_run_single_writes_npz_with_expected_keys(tmp_path, monkeypatch):
     assert payload['label'] == label
     assert payload['converged'] is True
 
-    # The archive itself.
-    npz_path = os.path.join(out_dir, f'{label}.npz')
-    assert os.path.isfile(npz_path)
-    with np.load(npz_path) as data:
-        assert set(data.files) == _EXPECTED_NPZ_KEYS
-        # Profile arrays: 1D, length 20, float dtype.
-        assert data['radii'].shape == (20,)
-        assert data['density'].dtype.kind == 'f'
-        # Converged stored as a true boolean.
-        assert data['converged'].dtype == np.bool_
-        assert bool(data['converged']) is True
-        # Metadata strings.
-        assert str(data['core_eos'].item()) == 'PALEOS:iron'
-        assert str(data['mantle_eos'].item()) == 'PALEOS:MgSiO3'
-        assert str(data['ice_layer_eos'].item()) == ''
-        assert str(data['rock_solidus_id'].item()) == 'Monteux16-solidus'
-        assert str(data['rock_liquidus_id'].item()) == 'Monteux16-liquidus-A-chondritic'
+    # The profile CSV itself.
+    csv_path = os.path.join(out_dir, f'{label}.csv')
+    assert os.path.isfile(csv_path)
+
+    # Comment header should be human-readable: opening the file in any
+    # editor must show the metadata as `# key: value` lines.
+    with open(csv_path) as fh:
+        head = fh.read(2048)
+    for key in _EXPECTED_METADATA_KEYS:
+        assert f'# {key}:' in head, f'metadata key {key!r} missing from CSV header'
+
+    # Body parses through the shared loader; preserves legacy in-memory
+    # key shape so plot tools are untouched.
+    data = load_profile(out_dir, label)
+    assert data is not None
+    for key in _EXPECTED_PROFILE_KEYS:
+        assert key in data, f'profile column {key!r} missing'
+        assert data[key].shape == (20,)
+        assert data[key].dtype.kind == 'f'
+
+    assert data['converged'] is True
+    assert data['core_eos'] == 'PALEOS:iron'
+    assert data['mantle_eos'] == 'PALEOS:MgSiO3'
+    assert data['ice_layer_eos'] == ''
+    assert data['rock_solidus_id'] == 'Monteux16-solidus'
+    assert data['rock_liquidus_id'] == 'Monteux16-liquidus-A-chondritic'
+
+    # Round-trip precision: 17g formatting preserves the synthetic
+    # arrays bit-for-bit (within float64 round-trip).
+    assert data['radii'][0] == pytest.approx(0.0, abs=0.0)
+    assert data['radii'][-1] == pytest.approx(6.0e6, rel=0.0, abs=0.0)
 
 
 def test_run_single_no_profiles_when_disabled(tmp_path, monkeypatch):
-    """save_profiles=False: no .npz is written (backward-compat path)."""
+    """save_profiles=False: no .csv is written (only the per-run JSON)."""
     from tools.grids.run_grid import run_single
 
     _install_fake_solver(monkeypatch)
@@ -306,7 +328,7 @@ def test_run_single_no_profiles_when_disabled(tmp_path, monkeypatch):
 
     assert result['error'] is None
     assert os.path.isfile(os.path.join(out_dir, f'{label}.json'))
-    assert not os.path.exists(os.path.join(out_dir, f'{label}.npz'))
+    assert not os.path.exists(os.path.join(out_dir, f'{label}.csv'))
 
 
 def test_load_grid_config_rejects_non_bool_save_profiles(tmp_path, monkeypatch):
@@ -351,8 +373,8 @@ def test_load_grid_config_happy_path(tmp_path, monkeypatch):
 
 
 def test_load_grid_config_default_save_profiles_false(tmp_path, monkeypatch):
-    """If [output].save_profiles is omitted, the default is False (the
-    backward-compat behaviour: no per-grid-point .npz write)."""
+    """If [output].save_profiles is omitted, the default is False (no
+    per-grid-point .csv write)."""
     import tools.grids.run_grid as rg
 
     monkeypatch.setattr(rg, 'get_zalmoxis_root', lambda: str(tmp_path))
@@ -388,19 +410,19 @@ def test_load_grid_config_unknown_sweep_param(tmp_path, monkeypatch):
 
 
 def test_run_single_profile_write_failure_reports_error(tmp_path, monkeypatch):
-    """When np.savez_compressed raises OSError, run_single logs a warning
-    and populates result['error'] so the failure surfaces in
+    """When the profile-CSV writer raises OSError, run_single logs a
+    warning and populates result['error'] so the failure surfaces in
     grid_summary.csv (rather than silently disagreeing with the JSON)."""
     import tools.grids.run_grid as rg
     from tools.grids.run_grid import run_single
 
     _install_fake_solver(monkeypatch)
 
-    # Make np.savez_compressed blow up inside run_single.
+    # Make the profile-CSV writer blow up inside run_single.
     def _raise(*_args, **_kwargs):
         raise OSError('simulated disk full')
 
-    monkeypatch.setattr(rg.np, 'savez_compressed', _raise)
+    monkeypatch.setattr(rg, '_write_profile_csv', _raise)
 
     cfg = tempfile.NamedTemporaryFile(mode='w', suffix='.toml', delete=False, dir=tmp_path)
     cfg.write('# fake config\n')
@@ -419,11 +441,13 @@ def test_run_single_profile_write_failure_reports_error(tmp_path, monkeypatch):
 # End-to-end tests for the three plot tools
 # ---------------------------------------------------------------------------
 def _write_synthetic_grid(gdir, masses=(0.5, 1.0, 2.0), mantle_eos='PALEOS:MgSiO3'):
-    """Create a tiny grid_summary.csv + <label>.npz set in gdir.
-
-    Lets the plot tools run end-to-end with no solver and no real EOS data.
+    """Create a tiny ``grid_summary.csv`` + per-cell profile CSV set in
+    ``gdir``. Lets the plot tools run end-to-end with no solver and no
+    real EOS data.
     """
     import csv
+
+    from tools.grids.run_grid import _write_profile_csv
 
     gdir.mkdir(parents=True, exist_ok=True)
     fieldnames = [
@@ -460,23 +484,31 @@ def _write_synthetic_grid(gdir, masses=(0.5, 1.0, 2.0), mantle_eos='PALEOS:MgSiO
     n = 20
     M_earth = 5.972e24
     R_earth = 6.371e6
+    layer_eos = {
+        'core': 'PALEOS:iron',
+        'mantle': mantle_eos,
+        'ice_layer': '',
+    }
     for m in masses:
-        np.savez_compressed(
-            gdir / f'planet_mass={m}.npz',
-            radii=np.linspace(0.0, R_earth * m**0.27, n),
-            density=np.linspace(12000.0, 3000.0, n),
-            pressure=np.linspace(3e11 * m, 1e5, n),
-            temperature=np.linspace(6000.0 * m**0.2, 3000.0, n),
-            gravity=np.linspace(0.0, 10.0 * m**0.5, n),
-            mass_enclosed=np.linspace(0.0, M_earth * m, n),
-            cmb_mass=np.array(0.325 * M_earth * m),
-            core_mantle_mass=np.array(0.325 * M_earth * m),  # 2-layer
-            converged=np.bool_(True),
-            core_eos=np.str_('PALEOS:iron'),
-            mantle_eos=np.str_(mantle_eos),
-            ice_layer_eos=np.str_(''),
-            rock_solidus_id=np.str_('Monteux16-solidus'),
-            rock_liquidus_id=np.str_('Monteux16-liquidus-A-chondritic'),
+        label = f'planet_mass={m}'
+        model_results = {
+            'radii': np.linspace(0.0, R_earth * m**0.27, n),
+            'density': np.linspace(12000.0, 3000.0, n),
+            'pressure': np.linspace(3e11 * m, 1e5, n),
+            'temperature': np.linspace(6000.0 * m**0.2, 3000.0, n),
+            'gravity': np.linspace(0.0, 10.0 * m**0.5, n),
+            'mass_enclosed': np.linspace(0.0, M_earth * m, n),
+            'cmb_mass': 0.325 * M_earth * m,
+            'core_mantle_mass': 0.325 * M_earth * m,  # 2-layer
+            'converged': True,
+        }
+        _write_profile_csv(
+            gdir / f'{label}.csv',
+            label=label,
+            model_results=model_results,
+            layer_eos=layer_eos,
+            rock_solidus_id='Monteux16-solidus',
+            rock_liquidus_id='Monteux16-liquidus-A-chondritic',
         )
     return gdir
 
@@ -503,13 +535,27 @@ def test_plot_grid_profiles_end_to_end(fake_grid_dir, tmp_path):
 
 def test_plot_grid_profiles_log_pressure_masks_zero(fake_grid_dir, tmp_path):
     """log_pressure=True exercises the P>0 mask branch."""
+    from tools.grids.run_grid import _write_profile_csv
+    from tools.plots._grid_io import load_profile
     from tools.plots.plot_grid_profiles import plot_grid_profiles
 
-    # Overwrite one of the .npz files so its surface shell has P == 0.
+    # Rewrite one of the per-cell CSVs so its surface shell has P == 0.
     label = 'planet_mass=1.0'
-    old = dict(np.load(fake_grid_dir / f'{label}.npz'))
-    old['pressure'][-1] = 0.0
-    np.savez_compressed(fake_grid_dir / f'{label}.npz', **old)
+    data = load_profile(str(fake_grid_dir), label)
+    assert data is not None
+    data['pressure'][-1] = 0.0
+    _write_profile_csv(
+        fake_grid_dir / f'{label}.csv',
+        label=label,
+        model_results=data,
+        layer_eos={
+            'core': data.get('core_eos', ''),
+            'mantle': data.get('mantle_eos', ''),
+            'ice_layer': data.get('ice_layer_eos', ''),
+        },
+        rock_solidus_id=data.get('rock_solidus_id', ''),
+        rock_liquidus_id=data.get('rock_liquidus_id', ''),
+    )
 
     out = tmp_path / 'profiles_log.png'
     result = plot_grid_profiles(str(fake_grid_dir), out=str(out), log_pressure=True)
@@ -779,6 +825,48 @@ def test_plot_grid_composition_parser_defaults_and_flags():
 # ---------------------------------------------------------------------------
 # Additional plot_grid_pt overlay-suppression branches
 # ---------------------------------------------------------------------------
+def _rewrite_profile_csv(path, **overrides):
+    """Helper: load a profile CSV, apply metadata overrides, write back."""
+    from tools.grids.run_grid import _write_profile_csv
+    from tools.plots._grid_io import load_profile
+
+    grid_dir = path.parent
+    label = path.stem
+    data = load_profile(str(grid_dir), label)
+    assert data is not None, f'expected an existing CSV at {path}'
+
+    layer_eos = {
+        'core': data.get('core_eos', ''),
+        'mantle': data.get('mantle_eos', ''),
+        'ice_layer': data.get('ice_layer_eos', ''),
+    }
+    rock_solidus_id = data.get('rock_solidus_id', '')
+    rock_liquidus_id = data.get('rock_liquidus_id', '')
+
+    for key, value in overrides.items():
+        if key == 'mantle_eos':
+            layer_eos['mantle'] = value
+        elif key == 'core_eos':
+            layer_eos['core'] = value
+        elif key == 'ice_layer_eos':
+            layer_eos['ice_layer'] = value
+        elif key == 'rock_solidus_id':
+            rock_solidus_id = value
+        elif key == 'rock_liquidus_id':
+            rock_liquidus_id = value
+        else:
+            data[key] = value
+
+    _write_profile_csv(
+        path,
+        label=label,
+        model_results=data,
+        layer_eos=layer_eos,
+        rock_solidus_id=rock_solidus_id,
+        rock_liquidus_id=rock_liquidus_id,
+    )
+
+
 def test_plot_grid_pt_mantle_varies_across_grid_suppresses_overlay(tmp_path):
     """A grid whose mantle_eos differs across points must suppress the
     overlay with the 'differs across grid points' note."""
@@ -787,11 +875,12 @@ def test_plot_grid_pt_mantle_varies_across_grid_suppresses_overlay(tmp_path):
     gdir = _write_synthetic_grid(
         tmp_path / 'mixed1', masses=(1.0, 2.0), mantle_eos='PALEOS:MgSiO3'
     )
-    # Overwrite one .npz to carry a different mantle_eos string but
-    # keep the CSV consistent.
-    d1 = dict(np.load(gdir / 'planet_mass=1.0.npz'))
-    d1['mantle_eos'] = np.str_('WolfBower2018:MgSiO3')
-    np.savez_compressed(gdir / 'planet_mass=1.0.npz', **d1)
+    # Rewrite one CSV so it carries a different mantle_eos string but
+    # keep grid_summary.csv consistent.
+    _rewrite_profile_csv(
+        gdir / 'planet_mass=1.0.csv',
+        mantle_eos='WolfBower2018:MgSiO3',
+    )
 
     out = tmp_path / 'pt_mixed.png'
     result = plot_grid_pt(str(gdir), out=str(out))
@@ -806,11 +895,8 @@ def test_plot_grid_pt_missing_curve_metadata_suppresses_overlay(tmp_path):
     gdir = _write_synthetic_grid(
         tmp_path / 'nometa', masses=(1.0, 2.0), mantle_eos='WolfBower2018:MgSiO3'
     )
-    for npz in gdir.glob('*.npz'):
-        d = dict(np.load(npz))
-        d['rock_solidus_id'] = np.str_('')
-        d['rock_liquidus_id'] = np.str_('')
-        np.savez_compressed(npz, **d)
+    for csv_path in gdir.glob('planet_mass=*.csv'):
+        _rewrite_profile_csv(csv_path, rock_solidus_id='', rock_liquidus_id='')
 
     out = tmp_path / 'pt_nometa.png'
     result = plot_grid_pt(str(gdir), out=str(out))
@@ -832,12 +918,12 @@ def test_plot_grid_pt_forced_invalid_curve_id_caught(tmp_path, fake_grid_dir):
     assert os.path.isfile(result)
 
 
-def test_plot_grid_profiles_skips_missing_npz(tmp_path):
-    """A CSV row whose .npz file does not exist is skipped with a note."""
+def test_plot_grid_profiles_skips_missing_csv(tmp_path):
+    """A summary row whose profile CSV does not exist is skipped."""
     from tools.plots.plot_grid_profiles import plot_grid_profiles
 
     gdir = _write_synthetic_grid(tmp_path / 'g', masses=(0.5, 1.0))
-    (gdir / 'planet_mass=1.0.npz').unlink()  # remove one archive
+    (gdir / 'planet_mass=1.0.csv').unlink()  # remove one profile
 
     out = tmp_path / 'profiles_missing.png'
     result = plot_grid_profiles(str(gdir), out=str(out))

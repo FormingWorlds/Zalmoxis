@@ -31,20 +31,25 @@ For every grid point the runner always writes:
 - ``<label>.json``: the same summary as a per-run JSON file.
 
 When ``save_profiles = true`` in the grid TOML (default ``false``), the
-runner additionally writes ``<label>.npz`` per grid point with the full
-radial structure (radius, density, gravity, pressure, temperature, mass
-enclosed), the CMB and core+mantle mass diagnostics, the ``converged``
-flag, and the per-layer EOS / melting-curve identifiers the solver
-actually used (``core_eos``, ``mantle_eos``, ``ice_layer_eos``,
-``rock_solidus_id``, ``rock_liquidus_id``). This lets downstream tools
-plot pressure, density, gravity, and temperature profiles and overlay
-the correct reference curves without rerunning the sweep.
+runner additionally writes ``<label>.csv`` per grid point. Each CSV
+holds a six-column radial profile body (``radius_m``, ``density_kg_m3``,
+``gravity_m_s2``, ``pressure_Pa``, ``temperature_K``,
+``mass_enclosed_kg``, all in SI units) and a ``# key: value`` comment
+header carrying the CMB and core+mantle mass diagnostics, the
+``converged`` flag, and the per-layer EOS / melting-curve identifiers
+the solver actually used (``core_eos``, ``mantle_eos``,
+``ice_layer_eos``, ``rock_solidus_id``, ``rock_liquidus_id``).
 
-Archives are written for non-converged grid points too (for debugging),
-but in that case ``radii[-1]`` and ``mass_enclosed[-1]`` are the last
-Picard iterate, not the planet's converged structure, and ``density``
-may contain NaN or zero in failed / padded shells. Filter on
-``converged == True`` before plotting.
+The format is human-readable (open in any editor or spreadsheet) and
+loads directly with ``pandas.read_csv(path, comment='#')`` or via the
+shared ``tools.plots._grid_io.load_profile`` helper that the bundled
+plot tools use.
+
+CSVs are written for non-converged grid points too (for debugging), but
+in that case ``radius_m[-1]`` and ``mass_enclosed_kg[-1]`` are the last
+Picard iterate, not the planet's converged structure, and
+``density_kg_m3`` may contain NaN or zero in failed / padded shells.
+Filter on ``converged == True`` before plotting.
 """
 
 from __future__ import annotations
@@ -59,7 +64,6 @@ import tempfile
 import time
 from multiprocessing import Pool
 
-import numpy as np
 import toml
 
 from zalmoxis import get_zalmoxis_root
@@ -72,6 +76,68 @@ from zalmoxis.constants import earth_mass, earth_radius
 from zalmoxis.solver import main
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Profile CSV writer
+# ---------------------------------------------------------------------------
+# CSV column order is fixed so downstream readers can address columns by
+# name (no positional assumptions). All values are SI: m, kg/m^3, m/s^2,
+# Pa, K, kg.
+_PROFILE_COLUMNS = (
+    ('radius_m', 'radii'),
+    ('density_kg_m3', 'density'),
+    ('gravity_m_s2', 'gravity'),
+    ('pressure_Pa', 'pressure'),
+    ('temperature_K', 'temperature'),
+    ('mass_enclosed_kg', 'mass_enclosed'),
+)
+
+
+def _format_float(x):
+    """Round-trip-safe float formatting for the CSV body."""
+    return f'{float(x):.17g}'
+
+
+def _write_profile_csv(
+    csv_path,
+    *,
+    label,
+    model_results,
+    layer_eos,
+    rock_solidus_id,
+    rock_liquidus_id,
+):
+    """Write the per-cell radial profile + metadata to a CSV.
+
+    The file has two parts: a ``# key: value`` comment header carrying
+    the scalar metadata (run label, convergence flag, CMB and core+mantle
+    masses, EOS / melting-curve identifiers) and a six-column SI-units
+    body (one row per radial node).
+    """
+    metadata = (
+        ('label', label),
+        ('converged', bool(model_results['converged'])),
+        ('cmb_mass', _format_float(model_results['cmb_mass'])),
+        ('core_mantle_mass', _format_float(model_results['core_mantle_mass'])),
+        ('core_eos', layer_eos.get('core', '')),
+        ('mantle_eos', layer_eos.get('mantle', '')),
+        ('ice_layer_eos', layer_eos.get('ice_layer', '')),
+        ('rock_solidus_id', rock_solidus_id),
+        ('rock_liquidus_id', rock_liquidus_id),
+    )
+    column_names = [name for name, _ in _PROFILE_COLUMNS]
+    arrays = [model_results[key] for _, key in _PROFILE_COLUMNS]
+    n_rows = len(arrays[0])
+
+    with open(csv_path, 'w', newline='') as fh:
+        for key, value in metadata:
+            fh.write(f'# {key}: {value}\n')
+        writer = csv.writer(fh)
+        writer.writerow(column_names)
+        for i in range(n_rows):
+            writer.writerow([_format_float(arr[i]) for arr in arrays])
+
 
 # ---------------------------------------------------------------------------
 # Parameter name -> (TOML section, TOML key) mapping
@@ -116,7 +182,7 @@ def load_grid_config(grid_toml_path):
     output_dir : str
         Absolute path to the output directory for this grid.
     save_profiles : bool
-        Whether to write the full radial profile (``<label>.npz``) per
+        Whether to write the full radial profile (``<label>.csv``) per
         grid point. Reads ``[output].save_profiles`` from the grid TOML,
         default ``False``.
     """
@@ -238,12 +304,14 @@ def run_single(args):
         ``label`` identifies the run, ``config_path`` is the temporary
         TOML file, ``output_dir`` is where to write per-run results, and
         ``save_profiles`` toggles dumping the full radial profile to
-        ``<label>.npz`` (arrays: ``radii``, ``density``, ``gravity``,
-        ``pressure``, ``temperature``, ``mass_enclosed``; scalars:
-        ``cmb_mass``, ``core_mantle_mass``, ``converged``). Archives
-        are written for non-converged points too; their ``radii[-1]``
-        and ``mass_enclosed[-1]`` are the last Picard iterate, and
-        ``density`` can contain NaN or zero in failed / padded shells.
+        ``<label>.csv`` (six-column body: ``radius_m``, ``density_kg_m3``,
+        ``gravity_m_s2``, ``pressure_Pa``, ``temperature_K``,
+        ``mass_enclosed_kg``, all SI units; comment header carries
+        ``cmb_mass``, ``core_mantle_mass``, ``converged``, and the
+        per-layer EOS / melting-curve identifiers). CSVs are written for
+        non-converged points too; their last-row values are the last
+        Picard iterate and ``density_kg_m3`` can contain NaN or zero in
+        failed / padded shells.
 
     Returns
     -------
@@ -315,48 +383,41 @@ def run_single(args):
         # Optional: persist the full radial profile so users can plot
         # pressure, density, gravity, and temperature vs. radius (or any
         # two of them against each other) without re-running the sweep.
-        # SI units throughout: m, kg/m^3, m/s^2, Pa, K, kg.
+        # SI units throughout: m, kg/m^3, m/s^2, Pa, K, kg. The CSV is
+        # human-readable and loads with pandas.read_csv(comment='#') or
+        # via tools.plots._grid_io.load_profile.
         #
         # Non-converged grid points are saved too (useful for debugging),
-        # but in that case radii[-1] and mass_enclosed[-1] reflect the
-        # last Picard iterate, not the planet's converged structure, and
-        # density can contain NaN or zero in failed / padded shells.
-        # The `converged` scalar is embedded in the archive so downstream
-        # users can filter without cross-referencing grid_summary.csv.
+        # but in that case radius_m[-1] and mass_enclosed_kg[-1] reflect
+        # the last Picard iterate, not the planet's converged structure,
+        # and density_kg_m3 can contain NaN or zero in failed / padded
+        # shells. The `converged` flag is embedded in the comment header
+        # so downstream users can filter without cross-referencing
+        # grid_summary.csv.
         #
         # The EOS and melting-curve identifiers are embedded so plotting
         # tools know which solidus/liquidus the solver actually used
         # (rather than guessing from defaults).
         if save_profiles:
             layer_eos = config_params.get('layer_eos_config') or {}
-            npz_path = os.path.join(output_dir, f'{label}.npz')
-            # Wrap the archive write so an I/O failure (disk full,
-            # permissions, etc.) does not silently contradict the
-            # per-run JSON summary written above: log a warning and
-            # record the failure on the result dict so it also surfaces
-            # in grid_summary.csv.
+            csv_path = os.path.join(output_dir, f'{label}.csv')
+            # Wrap the write so an I/O failure (disk full, permissions,
+            # etc.) does not silently contradict the per-run JSON summary
+            # written above: log a warning and record the failure on the
+            # result dict so it also surfaces in grid_summary.csv.
             try:
-                np.savez_compressed(
-                    npz_path,
-                    radii=model_results['radii'],
-                    density=model_results['density'],
-                    gravity=model_results['gravity'],
-                    pressure=model_results['pressure'],
-                    temperature=model_results['temperature'],
-                    mass_enclosed=model_results['mass_enclosed'],
-                    cmb_mass=model_results['cmb_mass'],
-                    core_mantle_mass=model_results['core_mantle_mass'],
-                    converged=np.bool_(model_results['converged']),
-                    core_eos=np.str_(layer_eos.get('core', '')),
-                    mantle_eos=np.str_(layer_eos.get('mantle', '')),
-                    ice_layer_eos=np.str_(layer_eos.get('ice_layer', '')),
-                    rock_solidus_id=np.str_(config_params.get('rock_solidus', '')),
-                    rock_liquidus_id=np.str_(config_params.get('rock_liquidus', '')),
+                _write_profile_csv(
+                    csv_path,
+                    label=label,
+                    model_results=model_results,
+                    layer_eos=layer_eos,
+                    rock_solidus_id=config_params.get('rock_solidus', ''),
+                    rock_liquidus_id=config_params.get('rock_liquidus', ''),
                 )
             except OSError as profile_error:
                 logger.warning(
-                    "Failed to write optional profile archive %s for run '%s': %s",
-                    npz_path,
+                    "Failed to write optional profile CSV %s for run '%s': %s",
+                    csv_path,
                     label,
                     profile_error,
                 )
@@ -386,7 +447,7 @@ def run_grid(grid_toml_path, n_workers=1):
     Per-run outputs (always written): ``grid_summary.csv`` plus a
     ``<label>.json`` file per grid point. When the grid TOML sets
     ``[output].save_profiles = true`` the runner additionally writes
-    ``<label>.npz`` containing the full radial profile (radius, density,
+    ``<label>.csv`` containing the full radial profile (radius, density,
     gravity, pressure, temperature, mass enclosed) for each grid point,
     including non-converged ones. Non-converged / failed profiles may
     contain padded or invalid shell values, so filter on
