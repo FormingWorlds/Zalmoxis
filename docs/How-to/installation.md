@@ -137,3 +137,13 @@ If the solver fails to converge, consider the following:
 - **WolfBower2018 mass limit**: The `WolfBower2018:MgSiO3` EOS is limited to $\leq 7\,M_\oplus$. For higher-mass planets, use `PALEOS:MgSiO3`, `RTPress100TPa:MgSiO3`, `Seager2007:MgSiO3`, or `Analytic:MgSiO3` instead.
 - **Tolerance parameters**: Relax the convergence tolerance in the input configuration file. Tighter tolerances require more iterations and may not converge for extreme planetary compositions or masses.
 - **Physical plausibility**: Verify that the input parameters (mass, composition fractions, core/mantle fractions) are physically plausible. Unphysical configurations (e.g., negative mass fractions, zero-thickness layers) will not converge.
+
+!!! tip "JAX determinism for fragile runs"
+    Numerically fragile coupled runs (wet 1 \(M_\oplus\) at IW+4, reduced 1 \(M_\oplus\) at IW-2) benefit from JAX 64-bit and a single-thread XLA. Set:
+
+    ```bash
+    export JAX_ENABLE_X64=1
+    export XLA_FLAGS="--xla_force_host_platform_device_count=1"
+    ```
+
+    Zalmoxis enables x64 by default at module import, so the env var is mostly a safety net for unusual harnesses.

@@ -97,6 +97,8 @@ When the Python logging level is set to `DEBUG`, the solver writes per-iteration
 
 Enable with `logging.getLogger('zalmoxis').setLevel(logging.DEBUG)`. These files are useful for diagnosing convergence behavior. They grow large quickly and are overwritten at the start of each new run.
 
+Adjust `tolerance_outer`, `tolerance_inner`, `max_iterations_outer`, `max_iterations_inner` in the `[IterativeProcess]` block (see [Configuration](configuration.md#iterativeprocess)) if convergence is slow.
+
 ### Plots (optional)
 
 When `plots_enabled = true` in the `[Output]` section, Zalmoxis automatically generates profile plots after each run. To enable:
@@ -122,4 +124,8 @@ This produces a six-panel figure showing the radial profiles of density, pressur
 ## Parameter grids
 
 To sweep over combinations of parameters and plot the results, see the [parameter grids](grids.md) guide.
+
+## See also
+
+- [First run](../Tutorials/firstrun.md) walks through a single Earth-mass run end to end.
 

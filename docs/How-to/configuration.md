@@ -363,6 +363,9 @@ The solver has been systematically tested across 293 configurations spanning 9 t
 | Mushy zone factor | 0.7 to 1.0 | Per-material overrides validated independently. Values below 0.7 are rejected. |
 | Three-layer ice fraction | any | **Only with $T_\mathrm{surf} < 647$ K** (H$_2$O critical point). See warning below. |
 
+!!! note "Per-EOS table limits are the canonical reference"
+    The mass limits in the **Available EOS options** table (`WolfBower2018:MgSiO3` $\leq 7\,M_\oplus$; all PALEOS, RTPress100TPa, and Chabrier:H entries up to $50\,M_\oplus$) are the canonical thermodynamic constraints, set by the pressure ceiling of each tabulated EOS. The validated-range row above ("Planet mass: 0.1 to 50 $M_\oplus$") is a downstream consequence of those table ceilings combined with solver convergence testing across 293 configurations. If a per-EOS limit and the validator-side limit ever appear to conflict (e.g., when a new EOS is added), the per-EOS table value takes precedence.
+
 !!! warning "H$_2$O-dominated mantles"
     Mantles with more than 50% H$_2$O by mass and no silicate component are rejected in adiabatic and linear temperature modes. At these temperatures, H$_2$O is vapor at surface pressure and cannot support hydrostatic structure in the volume-additive mixing model. Options: add a silicate component, use a 3-layer model with a separate ice layer, or use isothermal mode with $T < 647$ K.
 

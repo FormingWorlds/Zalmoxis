@@ -5,9 +5,12 @@ repo_url: https://github.com/FormingWorlds/Zalmoxis
 copyright: '© 2023-2026 <a href="https://formingworlds.space">Forming Worlds Lab</a>'
 
 nav:
-  - Home: 
+  - Home:
       - About: index.md
       - Getting started: getting_started.md
+
+  - Tutorials:
+      - First run: Tutorials/firstrun.md
 
   - How-to guides:
       - Installation: How-to/installation.md
@@ -35,9 +38,22 @@ nav:
           - Solver: Reference/api/zalmoxis.solver.md
           - Output: Reference/api/zalmoxis.output.md
           - Structure model: Reference/api/zalmoxis.structure_model.md
+          - Energetics: Reference/api/zalmoxis.energetics.md
           - EOS package: Reference/api/zalmoxis.eos.md
+          - EOS dispatch: Reference/api/zalmoxis.eos.dispatch.md
+          - EOS interpolation: Reference/api/zalmoxis.eos.interpolation.md
+          - EOS output: Reference/api/zalmoxis.eos.output.md
+          - PALEOS tables: Reference/api/zalmoxis.eos.paleos.md
+          - PALEOS API: Reference/api/zalmoxis.eos.paleos_api.md
+          - PALEOS API cache: Reference/api/zalmoxis.eos.paleos_api_cache.md
+          - Seager EOS: Reference/api/zalmoxis.eos.seager.md
+          - T-dependent EOS: Reference/api/zalmoxis.eos.tdep.md
+          - Adiabat / temperature: Reference/api/zalmoxis.eos.temperature.md
           - Analytic EOS: Reference/api/zalmoxis.eos_analytic.md
+          - EOS export: Reference/api/zalmoxis.eos_export.md
           - EOS properties: Reference/api/zalmoxis.eos_properties.md
+          - Vinet EOS: Reference/api/zalmoxis.eos_vinet.md
+          - JAX EOS package: Reference/api/zalmoxis.jax_eos.md
           - Melting curves: Reference/api/zalmoxis.melting_curves.md
           - Mixing: Reference/api/zalmoxis.mixing.md
           - Binodal: Reference/api/zalmoxis.binodal.md

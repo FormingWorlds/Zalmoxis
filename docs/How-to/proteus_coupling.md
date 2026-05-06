@@ -222,11 +222,15 @@ update_dphi_abs      = 0.05
 mesh_max_shift       = 0.05
 
 [interior_energetics]
-module = "aragog"
-# ...
+module     = "aragog"
+num_levels = 80
+rtol       = 1e-8
+atol       = 1e-10
 
 [interior_energetics.aragog]
-dilatation = true   # PdV from gravitational separation (Aragog only)
+backend     = "jax"
+core_bc     = "energy_balance"
+phi_step_cap = 0.05
 ```
 
 Run with:
@@ -239,12 +243,188 @@ For numerically fragile anchors (wet 1 $M_\oplus$ at IW+4, reduced 1 $M_\oplus$ 
 
 ---
 
+## Prioritised settings
+
+The list below is the short version of "what actually matters" when you stand up a new coupled Zalmoxis run.
+Knobs are ordered from highest to lowest impact on results and stability.
+Every default is read directly from `proteus.config` (see `src/proteus/config/_struct.py`, `_interior.py`, and `_planet.py`); if a quoted default disagrees with the source, the source wins.
+
+!!! warning "`dilatation` is no longer a valid field"
+    The `[interior_energetics.aragog].dilatation` field was deleted on 2026-05-04 (PROTEUS commits `706ff56f`, `b2241704`, `3e5d7641`; Aragog pin bump to `0948279`).
+    Any config that sets `dilatation = true` or `dilatation = false` will be rejected by the schema validator at load time.
+    Aragog no longer carries an explicit volumetric dilatation source (`\(\Phi_\mathrm{vol}\)`); the volumetric work is captured implicitly by the divergence of the enthalpy-flux vector, so there is nothing to toggle.
+
+### 1. `interior_struct.module` and `interior_energetics.module`
+
+**Defaults**: `interior_struct.module = "zalmoxis"`, `interior_energetics.module = "aragog"`.
+**Choices**: `interior_struct.module` is one of `"zalmoxis"`, `"spider"`, `"dummy"`; `interior_energetics.module` is one of `"aragog"`, `"spider"`, `"dummy"`.
+**Recommendation**: keep `"zalmoxis"` + `"aragog"` for new production runs.
+
+The structure module (Zalmoxis) and the energetics module (Aragog or SPIDER) are configured independently.
+Zalmoxis + Aragog is the default pairing because Aragog handles mushy-zone stiffness through the SUNDIALS CVODE + JAX-derived Jacobian path, and the Zalmoxis-side P-T tables for Aragog are full rectangular grids (no scipy fallback to unstructured interpolation).
+Use `interior_energetics.module = "spider"` only for SPIDER-parity comparisons, and only with `core_frac_mode = "radius"` because SPIDER does not accept mass-mode core fractions.
+
+### 2. `interior_struct.zalmoxis.update_interval` [yr]
+
+**Default**: `1e9` (effectively a ceiling).
+**Recommendation**: set to `5e4` (50 kyr) for evolutionary runs that traverse the magma-ocean to crystallised-mantle transition; raise to `>= 1e9` to freeze the mesh for clean atmosphere-interior parity tests.
+
+This is the maximum wall time between two Zalmoxis re-solves.
+Real re-solves still gate on the dynamic triggers (`update_dphi_abs`, `update_dtmagma_frac`, `update_stale_ceiling`) and respect the `update_min_interval` floor.
+Setting `update_interval >= 1e9` together with `update_dphi_abs = 1.0` and `update_dtmagma_frac = 1.0` reduces Zalmoxis to a one-shot pre-main-loop solve, which is the right setup for "static-Zalmoxis" diagnostic runs.
+The 50 kyr value is the sweet spot established by the 2026-05-03 / 2026-05-04 CHILI regression matrix: tight enough to track the rheological transition, loose enough not to dominate wall time.
+
+### 3. `interior_struct.zalmoxis.outer_solver`
+
+**Default**: `"newton"` (flipped from `"picard"` on 2026-04-27 in `_struct.py:198`).
+**Choices**: `"newton"`, `"picard"`.
+**Recommendation**: stay on Newton.
+
+Newton is the validated default for the 1 / 3 / 5 / 10 $M_\oplus$ super-Earth sweep.
+Damped Picard hits a basin attractor on hot fully-molten profiles at high mass and stalls; Newton + brentq bracketing converges on every G4 starting point in that sweep.
+The wrapper auto-tightens the integrator tolerances to `relative_tolerance = 1e-9` / `absolute_tolerance = 1e-10` whenever Newton is selected, so do not set those by hand.
+Drop back to `"picard"` only when reproducing a historic Picard fixed-point trajectory; expect 1.2 to 2x speedups on Earth-mass cool runs at the cost of giving up convergence on hot super-Earths.
+
+### 4. `interior_energetics.aragog.phi_step_cap` [$\Delta\phi$ fraction]
+
+**Default**: `0.0` (cap disabled).
+**Recommendation**: `0.05` for standard evolutionary runs; tighten to `0.001`-`0.01` only if mushy-zone oscillations appear in the first few snapshots.
+
+This is the per-call $|\Delta\phi|$ cap implemented as a SUNDIALS root function (Strategy B v3).
+CVODE evaluates `g(t, y) = cap - |Phi_global(t, y) - Phi_global(start)|` at every internal step and returns at the exact zero-crossing, so the integrator's adaptive step never overshoots a physically meaningful melt-fraction excursion.
+With `phi_step_cap = 0` the rootfn is not registered and Aragog runs with its native step control.
+Use the cap to keep the rheological transition trackable when interior structure or atmospheric flux changes quickly.
+
+### 5. `planet.prevent_warming`
+
+**Default**: `false`.
+**Recommendation**: leave at `false`. Only enable when you specifically need to enforce monotonic cooling.
+
+When set to `true`, all atmosphere modules and termination checks enforce a `T_magma = min(T_new, T_prev)` clamp.
+This is energy-non-conserving in any regime where the integrator transiently warms the magma (heat-pump quasi-equilibrium, dynamic Zalmoxis re-solves, atmosphere-interior coupling overshoot).
+The 2026-05-03 audit traced an apparent T_magma plateau and a $\sim 7 \times 10^{31}$ J energy-leak signature back to this clamp pinning the surface byte-exactly while the interior continued to deliver flux.
+All bundled CHILI configs were defaulted to `prevent_warming = false` on 2026-05-03 (commit `abfe2c9f`); follow that lead.
+
+### 6. `interior_struct.zalmoxis.mushy_zone_factor` [0.7-1.0]
+
+**Default**: `0.8` (PROTEUS schema; standalone Zalmoxis defaults to 1.0).
+**Recommendation**: `0.8` for paper-quality runs with PALEOS MgSiO3.
+
+This sets the solidus relative to the liquidus as $T_\mathrm{sol} = f \cdot T_\mathrm{liq}$, controlling the width of the mushy zone in the PALEOS unified EOS.
+The 0.8 default approximates the [Stixrude+2014](https://ui.adsabs.harvard.edu/abs/2014RSPTA.37230076S) cryoscopic depression for MgSiO3 and is applied consistently across Zalmoxis density interpolation, SPIDER phase boundaries, and the VolatileProfile $\phi$-blending.
+Setting `mushy_zone_factor = 1.0` collapses the mushy band to a sharp boundary.
+This factor only affects PALEOS unified tables; it is silently ignored for `WolfBower2018` and `RTPress100TPa`, which use explicit melting-curve files.
+
+### 7. `interior_struct.zalmoxis.num_levels` and `interior_energetics.num_levels`
+
+**Defaults**: `interior_struct.zalmoxis.num_levels = 150`; `interior_energetics.num_levels = 80`.
+**Recommendation**: keep the schema defaults. Zalmoxis 150 layers (structure mesh) and Aragog 80 layers (energetics mesh) is the validated production combination; SPIDER also runs at 80.
+
+The two meshes serve different purposes.
+Zalmoxis solves the static structure ODE (mass + hydrostatic + EOS) and benefits from the higher resolution to resolve thin core-mantle boundary regions in super-Earths.
+Aragog and SPIDER solve the time-dependent thermal evolution on a coarser mesh; 80 layers matches the SPIDER reference and keeps CVODE matrix factorisations cheap.
+Halving either does not save wall time linearly because the dominant cost is per-cell EOS evaluation; raising either above the default rarely pays off.
+
+### 8. `interior_struct.zalmoxis.equilibrate_init`
+
+**Default**: `true`.
+**Recommendation**: leave on for production; disable only for IC-debugging.
+
+This drives the CALLIOPE + Zalmoxis pre-main-loop equilibration described above.
+With it disabled, the first SPIDER or Aragog step uses an unequilibrated structure and the first ~10 main-loop iterations spend wall time doing what a few cheap Zalmoxis-only iterations would have done up front.
+The relative cost of the equilibration loop is small (typically 5-15 Zalmoxis calls before the main loop runs) and it almost always reduces total wall time.
+
+#### Summary table
+
+| Knob | Default | Recommended | Why it matters |
+|---|---|---|---|
+| `interior_struct.module` | `"zalmoxis"` | `"zalmoxis"` | Mass-mode core fractions, self-consistent EOS, SPIDER P-S tables on demand. |
+| `interior_energetics.module` | `"aragog"` | `"aragog"` | CVODE + JAX-derived Jacobian, robust on stiff mushy-zone profiles. |
+| `interior_struct.zalmoxis.update_interval` | `1e9` | `5e4` | Tracks the rheological transition without dominating wall time. |
+| `interior_struct.zalmoxis.outer_solver` | `"newton"` | `"newton"` | Converges on hot super-Earths where damped Picard stalls. |
+| `interior_energetics.aragog.phi_step_cap` | `0.0` | `0.05` | SUNDIALS root function caps per-call $|\Delta\phi|$ excursion. |
+| `planet.prevent_warming` | `false` | `false` | The clamp is energy-non-conserving in warming sub-steps. |
+| `interior_struct.zalmoxis.mushy_zone_factor` | `0.8` | `0.8` | Stixrude+2014 cryoscopic depression for PALEOS MgSiO3. |
+| `interior_struct.zalmoxis.num_levels` | `150` | `150` | Zalmoxis structure mesh resolution. |
+| `interior_energetics.num_levels` | `80` | `80` | Aragog / SPIDER energetics mesh resolution. |
+| `interior_struct.zalmoxis.equilibrate_init` | `true` | `true` | Saves wall time in the first ~10 main-loop iterations. |
+
+---
+
+## Worked example: minimal copy-paste TOML excerpt
+
+Anchored on `input/chili/chili_paleos_v1_1_0_1me_150res.toml` (the 1 $M_\oplus$ PALEOS reference run).
+This excerpt covers only the load-bearing blocks for Zalmoxis + Aragog coupling; merge it into a complete PROTEUS config with your own `[star]`, `[orbit]`, `[atmos_clim]`, `[outgas]`, `[escape]`, and `[params]` sections.
+
+```toml
+[planet]
+mass_tot           = 1.0
+temperature_mode   = "adiabatic_from_cmb"
+tcmb_init          = 7199.0
+tsurf_init         = 3830.0
+tcenter_init       = 6000.0
+ini_entropy        = 3900.0
+ini_dsdr           = -4.698e-6
+volatile_mode      = "elements"
+volatile_reservoir = "mantle"
+prevent_warming    = false
+
+[interior_struct]
+core_frac      = 0.325
+core_frac_mode = "mass"
+module         = "zalmoxis"
+core_density   = "self"
+core_heatcap   = "self"
+
+[interior_struct.zalmoxis]
+core_eos             = "PALEOS:iron"
+mantle_eos           = "PALEOS-2phase:MgSiO3"
+ice_layer_eos        = "none"
+mushy_zone_factor    = 0.8
+mantle_mass_fraction = 0.0
+num_levels           = 150
+outer_solver         = "newton"
+update_interval      = 50000.0
+update_min_interval  = 100.0
+update_dphi_abs      = 0.05
+update_dtmagma_frac  = 0.05
+update_stale_ceiling = 25000.0
+mesh_max_shift       = 0.05
+equilibrate_init     = true
+equilibrate_tol      = 0.01
+dry_mantle           = true
+use_jax              = true
+
+[interior_energetics]
+module           = "aragog"
+num_levels       = 80
+rtol             = 1e-8
+atol             = 1e-10
+trans_conduction = true
+trans_convection = true
+trans_grav_sep   = true
+trans_mixing     = true
+heat_radiogenic  = true
+
+[interior_energetics.aragog]
+backend                     = "jax"
+core_bc                     = "energy_balance"
+solver_method               = "cvode"
+atol_temperature_equivalent = 1e-8
+phi_step_cap                = 0.05
+```
+
+For the full reference (with `[params.dt]`, `[params.stop]`, atmosphere, escape, and outgassing blocks), see `input/chili/chili_paleos_v1_1_0_1me_150res.toml` in the PROTEUS repo.
+
+---
+
 ## Common pitfalls
 
 - **Setting `[InputParameter]` in a PROTEUS config does nothing.** Those keys are read only by `python -m zalmoxis`. PROTEUS reads its own `[planet]` and `[interior_struct.zalmoxis]` blocks.
 - **Using `core_frac_mode = "mass"` with `module = "spider"` fails validation.** Mass-mode core fractions require Zalmoxis. SPIDER only accepts radius-mode.
 - **Picard convergence stalls at high mass + hot.** Switch to `outer_solver = "newton"` (already default). If still failing on a Newton run, check the helpfile for $\Delta T_\mathrm{cmb}$ noise patterns; a `--deterministic` rerun may be needed.
 - **`mantle_mass_fraction != 0` rejected by the validator.** Only the `WolfBower2018:MgSiO3` and `RTPress100TPa:MgSiO3` mantle EOS prefixes (legacy 2-phase tables) require a non-zero `mantle_mass_fraction`. For PALEOS, PALEOS-2phase, Seager2007, or analytic mantles in a 2-layer model, set `mantle_mass_fraction = 0` so the solver derives it as `1 - core_frac`. 3-layer models with an ice layer also require `mantle_mass_fraction > 0`.
+- **`Unknown field 'dilatation'` at config load.** The `[interior_energetics.aragog].dilatation` key was removed on 2026-05-04. Delete the line; do not replace it with `false`. Aragog's enthalpy-flux divergence carries the volumetric work implicitly, so there is no toggle to set.
 - **Equilibration warns "did not converge after 15 iterations".** Usually a sign that CALLIOPE is oscillating. Inspect $\Delta P/P$ trace; if it is dropping but slowly, raise `equilibrate_max_iter`. If it is non-monotonic, check the volatile inventory.
 
 For the why behind these, see the [Coupling to PROTEUS theory page](../Explanations/proteus_coupling.md).

@@ -78,6 +78,13 @@ The table format and grid structure are identical to the main PALEOS tables.
 
 Unlike the main PALEOS tables, `PALEOS-2phase` requires external melting curves for phase routing.
 Configurable solidus and liquidus curves (see [Melting curve selection](../How-to/configuration.md#melting-curve-selection)) determine the phase at each $(P, T)$.
+
+!!! info "Which EOS families need an external melting curve"
+    The unified PALEOS tables (`PALEOS:iron`, `PALEOS:MgSiO3`, `PALEOS:H2O`) and `Chabrier:H` carry their own phase information in the table's stable-phase column and do **not** require an external solidus or liquidus file. They derive their phase boundary from the table at load time.
+
+    The two-phase EOS families (`PALEOS-2phase:MgSiO3`, `WolfBower2018:MgSiO3`, `RTPress100TPa:MgSiO3`) ship as separate solid and liquid tables and **do** require external melting curves loaded via the configurable `rock_solidus` and `rock_liquidus` fields (or via `melting_dir` in the PROTEUS coupling layer). Phase routing uses these curves to compute melt fraction in the mushy zone.
+
+    The Seager (2007) and Analytic families are evaluated at fixed 300 K and have no phase boundary at all.
 Both density and $\nabla_{\mathrm{ad}}$ follow the same three-regime structure:
 
 - **Below the solidus** ($T \le T_{\mathrm{sol}}$): density and $\nabla_{\mathrm{ad}}$ from the solid table.
