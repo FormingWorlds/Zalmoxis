@@ -9,9 +9,6 @@ nav:
       - About: index.md
       - Getting started: getting_started.md
 
-  - Tutorials:
-      - First run: Tutorials/firstrun.md
-
   - How-to guides:
       - Installation: How-to/installation.md
       - Configuration: How-to/configuration.md
@@ -20,6 +17,9 @@ nav:
       - Coupling to PROTEUS: How-to/proteus_coupling.md
       - Testing: How-to/testing.md
       - Releasing: How-to/releasing.md
+
+  - Tutorials:
+      - First run: Tutorials/firstrun.md
 
   - Explanations:
       - Model overview: Explanations/model.md
