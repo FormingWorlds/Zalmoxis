@@ -72,9 +72,9 @@ package-dir = {"zalmoxis" = "src/zalmoxis"}
 include-package-data = true
 
 [tool.setuptools_scm]
-# CalVer: tags must be like v25.03.17 or 25.03.17
+# CalVer: tags are bare YY.MM.DD dates (no leading 'v', e.g. 26.03.02).
 # setuptools-scm derives the version from the latest git tag.
-# Between tags, it appends .devN+gHASH (e.g., 25.03.17.dev5+gabc1234).
+# Between tags, it appends .devN+gHASH (e.g., 26.03.02.dev5+gabc1234).
 version_file = "src/zalmoxis/_version.py"
 
 [tool.coverage.run]
