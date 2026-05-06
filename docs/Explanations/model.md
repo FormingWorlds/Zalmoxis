@@ -5,7 +5,7 @@ Given a total planet mass, layer mass fractions, and a per-layer equation of sta
 
 Several EOS families are supported (see [Equations of State](eos_physics.md) for detailed physics):
 
-- **[PALEOS](eos_physics.md#paleos-iron-mgsio3-h2o)** (recommended): all stable phases per material in a single file, $T$-dependent with $\nabla_{\mathrm{ad}}$, up to 50 $M_\oplus$
+- **[PALEOS](eos_physics.md#paleos-iron-mgsio3-h2o)** ([Attia et al. (2026)](https://ui.adsabs.harvard.edu/abs/2026arXiv260503741A/abstract); recommended): all stable phases per material in a single file, $T$-dependent with $\nabla_{\mathrm{ad}}$, up to 50 $M_\oplus$
 - [PALEOS-2phase](eos_physics.md#paleos-2phase-mgsio3-only): separate solid/liquid tables with explicit melting curve control (MgSiO$_3$ only)
 - [Seager et al. (2007)](eos_physics.md#seager-et-al-2007-tabulated-eos): merged tabulated EOS at 300 K
 - [Wolf & Bower (2018)](eos_physics.md#wolf-bower-2018-temperature-dependent-eos): temperature-dependent RTpress EOS ($\leq 7\,M_\oplus$)

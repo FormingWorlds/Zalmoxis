@@ -80,7 +80,7 @@ A few notes on what each block does:
   `temperature_mode = "adiabatic"` integrates the layer adiabats with `surface_temperature` as the upper boundary and `center_temperature` as the initial guess for the inner boundary.
   Other choices are `"isothermal"`, `"linear"`, and `"prescribed"` (reads `temperature_profile_file`); see [Configuration](../How-to/configuration.md) for the full list.
 - `[EOS]` selects the per-layer equation of state.
-  `PALEOS:iron` and `PALEOS:MgSiO3` are unified multi-phase PALEOS tables that handle pressures up to 100 TPa and masses up to 50 $M_\oplus$.
+  `PALEOS:iron` and `PALEOS:MgSiO3` are unified multi-phase PALEOS tables ([Attia et al. (2026)](https://ui.adsabs.harvard.edu/abs/2026arXiv260503741A/abstract)) that handle pressures up to 100 TPa and masses up to 50 $M_\oplus$.
   `ice_layer = ""` keeps the model two-layer (core + mantle).
 - `[Calculations]` controls the radial grid resolution.
   150 points is enough for a 3 % radius match; double it for tighter convergence at high mass.
