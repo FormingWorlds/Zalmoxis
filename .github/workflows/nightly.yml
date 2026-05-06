@@ -6,10 +6,18 @@ on:
     # 03:00 / 04:00 CET (DST-dependent). Adjust the hour if you'd
     # rather pin to a specific local time.
     - cron: "0 2 * * *"
-  # Manual trigger for ad-hoc runs (e.g. before cutting a release).
+  # Manual trigger for ad-hoc runs (e.g. before cutting a release,
+  # or to verify the suite on a feature branch via
+  # ``gh workflow run "Zalmoxis nightly" -r <branch>``).
   workflow_dispatch:
 
-# Nightly: smoke + integration tests (full Picard solves) with coverage
+# Least-privilege token: only read access to the repo contents.
+# Coverage upload uses the CODECOV_TOKEN secret directly, not the
+# default GITHUB_TOKEN.
+permissions:
+  contents: read
+
+# Nightly: full test suite (unit + smoke + integration) with coverage
 # instrumentation. Targets <60 min wall. Excluded from push and PR CI
 # because each smoke or integration test runs a full Zalmoxis solver
 # call (5-10 min on a 2-vCPU runner under cov instrumentation) and
@@ -24,6 +32,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          # setuptools-scm derives the package version from the latest
+          # git tag; needs full history.
           fetch-depth: 0
 
       - name: Set up Python 3.12
