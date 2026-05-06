@@ -1,100 +1,304 @@
 # Zalmoxis AI Agent Guidelines
 
-Zalmoxis is the interior structure solver for the PROTEUS ecosystem.
-When installed within PROTEUS, see also `../CLAUDE.md` for ecosystem-wide guidelines.
+Zalmoxis is the interior-structure solver for the PROTEUS ecosystem. It runs
+standalone (single-planet structure for a fixed M, composition, T profile) or
+inside PROTEUS (per-iteration recompute coupled to atmosphere, energetics,
+and outgassing). Ecosystem-wide guidelines live in `../CLAUDE.md`. End-user
+documentation is in `docs/` (Zensical site at `proteus-framework.org/Zalmoxis/`).
 
 ## Quick reference
 
-- `python -m zalmoxis -c input/default.toml` - Run default config
-- `python -m pytest -o "addopts=" -m unit` - Run unit tests (override xdist parallel default)
-- `python -m pytest -o "addopts=" --cov=src/zalmoxis --cov-report=term-missing` - Coverage
-- `ruff check --fix src/ tests/ tools/ && ruff format src/ tests/ tools/` - Lint and format
-- `python -m tools.grids.run_grid <grid.toml> -j <workers>` - Run parameter grid
-- `python -m tools.grids.plot_grid <dir_or_csv>` - Plot grid results
+```bash
+# Run the default standalone config
+python -m zalmoxis -c input/default.toml
+
+# Tests (override pyproject.toml's xdist default)
+python -m pytest -o "addopts=" -m unit
+python -m pytest -o "addopts=" -m smoke
+python -m pytest -o "addopts=" -m "(unit or smoke or integration) and not slow" \
+    --cov=src/zalmoxis --cov-report=term-missing
+
+# Lint and format
+ruff check --fix src/ tests/ tools/ && ruff format src/ tests/ tools/
+
+# Parameter sweeps and plotting
+python -m tools.grids.run_grid <grid.toml> -j <workers>
+python -m tools.grids.plot_grid <dir_or_csv>
+
+# Documentation (Zensical, NOT raw mkdocs)
+zensical serve              # live reload on docs/ and src/
+zensical build --clean      # full build for CI parity
+```
 
 ## Environment
 
-- `ZALMOXIS_ROOT` is resolved lazily via `get_zalmoxis_root()` in `__init__.py`. Auto-detects from package location; set explicitly with `export ZALMOXIS_ROOT=$(pwd)` if needed.
-- EOS data lives in `data/` (downloaded via `bash tools/setup/get_zalmoxis.sh`)
-- Output goes to `output/` (gitignored)
+- `ZALMOXIS_ROOT` is resolved lazily by `get_zalmoxis_root()` in `__init__.py`.
+  Auto-detects from package location; set explicitly with
+  `export ZALMOXIS_ROOT=$(pwd)` only if the auto-detection picks the wrong tree.
+- EOS data lives in `data/` (~600 MB; gitignored). Bootstrap with
+  `bash tools/setup/get_zalmoxis.sh`.
+- Output goes to `output/` (gitignored).
+- The proteus conda env is required for development on machines that ship the
+  PROTEUS toolchain (Python 3.12, numpy 2, jax, diffrax). Activate with
+  `conda activate proteus`. Verify with `which python` (ends in
+  `envs/proteus/bin/python`).
 
 ## Project layout
 
 ```
 Zalmoxis/
-  src/zalmoxis/           # Core package (installed via pip)
-    __init__.py           # get_zalmoxis_root() (lazy), __version__
-    config.py             # Config parsing, validation, EOS/melting setup
-    solver.py             # main() solver loop (3 nested iterations)
-    output.py             # post_processing(), file output
-    structure_model.py    # ODE system (dM/dr, dg/dr, dP/dr), solve_structure()
-    eos/                  # EOS package, organized by family
-      __init__.py         # Re-exports all public functions
-      interpolation.py    # Shared grid builders, bilinear interp, table loaders
-      seager.py           # Seager2007 tabulated 1D P-rho lookups
-      paleos.py           # Unified PALEOS density + nabla_ad, mushy zone
-      tdep.py             # T-dependent EOS, melting curves, phase routing
-      dispatch.py         # calculate_density/batch (main entry points)
-      temperature.py      # Adiabat computation, T profiles
-      output.py           # Pressure/density profile file writing
-    eos_analytic.py       # Seager+2007 analytic polytrope (6 materials)
-    eos_properties.py     # Lazy EOS_REGISTRY (paths built on first access)
-    mixing.py             # Multi-component mixing, LayerMixture, suppression
-    melting_curves.py     # Solidus/liquidus functions
-    binodal.py            # H2-MgSiO3 and H2-H2O miscibility models
-    constants.py          # Physical constants (G, earth_mass, earth_radius)
-  tests/                  # Test suite (at repo root)
-  tools/                  # Standalone scripts (at repo root)
-    setup/                # Test fixtures, data download
-    validation/           # First-principles verification
-    benchmarks/           # EOS benchmarks
-    grids/                # Parameter sweep runners
-    converters/           # EOS format conversion
-    plots/                # Visualization scripts
-  input/                  # TOML configs and grid specs
-  data/                   # EOS tables (gitignored, ~600 MB)
-  output/                 # Generated outputs (gitignored)
-  docs/                   # Zensical documentation
+  src/zalmoxis/
+    __init__.py             # get_zalmoxis_root() (lazy), __version__
+    __main__.py             # CLI: load config, log, post_processing
+    _version.py             # auto-generated by setuptools-scm
+    config.py               # Config parsing, validation, EOS/melting setup
+    solver.py               # main() + three-nested-loop driver
+    structure_model.py      # ODE system (dM/dr, dg/dr, dP/dr), solve_structure
+    output.py               # post_processing(), text + plot writers
+    energetics.py           # Standalone energy-budget integrals
+    mixing.py               # Multi-component mixing, LayerMixture
+    melting_curves.py       # Solidus/liquidus functions
+    binodal.py              # H2-MgSiO3 (Rogers+25) + H2-H2O (Gupta+25) curves
+    constants.py            # Physical constants
+    eos_analytic.py         # Seager+2007 analytic polytrope (6 materials)
+    eos_export.py           # SPIDER P-S and Aragog P-T table writers
+    eos_properties.py       # Lazy EOS_REGISTRY (paths built on first access)
+    eos_vinet.py            # Vinet EOS (Boujibar+20, White & Li 25, Smith+18)
+    eos/                    # Tabulated + dispatched EOS
+      __init__.py           # Re-exports
+      dispatch.py           # calculate_density / _batch (main entry points)
+      interpolation.py      # Grid builders, bilinear interp, table loaders
+      seager.py             # Seager 2007 1D P-rho lookups
+      paleos.py             # Unified PALEOS density + nabla_ad, mushy zone
+      paleos_api.py         # Live-call path against the upstream PALEOS pkg
+      paleos_api_cache.py   # SHA-validated text-table cache (~/.zalmoxis_cache)
+      tdep.py               # T-dependent EOS, melting, phase routing
+      temperature.py        # Adiabat computation; surface vs CMB anchor
+      output.py             # Profile file writing
+    jax_eos/                # Optional diffrax-based inner-ODE path
+      __init__.py
+      bilinear.py           # JAX-compiled bilinear interpolation
+      paleos.py             # JAX PALEOS density lookup
+      tdep.py               # JAX PALEOS-2phase mantle
+      rhs.py                # coupled_odes_jax RHS
+      solver.py             # diffrax solve_structure replacement
+      wrapper.py            # numpy-side gateway, x64 setup, parity guards
+  tests/                    # ~1077 tests; markers: unit, smoke, integration, slow
+  tools/
+    setup/                  # Test fixtures, data download
+    validation/             # First-principles verification scripts
+    benchmarks/             # EOS and solver benchmarks
+    grids/                  # Parameter sweep runners (run_grid, plot_grid)
+    converters/             # EOS format conversion
+    plots/                  # Diagnostic and figure scripts
+  input/
+    default.toml            # Canonical standalone config (heavily commented)
+    grids/                  # Parameter-grid TOMLs
+  data/                     # EOS tables (gitignored)
+  output/                   # Generated outputs (gitignored)
+  docs/                     # Zensical sources
+    Tutorials/, How-to/, Explanations/, Reference/, Community/
+  mkdocs.yml                # Nav (consumed by Zensical)
+  pyproject.toml            # Project metadata; ruff and pytest config
 ```
 
 ## Solver architecture
 
-Three nested loops: structure ODE (innermost) -> density Picard iteration -> mass-radius outer loop.
-Main entry: `solver.py:main()`. Key modules: `eos/dispatch.py` (EOS density lookups), `mixing.py` (multi-material),
-`binodal.py` (H2 phase suppression), `structure_model.py` (ODE system), `melting_curves.py`.
+A three-deep nested fixed-point: outer mass-radius search → middle density
+Picard → inner structure ODE.
+
+**Outer (mass-radius):** find R such that integrating the structure ODE from
+r=R to r=0 yields the target mass M. Two implementations.
+
+- `outer_solver = 'picard'` (Zalmoxis-side default, `solver.py:165`):
+  damped cube-root scaling clamped to [0.5, 2.0]. Robust on Earth-like
+  profiles. Hits a basin attractor on hot fully-molten or super-Earth scales
+  (M_p > 2 M_E or T_surf > 3000 K).
+- `outer_solver = 'newton'` (PROTEUS schema default, `proteus.config._struct`):
+  Newton + scipy.optimize.brentq fallback. Required for hot or massive cases.
+  Auto-tightens integrator tolerances (rel=1e-9, abs=1e-10) so the
+  central-difference dM/dR is smooth.
+
+The advisory at `solver.py:285` logs an INFO line suggesting Newton when
+Picard runs on a profile that looks hot or massive.
+
+**Middle (density Picard):** at fixed R, alternate the structure ODE
+(yielding P(r)) with the EOS evaluation (yielding ρ(P, T)). Damped fixed-point
+with default damping α=0.5. Optional Anderson Type-II via `use_anderson = True`
+(default `False`); `_anderson_mix` (`solver.py:59-118`) does least-squares
+residual mixing with window size m_max=5 (Walker & Ni 2011). On a singular
+Anderson matrix the helper returns None and the caller falls back to damped
+Picard for that step.
+
+**Inner (structure ODE):** `solve_structure` integrates dM/dr, dg/dr, dP/dr
+from surface to centre with adaptive RK45 (Tsit5 on the JAX path). Central
+pressure is found by `scipy.optimize.brentq` so that P(R) = P_target. A
+P=0 terminal event stops integration cleanly when the central-pressure guess
+is too low.
+
+**Adiabat anchor:** `eos/temperature.py` exposes both surface-anchored
+(default, historic) and CMB-anchored (newer, used by Aragog/SPIDER coupling)
+modes.
+
+**JAX path (opt-in, `use_jax = True`):** dispatches to `jax_eos/` for the
+inner ODE; the outer and middle loops are unchanged. x64 mode is enabled at
+module import to prevent float32 loss. Parity guarantee: `fast_bilinear_jax`
+agrees with the numpy reference to rtol ≤ 1e-4. Only 2-layer single-component
+configurations are supported on the JAX path; unsupported configs fall back
+to numpy automatically.
+
+## Standalone execution
+
+The CLI is in `__main__.py` (`get_zalmoxis_root()` → `load_zalmoxis_config()`
+→ `post_processing()`) and is invoked as `python -m zalmoxis -c <config.toml>`.
+The TOML is the single input; there are no behaviour-controlling flags.
+
+The `[project.scripts]` entry in `pyproject.toml` registers `zalmoxis` as
+`zalmoxis.solver:main`. This bypasses `load_zalmoxis_config()` and is useful
+mainly for in-process callers; humans should prefer `python -m zalmoxis`.
+
+Outputs (under `output/`):
+
+- `planet_profile.txt`: six-column TSV with r, ρ, M(r), P(r), g(r), T(r).
+- `calculated_planet_mass_radius.txt`: appended one-line summary per run.
+- `zalmoxis.log`: per-run log (overwritten each invocation).
+- Optional debug: `density_profiles.txt`, `pressure_profiles.txt` per Picard
+  iteration when the Python logging level is `DEBUG`.
+
+Recommended workflow:
+
+1. Copy `input/default.toml` to a working location.
+2. Edit `[InputParameter]` (planet_mass), `[AssumptionsAndInitialGuesses]`
+   (core fraction, temperature mode), and `[EOS]` (per-layer EOS strings).
+3. Run with `-c your.toml`.
+4. For figures, set `[Output] plots_enabled = true`.
+
+For sweeps: `python -m tools.grids.run_grid <grid.toml> -j <workers>`.
+The grid runner produces a flat CSV and a per-cell output directory, both
+plottable via `python -m tools.grids.plot_grid <dir_or_csv>`.
+
+## PROTEUS integration
+
+When PROTEUS drives Zalmoxis the configuration lives in PROTEUS's own TOML
+schema, not in `input/default.toml`. The PROTEUS-side attrs class is
+`proteus.config._struct.Zalmoxis`; defaults there override several
+Zalmoxis-side defaults, most notably `outer_solver = 'newton'`.
+
+Two call sites in PROTEUS:
+
+- **Init solve**: `proteus.interior_struct.zalmoxis.zalmoxis_solver`,
+  invoked once before the main loop.
+- **Time-evolution re-solve**: `proteus.interior_energetics.wrapper.update_structure_from_interior`,
+  gated by `update_interval`, `update_dphi_abs`, `update_dtmagma_frac`, and a
+  stale-time ceiling.
+
+`hf_row` exchange:
+
+- *Reads*: T_magma, M_int, M_core, R_int, P_cmb, volatile masses.
+- *Writes*: R_int, R_core, masses, P_surf, P_center, rho_avg, core_density,
+  gravity, `_structure_stale`.
+- *Mesh handover*: `zalmoxis_output.dat` (5-column TSV) consumed by Aragog
+  via `solver.reset()` and by SPIDER via `write_spider_mesh_file`.
+
+EOS-table generation:
+
+- `interior_energetics.module = 'spider'`: Zalmoxis writes P-S tables via
+  `generate_spider_tables` (resolution `lookup_nP × lookup_nS`).
+- `interior_energetics.module = 'aragog'`: Zalmoxis writes P-T tables via
+  `generate_aragog_pt_tables` (or `_2phase`). Aragog requires rectangular
+  P-T grids; phase-filtering breaks `scipy.RegularGridInterpolator`.
+
+Recommended PROTEUS-side knobs (in priority order):
+
+1. `interior_struct.module = 'zalmoxis'` + `interior_energetics.module = 'aragog'`
+   for new production runs; `'spider'` for legacy parity comparisons.
+2. `interior_struct.zalmoxis.update_interval`: 5e4 yr for dynamic structure
+   updates during evolution; ≥1e9 to freeze the mesh after the init solve.
+3. `interior_struct.zalmoxis.outer_solver = 'newton'` (PROTEUS default).
+4. `interior_energetics.aragog.phi_step_cap`: 0.05 for typical evolution;
+   leave at 0.0 unless mushy-zone melt-fraction oscillations show up early.
+5. `planet.prevent_warming = false`. Must stay false; the clamp is
+   energy-non-conserving and produces a spurious T_magma plateau when true.
+6. `interior_struct.zalmoxis.mushy_zone_factor = 0.8` for paper-quality
+   PALEOS runs (Stixrude+14 cryoscopic depression).
+7. `interior_energetics.num_levels`: 80 for both Aragog and SPIDER.
+8. `interior_struct.zalmoxis.equilibrate_init = true` (CALLIOPE+Zalmoxis
+   pre-main-loop equilibration; default).
+
+Pitfalls:
+
+- *Deleted `dilatation` field*: removed from PROTEUS on 2026-05-04; any
+  config that sets `dilatation = true` or `dilatation = false` is rejected
+  by the schema validator.
+- *Resume + ULP radius drift*: a resumed run can hit single-ULP mismatch
+  between saved Zalmoxis radii and Aragog's mesh bounds at
+  `aragog/src/aragog/solver/entropy_solver.py:91-110`.
+- *core_density echo-back*: SPIDER's `-rho_core` parameter can overwrite
+  Zalmoxis's self-consistent core density; the mass-anchor check at
+  `proteus/interior_energetics/wrapper.py` (rtol 3e-3) catches gross
+  mismatches.
+
+For full theory and the prioritised-settings table, see
+`docs/Explanations/proteus_coupling.md` and `docs/How-to/proteus_coupling.md`.
 
 ## Import conventions
 
-No backward-compatibility shims. All imports are direct to the actual module:
-- `from zalmoxis.solver import main`
+No backward-compatibility shims; imports are direct to the actual module:
+
+- `from zalmoxis import get_zalmoxis_root`
 - `from zalmoxis.config import load_zalmoxis_config, validate_config`
+- `from zalmoxis.solver import main`
 - `from zalmoxis.output import post_processing`
 - `from zalmoxis.eos import calculate_density, load_paleos_unified_table`
 - `from zalmoxis.mixing import LayerMixture`
-- `from zalmoxis import get_zalmoxis_root`
+- `from zalmoxis.binodal import h2_silicate_miscibility, h2_water_miscibility`
+
+`from __future__ import annotations` is required at the top of every `.py`
+file (enforced by ruff isort).
 
 ## Testing
 
-- 435 unit tests, ~40 integration, 4 slow (~480 total)
-- Unit tests: `pytest -o "addopts=" -m unit` (~1.5 min)
-- The `-o "addopts="` override is needed because pyproject.toml defaults include `-n auto --dist loadfile`
-- Use `@pytest.mark.unit` on all new unit tests
-- Use `pytest.approx` for float comparisons, never `==`
-- First-principles verification: `tests/test_first_principles.py` (25 tests, analytic solutions)
+- 1077 tests collected: 1026 unit, 23 smoke, 2 integration, 44 slow.
+- Unit tier: `pytest -o "addopts=" -m unit` (~1.5 min on the dev machine,
+  ~1m54s ubuntu / ~2m29s macOS in CI).
+- Nightly tier: `pytest -o "addopts=" -m "(unit or smoke or integration) and not slow"`
+  with coverage; ~46 min on ubuntu CI.
+- The `-o "addopts="` override is needed because `pyproject.toml` defaults to
+  `-n auto --dist loadfile` for parallel execution; a single-marker filter run
+  is faster without the parallel split.
+- Use `@pytest.mark.unit` on every new unit test; CI runs with `-m unit` /
+  `-m smoke`. Tests without a marker are invisible to CI.
+- Use `pytest.approx` for float comparisons, never `==`.
+- First-principles verification suite: `tests/test_first_principles.py`
+  (~25 tests against analytic solutions; conservation laws, ideal-gas limit,
+  small-mass polytrope).
 
 ## Documentation (Zensical)
 
-- **Do not use `mkdocs serve` or `mkdocs build`.** Use `zensical serve` / `zensical build --clean`.
-- Live reload: `zensical serve` watches `docs/` and `src/` automatically
-- Root-level files (`CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `README.md`) are included via `markdown_include`
-  directives in `docs/Community/`. Zensical does not detect changes to these files during live reload.
-  To pick up changes: stop the server, run `zensical build --clean`, then `zensical serve`.
-- Docs URL structure uses `use_directory_urls: false` (pages are `*.html`, not `*/index.html`)
-- Nav defined in `mkdocs.yml`
+- The site builds with **Zensical**, not raw mkdocs. Use `zensical serve`
+  and `zensical build --clean`. Raw `mkdocs serve` may fail on theme
+  resolution.
+- Live reload: `zensical serve` watches `docs/` and `src/` automatically.
+- Root-level files (`CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `README.md`)
+  are pulled into `docs/Community/` via `markdown_include`. Zensical does
+  not detect changes to these on live-reload; stop the server and run
+  `zensical build --clean` to pick them up.
+- URLs use `use_directory_urls: false` (pages are `*.html`, not
+  `*/index.html`).
+- Nav is defined in `mkdocs.yml`. New pages need both the file and the nav
+  entry.
+- mkdocstrings `:::` directives auto-generate API pages from docstrings;
+  add a stub under `docs/Reference/api/` for any new module.
 
 ## Code style
 
-- `ruff` for linting and formatting (config in pyproject.toml)
-- Single quotes (configured in ruff)
-- `from __future__ import annotations` required in all files (enforced by ruff isort)
-- Line length 96 (prefer < 92)
+- `ruff` for linting and formatting (config in `pyproject.toml`).
+- Single quotes (configured in ruff).
+- `from __future__ import annotations` required in all files.
+- Line length 96 (prefer < 92).
+- Run `ruff format` before committing; the local ruff (0.12.x) and the CI
+  ruff (0.15.x) sometimes disagree on formatting drift, and CI is canonical.
+- NumPy-style docstrings (Parameters / Returns / Raises / Notes).
+- Comments should explain WHY, not WHAT. No project-tracking labels
+  (T1.x, Stage X, dates of past changes); the development history belongs
+  in commit messages, not in inline comments.
