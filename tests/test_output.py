@@ -420,12 +420,12 @@ class TestPostProcessingPlotting:
         import sys
         import types
 
-        fake_phase = types.ModuleType('tools.plots.plot_phase_vs_radius')
+        fake_phase = types.ModuleType('zalmoxis.plots.plot_phase_vs_radius')
         fake_phase.plot_PT_with_phases = _explode
-        fake_profiles = types.ModuleType('tools.plots.plot_profiles')
+        fake_profiles = types.ModuleType('zalmoxis.plots.plot_profiles')
         fake_profiles.plot_planet_profile_single = _explode
-        monkeypatch.setitem(sys.modules, 'tools.plots.plot_phase_vs_radius', fake_phase)
-        monkeypatch.setitem(sys.modules, 'tools.plots.plot_profiles', fake_profiles)
+        monkeypatch.setitem(sys.modules, 'zalmoxis.plots.plot_phase_vs_radius', fake_phase)
+        monkeypatch.setitem(sys.modules, 'zalmoxis.plots.plot_profiles', fake_profiles)
 
         # Should run without error.
         output_mod.post_processing(_base_config(plotting_enabled=False))
@@ -471,12 +471,12 @@ class TestPostProcessingPlotting:
         def _phase_mock(*a, **k):
             phase_calls.append((a, k))
 
-        fake_phase = types.ModuleType('tools.plots.plot_phase_vs_radius')
+        fake_phase = types.ModuleType('zalmoxis.plots.plot_phase_vs_radius')
         fake_phase.plot_PT_with_phases = _phase_mock
-        fake_profiles = types.ModuleType('tools.plots.plot_profiles')
+        fake_profiles = types.ModuleType('zalmoxis.plots.plot_profiles')
         fake_profiles.plot_planet_profile_single = _profile_mock
-        monkeypatch.setitem(sys.modules, 'tools.plots.plot_phase_vs_radius', fake_phase)
-        monkeypatch.setitem(sys.modules, 'tools.plots.plot_profiles', fake_profiles)
+        monkeypatch.setitem(sys.modules, 'zalmoxis.plots.plot_phase_vs_radius', fake_phase)
+        monkeypatch.setitem(sys.modules, 'zalmoxis.plots.plot_profiles', fake_profiles)
 
         # Mantle is unified PALEOS so the phase plot helper must NOT be invoked.
         cfg = _base_config(plotting_enabled=True)
@@ -506,16 +506,16 @@ class TestPostProcessingPlotting:
 
         monkeypatch.setattr(output_mod, 'get_Tdep_material', _fake_tdep)
 
-        fake_profiles = types.ModuleType('tools.plots.plot_profiles')
+        fake_profiles = types.ModuleType('zalmoxis.plots.plot_profiles')
         fake_profiles.plot_planet_profile_single = lambda *a, **k: None
-        fake_phase = types.ModuleType('tools.plots.plot_phase_vs_radius')
+        fake_phase = types.ModuleType('zalmoxis.plots.plot_phase_vs_radius')
 
         def _phase_mock(P, T, R, phases, cmb_radius):
             phase_calls.append({'n_pts': P.size, 'cmb_radius': float(cmb_radius)})
 
         fake_phase.plot_PT_with_phases = _phase_mock
-        monkeypatch.setitem(sys.modules, 'tools.plots.plot_profiles', fake_profiles)
-        monkeypatch.setitem(sys.modules, 'tools.plots.plot_phase_vs_radius', fake_phase)
+        monkeypatch.setitem(sys.modules, 'zalmoxis.plots.plot_profiles', fake_profiles)
+        monkeypatch.setitem(sys.modules, 'zalmoxis.plots.plot_phase_vs_radius', fake_phase)
 
         cfg = _base_config(
             plotting_enabled=True,

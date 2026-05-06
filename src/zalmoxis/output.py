@@ -9,7 +9,7 @@ import os
 import numpy as np
 
 from . import get_zalmoxis_root
-from .config import _NEEDS_MELTING_CURVES
+from .config import _NEEDS_MELTING_CURVES, load_solidus_liquidus_functions
 from .constants import earth_mass, earth_radius
 from .eos import get_Tdep_material
 from .mixing import parse_layer_components
@@ -44,7 +44,7 @@ def post_processing(config_params, id_mass=None, output_file=None, model_results
     plotting_enabled = config_params['plotting_enabled']
 
     if model_results is None:
-        from .config import load_material_dictionaries, load_solidus_liquidus_functions
+        from .config import load_material_dictionaries
         from .solver import main
 
         model_results = main(
@@ -178,8 +178,8 @@ def post_processing(config_params, id_mass=None, output_file=None, model_results
             file.write(f'{mass_enclosed[-1]}\t{radii[-1]}\n')
 
     if plotting_enabled:
-        from tools.plots.plot_phase_vs_radius import plot_PT_with_phases
-        from tools.plots.plot_profiles import plot_planet_profile_single
+        from .plots.plot_phase_vs_radius import plot_PT_with_phases
+        from .plots.plot_profiles import plot_planet_profile_single
 
         plot_planet_profile_single(
             radii,
