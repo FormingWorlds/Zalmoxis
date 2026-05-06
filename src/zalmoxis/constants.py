@@ -22,10 +22,16 @@ TDEP_EOS_NAMES = {
     'WolfBower2018:MgSiO3',
     'RTPress100TPa:MgSiO3',
     'PALEOS-2phase:MgSiO3',
+    'PALEOS-2phase:MgSiO3-highres',
     'PALEOS:iron',
     'PALEOS:MgSiO3',
     'PALEOS:H2O',
     'Chabrier:H',
+    # PALEOS-API live-tabulated (dispatch materialises cached .dat on first use).
+    'PALEOS-API:iron',
+    'PALEOS-API:MgSiO3',
+    'PALEOS-API:H2O',
+    'PALEOS-API-2phase:MgSiO3',
 }
 
 # Phase-aware mixing: smooth density suppression defaults.

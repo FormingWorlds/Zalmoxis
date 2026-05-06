@@ -5,11 +5,11 @@
 All tabulated data files are downloaded automatically by running the setup script from the repository root:
 
 ```bash
-bash src/get_zalmoxis.sh
+bash tools/setup/get_zalmoxis.sh
 ```
 
-This invokes `src/setup_zalmoxis.py`, which downloads and extracts the required data into the `data/` directory.
-See Installation Step 4 of the [installation guide](https://proteus-framework.org/Zalmoxis/installation/) for details.
+This invokes `tools/setup/setup_zalmoxis.py`, which downloads and extracts the required data into the `data/` directory.
+See Installation Step 4 of the [installation guide](../How-to/installation.md) for details.
 
 ## Data inventory
 
@@ -27,11 +27,11 @@ The table below lists every data file used by Zalmoxis, organised by subdirector
 | `adiabat_temp_grad_melt.dat` | `data/EOS_WolfBower2018_1TPa/` | TSV (P in Pa, T in K, dT/dP in K/Pa) | [Wolf & Bower (2018)](https://doi.org/10.1016/j.pepi.2018.02.004) | MgSiO3 melt adiabatic temperature gradient $(dT/dP)_S$ (P: 0--1 TPa, T: 0--16500 K). Used for `"adiabatic"` temperature mode. |
 | `density_melt.dat` | `data/EOS_RTPress_melt_100TPa/` | TSV (P in Pa, T in K, rho in kg/m^3) | Extended RTpress melt table | MgSiO3 melt density EOS extended to 100 TPa (P: 1e3--1e14 Pa, T: 400--50000 K). Used by `RTPress100TPa:MgSiO3`. Solid phase uses the WolfBower2018 table above. |
 | `adiabat_temp_grad_melt.dat` | `data/EOS_RTPress_melt_100TPa/` | TSV (P in Pa, T in K, dT/dP in K/Pa) | Extended RTpress melt table | MgSiO3 melt adiabatic temperature gradient $(dT/dP)_S$ extended to 100 TPa (P: 1e3--1e14 Pa, T: 400--50000 K). Used for `"adiabatic"` temperature mode with `RTPress100TPa:MgSiO3`. |
-| `paleos_mgsio3_tables_pt_proteus_solid.dat` | `data/EOS_PALEOS_MgSiO3/` | Space-separated, 10 columns (P, T, rho, u, s, cp, cv, alpha, nabla_ad, phase_id) | PALEOS (Zenodo 18924171) | MgSiO3 solid-phase EOS with adiabatic gradient (P: 1 bar--100 TPa, T: 300 K--max(T_liquidus), 150 ppd log-uniform grid, 75% filled). |
-| `paleos_mgsio3_tables_pt_proteus_liquid.dat` | `data/EOS_PALEOS_MgSiO3/` | Space-separated, 10 columns (same as solid) | PALEOS (Zenodo 18924171) | MgSiO3 liquid-phase EOS with adiabatic gradient (P: 1 bar--100 TPa, T: min(T_solidus)--100000 K, 150 ppd log-uniform grid, 53% filled). |
-| `paleos_iron_eos_table_pt.dat` | `data/EOS_PALEOS_iron/` | Space-separated, 10 columns (P, T, rho, u, s, cp, cv, alpha, nabla_ad, phase) | PALEOS (Zenodo 19000316) | Unified Fe EOS, 5 stable phases (alpha-bcc, delta-bcc, gamma-fcc, epsilon-hcp, liquid). P: 1 bar--100 TPa, T: 300--100000 K. 75.5 MB. |
-| `paleos_mgsio3_eos_table_pt.dat` | `data/EOS_PALEOS_MgSiO3_unified/` | Space-separated, 10 columns (same as iron) | PALEOS (Zenodo 19000316) | Unified MgSiO3 EOS, 6 stable phases (3 pyroxene, bridgmanite, postperovskite, liquid). P: 1 bar--100 TPa, T: 300--100000 K. 48.8 MB. |
-| `paleos_water_eos_table_pt.dat` | `data/EOS_PALEOS_H2O/` | Space-separated, 10 columns (same as iron) | PALEOS (Zenodo 19000316) | Unified H2O EOS, 7 EOS (ice Ih--X, liquid, vapor, superionic). P: 1 bar--100 TPa, T: 100--100000 K. 147.3 MB. |
+| `paleos_mgsio3_tables_pt_proteus_solid.dat` | `data/EOS_PALEOS_MgSiO3/` | Space-separated, 10 columns (P, T, rho, u, s, cp, cv, alpha, nabla_ad, phase_id) | [Attia et al. (2026)](https://ui.adsabs.harvard.edu/abs/2026arXiv260503741A/abstract); PALEOS (Zenodo 19680050, v1.1.0) | MgSiO3 solid-phase EOS with adiabatic gradient (P: 1 bar--100 TPa, T: 300 K--max(T_liquidus), 150 ppd log-uniform grid, 75% filled). |
+| `paleos_mgsio3_tables_pt_proteus_liquid.dat` | `data/EOS_PALEOS_MgSiO3/` | Space-separated, 10 columns (same as solid) | [Attia et al. (2026)](https://ui.adsabs.harvard.edu/abs/2026arXiv260503741A/abstract); PALEOS (Zenodo 19680050, v1.1.0) | MgSiO3 liquid-phase EOS with adiabatic gradient (P: 1 bar--100 TPa, T: min(T_solidus)--100000 K, 150 ppd log-uniform grid, 53% filled). |
+| `paleos_iron_eos_table_pt.dat` | `data/EOS_PALEOS_iron/` | Space-separated, 10 columns (P, T, rho, u, s, cp, cv, alpha, nabla_ad, phase) | [Attia et al. (2026)](https://ui.adsabs.harvard.edu/abs/2026arXiv260503741A/abstract); PALEOS (Zenodo 19000316) | Unified Fe EOS, 5 stable phases (alpha-bcc, delta-bcc, gamma-fcc, epsilon-hcp, liquid). P: 1 bar--100 TPa, T: 300--100000 K. 75.5 MB. |
+| `paleos_mgsio3_eos_table_pt.dat` | `data/EOS_PALEOS_MgSiO3_unified/` | Space-separated, 10 columns (same as iron) | [Attia et al. (2026)](https://ui.adsabs.harvard.edu/abs/2026arXiv260503741A/abstract); PALEOS (Zenodo 19000316) | Unified MgSiO3 EOS, 6 stable phases (3 pyroxene, bridgmanite, postperovskite, liquid). P: 1 bar--100 TPa, T: 300--100000 K. 48.8 MB. |
+| `paleos_water_eos_table_pt.dat` | `data/EOS_PALEOS_H2O/` | Space-separated, 10 columns (same as iron) | [Attia et al. (2026)](https://ui.adsabs.harvard.edu/abs/2026arXiv260503741A/abstract); PALEOS (Zenodo 19000316) | Unified H2O EOS, 7 EOS (ice Ih--X, liquid, vapor, superionic). P: 1 bar--100 TPa, T: 100--100000 K. 147.3 MB. |
 | `chabrier2021_H.dat` | `data/EOS_Chabrier2021_HHe/` | Space-separated, 10 columns (P, T, rho, u, s, cp, cv, alpha, nabla_ad, phase_id) | [Chabrier et al. (2019)](https://doi.org/10.3847/1538-4357/aaf99f), [Chabrier & Debras (2021)](https://doi.org/10.3847/1538-4357/abfc48) | Pure H$_2$ EOS (molecular, atomic, ionized). Grid: 121 x 441 (logT, logP), T: 100--$10^8$ K, P: 1 Pa--$10^{22}$ Pa. Registered as `Chabrier:H`. |
 | `chabrier2021_HE.dat` | `data/EOS_Chabrier2021_HHe/` | Same as above | Same | Pure He EOS. Not registered (available for future use). |
 | `chabrier2021_HHe_Y0275.dat` | `data/EOS_Chabrier2021_HHe/` | Same as above | Same | H/He mixture at $Y = 0.275$. Not registered (available for future use). |

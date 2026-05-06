@@ -1,5 +1,11 @@
 # Usage
 
+!!! info "Standalone vs PROTEUS-coupled mode"
+    This page documents **standalone** Zalmoxis use (`python -m zalmoxis -c <config>.toml`).
+    When Zalmoxis is driven from inside the PROTEUS framework, none of the TOML sections shown here are read.
+    PROTEUS reads its own `[interior_struct.zalmoxis]` block and calls `zalmoxis.solver.main()` directly.
+    For the PROTEUS recipe, see [Coupling to PROTEUS](proteus_coupling.md).
+
 ## Quick start
 
 Run the default configuration (1 Earth-mass planet with a PALEOS iron core and MgSiO3 mantle):
@@ -8,7 +14,7 @@ Run the default configuration (1 Earth-mass planet with a PALEOS iron core and M
 python -m zalmoxis -c input/default.toml
 ```
 
-Output files appear in `output_files/`. The PALEOS data files must be downloaded first (see [installation](installation.md)).
+Output files appear in `output/`. The PALEOS data files must be downloaded first (see [installation](installation.md)).
 
 ## What happens when you run Zalmoxis
 
@@ -44,10 +50,10 @@ For the full list of parameters (EOS selection, temperature modes, solver settin
 
 ## Output files
 
-All output files are written to the `output_files/` directory (created automatically on first run). The directory structure looks like:
+All output files are written to the `output/` directory (created automatically on first run). The directory structure looks like:
 
 ```
-output_files/
+output/
 ├── planet_profile.txt            # radial profiles (single run)
 ├── planet_profile5.0.txt         # radial profiles (batch run, mass in filename)
 ├── calculated_planet_mass_radius.txt  # summary: mass and radius per run
@@ -84,12 +90,14 @@ The first row is the center (r = 0) and the last row is the surface. Shells beyo
 
 ### Iteration profiles (optional)
 
-When `iteration_profiles_enabled = true` in the `[Output]` section:
+When the Python logging level is set to `DEBUG`, the solver writes per-iteration profiles:
 
 - **`pressure_profiles.txt`**: Pressure vs. radius for every iteration of the pressure adjustment loop.
 - **`density_profiles.txt`**: Density vs. radius for every iteration.
 
-These files are useful for diagnosing convergence behavior. They grow large quickly and are overwritten at the start of each new run. Leave disabled for production runs.
+Enable with `logging.getLogger('zalmoxis').setLevel(logging.DEBUG)`. These files are useful for diagnosing convergence behavior. They grow large quickly and are overwritten at the start of each new run.
+
+Adjust `tolerance_outer`, `tolerance_inner`, `max_iterations_outer`, `max_iterations_inner` in the `[IterativeProcess]` block (see [Configuration](configuration.md#iterativeprocess)) if convergence is slow.
 
 ### Plots (optional)
 
@@ -116,4 +124,8 @@ This produces a six-panel figure showing the radial profiles of density, pressur
 ## Parameter grids
 
 To sweep over combinations of parameters and plot the results, see the [parameter grids](grids.md) guide.
+
+## See also
+
+- [First run](../Tutorials/firstrun.md) walks through a single Earth-mass run end to end.
 

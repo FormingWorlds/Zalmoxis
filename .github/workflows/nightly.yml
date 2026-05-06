@@ -17,12 +17,12 @@ on:
 permissions:
   contents: read
 
-# Nightly: full test suite (unit + integration, plus smoke tier on
-# branches that define it) with coverage instrumentation. Targets
-# <60 min wall. Excluded from push and PR CI because each integration
-# test runs a full Zalmoxis solver call (5-10 min on a 2-vCPU runner
-# under cov instrumentation) and burning that on every push gives no
-# bug-finding signal that the unit suite doesn't already cover.
+# Nightly: full test suite (unit + smoke + integration) with coverage
+# instrumentation. Targets <60 min wall. Excluded from push and PR CI
+# because each smoke or integration test runs a full Zalmoxis solver
+# call (5-10 min on a 2-vCPU runner under cov instrumentation) and
+# burning that on every push gives no bug-finding signal that the
+# unit suite doesn't already cover.
 jobs:
   nightly:
     name: Zalmoxis-nightly (ubuntu-latest)
@@ -31,6 +31,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # setuptools-scm derives the package version from the latest
+          # git tag; needs full history.
+          fetch-depth: 0
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -46,14 +50,22 @@ jobs:
           pip install .
           pip install pytest pytest-cov pytest-xdist
 
+      - name: Cache Zalmoxis EOS data
+        id: cache-zalmoxis-data
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: zalmoxis-data-${{ runner.os }}-${{ hashFiles('tools/setup/get_zalmoxis.sh', 'tools/setup/setup_zalmoxis.py', 'tools/setup/setup_utils.py') }}
+
       - name: Download required input/output files
+        if: steps.cache-zalmoxis-data.outputs.cache-hit != 'true'
         run: |
-          bash src/get_zalmoxis.sh
+          bash tools/setup/get_zalmoxis.sh
 
       - name: Run unit + smoke + integration tests with coverage
         run: |
           pytest -m "(unit or smoke or integration) and not slow" -n auto -o "addopts=" \
-            --cov=src --cov-report=term-missing --cov-report=xml
+            --cov=zalmoxis --cov-report=term-missing --cov-report=xml
 
       - name: Upload coverage to Codecov
         if: ${{ !cancelled() }}

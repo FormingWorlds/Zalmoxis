@@ -1,5 +1,11 @@
 # Configuration file
 
+!!! info "Standalone vs PROTEUS-coupled mode"
+    This page documents the TOML schema used by **standalone** Zalmoxis (`python -m zalmoxis`).
+    Inside the PROTEUS framework, none of the sections below (`[InputParameter]`, `[AssumptionsAndInitialGuesses]`, `[EOS]`, `[Calculations]`, `[IterativeProcess]`, `[PressureAdjustment]`, `[Output]`) are read.
+    PROTEUS configures Zalmoxis through its own `[interior_struct]` and `[interior_struct.zalmoxis]` blocks; see [Coupling to PROTEUS](proteus_coupling.md).
+    The EOS-identifier table below (`PALEOS:iron`, `WolfBower2018:MgSiO3`, etc.) is still authoritative for both modes; only the surrounding TOML scaffolding differs.
+
 Zalmoxis uses [TOML](https://toml.io/en/) to structure its configuration file. The default is `default.toml` in the `input/` directory.
 
 The configuration file defines all parameters needed to run the planetary interior structure model: planet properties, equation of state (EOS) selection for each structural layer, numerical solver settings, and output options. The sections below document each parameter.
@@ -99,7 +105,7 @@ Rules:
 | `Seager2007:H2O` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | Water ice (phases VII, VIII, X) | Fixed 300 K | Yes | Experimental + DFT, tabulated $\rho(P)$. |
 | `WolfBower2018:MgSiO3` | [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) | MgSiO3 (melt + solid) | T-dependent | Yes | RTpress EOS with phase-aware melting (solid EOS derived from [Mosenfelder et al. 2009](https://doi.org/10.1029/2008JB005900)). **Limited to $\leq 7\,M_\oplus$** (table max ~1 TPa; out-of-bounds pressures clamped). Requires `temperature_mode` configuration. Uses [Monteux et al.](https://doi.org/10.1016/j.epsl.2016.05.010) solidus/liquidus curves. |
 | `RTPress100TPa:MgSiO3` | Extended RTpress melt table | MgSiO3 (melt + solid) | T-dependent | Yes | Extended melt EOS to 100 TPa ($P$: $10^3$ to $10^{14}$ Pa, $T$: 400 to 50000 K). Solid phase uses [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) table (clamped at 1 TPa). **Limited to $\leq 50\,M_\oplus$**. Requires `temperature_mode` configuration. |
-| `PALEOS-2phase:MgSiO3` | PALEOS (Zenodo 18924171) | MgSiO3 (solid + liquid) | T-dependent | Yes | Separate solid and liquid tables providing density and $\nabla_{\mathrm{ad}}$ (P: 1 bar to 100 TPa, T: 300 to 100000 K, 150 ppd log-uniform grid). Enables phase-aware adiabatic temperature profiles using nabla_ad from both phases. **Limited to $\leq 50\,M_\oplus$**. Requires `temperature_mode` configuration. |
+| `PALEOS-2phase:MgSiO3` | PALEOS (Zenodo 19680050, v1.1.0) | MgSiO3 (solid + liquid) | T-dependent | Yes | Separate solid and liquid tables providing density and $\nabla_{\mathrm{ad}}$ (P: 1 bar to 100 TPa, T: 300 to 100000 K, 150 ppd log-uniform grid). Enables phase-aware adiabatic temperature profiles using nabla_ad from both phases. **Limited to $\leq 50\,M_\oplus$**. Requires `temperature_mode` configuration. |
 | `PALEOS:iron` | PALEOS (Zenodo 19000316) | Fe (5 phases) | T-dependent | Yes | Unified single-file table with all stable Fe phases (alpha-bcc, delta-bcc, gamma-fcc, epsilon-hcp, liquid). P: 1 bar to 100 TPa, T: 300 to 100000 K. Phase boundary encoded in table. **Limited to $\leq 50\,M_\oplus$**. Enables T-dependent core with its own adiabat. |
 | `PALEOS:MgSiO3` | PALEOS (Zenodo 19000316) | MgSiO3 (6 phases) | T-dependent | Yes | Unified single-file table with all stable MgSiO3 phases (3 pyroxene, bridgmanite, postperovskite, liquid). P: 1 bar to 100 TPa, T: 300 to 100000 K. Phase boundary encoded in table. **Limited to $\leq 50\,M_\oplus$**. |
 | `PALEOS:H2O` | PALEOS (Zenodo 19000316) | H2O (7 EOS) | T-dependent | Yes | Unified single-file table with all stable H2O phases (ice Ih to X, liquid, vapor, superionic). P: 1 bar to 100 TPa, T: 100 to 100000 K. Phase boundary encoded in table. **Limited to $\leq 50\,M_\oplus$**. Use as `ice_layer` for 3-layer models. |
@@ -357,6 +363,9 @@ The solver has been systematically tested across 293 configurations spanning 9 t
 | Mushy zone factor | 0.7 to 1.0 | Per-material overrides validated independently. Values below 0.7 are rejected. |
 | Three-layer ice fraction | any | **Only with $T_\mathrm{surf} < 647$ K** (H$_2$O critical point). See warning below. |
 
+!!! note "Per-EOS table limits are the canonical reference"
+    The mass limits in the **Available EOS options** table (`WolfBower2018:MgSiO3` $\leq 7\,M_\oplus$; all PALEOS, RTPress100TPa, and Chabrier:H entries up to $50\,M_\oplus$) are the canonical thermodynamic constraints, set by the pressure ceiling of each tabulated EOS. The validated-range row above ("Planet mass: 0.1 to 50 $M_\oplus$") is a downstream consequence of those table ceilings combined with solver convergence testing across 293 configurations. If a per-EOS limit and the validator-side limit ever appear to conflict (e.g., when a new EOS is added), the per-EOS table value takes precedence.
+
 !!! warning "H$_2$O-dominated mantles"
     Mantles with more than 50% H$_2$O by mass and no silicate component are rejected in adiabatic and linear temperature modes. At these temperatures, H$_2$O is vapor at surface pressure and cannot support hydrostatic structure in the volume-additive mixing model. Options: add a silicate component, use a 3-layer model with a separate ice layer, or use isothermal mode with $T < 647$ K.
 
@@ -464,7 +473,7 @@ Controls what the model writes after a run.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `data_enabled` | bool | true | Write the computed radial profiles (radius, density, gravity, pressure, temperature, enclosed mass) to a text file in `output_files/`. |
+| `data_enabled` | bool | true | Write the computed radial profiles (radius, density, gravity, pressure, temperature, enclosed mass) to a text file in `output/`. |
 | `plots_enabled` | bool | false | Generate profile plots after the run. |
-| `verbose` | bool | false | Log detailed convergence diagnostics and warnings. When false, only essential messages (final results, errors) are shown. |
-| `iteration_profiles_enabled` | bool | false | Write pressure and density profiles for every iteration to files. Useful for debugging convergence behavior; produces large output. |
+
+Convergence diagnostics are controlled by the Python logging level. Set `logging.getLogger('zalmoxis').setLevel(logging.DEBUG)` to see per-iteration convergence info and write iteration pressure/density profiles.

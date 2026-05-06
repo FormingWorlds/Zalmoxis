@@ -5,7 +5,7 @@ repo_url: https://github.com/FormingWorlds/Zalmoxis
 copyright: '© 2023-2026 <a href="https://formingworlds.space">Forming Worlds Lab</a>'
 
 nav:
-  - Home: 
+  - Home:
       - About: index.md
       - Getting started: getting_started.md
 
@@ -14,7 +14,13 @@ nav:
       - Configuration: How-to/configuration.md
       - Usage: How-to/usage.md
       - Parameter grids: How-to/grids.md
-      - Testing: How-to/testing.md
+      - Coupling to PROTEUS: How-to/proteus_coupling.md
+      - Testing suite: How-to/testing.md
+      - Build tests: How-to/build_tests.md
+      - Releasing: How-to/releasing.md
+
+  - Tutorials:
+      - First run: Tutorials/firstrun.md
 
   - Explanations:
       - Model overview: Explanations/model.md
@@ -22,20 +28,37 @@ nav:
       - Multi-material mixing: Explanations/mixing.md
       - Binodal suppression: Explanations/binodal.md
       - Process flow: Explanations/process_flow.md
+      - Coupling to PROTEUS: Explanations/proteus_coupling.md
       - Code architecture: Explanations/code_architecture.md
+      - First-principles verification: Explanations/verification.md
 
   - Reference:
       - API reference:
           - Overview: Reference/api/index.md
-          - Core: Reference/api/zalmoxis.zalmoxis.md
-          - Constants: Reference/api/zalmoxis.constants.md
+          - Config: Reference/api/zalmoxis.config.md
+          - Solver: Reference/api/zalmoxis.solver.md
+          - Output: Reference/api/zalmoxis.output.md
+          - Structure model: Reference/api/zalmoxis.structure_model.md
+          - Energetics: Reference/api/zalmoxis.energetics.md
+          - EOS package: Reference/api/zalmoxis.eos.md
+          - EOS dispatch: Reference/api/zalmoxis.eos.dispatch.md
+          - EOS interpolation: Reference/api/zalmoxis.eos.interpolation.md
+          - EOS output: Reference/api/zalmoxis.eos.output.md
+          - PALEOS tables: Reference/api/zalmoxis.eos.paleos.md
+          - PALEOS API: Reference/api/zalmoxis.eos.paleos_api.md
+          - PALEOS API cache: Reference/api/zalmoxis.eos.paleos_api_cache.md
+          - Seager EOS: Reference/api/zalmoxis.eos.seager.md
+          - T-dependent EOS: Reference/api/zalmoxis.eos.tdep.md
+          - Adiabat / temperature: Reference/api/zalmoxis.eos.temperature.md
           - Analytic EOS: Reference/api/zalmoxis.eos_analytic.md
-          - EOS functions: Reference/api/zalmoxis.eos_functions.md
+          - EOS export: Reference/api/zalmoxis.eos_export.md
           - EOS properties: Reference/api/zalmoxis.eos_properties.md
+          - Vinet EOS: Reference/api/zalmoxis.eos_vinet.md
+          - JAX EOS package: Reference/api/zalmoxis.jax_eos.md
           - Melting curves: Reference/api/zalmoxis.melting_curves.md
           - Mixing: Reference/api/zalmoxis.mixing.md
           - Binodal: Reference/api/zalmoxis.binodal.md
-          - Structure model: Reference/api/zalmoxis.structure_model.md
+          - Constants: Reference/api/zalmoxis.constants.md
       - Data: Reference/data.md
 
   - Community:

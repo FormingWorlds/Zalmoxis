@@ -1,0 +1,61 @@
+# ============================================================================
+# Test fixture, not a user config. Do not run as `proteus start -c ...`.
+# ============================================================================
+#
+# This is the canonical Zalmoxis solver-benchmark + JAX-parity fixture. It
+# pins a specific Stage-1b production setup (PALEOS-2phase:MgSiO3 with
+# mushy_zone_factor = 0.80, 1 M_earth, adiabatic 3000 K surface) so that
+# numerical-path tests and performance benchmarks exercise the exact hot
+# paths PROTEUS uses, reproducibly across machines and commits. The values
+# below are not "good defaults" for new users; for those, start from
+# input/default.toml.
+#
+# Loaded by 8 files (do NOT delete or move without updating all of them):
+#   tools/benchmarks/bench_performance.py        - canonical perf benchmark
+#   tools/benchmarks/bench_coupled_tempfunc.py   - coupled T(r) bench variant
+#   tests/test_anderson_acceleration.py          - Anderson speedup
+#   tests/test_jax_temperature_arrays.py         - JAX vs numpy T-array path
+#   tests/test_jax_rhs_parity.py                 - JAX vs numpy ODE RHS
+#   tests/test_jax_tdep_parity.py                - JAX T-dependent EOS parity
+#   tests/test_jax_paleos_parity.py              - JAX PALEOS unified parity
+#   tests/test_jax_event_termination.py          - JAX surface-event parity
+#
+# Usage:
+#   python -m tools.benchmarks.bench_performance --config=tests/data/bench_performance.toml \
+#       --baseline=tests/data/bench_performance_baseline.npz
+#
+# Numerical solver params are intentionally left unset so
+# solver._default_solver_params() chooses mass-adaptive defaults; this
+# keeps the bench aligned with production calls rather than a hand-tuned
+# tighter regime. Changing any value below changes baseline outputs and
+# may invalidate the JAX-parity tolerances.
+
+[InputParameter]
+planet_mass                = 1
+
+[AssumptionsAndInitialGuesses]
+core_mass_fraction         = 0.325
+mantle_mass_fraction       = 0
+temperature_mode           = "adiabatic"
+surface_temperature        = 3000
+center_temperature         = 6000
+temperature_profile_file   = "temp_profile.txt"
+
+[EOS]
+core                       = "PALEOS:iron"
+mantle                     = "PALEOS-2phase:MgSiO3"
+ice_layer                  = ""
+condensed_rho_min          = 322.0
+condensed_rho_scale        = 50.0
+binodal_T_scale            = 50.0
+mushy_zone_factor          = 0.80
+
+[Calculations]
+num_layers                 = 150
+
+[Output]
+data_output_enabled        = false
+plotting_enabled           = false
+verbose                    = false
+plot_filename              = "struct.png"
+data_filename              = "struct.dat"

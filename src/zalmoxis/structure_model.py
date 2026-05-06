@@ -115,9 +115,13 @@ def coupled_odes(
     # Determine per-layer mixture for the current enclosed mass
     mixture = get_layer_mixture(mass, cmb_mass, core_mantle_mass, layer_mixtures)
 
-    # Return zero derivatives for non-physical pressure.  The adaptive ODE
-    # solver (RK45) may evaluate trial points beyond the physical domain;
-    # zero derivatives signal the solver to reject the step and retry smaller.
+    # Return zero derivatives for non-physical pressure.  When the RHS
+    # returns zeros, the ODE state freezes (mass, gravity, pressure stop
+    # changing).  The terminal event (_pressure_zero, direction=-1) then
+    # fires when pressure crosses zero, stopping the integration.
+    # Note: zero derivatives do NOT cause RK45 to reject the step; the
+    # solver accepts them and advances with frozen state until the
+    # terminal event triggers.
     if pressure <= 0 or np.isnan(pressure):
         logger.debug(f'Nonphysical pressure encountered: P={pressure} Pa at radius={radius} m')
         return [0.0, 0.0, 0.0]
@@ -137,20 +141,19 @@ def coupled_odes(
         binodal_T_scale,
     )
 
-    # Return zero derivatives for invalid density.  This is intentional:
-    # the adaptive ODE solver (RK45) evaluates the RHS at trial points that
-    # may be non-physical (e.g. negative pressure).  Zero derivatives cause
-    # the solver to reject the step and retry with a smaller step size.
+    # Return zero derivatives for invalid density.  The ODE state freezes
+    # and the terminal event stops integration when pressure crosses zero.
+    # This handles EOS lookup failures (None return) and NaN densities
+    # from out-of-bounds table queries.
     if current_density is None or not np.isfinite(current_density):
         return [0.0, 0.0, 0.0]
 
     # Define the ODEs for mass, gravity and pressure
     dMdr = 4 * np.pi * radius**2 * current_density
-    # At r=0 the 2g/r term is singular; use the analytic limit dg/dr = 4πGρ/3.
-    # For r>0, add a tiny offset (1e-20 m, ~1e-14 R_earth) to guard against
-    # the adaptive solver probing exactly r=0.
+    # At r=0 the 2g/r term is singular; use the analytic limit dg/dr = 4πGρ/3
+    # (L'Hopital on g(r) = GM(r)/r^2 with M ~ r^3 near the center).
     dgdr = (
-        4 * np.pi * G * current_density - 2 * gravity / (radius + 1e-20)
+        4 * np.pi * G * current_density - 2 * gravity / radius
         if radius > 0
         else (4.0 / 3.0) * np.pi * G * current_density
     )
@@ -179,6 +182,8 @@ def solve_structure(
     condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
     condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
     binodal_T_scale=BINODAL_T_SCALE_DEFAULT,
+    use_jax=False,
+    temperature_arrays=None,
 ):
     """Solve the coupled ODEs for the planetary structure model.
 
@@ -219,6 +224,11 @@ def solve_structure(
         Function returning temperature [K]. Signature: ``f(r, P) -> T``
         where ``r`` is radius in m and ``P`` is pressure in Pa. For
         non-adiabatic modes the pressure argument is ignored.
+    temperature_arrays : tuple[ndarray, ndarray] or None
+        Optional ``(r_arr, T_arr)`` for an explicit r-indexed T profile.
+        Only consumed by the JAX path (``use_jax=True``); the numpy path
+        still uses ``temperature_function``. See ``jax_eos.wrapper``
+        docstring for when to prefer this over the callable form.
     mushy_zone_factors : dict or float or None
         Per-EOS mushy zone factors. Dict keyed by EOS name, a single
         float (applied to all), or None (default 1.0 for all).
@@ -234,6 +244,42 @@ def solve_structure(
     tuple
         (mass_enclosed, gravity, pressure) arrays at each radial grid point.
     """
+    # JAX fast path — dispatch to the diffrax-based implementation when
+    # requested. Falls back to numpy path on any ValueError (unsupported
+    # config: 3-layer ice, multi-component mixing, non-PALEOS-2phase
+    # mantle, etc.). Logged at debug; callers observe the same return
+    # contract either way.
+    if use_jax:
+        try:
+            from .jax_eos.wrapper import solve_structure_via_jax
+
+            return solve_structure_via_jax(
+                layer_mixtures=layer_mixtures,
+                cmb_mass=cmb_mass,
+                core_mantle_mass=core_mantle_mass,
+                radii=radii,
+                adaptive_radial_fraction=adaptive_radial_fraction,
+                relative_tolerance=relative_tolerance,
+                absolute_tolerance=absolute_tolerance,
+                maximum_step=maximum_step,
+                material_dictionaries=material_dictionaries,
+                interpolation_cache=interpolation_cache,
+                y0=y0,
+                solidus_func=solidus_func,
+                liquidus_func=liquidus_func,
+                temperature_function=temperature_function,
+                temperature_arrays=temperature_arrays,
+                mushy_zone_factors=mushy_zone_factors,
+                condensed_rho_min=condensed_rho_min,
+                condensed_rho_scale=condensed_rho_scale,
+                binodal_T_scale=binodal_T_scale,
+            )
+        except ValueError as exc:
+            logger.warning(
+                'JAX solve_structure fell back to numpy path: %s',
+                exc,
+            )
+
     uses_Tdep = any_component_is_tdep(layer_mixtures)
 
     # Terminal event: stop integration when pressure crosses zero.

@@ -1,7 +1,7 @@
 # Installation
 
 !!! note "Installation within the PROTEUS framework"
-    The standard way of installing Zalmoxis is within the [PROTEUS framework](https://proteus-framework.org/PROTEUS/), as described in the [PROTEUS installation guide](https://proteus-framework.org/PROTEUS/installation.html). When installed as part of PROTEUS, Zalmoxis is set up automatically alongside all other modules. The standalone instructions below are only needed if you want to use Zalmoxis independently of PROTEUS.
+    The standard way of installing Zalmoxis is within the [PROTEUS framework](https://proteus-framework.org/PROTEUS/), as described in the [PROTEUS installation guide](https://proteus-framework.org/PROTEUS/How-to/installation.html). When installed as part of PROTEUS, Zalmoxis is set up automatically alongside all other modules. The standalone instructions below are only needed if you want to use Zalmoxis independently of PROTEUS.
 
 ## Prerequisites
 
@@ -42,7 +42,7 @@ The `[develop]` extras are required for running the test suite. See the [Testing
 
 ### Step 3: Set the environment variable
 
-Zalmoxis requires the `ZALMOXIS_ROOT` environment variable to point to the base directory:
+Zalmoxis auto-detects its root directory from the package installation path. If auto-detection fails (e.g., non-standard installation layout), set the environment variable explicitly:
 
 ```console
 export ZALMOXIS_ROOT=$(pwd)
@@ -69,10 +69,10 @@ source ~/.zshrc
 Run the provided script to download the required equation-of-state tables and reference data:
 
 ```console
-bash src/get_zalmoxis.sh
+bash tools/setup/get_zalmoxis.sh
 ```
 
-This downloads data into the `data/` directory within the Zalmoxis repository (not into `FWL_DATA`). When Zalmoxis is installed within PROTEUS, the data path is managed by the PROTEUS framework. The script also creates the `output_files/` folder for model results.
+This downloads data into the `data/` directory within the Zalmoxis repository (not into `FWL_DATA`). When Zalmoxis is installed within PROTEUS, the data path is managed by the PROTEUS framework. The script also creates the `output/` folder for model results.
 
 ### Step 5: Run your first simulation
 
@@ -82,17 +82,18 @@ Run the default configuration (1 Earth-mass planet with a PALEOS iron core and M
 python -m zalmoxis -c input/default.toml
 ```
 
-Output files are written to `output_files/`. See the [usage guide](usage.md) for an explanation of the output files and how to modify the configuration, or the [parameter grids guide](grids.md) for running parameter sweeps.
+Output files are written to `output/`. See the [usage guide](usage.md) for an explanation of the output files and how to modify the configuration, or the [parameter grids guide](grids.md) for running parameter sweeps.
 
 ## Troubleshooting
 
 ### `ZALMOXIS_ROOT` not set
 
 ```
-RuntimeError: ZALMOXIS_ROOT environment variable not set
+RuntimeError: ZALMOXIS_ROOT environment variable is not set and could not be
+auto-detected. Set it explicitly: export ZALMOXIS_ROOT=/path/to/Zalmoxis
 ```
 
-This error occurs when the `ZALMOXIS_ROOT` environment variable is not defined in your current shell session. Set it to the root of the Zalmoxis repository:
+This error occurs when auto-detection of the repository root fails and the `ZALMOXIS_ROOT` environment variable is not defined. Set it to the root of the Zalmoxis repository:
 
 ```console
 export ZALMOXIS_ROOT=/path/to/Zalmoxis
@@ -106,7 +107,7 @@ If you added the variable to your shell profile (Step 3) but still see the error
 FileNotFoundError: [Errno 2] No such file or directory: '.../data/EOS_Seager2007/...'
 ```
 
-This error indicates that the tabulated EOS data files have not been downloaded. Run `bash src/get_zalmoxis.sh` from the Zalmoxis root directory to complete Step 4.
+This error indicates that the tabulated EOS data files have not been downloaded. Run `bash tools/setup/get_zalmoxis.sh` from the Zalmoxis root directory to complete Step 4.
 
 ### Import errors
 
@@ -136,3 +137,13 @@ If the solver fails to converge, consider the following:
 - **WolfBower2018 mass limit**: The `WolfBower2018:MgSiO3` EOS is limited to $\leq 7\,M_\oplus$. For higher-mass planets, use `PALEOS:MgSiO3`, `RTPress100TPa:MgSiO3`, `Seager2007:MgSiO3`, or `Analytic:MgSiO3` instead.
 - **Tolerance parameters**: Relax the convergence tolerance in the input configuration file. Tighter tolerances require more iterations and may not converge for extreme planetary compositions or masses.
 - **Physical plausibility**: Verify that the input parameters (mass, composition fractions, core/mantle fractions) are physically plausible. Unphysical configurations (e.g., negative mass fractions, zero-thickness layers) will not converge.
+
+!!! tip "JAX determinism for fragile runs"
+    Numerically fragile coupled runs (wet 1 \(M_\oplus\) at IW+4, reduced 1 \(M_\oplus\) at IW-2) benefit from JAX 64-bit and a single-thread XLA. Set:
+
+    ```bash
+    export JAX_ENABLE_X64=1
+    export XLA_FLAGS="--xla_force_host_platform_device_count=1"
+    ```
+
+    Zalmoxis enables x64 by default at module import, so the env var is mostly a safety net for unusual harnesses.

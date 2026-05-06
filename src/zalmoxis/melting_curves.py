@@ -31,6 +31,12 @@ Liquidus:
         EOS table phase boundaries.
     ``'Monteux600-liquidus-tabulated'``
         Tabulated: ``melting_curves_Monteux-600/liquidus.dat``.
+
+Iron melting:
+    ``'Anzellini13-iron'``
+        Anzellini et al. (2013) composite Simon-Glatzel law.
+    ``'Sinmyo19-iron'``
+        Sinmyo et al. (2019) single Simon-Glatzel law.
 """
 
 from __future__ import annotations
@@ -41,12 +47,9 @@ import os
 import numpy as np
 from scipy.interpolate import interp1d
 
+from . import get_zalmoxis_root
+
 logger = logging.getLogger(__name__)
-
-ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
-if not ZALMOXIS_ROOT:
-    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
-
 
 # ── Valid identifiers ──────────────────────────────────────────────────
 
@@ -57,6 +60,10 @@ VALID_LIQUIDUS = {
     'Stixrude14-liquidus',
     'PALEOS-liquidus',
     'Monteux600-liquidus-tabulated',
+}
+VALID_IRON_MELTING = {
+    'Anzellini13-iron',
+    'Sinmyo19-iron',
 }
 
 
@@ -181,6 +188,14 @@ def stixrude14_liquidus(P):
     float or ndarray
         Liquidus temperature in K.
     """
+    # Scalar fast path. Skip np.atleast_1d / np.asarray / np.where
+    # dispatch overhead for scalar P. The solver's RHS calls this per
+    # cell and per step (millions of calls per solve); the array branch
+    # below is dispatched only when P is array-like. Scalar math is
+    # identical to the array np.where branch for P > 0 and the P == 0
+    # branch for P == 0.
+    if isinstance(P, (int, float, np.floating, np.integer)):
+        return _STIX14_T_REF * (P / _STIX14_P_REF) ** _STIX14_EXPONENT if P > 0 else 0.0
     P_arr = np.atleast_1d(np.asarray(P, dtype=float))
     # Guard P=0: the power law gives 0 K at P=0
     T = np.where(
@@ -250,6 +265,20 @@ def paleos_liquidus(P):
     float or ndarray
         Liquidus temperature in K.
     """
+    # Scalar fast path: in the numpy density Picard loop this function is
+    # called once per cell per inner iteration on scalar P; the np.atleast_1d
+    # / np.asarray / np.where / float() machinery dominates the trivial
+    # piecewise-power-law math. Branching on scalar P first keeps the
+    # per-call overhead negligible relative to a real CHILI solve.
+    if isinstance(P, (int, float)) or (hasattr(P, 'ndim') and P.ndim == 0):
+        Pf = float(P)
+        if Pf <= 0.0:
+            return 0.0
+        P_GPa = Pf * 1e-9
+        if P_GPa < _PALEOS_P0_GPA:
+            return 1831.0 * (1.0 + P_GPa / 4.6) ** 0.33
+        return 6000.0 * (P_GPa / 140.0) ** 0.26
+
     P_arr = np.atleast_1d(np.asarray(P, dtype=float))
     P_GPa = P_arr * 1e-9
     T = np.where(
@@ -259,6 +288,88 @@ def paleos_liquidus(P):
     )
     # Guard P=0: avoid 0^0.26 = NaN
     T = np.where(P_arr > 0, T, 0.0)
+    return T
+
+
+# ── Iron melting curves ────────────────────────────────────────────────
+
+
+def iron_melting_anzellini13(P):
+    """Iron melting temperature from Anzellini et al. (2013).
+
+    Composite Simon-Glatzel law matching the PALEOS iron phase diagram:
+
+    - Below 98.5 GPa (gamma-Fe / liquid): Eq. 2 from Anzellini+2013
+    - Above 98.5 GPa (epsilon-Fe / liquid): Eq. 3 from Anzellini+2013
+
+    Note: the gamma-Fe branch is parameterized relative to (P0=5.2 GPa,
+    T0=1991 K). Below P0, the formula extrapolates to lower temperatures
+    (non-physical: melting should increase with P). For P < 1 GPa, this
+    function clamps to the 1 atm melting point of pure iron (1811 K).
+    The epsilon-Fe branch (P > 98.5 GPa) is the relevant one for
+    planetary cores.
+
+    Parameters
+    ----------
+    P : float or array-like
+        Pressure [Pa].
+
+    Returns
+    -------
+    float or ndarray
+        Melting temperature [K].
+
+    References
+    ----------
+    Anzellini, S. et al. (2013). Science, 340, 464-466.
+    """
+    P_arr = np.atleast_1d(np.asarray(P, dtype=float))
+    P_GPa = P_arr / 1e9
+
+    P0_GPa = 5.2  # Reference pressure [GPa]
+    T0 = 1991.0  # Reference temperature [K]
+    Pt_GPa = 98.5  # Triple point pressure [GPa]
+    Tt = 3712.0  # Triple point temperature [K]
+    T_1atm = 1811.0  # 1 atm melting point of pure iron [K]
+
+    T = np.where(
+        P_GPa < Pt_GPa,
+        T0 * ((P_GPa - P0_GPa) / 27.39 + 1.0) ** (1.0 / 2.38),
+        Tt * ((P_GPa - Pt_GPa) / 161.2 + 1.0) ** (1.0 / 1.72),
+    )
+    # Clamp to 1 atm melting point for low pressures where the
+    # Simon-Glatzel extrapolation is non-physical
+    T = np.maximum(T, T_1atm)
+    return float(T[0]) if np.ndim(P) == 0 else T
+
+
+def iron_melting_sinmyo19(P):
+    """Iron melting temperature from Sinmyo et al. (2019).
+
+    Single Simon-Glatzel law valid to ~290 GPa:
+    T = T* * (P / a + 1)^b
+
+    Parameters
+    ----------
+    P : float or array-like
+        Pressure [Pa].
+
+    Returns
+    -------
+    float or ndarray
+        Melting temperature [K].
+
+    References
+    ----------
+    Sinmyo, R. et al. (2019). EPSL, 510, 45-52.
+    """
+    P_arr = np.atleast_1d(np.asarray(P, dtype=float))
+
+    T_star = 1811.0  # Reference temperature [K]
+    a = 134.69e9  # Reference pressure [Pa]
+    b = 0.93  # Exponent [-]
+
+    T = T_star * (P_arr / a + 1.0) ** b
     return float(T[0]) if np.ndim(P) == 0 else T
 
 
@@ -336,16 +447,26 @@ def get_melting_curve_function(curve_id):
 
     elif curve_id == 'Monteux600-solidus-tabulated':
         return _load_tabulated_curve(
-            os.path.join(ZALMOXIS_ROOT, 'data', 'melting_curves_Monteux-600', 'solidus.dat')
+            os.path.join(
+                get_zalmoxis_root(), 'data', 'melting_curves_Monteux-600', 'solidus.dat'
+            )
         )
 
     elif curve_id == 'Monteux600-liquidus-tabulated':
         return _load_tabulated_curve(
-            os.path.join(ZALMOXIS_ROOT, 'data', 'melting_curves_Monteux-600', 'liquidus.dat')
+            os.path.join(
+                get_zalmoxis_root(), 'data', 'melting_curves_Monteux-600', 'liquidus.dat'
+            )
         )
 
+    elif curve_id == 'Anzellini13-iron':
+        return iron_melting_anzellini13
+
+    elif curve_id == 'Sinmyo19-iron':
+        return iron_melting_sinmyo19
+
     else:
-        all_valid = sorted(VALID_SOLIDUS | VALID_LIQUIDUS)
+        all_valid = sorted(VALID_SOLIDUS | VALID_LIQUIDUS | VALID_IRON_MELTING)
         raise ValueError(f"Unknown melting curve '{curve_id}'. Valid values: {all_valid}")
 
 

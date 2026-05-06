@@ -5,10 +5,8 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 
-# Read the environment variable for ZALMOXIS_ROOT
-ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
-if not ZALMOXIS_ROOT:
-    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
+# Read the environment variable for get_zalmoxis_root()
+from zalmoxis import get_zalmoxis_root
 
 
 def plot_PT_with_phases(pressure, temperature, radii, mantle_phases, cmb_radius):
@@ -50,5 +48,5 @@ def plot_PT_with_phases(pressure, temperature, radii, mantle_phases, cmb_radius)
     ax.legend()
     ax.grid(alpha=0.3)
     plt.tight_layout()
-    plt.savefig(os.path.join(ZALMOXIS_ROOT, 'output_files', 'mantle_PT_profile.pdf'))
+    plt.savefig(os.path.join(get_zalmoxis_root(), 'output', 'mantle_PT_profile.pdf'))
     # plt.show()

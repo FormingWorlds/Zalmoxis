@@ -10,5 +10,5 @@ mantle = ["PALEOS:MgSiO3", "PALEOS:MgSiO3:0.90+PALEOS:H2O:0.10", "PALEOS:MgSiO3:
 surface_temperature = [2000, 3000]
 
 [output]
-dir = "output_files/grid_h2o_mixing"
+dir = "output/grid_h2o_mixing"
 save_profiles = true  # write <label>.npz radial profile per grid point (default: false)

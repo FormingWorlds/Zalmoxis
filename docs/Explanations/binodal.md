@@ -53,7 +53,7 @@ For non-H$_2$ components, $\sigma_{\mathrm{binodal}} = 1$ always.
 
 ### Source
 
-[Rogers, Young & Schlichting (2025)](https://doi.org/10.1093/mnras/staf1940), MNRAS 544, 3496. Analytic fit to the binodal temperature $T_\mathrm{b}(x_{\mathrm{H_2}}, P)$ from Eqs. A1-A11. Based on DFT-MD calculations of H$_2$-MgSiO$_3$ miscibility from [Gilmore & Stixrude (2026)](https://doi.org/10.1038/s41586-025-09970-4) and asymmetric Margules parameters from [Gilmore & Stixrude (2026)](https://doi.org/10.1038/s41586-025-09970-4).
+[Rogers, Young & Schlichting (2025)](https://doi.org/10.1093/mnras/staf1940), MNRAS 544, 3496. Analytic fit to the binodal temperature $T_\mathrm{b}(x_{\mathrm{H_2}}, P)$ from Eqs. A1-A11. Based on DFT-MD calculations of H$_2$-MgSiO$_3$ miscibility and asymmetric Margules parameters from [Gilmore & Stixrude (2026)](https://doi.org/10.1038/s41586-025-09970-4).
 
 ### Physics
 

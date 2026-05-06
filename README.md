@@ -28,7 +28,7 @@ cd Zalmoxis
 pip install -e .
 
 # Download EOS data
-bash src/get_zalmoxis.sh
+bash tools/setup/get_zalmoxis.sh
 
 # Run default config (1 Earth-mass, PALEOS iron + MgSiO3)
 python -m zalmoxis -c input/default.toml

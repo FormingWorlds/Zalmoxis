@@ -10,8 +10,8 @@ Provides:
 
 Imports
 -------
-- ``eos_functions``: ``calculate_density``, ``_get_paleos_unified_nabla_ad``,
-  ``_get_paleos_nabla_ad``, ``_compute_paleos_dtdp``
+- ``eos``: ``calculate_density``, ``calculate_density_batch``,
+  ``_get_paleos_unified_nabla_ad``, ``_compute_paleos_dtdp``, ``get_tabulated_eos``
 - ``binodal``: ``rogers2025_suppression_weight``, ``gupta2025_suppression_weight``
 - ``constants``: ``TDEP_EOS_NAMES``
 """
@@ -39,6 +39,7 @@ _SILICATE_EOS_NAMES = frozenset(
         'WolfBower2018:MgSiO3',
         'RTPress100TPa:MgSiO3',
         'PALEOS-2phase:MgSiO3',
+        'PALEOS-2phase:MgSiO3-highres',
     }
 )
 _H2_EOS_NAMES = frozenset({'Chabrier:H'})
@@ -156,29 +157,6 @@ class LayerMixture:
     def has_tdep(self) -> bool:
         """True if any component uses a T-dependent EOS."""
         return any(c in TDEP_EOS_NAMES for c in self.components)
-
-
-def _parse_single_component(s: str) -> tuple[str, float]:
-    """Parse one component string into (eos_name, fraction).
-
-    Examples
-    --------
-    >>> _parse_single_component("PALEOS:MgSiO3:0.85")
-    ('PALEOS:MgSiO3', 0.85)
-    >>> _parse_single_component("PALEOS:iron")
-    ('PALEOS:iron', 1.0)
-    >>> _parse_single_component("Analytic:SiC")
-    ('Analytic:SiC', 1.0)
-    """
-    parts = s.strip().split(':')
-    if len(parts) >= 3:
-        try:
-            frac = float(parts[-1])
-            eos_name = ':'.join(parts[:-1])
-            return eos_name, frac
-        except ValueError:
-            pass
-    return s.strip(), 1.0
 
 
 def parse_layer_components(config_value: str) -> LayerMixture:
@@ -453,7 +431,7 @@ def calculate_mixed_density(
     float or None
         Mixed density in kg/m^3, or None if all components are gas-like.
     """
-    from .eos_functions import calculate_density
+    from .eos import calculate_density
 
     # Fast path: single component (no suppression)
     if mixture.is_single():
@@ -524,6 +502,7 @@ def calculate_mixed_density_batch(
     condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
     condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
     binodal_T_scale=BINODAL_T_SCALE_DEFAULT,
+    frozen_sigma=None,
 ):
     """Vectorized mixed density for a batch of (P, T) points in one layer.
 
@@ -551,6 +530,11 @@ def calculate_mixed_density_batch(
         Global sigmoid width fallback (kg/m^3).
     binodal_T_scale : float
         Binodal sigmoid width in K.
+    frozen_sigma : dict or None
+        Pre-computed per-component sigmoid weights (keyed by EOS name,
+        values are 1D arrays of shape (n,)). When provided, overrides
+        the sigmoid computation to stabilize the Picard density iteration
+        for volatile-extended mantles.
 
     Returns
     -------
@@ -558,7 +542,7 @@ def calculate_mixed_density_batch(
         1D array of densities in kg/m^3. NaN where lookup fails or all
         components are suppressed.
     """
-    from .eos_functions import calculate_density_batch
+    from .eos import calculate_density_batch
 
     n = len(pressures)
 
@@ -599,23 +583,26 @@ def calculate_mixed_density_batch(
         bad = ~np.isfinite(rho_i) | (rho_i <= 0)
         any_invalid |= bad
 
-        # Per-component sigmoid
-        rho_min_i = _COMPONENT_RHO_MIN.get(eos_name, condensed_rho_min)
-        rho_scale_i = _COMPONENT_RHO_SCALE.get(eos_name, condensed_rho_scale)
-        sigma_i = _condensed_weight_batch(np.where(bad, 1.0, rho_i), rho_min_i, rho_scale_i)
+        # Per-component sigmoid (use frozen weights if provided)
+        if frozen_sigma is not None and eos_name in frozen_sigma:
+            sigma_i = frozen_sigma[eos_name].copy()
+        else:
+            rho_min_i = _COMPONENT_RHO_MIN.get(eos_name, condensed_rho_min)
+            rho_scale_i = _COMPONENT_RHO_SCALE.get(eos_name, condensed_rho_scale)
+            sigma_i = _condensed_weight_batch(np.where(bad, 1.0, rho_i), rho_min_i, rho_scale_i)
 
-        # Binodal suppression (scalar per shell, only for H2 components)
-        if eos_name in _H2_EOS_NAMES:
-            for j in range(n):
-                if not bad[j]:
-                    sigma_i[j] *= _binodal_factor(
-                        eos_name,
-                        w_i,
-                        mixture,
-                        pressures[j],
-                        temperatures[j],
-                        binodal_T_scale,
-                    )
+            # Binodal suppression (scalar per shell, only for H2 components)
+            if eos_name in _H2_EOS_NAMES:
+                for j in range(n):
+                    if not bad[j]:
+                        sigma_i[j] *= _binodal_factor(
+                            eos_name,
+                            w_i,
+                            mixture,
+                            pressures[j],
+                            temperatures[j],
+                            binodal_T_scale,
+                        )
 
         w_eff = w_i * sigma_i
         w_eff = np.where(bad, 0.0, w_eff)
@@ -701,7 +688,7 @@ def get_mixed_nabla_ad(
     (both treat the vapor as structurally absent) but differs from reality
     where vapor affects heat transport. This is a known limitation.
     """
-    from .eos_functions import calculate_density
+    from .eos import calculate_density
 
     if mixture.is_single():
         return _nabla_ad_for_component(
@@ -804,7 +791,7 @@ def _nabla_ad_for_component(
         Dimensionless adiabatic gradient, or None if the EOS does not
         support nabla_ad (e.g. Seager2007, Analytic).
     """
-    from .eos_functions import (
+    from .eos import (
         _compute_paleos_dtdp,
         _get_paleos_unified_nabla_ad,
     )
@@ -814,10 +801,23 @@ def _nabla_ad_for_component(
 
     mat = material_dictionaries.get(eos_name, {})
 
+    # PALEOS-API live tabulation: materialise cached .dat on first touch so the
+    # downstream format==paleos_unified / paleos branches apply unchanged.
+    from .eos.dispatch import _is_paleos_api
+
+    if _is_paleos_api(mat):
+        from .eos.paleos_api_cache import resolve_registry_entry
+
+        resolve_registry_entry(mat)
+
     if mat.get('format') == 'paleos_unified':
         return _get_paleos_unified_nabla_ad(pressure, temperature, mat, interpolation_functions)
 
-    if eos_name == 'PALEOS-2phase:MgSiO3':
+    if eos_name in (
+        'PALEOS-2phase:MgSiO3',
+        'PALEOS-2phase:MgSiO3-highres',
+        'PALEOS-API-2phase:MgSiO3',
+    ):
         # Convert dT/dP back to nabla_ad = (dT/dP) * P / T
         if pressure <= 0 or temperature <= 0:
             return None
@@ -835,7 +835,7 @@ def _nabla_ad_for_component(
 
     # WolfBower2018 / RTPress100TPa: use adiabat_grad_file
     # These provide dT/dP, not nabla_ad. Convert.
-    from .eos_functions import get_tabulated_eos
+    from .eos import get_tabulated_eos
 
     grad_file = mat.get('melted_mantle', {}).get('adiabat_grad_file')
     if grad_file is None:
@@ -847,3 +847,330 @@ def _nabla_ad_for_component(
     if dtdp is not None and dtdp > 0 and pressure > 0 and temperature > 0:
         return dtdp * pressure / temperature
     return None
+
+
+@dataclass
+class VolatileProfile:
+    """Per-phase volatile mass fractions for phi(r)-weighted blending.
+
+    At each radius, the local volatile mass fraction is:
+        w_i(r) = phi * w_liquid[i] + (1 - phi) * w_solid[i]
+    where phi is the local melt fraction from the melting curves.
+
+    The primary silicate mass fraction is computed as:
+        w_sil(r) = 1 - sum(w_i(r) for all volatiles)
+
+    When ``global_miscibility`` is enabled, binodal-controlled species
+    (H2, H2O) have their mass fractions set by the binodal phase diagram
+    instead of the melt-fraction blend:
+
+    - **Above binodal** (miscible): w_H2(r) = x_interior[species]
+    - **Below binodal** (immiscible): w_H2(r) = 0 (expelled to gas phase)
+
+    Parameters
+    ----------
+    w_liquid : dict
+        Mass fractions in the liquid phase, keyed by EOS component name.
+        Example: ``{"PALEOS:H2O": 0.02, "Chabrier:H": 0.001}``.
+    w_solid : dict
+        Mass fractions in the solid phase, keyed by EOS component name.
+    primary_component : str
+        EOS name of the primary (silicate) component whose fraction
+        is computed as the remainder (1 - sum of volatiles).
+    x_interior : dict
+        Interior mass fractions for binodal-controlled species, solved
+        by mass conservation. Keyed by EOS name. Example:
+        ``{"Chabrier:H": 0.03}``. Only used when ``global_miscibility``
+        is True. Species not in this dict use the standard phi-blend.
+    global_miscibility : bool
+        If True, binodal-controlled species use x_interior values above
+        the binodal and zero below it. If False (default), all species
+        use the standard phi-blend.
+    """
+
+    w_liquid: dict[str, float] = field(default_factory=dict)
+    w_solid: dict[str, float] = field(default_factory=dict)
+    primary_component: str = 'PALEOS:MgSiO3'
+    x_interior: dict[str, float] = field(default_factory=dict)
+    global_miscibility: bool = False
+
+    def _is_above_binodal(self, eos_name, pressure, temperature):
+        """Check if conditions are above the binodal for a species.
+
+        Parameters
+        ----------
+        eos_name : str
+            EOS identifier of the species to check.
+        pressure : float
+            Local pressure [Pa].
+        temperature : float
+            Local temperature [K].
+
+        Returns
+        -------
+        bool
+            True if the species is miscible at these conditions.
+        """
+        from .binodal import (
+            gupta2025_critical_temperature,
+            rogers2025_suppression_weight,
+        )
+
+        if eos_name == 'Chabrier:H':
+            # H2-MgSiO3 binodal: use suppression weight > 0.5 as threshold
+            x_int = self.x_interior.get(eos_name, 0.0)
+            if x_int <= 0:
+                return False
+            w_sil = 1.0 - x_int
+            sigma = rogers2025_suppression_weight(
+                pressure, temperature, x_int, w_sil, T_scale=50.0
+            )
+            return sigma > 0.5
+
+        if eos_name in ('PALEOS:H2O', 'Seager2007:H2O'):
+            # H2-H2O binodal: compare T to critical temperature
+            P_GPa = pressure * 1e-9
+            T_crit = gupta2025_critical_temperature(P_GPa)
+            if T_crit is None:
+                return True  # Cannot determine: assume miscible
+            T_crit = max(T_crit, 647.0)  # Floor at H2O critical point
+            return temperature > T_crit
+
+        return True  # Unknown species: assume miscible (no suppression)
+
+    def blend(self, phi: float) -> dict[str, float]:
+        """Compute blended mass fractions at a given melt fraction.
+
+        Uses the standard phi-weighted blend for all species. Does not
+        account for binodal physics. Use ``blend_with_binodal`` when
+        ``global_miscibility`` is True.
+
+        Parameters
+        ----------
+        phi : float
+            Local melt fraction, clamped to [0, 1].
+
+        Returns
+        -------
+        dict
+            Mass fractions keyed by EOS component name, summing to 1.0.
+            Includes the primary silicate component.
+        """
+        phi = max(0.0, min(1.0, phi))
+        result = {}
+        total_vol = 0.0
+
+        # Get all volatile components (union of liquid and solid keys)
+        all_keys = set(self.w_liquid.keys()) | set(self.w_solid.keys())
+        for key in all_keys:
+            w_liq = self.w_liquid.get(key, 0.0)
+            w_sol = self.w_solid.get(key, 0.0)
+            w = phi * w_liq + (1.0 - phi) * w_sol
+            if w > 0:
+                result[key] = w
+                total_vol += w
+
+        # Primary component gets the remainder
+        result[self.primary_component] = max(0.0, 1.0 - total_vol)
+        return result
+
+    def apply_to_mixture(self, mixture, phi: float) -> list[float]:
+        """Compute blended fractions compatible with a LayerMixture.
+
+        Maps the blended mass fractions onto the mixture's component
+        ordering. Components managed by this profile (present in w_liquid
+        or w_solid) that blend to zero are set to 0.0. Only components
+        completely outside the profile keep their original fraction.
+
+        Parameters
+        ----------
+        mixture : LayerMixture
+            The base mixture whose component ordering to follow.
+        phi : float
+            Local melt fraction [0, 1].
+
+        Returns
+        -------
+        list of float
+            Fractions in the same order as ``mixture.components``.
+        """
+        blended = self.blend(phi)
+        managed = set(self.w_liquid.keys()) | set(self.w_solid.keys())
+        managed.add(self.primary_component)
+        fracs = []
+        for comp in mixture.components:
+            if comp in blended:
+                fracs.append(blended[comp])
+            elif comp in managed:
+                # Managed by this profile but blended to zero
+                fracs.append(0.0)
+            else:
+                # Unrelated component; keep original
+                idx = mixture.components.index(comp)
+                fracs.append(mixture.fractions[idx])
+
+        # Normalize to 1.0
+        total = sum(fracs)
+        if total > 0:
+            fracs = [f / total for f in fracs]
+        return fracs
+
+    def blend_with_binodal(
+        self, phi: float, pressure: float, temperature: float
+    ) -> dict[str, float]:
+        """Compute blended mass fractions accounting for binodal physics.
+
+        For species controlled by the binodal (listed in ``x_interior``):
+        - Above binodal: mass fraction = x_interior[species]
+        - Below binodal: mass fraction = 0 (expelled to gas phase)
+
+        For all other species: standard phi-weighted blend (same as
+        ``blend()``).
+
+        Parameters
+        ----------
+        phi : float
+            Local melt fraction, clamped to [0, 1].
+        pressure : float
+            Local pressure [Pa].
+        temperature : float
+            Local temperature [K].
+
+        Returns
+        -------
+        dict
+            Mass fractions keyed by EOS component name, summing to 1.0.
+        """
+        if not self.global_miscibility or not self.x_interior:
+            return self.blend(phi)
+
+        phi = max(0.0, min(1.0, phi))
+        result = {}
+        total_vol = 0.0
+
+        # Get all volatile components
+        all_keys = set(self.w_liquid.keys()) | set(self.w_solid.keys())
+
+        for key in all_keys:
+            if key in self.x_interior:
+                # Binodal-controlled species
+                if self._is_above_binodal(key, pressure, temperature):
+                    w = self.x_interior[key]
+                else:
+                    w = 0.0
+            else:
+                # Standard phi-blend
+                w_liq = self.w_liquid.get(key, 0.0)
+                w_sol = self.w_solid.get(key, 0.0)
+                w = phi * w_liq + (1.0 - phi) * w_sol
+
+            if w > 0:
+                result[key] = w
+                total_vol += w
+
+        # Primary component gets the remainder
+        result[self.primary_component] = max(0.0, 1.0 - total_vol)
+        return result
+
+    def apply_to_mixture_with_binodal(
+        self, mixture, phi: float, pressure: float, temperature: float
+    ) -> list[float]:
+        """Compute blended fractions with binodal physics for a LayerMixture.
+
+        Like ``apply_to_mixture`` but uses ``blend_with_binodal`` instead
+        of ``blend``.
+
+        Parameters
+        ----------
+        mixture : LayerMixture
+            The base mixture whose component ordering to follow.
+        phi : float
+            Local melt fraction [0, 1].
+        pressure : float
+            Local pressure [Pa].
+        temperature : float
+            Local temperature [K].
+
+        Returns
+        -------
+        list of float
+            Fractions in the same order as ``mixture.components``.
+        """
+        blended = self.blend_with_binodal(phi, pressure, temperature)
+        managed = set(self.w_liquid.keys()) | set(self.w_solid.keys())
+        managed.add(self.primary_component)
+        fracs = []
+        for comp in mixture.components:
+            if comp in blended:
+                fracs.append(blended[comp])
+            elif comp in managed:
+                fracs.append(0.0)
+            else:
+                idx = mixture.components.index(comp)
+                fracs.append(mixture.fractions[idx])
+
+        # Normalize to 1.0
+        total = sum(fracs)
+        if total > 0:
+            fracs = [f / total for f in fracs]
+        return fracs
+
+
+def compute_melt_fraction(pressure, temperature, solidus_func, liquidus_func):
+    """Compute local melt fraction phi from melting curves.
+
+    Parameters
+    ----------
+    pressure : float
+        Local pressure [Pa].
+    temperature : float
+        Local temperature [K].
+    solidus_func : callable or None
+        P [Pa] -> T_solidus [K].
+    liquidus_func : callable or None
+        P [Pa] -> T_liquidus [K].
+
+    Returns
+    -------
+    float
+        Melt fraction phi, clamped to [0, 1]. Returns 0.5 if melting
+        curves are not available.
+    """
+    if solidus_func is None or liquidus_func is None:
+        return 0.5
+
+    T_sol = solidus_func(pressure)
+    T_liq = liquidus_func(pressure)
+
+    if T_sol is None or T_liq is None:
+        return 0.5
+    if not np.isfinite(T_sol) or not np.isfinite(T_liq):
+        return 0.5
+    if T_liq <= T_sol:
+        return 1.0 if temperature > T_sol else 0.0
+
+    phi = (temperature - T_sol) / (T_liq - T_sol)
+    return max(0.0, min(1.0, float(phi)))
+
+
+def _parse_single_component(s: str) -> tuple[str, float]:
+    """Parse one component string into (eos_name, fraction).
+
+    Examples
+    --------
+    >>> _parse_single_component("PALEOS:MgSiO3:0.85")
+    ('PALEOS:MgSiO3', 0.85)
+    >>> _parse_single_component("PALEOS:iron")
+    ('PALEOS:iron', 1.0)
+    >>> _parse_single_component("Analytic:SiC")
+    ('Analytic:SiC', 1.0)
+    """
+    parts = s.strip().split(':')
+    if len(parts) >= 3:
+        try:
+            frac = float(parts[-1])
+            eos_name = ':'.join(parts[:-1])
+            return eos_name, frac
+        except ValueError:
+            pass
+    return s.strip(), 1.0

@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.2"]
+requires = ["setuptools>=64", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "fwl-zalmoxis"
-version = "26.01.06"
+dynamic = ["version"]
 description = "Zalmoxis (Planetary interior structure model)"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -34,12 +34,14 @@ dependencies = [
     "matplotlib",
     "python-ternary",
     "tqdm",
-    "osfclient", 
-    "zenodo-get"
+    "osfclient",
+    "zenodo-get",
+    "jax>=0.4.38",
+    "diffrax>=0.7"
 ]
 
 [project.scripts]
-zalmoxis = "zalmoxis.zalmoxis:main"
+zalmoxis = "zalmoxis.solver:main"
 
 [project.urls]
 homepage = "https://github.com/FormingWorlds/Zalmoxis"
@@ -49,7 +51,6 @@ changelog = "https://github.com/FormingWorlds/Zalmoxis/releases"
 
 [project.optional-dependencies]
 develop = [
-    "bump-my-version",
     "coverage[toml]",
     "pip-tools",
     "pytest >= 8.1",
@@ -70,6 +71,12 @@ docs = [
 package-dir = {"zalmoxis" = "src/zalmoxis"}
 include-package-data = true
 
+[tool.setuptools_scm]
+# CalVer: tags are bare YY.MM.DD dates (no leading 'v', e.g. 26.03.02).
+# setuptools-scm derives the version from the latest git tag.
+# Between tags, it appends .devN+gHASH (e.g., 26.03.02.dev5+gabc1234).
+version_file = "src/zalmoxis/_version.py"
+
 [tool.coverage.run]
 branch = true
 source = ["zalmoxis"]
@@ -77,17 +84,18 @@ source = ["zalmoxis"]
 [tool.pytest.ini_options]
 minversion = "6.0"
 addopts = "-ra -v -n auto --dist loadfile"
-testpaths = ["src/tests"]
-pythonpath = ["src"]
+testpaths = ["tests"]
+pythonpath = ["src", "."]
 markers = [
     "unit: Fast unit tests (<100ms, no solver calls)",
-    "integration: Integration tests with full solver (10-60s each)",
+    "smoke: Single-mass solver runs that exercise the full code path with relaxed cost (1 M_earth only)",
+    "integration: Real-physics integration tests against published references (PALEOS rocky 1 + 5 M_earth)",
     "slow: Slow convergence tests (minutes, full composition grids)",
 ]
 
 [tool.ruff]
 line-length = 96
-target-version = "py311"
+target-version = "py312"
 extend-exclude = ["*ipynb"]
 
 [tool.ruff.lint]
@@ -108,30 +116,3 @@ required-imports = ["from __future__ import annotations"]
 [tool.ruff.format]
 quote-style = "single"
 indent-style = "space"
-
-[tool.bumpversion]
-current_version = "25.03.17"
-parse = """(?x)                      # Verbose mode
-    (?P<release>                     # The release part
-        (?:[1-9][0-9])\\.            # YY.
-        (?:1[0-2]|0[1-9])\\.         # MM.
-        (?:3[0-1]|[1-2][0-9]|0[1-9]) # DD
-    )
-    (?:\\.(?P<patch>\\d+))?         # .patch, optional
-"""
-serialize = ["{release}.{patch}", "{release}"]
-
-[[tool.bumpversion.files]]
-filename = "src/zalmoxis/__init__.py"
-search = "__version__ = '{current_version}'"
-replace = "__version__ = '{new_version}'"
-
-[[tool.bumpversion.files]]
-filename = "pyproject.toml"
-search = "version = \"{current_version}\""
-replace = "version = \"{new_version}\""
-
-[[tool.bumpversion.files]]
-filename = "CITATION.cff"
-search = "version: {current_version}"
-replace = "version: {new_version}"

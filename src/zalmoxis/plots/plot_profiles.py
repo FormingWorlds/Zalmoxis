@@ -12,11 +12,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Patch
 
+from zalmoxis import get_zalmoxis_root
 from zalmoxis.constants import earth_mass, earth_radius
-
-ZALMOXIS_ROOT = os.getenv('ZALMOXIS_ROOT')
-if not ZALMOXIS_ROOT:
-    raise RuntimeError('ZALMOXIS_ROOT environment variable not set')
 
 # Soft pastel colors for profile lines
 _LINE_COLORS = {
@@ -114,7 +111,7 @@ def _lookup_phases(
     list of str
         Phase label at each shell.
     """
-    from zalmoxis.eos_functions import _ensure_unified_cache
+    from zalmoxis.eos import _ensure_unified_cache
     from zalmoxis.eos_properties import EOS_REGISTRY
     from zalmoxis.mixing import parse_layer_components
 
@@ -321,6 +318,6 @@ def plot_planet_profile_single(
 
     fname = 'planet_profile.png' if id_mass is None else f'planet_profile{id_mass}.png'
     fig.savefig(
-        os.path.join(ZALMOXIS_ROOT, 'output_files', fname), dpi=200, bbox_inches='tight'
+        os.path.join(get_zalmoxis_root(), 'output', fname), dpi=200, bbox_inches='tight'
     )
     plt.close(fig)
