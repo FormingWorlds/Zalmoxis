@@ -33,6 +33,8 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 
+from tools.plots._grid_io import load_profile as _load_profile
+
 # ---------------------------------------------------------------------------
 # Constants (kept in sync with plot_grid_profiles.py)
 # ---------------------------------------------------------------------------
@@ -96,9 +98,6 @@ def _detect_sweep_params(rows):
 
 def _converged(row):
     return str(row.get('converged', '')).strip().lower() == 'true'
-
-
-from tools.plots._grid_io import load_profile as _load_profile
 
 
 def _choose_label_param(sweep_params, explicit=None):

@@ -30,6 +30,8 @@ import numpy as np
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import LogNorm, Normalize
 
+from tools.plots._grid_io import load_profile as _load_profile
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -114,9 +116,6 @@ def _choose_colour_param(sweep_params, rows, explicit=None):
 
 def _converged(row):
     return str(row.get('converged', '')).strip().lower() == 'true'
-
-
-from tools.plots._grid_io import load_profile as _load_profile
 
 
 # ---------------------------------------------------------------------------
