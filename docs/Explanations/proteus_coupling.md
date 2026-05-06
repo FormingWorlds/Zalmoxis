@@ -239,7 +239,7 @@ Capping the per-update shift forces Zalmoxis and the energetics solver to conver
 The mesh-convergence trigger (above) ensures the unfinished blend gets refined on a fast cadence (default 10 yr) instead of waiting a full `update_interval`.
 
 !!! note "Resume + ULP radius drift"
-    Aragog's `_validate_eos_radius_range` in `aragog/src/aragog/solver/entropy_solver.py` (lines ~91-110) checks that the EOS-table radius range agrees with the live mesh `inner_radius` / `outer_radius`. The check uses a relative tolerance $\max(1\,\mathrm{m},\ 10^{-9} \cdot \mathrm{span})$ against floating-point comparisons. When resuming from a saved snapshot, Zalmoxis recomputes `inner` and `outer` from the live planet state while the EOS table radii are frozen at the launch-time mesh; single-ULP drift between the two used to trip a strict `<` / `>` comparison. The current code tolerates the drift, but if you see `External EOS radius range [..., ...] m inconsistent with mesh bounds [..., ...] m` on a resume, regenerate the mesh by re-running Zalmoxis with the current planet radius rather than reusing the stale table.
+    Aragog's `_validate_eos_radius_range` in `aragog/src/aragog/solver/entropy_solver.py` (lines ~91-110) checks that the EOS-table radius range agrees with the live mesh `inner_radius` / `outer_radius`. The check uses a relative tolerance $\max(1\,\mathrm{m},\ 10^{-9} \cdot \mathrm{span})$ against floating-point comparisons. When resuming from a saved snapshot, Zalmoxis recomputes `inner` and `outer` from the live planet state while the EOS table radii are frozen at the launch-time mesh, so single-ULP drift between the two is possible. If you see `External EOS radius range [..., ...] m inconsistent with mesh bounds [..., ...] m` on a resume, regenerate the mesh by re-running Zalmoxis with the current planet radius rather than reusing the stale table.
 
 ## EOS table generation
 
@@ -273,7 +273,7 @@ When `global_miscibility = true`, the wrapper additionally calls `solve_miscible
 
 ## Outer solver and JAX path
 
-Zalmoxis offers two outer mass-radius solvers, `picard` and `newton`, with `newton` as the default in PROTEUS coupled runs (since 2026-04-27). The Picard path is a damped fixed-point iteration $R_{n+1} = R_n \cdot (M_\mathrm{target} / M_n)^{1/3}$, clamped to $[0.5, 2.0]$ and damped by 0.5; it converges robustly on cool Earth-mass profiles but can hit a basin attractor on hot fully-molten profiles, where the iteration oscillates around the true $R$ without escaping. The Newton path uses a central-difference $\mathrm{d}M/\mathrm{d}R$ estimate combined with brentq bracketing on $f(R) = M(R) - M_\mathrm{target}$, and converges on the hot-profile cases that trap Picard.
+Zalmoxis offers two outer mass-radius solvers, `picard` and `newton`, with `newton` as the default in PROTEUS coupled runs. The Picard path is a damped fixed-point iteration $R_{n+1} = R_n \cdot (M_\mathrm{target} / M_n)^{1/3}$, clamped to $[0.5, 2.0]$ and damped by 0.5; it converges robustly on cool Earth-mass profiles but can hit a basin attractor on hot fully-molten profiles, where the iteration oscillates around the true $R$ without escaping. The Newton path uses a central-difference $\mathrm{d}M/\mathrm{d}R$ estimate combined with brentq bracketing on $f(R) = M(R) - M_\mathrm{target}$, and converges on the hot-profile cases that trap Picard.
 
 Newton requires tighter integrator tolerances than Picard: the Picard default `relative_tolerance = 1e-5` produces $\sim 10^{-3}$ noise in $M(R)$ that swamps the central-difference estimate. The wrapper auto-applies `relative_tolerance = 1e-9` and `absolute_tolerance = 1e-10` whenever `outer_solver = "newton"` is selected, and only forwards the Newton-specific knobs to Zalmoxis when the Newton path is active, so a Picard run sees an unchanged config dict.
 
@@ -291,7 +291,7 @@ When `temperature_arrays` is supplied, the wrapper deliberately does *not* also 
 The function-call coupling is robust at the file boundary, but several edges have known traps. New code paths should re-check these before claiming behavioural neutrality.
 
 !!! warning "`prevent_warming` clamp is energy non-conserving"
-    `config.planet.prevent_warming` (default `false`) gates an early ratchet `T_magma = min(new, prev)` in `interior_energetics/wrapper.py`. The clamp was originally intended for strictly-cooling regimes but **silently destroys the warming half of any heat-pump cycle** in a coupled magma-ocean run, producing an apparent "T_magma plateau" that is in fact an energy-leak bug. As of 2026-05-03 the clamp is documented as non-conserving and must remain at the `false` default for production runs. A separate runaway-T fallback (`interior_o.ic == 2` recovery path) remains active independently and is not affected. If you see `T_magma` byte-pinned across hundreds of consecutive iterations with `F_dil`-style residuals (or any per-call energy residual) growing without bound, check the `prevent_warming` flag first.
+    `config.planet.prevent_warming` (default `false`) gates an early ratchet `T_magma = min(new, prev)` in `interior_energetics/wrapper.py`. The clamp suits strictly-cooling regimes but **silently destroys the warming half of any heat-pump cycle** in a coupled magma-ocean run, producing an apparent "T_magma plateau" that is in fact an energy-leak bug. The clamp must remain at the `false` default for production runs. A separate runaway-T fallback (`interior_o.ic == 2` recovery path) remains active independently and is not affected. If you see `T_magma` byte-pinned across hundreds of consecutive iterations with any per-call energy residual growing without bound, check the `prevent_warming` flag first.
 
 ### `core_density` echo-back
 
@@ -306,14 +306,6 @@ The check is loose enough to tolerate the $\sim 0.3$% margin built into Zalmoxis
 When `global_miscibility = true` and Zalmoxis writes a sub-surface solvus, `proteus.py` overrides `T_surf`, `P_surf`, `R_int`, and `T_magma` in `hf_row` for the duration of the atmosphere step (so AGNI sees the binodal surface as its lower boundary), and restores the originals immediately after `run_atmosphere` returns.
 Any new submodule that reads these keys *during* the atmosphere step gets the binodal values; outside the atmosphere step it gets the magma-ocean values.
 New code that reads structure quantities should read them where the override is not active, or at minimum check `R_solvus` to disambiguate.
-
-### DELETED `dilatation` field
-
-The `interior_energetics.aragog.dilatation` configuration field, the `F_dil` and `Q_dil_W` and `step_dE_Q_dil_J` helpfile columns, and the runtime gate that switched on volumetric-work heating were removed from PROTEUS in commits `706ff56f`, `b2241704`, and `3e5d7641` (all 2026-05-04).
-The corresponding source term was also removed from Aragog.
-The current code path has no `dilatation` schema field, no warning-on-deprecation shim, and no `Q_dil` column in the helpfile.
-Do not document, configure, or pattern-match this field; any reference in old configs is silently ignored by the attrs schema since the field no longer exists.
-If you see `dilatation = ...` in an old TOML, delete the line.
 
 ### Determinism
 

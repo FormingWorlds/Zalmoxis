@@ -249,11 +249,6 @@ The list below is the short version of "what actually matters" when you stand up
 Knobs are ordered from highest to lowest impact on results and stability.
 Every default is read directly from `proteus.config` (see `src/proteus/config/_struct.py`, `_interior.py`, and `_planet.py`); if a quoted default disagrees with the source, the source wins.
 
-!!! warning "`dilatation` is no longer a valid field"
-    The `[interior_energetics.aragog].dilatation` field was deleted on 2026-05-04 (PROTEUS commits `706ff56f`, `b2241704`, `3e5d7641`; Aragog pin bump to `0948279`).
-    Any config that sets `dilatation = true` or `dilatation = false` will be rejected by the schema validator at load time.
-    Aragog no longer carries an explicit volumetric dilatation source (`\(\Phi_\mathrm{vol}\)`); the volumetric work is captured implicitly by the divergence of the enthalpy-flux vector, so there is nothing to toggle.
-
 ### 1. `interior_struct.module` and `interior_energetics.module`
 
 **Defaults**: `interior_struct.module = "zalmoxis"`, `interior_energetics.module = "aragog"`.
@@ -272,18 +267,18 @@ Use `interior_energetics.module = "spider"` only for SPIDER-parity comparisons, 
 This is the maximum wall time between two Zalmoxis re-solves.
 Real re-solves still gate on the dynamic triggers (`update_dphi_abs`, `update_dtmagma_frac`, `update_stale_ceiling`) and respect the `update_min_interval` floor.
 Setting `update_interval >= 1e9` together with `update_dphi_abs = 1.0` and `update_dtmagma_frac = 1.0` reduces Zalmoxis to a one-shot pre-main-loop solve, which is the right setup for "static-Zalmoxis" diagnostic runs.
-The 50 kyr value is the sweet spot established by the 2026-05-03 / 2026-05-04 CHILI regression matrix: tight enough to track the rheological transition, loose enough not to dominate wall time.
+The 50 kyr value is tight enough to track the rheological transition, loose enough not to dominate wall time.
 
 ### 3. `interior_struct.zalmoxis.outer_solver`
 
-**Default**: `"newton"` (flipped from `"picard"` on 2026-04-27 in `_struct.py:198`).
+**Default**: `"newton"` (`_struct.py:198`).
 **Choices**: `"newton"`, `"picard"`.
 **Recommendation**: stay on Newton.
 
 Newton is the validated default for the 1 / 3 / 5 / 10 $M_\oplus$ super-Earth sweep.
 Damped Picard hits a basin attractor on hot fully-molten profiles at high mass and stalls; Newton + brentq bracketing converges on every G4 starting point in that sweep.
 The wrapper auto-tightens the integrator tolerances to `relative_tolerance = 1e-9` / `absolute_tolerance = 1e-10` whenever Newton is selected, so do not set those by hand.
-Drop back to `"picard"` only when reproducing a historic Picard fixed-point trajectory; expect 1.2 to 2x speedups on Earth-mass cool runs at the cost of giving up convergence on hot super-Earths.
+Use `"picard"` only when reproducing a Picard fixed-point trajectory; expect 1.2 to 2x speedups on Earth-mass cool runs at the cost of giving up convergence on hot super-Earths.
 
 ### 4. `interior_energetics.aragog.phi_step_cap` [$\Delta\phi$ fraction]
 
@@ -301,9 +296,8 @@ Use the cap to keep the rheological transition trackable when interior structure
 **Recommendation**: leave at `false`. Only enable when you specifically need to enforce monotonic cooling.
 
 When set to `true`, all atmosphere modules and termination checks enforce a `T_magma = min(T_new, T_prev)` clamp.
-This is energy-non-conserving in any regime where the integrator transiently warms the magma (heat-pump quasi-equilibrium, dynamic Zalmoxis re-solves, atmosphere-interior coupling overshoot).
-The 2026-05-03 audit traced an apparent T_magma plateau and a $\sim 7 \times 10^{31}$ J energy-leak signature back to this clamp pinning the surface byte-exactly while the interior continued to deliver flux.
-All bundled CHILI configs were defaulted to `prevent_warming = false` on 2026-05-03 (commit `abfe2c9f`); follow that lead.
+This is energy-non-conserving in any regime where the integrator transiently warms the magma (heat-pump quasi-equilibrium, dynamic Zalmoxis re-solves, atmosphere-interior coupling overshoot): the clamp pins the surface byte-exactly while the interior continues to deliver flux, producing an apparent T_magma plateau with an energy-leak signature.
+All bundled CHILI configs default to `prevent_warming = false`; follow that lead.
 
 ### 6. `interior_struct.zalmoxis.mushy_zone_factor` [0.7-1.0]
 
@@ -424,7 +418,6 @@ For the full reference (with `[params.dt]`, `[params.stop]`, atmosphere, escape,
 - **Using `core_frac_mode = "mass"` with `module = "spider"` fails validation.** Mass-mode core fractions require Zalmoxis. SPIDER only accepts radius-mode.
 - **Picard convergence stalls at high mass + hot.** Switch to `outer_solver = "newton"` (already default). If still failing on a Newton run, check the helpfile for $\Delta T_\mathrm{cmb}$ noise patterns; a `--deterministic` rerun may be needed.
 - **`mantle_mass_fraction != 0` rejected by the validator.** Only the `WolfBower2018:MgSiO3` and `RTPress100TPa:MgSiO3` mantle EOS prefixes (legacy 2-phase tables) require a non-zero `mantle_mass_fraction`. For PALEOS, PALEOS-2phase, Seager2007, or analytic mantles in a 2-layer model, set `mantle_mass_fraction = 0` so the solver derives it as `1 - core_frac`. 3-layer models with an ice layer also require `mantle_mass_fraction > 0`.
-- **`Unknown field 'dilatation'` at config load.** The `[interior_energetics.aragog].dilatation` key was removed on 2026-05-04. Delete the line; do not replace it with `false`. Aragog's enthalpy-flux divergence carries the volumetric work implicitly, so there is no toggle to set.
 - **Equilibration warns "did not converge after 15 iterations".** Usually a sign that CALLIOPE is oscillating. Inspect $\Delta P/P$ trace; if it is dropping but slowly, raise `equilibrate_max_iter`. If it is non-monotonic, check the volatile inventory.
 
 For the why behind these, see the [Coupling to PROTEUS theory page](../Explanations/proteus_coupling.md).
