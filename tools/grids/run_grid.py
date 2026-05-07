@@ -32,13 +32,20 @@ For every grid point the runner always writes:
 
 When ``save_profiles = true`` in the grid TOML (default ``false``), the
 runner additionally writes ``<label>.csv`` per grid point. Each CSV
-holds a six-column radial profile body (``radius_m``, ``density_kg_m3``,
-``gravity_m_s2``, ``pressure_Pa``, ``temperature_K``,
-``mass_enclosed_kg``, all in SI units) and a ``# key: value`` comment
-header carrying the CMB and core+mantle mass diagnostics, the
-``converged`` flag, and the per-layer EOS / melting-curve identifiers
-the solver actually used (``core_eos``, ``mantle_eos``,
-``ice_layer_eos``, ``rock_solidus_id``, ``rock_liquidus_id``).
+holds an eight-column radial profile body (six numeric SI columns
+``radius_m``, ``density_kg_m3``, ``gravity_m_s2``, ``pressure_Pa``,
+``temperature_K``, ``mass_enclosed_kg``, plus two string columns
+``main_component`` and ``phase``) and a ``# key: value`` comment header
+carrying the CMB and core+mantle mass diagnostics, the ``converged``
+flag, and the per-layer EOS / melting-curve identifiers the solver
+actually used (``core_eos``, ``mantle_eos``, ``ice_layer_eos``,
+``rock_solidus_id``, ``rock_liquidus_id``).
+
+``main_component`` is the dominant chemistry of the layer the shell
+sits in (``Fe``, ``MgSiO3``, ``H2O``, ``H2``, etc.). ``phase`` is its
+phase at the shell's (P, T): ``solid``, ``liquid``, ``gas``,
+``supercritical``, ``mixed`` (mushy zone for 2-phase silicate EOS), or
+``unknown`` (when no rule applies).
 
 The format is human-readable (open in any editor or spreadsheet) and
 loads directly with ``pandas.read_csv(path, comment='#')`` or via the
@@ -73,6 +80,7 @@ from zalmoxis.config import (
     load_zalmoxis_config,
 )
 from zalmoxis.constants import earth_mass, earth_radius
+from zalmoxis.phase_columns import compute_layer_phase_columns
 from zalmoxis.solver import main
 
 logger = logging.getLogger(__name__)
@@ -107,13 +115,15 @@ def _write_profile_csv(
     layer_eos,
     rock_solidus_id,
     rock_liquidus_id,
+    melting_curves_functions=None,
 ):
     """Write the per-cell radial profile + metadata to a CSV.
 
     The file has two parts: a ``# key: value`` comment header carrying
     the scalar metadata (run label, convergence flag, CMB and core+mantle
-    masses, EOS / melting-curve identifiers) and a six-column SI-units
-    body (one row per radial node).
+    masses, EOS / melting-curve identifiers) and an eight-column body
+    (six SI-units numeric columns plus the ``main_component`` and
+    ``phase`` string columns; one row per radial node).
     """
     metadata = (
         ('label', label),
@@ -126,9 +136,21 @@ def _write_profile_csv(
         ('rock_solidus_id', rock_solidus_id),
         ('rock_liquidus_id', rock_liquidus_id),
     )
-    column_names = [name for name, _ in _PROFILE_COLUMNS]
+    numeric_columns = [name for name, _ in _PROFILE_COLUMNS]
     arrays = [model_results[key] for _, key in _PROFILE_COLUMNS]
     n_rows = len(arrays[0])
+
+    components, phases = compute_layer_phase_columns(
+        pressure=model_results['pressure'],
+        temperature=model_results['temperature'],
+        mass_enclosed=model_results['mass_enclosed'],
+        cmb_mass=float(model_results['cmb_mass']),
+        core_mantle_mass=float(model_results['core_mantle_mass']),
+        layer_eos_config=layer_eos,
+        melting_curves_functions=melting_curves_functions,
+    )
+
+    column_names = [*numeric_columns, 'main_component', 'phase']
 
     with open(csv_path, 'w', newline='') as fh:
         for key, value in metadata:
@@ -136,7 +158,10 @@ def _write_profile_csv(
         writer = csv.writer(fh)
         writer.writerow(column_names)
         for i in range(n_rows):
-            writer.writerow([_format_float(arr[i]) for arr in arrays])
+            row = [_format_float(arr[i]) for arr in arrays]
+            row.append(components[i])
+            row.append(phases[i])
+            writer.writerow(row)
 
 
 # ---------------------------------------------------------------------------
@@ -413,6 +438,7 @@ def run_single(args):
                     layer_eos=layer_eos,
                     rock_solidus_id=config_params.get('rock_solidus', ''),
                     rock_liquidus_id=config_params.get('rock_liquidus', ''),
+                    melting_curves_functions=melting_curves,
                 )
             except OSError as profile_error:
                 logger.warning(
