@@ -1,11 +1,12 @@
 """Shared loader for per-cell profile CSVs written by ``run_grid``.
 
 The grid runner writes one ``<label>.csv`` per converged cell when
-``[output].save_profiles = true``. The CSV body is a 6-column radial
-profile (``radius_m``, ``density_kg_m3``, ``gravity_m_s2``,
-``pressure_Pa``, ``temperature_K``, ``mass_enclosed_kg``); the metadata
-(converged flag, CMB mass, layer EOS strings, melting-curve identifiers)
-sits in ``# key: value`` comment lines above the header.
+``[output].save_profiles = true``. The CSV body has six numeric SI
+columns (``radius_m``, ``density_kg_m3``, ``gravity_m_s2``,
+``pressure_Pa``, ``temperature_K``, ``mass_enclosed_kg``) plus two
+string columns (``main_component``, ``phase``); the metadata (converged
+flag, CMB mass, layer EOS strings, melting-curve identifiers) sits in
+``# key: value`` comment lines above the header.
 
 Three plot tools read these files (``plot_grid_profiles``,
 ``plot_grid_pt``, ``plot_grid_composition``); they share this loader so
@@ -32,6 +33,10 @@ _CSV_TO_LEGACY = {
     'temperature_K': 'temperature',
     'mass_enclosed_kg': 'mass_enclosed',
 }
+
+# String body columns (added with the per-shell main-component / phase
+# labelling). Loaded as object arrays rather than coerced to float.
+_STR_BODY_COLUMNS = ('main_component', 'phase')
 
 # Metadata keys that should be coerced to float when present.
 _FLOAT_METADATA = ('cmb_mass', 'core_mantle_mass')
@@ -100,17 +105,23 @@ def load_profile(grid_dir: str, label: str) -> Optional[dict]:
 
     reader = csv.reader(data_lines)
     header = next(reader)
-    columns: dict[str, list[float]] = {name: [] for name in header}
+    columns: dict[str, list] = {name: [] for name in header}
     for row in reader:
         if not row:
             continue
         for name, value in zip(header, row):
-            columns[name].append(float(value))
+            if name in _STR_BODY_COLUMNS:
+                columns[name].append(value)
+            else:
+                columns[name].append(float(value))
 
     out: dict = {}
     for csv_name, values in columns.items():
         legacy_key = _CSV_TO_LEGACY.get(csv_name, csv_name)
-        out[legacy_key] = np.asarray(values, dtype=np.float64)
+        if csv_name in _STR_BODY_COLUMNS:
+            out[legacy_key] = np.asarray(values, dtype=object)
+        else:
+            out[legacy_key] = np.asarray(values, dtype=np.float64)
 
     for key in _FLOAT_METADATA:
         if key in metadata:
