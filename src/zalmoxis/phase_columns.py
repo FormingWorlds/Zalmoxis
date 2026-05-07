@@ -32,7 +32,6 @@ Phase routing
 from __future__ import annotations
 
 import logging
-import os
 from typing import Optional
 
 import numpy as np
@@ -67,6 +66,11 @@ def eos_to_chemistry(eos_name: str) -> str:
     suffix = eos_name.split(':', 1)[1]
     # Strip resolution / variant suffixes like '-highres'.
     base = suffix.split('-', 1)[0]
+    # Defensive against 3-segment EOS names that ``parse_layer_components``
+    # passes through unchanged when the third segment is not a float
+    # mass-fraction (e.g. a hypothetical ``PALEOS:MgSiO3:phaseA``); strip
+    # any trailing ``:...`` so the chemistry token stays clean.
+    base = base.split(':', 1)[0]
     base_lower = base.lower()
     if base_lower in ('iron', 'fe'):
         return 'Fe'
@@ -110,47 +114,46 @@ def _canonicalize_paleos_phase(raw: str) -> str:
 # Per-process cache for unified PALEOS phase grids. Keyed by absolute
 # path of the table file. Built once on first hit and reused for every
 # subsequent radial shell across every grid cell run by this worker.
-# Entries are minimal projections (8 keys) of what
-# ``load_paleos_unified_table`` returns; the full numerical interpolators
-# are not needed here.
+# Entries are the full ``load_paleos_unified_table`` cache so that this
+# loader hits the same ``.pkl`` binary cache that the solver path uses
+# via ``_ensure_unified_cache``: cold ``.pkl`` skips the slow text reparse
+# of the 50-140 MB ``.dat`` file, and an installation that has only the
+# ``.pkl`` (no ``.dat``) still yields phase labels rather than ``unknown``.
 _PHASE_GRID_CACHE: dict[str, Optional[dict]] = {}
 
 
 def _load_phase_grid(eos_file: str) -> Optional[dict]:
     """Load (and cache) the (P-major, T-minor) phase string grid.
 
+    Routes through the shared ``_ensure_unified_cache`` so the lookup
+    benefits from the existing ``.pkl`` binary cache. Falls back to
+    ``None`` if neither the ``.pkl`` nor the ``.dat`` file is reachable
+    (e.g. on a CI runner without the bootstrapped ``data/`` tree).
+
     Parameters
     ----------
     eos_file : str
-        Absolute path to a unified PALEOS table.
+        Absolute path to a unified PALEOS table (``.dat`` filename; the
+        cached ``.pkl`` is derived from it by ``_ensure_unified_cache``).
 
     Returns
     -------
     dict or None
-        Cache entry with the eight keys needed for nearest-cell phase
-        lookup, or ``None`` if the table file does not exist.
+        The shared cache entry, or ``None`` if no source was found.
     """
     if eos_file in _PHASE_GRID_CACHE:
         return _PHASE_GRID_CACHE[eos_file]
-    if not os.path.isfile(eos_file):
+
+    from .eos.interpolation import _ensure_unified_cache
+
+    try:
+        cached = _ensure_unified_cache(eos_file, _PHASE_GRID_CACHE)
+    except (FileNotFoundError, OSError) as exc:
+        logger.debug('phase_columns: no PALEOS source for %s (%s)', eos_file, exc)
         _PHASE_GRID_CACHE[eos_file] = None
         return None
-    from .eos.interpolation import load_paleos_unified_table
 
-    full = load_paleos_unified_table(eos_file)
-    minimal = {
-        'logp_min': full['logp_min'],
-        'logp_max': full['logp_max'],
-        'dlog_p': full['dlog_p'],
-        'n_p': full['n_p'],
-        'logt_min': full['logt_min'],
-        'logt_max': full['logt_max'],
-        'dlog_t': full['dlog_t'],
-        'n_t': full['n_t'],
-        'phase_grid': full['phase_grid'],
-    }
-    _PHASE_GRID_CACHE[eos_file] = minimal
-    return minimal
+    return cached
 
 
 def _phase_from_unified_grid(eos_file: str, P: float, T: float) -> str:

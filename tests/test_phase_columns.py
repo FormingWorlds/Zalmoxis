@@ -15,6 +15,7 @@ import pytest
 from zalmoxis.phase_columns import (
     PHASE_UNKNOWN,
     _canonicalize_paleos_phase,
+    _load_phase_grid,
     compute_layer_phase_columns,
     eos_to_chemistry,
     phase_for_component,
@@ -45,6 +46,12 @@ pytestmark = pytest.mark.unit
         ('NoColon', PHASE_UNKNOWN),
         # Unrecognised but parseable: pass through the suffix.
         ('Foo:SiC', 'SiC'),
+        # Three-segment EOS names whose last segment is NOT a float mass
+        # fraction are passed through unchanged by parse_layer_components;
+        # the chemistry label must still be the bare material token.
+        # Discriminates a 'split-on-first-colon-only' bug.
+        ('PALEOS:MgSiO3:phaseA', 'MgSiO3'),
+        ('PALEOS-2phase:MgSiO3-highres:phaseA', 'MgSiO3'),
     ],
 )
 def test_eos_to_chemistry_known_and_edge_cases(eos_name, expected):
@@ -128,6 +135,70 @@ def test_phase_for_component_unknown_eos_returns_unknown():
     """An EOS identifier not in the registry (and not a Seager2007
     variant) returns the unknown sentinel."""
     assert phase_for_component('NotARealEOS:foo', P=1.0e9, T=1000.0) == PHASE_UNKNOWN
+
+
+def test_load_phase_grid_missing_file_returns_none(tmp_path):
+    """When neither the ``.pkl`` binary cache nor the ``.dat`` text
+    table exists for an EOS file path, ``_load_phase_grid`` must
+    return None and cache that result, rather than raising on the
+    second call."""
+    import zalmoxis.phase_columns as pc
+
+    bogus = str(tmp_path / 'definitely_not_a_real_paleos_table.dat')
+    pc._PHASE_GRID_CACHE.pop(bogus, None)
+
+    first = _load_phase_grid(bogus)
+    second = _load_phase_grid(bogus)
+    assert first is None
+    assert second is None
+    # The cache entry must be the None sentinel, not a missing key, so
+    # the second call hits the early-return path rather than re-trying
+    # the disk read.
+    assert bogus in pc._PHASE_GRID_CACHE
+    assert pc._PHASE_GRID_CACHE[bogus] is None
+
+
+def test_load_phase_grid_uses_pkl_cache_when_dat_absent(tmp_path, monkeypatch):
+    """``_load_phase_grid`` must route through ``_ensure_unified_cache``
+    so a pickle-only installation (``.pkl`` present, ``.dat`` absent)
+    still produces phase labels rather than ``unknown``. This is the
+    Codex P2 fix: the prior implementation gated on ``os.path.isfile``
+    on the ``.dat`` path and returned None whenever the text table
+    was missing, even when the ``.pkl`` binary cache existed."""
+    import pickle
+
+    import zalmoxis.phase_columns as pc
+
+    eos_file = str(tmp_path / 'pkl_only.dat')  # NB: never created
+    pkl_path = eos_file.replace('.dat', '.pkl')
+
+    # Hand-built minimal cache entry covering the keys
+    # ``_phase_from_unified_grid`` reads.
+    payload = {
+        'logp_min': 9.0,
+        'logp_max': 11.0,
+        'dlog_p': 0.5,
+        'n_p': 5,
+        'logt_min': 3.0,
+        'logt_max': 4.0,
+        'dlog_t': 0.25,
+        'n_t': 5,
+        'phase_grid': np.array([['solid'] * 5 for _ in range(5)], dtype=object),
+    }
+    with open(pkl_path, 'wb') as fh:
+        pickle.dump(payload, fh, protocol=4)
+
+    pc._PHASE_GRID_CACHE.pop(eos_file, None)
+    cached = _load_phase_grid(eos_file)
+
+    # Cache hit must look like the pickled payload (not None and not the
+    # text-loaded shape).
+    assert cached is not None
+    assert cached['n_p'] == 5
+    assert cached['phase_grid'][0, 0] == 'solid'
+
+    # Clean up so subsequent tests don't see a stale cached entry.
+    pc._PHASE_GRID_CACHE.pop(eos_file, None)
 
 
 def test_phase_for_component_seager_returns_solid():

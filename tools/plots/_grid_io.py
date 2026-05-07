@@ -1,12 +1,14 @@
 """Shared loader for per-cell profile CSVs written by ``run_grid``.
 
-The grid runner writes one ``<label>.csv`` per converged cell when
-``[output].save_profiles = true``. The CSV body has six numeric SI
-columns (``radius_m``, ``density_kg_m3``, ``gravity_m_s2``,
+The grid runner writes one ``<label>.csv`` per grid cell (converged or
+not) when ``[output].save_profiles = true``. The CSV body has six
+numeric SI columns (``radius_m``, ``density_kg_m3``, ``gravity_m_s2``,
 ``pressure_Pa``, ``temperature_K``, ``mass_enclosed_kg``) plus two
 string columns (``main_component``, ``phase``); the metadata (converged
 flag, CMB mass, layer EOS strings, melting-curve identifiers) sits in
-``# key: value`` comment lines above the header.
+``# key: value`` comment lines above the header. The ``converged`` flag
+in the metadata header lets callers filter out failed cells, where
+``density_kg_m3`` may contain NaN or zero in failed / padded shells.
 
 Three plot tools read these files (``plot_grid_profiles``,
 ``plot_grid_pt``, ``plot_grid_composition``); they share this loader so
@@ -70,11 +72,17 @@ def load_profile(grid_dir: str, label: str) -> Optional[dict]:
     -------
     dict or None
         ``None`` if the file is absent. Otherwise a dict with the six
-        profile arrays under their legacy keys (``radii``, ``density``,
-        ``gravity``, ``pressure``, ``temperature``, ``mass_enclosed``)
-        plus any metadata fields that were present in the comment
-        header. ``cmb_mass`` and ``core_mantle_mass`` are floats,
-        ``converged`` is bool, EOS / curve identifiers are strings.
+        numeric profile arrays under their legacy keys (``radii``,
+        ``density``, ``gravity``, ``pressure``, ``temperature``,
+        ``mass_enclosed``; all ``np.float64``) plus, when the body
+        carries the per-shell labelling columns, ``main_component`` and
+        ``phase`` as ``object`` arrays of strings (``'Fe'``,
+        ``'MgSiO3'``, ``'solid'``, ``'liquid'``, ``'unknown'``, ...).
+        Metadata fields from the comment header are also surfaced:
+        ``cmb_mass`` and ``core_mantle_mass`` as floats, ``converged``
+        as bool, and ``label`` / ``core_eos`` / ``mantle_eos`` /
+        ``ice_layer_eos`` / ``rock_solidus_id`` / ``rock_liquidus_id``
+        as strings.
 
     Raises
     ------
