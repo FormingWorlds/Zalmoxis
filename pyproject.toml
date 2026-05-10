@@ -88,6 +88,12 @@ omit = [
 ]
 
 [tool.coverage.report]
+# Hard 95% coverage gate. Per PROTEUS ecosystem policy this number is
+# the maximum ratchet threshold for any module: it does not increase
+# above 95% even if real coverage exceeds it. Real coverage targets
+# ~97% to give 2 percentage points of headroom for small future
+# additions before the gate trips.
+fail_under = 95.0
 show_missing = true
 precision = 2
 exclude_lines = [

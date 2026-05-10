@@ -258,7 +258,7 @@ file (enforced by ruff isort).
 
 ## Testing
 
-- 1077 tests collected: 1026 unit, 23 smoke, 2 integration, 44 slow.
+- ~1170 tests collected: ~1119 unit, 23 smoke, 2 integration, 44 slow.
 - Unit tier: `pytest -o "addopts=" -m unit` (~1.5 min on the dev machine,
   ~1m54s ubuntu / ~2m29s macOS in CI).
 - Nightly tier: `pytest -o "addopts=" -m "(unit or smoke or integration) and not slow"`
@@ -272,6 +272,24 @@ file (enforced by ruff isort).
 - First-principles verification suite: `tests/test_first_principles.py`
   (~25 tests against analytic solutions; conservation laws, ideal-gas limit,
   small-mass polytrope).
+
+## Coverage gate
+
+- Hard gate at `[tool.coverage.report] fail_under = 95.0` in
+  `pyproject.toml`. Per ecosystem policy this is the maximum ratchet
+  threshold for any module: it does not increase above 95% even if real
+  coverage exceeds it. Real coverage targets ~97% to give 2 percentage
+  points of headroom for small future additions before the gate trips.
+- The nightly invocation in `.github/workflows/nightly.yml` passes
+  `--cov-fail-under=95` explicitly. The `[tool.coverage.report]` value is
+  the source of truth; the explicit flag is belt-and-braces.
+- A pre-flight check in `.github/workflows/CI.yml` rejects PRs that lower
+  `fail_under` below the value on `origin/main`, mirroring PROTEUS's
+  `.github/workflows/ci-pr-checks.yml` idiom.
+- Use `# pragma: no cover` only for genuinely defensive recovery paths
+  (NaN fallbacks, LinAlgError handlers, dev-gated diagnostics). Never on
+  feature code. Every inline pragma carries a one-line "why this branch is
+  unreachable in unit tests" justification.
 
 ## Documentation (Zensical)
 

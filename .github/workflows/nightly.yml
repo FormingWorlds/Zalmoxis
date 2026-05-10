@@ -65,7 +65,8 @@ jobs:
       - name: Run unit + smoke + integration tests with coverage
         run: |
           pytest -m "(unit or smoke or integration) and not slow" -n auto -o "addopts=" \
-            --cov=zalmoxis --cov-report=term-missing --cov-report=xml
+            --cov=zalmoxis --cov-report=term-missing --cov-report=xml \
+            --cov-fail-under=95
 
       - name: Upload coverage to Codecov
         if: ${{ !cancelled() }}
