@@ -10,6 +10,14 @@ on:
       - synchronize
       - ready_for_review
 
+# Cancel superseded runs on the same ref. Without this, every commit on
+# an open PR queues both a push-triggered run and a pull_request-triggered
+# run, neither of which retires when a fresh commit lands; the queue can
+# grow to 30+ jobs on an active branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 # Push and PR CI: unit tests only, on ubuntu + macos. Targets <5 min
 # wall. Smoke and integration tests (full Picard solves) live in the
 # scheduled nightly workflow ``Nightly`` instead — running them on
@@ -114,9 +122,9 @@ jobs:
         run: |
           bash tools/validate_test_structure.sh
 
-      - name: Run unit + smoke tests
+      - name: Run unit tests
         run: |
-          pytest -m "(unit or smoke) and not skip" -n auto -o "addopts=" -o "junit_family=legacy" \
+          pytest -m "unit and not skip" -n auto -o "addopts=" -o "junit_family=legacy" \
             --junitxml=junit.xml
 
       - name: Upload test results to Codecov
