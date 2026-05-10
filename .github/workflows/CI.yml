@@ -104,9 +104,9 @@ jobs:
         run: |
           ruff check
 
-      - name: Run unit tests
+      - name: Run unit + smoke tests
         run: |
-          pytest -m "unit and not slow" -n auto -o "addopts=" -o "junit_family=legacy" \
+          pytest -m "(unit or smoke) and not skip" -n auto -o "addopts=" -o "junit_family=legacy" \
             --junitxml=junit.xml
 
       - name: Upload test results to Codecov
