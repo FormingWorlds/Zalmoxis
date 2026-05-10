@@ -35,6 +35,50 @@ jobs:
         with:
           python-version: "3.12.9"
 
+      - name: Prevent coverage threshold decreases vs main
+        # Pre-flight check: fail the PR if pyproject.toml's coverage
+        # `fail_under` ratchet was lowered vs `origin/main`. Skips per
+        # target if the key is missing on either side. Same idiom as
+        # PROTEUS's ci-pr-checks.yml (Prevent threshold decreases vs main).
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        run: |
+          git fetch origin main
+          python - <<'PY'
+          import pathlib
+          import subprocess
+          import tomllib
+
+          base = "origin/main"
+          current = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
+          base_text = subprocess.check_output(["git", "show", f"{base}:pyproject.toml"], text=True)
+          base_data = tomllib.loads(base_text)
+
+          paths = {
+              "full": ["tool", "coverage", "report", "fail_under"],
+          }
+
+          def get_val(data, path):
+              try:
+                  for key in path:
+                      data = data[key]
+              except KeyError:
+                  return None
+              return float(data)
+
+          for label, path in paths.items():
+              cur = get_val(current, path)
+              base_val = get_val(base_data, path)
+
+              if base_val is None or cur is None:
+                  print(f"Skipping {label} check (missing in base or current)")
+                  continue
+
+              if cur < base_val:
+                  raise SystemExit(f"{label} fail_under decreased: {cur} < {base_val}")
+
+          print("Coverage thresholds have not decreased vs main.")
+          PY
+
       - name: Set ZALMOXIS_ROOT environment variable
         run: echo "ZALMOXIS_ROOT=$GITHUB_WORKSPACE" >> $GITHUB_ENV
 
