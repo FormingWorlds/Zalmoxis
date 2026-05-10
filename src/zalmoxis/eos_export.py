@@ -1465,7 +1465,7 @@ def compute_entropy_adiabat(
             n_expand += 1
 
         bracket_ok = np.isfinite(s_lo) and np.isfinite(s_hi) and s_lo * s_hi <= 0
-        if not bracket_ok:
+        if not bracket_ok:  # pragma: no cover - PALEOS-table NaN-bracket fallback; defensive
             n_nan_bracket += 1
             logger.warning(
                 'Could not bracket S root at P=%.2e Pa '
