@@ -151,6 +151,22 @@ def test_inner_main_does_not_converge_breaks_loop():
     assert mocked_main.call_count == 1
     assert result['miscibility_converged'] is False
     assert result['miscibility_iterations'] == 1
+    # Regression guard: the early-break path must still attach every
+    # downstream key. Pre-loop initialisation of integrated_masses /
+    # solvus_info ensures the post-loop block at solver.py:2474-2480
+    # does not raise UnboundLocalError when the very first iteration
+    # bails out via the converged=False break.
+    assert 'solvus_radius' in result
+    assert 'solvus_temperature' in result
+    assert 'solvus_pressure' in result
+    assert 'x_interior_converged' in result
+    assert 'h2_mass_integrated' in result
+    # No iterations completed -> integrated mass dict is empty and the
+    # solvus probes default to None (no shells were inspected).
+    assert result['solvus_radius'] is None
+    assert result['solvus_temperature'] is None
+    assert result['solvus_pressure'] is None
+    assert result['h2_mass_integrated'] == {}
 
 
 def test_unknown_species_assume_miscible_converges_first_iteration():
@@ -329,12 +345,17 @@ def test_x_interior_upper_clamp():
 
 
 def test_solvus_detection_for_chabrier_h():
-    """Above-then-below transition for Chabrier:H records solvus radius/T/P."""
+    """Above-then-below transition for Chabrier:H records solvus radius/T/P.
+
+    Mocks ``VolatileProfile._is_above_binodal`` to deterministically return
+    True at high pressure and False at low pressure, guaranteeing exactly
+    one above-then-below transition. The test then asserts that the
+    detected solvus point lies inside the radial grid range and that its
+    P/T match the shell where the transition happens.
+    """
     n = 30
     radii = np.linspace(1.0e5, 6.4e6, n)
     density = np.full(n, 5000.0)
-    # Construct a profile where conditions are above binodal at high P but
-    # below binodal at low P (outer mantle).
     pressure = np.linspace(5.0e11, 1.0e9, n)  # 500 GPa -> 1 GPa
     temperature = np.linspace(8000.0, 2000.0, n)
     result_template = _synthetic_main_result(
@@ -348,23 +369,40 @@ def test_solvus_detection_for_chabrier_h():
         x_interior={'Chabrier:H': 0.05},
     )
 
-    with patch('zalmoxis.solver.main', return_value=result_template):
+    # Threshold pressure separating "above binodal" (deep) from "below
+    # binodal" (shallow). Pick a value squarely in the middle of the
+    # pressure profile so the solvus crossing is unambiguous.
+    p_threshold = 1.0e11
+
+    def _mock_above(self, species, P, T):  # noqa: ARG001
+        return P > p_threshold
+
+    with (
+        patch('zalmoxis.solver.main', return_value=result_template),
+        patch.object(VolatileProfile, '_is_above_binodal', _mock_above),
+    ):
         result = solve_miscible_interior(
             config_params={},
             material_dictionaries={},
             melting_curves_functions=None,
             input_dir='.',
             volatile_profile=vp,
-            h2_mass_targets={'Chabrier:H': 1.0e20},  # easy target
+            h2_mass_targets={'Chabrier:H': 1.0e20},
             max_iterations=2,
-            mass_tolerance=1.0,  # converge on iter 1 regardless
+            mass_tolerance=1.0,
         )
 
-    # solvus_radius is set only if a transition is detected for Chabrier:H.
-    # Either the run found one (radius is not None) or every shell was on the
-    # same side (radius is None). Both are valid outcomes given the random
-    # P-T profile -- we just exercise the code path. Don't over-constrain.
-    assert 'solvus_radius' in result
+    # Deterministic crossing exists -> solvus must be set, not None.
+    assert result['solvus_radius'] is not None
+    assert result['solvus_temperature'] is not None
+    assert result['solvus_pressure'] is not None
+    # Solvus radius lies strictly inside the radial grid extent.
+    assert radii[0] < result['solvus_radius'] < radii[-1]
+    # P at the solvus must straddle the threshold (the crossing happens at
+    # the first shell whose midpoint pressure dips below it).
+    assert result['solvus_pressure'] < p_threshold
+    # Temperature is positive and within the supplied profile range.
+    assert temperature[-1] <= result['solvus_temperature'] <= temperature[0]
 
 
 def test_zero_target_skipped():

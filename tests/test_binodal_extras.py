@@ -49,8 +49,11 @@ def test_gibbs_mixing_finite_for_interior_x():
     G_hi = gupta2025_gibbs_mixing(0.5, T=2000.0, P_GPa=50.0)
     assert np.isfinite(G_lo)
     assert np.isfinite(G_hi)
-    # Different P -> different G (not a degenerate constant).
-    assert G_lo != pytest.approx(G_hi, abs=1e-6)
+    # Different P -> different G. Use a relative tolerance scaled to the
+    # magnitudes of the two values (Gibbs is O(1e3-1e4) J/mol for typical
+    # mantle conditions, so abs=1e-6 was many orders of magnitude below
+    # any meaningful difference and made the assertion trivially true).
+    assert not np.isclose(G_lo, G_hi, rtol=1e-3, atol=0.0)
 
 
 def test_critical_temperature_nonpositive_pressure_returns_none():
