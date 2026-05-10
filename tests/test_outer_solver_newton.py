@@ -26,7 +26,11 @@ import pytest
 
 from zalmoxis.solver import _solve_newton_outer
 
-pytestmark = pytest.mark.unit
+# Tier markers are applied per class so that the synthetic-M(R)
+# unit-tier class (``TestNewtonOnSyntheticMR``) and the slow-tier
+# full-solver class (``TestNewtonEndToEndEarthLike``) each carry
+# exactly one tier marker. A module-level ``pytestmark`` would inherit
+# onto the slow class and trip ``tools/validate_test_structure.sh``.
 
 
 # ----------------------------------------------------------------------
@@ -102,6 +106,7 @@ def newton_config():
 # ----------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestNewtonOnSyntheticMR:
     """Newton iteration logic, with _solve mocked to a known M(R)."""
 

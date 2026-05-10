@@ -1,18 +1,23 @@
 #!/usr/bin/env bash
 # Marker-validation gate for the Zalmoxis test suite.
 #
-# Walks every test_*.py file under tests/, finds every top-level
-# ``def test_*`` and ``class Test*`` definition, and verifies the
-# function (or its enclosing class) carries exactly one of the four
-# canonical pytest markers (unit, smoke, integration, slow) or the
-# ``skip`` exclusion. Files that declare a module-level
-# ``pytestmark = pytest.mark.<marker>`` are accepted as marker-bearing
-# for every test inside.
+# Walks every test_*.py file under tests/, finds every ``def test_*``
+# definition, and verifies that the function (or its enclosing class,
+# or the module-level pytestmark) carries EXACTLY ONE of the four
+# canonical pytest tier markers:
+#
+#     @pytest.mark.unit
+#     @pytest.mark.smoke
+#     @pytest.mark.integration
+#     @pytest.mark.slow
+#
+# A test that carries ``@pytest.mark.skip`` (and no tier marker) also
+# passes, since a skipped test never runs and does not need a tier.
 #
 # Exit codes
 # ----------
-# 0  every test under tests/ carries exactly one marker
-# 1  one or more tests are unmarked (printed as file:line)
+# 0  every test under tests/ carries exactly one tier marker (or skip)
+# 1  one or more tests violate the marker rule (printed as file:line)
 #
 # Run
 # ---
@@ -29,15 +34,25 @@ if [ ! -d "${TESTS_DIR}" ]; then
 fi
 
 python3 - "${TESTS_DIR}" <<'PY'
-"""Validate that every test under tests/ carries a pytest marker.
+"""Validate that every test under tests/ carries exactly one tier marker.
 
-A test is considered marked when:
-- its module declares ``pytestmark = pytest.mark.<marker>``, OR
-- the def has an immediately-preceding ``@pytest.mark.<marker>`` decorator,
-  OR
-- the enclosing class has an ``@pytest.mark.<marker>`` decorator.
+A test passes the validator iff it carries exactly one of
+``unit / smoke / integration / slow``, OR it carries ``skip`` (and no
+tier marker, since a skipped test never runs).
 
-Allowed markers: unit, smoke, integration, slow, skip.
+Markers are inherited along: module-level ``pytestmark``, enclosing
+class decorator, function decorator. The merged set across these
+three sources must contain exactly one tier marker, or be exactly
+``{skip}``.
+
+Reports two kinds of failure with file:line diagnostics:
+
+- ``has multiple tier markers ['integration', 'unit']``: a test that
+  inherits or declares more than one tier marker. Such a test is
+  selected by both the PR-tier and the nightly-tier selectors and
+  gets double-counted in the per-tier badges.
+- ``carries no marker``: a test with no tier marker and no skip.
+  Invisible to CI under ``-m unit`` / ``-m "(unit or smoke or ...)``.
 """
 
 from __future__ import annotations
@@ -46,154 +61,129 @@ import ast
 import sys
 from pathlib import Path
 
-ALLOWED = {'unit', 'smoke', 'integration', 'slow', 'skip'}
+TIER = {'unit', 'smoke', 'integration', 'slow'}
+SKIP = {'skip'}
+ALLOWED = TIER | SKIP
 
 
-def marker_from_decorator(dec: ast.expr) -> str | None:
-    """Return the marker name from ``@pytest.mark.<x>`` or ``@pytest.mark.<x>(...)``."""
-    if isinstance(dec, ast.Call):
-        dec = dec.func
-    if isinstance(dec, ast.Attribute) and isinstance(dec.value, ast.Attribute):
-        if (
-            isinstance(dec.value.value, ast.Name)
-            and dec.value.value.id == 'pytest'
-            and dec.value.attr == 'mark'
-        ):
-            return dec.attr
-    return None
+def mark_names_from_decorators(decorators) -> list[str]:
+    """Return tier / skip marker names found on a list of decorator nodes."""
+    out: list[str] = []
+    for d in decorators:
+        # @pytest.mark.NAME
+        if isinstance(d, ast.Attribute) and isinstance(d.value, ast.Attribute):
+            if (
+                isinstance(d.value.value, ast.Name)
+                and d.value.value.id == 'pytest'
+                and d.value.attr == 'mark'
+            ):
+                out.append(d.attr)
+        # @pytest.mark.NAME(...)
+        elif isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute):
+            f = d.func
+            if (
+                isinstance(f.value, ast.Attribute)
+                and isinstance(f.value.value, ast.Name)
+                and f.value.value.id == 'pytest'
+                and f.value.attr == 'mark'
+            ):
+                out.append(f.attr)
+    return out
 
 
-_REAL_TIER_MARKERS = ALLOWED - {'skip'}
+def module_marks(tree: ast.Module) -> list[str]:
+    """Return the marker names assigned to module-level ``pytestmark``.
 
-
-def _marker_names_in_value(value: ast.expr) -> set[str]:
-    """Recursively extract marker names from a ``pytestmark`` RHS.
-
-    Accepts ``pytest.mark.<name>``, ``pytest.mark.<name>(...)``, and
-    list/tuple wrappers thereof. Returns the set of marker names found.
+    Accepts ``pytestmark = pytest.mark.<name>``, ``pytestmark = [...]``,
+    and ``pytestmark = (...)`` wrappers. An assignment whose RHS is
+    not a recognised ``pytest.mark.<name>`` expression returns an
+    empty list, which the caller treats as "no module-level marker".
     """
-    found: set[str] = set()
-    if isinstance(value, (ast.List, ast.Tuple)):
-        for elt in value.elts:
-            found |= _marker_names_in_value(elt)
-        return found
-    name = marker_from_decorator(value)
-    if name:
-        found.add(name)
-    return found
-
-
-def module_pytestmark_markers(tree: ast.Module) -> set[str]:
-    """Return the set of marker names assigned to module-level ``pytestmark``.
-
-    Empty set when ``pytestmark`` is absent or its RHS is not a
-    recognisable ``pytest.mark.<x>`` expression. A module that assigns
-    ``pytestmark = []``, ``pytestmark = "unit"``, or
-    ``pytestmark = pytest.mark.skip`` returns a set that does not
-    include any of unit/smoke/integration/slow, which the caller then
-    treats as "not marker-bearing".
-    """
+    marks: list[str] = []
     for node in tree.body:
         if isinstance(node, ast.Assign):
-            for tgt in node.targets:
-                if isinstance(tgt, ast.Name) and tgt.id == 'pytestmark':
-                    return _marker_names_in_value(node.value)
-        if isinstance(node, ast.AnnAssign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == 'pytestmark':
+                    val = node.value
+                    items = val.elts if isinstance(val, (ast.List, ast.Tuple)) else [val]
+                    for item in items:
+                        marks.extend(mark_names_from_decorators([item]))
+        elif isinstance(node, ast.AnnAssign):
             tgt = node.target
             if (
                 isinstance(tgt, ast.Name)
                 and tgt.id == 'pytestmark'
                 and node.value is not None
             ):
-                return _marker_names_in_value(node.value)
-    return set()
+                val = node.value
+                items = val.elts if isinstance(val, (ast.List, ast.Tuple)) else [val]
+                for item in items:
+                    marks.extend(mark_names_from_decorators([item]))
+    return marks
 
 
-def find_unmarked(path: Path) -> list[tuple[int, str]]:
-    """Return [(lineno, name), ...] of unmarked test_* defs in path.
+def walk(tree, parent_marks: list[str]):
+    """Yield ``(test_def, marks)`` for every test_* function in the tree.
 
-    Returns ``[(0, '<unparseable>')]`` if the file fails to parse, so
-    the caller can surface the syntax error as a marker-validation
-    failure rather than crashing the script.
+    ``marks`` is the merged list of marker names along the chain
+    module-level pytestmark plus enclosing class decorators plus
+    function decorators.
     """
-    try:
-        tree = ast.parse(path.read_text(), filename=str(path))
-    except SyntaxError:
-        return [(0, '<unparseable>')]
-
-    module_markers = module_pytestmark_markers(tree)
-    if module_markers & _REAL_TIER_MARKERS:
-        return []
-
-    unmarked: list[tuple[int, str]] = []
-
-    class_markers: dict[str, set[str]] = {}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ClassDef) and node.name.startswith('Test'):
-            class_markers[node.name] = {
-                m for m in (marker_from_decorator(d) for d in node.decorator_list) if m
-            }
-
-    def collect(parent: ast.AST, in_class: str | None = None):
-        children = getattr(parent, 'body', []) or []
-        for node in children:
-            if isinstance(node, ast.ClassDef) and node.name.startswith('Test'):
-                collect(node, in_class=node.name)
-            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                if not node.name.startswith('test_'):
-                    continue
-                own = {m for m in (marker_from_decorator(d) for d in node.decorator_list) if m}
-                cls = class_markers.get(in_class, set()) if in_class else set()
-                marks = (own | cls | module_markers) & ALLOWED
-                if not marks:
-                    unmarked.append((node.lineno, node.name))
-
-    collect(tree)
-    return unmarked
+    out: list[tuple[ast.FunctionDef | ast.AsyncFunctionDef, list[str]]] = []
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef):
+            cls_marks = parent_marks + mark_names_from_decorators(node.decorator_list)
+            out.extend(walk(node, cls_marks))
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.name.startswith('test_'):
+                fn_marks = mark_names_from_decorators(node.decorator_list)
+                out.append((node, parent_marks + fn_marks))
+    return out
 
 
 def main() -> int:
     tests_dir = Path(sys.argv[1])
     failures: list[str] = []
+    total = 0
     n_files = 0
-    n_tests = 0
+
     for path in sorted(tests_dir.rglob('test_*.py')):
         n_files += 1
-        unmarked = find_unmarked(path)
         try:
-            tree = ast.parse(path.read_text(), filename=str(path))
-            for node in ast.walk(tree):
-                if isinstance(
-                    node, (ast.FunctionDef, ast.AsyncFunctionDef)
-                ) and node.name.startswith('test_'):
-                    n_tests += 1
-        except SyntaxError:
-            # find_unmarked already reported this path with name '<unparseable>'.
-            pass
-        for lineno, name in unmarked:
+            tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
+        except SyntaxError as exc:
+            failures.append(f'{path}:{exc.lineno}: SyntaxError {exc.msg}')
+            continue
+
+        mod_marks = module_marks(tree)
+        for fn, marks in walk(tree, mod_marks):
+            total += 1
+            tier_marks = [m for m in marks if m in TIER]
+            has_skip = any(m in SKIP for m in marks)
             rel = path.relative_to(tests_dir.parent)
-            failures.append(f'{rel}:{lineno}: {name}')
+            if len(tier_marks) > 1:
+                failures.append(
+                    f'{rel}:{fn.lineno}: {fn.name} has multiple tier markers '
+                    f'{sorted(set(tier_marks))}; exactly one of '
+                    'unit / smoke / integration / slow is required.'
+                )
+            elif len(tier_marks) == 0 and not has_skip:
+                failures.append(
+                    f'{rel}:{fn.lineno}: {fn.name} carries no marker '
+                    '(need one of unit / smoke / integration / slow / skip)'
+                )
 
     if failures:
         print(
-            f'{len(failures)} unmarked tests in {n_files} files '
-            f'(of {n_tests} tests total):',
+            f'Marker validation FAILED on {len(failures)} of {total} tests '
+            f'in {n_files} files:',
             file=sys.stderr,
         )
-        for line in failures:
-            print(f'  {line}', file=sys.stderr)
-        print(
-            "\nEvery test must carry exactly one of: @pytest.mark.unit, "
-            '@pytest.mark.smoke, @pytest.mark.integration, @pytest.mark.slow.',
-            file=sys.stderr,
-        )
-        print(
-            'Or declare ``pytestmark = pytest.mark.<marker>`` at module level.',
-            file=sys.stderr,
-        )
+        for f in failures:
+            print(f'  {f}', file=sys.stderr)
         return 1
 
-    print(f'All {n_tests} tests in {n_files} files carry a marker.')
+    print(f'Marker validation OK: {total} tests in {n_files} files, all carry a marker.')
     return 0
 
 
