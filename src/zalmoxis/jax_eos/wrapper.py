@@ -231,7 +231,7 @@ def solve_structure_via_jax(
         else:
             core_mzf = float(mushy_zone_factors)
 
-    if _PROFILE:
+    if _PROFILE:  # pragma: no cover - dev profiling, gated on ZALMOXIS_JAX_PROFILE
         _PHASE_TIMES['cache_extract'] += _time.perf_counter() - _p_t0
         _p_t0 = _time.perf_counter()
 
@@ -287,7 +287,7 @@ def solve_structure_via_jax(
         T_axis_grid, T_values, T_surface = _entry
         T_axis_is_radius = False
 
-    if _PROFILE:
+    if _PROFILE:  # pragma: no cover - dev profiling, gated on ZALMOXIS_JAX_PROFILE
         _PHASE_TIMES['adiabat_tab'] += _time.perf_counter() - _p_t0
         _p_t0 = _time.perf_counter()
 
@@ -380,9 +380,8 @@ def solve_structure_via_jax(
     ys = np.asarray(ys)
     _dt = _time.perf_counter() - _t0
 
-    if _PROFILE:
+    if _PROFILE:  # pragma: no cover - dev profiling, gated on ZALMOXIS_JAX_PROFILE
         _PHASE_TIMES['jit_solve'] += _dt
-        # Report cumulative every 200 calls
         if _CALL_COUNT % 200 == 0:
             total = sum(_PHASE_TIMES.values())
             print(
@@ -397,7 +396,9 @@ def solve_structure_via_jax(
                 flush=True,
             )
     _TOTAL_WALL += _dt
-    if _DEBUG and (_CALL_COUNT <= 5 or _CALL_COUNT % 100 == 0):
+    if _DEBUG and (
+        _CALL_COUNT <= 5 or _CALL_COUNT % 100 == 0
+    ):  # pragma: no cover - dev debug, gated on ZALMOXIS_JAX_DEBUG
         print(
             f'[jax_wrapper] call {_CALL_COUNT}: {_dt * 1000:.1f} ms, cumulative '
             f'{_TOTAL_WALL:.2f} s',

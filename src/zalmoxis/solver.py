@@ -2336,6 +2336,9 @@ def solve_miscible_interior(
     species_list = list(h2_mass_targets.keys())
     misc_converged = False
     result = None
+    iteration = 0
+    integrated_masses: dict[str, float] = {}
+    solvus_info = {'radius': None, 'temperature': None, 'pressure': None}
 
     for iteration in range(max_iterations):
         # Run Zalmoxis structure solve
