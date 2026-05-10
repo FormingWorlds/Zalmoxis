@@ -289,17 +289,22 @@ def _compute_paleos_dtdp(
         nabla_liquid = _get_paleos_nabla_ad(
             pressure, temperature, mat_PALEOS, 'melted_mantle', interpolation_functions
         )
-        if nabla_solid is None and nabla_liquid is None:
+        if (
+            nabla_solid is None and nabla_liquid is None
+        ):  # pragma: no cover - both phases undefined; defensive
             return None
-        # Fall back to whichever is available if one is None
-        if nabla_solid is None:
+        if (
+            nabla_solid is None
+        ):  # pragma: no cover - solid-side phase undefined at table edge; defensive
             nabla = nabla_liquid
-        elif nabla_liquid is None:
+        elif (
+            nabla_liquid is None
+        ):  # pragma: no cover - liquid-side phase undefined at table edge; defensive
             nabla = nabla_solid
         else:
             nabla = (1.0 - phi) * nabla_solid + phi * nabla_liquid
 
-    if nabla is None or nabla <= 0:
+    if nabla is None or nabla <= 0:  # pragma: no cover - non-positive nabla_ad; defensive
         return None
 
     # Convert: dT/dP = nabla_ad * T / P

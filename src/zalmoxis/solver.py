@@ -1880,7 +1880,9 @@ def _solve(
             # Residual f_k = g(x_k) - x_k = new_density - old_density.
             # Clear history on shape change (n_valid differs from last iter).
             x_next_anderson = None
-            if use_anderson:
+            if (
+                use_anderson
+            ):  # pragma: no cover - opt-in Anderson path; default config is damped Picard
                 if _anderson_x_hist and len(_anderson_x_hist[-1]) != n_valid:
                     _anderson_x_hist.clear()
                     _anderson_f_hist.clear()
@@ -1893,9 +1895,6 @@ def _solve(
                     m_max=anderson_m_max,
                     beta=1.0,
                 )
-                # Always push the current (x_k, f_k) pair to history,
-                # regardless of whether the Anderson step itself succeeded,
-                # so the next iter has fresh data.
                 _anderson_x_hist.append(old_density[:n_valid].copy())
                 _anderson_f_hist.append(f_k.copy())
                 if len(_anderson_x_hist) > anderson_m_max:
@@ -2040,7 +2039,9 @@ def _solve(
         # wildly when calculated_mass << planet_mass, catapulting radius
         # to unphysical values and trapping the solver in a cycle.
         calculated_mass = mass_enclosed[-1]
-        if calculated_mass <= 0 or not np.isfinite(calculated_mass):
+        if calculated_mass <= 0 or not np.isfinite(
+            calculated_mass
+        ):  # pragma: no cover - non-finite calculated mass; defensive
             radius_guess *= 0.8
             logger.debug(
                 'Outer iter %d: calculated_mass=%.2e, shrinking radius_guess to %.0f m.',

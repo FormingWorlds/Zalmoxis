@@ -189,7 +189,9 @@ def solve_structure_via_jax(
     from ..eos.dispatch import _is_paleos_api
 
     if '_api_resolved' not in core_mat:
-        if _is_paleos_api(core_mat):
+        if _is_paleos_api(
+            core_mat
+        ):  # pragma: no cover - PALEOS-API lazy resolve; same path as dispatch.calculate_density (tested there)
             from ..eos.paleos_api_cache import resolve_registry_entry
 
             resolve_registry_entry(core_mat)
@@ -205,7 +207,9 @@ def solve_structure_via_jax(
     mantle_eos = mantle_lm.components[0]
     mantle_mat = material_dictionaries[mantle_eos]
     if '_api_resolved' not in mantle_mat:
-        if _is_paleos_api(mantle_mat):
+        if _is_paleos_api(
+            mantle_mat
+        ):  # pragma: no cover - PALEOS-API lazy resolve; same path as dispatch.calculate_density (tested there)
             from ..eos.paleos_api_cache import resolve_registry_entry
 
             resolve_registry_entry(mantle_mat)
