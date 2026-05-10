@@ -104,6 +104,16 @@ jobs:
         run: |
           ruff check
 
+      - name: Validate test marker structure
+        # Element 8 of the PROTEUS Ecosystem Testing Standard. Walks
+        # every test_*.py under tests/ and fails if any def test_*
+        # lacks one of unit / smoke / integration / slow / skip (either
+        # via @pytest.mark.<marker>, an enclosing class decorator, or a
+        # module-level pytestmark assignment).
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        run: |
+          bash tools/validate_test_structure.sh
+
       - name: Run unit + smoke tests
         run: |
           pytest -m "(unit or smoke) and not skip" -n auto -o "addopts=" -o "junit_family=legacy" \
