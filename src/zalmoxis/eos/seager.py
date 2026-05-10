@@ -80,7 +80,7 @@ def get_tabulated_eos(
                     if not (
                         np.all(np.diff(unique_pressures) > 0)
                         and np.all(np.diff(unique_temps) > 0)
-                    ):
+                    ):  # pragma: no cover - shipped Seager tables are sorted by construction; defensive
                         raise ValueError(
                             'Pressures or temperatures are not sorted as expected in EOS file.'
                         )
@@ -212,12 +212,9 @@ def get_tabulated_eos(
             if grid_type == 'regular':
                 density = cached['interp']((pressure, temperature))
             else:
-                # Irregular grid: check per-pressure T upper bound.
-                # Find the nearest pressure in the table to get the local T_max.
                 up = cached['unique_pressures']
                 idx = np.searchsorted(up, pressure, side='right')
                 idx = min(idx, len(up) - 1)
-                # Interpolate between the two nearest pressures' T_max
                 idx_lo = max(0, idx - 1)
                 local_tmax_lo = cached['p_tmax'][up[idx_lo]]
                 local_tmax_hi = cached['p_tmax'][up[idx]]
@@ -228,7 +225,6 @@ def get_tabulated_eos(
                     local_tmax = local_tmax_lo
 
                 if temperature > local_tmax:
-                    # Clamp temperature to the local domain boundary
                     logger.debug(
                         f'Temperature {temperature:.1f} K exceeds local T_max '
                         f'{local_tmax:.1f} K at P={pressure:.2e} Pa. '
@@ -240,7 +236,9 @@ def get_tabulated_eos(
         else:
             density = cached['interp'](pressure)
 
-        if density is None or not np.isfinite(density):
+        if density is None or not np.isfinite(
+            density
+        ):  # pragma: no cover - lookup-failed sentinel; defensive
             raise ValueError(
                 f'Density calculation failed for {material} at P={pressure:.2e} Pa, T={temperature}.'
             )

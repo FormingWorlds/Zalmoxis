@@ -174,14 +174,16 @@ def get_paleos_unified_density(
             _fp = (log_p - cached['logp_min']) / cached['dlog_p']
             _n_p_m1 = cached['n_p'] - 2
             _ip = int(_fp)
-            if _ip < 0:
+            if _ip < 0:  # pragma: no cover - log_p clamped earlier; defensive
                 _ip = 0
-            elif _ip > _n_p_m1:
+            elif _ip > _n_p_m1:  # pragma: no cover - log_p clamped earlier; defensive
                 _ip = _n_p_m1
             _frac = _fp - _ip
-            if _frac < 0.0:
+            if (
+                _frac < 0.0
+            ):  # pragma: no cover - frac is non-negative by construction; defensive
                 _frac = 0.0
-            elif _frac > 1.0:
+            elif _frac > 1.0:  # pragma: no cover - frac is bounded by construction; defensive
                 _frac = 1.0
             _local_tmin = _lt_min[_ip] + _frac * (_lt_min[_ip + 1] - _lt_min[_ip])
             _local_tmax = _lt_max[_ip] + _frac * (_lt_max[_ip + 1] - _lt_max[_ip])

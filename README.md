@@ -1,5 +1,8 @@
-![CI](https://github.com/FormingWorlds/Zalmoxis/actions/workflows/CI.yml/badge.svg)
-[![codecov](https://codecov.io/gh/FormingWorlds/Zalmoxis/graph/badge.svg)](https://codecov.io/gh/FormingWorlds/Zalmoxis)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/FormingWorlds/Zalmoxis/blob/main/LICENSE.txt)
+[![Docs](https://img.shields.io/github/actions/workflow/status/FormingWorlds/Zalmoxis/docs.yml?branch=main&label=Docs)](https://proteus-framework.org/Zalmoxis/)
+[![codecov](https://img.shields.io/codecov/c/github/FormingWorlds/Zalmoxis?label=coverage&logo=codecov)](https://app.codecov.io/gh/FormingWorlds/Zalmoxis)
+[![Unit Tests](https://img.shields.io/github/actions/workflow/status/FormingWorlds/Zalmoxis/CI.yml?branch=main&label=Unit%20Tests)](https://github.com/FormingWorlds/Zalmoxis/actions/workflows/CI.yml)
+[![Integration Tests](https://img.shields.io/github/actions/workflow/status/FormingWorlds/Zalmoxis/nightly.yml?branch=main&label=Integration%20Tests)](https://github.com/FormingWorlds/Zalmoxis/actions/workflows/nightly.yml)
 
 # Zalmoxis
 

@@ -24,7 +24,11 @@ import pytest
 
 from zalmoxis.solver import _anderson_mix
 
-pytestmark = pytest.mark.unit
+# Tier markers are applied per class so that the unit-tier helper class
+# (``TestAndersonMixHelper``) and the slow-tier full-solve class
+# (``TestFullSolveAnderson``) carry exactly one tier marker each. A
+# module-level ``pytestmark = pytest.mark.unit`` would inherit onto the
+# slow class and trip ``tools/validate_test_structure.sh``.
 
 
 # ----------------------------------------------------------------------
@@ -32,6 +36,7 @@ pytestmark = pytest.mark.unit
 # ----------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestAndersonMixHelper:
     def test_geometric_fixed_point_extrapolates_to_limit(self):
         """On a geometric fixed-point sequence x_{k+1} = 0.5 x_k + 2 with

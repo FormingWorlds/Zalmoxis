@@ -15,7 +15,6 @@ nav:
       - Usage: How-to/usage.md
       - Parameter grids: How-to/grids.md
       - Coupling to PROTEUS: How-to/proteus_coupling.md
-      - Testing suite: How-to/testing.md
       - Build tests: How-to/build_tests.md
       - Releasing: How-to/releasing.md
 
@@ -30,6 +29,7 @@ nav:
       - Process flow: Explanations/process_flow.md
       - Coupling to PROTEUS: Explanations/proteus_coupling.md
       - Code architecture: Explanations/code_architecture.md
+      - Testing suite: Explanations/testing.md
       - First-principles verification: Explanations/verification.md
 
   - Reference:

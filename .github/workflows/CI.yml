@@ -10,6 +10,14 @@ on:
       - synchronize
       - ready_for_review
 
+# Cancel superseded runs on the same ref. Without this, every commit on
+# an open PR queues both a push-triggered run and a pull_request-triggered
+# run, neither of which retires when a fresh commit lands; the queue can
+# grow to 30+ jobs on an active branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 # Push and PR CI: unit tests only, on ubuntu + macos. Targets <5 min
 # wall. Smoke and integration tests (full Picard solves) live in the
 # scheduled nightly workflow ``Nightly`` instead — running them on
@@ -34,6 +42,50 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12.9"
+
+      - name: Prevent coverage threshold decreases vs main
+        # Pre-flight check: fail the PR if pyproject.toml's coverage
+        # `fail_under` ratchet was lowered vs `origin/main`. Skips per
+        # target if the key is missing on either side. Same idiom as
+        # PROTEUS's ci-pr-checks.yml (Prevent threshold decreases vs main).
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        run: |
+          git fetch origin main
+          python - <<'PY'
+          import pathlib
+          import subprocess
+          import tomllib
+
+          base = "origin/main"
+          current = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
+          base_text = subprocess.check_output(["git", "show", f"{base}:pyproject.toml"], text=True)
+          base_data = tomllib.loads(base_text)
+
+          paths = {
+              "full": ["tool", "coverage", "report", "fail_under"],
+          }
+
+          def get_val(data, path):
+              try:
+                  for key in path:
+                      data = data[key]
+              except KeyError:
+                  return None
+              return float(data)
+
+          for label, path in paths.items():
+              cur = get_val(current, path)
+              base_val = get_val(base_data, path)
+
+              if base_val is None or cur is None:
+                  print(f"Skipping {label} check (missing in base or current)")
+                  continue
+
+              if cur < base_val:
+                  raise SystemExit(f"{label} fail_under decreased: {cur} < {base_val}")
+
+          print("Coverage thresholds have not decreased vs main.")
+          PY
 
       - name: Set ZALMOXIS_ROOT environment variable
         run: echo "ZALMOXIS_ROOT=$GITHUB_WORKSPACE" >> $GITHUB_ENV
@@ -60,9 +112,25 @@ jobs:
         run: |
           ruff check
 
-      - name: Run unit tests
+      - name: Validate test marker structure
+        # Element 8 of the PROTEUS Ecosystem Testing Standard. Walks
+        # every test_*.py under tests/ and fails if any def test_*
+        # lacks one of unit / smoke / integration / slow / skip (either
+        # via @pytest.mark.<marker>, an enclosing class decorator, or a
+        # module-level pytestmark assignment).
+        if: ${{ matrix.os == 'ubuntu-latest' }}
         run: |
-          pytest -m "unit and not slow" -n auto -o "addopts=" -o "junit_family=legacy" \
+          bash tools/validate_test_structure.sh
+
+      - name: Run unit tests
+        # Exclude slow tests at the marker-expression level. Several
+        # files (e.g. test_anderson_acceleration.py, test_outer_solver_newton.py)
+        # declare ``pytestmark = pytest.mark.unit`` at module scope while
+        # also marking specific full-solver classes ``@pytest.mark.slow``.
+        # Without the ``and not slow`` clause, those slow classes still
+        # carry the inherited ``unit`` marker and would run on every push.
+        run: |
+          pytest -m "unit and not slow and not skip" -n auto -o "addopts=" -o "junit_family=legacy" \
             --junitxml=junit.xml
 
       - name: Upload test results to Codecov

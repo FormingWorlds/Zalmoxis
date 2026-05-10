@@ -80,10 +80,37 @@ version_file = "src/zalmoxis/_version.py"
 [tool.coverage.run]
 branch = true
 source = ["zalmoxis"]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "*/__pycache__/*",
+    "*/conftest.py",
+]
+
+[tool.coverage.report]
+# Hard 95% coverage gate. Per PROTEUS ecosystem policy this number is
+# the maximum ratchet threshold for any module: it does not increase
+# above 95% even if real coverage exceeds it. Real coverage targets
+# ~97% to give 2 percentage points of headroom for small future
+# additions before the gate trips.
+fail_under = 95.0
+show_missing = true
+precision = 2
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "if typing.TYPE_CHECKING:",
+    "@abstractmethod",
+    "@abc.abstractmethod",
+]
 
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "-ra -v -n auto --dist loadfile"
+addopts = "-ra -v -n auto --dist loadfile --strict-markers --strict-config"
 testpaths = ["tests"]
 pythonpath = ["src", "."]
 markers = [

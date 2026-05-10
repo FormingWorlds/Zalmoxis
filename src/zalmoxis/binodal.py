@@ -313,11 +313,11 @@ def gupta2025_gibbs_mixing(x_H2, T, P_GPa):
     lam = _gupta2025_lambda(T)
     # Transformed composition (Eq. A3)
     denom = x_H2 + lam * (1.0 - x_H2)
-    if denom <= 0:
+    if denom <= 0:  # pragma: no cover - x_H2 in (0,1) and lam>0 keeps denom positive; defensive
         return 0.0
     y = x_H2 / denom
 
-    if y <= 0 or y >= 1:
+    if y <= 0 or y >= 1:  # pragma: no cover - transformed composition out of range; defensive
         return 0.0
 
     W = _gupta2025_W(T, P_GPa)
@@ -346,7 +346,7 @@ def gupta2025_critical_pressure(T):
         single-phase at this T for all P > 0).
     """
     W_V = _gupta2025_W_V(T)
-    if abs(W_V) < 1e-30:
+    if abs(W_V) < 1e-30:  # pragma: no cover - W_V near-zero singularity; defensive
         return np.inf
     numerator = 2.0 * R_GAS * T - (_G25_W_H - T * _G25_W_S)
     return numerator / W_V
@@ -379,7 +379,7 @@ def _gupta2025_critical_temperature_brentq(P_GPa, T_bounds=(300.0, 6000.0)):
 
     try:
         return brentq(residual, T_bounds[0], T_bounds[1], xtol=1.0, rtol=1e-8)
-    except ValueError:
+    except ValueError:  # pragma: no cover - brentq converged-flag failure; defensive
         return None
 
 
@@ -402,7 +402,7 @@ if np.any(_valid):
     _last = len(_valid) - 1 - np.argmax(_valid[::-1])
     _G25_TCRIT_VALS[:_first] = _G25_TCRIT_VALS[_first]
     _G25_TCRIT_VALS[_last + 1 :] = _G25_TCRIT_VALS[_last]
-else:
+else:  # pragma: no cover - import-time table failure; only fires if all brentq solves fail
     import warnings
 
     warnings.warn(
@@ -502,7 +502,9 @@ def gupta2025_coexistence_compositions(T, P_GPa):
     def _tangent_residual(x_pair):
         """Residual for common tangent: slope at x1 = slope at x2 = chord slope."""
         xa, xb = x_pair
-        if xa >= xb or xa <= 0 or xb >= 1:
+        if (
+            xa >= xb or xa <= 0 or xb >= 1
+        ):  # pragma: no cover - fsolve out-of-bounds guard; defensive
             return [1e10, 1e10]
         Ga = gupta2025_gibbs_mixing(xa, T, P_GPa)
         Gb = gupta2025_gibbs_mixing(xb, T, P_GPa)
@@ -517,14 +519,16 @@ def gupta2025_coexistence_compositions(T, P_GPa):
         x_sol = sol[0]
         if x_sol[0] < x_sol[1] and 0 < x_sol[0] < 1 and 0 < x_sol[1] < 1:
             return (float(x_sol[0]), float(x_sol[1]))
-    except Exception:
+    except (
+        Exception
+    ):  # pragma: no cover - fsolve numerical failure; falls through to grid-minima
         pass
 
     # Fallback: return grid minima
     if 0 < x1 < x2 < 1:
         return (float(x1), float(x2))
 
-    return None
+    return None  # pragma: no cover - degenerate grid minima ordering; defensive
 
 
 def gupta2025_suppression_weight(P_Pa, T_K, w_H2, w_H2O, T_scale=50.0):

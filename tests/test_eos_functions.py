@@ -940,6 +940,61 @@ class TestGetTabulatedEos:
         # 1D extrapolation allows extrapolation; just check it doesn't crash
         assert rho is not None
 
+    def test_irregular_grid_uses_linearnd_interp(self, tmp_path):
+        """A P-T-rho table where ``len(rows) != len(unique_P) * len(unique_T)``
+        is loaded via the irregular-grid branch (LinearNDInterpolator over
+        a Delaunay triangulation in log-P + T space). Exercises the
+        loader branch at seager.py:106-133.
+        """
+        from zalmoxis.eos import get_tabulated_eos
+
+        # 5 rows; unique_P={1e9, 2e9} (2 values), unique_T={2000, 3000, 4000}
+        # (3 values). Regular grid would need 2 * 3 = 6 rows; we have 5,
+        # so the loader takes the irregular-grid path.
+        eos_file = tmp_path / 'irregular_pt.tsv'
+        eos_file.write_text(
+            'P\tT\trho\n'
+            '1e9\t2000\t3000\n'
+            '1e9\t3000\t2900\n'
+            '1e9\t4000\t2800\n'
+            '2e9\t2000\t3500\n'
+            '2e9\t3000\t3400\n'
+        )
+
+        mat = {'melted_mantle': {'eos_file': str(eos_file)}}
+        # Query inside the convex hull of the irregular grid.
+        rho = get_tabulated_eos(1.5e9, mat, 'melted_mantle', temperature=2500)
+        assert rho is not None and np.isfinite(rho)
+        # Density must lie within the table's value range (2800-3500 kg/m^3).
+        assert 2800 < rho < 3500
+
+    def test_irregular_grid_local_tmax_clamp(self, tmp_path):
+        """Above-grid temperatures at a given pressure are clamped to the
+        per-pressure local T_max. Exercises seager.py:214-235.
+        """
+        from zalmoxis.eos import get_tabulated_eos
+
+        # Same irregular grid as above; at P=2e9 the local T_max is 3000 K
+        # (no row at P=2e9, T=4000).
+        eos_file = tmp_path / 'irregular_pt_clamp.tsv'
+        eos_file.write_text(
+            'P\tT\trho\n'
+            '1e9\t2000\t3000\n'
+            '1e9\t3000\t2900\n'
+            '1e9\t4000\t2800\n'
+            '2e9\t2000\t3500\n'
+            '2e9\t3000\t3400\n'
+        )
+
+        mat = {'melted_mantle': {'eos_file': str(eos_file)}}
+        # Query at T=3500 K and P=2e9 Pa: T exceeds the per-P local
+        # T_max=3000 K and is clamped down rather than producing NaN.
+        rho = get_tabulated_eos(2e9, mat, 'melted_mantle', temperature=3500)
+        assert rho is not None and np.isfinite(rho)
+        # After the clamp the lookup should sit near the (P=2e9, T=3000)
+        # data row, so rho should be close to 3400 kg/m^3.
+        assert 3300 < rho < 3500
+
 
 # =====================================================================
 # _get_paleos_unified_nabla_ad tests

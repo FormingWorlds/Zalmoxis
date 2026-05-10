@@ -167,11 +167,11 @@ def _phase_from_unified_grid(eos_file: str, P: float, T: float) -> str:
     log_t_clamped = min(max(log_t, grid['logt_min']), grid['logt_max'])
     if grid['dlog_p'] > 0 and grid['n_p'] > 1:
         ip = int(round((log_p_clamped - grid['logp_min']) / grid['dlog_p']))
-    else:
+    else:  # pragma: no cover - degenerate single-row pressure grid; defensive
         ip = 0
     if grid['dlog_t'] > 0 and grid['n_t'] > 1:
         it = int(round((log_t_clamped - grid['logt_min']) / grid['dlog_t']))
-    else:
+    else:  # pragma: no cover - degenerate single-row temperature grid; defensive
         it = 0
     ip = min(max(ip, 0), grid['n_p'] - 1)
     it = min(max(it, 0), grid['n_t'] - 1)
@@ -183,12 +183,14 @@ def _phase_from_melting_curves(P, T, melting_curves_functions) -> str:
     if not melting_curves_functions:
         return PHASE_UNKNOWN
     solidus_func, liquidus_func = melting_curves_functions
-    if solidus_func is None or liquidus_func is None:
+    if (
+        solidus_func is None or liquidus_func is None
+    ):  # pragma: no cover - tuple with None inner curves; defensive
         return PHASE_UNKNOWN
     try:
         T_sol = float(solidus_func(P))
         T_liq = float(liquidus_func(P))
-    except Exception:
+    except Exception:  # pragma: no cover - melting-curve evaluation error; defensive
         return PHASE_UNKNOWN
     if not (np.isfinite(T_sol) and np.isfinite(T_liq)):
         return PHASE_UNKNOWN

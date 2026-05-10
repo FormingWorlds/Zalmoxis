@@ -350,17 +350,75 @@ class TestBatchPath:
         # weakly negative dT slope; the volume-average preserves this).
         assert np.all(np.diff(rho) <= 0)
 
-    def test_batch_mushy_with_nan_falls_back_to_nn(self, synthetic_cache_with_nan):
-        """In the mushy batch branch, if the (T_sol, T_liq) bilinear
-        evaluations land on NaN cells, the NN fallback is invoked
-        (the ``nn_sol`` / ``nn_liq`` path inside the batch mushy block)."""
+    def test_batch_mushy_factor_above_liquidus_uses_nn_fallback(self, synthetic_cache_with_nan):
+        """In ``mushy_zone_factor < 1`` mode, an above-liquidus shell still
+        runs the direct bilinear lookup at line 317, and recovers NaN
+        cells via the NN fallback at line 319 (the post-mushy-classification
+        path).
+
+        At P=1e9 Pa, ``paleos_liquidus`` returns T_liq=1953.8 K. With
+        ``mushy_zone_factor=0.5``, T_liq is shifted up by the
+        ``_DT_PHASE_GUARD=1`` K to 1954.8 K, so T=2000 K is classified as
+        ``above`` and the shell never enters the mushy branch. The direct
+        bilinear at (log_p=9, log_t≈3.30) brackets the (0, 0) NaN cell,
+        triggering the NN fallback.
+        """
         s = synthetic_cache_with_nan
         # Place the query at the corner where the synthetic cache has NaN
         ps = np.array([10.0 ** s['entry']['logp_min']])
-        # Pick T inside the mushy zone for that pressure
         ts = np.array([2000.0])
         rho = get_paleos_unified_density_batch(ps, ts, s['mat'], 0.5, s['cache'])
         assert np.all(np.isfinite(rho))
+
+    def test_batch_above_below_with_nan_recovery(self, synthetic_cache_with_nan):
+        """When a shell is classified as above/below the mushy zone (not
+        mushy), the post-classification direct lookup at line 317 may still
+        land on a NaN cell; the NN fallback at line 319-323 must then
+        recover the density.
+
+        At P=1e9 Pa with ``mushy_zone_factor=0.8``, T_sol ≈ 1563 K. A query
+        at T=900 K is below T_sol, classified as ``below``, and bypasses
+        the mushy branch. After per-cell clamping log_t up to
+        ``logt_valid_min[0]=3.0`` the bilinear lands on the (0, 0) NaN
+        corner; the NN fallback fires at line 319-323.
+        """
+        s = synthetic_cache_with_nan
+        ps = np.array([1e9])
+        ts = np.array([900.0])  # well below T_sol at P=1e9
+        rho = get_paleos_unified_density_batch(ps, ts, s['mat'], 0.8, s['cache'])
+        assert np.all(np.isfinite(rho))
+        # Density should be physically reasonable (synthetic table
+        # rho ~ 5000 * (P/1e9)^0.1 at table corner is ~5000 kg/m^3).
+        assert 1000 < rho[0] < 20000
+
+    def test_batch_mushy_solid_and_liquid_side_nan_recovery(self):
+        """Both solid-side (line 339) and liquid-side (line 352) bilinear
+        NaN fallbacks fire simultaneously when the T_sol and T_liq lookups
+        each land on a bracket containing a NaN cell.
+
+        At P=1e10 Pa: PALEOS liquidus T_liq ≈ 3021 K, mushy_zone_factor=0.6
+        gives T_sol ≈ 1813 K. log_t_sol ≈ 3.258 brackets cells
+        (2,1)-(3,2); log_t_liq ≈ 3.480 brackets cells (2,3)-(3,4); the
+        unclamped query at log_t ≈ 3.398 brackets (2,2)-(3,3). NaN at
+        (3, 2) sits inside the solid-side bracket; NaN at (3, 3) sits
+        inside both the unclamped query bracket AND the liquid-side
+        bracket. One test therefore exercises lines 319, 339 and 352.
+        """
+        cache = _build_cache()
+        # log_p step is 3/7 ≈ 0.429, log_t step is 1/7 ≈ 0.143.
+        # cell (3, 2) is at (log_p≈10.286, log_t≈3.286) -> solid bracket
+        # cell (3, 3) is at (log_p≈10.286, log_t≈3.429) -> liquid bracket
+        cache['density_grid'][3, 2] = np.nan
+        cache['density_grid'][3, 3] = np.nan
+        eos_file = '/synthetic/paleos_solliq_nan.dat'
+        mat = {'eos_file': eos_file, 'format': 'paleos_unified'}
+        cdict = {eos_file: cache}
+
+        ps = np.array([10**10.0])
+        ts = np.array([2500.0])  # mushy at P=1e10 (T_liq≈3021, T_sol≈1813)
+        rho = get_paleos_unified_density_batch(ps, ts, mat, 0.6, cdict)
+        assert np.all(np.isfinite(rho))
+        assert 1000 < rho[0] < 20000
 
 
 class TestPerCellClampLogger:

@@ -18,7 +18,10 @@ import os
 import numpy as np
 import pytest
 
-pytestmark = pytest.mark.unit
+# Every class in this file is slow-tier (full-solver runs); the slow
+# marker is applied per class. A module-level ``pytestmark = pytest.mark.unit``
+# would inherit onto those classes and trip
+# ``tools/validate_test_structure.sh``.
 
 
 def _zalmoxis_root() -> str:
