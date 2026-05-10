@@ -1,15 +1,25 @@
 #!/usr/bin/env python3
 """Emit shields.io endpoint-badge JSON files for the Zalmoxis test count.
 
-Runs ``pytest --collect-only -q`` once per marker expression to obtain the
-collection count, parses the trailing summary line, and writes one
-endpoint-badge JSON per non-zero count to the requested output directory.
-The badges are consumed by shields.io via raw GitHub URLs of the form
-``https://raw.githubusercontent.com/FormingWorlds/Zalmoxis/main/.github/badges/tests-<name>.json``
-and rendered on the README and the PROTEUS framework website.
+Implements the public 2-category test scheme used across the PROTEUS
+ecosystem: every test counts as either "unit" (mocked, fast) or
+"integration" (everything else, including the internal ``smoke`` and
+``slow`` markers). The internal 4-marker scheme (unit / smoke /
+integration / slow) is kept inside CI for operational granularity but
+is hidden from the public-facing badges to keep the surface readable to
+non-developers.
 
-The script never executes the test bodies; it only collects, so the cost
-is bounded by import time.
+Three files are always written: ``tests-total.json``, ``tests-unit.json``,
+and ``tests-integration.json``. The integration count is the union of
+``smoke``, ``integration``, and ``slow`` markers; pytest's ``or`` marker
+expression handles the union deduplication for free.
+
+Badges are consumed by shields.io via raw GitHub URLs of the form
+``https://raw.githubusercontent.com/FormingWorlds/Zalmoxis/main/.github/badges/tests-<name>.json``
+and rendered in the README and on the PROTEUS framework website.
+
+The script never executes test bodies; it only collects, so the cost is
+bounded by import time.
 """
 
 from __future__ import annotations
@@ -21,14 +31,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Marker -> badge filename suffix and shields.io label.
-# The total badge has label "tests"; per-marker badges use the marker name.
-_MARKER_QUERIES: tuple[tuple[str, str, str], ...] = (
+# (filename suffix, pytest marker expression, shields.io label).
+# "integration" here is the public union of smoke + integration + slow.
+_BADGE_QUERIES: tuple[tuple[str, str, str], ...] = (
     ('total', 'not skip', 'tests'),
-    ('unit', 'unit and not skip', 'unit'),
-    ('integration', 'integration and not skip', 'integration'),
-    ('smoke', 'smoke and not skip', 'smoke'),
-    ('slow', 'slow and not skip', 'slow'),
+    ('unit', 'unit and not skip', 'unit tests'),
+    ('integration', '(smoke or integration or slow) and not skip', 'integration tests'),
 )
 
 # Pytest prints either ``<N> tests collected`` (all match) or
@@ -70,7 +78,6 @@ def count_collected(marker_expr: str) -> int:
         marker_expr,
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    # Exit 5 = "no tests collected". Treat as a successful zero.
     if proc.returncode == 5:
         return 0
     if proc.returncode != 0:
@@ -120,28 +127,6 @@ def write_badge(out_dir: Path, suffix: str, label: str, count: int) -> Path:
     return path
 
 
-def remove_stale_badge(out_dir: Path, suffix: str) -> bool:
-    """Delete a stale badge file if it exists.
-
-    Parameters
-    ----------
-    out_dir : pathlib.Path
-        Directory holding badge files.
-    suffix : str
-        Badge name suffix whose file should be removed.
-
-    Returns
-    -------
-    bool
-        True if a file was removed, False if no file existed.
-    """
-    path = out_dir / f'tests-{suffix}.json'
-    if path.exists():
-        path.unlink()
-        return True
-    return False
-
-
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments.
 
@@ -171,16 +156,10 @@ def main() -> int:
     args = parse_args()
     out_dir: Path = args.out
 
-    for suffix, marker_expr, label in _MARKER_QUERIES:
+    for suffix, marker_expr, label in _BADGE_QUERIES:
         count = count_collected(marker_expr)
         print(f'{label}: {count}')
-        if count > 0:
-            write_badge(out_dir, suffix, label, count)
-        else:
-            # Drop any stale badge so the website does not show an
-            # outdated number for a marker that no longer matches.
-            if suffix != 'total':
-                remove_stale_badge(out_dir, suffix)
+        write_badge(out_dir, suffix, label, count)
 
     return 0
 
