@@ -1,0 +1,58 @@
+name: Refresh test count badges
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'tests/**'
+      - 'src/**'
+      - 'pyproject.toml'
+      - 'tools/generate_test_badges.py'
+      - '.github/workflows/publish-test-badges.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: badges-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  refresh-badges:
+    name: Regenerate tests-*.json
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.9"
+
+      - name: Install Zalmoxis and pytest
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+          pip install pytest pytest-xdist
+
+      - name: Regenerate badge JSON files
+        run: |
+          python tools/generate_test_badges.py --out .github/badges/
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "actions"
+          git config user.email "actions@github.com"
+          git add .github/badges/
+          if git diff --cached --quiet; then
+            echo "No badge changes to commit."
+          else
+            git commit -m "ci: refresh test count badges [skip ci]"
+            git push
+          fi
