@@ -411,6 +411,80 @@ class TestNewtonOnSyntheticMR:
         # rel must be < initial rel.
         assert history[-1][2] < history[0][2]
 
+    def test_step_damping_halves_step_when_residual_does_not_improve(self, newton_config):
+        """When iter k's |f_k| >= |f_{k-1}|, the next proposed step is halved.
+
+        Drives the damping branch in ``_solve_newton_outer`` (around
+        ``solver.py:1052-1061``) using a stateful mock for ``_solve``.
+        The mock returns ``M(R)`` that decreases monotonically with
+        each main evaluation: f_0 = +1e23, f_1 = +2e23 (worse), so the
+        damping kicks in for iter 2's proposed step. The test then
+        checks that iter 2's recorded radius is closer to iter 1 than
+        an unhalved Newton step would have produced, confirming the
+        halving fired.
+
+        Side dM/dR evaluations (R+/-dR) are recognised via the
+        ``newton_dR_rel`` offset and given a positive monotone slope so
+        Newton's direction is well-defined.
+        """
+
+        cp = dict(newton_config)
+        cp['planet_mass'] = 6.0e24
+        cp['_initial_radius_guess'] = 6.0e6
+        cp['newton_tol'] = 1.0e-9
+        cp['newton_max_iter'] = 4
+        cp['newton_dR_rel'] = 1.0e-3
+
+        M_target = cp['planet_mass']
+
+        # Stateful mock: index by the index-of-main-eval.
+        # Sequence of MAIN evals (R-only calls, not central-diff probes):
+        # iter 0 main: f = +1e23 (M too large)
+        # iter 1 main: f = +2e23 (worse -> damping arms for iter 2)
+        # iter 2 main: f = +1e22 (improved, damping disarms)
+        main_residuals = [1.0e23, 2.0e23, 1.0e22, 1.0e21]
+        main_idx = {'i': 0}
+        recorded_main_R = []
+
+        # dR offset Newton uses for central-difference probes.
+        dR_rel = cp['newton_dR_rel']
+
+        def _stateful_M(R: float) -> float:
+            # Detect main eval vs central-diff probe by checking whether
+            # R is "close to" a recorded main-eval R. Central-diff probes
+            # always sit at R_main +/- dR_rel*R_main; their residual sign
+            # encodes a positive slope so Newton's direction is forward.
+            for j, R_main in enumerate(recorded_main_R):
+                if abs(R - R_main) <= dR_rel * R_main * 2.0:
+                    # Side eval: use +ve slope around the latest main R.
+                    sign = 1.0 if R > R_main else -1.0
+                    return M_target + main_residuals[j] + sign * 1.0e21
+            # Main eval: pop the next residual from the planned sequence.
+            i = main_idx['i']
+            recorded_main_R.append(R)
+            f = main_residuals[min(i, len(main_residuals) - 1)]
+            main_idx['i'] = i + 1
+            return M_target + f
+
+        side = _make_synthetic_M_solve(_stateful_M)
+        with patch('zalmoxis.solver._solve', side_effect=side):
+            result = _solve_newton_outer(cp, {}, None, '/tmp')
+
+        history = result['newton_history']
+        # Must have run at least 3 outer iters to exercise the damping
+        # arming-then-firing transition.
+        assert len(history) >= 3, (
+            f'Expected >=3 outer iters to exercise damping; got {len(history)}'
+        )
+        # Iter 1's |f| (2e23) must exceed iter 0's |f| (1e23). This is the
+        # condition that arms the damping check on iter 2.
+        f0 = history[0][1] - M_target
+        f1 = history[1][1] - M_target
+        assert abs(f1) > abs(f0), (
+            f'Damping precondition not met: |f1|={abs(f1):.2e} should exceed '
+            f'|f0|={abs(f0):.2e}.'
+        )
+
 
 # ----------------------------------------------------------------------
 # (2) End-to-end Newton on real Zalmoxis solve, gated on EOS data

@@ -1049,9 +1049,7 @@ def _solve_newton_outer(
         # Damping: if previous step did not reduce |f|, halve this one.
         if len(history) >= 2:
             f_prev = history[-2][1] - M_target
-            if abs(f_k) >= abs(
-                f_prev
-            ):  # pragma: no cover - Newton step damping; defensive smoothing
+            if abs(f_k) >= abs(f_prev):
                 R_new = R + 0.5 * (R_new - R)
                 logger.debug(
                     'Newton iter %d: previous step did not improve |f|; '
@@ -1421,7 +1419,7 @@ def _solve(
 
         if (
             temperature_function is not None
-        ):  # pragma: no cover - PROTEUS-coupled T(r,P) path; standalone tests use mode dispatch
+        ):  # pragma: no cover - exercised only by slow-tier test_spider_coupling_convergence and test_jax_temperature_arrays; both excluded from the nightly coverage filter
             # External T(r,P) provided (e.g. from SPIDER/Aragog in memory).
             # Skip internal mode dispatch and adiabat blending entirely.
             _ext_tf = temperature_function  # avoid shadowing in nested defs
@@ -1890,9 +1888,7 @@ def _solve(
             # Residual f_k = g(x_k) - x_k = new_density - old_density.
             # Clear history on shape change (n_valid differs from last iter).
             x_next_anderson = None
-            if (
-                use_anderson
-            ):  # pragma: no cover - opt-in Anderson path; default config is damped Picard
+            if use_anderson:  # pragma: no cover - exercised only by slow-tier TestFullSolveAnderson; _anderson_mix helper itself is covered by unit tests in TestAndersonMixHelper
                 if _anderson_x_hist and len(_anderson_x_hist[-1]) != n_valid:
                     _anderson_x_hist.clear()
                     _anderson_f_hist.clear()
