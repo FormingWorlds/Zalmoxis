@@ -38,7 +38,7 @@ For development (includes pytest, pytest-xdist, ruff, coverage, and pre-commit):
 pip install -e ".[develop]"
 ```
 
-The `[develop]` extras are required for running the test suite. See the [Testing](testing.md) page for details.
+The `[develop]` extras are required for running the test suite. See the [Testing](../Explanations/testing.md) page for details.
 
 ### Step 3: Set the environment variable
 

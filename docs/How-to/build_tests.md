@@ -1,7 +1,7 @@
 # How to build tests
 
 This page is about *writing* a new test, by hand or with an LLM. For running
-the existing suite see [Testing suite](testing.md).
+the existing suite see [Testing suite](../Explanations/testing.md).
 
 ## Decision tree: which marker?
 
@@ -153,7 +153,7 @@ stating the rationale.
 ## Coverage gate and pragma usage
 
 Zalmoxis enforces a 95% coverage gate in the nightly CI (see
-[Testing suite > Coverage gate](testing.md#coverage-gate)). Most defensive
+[Testing suite > Coverage gate](../Explanations/testing.md#coverage-gate)). Most defensive
 code is already excluded automatically through the `exclude_lines` list in
 `[tool.coverage.report]` (`def __repr__`, `if TYPE_CHECKING:`,
 `@abstractmethod`, `raise NotImplementedError`, etc.) — you do not need

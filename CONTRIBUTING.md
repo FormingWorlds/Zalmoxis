@@ -26,7 +26,7 @@ pytest                  # all tests in parallel
 
 Run `pytest -m unit` as a fast feedback loop during development. The full suite runs automatically on PRs.
 
-When adding or modifying code, add or update tests in `src/tests/` to match. See the [Testing documentation](https://proteus-framework.org/Zalmoxis/How-to/testing.html) for the full guide on markers, fixtures, and test structure.
+When adding or modifying code, add or update tests in `src/tests/` to match. See the [Testing documentation](https://proteus-framework.org/Zalmoxis/Explanations/testing.html) for the full guide on markers, fixtures, and test structure.
 
 ### Linting
 
