@@ -1,8 +1,8 @@
 # Testing suite
 
+[![Unit Tests](https://img.shields.io/github/actions/workflow/status/FormingWorlds/Zalmoxis/CI.yml?branch=main&label=Unit%20Tests)](https://github.com/FormingWorlds/Zalmoxis/actions/workflows/CI.yml)
+[![Integration Tests](https://img.shields.io/github/actions/workflow/status/FormingWorlds/Zalmoxis/nightly.yml?branch=main&label=Integration%20Tests)](https://github.com/FormingWorlds/Zalmoxis/actions/workflows/nightly.yml)
 [![codecov](https://codecov.io/gh/FormingWorlds/Zalmoxis/graph/badge.svg)](https://codecov.io/gh/FormingWorlds/Zalmoxis)
-[![unit tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/FormingWorlds/Zalmoxis/main/.github/badges/tests-unit.json)](https://proteus-framework.org/testing)
-[![integration tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/FormingWorlds/Zalmoxis/main/.github/badges/tests-integration.json)](https://proteus-framework.org/testing)
 [![tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/FormingWorlds/Zalmoxis/main/.github/badges/tests-total.json)](https://proteus-framework.org/testing)
 
 
