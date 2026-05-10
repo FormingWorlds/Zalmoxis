@@ -123,8 +123,14 @@ jobs:
           bash tools/validate_test_structure.sh
 
       - name: Run unit tests
+        # Exclude slow tests at the marker-expression level. Several
+        # files (e.g. test_anderson_acceleration.py, test_outer_solver_newton.py)
+        # declare ``pytestmark = pytest.mark.unit`` at module scope while
+        # also marking specific full-solver classes ``@pytest.mark.slow``.
+        # Without the ``and not slow`` clause, those slow classes still
+        # carry the inherited ``unit`` marker and would run on every push.
         run: |
-          pytest -m "unit and not skip" -n auto -o "addopts=" -o "junit_family=legacy" \
+          pytest -m "unit and not slow and not skip" -n auto -o "addopts=" -o "junit_family=legacy" \
             --junitxml=junit.xml
 
       - name: Upload test results to Codecov

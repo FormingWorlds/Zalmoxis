@@ -1,4 +1,4 @@
-"""Smoke tests for ``plots.plot_phase_vs_radius``.
+"""Unit tests for ``plots.plot_phase_vs_radius``.
 
 Drive the public ``plot_PT_with_phases`` helper with synthetic profiles and
 assert the PDF is created. Two scenarios cover the only branch in the module:

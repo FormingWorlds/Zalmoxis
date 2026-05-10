@@ -295,14 +295,22 @@ def test_no_integrated_mass_doubles_x_interior():
         )
 
     # No shells above binodal -> integrated mass = 0 -> x doubled each iteration.
-    # 0.001 * 2 * 2 = 0.004 after 2 doublings (3rd iter would also double).
+    # 0.001 * 2 * 2 * 2 = 0.008 after 3 doublings; max_iterations=3 means three
+    # non-converging iterations so the doubling fires three times.
     assert result['miscibility_converged'] is False
     # Each iteration doubled x: clamp range is [1e-6, 0.5], so doubling lands within.
     assert result['x_interior_converged']['PALEOS:H2O'] == pytest.approx(0.008, rel=1e-6)
 
 
 def test_x_interior_upper_clamp():
-    """Secant rescaling > 0.5 should be clamped at 0.5."""
+    """Secant rescaling > 0.5 should be clamped at 0.5.
+
+    The unclamped rescale ``new_x = old_x * target / integrated`` is engineered
+    to land well above 0.5 so the clamp at solver.py:2451 actually fires.
+    With ``old_x=0.1`` and ``integrated_at_x_init = 0.1 * total_mass_at_x1``,
+    a target of ``100 * total_mass_at_x1`` gives an unclamped rescale of
+    ``0.1 * (100 * M) / (0.1 * M) = 100``, which the solver must clamp to 0.5.
+    """
     n = 20
     radii = np.linspace(1.0e5, 6.4e6, n)
     density = np.full(n, 5000.0)
@@ -322,11 +330,13 @@ def test_x_interior_upper_clamp():
         rho_mid = 0.5 * (density[i] + density[i + 1])
         total_mass_at_x1 += rho_mid * 4.0 * np.pi * r_mid**2 * dr
 
-    # Target requires x ~10 -> rescaling should hit clamp at 0.5
-    target = 10.0 * total_mass_at_x1 * 0.001
+    old_x = 0.1
+    # Unclamped rescale = old_x * target / (old_x * total_mass_at_x1) = 100,
+    # well above the 0.5 cap; the clamp must trip on every iteration.
+    target = 100.0 * total_mass_at_x1
     vp = VolatileProfile(
         global_miscibility=True,
-        x_interior={'Unknown:Foo': 0.001},
+        x_interior={'Unknown:Foo': old_x},
     )
 
     with patch('zalmoxis.solver.main', return_value=result_template):
@@ -341,7 +351,10 @@ def test_x_interior_upper_clamp():
             mass_tolerance=1e-6,
         )
 
-    assert result['x_interior_converged']['Unknown:Foo'] <= 0.5
+    # With the clamp engaged, x_interior must equal 0.5 exactly.
+    assert result['x_interior_converged']['Unknown:Foo'] == pytest.approx(0.5, rel=1e-12)
+    # The run cannot converge: the clamped x can never reach the unrealistic target.
+    assert result['miscibility_converged'] is False
 
 
 def test_solvus_detection_for_chabrier_h():

@@ -484,6 +484,24 @@ class TestNewtonOnSyntheticMR:
             f'Damping precondition not met: |f1|={abs(f1):.2e} should exceed '
             f'|f0|={abs(f0):.2e}.'
         )
+        # Discriminating assertion. With the engineered slope from the side
+        # evals, ``dM/dR`` at iter 1 is ``1e21 / (dR_rel * R_1) = 1e24 / R_1``.
+        # The raw Newton step is ``-f_1 / dM/dR = -0.2 * R_1``, which exceeds
+        # the default trust-region cap ``newton_trust_region_frac=0.1`` so
+        # the cap clips the step to ``-0.1 * R_1``. Damping then halves it
+        # again to ``-0.05 * R_1``. The composed ratio is:
+        #   damped + capped:  R_2 / R_1 = 0.95
+        #   capped only:      R_2 / R_1 = 0.90
+        #   raw Newton:       R_2 / R_1 = 0.80
+        # Only damped+capped matches 0.95; the assertion fails if damping
+        # silently regresses to capped-only behaviour.
+        R_1 = history[1][0]
+        R_2 = history[2][0]
+        assert R_2 / R_1 == pytest.approx(0.95, rel=1e-3), (
+            f'Step damping did not halve the trust-region-capped step: '
+            f'R_2/R_1={R_2 / R_1:.4f}, expected 0.95 (capped + damped) vs '
+            f'0.90 (capped only) vs 0.80 (raw Newton).'
+        )
 
 
 # ----------------------------------------------------------------------

@@ -7,7 +7,7 @@
 
 
 This page is about *running* the existing test suite. For guidance on *writing*
-new tests see [How to build tests](build_tests.md).
+new tests see [How to build tests](../How-to/build_tests.md).
 
 Tests verify that the code does what was written; physical correctness is
 judged by data, not by tests. A test passing tells the developer that the
@@ -30,7 +30,7 @@ pip install -e ".[develop]"
 ```
 
 `ZALMOXIS_ROOT` is auto-detected by the package. If auto-detection fails, set
-it explicitly (see [Installation](installation.md#step-3-set-the-environment-variable)).
+it explicitly (see [Installation](../How-to/installation.md#step-3-set-the-environment-variable)).
 Tests that use mocked EOS functions, including the first-principles tier, run
 without `ZALMOXIS_ROOT` being set.
 
@@ -100,7 +100,7 @@ matrix runs the unit tier without xdist contention on small runners.
 
 | Trigger | Markers | Budget | Coverage |
 |---|---|---|---|
-| Push / PR (`CI.yml`) | `unit and not slow` | < 5 min | None (gate pre-flight only) |
+| Push / PR (`CI.yml`) | `unit and not slow and not skip` | < 10 min | None (gate pre-flight only) |
 | Nightly cron (`nightly.yml`, 02:00 UTC) | `(unit or smoke or integration) and not slow` | < 60 min | Yes; gates on 95% and uploads to Codecov with the `nightly` flag |
 | Manual `workflow_dispatch` | as above | < 60 min | Yes |
 
