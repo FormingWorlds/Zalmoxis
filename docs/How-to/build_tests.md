@@ -150,11 +150,36 @@ def test_clamp_within_grid_is_identity():
 Two unit tests, one branch each, both fast, both with a one-line docstring
 stating the rationale.
 
+## Coverage gate and pragma usage
+
+Zalmoxis enforces a 95% coverage gate in the nightly CI (see
+[Testing suite > Coverage gate](testing.md#coverage-gate)). Most defensive
+code is already excluded automatically through the `exclude_lines` list in
+`[tool.coverage.report]` (`def __repr__`, `if TYPE_CHECKING:`,
+`@abstractmethod`, `raise NotImplementedError`, etc.) — you do not need
+inline pragmas for those.
+
+For inline `# pragma: no cover`, use it only on **genuinely defensive**
+branches that no realistic test can reach without contrived inputs:
+`LinAlgError` from `np.linalg.lstsq`, `RuntimeError` recovery on a
+non-finite mass evaluation, dev-gated `if _PROFILE:` instrumentation,
+heavy-data-dependent fallback paths. Always pair the pragma with a
+one-line reason:
+
+```python
+except (ValueError, RuntimeError) as exc:  # pragma: no cover - stale-cache sign mismatch; defensive
+    ...
+```
+
+Do not pragma normal-execution paths. The reviewer will push back; "I
+couldn't be bothered to write a test" is not a defensive branch.
+
 ## Anti-patterns
 
 - **Forgetting the marker.** Tests without `@pytest.mark.unit` (or another
   marker) are invisible to CI. Run `pytest --collect-only -m unit | tail`
-  after adding a test to confirm pickup.
+  after adding a test to confirm pickup. With `--strict-markers`, a typo'd
+  marker now fails the run.
 - **Hardcoding paths.** Use `zalmoxis_root` or `pathlib.Path(__file__).parent`,
   never absolute paths.
 - **Test ordering dependence.** Each test must pass in isolation. xdist
@@ -207,6 +232,17 @@ MOCKING:
 - Mock EOS only when the test isolates a non-EOS component or exercises an
   analytic limit. For EOS-table-dependent physics, use the real PALEOS or
   Seager path via `cached_solver` or a direct call.
+
+COVERAGE EXCLUSIONS:
+- The 95% gate runs in nightly CI. Do NOT add `# pragma: no cover` just to
+  pass the gate. The exclude_lines list in pyproject.toml already covers
+  def __repr__, raise NotImplementedError, if TYPE_CHECKING:, @abstractmethod.
+- Inline pragma is acceptable ONLY for: numerical pathology recovery
+  (LinAlgError, RuntimeError on non-finite values, brentq same-sign
+  bracket), dev-gated diagnostics behind env vars, heavy-data-dependent
+  fallback paths.
+- Every inline pragma must carry a one-line "why this branch is
+  unreachable in unit tests" justification.
 
 NAMING:
 - Files: test_<module>.py, test_<module>_branches.py for hard-to-reach
