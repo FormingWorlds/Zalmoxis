@@ -62,14 +62,22 @@ jobs:
         run: |
           bash tools/setup/get_zalmoxis.sh
 
+      - name: Stamp nightly timestamp
+        # Generated unconditionally before pytest runs so the staleness
+        # check in the PR gate's coverage-union step always has a
+        # timestamp to read, even if pytest exits non-zero on a coverage
+        # regression and the upload-artifact step still fires under
+        # ``!cancelled()``. Without this guard the PR gate could read a
+        # success status with a missing timestamp and silently treat a
+        # broken nightly as fresh.
+        run: |
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > nightly-timestamp.txt
+
       - name: Run unit + smoke + integration tests with coverage
         run: |
           pytest -m "(unit or smoke or integration) and not slow" -n auto -o "addopts=" \
             --cov=zalmoxis --cov-report=term-missing --cov-report=xml --cov-report=json \
             --cov-fail-under=95
-          # Stamp the artifact with the nightly run timestamp so the PR
-          # gate can detect staleness.
-          date -u +"%Y-%m-%dT%H:%M:%SZ" > nightly-timestamp.txt
 
       - name: Upload coverage artifact for PR gate
         if: ${{ !cancelled() }}

@@ -63,24 +63,66 @@ def marker_from_decorator(dec: ast.expr) -> str | None:
     return None
 
 
-def module_has_pytestmark(tree: ast.Module) -> bool:
-    """True if the module has any ``pytestmark = ...`` assignment."""
+_REAL_TIER_MARKERS = ALLOWED - {'skip'}
+
+
+def _marker_names_in_value(value: ast.expr) -> set[str]:
+    """Recursively extract marker names from a ``pytestmark`` RHS.
+
+    Accepts ``pytest.mark.<name>``, ``pytest.mark.<name>(...)``, and
+    list/tuple wrappers thereof. Returns the set of marker names found.
+    """
+    found: set[str] = set()
+    if isinstance(value, (ast.List, ast.Tuple)):
+        for elt in value.elts:
+            found |= _marker_names_in_value(elt)
+        return found
+    name = marker_from_decorator(value)
+    if name:
+        found.add(name)
+    return found
+
+
+def module_pytestmark_markers(tree: ast.Module) -> set[str]:
+    """Return the set of marker names assigned to module-level ``pytestmark``.
+
+    Empty set when ``pytestmark`` is absent or its RHS is not a
+    recognisable ``pytest.mark.<x>`` expression. A module that assigns
+    ``pytestmark = []``, ``pytestmark = "unit"``, or
+    ``pytestmark = pytest.mark.skip`` returns a set that does not
+    include any of unit/smoke/integration/slow, which the caller then
+    treats as "not marker-bearing".
+    """
     for node in tree.body:
         if isinstance(node, ast.Assign):
             for tgt in node.targets:
                 if isinstance(tgt, ast.Name) and tgt.id == 'pytestmark':
-                    return True
+                    return _marker_names_in_value(node.value)
         if isinstance(node, ast.AnnAssign):
             tgt = node.target
-            if isinstance(tgt, ast.Name) and tgt.id == 'pytestmark':
-                return True
-    return False
+            if (
+                isinstance(tgt, ast.Name)
+                and tgt.id == 'pytestmark'
+                and node.value is not None
+            ):
+                return _marker_names_in_value(node.value)
+    return set()
 
 
 def find_unmarked(path: Path) -> list[tuple[int, str]]:
-    """Return [(lineno, name), ...] of unmarked test_* defs in path."""
-    tree = ast.parse(path.read_text(), filename=str(path))
-    if module_has_pytestmark(tree):
+    """Return [(lineno, name), ...] of unmarked test_* defs in path.
+
+    Returns ``[(0, '<unparseable>')]`` if the file fails to parse, so
+    the caller can surface the syntax error as a marker-validation
+    failure rather than crashing the script.
+    """
+    try:
+        tree = ast.parse(path.read_text(), filename=str(path))
+    except SyntaxError:
+        return [(0, '<unparseable>')]
+
+    module_markers = module_pytestmark_markers(tree)
+    if module_markers & _REAL_TIER_MARKERS:
         return []
 
     unmarked: list[tuple[int, str]] = []
@@ -102,7 +144,7 @@ def find_unmarked(path: Path) -> list[tuple[int, str]]:
                     continue
                 own = {m for m in (marker_from_decorator(d) for d in node.decorator_list) if m}
                 cls = class_markers.get(in_class, set()) if in_class else set()
-                marks = (own | cls) & ALLOWED
+                marks = (own | cls | module_markers) & ALLOWED
                 if not marks:
                     unmarked.append((node.lineno, node.name))
 
@@ -120,13 +162,14 @@ def main() -> int:
         unmarked = find_unmarked(path)
         try:
             tree = ast.parse(path.read_text(), filename=str(path))
+            for node in ast.walk(tree):
+                if isinstance(
+                    node, (ast.FunctionDef, ast.AsyncFunctionDef)
+                ) and node.name.startswith('test_'):
+                    n_tests += 1
         except SyntaxError:
-            continue
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith(
-                'test_'
-            ):
-                n_tests += 1
+            # find_unmarked already reported this path with name '<unparseable>'.
+            pass
         for lineno, name in unmarked:
             rel = path.relative_to(tests_dir.parent)
             failures.append(f'{rel}:{lineno}: {name}')

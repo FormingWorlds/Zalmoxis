@@ -86,7 +86,16 @@ def count_collected(marker_expr: str) -> int:
             f'(exit code {proc.returncode}):\n{proc.stdout}\n{proc.stderr}'
         )
 
-    match = _COLLECTED_RE.search(proc.stdout)
+    # Pytest emits the "<N> tests collected" summary as the LAST
+    # non-empty line of its collection-only output. Searching only the
+    # last line guards against a stray earlier match (e.g. a plugin's
+    # progress line, a docstring printed during collection, or an
+    # incidental "<digit>+ tests collected" string in a warning).
+    last_line = next(
+        (line for line in reversed(proc.stdout.splitlines()) if line.strip()),
+        '',
+    )
+    match = _COLLECTED_RE.search(last_line)
     if match is None:
         raise RuntimeError(
             f'Could not parse "<N> tests collected" from pytest output '

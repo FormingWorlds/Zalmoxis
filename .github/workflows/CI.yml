@@ -251,11 +251,11 @@ jobs:
               est_pct = 0.0
 
           drop = full_threshold - est_pct
-          status = 'ok'
-          if drop > GRACE:
-              status = 'fail'
-          elif drop > 0:
-              status = 'warn'
+          # The PR step is advisory; the hard 95% gate runs in the
+          # nightly workflow. Status names reflect that: ``ok`` and
+          # ``warn`` only, no ``fail`` value, to avoid implying that
+          # this step itself enforces the threshold.
+          status = 'ok' if drop <= GRACE else 'warn'
 
           # Write outputs for downstream steps
           out = pathlib.Path(os.environ.get('GITHUB_OUTPUT', '/tmp/o.txt'))
