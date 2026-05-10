@@ -258,7 +258,7 @@ file (enforced by ruff isort).
 
 ## Testing
 
-- ~1170 tests collected: ~1119 unit, 23 smoke, 2 integration, 44 slow.
+- ~1175 tests collected: ~1124 unit, 23 smoke, 2 integration, 44 slow.
 - Unit tier: `pytest -o "addopts=" -m unit` (~1.5 min on the dev machine,
   ~1m54s ubuntu / ~2m29s macOS in CI).
 - Nightly tier: `pytest -o "addopts=" -m "(unit or smoke or integration) and not slow"`

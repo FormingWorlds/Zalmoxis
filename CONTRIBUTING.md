@@ -14,19 +14,19 @@ This includes pytest, pytest-xdist (parallel test execution), ruff (linting/form
 
 ### Testing
 
-Tests are categorized by speed using pytest markers:
+Tests are categorized by speed using four pytest markers (`unit`, `smoke`, `integration`, `slow`):
 
 ```console
-pytest -m unit          # ~2s   -- EOS functions, no solver
-pytest -m integration   # ~10min -- full solver validation
-pytest -m slow          # ~30min -- composition grid sweep
-pytest -m "not slow"    # everything except the slow grid sweep
-pytest                  # all tests in parallel
+pytest -m unit                                            # ~1.5 min -- EOS helpers, mocked solver branches, no real solver
+pytest -m smoke                                           # ~5-10 min -- single-mass full-solver smoke
+pytest -m integration                                     # ~10-20 min -- published-reference comparisons
+pytest -m slow                                            # ~30+ min per test -- composition / tolerance grids; manual only
+pytest -m "(unit or smoke or integration) and not slow"   # full nightly tier
 ```
 
-Run `pytest -m unit` as a fast feedback loop during development. The full suite runs automatically on PRs.
+Every new test must carry exactly one of these markers; `--strict-markers` is enforced, so a typo'd marker fails the run. Run `pytest -m unit` as a fast feedback loop during development. Push and PR CI runs the unit + smoke tier; the nightly tier runs unit + smoke + integration with a 95% coverage gate.
 
-When adding or modifying code, add or update tests in `src/tests/` to match. See the [Testing documentation](https://proteus-framework.org/Zalmoxis/Explanations/testing.html) for the full guide on markers, fixtures, and test structure.
+When adding or modifying code, add or update tests in `tests/` to match. See the [Testing documentation](https://proteus-framework.org/Zalmoxis/Explanations/testing.html) for the full guide on markers, fixtures, and test structure, and the [How to build tests](https://proteus-framework.org/Zalmoxis/How-to/build_tests.html) guide for naming, mocking, and tolerance conventions.
 
 ### Linting
 

@@ -38,12 +38,12 @@ without `ZALMOXIS_ROOT` being set.
 
 | Marker | Tests | Wall | Scope |
 |---|---|---|---|
-| `unit` | ~1119 | ~1.5 min | EOS helpers, config validation, mixing, binodal, melting curves, PALEOS loaders, JAX parity, structure-model branches, mocked-solver branch coverage. No real solver call (a handful of analytic-EOS smoke tests excepted). |
+| `unit` | ~1124 | ~1.5 min | EOS helpers, config validation, mixing, binodal, melting curves, PALEOS loaders, JAX parity, structure-model branches, mocked-solver branch coverage. No real solver call (a handful of analytic-EOS smoke tests excepted). |
 | `smoke` | ~23 | ~5 to 10 min | Single 1 $M_\oplus$ full-solver runs that exercise the whole code path under relaxed cost. |
 | `integration` | ~2 | ~10 to 20 min | PALEOS rocky 1 + 5 $M_\oplus$ against published references. |
 | `slow` | ~44 | ~30+ min each | Composition grid sweeps and grid/tolerance convergence studies. Manual only. |
 
-Total collected: ~1170 tests. The exact counts drift as new branches are
+Total collected: ~1175 tests. The exact counts drift as new branches are
 covered; `pytest -o "addopts=" --collect-only -m <marker>` reports the live
 number.
 
@@ -164,9 +164,9 @@ above already captures the common cases (`def __repr__`, `if TYPE_CHECKING:`,
   non-finite mass evaluation, `brentq` raising on a same-sign bracket).
 - Dev-gated diagnostic blocks (e.g. `if _PROFILE:` blocks behind
   `ZALMOXIS_JAX_PROFILE`).
-- Heavy-data-dependent paths whose unit-test fixture would be larger than
-  the implementation (RTPress100TPa irregular-grid LinearNDInterpolator
-  path, for instance).
+- Branches reachable only from a tier outside the nightly coverage filter
+  (e.g. solver paths that fire only on a slow-tier full-solve and would
+  cost minutes per unit run).
 
 Do not mark normal-execution code paths. Every inline pragma should carry a
 one-line justification:
