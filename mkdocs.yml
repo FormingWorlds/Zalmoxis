@@ -31,7 +31,6 @@ nav:
       - Coupling to PROTEUS: Explanations/proteus_coupling.md
       - Code architecture: Explanations/code_architecture.md
       - First-principles verification: Explanations/verification.md
-      - Testing system: Explanations/testing.md
 
   - Reference:
       - API reference:

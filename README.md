@@ -1,8 +1,7 @@
-![CI](https://github.com/FormingWorlds/Zalmoxis/actions/workflows/CI.yml/badge.svg)
 [![codecov](https://codecov.io/gh/FormingWorlds/Zalmoxis/graph/badge.svg)](https://codecov.io/gh/FormingWorlds/Zalmoxis)
-[![tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/FormingWorlds/Zalmoxis/main/.github/badges/tests-total.json)](https://proteus-framework.org/testing)
 [![unit tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/FormingWorlds/Zalmoxis/main/.github/badges/tests-unit.json)](https://proteus-framework.org/testing)
 [![integration tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/FormingWorlds/Zalmoxis/main/.github/badges/tests-integration.json)](https://proteus-framework.org/testing)
+[![tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/FormingWorlds/Zalmoxis/main/.github/badges/tests-total.json)](https://proteus-framework.org/testing)
 
 # Zalmoxis
 
