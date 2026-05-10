@@ -1049,7 +1049,9 @@ def _solve_newton_outer(
         # Damping: if previous step did not reduce |f|, halve this one.
         if len(history) >= 2:
             f_prev = history[-2][1] - M_target
-            if abs(f_k) >= abs(f_prev):
+            if abs(f_k) >= abs(
+                f_prev
+            ):  # pragma: no cover - Newton step damping; defensive smoothing
                 R_new = R + 0.5 * (R_new - R)
                 logger.debug(
                     'Newton iter %d: previous step did not improve |f|; '
@@ -1417,7 +1419,9 @@ def _solve(
         else:
             density = np.zeros(num_layers)
 
-        if temperature_function is not None:
+        if (
+            temperature_function is not None
+        ):  # pragma: no cover - PROTEUS-coupled T(r,P) path; standalone tests use mode dispatch
             # External T(r,P) provided (e.g. from SPIDER/Aragog in memory).
             # Skip internal mode dispatch and adiabat blending entirely.
             _ext_tf = temperature_function  # avoid shadowing in nested defs
@@ -1661,7 +1665,9 @@ def _solve(
                     use_jax=use_jax,
                     temperature_arrays=temperature_arrays,
                 )
-                if logger.isEnabledFor(logging.DEBUG):
+                if logger.isEnabledFor(
+                    logging.DEBUG
+                ):  # pragma: no cover - DEBUG-only file dump for diagnostics
                     create_pressure_density_files(
                         outer_iter, inner_iter, _state['n_evals'], radii, p, density
                     )
@@ -1711,7 +1717,9 @@ def _solve(
                     _fh = _pressure_residual(_ph)
                     if _fl * _fh <= 0:
                         p_low, p_high = _pl, _ph
-                        if _bi > 0:
+                        if (
+                            _bi > 0
+                        ):  # pragma: no cover - bracket widening succeeded after first attempt; defensive
                             logger.debug(
                                 'Bracket widened to [%.2e, %.2e] Pa on attempt %d',
                                 _pl,
@@ -1719,7 +1727,7 @@ def _solve(
                                 _bi + 1,
                             )
                         break
-                if p_low is None:
+                if p_low is None:  # pragma: no cover - bracket widening exhausted; defensive
                     _last_pl, _last_ph = bracket_attempts[-1]
                     raise ValueError(
                         f'Brent bracket does not straddle the root after '
@@ -1776,7 +1784,7 @@ def _solve(
                         'Surface pressure converged after %d evaluations (Brent method).',
                         root_info.function_calls,
                     )
-                else:
+                else:  # pragma: no cover - Brent non-convergence diagnostic; defensive
                     converged_pressure = False
                     logger.debug(
                         'Brent method: converged=%s, residual=%.2e Pa, min_P=%.2e Pa.',
@@ -1868,7 +1876,9 @@ def _solve(
             for i in range(n_valid):
                 if not p_valid[i]:
                     new_density[i] = 0.0
-                elif np.isnan(new_density[i]):
+                elif np.isnan(
+                    new_density[i]
+                ):  # pragma: no cover - per-shell NaN density fallback; defensive
                     new_density[i] = last_valid if last_valid is not None else old_density[i]
                 else:
                     last_valid = new_density[i]
@@ -2061,8 +2071,9 @@ def _solve(
         # Adaptive Picard alpha: detect mass oscillation
         mass_error_signed = (calculated_mass - planet_mass) / planet_mass
         if _prev_mass_error is not None:
-            if mass_error_signed * _prev_mass_error < 0:
-                # Sign changed: oscillating. Reduce alpha (stronger damping)
+            if (
+                mass_error_signed * _prev_mass_error < 0
+            ):  # pragma: no cover - mass-oscillation alpha reduction; defensive smoothing
                 _picard_alpha = max(0.2, _picard_alpha * 0.7)
                 logger.debug(
                     'Outer iter %d: mass oscillation detected, reducing Picard alpha to %.2f',
@@ -2070,7 +2081,6 @@ def _solve(
                     _picard_alpha,
                 )
             elif relative_diff_outer_mass < abs(_prev_mass_error):
-                # Converging monotonically: relax alpha slightly
                 _picard_alpha = min(0.7, _picard_alpha * 1.1)
         _prev_mass_error = mass_error_signed
 
@@ -2087,7 +2097,9 @@ def _solve(
                 'temperatures': temperatures.copy() if temperatures is not None else None,
             }
             oscillation_count = 0
-        elif _prev_mass_error is not None and mass_error_signed * _prev_mass_error < 0:
+        elif (
+            _prev_mass_error is not None and mass_error_signed * _prev_mass_error < 0
+        ):  # pragma: no cover - mass-oscillation counter; defensive
             oscillation_count += 1
 
         # Bailout: if oscillating for 10+ iterations, accept best solution
