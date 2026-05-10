@@ -103,7 +103,7 @@ def get_tabulated_eos(
                         't_min': unique_temps[0],
                         't_max': unique_temps[-1],
                     }
-                else:  # pragma: no cover - irregular-grid path used only by RTPress100TPa melt; needs heavy EOS fixture
+                else:
                     # Irregular grid (e.g. RTPress100TPa melt table where the
                     # valid T range varies with P). Use scattered-data
                     # interpolation via Delaunay triangulation.
@@ -211,7 +211,7 @@ def get_tabulated_eos(
 
             if grid_type == 'regular':
                 density = cached['interp']((pressure, temperature))
-            else:  # pragma: no cover - irregular-grid lookup used only by RTPress100TPa melt; heavy fixture
+            else:
                 up = cached['unique_pressures']
                 idx = np.searchsorted(up, pressure, side='right')
                 idx = min(idx, len(up) - 1)

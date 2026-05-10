@@ -351,9 +351,15 @@ class TestBatchPath:
         assert np.all(np.diff(rho) <= 0)
 
     def test_batch_mushy_with_nan_falls_back_to_nn(self, synthetic_cache_with_nan):
-        """In the mushy batch branch, if the (T_sol, T_liq) bilinear
-        evaluations land on NaN cells, the NN fallback is invoked
-        (the ``nn_sol`` / ``nn_liq`` path inside the batch mushy block)."""
+        """In the mushy batch branch, if the solid-side bilinear evaluation
+        lands on a NaN cell, the NN fallback is invoked (``nn_sol`` path).
+
+        At P=1e9 Pa, ``paleos_liquidus`` returns T_liq=1953.8 K, so with
+        ``mushy_zone_factor=0.5`` we get T_sol=976.9 K and log_t_sol=2.99,
+        which clamps up to ``logt_valid_min[0]=3.0``. The bilinear at
+        (log_p=9, log_t_sol_c=3.0) lands exactly on the (0, 0) NaN cell,
+        triggering the solid-side NN fallback.
+        """
         s = synthetic_cache_with_nan
         # Place the query at the corner where the synthetic cache has NaN
         ps = np.array([10.0 ** s['entry']['logp_min']])
@@ -361,6 +367,55 @@ class TestBatchPath:
         ts = np.array([2000.0])
         rho = get_paleos_unified_density_batch(ps, ts, s['mat'], 0.5, s['cache'])
         assert np.all(np.isfinite(rho))
+
+    def test_batch_above_below_with_nan_recovery(self, synthetic_cache_with_nan):
+        """When a shell is classified as above/below the mushy zone (not
+        mushy), the post-classification direct lookup at line 317 may still
+        land on a NaN cell; the NN fallback at line 319-323 must then
+        recover the density.
+
+        At P=1e9 Pa with ``mushy_zone_factor=0.8``, T_sol ≈ 1563 K. A query
+        at T=900 K is below T_sol, classified as ``below``, and bypasses
+        the mushy branch. After per-cell clamping log_t up to
+        ``logt_valid_min[0]=3.0`` the bilinear lands on the (0, 0) NaN
+        corner; the NN fallback fires at line 319-323.
+        """
+        s = synthetic_cache_with_nan
+        ps = np.array([1e9])
+        ts = np.array([900.0])  # well below T_sol at P=1e9
+        rho = get_paleos_unified_density_batch(ps, ts, s['mat'], 0.8, s['cache'])
+        assert np.all(np.isfinite(rho))
+        # Density should be physically reasonable (synthetic table
+        # rho ~ 5000 * (P/1e9)^0.1 at table corner is ~5000 kg/m^3).
+        assert 1000 < rho[0] < 20000
+
+    def test_batch_mushy_liquid_side_nan_recovery(self):
+        """Liquid-side bilinear NaN fallback at line 352 fires when the
+        T_liq-side lookup lands on a NaN cell within the mushy zone.
+
+        Constructs a cache with NaN placed at the cell that the
+        log_t_liq lookup brackets at P=1e10 Pa (where the PALEOS liquidus
+        is ~3021 K; log_t_liq ≈ 3.48, which sits between log_t[3]=3.43
+        and log_t[4]=3.57 on the 8-point grid). NaN at (log_p=10, log_t=3.43)
+        ensures the bracket contains a NaN cell.
+        """
+        cache = _build_cache()
+        # Set NaN at cell (3, 3) -> (log_p=10.29, log_t=3.43). The bilinear
+        # bracket of (log_p=10, log_t=3.48) is rows 3-4 x cols 3-4, which
+        # includes (3, 3).
+        cache['density_grid'][3, 3] = np.nan
+        eos_file = '/synthetic/paleos_liq_nan.dat'
+        mat = {'eos_file': eos_file, 'format': 'paleos_unified'}
+        cdict = {eos_file: cache}
+
+        # Pick T just above the synthetic table's solidus floor for P=1e10
+        # so the shell is classified as mushy and reaches the liq-side
+        # bilinear lookup.
+        ps = np.array([10**10.0])
+        ts = np.array([2500.0])  # mushy at P=1e10 (T_liq=3021, T_sol*0.6=1813)
+        rho = get_paleos_unified_density_batch(ps, ts, mat, 0.6, cdict)
+        assert np.all(np.isfinite(rho))
+        assert 1000 < rho[0] < 20000
 
 
 class TestPerCellClampLogger:

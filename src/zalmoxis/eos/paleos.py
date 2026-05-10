@@ -316,9 +316,7 @@ def get_paleos_unified_density_batch(
     # Direct lookup for above-liquidus and below-solidus shells
     result = fast_bilinear_batch(log_p, log_t_clamped, cached['density_grid'], cached)
     nan_mask = ~np.isfinite(result)
-    if np.any(
-        nan_mask
-    ):  # pragma: no cover - bilinear NaN fallback to nearest-neighbour; defensive
+    if np.any(nan_mask):
         pts_nn = np.column_stack([log_p[nan_mask], log_t_clamped[nan_mask]])
         result[nan_mask] = cached['density_nn'](pts_nn)
 
@@ -336,7 +334,7 @@ def get_paleos_unified_density_batch(
         log_t_sol_c = np.where(sol_valid & (log_t_sol_c > sol_tmax), sol_tmax, log_t_sol_c)
         rho_sol = fast_bilinear_batch(log_p[m_idx], log_t_sol_c, cached['density_grid'], cached)
         nn_sol = ~np.isfinite(rho_sol)
-        if np.any(nn_sol):  # pragma: no cover - solid-side bilinear NaN fallback; defensive
+        if np.any(nn_sol):
             pts_sol_nn = np.column_stack([log_p[m_idx][nn_sol], log_t_sol_c[nn_sol]])
             rho_sol[nn_sol] = cached['density_nn'](pts_sol_nn)
 
@@ -349,7 +347,7 @@ def get_paleos_unified_density_batch(
         log_t_liq_c = np.where(liq_valid & (log_t_liq_c > liq_tmax), liq_tmax, log_t_liq_c)
         rho_liq = fast_bilinear_batch(log_p[m_idx], log_t_liq_c, cached['density_grid'], cached)
         nn_liq = ~np.isfinite(rho_liq)
-        if np.any(nn_liq):  # pragma: no cover - liquid-side bilinear NaN fallback; defensive
+        if np.any(nn_liq):
             pts_liq_nn = np.column_stack([log_p[m_idx][nn_liq], log_t_liq_c[nn_liq]])
             rho_liq[nn_liq] = cached['density_nn'](pts_liq_nn)
 
