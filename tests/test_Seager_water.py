@@ -66,6 +66,12 @@ def test_density_profile_water(cached_solver):
 
     rho_m = model_densities[mask]
     rho_s = seager_density_interp[mask]
+    assert rho_m.size > 10, (
+        f'Density profile for water config at {mass} M_earth: mask retained '
+        f'only {rho_m.size} shells (expected dozens). The solver produced a '
+        f'degenerate profile (mostly vacuum padding or large discontinuities) '
+        f'and the percentile comparison against Seager is not meaningful.'
+    )
     rel_dev = np.abs(rho_m - rho_s) / np.abs(rho_s)
 
     p99 = float(np.percentile(rel_dev, 99))

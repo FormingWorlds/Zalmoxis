@@ -412,8 +412,7 @@ def test_load_grid_config_unknown_sweep_param(tmp_path, monkeypatch):
 def test_param_map_target_surface_pressure_registered():
     """target_surface_pressure must map to (PressureAdjustment,
     target_surface_pressure). Pins the registry entry so a future
-    refactor of _PARAM_MAP cannot silently drop it (the entry was
-    missing before 2026-05-12 and broke standalone grids)."""
+    refactor of _PARAM_MAP cannot silently drop it."""
     import tools.grids.run_grid as rg
 
     assert 'target_surface_pressure' in rg._PARAM_MAP
@@ -424,9 +423,8 @@ def test_param_map_target_surface_pressure_registered():
 
 def test_load_grid_config_accepts_target_surface_pressure(tmp_path, monkeypatch):
     """End-to-end loader regression: a sweep over target_surface_pressure
-    parses cleanly and round-trips the values. Guards against the
-    pre-2026-05-12 ValueError ("Unknown sweep parameter
-    'target_surface_pressure'") that blocked standalone P_surf grids."""
+    parses cleanly and round-trips the values verbatim from the grid
+    TOML through load_grid_config."""
     import tools.grids.run_grid as rg
 
     monkeypatch.setattr(rg, 'get_zalmoxis_root', lambda: str(tmp_path))
@@ -450,10 +448,7 @@ def test_generate_configs_creates_missing_section(tmp_path):
     """generate_configs must not KeyError when the base TOML omits the
     target section of a sweep parameter. A minimal base config that
     sweeps target_surface_pressure but never explicitly sets
-    [PressureAdjustment] must still produce a valid override TOML.
-    Guards against the latent crash flagged by adversarial review on
-    2026-05-12 when ('PressureAdjustment', 'target_surface_pressure')
-    became the first sweep mapping into a plausibly-omitted section."""
+    [PressureAdjustment] must still produce a valid override TOML."""
     import tools.grids.run_grid as rg
 
     # Minimal base config: only [Output] (required by generate_configs

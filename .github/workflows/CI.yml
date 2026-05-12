@@ -96,6 +96,11 @@ jobs:
                       f"{label} fail_under {cur} < floor {floor} "
                       f"(base={base_val}, ceiling={ECOSYSTEM_CEILING})"
                   )
+              if cur > ECOSYSTEM_CEILING:
+                  raise SystemExit(
+                      f"{label} fail_under {cur} exceeds the "
+                      f"{ECOSYSTEM_CEILING}% ecosystem ceiling"
+                  )
 
           print("Coverage thresholds respect the 90% ecosystem ceiling.")
           PY
