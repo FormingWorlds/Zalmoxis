@@ -292,11 +292,16 @@ def generate_configs(base_config_path, sweeps):
             label_parts.append(f'{name}={val}')
         label = '__'.join(label_parts)
 
-        # Deep copy the base TOML and apply overrides
+        # Deep copy the base TOML and apply overrides. Auto-create the
+        # target section if the base config omits it (e.g. a minimal
+        # config that sweeps target_surface_pressure but never set
+        # [PressureAdjustment] explicitly). Zalmoxis fills unset keys
+        # with documented defaults, so writing to a fresh section is
+        # equivalent to overriding the default.
         modified = copy.deepcopy(base_toml)
         for name, val in zip(param_names, combo):
             section, key = _PARAM_MAP[name]
-            modified[section][key] = val
+            modified.setdefault(section, {})[key] = val
 
         # Disable plots and verbose for grid runs (speed)
         modified['Output']['plots_enabled'] = False
