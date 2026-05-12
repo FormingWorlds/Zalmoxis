@@ -184,6 +184,7 @@ _PARAM_MAP: dict[str, tuple[str, str]] = {
     'rock_solidus': ('EOS', 'rock_solidus'),
     'rock_liquidus': ('EOS', 'rock_liquidus'),
     'num_layers': ('Calculations', 'num_layers'),
+    'target_surface_pressure': ('PressureAdjustment', 'target_surface_pressure'),
 }
 
 

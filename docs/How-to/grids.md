@@ -47,6 +47,7 @@ The available sweep parameter names and their mapping to TOML config sections ar
 | `rock_solidus` | `[EOS]` | `rock_solidus` |
 | `rock_liquidus` | `[EOS]` | `rock_liquidus` |
 | `num_layers` | `[Calculations]` | `num_layers` |
+| `target_surface_pressure` | `[PressureAdjustment]` | `target_surface_pressure` |
 
 ## Example: mass-radius curve
 
