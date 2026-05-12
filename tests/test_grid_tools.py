@@ -409,6 +409,43 @@ def test_load_grid_config_unknown_sweep_param(tmp_path, monkeypatch):
         rg.load_grid_config(str(grid))
 
 
+def test_param_map_target_surface_pressure_registered():
+    """target_surface_pressure must map to (PressureAdjustment,
+    target_surface_pressure). Pins the registry entry so a future
+    refactor of _PARAM_MAP cannot silently drop it (the entry was
+    missing before 2026-05-12 and broke standalone grids)."""
+    import tools.grids.run_grid as rg
+
+    assert 'target_surface_pressure' in rg._PARAM_MAP
+    section, key = rg._PARAM_MAP['target_surface_pressure']
+    assert section == 'PressureAdjustment'
+    assert key == 'target_surface_pressure'
+
+
+def test_load_grid_config_accepts_target_surface_pressure(tmp_path, monkeypatch):
+    """End-to-end loader regression: a sweep over target_surface_pressure
+    parses cleanly and round-trips the values. Guards against the
+    pre-2026-05-12 ValueError ("Unknown sweep parameter
+    'target_surface_pressure'") that blocked standalone P_surf grids."""
+    import tools.grids.run_grid as rg
+
+    monkeypatch.setattr(rg, 'get_zalmoxis_root', lambda: str(tmp_path))
+    base = tmp_path / 'input'
+    base.mkdir()
+    (base / 'default.toml').write_text('# base config')
+    grid = tmp_path / 'psurf.toml'
+    grid.write_text(
+        '[base]\nconfig = "input/default.toml"\n'
+        '[sweep]\ntarget_surface_pressure = [1.013e5, 1.0e7, 1.0e9]\n'
+        '[output]\ndir = "output/psurf"\n'
+    )
+    base_cfg, sweeps, out_dir, save = rg.load_grid_config(str(grid))
+    assert base_cfg.endswith('default.toml')
+    assert sweeps == {'target_surface_pressure': [1.013e5, 1.0e7, 1.0e9]}
+    assert out_dir.endswith('output/psurf')
+    assert save is False
+
+
 def test_run_single_profile_write_failure_reports_error(tmp_path, monkeypatch):
     """When the profile-CSV writer raises OSError, run_single logs a
     warning and populates result['error'] so the failure surfaces in
