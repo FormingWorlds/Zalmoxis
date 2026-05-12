@@ -24,7 +24,7 @@ pytest -m slow                                            # ~30+ min per test --
 pytest -m "(unit or smoke or integration) and not slow"   # full nightly tier
 ```
 
-Every new test must carry exactly one of these markers; `--strict-markers` is enforced, so a typo'd marker fails the run. Run `pytest -m unit` as a fast feedback loop during development. Push and PR CI runs the unit tier only; the nightly tier runs unit + smoke + integration with a 95% coverage gate.
+Every new test must carry exactly one of these markers; `--strict-markers` is enforced, so a typo'd marker fails the run. Run `pytest -m unit` as a fast feedback loop during development. Push and PR CI runs the unit tier only; the nightly tier runs unit + smoke + integration with a 90% coverage gate.
 
 When adding or modifying code, add or update tests in `tests/` to match. See the [Testing documentation](https://proteus-framework.org/Zalmoxis/Explanations/testing.html) for the full guide on markers, fixtures, and test structure, and the [How to build tests](https://proteus-framework.org/Zalmoxis/How-to/build_tests.html) guide for naming, mocking, and tolerance conventions.
 
