@@ -45,9 +45,11 @@ jobs:
 
       - name: Prevent coverage threshold decreases vs main
         # Pre-flight check: fail the PR if pyproject.toml's coverage
-        # `fail_under` ratchet was lowered vs `origin/main`. Skips per
-        # target if the key is missing on either side. Same idiom as
-        # PROTEUS's ci-pr-checks.yml (Prevent threshold decreases vs main).
+        # `fail_under` ratchet was lowered vs `origin/main`. The 90%
+        # ecosystem ceiling caps the ratchet on the upside; this check
+        # enforces the lower bound. Skips per target if the key is
+        # missing on either side. Same idiom as PROTEUS's
+        # ci-pr-checks.yml (Prevent threshold decreases vs main).
         if: ${{ matrix.os == 'ubuntu-latest' }}
         run: |
           git fetch origin main

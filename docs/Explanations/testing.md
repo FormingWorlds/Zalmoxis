@@ -101,7 +101,7 @@ matrix runs the unit tier without xdist contention on small runners.
 | Trigger | Markers | Budget | Coverage |
 |---|---|---|---|
 | Push / PR (`CI.yml`) | `unit and not slow and not skip` | < 10 min | None (gate pre-flight only) |
-| Nightly cron (`nightly.yml`, 02:00 UTC) | `(unit or smoke or integration) and not slow` | < 60 min | Yes; gates on 95% and uploads to Codecov with the `nightly` flag |
+| Nightly cron (`nightly.yml`, 02:00 UTC) | `(unit or smoke or integration) and not slow` | < 60 min | Yes; gates on 90% and uploads to Codecov with the `nightly` flag |
 | Manual `workflow_dispatch` | as above | < 60 min | Yes |
 
 Push CI is intentionally unit-only because each smoke or integration test
@@ -119,11 +119,11 @@ on either side.
 
 ## Coverage gate
 
-Zalmoxis enforces a hard `--cov-fail-under=95` in the nightly CI invocation.
+Zalmoxis enforces a hard `--cov-fail-under=90` in the nightly CI invocation.
 The threshold lives in `[tool.coverage.report] fail_under` of
-`pyproject.toml` and is **not** ratcheted: once Zalmoxis crosses 95%, the
-gate is fixed at 95% and never raised again. Aim for **~97% real coverage**
-so small future code additions do not trip the gate.
+`pyproject.toml` and is fixed at the 90% PROTEUS-ecosystem ceiling: it is
+not raised above 90% even if real coverage exceeds it. Aim for **~92% real
+coverage** so small future code additions do not trip the gate.
 
 ```toml
 # pyproject.toml
@@ -141,17 +141,17 @@ exclude_lines = [
     "@abstractmethod",
     "@abc.abstractmethod",
 ]
-fail_under = 95.0
+fail_under = 90.0
 ```
 
 The `exclude_lines` list, the `omit` list under `[tool.coverage.run]`, and
 the markers list under `[tool.pytest.ini_options]` all match the PROTEUS
 main repo verbatim. The intentional divergence is the threshold style:
-PROTEUS uses an auto-ratcheting `fail_under` (handled by
-`tools/update_coverage_threshold.py`) that only ever increases, while
-Zalmoxis uses a hard gate at 95%. This matches the ecosystem-wide policy
-that **95% is the maximum coverage threshold for any PROTEUS module**:
-above 95% you are tracking style and pragma usage, not bug-finding signal.
+PROTEUS uses an auto-ratcheting `fail_under` that only ever increases,
+while Zalmoxis uses a hard gate at 90%. This matches the ecosystem-wide
+policy that **90% is the maximum coverage threshold for any PROTEUS
+module**: above 90% you are tracking style and pragma usage, not
+bug-finding signal.
 
 ## `# pragma: no cover` usage
 
@@ -212,7 +212,7 @@ pytest -o "addopts=" --cov=zalmoxis --cov-report=html -m "(unit or smoke or inte
 ```
 
 Open `htmlcov/index.html` to inspect line-by-line coverage. The nightly CI
-uses `--cov-report=xml --cov-fail-under=95` and uploads the result to
+uses `--cov-report=xml --cov-fail-under=90` and uploads the result to
 Codecov with the `nightly` flag.
 
 Branch coverage (`branch = true` in `[tool.coverage.run]`) is on by default,
