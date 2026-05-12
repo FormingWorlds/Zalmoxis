@@ -45,10 +45,10 @@ jobs:
 
       - name: Prevent coverage threshold decreases vs main
         # Pre-flight check: fail the PR if pyproject.toml's coverage
-        # `fail_under` ratchet was lowered vs `origin/main`. The 90%
-        # ecosystem ceiling caps the ratchet on the upside; this check
-        # enforces the lower bound. Skips per target if the key is
-        # missing on either side. Same idiom as PROTEUS's
+        # `fail_under` was lowered below the 90% PROTEUS-ecosystem
+        # ceiling. The floor is min(base, 90.0) so a one-time drop
+        # from a stale higher value down to 90 is allowed, but any
+        # drop below 90 is blocked. Same idiom as PROTEUS's
         # ci-pr-checks.yml (Prevent threshold decreases vs main).
         if: ${{ matrix.os == 'ubuntu-latest' }}
         run: |
@@ -62,6 +62,13 @@ jobs:
           current = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
           base_text = subprocess.check_output(["git", "show", f"{base}:pyproject.toml"], text=True)
           base_data = tomllib.loads(base_text)
+
+          # The lower bound is min(base, ECOSYSTEM_CEILING). This allows
+          # a one-time ratchet *down* to the 90% ecosystem ceiling, while
+          # blocking any drop below 90%. Once main itself is at <=90, the
+          # floor degenerates to base and the guard is a pure
+          # non-decreasing check.
+          ECOSYSTEM_CEILING = 90.0
 
           paths = {
               "full": ["tool", "coverage", "report", "fail_under"],
@@ -83,10 +90,14 @@ jobs:
                   print(f"Skipping {label} check (missing in base or current)")
                   continue
 
-              if cur < base_val:
-                  raise SystemExit(f"{label} fail_under decreased: {cur} < {base_val}")
+              floor = min(base_val, ECOSYSTEM_CEILING)
+              if cur < floor:
+                  raise SystemExit(
+                      f"{label} fail_under {cur} < floor {floor} "
+                      f"(base={base_val}, ceiling={ECOSYSTEM_CEILING})"
+                  )
 
-          print("Coverage thresholds have not decreased vs main.")
+          print("Coverage thresholds respect the 90% ecosystem ceiling.")
           PY
 
       - name: Set ZALMOXIS_ROOT environment variable
