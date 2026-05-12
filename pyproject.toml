@@ -74,7 +74,14 @@ include-package-data = true
 [tool.setuptools_scm]
 # CalVer: tags are bare YY.MM.DD dates (no leading 'v', e.g. 26.03.02).
 # setuptools-scm derives the version from the latest git tag.
-# Between tags, it appends .devN+gHASH (e.g., 26.03.02.dev5+gabc1234).
+# version_scheme = "no-guess-dev" is required for CalVer: the default
+# "guess-next-dev" would produce 26.3.3.devN+gHASH for commits after
+# the 26.03.02 tag, claiming a future calendar date that will collide
+# with the next daily release tag. "no-guess-dev" produces
+# 26.03.02.post1.devN+gHASH instead, which is honest about the build
+# being a post-tag development commit rather than a pre-release of
+# the next version.
+version_scheme = "no-guess-dev"
 version_file = "src/zalmoxis/_version.py"
 
 [tool.coverage.run]
