@@ -19,11 +19,13 @@ import pytest
 
 from zalmoxis.mixing import (
     LayerMixture,
+    VolatileProfile,
     _binodal_factor,
     _condensed_weight,
     _condensed_weight_batch,
     _nabla_ad_for_component,
     any_component_is_tdep,
+    apply_partition_rule,
     calculate_mixed_density,
     calculate_mixed_density_batch,
     get_mixed_nabla_ad,
@@ -1286,3 +1288,87 @@ class TestNablaAdForComponent:
         result = _nabla_ad_for_component('RTPress100TPa:MgSiO3', 1e10, 3000, md, {}, None, None)
         # No melted_mantle/adiabat_grad_file, so returns None
         assert result is None
+
+
+@pytest.mark.unit
+class TestApplyPartitionRule:
+    """Tests for the partition-law hook used upstream of ``VolatileProfile``.
+
+    The hook signature is stable from this commit; only the ``'uniform'``
+    rule returns numerical values in this revision. The reserved rules
+    (``'strong'``, ``'D_const'``, ``'solubility'``) raise
+    ``NotImplementedError`` until the physics lands in subsequent commits.
+    """
+
+    def test_uniform_returns_x_bulk_for_both_phases(self):
+        x_bulk = {'PALEOS:H2O': 0.15}
+        w_liquid, w_solid = apply_partition_rule('uniform', x_bulk, phi_avg=0.5)
+        assert w_liquid == {'PALEOS:H2O': 0.15}
+        assert w_solid == {'PALEOS:H2O': 0.15}
+
+    def test_uniform_multi_species(self):
+        x_bulk = {'PALEOS:H2O': 0.1, 'Chabrier:H': 0.03}
+        w_liquid, w_solid = apply_partition_rule('uniform', x_bulk, phi_avg=0.7)
+        assert w_liquid == x_bulk
+        assert w_solid == x_bulk
+
+    def test_uniform_empty_inventory(self):
+        w_liquid, w_solid = apply_partition_rule('uniform', {}, phi_avg=0.5)
+        assert w_liquid == {}
+        assert w_solid == {}
+
+    def test_uniform_returns_independent_copies(self):
+        """The returned dicts must be independent copies of ``X_bulk``, so
+        callers can mutate one without aliasing the other or the input."""
+        x_bulk = {'PALEOS:H2O': 0.15}
+        w_liquid, w_solid = apply_partition_rule('uniform', x_bulk, phi_avg=0.5)
+        w_liquid['PALEOS:H2O'] = 0.0
+        assert w_solid == {'PALEOS:H2O': 0.15}
+        assert x_bulk == {'PALEOS:H2O': 0.15}
+
+    def test_uniform_phi_independence_via_volatile_profile(self):
+        """Algebraic round-trip: feeding the ``'uniform'`` output into
+        ``VolatileProfile.blend(phi)`` reproduces ``X_bulk`` at every
+        phi, demonstrating that the uniform-spread path is phi-independent.
+        """
+        x_bulk = {'PALEOS:H2O': 0.15}
+        w_liquid, w_solid = apply_partition_rule('uniform', x_bulk, phi_avg=0.5)
+        profile = VolatileProfile(
+            w_liquid=w_liquid,
+            w_solid=w_solid,
+            primary_component='PALEOS:MgSiO3',
+        )
+        for phi in (0.0, 0.25, 0.5, 0.75, 1.0):
+            blended = profile.blend(phi)
+            assert blended['PALEOS:H2O'] == pytest.approx(0.15)
+            assert blended['PALEOS:MgSiO3'] == pytest.approx(0.85)
+
+    def test_strong_not_yet_wired(self):
+        with pytest.raises(NotImplementedError, match='subsequent commit'):
+            apply_partition_rule('strong', {'PALEOS:H2O': 0.15}, phi_avg=0.5)
+
+    def test_d_const_not_yet_wired(self):
+        with pytest.raises(NotImplementedError, match='subsequent commit'):
+            apply_partition_rule(
+                'D_const',
+                {'PALEOS:H2O': 0.15},
+                phi_avg=0.5,
+                D_const={'PALEOS:H2O': 0.01},
+            )
+
+    def test_solubility_not_yet_wired(self):
+        with pytest.raises(NotImplementedError, match='subsequent commit'):
+            apply_partition_rule(
+                'solubility',
+                {'PALEOS:H2O': 0.15},
+                phi_avg=0.5,
+                solubility_fn=lambda p, t: 0.01,
+            )
+
+    def test_unknown_rule_raises(self):
+        with pytest.raises(ValueError, match="Unknown partition_rule 'bogus'"):
+            apply_partition_rule('bogus', {'PALEOS:H2O': 0.15}, phi_avg=0.5)
+
+    def test_unknown_rule_lists_valid_options(self):
+        with pytest.raises(ValueError, match='Valid options'):
+            apply_partition_rule('', {}, phi_avg=0.5)

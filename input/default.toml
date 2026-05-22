@@ -69,6 +69,22 @@ condensed_rho_scale        = 50.0   # kg/m^3 — sigmoid transition width
 # automatically by the code; no manual config change needed for sub-Neptunes.
 binodal_T_scale            = 50.0   # K — binodal sigmoid width (~200 K transition zone)
 
+# Phase-aware volatile partitioning rule (opt-in).
+# Selects how a bulk mantle volatile inventory X_i is mapped onto the per-phase
+# mass fractions (w_liquid, w_solid) consumed by zalmoxis.mixing.VolatileProfile.
+# Valid options:
+#   "uniform"     The bulk mantle inventory is spread uniformly across the mantle
+#                 at every radial shell. Byte-for-byte equivalent to the existing
+#                 single-EOS-string path (e.g., "PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15").
+#                 Default; existing TOMLs run unchanged.
+#   "strong"      Strong-partition limit: w_liquid = X_i / phi_avg, w_solid = 0;
+#                 the volatile mass lives entirely in the silicate melt. Bulk X_i
+#                 is read from the mantle EOS string fractions. (Not yet wired.)
+#   "D_const"     Constant partition coefficient D_i per species. (Not yet wired.)
+#   "solubility"  Pressure-dependent solubility callback (Henry- or Bower-style).
+#                 (Not yet wired.)
+# partition_rule           = "uniform"
+
 # Mushy zone factor for unified PALEOS tables (global default).
 # Controls the width of the artificial mushy (mixed solid+liquid) zone.
 # Valid range: [0.7, 1.0]. Values below 0.7 are rejected (unphysical).

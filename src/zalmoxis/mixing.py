@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -1114,6 +1115,119 @@ class VolatileProfile:
         if total > 0:
             fracs = [f / total for f in fracs]
         return fracs
+
+
+_VALID_PARTITION_RULES = ('uniform', 'strong', 'D_const', 'solubility')
+
+
+def apply_partition_rule(
+    rule: str,
+    X_bulk: dict[str, float],
+    phi_avg: float,
+    *,
+    pressure: np.ndarray | None = None,
+    temperature: np.ndarray | None = None,
+    melt_fraction: np.ndarray | None = None,
+    D_const: dict[str, float] | None = None,
+    solubility_fn: Callable[..., float] | None = None,
+    phi_floor: float = 0.05,
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Map a bulk interior inventory into per-phase mass fractions.
+
+    This is the partition-law hook consumed upstream of
+    ``VolatileProfile``. It maps a bulk mantle mass fraction
+    ``X_bulk[species]`` and a mantle-averaged melt fraction ``phi_avg``
+    into the ``(w_liquid, w_solid)`` pair that ``VolatileProfile``
+    already accepts. The ``rule`` argument selects the physical
+    prescription. Only ``'uniform'`` returns numerical values in this
+    revision; the remaining rules are reserved hooks that will be
+    implemented in subsequent commits on this branch.
+
+    Parameters
+    ----------
+    rule : str
+        Partition-law selector. One of:
+
+        - ``'uniform'``: returns ``w_liquid = w_solid = X_bulk``, so the
+          phi-blend collapses to a constant per-shell fraction. This
+          reproduces the existing single-EOS-string mantle behavior.
+        - ``'strong'``: strong-partition limit
+          ``w_liquid = X_bulk / phi_avg``, ``w_solid = 0``. Not wired
+          yet.
+        - ``'D_const'``: constant partition coefficient
+          ``D = w_solid / w_liquid`` per species. Not wired yet.
+        - ``'solubility'``: pressure-dependent solubility callback
+          (Henry-style or Bower-style). Not wired yet.
+    X_bulk : dict
+        Bulk mantle mass fractions keyed by EOS component name
+        (e.g., ``{'PALEOS:H2O': 0.15}``). For the existing single
+        EOS-string format these come from the fractions encoded in
+        the mantle string itself.
+    phi_avg : float
+        Mass-weighted mantle-averaged melt fraction in ``[0, 1]``.
+        Only consumed by rules other than ``'uniform'``.
+    pressure : numpy.ndarray, optional
+        Radial pressure profile [Pa] for solubility-style rules.
+        Ignored by ``'uniform'`` and ``'strong'``.
+    temperature : numpy.ndarray, optional
+        Radial temperature profile [K] for solubility-style rules.
+        Ignored by ``'uniform'`` and ``'strong'``.
+    melt_fraction : numpy.ndarray, optional
+        Radial melt-fraction profile ``phi(r)`` for per-shell rules.
+        Ignored by the bulk-averaged rules.
+    D_const : dict, optional
+        Per-species constant partition coefficient
+        ``D_i = w_solid / w_liquid``, consumed by the ``'D_const'``
+        rule.
+    solubility_fn : callable, optional
+        Pressure-dependent solubility callback consumed by the
+        ``'solubility'`` rule.
+    phi_floor : float, optional
+        Threshold on ``phi_avg`` below which the strong-partition
+        normalization becomes ill-conditioned, and rules will fall
+        back to the uniform-spread path. Default ``0.05``.
+
+    Returns
+    -------
+    tuple of dict
+        ``(w_liquid, w_solid)``, each keyed by EOS component name and
+        compatible with ``VolatileProfile``.
+
+    Raises
+    ------
+    NotImplementedError
+        If ``rule`` is ``'strong'``, ``'D_const'``, or ``'solubility'``
+        in this revision. The hook signature is stable; the physics
+        lands in subsequent commits.
+    ValueError
+        If ``rule`` is not in ``_VALID_PARTITION_RULES``.
+
+    Notes
+    -----
+    The future strong-partition rule, ``w_liquid = X_bulk / phi_avg``,
+    is satisfied by an outer self-consistency loop on ``phi_avg`` that
+    mirrors the binodal-miscibility loop in
+    ``zalmoxis.solver.solve_miscible_interior``: the structure solve
+    is repeated until the mass-weighted average melt fraction returned
+    by the solve matches the ``phi_avg`` used to build ``w_liquid``,
+    to a documented tolerance. The bulk inventory ``X_bulk`` is read
+    from the fractions already encoded in the mantle EOS string
+    (e.g., ``'PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15'`` becomes
+    ``X_bulk = {'PALEOS:H2O': 0.15}``), so no new TOML key is needed
+    to specify it.
+    """
+    if rule == 'uniform':
+        return dict(X_bulk), dict(X_bulk)
+
+    if rule in ('strong', 'D_const', 'solubility'):
+        raise NotImplementedError(
+            f"partition_rule '{rule}' is reserved; the physics lands in a "
+            'subsequent commit on this branch.'
+        )
+
+    raise ValueError(
+        f"Unknown partition_rule '{rule}'. Valid options: {_VALID_PARTITION_RULES}."
+    )
 
 
 def compute_melt_fraction(pressure, temperature, solidus_func, liquidus_func):
