@@ -2538,7 +2538,6 @@ def solve_strong_partition(
     max_iterations=10,
     phi_tolerance=1e-3,
     initial_phi_avg=0.5,
-    phi_floor=0.05,
 ):
     """Run Zalmoxis with the strong-partition rule and a self-consistent phi_avg.
 
@@ -2574,9 +2573,6 @@ def solve_strong_partition(
         Absolute convergence tolerance on phi_avg.
     initial_phi_avg : float
         Initial guess for phi_avg (default 0.5).
-    phi_floor : float
-        Below this value the strong-partition rule falls back to the
-        uniform-spread path (see :func:`apply_partition_rule`).
 
     Returns
     -------
@@ -2629,9 +2625,7 @@ def solve_strong_partition(
     iteration = 0
 
     for iteration in range(max_iterations):
-        profile, _, _ = build_partition_profile(
-            mantle_mixture, 'strong', phi_avg, phi_floor=phi_floor
-        )
+        profile, _, _ = build_partition_profile(mantle_mixture, 'strong', phi_avg)
         result = main(
             config_params,
             material_dictionaries,
