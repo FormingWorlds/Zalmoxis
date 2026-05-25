@@ -26,11 +26,13 @@ from zalmoxis.mixing import (
     _nabla_ad_for_component,
     any_component_is_tdep,
     apply_partition_rule,
+    build_partition_profile,
     calculate_mixed_density,
     calculate_mixed_density_batch,
     get_mixed_nabla_ad,
     parse_all_layer_mixtures,
     parse_layer_components,
+    split_mantle_volatile_inventory,
 )
 
 
@@ -1294,10 +1296,9 @@ class TestNablaAdForComponent:
 class TestApplyPartitionRule:
     """Tests for the partition-law hook used upstream of ``VolatileProfile``.
 
-    The hook signature is stable from this commit; only the ``'uniform'``
-    rule returns numerical values in this revision. The reserved rules
-    (``'strong'``, ``'D_const'``, ``'solubility'``) raise
-    ``NotImplementedError`` until the physics lands in subsequent commits.
+    The ``'uniform'`` and ``'strong'`` rules return numerical values;
+    ``'D_const'`` and ``'solubility'`` remain reserved hooks that raise
+    ``NotImplementedError`` until subsequent commits land them.
     """
 
     def test_uniform_returns_x_bulk_for_both_phases(self):
@@ -1343,9 +1344,61 @@ class TestApplyPartitionRule:
             assert blended['PALEOS:H2O'] == pytest.approx(0.15)
             assert blended['PALEOS:MgSiO3'] == pytest.approx(0.85)
 
-    def test_strong_not_yet_wired(self):
-        with pytest.raises(NotImplementedError, match='subsequent commit'):
-            apply_partition_rule('strong', {'PALEOS:H2O': 0.15}, phi_avg=0.5)
+    def test_strong_basic(self):
+        """w_liquid = X / phi_avg, w_solid = 0 above phi_floor."""
+        x_bulk = {'PALEOS:H2O': 0.15}
+        w_liquid, w_solid = apply_partition_rule('strong', x_bulk, phi_avg=0.5)
+        assert w_liquid == {'PALEOS:H2O': pytest.approx(0.30)}
+        assert w_solid == {'PALEOS:H2O': 0.0}
+
+    def test_strong_multi_species(self):
+        x_bulk = {'PALEOS:H2O': 0.1, 'Chabrier:H': 0.03}
+        w_liquid, w_solid = apply_partition_rule('strong', x_bulk, phi_avg=0.25)
+        assert w_liquid['PALEOS:H2O'] == pytest.approx(0.40)
+        assert w_liquid['Chabrier:H'] == pytest.approx(0.12)
+        assert w_solid == {'PALEOS:H2O': 0.0, 'Chabrier:H': 0.0}
+
+    def test_strong_fully_molten_limit(self):
+        """At phi_avg = 1.0, w_liquid collapses back to X_bulk."""
+        x_bulk = {'PALEOS:H2O': 0.15}
+        w_liquid, w_solid = apply_partition_rule('strong', x_bulk, phi_avg=1.0)
+        assert w_liquid['PALEOS:H2O'] == pytest.approx(0.15)
+        assert w_solid['PALEOS:H2O'] == 0.0
+
+    def test_strong_below_phi_floor_falls_back_to_uniform(self):
+        """At phi_avg < phi_floor the normalization is ill-conditioned;
+        the rule falls back to the uniform-spread path (w_liquid =
+        w_solid = X_bulk) for numerical robustness."""
+        x_bulk = {'PALEOS:H2O': 0.15}
+        w_liquid, w_solid = apply_partition_rule('strong', x_bulk, phi_avg=0.01, phi_floor=0.05)
+        assert w_liquid == {'PALEOS:H2O': 0.15}
+        assert w_solid == {'PALEOS:H2O': 0.15}
+
+    def test_strong_at_phi_floor_uses_uniform_fallback(self):
+        """phi_avg < phi_floor triggers fallback; equal does not."""
+        x_bulk = {'PALEOS:H2O': 0.1}
+        # Just above the floor: strong-partition kicks in.
+        w_l_above, _ = apply_partition_rule('strong', x_bulk, phi_avg=0.06, phi_floor=0.05)
+        assert w_l_above['PALEOS:H2O'] == pytest.approx(0.1 / 0.06)
+        # Just below the floor: uniform fallback.
+        w_l_below, _ = apply_partition_rule('strong', x_bulk, phi_avg=0.04, phi_floor=0.05)
+        assert w_l_below == {'PALEOS:H2O': 0.1}
+
+    def test_strong_mass_conservation_via_volatile_profile(self):
+        """When ``phi_avg`` matches the constant ``phi(r) = phi_avg``,
+        ``profile.blend(phi_avg)`` returns ``X_bulk`` exactly (mass
+        conservation for a constant phi profile)."""
+        x_bulk = {'PALEOS:H2O': 0.15}
+        phi_avg = 0.4
+        w_liquid, w_solid = apply_partition_rule('strong', x_bulk, phi_avg=phi_avg)
+        profile = VolatileProfile(
+            w_liquid=w_liquid,
+            w_solid=w_solid,
+            primary_component='PALEOS:MgSiO3',
+        )
+        blended = profile.blend(phi_avg)
+        assert blended['PALEOS:H2O'] == pytest.approx(0.15)
+        assert blended['PALEOS:MgSiO3'] == pytest.approx(0.85)
 
     def test_d_const_not_yet_wired(self):
         with pytest.raises(NotImplementedError, match='subsequent commit'):
@@ -1372,3 +1425,82 @@ class TestApplyPartitionRule:
     def test_unknown_rule_lists_valid_options(self):
         with pytest.raises(ValueError, match='Valid options'):
             apply_partition_rule('', {}, phi_avg=0.5)
+
+
+@pytest.mark.unit
+class TestSplitMantleVolatileInventory:
+    """Classify mantle components into ``X_bulk`` and the primary silicate."""
+
+    def test_pure_silicate(self):
+        m = parse_layer_components('PALEOS:MgSiO3')
+        X_bulk, primary = split_mantle_volatile_inventory(m)
+        assert X_bulk == {}
+        assert primary == 'PALEOS:MgSiO3'
+
+    def test_silicate_plus_water(self):
+        m = parse_layer_components('PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15')
+        X_bulk, primary = split_mantle_volatile_inventory(m)
+        assert X_bulk == {'PALEOS:H2O': pytest.approx(0.15)}
+        assert primary == 'PALEOS:MgSiO3'
+
+    def test_silicate_plus_h2_and_water(self):
+        m = parse_layer_components('PALEOS:MgSiO3:0.87+PALEOS:H2O:0.1+Chabrier:H:0.03')
+        X_bulk, primary = split_mantle_volatile_inventory(m)
+        assert X_bulk['PALEOS:H2O'] == pytest.approx(0.1)
+        assert X_bulk['Chabrier:H'] == pytest.approx(0.03)
+        assert primary == 'PALEOS:MgSiO3'
+
+    def test_no_silicate_raises(self):
+        m = LayerMixture(['PALEOS:H2O'], [1.0])
+        with pytest.raises(ValueError, match='no silicate'):
+            split_mantle_volatile_inventory(m)
+
+    def test_multiple_silicates_raises(self):
+        m = LayerMixture(
+            ['PALEOS:MgSiO3', 'WolfBower2018:MgSiO3'],
+            [0.5, 0.5],
+        )
+        with pytest.raises(ValueError, match='more than one silicate'):
+            split_mantle_volatile_inventory(m)
+
+    def test_unknown_component_raises(self):
+        m = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:iron'], [0.5, 0.5])
+        with pytest.raises(ValueError, match='neither a recognized silicate'):
+            split_mantle_volatile_inventory(m)
+
+
+@pytest.mark.unit
+class TestBuildPartitionProfile:
+    """End-to-end builder from a mantle ``LayerMixture`` to a ``VolatileProfile``."""
+
+    def test_pure_silicate_returns_none_profile(self):
+        m = parse_layer_components('PALEOS:MgSiO3')
+        profile, X_bulk, primary = build_partition_profile(m, 'uniform', phi_avg=0.5)
+        assert profile is None
+        assert X_bulk == {}
+        assert primary == 'PALEOS:MgSiO3'
+
+    def test_uniform_rule_builds_profile(self):
+        m = parse_layer_components('PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15')
+        profile, X_bulk, primary = build_partition_profile(m, 'uniform', phi_avg=0.5)
+        assert profile is not None
+        assert profile.primary_component == 'PALEOS:MgSiO3'
+        assert profile.w_liquid == {'PALEOS:H2O': pytest.approx(0.15)}
+        assert profile.w_solid == {'PALEOS:H2O': pytest.approx(0.15)}
+        assert X_bulk == {'PALEOS:H2O': pytest.approx(0.15)}
+
+    def test_strong_rule_builds_profile(self):
+        m = parse_layer_components('PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15')
+        profile, X_bulk, primary = build_partition_profile(m, 'strong', phi_avg=0.3)
+        assert profile is not None
+        assert profile.primary_component == 'PALEOS:MgSiO3'
+        assert profile.w_liquid['PALEOS:H2O'] == pytest.approx(0.15 / 0.3)
+        assert profile.w_solid['PALEOS:H2O'] == 0.0
+        assert X_bulk == {'PALEOS:H2O': pytest.approx(0.15)}
+
+    def test_strong_below_floor_falls_back_to_uniform_inside_builder(self):
+        m = parse_layer_components('PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15')
+        profile, _, _ = build_partition_profile(m, 'strong', phi_avg=0.02, phi_floor=0.05)
+        assert profile is not None
+        assert profile.w_liquid == {'PALEOS:H2O': pytest.approx(0.15)}
+        assert profile.w_solid == {'PALEOS:H2O': pytest.approx(0.15)}

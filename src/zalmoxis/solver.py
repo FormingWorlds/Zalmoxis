@@ -43,8 +43,11 @@ from .eos import (
 from .mixing import (
     BINODAL_T_SCALE_DEFAULT,
     any_component_is_tdep,
+    build_partition_profile,
     calculate_mixed_density_batch,
+    compute_melt_fraction,
     parse_all_layer_mixtures,
+    split_mantle_volatile_inventory,
 )
 from .structure_model import solve_structure
 
@@ -1662,6 +1665,7 @@ def _solve(
                     binodal_T_scale,
                     use_jax=use_jax,
                     temperature_arrays=temperature_arrays,
+                    volatile_profile=volatile_profile,
                 )
                 if logger.isEnabledFor(
                     logging.DEBUG
@@ -1767,6 +1771,7 @@ def _solve(
                     binodal_T_scale,
                     use_jax=use_jax,
                     temperature_arrays=temperature_arrays,
+                    volatile_profile=volatile_profile,
                 )
 
                 surface_residual = abs(pressure[-1] - target_surface_pressure)
@@ -1854,6 +1859,8 @@ def _solve(
                     if len(T_arr) == len(valid_indices)
                     else T_arr[mask]
                 )
+                # Phi-aware blend only applies inside the mantle.
+                vp_for_batch = volatile_profile if layer_name == 'mantle' else None
                 rho_batch = calculate_mixed_density_batch(
                     pressure[idx],
                     T_batch,
@@ -1866,6 +1873,7 @@ def _solve(
                     condensed_rho_min,
                     condensed_rho_scale,
                     binodal_T_scale,
+                    volatile_profile=vp_for_batch,
                 )
                 new_density[idx] = rho_batch
 
@@ -2479,4 +2487,205 @@ def solve_miscible_interior(
     result['miscibility_converged'] = misc_converged
     result['miscibility_iterations'] = iteration + 1
 
+    return result
+
+
+def _mantle_mass_weighted_phi(result, cmb_mass_value, solidus_func, liquidus_func):
+    """Compute the mass-weighted mean melt fraction over the mantle.
+
+    Integrates ``phi(P, T) * dM`` across mantle shells (mass > cmb_mass)
+    using midpoint shell values for ``rho``, ``P``, and ``T``. Returns
+    ``(phi_avg, mantle_mass)``; when no mantle shells contribute,
+    ``mantle_mass`` is ``0.0``.
+    """
+    radii = result['radii']
+    density = result['density']
+    pressure = result['pressure']
+    temperature = result['temperature']
+    mass_enclosed = result['mass_enclosed']
+
+    phi_integrated = 0.0
+    mantle_mass = 0.0
+    for i in range(len(radii) - 1):
+        m_mid = 0.5 * (mass_enclosed[i] + mass_enclosed[i + 1])
+        if m_mid < cmb_mass_value:
+            continue
+        r_mid = 0.5 * (radii[i] + radii[i + 1])
+        dr = radii[i + 1] - radii[i]
+        rho_mid = 0.5 * (density[i] + density[i + 1])
+        P_mid = 0.5 * (pressure[i] + pressure[i + 1])
+        T_mid = 0.5 * (temperature[i] + temperature[i + 1])
+        if rho_mid <= 0 or P_mid <= 0 or dr <= 0:
+            continue
+        phi_i = compute_melt_fraction(P_mid, T_mid, solidus_func, liquidus_func)
+        shell_mass = rho_mid * 4.0 * np.pi * r_mid**2 * dr
+        phi_integrated += phi_i * shell_mass
+        mantle_mass += shell_mass
+
+    if mantle_mass <= 0:
+        return 0.0, 0.0
+    return phi_integrated / mantle_mass, mantle_mass
+
+
+def solve_strong_partition(
+    config_params,
+    material_dictionaries,
+    melting_curves_functions,
+    input_dir,
+    layer_mixtures=None,
+    temperature_function=None,
+    temperature_arrays=None,
+    max_iterations=10,
+    phi_tolerance=1e-3,
+    initial_phi_avg=0.5,
+    phi_floor=0.05,
+):
+    """Run Zalmoxis with the strong-partition rule and a self-consistent phi_avg.
+
+    Wraps ``main()`` in an outer loop that builds the mantle
+    ``VolatileProfile`` from ``apply_partition_rule('strong', ...)`` and
+    iterates the mass-weighted mantle melt fraction ``phi_avg`` until it
+    matches the one extracted from the resulting structure. The mantle
+    bulk volatile inventory ``X_bulk`` is read from the fractions already
+    encoded in the mantle EOS string (e.g.,
+    ``'PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15'`` becomes ``X_H2O = 0.15``).
+
+    Parameters
+    ----------
+    config_params : dict
+        Configuration parameters for the model.
+    material_dictionaries : dict
+        EOS registry dict keyed by EOS identifier string.
+    melting_curves_functions : tuple or None
+        ``(solidus_func, liquidus_func)`` used both by the structure solve
+        and by the mass-weighted phi integral.
+    input_dir : str
+        Directory containing input files.
+    layer_mixtures : dict or None, optional
+        Per-layer ``LayerMixture`` objects. If ``None``, parsed from
+        ``config_params['layer_eos_config']``.
+    temperature_function : callable or None, optional
+        External T(r, P) callable forwarded to ``main()``.
+    temperature_arrays : tuple or None, optional
+        Explicit r-indexed T profile forwarded to ``main()`` (JAX path).
+    max_iterations : int
+        Maximum number of phi_avg outer iterations.
+    phi_tolerance : float
+        Absolute convergence tolerance on phi_avg.
+    initial_phi_avg : float
+        Initial guess for phi_avg (default 0.5).
+    phi_floor : float
+        Below this value the strong-partition rule falls back to the
+        uniform-spread path (see :func:`apply_partition_rule`).
+
+    Returns
+    -------
+    dict
+        Result dict from ``main()`` augmented with:
+
+        - ``'phi_avg_converged'``: final mass-weighted mantle phi.
+        - ``'X_bulk_mantle'``: bulk mantle volatile mass fractions.
+        - ``'strong_partition_iterations'``: outer iterations used.
+        - ``'strong_partition_converged'``: ``True`` on convergence.
+    """
+    if layer_mixtures is None:
+        layer_mixtures = parse_all_layer_mixtures(config_params['layer_eos_config'])
+
+    mantle_mixture = layer_mixtures.get('mantle')
+    if mantle_mixture is None:
+        raise ValueError('solve_strong_partition requires a mantle layer in layer_mixtures.')
+
+    X_bulk, _primary = split_mantle_volatile_inventory(mantle_mixture)
+
+    # No volatiles in the mantle: fall through to a single main() call.
+    # partition_rule = "strong" with a pure-silicate mantle is a no-op.
+    if not X_bulk:
+        logger.info(
+            "partition_rule='strong' but mantle has no volatile species; "
+            'running a single main() pass.'
+        )
+        result = main(
+            config_params,
+            material_dictionaries,
+            melting_curves_functions,
+            input_dir,
+            layer_mixtures,
+            temperature_function=temperature_function,
+            temperature_arrays=temperature_arrays,
+        )
+        result['phi_avg_converged'] = None
+        result['X_bulk_mantle'] = {}
+        result['strong_partition_iterations'] = 0
+        result['strong_partition_converged'] = True
+        return result
+
+    solidus_func, liquidus_func = (
+        melting_curves_functions if melting_curves_functions else (None, None)
+    )
+
+    phi_avg = float(initial_phi_avg)
+    sp_converged = False
+    result = None
+    iteration = 0
+
+    for iteration in range(max_iterations):
+        profile, _, _ = build_partition_profile(
+            mantle_mixture, 'strong', phi_avg, phi_floor=phi_floor
+        )
+        result = main(
+            config_params,
+            material_dictionaries,
+            melting_curves_functions,
+            input_dir,
+            layer_mixtures,
+            volatile_profile=profile,
+            temperature_function=temperature_function,
+            temperature_arrays=temperature_arrays,
+        )
+
+        if not result.get('converged', False):
+            logger.warning(
+                'Strong-partition iter %d: Zalmoxis did not converge. '
+                'Returning current state without further phi_avg iteration.',
+                iteration,
+            )
+            break
+
+        phi_avg_new, mantle_mass = _mantle_mass_weighted_phi(
+            result, result['cmb_mass'], solidus_func, liquidus_func
+        )
+        if mantle_mass <= 0:
+            logger.warning(
+                'Strong-partition iter %d: no mantle mass integrated; '
+                'cannot evaluate phi_avg. Stopping.',
+                iteration,
+            )
+            break
+
+        delta = abs(phi_avg_new - phi_avg)
+        logger.info(
+            'Strong-partition iter %d: phi_avg %.6f -> %.6f (|delta|=%.2e)',
+            iteration,
+            phi_avg,
+            phi_avg_new,
+            delta,
+        )
+        phi_avg = phi_avg_new
+        if delta < phi_tolerance:
+            sp_converged = True
+            break
+
+    if not sp_converged:
+        logger.warning(
+            'Strong-partition phi_avg did not converge after %d iterations '
+            '(|delta|>%.2e). Proceeding with current phi_avg=%.6f.',
+            max_iterations,
+            phi_tolerance,
+            phi_avg,
+        )
+
+    result['phi_avg_converged'] = phi_avg
+    result['X_bulk_mantle'] = dict(X_bulk)
+    result['strong_partition_iterations'] = iteration + 1
+    result['strong_partition_converged'] = sp_converged
     return result

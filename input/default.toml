@@ -79,7 +79,9 @@ binodal_T_scale            = 50.0   # K — binodal sigmoid width (~200 K transi
 #                 Default; existing TOMLs run unchanged.
 #   "strong"      Strong-partition limit: w_liquid = X_i / phi_avg, w_solid = 0;
 #                 the volatile mass lives entirely in the silicate melt. Bulk X_i
-#                 is read from the mantle EOS string fractions. (Not yet wired.)
+#                 is read from the mantle EOS string fractions. The standalone
+#                 driver wraps the structure solve in an outer self-consistency
+#                 loop on phi_avg.
 #   "D_const"     Constant partition coefficient D_i per species. (Not yet wired.)
 #   "solubility"  Pressure-dependent solubility callback (Henry- or Bower-style).
 #                 (Not yet wired.)

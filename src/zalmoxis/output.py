@@ -45,16 +45,20 @@ def post_processing(config_params, id_mass=None, output_file=None, model_results
 
     if model_results is None:
         from .config import load_material_dictionaries
-        from .solver import main
+        from .solver import main, solve_strong_partition
 
-        model_results = main(
-            config_params,
+        partition_rule = config_params.get('partition_rule', 'uniform')
+        _solver_kwargs = dict(
             material_dictionaries=load_material_dictionaries(),
             melting_curves_functions=load_solidus_liquidus_functions(
                 layer_eos_config, solidus_id, liquidus_id
             ),
             input_dir=os.path.join(get_zalmoxis_root(), 'input'),
         )
+        if partition_rule == 'strong':
+            model_results = solve_strong_partition(config_params, **_solver_kwargs)
+        else:
+            model_results = main(config_params, **_solver_kwargs)
 
     # Extract results
     radii = model_results['radii']
