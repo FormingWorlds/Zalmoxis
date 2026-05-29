@@ -85,9 +85,9 @@ nav:
       - 🔗 VULCAN: https://proteus-framework.org/VULCAN/
       - 🔗 Aragog: https://proteus-framework.org/aragog/
       - 🔗 SPIDER: https://proteus-framework.org/SPIDER/
-      - 🔗 Atmodeller: https://atmodeller.readthedocs.io/en/latest/
-      - 🔗 FastChem: https://newstrangeworlds.github.io/FastChem/
-      - 🔗 PLATON: https://platon.readthedocs.io/en/latest/
+      - 🔗 Atmodeller: https://github.com/FormingWorlds/Atmodeller/
+      - 🔗 FastChem: https://github.com/FormingWorlds/FastChem/
+      - 🔗 SOCRATES: https://proteus-framework.org/SOCRATES/
 
 theme:
   name: material
@@ -129,6 +129,8 @@ theme:
 
 extra_css:
   - stylesheets/extra.css
+  - stylesheets/footnotes.css
+  - stylesheets/proteus_theme.css
 
 markdown_extensions:
   - admonition
