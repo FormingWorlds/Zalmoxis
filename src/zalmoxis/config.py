@@ -794,6 +794,8 @@ def load_zalmoxis_config(temp_config_path=None):
         'maximum_step',
         'adaptive_radial_fraction',
         'max_center_pressure_guess',
+        'outer_solver',
+        'wall_timeout',
     ]
     for key in _optional_iter_keys:
         if key in _iter:
