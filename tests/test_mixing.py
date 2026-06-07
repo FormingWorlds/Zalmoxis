@@ -1368,8 +1368,8 @@ class TestApplyPartitionRule:
     def test_strong_below_floor_falls_back_to_uniform(self):
         """At phi_avg below the X-derived floor the mass-fraction bound
         ``w_liquid <= 1`` is violated, so the rule falls back to the
-        uniform-spread path. For X_total = 0.15 and safety = 1.2 the floor
-        is 0.18; phi_avg = 0.01 sits far below it."""
+        uniform-spread path. For X_total = 0.15 and safety = 1.01 the floor
+        is ~0.1515; phi_avg = 0.01 sits far below it."""
         x_bulk = {'PALEOS:H2O': 0.15}
         w_liquid, w_solid = apply_partition_rule('strong', x_bulk, phi_avg=0.01)
         assert w_liquid == {'PALEOS:H2O': 0.15}
@@ -1378,13 +1378,13 @@ class TestApplyPartitionRule:
     def test_strong_floor_pivot_is_x_derived(self):
         """The pivot between strong-partition and uniform fallback is at
         ``_STRONG_PARTITION_PHI_SAFETY * sum(X_bulk)``. With X_total = 0.1
-        and safety = 1.2 the floor is 0.12: phi_avg = 0.13 activates the
-        strong rule; phi_avg = 0.11 falls back."""
+        and safety = 1.01 the floor is 0.101: a phi_avg just above the
+        floor activates the strong rule; just below, it falls back."""
         from zalmoxis.mixing import _STRONG_PARTITION_PHI_SAFETY
 
         x_bulk = {'PALEOS:H2O': 0.1}
         floor = _STRONG_PARTITION_PHI_SAFETY * sum(x_bulk.values())
-        assert floor == pytest.approx(0.12)
+        assert floor == pytest.approx(0.101)
 
         w_l_above, _ = apply_partition_rule('strong', x_bulk, phi_avg=floor + 0.01)
         assert w_l_above['PALEOS:H2O'] == pytest.approx(0.1 / (floor + 0.01))
@@ -1406,9 +1406,9 @@ class TestApplyPartitionRule:
         # Heavy volatile load: floor scales up.
         x_heavy = {'PALEOS:H2O': 0.4}
         floor_heavy = _STRONG_PARTITION_PHI_SAFETY * 0.4
-        assert floor_heavy == pytest.approx(0.48)
-        # phi_avg = 0.45 is below the heavy floor but above the light floor.
-        w_l_heavy, _ = apply_partition_rule('strong', x_heavy, phi_avg=0.45)
+        assert floor_heavy == pytest.approx(0.404)
+        # phi_avg = 0.40 is below the heavy floor but above the light floor.
+        w_l_heavy, _ = apply_partition_rule('strong', x_heavy, phi_avg=0.40)
         assert w_l_heavy == {'PALEOS:H2O': 0.4}  # uniform fallback
 
     def test_strong_pure_silicate_mantle_has_zero_floor(self):
@@ -1534,7 +1534,7 @@ class TestBuildPartitionProfile:
         assert X_bulk == {'PALEOS:H2O': pytest.approx(0.15)}
 
     def test_strong_below_floor_falls_back_to_uniform_inside_builder(self):
-        """X_total = 0.15 gives floor = 0.18; phi_avg = 0.10 sits below it
+        """X_total = 0.15 gives floor = ~0.1515; phi_avg = 0.10 sits below it
         and the builder returns a uniform-spread profile."""
         m = parse_layer_components('PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15')
         profile, _, _ = build_partition_profile(m, 'strong', phi_avg=0.10)

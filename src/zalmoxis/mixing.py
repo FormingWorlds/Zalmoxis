@@ -1305,14 +1305,12 @@ _VOLATILE_EOS_NAMES = _H2_EOS_NAMES | _H2O_EOS_NAMES
 #
 # The strong-partition rule sets w_liquid = X_bulk / phi_avg. The
 # mass-fraction bound w_liquid <= 1 then requires
-# phi_avg >= sum(X_bulk). We add a 20% headroom so the per-shell
-# volatile fraction stays away from saturation (w_liquid <= 1/1.2 ~ 0.83
-# at the boundary), where the silicate has effectively been displaced
-# by the volatile in the most-molten shells and the strong-partition
-# assumption is at its weakest. Below the resulting floor the rule
-# falls back to the uniform-spread path so the structure solve stays
-# well-conditioned.
-_STRONG_PARTITION_PHI_SAFETY = 1.2
+# phi_avg >= sum(X_bulk). We add a 1% headroom purely to keep the
+# division away from the w_liquid = 1 singularity; the bound is
+# numerical, not physical, so the floor sits just above sum(X_bulk).
+# Below the resulting floor the rule falls back to the uniform-spread
+# path so the structure solve stays well-conditioned.
+_STRONG_PARTITION_PHI_SAFETY = 1.01
 
 
 def split_mantle_volatile_inventory(
