@@ -16,6 +16,8 @@ import logging
 
 import numpy as np
 
+from .constants import G, earth_radius
+
 logger = logging.getLogger(__name__)
 
 # Maximum pressure for which the analytic fit is valid (Pa)
@@ -32,7 +34,26 @@ SEAGER2007_MATERIALS: dict[str, tuple[float, float, float]] = {
     'SiC': (3220.0, 0.00172, 0.537),  # Silicon carbide
 }
 
-VALID_MATERIAL_KEYS: set[str] = set(SEAGER2007_MATERIALS.keys())
+# Analytic verification material with an exact interior-structure solution.
+# The n = 1 polytrope P = K rho^2 is the modified-polytrope form
+# rho = rho_0 + c P^n with rho_0 = 0, c = K^(-1/2), n = 1/2. Its Lane-Emden
+# equation is linear, with the closed-form solution rho(r) = rho_c sin(xi)/xi
+# (xi = r / sqrt(K / 2 pi G)) and the surface at the first zero xi = pi, so the
+# radius pi sqrt(K / 2 pi G) is fixed by K alone, independent of central
+# density. K is chosen so the surface falls at one Earth radius, providing an
+# exact reference for end-to-end verification of the coupled solver.
+_K_POLYTROPE_N1 = 2.0 * np.pi * G * (earth_radius / np.pi) ** 2
+VERIFICATION_MATERIALS: dict[str, tuple[float, float, float]] = {
+    'polytrope_n1': (0.0, _K_POLYTROPE_N1**-0.5, 0.5),
+}
+
+# Combined registry consumed by the density lookup and the config validator.
+ANALYTIC_MATERIALS: dict[str, tuple[float, float, float]] = {
+    **SEAGER2007_MATERIALS,
+    **VERIFICATION_MATERIALS,
+}
+
+VALID_MATERIAL_KEYS: set[str] = set(ANALYTIC_MATERIALS.keys())
 
 
 def get_analytic_density(pressure: float, material_key: str) -> float | None:
@@ -44,8 +65,9 @@ def get_analytic_density(pressure: float, material_key: str) -> float | None:
     pressure : float
         Pressure in Pa.
     material_key : str
-        One of the keys in SEAGER2007_MATERIALS
-        (e.g., "iron", "MgSiO3", "H2O", "graphite", "SiC", "MgFeSiO3").
+        One of the keys in ANALYTIC_MATERIALS
+        (e.g., "iron", "MgSiO3", "H2O", "graphite", "SiC", "MgFeSiO3",
+        or the verification material "polytrope_n1").
 
     Returns
     -------
@@ -59,12 +81,12 @@ def get_analytic_density(pressure: float, material_key: str) -> float | None:
     ValueError
         If material_key is not recognized.
     """
-    if material_key not in SEAGER2007_MATERIALS:
+    if material_key not in ANALYTIC_MATERIALS:
         raise ValueError(
             f"Unknown material key '{material_key}'. Valid keys: {sorted(VALID_MATERIAL_KEYS)}"
         )
 
-    rho_0, c, n = SEAGER2007_MATERIALS[material_key]
+    rho_0, c, n = ANALYTIC_MATERIALS[material_key]
 
     # Guard against nonphysical pressure
     if np.isnan(pressure):

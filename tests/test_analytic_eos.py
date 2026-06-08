@@ -30,9 +30,14 @@ ALL_MATERIALS = sorted(VALID_MATERIAL_KEYS)
 class TestAnalyticDensityBasic:
     """Basic correctness tests for get_analytic_density()."""
 
-    @pytest.mark.parametrize('material', ALL_MATERIALS)
+    @pytest.mark.parametrize('material', sorted(SEAGER2007_MATERIALS))
     def test_zero_pressure_limit(self, material):
-        """At very low pressure, density should approach rho_0."""
+        """At very low pressure, density should approach rho_0.
+
+        Restricted to the Seager materials, which have a non-zero density
+        floor; the verification polytrope has rho_0 = 0 and is a pure power
+        law, so its low-pressure density is not governed by rho_0.
+        """
         rho_0 = SEAGER2007_MATERIALS[material][0]
         # Use a very small but positive pressure (1 Pa)
         density = get_analytic_density(1.0, material)
@@ -144,3 +149,33 @@ class TestAnalyticVsTabulated:
                 f'rho_analytic={rho_analytic:.0f}, rho_tab={rho_tab:.0f}, '
                 f'rel_diff={rel_diff:.2%}'
             )
+
+
+@pytest.mark.unit
+class TestPolytropeN1VerificationMaterial:
+    """The n=1 polytrope verification material (P = K rho^2)."""
+
+    def test_density_matches_sqrt_law(self):
+        """rho(P) = sqrt(P/K) for the registered polytrope_n1 material."""
+        import math
+
+        from zalmoxis.eos_analytic import _K_POLYTROPE_N1 as K
+
+        for pressure in (1e8, 1e10, 1e11, 5e11):
+            assert get_analytic_density(pressure, 'polytrope_n1') == pytest.approx(
+                math.sqrt(pressure / K), rel=1e-12
+            )
+
+    def test_radius_scale_is_one_earth_radius(self):
+        """K places the n=1 surface (xi = pi) at one Earth radius."""
+        import math
+
+        from zalmoxis.constants import G, earth_radius
+        from zalmoxis.eos_analytic import _K_POLYTROPE_N1 as K
+
+        radius = math.pi * math.sqrt(K / (2.0 * math.pi * G))
+        assert radius == pytest.approx(earth_radius, rel=1e-12)
+
+    def test_zero_pressure_density_is_zero(self):
+        """The polytrope has no density floor (rho_0 = 0)."""
+        assert get_analytic_density(0.0, 'polytrope_n1') == 0.0
