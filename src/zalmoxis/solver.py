@@ -2612,7 +2612,7 @@ def solve_strong_partition(
         result['phi_avg_converged'] = None
         result['X_bulk_mantle'] = {}
         result['strong_partition_iterations'] = 0
-        result['strong_partition_converged'] = True
+        result['strong_partition_converged'] = bool(result.get('converged', False))
         return result
 
     solidus_func, liquidus_func = (
