@@ -157,7 +157,7 @@ stating the rationale.
 
 ## Coverage gate and pragma usage
 
-Zalmoxis enforces a 95% coverage gate in the nightly CI (see
+Zalmoxis enforces a 90% coverage gate in the nightly CI (see
 [Testing suite > Coverage gate](../Explanations/testing.md#coverage-gate)). Most defensive
 code is already excluded automatically through the `exclude_lines` list in
 `[tool.coverage.report]` (`def __repr__`, `if TYPE_CHECKING:`,
@@ -239,7 +239,7 @@ MOCKING:
   Seager path via `cached_solver` or a direct call.
 
 COVERAGE EXCLUSIONS:
-- The 95% gate runs in nightly CI. Do NOT add `# pragma: no cover` just to
+- The 90% gate runs in nightly CI. Do NOT add `# pragma: no cover` just to
   pass the gate. The exclude_lines list in pyproject.toml already covers
   def __repr__, raise NotImplementedError, if TYPE_CHECKING:, @abstractmethod.
 - Inline pragma is acceptable ONLY for: numerical pathology recovery

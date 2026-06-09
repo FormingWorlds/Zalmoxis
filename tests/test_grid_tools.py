@@ -409,6 +409,74 @@ def test_load_grid_config_unknown_sweep_param(tmp_path, monkeypatch):
         rg.load_grid_config(str(grid))
 
 
+def test_param_map_target_surface_pressure_registered():
+    """target_surface_pressure must map to (PressureAdjustment,
+    target_surface_pressure). Pins the registry entry so a future
+    refactor of _PARAM_MAP cannot silently drop it."""
+    import tools.grids.run_grid as rg
+
+    assert 'target_surface_pressure' in rg._PARAM_MAP
+    section, key = rg._PARAM_MAP['target_surface_pressure']
+    assert section == 'PressureAdjustment'
+    assert key == 'target_surface_pressure'
+
+
+def test_load_grid_config_accepts_target_surface_pressure(tmp_path, monkeypatch):
+    """End-to-end loader regression: a sweep over target_surface_pressure
+    parses cleanly and round-trips the values verbatim from the grid
+    TOML through load_grid_config."""
+    import tools.grids.run_grid as rg
+
+    monkeypatch.setattr(rg, 'get_zalmoxis_root', lambda: str(tmp_path))
+    base = tmp_path / 'input'
+    base.mkdir()
+    (base / 'default.toml').write_text('# base config')
+    grid = tmp_path / 'psurf.toml'
+    grid.write_text(
+        '[base]\nconfig = "input/default.toml"\n'
+        '[sweep]\ntarget_surface_pressure = [1.013e5, 1.0e7, 1.0e9]\n'
+        '[output]\ndir = "output/psurf"\n'
+    )
+    base_cfg, sweeps, out_dir, save = rg.load_grid_config(str(grid))
+    assert base_cfg.endswith('default.toml')
+    assert sweeps == {'target_surface_pressure': [1.013e5, 1.0e7, 1.0e9]}
+    assert out_dir.endswith('output/psurf')
+    assert save is False
+
+
+def test_generate_configs_creates_missing_section(tmp_path):
+    """generate_configs must not KeyError when the base TOML omits the
+    target section of a sweep parameter. A minimal base config that
+    sweeps target_surface_pressure but never explicitly sets
+    [PressureAdjustment] must still produce a valid override TOML."""
+    import tools.grids.run_grid as rg
+
+    # Minimal base config: only [Output] (required by generate_configs
+    # for the plots_enabled/verbose writeback at the end of the loop).
+    # NO [PressureAdjustment] section.
+    base = tmp_path / 'base.toml'
+    base.write_text(
+        '[Output]\nplots_enabled = true\nverbose = true\n'
+    )
+
+    configs = rg.generate_configs(
+        str(base),
+        {'target_surface_pressure': [1.013e5, 1.0e7]},
+    )
+    assert len(configs) == 2
+
+    # Confirm each generated config has the section now present with
+    # the right value, and that the writer did not corrupt [Output].
+    import toml as toml_mod
+    for label, cfg_path in configs:
+        cfg = toml_mod.load(cfg_path)
+        assert 'PressureAdjustment' in cfg
+        assert 'target_surface_pressure' in cfg['PressureAdjustment']
+        assert cfg['Output']['plots_enabled'] is False
+        assert cfg['Output']['verbose'] is False
+        os.unlink(cfg_path)
+
+
 def test_run_single_profile_write_failure_reports_error(tmp_path, monkeypatch):
     """When the profile-CSV writer raises OSError, run_single logs a
     warning and populates result['error'] so the failure surfaces in

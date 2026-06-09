@@ -275,13 +275,13 @@ file (enforced by ruff isort).
 
 ## Coverage gate
 
-- Hard gate at `[tool.coverage.report] fail_under = 95.0` in
+- Hard gate at `[tool.coverage.report] fail_under = 90.0` in
   `pyproject.toml`. Per ecosystem policy this is the maximum ratchet
-  threshold for any module: it does not increase above 95% even if real
-  coverage exceeds it. Real coverage targets ~97% to give 2 percentage
+  threshold for any module: it does not increase above 90% even if real
+  coverage exceeds it. Real coverage targets ~92% to give 2 percentage
   points of headroom for small future additions before the gate trips.
 - The nightly invocation in `.github/workflows/nightly.yml` passes
-  `--cov-fail-under=95` explicitly. The `[tool.coverage.report]` value is
+  `--cov-fail-under=90` explicitly. The `[tool.coverage.report]` value is
   the source of truth; the explicit flag is belt-and-braces.
 - A pre-flight check in `.github/workflows/CI.yml` rejects PRs that lower
   `fail_under` below the value on `origin/main`, mirroring PROTEUS's

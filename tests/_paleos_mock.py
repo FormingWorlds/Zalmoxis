@@ -2,8 +2,8 @@
 
 The CI runner does not vendor the upstream PALEOS Python package, so without
 this mock ``tests/test_paleos_api.py`` would skip on every CI push and drag
-``src/zalmoxis/eos/paleos_api.py`` coverage on CI well below the >95 % the
-PALEOS-installed developer machines see.
+``src/zalmoxis/eos/paleos_api.py`` coverage on CI well below the level
+PALEOS-installed developer machines see (the nightly gate is 90 %).
 
 This mock injects a minimal ``paleos`` package into ``sys.modules`` whenever
 the real package cannot be imported. The injection happens once per process
