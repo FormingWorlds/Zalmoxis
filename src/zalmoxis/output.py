@@ -57,6 +57,10 @@ def post_processing(config_params, id_mass=None, output_file=None, model_results
         )
         if partition_rule == 'strong':
             model_results = solve_strong_partition(config_params, **_solver_kwargs)
+        elif partition_rule in ('D_const', 'solubility'):
+            raise NotImplementedError(
+                f"partition_rule '{partition_rule}' is reserved; the physics is not implemented yet."
+            )
         else:
             model_results = main(config_params, **_solver_kwargs)
 
