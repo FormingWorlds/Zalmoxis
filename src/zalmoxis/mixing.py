@@ -1192,9 +1192,9 @@ def apply_partition_rule(
     ``X_bulk[species]`` and a mantle-averaged melt fraction ``phi_avg``
     into the ``(w_liquid, w_solid)`` pair that ``VolatileProfile``
     already accepts. The ``rule`` argument selects the physical
-    prescription. Only ``'uniform'`` returns numerical values in this
-    revision; the remaining rules are reserved hooks that will be
-    implemented in subsequent commits on this branch.
+    prescription. In this revision, ``'uniform'`` and ``'strong'`` return
+    numerical values; the remaining rules are reserved hooks that raise
+    ``NotImplementedError`` until their physics is implemented.
 
     Parameters
     ----------
@@ -1205,12 +1205,13 @@ def apply_partition_rule(
           phi-blend collapses to a constant per-shell fraction. This
           reproduces the existing single-EOS-string mantle behavior.
         - ``'strong'``: strong-partition limit
-          ``w_liquid = X_bulk / phi_avg``, ``w_solid = 0``. Not wired
-          yet.
+          ``w_liquid = X_bulk / phi_avg``, ``w_solid = 0``.
         - ``'D_const'``: constant partition coefficient
-          ``D = w_solid / w_liquid`` per species. Not wired yet.
+          ``D = w_solid / w_liquid`` per species. Reserved hook; raises
+          ``NotImplementedError``.
         - ``'solubility'``: pressure-dependent solubility callback
-          (Henry-style or Bower-style). Not wired yet.
+          (Henry-style or Bower-style). Reserved hook; raises
+          ``NotImplementedError``.
     X_bulk : dict
         Bulk mantle mass fractions keyed by EOS component name
         (e.g., ``{'PALEOS:H2O': 0.15}``). For the existing single
