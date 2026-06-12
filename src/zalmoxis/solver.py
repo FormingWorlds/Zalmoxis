@@ -2129,18 +2129,25 @@ def _solve(
         # progressively more adiabat in the T-func. This prevents the
         # T-dependent density field from diverging when switching abruptly
         # from linear to adiabat T.
+        # The ramp applies only when the internal adiabat machinery built
+        # the T profile: an external temperature_function bypasses the
+        # blend entirely (see the external branch in the T-profile setup),
+        # so with a callable supplied the blend never reaches 1.0 and the
+        # ramp branch would consume every outer iteration without doing
+        # work, leaving converged_mass unset on a mass-converged outer.
         # For T-INDEPENDENT EOS (Seager+2007, Analytic, Vinet) the density
-        # does not depend on T at all, so the blend ramp does no useful work
-        # — the recomputed structure is identical at every blend step. Skip
-        # the ramp in that case and break immediately on mass convergence;
-        # the T output for T-independent EOS in adiabatic mode falls back to
-        # the linear profile (see the T-independent branch around the
-        # _temperature_func construction).
+        # does not depend on T at all, so the blend ramp does no useful
+        # work; the recomputed structure is identical at every blend step.
+        # Skip the ramp in that case and break immediately on mass
+        # convergence; the T output for T-independent EOS in adiabatic mode
+        # falls back to the linear profile (see the T-independent branch
+        # around the _temperature_func construction).
         if relative_diff_outer_mass < tolerance_outer:
             if (
                 temperature_mode in ('adiabatic', 'adiabatic_from_cmb')
                 and _adiabat_blend < 1.0
                 and uses_Tdep
+                and temperature_function is None
             ):
                 if not _using_adiabat:
                     _using_adiabat = True
