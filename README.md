@@ -59,4 +59,4 @@ Contributions are welcome. Please read the [Code of Conduct](CODE_OF_CONDUCT.md)
 
 ## License
 
-[MIT License](LICENSE.txt)
+[Apache License 2.0](LICENSE.txt)
