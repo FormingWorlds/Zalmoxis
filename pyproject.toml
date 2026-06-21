@@ -29,7 +29,11 @@ classifiers = [
 ]
 dependencies = [
     "numpy",
-    "scipy",
+    # Upper bound: scipy 1.18 dropped the vendored scipy._lib.array_api_compat
+    # module that pickled EOS interpolator caches (RegularGridInterpolator,
+    # NearestNDInterpolator) reference, so loading a cache fails to unpickle on
+    # scipy >= 1.18. Lower bound follows the JAX stack, which requires scipy >= 1.14.
+    "scipy>=1.14,<1.18",
     "toml",
     "matplotlib",
     "python-ternary",
