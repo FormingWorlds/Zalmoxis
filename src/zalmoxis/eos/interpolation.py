@@ -569,13 +569,27 @@ def _ensure_unified_cache(eos_file, interpolation_functions):
             pickle.UnpicklingError,
             ImportError,
             AttributeError,
-        ):
-            # ImportError/AttributeError cover a cache pickled by a different
-            # scipy build whose interpolator classes or vendored submodules
+        ) as exc:
+            # FileNotFoundError is the normal first-load case (no cache yet). The
+            # other errors mean a cache file exists but cannot be unpickled, most
+            # often because it was written by a different scipy build whose
+            # interpolator classes or vendored submodules
             # (e.g. scipy._lib.array_api_compat) no longer resolve. Rebuilding
             # from the text table always produces a cache valid for the current
             # scipy, so a stale binary cache degrades to a slow load, not a crash.
-            logger.info('Loading PALEOS table from text: %s', eos_file)
+            if isinstance(exc, FileNotFoundError):
+                logger.info('Loading PALEOS table from text: %s', eos_file)
+            else:
+                # Record why the cache was rejected so a scipy-version mismatch
+                # is distinguishable from a corrupt or partial cache in ops logs.
+                logger.info(
+                    'PALEOS binary cache %s could not be loaded (%s: %s); '
+                    'rebuilding from text table',
+                    cache_path,
+                    type(exc).__name__,
+                    exc,
+                )
+                logger.debug('PALEOS cache load failure traceback', exc_info=True)
             interpolation_functions[eos_file] = load_paleos_unified_table(eos_file)
             # Save binary cache for next time
             try:

@@ -332,16 +332,18 @@ class TestEnsureUnifiedCache:
         assert 'density_interp' in result
         assert 'nabla_ad_interp' in result
 
-    def test_rebuilds_when_cache_references_missing_module(self, tmp_path):
+    def test_rebuilds_when_cache_references_missing_module(self, caplog, tmp_path):
         """A binary cache that cannot be unpickled rebuilds from the text table.
 
         A cache pickled by one scipy build embeds the fully-qualified class
         paths of its interpolator objects (and vendored submodules such as
         scipy._lib.array_api_compat). Loading that cache under a scipy build
         that no longer ships those paths raises ModuleNotFoundError, a subclass
-        of ImportError. The loader must treat the binary cache as unusable and
-        rebuild from the authoritative text table instead of propagating.
+        of ImportError. The loader must treat the binary cache as unusable,
+        record why it was rejected, and rebuild from the authoritative text
+        table instead of propagating.
         """
+        import logging
         from unittest.mock import patch
 
         from zalmoxis.eos import _ensure_unified_cache
@@ -359,11 +361,12 @@ class TestEnsureUnifiedCache:
 
         rebuilt = {'type': 'paleos_unified', 'p_min': 1.0e5, 'p_max': 1.0e12}
         cache = {}
-        with patch(
-            'zalmoxis.eos.interpolation.load_paleos_unified_table',
-            return_value=rebuilt,
-        ) as mock_load:
-            result = _ensure_unified_cache(eos_file, cache)
+        with caplog.at_level(logging.INFO, logger='zalmoxis.eos.interpolation'):
+            with patch(
+                'zalmoxis.eos.interpolation.load_paleos_unified_table',
+                return_value=rebuilt,
+            ) as mock_load:
+                result = _ensure_unified_cache(eos_file, cache)
 
         # The unpickle error must not escape; the text loader supplies the entry.
         mock_load.assert_called_once_with(eos_file)
@@ -372,6 +375,12 @@ class TestEnsureUnifiedCache:
         # The unusable binary cache is replaced on disk by the rebuilt entry.
         with open(cache_path, 'rb') as f:
             assert pickle.load(f)['type'] == 'paleos_unified'
+        # The rejection reason is recorded so ops can distinguish a version
+        # mismatch from a corrupt cache: the message names the offending cache
+        # and the concrete exception type, not a generic 'rebuilding' line.
+        assert 'could not be loaded' in caplog.text
+        assert 'ModuleNotFoundError' in caplog.text
+        assert cache_path in caplog.text
 
     def test_uses_valid_binary_cache_without_text_load(self, tmp_path):
         """A readable binary cache is returned directly without the slow text load."""
