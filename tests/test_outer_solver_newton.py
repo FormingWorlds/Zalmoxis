@@ -24,7 +24,8 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from zalmoxis.solver import _solve_newton_outer
+from zalmoxis.constants import earth_mass
+from zalmoxis.solver import _require_solvable_target_mass, _solve_newton_outer
 
 # Tier markers are applied per class so that the synthetic-M(R)
 # unit-tier class (``TestNewtonOnSyntheticMR``) and the slow-tier
@@ -506,6 +507,98 @@ class TestNewtonOnSyntheticMR:
             f'Step damping did not halve the trust-region-capped step: '
             f'R_2/R_1={R_2 / R_1:.4f}, expected 0.95 (capped + damped) vs '
             f'0.90 (capped only) vs 0.80 (raw Newton).'
+        )
+
+
+@pytest.mark.unit
+class TestRequireSolvableTargetMass:
+    """The shared target-mass guard used by both outer solvers.
+
+    ``_require_solvable_target_mass`` is called at the top of both the
+    Newton path (``_solve_newton_outer``) and the Picard path (``_solve``)
+    before either evaluates the Seager+2007 initial-radius estimate
+    ``(M / earth_mass) ** 0.282``. It rejects three distinct degenerate
+    inputs with a single ``RuntimeError``: a negative mass (the Seager
+    power is complex and used to crash the radius clamp with a TypeError),
+    a zero mass (the Newton residual ``|M - M_target| / M_target`` divides
+    by zero), and a non-finite mass (NaN/inf would poison the radius). A
+    non-positive dry mass is reached when the volatile envelope mass meets
+    or exceeds the planet mass.
+    """
+
+    @pytest.mark.parametrize(
+        'bad_mass',
+        [-3.0e24, 0.0, -0.0, float('nan'), float('inf'), float('-inf')],
+        ids=['negative', 'zero', 'neg_zero', 'nan', 'pos_inf', 'neg_inf'],
+    )
+    def test_degenerate_mass_raises_runtimeerror(self, bad_mass):
+        """Every non-positive or non-finite mass is rejected with RuntimeError.
+
+        Covers the full set of inputs that have no structure solution:
+        negative (complex Seager root), zero and negative-zero (degenerate),
+        and the three non-finite values. Each must raise the same
+        target-mass RuntimeError rather than a TypeError or a silent NaN.
+        """
+        with pytest.raises(RuntimeError, match='positive, finite target mass'):
+            _require_solvable_target_mass(bad_mass)
+
+    def test_negative_mass_drives_a_complex_seager_root(self):
+        """Pin the physical reason the guard exists: the Seager root is complex.
+
+        Discriminating: for a negative base the fractional power
+        ``(M / earth_mass) ** 0.282`` returns a Python ``complex``, which is
+        exactly the value that crashed the radius clamp before the guard.
+        A guard placed at the wrong sign would not protect against this.
+        """
+        seager_root = (-3.0e24 / earth_mass) ** 0.282
+        assert isinstance(seager_root, complex), (
+            'a negative target mass must drive the Seager estimate complex; '
+            'otherwise the guard would be protecting against nothing'
+        )
+        # The smallest representable positive mass is NOT complex and must
+        # pass the guard, so the boundary is exactly at zero, not above it.
+        assert isinstance((5e-324 / earth_mass) ** 0.282, float)
+
+    def test_positive_finite_mass_is_accepted(self):
+        """A normal positive mass passes the guard and returns None.
+
+        Boundary partner to the rejection tests: 1 M_Earth and the smallest
+        positive subnormal both pass, confirming the guard rejects only the
+        non-positive/non-finite tail and does not over-reject small planets.
+        """
+        assert _require_solvable_target_mass(earth_mass) is None
+        assert _require_solvable_target_mass(5e-324) is None
+
+
+@pytest.mark.unit
+class TestNewtonDegenerateMassGuard:
+    """The Newton entry point routes a degenerate mass through the guard.
+
+    Verifies the wiring, not just the helper: ``_solve_newton_outer`` must
+    reject the non-physical target mass that crashed issue #715 (a
+    volatile-rich sub-Neptune whose envelope mass exceeds the planet mass,
+    giving a negative dry mass) before it ever calls ``_solve``. This is the
+    path PROTEUS drives by default (``outer_solver='newton'``).
+    """
+
+    def test_negative_mass_rejected_before_any_inner_solve(self, newton_config):
+        """A negative dry mass raises RuntimeError without reaching ``_solve``.
+
+        Discriminating: pre-fix, the negative mass produced a complex Seager
+        radius and a ``TypeError`` at the clamp, which ``pytest.raises``
+        (RuntimeError) does not catch, so a regression that drops the guard
+        fails this test loudly. ``mock_solve.call_count == 0`` pins that the
+        guard fires before any structure solve, which a positive mass would
+        not satisfy (it reaches ``_solve``).
+        """
+        cp = dict(newton_config)
+        cp['planet_mass'] = -3.0e24  # envelope exceeds planet mass
+
+        with patch('zalmoxis.solver._solve') as mock_solve:
+            with pytest.raises(RuntimeError, match='positive, finite target mass'):
+                _solve_newton_outer(cp, {}, None, '/tmp')
+        assert mock_solve.call_count == 0, (
+            'guard must reject the non-physical mass before any structure solve'
         )
 
 

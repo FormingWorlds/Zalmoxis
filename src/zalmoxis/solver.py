@@ -754,6 +754,36 @@ def _attach_newton_bookkeeping(
     return result
 
 
+def _require_solvable_target_mass(M_target):
+    """Reject a target mass that has no physical structure solution.
+
+    Both outer solvers seed the initial radius with the Seager+2007
+    estimate ``(M / earth_mass) ** 0.282``. A negative base makes that
+    fractional power complex, which has no meaning as a radius; a
+    non-positive dry mass is reached when the volatile envelope mass meets
+    or exceeds the planet mass. Raising here keeps the failure inside the
+    convergence-error contract, so a caller that wraps the solve in a
+    ``RuntimeError`` handler falls back to the previous structure.
+
+    Parameters
+    ----------
+    M_target : float
+        Target (dry) planet mass [kg].
+
+    Raises
+    ------
+    RuntimeError
+        If ``M_target`` is non-finite or not strictly positive.
+    """
+    if not np.isfinite(M_target) or M_target <= 0.0:
+        raise RuntimeError(
+            f'Structure solve requires a positive, finite target mass; '
+            f'got planet_mass={M_target!r} kg. A non-positive dry mass is '
+            f'reached when the volatile envelope mass meets or exceeds the '
+            f'planet mass, and has no structure solution.'
+        )
+
+
 def _solve_newton_outer(
     config_params,
     material_dictionaries,
@@ -823,9 +853,11 @@ def _solve_newton_outer(
     ValueError
         If integrator tolerances are too loose for Newton to converge.
     RuntimeError
-        If both Newton and the brentq fall-back fail to converge.
+        If the target mass is not strictly positive and finite, or if
+        both Newton and the brentq fall-back fail to converge.
     """
     M_target = float(config_params['planet_mass'])
+    _require_solvable_target_mass(M_target)
     defaults = _default_solver_params(M_target)
 
     # Newton numerical knobs (use defaults if absent).
@@ -1133,6 +1165,7 @@ def _solve(
 
     # Unpack physics parameters (required)
     planet_mass = config_params['planet_mass']
+    _require_solvable_target_mass(planet_mass)
     core_mass_fraction = config_params['core_mass_fraction']
     mantle_mass_fraction = config_params['mantle_mass_fraction']
     temperature_mode = config_params['temperature_mode']
