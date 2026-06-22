@@ -4,6 +4,8 @@
 [![Unit Tests](https://img.shields.io/github/actions/workflow/status/FormingWorlds/Zalmoxis/CI.yml?branch=main&label=Unit%20Tests)](https://github.com/FormingWorlds/Zalmoxis/actions/workflows/CI.yml)
 [![Integration Tests](https://img.shields.io/github/actions/workflow/status/FormingWorlds/Zalmoxis/nightly.yml?branch=main&label=Integration%20Tests)](https://github.com/FormingWorlds/Zalmoxis/actions/workflows/nightly.yml)
 [![tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/FormingWorlds/Zalmoxis/badges/tests-total.json)](https://proteus-framework.org/testing)
+[![unit tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/FormingWorlds/Zalmoxis/badges/tests-unit.json)](https://proteus-framework.org/testing)
+[![integration tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/FormingWorlds/Zalmoxis/badges/tests-integration.json)](https://proteus-framework.org/testing)
 
 
 This page is about *running* the existing test suite. For guidance on *writing*

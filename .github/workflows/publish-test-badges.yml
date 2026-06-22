@@ -25,6 +25,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Guard against publishing from a non-main ref
+        # The push trigger is already main-only, but workflow_dispatch can
+        # be launched from any branch. Publishing another ref's test count
+        # to the public badge would be misleading, so refuse it loudly.
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "Badges may only be published from main; this run is on ${{ github.ref }}." >&2
+          exit 1
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -63,14 +72,27 @@ jobs:
           remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           branch="badges"
 
-          # Refuse to publish a partial set: a generator regression that
-          # emits fewer than the three expected files would otherwise
-          # leave one badge silently stale behind a green check.
-          found="$(ls "${payload}"/tests-*.json 2>/dev/null | wc -l | tr -d ' ')"
-          if [ "${found}" -ne 3 ]; then
-            echo "Expected 3 badge files in ${payload}, found ${found}." >&2
-            exit 1
-          fi
+          # Refuse to publish a partial or malformed set: a generator
+          # regression that drops a file or emits invalid JSON would
+          # otherwise leave a badge silently stale or broken behind a green
+          # check. Validate names and shields schema before touching the
+          # remote.
+          python3 - "${payload}" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          payload = Path(sys.argv[1])
+          expected = ('tests-total.json', 'tests-unit.json', 'tests-integration.json')
+          for name in expected:
+              path = payload / name
+              if not path.is_file():
+                  sys.exit(f'Missing badge file: {path}')
+              data = json.loads(path.read_text())
+              if data.get('schemaVersion') != 1 or not str(data.get('message', '')).strip():
+                  sys.exit(f'Malformed badge file: {path}')
+          print(f'Validated {len(expected)} badge files.')
+          PY
 
           # Each fallible step returns explicitly: the function is invoked
           # from a conditional, which disables ``set -e`` inside it, so a
@@ -103,6 +125,10 @@ jobs:
             if [ "${exists}" -eq 1 ]; then
               git fetch -q "${remote}" "${branch}" || return 1
               git checkout -q FETCH_HEAD || return 1
+              # Drop everything the branch carried so the new commit holds
+              # only the freshly generated files; a stale leftover would
+              # otherwise survive the checkout-and-overwrite.
+              git rm -rfq --ignore-unmatch . >/dev/null 2>&1 || return 1
             fi
 
             cp "${payload}"/tests-*.json . || return 1
