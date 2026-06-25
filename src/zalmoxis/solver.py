@@ -48,6 +48,7 @@ from .mixing import (
     compute_melt_fraction,
     parse_all_layer_mixtures,
     split_mantle_volatile_inventory,
+    strong_partition_phi_floor,
 )
 from .structure_model import solve_structure
 
@@ -2565,6 +2566,7 @@ def solve_strong_partition(
     max_iterations=10,
     phi_tolerance=1e-3,
     initial_phi_avg=0.5,
+    relaxation=1.0,
 ):
     """Run Zalmoxis with the strong-partition rule and a self-consistent phi_avg.
 
@@ -2600,6 +2602,14 @@ def solve_strong_partition(
         Absolute convergence tolerance on phi_avg.
     initial_phi_avg : float
         Initial guess for phi_avg (default 0.5).
+    relaxation : float
+        Under-relaxation factor for the phi_avg update, in ``(0, 1]``.
+        The update is ``phi_avg += relaxation * (phi_avg_new - phi_avg)``;
+        ``1.0`` (default) is the plain fixed-point step. Values below 1
+        damp the oscillation that can otherwise flip the rule between the
+        strong and uniform paths when ``phi_avg`` sits near the floor
+        ``1.01 * sum(X_bulk)``. The convergence test uses the un-relaxed
+        residual ``|phi_avg_new - phi_avg|``.
 
     Returns
     -------
@@ -2610,7 +2620,20 @@ def solve_strong_partition(
         - ``'X_bulk_mantle'``: bulk mantle volatile mass fractions.
         - ``'strong_partition_iterations'``: outer iterations used.
         - ``'strong_partition_converged'``: ``True`` on convergence.
+        - ``'strong_partition_fallback_to_uniform'``: ``True`` when the
+          final ``phi_avg`` is below the floor, so the strong rule
+          collapsed to the uniform spread (the run is effectively
+          ``uniform``, not ``strong``).
     """
+    if max_iterations < 1:
+        raise ValueError(
+            f'solve_strong_partition requires max_iterations >= 1, got {max_iterations}.'
+        )
+    if not 0.0 < relaxation <= 1.0:
+        raise ValueError(
+            f'solve_strong_partition requires 0 < relaxation <= 1, got {relaxation}.'
+        )
+
     if layer_mixtures is None:
         layer_mixtures = parse_all_layer_mixtures(config_params['layer_eos_config'])
 
@@ -2642,11 +2665,19 @@ def solve_strong_partition(
         result['X_bulk_mantle'] = {}
         result['strong_partition_iterations'] = 0
         result['strong_partition_converged'] = bool(result.get('converged', False))
+        result['strong_partition_fallback_to_uniform'] = False
         return result
 
     solidus_func, liquidus_func = (
         melting_curves_functions if melting_curves_functions else (None, None)
     )
+    if solidus_func is None or liquidus_func is None:
+        logger.warning(
+            "partition_rule='strong' without melting curves: compute_melt_fraction "
+            'defaults phi to 0.5 for every shell, so phi_avg degenerates to 0.5 and '
+            'w_liquid = X_bulk / 0.5 = 2 * X_bulk. Provide solidus/liquidus functions '
+            'for a meaningful strong-partition solve.'
+        )
 
     phi_avg = float(initial_phi_avg)
     sp_converged = False
@@ -2699,10 +2730,14 @@ def solve_strong_partition(
             phi_avg_new,
             delta,
         )
-        phi_avg = phi_avg_new
+        # Convergence is on the un-relaxed residual; the stored phi_avg is
+        # the integral-consistent value on the converged step and the
+        # under-relaxed step otherwise.
         if delta < phi_tolerance:
+            phi_avg = phi_avg_new
             sp_converged = True
             break
+        phi_avg = phi_avg + relaxation * (phi_avg_new - phi_avg)
 
     if not sp_converged:
         logger.warning(
@@ -2713,8 +2748,22 @@ def solve_strong_partition(
             phi_avg,
         )
 
+    # Below the floor the strong rule collapses to the uniform spread
+    # (see apply_partition_rule); surface that the run is effectively
+    # uniform rather than reporting a converged strong solve.
+    fell_back = bool(phi_avg < strong_partition_phi_floor(X_bulk))
+    if fell_back:
+        logger.warning(
+            'Strong-partition fell back to the uniform spread: final phi_avg=%.6f '
+            'is below the floor %.6f (1.01*sum(X_bulk)). The result is uniform, '
+            'not strong-partitioned.',
+            phi_avg,
+            strong_partition_phi_floor(X_bulk),
+        )
+
     result['phi_avg_converged'] = phi_avg
     result['X_bulk_mantle'] = dict(X_bulk)
     result['strong_partition_iterations'] = iteration + 1
-    result['strong_partition_converged'] = sp_converged
+    result['strong_partition_converged'] = bool(sp_converged and not fell_back)
+    result['strong_partition_fallback_to_uniform'] = fell_back
     return result

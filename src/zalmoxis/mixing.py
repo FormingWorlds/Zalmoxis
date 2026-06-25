@@ -1246,9 +1246,8 @@ def apply_partition_rule(
     Raises
     ------
     NotImplementedError
-        If ``rule`` is ``'D_const'`` or ``'solubility'`` in this
-        revision. The hook signature is stable; the physics lands in
-        subsequent commits.
+        If ``rule`` is ``'D_const'`` or ``'solubility'``: reserved hooks,
+        not implemented yet. The hook signature is stable.
     ValueError
         If ``rule`` is not in ``_VALID_PARTITION_RULES``.
 
@@ -1281,19 +1280,22 @@ def apply_partition_rule(
         # = X_bulk; we invert. The floor is set by the mass-fraction
         # bound w_liquid <= 1 (i.e., phi_avg >= sum(X_bulk)), padded
         # by _STRONG_PARTITION_PHI_SAFETY.
-        x_total = sum(X_bulk.values())
-        effective_floor = _STRONG_PARTITION_PHI_SAFETY * x_total
+        effective_floor = strong_partition_phi_floor(X_bulk)
         if phi_avg < effective_floor:
+            logger.warning(
+                "partition_rule='strong': phi_avg=%.4g is below the floor "
+                '%.4g (1.01*sum(X_bulk)); falling back to the uniform-spread '
+                'path for this evaluation.',
+                phi_avg,
+                effective_floor,
+            )
             return dict(X_bulk), dict(X_bulk)
         w_liquid = {k: v / phi_avg for k, v in X_bulk.items()}
         w_solid = dict.fromkeys(X_bulk, 0.0)
         return w_liquid, w_solid
 
     if rule in ('D_const', 'solubility'):
-        raise NotImplementedError(
-            f"partition_rule '{rule}' is reserved; the physics lands in a "
-            'subsequent commit on this branch.'
-        )
+        raise NotImplementedError(f"partition_rule '{rule}' is reserved; not implemented yet.")
 
     raise ValueError(
         f"Unknown partition_rule '{rule}'. Valid options: {_VALID_PARTITION_RULES}."
@@ -1312,6 +1314,18 @@ _VOLATILE_EOS_NAMES = _H2_EOS_NAMES | _H2O_EOS_NAMES
 # Below the resulting floor the rule falls back to the uniform-spread
 # path so the structure solve stays well-conditioned.
 _STRONG_PARTITION_PHI_SAFETY = 1.01
+
+
+def strong_partition_phi_floor(X_bulk: dict[str, float]) -> float:
+    """Return the strong-partition ``phi_avg`` fallback floor.
+
+    The floor is ``_STRONG_PARTITION_PHI_SAFETY * sum(X_bulk)``. Below it
+    the strong rule falls back to the uniform spread (see
+    ``apply_partition_rule``). This is the single source of truth for the
+    floor so callers (e.g., ``solve_strong_partition``) can detect the
+    fallback without duplicating the constant.
+    """
+    return _STRONG_PARTITION_PHI_SAFETY * sum(X_bulk.values())
 
 
 def split_mantle_volatile_inventory(
