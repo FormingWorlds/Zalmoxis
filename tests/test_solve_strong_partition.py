@@ -13,8 +13,12 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from zalmoxis.mixing import LayerMixture
-from zalmoxis.solver import solve_strong_partition
+from zalmoxis.mixing import (
+    LayerMixture,
+    build_partition_profile,
+    compute_melt_fraction,
+)
+from zalmoxis.solver import _mantle_mass_weighted_phi, solve_strong_partition
 
 
 def _paleos_data_available() -> bool:
@@ -245,6 +249,206 @@ class TestSolveStrongPartitionOuterLoop:
                 melting_curves_functions=None,
                 input_dir='.',
                 layer_mixtures={'core': LayerMixture(['PALEOS:iron'], [1.0])},
+            )
+
+
+@pytest.mark.unit
+class TestSolveStrongPartitionMassAndLayers:
+    """Mass conservation over a varying phi(r), ice-layer exclusion, the
+    floor fallback flag, and input guards. All on a mocked ``main()``."""
+
+    @staticmethod
+    def _integrate_mantle_w(result, profile, species, sol, liq, cmb_mass, mantle_top=None):
+        """Mantle-mass-weighted mean of the per-shell volatile fraction,
+        mirroring the midpoint scheme of ``_mantle_mass_weighted_phi``."""
+        radii = result['radii']
+        density = result['density']
+        pressure = result['pressure']
+        temperature = result['temperature']
+        mass_enclosed = result['mass_enclosed']
+        num = 0.0
+        mantle_mass = 0.0
+        for i in range(len(radii) - 1):
+            m_mid = 0.5 * (mass_enclosed[i] + mass_enclosed[i + 1])
+            if m_mid < cmb_mass:
+                continue
+            if mantle_top is not None and m_mid >= mantle_top:
+                continue
+            r_mid = 0.5 * (radii[i] + radii[i + 1])
+            dr = radii[i + 1] - radii[i]
+            rho_mid = 0.5 * (density[i] + density[i + 1])
+            P_mid = 0.5 * (pressure[i] + pressure[i + 1])
+            T_mid = 0.5 * (temperature[i] + temperature[i + 1])
+            if rho_mid <= 0 or P_mid <= 0 or dr <= 0:
+                continue
+            phi_i = compute_melt_fraction(P_mid, T_mid, sol, liq)
+            w = profile.blend(phi_i)[species]
+            shell_mass = rho_mid * 4.0 * np.pi * r_mid**2 * dr
+            num += w * shell_mass
+            mantle_mass += shell_mass
+        return num / mantle_mass
+
+    def test_mass_conserved_over_varying_phi(self):
+        """At the converged phi_avg the mantle-integrated water fraction
+        recovers X_bulk even though phi(r) varies shell to shell. The
+        pre-existing test only checked the constant-phi identity."""
+        radii, density, pressure, temperature, mass_enclosed, cmb_mass = (
+            _earth_like_shell_grid()
+        )
+        result_template = _synthetic_main_result(
+            radii=radii,
+            density=density,
+            pressure=pressure,
+            temperature=temperature,
+            mass_enclosed=mass_enclosed,
+            cmb_mass=cmb_mass,
+        )
+        layer_mixtures = {
+            'core': LayerMixture(['PALEOS:iron'], [1.0]),
+            'mantle': LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.9, 0.1]),
+        }
+        # sol=0, liq=9000 => phi = T/9000 varies across mantle shells.
+        sol = lambda _p: 0.0  # noqa: E731
+        liq = lambda _p: 9000.0  # noqa: E731
+
+        with patch('zalmoxis.solver.main', return_value=result_template):
+            result = solve_strong_partition(
+                config_params={'layer_eos_config': {}},
+                material_dictionaries={},
+                melting_curves_functions=(sol, liq),
+                input_dir='.',
+                layer_mixtures=layer_mixtures,
+                max_iterations=50,
+                phi_tolerance=1e-12,
+            )
+
+        assert result['strong_partition_converged'] is True
+        assert result['strong_partition_fallback_to_uniform'] is False
+        # phi(r) genuinely varies, so this is not the constant-phi identity.
+        phis = [compute_melt_fraction(p, t, sol, liq) for p, t in zip(pressure, temperature)]
+        assert max(phis) - min(phis) > 0.05
+        profile, _, _ = build_partition_profile(
+            layer_mixtures['mantle'], 'strong', result['phi_avg_converged']
+        )
+        recovered = self._integrate_mantle_w(result, profile, 'PALEOS:H2O', sol, liq, cmb_mass)
+        assert recovered == pytest.approx(0.1, rel=1e-6)
+
+    def test_ice_shells_excluded_from_phi_avg(self):
+        """3-layer core+mantle+ice: ice shells must not enter phi_avg while
+        w_liquid=X/phi_avg is applied to the mantle alone. Pre-fix,
+        _mantle_mass_weighted_phi integrated every shell above the CMB."""
+        radii, density, pressure, temperature, mass_enclosed, cmb_mass = (
+            _earth_like_shell_grid()
+        )
+        core_mantle_mass = 0.6 * mass_enclosed[-1]
+        result_template = _synthetic_main_result(
+            radii=radii,
+            density=density,
+            pressure=pressure,
+            temperature=temperature,
+            mass_enclosed=mass_enclosed,
+            cmb_mass=cmb_mass,
+        )
+        result_template['core_mantle_mass'] = core_mantle_mass
+        layer_mixtures = {
+            'core': LayerMixture(['PALEOS:iron'], [1.0]),
+            'mantle': LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.9, 0.1]),
+            'ice_layer': LayerMixture(['PALEOS:H2O'], [1.0]),
+        }
+        sol = lambda _p: 0.0  # noqa: E731
+        liq = lambda _p: 9000.0  # noqa: E731
+
+        mantle_only, _ = _mantle_mass_weighted_phi(
+            result_template, cmb_mass, sol, liq, core_mantle_mass
+        )
+        with_ice, _ = _mantle_mass_weighted_phi(result_template, cmb_mass, sol, liq, None)
+        # The mantle bound must actually change the answer, else the test
+        # proves nothing (this is the value the pre-fix code returned).
+        assert mantle_only != pytest.approx(with_ice, rel=1e-3)
+
+        with patch('zalmoxis.solver.main', return_value=result_template):
+            result = solve_strong_partition(
+                config_params={'layer_eos_config': {}},
+                material_dictionaries={},
+                melting_curves_functions=(sol, liq),
+                input_dir='.',
+                layer_mixtures=layer_mixtures,
+                max_iterations=50,
+                phi_tolerance=1e-12,
+            )
+
+        assert result['phi_avg_converged'] == pytest.approx(mantle_only)
+        assert result['phi_avg_converged'] != pytest.approx(with_ice, rel=1e-3)
+
+    def test_below_floor_reports_fallback_not_strong(self, caplog):
+        """When the converged phi_avg sits below the floor the run is
+        effectively uniform: strong_partition_converged is False, the
+        fallback flag is set, and a warning is logged."""
+        import logging
+
+        radii, density, pressure, temperature, mass_enclosed, cmb_mass = (
+            _earth_like_shell_grid()
+        )
+        result_template = _synthetic_main_result(
+            radii=radii,
+            density=density,
+            pressure=pressure,
+            temperature=temperature,
+            mass_enclosed=mass_enclosed,
+            cmb_mass=cmb_mass,
+        )
+        layer_mixtures = {
+            'core': LayerMixture(['PALEOS:iron'], [1.0]),
+            # 50% water: floor = 1.01*0.5 = 0.505, above the ~0.4 phi mean.
+            'mantle': LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.5, 0.5]),
+        }
+        sol = lambda _p: 0.0  # noqa: E731
+        liq = lambda _p: 9000.0  # noqa: E731
+
+        with patch('zalmoxis.solver.main', return_value=result_template):
+            with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+                result = solve_strong_partition(
+                    config_params={'layer_eos_config': {}},
+                    material_dictionaries={},
+                    melting_curves_functions=(sol, liq),
+                    input_dir='.',
+                    layer_mixtures=layer_mixtures,
+                    max_iterations=50,
+                    phi_tolerance=1e-12,
+                )
+
+        assert result['strong_partition_fallback_to_uniform'] is True
+        assert result['strong_partition_converged'] is False
+        assert 'fell back to the uniform spread' in caplog.text
+
+    def test_max_iterations_zero_raises(self):
+        """max_iterations < 1 is a caller error, not a silent None result."""
+        layer_mixtures = {
+            'mantle': LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.9, 0.1]),
+        }
+        with pytest.raises(ValueError, match='max_iterations >= 1'):
+            solve_strong_partition(
+                config_params={'layer_eos_config': {}},
+                material_dictionaries={},
+                melting_curves_functions=None,
+                input_dir='.',
+                layer_mixtures=layer_mixtures,
+                max_iterations=0,
+            )
+
+    def test_invalid_relaxation_raises(self):
+        """relaxation must be in (0, 1]."""
+        layer_mixtures = {
+            'mantle': LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.9, 0.1]),
+        }
+        with pytest.raises(ValueError, match='relaxation'):
+            solve_strong_partition(
+                config_params={'layer_eos_config': {}},
+                material_dictionaries={},
+                melting_curves_functions=None,
+                input_dir='.',
+                layer_mixtures=layer_mixtures,
+                relaxation=1.5,
             )
 
 

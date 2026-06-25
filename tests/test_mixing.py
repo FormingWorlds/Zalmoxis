@@ -1436,7 +1436,7 @@ class TestApplyPartitionRule:
         assert blended['PALEOS:MgSiO3'] == pytest.approx(0.85)
 
     def test_d_const_not_yet_wired(self):
-        with pytest.raises(NotImplementedError, match='subsequent commit'):
+        with pytest.raises(NotImplementedError, match='reserved; not implemented'):
             apply_partition_rule(
                 'D_const',
                 {'PALEOS:H2O': 0.15},
@@ -1445,7 +1445,7 @@ class TestApplyPartitionRule:
             )
 
     def test_solubility_not_yet_wired(self):
-        with pytest.raises(NotImplementedError, match='subsequent commit'):
+        with pytest.raises(NotImplementedError, match='reserved; not implemented'):
             apply_partition_rule(
                 'solubility',
                 {'PALEOS:H2O': 0.15},
