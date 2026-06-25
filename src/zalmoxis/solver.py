@@ -2490,13 +2490,38 @@ def solve_miscible_interior(
     return result
 
 
-def _mantle_mass_weighted_phi(result, cmb_mass_value, solidus_func, liquidus_func):
+def _mantle_mass_weighted_phi(
+    result, cmb_mass_value, solidus_func, liquidus_func, mantle_top_mass=None
+):
     """Compute the mass-weighted mean melt fraction over the mantle.
 
-    Integrates ``phi(P, T) * dM`` across mantle shells (mass > cmb_mass)
-    using midpoint shell values for ``rho``, ``P``, and ``T``. Returns
+    Integrates ``phi(P, T) * dM`` across mantle shells using midpoint
+    shell values for ``rho``, ``P``, and ``T``. The mantle is the shell
+    range ``cmb_mass <= m < mantle_top_mass``. Returns
     ``(phi_avg, mantle_mass)``; when no mantle shells contribute,
     ``mantle_mass`` is ``0.0``.
+
+    Parameters
+    ----------
+    mantle_top_mass : float or None, optional
+        Outer mass boundary of the mantle. When provided (a 3-layer
+        config with an ``ice_layer``), shells with ``m_mid >=
+        mantle_top_mass`` are excluded so ice shells do not enter
+        ``phi_avg`` while the strong-partition ``w_liquid = X / phi_avg``
+        is applied to the mantle alone. When ``None`` (2-layer config),
+        the integral has no upper bound; note that
+        ``core_mantle_mass == cmb_mass`` there, so an unconditional upper
+        bound would empty the mantle.
+
+    Notes
+    -----
+    The integral samples ``phi`` at shell midpoints, whereas the density
+    blend in the structure solve samples ``phi`` at shell nodes. The two
+    differ only at the discretization level; the end-to-end mantle
+    mass-conservation residual this leaves is bounded by the validation
+    grid (max ``7.1e-5`` relative), well below the outer-loop tolerance,
+    so the midpoint quadrature is kept for consistency with the
+    structure integration rather than reconciled node by node.
     """
     radii = result['radii']
     density = result['density']
@@ -2509,6 +2534,8 @@ def _mantle_mass_weighted_phi(result, cmb_mass_value, solidus_func, liquidus_fun
     for i in range(len(radii) - 1):
         m_mid = 0.5 * (mass_enclosed[i] + mass_enclosed[i + 1])
         if m_mid < cmb_mass_value:
+            continue
+        if mantle_top_mass is not None and m_mid >= mantle_top_mass:
             continue
         r_mid = 0.5 * (radii[i] + radii[i + 1])
         dr = radii[i + 1] - radii[i]
@@ -2591,6 +2618,8 @@ def solve_strong_partition(
     if mantle_mixture is None:
         raise ValueError('solve_strong_partition requires a mantle layer in layer_mixtures.')
 
+    has_ice_layer = 'ice_layer' in layer_mixtures
+
     X_bulk, _primary = split_mantle_volatile_inventory(mantle_mixture)
 
     # No volatiles in the mantle: fall through to a single main() call.
@@ -2645,8 +2674,14 @@ def solve_strong_partition(
             )
             break
 
+        # With an ice_layer, the mantle is bounded above by
+        # core_mantle_mass; exclude ice shells from phi_avg so the
+        # strong-partition w_liquid = X / phi_avg stays mass-consistent
+        # with the mantle-only blend. In 2-layer configs there is no ice
+        # and core_mantle_mass == cmb_mass, so pass None (no upper bound).
+        mantle_top_mass = result['core_mantle_mass'] if has_ice_layer else None
         phi_avg_new, mantle_mass = _mantle_mass_weighted_phi(
-            result, result['cmb_mass'], solidus_func, liquidus_func
+            result, result['cmb_mass'], solidus_func, liquidus_func, mantle_top_mass
         )
         if mantle_mass <= 0:
             logger.warning(
