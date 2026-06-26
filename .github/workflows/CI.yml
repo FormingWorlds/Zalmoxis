@@ -2,6 +2,12 @@ name: Zalmoxis tests
 
 on:
   push:
+    # The ``badges`` branch carries only the generated test-count JSON and
+    # ``gh-pages`` only deployed docs, neither has a source tree to test, so
+    # exclude them from the test matrix.
+    branches-ignore:
+      - badges
+      - gh-pages
   pull_request:
     branches: [main]
     types:

@@ -65,6 +65,17 @@ def run_zalmoxis_rocky_water(id_mass, config_type, cmf, immf, layer_eos_override
     if layer_eos_override:
         config_params['layer_eos_config'] = layer_eos_override
 
+    # Give the analytic Seager solve a generous wall-clock budget. It converges
+    # in tens of seconds, but under pytest-xdist the suite oversubscribes the
+    # CPU and the same solve can take far longer in wall time. At the solver's
+    # 300 s default that contention can trip the wall-clock bail mid-solve and
+    # return an early, non-converged density profile, so the reference
+    # comparisons see a wrong profile instead of the converged one. 3600 s is
+    # far above any contended wall time for this solve yet still bounds a
+    # genuinely stuck one, matching the override the benchmark and JAX suites
+    # already use.
+    config_params['wall_timeout'] = 3600.0
+
     # Create a temporary output file
     suffix = '_rocky.txt' if config_type == 'rocky' else '_water.txt'
     with tempfile.NamedTemporaryFile(delete=False, mode='w', suffix=suffix) as temp_output_file:

@@ -14,9 +14,12 @@ and ``tests-integration.json``. The integration count is the union of
 ``smoke``, ``integration``, and ``slow`` markers; pytest's ``or`` marker
 expression handles the union deduplication for free.
 
-Badges are consumed by shields.io via raw GitHub URLs of the form
-``https://raw.githubusercontent.com/FormingWorlds/Zalmoxis/main/.github/badges/tests-<name>.json``
-and rendered in the README and on the PROTEUS framework website.
+The ``Refresh test count badges`` workflow writes the files with this
+script and publishes them to the dedicated ``badges`` branch. shields.io
+consumes them via raw GitHub URLs of the form
+``https://raw.githubusercontent.com/FormingWorlds/Zalmoxis/badges/tests-<name>.json``
+and renders them on the testing documentation pages, which publish to the
+PROTEUS framework website.
 
 The script never executes test bodies; it only collects, so the cost is
 bounded by import time.
