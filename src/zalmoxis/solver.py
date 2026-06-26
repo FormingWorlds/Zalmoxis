@@ -2616,7 +2616,10 @@ def solve_strong_partition(
     dict
         Result dict from ``main()`` augmented with:
 
-        - ``'phi_avg_converged'``: final mass-weighted mantle phi.
+        - ``'phi_avg_converged'``: the phi_avg used to build the returned
+          structure (the mass-weighted mantle phi at convergence; on an
+          unconverged exit, the last value actually fed to the profile, not
+          the dangling look-ahead update).
         - ``'X_bulk_mantle'``: bulk mantle volatile mass fractions.
         - ``'strong_partition_iterations'``: outer iterations used.
         - ``'strong_partition_converged'``: ``True`` on convergence.
@@ -2680,12 +2683,18 @@ def solve_strong_partition(
         )
 
     phi_avg = float(initial_phi_avg)
+    phi_avg_built = phi_avg
     sp_converged = False
     result = None
     iteration = 0
 
     for iteration in range(max_iterations):
-        profile, _, _ = build_partition_profile(mantle_mixture, 'strong', phi_avg)
+        # phi_avg_built is the value that builds the structure returned this
+        # iteration; phi_avg may be advanced past it by the look-ahead update
+        # below. Report phi_avg_built so the returned structure, phi_avg, and
+        # the fallback flag stay mutually consistent on the non-converged exit.
+        phi_avg_built = phi_avg
+        profile, _, _ = build_partition_profile(mantle_mixture, 'strong', phi_avg_built)
         result = main(
             config_params,
             material_dictionaries,
@@ -2722,46 +2731,47 @@ def solve_strong_partition(
             )
             break
 
-        delta = abs(phi_avg_new - phi_avg)
+        delta = abs(phi_avg_new - phi_avg_built)
         logger.info(
             'Strong-partition iter %d: phi_avg %.6f -> %.6f (|delta|=%.2e)',
             iteration,
-            phi_avg,
+            phi_avg_built,
             phi_avg_new,
             delta,
         )
-        # Convergence is on the un-relaxed residual; the stored phi_avg is
-        # the integral-consistent value on the converged step and the
-        # under-relaxed step otherwise.
+        # Convergence is on the un-relaxed residual. The look-ahead update
+        # only seeds the next iteration; it is never reported, so the
+        # returned structure (built with phi_avg_built) stays consistent
+        # with phi_avg_converged even when the loop exits unconverged.
         if delta < phi_tolerance:
-            phi_avg = phi_avg_new
             sp_converged = True
             break
-        phi_avg = phi_avg + relaxation * (phi_avg_new - phi_avg)
+        phi_avg = phi_avg_built + relaxation * (phi_avg_new - phi_avg_built)
 
     if not sp_converged:
         logger.warning(
             'Strong-partition phi_avg did not converge after %d iterations '
-            '(|delta|>%.2e). Proceeding with current phi_avg=%.6f.',
+            '(|delta|>%.2e). Proceeding with phi_avg=%.6f (the value used to '
+            'build the returned structure).',
             max_iterations,
             phi_tolerance,
-            phi_avg,
+            phi_avg_built,
         )
 
     # Below the floor the strong rule collapses to the uniform spread
     # (see apply_partition_rule); surface that the run is effectively
     # uniform rather than reporting a converged strong solve.
-    fell_back = bool(phi_avg < strong_partition_phi_floor(X_bulk))
+    fell_back = bool(phi_avg_built < strong_partition_phi_floor(X_bulk))
     if fell_back:
         logger.warning(
-            'Strong-partition fell back to the uniform spread: final phi_avg=%.6f '
+            'Strong-partition fell back to the uniform spread: phi_avg=%.6f '
             'is below the floor %.6f (1.01*sum(X_bulk)). The result is uniform, '
             'not strong-partitioned.',
-            phi_avg,
+            phi_avg_built,
             strong_partition_phi_floor(X_bulk),
         )
 
-    result['phi_avg_converged'] = phi_avg
+    result['phi_avg_converged'] = phi_avg_built
     result['X_bulk_mantle'] = dict(X_bulk)
     result['strong_partition_iterations'] = iteration + 1
     result['strong_partition_converged'] = bool(sp_converged and not fell_back)

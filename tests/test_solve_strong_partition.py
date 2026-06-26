@@ -152,8 +152,10 @@ class TestSolveStrongPartitionOuterLoop:
 
     def test_max_iterations_exhausted_flags_non_convergence(self):
         """Cap ``max_iterations=1`` with an initial guess far from the
-        integrated phi_avg: the loop exits one update later without
-        re-checking, and ``strong_partition_converged=False``."""
+        integrated phi_avg: the loop exits unconverged
+        (``strong_partition_converged=False``), and ``phi_avg_converged``
+        reports the value that built the returned structure (the initial
+        guess here), not the dangling look-ahead update."""
         radii, density, pressure, temperature, mass_enclosed, cmb_mass = (
             _earth_like_shell_grid()
         )
@@ -197,7 +199,10 @@ class TestSolveStrongPartitionOuterLoop:
         # cannot iterate to a smaller residual.
         assert result['strong_partition_iterations'] == 1
         assert result['strong_partition_converged'] is False
-        assert result['phi_avg_converged'] != pytest.approx(0.05)
+        # The returned structure was built with the initial guess (one
+        # iteration), so phi_avg_converged must equal it and not the
+        # look-ahead value that would seed a second iteration.
+        assert result['phi_avg_converged'] == pytest.approx(0.05)
 
     def test_main_non_convergence_breaks_loop(self):
         """If main() fails to converge, the outer loop exits gracefully
