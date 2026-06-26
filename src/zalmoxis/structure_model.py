@@ -70,7 +70,6 @@ def coupled_odes(
     condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
     binodal_T_scale=BINODAL_T_SCALE_DEFAULT,
     volatile_profile=None,
-    mantle_layer_key='mantle',
 ):
     """Calculate derivatives of mass, gravity, and pressure w.r.t. radius.
 
@@ -108,9 +107,6 @@ def coupled_odes(
     volatile_profile : VolatileProfile or None
         Phi-aware mantle profile from the partition-law hook. Applied
         only to the mantle layer; the core and ice layers ignore it.
-    mantle_layer_key : str
-        Key in ``layer_mixtures`` identifying the mantle (default
-        ``'mantle'``). The volatile profile is gated on this match.
 
     Returns
     -------
@@ -135,10 +131,11 @@ def coupled_odes(
         return [0.0, 0.0, 0.0]
 
     # Apply the phi-aware profile only inside the mantle: the core and
-    # ice layers do not partition volatiles.
+    # ice layers do not partition volatiles. get_layer_mixture returns the
+    # 'mantle' entry for mantle shells, so gate on that same key.
     profile_for_shell = (
         volatile_profile
-        if (volatile_profile is not None and mixture is layer_mixtures.get(mantle_layer_key))
+        if (volatile_profile is not None and mixture is layer_mixtures.get('mantle'))
         else None
     )
 
