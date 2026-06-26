@@ -29,7 +29,10 @@ classifiers = [
 ]
 dependencies = [
     "numpy",
-    "scipy",
+    # scipy 1.18 drops the vendored scipy._lib.array_api_compat module that the
+    # EOS interpolation path reaches through scipy.interpolate; cap below it
+    # until that import moves to the standalone array-api-compat package.
+    "scipy<1.18",
     "toml",
     "matplotlib",
     "python-ternary",
