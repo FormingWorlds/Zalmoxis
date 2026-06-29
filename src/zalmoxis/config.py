@@ -291,6 +291,15 @@ def validate_config(config_params):
             f"Unknown temperature_mode '{temperature_mode}'. Valid options: {valid_modes}."
         )
 
+    # ── Phase-aware volatile partitioning ───────────────────────────
+    partition_rule = config_params.get('partition_rule', 'uniform')
+    valid_partition_rules = ('uniform', 'strong', 'D_const', 'solubility')
+    if partition_rule not in valid_partition_rules:
+        raise ValueError(
+            f"Unknown partition_rule '{partition_rule}'. "
+            f'Valid options: {valid_partition_rules}.'
+        )
+
     surface_temp = config_params['surface_temperature']
     center_temp = config_params['center_temperature']
 
@@ -723,6 +732,7 @@ def load_zalmoxis_config(temp_config_path=None):
     condensed_rho_min = eos_section.get('condensed_rho_min', CONDENSED_RHO_MIN_DEFAULT)
     condensed_rho_scale = eos_section.get('condensed_rho_scale', CONDENSED_RHO_SCALE_DEFAULT)
     binodal_T_scale = eos_section.get('binodal_T_scale', BINODAL_T_SCALE_DEFAULT)
+    partition_rule = eos_section.get('partition_rule', 'uniform')
 
     # Build per-EOS mushy_zone_factors dict. Only include materials that are
     # actually configured in a layer; unused materials default to 1.0 so that
@@ -760,6 +770,7 @@ def load_zalmoxis_config(temp_config_path=None):
         'condensed_rho_min': condensed_rho_min,
         'condensed_rho_scale': condensed_rho_scale,
         'binodal_T_scale': binodal_T_scale,
+        'partition_rule': partition_rule,
         'num_layers': config['Calculations']['num_layers'],
         'target_surface_pressure': config.get('PressureAdjustment', {}).get(
             'target_surface_pressure',
@@ -783,6 +794,8 @@ def load_zalmoxis_config(temp_config_path=None):
         'maximum_step',
         'adaptive_radial_fraction',
         'max_center_pressure_guess',
+        'outer_solver',
+        'wall_timeout',
     ]
     for key in _optional_iter_keys:
         if key in _iter:

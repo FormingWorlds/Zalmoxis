@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -375,6 +376,7 @@ def calculate_mixed_density(
     condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
     condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
     binodal_T_scale=BINODAL_T_SCALE_DEFAULT,
+    volatile_profile=None,
 ):
     """Compute volume-additive mixed density for a layer mixture.
 
@@ -425,6 +427,14 @@ def calculate_mixed_density(
     binodal_T_scale : float
         Binodal sigmoid width in K. Controls the smooth transition at
         the miscibility boundary. Default 50 K.
+    volatile_profile : VolatileProfile or None, optional
+        Per-shell phi-aware mass fractions. When provided and the
+        mixture is multi-component, the per-component ``w_i`` used in
+        the harmonic mean is taken from
+        ``volatile_profile.apply_to_mixture(mixture, phi)`` where
+        ``phi`` is the local melt fraction from the solidus / liquidus
+        curves. When ``None`` (default), ``mixture.fractions`` is used,
+        which reproduces the existing uniform-spread behavior.
 
     Returns
     -------
@@ -447,10 +457,19 @@ def calculate_mixed_density(
             mzf,
         )
 
+    # Per-shell fractions: phi-blended through the partition-law hook
+    # when a profile is provided, otherwise the bulk LayerMixture
+    # fractions (existing uniform-spread behavior).
+    if volatile_profile is not None:
+        phi = compute_melt_fraction(pressure, temperature, solidus_func, liquidus_func)
+        fractions = volatile_profile.apply_to_mixture(mixture, phi)
+    else:
+        fractions = mixture.fractions
+
     # Multi-component suppressed harmonic mean
     w_eff_sum = 0.0
     inv_rho_sum = 0.0
-    for eos_name, w_i in zip(mixture.components, mixture.fractions):
+    for eos_name, w_i in zip(mixture.components, fractions):
         if w_i <= 0:
             continue
         mzf = _get_mushy_zone_factor(eos_name, mushy_zone_factors)
@@ -503,6 +522,7 @@ def calculate_mixed_density_batch(
     condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
     binodal_T_scale=BINODAL_T_SCALE_DEFAULT,
     frozen_sigma=None,
+    volatile_profile=None,
 ):
     """Vectorized mixed density for a batch of (P, T) points in one layer.
 
@@ -535,6 +555,15 @@ def calculate_mixed_density_batch(
         values are 1D arrays of shape (n,)). When provided, overrides
         the sigmoid computation to stabilize the Picard density iteration
         for volatile-extended mantles.
+    volatile_profile : VolatileProfile or None, optional
+        Per-shell phi-aware mass fractions. When provided and the
+        mixture is multi-component, the per-component fraction is a
+        1D array (one value per shell) built from
+        ``volatile_profile.apply_to_mixture(mixture, phi)`` with a
+        per-shell melt fraction ``phi`` from the solidus / liquidus
+        curves. When ``None`` (default), the scalar ``mixture.fractions``
+        is broadcast over the batch, reproducing the existing
+        uniform-spread behavior.
 
     Returns
     -------
@@ -560,14 +589,37 @@ def calculate_mixed_density_batch(
             mzf,
         )
 
+    # Per-shell fractions: when a volatile_profile is provided, evaluate
+    # phi(P_j, T_j) per shell and apply the phi-blend; otherwise broadcast
+    # the bulk LayerMixture fractions across the batch.
+    if volatile_profile is not None:
+        per_shell_fractions = np.empty((len(mixture.components), n))
+        for j in range(n):
+            phi_j = compute_melt_fraction(
+                pressures[j], temperatures[j], solidus_func, liquidus_func
+            )
+            fracs_j = volatile_profile.apply_to_mixture(mixture, phi_j)
+            per_shell_fractions[:, j] = fracs_j
+    else:
+        per_shell_fractions = None
+
     # Multi-component: evaluate each component, then suppressed harmonic mean
     w_eff_sum = np.zeros(n)
     inv_rho_sum = np.zeros(n)
     any_invalid = np.zeros(n, dtype=bool)
 
-    for eos_name, w_i in zip(mixture.components, mixture.fractions):
-        if w_i <= 0:
-            continue
+    for k, (eos_name, w_i_bulk) in enumerate(zip(mixture.components, mixture.fractions)):
+        if per_shell_fractions is not None:
+            w_i = per_shell_fractions[k]
+            # Skip components whose phi-blend is identically zero across
+            # the whole batch (e.g., a strong-partition rule with phi=0
+            # everywhere when melt curves are missing).
+            if not np.any(w_i > 0):
+                continue
+        else:
+            w_i = w_i_bulk
+            if w_i <= 0:
+                continue
         mzf = _get_mushy_zone_factor(eos_name, mushy_zone_factors)
         rho_i = calculate_density_batch(
             pressures,
@@ -595,9 +647,12 @@ def calculate_mixed_density_batch(
             if eos_name in _H2_EOS_NAMES:
                 for j in range(n):
                     if not bad[j]:
+                        # w_i is a 1D array when per-shell fractions are
+                        # in use (phi-aware path), else a scalar.
+                        w_ij = w_i[j] if per_shell_fractions is not None else w_i
                         sigma_i[j] *= _binodal_factor(
                             eos_name,
-                            w_i,
+                            w_ij,
                             mixture,
                             pressures[j],
                             temperatures[j],
@@ -1114,6 +1169,268 @@ class VolatileProfile:
         if total > 0:
             fracs = [f / total for f in fracs]
         return fracs
+
+
+_VALID_PARTITION_RULES = ('uniform', 'strong', 'D_const', 'solubility')
+
+
+def apply_partition_rule(
+    rule: str,
+    X_bulk: dict[str, float],
+    phi_avg: float,
+    *,
+    pressure: np.ndarray | None = None,
+    temperature: np.ndarray | None = None,
+    melt_fraction: np.ndarray | None = None,
+    D_const: dict[str, float] | None = None,
+    solubility_fn: Callable[..., float] | None = None,
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Map a bulk interior inventory into per-phase mass fractions.
+
+    This is the partition-law hook consumed upstream of
+    ``VolatileProfile``. It maps a bulk mantle mass fraction
+    ``X_bulk[species]`` and a mantle-averaged melt fraction ``phi_avg``
+    into the ``(w_liquid, w_solid)`` pair that ``VolatileProfile``
+    already accepts. The ``rule`` argument selects the physical
+    prescription. In this revision, ``'uniform'`` and ``'strong'`` return
+    numerical values; the remaining rules are reserved hooks that raise
+    ``NotImplementedError`` until their physics is implemented.
+
+    Parameters
+    ----------
+    rule : str
+        Partition-law selector. One of:
+
+        - ``'uniform'``: returns ``w_liquid = w_solid = X_bulk``, so the
+          phi-blend collapses to a constant per-shell fraction. This
+          reproduces the existing single-EOS-string mantle behavior.
+        - ``'strong'``: strong-partition limit
+          ``w_liquid = X_bulk / phi_avg``, ``w_solid = 0``.
+        - ``'D_const'``: constant partition coefficient
+          ``D = w_solid / w_liquid`` per species. Reserved hook; raises
+          ``NotImplementedError``.
+        - ``'solubility'``: pressure-dependent solubility callback
+          (Henry-style or Bower-style). Reserved hook; raises
+          ``NotImplementedError``.
+    X_bulk : dict
+        Bulk mantle mass fractions keyed by EOS component name
+        (e.g., ``{'PALEOS:H2O': 0.15}``). For the existing single
+        EOS-string format these come from the fractions encoded in
+        the mantle string itself.
+    phi_avg : float
+        Mass-weighted mantle-averaged melt fraction in ``[0, 1]``.
+        Only consumed by rules other than ``'uniform'``.
+    pressure : numpy.ndarray, optional
+        Radial pressure profile [Pa] for solubility-style rules.
+        Ignored by ``'uniform'`` and ``'strong'``.
+    temperature : numpy.ndarray, optional
+        Radial temperature profile [K] for solubility-style rules.
+        Ignored by ``'uniform'`` and ``'strong'``.
+    melt_fraction : numpy.ndarray, optional
+        Radial melt-fraction profile ``phi(r)`` for per-shell rules.
+        Ignored by the bulk-averaged rules.
+    D_const : dict, optional
+        Per-species constant partition coefficient
+        ``D_i = w_solid / w_liquid``, consumed by the ``'D_const'``
+        rule.
+    solubility_fn : callable, optional
+        Pressure-dependent solubility callback consumed by the
+        ``'solubility'`` rule.
+
+    Returns
+    -------
+    tuple of dict
+        ``(w_liquid, w_solid)``, each keyed by EOS component name and
+        compatible with ``VolatileProfile``.
+
+    Raises
+    ------
+    NotImplementedError
+        If ``rule`` is ``'D_const'`` or ``'solubility'``: reserved hooks,
+        not implemented yet. The hook signature is stable.
+    ValueError
+        If ``rule`` is not in ``_VALID_PARTITION_RULES``.
+
+    Notes
+    -----
+    The strong-partition rule, ``w_liquid = X_bulk / phi_avg``, is
+    satisfied by an outer self-consistency loop on ``phi_avg`` that
+    mirrors the binodal-miscibility loop in
+    ``zalmoxis.solver.solve_miscible_interior``: the structure solve
+    is repeated until the mass-weighted average melt fraction returned
+    by the solve matches the ``phi_avg`` used to build ``w_liquid``,
+    to a documented tolerance. The bulk inventory ``X_bulk`` is read
+    from the fractions already encoded in the mantle EOS string
+    (e.g., ``'PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15'`` becomes
+    ``X_bulk = {'PALEOS:H2O': 0.15}``), so no new TOML key is needed
+    to specify it.
+
+    The mass-fraction bound ``w_liquid <= 1`` requires
+    ``phi_avg >= sum(X_bulk)``. The rule falls back to the uniform-
+    spread path below an internal floor ``_STRONG_PARTITION_PHI_SAFETY
+    * sum(X_bulk.values())``, so volatile fractions never approach
+    saturation in the most-molten shells.
+    """
+    if rule == 'uniform':
+        return dict(X_bulk), dict(X_bulk)
+
+    if rule == 'strong':
+        # Strong-partition limit: volatile mass lives entirely in the
+        # silicate melt. Mass conservation reduces to phi_avg * w_liquid
+        # = X_bulk; we invert. The floor is set by the mass-fraction
+        # bound w_liquid <= 1 (i.e., phi_avg >= sum(X_bulk)), padded
+        # by _STRONG_PARTITION_PHI_SAFETY.
+        effective_floor = strong_partition_phi_floor(X_bulk)
+        if phi_avg < effective_floor:
+            logger.warning(
+                "partition_rule='strong': phi_avg=%.4g is below the floor "
+                '%.4g (1.01*sum(X_bulk)); falling back to the uniform-spread '
+                'path for this evaluation.',
+                phi_avg,
+                effective_floor,
+            )
+            return dict(X_bulk), dict(X_bulk)
+        w_liquid = {k: v / phi_avg for k, v in X_bulk.items()}
+        w_solid = dict.fromkeys(X_bulk, 0.0)
+        return w_liquid, w_solid
+
+    if rule in ('D_const', 'solubility'):
+        raise NotImplementedError(f"partition_rule '{rule}' is reserved; not implemented yet.")
+
+    raise ValueError(
+        f"Unknown partition_rule '{rule}'. Valid options: {_VALID_PARTITION_RULES}."
+    )
+
+
+_VOLATILE_EOS_NAMES = _H2_EOS_NAMES | _H2O_EOS_NAMES
+
+# Safety factor that sets the strong-partition phi_avg floor.
+#
+# The strong-partition rule sets w_liquid = X_bulk / phi_avg. The
+# mass-fraction bound w_liquid <= 1 then requires
+# phi_avg >= sum(X_bulk). We add a 1% headroom purely to keep the
+# division away from the w_liquid = 1 singularity; the bound is
+# numerical, not physical, so the floor sits just above sum(X_bulk).
+# Below the resulting floor the rule falls back to the uniform-spread
+# path so the structure solve stays well-conditioned.
+_STRONG_PARTITION_PHI_SAFETY = 1.01
+
+
+def strong_partition_phi_floor(X_bulk: dict[str, float]) -> float:
+    """Return the strong-partition ``phi_avg`` fallback floor.
+
+    The floor is ``_STRONG_PARTITION_PHI_SAFETY * sum(X_bulk)``. Below it
+    the strong rule falls back to the uniform spread (see
+    ``apply_partition_rule``). This is the single source of truth for the
+    floor so callers (e.g., ``solve_strong_partition``) can detect the
+    fallback without duplicating the constant.
+    """
+    return _STRONG_PARTITION_PHI_SAFETY * sum(X_bulk.values())
+
+
+def split_mantle_volatile_inventory(
+    mixture: LayerMixture,
+) -> tuple[dict[str, float], str]:
+    """Split a mantle ``LayerMixture`` into bulk volatiles and primary silicate.
+
+    Identifies each component as a volatile (``Chabrier:H``, ``PALEOS:H2O``,
+    ``Seager2007:H2O``) or as the primary silicate (``PALEOS:MgSiO3`` and
+    related). Volatile mass fractions populate ``X_bulk``; the silicate
+    becomes the primary component for ``VolatileProfile``.
+
+    Parameters
+    ----------
+    mixture : LayerMixture
+        Mantle layer mixture parsed from the EOS string.
+
+    Returns
+    -------
+    X_bulk : dict
+        Bulk mantle mass fractions of volatile species, keyed by EOS name.
+        Empty when the mantle is pure silicate.
+    primary : str
+        EOS name of the primary silicate component.
+
+    Raises
+    ------
+    ValueError
+        If the mantle has no silicate, more than one silicate, or any
+        component that is neither a recognized silicate nor a recognized
+        volatile (H2 / H2O).
+    """
+    X_bulk: dict[str, float] = {}
+    primary: str | None = None
+    for comp, frac in zip(mixture.components, mixture.fractions):
+        if comp in _VOLATILE_EOS_NAMES:
+            if frac > 0:
+                X_bulk[comp] = frac
+        elif comp in _SILICATE_EOS_NAMES:
+            if primary is not None:
+                raise ValueError(
+                    f'Mantle has more than one silicate component: '
+                    f'{primary!r} and {comp!r}. The partition-law path '
+                    f'expects a single primary silicate.'
+                )
+            primary = comp
+        else:
+            raise ValueError(
+                f'Mantle component {comp!r} is neither a recognized silicate '
+                f'(PALEOS:MgSiO3, WolfBower2018:MgSiO3, RTPress100TPa:MgSiO3, '
+                f'PALEOS-2phase:MgSiO3) nor a recognized volatile (Chabrier:H, '
+                f'PALEOS:H2O, Seager2007:H2O). Extend the classification sets '
+                f'in zalmoxis.mixing if a new species needs to plug in.'
+            )
+
+    if primary is None:
+        raise ValueError(
+            'Mantle has no silicate component. The partition-law path '
+            'requires exactly one primary silicate.'
+        )
+    return X_bulk, primary
+
+
+def build_partition_profile(
+    mantle_mixture: LayerMixture,
+    rule: str,
+    phi_avg: float,
+) -> tuple[VolatileProfile | None, dict[str, float], str]:
+    """Build a ``VolatileProfile`` from a mantle ``LayerMixture``.
+
+    Wraps :func:`split_mantle_volatile_inventory` and
+    :func:`apply_partition_rule` so callers can go from a parsed mantle
+    EOS string directly to a ``VolatileProfile`` for the chosen rule.
+
+    Parameters
+    ----------
+    mantle_mixture : LayerMixture
+        Mantle layer mixture (e.g., from ``parse_layer_components`` on
+        ``'PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15'``).
+    rule : str
+        Partition-law selector (see :func:`apply_partition_rule`).
+    phi_avg : float
+        Mass-weighted mantle-averaged melt fraction in ``[0, 1]``.
+
+    Returns
+    -------
+    profile : VolatileProfile or None
+        ``None`` when the mantle has no volatile components (nothing to
+        partition); callers fall back to the existing single-EOS-string
+        path in that case.
+    X_bulk : dict
+        Bulk mantle volatile mass fractions.
+    primary : str
+        Primary silicate EOS name.
+    """
+    X_bulk, primary = split_mantle_volatile_inventory(mantle_mixture)
+    if not X_bulk:
+        return None, X_bulk, primary
+    w_liquid, w_solid = apply_partition_rule(rule, X_bulk, phi_avg)
+    profile = VolatileProfile(
+        w_liquid=w_liquid,
+        w_solid=w_solid,
+        primary_component=primary,
+    )
+    return profile, X_bulk, primary
 
 
 def compute_melt_fraction(pressure, temperature, solidus_func, liquidus_func):

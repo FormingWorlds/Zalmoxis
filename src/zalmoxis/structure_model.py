@@ -69,6 +69,7 @@ def coupled_odes(
     condensed_rho_min=CONDENSED_RHO_MIN_DEFAULT,
     condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
     binodal_T_scale=BINODAL_T_SCALE_DEFAULT,
+    volatile_profile=None,
 ):
     """Calculate derivatives of mass, gravity, and pressure w.r.t. radius.
 
@@ -103,6 +104,9 @@ def coupled_odes(
         Sigmoid width for phase-aware suppression (kg/m^3).
     binodal_T_scale : float
         Binodal sigmoid width in K for H2 miscibility suppression.
+    volatile_profile : VolatileProfile or None
+        Phi-aware mantle profile from the partition-law hook. Applied
+        only to the mantle layer; the core and ice layers ignore it.
 
     Returns
     -------
@@ -126,6 +130,15 @@ def coupled_odes(
         logger.debug(f'Nonphysical pressure encountered: P={pressure} Pa at radius={radius} m')
         return [0.0, 0.0, 0.0]
 
+    # Apply the phi-aware profile only inside the mantle: the core and
+    # ice layers do not partition volatiles. get_layer_mixture returns the
+    # 'mantle' entry for mantle shells, so gate on that same key.
+    profile_for_shell = (
+        volatile_profile
+        if (volatile_profile is not None and mixture is layer_mixtures.get('mantle'))
+        else None
+    )
+
     # Calculate density at the current radius, using pressure from y
     current_density = calculate_mixed_density(
         pressure,
@@ -139,6 +152,7 @@ def coupled_odes(
         condensed_rho_min,
         condensed_rho_scale,
         binodal_T_scale,
+        volatile_profile=profile_for_shell,
     )
 
     # Return zero derivatives for invalid density.  The ODE state freezes
@@ -184,6 +198,7 @@ def solve_structure(
     binodal_T_scale=BINODAL_T_SCALE_DEFAULT,
     use_jax=False,
     temperature_arrays=None,
+    volatile_profile=None,
 ):
     """Solve the coupled ODEs for the planetary structure model.
 
@@ -249,6 +264,15 @@ def solve_structure(
     # config: 3-layer ice, multi-component mixing, non-PALEOS-2phase
     # mantle, etc.). Logged at debug; callers observe the same return
     # contract either way.
+    if use_jax and volatile_profile is not None:
+        # Phi-aware mantle blending is not yet wired into the JAX path;
+        # multi-component mantles fall back to numpy anyway, but force
+        # the fallback explicitly so the dispatch is transparent.
+        logger.debug(
+            'volatile_profile is set; JAX fast path is unsupported, '
+            'falling back to numpy structure solver.'
+        )
+        use_jax = False
     if use_jax:
         try:
             from .jax_eos.wrapper import solve_structure_via_jax
@@ -307,6 +331,7 @@ def solve_structure(
             condensed_rho_min,
             condensed_rho_scale,
             binodal_T_scale,
+            volatile_profile=volatile_profile,
         )
 
     if uses_Tdep:

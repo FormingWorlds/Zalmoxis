@@ -157,6 +157,57 @@ class TestTemperatureValidation:
 
 
 @pytest.mark.unit
+class TestPartitionRuleValidation:
+    """Validate the opt-in ``partition_rule`` key.
+
+    ``'uniform'`` is the default and reproduces the existing
+    single-EOS-string mantle behavior. The remaining rules are
+    reserved hooks whose physics is wired in subsequent commits on
+    this branch.
+    """
+
+    def test_missing_key_passes(self):
+        """Config without ``partition_rule`` validates: the loader supplies
+        ``'uniform'`` as the default before validation, but ``validate_config``
+        is also tolerant of the key being absent when called directly."""
+        from zalmoxis.config import validate_config
+
+        validate_config(_make_config())
+
+    def test_uniform_passes(self):
+        from zalmoxis.config import validate_config
+
+        validate_config(_make_config(partition_rule='uniform'))
+
+    def test_strong_passes(self):
+        from zalmoxis.config import validate_config
+
+        validate_config(_make_config(partition_rule='strong'))
+
+    def test_d_const_passes(self):
+        from zalmoxis.config import validate_config
+
+        validate_config(_make_config(partition_rule='D_const'))
+
+    def test_solubility_passes(self):
+        from zalmoxis.config import validate_config
+
+        validate_config(_make_config(partition_rule='solubility'))
+
+    def test_unknown_rule_raises(self):
+        from zalmoxis.config import validate_config
+
+        with pytest.raises(ValueError, match="Unknown partition_rule 'bogus'"):
+            validate_config(_make_config(partition_rule='bogus'))
+
+    def test_unknown_rule_lists_valid_options(self):
+        from zalmoxis.config import validate_config
+
+        with pytest.raises(ValueError, match='Valid options'):
+            validate_config(_make_config(partition_rule=''))
+
+
+@pytest.mark.unit
 class TestMushyZoneValidation:
     def test_factor_above_one_raises(self):
         from zalmoxis.config import validate_config
