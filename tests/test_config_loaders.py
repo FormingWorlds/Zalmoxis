@@ -236,6 +236,24 @@ class TestLoadZalmoxisConfig:
         assert params['rock_solidus'] == 'Stixrude14-solidus'
         assert params['rock_liquidus'] == 'Stixrude14-liquidus'
 
+    def test_partition_rule_defaults_to_uniform(self, tmp_path):
+        """A TOML without ``partition_rule`` resolves to ``'uniform'`` so
+        every existing config keeps running unchanged."""
+        p = _write_toml(tmp_path / 'no_partition.toml', _MINIMAL_TOML)
+        params = load_zalmoxis_config(temp_config_path=str(p))
+        assert params['partition_rule'] == 'uniform'
+
+    def test_partition_rule_explicit_strong_round_trips(self, tmp_path):
+        """An explicit ``partition_rule = "strong"`` flows through the loader
+        and survives validation; the hook itself is dormant in this commit."""
+        body = _MINIMAL_TOML.replace(
+            'mantle = "PALEOS:MgSiO3"',
+            'mantle = "PALEOS:MgSiO3"\npartition_rule = "strong"',
+        )
+        p = _write_toml(tmp_path / 'strong.toml', body)
+        params = load_zalmoxis_config(temp_config_path=str(p))
+        assert params['partition_rule'] == 'strong'
+
     def test_optional_iter_keys_pass_through(self, tmp_path):
         """``[IterativeProcess]`` keys override mass-adaptive defaults."""
         toml_with_iter = _MINIMAL_TOML + (

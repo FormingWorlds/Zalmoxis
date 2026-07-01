@@ -21,6 +21,7 @@ References:
 from __future__ import annotations
 
 import os
+import pickle
 import tempfile
 
 import numpy as np
@@ -330,6 +331,77 @@ class TestEnsureUnifiedCache:
         assert result['type'] == 'paleos_unified'
         assert 'density_interp' in result
         assert 'nabla_ad_interp' in result
+
+    def test_rebuilds_when_cache_references_missing_module(self, caplog, tmp_path):
+        """A binary cache that cannot be unpickled rebuilds from the text table.
+
+        A cache pickled by one scipy build embeds the fully-qualified class
+        paths of its interpolator objects (and vendored submodules such as
+        scipy._lib.array_api_compat). Loading that cache under a scipy build
+        that no longer ships those paths raises ModuleNotFoundError, a subclass
+        of ImportError. The loader must treat the binary cache as unusable,
+        record why it was rejected, and rebuild from the authoritative text
+        table instead of propagating.
+        """
+        import logging
+        from unittest.mock import patch
+
+        from zalmoxis.eos import _ensure_unified_cache
+
+        eos_file = str(tmp_path / 'fake_table.dat')
+        cache_path = str(tmp_path / 'fake_table.pkl')
+
+        # GLOBAL opcode referencing a module that cannot be imported: the exact
+        # failure shape of a scipy-version-mismatched interpolator cache.
+        bad_pickle = b'\x80\x04c__zalmoxis_absent_module__\nFoo\n.'
+        with pytest.raises(ModuleNotFoundError):
+            pickle.loads(bad_pickle)
+        with open(cache_path, 'wb') as f:
+            f.write(bad_pickle)
+
+        rebuilt = {'type': 'paleos_unified', 'p_min': 1.0e5, 'p_max': 1.0e12}
+        cache = {}
+        with caplog.at_level(logging.INFO, logger='zalmoxis.eos.interpolation'):
+            with patch(
+                'zalmoxis.eos.interpolation.load_paleos_unified_table',
+                return_value=rebuilt,
+            ) as mock_load:
+                result = _ensure_unified_cache(eos_file, cache)
+
+        # The unpickle error must not escape; the text loader supplies the entry.
+        mock_load.assert_called_once_with(eos_file)
+        assert result is rebuilt
+        assert cache[eos_file] is rebuilt
+        # The unusable binary cache is replaced on disk by the rebuilt entry.
+        with open(cache_path, 'rb') as f:
+            assert pickle.load(f)['type'] == 'paleos_unified'
+        # The rejection reason is recorded so ops can distinguish a version
+        # mismatch from a corrupt cache: the message names the offending cache
+        # and the concrete exception type, not a generic 'rebuilding' line.
+        assert 'could not be loaded' in caplog.text
+        assert 'ModuleNotFoundError' in caplog.text
+        assert cache_path in caplog.text
+
+    def test_uses_valid_binary_cache_without_text_load(self, tmp_path):
+        """A readable binary cache is returned directly without the slow text load."""
+        from unittest.mock import patch
+
+        from zalmoxis.eos import _ensure_unified_cache
+
+        eos_file = str(tmp_path / 'good_table.dat')
+        cache_path = str(tmp_path / 'good_table.pkl')
+        cached = {'type': 'paleos_unified', 'p_min': 2.0e5, 'p_max': 5.0e11}
+        with open(cache_path, 'wb') as f:
+            pickle.dump(cached, f, protocol=4)
+
+        cache = {}
+        with patch('zalmoxis.eos.interpolation.load_paleos_unified_table') as mock_load:
+            result = _ensure_unified_cache(eos_file, cache)
+
+        # A loadable cache must short-circuit the text rebuild entirely.
+        mock_load.assert_not_called()
+        assert result == cached
+        assert result['p_min'] == pytest.approx(2.0e5)
 
 
 # =====================================================================

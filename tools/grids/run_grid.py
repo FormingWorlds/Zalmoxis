@@ -183,8 +183,13 @@ _PARAM_MAP: dict[str, tuple[str, str]] = {
     'mushy_zone_factor': ('EOS', 'mushy_zone_factor'),
     'rock_solidus': ('EOS', 'rock_solidus'),
     'rock_liquidus': ('EOS', 'rock_liquidus'),
+    'partition_rule': ('EOS', 'partition_rule'),
     'num_layers': ('Calculations', 'num_layers'),
     'target_surface_pressure': ('PressureAdjustment', 'target_surface_pressure'),
+    'outer_solver': ('IterativeProcess', 'outer_solver'),
+    'wall_timeout': ('IterativeProcess', 'wall_timeout'),
+    'relative_tolerance': ('IterativeProcess', 'relative_tolerance'),
+    'absolute_tolerance': ('IterativeProcess', 'absolute_tolerance'),
 }
 
 
