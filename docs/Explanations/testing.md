@@ -103,8 +103,8 @@ matrix runs the unit tier without xdist contention on small runners.
 | Trigger | Markers | Budget | Coverage |
 |---|---|---|---|
 | Push / PR (`CI.yml`) | `unit and not slow and not skip` | < 10 min | None (gate pre-flight only) |
-| Nightly cron (`nightly.yml`, 02:00 UTC) | `(unit or smoke or integration) and not slow` | < 60 min | Yes; gates on 90% and uploads to Codecov with the `nightly` flag |
-| Manual `workflow_dispatch` | as above | < 60 min | Yes |
+| Nightly cron (`nightly.yml`, 02:00 UTC) | `(unit or smoke or integration) and not slow` | ~50-55 min (90 min ceiling) | Yes; gates on 90% and uploads to Codecov with the `nightly` flag |
+| Manual `workflow_dispatch` | as above | ~50-55 min (90 min ceiling) | Yes |
 
 Push CI is intentionally unit-only because each smoke or integration test
 runs a full Zalmoxis solver call (5 to 10 min on a 2-vCPU runner under

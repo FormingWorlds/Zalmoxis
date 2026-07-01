@@ -261,8 +261,8 @@ file (enforced by ruff isort).
 - ~1175 tests collected: ~1124 unit, 23 smoke, 2 integration, 44 slow.
 - Unit tier: `pytest -o "addopts=" -m unit` (~1.5 min on the dev machine,
   ~1m54s ubuntu / ~2m29s macOS in CI).
-- Nightly tier: `pytest -o "addopts=" -m "(unit or smoke or integration) and not slow"`
-  with coverage; ~46 min on ubuntu CI.
+- Nightly tier: `pytest -o "addopts=" -m "(unit or smoke or integration) and not slow" -n auto`
+  with coverage; ~50-55 min on ubuntu CI (90 min job ceiling).
 - The `-o "addopts="` override is needed because `pyproject.toml` defaults to
   `-n auto --dist loadfile` for parallel execution; a single-marker filter run
   is faster without the parallel split.
