@@ -7,7 +7,7 @@ $$
 \rho(P) = \rho_0 + c \cdot P^n
 $$
 
-Valid for $P < 10^{16}$ Pa. Approximates the full merged Vinet/BME + TFD EOS to 2-12% accuracy for all planetary pressures.
+The six Seager materials are empirical fits valid for $P < 10^{16}$ Pa, approximating the full merged Vinet/BME + TFD EOS to 2-12% accuracy across planetary pressures. The module also registers an exact n=1 polytrope ($\rho_0 = 0$, $n = 1/2$, so $P = K \rho^2$) as a verification material with a closed-form Lane-Emden solution, used to check the coupled structure solver end to end.
 """
 
 from __future__ import annotations
@@ -55,6 +55,11 @@ ANALYTIC_MATERIALS: dict[str, tuple[float, float, float]] = {
 
 VALID_MATERIAL_KEYS: set[str] = set(ANALYTIC_MATERIALS.keys())
 
+# Keys a production config may select in an ``Analytic:<material>`` EOS string. The verification
+# polytrope is resolvable by get_analytic_density (it lives in ANALYTIC_MATERIALS) but is not a
+# real planetary material, so it is excluded here and the config validator rejects it.
+USER_SELECTABLE_MATERIALS: set[str] = set(SEAGER2007_MATERIALS)
+
 
 def get_analytic_density(pressure: float, material_key: str) -> float | None:
     """
@@ -94,7 +99,10 @@ def get_analytic_density(pressure: float, material_key: str) -> float | None:
     if pressure <= 0:
         return float(rho_0)
 
-    if pressure > P_MAX:
+    # The validity limit is an empirical bound on the Seager+2007 fits. The polytrope
+    # verification material is an exact P = K rho^2 relation at every pressure, so it is
+    # excluded from the warning to avoid mislabelling an exact EOS as inaccurate.
+    if material_key in SEAGER2007_MATERIALS and pressure > P_MAX:
         logger.warning(
             f'Pressure {pressure:.2e} Pa exceeds validity limit of {P_MAX:.0e} Pa '
             f'for Seager+2007 analytic EOS. Results may be inaccurate.'

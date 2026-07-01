@@ -20,7 +20,7 @@ from .constants import (
     earth_mass,
 )
 from .eos import get_solidus_liquidus_functions
-from .eos_analytic import VALID_MATERIAL_KEYS
+from .eos_analytic import USER_SELECTABLE_MATERIALS
 from .eos_properties import EOS_REGISTRY
 from .eos_vinet import VALID_VINET_KEYS
 from .mixing import (
@@ -157,11 +157,11 @@ def validate_layer_eos(layer_eos_config):
                 continue
             if comp.startswith('Analytic:'):
                 material_key = comp.split(':', 1)[1]
-                if material_key not in VALID_MATERIAL_KEYS:
+                if material_key not in USER_SELECTABLE_MATERIALS:
                     raise ValueError(
                         f"Invalid analytic material '{material_key}' "
                         f"in layer '{layer}'. "
-                        f'Valid keys: {sorted(VALID_MATERIAL_KEYS)}'
+                        f'Valid keys: {sorted(USER_SELECTABLE_MATERIALS)}'
                     )
                 continue
             if comp.startswith('Vinet:'):
@@ -177,7 +177,7 @@ def validate_layer_eos(layer_eos_config):
                 f"Invalid EOS component '{comp}' in layer '{layer}'. "
                 f'Valid tabulated: {sorted(VALID_TABULATED_EOS)}. '
                 f'Valid analytic: Analytic:<material> with '
-                f'{sorted(VALID_MATERIAL_KEYS)}. '
+                f'{sorted(USER_SELECTABLE_MATERIALS)}. '
                 f'Valid Vinet: Vinet:<material> with '
                 f'{sorted(VALID_VINET_KEYS)}.'
             )
