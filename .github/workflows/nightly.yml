@@ -18,16 +18,18 @@ permissions:
   contents: read
 
 # Nightly: full test suite (unit + smoke + integration) with coverage
-# instrumentation. Targets <60 min wall. Excluded from push and PR CI
-# because each smoke or integration test runs a full Zalmoxis solver
-# call (5-10 min on a 2-vCPU runner under cov instrumentation) and
-# burning that on every push gives no bug-finding signal that the
-# unit suite doesn't already cover.
+# instrumentation. Runs ~50-55 min wall on the shared runners. Excluded
+# from push and PR CI because each smoke or integration test runs a full
+# Zalmoxis solver call (5-10 min on a 2-vCPU runner under cov
+# instrumentation) and burning that on every push gives no bug-finding
+# signal that the unit suite doesn't already cover.
 jobs:
   nightly:
     name: Zalmoxis-nightly (ubuntu-latest)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # The suite runs ~50-55 min, so a 90 min ceiling leaves wide margin
+    # for shared-runner variance without masking a genuine hang.
+    timeout-minutes: 90
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -48,7 +50,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install .
-          pip install pytest pytest-cov pytest-xdist
+          pip install pytest pytest-cov pytest-xdist pytest-timeout
 
       - name: Cache Zalmoxis EOS data
         id: cache-zalmoxis-data
@@ -64,7 +66,15 @@ jobs:
 
       - name: Run unit + smoke + integration tests with coverage
         run: |
+          # --timeout kills any single hung test after 50 min, failing the
+          # run and naming that test in the worker-crash report while the
+          # other workers still finish, instead of the job ceiling cancelling
+          # the whole run with no clue which test wedged. The slowest healthy
+          # test is ~20 min on the 2-vCPU runner under coverage, so 3000 s
+          # (about 2.4x) absorbs runner variance without risking a false kill.
+          # --durations prints the slowest tests so the profile stays visible.
           pytest -m "(unit or smoke or integration) and not slow" -n auto -o "addopts=" \
+            --timeout=3000 --timeout-method=thread --durations=25 \
             --cov=zalmoxis --cov-report=term-missing --cov-report=xml \
             --cov-fail-under=90
 
