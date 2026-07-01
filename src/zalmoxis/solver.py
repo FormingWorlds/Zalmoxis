@@ -176,6 +176,15 @@ def _default_solver_params(planet_mass):
 
 _VALID_OUTER_SOLVERS = ('picard', 'newton')
 
+# Mass-error ceiling below which a structure solve that did not tighten to the
+# requested tolerance is still accepted as a usable "timeout" solution: the
+# radius is accurate to under ~1% and the outer mass-radius loop corrects the
+# residual across iterations, so accepting it beats crashing the caller on a
+# hot fully-molten profile the inner Picard cannot tighten further. The accept
+# gate and the warning message both read this one value so the reported
+# threshold can never drift from the gate it describes.
+_TIMEOUT_ACCEPT_MASS_ERR = 0.03
+
 
 def _tighten_solver_params(params):
     """Return a copy of solver params with tighter settings for retry.
@@ -2138,18 +2147,25 @@ def _solve(
         # progressively more adiabat in the T-func. This prevents the
         # T-dependent density field from diverging when switching abruptly
         # from linear to adiabat T.
+        # The ramp applies only when the internal adiabat machinery built
+        # the T profile: an external temperature_function bypasses the
+        # blend entirely (see the external branch in the T-profile setup),
+        # so with a callable supplied the blend never reaches 1.0 and the
+        # ramp branch would consume every outer iteration without doing
+        # work, leaving converged_mass unset on a mass-converged outer.
         # For T-INDEPENDENT EOS (Seager+2007, Analytic, Vinet) the density
-        # does not depend on T at all, so the blend ramp does no useful work
-        # — the recomputed structure is identical at every blend step. Skip
-        # the ramp in that case and break immediately on mass convergence;
-        # the T output for T-independent EOS in adiabatic mode falls back to
-        # the linear profile (see the T-independent branch around the
-        # _temperature_func construction).
+        # does not depend on T at all, so the blend ramp does no useful
+        # work; the recomputed structure is identical at every blend step.
+        # Skip the ramp in that case and break immediately on mass
+        # convergence; the T output for T-independent EOS in adiabatic mode
+        # falls back to the linear profile (see the T-independent branch
+        # around the _temperature_func construction).
         if relative_diff_outer_mass < tolerance_outer:
             if (
                 temperature_mode in ('adiabatic', 'adiabatic_from_cmb')
                 and _adiabat_blend < 1.0
                 and uses_Tdep
+                and temperature_function is None
             ):
                 if not _using_adiabat:
                     _using_adiabat = True
@@ -2185,16 +2201,17 @@ def _solve(
             converged_pressure,
         )
         converged = True
-    elif best_mass_error < 0.03 and best_profiles is not None:
-        # Timeout or max-iterations with < 3% mass error. The structure
-        # is usable (radius accurate to < 1%, pressure to < 3%).
-        # Better to return a slightly loose solution than crash the
-        # calling code. The caller can check converged_mass/density/
-        # pressure flags for diagnostics.
+    elif best_mass_error < _TIMEOUT_ACCEPT_MASS_ERR and best_profiles is not None:
+        # Timeout or max-iterations within the loose-accept ceiling. The
+        # structure is usable (radius accurate to < 1%) and better returned
+        # than crashed on; the caller can check converged_mass/density/
+        # pressure flags for diagnostics, and the outer mass-radius loop
+        # corrects the residual across iterations.
         logger.warning(
-            'Accepting timeout solution: mass error %.4f%% (threshold 2%%), '
+            'Accepting timeout solution: mass error %.4f%% (threshold %.1f%%), '
             'density_converged=%s, pressure_converged=%s.',
             best_mass_error * 100,
+            _TIMEOUT_ACCEPT_MASS_ERR * 100,
             converged_density,
             converged_pressure,
         )
