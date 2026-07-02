@@ -120,6 +120,43 @@ def _tabulate_adiabat(radii, temperature_function, n_pts=4000):
     return log_p_grid, T_values
 
 
+def _validate_wet_mantle(volatile_profile, mantle_lm, material_dictionaries):
+    """Check a VolatileProfile against the JAX wet-mantle envelope.
+
+    Supported: exactly one active volatile, paleos_unified format, no
+    binodal physics (Chabrier:H needs the H2 suppression factor, which
+    is not ported), no global miscibility, no x_interior. Anything else
+    raises ValueError so the caller falls back to the numpy path.
+
+    Returns (vol_eos_name, (w_liquid, w_solid)).
+    """
+    if getattr(volatile_profile, 'global_miscibility', False):
+        raise ValueError('JAX wet path does not support global_miscibility profiles')
+    if getattr(volatile_profile, 'x_interior', None):
+        raise ValueError('JAX wet path does not support x_interior profiles')
+
+    active = {}
+    for key in set(volatile_profile.w_liquid) | set(volatile_profile.w_solid):
+        w_l = float(volatile_profile.w_liquid.get(key, 0.0))
+        w_s = float(volatile_profile.w_solid.get(key, 0.0))
+        if (w_l > 0.0 or w_s > 0.0) and key in mantle_lm.components:
+            active[key] = (w_l, w_s)
+    if len(active) != 1:
+        raise ValueError(
+            'JAX wet path supports exactly one active volatile in the '
+            f'mantle mixture, got {sorted(active) or "none"}'
+        )
+    ((vol_eos, scalars),) = active.items()
+    if vol_eos == 'Chabrier:H':
+        raise ValueError(
+            'JAX wet path does not support Chabrier:H (binodal suppression not ported)'
+        )
+    vol_mat = material_dictionaries.get(vol_eos)
+    if vol_mat is None:
+        raise ValueError(f'JAX wet path: no material entry for {vol_eos!r}')
+    return vol_eos, scalars
+
+
 def solve_structure_via_jax(
     layer_mixtures,
     cmb_mass,
@@ -137,9 +174,10 @@ def solve_structure_via_jax(
     temperature_function=None,
     temperature_arrays=None,  # (r_arr, T_arr): r-indexed T profile
     mushy_zone_factors=None,
-    condensed_rho_min=None,  # ignored (JAX path assumes no multi-component mixing)
+    condensed_rho_min=None,  # sigmoid center for the wet-mantle harmonic mean
     condensed_rho_scale=None,
     binodal_T_scale=None,
+    volatile_profile=None,  # VolatileProfile: single-volatile wet mantle
 ):
     """Drop-in replacement for ``solve_structure`` using the JAX path.
 
@@ -202,9 +240,31 @@ def solve_structure_via_jax(
         )
     core_cached = _ensure_unified_cache(core_mat['eos_file'], interpolation_cache)
 
-    # Mantle cache: PALEOS-2phase (solid + melted sub-tables)
+    # Mantle components. The dry path requires a single-component
+    # mantle; a multi-component mixture without a profile has no JAX
+    # implementation of the uniform-spread harmonic mean, and silently
+    # taking components[0] would drop the other components' mass, so
+    # reject it (numpy fallback). With a VolatileProfile, exactly one
+    # paleos_unified volatile is supported alongside the Tdep silicate.
     mantle_lm = layer_mixtures['mantle']
-    mantle_eos = mantle_lm.components[0]
+    vol_eos = None
+    if volatile_profile is not None:
+        vol_eos, vol_scalars = _validate_wet_mantle(
+            volatile_profile, mantle_lm, material_dictionaries
+        )
+        mantle_eos = volatile_profile.primary_component
+        if mantle_eos not in mantle_lm.components:
+            raise ValueError(
+                'JAX wet path: profile primary component '
+                f'{mantle_eos!r} not in mantle mixture {mantle_lm.components!r}'
+            )
+    else:
+        if len(mantle_lm.components) != 1:
+            raise ValueError(
+                'JAX path requires a single-component mantle without a '
+                f'volatile profile, got {mantle_lm.components!r}'
+            )
+        mantle_eos = mantle_lm.components[0]
     mantle_mat = material_dictionaries[mantle_eos]
     if '_api_resolved' not in mantle_mat:
         if _is_paleos_api(
@@ -225,6 +285,24 @@ def solve_structure_via_jax(
     liq_file = mantle_mat['melted_mantle']['eos_file']
     sol_cached = interpolation_cache[sol_file]
     liq_cached = interpolation_cache[liq_file]
+
+    # Volatile cache (wet mantle only): paleos_unified, same extraction
+    # as the core. Resolve the PALEOS-API entry lazily like the others.
+    vol_cached = None
+    if vol_eos is not None:
+        vol_mat = material_dictionaries[vol_eos]
+        if '_api_resolved' not in vol_mat:
+            if _is_paleos_api(vol_mat):
+                from ..eos.paleos_api_cache import resolve_registry_entry
+
+                resolve_registry_entry(vol_mat)
+            vol_mat['_api_resolved'] = True
+        if vol_mat.get('format') != 'paleos_unified':
+            raise ValueError(
+                f'JAX wet path requires a paleos_unified volatile, got '
+                f'format {vol_mat.get("format")!r} for {vol_eos!r}'
+            )
+        vol_cached = _ensure_unified_cache(vol_mat['eos_file'], interpolation_cache)
 
     # mushy_zone_factor for the CORE (paleos_unified takes one; mantle uses Tdep
     # which handles its own solid/liquid separately).
@@ -363,6 +441,46 @@ def solve_structure_via_jax(
     jax_args.update(_extract_sub_args(liq_cached, 'liq'))
     jax_args.update(melt_curves)
 
+    has_volatile = vol_cached is not None
+    if has_volatile:
+        from ..mixing import (
+            _COMPONENT_RHO_MIN,
+            _COMPONENT_RHO_SCALE,
+            CONDENSED_RHO_MIN_DEFAULT,
+            CONDENSED_RHO_SCALE_DEFAULT,
+            _get_mushy_zone_factor,
+        )
+
+        # Sigmoid centers and widths exactly as calculate_mixed_density
+        # resolves them: per-component override, else the config value,
+        # else the mixing-module default.
+        _rho_min_cfg = (
+            float(condensed_rho_min)
+            if condensed_rho_min is not None
+            else CONDENSED_RHO_MIN_DEFAULT
+        )
+        _rho_scale_cfg = (
+            float(condensed_rho_scale)
+            if condensed_rho_scale is not None
+            else CONDENSED_RHO_SCALE_DEFAULT
+        )
+        w_liq_v, w_sol_v = vol_scalars
+        jax_args.update(_extract_sub_args(vol_cached, 'vol'))
+        jax_args.update(_extract_liquidus(vol_cached, 'vol'))
+        jax_args.update(
+            {
+                'vol_w_liquid': float(w_liq_v),
+                'vol_w_solid': float(w_sol_v),
+                'vol_mushy_zone_factor': float(
+                    _get_mushy_zone_factor(vol_eos, mushy_zone_factors)
+                ),
+                'sil_rho_min': _COMPONENT_RHO_MIN.get(mantle_eos, _rho_min_cfg),
+                'sil_rho_scale': _COMPONENT_RHO_SCALE.get(mantle_eos, _rho_scale_cfg),
+                'vol_rho_min': _COMPONENT_RHO_MIN.get(vol_eos, _rho_min_cfg),
+                'vol_rho_scale': _COMPONENT_RHO_SCALE.get(vol_eos, _rho_scale_cfg),
+            }
+        )
+
     global _CALL_COUNT, _TOTAL_WALL
     _CALL_COUNT += 1
     _t0 = _time.perf_counter()
@@ -372,6 +490,7 @@ def solve_structure_via_jax(
         rtol=float(relative_tolerance),
         atol=float(absolute_tolerance),
         T_axis_is_radius=T_axis_is_radius,
+        has_volatile=has_volatile,
         **jax_args,
     )
     # np.asarray on a jnp.ndarray yields a read-only view of the JAX
