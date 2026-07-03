@@ -42,7 +42,7 @@ def _build_diffeqsolve_jit(
     stays zero. ``T_axis_is_radius`` and ``has_volatile`` are closed
     over (not traced args) so the corresponding branches of
     ``coupled_odes_jax`` are specialised at compile time. A separate
-    compiled variant is cached per flag pair in ``_SOLVE_CACHE`` below.
+    compiled variant is cached per flag triple in ``_SOLVE_CACHE`` below.
     """
     import diffrax
     import optimistix as optx

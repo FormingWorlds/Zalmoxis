@@ -139,8 +139,9 @@ def _validate_wet_mantle(volatile_profile, mantle_lm, material_dictionaries):
     if getattr(volatile_profile, 'x_interior', None):
         raise ValueError('JAX wet path does not support x_interior profiles')
 
+    managed = set(volatile_profile.w_liquid) | set(volatile_profile.w_solid)
     active = {}
-    for key in set(volatile_profile.w_liquid) | set(volatile_profile.w_solid):
+    for key in managed:
         w_l = float(volatile_profile.w_liquid.get(key, 0.0))
         w_s = float(volatile_profile.w_solid.get(key, 0.0))
         if (w_l > 0.0 or w_s > 0.0) and key in mantle_lm.components:
@@ -149,6 +150,19 @@ def _validate_wet_mantle(volatile_profile, mantle_lm, material_dictionaries):
         raise ValueError(
             'JAX wet path supports exactly one active volatile in the '
             f'mantle mixture, got {sorted(active) or "none"}'
+        )
+    # Every mixture component must be the primary silicate, the active
+    # volatile, or profile-managed with zero weight in both phases
+    # (which contributes nothing in numpy's apply_to_mixture either).
+    # An unmanaged extra component keeps its fraction on the numpy path,
+    # so dropping it here would silently misrepresent the density;
+    # reject instead, and the caller falls back to numpy.
+    allowed = managed | {volatile_profile.primary_component}
+    extras = [c for c in mantle_lm.components if c not in allowed]
+    if extras:
+        raise ValueError(
+            'JAX wet path: mantle mixture carries components outside the '
+            f'volatile profile: {extras!r}'
         )
     ((vol_eos, scalars),) = active.items()
     if vol_eos == 'Chabrier:H':

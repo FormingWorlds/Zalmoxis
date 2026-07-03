@@ -211,14 +211,17 @@ def test_wet_profile_gates_fall_back():
     with pytest.raises(ValueError, match='exactly one active volatile'):
         _validate_wet_mantle(p2, lm, mats)
 
-    # H2 alone: binodal suppression not ported.
+    # H2 alone: binodal suppression not ported. The mixture must match
+    # the profile so the Chabrier-specific gate fires rather than the
+    # unmanaged-component check.
     ph2 = VolatileProfile(
         w_liquid={'Chabrier:H': 0.01},
         w_solid={},
         primary_component='PALEOS:MgSiO3',
     )
+    lm_h2 = LayerMixture(['PALEOS:MgSiO3', 'Chabrier:H'], [0.99, 0.01])
     with pytest.raises(ValueError, match='Chabrier:H'):
-        _validate_wet_mantle(ph2, lm, mats)
+        _validate_wet_mantle(ph2, lm_h2, mats)
 
     # Miscibility profiles stay on numpy.
     pm = VolatileProfile(
@@ -230,9 +233,48 @@ def test_wet_profile_gates_fall_back():
     with pytest.raises(ValueError, match='global_miscibility'):
         _validate_wet_mantle(pm, lm, mats)
 
-    # The supported envelope: one active paleos-table volatile.
+    # The supported envelope: one active paleos-table volatile, and the
+    # mixture carries nothing outside the profile (the 3-component lm
+    # above has an unmanaged Chabrier:H, which is itself rejected; see
+    # test_wet_mantle_with_unmanaged_component_falls_back).
     pm.global_miscibility = False
-    vol_eos, (w_l, w_s) = _validate_wet_mantle(pm, lm, mats)
+    lm_ok = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.99, 0.01])
+    vol_eos, (w_l, w_s) = _validate_wet_mantle(pm, lm_ok, mats)
+    assert vol_eos == 'PALEOS:H2O'
+    assert w_l == pytest.approx(0.05)
+    assert w_s == 0.0
+
+
+@pytest.mark.integration
+def test_wet_mantle_with_unmanaged_component_falls_back():
+    """A mixture component outside the profile keeps its fraction on the
+    numpy path (apply_to_mixture), so the 2-component JAX blend would
+    silently drop it; the wrapper must reject it to the numpy fallback.
+    Profile-managed components with zero weight in both phases contribute
+    nothing in numpy and stay allowed."""
+    from zalmoxis.jax_eos.wrapper import _validate_wet_mantle
+    from zalmoxis.mixing import LayerMixture, VolatileProfile
+
+    mats = {'PALEOS:H2O': {}}
+    profile = VolatileProfile(
+        w_liquid={'PALEOS:H2O': 0.05},
+        w_solid={'PALEOS:H2O': 0.0},
+        primary_component='PALEOS:MgSiO3',
+    )
+
+    lm_extra = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O', 'PALEOS:iron'], [0.90, 0.05, 0.05])
+    with pytest.raises(ValueError, match='outside the volatile profile'):
+        _validate_wet_mantle(profile, lm_extra, mats)
+
+    # Managed-but-inactive component: zero weight in both phases blends
+    # to zero in numpy, so the JAX envelope keeps it.
+    profile_managed = VolatileProfile(
+        w_liquid={'PALEOS:H2O': 0.05, 'Chabrier:H': 0.0},
+        w_solid={'PALEOS:H2O': 0.0, 'Chabrier:H': 0.0},
+        primary_component='PALEOS:MgSiO3',
+    )
+    lm_managed = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O', 'Chabrier:H'], [0.90, 0.05, 0.05])
+    vol_eos, (w_l, w_s) = _validate_wet_mantle(profile_managed, lm_managed, mats)
     assert vol_eos == 'PALEOS:H2O'
     assert w_l == pytest.approx(0.05)
     assert w_s == 0.0
