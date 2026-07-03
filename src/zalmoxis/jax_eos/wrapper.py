@@ -5,10 +5,14 @@
 (mass, gravity, pressure) output arrays, but routes through the
 JIT-compiled JAX path.
 
-Scope: Stage-1b 2-layer config (single-component core + mantle,
-PALEOS:iron + PALEOS-2phase:MgSiO3). Anything outside this envelope
-(3-layer ice, multi-component mixing, non-Stixrude14 melting) falls
-back to the numpy path at the caller (solver._solve).
+Scope: 2-layer config with a paleos_unified core (PALEOS:iron) and a
+mantle in either representation: the unified single table
+(PALEOS:MgSiO3, the production default) or the 2-phase solid/melted
+sub-tables (PALEOS-2phase:MgSiO3). A wet mantle (VolatileProfile with
+one paleos_unified volatile) is supported on top of either. Anything
+outside this envelope (3-layer ice, uniform-spread multi-component
+mixing, H2 profiles) falls back to the numpy path at the caller
+(solver._solve).
 
 The wrapper does three things per call:
  1. Extract cache contents into flat arrays the JIT function needs.
@@ -274,17 +278,37 @@ def solve_structure_via_jax(
 
             resolve_registry_entry(mantle_mat)
         mantle_mat['_api_resolved'] = True
-    if 'melted_mantle' not in mantle_mat or 'solid_mantle' not in mantle_mat:
+    # Two supported mantle representations. Unified: a single PALEOS
+    # table (the production default), consumed by the same kernel as the
+    # core with the mantle's mushy zone factor; its solidus derives
+    # internally from the table's own liquidus, so the external melting
+    # curves below matter only for the wet blend's phi. 2-phase: solid +
+    # melted sub-tables through the Tdep kernel.
+    mantle_is_unified = mantle_mat.get('format') == 'paleos_unified'
+    sol_cached = liq_cached = mantle_cached = None
+    if mantle_is_unified:
+        _mantle_file = mantle_mat.get('eos_file')
+        if not _mantle_file:
+            # Raise ValueError, not KeyError: the caller's numpy
+            # fallback only catches ValueError.
+            raise ValueError(
+                f'paleos_unified mantle entry for {mantle_eos!r} carries no eos_file'
+            )
+        mantle_cached = _ensure_unified_cache(_mantle_file, interpolation_cache)
+    elif 'melted_mantle' in mantle_mat and 'solid_mantle' in mantle_mat:
+        # Lazy-load both sub-tables via numpy's get_tabulated_eos
+        _ = get_tabulated_eos(1e10, mantle_mat, 'solid_mantle', 3000.0, interpolation_cache)
+        _ = get_tabulated_eos(1e10, mantle_mat, 'melted_mantle', 5000.0, interpolation_cache)
+        sol_file = mantle_mat['solid_mantle']['eos_file']
+        liq_file = mantle_mat['melted_mantle']['eos_file']
+        sol_cached = interpolation_cache[sol_file]
+        liq_cached = interpolation_cache[liq_file]
+    else:
         raise ValueError(
-            'JAX path requires PALEOS-2phase mantle with solid_mantle+melted_mantle'
+            'JAX path requires a paleos_unified mantle or a PALEOS-2phase '
+            'mantle with solid_mantle+melted_mantle, got format '
+            f'{mantle_mat.get("format")!r} for {mantle_eos!r}'
         )
-    # Lazy-load both sub-tables via numpy's get_tabulated_eos
-    _ = get_tabulated_eos(1e10, mantle_mat, 'solid_mantle', 3000.0, interpolation_cache)
-    _ = get_tabulated_eos(1e10, mantle_mat, 'melted_mantle', 5000.0, interpolation_cache)
-    sol_file = mantle_mat['solid_mantle']['eos_file']
-    liq_file = mantle_mat['melted_mantle']['eos_file']
-    sol_cached = interpolation_cache[sol_file]
-    liq_cached = interpolation_cache[liq_file]
 
     # Volatile cache (wet mantle only): paleos_unified, same extraction
     # as the core. Resolve the PALEOS-API entry lazily like the others.
@@ -397,9 +421,33 @@ def solve_structure_via_jax(
     # time, which dominates coupled-solve wall time.
     # Cache key uses object id; the dict cap prevents unbounded growth from
     # unique-per-call closures (rare).
+    # Missing melting curves are legitimate for an all-unified config
+    # (the unified density derives its solidus internally, and Zalmoxis'
+    # loader returns None for such configs). Mirror numpy: NaN tables
+    # make the RHS's melt-curve lookup non-finite, which routes the wet
+    # blend's phi to the same 0.5 fallback compute_melt_fraction uses
+    # for None curves. The 2-phase Tdep mantle genuinely needs the
+    # curves, so reject that combination (numpy fallback fails the same
+    # way there).
+    if solidus_func is None or liquidus_func is None:
+        if not mantle_is_unified:
+            raise ValueError(
+                'JAX path needs solidus/liquidus functions for a PALEOS-2phase mantle'
+            )
+        _nan4 = np.full(4, np.nan)
+        melt_curves = {
+            'melt_log_p_min': 8.0,
+            'melt_dlog_p': 1.0,
+            'melt_n': 4,
+            'log_T_liq_table': _nan4,
+            'log_T_sol_table': _nan4,
+        }
+        _entry = melt_curves
+        _key = None
+    else:
+        _key = (id(solidus_func), id(liquidus_func))
+        _entry = _MELT_TABLE_CACHE.get(_key)
     _melt_cache = _MELT_TABLE_CACHE
-    _key = (id(solidus_func), id(liquidus_func))
-    _entry = _melt_cache.get(_key)
     if _entry is None:
         n_melt = 256
         log_p_axis = np.linspace(np.log10(1e8), np.log10(5e12), n_melt)
@@ -437,8 +485,17 @@ def solve_structure_via_jax(
     }
     jax_args.update(_extract_sub_args(core_cached, 'core'))
     jax_args.update(_extract_liquidus(core_cached, 'core'))
-    jax_args.update(_extract_sub_args(sol_cached, 'sol'))
-    jax_args.update(_extract_sub_args(liq_cached, 'liq'))
+    if mantle_is_unified:
+        from ..mixing import _get_mushy_zone_factor
+
+        jax_args.update(_extract_sub_args(mantle_cached, 'mun'))
+        jax_args.update(_extract_liquidus(mantle_cached, 'mun'))
+        jax_args['mushy_zone_factor_mantle'] = float(
+            _get_mushy_zone_factor(mantle_eos, mushy_zone_factors)
+        )
+    else:
+        jax_args.update(_extract_sub_args(sol_cached, 'sol'))
+        jax_args.update(_extract_sub_args(liq_cached, 'liq'))
     jax_args.update(melt_curves)
 
     has_volatile = vol_cached is not None
@@ -491,6 +548,7 @@ def solve_structure_via_jax(
         atol=float(absolute_tolerance),
         T_axis_is_radius=T_axis_is_radius,
         has_volatile=has_volatile,
+        mantle_is_unified=mantle_is_unified,
         **jax_args,
     )
     # np.asarray on a jnp.ndarray yields a read-only view of the JAX

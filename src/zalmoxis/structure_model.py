@@ -261,13 +261,14 @@ def solve_structure(
     """
     # JAX fast path — dispatch to the diffrax-based implementation when
     # requested. Falls back to numpy path on any ValueError (unsupported
-    # config: 3-layer ice, unsupported mixtures, non-PALEOS-2phase
-    # mantle, unsupported volatile profiles, etc.). Logged at warning;
-    # callers observe the same return contract either way. A
-    # volatile_profile is supported when it carries exactly one active
-    # paleos_unified volatile (the phi-blended wet mantle); profiles
-    # outside that envelope (H2 binodal, miscibility, multi-volatile)
-    # raise ValueError inside the wrapper and land on numpy.
+    # config: 3-layer ice, unsupported mixtures, a mantle in neither the
+    # unified nor the 2-phase PALEOS representation, unsupported
+    # volatile profiles, etc.). Logged at warning; callers observe the
+    # same return contract either way. A volatile_profile is supported
+    # when it carries exactly one active paleos_unified volatile (the
+    # phi-blended wet mantle); profiles outside that envelope (H2
+    # binodal, miscibility, multi-volatile) raise ValueError inside the
+    # wrapper and land on numpy.
     if use_jax:
         try:
             from .jax_eos.wrapper import solve_structure_via_jax

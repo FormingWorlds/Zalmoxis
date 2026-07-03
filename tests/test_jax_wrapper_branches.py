@@ -81,7 +81,8 @@ def _common_fixtures(*, core_format='paleos_unified', mantle_2phase=True):
             'melted_mantle': {'eos_file': liq_cache_file, 'format': 'paleos_unified'},
         }
     else:
-        mantle_mat = {'format': 'paleos_unified', '_api_resolved': True}
+        # Neither supported representation: not unified, no sub-tables.
+        mantle_mat = {'format': 'seager', '_api_resolved': True}
 
     material_dictionaries = {core_eos: core_mat, mantle_eos: mantle_mat}
     interpolation_cache = {
@@ -130,12 +131,36 @@ class TestCoreFormatValidation:
 
 
 class TestMantleFormatValidation:
-    """Mantle must be PALEOS-2phase (solid_mantle + melted_mantle keys)."""
+    """Mantle must be paleos_unified or PALEOS-2phase (sub-table keys)."""
 
-    def test_non_2phase_mantle_raises(self):
+    def test_unsupported_mantle_format_raises(self):
         layer_mixtures, mds, cache = _common_fixtures(mantle_2phase=False)
         radii = np.linspace(1.0, 1e6, 20)
         with pytest.raises(ValueError, match='PALEOS-2phase'):
+            jw.solve_structure_via_jax(
+                layer_mixtures=layer_mixtures,
+                cmb_mass=2e23,
+                core_mantle_mass=4e23,
+                radii=radii,
+                adaptive_radial_fraction=0.5,
+                relative_tolerance=1e-6,
+                absolute_tolerance=1e-8,
+                maximum_step=1e5,
+                material_dictionaries=mds,
+                interpolation_cache=cache,
+                y0=[0.0, 0.0, 1e12],
+                solidus_func=_solidus_func,
+                liquidus_func=_liquidus_func,
+                temperature_function=_t_func,
+            )
+
+    def test_unified_mantle_without_eos_file_raises(self):
+        """A malformed unified entry raises ValueError (numpy fallback),
+        not KeyError, which the caller's except clause would miss."""
+        layer_mixtures, mds, cache = _common_fixtures(mantle_2phase=False)
+        mds['PALEOS-2phase:MgSiO3'] = {'format': 'paleos_unified', '_api_resolved': True}
+        radii = np.linspace(1.0, 1e6, 20)
+        with pytest.raises(ValueError, match='no eos_file'):
             jw.solve_structure_via_jax(
                 layer_mixtures=layer_mixtures,
                 cmb_mass=2e23,

@@ -49,7 +49,7 @@ from .paleos import get_paleos_unified_density_jax
 from .tdep import get_tdep_density_jax
 
 
-@partial(jax.jit, static_argnames=('T_axis_is_radius', 'has_volatile'))
+@partial(jax.jit, static_argnames=('T_axis_is_radius', 'has_volatile', 'mantle_is_unified'))
 def coupled_odes_jax(
     radius: jnp.ndarray,
     y: jnp.ndarray,  # shape (3,): [mass, gravity, pressure]
@@ -79,32 +79,60 @@ def coupled_odes_jax(
     core_liquidus_max_log_p: float,
     core_has_liquidus_f: jnp.ndarray,
     # --- mantle Tdep (solid + liquid sub-tables + melting curves) ---
-    sol_density_grid: jnp.ndarray,
-    sol_unique_log_p: jnp.ndarray,
-    sol_unique_log_t: jnp.ndarray,
-    sol_logp_min: float,
-    sol_logt_min: float,
-    sol_dlog_p: float,
-    sol_dlog_t: float,
-    sol_n_p: int,
-    sol_n_t: int,
-    sol_p_min: float,
-    sol_p_max: float,
-    sol_lt_min_per_p: jnp.ndarray,
-    sol_lt_max_per_p: jnp.ndarray,
-    liq_density_grid: jnp.ndarray,
-    liq_unique_log_p: jnp.ndarray,
-    liq_unique_log_t: jnp.ndarray,
-    liq_logp_min: float,
-    liq_logt_min: float,
-    liq_dlog_p: float,
-    liq_dlog_t: float,
-    liq_n_p: int,
-    liq_n_t: int,
-    liq_p_min: float,
-    liq_p_max: float,
-    liq_lt_min_per_p: jnp.ndarray,
-    liq_lt_max_per_p: jnp.ndarray,
+    # Unused (and omittable) when mantle_is_unified=True; the static flag
+    # keeps the untraced branch off the compiled graph.
+    sol_density_grid: jnp.ndarray = None,  # type: ignore[assignment]
+    sol_unique_log_p: jnp.ndarray = None,  # type: ignore[assignment]
+    sol_unique_log_t: jnp.ndarray = None,  # type: ignore[assignment]
+    sol_logp_min: float = 0.0,
+    sol_logt_min: float = 0.0,
+    sol_dlog_p: float = 0.0,
+    sol_dlog_t: float = 0.0,
+    sol_n_p: int = 0,
+    sol_n_t: int = 0,
+    sol_p_min: float = 0.0,
+    sol_p_max: float = 0.0,
+    sol_lt_min_per_p: jnp.ndarray = None,  # type: ignore[assignment]
+    sol_lt_max_per_p: jnp.ndarray = None,  # type: ignore[assignment]
+    liq_density_grid: jnp.ndarray = None,  # type: ignore[assignment]
+    liq_unique_log_p: jnp.ndarray = None,  # type: ignore[assignment]
+    liq_unique_log_t: jnp.ndarray = None,  # type: ignore[assignment]
+    liq_logp_min: float = 0.0,
+    liq_logt_min: float = 0.0,
+    liq_dlog_p: float = 0.0,
+    liq_dlog_t: float = 0.0,
+    liq_n_p: int = 0,
+    liq_n_t: int = 0,
+    liq_p_min: float = 0.0,
+    liq_p_max: float = 0.0,
+    liq_lt_min_per_p: jnp.ndarray = None,  # type: ignore[assignment]
+    liq_lt_max_per_p: jnp.ndarray = None,  # type: ignore[assignment]
+    # --- mantle unified (single PALEOS table, mantle_is_unified=True) ---
+    # Same table anatomy as the core; consumed by
+    # get_paleos_unified_density_jax with the mantle's mushy zone factor
+    # (the unified path derives its solidus internally from the table's
+    # own liquidus, mirroring eos/paleos.get_paleos_unified_density; the
+    # external melting-curve tables below are NOT consulted for density,
+    # only for the wet blend's phi).
+    mushy_zone_factor_mantle: jnp.ndarray = None,  # type: ignore[assignment]
+    mun_density_grid: jnp.ndarray = None,  # type: ignore[assignment]
+    mun_unique_log_p: jnp.ndarray = None,  # type: ignore[assignment]
+    mun_unique_log_t: jnp.ndarray = None,  # type: ignore[assignment]
+    mun_logp_min: float = 0.0,
+    mun_logt_min: float = 0.0,
+    mun_dlog_p: float = 0.0,
+    mun_dlog_t: float = 0.0,
+    mun_n_p: int = 0,
+    mun_n_t: int = 0,
+    mun_p_min: float = 0.0,
+    mun_p_max: float = 0.0,
+    mun_lt_min_per_p: jnp.ndarray = None,  # type: ignore[assignment]
+    mun_lt_max_per_p: jnp.ndarray = None,  # type: ignore[assignment]
+    mun_liquidus_log_p: jnp.ndarray = None,  # type: ignore[assignment]
+    mun_liquidus_log_t: jnp.ndarray = None,  # type: ignore[assignment]
+    mun_liquidus_min_log_p: float = 0.0,
+    mun_liquidus_max_log_p: float = 0.0,
+    mun_has_liquidus_f: jnp.ndarray = None,  # type: ignore[assignment]
     # Mantle liquidus and solidus tabulated on a UNIFORM log10(P [Pa])
     # axis as ``log10(T)`` values. The wrapper samples
     # ``log10(liquidus_func(P))`` and ``log10(solidus_func(P))`` on the
@@ -167,6 +195,11 @@ def coupled_odes_jax(
     # Wet-mantle flag (static). True adds the volatile blend to the
     # mantle density; False reproduces the dry trace exactly.
     has_volatile: bool = False,
+    # Mantle-representation flag (static). False: PALEOS-2phase solid +
+    # melted sub-tables through the Tdep kernel (the original path).
+    # True: single unified PALEOS table through the same kernel the core
+    # uses.
+    mantle_is_unified: bool = False,
 ):
     """Return dy/dr = [dM/dr, dg/dr, dP/dr] at (radius, y)."""
     mass, gravity, pressure = y[0], y[1], y[2]
@@ -229,39 +262,68 @@ def coupled_odes_jax(
         core_has_liquidus_f,
     )
 
-    # Mantle density (Tdep 2-phase)
-    rho_mantle = get_tdep_density_jax(
-        pressure,
-        temperature,
-        T_sol,
-        T_liq,
-        sol_density_grid,
-        sol_unique_log_p,
-        sol_unique_log_t,
-        sol_logp_min,
-        sol_logt_min,
-        sol_dlog_p,
-        sol_dlog_t,
-        sol_n_p,
-        sol_n_t,
-        sol_p_min,
-        sol_p_max,
-        sol_lt_min_per_p,
-        sol_lt_max_per_p,
-        liq_density_grid,
-        liq_unique_log_p,
-        liq_unique_log_t,
-        liq_logp_min,
-        liq_logt_min,
-        liq_dlog_p,
-        liq_dlog_t,
-        liq_n_p,
-        liq_n_t,
-        liq_p_min,
-        liq_p_max,
-        liq_lt_min_per_p,
-        liq_lt_max_per_p,
-    )
+    # Mantle density: unified single table (same kernel as the core, its
+    # solidus derived internally from the table's own liquidus and the
+    # mantle mushy zone factor) or Tdep 2-phase (solid + melted
+    # sub-tables blended through the external melting-curve tables). The
+    # static flag keeps only the selected branch in the compiled graph.
+    if mantle_is_unified:
+        rho_mantle = get_paleos_unified_density_jax(
+            pressure,
+            temperature,
+            mushy_zone_factor_mantle,
+            mun_density_grid,
+            mun_unique_log_p,
+            mun_unique_log_t,
+            mun_logp_min,
+            mun_logt_min,
+            mun_dlog_p,
+            mun_dlog_t,
+            mun_n_p,
+            mun_n_t,
+            mun_p_min,
+            mun_p_max,
+            mun_lt_min_per_p,
+            mun_lt_max_per_p,
+            mun_liquidus_log_p,
+            mun_liquidus_log_t,
+            mun_liquidus_min_log_p,
+            mun_liquidus_max_log_p,
+            mun_has_liquidus_f,
+        )
+    else:
+        rho_mantle = get_tdep_density_jax(
+            pressure,
+            temperature,
+            T_sol,
+            T_liq,
+            sol_density_grid,
+            sol_unique_log_p,
+            sol_unique_log_t,
+            sol_logp_min,
+            sol_logt_min,
+            sol_dlog_p,
+            sol_dlog_t,
+            sol_n_p,
+            sol_n_t,
+            sol_p_min,
+            sol_p_max,
+            sol_lt_min_per_p,
+            sol_lt_max_per_p,
+            liq_density_grid,
+            liq_unique_log_p,
+            liq_unique_log_t,
+            liq_logp_min,
+            liq_logt_min,
+            liq_dlog_p,
+            liq_dlog_t,
+            liq_n_p,
+            liq_n_t,
+            liq_p_min,
+            liq_p_max,
+            liq_lt_min_per_p,
+            liq_lt_max_per_p,
+        )
 
     if has_volatile:
         # Wet mantle: blend one volatile into the silicate density,

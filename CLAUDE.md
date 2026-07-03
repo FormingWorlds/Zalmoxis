@@ -144,13 +144,17 @@ modes.
 inner ODE; the outer and middle loops are unchanged. x64 mode is enabled at
 module import to prevent float32 loss. Parity guarantee: `fast_bilinear_jax`
 agrees with the numpy reference to rtol ≤ 1e-4. Supported on the JAX path:
-2-layer single-component configurations, plus the wet mantle with a
+2-layer configurations with a paleos_unified core and a mantle in either
+representation, the unified single table (`PALEOS:MgSiO3`, the production
+default; same kernel as the core with the mantle mushy zone factor, static
+`mantle_is_unified` flag) or the 2-phase solid/melted sub-tables
+(`PALEOS-2phase:MgSiO3`, Tdep kernel); plus the wet mantle with a
 `VolatileProfile` carrying exactly one active paleos_unified volatile (the
 phi-blended suppressed harmonic mean of `calculate_mixed_density`, ported
-in `jax_eos/rhs.py` under the static `has_volatile` flag). Profiles outside
-that envelope (Chabrier:H with its binodal suppression, multi-volatile,
-`global_miscibility`, `x_interior`) and other unsupported configs fall back
-to numpy automatically.
+in `jax_eos/rhs.py` under the static `has_volatile` flag) on top of either
+mantle. Profiles outside that envelope (Chabrier:H with its binodal
+suppression, multi-volatile, `global_miscibility`, `x_interior`) and other
+unsupported configs fall back to numpy automatically.
 
 ## Standalone execution
 

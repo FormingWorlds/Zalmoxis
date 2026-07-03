@@ -32,7 +32,9 @@ import jax.numpy as jnp
 from .rhs import coupled_odes_jax
 
 
-def _build_diffeqsolve_jit(T_axis_is_radius: bool, has_volatile: bool = False):
+def _build_diffeqsolve_jit(
+    T_axis_is_radius: bool, has_volatile: bool = False, mantle_is_unified: bool = False
+):
     """Build a jitted diffeqsolve closure for one axis convention.
 
     Must be top-level so jax.jit can cache the compiled kernel across
@@ -50,7 +52,12 @@ def _build_diffeqsolve_jit(T_axis_is_radius: bool, has_volatile: bool = False):
         # static for JIT; this keeps coupled_odes_jax single-variant
         # per _solve closure.
         return coupled_odes_jax(
-            t, y, T_axis_is_radius=T_axis_is_radius, has_volatile=has_volatile, **args
+            t,
+            y,
+            T_axis_is_radius=T_axis_is_radius,
+            has_volatile=has_volatile,
+            mantle_is_unified=mantle_is_unified,
+            **args,
         )
 
     def _pressure_cond(t, y, args, **kwargs):
@@ -96,14 +103,19 @@ def _build_diffeqsolve_jit(T_axis_is_radius: bool, has_volatile: bool = False):
     return _solve
 
 
-# Separate compiled closure per (temperature-axis, wet-mantle) pair.
-_SOLVE_CACHE: dict[tuple[bool, bool], object] = {}
+# Separate compiled closure per (temperature-axis, wet-mantle,
+# mantle-representation) triple.
+_SOLVE_CACHE: dict[tuple[bool, bool, bool], object] = {}
 
 
-def _get_solve(T_axis_is_radius: bool, has_volatile: bool = False):
-    key = (T_axis_is_radius, has_volatile)
+def _get_solve(
+    T_axis_is_radius: bool, has_volatile: bool = False, mantle_is_unified: bool = False
+):
+    key = (T_axis_is_radius, has_volatile, mantle_is_unified)
     if key not in _SOLVE_CACHE:
-        _SOLVE_CACHE[key] = _build_diffeqsolve_jit(T_axis_is_radius, has_volatile)
+        _SOLVE_CACHE[key] = _build_diffeqsolve_jit(
+            T_axis_is_radius, has_volatile, mantle_is_unified
+        )
     return _SOLVE_CACHE[key]
 
 
@@ -114,6 +126,7 @@ def solve_structure_jax(
     atol=1e-6,
     T_axis_is_radius: bool = False,
     has_volatile: bool = False,
+    mantle_is_unified: bool = False,
     **rhs_kwargs,
 ):
     """Integrate the structure ODE from radii[0] to radii[-1].
@@ -141,7 +154,7 @@ def solve_structure_jax(
     ys : array of shape (n_layers, 3)
         State [M, g, P] at each radii.
     """
-    solve = _get_solve(T_axis_is_radius, has_volatile)
+    solve = _get_solve(T_axis_is_radius, has_volatile, mantle_is_unified)
     return solve(
         jnp.asarray(radii, dtype=jnp.float64),
         jnp.asarray(y0, dtype=jnp.float64),

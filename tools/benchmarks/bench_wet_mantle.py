@@ -56,6 +56,15 @@ def run(config_path, w_liquid, num_levels, use_jax):
         config_params.get('rock_solidus', 'Stixrude14-solidus'),
         config_params.get('rock_liquidus', 'Stixrude14-liquidus'),
     )
+    if melt_funcs is None:
+        # All-unified configs need no external curves for density, but
+        # the wet blend's phi does; build the defaults, as PROTEUS does.
+        from zalmoxis.melting_curves import get_solidus_liquidus_functions
+
+        melt_funcs = get_solidus_liquidus_functions(
+            config_params.get('rock_solidus', 'Stixrude14-solidus'),
+            config_params.get('rock_liquidus', 'Stixrude14-liquidus'),
+        )
 
     t0 = time.perf_counter()
     results = main(
