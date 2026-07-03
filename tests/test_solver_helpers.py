@@ -126,3 +126,46 @@ class TestTightenSolverParams:
         params['custom_thing'] = 'preserve_me'
         tight = _tighten_solver_params(params)
         assert tight['custom_thing'] == 'preserve_me'
+
+
+class TestTimeoutAcceptThreshold:
+    """The loose-accept mass-error ceiling and the warning that reports it.
+
+    A structure solve that does not tighten to the requested tolerance is
+    still accepted when its mass error sits below ``_TIMEOUT_ACCEPT_MASS_ERR``;
+    the warning that announces this must report the same ceiling it gated on.
+    Regression: the warning hard-coded 'threshold 2%' while the gate accepted
+    below 3%, so a 2.5% solution was logged as if it had cleared a 2% bar. The
+    gate and the message now read one shared constant so the reported threshold
+    cannot drift from the gate. The accept branch lives inside the slow
+    monolithic ``_solve`` driver, so this guards the gate-vs-message invariant
+    at the source rather than through a multi-minute live solve.
+    """
+
+    def test_ceiling_is_a_small_positive_fraction(self):
+        """The ceiling is a usable loose-accept fraction, not a fraction-vs-
+        percent unit slip (3%, not 3.0 or 0.0003)."""
+        from zalmoxis.solver import _TIMEOUT_ACCEPT_MASS_ERR
+
+        assert 0.005 < _TIMEOUT_ACCEPT_MASS_ERR < 0.10
+        # A wrong unit (percent written as 3.0, or per-mille as 0.0003) would
+        # fall outside this band by more than an order of magnitude.
+        assert _TIMEOUT_ACCEPT_MASS_ERR == pytest.approx(0.03, abs=1e-9)
+
+    def test_gate_and_message_share_the_constant(self):
+        """The accept gate and its warning both read the constant, and no
+        stale numeric threshold literal survives in the message."""
+        import inspect
+
+        from zalmoxis import solver
+
+        src = inspect.getsource(solver._solve)
+        # The gate condition AND the warning format both read the constant
+        # (>= 2 references: the ``elif`` test and the ``%`` argument).
+        assert src.count('_TIMEOUT_ACCEPT_MASS_ERR') >= 2, src
+        assert 'best_mass_error < _TIMEOUT_ACCEPT_MASS_ERR' in src
+        # Discriminating guard: no baked-in 'threshold N%' literal survives in
+        # the accept message that could drift from the gate (that hard-coded
+        # mismatch, 'threshold 2%' against a 3% gate, is the regressed bug).
+        assert 'threshold 2%' not in src
+        assert 'threshold 3%' not in src

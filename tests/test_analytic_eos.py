@@ -30,9 +30,14 @@ ALL_MATERIALS = sorted(VALID_MATERIAL_KEYS)
 class TestAnalyticDensityBasic:
     """Basic correctness tests for get_analytic_density()."""
 
-    @pytest.mark.parametrize('material', ALL_MATERIALS)
+    @pytest.mark.parametrize('material', sorted(SEAGER2007_MATERIALS))
     def test_zero_pressure_limit(self, material):
-        """At very low pressure, density should approach rho_0."""
+        """At very low pressure, density should approach rho_0.
+
+        Restricted to the Seager materials, which have a non-zero density
+        floor; the verification polytrope has rho_0 = 0 and is a pure power
+        law, so its low-pressure density is not governed by rho_0.
+        """
         rho_0 = SEAGER2007_MATERIALS[material][0]
         # Use a very small but positive pressure (1 Pa)
         density = get_analytic_density(1.0, material)
@@ -98,15 +103,36 @@ class TestAnalyticDensityEdgeCases:
         result = get_analytic_density(float('nan'), 'iron')
         assert result is None
 
-    @pytest.mark.parametrize('material', ALL_MATERIALS)
+    @pytest.mark.parametrize('material', sorted(SEAGER2007_MATERIALS))
     def test_high_pressure_warning(self, material, caplog):
-        """Pressure above P_MAX should log a warning but still return a value."""
+        """Pressure above P_MAX warns for a Seager fit but still returns a value.
+
+        The validity bound is an empirical property of the Seager+2007 fits, so every
+        tabulated material must warn once P exceeds P_MAX while still returning a finite
+        positive density (the solver never receives None from an over-range finite P).
+        """
         import logging
 
         with caplog.at_level(logging.WARNING):
             density = get_analytic_density(2e16, material)
         assert density is not None
+        assert density > 0.0
         assert 'exceeds validity limit' in caplog.text
+
+    def test_polytrope_above_pmax_does_not_warn(self, caplog):
+        """The exact polytrope is unbounded by P_MAX and never warns, even above it.
+
+        P = K rho^2 is exact at every pressure, so flagging it inaccurate above the Seager
+        validity bound would be wrong. The value is returned and no validity warning is
+        emitted, which discriminates the verification material from the empirical fits.
+        """
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            density = get_analytic_density(2e16, 'polytrope_n1')
+        assert density is not None
+        assert density > 0.0
+        assert 'exceeds validity limit' not in caplog.text
 
 
 @pytest.mark.unit
@@ -144,3 +170,57 @@ class TestAnalyticVsTabulated:
                 f'rho_analytic={rho_analytic:.0f}, rho_tab={rho_tab:.0f}, '
                 f'rel_diff={rel_diff:.2%}'
             )
+
+
+@pytest.mark.unit
+class TestPolytropeN1VerificationMaterial:
+    """The n=1 polytrope verification material (P = K rho^2)."""
+
+    def test_density_matches_sqrt_law(self):
+        """rho(P) = sqrt(P/K) for the registered polytrope_n1 material."""
+        import math
+
+        from zalmoxis.eos_analytic import _K_POLYTROPE_N1 as K
+
+        for pressure in (1e8, 1e10, 1e11, 5e11):
+            assert get_analytic_density(pressure, 'polytrope_n1') == pytest.approx(
+                math.sqrt(pressure / K), rel=1e-12
+            )
+
+    def test_radius_scale_is_one_earth_radius(self):
+        """K places the n=1 surface (xi = pi) at one Earth radius."""
+        import math
+
+        from zalmoxis.constants import G, earth_radius
+        from zalmoxis.eos_analytic import _K_POLYTROPE_N1 as K
+
+        radius = math.pi * math.sqrt(K / (2.0 * math.pi * G))
+        assert radius == pytest.approx(earth_radius, rel=1e-12)
+
+    def test_zero_and_subzero_pressure_have_no_density_floor(self):
+        """The polytrope has no density floor: density vanishes continuously as P -> 0.
+
+        Three checks discriminate the rho_0 = 0 power law from a floored Seager EOS: the
+        exact zero at P = 0, the identical clamp at negative pressure (the non-positive
+        guard path), and the sqrt continuity of the small-but-positive limit. A nonzero
+        floor would fail the small-P check; a wrong exponent would fail the scaling check.
+        """
+        import math
+
+        from zalmoxis.eos_analytic import _K_POLYTROPE_N1 as K
+
+        # No floor at or below zero pressure: the guard returns rho_0 = 0 exactly.
+        assert get_analytic_density(0.0, 'polytrope_n1') == pytest.approx(0.0, abs=1e-30)
+        assert get_analytic_density(-1e10, 'polytrope_n1') == pytest.approx(0.0, abs=1e-30)
+
+        # Continuity from above: the small-P density is the sqrt law, not a nonzero floor.
+        rho_small = get_analytic_density(1.0, 'polytrope_n1')
+        assert rho_small == pytest.approx(math.sqrt(1.0 / K), rel=1e-12)
+        # Strictly positive and far below every Seager floor (all Seager rho_0 > 1000).
+        assert 0.0 < rho_small < 1.0
+
+        # The exponent is 1/2: quadrupling P doubles rho. The n = 1 law would give 4x, so
+        # the ratio discriminates the correct exponent well outside the 1e-12 tolerance.
+        rho_4 = get_analytic_density(4.0, 'polytrope_n1')
+        assert rho_4 / rho_small == pytest.approx(2.0, rel=1e-12)
+        assert abs(rho_4 / rho_small - 4.0) > 1.0
