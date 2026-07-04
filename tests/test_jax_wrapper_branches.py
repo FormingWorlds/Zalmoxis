@@ -215,6 +215,54 @@ class TestMantleFormatValidation:
             )
 
 
+class TestMissingMaterialEntries:
+    """Missing registry entries raise ValueError (numpy fallback), not KeyError."""
+
+    def test_missing_mantle_material_raises(self):
+        layer_mixtures, mds, cache = _common_fixtures()
+        del mds['PALEOS-2phase:MgSiO3']
+        radii = np.linspace(1.0, 1e6, 20)
+        with pytest.raises(ValueError, match='no material entry for mantle'):
+            jw.solve_structure_via_jax(
+                layer_mixtures=layer_mixtures,
+                cmb_mass=2e23,
+                core_mantle_mass=4e23,
+                radii=radii,
+                adaptive_radial_fraction=0.5,
+                relative_tolerance=1e-6,
+                absolute_tolerance=1e-8,
+                maximum_step=1e5,
+                material_dictionaries=mds,
+                interpolation_cache=cache,
+                y0=[0.0, 0.0, 1e12],
+                solidus_func=_solidus_func,
+                liquidus_func=_liquidus_func,
+                temperature_function=_t_func,
+            )
+
+    def test_missing_core_material_raises(self):
+        layer_mixtures, mds, cache = _common_fixtures()
+        del mds['PALEOS:iron']
+        radii = np.linspace(1.0, 1e6, 20)
+        with pytest.raises(ValueError, match='no material entry for core'):
+            jw.solve_structure_via_jax(
+                layer_mixtures=layer_mixtures,
+                cmb_mass=2e23,
+                core_mantle_mass=4e23,
+                radii=radii,
+                adaptive_radial_fraction=0.5,
+                relative_tolerance=1e-6,
+                absolute_tolerance=1e-8,
+                maximum_step=1e5,
+                material_dictionaries=mds,
+                interpolation_cache=cache,
+                y0=[0.0, 0.0, 1e12],
+                solidus_func=_solidus_func,
+                liquidus_func=_liquidus_func,
+                temperature_function=_t_func,
+            )
+
+
 class TestTemperatureArraysValidation:
     """``temperature_arrays`` must be two 1-D arrays of equal length."""
 

@@ -139,7 +139,23 @@ def _validate_wet_mantle(volatile_profile, mantle_lm, material_dictionaries):
     if getattr(volatile_profile, 'x_interior', None):
         raise ValueError('JAX wet path does not support x_interior profiles')
 
-    managed = set(volatile_profile.w_liquid) | set(volatile_profile.w_solid)
+    # A profile entry for the primary silicate itself is degenerate
+    # input: numpy's VolatileProfile.blend() adds its weight to the
+    # volatile total and then overwrites its fraction with the
+    # remainder, a double-count this 2-component blend does not (and
+    # should not) replicate. Reject nonzero primary weights so the
+    # numpy fallback preserves that behavior; zero-weight primary
+    # entries contribute nothing in blend() and are tolerated.
+    primary = volatile_profile.primary_component
+    w_l_primary = float(volatile_profile.w_liquid.get(primary, 0.0))
+    w_s_primary = float(volatile_profile.w_solid.get(primary, 0.0))
+    if w_l_primary > 0.0 or w_s_primary > 0.0:
+        raise ValueError(
+            'JAX wet path: the profile carries nonzero weights for its '
+            f'primary component {primary!r}'
+        )
+
+    managed = (set(volatile_profile.w_liquid) | set(volatile_profile.w_solid)) - {primary}
     active = {}
     for key in managed:
         w_l = float(volatile_profile.w_liquid.get(key, 0.0))
@@ -157,7 +173,7 @@ def _validate_wet_mantle(volatile_profile, mantle_lm, material_dictionaries):
     # An unmanaged extra component keeps its fraction on the numpy path,
     # so dropping it here would silently misrepresent the density;
     # reject instead, and the caller falls back to numpy.
-    allowed = managed | {volatile_profile.primary_component}
+    allowed = managed | {primary}
     extras = [c for c in mantle_lm.components if c not in allowed]
     if extras:
         raise ValueError(
@@ -240,7 +256,10 @@ def solve_structure_via_jax(
     # Core cache: paleos_unified (load via _ensure_unified_cache)
     core_lm = layer_mixtures['core']
     core_eos = core_lm.components[0]  # single-component assumption
-    core_mat = material_dictionaries[core_eos]
+    core_mat = material_dictionaries.get(core_eos)
+    if core_mat is None:
+        # Same fallback contract as the mantle guard below.
+        raise ValueError(f'JAX path: no material entry for core {core_eos!r}')
     # Resolve PALEOS-API lazily if needed (matches numpy dispatch)
     from ..eos.dispatch import _is_paleos_api
 
@@ -283,7 +302,11 @@ def solve_structure_via_jax(
                 f'volatile profile, got {mantle_lm.components!r}'
             )
         mantle_eos = mantle_lm.components[0]
-    mantle_mat = material_dictionaries[mantle_eos]
+    mantle_mat = material_dictionaries.get(mantle_eos)
+    if mantle_mat is None:
+        # ValueError, not KeyError: the caller's numpy fallback only
+        # catches ValueError.
+        raise ValueError(f'JAX path: no material entry for mantle {mantle_eos!r}')
     if '_api_resolved' not in mantle_mat:
         if _is_paleos_api(
             mantle_mat

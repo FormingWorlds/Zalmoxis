@@ -296,6 +296,52 @@ def test_wet_mantle_with_unmanaged_component_falls_back():
     assert w_s == 0.0
 
 
+@pytest.mark.unit
+def test_wet_profile_with_weighted_primary_falls_back():
+    """A nonzero profile weight on the primary silicate is degenerate
+    input: numpy's blend() double-counts it into the volatile total
+    before the remainder overwrite, which the 2-component JAX blend
+    does not replicate. Reject to the numpy fallback, which preserves
+    that behavior. Zero-weight primary entries contribute nothing in
+    blend() and stay allowed."""
+    from zalmoxis.jax_eos.wrapper import _validate_wet_mantle
+    from zalmoxis.mixing import LayerMixture, VolatileProfile
+
+    mats = {'PALEOS:H2O': {}}
+    lm = LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.99, 0.01])
+
+    # Weighted primary alongside a genuine volatile: rejected.
+    p_weighted = VolatileProfile(
+        w_liquid={'PALEOS:MgSiO3': 0.9, 'PALEOS:H2O': 0.05},
+        w_solid={},
+        primary_component='PALEOS:MgSiO3',
+    )
+    with pytest.raises(ValueError, match='nonzero weights for its primary'):
+        _validate_wet_mantle(p_weighted, lm, mats)
+
+    # Weighted primary alone: rejected the same way (numpy would treat
+    # it as pure silicate via the remainder overwrite).
+    p_only = VolatileProfile(
+        w_liquid={'PALEOS:MgSiO3': 0.9},
+        w_solid={},
+        primary_component='PALEOS:MgSiO3',
+    )
+    with pytest.raises(ValueError, match='nonzero weights for its primary'):
+        _validate_wet_mantle(p_only, lm, mats)
+
+    # Zero-weight primary entry: harmless, the real volatile is found.
+    p_zero = VolatileProfile(
+        w_liquid={'PALEOS:MgSiO3': 0.0, 'PALEOS:H2O': 0.05},
+        w_solid={},
+        primary_component='PALEOS:MgSiO3',
+    )
+    vol_eos, (w_l, w_s) = _validate_wet_mantle(p_zero, lm, mats)
+    assert vol_eos == 'PALEOS:H2O'
+    assert w_l == pytest.approx(0.05)
+    # Exact zero is intended: literal passthrough, no arithmetic.
+    assert w_s == 0.0
+
+
 @pytest.mark.integration
 @pytest.mark.physics_invariant
 def test_wet_blend_reduces_to_dry_at_zero_w_liquid():
