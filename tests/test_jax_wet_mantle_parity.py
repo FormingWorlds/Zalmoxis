@@ -168,7 +168,20 @@ def test_coupled_odes_jax_wet_parity():
     numpy_dydr = np.asarray(numpy_dydr, dtype=float)
     jax_dydr = np.asarray(jax_dydr, dtype=float)
 
-    both_nonzero = (np.abs(numpy_dydr).max(axis=1) > 0) & (np.abs(jax_dydr).max(axis=1) > 0)
+    nz_numpy = np.abs(numpy_dydr).max(axis=1) > 0
+    nz_jax = np.abs(jax_dydr).max(axis=1) > 0
+    # Directional mask check. JAX producing a derivative where numpy
+    # zeroed the shell would be a porting bug: assert none. The opposite
+    # direction is the documented un-ported numpy KDTree NN fallback
+    # rescuing rare out-of-table (P, T) queries (jax_eos/paleos.py
+    # returns NaN there, zeroing the RHS): tolerate a small count so a
+    # silently-zeroed JAX branch still fails loudly.
+    assert int((nz_jax & ~nz_numpy).sum()) == 0, 'JAX nonzero where numpy zeroed'
+    n_nn_rescued = int((nz_numpy & ~nz_jax).sum())
+    print(f'NN-fallback-rescued points (numpy nonzero, JAX zeroed): {n_nn_rescued}')
+    assert n_nn_rescued <= 4, f'too many JAX-zeroed points: {n_nn_rescued}/200'
+
+    both_nonzero = nz_numpy & nz_jax
     n_both = int(both_nonzero.sum())
     assert n_both > 100, f'too few comparable points: {n_both}/200'
 
@@ -193,7 +206,7 @@ def test_coupled_odes_jax_wet_parity():
     assert max_rel <= 1e-5, f'wet RHS parity failed: max_rel={max_rel:.3e} (want <=1e-5)'
 
 
-@pytest.mark.integration
+@pytest.mark.unit
 def test_wet_profile_gates_fall_back():
     """Unsupported profiles raise ValueError (numpy fallback) in the wrapper."""
     from zalmoxis.jax_eos.wrapper import _validate_wet_mantle
@@ -242,10 +255,12 @@ def test_wet_profile_gates_fall_back():
     vol_eos, (w_l, w_s) = _validate_wet_mantle(pm, lm_ok, mats)
     assert vol_eos == 'PALEOS:H2O'
     assert w_l == pytest.approx(0.05)
+    # Exact zero is intended: the validator passes the 0.0 literal
+    # through with no arithmetic.
     assert w_s == 0.0
 
 
-@pytest.mark.integration
+@pytest.mark.unit
 def test_wet_mantle_with_unmanaged_component_falls_back():
     """A mixture component outside the profile keeps its fraction on the
     numpy path (apply_to_mixture), so the 2-component JAX blend would
@@ -277,4 +292,39 @@ def test_wet_mantle_with_unmanaged_component_falls_back():
     vol_eos, (w_l, w_s) = _validate_wet_mantle(profile_managed, lm_managed, mats)
     assert vol_eos == 'PALEOS:H2O'
     assert w_l == pytest.approx(0.05)
+    # Exact zero is intended: literal passthrough, no arithmetic.
     assert w_s == 0.0
+
+
+@pytest.mark.integration
+@pytest.mark.physics_invariant
+def test_wet_blend_reduces_to_dry_at_zero_w_liquid():
+    """Independent anchor: the parity suite is purely differential, so a
+    bug shared by both implementations would pass. With w_liquid and
+    w_solid at zero the wet blend must reduce to the dry silicate
+    density (the volatile term vanishes and the sigmoid cancels in the
+    single-component harmonic mean), which pins the blend algebra
+    without cross-checking two copies of it."""
+    from zalmoxis.jax_eos.rhs import coupled_odes_jax
+
+    setup = _wet_setup()
+    dry_args = dict(setup['jax_args'])
+    wet_zero_args = dict(setup['jax_args'])
+    wet_zero_args['vol_w_liquid'] = 0.0
+    wet_zero_args['vol_w_solid'] = 0.0
+
+    rng = np.random.default_rng(509)
+    M_planet = 5.972e24
+    n_checked = 0
+    for _ in range(100):
+        r = rng.uniform(1e5, 6.4e6)
+        y = np.array(
+            [rng.uniform(0.0, M_planet), rng.uniform(0.5, 25.0), rng.uniform(1e6, 3e11)]
+        )
+        dv = np.asarray(coupled_odes_jax(r, y, has_volatile=False, **dry_args))
+        wv = np.asarray(coupled_odes_jax(r, y, has_volatile=True, **wet_zero_args))
+        if np.abs(dv).max() == 0.0 and np.abs(wv).max() == 0.0:
+            continue  # both zeroed (out-of-table shell); nothing to compare
+        n_checked += 1
+        np.testing.assert_allclose(wv, dv, rtol=1e-13, atol=0.0)
+    assert n_checked > 50, f'too few comparable points: {n_checked}/100'

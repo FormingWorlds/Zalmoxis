@@ -178,6 +178,42 @@ class TestMantleFormatValidation:
                 temperature_function=_t_func,
             )
 
+    def test_volatile_without_eos_file_raises(self):
+        """The volatile branch mirrors the mantle guard: a resolved but
+        incomplete paleos_unified volatile entry (format set, eos_file
+        missing) raises ValueError for the numpy fallback, not KeyError."""
+        from zalmoxis.mixing import LayerMixture, VolatileProfile
+
+        layer_mixtures, mds, cache = _common_fixtures()
+        layer_mixtures['mantle'] = LayerMixture(
+            ['PALEOS-2phase:MgSiO3', 'PALEOS:H2O'], [0.99, 0.01]
+        )
+        mds['PALEOS:H2O'] = {'format': 'paleos_unified', '_api_resolved': True}
+        profile = VolatileProfile(
+            w_liquid={'PALEOS:H2O': 0.05},
+            w_solid={'PALEOS:H2O': 0.0},
+            primary_component='PALEOS-2phase:MgSiO3',
+        )
+        radii = np.linspace(1.0, 1e6, 20)
+        with pytest.raises(ValueError, match='no eos_file'):
+            jw.solve_structure_via_jax(
+                layer_mixtures=layer_mixtures,
+                cmb_mass=2e23,
+                core_mantle_mass=4e23,
+                radii=radii,
+                adaptive_radial_fraction=0.5,
+                relative_tolerance=1e-6,
+                absolute_tolerance=1e-8,
+                maximum_step=1e5,
+                material_dictionaries=mds,
+                interpolation_cache=cache,
+                y0=[0.0, 0.0, 1e12],
+                solidus_func=_solidus_func,
+                liquidus_func=_liquidus_func,
+                temperature_function=_t_func,
+                volatile_profile=profile,
+            )
+
 
 class TestTemperatureArraysValidation:
     """``temperature_arrays`` must be two 1-D arrays of equal length."""

@@ -85,8 +85,11 @@ def cli(argv=None):
     ap.add_argument('--num-levels', type=int, default=0)
     args = ap.parse_args(argv)
 
+    import zalmoxis.jax_eos.wrapper as jax_wrapper
+
     rows = []
     for label, use_jax in (('numpy', False), ('jax', True)):
+        calls_before = jax_wrapper._CALL_COUNT
         results, wall = run(args.config, args.w_liquid, args.num_levels, use_jax)
         R = float(results['radii'][-1])
         rows.append((label, wall, R, bool(results['converged'])))
@@ -94,14 +97,23 @@ def cli(argv=None):
             f'[{label:5s}] wall={wall:8.1f} s  R={R:.6e} m  converged={results["converged"]}',
             flush=True,
         )
+        # The JAX path silently falls back to numpy on ValueError; a
+        # mis-scoped config would then compare numpy against numpy and
+        # read as validated. Verify the JAX wrapper actually ran.
+        if use_jax and jax_wrapper._CALL_COUNT == calls_before:
+            print(
+                'ERROR: the JAX leg never reached solve_structure_via_jax '
+                '(silent numpy fallback); comparison is numpy vs numpy.'
+            )
+            return 1
 
     (_, wall_np, R_np, ok_np), (_, wall_jx, R_jx, ok_jx) = rows
-    dR = abs(R_jx / R_np - 1.0)
-    print(f'\nspeedup (numpy/jax wall) = {wall_np / max(wall_jx, 1e-9):.2f}x')
-    print(f'|R_jax/R_numpy - 1|      = {dR:.3e}')
     if not (ok_np and ok_jx):
         print('WARNING: at least one path did not fully converge; times not comparable.')
         return 1
+    dR = abs(R_jx / R_np - 1.0)
+    print(f'\nspeedup (numpy/jax wall) = {wall_np / max(wall_jx, 1e-9):.2f}x')
+    print(f'|R_jax/R_numpy - 1|      = {dR:.3e}')
     return 0
 
 

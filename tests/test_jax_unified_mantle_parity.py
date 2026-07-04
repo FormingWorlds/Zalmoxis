@@ -161,7 +161,17 @@ def _compare_rhs(setup, layer_mixtures, mat_dicts, profile, jax_extra, seed, tol
 
     numpy_dydr = np.asarray(numpy_dydr, dtype=float)
     jax_dydr = np.asarray(jax_dydr, dtype=float)
-    both = (np.abs(numpy_dydr).max(axis=1) > 0) & (np.abs(jax_dydr).max(axis=1) > 0)
+    nz_numpy = np.abs(numpy_dydr).max(axis=1) > 0
+    nz_jax = np.abs(jax_dydr).max(axis=1) > 0
+    # Directional mask check: JAX nonzero where numpy zeroed would be a
+    # porting bug (assert none); numpy nonzero where JAX zeroed is the
+    # documented un-ported NN fallback on rare out-of-table queries
+    # (bounded so a silently-zeroed JAX branch still fails loudly).
+    assert int((nz_jax & ~nz_numpy).sum()) == 0, 'JAX nonzero where numpy zeroed'
+    n_nn_rescued = int((nz_numpy & ~nz_jax).sum())
+    print(f'NN-fallback-rescued points (numpy nonzero, JAX zeroed): {n_nn_rescued}')
+    assert n_nn_rescued <= 4, f'too many JAX-zeroed points: {n_nn_rescued}/200'
+    both = nz_numpy & nz_jax
     n_both = int(both.sum())
     assert n_both > 100, f'too few comparable points: {n_both}/200'
     with np.errstate(divide='ignore', invalid='ignore'):
@@ -189,6 +199,27 @@ def test_unified_mantle_dry_parity():
 @pytest.mark.integration
 def test_unified_mantle_wet_parity():
     """Wet unified mantle: the volatile blend composes with the unified kernel."""
+    from zalmoxis.mixing import LayerMixture, VolatileProfile
+
+    setup = _unified_setup(mushy_zone_factor=0.8)
+    jax_extra, vol_mat = _h2o_extra(setup)
+
+    layer_mixtures = {
+        'core': LayerMixture(['PALEOS:iron'], [1.0]),
+        'mantle': LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.99, 0.01]),
+    }
+    mat_dicts = dict(setup['mat_dicts'])
+    mat_dicts['PALEOS:H2O'] = vol_mat
+    profile = VolatileProfile(
+        w_liquid={'PALEOS:H2O': 0.083},
+        w_solid={'PALEOS:H2O': 0.0},
+        primary_component='PALEOS:MgSiO3',
+    )
+    _compare_rhs(setup, layer_mixtures, mat_dicts, profile, jax_extra, seed=419, tol=1e-5)
+
+
+def _h2o_extra(setup):
+    """Wet jax_extra for a PALEOS:H2O volatile on top of the unified mantle."""
     from zalmoxis.eos.interpolation import _ensure_unified_cache
     from zalmoxis.eos.paleos_api_cache import resolve_registry_entry
     from zalmoxis.mixing import (
@@ -196,18 +227,15 @@ def test_unified_mantle_wet_parity():
         _COMPONENT_RHO_SCALE,
         CONDENSED_RHO_MIN_DEFAULT,
         CONDENSED_RHO_SCALE_DEFAULT,
-        LayerMixture,
-        VolatileProfile,
     )
 
-    setup = _unified_setup(mushy_zone_factor=0.8)
     vol_mat = setup['mat_dicts']['PALEOS:H2O']
     resolve_registry_entry(vol_mat)
     if not os.path.isfile(vol_mat.get('eos_file', '')):
         pytest.skip('H2O EOS file missing')
     vol_cached = _ensure_unified_cache(vol_mat['eos_file'], setup['interp_cache'])
 
-    jax_extra = {
+    extra = {
         'has_volatile': True,
         'vol_w_liquid': 0.083,
         'vol_w_solid': 0.0,
@@ -232,21 +260,52 @@ def test_unified_mantle_wet_parity():
     }
     vlp = np.asarray(vol_cached.get('liquidus_log_p', []), dtype=float)
     vlt = np.asarray(vol_cached.get('liquidus_log_t', []), dtype=float)
-    jax_extra['vol_liquidus_log_p'] = vlp
-    jax_extra['vol_liquidus_log_t'] = vlt
-    jax_extra['vol_liquidus_min_log_p'] = float(vlp[0]) if len(vlp) else 0.0
-    jax_extra['vol_liquidus_max_log_p'] = float(vlp[-1]) if len(vlp) else 0.0
-    jax_extra['vol_has_liquidus_f'] = 1.0 if len(vlp) else 0.0
+    extra['vol_liquidus_log_p'] = vlp
+    extra['vol_liquidus_log_t'] = vlt
+    extra['vol_liquidus_min_log_p'] = float(vlp[0]) if len(vlp) else 0.0
+    extra['vol_liquidus_max_log_p'] = float(vlp[-1]) if len(vlp) else 0.0
+    extra['vol_has_liquidus_f'] = 1.0 if len(vlp) else 0.0
+    return extra, vol_mat
+
+
+@pytest.mark.integration
+def test_unified_wet_parity_without_melting_curves():
+    """The all-unified production default hands the wrapper no external
+    melting curves (the loader returns None; the unified density derives
+    its solidus internally). The wrapper then feeds NaN melt tables and
+    the wet blend's phi collapses to the same 0.5 fallback numpy's
+    compute_melt_fraction returns for None curves. This is the exact
+    path a standalone default-config wet solve takes, so pin the parity
+    on it directly. (A 2-phase mantle cannot reach this regime: its
+    numpy Tdep density itself requires the curves and raises.)"""
+    from zalmoxis.mixing import LayerMixture, VolatileProfile
+
+    setup = _unified_setup(mushy_zone_factor=0.8)
+    jax_extra, vol_mat = _h2o_extra(setup)
+
+    # None curves for numpy; the wrapper's NaN placeholder tables for JAX.
+    setup['sol_func'] = None
+    setup['liq_func'] = None
+    nan4 = np.full(4, np.nan)
+    setup['jax_args'].update(
+        {
+            'melt_log_p_min': 8.0,
+            'melt_dlog_p': 1.0,
+            'melt_n': 4,
+            'log_T_liq_table': nan4,
+            'log_T_sol_table': nan4,
+        }
+    )
 
     layer_mixtures = {
         'core': LayerMixture(['PALEOS:iron'], [1.0]),
         'mantle': LayerMixture(['PALEOS:MgSiO3', 'PALEOS:H2O'], [0.99, 0.01]),
     }
+    mat_dicts = dict(setup['mat_dicts'])
+    mat_dicts['PALEOS:H2O'] = vol_mat
     profile = VolatileProfile(
         w_liquid={'PALEOS:H2O': 0.083},
         w_solid={'PALEOS:H2O': 0.0},
         primary_component='PALEOS:MgSiO3',
     )
-    _compare_rhs(
-        setup, layer_mixtures, setup['mat_dicts'], profile, jax_extra, seed=419, tol=1e-5
-    )
+    _compare_rhs(setup, layer_mixtures, mat_dicts, profile, jax_extra, seed=613, tol=1e-5)

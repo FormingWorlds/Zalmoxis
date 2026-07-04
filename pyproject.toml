@@ -128,6 +128,7 @@ markers = [
     "smoke: Single-mass solver runs that exercise the full code path with relaxed cost (1 M_earth only)",
     "integration: Real-physics integration tests against published references (PALEOS rocky 1 + 5 M_earth)",
     "slow: Slow convergence tests (minutes, full composition grids)",
+    "physics_invariant: Tests pinning a physical invariant independently of a reference implementation",
 ]
 
 [tool.ruff]

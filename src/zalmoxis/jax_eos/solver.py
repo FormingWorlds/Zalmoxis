@@ -39,10 +39,11 @@ def _build_diffeqsolve_jit(
 
     Must be top-level so jax.jit can cache the compiled kernel across
     wrapper calls. Closure over diffrax so the numpy-path import cost
-    stays zero. ``T_axis_is_radius`` and ``has_volatile`` are closed
-    over (not traced args) so the corresponding branches of
-    ``coupled_odes_jax`` are specialised at compile time. A separate
-    compiled variant is cached per flag triple in ``_SOLVE_CACHE`` below.
+    stays zero. ``T_axis_is_radius``, ``has_volatile``, and
+    ``mantle_is_unified`` are closed over (not traced args) so the
+    corresponding branches of ``coupled_odes_jax`` are specialised at
+    compile time. A separate compiled variant is cached per flag triple
+    in ``_SOLVE_CACHE`` below.
     """
     import diffrax
     import optimistix as optx

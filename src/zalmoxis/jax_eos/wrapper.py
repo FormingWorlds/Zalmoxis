@@ -340,7 +340,14 @@ def solve_structure_via_jax(
                 f'JAX wet path requires a paleos_unified volatile, got '
                 f'format {vol_mat.get("format")!r} for {vol_eos!r}'
             )
-        vol_cached = _ensure_unified_cache(vol_mat['eos_file'], interpolation_cache)
+        _vol_file = vol_mat.get('eos_file')
+        if not _vol_file:
+            # Raise ValueError, not KeyError: the caller's numpy
+            # fallback only catches ValueError (mirrors the mantle guard).
+            raise ValueError(
+                f'paleos_unified volatile entry for {vol_eos!r} carries no eos_file'
+            )
+        vol_cached = _ensure_unified_cache(_vol_file, interpolation_cache)
 
     # mushy_zone_factor for the CORE (paleos_unified takes one; mantle uses Tdep
     # which handles its own solid/liquid separately).
