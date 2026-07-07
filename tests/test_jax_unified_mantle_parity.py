@@ -184,6 +184,7 @@ def _compare_rhs(setup, layer_mixtures, mat_dicts, profile, jax_extra, seed, tol
 
 
 @pytest.mark.integration
+@pytest.mark.reference_pinned
 def test_unified_mantle_dry_parity():
     """Dry unified mantle: JAX RHS matches numpy, mushy zone included."""
     from zalmoxis.mixing import LayerMixture
@@ -197,6 +198,7 @@ def test_unified_mantle_dry_parity():
 
 
 @pytest.mark.integration
+@pytest.mark.reference_pinned
 def test_unified_mantle_wet_parity():
     """Wet unified mantle: the volatile blend composes with the unified kernel."""
     from zalmoxis.mixing import LayerMixture, VolatileProfile
@@ -269,6 +271,7 @@ def _h2o_extra(setup):
 
 
 @pytest.mark.integration
+@pytest.mark.reference_pinned
 def test_unified_wet_parity_without_melting_curves():
     """The all-unified production default hands the wrapper no external
     melting curves (the loader returns None; the unified density derives

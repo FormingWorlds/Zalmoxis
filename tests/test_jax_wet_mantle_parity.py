@@ -97,6 +97,7 @@ def _wet_setup():
 
 
 @pytest.mark.integration
+@pytest.mark.reference_pinned
 def test_coupled_odes_jax_wet_parity():
     """JAX wet-mantle RHS matches numpy coupled_odes + VolatileProfile."""
     from zalmoxis.jax_eos.rhs import coupled_odes_jax
