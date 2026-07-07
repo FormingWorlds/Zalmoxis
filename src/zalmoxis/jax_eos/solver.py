@@ -32,24 +32,34 @@ import jax.numpy as jnp
 from .rhs import coupled_odes_jax
 
 
-def _build_diffeqsolve_jit(T_axis_is_radius: bool):
+def _build_diffeqsolve_jit(
+    T_axis_is_radius: bool, has_volatile: bool = False, mantle_is_unified: bool = False
+):
     """Build a jitted diffeqsolve closure for one axis convention.
 
     Must be top-level so jax.jit can cache the compiled kernel across
     wrapper calls. Closure over diffrax so the numpy-path import cost
-    stays zero. ``T_axis_is_radius`` is closed over (not a traced arg)
-    so the corresponding branch of ``coupled_odes_jax`` is specialised
-    at compile time. A separate compiled variant is cached per flag
-    value in ``_SOLVE_CACHE`` below.
+    stays zero. ``T_axis_is_radius``, ``has_volatile``, and
+    ``mantle_is_unified`` are closed over (not traced args) so the
+    corresponding branches of ``coupled_odes_jax`` are specialised at
+    compile time. A separate compiled variant is cached per flag triple
+    in ``_SOLVE_CACHE`` below.
     """
     import diffrax
     import optimistix as optx
 
     def _ode_rhs(t, y, args):
-        # T_axis_is_radius is closed over (not in args) so it stays
+        # The static flags are closed over (not in args) so they stay
         # static for JIT; this keeps coupled_odes_jax single-variant
         # per _solve closure.
-        return coupled_odes_jax(t, y, T_axis_is_radius=T_axis_is_radius, **args)
+        return coupled_odes_jax(
+            t,
+            y,
+            T_axis_is_radius=T_axis_is_radius,
+            has_volatile=has_volatile,
+            mantle_is_unified=mantle_is_unified,
+            **args,
+        )
 
     def _pressure_cond(t, y, args, **kwargs):
         # Event fires when pressure crosses zero. direction=False tells
@@ -94,14 +104,20 @@ def _build_diffeqsolve_jit(T_axis_is_radius: bool):
     return _solve
 
 
-# Separate compiled closure per temperature-axis convention.
-_SOLVE_CACHE: dict[bool, object] = {}
+# Separate compiled closure per (temperature-axis, wet-mantle,
+# mantle-representation) triple.
+_SOLVE_CACHE: dict[tuple[bool, bool, bool], object] = {}
 
 
-def _get_solve(T_axis_is_radius: bool):
-    if T_axis_is_radius not in _SOLVE_CACHE:
-        _SOLVE_CACHE[T_axis_is_radius] = _build_diffeqsolve_jit(T_axis_is_radius)
-    return _SOLVE_CACHE[T_axis_is_radius]
+def _get_solve(
+    T_axis_is_radius: bool, has_volatile: bool = False, mantle_is_unified: bool = False
+):
+    key = (T_axis_is_radius, has_volatile, mantle_is_unified)
+    if key not in _SOLVE_CACHE:
+        _SOLVE_CACHE[key] = _build_diffeqsolve_jit(
+            T_axis_is_radius, has_volatile, mantle_is_unified
+        )
+    return _SOLVE_CACHE[key]
 
 
 def solve_structure_jax(
@@ -110,6 +126,8 @@ def solve_structure_jax(
     rtol=1e-5,
     atol=1e-6,
     T_axis_is_radius: bool = False,
+    has_volatile: bool = False,
+    mantle_is_unified: bool = False,
     **rhs_kwargs,
 ):
     """Integrate the structure ODE from radii[0] to radii[-1].
@@ -137,7 +155,7 @@ def solve_structure_jax(
     ys : array of shape (n_layers, 3)
         State [M, g, P] at each radii.
     """
-    solve = _get_solve(T_axis_is_radius)
+    solve = _get_solve(T_axis_is_radius, has_volatile, mantle_is_unified)
     return solve(
         jnp.asarray(radii, dtype=jnp.float64),
         jnp.asarray(y0, dtype=jnp.float64),
