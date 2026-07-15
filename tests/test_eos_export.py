@@ -162,6 +162,72 @@ def melting_curves():
     return solidus_func, liquidus_func
 
 
+def _s_pdep(P, T):
+    """P- and T-dependent synthetic entropy [J/(kg*K)], monotone in T.
+
+    Unlike ``_s``, this depends on pressure, so an isentrope is a genuine
+    ``T(P)`` curve rather than a constant-temperature line. That lets an
+    adiabat test exercise the molten interpolation as a function of depth and
+    supplies an independent reference for the recovered profile entropy.
+    """
+    return 1000.0 * np.log(T / 300.0) - 150.0 * np.log(P / 1.0e6)
+
+
+def _pdep_solidus(P):
+    """Solidus for the P-dependent 2-phase fixture; scalar in, scalar out."""
+    out = 2000.0 + 200.0 * np.log10(np.asarray(P) / 1e5)
+    return float(out) if np.ndim(P) == 0 else out
+
+
+def _pdep_liquidus(P):
+    """Liquidus for the P-dependent 2-phase fixture; scalar in, scalar out."""
+    out = 2400.0 + 220.0 * np.log10(np.asarray(P) / 1e5)
+    return float(out) if np.ndim(P) == 0 else out
+
+
+def _write_pdep_phase_table(path, P_arr, T_arr, s_factor, phase, nan_above=None):
+    """Write a synthetic P-dependent phase table.
+
+    When ``nan_above`` (a callable ``P -> T_cut``) is given, the entropy of
+    every row with ``T > T_cut(P)`` is written as ``nan``, so
+    ``load_paleos_all_properties`` returns a NaN entropy there. This mirrors
+    the real PALEOS solid table, whose entropy is non-converged (NaN) at
+    molten temperatures above the liquidus.
+    """
+    lines = [f'# synthetic P-dependent {phase} table\n']
+    for P in P_arr:
+        for T in T_arr:
+            if nan_above is not None and T > nan_above(P):
+                s_val = 'nan'
+            else:
+                s_val = f'{s_factor * _s_pdep(P, T):.8e}'
+            lines.append(
+                f'{P:.8e} {T:.8e} {4000.0:.8e} {1.0e3 * T:.8e} '
+                f'{s_val} 1200 1100 1e-5 0.3 {phase}\n'
+            )
+    Path(path).write_text(''.join(lines))
+
+
+@pytest.fixture
+def pdep_2phase(tmp_path):
+    """P-dependent solid/liquid tables; solid entropy is NaN above the liquidus.
+
+    The liquid entropy is 1.08x the solid formula and finite throughout; the
+    solid entropy is NaN for ``T > liquidus(P)``, reproducing the real PALEOS
+    solid table's non-converged molten region. A fully molten adiabat over
+    these tables reproduces the NaN plateau on the unfixed code (molten points
+    read the solid table) and a finite, depth-varying profile once molten
+    points are routed to the liquid table.
+    """
+    P_arr = np.logspace(6.0, 9.0, 16)
+    T_arr = np.logspace(3.0, 4.3, 28)
+    solid = tmp_path / 'pdep_solid.dat'
+    liquid = tmp_path / 'pdep_liquid.dat'
+    _write_pdep_phase_table(solid, P_arr, T_arr, 1.0, 'solid', nan_above=_pdep_liquidus)
+    _write_pdep_phase_table(liquid, P_arr, T_arr, 1.08, 'liquid')
+    return solid, liquid
+
+
 # ---------------------------------------------------------------------------
 # load_paleos_all_properties
 # ---------------------------------------------------------------------------
@@ -1048,6 +1114,37 @@ class TestComputeSurfaceEntropy:
         # weighted S_target should be larger than the unified result.
         assert twophase > unified
 
+    @pytest.mark.physics_invariant
+    def test_fully_molten_surface_reads_liquid_table(self, pdep_2phase):
+        """A fully molten surface anchor reads the liquid table instead of raising.
+
+        ``compute_surface_entropy`` shares the phase routing of
+        ``compute_entropy_adiabat`` and drives the SPIDER entropy-IC cross-check
+        and the ``adiabatic_from_cmb`` fallback, both of which anchor at fully
+        molten temperatures. For a 2-phase mantle the single-phase table is the
+        solid table, NaN at molten temperatures, so a molten anchor previously
+        fell through to it and tripped the NaN guard (silently disabling the
+        cross-check, or raising in the fallback). The molten branch must return
+        the liquid entropy: the 8% gap from the solid value discriminates the
+        tables, and the result must be finite.
+        """
+        solid_path, liquid_path = pdep_2phase
+        T_surf = 4000.0  # molten at P=1e6 (liquidus 2620 K); solid table NaN here
+        result = eos_export.compute_surface_entropy(
+            solid_path,
+            T_surface=T_surf,
+            P_surface=1.0e6,
+            solidus_func=_pdep_solidus,
+            liquidus_func=_pdep_liquidus,
+            solid_eos_file=solid_path,
+            liquid_eos_file=liquid_path,
+        )
+        s_liquid = 1.08 * _s_pdep(1.0e6, T_surf)
+        s_solid = _s_pdep(1.0e6, T_surf)
+        assert np.isfinite(result['S_target'])
+        np.testing.assert_allclose(result['S_target'], s_liquid, rtol=1e-3)
+        assert abs(result['S_target'] - s_solid) > 0.05 * abs(s_solid)
+
 
 # ---------------------------------------------------------------------------
 # compute_entropy_adiabat
@@ -1119,3 +1216,91 @@ class TestComputeEntropyAdiabat:
         )
         assert np.all(result['T'] > 0)
         assert np.isfinite(result['S_target'])
+
+    @pytest.mark.physics_invariant
+    def test_fully_molten_adiabat_reads_liquid_table(self, pdep_2phase):
+        """Fully molten adiabat reads the liquid table at every depth: finite, isentropic, depth-varying.
+
+        A super-liquidus initial condition is molten at every depth, yet the
+        single-phase table handed to ``compute_entropy_adiabat`` is the solid
+        table, whose entropy is NaN at molten temperatures (here: NaN above the
+        liquidus). Without phase routing the deep molten points come back NaN,
+        the profile flattens to a constant temperature, and isentropy breaks.
+        The liquid table carries s = 1.08x the solid formula, so three things
+        must hold and each fails on the unfixed code:
+
+        * the fully molten surface anchor's entropy equals the liquid value,
+          not the solid value 8% below it (table discrimination);
+        * the temperature rises monotonically with depth rather than pinning to
+          the surface value, and the whole profile is finite (no NaN plateau);
+        * every profile point lies on the liquid isentrope, checked by an
+          independent recomputation ``1.08 * s(P, T)`` from the fixture formula
+          (not the returned ``S_profile``, which brentq forces to ``S_target``),
+          so a depth-routing regression that reads solid at depth is caught.
+        """
+        solid_path, liquid_path = pdep_2phase
+        P_surf, P_cmb = 1.0e6, 1.0e9
+        # Above liquidus(P_surf)=2620 K and molten all the way to P_cmb.
+        T_surf = 4000.0
+        result = eos_export.compute_entropy_adiabat(
+            solid_path,
+            T_surface=T_surf,
+            P_surface=P_surf,
+            P_cmb=P_cmb,
+            n_points=24,
+            solidus_func=_pdep_solidus,
+            liquidus_func=_pdep_liquidus,
+            solid_eos_file=solid_path,
+            liquid_eos_file=liquid_path,
+        )
+        P = np.asarray(result['P'])
+        T = np.asarray(result['T'])
+        S_target = result['S_target']
+        s_liquid = 1.08 * _s_pdep(P_surf, T_surf)  # liquid-table anchor entropy
+        s_solid = _s_pdep(P_surf, T_surf)  # solid-table value (mis-routed branch)
+        # Surface anchor entropy is the liquid value, not the solid value.
+        assert np.isfinite(S_target)
+        np.testing.assert_allclose(S_target, s_liquid, rtol=1e-3)
+        assert abs(S_target - s_solid) > 0.05 * abs(s_solid)  # 8% gap discriminates
+        # No NaN plateau: finite, and temperature rises with depth (the unfixed
+        # code pinned every deep point to T_surf).
+        order = np.argsort(P)
+        Ts = T[order]
+        assert np.all(np.isfinite(T))
+        assert np.all(np.diff(Ts) > 0.0)
+        assert Ts[-1] > 1.5 * Ts[0]
+        # Independent check: every point sits on the liquid isentrope. Uses the
+        # fixture entropy formula, so it catches a depth-routing regression that
+        # the tautological S_profile == S_target check cannot.
+        np.testing.assert_allclose(1.08 * _s_pdep(P, T), S_target, rtol=5e-3)
+
+    @pytest.mark.physics_invariant
+    def test_fully_molten_routing_survives_collapsed_mushy_zone(self, pdep_2phase):
+        """mushy_zone_factor = 1.0 (solidus == liquidus) still routes molten points to the liquid table.
+
+        With the mushy zone collapsed there is no ``T_sol < T < T_liq``
+        interval, so a strict ``T_liq > T_sol`` guard on the molten branch
+        would send every molten point to the solid table (NaN) and reproduce
+        the original crash. The branch uses ``T_liq >= T_sol``, so a fully
+        molten adiabat over collapsed curves stays finite, isentropic, and
+        anchored to the liquid table.
+        """
+        solid_path, liquid_path = pdep_2phase
+        # Collapsed curves: solidus == liquidus everywhere.
+        result = eos_export.compute_entropy_adiabat(
+            solid_path,
+            T_surface=4000.0,
+            P_surface=1.0e6,
+            P_cmb=1.0e9,
+            n_points=16,
+            solidus_func=_pdep_liquidus,
+            liquidus_func=_pdep_liquidus,
+            solid_eos_file=solid_path,
+            liquid_eos_file=liquid_path,
+        )
+        T = np.asarray(result['T'])
+        assert np.isfinite(result['S_target'])
+        np.testing.assert_allclose(result['S_target'], 1.08 * _s_pdep(1.0e6, 4000.0), rtol=1e-3)
+        assert np.all(np.isfinite(T))
+        # Not a NaN-driven flat plateau: the profile actually deepens.
+        assert T[-1] > 1.5 * T[0]
