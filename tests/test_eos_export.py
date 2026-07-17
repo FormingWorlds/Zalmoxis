@@ -1122,11 +1122,16 @@ class TestComputeSurfaceEntropy:
         ``compute_entropy_adiabat`` and drives the SPIDER entropy-IC cross-check
         and the ``adiabatic_from_cmb`` fallback, both of which anchor at fully
         molten temperatures. For a 2-phase mantle the single-phase table is the
-        solid table, NaN at molten temperatures, so a molten anchor previously
-        fell through to it and tripped the NaN guard (silently disabling the
-        cross-check, or raising in the fallback). The molten branch must return
-        the liquid entropy: the 8% gap from the solid value discriminates the
-        tables, and the result must be finite.
+        solid table, NaN at molten temperatures, so a molten anchor that
+        misses the phase routing falls through to it and trips the NaN guard
+        (silently disabling the cross-check, or raising in the fallback). The
+        molten branch must return the liquid entropy: a mis-routed lookup
+        comes back NaN from the solid table (caught by the finiteness
+        assert), and the 8% liquid/solid gap additionally rejects any finite
+        value on the solid entropy scale. The tolerance is tight (rtol 1e-6)
+        because the fixture entropy is affine in (log10 P, log10 T), which
+        bilinear interpolation on the log-log grid reproduces to float
+        precision, so a systematic sub-percent scaling error is resolvable.
         """
         solid_path, liquid_path = pdep_2phase
         T_surf = 4000.0  # molten at P=1e6 (liquidus 2620 K); solid table NaN here
@@ -1142,7 +1147,7 @@ class TestComputeSurfaceEntropy:
         s_liquid = 1.08 * _s_pdep(1.0e6, T_surf)
         s_solid = _s_pdep(1.0e6, T_surf)
         assert np.isfinite(result['S_target'])
-        np.testing.assert_allclose(result['S_target'], s_liquid, rtol=1e-3)
+        np.testing.assert_allclose(result['S_target'], s_liquid, rtol=1e-6)
         assert abs(result['S_target'] - s_solid) > 0.05 * abs(s_solid)
 
 
@@ -1227,16 +1232,25 @@ class TestComputeEntropyAdiabat:
         liquidus). Without phase routing the deep molten points come back NaN,
         the profile flattens to a constant temperature, and isentropy breaks.
         The liquid table carries s = 1.08x the solid formula, so three things
-        must hold and each fails on the unfixed code:
+        must hold and each fails without the molten branch:
 
-        * the fully molten surface anchor's entropy equals the liquid value,
-          not the solid value 8% below it (table discrimination);
-        * the temperature rises monotonically with depth rather than pinning to
-          the surface value, and the whole profile is finite (no NaN plateau);
-        * every profile point lies on the liquid isentrope, checked by an
-          independent recomputation ``1.08 * s(P, T)`` from the fixture formula
-          (not the returned ``S_profile``, which brentq forces to ``S_target``),
+        * the fully molten surface anchor's entropy equals the liquid value
+          (a mis-routed anchor reads the solid table and comes back NaN; the
+          8% guard additionally rejects any finite solid-scale value);
+        * the temperature rises monotonically with depth rather than pinning
+          to the surface value, and the whole profile is finite (no NaN
+          plateau);
+        * every profile point lies on the liquid isentrope, checked against
+          ``1.08 * s(P, T)`` recomputed from the fixture formula rather than
+          the returned ``S_profile`` (which brentq forces to ``S_target``),
           so a depth-routing regression that reads solid at depth is caught.
+          The liquid table tabulates the same formula, so this verifies
+          routing and isentropy, not interpolation accuracy.
+
+        Tolerances are rtol 1e-6: the fixture entropy is affine in
+        (log10 P, log10 T), which bilinear interpolation on the log-log grid
+        reproduces to float precision, so a systematic sub-percent scaling
+        error is resolvable.
         """
         solid_path, liquid_path = pdep_2phase
         P_surf, P_cmb = 1.0e6, 1.0e9
@@ -1260,8 +1274,8 @@ class TestComputeEntropyAdiabat:
         s_solid = _s_pdep(P_surf, T_surf)  # solid-table value (mis-routed branch)
         # Surface anchor entropy is the liquid value, not the solid value.
         assert np.isfinite(S_target)
-        np.testing.assert_allclose(S_target, s_liquid, rtol=1e-3)
-        assert abs(S_target - s_solid) > 0.05 * abs(s_solid)  # 8% gap discriminates
+        np.testing.assert_allclose(S_target, s_liquid, rtol=1e-6)
+        assert abs(S_target - s_solid) > 0.05 * abs(s_solid)  # rejects solid scale
         # No NaN plateau: finite, and temperature rises with depth (the unfixed
         # code pinned every deep point to T_surf).
         order = np.argsort(P)
@@ -1269,10 +1283,10 @@ class TestComputeEntropyAdiabat:
         assert np.all(np.isfinite(T))
         assert np.all(np.diff(Ts) > 0.0)
         assert Ts[-1] > 1.5 * Ts[0]
-        # Independent check: every point sits on the liquid isentrope. Uses the
-        # fixture entropy formula, so it catches a depth-routing regression that
-        # the tautological S_profile == S_target check cannot.
-        np.testing.assert_allclose(1.08 * _s_pdep(P, T), S_target, rtol=5e-3)
+        # Every point sits on the liquid isentrope: recomputed from the fixture
+        # entropy formula, so it catches a depth-routing regression that the
+        # tautological S_profile == S_target check cannot.
+        np.testing.assert_allclose(1.08 * _s_pdep(P, T), S_target, rtol=1e-6)
 
     @pytest.mark.physics_invariant
     def test_fully_molten_routing_survives_collapsed_mushy_zone(self, pdep_2phase):
@@ -1280,10 +1294,13 @@ class TestComputeEntropyAdiabat:
 
         With the mushy zone collapsed there is no ``T_sol < T < T_liq``
         interval, so a strict ``T_liq > T_sol`` guard on the molten branch
-        would send every molten point to the solid table (NaN) and reproduce
-        the original crash. The branch uses ``T_liq >= T_sol``, so a fully
-        molten adiabat over collapsed curves stays finite, isentropic, and
-        anchored to the liquid table.
+        would send every molten point to the solid table, which is NaN there,
+        and flatten the profile. The branch uses ``T_liq >= T_sol``, so a
+        fully molten adiabat over collapsed curves stays finite, isentropic,
+        and anchored to the liquid table. The pinned contract is the fully
+        molten profile; a collapsed-curve adiabat whose isentrope reaches the
+        melting curve at depth crosses a fusion-entropy discontinuity and is
+        not covered here.
         """
         solid_path, liquid_path = pdep_2phase
         # Collapsed curves: solidus == liquidus everywhere.
@@ -1300,7 +1317,7 @@ class TestComputeEntropyAdiabat:
         )
         T = np.asarray(result['T'])
         assert np.isfinite(result['S_target'])
-        np.testing.assert_allclose(result['S_target'], 1.08 * _s_pdep(1.0e6, 4000.0), rtol=1e-3)
+        np.testing.assert_allclose(result['S_target'], 1.08 * _s_pdep(1.0e6, 4000.0), rtol=1e-6)
         assert np.all(np.isfinite(T))
         # Not a NaN-driven flat plateau: the profile actually deepens.
         assert T[-1] > 1.5 * T[0]
