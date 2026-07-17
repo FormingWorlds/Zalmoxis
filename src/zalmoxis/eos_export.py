@@ -1260,6 +1260,16 @@ def compute_surface_entropy(
             # for a single-point lookup.
             T_sol = float(np.asarray(solidus_func(P)).item())
             T_liq = float(np.asarray(liquidus_func(P)).item())
+            # Fully molten: read the liquid table at the actual (P, T). The
+            # single-phase table is the solid (or unified) table, which has
+            # no converged cells at molten temperatures for a 2-phase mantle,
+            # so a molten anchor falling through to it returns NaN and trips
+            # the guard below. T_liq >= T_sol uses >= so that collapsed
+            # melting curves (solidus equal to the liquidus, no mushy
+            # interval) still route molten points to the liquid table.
+            if s_liquid_interp is not None and T_liq >= T_sol and T >= T_liq:
+                pt = np.array([[np.log10(max(P, 1.0)), np.log10(max(T, 300.0))]])
+                return float(s_liquid_interp(pt).item())
             if T_sol < T < T_liq and T_liq > T_sol:
                 phi = (T - T_sol) / (T_liq - T_sol)
                 pt_sol = np.array([[np.log10(max(P, 1.0)), np.log10(max(T_sol, 300.0))]])
@@ -1381,11 +1391,15 @@ def compute_entropy_adiabat(
         return float(s_interp(pt).item())
 
     def entropy_total(P, T):
-        """Evaluate total entropy including mixed-phase contribution.
+        """Evaluate total entropy, phase-routing molten and mushy points.
 
-        In the mushy zone, S = phi * S_liq(P, T_liq) + (1-phi) * S_sol(P, T_sol).
-        Uses phase-specific tables when available for clean values at
-        the solidus/liquidus.
+        With 2-phase PALEOS tables the fully molten region (``T >= T_liq``)
+        is read from the liquid table at the actual ``(P, T)``, and the mushy
+        zone (``T_sol < T < T_liq``) is the melt-fraction-weighted blend
+        S = phi * S_liq(P, T_liq) + (1-phi) * S_sol(P, T_sol) of the phase
+        entropies at the enclosing solidus and liquidus. Subsolidus points,
+        and every point when no phase-specific tables are provided, read the
+        single (unified) table.
         """
         if solidus_func is not None and liquidus_func is not None:
             # Coerce to scalar floats: ``solidus_func`` / ``liquidus_func`` may
@@ -1396,6 +1410,17 @@ def compute_entropy_adiabat(
             # for a single-point lookup.
             T_sol = float(np.asarray(solidus_func(P)).item())
             T_liq = float(np.asarray(liquidus_func(P)).item())
+            # Fully molten: read the liquid table at the actual (P, T) so the
+            # molten region sits on the liquid-table entropy scale at every
+            # depth. The single-phase table is the solid (or unified) table;
+            # the solid table has no converged cells at molten temperatures
+            # and returns NaN there, which flattens a super-liquidus adiabat
+            # and breaks isentropy. T_liq >= T_sol uses >= so that collapsed
+            # melting curves (solidus equal to the liquidus, no mushy
+            # interval) still route molten points to the liquid table.
+            if s_liquid_interp is not None and T_liq >= T_sol and T >= T_liq:
+                pt = np.array([[np.log10(max(P, 1.0)), np.log10(max(T, 300.0))]])
+                return float(s_liquid_interp(pt).item())
             if T_sol < T < T_liq and T_liq > T_sol:
                 phi = (T - T_sol) / (T_liq - T_sol)
                 pt_sol = np.array([[np.log10(max(P, 1.0)), np.log10(max(T_sol, 300.0))]])
