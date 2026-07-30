@@ -51,4 +51,37 @@
     }
   })();
   </script>
+
+  <script>
+  // The served markup always carries the first palette listed in mkdocs.yml, and
+  // the theme resolves the reader's actual scheme from a script at the end of the
+  // body, so a reader whose setting is the other one sees the wrong palette until
+  // the page has finished parsing. Resolving it here, and stamping it on the body
+  // the moment the body exists, means the first paint is already right. A scheme
+  // the reader chose by hand is kept, since the theme stores that choice.
+  (function () {
+    var scheme = null;
+    try {
+      var stored = JSON.parse(localStorage.getItem("__palette") || "null");
+      if (stored && stored.color && stored.color.media !== "(prefers-color-scheme)") {
+        scheme = stored.color.scheme;
+      }
+    } catch (e) { /* storage unavailable or unparseable; fall back to the setting */ }
+    if (!scheme) {
+      scheme = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "slate"
+        : "default";
+    }
+    if (document.body) {
+      document.body.setAttribute("data-md-color-scheme", scheme);
+      return;
+    }
+    new MutationObserver(function (records, observer) {
+      if (document.body) {
+        document.body.setAttribute("data-md-color-scheme", scheme);
+        observer.disconnect();
+      }
+    }).observe(document.documentElement, { childList: true });
+  })();
+  </script>
 {% endblock %}
