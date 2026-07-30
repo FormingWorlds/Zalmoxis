@@ -147,6 +147,14 @@
   text-decoration: none !important;
 }
 
+/* Front-page subtitle: the line under the module name, a size down and in the
+   muted foreground so it reads as a caption rather than a second heading */
+.md-typeset .subtitle {
+  font-size: 1.0rem;
+  color: var(--md-default-fg-color--light);
+  margin-top: -0.1rem;
+}
+
 /* Header title doubles as a home link (see javascripts/header-links.js) */
 .md-header__title[data-md-component="header-title"] {
   cursor: pointer;
