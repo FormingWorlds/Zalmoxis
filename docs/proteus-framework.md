@@ -5,8 +5,8 @@ title: Zalmoxis in the PROTEUS framework
 <h1 align="center">
     <a href="https://proteus-framework.org">
     <div>
-        <img src="https://raw.githubusercontent.com/FormingWorlds/PROTEUS/main/docs/assets/PROTEUS_white.png#gh-light-mode-only" style="vertical-align: middle;" width="60%"/>
-        <img src="https://raw.githubusercontent.com/FormingWorlds/PROTEUS/main/docs/assets/PROTEUS_black_nobkg.png#gh-dark-mode-only" style="vertical-align: middle;" width="60%"/>
+        <img class="logo-light" src="https://cdn.jsdelivr.net/gh/FormingWorlds/PROTEUS@main/docs/assets/proteus-lockup-light-transparent.png" style="vertical-align: middle;" width="60%" alt="PROTEUS"/>
+        <img class="logo-dark" src="https://cdn.jsdelivr.net/gh/FormingWorlds/PROTEUS@main/docs/assets/proteus-lockup-dark-transparent.png" style="vertical-align: middle;" width="60%" alt="PROTEUS"/>
     </div>
     </a>
 </h1>
