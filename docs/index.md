@@ -1,10 +1,10 @@
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/FormingWorlds/Zalmoxis/blob/main/LICENSE.txt)
+# Zalmoxis
+
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Docs](https://img.shields.io/github/actions/workflow/status/FormingWorlds/Zalmoxis/docs.yml?branch=main&label=Docs)](https://proteus-framework.org/Zalmoxis/)
-[![codecov](https://img.shields.io/codecov/c/github/FormingWorlds/Zalmoxis?label=coverage&logo=codecov)](https://app.codecov.io/gh/FormingWorlds/Zalmoxis)
+[![Coverage](https://img.shields.io/codecov/c/github/FormingWorlds/Zalmoxis?label=coverage&logo=codecov)](https://app.codecov.io/gh/FormingWorlds/Zalmoxis)
 [![Unit Tests](https://img.shields.io/github/actions/workflow/status/FormingWorlds/Zalmoxis/CI.yml?branch=main&label=Unit%20Tests)](https://github.com/FormingWorlds/Zalmoxis/actions/workflows/CI.yml)
 [![Integration Tests](https://img.shields.io/github/actions/workflow/status/FormingWorlds/Zalmoxis/nightly.yml?branch=main&label=Integration%20Tests)](https://github.com/FormingWorlds/Zalmoxis/actions/workflows/nightly.yml)
-
-# Zalmoxis
 
 **Zalmoxis** is the interior structure solver of the [PROTEUS](https://proteus-framework.org/PROTEUS) coupled atmosphere-interior evolution framework, and also works fully self-consistently as an independent tool for mass-radius modelling and parameter studies.
 It resolves the planet from its center to the surface, computing self-consistent radial profiles of density, pressure, temperature, gravity, and phase state for differentiated rocky planets and sub-Neptunes from 0.1 to 50 Earth masses.
