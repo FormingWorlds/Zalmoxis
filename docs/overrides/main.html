@@ -53,16 +53,17 @@
   </script>
 
   <script>
-  // The served markup always carries the first palette listed in mkdocs.yml, and
-  // the theme resolves the reader's actual scheme from a script at the end of the
-  // body, so a reader whose setting is the other one sees the wrong palette until
-  // the page has finished parsing. Resolving it here, and stamping it on the body
-  // the moment the body exists, means the first paint is already right. A scheme
-  // the reader chose by hand is kept, since the theme stores that choice.
+  // The served markup always carries the first palette listed in mkdocs.yml, so a
+  // reader whose setting is the other one sees the wrong palette until the theme
+  // resolves it. Resolving it here, and stamping it on the body the moment the
+  // body exists, means the first paint is already right. A scheme the reader chose
+  // by hand wins over the setting, read through the theme's own storage getter.
   (function () {
     var scheme = null;
     try {
-      var stored = JSON.parse(localStorage.getItem("__palette") || "null");
+      // The theme scopes its storage keys by path, so read through its own
+      // getter rather than guessing the key.
+      var stored = typeof __md_get === "function" ? __md_get("__palette") : null;
       if (stored && stored.color && stored.color.media !== "(prefers-color-scheme)") {
         scheme = stored.color.scheme;
       }
