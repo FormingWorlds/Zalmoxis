@@ -360,7 +360,7 @@ class TestBuildInterpolator:
 
 
 class TestFillNanNearest:
-    """In-place nearest-neighbor NaN fill (Manhattan)."""
+    """In-place nearest-neighbor NaN fill (Euclidean; per-column then 2D fallback)."""
 
     def test_no_nan_input_grid_unchanged(self):
         """When the input has no NaN, the function is a no-op."""
@@ -370,10 +370,12 @@ class TestFillNanNearest:
         np.testing.assert_array_equal(grid, before)
 
     def test_isolated_nan_is_replaced_by_finite_neighbor(self):
-        """A single interior NaN is replaced by an adjacent finite value.
+        """A single interior NaN is replaced by a same-column finite value.
 
-        Discriminating: surround the NaN with 4 distinct finite values so a
-        wrong choice of neighbor would be detectable.
+        The fill searches each pressure column (axis 1) independently along
+        the entropy axis (axis 0), so only the vertical neighbors (20.0,
+        80.0) are reachable; the horizontal ones (40.0, 60.0) sit in
+        different columns and must never be picked.
         """
         grid = np.array(
             [
@@ -384,11 +386,15 @@ class TestFillNanNearest:
         )
         eos_export._fill_nan_nearest(grid)
         assert not np.isnan(grid).any()
-        # Whichever neighbor is selected must be one of the 4 finite ones.
-        assert grid[1, 1] in {20.0, 40.0, 60.0, 80.0}
+        assert grid[1, 1] in {20.0, 80.0}
 
-    def test_corner_nan_is_replaced_by_diagonal_neighbor(self):
-        """A NaN at a grid corner is filled from the nearest finite cell."""
+    def test_corner_nan_is_replaced_by_same_column_neighbor(self):
+        """A NaN at a grid corner is filled from its own column, not a diagonal.
+
+        Column 0 has only one valid cell (40.0), so that is the only
+        reachable donor; the same-row, different-column values (20.0, 50.0)
+        must never be picked.
+        """
         grid = np.array(
             [
                 [np.nan, 20.0],
@@ -396,14 +402,77 @@ class TestFillNanNearest:
             ]
         )
         eos_export._fill_nan_nearest(grid)
-        assert not np.isnan(grid).any()
-        assert grid[0, 0] in {20.0, 40.0, 50.0}
+        assert grid[0, 0] == 40.0
 
     def test_returns_silently_when_no_nan_present(self):
         """The early-return branch when ``mask.any()`` is False does not raise."""
         grid = np.ones((2, 2), dtype=float)
         result = eos_export._fill_nan_nearest(grid)
         assert result is None  # in-place; no return value
+
+    def test_nan_fill_stays_within_its_own_column(self):
+        """A sub-boundary NaN never picks up a neighboring column's value.
+
+        One column (index 6) has valid data reaching much further down
+        the entropy axis than its neighbors, mimicking a pressure column
+        whose phase boundary (e.g. the liquidus) sits at a much lower
+        entropy than the columns around it. Every cell is tagged with a
+        value that uniquely encodes its own column, so any cross-column
+        fill is directly detectable.
+        """
+        nS, nP = 30, 12
+        s_lo = np.full(nP, 15)
+        s_lo[6] = 2
+
+        grid = np.full((nS, nP), np.nan)
+        for ip in range(nP):
+            for i_s in range(s_lo[ip], nS):
+                grid[i_s, ip] = 1000 * ip + i_s  # decodes uniquely: ip, i_s = divmod(v, 1000)
+
+        eos_export._fill_nan_nearest(grid)
+
+        assert not np.isnan(grid).any()
+        for ip in range(nP):
+            for i_s in range(s_lo[ip]):
+                donor_ip, _ = divmod(int(round(grid[i_s, ip])), 1000)
+                assert donor_ip == ip, (
+                    f'cell (S={i_s}, P={ip}) was filled from column {donor_ip}'
+                )
+
+    def test_column_with_no_valid_data_falls_back_to_global_fill(self):
+        """A column that is entirely NaN still gets filled, from elsewhere."""
+        nS, nP = 10, 5
+        grid = np.full((nS, nP), np.nan)
+        for ip in range(nP):
+            if ip == 2:
+                continue  # column 2 has no valid data at all
+            grid[:, ip] = 100.0 * ip
+
+        eos_export._fill_nan_nearest(grid)
+
+        assert not np.isnan(grid).any()
+        assert np.all(np.isin(grid[:, 2], [100.0, 300.0]))
+
+    def test_empty_column_fallback_ignores_per_column_extrapolation(self):
+        """A fully-empty column donates from real data, not a filled neighbor.
+
+        Column 1 has one real value, far down its own column; the
+        per-column pass extrapolates it across the whole column before the
+        fallback runs. Column 3 is fully real data. For column 0 (empty),
+        the nearest cell after the per-column pass is column 1 (distance
+        1), but that cell is itself an extrapolated copy: the nearest cell
+        that held real data is in column 3 (distance 3). The fallback must
+        pick the real data in column 3, not the closer extrapolated copy.
+        """
+        nS, nP = 6, 4
+        grid = np.full((nS, nP), np.nan)
+        grid[5, 1] = 111.0  # column 1's only real value, at the far row
+        grid[:, 3] = 333.0 + np.arange(nS)  # column 3 is fully real data
+
+        eos_export._fill_nan_nearest(grid)
+
+        assert not np.isnan(grid).any()
+        assert grid[0, 0] == 333.0
 
 
 # ---------------------------------------------------------------------------

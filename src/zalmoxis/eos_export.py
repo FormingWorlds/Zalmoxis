@@ -136,10 +136,17 @@ def _build_interpolator(unique_log_p, unique_log_t, grid):
 
 
 def _fill_nan_nearest(grid):
-    """Fill NaN cells in a 2D grid using nearest valid neighbor.
+    """Fill NaN cells in a 2D grid using the nearest valid neighbor.
 
-    Operates in-place. For each NaN cell, copies the value from the
-    nearest cell (by Manhattan distance) that has a finite value.
+    Operates in-place, one pressure column (axis 1) at a time: a NaN
+    cell is filled from the nearest valid cell in its own column along
+    the entropy axis (axis 0). Filling column by column keeps the
+    extrapolation below a phase boundary such as the liquidus anchored
+    to that column's own boundary node, instead of a global 2D nearest
+    search picking up a neighboring column's value whenever its
+    boundary sits at a different entropy. A column with no valid cells
+    at all falls back to the nearest cell that held original, non-filled
+    data anywhere in the grid.
 
     Parameters
     ----------
@@ -152,9 +159,24 @@ def _fill_nan_nearest(grid):
     if not mask.any():
         return
 
-    # distance_transform_edt returns distances and indices of nearest valid cell
-    _, indices = distance_transform_edt(mask, return_distances=True, return_indices=True)
-    grid[mask] = grid[tuple(indices[:, mask])]
+    original_valid = ~mask
+    nP = grid.shape[1]
+    for ip in range(nP):
+        col_mask = mask[:, ip]
+        if not col_mask.any() or not (~col_mask).any():
+            continue
+        _, idx = distance_transform_edt(col_mask, return_distances=True, return_indices=True)
+        grid[col_mask, ip] = grid[idx[0][col_mask], ip]
+
+    remaining = np.isnan(grid)
+    if remaining.any():
+        # Search for the nearest cell that held real data before the
+        # per-column pass, so a fully-empty column never donates from a
+        # neighboring column's own extrapolated fill.
+        _, indices = distance_transform_edt(
+            ~original_valid, return_distances=True, return_indices=True
+        )
+        grid[remaining] = grid[tuple(indices[:, remaining])]
 
 
 # ── Phase boundary generation ───────────────────────────────────────
