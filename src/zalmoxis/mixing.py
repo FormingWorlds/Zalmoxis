@@ -30,8 +30,17 @@ from .constants import CONDENSED_RHO_MIN_DEFAULT, CONDENSED_RHO_SCALE_DEFAULT, T
 
 logger = logging.getLogger(__name__)
 
-# All unified PALEOS EOS names that support mushy_zone_factor
-_PALEOS_UNIFIED_NAMES = frozenset({'PALEOS:iron', 'PALEOS:MgSiO3', 'PALEOS:H2O', 'Chabrier:H'})
+# All unified PALEOS EOS names that support mushy_zone_factor. The two-phase
+# variants (PALEOS-2phase, PALEOS-API-2phase) are absent by design: they have
+# separate solid/liquid tables and set melting from the liquidus, so mzf has no
+# meaning there.
+_PALEOS_UNIFIED_NAMES = frozenset(
+    {
+        'PALEOS:iron', 'PALEOS:MgSiO3', 'PALEOS:H2O',
+        'PALEOS-API:iron', 'PALEOS-API:MgSiO3', 'PALEOS-API:H2O',
+        'Chabrier:H',
+    }
+)
 
 # Component-type sets for binodal matching
 _SILICATE_EOS_NAMES = frozenset(
