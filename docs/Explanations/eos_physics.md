@@ -8,7 +8,7 @@ For configuration syntax and examples, see the [configuration guide](../How-to/c
 
 ## PALEOS (Iron, MgSiO3, H2O)
 
-The PALEOS tables (`PALEOS:iron`, `PALEOS:MgSiO3`, `PALEOS:H2O`) are the standard EOS in Zalmoxis. PALEOS is described in [Attia et al. (2026)](https://ui.adsabs.harvard.edu/abs/2026arXiv260503741A/abstract) and developed at [github.com/maraattia/PALEOS](https://github.com/maraattia/PALEOS); the tables used by Zalmoxis are distributed via [Zenodo record 19000316](https://zenodo.org/records/19000316).
+The PALEOS tables (`PALEOS:iron`, `PALEOS:MgSiO3`, `PALEOS:H2O`) are the standard EOS in Zalmoxis. PALEOS is described in [Attia et al. (2026)](https://ui.adsabs.harvard.edu/abs/2026arXiv260503741A/abstract) and developed at [github.com/maraattia/PALEOS](https://github.com/maraattia/PALEOS); the tables used by Zalmoxis are distributed via [Zenodo record 10.5281/zenodo.19000315](https://doi.org/10.5281/zenodo.19000315), which resolves to the newest release; the setup script pins v1.3.0.
 Each material is contained in a single file with all thermodynamically stable phases: iron has 5 phases (alpha-bcc, delta-bcc, gamma-fcc, epsilon-hcp, liquid), MgSiO$_3$ has 6 phases (3 pyroxene polymorphs, bridgmanite, postperovskite, liquid), and H$_2$O has 7 EOS (ice Ih through X, liquid, vapor, superionic).
 
 The tables provide 10 columns in SI units: $P$, $T$, $\rho$, $u$, $s$, $c_p$, $c_v$, $\alpha$, $\nabla_{\mathrm{ad}}$, and the stable phase identifier at each grid point.

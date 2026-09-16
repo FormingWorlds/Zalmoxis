@@ -403,6 +403,80 @@ class TestEnsureUnifiedCache:
         assert result == cached
         assert result['p_min'] == pytest.approx(2.0e5)
 
+    def test_rebuilds_when_cache_predates_its_table(self, caplog, tmp_path):
+        """A cache older than its text table is discarded and rebuilt.
+
+        The PROTEUS data layer overwrites a table in place when its Zenodo pin
+        moves to a new release, leaving the previous cache beside it. Loading
+        that cache would silently serve the superseded table for the rest of
+        the installation's life, so the loader must prefer the newer text file.
+        """
+        import logging
+        from unittest.mock import patch
+
+        from zalmoxis.eos import _ensure_unified_cache
+
+        eos_file = str(tmp_path / 'refreshed_table.dat')
+        cache_path = str(tmp_path / 'refreshed_table.pkl')
+        superseded = {'type': 'paleos_unified', 'p_min': 1.0e5, 'p_max': 1.0e12}
+        with open(cache_path, 'wb') as f:
+            pickle.dump(superseded, f, protocol=4)
+        # The replacement table is written after the cache, exactly as an
+        # in-place refresh leaves the two files.
+        with open(eos_file, 'w') as f:
+            f.write('# replacement table\n')
+        os.utime(cache_path, (1_000_000, 1_000_000))
+        os.utime(eos_file, (2_000_000, 2_000_000))
+
+        rebuilt = {'type': 'paleos_unified', 'p_min': 3.0e5, 'p_max': 7.0e11}
+        cache = {}
+        with caplog.at_level(logging.INFO, logger='zalmoxis.eos.interpolation'):
+            with patch(
+                'zalmoxis.eos.interpolation.load_paleos_unified_table',
+                return_value=rebuilt,
+            ) as mock_load:
+                result = _ensure_unified_cache(eos_file, cache)
+
+        # The entry must come from the newer table, not the stale pickle.
+        mock_load.assert_called_once_with(eos_file)
+        assert result is rebuilt
+        assert result['p_min'] == pytest.approx(3.0e5)
+        assert result['p_min'] != pytest.approx(superseded['p_min'])
+        # The refreshed entry replaces the superseded cache on disk, so the
+        # next process does not pay the text load again.
+        with open(cache_path, 'rb') as f:
+            assert pickle.load(f)['p_min'] == pytest.approx(3.0e5)
+        assert os.path.getmtime(cache_path) >= os.path.getmtime(eos_file)
+        # Ops logs must name the discarded cache and the table that outranked it.
+        assert 'is older than' in caplog.text
+        assert cache_path in caplog.text
+        assert eos_file in caplog.text
+
+    def test_keeps_cache_newer_than_its_table(self, tmp_path):
+        """A cache written after its text table is still used directly."""
+        from unittest.mock import patch
+
+        from zalmoxis.eos import _ensure_unified_cache
+
+        eos_file = str(tmp_path / 'current_table.dat')
+        cache_path = str(tmp_path / 'current_table.pkl')
+        cached = {'type': 'paleos_unified', 'p_min': 4.0e5, 'p_max': 9.0e11}
+        with open(eos_file, 'w') as f:
+            f.write('# current table\n')
+        with open(cache_path, 'wb') as f:
+            pickle.dump(cached, f, protocol=4)
+        os.utime(eos_file, (1_000_000, 1_000_000))
+        os.utime(cache_path, (2_000_000, 2_000_000))
+
+        cache = {}
+        with patch('zalmoxis.eos.interpolation.load_paleos_unified_table') as mock_load:
+            result = _ensure_unified_cache(eos_file, cache)
+
+        # The staleness check must not cost a rebuild when the cache is current.
+        mock_load.assert_not_called()
+        assert result == cached
+        assert result['p_min'] == pytest.approx(4.0e5)
+
 
 # =====================================================================
 # calculate_density dispatch tests

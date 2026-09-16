@@ -86,7 +86,7 @@ def _build_registry() -> dict:
         'format': 'paleos',
     }
 
-    # ── PALEOS unified tables (Zenodo 19000316) ─────────────────────────
+    # ── PALEOS unified tables (Zenodo 22776069, v1.3.0) ─────────────────
     _paleos_iron = {
         'eos_file': os.path.join(
             root, 'data', 'EOS_PALEOS_iron', 'paleos_iron_eos_table_pt.dat'

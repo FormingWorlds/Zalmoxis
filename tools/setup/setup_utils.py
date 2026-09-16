@@ -107,6 +107,36 @@ def download_zenodo_folder(zenodo_id: str, folder_dir: Path, keep_files: list[st
                     )
 
 
+# Name of the file recording which Zenodo record supplied a data folder.
+_SOURCE_MARKER = '.zenodo_record'
+
+
+def read_source_marker(folder_dir: Path):
+    """Return the Zenodo record id recorded for a downloaded folder.
+
+    A missing or unreadable marker reads as None, which callers treat as
+    provenance unknown and therefore as a folder due for a refresh.
+    """
+    try:
+        return (folder_dir / _SOURCE_MARKER).read_text().strip() or None
+    except OSError:
+        return None
+
+
+def write_source_marker(folder_dir: Path, zenodo_id):
+    """Record which Zenodo record supplied the contents of a folder.
+
+    Written after every successful download, including the OSF fallback,
+    where the id states which record the fetch was meant to deliver.
+    """
+    if zenodo_id is None or not folder_dir.is_dir():
+        return
+    try:
+        (folder_dir / _SOURCE_MARKER).write_text(f'{zenodo_id}\n')
+    except OSError:
+        logger.debug(f"Could not record the source of '{folder_dir}'.")
+
+
 def download(
     folder: str,
     data_dir: Path,
@@ -127,11 +157,19 @@ def download(
     folder_dir = data_dir / folder
 
     if folder_dir.exists():
-        logger.info(f"Folder '{folder}' already exists in '{data_dir}'. Skipping download.")
-        return
+        # A folder is reusable only when it came from the record now pinned.
+        # Anything else, including every folder downloaded before this marker
+        # existed, is refreshed once so a pin bump actually reaches the disk.
+        recorded = read_source_marker(folder_dir)
+        if zenodo_id is None or recorded == str(zenodo_id):
+            logger.info(f"Folder '{folder}' already exists in '{data_dir}'. Skipping download.")
+            return
+        logger.info(
+            f"Folder '{folder}' in '{data_dir}' did not come from Zenodo record "
+            f'{zenodo_id}. Refreshing it.'
+        )
 
-    logger.info(f"Folder '{folder}' does not exist in '{data_dir}'. Proceeding with download.")
-    logger.info(f"Downloading folder '{folder}' from OSF project '{osf_id}' to '{data_dir}'...")
+    logger.info(f"Proceeding with the download of folder '{folder}' into '{data_dir}'.")
 
     # Try with Zenodo first
     try:
@@ -157,6 +195,9 @@ def download(
             raise RuntimeError(
                 f"Failed to download folder '{folder}' from both Zenodo and OSF."
             )
+
+    # Reached only when one of the two sources delivered the folder.
+    write_source_marker(folder_dir, zenodo_id)
 
 
 def download_zenodo_tarball(zenodo_id: str, folder_dir: Path):
@@ -296,23 +337,23 @@ def download_data():
             'paleos_mgsio3_tables_pt_proteus_liquid_highres.dat',
         ],
     )
-    # Unified PALEOS tables (Zenodo 19000316): iron, MgSiO3, H2O
+    # Unified PALEOS tables (Zenodo 22776069): iron, MgSiO3, H2O
     download(
         folder='EOS_PALEOS_iron',
         data_dir=Path(get_zalmoxis_root(), 'data'),
-        zenodo_id=19000316,
+        zenodo_id=22776069,
         keep_files=['paleos_iron_eos_table_pt.dat'],
     )
     download(
         folder='EOS_PALEOS_MgSiO3_unified',
         data_dir=Path(get_zalmoxis_root(), 'data'),
-        zenodo_id=19000316,
+        zenodo_id=22776069,
         keep_files=['paleos_mgsio3_eos_table_pt.dat'],
     )
     download(
         folder='EOS_PALEOS_H2O',
         data_dir=Path(get_zalmoxis_root(), 'data'),
-        zenodo_id=19000316,
+        zenodo_id=22776069,
         keep_files=['paleos_water_eos_table_pt.dat'],
     )
     # Chabrier+2019/2021 H/He EOS (Zenodo 19135021): tarball with 5 tables
