@@ -371,19 +371,14 @@ def validate_config(config_params):
         )
 
     # mushy_zone_factor < 1.0 only makes sense with unified PALEOS tables
-    _unified_paleos_names = {
-        'PALEOS:iron', 'PALEOS:MgSiO3', 'PALEOS:H2O',
-        'PALEOS-API:iron', 'PALEOS-API:MgSiO3', 'PALEOS-API:H2O',
-    }
-    has_unified_paleos = bool(all_components & _unified_paleos_names)
+    has_unified_paleos = bool(all_components & {'PALEOS:iron', 'PALEOS:MgSiO3', 'PALEOS:H2O'})
     if mushy_zone_factor < 1.0 and not has_unified_paleos:
         raise ValueError(
             f'mushy_zone_factor = {mushy_zone_factor} < 1.0 but no unified PALEOS '
             f'EOS is configured. The mushy zone factor only applies to unified '
-            f'PALEOS tables (PALEOS:iron, PALEOS:MgSiO3, PALEOS:H2O and their '
-            f'PALEOS-API equivalents). For PALEOS-2phase, PALEOS-API-2phase or '
-            f'WolfBower2018, phase routing is controlled by the '
-            f'rock_solidus/rock_liquidus melting curves instead.'
+            f'PALEOS tables (PALEOS:iron, PALEOS:MgSiO3, PALEOS:H2O). '
+            f'For PALEOS-2phase or WolfBower2018, phase routing is controlled '
+            f'by the rock_solidus/rock_liquidus melting curves instead.'
         )
 
     # ── Per-EOS mushy zone factors ──────────────────────────────────

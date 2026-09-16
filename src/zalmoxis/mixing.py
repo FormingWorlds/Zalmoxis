@@ -36,8 +36,12 @@ logger = logging.getLogger(__name__)
 # meaning there.
 _PALEOS_UNIFIED_NAMES = frozenset(
     {
-        'PALEOS:iron', 'PALEOS:MgSiO3', 'PALEOS:H2O',
-        'PALEOS-API:iron', 'PALEOS-API:MgSiO3', 'PALEOS-API:H2O',
+        'PALEOS:iron',
+        'PALEOS:MgSiO3',
+        'PALEOS:H2O',
+        'PALEOS-API:iron',
+        'PALEOS-API:MgSiO3',
+        'PALEOS-API:H2O',
         'Chabrier:H',
     }
 )
