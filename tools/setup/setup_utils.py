@@ -296,23 +296,23 @@ def download_data():
             'paleos_mgsio3_tables_pt_proteus_liquid_highres.dat',
         ],
     )
-    # Unified PALEOS tables (Zenodo 19000316): iron, MgSiO3, H2O
+    # Unified PALEOS tables (Zenodo 22776069): iron, MgSiO3, H2O
     download(
         folder='EOS_PALEOS_iron',
         data_dir=Path(get_zalmoxis_root(), 'data'),
-        zenodo_id=19000316,
+        zenodo_id=22776069,
         keep_files=['paleos_iron_eos_table_pt.dat'],
     )
     download(
         folder='EOS_PALEOS_MgSiO3_unified',
         data_dir=Path(get_zalmoxis_root(), 'data'),
-        zenodo_id=19000316,
+        zenodo_id=22776069,
         keep_files=['paleos_mgsio3_eos_table_pt.dat'],
     )
     download(
         folder='EOS_PALEOS_H2O',
         data_dir=Path(get_zalmoxis_root(), 'data'),
-        zenodo_id=19000316,
+        zenodo_id=22776069,
         keep_files=['paleos_water_eos_table_pt.dat'],
     )
     # Chabrier+2019/2021 H/He EOS (Zenodo 19135021): tarball with 5 tables
