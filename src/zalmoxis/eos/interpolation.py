@@ -7,6 +7,7 @@ clamping used by all PALEOS-based EOS lookups.
 from __future__ import annotations
 
 import logging
+import os
 
 import numpy as np
 from scipy.interpolate import (
@@ -537,6 +538,10 @@ def _paleos_clamp_temperature(log_p, log_t, cached):
     return log_t, False
 
 
+class _StaleCache(Exception):
+    """Raised when a binary cache predates the text table it was built from."""
+
+
 def _ensure_unified_cache(eos_file, interpolation_functions):
     """Ensure a unified PALEOS table is loaded into the interpolation cache.
 
@@ -560,25 +565,41 @@ def _ensure_unified_cache(eos_file, interpolation_functions):
 
         cache_path = eos_file.replace('.dat', '.pkl')
         try:
+            # A cache older than its text table describes a superseded release.
+            # The PROTEUS data layer replaces the .dat in place when its Zenodo
+            # pin moves, so without this check every run keeps reading the
+            # previous table through a cache that never expires.
+            if os.path.exists(eos_file) and os.path.getmtime(cache_path) < os.path.getmtime(
+                eos_file
+            ):
+                raise _StaleCache(cache_path)
             with open(cache_path, 'rb') as f:
                 interpolation_functions[eos_file] = pickle.load(f)
             logger.debug('Loaded PALEOS cache from %s', cache_path)
         except (
+            _StaleCache,
             FileNotFoundError,
             EOFError,
             pickle.UnpicklingError,
             ImportError,
             AttributeError,
         ) as exc:
-            # FileNotFoundError is the normal first-load case (no cache yet). The
-            # other errors mean a cache file exists but cannot be unpickled, most
-            # often because it was written by a different scipy build whose
-            # interpolator classes or vendored submodules
+            # FileNotFoundError is the normal first-load case (no cache yet),
+            # and _StaleCache means the table was replaced after the cache was
+            # written. The remaining errors mean a cache file exists but cannot
+            # be unpickled, most often because it was written by a different
+            # scipy build whose interpolator classes or vendored submodules
             # (e.g. scipy._lib.array_api_compat) no longer resolve. Rebuilding
             # from the text table always produces a cache valid for the current
-            # scipy, so a stale binary cache degrades to a slow load, not a crash.
+            # scipy, so an unusable cache degrades to a slow load, not a crash.
             if isinstance(exc, FileNotFoundError):
                 logger.info('Loading PALEOS table from text: %s', eos_file)
+            elif isinstance(exc, _StaleCache):
+                logger.info(
+                    'PALEOS binary cache %s is older than %s; rebuilding from text table',
+                    cache_path,
+                    eos_file,
+                )
             else:
                 # Record why the cache was rejected so a scipy-version mismatch
                 # is distinguishable from a corrupt or partial cache in ops logs.
