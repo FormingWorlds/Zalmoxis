@@ -175,3 +175,198 @@ class TestDownloadProvenance:
                         )
 
         assert not _marker(folder_dir).exists()
+
+    def test_zenodo_incomplete_delivery_falls_through_to_osf(self, tmp_path):
+        """Zenodo reporting success while short a kept file must still try OSF.
+
+        This is the case that reached production: ``zenodo_get`` exits 0 but
+        the record does not carry every file ``keep_files`` names. The OSF
+        fallback is configured for exactly this folder, so it must run
+        instead of the download being accepted or failing outright.
+        """
+        from tools.setup.setup_utils import download
+
+        folder_dir = tmp_path / 'mass_radius_curves'
+        zenodo_calls = []
+        osf_calls = []
+
+        def _zenodo(zenodo_id, folder_dir=folder_dir, keep_files=None):
+            zenodo_calls.append(zenodo_id)
+            folder_dir.mkdir(parents=True, exist_ok=True)
+            (folder_dir / 'a.txt').write_text('present')
+            # 'b.txt' never arrives: Zenodo under-delivers without raising.
+
+        def _osf(storage, folders, data_dir):
+            osf_calls.append(folders)
+            folder_dir.mkdir(parents=True, exist_ok=True)
+            (folder_dir / 'a.txt').write_text('from OSF')
+            (folder_dir / 'b.txt').write_text('from OSF')
+
+        with patch('tools.setup.setup_utils.download_zenodo_folder', side_effect=_zenodo):
+            with patch('tools.setup.setup_utils.get_osf', return_value=object()):
+                with patch('tools.setup.setup_utils.download_OSF_folder', side_effect=_osf):
+                    download(
+                        folder='mass_radius_curves',
+                        data_dir=tmp_path,
+                        zenodo_id=15727899,
+                        osf_id='dpkjb',
+                        keep_files=['a.txt', 'b.txt'],
+                    )
+
+        assert zenodo_calls == [15727899]
+        assert osf_calls == [['mass_radius_curves']]
+        assert (folder_dir / 'a.txt').read_text() == 'from OSF'
+        assert (folder_dir / 'b.txt').read_text() == 'from OSF'
+        assert _marker(folder_dir).read_text().strip() == '15727899'
+
+    def test_osf_fallback_does_not_keep_leftover_zenodo_files(self, tmp_path):
+        """A Zenodo partial delivery must not survive into the OSF result.
+
+        Zenodo writes 'a.txt' then under-delivers; the OSF fallback only ever
+        writes 'b.txt'. If the leftover 'a.txt' were kept, the folder would be
+        a hybrid of two sources recorded under a single marker.
+        """
+        from tools.setup.setup_utils import download
+
+        folder_dir = tmp_path / 'mass_radius_curves'
+
+        def _zenodo(zenodo_id, folder_dir=folder_dir, keep_files=None):
+            folder_dir.mkdir(parents=True, exist_ok=True)
+            (folder_dir / 'a.txt').write_text('zenodo leftover')
+            # 'b.txt' never arrives: Zenodo under-delivers without raising.
+
+        def _osf(storage, folders, data_dir):
+            folder_dir.mkdir(parents=True, exist_ok=True)
+            (folder_dir / 'b.txt').write_text('from OSF')
+
+        with patch('tools.setup.setup_utils.download_zenodo_folder', side_effect=_zenodo):
+            with patch('tools.setup.setup_utils.get_osf', return_value=object()):
+                with patch('tools.setup.setup_utils.download_OSF_folder', side_effect=_osf):
+                    download(
+                        folder='mass_radius_curves',
+                        data_dir=tmp_path,
+                        zenodo_id=15727899,
+                        osf_id='dpkjb',
+                        keep_files=['b.txt'],
+                    )
+
+        assert not (folder_dir / 'a.txt').exists()
+        assert (folder_dir / 'b.txt').read_text() == 'from OSF'
+
+    def test_osf_fallback_incomplete_raises(self, tmp_path):
+        """An OSF fallback that also under-delivers a kept file is not accepted."""
+        from tools.setup.setup_utils import download
+
+        folder_dir = tmp_path / 'mass_radius_curves'
+
+        def _osf(storage, folders, data_dir):
+            folder_dir.mkdir(parents=True, exist_ok=True)
+            (folder_dir / 'a.txt').write_text('from OSF')
+            # 'b.txt' never arrives.
+
+        with patch(
+            'tools.setup.setup_utils.download_zenodo_folder',
+            side_effect=RuntimeError('zenodo_get failed with exit code 1'),
+        ):
+            with patch('tools.setup.setup_utils.get_osf', return_value=object()):
+                with patch('tools.setup.setup_utils.download_OSF_folder', side_effect=_osf):
+                    with pytest.raises(RuntimeError, match='from both Zenodo and OSF'):
+                        download(
+                            folder='mass_radius_curves',
+                            data_dir=tmp_path,
+                            zenodo_id=15727899,
+                            osf_id='dpkjb',
+                            keep_files=['a.txt', 'b.txt'],
+                        )
+
+        assert not _marker(folder_dir).exists()
+
+    def test_folder_with_every_kept_file_and_matching_marker_is_reused(self, tmp_path):
+        """A folder that matches the pin and holds every kept file costs no download.
+
+        Pins the counterpart of the missing-file case: a future edit that
+        inverts the ``if not missing`` check would pass every other test here
+        while forcing a full re-download of a complete folder on every run.
+        """
+        from tools.setup.setup_utils import download
+
+        folder_dir = tmp_path / 'mass_radius_curves'
+        folder_dir.mkdir(parents=True)
+        (folder_dir / 'a.txt').write_text('present')
+        (folder_dir / 'b.txt').write_text('present')
+        _marker(folder_dir).write_text('15727899\n')
+
+        fetch, calls = _fake_fetch(folder_dir, 'refetched')
+        with patch('tools.setup.setup_utils.download_zenodo_folder', side_effect=fetch):
+            download(
+                folder='mass_radius_curves',
+                data_dir=tmp_path,
+                zenodo_id=15727899,
+                keep_files=['a.txt', 'b.txt'],
+            )
+
+        assert calls == []
+        assert (folder_dir / 'a.txt').read_text() == 'present'
+        assert (folder_dir / 'b.txt').read_text() == 'present'
+
+    def test_folder_missing_a_kept_file_is_refreshed_despite_matching_marker(self, tmp_path):
+        """A folder that matches the pin but is short a kept file is not reused.
+
+        This is the state an incomplete download left cached before this fix:
+        the marker matches the pin, so the old reuse check stood down forever
+        without ever looking at what actually landed on disk.
+        """
+        from tools.setup.setup_utils import download
+
+        folder_dir = tmp_path / 'mass_radius_curves'
+        folder_dir.mkdir(parents=True)
+        (folder_dir / 'a.txt').write_text('stale')
+        _marker(folder_dir).write_text('15727899\n')
+
+        calls = []
+
+        def _fetch(zenodo_id, folder_dir=folder_dir, keep_files=None):
+            calls.append(zenodo_id)
+            folder_dir.mkdir(parents=True, exist_ok=True)
+            for fname in keep_files:
+                (folder_dir / fname).write_text('refetched')
+
+        with patch('tools.setup.setup_utils.download_zenodo_folder', side_effect=_fetch):
+            download(
+                folder='mass_radius_curves',
+                data_dir=tmp_path,
+                zenodo_id=15727899,
+                keep_files=['a.txt', 'b.txt'],
+            )
+
+        assert calls == [15727899]
+        assert (folder_dir / 'b.txt').read_text() == 'refetched'
+
+
+class TestMissingKeptFiles:
+    """Unit tests for the shared completeness check used at every call site."""
+
+    def test_no_keep_files_means_nothing_is_checked(self, tmp_path):
+        from tools.setup.setup_utils import missing_kept_files
+
+        assert missing_kept_files(tmp_path, None) == []
+
+    def test_an_absent_file_is_missing(self, tmp_path):
+        from tools.setup.setup_utils import missing_kept_files
+
+        assert missing_kept_files(tmp_path, ['a.txt']) == ['a.txt']
+
+    def test_a_zero_byte_file_is_missing(self, tmp_path):
+        """A truncated mid-write download must not pass an existence-only check."""
+        from tools.setup.setup_utils import missing_kept_files
+
+        (tmp_path / 'a.txt').write_text('present')
+        (tmp_path / 'b.txt').write_text('')
+        assert missing_kept_files(tmp_path, ['a.txt', 'b.txt']) == ['b.txt']
+
+    def test_a_directory_matching_a_kept_filename_is_missing(self, tmp_path):
+        """A directory is not the kept file, even though it exists at that path."""
+        from tools.setup.setup_utils import missing_kept_files
+
+        (tmp_path / 'a.txt').mkdir()
+        assert missing_kept_files(tmp_path, ['a.txt']) == ['a.txt']

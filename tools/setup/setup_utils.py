@@ -137,6 +137,25 @@ def write_source_marker(folder_dir: Path, zenodo_id):
         logger.debug(f"Could not record the source of '{folder_dir}'.")
 
 
+def missing_kept_files(folder_dir: Path, keep_files: list[str] | None = None) -> list[str]:
+    """Return which of ``keep_files`` are absent or empty under ``folder_dir``.
+
+    ``None`` means no fixed file list is pinned for this folder, so nothing
+    can be checked; that case always reports no missing files. A zero-byte
+    file counts as missing: it is what a connection dropped mid-write leaves
+    behind, and it would otherwise pass an existence-only check. A directory
+    matching a kept filename counts as missing too, since it is not the file.
+    """
+    if keep_files is None:
+        return []
+    missing = []
+    for fname in keep_files:
+        path = folder_dir / fname
+        if not path.is_file() or path.stat().st_size == 0:
+            missing.append(fname)
+    return missing
+
+
 def download(
     folder: str,
     data_dir: Path,
@@ -151,23 +170,33 @@ def download(
         osf_id (str): OSF project ID to download from.
         data_dir (Path): Local directory where the folder will be saved.
     Raises:
-        RuntimeError: If the folder cannot be downloaded from both Zenodo and OSF.
+        RuntimeError: If the folder cannot be downloaded from both Zenodo and
+            OSF, or if neither delivers every one of ``keep_files``.
     """
     # Get the target path for the folder
     folder_dir = data_dir / folder
 
     if folder_dir.exists():
-        # A folder is reusable only when it came from the record now pinned.
-        # Anything else, including every folder downloaded before this marker
-        # existed, is refreshed once so a pin bump actually reaches the disk.
+        # A folder is reusable only when it came from the record now pinned
+        # and holds every file that record is expected to provide. Anything
+        # else, including every folder downloaded before this marker existed
+        # or one a prior run cached while incomplete, is refreshed once.
         recorded = read_source_marker(folder_dir)
         if zenodo_id is None or recorded == str(zenodo_id):
-            logger.info(f"Folder '{folder}' already exists in '{data_dir}'. Skipping download.")
-            return
-        logger.info(
-            f"Folder '{folder}' in '{data_dir}' did not come from Zenodo record "
-            f'{zenodo_id}. Refreshing it.'
-        )
+            missing = missing_kept_files(folder_dir, keep_files)
+            if not missing:
+                logger.info(
+                    f"Folder '{folder}' already exists in '{data_dir}'. Skipping download."
+                )
+                return
+            logger.info(
+                f"Folder '{folder}' in '{data_dir}' is missing {missing}. Refreshing it."
+            )
+        else:
+            logger.info(
+                f"Folder '{folder}' in '{data_dir}' did not come from Zenodo record "
+                f'{zenodo_id}. Refreshing it.'
+            )
 
     logger.info(f"Proceeding with the download of folder '{folder}' into '{data_dir}'.")
 
@@ -177,6 +206,12 @@ def download(
         download_zenodo_folder(
             zenodo_id=zenodo_id, folder_dir=folder_dir, keep_files=keep_files
         )
+        missing = missing_kept_files(folder_dir, keep_files)
+        if missing:
+            raise RuntimeError(
+                f"Zenodo record '{zenodo_id}' did not deliver folder '{folder}' in "
+                f'full: missing {missing}.'
+            )
     except Exception as e:
         logger.error(f'Failed to download from Zenodo: {e}')
         logger.info('Trying to download from OSF...')
@@ -188,7 +223,15 @@ def download(
             )
         try:
             logger.info(f"Downloading from OSF project '{osf_id}'...")
+            # Clear a partial Zenodo delivery first so the OSF result is a
+            # clean copy from one source, never a hybrid of both.
+            shutil.rmtree(folder_dir, ignore_errors=True)
             download_OSF_folder(storage=get_osf(osf_id), folders=[folder], data_dir=data_dir)
+            missing = missing_kept_files(folder_dir, keep_files)
+            if missing:
+                raise RuntimeError(
+                    f"OSF fallback for folder '{folder}' is incomplete: missing {missing}."
+                )
             logger.info(f"Download of '{folder}' complete.")
         except Exception as e:
             logger.error(f'Failed to download from OSF: {e}')
@@ -196,7 +239,6 @@ def download(
                 f"Failed to download folder '{folder}' from both Zenodo and OSF."
             )
 
-    # Reached only when one of the two sources delivered the folder.
     write_source_marker(folder_dir, zenodo_id)
 
 
