@@ -30,10 +30,10 @@ from .constants import CONDENSED_RHO_MIN_DEFAULT, CONDENSED_RHO_SCALE_DEFAULT, T
 
 logger = logging.getLogger(__name__)
 
-# All unified PALEOS EOS names that support mushy_zone_factor. The two-phase
-# variants (PALEOS-2phase, PALEOS-API-2phase) are absent by design: they have
-# separate solid/liquid tables and set melting from the liquidus, so mzf has no
-# meaning there.
+# All unified PALEOS EOS names whose density blend applies mushy_zone_factor
+# through this dict. The two-phase variants (PALEOS-2phase, PALEOS-API-2phase)
+# are absent by design: their density comes from separate solid/liquid
+# tables, not a blended interpolation.
 _PALEOS_UNIFIED_NAMES = frozenset(
     {
         'PALEOS:iron',
@@ -45,6 +45,19 @@ _PALEOS_UNIFIED_NAMES = frozenset(
         'Chabrier:H',
     }
 )
+
+# TOML per-material mushy_zone_factor override key for each unified PALEOS
+# name. The bare PALEOS keys predate PALEOS-API and Chabrier support and
+# stay as-is so existing TOML files keep working.
+_PALEOS_UNIFIED_TOML_KEYS = {
+    'PALEOS:iron': 'mushy_zone_factor_iron',
+    'PALEOS:MgSiO3': 'mushy_zone_factor_MgSiO3',
+    'PALEOS:H2O': 'mushy_zone_factor_H2O',
+    'PALEOS-API:iron': 'mushy_zone_factor_paleos_api_iron',
+    'PALEOS-API:MgSiO3': 'mushy_zone_factor_paleos_api_MgSiO3',
+    'PALEOS-API:H2O': 'mushy_zone_factor_paleos_api_H2O',
+    'Chabrier:H': 'mushy_zone_factor_chabrier_H',
+}
 
 # Component-type sets for binodal matching
 _SILICATE_EOS_NAMES = frozenset(

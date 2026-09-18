@@ -25,6 +25,8 @@ from .eos_properties import EOS_REGISTRY
 from .eos_vinet import VALID_VINET_KEYS
 from .mixing import (
     BINODAL_T_SCALE_DEFAULT,
+    _PALEOS_UNIFIED_NAMES,
+    _PALEOS_UNIFIED_TOML_KEYS,
     parse_layer_components,
 )
 
@@ -371,23 +373,20 @@ def validate_config(config_params):
         )
 
     # mushy_zone_factor < 1.0 only makes sense with unified PALEOS tables
-    has_unified_paleos = bool(all_components & {'PALEOS:iron', 'PALEOS:MgSiO3', 'PALEOS:H2O'})
+    has_unified_paleos = bool(all_components & _PALEOS_UNIFIED_NAMES)
     if mushy_zone_factor < 1.0 and not has_unified_paleos:
         raise ValueError(
             f'mushy_zone_factor = {mushy_zone_factor} < 1.0 but no unified PALEOS '
             f'EOS is configured. The mushy zone factor only applies to unified '
-            f'PALEOS tables (PALEOS:iron, PALEOS:MgSiO3, PALEOS:H2O). '
-            f'For PALEOS-2phase or WolfBower2018, phase routing is controlled '
-            f'by the rock_solidus/rock_liquidus melting curves instead.'
+            f'PALEOS tables ({", ".join(sorted(_PALEOS_UNIFIED_NAMES))}). '
+            f'For PALEOS-2phase, PALEOS-API-2phase, or WolfBower2018, phase '
+            f'routing is controlled by the rock_solidus/rock_liquidus melting '
+            f'curves instead.'
         )
 
     # ── Per-EOS mushy zone factors ──────────────────────────────────
     mushy_zone_factors = config_params.get('mushy_zone_factors', {})
-    _eos_to_key = {
-        'PALEOS:iron': 'mushy_zone_factor_iron',
-        'PALEOS:MgSiO3': 'mushy_zone_factor_MgSiO3',
-        'PALEOS:H2O': 'mushy_zone_factor_H2O',
-    }
+    _eos_to_key = _PALEOS_UNIFIED_TOML_KEYS
     for eos_name, config_key in _eos_to_key.items():
         mzf = mushy_zone_factors.get(eos_name, 1.0)
         if mzf < 0 or mzf > 1.0:
@@ -738,16 +737,13 @@ def load_zalmoxis_config(temp_config_path=None):
     # actually configured in a layer; unused materials default to 1.0 so that
     # a global mushy_zone_factor < 1.0 does not trigger the validation check
     # for materials absent from the model.
-    _paleos_materials = {
-        'PALEOS:iron': 'mushy_zone_factor_iron',
-        'PALEOS:MgSiO3': 'mushy_zone_factor_MgSiO3',
-        'PALEOS:H2O': 'mushy_zone_factor_H2O',
-    }
-    # Collect all EOS component strings from all layers
-    _all_eos_strings = ' '.join(v for v in layer_eos_config.values() if v)
+    _configured_eos = set()
+    for v in layer_eos_config.values():
+        if v:
+            _configured_eos.update(parse_layer_components(v).components)
     mushy_zone_factors = {}
-    for paleos_name, toml_key in _paleos_materials.items():
-        if paleos_name in _all_eos_strings:
+    for paleos_name, toml_key in _PALEOS_UNIFIED_TOML_KEYS.items():
+        if paleos_name in _configured_eos:
             # Material is in use: apply per-material override or global default
             mushy_zone_factors[paleos_name] = eos_section.get(toml_key, mushy_zone_factor)
         else:

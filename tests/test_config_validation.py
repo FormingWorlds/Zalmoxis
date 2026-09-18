@@ -250,6 +250,23 @@ class TestMushyZoneValidation:
 
         validate_config(_make_config(mushy_zone_factor=0.7))
 
+    def test_paleos_api_eos_with_factor_below_one_passes(self):
+        """A PALEOS-API:* unified mantle does not trigger the 'no unified
+        PALEOS EOS configured' error (regression: the allowlist this check
+        uses was once a stale hardcoded set of bare PALEOS:* names only).
+        """
+        from zalmoxis.config import validate_config
+
+        validate_config(
+            _make_config(
+                mushy_zone_factor=0.8,
+                layer_eos_config={
+                    'core': 'PALEOS-API:iron',
+                    'mantle': 'PALEOS-API:MgSiO3',
+                },
+            )
+        )
+
 
 @pytest.mark.unit
 class TestPerEosMushyZoneValidation:
