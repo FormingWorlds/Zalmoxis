@@ -296,6 +296,20 @@ class TestMushyZoneValidation:
                 )
             )
 
+    def test_unified_core_with_2phase_mantle_on_other_curves_passes(self):
+        """A unified PALEOS core honors mzf in its own density, so mzf < 1.0 is valid
+        even when the 2-phase mantle uses non-PALEOS curves and ignores it."""
+        from zalmoxis.config import validate_config
+
+        validate_config(
+            _make_config(
+                mushy_zone_factor=0.8,
+                layer_eos_config={'core': 'PALEOS:iron', 'mantle': 'PALEOS-2phase:MgSiO3'},
+                rock_solidus='Stixrude14-solidus',
+                rock_liquidus='Stixrude14-liquidus',
+            )
+        )
+
 
 @pytest.mark.unit
 class TestPerEosMushyZoneValidation:
