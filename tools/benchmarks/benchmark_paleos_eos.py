@@ -213,6 +213,7 @@ def _run_model(
         layer_eos,
         config.get('rock_solidus', 'Stixrude14-solidus'),
         config.get('rock_liquidus', 'Stixrude14-liquidus'),
+        config.get('mushy_zone_factor', 1.0),
     )
 
     return main(

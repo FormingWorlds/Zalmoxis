@@ -94,6 +94,7 @@ def _run(
             lec,
             config.get('rock_solidus', 'Stixrude14-solidus'),
             config.get('rock_liquidus', 'Stixrude14-liquidus'),
+            config.get('mushy_zone_factor', 1.0),
         ),
         input_dir=os.path.join(root, 'input'),
     )

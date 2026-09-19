@@ -77,6 +77,7 @@ def _run_paleos(mass_earth, temperature_mode='linear'):
             layer_eos_config,
             config_params.get('rock_solidus', 'Stixrude14-solidus'),
             config_params.get('rock_liquidus', 'Stixrude14-liquidus'),
+            config_params.get('mushy_zone_factor', 1.0),
         ),
         input_dir=os.path.join(root, 'input'),
     )

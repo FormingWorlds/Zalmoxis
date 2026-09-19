@@ -129,7 +129,10 @@ def run_solver(id_mass, config_type, cmf, immf, layer_eos_override=None):
     model_results = zalmoxis_main(
         config_params,
         material_dictionaries=load_material_dictionaries(),
-        melting_curves_functions=load_solidus_liquidus_functions(layer_eos_config),
+        melting_curves_functions=load_solidus_liquidus_functions(
+            layer_eos_config,
+            mushy_zone_factor=config_params.get('mushy_zone_factor', 1.0),
+        ),
         input_dir=os.path.join(ZALMOXIS_ROOT, 'input'),
     )
 

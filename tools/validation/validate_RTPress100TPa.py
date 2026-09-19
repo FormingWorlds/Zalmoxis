@@ -38,7 +38,9 @@ def run_model(mass_earth, eos_config):
     config['layer_eos_config'] = eos_config
 
     mat = load_material_dictionaries()
-    melt = load_solidus_liquidus_functions(eos_config)
+    melt = load_solidus_liquidus_functions(
+        eos_config, mushy_zone_factor=config.get('mushy_zone_factor', 1.0)
+    )
     input_dir = os.path.join(get_zalmoxis_root(), 'input')
 
     results = main(config, mat, melt, input_dir)
