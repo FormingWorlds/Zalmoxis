@@ -307,7 +307,7 @@ All bundled CHILI configs default to `prevent_warming = false`; follow that lead
 This sets the solidus relative to the liquidus as $T_\mathrm{sol} = f \cdot T_\mathrm{liq}$, controlling the width of the mushy zone in the PALEOS unified EOS.
 The 0.8 default approximates the [Stixrude+2014](https://ui.adsabs.harvard.edu/abs/2014RSPTA.37230076S) cryoscopic depression for MgSiO3 and is applied consistently across Zalmoxis density interpolation, SPIDER phase boundaries, and the VolatileProfile $\phi$-blending.
 Setting `mushy_zone_factor = 1.0` collapses the mushy band to a sharp boundary.
-This factor only affects PALEOS unified tables; it is silently ignored for `WolfBower2018` and `RTPress100TPa`, which use explicit melting-curve files.
+This factor acts on the PALEOS unified tables and on the PALEOS two-phase tables (`PALEOS-2phase`, `PALEOS-API-2phase`), where the solidus is `mushy_zone_factor * liquidus`. It is ignored for `WolfBower2018` and `RTPress100TPa`, which use explicit melting-curve files.
 
 ### 7. `interior_struct.zalmoxis.num_levels` and `interior_energetics.num_levels`
 
