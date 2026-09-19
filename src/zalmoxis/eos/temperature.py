@@ -265,8 +265,11 @@ def _compute_paleos_dtdp(
     T_sol = solidus_func(pressure) if solidus_func is not None else np.nan
     T_liq = liquidus_func(pressure) if liquidus_func is not None else np.nan
 
-    if np.isnan(T_sol) or np.isnan(T_liq) or T_liq <= T_sol:
-        # Outside melting curve range or degenerate: use solid table
+    if np.isnan(T_sol) or np.isnan(T_liq) or T_liq < T_sol:
+        # Outside melting curve range or inverted (unphysical) curve: use
+        # solid table. T_liq == T_sol (zero-width mushy zone, e.g.
+        # mushy_zone_factor = 1.0) falls through to the solid/liquid
+        # branches below instead, which bifurcate correctly on temperature.
         nabla = _get_paleos_nabla_ad(
             pressure, temperature, mat_PALEOS, 'solid_mantle', interpolation_functions
         )

@@ -1262,6 +1262,47 @@ class TestComputePaleosDtdp:
         assert dtdp is not None
         assert dtdp > 0
 
+    def test_collapsed_melting_curve_bifurcates_on_temperature(self):
+        """A zero-width mushy zone (T_sol == T_liq, e.g. mushy_zone_factor=1.0)
+        still picks solid nabla_ad below the collapsed point and liquid
+        nabla_ad above it, rather than solid nabla_ad everywhere.
+        """
+        root = os.environ.get('ZALMOXIS_ROOT', '')
+        solid_file = os.path.join(
+            root, 'data', 'EOS_PALEOS_MgSiO3', 'paleos_mgsio3_tables_pt_proteus_solid.dat'
+        )
+        liquid_file = os.path.join(
+            root, 'data', 'EOS_PALEOS_MgSiO3', 'paleos_mgsio3_tables_pt_proteus_liquid.dat'
+        )
+        if not (os.path.isfile(solid_file) and os.path.isfile(liquid_file)):
+            pytest.skip('PALEOS 2-phase data not found')
+
+        from zalmoxis.eos import _compute_paleos_dtdp
+        from zalmoxis.eos.tdep import _get_paleos_nabla_ad
+        from zalmoxis.eos_properties import EOS_REGISTRY
+
+        mat = EOS_REGISTRY['PALEOS-2phase:MgSiO3']
+        P = 100e9
+        T_collapsed = 4000.0
+
+        def sf(_P):
+            return T_collapsed
+
+        def lf(_P):
+            return T_collapsed
+
+        cache = {}
+        dtdp_below = _compute_paleos_dtdp(P, 3500.0, mat, sf, lf, cache)
+        dtdp_above = _compute_paleos_dtdp(P, 4500.0, mat, sf, lf, cache)
+        assert dtdp_below is not None
+        assert dtdp_above is not None
+        assert dtdp_below != pytest.approx(dtdp_above)
+
+        expected_solid = _get_paleos_nabla_ad(P, 4500.0, mat, 'solid_mantle', {}) * 4500.0 / P
+        expected_liquid = _get_paleos_nabla_ad(P, 4500.0, mat, 'melted_mantle', {}) * 4500.0 / P
+        assert dtdp_above == pytest.approx(expected_liquid)
+        assert dtdp_above != pytest.approx(expected_solid)
+
 
 # =====================================================================
 # calculate_temperature_profile tests
