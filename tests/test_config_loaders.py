@@ -398,3 +398,42 @@ class TestLoadSolidusLiquidusFunctions:
         T_stx = float(out_stx[1](50e9))
         T_paleos = float(out_p[1](50e9))
         assert abs(T_stx - T_paleos) > 1.0
+
+    @pytest.mark.parametrize('mantle', ['PALEOS-2phase:MgSiO3', 'PALEOS-API-2phase:MgSiO3'])
+    def test_2phase_solidus_scales_with_mushy_zone_factor(self, mantle):
+        """2-phase solidus is the PALEOS-liquidus curve scaled by mzf.
+
+        Discriminating: at mzf=0.8 the solidus must equal 0.8 * liquidus at
+        every pressure tested, not the Stixrude14-solidus curve that
+        ``solidus_id`` nominally requests.
+        """
+        out = load_solidus_liquidus_functions(
+            {'core': 'PALEOS:iron', 'mantle': mantle},
+            'Stixrude14-solidus',
+            'Stixrude14-liquidus',
+            mushy_zone_factor=0.8,
+        )
+        assert out is not None
+        sol_func, liq_func = out
+        for P in (1e9, 1e10, 1e11):
+            T_liq = float(liq_func(P))
+            T_sol = float(sol_func(P))
+            assert T_sol == pytest.approx(0.8 * T_liq, rel=1e-10)
+
+    @pytest.mark.parametrize('mantle', ['PALEOS-2phase:MgSiO3', 'PALEOS-API-2phase:MgSiO3'])
+    def test_2phase_mushy_zone_factor_one_is_noop(self, mantle):
+        """Edge: mzf=1.0 collapses the 2-phase solidus onto the liquidus."""
+        out = load_solidus_liquidus_functions(
+            {'core': 'PALEOS:iron', 'mantle': mantle},
+            mushy_zone_factor=1.0,
+        )
+        sol_func, liq_func = out
+        for P in (1e9, 1e10, 1e11):
+            assert float(sol_func(P)) == pytest.approx(float(liq_func(P)), rel=1e-10)
+
+    def test_paleos_api_2phase_triggers_curve_loading(self):
+        """PALEOS-API-2phase:MgSiO3 needs external melting curves, like PALEOS-2phase."""
+        out = load_solidus_liquidus_functions(
+            {'core': 'PALEOS:iron', 'mantle': 'PALEOS-API-2phase:MgSiO3'},
+        )
+        assert out is not None

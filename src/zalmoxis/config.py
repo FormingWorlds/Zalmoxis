@@ -23,6 +23,7 @@ from .eos import get_solidus_liquidus_functions
 from .eos_analytic import USER_SELECTABLE_MATERIALS
 from .eos_properties import EOS_REGISTRY
 from .eos_vinet import VALID_VINET_KEYS
+from .melting_curves import derive_solidus_from_liquidus
 from .mixing import (
     BINODAL_T_SCALE_DEFAULT,
     _PALEOS_UNIFIED_NAMES,
@@ -372,16 +373,23 @@ def validate_config(config_params):
             f'cause solver instabilities. Use a value in [0.7, 1.0].'
         )
 
-    # mushy_zone_factor < 1.0 only makes sense with unified PALEOS tables
-    has_unified_paleos = bool(all_components & _PALEOS_UNIFIED_NAMES)
-    if mushy_zone_factor < 1.0 and not has_unified_paleos:
+    # mushy_zone_factor < 1.0 only makes sense with unified PALEOS tables or
+    # PALEOS-2phase/PALEOS-API-2phase materials, whose solidus is derived
+    # from the PALEOS-liquidus curve scaled by mushy_zone_factor. WolfBower2018
+    # and RTPress100TPa keep the configured rock_solidus/rock_liquidus curves
+    # and stay mzf-independent.
+    has_mzf_capable_eos = bool(
+        all_components & (_PALEOS_UNIFIED_NAMES | _PALEOS_2PHASE_MZF_NAMES)
+    )
+    if mushy_zone_factor < 1.0 and not has_mzf_capable_eos:
         raise ValueError(
-            f'mushy_zone_factor = {mushy_zone_factor} < 1.0 but no unified PALEOS '
+            f'mushy_zone_factor = {mushy_zone_factor} < 1.0 but no mzf-capable '
             f'EOS is configured. The mushy zone factor only applies to unified '
-            f'PALEOS tables ({", ".join(sorted(_PALEOS_UNIFIED_NAMES))}). '
-            f'For PALEOS-2phase, PALEOS-API-2phase, or WolfBower2018, phase '
-            f'routing is controlled by the rock_solidus/rock_liquidus melting '
-            f'curves instead.'
+            f'PALEOS tables ({", ".join(sorted(_PALEOS_UNIFIED_NAMES))}) and to '
+            f'PALEOS-2phase/PALEOS-API-2phase materials '
+            f'({", ".join(sorted(_PALEOS_2PHASE_MZF_NAMES))}). '
+            f'For WolfBower2018 or RTPress100TPa, phase routing is controlled '
+            f'by the rock_solidus/rock_liquidus melting curves instead.'
         )
 
     # ── Per-EOS mushy zone factors ──────────────────────────────────
@@ -827,6 +835,18 @@ _NEEDS_MELTING_CURVES = {
     'RTPress100TPa:MgSiO3',
     'PALEOS-2phase:MgSiO3',
     'PALEOS-2phase:MgSiO3-highres',
+    'PALEOS-API-2phase:MgSiO3',
+}
+
+# 2-phase materials whose solidus is derived from the PALEOS-liquidus curve
+# scaled by mushy_zone_factor, matching the coupled PROTEUS solver's own
+# derivation (see load_zalmoxis_solidus_liquidus_functions in
+# proteus.interior_struct.zalmoxis). WolfBower2018/RTPress100TPa instead
+# keep the Stixrude14/rock_solidus curves as-is and are mzf-independent.
+_PALEOS_2PHASE_MZF_NAMES = {
+    'PALEOS-2phase:MgSiO3',
+    'PALEOS-2phase:MgSiO3-highres',
+    'PALEOS-API-2phase:MgSiO3',
 }
 
 
@@ -834,6 +854,7 @@ def load_solidus_liquidus_functions(
     layer_eos_config,
     solidus_id='Stixrude14-solidus',
     liquidus_id='Stixrude14-liquidus',
+    mushy_zone_factor=1.0,
 ):
     """Load solidus and liquidus functions if any layer uses an EOS that needs them.
 
@@ -841,14 +862,26 @@ def load_solidus_liquidus_functions(
     T-dependent but derive their phase boundary from the table itself, so
     they do not need external melting curves.
 
+    PALEOS-2phase and PALEOS-API-2phase materials use the analytic
+    PALEOS-liquidus curve with the solidus derived as
+    ``T_sol = T_liq * mushy_zone_factor``, regardless of ``solidus_id``/
+    ``liquidus_id``. This matches the curve basis and mzf handling the
+    coupled PROTEUS solver uses for the same materials. WolfBower2018 and
+    RTPress100TPa keep the ``solidus_id``/``liquidus_id`` curves as-is.
+
     Parameters
     ----------
     layer_eos_config : dict
         Per-layer EOS config.
     solidus_id : str
-        Solidus melting curve identifier.
+        Solidus melting curve identifier. Ignored for PALEOS-2phase and
+        PALEOS-API-2phase materials.
     liquidus_id : str
-        Liquidus melting curve identifier.
+        Liquidus melting curve identifier. Ignored for PALEOS-2phase and
+        PALEOS-API-2phase materials.
+    mushy_zone_factor : float
+        Solidus-to-liquidus temperature ratio for PALEOS-2phase and
+        PALEOS-API-2phase materials, in [0.7, 1.0].
 
     Returns
     -------
@@ -860,6 +893,10 @@ def load_solidus_liquidus_functions(
         if v:
             m = parse_layer_components(v)
             all_comps.update(m.components)
+    if all_comps & _PALEOS_2PHASE_MZF_NAMES:
+        _, liquidus_func = get_solidus_liquidus_functions(liquidus_id='PALEOS-liquidus')
+        solidus_func = derive_solidus_from_liquidus(liquidus_func, mushy_zone_factor)
+        return (solidus_func, liquidus_func)
     if all_comps & _NEEDS_MELTING_CURVES:
         solidus_func, liquidus_func = get_solidus_liquidus_functions(solidus_id, liquidus_id)
         return (solidus_func, liquidus_func)
