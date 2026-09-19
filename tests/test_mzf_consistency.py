@@ -58,7 +58,7 @@ def stub_tables(monkeypatch):
 def _curves(mzf):
     """Return the (solidus, liquidus) pair the 2-phase loader builds for ``mzf``."""
     out = load_solidus_liquidus_functions(
-        _TWO_PHASE, 'Stixrude14-solidus', 'Stixrude14-liquidus', mzf
+        _TWO_PHASE, 'Stixrude14-solidus', 'PALEOS-liquidus', mzf
     )
     assert out is not None
     return out

@@ -401,7 +401,7 @@ class TestLoadSolidusLiquidusFunctions:
 
     @pytest.mark.parametrize('mantle', ['PALEOS-2phase:MgSiO3', 'PALEOS-API-2phase:MgSiO3'])
     def test_2phase_solidus_scales_with_mushy_zone_factor(self, mantle):
-        """2-phase solidus is the PALEOS-liquidus curve scaled by mzf.
+        """With ``PALEOS-liquidus`` the 2-phase solidus is mzf times the liquidus.
 
         Discriminating: at mzf=0.8 the solidus must equal 0.8 * liquidus at
         every pressure tested, not the Stixrude14-solidus curve that
@@ -410,7 +410,7 @@ class TestLoadSolidusLiquidusFunctions:
         out = load_solidus_liquidus_functions(
             {'core': 'PALEOS:iron', 'mantle': mantle},
             'Stixrude14-solidus',
-            'Stixrude14-liquidus',
+            'PALEOS-liquidus',
             mushy_zone_factor=0.8,
         )
         assert out is not None
@@ -425,11 +425,28 @@ class TestLoadSolidusLiquidusFunctions:
         """Edge: mzf=1.0 collapses the 2-phase solidus onto the liquidus."""
         out = load_solidus_liquidus_functions(
             {'core': 'PALEOS:iron', 'mantle': mantle},
+            liquidus_id='PALEOS-liquidus',
             mushy_zone_factor=1.0,
         )
         sol_func, liq_func = out
         for P in (1e9, 1e10, 1e11):
             assert float(sol_func(P)) == pytest.approx(float(liq_func(P)), rel=1e-10)
+
+    @pytest.mark.parametrize('mantle', ['PALEOS-2phase:MgSiO3', 'PALEOS-API-2phase:MgSiO3'])
+    def test_2phase_default_curves_ignore_mushy_zone_factor(self, mantle):
+        """With the default Stixrude14 curves the 2-phase loader ignores mzf."""
+        from zalmoxis.eos import get_solidus_liquidus_functions
+
+        ref_sol, ref_liq = get_solidus_liquidus_functions(
+            'Stixrude14-solidus', 'Stixrude14-liquidus'
+        )
+        out = load_solidus_liquidus_functions(
+            {'core': 'PALEOS:iron', 'mantle': mantle}, mushy_zone_factor=0.8
+        )
+        sol_func, liq_func = out
+        for P in (1e9, 1e10, 1e11):
+            assert float(sol_func(P)) == pytest.approx(float(ref_sol(P)), rel=1e-12)
+            assert float(liq_func(P)) == pytest.approx(float(ref_liq(P)), rel=1e-12)
 
     def test_paleos_api_2phase_triggers_curve_loading(self):
         """PALEOS-API-2phase:MgSiO3 needs external melting curves, like PALEOS-2phase."""
