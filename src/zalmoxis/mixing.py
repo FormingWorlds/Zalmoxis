@@ -46,6 +46,17 @@ _PALEOS_UNIFIED_NAMES = frozenset(
     }
 )
 
+# 2-phase mantle EOS names (separate solid and liquid tables). Their density
+# blend uses the solidus/liquidus functions, so mushy_zone_factor reaches them
+# through those curves.
+_PALEOS_2PHASE_NAMES = frozenset(
+    {
+        'PALEOS-2phase:MgSiO3',
+        'PALEOS-2phase:MgSiO3-highres',
+        'PALEOS-API-2phase:MgSiO3',
+    }
+)
+
 # TOML per-material mushy_zone_factor override key for each unified PALEOS
 # name. The bare PALEOS keys predate PALEOS-API and Chabrier support and
 # stay as-is so existing TOML files keep working.
@@ -894,11 +905,7 @@ def _nabla_ad_for_component(
     if mat.get('format') == 'paleos_unified':
         return _get_paleos_unified_nabla_ad(pressure, temperature, mat, interpolation_functions)
 
-    if eos_name in (
-        'PALEOS-2phase:MgSiO3',
-        'PALEOS-2phase:MgSiO3-highres',
-        'PALEOS-API-2phase:MgSiO3',
-    ):
+    if eos_name in _PALEOS_2PHASE_NAMES:
         # Convert dT/dP back to nabla_ad = (dT/dP) * P / T
         if pressure <= 0 or temperature <= 0:
             return None

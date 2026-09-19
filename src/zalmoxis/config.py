@@ -26,6 +26,7 @@ from .eos_vinet import VALID_VINET_KEYS
 from .melting_curves import derive_solidus_from_liquidus
 from .mixing import (
     BINODAL_T_SCALE_DEFAULT,
+    _PALEOS_2PHASE_NAMES,
     _PALEOS_UNIFIED_NAMES,
     _PALEOS_UNIFIED_TOML_KEYS,
     parse_layer_components,
@@ -378,7 +379,7 @@ def validate_config(config_params):
     # curve, whose solidus is derived from it. WolfBower2018, RTPress100TPa
     # and 2-phase materials on other curves stay mzf-independent.
     has_mzf_capable_eos = bool(all_components & _PALEOS_UNIFIED_NAMES) or (
-        bool(all_components & _PALEOS_2PHASE_MZF_NAMES)
+        bool(all_components & _PALEOS_2PHASE_NAMES)
         and config_params.get('rock_liquidus') == _PALEOS_LIQUIDUS_ID
     )
     if mushy_zone_factor < 1.0 and not has_mzf_capable_eos:
@@ -388,7 +389,7 @@ def validate_config(config_params):
             f'PALEOS tables ({", ".join(sorted(_PALEOS_UNIFIED_NAMES))}) and to '
             f'PALEOS-2phase/PALEOS-API-2phase materials with '
             f"rock_liquidus = '{_PALEOS_LIQUIDUS_ID}' "
-            f'({", ".join(sorted(_PALEOS_2PHASE_MZF_NAMES))}). '
+            f'({", ".join(sorted(_PALEOS_2PHASE_NAMES))}). '
             f'For WolfBower2018 or RTPress100TPa, phase routing is controlled '
             f'by the rock_solidus/rock_liquidus melting curves instead.'
         )
@@ -834,24 +835,14 @@ def load_material_dictionaries():
 _NEEDS_MELTING_CURVES = {
     'WolfBower2018:MgSiO3',
     'RTPress100TPa:MgSiO3',
-    'PALEOS-2phase:MgSiO3',
-    'PALEOS-2phase:MgSiO3-highres',
-    'PALEOS-API-2phase:MgSiO3',
-}
+} | _PALEOS_2PHASE_NAMES
 
 # Melting-curve identifier whose solidus is derived as mushy_zone_factor times
 # the liquidus, as in the coupled PROTEUS solver (see
 # load_zalmoxis_solidus_liquidus_functions in proteus.interior_struct.zalmoxis).
+# PALEOS 2-phase materials honor mushy_zone_factor only on this curve;
+# WolfBower2018/RTPress100TPa keep the configured curves and ignore it.
 _PALEOS_LIQUIDUS_ID = 'PALEOS-liquidus'
-
-# 2-phase materials that honor mushy_zone_factor when rock_liquidus is
-# PALEOS-liquidus. WolfBower2018/RTPress100TPa always keep the configured
-# rock_solidus/rock_liquidus curves and are mzf-independent.
-_PALEOS_2PHASE_MZF_NAMES = {
-    'PALEOS-2phase:MgSiO3',
-    'PALEOS-2phase:MgSiO3-highres',
-    'PALEOS-API-2phase:MgSiO3',
-}
 
 
 def load_solidus_liquidus_functions(
@@ -897,7 +888,7 @@ def load_solidus_liquidus_functions(
         if v:
             m = parse_layer_components(v)
             all_comps.update(m.components)
-    if all_comps & _PALEOS_2PHASE_MZF_NAMES and liquidus_id == _PALEOS_LIQUIDUS_ID:
+    if all_comps & _PALEOS_2PHASE_NAMES and liquidus_id == _PALEOS_LIQUIDUS_ID:
         _, liquidus_func = get_solidus_liquidus_functions(liquidus_id=_PALEOS_LIQUIDUS_ID)
         solidus_func = derive_solidus_from_liquidus(liquidus_func, mushy_zone_factor)
         return (solidus_func, liquidus_func)
