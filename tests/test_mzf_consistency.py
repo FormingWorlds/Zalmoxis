@@ -266,3 +266,55 @@ class TestUnifiedVersusTwoPhase:
             rho_two = get_Tdep_density(pressure, frac * t_liq, two_phase, sol, liq, {})
             rho_uni = get_paleos_unified_density(pressure, frac * t_liq, uni, 0.8, {})
             assert rho_two == pytest.approx(rho_uni, rel=0.05)
+
+
+_NABLA_SOLID = 0.20
+_NABLA_LIQUID = 0.30
+
+
+@pytest.fixture
+def stub_nabla(monkeypatch):
+    """Return distinct solid and liquid nabla_ad values from the table lookup."""
+
+    def _nabla(pressure, temperature, material, phase, interpolation_functions):
+        return _NABLA_SOLID if phase == 'solid_mantle' else _NABLA_LIQUID
+
+    monkeypatch.setattr('zalmoxis.eos.temperature._get_paleos_nabla_ad', _nabla)
+
+
+class TestDtdpPhaseRouting:
+    """``_compute_paleos_dtdp`` picks the phase table from the solidus and liquidus."""
+
+    _P = 50e9
+
+    def _dtdp(self, t_sol, t_liq, temperature):
+        from zalmoxis.eos.temperature import _compute_paleos_dtdp
+
+        return _compute_paleos_dtdp(
+            self._P, temperature, {}, lambda p: t_sol, lambda p: t_liq, {}
+        )
+
+    def test_inverted_curves_fall_back_to_solid_table(self, stub_nabla):
+        """With T_liq < T_sol the solid table is used even at T above both curves."""
+        temperature = 3500.0
+        dtdp = self._dtdp(t_sol=3000.0, t_liq=2000.0, temperature=temperature)
+        assert dtdp == pytest.approx(_NABLA_SOLID * temperature / self._P)
+
+    def test_zero_width_mushy_zone_uses_liquid_above_curve(self, stub_nabla):
+        """With T_sol == T_liq (mzf = 1.0) a temperature above the curve is liquid."""
+        temperature = 3500.0
+        dtdp = self._dtdp(t_sol=3000.0, t_liq=3000.0, temperature=temperature)
+        assert dtdp == pytest.approx(_NABLA_LIQUID * temperature / self._P)
+
+    def test_zero_width_mushy_zone_uses_solid_below_curve(self, stub_nabla):
+        """With T_sol == T_liq a temperature below the curve is solid."""
+        temperature = 2500.0
+        dtdp = self._dtdp(t_sol=3000.0, t_liq=3000.0, temperature=temperature)
+        assert dtdp == pytest.approx(_NABLA_SOLID * temperature / self._P)
+
+    def test_mushy_zone_blends_with_melt_fraction(self, stub_nabla):
+        """Halfway through the mushy zone nabla_ad is the mean of the two tables."""
+        temperature = 2500.0
+        dtdp = self._dtdp(t_sol=2000.0, t_liq=3000.0, temperature=temperature)
+        expected = 0.5 * (_NABLA_SOLID + _NABLA_LIQUID) * temperature / self._P
+        assert dtdp == pytest.approx(expected)
