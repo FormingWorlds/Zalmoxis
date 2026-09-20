@@ -131,7 +131,7 @@ where $\rho_0$ is the zero-pressure density, $c$ and $n$ are fitted constants. T
 
 When any T-dependent EOS is assigned to any layer, the `temperature_mode`, `surface_temperature`, and `center_temperature` parameters in `[AssumptionsAndInitialGuesses]` become active.
 
-#### Mushy zone factor (unified PALEOS only)
+#### Mushy zone factor
 
 | Field | Required | Default | Description |
 |---|---|---|---|
@@ -139,6 +139,7 @@ When any T-dependent EOS is assigned to any layer, the `temperature_mode`, `surf
 | `mushy_zone_factor_iron` | No | global value | Per-material override for `PALEOS:iron`. Same range and semantics as `mushy_zone_factor`. Only validated when `PALEOS:iron` is configured. |
 | `mushy_zone_factor_MgSiO3` | No | global value | Per-material override for `PALEOS:MgSiO3`. |
 | `mushy_zone_factor_H2O` | No | global value | Per-material override for `PALEOS:H2O`. |
+| `mushy_zone_factor_chabrier_H` | No | global value | Per-material override for the `Chabrier:H` component. Same range and semantics as `mushy_zone_factor`. Only validated when `Chabrier:H` is present as a mixing component of a layer (a pure `Chabrier:H` layer is not supported). |
 
 Per-material overrides take precedence over the global default. If a per-material key is absent, the global `mushy_zone_factor` is used for that material. This allows independent control of phase boundary widths, for example using a wider mushy zone for silicate (`0.8`) while keeping a sharp boundary for iron (`1.0`):
 

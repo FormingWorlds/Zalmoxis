@@ -889,6 +889,14 @@ def load_solidus_liquidus_functions(
             m = parse_layer_components(v)
             all_comps.update(m.components)
     if all_comps & _PALEOS_2PHASE_NAMES and liquidus_id == _PALEOS_LIQUIDUS_ID:
+        if solidus_id != 'Stixrude14-solidus':
+            logger.warning(
+                "rock_solidus=%r is not used for a PALEOS 2-phase mantle with "
+                "rock_liquidus='PALEOS-liquidus': the solidus is derived as "
+                "mushy_zone_factor * liquidus (mushy_zone_factor=%.3g).",
+                solidus_id,
+                mushy_zone_factor,
+            )
         _, liquidus_func = get_solidus_liquidus_functions(liquidus_id=_PALEOS_LIQUIDUS_ID)
         solidus_func = derive_solidus_from_liquidus(liquidus_func, mushy_zone_factor)
         return (solidus_func, liquidus_func)

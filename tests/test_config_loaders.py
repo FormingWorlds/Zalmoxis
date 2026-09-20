@@ -308,6 +308,43 @@ class TestLoadZalmoxisConfig:
         with pytest.raises(ValueError):
             load_zalmoxis_config(temp_config_path=str(p))
 
+    def test_chabrier_h_mushy_override_resolves_for_mixture(self, tmp_path):
+        """The ``mushy_zone_factor_chabrier_H`` override reaches ``Chabrier:H``
+        when it is a mixing component of the mantle. A pure Chabrier:H layer
+        is rejected, so the mixture form is the only standalone path that
+        exercises this key.
+        """
+        body = _MINIMAL_TOML.replace(
+            '[EOS]\ncore = "PALEOS:iron"\nmantle = "PALEOS:MgSiO3"\n',
+            (
+                '[EOS]\n'
+                'core = "PALEOS:iron"\n'
+                'mantle = "PALEOS:MgSiO3:0.97+Chabrier:H:0.03"\n'
+                'mushy_zone_factor = 1.0\n'
+                'mushy_zone_factor_chabrier_H = 0.85\n'
+                'mushy_zone_factor_MgSiO3 = 0.9\n'
+            ),
+        )
+        p = _write_toml(tmp_path / 'chabrier.toml', body)
+        params = load_zalmoxis_config(temp_config_path=str(p))
+        factors = params['mushy_zone_factors']
+        assert factors['Chabrier:H'] == pytest.approx(0.85)
+        assert factors['PALEOS:MgSiO3'] == pytest.approx(0.9)
+        # iron takes the global default 1.0 since no per-material override.
+        assert factors['PALEOS:iron'] == pytest.approx(1.0)
+
+    def test_mushy_override_for_absent_material_raises(self, tmp_path):
+        """Edge: a sub-1.0 override for a material not in any layer is
+        rejected, so a typo cannot silently apply to nothing.
+        """
+        body = _MINIMAL_TOML.replace(
+            'mantle = "PALEOS:MgSiO3"',
+            'mantle = "PALEOS:MgSiO3"\nmushy_zone_factor_H2O = 0.8',
+        )
+        p = _write_toml(tmp_path / 'absent.toml', body)
+        with pytest.raises(ValueError, match='not configured in any layer'):
+            load_zalmoxis_config(temp_config_path=str(p))
+
 
 # ---------------------------------------------------------------------------
 # load_material_dictionaries
@@ -454,3 +491,70 @@ class TestLoadSolidusLiquidusFunctions:
             {'core': 'PALEOS:iron', 'mantle': 'PALEOS-API-2phase:MgSiO3'},
         )
         assert out is not None
+
+    def test_overridden_rock_solidus_warns_for_2phase(self, caplog):
+        """A non-default ``rock_solidus`` is silently ignored for a PALEOS
+        2-phase mantle with ``PALEOS-liquidus``: the derived solidus is
+        ``mushy_zone_factor * liquidus``. The loader must warn so a user who
+        sets ``rock_solidus`` learns it has no effect.
+        """
+        with caplog.at_level('WARNING', logger='zalmoxis.config'):
+            out = load_solidus_liquidus_functions(
+                {'core': 'PALEOS:iron', 'mantle': 'PALEOS-2phase:MgSiO3'},
+                solidus_id='WolfBower2018-solidus',
+                liquidus_id='PALEOS-liquidus',
+                mushy_zone_factor=0.8,
+            )
+        assert out is not None
+        assert any(
+            'is not used for a PALEOS 2-phase mantle' in r.getMessage()
+            and r.levelname == 'WARNING'
+            for r in caplog.records
+        )
+
+    def test_default_rock_solidus_is_silent_for_2phase(self, caplog):
+        """The default ``rock_solidus`` carries no user intent to override,
+        so the loader stays silent even though the value is still ignored.
+        """
+        with caplog.at_level('WARNING', logger='zalmoxis.config'):
+            load_solidus_liquidus_functions(
+                {'core': 'PALEOS:iron', 'mantle': 'PALEOS-2phase:MgSiO3'},
+                solidus_id='Stixrude14-solidus',
+                liquidus_id='PALEOS-liquidus',
+                mushy_zone_factor=0.8,
+            )
+        assert not any(
+            'is not used for a PALEOS 2-phase mantle' in r.getMessage()
+            for r in caplog.records
+        )
+
+
+# ---------------------------------------------------------------------------
+# Per-material mushy-zone TOML key mapping
+# ---------------------------------------------------------------------------
+
+
+class TestMushyZoneTomlKeys:
+    """The unified-name to TOML-key mapping is the contract between the
+    configuration file and the per-material mushy-zone overrides."""
+
+    def test_mapping_covers_every_unified_name(self):
+        """Each unified EOS name maps to exactly the documented TOML key.
+
+        The PALEOS-API keys have no standalone config path yet, so this
+        mapping is their only guard against a silent rename.
+        """
+        from zalmoxis.mixing import _PALEOS_UNIFIED_NAMES, _PALEOS_UNIFIED_TOML_KEYS
+
+        expected = {
+            'PALEOS:iron': 'mushy_zone_factor_iron',
+            'PALEOS:MgSiO3': 'mushy_zone_factor_MgSiO3',
+            'PALEOS:H2O': 'mushy_zone_factor_H2O',
+            'PALEOS-API:iron': 'mushy_zone_factor_paleos_api_iron',
+            'PALEOS-API:MgSiO3': 'mushy_zone_factor_paleos_api_MgSiO3',
+            'PALEOS-API:H2O': 'mushy_zone_factor_paleos_api_H2O',
+            'Chabrier:H': 'mushy_zone_factor_chabrier_H',
+        }
+        assert _PALEOS_UNIFIED_TOML_KEYS == expected
+        # Every name with a per-material override is a recognised unified name.
+        assert set(_PALEOS_UNIFIED_TOML_KEYS) <= set(_PALEOS_UNIFIED_NAMES)
