@@ -697,7 +697,11 @@ class TestGetTdepDensity:
         assert rho > 0
 
     def test_degenerate_melting_curve(self):
-        """When T_liq <= T_sol, defaults to melted_mantle."""
+        """Inverted curve (T_liq < T_sol) below T_sol returns a finite density.
+
+        At T=4500 K, below the solidus, get_Tdep_density selects the solid
+        table and returns a positive density.
+        """
         if not _wb2018_data_available():
             pytest.skip('WB2018 data not found')
 
@@ -767,7 +771,11 @@ class TestGetTdepMaterial:
         assert result == 'mixed_mantle'
 
     def test_degenerate_melting_curve_above(self):
-        """When T_liq <= T_sol and T >= T_sol, returns 'melted_mantle'."""
+        """Inverted curve (T_liq < T_sol) at T == T_sol returns 'solid_mantle'.
+
+        The boundary T == T_sol routes to the solid branch, matching
+        get_Tdep_density, which selects solid for temperature <= T_sol.
+        """
         from zalmoxis.eos import get_Tdep_material
 
         def sf(P):
@@ -777,7 +785,7 @@ class TestGetTdepMaterial:
             return 4000.0
 
         result = get_Tdep_material(100e9, 5000, sf, lf)
-        assert result == 'melted_mantle'
+        assert result == 'solid_mantle'
 
     def test_degenerate_melting_curve_below(self):
         """When T_liq <= T_sol and T < T_sol, returns 'solid_mantle'."""
