@@ -42,6 +42,7 @@ from .eos import (
 )
 from .mixing import (
     BINODAL_T_SCALE_DEFAULT,
+    _PALEOS_UNIFIED_NAMES,
     any_component_is_tdep,
     build_partition_profile,
     calculate_mixed_density_batch,
@@ -1180,19 +1181,14 @@ def _solve(
     # Optional initial radius guess from a previous failed attempt
     initial_radius_guess = config_params.get('_initial_radius_guess', None)
 
-    # Build per-EOS mushy_zone_factors dict. Prefer the dict if present
-    # (set by load_zalmoxis_config). Fall back to building one from the
-    # single float for backward compat with callers that only set the
-    # global 'mushy_zone_factor' key.
+    # Build the per-EOS mushy_zone_factors dict. Use the per-material dict
+    # when the caller provides one; otherwise assign the single global
+    # 'mushy_zone_factor' float to every mzf-aware EOS name.
     if 'mushy_zone_factors' in config_params:
         mushy_zone_factors = config_params['mushy_zone_factors']
     else:
         _global_mzf = config_params.get('mushy_zone_factor', 1.0)
-        mushy_zone_factors = {
-            'PALEOS:iron': _global_mzf,
-            'PALEOS:MgSiO3': _global_mzf,
-            'PALEOS:H2O': _global_mzf,
-        }
+        mushy_zone_factors = {name: _global_mzf for name in _PALEOS_UNIFIED_NAMES}
     condensed_rho_min = config_params.get('condensed_rho_min', CONDENSED_RHO_MIN_DEFAULT)
     condensed_rho_scale = config_params.get('condensed_rho_scale', CONDENSED_RHO_SCALE_DEFAULT)
     binodal_T_scale = config_params.get('binodal_T_scale', BINODAL_T_SCALE_DEFAULT)

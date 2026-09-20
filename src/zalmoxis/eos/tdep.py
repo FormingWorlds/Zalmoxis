@@ -237,9 +237,11 @@ def get_Tdep_material(pressure, temperature, solidus_func, liquidus_func):
     def evaluate_phase(P, T):
         T_sol = solidus_func(P)
         T_liq = liquidus_func(P)
-        # Guard against degenerate melting curves where T_liq == T_sol
+        # Guard against degenerate melting curves where T_liq == T_sol.
+        # Equality (T == T_sol) selects solid, matching the density and
+        # nabla_ad paths.
         if T_liq <= T_sol:
-            return 'melted_mantle' if T >= T_sol else 'solid_mantle'
+            return 'melted_mantle' if T > T_sol else 'solid_mantle'
         frac_melt = (T - T_sol) / (T_liq - T_sol)
         if frac_melt < 0:
             return 'solid_mantle'

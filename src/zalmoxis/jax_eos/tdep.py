@@ -172,7 +172,12 @@ def get_tdep_density_jax(
     liq_above_sol = T_liq > T_sol
 
     is_below_sol = temperature <= T_sol
-    is_above_liq = temperature >= T_liq
+    # Strict > so that at a collapsed boundary (T_sol == T_liq, e.g.
+    # mushy_zone_factor = 1.0) T == T_liq selects solid, matching the numpy
+    # get_Tdep_density and nabla_ad paths which route equality to solid via
+    # temperature <= T_sol. For T_liq > T_sol the mushy branch at T == T_liq
+    # gives frac_melt = 1, so rho_mixed == rho_liquid and nothing else moves.
+    is_above_liq = temperature > T_liq
     # Mushy zone is the implicit fall-through of the jnp.where below: not
     # is_below_sol AND not is_above_liq AND liq_above_sol → rho_mixed.
 

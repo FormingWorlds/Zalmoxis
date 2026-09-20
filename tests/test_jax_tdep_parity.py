@@ -140,3 +140,66 @@ def test_get_tdep_density_parity_vs_numpy():
     )
 
     assert max_rel <= 1e-8, f'Tdep parity failed: max_rel={max_rel:.3e} (want <=1e-8)'
+
+
+@pytest.mark.unit
+def test_get_tdep_density_parity_at_collapsed_boundary():
+    """JAX and numpy agree at T_sol == T_liq (mzf = 1.0), and equality is solid.
+
+    A mushy_zone_factor of 1.0 collapses the mushy band to zero width, so
+    T_sol == T_liq at every pressure. Exactly on that boundary numpy routes
+    T == T_liq to the solid table (get_Tdep_density: temperature <= T_sol).
+    The JAX path must match: a strict ``temperature > T_liq`` is required, an
+    inclusive ``>=`` selects the liquid table and breaks parity at equality.
+
+    The test brackets the boundary at +/- 1e-9 (relative) and asserts:
+    - numpy and JAX agree to float64 rounding at all three points;
+    - on and just below the boundary both take the solid density, which
+      differs from the just-above liquid density by the finite melting jump.
+    """
+    from zalmoxis.eos.tdep import get_Tdep_density
+    from zalmoxis.jax_eos.tdep import get_tdep_density_jax
+
+    mat, sol_cached, liq_cached, sol_func, liq_func, interp_cache = _load_stage1b_mantle()
+
+    jax_args = {}
+    jax_args.update(_extract_sub_args(sol_cached, 'sol'))
+    jax_args.update(_extract_sub_args(liq_cached, 'liq'))
+
+    p_min = max(sol_cached['p_min'], liq_cached['p_min'])
+    p_max = min(sol_cached['p_max'], liq_cached['p_max'])
+    pressures = 10.0 ** np.linspace(np.log10(p_min) + 0.3, np.log10(p_max) - 0.3, 12)
+
+    for pressure in pressures:
+        # Collapse the melting curve: solidus == liquidus at this pressure.
+        t_star = float(liq_func(pressure))
+        const_sol = lambda p, _t=t_star: _t  # noqa: E731
+        const_liq = lambda p, _t=t_star: _t  # noqa: E731
+
+        for frac in (1.0 - 1e-9, 1.0, 1.0 + 1e-9):
+            temperature = frac * t_star
+            nv = get_Tdep_density(pressure, temperature, mat, const_sol, const_liq, interp_cache)
+            jv = float(get_tdep_density_jax(pressure, temperature, t_star, t_star, **jax_args))
+            assert nv is not None and np.isfinite(jv)
+            rel = abs(nv - jv) / max(abs(nv), 1e-30)
+            assert rel <= 1e-8, (
+                f'collapsed-boundary parity failed at P={pressure:.2e} Pa, '
+                f'frac={frac}: numpy={nv:.6e}, jax={jv:.6e}, rel={rel:.3e}'
+            )
+
+        # The melting jump must be resolvable, else the equality branch is
+        # not discriminating. Solid (on/below) differs from liquid (above).
+        rho_on = float(get_tdep_density_jax(pressure, t_star, t_star, t_star, **jax_args))
+        rho_below = float(
+            get_tdep_density_jax(pressure, t_star * (1.0 - 1e-9), t_star, t_star, **jax_args)
+        )
+        rho_above = float(
+            get_tdep_density_jax(pressure, t_star * (1.0 + 1e-9), t_star, t_star, **jax_args)
+        )
+        assert abs(rho_on - rho_below) / rho_below <= 1e-6, (
+            f'equality did not take the solid branch at P={pressure:.2e} Pa'
+        )
+        assert abs(rho_on - rho_above) / rho_above > 1e-3, (
+            f'melting jump not resolvable at P={pressure:.2e} Pa; test is not '
+            f'discriminating (rho_on={rho_on:.6e}, rho_above={rho_above:.6e})'
+        )

@@ -74,10 +74,12 @@ _PALEOS_UNIFIED_TOML_KEYS = {
 _SILICATE_EOS_NAMES = frozenset(
     {
         'PALEOS:MgSiO3',
+        'PALEOS-API:MgSiO3',
         'WolfBower2018:MgSiO3',
         'RTPress100TPa:MgSiO3',
         'PALEOS-2phase:MgSiO3',
         'PALEOS-2phase:MgSiO3-highres',
+        'PALEOS-API-2phase:MgSiO3',
     }
 )
 _H2_EOS_NAMES = frozenset({'Chabrier:H'})
@@ -1406,11 +1408,12 @@ def split_mantle_volatile_inventory(
                 )
             primary = comp
         else:
+            recognized_silicates = ', '.join(sorted(_SILICATE_EOS_NAMES))
+            recognized_volatiles = ', '.join(sorted(_VOLATILE_EOS_NAMES))
             raise ValueError(
                 f'Mantle component {comp!r} is neither a recognized silicate '
-                f'(PALEOS:MgSiO3, WolfBower2018:MgSiO3, RTPress100TPa:MgSiO3, '
-                f'PALEOS-2phase:MgSiO3) nor a recognized volatile (Chabrier:H, '
-                f'PALEOS:H2O, Seager2007:H2O). Extend the classification sets '
+                f'({recognized_silicates}) nor a recognized volatile '
+                f'({recognized_volatiles}). Extend the classification sets '
                 f'in zalmoxis.mixing if a new species needs to plug in.'
             )
 

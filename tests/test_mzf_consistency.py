@@ -318,3 +318,50 @@ class TestDtdpPhaseRouting:
         dtdp = self._dtdp(t_sol=2000.0, t_liq=3000.0, temperature=temperature)
         expected = 0.5 * (_NABLA_SOLID + _NABLA_LIQUID) * temperature / self._P
         assert dtdp == pytest.approx(expected)
+
+
+class TestCollapsedBoundaryConsumersAgree:
+    """Every numpy consumer routes T == T_sol == T_liq to the solid branch.
+
+    At mzf = 1.0 the mushy band has zero width, so T_sol == T_liq. The three
+    numpy density/phase consumers must all pick solid at that exact point:
+
+    - ``get_Tdep_density`` (density);
+    - ``get_Tdep_material`` -> ``evaluate_phase`` (phase label);
+    - ``_compute_paleos_dtdp`` (nabla_ad routing).
+
+    A consumer that used an inclusive ``>= T_liq`` there would flip to liquid
+    and disagree with the other two. The JAX density path is pinned to the
+    same convention in ``test_jax_tdep_parity``.
+    """
+
+    _P = 50e9
+    _T_STAR = 3000.0
+
+    def test_density_selects_solid_at_equality(self, stub_tables):
+        """get_Tdep_density returns the solid end member at T == T_sol == T_liq."""
+        const = lambda p: self._T_STAR  # noqa: E731
+        rho = get_Tdep_density(self._P, self._T_STAR, {}, const, const, {})
+        assert rho == pytest.approx(_RHO_SOLID, rel=1e-12)
+
+    def test_phase_label_is_solid_at_equality(self):
+        """get_Tdep_material labels T == T_sol == T_liq as solid, not melted."""
+        from zalmoxis.eos.tdep import get_Tdep_material
+
+        const = lambda p: self._T_STAR  # noqa: E731
+        phase = get_Tdep_material(self._P, self._T_STAR, const, const)
+        assert phase == 'solid_mantle'
+
+    def test_nabla_ad_routing_is_solid_at_equality(self, stub_nabla):
+        """_compute_paleos_dtdp uses the solid table at T == T_sol == T_liq."""
+        from zalmoxis.eos.temperature import _compute_paleos_dtdp
+
+        dtdp = _compute_paleos_dtdp(
+            self._P,
+            self._T_STAR,
+            {},
+            lambda p: self._T_STAR,
+            lambda p: self._T_STAR,
+            {},
+        )
+        assert dtdp == pytest.approx(_NABLA_SOLID * self._T_STAR / self._P)
