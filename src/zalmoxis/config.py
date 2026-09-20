@@ -28,6 +28,7 @@ from .mixing import (
     _PALEOS_2PHASE_NAMES,
     _PALEOS_UNIFIED_NAMES,
     _PALEOS_UNIFIED_TOML_KEYS,
+    _SILICATE_EOS_NAMES,
     BINODAL_T_SCALE_DEFAULT,
     parse_layer_components,
 )
@@ -614,17 +615,7 @@ def validate_config(config_params):
             continue
         mix = parse_layer_components(eos_str)
         h2o_frac = sum(f for c, f in zip(mix.components, mix.fractions) if 'H2O' in c)
-        has_silicate = any(
-            c
-            in {
-                'PALEOS:MgSiO3',
-                'WolfBower2018:MgSiO3',
-                'RTPress100TPa:MgSiO3',
-                'PALEOS-2phase:MgSiO3',
-                'PALEOS-2phase:MgSiO3-highres',
-            }
-            for c in mix.components
-        )
+        has_silicate = any(c in _SILICATE_EOS_NAMES for c in mix.components)
         if h2o_frac > 0.5 and not has_silicate and temperature_mode != 'isothermal':
             raise ValueError(
                 f'Mantle is {h2o_frac * 100:.0f}% H2O with no silicate component. '
