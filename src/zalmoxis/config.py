@@ -25,10 +25,10 @@ from .eos_properties import EOS_REGISTRY
 from .eos_vinet import VALID_VINET_KEYS
 from .melting_curves import derive_solidus_from_liquidus
 from .mixing import (
-    BINODAL_T_SCALE_DEFAULT,
     _PALEOS_2PHASE_NAMES,
     _PALEOS_UNIFIED_NAMES,
     _PALEOS_UNIFIED_TOML_KEYS,
+    BINODAL_T_SCALE_DEFAULT,
     parse_layer_components,
 )
 
