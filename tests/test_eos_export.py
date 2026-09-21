@@ -485,6 +485,108 @@ class TestFillNanNearest:
         assert grid[0, 0] == 333.0
 
 
+def _curved_liquidus_table(nS=80, nP=20):
+    """Build a synthetic melt-phase P-S temperature table with a curved liquidus.
+
+    Rows are entropy ``S`` (J/kg/K), columns are pressure. Column ``j``
+    holds data only above its own liquidus entropy ``S_b[j]``, which
+    falls by more than one row per column, so the valid region has a
+    curved lower edge. Above the edge the temperature is the column's
+    analytic liquidus ``T_liq[j]`` plus a linear rise with entropy, and
+    ``T_liq`` rises by several percent from one column to the next.
+
+    Returns
+    -------
+    tuple
+        ``(S_axis, P_axis, grid, S_b, T_liq)`` with ``grid`` of shape
+        ``(nS, nP)`` and NaN below each column's boundary.
+    """
+    S_axis = np.linspace(1200.0, 3200.0, nS)
+    x = np.linspace(0.0, 1.0, nP)
+    P_axis = 1e9 + 1e11 * x  # Pa
+    S_b = 3000.0 - 1200.0 * x**0.7  # boundary entropy per column
+    T_liq = 2000.0 + 2500.0 * x  # analytic boundary temperature per column
+    grid = np.full((nS, nP), np.nan)
+    for j in range(nP):
+        above = S_axis >= S_b[j]
+        grid[above, j] = T_liq[j] + 0.5 * (S_axis[above] - S_b[j])
+    return S_axis, P_axis, grid, S_b, T_liq
+
+
+def _global_2d_nearest_fill(grid):
+    """Reference fill: one global 2D nearest-neighbor search over all cells."""
+    from scipy.ndimage import distance_transform_edt
+
+    filled = grid.copy()
+    mask = np.isnan(filled)
+    _, idx = distance_transform_edt(mask, return_distances=True, return_indices=True)
+    filled[mask] = grid[tuple(idx[:, mask])]
+    return filled
+
+
+class TestFillOnCurvedBoundary:
+    """Fill behavior on a table whose phase boundary curves across columns."""
+
+    def test_off_node_query_below_boundary_stays_in_its_own_column(self):
+        """Interpolating within a column's fill never sees a neighboring column.
+
+        The filled grid goes through ``_build_interpolator``, a generic
+        bilinear interpolator on the S-P axes. It stands in for the
+        consumer's own interpolation; it is not that code. At every
+        pressure node, an off-node entropy query midway between two rows
+        at depth 0 (the last filled row and the first data row), 2 and 5
+        rows below the edge must return the column's own first data
+        value, taken from the grid before the fill. A donor from another
+        column shifts the filled cell by the column-to-column liquidus
+        step (over 100 K here), so the query then misses that value.
+        """
+        S_axis, P_axis, grid, S_b, T_liq = _curved_liquidus_table()
+        first_data = np.array(
+            [grid[np.searchsorted(S_axis, S_b[j]), j] for j in range(len(P_axis))]
+        )
+        eos_export._fill_nan_nearest(grid)
+        interp = eos_export._build_interpolator(S_axis, P_axis, grid)
+
+        for j in range(len(P_axis)):
+            k = int(np.searchsorted(S_axis, S_b[j]))  # first data row of column j
+            assert k > 5
+            for depth in (0, 2, 5):  # rows below the boundary edge
+                s_mid = 0.5 * (S_axis[k - 1 - depth] + S_axis[k - depth])
+                got = float(interp((s_mid, P_axis[j])))
+                np.testing.assert_allclose(got, first_data[j], rtol=1e-12)
+                assert abs(got - T_liq[j]) < 0.02 * T_liq[j]  # near this column's liquidus
+
+    def test_filled_temperature_tracks_each_columns_own_liquidus(self):
+        """Below the boundary each column's fill stays near its own analytic liquidus.
+
+        The tolerance is one third of the smallest column-to-column
+        liquidus step (relative), so a fill donated from a neighboring
+        column falls outside it. The reference global 2D search violates
+        the tolerance in most columns, which shows the check can fail.
+        This is a per-column isolation check on a synthetic table; it
+        does not measure the off-liquidus fraction of a real table.
+        """
+        S_axis, P_axis, grid, S_b, T_liq = _curved_liquidus_table()
+        step = np.abs(np.diff(T_liq)) / T_liq[:-1]
+        tol = step.min() / 3.0  # a neighbor's liquidus lies well outside tolerance
+
+        reference = _global_2d_nearest_fill(grid)
+        off_reference = 0
+        for j in range(len(P_axis)):
+            below = S_axis < S_b[j]
+            assert below.any()
+            off_reference += int(np.any(np.abs(reference[below, j] / T_liq[j] - 1.0) > tol))
+        assert off_reference > len(P_axis) // 2
+
+        eos_export._fill_nan_nearest(grid)
+        for j in range(len(P_axis)):
+            below = S_axis < S_b[j]
+            rel_err = np.abs(grid[below, j] / T_liq[j] - 1.0)
+            assert rel_err.max() < tol, (
+                f'column {j}: fill off its liquidus by {rel_err.max():.3f}'
+            )
+
+
 # ---------------------------------------------------------------------------
 # SPIDER file writers (1D + 2D)
 # ---------------------------------------------------------------------------

@@ -173,6 +173,7 @@ def _fill_nan_nearest(grid):
         # Search for the nearest cell that held real data before the
         # per-column pass, so a fully-empty column never donates from a
         # neighboring column's own extrapolated fill.
+        # A fully-empty column has no same-column donor, so it takes another column's value.
         _, indices = distance_transform_edt(
             ~original_valid, return_distances=True, return_indices=True
         )
