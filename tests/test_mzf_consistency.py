@@ -196,6 +196,24 @@ def _two_phase_tables_available():
     return mat
 
 
+@pytest.fixture(scope='module')
+def two_phase_cache():
+    """Interpolation cache shared by the 2-phase lookups of one worker.
+
+    Each 2-phase table is parsed from text once per worker instead of once per
+    density call.
+    """
+    return {}
+
+
+@pytest.fixture(scope='module')
+def unified_cache():
+    """Interpolation cache shared by the unified-table lookups of one worker."""
+    return {}
+
+
+# Real tables are parsed on first use, which is slow under coverage tracing.
+@pytest.mark.timeout(1800)
 class TestUnifiedVersusTwoPhase:
     """The unified blend and the 2-phase blend share one phase-boundary basis."""
 
@@ -239,7 +257,9 @@ class TestUnifiedVersusTwoPhase:
 
     @pytest.mark.parametrize('pressure', [5e9, 50e9, 200e9], ids=['5GPa', '50GPa', '200GPa'])
     @pytest.mark.parametrize('frac', [0.6, 1.3], ids=['solid', 'liquid'])
-    def test_unified_and_two_phase_agree_outside_mushy_zone(self, pressure, frac):
+    def test_unified_and_two_phase_agree_outside_mushy_zone(
+        self, pressure, frac, two_phase_cache, unified_cache
+    ):
         """Both blends reduce to the same table value away from the mushy zone."""
         from zalmoxis.eos.paleos import get_paleos_unified_density
 
@@ -248,12 +268,12 @@ class TestUnifiedVersusTwoPhase:
         uni['eos_file'] = _unified_table_file()
         sol, liq = _curves(0.8)
         t = frac * float(liq(pressure))
-        rho_two = get_Tdep_density(pressure, t, two_phase, sol, liq, {})
-        rho_uni = get_paleos_unified_density(pressure, t, uni, 0.8, {})
+        rho_two = get_Tdep_density(pressure, t, two_phase, sol, liq, two_phase_cache)
+        rho_uni = get_paleos_unified_density(pressure, t, uni, 0.8, unified_cache)
         assert rho_two == pytest.approx(rho_uni, rel=1e-4)
 
     @pytest.mark.parametrize('pressure', [5e9, 50e9, 200e9], ids=['5GPa', '50GPa', '200GPa'])
-    def test_mushy_zone_disagreement_is_bounded(self, pressure):
+    def test_mushy_zone_disagreement_is_bounded(self, pressure, two_phase_cache, unified_cache):
         """Inside the mushy zone the two blends differ by less than 5% (measured max 3.4%)."""
         from zalmoxis.eos.paleos import get_paleos_unified_density
 
@@ -263,8 +283,12 @@ class TestUnifiedVersusTwoPhase:
         sol, liq = _curves(0.8)
         t_liq = float(liq(pressure))
         for frac in (0.85, 0.9, 0.95, 1.0):
-            rho_two = get_Tdep_density(pressure, frac * t_liq, two_phase, sol, liq, {})
-            rho_uni = get_paleos_unified_density(pressure, frac * t_liq, uni, 0.8, {})
+            rho_two = get_Tdep_density(
+                pressure, frac * t_liq, two_phase, sol, liq, two_phase_cache
+            )
+            rho_uni = get_paleos_unified_density(
+                pressure, frac * t_liq, uni, 0.8, unified_cache
+            )
             assert rho_two == pytest.approx(rho_uni, rel=0.05)
 
 
