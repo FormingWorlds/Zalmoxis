@@ -58,7 +58,8 @@ def run_zalmoxis_for_ternary(args):
         config_params,
         material_dictionaries=load_material_dictionaries(),
         melting_curves_functions=load_solidus_liquidus_functions(
-            config_params['layer_eos_config']
+            config_params['layer_eos_config'],
+            mushy_zone_factor=config_params.get('mushy_zone_factor', 1.0),
         ),
         input_dir=os.path.join(get_zalmoxis_root(), 'input'),
     )

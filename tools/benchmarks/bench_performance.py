@@ -216,6 +216,7 @@ def main_cli():
         layer_eos_config,
         config_params.get('rock_solidus', 'Stixrude14-solidus'),
         config_params.get('rock_liquidus', 'Stixrude14-liquidus'),
+        config_params.get('mushy_zone_factor', 1.0),
     )
     _input_dir = os.path.normpath(
         os.path.join(os.path.dirname(_zal.__file__), '..', '..', 'input')

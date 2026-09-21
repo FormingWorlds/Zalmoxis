@@ -55,6 +55,7 @@ def run(config_path, w_liquid, num_levels, use_jax):
         config_params['layer_eos_config'],
         config_params.get('rock_solidus', 'Stixrude14-solidus'),
         config_params.get('rock_liquidus', 'Stixrude14-liquidus'),
+        config_params.get('mushy_zone_factor', 1.0),
     )
     if melt_funcs is None:
         # All-unified configs need no external curves for density, but

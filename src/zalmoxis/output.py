@@ -39,6 +39,7 @@ def post_processing(config_params, id_mass=None, output_file=None, model_results
     layer_eos_config = config_params['layer_eos_config']
     solidus_id = config_params.get('rock_solidus', 'Stixrude14-solidus')
     liquidus_id = config_params.get('rock_liquidus', 'Stixrude14-liquidus')
+    mushy_zone_factor = config_params.get('mushy_zone_factor', 1.0)
 
     data_output_enabled = config_params['data_output_enabled']
     plotting_enabled = config_params['plotting_enabled']
@@ -51,7 +52,7 @@ def post_processing(config_params, id_mass=None, output_file=None, model_results
         _solver_kwargs = dict(
             material_dictionaries=load_material_dictionaries(),
             melting_curves_functions=load_solidus_liquidus_functions(
-                layer_eos_config, solidus_id, liquidus_id
+                layer_eos_config, solidus_id, liquidus_id, mushy_zone_factor
             ),
             input_dir=os.path.join(get_zalmoxis_root(), 'input'),
         )
@@ -103,7 +104,7 @@ def post_processing(config_params, id_mass=None, output_file=None, model_results
         mantle_radii = radii[cmb_index:]
 
         solidus_func, liquidus_func = load_solidus_liquidus_functions(
-            layer_eos_config, solidus_id, liquidus_id
+            layer_eos_config, solidus_id, liquidus_id, mushy_zone_factor
         )
 
         mantle_phases = get_Tdep_material(

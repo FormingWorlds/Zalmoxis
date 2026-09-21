@@ -30,17 +30,56 @@ from .constants import CONDENSED_RHO_MIN_DEFAULT, CONDENSED_RHO_SCALE_DEFAULT, T
 
 logger = logging.getLogger(__name__)
 
-# All unified PALEOS EOS names that support mushy_zone_factor
-_PALEOS_UNIFIED_NAMES = frozenset({'PALEOS:iron', 'PALEOS:MgSiO3', 'PALEOS:H2O', 'Chabrier:H'})
+# All unified PALEOS EOS names whose density blend applies mushy_zone_factor
+# through this dict. The two-phase variants (PALEOS-2phase, PALEOS-API-2phase)
+# are absent by design: their density comes from separate solid/liquid
+# tables, not a blended interpolation.
+_PALEOS_UNIFIED_NAMES = frozenset(
+    {
+        'PALEOS:iron',
+        'PALEOS:MgSiO3',
+        'PALEOS:H2O',
+        'PALEOS-API:iron',
+        'PALEOS-API:MgSiO3',
+        'PALEOS-API:H2O',
+        'Chabrier:H',
+    }
+)
+
+# 2-phase mantle EOS names (separate solid and liquid tables). Their density
+# blend uses the solidus/liquidus functions, so mushy_zone_factor reaches them
+# through those curves.
+_PALEOS_2PHASE_NAMES = frozenset(
+    {
+        'PALEOS-2phase:MgSiO3',
+        'PALEOS-2phase:MgSiO3-highres',
+        'PALEOS-API-2phase:MgSiO3',
+    }
+)
+
+# TOML per-material mushy_zone_factor override key for each unified PALEOS
+# name. The bare PALEOS keys predate PALEOS-API and Chabrier support and
+# stay as-is so existing TOML files keep working.
+_PALEOS_UNIFIED_TOML_KEYS = {
+    'PALEOS:iron': 'mushy_zone_factor_iron',
+    'PALEOS:MgSiO3': 'mushy_zone_factor_MgSiO3',
+    'PALEOS:H2O': 'mushy_zone_factor_H2O',
+    'PALEOS-API:iron': 'mushy_zone_factor_paleos_api_iron',
+    'PALEOS-API:MgSiO3': 'mushy_zone_factor_paleos_api_MgSiO3',
+    'PALEOS-API:H2O': 'mushy_zone_factor_paleos_api_H2O',
+    'Chabrier:H': 'mushy_zone_factor_chabrier_H',
+}
 
 # Component-type sets for binodal matching
 _SILICATE_EOS_NAMES = frozenset(
     {
         'PALEOS:MgSiO3',
+        'PALEOS-API:MgSiO3',
         'WolfBower2018:MgSiO3',
         'RTPress100TPa:MgSiO3',
         'PALEOS-2phase:MgSiO3',
         'PALEOS-2phase:MgSiO3-highres',
+        'PALEOS-API-2phase:MgSiO3',
     }
 )
 _H2_EOS_NAMES = frozenset({'Chabrier:H'})
@@ -868,11 +907,7 @@ def _nabla_ad_for_component(
     if mat.get('format') == 'paleos_unified':
         return _get_paleos_unified_nabla_ad(pressure, temperature, mat, interpolation_functions)
 
-    if eos_name in (
-        'PALEOS-2phase:MgSiO3',
-        'PALEOS-2phase:MgSiO3-highres',
-        'PALEOS-API-2phase:MgSiO3',
-    ):
+    if eos_name in _PALEOS_2PHASE_NAMES:
         # Convert dT/dP back to nabla_ad = (dT/dP) * P / T
         if pressure <= 0 or temperature <= 0:
             return None
@@ -1373,11 +1408,12 @@ def split_mantle_volatile_inventory(
                 )
             primary = comp
         else:
+            recognized_silicates = ', '.join(sorted(_SILICATE_EOS_NAMES))
+            recognized_volatiles = ', '.join(sorted(_VOLATILE_EOS_NAMES))
             raise ValueError(
                 f'Mantle component {comp!r} is neither a recognized silicate '
-                f'(PALEOS:MgSiO3, WolfBower2018:MgSiO3, RTPress100TPa:MgSiO3, '
-                f'PALEOS-2phase:MgSiO3) nor a recognized volatile (Chabrier:H, '
-                f'PALEOS:H2O, Seager2007:H2O). Extend the classification sets '
+                f'({recognized_silicates}) nor a recognized volatile '
+                f'({recognized_volatiles}). Extend the classification sets '
                 f'in zalmoxis.mixing if a new species needs to plug in.'
             )
 

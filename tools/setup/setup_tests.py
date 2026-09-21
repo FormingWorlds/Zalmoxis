@@ -94,7 +94,10 @@ def run_zalmoxis_rocky_water(id_mass, config_type, cmf, immf, layer_eos_override
     model_results = main(
         config_params,
         material_dictionaries=load_material_dictionaries(),
-        melting_curves_functions=load_solidus_liquidus_functions(layer_eos_config),
+        melting_curves_functions=load_solidus_liquidus_functions(
+            layer_eos_config,
+            mushy_zone_factor=config_params.get('mushy_zone_factor', 1.0),
+        ),
         input_dir=os.path.join(get_zalmoxis_root(), 'input'),
     )
     post_processing(
@@ -150,7 +153,10 @@ def run_zalmoxis_TdepEOS(id_mass):
     model_results = main(
         config_params,
         material_dictionaries=load_material_dictionaries(),
-        melting_curves_functions=load_solidus_liquidus_functions(layer_eos_config),
+        melting_curves_functions=load_solidus_liquidus_functions(
+            layer_eos_config,
+            mushy_zone_factor=config_params.get('mushy_zone_factor', 1.0),
+        ),
         input_dir=os.path.join(get_zalmoxis_root(), 'input'),
     )
     converged = model_results.get('converged', False)
@@ -212,7 +218,10 @@ def run_zalmoxis_RTPress100TPa(id_mass):
     model_results = main(
         config_params,
         material_dictionaries=load_material_dictionaries(),
-        melting_curves_functions=load_solidus_liquidus_functions(layer_eos_config),
+        melting_curves_functions=load_solidus_liquidus_functions(
+            layer_eos_config,
+            mushy_zone_factor=config_params.get('mushy_zone_factor', 1.0),
+        ),
         input_dir=os.path.join(get_zalmoxis_root(), 'input'),
     )
     converged = model_results.get('converged', False)
@@ -277,7 +286,10 @@ def run_zalmoxis_PALEOS(id_mass, temperature_mode='linear'):
     model_results = main(
         config_params,
         material_dictionaries=load_material_dictionaries(),
-        melting_curves_functions=load_solidus_liquidus_functions(layer_eos_config),
+        melting_curves_functions=load_solidus_liquidus_functions(
+            layer_eos_config,
+            mushy_zone_factor=config_params.get('mushy_zone_factor', 1.0),
+        ),
         input_dir=os.path.join(get_zalmoxis_root(), 'input'),
     )
     converged = model_results.get('converged', False)

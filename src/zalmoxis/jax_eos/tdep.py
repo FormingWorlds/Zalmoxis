@@ -145,8 +145,10 @@ def get_tdep_density_jax(
     )
 
     # Volume-averaged density in mushy zone.
-    # Guard against degenerate melting curves where T_liq <= T_sol: then
-    # numpy falls back to pure-liquid. We preserve that behaviour.
+    # safe_dT avoids a divide-by-zero for a degenerate melting curve
+    # (T_liq <= T_sol, e.g. a collapsed band at mushy_zone_factor = 1.0).
+    # The mushy value here is unused there: the branch selection below
+    # takes solid at or below T_sol and liquid above T_sol.
     safe_dT = jnp.where(T_liq > T_sol, T_liq - T_sol, 1.0)
     frac_melt_raw = (temperature - T_sol) / safe_dT
     # Smoothstep ramp on the mushy-zone melt fraction. Linear frac_melt
@@ -168,11 +170,18 @@ def get_tdep_density_jax(
     # Branch selection.
     # If melting curves return NaN, default to solid phase (line 137-147 numpy).
     melt_curve_valid = jnp.isfinite(T_sol) & jnp.isfinite(T_liq)
-    # If T_liq <= T_sol (degenerate), use liquid (line 174-181 numpy).
+    # liq_above_sol is False for a degenerate curve (T_liq <= T_sol). There the
+    # selection below takes solid at or below T_sol and liquid above, with no
+    # mushy band, matching numpy get_Tdep_density.
     liq_above_sol = T_liq > T_sol
 
     is_below_sol = temperature <= T_sol
-    is_above_liq = temperature >= T_liq
+    # Strict > so that at a collapsed boundary (T_sol == T_liq, e.g.
+    # mushy_zone_factor = 1.0) T == T_liq selects solid, matching the numpy
+    # get_Tdep_density and nabla_ad paths which route equality to solid via
+    # temperature <= T_sol. For T_liq > T_sol the mushy branch at T == T_liq
+    # gives frac_melt = 1, so rho_mixed == rho_liquid and nothing else moves.
+    is_above_liq = temperature > T_liq
     # Mushy zone is the implicit fall-through of the jnp.where below: not
     # is_below_sol AND not is_above_liq AND liq_above_sol → rho_mixed.
 

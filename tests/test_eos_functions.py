@@ -771,7 +771,11 @@ class TestGetTdepDensity:
         assert rho > 0
 
     def test_degenerate_melting_curve(self):
-        """When T_liq <= T_sol, defaults to melted_mantle."""
+        """Inverted curve (T_liq < T_sol) below T_sol returns a finite density.
+
+        At T=4500 K, below the solidus, get_Tdep_density selects the solid
+        table and returns a positive density.
+        """
         if not _wb2018_data_available():
             pytest.skip('WB2018 data not found')
 
@@ -841,7 +845,11 @@ class TestGetTdepMaterial:
         assert result == 'mixed_mantle'
 
     def test_degenerate_melting_curve_above(self):
-        """When T_liq <= T_sol and T >= T_sol, returns 'melted_mantle'."""
+        """Inverted curve (T_liq < T_sol) at T == T_sol returns 'solid_mantle'.
+
+        The boundary T == T_sol routes to the solid branch, matching
+        get_Tdep_density, which selects solid for temperature <= T_sol.
+        """
         from zalmoxis.eos import get_Tdep_material
 
         def sf(P):
@@ -851,7 +859,7 @@ class TestGetTdepMaterial:
             return 4000.0
 
         result = get_Tdep_material(100e9, 5000, sf, lf)
-        assert result == 'melted_mantle'
+        assert result == 'solid_mantle'
 
     def test_degenerate_melting_curve_below(self):
         """When T_liq <= T_sol and T < T_sol, returns 'solid_mantle'."""
@@ -1335,6 +1343,100 @@ class TestComputePaleosDtdp:
         dtdp = _compute_paleos_dtdp(100e9, 4000, mat, sf, lf, cache)
         assert dtdp is not None
         assert dtdp > 0
+
+    def test_collapsed_melting_curve_bifurcates_on_temperature(self):
+        """A zero-width mushy zone (T_sol == T_liq, e.g. mushy_zone_factor=1.0)
+        still picks solid nabla_ad below the collapsed point and liquid
+        nabla_ad above it, rather than solid nabla_ad everywhere.
+        """
+        root = os.environ.get('ZALMOXIS_ROOT', '')
+        solid_file = os.path.join(
+            root, 'data', 'EOS_PALEOS_MgSiO3', 'paleos_mgsio3_tables_pt_proteus_solid.dat'
+        )
+        liquid_file = os.path.join(
+            root, 'data', 'EOS_PALEOS_MgSiO3', 'paleos_mgsio3_tables_pt_proteus_liquid.dat'
+        )
+        if not (os.path.isfile(solid_file) and os.path.isfile(liquid_file)):
+            pytest.skip('PALEOS 2-phase data not found')
+
+        from zalmoxis.eos import _compute_paleos_dtdp
+        from zalmoxis.eos.tdep import _get_paleos_nabla_ad
+        from zalmoxis.eos_properties import EOS_REGISTRY
+
+        mat = EOS_REGISTRY['PALEOS-2phase:MgSiO3']
+        P = 100e9
+        T_collapsed = 4000.0
+
+        def sf(_P):
+            return T_collapsed
+
+        def lf(_P):
+            return T_collapsed
+
+        cache = {}
+        dtdp_below = _compute_paleos_dtdp(P, 3500.0, mat, sf, lf, cache)
+        dtdp_above = _compute_paleos_dtdp(P, 4500.0, mat, sf, lf, cache)
+        assert dtdp_below is not None
+        assert dtdp_above is not None
+        assert dtdp_below != pytest.approx(dtdp_above)
+
+        expected_solid = _get_paleos_nabla_ad(P, 4500.0, mat, 'solid_mantle', {}) * 4500.0 / P
+        expected_liquid = _get_paleos_nabla_ad(P, 4500.0, mat, 'melted_mantle', {}) * 4500.0 / P
+        assert dtdp_above == pytest.approx(expected_liquid)
+        assert dtdp_above != pytest.approx(expected_solid)
+
+    def test_mixed_phase_blend_tracks_melt_fraction(self):
+        """The mushy-zone blend weights the liquid nabla_ad by the melt
+        fraction phi = (T - T_sol) / (T_liq - T_sol), so the recovered
+        fraction matches phi at off-midpoint temperatures and increases
+        monotonically toward the liquidus. A phi=0.5 query alone cannot
+        catch an inverted weighting, since the midpoint is symmetric.
+        """
+        root = os.environ.get('ZALMOXIS_ROOT', '')
+        solid_file = os.path.join(
+            root, 'data', 'EOS_PALEOS_MgSiO3', 'paleos_mgsio3_tables_pt_proteus_solid.dat'
+        )
+        liquid_file = os.path.join(
+            root, 'data', 'EOS_PALEOS_MgSiO3', 'paleos_mgsio3_tables_pt_proteus_liquid.dat'
+        )
+        if not (os.path.isfile(solid_file) and os.path.isfile(liquid_file)):
+            pytest.skip('PALEOS 2-phase data not found')
+
+        from zalmoxis.eos import _compute_paleos_dtdp
+        from zalmoxis.eos.tdep import _get_paleos_nabla_ad
+        from zalmoxis.eos_properties import EOS_REGISTRY
+
+        mat = EOS_REGISTRY['PALEOS-2phase:MgSiO3']
+        P = 100e9
+        T_sol, T_liq = 3000.0, 5000.0
+
+        def sf(_P):
+            return T_sol
+
+        def lf(_P):
+            return T_liq
+
+        cache = {}
+        recovered = []
+        for phi in (0.05, 0.2, 0.5, 0.8, 0.95):
+            T = T_sol + phi * (T_liq - T_sol)
+            nabla_solid = _get_paleos_nabla_ad(P, T, mat, 'solid_mantle', cache)
+            nabla_liquid = _get_paleos_nabla_ad(P, T, mat, 'melted_mantle', cache)
+            assert nabla_solid is not None and nabla_liquid is not None
+            # The two phases must differ, else the fraction is undefined.
+            assert nabla_solid != pytest.approx(nabla_liquid, rel=1e-3)
+            solid_dtdp = nabla_solid * T / P
+            liquid_dtdp = nabla_liquid * T / P
+            dtdp = _compute_paleos_dtdp(P, T, mat, sf, lf, cache)
+            f = (dtdp - solid_dtdp) / (liquid_dtdp - solid_dtdp)
+            # An inverted weighting would recover 1 - phi instead of phi.
+            assert f == pytest.approx(phi, abs=1e-9)
+            recovered.append(f)
+
+        # Melt fraction rises monotonically from the solidus to the liquidus.
+        assert recovered == sorted(recovered)
+        assert recovered[0] < 0.1
+        assert recovered[-1] > 0.9
 
 
 # =====================================================================

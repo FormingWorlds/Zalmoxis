@@ -23,6 +23,7 @@ from zalmoxis.mixing import (
     _binodal_factor,
     _condensed_weight,
     _condensed_weight_batch,
+    _get_mushy_zone_factor,
     _nabla_ad_for_component,
     any_component_is_tdep,
     apply_partition_rule,
@@ -691,6 +692,35 @@ class TestPerEosMushyZoneFactors:
 
         assert received_mzf['PALEOS:MgSiO3'] == pytest.approx(0.85)
         assert received_mzf['PALEOS:H2O'] == pytest.approx(0.85)
+
+
+@pytest.mark.unit
+class TestGetMushyZoneFactor:
+    """Tests for _get_mushy_zone_factor, the per-EOS mzf lookup."""
+
+    def test_paleos_api_name_gets_dict_value(self):
+        """A PALEOS-API:* unified name looks up its own dict entry."""
+        factors = {'PALEOS-API:MgSiO3': 0.8, 'PALEOS:iron': 0.9}
+        assert _get_mushy_zone_factor('PALEOS-API:MgSiO3', factors) == pytest.approx(0.8)
+
+    def test_paleos_api_name_missing_from_dict_defaults_to_one(self):
+        """A configured-but-unlisted PALEOS-API:* name falls back to 1.0."""
+        factors = {'PALEOS:iron': 0.9}
+        assert _get_mushy_zone_factor('PALEOS-API:MgSiO3', factors) == pytest.approx(1.0)
+
+    def test_two_phase_name_always_one_regardless_of_dict(self):
+        """PALEOS-2phase / PALEOS-API-2phase are excluded from the density
+        blend: their density comes from separate solid/liquid tables, not
+        an interpolated blend, so this lookup always returns 1.0 even if
+        the caller passes a dict entry for the name by mistake.
+        """
+        factors = {'PALEOS-2phase:MgSiO3': 0.8, 'PALEOS-API-2phase:MgSiO3': 0.8}
+        assert _get_mushy_zone_factor('PALEOS-2phase:MgSiO3', factors) == pytest.approx(1.0)
+        assert _get_mushy_zone_factor('PALEOS-API-2phase:MgSiO3', factors) == pytest.approx(1.0)
+
+    def test_two_phase_name_with_float_mzf_still_one(self):
+        """The backward-compat float form also excludes 2-phase names."""
+        assert _get_mushy_zone_factor('PALEOS-2phase:MgSiO3', 0.8) == pytest.approx(1.0)
 
 
 @pytest.mark.unit

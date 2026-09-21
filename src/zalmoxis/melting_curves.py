@@ -489,3 +489,26 @@ def get_solidus_liquidus_functions(
         ``(solidus_func, liquidus_func)``
     """
     return get_melting_curve_function(solidus_id), get_melting_curve_function(liquidus_id)
+
+
+def derive_solidus_from_liquidus(liquidus_func, mushy_zone_factor):
+    """Derive a solidus curve as a fixed fraction of a liquidus curve.
+
+    Parameters
+    ----------
+    liquidus_func : callable
+        Liquidus temperature as a function of pressure, ``T = liquidus_func(P)``.
+    mushy_zone_factor : float
+        Solidus-to-liquidus temperature ratio, in [0.7, 1.0]. 1.0 collapses
+        the mushy zone to zero width.
+
+    Returns
+    -------
+    callable
+        Solidus temperature as a function of pressure, ``T = solidus_func(P)``.
+    """
+
+    def solidus_func(P):
+        return liquidus_func(P) * mushy_zone_factor
+
+    return solidus_func

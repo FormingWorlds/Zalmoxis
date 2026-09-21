@@ -11,13 +11,60 @@ solver's bracket search.
 
 from __future__ import annotations
 
+import os
 import sys
+from functools import lru_cache
 
 import numpy as np
 import pytest
 
 from tests._paleos_helpers import _paleos_data_available, _run_paleos
 from zalmoxis.constants import earth_radius
+
+
+@lru_cache(maxsize=8)
+def _run_paleos_mzf(mzf, mass_earth=1.0, temperature_mode='linear'):
+    """Run the full solver for a PALEOS 2-phase mantle with a derived solidus.
+
+    Unlike ``_run_paleos`` this selects ``rock_liquidus='PALEOS-liquidus'``,
+    so ``mushy_zone_factor`` sets ``T_sol = mzf * T_liq`` and the mushy zone
+    reaches the density through ``load_solidus_liquidus_functions``. Cached
+    per ``(mzf, mass, mode)``; callers must only read the returned dict.
+    """
+    from zalmoxis import get_zalmoxis_root
+    from zalmoxis.config import (
+        load_material_dictionaries,
+        load_solidus_liquidus_functions,
+        load_zalmoxis_config,
+    )
+    from zalmoxis.constants import earth_mass
+    from zalmoxis.solver import main
+
+    root = get_zalmoxis_root()
+    config_params = load_zalmoxis_config(os.path.join(root, 'input', 'default.toml'))
+    config_params['planet_mass'] = mass_earth * earth_mass
+    config_params['layer_eos_config'] = {
+        'core': 'Seager2007:iron',
+        'mantle': 'PALEOS-2phase:MgSiO3',
+    }
+    config_params['temperature_mode'] = temperature_mode
+    config_params['data_output_enabled'] = False
+    config_params['plotting_enabled'] = False
+    config_params['rock_liquidus'] = 'PALEOS-liquidus'
+    config_params['mushy_zone_factor'] = mzf
+
+    melting_curves = load_solidus_liquidus_functions(
+        config_params['layer_eos_config'],
+        config_params.get('rock_solidus', 'Stixrude14-solidus'),
+        'PALEOS-liquidus',
+        mzf,
+    )
+    return main(
+        config_params,
+        material_dictionaries=load_material_dictionaries(),
+        melting_curves_functions=melting_curves,
+        input_dir=os.path.join(root, 'input'),
+    )
 
 # ── Linear mode convergence ────────────────────────────────────────────
 
@@ -115,3 +162,40 @@ def test_PALEOS_adiabatic_physically_reasonable():
     assert T[0] > T[-1], f'Center T ({T[0]:.0f} K) should exceed surface T ({T[-1]:.0f} K)'
     assert T[0] < 15000, f'Center temperature {T[0]:.0f} K unreasonably high'
     assert T[0] > 3000, f'Center temperature {T[0]:.0f} K unreasonably low'
+
+
+# ── Mushy zone factor through the full solver ──────────────────────────
+
+
+@pytest.mark.integration
+@pytest.mark.physics_invariant
+def test_PALEOS_mushy_zone_factor_enlarges_radius():
+    """A sub-1.0 mushy_zone_factor increases the converged 1 M_earth radius.
+
+    With ``rock_liquidus='PALEOS-liquidus'`` the 2-phase solidus is
+    ``mzf * liquidus``, so mzf<1.0 opens a mushy band below the liquidus
+    where density is volume-averaged toward the melt. That lowers density
+    over the band and enlarges the planet. This drives mzf through the
+    complete solver, not only the density helper, and fails if any layer
+    of the coupling drops it (the solver would return identical radii).
+    """
+    if not _paleos_data_available():
+        pytest.skip('PALEOS data files not found')
+
+    sharp = _run_paleos_mzf(1.0)
+    mushy = _run_paleos_mzf(0.8)
+
+    assert sharp['converged'], 'mushy_zone_factor=1.0 run did not converge'
+    assert mushy['converged'], 'mushy_zone_factor=0.8 run did not converge'
+
+    R_sharp = sharp['radii'][-1]
+    R_mushy = mushy['radii'][-1]
+    rel_diff = (R_mushy - R_sharp) / R_sharp
+    assert rel_diff > 1e-3, (
+        f'mzf=0.8 radius should exceed mzf=1.0 radius by more than the '
+        f'convergence floor: R_sharp={R_sharp / earth_radius:.5f}, '
+        f'R_mushy={R_mushy / earth_radius:.5f}, rel diff={rel_diff:.2e}'
+    )
+    assert rel_diff < 5e-2, (
+        f'mzf=0.8 radius change is implausibly large: rel diff={rel_diff:.2e}'
+    )

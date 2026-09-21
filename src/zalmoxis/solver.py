@@ -41,6 +41,8 @@ from .eos import (
     create_pressure_density_files,
 )
 from .mixing import (
+    _PALEOS_2PHASE_NAMES,
+    _PALEOS_UNIFIED_NAMES,
     BINODAL_T_SCALE_DEFAULT,
     any_component_is_tdep,
     build_partition_profile,
@@ -1180,19 +1182,14 @@ def _solve(
     # Optional initial radius guess from a previous failed attempt
     initial_radius_guess = config_params.get('_initial_radius_guess', None)
 
-    # Build per-EOS mushy_zone_factors dict. Prefer the dict if present
-    # (set by load_zalmoxis_config). Fall back to building one from the
-    # single float for backward compat with callers that only set the
-    # global 'mushy_zone_factor' key.
+    # Build the per-EOS mushy_zone_factors dict. Use the per-material dict
+    # when the caller provides one; otherwise assign the single global
+    # 'mushy_zone_factor' float to every mzf-aware EOS name.
     if 'mushy_zone_factors' in config_params:
         mushy_zone_factors = config_params['mushy_zone_factors']
     else:
         _global_mzf = config_params.get('mushy_zone_factor', 1.0)
-        mushy_zone_factors = {
-            'PALEOS:iron': _global_mzf,
-            'PALEOS:MgSiO3': _global_mzf,
-            'PALEOS:H2O': _global_mzf,
-        }
+        mushy_zone_factors = {name: _global_mzf for name in _PALEOS_UNIFIED_NAMES}
     condensed_rho_min = config_params.get('condensed_rho_min', CONDENSED_RHO_MIN_DEFAULT)
     condensed_rho_scale = config_params.get('condensed_rho_scale', CONDENSED_RHO_SCALE_DEFAULT)
     binodal_T_scale = config_params.get('binodal_T_scale', BINODAL_T_SCALE_DEFAULT)
@@ -1237,21 +1234,21 @@ def _solve(
                     'The RTPress100TPa melt table extends to 100 TPa but '
                     'the solid table is limited to 1 TPa.'
                 )
-            elif eos_name in ('PALEOS-2phase:MgSiO3', 'PALEOS-2phase:MgSiO3-highres'):
+            elif eos_name in _PALEOS_2PHASE_NAMES:
                 max_mass = PALEOS_MAX_MASS_EARTH
                 reason = (
                     'The PALEOS MgSiO3 tables extend to 100 TPa for both '
                     'solid and liquid phases.'
                 )
-            elif eos_name in ('PALEOS:iron', 'PALEOS:MgSiO3', 'PALEOS:H2O'):
-                max_mass = PALEOS_UNIFIED_MAX_MASS_EARTH
-                reason = 'The unified PALEOS tables extend to 100 TPa (P: 1 bar to 100 TPa).'
             elif eos_name == 'Chabrier:H':
                 max_mass = PALEOS_UNIFIED_MAX_MASS_EARTH
                 reason = (
                     'The Chabrier H table extends to 10^22 Pa but '
                     'has only been validated up to ~50 M_earth.'
                 )
+            elif eos_name in _PALEOS_UNIFIED_NAMES:
+                max_mass = PALEOS_UNIFIED_MAX_MASS_EARTH
+                reason = 'The unified PALEOS tables extend to 100 TPa (P: 1 bar to 100 TPa).'
             else:
                 continue
             if mass_in_earth > max_mass:

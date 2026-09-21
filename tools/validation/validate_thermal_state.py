@@ -88,7 +88,9 @@ def run_model(mass_earth):
     config['verbose'] = False
 
     mat = load_material_dictionaries()
-    melt = load_solidus_liquidus_functions(EOS_CONFIG)
+    melt = load_solidus_liquidus_functions(
+        EOS_CONFIG, mushy_zone_factor=config.get('mushy_zone_factor', 1.0)
+    )
     input_dir = os.path.join(get_zalmoxis_root(), 'input')
 
     results = zalmoxis_main(config, mat, melt, input_dir)
