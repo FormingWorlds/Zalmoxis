@@ -145,8 +145,8 @@ def _fill_nan_nearest(grid):
     to that column's own boundary node, instead of a global 2D nearest
     search picking up a neighboring column's value whenever its
     boundary sits at a different entropy. A column with no valid cells
-    at all falls back to the nearest cell that held original, non-filled
-    data anywhere in the grid.
+    at all falls back to the nearest cell, by Euclidean distance in index
+    space, that held original, non-filled data anywhere in the grid.
 
     Parameters
     ----------
@@ -411,6 +411,9 @@ def generate_spider_phase_boundaries(
 
 # ── SPIDER file writers ──────────────────────────────────────────────
 
+# Properties tabulated per phase in the SPIDER P-S tables.
+_SPIDER_TABLE_PROPERTIES = ('rho', 'temperature', 'cp', 'alpha', 'nabla_ad')
+
 # Default scaling factors (matching SPIDER's internal conventions)
 _P_SCALE = 1e9  # Pa
 _S_SCALE = 4824266.84604467  # J/(kg*K), SPIDER's entropy scale
@@ -547,6 +550,10 @@ def generate_spider_eos_tables(
     - thermal_exp_{phase}.dat
     - adiabat_temp_grad_{phase}.dat
 
+    plus ``valid_mask_{phase}.dat`` on the same grid, 1 where the cell holds a
+    PALEOS state for every property and 0 where the values were filled from
+    the nearest valid cell (SPIDER tables cannot hold NaN).
+
     The algorithm:
     1. Load PALEOS P-T table with all properties (rho, s, cp, alpha, nabla_ad)
     2. At each (P, T) grid point, we have S directly from the table
@@ -574,8 +581,10 @@ def generate_spider_eos_tables(
     Returns
     -------
     dict
-        Keys: ``'P_Pa'``, ``'S_solid'``, ``'S_melt'``, and property
-        grids for each phase. Also ``'output_dir'`` if files were written.
+        Keys: ``'P_Pa'``, ``'S_solid'``, ``'S_melt'``, property grids for
+        each phase under ``'solid'`` and ``'melt'``, the boolean validity
+        masks under ``'valid'`` (keys ``'solid'`` and ``'melt'``, shape
+        (nS, nP)), and ``'output_dir'`` (None when nothing was written).
     """
     logger.info('Generating SPIDER P-S EOS tables from %s', eos_file)
     table = load_paleos_all_properties(eos_file)
@@ -885,10 +894,26 @@ def generate_spider_eos_tables(
         solid_grids = fut_solid.result()
         melt_grids = fut_melt.result()
 
+    # Record which cells hold a PALEOS state for every property before the
+    # fill below overwrites the gaps, so consumers can tell filled cells apart.
+    valid_masks = {
+        phase_name: np.all(
+            [np.isfinite(grids[prop]) for prop in _SPIDER_TABLE_PROPERTIES], axis=0
+        )
+        for phase_name, grids in [('solid', solid_grids), ('melt', melt_grids)]
+    }
+    for phase_name, mask in valid_masks.items():
+        logger.info(
+            '%s phase: %d/%d cells hold a PALEOS state; the rest are filled',
+            phase_name,
+            int(mask.sum()),
+            mask.size,
+        )
+
     # Fill NaN cells by nearest-neighbor extrapolation. SPIDER does
     # not handle NaN in its lookup tables.
     for phase_name, grids in [('solid', solid_grids), ('melt', melt_grids)]:
-        for prop in ['rho', 'temperature', 'cp', 'alpha', 'nabla_ad']:
+        for prop in _SPIDER_TABLE_PROPERTIES:
             grid = grids[prop]
             n_nan_before = np.sum(np.isnan(grid))
             if n_nan_before > 0:
@@ -938,12 +963,20 @@ def generate_spider_eos_tables(
             _write_spider_2d(fpath, P_out, S_melt_grid, melt_grids[prop], scale)
             logger.info('Wrote %s', fpath)
 
+        # Validity masks: 1 where the cell holds a PALEOS state, 0 where
+        # the value was filled from a neighbouring cell.
+        for phase_name, S_grid in [('solid', S_solid_grid), ('melt', S_melt_grid)]:
+            fpath = str(output_dir / f'valid_mask_{phase_name}.dat')
+            _write_spider_2d(fpath, P_out, S_grid, valid_masks[phase_name].astype(float), 1.0)
+            logger.info('Wrote %s', fpath)
+
     return {
         'P_Pa': P_out,
         'S_solid': S_solid_grid,
         'S_melt': S_melt_grid,
         'solid': solid_grids,
         'melt': melt_grids,
+        'valid': valid_masks,
         'output_dir': str(output_dir) if output_dir else None,
     }
 
@@ -1466,8 +1499,11 @@ def compute_entropy_adiabat(
         S_target,
     )
 
-    # Build pressure grid (log-spaced for better resolution at low P)
-    P_grid = np.logspace(np.log10(P_surface * 1.001), np.log10(P_cmb * 0.999), n_points)
+    # Build pressure grid (log-spaced for better resolution at low P). The
+    # ends are pinned to the exact inputs so T[-1] is the temperature at P_cmb.
+    P_grid = np.logspace(np.log10(P_surface), np.log10(P_cmb), n_points)
+    P_grid[0] = P_surface
+    P_grid[-1] = P_cmb
     T_profile = np.zeros(n_points)
     S_profile = np.zeros(n_points)
 
