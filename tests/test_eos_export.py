@@ -948,6 +948,9 @@ class TestGenerateSpiderEosTables:
         assert {'P_Pa', 'S_solid', 'S_melt', 'solid', 'melt', 'valid', 'output_dir'} <= set(
             out.keys()
         )
+        # The phase dicts hold the five table properties and nothing else.
+        props = set(eos_export._SPIDER_TABLE_PROPERTIES)
+        assert set(out['solid']) == props and set(out['melt']) == props
         for prop in ('rho', 'temperature', 'cp', 'alpha', 'nabla_ad'):
             assert out['solid'][prop].shape == (15, 15)
             assert out['melt'][prop].shape == (15, 15)
@@ -1040,17 +1043,20 @@ class TestGenerateSpiderEosTables:
                 fields[column] = 'nan'  # alpha (7) or nabla_ad (8)
                 row = ' '.join(fields) + '\n'
             edited.append(row)
-        table = tmp_path / 'alpha_gap.dat'
+        table = tmp_path / 'property_gap.dat'
         table.write_text(''.join(edited))
         out = eos_export.generate_spider_eos_tables(
             table, sol_func, liq_func, P_range=(1e6, 1e10), n_P=12, n_S=14, output_dir=None
         )
         mask = out['valid']['melt']
-        # Columns above the last finite alpha node have no alpha, so no valid cell.
+        # Columns above the last finite node of the property have no valid cell.
         top = out['P_Pa'] > _P_NODES_PA[-2]
         assert top.any() and not mask[:, top].any()
         # Below that node the melt phase still has valid cells.
         assert mask[:, ~top].any()
+        if column == 8:
+            # A missing nabla_ad is written as 0, not filled from a neighbour.
+            assert (out['melt']['nabla_ad'][:, top] == 0.0).any()
 
     def test_solid_S_max_extended_to_match_melt_S_max(self, synthetic_table, melting_curves):
         """Solid-phase S range is extended up to the melt-phase max.

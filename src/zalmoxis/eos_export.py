@@ -230,28 +230,31 @@ def generate_spider_phase_boundaries(
 
     Notes
     -----
-    Both entropies are held at their running maximum in pressure
-    (``np.maximum.accumulate``), so above their peak the written curves are
-    flat. This is a solver-stability choice, not a property of the tables.
-    For PALEOS MgSiO3 the liquid-table entropy along the liquidus peaks and
-    then falls with pressure while T_liq keeps rising, since
+    The written curves come from a PCHIP fit through 20 anchors spread over
+    the pressure range of the table, and each is then held at its running
+    maximum in pressure (``np.maximum.accumulate``), so at pressures above
+    its peak it is flat. The plateau is a solver-stability choice, not a
+    property of the tables. For PALEOS MgSiO3 the liquid-table entropy along the liquidus
+    peaks near 164 GPa and then falls while T_liq keeps rising, since
     dS_liq/dP = -alpha/rho + (c_p/T) dT_liq/dP. With the falling curve the
     first solid in a cooling molten mantle forms in a thin layer at the peak,
-    above still molten material, and the time step of coupled runs of 3 and
-    5 Earth-mass planets (SPIDER at both masses, Aragog at 3) collapses at
-    that onset. With the plateau the whole range from the peak down to the
-    core-mantle boundary reaches the liquidus together.
+    above still molten material, and the time step of coupled SPIDER and
+    Aragog runs of 3 and 5 Earth-mass planets collapses at that onset. With
+    the plateau the whole range from the peak pressure to the core-mantle
+    boundary reaches the liquidus together.
 
-    The peak pressure and the plateau offsets depend on the pressure range
-    of the table, because the smoothing anchors follow that range. For the
-    tables of 1 to 10 Earth-mass planets (P_max 350 to 1700 GPa) the peak
-    lies between about 120 and 225 GPa; the plateau lies 100 to 150 J/kg/K
-    above the table liquidus entropy at 350 GPa and 145 to 990 J/kg/K at the
-    table top, and the solidus offset reaches 13 to 104 J/kg/K. Since both
-    boundaries are raised, the lever-rule melt fraction above the peak is
-    never higher than the table curves give, and a cell with an entropy
-    between the table liquidus and the plateau counts as partly molten
-    instead of molten.
+    The peak of the smoothed curve moves with the table range: for the tables
+    of 1 to 10 Earth-mass planets (mushy_zone_factor 0.8) it lies between
+    about 110 and 255 GPa and can jump between neighbouring masses, and the
+    smoothed solidus can peak lower, between about 78 and 175 GPa, so its
+    plateau can start at a much lower pressure. The liquidus plateau
+    lies above the smoothed curve by 64 to 152 J/kg/K at 350 GPa and by 145
+    to 991 J/kg/K at the table top; the solidus offset reaches 13 to 104
+    J/kg/K. With both boundaries raised, the lever-rule melt fraction is
+    never higher than the smoothed curves give. The smoothing itself departs
+    from the table entropy by up to about 240 J/kg/K on the liquidus and 190
+    J/kg/K on the solidus, so against the table the melt fraction can be
+    higher or lower.
     """
     # Load PALEOS table and build entropy interpolators.
     # When 2-phase tables are provided, use phase-specific entropy to
@@ -553,8 +556,9 @@ def generate_spider_eos_tables(
     - adiabat_temp_grad_{phase}.dat
 
     plus ``valid_mask_{phase}.dat`` on the same grid, 1 where the cell holds a
-    PALEOS state for every property and 0 where the values were filled from
-    the nearest valid cell (SPIDER tables cannot hold NaN).
+    PALEOS state for every property and 0 where a value has none: it is
+    filled from the nearest valid cell (SPIDER tables cannot hold NaN), or
+    written as 0 for nabla_ad.
 
     The algorithm:
     1. Load PALEOS P-T table with all properties (rho, s, cp, alpha, nabla_ad)
@@ -768,8 +772,10 @@ def generate_spider_eos_tables(
         -------
         dict of ndarray
             Keys: 'rho', 'temperature', 'cp', 'alpha', 'nabla_ad',
-            each shape (nS, nP), and the boolean 'nabla_ad_finite' (the
-            table nabla_ad was finite; a non-finite one is written as 0).
+            each shape (nS, nP).
+        ndarray of bool
+            Shape (nS, nP): the table nabla_ad was finite. A non-finite one
+            is written as 0, so this is the only record of it.
         """
         nP_out = len(P_grid)
         nS_out = len(S_grid)
@@ -779,8 +785,8 @@ def generate_spider_eos_tables(
             'cp': np.full((nS_out, nP_out), np.nan),
             'alpha': np.full((nS_out, nP_out), np.nan),
             'nabla_ad': np.full((nS_out, nP_out), np.nan),
-            'nabla_ad_finite': np.zeros((nS_out, nP_out), dtype=bool),
         }
+        nad_finite = np.zeros((nS_out, nP_out), dtype=bool)
 
         n_filled = 0
         n_total = nP_out * nS_out
@@ -840,7 +846,7 @@ def generate_spider_eos_tables(
             result['cp'][idx_s, ip] = cp_phase_interp(pts)
             result['alpha'][idx_s, ip] = alpha_phase_interp(pts)
             nad_vals = nad_phase_interp(pts)
-            result['nabla_ad_finite'][idx_s, ip] = np.isfinite(nad_vals)
+            nad_finite[idx_s, ip] = np.isfinite(nad_vals)
             if P_Pa > 0:
                 result['nabla_ad'][idx_s, ip] = np.where(
                     np.isfinite(nad_vals), nad_vals * T_found / P_Pa, 0.0
@@ -855,7 +861,7 @@ def generate_spider_eos_tables(
             n_total,
             100 * fill_frac,
         )
-        return result
+        return result, nad_finite
 
     # Fill solid and melt phase grids in parallel (independent computations)
     def _T_lo_solid(P):
@@ -897,8 +903,8 @@ def generate_spider_eos_tables(
     with ThreadPoolExecutor(max_workers=2) as pool:
         fut_solid = pool.submit(_fill_solid)
         fut_melt = pool.submit(_fill_melt)
-        solid_grids = fut_solid.result()
-        melt_grids = fut_melt.result()
+        solid_grids, solid_nad_finite = fut_solid.result()
+        melt_grids, melt_nad_finite = fut_melt.result()
 
     # Record which cells hold a PALEOS state for every property before the
     # fill below overwrites the gaps, so consumers can tell filled cells apart.
@@ -906,8 +912,11 @@ def generate_spider_eos_tables(
         phase_name: np.all(
             [np.isfinite(grids[prop]) for prop in _SPIDER_TABLE_PROPERTIES], axis=0
         )
-        & grids.pop('nabla_ad_finite')
-        for phase_name, grids in [('solid', solid_grids), ('melt', melt_grids)]
+        & nad_finite
+        for phase_name, grids, nad_finite in [
+            ('solid', solid_grids, solid_nad_finite),
+            ('melt', melt_grids, melt_nad_finite),
+        ]
     }
     for phase_name, mask in valid_masks.items():
         logger.info(
@@ -970,8 +979,8 @@ def generate_spider_eos_tables(
             _write_spider_2d(fpath, P_out, S_melt_grid, melt_grids[prop], scale)
             logger.info('Wrote %s', fpath)
 
-        # Validity masks: 1 where the cell holds a PALEOS state, 0 where
-        # the value was filled from a neighbouring cell.
+        # Validity masks: 1 where the cell holds a PALEOS state for every
+        # property, 0 where a value was filled (or, for nabla_ad, set to 0).
         for phase_name, S_grid in [('solid', S_solid_grid), ('melt', S_melt_grid)]:
             fpath = str(output_dir / f'valid_mask_{phase_name}.dat')
             _write_spider_2d(fpath, P_out, S_grid, valid_masks[phase_name].astype(float), 1.0)
