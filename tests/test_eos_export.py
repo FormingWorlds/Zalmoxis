@@ -945,7 +945,9 @@ class TestGenerateSpiderEosTables:
             n_S=15,
             output_dir=None,
         )
-        assert {'P_Pa', 'S_solid', 'S_melt', 'solid', 'melt', 'output_dir'} <= set(out.keys())
+        assert {'P_Pa', 'S_solid', 'S_melt', 'solid', 'melt', 'valid', 'output_dir'} <= set(
+            out.keys()
+        )
         for prop in ('rho', 'temperature', 'cp', 'alpha', 'nabla_ad'):
             assert out['solid'][prop].shape == (15, 15)
             assert out['melt'][prop].shape == (15, 15)
@@ -1015,15 +1017,18 @@ class TestGenerateSpiderEosTables:
         # Both classes present in the melt grid (cells below the liquidus are filled).
         assert out['valid']['melt'].any() and not out['valid']['melt'].all()
 
+    @pytest.mark.parametrize('column', [7, 8], ids=['alpha', 'nabla_ad'])
     def test_validity_mask_needs_every_property(
-        self, synthetic_table, melting_curves, tmp_path
+        self, synthetic_table, melting_curves, tmp_path, column
     ):
-        """A cell whose temperature inverts but whose thermal expansion has no
-        PALEOS value is marked invalid: the mask requires all five properties,
-        not only the temperature.
+        """A cell whose temperature inverts but whose thermal expansion or
+        adiabatic gradient has no PALEOS value is marked invalid: the mask
+        requires all five properties, not only the temperature. A missing
+        nabla_ad is written as 0, so the mask is the only record of it.
 
-        Edge case: alpha is NaN along the highest-pressure table node while the
-        entropy there stays finite, so the S(P,T) inversion still succeeds.
+        Edge case: the property is NaN along the highest-pressure table node
+        while the entropy there stays finite, so the S(P,T) inversion still
+        succeeds.
         """
         sol_func, liq_func = melting_curves
         rows = synthetic_table.read_text().splitlines(keepends=True)
@@ -1032,7 +1037,7 @@ class TestGenerateSpiderEosTables:
         for row in rows:
             fields = row.split()
             if not row.startswith('#') and fields[0] == p_top:
-                fields[7] = 'nan'  # alpha column
+                fields[column] = 'nan'  # alpha (7) or nabla_ad (8)
                 row = ' '.join(fields) + '\n'
             edited.append(row)
         table = tmp_path / 'alpha_gap.dat'
