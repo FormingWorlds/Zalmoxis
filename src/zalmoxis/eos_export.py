@@ -227,6 +227,28 @@ def generate_spider_phase_boundaries(
         - ``'S_liquidus'``: liquidus entropy [J/(kg*K)], shape (n_valid,)
         - ``'solidus_path'``: path to written solidus file (or None)
         - ``'liquidus_path'``: path to written liquidus file (or None)
+
+    Notes
+    -----
+    Both entropies are held at their running maximum in pressure
+    (``np.maximum.accumulate``), so above their peak the written curves are
+    flat. This is a solver-stability choice, not a property of the tables.
+    For PALEOS MgSiO3 the liquid-table entropy along the liquidus peaks
+    between about 125 and 175 GPa (the smoothing anchors follow the pressure
+    range of the table) and falls at higher pressure while T_liq keeps
+    rising, since dS_liq/dP = -alpha/rho + (c_p/T) dT_liq/dP. With the
+    falling curve the first solid in a cooling molten mantle forms in a thin
+    layer at the peak, above still molten material, and the time step of
+    coupled runs of 3 and 5 Earth-mass planets (SPIDER at both masses,
+    Aragog at 3) collapses at that onset. With the plateau the whole range from the peak down to the
+    core-mantle boundary reaches the liquidus together.
+
+    The plateau lies above the table liquidus entropy by about 150 J/kg/K at
+    350 GPa and about 640 J/kg/K at 950 GPa; the solidus offset is at most
+    about 60 J/kg/K. Since both boundaries are raised, the lever-rule melt
+    fraction above the peak is never higher than the table curves give, and
+    a cell with an entropy between the table liquidus and the plateau counts
+    as partly molten instead of molten.
     """
     # Load PALEOS table and build entropy interpolators.
     # When 2-phase tables are provided, use phase-specific entropy to
@@ -344,11 +366,25 @@ def generate_spider_phase_boundaries(
         S_sol_valid = S_sol_smooth
         S_liq_valid = S_liq_smooth
 
-    # The phase-boundary entropies are written as they follow from the tables.
-    # S(P, T_liq(P)) can fall with pressure once the liquidus flattens, because
-    # dS_liq/dP = -alpha/rho + (c_p/T) dT_liq/dP: for PALEOS MgSiO3 the liquidus
-    # entropy peaks near 160 GPa while T_liq keeps rising. A clipped (flat) curve
-    # above the peak would label molten cells there as mushy.
+    # Hold both entropies at their running maximum in pressure: a solver-stability
+    # choice, see the Notes of this function.
+    if n_valid > 1:
+        S_sol_before = S_sol_valid.copy()
+        S_liq_before = S_liq_valid.copy()
+        S_sol_valid = np.maximum.accumulate(S_sol_valid)
+        S_liq_valid = np.maximum.accumulate(S_liq_valid)
+        n_sol_clipped = int(np.sum(S_sol_valid > S_sol_before + 1e-6))
+        n_liq_clipped = int(np.sum(S_liq_valid > S_liq_before + 1e-6))
+        if n_sol_clipped > 0 or n_liq_clipped > 0:
+            logger.info(
+                'Monotonised phase boundaries (cumulative max): %d solidus '
+                'points clipped, %d liquidus points clipped; peaks at '
+                'S_sol=%.1f J/kg/K and S_liq=%.1f J/kg/K',
+                n_sol_clipped,
+                n_liq_clipped,
+                float(S_sol_valid[-1]),
+                float(S_liq_valid[-1]),
+            )
 
     # Write files
     solidus_path = None
