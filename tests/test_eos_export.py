@@ -773,8 +773,9 @@ class TestGenerateSpiderPhaseBoundaries:
         assert np.all(np.isfinite(S_liq))
         # S_liq > S_sol pointwise (latent heat of melting > 0).
         assert np.all(S_liq > S_sol)
-        # Monotone after cumulative-max enforcement.
-        np.testing.assert_array_less(-np.diff(S_sol), 1e-9)  # non-decreasing
+        # The synthetic entropy does not depend on P, so S follows the rising
+        # melting temperatures and is non-decreasing.
+        np.testing.assert_array_less(-np.diff(S_sol), 1e-9)
         np.testing.assert_array_less(-np.diff(S_liq), 1e-9)
 
     def test_returns_empty_when_curves_outside_table_range(self, synthetic_table, tmp_path):
@@ -856,6 +857,54 @@ class TestGenerateSpiderPhaseBoundaries:
         # S_liquidus should be ~8% higher with the liquid-phase table.
         assert np.all(twophase_result['S_liquidus'] > unified_result['S_liquidus'])
 
+    @pytest.mark.physics_invariant
+    def test_liquidus_entropy_peak_is_kept(self, tmp_path):
+        """A liquidus entropy that peaks and then falls with pressure is written
+        as it is, not held at the peak value.
+
+        The table entropy s = 1000 ln(T/300) - 150 ln(P/1e6) falls with P at
+        fixed T, and the liquidus T = 1500 + 400 ln(P/1e6) flattens, so
+        dS_liq/dlnP = 4e5/T_liq - 150 changes sign where T_liq = 2667 K
+        (P near 1.9e7 Pa). Above that pressure the curve must decrease; a
+        clipped curve stays at its maximum to the table top.
+        """
+        P_arr = np.logspace(6.0, 9.0, 16)
+        T_arr = np.logspace(3.0, 4.3, 28)
+        solid, liquid = tmp_path / 'peak_solid.dat', tmp_path / 'peak_liquid.dat'
+        _write_pdep_phase_table(solid, P_arr, T_arr, 1.0, 'solid')
+        _write_pdep_phase_table(liquid, P_arr, T_arr, 1.08, 'liquid')
+
+        def liq(P):
+            out = 1500.0 + 400.0 * np.log(np.asarray(P) / 1e6)
+            return float(out) if np.ndim(P) == 0 else out
+
+        def sol(P):
+            out = 0.8 * liq(P)
+            return float(out) if np.ndim(P) == 0 else out
+
+        res = eos_export.generate_spider_phase_boundaries(
+            sol,
+            liq,
+            solid,
+            P_range=(1e6, 1e9),
+            n_P=200,
+            output_dir=tmp_path / 'pb',
+            solid_eos_file=solid,
+            liquid_eos_file=liquid,
+        )
+        P, S_liq = res['P_Pa'], res['S_liquidus']
+        i_peak = int(np.argmax(S_liq))
+        # The peak sits inside the range, near the analytic 1.9e7 Pa.
+        assert 5e6 < P[i_peak] < 7e7
+        # Above the peak the curve falls by 1.08 * (150 ln(54) - 1000 ln(4263/2667)), about 140.
+        drop = S_liq[i_peak] - S_liq[-1]
+        assert drop > 50.0
+        expected_top = 1.08 * _s_pdep(P[-1], liq(P[-1]))
+        assert S_liq[-1] == pytest.approx(expected_top, rel=2e-3)
+        # The file holds the same unclipped curve.
+        on_disk = np.loadtxt(res['liquidus_path'])[:, 1] * eos_export._S_SCALE
+        np.testing.assert_allclose(on_disk, S_liq, rtol=1e-12)
+
     def test_pchip_smoothing_reduces_dS_dP_sign_changes(self, synthetic_table, melting_curves):
         """The PCHIP-smoothed curve has dS/dP-sign-change count <= raw count.
 
@@ -871,7 +920,8 @@ class TestGenerateSpiderPhaseBoundaries:
             output_dir=None,
         )
         dliq = np.diff(result['S_liquidus'])
-        # After cumulative-max + PCHIP, sign-change count is zero.
+        # The synthetic liquidus entropy rises monotonically; PCHIP keeps at
+        # most one change of sign.
         sign_changes = int(np.sum((dliq[:-1] > 0) != (dliq[1:] > 0)))
         assert sign_changes <= 1
 
