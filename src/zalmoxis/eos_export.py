@@ -33,6 +33,8 @@ logger = logging.getLogger(__name__)
 # ── PALEOS unified table loader ─────────────────────────────────────
 
 
+_ROW_DTYPE = [(f'c{i}', float) for i in range(9)] + [('phase', 'U32')]
+
 #: Parsed tables kept in memory per process; a super-liquidus solve uses the
 #: unified table plus a solid and liquid pair, so four covers one working set.
 _TABLE_CACHE_SIZE = 4
@@ -73,6 +75,14 @@ def load_paleos_all_properties(eos_file):
         - ``'phase'``: phase identifier grid (string, object dtype)
         - ``'p_min'``, ``'p_max'``: pressure bounds [Pa]
         - ``'t_min'``, ``'t_max'``: temperature bounds [K]
+
+    Raises
+    ------
+    ValueError
+        If a data line holds a token that is not a number (``N/A``, ``---``,
+        ``1.0D+00``, a byte-order mark, ``1_0``) or a phase label of 32
+        characters or longer. Every ``#`` line is a comment; a header line
+        without ``#`` is such a token.
     """
     path = os.path.realpath(str(eos_file))
     st = os.stat(path)
@@ -84,8 +94,11 @@ def load_paleos_all_properties(eos_file):
 @lru_cache(maxsize=_TABLE_CACHE_SIZE)
 def _parse_paleos_table(eos_file, file_id):
     """Parse one table file; ``file_id`` only keys the cache."""
-    data = read_table_columns(eos_file, range(9))
-    phase_strings = read_table_columns(eos_file, (9,), dtype=str)
+    rows = np.atleast_1d(read_table_columns(eos_file, None, dtype=_ROW_DTYPE))
+    if np.char.str_len(rows['phase']).max(initial=0) >= 32:
+        raise ValueError(f'{eos_file}: a phase label is 32 characters or longer')
+    data = np.column_stack([rows[f'c{i}'] for i in range(9)])
+    phase_strings = rows['phase']
 
     pressures = data[:, 0]
     temps = data[:, 1]
@@ -146,20 +159,20 @@ def _build_interpolator(unique_log_p, unique_log_t, grid):
     Parameters
     ----------
     unique_log_p : ndarray
-        Unique log10(P) values.
+        Unique log10(P) values (copied).
     unique_log_t : ndarray
-        Unique log10(T) values.
+        Unique log10(T) values (copied).
     grid : ndarray
         2D array of shape (nP, nT). It is copied: SciPy's linear evaluation
-        of a read-only array (such as a cached table) differs from that of a
-        writable one in the last bits.
+        of a read-only array (such as a cached table) can differ from that of
+        a writable one in the last bits.
 
     Returns
     -------
     RegularGridInterpolator
     """
     return RegularGridInterpolator(
-        (unique_log_p, unique_log_t),
+        (np.array(unique_log_p), np.array(unique_log_t)),
         np.array(grid),
         bounds_error=False,
         fill_value=np.nan,

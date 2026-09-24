@@ -24,6 +24,7 @@ import numpy as np
 import pytest
 
 from zalmoxis import eos_export
+from zalmoxis.eos import interpolation as eos_interp
 from zalmoxis.eos.interpolation import read_table_columns
 
 pytestmark = pytest.mark.unit
@@ -337,7 +338,7 @@ def _reference_arrays(path):
 
 
 def _real_paleos_tables():
-    """Paths of the shipped unified, solid and liquid tables that exist locally."""
+    """Paths of the shipped unified, solid, liquid and highres tables that exist locally."""
     roots = []
     if os.environ.get('FWL_DATA'):
         roots.append(Path(os.environ['FWL_DATA']) / 'zalmoxis_eos')
@@ -351,6 +352,8 @@ def _real_paleos_tables():
         'EOS_PALEOS_MgSiO3_unified/paleos_mgsio3_eos_table_pt.dat',
         'EOS_PALEOS_MgSiO3/paleos_mgsio3_tables_pt_proteus_solid.dat',
         'EOS_PALEOS_MgSiO3/paleos_mgsio3_tables_pt_proteus_liquid.dat',
+        'EOS_PALEOS_MgSiO3/paleos_mgsio3_tables_pt_proteus_solid_highres.dat',
+        'EOS_PALEOS_MgSiO3/paleos_mgsio3_tables_pt_proteus_liquid_highres.dat',
     ]
     return [r / n for r in roots for n in names if (r / n).is_file()]
 
@@ -359,7 +362,7 @@ class TestLoadPaleosAllPropertiesCache:
     """The parsed table is read once per file version and cannot be changed through the cache."""
 
     def test_second_call_does_not_read_the_file_again(self, synthetic_table, monkeypatch):
-        """The reader runs twice for the first load (numbers, phases) and never after."""
+        """The reader runs once for the first load and never after."""
         calls = []
         real = eos_export.read_table_columns
 
@@ -370,11 +373,11 @@ class TestLoadPaleosAllPropertiesCache:
         monkeypatch.setattr(eos_export, 'read_table_columns', counting)
 
         first = eos_export.load_paleos_all_properties(synthetic_table)
-        assert len(calls) == 2
+        assert len(calls) == 1
         second = eos_export.load_paleos_all_properties(synthetic_table)
         third = eos_export.load_paleos_all_properties(str(synthetic_table))
 
-        assert len(calls) == 2
+        assert len(calls) == 1
         np.testing.assert_array_equal(first['rho'], second['rho'])
         np.testing.assert_array_equal(first['s'], third['s'])
 
@@ -448,7 +451,7 @@ class TestLoadPaleosAllPropertiesCache:
         n_first = len(calls)
         eos_export.compute_entropy_adiabat(unified, **kwargs)
 
-        assert n_first == 6  # three tables, numbers and phases each
+        assert n_first == 3  # one read per table
         assert len(calls) == n_first
         assert eos_export._parse_paleos_table.cache_info().currsize == 3
 
@@ -507,6 +510,27 @@ class TestLoadPaleosAllPropertiesCache:
             assert np.isnan(out[name][2, 3])
             assert np.isfinite(out[name][2, 2])
         assert out['phase'][2, 3] == ''
+
+    @pytest.mark.parametrize('loader', ['load_paleos_all_properties', 'load_paleos_table'])
+    @pytest.mark.parametrize(
+        'bad_line',
+        ['# ok\nP T rho u s cp cv alpha nabla_ad phase\n', '1e6 1e3 N/A 1 1 1 1 1 1 solid\n'],
+        ids=['header-without-hash', 'not-a-number'],
+    )
+    def test_loaders_raise_on_a_line_that_is_not_numeric(self, tmp_path, loader, bad_line):
+        """The documented ValueError, through both public loaders."""
+        path = tmp_path / 'bad_table.dat'
+        path.write_text(bad_line + '1e6 1e3 1 1 1 1 1 1 1 solid\n')
+        module = eos_export if loader == 'load_paleos_all_properties' else eos_interp
+        with pytest.raises(ValueError):
+            getattr(module, loader)(path)
+
+    def test_phase_label_of_32_characters_is_an_error(self, tmp_path):
+        """A label that the fixed-width phase field could cut is refused, not truncated."""
+        path = tmp_path / 'long_phase.dat'
+        path.write_text('1e6 1e3 1 1 1 1 1 1 1 ' + 'x' * 32 + '\n')
+        with pytest.raises(ValueError, match='phase label'):
+            eos_export.load_paleos_all_properties(path)
 
     def test_read_table_columns_rejects_a_token_that_is_not_a_number(self, tmp_path):
         """A non-numeric cell is an error, where genfromtxt made it NaN."""
@@ -660,8 +684,19 @@ class TestBuildInterpolator:
         expected = eos_export._build_interpolator(log_p, log_t, grid)(points)
         frozen = grid.copy()
         frozen.setflags(write=False)
-        result = eos_export._build_interpolator(log_p, log_t, frozen)(points)
-        np.testing.assert_array_equal(result, expected)
+        frozen_axes = (log_p.copy(), log_t.copy())
+        for axis in frozen_axes:
+            axis.setflags(write=False)
+        interp = eos_export._build_interpolator(*frozen_axes, frozen)
+        np.testing.assert_array_equal(interp(points), expected)
+
+    def test_interpolator_shares_no_memory_with_its_inputs(self):
+        """Grid and both axes are copies, so a cached table is never held by an interpolator."""
+        log_p, log_t, grid = np.linspace(0, 1, 6), np.linspace(0, 1, 5), np.ones((6, 5))
+        interp = eos_export._build_interpolator(log_p, log_t, grid)
+        assert not np.shares_memory(interp.values, grid)
+        assert not np.shares_memory(interp.grid[0], log_p)
+        assert not np.shares_memory(interp.grid[1], log_t)
 
 
 class TestFillNanNearest:

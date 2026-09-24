@@ -26,6 +26,8 @@ _paleos_clamp_warned = set()
 def read_table_columns(eos_file, usecols, dtype=float):
     """Read whitespace-separated columns of a PALEOS text table, skipping ``#`` comments.
 
+    ``usecols=None`` reads every column; ``dtype`` may be a structured dtype.
+
     ``np.loadtxt`` parses these 50-140 MB files several times faster than
     ``np.genfromtxt`` and returns the same arrays for numeric input. A token
     that is not a number (``N/A``, ``---``) raises ``ValueError`` where
@@ -60,6 +62,13 @@ def load_paleos_table(eos_file):
         - ``'nabla_ad_interp'``: RegularGridInterpolator for nabla_ad(log10P, log10T)
         - ``'p_min'``, ``'p_max'``: pressure bounds in Pa
         - ``'t_min'``, ``'t_max'``: temperature bounds in K
+
+    Raises
+    ------
+    ValueError
+        If a data line holds a token that is not a number (``N/A``, ``---``,
+        ``1.0D+00``, a byte-order mark, ``1_0``). Every ``#`` line is a
+        comment; a header line without ``#`` is such a token.
     """
     # Read only numeric columns (0-8), skipping the string phase_id column (9)
     data = read_table_columns(eos_file, range(9))
