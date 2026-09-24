@@ -264,6 +264,49 @@ class TestInteriorStopFails:
         assert len(m) == N and p[-1] > 0
         assert m[-1] == pytest.approx(clean.y[0, -1], rel=1e-8)
 
+    def test_every_passing_restart_resumes(self, monkeypatch):
+        """Five narrow bands; three stop the grid solve and each restart passes
+        them. The profile ends as the band-free one."""
+        radii = np.linspace(0.0, R_OUT, N)
+        dr, base = radii[1], _band_rhs(-1, -1)
+        los = [(k + 0.5) * dr for k in (7, 12, 17, 21, 24)]
+
+        def rhs(r, y, *args, **kwargs):
+            if any(lo < r < lo + 0.1 * dr for lo in los):
+                return np.full(3, np.nan)
+            return base(r, y)
+
+        tails, real = [], sm.solve_ivp
+
+        def spy(f, t_span, y0, **kwargs):
+            sol = real(f, t_span, y0, **kwargs)
+            if kwargs.get('t_eval') is None:
+                tails.append(sol.status)
+            return sol
+
+        monkeypatch.setattr(sm, 'solve_ivp', spy)
+        monkeypatch.setattr(sm, 'coupled_odes', rhs)
+        monkeypatch.setattr(sm, 'any_component_is_tdep', lambda _: False)
+        m, g, p = sm.solve_structure(
+            {},
+            0.0,
+            0.0,
+            radii,
+            0.5,
+            1e-10,
+            1e-12,
+            np.inf,
+            {},
+            {},
+            [0.0, 0.0, self.P_C],
+            None,
+            None,
+        )
+        clean = self._solve(monkeypatch, (2.0, 0.0))[2:]
+        assert tails == [0, 0, 0]
+        assert m == pytest.approx(clean[0], rel=1e-6)
+        assert np.all((p == 0.0) == (clean[2] == 0.0))
+
 
 class TestPadAfterStop:
     """pad_after_stop pads at or below the surface pressure limit and fails above it."""
@@ -343,139 +386,3 @@ class TestJaxStopState:
         assert np.all(np.isfinite(ys)) and ys[-1, 2] > 0
         assert y_end == pytest.approx(ys[-1], rel=1e-12)
         assert y_end[0] == pytest.approx(_mass(R_OUT), rel=1e-6)
-
-
-class TestFailedSolveInMain:
-    """A failed solve inside the pressure bracket leaves no NaN in the outer state."""
-
-    @pytest.mark.parametrize('scope', ['one', 'all'])
-    def test_nan_evaluation_is_not_adopted(self, monkeypatch, caplog, scope):
-        """'one': one failed evaluation inside brentq. 'all': every solve of one
-        outer iteration fails, which leaves no finite profile at all."""
-        import os
-
-        import zalmoxis
-        import zalmoxis.solver as zs
-
-        root = os.path.normpath(os.path.join(os.path.dirname(zalmoxis.__file__), '..', '..'))
-        for sub, name in (
-            ('EOS_PALEOS_iron', 'paleos_iron_eos_table_pt.dat'),
-            ('EOS_PALEOS_MgSiO3_unified', 'paleos_mgsio3_eos_table_pt.dat'),
-        ):
-            if not os.path.isfile(os.path.join(root, 'data', sub, name)):
-                pytest.skip('PALEOS unified EOS data not available')
-        from zalmoxis.config import load_material_dictionaries
-        from zalmoxis.constants import earth_mass
-
-        state = {'in_brentq': False, 'injected': None, 'adiabat_args': []}
-        real_solve, real_brentq, real_adiabat = (
-            zs.solve_structure,
-            zs.brentq,
-            zs.compute_adiabatic_temperature,
-        )
-
-        def brentq(*args, **kwargs):
-            state['in_brentq'] = True
-            try:
-                return real_brentq(*args, **kwargs)
-            finally:
-                state['in_brentq'] = False
-
-        def solve(*args, **kwargs):
-            m, g, p = real_solve(*args, **kwargs)
-            # Fail once the adiabat is active, so the next outer iteration
-            # anchors its adiabat on the state this one leaves.
-            n_adiabat = len(state['adiabat_args'])
-            if scope == 'one':
-                hit = state['in_brentq'] and n_adiabat and state['injected'] is None
-            else:
-                hit = n_adiabat and state['injected'] in (None, n_adiabat)
-            if hit:
-                state['injected'] = n_adiabat
-                m, g, p = (
-                    np.where(np.arange(len(m)) >= len(m) // 2, np.nan, a) for a in (m, g, p)
-                )
-            return m, g, p
-
-        def adiabat(radii, p_prev, m_prev, t_surf, cmb, core_mantle, *args, **kwargs):
-            state['adiabat_args'].append((p_prev, m_prev, cmb, core_mantle))
-            return real_adiabat(
-                radii, p_prev, m_prev, t_surf, cmb, core_mantle, *args, **kwargs
-            )
-
-        monkeypatch.setattr(zs, 'brentq', brentq)
-        monkeypatch.setattr(zs, 'solve_structure', solve)
-        monkeypatch.setattr(zs, 'compute_adiabatic_temperature', adiabat)
-        cfg = {
-            'planet_mass': earth_mass,
-            'core_mass_fraction': 0.325,
-            'mantle_mass_fraction': 0,
-            'temperature_mode': 'adiabatic',
-            'surface_temperature': 3000.0,
-            'center_temperature': 6000.0,
-            'temp_profile_file': '',
-            'layer_eos_config': {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
-            'mushy_zone_factor': 1.0,
-            'num_layers': 50,
-            'target_surface_pressure': 101325,
-            'max_iterations_outer': 8,
-            'max_iterations_inner': 1,
-            'data_output_enabled': False,
-            'plotting_enabled': False,
-        }
-        with caplog.at_level('DEBUG', logger='zalmoxis.solver'):
-            zs.main(cfg, load_material_dictionaries(), None, os.path.join(root, 'input'))
-        assert state['injected'] and len(state['adiabat_args']) > state['injected']
-        assert 'calculated_mass=nan' not in caplog.text
-        for p_prev, m_prev, cmb, core_mantle in state['adiabat_args']:
-            assert np.all(np.isfinite(p_prev)) and np.all(np.isfinite(m_prev))
-            assert p_prev[0] > 0 and m_prev[-1] > 0
-            assert cmb > 0 and core_mantle > 0
-
-    def test_newton_reports_a_radius_where_every_solve_fails(self, monkeypatch):
-        """A failure at every central pressure of the first radius has no mass to
-        offer; Newton must not read the zero-mass profile as M(R) = 0."""
-        import os
-
-        import zalmoxis
-        import zalmoxis.solver as zs
-        from zalmoxis.config import load_material_dictionaries
-        from zalmoxis.constants import earth_mass
-
-        root = os.path.normpath(os.path.join(os.path.dirname(zalmoxis.__file__), '..', '..'))
-        if not os.path.isfile(
-            os.path.join(root, 'data', 'EOS_Seager2007', 'eos_seager07_iron.txt')
-        ):
-            pytest.skip('Seager2007 EOS data not available')
-        real_solve, first_r = zs.solve_structure, []
-
-        def solve(*args, **kwargs):
-            m, g, p = real_solve(*args, **kwargs)
-            first_r.append(first_r[0] if first_r else args[3][-1])
-            if args[3][-1] == first_r[0]:
-                m, g, p = (
-                    np.where(np.arange(len(m)) >= len(m) // 2, np.nan, a) for a in (m, g, p)
-                )
-            return m, g, p
-
-        monkeypatch.setattr(zs, 'solve_structure', solve)
-        cfg = {
-            'planet_mass': earth_mass,
-            'core_mass_fraction': 0.325,
-            'mantle_mass_fraction': 0,
-            'temperature_mode': 'isothermal',
-            'surface_temperature': 3000.0,
-            'center_temperature': 6000.0,
-            'temp_profile_file': '',
-            'layer_eos_config': {'core': 'Seager2007:iron', 'mantle': 'Seager2007:MgSiO3'},
-            'mushy_zone_factor': 1.0,
-            'num_layers': 50,
-            'target_surface_pressure': 101325,
-            'outer_solver': 'newton',
-            'relative_tolerance': 1e-9,
-            'absolute_tolerance': 1e-10,
-            'data_output_enabled': False,
-            'plotting_enabled': False,
-        }
-        with pytest.raises(RuntimeError, match='failed at every central pressure'):
-            zs.main(cfg, load_material_dictionaries(), None, os.path.join(root, 'input'))

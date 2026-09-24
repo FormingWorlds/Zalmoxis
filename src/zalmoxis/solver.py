@@ -558,10 +558,18 @@ def _brentq_fallback_outer(
         )
         M_at_current, _ = eval_M_at_R(R_current)
         if not np.isfinite(M_at_current):
-            raise RuntimeError(
-                f'Brentq fall-back: M(R={R_current:.4e}) is not finite: the structure solve '
-                'failed at every central pressure tried at this radius (see the warnings '
-                'that name the stop radius and pressure). Cannot recover.'
+            if not history:
+                raise RuntimeError(
+                    f'Brentq fall-back: the pressure solve found no root at R={R_current:.4e} '
+                    'and no other radius has a mass. Cannot recover.'
+                )
+            R_failed = R_current
+            R_current, M_at_current, _ = min(history, key=lambda h: h[2])
+            logger.warning(
+                'Brentq: the pressure solve found no root at R=%.4e; sweeping from the best '
+                'evaluated R=%.4e instead.',
+                R_failed,
+                R_current,
             )
         f0 = M_at_current - M_target
         history.append((R_current, M_at_current, abs(f0) / M_target))
@@ -1144,7 +1152,7 @@ def _solve(
     converged_pressure = False
     converged_density = False
     converged_mass = False
-    structure_failed = False  # no finite structure solve in the last pressure solve
+    structure_failed = True  # the last pressure solve found no root
 
     # Unpack physics parameters (required)
     planet_mass = config_params['planet_mass']
@@ -1362,6 +1370,7 @@ def _solve(
         # a previous outer iteration masking failure in the current one).
         converged_pressure = False
         converged_density = False
+        structure_failed = True
 
         # Wall-clock timeout check
         if time.time() - wall_start > wall_timeout:
@@ -1819,8 +1828,9 @@ def _solve(
                 # Invalid bracket, a failed solve inside brentq, or at its root:
                 # use the last finite evaluated solution if available.
                 logger.debug('Pressure solve failed: %s', exc)
-                structure_failed = _state['mass_enclosed'] is None
-                if not structure_failed:
+                # No root: the solve has failed, whatever finite profile remains.
+                structure_failed = True
+                if _state['mass_enclosed'] is not None:
                     mass_enclosed = _state['mass_enclosed']
                     gravity = _state['gravity']
                     pressure = _state['pressure']
@@ -2083,8 +2093,9 @@ def _solve(
             scale = (planet_mass / calculated_mass) ** (1.0 / 3.0)
             scale = max(0.5, min(scale, 2.0))
             radius_guess *= scale
-            cmb_mass = core_mass_fraction * calculated_mass
-            core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * calculated_mass
+            if not structure_failed:
+                cmb_mass = core_mass_fraction * calculated_mass
+                core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * calculated_mass
 
         relative_diff_outer_mass = np.abs((calculated_mass - planet_mass) / planet_mass)
 

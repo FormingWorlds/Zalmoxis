@@ -457,7 +457,6 @@ def solve_structure(
     # Pad to full length if the integration stopped before the outermost radial
     # grid point (pressure-zero event, or a step-size failure).
     n = len(mass_enclosed)
-    resumes = 2
     while n < len(radii):
         if sol_end.status == 1:
             y_stop = sol_end.y_events[0][-1]
@@ -474,12 +473,11 @@ def solve_structure(
             method='RK45',
             events=_pressure_zero,
         )
-        if tail.status != 0 or resumes == 0:
+        if tail.status != 0:
             y_stop = tail.y[:, -1]  # at a terminal event this is the event state
             break
-        # The restart passed the failure, so the grid integration resumes there;
-        # at the outer radius the restart itself completes the profile.
-        resumes -= 1
+        # The restart passed the failure, so the grid integration resumes there
+        # (each resume adds a node); at the outer radius the restart completes it.
         max_step_end = maximum_step if uses_Tdep else np.inf
         if n == len(radii) - 1:
             sol_end, new = tail, tail.y[:, -1:]

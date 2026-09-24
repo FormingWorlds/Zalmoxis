@@ -73,8 +73,9 @@ The terminal event reduces evaluation time for bad guesses from minutes to milli
 **Early termination handling.**
 When the terminal event fires, or the step size collapses, the ODE integration stops short of the outermost grid point.
 A stop at a pressure of at most $10^{-6} P_c$, or below the target surface pressure, is treated as the surface: the remaining points take the mass and gravity at the stop and zero pressure, so the enclosed mass is continuous as the stop moves through the last shell.
-After a step-size collapse, the stop state comes from a re-integration of the one shell in which the integration stopped; if that re-integration passes the failure, the integration resumes on the grid (at most twice).
-A stop at a higher pressure is a failed solve: the remaining points are NaN, a warning names the stop, and the pressure solver treats the evaluation as failed and keeps the last finite profile.
+After a step-size collapse, the stop state comes from a re-integration of the one shell in which the integration stopped; if that re-integration passes the failure, the integration resumes on the grid.
+A stop at a higher pressure is a failed solve: the remaining points are NaN, a warning names the stop, and the pressure solver treats the evaluation as failed.
+A pressure solve that finds no root is itself a failed solve: its profile does not update the core mass or the profile the next adiabat uses, and the Newton outer loop treats that radius as having no mass and continues from its best evaluated radius.
 The JAX path applies the same rule to the state where `diffeqsolve` stopped, at the event or at its last accepted step, without a re-integration, so near the $10^{-6} P_c$ limit a stop can pad on one path and fail on the other.
 The residual function detects a surface stop ($P_{\mathrm{surface}} \leq 0$) and returns $-P_{\mathrm{target}}$ (a negative value that signals to Brent's method that $P_c$ is too low), maintaining a valid bracket.
 
