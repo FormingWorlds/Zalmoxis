@@ -25,15 +25,19 @@ logger = logging.getLogger(__name__)
 SURFACE_STOP_P_FRACTION = 1e-6
 
 
-def pad_after_stop(radii, mass, gravity, pressure, y_stop, p_center):
+def pad_after_stop(radii, mass, gravity, pressure, y_stop, p_center, p_surface=0.0):
     """Extend profiles cut short by a stop in the integration to the full grid.
 
     The integration stops between ``radii[n - 1]`` and ``radii[n]``, with ``n``
-    the length of the profiles. A stop near the surface, at a pressure of at
-    most ``SURFACE_STOP_P_FRACTION * p_center``, is the planet's surface: the
-    remaining nodes take mass and gravity at the stop and zero pressure. A stop
-    at a higher pressure is a failed solve: the remaining nodes are NaN, which
-    the callers treat as a failed evaluation, and a WARNING names the stop.
+    the length of the profiles. A stop at a pressure of at most
+    ``SURFACE_STOP_P_FRACTION * p_center``, or below the target surface
+    pressure ``p_surface``, is padded as the surface: the remaining nodes take
+    mass and gravity at the stop and zero pressure. Below the target the
+    pressure has fallen short before the outer radius, so the zero surface
+    pressure gives the pressure solve the right sign (central pressure too
+    low). A stop at a higher pressure is a failed solve: the remaining nodes are
+    NaN, which the callers treat as a failed evaluation, and a WARNING names
+    the stop.
 
     Parameters
     ----------
@@ -45,6 +49,8 @@ def pad_after_stop(radii, mass, gravity, pressure, y_stop, p_center):
         State [m, g, P] where the integration stopped.
     p_center : float
         Central pressure of the solve [Pa].
+    p_surface : float, optional
+        Target surface pressure [Pa].
 
     Returns
     -------
@@ -53,7 +59,7 @@ def pad_after_stop(radii, mass, gravity, pressure, y_stop, p_center):
     """
     n = len(mass)
     m_stop, g_stop, p_stop = (float(v) for v in y_stop)
-    if p_stop <= SURFACE_STOP_P_FRACTION * p_center:
+    if p_stop <= max(SURFACE_STOP_P_FRACTION * p_center, p_surface):
         fill = (m_stop, g_stop, 0.0)
     else:
         logger.warning(
@@ -249,6 +255,7 @@ def solve_structure(
     use_jax=False,
     temperature_arrays=None,
     volatile_profile=None,
+    surface_pressure=0.0,
 ):
     """Solve the coupled ODEs for the planetary structure model.
 
@@ -303,6 +310,8 @@ def solve_structure(
         Sigmoid width for phase-aware suppression (kg/m^3).
     binodal_T_scale : float
         Binodal sigmoid width in K for H2 miscibility suppression.
+    surface_pressure : float, optional
+        Target surface pressure [Pa], passed to ``pad_after_stop``.
 
     Returns
     -------
@@ -345,6 +354,7 @@ def solve_structure(
                 condensed_rho_scale=condensed_rho_scale,
                 binodal_T_scale=binodal_T_scale,
                 volatile_profile=volatile_profile,
+                surface_pressure=surface_pressure,
             )
         except ValueError as exc:
             logger.warning(
@@ -447,25 +457,47 @@ def solve_structure(
     # Pad to full length if the integration stopped before the outermost radial
     # grid point (pressure-zero event, or a step-size failure).
     n = len(mass_enclosed)
-    if n < len(radii):
+    resumes = 2
+    while n < len(radii):
         if sol_end.status == 1:
             y_stop = sol_end.y_events[0][-1]
-        else:
-            # The failure lies between radii[n - 1] and radii[n]; re-integrating
-            # only that shell finds where it stops without stepping past it.
-            tail = solve_ivp(
-                _ode_rhs,
-                (radii[n - 1], radii[n]),
-                [mass_enclosed[-1], gravity[-1], pressure[-1]],
-                rtol=relative_tolerance,
-                atol=absolute_tolerance,
-                max_step=max_step_end,
-                method='RK45',
-                events=_pressure_zero,
-            )
-            y_stop = tail.y_events[0][-1] if tail.status == 1 else tail.y[:, -1]
+            break
+        # The failure lies between radii[n - 1] and radii[n]; re-integrating
+        # only that shell finds where it stops without stepping past it.
+        tail = solve_ivp(
+            _ode_rhs,
+            (radii[n - 1], radii[n]),
+            [mass_enclosed[-1], gravity[-1], pressure[-1]],
+            rtol=relative_tolerance,
+            atol=absolute_tolerance,
+            max_step=max_step_end,
+            method='RK45',
+            events=_pressure_zero,
+        )
+        if tail.status != 0 or resumes == 0:
+            y_stop = tail.y[:, -1]  # at a terminal event this is the event state
+            break
+        # The restart passed the failure, so the grid integration resumes there.
+        resumes -= 1
+        max_step_end = maximum_step if uses_Tdep else np.inf
+        sol_end = solve_ivp(
+            _ode_rhs,
+            (radii[n], radii[-1]),
+            tail.y[:, -1],
+            t_eval=radii[n:],
+            rtol=relative_tolerance,
+            atol=absolute_tolerance,
+            max_step=max_step_end,
+            method='RK45',
+            events=_pressure_zero,
+        )
+        mass_enclosed = np.concatenate([mass_enclosed, sol_end.y[0]])
+        gravity = np.concatenate([gravity, sol_end.y[1]])
+        pressure = np.concatenate([pressure, sol_end.y[2]])
+        n = len(mass_enclosed)
+    if n < len(radii):
         mass_enclosed, gravity, pressure = pad_after_stop(
-            radii, mass_enclosed, gravity, pressure, y_stop, y0[2]
+            radii, mass_enclosed, gravity, pressure, y_stop, y0[2], surface_pressure
         )
 
     return mass_enclosed, gravity, pressure

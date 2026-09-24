@@ -213,6 +213,7 @@ def solve_structure_via_jax(
     condensed_rho_scale=None,
     binodal_T_scale=None,
     volatile_profile=None,  # VolatileProfile: single-volatile wet mantle
+    surface_pressure=0.0,  # target surface pressure [Pa], for pad_after_stop
 ):
     """Drop-in replacement for ``solve_structure`` using the JAX path.
 
@@ -639,6 +640,12 @@ def solve_structure_via_jax(
     if np.any(post_event):
         n = int(np.argmax(post_event))
         return pad_after_stop(
-            radii_arr, mass_enclosed[:n], gravity[:n], pressure[:n], y_end, float(y0[2])
+            radii_arr,
+            mass_enclosed[:n],
+            gravity[:n],
+            pressure[:n],
+            y_end,
+            float(y0[2]),
+            surface_pressure,
         )
     return mass_enclosed, gravity, pressure

@@ -184,8 +184,7 @@ class TestEventTermination:
         radii = np.asarray(jax_event_result['radii'])
 
         pad_idx = np.flatnonzero(P_jx == 0.0)
-        if pad_idx.size == 0:
-            pytest.skip('No padded shells.')
+        assert pad_idx.size > 0, 'bench_performance.toml is expected to stop below R'
         k = pad_idx[0]
         assert np.all(mass_jx[pad_idx] == mass_jx[k])
         assert np.all(g_jx[pad_idx] == g_jx[k])

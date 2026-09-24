@@ -557,9 +557,11 @@ def _brentq_fallback_outer(
             R_max,
         )
         M_at_current, _ = eval_M_at_R(R_current)
-        if not np.isfinite(M_at_current):  # pragma: no cover - cannot recover; defensive
+        if not np.isfinite(M_at_current):
             raise RuntimeError(
-                f'Brentq fall-back: M(R={R_current:.4e}) is not finite. Cannot recover.'
+                f'Brentq fall-back: M(R={R_current:.4e}) is not finite: the structure solve '
+                'failed at every central pressure tried at this radius (see the warnings '
+                'that name the stop radius and pressure). Cannot recover.'
             )
         f0 = M_at_current - M_target
         history.append((R_current, M_at_current, abs(f0) / M_target))
@@ -900,6 +902,8 @@ def _solve_newton_outer(
         )
         mass_arr = np.asarray(sub_result.get('mass_enclosed', [np.nan]))
         M_val = float(mass_arr[-1]) if mass_arr.size > 0 else float('nan')
+        if sub_result.get('structure_failed'):
+            M_val = float('nan')
         return M_val, sub_result
 
     # ----- Newton iteration -----
@@ -918,9 +922,7 @@ def _solve_newton_outer(
 
     for k in range(max_iter):
         M_k, last_result = _M_at_R(R)
-        if not np.isfinite(
-            M_k
-        ):  # pragma: no cover - non-finite M(R) -> brentq fallback; defensive
+        if not np.isfinite(M_k):
             logger.warning(
                 'Newton iter %d: M(R=%.4e) not finite; falling back to brentq.',
                 k,
@@ -1142,6 +1144,7 @@ def _solve(
     converged_pressure = False
     converged_density = False
     converged_mass = False
+    structure_failed = False  # no finite structure solve in the last pressure solve
 
     # Unpack physics parameters (required)
     planet_mass = config_params['planet_mass']
@@ -1673,6 +1676,7 @@ def _solve(
                     use_jax=use_jax,
                     temperature_arrays=temperature_arrays,
                     volatile_profile=volatile_profile,
+                    surface_pressure=target_surface_pressure,
                 )
                 if logger.isEnabledFor(
                     logging.DEBUG
@@ -1680,9 +1684,11 @@ def _solve(
                     create_pressure_density_files(
                         outer_iter, inner_iter, _state['n_evals'], radii, p, density
                     )
-                _state['mass_enclosed'] = m
-                _state['gravity'] = g
-                _state['pressure'] = p
+                # Only a finite profile can stand in for a failed bracket.
+                if np.all(np.isfinite(m)) and np.all(np.isfinite(p)):
+                    _state['mass_enclosed'] = m
+                    _state['gravity'] = g
+                    _state['pressure'] = p
                 _state['n_evals'] += 1
 
                 # Early termination: pressure reached zero before the
@@ -1757,7 +1763,7 @@ def _solve(
                 # Re-run solve_structure at the exact root to get clean profiles
                 # (brentq may have evaluated _state at a slightly different P)
                 y0_root = [0, 0, p_solution]
-                mass_enclosed, gravity, pressure = solve_structure(
+                m_root, g_root, p_root = solve_structure(
                     layer_mixtures,
                     cmb_mass,
                     core_mantle_mass,
@@ -1779,8 +1785,15 @@ def _solve(
                     use_jax=use_jax,
                     temperature_arrays=temperature_arrays,
                     volatile_profile=volatile_profile,
+                    surface_pressure=target_surface_pressure,
                 )
 
+                if not (np.all(np.isfinite(m_root)) and np.all(np.isfinite(p_root))):
+                    raise ValueError(
+                        f'Structure solve failed at the root P_c = {p_solution:.3e} Pa.'
+                    )
+                mass_enclosed, gravity, pressure = m_root, g_root, p_root
+                structure_failed = False
                 surface_residual = abs(pressure[-1] - target_surface_pressure)
                 # Allow zero pressure at the surface: the terminal event
                 # pads truncated points with P=0, so check >= 0
@@ -1802,15 +1815,16 @@ def _solve(
                         surface_residual,
                         np.min(pressure),
                     )
-            except ValueError:  # pragma: no cover - bracket-invalid recovery; defensive
-                # f(p_low) and f(p_high) have the same sign: bracket invalid.
-                # Use the last evaluated solution if available.
+            except ValueError:
+                # Invalid bracket, a failed solve inside brentq, or at its root:
+                # use the last finite evaluated solution if available.
                 logger.debug(
                     'Could not bracket pressure root in [%.2e, %.2e] Pa.',
                     p_low,
                     p_high,
                 )
-                if _state['mass_enclosed'] is not None:
+                structure_failed = _state['mass_enclosed'] is None
+                if not structure_failed:
                     mass_enclosed = _state['mass_enclosed']
                     gravity = _state['gravity']
                     pressure = _state['pressure']
@@ -2051,18 +2065,17 @@ def _solve(
             )
 
         # Save converged profiles for the next outer iteration's adiabat
-        prev_radii = radii.copy()
-        prev_pressure = np.asarray(pressure).copy()
-        prev_mass_enclosed = np.asarray(mass_enclosed).copy()
+        if np.all(np.isfinite(pressure)) and np.all(np.isfinite(mass_enclosed)):
+            prev_radii = radii.copy()
+            prev_pressure = np.asarray(pressure).copy()
+            prev_mass_enclosed = np.asarray(mass_enclosed).copy()
 
         # Update radius guess with damped scaling to prevent oscillation.
         # The cube-root scaling is correct in direction but can overshoot
         # wildly when calculated_mass << planet_mass, catapulting radius
         # to unphysical values and trapping the solver in a cycle.
         calculated_mass = mass_enclosed[-1]
-        if calculated_mass <= 0 or not np.isfinite(
-            calculated_mass
-        ):  # pragma: no cover - non-finite calculated mass; defensive
+        if calculated_mass <= 0 or not np.isfinite(calculated_mass):
             radius_guess *= 0.8
             logger.debug(
                 'Outer iter %d: calculated_mass=%.2e, shrinking radius_guess to %.0f m.',
@@ -2074,8 +2087,8 @@ def _solve(
             scale = (planet_mass / calculated_mass) ** (1.0 / 3.0)
             scale = max(0.5, min(scale, 2.0))
             radius_guess *= scale
-        cmb_mass = core_mass_fraction * calculated_mass
-        core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * calculated_mass
+            cmb_mass = core_mass_fraction * calculated_mass
+            core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * calculated_mass
 
         relative_diff_outer_mass = np.abs((calculated_mass - planet_mass) / planet_mass)
 
@@ -2288,6 +2301,7 @@ def _solve(
         'converged_pressure': converged_pressure,
         'converged_density': converged_density,
         'converged_mass': converged_mass,
+        'structure_failed': structure_failed,
         'best_mass_error': float(best_mass_error) if np.isfinite(best_mass_error) else None,
         'p_center': pressure[0] if len(pressure) > 0 else None,
     }
