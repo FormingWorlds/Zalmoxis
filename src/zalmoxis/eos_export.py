@@ -94,7 +94,7 @@ def load_paleos_all_properties(eos_file):
 @lru_cache(maxsize=_TABLE_CACHE_SIZE)
 def _parse_paleos_table(eos_file, file_id):
     """Parse one table file; ``file_id`` only keys the cache."""
-    rows = np.atleast_1d(read_table_columns(eos_file, None, dtype=_ROW_DTYPE))
+    rows = np.atleast_1d(read_table_columns(eos_file, range(10), dtype=_ROW_DTYPE))
     if np.char.str_len(rows['phase']).max(initial=0) >= 32:
         raise ValueError(f'{eos_file}: a phase label is 32 characters or longer')
     data = np.column_stack([rows[f'c{i}'] for i in range(9)])
