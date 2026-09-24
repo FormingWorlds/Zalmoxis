@@ -393,28 +393,22 @@ class TestLoadPaleosAllPropertiesCache:
         assert before['phase'][0, 0] == 'solid'
         assert after['phase'][0, 0] == 'lqiud'
 
-    def test_rewrite_with_restored_modification_time_is_read_again(self, synthetic_table):
-        """An in-place rewrite of the same size and mtime still changes the change time."""
+    @pytest.mark.parametrize('mutate', ['rewrite', 'replace'])
+    def test_same_size_and_time_but_new_content_is_read_again(
+        self, synthetic_table, tmp_path, mutate
+    ):
+        """A rewrite in place (change time) or a moved-in file (inode) is read again."""
         before = eos_export.load_paleos_all_properties(synthetic_table)
         stat = synthetic_table.stat()
-        text = synthetic_table.read_text()
+        edited = synthetic_table.read_text().replace('solid', 'lqiud')
         time.sleep(0.05)
-        synthetic_table.write_text(text.replace('solid', 'lqiud'))
-        os.utime(synthetic_table, ns=(stat.st_atime_ns, stat.st_mtime_ns))
-
-        after = eos_export.load_paleos_all_properties(synthetic_table)
-
-        assert before['phase'][0, 0] == 'solid'
-        assert after['phase'][0, 0] == 'lqiud'
-
-    def test_replaced_file_of_same_size_and_time_is_read_again(self, synthetic_table, tmp_path):
-        """A new file moved onto the path is a different inode, whatever size and mtime say."""
-        before = eos_export.load_paleos_all_properties(synthetic_table)
-        stat = synthetic_table.stat()
-        other = tmp_path / 'replacement.dat'
-        other.write_text(synthetic_table.read_text().replace('solid', 'lqiud'))
-        os.utime(other, ns=(stat.st_atime_ns, stat.st_mtime_ns))
-        os.replace(other, synthetic_table)
+        target = synthetic_table if mutate == 'rewrite' else tmp_path / 'replacement.dat'
+        target.write_text(edited)
+        os.utime(target, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+        if mutate == 'replace':
+            os.replace(target, synthetic_table)
+        elif synthetic_table.stat().st_ctime_ns == stat.st_ctime_ns:
+            pytest.skip('file system change time is too coarse to see the rewrite')
 
         after = eos_export.load_paleos_all_properties(synthetic_table)
 
@@ -431,6 +425,8 @@ class TestLoadPaleosAllPropertiesCache:
     def test_entropy_adiabat_parses_each_table_once(self, pdep_2phase, monkeypatch):
         """Repeated adiabat solves over the same tables read no file after the first."""
         solid_path, liquid_path = pdep_2phase
+        unified = solid_path.with_name('pdep_unified.dat')
+        unified.write_text(solid_path.read_text())
         calls = []
         real = eos_export.read_table_columns
         monkeypatch.setattr(
@@ -448,12 +444,13 @@ class TestLoadPaleosAllPropertiesCache:
             solid_eos_file=solid_path,
             liquid_eos_file=liquid_path,
         )
-        eos_export.compute_entropy_adiabat(solid_path, **kwargs)
+        eos_export.compute_entropy_adiabat(unified, **kwargs)
         n_first = len(calls)
-        eos_export.compute_entropy_adiabat(solid_path, **kwargs)
+        eos_export.compute_entropy_adiabat(unified, **kwargs)
 
-        assert n_first == 4  # two tables, numbers and phases each
+        assert n_first == 6  # three tables, numbers and phases each
         assert len(calls) == n_first
+        assert eos_export._parse_paleos_table.cache_info().currsize == 3
 
     def test_a_file_of_another_size_is_read_again(self, synthetic_table):
         """A different size is enough, whatever the modification time says."""
@@ -495,6 +492,28 @@ class TestLoadPaleosAllPropertiesCache:
             expected = numeric[keep, col].reshape(3, 3)
             np.testing.assert_array_equal(out[name], expected)
         assert list(out['phase'].ravel()) == [p.strip() for p in phase[keep]]
+
+    def test_grid_cell_without_a_row_stays_nan_and_empty(self, synthetic_table):
+        """A (P, T) node that has no table row is NaN in every property and '' in the phase."""
+        prefix = f'{_P_NODES_PA[2]:.8e} {_T_NODES_K[3]:.8e} '
+        lines = synthetic_table.read_text().splitlines(keepends=True)
+        kept = [line for line in lines if not line.startswith(prefix)]
+        assert len(kept) == len(lines) - 1
+        synthetic_table.write_text(''.join(kept))
+
+        out = eos_export.load_paleos_all_properties(synthetic_table)
+
+        for name in ['rho', 'u', 's', 'cp', 'cv', 'alpha', 'nabla_ad']:
+            assert np.isnan(out[name][2, 3])
+            assert np.isfinite(out[name][2, 2])
+        assert out['phase'][2, 3] == ''
+
+    def test_read_table_columns_rejects_a_token_that_is_not_a_number(self, tmp_path):
+        """A non-numeric cell is an error, where genfromtxt made it NaN."""
+        path = tmp_path / 'bad.dat'
+        path.write_text('1.0 2.0 N/A\n4.0 5.0 6.0\n')
+        with pytest.raises(ValueError):
+            read_table_columns(path, range(3))
 
     def test_read_table_columns_is_silent_and_equal_to_genfromtxt(self, synthetic_table):
         """The faster reader gives the same arrays and no warning about the comment header."""
@@ -585,6 +604,11 @@ class TestLoadPaleosAllPropertiesCache:
             ):
                 np.testing.assert_array_equal(out[name][ip, it], numeric[keep, col])
             assert list(out['phase'][ip, it]) == [p.strip() for p in phase[keep]]
+            hit = np.zeros(out['rho'].shape, dtype=bool)
+            hit[ip, it] = True
+            for name in ['rho', 'u', 's', 'cp', 'cv', 'alpha', 'nabla_ad']:
+                assert np.isnan(out[name][~hit]).all()
+            assert (out['phase'][~hit] == '').all()
 
 
 # ---------------------------------------------------------------------------

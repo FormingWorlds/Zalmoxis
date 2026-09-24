@@ -50,7 +50,8 @@ def load_paleos_all_properties(eos_file):
     the file, so an edited or replaced file is read again. A rewrite of the
     same size within one clock tick of the file system is not detected.
     Every call returns a new dict whose arrays are read-only views of the
-    cached ones; copy an array before changing it.
+    cached ones; copy an array before changing it. Setting the cached
+    array itself writable through ``.base`` is not prevented.
 
     Parameters
     ----------
