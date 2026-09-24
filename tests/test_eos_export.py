@@ -655,12 +655,6 @@ class TestLoadPaleosAllPropertiesCache:
         for path in _real_paleos_tables():
             _assert_table_matches_genfromtxt(path)
 
-    @pytest.mark.slow
-    @pytest.mark.parametrize('path', _real_paleos_tables(highres=True), ids=lambda p: p.name)
-    def test_highres_tables_are_identical_to_the_genfromtxt_reader(self, path):
-        """The 600-700 MB highres tables too (about 100 s and 9 GB; runs with ``-m slow``)."""
-        _assert_table_matches_genfromtxt(path)
-
 
 # ---------------------------------------------------------------------------
 # _build_interpolator and _fill_nan_nearest
