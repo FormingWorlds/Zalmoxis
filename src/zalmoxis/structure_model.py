@@ -477,23 +477,28 @@ def solve_structure(
         if tail.status != 0 or resumes == 0:
             y_stop = tail.y[:, -1]  # at a terminal event this is the event state
             break
-        # The restart passed the failure, so the grid integration resumes there.
+        # The restart passed the failure, so the grid integration resumes there;
+        # at the outer radius the restart itself completes the profile.
         resumes -= 1
         max_step_end = maximum_step if uses_Tdep else np.inf
-        sol_end = solve_ivp(
-            _ode_rhs,
-            (radii[n], radii[-1]),
-            tail.y[:, -1],
-            t_eval=radii[n:],
-            rtol=relative_tolerance,
-            atol=absolute_tolerance,
-            max_step=max_step_end,
-            method='RK45',
-            events=_pressure_zero,
-        )
-        mass_enclosed = np.concatenate([mass_enclosed, sol_end.y[0]])
-        gravity = np.concatenate([gravity, sol_end.y[1]])
-        pressure = np.concatenate([pressure, sol_end.y[2]])
+        if n == len(radii) - 1:
+            sol_end, new = tail, tail.y[:, -1:]
+        else:
+            sol_end = solve_ivp(
+                _ode_rhs,
+                (radii[n], radii[-1]),
+                tail.y[:, -1],
+                t_eval=radii[n:],
+                rtol=relative_tolerance,
+                atol=absolute_tolerance,
+                max_step=max_step_end,
+                method='RK45',
+                events=_pressure_zero,
+            )
+            new = sol_end.y
+        mass_enclosed = np.concatenate([mass_enclosed, new[0]])
+        gravity = np.concatenate([gravity, new[1]])
+        pressure = np.concatenate([pressure, new[2]])
         n = len(mass_enclosed)
     if n < len(radii):
         mass_enclosed, gravity, pressure = pad_after_stop(

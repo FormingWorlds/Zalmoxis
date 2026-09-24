@@ -219,33 +219,50 @@ class TestInteriorStopFails:
         self._solve(monkeypatch, band, tdep, max_step=7e4)
         assert steps and steps[0] == expected
 
-    def test_tail_reaching_the_event_pads_there(self, monkeypatch):
-        """The grid solve fails at a band just below r0; the tail, on a healthy
-        RHS, reaches P = 0 inside the same shell and supplies the event state."""
-        radii, r0, p_c = _setup(0.6)
-        dr = radii[1]
-        band = _rhs_band_uniform(radii[-2] + 0.1 * dr, radii[-2] + 0.5 * dr)
-        real = sm.solve_ivp
+    def _tail_case(self, monkeypatch, shell, p_c):
+        """Grid solve on a NaN band inside ``shell``; the tail runs on a healthy RHS."""
+        radii = np.linspace(0.0, R_OUT, N)
+        lo = radii[shell - 1]
+        band, healthy = _band_rhs(lo + 0.2 * radii[1], lo + 0.6 * radii[1]), _band_rhs(-1, -1)
+        tails, real = [], sm.solve_ivp
 
         def spy(f, t_span, y0, **kwargs):
-            rhs = band if kwargs.get('t_eval') is not None else _rhs('continue')
-            return real(rhs, t_span, y0, **kwargs)
+            grid = kwargs.get('t_eval') is not None
+            sol = real(band if grid else healthy, t_span, y0, **kwargs)
+            if not grid:
+                tails.append(sol.status)
+            return sol
 
         monkeypatch.setattr(sm, 'solve_ivp', spy)
-        m, g, p = _solve_numpy(monkeypatch, radii, p_c, 'continue', False)
-        assert p[-1] == 0.0
-        assert m[-1] == pytest.approx(_mass(r0), rel=1e-6)
-        assert g[-1] == pytest.approx(G * _mass(r0) / r0**2, rel=1e-6)
+        monkeypatch.setattr(sm, 'any_component_is_tdep', lambda _: False)
+        m, g, p = sm.solve_structure(
+            {}, 0.0, 0.0, radii, 0.5, 1e-10, 1e-12, np.inf, {}, {}, [0.0, 0.0, p_c], None, None
+        )
+        clean = real(
+            healthy,
+            (0.0, R_OUT),
+            [0.0, 0.0, p_c],
+            rtol=1e-10,
+            atol=1e-12,
+            events=lambda r, y: y[2],
+            t_eval=radii,
+        )
+        return m, g, p, tails, clean
 
+    def test_tail_reaching_the_event_pads_there(self, monkeypatch):
+        """The tail reaches P = 0 inside the stop shell and supplies the event state."""
+        m, g, p, tails, clean = self._tail_case(monkeypatch, 38, self.P_C)
+        assert tails == [1]
+        m0, g0, _ = clean.y_events[0][0]
+        assert m[38:] == pytest.approx(np.full(N - 38, m0), rel=1e-8)
+        assert g[-1] == pytest.approx(g0, rel=1e-8) and np.all(p[38:] == 0.0)
 
-def _rhs_band_uniform(r_lo, r_hi):
-    """Uniform-density RHS that returns NaN for r_lo < r < r_hi."""
-    healthy = _rhs('continue')
-
-    def rhs(r, y, *args, **kwargs):
-        return np.full(3, np.nan) if r_lo < r < r_hi else healthy(r, y)
-
-    return rhs
+    def test_restart_that_reaches_the_outer_radius(self, monkeypatch):
+        """A restart that passes a failure in the last shell completes the profile."""
+        m, g, p, tails, clean = self._tail_case(monkeypatch, N - 1, 3.0 * self.P_C)
+        assert tails == [0]
+        assert len(m) == N and p[-1] > 0
+        assert m[-1] == pytest.approx(clean.y[0, -1], rel=1e-8)
 
 
 class TestPadAfterStop:
