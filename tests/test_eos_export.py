@@ -561,6 +561,23 @@ class TestBuildInterpolator:
         interp = eos_export._build_interpolator(log_p, log_t, grid)
         assert np.isnan(float(interp((10.0, 5.0))))
 
+    def test_read_only_grid_evaluates_bit_identically(self):
+        """A read-only grid (a cached table) gives the values of a writable one."""
+        rng = np.random.default_rng(0)
+        log_p, log_t = np.linspace(0, 1, 300), np.linspace(0, 1, 200)
+        grid = rng.random((300, 200))
+        points = rng.random((5000, 2))
+        expected = eos_export._build_interpolator(log_p, log_t, grid)(points)
+        frozen = grid.copy()
+        frozen.setflags(write=False)
+        result = eos_export._build_interpolator(log_p, log_t, frozen)(points)
+        np.testing.assert_array_equal(result, expected)
+        # The reference itself differs when SciPy sees the read-only array.
+        from scipy.interpolate import RegularGridInterpolator
+
+        raw = RegularGridInterpolator((log_p, log_t), frozen)(points)
+        assert not np.array_equal(raw, expected)
+
 
 class TestFillNanNearest:
     """In-place nearest-neighbor NaN fill (Euclidean; per-column then 2D fallback)."""

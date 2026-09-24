@@ -145,7 +145,9 @@ def _build_interpolator(unique_log_p, unique_log_t, grid):
     unique_log_t : ndarray
         Unique log10(T) values.
     grid : ndarray
-        2D array of shape (nP, nT).
+        2D array of shape (nP, nT). It is copied: SciPy's linear evaluation
+        of a read-only array (such as a cached table) differs from that of a
+        writable one in the last bits.
 
     Returns
     -------
@@ -153,7 +155,7 @@ def _build_interpolator(unique_log_p, unique_log_t, grid):
     """
     return RegularGridInterpolator(
         (unique_log_p, unique_log_t),
-        grid,
+        np.array(grid),
         bounds_error=False,
         fill_value=np.nan,
     )
