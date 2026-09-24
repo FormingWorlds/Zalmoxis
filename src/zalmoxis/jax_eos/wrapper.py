@@ -634,10 +634,8 @@ def solve_structure_via_jax(
     gravity = ys[:, 1]
     pressure = ys[:, 2]
 
-    # Pressure-zero terminal event post-processing. When the event fires
-    # mid-grid, diffrax returns `inf` for all saveat entries past the
-    # crossing. Mass/gravity take their values at the event, pressure is 0,
-    # as in structure_model.solve_structure.
+    # Past a mid-grid pressure-zero event diffrax returns inf; pad as
+    # structure_model.solve_structure does: event mass/gravity, zero pressure.
     post_event = ~np.isfinite(pressure)
     if np.any(post_event):
         y_end = np.asarray(y_end)

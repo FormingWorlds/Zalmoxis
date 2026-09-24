@@ -203,10 +203,8 @@ class TestEventTermination:
         """
         self._skip_if_partial(numpy_result, jax_event_result)
 
-        # Live mask: keep only shells where BOTH paths report P > 0.
-        # Padded shells (P==0) carry whatever the implementation chose
-        # to stamp there (numpy: 0; JAX+Event: the event state)
-        # and are not directly comparable.
+        # Live mask: keep only shells where BOTH paths report P > 0; the
+        # two paths can pad different numbers of outer shells.
         P_np = np.asarray(numpy_result['pressure'])
         P_jx = np.asarray(jax_event_result['pressure'])
         live = (P_np > 0) & (P_jx > 0)
