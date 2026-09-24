@@ -18,15 +18,24 @@ Full EOS table generation:
 from __future__ import annotations
 
 import logging
+import os
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 
+from zalmoxis.eos.interpolation import read_table_columns
+
 logger = logging.getLogger(__name__)
 
 
 # ── PALEOS unified table loader ─────────────────────────────────────
+
+
+#: Parsed tables kept in memory; a super-liquidus solve uses the unified table
+#: or a solid and liquid pair, so four covers one working set.
+_TABLE_CACHE_SIZE = 4
 
 
 def load_paleos_all_properties(eos_file):
@@ -35,6 +44,11 @@ def load_paleos_all_properties(eos_file):
     Unlike ``eos_functions.load_paleos_unified_table`` (which only builds
     density and nabla_ad interpolators), this function retains all 9
     numeric columns for EOS export.
+
+    The parsed table is cached in memory per process, keyed on the resolved
+    path, the file size and the modification time, so an edited file is read
+    again. Every call returns a new dict whose arrays are read-only views of
+    the cached ones; copy an array before changing it.
 
     Parameters
     ----------
@@ -57,9 +71,16 @@ def load_paleos_all_properties(eos_file):
         - ``'p_min'``, ``'p_max'``: pressure bounds [Pa]
         - ``'t_min'``, ``'t_max'``: temperature bounds [K]
     """
-    eos_file = str(eos_file)
-    data = np.genfromtxt(eos_file, usecols=range(9), comments='#')
-    phase_strings = np.genfromtxt(eos_file, usecols=(9,), dtype=str, comments='#')
+    path = os.path.realpath(str(eos_file))
+    stat = os.stat(path)
+    return dict(_parse_paleos_table(path, stat.st_size, stat.st_mtime_ns))
+
+
+@lru_cache(maxsize=_TABLE_CACHE_SIZE)
+def _parse_paleos_table(eos_file, size, mtime_ns):
+    """Parse one table file; ``size`` and ``mtime_ns`` only key the cache."""
+    data = read_table_columns(eos_file, range(9))
+    phase_strings = read_table_columns(eos_file, (9,), dtype=str)
 
     pressures = data[:, 0]
     temps = data[:, 1]
@@ -108,6 +129,9 @@ def load_paleos_all_properties(eos_file):
         't_max': 10.0 ** unique_log_t[-1],
     }
     result.update(grids)
+    for value in result.values():
+        if isinstance(value, np.ndarray):
+            value.setflags(write=False)
     return result
 
 

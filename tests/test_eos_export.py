@@ -16,12 +16,14 @@ or be handled (NaN lookup, melting curves outside table bounds).
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import numpy as np
 import pytest
 
 from zalmoxis import eos_export
+from zalmoxis.eos.interpolation import read_table_columns
 
 pytestmark = pytest.mark.unit
 
@@ -316,6 +318,207 @@ class TestLoadPaleosAllProperties:
         out = eos_export.load_paleos_all_properties(p)
         # The leading/trailing spaces in the source must not survive.
         assert out['phase'][0, 0] == 'liquid'
+
+
+@pytest.fixture(autouse=True)
+def _fresh_table_cache():
+    """Start and end every test in this module with an empty parsed-table cache."""
+    eos_export._parse_paleos_table.cache_clear()
+    yield
+    eos_export._parse_paleos_table.cache_clear()
+
+
+def _reference_arrays(path):
+    """The numeric and phase columns read the way the loader read them before it cached."""
+    numeric = np.genfromtxt(path, usecols=range(9), comments='#')
+    phase = np.genfromtxt(path, usecols=(9,), dtype=str, comments='#')
+    return numeric, phase
+
+
+def _real_paleos_tables():
+    """Paths of the shipped unified, solid and liquid tables that exist locally."""
+    roots = []
+    if os.environ.get('FWL_DATA'):
+        roots.append(Path(os.environ['FWL_DATA']) / 'zalmoxis_eos')
+    try:
+        from zalmoxis import get_zalmoxis_root
+
+        roots.append(Path(get_zalmoxis_root()) / 'data')
+    except RuntimeError:
+        pass
+    names = [
+        'EOS_PALEOS_MgSiO3_unified/paleos_mgsio3_eos_table_pt.dat',
+        'EOS_PALEOS_MgSiO3/paleos_mgsio3_tables_pt_proteus_solid.dat',
+        'EOS_PALEOS_MgSiO3/paleos_mgsio3_tables_pt_proteus_liquid.dat',
+    ]
+    return [r / n for r in roots for n in names if (r / n).is_file()]
+
+
+class TestLoadPaleosAllPropertiesCache:
+    """The parsed table is read once per file version and cannot be changed through the cache."""
+
+    def test_second_call_does_not_read_the_file_again(self, synthetic_table, monkeypatch):
+        """The reader runs twice for the first load (numbers, phases) and never after."""
+        calls = []
+        real = eos_export.read_table_columns
+
+        def counting(*args, **kwargs):
+            calls.append(args[1])
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(eos_export, 'read_table_columns', counting)
+
+        first = eos_export.load_paleos_all_properties(synthetic_table)
+        assert len(calls) == 2
+        second = eos_export.load_paleos_all_properties(synthetic_table)
+        third = eos_export.load_paleos_all_properties(str(synthetic_table))
+
+        assert len(calls) == 2
+        np.testing.assert_array_equal(first['rho'], second['rho'])
+        np.testing.assert_array_equal(first['s'], third['s'])
+
+    def test_edited_file_is_read_again(self, synthetic_table):
+        """A new modification time, with the same size, invalidates the cached table."""
+        before = eos_export.load_paleos_all_properties(synthetic_table)
+        stat = synthetic_table.stat()
+        text = synthetic_table.read_text()
+        edited = text.replace('solid', 'lqiud')  # same length, different phase strings
+        assert len(edited) == len(text) and edited != text
+        synthetic_table.write_text(edited)
+        os.utime(synthetic_table, ns=(stat.st_atime_ns, stat.st_mtime_ns + 5_000_000_000))
+
+        after = eos_export.load_paleos_all_properties(synthetic_table)
+
+        assert before['phase'][0, 0] == 'solid'
+        assert after['phase'][0, 0] == 'lqiud'
+
+    def test_a_file_of_another_size_is_read_again(self, synthetic_table):
+        """A different size is enough, whatever the modification time says."""
+        before = eos_export.load_paleos_all_properties(synthetic_table)
+        stat = synthetic_table.stat()
+        with open(synthetic_table, 'a') as f:
+            f.write('1e11 1000 4000 1e9 1000 1200 1100 1e-5 0.3 solid\n')
+        os.utime(synthetic_table, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+
+        after = eos_export.load_paleos_all_properties(synthetic_table)
+
+        assert after['rho'].shape[0] == before['rho'].shape[0] + 1
+
+    def test_arrays_match_the_genfromtxt_reader(self, tmp_path):
+        """Header, blank line, a P = 0 row and NaN cells come out as the old reader gave them."""
+        path = tmp_path / 'edge.dat'
+        rows = [
+            '# header line one\n',
+            '# header line two\n',
+            '\n',
+            '0.0 1000.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 solid\n',
+        ]
+        for P in (1e6, 1e8, 1e10):
+            for T in (1000.0, 3000.0, 9000.0):
+                nan = 'nan' if (P == 1e10 and T == 9000.0) else f'{_rho(P, T):.8e}'
+                rows.append(
+                    f'{P:.8e} {T:.8e} {nan} {_u(P, T):.8e} {_s(P, T):.8e} '
+                    f'{_cp(P, T):.8e} {_cv(P, T):.8e} {_alpha(P, T):.8e} '
+                    f'{_nabla_ad(P, T):.8e}   {_phase_for_T(T)}  \n'
+                )
+        path.write_text(''.join(rows))
+        numeric, phase = _reference_arrays(path)
+
+        out = eos_export.load_paleos_all_properties(path)
+
+        keep = numeric[:, 0] > 0
+        assert np.isnan(out['rho']).sum() == 1
+        for name, col in zip(['rho', 'u', 's', 'cp', 'cv', 'alpha', 'nabla_ad'], range(2, 9)):
+            expected = numeric[keep, col].reshape(3, 3)
+            np.testing.assert_array_equal(out[name], expected)
+        assert list(out['phase'].ravel()) == [p.strip() for p in phase[keep]]
+
+    def test_read_table_columns_is_silent_and_equal_to_genfromtxt(self, synthetic_table):
+        """The faster reader gives the same arrays and no warning about the comment header."""
+        import warnings
+
+        numeric, phase = _reference_arrays(synthetic_table)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter('error')
+            got_numeric = read_table_columns(synthetic_table, range(9))
+            got_phase = read_table_columns(synthetic_table, (9,), dtype=str)
+
+        np.testing.assert_array_equal(got_numeric, numeric)
+        np.testing.assert_array_equal(got_phase, phase)
+
+    def test_cached_arrays_cannot_be_written_through(self, synthetic_table):
+        """A caller that assigns into a returned array gets an error, and the cache is unchanged."""
+        out = eos_export.load_paleos_all_properties(synthetic_table)
+        reference = out['s'].copy()
+
+        with pytest.raises(ValueError, match='read-only'):
+            out['s'][0, 0] = -1.0
+        with pytest.raises(ValueError, match='read-only'):
+            out['unique_log_p'][0] = 0.0
+        out['extra'] = 1  # the dict is the caller's own
+
+        again = eos_export.load_paleos_all_properties(synthetic_table)
+        assert 'extra' not in again
+        np.testing.assert_array_equal(again['s'], reference)
+        assert again['s'].flags.writeable is False
+
+    def test_a_copy_of_a_cached_array_can_be_changed(self, synthetic_table):
+        """Callers that need a scratch grid copy it, and the copy is a normal array."""
+        out = eos_export.load_paleos_all_properties(synthetic_table)
+        scratch = out['s'].copy()
+        scratch[0, 0] = -1.0
+        assert eos_export.load_paleos_all_properties(synthetic_table)['s'][0, 0] != -1.0
+
+    def test_interpolator_accepts_the_read_only_grid(self, synthetic_table):
+        """A cached grid feeds the interpolator, and a node lookup returns the stored value."""
+        out = eos_export.load_paleos_all_properties(synthetic_table)
+        interp = eos_export._build_interpolator(
+            out['unique_log_p'], out['unique_log_t'], out['s']
+        )
+        point = np.array([[np.log10(_P_NODES_PA[2]), np.log10(_T_NODES_K[3])]])
+        np.testing.assert_allclose(
+            interp(point).item(), _s(_P_NODES_PA[2], _T_NODES_K[3]), rtol=1e-7
+        )
+
+    def test_missing_file_raises(self, tmp_path):
+        """A path that does not exist is an error, not an empty table."""
+        with pytest.raises(FileNotFoundError):
+            eos_export.load_paleos_all_properties(tmp_path / 'absent.dat')
+
+    def test_cache_holds_a_few_tables(self, tmp_path):
+        """More distinct files than the cache size evict the oldest, and it is read again."""
+        paths = []
+        for i in range(eos_export._TABLE_CACHE_SIZE + 1):
+            path = tmp_path / f'table_{i}.dat'
+            _write_paleos_unified(path, _P_NODES_PA, _T_NODES_K)
+            paths.append(path)
+            eos_export.load_paleos_all_properties(path)
+        info = eos_export._parse_paleos_table.cache_info()
+        assert info.currsize == eos_export._TABLE_CACHE_SIZE
+        assert info.misses == eos_export._TABLE_CACHE_SIZE + 1
+
+    @pytest.mark.skipif(
+        not _real_paleos_tables(), reason='shipped PALEOS tables not staged locally'
+    )
+    def test_shipped_tables_are_identical_to_the_genfromtxt_reader(self):
+        """On the real tables the new reader returns the very arrays the old one did."""
+        for path in _real_paleos_tables():
+            numeric, phase = _reference_arrays(path)
+            out = eos_export.load_paleos_all_properties(path)
+            keep = numeric[:, 0] > 0
+            log_p = np.log10(numeric[keep, 0])
+            np.testing.assert_array_equal(out['unique_log_p'], np.unique(log_p))
+            assert out['rho'].shape == (
+                len(np.unique(log_p)),
+                len(np.unique(np.log10(numeric[keep, 1]))),
+            )
+            n_valid = np.count_nonzero(~np.isnan(out['s']))
+            assert n_valid == np.count_nonzero(~np.isnan(numeric[keep, 4]))
+            np.testing.assert_array_equal(
+                np.sort(out['s'][~np.isnan(out['s'])]),
+                np.sort(numeric[keep, 4][~np.isnan(numeric[keep, 4])]),
+            )
 
 
 # ---------------------------------------------------------------------------
