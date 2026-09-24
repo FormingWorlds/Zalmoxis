@@ -331,7 +331,10 @@ class TestJaxStopState:
 class TestFailedSolveInMain:
     """A failed solve inside the pressure bracket leaves no NaN in the outer state."""
 
-    def test_nan_evaluation_is_not_adopted(self, monkeypatch):
+    @pytest.mark.parametrize('scope', ['one', 'all'])
+    def test_nan_evaluation_is_not_adopted(self, monkeypatch, caplog, scope):
+        """'one': one failed evaluation inside brentq. 'all': every solve of one
+        outer iteration fails, which leaves no finite profile at all."""
         import os
 
         import zalmoxis
@@ -363,10 +366,15 @@ class TestFailedSolveInMain:
 
         def solve(*args, **kwargs):
             m, g, p = real_solve(*args, **kwargs)
-            # Fail one evaluation inside brentq once the adiabat is active, so
-            # the next outer iteration anchors its adiabat on this state.
-            if state['in_brentq'] and state['adiabat_args'] and state['injected'] is None:
-                state['injected'] = len(state['adiabat_args'])
+            # Fail once the adiabat is active, so the next outer iteration
+            # anchors its adiabat on the state this one leaves.
+            n_adiabat = len(state['adiabat_args'])
+            if scope == 'one':
+                hit = state['in_brentq'] and n_adiabat and state['injected'] is None
+            else:
+                hit = n_adiabat and state['injected'] in (None, n_adiabat)
+            if hit:
+                state['injected'] = n_adiabat
                 m, g, p = (
                     np.where(np.arange(len(m)) >= len(m) // 2, np.nan, a) for a in (m, g, p)
                 )
@@ -398,11 +406,14 @@ class TestFailedSolveInMain:
             'data_output_enabled': False,
             'plotting_enabled': False,
         }
-        zs.main(cfg, load_material_dictionaries(), None, os.path.join(root, 'input'))
+        with caplog.at_level('DEBUG', logger='zalmoxis.solver'):
+            zs.main(cfg, load_material_dictionaries(), None, os.path.join(root, 'input'))
         assert state['injected'] and len(state['adiabat_args']) > state['injected']
+        assert 'calculated_mass=nan' not in caplog.text
         for p_prev, m_prev, cmb, core_mantle in state['adiabat_args']:
             assert np.all(np.isfinite(p_prev)) and np.all(np.isfinite(m_prev))
-            assert np.isfinite(cmb) and np.isfinite(core_mantle)
+            assert p_prev[0] > 0 and m_prev[-1] > 0
+            assert cmb > 0 and core_mantle > 0
 
     def test_newton_reports_a_radius_where_every_solve_fails(self, monkeypatch):
         """A failure at every central pressure of the first radius has no mass to

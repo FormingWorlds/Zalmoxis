@@ -1815,14 +1815,10 @@ def _solve(
                         surface_residual,
                         np.min(pressure),
                     )
-            except ValueError:
+            except ValueError as exc:
                 # Invalid bracket, a failed solve inside brentq, or at its root:
                 # use the last finite evaluated solution if available.
-                logger.debug(
-                    'Could not bracket pressure root in [%.2e, %.2e] Pa.',
-                    p_low,
-                    p_high,
-                )
+                logger.debug('Pressure solve failed: %s', exc)
                 structure_failed = _state['mass_enclosed'] is None
                 if not structure_failed:
                     mass_enclosed = _state['mass_enclosed']
@@ -2065,7 +2061,7 @@ def _solve(
             )
 
         # Save converged profiles for the next outer iteration's adiabat
-        if np.all(np.isfinite(pressure)) and np.all(np.isfinite(mass_enclosed)):
+        if not structure_failed:
             prev_radii = radii.copy()
             prev_pressure = np.asarray(pressure).copy()
             prev_mass_enclosed = np.asarray(mass_enclosed).copy()
