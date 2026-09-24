@@ -66,7 +66,6 @@ def _run_paleos_mzf(mzf, mass_earth=1.0, temperature_mode='linear'):
         input_dir=os.path.join(root, 'input'),
     )
 
-
 # ── Linear mode convergence ────────────────────────────────────────────
 
 
