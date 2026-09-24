@@ -1397,6 +1397,7 @@ def _solve(
                 mass_enclosed = np.array(best_profiles['mass_enclosed'])
                 if best_profiles['temperatures'] is not None:
                     temperatures = np.array(best_profiles['temperatures'])
+                structure_failed = False
             break
 
         radii = np.linspace(0, radius_guess, num_layers)
@@ -2117,7 +2118,7 @@ def _solve(
 
         # Track best solution for oscillation bailout (local variables,
         # reset per _solve() call to avoid stale state between calls)
-        if relative_diff_outer_mass < best_mass_error:
+        if not structure_failed and relative_diff_outer_mass < best_mass_error:
             best_mass_error = relative_diff_outer_mass
             best_profiles = {
                 'radii': radii.copy(),
@@ -2151,6 +2152,7 @@ def _solve(
             if best_profiles['temperatures'] is not None:
                 temperatures = np.array(best_profiles['temperatures'])
             converged_mass = True
+            structure_failed = False
             break
 
         # Reset frozen sigma for next outer iteration

@@ -10,6 +10,7 @@ EOS and need no data.
 from __future__ import annotations
 
 import os
+import time as _time
 
 import numpy as np
 import pytest
@@ -104,6 +105,42 @@ class TestFailedPressureSolve:
         """A wall-clock stop before the first pressure solve leaves the zero profile."""
         first = _first_solve_result(monkeypatch, _cfg(outer_solver='picard', wall_timeout=-1.0))
         assert first['structure_failed'] is True
+
+
+class TestWallClockStop:
+    """A wall-clock stop inside the last outer iteration reports a failure unless a
+    best solution from an earlier iteration is restored."""
+
+    @pytest.mark.parametrize(
+        'n_outer, fail_first, failed', [(2, False, True), (3, False, False), (3, True, True)]
+    )
+    def test_stop_before_the_first_pressure_solve(
+        self, monkeypatch, n_outer, fail_first, failed
+    ):
+        """The clock jumps past the limit when the second outer iteration sets up
+        its temperatures, so its inner loop stops before any structure solve. With
+        3 iterations the third restores the best earlier solution; if every solve
+        of the first iteration failed there is none."""
+        from types import SimpleNamespace
+
+        clock, calls, real_tp = {'jump': 0.0}, [], zs.calculate_temperature_profile
+
+        def temperature_profile(*args, **kwargs):
+            calls.append(1)
+            if len(calls) == 2:
+                clock['jump'] = 1e9
+            return real_tp(*args, **kwargs)
+
+        monkeypatch.setattr(zs, 'calculate_temperature_profile', temperature_profile)
+        if fail_first:
+            _spy_solve(monkeypatch, lambda radii, y0: len(calls) == 1)
+        monkeypatch.setattr(
+            zs, 'time', SimpleNamespace(time=lambda: _time.time() + clock['jump'])
+        )
+        cfg = _cfg(outer_solver='picard', max_iterations_outer=n_outer, max_iterations_inner=1)
+        first = _first_solve_result(monkeypatch, cfg)
+        assert len(calls) == 2
+        assert first['structure_failed'] is failed
 
 
 class TestNewtonWithFailedRadius:
