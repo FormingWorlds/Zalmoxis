@@ -593,7 +593,6 @@ def solve_structure_via_jax(
         T_axis_is_radius=T_axis_is_radius,
         has_volatile=has_volatile,
         mantle_is_unified=mantle_is_unified,
-        return_end=True,
         **jax_args,
     )
     # np.asarray on a jnp.ndarray yields a read-only view of the JAX
@@ -634,10 +633,10 @@ def solve_structure_via_jax(
     gravity = ys[:, 1]
     pressure = ys[:, 2]
 
-    # Past a mid-grid pressure-zero event diffrax returns inf; pad as
-    # structure_model.solve_structure does: event mass/gravity, zero pressure.
+    # Past a mid-grid stop diffrax returns inf; pad as solve_structure does, with
+    # mass/gravity at the stop and zero pressure. With no accepted step, keep inf.
     post_event = ~np.isfinite(pressure)
-    if np.any(post_event):
+    if np.any(post_event) and not np.all(post_event):
         y_end = np.asarray(y_end)
         mass_enclosed = np.where(post_event, y_end[0], mass_enclosed)
         gravity = np.where(post_event, y_end[1], gravity)

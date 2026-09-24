@@ -18,10 +18,8 @@ fires, saveat points beyond the crossing are returned as ``inf`` by
 diffrax; the wrapper (``jax_eos/wrapper.py``) detects these and pads
 pressure to 0 and mass/gravity to their values at the event.
 
-As a defensive belt-and-suspenders, ``coupled_odes_jax`` still zeroes
-its RHS when P<=0 so the state is bounded even if the integrator
-briefly overshoots into negative P between step and event-localize.
-The event itself provides the physics-faithful termination.
+``coupled_odes_jax`` zeroes its RHS only for a non-finite density, not
+for P <= 0, so that the event sees the pressure-zero downcrossing.
 """
 
 from __future__ import annotations
@@ -128,7 +126,6 @@ def solve_structure_jax(
     T_axis_is_radius: bool = False,
     has_volatile: bool = False,
     mantle_is_unified: bool = False,
-    return_end: bool = False,
     **rhs_kwargs,
 ):
     """Integrate the structure ODE from radii[0] to radii[-1].
@@ -151,23 +148,19 @@ def solve_structure_jax(
         All the cache + adiabat + Stixrude14 parameters that
         coupled_odes_jax needs. Passed through as a dict pytree.
 
-    return_end : bool
-        Also return the state where the integration stopped: at the
-        pressure-zero event if it fired, else at ``radii[-1]``.
-
     Returns
     -------
     ys : array of shape (n_layers, 3)
         State [M, g, P] at each radii.
     y_end : array of shape (3,)
-        Only with ``return_end``.
+        State where the integration stopped: at the pressure-zero event,
+        at ``radii[-1]``, or at the last accepted step if the solve failed.
     """
     solve = _get_solve(T_axis_is_radius, has_volatile, mantle_is_unified)
-    ys, y_end = solve(
+    return solve(
         jnp.asarray(radii, dtype=jnp.float64),
         jnp.asarray(y0, dtype=jnp.float64),
         jnp.asarray(rtol, dtype=jnp.float64),
         jnp.asarray(atol, dtype=jnp.float64),
         rhs_kwargs,
     )
-    return (ys, y_end) if return_end else ys

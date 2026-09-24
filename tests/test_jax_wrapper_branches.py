@@ -431,12 +431,39 @@ class TestPostEventPadding:
         assert np.all(np.isfinite(mass))
         assert np.all(np.isfinite(gravity))
         # Padded entries hold the event state, not the last pre-event node
-        assert mass[5] == mass[-1] == pytest.approx(y_end[0])
-        assert gravity[-1] == pytest.approx(y_end[1])
+        assert mass[5:] == pytest.approx(np.full(5, y_end[0]))
+        assert gravity[5:] == pytest.approx(np.full(5, y_end[1]))
         assert mass[4] == pytest.approx(1e23)
         # Padded pressure entries are exactly zero (numpy contract)
         assert pressure[-1] == 0.0
         assert pressure[5] == 0.0
+
+    def test_no_accepted_step_is_not_padded(self):
+        """All rows inf (no accepted step): no pad, so the failure stays visible."""
+        layer_mixtures, mds, cache = _common_fixtures()
+        radii = np.linspace(1.0, 1e6, 10)
+        ys = np.full((10, 3), np.inf)
+        y_end = np.array([0.0, 0.0, 1e12])
+
+        with mock.patch.object(jw, 'solve_structure_jax', return_value=(ys, y_end)):
+            mass, gravity, pressure = jw.solve_structure_via_jax(
+                layer_mixtures=layer_mixtures,
+                cmb_mass=2e23,
+                core_mantle_mass=4e23,
+                radii=radii,
+                adaptive_radial_fraction=0.5,
+                relative_tolerance=1e-6,
+                absolute_tolerance=1e-8,
+                maximum_step=1e5,
+                material_dictionaries=mds,
+                interpolation_cache=cache,
+                y0=[0.0, 0.0, 1e12],
+                solidus_func=_solidus_func,
+                liquidus_func=_liquidus_func,
+                temperature_function=_t_func,
+            )
+        assert not np.any(np.isfinite(pressure))
+        assert not np.any(np.isfinite(mass))
 
 
 class TestMushyZoneFactorDispatch:
