@@ -71,7 +71,8 @@ Without this event, trial central pressures far below the true value cause the i
 The terminal event reduces evaluation time for bad guesses from minutes to milliseconds.
 
 **Early termination handling.**
-When the terminal event fires, the ODE integration stops short of the planet surface and the solution arrays are padded with zeros.
+When the terminal event fires, or the step size collapses just above $P = 0$, the ODE integration stops short of the outermost grid point.
+The remaining points take the mass and gravity at the stop and zero pressure, so the enclosed mass is continuous as the stop moves through the last shell.
 The residual function detects this ($P_{\mathrm{surface}} \leq 0$) and returns $-P_{\mathrm{target}}$ (a negative value that signals to Brent's method that $P_c$ is too low), maintaining a valid bracket.
 
 **Closure state capture.**

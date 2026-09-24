@@ -16,7 +16,7 @@ integration via a scipy event when P crosses zero. This module uses
 localize the crossing, matching numpy's physics. After the event
 fires, saveat points beyond the crossing are returned as ``inf`` by
 diffrax; the wrapper (``jax_eos/wrapper.py``) detects these and pads
-pressure to 0 and mass/gravity to their last-valid values.
+pressure to 0 and mass/gravity to their values at the event.
 
 As a defensive belt-and-suspenders, ``coupled_odes_jax`` still zeroes
 its RHS when P<=0 so the state is bounded even if the integrator
@@ -84,7 +84,7 @@ def _build_diffeqsolve_jit(
     @jax.jit
     def _solve(radii, y0, rtol, atol, rhs_args):
         controller = diffrax.PIDController(rtol=rtol, atol=atol)
-        saveat = diffrax.SaveAt(ts=radii)
+        saveat = diffrax.SaveAt(subs=[diffrax.SubSaveAt(ts=radii), diffrax.SubSaveAt(t1=True)])
         sol = diffrax.diffeqsolve(
             term,
             solver,
@@ -99,7 +99,7 @@ def _build_diffeqsolve_jit(
             max_steps=200000,
             throw=False,
         )
-        return sol.ys
+        return sol.ys[0], sol.ys[1][0]
 
     return _solve
 
@@ -128,6 +128,7 @@ def solve_structure_jax(
     T_axis_is_radius: bool = False,
     has_volatile: bool = False,
     mantle_is_unified: bool = False,
+    return_end: bool = False,
     **rhs_kwargs,
 ):
     """Integrate the structure ODE from radii[0] to radii[-1].
@@ -150,16 +151,23 @@ def solve_structure_jax(
         All the cache + adiabat + Stixrude14 parameters that
         coupled_odes_jax needs. Passed through as a dict pytree.
 
+    return_end : bool
+        Also return the state where the integration stopped: at the
+        pressure-zero event if it fired, else at ``radii[-1]``.
+
     Returns
     -------
     ys : array of shape (n_layers, 3)
         State [M, g, P] at each radii.
+    y_end : array of shape (3,)
+        Only with ``return_end``.
     """
     solve = _get_solve(T_axis_is_radius, has_volatile, mantle_is_unified)
-    return solve(
+    ys, y_end = solve(
         jnp.asarray(radii, dtype=jnp.float64),
         jnp.asarray(y0, dtype=jnp.float64),
         jnp.asarray(rtol, dtype=jnp.float64),
         jnp.asarray(atol, dtype=jnp.float64),
         rhs_kwargs,
     )
+    return (ys, y_end) if return_end else ys

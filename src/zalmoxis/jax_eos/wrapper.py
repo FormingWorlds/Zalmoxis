@@ -585,7 +585,7 @@ def solve_structure_via_jax(
     global _CALL_COUNT, _TOTAL_WALL
     _CALL_COUNT += 1
     _t0 = _time.perf_counter()
-    ys = solve_structure_jax(
+    ys, y_end = solve_structure_jax(
         radii_arr,
         np.asarray(y0, dtype=float),
         rtol=float(relative_tolerance),
@@ -593,6 +593,7 @@ def solve_structure_via_jax(
         T_axis_is_radius=T_axis_is_radius,
         has_volatile=has_volatile,
         mantle_is_unified=mantle_is_unified,
+        return_end=True,
         **jax_args,
     )
     # np.asarray on a jnp.ndarray yields a read-only view of the JAX
@@ -635,16 +636,12 @@ def solve_structure_via_jax(
 
     # Pressure-zero terminal event post-processing. When the event fires
     # mid-grid, diffrax returns `inf` for all saveat entries past the
-    # crossing. We replace those with the numpy contract: mass/gravity
-    # carry the last valid value, pressure is padded to 0. Matches
-    # structure_model.solve_structure's final pad.
+    # crossing. Mass/gravity take their values at the event, pressure is 0,
+    # as in structure_model.solve_structure.
     post_event = ~np.isfinite(pressure)
     if np.any(post_event):
-        valid_idx = np.flatnonzero(~post_event)
-        if valid_idx.size > 0:
-            last_M = mass_enclosed[valid_idx[-1]]
-            last_g = gravity[valid_idx[-1]]
-            mass_enclosed = np.where(post_event, last_M, mass_enclosed)
-            gravity = np.where(post_event, last_g, gravity)
-            pressure = np.where(post_event, 0.0, pressure)
+        y_end = np.asarray(y_end)
+        mass_enclosed = np.where(post_event, y_end[0], mass_enclosed)
+        gravity = np.where(post_event, y_end[1], gravity)
+        pressure = np.where(post_event, 0.0, pressure)
     return mass_enclosed, gravity, pressure

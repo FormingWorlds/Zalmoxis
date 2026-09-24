@@ -4,8 +4,8 @@ in the JAX structure-ODE path.
 Verifies:
   (1) When pressure crosses zero mid-grid, diffrax terminates and
       the wrapper pads the post-event shells to match numpy's
-      solve_structure contract (pressure = 0, mass/gravity carry
-      the last-valid value).
+      solve_structure contract (pressure = 0, mass/gravity hold
+      their values at the event).
   (2) The wrapper's post-event padding handler produces no `inf`
       or `NaN` in the returned arrays.
   (3) Physics drift between the JAX+Event path and the numpy path
@@ -170,10 +170,10 @@ class TestEventTermination:
             f'JAX pressure at numpy-zero indices: {jax_at_np_zero} (want all exactly 0.0)'
         )
 
-    def test_mass_gravity_pad_carries_last_valid(self, jax_event_result):
+    def test_mass_gravity_pad_is_constant(self, jax_event_result):
         """On shells where the JAX path padded pressure to 0, the
-        mass/gravity arrays must carry the last-valid value across
-        all padded shells (no variation inside the pad region).
+        mass/gravity arrays must hold one value (the event state)
+        across all padded shells (no variation inside the pad region).
         """
         P_jx = np.asarray(jax_event_result['pressure'])
         mass_jx = np.asarray(jax_event_result['mass_enclosed'])
@@ -205,7 +205,7 @@ class TestEventTermination:
 
         # Live mask: keep only shells where BOTH paths report P > 0.
         # Padded shells (P==0) carry whatever the implementation chose
-        # to stamp there (numpy: 0; JAX+Event: last-valid carry-over)
+        # to stamp there (numpy: 0; JAX+Event: the event state)
         # and are not directly comparable.
         P_np = np.asarray(numpy_result['pressure'])
         P_jx = np.asarray(jax_event_result['pressure'])

@@ -327,7 +327,7 @@ class TestTemperatureFallback:
             captured['T_values'] = kwargs['T_values']
             captured['T_surface'] = kwargs['T_surface']
             captured['T_axis_is_radius'] = kwargs.get('T_axis_is_radius', False)
-            return np.zeros((len(radii_arr), 3))
+            return np.zeros((len(radii_arr), 3)), np.zeros(3)
 
         with mock.patch.object(jw, 'solve_structure_jax', side_effect=fake_solve_jax):
             jw.solve_structure_via_jax(
@@ -369,7 +369,7 @@ class TestTemperatureArraysPath:
             captured['T_axis_is_radius'] = kwargs.get('T_axis_is_radius', False)
             captured['T_axis_grid'] = kwargs['T_axis_grid']
             captured['T_values'] = kwargs['T_values']
-            return np.zeros((len(radii_arr), 3))
+            return np.zeros((len(radii_arr), 3)), np.zeros(3)
 
         with mock.patch.object(jw, 'solve_structure_jax', side_effect=fake_solve_jax):
             jw.solve_structure_via_jax(
@@ -396,7 +396,7 @@ class TestTemperatureArraysPath:
 class TestPostEventPadding:
     """Diffrax returns ``inf`` for save-points past the pressure-zero terminal
     event. The wrapper rewrites that contract to numpy's: mass/gravity carry
-    the last valid value, pressure is padded to 0."""
+    the state at the event, pressure is padded to 0."""
 
     def test_inf_past_event_replaced_with_holds(self):
         layer_mixtures, mds, cache = _common_fixtures()
@@ -408,8 +408,9 @@ class TestPostEventPadding:
         ys[:5, 2] = np.linspace(1e12, 1e10, 5)
         # Past index 4 the event fired: diffrax pads with inf
         ys[5:, :] = np.inf
+        y_end = np.array([1.1e23, 5.2, 0.0])
 
-        with mock.patch.object(jw, 'solve_structure_jax', return_value=ys):
+        with mock.patch.object(jw, 'solve_structure_jax', return_value=(ys, y_end)):
             mass, gravity, pressure = jw.solve_structure_via_jax(
                 layer_mixtures=layer_mixtures,
                 cmb_mass=2e23,
@@ -429,9 +430,10 @@ class TestPostEventPadding:
         # All padded entries are finite (no leftover inf)
         assert np.all(np.isfinite(mass))
         assert np.all(np.isfinite(gravity))
-        # Padded mass entries hold the last pre-event value
-        assert mass[-1] == pytest.approx(mass[4])
-        assert gravity[-1] == pytest.approx(gravity[4])
+        # Padded entries hold the event state, not the last pre-event node
+        assert mass[5] == mass[-1] == pytest.approx(y_end[0])
+        assert gravity[-1] == pytest.approx(y_end[1])
+        assert mass[4] == pytest.approx(1e23)
         # Padded pressure entries are exactly zero (numpy contract)
         assert pressure[-1] == 0.0
         assert pressure[5] == 0.0
@@ -448,7 +450,7 @@ class TestMushyZoneFactorDispatch:
 
         def fake_solve_jax(radii_arr, y0, **kwargs):
             captured['mzf'] = kwargs['mushy_zone_factor_core']
-            return np.zeros((len(radii_arr), 3))
+            return np.zeros((len(radii_arr), 3)), np.zeros(3)
 
         with mock.patch.object(jw, 'solve_structure_jax', side_effect=fake_solve_jax):
             jw.solve_structure_via_jax(
@@ -477,7 +479,7 @@ class TestMushyZoneFactorDispatch:
 
         def fake_solve_jax(radii_arr, y0, **kwargs):
             captured['mzf'] = kwargs['mushy_zone_factor_core']
-            return np.zeros((len(radii_arr), 3))
+            return np.zeros((len(radii_arr), 3)), np.zeros(3)
 
         with mock.patch.object(jw, 'solve_structure_jax', side_effect=fake_solve_jax):
             jw.solve_structure_via_jax(
