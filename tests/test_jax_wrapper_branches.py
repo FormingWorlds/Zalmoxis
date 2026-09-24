@@ -394,9 +394,9 @@ class TestTemperatureArraysPath:
 
 
 class TestPostEventPadding:
-    """Diffrax returns ``inf`` for save-points past the pressure-zero terminal
-    event. The wrapper rewrites that contract to numpy's: mass/gravity carry
-    the state at the event, pressure is padded to 0."""
+    """Diffrax returns ``inf`` for save-points past a stop. The wrapper pads them
+    as numpy does (mass/gravity at the stop, pressure 0), and leaves a result
+    with no accepted step as ``inf``."""
 
     def test_inf_past_event_replaced_with_holds(self):
         layer_mixtures, mds, cache = _common_fixtures()
@@ -464,6 +464,7 @@ class TestPostEventPadding:
             )
         assert not np.any(np.isfinite(pressure))
         assert not np.any(np.isfinite(mass))
+        assert not np.any(np.isfinite(gravity))
 
 
 class TestMushyZoneFactorDispatch:

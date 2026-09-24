@@ -76,6 +76,24 @@ class TestNumpyStopPad:
         # Nodes below the stop keep their own values; only the pad changes.
         assert m[1:i_stop] == pytest.approx(_mass(radii[1:i_stop]), rel=1e-6)
 
+    def test_interior_failure_does_not_restart_at_the_split(self, monkeypatch):
+        """A step failure inside the first Tdep solve stops there; the second solve,
+        which starts at the split radius, must not supply the pad state."""
+        radii, r0, p_c = _setup(0.6, 10)
+        r_split = radii[N // 2 - 1]
+        inner = _rhs('nan')
+        outer = _rhs('continue')
+        monkeypatch.setattr(
+            sm, 'coupled_odes', lambda r, y, *a, **k: (inner if r < r_split else outer)(r, y)
+        )
+        monkeypatch.setattr(sm, 'any_component_is_tdep', lambda _: True)
+        m, g, p = sm.solve_structure(
+            {}, 0.0, 0.0, radii, 0.5, 1e-10, 1e-12, np.inf, {}, {}, [0.0, 0.0, p_c], None, None
+        )
+        assert m[-1] == pytest.approx(_mass(r0), rel=1e-6)
+        assert g[-1] == pytest.approx(G * _mass(r0) / r0**2, rel=1e-6)
+        assert np.all(p[11:] == 0.0)
+
     def test_mass_continuous_across_stop_onset(self, monkeypatch):
         """M at the outer node varies smoothly as the stop moves out through R."""
         radii, _, p_c = _setup(0.999)

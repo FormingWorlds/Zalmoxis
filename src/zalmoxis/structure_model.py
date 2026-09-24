@@ -350,8 +350,8 @@ def solve_structure(
         )
 
         sol_end = sol1
-        # If sol1 hit the terminal event (pressure reached zero), skip sol2
-        if sol1.status == 1:
+        # If sol1 stopped (pressure-zero event or step-size failure), skip sol2
+        if sol1.status != 0:
             mass_enclosed = sol1.y[0]
             gravity = sol1.y[1]
             pressure = sol1.y[2]
