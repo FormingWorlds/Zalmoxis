@@ -20,6 +20,56 @@ from .mixing import BINODAL_T_SCALE_DEFAULT, any_component_is_tdep, calculate_mi
 # Set up logging
 logger = logging.getLogger(__name__)
 
+# A stop in the integration at or below this fraction of the central pressure
+# is the planet's surface; a stop at a higher pressure is a failed solve.
+SURFACE_STOP_P_FRACTION = 1e-6
+
+
+def pad_after_stop(radii, mass, gravity, pressure, y_stop, p_center):
+    """Extend profiles cut short by a stop in the integration to the full grid.
+
+    The integration stops between ``radii[n - 1]`` and ``radii[n]``, with ``n``
+    the length of the profiles. A stop near the surface, at a pressure of at
+    most ``SURFACE_STOP_P_FRACTION * p_center``, is the planet's surface: the
+    remaining nodes take mass and gravity at the stop and zero pressure. A stop
+    at a higher pressure is a failed solve: the remaining nodes are NaN, which
+    the callers treat as a failed evaluation, and a WARNING names the stop.
+
+    Parameters
+    ----------
+    radii : numpy.ndarray
+        Full radial grid [m].
+    mass, gravity, pressure : numpy.ndarray
+        Profiles up to the last grid node before the stop.
+    y_stop : array_like
+        State [m, g, P] where the integration stopped.
+    p_center : float
+        Central pressure of the solve [Pa].
+
+    Returns
+    -------
+    tuple of numpy.ndarray
+        Mass, gravity and pressure on the full grid.
+    """
+    n = len(mass)
+    m_stop, g_stop, p_stop = (float(v) for v in y_stop)
+    if p_stop <= SURFACE_STOP_P_FRACTION * p_center:
+        fill = (m_stop, g_stop, 0.0)
+    else:
+        logger.warning(
+            'Structure integration stopped at P = %.3e Pa (P_c = %.3e Pa), between '
+            'r = %.6e and %.6e m; treating the solve as failed.',
+            p_stop,
+            p_center,
+            radii[n - 1],
+            radii[n],
+        )
+        fill = (np.nan, np.nan, np.nan)
+    return tuple(
+        np.concatenate([a, np.full(len(radii) - n, f)])
+        for a, f in zip((mass, gravity, pressure), fill)
+    )
+
 
 def get_layer_mixture(mass, cmb_mass, core_mantle_mass, layer_mixtures):
     """Determine the per-layer mixture based on enclosed mass (purely geometric).
@@ -258,6 +308,7 @@ def solve_structure(
     -------
     tuple
         (mass_enclosed, gravity, pressure) arrays at each radial grid point.
+        Past a stop in the integration they are padded by ``pad_after_stop``.
     """
     # JAX fast path — dispatch to the diffrax-based implementation when
     # requested. Falls back to numpy path on any ValueError (unsupported
@@ -349,7 +400,7 @@ def solve_structure(
             events=_pressure_zero,
         )
 
-        sol_end = sol1
+        sol_end, max_step_end = sol1, np.inf
         # If sol1 stopped (pressure-zero event or step-size failure), skip sol2
         if sol1.status != 0:
             mass_enclosed = sol1.y[0]
@@ -368,7 +419,7 @@ def solve_structure(
                 method='RK45',
                 events=_pressure_zero,
             )
-            sol_end = sol2
+            sol_end, max_step_end = sol2, maximum_step
 
             # Concatenate the two solutions
             mass_enclosed = np.concatenate([sol1.y[0, :-1], sol2.y[0]])
@@ -386,7 +437,7 @@ def solve_structure(
             method='RK45',
             events=_pressure_zero,
         )
-        sol_end = sol
+        sol_end, max_step_end = sol, np.inf
 
         # Extract mass, gravity, and pressure grids from the solution
         mass_enclosed = sol.y[0]
@@ -394,25 +445,27 @@ def solve_structure(
         pressure = sol.y[2]
 
     # Pad to full length if the integration stopped before the outermost radial
-    # grid point (pressure-zero event, or a step-size failure just above P = 0).
-    n_target = len(radii)
-    if len(mass_enclosed) < n_target:
-        n_pad = n_target - len(mass_enclosed)
+    # grid point (pressure-zero event, or a step-size failure).
+    n = len(mass_enclosed)
+    if n < len(radii):
         if sol_end.status == 1:
-            m_end, g_end = sol_end.y_events[0][-1][:2]
+            y_stop = sol_end.y_events[0][-1]
         else:
+            # The failure lies between radii[n - 1] and radii[n]; re-integrating
+            # only that shell finds where it stops without stepping past it.
             tail = solve_ivp(
                 _ode_rhs,
-                (radii[len(mass_enclosed) - 1], radii[-1]),
+                (radii[n - 1], radii[n]),
                 [mass_enclosed[-1], gravity[-1], pressure[-1]],
                 rtol=relative_tolerance,
                 atol=absolute_tolerance,
+                max_step=max_step_end,
                 method='RK45',
                 events=_pressure_zero,
             )
-            m_end, g_end = tail.y[:2, -1]
-        mass_enclosed = np.concatenate([mass_enclosed, np.full(n_pad, m_end)])
-        gravity = np.concatenate([gravity, np.full(n_pad, g_end)])
-        pressure = np.concatenate([pressure, np.zeros(n_pad)])
+            y_stop = tail.y_events[0][-1] if tail.status == 1 else tail.y[:, -1]
+        mass_enclosed, gravity, pressure = pad_after_stop(
+            radii, mass_enclosed, gravity, pressure, y_stop, y0[2]
+        )
 
     return mass_enclosed, gravity, pressure

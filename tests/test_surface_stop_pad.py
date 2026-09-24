@@ -76,10 +76,12 @@ class TestNumpyStopPad:
         # Nodes below the stop keep their own values; only the pad changes.
         assert m[1:i_stop] == pytest.approx(_mass(radii[1:i_stop]), rel=1e-6)
 
-    def test_interior_failure_does_not_restart_at_the_split(self, monkeypatch):
+    @pytest.mark.parametrize('node', [10, 20])
+    def test_interior_failure_does_not_restart_at_the_split(self, monkeypatch, node):
         """A step failure inside the first Tdep solve stops there; the second solve,
-        which starts at the split radius, must not supply the pad state."""
-        radii, r0, p_c = _setup(0.6, 10)
+        which starts at the split radius, must not supply the pad state. Only a
+        failure (status -1) with a healthy RHS past the split separates the two."""
+        radii, r0, p_c = _setup(0.6, node)
         r_split = radii[int(0.5 * N) - 1]  # adaptive_radial_fraction 0.5 below
         inner, outer = _rhs('nan'), _rhs('continue')
         monkeypatch.setattr(
@@ -89,10 +91,11 @@ class TestNumpyStopPad:
         m, g, p = sm.solve_structure(
             {}, 0.0, 0.0, radii, 0.5, 1e-10, 1e-12, np.inf, {}, {}, [0.0, 0.0, p_c], None, None
         )
-        assert m[11:] == pytest.approx(np.full(N - 11, _mass(r0)), rel=1e-6)
+        k = node + 1
+        assert m[k:] == pytest.approx(np.full(N - k, _mass(r0)), rel=1e-6)
         assert g[-1] == pytest.approx(G * _mass(r0) / r0**2, rel=1e-6)
-        assert np.all(p[11:] == 0.0)
-        assert m[1:11] == pytest.approx(_mass(radii[1:11]), rel=1e-6)
+        assert np.all(p[k:] == 0.0)
+        assert m[1:k] == pytest.approx(_mass(radii[1:k]), rel=1e-6)
 
     def test_mass_continuous_across_stop_onset(self, monkeypatch):
         """M at the outer node varies smoothly as the stop moves out through R."""
@@ -109,12 +112,85 @@ class TestNumpyStopPad:
         assert m[-1] == pytest.approx(_mass(R_OUT), rel=1e-6)
 
 
+def _band_rhs(r_lo, r_hi):
+    """Exponential-density RHS that returns NaN for r_lo < r < r_hi, where P > 0.
+
+    Unlike the uniform sphere, RK45 is not exact here, so its steps are short
+    enough to run into the band.
+    """
+
+    def rhs(r, y, *args, **kwargs):
+        if r_lo < r < r_hi:
+            return np.full(3, np.nan)
+        m, g, p = y
+        rho = RHO * np.exp(-r / R_OUT)
+        dgdr = 4.0 * np.pi * G * rho - (2.0 * g / r if r > 0 else 8.0 / 3.0 * np.pi * G * RHO)
+        return np.array([4.0 * np.pi * r**2 * rho, dgdr, -rho * g])
+
+    return rhs
+
+
+class TestInteriorStopFails:
+    """A stop far below the surface is a failed solve, not a surface."""
+
+    # P reaches zero near 0.77 R_OUT without the band; each band stops the solve
+    # near 0.5 R_OUT, and a restart from the last node would step past it.
+    P_C = 2.0 / 3.0 * np.pi * G * RHO**2 * (0.8 * R_OUT) ** 2 * 0.4
+
+    @pytest.mark.parametrize(
+        'band, tdep', [((0.53, 0.1), False), ((0.46, 0.3), False), ((0.46, 0.3), True)]
+    )
+    def test_nan_band_is_a_failed_solve(self, monkeypatch, caplog, band, tdep):
+        radii = np.linspace(0.0, R_OUT, N)
+        r_lo = band[0] * R_OUT
+        monkeypatch.setattr(sm, 'coupled_odes', _band_rhs(r_lo, r_lo + band[1] * radii[1]))
+        monkeypatch.setattr(sm, 'any_component_is_tdep', lambda _: tdep)
+        with caplog.at_level('WARNING', logger='zalmoxis.structure_model'):
+            m, g, p = sm.solve_structure(
+                {},
+                0.0,
+                0.0,
+                radii,
+                0.5,
+                1e-10,
+                1e-12,
+                np.inf,
+                {},
+                {},
+                [0.0, 0.0, self.P_C],
+                None,
+                None,
+            )
+        live = radii <= r_lo
+        assert np.all(np.isfinite(m[live])) and np.all(p[live] > 0)
+        assert np.all(np.isnan(m[~live])) and np.all(np.isnan(g[~live]))
+        assert np.all(np.isnan(p[~live]))
+        assert 'treating the solve as failed' in caplog.text
+
+
+class TestPadAfterStop:
+    """pad_after_stop pads at or below the surface pressure limit and fails above it."""
+
+    @pytest.mark.parametrize('p_frac, padded', [(0.0, True), (0.9e-6, True), (1.1e-6, False)])
+    def test_pressure_limit(self, p_frac, padded):
+        radii = np.linspace(0.0, 1.0, 5)
+        m, g, p = sm.pad_after_stop(
+            radii, np.ones(3), np.ones(3), np.ones(3), [2.0, 3.0, p_frac * 1e11], 1e11
+        )
+        assert len(m) == 5
+        if padded:
+            assert list(m[3:]) == [2.0, 2.0] and list(g[3:]) == [3.0, 3.0]
+            assert list(p[3:]) == [0.0, 0.0]
+        else:
+            assert np.all(np.isnan(m[3:])) and np.all(np.isnan(p[3:]))
+
+
 class TestJaxStopState:
     """solve_structure_jax returns the state at the P = 0 event as its end state."""
 
-    def test_end_state_at_event(self, monkeypatch):
+    @staticmethod
+    def _rhs():
         jnp = pytest.importorskip('jax.numpy')
-        import zalmoxis.jax_eos.solver as js
 
         def rhs(t, y, **kwargs):
             m, g, p = y
@@ -125,7 +201,13 @@ class TestJaxStopState:
             )
             return jnp.array([4.0 * jnp.pi * t**2 * RHO, dgdr, -RHO * g])
 
-        monkeypatch.setattr(js, 'coupled_odes_jax', rhs)
+        return rhs
+
+    def test_end_state_at_event(self, monkeypatch):
+        pytest.importorskip('jax')
+        import zalmoxis.jax_eos.solver as js
+
+        monkeypatch.setattr(js, 'coupled_odes_jax', self._rhs())
         monkeypatch.setattr(js, '_SOLVE_CACHE', {})
         radii, r0, p_c = _setup(0.6)
         ys, y_end = js.solve_structure_jax(radii, [0.0, 0.0, p_c], rtol=1e-10, atol=1e-12)
@@ -134,3 +216,17 @@ class TestJaxStopState:
         assert y_end[0] == pytest.approx(_mass(r0), rel=1e-6)
         assert y_end[1] == pytest.approx(G * _mass(r0) / r0**2, rel=1e-6)
         assert y_end[2] == pytest.approx(0.0, abs=1e-3 * p_c)
+
+    def test_end_state_without_event(self, monkeypatch):
+        """With P > 0 at R the end state is the state at radii[-1]."""
+        pytest.importorskip('jax')
+        import zalmoxis.jax_eos.solver as js
+
+        monkeypatch.setattr(js, 'coupled_odes_jax', self._rhs())
+        monkeypatch.setattr(js, '_SOLVE_CACHE', {})
+        radii, _, p_c = _setup(1.5)
+        ys, y_end = js.solve_structure_jax(radii, [0.0, 0.0, p_c], rtol=1e-10, atol=1e-12)
+        ys, y_end = np.asarray(ys), np.asarray(y_end)
+        assert np.all(np.isfinite(ys)) and ys[-1, 2] > 0
+        assert y_end == pytest.approx(ys[-1], rel=1e-12)
+        assert y_end[0] == pytest.approx(_mass(R_OUT), rel=1e-6)

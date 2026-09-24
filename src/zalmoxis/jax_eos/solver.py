@@ -14,9 +14,11 @@ Pressure-zero terminal event: numpy's ``solve_structure`` stops
 integration via a scipy event when P crosses zero. This module uses
 ``diffrax.Event`` with an ``optimistix.Newton`` root finder to
 localize the crossing, matching numpy's physics. After the event
-fires, saveat points beyond the crossing are returned as ``inf`` by
-diffrax; the wrapper (``jax_eos/wrapper.py``) detects these and pads
-pressure to 0 and mass/gravity to their values at the event.
+fires, or after a failed step, saveat points beyond the stop are
+returned as ``inf`` by diffrax; the wrapper (``jax_eos/wrapper.py``)
+pads them with ``structure_model.pad_after_stop`` from the state where
+the solve stopped: mass/gravity at the stop and zero pressure at the
+surface, NaN for a stop deep inside.
 
 ``coupled_odes_jax`` zeroes its RHS only for a non-finite density, not
 for P <= 0, so that the event sees the pressure-zero downcrossing.
@@ -62,8 +64,7 @@ def _build_diffeqsolve_jit(
     def _pressure_cond(t, y, args, **kwargs):
         # Event fires when pressure crosses zero. direction=False tells
         # diffrax to trigger only on the downcrossing (the physical
-        # outer-surface case). A tiny positive offset keeps the root
-        # finder away from exact y[2]=0 where the EOS tables can NaN.
+        # outer-surface case).
         return y[2]
 
     term = diffrax.ODETerm(_ode_rhs)

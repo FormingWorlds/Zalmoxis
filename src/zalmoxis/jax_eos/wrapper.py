@@ -33,6 +33,7 @@ import time as _time
 
 import numpy as np
 
+from ..structure_model import pad_after_stop
 from .solver import solve_structure_jax
 
 _CALL_COUNT = 0
@@ -633,12 +634,11 @@ def solve_structure_via_jax(
     gravity = ys[:, 1]
     pressure = ys[:, 2]
 
-    # Past a mid-grid stop diffrax returns inf; pad as solve_structure does, with
-    # mass/gravity at the stop and zero pressure. With no accepted step, keep inf.
+    # Past a mid-grid stop diffrax returns inf; pad as solve_structure does.
     post_event = ~np.isfinite(pressure)
-    if np.any(post_event) and not np.all(post_event):
-        y_end = np.asarray(y_end)
-        mass_enclosed = np.where(post_event, y_end[0], mass_enclosed)
-        gravity = np.where(post_event, y_end[1], gravity)
-        pressure = np.where(post_event, 0.0, pressure)
+    if np.any(post_event):
+        n = int(np.argmax(post_event))
+        return pad_after_stop(
+            radii_arr, mass_enclosed[:n], gravity[:n], pressure[:n], y_end, float(y0[2])
+        )
     return mass_enclosed, gravity, pressure

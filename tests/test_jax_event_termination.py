@@ -170,26 +170,28 @@ class TestEventTermination:
             f'JAX pressure at numpy-zero indices: {jax_at_np_zero} (want all exactly 0.0)'
         )
 
-    def test_mass_gravity_pad_is_constant(self, jax_event_result):
-        """On shells where the JAX path padded pressure to 0, the
-        mass/gravity arrays must hold one value (the event state)
-        across all padded shells (no variation inside the pad region).
+    def test_pad_holds_the_event_state(self, jax_event_result):
+        """Padded shells hold one (m, g), and it is the state inside the stop shell.
+
+        At the stop g = G m / r^2, so r = sqrt(G m / g) must lie after the last
+        live node and at or before the first padded node.
         """
+        from zalmoxis.constants import G
+
         P_jx = np.asarray(jax_event_result['pressure'])
         mass_jx = np.asarray(jax_event_result['mass_enclosed'])
         g_jx = np.asarray(jax_event_result['gravity'])
+        radii = np.asarray(jax_event_result['radii'])
 
-        zero_mask = P_jx == 0.0
-        if zero_mask.sum() < 2:
-            pytest.skip("Less than 2 padded shells; can't test flatness.")
-
-        pad_idx = np.flatnonzero(zero_mask)
-        m0 = mass_jx[pad_idx[0]]
-        g0 = g_jx[pad_idx[0]]
-        assert np.all(mass_jx[pad_idx] == m0), (
-            f'mass varies on padded shells: {mass_jx[pad_idx]}'
-        )
-        assert np.all(g_jx[pad_idx] == g0), f'gravity varies on padded shells: {g_jx[pad_idx]}'
+        pad_idx = np.flatnonzero(P_jx == 0.0)
+        if pad_idx.size == 0:
+            pytest.skip('No padded shells.')
+        k = pad_idx[0]
+        assert np.all(mass_jx[pad_idx] == mass_jx[k])
+        assert np.all(g_jx[pad_idx] == g_jx[k])
+        r_stop = np.sqrt(G * mass_jx[k] / g_jx[k])
+        assert radii[k - 1] < r_stop <= radii[k] * (1 + 1e-9)
+        assert mass_jx[k] > mass_jx[k - 1]
 
     def test_profile_drift_at_solver_tolerance(self, numpy_result, jax_event_result):
         """Profile drift between numpy and JAX+Event paths must be
