@@ -26,9 +26,11 @@ _paleos_clamp_warned = set()
 def read_table_columns(eos_file, usecols, dtype=float):
     """Read whitespace-separated columns of a PALEOS text table, skipping ``#`` comments.
 
-    ``np.loadtxt`` parses these 50-140 MB files about 4.7 times faster than
-    ``np.genfromtxt`` and returns identical arrays. Its notice about comment
-    lines at the top of a file is silenced: the header is expected.
+    ``np.loadtxt`` parses these 50-140 MB files several times faster than
+    ``np.genfromtxt`` and returns the same arrays for numeric input. A token
+    that is not a number (``N/A``, ``---``) raises ``ValueError`` where
+    ``genfromtxt`` gave NaN. The notice about comment lines at the top of a
+    file is silenced: the header is expected.
     """
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', message='Input line .* contained no data')

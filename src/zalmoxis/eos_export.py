@@ -33,8 +33,8 @@ logger = logging.getLogger(__name__)
 # ── PALEOS unified table loader ─────────────────────────────────────
 
 
-#: Parsed tables kept in memory; a super-liquidus solve uses the unified table
-#: or a solid and liquid pair, so four covers one working set.
+#: Parsed tables kept in memory per process; a super-liquidus solve uses the
+#: unified table plus a solid and liquid pair, so four covers one working set.
 _TABLE_CACHE_SIZE = 4
 
 
@@ -46,9 +46,11 @@ def load_paleos_all_properties(eos_file):
     numeric columns for EOS export.
 
     The parsed table is cached in memory per process, keyed on the resolved
-    path, the file size and the modification time, so an edited file is read
-    again. Every call returns a new dict whose arrays are read-only views of
-    the cached ones; copy an array before changing it.
+    path and the device, inode, size, modification time and change time of
+    the file, so an edited or replaced file is read again. A rewrite of the
+    same size within one clock tick of the file system is not detected.
+    Every call returns a new dict whose arrays are read-only views of the
+    cached ones; copy an array before changing it.
 
     Parameters
     ----------
@@ -72,13 +74,15 @@ def load_paleos_all_properties(eos_file):
         - ``'t_min'``, ``'t_max'``: temperature bounds [K]
     """
     path = os.path.realpath(str(eos_file))
-    stat = os.stat(path)
-    return dict(_parse_paleos_table(path, stat.st_size, stat.st_mtime_ns))
+    st = os.stat(path)
+    file_id = (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+    cached = _parse_paleos_table(path, file_id)
+    return {k: v.view() if isinstance(v, np.ndarray) else v for k, v in cached.items()}
 
 
 @lru_cache(maxsize=_TABLE_CACHE_SIZE)
-def _parse_paleos_table(eos_file, size, mtime_ns):
-    """Parse one table file; ``size`` and ``mtime_ns`` only key the cache."""
+def _parse_paleos_table(eos_file, file_id):
+    """Parse one table file; ``file_id`` only keys the cache."""
     data = read_table_columns(eos_file, range(9))
     phase_strings = read_table_columns(eos_file, (9,), dtype=str)
 

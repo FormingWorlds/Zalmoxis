@@ -17,6 +17,7 @@ or be handled (NaN lookup, melting curves outside table bounds).
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 import numpy as np
@@ -392,6 +393,68 @@ class TestLoadPaleosAllPropertiesCache:
         assert before['phase'][0, 0] == 'solid'
         assert after['phase'][0, 0] == 'lqiud'
 
+    def test_rewrite_with_restored_modification_time_is_read_again(self, synthetic_table):
+        """An in-place rewrite of the same size and mtime still changes the change time."""
+        before = eos_export.load_paleos_all_properties(synthetic_table)
+        stat = synthetic_table.stat()
+        text = synthetic_table.read_text()
+        time.sleep(0.05)
+        synthetic_table.write_text(text.replace('solid', 'lqiud'))
+        os.utime(synthetic_table, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+
+        after = eos_export.load_paleos_all_properties(synthetic_table)
+
+        assert before['phase'][0, 0] == 'solid'
+        assert after['phase'][0, 0] == 'lqiud'
+
+    def test_replaced_file_of_same_size_and_time_is_read_again(self, synthetic_table, tmp_path):
+        """A new file moved onto the path is a different inode, whatever size and mtime say."""
+        before = eos_export.load_paleos_all_properties(synthetic_table)
+        stat = synthetic_table.stat()
+        other = tmp_path / 'replacement.dat'
+        other.write_text(synthetic_table.read_text().replace('solid', 'lqiud'))
+        os.utime(other, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+        os.replace(other, synthetic_table)
+
+        after = eos_export.load_paleos_all_properties(synthetic_table)
+
+        assert before['phase'][0, 0] == 'solid'
+        assert after['phase'][0, 0] == 'lqiud'
+
+    def test_deleted_file_is_an_error_not_a_cached_table(self, synthetic_table):
+        """A table removed after it was cached is not served from memory."""
+        eos_export.load_paleos_all_properties(synthetic_table)
+        synthetic_table.unlink()
+        with pytest.raises(FileNotFoundError):
+            eos_export.load_paleos_all_properties(synthetic_table)
+
+    def test_entropy_adiabat_parses_each_table_once(self, pdep_2phase, monkeypatch):
+        """Repeated adiabat solves over the same tables read no file after the first."""
+        solid_path, liquid_path = pdep_2phase
+        calls = []
+        real = eos_export.read_table_columns
+        monkeypatch.setattr(
+            eos_export,
+            'read_table_columns',
+            lambda *a, **k: calls.append(a[0]) or real(*a, **k),
+        )
+        kwargs = dict(
+            T_surface=4000.0,
+            P_surface=1.0e6,
+            P_cmb=1.0e9,
+            n_points=8,
+            solidus_func=_pdep_solidus,
+            liquidus_func=_pdep_liquidus,
+            solid_eos_file=solid_path,
+            liquid_eos_file=liquid_path,
+        )
+        eos_export.compute_entropy_adiabat(solid_path, **kwargs)
+        n_first = len(calls)
+        eos_export.compute_entropy_adiabat(solid_path, **kwargs)
+
+        assert n_first == 4  # two tables, numbers and phases each
+        assert len(calls) == n_first
+
     def test_a_file_of_another_size_is_read_again(self, synthetic_table):
         """A different size is enough, whatever the modification time says."""
         before = eos_export.load_paleos_all_properties(synthetic_table)
@@ -456,6 +519,10 @@ class TestLoadPaleosAllPropertiesCache:
             out['s'][0, 0] = -1.0
         with pytest.raises(ValueError, match='read-only'):
             out['unique_log_p'][0] = 0.0
+        for value in out.values():
+            if isinstance(value, np.ndarray):
+                with pytest.raises(ValueError, match='cannot set WRITEABLE'):
+                    value.setflags(write=True)
         out['extra'] = 1  # the dict is the caller's own
 
         again = eos_export.load_paleos_all_properties(synthetic_table)
@@ -508,17 +575,16 @@ class TestLoadPaleosAllPropertiesCache:
             out = eos_export.load_paleos_all_properties(path)
             keep = numeric[:, 0] > 0
             log_p = np.log10(numeric[keep, 0])
+            log_t = np.log10(numeric[keep, 1])
             np.testing.assert_array_equal(out['unique_log_p'], np.unique(log_p))
-            assert out['rho'].shape == (
-                len(np.unique(log_p)),
-                len(np.unique(np.log10(numeric[keep, 1]))),
-            )
-            n_valid = np.count_nonzero(~np.isnan(out['s']))
-            assert n_valid == np.count_nonzero(~np.isnan(numeric[keep, 4]))
-            np.testing.assert_array_equal(
-                np.sort(out['s'][~np.isnan(out['s'])]),
-                np.sort(numeric[keep, 4][~np.isnan(numeric[keep, 4])]),
-            )
+            np.testing.assert_array_equal(out['unique_log_t'], np.unique(log_t))
+            ip = np.searchsorted(out['unique_log_p'], log_p)
+            it = np.searchsorted(out['unique_log_t'], log_t)
+            for name, col in zip(
+                ['rho', 'u', 's', 'cp', 'cv', 'alpha', 'nabla_ad'], range(2, 9)
+            ):
+                np.testing.assert_array_equal(out[name][ip, it], numeric[keep, col])
+            assert list(out['phase'][ip, it]) == [p.strip() for p in phase[keep]]
 
 
 # ---------------------------------------------------------------------------
@@ -572,11 +638,6 @@ class TestBuildInterpolator:
         frozen.setflags(write=False)
         result = eos_export._build_interpolator(log_p, log_t, frozen)(points)
         np.testing.assert_array_equal(result, expected)
-        # The reference itself differs when SciPy sees the read-only array.
-        from scipy.interpolate import RegularGridInterpolator
-
-        raw = RegularGridInterpolator((log_p, log_t), frozen)(points)
-        assert not np.array_equal(raw, expected)
 
 
 class TestFillNanNearest:
