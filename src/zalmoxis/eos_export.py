@@ -145,8 +145,8 @@ def _fill_nan_nearest(grid):
     to that column's own boundary node, instead of a global 2D nearest
     search picking up a neighboring column's value whenever its
     boundary sits at a different entropy. A column with no valid cells
-    at all falls back to the nearest cell that held original, non-filled
-    data anywhere in the grid.
+    at all falls back to the nearest cell, by Euclidean distance in index
+    space, that held original, non-filled data anywhere in the grid.
 
     Parameters
     ----------
@@ -227,6 +227,20 @@ def generate_spider_phase_boundaries(
         - ``'S_liquidus'``: liquidus entropy [J/(kg*K)], shape (n_valid,)
         - ``'solidus_path'``: path to written solidus file (or None)
         - ``'liquidus_path'``: path to written liquidus file (or None)
+
+    Notes
+    -----
+    The written curves come from a PCHIP fit through 20 anchors spread over
+    the pressure range of the table, and each is then held at its running
+    maximum in pressure (``np.maximum.accumulate``), so it is non-decreasing
+    and flat above its highest value. This plateau is a solver-stability
+    choice, not a property of the tables: for PALEOS MgSiO3 the liquid-table
+    entropy along the liquidus peaks near 164 GPa and then falls, and with
+    the falling curve the time step of coupled SPIDER and Aragog runs
+    collapses at the onset of crystallisation. The size of the plateau in
+    entropy, temperature, melt fraction and entropy of fusion for 1 to 10
+    Earth-mass planets is given on the PROTEUS coupling page of the
+    documentation, under EOS table generation.
     """
     # Load PALEOS table and build entropy interpolators.
     # When 2-phase tables are provided, use phase-specific entropy to
@@ -344,31 +358,8 @@ def generate_spider_phase_boundaries(
         S_sol_valid = S_sol_smooth
         S_liq_valid = S_liq_smooth
 
-    # Enforce non-decreasing S_solidus(P) and S_liquidus(P) via
-    # cumulative maximum (super-Earth pressure range fix).
-    #
-    # Motivation. When P_max is raised above ~200 GPa to cover super-Earth
-    # mantles, both phase-boundary entropies show a peak near 175-200 GPa
-    # and decrease thereafter. The peak is a feature of the WB2018 liquid
-    # EOS entropy lookup at (P, T_liq(P)): at high P the density
-    # contribution to S dominates and S(P, T_liq(P)) flattens and then
-    # decreases, even though T_liq(P) is strictly monotone in P via
-    # Belonoshko+2005 / Fei+2021.
-    #
-    # The lever rule Phi = (S_node - S_sol) / (S_liq - S_sol) becomes
-    # nearly singular near the peak, because dS_liq/dP goes through zero
-    # there. A fully-molten IC with S_node comparable to S_liq_peak ends
-    # up with a narrow mushy band at ~175 GPa where Phi ~ 0.995, and the
-    # resulting RHS is stiff enough that CVODE collapses to micro-year
-    # timesteps and hits its 100k-step cap at the 5 M_E super-Earth scale
-    # with P_max ~ 950 GPa.
-    #
-    # Fix. Apply np.maximum.accumulate (from low P to high P) to both
-    # arrays. Below the peak nothing changes (the arrays are already
-    # monotone there). Above the peak the entropy is pinned to the peak
-    # value, which is the defensible choice for a lever-rule consumer:
-    # anything at least as hot as the peak should register as fully
-    # liquid, and the flat tail removes the near-singular derivative.
+    # Hold both entropies at their running maximum in pressure: a solver-stability
+    # choice, see the Notes of this function.
     if n_valid > 1:
         S_sol_before = S_sol_valid.copy()
         S_liq_before = S_liq_valid.copy()
@@ -410,6 +401,9 @@ def generate_spider_phase_boundaries(
 
 
 # ── SPIDER file writers ──────────────────────────────────────────────
+
+# Properties tabulated per phase in the SPIDER P-S tables.
+_SPIDER_TABLE_PROPERTIES = ('rho', 'temperature', 'cp', 'alpha', 'nabla_ad')
 
 # Default scaling factors (matching SPIDER's internal conventions)
 _P_SCALE = 1e9  # Pa
@@ -488,6 +482,31 @@ def _write_spider_2d(
                 f.write(f'{P_nd[i]:.18e} {S_nd[j]:.18e} {Q_nd[j, i]:.18e}\n')
 
 
+def _write_valid_mask(filepath, mask, phase):
+    """Write a P-S validity mask as a 0/1 integer grid that ``np.loadtxt`` reads.
+
+    Parameters
+    ----------
+    filepath : str or Path
+        Output file path.
+    mask : ndarray of bool
+        Shape (nS, nP): one row per entropy node and one column per pressure
+        node, the nodes of the property tables of the same phase.
+    phase : str
+        ``'solid'`` or ``'melt'``, named in the header.
+    """
+    nS, nP = mask.shape
+    with open(filepath, 'w') as f:
+        f.write(
+            f'# {phase} validity mask: {nS} rows (entropy nodes) x {nP} columns '
+            f'(pressure nodes), the nodes of the {phase} P-S tables\n'
+            '# 1: inside the phase temperature window with a finite PALEOS value for '
+            'all five properties; 0: a filled value or nabla_ad written as 0\n'
+        )
+        f.write('\n'.join(' '.join(row) for row in np.where(mask, '1', '0')))
+        f.write('\n')
+
+
 # ── Full EOS table generation ───────────────────────────────────────
 
 
@@ -547,6 +566,14 @@ def generate_spider_eos_tables(
     - thermal_exp_{phase}.dat
     - adiabat_temp_grad_{phase}.dat
 
+    plus ``valid_mask_{phase}.dat`` (see :func:`_write_valid_mask`). A cell is
+    1 where it lies inside the phase's temperature window (solid up to the
+    solidus, melt from the liquidus) and PALEOS gives a finite value for all
+    five properties there. It is 0 where a value was filled from the nearest
+    valid cell in its pressure column (SPIDER tables cannot hold NaN), and 0
+    where the temperature inverts but the table nabla_ad is not finite: that
+    cell keeps its other values and has nabla_ad written as 0.
+
     The algorithm:
     1. Load PALEOS P-T table with all properties (rho, s, cp, alpha, nabla_ad)
     2. At each (P, T) grid point, we have S directly from the table
@@ -574,8 +601,11 @@ def generate_spider_eos_tables(
     Returns
     -------
     dict
-        Keys: ``'P_Pa'``, ``'S_solid'``, ``'S_melt'``, and property
-        grids for each phase. Also ``'output_dir'`` if files were written.
+        Keys: ``'P_Pa'``, ``'S_solid'``, ``'S_melt'``, property grids for
+        each phase under ``'solid'`` and ``'melt'``, the boolean validity
+        masks under ``'valid'`` (keys ``'solid'`` and ``'melt'``, shape
+        (nS, nP)), and ``'output_dir'`` (None when nothing was written).
+        An empty dict when the table gives no entropy range for a phase.
     """
     logger.info('Generating SPIDER P-S EOS tables from %s', eos_file)
     table = load_paleos_all_properties(eos_file)
@@ -757,6 +787,9 @@ def generate_spider_eos_tables(
         dict of ndarray
             Keys: 'rho', 'temperature', 'cp', 'alpha', 'nabla_ad',
             each shape (nS, nP).
+        ndarray of bool
+            Shape (nS, nP): the table nabla_ad was finite. A non-finite one
+            is written as 0, so this is the only record of it.
         """
         nP_out = len(P_grid)
         nS_out = len(S_grid)
@@ -767,6 +800,7 @@ def generate_spider_eos_tables(
             'alpha': np.full((nS_out, nP_out), np.nan),
             'nabla_ad': np.full((nS_out, nP_out), np.nan),
         }
+        nad_finite = np.zeros((nS_out, nP_out), dtype=bool)
 
         n_filled = 0
         n_total = nP_out * nS_out
@@ -826,6 +860,7 @@ def generate_spider_eos_tables(
             result['cp'][idx_s, ip] = cp_phase_interp(pts)
             result['alpha'][idx_s, ip] = alpha_phase_interp(pts)
             nad_vals = nad_phase_interp(pts)
+            nad_finite[idx_s, ip] = np.isfinite(nad_vals)
             if P_Pa > 0:
                 result['nabla_ad'][idx_s, ip] = np.where(
                     np.isfinite(nad_vals), nad_vals * T_found / P_Pa, 0.0
@@ -840,7 +875,7 @@ def generate_spider_eos_tables(
             n_total,
             100 * fill_frac,
         )
-        return result
+        return result, nad_finite
 
     # Fill solid and melt phase grids in parallel (independent computations)
     def _T_lo_solid(P):
@@ -882,13 +917,33 @@ def generate_spider_eos_tables(
     with ThreadPoolExecutor(max_workers=2) as pool:
         fut_solid = pool.submit(_fill_solid)
         fut_melt = pool.submit(_fill_melt)
-        solid_grids = fut_solid.result()
-        melt_grids = fut_melt.result()
+        solid_grids, solid_nad_finite = fut_solid.result()
+        melt_grids, melt_nad_finite = fut_melt.result()
+
+    # Record the valid cells before the fill below overwrites the gaps.
+    valid_masks = {
+        phase_name: np.all(
+            [np.isfinite(grids[prop]) for prop in _SPIDER_TABLE_PROPERTIES], axis=0
+        )
+        & nad_finite
+        for phase_name, grids, nad_finite in [
+            ('solid', solid_grids, solid_nad_finite),
+            ('melt', melt_grids, melt_nad_finite),
+        ]
+    }
+    for phase_name, mask in valid_masks.items():
+        logger.info(
+            '%s phase: %d/%d cells valid; each other cell has a filled value '
+            'or nabla_ad written as 0',
+            phase_name,
+            int(mask.sum()),
+            mask.size,
+        )
 
     # Fill NaN cells by nearest-neighbor extrapolation. SPIDER does
     # not handle NaN in its lookup tables.
     for phase_name, grids in [('solid', solid_grids), ('melt', melt_grids)]:
-        for prop in ['rho', 'temperature', 'cp', 'alpha', 'nabla_ad']:
+        for prop in _SPIDER_TABLE_PROPERTIES:
             grid = grids[prop]
             n_nan_before = np.sum(np.isnan(grid))
             if n_nan_before > 0:
@@ -924,7 +979,7 @@ def generate_spider_eos_tables(
             'nabla_ad': 'adiabat_temp_grad',
         }
 
-        for prop in ['rho', 'temperature', 'cp', 'alpha', 'nabla_ad']:
+        for prop in _SPIDER_TABLE_PROPERTIES:
             spider_name = spider_names[prop]
             scale = scales[prop]
 
@@ -938,12 +993,18 @@ def generate_spider_eos_tables(
             _write_spider_2d(fpath, P_out, S_melt_grid, melt_grids[prop], scale)
             logger.info('Wrote %s', fpath)
 
+        for phase_name, mask in valid_masks.items():
+            fpath = str(output_dir / f'valid_mask_{phase_name}.dat')
+            _write_valid_mask(fpath, mask, phase_name)
+            logger.info('Wrote %s', fpath)
+
     return {
         'P_Pa': P_out,
         'S_solid': S_solid_grid,
         'S_melt': S_melt_grid,
         'solid': solid_grids,
         'melt': melt_grids,
+        'valid': valid_masks,
         'output_dir': str(output_dir) if output_dir else None,
     }
 
@@ -1366,7 +1427,8 @@ def compute_entropy_adiabat(
     P_cmb : float
         CMB pressure [Pa].
     n_points : int
-        Number of pressure points in the profile.
+        Number of pressure points in the profile, at least 2 (the surface
+        and the CMB).
     solidus_func : callable or None
         P [Pa] -> T_solidus [K]. Required for mixed-phase entropy.
     liquidus_func : callable or None
@@ -1382,8 +1444,18 @@ def compute_entropy_adiabat(
     dict
         Keys: ``'P'`` [Pa], ``'T'`` [K], ``'S_target'`` [J/(kg*K)],
         ``'S_profile'`` [J/(kg*K)] (entropy at each point for verification).
+
+    Raises
+    ------
+    ValueError
+        If ``n_points`` is below 2.
+    FileNotFoundError
+        If the PALEOS table is not found.
     """
     from scipy.optimize import brentq
+
+    if n_points < 2:
+        raise ValueError('n_points must be >= 2')
 
     table = load_paleos_all_properties(eos_file)
     if table is None:
@@ -1466,8 +1538,11 @@ def compute_entropy_adiabat(
         S_target,
     )
 
-    # Build pressure grid (log-spaced for better resolution at low P)
-    P_grid = np.logspace(np.log10(P_surface * 1.001), np.log10(P_cmb * 0.999), n_points)
+    # Build pressure grid (log-spaced for better resolution at low P). The
+    # ends are pinned to the exact inputs so T[-1] is the temperature at P_cmb.
+    P_grid = np.logspace(np.log10(P_surface), np.log10(P_cmb), n_points)
+    P_grid[0] = P_surface
+    P_grid[-1] = P_cmb
     T_profile = np.zeros(n_points)
     S_profile = np.zeros(n_points)
 

@@ -856,6 +856,54 @@ class TestGenerateSpiderPhaseBoundaries:
         # S_liquidus should be ~8% higher with the liquid-phase table.
         assert np.all(twophase_result['S_liquidus'] > unified_result['S_liquidus'])
 
+    @pytest.mark.physics_invariant
+    def test_liquidus_entropy_is_held_at_its_peak(self, tmp_path):
+        """A liquidus entropy that peaks and then falls with pressure is
+        written flat at its peak value above the peak, and unchanged below it.
+
+        The table entropy s = 1000 ln(T/300) - 150 ln(P/1e6) falls with P at
+        fixed T, and the liquidus T = 1500 + 400 ln(P/1e6) flattens, so
+        dS_liq/dlnP = 4e5/T_liq - 150 changes sign where T_liq = 2667 K
+        (P near 1.9e7 Pa).
+        """
+        P_arr = np.logspace(6.0, 9.0, 16)
+        T_arr = np.logspace(3.0, 4.3, 28)
+        solid, liquid = tmp_path / 'peak_solid.dat', tmp_path / 'peak_liquid.dat'
+        _write_pdep_phase_table(solid, P_arr, T_arr, 1.0, 'solid')
+        _write_pdep_phase_table(liquid, P_arr, T_arr, 1.08, 'liquid')
+
+        def liq(P):
+            out = 1500.0 + 400.0 * np.log(np.asarray(P) / 1e6)
+            return float(out) if np.ndim(P) == 0 else out
+
+        def sol(P):
+            return 0.8 * liq(P)
+
+        res = eos_export.generate_spider_phase_boundaries(
+            sol,
+            liq,
+            solid,
+            P_range=(1e6, 1e9),
+            n_P=200,
+            output_dir=tmp_path / 'pb',
+            solid_eos_file=solid,
+            liquid_eos_file=liquid,
+        )
+        P, S_liq = res['P_Pa'], res['S_liquidus']
+        i_peak = int(np.argmax(S_liq))
+        # The peak sits inside the range, near the analytic 1.9e7 Pa.
+        assert 5e6 < P[i_peak] < 7e7
+        # Above the peak the curve is flat at the peak value.
+        np.testing.assert_array_equal(S_liq[i_peak:], S_liq[i_peak])
+        # Below the peak it follows the table (smoothing aside).
+        j = i_peak // 2
+        assert S_liq[j] == pytest.approx(1.08 * _s_pdep(P[j], liq(P[j])), rel=2e-3)
+        # Discrimination: the table curve at the top lies about 140 below.
+        assert S_liq[-1] - 1.08 * _s_pdep(P[-1], liq(P[-1])) > 50.0
+        # The file holds the same curve.
+        on_disk = np.loadtxt(res['liquidus_path'])[:, 1] * eos_export._S_SCALE
+        np.testing.assert_allclose(on_disk, S_liq, rtol=1e-12)
+
     def test_pchip_smoothing_reduces_dS_dP_sign_changes(self, synthetic_table, melting_curves):
         """The PCHIP-smoothed curve has dS/dP-sign-change count <= raw count.
 
@@ -896,7 +944,12 @@ class TestGenerateSpiderEosTables:
             n_S=15,
             output_dir=None,
         )
-        assert {'P_Pa', 'S_solid', 'S_melt', 'solid', 'melt', 'output_dir'} <= set(out.keys())
+        assert {'P_Pa', 'S_solid', 'S_melt', 'solid', 'melt', 'valid', 'output_dir'} <= set(
+            out.keys()
+        )
+        # The phase dicts hold the five table properties and nothing else.
+        props = set(eos_export._SPIDER_TABLE_PROPERTIES)
+        assert set(out['solid']) == props and set(out['melt']) == props
         for prop in ('rho', 'temperature', 'cp', 'alpha', 'nabla_ad'):
             assert out['solid'][prop].shape == (15, 15)
             assert out['melt'][prop].shape == (15, 15)
@@ -925,10 +978,84 @@ class TestGenerateSpiderEosTables:
                 'heat_capacity',
                 'thermal_exp',
                 'adiabat_temp_grad',
+                'valid_mask',
             )
             for phase in ('solid', 'melt')
         )
         assert produced == expected
+
+    def test_validity_mask_marks_filled_cells(
+        self, synthetic_table, melting_curves, tmp_path, monkeypatch
+    ):
+        """The validity mask is 1 exactly where every property held a PALEOS
+        state before the NaN fill, the fill leaves those cells untouched, and
+        the mask file on disk round-trips the same 0/1 grid.
+
+        The melt phase has no state below the liquidus, so the grid carries both
+        classes of cell; a mask that marked every cell valid would fail here.
+        """
+        sol_func, liq_func = melting_curves
+        kwargs = dict(P_range=(1e6, 1e9), n_P=12, n_S=14)
+        out_dir = tmp_path / 'masked'
+        out = eos_export.generate_spider_eos_tables(
+            synthetic_table, sol_func, liq_func, output_dir=out_dir, **kwargs
+        )
+        # Same generation without the fill: the NaN pattern it leaves is the truth.
+        monkeypatch.setattr(eos_export, '_fill_nan_nearest', lambda grid: None)
+        raw = eos_export.generate_spider_eos_tables(
+            synthetic_table, sol_func, liq_func, output_dir=None, **kwargs
+        )
+        for phase in ('solid', 'melt'):
+            mask = out['valid'][phase]
+            assert mask.dtype == bool and mask.shape == (14, 12)
+            truth = np.all([np.isfinite(raw[phase][p]) for p in raw[phase]], axis=0)
+            np.testing.assert_array_equal(mask, truth)
+            for prop in ('rho', 'temperature', 'cp', 'alpha', 'nabla_ad'):
+                # Valid cells are bit-identical; filled cells are finite.
+                np.testing.assert_array_equal(out[phase][prop][mask], raw[phase][prop][mask])
+                assert np.all(np.isfinite(out[phase][prop][~mask]))
+            on_disk = np.loadtxt(out_dir / f'valid_mask_{phase}.dat', dtype=int)
+            np.testing.assert_array_equal(on_disk, mask.astype(int))
+        # Both classes present in the melt grid (cells below the liquidus are filled).
+        assert out['valid']['melt'].any() and not out['valid']['melt'].all()
+
+    @pytest.mark.parametrize('column', [7, 8], ids=['alpha', 'nabla_ad'])
+    def test_validity_mask_needs_every_property(
+        self, synthetic_table, melting_curves, tmp_path, column
+    ):
+        """A cell whose temperature inverts but whose thermal expansion or
+        adiabatic gradient has no PALEOS value is marked invalid: the mask
+        requires all five properties, not only the temperature. A missing
+        nabla_ad is written as 0, so the mask is the only record of it.
+
+        Edge case: the property is NaN along the highest-pressure table node
+        while the entropy there stays finite, so the S(P,T) inversion still
+        succeeds.
+        """
+        sol_func, liq_func = melting_curves
+        rows = synthetic_table.read_text().splitlines(keepends=True)
+        p_top = f'{_P_NODES_PA[-1]:.8e}'
+        edited = []
+        for row in rows:
+            fields = row.split()
+            if not row.startswith('#') and fields[0] == p_top:
+                fields[column] = 'nan'  # alpha (7) or nabla_ad (8)
+                row = ' '.join(fields) + '\n'
+            edited.append(row)
+        table = tmp_path / 'property_gap.dat'
+        table.write_text(''.join(edited))
+        out = eos_export.generate_spider_eos_tables(
+            table, sol_func, liq_func, P_range=(1e6, 1e10), n_P=12, n_S=14, output_dir=None
+        )
+        mask = out['valid']['melt']
+        # Columns above the last finite node of the property have no valid cell.
+        top = out['P_Pa'] > _P_NODES_PA[-2]
+        assert top.any() and not mask[:, top].any()
+        # Below that node the melt phase still has valid cells.
+        assert mask[:, ~top].any()
+        if column == 8:
+            # A missing nabla_ad is written as 0, not filled from a neighbour.
+            assert (out['melt']['nabla_ad'][:, top] == 0.0).any()
 
     def test_solid_S_max_extended_to_match_melt_S_max(self, synthetic_table, melting_curves):
         """Solid-phase S range is extended up to the melt-phase max.
@@ -1468,6 +1595,63 @@ class TestComputeEntropyAdiabat:
         # entropy formula, so it catches a depth-routing regression that the
         # tautological S_profile == S_target check cannot.
         np.testing.assert_allclose(1.08 * _s_pdep(P, T), S_target, rtol=1e-6)
+
+    @pytest.mark.parametrize('n_points', [0, 1])
+    def test_fewer_than_two_points_is_rejected(self, pdep_2phase, n_points):
+        """A profile needs both ends: with one point the CMB pin would overwrite
+        the surface point, so n_points below 2 raises ValueError."""
+        solid_path, liquid_path = pdep_2phase
+        with pytest.raises(ValueError, match='n_points must be >= 2'):
+            eos_export.compute_entropy_adiabat(
+                solid_path, T_surface=4000.0, P_surface=1e6, P_cmb=1e9, n_points=n_points
+            )
+
+    @pytest.mark.physics_invariant
+    def test_profile_ends_at_the_surface_and_cmb_pressures(self, pdep_2phase):
+        """The profile starts at P_surface and ends at P_cmb, so T[-1] is the CMB
+        temperature and T[0] the surface temperature.
+
+        Edge case: both ends sit exactly on the table bounds (1e6 and 1e9 Pa),
+        where an end point a rounding step outside the grid would read NaN.
+        Discrimination: an adiabat that stops at 0.999 * P_cmb is cooler at its
+        deepest point, because T rises with depth along the isentrope.
+        """
+        solid_path, liquid_path = pdep_2phase
+        P_surf, P_cmb = 1.0e6, 1.0e9
+        kwargs = dict(
+            T_surface=4000.0,
+            n_points=24,
+            solidus_func=_pdep_solidus,
+            liquidus_func=_pdep_liquidus,
+            solid_eos_file=solid_path,
+            liquid_eos_file=liquid_path,
+        )
+        result = eos_export.compute_entropy_adiabat(
+            solid_path, P_surface=P_surf, P_cmb=P_cmb, **kwargs
+        )
+        P = np.asarray(result['P'])
+        T = np.asarray(result['T'])
+        np.testing.assert_array_equal(P[[0, -1]], [P_surf, P_cmb])
+        assert T[0] == pytest.approx(4000.0, rel=1e-8)
+        assert np.all(np.isfinite(T))
+        shallow = eos_export.compute_entropy_adiabat(
+            solid_path, P_surface=P_surf, P_cmb=0.999 * P_cmb, **kwargs
+        )
+        assert T[-1] > shallow['T'][-1]
+        # The end is the input pressure bit for bit, also where 10**log10(P)
+        # does not round-trip (7.3e8 Pa comes back 1.4e-6 Pa high).
+        odd = eos_export.compute_entropy_adiabat(
+            solid_path, P_surface=P_surf, P_cmb=7.3e8, **kwargs
+        )
+        np.testing.assert_array_equal(np.asarray(odd['P'])[[0, -1]], [P_surf, 7.3e8])
+        # The same at the surface: 1.013e6 Pa, inside the table, does not round-trip.
+        odd_surf = eos_export.compute_entropy_adiabat(
+            solid_path, P_surface=1.013e6, P_cmb=P_cmb, **kwargs
+        )
+        assert odd_surf['P'][0] == 1.013e6
+        assert odd_surf['T'][0] == pytest.approx(4000.0, rel=1e-8)
+        # The CMB end lies on the same isentrope as the rest of the profile.
+        np.testing.assert_allclose(1.08 * _s_pdep(P[-1], T[-1]), result['S_target'], rtol=1e-6)
 
     @pytest.mark.physics_invariant
     def test_fully_molten_routing_survives_collapsed_mushy_zone(self, pdep_2phase):
