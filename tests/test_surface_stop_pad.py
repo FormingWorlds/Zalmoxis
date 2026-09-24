@@ -80,9 +80,8 @@ class TestNumpyStopPad:
         """A step failure inside the first Tdep solve stops there; the second solve,
         which starts at the split radius, must not supply the pad state."""
         radii, r0, p_c = _setup(0.6, 10)
-        r_split = radii[N // 2 - 1]
-        inner = _rhs('nan')
-        outer = _rhs('continue')
+        r_split = radii[int(0.5 * N) - 1]  # adaptive_radial_fraction 0.5 below
+        inner, outer = _rhs('nan'), _rhs('continue')
         monkeypatch.setattr(
             sm, 'coupled_odes', lambda r, y, *a, **k: (inner if r < r_split else outer)(r, y)
         )
@@ -90,9 +89,10 @@ class TestNumpyStopPad:
         m, g, p = sm.solve_structure(
             {}, 0.0, 0.0, radii, 0.5, 1e-10, 1e-12, np.inf, {}, {}, [0.0, 0.0, p_c], None, None
         )
-        assert m[-1] == pytest.approx(_mass(r0), rel=1e-6)
+        assert m[11:] == pytest.approx(np.full(N - 11, _mass(r0)), rel=1e-6)
         assert g[-1] == pytest.approx(G * _mass(r0) / r0**2, rel=1e-6)
         assert np.all(p[11:] == 0.0)
+        assert m[1:11] == pytest.approx(_mass(radii[1:11]), rel=1e-6)
 
     def test_mass_continuous_across_stop_onset(self, monkeypatch):
         """M at the outer node varies smoothly as the stop moves out through R."""
