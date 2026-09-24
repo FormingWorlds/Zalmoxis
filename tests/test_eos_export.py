@@ -877,8 +877,7 @@ class TestGenerateSpiderPhaseBoundaries:
             return float(out) if np.ndim(P) == 0 else out
 
         def sol(P):
-            out = 0.8 * liq(P)
-            return float(out) if np.ndim(P) == 0 else out
+            return 0.8 * liq(P)
 
         res = eos_export.generate_spider_phase_boundaries(
             sol,
@@ -1015,8 +1014,8 @@ class TestGenerateSpiderEosTables:
                 # Valid cells are bit-identical; filled cells are finite.
                 np.testing.assert_array_equal(out[phase][prop][mask], raw[phase][prop][mask])
                 assert np.all(np.isfinite(out[phase][prop][~mask]))
-            on_disk = np.loadtxt(out_dir / f'valid_mask_{phase}.dat')[:, 2]
-            np.testing.assert_array_equal(on_disk.reshape(14, 12), mask.astype(float))
+            on_disk = np.loadtxt(out_dir / f'valid_mask_{phase}.dat', dtype=int)
+            np.testing.assert_array_equal(on_disk, mask.astype(int))
         # Both classes present in the melt grid (cells below the liquidus are filled).
         assert out['valid']['melt'].any() and not out['valid']['melt'].all()
 
@@ -1597,6 +1596,16 @@ class TestComputeEntropyAdiabat:
         # tautological S_profile == S_target check cannot.
         np.testing.assert_allclose(1.08 * _s_pdep(P, T), S_target, rtol=1e-6)
 
+    @pytest.mark.parametrize('n_points', [0, 1])
+    def test_fewer_than_two_points_is_rejected(self, pdep_2phase, n_points):
+        """A profile needs both ends: with one point the CMB pin would overwrite
+        the surface point, so n_points below 2 raises ValueError."""
+        solid_path, liquid_path = pdep_2phase
+        with pytest.raises(ValueError, match='n_points must be >= 2'):
+            eos_export.compute_entropy_adiabat(
+                solid_path, T_surface=4000.0, P_surface=1e6, P_cmb=1e9, n_points=n_points
+            )
+
     @pytest.mark.physics_invariant
     def test_profile_ends_at_the_surface_and_cmb_pressures(self, pdep_2phase):
         """The profile starts at P_surface and ends at P_cmb, so T[-1] is the CMB
@@ -1635,6 +1644,12 @@ class TestComputeEntropyAdiabat:
             solid_path, P_surface=P_surf, P_cmb=7.3e8, **kwargs
         )
         np.testing.assert_array_equal(np.asarray(odd['P'])[[0, -1]], [P_surf, 7.3e8])
+        # The same at the surface: 1.013e6 Pa, inside the table, does not round-trip.
+        odd_surf = eos_export.compute_entropy_adiabat(
+            solid_path, P_surface=1.013e6, P_cmb=P_cmb, **kwargs
+        )
+        assert odd_surf['P'][0] == 1.013e6
+        assert odd_surf['T'][0] == pytest.approx(4000.0, rel=1e-8)
         # The CMB end lies on the same isentrope as the rest of the profile.
         np.testing.assert_allclose(1.08 * _s_pdep(P[-1], T[-1]), result['S_target'], rtol=1e-6)
 

@@ -232,29 +232,15 @@ def generate_spider_phase_boundaries(
     -----
     The written curves come from a PCHIP fit through 20 anchors spread over
     the pressure range of the table, and each is then held at its running
-    maximum in pressure (``np.maximum.accumulate``), so at pressures above
-    its peak it is flat. The plateau is a solver-stability choice, not a
-    property of the tables. For PALEOS MgSiO3 the liquid-table entropy along the liquidus
-    peaks near 164 GPa and then falls while T_liq keeps rising, since
-    dS_liq/dP = -alpha/rho + (c_p/T) dT_liq/dP. With the falling curve the
-    first solid in a cooling molten mantle forms in a thin layer at the peak,
-    above still molten material, and the time step of coupled SPIDER and
-    Aragog runs of 3 and 5 Earth-mass planets collapses at that onset. With
-    the plateau the whole range from the peak pressure to the core-mantle
-    boundary reaches the liquidus together.
-
-    The peak of the smoothed curve moves with the table range: for the tables
-    of 1 to 10 Earth-mass planets (mushy_zone_factor 0.8) it lies between
-    about 110 and 255 GPa and can jump between neighbouring masses, and the
-    smoothed solidus can peak lower, between about 78 and 175 GPa, so its
-    plateau can start at a much lower pressure. The liquidus plateau
-    lies above the smoothed curve by 64 to 152 J/kg/K at 350 GPa and by 145
-    to 991 J/kg/K at the table top; the solidus offset reaches 13 to 104
-    J/kg/K. With both boundaries raised, the lever-rule melt fraction is
-    never higher than the smoothed curves give. The smoothing itself departs
-    from the table entropy by up to about 240 J/kg/K on the liquidus and 190
-    J/kg/K on the solidus, so against the table the melt fraction can be
-    higher or lower.
+    maximum in pressure (``np.maximum.accumulate``), so it is non-decreasing
+    and flat above its highest value. This plateau is a solver-stability
+    choice, not a property of the tables: for PALEOS MgSiO3 the liquid-table
+    entropy along the liquidus peaks near 164 GPa and then falls, and with
+    the falling curve the time step of coupled SPIDER and Aragog runs
+    collapses at the onset of crystallisation. The size of the plateau in
+    entropy, temperature, melt fraction and entropy of fusion for 1 to 10
+    Earth-mass planets is given on the PROTEUS coupling page of the
+    documentation, under EOS table generation.
     """
     # Load PALEOS table and build entropy interpolators.
     # When 2-phase tables are provided, use phase-specific entropy to
@@ -496,6 +482,31 @@ def _write_spider_2d(
                 f.write(f'{P_nd[i]:.18e} {S_nd[j]:.18e} {Q_nd[j, i]:.18e}\n')
 
 
+def _write_valid_mask(filepath, mask, phase):
+    """Write a P-S validity mask as a 0/1 integer grid that ``np.loadtxt`` reads.
+
+    Parameters
+    ----------
+    filepath : str or Path
+        Output file path.
+    mask : ndarray of bool
+        Shape (nS, nP): one row per entropy node and one column per pressure
+        node, the nodes of the property tables of the same phase.
+    phase : str
+        ``'solid'`` or ``'melt'``, named in the header.
+    """
+    nS, nP = mask.shape
+    with open(filepath, 'w') as f:
+        f.write(
+            f'# {phase} validity mask: {nS} rows (entropy nodes) x {nP} columns '
+            f'(pressure nodes), the nodes of the {phase} P-S tables\n'
+            '# 1: inside the phase temperature window with a finite PALEOS value for '
+            'all five properties; 0: a filled value or nabla_ad written as 0\n'
+        )
+        f.write('\n'.join(' '.join(row) for row in np.where(mask, '1', '0')))
+        f.write('\n')
+
+
 # ── Full EOS table generation ───────────────────────────────────────
 
 
@@ -555,10 +566,13 @@ def generate_spider_eos_tables(
     - thermal_exp_{phase}.dat
     - adiabat_temp_grad_{phase}.dat
 
-    plus ``valid_mask_{phase}.dat`` on the same grid, 1 where the cell holds a
-    PALEOS state for every property and 0 where a value has none: it is
-    filled from the nearest valid cell (SPIDER tables cannot hold NaN), or
-    written as 0 for nabla_ad.
+    plus ``valid_mask_{phase}.dat`` (see :func:`_write_valid_mask`). A cell is
+    1 where it lies inside the phase's temperature window (solid up to the
+    solidus, melt from the liquidus) and PALEOS gives a finite value for all
+    five properties there. It is 0 where a value was filled from the nearest
+    valid cell in its pressure column (SPIDER tables cannot hold NaN), and 0
+    where the temperature inverts but the table nabla_ad is not finite: that
+    cell keeps its other values and has nabla_ad written as 0.
 
     The algorithm:
     1. Load PALEOS P-T table with all properties (rho, s, cp, alpha, nabla_ad)
@@ -906,8 +920,7 @@ def generate_spider_eos_tables(
         solid_grids, solid_nad_finite = fut_solid.result()
         melt_grids, melt_nad_finite = fut_melt.result()
 
-    # Record which cells hold a PALEOS state for every property before the
-    # fill below overwrites the gaps, so consumers can tell filled cells apart.
+    # Record the valid cells before the fill below overwrites the gaps.
     valid_masks = {
         phase_name: np.all(
             [np.isfinite(grids[prop]) for prop in _SPIDER_TABLE_PROPERTIES], axis=0
@@ -920,7 +933,8 @@ def generate_spider_eos_tables(
     }
     for phase_name, mask in valid_masks.items():
         logger.info(
-            '%s phase: %d/%d cells hold a PALEOS state; the rest are filled',
+            '%s phase: %d/%d cells valid; each other cell has a filled value '
+            'or nabla_ad written as 0',
             phase_name,
             int(mask.sum()),
             mask.size,
@@ -979,11 +993,9 @@ def generate_spider_eos_tables(
             _write_spider_2d(fpath, P_out, S_melt_grid, melt_grids[prop], scale)
             logger.info('Wrote %s', fpath)
 
-        # Validity masks: 1 where the cell holds a PALEOS state for every
-        # property, 0 where a value was filled (or, for nabla_ad, set to 0).
-        for phase_name, S_grid in [('solid', S_solid_grid), ('melt', S_melt_grid)]:
+        for phase_name, mask in valid_masks.items():
             fpath = str(output_dir / f'valid_mask_{phase_name}.dat')
-            _write_spider_2d(fpath, P_out, S_grid, valid_masks[phase_name].astype(float), 1.0)
+            _write_valid_mask(fpath, mask, phase_name)
             logger.info('Wrote %s', fpath)
 
     return {
@@ -1415,7 +1427,8 @@ def compute_entropy_adiabat(
     P_cmb : float
         CMB pressure [Pa].
     n_points : int
-        Number of pressure points in the profile.
+        Number of pressure points in the profile, at least 2 (the surface
+        and the CMB).
     solidus_func : callable or None
         P [Pa] -> T_solidus [K]. Required for mixed-phase entropy.
     liquidus_func : callable or None
@@ -1431,8 +1444,18 @@ def compute_entropy_adiabat(
     dict
         Keys: ``'P'`` [Pa], ``'T'`` [K], ``'S_target'`` [J/(kg*K)],
         ``'S_profile'`` [J/(kg*K)] (entropy at each point for verification).
+
+    Raises
+    ------
+    ValueError
+        If ``n_points`` is below 2.
+    FileNotFoundError
+        If the PALEOS table is not found.
     """
     from scipy.optimize import brentq
+
+    if n_points < 2:
+        raise ValueError('n_points must be >= 2')
 
     table = load_paleos_all_properties(eos_file)
     if table is None:
