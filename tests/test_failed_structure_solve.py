@@ -260,10 +260,6 @@ class TestNonFiniteDensity:
             _run(_cfg(outer_solver='picard'))
 
 
-class _FellBack(Exception):
-    """Ends main after the first structure solve that fell back to numpy."""
-
-
 def _synthetic_jax_world(monkeypatch, fill=False):
     """Synthetic PALEOS-format tables (no data files) with NaN density in the core-table
     row at log P = 9.86, which covers 2.7e9 to 1.95e10 Pa. numpy's nearest-neighbour
@@ -332,19 +328,21 @@ class TestNonFiniteDensityJax:
         assert n > 0 and np.all(np.isfinite(ys[:n])) and not np.any(np.isfinite(ys[n:, 2]))
         assert np.all(np.isfinite(y_end)) and 1.9e10 < y_end[2] < ys[n - 1, 2]
 
+    @staticmethod
+    def _cfg():
+        return _cfg(
+            outer_solver='picard',
+            use_jax=True,
+            relative_tolerance=1e-8,
+            layer_eos_config={'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
+        )
+
     def _main(self, monkeypatch, caplog, fill):
-        """Run main on the JAX path until it fails or a solve fell back to numpy; return
-        the profile of that solve and the ValueErrors the JAX wrapper raised."""
+        """Run main on the JAX path; return its result and the ValueErrors the wrapper raised."""
         import zalmoxis.jax_eos.wrapper as jw
 
         world = _synthetic_jax_world(monkeypatch, fill)
-        raised, real, real_solve, out = [], jw.solve_structure_via_jax, zs.solve_structure, []
-
-        def solve(*args, **kwargs):
-            out.append(real_solve(*args, **kwargs))
-            if raised and np.all(np.isfinite(out[-1])):
-                raise _FellBack
-            return out[-1]
+        raised, real = [], jw.solve_structure_via_jax
 
         def spy(*args, **kwargs):
             try:
@@ -354,25 +352,18 @@ class TestNonFiniteDensityJax:
                 raise
 
         monkeypatch.setattr(jw, 'solve_structure_via_jax', spy)
-        monkeypatch.setattr(zs, 'solve_structure', solve)
-        cfg = _cfg(
-            outer_solver='picard',
-            use_jax=True,
-            relative_tolerance=1e-8,
-            layer_eos_config={'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
-        )
         with caplog.at_level('WARNING', logger='zalmoxis.structure_model'):
-            with pytest.raises(_FellBack):
-                zs.main(cfg, world['mats'], None, os.path.join(ROOT, 'input'))
-        return out[-1], raised
+            return zs.main(
+                self._cfg(), world['mats'], None, os.path.join(ROOT, 'input')
+            ), raised
 
-    @pytest.mark.timeout(120)
-    def test_nan_table_band_falls_back_to_numpy_which_fills_it(self, monkeypatch, caplog):
-        """The JAX wrapper hands the band to numpy, whose table lookup fills the NaN cells."""
-        profile, raised = self._main(monkeypatch, caplog, fill=True)
+    @pytest.mark.timeout(600)
+    def test_nan_table_band_falls_back_to_numpy_once(self, monkeypatch, caplog):
+        """After the first deep JAX stop the rest of main runs on numpy, which fills the band."""
+        result, raised = self._main(monkeypatch, caplog, fill=True)
         assert len(raised) == 1 and 'which is not the surface' in raised[0]
-        assert 'fell back to numpy path' in caplog.text
-        assert np.all(np.isfinite(profile))
+        assert caplog.text.count('fell back to numpy path') == 1
+        assert result['converged'] and np.all(np.isfinite(result['pressure']))
 
     @pytest.mark.timeout(120)
     def test_nan_table_band_fails_on_numpy_too(self, monkeypatch, caplog):

@@ -350,7 +350,7 @@ def solve_structure(
     # phi-blended wet mantle); profiles outside that envelope (H2
     # binodal, miscibility, multi-volatile) raise ValueError inside the
     # wrapper and land on numpy.
-    if use_jax:
+    if use_jax and not interpolation_cache.get('_jax_fell_back'):
         try:
             from .jax_eos.wrapper import solve_structure_via_jax
 
@@ -378,6 +378,7 @@ def solve_structure(
                 surface_pressure=surface_pressure,
             )
         except ValueError as exc:
+            interpolation_cache['_jax_fell_back'] = True  # numpy for the rest of this main()
             logger.warning(
                 'JAX solve_structure fell back to numpy path: %s',
                 exc,

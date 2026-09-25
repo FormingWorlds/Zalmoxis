@@ -308,6 +308,7 @@ def main(
         deep inside the planet), with either outer solver. Any trial central
         pressure counts, including a bracket end of the pressure search.
     """
+    _interpolation_cache.pop('_jax_fell_back', None)  # set by solve_structure's numpy fallback
     # Validate outer-solver choice. Default is 'picard' (the damped
     # fixed-point loop inside `_solve()`); 'newton' dispatches to
     # `_solve_newton_outer()`.
