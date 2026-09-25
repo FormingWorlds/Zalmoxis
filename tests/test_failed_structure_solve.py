@@ -220,6 +220,24 @@ class TestNonFiniteDensity:
         assert lo < 2.5e6 < hi
 
     @pytest.mark.timeout(60)
+    def test_nan_band_just_below_the_centre_pressure_raises(self, monkeypatch):
+        """NaN for P between P_c (1 - 1e-3) / 3 and P_c (1 - 1e-3) of each structure solve."""
+        state, real_solve, real_rho = {}, zs.solve_structure, sm.calculate_mixed_density
+
+        def solve(*args, **kwargs):
+            state['hi'] = args[10][2] * (1.0 - 1e-3)
+            return real_solve(*args, **kwargs)
+
+        def rho(pressure, *args, **kwargs):
+            band = state.get('hi', 0.0) / 3.0 < pressure < state.get('hi', 0.0)
+            return np.nan if band else real_rho(pressure, *args, **kwargs)
+
+        monkeypatch.setattr(zs, 'solve_structure', solve)
+        monkeypatch.setattr(sm, 'calculate_mixed_density', rho)
+        with pytest.raises(StructureSolveError):
+            _run(_cfg(outer_solver='picard'))
+
+    @pytest.mark.timeout(60)
     def test_nan_density_at_the_centre_raises(self, monkeypatch):
         """A NaN density at r = 0 fails the solve at the centre instead of a NaN first step."""
         self._nan_band(monkeypatch, -1.0, 1e5)

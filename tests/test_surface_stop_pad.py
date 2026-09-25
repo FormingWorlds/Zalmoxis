@@ -112,17 +112,17 @@ class TestNumpyStopPad:
         assert m[-1] == pytest.approx(_mass(R_OUT), rel=1e-6)
 
 
-def _band_rhs(r_lo, r_hi):
-    """Exponential-density RHS that returns NaN for r_lo < r < r_hi, where P > 0.
+def _band_rhs(r_lo, r_hi, p_lo=np.inf, p_hi=-np.inf):
+    """Exponential-density RHS that returns NaN for r_lo < r < r_hi or p_lo < P < p_hi.
 
     Unlike the uniform sphere, RK45 is not exact here, so its steps are short
     enough to run into the band.
     """
 
     def rhs(r, y, *args, **kwargs):
-        if r_lo < r < r_hi:
-            return np.full(3, np.nan)
         m, g, p = y
+        if r_lo < r < r_hi or p_lo < p < p_hi:
+            return np.full(3, np.nan)
         rho = RHO * np.exp(-r / R_OUT)
         dgdr = 4.0 * np.pi * G * rho - (2.0 * g / r if r > 0 else 8.0 / 3.0 * np.pi * G * RHO)
         return np.array([4.0 * np.pi * r**2 * rho, dgdr, -rho * g])
@@ -177,6 +177,30 @@ class TestInteriorStopFails:
         """The first step fails (the centre itself is fine), so no node is saved."""
         _, _, m, g, p = self._solve(monkeypatch, (0.0, 1.5), tdep)
         assert len(p) == N and np.all(np.isnan([m, g, p]))
+
+    @pytest.mark.timeout(60)
+    @pytest.mark.parametrize('tdep', [False, True])
+    def test_band_just_below_the_centre_pressure_ends(self, monkeypatch, tdep):
+        """P sits on the band edge while steps far below the grid spacing are accepted."""
+        radii, hi = np.linspace(0.0, R_OUT, N), self.P_C * (1.0 - 1e-3)
+        monkeypatch.setattr(sm, 'coupled_odes', _band_rhs(-1.0, -1.0, hi / 3.0, hi))
+        monkeypatch.setattr(sm, 'any_component_is_tdep', lambda _: tdep)
+        _, _, p = sm.solve_structure(
+            {},
+            0.0,
+            0.0,
+            radii,
+            0.5,
+            1e-10,
+            1e-12,
+            np.inf,
+            {},
+            {},
+            [0.0, 0.0, self.P_C],
+            None,
+            None,
+        )
+        assert p[0] == self.P_C and np.all(np.isnan(p[1:]))
 
     @pytest.mark.timeout(60)
     def test_failure_at_the_split_node_keeps_it(self, monkeypatch):

@@ -24,6 +24,10 @@ logger = logging.getLogger(__name__)
 # is the planet's surface; a stop at a higher pressure is a failed solve.
 SURFACE_STOP_P_FRACTION = 1e-6
 
+# One step-size collapse to scipy's min_step takes at most about 470 rejections (2800 NaN
+# right-hand sides); past this count per solve_ivp call the RHS is NaN, so the solve ends.
+MAX_NONFINITE_RHS = 10000
+
 
 def pad_after_stop(radii, mass, gravity, pressure, y_stop, p_center, p_surface=0.0):
     """Extend profiles cut short by a stop in the integration to the full grid.
@@ -373,8 +377,12 @@ def solve_structure(
     _pressure_zero.terminal = True
     _pressure_zero.direction = -1  # trigger on positive → negative crossing
 
+    nonfinite = [0]  # NaN right-hand sides in the current solve_ivp call
+
     def _ode_rhs(r, y):
-        return coupled_odes(
+        if nonfinite[0] >= MAX_NONFINITE_RHS:
+            return [np.nan, np.nan, np.nan]
+        dydr = coupled_odes(
             r,
             y,
             cmb_mass,
@@ -391,6 +399,8 @@ def solve_structure(
             binodal_T_scale,
             volatile_profile=volatile_profile,
         )
+        nonfinite[0] += bool(np.isnan(dydr[0]))
+        return dydr
 
     # scipy takes a NaN first step, and then never ends, if the RHS fails at the centre.
     if not np.all(np.isfinite(_ode_rhs(radii[0], y0))):
@@ -421,6 +431,7 @@ def solve_structure(
             mass_enclosed, gravity, pressure = np.reshape(sol1.y, (3, -1))
         else:
             # Second part with user-defined max_step
+            nonfinite[0] = 0
             sol2 = solve_ivp(
                 _ode_rhs,
                 (radii[radial_split_index - 1], radii[-1]),
@@ -466,6 +477,7 @@ def solve_structure(
             y_stop = [mass_enclosed[-1], gravity[-1], pressure[-1]] if n else y0
             # The failure lies between radii[n - 1] and radii[n]; re-integrate only that shell
             # to find where it stops (scipy never ends a step from a non-finite RHS).
+            nonfinite[0] = 0
             if n and np.all(np.isfinite(_ode_rhs(radii[n - 1], y_stop))):
                 tail = solve_ivp(
                     _ode_rhs,
