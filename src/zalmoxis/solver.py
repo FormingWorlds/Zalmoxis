@@ -825,8 +825,8 @@ def _solve_newton_outer(
     Degenerate cases (vanishing derivative, out-of-bounds step,
     max-iter without convergence) hand off to ``_brentq_fallback_outer``,
     which brackets the root via bisection and converges scipy's
-    ``brentq`` on it. The Newton path raises ``RuntimeError`` only when
-    both Newton and the brentq fall-back fail.
+    ``brentq`` on it. A failed structure solve at any radius raises
+    ``StructureSolveError``.
 
     Parameters
     ----------
@@ -862,6 +862,8 @@ def _solve_newton_outer(
         If integrator tolerances are too loose for Newton to converge.
     RuntimeError
         If both Newton and the brentq fall-back fail to converge.
+    StructureSolveError
+        If a structure solve at any evaluated radius is not finite.
     """
     M_target = float(config_params['planet_mass'])
     defaults = _default_solver_params(M_target)
@@ -1707,6 +1709,13 @@ def _solve(
                     create_pressure_density_files(
                         outer_iter, inner_iter, _state['n_evals'], radii, p, density
                     )
+                _require_finite(
+                    radii,
+                    p,
+                    f'solve at P_c = {p_center:.3e} Pa not finite',
+                    outer_iter,
+                    inner_iter,
+                )
                 _state['mass_enclosed'] = m
                 _state['gravity'] = g
                 _state['pressure'] = p
@@ -1808,14 +1817,6 @@ def _solve(
                     volatile_profile=volatile_profile,
                     surface_pressure=target_surface_pressure,
                 )
-                _require_finite(
-                    radii,
-                    pressure,
-                    f'solve at the Brent root P_c = {p_solution:.3e} Pa not finite',
-                    outer_iter,
-                    inner_iter,
-                )
-
                 surface_residual = abs(pressure[-1] - target_surface_pressure)
                 # Allow zero pressure at the surface: the terminal event
                 # pads truncated points with P=0, so check >= 0
@@ -1849,13 +1850,6 @@ def _solve(
                     mass_enclosed = _state['mass_enclosed']
                     gravity = _state['gravity']
                     pressure = _state['pressure']
-                    _require_finite(
-                        radii,
-                        pressure,
-                        'no pressure root, last evaluation not finite',
-                        outer_iter,
-                        inner_iter,
-                    )
                 else:
                     logger.debug(
                         'No valid ODE solutions obtained during bracket search. '

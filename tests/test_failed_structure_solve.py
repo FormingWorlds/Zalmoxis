@@ -90,8 +90,8 @@ class TestFailedPressureSolve:
         )
         with pytest.raises(
             StructureSolveError,
-            match=r'at R = 6\.113602e\+06 m \(outer iteration 0, inner 0\): no pressure root, '
-            r'last evaluation not finite; stop between r = ',
+            match=r'at R = 6\.113602e\+06 m \(outer iteration 0, inner 0\): solve at '
+            r'P_c = [0-9.]+e\+\d+ Pa not finite; stop between r = ',
         ):
             _run(cfg)
 
@@ -115,19 +115,24 @@ class TestFailedPressureSolve:
         with pytest.raises(StructureSolveError, match='outer iteration 0'):
             _run(_cfg(outer_solver='picard'))
 
-    def test_failure_at_the_brent_root_raises(self, monkeypatch):
-        """Every solve succeeds except the one at the root brentq returns."""
-        calls, real_brentq = {'root': None}, zs.brentq
-
-        def brentq(*args, **kwargs):
-            out = real_brentq(*args, **kwargs)
-            calls['root'] = out[0]
-            return out
-
-        monkeypatch.setattr(zs, 'brentq', brentq)
-        _spy_solve(monkeypatch, lambda radii, y0: y0[2] == calls['root'])
-        with pytest.raises(StructureSolveError, match='solve at the Brent root'):
+    def test_failure_below_the_root_raises(self, monkeypatch):
+        """Structure solves fail below P_c = 1e11 Pa, so the low bracket end fails
+        while the high one is finite."""
+        _spy_solve(monkeypatch, lambda radii, y0: y0[2] < 1e11)
+        with pytest.raises(StructureSolveError, match='outer iteration 0, inner 0'):
             _run(_cfg(outer_solver='picard'))
+
+    def test_every_solve_gets_the_target_surface_pressure(self, monkeypatch):
+        """The pad rule reads the target surface pressure of the configuration."""
+        pressures, real = [], zs.solve_structure
+
+        def solve(*args, **kwargs):
+            pressures.append(kwargs['surface_pressure'])
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(zs, 'solve_structure', solve)
+        _run(_cfg(outer_solver='picard', max_iterations_outer=1, target_surface_pressure=2e5))
+        assert len(pressures) > 2 and set(pressures) == {2e5}
 
 
 @pytest.mark.unit
