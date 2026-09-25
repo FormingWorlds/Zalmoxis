@@ -235,6 +235,7 @@ class TestInteriorStopFails:
             return sol
 
         monkeypatch.setattr(sm, 'solve_ivp', spy)
+        monkeypatch.setattr(sm, 'coupled_odes', healthy)
         monkeypatch.setattr(sm, 'any_component_is_tdep', lambda _: False)
         m, g, p = sm.solve_structure(
             {}, 0.0, 0.0, radii, 0.5, 1e-10, 1e-12, np.inf, {}, {}, [0.0, 0.0, p_c], None, None

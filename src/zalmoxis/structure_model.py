@@ -392,6 +392,11 @@ def solve_structure(
             volatile_profile=volatile_profile,
         )
 
+    # scipy takes a NaN first step, and then never ends, if the RHS fails at the centre.
+    if not np.all(np.isfinite(_ode_rhs(radii[0], y0))):
+        empty = np.empty(0)
+        return pad_after_stop(radii, empty, empty, empty, y0, y0[2], surface_pressure)
+
     if uses_Tdep:
         # Split the radial grid into two parts for better handling of large step sizes
         radial_split_index = max(

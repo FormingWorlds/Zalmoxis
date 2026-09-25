@@ -195,8 +195,8 @@ class TestFailedPressureSolve:
 class TestNonFiniteDensity:
     """An EOS failure inside the planet stops the integration and fails the solve."""
 
-    def test_nan_density_band_raises_at_the_band(self, monkeypatch):
-        """The density is NaN for 2.5e6 m < r < 3.5e6 m."""
+    @staticmethod
+    def _nan_band(monkeypatch, lo, hi):
         state, real_odes, real_rho = {'r': 0.0}, sm.coupled_odes, sm.calculate_mixed_density
 
         def odes(radius, y, *args, **kwargs):
@@ -204,10 +204,14 @@ class TestNonFiniteDensity:
             return real_odes(radius, y, *args, **kwargs)
 
         def rho(*args, **kwargs):
-            return np.nan if 2.5e6 < state['r'] < 3.5e6 else real_rho(*args, **kwargs)
+            return np.nan if lo < state['r'] < hi else real_rho(*args, **kwargs)
 
         monkeypatch.setattr(sm, 'coupled_odes', odes)
         monkeypatch.setattr(sm, 'calculate_mixed_density', rho)
+
+    def test_nan_density_band_raises_at_the_band(self, monkeypatch):
+        """The density is NaN for 2.5e6 m < r < 3.5e6 m."""
+        self._nan_band(monkeypatch, 2.5e6, 3.5e6)
         with pytest.raises(StructureSolveError, match='stop between r = ') as exc:
             _run(_cfg(outer_solver='picard'))
         lo, hi = (
@@ -215,6 +219,13 @@ class TestNonFiniteDensity:
             for v in re.findall(r'r = ([0-9.e+]+) and ([0-9.e+]+) m', str(exc.value))[0]
         )
         assert lo < 2.5e6 < hi
+
+    @pytest.mark.timeout(60)
+    def test_nan_density_at_the_centre_raises(self, monkeypatch):
+        """A NaN density at r = 0 fails the solve at the centre instead of a NaN first step."""
+        self._nan_band(monkeypatch, -1.0, 1e5)
+        with pytest.raises(StructureSolveError, match='stop at r = 0'):
+            _run(_cfg(outer_solver='picard'))
 
 
 def _synthetic_jax_world(monkeypatch):
