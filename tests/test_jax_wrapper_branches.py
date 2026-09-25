@@ -578,9 +578,34 @@ class TestCacheKeyIdentity:
                 return self.value
 
         monkeypatch.setattr(jw, '_MELT_TABLE_CACHE', {})
+        tabulated, tabulate = [], jw._tabulate_adiabat
+        monkeypatch.setattr(
+            jw, '_tabulate_adiabat', lambda *a: tabulated.append(1) or tabulate(*a)
+        )
         _, _, cache = _common_fixtures()
         t, sol, liq = Curve(1000.0), Curve(2000.0), Curve(3000.0)
+        tables = []
         for _ in range(2):
             got = self._solve_captured(cache, t, sol, liq)
             np.testing.assert_array_equal(got['T_values'], 1000.0)
+            np.testing.assert_array_equal(got['log_T_sol_table'], np.log10(2000.0))
             np.testing.assert_array_equal(got['log_T_liq_table'], np.log10(3000.0))
+            tables.append(got['log_T_liq_table'])
+        assert len(tabulated) == 1 and tables[1] is tables[0]
+
+    def test_cached_functions_stay_available(self, monkeypatch):
+        """With real ids, earlier functions keep their entries while new ones are added."""
+        monkeypatch.setattr(jw, '_MELT_TABLE_CACHE', {})
+        tabulated, tabulate = [], jw._tabulate_adiabat
+        monkeypatch.setattr(
+            jw, '_tabulate_adiabat', lambda *a: tabulated.append(1) or tabulate(*a)
+        )
+        _, _, cache = _common_fixtures()
+        funcs = [self._make(t) for t in (1000.0, 1001.0, 1002.0)]
+        curves = [(self._make(2000.0 + k), self._make(3000.0 + k)) for k in range(3)]
+        tables = []
+        for f, (sol, liq) in zip(funcs + funcs[:1], curves + curves[:1]):
+            got = self._solve_captured(cache, f, sol, liq)
+            np.testing.assert_array_equal(got['T_values'], f())
+            tables.append(got['log_T_liq_table'])
+        assert len(tabulated) == 3 and tables[3] is tables[0]

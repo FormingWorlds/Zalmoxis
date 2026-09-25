@@ -45,8 +45,8 @@ _PROFILE = bool(_os.environ.get('ZALMOXIS_JAX_PROFILE'))
 _PHASE_TIMES = {'cache_extract': 0.0, 'adiabat_tab': 0.0, 'jit_solve': 0.0, 'other': 0.0}
 
 # Mantle melting-curve tables on a shared log-P axis. This cache and the adiabat cache
-# are keyed by id and store the functions with the tables: a hit needs the same objects,
-# and the stored reference keeps a cached id from passing to another function.
+# (in interpolation_cache) key by id and keep the functions with the tables; an entry is
+# used only for the same objects, and the kept reference stops its id being reused.
 _MELT_TABLE_CACHE: dict = {}
 
 
