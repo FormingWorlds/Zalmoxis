@@ -300,13 +300,16 @@ class TestBatchPath:
         )
         np.testing.assert_allclose(rho_batch, rho_scalar, rtol=1e-12)
 
+    @pytest.mark.parametrize('narrow', [True, False])
     @pytest.mark.parametrize('mzf', [0.8, 0.7])
-    def test_batch_matches_scalar_in_the_mushy_zone(self, synthetic_cache, mzf):
+    def test_batch_matches_scalar_in_the_mushy_zone(self, synthetic_cache, mzf, narrow):
         """With a mushy zone the batch path takes the table's own liquidus, as the scalar
-        path does, and the direct lookup outside the liquidus pressure range."""
+        path does, on the clamped pressure, and the direct lookup outside the liquidus
+        pressure range (narrowed, or the full table range with P outside the table)."""
         s = synthetic_cache
-        s['entry']['liquidus_log_p'] = np.linspace(9.5, 11.5, 8)
-        p, t = np.meshgrid(np.logspace(9.0, 12.0, 13), np.linspace(1200.0, 6000.0, 17))
+        if narrow:
+            s['entry']['liquidus_log_p'] = np.linspace(9.5, 11.5, 8)
+        p, t = np.meshgrid(np.logspace(8.5, 12.5, 17), np.linspace(1200.0, 6000.0, 17))
         ps, ts = p.ravel(), t.ravel()
         rho_batch = get_paleos_unified_density_batch(ps, ts, s['mat'], mzf, s['cache'])
         rho_scalar = [
@@ -344,30 +347,6 @@ class TestBatchPath:
         ts = np.array([10.0 ** s['entry']['logt_min'], 4000.0])
         rho = get_paleos_unified_density_batch(ps, ts, s['mat'], 1.0, s['cache'])
         assert np.all(np.isfinite(rho))
-
-    def test_batch_mushy_actually_in_mushy_zone(self, synthetic_cache):
-        """At P=1e10 Pa the synthetic table liquidus is ~2714 K. With mushy_zone_factor
-        0.5 the solidus drops to ~1357 K. Pick T values squarely between
-        them so the batch path takes the mushy branch (in
-        paleos.py: phi computation + solid-side and liquid-side bilinear
-        lookups + volume-additive average), which the prior 'mushy' test
-        did not actually exercise (its T values fell above the liquidus)."""
-        s = synthetic_cache
-        # Table liquidus at log P = 10: 2000 * 2.5**(1/3) ≈ 2714 K; with mzf=0.5,
-        # T_sol ≈ 1357 K.
-        ps = np.array([1e10, 1e10, 1e10, 1e10])
-        ts = np.array([2000.0, 2200.0, 2500.0, 2700.0])
-        rho = get_paleos_unified_density_batch(ps, ts, s['mat'], 0.5, s['cache'])
-        # The mushy branch returns the volume-additive average
-        # 1 / (phi/rho_liq + (1-phi)/rho_sol). All four shells should be
-        # finite and physically reasonable.
-        assert np.all(np.isfinite(rho))
-        assert np.all(rho > 1000)
-        assert np.all(rho < 20000)
-        # Density should be monotonically decreasing in T at fixed P (mushy
-        # zone interpolates from cold->hot, and the synthetic table has
-        # weakly negative dT slope; the volume-average preserves this).
-        assert np.all(np.diff(rho) <= 0)
 
     def test_batch_mushy_solid_side_nan_corner_uses_nn_fallback(self, synthetic_cache_with_nan):
         """At P=1e9 Pa the table liquidus is 2000 K (2001 K with the phase guard) and

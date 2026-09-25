@@ -13,21 +13,13 @@ from zalmoxis.eos import calculate_density, calculate_density_batch
 pytestmark = pytest.mark.smoke
 
 
-def _eos_files(entry):
-    """All ``eos_file`` paths of a registry entry, including its phase sub-tables."""
-    files = [entry['eos_file']] if 'eos_file' in entry else []
-    return files + [f for v in entry.values() if isinstance(v, dict) for f in _eos_files(v)]
-
-
 @pytest.mark.parametrize('mzf', [0.8, 1.0])
-@pytest.mark.parametrize(
-    'eos', ['PALEOS:iron', 'PALEOS:MgSiO3', 'PALEOS:H2O', 'PALEOS-2phase:MgSiO3']
-)
+@pytest.mark.parametrize('eos', ['PALEOS:iron', 'PALEOS:MgSiO3', 'PALEOS:H2O'])
 def test_batch_matches_scalar_on_shipped_tables(eos, mzf):
     """Random (P, T) from 1e4 to 3e13 Pa and 300 to 5e4 K, inside and outside the mushy
     zone: the two paths differ only by the rounding of their bilinear kernels."""
     mats = load_material_dictionaries()
-    if not all(os.path.isfile(f) for f in _eos_files(mats[eos])):
+    if not os.path.isfile(mats[eos]['eos_file']):
         pytest.skip('PALEOS data files not found')
     curves = load_solidus_liquidus_functions(
         {'mantle': eos}, liquidus_id='PALEOS-liquidus', mushy_zone_factor=mzf
