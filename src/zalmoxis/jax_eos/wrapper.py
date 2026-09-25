@@ -63,7 +63,9 @@ def _extract_sub_args(cached, prefix):
     the node, the value numpy's lookup falls back to there. Inside a cell with
     a filled corner JAX interpolates bilinearly where numpy can return the
     nearest valid node, so the two agree at the nodes and can differ inside such
-    cells.
+    cells: by up to about 50 % on the shipped PALEOS MgSiO3 tables (near
+    log P 8.5, log T 3.69, which hot surfaces reach) and 2 % on the 2-phase
+    solid table.
     """
     cache_key = f'_jax_sub_args::{prefix}'
     cached_args = cached.get(cache_key)
