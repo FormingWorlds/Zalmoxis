@@ -254,9 +254,8 @@ class TestNonFiniteDensity:
             return rho
 
         monkeypatch.setattr(zs, 'calculate_mixed_density_batch', batch)
-        cfg = _cfg(outer_solver='picard', relative_tolerance=1e-6, absolute_tolerance=1e-7)
         with pytest.raises(StructureSolveError, match='density not finite at r = '):
-            _run(cfg)
+            _run(_cfg(outer_solver='picard', relative_tolerance=1e-6, absolute_tolerance=1e-7))
 
     @pytest.mark.timeout(60)
     def test_nan_density_at_the_centre_raises(self, monkeypatch):

@@ -276,19 +276,22 @@ class TestInteriorStopFails:
         assert all(np.array_equal(a, b) for a, b in zip(out, ref))
 
     def test_each_part_of_a_tdep_solve_has_its_own_budget(self, monkeypatch):
-        """One rejected NaN step in each part of the split solve (4 non-finite results
-        each: the later stages see a NaN state) passes with a limit of 5."""
+        """One rejected NaN step in each part of the split solve passes with a limit of 2.
+        As in coupled_odes, a NaN stage state gives zeros, so each part counts one."""
         ref = self._solve(monkeypatch, (2.0, 0.0), True)[2:]
-        base, shots = sm.coupled_odes, [0.2 * R_OUT, 0.6 * R_OUT]
+        base, shots = _band_rhs(2.0 * R_OUT, 2.0 * R_OUT), [0.2 * R_OUT, 0.6 * R_OUT]
 
         def rhs(r, y, *args, **kwargs):
+            if np.isnan(y[2]):
+                return np.zeros(3)
             if shots and r > shots[0]:
                 shots.pop(0)
                 return np.full(3, np.nan)
             return base(r, y)
 
-        monkeypatch.setattr(sm, 'MAX_NONFINITE_RHS', 5)
+        monkeypatch.setattr(sm, 'MAX_NONFINITE_RHS', 2)
         monkeypatch.setattr(sm, 'coupled_odes', rhs)
+        monkeypatch.setattr(sm, 'any_component_is_tdep', lambda _: True)
         radii = np.linspace(0.0, R_OUT, N)
         out = sm.solve_structure(
             {},
