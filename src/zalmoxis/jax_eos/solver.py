@@ -82,7 +82,9 @@ def _build_diffeqsolve_jit(
 
     @jax.jit
     def _solve(radii, y0, rtol, atol, rhs_args):
-        controller = diffrax.PIDController(rtol=rtol, atol=atol)
+        controller = diffrax.PIDController(
+            rtol=rtol, atol=atol, dtmin=1e-12 * (radii[-1] - radii[0]), force_dtmin=False
+        )
         saveat = diffrax.SaveAt(subs=[diffrax.SubSaveAt(ts=radii), diffrax.SubSaveAt(t1=True)])
         sol = diffrax.diffeqsolve(
             term,
@@ -156,6 +158,13 @@ def solve_structure_jax(
     y_end : array of shape (3,)
         State where the integration stopped: at the pressure-zero event,
         at ``radii[-1]``, or at the last accepted step if the solve failed.
+
+    Notes
+    -----
+    A step size below ``1e-12`` of the grid span (e.g. after NaN derivatives
+    from a failed EOS lookup) ends the solve (``force_dtmin=False``,
+    ``throw=False``): ``y_end`` is the last accepted state and the later save
+    points are not finite.
     """
     solve = _get_solve(T_axis_is_radius, has_volatile, mantle_is_unified)
     return solve(

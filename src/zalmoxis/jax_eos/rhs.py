@@ -407,13 +407,9 @@ def coupled_odes_jax(
     # Layer selection
     rho = jnp.where(mass < cmb_mass, rho_core, rho_mantle)
 
-    # Match numpy's coupled_odes: return zeros when the EOS produces
-    # a non-finite density (out-of-table T clamp, PALEOS edge case).
-    # This mirrors structure_model.coupled_odes line 148 and is what
-    # the test_jax_rhs_parity test filters out (both_nonzero mask).
-    # We do NOT freeze on pressure <= 0 here because that would prevent
-    # diffrax.Event from seeing the pressure-zero downcrossing;
-    # event-based termination handles P<=0 instead.
+    # As in structure_model.coupled_odes, a non-finite density at P > 0 gives NaN
+    # derivatives, which stop the solve; at P <= 0 it gives zeros, and the
+    # pressure-zero event (not a freeze on P) ends the integration.
     rho_finite = jnp.isfinite(rho)
     rho_safe = jnp.where(rho_finite, rho, 1.0)
 
@@ -425,5 +421,5 @@ def coupled_odes_jax(
     dgdr = jnp.where(radius > 0, dgdr_gen, dgdr_r0)
     dPdr = -rho_safe * gravity
 
-    zero3 = jnp.zeros(3, dtype=dMdr.dtype)
-    return jnp.where(rho_finite, jnp.stack([dMdr, dgdr, dPdr]), zero3)
+    failed = jnp.where(pressure > 0.0, jnp.nan, 0.0) * jnp.ones(3, dtype=dMdr.dtype)
+    return jnp.where(rho_finite, jnp.stack([dMdr, dgdr, dPdr]), failed)

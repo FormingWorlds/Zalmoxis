@@ -291,6 +291,18 @@ class TestPadAfterStop:
         else:
             assert np.all(np.isnan(m[3:])) and np.all(np.isnan(p[3:]))
 
+    def test_stop_before_the_first_node_names_the_centre(self, caplog):
+        with caplog.at_level('WARNING', logger='zalmoxis.structure_model'):
+            m, _, p = sm.pad_after_stop(
+                np.linspace(0.0, 1.0, 5),
+                np.ones(0),
+                np.ones(0),
+                np.ones(0),
+                [0.0, 0.0, 5e9],
+                1e11,
+            )
+        assert 'at r = 0;' in caplog.text and np.all(np.isnan(p)) and len(m) == 5
+
     @pytest.mark.parametrize('y_stop', [[np.nan, 3.0, 0.0], [2.0, np.inf, 0.0]])
     def test_non_finite_stop_state_fails(self, y_stop):
         """A stop at zero pressure with a non-finite mass or gravity is a failed solve."""

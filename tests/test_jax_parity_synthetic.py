@@ -294,3 +294,20 @@ def test_rhs_parity_synthetic_unified_wet_and_dry():
             np.testing.assert_allclose(jv, nv, rtol=1e-10, atol=0.0)
             n_compared += 1
         assert n_compared == 60
+
+
+def test_rhs_non_finite_density_gives_nan_above_zero_pressure():
+    """A non-finite density gives NaN derivatives at P > 0 (the solve stops there) and
+    zeros at P <= 0 (the pressure-zero event ends the integration)."""
+    from zalmoxis.jax_eos.rhs import coupled_odes_jax
+
+    world = _synthetic_world()
+    args = dict(world['jax_args'])
+    args['core_density_grid'] = np.full_like(args['core_density_grid'], np.nan)
+    for pressure, expected in ((1e11, 'nan'), (0.0, 'zero'), (-1e3, 'zero')):
+        y = np.array([0.5 * world['cmb_mass'], 5.0, pressure])  # inside the core
+        dy = np.asarray(coupled_odes_jax(2e6, y, mantle_is_unified=True, **args))
+        if expected == 'nan':
+            assert np.all(np.isnan(dy)), (pressure, dy)
+        else:
+            assert np.all(dy == 0.0), (pressure, dy)

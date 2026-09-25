@@ -9,12 +9,15 @@ instead of returning a result.
 from __future__ import annotations
 
 import os
+import re
+import time
 
 import numpy as np
 import pytest
 
 import zalmoxis
 import zalmoxis.solver as zs
+import zalmoxis.structure_model as sm
 from zalmoxis.config import load_material_dictionaries
 from zalmoxis.constants import earth_mass
 from zalmoxis.solver import StructureSolveError
@@ -186,6 +189,101 @@ class TestFailedPressureSolve:
         monkeypatch.setattr(zs, 'solve_structure', solve)
         with pytest.raises(StructureSolveError, match='solve at the Brent root'):
             _run(_cfg(outer_solver=outer_solver, max_iterations_outer=1))
+
+
+@pytest.mark.unit
+class TestNonFiniteDensity:
+    """An EOS failure inside the planet stops the integration and fails the solve."""
+
+    def test_nan_density_band_raises_at_the_band(self, monkeypatch):
+        """The density is NaN for 2.5e6 m < r < 3.5e6 m."""
+        state, real_odes, real_rho = {'r': 0.0}, sm.coupled_odes, sm.calculate_mixed_density
+
+        def odes(radius, y, *args, **kwargs):
+            state['r'] = radius
+            return real_odes(radius, y, *args, **kwargs)
+
+        def rho(*args, **kwargs):
+            return np.nan if 2.5e6 < state['r'] < 3.5e6 else real_rho(*args, **kwargs)
+
+        monkeypatch.setattr(sm, 'coupled_odes', odes)
+        monkeypatch.setattr(sm, 'calculate_mixed_density', rho)
+        with pytest.raises(StructureSolveError, match='stop between r = ') as exc:
+            _run(_cfg(outer_solver='picard'))
+        lo, hi = (
+            float(v)
+            for v in re.findall(r'r = ([0-9.e+]+) and ([0-9.e+]+) m', str(exc.value))[0]
+        )
+        assert lo < 2.5e6 < hi
+
+
+def _synthetic_jax_world(monkeypatch):
+    """Synthetic PALEOS-format tables (no data files) with NaN density in the core-table
+    row at log P = 9.86, which covers 2.7e9 to 1.95e10 Pa."""
+    pytest.importorskip('jax')
+    from tests.test_jax_parity_synthetic import _synthetic_world
+
+    world = _synthetic_world()
+    core = dict(world['interp_cache']['/synthetic/core.dat'])
+    grid = np.array(core['density_grid'], dtype=float)
+    grid[(core['unique_log_p'] > 9.8) & (core['unique_log_p'] < 9.9)] = np.nan
+    core['density_grid'] = grid
+    world['interp_cache']['/synthetic/core.dat'] = core
+    world['jax_args']['core_density_grid'] = grid
+    monkeypatch.setattr(zs, '_interpolation_cache', dict(world['interp_cache']))
+    return world
+
+
+@pytest.mark.smoke
+class TestNonFiniteDensityJax:
+    """The JAX path: an EOS failure inside the planet ends the solve at once and fails it."""
+
+    def test_nan_table_band_ends_the_jax_solve(self, monkeypatch):
+        """The solve stops where P enters the band, without running to max_steps."""
+        import zalmoxis.jax_eos.solver as js
+
+        world = _synthetic_jax_world(monkeypatch)
+        radii = np.linspace(0.0, 6.4e6, 150)
+
+        def solve():
+            return js.solve_structure_jax(
+                radii,
+                [0.0, 0.0, 3e11],
+                rtol=1e-8,
+                atol=1e-10,
+                mantle_is_unified=True,
+                **world['jax_args'],
+            )
+
+        solve()  # compile
+        t0 = time.perf_counter()
+        ys, y_end = (np.asarray(a) for a in solve())
+        elapsed = time.perf_counter() - t0
+        n = int(np.argmax(~np.isfinite(ys[:, 2])))
+        assert n > 0 and np.all(np.isfinite(ys[:n])) and not np.any(np.isfinite(ys[n:, 2]))
+        assert np.all(np.isfinite(y_end)) and 1.9e10 < y_end[2] < ys[n - 1, 2]
+        assert elapsed < 2.0, elapsed
+
+    def test_nan_table_band_raises_through_main(self, monkeypatch):
+        import zalmoxis.jax_eos.wrapper as jw
+
+        world = _synthetic_jax_world(monkeypatch)
+        calls, real = [], jw.solve_structure_via_jax
+
+        def spy(*args, **kwargs):
+            calls.append(1)
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(jw, 'solve_structure_via_jax', spy)
+        cfg = _cfg(
+            outer_solver='picard',
+            use_jax=True,
+            relative_tolerance=1e-8,
+            layer_eos_config={'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
+        )
+        with pytest.raises(StructureSolveError, match='stop between r = '):
+            zs.main(cfg, world['mats'], None, os.path.join(ROOT, 'input'))
+        assert calls
 
 
 @pytest.mark.smoke

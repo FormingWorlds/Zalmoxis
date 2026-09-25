@@ -64,13 +64,13 @@ def pad_after_stop(radii, mass, gravity, pressure, y_stop, p_center, p_surface=0
     ):
         fill = (m_stop, g_stop, 0.0)
     else:
+        where = f'between r = {radii[n - 1]:.6e} and {radii[n]:.6e} m' if n else 'at r = 0'
         logger.warning(
-            'Structure integration stopped at P = %.3e Pa (P_c = %.3e Pa), between '
-            'r = %.6e and %.6e m; treating the solve as failed.',
+            'Structure integration stopped at P = %.3e Pa (P_c = %.3e Pa), %s; '
+            'treating the solve as failed.',
             p_stop,
             p_center,
-            radii[n - 1],
-            radii[n],
+            where,
         )
         fill = (np.nan, np.nan, np.nan)
     return tuple(
@@ -213,12 +213,10 @@ def coupled_odes(
         volatile_profile=profile_for_shell,
     )
 
-    # Return zero derivatives for invalid density.  The ODE state freezes
-    # and the terminal event stops integration when pressure crosses zero.
-    # This handles EOS lookup failures (None return) and NaN densities
-    # from out-of-bounds table queries.
+    # An EOS failure (None or non-finite density) at P > 0 stops the integration:
+    # NaN derivatives make the step fail, and the stop is a failed solve.
     if current_density is None or not np.isfinite(current_density):
-        return [0.0, 0.0, 0.0]
+        return [np.nan, np.nan, np.nan]
 
     # Define the ODEs for mass, gravity and pressure
     dMdr = 4 * np.pi * radius**2 * current_density
