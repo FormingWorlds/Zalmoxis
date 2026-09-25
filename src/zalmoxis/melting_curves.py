@@ -251,9 +251,8 @@ def paleos_liquidus(P):
     - P < 2.55 GPa: T = 1831 * (1 + P/4.6)^0.33  (Belonoshko+2005)
     - P >= 2.55 GPa: T = 6000 * (P/140)^0.26      (Fei+2021)
 
-    This is the melting curve used internally by the PALEOS unified EOS
-    tables. Using it for the mushy zone calculation ensures consistency
-    between the table's phase boundaries and the derived solidus.
+    It is the ``'PALEOS-liquidus'`` melting curve (2-phase PALEOS mantle); the
+    unified PALEOS lookups use each table's own extracted liquidus instead.
 
     Parameters
     ----------

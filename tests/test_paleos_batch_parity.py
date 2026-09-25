@@ -20,7 +20,9 @@ def _eos_files(entry):
 
 
 @pytest.mark.parametrize('mzf', [0.8, 1.0])
-@pytest.mark.parametrize('eos', ['PALEOS:iron', 'PALEOS:MgSiO3', 'PALEOS-2phase:MgSiO3'])
+@pytest.mark.parametrize(
+    'eos', ['PALEOS:iron', 'PALEOS:MgSiO3', 'PALEOS:H2O', 'PALEOS-2phase:MgSiO3']
+)
 def test_batch_matches_scalar_on_shipped_tables(eos, mzf):
     """Random (P, T) from 1e4 to 3e13 Pa and 300 to 5e4 K, inside and outside the mushy
     zone: the two paths differ only by the rounding of their bilinear kernels."""
@@ -39,4 +41,5 @@ def test_batch_matches_scalar_on_shipped_tables(eos, mzf):
         [calculate_density(p, mats, eos, t, sol, liq, cache, mzf) for p, t in zip(ps, ts)],
         dtype=float,
     )
+    assert np.isfinite(scalar).mean() > 0.99
     np.testing.assert_allclose(batch, scalar, rtol=1e-7)

@@ -319,12 +319,9 @@ class TestBatchPath:
         branch for shells that fall between the synthetic solidus/liquidus."""
 
         s = synthetic_cache
-        # Force PALEOS internal melting curve to drive the path. Our
-        # synthetic liquidus is monotonic 2000-5000 K; pick T values that
-        # straddle it.
+        # Table liquidus at log P = 10: about 2714 K; mzf 0.8 puts the solidus at 2171 K.
         ps = np.array([1e10, 1e10, 1e10])
-        # T_melt at log_p=10 is roughly 10**((log10(2000)+log10(5000))/2) ~ 3162 K
-        ts = np.array([1500.0, 3162.0, 6000.0])  # below / mushy / above
+        ts = np.array([1500.0, 2500.0, 6000.0])  # below / mushy / above
         rho = get_paleos_unified_density_batch(ps, ts, s['mat'], 0.8, s['cache'])
         assert np.all(np.isfinite(rho))
         # All three should be in a sensible range
@@ -343,7 +340,7 @@ class TestBatchPath:
     def test_batch_mushy_actually_in_mushy_zone(self, synthetic_cache):
         """At P=1e10 Pa the synthetic table liquidus is ~2714 K. With mushy_zone_factor
         0.5 the solidus drops to ~1357 K. Pick T values squarely between
-        them so the batch path takes the mushy branch (lines 322-357 in
+        them so the batch path takes the mushy branch (in
         paleos.py: phi computation + solid-side and liquid-side bilinear
         lookups + volume-additive average), which the prior 'mushy' test
         did not actually exercise (its T values fell above the liquidus)."""
@@ -378,15 +375,15 @@ class TestBatchPath:
 
     def test_batch_above_below_with_nan_recovery(self, synthetic_cache_with_nan):
         """When a shell is classified as above/below the mushy zone (not
-        mushy), the post-classification direct lookup at line 317 may still
-        land on a NaN cell; the NN fallback at line 319-323 must then
+        mushy), the post-classification direct lookup may still
+        land on a NaN cell; the NN fallback must then
         recover the density.
 
         At P=1e9 Pa with ``mushy_zone_factor=0.8``, T_sol = 1600 K. A query
         at T=900 K is below T_sol, classified as ``below``, and bypasses
         the mushy branch. After per-cell clamping log_t up to
         ``logt_valid_min[0]=3.0`` the bilinear lands on the (0, 0) NaN
-        corner; the NN fallback fires at line 319-323.
+        corner; the NN fallback fires.
         """
         s = synthetic_cache_with_nan
         ps = np.array([1e9])
@@ -398,7 +395,7 @@ class TestBatchPath:
         assert 1000 < rho[0] < 20000
 
     def test_batch_mushy_solid_and_liquid_side_nan_recovery(self):
-        """Both solid-side (line 339) and liquid-side (line 352) bilinear
+        """Both solid-side and liquid-side bilinear
         NaN fallbacks fire simultaneously when the T_sol and T_liq lookups
         each land on a bracket containing a NaN cell.
 
@@ -408,7 +405,7 @@ class TestBatchPath:
         unclamped query at log_t ≈ 3.398 brackets (2,2)-(3,3). NaN at
         (3, 2) sits inside the solid-side bracket; NaN at (3, 3) sits
         inside both the unclamped query bracket AND the liquid-side
-        bracket. One test therefore exercises lines 319, 339 and 352.
+        bracket. One test therefore exercises all three NN fallbacks.
         """
         cache = _build_cache()
         # log_p step is 3/7 ≈ 0.429, log_t step is 1/7 ≈ 0.143.
