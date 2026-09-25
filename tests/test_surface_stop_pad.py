@@ -22,8 +22,8 @@ N = 50
 
 
 def budget_solve_ivp(monkeypatch):
-    """Make a numpy structure solve that does not end fail after 1e5 right-hand sides,
-    with or without pytest-timeout."""
+    """Make a solve_ivp call of the numpy structure solve fail as an assertion after 1e5
+    right-hand sides instead of hanging, with or without pytest-timeout."""
     real = sm.solve_ivp
 
     def solve_ivp(fun, *args, **kwargs):
@@ -41,6 +41,7 @@ def budget_solve_ivp(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _call_budget(monkeypatch):
+    """Every test in this module runs with the right-hand-side budget."""
     budget_solve_ivp(monkeypatch)
 
 

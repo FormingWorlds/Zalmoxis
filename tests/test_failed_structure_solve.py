@@ -223,7 +223,7 @@ class TestNonFiniteDensity:
     @pytest.mark.timeout(60)
     def test_nan_band_just_below_the_centre_pressure_raises(self, monkeypatch):
         """NaN for P between P_c (1 - 1e-3) / 3 and P_c (1 - 1e-3) of each structure solve.
-        A solve that does not end fails after 1e5 right-hand sides."""
+        A hang fails as an assertion after 1e5 right-hand sides."""
         from tests.test_surface_stop_pad import budget_solve_ivp
 
         state, real_solve, real_rho = {}, zs.solve_structure, sm.calculate_mixed_density
