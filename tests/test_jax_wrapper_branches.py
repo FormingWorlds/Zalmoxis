@@ -539,6 +539,7 @@ class TestCacheKeyIdentity:
         """Every ``id`` in the wrapper module collides; each new temperature function
         still gets its own tabulation, and a repeated one reuses its entry."""
         monkeypatch.setattr(jw, 'id', lambda obj: 7, raising=False)
+        monkeypatch.setattr(jw, '_MELT_TABLE_CACHE', {})
         tabulated, tabulate = [], jw._tabulate_adiabat
         monkeypatch.setattr(
             jw, '_tabulate_adiabat', lambda *a: tabulated.append(1) or tabulate(*a)
@@ -557,8 +558,10 @@ class TestCacheKeyIdentity:
         _, _, cache = _common_fixtures()
         s1, s2 = self._make(2000.0), self._make(2100.0)
         l1, l2 = self._make(3000.0), self._make(3100.0)
+        tables = []
         for sol, liq in ((s1, l1), (s1, l2), (s2, l2), (s1, l1)):
             got = self._solve_captured(cache, _t_func, sol, liq)
             np.testing.assert_array_equal(got['log_T_sol_table'], np.log10(sol()))
             np.testing.assert_array_equal(got['log_T_liq_table'], np.log10(liq()))
-        assert len(jw._MELT_TABLE_CACHE) == 3
+            tables.append(got['log_T_liq_table'])
+        assert tables[3] is tables[0] and len(jw._MELT_TABLE_CACHE) == 3
