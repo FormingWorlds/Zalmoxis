@@ -62,10 +62,9 @@ def _extract_sub_args(cached, prefix):
     NaN nodes of the density grid are filled from ``cached['density_nn']`` at
     the node, the value numpy's lookup falls back to there. Inside a cell with
     a filled corner JAX interpolates bilinearly where numpy can return the
-    nearest valid node, so the two agree at the nodes and can differ inside such
-    cells: by up to 51 % on the shipped PALEOS MgSiO3 unified and 2-phase liquid
-    tables (near log P 8.5, log T 3.69, which hot surfaces reach) and 2.3 % on
-    the 2-phase solid table.
+    nearest valid node, so the two agree at the nodes. Inside a cell with a
+    filled corner the two can differ, by tens of percent on the shipped MgSiO3
+    tables near log P 8.5, log T 3.69, which hot surfaces reach.
     """
     cache_key = f'_jax_sub_args::{prefix}'
     cached_args = cached.get(cache_key)
