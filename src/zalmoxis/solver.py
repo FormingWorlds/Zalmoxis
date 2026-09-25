@@ -56,6 +56,24 @@ from .structure_model import solve_structure
 
 logger = logging.getLogger(__name__)
 
+
+class StructureSolveError(RuntimeError):
+    """A structure solve gave a non-finite profile, e.g. a stop deep inside the planet."""
+
+
+def _require_finite(radii, pressure, reason, outer_iter, inner_iter):
+    """Raise StructureSolveError unless the pressure profile on ``radii`` is finite."""
+    bad = ~np.isfinite(pressure)
+    if not bad.any():
+        return
+    i = int(np.argmax(bad))
+    stop = f'between r = {radii[i - 1]:.4e} and {radii[i]:.4e} m' if i > 0 else 'at r = 0'
+    raise StructureSolveError(
+        f'Structure solve failed at R = {radii[-1]:.6e} m (outer iteration {outer_iter}, '
+        f'inner {inner_iter}): {reason}; stop {stop}.'
+    )
+
+
 # Module-level EOS interpolation cache. Persists across multiple main() calls
 # within the same Python process (e.g., PROTEUS coupling loop), avoiding
 # repeated parsing of large PALEOS text tables (~3s per table per reload).
@@ -282,6 +300,12 @@ def main(
     dict
         Model results including radii, density, gravity, pressure, temperature,
         mass enclosed, convergence status, and timing.
+
+    Raises
+    ------
+    StructureSolveError
+        A structure solve gave a non-finite profile (a stop in the integration
+        deep inside the planet), with either outer solver.
     """
     # Validate outer-solver choice. Default is 'picard' (the damped
     # fixed-point loop inside `_solve()`); 'newton' dispatches to
@@ -523,35 +547,6 @@ def _brentq_fallback_outer(
         bookkeeping keys ``newton_n_iter``, ``newton_history``, and
         ``newton_used_brentq=True``.
     """
-    results = {}
-
-    def eval_M(R_query):
-        """``eval_M_at_R`` that keeps the result of every finite evaluation."""
-        M_q, res = eval_M_at_R(R_query)
-        if np.isfinite(M_q):
-            results[float(R_query)] = res
-        return M_q, res
-
-    def best_seen():
-        """Result of the best finite evaluation, marked with its mass error."""
-        finite = [h for h in history if np.isfinite(h[1])]
-        best_rel = float('nan')
-        result = dict(last_result) if last_result else {}
-        if finite:
-            best_R, _, best_rel = min(finite, key=lambda h: h[2])
-            res = results.get(float(best_R))
-            result = dict(res if res is not None else eval_M_at_R(best_R)[1])
-        result['converged'] = bool(best_rel < tol)
-        result['converged_mass'] = bool(best_rel < tol)
-        result['best_mass_error'] = float(best_rel)
-        result['total_time'] = time.time() - start_time
-        result['newton_n_iter'] = (
-            int(n_newton_iter) if n_newton_iter is not None else len(history)
-        )
-        result['newton_history'] = history
-        result['newton_used_brentq'] = True
-        return result
-
     # Step 1: try to reuse Newton history.
     R_lo, R_hi = None, None
     if len(history) >= 2:
@@ -585,20 +580,10 @@ def _brentq_fallback_outer(
             R_min,
             R_max,
         )
-        M_at_current, _ = eval_M(R_current)
-        if not np.isfinite(M_at_current):
-            if not history:
-                raise RuntimeError(
-                    f'Brentq fall-back: the pressure solve found no root at R={R_current:.4e} '
-                    'and no other radius has a mass. Cannot recover.'
-                )
-            R_failed = R_current
-            R_current, M_at_current, _ = min(history, key=lambda h: h[2])
-            logger.warning(
-                'Brentq: the pressure solve found no root at R=%.4e; sweeping from the best '
-                'evaluated R=%.4e instead.',
-                R_failed,
-                R_current,
+        M_at_current, _ = eval_M_at_R(R_current)
+        if not np.isfinite(M_at_current):  # pragma: no cover - cannot recover; defensive
+            raise RuntimeError(
+                f'Brentq fall-back: M(R={R_current:.4e}) is not finite. Cannot recover.'
             )
         f0 = M_at_current - M_target
         history.append((R_current, M_at_current, abs(f0) / M_target))
@@ -615,7 +600,7 @@ def _brentq_fallback_outer(
             # M too large -> shrink R.
             R_test = R_current * 0.5
             while R_test > R_min:
-                M_test, _ = eval_M(R_test)
+                M_test, _ = eval_M_at_R(R_test)
                 if not np.isfinite(M_test):
                     R_test *= 0.5
                     continue
@@ -628,7 +613,7 @@ def _brentq_fallback_outer(
             # M too small -> grow R.
             R_test = R_current * 1.5
             while R_test < R_max:
-                M_test, _ = eval_M(R_test)
+                M_test, _ = eval_M_at_R(R_test)
                 if not np.isfinite(M_test):
                     R_test *= 1.3
                     continue
@@ -639,15 +624,27 @@ def _brentq_fallback_outer(
                 R_test *= 1.3
 
     if R_lo is None or R_hi is None:  # pragma: no cover - exhausted physical bounds; defensive
-        result = best_seen()
+        best_idx = int(np.argmin([h[2] for h in history])) if history else 0
+        best_R, best_M, best_rel = history[best_idx]
         logger.warning(
-            'Brentq: no sign-flipping bracket in [%.2e, %.2e]; returning the best '
-            'evaluation (mass error %.3e, converged=False).',
+            'Brentq: no sign-flipping bracket in [%.2e, %.2e]; returning '
+            'best-seen R=%.4e M=%.4e rel=%.3e (converged=False).',
             R_min,
             R_max,
-            result['best_mass_error'],
+            best_R,
+            best_M,
+            best_rel,
         )
+        result = dict(last_result) if last_result else {}
         result['converged'] = False
+        result['converged_mass'] = bool(best_rel < tol)
+        result['best_mass_error'] = float(best_rel)
+        result['total_time'] = time.time() - start_time
+        result['newton_n_iter'] = (
+            int(n_newton_iter) if n_newton_iter is not None else len(history)
+        )
+        result['newton_history'] = history
+        result['newton_used_brentq'] = True
         return result
 
     # Step 3: brentq.
@@ -659,7 +656,19 @@ def _brentq_fallback_outer(
             'Brentq: bracket width %.3e m too narrow; returning best-seen (converged=False).',
             R_hi - R_lo,
         )
-        return best_seen()
+        best_idx = int(np.argmin([h[2] for h in history])) if history else 0
+        best_R, best_M, best_rel = history[best_idx]
+        result = dict(last_result) if last_result else {}
+        result['converged'] = bool(best_rel < tol)
+        result['converged_mass'] = bool(best_rel < tol)
+        result['best_mass_error'] = float(best_rel)
+        result['total_time'] = time.time() - start_time
+        result['newton_n_iter'] = (
+            int(n_newton_iter) if n_newton_iter is not None else len(history)
+        )
+        result['newton_history'] = history
+        result['newton_used_brentq'] = True
+        return result
 
     # Estimate |dM/dR| from bracket endpoints to set xtol such that
     # the returned R yields M within `tol` of M_target. Lookup is by
@@ -689,7 +698,7 @@ def _brentq_fallback_outer(
 
     # Closure for brentq: side-effects history.
     def _f(R_query):
-        M_q, _ = eval_M(R_query)
+        M_q, _ = eval_M_at_R(R_query)
         history.append((float(R_query), float(M_q), abs(M_q - M_target) / M_target))
         return float(M_q - M_target)
 
@@ -700,6 +709,8 @@ def _brentq_fallback_outer(
     # rather than letting the exception propagate.
     try:
         R_root = brentq(_f, R_lo, R_hi, xtol=xtol_target, rtol=tol)
+    except StructureSolveError:
+        raise
     except (
         ValueError,
         RuntimeError,
@@ -709,7 +720,19 @@ def _brentq_fallback_outer(
             type(exc).__name__,
             exc,
         )
-        return best_seen()
+        best_idx = int(np.argmin([h[2] for h in history])) if history else 0
+        best_R, best_M, best_rel = history[best_idx]
+        result = dict(last_result) if last_result else {}
+        result['converged'] = bool(best_rel < tol)
+        result['converged_mass'] = bool(best_rel < tol)
+        result['best_mass_error'] = float(best_rel)
+        result['total_time'] = time.time() - start_time
+        result['newton_n_iter'] = (
+            int(n_newton_iter) if n_newton_iter is not None else len(history)
+        )
+        result['newton_history'] = history
+        result['newton_used_brentq'] = True
+        return result
 
     # Final eval at the converged root for the returned profiles.
     M_root, last_result = eval_M_at_R(R_root)
@@ -903,8 +926,6 @@ def _solve_newton_outer(
         )
         mass_arr = np.asarray(sub_result.get('mass_enclosed', [np.nan]))
         M_val = float(mass_arr[-1]) if mass_arr.size > 0 else float('nan')
-        if sub_result.get('structure_failed'):
-            M_val = float('nan')
         return M_val, sub_result
 
     # ----- Newton iteration -----
@@ -923,7 +944,9 @@ def _solve_newton_outer(
 
     for k in range(max_iter):
         M_k, last_result = _M_at_R(R)
-        if not np.isfinite(M_k):
+        if not np.isfinite(
+            M_k
+        ):  # pragma: no cover - non-finite M(R) -> brentq fallback; defensive
             logger.warning(
                 'Newton iter %d: M(R=%.4e) not finite; falling back to brentq.',
                 k,
@@ -933,7 +956,7 @@ def _solve_newton_outer(
                 R,
                 M_target,
                 _M_at_R,
-                history + side_evals,
+                history,
                 R_min=R_min,
                 R_max=R_max,
                 tol=tol,
@@ -1145,7 +1168,6 @@ def _solve(
     converged_pressure = False
     converged_density = False
     converged_mass = False
-    structure_failed = True  # the last pressure solve found no root
 
     # Unpack physics parameters (required)
     planet_mass = config_params['planet_mass']
@@ -1345,20 +1367,6 @@ def _solve(
     # Outer-loop oscillation tracking (local to this call, not function-level).
     best_mass_error = float('inf')
     best_profiles = None
-
-    def _restored_best():
-        """Writable copies of the best profiles (JAX results can be read-only views)."""
-        b = best_profiles
-        copy = lambda a: None if a is None else np.array(a)  # noqa: E731
-        return (
-            copy(b['radii']),
-            copy(b['density']),
-            copy(b['gravity']),
-            copy(b['pressure']),
-            copy(b['mass_enclosed']),
-            temperatures if b['temperatures'] is None else copy(b['temperatures']),
-        )
-
     oscillation_count = 0
 
     # Initialize arrays to safe defaults. These are overwritten on the
@@ -1377,7 +1385,6 @@ def _solve(
         # a previous outer iteration masking failure in the current one).
         converged_pressure = False
         converged_density = False
-        structure_failed = True
 
         # Wall-clock timeout check
         if time.time() - wall_start > wall_timeout:
@@ -1390,10 +1397,20 @@ def _solve(
             )
             if best_profiles is not None:
                 converged_mass = best_mass_error < 3 * tolerance_outer
-                radii, density, gravity, pressure, mass_enclosed, temperatures = (
-                    _restored_best()
-                )
-                structure_failed = False
+                # Fresh writable copies: `pressure` / `mass_enclosed`
+                # carry over from the previous outer iter and may be
+                # read-only views of JAX buffers (jax_eos/wrapper.py
+                # returns np.asarray(...) for speed; the host-device
+                # sync penalty of a writable np.array on every solve
+                # is 1 ms/call ~ 88 s/main() in coupled PROTEUS).
+                # Converting only on the rare timeout path keeps the
+                # hot loop fast.
+                radii = np.array(best_profiles['radii'])
+                density = np.array(best_profiles['density'])
+                pressure = np.array(best_profiles['pressure'])
+                mass_enclosed = np.array(best_profiles['mass_enclosed'])
+                if best_profiles['temperatures'] is not None:
+                    temperatures = np.array(best_profiles['temperatures'])
             break
 
         radii = np.linspace(0, radius_guess, num_layers)
@@ -1690,11 +1707,9 @@ def _solve(
                     create_pressure_density_files(
                         outer_iter, inner_iter, _state['n_evals'], radii, p, density
                     )
-                # Only a finite profile can stand in for a failed bracket.
-                if np.all(np.isfinite(m)) and np.all(np.isfinite(p)):
-                    _state['mass_enclosed'] = m
-                    _state['gravity'] = g
-                    _state['pressure'] = p
+                _state['mass_enclosed'] = m
+                _state['gravity'] = g
+                _state['pressure'] = p
                 _state['n_evals'] += 1
 
                 # Early termination: pressure reached zero before the
@@ -1769,7 +1784,7 @@ def _solve(
                 # Re-run solve_structure at the exact root to get clean profiles
                 # (brentq may have evaluated _state at a slightly different P)
                 y0_root = [0, 0, p_solution]
-                m_root, g_root, p_root = solve_structure(
+                mass_enclosed, gravity, pressure = solve_structure(
                     layer_mixtures,
                     cmb_mass,
                     core_mantle_mass,
@@ -1793,13 +1808,14 @@ def _solve(
                     volatile_profile=volatile_profile,
                     surface_pressure=target_surface_pressure,
                 )
+                _require_finite(
+                    radii,
+                    pressure,
+                    f'solve at the Brent root P_c = {p_solution:.3e} Pa not finite',
+                    outer_iter,
+                    inner_iter,
+                )
 
-                if not (np.all(np.isfinite(m_root)) and np.all(np.isfinite(p_root))):
-                    raise ValueError(
-                        f'Structure solve failed at the root P_c = {p_solution:.3e} Pa.'
-                    )
-                mass_enclosed, gravity, pressure = m_root, g_root, p_root
-                structure_failed = False
                 surface_residual = abs(pressure[-1] - target_surface_pressure)
                 # Allow zero pressure at the surface: the terminal event
                 # pads truncated points with P=0, so check >= 0
@@ -1821,16 +1837,25 @@ def _solve(
                         surface_residual,
                         np.min(pressure),
                     )
-            except ValueError as exc:
-                # Invalid bracket, a failed solve inside brentq, or at its root:
-                # use the last finite evaluated solution if available.
-                logger.debug('Pressure solve failed: %s', exc)
-                # No root: the solve has failed, whatever finite profile remains.
-                structure_failed = True
+            except ValueError:  # pragma: no cover - bracket-invalid recovery; defensive
+                # f(p_low) and f(p_high) have the same sign: bracket invalid.
+                # Use the last evaluated solution if available.
+                logger.debug(
+                    'Could not bracket pressure root in [%.2e, %.2e] Pa.',
+                    p_low,
+                    p_high,
+                )
                 if _state['mass_enclosed'] is not None:
                     mass_enclosed = _state['mass_enclosed']
                     gravity = _state['gravity']
                     pressure = _state['pressure']
+                    _require_finite(
+                        radii,
+                        pressure,
+                        'no pressure root, last evaluation not finite',
+                        outer_iter,
+                        inner_iter,
+                    )
                 else:
                     logger.debug(
                         'No valid ODE solutions obtained during bracket search. '
@@ -2068,23 +2093,18 @@ def _solve(
             )
 
         # Save converged profiles for the next outer iteration's adiabat
-        if not structure_failed:
-            prev_radii = radii.copy()
-            prev_pressure = np.asarray(pressure).copy()
-            prev_mass_enclosed = np.asarray(mass_enclosed).copy()
-
-        if structure_failed:
-            # A failed pressure solve gives no mass for the radius, the best
-            # solution or the convergence test.
-            _frozen_sigma = {}
-            continue
+        prev_radii = radii.copy()
+        prev_pressure = np.asarray(pressure).copy()
+        prev_mass_enclosed = np.asarray(mass_enclosed).copy()
 
         # Update radius guess with damped scaling to prevent oscillation.
         # The cube-root scaling is correct in direction but can overshoot
         # wildly when calculated_mass << planet_mass, catapulting radius
         # to unphysical values and trapping the solver in a cycle.
         calculated_mass = mass_enclosed[-1]
-        if calculated_mass <= 0 or not np.isfinite(calculated_mass):
+        if calculated_mass <= 0 or not np.isfinite(
+            calculated_mass
+        ):  # pragma: no cover - non-finite calculated mass; defensive
             radius_guess *= 0.8
             logger.debug(
                 'Outer iter %d: calculated_mass=%.2e, shrinking radius_guess to %.0f m.',
@@ -2096,9 +2116,8 @@ def _solve(
             scale = (planet_mass / calculated_mass) ** (1.0 / 3.0)
             scale = max(0.5, min(scale, 2.0))
             radius_guess *= scale
-            if not structure_failed:
-                cmb_mass = core_mass_fraction * calculated_mass
-                core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * calculated_mass
+        cmb_mass = core_mass_fraction * calculated_mass
+        core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * calculated_mass
 
         relative_diff_outer_mass = np.abs((calculated_mass - planet_mass) / planet_mass)
 
@@ -2120,7 +2139,7 @@ def _solve(
 
         # Track best solution for oscillation bailout (local variables,
         # reset per _solve() call to avoid stale state between calls)
-        if not structure_failed and relative_diff_outer_mass < best_mass_error:
+        if relative_diff_outer_mass < best_mass_error:
             best_mass_error = relative_diff_outer_mass
             best_profiles = {
                 'radii': radii.copy(),
@@ -2147,9 +2166,13 @@ def _solve(
                 best_mass_error * 100,
                 tolerance_outer * 100,
             )
-            radii, density, gravity, pressure, mass_enclosed, temperatures = _restored_best()
+            radii = np.array(best_profiles['radii'])
+            density = np.array(best_profiles['density'])
+            pressure = np.array(best_profiles['pressure'])
+            mass_enclosed = np.array(best_profiles['mass_enclosed'])
+            if best_profiles['temperatures'] is not None:
+                temperatures = np.array(best_profiles['temperatures'])
             converged_mass = True
-            structure_failed = False
             break
 
         # Reset frozen sigma for next outer iteration
@@ -2200,10 +2223,6 @@ def _solve(
                 'Maximum outer iterations (%d) reached. Total mass may not be fully converged.',
                 max_iterations_outer,
             )
-
-    if structure_failed and best_profiles is not None:
-        radii, density, gravity, pressure, mass_enclosed, temperatures = _restored_best()
-        structure_failed = False
 
     if converged_mass and converged_density and converged_pressure:
         converged = True
@@ -2311,7 +2330,6 @@ def _solve(
         'converged_pressure': converged_pressure,
         'converged_density': converged_density,
         'converged_mass': converged_mass,
-        'structure_failed': structure_failed,
         'best_mass_error': float(best_mass_error) if np.isfinite(best_mass_error) else None,
         'p_center': pressure[0] if len(pressure) > 0 else None,
     }

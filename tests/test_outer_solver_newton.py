@@ -24,7 +24,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from zalmoxis.solver import _solve_newton_outer
+from zalmoxis.solver import StructureSolveError, _solve_newton_outer
 
 # Tier markers are applied per class so that the synthetic-M(R)
 # unit-tier class (``TestNewtonOnSyntheticMR``) and the slow-tier
@@ -600,42 +600,43 @@ class TestNewtonEndToEndEarthLike:
 
 @pytest.mark.unit
 class TestNewtonWithFailedRadius:
-    """Radii where no structure solve finds a pressure root, on a linear M(R) with
-    its root at R = 7e6 m. A failed radius returns ``structure_failed``."""
+    """A structure solve that fails at a radius raises StructureSolveError, which
+    Newton and its brentq fall-back pass on instead of returning a result."""
 
     @staticmethod
-    def _run(newton_config, failed):
-        solve = _make_synthetic_M_solve(lambda R: 6.0e18 * R - 3.6e25)
+    def _run(newton_config, M_func, failed, R0):
+        solve = _make_synthetic_M_solve(M_func)
 
         def side(config_params, *args, **kwargs):
-            result = solve(config_params, *args, **kwargs)
-            if failed(float(config_params['_initial_radius_guess'])):
-                result['mass_enclosed'] = np.full(3, np.nan)
-                result['structure_failed'] = True
-            return result
+            R = float(config_params['_initial_radius_guess'])
+            if failed(R):
+                raise StructureSolveError(f'failed at R = {R:.6e} m')
+            return solve(config_params, *args, **kwargs)
 
-        cp = dict(newton_config, planet_mass=6.0e24, _initial_radius_guess=6.0e6)
+        cp = dict(newton_config, planet_mass=6.0e24, _initial_radius_guess=R0)
         cp.update(newton_tol=1.0e-6, newton_max_iter=10)
         with patch('zalmoxis.solver._solve', side_effect=side):
             return _solve_newton_outer(cp, {}, None, '/tmp')
 
-    def test_failure_at_the_first_radius_raises(self, newton_config):
-        with pytest.raises(RuntimeError, match='no other radius has a mass'):
-            self._run(newton_config, lambda R: R == 6.0e6)
+    def test_failure_at_the_newton_step_raises(self, newton_config):
+        """Linear M(R) with its root at 7e6 m; the first Newton step (6.6e6 m) fails."""
+        with pytest.raises(StructureSolveError, match='R = 6.600000e.06'):
+            self._run(
+                newton_config,
+                lambda R: 6.0e18 * R - 3.6e25,
+                lambda R: abs(R - 6.6e6) < 1,
+                6.0e6,
+            )
 
-    def test_failure_at_the_newton_step_recovers(self, newton_config):
-        """The first Newton step (capped at +10 % to 6.6e6 m) fails; the fall-back
-        sweeps from the best evaluated radius and still finds the root."""
-        result = self._run(newton_config, lambda R: abs(R - 6.6e6) < 1.0)
-        assert result['converged'] is True and result['newton_used_brentq'] is True
-        assert result['mass_enclosed'][-1] == pytest.approx(6.0e24, rel=1e-5)
+    def test_failure_inside_the_brentq_fall_back_raises(self, newton_config, caplog):
+        """M(R) is flat at R0 = 6e6 m, so Newton hands over to the fall-back, whose
+        sweep brackets the root at 8e6 m; every radius within 2e5 m of it fails."""
+        Mt = 6.0e24
 
-    def test_failure_band_around_the_root_returns_the_best_finite_result(self, newton_config):
-        """No radius within 1 % of the root has a mass; the result is the best
-        finite evaluation, not a failed one."""
-        result = self._run(newton_config, lambda R: abs(R / 7.0e6 - 1) < 0.01)
-        assert result['converged'] is False
-        assert np.isfinite(result['best_mass_error'])
-        assert np.isfinite(result['mass_enclosed'][-1])
-        M_best = result['mass_enclosed'][-1]
-        assert abs(M_best / 6.0e24 - 1) == pytest.approx(result['best_mass_error'])
+        def M(R):
+            return 0.5 * Mt if R < 6.5e6 else Mt * R / 8.0e6
+
+        with caplog.at_level('INFO', logger='zalmoxis.solver'):
+            with pytest.raises(StructureSolveError):
+                self._run(newton_config, M, lambda R: abs(R - 8.0e6) < 2.0e5, 6.0e6)
+        assert 'Brentq: xtol' in caplog.text
