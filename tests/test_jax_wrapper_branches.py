@@ -498,3 +498,47 @@ class TestMushyZoneFactorDispatch:
                 mushy_zone_factors=0.55,
             )
         assert captured['mzf'] == pytest.approx(0.55)
+
+
+class TestNanCellFill:
+    """NaN cells of a density grid are filled from the nearest valid cell at extraction."""
+
+    @staticmethod
+    def _check(cached, sample=None):
+        before = np.array(cached['density_grid'])
+        ip, it = np.nonzero(~np.isfinite(before))
+        grid = jw._extract_sub_args(cached, 'core')['core_density_grid']
+        k = slice(None) if sample is None else np.random.default_rng(0).choice(len(ip), sample)
+        nodes = np.column_stack([cached['unique_log_p'][ip[k]], cached['unique_log_t'][it[k]]])
+        assert len(ip) and not np.any(np.isnan(grid))
+        np.testing.assert_array_equal(grid[ip[k], it[k]], cached['density_nn'](nodes))
+        assert np.array_equal(grid[np.isfinite(before)], before[np.isfinite(before)])
+        assert np.array_equal(cached['density_grid'], before, equal_nan=True)
+
+    def test_synthetic_nan_row(self):
+        pytest.importorskip('jax')
+        from scipy.interpolate import NearestNDInterpolator
+
+        from tests.test_jax_parity_synthetic import _synthetic_world
+
+        cached = dict(_synthetic_world()['interp_cache']['/synthetic/core.dat'])
+        grid = np.array(cached['density_grid'], dtype=float)
+        grid[3] = np.nan
+        ip, it = np.nonzero(np.isfinite(grid))
+        nodes = np.column_stack([cached['unique_log_p'][ip], cached['unique_log_t'][it]])
+        cached.update(density_grid=grid, density_nn=NearestNDInterpolator(nodes, grid[ip, it]))
+        self._check(cached)
+
+    def test_shipped_mgsio3_grid(self):
+        import os
+        from pathlib import Path
+
+        from zalmoxis.eos.interpolation import _ensure_unified_cache
+
+        root = os.environ.get('ZALMOXIS_ROOT', str(Path(__file__).resolve().parents[1]))
+        f = os.path.join(
+            root, 'data', 'EOS_PALEOS_MgSiO3_unified', 'paleos_mgsio3_eos_table_pt.dat'
+        )
+        if not os.path.exists(f):
+            pytest.skip('PALEOS data files not found')
+        self._check(dict(_ensure_unified_cache(f, {})), sample=1000)

@@ -58,6 +58,11 @@ def _extract_sub_args(cached, prefix):
     calls solve_structure_via_jax thousands of times per main(); without
     this cache the np.asarray + dict-allocation overhead dominates in
     coupled runs (~70 % of wall on the no-Anderson coupled bench).
+
+    NaN cells of the density grid are filled from ``cached['density_nn']`` at
+    the cell, the value numpy's lookup falls back to there. Inside a cell with
+    a filled corner JAX interpolates bilinearly where numpy returns the nearest
+    valid node, so the two agree at the nodes but not inside such cells.
     """
     cache_key = f'_jax_sub_args::{prefix}'
     cached_args = cached.get(cache_key)
@@ -65,8 +70,14 @@ def _extract_sub_args(cached, prefix):
         return cached_args
     # _ensure_unified_cache and seager.get_tabulated_eos already store
     # numpy arrays for these fields; np.asarray here is redundant.
+    grid = cached['density_grid']
+    ip, it = np.nonzero(~np.isfinite(grid))
+    if len(ip):
+        grid = np.array(grid, dtype=float)
+        nodes = np.column_stack([cached['unique_log_p'][ip], cached['unique_log_t'][it]])
+        grid[ip, it] = cached['density_nn'](nodes)
     out = {
-        f'{prefix}_density_grid': cached['density_grid'],
+        f'{prefix}_density_grid': grid,
         f'{prefix}_unique_log_p': cached['unique_log_p'],
         f'{prefix}_unique_log_t': cached['unique_log_t'],
         f'{prefix}_logp_min': float(cached['logp_min']),
