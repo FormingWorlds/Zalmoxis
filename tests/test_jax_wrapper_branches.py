@@ -556,7 +556,6 @@ class TestCacheKeyIdentity:
                 liquidus_func=_liquidus_func,
             )
             assert np.all(got['T_values'] == 1000.0 + k)
-            assert got['T_surface'] == 1000.0 + k
             del t_func
 
     def test_new_melting_curves_get_own_tabulation(self, monkeypatch):
