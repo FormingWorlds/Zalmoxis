@@ -59,8 +59,8 @@ def _extract_sub_args(cached, prefix):
     this cache the np.asarray + dict-allocation overhead dominates in
     coupled runs (~70 % of wall on the no-Anderson coupled bench).
 
-    NaN cells of the density grid are filled from ``cached['density_nn']`` at
-    the cell, the value numpy's lookup falls back to there. Inside a cell with
+    NaN nodes of the density grid are filled from ``cached['density_nn']`` at
+    the node, the value numpy's lookup falls back to there. Inside a cell with
     a filled corner JAX interpolates bilinearly where numpy returns the nearest
     valid node, so the two agree at the nodes but not inside such cells.
     """
