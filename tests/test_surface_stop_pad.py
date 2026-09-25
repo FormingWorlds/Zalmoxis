@@ -116,15 +116,12 @@ def _band_rhs(r_lo, r_hi, p_lo=np.inf, p_hi=-np.inf, bad=(np.nan,) * 3):
     """Exponential-density RHS that returns ``bad`` for r_lo < r < r_hi or p_lo < P < p_hi.
 
     Unlike the uniform sphere, RK45 is not exact here, so its steps are short
-    enough to run into the band. A solve that does not end fails after 1e5 band calls.
+    enough to run into the band.
     """
-    calls = [0]
 
     def rhs(r, y, *args, **kwargs):
         m, g, p = y
         if r_lo < r < r_hi or p_lo < p < p_hi:
-            calls[0] += 1
-            assert calls[0] < 100_000, 'the structure solve does not end'
             return np.array(bad, dtype=float)
         rho = RHO * np.exp(-r / R_OUT)
         dgdr = 4.0 * np.pi * G * rho - (2.0 * g / r if r > 0 else 8.0 / 3.0 * np.pi * G * RHO)
@@ -138,6 +135,24 @@ class TestInteriorStopFails:
 
     # P reaches zero near 0.77 R_OUT without a band.
     P_C = 2.0 / 3.0 * np.pi * G * RHO**2 * (0.8 * R_OUT) ** 2 * 0.4
+
+    @pytest.fixture(autouse=True)
+    def _call_budget(self, monkeypatch):
+        """A solve that does not end fails after 1e5 right-hand sides, with or without
+        pytest-timeout."""
+        real = sm.solve_ivp
+
+        def solve_ivp(fun, *args, **kwargs):
+            calls = [0]
+
+            def budgeted(t, y):
+                calls[0] += 1
+                assert calls[0] < 100_000, 'the structure solve does not end'
+                return fun(t, y)
+
+            return real(budgeted, *args, **kwargs)
+
+        monkeypatch.setattr(sm, 'solve_ivp', solve_ivp)
 
     def _solve(self, monkeypatch, band, tdep=False, surface_pressure=0.0, max_step=np.inf):
         radii = np.linspace(0.0, R_OUT, N)
