@@ -24,8 +24,8 @@ logger = logging.getLogger(__name__)
 # is the planet's surface; a stop at a higher pressure is a failed solve.
 SURFACE_STOP_P_FRACTION = 1e-6
 
-# One step-size collapse to scipy's min_step takes at most about 470 rejections (2800 NaN
-# right-hand sides); past this count per solve_ivp call the RHS is NaN, so the solve ends.
+# One step-size collapse to scipy's min_step takes at most about 470 rejections (2800
+# non-finite right-hand sides); past this count per solve_ivp call the RHS is NaN.
 MAX_NONFINITE_RHS = 10000
 
 
@@ -337,7 +337,7 @@ def solve_structure(
     a grid node lies in it; a region thinner than the steps and between nodes
     can pass unseen. A stop at P <= max(``SURFACE_STOP_P_FRACTION`` * P_c,
     ``surface_pressure``) is padded as the surface. After
-    ``MAX_NONFINITE_RHS`` NaN right-hand sides in one ``solve_ivp`` call every
+    ``MAX_NONFINITE_RHS`` non-finite right-hand sides in one ``solve_ivp`` call every
     further one is NaN, so a solve that creeps along the edge of a failed
     region ends.
     """
@@ -402,7 +402,7 @@ def solve_structure(
     _pressure_zero.terminal = True
     _pressure_zero.direction = -1  # trigger on positive → negative crossing
 
-    nonfinite = [0]  # NaN right-hand sides in the current solve_ivp call
+    nonfinite = [0]  # non-finite right-hand sides in the current solve_ivp call
 
     def _ode_rhs(r, y):
         if nonfinite[0] >= MAX_NONFINITE_RHS:
@@ -424,7 +424,7 @@ def solve_structure(
             binodal_T_scale,
             volatile_profile=volatile_profile,
         )
-        nonfinite[0] += bool(np.isnan(dydr[0]))
+        nonfinite[0] += not np.all(np.isfinite(dydr))
         return dydr
 
     # scipy takes a NaN first step, and then never ends, if the RHS fails at the centre.

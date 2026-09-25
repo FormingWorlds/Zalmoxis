@@ -112,17 +112,20 @@ class TestNumpyStopPad:
         assert m[-1] == pytest.approx(_mass(R_OUT), rel=1e-6)
 
 
-def _band_rhs(r_lo, r_hi, p_lo=np.inf, p_hi=-np.inf):
-    """Exponential-density RHS that returns NaN for r_lo < r < r_hi or p_lo < P < p_hi.
+def _band_rhs(r_lo, r_hi, p_lo=np.inf, p_hi=-np.inf, bad=(np.nan,) * 3):
+    """Exponential-density RHS that returns ``bad`` for r_lo < r < r_hi or p_lo < P < p_hi.
 
     Unlike the uniform sphere, RK45 is not exact here, so its steps are short
-    enough to run into the band.
+    enough to run into the band. A solve that does not end fails after 1e5 band calls.
     """
+    calls = [0]
 
     def rhs(r, y, *args, **kwargs):
         m, g, p = y
         if r_lo < r < r_hi or p_lo < p < p_hi:
-            return np.full(3, np.nan)
+            calls[0] += 1
+            assert calls[0] < 100_000, 'the structure solve does not end'
+            return np.array(bad, dtype=float)
         rho = RHO * np.exp(-r / R_OUT)
         dgdr = 4.0 * np.pi * G * rho - (2.0 * g / r if r > 0 else 8.0 / 3.0 * np.pi * G * RHO)
         return np.array([4.0 * np.pi * r**2 * rho, dgdr, -rho * g])
@@ -179,11 +182,22 @@ class TestInteriorStopFails:
         assert len(p) == N and np.all(np.isnan([m, g, p]))
 
     @pytest.mark.timeout(60)
-    @pytest.mark.parametrize('tdep', [False, True])
-    def test_band_just_below_the_centre_pressure_ends(self, monkeypatch, tdep):
-        """P sits on the band edge while steps far below the grid spacing are accepted."""
+    @pytest.mark.parametrize(
+        'tdep, limit, bad',
+        [
+            (False, None, (np.nan,) * 3),
+            (True, 100, (np.nan,) * 3),
+            (False, 100, (0.0, 0.0, np.nan)),
+            (False, 100, (np.inf,) * 3),
+        ],
+    )
+    def test_band_just_below_the_centre_pressure_ends(self, monkeypatch, tdep, limit, bad):
+        """P sits on the band edge while steps far below the grid spacing are accepted.
+        Any non-finite derivative counts, not only a NaN dm/dr."""
+        if limit:
+            monkeypatch.setattr(sm, 'MAX_NONFINITE_RHS', limit)
         radii, hi = np.linspace(0.0, R_OUT, N), self.P_C * (1.0 - 1e-3)
-        monkeypatch.setattr(sm, 'coupled_odes', _band_rhs(-1.0, -1.0, hi / 3.0, hi))
+        monkeypatch.setattr(sm, 'coupled_odes', _band_rhs(-1.0, -1.0, hi / 3.0, hi, bad))
         monkeypatch.setattr(sm, 'any_component_is_tdep', lambda _: tdep)
         m, g, p = sm.solve_structure(
             {},
@@ -253,6 +267,73 @@ class TestInteriorStopFails:
             assert np.all(p[dead] == 0.0) and np.all(np.isfinite(m))
         else:
             assert np.all(np.isnan(p[dead]))
+
+    def test_clean_solve_ignores_the_latch(self, monkeypatch):
+        """Only non-finite results count: a clean solve is the same with a limit of 1."""
+        ref = self._solve(monkeypatch, (2.0, 0.0), True)[2:]
+        monkeypatch.setattr(sm, 'MAX_NONFINITE_RHS', 1)
+        out = self._solve(monkeypatch, (2.0, 0.0), True)[2:]
+        assert all(np.array_equal(a, b) for a, b in zip(out, ref))
+
+    def test_each_part_of_a_tdep_solve_has_its_own_budget(self, monkeypatch):
+        """One rejected NaN step in each part of the split solve (4 non-finite results
+        each: the later stages see a NaN state) passes with a limit of 5."""
+        ref = self._solve(monkeypatch, (2.0, 0.0), True)[2:]
+        base, shots = sm.coupled_odes, [0.2 * R_OUT, 0.6 * R_OUT]
+
+        def rhs(r, y, *args, **kwargs):
+            if shots and r > shots[0]:
+                shots.pop(0)
+                return np.full(3, np.nan)
+            return base(r, y)
+
+        monkeypatch.setattr(sm, 'MAX_NONFINITE_RHS', 5)
+        monkeypatch.setattr(sm, 'coupled_odes', rhs)
+        radii = np.linspace(0.0, R_OUT, N)
+        out = sm.solve_structure(
+            {},
+            0.0,
+            0.0,
+            radii,
+            0.5,
+            1e-10,
+            1e-12,
+            np.inf,
+            {},
+            {},
+            [0.0, 0.0, self.P_C],
+            None,
+            None,
+        )
+        assert not shots
+        for a, b in zip(out, ref):
+            np.testing.assert_allclose(a, b, rtol=1e-6, atol=1e-6 * np.max(np.abs(b)))
+
+    def test_restart_has_its_own_budget(self, monkeypatch):
+        """The main solve ends by the limit at a band below the target surface pressure;
+        the restart of the last shell reaches the band with a fresh count, so the stop pads
+        as the surface."""
+        monkeypatch.setattr(sm, 'MAX_NONFINITE_RHS', 10)
+        radii = np.linspace(0.0, R_OUT, N)
+        monkeypatch.setattr(sm, 'coupled_odes', _band_rhs(-1.0, -1.0, 0.0, 0.03 * self.P_C))
+        monkeypatch.setattr(sm, 'any_component_is_tdep', lambda _: False)
+        m, g, p = sm.solve_structure(
+            {},
+            0.0,
+            0.0,
+            radii,
+            0.5,
+            1e-10,
+            1e-12,
+            np.inf,
+            {},
+            {},
+            [0.0, 0.0, self.P_C],
+            None,
+            None,
+            surface_pressure=0.05 * self.P_C,
+        )
+        assert np.all(np.isfinite([m, g, p])) and p[-1] == 0.0
 
     def test_restart_that_passes_a_middle_shell_is_a_failed_solve(self, monkeypatch, caplog):
         """The one-shell restart steps over this band, but its end state lies deep
