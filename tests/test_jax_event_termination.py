@@ -295,15 +295,13 @@ class TestSurfaceCrossing:
 
     @pytest.mark.timeout(120)
     def test_temperature_at_zero_pressure_does_not_stall_the_solve(self):
-        """T_surface differs from the tabulated T at low P, as for a real adiabat."""
         pytest.importorskip('jax')
         import time
 
         import zalmoxis.jax_eos.solver as js
         from tests.test_jax_parity_synthetic import _synthetic_world
 
-        args = dict(_synthetic_world()['jax_args'])
-        args['T_surface'] = float(args['T_values'][0]) + 1000.0
+        args = _synthetic_world()['jax_args']
         radii = np.linspace(0.0, 1.2e7, 150)
 
         def solve():

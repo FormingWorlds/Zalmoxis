@@ -87,7 +87,6 @@ def _unified_setup(mushy_zone_factor=0.8):
         'cmb_mass': float(cmb_mass),
         'T_axis_grid': T_logP_grid,
         'T_values': T_values,
-        'T_surface': 3000.0,
         'mushy_zone_factor_core': 1.0,
         'mushy_zone_factor_mantle': float(mushy_zone_factor),
         'melt_log_p_min': float(melt_lp[0]),

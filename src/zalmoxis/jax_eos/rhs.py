@@ -57,7 +57,6 @@ def coupled_odes_jax(
     # --- temperature lookup (see module docstring for axis conventions) ---
     T_axis_grid: jnp.ndarray,  # monotone increasing: log10(P) OR radius
     T_values: jnp.ndarray,  # matching T values on the axis grid
-    T_surface: float,  # fallback when P <= 0 (P-indexed mode only)
     # --- core (paleos_unified) table ---
     mushy_zone_factor_core: jnp.ndarray,
     core_density_grid: jnp.ndarray,

@@ -109,7 +109,6 @@ def _stage1b_setup():
         'cmb_mass': float(cmb_mass),
         'T_axis_grid': T_logP_grid,
         'T_values': T_values,
-        'T_surface': 3000.0,
         'mushy_zone_factor_core': 1.0,  # PALEOS:iron: no mushy (uses table's own phase)
     }
     # Core args

@@ -144,7 +144,6 @@ def _synthetic_world():
         'cmb_mass': cmb_mass,
         'T_axis_grid': T_grid,
         'T_values': T_vals,
-        'T_surface': 1500.0,
         'mushy_zone_factor_core': 1.0,
         'mushy_zone_factor_mantle': _get_mushy_zone_factor(sil_eos, {sil_eos: 0.8}),
         'melt_log_p_min': float(melt_lp[0]),
