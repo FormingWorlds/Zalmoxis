@@ -21,10 +21,9 @@ In JAX, we compute the result of ALL applicable branches and use
 same bilinear at (P, T_clamped), so we collapse them into a "direct"
 branch. The mushy-zone branch is the only distinct path.
 
-NaN-on-lookup fallback (numpy's ``density_nn`` KDTree nearest-neighbour)
-is NOT ported — the JAX path returns NaN, which the caller must check
-and fall back to numpy for. On Stage-1b-equivalent configs with
-well-covered PALEOS tables, NaN returns are not expected.
+NaN table cells: numpy falls back to ``density_nn`` (nearest valid cell)
+per query; the JAX wrapper instead fills the NaN cells of each grid with
+that value once, at extraction (``jax_eos.wrapper._extract_sub_args``).
 """
 
 from __future__ import annotations
