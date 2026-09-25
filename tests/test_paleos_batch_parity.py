@@ -41,5 +41,5 @@ def test_batch_matches_scalar_on_shipped_tables(eos, mzf):
         [calculate_density(p, mats, eos, t, sol, liq, cache, mzf) for p, t in zip(ps, ts)],
         dtype=float,
     )
-    assert np.isfinite(scalar).mean() > 0.99
+    assert np.all(np.isfinite(scalar)) and np.all(np.isfinite(batch))
     np.testing.assert_allclose(batch, scalar, rtol=1e-7)

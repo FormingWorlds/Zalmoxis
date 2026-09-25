@@ -327,6 +327,10 @@ class TestBatchPath:
         # All three should be in a sensible range
         assert np.all(rho > 1000)
         assert np.all(rho < 20000)
+        scalar = [
+            get_paleos_unified_density(p, t, s['mat'], 0.8, s['cache']) for p, t in zip(ps, ts)
+        ]
+        np.testing.assert_allclose(rho, scalar, rtol=1e-12)
 
     def test_batch_nan_recovery(self, synthetic_cache_with_nan):
         """NaN cells are recovered by NN fallback in the batch path."""
@@ -374,10 +378,9 @@ class TestBatchPath:
         assert np.isfinite(rho[0]) and rho[0] == pytest.approx(scalar, rel=1e-12)
 
     def test_batch_above_below_with_nan_recovery(self, synthetic_cache_with_nan):
-        """When a shell is classified as above/below the mushy zone (not
-        mushy), the post-classification direct lookup may still
-        land on a NaN cell; the NN fallback must then
-        recover the density.
+        """A shell below the solidus takes the direct lookup, which can land on a NaN
+        cell; the NN fallback must then recover the density. (No above-liquidus query
+        reaches this fixture's NaN corner.)
 
         At P=1e9 Pa with ``mushy_zone_factor=0.8``, T_sol = 1600 K. A query
         at T=900 K is below T_sol, classified as ``below``, and bypasses
@@ -405,7 +408,8 @@ class TestBatchPath:
         unclamped query at log_t ≈ 3.398 brackets (2,2)-(3,3). NaN at
         (3, 2) sits inside the solid-side bracket; NaN at (3, 3) sits
         inside both the unclamped query bracket AND the liquid-side
-        bracket. One test therefore exercises all three NN fallbacks.
+        bracket. All three lookups call the NN fallback; the mushy value then
+        replaces the direct one.
         """
         cache = _build_cache()
         # log_p step is 3/7 ≈ 0.429, log_t step is 1/7 ≈ 0.143.
