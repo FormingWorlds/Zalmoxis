@@ -363,15 +363,19 @@ class TestNonFiniteDensityJax:
             layer_eos_config={'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
         )
 
-    def _main(self, monkeypatch, caplog, fill):
-        """Run main on the JAX path; return its result and the ValueErrors the wrapper raised."""
+    def _main(self, monkeypatch, caplog, fill, raise_once=False):
+        """Run main on the JAX path; return its result, the ValueErrors the wrapper raised
+        and the number of wrapper calls. ``raise_once`` makes the first call raise."""
         import zalmoxis.jax_eos.wrapper as jw
 
         world = _synthetic_jax_world(monkeypatch, fill)
-        raised, real = [], jw.solve_structure_via_jax
+        raised, real, ran = [], jw.solve_structure_via_jax, []
 
         def spy(*args, **kwargs):
+            ran.append(1)
             try:
+                if raise_once and not raised:
+                    raise ValueError('forced JAX failure')
                 return real(*args, **kwargs)
             except ValueError as exc:
                 raised.append(str(exc))
@@ -379,19 +383,40 @@ class TestNonFiniteDensityJax:
 
         monkeypatch.setattr(jw, 'solve_structure_via_jax', spy)
         with caplog.at_level('WARNING', logger='zalmoxis.structure_model'):
-            return zs.main(
-                self._cfg(), world['mats'], None, os.path.join(ROOT, 'input')
-            ), raised
+            result = zs.main(self._cfg(), world['mats'], None, os.path.join(ROOT, 'input'))
+        return result, raised, len(ran)
 
     @pytest.mark.timeout(2400)
-    def test_nan_table_band_falls_back_to_numpy_once(self, monkeypatch, caplog):
-        """After the first deep JAX stop the rest of main runs on numpy, which fills the band."""
-        result, raised = self._main(monkeypatch, caplog, fill=True)
-        assert len(raised) == 1 and 'which is not the surface' in raised[0]
+    def test_jax_failure_falls_back_to_numpy_once(self, monkeypatch, caplog):
+        """After the first JAX failure the rest of main runs on numpy, which fills the band."""
+        result, raised, calls = self._main(monkeypatch, caplog, fill=True, raise_once=True)
+        assert raised == ['forced JAX failure'] and calls == 1
         assert [r.message for r in caplog.records].count(
             'JAX solve_structure fell back to numpy path: ' + raised[0]
         ) == 1
         assert result['converged'] and np.all(np.isfinite(result['pressure']))
+
+    @pytest.mark.timeout(600)
+    def test_nan_table_band_filled_runs_on_jax(self, monkeypatch, caplog):
+        """The JAX grid holds numpy's nearest-cell fill, so main runs to the end on JAX."""
+        result, raised, calls = self._main(monkeypatch, caplog, fill=True)
+        assert calls and not raised and 'fell back to numpy path' not in caplog.text
+        assert result['converged'] and np.all(np.isfinite(result['pressure']))
+
+    def test_shipped_mgsio3_grid_is_filled(self):
+        """The shipped MgSiO3 grid: a sample of filled nodes holds numpy's nearest-cell value."""
+        from pathlib import Path
+
+        from tests.test_jax_wrapper_branches import TestNanCellFill
+        from zalmoxis.eos.interpolation import _ensure_unified_cache
+
+        root = os.environ.get('ZALMOXIS_ROOT') or str(Path(__file__).resolve().parents[1])
+        f = os.path.join(
+            root, 'data', 'EOS_PALEOS_MgSiO3_unified', 'paleos_mgsio3_eos_table_pt.dat'
+        )
+        if not os.path.exists(f):
+            pytest.skip('PALEOS data files not found')
+        TestNanCellFill._check(dict(_ensure_unified_cache(f, {})), sample=1000)
 
     @pytest.mark.timeout(120)
     def test_nan_table_band_fails_on_numpy_too(self, monkeypatch, caplog):
