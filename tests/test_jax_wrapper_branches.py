@@ -433,13 +433,10 @@ class TestPostEventPadding:
         assert mass[4] == pytest.approx(1e23)
         assert np.all(pressure[5:] == 0.0)
 
-    def test_stop_deep_inside_is_a_failed_solve(self, caplog):
-        with caplog.at_level('WARNING', logger='zalmoxis.structure_model'):
-            mass, gravity, pressure = self._run(np.array([1.1e23, 5.2, 5e9]))
-        assert mass[4] == pytest.approx(1e23)
-        assert np.all(np.isnan(mass[5:])) and np.all(np.isnan(gravity[5:]))
-        assert np.all(np.isnan(pressure[5:]))
-        assert 'treating the solve as failed' in caplog.text
+    def test_stop_deep_inside_falls_back_to_numpy(self):
+        """A stop that is not the surface raises ValueError, the numpy fallback trigger."""
+        with pytest.raises(ValueError, match='which is not the surface'):
+            self._run(np.array([1.1e23, 5.2, 5e9]))
 
 
 class TestMushyZoneFactorDispatch:

@@ -24,6 +24,23 @@ logger = logging.getLogger(__name__)
 # is the planet's surface; a stop at a higher pressure is a failed solve.
 SURFACE_STOP_P_FRACTION = 1e-6
 
+# One step-size collapse to scipy's min_step takes at most about 470 rejections (2800
+# non-finite right-hand sides); past this count per solve_ivp call the RHS is NaN.
+MAX_NONFINITE_RHS = 10000
+
+
+def stop_is_surface(y_stop, p_center, p_surface=0.0):
+    """Return True when a stop at the state ``y_stop`` = [m, g, P] is the surface.
+
+    It is the surface when the state is finite and P is at most
+    ``SURFACE_STOP_P_FRACTION * p_center`` or the target surface pressure
+    ``p_surface``; any other stop is a failed solve (see ``pad_after_stop``).
+    """
+    return bool(
+        np.all(np.isfinite(y_stop))
+        and float(y_stop[2]) <= max(SURFACE_STOP_P_FRACTION * p_center, p_surface)
+    )
+
 
 def pad_after_stop(radii, mass, gravity, pressure, y_stop, p_center, p_surface=0.0):
     """Extend profiles cut short by a stop in the integration to the full grid.
@@ -59,18 +76,16 @@ def pad_after_stop(radii, mass, gravity, pressure, y_stop, p_center, p_surface=0
     """
     n = len(mass)
     m_stop, g_stop, p_stop = (float(v) for v in y_stop)
-    if np.all(np.isfinite(y_stop)) and p_stop <= max(
-        SURFACE_STOP_P_FRACTION * p_center, p_surface
-    ):
+    if stop_is_surface(y_stop, p_center, p_surface):
         fill = (m_stop, g_stop, 0.0)
     else:
+        where = f'between r = {radii[n - 1]:.6e} and {radii[n]:.6e} m' if n else 'at r = 0'
         logger.warning(
-            'Structure integration stopped at P = %.3e Pa (P_c = %.3e Pa), between '
-            'r = %.6e and %.6e m; treating the solve as failed.',
+            'Structure integration stopped at P = %.3e Pa (P_c = %.3e Pa), %s; '
+            'treating the solve as failed.',
             p_stop,
             p_center,
-            radii[n - 1],
-            radii[n],
+            where,
         )
         fill = (np.nan, np.nan, np.nan)
     return tuple(
@@ -177,13 +192,8 @@ def coupled_odes(
     # Determine per-layer mixture for the current enclosed mass
     mixture = get_layer_mixture(mass, cmb_mass, core_mantle_mass, layer_mixtures)
 
-    # Return zero derivatives for non-physical pressure.  When the RHS
-    # returns zeros, the ODE state freezes (mass, gravity, pressure stop
-    # changing).  The terminal event (_pressure_zero, direction=-1) then
-    # fires when pressure crosses zero, stopping the integration.
-    # Note: zero derivatives do NOT cause RK45 to reject the step; the
-    # solver accepts them and advances with frozen state until the
-    # terminal event triggers.
+    # Past the surface (P <= 0) zero derivatives keep the trial state finite; the
+    # pressure-zero event locates the downcrossing inside the step that reaches it.
     if pressure <= 0 or np.isnan(pressure):
         logger.debug(f'Nonphysical pressure encountered: P={pressure} Pa at radius={radius} m')
         return [0.0, 0.0, 0.0]
@@ -213,12 +223,10 @@ def coupled_odes(
         volatile_profile=profile_for_shell,
     )
 
-    # Return zero derivatives for invalid density.  The ODE state freezes
-    # and the terminal event stops integration when pressure crosses zero.
-    # This handles EOS lookup failures (None return) and NaN densities
-    # from out-of-bounds table queries.
+    # An EOS failure (None or non-finite density) at P > 0 stops the integration:
+    # NaN derivatives make the step fail, and the stop is a failed solve.
     if current_density is None or not np.isfinite(current_density):
-        return [0.0, 0.0, 0.0]
+        return [np.nan, np.nan, np.nan]
 
     # Define the ODEs for mass, gravity and pressure
     dMdr = 4 * np.pi * radius**2 * current_density
@@ -299,9 +307,10 @@ def solve_structure(
         where ``r`` is radius in m and ``P`` is pressure in Pa. For
         non-adiabatic modes the pressure argument is ignored.
     temperature_arrays : tuple[ndarray, ndarray] or None
-        Optional ``(r_arr, T_arr)`` for an explicit r-indexed T profile.
-        Only consumed by the JAX path (``use_jax=True``); the numpy path
-        still uses ``temperature_function``. See ``jax_eos.wrapper``
+        Optional ``(r_arr, T_arr)`` for an explicit r-indexed T profile,
+        ``r_arr`` ascending. Consumed only with ``use_jax=True``: by the JAX
+        path, and by the numpy solve that replaces it after a fallback,
+        which then ignores ``temperature_function``. See ``jax_eos.wrapper``
         docstring for when to prefer this over the callable form.
     mushy_zone_factors : dict or float or None
         Per-EOS mushy zone factors. Dict keyed by EOS name, a single
@@ -320,6 +329,17 @@ def solve_structure(
     tuple
         (mass_enclosed, gravity, pressure) arrays at each radial grid point.
         Past a stop in the integration they are padded by ``pad_after_stop``.
+
+    Notes
+    -----
+    A non-finite density at P > 0 fails the solve where the integrator samples
+    it (NaN derivatives stop the integration) or, in ``zalmoxis.solver``, where
+    a grid node lies in it; a region thinner than the steps and between nodes
+    can pass unseen. A stop at P <= max(``SURFACE_STOP_P_FRACTION`` * P_c,
+    ``surface_pressure``) is padded as the surface. After
+    ``MAX_NONFINITE_RHS`` non-finite right-hand sides in one ``solve_ivp`` call every
+    further one is NaN, so a solve that creeps along the edge of a failed
+    region ends.
     """
     # JAX fast path — dispatch to the diffrax-based implementation when
     # requested. Falls back to numpy path on any ValueError (unsupported
@@ -331,7 +351,7 @@ def solve_structure(
     # phi-blended wet mantle); profiles outside that envelope (H2
     # binodal, miscibility, multi-volatile) raise ValueError inside the
     # wrapper and land on numpy.
-    if use_jax:
+    if use_jax and not interpolation_cache.get('_jax_fell_back'):
         try:
             from .jax_eos.wrapper import solve_structure_via_jax
 
@@ -359,10 +379,17 @@ def solve_structure(
                 surface_pressure=surface_pressure,
             )
         except ValueError as exc:
+            interpolation_cache['_jax_fell_back'] = True  # numpy for the rest of this main()
             logger.warning(
                 'JAX solve_structure fell back to numpy path: %s',
                 exc,
             )
+    if use_jax and temperature_arrays is not None:
+        # Numpy fallback: the same T(r) as the JAX path, clamped at the ends.
+        r_arr, T_arr = (np.asarray(a, dtype=float) for a in temperature_arrays)
+
+        def temperature_function(r, P):
+            return float(np.interp(r, r_arr, T_arr))
 
     uses_Tdep = any_component_is_tdep(layer_mixtures)
 
@@ -375,8 +402,12 @@ def solve_structure(
     _pressure_zero.terminal = True
     _pressure_zero.direction = -1  # trigger on positive → negative crossing
 
+    nonfinite = [0]  # non-finite right-hand sides in the current solve_ivp call
+
     def _ode_rhs(r, y):
-        return coupled_odes(
+        if nonfinite[0] >= MAX_NONFINITE_RHS:
+            return [np.nan, np.nan, np.nan]
+        dydr = coupled_odes(
             r,
             y,
             cmb_mass,
@@ -393,6 +424,13 @@ def solve_structure(
             binodal_T_scale,
             volatile_profile=volatile_profile,
         )
+        nonfinite[0] += not np.all(np.isfinite(dydr))
+        return dydr
+
+    # scipy takes a NaN first step, and then never ends, if the RHS fails at the centre.
+    if not np.all(np.isfinite(_ode_rhs(radii[0], y0))):
+        empty = np.empty(0)
+        return pad_after_stop(radii, empty, empty, empty, y0, y0[2], surface_pressure)
 
     if uses_Tdep:
         # Split the radial grid into two parts for better handling of large step sizes
@@ -415,11 +453,10 @@ def solve_structure(
         sol_end, max_step_end = sol1, np.inf
         # If sol1 stopped (pressure-zero event or step-size failure), skip sol2
         if sol1.status != 0:
-            mass_enclosed = sol1.y[0]
-            gravity = sol1.y[1]
-            pressure = sol1.y[2]
+            mass_enclosed, gravity, pressure = np.reshape(sol1.y, (3, -1))
         else:
             # Second part with user-defined max_step
+            nonfinite[0] = 0
             sol2 = solve_ivp(
                 _ode_rhs,
                 (radii[radial_split_index - 1], radii[-1]),
@@ -434,9 +471,10 @@ def solve_structure(
             sol_end, max_step_end = sol2, maximum_step
 
             # Concatenate the two solutions
-            mass_enclosed = np.concatenate([sol1.y[0, :-1], sol2.y[0]])
-            gravity = np.concatenate([sol1.y[1, :-1], sol2.y[1]])
-            pressure = np.concatenate([sol1.y[2, :-1], sol2.y[2]])
+            y2 = np.reshape(sol2.y, (3, -1))  # empty if the first step fails
+            mass_enclosed, gravity, pressure = np.concatenate(
+                [sol1.y[:, :-1], y2 if y2.size else sol1.y[:, -1:]], axis=1
+            )
     else:
         # Single integration with fixed temperature (300 K for Seager+2007)
         sol = solve_ivp(
@@ -451,10 +489,8 @@ def solve_structure(
         )
         sol_end, max_step_end = sol, np.inf
 
-        # Extract mass, gravity, and pressure grids from the solution
-        mass_enclosed = sol.y[0]
-        gravity = sol.y[1]
-        pressure = sol.y[2]
+        # scipy returns empty lists when the first step fails before radii[1].
+        mass_enclosed, gravity, pressure = np.reshape(sol.y, (3, -1))
 
     # Pad to full length if the integration stopped before the outermost radial
     # grid point (pressure-zero event, or a step-size failure).
@@ -463,24 +499,28 @@ def solve_structure(
         if sol_end.status == 1:
             y_stop = sol_end.y_events[0][-1]
         else:
-            # The failure lies between radii[n - 1] and radii[n]; re-integrating
-            # only that shell finds where it stops without stepping past it.
-            tail = solve_ivp(
-                _ode_rhs,
-                (radii[n - 1], radii[n]),
-                [mass_enclosed[-1], gravity[-1], pressure[-1]],
-                rtol=relative_tolerance,
-                atol=absolute_tolerance,
-                max_step=max_step_end,
-                method='RK45',
-                events=_pressure_zero,
-            )
-            y_stop = tail.y[:, -1]  # at a terminal event this is the event state
-            if tail.status == 0 and n == len(radii) - 1:
-                # The re-integration passed the last shell: its end state completes the profile.
-                return tuple(
-                    np.append(a, v) for a, v in zip((mass_enclosed, gravity, pressure), y_stop)
+            y_stop = [mass_enclosed[-1], gravity[-1], pressure[-1]] if n else y0
+            # The failure lies between radii[n - 1] and radii[n]; re-integrate only that shell
+            # to find where it stops (scipy never ends a step from a non-finite RHS).
+            nonfinite[0] = 0
+            if n and np.all(np.isfinite(_ode_rhs(radii[n - 1], y_stop))):
+                tail = solve_ivp(
+                    _ode_rhs,
+                    (radii[n - 1], radii[n]),
+                    y_stop,
+                    rtol=relative_tolerance,
+                    atol=absolute_tolerance,
+                    max_step=max_step_end,
+                    method='RK45',
+                    events=_pressure_zero,
                 )
+                y_stop = tail.y[:, -1]  # at a terminal event this is the event state
+                if tail.status == 0 and n == len(radii) - 1:
+                    # The re-integration passed the last shell: its end state completes the profile.
+                    return tuple(
+                        np.append(a, v)
+                        for a, v in zip((mass_enclosed, gravity, pressure), y_stop)
+                    )
         mass_enclosed, gravity, pressure = pad_after_stop(
             radii, mass_enclosed, gravity, pressure, y_stop, y0[2], surface_pressure
         )

@@ -280,8 +280,10 @@ def main(
         Used by PROTEUS to pass SPIDER/Aragog T(r) profiles directly
         in memory.
     temperature_arrays : tuple[ndarray, ndarray] or None, optional
-        Explicit r-indexed T profile ``(r_arr, T_arr)``. Only consumed
-        by the JAX path (``config_params['use_jax']=True``). Preferred
+        Explicit r-indexed T profile ``(r_arr, T_arr)``. Consumed only
+        with ``config_params['use_jax']=True``, by the JAX structure solves
+        and by their numpy fallback; the Picard density update still uses
+        the internal temperature profile. Preferred
         over ``temperature_function`` when the caller's T is naturally
         r-indexed (e.g. SPIDER/Aragog-coupled runs): the P-indexed
         tabulation inside ``jax_eos.wrapper`` collapses to a constant
@@ -308,6 +310,7 @@ def main(
         deep inside the planet), with either outer solver. Any trial central
         pressure counts, including a bracket end of the pressure search.
     """
+    _interpolation_cache.pop('_jax_fell_back', None)  # set by solve_structure's numpy fallback
     # Validate outer-solver choice. Default is 'picard' (the damped
     # fixed-point loop inside `_solve()`); 'newton' dispatches to
     # `_solve_newton_outer()`.
@@ -1929,17 +1932,16 @@ def _solve(
                 )
                 new_density[idx] = rho_batch
 
-            # Fill NaN entries with last valid density (walking outward)
-            last_valid = None
-            for i in range(n_valid):
-                if not p_valid[i]:
-                    new_density[i] = 0.0
-                elif np.isnan(
-                    new_density[i]
-                ):  # pragma: no cover - per-shell NaN density fallback; defensive
-                    new_density[i] = last_valid if last_valid is not None else old_density[i]
-                else:
-                    last_valid = new_density[i]
+            # A non-finite density at a node with P > 0 is an EOS failure the solve stepped over.
+            bad = p_valid & ~np.isfinite(new_density[:n_valid])
+            if bad.any():
+                i = int(np.argmax(bad))
+                raise StructureSolveError(
+                    f'Structure solve failed at R = {radii[-1]:.6e} m (outer iteration '
+                    f'{outer_iter}, inner {inner_iter}): density not finite at r = '
+                    f'{radii[i]:.4e} m, P = {pressure[i]:.3e} Pa.'
+                )
+            new_density[:n_valid][~p_valid] = 0.0
 
             # Adaptive Picard blend: use inner-loop alpha for density damping
             alpha = min(_picard_alpha, _inner_alpha)
