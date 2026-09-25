@@ -394,19 +394,13 @@ class TestNonFiniteDensityJax:
     @pytest.mark.timeout(600)
     def test_nan_table_band_filled_runs_on_jax(self, monkeypatch, caplog):
         """The JAX grid holds numpy's nearest-node fill, so main runs to the end on JAX."""
-        import zalmoxis.jax_eos.wrapper as jw
-
-        grids, extract = {}, jw._extract_sub_args
-        monkeypatch.setattr(
-            jw, '_extract_sub_args', lambda c, p: grids.setdefault(p, extract(c, p))
-        )
         result, raised, calls = self._main(monkeypatch, caplog, fill=True)
         assert calls and not raised and 'fell back to numpy path' not in caplog.text
         assert result['converged'] and np.all(np.isfinite(result['pressure']))
         core = zs._interpolation_cache['/synthetic/core.dat']
         ip, it = np.nonzero(~np.isfinite(core['density_grid']))
         nodes = np.column_stack([core['unique_log_p'][ip], core['unique_log_t'][it]])
-        filled = grids['core']['core_density_grid'][ip, it]
+        filled = core['_jax_sub_args::core']['core_density_grid'][ip, it]  # what JAX got
         np.testing.assert_array_equal(filled, core['density_nn'](nodes))
 
     def test_shipped_mgsio3_grid_is_filled(self):

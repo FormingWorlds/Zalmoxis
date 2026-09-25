@@ -510,7 +510,8 @@ def with_nan_rows(cached, rows, fill=True):
     ip, it = np.nonzero(np.isfinite(grid))
     nodes = np.column_stack([cached['unique_log_p'][ip], cached['unique_log_t'][it]])
     nn = NearestNDInterpolator(nodes, grid[ip, it]) if fill else (lambda _: np.nan)
-    return dict(cached, density_grid=grid, density_nn=nn)
+    out = {k: v for k, v in cached.items() if not k.startswith('_jax_sub_args')}
+    return dict(out, density_grid=grid, density_nn=nn)
 
 
 class TestNanNodeFill:

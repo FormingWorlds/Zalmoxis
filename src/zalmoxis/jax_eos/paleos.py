@@ -63,8 +63,8 @@ def get_paleos_unified_density_jax(
     """Return PALEOS-unified density at (pressure, temperature) in kg/m^3.
 
     Mirrors ``zalmoxis.eos.paleos.get_paleos_unified_density``. Inputs
-    are scalars or 0-d arrays; returns a scalar. NaN nodes: see
-    ``jax_eos.wrapper._extract_sub_args``; one the fill leaves NaN can make the result NaN.
+    are scalars or 0-d arrays; returns a scalar. NaN nodes are filled at extraction
+    (``jax_eos.wrapper._extract_sub_args``); a node left NaN can make the result NaN.
     """
     # Clamp pressure to table bounds, then log10
     pressure_c = jnp.clip(pressure, p_min, p_max)
