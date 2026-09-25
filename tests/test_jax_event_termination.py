@@ -317,10 +317,11 @@ class TestSurfaceCrossing:
     @pytest.mark.parametrize('temperature', [300.0, 2000.0, 3000.0])
     @pytest.mark.parametrize('unified', [True, False])
     def test_rhs_is_continuous_across_zero_pressure(self, unified, temperature):
-        """T and the melting curves do not jump where P crosses zero. The 2-phase mantle is
-        solid, mushy or liquid against flat melting curves at 1760 and 2200 K (its solid and
-        liquid tables are the unified one and 0.9x); the unified mantle takes its mushy zone
-        from its own table, whose lookup clamps P to the table range."""
+        """T and the melting curves do not jump where P crosses zero, at 300, 2000 and 3000 K.
+        The 2-phase mantle reads the flat melting curves at 1760 and 2200 K (its solid and
+        liquid tables are the unified one and 0.9x); the unified mantle reads its own table
+        liquidus, with the solidus at mushy_zone_factor times it, and its lookup clamps P to
+        the table range."""
         pytest.importorskip('jax')
         from tests.test_jax_parity_synthetic import _synthetic_world
         from zalmoxis.jax_eos.rhs import coupled_odes_jax
