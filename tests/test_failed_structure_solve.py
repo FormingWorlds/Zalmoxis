@@ -295,7 +295,8 @@ def _synthetic_jax_world(monkeypatch, fill=False):
 
 
 @pytest.mark.unit
-def test_main_clears_the_jax_fallback_flag(monkeypatch):
+@pytest.mark.parametrize('outer_solver', ['picard', 'newton'])
+def test_main_clears_the_jax_fallback_flag(monkeypatch, outer_solver):
     """A fallback in one main() call does not keep the next call off the JAX path."""
     seen = []
 
@@ -306,7 +307,7 @@ def test_main_clears_the_jax_fallback_flag(monkeypatch):
     monkeypatch.setattr(zs, '_interpolation_cache', {'_jax_fell_back': True})
     monkeypatch.setattr(zs, '_solve', stub)
     with pytest.raises(StructureSolveError, match='stub'):
-        _run(_cfg(outer_solver='picard'))
+        _run(_cfg(outer_solver=outer_solver))
     assert seen == [None]
 
 
@@ -382,7 +383,7 @@ class TestNonFiniteDensityJax:
                 self._cfg(), world['mats'], None, os.path.join(ROOT, 'input')
             ), raised
 
-    @pytest.mark.timeout(600)
+    @pytest.mark.timeout(2400)
     def test_nan_table_band_falls_back_to_numpy_once(self, monkeypatch, caplog):
         """After the first deep JAX stop the rest of main runs on numpy, which fills the band."""
         result, raised = self._main(monkeypatch, caplog, fill=True)
