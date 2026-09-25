@@ -33,7 +33,7 @@ import time as _time
 
 import numpy as np
 
-from ..structure_model import pad_after_stop
+from ..structure_model import pad_after_stop, stop_is_surface
 from .solver import solve_structure_jax
 
 _CALL_COUNT = 0
@@ -247,6 +247,14 @@ def solve_structure_via_jax(
     structure solves).
 
     Providing both is rejected to avoid ambiguity.
+
+    Raises
+    ------
+    ValueError
+        When the solve stops before ``radii[-1]`` and the stop is not the
+        surface (``stop_is_surface``), e.g. at a NaN cell of a PALEOS table.
+        ``solve_structure`` then retries on numpy, whose table lookup fills
+        NaN cells from the nearest valid cell.
     """
     from ..eos.interpolation import _ensure_unified_cache
     from ..eos.seager import get_tabulated_eos
@@ -639,6 +647,11 @@ def solve_structure_via_jax(
     post_event = ~np.isfinite(pressure)
     if np.any(post_event):
         n = int(np.argmax(post_event))
+        if not stop_is_surface(y_end, float(y0[2]), surface_pressure):
+            raise ValueError(
+                f'JAX solve stopped at P = {float(y_end[2]):.3e} Pa before '
+                f'r = {radii_arr[n]:.6e} m, which is not the surface'
+            )
         return pad_after_stop(
             radii_arr,
             mass_enclosed[:n],

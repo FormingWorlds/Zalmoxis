@@ -245,16 +245,28 @@ class TestNonFiniteDensity:
             _run(_cfg(outer_solver='picard'))
 
 
-def _synthetic_jax_world(monkeypatch):
+class _FellBack(Exception):
+    """Ends main after the first structure solve that fell back to numpy."""
+
+
+def _synthetic_jax_world(monkeypatch, fill=False):
     """Synthetic PALEOS-format tables (no data files) with NaN density in the core-table
-    row at log P = 9.86, which covers 2.7e9 to 1.95e10 Pa."""
+    row at log P = 9.86, which covers 2.7e9 to 1.95e10 Pa. numpy's nearest-neighbour
+    fallback fills that row from the valid cells if ``fill``, else it returns NaN."""
     pytest.importorskip('jax')
+    from scipy.interpolate import NearestNDInterpolator
+
     from tests.test_jax_parity_synthetic import _synthetic_world
 
     world = _synthetic_world()
     core = dict(world['interp_cache']['/synthetic/core.dat'])
     grid = np.array(core['density_grid'], dtype=float)
     grid[(core['unique_log_p'] > 9.8) & (core['unique_log_p'] < 9.9)] = np.nan
+    ip, it = np.nonzero(np.isfinite(grid))
+    nodes = np.column_stack([core['unique_log_p'][ip], core['unique_log_t'][it]])
+    core['density_nn'] = (
+        NearestNDInterpolator(nodes, grid[ip, it]) if fill else lambda _: np.nan
+    )
     core['density_grid'] = grid
     world['interp_cache']['/synthetic/core.dat'] = core
     world['jax_args']['core_density_grid'] = grid
@@ -287,26 +299,54 @@ class TestNonFiniteDensityJax:
         assert n > 0 and np.all(np.isfinite(ys[:n])) and not np.any(np.isfinite(ys[n:, 2]))
         assert np.all(np.isfinite(y_end)) and 1.9e10 < y_end[2] < ys[n - 1, 2]
 
-    def test_nan_table_band_raises_through_main(self, monkeypatch):
+    def _main(self, monkeypatch, caplog, fill):
+        """Run main on the JAX path until it fails or a solve fell back to numpy; return
+        the profile of that solve and the ValueErrors the JAX wrapper raised."""
         import zalmoxis.jax_eos.wrapper as jw
 
-        world = _synthetic_jax_world(monkeypatch)
-        calls, real = [], jw.solve_structure_via_jax
+        world = _synthetic_jax_world(monkeypatch, fill)
+        raised, real, real_solve, out = [], jw.solve_structure_via_jax, zs.solve_structure, []
+
+        def solve(*args, **kwargs):
+            out.append(real_solve(*args, **kwargs))
+            if raised and np.all(np.isfinite(out[-1])):
+                raise _FellBack
+            return out[-1]
 
         def spy(*args, **kwargs):
-            calls.append(1)
-            return real(*args, **kwargs)
+            try:
+                return real(*args, **kwargs)
+            except ValueError as exc:
+                raised.append(str(exc))
+                raise
 
         monkeypatch.setattr(jw, 'solve_structure_via_jax', spy)
+        monkeypatch.setattr(zs, 'solve_structure', solve)
         cfg = _cfg(
             outer_solver='picard',
             use_jax=True,
             relative_tolerance=1e-8,
             layer_eos_config={'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
         )
+        with caplog.at_level('WARNING', logger='zalmoxis.structure_model'):
+            with pytest.raises(_FellBack):
+                zs.main(cfg, world['mats'], None, os.path.join(ROOT, 'input'))
+        return out[-1], raised
+
+    @pytest.mark.timeout(120)
+    def test_nan_table_band_falls_back_to_numpy_which_fills_it(self, monkeypatch, caplog):
+        """The JAX wrapper hands the band to numpy, whose table lookup fills the NaN cells."""
+        profile, raised = self._main(monkeypatch, caplog, fill=True)
+        assert len(raised) == 1 and 'which is not the surface' in raised[0]
+        assert 'fell back to numpy path' in caplog.text
+        assert np.all(np.isfinite(profile))
+
+    @pytest.mark.timeout(120)
+    def test_nan_table_band_fails_on_numpy_too(self, monkeypatch, caplog):
+        """With no fill on numpy either, the solve that the JAX wrapper handed over fails."""
         with pytest.raises(StructureSolveError, match='stop between r = '):
-            zs.main(cfg, world['mats'], None, os.path.join(ROOT, 'input'))
-        assert calls
+            self._main(monkeypatch, caplog, fill=False)
+        assert 'fell back to numpy path' in caplog.text
 
 
 @pytest.mark.smoke

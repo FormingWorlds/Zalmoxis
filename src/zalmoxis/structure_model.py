@@ -29,6 +29,19 @@ SURFACE_STOP_P_FRACTION = 1e-6
 MAX_NONFINITE_RHS = 10000
 
 
+def stop_is_surface(y_stop, p_center, p_surface=0.0):
+    """Return True when a stop at the state ``y_stop`` = [m, g, P] is the surface.
+
+    It is the surface when the state is finite and P is at most
+    ``SURFACE_STOP_P_FRACTION * p_center`` or the target surface pressure
+    ``p_surface``; any other stop is a failed solve (see ``pad_after_stop``).
+    """
+    return bool(
+        np.all(np.isfinite(y_stop))
+        and float(y_stop[2]) <= max(SURFACE_STOP_P_FRACTION * p_center, p_surface)
+    )
+
+
 def pad_after_stop(radii, mass, gravity, pressure, y_stop, p_center, p_surface=0.0):
     """Extend profiles cut short by a stop in the integration to the full grid.
 
@@ -63,9 +76,7 @@ def pad_after_stop(radii, mass, gravity, pressure, y_stop, p_center, p_surface=0
     """
     n = len(mass)
     m_stop, g_stop, p_stop = (float(v) for v in y_stop)
-    if np.all(np.isfinite(y_stop)) and p_stop <= max(
-        SURFACE_STOP_P_FRACTION * p_center, p_surface
-    ):
+    if stop_is_surface(y_stop, p_center, p_surface):
         fill = (m_stop, g_stop, 0.0)
     else:
         where = f'between r = {radii[n - 1]:.6e} and {radii[n]:.6e} m' if n else 'at r = 0'
