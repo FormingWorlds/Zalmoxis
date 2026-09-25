@@ -77,7 +77,7 @@ After a step-size collapse, the stop state comes from a re-integration of the on
 A stop at a higher pressure is a failed solve: the remaining points are NaN and a warning names the stop.
 A failed solve is an error: at the first structure solve of the pressure search, or the re-solve at its root, that is not finite, `main` raises `StructureSolveError` with the radius, the outer and inner iteration, the central pressure and the stop, for both the Picard and the Newton outer solver.
 The JAX path applies the same rule to the state where `diffeqsolve` stopped, at the event or at its last accepted step, without a re-integration, so near the $10^{-6} P_c$ limit a stop can pad on one path and fail on the other.
-The residual function detects a surface stop ($P_{\mathrm{surface}} \leq 0$) and returns $-P_{\mathrm{target}}$ (a negative value that signals to Brent's method that $P_c$ is too low), maintaining a valid bracket.
+The residual function detects a surface stop ($P_{\mathrm{surface}} \leq 0$) and returns $-P_{\mathrm{target}}$, which is negative because the configuration requires $P_{\mathrm{target}} > 0$; this signals to Brent's method that $P_c$ is too low and keeps the bracket valid.
 
 **Closure state capture.**
 Since `brentq` only returns the root value (not intermediate ODE solutions), the residual function uses a mutable closure dict to capture the mass, gravity, and pressure arrays from the last evaluation.

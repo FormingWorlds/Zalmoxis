@@ -462,7 +462,7 @@ See the [process flow documentation](../Explanations/process_flow.md#pressure-so
 
 | Parameter | Type | Unit | Default | Description |
 |---|---|---|---|---|
-| `target_surface_pressure` | float | Pa | 101325 | Target pressure at the planetary surface. Default is 1 atm. |
+| `target_surface_pressure` | float | Pa | 101325 | Target pressure at the planetary surface, > 0. Default is 1 atm. |
 | `pressure_tolerance` | float | Pa | 1e9 | Convergence criterion: the solver iterates until $\lvert P_\mathrm{surface} - P_\mathrm{target} \rvert$ falls below this value. |
 | `max_iterations_pressure` | int | -- | 200 | Maximum number of function evaluations for the Brent solver. Typical convergence requires 20 to 36 evaluations. |
 
