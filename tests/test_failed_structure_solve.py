@@ -222,17 +222,22 @@ class TestNonFiniteDensity:
 
     @pytest.mark.timeout(60)
     def test_nan_band_just_below_the_centre_pressure_raises(self, monkeypatch):
-        """NaN for P between P_c (1 - 1e-3) / 3 and P_c (1 - 1e-3) of each structure solve."""
-        state, real_solve, real_rho = {}, zs.solve_structure, sm.calculate_mixed_density
+        """NaN for P between P_c (1 - 1e-3) / 3 and P_c (1 - 1e-3) of each structure solve.
+        A solve that does not end fails after 1e5 NaN densities."""
+        state, real_solve, real_rho = {'nan': 0}, zs.solve_structure, sm.calculate_mixed_density
 
         def solve(*args, **kwargs):
             state['hi'] = args[10][2] * (1.0 - 1e-3)
             return real_solve(*args, **kwargs)
 
         def rho(pressure, *args, **kwargs):
-            band = state.get('hi', 0.0) / 3.0 < pressure < state.get('hi', 0.0)
-            return np.nan if band else real_rho(pressure, *args, **kwargs)
+            if not state.get('hi', 0.0) / 3.0 < pressure < state.get('hi', 0.0):
+                return real_rho(pressure, *args, **kwargs)
+            state['nan'] += 1
+            assert state['nan'] < 100_000, 'the structure solve does not end'
+            return np.nan
 
+        monkeypatch.setattr(sm, 'MAX_NONFINITE_RHS', 100)
         monkeypatch.setattr(zs, 'solve_structure', solve)
         monkeypatch.setattr(sm, 'calculate_mixed_density', rho)
         with pytest.raises(StructureSolveError, match='not finite; stop '):
@@ -249,8 +254,9 @@ class TestNonFiniteDensity:
             return rho
 
         monkeypatch.setattr(zs, 'calculate_mixed_density_batch', batch)
+        cfg = _cfg(outer_solver='picard', relative_tolerance=1e-6, absolute_tolerance=1e-7)
         with pytest.raises(StructureSolveError, match='density not finite at r = '):
-            _run(_cfg(outer_solver='picard'))
+            _run(cfg)
 
     @pytest.mark.timeout(60)
     def test_nan_density_at_the_centre_raises(self, monkeypatch):
