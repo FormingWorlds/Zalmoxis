@@ -535,17 +535,30 @@ class TestCacheKeyIdentity:
             )
         return captured
 
-    def test_each_function_gets_its_own_tabulation(self, monkeypatch):
-        """Every ``id`` in the wrapper module collides; each call must still see the
-        tables of the functions it was given. Changing the solidus or the liquidus
-        alone must give new melt tables."""
+    def test_each_temperature_function_gets_its_own_tabulation(self, monkeypatch):
+        """Every ``id`` in the wrapper module collides; each new temperature function
+        still gets its own tabulation, and a repeated one reuses its entry."""
+        monkeypatch.setattr(jw, 'id', lambda obj: 7, raising=False)
+        tabulated, tabulate = [], jw._tabulate_adiabat
+        monkeypatch.setattr(
+            jw, '_tabulate_adiabat', lambda *a: tabulated.append(1) or tabulate(*a)
+        )
+        _, _, cache = _common_fixtures()
+        funcs = [self._make(t) for t in (1000.0, 1001.0, 1002.0)]
+        for f in funcs + funcs[:1]:
+            got = self._solve_captured(cache, f, _solidus_func, _liquidus_func)
+            np.testing.assert_array_equal(got['T_values'], f())
+        assert len(tabulated) == 3
+
+    def test_each_melting_curve_pair_gets_its_own_tables(self, monkeypatch):
+        """As above for the melt tables; the solidus and the liquidus change one at a time."""
         monkeypatch.setattr(jw, 'id', lambda obj: 7, raising=False)
         monkeypatch.setattr(jw, '_MELT_TABLE_CACHE', {})
         _, _, cache = _common_fixtures()
         s1, s2 = self._make(2000.0), self._make(2100.0)
         l1, l2 = self._make(3000.0), self._make(3100.0)
-        for t, sol, liq in ((1000.0, s1, l1), (1001.0, s1, l2), (1002.0, s2, l2)):
-            got = self._solve_captured(cache, self._make(t), sol, liq)
-            assert np.all(got['T_values'] == t)
+        for sol, liq in ((s1, l1), (s1, l2), (s2, l2), (s1, l1)):
+            got = self._solve_captured(cache, _t_func, sol, liq)
             np.testing.assert_array_equal(got['log_T_sol_table'], np.log10(sol()))
             np.testing.assert_array_equal(got['log_T_liq_table'], np.log10(liq()))
+        assert len(jw._MELT_TABLE_CACHE) == 3
