@@ -338,7 +338,13 @@ class TestNonFiniteDensityJax:
         import zalmoxis.jax_eos.wrapper as jw
 
         world = _synthetic_jax_world(monkeypatch, fill)
-        raised, real, real_solve, out = [], jw.solve_structure_via_jax, zs.solve_structure, []
+        raised, real, real_solve, out, ran = (
+            [],
+            jw.solve_structure_via_jax,
+            zs.solve_structure,
+            [],
+            [],
+        )
 
         def solve(*args, **kwargs):
             out.append(real_solve(*args, **kwargs))
@@ -348,7 +354,8 @@ class TestNonFiniteDensityJax:
 
         def spy(*args, **kwargs):
             try:
-                return real(*args, **kwargs)
+                ran.append(real(*args, **kwargs))
+                return ran[-1]
             except ValueError as exc:
                 raised.append(str(exc))
                 raise
@@ -363,16 +370,35 @@ class TestNonFiniteDensityJax:
         )
         with caplog.at_level('WARNING', logger='zalmoxis.structure_model'):
             try:
-                return zs.main(cfg, world['mats'], None, os.path.join(ROOT, 'input')), raised
+                return (
+                    zs.main(cfg, world['mats'], None, os.path.join(ROOT, 'input')),
+                    raised,
+                    ran,
+                )
             except _FellBack:
-                return None, raised
+                return None, raised, ran
 
     @pytest.mark.timeout(600)
     def test_nan_table_band_filled_runs_on_jax(self, monkeypatch, caplog):
         """The JAX grid holds numpy's nearest-cell fill, so main runs to the end on JAX."""
-        result, raised = self._main(monkeypatch, caplog, fill=True)
-        assert not raised and 'fell back to numpy path' not in caplog.text
+        result, raised, ran = self._main(monkeypatch, caplog, fill=True)
+        assert ran and not raised and 'fell back to numpy path' not in caplog.text
         assert result['converged'] and np.all(np.isfinite(result['pressure']))
+
+    def test_shipped_mgsio3_grid_is_filled(self):
+        """The shipped MgSiO3 grid: a sample of filled nodes holds numpy's nearest-cell value."""
+        from pathlib import Path
+
+        from tests.test_jax_wrapper_branches import TestNanCellFill
+        from zalmoxis.eos.interpolation import _ensure_unified_cache
+
+        root = os.environ.get('ZALMOXIS_ROOT') or str(Path(__file__).resolve().parents[1])
+        f = os.path.join(
+            root, 'data', 'EOS_PALEOS_MgSiO3_unified', 'paleos_mgsio3_eos_table_pt.dat'
+        )
+        if not os.path.exists(f):
+            pytest.skip('PALEOS data files not found')
+        TestNanCellFill._check(dict(_ensure_unified_cache(f, {})), sample=1000)
 
     @pytest.mark.timeout(120)
     def test_nan_table_band_fails_on_numpy_too(self, monkeypatch, caplog):
