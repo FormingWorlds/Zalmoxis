@@ -2215,6 +2215,7 @@ def _solve(
                 and _adiabat_blend < 1.0
                 and uses_Tdep
                 and temperature_function is None
+                and not arrays_give_T
             ):
                 if not _using_adiabat:
                     _using_adiabat = True
