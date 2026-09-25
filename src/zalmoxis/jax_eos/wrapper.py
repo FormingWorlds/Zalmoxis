@@ -61,8 +61,9 @@ def _extract_sub_args(cached, prefix):
 
     NaN nodes of the density grid are filled from ``cached['density_nn']`` at
     the node, the value numpy's lookup falls back to there. Inside a cell with
-    a filled corner JAX interpolates bilinearly where numpy returns the nearest
-    valid node, so the two agree at the nodes but not inside such cells.
+    a filled corner JAX interpolates bilinearly where numpy can return the
+    nearest valid node, so the two agree at the nodes and can differ inside such
+    cells.
     """
     cache_key = f'_jax_sub_args::{prefix}'
     cached_args = cached.get(cache_key)
