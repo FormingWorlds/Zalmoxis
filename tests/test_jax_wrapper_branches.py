@@ -503,3 +503,75 @@ class TestMushyZoneFactorDispatch:
                 mushy_zone_factors=0.55,
             )
         assert captured['mzf'] == pytest.approx(0.55)
+
+
+class TestCacheKeyIdentity:
+    """Each new temperature or melting-curve function gets its own tabulation,
+    also when an earlier, freed function had the same ``id``."""
+
+    @staticmethod
+    def _make(value):
+        return lambda *args: value
+
+    def test_freed_closures_recycle_ids(self):
+        """Precondition of the tests below: in this interpreter a freed closure's
+        id goes to the next closure of the same shape."""
+        ids = []
+        for k in range(20):
+            f = self._make(1000.0 + k)
+            ids.append(id(f))
+            del f
+        assert len(set(ids)) < len(ids)
+
+    def _solve_captured(self, cache, *, temperature_function, solidus_func, liquidus_func):
+        captured = {}
+
+        def fake_solve_jax(radii_arr, y0, **kwargs):
+            captured.update(kwargs)
+            return np.zeros((len(radii_arr), 3)), np.zeros(3)
+
+        layer_mixtures, mds, _ = _common_fixtures()
+        with mock.patch.object(jw, 'solve_structure_jax', side_effect=fake_solve_jax):
+            jw.solve_structure_via_jax(
+                layer_mixtures=layer_mixtures,
+                cmb_mass=2e23,
+                core_mantle_mass=4e23,
+                radii=np.linspace(1.0, 1e6, 20),
+                adaptive_radial_fraction=0.5,
+                relative_tolerance=1e-6,
+                absolute_tolerance=1e-8,
+                maximum_step=1e5,
+                material_dictionaries=mds,
+                interpolation_cache=cache,
+                y0=[0.0, 0.0, 1e12],
+                solidus_func=solidus_func,
+                liquidus_func=liquidus_func,
+                temperature_function=temperature_function,
+            )
+        return captured
+
+    def test_new_temperature_function_gets_own_tabulation(self):
+        _, _, cache = _common_fixtures()
+        for k in range(20):
+            t_func = self._make(1000.0 + k)
+            got = self._solve_captured(
+                cache,
+                temperature_function=t_func,
+                solidus_func=_solidus_func,
+                liquidus_func=_liquidus_func,
+            )
+            assert np.all(got['T_values'] == 1000.0 + k)
+            assert got['T_surface'] == 1000.0 + k
+            del t_func
+
+    def test_new_melting_curves_get_own_tabulation(self, monkeypatch):
+        monkeypatch.setattr(jw, '_MELT_TABLE_CACHE', {})
+        _, _, cache = _common_fixtures()
+        for k in range(20):
+            sol, liq = self._make(2000.0 + k), self._make(3000.0 + k)
+            got = self._solve_captured(
+                cache, temperature_function=_t_func, solidus_func=sol, liquidus_func=liq
+            )
+            np.testing.assert_array_equal(got['log_T_sol_table'], np.log10(2000.0 + k))
+            np.testing.assert_array_equal(got['log_T_liq_table'], np.log10(3000.0 + k))
+            del sol, liq
