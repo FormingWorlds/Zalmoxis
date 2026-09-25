@@ -207,7 +207,11 @@ class TestInteriorStopFails:
         """The second part of a Tdep solve fails at once; the node where it starts stays."""
         radii = np.linspace(0.0, R_OUT, N)
         _, _, m, g, p = self._solve(monkeypatch, (radii[N // 2 - 1] / R_OUT, 0.5), True)
-        assert np.all(p[: N // 2] > 0) and np.all(np.isnan([m, g, p])[:, N // 2 :])
+        clean = np.array(self._solve(monkeypatch, (2.0, 0.0), True)[2:])
+        np.testing.assert_allclose(
+            np.array([m, g, p])[:, : N // 2], clean[:, : N // 2], rtol=1e-8
+        )
+        assert np.all(np.isnan([m, g, p])[:, N // 2 :])
 
     @pytest.mark.timeout(60)
     def test_failure_at_the_last_saved_node_ends_there(self, monkeypatch):

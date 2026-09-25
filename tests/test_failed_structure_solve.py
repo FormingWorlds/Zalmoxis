@@ -208,6 +208,7 @@ class TestNonFiniteDensity:
         monkeypatch.setattr(sm, 'coupled_odes', odes)
         monkeypatch.setattr(sm, 'calculate_mixed_density', rho)
 
+    @pytest.mark.timeout(60)
     def test_nan_density_band_raises_at_the_band(self, monkeypatch):
         """The density is NaN for 2.5e6 m < r < 3.5e6 m."""
         self._nan_band(monkeypatch, 2.5e6, 3.5e6)
@@ -290,6 +291,24 @@ def _synthetic_jax_world(monkeypatch, fill=False):
 @pytest.mark.smoke
 class TestNonFiniteDensityJax:
     """The JAX path: an EOS failure inside the planet ends the solve and fails it."""
+
+    def test_rhs_non_finite_density_gives_nan_above_zero_pressure(self):
+        """NaN derivatives at P > 0 (the solve stops there), zeros at P <= 0 (the
+        pressure-zero event ends the integration)."""
+        pytest.importorskip('jax')
+        from tests.test_jax_parity_synthetic import _synthetic_world
+        from zalmoxis.jax_eos.rhs import coupled_odes_jax
+
+        world = _synthetic_world()
+        args = dict(world['jax_args'])
+        args['core_density_grid'] = np.full_like(args['core_density_grid'], np.nan)
+        for pressure, expected in ((1e11, 'nan'), (0.0, 'zero'), (-1e3, 'zero')):
+            y = np.array([0.5 * world['cmb_mass'], 5.0, pressure])  # inside the core
+            dy = np.asarray(coupled_odes_jax(2e6, y, mantle_is_unified=True, **args))
+            if expected == 'nan':
+                assert np.all(np.isnan(dy)), (pressure, dy)
+            else:
+                assert np.all(dy == 0.0), (pressure, dy)
 
     @pytest.mark.timeout(120)
     def test_nan_table_band_ends_the_jax_solve(self, monkeypatch):

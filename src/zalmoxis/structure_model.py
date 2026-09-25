@@ -192,13 +192,8 @@ def coupled_odes(
     # Determine per-layer mixture for the current enclosed mass
     mixture = get_layer_mixture(mass, cmb_mass, core_mantle_mass, layer_mixtures)
 
-    # Return zero derivatives for non-physical pressure.  When the RHS
-    # returns zeros, the ODE state freezes (mass, gravity, pressure stop
-    # changing).  The terminal event (_pressure_zero, direction=-1) then
-    # fires when pressure crosses zero, stopping the integration.
-    # Note: zero derivatives do NOT cause RK45 to reject the step; the
-    # solver accepts them and advances with frozen state until the
-    # terminal event triggers.
+    # Past the surface (P <= 0) zero derivatives keep the trial state finite; the
+    # pressure-zero event locates the downcrossing inside the step that reaches it.
     if pressure <= 0 or np.isnan(pressure):
         logger.debug(f'Nonphysical pressure encountered: P={pressure} Pa at radius={radius} m')
         return [0.0, 0.0, 0.0]
