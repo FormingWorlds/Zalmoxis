@@ -440,12 +440,11 @@ class TestNonFiniteDensityJax:
         args[10] = [0.0, 0.0, 3e11]  # P_c whose core crosses the NaN band
         r_arr = np.asarray(args[3])
         T_arr = np.linspace(7000.0, 3000.0, len(r_arr))
-        import zalmoxis.jax_eos.wrapper as jw
 
-        def fail(*args, **kwargs):
+        def fail(*_args, **_kwargs):
             raise ValueError('forced JAX failure')  # the filled band no longer fails on JAX
 
-        monkeypatch.setattr(jw, 'solve_structure_via_jax', fail)
+        monkeypatch.setattr('zalmoxis.jax_eos.wrapper.solve_structure_via_jax', fail)
         with caplog.at_level('WARNING', logger='zalmoxis.structure_model'):
             fell = sm.solve_structure(
                 *args, **dict(kwargs, use_jax=True, temperature_arrays=(r_arr, T_arr))
