@@ -2,9 +2,9 @@
 
 A structure solve that fails away from the surface returns NaN past its stop
 (``pad_after_stop``). These tests inject such failures into real solver runs
-and check that no failed profile is taken as a solution. They run ``main`` and
-so belong to the smoke tier; all but the PALEOS adiabat case use the analytic
-EOS and need no data.
+and check that no failed profile is taken as a solution. The analytic-EOS
+cases stop ``main`` after its first ``_solve`` and take a few seconds, so they
+are unit tests; the real Newton run and the PALEOS adiabat case are smoke tests.
 """
 
 from __future__ import annotations
@@ -18,9 +18,7 @@ import pytest
 import zalmoxis
 import zalmoxis.solver as zs
 from zalmoxis.config import load_material_dictionaries
-from zalmoxis.constants import earth_mass
-
-pytestmark = pytest.mark.smoke
+from zalmoxis.constants import G, earth_mass
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(zalmoxis.__file__), '..', '..'))
 
@@ -86,6 +84,7 @@ def _first_solve_result(monkeypatch, cfg):
     return results[0]
 
 
+@pytest.mark.unit
 class TestFailedPressureSolve:
     """A pressure solve with no root is a failed solve, whatever profile remains."""
 
@@ -107,12 +106,24 @@ class TestFailedPressureSolve:
         assert first['structure_failed'] is True
 
 
+def _check_restored_or_failed(result, failed):
+    """A failed result is not converged; a restored one is a consistent profile."""
+    assert result['structure_failed'] is failed
+    if failed:
+        assert result['converged'] is False
+    else:
+        M, R = result['mass_enclosed'][-1], result['radii'][-1]
+        assert result['gravity'][-1] == pytest.approx(G * M / R**2, rel=1e-4)
+        assert result['pressure'][0] == pytest.approx(result['p_center'])
+
+
+@pytest.mark.unit
 class TestWallClockStop:
-    """A wall-clock stop inside the last outer iteration reports a failure unless a
-    best solution from an earlier iteration is restored."""
+    """A wall-clock stop inside the last outer iteration restores the best earlier
+    solution, or reports a failure when there is none."""
 
     @pytest.mark.parametrize(
-        'n_outer, fail_first, failed', [(2, False, True), (3, False, False), (3, True, True)]
+        'n_outer, fail_first, failed', [(2, False, False), (3, False, False), (3, True, True)]
     )
     def test_stop_before_the_first_pressure_solve(
         self, monkeypatch, n_outer, fail_first, failed
@@ -120,7 +131,8 @@ class TestWallClockStop:
         """The clock jumps past the limit when the second outer iteration sets up
         its temperatures, so its inner loop stops before any structure solve. With
         3 iterations the third restores the best earlier solution; if every solve
-        of the first iteration failed there is none."""
+        of the first iteration failed there is none. With 2 iterations the restore
+        happens after the loop."""
         from types import SimpleNamespace
 
         clock, calls, real_tp = {'jump': 0.0}, [], zs.calculate_temperature_profile
@@ -140,11 +152,35 @@ class TestWallClockStop:
         cfg = _cfg(outer_solver='picard', max_iterations_outer=n_outer, max_iterations_inner=1)
         first = _first_solve_result(monkeypatch, cfg)
         assert len(calls) == 2
-        assert first['structure_failed'] is failed
+        _check_restored_or_failed(first, failed)
 
 
+@pytest.mark.unit
+class TestFailedLastPicardIteration:
+    """The last outer iteration's pressure solve finds no root, but leaves finite
+    bracket-end profiles (solves fail above P_c = 1e11 Pa, below the root)."""
+
+    @pytest.mark.parametrize('n_outer, failed', [(3, False), (1, True)])
+    def test_best_solution_or_failure(self, monkeypatch, n_outer, failed):
+        calls, real_tp = [], zs.calculate_temperature_profile
+
+        def temperature_profile(*args, **kwargs):
+            calls.append(1)
+            return real_tp(*args, **kwargs)
+
+        monkeypatch.setattr(zs, 'calculate_temperature_profile', temperature_profile)
+        _spy_solve(monkeypatch, lambda radii, y0: len(calls) == n_outer and y0[2] > 1e11)
+        cfg = _cfg(outer_solver='picard', max_iterations_outer=n_outer, max_iterations_inner=1)
+        first = _first_solve_result(monkeypatch, cfg)
+        _check_restored_or_failed(first, failed)
+        if not failed:
+            assert first['mass_enclosed'][-1] == pytest.approx(earth_mass, rel=0.05)
+
+
+@pytest.mark.smoke
 class TestNewtonWithFailedRadius:
-    """Newton reads a radius with no pressure root as a failed M(R)."""
+    """A full Newton run with a radius that has no pressure root (the fall-back
+    cases on a synthetic M(R) are unit tests in test_outer_solver_newton.py)."""
 
     FAST = {
         'outer_solver': 'newton',
@@ -152,17 +188,6 @@ class TestNewtonWithFailedRadius:
         'relative_tolerance': 1e-7,
         'absolute_tolerance': 1e-8,
     }
-
-    def test_failure_at_the_first_radius_raises(self, monkeypatch):
-        first = []
-
-        def fails(radii, y0):
-            first.append(first[0] if first else radii[-1])
-            return radii[-1] == first[0]
-
-        _spy_solve(monkeypatch, fails)
-        with pytest.raises(RuntimeError, match='no other radius has a mass'):
-            _run(_cfg(**self.FAST))
 
     def test_failure_at_a_later_radius_recovers(self, monkeypatch, caplog):
         """Every solve fails at the fourth radius (the first Newton step after R0
@@ -182,6 +207,7 @@ class TestNewtonWithFailedRadius:
         assert result['mass_enclosed'][-1] == pytest.approx(earth_mass, rel=1e-3)
 
 
+@pytest.mark.smoke
 class TestFailedSolveInPaleosAdiabat:
     """A failed solve leaves no NaN in the state the next adiabat step reads."""
 

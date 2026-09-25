@@ -523,6 +523,35 @@ def _brentq_fallback_outer(
         bookkeeping keys ``newton_n_iter``, ``newton_history``, and
         ``newton_used_brentq=True``.
     """
+    results = {}
+
+    def eval_M(R_query):
+        """``eval_M_at_R`` that keeps the result of every finite evaluation."""
+        M_q, res = eval_M_at_R(R_query)
+        if np.isfinite(M_q):
+            results[float(R_query)] = res
+        return M_q, res
+
+    def best_seen():
+        """Result of the best finite evaluation, marked with its mass error."""
+        finite = [h for h in history if np.isfinite(h[1])]
+        best_rel = float('nan')
+        result = dict(last_result) if last_result else {}
+        if finite:
+            best_R, _, best_rel = min(finite, key=lambda h: h[2])
+            res = results.get(float(best_R))
+            result = dict(res if res is not None else eval_M_at_R(best_R)[1])
+        result['converged'] = bool(best_rel < tol)
+        result['converged_mass'] = bool(best_rel < tol)
+        result['best_mass_error'] = float(best_rel)
+        result['total_time'] = time.time() - start_time
+        result['newton_n_iter'] = (
+            int(n_newton_iter) if n_newton_iter is not None else len(history)
+        )
+        result['newton_history'] = history
+        result['newton_used_brentq'] = True
+        return result
+
     # Step 1: try to reuse Newton history.
     R_lo, R_hi = None, None
     if len(history) >= 2:
@@ -556,7 +585,7 @@ def _brentq_fallback_outer(
             R_min,
             R_max,
         )
-        M_at_current, _ = eval_M_at_R(R_current)
+        M_at_current, _ = eval_M(R_current)
         if not np.isfinite(M_at_current):
             if not history:
                 raise RuntimeError(
@@ -586,7 +615,7 @@ def _brentq_fallback_outer(
             # M too large -> shrink R.
             R_test = R_current * 0.5
             while R_test > R_min:
-                M_test, _ = eval_M_at_R(R_test)
+                M_test, _ = eval_M(R_test)
                 if not np.isfinite(M_test):
                     R_test *= 0.5
                     continue
@@ -599,7 +628,7 @@ def _brentq_fallback_outer(
             # M too small -> grow R.
             R_test = R_current * 1.5
             while R_test < R_max:
-                M_test, _ = eval_M_at_R(R_test)
+                M_test, _ = eval_M(R_test)
                 if not np.isfinite(M_test):
                     R_test *= 1.3
                     continue
@@ -610,27 +639,15 @@ def _brentq_fallback_outer(
                 R_test *= 1.3
 
     if R_lo is None or R_hi is None:  # pragma: no cover - exhausted physical bounds; defensive
-        best_idx = int(np.argmin([h[2] for h in history])) if history else 0
-        best_R, best_M, best_rel = history[best_idx]
+        result = best_seen()
         logger.warning(
-            'Brentq: no sign-flipping bracket in [%.2e, %.2e]; returning '
-            'best-seen R=%.4e M=%.4e rel=%.3e (converged=False).',
+            'Brentq: no sign-flipping bracket in [%.2e, %.2e]; returning the best '
+            'evaluation (mass error %.3e, converged=False).',
             R_min,
             R_max,
-            best_R,
-            best_M,
-            best_rel,
+            result['best_mass_error'],
         )
-        result = dict(last_result) if last_result else {}
         result['converged'] = False
-        result['converged_mass'] = bool(best_rel < tol)
-        result['best_mass_error'] = float(best_rel)
-        result['total_time'] = time.time() - start_time
-        result['newton_n_iter'] = (
-            int(n_newton_iter) if n_newton_iter is not None else len(history)
-        )
-        result['newton_history'] = history
-        result['newton_used_brentq'] = True
         return result
 
     # Step 3: brentq.
@@ -642,19 +659,7 @@ def _brentq_fallback_outer(
             'Brentq: bracket width %.3e m too narrow; returning best-seen (converged=False).',
             R_hi - R_lo,
         )
-        best_idx = int(np.argmin([h[2] for h in history])) if history else 0
-        best_R, best_M, best_rel = history[best_idx]
-        result = dict(last_result) if last_result else {}
-        result['converged'] = bool(best_rel < tol)
-        result['converged_mass'] = bool(best_rel < tol)
-        result['best_mass_error'] = float(best_rel)
-        result['total_time'] = time.time() - start_time
-        result['newton_n_iter'] = (
-            int(n_newton_iter) if n_newton_iter is not None else len(history)
-        )
-        result['newton_history'] = history
-        result['newton_used_brentq'] = True
-        return result
+        return best_seen()
 
     # Estimate |dM/dR| from bracket endpoints to set xtol such that
     # the returned R yields M within `tol` of M_target. Lookup is by
@@ -684,7 +689,7 @@ def _brentq_fallback_outer(
 
     # Closure for brentq: side-effects history.
     def _f(R_query):
-        M_q, _ = eval_M_at_R(R_query)
+        M_q, _ = eval_M(R_query)
         history.append((float(R_query), float(M_q), abs(M_q - M_target) / M_target))
         return float(M_q - M_target)
 
@@ -704,22 +709,12 @@ def _brentq_fallback_outer(
             type(exc).__name__,
             exc,
         )
-        best_idx = int(np.argmin([h[2] for h in history])) if history else 0
-        best_R, best_M, best_rel = history[best_idx]
-        result = dict(last_result) if last_result else {}
-        result['converged'] = bool(best_rel < tol)
-        result['converged_mass'] = bool(best_rel < tol)
-        result['best_mass_error'] = float(best_rel)
-        result['total_time'] = time.time() - start_time
-        result['newton_n_iter'] = (
-            int(n_newton_iter) if n_newton_iter is not None else len(history)
-        )
-        result['newton_history'] = history
-        result['newton_used_brentq'] = True
-        return result
+        return best_seen()
 
     # Final eval at the converged root for the returned profiles.
-    M_root, last_result = eval_M_at_R(R_root)
+    M_root, last_result = eval_M(R_root)
+    if not np.isfinite(M_root):
+        return best_seen()
     rel = abs(M_root - M_target) / M_target
     history.append((float(R_root), float(M_root), rel))
     logger.info(
@@ -940,7 +935,7 @@ def _solve_newton_outer(
                 R,
                 M_target,
                 _M_at_R,
-                history,
+                history + side_evals,
                 R_min=R_min,
                 R_max=R_max,
                 tol=tol,
@@ -1352,6 +1347,20 @@ def _solve(
     # Outer-loop oscillation tracking (local to this call, not function-level).
     best_mass_error = float('inf')
     best_profiles = None
+
+    def _restored_best():
+        """Writable copies of the best profiles (JAX results can be read-only views)."""
+        b = best_profiles
+        copy = lambda a: None if a is None else np.array(a)  # noqa: E731
+        return (
+            copy(b['radii']),
+            copy(b['density']),
+            copy(b['gravity']),
+            copy(b['pressure']),
+            copy(b['mass_enclosed']),
+            temperatures if b['temperatures'] is None else copy(b['temperatures']),
+        )
+
     oscillation_count = 0
 
     # Initialize arrays to safe defaults. These are overwritten on the
@@ -1383,20 +1392,9 @@ def _solve(
             )
             if best_profiles is not None:
                 converged_mass = best_mass_error < 3 * tolerance_outer
-                # Fresh writable copies: `pressure` / `mass_enclosed`
-                # carry over from the previous outer iter and may be
-                # read-only views of JAX buffers (jax_eos/wrapper.py
-                # returns np.asarray(...) for speed; the host-device
-                # sync penalty of a writable np.array on every solve
-                # is 1 ms/call ~ 88 s/main() in coupled PROTEUS).
-                # Converting only on the rare timeout path keeps the
-                # hot loop fast.
-                radii = np.array(best_profiles['radii'])
-                density = np.array(best_profiles['density'])
-                pressure = np.array(best_profiles['pressure'])
-                mass_enclosed = np.array(best_profiles['mass_enclosed'])
-                if best_profiles['temperatures'] is not None:
-                    temperatures = np.array(best_profiles['temperatures'])
+                radii, density, gravity, pressure, mass_enclosed, temperatures = (
+                    _restored_best()
+                )
                 structure_failed = False
             break
 
@@ -2077,6 +2075,12 @@ def _solve(
             prev_pressure = np.asarray(pressure).copy()
             prev_mass_enclosed = np.asarray(mass_enclosed).copy()
 
+        if structure_failed:
+            # A failed pressure solve gives no mass for the radius, the best
+            # solution or the convergence test.
+            _frozen_sigma = {}
+            continue
+
         # Update radius guess with damped scaling to prevent oscillation.
         # The cube-root scaling is correct in direction but can overshoot
         # wildly when calculated_mass << planet_mass, catapulting radius
@@ -2145,12 +2149,7 @@ def _solve(
                 best_mass_error * 100,
                 tolerance_outer * 100,
             )
-            radii = np.array(best_profiles['radii'])
-            density = np.array(best_profiles['density'])
-            pressure = np.array(best_profiles['pressure'])
-            mass_enclosed = np.array(best_profiles['mass_enclosed'])
-            if best_profiles['temperatures'] is not None:
-                temperatures = np.array(best_profiles['temperatures'])
+            radii, density, gravity, pressure, mass_enclosed, temperatures = _restored_best()
             converged_mass = True
             structure_failed = False
             break
@@ -2203,6 +2202,10 @@ def _solve(
                 'Maximum outer iterations (%d) reached. Total mass may not be fully converged.',
                 max_iterations_outer,
             )
+
+    if structure_failed and best_profiles is not None:
+        radii, density, gravity, pressure, mass_enclosed, temperatures = _restored_best()
+        structure_failed = False
 
     if converged_mass and converged_density and converged_pressure:
         converged = True

@@ -476,28 +476,32 @@ def solve_structure(
         if tail.status != 0:
             y_stop = tail.y[:, -1]  # at a terminal event this is the event state
             break
-        # The restart passed the failure, so the grid integration resumes there
-        # (each resume adds a node); at the outer radius the restart completes it.
+        # The restart passed the failure: its state at radii[n] becomes node n and
+        # the grid integration resumes there. Each pass adds a node, so this ends.
+        mass_enclosed, gravity, pressure = (
+            np.append(a, v) for a, v in zip((mass_enclosed, gravity, pressure), tail.y[:, -1])
+        )
+        n += 1
+        if n == len(radii):
+            break
         max_step_end = maximum_step if uses_Tdep else np.inf
-        if n == len(radii) - 1:
-            sol_end, new = tail, tail.y[:, -1:]
-        else:
-            sol_end = solve_ivp(
-                _ode_rhs,
-                (radii[n], radii[-1]),
-                tail.y[:, -1],
-                t_eval=radii[n:],
-                rtol=relative_tolerance,
-                atol=absolute_tolerance,
-                max_step=max_step_end,
-                method='RK45',
-                events=_pressure_zero,
+        sol_end = solve_ivp(
+            _ode_rhs,
+            (radii[n - 1], radii[-1]),
+            tail.y[:, -1],
+            t_eval=radii[n:],
+            rtol=relative_tolerance,
+            atol=absolute_tolerance,
+            max_step=max_step_end,
+            method='RK45',
+            events=_pressure_zero,
+        )
+        if len(sol_end.t):
+            mass_enclosed, gravity, pressure = (
+                np.concatenate([a, b])
+                for a, b in zip((mass_enclosed, gravity, pressure), sol_end.y)
             )
-            new = sol_end.y
-        mass_enclosed = np.concatenate([mass_enclosed, new[0]])
-        gravity = np.concatenate([gravity, new[1]])
-        pressure = np.concatenate([pressure, new[2]])
-        n = len(mass_enclosed)
+            n = len(mass_enclosed)
     if n < len(radii):
         mass_enclosed, gravity, pressure = pad_after_stop(
             radii, mass_enclosed, gravity, pressure, y_stop, y0[2], surface_pressure

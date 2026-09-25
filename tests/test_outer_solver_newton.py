@@ -596,3 +596,46 @@ class TestNewtonEndToEndEarthLike:
         # Sanity: R within Earth-like range.
         R_final = result['radii'][-1]
         assert 5.0e6 < R_final < 8.0e6, f'Final R = {R_final:.4e} m outside Earth-like range'
+
+
+@pytest.mark.unit
+class TestNewtonWithFailedRadius:
+    """Radii where no structure solve finds a pressure root, on a linear M(R) with
+    its root at R = 7e6 m. A failed radius returns ``structure_failed``."""
+
+    @staticmethod
+    def _run(newton_config, failed):
+        solve = _make_synthetic_M_solve(lambda R: 6.0e18 * R - 3.6e25)
+
+        def side(config_params, *args, **kwargs):
+            result = solve(config_params, *args, **kwargs)
+            if failed(float(config_params['_initial_radius_guess'])):
+                result['mass_enclosed'] = np.full(3, np.nan)
+                result['structure_failed'] = True
+            return result
+
+        cp = dict(newton_config, planet_mass=6.0e24, _initial_radius_guess=6.0e6)
+        cp.update(newton_tol=1.0e-6, newton_max_iter=10)
+        with patch('zalmoxis.solver._solve', side_effect=side):
+            return _solve_newton_outer(cp, {}, None, '/tmp')
+
+    def test_failure_at_the_first_radius_raises(self, newton_config):
+        with pytest.raises(RuntimeError, match='no other radius has a mass'):
+            self._run(newton_config, lambda R: R == 6.0e6)
+
+    def test_failure_at_the_newton_step_recovers(self, newton_config):
+        """The first Newton step (capped at +10 % to 6.6e6 m) fails; the fall-back
+        sweeps from the best evaluated radius and still finds the root."""
+        result = self._run(newton_config, lambda R: abs(R - 6.6e6) < 1.0)
+        assert result['converged'] is True and result['newton_used_brentq'] is True
+        assert result['mass_enclosed'][-1] == pytest.approx(6.0e24, rel=1e-5)
+
+    def test_failure_band_around_the_root_returns_the_best_finite_result(self, newton_config):
+        """No radius within 1 % of the root has a mass; the result is the best
+        finite evaluation, not a failed one."""
+        result = self._run(newton_config, lambda R: abs(R / 7.0e6 - 1) < 0.01)
+        assert result['converged'] is False
+        assert np.isfinite(result['best_mass_error'])
+        assert np.isfinite(result['mass_enclosed'][-1])
+        M_best = result['mass_enclosed'][-1]
+        assert abs(M_best / 6.0e24 - 1) == pytest.approx(result['best_mass_error'])

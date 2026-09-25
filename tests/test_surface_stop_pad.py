@@ -307,6 +307,48 @@ class TestInteriorStopFails:
         assert m == pytest.approx(clean[0], rel=1e-6)
         assert np.all((p == 0.0) == (clean[2] == 0.0))
 
+    @pytest.mark.timeout(60)
+    @pytest.mark.parametrize('k', [10, 30])
+    def test_resume_that_fails_at_once_ends(self, monkeypatch, k):
+        """A band that starts exactly at node k: the restart ends at radii[k], the
+        resume from there fails on its first step with no output, and the next
+        restart fails too, so the solve fails past node k instead of looping."""
+        radii = np.linspace(0.0, R_OUT, N)
+        lo, base = radii[k], _band_rhs(-1, -1)
+        calls, real = [], sm.solve_ivp
+
+        def spy(f, t_span, y0, **kwargs):
+            sol = real(f, t_span, y0, **kwargs)
+            calls.append((kwargs.get('t_eval') is not None, sol.status, len(sol.t)))
+            return sol
+
+        monkeypatch.setattr(sm, 'solve_ivp', spy)
+        monkeypatch.setattr(
+            sm,
+            'coupled_odes',
+            lambda r, y, *a, **kw: (
+                np.full(3, np.nan) if lo < r < lo + 0.3 * radii[1] else base(r, y)
+            ),
+        )
+        monkeypatch.setattr(sm, 'any_component_is_tdep', lambda _: False)
+        m, g, p = sm.solve_structure(
+            {},
+            0.0,
+            0.0,
+            radii,
+            0.5,
+            1e-10,
+            1e-12,
+            np.inf,
+            {},
+            {},
+            [0.0, 0.0, self.P_C],
+            None,
+            None,
+        )
+        assert (True, -1, 0) in calls
+        assert np.all(np.isfinite(m[: k + 1])) and np.all(np.isnan(m[k + 1 :]))
+
 
 class TestPadAfterStop:
     """pad_after_stop pads at or below the surface pressure limit and fails above it."""
