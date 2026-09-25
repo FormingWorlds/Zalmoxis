@@ -66,8 +66,8 @@ def get_paleos_unified_density_jax(
 
     Mirrors ``zalmoxis.eos.paleos.get_paleos_unified_density``. Inputs
     are scalars or 0-d arrays; returns a scalar. The grid comes with its NaN
-    cells filled (``jax_eos.wrapper._extract_sub_args``); a cell whose fill is
-    NaN still gives NaN.
+    nodes filled (``jax_eos.wrapper._extract_sub_args``); a node the fill leaves
+    NaN (``density_nn`` gives NaN there) makes every lookup that reads it NaN.
     """
     # Clamp pressure to table bounds, then log10
     pressure_c = jnp.clip(pressure, p_min, p_max)
