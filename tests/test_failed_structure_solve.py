@@ -235,9 +235,10 @@ class TestNonFiniteDensity:
 
         monkeypatch.setattr(zs, 'solve_structure', solve)
         monkeypatch.setattr(sm, 'calculate_mixed_density', rho)
-        with pytest.raises(StructureSolveError):
+        with pytest.raises(StructureSolveError, match='not finite'):
             _run(_cfg(outer_solver='picard'))
 
+    @pytest.mark.timeout(60)
     def test_nan_density_at_a_node_raises(self, monkeypatch):
         """The integration is clean, but the density update meets a NaN at a node."""
         real = zs.calculate_mixed_density_batch

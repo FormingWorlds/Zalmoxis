@@ -185,7 +185,7 @@ class TestInteriorStopFails:
         radii, hi = np.linspace(0.0, R_OUT, N), self.P_C * (1.0 - 1e-3)
         monkeypatch.setattr(sm, 'coupled_odes', _band_rhs(-1.0, -1.0, hi / 3.0, hi))
         monkeypatch.setattr(sm, 'any_component_is_tdep', lambda _: tdep)
-        _, _, p = sm.solve_structure(
+        m, g, p = sm.solve_structure(
             {},
             0.0,
             0.0,
@@ -200,7 +200,7 @@ class TestInteriorStopFails:
             None,
             None,
         )
-        assert p[0] == self.P_C and np.all(np.isnan(p[1:]))
+        assert p[0] == self.P_C and np.all(np.isnan([m, g, p])[:, 1:])
 
     @pytest.mark.timeout(60)
     def test_failure_at_the_split_node_keeps_it(self, monkeypatch):

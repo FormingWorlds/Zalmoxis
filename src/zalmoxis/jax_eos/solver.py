@@ -16,9 +16,9 @@ integration via a scipy event when P crosses zero. This module uses
 localize the crossing, matching numpy's physics. After the event
 fires, or after a failed step, saveat points beyond the stop are
 returned as ``inf`` by diffrax; the wrapper (``jax_eos/wrapper.py``)
-pads them with ``structure_model.pad_after_stop`` from the state where
-the solve stopped: mass/gravity at the stop and zero pressure at the
-surface, NaN for a stop deep inside.
+pads a surface stop with ``structure_model.pad_after_stop`` (mass and
+gravity at the stop, zero pressure) and raises ValueError for a stop
+deep inside, so that ``solve_structure`` retries that solve on numpy.
 
 For a non-finite density ``coupled_odes_jax`` returns NaN at P > 0, which
 fails the solve, and zeros at P <= 0; it does not freeze on P <= 0 itself,
