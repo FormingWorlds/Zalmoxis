@@ -254,7 +254,8 @@ def solve_structure_via_jax(
         When the solve stops before ``radii[-1]`` and the stop is not the
         surface (``stop_is_surface``), e.g. at a NaN cell of a PALEOS table.
         ``solve_structure`` then retries on numpy, whose table lookup fills
-        NaN cells from the nearest valid cell.
+        NaN cells from the nearest valid cell. Such a solve costs the diffrax
+        ``max_steps`` spin (about 10 s) plus a numpy solve.
     """
     from ..eos.interpolation import _ensure_unified_cache
     from ..eos.seager import get_tabulated_eos
