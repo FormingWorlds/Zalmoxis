@@ -175,8 +175,6 @@ def test_coupled_odes_jax_parity():
     }
 
     def numpy_temp(r, P):
-        if P <= 0:
-            return 3000.0
         return float(np.interp(np.log10(max(P, 1.0)), T_logP_grid, T_values))
 
     rng = np.random.default_rng(113)

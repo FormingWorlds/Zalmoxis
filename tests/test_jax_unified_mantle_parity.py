@@ -126,8 +126,6 @@ def _compare_rhs(setup, layer_mixtures, mat_dicts, profile, jax_extra, seed, tol
     T_values = setup['T_values']
 
     def numpy_temp(P):
-        if P <= 0:
-            return 3000.0
         return float(np.interp(np.log10(max(P, 1.0)), T_logP_grid, T_values))
 
     rng = np.random.default_rng(seed)
