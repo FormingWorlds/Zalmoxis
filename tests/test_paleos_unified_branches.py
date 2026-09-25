@@ -331,6 +331,10 @@ class TestBatchPath:
             get_paleos_unified_density(p, t, s['mat'], 0.8, s['cache']) for p, t in zip(ps, ts)
         ]
         np.testing.assert_allclose(rho, scalar, rtol=1e-12)
+        direct = get_paleos_unified_density_batch(ps, ts, s['mat'], 1.0, s['cache'])
+        assert rho[1] != pytest.approx(
+            direct[1], rel=1e-6
+        )  # the mushy blend, not the direct value
 
     def test_batch_nan_recovery(self, synthetic_cache_with_nan):
         """NaN cells are recovered by NN fallback in the batch path."""
@@ -377,7 +381,7 @@ class TestBatchPath:
         scalar = get_paleos_unified_density(ps[0], ts[0], s['mat'], 0.5, s['cache'])
         assert np.isfinite(rho[0]) and rho[0] == pytest.approx(scalar, rel=1e-12)
 
-    def test_batch_above_below_with_nan_recovery(self, synthetic_cache_with_nan):
+    def test_batch_below_solidus_with_nan_recovery(self, synthetic_cache_with_nan):
         """A shell below the solidus takes the direct lookup, which can land on a NaN
         cell; the NN fallback must then recover the density. (No above-liquidus query
         reaches this fixture's NaN corner.)
@@ -396,20 +400,20 @@ class TestBatchPath:
         # Density should be physically reasonable (synthetic table
         # rho ~ 5000 * (P/1e9)^0.1 at table corner is ~5000 kg/m^3).
         assert 1000 < rho[0] < 20000
+        scalar = get_paleos_unified_density(ps[0], ts[0], s['mat'], 0.8, s['cache'])
+        assert rho[0] == pytest.approx(scalar, rel=1e-12)
 
     def test_batch_mushy_solid_and_liquid_side_nan_recovery(self):
-        """Both solid-side and liquid-side bilinear
-        NaN fallbacks fire simultaneously when the T_sol and T_liq lookups
-        each land on a bracket containing a NaN cell.
+        """The solid-side, liquid-side and direct NN fallbacks each recover a NaN cell.
 
         At P=1e10 Pa: table liquidus T_liq ≈ 2714 K, mushy_zone_factor=0.6
         gives T_sol ≈ 1629 K. log_t_sol ≈ 3.212 brackets cells
-        (2,1)-(3,2); log_t_liq ≈ 3.434 brackets cells (2,3)-(3,4); the
-        unclamped query at log_t ≈ 3.398 brackets (2,2)-(3,3). NaN at
-        (3, 2) sits inside the solid-side bracket; NaN at (3, 3) sits
-        inside both the unclamped query bracket AND the liquid-side
-        bracket. All three lookups call the NN fallback; the mushy value then
-        replaces the direct one.
+        (2,1)-(3,2); log_t_liq ≈ 3.434 brackets cells (2,3)-(3,4). NaN at
+        (3, 2) lies in the solid-side bracket (and in the direct bracket of
+        the mushy query at T = 2500 K, whose direct value the mushy value
+        replaces); NaN at (3, 3) lies in the liquid-side bracket and in the
+        direct bracket of the above-liquidus query at T = 2800 K (log_t ≈
+        3.447, cells (2,3)-(3,4)), where the direct fallback sets the result.
         """
         cache = _build_cache()
         # log_p step is 3/7 ≈ 0.429, log_t step is 1/7 ≈ 0.143.
@@ -421,14 +425,12 @@ class TestBatchPath:
         mat = {'eos_file': eos_file, 'format': 'paleos_unified'}
         cdict = {eos_file: cache}
 
-        ps = np.array([10**10.0])
-        ts = np.array([2500.0])  # mushy at P=1e10 (T_liq≈2714, T_sol≈1629)
+        ps = np.array([10**10.0, 10**10.0])
+        ts = np.array([2500.0, 2800.0])  # mushy and above the liquidus at P=1e10
         rho = get_paleos_unified_density_batch(ps, ts, mat, 0.6, cdict)
-        assert np.all(np.isfinite(rho))
-        assert rho[0] == pytest.approx(
-            get_paleos_unified_density(ps[0], ts[0], mat, 0.6, cdict)
-        )
-        assert 1000 < rho[0] < 20000
+        assert np.all(np.isfinite(rho)) and np.all((1000 < rho) & (rho < 20000))
+        scalar = [get_paleos_unified_density(p, t, mat, 0.6, cdict) for p, t in zip(ps, ts)]
+        np.testing.assert_allclose(rho, scalar, rtol=1e-12)
 
 
 class TestPerCellClampLogger:
