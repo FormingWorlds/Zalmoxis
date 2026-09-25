@@ -94,6 +94,28 @@ def pad_after_stop(radii, mass, gravity, pressure, y_stop, p_center, p_surface=0
     )
 
 
+def temperature_from_arrays(temperature_arrays):
+    """Temperature function T(r, P) of an r-indexed profile, as the JAX path reads it.
+
+    Parameters
+    ----------
+    temperature_arrays : tuple of array_like
+        ``(r_arr, T_arr)``: radii [m] in increasing order and temperatures [K].
+
+    Returns
+    -------
+    callable
+        ``T(r, P)``, linear in r and held at the end values outside ``r_arr``;
+        P is ignored.
+    """
+    r_arr, T_arr = (np.asarray(a, dtype=float) for a in temperature_arrays)
+
+    def temperature_function(r, P):
+        return float(np.interp(r, r_arr, T_arr))
+
+    return temperature_function
+
+
 def get_layer_mixture(mass, cmb_mass, core_mantle_mass, layer_mixtures):
     """Determine the per-layer mixture based on enclosed mass (purely geometric).
 
@@ -385,11 +407,7 @@ def solve_structure(
                 exc,
             )
     if use_jax and temperature_arrays is not None:
-        # Numpy fallback: the same T(r) as the JAX path, clamped at the ends.
-        r_arr, T_arr = (np.asarray(a, dtype=float) for a in temperature_arrays)
-
-        def temperature_function(r, P):
-            return float(np.interp(r, r_arr, T_arr))
+        temperature_function = temperature_from_arrays(temperature_arrays)  # as on JAX
 
     uses_Tdep = any_component_is_tdep(layer_mixtures)
 

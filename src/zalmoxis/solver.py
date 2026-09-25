@@ -52,7 +52,7 @@ from .mixing import (
     split_mantle_volatile_inventory,
     strong_partition_phi_floor,
 )
-from .structure_model import solve_structure
+from .structure_model import solve_structure, temperature_from_arrays
 
 logger = logging.getLogger(__name__)
 
@@ -1230,6 +1230,8 @@ def _solve(
     # Supported configs: 2-layer single-component.
     # Unsupported configs fall back to the numpy path automatically.
     use_jax = bool(config_params.get('use_jax', False))
+    # With use_jax the structure solve integrates temperature_arrays, so they give T everywhere.
+    arrays_give_T = use_jax and temperature_arrays is not None
     # Anderson acceleration for the density Picard loop: when True,
     # replaces the damped fixed-point update (density = alpha * new + (1-alpha) * old)
     # with a Walker & Ni 2011 Type-II Anderson step that least-squares-combines
@@ -1600,6 +1602,9 @@ def _solve(
                 cmb_temperature=cmb_temperature,
             )
             temperatures = np.asarray(_output_tf(radii), dtype=float)
+        if arrays_give_T:
+            _temperature_func = temperature_from_arrays(temperature_arrays)
+            temperatures = np.array([_temperature_func(r, None) for r in radii])
 
         cmb_mass = core_mass_fraction * planet_mass
         core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * planet_mass
