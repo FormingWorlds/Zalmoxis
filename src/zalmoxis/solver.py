@@ -712,9 +712,7 @@ def _brentq_fallback_outer(
         return best_seen()
 
     # Final eval at the converged root for the returned profiles.
-    M_root, last_result = eval_M(R_root)
-    if not np.isfinite(M_root):
-        return best_seen()
+    M_root, last_result = eval_M_at_R(R_root)
     rel = abs(M_root - M_target) / M_target
     history.append((float(R_root), float(M_root), rel))
     logger.info(

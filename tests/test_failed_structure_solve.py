@@ -176,6 +176,22 @@ class TestFailedLastPicardIteration:
         if not failed:
             assert first['mass_enclosed'][-1] == pytest.approx(earth_mass, rel=0.05)
 
+    def test_failed_middle_iteration_keeps_the_radius(self, monkeypatch):
+        """Outer iteration 2 of 3 fails; iteration 3 starts from the same radius."""
+        calls, radius, real_tp = [], {}, zs.calculate_temperature_profile
+
+        def temperature_profile(radii, *args, **kwargs):
+            calls.append(1)
+            radius[len(calls)] = radii[-1]
+            return real_tp(radii, *args, **kwargs)
+
+        monkeypatch.setattr(zs, 'calculate_temperature_profile', temperature_profile)
+        _spy_solve(monkeypatch, lambda radii, y0: len(calls) == 2 and y0[2] > 1e11)
+        cfg = _cfg(outer_solver='picard', max_iterations_outer=3, max_iterations_inner=1)
+        _first_solve_result(monkeypatch, cfg)
+        assert len(calls) == 3 and radius[1] != radius[2]
+        assert radius[3] == radius[2]
+
 
 @pytest.mark.smoke
 class TestNewtonWithFailedRadius:
