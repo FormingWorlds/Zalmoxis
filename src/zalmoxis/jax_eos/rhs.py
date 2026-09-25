@@ -372,14 +372,9 @@ def coupled_odes_jax(
             vol_has_liquidus_f,
         )
 
-        # Suppressed harmonic mean (mixing.calculate_mixed_density):
-        # each component weighted by w_i * sigmoid(rho_i), gas-like
-        # densities suppressed. The arg clamp matches _condensed_weight.
-        # numpy semantics preserved: a component with w_i <= 0 is
-        # skipped before its density is even consulted; a component
-        # with w_i > 0 but invalid density aborts the whole mixture
-        # (None in numpy, NaN here, zeroed RHS below). Safe substitutes
-        # keep the discarded lanes of the trace NaN-free.
+        # Suppressed harmonic mean as in mixing.calculate_mixed_density (same clamp): w_i <= 0
+        # skips a component; an invalid density with w_i > 0 makes the mixture NaN (None in
+        # numpy), so the RHS is NaN at P > 0. Safe substitutes keep unused lanes NaN-free.
         def _condensed_weight_jax(rho_i, rho_min, rho_scale):
             arg = jnp.clip(-(rho_i - rho_min) / rho_scale, -500.0, 500.0)
             return 1.0 / (1.0 + jnp.exp(arg))

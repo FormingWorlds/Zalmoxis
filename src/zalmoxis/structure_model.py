@@ -435,8 +435,9 @@ def solve_structure(
             sol_end, max_step_end = sol2, maximum_step
 
             # Concatenate the two solutions
+            y2 = np.reshape(sol2.y, (3, -1))  # empty if the first step fails
             mass_enclosed, gravity, pressure = np.concatenate(
-                [sol1.y[:, :-1], np.reshape(sol2.y, (3, -1))], axis=1
+                [sol1.y[:, :-1], y2 if y2.size else sol1.y[:, -1:]], axis=1
             )
     else:
         # Single integration with fixed temperature (300 K for Seager+2007)

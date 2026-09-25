@@ -176,7 +176,14 @@ class TestInteriorStopFails:
     def test_failure_before_the_first_node_fails_the_profile(self, monkeypatch, tdep):
         """The first step fails (the centre itself is fine), so no node is saved."""
         _, _, m, g, p = self._solve(monkeypatch, (0.0, 1.5), tdep)
-        assert np.all(np.isnan(m)) and np.all(np.isnan(g)) and np.all(np.isnan(p))
+        assert len(p) == N and np.all(np.isnan([m, g, p]))
+
+    @pytest.mark.timeout(60)
+    def test_failure_at_the_split_node_keeps_it(self, monkeypatch):
+        """The second part of a Tdep solve fails at once; the node where it starts stays."""
+        radii = np.linspace(0.0, R_OUT, N)
+        _, _, m, g, p = self._solve(monkeypatch, (radii[N // 2 - 1] / R_OUT, 0.5), True)
+        assert np.all(p[: N // 2] > 0) and np.all(np.isnan([m, g, p])[:, N // 2 :])
 
     @pytest.mark.timeout(60)
     def test_failure_at_the_last_saved_node_ends_there(self, monkeypatch):
@@ -189,7 +196,7 @@ class TestInteriorStopFails:
 
         monkeypatch.setattr(sm, 'coupled_odes', rhs)
         monkeypatch.setattr(sm, 'any_component_is_tdep', lambda _: False)
-        _, _, p = sm.solve_structure(
+        m, g, p = sm.solve_structure(
             {},
             0.0,
             0.0,
@@ -204,7 +211,7 @@ class TestInteriorStopFails:
             None,
             None,
         )
-        assert np.all(p[:21] > 0) and np.all(np.isnan(p[21:]))
+        assert np.all(p[:21] > 0) and np.all(np.isnan([m, g, p])[:, 21:])
 
     @pytest.mark.parametrize('factor, padded', [(1.01, True), (0.5, False)])
     def test_stop_below_target_pressure_is_a_surface(self, monkeypatch, factor, padded):
