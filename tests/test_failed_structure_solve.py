@@ -17,11 +17,18 @@ import pytest
 import zalmoxis
 import zalmoxis.solver as zs
 import zalmoxis.structure_model as sm
+from tests.test_surface_stop_pad import budget_solve_ivp
 from zalmoxis.config import load_material_dictionaries
 from zalmoxis.constants import earth_mass
 from zalmoxis.solver import StructureSolveError
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(zalmoxis.__file__), '..', '..'))
+
+
+@pytest.fixture(autouse=True)
+def _call_budget(monkeypatch):
+    """A numpy integration that does not end fails as an assertion, not a hang."""
+    budget_solve_ivp(monkeypatch)
 
 
 def _cfg(**kwargs):
@@ -224,8 +231,6 @@ class TestNonFiniteDensity:
     def test_nan_band_just_below_the_centre_pressure_raises(self, monkeypatch):
         """NaN for P between P_c (1 - 1e-3) / 3 and P_c (1 - 1e-3) of each structure solve.
         A hang fails as an assertion after 1e5 right-hand sides."""
-        from tests.test_surface_stop_pad import budget_solve_ivp
-
         state, real_solve, real_rho = {}, zs.solve_structure, sm.calculate_mixed_density
 
         def solve(*args, **kwargs):
@@ -236,7 +241,6 @@ class TestNonFiniteDensity:
             band = state.get('hi', 0.0) / 3.0 < pressure < state.get('hi', 0.0)
             return np.nan if band else real_rho(pressure, *args, **kwargs)
 
-        budget_solve_ivp(monkeypatch)
         monkeypatch.setattr(sm, 'MAX_NONFINITE_RHS', 100)
         monkeypatch.setattr(zs, 'solve_structure', solve)
         monkeypatch.setattr(sm, 'calculate_mixed_density', rho)
