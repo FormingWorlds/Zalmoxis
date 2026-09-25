@@ -457,52 +457,28 @@ def solve_structure(
     # Pad to full length if the integration stopped before the outermost radial
     # grid point (pressure-zero event, or a step-size failure).
     n = len(mass_enclosed)
-    while n < len(radii):
+    if n < len(radii):
         if sol_end.status == 1:
             y_stop = sol_end.y_events[0][-1]
-            break
-        # The failure lies between radii[n - 1] and radii[n]; re-integrating
-        # only that shell finds where it stops without stepping past it.
-        tail = solve_ivp(
-            _ode_rhs,
-            (radii[n - 1], radii[n]),
-            [mass_enclosed[-1], gravity[-1], pressure[-1]],
-            rtol=relative_tolerance,
-            atol=absolute_tolerance,
-            max_step=max_step_end,
-            method='RK45',
-            events=_pressure_zero,
-        )
-        if tail.status != 0:
-            y_stop = tail.y[:, -1]  # at a terminal event this is the event state
-            break
-        # The restart passed the failure: its state at radii[n] becomes node n and
-        # the grid integration resumes there. Each pass adds a node, so this ends.
-        mass_enclosed, gravity, pressure = (
-            np.append(a, v) for a, v in zip((mass_enclosed, gravity, pressure), tail.y[:, -1])
-        )
-        n += 1
-        if n == len(radii):
-            break
-        max_step_end = maximum_step if uses_Tdep else np.inf
-        sol_end = solve_ivp(
-            _ode_rhs,
-            (radii[n - 1], radii[-1]),
-            tail.y[:, -1],
-            t_eval=radii[n:],
-            rtol=relative_tolerance,
-            atol=absolute_tolerance,
-            max_step=max_step_end,
-            method='RK45',
-            events=_pressure_zero,
-        )
-        if len(sol_end.t):
-            mass_enclosed, gravity, pressure = (
-                np.concatenate([a, b])
-                for a, b in zip((mass_enclosed, gravity, pressure), sol_end.y)
+        else:
+            # The failure lies between radii[n - 1] and radii[n]; re-integrating
+            # only that shell finds where it stops without stepping past it.
+            tail = solve_ivp(
+                _ode_rhs,
+                (radii[n - 1], radii[n]),
+                [mass_enclosed[-1], gravity[-1], pressure[-1]],
+                rtol=relative_tolerance,
+                atol=absolute_tolerance,
+                max_step=max_step_end,
+                method='RK45',
+                events=_pressure_zero,
             )
-            n = len(mass_enclosed)
-    if n < len(radii):
+            y_stop = tail.y[:, -1]  # at a terminal event this is the event state
+            if tail.status == 0 and n == len(radii) - 1:
+                # The re-integration passed the last shell: its end state completes the profile.
+                return tuple(
+                    np.append(a, v) for a, v in zip((mass_enclosed, gravity, pressure), y_stop)
+                )
         mass_enclosed, gravity, pressure = pad_after_stop(
             radii, mass_enclosed, gravity, pressure, y_stop, y0[2], surface_pressure
         )

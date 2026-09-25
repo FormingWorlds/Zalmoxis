@@ -131,7 +131,7 @@ def _band_rhs(r_lo, r_hi):
 
 
 class TestInteriorStopFails:
-    """A stop far below the surface is a failed solve, unless a restart passes it."""
+    """A stop far below the surface is a failed solve; a restart completes only the last shell."""
 
     # P reaches zero near 0.77 R_OUT without a band.
     P_C = 2.0 / 3.0 * np.pi * G * RHO**2 * (0.8 * R_OUT) ** 2 * 0.4
@@ -184,23 +184,24 @@ class TestInteriorStopFails:
         else:
             assert np.all(np.isnan(p[dead]))
 
-    def test_restart_that_passes_resumes_the_grid(self, monkeypatch):
-        """The one-shell restart steps over this band; integration resumes on the
-        grid and pads at the real P = 0 crossing."""
-        calls = []
-        real = sm.solve_ivp
+    def test_restart_that_passes_a_middle_shell_is_a_failed_solve(self, monkeypatch, caplog):
+        """The one-shell restart steps over this band, but its end state lies deep
+        inside, so the solve fails from the next node on."""
+        tails, real = [], sm.solve_ivp
 
         def spy(f, t_span, y0, **kwargs):
-            calls.append((t_span[0], kwargs.get('t_eval') is not None))
-            return real(f, t_span, y0, **kwargs)
+            sol = real(f, t_span, y0, **kwargs)
+            if kwargs.get('t_eval') is None:
+                tails.append(sol.status)
+            return sol
 
         monkeypatch.setattr(sm, 'solve_ivp', spy)
-        radii, _, m, g, p = self._solve(monkeypatch, (0.46, 0.3))
-        assert any(t0 > 0 and grid for t0, grid in calls)
-        clean = self._solve(monkeypatch, (2.0, 0.0))[2:]
-        assert m == pytest.approx(clean[0], rel=1e-8)
-        assert g == pytest.approx(clean[1], rel=1e-8)
-        assert np.all(p[clean[2] == 0.0] == 0.0)
+        with caplog.at_level('WARNING', logger='zalmoxis.structure_model'):
+            _, _, m, g, p = self._solve(monkeypatch, (0.46, 0.3))
+        assert tails == [0] and 'treating the solve as failed' in caplog.text
+        n = int(np.argmax(np.isnan(p)))
+        assert n > 0 and np.all(np.isfinite(m[:n])) and np.all(p[:n] > 0)
+        assert np.all(np.isnan(m[n:])) and np.all(np.isnan(g[n:])) and np.all(np.isnan(p[n:]))
 
     @pytest.mark.parametrize(
         'band, tdep, expected', [((0.6, 0.3), True, 7e4), ((0.34, 0.1), True, np.inf)]
@@ -263,91 +264,6 @@ class TestInteriorStopFails:
         assert tails == [0]
         assert len(m) == N and p[-1] > 0
         assert m[-1] == pytest.approx(clean.y[0, -1], rel=1e-8)
-
-    def test_every_passing_restart_resumes(self, monkeypatch):
-        """Five narrow bands; three stop the grid solve and each restart passes
-        them. The profile ends as the band-free one."""
-        radii = np.linspace(0.0, R_OUT, N)
-        dr, base = radii[1], _band_rhs(-1, -1)
-        los = [(k + 0.5) * dr for k in (7, 12, 17, 21, 24)]
-
-        def rhs(r, y, *args, **kwargs):
-            if any(lo < r < lo + 0.1 * dr for lo in los):
-                return np.full(3, np.nan)
-            return base(r, y)
-
-        tails, real = [], sm.solve_ivp
-
-        def spy(f, t_span, y0, **kwargs):
-            sol = real(f, t_span, y0, **kwargs)
-            if kwargs.get('t_eval') is None:
-                tails.append(sol.status)
-            return sol
-
-        monkeypatch.setattr(sm, 'solve_ivp', spy)
-        monkeypatch.setattr(sm, 'coupled_odes', rhs)
-        monkeypatch.setattr(sm, 'any_component_is_tdep', lambda _: False)
-        m, g, p = sm.solve_structure(
-            {},
-            0.0,
-            0.0,
-            radii,
-            0.5,
-            1e-10,
-            1e-12,
-            np.inf,
-            {},
-            {},
-            [0.0, 0.0, self.P_C],
-            None,
-            None,
-        )
-        clean = self._solve(monkeypatch, (2.0, 0.0))[2:]
-        assert tails == [0, 0, 0]
-        assert m == pytest.approx(clean[0], rel=1e-6)
-        assert np.all((p == 0.0) == (clean[2] == 0.0))
-
-    @pytest.mark.timeout(60)
-    @pytest.mark.parametrize('k', [10, 30])
-    def test_resume_that_fails_at_once_ends(self, monkeypatch, k):
-        """A band that starts exactly at node k: the restart ends at radii[k], the
-        resume from there fails on its first step with no output, and the next
-        restart fails too, so the solve fails past node k instead of looping."""
-        radii = np.linspace(0.0, R_OUT, N)
-        lo, base = radii[k], _band_rhs(-1, -1)
-        calls, real = [], sm.solve_ivp
-
-        def spy(f, t_span, y0, **kwargs):
-            sol = real(f, t_span, y0, **kwargs)
-            calls.append((kwargs.get('t_eval') is not None, sol.status, len(sol.t)))
-            return sol
-
-        monkeypatch.setattr(sm, 'solve_ivp', spy)
-        monkeypatch.setattr(
-            sm,
-            'coupled_odes',
-            lambda r, y, *a, **kw: (
-                np.full(3, np.nan) if lo < r < lo + 0.3 * radii[1] else base(r, y)
-            ),
-        )
-        monkeypatch.setattr(sm, 'any_component_is_tdep', lambda _: False)
-        m, g, p = sm.solve_structure(
-            {},
-            0.0,
-            0.0,
-            radii,
-            0.5,
-            1e-10,
-            1e-12,
-            np.inf,
-            {},
-            {},
-            [0.0, 0.0, self.P_C],
-            None,
-            None,
-        )
-        assert (True, -1, 0) in calls
-        assert np.all(np.isfinite(m[: k + 1])) and np.all(np.isnan(m[k + 1 :]))
 
 
 class TestPadAfterStop:
