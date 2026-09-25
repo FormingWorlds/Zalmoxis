@@ -507,10 +507,11 @@ class TestNanCellFill:
     def _check(cached, sample=None):
         before = np.array(cached['density_grid'])
         ip, it = np.nonzero(~np.isfinite(before))
+        assert len(ip)
         grid = jw._extract_sub_args(cached, 'core')['core_density_grid']
         k = slice(None) if sample is None else np.random.default_rng(0).choice(len(ip), sample)
         nodes = np.column_stack([cached['unique_log_p'][ip[k]], cached['unique_log_t'][it[k]]])
-        assert len(ip) and np.all(np.isfinite(grid))
+        assert np.all(np.isfinite(grid))
         np.testing.assert_array_equal(grid[ip[k], it[k]], cached['density_nn'](nodes))
         assert np.array_equal(grid[np.isfinite(before)], before[np.isfinite(before)])
         assert np.array_equal(cached['density_grid'], before, equal_nan=True)

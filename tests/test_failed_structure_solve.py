@@ -391,9 +391,10 @@ class TestNonFiniteDensityJax:
         """After the first JAX failure the rest of main runs on numpy, which fills the band."""
         result, raised, calls = self._main(monkeypatch, caplog, fill=True, raise_once=True)
         assert raised == ['forced JAX failure'] and calls == 1
-        assert [r.message for r in caplog.records].count(
-            'JAX solve_structure fell back to numpy path: ' + raised[0]
-        ) == 1
+        assert (
+            caplog.messages.count('JAX solve_structure fell back to numpy path: ' + raised[0])
+            == 1
+        )
         assert result['converged'] and np.all(np.isfinite(result['pressure']))
 
     @pytest.mark.timeout(600)
@@ -405,15 +406,10 @@ class TestNonFiniteDensityJax:
 
     def test_shipped_mgsio3_grid_is_filled(self):
         """The shipped MgSiO3 grid: a sample of filled nodes holds numpy's nearest-cell value."""
-        from pathlib import Path
-
         from tests.test_jax_wrapper_branches import TestNanCellFill
         from zalmoxis.eos.interpolation import _ensure_unified_cache
 
-        root = os.environ.get('ZALMOXIS_ROOT') or str(Path(__file__).resolve().parents[1])
-        f = os.path.join(
-            root, 'data', 'EOS_PALEOS_MgSiO3_unified', 'paleos_mgsio3_eos_table_pt.dat'
-        )
+        f = load_material_dictionaries()['PALEOS:MgSiO3']['eos_file']
         if not os.path.exists(f):
             pytest.skip('PALEOS data files not found')
         TestNanCellFill._check(dict(_ensure_unified_cache(f, {})), sample=1000)
