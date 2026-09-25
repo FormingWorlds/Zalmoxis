@@ -288,16 +288,11 @@ def get_paleos_unified_density_batch(
             result[nan_mask] = cached['density_nn'](pts_nn)
         return result
 
-    # Mushy zone path (vectorized).
-    # Compute T_melt from the PALEOS analytic melting curve rather than
-    # interpolating the extracted liquidus grid. This is faster and avoids
-    # branching per-element for the "outside liquidus coverage" case.
-    from ..melting_curves import paleos_liquidus
-
-    T_melt = paleos_liquidus(pressures)
-
-    # Derive mushy zone boundaries (currently from PALEOS liquidus,
-    # but may come from external melting curves in future).
+    # Mushy zone path (vectorized), with the table's own liquidus as in the
+    # scalar lookup; outside its pressure coverage the direct lookup applies.
+    liq_lp = cached['liquidus_log_p']
+    covered = (log_p >= liq_lp[0]) & (log_p <= liq_lp[-1])
+    T_melt = 10.0 ** np.interp(log_p, liq_lp, cached['liquidus_log_t'])
     T_liq = T_melt.copy()
     T_sol = T_liq * mushy_zone_factor
 
@@ -311,7 +306,7 @@ def get_paleos_unified_density_batch(
     # Classify shells: above liquidus, below solidus, or in mushy zone
     above = temperatures >= T_liq
     below = temperatures <= T_sol
-    mushy = ~above & ~below
+    mushy = covered & ~above & ~below
 
     # Direct lookup for above-liquidus and below-solidus shells
     result = fast_bilinear_batch(log_p, log_t_clamped, cached['density_grid'], cached)

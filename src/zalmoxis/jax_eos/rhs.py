@@ -57,7 +57,6 @@ def coupled_odes_jax(
     # --- temperature lookup (see module docstring for axis conventions) ---
     T_axis_grid: jnp.ndarray,  # monotone increasing: log10(P) OR radius
     T_values: jnp.ndarray,  # matching T values on the axis grid
-    T_surface: float,  # fallback when P <= 0 (P-indexed mode only)
     # --- core (paleos_unified) table ---
     mushy_zone_factor_core: jnp.ndarray,
     core_density_grid: jnp.ndarray,
@@ -204,17 +203,12 @@ def coupled_odes_jax(
     """Return dy/dr = [dM/dr, dg/dr, dP/dr] at (radius, y)."""
     mass, gravity, pressure = y[0], y[1], y[2]
 
-    # Temperature at this (r, P). Two axis conventions — see module docstring.
-    # P-indexed: interp on log10(max(P, 1)), fall back to T_surface for P<=0.
-    # R-indexed: interp directly on radius. The P<=0 fallback is not needed
-    # because the r-grid covers the full column from CMB to surface; any
-    # overshoot beyond r[-1] is clamped by ``jnp.interp`` at the endpoint T.
+    # Temperature at this (r, P), on radius or on log10(max(P, 1)): continuous
+    # across P = 0, since a jump there stalls the steps that cross the surface.
     if T_axis_is_radius:
         temperature = jnp.interp(radius, T_axis_grid, T_values)
     else:
-        log_p_for_T = jnp.log10(jnp.maximum(pressure, 1.0))
-        T_interp = jnp.interp(log_p_for_T, T_axis_grid, T_values)
-        temperature = jnp.where(pressure > 0, T_interp, T_surface)
+        temperature = jnp.interp(jnp.log10(jnp.maximum(pressure, 1.0)), T_axis_grid, T_values)
 
     # Melting curves at this pressure: O(1) regular-grid lookup on
     # log_T tables (see arg comments above for the rationale). Compute
@@ -232,10 +226,8 @@ def coupled_odes_jax(
     log_T_sol_hi = log_T_sol_table[melt_i + 1]
     log_T_liq = (1.0 - melt_frac) * log_T_liq_lo + melt_frac * log_T_liq_hi
     log_T_sol = (1.0 - melt_frac) * log_T_sol_lo + melt_frac * log_T_sol_hi
-    T_liq_interp = 10.0**log_T_liq
-    T_sol_interp = 10.0**log_T_sol
-    T_liq = jnp.where(pressure > 0, T_liq_interp, 0.0)
-    T_sol = jnp.where(pressure > 0, T_sol_interp, 0.0)
+    T_liq = 10.0**log_T_liq  # no switch at P <= 0: a jump there stalls the surface steps
+    T_sol = 10.0**log_T_sol
 
     # Core density (paleos_unified)
     rho_core = get_paleos_unified_density_jax(
@@ -372,14 +364,9 @@ def coupled_odes_jax(
             vol_has_liquidus_f,
         )
 
-        # Suppressed harmonic mean (mixing.calculate_mixed_density):
-        # each component weighted by w_i * sigmoid(rho_i), gas-like
-        # densities suppressed. The arg clamp matches _condensed_weight.
-        # numpy semantics preserved: a component with w_i <= 0 is
-        # skipped before its density is even consulted; a component
-        # with w_i > 0 but invalid density aborts the whole mixture
-        # (None in numpy, NaN here, zeroed RHS below). Safe substitutes
-        # keep the discarded lanes of the trace NaN-free.
+        # Suppressed harmonic mean as in mixing.calculate_mixed_density (same clamp): w_i <= 0
+        # skips a component; an invalid density with w_i > 0 makes the mixture NaN (None in
+        # numpy), so the RHS is NaN at P > 0. Safe substitutes keep unused lanes NaN-free.
         def _condensed_weight_jax(rho_i, rho_min, rho_scale):
             arg = jnp.clip(-(rho_i - rho_min) / rho_scale, -500.0, 500.0)
             return 1.0 / (1.0 + jnp.exp(arg))
@@ -407,13 +394,9 @@ def coupled_odes_jax(
     # Layer selection
     rho = jnp.where(mass < cmb_mass, rho_core, rho_mantle)
 
-    # Match numpy's coupled_odes: return zeros when the EOS produces
-    # a non-finite density (out-of-table T clamp, PALEOS edge case).
-    # This mirrors structure_model.coupled_odes line 148 and is what
-    # the test_jax_rhs_parity test filters out (both_nonzero mask).
-    # We do NOT freeze on pressure <= 0 here because that would prevent
-    # diffrax.Event from seeing the pressure-zero downcrossing;
-    # event-based termination handles P<=0 instead.
+    # As in structure_model.coupled_odes, a non-finite density at P > 0 gives NaN
+    # derivatives, which stop the solve; at P <= 0 it gives zeros, and the
+    # pressure-zero event (not a freeze on P) ends the integration.
     rho_finite = jnp.isfinite(rho)
     rho_safe = jnp.where(rho_finite, rho, 1.0)
 
@@ -425,5 +408,5 @@ def coupled_odes_jax(
     dgdr = jnp.where(radius > 0, dgdr_gen, dgdr_r0)
     dPdr = -rho_safe * gravity
 
-    zero3 = jnp.zeros(3, dtype=dMdr.dtype)
-    return jnp.where(rho_finite, jnp.stack([dMdr, dgdr, dPdr]), zero3)
+    failed = jnp.where(pressure > 0.0, jnp.nan, 0.0) * jnp.ones(3, dtype=dMdr.dtype)
+    return jnp.where(rho_finite, jnp.stack([dMdr, dgdr, dPdr]), failed)

@@ -325,7 +325,6 @@ class TestTemperatureFallback:
 
         def fake_solve_jax(radii_arr, y0, **kwargs):
             captured['T_values'] = kwargs['T_values']
-            captured['T_surface'] = kwargs['T_surface']
             captured['T_axis_is_radius'] = kwargs.get('T_axis_is_radius', False)
             return np.zeros((len(radii_arr), 3)), np.zeros(3)
 
@@ -349,7 +348,6 @@ class TestTemperatureFallback:
             )
         # Constant 3000 K everywhere is the documented fallback contract
         assert np.all(captured['T_values'] == pytest.approx(3000.0))
-        assert captured['T_surface'] == pytest.approx(3000.0)
         # Without arrays, the axis is the log-P grid, not radius
         assert captured['T_axis_is_radius'] is False
 
@@ -433,13 +431,10 @@ class TestPostEventPadding:
         assert mass[4] == pytest.approx(1e23)
         assert np.all(pressure[5:] == 0.0)
 
-    def test_stop_deep_inside_is_a_failed_solve(self, caplog):
-        with caplog.at_level('WARNING', logger='zalmoxis.structure_model'):
-            mass, gravity, pressure = self._run(np.array([1.1e23, 5.2, 5e9]))
-        assert mass[4] == pytest.approx(1e23)
-        assert np.all(np.isnan(mass[5:])) and np.all(np.isnan(gravity[5:]))
-        assert np.all(np.isnan(pressure[5:]))
-        assert 'treating the solve as failed' in caplog.text
+    def test_stop_deep_inside_falls_back_to_numpy(self):
+        """A stop that is not the surface raises ValueError, the numpy fallback trigger."""
+        with pytest.raises(ValueError, match='which is not the surface'):
+            self._run(np.array([1.1e23, 5.2, 5e9]))
 
 
 class TestMushyZoneFactorDispatch:

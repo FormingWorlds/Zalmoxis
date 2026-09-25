@@ -33,7 +33,7 @@ import time as _time
 
 import numpy as np
 
-from ..structure_model import pad_after_stop
+from ..structure_model import pad_after_stop, stop_is_surface
 from .solver import solve_structure_jax
 
 _CALL_COUNT = 0
@@ -246,6 +246,15 @@ def solve_structure_via_jax(
     structure solves).
 
     Providing both is rejected to avoid ambiguity.
+
+    Raises
+    ------
+    ValueError
+        When the solve stops before ``radii[-1]`` and the stop is not the
+        surface (``stop_is_surface``), e.g. at a NaN cell of a PALEOS table.
+        ``solve_structure`` then retries on numpy, whose table lookup fills
+        NaN cells from the nearest valid cell. Such a solve costs the diffrax
+        ``max_steps`` spin (about 10 s) plus a numpy solve.
     """
     from ..eos.interpolation import _ensure_unified_cache
     from ..eos.seager import get_tabulated_eos
@@ -404,15 +413,10 @@ def solve_structure_via_jax(
                 'temperature_arrays must be two 1-D arrays of equal length, '
                 f'got shapes {T_axis_grid.shape} and {T_values.shape}.'
             )
-        # T_surface is unused in the r-indexed RHS branch (jnp.interp
-        # clamps at the endpoint T), but passed through for signature
-        # compatibility with the P-indexed branch.
-        T_surface = float(T_values[-1])
         T_axis_is_radius = True
     elif temperature_function is None:
         T_axis_grid = np.linspace(5.0, 13.0, 4)
         T_values = np.full(4, 3000.0)
-        T_surface = 3000.0
         T_axis_is_radius = False
     else:
         # One tabulation per temperature function (constant within an inner
@@ -422,16 +426,14 @@ def solve_structure_via_jax(
         _key = temperature_function
         _entry = _adia_cache.get(_key)
         if _entry is None:
-            _T_logP_grid, _T_values = _tabulate_adiabat(radii_arr, temperature_function)
-            _T_surface = float(temperature_function(float(radii_arr[-1]), 1e5))
-            _entry = (_T_logP_grid, _T_values, _T_surface)
+            _entry = _tabulate_adiabat(radii_arr, temperature_function)
             # Cap cache size so stale closures don't accumulate across
             # many outer iters (rare in practice; the _solve() control
             # flow creates ~10-20 distinct _temperature_func objects).
             if len(_adia_cache) > 64:
                 _adia_cache.pop(next(iter(_adia_cache)))
             _adia_cache[_key] = _entry
-        T_axis_grid, T_values, T_surface = _entry
+        T_axis_grid, T_values = _entry
         T_axis_is_radius = False
 
     if _PROFILE:  # pragma: no cover - dev profiling, gated on ZALMOXIS_JAX_PROFILE
@@ -492,7 +494,6 @@ def solve_structure_via_jax(
         'cmb_mass': float(cmb_mass),
         'T_axis_grid': T_axis_grid,
         'T_values': T_values,
-        'T_surface': T_surface,
         'mushy_zone_factor_core': core_mzf,
         'G': float(G),
     }
@@ -606,6 +607,11 @@ def solve_structure_via_jax(
     post_event = ~np.isfinite(pressure)
     if np.any(post_event):
         n = int(np.argmax(post_event))
+        if not stop_is_surface(y_end, float(y0[2]), surface_pressure):
+            raise ValueError(
+                f'JAX solve stopped at P = {float(y_end[2]):.3e} Pa before '
+                f'r = {radii_arr[n]:.6e} m, which is not the surface'
+            )
         return pad_after_stop(
             radii_arr,
             mass_enclosed[:n],
