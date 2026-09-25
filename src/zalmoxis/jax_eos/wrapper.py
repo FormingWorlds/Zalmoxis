@@ -44,9 +44,9 @@ _DEBUG = bool(_os.environ.get('ZALMOXIS_JAX_DEBUG'))
 _PROFILE = bool(_os.environ.get('ZALMOXIS_JAX_PROFILE'))
 _PHASE_TIMES = {'cache_extract': 0.0, 'adiabat_tab': 0.0, 'jit_solve': 0.0, 'other': 0.0}
 
-# Mantle melting-curve tabulations on a shared log-P axis. This cache and the adiabat
-# cache use the functions themselves as keys; a cached function stays alive, so no
-# other function can have its id while its entry exists.
+# Mantle melting-curve tables on a shared log-P axis, keyed by the (solidus_func,
+# liquidus_func) pair; the adiabat cache is keyed by the temperature function. The
+# keys are the function objects themselves, not their ids.
 _MELT_TABLE_CACHE: dict = {}
 
 
