@@ -314,10 +314,12 @@ class TestSurfaceCrossing:
         solve()
         assert time.perf_counter() - t0 < 2.0  # max_steps (200000) takes about 10 s
 
+    @pytest.mark.parametrize('temperature', [300.0, 2000.0, 3000.0])
     @pytest.mark.parametrize('unified', [True, False])
-    def test_rhs_is_continuous_across_zero_pressure(self, unified):
-        """T and the melting curves do not jump where P crosses zero: 300 K, below flat
-        melting curves (solid); 2-phase solid and liquid tables are the unified one and 0.9x."""
+    def test_rhs_is_continuous_across_zero_pressure(self, unified, temperature):
+        """T and the melting curves do not jump where P crosses zero, with T solid, mushy or
+        liquid against flat melting curves at 1760 and 2200 K; 2-phase solid and liquid
+        tables are the unified one and 0.9x."""
         pytest.importorskip('jax')
         from tests.test_jax_parity_synthetic import _synthetic_world
         from zalmoxis.jax_eos.rhs import coupled_odes_jax
@@ -326,7 +328,7 @@ class TestSurfaceCrossing:
         base = world['jax_args']
         args = dict(
             base,
-            T_values=np.full_like(base['T_values'], 300.0),
+            T_values=np.full_like(base['T_values'], temperature),
             log_T_sol_table=np.full_like(base['log_T_sol_table'], np.log10(1760.0)),
             log_T_liq_table=np.full_like(base['log_T_liq_table'], np.log10(2200.0)),
         )
