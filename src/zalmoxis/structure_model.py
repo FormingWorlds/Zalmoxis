@@ -307,9 +307,10 @@ def solve_structure(
         where ``r`` is radius in m and ``P`` is pressure in Pa. For
         non-adiabatic modes the pressure argument is ignored.
     temperature_arrays : tuple[ndarray, ndarray] or None
-        Optional ``(r_arr, T_arr)`` for an explicit r-indexed T profile.
-        Only consumed by the JAX path (``use_jax=True``); the numpy path
-        still uses ``temperature_function``. See ``jax_eos.wrapper``
+        Optional ``(r_arr, T_arr)`` for an explicit r-indexed T profile,
+        ``r_arr`` ascending. Consumed only with ``use_jax=True``: by the JAX
+        path, and by the numpy solve that replaces it after a fallback,
+        which then ignores ``temperature_function``. See ``jax_eos.wrapper``
         docstring for when to prefer this over the callable form.
     mushy_zone_factors : dict or float or None
         Per-EOS mushy zone factors. Dict keyed by EOS name, a single
@@ -384,7 +385,8 @@ def solve_structure(
                 exc,
             )
     if use_jax and temperature_arrays is not None:
-        r_arr, T_arr = temperature_arrays  # the JAX path's temperature, clamped at the ends
+        # The JAX path's temperature, clamped at the ends.
+        r_arr, T_arr = (np.asarray(a, dtype=float) for a in temperature_arrays)
 
         def temperature_function(r, P):
             return float(np.interp(r, r_arr, T_arr))

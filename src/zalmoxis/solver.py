@@ -280,8 +280,10 @@ def main(
         Used by PROTEUS to pass SPIDER/Aragog T(r) profiles directly
         in memory.
     temperature_arrays : tuple[ndarray, ndarray] or None, optional
-        Explicit r-indexed T profile ``(r_arr, T_arr)``. Only consumed
-        by the JAX path (``config_params['use_jax']=True``). Preferred
+        Explicit r-indexed T profile ``(r_arr, T_arr)``. Consumed only
+        with ``config_params['use_jax']=True``, by the JAX structure solves
+        and by their numpy fallback; the Picard density update still uses
+        the internal temperature profile. Preferred
         over ``temperature_function`` when the caller's T is naturally
         r-indexed (e.g. SPIDER/Aragog-coupled runs): the P-indexed
         tabulation inside ``jax_eos.wrapper`` collapses to a constant
