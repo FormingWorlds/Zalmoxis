@@ -274,22 +274,16 @@ def _synthetic_jax_world(monkeypatch, fill=False):
     row at log P = 9.86, which covers 2.7e9 to 1.95e10 Pa. numpy's nearest-neighbour
     fallback fills that row from the valid cells if ``fill``, else it returns NaN."""
     pytest.importorskip('jax')
-    from scipy.interpolate import NearestNDInterpolator
-
     from tests.test_jax_parity_synthetic import _synthetic_world
+    from tests.test_jax_wrapper_branches import with_nan_rows
 
     world = _synthetic_world()
-    core = dict(world['interp_cache']['/synthetic/core.dat'])
-    grid = np.array(core['density_grid'], dtype=float)
-    grid[(core['unique_log_p'] > 9.8) & (core['unique_log_p'] < 9.9)] = np.nan
-    ip, it = np.nonzero(np.isfinite(grid))
-    nodes = np.column_stack([core['unique_log_p'][ip], core['unique_log_t'][it]])
-    core['density_nn'] = (
-        NearestNDInterpolator(nodes, grid[ip, it]) if fill else lambda _: np.nan
+    core = world['interp_cache']['/synthetic/core.dat']
+    core = with_nan_rows(
+        core, (core['unique_log_p'] > 9.8) & (core['unique_log_p'] < 9.9), fill
     )
-    core['density_grid'] = grid
     world['interp_cache']['/synthetic/core.dat'] = core
-    world['jax_args']['core_density_grid'] = grid
+    world['jax_args']['core_density_grid'] = core['density_grid']
     monkeypatch.setattr(zs, '_interpolation_cache', dict(world['interp_cache']))
     return world
 
@@ -399,20 +393,31 @@ class TestNonFiniteDensityJax:
 
     @pytest.mark.timeout(600)
     def test_nan_table_band_filled_runs_on_jax(self, monkeypatch, caplog):
-        """The JAX grid holds numpy's nearest-cell fill, so main runs to the end on JAX."""
+        """The JAX grid holds numpy's nearest-node fill, so main runs to the end on JAX."""
+        import zalmoxis.jax_eos.wrapper as jw
+
+        grids, extract = {}, jw._extract_sub_args
+        monkeypatch.setattr(
+            jw, '_extract_sub_args', lambda c, p: grids.setdefault(p, extract(c, p))
+        )
         result, raised, calls = self._main(monkeypatch, caplog, fill=True)
         assert calls and not raised and 'fell back to numpy path' not in caplog.text
         assert result['converged'] and np.all(np.isfinite(result['pressure']))
+        core = zs._interpolation_cache['/synthetic/core.dat']
+        ip, it = np.nonzero(~np.isfinite(core['density_grid']))
+        nodes = np.column_stack([core['unique_log_p'][ip], core['unique_log_t'][it]])
+        filled = grids['core']['core_density_grid'][ip, it]
+        np.testing.assert_array_equal(filled, core['density_nn'](nodes))
 
     def test_shipped_mgsio3_grid_is_filled(self):
-        """The shipped MgSiO3 grid: a sample of filled nodes holds numpy's nearest-cell value."""
-        from tests.test_jax_wrapper_branches import TestNanCellFill
+        """The shipped MgSiO3 grid: a sample of filled nodes holds numpy's nearest-node value."""
+        from tests.test_jax_wrapper_branches import TestNanNodeFill
         from zalmoxis.eos.interpolation import _ensure_unified_cache
 
         f = load_material_dictionaries()['PALEOS:MgSiO3']['eos_file']
         if not os.path.exists(f):
             pytest.skip('PALEOS data files not found')
-        TestNanCellFill._check(dict(_ensure_unified_cache(f, {})), sample=1000)
+        TestNanNodeFill._check(dict(_ensure_unified_cache(f, {})), sample=1000)
 
     @pytest.mark.timeout(120)
     def test_nan_table_band_fails_on_numpy_too(self, monkeypatch, caplog):

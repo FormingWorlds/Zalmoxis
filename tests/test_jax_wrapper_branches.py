@@ -500,8 +500,21 @@ class TestMushyZoneFactorDispatch:
         assert captured['mzf'] == pytest.approx(0.55)
 
 
-class TestNanCellFill:
-    """NaN cells of a density grid are filled from the nearest valid cell at extraction."""
+def with_nan_rows(cached, rows, fill=True):
+    """Copy of a table cache entry with NaN density ``rows`` and numpy's nearest-valid-node
+    fallback over the other nodes (a NaN fallback if not ``fill``)."""
+    from scipy.interpolate import NearestNDInterpolator
+
+    grid = np.array(cached['density_grid'], dtype=float)
+    grid[rows] = np.nan
+    ip, it = np.nonzero(np.isfinite(grid))
+    nodes = np.column_stack([cached['unique_log_p'][ip], cached['unique_log_t'][it]])
+    nn = NearestNDInterpolator(nodes, grid[ip, it]) if fill else (lambda _: np.nan)
+    return dict(cached, density_grid=grid, density_nn=nn)
+
+
+class TestNanNodeFill:
+    """NaN nodes of a density grid are filled from the nearest valid node at extraction."""
 
     @staticmethod
     def _check(cached, sample=None):
@@ -517,14 +530,6 @@ class TestNanCellFill:
         assert np.array_equal(cached['density_grid'], before, equal_nan=True)
 
     def test_synthetic_nan_row(self):
-        from scipy.interpolate import NearestNDInterpolator
-
         from tests.test_jax_parity_synthetic import _synthetic_world
 
-        cached = dict(_synthetic_world()['interp_cache']['/synthetic/core.dat'])
-        grid = np.array(cached['density_grid'], dtype=float)
-        grid[3] = np.nan
-        ip, it = np.nonzero(np.isfinite(grid))
-        nodes = np.column_stack([cached['unique_log_p'][ip], cached['unique_log_t'][it]])
-        cached.update(density_grid=grid, density_nn=NearestNDInterpolator(nodes, grid[ip, it]))
-        self._check(cached)
+        self._check(with_nan_rows(_synthetic_world()['interp_cache']['/synthetic/core.dat'], 3))
