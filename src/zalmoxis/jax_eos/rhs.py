@@ -204,17 +204,12 @@ def coupled_odes_jax(
     """Return dy/dr = [dM/dr, dg/dr, dP/dr] at (radius, y)."""
     mass, gravity, pressure = y[0], y[1], y[2]
 
-    # Temperature at this (r, P). Two axis conventions — see module docstring.
-    # P-indexed: interp on log10(max(P, 1)), fall back to T_surface for P<=0.
-    # R-indexed: interp directly on radius. The P<=0 fallback is not needed
-    # because the r-grid covers the full column from CMB to surface; any
-    # overshoot beyond r[-1] is clamped by ``jnp.interp`` at the endpoint T.
+    # Temperature at this (r, P), on radius or on log10(max(P, 1)): continuous
+    # across P = 0, since a jump there stalls the steps that cross the surface.
     if T_axis_is_radius:
         temperature = jnp.interp(radius, T_axis_grid, T_values)
     else:
-        log_p_for_T = jnp.log10(jnp.maximum(pressure, 1.0))
-        T_interp = jnp.interp(log_p_for_T, T_axis_grid, T_values)
-        temperature = jnp.where(pressure > 0, T_interp, T_surface)
+        temperature = jnp.interp(jnp.log10(jnp.maximum(pressure, 1.0)), T_axis_grid, T_values)
 
     # Melting curves at this pressure: O(1) regular-grid lookup on
     # log_T tables (see arg comments above for the rationale). Compute

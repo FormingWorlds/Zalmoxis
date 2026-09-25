@@ -287,3 +287,31 @@ class TestEventTermination:
             f'interior pressure dropped below 1e8 Pa: min={inner.min():.3e}, '
             f'suggests Event fired too early.'
         )
+
+
+@pytest.mark.smoke
+class TestSurfaceCrossing:
+    """A JAX solve at the Newton tolerances crosses P = 0 in a bounded number of steps."""
+
+    @pytest.mark.timeout(120)
+    def test_temperature_at_zero_pressure_does_not_stall_the_solve(self):
+        """T_surface differs from the tabulated T at low P, as for a real adiabat."""
+        pytest.importorskip('jax')
+        import time
+
+        import zalmoxis.jax_eos.solver as js
+        from tests.test_jax_parity_synthetic import _synthetic_world
+
+        args = dict(_synthetic_world()['jax_args'])
+        args['T_surface'] = float(args['T_values'][0]) + 1000.0
+        radii = np.linspace(0.0, 1.2e7, 150)
+
+        def solve():
+            return js.solve_structure_jax(
+                radii, [0.0, 0.0, 3e11], rtol=1e-9, atol=1e-10, mantle_is_unified=True, **args
+            )
+
+        solve()  # compile
+        t0 = time.perf_counter()
+        solve()
+        assert time.perf_counter() - t0 < 2.0  # max_steps (200000) takes about 10 s
