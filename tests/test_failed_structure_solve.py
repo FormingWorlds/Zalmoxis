@@ -285,6 +285,22 @@ def _synthetic_jax_world(monkeypatch, fill=False):
     return world
 
 
+@pytest.mark.unit
+def test_main_clears_the_jax_fallback_flag(monkeypatch):
+    """A fallback in one main() call does not keep the next call off the JAX path."""
+    seen = []
+
+    def stub(*args, **kwargs):
+        seen.append(zs._interpolation_cache.get('_jax_fell_back'))
+        raise StructureSolveError('stub')
+
+    monkeypatch.setattr(zs, '_interpolation_cache', {'_jax_fell_back': True})
+    monkeypatch.setattr(zs, '_solve', stub)
+    with pytest.raises(StructureSolveError, match='stub'):
+        _run(_cfg(outer_solver='picard'))
+    assert seen == [None]
+
+
 @pytest.mark.smoke
 class TestNonFiniteDensityJax:
     """The JAX path: an EOS failure inside the planet ends the solve and fails it."""
@@ -362,7 +378,9 @@ class TestNonFiniteDensityJax:
         """After the first deep JAX stop the rest of main runs on numpy, which fills the band."""
         result, raised = self._main(monkeypatch, caplog, fill=True)
         assert len(raised) == 1 and 'which is not the surface' in raised[0]
-        assert caplog.text.count('fell back to numpy path') == 1
+        assert [r.message for r in caplog.records].count(
+            'JAX solve_structure fell back to numpy path: ' + raised[0]
+        ) == 1
         assert result['converged'] and np.all(np.isfinite(result['pressure']))
 
     @pytest.mark.timeout(120)
@@ -395,10 +413,15 @@ class TestNonFiniteDensityJax:
             fell = sm.solve_structure(
                 *args, **dict(kwargs, use_jax=True, temperature_arrays=(r_arr, T_arr))
             )
-        assert 'fell back to numpy path' in caplog.text
+            again = sm.solve_structure(
+                *args, **dict(kwargs, use_jax=True, temperature_arrays=(r_arr, T_arr))
+            )
+        assert caplog.text.count('fell back to numpy path') == 1  # the second solve skips JAX
         args[13] = lambda r, P: float(np.interp(r, r_arr, T_arr))
         ref = sm.solve_structure(*args, **dict(kwargs, use_jax=False, temperature_arrays=None))
-        assert all(np.array_equal(a, b, equal_nan=True) for a, b in zip(fell, ref))
+        assert all(np.all(np.isfinite(a)) for a in ref)
+        for out in (fell, again):
+            assert all(np.array_equal(a, b) for a, b in zip(out, ref))
 
 
 @pytest.mark.smoke
