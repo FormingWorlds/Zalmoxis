@@ -385,7 +385,7 @@ def solve_structure(
                 exc,
             )
     if use_jax and temperature_arrays is not None:
-        # The JAX path's temperature, clamped at the ends.
+        # Numpy fallback: the same T(r) as the JAX path, clamped at the ends.
         r_arr, T_arr = (np.asarray(a, dtype=float) for a in temperature_arrays)
 
         def temperature_function(r, P):
