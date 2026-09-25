@@ -501,24 +501,14 @@ class TestMushyZoneFactorDispatch:
 
 
 class TestCacheKeyIdentity:
-    """Each new temperature or melting-curve function gets its own tabulation,
-    also when an earlier, freed function had the same ``id``."""
+    """A new temperature or melting-curve function gets its own tabulation, also
+    when it has the ``id`` of a function cached before."""
 
     @staticmethod
     def _make(value):
         return lambda *args: value
 
-    def test_freed_closures_recycle_ids(self):
-        """Precondition of the tests below: in this interpreter a freed closure's
-        id goes to the next closure of the same shape."""
-        ids = []
-        for k in range(20):
-            f = self._make(1000.0 + k)
-            ids.append(id(f))
-            del f
-        assert len(set(ids)) < len(ids)
-
-    def _solve_captured(self, cache, *, temperature_function, solidus_func, liquidus_func):
+    def _solve_captured(self, cache, temperature_function, solidus_func, liquidus_func):
         captured = {}
 
         def fake_solve_jax(radii_arr, y0, **kwargs):
@@ -545,27 +535,17 @@ class TestCacheKeyIdentity:
             )
         return captured
 
-    def test_new_temperature_function_gets_own_tabulation(self):
-        _, _, cache = _common_fixtures()
-        for k in range(20):
-            t_func = self._make(1000.0 + k)
-            got = self._solve_captured(
-                cache,
-                temperature_function=t_func,
-                solidus_func=_solidus_func,
-                liquidus_func=_liquidus_func,
-            )
-            assert np.all(got['T_values'] == 1000.0 + k)
-            del t_func
-
-    def test_new_melting_curves_get_own_tabulation(self, monkeypatch):
+    def test_each_function_gets_its_own_tabulation(self, monkeypatch):
+        """Every ``id`` in the wrapper module collides; each call must still see the
+        tables of the functions it was given. Changing the solidus or the liquidus
+        alone must give new melt tables."""
+        monkeypatch.setattr(jw, 'id', lambda obj: 7, raising=False)
         monkeypatch.setattr(jw, '_MELT_TABLE_CACHE', {})
         _, _, cache = _common_fixtures()
-        for k in range(20):
-            sol, liq = self._make(2000.0 + k), self._make(3000.0 + k)
-            got = self._solve_captured(
-                cache, temperature_function=_t_func, solidus_func=sol, liquidus_func=liq
-            )
-            np.testing.assert_array_equal(got['log_T_sol_table'], np.log10(2000.0 + k))
-            np.testing.assert_array_equal(got['log_T_liq_table'], np.log10(3000.0 + k))
-            del sol, liq
+        s1, s2 = self._make(2000.0), self._make(2100.0)
+        l1, l2 = self._make(3000.0), self._make(3100.0)
+        for t, sol, liq in ((1000.0, s1, l1), (1001.0, s1, l2), (1002.0, s2, l2)):
+            got = self._solve_captured(cache, self._make(t), sol, liq)
+            assert np.all(got['T_values'] == t)
+            np.testing.assert_array_equal(got['log_T_sol_table'], np.log10(sol()))
+            np.testing.assert_array_equal(got['log_T_liq_table'], np.log10(liq()))
