@@ -23,7 +23,8 @@ branch. The mushy-zone branch is the only distinct path.
 
 NaN table nodes: numpy falls back to ``density_nn`` (nearest valid node)
 per query; the JAX wrapper instead fills the NaN nodes of each grid with
-that value once, at extraction (``jax_eos.wrapper._extract_sub_args``).
+that value once, at extraction (``jax_eos.wrapper._extract_sub_args``). Inside
+a cell with a filled corner the two can differ.
 """
 
 from __future__ import annotations
@@ -67,7 +68,7 @@ def get_paleos_unified_density_jax(
     Mirrors ``zalmoxis.eos.paleos.get_paleos_unified_density``. Inputs
     are scalars or 0-d arrays; returns a scalar. The grid comes with its NaN
     nodes filled (``jax_eos.wrapper._extract_sub_args``); a node the fill leaves
-    NaN (``density_nn`` gives NaN there) makes every lookup that reads it NaN.
+    NaN can make the result NaN.
     """
     # Clamp pressure to table bounds, then log10
     pressure_c = jnp.clip(pressure, p_min, p_max)
