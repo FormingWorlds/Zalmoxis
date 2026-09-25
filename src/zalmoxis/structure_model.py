@@ -383,6 +383,11 @@ def solve_structure(
                 'JAX solve_structure fell back to numpy path: %s',
                 exc,
             )
+    if use_jax and temperature_arrays is not None:
+        r_arr, T_arr = temperature_arrays  # the JAX path's temperature, clamped at the ends
+
+        def temperature_function(r, P):
+            return float(np.interp(r, r_arr, T_arr))
 
     uses_Tdep = any_component_is_tdep(layer_mixtures)
 

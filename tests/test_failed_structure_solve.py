@@ -372,6 +372,34 @@ class TestNonFiniteDensityJax:
             self._main(monkeypatch, caplog, fill=False)
         assert 'fell back to numpy path' in caplog.text
 
+    @pytest.mark.timeout(120)
+    def test_fallback_integrates_the_temperature_arrays(self, monkeypatch, caplog):
+        """The numpy fallback uses temperature_arrays, as the JAX path does, not main's profile."""
+        world, call = _synthetic_jax_world(monkeypatch, fill=True), {}
+
+        class _Captured(Exception):
+            pass
+
+        def capture(*args, **kwargs):
+            call.update(args=list(args), kwargs=kwargs)
+            raise _Captured
+
+        monkeypatch.setattr(zs, 'solve_structure', capture)
+        with pytest.raises(_Captured):
+            zs.main(self._cfg(), world['mats'], None, os.path.join(ROOT, 'input'))
+        args, kwargs = call['args'], call['kwargs']
+        args[10] = [0.0, 0.0, 3e11]  # P_c whose core crosses the NaN band
+        r_arr = np.asarray(args[3])
+        T_arr = np.linspace(7000.0, 3000.0, len(r_arr))
+        with caplog.at_level('WARNING', logger='zalmoxis.structure_model'):
+            fell = sm.solve_structure(
+                *args, **dict(kwargs, use_jax=True, temperature_arrays=(r_arr, T_arr))
+            )
+        assert 'fell back to numpy path' in caplog.text
+        args[13] = lambda r, P: float(np.interp(r, r_arr, T_arr))
+        ref = sm.solve_structure(*args, **dict(kwargs, use_jax=False, temperature_arrays=None))
+        assert all(np.array_equal(a, b, equal_nan=True) for a, b in zip(fell, ref))
+
 
 @pytest.mark.smoke
 class TestFailedPicardIteration:
