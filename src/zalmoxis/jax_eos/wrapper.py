@@ -44,8 +44,8 @@ _DEBUG = bool(_os.environ.get('ZALMOXIS_JAX_DEBUG'))
 _PROFILE = bool(_os.environ.get('ZALMOXIS_JAX_PROFILE'))
 _PHASE_TIMES = {'cache_extract': 0.0, 'adiabat_tab': 0.0, 'jit_solve': 0.0, 'other': 0.0}
 
-# Mantle melting-curve tabulations on a shared log-P axis, keyed by the
-# (solidus_func, liquidus_func) objects themselves (see solve_structure_via_jax).
+# Mantle melting-curve tabulations on a shared log-P axis. This cache and the adiabat
+# cache are keyed by the function objects, which the dict keeps alive: no id is reused.
 _MELT_TABLE_CACHE: dict = {}
 
 
@@ -419,17 +419,13 @@ def solve_structure_via_jax(
         T_values = np.full(4, 3000.0)
         T_axis_is_radius = False
     else:
-        # One tabulation per temperature function (constant within an inner
-        # iteration). The key is the function itself: it stays alive while
-        # cached, so a later function can never take over its id and its entry.
+        # One tabulation per temperature function (constant within an inner iteration).
         _adia_cache = interpolation_cache.setdefault('_jax_adiabat_cache', {})
         _key = temperature_function
         _entry = _adia_cache.get(_key)
         if _entry is None:
             _entry = _tabulate_adiabat(radii_arr, temperature_function)
-            # Cap cache size so stale closures don't accumulate across
-            # many outer iters (rare in practice; the _solve() control
-            # flow creates ~10-20 distinct _temperature_func objects).
+            # Persists across main() calls (solver._interpolation_cache), so it fills to the cap.
             if len(_adia_cache) > 64:
                 _adia_cache.pop(next(iter(_adia_cache)))
             _adia_cache[_key] = _entry
@@ -459,7 +455,6 @@ def solve_structure_via_jax(
         _entry = melt_curves
         _key = None
     else:
-        # Keyed by the curve objects, which stay alive while cached (no id reuse).
         _key = (solidus_func, liquidus_func)
         _entry = _MELT_TABLE_CACHE.get(_key)
     _melt_cache = _MELT_TABLE_CACHE
