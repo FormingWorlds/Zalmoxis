@@ -20,8 +20,9 @@ pads them with ``structure_model.pad_after_stop`` from the state where
 the solve stopped: mass/gravity at the stop and zero pressure at the
 surface, NaN for a stop deep inside.
 
-``coupled_odes_jax`` zeroes its RHS only for a non-finite density, not
-for P <= 0, so that the event sees the pressure-zero downcrossing.
+For a non-finite density ``coupled_odes_jax`` returns NaN at P > 0, which
+fails the solve, and zeros at P <= 0; it does not freeze on P <= 0 itself,
+so that the event sees the pressure-zero downcrossing.
 """
 
 from __future__ import annotations

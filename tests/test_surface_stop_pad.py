@@ -171,6 +171,41 @@ class TestInteriorStopFails:
         assert np.all(np.isnan(p[~live]))
         assert 'treating the solve as failed' in caplog.text
 
+    @pytest.mark.timeout(60)
+    @pytest.mark.parametrize('tdep', [False, True])
+    def test_failure_before_the_first_node_fails_the_profile(self, monkeypatch, tdep):
+        """The first step fails (the centre itself is fine), so no node is saved."""
+        _, _, m, g, p = self._solve(monkeypatch, (0.0, 1.5), tdep)
+        assert np.all(np.isnan(m)) and np.all(np.isnan(g)) and np.all(np.isnan(p))
+
+    @pytest.mark.timeout(60)
+    def test_failure_at_the_last_saved_node_ends_there(self, monkeypatch):
+        """The grid steps pass over a failure at radii[20]; the stop re-integration would start in it."""
+        radii = np.linspace(0.0, R_OUT, N)
+        band = _band_rhs(radii[20] + 0.3 * radii[1], R_OUT)
+
+        def rhs(r, y, *args, **kwargs):
+            return np.full(3, np.nan) if abs(r - radii[20]) < 1.0 else band(r, y)
+
+        monkeypatch.setattr(sm, 'coupled_odes', rhs)
+        monkeypatch.setattr(sm, 'any_component_is_tdep', lambda _: False)
+        _, _, p = sm.solve_structure(
+            {},
+            0.0,
+            0.0,
+            radii,
+            0.5,
+            1e-10,
+            1e-12,
+            np.inf,
+            {},
+            {},
+            [0.0, 0.0, self.P_C],
+            None,
+            None,
+        )
+        assert np.all(p[:21] > 0) and np.all(np.isnan(p[21:]))
+
     @pytest.mark.parametrize('factor, padded', [(1.01, True), (0.5, False)])
     def test_stop_below_target_pressure_is_a_surface(self, monkeypatch, factor, padded):
         """Below the target surface pressure the stop pads with P = 0, so the
