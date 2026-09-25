@@ -9,7 +9,7 @@ logic, the inter-table mix IS the mushy logic). We reuse
 ``fast_bilinear_jax`` + ``paleos_clamp_temperature_jax`` from the
 bilinear kernel module.
 
-numpy's per-query density_nn fallback is replaced by filling the NaN cells
+numpy's per-query density_nn fallback is replaced by filling the NaN nodes
 of each grid once, in ``jax_eos.wrapper._extract_sub_args``.
 """
 

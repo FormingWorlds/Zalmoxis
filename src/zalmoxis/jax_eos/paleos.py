@@ -21,8 +21,8 @@ In JAX, we compute the result of ALL applicable branches and use
 same bilinear at (P, T_clamped), so we collapse them into a "direct"
 branch. The mushy-zone branch is the only distinct path.
 
-NaN table cells: numpy falls back to ``density_nn`` (nearest valid cell)
-per query; the JAX wrapper instead fills the NaN cells of each grid with
+NaN table nodes: numpy falls back to ``density_nn`` (nearest valid node)
+per query; the JAX wrapper instead fills the NaN nodes of each grid with
 that value once, at extraction (``jax_eos.wrapper._extract_sub_args``).
 """
 
