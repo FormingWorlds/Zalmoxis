@@ -1929,17 +1929,16 @@ def _solve(
                 )
                 new_density[idx] = rho_batch
 
-            # Fill NaN entries with last valid density (walking outward)
-            last_valid = None
-            for i in range(n_valid):
-                if not p_valid[i]:
-                    new_density[i] = 0.0
-                elif np.isnan(
-                    new_density[i]
-                ):  # pragma: no cover - per-shell NaN density fallback; defensive
-                    new_density[i] = last_valid if last_valid is not None else old_density[i]
-                else:
-                    last_valid = new_density[i]
+            # A non-finite density at a node with P > 0 is an EOS failure the solve stepped over.
+            bad = p_valid & ~np.isfinite(new_density[:n_valid])
+            if bad.any():
+                i = int(np.argmax(bad))
+                raise StructureSolveError(
+                    f'Structure solve failed at R = {radii[-1]:.6e} m (outer iteration '
+                    f'{outer_iter}, inner {inner_iter}): density not finite at r = '
+                    f'{radii[i]:.4e} m, P = {pressure[i]:.3e} Pa.'
+                )
+            new_density[:n_valid][~p_valid] = 0.0
 
             # Adaptive Picard blend: use inner-loop alpha for density damping
             alpha = min(_picard_alpha, _inner_alpha)

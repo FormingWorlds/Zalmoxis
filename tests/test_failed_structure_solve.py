@@ -237,6 +237,19 @@ class TestNonFiniteDensity:
         with pytest.raises(StructureSolveError):
             _run(_cfg(outer_solver='picard'))
 
+    def test_nan_density_at_a_node_raises(self, monkeypatch):
+        """The integration is clean, but the density update meets a NaN at a node."""
+        real = zs.calculate_mixed_density_batch
+
+        def batch(pressure, *args, **kwargs):
+            rho = np.array(real(pressure, *args, **kwargs), dtype=float)
+            rho[len(rho) // 2] = np.nan
+            return rho
+
+        monkeypatch.setattr(zs, 'calculate_mixed_density_batch', batch)
+        with pytest.raises(StructureSolveError, match='density not finite at r = '):
+            _run(_cfg(outer_solver='picard'))
+
     @pytest.mark.timeout(60)
     def test_nan_density_at_the_centre_raises(self, monkeypatch):
         """A NaN density at r = 0 fails the solve at the centre instead of a NaN first step."""

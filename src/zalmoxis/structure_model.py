@@ -333,6 +333,17 @@ def solve_structure(
     tuple
         (mass_enclosed, gravity, pressure) arrays at each radial grid point.
         Past a stop in the integration they are padded by ``pad_after_stop``.
+
+    Notes
+    -----
+    A non-finite density at P > 0 fails the solve where the integrator samples
+    it (NaN derivatives stop the integration) or, in ``zalmoxis.solver``, where
+    a grid node lies in it; a region thinner than the steps and between nodes
+    can pass unseen. A stop at P <= max(``SURFACE_STOP_P_FRACTION`` * P_c,
+    ``surface_pressure``) is padded as the surface. After
+    ``MAX_NONFINITE_RHS`` NaN right-hand sides in one ``solve_ivp`` call every
+    further one is NaN, so a solve that creeps along the edge of a failed
+    region ends.
     """
     # JAX fast path — dispatch to the diffrax-based implementation when
     # requested. Falls back to numpy path on any ValueError (unsupported
