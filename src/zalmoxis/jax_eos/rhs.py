@@ -226,10 +226,8 @@ def coupled_odes_jax(
     log_T_sol_hi = log_T_sol_table[melt_i + 1]
     log_T_liq = (1.0 - melt_frac) * log_T_liq_lo + melt_frac * log_T_liq_hi
     log_T_sol = (1.0 - melt_frac) * log_T_sol_lo + melt_frac * log_T_sol_hi
-    T_liq_interp = 10.0**log_T_liq
-    T_sol_interp = 10.0**log_T_sol
-    T_liq = jnp.where(pressure > 0, T_liq_interp, 0.0)
-    T_sol = jnp.where(pressure > 0, T_sol_interp, 0.0)
+    T_liq = 10.0**log_T_liq  # no switch at P <= 0: a jump there stalls the surface steps
+    T_sol = 10.0**log_T_sol
 
     # Core density (paleos_unified)
     rho_core = get_paleos_unified_density_jax(

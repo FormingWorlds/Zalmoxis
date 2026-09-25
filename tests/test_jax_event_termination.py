@@ -313,3 +313,35 @@ class TestSurfaceCrossing:
         t0 = time.perf_counter()
         solve()
         assert time.perf_counter() - t0 < 2.0  # max_steps (200000) takes about 10 s
+
+    @pytest.mark.parametrize('unified', [True, False])
+    def test_rhs_is_continuous_across_zero_pressure(self, unified):
+        """T and the melting curves do not jump where P crosses zero: 300 K, below flat
+        melting curves (solid); 2-phase solid and liquid tables are the unified one and 0.9x."""
+        pytest.importorskip('jax')
+        from tests.test_jax_parity_synthetic import _synthetic_world
+        from zalmoxis.jax_eos.rhs import coupled_odes_jax
+
+        world = _synthetic_world()
+        base = world['jax_args']
+        args = dict(
+            base,
+            T_values=np.full_like(base['T_values'], 300.0),
+            log_T_sol_table=np.full_like(base['log_T_sol_table'], np.log10(1760.0)),
+            log_T_liq_table=np.full_like(base['log_T_liq_table'], np.log10(2200.0)),
+        )
+        if not unified:
+            for prefix, scale in (('sol', 1.0), ('liq', 0.9)):
+                for k, v in world['jax_args'].items():
+                    if k.startswith('mun_') and 'liquidus' not in k and 'has_liq' not in k:
+                        name = prefix + k[3:]
+                        args[name] = v * scale if k == 'mun_density_grid' else v
+            args = {k: v for k, v in args.items() if not k.startswith('mun_')}
+        y = np.array([2.0 * world['cmb_mass'], 5.0, 0.0])
+        rhs = [
+            np.asarray(
+                coupled_odes_jax(4e6, y + [0.0, 0.0, p], mantle_is_unified=unified, **args)
+            )
+            for p in (1e-6, -1e-6)
+        ]
+        np.testing.assert_allclose(rhs[0], rhs[1], rtol=1e-12)
