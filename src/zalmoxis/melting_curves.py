@@ -27,8 +27,8 @@ Liquidus:
         Stixrude (2014) Eq. 1.9: pure MgSiO3 Simon-like power law.
     ``'PALEOS-liquidus'``
         PALEOS MgSiO3 melting curve: Belonoshko+2005 (P < 2.55 GPa) /
-        Fei+2021 (P >= 2.55 GPa). Consistent with the PALEOS unified
-        EOS table phase boundaries.
+        Fei+2021 (P >= 2.55 GPa). The unified PALEOS lookups do not use it;
+        they take each table's own extracted liquidus.
     ``'Monteux600-liquidus-tabulated'``
         Tabulated: ``melting_curves_Monteux-600/liquidus.dat``.
 
@@ -251,9 +251,8 @@ def paleos_liquidus(P):
     - P < 2.55 GPa: T = 1831 * (1 + P/4.6)^0.33  (Belonoshko+2005)
     - P >= 2.55 GPa: T = 6000 * (P/140)^0.26      (Fei+2021)
 
-    This is the melting curve used internally by the PALEOS unified EOS
-    tables. Using it for the mushy zone calculation ensures consistency
-    between the table's phase boundaries and the derived solidus.
+    It is the ``'PALEOS-liquidus'`` melting curve. The unified PALEOS lookups do
+    not use it; they take each table's own extracted liquidus.
 
     Parameters
     ----------
