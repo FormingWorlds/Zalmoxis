@@ -14,6 +14,7 @@ test does not discriminate against:
 
 from __future__ import annotations
 
+import dataclasses
 from unittest import mock
 
 import numpy as np
@@ -537,7 +538,7 @@ class TestCacheKeyIdentity:
 
     def test_each_temperature_function_gets_its_own_tabulation(self, monkeypatch):
         """Every ``id`` in the wrapper module collides; each new temperature function
-        still gets its own tabulation, and a repeated one reuses its entry."""
+        still gets its own tabulation, and the same one again reuses its entry."""
         monkeypatch.setattr(jw, 'id', lambda obj: 7, raising=False)
         monkeypatch.setattr(jw, '_MELT_TABLE_CACHE', {})
         tabulated, tabulate = [], jw._tabulate_adiabat
@@ -546,7 +547,7 @@ class TestCacheKeyIdentity:
         )
         _, _, cache = _common_fixtures()
         funcs = [self._make(t) for t in (1000.0, 1001.0, 1002.0)]
-        for f in funcs + funcs[:1]:
+        for f in funcs + funcs[-1:]:
             got = self._solve_captured(cache, f, _solidus_func, _liquidus_func)
             np.testing.assert_array_equal(got['T_values'], f())
         assert len(tabulated) == 3
@@ -559,9 +560,27 @@ class TestCacheKeyIdentity:
         s1, s2 = self._make(2000.0), self._make(2100.0)
         l1, l2 = self._make(3000.0), self._make(3100.0)
         tables = []
-        for sol, liq in ((s1, l1), (s1, l2), (s2, l2), (s1, l1)):
+        for sol, liq in ((s1, l1), (s1, l2), (s2, l2), (s2, l2)):
             got = self._solve_captured(cache, _t_func, sol, liq)
             np.testing.assert_array_equal(got['log_T_sol_table'], np.log10(sol()))
             np.testing.assert_array_equal(got['log_T_liq_table'], np.log10(liq()))
             tables.append(got['log_T_liq_table'])
-        assert tables[3] is tables[0] and len(jw._MELT_TABLE_CACHE) == 3
+        assert tables[3] is tables[2]
+
+    def test_unhashable_callables_are_cached(self, monkeypatch):
+        """A callable with ``__eq__`` and no ``__hash__`` works as T and as a melting curve."""
+
+        @dataclasses.dataclass
+        class Curve:
+            value: float
+
+            def __call__(self, *args):
+                return self.value
+
+        monkeypatch.setattr(jw, '_MELT_TABLE_CACHE', {})
+        _, _, cache = _common_fixtures()
+        t, sol, liq = Curve(1000.0), Curve(2000.0), Curve(3000.0)
+        for _ in range(2):
+            got = self._solve_captured(cache, t, sol, liq)
+            np.testing.assert_array_equal(got['T_values'], 1000.0)
+            np.testing.assert_array_equal(got['log_T_liq_table'], np.log10(3000.0))

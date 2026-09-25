@@ -44,9 +44,9 @@ _DEBUG = bool(_os.environ.get('ZALMOXIS_JAX_DEBUG'))
 _PROFILE = bool(_os.environ.get('ZALMOXIS_JAX_PROFILE'))
 _PHASE_TIMES = {'cache_extract': 0.0, 'adiabat_tab': 0.0, 'jit_solve': 0.0, 'other': 0.0}
 
-# Mantle melting-curve tables on a shared log-P axis, keyed by the (solidus_func,
-# liquidus_func) pair; the adiabat cache is keyed by the temperature function. The
-# keys are the function objects themselves, not their ids.
+# Mantle melting-curve tables on a shared log-P axis. This cache and the adiabat cache
+# are keyed by id and store the functions with the tables: a hit needs the same objects,
+# and the stored reference keeps a cached id from passing to another function.
 _MELT_TABLE_CACHE: dict = {}
 
 
@@ -422,15 +422,15 @@ def solve_structure_via_jax(
     else:
         # One tabulation per temperature function (constant within an inner iteration).
         _adia_cache = interpolation_cache.setdefault('_jax_adiabat_cache', {})
-        _key = temperature_function
+        _key = id(temperature_function)
         _entry = _adia_cache.get(_key)
-        if _entry is None:
-            _entry = _tabulate_adiabat(radii_arr, temperature_function)
+        if _entry is None or _entry[0] is not temperature_function:
+            _entry = (temperature_function, *_tabulate_adiabat(radii_arr, temperature_function))
             # Persists across main() calls (solver._interpolation_cache), so it fills to the cap.
             if len(_adia_cache) > 64:
                 _adia_cache.pop(next(iter(_adia_cache)))
             _adia_cache[_key] = _entry
-        T_axis_grid, T_values = _entry
+        _, T_axis_grid, T_values = _entry
         T_axis_is_radius = False
 
     if _PROFILE:  # pragma: no cover - dev profiling, gated on ZALMOXIS_JAX_PROFILE
@@ -456,8 +456,10 @@ def solve_structure_via_jax(
         _entry = melt_curves
         _key = None
     else:
-        _key = (solidus_func, liquidus_func)
-        _entry = _MELT_TABLE_CACHE.get(_key)
+        _key = (id(solidus_func), id(liquidus_func))
+        _hit = _MELT_TABLE_CACHE.get(_key)
+        _same = _hit is not None and _hit[0] is solidus_func and _hit[1] is liquidus_func
+        _entry = _hit[2] if _same else None
     _melt_cache = _MELT_TABLE_CACHE
     if _entry is None:
         n_melt = 256
@@ -480,7 +482,7 @@ def solve_structure_via_jax(
         }
         if len(_melt_cache) > 64:
             _melt_cache.pop(next(iter(_melt_cache)))
-        _melt_cache[_key] = _entry
+        _melt_cache[_key] = (solidus_func, liquidus_func, _entry)
     melt_curves = _entry
 
     # Physical constant G matching numpy path
