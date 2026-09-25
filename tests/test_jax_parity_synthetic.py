@@ -144,7 +144,6 @@ def _synthetic_world():
         'cmb_mass': cmb_mass,
         'T_axis_grid': T_grid,
         'T_values': T_vals,
-        'T_surface': 1500.0,
         'mushy_zone_factor_core': 1.0,
         'mushy_zone_factor_mantle': _get_mushy_zone_factor(sil_eos, {sil_eos: 0.8}),
         'melt_log_p_min': float(melt_lp[0]),
@@ -294,3 +293,37 @@ def test_rhs_parity_synthetic_unified_wet_and_dry():
             np.testing.assert_allclose(jv, nv, rtol=1e-10, atol=0.0)
             n_compared += 1
         assert n_compared == 60
+
+
+@pytest.mark.parametrize('temperature', [300.0, 2000.0, 3000.0])
+@pytest.mark.parametrize('unified', [True, False])
+def test_rhs_is_continuous_across_zero_pressure(unified, temperature):
+    """T and the melting curves do not jump where P crosses zero, at 300, 2000 and 3000 K.
+    The 2-phase mantle reads the flat melting curves at 1760 and 2200 K (its solid and
+    liquid tables are the unified one and 0.9x); the unified mantle reads its own table
+    liquidus, with the solidus at mushy_zone_factor times it, and its lookup clamps P to
+    the table range."""
+    pytest.importorskip('jax')
+    from zalmoxis.jax_eos.rhs import coupled_odes_jax
+
+    world = _synthetic_world()
+    base = world['jax_args']
+    args = dict(
+        base,
+        T_values=np.full_like(base['T_values'], temperature),
+        log_T_sol_table=np.full_like(base['log_T_sol_table'], np.log10(1760.0)),
+        log_T_liq_table=np.full_like(base['log_T_liq_table'], np.log10(2200.0)),
+    )
+    if not unified:
+        for prefix, scale in (('sol', 1.0), ('liq', 0.9)):
+            for k, v in world['jax_args'].items():
+                if k.startswith('mun_') and 'liquidus' not in k and 'has_liq' not in k:
+                    name = prefix + k[3:]
+                    args[name] = v * scale if k == 'mun_density_grid' else v
+        args = {k: v for k, v in args.items() if not k.startswith('mun_')}
+    y = np.array([2.0 * world['cmb_mass'], 5.0, 0.0])
+    rhs = [
+        np.asarray(coupled_odes_jax(4e6, y + [0.0, 0.0, p], mantle_is_unified=unified, **args))
+        for p in (1e-6, -1e-6)
+    ]
+    np.testing.assert_allclose(rhs[0], rhs[1], rtol=1e-12)

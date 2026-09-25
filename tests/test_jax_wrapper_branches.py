@@ -325,7 +325,6 @@ class TestTemperatureFallback:
 
         def fake_solve_jax(radii_arr, y0, **kwargs):
             captured['T_values'] = kwargs['T_values']
-            captured['T_surface'] = kwargs['T_surface']
             captured['T_axis_is_radius'] = kwargs.get('T_axis_is_radius', False)
             return np.zeros((len(radii_arr), 3)), np.zeros(3)
 
@@ -349,7 +348,6 @@ class TestTemperatureFallback:
             )
         # Constant 3000 K everywhere is the documented fallback contract
         assert np.all(captured['T_values'] == pytest.approx(3000.0))
-        assert captured['T_surface'] == pytest.approx(3000.0)
         # Without arrays, the axis is the log-P grid, not radius
         assert captured['T_axis_is_radius'] is False
 
