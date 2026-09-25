@@ -140,15 +140,29 @@ class TestFailedPressureSolve:
             _run(_cfg(outer_solver='picard'))
 
     def test_every_solve_gets_the_target_surface_pressure(self, monkeypatch):
-        """The pad rule reads the target surface pressure of the configuration."""
-        pressures, real = [], zs.solve_structure
+        """The pad rule reads the target surface pressure of the configuration, in
+        the pressure search and in the re-solve at its root (the run stops there)."""
+        pressures, state = [], {'root': False}
+        real_solve, real_brentq = zs.solve_structure, zs.brentq
+
+        class _Stop(Exception):
+            pass
+
+        def brentq(*args, **kwargs):
+            out = real_brentq(*args, **kwargs)
+            state['root'] = True
+            return out
 
         def solve(*args, **kwargs):
             pressures.append(kwargs['surface_pressure'])
-            return real(*args, **kwargs)
+            if state['root']:
+                raise _Stop
+            return real_solve(*args, **kwargs)
 
+        monkeypatch.setattr(zs, 'brentq', brentq)
         monkeypatch.setattr(zs, 'solve_structure', solve)
-        _run(_cfg(outer_solver='picard', max_iterations_outer=1, target_surface_pressure=2e5))
+        with pytest.raises(_Stop):
+            _run(_cfg(outer_solver='picard', target_surface_pressure=2e5))
         assert len(pressures) > 2 and set(pressures) == {2e5}
 
 
