@@ -235,7 +235,7 @@ class TestNonFiniteDensity:
 
         monkeypatch.setattr(zs, 'solve_structure', solve)
         monkeypatch.setattr(sm, 'calculate_mixed_density', rho)
-        with pytest.raises(StructureSolveError, match='not finite'):
+        with pytest.raises(StructureSolveError, match='not finite; stop '):
             _run(_cfg(outer_solver='picard'))
 
     @pytest.mark.timeout(60)
