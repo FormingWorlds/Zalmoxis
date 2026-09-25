@@ -1817,6 +1817,14 @@ def _solve(
                     volatile_profile=volatile_profile,
                     surface_pressure=target_surface_pressure,
                 )
+                _require_finite(
+                    radii,
+                    pressure,
+                    f'solve at the Brent root P_c = {p_solution:.3e} Pa not finite',
+                    outer_iter,
+                    inner_iter,
+                )
+
                 surface_residual = abs(pressure[-1] - target_surface_pressure)
                 # Allow zero pressure at the surface: the terminal event
                 # pads truncated points with P=0, so check >= 0

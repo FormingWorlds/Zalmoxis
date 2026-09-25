@@ -119,7 +119,24 @@ class TestFailedPressureSolve:
         """Structure solves fail below P_c = 1e11 Pa, so the low bracket end fails
         while the high one is finite."""
         _spy_solve(monkeypatch, lambda radii, y0: y0[2] < 1e11)
-        with pytest.raises(StructureSolveError, match='outer iteration 0, inner 0'):
+        with pytest.raises(
+            StructureSolveError,
+            match=r'\(outer iteration 0, inner 0\): solve at P_c = [0-9.]+e\+10 Pa',
+        ):
+            _run(_cfg(outer_solver='picard'))
+
+    def test_failure_at_the_brent_root_raises(self, monkeypatch):
+        """Every solve succeeds except the re-solve at the root brentq returns."""
+        calls, real_brentq = {'root': None}, zs.brentq
+
+        def brentq(*args, **kwargs):
+            out = real_brentq(*args, **kwargs)
+            calls['root'] = out[0]
+            return out
+
+        monkeypatch.setattr(zs, 'brentq', brentq)
+        _spy_solve(monkeypatch, lambda radii, y0: y0[2] == calls['root'])
+        with pytest.raises(StructureSolveError, match='solve at the Brent root'):
             _run(_cfg(outer_solver='picard'))
 
     def test_every_solve_gets_the_target_surface_pressure(self, monkeypatch):
