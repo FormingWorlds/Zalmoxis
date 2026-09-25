@@ -354,8 +354,9 @@ class TestNonFiniteDensityJax:
 
         def spy(*args, **kwargs):
             try:
-                ran.append(real(*args, **kwargs))
-                return ran[-1]
+                profile = real(*args, **kwargs)
+                ran.append(1)
+                return profile
             except ValueError as exc:
                 raised.append(str(exc))
                 raise

@@ -9,8 +9,8 @@ logic, the inter-table mix IS the mushy logic). We reuse
 ``fast_bilinear_jax`` + ``paleos_clamp_temperature_jax`` from the
 bilinear kernel module.
 
-NaN-fallback (numpy's density_nn KDTree) is NOT ported. On the
-PALEOS-2phase P-T envelope the fallback is not exercised.
+numpy's per-query density_nn fallback is replaced by filling the NaN cells
+of each grid once, in ``jax_eos.wrapper._extract_sub_args``.
 """
 
 from __future__ import annotations
