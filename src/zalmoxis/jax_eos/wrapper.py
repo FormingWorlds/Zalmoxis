@@ -33,6 +33,7 @@ import time as _time
 
 import numpy as np
 
+from ..structure_model import pad_after_stop
 from .solver import solve_structure_jax
 
 _CALL_COUNT = 0
@@ -212,6 +213,7 @@ def solve_structure_via_jax(
     condensed_rho_scale=None,
     binodal_T_scale=None,
     volatile_profile=None,  # VolatileProfile: single-volatile wet mantle
+    surface_pressure=0.0,  # target surface pressure [Pa], for pad_after_stop
 ):
     """Drop-in replacement for ``solve_structure`` using the JAX path.
 
@@ -585,7 +587,7 @@ def solve_structure_via_jax(
     global _CALL_COUNT, _TOTAL_WALL
     _CALL_COUNT += 1
     _t0 = _time.perf_counter()
-    ys = solve_structure_jax(
+    ys, y_end = solve_structure_jax(
         radii_arr,
         np.asarray(y0, dtype=float),
         rtol=float(relative_tolerance),
@@ -633,18 +635,17 @@ def solve_structure_via_jax(
     gravity = ys[:, 1]
     pressure = ys[:, 2]
 
-    # Pressure-zero terminal event post-processing. When the event fires
-    # mid-grid, diffrax returns `inf` for all saveat entries past the
-    # crossing. We replace those with the numpy contract: mass/gravity
-    # carry the last valid value, pressure is padded to 0. Matches
-    # structure_model.solve_structure's final pad.
+    # Past a mid-grid stop diffrax returns inf; pad as solve_structure does.
     post_event = ~np.isfinite(pressure)
     if np.any(post_event):
-        valid_idx = np.flatnonzero(~post_event)
-        if valid_idx.size > 0:
-            last_M = mass_enclosed[valid_idx[-1]]
-            last_g = gravity[valid_idx[-1]]
-            mass_enclosed = np.where(post_event, last_M, mass_enclosed)
-            gravity = np.where(post_event, last_g, gravity)
-            pressure = np.where(post_event, 0.0, pressure)
+        n = int(np.argmax(post_event))
+        return pad_after_stop(
+            radii_arr,
+            mass_enclosed[:n],
+            gravity[:n],
+            pressure[:n],
+            y_end,
+            float(y0[2]),
+            surface_pressure,
+        )
     return mass_enclosed, gravity, pressure

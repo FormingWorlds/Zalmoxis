@@ -14,14 +14,14 @@ Pressure-zero terminal event: numpy's ``solve_structure`` stops
 integration via a scipy event when P crosses zero. This module uses
 ``diffrax.Event`` with an ``optimistix.Newton`` root finder to
 localize the crossing, matching numpy's physics. After the event
-fires, saveat points beyond the crossing are returned as ``inf`` by
-diffrax; the wrapper (``jax_eos/wrapper.py``) detects these and pads
-pressure to 0 and mass/gravity to their last-valid values.
+fires, or after a failed step, saveat points beyond the stop are
+returned as ``inf`` by diffrax; the wrapper (``jax_eos/wrapper.py``)
+pads them with ``structure_model.pad_after_stop`` from the state where
+the solve stopped: mass/gravity at the stop and zero pressure at the
+surface, NaN for a stop deep inside.
 
-As a defensive belt-and-suspenders, ``coupled_odes_jax`` still zeroes
-its RHS when P<=0 so the state is bounded even if the integrator
-briefly overshoots into negative P between step and event-localize.
-The event itself provides the physics-faithful termination.
+``coupled_odes_jax`` zeroes its RHS only for a non-finite density, not
+for P <= 0, so that the event sees the pressure-zero downcrossing.
 """
 
 from __future__ import annotations
@@ -64,8 +64,7 @@ def _build_diffeqsolve_jit(
     def _pressure_cond(t, y, args, **kwargs):
         # Event fires when pressure crosses zero. direction=False tells
         # diffrax to trigger only on the downcrossing (the physical
-        # outer-surface case). A tiny positive offset keeps the root
-        # finder away from exact y[2]=0 where the EOS tables can NaN.
+        # outer-surface case).
         return y[2]
 
     term = diffrax.ODETerm(_ode_rhs)
@@ -84,7 +83,7 @@ def _build_diffeqsolve_jit(
     @jax.jit
     def _solve(radii, y0, rtol, atol, rhs_args):
         controller = diffrax.PIDController(rtol=rtol, atol=atol)
-        saveat = diffrax.SaveAt(ts=radii)
+        saveat = diffrax.SaveAt(subs=[diffrax.SubSaveAt(ts=radii), diffrax.SubSaveAt(t1=True)])
         sol = diffrax.diffeqsolve(
             term,
             solver,
@@ -99,7 +98,7 @@ def _build_diffeqsolve_jit(
             max_steps=200000,
             throw=False,
         )
-        return sol.ys
+        return sol.ys[0], sol.ys[1][0]
 
     return _solve
 
@@ -154,6 +153,9 @@ def solve_structure_jax(
     -------
     ys : array of shape (n_layers, 3)
         State [M, g, P] at each radii.
+    y_end : array of shape (3,)
+        State where the integration stopped: at the pressure-zero event,
+        at ``radii[-1]``, or at the last accepted step if the solve failed.
     """
     solve = _get_solve(T_axis_is_radius, has_volatile, mantle_is_unified)
     return solve(

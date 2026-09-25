@@ -327,7 +327,7 @@ class TestTemperatureFallback:
             captured['T_values'] = kwargs['T_values']
             captured['T_surface'] = kwargs['T_surface']
             captured['T_axis_is_radius'] = kwargs.get('T_axis_is_radius', False)
-            return np.zeros((len(radii_arr), 3))
+            return np.zeros((len(radii_arr), 3)), np.zeros(3)
 
         with mock.patch.object(jw, 'solve_structure_jax', side_effect=fake_solve_jax):
             jw.solve_structure_via_jax(
@@ -369,7 +369,7 @@ class TestTemperatureArraysPath:
             captured['T_axis_is_radius'] = kwargs.get('T_axis_is_radius', False)
             captured['T_axis_grid'] = kwargs['T_axis_grid']
             captured['T_values'] = kwargs['T_values']
-            return np.zeros((len(radii_arr), 3))
+            return np.zeros((len(radii_arr), 3)), np.zeros(3)
 
         with mock.patch.object(jw, 'solve_structure_jax', side_effect=fake_solve_jax):
             jw.solve_structure_via_jax(
@@ -394,27 +394,24 @@ class TestTemperatureArraysPath:
 
 
 class TestPostEventPadding:
-    """Diffrax returns ``inf`` for save-points past the pressure-zero terminal
-    event. The wrapper rewrites that contract to numpy's: mass/gravity carry
-    the last valid value, pressure is padded to 0."""
+    """Diffrax returns ``inf`` for save-points past a stop. The wrapper pads them
+    as numpy does: mass/gravity at the stop and pressure 0 for a stop at the
+    surface, NaN for a stop deep inside."""
 
-    def test_inf_past_event_replaced_with_holds(self):
+    @staticmethod
+    def _run(y_end):
         layer_mixtures, mds, cache = _common_fixtures()
-        radii = np.linspace(1.0, 1e6, 10)
-
         ys = np.zeros((10, 3))
         ys[:5, 0] = np.linspace(0.0, 1e23, 5)
         ys[:5, 1] = np.linspace(0.0, 5.0, 5)
         ys[:5, 2] = np.linspace(1e12, 1e10, 5)
-        # Past index 4 the event fired: diffrax pads with inf
         ys[5:, :] = np.inf
-
-        with mock.patch.object(jw, 'solve_structure_jax', return_value=ys):
-            mass, gravity, pressure = jw.solve_structure_via_jax(
+        with mock.patch.object(jw, 'solve_structure_jax', return_value=(ys, y_end)):
+            return jw.solve_structure_via_jax(
                 layer_mixtures=layer_mixtures,
                 cmb_mass=2e23,
                 core_mantle_mass=4e23,
-                radii=radii,
+                radii=np.linspace(1.0, 1e6, 10),
                 adaptive_radial_fraction=0.5,
                 relative_tolerance=1e-6,
                 absolute_tolerance=1e-8,
@@ -426,15 +423,23 @@ class TestPostEventPadding:
                 liquidus_func=_liquidus_func,
                 temperature_function=_t_func,
             )
-        # All padded entries are finite (no leftover inf)
-        assert np.all(np.isfinite(mass))
-        assert np.all(np.isfinite(gravity))
-        # Padded mass entries hold the last pre-event value
-        assert mass[-1] == pytest.approx(mass[4])
-        assert gravity[-1] == pytest.approx(gravity[4])
-        # Padded pressure entries are exactly zero (numpy contract)
-        assert pressure[-1] == 0.0
-        assert pressure[5] == 0.0
+
+    def test_inf_past_event_replaced_with_holds(self):
+        y_end = np.array([1.1e23, 5.2, 0.0])
+        mass, gravity, pressure = self._run(y_end)
+        # Padded entries hold the event state, not the last pre-event node
+        assert mass[5:] == pytest.approx(np.full(5, y_end[0]))
+        assert gravity[5:] == pytest.approx(np.full(5, y_end[1]))
+        assert mass[4] == pytest.approx(1e23)
+        assert np.all(pressure[5:] == 0.0)
+
+    def test_stop_deep_inside_is_a_failed_solve(self, caplog):
+        with caplog.at_level('WARNING', logger='zalmoxis.structure_model'):
+            mass, gravity, pressure = self._run(np.array([1.1e23, 5.2, 5e9]))
+        assert mass[4] == pytest.approx(1e23)
+        assert np.all(np.isnan(mass[5:])) and np.all(np.isnan(gravity[5:]))
+        assert np.all(np.isnan(pressure[5:]))
+        assert 'treating the solve as failed' in caplog.text
 
 
 class TestMushyZoneFactorDispatch:
@@ -448,7 +453,7 @@ class TestMushyZoneFactorDispatch:
 
         def fake_solve_jax(radii_arr, y0, **kwargs):
             captured['mzf'] = kwargs['mushy_zone_factor_core']
-            return np.zeros((len(radii_arr), 3))
+            return np.zeros((len(radii_arr), 3)), np.zeros(3)
 
         with mock.patch.object(jw, 'solve_structure_jax', side_effect=fake_solve_jax):
             jw.solve_structure_via_jax(
@@ -477,7 +482,7 @@ class TestMushyZoneFactorDispatch:
 
         def fake_solve_jax(radii_arr, y0, **kwargs):
             captured['mzf'] = kwargs['mushy_zone_factor_core']
-            return np.zeros((len(radii_arr), 3))
+            return np.zeros((len(radii_arr), 3)), np.zeros(3)
 
         with mock.patch.object(jw, 'solve_structure_jax', side_effect=fake_solve_jax):
             jw.solve_structure_via_jax(

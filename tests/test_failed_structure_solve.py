@@ -1,0 +1,211 @@
+"""Failed structure solves inside the pressure and mass loops of ``main``.
+
+A structure solve that fails away from the surface returns NaN past its stop
+(``pad_after_stop``). These tests inject such failures into real solver runs
+with analytic EOS and check that ``main`` raises ``StructureSolveError``
+instead of returning a result.
+"""
+
+from __future__ import annotations
+
+import os
+
+import numpy as np
+import pytest
+
+import zalmoxis
+import zalmoxis.solver as zs
+from zalmoxis.config import load_material_dictionaries
+from zalmoxis.constants import earth_mass
+from zalmoxis.solver import StructureSolveError
+
+ROOT = os.path.normpath(os.path.join(os.path.dirname(zalmoxis.__file__), '..', '..'))
+
+
+def _cfg(**kwargs):
+    """1 M_earth analytic iron/MgSiO3 planet, isothermal, 50 layers."""
+    cfg = {
+        'planet_mass': earth_mass,
+        'core_mass_fraction': 0.325,
+        'mantle_mass_fraction': 0,
+        'temperature_mode': 'isothermal',
+        'surface_temperature': 3000.0,
+        'center_temperature': 6000.0,
+        'temp_profile_file': '',
+        'layer_eos_config': {'core': 'Analytic:iron', 'mantle': 'Analytic:MgSiO3'},
+        'mushy_zone_factor': 1.0,
+        'num_layers': 50,
+        'target_surface_pressure': 101325,
+        'relative_tolerance': 1e-9,
+        'absolute_tolerance': 1e-10,
+        'data_output_enabled': False,
+        'plotting_enabled': False,
+    }
+    cfg.update(kwargs)
+    return cfg
+
+
+def _run(cfg):
+    return zs.main(cfg, load_material_dictionaries(), None, os.path.join(ROOT, 'input'))
+
+
+def _fail(m, g, p):
+    """The profile of a structure solve that failed half way out."""
+    return tuple(np.where(np.arange(len(m)) >= len(m) // 2, np.nan, a) for a in (m, g, p))
+
+
+def _spy_solve(monkeypatch, fails):
+    """Replace structure solves for which ``fails(radii, y0)`` holds by a failed one."""
+    real = zs.solve_structure
+
+    def solve(*args, **kwargs):
+        out = real(*args, **kwargs)
+        return _fail(*out) if fails(args[3], args[10]) else out
+
+    monkeypatch.setattr(zs, 'solve_structure', solve)
+
+
+def _count_outer_iterations(monkeypatch):
+    """Record the outer radius of each outer iteration (one temperature profile each)."""
+    radius, real_tp = [], zs.calculate_temperature_profile
+
+    def temperature_profile(radii, *args, **kwargs):
+        radius.append(radii[-1])
+        return real_tp(radii, *args, **kwargs)
+
+    monkeypatch.setattr(zs, 'calculate_temperature_profile', temperature_profile)
+    return radius
+
+
+@pytest.mark.unit
+class TestFailedPressureSolve:
+    """A failed structure solve in the pressure loop raises StructureSolveError."""
+
+    def test_failure_above_the_root_raises(self, monkeypatch):
+        """Structure solves fail above P_c = 5e11 Pa, above this radius's root
+        (3.9e11 Pa): brentq meets a NaN and no finite solution exists."""
+        _spy_solve(monkeypatch, lambda radii, y0: y0[2] > 5e11)
+        cfg = _cfg(
+            outer_solver='picard', max_iterations_outer=1, _initial_radius_guess=6113601.77
+        )
+        with pytest.raises(
+            StructureSolveError,
+            match=r'at R = 6\.113602e\+06 m \(outer iteration 0, inner 0\): solve at '
+            r'P_c = [0-9.]+e\+\d+ Pa not finite; stop between r = ',
+        ):
+            _run(cfg)
+
+    def test_one_failed_evaluation_inside_brentq_raises(self, monkeypatch):
+        """Only the first structure solve inside brentq fails."""
+        state, real_brentq = {'in': False, 'n': 0}, zs.brentq
+
+        def brentq(*args, **kwargs):
+            state['in'] = True
+            try:
+                return real_brentq(*args, **kwargs)
+            finally:
+                state['in'] = False
+
+        def fails(radii, y0):
+            state['n'] += state['in']
+            return state['in'] and state['n'] == 1
+
+        monkeypatch.setattr(zs, 'brentq', brentq)
+        _spy_solve(monkeypatch, fails)
+        with pytest.raises(StructureSolveError, match='outer iteration 0'):
+            _run(_cfg(outer_solver='picard'))
+
+    def test_failure_below_the_root_raises(self, monkeypatch):
+        """Structure solves fail below P_c = 1e11 Pa, so the low bracket end fails
+        while the high one is finite."""
+        _spy_solve(monkeypatch, lambda radii, y0: y0[2] < 1e11)
+        with pytest.raises(
+            StructureSolveError,
+            match=r'\(outer iteration 0, inner 0\): solve at P_c = [0-9.]+e\+10 Pa',
+        ):
+            _run(_cfg(outer_solver='picard'))
+
+    def test_failure_at_the_brent_root_raises(self, monkeypatch):
+        """Every solve succeeds except the re-solve at the root brentq returns."""
+        calls, real_brentq = {'root': None}, zs.brentq
+
+        def brentq(*args, **kwargs):
+            out = real_brentq(*args, **kwargs)
+            calls['root'] = out[0]
+            return out
+
+        monkeypatch.setattr(zs, 'brentq', brentq)
+        _spy_solve(monkeypatch, lambda radii, y0: y0[2] == calls['root'])
+        with pytest.raises(StructureSolveError, match='solve at the Brent root'):
+            _run(_cfg(outer_solver='picard'))
+
+    def test_every_solve_gets_the_target_surface_pressure(self, monkeypatch):
+        """The pad rule reads the target surface pressure of the configuration, in
+        the pressure search and in the re-solve at its root (the run stops there)."""
+        pressures, state = [], {'root': False}
+        real_solve, real_brentq = zs.solve_structure, zs.brentq
+
+        class _Stop(Exception):
+            pass
+
+        def brentq(*args, **kwargs):
+            out = real_brentq(*args, **kwargs)
+            state['root'] = True
+            return out
+
+        def solve(*args, **kwargs):
+            pressures.append(kwargs['surface_pressure'])
+            if state['root']:
+                raise _Stop
+            return real_solve(*args, **kwargs)
+
+        monkeypatch.setattr(zs, 'brentq', brentq)
+        monkeypatch.setattr(zs, 'solve_structure', solve)
+        with pytest.raises(_Stop):
+            _run(_cfg(outer_solver='picard', target_surface_pressure=2e5))
+        assert len(pressures) > 2 and set(pressures) == {2e5}
+
+    @pytest.mark.parametrize('outer_solver', ['picard', 'newton'])
+    def test_non_finite_mass_at_the_brent_root_raises(self, monkeypatch, outer_solver):
+        """The re-solve at the root has NaN mass in its last nodes and finite pressure."""
+        state, real_solve, real_brentq = {'root': False}, zs.solve_structure, zs.brentq
+
+        def brentq(*args, **kwargs):
+            out = real_brentq(*args, **kwargs)
+            state['root'] = True
+            return out
+
+        def solve(*args, **kwargs):
+            m, g, p = real_solve(*args, **kwargs)
+            if state['root']:
+                m = np.array(m, dtype=float)
+                m[-3:] = np.nan
+            return m, g, p
+
+        monkeypatch.setattr(zs, 'brentq', brentq)
+        monkeypatch.setattr(zs, 'solve_structure', solve)
+        with pytest.raises(StructureSolveError, match='solve at the Brent root'):
+            _run(_cfg(outer_solver=outer_solver, max_iterations_outer=1))
+
+
+@pytest.mark.smoke
+class TestFailedPicardIteration:
+    """A failed outer iteration raises; no earlier solution stands in for it."""
+
+    @pytest.mark.parametrize('n_outer', [1, 3])
+    def test_failed_last_iteration_raises(self, monkeypatch, n_outer):
+        """Solves of the last outer iteration fail above P_c = 1e11 Pa, below the root."""
+        radius = _count_outer_iterations(monkeypatch)
+        _spy_solve(monkeypatch, lambda radii, y0: len(radius) == n_outer and y0[2] > 1e11)
+        cfg = _cfg(outer_solver='picard', max_iterations_outer=n_outer, max_iterations_inner=1)
+        with pytest.raises(StructureSolveError, match=f'outer iteration {n_outer - 1},'):
+            _run(cfg)
+
+    def test_failure_at_one_radius_raises(self, monkeypatch):
+        """Every solve at the radius of outer iteration 2 fails."""
+        radius = _count_outer_iterations(monkeypatch)
+        _spy_solve(monkeypatch, lambda radii, y0: len(radius) >= 2 and radii[-1] == radius[1])
+        cfg = _cfg(outer_solver='picard', max_iterations_outer=15, max_iterations_inner=3)
+        with pytest.raises(StructureSolveError, match='outer iteration 1,') as exc:
+            _run(cfg)
+        assert f'at R = {radius[1]:.6e} m' in str(exc.value)
