@@ -21,6 +21,29 @@ R_OUT = 6.0e6
 N = 50
 
 
+def budget_solve_ivp(monkeypatch):
+    """Make a numpy structure solve that does not end fail after 1e5 right-hand sides,
+    with or without pytest-timeout."""
+    real = sm.solve_ivp
+
+    def solve_ivp(fun, *args, **kwargs):
+        calls = [0]
+
+        def budgeted(t, y):
+            calls[0] += 1
+            assert calls[0] < 100_000, 'the structure solve does not end'
+            return fun(t, y)
+
+        return real(budgeted, *args, **kwargs)
+
+    monkeypatch.setattr(sm, 'solve_ivp', solve_ivp)
+
+
+@pytest.fixture(autouse=True)
+def _call_budget(monkeypatch):
+    budget_solve_ivp(monkeypatch)
+
+
 def _mass(r):
     return 4.0 / 3.0 * np.pi * RHO * r**3
 
@@ -135,24 +158,6 @@ class TestInteriorStopFails:
 
     # P reaches zero near 0.77 R_OUT without a band.
     P_C = 2.0 / 3.0 * np.pi * G * RHO**2 * (0.8 * R_OUT) ** 2 * 0.4
-
-    @pytest.fixture(autouse=True)
-    def _call_budget(self, monkeypatch):
-        """A solve that does not end fails after 1e5 right-hand sides, with or without
-        pytest-timeout."""
-        real = sm.solve_ivp
-
-        def solve_ivp(fun, *args, **kwargs):
-            calls = [0]
-
-            def budgeted(t, y):
-                calls[0] += 1
-                assert calls[0] < 100_000, 'the structure solve does not end'
-                return fun(t, y)
-
-            return real(budgeted, *args, **kwargs)
-
-        monkeypatch.setattr(sm, 'solve_ivp', solve_ivp)
 
     def _solve(self, monkeypatch, band, tdep=False, surface_pressure=0.0, max_step=np.inf):
         radii = np.linspace(0.0, R_OUT, N)
