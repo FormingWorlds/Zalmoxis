@@ -35,9 +35,9 @@ def pad_after_stop(radii, mass, gravity, pressure, y_stop, p_center, p_surface=0
     mass and gravity at the stop and zero pressure. Below the target the
     pressure has fallen short before the outer radius, so the zero surface
     pressure gives the pressure solve the right sign (central pressure too
-    low). A stop at a higher pressure is a failed solve: the remaining nodes are
-    NaN, which the callers treat as a failed evaluation, and a WARNING names
-    the stop.
+    low). A stop at a higher pressure, or with a non-finite state, is a failed
+    solve: the remaining nodes are NaN, which the callers treat as a failed
+    evaluation, and a WARNING names the stop.
 
     Parameters
     ----------
@@ -59,7 +59,9 @@ def pad_after_stop(radii, mass, gravity, pressure, y_stop, p_center, p_surface=0
     """
     n = len(mass)
     m_stop, g_stop, p_stop = (float(v) for v in y_stop)
-    if p_stop <= max(SURFACE_STOP_P_FRACTION * p_center, p_surface):
+    if np.all(np.isfinite(y_stop)) and p_stop <= max(
+        SURFACE_STOP_P_FRACTION * p_center, p_surface
+    ):
         fill = (m_stop, g_stop, 0.0)
     else:
         logger.warning(

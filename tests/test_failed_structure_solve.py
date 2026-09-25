@@ -165,8 +165,30 @@ class TestFailedPressureSolve:
             _run(_cfg(outer_solver='picard', target_surface_pressure=2e5))
         assert len(pressures) > 2 and set(pressures) == {2e5}
 
+    @pytest.mark.parametrize('outer_solver', ['picard', 'newton'])
+    def test_non_finite_mass_at_the_brent_root_raises(self, monkeypatch, outer_solver):
+        """The re-solve at the root has NaN mass in its last nodes and finite pressure."""
+        state, real_solve, real_brentq = {'root': False}, zs.solve_structure, zs.brentq
 
-@pytest.mark.unit
+        def brentq(*args, **kwargs):
+            out = real_brentq(*args, **kwargs)
+            state['root'] = True
+            return out
+
+        def solve(*args, **kwargs):
+            m, g, p = real_solve(*args, **kwargs)
+            if state['root']:
+                m = np.array(m, dtype=float)
+                m[-3:] = np.nan
+            return m, g, p
+
+        monkeypatch.setattr(zs, 'brentq', brentq)
+        monkeypatch.setattr(zs, 'solve_structure', solve)
+        with pytest.raises(StructureSolveError, match='solve at the Brent root'):
+            _run(_cfg(outer_solver=outer_solver, max_iterations_outer=1))
+
+
+@pytest.mark.smoke
 class TestFailedPicardIteration:
     """A failed outer iteration raises; no earlier solution stands in for it."""
 

@@ -61,9 +61,9 @@ class StructureSolveError(RuntimeError):
     """A structure solve gave a non-finite profile, e.g. a stop deep inside the planet."""
 
 
-def _require_finite(radii, pressure, reason, outer_iter, inner_iter):
-    """Raise StructureSolveError unless the pressure profile on ``radii`` is finite."""
-    bad = ~np.isfinite(pressure)
+def _require_finite(radii, profiles, reason, outer_iter, inner_iter):
+    """Raise StructureSolveError unless every profile (m, g, P) on ``radii`` is finite."""
+    bad = ~np.all(np.isfinite(profiles), axis=0)
     if not bad.any():
         return
     i = int(np.argmax(bad))
@@ -305,7 +305,8 @@ def main(
     ------
     StructureSolveError
         A structure solve gave a non-finite profile (a stop in the integration
-        deep inside the planet), with either outer solver.
+        deep inside the planet), with either outer solver. Any trial central
+        pressure counts, including a bracket end of the pressure search.
     """
     # Validate outer-solver choice. Default is 'picard' (the damped
     # fixed-point loop inside `_solve()`); 'newton' dispatches to
@@ -1711,7 +1712,7 @@ def _solve(
                     )
                 _require_finite(
                     radii,
-                    p,
+                    (m, g, p),
                     f'solve at P_c = {p_center:.3e} Pa not finite',
                     outer_iter,
                     inner_iter,
@@ -1819,7 +1820,7 @@ def _solve(
                 )
                 _require_finite(
                     radii,
-                    pressure,
+                    (mass_enclosed, gravity, pressure),
                     f'solve at the Brent root P_c = {p_solution:.3e} Pa not finite',
                     outer_iter,
                     inner_iter,

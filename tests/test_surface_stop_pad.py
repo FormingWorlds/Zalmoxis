@@ -291,6 +291,14 @@ class TestPadAfterStop:
         else:
             assert np.all(np.isnan(m[3:])) and np.all(np.isnan(p[3:]))
 
+    @pytest.mark.parametrize('y_stop', [[np.nan, 3.0, 0.0], [2.0, np.inf, 0.0]])
+    def test_non_finite_stop_state_fails(self, y_stop):
+        """A stop at zero pressure with a non-finite mass or gravity is a failed solve."""
+        m, g, p = sm.pad_after_stop(
+            np.linspace(0.0, 1.0, 5), np.ones(3), np.ones(3), np.ones(3), y_stop, 1e11
+        )
+        assert np.all(np.isnan(m[3:])) and np.all(np.isnan(g[3:])) and np.all(np.isnan(p[3:]))
+
 
 class TestJaxStopState:
     """solve_structure_jax returns the state at the P = 0 event as its end state."""
