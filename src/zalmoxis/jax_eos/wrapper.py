@@ -44,9 +44,9 @@ _DEBUG = bool(_os.environ.get('ZALMOXIS_JAX_DEBUG'))
 _PROFILE = bool(_os.environ.get('ZALMOXIS_JAX_PROFILE'))
 _PHASE_TIMES = {'cache_extract': 0.0, 'adiabat_tab': 0.0, 'jit_solve': 0.0, 'other': 0.0}
 
-# Cache the mantle melting-curve tabulation on a shared log-P axis,
-# keyed by (id(solidus_func), id(liquidus_func)). See the rebuild
-# branch in solve_structure_via_jax for the rationale and cost numbers.
+# Mantle melting-curve tables on a shared log-P axis. This cache and the adiabat cache
+# (in interpolation_cache) key by id and keep the functions with the tables; an entry is
+# used only for the same objects, and the kept reference stops its id being reused.
 _MELT_TABLE_CACHE: dict = {}
 
 
@@ -237,8 +237,8 @@ def solve_structure_via_jax(
 
     * ``temperature_function(r, P) -> T`` — a Python callable. The
       wrapper samples it on a 4000-point log-P axis at
-      ``r_mid = 0.5 * (radii[0] + radii[-1])``, caches the result by
-      ``id(temperature_function)``, and the RHS interpolates on
+      ``r_mid = 0.5 * (radii[0] + radii[-1])``, caches the result per
+      function object, and the RHS interpolates on
       ``log10(P)``. This matches Zalmoxis' internal adiabat path where
       T along a column tracks P strongly and weakly depends on r.
 
@@ -420,63 +420,26 @@ def solve_structure_via_jax(
         T_values = np.full(4, 3000.0)
         T_axis_is_radius = False
     else:
-        # P-indexed path. The temperature_function changes between outer
-        # Picard iterations (blend, converged density update) but is
-        # CONSTANT across brentq evals within one inner iteration. Cache
-        # the tabulation by id(temperature_function) in
-        # interpolation_cache so the 4000-point np.interp sweep only
-        # runs once per outer iter, not per brentq call. Empirical:
-        # removes ~5 ms/call * 5000 calls ~ 25 s of the JAX total.
+        # One tabulation per temperature function (constant within an inner iteration).
         _adia_cache = interpolation_cache.setdefault('_jax_adiabat_cache', {})
         _key = id(temperature_function)
         _entry = _adia_cache.get(_key)
-        if _entry is None:
-            _entry = _tabulate_adiabat(radii_arr, temperature_function)
-            # Cap cache size so stale closures don't accumulate across
-            # many outer iters (rare in practice; the _solve() control
-            # flow creates ~10-20 distinct _temperature_func objects).
+        if _entry is None or _entry[0] is not temperature_function:
+            _entry = (temperature_function, *_tabulate_adiabat(radii_arr, temperature_function))
+            # Persists across main() calls (solver._interpolation_cache), so it fills to the cap.
             if len(_adia_cache) > 64:
                 _adia_cache.pop(next(iter(_adia_cache)))
             _adia_cache[_key] = _entry
-        T_axis_grid, T_values = _entry
+        _, T_axis_grid, T_values = _entry
         T_axis_is_radius = False
 
     if _PROFILE:  # pragma: no cover - dev profiling, gated on ZALMOXIS_JAX_PROFILE
         _PHASE_TIMES['adiabat_tab'] += _time.perf_counter() - _p_t0
         _p_t0 = _time.perf_counter()
 
-    # Mantle melting-curve tabulation on a shared log-P axis, sampled
-    # in log-T. We sample log10(liquidus_func) and log10(solidus_func)
-    # on a log-P axis (rather than T directly) so linear interp is
-    # bit-exact for any Simon-Glatzel power law T = A*P^B (log T is
-    # linear in log P); piecewise power laws (PALEOS-liquidus) are also
-    # exact except at the kink where the residual is <=1e-7. This keeps
-    # N small (256) so the JIT compile and per-call cost stay short.
-    # Tabulating BOTH curves (rather than ``T_sol = T_liq * mzf``)
-    # preserves generality: any (solidus, liquidus) pair the caller
-    # passes via ``melting_curves_functions`` works, including
-    # independently-tabulated pairs (e.g. Monteux600 solidus + liquidus)
-    # where T_sol/T_liq varies with P. PROTEUS' usual convention of
-    # ``solidus_func = liquidus_func * mushy_zone_factor`` flows through
-    # unchanged because the wrapper just samples whatever solidus_func
-    # returns.
-    # Cache the melting-curve tabulation by (id(solidus_func), id(liquidus_func)).
-    # The samples depend ONLY on the curve functions, so they are constant
-    # across all solve_structure_via_jax calls within a single main() (and
-    # across all main() calls that re-use the same closure pair). Without
-    # this cache we re-tabulate 256 x 2 = 512 melting-curve evaluations
-    # per call and re-allocate / re-log10 / re-ascontiguousarray every
-    # time, which dominates coupled-solve wall time.
-    # Cache key uses object id; the dict cap prevents unbounded growth from
-    # unique-per-call closures (rare).
-    # Missing melting curves are legitimate for an all-unified config
-    # (the unified density derives its solidus internally, and Zalmoxis'
-    # loader returns None for such configs). Mirror numpy: NaN tables
-    # make the RHS's melt-curve lookup non-finite, which routes the wet
-    # blend's phi to the same 0.5 fallback compute_melt_fraction uses
-    # for None curves. The 2-phase Tdep mantle genuinely needs the
-    # curves, so reject that combination (numpy fallback fails the same
-    # way there).
+    # Both melting curves sampled in log T on a 256-point log-P axis (exact for power laws).
+    # Missing curves are valid for an all-unified mantle: NaN tables send phi to the same
+    # 0.5 fallback numpy uses; a 2-phase Tdep mantle needs the curves.
     if solidus_func is None or liquidus_func is None:
         if not mantle_is_unified:
             raise ValueError(
@@ -494,7 +457,9 @@ def solve_structure_via_jax(
         _key = None
     else:
         _key = (id(solidus_func), id(liquidus_func))
-        _entry = _MELT_TABLE_CACHE.get(_key)
+        _hit = _MELT_TABLE_CACHE.get(_key)
+        _same = _hit is not None and _hit[0] is solidus_func and _hit[1] is liquidus_func
+        _entry = _hit[2] if _same else None
     _melt_cache = _MELT_TABLE_CACHE
     if _entry is None:
         n_melt = 256
@@ -517,7 +482,7 @@ def solve_structure_via_jax(
         }
         if len(_melt_cache) > 64:
             _melt_cache.pop(next(iter(_melt_cache)))
-        _melt_cache[_key] = _entry
+        _melt_cache[_key] = (solidus_func, liquidus_func, _entry)
     melt_curves = _entry
 
     # Physical constant G matching numpy path
