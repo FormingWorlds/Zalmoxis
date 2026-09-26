@@ -274,22 +274,16 @@ def _synthetic_jax_world(monkeypatch, fill=False):
     row at log P = 9.86, which covers 2.7e9 to 1.95e10 Pa. numpy's nearest-neighbour
     fallback fills that row from the valid cells if ``fill``, else it returns NaN."""
     pytest.importorskip('jax')
-    from scipy.interpolate import NearestNDInterpolator
-
     from tests.test_jax_parity_synthetic import _synthetic_world
+    from tests.test_jax_wrapper_branches import with_nan_rows
 
     world = _synthetic_world()
-    core = dict(world['interp_cache']['/synthetic/core.dat'])
-    grid = np.array(core['density_grid'], dtype=float)
-    grid[(core['unique_log_p'] > 9.8) & (core['unique_log_p'] < 9.9)] = np.nan
-    ip, it = np.nonzero(np.isfinite(grid))
-    nodes = np.column_stack([core['unique_log_p'][ip], core['unique_log_t'][it]])
-    core['density_nn'] = (
-        NearestNDInterpolator(nodes, grid[ip, it]) if fill else lambda _: np.nan
+    core = world['interp_cache']['/synthetic/core.dat']
+    core = with_nan_rows(
+        core, (core['unique_log_p'] > 9.8) & (core['unique_log_p'] < 9.9), fill
     )
-    core['density_grid'] = grid
     world['interp_cache']['/synthetic/core.dat'] = core
-    world['jax_args']['core_density_grid'] = grid
+    world['jax_args']['core_density_grid'] = core['density_grid']
     monkeypatch.setattr(zs, '_interpolation_cache', dict(world['interp_cache']))
     return world
 
@@ -363,15 +357,19 @@ class TestNonFiniteDensityJax:
             layer_eos_config={'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
         )
 
-    def _main(self, monkeypatch, caplog, fill):
-        """Run main on the JAX path; return its result and the ValueErrors the wrapper raised."""
+    def _main(self, monkeypatch, caplog, fill, raise_once=False):
+        """Run main on the JAX path; return its result, the ValueErrors the wrapper raised
+        and the number of wrapper calls. ``raise_once`` makes the first call raise."""
         import zalmoxis.jax_eos.wrapper as jw
 
         world = _synthetic_jax_world(monkeypatch, fill)
-        raised, real = [], jw.solve_structure_via_jax
+        raised, real, ran = [], jw.solve_structure_via_jax, []
 
         def spy(*args, **kwargs):
+            ran.append(1)
             try:
+                if raise_once and not raised:
+                    raise ValueError('forced JAX failure')
                 return real(*args, **kwargs)
             except ValueError as exc:
                 raised.append(str(exc))
@@ -379,19 +377,41 @@ class TestNonFiniteDensityJax:
 
         monkeypatch.setattr(jw, 'solve_structure_via_jax', spy)
         with caplog.at_level('WARNING', logger='zalmoxis.structure_model'):
-            return zs.main(
-                self._cfg(), world['mats'], None, os.path.join(ROOT, 'input')
-            ), raised
+            result = zs.main(self._cfg(), world['mats'], None, os.path.join(ROOT, 'input'))
+        return result, raised, len(ran)
 
     @pytest.mark.timeout(2400)
-    def test_nan_table_band_falls_back_to_numpy_once(self, monkeypatch, caplog):
-        """After the first deep JAX stop the rest of main runs on numpy, which fills the band."""
-        result, raised = self._main(monkeypatch, caplog, fill=True)
-        assert len(raised) == 1 and 'which is not the surface' in raised[0]
-        assert [r.message for r in caplog.records].count(
-            'JAX solve_structure fell back to numpy path: ' + raised[0]
-        ) == 1
+    def test_jax_failure_falls_back_to_numpy_once(self, monkeypatch, caplog):
+        """After the first JAX failure the rest of main runs on numpy, which fills the band."""
+        result, raised, calls = self._main(monkeypatch, caplog, fill=True, raise_once=True)
+        assert raised == ['forced JAX failure'] and calls == 1
+        assert (
+            caplog.messages.count('JAX solve_structure fell back to numpy path: ' + raised[0])
+            == 1
+        )
         assert result['converged'] and np.all(np.isfinite(result['pressure']))
+
+    @pytest.mark.timeout(600)
+    def test_nan_table_band_filled_runs_on_jax(self, monkeypatch, caplog):
+        """The JAX grid holds numpy's nearest-node fill, so main runs to the end on JAX."""
+        result, raised, calls = self._main(monkeypatch, caplog, fill=True)
+        assert calls and not raised and 'fell back to numpy path' not in caplog.text
+        assert result['converged'] and np.all(np.isfinite(result['pressure']))
+        core = zs._interpolation_cache['/synthetic/core.dat']
+        ip, it = np.nonzero(~np.isfinite(core['density_grid']))
+        nodes = np.column_stack([core['unique_log_p'][ip], core['unique_log_t'][it]])
+        filled = core['_jax_sub_args::core']['core_density_grid'][ip, it]  # what JAX got
+        np.testing.assert_array_equal(filled, core['density_nn'](nodes))
+
+    def test_shipped_mgsio3_grid_is_filled(self):
+        """The shipped MgSiO3 grid: a sample of filled nodes holds numpy's nearest-node value."""
+        from tests.test_jax_wrapper_branches import TestNanNodeFill
+        from zalmoxis.eos.interpolation import _ensure_unified_cache
+
+        f = load_material_dictionaries()['PALEOS:MgSiO3']['eos_file']
+        if not os.path.exists(f):
+            pytest.skip('PALEOS data files not found')
+        TestNanNodeFill._check(dict(_ensure_unified_cache(f, {})), sample=1000)
 
     @pytest.mark.timeout(120)
     def test_nan_table_band_fails_on_numpy_too(self, monkeypatch, caplog):
@@ -419,6 +439,11 @@ class TestNonFiniteDensityJax:
         args[10] = [0.0, 0.0, 3e11]  # P_c whose core crosses the NaN band
         r_arr = np.asarray(args[3])
         T_arr = np.linspace(7000.0, 3000.0, len(r_arr))
+
+        def fail(*_args, **_kwargs):
+            raise ValueError('forced JAX failure')  # the filled band no longer fails on JAX
+
+        monkeypatch.setattr('zalmoxis.jax_eos.wrapper.solve_structure_via_jax', fail)
         with caplog.at_level('WARNING', logger='zalmoxis.structure_model'):
             fell = sm.solve_structure(
                 *args, **dict(kwargs, use_jax=True, temperature_arrays=(r_arr, T_arr))

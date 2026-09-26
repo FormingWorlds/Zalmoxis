@@ -58,6 +58,13 @@ def _extract_sub_args(cached, prefix):
     calls solve_structure_via_jax thousands of times per main(); without
     this cache the np.asarray + dict-allocation overhead dominates in
     coupled runs (~70 % of wall on the no-Anderson coupled bench).
+
+    NaN nodes of the density grid are filled from ``cached['density_nn']`` at
+    the node, the value numpy's lookup falls back to there. Inside a cell with
+    a filled corner JAX interpolates bilinearly where numpy can return the
+    nearest valid node, so the two agree at the nodes. Inside a cell with a
+    filled corner the two can differ, by tens of percent on the shipped MgSiO3
+    tables near log P 8.5, log T 3.69, which hot surfaces reach.
     """
     cache_key = f'_jax_sub_args::{prefix}'
     cached_args = cached.get(cache_key)
@@ -65,8 +72,14 @@ def _extract_sub_args(cached, prefix):
         return cached_args
     # _ensure_unified_cache and seager.get_tabulated_eos already store
     # numpy arrays for these fields; np.asarray here is redundant.
+    grid = cached['density_grid']
+    ip, it = np.nonzero(~np.isfinite(grid))
+    if len(ip):
+        grid = np.array(grid, dtype=float)
+        nodes = np.column_stack([cached['unique_log_p'][ip], cached['unique_log_t'][it]])
+        grid[ip, it] = cached['density_nn'](nodes)
     out = {
-        f'{prefix}_density_grid': cached['density_grid'],
+        f'{prefix}_density_grid': grid,
         f'{prefix}_unique_log_p': cached['unique_log_p'],
         f'{prefix}_unique_log_t': cached['unique_log_t'],
         f'{prefix}_logp_min': float(cached['logp_min']),
@@ -252,10 +265,9 @@ def solve_structure_via_jax(
     ------
     ValueError
         When the solve stops before ``radii[-1]`` and the stop is not the
-        surface (``stop_is_surface``), e.g. at a NaN cell of a PALEOS table.
-        ``solve_structure`` then retries on numpy, whose table lookup fills
-        NaN cells from the nearest valid cell. Such a solve costs the diffrax
-        ``max_steps`` spin (about 10 s) plus a numpy solve.
+        surface (``stop_is_surface``). ``solve_structure`` then retries on
+        numpy. Such a solve costs the diffrax ``max_steps`` spin (about 10 s)
+        plus a numpy solve.
     """
     from ..eos.interpolation import _ensure_unified_cache
     from ..eos.seager import get_tabulated_eos

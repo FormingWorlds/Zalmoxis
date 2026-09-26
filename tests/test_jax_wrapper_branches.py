@@ -501,6 +501,42 @@ class TestMushyZoneFactorDispatch:
         assert captured['mzf'] == pytest.approx(0.55)
 
 
+def with_nan_rows(cached, rows, fill=True):
+    """Copy of a table cache entry with NaN density ``rows`` and numpy's nearest-valid-node
+    fallback over the other nodes (a NaN fallback if not ``fill``)."""
+    from scipy.interpolate import NearestNDInterpolator
+
+    grid = np.array(cached['density_grid'], dtype=float)
+    grid[rows] = np.nan
+    ip, it = np.nonzero(np.isfinite(grid))
+    nodes = np.column_stack([cached['unique_log_p'][ip], cached['unique_log_t'][it]])
+    nn = NearestNDInterpolator(nodes, grid[ip, it]) if fill else (lambda _: np.nan)
+    out = {k: v for k, v in cached.items() if not k.startswith('_jax_sub_args')}
+    return dict(out, density_grid=grid, density_nn=nn)
+
+
+class TestNanNodeFill:
+    """NaN nodes of a density grid are filled from the nearest valid node at extraction."""
+
+    @staticmethod
+    def _check(cached, sample=None):
+        before = np.array(cached['density_grid'])
+        ip, it = np.nonzero(~np.isfinite(before))
+        assert len(ip)
+        grid = jw._extract_sub_args(cached, 'core')['core_density_grid']
+        k = slice(None) if sample is None else np.random.default_rng(0).choice(len(ip), sample)
+        nodes = np.column_stack([cached['unique_log_p'][ip[k]], cached['unique_log_t'][it[k]]])
+        assert np.all(np.isfinite(grid))
+        np.testing.assert_array_equal(grid[ip[k], it[k]], cached['density_nn'](nodes))
+        assert np.array_equal(grid[np.isfinite(before)], before[np.isfinite(before)])
+        assert np.array_equal(cached['density_grid'], before, equal_nan=True)
+
+    def test_synthetic_nan_row(self):
+        from tests.test_jax_parity_synthetic import _synthetic_world
+
+        self._check(with_nan_rows(_synthetic_world()['interp_cache']['/synthetic/core.dat'], 3))
+
+
 class TestCacheKeyIdentity:
     """A new temperature or melting-curve function gets its own tabulation, also
     when it has the ``id`` of a function cached before."""
