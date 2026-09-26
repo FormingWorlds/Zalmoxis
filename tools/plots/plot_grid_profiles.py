@@ -203,7 +203,7 @@ def plot_grid_profiles(
         (ax_g, 'gravity', 1.0, r'Gravity (m s$^{-2}$)', '(d)'),
     ]
 
-    for idx, (label, row, data, c_val) in enumerate(profiles):
+    for idx, (_label, _row, data, c_val) in enumerate(profiles):
         r_km = np.asarray(data['radii']) / 1e3
         col = _colour(c_val, idx)
         for ax, key, scale, _, _ in panels:

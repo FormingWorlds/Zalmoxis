@@ -293,7 +293,7 @@ def generate_configs(base_config_path, sweeps):
     for combo in itertools.product(*param_values):
         # Build label string
         label_parts = []
-        for name, val in zip(param_names, combo):
+        for name, val in zip(param_names, combo, strict=False):
             label_parts.append(f'{name}={val}')
         label = '__'.join(label_parts)
 
@@ -304,7 +304,7 @@ def generate_configs(base_config_path, sweeps):
         # with documented defaults, so writing to a fresh section is
         # equivalent to overriding the default.
         modified = copy.deepcopy(base_toml)
-        for name, val in zip(param_names, combo):
+        for name, val in zip(param_names, combo, strict=False):
             section, key = _PARAM_MAP[name]
             modified.setdefault(section, {})[key] = val
 

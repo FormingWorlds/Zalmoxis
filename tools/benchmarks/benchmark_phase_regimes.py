@@ -109,7 +109,7 @@ def _lookup_phases(cache, P_arr, T_arr):
     ult = cache['density_interp'].grid[1]
 
     phases = []
-    for P, T in zip(P_arr, T_arr):
+    for P, T in zip(P_arr, T_arr, strict=False):
         if P <= 0 or T <= 0:
             phases.append('')
             continue
@@ -159,8 +159,8 @@ def run_temperature_sweep():
                 core_phases = _lookup_phases(iron_cache, P[:cmb_idx], T[:cmb_idx])
                 mantle_phases = _lookup_phases(mgsio3_cache, P[cmb_idx:], T[cmb_idx:])
 
-                core_unique = sorted(set(p for p in core_phases if p))
-                mantle_unique = sorted(set(p for p in mantle_phases if p))
+                core_unique = sorted({p for p in core_phases if p})
+                mantle_unique = sorted({p for p in mantle_phases if p})
 
                 results[label] = {
                     'result': res,
@@ -277,7 +277,7 @@ def plot_phase_regime_map(temp_results):
         for mass_e in [1.0, 5.0]:
             temps = []
             phase_sets = []
-            for key, val in sorted(temp_results.items()):
+            for _key, val in sorted(temp_results.items()):
                 if val is None:
                     continue
                 if val['mass'] != mass_e or not val['result']['converged']:
@@ -289,11 +289,11 @@ def plot_phase_regime_map(temp_results):
                 continue
 
             # Build a phase presence matrix
-            all_phases = sorted(set(p for ps in phase_sets for p in ps))
-            for ip, phase in enumerate(all_phases):
+            all_phases = sorted({p for ps in phase_sets for p in ps})
+            for _ip, phase in enumerate(all_phases):
                 presence = [1 if phase in ps else 0 for ps in phase_sets]
                 ax.scatter(
-                    [t for t, p in zip(temps, presence) if p],
+                    [t for t, p in zip(temps, presence, strict=False) if p],
                     [phase] * sum(presence),
                     s=80,
                     label=f'{mass_e} ME: {phase}' if mass_e == 1.0 else None,
@@ -338,7 +338,7 @@ def plot_tp_profiles_temperature_sweep(temp_results):
         )
 
         cmap = plt.cm.coolwarm
-        for key, val in sorted(temp_results.items()):
+        for _key, val in sorted(temp_results.items()):
             if val is None or val['mass'] != mass_e:
                 continue
             if not val['result']['converged']:
@@ -375,7 +375,7 @@ def plot_radial_profiles_sweep(temp_results, mass_e=1.0):
     fig, axes = plt.subplots(2, 2, figsize=(12, 10))
     cmap = plt.cm.coolwarm
 
-    for key, val in sorted(temp_results.items()):
+    for _key, val in sorted(temp_results.items()):
         if val is None or val['mass'] != mass_e:
             continue
         if not val['result']['converged']:
@@ -409,7 +409,7 @@ def plot_mushy_comparison(mushy_results):
     """T, rho, P profiles comparing mushy zone factors at T_surf=1500 K."""
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 
-    for label, val in sorted(mushy_results.items()):
+    for _label, val in sorted(mushy_results.items()):
         if val is None or not val['result']['converged']:
             continue
         f = val['factor']
@@ -438,7 +438,7 @@ def plot_three_layer(three_layer_results):
     """Radial profiles for 3-layer models at various T_surf."""
     fig, axes = plt.subplots(2, 2, figsize=(12, 10))
 
-    for label, val in sorted(three_layer_results.items()):
+    for _label, val in sorted(three_layer_results.items()):
         if val is None or not val['result']['converged']:
             continue
         T_surf = val['T_surf']
@@ -509,7 +509,7 @@ def write_report(temp_results, mushy_results, three_results, eos_results):
             f'{"T_ctr":>7} {"time":>6} {"core_phases":>25} '
             f'{"mantle_phases":>25}\n'
         )
-        for key, val in sorted(temp_results.items()):
+        for _key, val in sorted(temp_results.items()):
             if val is None:
                 continue
             res = val['result']
@@ -525,7 +525,7 @@ def write_report(temp_results, mushy_results, three_results, eos_results):
 
         f.write('\nMushy zone factor sweep (1 ME, T_surf=1500 K)\n')
         f.write('-' * 70 + '\n')
-        for label, val in sorted(mushy_results.items()):
+        for _label, val in sorted(mushy_results.items()):
             if val is None:
                 continue
             res = val['result']
@@ -537,7 +537,7 @@ def write_report(temp_results, mushy_results, three_results, eos_results):
 
         f.write('\n3-layer models (iron + MgSiO3 + H2O)\n')
         f.write('-' * 70 + '\n')
-        for label, val in sorted(three_results.items()):
+        for _label, val in sorted(three_results.items()):
             if val is None:
                 continue
             res = val['result']

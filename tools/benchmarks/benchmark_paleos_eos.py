@@ -404,7 +404,7 @@ def plot_density_pressure(results):
     """Density vs pressure for 1 and 5 M_earth, all EOS."""
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
 
-    for ax, mass in zip(axes, [1.0, 5.0]):
+    for ax, mass in zip(axes, [1.0, 5.0], strict=False):
         for label in EOS_CONFIGS:
             eos_label = label[0]
             if eos_label not in results:
@@ -461,7 +461,7 @@ def plot_radial_profiles(results):
         res = entry[0]
         r_km = res['radii'] / 1e6
 
-        for ax, (key, ylabel) in zip(axes.flat, labels_and_units):
+        for ax, (key, _ylabel) in zip(axes.flat, labels_and_units, strict=False):
             vals = res[key]
             if key == 'pressure':
                 vals = vals / 1e9
@@ -473,7 +473,7 @@ def plot_radial_profiles(results):
                 label=eos_label,
             )
 
-    for ax, (_, ylabel) in zip(axes.flat, labels_and_units):
+    for ax, (_, ylabel) in zip(axes.flat, labels_and_units, strict=False):
         ax.set_xlabel('Radius [1000 km]')
         ax.set_ylabel(ylabel)
         ax.legend(fontsize=7)
@@ -576,7 +576,7 @@ def plot_mushy_zone(mushy_results):
             r_km = res['radii'] / 1e6
             ls = MUSHY_STYLES[factor]
 
-            for ax, (key, _) in zip(axes, keys_units):
+            for ax, (key, _) in zip(axes, keys_units, strict=False):
                 vals = res[key]
                 if key == 'pressure':
                     vals = vals / 1e9
@@ -588,7 +588,7 @@ def plot_mushy_zone(mushy_results):
                     label=f'f={factor:.1f}',
                 )
 
-        for ax, (_, ylabel) in zip(axes, keys_units):
+        for ax, (_, ylabel) in zip(axes, keys_units, strict=False):
             ax.set_xlabel('Radius [1000 km]')
             ax.set_ylabel(ylabel)
             ax.legend(fontsize=8)
@@ -673,7 +673,7 @@ def plot_phase_regime(results):
 
         # Look up phase at each (P, T) along the profile
         phases = []
-        for p_val, t_val in zip(P_layer, T_layer):
+        for p_val, t_val in zip(P_layer, T_layer, strict=False):
             if p_val <= 0 or t_val <= 0:
                 phases.append('N/A')
                 continue
@@ -759,7 +759,7 @@ def plot_runtimes(results, mushy_results, three_layer):
     bars = ax.bar(x, times, color='steelblue', edgecolor='navy')
 
     # Add time labels on top of bars
-    for bar, t in zip(bars, times):
+    for bar, t in zip(bars, times, strict=False):
         ax.text(
             bar.get_x() + bar.get_width() / 2,
             bar.get_height() + 0.5,

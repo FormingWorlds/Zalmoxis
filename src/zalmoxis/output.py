@@ -49,13 +49,13 @@ def post_processing(config_params, id_mass=None, output_file=None, model_results
         from .solver import main, solve_strong_partition
 
         partition_rule = config_params.get('partition_rule', 'uniform')
-        _solver_kwargs = dict(
-            material_dictionaries=load_material_dictionaries(),
-            melting_curves_functions=load_solidus_liquidus_functions(
+        _solver_kwargs = {
+            'material_dictionaries': load_material_dictionaries(),
+            'melting_curves_functions': load_solidus_liquidus_functions(
                 layer_eos_config, solidus_id, liquidus_id, mushy_zone_factor
             ),
-            input_dir=os.path.join(get_zalmoxis_root(), 'input'),
-        )
+            'input_dir': os.path.join(get_zalmoxis_root(), 'input'),
+        }
         if partition_rule == 'strong':
             model_results = solve_strong_partition(config_params, **_solver_kwargs)
         elif partition_rule in ('D_const', 'solubility'):

@@ -467,7 +467,7 @@ def test_generate_configs_creates_missing_section(tmp_path):
     # the right value, and that the writer did not corrupt [Output].
     import toml as toml_mod
 
-    for label, cfg_path in configs:
+    for _label, cfg_path in configs:
         cfg = toml_mod.load(cfg_path)
         assert 'PressureAdjustment' in cfg
         assert 'target_surface_pressure' in cfg['PressureAdjustment']

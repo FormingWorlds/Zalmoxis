@@ -41,7 +41,7 @@ pytestmark = pytest.mark.unit
 
 # Tiny (P, T) grid for end-to-end generators. Asymmetric n_p != n_t and
 # asymmetric P/T ranges so any axis-swap is detectable.
-_TINY_PT = dict(p_lo=1.0e9, p_hi=1.0e10, n_p=3, t_lo=1500.0, t_hi=4000.0, n_t=2)
+_TINY_PT = {'p_lo': 1.0e9, 'p_hi': 1.0e10, 'n_p': 3, 't_lo': 1500.0, 't_hi': 4000.0, 'n_t': 2}
 
 
 def _tiny_grid() -> paleos_api.GridSpec:

@@ -640,7 +640,7 @@ class TestCacheKeyIdentity:
         funcs = [self._make(t) for t in (1000.0, 1001.0, 1002.0)]
         curves = [(self._make(2000.0 + k), self._make(3000.0 + k)) for k in range(3)]
         tables = []
-        for f, (sol, liq) in zip(funcs + funcs[:1], curves + curves[:1]):
+        for f, (sol, liq) in zip(funcs + funcs[:1], curves + curves[:1], strict=False):
             got = self._solve_captured(cache, f, sol, liq)
             np.testing.assert_array_equal(got['T_values'], f())
             tables.append(got['log_T_liq_table'])

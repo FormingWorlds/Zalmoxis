@@ -71,7 +71,7 @@ def main():
     )
 
     # Reference point annotations with manually tuned positions
-    arrow_props = dict(arrowstyle='->', color='#475569', lw=1.2)
+    arrow_props = {'arrowstyle': '->', 'color': '#475569', 'lw': 1.2}
     # (label_top, label_bottom, rho_val, text_x, text_y, ha, va)
     annotation_layout = [
         (REFERENCE_POINTS[0], 1.5, 0.28, 'center', 'bottom'),  # H2O vapor
@@ -103,7 +103,7 @@ def main():
         fontsize=10,
         ha='right',
         va='bottom',
-        bbox=dict(boxstyle='round,pad=0.3', fc='white', ec='#cbd5e1', alpha=0.9),
+        bbox={'boxstyle': 'round,pad=0.3', 'fc': 'white', 'ec': '#cbd5e1', 'alpha': 0.9},
     )
 
     ax.set_xscale('log')

@@ -116,7 +116,7 @@ def load_profile(grid_dir: str, label: str) -> dict | None:
     for row in reader:
         if not row:
             continue
-        for name, value in zip(header, row):
+        for name, value in zip(header, row, strict=False):
             if name in _STR_BODY_COLUMNS:
                 columns[name].append(value)
             else:

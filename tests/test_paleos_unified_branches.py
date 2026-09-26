@@ -295,7 +295,7 @@ class TestBatchPath:
         rho_scalar = np.array(
             [
                 get_paleos_unified_density(p, t, s['mat'], 1.0, s['cache'])
-                for p, t in zip(ps, ts)
+                for p, t in zip(ps, ts, strict=False)
             ]
         )
         np.testing.assert_allclose(rho_batch, rho_scalar, rtol=1e-12)
@@ -313,7 +313,8 @@ class TestBatchPath:
         ps, ts = p.ravel(), t.ravel()
         rho_batch = get_paleos_unified_density_batch(ps, ts, s['mat'], mzf, s['cache'])
         rho_scalar = [
-            get_paleos_unified_density(p, t, s['mat'], mzf, s['cache']) for p, t in zip(ps, ts)
+            get_paleos_unified_density(p, t, s['mat'], mzf, s['cache'])
+            for p, t in zip(ps, ts, strict=False)
         ]
         np.testing.assert_allclose(rho_batch, rho_scalar, rtol=1e-12)
 
@@ -331,7 +332,8 @@ class TestBatchPath:
         assert np.all(rho > 1000)
         assert np.all(rho < 20000)
         scalar = [
-            get_paleos_unified_density(p, t, s['mat'], 0.8, s['cache']) for p, t in zip(ps, ts)
+            get_paleos_unified_density(p, t, s['mat'], 0.8, s['cache'])
+            for p, t in zip(ps, ts, strict=False)
         ]
         np.testing.assert_allclose(rho, scalar, rtol=1e-12)
         direct = get_paleos_unified_density_batch(ps, ts, s['mat'], 1.0, s['cache'])
@@ -408,7 +410,10 @@ class TestBatchPath:
         ts = np.array([2500.0, 2800.0])  # mushy and above the liquidus at P=1e10
         rho = get_paleos_unified_density_batch(ps, ts, mat, 0.6, cdict)
         assert np.all(np.isfinite(rho)) and np.all((1000 < rho) & (rho < 20000))
-        scalar = [get_paleos_unified_density(p, t, mat, 0.6, cdict) for p, t in zip(ps, ts)]
+        scalar = [
+            get_paleos_unified_density(p, t, mat, 0.6, cdict)
+            for p, t in zip(ps, ts, strict=False)
+        ]
         np.testing.assert_allclose(rho, scalar, rtol=1e-12)
 
 

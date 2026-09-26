@@ -595,7 +595,9 @@ def validate_config(config_params):
         h2o_in_layer = any('H2O' in c for c in mix.components)
         if not h2o_in_layer:
             continue
-        h2o_frac = sum(f for c, f in zip(mix.components, mix.fractions) if 'H2O' in c)
+        h2o_frac = sum(
+            f for c, f in zip(mix.components, mix.fractions, strict=False) if 'H2O' in c
+        )
         if h2o_frac > 0.30:
             logger.warning(
                 f"Layer '{layer}' has {h2o_frac * 100:.0f}% H2O, which exceeds "
@@ -615,7 +617,9 @@ def validate_config(config_params):
         if not eos_str:
             continue
         mix = parse_layer_components(eos_str)
-        h2o_frac = sum(f for c, f in zip(mix.components, mix.fractions) if 'H2O' in c)
+        h2o_frac = sum(
+            f for c, f in zip(mix.components, mix.fractions, strict=False) if 'H2O' in c
+        )
         has_silicate = any(c in _SILICATE_EOS_NAMES for c in mix.components)
         if h2o_frac > 0.5 and not has_silicate and temperature_mode != 'isothermal':
             raise ValueError(
@@ -648,7 +652,9 @@ def validate_config(config_params):
         if not eos_str:
             continue
         mix = parse_layer_components(eos_str)
-        h2_frac = sum(f for c, f in zip(mix.components, mix.fractions) if c == 'Chabrier:H')
+        h2_frac = sum(
+            f for c, f in zip(mix.components, mix.fractions, strict=False) if c == 'Chabrier:H'
+        )
         if h2_frac > 0.20:
             logger.warning(
                 f"Layer '{layer}' has {h2_frac * 100:.0f}% H2 by mass. "

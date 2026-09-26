@@ -126,7 +126,7 @@ def build_paleos_cp():
 
     from scipy.interpolate import LinearNDInterpolator
 
-    interp = LinearNDInterpolator(list(zip(log_p, log_t)), cp)
+    interp = LinearNDInterpolator(list(zip(log_p, log_t, strict=False)), cp)
 
     def cp_paleos(P_Pa, T_K):
         import math

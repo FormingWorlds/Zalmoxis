@@ -218,7 +218,7 @@ def plot_grid_summary(
     def _series_label(key):
         """Build a human-readable label from sweep parameter values."""
         parts = []
-        for p, v in zip(other_sweeps, key):
+        for p, v in zip(other_sweeps, key, strict=False):
             parts.append(f'{p} = {v}')
         return ', '.join(parts) if parts else None
 

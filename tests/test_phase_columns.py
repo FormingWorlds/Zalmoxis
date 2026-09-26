@@ -408,7 +408,9 @@ def test_compute_layer_phase_columns_multicomponent_picks_dominant():
         },
     )
     # Mantle shells: dominant is MgSiO3 (0.6 > 0.4).
-    mantle_components = [c for c, m in zip(components, np.linspace(0.0, M, n)) if m >= 0.30 * M]
+    mantle_components = [
+        c for c, m in zip(components, np.linspace(0.0, M, n), strict=False) if m >= 0.30 * M
+    ]
     assert all(c == 'MgSiO3' for c in mantle_components)
 
 
@@ -453,7 +455,7 @@ def test_compute_layer_phase_columns_chabrier_envelope_supercritical():
             'ice_layer': 'Chabrier:H',
         },
     )
-    envelope_phases = [p for p, m in zip(phases, mass) if m >= 0.60 * M]
-    envelope_components = [c for c, m in zip(components, mass) if m >= 0.60 * M]
+    envelope_phases = [p for p, m in zip(phases, mass, strict=False) if m >= 0.60 * M]
+    envelope_components = [c for c, m in zip(components, mass, strict=False) if m >= 0.60 * M]
     assert envelope_components and all(c == 'H2' for c in envelope_components)
     assert all(p == 'supercritical' for p in envelope_phases)

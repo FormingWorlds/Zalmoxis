@@ -113,7 +113,7 @@ def run_zalmoxis_rocky_water(id_mass, config_type, cmf, immf, layer_eos_override
     ) as profile_file:
         profile_output_file = profile_file.name
         profile_file.write('radius (m),density (kg/m^3)\n')
-        for r, d in zip(model_results['radii'], model_results['density']):
+        for r, d in zip(model_results['radii'], model_results['density'], strict=False):
             profile_file.write(f'{r},{d}\n')
 
     return output_file, profile_output_file

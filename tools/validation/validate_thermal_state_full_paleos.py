@@ -87,7 +87,7 @@ def build_paleos_cp_func(material='MgSiO3'):
 
     lp = np.log10(P[valid])
     lt = np.log10(T[valid])
-    interp = LinearNDInterpolator(list(zip(lp, lt)), cp[valid])
+    interp = LinearNDInterpolator(list(zip(lp, lt, strict=False)), cp[valid])
 
     def func(P_Pa, T_K, _i=interp, _fb=fallback):
         if P_Pa <= 0 or T_K <= 0:

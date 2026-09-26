@@ -102,7 +102,7 @@ def main():
         xytext=(H2_RHO_MIN + 50, 0.35),
         fontsize=9,
         ha='left',
-        arrowprops=dict(arrowstyle='->', color='#475569', lw=1),
+        arrowprops={'arrowstyle': '->', 'color': '#475569', 'lw': 1},
     )
 
     ax.set_xlabel(r'Density (kg/m$^3$)', fontsize=11)
@@ -135,7 +135,7 @@ def main():
         xytext=(T_b - 600, 0.3),
         fontsize=9,
         ha='right',
-        arrowprops=dict(arrowstyle='->', color='#475569', lw=1),
+        arrowprops={'arrowstyle': '->', 'color': '#475569', 'lw': 1},
     )
 
     # Region labels
@@ -175,7 +175,7 @@ def main():
     sigma_binodal = np.array(
         [
             binodal_sigmoid(np.array([T]), rogers2025_binodal_T(P), 50.0)[0]
-            for T, P in zip(T_adiabat, P_GPa)
+            for T, P in zip(T_adiabat, P_GPa, strict=False)
         ]
     )
     sigma_total = sigma_density * sigma_binodal

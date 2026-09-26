@@ -248,20 +248,20 @@ class TestSolveStructureViaJaxFormatChecks:
             'Tdep:iron': {'format': core_format, 'eos_file': '/dev/null'},
             'Tdep:MgSiO3': {'format': 'paleos_unified', 'eos_file': '/dev/null'},
         }
-        kwargs = dict(
-            cmb_mass=0.325 * 5.972e24,
-            core_mantle_mass=5.972e24,
-            radii=radii,
-            adaptive_radial_fraction=1.0,
-            relative_tolerance=1e-6,
-            absolute_tolerance=1e-6,
-            maximum_step=1.0,
-            material_dictionaries=material_dictionaries,
-            interpolation_cache={},
-            y0=[0.0, 0.0, 360e9],
-            solidus_func=lambda P: 1500.0,
-            liquidus_func=lambda P: 4500.0,
-        )
+        kwargs = {
+            'cmb_mass': 0.325 * 5.972e24,
+            'core_mantle_mass': 5.972e24,
+            'radii': radii,
+            'adaptive_radial_fraction': 1.0,
+            'relative_tolerance': 1e-6,
+            'absolute_tolerance': 1e-6,
+            'maximum_step': 1.0,
+            'material_dictionaries': material_dictionaries,
+            'interpolation_cache': {},
+            'y0': [0.0, 0.0, 360e9],
+            'solidus_func': lambda P: 1500.0,
+            'liquidus_func': lambda P: 4500.0,
+        }
         return solve_structure_via_jax, layer_mixtures, kwargs
 
     def test_non_paleos_unified_core_format_raises_value_error(self):

@@ -1716,7 +1716,12 @@ def _solve(
                     logging.DEBUG
                 ):  # pragma: no cover - DEBUG-only file dump for diagnostics
                     create_pressure_density_files(
-                        outer_iter, inner_iter, _state['n_evals'], radii, p, density
+                        outer_iter,
+                        inner_iter,
+                        _state['n_evals'],
+                        radii,
+                        p,
+                        density,
                     )
                 _require_finite(
                     radii,

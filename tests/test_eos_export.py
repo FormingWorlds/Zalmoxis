@@ -995,7 +995,7 @@ class TestGenerateSpiderEosTables:
         classes of cell; a mask that marked every cell valid would fail here.
         """
         sol_func, liq_func = melting_curves
-        kwargs = dict(P_range=(1e6, 1e9), n_P=12, n_S=14)
+        kwargs = {'P_range': (1e6, 1e9), 'n_P': 12, 'n_S': 14}
         out_dir = tmp_path / 'masked'
         out = eos_export.generate_spider_eos_tables(
             synthetic_table, sol_func, liq_func, output_dir=out_dir, **kwargs
@@ -1618,14 +1618,14 @@ class TestComputeEntropyAdiabat:
         """
         solid_path, liquid_path = pdep_2phase
         P_surf, P_cmb = 1.0e6, 1.0e9
-        kwargs = dict(
-            T_surface=4000.0,
-            n_points=24,
-            solidus_func=_pdep_solidus,
-            liquidus_func=_pdep_liquidus,
-            solid_eos_file=solid_path,
-            liquid_eos_file=liquid_path,
-        )
+        kwargs = {
+            'T_surface': 4000.0,
+            'n_points': 24,
+            'solidus_func': _pdep_solidus,
+            'liquidus_func': _pdep_liquidus,
+            'solid_eos_file': solid_path,
+            'liquid_eos_file': liquid_path,
+        }
         result = eos_export.compute_entropy_adiabat(
             solid_path, P_surface=P_surf, P_cmb=P_cmb, **kwargs
         )

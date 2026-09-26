@@ -30,7 +30,10 @@ def test_batch_matches_scalar_on_shipped_tables(eos, mzf):
     cache = {}
     batch = calculate_density_batch(ps, ts, mats, eos, sol, liq, cache, mzf)
     scalar = np.array(
-        [calculate_density(p, mats, eos, t, sol, liq, cache, mzf) for p, t in zip(ps, ts)],
+        [
+            calculate_density(p, mats, eos, t, sol, liq, cache, mzf)
+            for p, t in zip(ps, ts, strict=False)
+        ],
         dtype=float,
     )
     assert np.all(np.isfinite(scalar))

@@ -12,7 +12,11 @@ from tests.test_failed_structure_solve import ROOT, _cfg
 from zalmoxis.config import load_material_dictionaries
 
 pytestmark = pytest.mark.unit
-_SHORT = dict(max_iterations_outer=1, max_iterations_inner=1, _initial_radius_guess=6113601.77)
+_SHORT = {
+    'max_iterations_outer': 1,
+    'max_iterations_inner': 1,
+    '_initial_radius_guess': 6113601.77,
+}
 
 
 def _node_temperatures(monkeypatch, cfg, **main_kwargs):
@@ -28,7 +32,9 @@ def _node_temperatures(monkeypatch, cfg, **main_kwargs):
 
     def rho(pressure, temperature, *args, **kwargs):
         radii, profile = next(s for s in reversed(solves) if np.all(np.isin(pressure, s[1])))
-        nodes.extend(zip(radii[np.searchsorted(-profile, -pressure)], temperature))
+        nodes.extend(
+            zip(radii[np.searchsorted(-profile, -pressure)], temperature, strict=False)
+        )
         return real_rho(pressure, temperature, *args, **kwargs)
 
     monkeypatch.setattr(zs, 'solve_structure', solve)

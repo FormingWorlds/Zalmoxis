@@ -330,7 +330,10 @@ class TestSolveStrongPartitionMassAndLayers:
         assert result['strong_partition_converged'] is True
         assert result['strong_partition_fallback_to_uniform'] is False
         # phi(r) genuinely varies, so this is not the constant-phi identity.
-        phis = [compute_melt_fraction(p, t, sol, liq) for p, t in zip(pressure, temperature)]
+        phis = [
+            compute_melt_fraction(p, t, sol, liq)
+            for p, t in zip(pressure, temperature, strict=False)
+        ]
         assert max(phis) - min(phis) > 0.05
         profile, _, _ = build_partition_profile(
             layer_mixtures['mantle'], 'strong', result['phi_avg_converged']

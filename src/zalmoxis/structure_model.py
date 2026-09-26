@@ -90,7 +90,7 @@ def pad_after_stop(radii, mass, gravity, pressure, y_stop, p_center, p_surface=0
         fill = (np.nan, np.nan, np.nan)
     return tuple(
         np.concatenate([a, np.full(len(radii) - n, f)])
-        for a, f in zip((mass, gravity, pressure), fill)
+        for a, f in zip((mass, gravity, pressure), fill, strict=False)
     )
 
 
@@ -537,7 +537,9 @@ def solve_structure(
                     # The re-integration passed the last shell: its end state completes the profile.
                     return tuple(
                         np.append(a, v)
-                        for a, v in zip((mass_enclosed, gravity, pressure), y_stop)
+                        for a, v in zip(
+                            (mass_enclosed, gravity, pressure), y_stop, strict=False
+                        )
                     )
         mass_enclosed, gravity, pressure = pad_after_stop(
             radii, mass_enclosed, gravity, pressure, y_stop, y0[2], surface_pressure

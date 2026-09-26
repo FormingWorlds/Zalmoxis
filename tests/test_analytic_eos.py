@@ -162,7 +162,7 @@ class TestAnalyticVsTabulated:
         pressures_test = pressures_tab[mask]
         densities_test = densities_tab[mask]
 
-        for p, rho_tab in zip(pressures_test, densities_test):
+        for p, rho_tab in zip(pressures_test, densities_test, strict=False):
             rho_analytic = get_analytic_density(p, material_key)
             rel_diff = abs(rho_analytic - rho_tab) / rho_tab
             assert rel_diff < 0.15, (

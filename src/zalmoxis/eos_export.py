@@ -83,7 +83,7 @@ def load_paleos_all_properties(eos_file):
     prop_cols = [2, 3, 4, 5, 6, 7, 8]
 
     grids = {}
-    for name, col in zip(prop_names, prop_cols):
+    for name, _col in zip(prop_names, prop_cols, strict=False):
         grids[name] = np.full((n_p, n_t), np.nan)
 
     phase_grid = np.full((n_p, n_t), '', dtype=object)
@@ -94,7 +94,7 @@ def load_paleos_all_properties(eos_file):
     for k in range(len(pressures)):
         ip = p_idx_map[log_p[k]]
         it = t_idx_map[log_t[k]]
-        for name, col in zip(prop_names, prop_cols):
+        for name, col in zip(prop_names, prop_cols, strict=False):
             grids[name][ip, it] = data[k, col]
         phase_grid[ip, it] = phase_strings[k]
 
@@ -436,7 +436,7 @@ def _write_spider_1d(filepath, P_Pa, S_SI, P_scale=_P_SCALE, S_scale=_S_SCALE):
         f.write('# column * scaling factor = SI units: Pressure [Pa], Entropy [J/kg/K]\n')
         f.write('# scaling factors (constant) for each column given on line below\n')
         f.write(f'# {P_scale} {S_scale}\n')
-        for p, s in zip(P_nd, S_nd):
+        for p, s in zip(P_nd, S_nd, strict=False):
             f.write(f'{p:.18e} {s:.18e}\n')
 
 

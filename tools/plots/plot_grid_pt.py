@@ -280,7 +280,7 @@ def plot_grid_pt(
     if t_max_data <= 0:
         t_max_data = 1e4
 
-    for idx, (label, row, data, c_val) in enumerate(profiles):
+    for idx, (_label, _row, data, c_val) in enumerate(profiles):
         # Log pressure axis cannot show P = 0 at the surface cell. Clip
         # the surface pad so we plot only shells with P > 0. The
         # physically interesting trajectory (centre -> surface mantle)

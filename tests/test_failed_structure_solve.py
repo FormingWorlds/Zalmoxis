@@ -456,7 +456,7 @@ class TestNonFiniteDensityJax:
         ref = sm.solve_structure(*args, **dict(kwargs, use_jax=False, temperature_arrays=None))
         assert all(np.all(np.isfinite(a)) for a in ref)
         for out in (fell, again):
-            assert all(np.array_equal(a, b) for a, b in zip(out, ref))
+            assert all(np.array_equal(a, b) for a, b in zip(out, ref, strict=False))
 
 
 @pytest.mark.smoke

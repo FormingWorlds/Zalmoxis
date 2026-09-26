@@ -387,7 +387,7 @@ def _binodal_factor(eos_name, w_i, mixture, pressure, temperature, T_scale):
         return 1.0
 
     sigma = 1.0
-    for partner, w_p in zip(mixture.components, mixture.fractions):
+    for partner, w_p in zip(mixture.components, mixture.fractions, strict=False):
         if w_p <= 0:
             continue
         if partner in _SILICATE_EOS_NAMES:
@@ -508,7 +508,7 @@ def calculate_mixed_density(
     # Multi-component suppressed harmonic mean
     w_eff_sum = 0.0
     inv_rho_sum = 0.0
-    for eos_name, w_i in zip(mixture.components, fractions):
+    for eos_name, w_i in zip(mixture.components, fractions, strict=False):
         if w_i <= 0:
             continue
         mzf = _get_mushy_zone_factor(eos_name, mushy_zone_factors)
@@ -644,7 +644,9 @@ def calculate_mixed_density_batch(
     inv_rho_sum = np.zeros(n)
     any_invalid = np.zeros(n, dtype=bool)
 
-    for k, (eos_name, w_i_bulk) in enumerate(zip(mixture.components, mixture.fractions)):
+    for k, (eos_name, w_i_bulk) in enumerate(
+        zip(mixture.components, mixture.fractions, strict=False)
+    ):
         if per_shell_fractions is not None:
             w_i = per_shell_fractions[k]
             # Skip components whose phi-blend is identically zero across
@@ -796,7 +798,7 @@ def get_mixed_nabla_ad(
     weighted_sum = 0.0
     weight_total = 0.0
 
-    for eos_name, w_i in zip(mixture.components, mixture.fractions):
+    for eos_name, w_i in zip(mixture.components, mixture.fractions, strict=False):
         if w_i <= 0:
             continue
         # Use pre-computed density if available, otherwise compute it
@@ -1392,7 +1394,7 @@ def split_mantle_volatile_inventory(
     """
     X_bulk: dict[str, float] = {}
     primary: str | None = None
-    for comp, frac in zip(mixture.components, mixture.fractions):
+    for comp, frac in zip(mixture.components, mixture.fractions, strict=False):
         if comp in _VOLATILE_EOS_NAMES:
             if frac > 0:
                 X_bulk[comp] = frac

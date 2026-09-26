@@ -294,7 +294,7 @@ class TestInteriorStopFails:
         ref = self._solve(monkeypatch, (2.0, 0.0), True)[2:]
         monkeypatch.setattr(sm, 'MAX_NONFINITE_RHS', 1)
         out = self._solve(monkeypatch, (2.0, 0.0), True)[2:]
-        assert all(np.array_equal(a, b) for a, b in zip(out, ref))
+        assert all(np.array_equal(a, b) for a, b in zip(out, ref, strict=False))
 
     def test_each_part_of_a_tdep_solve_has_its_own_budget(self, monkeypatch):
         """One rejected NaN step in each part of the split solve passes with a limit of 2.
@@ -330,7 +330,7 @@ class TestInteriorStopFails:
             None,
         )
         assert not shots
-        for a, b in zip(out, ref):
+        for a, b in zip(out, ref, strict=False):
             np.testing.assert_allclose(a, b, rtol=1e-6, atol=1e-6 * np.max(np.abs(b)))
 
     def test_restart_has_its_own_budget(self, monkeypatch):

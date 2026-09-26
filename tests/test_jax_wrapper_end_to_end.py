@@ -51,23 +51,23 @@ def test_solve_structure_via_jax_end_to_end_parity():
         cfg['layer_eos_config']['mantle']: setup['mantle_mat'],
     }
 
-    common_kwargs = dict(
-        layer_mixtures=layer_mixtures,
-        cmb_mass=setup['cmb_mass'],
-        core_mantle_mass=setup['cmb_mass'] + 0.675 * M_planet,
-        radii=radii,
-        adaptive_radial_fraction=0.98,
-        relative_tolerance=1e-5,
-        absolute_tolerance=1e-6,
-        maximum_step=6.37e6 * 0.004,
-        material_dictionaries=material_dicts,
-        interpolation_cache=setup['interp_cache'],
-        y0=y0,
-        solidus_func=setup['sol_func'],
-        liquidus_func=setup['liq_func'],
-        temperature_function=numpy_temp,
-        mushy_zone_factors=setup['mushy_zone_factors'],
-    )
+    common_kwargs = {
+        'layer_mixtures': layer_mixtures,
+        'cmb_mass': setup['cmb_mass'],
+        'core_mantle_mass': setup['cmb_mass'] + 0.675 * M_planet,
+        'radii': radii,
+        'adaptive_radial_fraction': 0.98,
+        'relative_tolerance': 1e-5,
+        'absolute_tolerance': 1e-6,
+        'maximum_step': 6.37e6 * 0.004,
+        'material_dictionaries': material_dicts,
+        'interpolation_cache': setup['interp_cache'],
+        'y0': y0,
+        'solidus_func': setup['sol_func'],
+        'liquidus_func': setup['liq_func'],
+        'temperature_function': numpy_temp,
+        'mushy_zone_factors': setup['mushy_zone_factors'],
+    }
 
     mass_np, g_np, P_np = solve_structure(**common_kwargs)
     mass_jx, g_jx, P_jx = solve_structure_via_jax(**common_kwargs)
