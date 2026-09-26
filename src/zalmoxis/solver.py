@@ -52,7 +52,7 @@ from .mixing import (
     split_mantle_volatile_inventory,
     strong_partition_phi_floor,
 )
-from .structure_model import solve_structure
+from .structure_model import solve_structure, temperature_from_arrays
 
 logger = logging.getLogger(__name__)
 
@@ -280,10 +280,11 @@ def main(
         Used by PROTEUS to pass SPIDER/Aragog T(r) profiles directly
         in memory.
     temperature_arrays : tuple[ndarray, ndarray] or None, optional
-        Explicit r-indexed T profile ``(r_arr, T_arr)``. Consumed only
-        with ``config_params['use_jax']=True``, by the JAX structure solves
-        and by their numpy fallback; the Picard density update still uses
-        the internal temperature profile. Preferred
+        Explicit r-indexed T profile ``(r_arr, T_arr)``, ``r_arr`` increasing.
+        Consumed only with ``config_params['use_jax']=True``; it then gives T
+        everywhere, in place of ``temperature_function`` and the temperature
+        mode: in the JAX structure solves, their numpy fallback, the density
+        update at the nodes and the output temperature. Preferred
         over ``temperature_function`` when the caller's T is naturally
         r-indexed (e.g. SPIDER/Aragog-coupled runs): the P-indexed
         tabulation inside ``jax_eos.wrapper`` collapses to a constant
@@ -1158,6 +1159,9 @@ def _solve(
     temperature_function : callable or None, optional
         External temperature function ``f(r, P) -> T``. When provided,
         bypasses internal temperature mode dispatch and adiabat blending.
+    temperature_arrays : tuple[ndarray, ndarray] or None, optional
+        r-indexed T profile ``(r_arr, T_arr)``; with ``use_jax`` it gives T
+        everywhere, as described in ``main``.
     initial_density : numpy.ndarray or None, optional
         Density seed from a previous solve. Interpolated onto the current
         radial grid to accelerate Picard convergence.
@@ -1230,6 +1234,7 @@ def _solve(
     # Supported configs: 2-layer single-component.
     # Unsupported configs fall back to the numpy path automatically.
     use_jax = bool(config_params.get('use_jax', False))
+    arrays_give_T = use_jax and temperature_arrays is not None
     # Anderson acceleration for the density Picard loop: when True,
     # replaces the damped fixed-point update (density = alpha * new + (1-alpha) * old)
     # with a Walker & Ni 2011 Type-II Anderson step that least-squares-combines
@@ -1459,9 +1464,9 @@ def _solve(
         else:
             density = np.zeros(num_layers)
 
-        if (
-            temperature_function is not None
-        ):  # pragma: no cover - exercised only by slow-tier test_spider_coupling_convergence and test_jax_temperature_arrays; both excluded from the nightly coverage filter
+        if arrays_give_T:
+            _temperature_func = temperature_from_arrays(temperature_arrays)
+        elif temperature_function is not None:
             # External T(r,P) provided (e.g. from SPIDER/Aragog in memory).
             # Skip internal mode dispatch and adiabat blending entirely.
             _ext_tf = temperature_function  # avoid shadowing in nested defs
@@ -2210,6 +2215,7 @@ def _solve(
                 and _adiabat_blend < 1.0
                 and uses_Tdep
                 and temperature_function is None
+                and not arrays_give_T
             ):
                 if not _using_adiabat:
                     _using_adiabat = True

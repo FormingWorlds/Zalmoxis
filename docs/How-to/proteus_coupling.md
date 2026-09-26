@@ -175,7 +175,7 @@ use_jax       = true     # default
 use_anderson  = false    # default
 ```
 
-In coupled mode, the wrapper auto-disables `use_jax` and `use_anderson` for any Zalmoxis call where neither a `temperature_function` nor a `temperature_arrays` argument is supplied (initialisation and equilibration calls), because the JAX RHS path collapses on P-ignoring callables. See the [JAX path explainer](../Explanations/proteus_coupling.md#jax-path-and-temperature-arrays) for why.
+In coupled mode, the wrapper auto-disables `use_jax` and `use_anderson` for any Zalmoxis call where neither a `temperature_function` nor a `temperature_arrays` argument is supplied (initialisation and equilibration calls), because the JAX RHS path collapses on P-ignoring callables. See the [JAX path explainer](../Explanations/proteus_coupling.md#outer-solver-and-jax-path) for why.
 
 ---
 
