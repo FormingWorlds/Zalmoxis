@@ -157,6 +157,11 @@ ignore = [
     "E501", # Line too long
 ]
 
+# The residual and temperature closures in the solver loops are only called
+# within the iteration that defines them.
+[tool.ruff.lint.per-file-ignores]
+"src/zalmoxis/solver.py" = ["B023"]
+
 [tool.ruff.lint.isort]
 known-first-party=["zalmoxis"]
 required-imports = ["from __future__ import annotations"]
