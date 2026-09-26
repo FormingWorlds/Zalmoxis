@@ -18,15 +18,26 @@ Full EOS table generation:
 from __future__ import annotations
 
 import logging
+import os
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 
+from zalmoxis.eos.interpolation import read_table_columns
+
 logger = logging.getLogger(__name__)
 
 
 # ── PALEOS unified table loader ─────────────────────────────────────
+
+
+_ROW_DTYPE = [(f'c{i}', float) for i in range(9)] + [('phase', 'U32')]
+
+#: Parsed tables kept in memory per process; a super-liquidus solve uses the
+#: unified table plus a solid and liquid pair, so four covers one working set.
+_TABLE_CACHE_SIZE = 4
 
 
 def load_paleos_all_properties(eos_file):
@@ -35,6 +46,14 @@ def load_paleos_all_properties(eos_file):
     Unlike ``eos_functions.load_paleos_unified_table`` (which only builds
     density and nabla_ad interpolators), this function retains all 9
     numeric columns for EOS export.
+
+    The parsed table is cached in memory per process, keyed on the resolved
+    path and the device, inode, size, modification time and change time of
+    the file, so an edited or replaced file is read again. A rewrite of the
+    same size within one clock tick of the file system is not detected.
+    Every call returns a new dict whose arrays are read-only views of the
+    cached ones; copy an array before changing it. Setting the cached
+    array itself writable through ``.base`` is not prevented.
 
     Parameters
     ----------
@@ -56,10 +75,30 @@ def load_paleos_all_properties(eos_file):
         - ``'phase'``: phase identifier grid (string, object dtype)
         - ``'p_min'``, ``'p_max'``: pressure bounds [Pa]
         - ``'t_min'``, ``'t_max'``: temperature bounds [K]
+
+    Raises
+    ------
+    ValueError
+        If a data line holds a token that is not a number (``N/A``, ``---``,
+        ``1.0D+00``, a byte-order mark, ``1_0``) or a phase label of 32
+        characters or longer. Every ``#`` line is a comment; a header line
+        without ``#`` is such a token.
     """
-    eos_file = str(eos_file)
-    data = np.genfromtxt(eos_file, usecols=range(9), comments='#')
-    phase_strings = np.genfromtxt(eos_file, usecols=(9,), dtype=str, comments='#')
+    path = os.path.realpath(str(eos_file))
+    st = os.stat(path)
+    file_id = (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+    cached = _parse_paleos_table(path, file_id)
+    return {k: v.view() if isinstance(v, np.ndarray) else v for k, v in cached.items()}
+
+
+@lru_cache(maxsize=_TABLE_CACHE_SIZE)
+def _parse_paleos_table(eos_file, file_id):
+    """Parse one table file; ``file_id`` only keys the cache."""
+    rows = np.atleast_1d(read_table_columns(eos_file, range(10), dtype=_ROW_DTYPE))
+    if np.char.str_len(rows['phase']).max(initial=0) >= 32:
+        raise ValueError(f'{eos_file}: a phase label is 32 characters or longer')
+    data = np.column_stack([rows[f'c{i}'] for i in range(9)])
+    phase_strings = rows['phase']
 
     pressures = data[:, 0]
     temps = data[:, 1]
@@ -108,6 +147,9 @@ def load_paleos_all_properties(eos_file):
         't_max': 10.0 ** unique_log_t[-1],
     }
     result.update(grids)
+    for value in result.values():
+        if isinstance(value, np.ndarray):
+            value.setflags(write=False)
     return result
 
 
@@ -117,19 +159,21 @@ def _build_interpolator(unique_log_p, unique_log_t, grid):
     Parameters
     ----------
     unique_log_p : ndarray
-        Unique log10(P) values.
+        Unique log10(P) values (copied).
     unique_log_t : ndarray
-        Unique log10(T) values.
+        Unique log10(T) values (copied).
     grid : ndarray
-        2D array of shape (nP, nT).
+        2D array of shape (nP, nT). It is copied: SciPy's linear evaluation
+        of a read-only array (such as a cached table) can differ from that of
+        a writable one in the last bits.
 
     Returns
     -------
     RegularGridInterpolator
     """
     return RegularGridInterpolator(
-        (unique_log_p, unique_log_t),
-        grid,
+        (np.array(unique_log_p), np.array(unique_log_t)),
+        np.array(grid),
         bounds_error=False,
         fill_value=np.nan,
     )

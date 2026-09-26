@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import warnings
 
 import numpy as np
 from scipy.interpolate import (
@@ -20,6 +21,22 @@ logger = logging.getLogger(__name__)
 # Track whether the per-cell clamping warning has been issued for each file,
 # to avoid flooding the log with repeated messages.
 _paleos_clamp_warned = set()
+
+
+def read_table_columns(eos_file, usecols, dtype=float):
+    """Read whitespace-separated columns of a PALEOS text table, skipping ``#`` comments.
+
+    ``dtype`` may be a structured dtype with one field per column in ``usecols``.
+
+    ``np.loadtxt`` parses these 50-140 MB files several times faster than
+    ``np.genfromtxt`` and returns the same arrays for numeric input. A token
+    that is not a number (``N/A``, ``---``) raises ``ValueError`` where
+    ``genfromtxt`` gave NaN. The notice about comment lines at the top of a
+    file is silenced: the header is expected.
+    """
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore', message='Input line .* contained no data')
+        return np.loadtxt(eos_file, usecols=usecols, dtype=dtype, comments='#')
 
 
 def load_paleos_table(eos_file):
@@ -45,9 +62,16 @@ def load_paleos_table(eos_file):
         - ``'nabla_ad_interp'``: RegularGridInterpolator for nabla_ad(log10P, log10T)
         - ``'p_min'``, ``'p_max'``: pressure bounds in Pa
         - ``'t_min'``, ``'t_max'``: temperature bounds in K
+
+    Raises
+    ------
+    ValueError
+        If a data line holds a token that is not a number (``N/A``, ``---``,
+        ``1.0D+00``, a byte-order mark, ``1_0``). Every ``#`` line is a
+        comment; a header line without ``#`` is such a token.
     """
     # Read only numeric columns (0-8), skipping the string phase_id column (9)
-    data = np.genfromtxt(eos_file, usecols=range(9), comments='#')
+    data = read_table_columns(eos_file, range(9))
 
     pressures = data[:, 0]
     temps = data[:, 1]
