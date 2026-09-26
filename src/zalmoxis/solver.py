@@ -1234,7 +1234,6 @@ def _solve(
     # Supported configs: 2-layer single-component.
     # Unsupported configs fall back to the numpy path automatically.
     use_jax = bool(config_params.get('use_jax', False))
-    # With use_jax the structure solve integrates temperature_arrays, so they give T everywhere.
     arrays_give_T = use_jax and temperature_arrays is not None
     # Anderson acceleration for the density Picard loop: when True,
     # replaces the damped fixed-point update (density = alpha * new + (1-alpha) * old)
@@ -1467,9 +1466,7 @@ def _solve(
 
         if arrays_give_T:
             _temperature_func = temperature_from_arrays(temperature_arrays)
-        elif (
-            temperature_function is not None
-        ):  # pragma: no cover - exercised only by slow-tier test_spider_coupling_convergence and test_jax_temperature_arrays; both excluded from the nightly coverage filter
+        elif temperature_function is not None:
             # External T(r,P) provided (e.g. from SPIDER/Aragog in memory).
             # Skip internal mode dispatch and adiabat blending entirely.
             _ext_tf = temperature_function  # avoid shadowing in nested defs
@@ -1608,6 +1605,7 @@ def _solve(
                 cmb_temperature=cmb_temperature,
             )
             temperatures = np.asarray(_output_tf(radii), dtype=float)
+
         cmb_mass = core_mass_fraction * planet_mass
         core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * planet_mass
 

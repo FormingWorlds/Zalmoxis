@@ -68,3 +68,30 @@ def test_node_temperature_follows_the_callable_without_jax(monkeypatch):
     assert len(nodes)
     np.testing.assert_array_equal(nodes[:, 1], 5000.0 + 1e-4 * nodes[:, 0])
     np.testing.assert_array_equal(result['temperature'], 5000.0 + 1e-4 * result['radii'])
+
+
+def test_temperature_arrays_replace_the_temperature_mode(monkeypatch):
+    """The arrays take precedence over the mode: a missing prescribed profile is not read."""
+    r_arr, T_arr = np.linspace(0.0, 8e6, 41), np.linspace(7000.0, 4000.0, 41)
+    cfg = _cfg(
+        use_jax=True, temperature_mode='prescribed', temp_profile_file='missing.txt', **_SHORT
+    )
+    result, nodes = _node_temperatures(monkeypatch, cfg, temperature_arrays=(r_arr, T_arr))
+    np.testing.assert_array_equal(nodes[:, 1], np.interp(nodes[:, 0], r_arr, T_arr))
+
+
+def test_temperature_arrays_skip_the_adiabat_blend(monkeypatch, caplog):
+    """With the arrays giving T, mass convergence ends the outer loop without a blend ramp."""
+    monkeypatch.setattr(zs, 'any_component_is_tdep', lambda *a, **k: True)
+    r_arr, T_arr = np.linspace(0.0, 8e6, 41), np.linspace(7000.0, 4000.0, 41)
+    cfg = _cfg(
+        use_jax=True,
+        temperature_mode='adiabatic',
+        max_iterations_outer=6,
+        max_iterations_inner=1,
+        tolerance_outer=0.05,
+    )
+    with caplog.at_level('INFO', logger='zalmoxis'):
+        _node_temperatures(monkeypatch, cfg, temperature_arrays=(r_arr, T_arr))
+    assert 'Outer loop (total mass) converged' in caplog.text
+    assert 'activating adiabat blend' not in caplog.text
