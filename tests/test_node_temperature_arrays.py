@@ -67,3 +67,4 @@ def test_node_temperature_follows_the_callable_without_jax(monkeypatch):
     )
     assert len(nodes)
     np.testing.assert_array_equal(nodes[:, 1], 5000.0 + 1e-4 * nodes[:, 0])
+    np.testing.assert_array_equal(result['temperature'], 5000.0 + 1e-4 * result['radii'])

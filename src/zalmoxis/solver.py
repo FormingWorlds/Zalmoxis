@@ -281,9 +281,9 @@ def main(
         in memory.
     temperature_arrays : tuple[ndarray, ndarray] or None, optional
         Explicit r-indexed T profile ``(r_arr, T_arr)``. Consumed only
-        with ``config_params['use_jax']=True``, by the JAX structure solves
-        and by their numpy fallback; the Picard density update still uses
-        the internal temperature profile. Preferred
+        with ``config_params['use_jax']=True``; it then gives T everywhere:
+        in the JAX structure solves, their numpy fallback, the density update
+        at the nodes and the output temperature (no adiabat blend). Preferred
         over ``temperature_function`` when the caller's T is naturally
         r-indexed (e.g. SPIDER/Aragog-coupled runs): the P-indexed
         tabulation inside ``jax_eos.wrapper`` collapses to a constant
@@ -1461,7 +1461,12 @@ def _solve(
         else:
             density = np.zeros(num_layers)
 
-        if (
+        if arrays_give_T:
+            _temperature_func = temperature_from_arrays(temperature_arrays)
+            temperatures = np.interp(
+                radii, *(np.asarray(a, dtype=float) for a in temperature_arrays)
+            )
+        elif (
             temperature_function is not None
         ):  # pragma: no cover - exercised only by slow-tier test_spider_coupling_convergence and test_jax_temperature_arrays; both excluded from the nightly coverage filter
             # External T(r,P) provided (e.g. from SPIDER/Aragog in memory).
@@ -1602,10 +1607,6 @@ def _solve(
                 cmb_temperature=cmb_temperature,
             )
             temperatures = np.asarray(_output_tf(radii), dtype=float)
-        if arrays_give_T:
-            _temperature_func = temperature_from_arrays(temperature_arrays)
-            temperatures = np.array([_temperature_func(r, None) for r in radii])
-
         cmb_mass = core_mass_fraction * planet_mass
         core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * planet_mass
 
