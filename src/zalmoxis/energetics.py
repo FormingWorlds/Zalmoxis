@@ -92,7 +92,7 @@ def gravitational_binding_energy(radii, mass_enclosed):
     if hasattr(np, 'trapezoid'):
         U = np.trapezoid(integrand, m)
     else:
-        U = np.trapz(integrand, m)  # numpy < 2.0
+        U = np.trapz(integrand, m)  # noqa: NPY201 (numpy < 2.0)
 
     return float(abs(U))
 

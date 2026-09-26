@@ -386,7 +386,9 @@ def load_profile_output(profile_output_file):
                     radii.append(radius)
                     densities.append(density)
                 except ValueError as e:
-                    raise RuntimeError(f"Failed to parse line: '{line.strip()}'. Error: {e}")
+                    raise RuntimeError(
+                        f"Failed to parse line: '{line.strip()}'. Error: {e}"
+                    ) from e
 
     if not radii or not densities:
         raise RuntimeError(f'No valid data found in {profile_output_file}')

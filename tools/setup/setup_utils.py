@@ -220,7 +220,7 @@ def download(
         if osf_id is None:
             raise RuntimeError(
                 f"Failed to download folder '{folder}' from Zenodo and no OSF fallback configured."
-            )
+            ) from e
         try:
             logger.info(f"Downloading from OSF project '{osf_id}'...")
             # Clear a partial Zenodo delivery first so the OSF result is a
@@ -237,7 +237,7 @@ def download(
             logger.error(f'Failed to download from OSF: {e}')
             raise RuntimeError(
                 f"Failed to download folder '{folder}' from both Zenodo and OSF."
-            )
+            ) from e
 
     write_source_marker(folder_dir, zenodo_id)
 

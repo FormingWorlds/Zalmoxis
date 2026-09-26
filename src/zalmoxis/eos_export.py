@@ -1551,7 +1551,7 @@ def compute_entropy_adiabat(
     for i, P_i in enumerate(P_grid):
 
         def residual(T_cand):
-            return entropy_total(P_i, T_cand) - S_target
+            return entropy_total(P_i, T_cand) - S_target  # noqa: B023
 
         # Bracket: expand around previous T. If either endpoint lands
         # in a non-converged PALEOS cell (NaN), shrink it toward T_prev
