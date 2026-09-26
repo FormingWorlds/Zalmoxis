@@ -280,10 +280,11 @@ def main(
         Used by PROTEUS to pass SPIDER/Aragog T(r) profiles directly
         in memory.
     temperature_arrays : tuple[ndarray, ndarray] or None, optional
-        Explicit r-indexed T profile ``(r_arr, T_arr)``. Consumed only
-        with ``config_params['use_jax']=True``; it then gives T everywhere:
-        in the JAX structure solves, their numpy fallback, the density update
-        at the nodes and the output temperature (no adiabat blend). Preferred
+        Explicit r-indexed T profile ``(r_arr, T_arr)``, ``r_arr`` increasing.
+        Consumed only with ``config_params['use_jax']=True``; it then gives T
+        everywhere, in place of ``temperature_function`` and the temperature
+        mode: in the JAX structure solves, their numpy fallback, the density
+        update at the nodes and the output temperature. Preferred
         over ``temperature_function`` when the caller's T is naturally
         r-indexed (e.g. SPIDER/Aragog-coupled runs): the P-indexed
         tabulation inside ``jax_eos.wrapper`` collapses to a constant
@@ -1158,6 +1159,9 @@ def _solve(
     temperature_function : callable or None, optional
         External temperature function ``f(r, P) -> T``. When provided,
         bypasses internal temperature mode dispatch and adiabat blending.
+    temperature_arrays : tuple[ndarray, ndarray] or None, optional
+        r-indexed T profile ``(r_arr, T_arr)``; with ``use_jax`` it gives T
+        everywhere, as described in ``main``.
     initial_density : numpy.ndarray or None, optional
         Density seed from a previous solve. Interpolated onto the current
         radial grid to accelerate Picard convergence.
@@ -1463,9 +1467,6 @@ def _solve(
 
         if arrays_give_T:
             _temperature_func = temperature_from_arrays(temperature_arrays)
-            temperatures = np.interp(
-                radii, *(np.asarray(a, dtype=float) for a in temperature_arrays)
-            )
         elif (
             temperature_function is not None
         ):  # pragma: no cover - exercised only by slow-tier test_spider_coupling_convergence and test_jax_temperature_arrays; both excluded from the nightly coverage filter
