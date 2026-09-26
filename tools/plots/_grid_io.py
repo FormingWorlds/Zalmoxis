@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import csv
 import os
-from typing import Optional
 
 import numpy as np
 
@@ -57,7 +56,7 @@ _STR_METADATA = (
 )
 
 
-def load_profile(grid_dir: str, label: str) -> Optional[dict]:
+def load_profile(grid_dir: str, label: str) -> dict | None:
     """Load one per-cell profile CSV into a dict.
 
     Parameters

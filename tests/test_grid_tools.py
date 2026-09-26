@@ -242,7 +242,7 @@ def _install_fake_solver(monkeypatch):
     }
 
     monkeypatch.setattr(rg, 'load_zalmoxis_config', lambda _path: fake_config)
-    monkeypatch.setattr(rg, 'load_material_dictionaries', lambda: {})
+    monkeypatch.setattr(rg, 'load_material_dictionaries', dict)
     monkeypatch.setattr(
         rg,
         'load_solidus_liquidus_functions',
@@ -455,9 +455,7 @@ def test_generate_configs_creates_missing_section(tmp_path):
     # for the plots_enabled/verbose writeback at the end of the loop).
     # NO [PressureAdjustment] section.
     base = tmp_path / 'base.toml'
-    base.write_text(
-        '[Output]\nplots_enabled = true\nverbose = true\n'
-    )
+    base.write_text('[Output]\nplots_enabled = true\nverbose = true\n')
 
     configs = rg.generate_configs(
         str(base),
@@ -468,6 +466,7 @@ def test_generate_configs_creates_missing_section(tmp_path):
     # Confirm each generated config has the section now present with
     # the right value, and that the writer did not corrupt [Output].
     import toml as toml_mod
+
     for label, cfg_path in configs:
         cfg = toml_mod.load(cfg_path)
         assert 'PressureAdjustment' in cfg

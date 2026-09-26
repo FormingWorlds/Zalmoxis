@@ -140,7 +140,7 @@ def read_results(id_mass=None):
         get_zalmoxis_root(), 'output', f'composition_radius_log{id_mass}.txt'
     )
     data = []
-    with open(log_path, 'r') as file:
+    with open(log_path) as file:
         for line in file:
             try:
                 core, mantle, water, radius, total_time = map(float, line.strip().split())

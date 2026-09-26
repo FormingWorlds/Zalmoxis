@@ -257,7 +257,7 @@ def main_cli():
     if args.baseline:
         baseline = dict(np.load(args.baseline))
         ok, report = compare(baseline, current, args.tolerance)
-        print('\n=== per-key comparison ({}) ==='.format(args.tolerance))
+        print(f'\n=== per-key comparison ({args.tolerance}) ===')
         for k, v in report.items():
             print(f'  {k:25s}  {v}')
         if not ok:

@@ -217,7 +217,7 @@ def _write_header(
     extra_lines=None,
 ):
     """Emit the commented header block. Matches shipped-table conventions."""
-    timestamp = _dt.datetime.now(_dt.timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+    timestamp = _dt.datetime.now(_dt.UTC).strftime('%Y-%m-%d %H:%M:%S UTC')
     f.write('# ' + '=' * 78 + '\n')
     f.write(f'# PALEOS {material} EoS Lookup Table — PROTEUS (live-generated)\n')
     f.write('# ' + '=' * 78 + '\n#\n')

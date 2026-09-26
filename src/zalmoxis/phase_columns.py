@@ -32,7 +32,6 @@ Phase routing
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 import numpy as np
 
@@ -119,10 +118,10 @@ def _canonicalize_paleos_phase(raw: str) -> str:
 # via ``_ensure_unified_cache``: cold ``.pkl`` skips the slow text reparse
 # of the 50-140 MB ``.dat`` file, and an installation that has only the
 # ``.pkl`` (no ``.dat``) still yields phase labels rather than ``unknown``.
-_PHASE_GRID_CACHE: dict[str, Optional[dict]] = {}
+_PHASE_GRID_CACHE: dict[str, dict | None] = {}
 
 
-def _load_phase_grid(eos_file: str) -> Optional[dict]:
+def _load_phase_grid(eos_file: str) -> dict | None:
     """Load (and cache) the (P-major, T-minor) phase string grid.
 
     Routes through the shared ``_ensure_unified_cache`` so the lookup

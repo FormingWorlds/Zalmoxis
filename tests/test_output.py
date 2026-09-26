@@ -563,7 +563,7 @@ class TestPostProcessingSolverContract:
             'converged_mass': True,
         }
         monkeypatch.setattr(solver_mod, 'main', lambda *a, **k: broken)
-        monkeypatch.setattr(cfg_mod, 'load_material_dictionaries', lambda: {})
+        monkeypatch.setattr(cfg_mod, 'load_material_dictionaries', dict)
         monkeypatch.setattr(
             cfg_mod,
             'load_solidus_liquidus_functions',
@@ -592,7 +592,7 @@ class TestPostProcessingSolverContract:
             return fake_solver_results
 
         monkeypatch.setattr(solver_mod, 'main', _capturing_main)
-        monkeypatch.setattr(cfg_mod, 'load_material_dictionaries', lambda: {})
+        monkeypatch.setattr(cfg_mod, 'load_material_dictionaries', dict)
         monkeypatch.setattr(
             cfg_mod,
             'load_solidus_liquidus_functions',
@@ -648,7 +648,7 @@ class TestPostProcessingLogLines:
         import zalmoxis.solver as solver_mod
 
         monkeypatch.setattr(solver_mod, 'main', lambda *a, **k: results, raising=True)
-        monkeypatch.setattr(cfg_mod, 'load_material_dictionaries', lambda: {}, raising=True)
+        monkeypatch.setattr(cfg_mod, 'load_material_dictionaries', dict, raising=True)
         monkeypatch.setattr(
             cfg_mod,
             'load_solidus_liquidus_functions',

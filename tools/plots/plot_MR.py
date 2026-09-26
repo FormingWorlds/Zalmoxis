@@ -36,7 +36,6 @@ def plot_mass_radius_relationship(target_mass_array):
         os.path.join(
             get_zalmoxis_root(), 'data', 'mass_radius_curves', 'massradiusEarthlikeRocky.txt'
         ),
-        'r',
     ) as zeng_file:
         next(zeng_file)  # Skip the header line
         for line in zeng_file:
@@ -54,7 +53,6 @@ def plot_mass_radius_relationship(target_mass_array):
             'mass_radius_curves',
             'massradius_50percentH2O_300K_1mbar.txt',
         ),
-        'r',
     ) as zeng_file:
         next(zeng_file)  # Skip the header line
         for line in zeng_file:
@@ -67,7 +65,6 @@ def plot_mass_radius_relationship(target_mass_array):
     radii_Earth = []
     with open(
         os.path.join(get_zalmoxis_root(), 'output', 'calculated_planet_mass_radius_Earth.txt'),
-        'r',
     ) as file:
         next(file)  # Skip the header line
         for line in file:
@@ -80,7 +77,6 @@ def plot_mass_radius_relationship(target_mass_array):
     radii_water = []
     with open(
         os.path.join(get_zalmoxis_root(), 'output', 'calculated_planet_mass_radius_water.txt'),
-        'r',
     ) as file:
         next(file)  # Skip the header line
         for line in file:

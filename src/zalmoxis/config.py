@@ -883,9 +883,9 @@ def load_solidus_liquidus_functions(
     if all_comps & _PALEOS_2PHASE_NAMES and liquidus_id == _PALEOS_LIQUIDUS_ID:
         if solidus_id != 'Stixrude14-solidus':
             logger.warning(
-                "rock_solidus=%r is not used for a PALEOS 2-phase mantle with "
+                'rock_solidus=%r is not used for a PALEOS 2-phase mantle with '
                 "rock_liquidus='PALEOS-liquidus': the solidus is derived as "
-                "mushy_zone_factor * liquidus (mushy_zone_factor=%.3g).",
+                'mushy_zone_factor * liquidus (mushy_zone_factor=%.3g).',
                 solidus_id,
                 mushy_zone_factor,
             )

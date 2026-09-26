@@ -327,7 +327,7 @@ def load_zeng_curve(filename):
 
     masses = []
     radii = []
-    with open(data_path, 'r') as f:
+    with open(data_path) as f:
         for line in f:
             if line.strip() == '' or line.startswith('#'):
                 continue
@@ -350,7 +350,7 @@ def load_model_output(output_file):
     tuple
         (mass_earth_masses, radius_earth_radii).
     """
-    with open(output_file, 'r') as f:
+    with open(output_file) as f:
         next(f)  # Skip the header line
         for line in f:
             if line.strip():
@@ -375,7 +375,7 @@ def load_profile_output(profile_output_file):
     radii = []
     densities = []
 
-    with open(profile_output_file, 'r') as f:
+    with open(profile_output_file) as f:
         next(f)  # Skip header line
         for line in f:
             if line.strip():
@@ -410,7 +410,7 @@ def load_Seager_data(filename):
     data_path = os.path.join(get_zalmoxis_root(), 'data', 'radial_profiles', filename)
 
     data_by_mass = {}
-    with open(data_path, 'r') as f:
+    with open(data_path) as f:
         for line in f:
             if line.strip() == '':
                 continue

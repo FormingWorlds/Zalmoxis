@@ -1225,7 +1225,7 @@ def _solve(
         mushy_zone_factors = config_params['mushy_zone_factors']
     else:
         _global_mzf = config_params.get('mushy_zone_factor', 1.0)
-        mushy_zone_factors = {name: _global_mzf for name in _PALEOS_UNIFIED_NAMES}
+        mushy_zone_factors = dict.fromkeys(_PALEOS_UNIFIED_NAMES, _global_mzf)
     condensed_rho_min = config_params.get('condensed_rho_min', CONDENSED_RHO_MIN_DEFAULT)
     condensed_rho_scale = config_params.get('condensed_rho_scale', CONDENSED_RHO_SCALE_DEFAULT)
     binodal_T_scale = config_params.get('binodal_T_scale', BINODAL_T_SCALE_DEFAULT)

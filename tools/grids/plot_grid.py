@@ -250,7 +250,7 @@ def plot_grid_summary(
 
     if single_panel or n_groups == 1:
         fig, ax = plt.subplots(figsize=(8, 6))
-        axes_map = {gv: ax for gv in group_values}
+        axes_map = dict.fromkeys(group_values, ax)
     else:
         ncols = min(n_groups, 3)
         nrows = (n_groups + ncols - 1) // ncols
