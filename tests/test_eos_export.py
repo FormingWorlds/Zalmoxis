@@ -590,7 +590,13 @@ class TestLoadPaleosAllPropertiesCache:
             eos_export.load_paleos_all_properties(tmp_path / 'absent.dat')
 
     @pytest.mark.parametrize(
-        'kind', ['empty', 'directory', 'fifo', 'broken', 'loop', 'in_file']
+        'kind',
+        ['empty', 'directory', 'broken', 'loop', 'in_file']
+        + [
+            pytest.param(
+                'fifo', marks=pytest.mark.skipif(not hasattr(os, 'mkfifo'), reason='no FIFOs')
+            )
+        ],
     )
     def test_path_that_is_not_a_file_raises_file_not_found(self, tmp_path, kind):
         """A path that is not a regular file is a missing table, as callers expect."""
@@ -610,7 +616,10 @@ class TestLoadPaleosAllPropertiesCache:
         with pytest.raises(FileNotFoundError, match='PALEOS table'):
             eos_export.load_paleos_all_properties(paths[kind])
 
-    @pytest.mark.skipif(os.geteuid() == 0, reason='root ignores directory permissions')
+    @pytest.mark.skipif(
+        not hasattr(os, 'geteuid') or os.geteuid() == 0,
+        reason='needs POSIX directory permissions and a non-root user',
+    )
     def test_unreadable_directory_keeps_permission_error(self, tmp_path):
         """A table the process may not reach is a PermissionError, not a missing table."""
         locked = tmp_path / 'locked'
