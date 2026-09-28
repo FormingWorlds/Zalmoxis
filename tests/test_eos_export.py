@@ -611,12 +611,12 @@ class TestLoadPaleosAllPropertiesCache:
             eos_export.load_paleos_all_properties(paths[kind])
 
     @pytest.mark.skipif(os.geteuid() == 0, reason='root ignores directory permissions')
-    def test_unreadable_directory_keeps_permission_error(self, synthetic_table, tmp_path):
+    def test_unreadable_directory_keeps_permission_error(self, tmp_path):
         """A table the process may not reach is a PermissionError, not a missing table."""
         locked = tmp_path / 'locked'
         locked.mkdir()
         target = locked / 'table.dat'
-        target.write_text(synthetic_table.read_text())
+        target.write_text('')
         locked.chmod(0)
         try:
             with pytest.raises(PermissionError):

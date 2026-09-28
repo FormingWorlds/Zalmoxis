@@ -75,10 +75,10 @@ def load_paleos_all_properties(eos_file):
     Raises
     ------
     FileNotFoundError
-        If ``eos_file`` is not a regular file (missing, empty, a directory, a
-        FIFO, a broken link).
+        If ``eos_file`` is not a regular file: missing, an empty path, a
+        directory, a FIFO, a broken link or link loop, or a path through a file.
     PermissionError
-        If a directory on the path cannot be searched.
+        If the table or a directory on its path cannot be read.
     ValueError
         If a data line holds a token that is not a number (``N/A``, ``---``,
         ``1.0D+00``, a byte-order mark, ``1_0``) or a phase label of 32
