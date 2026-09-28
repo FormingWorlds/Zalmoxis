@@ -4,8 +4,8 @@ in the JAX structure-ODE path.
 Verifies:
   (1) When pressure crosses zero mid-grid, diffrax terminates and
       the wrapper pads the post-event shells to match numpy's
-      solve_structure contract (pressure = 0, mass/gravity carry
-      the last-valid value).
+      solve_structure contract (pressure = 0, mass/gravity hold
+      their values at the event).
   (2) The wrapper's post-event padding handler produces no `inf`
       or `NaN` in the returned arrays.
   (3) Physics drift between the JAX+Event path and the numpy path
@@ -170,26 +170,27 @@ class TestEventTermination:
             f'JAX pressure at numpy-zero indices: {jax_at_np_zero} (want all exactly 0.0)'
         )
 
-    def test_mass_gravity_pad_carries_last_valid(self, jax_event_result):
-        """On shells where the JAX path padded pressure to 0, the
-        mass/gravity arrays must carry the last-valid value across
-        all padded shells (no variation inside the pad region).
+    def test_pad_holds_the_event_state(self, jax_event_result):
+        """Padded shells hold one (m, g), and it is the state inside the stop shell.
+
+        At the stop g = G m / r^2, so r = sqrt(G m / g) must lie after the last
+        live node and at or before the first padded node.
         """
+        from zalmoxis.constants import G
+
         P_jx = np.asarray(jax_event_result['pressure'])
         mass_jx = np.asarray(jax_event_result['mass_enclosed'])
         g_jx = np.asarray(jax_event_result['gravity'])
+        radii = np.asarray(jax_event_result['radii'])
 
-        zero_mask = P_jx == 0.0
-        if zero_mask.sum() < 2:
-            pytest.skip("Less than 2 padded shells; can't test flatness.")
-
-        pad_idx = np.flatnonzero(zero_mask)
-        m0 = mass_jx[pad_idx[0]]
-        g0 = g_jx[pad_idx[0]]
-        assert np.all(mass_jx[pad_idx] == m0), (
-            f'mass varies on padded shells: {mass_jx[pad_idx]}'
-        )
-        assert np.all(g_jx[pad_idx] == g0), f'gravity varies on padded shells: {g_jx[pad_idx]}'
+        pad_idx = np.flatnonzero(P_jx == 0.0)
+        assert pad_idx.size > 0, 'bench_performance.toml is expected to stop below R'
+        k = pad_idx[0]
+        assert np.all(mass_jx[pad_idx] == mass_jx[k])
+        assert np.all(g_jx[pad_idx] == g_jx[k])
+        r_stop = np.sqrt(G * mass_jx[k] / g_jx[k])
+        assert radii[k - 1] < r_stop <= radii[k] * (1 + 1e-9)
+        assert mass_jx[k] > mass_jx[k - 1]
 
     def test_profile_drift_at_solver_tolerance(self, numpy_result, jax_event_result):
         """Profile drift between numpy and JAX+Event paths must be
@@ -203,10 +204,8 @@ class TestEventTermination:
         """
         self._skip_if_partial(numpy_result, jax_event_result)
 
-        # Live mask: keep only shells where BOTH paths report P > 0.
-        # Padded shells (P==0) carry whatever the implementation chose
-        # to stamp there (numpy: 0; JAX+Event: last-valid carry-over)
-        # and are not directly comparable.
+        # Live mask: keep only shells where BOTH paths report P > 0; the
+        # two paths can pad different numbers of outer shells.
         P_np = np.asarray(numpy_result['pressure'])
         P_jx = np.asarray(jax_event_result['pressure'])
         live = (P_np > 0) & (P_jx > 0)
@@ -288,3 +287,32 @@ class TestEventTermination:
             f'interior pressure dropped below 1e8 Pa: min={inner.min():.3e}, '
             f'suggests Event fired too early.'
         )
+
+
+@pytest.mark.smoke
+class TestSurfaceCrossing:
+    """A JAX solve at the Newton tolerances crosses P = 0 in a bounded number of steps."""
+
+    @pytest.mark.timeout(120)
+    def test_temperature_at_zero_pressure_does_not_stall_the_solve(self):
+        """Guard against a stalled surface crossing; the synthetic world has no jump at
+        P = 0 on main either, so the continuity of the RHS is tested in
+        test_jax_parity_synthetic."""
+        pytest.importorskip('jax')
+        import time
+
+        import zalmoxis.jax_eos.solver as js
+        from tests.test_jax_parity_synthetic import _synthetic_world
+
+        args = _synthetic_world()['jax_args']
+        radii = np.linspace(0.0, 1.2e7, 150)
+
+        def solve():
+            return js.solve_structure_jax(
+                radii, [0.0, 0.0, 3e11], rtol=1e-9, atol=1e-10, mantle_is_unified=True, **args
+            )
+
+        solve()  # compile
+        t0 = time.perf_counter()
+        solve()
+        assert time.perf_counter() - t0 < 2.0  # max_steps (200000) takes several seconds

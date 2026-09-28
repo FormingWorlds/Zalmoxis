@@ -21,10 +21,7 @@ In JAX, we compute the result of ALL applicable branches and use
 same bilinear at (P, T_clamped), so we collapse them into a "direct"
 branch. The mushy-zone branch is the only distinct path.
 
-NaN-on-lookup fallback (numpy's ``density_nn`` KDTree nearest-neighbour)
-is NOT ported — the JAX path returns NaN, which the caller must check
-and fall back to numpy for. On Stage-1b-equivalent configs with
-well-covered PALEOS tables, NaN returns are not expected.
+NaN table nodes are filled at extraction: see ``jax_eos.wrapper._extract_sub_args``.
 """
 
 from __future__ import annotations
@@ -66,8 +63,8 @@ def get_paleos_unified_density_jax(
     """Return PALEOS-unified density at (pressure, temperature) in kg/m^3.
 
     Mirrors ``zalmoxis.eos.paleos.get_paleos_unified_density``. Inputs
-    are scalars or 0-d arrays; returns a scalar. NaN on lookup failure
-    (caller must fall back to numpy path for those rare points).
+    are scalars or 0-d arrays; returns a scalar. NaN nodes are filled at extraction
+    (``jax_eos.wrapper._extract_sub_args``); a node left NaN can make the result NaN.
     """
     # Clamp pressure to table bounds, then log10
     pressure_c = jnp.clip(pressure, p_min, p_max)

@@ -111,14 +111,13 @@ class TestGetLayerMixture:
 
 
 class TestCoupledOdesNoneDensity:
-    """When the EOS lookup returns ``None``/NaN the ODE state freezes."""
+    """An EOS failure (None or NaN density) at P > 0 gives NaN derivatives, so the step fails."""
 
-    def test_none_density_returns_zero_derivatives(self, three_layer_mixtures):
-        """Mock the mixed-density helper to return None; the ODEs produce
-        zero derivatives so the integrator stops advancing this shell."""
+    @pytest.mark.parametrize('density', [None, float('nan')])
+    def test_failed_density_returns_nan_derivatives(self, three_layer_mixtures, density):
         with mock.patch(
             'zalmoxis.structure_model.calculate_mixed_density',
-            return_value=None,
+            return_value=density,
         ):
             dy = coupled_odes(
                 radius=1e6,
@@ -136,31 +135,7 @@ class TestCoupledOdesNoneDensity:
                 condensed_rho_scale=None,
                 binodal_T_scale=None,
             )
-        assert dy == [0.0, 0.0, 0.0]
-
-    def test_nan_density_returns_zero_derivatives(self, three_layer_mixtures):
-        """NaN density is also treated as a frozen-shell signal."""
-        with mock.patch(
-            'zalmoxis.structure_model.calculate_mixed_density',
-            return_value=float('nan'),
-        ):
-            dy = coupled_odes(
-                radius=1e6,
-                y=[1e23, 5.0, 1e10],
-                cmb_mass=2e23,
-                core_mantle_mass=4e23,
-                layer_mixtures=three_layer_mixtures,
-                interpolation_cache={},
-                material_dictionaries={},
-                temperature=3000.0,
-                solidus_func=None,
-                liquidus_func=None,
-                mushy_zone_factors=None,
-                condensed_rho_min=None,
-                condensed_rho_scale=None,
-                binodal_T_scale=None,
-            )
-        assert dy == [0.0, 0.0, 0.0]
+        assert np.all(np.isnan(dy)) and len(dy) == 3
 
     def test_finite_density_yields_normal_derivatives(self, three_layer_mixtures):
         """With a finite density the ODEs return non-trivial derivatives,

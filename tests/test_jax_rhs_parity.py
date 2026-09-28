@@ -109,7 +109,6 @@ def _stage1b_setup():
         'cmb_mass': float(cmb_mass),
         'T_axis_grid': T_logP_grid,
         'T_values': T_values,
-        'T_surface': 3000.0,
         'mushy_zone_factor_core': 1.0,  # PALEOS:iron: no mushy (uses table's own phase)
     }
     # Core args
@@ -176,8 +175,6 @@ def test_coupled_odes_jax_parity():
     }
 
     def numpy_temp(r, P):
-        if P <= 0:
-            return 3000.0
         return float(np.interp(np.log10(max(P, 1.0)), T_logP_grid, T_values))
 
     rng = np.random.default_rng(113)

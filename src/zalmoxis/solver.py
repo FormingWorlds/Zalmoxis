@@ -52,9 +52,27 @@ from .mixing import (
     split_mantle_volatile_inventory,
     strong_partition_phi_floor,
 )
-from .structure_model import solve_structure
+from .structure_model import solve_structure, temperature_from_arrays
 
 logger = logging.getLogger(__name__)
+
+
+class StructureSolveError(RuntimeError):
+    """A structure solve gave a non-finite profile, e.g. a stop deep inside the planet."""
+
+
+def _require_finite(radii, profiles, reason, outer_iter, inner_iter):
+    """Raise StructureSolveError unless every profile (m, g, P) on ``radii`` is finite."""
+    bad = ~np.all(np.isfinite(profiles), axis=0)
+    if not bad.any():
+        return
+    i = int(np.argmax(bad))
+    stop = f'between r = {radii[i - 1]:.4e} and {radii[i]:.4e} m' if i > 0 else 'at r = 0'
+    raise StructureSolveError(
+        f'Structure solve failed at R = {radii[-1]:.6e} m (outer iteration {outer_iter}, '
+        f'inner {inner_iter}): {reason}; stop {stop}.'
+    )
+
 
 # Module-level EOS interpolation cache. Persists across multiple main() calls
 # within the same Python process (e.g., PROTEUS coupling loop), avoiding
@@ -262,8 +280,11 @@ def main(
         Used by PROTEUS to pass SPIDER/Aragog T(r) profiles directly
         in memory.
     temperature_arrays : tuple[ndarray, ndarray] or None, optional
-        Explicit r-indexed T profile ``(r_arr, T_arr)``. Only consumed
-        by the JAX path (``config_params['use_jax']=True``). Preferred
+        Explicit r-indexed T profile ``(r_arr, T_arr)``, ``r_arr`` increasing.
+        Consumed only with ``config_params['use_jax']=True``; it then gives T
+        everywhere, in place of ``temperature_function`` and the temperature
+        mode: in the JAX structure solves, their numpy fallback, the density
+        update at the nodes and the output temperature. Preferred
         over ``temperature_function`` when the caller's T is naturally
         r-indexed (e.g. SPIDER/Aragog-coupled runs): the P-indexed
         tabulation inside ``jax_eos.wrapper`` collapses to a constant
@@ -282,7 +303,15 @@ def main(
     dict
         Model results including radii, density, gravity, pressure, temperature,
         mass enclosed, convergence status, and timing.
+
+    Raises
+    ------
+    StructureSolveError
+        A structure solve gave a non-finite profile (a stop in the integration
+        deep inside the planet), with either outer solver. Any trial central
+        pressure counts, including a bracket end of the pressure search.
     """
+    _interpolation_cache.pop('_jax_fell_back', None)  # set by solve_structure's numpy fallback
     # Validate outer-solver choice. Default is 'picard' (the damped
     # fixed-point loop inside `_solve()`); 'newton' dispatches to
     # `_solve_newton_outer()`.
@@ -685,6 +714,8 @@ def _brentq_fallback_outer(
     # rather than letting the exception propagate.
     try:
         R_root = brentq(_f, R_lo, R_hi, xtol=xtol_target, rtol=tol)
+    except StructureSolveError:
+        raise
     except (
         ValueError,
         RuntimeError,
@@ -799,8 +830,8 @@ def _solve_newton_outer(
     Degenerate cases (vanishing derivative, out-of-bounds step,
     max-iter without convergence) hand off to ``_brentq_fallback_outer``,
     which brackets the root via bisection and converges scipy's
-    ``brentq`` on it. The Newton path raises ``RuntimeError`` only when
-    both Newton and the brentq fall-back fail.
+    ``brentq`` on it. A failed structure solve at any radius raises
+    ``StructureSolveError``.
 
     Parameters
     ----------
@@ -836,6 +867,8 @@ def _solve_newton_outer(
         If integrator tolerances are too loose for Newton to converge.
     RuntimeError
         If both Newton and the brentq fall-back fail to converge.
+    StructureSolveError
+        If a structure solve at any evaluated radius is not finite.
     """
     M_target = float(config_params['planet_mass'])
     defaults = _default_solver_params(M_target)
@@ -1126,6 +1159,9 @@ def _solve(
     temperature_function : callable or None, optional
         External temperature function ``f(r, P) -> T``. When provided,
         bypasses internal temperature mode dispatch and adiabat blending.
+    temperature_arrays : tuple[ndarray, ndarray] or None, optional
+        r-indexed T profile ``(r_arr, T_arr)``; with ``use_jax`` it gives T
+        everywhere, as described in ``main``.
     initial_density : numpy.ndarray or None, optional
         Density seed from a previous solve. Interpolated onto the current
         radial grid to accelerate Picard convergence.
@@ -1198,6 +1234,7 @@ def _solve(
     # Supported configs: 2-layer single-component.
     # Unsupported configs fall back to the numpy path automatically.
     use_jax = bool(config_params.get('use_jax', False))
+    arrays_give_T = use_jax and temperature_arrays is not None
     # Anderson acceleration for the density Picard loop: when True,
     # replaces the damped fixed-point update (density = alpha * new + (1-alpha) * old)
     # with a Walker & Ni 2011 Type-II Anderson step that least-squares-combines
@@ -1427,9 +1464,9 @@ def _solve(
         else:
             density = np.zeros(num_layers)
 
-        if (
-            temperature_function is not None
-        ):  # pragma: no cover - exercised only by slow-tier test_spider_coupling_convergence and test_jax_temperature_arrays; both excluded from the nightly coverage filter
+        if arrays_give_T:
+            _temperature_func = temperature_from_arrays(temperature_arrays)
+        elif temperature_function is not None:
             # External T(r,P) provided (e.g. from SPIDER/Aragog in memory).
             # Skip internal mode dispatch and adiabat blending entirely.
             _ext_tf = temperature_function  # avoid shadowing in nested defs
@@ -1673,6 +1710,7 @@ def _solve(
                     use_jax=use_jax,
                     temperature_arrays=temperature_arrays,
                     volatile_profile=volatile_profile,
+                    surface_pressure=target_surface_pressure,
                 )
                 if logger.isEnabledFor(
                     logging.DEBUG
@@ -1680,6 +1718,13 @@ def _solve(
                     create_pressure_density_files(
                         outer_iter, inner_iter, _state['n_evals'], radii, p, density
                     )
+                _require_finite(
+                    radii,
+                    (m, g, p),
+                    f'solve at P_c = {p_center:.3e} Pa not finite',
+                    outer_iter,
+                    inner_iter,
+                )
                 _state['mass_enclosed'] = m
                 _state['gravity'] = g
                 _state['pressure'] = p
@@ -1779,6 +1824,14 @@ def _solve(
                     use_jax=use_jax,
                     temperature_arrays=temperature_arrays,
                     volatile_profile=volatile_profile,
+                    surface_pressure=target_surface_pressure,
+                )
+                _require_finite(
+                    radii,
+                    (mass_enclosed, gravity, pressure),
+                    f'solve at the Brent root P_c = {p_solution:.3e} Pa not finite',
+                    outer_iter,
+                    inner_iter,
                 )
 
                 surface_residual = abs(pressure[-1] - target_surface_pressure)
@@ -1884,17 +1937,16 @@ def _solve(
                 )
                 new_density[idx] = rho_batch
 
-            # Fill NaN entries with last valid density (walking outward)
-            last_valid = None
-            for i in range(n_valid):
-                if not p_valid[i]:
-                    new_density[i] = 0.0
-                elif np.isnan(
-                    new_density[i]
-                ):  # pragma: no cover - per-shell NaN density fallback; defensive
-                    new_density[i] = last_valid if last_valid is not None else old_density[i]
-                else:
-                    last_valid = new_density[i]
+            # A non-finite density at a node with P > 0 is an EOS failure the solve stepped over.
+            bad = p_valid & ~np.isfinite(new_density[:n_valid])
+            if bad.any():
+                i = int(np.argmax(bad))
+                raise StructureSolveError(
+                    f'Structure solve failed at R = {radii[-1]:.6e} m (outer iteration '
+                    f'{outer_iter}, inner {inner_iter}): density not finite at r = '
+                    f'{radii[i]:.4e} m, P = {pressure[i]:.3e} Pa.'
+                )
+            new_density[:n_valid][~p_valid] = 0.0
 
             # Adaptive Picard blend: use inner-loop alpha for density damping
             alpha = min(_picard_alpha, _inner_alpha)
@@ -2163,6 +2215,7 @@ def _solve(
                 and _adiabat_blend < 1.0
                 and uses_Tdep
                 and temperature_function is None
+                and not arrays_give_T
             ):
                 if not _using_adiabat:
                     _using_adiabat = True

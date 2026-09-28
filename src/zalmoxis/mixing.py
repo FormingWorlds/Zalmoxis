@@ -523,11 +523,8 @@ def calculate_mixed_density(
             mzf,
         )
         if rho_i is None or not np.isfinite(rho_i) or rho_i <= 0:
-            # Abort the entire mixture rather than skipping this component.
-            # A None from calculate_density indicates an EOS table coverage
-            # gap, not a vapor-phase state (vapor has low but finite density).
-            # Treating it as suppressed (continue) would silently hide table
-            # errors. The Picard loop falls back to old_density for this shell.
+            # A None density is a table coverage gap, not vapour (low but finite
+            # density): skipping the component would hide it, so the mixture fails.
             return None
         # Per-component sigmoid center and width: each volatile has its own
         # critical density. Fall back to the global config value if not listed.

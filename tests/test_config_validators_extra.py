@@ -167,7 +167,7 @@ class TestPressureSolverParams:
     def test_negative_target_surface_pressure_raises(self):
         """target_surface_pressure < 0 -> ValueError."""
         cfg = _make_minimal_config(target_surface_pressure=-100.0)
-        with pytest.raises(ValueError, match='target_surface_pressure must be >= 0'):
+        with pytest.raises(ValueError, match='target_surface_pressure must be > 0'):
             validate_config(cfg)
 
     def test_zero_pressure_tolerance_raises(self):

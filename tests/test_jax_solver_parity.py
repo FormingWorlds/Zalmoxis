@@ -78,7 +78,7 @@ def test_solve_structure_jax_parity_vs_scipy():
     )
 
     # JAX path
-    ys_jax = solve_structure_jax(radii, y0, rtol=1e-5, atol=1e-6, **setup['jax_args'])
+    ys_jax, _ = solve_structure_jax(radii, y0, rtol=1e-5, atol=1e-6, **setup['jax_args'])
     ys_jax = np.asarray(ys_jax)
     mass_jax = ys_jax[:, 0]
     gravity_jax = ys_jax[:, 1]

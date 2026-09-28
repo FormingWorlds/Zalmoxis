@@ -33,6 +33,7 @@ import time as _time
 
 import numpy as np
 
+from ..structure_model import pad_after_stop, stop_is_surface
 from .solver import solve_structure_jax
 
 _CALL_COUNT = 0
@@ -43,9 +44,9 @@ _DEBUG = bool(_os.environ.get('ZALMOXIS_JAX_DEBUG'))
 _PROFILE = bool(_os.environ.get('ZALMOXIS_JAX_PROFILE'))
 _PHASE_TIMES = {'cache_extract': 0.0, 'adiabat_tab': 0.0, 'jit_solve': 0.0, 'other': 0.0}
 
-# Cache the mantle melting-curve tabulation on a shared log-P axis,
-# keyed by (id(solidus_func), id(liquidus_func)). See the rebuild
-# branch in solve_structure_via_jax for the rationale and cost numbers.
+# Mantle melting-curve tables on a shared log-P axis. This cache and the adiabat cache
+# (in interpolation_cache) key by id and keep the functions with the tables; an entry is
+# used only for the same objects, and the kept reference stops its id being reused.
 _MELT_TABLE_CACHE: dict = {}
 
 
@@ -57,6 +58,13 @@ def _extract_sub_args(cached, prefix):
     calls solve_structure_via_jax thousands of times per main(); without
     this cache the np.asarray + dict-allocation overhead dominates in
     coupled runs (~70 % of wall on the no-Anderson coupled bench).
+
+    NaN nodes of the density grid are filled from ``cached['density_nn']`` at
+    the node, the value numpy's lookup falls back to there. Inside a cell with
+    a filled corner JAX interpolates bilinearly where numpy can return the
+    nearest valid node, so the two agree at the nodes. Inside a cell with a
+    filled corner the two can differ, by tens of percent on the shipped MgSiO3
+    tables near log P 8.5, log T 3.69, which hot surfaces reach.
     """
     cache_key = f'_jax_sub_args::{prefix}'
     cached_args = cached.get(cache_key)
@@ -64,8 +72,14 @@ def _extract_sub_args(cached, prefix):
         return cached_args
     # _ensure_unified_cache and seager.get_tabulated_eos already store
     # numpy arrays for these fields; np.asarray here is redundant.
+    grid = cached['density_grid']
+    ip, it = np.nonzero(~np.isfinite(grid))
+    if len(ip):
+        grid = np.array(grid, dtype=float)
+        nodes = np.column_stack([cached['unique_log_p'][ip], cached['unique_log_t'][it]])
+        grid[ip, it] = cached['density_nn'](nodes)
     out = {
-        f'{prefix}_density_grid': cached['density_grid'],
+        f'{prefix}_density_grid': grid,
         f'{prefix}_unique_log_p': cached['unique_log_p'],
         f'{prefix}_unique_log_t': cached['unique_log_t'],
         f'{prefix}_logp_min': float(cached['logp_min']),
@@ -212,6 +226,7 @@ def solve_structure_via_jax(
     condensed_rho_scale=None,
     binodal_T_scale=None,
     volatile_profile=None,  # VolatileProfile: single-volatile wet mantle
+    surface_pressure=0.0,  # target surface pressure [Pa], for pad_after_stop
 ):
     """Drop-in replacement for ``solve_structure`` using the JAX path.
 
@@ -235,8 +250,8 @@ def solve_structure_via_jax(
 
     * ``temperature_function(r, P) -> T`` — a Python callable. The
       wrapper samples it on a 4000-point log-P axis at
-      ``r_mid = 0.5 * (radii[0] + radii[-1])``, caches the result by
-      ``id(temperature_function)``, and the RHS interpolates on
+      ``r_mid = 0.5 * (radii[0] + radii[-1])``, caches the result per
+      function object, and the RHS interpolates on
       ``log10(P)``. This matches Zalmoxis' internal adiabat path where
       T along a column tracks P strongly and weakly depends on r.
 
@@ -245,6 +260,14 @@ def solve_structure_via_jax(
     structure solves).
 
     Providing both is rejected to avoid ambiguity.
+
+    Raises
+    ------
+    ValueError
+        When the solve stops before ``radii[-1]`` and the stop is not the
+        surface (``stop_is_surface``). ``solve_structure`` then retries on
+        numpy. Such a solve costs the diffrax ``max_steps`` spin (about 10 s)
+        plus a numpy solve.
     """
     from ..eos.interpolation import _ensure_unified_cache
     from ..eos.seager import get_tabulated_eos
@@ -403,76 +426,32 @@ def solve_structure_via_jax(
                 'temperature_arrays must be two 1-D arrays of equal length, '
                 f'got shapes {T_axis_grid.shape} and {T_values.shape}.'
             )
-        # T_surface is unused in the r-indexed RHS branch (jnp.interp
-        # clamps at the endpoint T), but passed through for signature
-        # compatibility with the P-indexed branch.
-        T_surface = float(T_values[-1])
         T_axis_is_radius = True
     elif temperature_function is None:
         T_axis_grid = np.linspace(5.0, 13.0, 4)
         T_values = np.full(4, 3000.0)
-        T_surface = 3000.0
         T_axis_is_radius = False
     else:
-        # P-indexed path. The temperature_function changes between outer
-        # Picard iterations (blend, converged density update) but is
-        # CONSTANT across brentq evals within one inner iteration. Cache
-        # the tabulation by id(temperature_function) in
-        # interpolation_cache so the 4000-point np.interp sweep only
-        # runs once per outer iter, not per brentq call. Empirical:
-        # removes ~5 ms/call * 5000 calls ~ 25 s of the JAX total.
+        # One tabulation per temperature function (constant within an inner iteration).
         _adia_cache = interpolation_cache.setdefault('_jax_adiabat_cache', {})
         _key = id(temperature_function)
         _entry = _adia_cache.get(_key)
-        if _entry is None:
-            _T_logP_grid, _T_values = _tabulate_adiabat(radii_arr, temperature_function)
-            _T_surface = float(temperature_function(float(radii_arr[-1]), 1e5))
-            _entry = (_T_logP_grid, _T_values, _T_surface)
-            # Cap cache size so stale closures don't accumulate across
-            # many outer iters (rare in practice; the _solve() control
-            # flow creates ~10-20 distinct _temperature_func objects).
+        if _entry is None or _entry[0] is not temperature_function:
+            _entry = (temperature_function, *_tabulate_adiabat(radii_arr, temperature_function))
+            # Persists across main() calls (solver._interpolation_cache), so it fills to the cap.
             if len(_adia_cache) > 64:
                 _adia_cache.pop(next(iter(_adia_cache)))
             _adia_cache[_key] = _entry
-        T_axis_grid, T_values, T_surface = _entry
+        _, T_axis_grid, T_values = _entry
         T_axis_is_radius = False
 
     if _PROFILE:  # pragma: no cover - dev profiling, gated on ZALMOXIS_JAX_PROFILE
         _PHASE_TIMES['adiabat_tab'] += _time.perf_counter() - _p_t0
         _p_t0 = _time.perf_counter()
 
-    # Mantle melting-curve tabulation on a shared log-P axis, sampled
-    # in log-T. We sample log10(liquidus_func) and log10(solidus_func)
-    # on a log-P axis (rather than T directly) so linear interp is
-    # bit-exact for any Simon-Glatzel power law T = A*P^B (log T is
-    # linear in log P); piecewise power laws (PALEOS-liquidus) are also
-    # exact except at the kink where the residual is <=1e-7. This keeps
-    # N small (256) so the JIT compile and per-call cost stay short.
-    # Tabulating BOTH curves (rather than ``T_sol = T_liq * mzf``)
-    # preserves generality: any (solidus, liquidus) pair the caller
-    # passes via ``melting_curves_functions`` works, including
-    # independently-tabulated pairs (e.g. Monteux600 solidus + liquidus)
-    # where T_sol/T_liq varies with P. PROTEUS' usual convention of
-    # ``solidus_func = liquidus_func * mushy_zone_factor`` flows through
-    # unchanged because the wrapper just samples whatever solidus_func
-    # returns.
-    # Cache the melting-curve tabulation by (id(solidus_func), id(liquidus_func)).
-    # The samples depend ONLY on the curve functions, so they are constant
-    # across all solve_structure_via_jax calls within a single main() (and
-    # across all main() calls that re-use the same closure pair). Without
-    # this cache we re-tabulate 256 x 2 = 512 melting-curve evaluations
-    # per call and re-allocate / re-log10 / re-ascontiguousarray every
-    # time, which dominates coupled-solve wall time.
-    # Cache key uses object id; the dict cap prevents unbounded growth from
-    # unique-per-call closures (rare).
-    # Missing melting curves are legitimate for an all-unified config
-    # (the unified density derives its solidus internally, and Zalmoxis'
-    # loader returns None for such configs). Mirror numpy: NaN tables
-    # make the RHS's melt-curve lookup non-finite, which routes the wet
-    # blend's phi to the same 0.5 fallback compute_melt_fraction uses
-    # for None curves. The 2-phase Tdep mantle genuinely needs the
-    # curves, so reject that combination (numpy fallback fails the same
-    # way there).
+    # Both melting curves sampled in log T on a 256-point log-P axis (exact for power laws).
+    # Missing curves are valid for an all-unified mantle: NaN tables send phi to the same
+    # 0.5 fallback numpy uses; a 2-phase Tdep mantle needs the curves.
     if solidus_func is None or liquidus_func is None:
         if not mantle_is_unified:
             raise ValueError(
@@ -490,7 +469,9 @@ def solve_structure_via_jax(
         _key = None
     else:
         _key = (id(solidus_func), id(liquidus_func))
-        _entry = _MELT_TABLE_CACHE.get(_key)
+        _hit = _MELT_TABLE_CACHE.get(_key)
+        _same = _hit is not None and _hit[0] is solidus_func and _hit[1] is liquidus_func
+        _entry = _hit[2] if _same else None
     _melt_cache = _MELT_TABLE_CACHE
     if _entry is None:
         n_melt = 256
@@ -513,7 +494,7 @@ def solve_structure_via_jax(
         }
         if len(_melt_cache) > 64:
             _melt_cache.pop(next(iter(_melt_cache)))
-        _melt_cache[_key] = _entry
+        _melt_cache[_key] = (solidus_func, liquidus_func, _entry)
     melt_curves = _entry
 
     # Physical constant G matching numpy path
@@ -523,7 +504,6 @@ def solve_structure_via_jax(
         'cmb_mass': float(cmb_mass),
         'T_axis_grid': T_axis_grid,
         'T_values': T_values,
-        'T_surface': T_surface,
         'mushy_zone_factor_core': core_mzf,
         'G': float(G),
     }
@@ -585,7 +565,7 @@ def solve_structure_via_jax(
     global _CALL_COUNT, _TOTAL_WALL
     _CALL_COUNT += 1
     _t0 = _time.perf_counter()
-    ys = solve_structure_jax(
+    ys, y_end = solve_structure_jax(
         radii_arr,
         np.asarray(y0, dtype=float),
         rtol=float(relative_tolerance),
@@ -633,18 +613,22 @@ def solve_structure_via_jax(
     gravity = ys[:, 1]
     pressure = ys[:, 2]
 
-    # Pressure-zero terminal event post-processing. When the event fires
-    # mid-grid, diffrax returns `inf` for all saveat entries past the
-    # crossing. We replace those with the numpy contract: mass/gravity
-    # carry the last valid value, pressure is padded to 0. Matches
-    # structure_model.solve_structure's final pad.
+    # Past a mid-grid stop diffrax returns inf; pad as solve_structure does.
     post_event = ~np.isfinite(pressure)
     if np.any(post_event):
-        valid_idx = np.flatnonzero(~post_event)
-        if valid_idx.size > 0:
-            last_M = mass_enclosed[valid_idx[-1]]
-            last_g = gravity[valid_idx[-1]]
-            mass_enclosed = np.where(post_event, last_M, mass_enclosed)
-            gravity = np.where(post_event, last_g, gravity)
-            pressure = np.where(post_event, 0.0, pressure)
+        n = int(np.argmax(post_event))
+        if not stop_is_surface(y_end, float(y0[2]), surface_pressure):
+            raise ValueError(
+                f'JAX solve stopped at P = {float(y_end[2]):.3e} Pa before '
+                f'r = {radii_arr[n]:.6e} m, which is not the surface'
+            )
+        return pad_after_stop(
+            radii_arr,
+            mass_enclosed[:n],
+            gravity[:n],
+            pressure[:n],
+            y_end,
+            float(y0[2]),
+            surface_pressure,
+        )
     return mass_enclosed, gravity, pressure

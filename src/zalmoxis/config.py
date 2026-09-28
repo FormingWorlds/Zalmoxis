@@ -500,9 +500,10 @@ def validate_config(config_params):
 
     # ── Pressure solver ─────────────────────────────────────────────
     target_sp = config_params['target_surface_pressure']
-    if target_sp < 0:
+    if target_sp <= 0:
         raise ValueError(
-            f'target_surface_pressure must be >= 0, got {target_sp} Pa. '
+            f'target_surface_pressure must be > 0, got {target_sp} Pa: with 0 every '
+            f'stop in the structure integration is a pressure root. '
             f'Default is 101325 Pa (1 atm).'
         )
 

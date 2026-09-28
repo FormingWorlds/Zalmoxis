@@ -14,6 +14,7 @@ test does not discriminate against:
 
 from __future__ import annotations
 
+import dataclasses
 from unittest import mock
 
 import numpy as np
@@ -325,9 +326,8 @@ class TestTemperatureFallback:
 
         def fake_solve_jax(radii_arr, y0, **kwargs):
             captured['T_values'] = kwargs['T_values']
-            captured['T_surface'] = kwargs['T_surface']
             captured['T_axis_is_radius'] = kwargs.get('T_axis_is_radius', False)
-            return np.zeros((len(radii_arr), 3))
+            return np.zeros((len(radii_arr), 3)), np.zeros(3)
 
         with mock.patch.object(jw, 'solve_structure_jax', side_effect=fake_solve_jax):
             jw.solve_structure_via_jax(
@@ -349,7 +349,6 @@ class TestTemperatureFallback:
             )
         # Constant 3000 K everywhere is the documented fallback contract
         assert np.all(captured['T_values'] == pytest.approx(3000.0))
-        assert captured['T_surface'] == pytest.approx(3000.0)
         # Without arrays, the axis is the log-P grid, not radius
         assert captured['T_axis_is_radius'] is False
 
@@ -369,7 +368,7 @@ class TestTemperatureArraysPath:
             captured['T_axis_is_radius'] = kwargs.get('T_axis_is_radius', False)
             captured['T_axis_grid'] = kwargs['T_axis_grid']
             captured['T_values'] = kwargs['T_values']
-            return np.zeros((len(radii_arr), 3))
+            return np.zeros((len(radii_arr), 3)), np.zeros(3)
 
         with mock.patch.object(jw, 'solve_structure_jax', side_effect=fake_solve_jax):
             jw.solve_structure_via_jax(
@@ -394,27 +393,24 @@ class TestTemperatureArraysPath:
 
 
 class TestPostEventPadding:
-    """Diffrax returns ``inf`` for save-points past the pressure-zero terminal
-    event. The wrapper rewrites that contract to numpy's: mass/gravity carry
-    the last valid value, pressure is padded to 0."""
+    """Diffrax returns ``inf`` for save-points past a stop. The wrapper pads them
+    as numpy does: mass/gravity at the stop and pressure 0 for a stop at the
+    surface, NaN for a stop deep inside."""
 
-    def test_inf_past_event_replaced_with_holds(self):
+    @staticmethod
+    def _run(y_end):
         layer_mixtures, mds, cache = _common_fixtures()
-        radii = np.linspace(1.0, 1e6, 10)
-
         ys = np.zeros((10, 3))
         ys[:5, 0] = np.linspace(0.0, 1e23, 5)
         ys[:5, 1] = np.linspace(0.0, 5.0, 5)
         ys[:5, 2] = np.linspace(1e12, 1e10, 5)
-        # Past index 4 the event fired: diffrax pads with inf
         ys[5:, :] = np.inf
-
-        with mock.patch.object(jw, 'solve_structure_jax', return_value=ys):
-            mass, gravity, pressure = jw.solve_structure_via_jax(
+        with mock.patch.object(jw, 'solve_structure_jax', return_value=(ys, y_end)):
+            return jw.solve_structure_via_jax(
                 layer_mixtures=layer_mixtures,
                 cmb_mass=2e23,
                 core_mantle_mass=4e23,
-                radii=radii,
+                radii=np.linspace(1.0, 1e6, 10),
                 adaptive_radial_fraction=0.5,
                 relative_tolerance=1e-6,
                 absolute_tolerance=1e-8,
@@ -426,15 +422,20 @@ class TestPostEventPadding:
                 liquidus_func=_liquidus_func,
                 temperature_function=_t_func,
             )
-        # All padded entries are finite (no leftover inf)
-        assert np.all(np.isfinite(mass))
-        assert np.all(np.isfinite(gravity))
-        # Padded mass entries hold the last pre-event value
-        assert mass[-1] == pytest.approx(mass[4])
-        assert gravity[-1] == pytest.approx(gravity[4])
-        # Padded pressure entries are exactly zero (numpy contract)
-        assert pressure[-1] == 0.0
-        assert pressure[5] == 0.0
+
+    def test_inf_past_event_replaced_with_holds(self):
+        y_end = np.array([1.1e23, 5.2, 0.0])
+        mass, gravity, pressure = self._run(y_end)
+        # Padded entries hold the event state, not the last pre-event node
+        assert mass[5:] == pytest.approx(np.full(5, y_end[0]))
+        assert gravity[5:] == pytest.approx(np.full(5, y_end[1]))
+        assert mass[4] == pytest.approx(1e23)
+        assert np.all(pressure[5:] == 0.0)
+
+    def test_stop_deep_inside_falls_back_to_numpy(self):
+        """A stop that is not the surface raises ValueError, the numpy fallback trigger."""
+        with pytest.raises(ValueError, match='which is not the surface'):
+            self._run(np.array([1.1e23, 5.2, 5e9]))
 
 
 class TestMushyZoneFactorDispatch:
@@ -448,7 +449,7 @@ class TestMushyZoneFactorDispatch:
 
         def fake_solve_jax(radii_arr, y0, **kwargs):
             captured['mzf'] = kwargs['mushy_zone_factor_core']
-            return np.zeros((len(radii_arr), 3))
+            return np.zeros((len(radii_arr), 3)), np.zeros(3)
 
         with mock.patch.object(jw, 'solve_structure_jax', side_effect=fake_solve_jax):
             jw.solve_structure_via_jax(
@@ -477,7 +478,7 @@ class TestMushyZoneFactorDispatch:
 
         def fake_solve_jax(radii_arr, y0, **kwargs):
             captured['mzf'] = kwargs['mushy_zone_factor_core']
-            return np.zeros((len(radii_arr), 3))
+            return np.zeros((len(radii_arr), 3)), np.zeros(3)
 
         with mock.patch.object(jw, 'solve_structure_jax', side_effect=fake_solve_jax):
             jw.solve_structure_via_jax(
@@ -498,3 +499,149 @@ class TestMushyZoneFactorDispatch:
                 mushy_zone_factors=0.55,
             )
         assert captured['mzf'] == pytest.approx(0.55)
+
+
+def with_nan_rows(cached, rows, fill=True):
+    """Copy of a table cache entry with NaN density ``rows`` and numpy's nearest-valid-node
+    fallback over the other nodes (a NaN fallback if not ``fill``)."""
+    from scipy.interpolate import NearestNDInterpolator
+
+    grid = np.array(cached['density_grid'], dtype=float)
+    grid[rows] = np.nan
+    ip, it = np.nonzero(np.isfinite(grid))
+    nodes = np.column_stack([cached['unique_log_p'][ip], cached['unique_log_t'][it]])
+    nn = NearestNDInterpolator(nodes, grid[ip, it]) if fill else (lambda _: np.nan)
+    out = {k: v for k, v in cached.items() if not k.startswith('_jax_sub_args')}
+    return dict(out, density_grid=grid, density_nn=nn)
+
+
+class TestNanNodeFill:
+    """NaN nodes of a density grid are filled from the nearest valid node at extraction."""
+
+    @staticmethod
+    def _check(cached, sample=None):
+        before = np.array(cached['density_grid'])
+        ip, it = np.nonzero(~np.isfinite(before))
+        assert len(ip)
+        grid = jw._extract_sub_args(cached, 'core')['core_density_grid']
+        k = slice(None) if sample is None else np.random.default_rng(0).choice(len(ip), sample)
+        nodes = np.column_stack([cached['unique_log_p'][ip[k]], cached['unique_log_t'][it[k]]])
+        assert np.all(np.isfinite(grid))
+        np.testing.assert_array_equal(grid[ip[k], it[k]], cached['density_nn'](nodes))
+        assert np.array_equal(grid[np.isfinite(before)], before[np.isfinite(before)])
+        assert np.array_equal(cached['density_grid'], before, equal_nan=True)
+
+    def test_synthetic_nan_row(self):
+        from tests.test_jax_parity_synthetic import _synthetic_world
+
+        self._check(with_nan_rows(_synthetic_world()['interp_cache']['/synthetic/core.dat'], 3))
+
+
+class TestCacheKeyIdentity:
+    """A new temperature or melting-curve function gets its own tabulation, also
+    when it has the ``id`` of a function cached before."""
+
+    @staticmethod
+    def _make(value):
+        return lambda *args: value
+
+    def _solve_captured(self, cache, temperature_function, solidus_func, liquidus_func):
+        captured = {}
+
+        def fake_solve_jax(radii_arr, y0, **kwargs):
+            captured.update(kwargs)
+            return np.zeros((len(radii_arr), 3)), np.zeros(3)
+
+        layer_mixtures, mds, _ = _common_fixtures()
+        with mock.patch.object(jw, 'solve_structure_jax', side_effect=fake_solve_jax):
+            jw.solve_structure_via_jax(
+                layer_mixtures=layer_mixtures,
+                cmb_mass=2e23,
+                core_mantle_mass=4e23,
+                radii=np.linspace(1.0, 1e6, 20),
+                adaptive_radial_fraction=0.5,
+                relative_tolerance=1e-6,
+                absolute_tolerance=1e-8,
+                maximum_step=1e5,
+                material_dictionaries=mds,
+                interpolation_cache=cache,
+                y0=[0.0, 0.0, 1e12],
+                solidus_func=solidus_func,
+                liquidus_func=liquidus_func,
+                temperature_function=temperature_function,
+            )
+        return captured
+
+    def test_each_temperature_function_gets_its_own_tabulation(self, monkeypatch):
+        """Every ``id`` in the wrapper module collides; each new temperature function
+        still gets its own tabulation, and the same one again reuses its entry."""
+        monkeypatch.setattr(jw, 'id', lambda obj: 7, raising=False)
+        monkeypatch.setattr(jw, '_MELT_TABLE_CACHE', {})
+        tabulated, tabulate = [], jw._tabulate_adiabat
+        monkeypatch.setattr(
+            jw, '_tabulate_adiabat', lambda *a: tabulated.append(1) or tabulate(*a)
+        )
+        _, _, cache = _common_fixtures()
+        funcs = [self._make(t) for t in (1000.0, 1001.0, 1002.0)]
+        for f in funcs + funcs[-1:]:
+            got = self._solve_captured(cache, f, _solidus_func, _liquidus_func)
+            np.testing.assert_array_equal(got['T_values'], f())
+        assert len(tabulated) == 3
+
+    def test_each_melting_curve_pair_gets_its_own_tables(self, monkeypatch):
+        """As above for the melt tables; the solidus and the liquidus change one at a time."""
+        monkeypatch.setattr(jw, 'id', lambda obj: 7, raising=False)
+        monkeypatch.setattr(jw, '_MELT_TABLE_CACHE', {})
+        _, _, cache = _common_fixtures()
+        s1, s2 = self._make(2000.0), self._make(2100.0)
+        l1, l2 = self._make(3000.0), self._make(3100.0)
+        tables = []
+        for sol, liq in ((s1, l1), (s1, l2), (s2, l2), (s2, l2)):
+            got = self._solve_captured(cache, _t_func, sol, liq)
+            np.testing.assert_array_equal(got['log_T_sol_table'], np.log10(sol()))
+            np.testing.assert_array_equal(got['log_T_liq_table'], np.log10(liq()))
+            tables.append(got['log_T_liq_table'])
+        assert tables[3] is tables[2]
+
+    def test_unhashable_callables_are_cached(self, monkeypatch):
+        """A callable with ``__eq__`` and no ``__hash__`` works as T and as a melting curve."""
+
+        @dataclasses.dataclass
+        class Curve:
+            value: float
+
+            def __call__(self, *args):
+                return self.value
+
+        monkeypatch.setattr(jw, '_MELT_TABLE_CACHE', {})
+        tabulated, tabulate = [], jw._tabulate_adiabat
+        monkeypatch.setattr(
+            jw, '_tabulate_adiabat', lambda *a: tabulated.append(1) or tabulate(*a)
+        )
+        _, _, cache = _common_fixtures()
+        t, sol, liq = Curve(1000.0), Curve(2000.0), Curve(3000.0)
+        tables = []
+        for _ in range(2):
+            got = self._solve_captured(cache, t, sol, liq)
+            np.testing.assert_array_equal(got['T_values'], 1000.0)
+            np.testing.assert_array_equal(got['log_T_sol_table'], np.log10(2000.0))
+            np.testing.assert_array_equal(got['log_T_liq_table'], np.log10(3000.0))
+            tables.append(got['log_T_liq_table'])
+        assert len(tabulated) == 1 and tables[1] is tables[0]
+
+    def test_cached_functions_stay_available(self, monkeypatch):
+        """With real ids, earlier functions keep their entries while new ones are added."""
+        monkeypatch.setattr(jw, '_MELT_TABLE_CACHE', {})
+        tabulated, tabulate = [], jw._tabulate_adiabat
+        monkeypatch.setattr(
+            jw, '_tabulate_adiabat', lambda *a: tabulated.append(1) or tabulate(*a)
+        )
+        _, _, cache = _common_fixtures()
+        funcs = [self._make(t) for t in (1000.0, 1001.0, 1002.0)]
+        curves = [(self._make(2000.0 + k), self._make(3000.0 + k)) for k in range(3)]
+        tables = []
+        for f, (sol, liq) in zip(funcs + funcs[:1], curves + curves[:1]):
+            got = self._solve_captured(cache, f, sol, liq)
+            np.testing.assert_array_equal(got['T_values'], f())
+            tables.append(got['log_T_liq_table'])
+        assert len(tabulated) == 3 and tables[3] is tables[0]

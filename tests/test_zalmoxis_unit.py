@@ -439,14 +439,15 @@ class TestValidatePressureSolverParams:
     def test_negative_target_surface_pressure_raises(self):
         from zalmoxis.config import validate_config
 
-        with pytest.raises(ValueError, match='target_surface_pressure must be >= 0'):
+        with pytest.raises(ValueError, match='target_surface_pressure must be > 0'):
             validate_config(_make_config(target_surface_pressure=-1))
 
-    def test_zero_target_surface_pressure_passes(self):
-        """Zero surface pressure (vacuum boundary) should pass."""
+    def test_zero_target_surface_pressure_raises(self):
+        """With a zero target every stopped solve would be a pressure root."""
         from zalmoxis.config import validate_config
 
-        validate_config(_make_config(target_surface_pressure=0))
+        with pytest.raises(ValueError, match='target_surface_pressure must be > 0'):
+            validate_config(_make_config(target_surface_pressure=0))
 
     def test_negative_pressure_tolerance_raises(self):
         from zalmoxis.config import validate_config
