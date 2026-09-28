@@ -10,6 +10,7 @@ import pytest
 
 from tests.test_eos_export_real_tables import (
     _assert_table_matches_genfromtxt,
+    _fresh_table_cache,  # noqa: F401 (autouse, frees each table)
     _real_paleos_tables,
 )
 

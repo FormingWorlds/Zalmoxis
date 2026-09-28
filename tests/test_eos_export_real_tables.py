@@ -15,12 +15,17 @@ import pytest
 from tests.test_eos_export import _reference_arrays
 from zalmoxis import eos_export
 
-pytestmark = pytest.mark.integration
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.reference_pinned,
+    pytest.mark.filterwarnings('error::UserWarning'),
+]
 
 
 @pytest.fixture(autouse=True)
 def _fresh_table_cache():
-    """Release the parsed tables after each test."""
+    """Parse each table in the test itself and release it afterwards."""
+    eos_export._parse_paleos_table.cache_clear()
     yield
     eos_export._parse_paleos_table.cache_clear()
 
@@ -81,5 +86,5 @@ def _assert_table_matches_genfromtxt(path):
 
 @pytest.mark.parametrize('path', _real_paleos_tables(), ids=lambda p: p.name)
 def test_shipped_tables_are_identical_to_the_genfromtxt_reader(path):
-    """On the real tables the new reader returns the very arrays the old one did."""
+    """On each real table the loader returns the arrays np.genfromtxt reads from it."""
     _assert_table_matches_genfromtxt(path)
