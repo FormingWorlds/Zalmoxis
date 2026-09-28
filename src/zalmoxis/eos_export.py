@@ -86,15 +86,15 @@ def load_paleos_all_properties(eos_file):
         without ``#`` is such a token.
     """
     path = os.path.realpath(str(eos_file))
+    msg = f'PALEOS table {str(eos_file)!r} is not a file'
     try:
         st = os.stat(path)
-        regular = stat.S_ISREG(st.st_mode)
     except PermissionError:
         raise
-    except OSError:
-        regular = False
-    if not regular:
-        raise FileNotFoundError(f'PALEOS table {str(eos_file)!r} is not a file')
+    except OSError as exc:
+        raise FileNotFoundError(msg) from exc
+    if not stat.S_ISREG(st.st_mode):
+        raise FileNotFoundError(msg)
     file_id = (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
     cached = _parse_paleos_table(path, file_id)
     return {k: v.view() if isinstance(v, np.ndarray) else v for k, v in cached.items()}
