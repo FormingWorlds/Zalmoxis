@@ -589,6 +589,12 @@ class TestLoadPaleosAllPropertiesCache:
         with pytest.raises(FileNotFoundError):
             eos_export.load_paleos_all_properties(tmp_path / 'absent.dat')
 
+    @pytest.mark.parametrize('kind', ['empty', 'directory'])
+    def test_path_that_is_not_a_file_raises_file_not_found(self, tmp_path, kind):
+        """An unset table path ('') or a directory is a missing table, as callers expect."""
+        with pytest.raises(FileNotFoundError, match='PALEOS table'):
+            eos_export.load_paleos_all_properties('' if kind == 'empty' else tmp_path)
+
     def test_cache_holds_a_few_tables(self, tmp_path):
         """More distinct files than the cache size evict the oldest, and it is read again."""
         paths = []
