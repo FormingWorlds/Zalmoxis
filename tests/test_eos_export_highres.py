@@ -14,7 +14,11 @@ from tests.test_eos_export_real_tables import (
     _real_paleos_tables,
 )
 
-pytestmark = pytest.mark.slow
+pytestmark = [
+    pytest.mark.slow,
+    pytest.mark.reference_pinned,
+    pytest.mark.filterwarnings('error::UserWarning'),
+]
 
 
 @pytest.mark.parametrize('path', _real_paleos_tables(highres=True), ids=lambda p: p.name)
