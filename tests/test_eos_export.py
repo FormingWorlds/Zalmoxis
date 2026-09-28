@@ -589,6 +589,50 @@ class TestLoadPaleosAllPropertiesCache:
         with pytest.raises(FileNotFoundError):
             eos_export.load_paleos_all_properties(tmp_path / 'absent.dat')
 
+    @pytest.mark.parametrize(
+        'kind',
+        ['empty', 'directory', 'broken', 'loop', 'in_file']
+        + [
+            pytest.param(
+                'fifo', marks=pytest.mark.skipif(not hasattr(os, 'mkfifo'), reason='no FIFOs')
+            )
+        ],
+    )
+    def test_path_that_is_not_a_file_raises_file_not_found(self, tmp_path, kind):
+        """A path that is not a regular file is a missing table, as callers expect."""
+        (tmp_path / 'afile').write_text('x')
+        if kind == 'fifo':
+            os.mkfifo(tmp_path / 'fifo')
+        elif kind in ('broken', 'loop'):
+            os.symlink(tmp_path / kind, tmp_path / kind if kind == 'loop' else tmp_path / 'b')
+        paths = {
+            'empty': '',
+            'directory': tmp_path,
+            'fifo': tmp_path / 'fifo',
+            'broken': tmp_path / 'b',
+            'loop': tmp_path / 'loop',
+            'in_file': tmp_path / 'afile' / 't',
+        }
+        with pytest.raises(FileNotFoundError, match='PALEOS table'):
+            eos_export.load_paleos_all_properties(paths[kind])
+
+    @pytest.mark.skipif(
+        not hasattr(os, 'geteuid') or os.geteuid() == 0,
+        reason='needs POSIX directory permissions and a non-root user',
+    )
+    def test_unreadable_directory_keeps_permission_error(self, tmp_path):
+        """A table the process may not reach is a PermissionError, not a missing table."""
+        locked = tmp_path / 'locked'
+        locked.mkdir()
+        target = locked / 'table.dat'
+        target.write_text('')
+        locked.chmod(0)
+        try:
+            with pytest.raises(PermissionError):
+                eos_export.load_paleos_all_properties(target)
+        finally:
+            locked.chmod(0o755)
+
     def test_cache_holds_a_few_tables(self, tmp_path):
         """More distinct files than the cache size evict the oldest, and it is read again."""
         paths = []
@@ -1809,13 +1853,12 @@ class TestComputeEntropyAdiabat:
         )
         np.testing.assert_allclose(result['S_profile'], result['S_target'], rtol=1e-4)
 
-    def test_raises_when_eos_file_missing(self, tmp_path):
-        """Edge case: passing a non-existent file raises FileNotFoundError or OSError."""
-        bogus = tmp_path / 'does_not_exist.dat'
-        with pytest.raises((FileNotFoundError, OSError)):
-            eos_export.compute_entropy_adiabat(
-                bogus, T_surface=2000.0, P_surface=1e6, P_cmb=1e9
-            )
+    @pytest.mark.parametrize('bogus', ['does_not_exist.dat', ''])
+    def test_raises_when_eos_file_missing(self, tmp_path, bogus):
+        """A missing table or an unset path ('') raises FileNotFoundError."""
+        path = tmp_path / bogus if bogus else ''
+        with pytest.raises(FileNotFoundError):
+            eos_export.compute_entropy_adiabat(path, T_surface=2000.0, P_surface=1e6, P_cmb=1e9)
 
     def test_phase_weighted_adiabat_with_2phase_tables(self, synthetic_2phase, melting_curves):
         """2-phase entropy used in the mushy zone changes the recovered T(P)."""

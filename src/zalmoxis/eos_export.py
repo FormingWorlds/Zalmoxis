@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import os
+import stat
 from functools import lru_cache
 from pathlib import Path
 
@@ -73,6 +74,11 @@ def load_paleos_all_properties(eos_file):
 
     Raises
     ------
+    FileNotFoundError
+        If ``eos_file`` is not a regular file: missing, an empty path, a
+        directory, a FIFO, a broken link or link loop, or a path through a file.
+    PermissionError
+        If the table or a directory on its path cannot be read.
     ValueError
         If a data line holds a token that is not a number (``N/A``, ``---``,
         ``1.0D+00``, a byte-order mark, ``1_0``) or a phase label of 32
@@ -80,7 +86,15 @@ def load_paleos_all_properties(eos_file):
         without ``#`` is such a token.
     """
     path = os.path.realpath(str(eos_file))
-    st = os.stat(path)
+    msg = f'PALEOS table {str(eos_file)!r} is not a file'
+    try:
+        st = os.stat(path)
+    except PermissionError:
+        raise
+    except OSError as exc:
+        raise FileNotFoundError(msg) from exc
+    if not stat.S_ISREG(st.st_mode):
+        raise FileNotFoundError(msg)
     file_id = (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
     cached = _parse_paleos_table(path, file_id)
     return {k: v.view() if isinstance(v, np.ndarray) else v for k, v in cached.items()}
