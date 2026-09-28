@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import os
+import stat
 from functools import lru_cache
 from pathlib import Path
 
@@ -82,9 +83,9 @@ def load_paleos_all_properties(eos_file):
         without ``#`` is such a token.
     """
     path = os.path.realpath(str(eos_file))
-    if not os.path.isfile(path):
-        raise FileNotFoundError(f'PALEOS table {str(eos_file)!r} is not a file')
     st = os.stat(path)
+    if not stat.S_ISREG(st.st_mode):
+        raise FileNotFoundError(f'PALEOS table {str(eos_file)!r} is not a file')
     file_id = (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
     cached = _parse_paleos_table(path, file_id)
     return {k: v.view() if isinstance(v, np.ndarray) else v for k, v in cached.items()}

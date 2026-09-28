@@ -1815,13 +1815,12 @@ class TestComputeEntropyAdiabat:
         )
         np.testing.assert_allclose(result['S_profile'], result['S_target'], rtol=1e-4)
 
-    def test_raises_when_eos_file_missing(self, tmp_path):
-        """Edge case: passing a non-existent file raises FileNotFoundError or OSError."""
-        bogus = tmp_path / 'does_not_exist.dat'
-        with pytest.raises((FileNotFoundError, OSError)):
-            eos_export.compute_entropy_adiabat(
-                bogus, T_surface=2000.0, P_surface=1e6, P_cmb=1e9
-            )
+    @pytest.mark.parametrize('bogus', ['does_not_exist.dat', ''])
+    def test_raises_when_eos_file_missing(self, tmp_path, bogus):
+        """A missing table or an unset path ('') raises FileNotFoundError."""
+        path = tmp_path / bogus if bogus else ''
+        with pytest.raises(FileNotFoundError):
+            eos_export.compute_entropy_adiabat(path, T_surface=2000.0, P_surface=1e6, P_cmb=1e9)
 
     def test_phase_weighted_adiabat_with_2phase_tables(self, synthetic_2phase, melting_curves):
         """2-phase entropy used in the mushy zone changes the recovered T(P)."""
