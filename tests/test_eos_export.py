@@ -579,7 +579,7 @@ class TestLoadPaleosAllPropertiesCache:
             read_table_columns(path, range(3))
 
     def test_read_table_columns_is_silent_and_equal_to_genfromtxt(self, synthetic_table):
-        """The faster reader gives the same arrays and no warning about the comment header."""
+        """The loaders' reads give the same arrays and no warning about the comment header."""
         import warnings
 
         numeric, phase = _reference_arrays(synthetic_table)
@@ -587,10 +587,10 @@ class TestLoadPaleosAllPropertiesCache:
         with warnings.catch_warnings():
             warnings.simplefilter('error')
             got_numeric = read_table_columns(synthetic_table, range(9))
-            got_phase = read_table_columns(synthetic_table, (9,), dtype=str)
+            rows = read_table_columns(synthetic_table, range(10), dtype=eos_export._ROW_DTYPE)
 
         np.testing.assert_array_equal(got_numeric, numeric)
-        np.testing.assert_array_equal(got_phase, phase)
+        np.testing.assert_array_equal(rows['phase'], phase)
 
     def test_cached_arrays_cannot_be_written_through(self, synthetic_table):
         """A caller that assigns into a returned array gets an error, and the cache is unchanged."""

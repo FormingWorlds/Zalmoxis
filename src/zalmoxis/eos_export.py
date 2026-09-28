@@ -47,13 +47,8 @@ def load_paleos_all_properties(eos_file):
     density and nabla_ad interpolators), this function retains all 9
     numeric columns for EOS export.
 
-    The parsed table is cached in memory per process, keyed on the resolved
-    path and the device, inode, size, modification time and change time of
-    the file, so an edited or replaced file is read again. A rewrite of the
-    same size within one clock tick of the file system is not detected.
-    Every call returns a new dict whose arrays are read-only views of the
-    cached ones; copy an array before changing it. Setting the cached
-    array itself writable through ``.base`` is not prevented.
+    The parsed table is cached per process and file version, since a solve reads
+    the same tables many times; the arrays are read-only, so copy one to change it.
 
     Parameters
     ----------

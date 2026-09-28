@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 import os
-import warnings
 
 import numpy as np
 from scipy.interpolate import (
@@ -27,16 +26,15 @@ def read_table_columns(eos_file, usecols, dtype=float):
     """Read whitespace-separated columns of a PALEOS text table, skipping ``#`` comments.
 
     ``dtype`` may be a structured dtype with one field per column in ``usecols``.
+    Give string fields a width (``'U32'``): an unsized ``str`` makes numpy read
+    in chunks and warn about the comment lines.
 
     ``np.loadtxt`` parses these 50-140 MB files several times faster than
     ``np.genfromtxt`` and returns the same arrays for numeric input. A token
     that is not a number (``N/A``, ``---``) raises ``ValueError`` where
-    ``genfromtxt`` gave NaN. The notice about comment lines at the top of a
-    file is silenced: the header is expected.
+    ``genfromtxt`` gave NaN.
     """
-    with warnings.catch_warnings():
-        warnings.filterwarnings('ignore', message='Input line .* contained no data')
-        return np.loadtxt(eos_file, usecols=usecols, dtype=dtype, comments='#')
+    return np.loadtxt(eos_file, usecols=usecols, dtype=dtype, comments='#')
 
 
 def load_paleos_table(eos_file):
