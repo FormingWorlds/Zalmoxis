@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import pytest
 
-from tests.test_eos_export import _assert_table_matches_genfromtxt, _real_paleos_tables
+from tests.test_eos_export_real_tables import (
+    _assert_table_matches_genfromtxt,
+    _real_paleos_tables,
+)
 
 pytestmark = pytest.mark.slow
 
