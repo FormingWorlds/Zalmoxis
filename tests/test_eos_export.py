@@ -589,11 +589,40 @@ class TestLoadPaleosAllPropertiesCache:
         with pytest.raises(FileNotFoundError):
             eos_export.load_paleos_all_properties(tmp_path / 'absent.dat')
 
-    @pytest.mark.parametrize('kind', ['empty', 'directory'])
+    @pytest.mark.parametrize(
+        'kind', ['empty', 'directory', 'fifo', 'broken', 'loop', 'in_file']
+    )
     def test_path_that_is_not_a_file_raises_file_not_found(self, tmp_path, kind):
-        """An unset table path ('') or a directory is a missing table, as callers expect."""
+        """A path that is not a regular file is a missing table, as callers expect."""
+        (tmp_path / 'afile').write_text('x')
+        if kind == 'fifo':
+            os.mkfifo(tmp_path / 'fifo')
+        elif kind in ('broken', 'loop'):
+            os.symlink(tmp_path / kind, tmp_path / kind if kind == 'loop' else tmp_path / 'b')
+        paths = {
+            'empty': '',
+            'directory': tmp_path,
+            'fifo': tmp_path / 'fifo',
+            'broken': tmp_path / 'b',
+            'loop': tmp_path / 'loop',
+            'in_file': tmp_path / 'afile' / 't',
+        }
         with pytest.raises(FileNotFoundError, match='PALEOS table'):
-            eos_export.load_paleos_all_properties('' if kind == 'empty' else tmp_path)
+            eos_export.load_paleos_all_properties(paths[kind])
+
+    @pytest.mark.skipif(os.geteuid() == 0, reason='root ignores directory permissions')
+    def test_unreadable_directory_keeps_permission_error(self, synthetic_table, tmp_path):
+        """A table the process may not reach is a PermissionError, not a missing table."""
+        locked = tmp_path / 'locked'
+        locked.mkdir()
+        target = locked / 'table.dat'
+        target.write_text(synthetic_table.read_text())
+        locked.chmod(0)
+        try:
+            with pytest.raises(PermissionError):
+                eos_export.load_paleos_all_properties(target)
+        finally:
+            locked.chmod(0o755)
 
     def test_cache_holds_a_few_tables(self, tmp_path):
         """More distinct files than the cache size evict the oldest, and it is read again."""

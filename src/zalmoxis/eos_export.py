@@ -75,7 +75,10 @@ def load_paleos_all_properties(eos_file):
     Raises
     ------
     FileNotFoundError
-        If ``eos_file`` is not a file (missing, empty, or a directory).
+        If ``eos_file`` is not a regular file (missing, empty, a directory, a
+        FIFO, a broken link).
+    PermissionError
+        If a directory on the path cannot be searched.
     ValueError
         If a data line holds a token that is not a number (``N/A``, ``---``,
         ``1.0D+00``, a byte-order mark, ``1_0``) or a phase label of 32
@@ -83,8 +86,14 @@ def load_paleos_all_properties(eos_file):
         without ``#`` is such a token.
     """
     path = os.path.realpath(str(eos_file))
-    st = os.stat(path)
-    if not stat.S_ISREG(st.st_mode):
+    try:
+        st = os.stat(path)
+        regular = stat.S_ISREG(st.st_mode)
+    except PermissionError:
+        raise
+    except OSError:
+        regular = False
+    if not regular:
         raise FileNotFoundError(f'PALEOS table {str(eos_file)!r} is not a file')
     file_id = (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
     cached = _parse_paleos_table(path, file_id)
