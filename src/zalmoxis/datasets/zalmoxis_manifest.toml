@@ -5,4 +5,5 @@
 [interior.radial_profiles]
 name = "Reference radial profiles of Earth and water worlds"
 zenodo = "10.5281/zenodo.16837954"
+dataverse = "10.34894/N6NVEU"
 required_by = ["zalmoxis"]

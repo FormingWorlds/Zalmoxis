@@ -31,11 +31,12 @@ def test_every_folder_maps_to_a_declared_dataset():
 
 
 def test_zalmoxis_manifest_declares_the_radial_profiles():
-    """The Zalmoxis manifest pins the radial profiles to Zenodo with their registry."""
+    """The Zalmoxis manifest pins the radial profiles to Zenodo and DataverseNL with their registry."""
     from fwl_io import load_manifest
 
     (ds,) = load_manifest(manifest_path())
     assert (ds.key, ds.zenodo) == ('interior.radial_profiles', '10.5281/zenodo.16837954')
+    assert ds.dataverse == '10.34894/N6NVEU'
     assert ds.required_by == ('zalmoxis',)
     registry = ds.registry()
     assert len(registry) == 9
