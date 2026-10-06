@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import logging
 import os
+import re
+import shlex
 from pathlib import Path
 
 from zalmoxis import get_zalmoxis_root
@@ -73,15 +75,21 @@ def fetch_dataset(key: str, datasets: dict) -> Path:
     return fetcher.target_dir
 
 
-def link_folder(link: Path, target: Path, data_root: Path) -> bool:
-    """Point ``link`` at ``target``; return False when the user's own folder or link is kept.
+def link_folder(link: Path, target: Path, key: str, inner: str = '') -> bool:
+    """Point ``link`` at ``target``; return False when a path this setup did not make is kept.
 
-    A link that is dangling or points into ``data_root`` is replaced, and an empty folder is
-    removed first. Anything else can hold data the user wants to keep, so it stays as it is and
-    Zalmoxis reads it.
+    A link is replaced when it is dangling or names a version directory of dataset ``key``
+    below any data root (its target is read, not resolved, so a symlinked subtree or an earlier
+    FWL_DATA still counts). An empty folder is replaced too. Anything else can hold data the
+    user wants to keep, so it stays as it is and Zalmoxis reads it.
     """
     if link.is_symlink():
-        if link.exists() and not link.resolve().is_relative_to(data_root.resolve()):
+        own = (
+            re.escape(key.replace('.', '/'))
+            + r'/r\d+'
+            + (f'/{re.escape(inner)}' if inner else '')
+        )
+        if link.exists() and not re.search(rf'(^|/){own}/?$', os.readlink(link)):
             return False
         link.unlink()
     elif link.is_dir() and not any(link.iterdir()):
@@ -115,8 +123,6 @@ def download_data():
     fwl_io.MissingDataRootError
         If FWL_DATA is not set.
     """
-    from fwl_io import resolve_data_root
-
     datasets = _datasets()
     data_dir = Path(get_zalmoxis_root(), 'data')
     kept = []
@@ -125,18 +131,11 @@ def download_data():
         target = fetch_dataset(key, datasets) / inner
         if not target.is_dir():
             raise FileNotFoundError(f"Dataset {key} has no folder '{inner}' after the fetch")
-        if not link_folder(data_dir / folder, target, resolve_data_root()):
+        if not link_folder(data_dir / folder, target, key, inner):
             kept.append(data_dir / folder)
     if kept:
         logger.warning(
-            'Zalmoxis keeps reading these folders from an earlier setup, not the fetched data. '
-            'To use the fetched data, remove them and run get_zalmoxis.sh again:\n%s',
-            '\n'.join(f"  rm -r '{path}'" for path in kept),
+            'Zalmoxis keeps reading these paths, which this setup did not make, instead of the '
+            'fetched data. To use the fetched data, remove them and run get_zalmoxis.sh again:\n%s',
+            '\n'.join(f'  rm -r {shlex.quote(str(path))}' for path in kept),
         )
-
-
-if __name__ == '__main__':
-    logger.info('Starting data download...')
-    download_data()  # Download and extract data for Zalmoxis
-    create_output()  # Create output files directory
-    logger.info('Setup completed successfully!')

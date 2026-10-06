@@ -133,15 +133,18 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/fwl_data
-          key: zalmoxis-fwl-data-${{ runner.os }}-${{ steps.datakey.outputs.fwlio }}-${{ hashFiles('tools/setup/setup_utils.py', 'src/zalmoxis/datasets/*') }}
+          key: zalmoxis-fwl-data-${{ runner.os }}-${{ steps.datakey.outputs.fwlio }}-${{ hashFiles('tools/setup/setup_utils.py', 'src/zalmoxis/datasets/*.toml', 'src/zalmoxis/datasets/*.txt') }}
           restore-keys: |
             zalmoxis-fwl-data-${{ runner.os }}-
 
-      # Prune drops versions no installed manifest pins, so a restored tree does not grow.
       - name: Fetch the input data and link it into data/
         run: |
           bash tools/setup/get_zalmoxis.sh
-          fwl-io prune --delete --yes
+
+      # Drops versions no installed manifest pins, so a restored tree does not grow; a refusal
+      # only costs cache space, so it warns instead of failing the tests.
+      - name: Prune superseded data versions
+        run: fwl-io prune --delete --yes || echo "::warning::fwl-io prune did not run"
 
       - name: Lint with Ruff
         run: |

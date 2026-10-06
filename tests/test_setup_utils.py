@@ -30,11 +30,16 @@ READ_FILES = {
         'adiabat_temp_grad_melt.dat',
     ],
     'radial_profiles': [
-        'radiusdensityWagner.txt',
-        'radiusdensitySeagerEarthbymass.txt',
-        'radiusdensitySeagerwaterbymass.txt',
+        f'radius{q}{s}.txt'
+        for q, s in [('density', 'EarthBoujibar'), ('pressure', 'EarthBoujibar')]
+        + [(q, 'Wagner') for q in ('density', 'gravity', 'pressure')]
+        + [('density', f'Seager{s}') for s in ('Earth', 'Earthbymass', 'water', 'waterbymass')]
     ],
-    'mass_radius_curves': ['massradiusEarthlikeRocky.txt', 'massradiusFe.txt'],
+    'mass_radius_curves': [
+        f'massradius{s}.txt'
+        for s in ('EarthlikeRocky', 'Fe', 'mgsio3', '_50percentH2O_300K_1mbar')
+        + ('_100percentH2O_300K_1mbar',)
+    ],
     'EOS_RTPress_melt_100TPa': ['density_melt.dat', 'adiabat_temp_grad_melt.dat'],
     'melting_curves_Monteux-600': ['liquidus.dat', 'solidus.dat'],
     'EOS_PALEOS_MgSiO3': [
@@ -72,6 +77,9 @@ def test_zalmoxis_manifest_declares_the_radial_profiles():
     assert (ds.key, ds.zenodo) == ('interior.radial_profiles', '10.5281/zenodo.16837954')
     assert ds.dataverse == '10.34894/N6NVEU'
     assert ds.required_by == ('zalmoxis',)
+    registry = ds.registry()
+    assert len(registry) == 9
+    assert registry['radiusdensitySeagerEarth.txt'] == 'md5:a33bb8fc796c641cb16dad4c481c9f9d'
 
 
 def test_fetch_dataset_passes_the_manifest_entry(monkeypatch, tmp_path):
@@ -122,54 +130,77 @@ def test_fetch_dataset_needs_fwl_data(monkeypatch):
         setup_utils.fetch_dataset('interior.radial_profiles', datasets)
 
 
+KEY = 'interior.eos.x'
+
+
 @pytest.fixture
 def tree(tmp_path):
-    """Return a data root with two version directories and a data/ folder path."""
+    """Return a data root with two versions of dataset KEY and a data/ folder path."""
     root = tmp_path / 'fwl'
     for name in ('r1', 'r2'):
-        (root / name).mkdir(parents=True)
+        (root / 'interior' / 'eos' / 'x' / name).mkdir(parents=True)
+    version = root / 'interior' / 'eos' / 'x'
     return SimpleNamespace(
-        root=root, r1=root / 'r1', r2=root / 'r2', link=tmp_path / 'data' / 'EOS'
+        root=root, r1=version / 'r1', r2=version / 'r2', link=tmp_path / 'data' / 'EOS'
     )
 
 
 def test_link_folder_makes_and_moves_its_own_links(tree):
-    """A missing link is made, and a link into the data root moves to the new target."""
-    assert setup_utils.link_folder(tree.link, tree.r1, tree.root)
+    """A missing link is made, and a link to a version of the same dataset moves on."""
+    assert setup_utils.link_folder(tree.link, tree.r1, KEY)
     assert tree.link.resolve() == tree.r1.resolve()
-    assert setup_utils.link_folder(tree.link, tree.r2, tree.root)
+    assert setup_utils.link_folder(tree.link, tree.r1, KEY)
+    assert setup_utils.link_folder(tree.link, tree.r2, KEY)
     assert tree.link.resolve() == tree.r2.resolve()
+
+
+def test_link_folder_follows_its_links_across_symlinked_and_earlier_roots(tree, tmp_path):
+    """A data root whose subtree is a symlink, or an earlier data root, still holds our links."""
+    scratch = tmp_path / 'scratch'
+    (tree.root / 'interior').rename(scratch)
+    (tree.root / 'interior').symlink_to(scratch)
+    assert setup_utils.link_folder(tree.link, tree.r1, KEY)
+    assert setup_utils.link_folder(tree.link, tree.r2, KEY)
+    assert tree.link.resolve() == (scratch / 'eos' / 'x' / 'r2').resolve()
+
+    old = tmp_path / 'old_fwl' / 'interior' / 'eos' / 'x' / 'r1'
+    old.mkdir(parents=True)
+    tree.link.unlink()
+    tree.link.symlink_to(old)
+    assert setup_utils.link_folder(tree.link, tree.r2, KEY)
+    assert tree.link.resolve() == (scratch / 'eos' / 'x' / 'r2').resolve()
 
 
 def test_link_folder_replaces_a_dangling_link_and_an_empty_folder(tree):
     """A dangling link and an empty folder hold no data, so both become links."""
     tree.link.parent.mkdir()
     tree.link.symlink_to(tree.root / 'gone')
-    assert setup_utils.link_folder(tree.link, tree.r1, tree.root)
+    assert setup_utils.link_folder(tree.link, tree.r1, KEY)
     assert tree.link.resolve() == tree.r1.resolve()
     tree.link.unlink()
     tree.link.mkdir()
-    assert setup_utils.link_folder(tree.link, tree.r1, tree.root)
+    assert setup_utils.link_folder(tree.link, tree.r1, KEY)
     assert tree.link.is_symlink()
 
 
 def test_link_folder_keeps_the_users_own_data(tree, tmp_path):
-    """A folder with files, a link outside the data root and a plain file all stay."""
+    """A folder with files, a link to another folder, even inside FWL_DATA, and a plain file
+    all stay."""
     tree.link.mkdir(parents=True)
     (tree.link / 'table.dat').write_text('old')
-    assert not setup_utils.link_folder(tree.link, tree.r1, tree.root)
+    assert not setup_utils.link_folder(tree.link, tree.r1, KEY)
     assert (tree.link / 'table.dat').read_text() == 'old'
 
-    mine = tmp_path / 'mine'
-    mine.mkdir()
-    other = tree.link.parent / 'OTHER'
-    other.symlink_to(mine)
-    assert not setup_utils.link_folder(other, tree.r1, tree.root)
-    assert other.resolve() == mine.resolve()
+    for mine in (tmp_path / 'mine', tree.root / 'mine'):
+        mine.mkdir()
+        other = tree.link.parent / mine.parent.name
+        other.symlink_to(mine)
+        assert not setup_utils.link_folder(other, tree.r1, KEY)
+        assert other.resolve() == mine.resolve()
 
     plain = tree.link.parent / 'PLAIN'
     plain.write_text('x')
-    assert not setup_utils.link_folder(plain, tree.r1, tree.root)
+    assert not setup_utils.link_folder(plain, tree.r1, KEY)
     assert plain.read_text() == 'x'
 
 
@@ -214,20 +245,18 @@ def test_download_data_lists_the_folders_it_keeps(fake_setup, caplog):
     assert (old / 'eos_seager07_iron.txt').read_text() == 'old'
     assert (fake_setup / 'zal' / 'data' / 'EOS_PALEOS_iron').is_symlink()
     (record,) = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert f"rm -r '{old}'" in record.getMessage()
+    assert f'rm -r {old}' in record.getMessage()
 
 
-def test_download_data_stops_when_the_archive_folder_is_missing(monkeypatch, tmp_path):
+def test_download_data_stops_when_the_archive_folder_is_missing(fake_setup, monkeypatch):
     """An archive without the expected inner folder stops the setup with its name."""
 
     def fetch(key, datasets):
-        target = tmp_path / key.replace('.', '/')
+        target = fake_setup / 'fwl' / key.replace('.', '/')
         target.mkdir(parents=True, exist_ok=True)
         return target
 
     monkeypatch.setattr(setup_utils, 'fetch_dataset', fetch)
-    monkeypatch.setattr(setup_utils, 'get_zalmoxis_root', lambda: str(tmp_path / 'zal'))
-    monkeypatch.setenv('FWL_DATA', str(tmp_path))
     with pytest.raises(FileNotFoundError, match="no folder 'EOS_Chabrier2021_HHe'"):
         setup_utils.download_data()
 
