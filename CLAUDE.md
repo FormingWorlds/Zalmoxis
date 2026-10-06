@@ -35,7 +35,7 @@ zensical build --clean      # full build for CI parity
 - `ZALMOXIS_ROOT` is resolved lazily by `get_zalmoxis_root()` in `__init__.py`.
   Auto-detects from package location; set explicitly with
   `export ZALMOXIS_ROOT=$(pwd)` only if the auto-detection picks the wrong tree.
-- EOS data is fetched through fwl-io into `$FWL_DATA` (~2.2 GB); each folder of
+- EOS data is fetched through fwl-io into `$FWL_DATA` (~2.3 GB); each folder of
   `data/` (gitignored) links to its dataset. Bootstrap with
   `FWL_DATA=<dir> bash tools/setup/get_zalmoxis.sh`.
 - Output goes to `output/` (gitignored).

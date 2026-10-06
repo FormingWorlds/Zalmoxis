@@ -9,7 +9,7 @@
 - **Python**: 3.12 (recommended; matches the PROTEUS framework requirement)
 - **Conda**: [miniforge](https://github.com/conda-forge/miniforge) (macOS) or [miniconda](https://docs.anaconda.com/miniconda/) (Linux) for environment management
 - **Git**: for cloning the repository
-- **Disk space**: approximately 800 MB for tabulated EOS data files (including ~270 MB for unified PALEOS tables)
+- **Disk space**: about 2.3 GB in `$FWL_DATA` for the tabulated EOS data files
 
 ## Installation steps
 

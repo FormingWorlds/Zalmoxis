@@ -24,7 +24,7 @@ python -c "import zalmoxis; print(zalmoxis.__version__, zalmoxis.get_zalmoxis_ro
 You normally do **not** need to set `ZALMOXIS_ROOT` by hand.
 Set it explicitly only if auto-detection fails (non-standard installation layouts, frozen wheels, etc.); see the [installation troubleshooting](../How-to/installation.md#zalmoxis_root-not-set) section.
 
-Download the equation-of-state tables (about 2.2 GB on disk) into `$FWL_DATA`:
+Download the equation-of-state tables (about 2.3 GB on disk) into `$FWL_DATA`:
 
 ```console
 export FWL_DATA=/path/to/fwl_data

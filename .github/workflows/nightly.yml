@@ -54,19 +54,26 @@ jobs:
           pip install .
           pip install pytest pytest-cov pytest-xdist pytest-timeout
 
+      # The pins live in the installed fwl-io and in src/zalmoxis/datasets.
+      - name: Resolve the data cache key
+        id: datakey
+        run: echo "fwlio=$(python -c 'import fwl_io; print(fwl_io.__version__)')" >> "$GITHUB_OUTPUT"
+
       # data/ holds links into FWL_DATA, so the cache holds FWL_DATA; a moved key starts
       # from the previous tree, and the setup fetches only missing or damaged files.
       - name: Cache the fwl-io data
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/fwl_data
-          key: zalmoxis-fwl-data-${{ runner.os }}-${{ hashFiles('tools/setup/setup_utils.py', 'src/zalmoxis/datasets/*', 'pyproject.toml') }}
+          key: zalmoxis-fwl-data-${{ runner.os }}-${{ steps.datakey.outputs.fwlio }}-${{ hashFiles('tools/setup/setup_utils.py', 'src/zalmoxis/datasets/*') }}
           restore-keys: |
             zalmoxis-fwl-data-${{ runner.os }}-
 
+      # Prune drops versions no installed manifest pins, so a restored tree does not grow.
       - name: Fetch the input data and link it into data/
         run: |
           bash tools/setup/get_zalmoxis.sh
+          fwl-io prune --delete --yes
 
       - name: Run unit + smoke + integration tests with coverage
         run: |

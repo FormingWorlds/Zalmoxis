@@ -1,9 +1,12 @@
 # setup_zalmoxis.py (at root)
 from __future__ import annotations
 
+import logging
+
 from tools.setup.setup_utils import create_output, download_data
 
 if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO, format='%(message)s')
     # Download and extract data
     download_data()
     # Create output files directory

@@ -17,7 +17,7 @@ from zalmoxis import get_zalmoxis_root
 logger = logging.getLogger(__name__)
 
 # Folder under data/ -> (fwl-io dataset key, path of the folder inside the version directory)
-DATASETS = {
+FOLDERS = {
     'EOS_Seager2007': ('interior.eos.seager_2007', ''),
     'EOS_WolfBower2018_1TPa': ('interior.eos.wolf_bower_2018_1tpa', ''),
     'radial_profiles': ('interior.radial_profiles', ''),
@@ -57,38 +57,40 @@ def fetch_dataset(key: str, datasets: dict) -> Path:
     """
     from fwl_io import create_fetcher
 
-    ds = datasets[key]
+    try:
+        ds = datasets[key]
+    except KeyError:
+        raise KeyError(f'{key} is in no installed fwl-io manifest; upgrade fwl-io') from None
     fetcher = create_fetcher(
         subdir=ds.subdir,
         zenodo=ds.zenodo,
         dataverse=ds.dataverse,
         registry=ds.registry(),
         extract=ds.extract,
+        progress=True,
     )
     fetcher.fetch_all()
     return fetcher.target_dir
 
 
-def link_folder(link: Path, target: Path) -> None:
-    """Point ``link`` at ``target``, keeping a real folder from an earlier setup.
+def link_folder(link: Path, target: Path, data_root: Path) -> bool:
+    """Point ``link`` at ``target``; return False when the user's own folder or link is kept.
 
-    A link to another place is replaced. A real folder is left as it is, with a warning, since
-    it can hold data the user wants to keep; Zalmoxis then reads that folder.
+    A link that is dangling or points into ``data_root`` is replaced, and an empty folder is
+    removed first. Anything else can hold data the user wants to keep, so it stays as it is and
+    Zalmoxis reads it.
     """
     if link.is_symlink():
-        if link.resolve() == target.resolve():
-            return
+        if link.exists() and not link.resolve().is_relative_to(data_root.resolve()):
+            return False
         link.unlink()
+    elif link.is_dir() and not any(link.iterdir()):
+        link.rmdir()
     elif link.exists():
-        logger.warning(
-            "'%s' is a folder from an earlier setup, so Zalmoxis keeps reading it. "
-            "To use the fwl-io copy, remove it (rm -r '%s') and run get_zalmoxis.sh again.",
-            link,
-            link,
-        )
-        return
+        return False
     link.parent.mkdir(parents=True, exist_ok=True)
     link.symlink_to(target, target_is_directory=True)
+    return True
 
 
 def create_output():
@@ -113,14 +115,24 @@ def download_data():
     fwl_io.MissingDataRootError
         If FWL_DATA is not set.
     """
+    from fwl_io import resolve_data_root
+
     datasets = _datasets()
     data_dir = Path(get_zalmoxis_root(), 'data')
-    for folder, (key, inner) in DATASETS.items():
+    kept = []
+    for folder, (key, inner) in FOLDERS.items():
         logger.info("Fetching '%s' (%s)...", folder, key)
         target = fetch_dataset(key, datasets) / inner
         if not target.is_dir():
             raise FileNotFoundError(f"Dataset {key} has no folder '{inner}' after the fetch")
-        link_folder(data_dir / folder, target)
+        if not link_folder(data_dir / folder, target, resolve_data_root()):
+            kept.append(data_dir / folder)
+    if kept:
+        logger.warning(
+            'Zalmoxis keeps reading these folders from an earlier setup, not the fetched data. '
+            'To use the fetched data, remove them and run get_zalmoxis.sh again:\n%s',
+            '\n'.join(f"  rm -r '{path}'" for path in kept),
+        )
 
 
 if __name__ == '__main__':
