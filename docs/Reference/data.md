@@ -8,7 +8,7 @@ All tabulated data files are downloaded automatically by running the setup scrip
 bash tools/setup/get_zalmoxis.sh
 ```
 
-This invokes `tools/setup/setup_zalmoxis.py`, which downloads and extracts the required data into the `data/` directory.
+This invokes `tools/setup/setup_zalmoxis.py`, which fetches the required data through fwl-io into `$FWL_DATA` and links each folder of the `data/` directory to its dataset. Set `FWL_DATA` first.
 See Installation Step 4 of the [installation guide](../How-to/installation.md) for details.
 
 ## Data inventory

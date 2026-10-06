@@ -35,8 +35,9 @@ zensical build --clean      # full build for CI parity
 - `ZALMOXIS_ROOT` is resolved lazily by `get_zalmoxis_root()` in `__init__.py`.
   Auto-detects from package location; set explicitly with
   `export ZALMOXIS_ROOT=$(pwd)` only if the auto-detection picks the wrong tree.
-- EOS data lives in `data/` (~600 MB; gitignored). Bootstrap with
-  `bash tools/setup/get_zalmoxis.sh`.
+- EOS data is fetched through fwl-io into `$FWL_DATA` (~2.2 GB); each folder of
+  `data/` (gitignored) links to its dataset. Bootstrap with
+  `FWL_DATA=<dir> bash tools/setup/get_zalmoxis.sh`.
 - Output goes to `output/` (gitignored).
 - The proteus conda env is required for development on machines that ship the
   PROTEUS toolchain (Python 3.12, numpy 2, jax, diffrax). Activate with
@@ -60,6 +61,7 @@ Zalmoxis/
     melting_curves.py       # Solidus/liquidus functions
     binodal.py              # H2-MgSiO3 (Rogers+25) + H2-H2O (Gupta+25) curves
     constants.py            # Physical constants
+    datasets/               # fwl-io manifest of the Zalmoxis-only data + registry
     eos_analytic.py         # Seager+2007 analytic polytrope (6 materials)
     eos_export.py           # SPIDER P-S and Aragog P-T table writers
     eos_properties.py       # Lazy EOS_REGISTRY (paths built on first access)
@@ -94,7 +96,7 @@ Zalmoxis/
   input/
     default.toml            # Canonical standalone config (heavily commented)
     grids/                  # Parameter-grid TOMLs
-  data/                     # EOS tables (gitignored)
+  data/                     # Links to the EOS tables in FWL_DATA (gitignored)
   output/                   # Generated outputs (gitignored)
   docs/                     # Zensical sources
     Tutorials/, How-to/, Explanations/, Reference/, Community/

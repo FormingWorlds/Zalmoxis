@@ -43,8 +43,10 @@ jobs:
         with:
           python-version: "3.12.9"
 
-      - name: Set ZALMOXIS_ROOT environment variable
-        run: echo "ZALMOXIS_ROOT=$GITHUB_WORKSPACE" >> $GITHUB_ENV
+      - name: Set ZALMOXIS_ROOT and FWL_DATA
+        run: |
+          echo "ZALMOXIS_ROOT=$GITHUB_WORKSPACE" >> $GITHUB_ENV
+          echo "FWL_DATA=$RUNNER_TEMP/fwl_data" >> $GITHUB_ENV
 
       - name: Install dependencies
         run: |
@@ -52,15 +54,17 @@ jobs:
           pip install .
           pip install pytest pytest-cov pytest-xdist pytest-timeout
 
-      - name: Cache Zalmoxis EOS data
-        id: cache-zalmoxis-data
+      # data/ holds links into FWL_DATA, so the cache holds FWL_DATA; a moved key starts
+      # from the previous tree, and the setup fetches only missing or damaged files.
+      - name: Cache the fwl-io data
         uses: actions/cache@v4
         with:
-          path: data
-          key: zalmoxis-data-${{ runner.os }}-${{ hashFiles('tools/setup/get_zalmoxis.sh', 'tools/setup/setup_zalmoxis.py', 'tools/setup/setup_utils.py') }}
+          path: ${{ runner.temp }}/fwl_data
+          key: zalmoxis-fwl-data-${{ runner.os }}-${{ hashFiles('tools/setup/setup_utils.py', 'src/zalmoxis/datasets/*', 'pyproject.toml') }}
+          restore-keys: |
+            zalmoxis-fwl-data-${{ runner.os }}-
 
-      - name: Download required input/output files
-        if: steps.cache-zalmoxis-data.outputs.cache-hit != 'true'
+      - name: Fetch the input data and link it into data/
         run: |
           bash tools/setup/get_zalmoxis.sh
 

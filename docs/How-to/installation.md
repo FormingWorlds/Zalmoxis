@@ -66,13 +66,14 @@ source ~/.zshrc
 
 ### Step 4: Download EOS data
 
-Run the provided script to download the required equation-of-state tables and reference data:
+Set `FWL_DATA` to the directory for PROTEUS ecosystem data, then run the provided script to download the required equation-of-state tables and reference data:
 
 ```console
+export FWL_DATA=/path/to/fwl_data
 bash tools/setup/get_zalmoxis.sh
 ```
 
-This downloads data into the `data/` directory within the Zalmoxis repository (not into `FWL_DATA`). When Zalmoxis is installed within PROTEUS, the data path is managed by the PROTEUS framework. The script also creates the `output/` folder for model results.
+The script fetches the data through [fwl-io](https://github.com/FormingWorlds/fwl-io) from its Zenodo records, with their DataverseNL mirrors as the fallback, checks every file against the registry, and stores it in `$FWL_DATA`, where PROTEUS reads the same copy. Each folder of `data/` in the repository is a link to its dataset there. A real folder under `data/` from an earlier setup is kept with a warning; remove it and run the script again to use the fetched copy. The script also creates the `output/` folder for model results.
 
 ### Step 5: Run your first simulation
 

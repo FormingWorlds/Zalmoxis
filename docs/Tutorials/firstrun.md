@@ -24,13 +24,14 @@ python -c "import zalmoxis; print(zalmoxis.__version__, zalmoxis.get_zalmoxis_ro
 You normally do **not** need to set `ZALMOXIS_ROOT` by hand.
 Set it explicitly only if auto-detection fails (non-standard installation layouts, frozen wheels, etc.); see the [installation troubleshooting](../How-to/installation.md#zalmoxis_root-not-set) section.
 
-Download the equation-of-state tables (about 800 MB on disk):
+Download the equation-of-state tables (about 2.2 GB on disk) into `$FWL_DATA`:
 
 ```console
+export FWL_DATA=/path/to/fwl_data
 bash tools/setup/get_zalmoxis.sh
 ```
 
-This populates `data/` inside the repository (Seager+2007 lookups, PALEOS unified tables, Zeng+2019 reference curves) and creates an empty `output/` directory.
+This fetches the Seager+2007 lookups, PALEOS tables and Zeng+2019 reference curves into `$FWL_DATA`, links each folder of `data/` inside the repository to them, and creates an empty `output/` directory.
 You should now see populated subdirectories under `data/`, for example `data/EOS_Seager2007/` and `data/EOS_PALEOS/`.
 
 !!! note "Within PROTEUS"
