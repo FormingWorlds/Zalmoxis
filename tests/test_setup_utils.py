@@ -8,6 +8,8 @@ replaced by a fake that builds the version directory.
 from __future__ import annotations
 
 import logging
+import os
+import shlex
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -171,6 +173,35 @@ def test_link_folder_follows_its_links_across_symlinked_and_earlier_roots(tree, 
     assert tree.link.resolve() == (scratch / 'eos' / 'x' / 'r2').resolve()
 
 
+@pytest.mark.parametrize(
+    'rel',
+    [
+        'fwl/interior/eos/y/r1',
+        'fwl/interior/eos/x/r1x',
+        'fwl/interior/eos/x/r',
+        'fwl/interior/eos/x/r1/sub',
+        'fwl/interior/eos/x/y/r1',
+        'myinterior/eos/x/r1',
+        'fwl/interior/eos/x',
+    ],
+)
+def test_link_folder_keeps_links_that_only_look_like_its_own(tree, tmp_path, rel):
+    """A link to another dataset, version name or depth is the user's, so it stays."""
+    (tmp_path / rel).mkdir(parents=True, exist_ok=True)
+    tree.link.parent.mkdir()
+    tree.link.symlink_to(tmp_path / rel)
+    assert not setup_utils.link_folder(tree.link, tree.r2, KEY)
+    assert os.readlink(tree.link) == str(tmp_path / rel)
+
+
+def test_link_folder_moves_a_relative_link_of_its_own(tree):
+    """A relative link to a version of the dataset is the setup's, so it moves on."""
+    tree.link.parent.mkdir()
+    tree.link.symlink_to(Path('..', 'fwl', 'interior', 'eos', 'x', 'r1'))
+    assert setup_utils.link_folder(tree.link, tree.r2, KEY)
+    assert tree.link.resolve() == tree.r2.resolve()
+
+
 def test_link_folder_replaces_a_dangling_link_and_an_empty_folder(tree):
     """A dangling link and an empty folder hold no data, so both become links."""
     tree.link.parent.mkdir()
@@ -204,12 +235,17 @@ def test_link_folder_keeps_the_users_own_data(tree, tmp_path):
     assert plain.read_text() == 'x'
 
 
-def _fake_fetch(root: Path):
+CHABRIER = 'interior.eos.chabrier_2021_hhe'
+
+
+def _fake_fetch(root: Path, version: str = 'r1'):
     """Build a stand-in for fetch_dataset that makes each version directory."""
 
     def fetch(key, datasets):
-        target = root / key.replace('.', '/') / 'r1'
-        (target / 'EOS_Chabrier2021_HHe').mkdir(parents=True, exist_ok=True)
+        target = root / key.replace('.', '/') / version
+        target.mkdir(parents=True, exist_ok=True)
+        if key == CHABRIER:
+            (target / 'EOS_Chabrier2021_HHe').mkdir(exist_ok=True)
         return target
 
     return fetch
@@ -229,23 +265,51 @@ def test_download_data_links_every_folder_to_its_dataset(fake_setup):
     setup_utils.download_data()
     data = fake_setup / 'zal' / 'data'
     assert sorted(p.name for p in data.iterdir()) == sorted(setup_utils.FOLDERS)
-    for folder, (key, inner) in setup_utils.FOLDERS.items():
-        target = fake_setup / 'fwl' / key.replace('.', '/') / 'r1' / inner
-        assert (data / folder).resolve() == target.resolve()
+    eos = fake_setup / 'fwl' / 'interior' / 'eos'
+    assert os.readlink(data / 'EOS_Seager2007') == str(eos / 'seager_2007' / 'r1')
+    chabrier = eos / 'chabrier_2021_hhe' / 'r1' / 'EOS_Chabrier2021_HHe'
+    assert os.readlink(data / 'EOS_Chabrier2021_HHe') == str(chabrier)
 
 
-def test_download_data_lists_the_folders_it_keeps(fake_setup, caplog):
-    """A run that keeps a folder with data ends with one warning naming how to remove it."""
-    old = fake_setup / 'zal' / 'data' / 'EOS_Seager2007'
-    old.mkdir(parents=True)
-    (old / 'eos_seager07_iron.txt').write_text('old')
+def test_download_data_moves_every_link_to_a_new_record(fake_setup, monkeypatch, caplog):
+    """A second run on new records moves all its links, Chabrier's inner one too, silently."""
+    setup_utils.download_data()
+    monkeypatch.setattr(setup_utils, 'fetch_dataset', _fake_fetch(fake_setup / 'fwl', 'r2'))
     with caplog.at_level(logging.WARNING):
         setup_utils.download_data()
-    assert not old.is_symlink()
+    data = fake_setup / 'zal' / 'data'
+    for folder, (key, inner) in setup_utils.FOLDERS.items():
+        target = fake_setup / 'fwl' / key.replace('.', '/') / 'r2' / inner
+        assert os.readlink(data / folder) == str(target).rstrip('/')
+    assert not [r for r in caplog.records if r.levelno == logging.WARNING]
+
+
+def test_download_data_lists_the_paths_it_keeps(fake_setup, monkeypatch, caplog):
+    """A run that keeps paths ends with one warning: a shell-quoted removal line for each,
+    saying whether it deletes files or only a link."""
+    zal = fake_setup / "it's zal"
+    monkeypatch.setattr(setup_utils, 'get_zalmoxis_root', lambda: str(zal))
+    old = zal / 'data' / 'EOS_Seager2007'
+    old.mkdir(parents=True)
+    (old / 'eos_seager07_iron.txt').write_text('old')
+    mine = fake_setup / 'mine'
+    mine.mkdir()
+    (zal / 'data' / 'EOS_PALEOS_H2O').symlink_to(mine)
+    with caplog.at_level(logging.WARNING):
+        setup_utils.download_data()
     assert (old / 'eos_seager07_iron.txt').read_text() == 'old'
-    assert (fake_setup / 'zal' / 'data' / 'EOS_PALEOS_iron').is_symlink()
+    assert (zal / 'data' / 'EOS_PALEOS_iron').is_symlink()
     (record,) = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert f'rm -r {old}' in record.getMessage()
+    lines = record.getMessage().splitlines()[1:]
+    folder = shlex.quote(str(old))
+    link = shlex.quote(str(zal / 'data' / 'EOS_PALEOS_H2O'))
+    assert sorted(lines) == sorted(
+        [
+            f'  rm -r {folder}  # deletes this folder and its files',
+            f'  rm {link}  # removes only this link or file',
+        ]
+    )
+    assert subprocess.run(['sh', '-c', f'ls -d {folder}'], capture_output=True).returncode == 0
 
 
 def test_download_data_stops_when_the_archive_folder_is_missing(fake_setup, monkeypatch):

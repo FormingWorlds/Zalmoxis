@@ -73,7 +73,7 @@ export FWL_DATA=/path/to/fwl_data
 bash tools/setup/get_zalmoxis.sh
 ```
 
-The script fetches the data through [fwl-io](https://github.com/FormingWorlds/fwl-io) from its Zenodo records, with their DataverseNL mirrors as the fallback, checks every file against the registry, and stores it in `$FWL_DATA`, where PROTEUS reads the same copy. Each folder of `data/` in the repository is a link to its dataset there. A real folder under `data/` from an earlier setup is kept with a warning; remove it and run the script again to use the fetched copy. The script also creates the `output/` folder for model results.
+The script fetches the data through [fwl-io](https://github.com/FormingWorlds/fwl-io) from its Zenodo records, with their DataverseNL mirrors as the fallback, checks every file against the registry, and stores it in `$FWL_DATA`, where PROTEUS reads the same copy. Each folder of `data/` in the repository is a link to its dataset there. The script replaces a link it made (to a version of the same dataset), a dangling link, or an empty folder. A folder with files, a file, or a link to another place is kept, and the script ends with a warning that lists the command to remove each one; remove them and run the script again to use the fetched copy. The script also creates the `output/` folder for model results.
 
 ### Step 5: Run your first simulation
 

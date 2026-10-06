@@ -84,11 +84,7 @@ def link_folder(link: Path, target: Path, key: str, inner: str = '') -> bool:
     user wants to keep, so it stays as it is and Zalmoxis reads it.
     """
     if link.is_symlink():
-        own = (
-            re.escape(key.replace('.', '/'))
-            + r'/r\d+'
-            + (f'/{re.escape(inner)}' if inner else '')
-        )
+        own = re.escape(key.replace('.', '/')) + r'/r\d+' + re.escape(f'/{inner}'.rstrip('/'))
         if link.exists() and not re.search(rf'(^|/){own}/?$', os.readlink(link)):
             return False
         link.unlink()
@@ -137,5 +133,12 @@ def download_data():
         logger.warning(
             'Zalmoxis keeps reading these paths, which this setup did not make, instead of the '
             'fetched data. To use the fetched data, remove them and run get_zalmoxis.sh again:\n%s',
-            '\n'.join(f'  rm -r {shlex.quote(str(path))}' for path in kept),
+            '\n'.join(map(_removal, kept)),
         )
+
+
+def _removal(path: Path) -> str:
+    """Return the shell line that removes a kept path, saying what it deletes."""
+    if path.is_dir() and not path.is_symlink():
+        return f'  rm -r {shlex.quote(str(path))}  # deletes this folder and its files'
+    return f'  rm {shlex.quote(str(path))}  # removes only this link or file'
