@@ -38,7 +38,7 @@ dependencies = [
     "matplotlib",
     "python-ternary",
     "tqdm",
-    "fwl-io>=26.10.6",
+    "fwl-io>=26.10.7",
     "jax>=0.4.38",
     "diffrax>=0.7"
 ]
