@@ -14,6 +14,7 @@ from zalmoxis.eos.interpolation import (
 )
 from zalmoxis.eos.seager import get_tabulated_eos
 from zalmoxis.eos.tdep import load_melting_curve
+from zalmoxis.eos_export import load_paleos_all_properties
 from zalmoxis.melting_curves import _load_tabulated_curve
 
 pytestmark = pytest.mark.unit
@@ -34,6 +35,7 @@ def test_a_table_behind_a_dangling_link_names_the_link_and_the_setup_script(dang
     with pytest.raises(FileNotFoundError) as raised:
         require_eos_file(str(table))
     message = str(raised.value)
+    assert message.startswith(f'Data file {table} is missing')
     assert f'{link} links to {gone}' in message
     assert 'bash tools/setup/get_zalmoxis.sh to relink it' in message
 
@@ -43,6 +45,7 @@ def test_a_plain_missing_table_asks_for_the_fetch(tmp_path):
         FileNotFoundError, match='remove any data/ path it lists at the end, and run it again'
     ) as raised:
         require_eos_file(str(tmp_path / 'absent.txt'))
+    assert str(raised.value).startswith('Data file ')
     assert 'links to' not in str(raised.value)
 
 
@@ -52,7 +55,9 @@ def test_a_present_table_passes(tmp_path):
     assert require_eos_file(str(table)) is None
 
 
-@pytest.mark.parametrize('loader', [load_paleos_table, load_paleos_unified_table])
+@pytest.mark.parametrize(
+    'loader', [load_paleos_table, load_paleos_unified_table, load_paleos_all_properties]
+)
 def test_the_paleos_loaders_report_the_dangling_link(dangling, loader):
     table, link, _ = dangling
     with pytest.raises(FileNotFoundError, match='relink it'):
