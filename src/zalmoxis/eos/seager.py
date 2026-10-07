@@ -22,6 +22,7 @@ from .interpolation import (
     _paleos_clamp_temperature,
     _paleos_clamp_warned,
     load_paleos_table,
+    require_eos_file,
 )
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,7 @@ def get_tabulated_eos(
     is_paleos = props.get('format') == 'paleos'
     try:
         if eos_file not in interpolation_functions:
+            require_eos_file(eos_file)
             if is_paleos:
                 # PALEOS 10-column format with log-log grid
                 interpolation_functions[eos_file] = load_paleos_table(eos_file)

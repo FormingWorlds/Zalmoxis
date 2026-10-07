@@ -139,9 +139,9 @@ KEY = 'interior.eos.x'
 def tree(tmp_path):
     """Return a data root with two versions of dataset KEY and a data/ folder path."""
     root = tmp_path / 'fwl'
-    for name in ('r1', 'r2'):
-        (root / 'interior' / 'eos' / 'x' / name).mkdir(parents=True)
     version = root / 'interior' / 'eos' / 'x'
+    for name in ('r1', 'r2'):
+        (version / name).mkdir(parents=True)
     return SimpleNamespace(
         root=root, r1=version / 'r1', r2=version / 'r2', link=tmp_path / 'data' / 'EOS'
     )
@@ -271,22 +271,19 @@ def test_download_data_links_every_folder_to_its_dataset(fake_setup):
     assert os.readlink(data / 'EOS_Chabrier2021_HHe') == str(chabrier)
 
 
-def test_download_data_moves_every_link_to_a_new_record(fake_setup, monkeypatch, caplog):
-    """A second run on new records moves all its links, Chabrier's inner one too, silently."""
+def test_download_data_moves_every_link_to_a_new_record(fake_setup, monkeypatch):
+    """A second run on new records moves all its links, Chabrier's inner one too, and keeps none."""
     setup_utils.download_data()
     monkeypatch.setattr(setup_utils, 'fetch_dataset', _fake_fetch(fake_setup / 'fwl', 'r2'))
-    with caplog.at_level(logging.WARNING):
-        setup_utils.download_data()
+    assert setup_utils.download_data() == []
     data = fake_setup / 'zal' / 'data'
     for folder, (key, inner) in setup_utils.FOLDERS.items():
         target = fake_setup / 'fwl' / key.replace('.', '/') / 'r2' / inner
-        assert os.readlink(data / folder) == str(target).rstrip('/')
-    assert not [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert os.readlink(data / folder) == str(target)
 
 
 def test_download_data_lists_the_paths_it_keeps(fake_setup, monkeypatch, caplog):
-    """A run that keeps paths ends with one warning: a shell-quoted removal line for each,
-    saying whether it deletes files or only a link."""
+    """Kept paths get one warning: a shell-quoted removal line each, saying what it deletes."""
     zal = fake_setup / "it's zal"
     monkeypatch.setattr(setup_utils, 'get_zalmoxis_root', lambda: str(zal))
     old = zal / 'data' / 'EOS_Seager2007'
@@ -295,8 +292,9 @@ def test_download_data_lists_the_paths_it_keeps(fake_setup, monkeypatch, caplog)
     mine = fake_setup / 'mine'
     mine.mkdir()
     (zal / 'data' / 'EOS_PALEOS_H2O').symlink_to(mine)
+    kept = setup_utils.download_data()
     with caplog.at_level(logging.WARNING):
-        setup_utils.download_data()
+        setup_utils.report_kept(kept)
     assert (old / 'eos_seager07_iron.txt').read_text() == 'old'
     assert (zal / 'data' / 'EOS_PALEOS_iron').is_symlink()
     (record,) = [r for r in caplog.records if r.levelno == logging.WARNING]
@@ -310,6 +308,27 @@ def test_download_data_lists_the_paths_it_keeps(fake_setup, monkeypatch, caplog)
         ]
     )
     assert subprocess.run(['sh', '-c', f'ls -d {folder}'], capture_output=True).returncode == 0
+
+
+def test_setup_ends_with_the_kept_paths_after_the_completion_line(
+    monkeypatch, tmp_path, caplog
+):
+    """The kept-paths warning is the last line, after 'Data setup complete!'."""
+    from tools.setup import setup_zalmoxis
+
+    monkeypatch.setattr(setup_zalmoxis, 'download_data', lambda: [tmp_path / 'data' / 'EOS'])
+    monkeypatch.setattr(setup_zalmoxis, 'create_output', lambda: None)
+    with caplog.at_level(logging.INFO):
+        setup_zalmoxis.main()
+    messages = [r.getMessage() for r in caplog.records]
+    assert messages[-2] == 'Data setup complete!'
+    assert caplog.records[-1].levelno == logging.WARNING
+    assert str(tmp_path / 'data' / 'EOS') in messages[-1]
+    caplog.clear()
+    monkeypatch.setattr(setup_zalmoxis, 'download_data', lambda: [])
+    with caplog.at_level(logging.INFO):
+        setup_zalmoxis.main()
+    assert [r.getMessage() for r in caplog.records][-1] == 'Data setup complete!'
 
 
 def test_download_data_stops_when_the_archive_folder_is_missing(fake_setup, monkeypatch):

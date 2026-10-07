@@ -22,6 +22,33 @@ logger = logging.getLogger(__name__)
 _paleos_clamp_warned = set()
 
 
+def require_eos_file(eos_file):
+    """Raise FileNotFoundError naming the cause when an EOS table is not a file.
+
+    A ``data/`` folder is a link into FWL_DATA, so a table behind a link whose
+    target is gone (a moved FWL_DATA or a pruned version) names that link and
+    the setup script that remakes it.
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``eos_file`` is not a file.
+    """
+    if os.path.isfile(eos_file):
+        return
+    path = os.path.abspath(eos_file)
+    while path != os.path.dirname(path):
+        if os.path.islink(path) and not os.path.exists(path):
+            raise FileNotFoundError(
+                f'EOS table {eos_file} is missing: {path} links to {os.readlink(path)}, '
+                'which does not exist; run bash tools/setup/get_zalmoxis.sh to relink it'
+            )
+        path = os.path.dirname(path)
+    raise FileNotFoundError(
+        f'EOS table {eos_file} is missing; run bash tools/setup/get_zalmoxis.sh to fetch it'
+    )
+
+
 def read_table_columns(eos_file, usecols, dtype=float):
     """Read whitespace-separated columns of a PALEOS text table, skipping ``#`` comments.
 
@@ -68,6 +95,7 @@ def load_paleos_table(eos_file):
         ``1.0D+00``, a byte-order mark, ``1_0``). Every ``#`` line is a
         comment; a header line without ``#`` is such a token.
     """
+    require_eos_file(eos_file)
     # Read only numeric columns (0-8), skipping the string phase_id column (9)
     data = read_table_columns(eos_file, range(9))
 
@@ -211,6 +239,7 @@ def load_paleos_unified_table(eos_file):
         - ``'liquidus_log_t'``: log10(T_liquidus) array at each pressure
         - ``'phase_grid'``: 2D string array of phase identifiers
     """
+    require_eos_file(eos_file)
     # Single-pass read: parse numeric columns and phase string together.
     # Avoids the 2x penalty of calling genfromtxt twice on 50-140 MB files.
     numeric_rows = []

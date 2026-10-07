@@ -133,7 +133,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/fwl_data
-          key: zalmoxis-fwl-data-${{ runner.os }}-${{ steps.datakey.outputs.fwlio }}-${{ hashFiles('tools/setup/setup_utils.py', 'src/zalmoxis/datasets/*.toml', 'src/zalmoxis/datasets/*.txt') }}
+          key: zalmoxis-fwl-data-${{ runner.os }}-${{ steps.datakey.outputs.fwlio }}-${{ hashFiles('src/zalmoxis/datasets/*.toml', 'src/zalmoxis/datasets/*.txt') }}
           restore-keys: |
             zalmoxis-fwl-data-${{ runner.os }}-
 

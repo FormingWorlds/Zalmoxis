@@ -110,6 +110,10 @@ FileNotFoundError: [Errno 2] No such file or directory: '.../data/EOS_Seager2007
 
 This error indicates that the tabulated EOS data files have not been downloaded. Run `bash tools/setup/get_zalmoxis.sh` from the Zalmoxis root directory to complete Step 4.
 
+### A `data/` link points nowhere
+
+Each folder in `data/` is a link into `$FWL_DATA`. After `fwl-io prune` removes a superseded version, or after `$FWL_DATA` moves, a link can point at a folder that no longer exists. A run then stops with a `StructureSolveError`, and `output/zalmoxis.log` names the cause: `EOS table ... is missing: .../data/<folder> links to ..., which does not exist`. Run `bash tools/setup/get_zalmoxis.sh` again with `FWL_DATA` set: it fetches what is missing and relinks every folder.
+
 ### Import errors
 
 ```

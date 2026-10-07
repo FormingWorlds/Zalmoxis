@@ -114,6 +114,11 @@ def create_output():
 def download_data():
     """Fetch every dataset Zalmoxis reads and link it into ``<ZALMOXIS_ROOT>/data/``.
 
+    Returns
+    -------
+    list of Path
+        The ``data/`` paths this setup did not make and kept, for ``report_kept``.
+
     Raises
     ------
     fwl_io.MissingDataRootError
@@ -129,6 +134,11 @@ def download_data():
             raise FileNotFoundError(f"Dataset {key} has no folder '{inner}' after the fetch")
         if not link_folder(data_dir / folder, target, key, inner):
             kept.append(data_dir / folder)
+    return kept
+
+
+def report_kept(kept):
+    """Warn that Zalmoxis reads the kept paths, with a removal line for each."""
     if kept:
         logger.warning(
             'Zalmoxis keeps reading these paths, which this setup did not make, instead of the '

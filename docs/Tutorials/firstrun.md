@@ -32,7 +32,7 @@ bash tools/setup/get_zalmoxis.sh
 ```
 
 This fetches the Seager+2007 lookups, PALEOS tables and Zeng+2019 reference curves into `$FWL_DATA`, links each folder of `data/` inside the repository to them, and creates an empty `output/` directory.
-You should now see populated subdirectories under `data/`, for example `data/EOS_Seager2007/` and `data/EOS_PALEOS/`.
+You should now see populated subdirectories under `data/`, for example `data/EOS_Seager2007/` and `data/EOS_PALEOS_iron/`.
 
 !!! note "Within PROTEUS"
     When Zalmoxis runs inside PROTEUS, EOS data lives under `FWL_DATA` and the script above is not used.
@@ -169,13 +169,13 @@ The smoke test `tests/test_MR_rocky.py::test_rocky_1Mearth_vs_zeng_and_seager` e
 You can reproduce them by hand.
 
 **Mass-radius (Zeng+2019).**
-The reference curve `data/Zeng2019/massradiusEarthlikeRocky.txt` is an Earth-like rocky composition (32.5 % iron core, 67.5 % MgSiO3 mantle, 300 K).
+The reference curve `data/mass_radius_curves/massradiusEarthlikeRocky.txt` is an Earth-like rocky composition (32.5 % iron core, 67.5 % MgSiO3 mantle, 300 K).
 Interpolate it at your computed mass and compare:
 
 ```python
 import numpy as np
 
-zeng = np.loadtxt('data/Zeng2019/massradiusEarthlikeRocky.txt', skiprows=1)
+zeng = np.loadtxt('data/mass_radius_curves/massradiusEarthlikeRocky.txt', skiprows=1)
 zeng_mass, zeng_radius = zeng[:, 0], zeng[:, 1]   # M_earth, R_earth
 
 mr = np.loadtxt('output/calculated_planet_mass_radius.txt', skiprows=1)
@@ -195,7 +195,7 @@ The smoke test asserts `rtol = 0.03` (3 %).
 Your run should be well inside that envelope.
 
 **Density profile (Seager+2007).**
-The file `data/Seager2007/radiusdensitySeagerEarthbymass.txt` carries tabulated Earth-mass density profiles from the same paper.
+The file `data/radial_profiles/radiusdensitySeagerEarthbymass.txt` carries tabulated Earth-mass density profiles from the same paper.
 Loading the 1 $M_\oplus$ slice and overlaying it on your `planet_profile.txt` should match within 10 % everywhere except for a narrow band around the core-mantle boundary.
 The CMB lies between Seager's grid points, so interpolating across the discontinuity inflates the residual artificially; the smoke test masks $\pm 3$ grid points around any density jump greater than 2000 kg m$^{-3}$ before comparing.
 See `tests/test_MR_rocky.py` for the exact masking logic if you need to reproduce the assertion verbatim.
