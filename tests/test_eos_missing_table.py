@@ -13,6 +13,8 @@ from zalmoxis.eos.interpolation import (
     require_eos_file,
 )
 from zalmoxis.eos.seager import get_tabulated_eos
+from zalmoxis.eos.tdep import load_melting_curve
+from zalmoxis.melting_curves import _load_tabulated_curve
 
 pytestmark = pytest.mark.unit
 
@@ -37,7 +39,9 @@ def test_a_table_behind_a_dangling_link_names_the_link_and_the_setup_script(dang
 
 
 def test_a_plain_missing_table_asks_for_the_fetch(tmp_path):
-    with pytest.raises(FileNotFoundError, match='get_zalmoxis.sh to fetch it') as raised:
+    with pytest.raises(
+        FileNotFoundError, match='remove any data/ folder it reports as kept'
+    ) as raised:
         require_eos_file(str(tmp_path / 'absent.txt'))
     assert 'links to' not in str(raised.value)
 
@@ -62,3 +66,11 @@ def test_the_tabulated_eos_logs_the_cause_and_returns_none(dangling, caplog):
         assert get_tabulated_eos(1e10, materials, 'core', temperature=300.0) is None
     assert f'{link} links to' in caplog.text
     assert 'get_zalmoxis.sh' in caplog.text
+
+
+def test_the_melting_curve_loaders_report_the_dangling_link(dangling, capsys):
+    table, link, _ = dangling
+    with pytest.raises(FileNotFoundError, match='relink it'):
+        _load_tabulated_curve(str(table))
+    assert load_melting_curve(str(table)) is None
+    assert f'{link} links to' in capsys.readouterr().out

@@ -112,7 +112,7 @@ This error indicates that the tabulated EOS data files have not been downloaded.
 
 ### A `data/` link points nowhere
 
-Each folder in `data/` is a link into `$FWL_DATA`. After `fwl-io prune` removes a superseded version, or after `$FWL_DATA` moves, a link can point at a folder that no longer exists. A run then stops with a `StructureSolveError`, and `output/zalmoxis.log` names the cause: `EOS table ... is missing: .../data/<folder> links to ..., which does not exist`. Run `bash tools/setup/get_zalmoxis.sh` again with `FWL_DATA` set: it fetches what is missing and relinks every folder.
+Each folder in `data/` is a link into `$FWL_DATA`. After `fwl-io prune` removes a superseded version, or after `$FWL_DATA` moves, a link can point at a folder that no longer exists. A run that reads an EOS table or a melting curve through such a link then stops, and `output/zalmoxis.log` names the cause: `EOS table ... is missing: .../data/<folder> links to ..., which does not exist`. Run `bash tools/setup/get_zalmoxis.sh` again with `FWL_DATA` set: it fetches what is missing and relinks every folder it made; a folder or link it did not make is kept and listed at the end with the line that removes it.
 
 ### Import errors
 

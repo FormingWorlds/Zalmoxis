@@ -45,7 +45,8 @@ def require_eos_file(eos_file):
             )
         path = os.path.dirname(path)
     raise FileNotFoundError(
-        f'EOS table {eos_file} is missing; run bash tools/setup/get_zalmoxis.sh to fetch it'
+        f'EOS table {eos_file} is missing; for a file under data/, run bash '
+        'tools/setup/get_zalmoxis.sh and remove any data/ folder it reports as kept'
     )
 
 
