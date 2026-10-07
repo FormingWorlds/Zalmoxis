@@ -1,4 +1,4 @@
-"""A missing EOS table names its cause and the setup script that restores it."""
+"""A missing EOS or melting-curve file names its cause and the setup script that restores it."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ def test_a_table_behind_a_dangling_link_names_the_link_and_the_setup_script(dang
 
 def test_a_plain_missing_table_asks_for_the_fetch(tmp_path):
     with pytest.raises(
-        FileNotFoundError, match='remove any data/ folder it reports as kept'
+        FileNotFoundError, match='remove any data/ path it lists at the end, and run it again'
     ) as raised:
         require_eos_file(str(tmp_path / 'absent.txt'))
     assert 'links to' not in str(raised.value)

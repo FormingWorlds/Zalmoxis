@@ -16,7 +16,6 @@ from .interpolation import (
     _paleos_clamp_temperature,
     _paleos_clamp_warned,
     load_paleos_table,
-    require_eos_file,
 )
 from .seager import get_tabulated_eos
 
@@ -38,17 +37,10 @@ def load_melting_curve(melt_file):
         One-dimensional interpolation function returning temperature as a
         function of pressure. Returns ``None`` if the file cannot be loaded.
     """
-    from scipy.interpolate import interp1d
+    from ..melting_curves import _load_tabulated_curve
 
     try:
-        require_eos_file(melt_file)
-        data = np.loadtxt(melt_file, comments='#')
-        pressures = data[:, 0]  # in Pa
-        temperatures = data[:, 1]  # in K
-        interp_func = interp1d(
-            pressures, temperatures, kind='linear', bounds_error=False, fill_value=np.nan
-        )
-        return interp_func
+        return _load_tabulated_curve(melt_file)
     except Exception as e:
         print(f'Error loading melting curve data: {e}')
         return None

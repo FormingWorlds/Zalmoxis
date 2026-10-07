@@ -23,7 +23,7 @@ _paleos_clamp_warned = set()
 
 
 def require_eos_file(eos_file):
-    """Raise FileNotFoundError naming the cause when an EOS table is not a file.
+    """Raise FileNotFoundError naming the cause when an EOS or melting-curve file is missing.
 
     A ``data/`` folder is a link into FWL_DATA, so a table behind a link whose
     target is gone (a moved FWL_DATA or a pruned version) names that link and
@@ -40,13 +40,13 @@ def require_eos_file(eos_file):
     while path != os.path.dirname(path):
         if os.path.islink(path) and not os.path.exists(path):
             raise FileNotFoundError(
-                f'EOS table {eos_file} is missing: {path} links to {os.readlink(path)}, '
+                f'Data file {eos_file} is missing: {path} links to {os.readlink(path)}, '
                 'which does not exist; run bash tools/setup/get_zalmoxis.sh to relink it'
             )
         path = os.path.dirname(path)
     raise FileNotFoundError(
-        f'EOS table {eos_file} is missing; for a file under data/, run bash '
-        'tools/setup/get_zalmoxis.sh and remove any data/ folder it reports as kept'
+        f'Data file {eos_file} is missing; for a file under data/, run bash '
+        'tools/setup/get_zalmoxis.sh, remove any data/ path it lists at the end, and run it again'
     )
 
 
