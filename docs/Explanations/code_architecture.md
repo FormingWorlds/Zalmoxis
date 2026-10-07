@@ -11,6 +11,7 @@ Zalmoxis/
     __main__.py             # CLI entry: python -m zalmoxis -c <config.toml>
     config.py               # TOML parsing, schema validation, EOS/melting setup
     constants.py            # G, earth_mass, earth_radius, TDEP_EOS_NAMES, defaults
+    datasets/               # fwl-io manifest of the Zalmoxis-only data + registry
     solver.py               # main(): 3-loop solver (Picard or Newton outer)
     structure_model.py      # Hydrostatic ODE system + RK45 / diffrax driver
     output.py               # post_processing(), profile + summary file output
@@ -50,7 +51,7 @@ Zalmoxis/
     converters/             # EOS format conversion
     plots/                  # Visualisation scripts
   input/                    # TOML configs and grid specs
-  data/                     # EOS tables (gitignored, ~600 MB; via tools/setup)
+  data/                     # Links to the EOS tables in FWL_DATA (gitignored, ~2.3 GB; via tools/setup)
   output/                   # Generated outputs (gitignored)
   docs/                     # Zensical documentation
 ```

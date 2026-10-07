@@ -48,6 +48,7 @@ import numpy as np
 from scipy.interpolate import interp1d
 
 from . import get_zalmoxis_root
+from .eos.interpolation import require_eos_file
 
 logger = logging.getLogger(__name__)
 
@@ -388,6 +389,7 @@ def _load_tabulated_curve(filepath):
     callable
         Interpolation function f(P) -> T. Returns NaN outside the table range.
     """
+    require_eos_file(filepath)
     data = np.loadtxt(filepath, comments='#')
     pressures = data[:, 0]
     temperatures = data[:, 1]

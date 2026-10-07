@@ -9,7 +9,7 @@
 - **Python**: 3.12 (recommended; matches the PROTEUS framework requirement)
 - **Conda**: [miniforge](https://github.com/conda-forge/miniforge) (macOS) or [miniconda](https://docs.anaconda.com/miniconda/) (Linux) for environment management
 - **Git**: for cloning the repository
-- **Disk space**: approximately 800 MB for tabulated EOS data files (including ~270 MB for unified PALEOS tables)
+- **Disk space**: about 2.3 GB in `$FWL_DATA` for the tabulated EOS data files
 
 ## Installation steps
 
@@ -66,13 +66,14 @@ source ~/.zshrc
 
 ### Step 4: Download EOS data
 
-Run the provided script to download the required equation-of-state tables and reference data:
+Set `FWL_DATA` to the directory for PROTEUS ecosystem data, then run the provided script to download the required equation-of-state tables and reference data:
 
 ```console
+export FWL_DATA=/path/to/fwl_data
 bash tools/setup/get_zalmoxis.sh
 ```
 
-This downloads data into the `data/` directory within the Zalmoxis repository (not into `FWL_DATA`). When Zalmoxis is installed within PROTEUS, the data path is managed by the PROTEUS framework. The script also creates the `output/` folder for model results.
+The script fetches the data through [fwl-io](https://github.com/FormingWorlds/fwl-io) from its Zenodo records, with their DataverseNL mirrors as the fallback, checks every file against the registry, and stores it in `$FWL_DATA`, where PROTEUS reads the same copy. Each folder of `data/` in the repository is a link to its dataset there. The script replaces a link it made (to a version of the same dataset), a dangling link, or an empty folder. A folder with files, a file, or a link to another place is kept, and the script ends with a warning that lists the command to remove each one; remove them and run the script again to use the fetched copy. The script also creates the `output/` folder for model results.
 
 ### Step 5: Run your first simulation
 
@@ -108,6 +109,10 @@ FileNotFoundError: [Errno 2] No such file or directory: '.../data/EOS_Seager2007
 ```
 
 This error indicates that the tabulated EOS data files have not been downloaded. Run `bash tools/setup/get_zalmoxis.sh` from the Zalmoxis root directory to complete Step 4.
+
+### A `data/` link points nowhere
+
+Each folder in `data/` is a link into `$FWL_DATA`. After `fwl-io prune` removes a superseded version, or after `$FWL_DATA` moves, a link can point at a folder that no longer exists. The error names the cause, `Data file ... is missing: .../data/<folder> links to ..., which does not exist`: for an EOS table it is the first ERROR line in `output/zalmoxis.log` (the run itself stops with a `StructureSolveError`), and for a melting curve it is in the traceback. Run `bash tools/setup/get_zalmoxis.sh` again with `FWL_DATA` set: it fetches what is missing and replaces every link it made, every dangling link and every empty folder; a folder with files in it, or a link to another place, is kept and listed at the end with the line that removes it; remove it and run the script again.
 
 ### Import errors
 

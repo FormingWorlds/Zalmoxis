@@ -613,7 +613,7 @@ class TestLoadPaleosAllPropertiesCache:
             'loop': tmp_path / 'loop',
             'in_file': tmp_path / 'afile' / 't',
         }
-        with pytest.raises(FileNotFoundError, match='PALEOS table'):
+        with pytest.raises(FileNotFoundError, match='PALEOS table|Data file'):
             eos_export.load_paleos_all_properties(paths[kind])
 
     @pytest.mark.skipif(

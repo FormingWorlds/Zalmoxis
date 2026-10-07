@@ -26,7 +26,7 @@ from pathlib import Path
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 
-from zalmoxis.eos.interpolation import read_table_columns
+from zalmoxis.eos.interpolation import read_table_columns, require_eos_file
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +92,7 @@ def load_paleos_all_properties(eos_file):
     except PermissionError:
         raise
     except OSError as exc:
+        require_eos_file(eos_file)
         raise FileNotFoundError(msg) from exc
     if not stat.S_ISREG(st.st_mode):
         raise FileNotFoundError(msg)

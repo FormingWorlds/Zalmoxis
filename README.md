@@ -30,7 +30,8 @@ git clone https://github.com/FormingWorlds/Zalmoxis.git
 cd Zalmoxis
 pip install -e .
 
-# Download EOS data
+# Download EOS data into $FWL_DATA (linked from data/)
+export FWL_DATA=/path/to/fwl_data
 bash tools/setup/get_zalmoxis.sh
 
 # Run default config (1 Earth-mass, PALEOS iron + MgSiO3)

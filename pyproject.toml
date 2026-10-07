@@ -38,14 +38,16 @@ dependencies = [
     "matplotlib",
     "python-ternary",
     "tqdm",
-    "osfclient",
-    "zenodo-get",
+    "fwl-io>=26.10.7",
     "jax>=0.4.38",
     "diffrax>=0.7"
 ]
 
 [project.scripts]
 zalmoxis = "zalmoxis.solver:main"
+
+[project.entry-points."fwl_io.manifests"]
+zalmoxis = "zalmoxis.datasets:manifest_path"
 
 [project.urls]
 homepage = "https://github.com/FormingWorlds/Zalmoxis"

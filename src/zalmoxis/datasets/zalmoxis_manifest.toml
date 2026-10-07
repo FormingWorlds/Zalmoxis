@@ -1,0 +1,9 @@
+# Datasets only Zalmoxis reads, fetched through fwl-io; shared data is in the fwl-io manifest.
+# Each dotted key is the dataset location below FWL_DATA, and its registry
+# <dotted-key>.registry.txt next to this file comes from `fwl-io sync <this file>`.
+
+[interior.radial_profiles]
+name = "Reference radial profiles of Earth and water worlds"
+zenodo = "10.5281/zenodo.16837954"
+dataverse = "10.34894/N6NVEU"
+required_by = ["zalmoxis"]

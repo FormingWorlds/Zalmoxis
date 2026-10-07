@@ -59,6 +59,7 @@ nav:
           - Mixing: Reference/api/zalmoxis.mixing.md
           - Binodal: Reference/api/zalmoxis.binodal.md
           - Constants: Reference/api/zalmoxis.constants.md
+          - Datasets: Reference/api/zalmoxis.datasets.md
       - Data: Reference/data.md
 
   - Community:
