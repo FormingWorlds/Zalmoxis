@@ -27,13 +27,16 @@ from .interpolation import (
 
 logger = logging.getLogger(__name__)
 
-# Cells at or below this density are table fill (the Wolf & Bower tables use 1e-15).
-_FILL_DENSITY_MAX = 1e-10
-_tdep_clamp_warned: set[str] = set()
+_tdep_edge_warned: set[str] = set()
 
 
-def _valid_t_bounds(density_grid, unique_temps):
-    """Return the T band of each pressure interval where all 4 cell corners are valid.
+def _fill_invalid_cells(density_grid, unique_temps):
+    """Fill each pressure row's invalid cells with the row's nearest valid value along T.
+
+    Cells that are not finite or at or below 1e-10 are table fill (the Wolf & Bower
+    tables use 1e-15). Below and above a row's valid band the fill becomes the band
+    edge, and inside a gap the nearest valid node, so a bilinear query only ever
+    combines valid densities. A row with no valid cell stays NaN.
 
     Parameters
     ----------
@@ -45,30 +48,28 @@ def _valid_t_bounds(density_grid, unique_temps):
     Returns
     -------
     tuple of numpy.ndarray
-        Lower and upper T bound per pressure interval (length n_p - 1), NaN where
-        the interval has no valid cell.
-
-    Raises
-    ------
-    ValueError
-        If the valid cells of an interval do not form one contiguous T band.
+        The filled grid, and the lowest and highest valid T of each row (NaN for a
+        row without a valid cell).
     """
-    ok = np.isfinite(density_grid) & (density_grid > _FILL_DENSITY_MAX)
-    cells = ok[:-1, :-1] & ok[1:, :-1] & ok[:-1, 1:] & ok[1:, 1:]
-    t_lo = np.full(len(cells), np.nan)
-    t_hi = np.full(len(cells), np.nan)
-    for i, row in enumerate(cells):
+    ok = np.isfinite(density_grid) & (density_grid > 1e-10)
+    filled = np.full(density_grid.shape, np.nan)
+    t_lo = np.full(len(density_grid), np.nan)
+    t_hi = np.full(len(density_grid), np.nan)
+    for i, row in enumerate(ok):
         j = np.flatnonzero(row)
         if len(j) == 0:
             continue
-        if j[-1] - j[0] + 1 != len(j):
-            raise ValueError(f'EOS table has a gap in its valid T band at pressure index {i}.')
-        t_lo[i], t_hi[i] = unique_temps[j[0]], unique_temps[j[-1] + 1]
-    return t_lo, t_hi
+        k = np.arange(row.size)
+        right = np.clip(np.searchsorted(j, k), 0, len(j) - 1)
+        left = np.clip(right - 1, 0, len(j) - 1)
+        nearest = np.where(np.abs(j[left] - k) <= np.abs(j[right] - k), j[left], j[right])
+        filled[i] = density_grid[i, nearest]
+        t_lo[i], t_hi[i] = unique_temps[j[0]], unique_temps[j[-1]]
+    return filled, t_lo, t_hi
 
 
-def _clamp_to_valid_cells(cached, eos_file, pressure, temperature):
-    """Clamp T into the valid band of the pressure interval, warning once per table.
+def _warn_beyond_row_edge(cached, eos_file, pressure, temperature):
+    """Warn once per table when T lies outside the valid band of a bracketing pressure row.
 
     Parameters
     ----------
@@ -77,37 +78,23 @@ def _clamp_to_valid_cells(cached, eos_file, pressure, temperature):
     eos_file : str
         Table path, named in the warning.
     pressure : float
-        Pressure in Pa, already inside the table range; a pressure on a node takes
-        the interval above it.
+        Pressure in Pa, already inside the table range.
     temperature : float
         Temperature in K.
-
-    Returns
-    -------
-    float
-        Temperature inside the band, in K.
-
-    Raises
-    ------
-    ValueError
-        If the pressure interval has no cell with 4 valid corners.
     """
+    if eos_file in _tdep_edge_warned:
+        return
     up = cached['unique_pressures']
     i = min(max(int(np.searchsorted(up, pressure, side='right')) - 1, 0), len(up) - 2)
-    lo, hi = cached['t_lo'][i], cached['t_hi'][i]
-    if not np.isfinite(lo):
-        raise ValueError(
-            f'{os.path.basename(eos_file)} has no valid cell at P={pressure:.2e} Pa.'
-        )
-    t_new = min(max(temperature, lo), hi)
-    if t_new != temperature and eos_file not in _tdep_clamp_warned:
-        _tdep_clamp_warned.add(eos_file)
-        logger.warning(
-            f'{os.path.basename(eos_file)}: T={temperature:.0f} K at P={pressure:.2e} Pa '
-            f'is outside the valid cells of the table; clamped to {t_new:.0f} K. '
-            f'Further clamps of this table are not reported.'
-        )
-    return t_new
+    lo, hi = np.nanmax(cached['t_lo'][i : i + 2]), np.nanmin(cached['t_hi'][i : i + 2])
+    if lo <= temperature <= hi:
+        return
+    _tdep_edge_warned.add(eos_file)
+    logger.warning(
+        f'{os.path.basename(eos_file)}: T={temperature:.0f} K at P={pressure:.2e} Pa is '
+        f'outside the valid band [{lo:.0f}, {hi:.0f}] K of the table; the density is '
+        f'taken at the band edge. Further queries outside the band are not reported.'
+    )
 
 
 def get_tabulated_eos(
@@ -170,7 +157,10 @@ def get_tabulated_eos(
                         )
 
                     # Reshape densities to a 2D grid for interpolation
-                    density_grid = densities.reshape(len(unique_pressures), len(unique_temps))
+                    density_grid, t_lo, t_hi = _fill_invalid_cells(
+                        densities.reshape(len(unique_pressures), len(unique_temps)),
+                        unique_temps,
+                    )
 
                     # Create a RegularGridInterpolator for rho(P,T)
                     interpolator = RegularGridInterpolator(
@@ -179,7 +169,6 @@ def get_tabulated_eos(
                         bounds_error=False,
                         fill_value=None,
                     )
-                    t_lo, t_hi = _valid_t_bounds(density_grid, unique_temps)
                     interpolation_functions[eos_file] = {
                         'type': 'regular',
                         'interp': interpolator,
@@ -298,7 +287,7 @@ def get_tabulated_eos(
                 pressure = np.clip(pressure, p_min, p_max)
 
             if grid_type == 'regular':
-                temperature = _clamp_to_valid_cells(cached, eos_file, pressure, temperature)
+                _warn_beyond_row_edge(cached, eos_file, pressure, temperature)
                 density = cached['interp']((pressure, temperature))
             else:
                 up = cached['unique_pressures']

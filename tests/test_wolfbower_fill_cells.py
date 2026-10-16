@@ -36,7 +36,7 @@ def test_melt_above_surface_band_lies_between_valid_neighbours(cache):
 
     The plain bilinear value at 3830 K mixes a fill corner in (about 228 kg m-3).
     """
-    seager._tdep_clamp_warned.discard(WB['melted_mantle']['eos_file'])
+    seager._tdep_edge_warned.discard(WB['melted_mantle']['eos_file'])
     edge = get_tabulated_eos(1e5, WB, 'melted_mantle', 3815.0, cache)
     inner = get_tabulated_eos(1e5, WB, 'melted_mantle', 3800.0, cache)
     for t in (3830.0, 4000.0, 9000.0):
@@ -44,6 +44,16 @@ def test_melt_above_surface_band_lies_between_valid_neighbours(cache):
         assert 2000.0 < rho <= edge
         assert rho == pytest.approx(edge, rel=1e-3)
     assert inner > edge  # the melt density still falls with T inside the band
+
+
+def test_density_does_not_fall_with_pressure_beyond_the_band(cache):
+    """At fixed temperature, inside and beyond the valid bands, the density of both tables
+    never falls with pressure over the whole table range."""
+    pressures = np.geomspace(1e5, 1e12, 3000)
+    for phase in ('melted_mantle', 'solid_mantle'):
+        for t in (300.0, 4500.0, 9000.0, 16000.0):
+            rho = np.array([get_tabulated_eos(p, WB, phase, t, cache) for p in pressures])
+            assert np.min(np.diff(rho)) >= 0.0, (phase, t)
 
 
 def test_both_tables_finite_and_positive_over_sweep(cache):
