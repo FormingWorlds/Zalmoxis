@@ -446,7 +446,10 @@ def validate_config(config_params):
             f'Typical value: 50 K.'
         )
 
-    max_band_excess = config_params.get('max_band_excess', MAX_BAND_EXCESS_DEFAULT)
+    try:
+        max_band_excess = float(config_params.get('max_band_excess', MAX_BAND_EXCESS_DEFAULT))
+    except (TypeError, ValueError):
+        max_band_excess = float('nan')
     if not max_band_excess >= 0:
         raise ValueError(
             f'max_band_excess must be >= 0, got {max_band_excess} K. A converged mantle '

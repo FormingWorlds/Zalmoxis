@@ -65,11 +65,11 @@ def _fill_invalid_cells(density_grid, unique_temps):
 
 
 def band_excess(cached, pressure, temperature):
-    """Return how far T lies outside the valid band of the pressure rows a query uses, in K.
+    """Return how far T lies outside the valid band of a regular table at P, in K.
 
-    A row is used when its bilinear weight is not zero, so a query on a pressure node
-    looks only at that node's row; a row without a valid cell is not a band. The
-    pressure is clipped to the table range, as in the lookup.
+    The distance outside each pressure row's band (0 inside it) is weighted by that
+    row's bilinear weight, as the density there is; a row without a valid cell adds
+    nothing. The pressure is clipped to the table range, as in the lookup.
 
     Parameters
     ----------
@@ -83,18 +83,19 @@ def band_excess(cached, pressure, temperature):
     Returns
     -------
     float
-        The largest distance below the lowest or above the highest valid T of a used
-        row, 0 inside every used band.
+        The weighted distance in K, 0 inside the band, NaN for a non-finite T.
     """
+    if not np.isfinite(temperature):
+        return np.nan
     up = cached['unique_pressures']
     pressure = min(max(pressure, up[0]), up[-1])
     i = min(max(int(np.searchsorted(up, pressure, side='right')) - 1, 0), len(up) - 2)
-    rows = [r for r, w in ((i, up[i + 1] - pressure), (i + 1, pressure - up[i])) if w > 0]
+    w = (pressure - up[i]) / (up[i + 1] - up[i])
     excess = 0.0
-    for r in rows:
+    for r, weight in ((i, 1.0 - w), (i + 1, w)):
         lo, hi = cached['t_lo'][r], cached['t_hi'][r]
-        if np.isfinite(lo):
-            excess = max(excess, lo - temperature, temperature - hi)
+        if weight > 0 and np.isfinite(lo):
+            excess += weight * max(0.0, lo - temperature, temperature - hi)
     return excess
 
 
@@ -288,8 +289,9 @@ def get_tabulated_eos(
                 pressure = np.clip(pressure, p_min, p_max)
 
             if grid_type == 'regular':
-                if logger.isEnabledFor(logging.DEBUG) and band_excess(
-                    cached, pressure, temperature
+                if (
+                    logger.isEnabledFor(logging.DEBUG)
+                    and band_excess(cached, pressure, temperature) > 0
                 ):
                     logger.debug(
                         f'{os.path.basename(eos_file)}: T={temperature:.0f} K at '

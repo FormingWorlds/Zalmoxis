@@ -353,18 +353,18 @@ class TestFillCells:
             (2e9, 1200.0, 300.0),  # row 2 starts at 1500 K
             (3e9, 3200.0, 0.0),  # p_max node: row 2 (to 3000 K) has no weight
             (3e9, 1000.0, 500.0),
-            (1.5e9, 1200.0, 300.0),  # the larger excess of the 2 used rows
+            (1.5e9, 1200.0, 150.0),  # 300 K below row 2 only, at weight 0.5
             (1.5e9, 3200.0, 200.0),
             (4e9, 3600.0, 100.0),  # pressure clipped to the p_max row
-            (2.5e9, float('nan'), 0.0),  # a NaN T is left to the lookup
+            (2.5e9, float('nan'), np.nan),  # a NaN T has no distance
         ],
     )
     def test_band_excess_uses_the_rows_with_weight(self, fill_table, p, t, excess):
-        """The excess is the largest distance beyond the band of a row with non-zero weight."""
+        """The excess weights each used row's distance beyond its band by the row's weight."""
         cache = {}
         get_tabulated_eos(1e9, fill_table, 'melted_mantle', 2000.0, cache)
         cached = cache[fill_table['melted_mantle']['eos_file']]
-        assert band_excess(cached, p, t) == pytest.approx(excess)
+        assert band_excess(cached, p, t) == pytest.approx(excess, nan_ok=True)
 
     def test_query_beyond_the_band_logs_at_debug_only(self, fill_table, caplog):
         """A lookup outside a band logs one DEBUG line per query and no warning."""

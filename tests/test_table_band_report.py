@@ -1,11 +1,12 @@
 """Band report of the converged mantle profile against the valid T band of regular tables.
 
 Module under test: ``zalmoxis.solver._report_table_bands`` and its call from
-``zalmoxis.solver.main``. Contract: each table that a mantle node reads gets the count
-of nodes outside its band and the largest excess in K; one warning per solve names the
-tables; an excess above ``max_band_excess`` returns ``converged=False``. The unit tests
-use the synthetic fill table of ``tests/test_seager_branches.py``; the integration tests
-solve a 1 M_earth Wolf & Bower mantle. See docs/How-to/build_tests.md for the test tiers.
+``zalmoxis.solver.main``. Contract: each cached regular table that a mantle node reads
+gets the count of nodes outside its band and the largest weighted excess in K; one
+warning per call names the tables; an excess above ``max_band_excess`` returns
+``converged=False`` and ``converged_bands=False``. The unit tests use the synthetic fill
+table of ``tests/test_seager_branches.py``; the integration tests solve a 1 M_earth Wolf
+& Bower mantle. See docs/How-to/build_tests.md for the test tiers.
 """
 
 from __future__ import annotations
@@ -20,32 +21,37 @@ import pytest
 from tests.test_seager_branches import _fill_table, _write_table
 from zalmoxis import solver
 from zalmoxis.config import validate_config
+from zalmoxis.eos import tdep
+from zalmoxis.eos.seager import get_tabulated_eos
 from zalmoxis.eos_properties import EOS_REGISTRY
+from zalmoxis.mixing import parse_all_layer_mixtures
 from zalmoxis.solver import _report_table_bands
 
 
 @pytest.fixture
 def mats(tmp_path, monkeypatch):
-    """Registry entry with the fill table as melt, solid and gradient table."""
+    """Registry entry with the fill table as melt, solid and gradient table, all cached."""
     monkeypatch.setattr(solver, '_interpolation_cache', {})
     melt, grad, solid = (
         _write_table(tmp_path / name, _fill_table())['melted_mantle']['eos_file']
         for name in ('density_melt.dat', 'grad.dat', 'density_solid.dat')
     )
-    return (
-        {
-            'X:MgSiO3': {
-                'melted_mantle': {'eos_file': melt, 'adiabat_grad_file': grad},
-                'solid_mantle': {'eos_file': solid},
-            }
-        },
-        melt,
-        grad,
-        solid,
-    )
+    for path in (melt, grad, solid):
+        get_tabulated_eos(
+            1e9,
+            {'melted_mantle': {'eos_file': path}},
+            'melted_mantle',
+            2000.0,
+            solver._interpolation_cache,
+        )
+    entry = {
+        'melted_mantle': {'eos_file': melt, 'adiabat_grad_file': grad},
+        'solid_mantle': {'eos_file': solid},
+    }
+    return {'X:MgSiO3': entry}, melt, grad, solid
 
 
-def _result(T, P=(0.0, 1e9, 2e9, 3e9), m=(1.0, 2.0, 3.0, 4.0), ice=''):
+def _result(T, P=(0.0, 1e9, 2e9, 3e9), m=(1.0, 2.0, 3.0, 4.0), ice='', adiabat=False):
     """A converged result whose nodes 1 to 3 (m >= 2) are mantle."""
     return {
         'layer_eos_config': {'core': 'Seager2007:iron', 'mantle': 'X:MgSiO3', 'ice_layer': ice},
@@ -55,6 +61,7 @@ def _result(T, P=(0.0, 1e9, 2e9, 3e9), m=(1.0, 2.0, 3.0, 4.0), ice=''):
         'cmb_mass': 2.0,
         'core_mantle_mass': 3.5,
         'converged': True,
+        'adiabat_computed': adiabat,
     }
 
 
@@ -63,119 +70,173 @@ def _curves(t_sol, t_liq):
     return (lambda p: t_sol, lambda p: t_liq)
 
 
-def _check(res, cfg, md, curves, adiabat):
+def _check(res, md, curves, mixtures=None, **cfg):
     """Run the band check with the layers of ``res`` in the config, as main() passes them."""
-    return _report_table_bands(
-        res, {'layer_eos_config': res['layer_eos_config'], **cfg}, md, curves, adiabat
-    )
+    cfg = {'layer_eos_config': res['layer_eos_config'], **cfg}
+    return _report_table_bands(res, cfg, md, curves, mixtures)
+
+
+HOT = [0, 3300.0, 2000.0, 3600.0]  # node 1: 300 K above row 1, node 3: 100 K above row 3
 
 
 @pytest.mark.unit
 class TestReportTableBands:
-    """Counts, excess, table use per node, warning and the converged flag."""
+    """Counts, excess, table use per node, warning and the converged flags."""
 
     def test_melt_nodes_report_count_and_largest_excess(self, mats, caplog):
-        """Molten nodes read melt and gradient tables; 3300 K at 1 GPa is 300 K beyond."""
+        """Molten nodes read the melt table; 3300 K at 1 GPa is 300 K beyond its band."""
         md, melt, grad, solid = mats
         with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
-            res = _check(
-                _result([0, 3300.0, 2000.0, 3600.0]), {}, md, _curves(500.0, 600.0), True
-            )
-        assert res['table_band_excess'][melt] == (2, pytest.approx(300.0))
-        assert res['table_band_excess'][grad] == (2, pytest.approx(300.0))
-        assert res['table_band_excess'][solid] == (0, 0.0)
-        assert res['converged'] is False  # 300 K > 200 K
+            res = _check(_result(HOT), md, _curves(500.0, 600.0))
+        assert res['table_band_excess'] == {melt: (2, pytest.approx(300.0)), solid: (0, 0.0)}
+        assert res['converged'] is False and res['converged_bands'] is False
         msgs = [r.getMessage() for r in caplog.records]
         assert len(msgs) == 2
         assert 'density_melt.dat 2, 300' in msgs[0] and 'value there is taken' in msgs[0]
         assert 'max_band_excess = 200 K' in msgs[1]
 
     def test_limit_parameter_keeps_converged(self, mats, caplog):
-        """With max_band_excess = 300 K the same profile stays converged and warns once."""
-        md, melt, _, _ = mats
-        with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
-            res = _check(
-                _result([0, 3300.0, 2000.0, 3600.0]),
-                {'max_band_excess': 300.0},
-                md,
-                _curves(500.0, 600.0),
-                False,
-            )
-        assert res['converged'] is True
-        assert len(caplog.records) == 1
-        assert all('grad' not in os.path.basename(k) for k in res['table_band_excess'])
+        """With max_band_excess = 300 K (a TOML string works too) the profile stays converged."""
+        md, _, _, _ = mats
+        for limit in (300.0, '300'):
+            caplog.clear()
+            with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+                res = _check(_result(HOT), md, _curves(500.0, 600.0), max_band_excess=limit)
+            assert res['converged'] is True and res['converged_bands'] is True
+            assert len(caplog.records) == 1
 
     def test_inside_every_band_is_silent(self, mats, caplog):
         """A profile inside every band reports zeros and logs nothing."""
         md, melt, grad, solid = mats
+        res = _result([9999.0, 2000.0, 2000.0, 2000.0], adiabat=True)
         with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
-            res = _check(
-                _result([9999.0, 2000.0, 2000.0, 2000.0]), {}, md, _curves(1800.0, 2200.0), True
-            )
+            _check(res, md, _curves(1800.0, 2200.0))
         assert res['table_band_excess'] == {melt: (0, 0.0), solid: (0, 0.0), grad: (0, 0.0)}
         assert res['converged'] is True and not caplog.records
 
     @pytest.mark.parametrize(
-        ('t_sol', 't_liq', 'melt_n', 'solid_n'),
+        ('t_sol', 't_liq'),
         [
-            (5000.0, 6000.0, 0, 2),  # solid: only the solid table
-            (100.0, 200.0, 2, 0),  # molten: only the melt table
-            (100.0, 6000.0, 2, 2),  # mushy: both
-            (np.nan, np.nan, 0, 2),  # curves undefined: solid
-            (6000.0, 100.0, 0, 2),  # degenerate curves below the solidus: solid
+            (5000.0, 6000.0),
+            (100.0, 200.0),
+            (100.0, 6000.0),
+            (np.nan, np.nan),
+            (6000.0, 100.0),
+            (3600.0, 3700.0),
+            (3500.0, 3600.0),
+        ],
+        ids=[
+            'solid',
+            'molten',
+            'mushy',
+            'undefined',
+            'degenerate',
+            'at_solidus',
+            'at_liquidus',
         ],
     )
-    def test_phase_selects_the_tables(self, mats, t_sol, t_liq, melt_n, solid_n):
-        """The melt table counts above the solidus, the solid table where it is read."""
+    def test_tables_match_the_density_lookup(self, mats, monkeypatch, t_sol, t_liq):
+        """A node counts against exactly the tables get_Tdep_density reads at its P and T."""
         md, melt, _, solid = mats
-        res = _check(
-            _result([0, 3300.0, 2000.0, 3600.0]),
-            {'max_band_excess': 1e9},
-            md,
-            _curves(t_sol, t_liq),
-            False,
+        read = []
+        monkeypatch.setattr(
+            tdep, 'get_tabulated_eos', lambda p, mat, phase, *a: read.append(phase) or 3000.0
         )
-        assert res['table_band_excess'][melt][0] == melt_n
-        assert res['table_band_excess'][solid][0] == solid_n
+        tdep.get_Tdep_density(1e9, 3600.0, md['X:MgSiO3'], *_curves(t_sol, t_liq))
+        res = _check(
+            _result([0, 3600.0, 2000.0, 2000.0]), md, _curves(t_sol, t_liq), max_band_excess=1e9
+        )
+        counted = {
+            'melted_mantle': res['table_band_excess'][melt][0],
+            'solid_mantle': res['table_band_excess'][solid][0],
+        }
+        assert counted == {k: int(k in read) for k in counted}
+
+    @pytest.mark.parametrize(
+        ('mode', 'expected'),
+        [('adiabatic', (1, 100.0)), ('adiabatic_from_cmb', (1, 300.0))],
+        ids=['surface_anchor', 'cmb_anchor'],
+    )
+    def test_gradient_counts_where_the_adiabat_reads(self, mats, mode, expected):
+        """The surface-anchored adiabat never reads the innermost mantle node, the
+        CMB-anchored one never the outermost; no gradient entry without an adiabat."""
+        md, _, grad, _ = mats
+        res = _check(
+            _result(HOT, adiabat=True),
+            md,
+            _curves(500.0, 600.0),
+            temperature_mode=mode,
+            max_band_excess=1e9,
+        )
+        assert res['table_band_excess'][grad] == (expected[0], pytest.approx(expected[1]))
+        assert grad not in _check(_result(HOT), md, _curves(500.0, 600.0))['table_band_excess']
 
     @pytest.mark.parametrize(
         ('pressures', 'ice', 'expected'),
         [
             ((1e9, 1e9, 2e9, 3e9), 'Seager2007:H2O', (1, 300.0)),  # node 3 is ice
-            ((1e9, 1e9, 2e9, 0.0), '', (1, 300.0)),  # node 3 is the P = 0 padding
+            ((1e9, 1e9, 2e9, 0.0), '', (2, 6500.0)),  # node 3 is the surface: 9000 - 2500 K
             ((1e9, 1e9, 2e9, 3e9), '', (2, 5500.0)),  # node 3 is mantle: 9000 - 3500 K
         ],
+        ids=['ice_layer', 'surface_node', 'mantle_node'],
     )
-    def test_core_ice_and_padding_nodes_are_left_out(self, mats, pressures, ice, expected):
-        """Core nodes, ice nodes above core_mantle_mass and P = 0 nodes are not mantle."""
+    def test_core_and_ice_nodes_are_left_out(self, mats, pressures, ice, expected):
+        """Core nodes and ice nodes above core_mantle_mass are not mantle; the surface is."""
         md, melt, _, _ = mats
         res = _check(
             _result([9000.0, 3300.0, 2000.0, 9000.0], P=pressures, ice=ice),
-            {'max_band_excess': 1e9},
             md,
             _curves(100.0, 200.0),
-            False,
+            max_band_excess=1e9,
         )
         assert res['table_band_excess'][melt] == (expected[0], pytest.approx(expected[1]))
 
-    def test_table_not_in_cache_is_loaded(self, mats):
-        """A table no lookup has read yet is loaded for the check."""
+    def test_excess_is_weighted_between_rows(self, mats):
+        """Halfway between rows 1 and 2, 1200 K is 300 K below row 2 only: 150 K."""
         md, melt, _, _ = mats
-        assert melt not in solver._interpolation_cache
-        _check(_result([0, 2000.0, 2000.0, 2000.0]), {}, md, None, False)
-        assert 't_lo' in solver._interpolation_cache[melt]
+        res = _check(
+            _result([0, 1200.0, 2000.0, 2000.0], P=(0.0, 1.5e9, 2e9, 3e9)),
+            md,
+            _curves(100.0, 200.0),
+        )
+        assert res['table_band_excess'][melt] == (1, pytest.approx(150.0))
+
+    def test_non_finite_node_fails_the_check(self, mats):
+        """A mantle node with a NaN temperature counts as infinitely far outside."""
+        md, melt, _, solid = mats
+        res = _check(_result([0, np.nan, 2000.0, 2000.0]), md, _curves(100.0, 200.0))
+        assert res['table_band_excess'][melt] == (1, np.inf)
+        assert res['table_band_excess'][solid] == (1, np.inf)
+        assert res['converged'] is False
+
+    def test_uncached_table_is_not_checked(self, mats):
+        """A table no lookup of the solve has read is left out of the report."""
+        md, melt, grad, solid = mats
+        solver._interpolation_cache.pop(solid)
+        res = _check(_result(HOT), md, _curves(500.0, 600.0))
+        assert list(res['table_band_excess']) == [melt]
+        assert solid not in solver._interpolation_cache
+
+    def test_layer_mixtures_take_precedence_over_the_config(self, mats):
+        """The mixtures the solve used choose the tables, not the config string."""
+        md, melt, _, _ = mats
+        res = _result(HOT)
+        res['layer_eos_config']['mantle'] = 'Seager2007:MgSiO3'
+        assert _check(res, md, _curves(500.0, 600.0))['table_band_excess'] == {}
+        mixtures = parse_all_layer_mixtures({'core': 'Seager2007:iron', 'mantle': 'X:MgSiO3'})
+        assert melt in _check(res, md, _curves(500.0, 600.0), mixtures)['table_band_excess']
 
     def test_mantle_without_regular_tables_reports_nothing(self, mats):
         """A mantle of a non-tabulated EOS, or no mantle, gives an empty report."""
         md, _, _, _ = mats
-        res = _result([0, 9000.0, 9000.0, 9000.0])
+        res = _result([0, 9000.0, 9000.0, 9000.0], adiabat=True)
         res['layer_eos_config']['mantle'] = 'Seager2007:MgSiO3'
-        assert _check(res, {}, md, None, True)['table_band_excess'] == {}
+        assert _check(res, md, None)['table_band_excess'] == {}
         res['layer_eos_config']['mantle'] = ''
-        assert _check(res, {}, md, None, True)['converged'] is True
+        assert _check(res, md, None)['converged_bands'] is True
 
-    @pytest.mark.parametrize('bad', [-1.0, float('nan')])
-    def test_validator_rejects_negative_and_nan(self, bad):
+    @pytest.mark.parametrize('bad', [-1.0, float('nan'), 'abc'])
+    def test_validator_rejects_negative_nan_and_text(self, bad):
         """max_band_excess must be a number >= 0."""
         from zalmoxis.config import load_zalmoxis_config
 
@@ -191,7 +252,8 @@ WB = EOS_REGISTRY['WolfBower2018:MgSiO3']
 
 @pytest.fixture(scope='module')
 def wb_solves(tmp_path_factory):
-    """Solve 1 M_earth with a Wolf & Bower mantle at 3871 K, then 4500 K, in one process."""
+    """Solve 1 M_earth with a Wolf & Bower mantle at 3871 K, then 4500 K, in one process,
+    and a Newton solve at 500 K, which never computes the adiabat."""
     from zalmoxis import get_zalmoxis_root
     from zalmoxis.config import (
         load_material_dictionaries,
@@ -204,7 +266,11 @@ def wb_solves(tmp_path_factory):
             pytest.skip(f'Wolf & Bower table missing: {WB[phase]["eos_file"]}')
     root = get_zalmoxis_root()
     out = {}
-    for ts in (3871.0, 4500.0):
+    for name, ts, outer in (
+        ('3871', 3871.0, None),
+        ('4500', 4500.0, None),
+        ('newton', 500.0, 'newton'),
+    ):
         text = open(os.path.join(root, 'input', 'default.toml')).read()
         for key, value in (
             ('mantle', '"WolfBower2018:MgSiO3"'),
@@ -215,6 +281,8 @@ def wb_solves(tmp_path_factory):
         path = tmp_path_factory.mktemp('wb') / 'wb.toml'
         path.write_text(text)
         cfg = load_zalmoxis_config(str(path))
+        if outer:
+            cfg['outer_solver'] = outer
         melt = load_solidus_liquidus_functions(
             cfg['layer_eos_config'],
             cfg['rock_solidus'],
@@ -234,7 +302,7 @@ def wb_solves(tmp_path_factory):
             )
         finally:
             logging.getLogger('zalmoxis.solver').removeHandler(handler)
-        out[ts] = (res, [r.getMessage() for r in records if 'valid T band' in r.getMessage()])
+        out[name] = (res, [r.getMessage() for r in records if 'valid T band' in r.getMessage()])
     return out
 
 
@@ -245,7 +313,7 @@ class TestWolfBowerSolves:
 
     def test_inside_the_limit_converges_and_reports(self, wb_solves):
         """At 3871 K the molten mantle lies up to about 58 K beyond the melt band."""
-        res, msgs = wb_solves[3871.0]
+        res, msgs = wb_solves['3871']
         n, excess = res['table_band_excess'][WB['melted_mantle']['eos_file']]
         assert res['converged'] is True
         assert n > 0 and 0.0 < excess <= 200.0
@@ -253,12 +321,19 @@ class TestWolfBowerSolves:
 
     def test_beyond_the_limit_returns_not_converged(self, wb_solves):
         """At 4500 K the excess passes 200 K and the solve returns converged=False."""
-        res, msgs = wb_solves[4500.0]
+        res, msgs = wb_solves['4500']
         _, excess = res['table_band_excess'][WB['melted_mantle']['eos_file']]
         assert excess > 200.0
         assert res['converged'] is False
 
     def test_second_solve_in_the_process_reports_too(self, wb_solves):
         """The 4500 K solve after the 3871 K one logs its own band warning."""
-        assert len(wb_solves[4500.0][1]) == 1
-        assert wb_solves[4500.0][1] != wb_solves[3871.0][1]
+        assert len(wb_solves['4500'][1]) == 1
+        assert wb_solves['4500'][1] != wb_solves['3871'][1]
+
+    def test_newton_solve_has_no_gradient_entry(self, wb_solves):
+        """A Newton solve keeps the linear T profile, so the gradient table was not read."""
+        res, _ = wb_solves['newton']
+        assert res['adiabat_computed'] is False
+        assert WB['melted_mantle']['adiabat_grad_file'] not in res['table_band_excess']
+        assert res['converged_bands'] is True

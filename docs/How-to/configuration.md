@@ -152,7 +152,7 @@ mushy_zone_factor_MgSiO3   = 0.8   # wider mushy zone for silicate only
 
 | Field | Required | Default | Unit | Description |
 |---|---|---|---|---|
-| `max_band_excess` | No | `200.0` | K | Largest distance of a mantle node of the converged profile beyond the valid $T$ band of a regular-grid table it reads (`WolfBower2018:MgSiO3`, and the solid table of `RTPress100TPa:MgSiO3`). Beyond it the solve returns `converged = False`; within it the band-edge value is used and the result reports the excess. Must be >= 0. See [EOS physics](../Explanations/eos_physics.md). |
+| `max_band_excess` | No | `200.0` | K | Largest distance of a mantle node of the converged profile beyond the valid $T$ band of a regular-grid table it reads (`WolfBower2018:MgSiO3`, and the solid table of `RTPress100TPa:MgSiO3`). Beyond it the result has `converged = False` and `converged_bands = False`; within it the band-edge value is used and the result reports the excess. Must be >= 0. See [EOS physics](../Explanations/eos_physics.md). |
 
 #### Phase-aware mixing parameters (multi-material only)
 

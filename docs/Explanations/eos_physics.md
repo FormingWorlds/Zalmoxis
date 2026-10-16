@@ -155,11 +155,14 @@ Near 1 bar the density falls ever faster towards the edge (13% per 1000 K over t
 For material colder than the band it underestimates the density by the same measure: for the melt table about 6.7% per 1000 K below the edge near 1 bar (edge at 1008 K), 5.5% at 1 GPa, 2.6% at 10 GPa, 2.2% at 100 GPa and 1.3% at 500 GPa.
 The adiabatic gradient table `adiabat_temp_grad_melt.dat` takes the same row fill, so beyond the band $(dT/dP)_S$ keeps its edge value and $\nabla_{\mathrm{ad}} = (dT/dP)_S\,P/T$ varies as $1/T$; above the band this makes a hot adiabat too shallow.
 The hot edge of the melt band rises more slowly with pressure than the liquidus, which crosses it at 462 GPa for `Stixrude14-liquidus`, 544 GPa for `Monteux16-liquidus-F-peridotitic` and 712 GPa for `Monteux16-liquidus-A-chondritic`; at higher pressures all of the liquid field lies above the melt band.
-Below 4.5 GPa the `Stixrude14-liquidus` power law lies under the cold edge of the melt band, so melt just above that liquidus reads the cold edge.
+The `Stixrude14` power laws fall to about 6 K at 1 bar: below 7.3 GPa the solidus and below 4.5 GPa the liquidus lie under the cold edge of the melt band, so mushy and molten nodes there that are colder than the edge read the cold-edge value.
 
-**Band check.** After each solve, Zalmoxis checks every mantle node of the final profile against the band of each table that node reads (the solid table below the liquidus, the melt table above the solidus, the gradient table when it computes the adiabat).
-The result holds, per table, the number of nodes outside the band and the largest excess in K (`table_band_excess`), and one warning per solve names the tables.
-When a node lies more than `max_band_excess` (default 200 K) beyond a band, the solve returns `converged = False`.
+**Band check.** At the end of each `main()` call, Zalmoxis checks every mantle node of the final profile, the surface included, against the band of each table the solve read there: the solid table below the liquidus, the melt table above the solidus, and the gradient table at the nodes the adiabat integration read, when the solve computed the adiabat.
+The excess at a node is the distance outside each pressure row's band weighted by the row's bilinear weight, as the density is.
+The result holds, per table, the number of nodes outside the band and the largest excess in K (`table_band_excess`), and one warning per call names the tables.
+When a node lies more than `max_band_excess` (default 200 K) beyond a band, the result has `converged = False` and `converged_bands = False`; the other convergence flags keep their values, so a caller can tell a band failure from a numerical one.
+The outer loops of `solve_miscible_interior` and `solve_strong_partition` stop on it as on any failed structure solve.
+For the melt table, 200 K above the hot edge is a density bias of at least about 4.6% at 1 bar, 1.5% at 1 GPa, 1.1% at 10 GPa and 0.3% at 100 GPa.
 
 ### RTPress100TPa Extended Melt EOS
 
