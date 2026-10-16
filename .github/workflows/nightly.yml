@@ -17,12 +17,9 @@ on:
 permissions:
   contents: read
 
-# Nightly: full test suite (unit + smoke + integration) with coverage
-# instrumentation. Runs ~50-55 min wall on the shared runners. Excluded
-# from push and PR CI because each smoke or integration test runs a full
-# Zalmoxis solver call (5-10 min on a 2-vCPU runner under cov
-# instrumentation) and burning that on every push gives no bug-finding
-# signal that the unit suite doesn't already cover.
+# Nightly: unit + smoke + integration with coverage, as two parallel jobs. Not on push or PR
+# CI: each smoke or integration test runs a full solve (5-10 min on a 2-vCPU runner under
+# coverage), which adds no bug-finding signal to the unit suite.
 jobs:
   nightly:
     name: Zalmoxis-nightly ${{ matrix.suite }} (ubuntu-latest)
@@ -34,12 +31,11 @@ jobs:
         include:
           - suite: main
             select: (unit or smoke or integration) and not slow and not wolfbower
-            gate: --cov-fail-under=90
+            args: --dist load --cov-fail-under=90
           - suite: wolfbower
             select: wolfbower
-            gate: ""
-    # The suite runs ~50-55 min, so a 90 min ceiling leaves wide margin
-    # for shared-runner variance without masking a genuine hang.
+            args: --dist loadfile --cov-fail-under=0
+    # A 90 min ceiling per job leaves wide margin for shared-runner variance.
     timeout-minutes: 90
     steps:
       - name: Checkout repository
@@ -98,10 +94,10 @@ jobs:
           # test is ~20 min on the 2-vCPU runner under coverage, so 3000 s
           # (about 2.4x) absorbs runner variance without risking a false kill.
           # --durations prints the slowest tests so the profile stays visible.
-          pytest -m "${{ matrix.select }}" -n auto --dist loadfile -o "addopts=" \
+          pytest -m "${{ matrix.select }}" -n auto -o "addopts=" \
             --timeout=3000 --timeout-method=thread --durations=25 \
             --cov=zalmoxis --cov-report=term-missing --cov-report=xml \
-            ${{ matrix.gate }}
+            ${{ matrix.args }}
 
       - name: Upload coverage to Codecov
         if: ${{ !cancelled() }}

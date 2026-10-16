@@ -114,6 +114,8 @@ def test_wolf_bower_mantle_on_the_jax_path_falls_back_to_numpy(tmp_path, caplog)
     ]
     assert fell_back and 'PALEOS-2phase' in fell_back[0]
     assert not [r for r in caplog.records if 'density_grid' in r.getMessage()]
+    assert not [r for r in caplog.records if 'Wall-clock timeout' in r.getMessage()]
+    assert not [r for r in caplog.records if 'Retrying with tighter' in r.getMessage()]
     assert res['converged'] and res['converged_pressure'] and res['converged_density']
     inside = np.asarray(res['pressure']) > 0  # the surface padding node has zero density
     assert np.all(np.isfinite(res['density'])) and res['density'][inside].min() > 1000.0

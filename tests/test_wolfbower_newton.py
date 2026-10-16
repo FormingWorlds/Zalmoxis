@@ -24,8 +24,9 @@ def test_newton_solve_has_no_gradient_entry(tmp_path):
         outer_solver='newton',
         relative_tolerance=1e-9,
         absolute_tolerance=1e-10,
-        newton_tol=1e-2,
+        newton_tol=1e-2,  # 1 % in mass is enough for a band check and ends in minutes
     )
+    assert res['converged'] and res['converged_pressure'] and res['converged_density']
     assert res['adiabat_computed'] is False
     assert WB['melted_mantle']['adiabat_grad_file'] not in res['table_band_excess']
     assert res['converged_bands'] is True and msgs == []

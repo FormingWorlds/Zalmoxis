@@ -443,7 +443,9 @@ def _wb_solve(tmp_dir, surface_temperature, **params):
         )
     finally:
         logging.getLogger('zalmoxis.solver').removeHandler(handler)
-    return res, [r.getMessage() for r in records if 'valid T band' in r.getMessage()]
+    msgs = [r.getMessage() for r in records]
+    assert not [m for m in msgs if 'Wall-clock timeout' in m or 'Retrying with tighter' in m]
+    return res, [m for m in msgs if 'valid T band' in m]
 
 
 @pytest.fixture(scope='module')
@@ -471,7 +473,7 @@ class TestWolfBowerSolves:
         """At 4500 K the excess passes 200 K and the solve returns converged=False."""
         res, msgs = wb_solves['4500']
         _, excess = res['table_band_excess'][WB['melted_mantle']['eos_file']]
-        assert excess > 200.0
+        assert excess == pytest.approx(4500.0 - 3815.3, abs=1.0)  # the 1-bar node, beyond 200 K
         assert res['converged'] is False and res['converged_bands'] is False
         assert res['converged_pressure'] and res['converged_density']  # numerically converged
 

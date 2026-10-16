@@ -12,7 +12,8 @@ the existing suite see [Testing suite](../Explanations/testing.md).
 
 The marker is the load-bearing decision. CI runs `-m unit` on every push and
 `-m "(unit or smoke or integration) and not slow"` nightly; an unmarked test
-is invisible to CI. Pick the strictest marker the test fits.
+is invisible to CI. Pick the strictest marker the test fits. A full solve on the Wolf &
+Bower tables also gets `wolfbower`, which runs it in its own nightly job.
 
 | Use ... | When ... |
 |---|---|
