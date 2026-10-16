@@ -645,3 +645,44 @@ class TestCacheKeyIdentity:
             np.testing.assert_array_equal(got['T_values'], f())
             tables.append(got['log_T_liq_table'])
         assert len(tabulated) == 3 and tables[3] is tables[0]
+
+
+class TestNonPaleosTwoPhaseMantle:
+    """A 2-phase mantle from P-T-rho tables (Wolf & Bower, RTPress) is refused, not crashed."""
+
+    @pytest.mark.parametrize('mantle_eos', ['WolfBower2018:MgSiO3', 'RTPress100TPa:MgSiO3'])
+    def test_tabulated_two_phase_mantle_raises_value_error(self, mantle_eos):
+        """The ValueError lets solve_structure fall back to numpy; main raised KeyError."""
+        layer_mixtures, mds, cache = _common_fixtures()
+        layer_mixtures['mantle'] = LayerMixture([mantle_eos], [1.0])
+        mds[mantle_eos] = {
+            '_api_resolved': True,
+            'solid_mantle': {'eos_file': '/synthetic/wb_solid.dat'},
+            'melted_mantle': {'eos_file': '/synthetic/wb_melt.dat'},
+        }
+        with pytest.raises(ValueError, match='PALEOS-2phase'):
+            jw.solve_structure_via_jax(
+                layer_mixtures=layer_mixtures,
+                cmb_mass=2e23,
+                core_mantle_mass=4e23,
+                radii=np.linspace(1.0, 1e6, 20),
+                adaptive_radial_fraction=0.5,
+                relative_tolerance=1e-6,
+                absolute_tolerance=1e-8,
+                maximum_step=1e5,
+                material_dictionaries=mds,
+                interpolation_cache=cache,
+                y0=[0.0, 0.0, 1e12],
+                solidus_func=_solidus_func,
+                liquidus_func=_liquidus_func,
+                temperature_function=_t_func,
+            )
+
+    def test_extract_sub_args_without_density_grid_raises_value_error(self):
+        """A regular-grid seager cache has no density_grid: ValueError, never KeyError."""
+        seager_cache = {'type': 'regular', 'interp': None, 'p_min': 0.0, 'p_max': 1e12}
+        with pytest.raises(ValueError, match='liq EOS table has no density grid'):
+            jw._extract_sub_args(seager_cache, 'liq')
+        out = jw._extract_sub_args(_build_min_cache_dict(), 'liq')
+        assert out['liq_n_p'] == 4
+        assert out['liq_density_grid'].shape == (4, 4)

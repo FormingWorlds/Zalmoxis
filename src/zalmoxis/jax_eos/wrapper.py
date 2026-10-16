@@ -72,6 +72,8 @@ def _extract_sub_args(cached, prefix):
         return cached_args
     # _ensure_unified_cache and seager.get_tabulated_eos already store
     # numpy arrays for these fields; np.asarray here is redundant.
+    if 'density_grid' not in cached:
+        raise ValueError(f'JAX path: the {prefix} EOS table has no density grid')
     grid = cached['density_grid']
     ip, it = np.nonzero(~np.isfinite(grid))
     if len(ip):
@@ -355,7 +357,10 @@ def solve_structure_via_jax(
                 f'paleos_unified mantle entry for {mantle_eos!r} carries no eos_file'
             )
         mantle_cached = _ensure_unified_cache(_mantle_file, interpolation_cache)
-    elif 'melted_mantle' in mantle_mat and 'solid_mantle' in mantle_mat:
+    elif all(
+        str(mantle_mat.get(k, {}).get('format', '')).startswith('paleos')
+        for k in ('melted_mantle', 'solid_mantle')
+    ):
         # Lazy-load both sub-tables via numpy's get_tabulated_eos
         _ = get_tabulated_eos(1e10, mantle_mat, 'solid_mantle', 3000.0, interpolation_cache)
         _ = get_tabulated_eos(1e10, mantle_mat, 'melted_mantle', 5000.0, interpolation_cache)
