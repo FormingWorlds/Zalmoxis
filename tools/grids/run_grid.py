@@ -353,7 +353,8 @@ def run_single(args):
     -------
     dict
         Summary with keys: label, R_earth, M_earth, converged,
-        converged_pressure, converged_density, converged_mass, time_s.
+        converged_pressure, converged_density, converged_mass, converged_bands,
+        band_excess_K (largest excess beyond a table band), time_s.
         On failure, includes an 'error' key.
     """
     label, config_path, output_dir, save_profiles = args
@@ -367,6 +368,8 @@ def run_single(args):
         'converged_pressure': False,
         'converged_density': False,
         'converged_mass': False,
+        'converged_bands': None,
+        'band_excess_K': None,
         'time_s': 0.0,
         'error': None,
     }
@@ -400,6 +403,10 @@ def run_single(args):
         result['converged_pressure'] = model_results['converged_pressure']
         result['converged_density'] = model_results['converged_density']
         result['converged_mass'] = model_results['converged_mass']
+        result['converged_bands'] = model_results.get('converged_bands')
+        result['band_excess_K'] = max(
+            (x for _, x in model_results.get('table_band_excess', {}).values()), default=0.0
+        )
 
         # Save per-run JSON summary
         os.makedirs(output_dir, exist_ok=True)
@@ -557,6 +564,8 @@ def run_grid(grid_toml_path, n_workers=1):
             'converged_pressure',
             'converged_density',
             'converged_mass',
+            'converged_bands',
+            'band_excess_K',
             'time_s',
             'error',
         ]

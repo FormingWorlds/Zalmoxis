@@ -27,6 +27,8 @@ from .interpolation import (
 
 logger = logging.getLogger(__name__)
 
+_band_debug_seen: set[str] = set()  # tables with an out-of-band DEBUG line in this main() call
+
 
 def _fill_invalid_cells(density_grid, unique_temps):
     """Fill each pressure row's invalid cells with the row's nearest valid value along T.
@@ -83,9 +85,9 @@ def band_excess(cached, pressure, temperature):
     Returns
     -------
     float
-        The weighted distance in K, 0 inside the band, NaN for a non-finite T.
+        The weighted distance in K, 0 inside the band, NaN for a non-finite P or T.
     """
-    if not np.isfinite(temperature):
+    if not (np.isfinite(pressure) and np.isfinite(temperature)):
         return np.nan
     up = cached['unique_pressures']
     pressure = min(max(pressure, up[0]), up[-1])
@@ -291,8 +293,10 @@ def get_tabulated_eos(
             if grid_type == 'regular':
                 if (
                     logger.isEnabledFor(logging.DEBUG)
+                    and eos_file not in _band_debug_seen
                     and band_excess(cached, pressure, temperature) > 0
                 ):
+                    _band_debug_seen.add(eos_file)
                     logger.debug(
                         f'{os.path.basename(eos_file)}: T={temperature:.0f} K at '
                         f'P={pressure:.2e} Pa is outside the valid band; the value is taken '

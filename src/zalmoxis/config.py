@@ -7,6 +7,7 @@ parameter validation, material dictionary loading, and melting curve setup.
 from __future__ import annotations
 
 import logging
+import math
 import os
 import sys
 
@@ -205,17 +206,18 @@ def band_limit(config_params):
     Raises
     ------
     ValueError
-        If the value is not a number >= 0.
+        If the value is a bool, not a number, not finite, or below 0.
     """
     value = config_params.get('max_band_excess', MAX_BAND_EXCESS_DEFAULT)
     try:
-        limit = float(value)
+        limit = float('nan') if isinstance(value, bool) else float(value)
     except (TypeError, ValueError):
         limit = float('nan')
-    if not limit >= 0:
+    if not (math.isfinite(limit) and limit >= 0):
         raise ValueError(
-            f'max_band_excess must be >= 0, got {value!r} K. A converged mantle node further '
-            f"than this beyond a table's valid temperature band fails the solve."
+            f'max_band_excess must be a finite number >= 0, got {value!r} K. A converged '
+            f"mantle node further than this beyond a table's valid temperature band fails "
+            f'the solve.'
         )
     return limit
 

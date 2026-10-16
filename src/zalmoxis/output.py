@@ -143,9 +143,13 @@ def post_processing(config_params, id_mass=None, output_file=None, model_results
         f'{(radii[np.argmax(mass_enclosed >= core_mantle_mass)] / radii[-1]):.2f}'
     )
     logger.info(f'Total Computation Time: {total_time:.2f} seconds')
+    band_excess = max(
+        (x for _, x in model_results.get('table_band_excess', {}).values()), default=0.0
+    )
     logger.info(
         f'Overall Convergence Status: {converged} with Pressure: {converged_pressure}, '
-        f'Density: {converged_density}, Mass: {converged_mass}'
+        f'Density: {converged_density}, Mass: {converged_mass}, '
+        f'Bands: {model_results.get("converged_bands")} (largest excess {band_excess:.0f} K)'
     )
 
     if data_output_enabled:

@@ -202,13 +202,28 @@ class TestReportTableBands:
         )
         assert res['table_band_excess'][melt] == (1, pytest.approx(150.0))
 
-    def test_non_finite_node_fails_the_check(self, mats):
-        """A mantle node with a NaN temperature counts as infinitely far outside."""
+    @pytest.mark.parametrize('pressure', [1e9, np.nan], ids=['nan_T', 'nan_P_and_T'])
+    def test_non_finite_node_fails_the_check(self, mats, pressure):
+        """A mantle node with a NaN temperature or pressure counts as infinitely far outside."""
         md, melt, _, solid = mats
-        res = _check(_result([0, np.nan, 2000.0, 2000.0]), md, _curves(100.0, 200.0))
+        res = _check(
+            _result([0, np.nan, 2000.0, 2000.0], P=(0.0, pressure, 2e9, 3e9)),
+            md,
+            _curves(100.0, 200.0),
+        )
         assert res['table_band_excess'][melt] == (1, np.inf)
         assert res['table_band_excess'][solid] == (1, np.inf)
         assert res['converged'] is False
+
+    def test_nan_pressure_alone_fails_the_check(self, mats):
+        """A NaN pressure at a node with a finite temperature also counts as infinite."""
+        md, melt, _, _ = mats
+        res = _check(
+            _result([0, 2000.0, 2000.0, 2000.0], P=(0.0, np.nan, 2e9, 3e9)),
+            md,
+            _curves(100.0, 200.0),
+        )
+        assert res['table_band_excess'][melt] == (1, np.inf)
 
     def test_uncached_table_is_not_checked(self, mats):
         """A table no lookup of the solve has read is left out of the report."""
@@ -236,15 +251,15 @@ class TestReportTableBands:
         res['layer_eos_config']['mantle'] = ''
         assert _check(res, md, None)['converged_bands'] is None  # not checked
 
-    @pytest.mark.parametrize('bad', [-1.0, float('nan'), 'abc', None])
+    @pytest.mark.parametrize('bad', [-1.0, float('nan'), float('inf'), True, 'abc', None])
     def test_validator_rejects_negative_nan_and_text(self, bad):
-        """max_band_excess must be a number >= 0; the message names the value given."""
+        """max_band_excess must be a finite number >= 0, not a bool; the message names it."""
         cfg = load_zalmoxis_config(os.path.join(get_zalmoxis_root(), 'input', 'default.toml'))
         assert cfg['max_band_excess'] == 200.0 and band_limit({'max_band_excess': '7'}) == 7.0
         cfg['max_band_excess'] = bad
-        with pytest.raises(ValueError, match=f'max_band_excess must be >= 0, got {bad!r}'):
+        with pytest.raises(ValueError, match=f'finite number >= 0, got {bad!r}'):
             validate_config(cfg)
-        with pytest.raises(ValueError, match='max_band_excess must be >= 0'):
+        with pytest.raises(ValueError, match='max_band_excess must be a finite number >= 0'):
             _report_table_bands({}, cfg, {}, None, {})
 
     def test_node_within_the_layer_tolerance_is_mantle(self, mats):
@@ -272,7 +287,7 @@ class TestReportTableBands:
         """A non-numeric max_band_excess stops main() before any solve runs."""
         monkeypatch.setattr(solver, '_solve', lambda *a, **k: pytest.fail('solve ran'))
         cfg = {'layer_eos_config': {'mantle': 'Seager2007:MgSiO3'}, 'max_band_excess': 'x'}
-        with pytest.raises(ValueError, match='max_band_excess must be >= 0'):
+        with pytest.raises(ValueError, match='max_band_excess must be a finite number >= 0'):
             solver.main(cfg, {}, None, '/tmp')
 
     def test_empty_mantle_and_missing_profile(self, mats):
@@ -347,25 +362,27 @@ def test_gradient_nodes_are_the_adiabat_reads(mats, monkeypatch, mode, ice, surf
 
 @pytest.mark.unit
 @pytest.mark.parametrize('outer', ['picard', 'newton'])
-def test_main_checks_the_profile_with_the_mixtures_it_got(mats, monkeypatch, outer):
+def test_main_checks_the_profile_with_the_mixtures_it_got(mats, monkeypatch, caplog, outer):
     """main() runs the check on both outer solvers with the mixtures passed in; a band failure
-    leaves the numerical convergence flags as they are."""
+    leaves the numerical convergence flags as they are. A Newton solve that kept the linear
+    profile in an adiabatic mode logs a warning."""
     md, melt, grad, _ = mats
     res = {**_result(HOT, adiabat=True), 'converged_mass': True, 'converged_density': True}
+    newton_res = {**res, 'adiabat_computed': False}
     monkeypatch.setattr(solver, '_solve', lambda *a, **k: dict(res))
-    monkeypatch.setattr(solver, '_solve_newton_outer', lambda *a, **k: dict(res))
+    monkeypatch.setattr(solver, '_solve_newton_outer', lambda *a, **k: dict(newton_res))
     cfg = {
         'layer_eos_config': {'core': 'Seager2007:iron', 'mantle': 'Seager2007:MgSiO3'},
         'temperature_mode': 'adiabatic',
         'outer_solver': outer,
     }
     mixtures = parse_all_layer_mixtures({'core': 'Seager2007:iron', 'mantle': 'X:MgSiO3'})
-    out = solver.main(cfg, md, _curves(500.0, 600.0), '/tmp', layer_mixtures=mixtures)
-    assert set(out['table_band_excess']) == {
-        melt,
-        grad,
-        md['X:MgSiO3']['solid_mantle']['eos_file'],
-    }
+    with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+        out = solver.main(cfg, md, _curves(500.0, 600.0), '/tmp', layer_mixtures=mixtures)
+    tables = {melt, md['X:MgSiO3']['solid_mantle']['eos_file']}
+    assert set(out['table_band_excess']) == (tables if outer == 'newton' else tables | {grad})
+    linear = [r for r in caplog.records if 'kept the linear' in r.getMessage()]
+    assert len(linear) == (outer == 'newton')
     assert out['converged'] is False and out['converged_bands'] is False
     assert out['converged_mass'] is True and out['converged_density'] is True
 
@@ -460,7 +477,8 @@ class TestWolfBowerSolves:
         )
 
     def test_newton_solve_has_no_gradient_entry(self, wb_solves):
-        """A Newton solve keeps the linear T profile, so the gradient table was not read."""
+        """A Newton solve keeps the linear T profile (a known limitation of the Newton outer
+        solver, not a contract), so the gradient table was not read."""
         res, _ = wb_solves['newton']
         assert res['adiabat_computed'] is False
         assert WB['melted_mantle']['adiabat_grad_file'] not in res['table_band_excess']

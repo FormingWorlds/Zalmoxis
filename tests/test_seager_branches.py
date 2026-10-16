@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 from scipy.interpolate import LinearNDInterpolator, RegularGridInterpolator, interp1d
 
+from zalmoxis.eos import seager
 from zalmoxis.eos.seager import _fill_invalid_cells, band_excess, get_tabulated_eos
 
 pytestmark = pytest.mark.unit
@@ -357,6 +358,7 @@ class TestFillCells:
             (1.5e9, 3200.0, 200.0),
             (4e9, 3600.0, 100.0),  # pressure clipped to the p_max row
             (2.5e9, float('nan'), np.nan),  # a NaN T has no distance
+            (float('nan'), 2000.0, np.nan),  # nor a NaN P
         ],
     )
     def test_band_excess_uses_the_rows_with_weight(self, fill_table, p, t, excess):
@@ -367,13 +369,17 @@ class TestFillCells:
         assert band_excess(cached, p, t) == pytest.approx(excess, nan_ok=True)
 
     def test_query_beyond_the_band_logs_at_debug_only(self, fill_table, caplog):
-        """A lookup outside a band logs one DEBUG line per query and no warning."""
+        """Lookups outside a band log one DEBUG line per table until the memory is cleared,
+        as main() does at each call, and no warning."""
         cache = {}
+        seager._band_debug_seen.clear()
         with caplog.at_level('DEBUG', logger='zalmoxis.eos.seager'):
             for _ in range(2):
                 get_tabulated_eos(2.5e9, fill_table, 'melted_mantle', 3400.0, cache)
             get_tabulated_eos(2.5e9, fill_table, 'melted_mantle', 2000.0, cache)
             assert get_tabulated_eos(2.5e9, fill_table, 'melted_mantle', np.nan, cache) is None
+            seager._band_debug_seen.clear()
+            get_tabulated_eos(2.5e9, fill_table, 'melted_mantle', 3400.0, cache)
         band = [r for r in caplog.records if 'valid band' in r.getMessage()]
         assert [r.levelname for r in band] == ['DEBUG', 'DEBUG']
         assert 'T=3400 K' in band[0].getMessage() and 'value is taken' in band[0].getMessage()

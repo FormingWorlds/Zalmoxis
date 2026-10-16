@@ -42,6 +42,7 @@ from .eos import (
     compute_adiabatic_temperature,
     create_pressure_density_files,
 )
+from .eos.seager import _band_debug_seen
 from .mixing import (
     _PALEOS_2PHASE_NAMES,
     _PALEOS_UNIFIED_NAMES,
@@ -244,9 +245,11 @@ def _report_table_bands(
     A table counts at a mantle node when the solve read it there: the solid table at or
     below the solidus, below the liquidus, or where the melting curves are undefined; the
     melt table above the solidus; the gradient table where the adiabat integration read
-    it, when the solve computed the adiabat. Only tables in the interpolation cache are
-    checked. A node with a non-finite P or T counts as infinitely far outside. One
-    warning per call names the tables with a node outside their band.
+    it, when the solve computed the adiabat. The check uses the final P and T, which are
+    the values the adiabat integration read only once its blend reached 1. Only tables in
+    the interpolation cache are checked. A node with a non-finite P or T counts as
+    infinitely far outside. One warning names the tables with a node outside their band,
+    and a second one the limit when an excess exceeds it.
 
     Parameters
     ----------
@@ -417,6 +420,7 @@ def main(
         pressure counts, including a bracket end of the pressure search.
     """
     _interpolation_cache.pop('_jax_fell_back', None)  # set by solve_structure's numpy fallback
+    _band_debug_seen.clear()
     # Validate outer-solver choice. Default is 'picard' (the damped
     # fixed-point loop inside `_solve()`); 'newton' dispatches to
     # `_solve_newton_outer()`.
@@ -471,6 +475,17 @@ def main(
             initial_density=initial_density,
             initial_radii=initial_radii,
         )
+        adiabat_asked = (
+            config_params.get('temperature_mode') in ('adiabatic', 'adiabatic_from_cmb')
+            and temperature_function is None
+            and not (config_params.get('use_jax', False) and temperature_arrays is not None)
+        )
+        if adiabat_asked and not result.get('adiabat_computed'):
+            logger.warning(
+                "outer_solver='newton' kept the linear first-guess temperature profile; "
+                "the adiabat of temperature_mode='%s' was not computed.",
+                config_params['temperature_mode'],
+            )
         return _report_table_bands(result, *bands)
 
     result = _solve(
