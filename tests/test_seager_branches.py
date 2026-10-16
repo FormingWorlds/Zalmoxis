@@ -350,14 +350,18 @@ class TestFillCells:
         [
             (5e8, 1000.0, None),  # both rows hold 1000 K
             (5e8, 2500.0, None),  # the upper edge of row 0, inside row 1
-            (0.0, 2600.0, '[1000, 2500]'),  # on the row-0 node only row 0 counts
-            (1e9, 2900.0, None),  # on the row-1 node: inside row 1, outside row 2 below 1500 K
-            (1.5e9, 1200.0, '[1500, 3000]'),  # inside row 1, below row 2
-            (1.5e9, 3200.0, '[1000, 3000]'),  # above both rows: the lower row is reported
+            (0.0, 2600.0, '[1000, 2500] K of the pressure row at 0.00e+00'),
+            (1e9, 1200.0, None),  # row-1 node: inside row 1, row 2 (from 1500 K) has no weight
+            (2e9, 1200.0, '[1500, 3000] K of the pressure row at 2.00e+09'),
+            (3e9, 3200.0, None),  # p_max node: inside row 3, row 2 (to 3000 K) has no weight
+            (3e9, 1000.0, '[1500, 3500] K of the pressure row at 3.00e+09'),
+            (1.5e9, 1200.0, '[1500, 3000] K of the pressure row at 2.00e+09'),
+            (1.5e9, 3200.0, '[1000, 3000] K of the pressure row at 1.00e+09'),
         ],
     )
     def test_warning_names_the_band_of_a_used_row(self, fill_table, caplog, p, t, band):
-        """The warning fires only outside the band of a row with non-zero weight and names it."""
+        """The warning fires only outside the band of a row with non-zero weight and names
+        that row; a pressure node uses only its own row."""
         with caplog.at_level('WARNING', logger='zalmoxis.eos.seager'):
             get_tabulated_eos(p, fill_table, 'melted_mantle', t, {})
         msgs = [r.getMessage() for r in caplog.records if 'valid band' in r.getMessage()]
@@ -365,15 +369,30 @@ class TestFillCells:
         if band:
             assert band in msgs[0]
 
-    def test_row_without_valid_cell_gives_none(self, tmp_path):
-        """A row of fill stays NaN; a query next to it fails as a lookup, never as a fill density."""
+    def test_nan_temperature_does_not_spend_the_warning(self, fill_table, caplog):
+        """A NaN T fails its lookup without a band warning; a later real excursion still warns."""
+        cache = {}
+        with caplog.at_level('WARNING', logger='zalmoxis.eos.seager'):
+            assert (
+                get_tabulated_eos(2.5e9, fill_table, 'melted_mantle', float('nan'), cache)
+                is None
+            )
+            assert fill_table['melted_mantle']['eos_file'] not in seager._tdep_edge_warned
+            get_tabulated_eos(2.5e9, fill_table, 'melted_mantle', 3400.0, cache)
+        msgs = [r.getMessage() for r in caplog.records if 'valid band' in r.getMessage()]
+        assert len(msgs) == 1 and 'T=3400 K' in msgs[0]
+
+    def test_row_without_valid_cell_gives_none(self, tmp_path, caplog):
+        """A row of fill stays NaN; a query next to it fails as a lookup, with no band warning."""
         rho = _fill_table()
         rho[1, :] = FILL
         filled, t_lo, _ = _fill_invalid_cells(rho, T_AX)
         assert np.isnan(filled[1]).all() and np.isnan(t_lo[1])
         mat = _write_table(tmp_path / 'density_melt.dat', rho)
         cache = {}
-        assert get_tabulated_eos(5e8, mat, 'melted_mantle', 2000.0, cache) is None
+        with caplog.at_level('WARNING', logger='zalmoxis.eos.seager'):
+            assert get_tabulated_eos(5e8, mat, 'melted_mantle', 2000.0, cache) is None
+        assert not [r for r in caplog.records if 'valid band' in r.getMessage()]
         assert get_tabulated_eos(2.5e9, mat, 'melted_mantle', 2000.0, cache) == pytest.approx(
             _plane(2.5e9, 2000.0)
         )

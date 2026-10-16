@@ -59,15 +59,10 @@ def _fill_invalid_cells(density_grid, unique_temps):
         j = np.flatnonzero(row)
         if len(j) == 0:
             continue
-        k = np.arange(row.size)
-        right = np.clip(np.searchsorted(j, k), 0, len(j) - 1)
-        left = np.clip(right - 1, 0, len(j) - 1)
-        t = unique_temps
-        nearest = np.where(
-            np.abs(t[j[left]] - t[k]) <= np.abs(t[j[right]] - t[k]), j[left], j[right]
-        )
-        filled[i] = density_grid[i, nearest]
-        t_lo[i], t_hi[i] = unique_temps[j[0]], unique_temps[j[-1]]
+        t_ok = unique_temps[j]
+        mid = (t_ok[:-1] + t_ok[1:]) / 2  # a node on a midpoint takes the lower valid node
+        filled[i] = density_grid[i, j[np.searchsorted(mid, unique_temps)]]
+        t_lo[i], t_hi[i] = t_ok[0], t_ok[-1]
     return filled, t_lo, t_hi
 
 
@@ -75,7 +70,8 @@ def _warn_beyond_row_edge(cached, eos_file, pressure, temperature):
     """Warn once per table when T lies outside the valid band of a pressure row that the query uses.
 
     A row is used when its bilinear weight is not zero, so a query on a pressure node
-    looks only at that node's row; a row without a valid cell is not a band.
+    looks only at that node's row; a row without a valid cell is not a band, and a
+    non-finite T is left to the lookup that fails on it.
 
     Parameters
     ----------
@@ -88,7 +84,7 @@ def _warn_beyond_row_edge(cached, eos_file, pressure, temperature):
     temperature : float
         Temperature in K.
     """
-    if eos_file in _tdep_edge_warned:
+    if eos_file in _tdep_edge_warned or not np.isfinite(temperature):
         return
     up = cached['unique_pressures']
     i = min(max(int(np.searchsorted(up, pressure, side='right')) - 1, 0), len(up) - 2)
