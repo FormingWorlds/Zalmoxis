@@ -189,6 +189,37 @@ def validate_layer_eos(layer_eos_config):
             )
 
 
+def band_limit(config_params):
+    """Return ``max_band_excess`` in K.
+
+    Parameters
+    ----------
+    config_params : dict
+        Configuration; ``max_band_excess`` defaults to ``MAX_BAND_EXCESS_DEFAULT``.
+
+    Returns
+    -------
+    float
+        The limit.
+
+    Raises
+    ------
+    ValueError
+        If the value is not a number >= 0.
+    """
+    value = config_params.get('max_band_excess', MAX_BAND_EXCESS_DEFAULT)
+    try:
+        limit = float(value)
+    except (TypeError, ValueError):
+        limit = float('nan')
+    if not limit >= 0:
+        raise ValueError(
+            f'max_band_excess must be >= 0, got {value!r} K. A converged mantle node further '
+            f"than this beyond a table's valid temperature band fails the solve."
+        )
+    return limit
+
+
 def validate_config(config_params):
     """Validate all configuration parameters for physical and logical consistency.
 
@@ -446,15 +477,7 @@ def validate_config(config_params):
             f'Typical value: 50 K.'
         )
 
-    try:
-        max_band_excess = float(config_params.get('max_band_excess', MAX_BAND_EXCESS_DEFAULT))
-    except (TypeError, ValueError):
-        max_band_excess = float('nan')
-    if not max_band_excess >= 0:
-        raise ValueError(
-            f'max_band_excess must be >= 0, got {max_band_excess} K. A converged mantle '
-            f"node further than this beyond a table's valid temperature band fails the solve."
-        )
+    band_limit(config_params)
 
     # ── Numerical parameters ────────────────────────────────────────
     num_layers = config_params['num_layers']
@@ -896,9 +919,9 @@ def load_solidus_liquidus_functions(
     if all_comps & _PALEOS_2PHASE_NAMES and liquidus_id == _PALEOS_LIQUIDUS_ID:
         if solidus_id != 'Stixrude14-solidus':
             logger.warning(
-                "rock_solidus=%r is not used for a PALEOS 2-phase mantle with "
+                'rock_solidus=%r is not used for a PALEOS 2-phase mantle with '
                 "rock_liquidus='PALEOS-liquidus': the solidus is derived as "
-                "mushy_zone_factor * liquidus (mushy_zone_factor=%.3g).",
+                'mushy_zone_factor * liquidus (mushy_zone_factor=%.3g).',
                 solidus_id,
                 mushy_zone_factor,
             )

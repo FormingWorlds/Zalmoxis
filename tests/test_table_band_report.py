@@ -19,10 +19,11 @@ import numpy as np
 import pytest
 
 from tests.test_seager_branches import _fill_table, _write_table
-from zalmoxis import solver
-from zalmoxis.config import validate_config
-from zalmoxis.eos import tdep
+from zalmoxis import get_zalmoxis_root, mixing, solver
+from zalmoxis.config import band_limit, load_zalmoxis_config, validate_config
+from zalmoxis.eos import seager, tdep
 from zalmoxis.eos.seager import get_tabulated_eos
+from zalmoxis.eos.temperature import compute_adiabatic_temperature
 from zalmoxis.eos_properties import EOS_REGISTRY
 from zalmoxis.mixing import parse_all_layer_mixtures
 from zalmoxis.solver import _report_table_bands
@@ -233,18 +234,112 @@ class TestReportTableBands:
         res['layer_eos_config']['mantle'] = 'Seager2007:MgSiO3'
         assert _check(res, md, None)['table_band_excess'] == {}
         res['layer_eos_config']['mantle'] = ''
-        assert _check(res, md, None)['converged_bands'] is True
+        assert _check(res, md, None)['converged_bands'] is None  # not checked
 
-    @pytest.mark.parametrize('bad', [-1.0, float('nan'), 'abc'])
+    @pytest.mark.parametrize('bad', [-1.0, float('nan'), 'abc', None])
     def test_validator_rejects_negative_nan_and_text(self, bad):
-        """max_band_excess must be a number >= 0."""
-        from zalmoxis.config import load_zalmoxis_config
-
-        cfg = load_zalmoxis_config()
-        assert cfg['max_band_excess'] == 200.0
+        """max_band_excess must be a number >= 0; the message names the value given."""
+        cfg = load_zalmoxis_config(os.path.join(get_zalmoxis_root(), 'input', 'default.toml'))
+        assert cfg['max_band_excess'] == 200.0 and band_limit({'max_band_excess': '7'}) == 7.0
         cfg['max_band_excess'] = bad
-        with pytest.raises(ValueError, match='max_band_excess must be >= 0'):
+        with pytest.raises(ValueError, match=f'max_band_excess must be >= 0, got {bad!r}'):
             validate_config(cfg)
+        with pytest.raises(ValueError, match='max_band_excess must be >= 0'):
+            _report_table_bands({}, cfg, {}, None, {})
+
+    def test_empty_mantle_and_missing_profile(self, mats):
+        """No mantle node gives a checked, empty count; a result without a profile is not checked."""
+        md, melt, _, _ = mats
+        res = _check(_result(HOT, m=(1.0, 1.0, 1.0, 1.0)), md, _curves(100.0, 200.0))
+        assert res['table_band_excess'][melt] == (0, 0.0) and res['converged_bands'] is True
+        res = _check({'layer_eos_config': _result(HOT)['layer_eos_config']}, md, None)
+        assert res['table_band_excess'] == {} and res['converged_bands'] is None
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ('mode', 'ice', 'surface_p'),
+    [
+        ('adiabatic', '', 0.0),
+        ('adiabatic', 'Seager2007:H2O', 0.0),
+        ('adiabatic', '', 1e5),
+        ('adiabatic_from_cmb', '', 0.0),
+        ('adiabatic_from_cmb', '', 1e5),
+        ('adiabatic_from_cmb', 'Seager2007:H2O', 0.0),
+    ],
+    ids=['surface', 'surface_ice', 'surface_1bar', 'cmb', 'cmb_1bar', 'cmb_ice'],
+)
+def test_gradient_nodes_are_the_adiabat_reads(mats, monkeypatch, mode, ice, surface_p):
+    """The gradient entry covers exactly the nodes compute_adiabatic_temperature reads."""
+    md, _, grad, _ = mats
+    md = {'WolfBower2018:MgSiO3': md['X:MgSiO3']}
+    layers = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3', 'ice_layer': ice}
+    mixtures = parse_all_layer_mixtures(layers)
+    m = np.arange(1.0, 11.0)
+    P = np.append(np.linspace(9e9, 1e9, 9), surface_p)
+    adiabat_reads, check_reads = [], []
+    monkeypatch.setattr(
+        mixing, 'get_mixed_nabla_ad', lambda p, *a: adiabat_reads.append(p) or 0.1
+    )
+    compute_adiabatic_temperature(
+        m,
+        P,
+        m,
+        3000.0,
+        3.5,
+        8.5,
+        mixtures,
+        md,
+        {},
+        *_curves(100.0, 200.0),
+        anchor='cmb' if mode == 'adiabatic_from_cmb' else 'surface',
+        cmb_temperature=5000.0,
+    )
+
+    def spy(cached, p, temperature):
+        if cached is solver._interpolation_cache[grad]:
+            check_reads.append(p)
+        return 1.0
+
+    monkeypatch.setattr(seager, 'band_excess', spy)
+    res = {
+        **_result(np.full(10, 9000.0), P=P, m=m, ice=ice, adiabat=True),
+        'layer_eos_config': layers,
+    }
+    res.update(cmb_mass=3.5, core_mantle_mass=8.5)
+    _report_table_bands(
+        res,
+        {'temperature_mode': mode, 'layer_eos_config': layers},
+        md,
+        _curves(100.0, 200.0),
+        mixtures,
+    )
+    assert sorted(check_reads) == sorted(adiabat_reads) and adiabat_reads
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('outer', ['picard', 'newton'])
+def test_main_checks_the_profile_with_the_mixtures_it_got(mats, monkeypatch, outer):
+    """main() runs the check on both outer solvers with the mixtures passed in; a band failure
+    leaves the numerical convergence flags as they are."""
+    md, melt, grad, _ = mats
+    res = {**_result(HOT, adiabat=True), 'converged_mass': True, 'converged_density': True}
+    monkeypatch.setattr(solver, '_solve', lambda *a, **k: dict(res))
+    monkeypatch.setattr(solver, '_solve_newton_outer', lambda *a, **k: dict(res))
+    cfg = {
+        'layer_eos_config': {'core': 'Seager2007:iron', 'mantle': 'Seager2007:MgSiO3'},
+        'temperature_mode': 'adiabatic',
+        'outer_solver': outer,
+    }
+    mixtures = parse_all_layer_mixtures({'core': 'Seager2007:iron', 'mantle': 'X:MgSiO3'})
+    out = solver.main(cfg, md, _curves(500.0, 600.0), '/tmp', layer_mixtures=mixtures)
+    assert set(out['table_band_excess']) == {
+        melt,
+        grad,
+        md['X:MgSiO3']['solid_mantle']['eos_file'],
+    }
+    assert out['converged'] is False and out['converged_bands'] is False
+    assert out['converged_mass'] is True and out['converged_density'] is True
 
 
 WB = EOS_REGISTRY['WolfBower2018:MgSiO3']
@@ -315,8 +410,10 @@ class TestWolfBowerSolves:
         """At 3871 K the molten mantle lies up to about 58 K beyond the melt band."""
         res, msgs = wb_solves['3871']
         n, excess = res['table_band_excess'][WB['melted_mantle']['eos_file']]
-        assert res['converged'] is True
-        assert n > 0 and 0.0 < excess <= 200.0
+        assert res['converged'] is True and res['converged_bands'] is True
+        assert n > 0 and excess == pytest.approx(3871.0 - 3815.3, abs=1.0)  # the 1-bar node
+        assert res['adiabat_computed'] is True
+        assert res['table_band_excess'][WB['melted_mantle']['adiabat_grad_file']][0] > 0
         assert len(msgs) == 1
 
     def test_beyond_the_limit_returns_not_converged(self, wb_solves):
@@ -324,12 +421,15 @@ class TestWolfBowerSolves:
         res, msgs = wb_solves['4500']
         _, excess = res['table_band_excess'][WB['melted_mantle']['eos_file']]
         assert excess > 200.0
-        assert res['converged'] is False
+        assert res['converged'] is False and res['converged_bands'] is False
+        assert res['converged_pressure'] and res['converged_density']  # numerically converged
 
     def test_second_solve_in_the_process_reports_too(self, wb_solves):
         """The 4500 K solve after the 3871 K one logs its own band warning."""
-        assert len(wb_solves['4500'][1]) == 1
-        assert wb_solves['4500'][1] != wb_solves['3871'][1]
+        assert (
+            len(wb_solves['4500'][1]) == 1
+            and 'density_melt.dat 74, 685' in wb_solves['4500'][1][0]
+        )
 
     def test_newton_solve_has_no_gradient_entry(self, wb_solves):
         """A Newton solve keeps the linear T profile, so the gradient table was not read."""

@@ -27,11 +27,11 @@ from .config import (
     PALEOS_UNIFIED_MAX_MASS_EARTH,
     RTPRESS100TPA_MAX_MASS_EARTH,
     WOLFBOWER2018_MAX_MASS_EARTH,
+    band_limit,
 )
 from .constants import (
     CONDENSED_RHO_MIN_DEFAULT,
     CONDENSED_RHO_SCALE_DEFAULT,
-    MAX_BAND_EXCESS_DEFAULT,
     TDEP_EOS_NAMES,
     earth_center_pressure,
     earth_mass,
@@ -270,7 +270,7 @@ def _report_table_bands(
     """
     from .eos.seager import band_excess
 
-    limit = float(config_params.get('max_band_excess', MAX_BAND_EXCESS_DEFAULT))
+    limit = band_limit(config_params)
     if layer_mixtures is None:
         layer_mixtures = parse_all_layer_mixtures(config_params['layer_eos_config'])
     tables = {}
@@ -284,36 +284,39 @@ def _report_table_bands(
     tables = {k: v for k, v in tables.items() if 't_lo' in _interpolation_cache.get(k, {})}
     report = {}
     result['table_band_excess'] = report
-    result['converged_bands'] = True
-    if not tables:
+    result['converged_bands'] = None  # not checked
+    if not tables or 'mass_enclosed' not in result:
         return result
     m = np.asarray(result['mass_enclosed'])
+    P = np.asarray(result['pressure'], dtype=float)
+    T = np.asarray(result['temperature'], dtype=float)
     mantle = m >= result['cmb_mass']
     if 'ice_layer' in layer_mixtures:
         mantle &= m < result['core_mantle_mass']
-    P = np.asarray(result['pressure'], dtype=float)[mantle]
-    T = np.asarray(result['temperature'], dtype=float)[mantle]
     sol, liq = melting_curves_functions or (lambda p: np.nan,) * 2
     t_sol, t_liq = (np.array([f(p) for p in P], dtype=float) for f in (sol, liq))
     undefined = ~(np.isfinite(t_sol) & np.isfinite(t_liq))
-    ends = np.zeros(len(P), bool)  # the adiabat reads node i+1 (surface anchor) or i-1 (CMB)
-    ends[-1 if config_params.get('temperature_mode') == 'adiabatic_from_cmb' else 0] = (
-        len(P) > 0
-    )
-    bad = ~(np.isfinite(P) & np.isfinite(T))
+    # The adiabat integration (eos/temperature.py) steps between nodes with P >= 1e5 at
+    # both ends: inward it reads the outer node of a mantle step, outward the inner one.
+    step = (P[:-1] >= 1e5) & (P[1:] >= 1e5)
+    grad = np.zeros(len(P), bool)
+    if config_params.get('temperature_mode') == 'adiabatic_from_cmb':
+        cmb = max(1, min(int(np.searchsorted(m, result['cmb_mass'])), len(P) - 1))
+        grad[:-1] = mantle[1:] & step & (np.arange(1, len(P)) > cmb)
+    else:
+        grad[1:] = mantle[:-1] & step
+    bad = mantle & ~(np.isfinite(P) & np.isfinite(T))
     reads = {
-        'solid': undefined | (T <= t_sol) | (T < t_liq),
-        'melt': ~undefined & (T > t_sol),
-        'grad': (P >= 1e5) & ~ends,
+        'solid': mantle & (undefined | (T <= t_sol) | (T < t_liq)),
+        'melt': mantle & ~undefined & (T > t_sol),
+        'grad': grad,
     }
+    result['converged_bands'] = True
     for path, use in tables.items():
         read = reads[use] | bad
-        excess = np.array(
-            [
-                np.inf if b else band_excess(_interpolation_cache[path], p, t)
-                for p, t, b in zip(P[read], T[read], bad[read])
-            ]
-        )
+        cached = _interpolation_cache[path]
+        excess = np.array([band_excess(cached, p, t) for p, t in zip(P[read], T[read])])
+        excess[bad[read]] = np.inf
         report[path] = (int(np.sum(excess > 0)), float(excess.max(initial=0.0)))
     outside = {os.path.basename(k): v for k, v in report.items() if v[0]}
     if outside:
