@@ -290,11 +290,14 @@ def _report_table_bands(
     m = np.asarray(result['mass_enclosed'])
     P = np.asarray(result['pressure'], dtype=float)
     T = np.asarray(result['temperature'], dtype=float)
-    mantle = m >= result['cmb_mass']
+    rtol = 1e-12  # the layer rule of structure_model.get_layer_mixture
+    mantle = m >= result['cmb_mass'] * (1.0 - rtol)
     if 'ice_layer' in layer_mixtures:
-        mantle &= m < result['core_mantle_mass']
+        mantle &= m < result['core_mantle_mass'] * (1.0 - rtol)
     sol, liq = melting_curves_functions or (lambda p: np.nan,) * 2
-    t_sol, t_liq = (np.array([f(p) for p in P], dtype=float) for f in (sol, liq))
+    t_sol, t_liq = np.full(len(P), np.nan), np.full(len(P), np.nan)
+    t_sol[mantle] = [sol(p) for p in P[mantle]]
+    t_liq[mantle] = [liq(p) for p in P[mantle]]
     undefined = ~(np.isfinite(t_sol) & np.isfinite(t_liq))
     # The adiabat integration (eos/temperature.py) steps between nodes with P >= 1e5 at
     # both ends: inward it reads the outer node of a mantle step, outward the inner one.
@@ -311,13 +314,14 @@ def _report_table_bands(
         'melt': mantle & ~undefined & (T > t_sol),
         'grad': grad,
     }
-    result['converged_bands'] = True
     for path, use in tables.items():
         read = reads[use] | bad
         cached = _interpolation_cache[path]
         excess = np.array([band_excess(cached, p, t) for p, t in zip(P[read], T[read])])
-        excess[bad[read]] = np.inf
+        excess[~np.isfinite(excess)] = np.inf
         report[path] = (int(np.sum(excess > 0)), float(excess.max(initial=0.0)))
+        if len(excess):
+            result['converged_bands'] = True
     outside = {os.path.basename(k): v for k, v in report.items() if v[0]}
     if outside:
         logger.warning(
@@ -451,6 +455,7 @@ def main(
                 'change behaviour.',
                 ', '.join(_trigger),
             )
+    band_limit(config_params)  # a bad limit fails before the solve, not after it
     bands = (config_params, material_dictionaries, melting_curves_functions, layer_mixtures)
     if outer_solver == 'newton':
         result = _solve_newton_outer(

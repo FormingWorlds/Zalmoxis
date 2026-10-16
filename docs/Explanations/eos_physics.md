@@ -160,9 +160,9 @@ The `Stixrude14` power laws fall to about 6 K at 1 bar: below 7.3 GPa the solidu
 **Band check.** At the end of each `main()` call, Zalmoxis checks every mantle node of the final profile, the surface included, against the band of each table the solve read there: the solid table below the liquidus, the melt table above the solidus, and the gradient table at the nodes the adiabat integration read, when the solve computed the adiabat.
 The excess at a node is the distance outside each pressure row's band weighted by the row's bilinear weight, as the density is.
 The result holds, per table, the number of nodes outside the band and the largest excess in K (`table_band_excess`), and one warning per call names the tables.
-When a node lies more than `max_band_excess` (default 200 K) beyond a band, the result has `converged = False` and `converged_bands = False`; the other convergence flags keep their values, so a caller can tell a band failure from a numerical one. `converged_bands` is None when no table was checked.
+When a node lies more than `max_band_excess` (default 200 K) beyond a band, the result has `converged = False` and `converged_bands = False`; the other convergence flags keep their values, so a caller can tell a band failure from a numerical one. `converged_bands` is None when no node was checked.
 The outer loops of `solve_miscible_interior` and `solve_strong_partition` stop on it as on any failed structure solve.
-For the melt table, 200 K above the hot edge is a density bias of at least about 4.6% at 1 bar, 1.5% at 1 GPa, 1.1% at 10 GPa and 0.3% at 100 GPa; the surface node sits on the 1-bar row, so with the default limit a surface temperature above about 4015 K fails.
+For the melt table, 200 K above the hot edge is a density bias of about 4.7% at 1 bar (a lower bound, see above), 1.5% at 1 GPa, 1.1% at 10 GPa and 0.3% at 100 GPa; a surface node of the mantle sits close to the P = 0 row (edge 3815 K), so with the default limit a surface temperature above about 4015 K fails.
 
 ### RTPress100TPa Extended Melt EOS
 

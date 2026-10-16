@@ -247,11 +247,39 @@ class TestReportTableBands:
         with pytest.raises(ValueError, match='max_band_excess must be >= 0'):
             _report_table_bands({}, cfg, {}, None, {})
 
+    def test_node_within_the_layer_tolerance_is_mantle(self, mats):
+        """A node 1e-13 below cmb_mass is mantle, as in structure_model.get_layer_mixture."""
+        md, melt, _, _ = mats
+        res = _check(
+            _result(HOT, m=(1.0, 2.0 * (1 - 1e-13), 3.0, 4.0)), md, _curves(100.0, 200.0)
+        )
+        assert res['table_band_excess'][melt][0] == 2
+
+    def test_non_finite_gradient_node_above_the_mantle_fails(self, mats):
+        """The surface-anchored adiabat reads the first ice node; a NaN there fails the check."""
+        md, _, grad, _ = mats
+        res = _result(
+            [0, 2000.0, 2000.0, np.nan],
+            m=(1.0, 2.0, 3.0, 4.0),
+            ice='Seager2007:H2O',
+            adiabat=True,
+        )
+        res['core_mantle_mass'] = 3.5
+        _check(res, md, _curves(100.0, 200.0))
+        assert res['table_band_excess'][grad] == (1, np.inf) and res['converged'] is False
+
+    def test_main_rejects_a_bad_limit_before_the_solve(self, monkeypatch):
+        """A non-numeric max_band_excess stops main() before any solve runs."""
+        monkeypatch.setattr(solver, '_solve', lambda *a, **k: pytest.fail('solve ran'))
+        cfg = {'layer_eos_config': {'mantle': 'Seager2007:MgSiO3'}, 'max_band_excess': 'x'}
+        with pytest.raises(ValueError, match='max_band_excess must be >= 0'):
+            solver.main(cfg, {}, None, '/tmp')
+
     def test_empty_mantle_and_missing_profile(self, mats):
         """No mantle node gives a checked, empty count; a result without a profile is not checked."""
         md, melt, _, _ = mats
         res = _check(_result(HOT, m=(1.0, 1.0, 1.0, 1.0)), md, _curves(100.0, 200.0))
-        assert res['table_band_excess'][melt] == (0, 0.0) and res['converged_bands'] is True
+        assert res['table_band_excess'][melt] == (0, 0.0) and res['converged_bands'] is None
         res = _check({'layer_eos_config': _result(HOT)['layer_eos_config']}, md, None)
         assert res['table_band_excess'] == {} and res['converged_bands'] is None
 
