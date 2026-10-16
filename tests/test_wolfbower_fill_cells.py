@@ -66,6 +66,7 @@ def test_both_tables_finite_and_positive_over_sweep(cache):
         assert vals.max() < 1.2e4, (phase, vals.max())
 
 
+@pytest.mark.wolfbower
 def test_wolf_bower_mantle_on_the_jax_path_falls_back_to_numpy(tmp_path, caplog):
     """use_jax with a Wolf & Bower mantle runs on the numpy path and converges: the JAX
     wrapper refuses the non-PALEOS 2-phase mantle with ValueError, which the caller catches."""

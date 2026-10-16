@@ -13,7 +13,7 @@ import pytest
 
 from tests.test_table_band_report import WB, _wb_solve
 
-pytestmark = [pytest.mark.integration, pytest.mark.timeout(1500)]
+pytestmark = [pytest.mark.integration, pytest.mark.wolfbower, pytest.mark.timeout(1500)]
 
 
 def test_newton_solve_has_no_gradient_entry(tmp_path):

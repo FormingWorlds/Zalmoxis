@@ -453,6 +453,7 @@ def wb_solves(tmp_path_factory):
 
 
 @pytest.mark.integration
+@pytest.mark.wolfbower
 @pytest.mark.timeout(1500)  # 2 solves, about 4 minutes on one core, 3x that on CI
 class TestWolfBowerSolves:
     """Real solves: inside the limit the clamp stays, beyond it the solve fails."""
