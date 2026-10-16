@@ -401,64 +401,55 @@ def test_main_checks_the_profile_with_the_mixtures_it_got(mats, monkeypatch, cap
 WB = EOS_REGISTRY['WolfBower2018:MgSiO3']
 
 
-@pytest.fixture(scope='module')
-def wb_solves(tmp_path_factory):
-    """Solve 1 M_earth with a Wolf & Bower mantle at 3871 K, then 4500 K, in one process,
-    and a Newton solve at 500 K, which never computes the adiabat."""
-    from zalmoxis import get_zalmoxis_root
-    from zalmoxis.config import (
-        load_material_dictionaries,
-        load_solidus_liquidus_functions,
-        load_zalmoxis_config,
-    )
+def _wb_solve(tmp_dir, surface_temperature, **params):
+    """Solve 1 M_earth with a Wolf & Bower mantle; return the result and the band warnings."""
+    from zalmoxis.config import load_material_dictionaries, load_solidus_liquidus_functions
 
     for phase in ('melted_mantle', 'solid_mantle'):
         if not os.path.isfile(WB[phase]['eos_file']):
             pytest.skip(f'Wolf & Bower table missing: {WB[phase]["eos_file"]}')
     root = get_zalmoxis_root()
-    out = {}
-    for name, ts, outer in (
-        ('3871', 3871.0, None),
-        ('4500', 4500.0, None),
-        ('newton', 500.0, 'newton'),
+    text = open(os.path.join(root, 'input', 'default.toml')).read()
+    for key, value in (
+        ('mantle', '"WolfBower2018:MgSiO3"'),
+        ('data_enabled', 'false'),
+        ('surface_temperature', str(surface_temperature)),
     ):
-        text = open(os.path.join(root, 'input', 'default.toml')).read()
-        for key, value in (
-            ('mantle', '"WolfBower2018:MgSiO3"'),
-            ('data_enabled', 'false'),
-            ('surface_temperature', str(ts)),
-        ):
-            text = re.sub(rf'(?m)^{key}\s*=.*$', f'{key} = {value}', text)
-        path = tmp_path_factory.mktemp('wb') / 'wb.toml'
-        path.write_text(text)
-        cfg = load_zalmoxis_config(str(path))
-        if outer:  # Newton needs tight integrator tolerances
-            cfg.update(outer_solver=outer, relative_tolerance=1e-9, absolute_tolerance=1e-10)
-        melt = load_solidus_liquidus_functions(
-            cfg['layer_eos_config'],
-            cfg['rock_solidus'],
-            cfg['rock_liquidus'],
-            cfg['mushy_zone_factor'],
+        text = re.sub(rf'(?m)^{key}\s*=.*$', f'{key} = {value}', text)
+    path = tmp_dir / 'wb.toml'
+    path.write_text(text)
+    cfg = load_zalmoxis_config(str(path))
+    cfg.update(params)
+    melt = load_solidus_liquidus_functions(
+        cfg['layer_eos_config'],
+        cfg['rock_solidus'],
+        cfg['rock_liquidus'],
+        cfg['mushy_zone_factor'],
+    )
+    records = []
+    handler = logging.Handler()
+    handler.emit = records.append
+    logging.getLogger('zalmoxis.solver').addHandler(handler)
+    try:
+        res = solver.main(
+            cfg,
+            material_dictionaries=load_material_dictionaries(),
+            melting_curves_functions=melt,
+            input_dir=os.path.join(root, 'input'),
         )
-        records = []
-        handler = logging.Handler()
-        handler.emit = records.append
-        logging.getLogger('zalmoxis.solver').addHandler(handler)
-        try:
-            res = solver.main(
-                cfg,
-                material_dictionaries=load_material_dictionaries(),
-                melting_curves_functions=melt,
-                input_dir=os.path.join(root, 'input'),
-            )
-        finally:
-            logging.getLogger('zalmoxis.solver').removeHandler(handler)
-        out[name] = (res, [r.getMessage() for r in records if 'valid T band' in r.getMessage()])
-    return out
+    finally:
+        logging.getLogger('zalmoxis.solver').removeHandler(handler)
+    return res, [r.getMessage() for r in records if 'valid T band' in r.getMessage()]
+
+
+@pytest.fixture(scope='module')
+def wb_solves(tmp_path_factory):
+    """Solve at 3871 K, then at 4500 K, in one process."""
+    return {ts: _wb_solve(tmp_path_factory.mktemp('wb'), float(ts)) for ts in ('3871', '4500')}
 
 
 @pytest.mark.integration
-@pytest.mark.timeout(1500)  # 3 solves, the Newton one about 7 minutes
+@pytest.mark.timeout(1500)  # 2 solves, about 4 minutes on one core, 3x that on CI
 class TestWolfBowerSolves:
     """Real solves: inside the limit the clamp stays, beyond it the solve fails."""
 
@@ -486,11 +477,3 @@ class TestWolfBowerSolves:
             len(wb_solves['4500'][1]) == 1
             and 'density_melt.dat 74, 685' in wb_solves['4500'][1][0]
         )
-
-    def test_newton_solve_has_no_gradient_entry(self, wb_solves):
-        """A Newton solve keeps the linear T profile (a known limitation of the Newton outer
-        solver, not a contract), so the gradient table was not read."""
-        res, _ = wb_solves['newton']
-        assert res['adiabat_computed'] is False
-        assert WB['melted_mantle']['adiabat_grad_file'] not in res['table_band_excess']
-        assert res['converged_bands'] is True

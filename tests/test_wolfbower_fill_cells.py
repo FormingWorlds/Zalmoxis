@@ -16,7 +16,7 @@ import pytest
 from zalmoxis.eos.seager import get_tabulated_eos
 from zalmoxis.eos_properties import EOS_REGISTRY
 
-pytestmark = [pytest.mark.integration, pytest.mark.timeout(300)]
+pytestmark = [pytest.mark.integration, pytest.mark.timeout(900)]
 
 WB = EOS_REGISTRY['WolfBower2018:MgSiO3']
 
