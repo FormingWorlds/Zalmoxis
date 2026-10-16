@@ -56,3 +56,55 @@ def test_both_tables_finite_and_positive_over_sweep(cache):
         assert np.all(np.isfinite(vals)), phase
         assert vals.min() > lo, (phase, vals.min())
         assert vals.max() < 1.2e4, (phase, vals.max())
+
+
+def test_wolf_bower_mantle_on_the_jax_path_falls_back_to_numpy(tmp_path, caplog):
+    """use_jax with a Wolf & Bower mantle runs on the numpy path and converges: the JAX
+    wrapper refuses the non-PALEOS 2-phase mantle with ValueError, which the caller catches."""
+    import logging
+    import re
+
+    from zalmoxis import get_zalmoxis_root
+    from zalmoxis.config import (
+        load_material_dictionaries,
+        load_solidus_liquidus_functions,
+        load_zalmoxis_config,
+    )
+    from zalmoxis.solver import main
+
+    for phase in ('melted_mantle', 'solid_mantle'):
+        if not os.path.isfile(WB[phase]['eos_file']):
+            pytest.skip(f'Wolf & Bower table missing: {WB[phase]["eos_file"]}')
+    root = get_zalmoxis_root()
+    text = open(os.path.join(root, 'input', 'default.toml')).read()
+    for key, value in (
+        ('mantle', '"WolfBower2018:MgSiO3"'),
+        ('data_enabled', 'false'),
+        ('num_layers', '60'),
+    ):
+        text = re.sub(rf'(?m)^{key}\s*=.*$', f'{key} = {value}', text)
+    cfg_path = tmp_path / 'wb.toml'
+    cfg_path.write_text(text)
+    cfg = load_zalmoxis_config(str(cfg_path))
+    cfg['use_jax'] = True
+    melt = load_solidus_liquidus_functions(
+        cfg['layer_eos_config'],
+        cfg.get('rock_solidus', 'Stixrude14-solidus'),
+        cfg.get('rock_liquidus', 'Stixrude14-liquidus'),
+        cfg.get('mushy_zone_factor', 1.0),
+    )
+    with caplog.at_level(logging.WARNING, logger='zalmoxis'):
+        res = main(
+            cfg,
+            material_dictionaries=load_material_dictionaries(),
+            melting_curves_functions=melt,
+            input_dir=os.path.join(root, 'input'),
+        )
+    fell_back = [
+        r.getMessage() for r in caplog.records if 'fell back to numpy' in r.getMessage()
+    ]
+    assert fell_back and 'PALEOS-2phase' in fell_back[0]
+    assert not [r for r in caplog.records if 'density_grid' in r.getMessage()]
+    assert res['converged']
+    inside = np.asarray(res['pressure']) > 0  # the surface padding node has zero density
+    assert np.all(np.isfinite(res['density'])) and res['density'][inside].min() > 1000.0

@@ -650,16 +650,28 @@ class TestCacheKeyIdentity:
 class TestNonPaleosTwoPhaseMantle:
     """A 2-phase mantle from P-T-rho tables (Wolf & Bower, RTPress) is refused, not crashed."""
 
-    @pytest.mark.parametrize('mantle_eos', ['WolfBower2018:MgSiO3', 'RTPress100TPa:MgSiO3'])
+    @pytest.mark.parametrize(
+        'mantle_eos', ['WolfBower2018:MgSiO3', 'RTPress100TPa:MgSiO3', 'mixed_format']
+    )
     def test_tabulated_two_phase_mantle_raises_value_error(self, mantle_eos):
-        """The ValueError lets solve_structure fall back to numpy; main raised KeyError."""
+        """The real Wolf & Bower and RTPress registry entries, and a mantle with one PALEOS and
+        one tabulated sub-table, are refused with ValueError, so solve_structure falls back to
+        numpy; main raised KeyError."""
+        import copy
+
+        from zalmoxis.eos_properties import EOS_REGISTRY
+
         layer_mixtures, mds, cache = _common_fixtures()
         layer_mixtures['mantle'] = LayerMixture([mantle_eos], [1.0])
-        mds[mantle_eos] = {
-            '_api_resolved': True,
-            'solid_mantle': {'eos_file': '/synthetic/wb_solid.dat'},
-            'melted_mantle': {'eos_file': '/synthetic/wb_melt.dat'},
-        }
+        if mantle_eos == 'mixed_format':
+            entry = copy.deepcopy(EOS_REGISTRY['WolfBower2018:MgSiO3'])
+            entry['solid_mantle'] = {'eos_file': '/synthetic/sol.dat', 'format': 'paleos'}
+        else:
+            entry = copy.deepcopy(EOS_REGISTRY[mantle_eos])
+            assert (
+                'format' not in entry['melted_mantle'] and 'format' not in entry['solid_mantle']
+            )
+        mds[mantle_eos] = {**entry, '_api_resolved': True}
         with pytest.raises(ValueError, match='PALEOS-2phase'):
             jw.solve_structure_via_jax(
                 layer_mixtures=layer_mixtures,
