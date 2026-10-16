@@ -94,7 +94,7 @@ def test_wolf_bower_mantle_on_the_jax_path_falls_back_to_numpy(tmp_path, caplog)
     cfg_path = tmp_path / 'wb.toml'
     cfg_path.write_text(text)
     cfg = load_zalmoxis_config(str(cfg_path))
-    cfg['use_jax'] = True
+    cfg.update(use_jax=True, wall_timeout=3600.0)  # the iteration limits end the solve
     melt = load_solidus_liquidus_functions(
         cfg['layer_eos_config'],
         cfg.get('rock_solidus', 'Stixrude14-solidus'),
@@ -113,6 +113,6 @@ def test_wolf_bower_mantle_on_the_jax_path_falls_back_to_numpy(tmp_path, caplog)
     ]
     assert fell_back and 'PALEOS-2phase' in fell_back[0]
     assert not [r for r in caplog.records if 'density_grid' in r.getMessage()]
-    assert res['converged']
+    assert res['converged'] and res['converged_pressure'] and res['converged_density']
     inside = np.asarray(res['pressure']) > 0  # the surface padding node has zero density
     assert np.all(np.isfinite(res['density'])) and res['density'][inside].min() > 1000.0

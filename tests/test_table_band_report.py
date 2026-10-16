@@ -402,7 +402,11 @@ WB = EOS_REGISTRY['WolfBower2018:MgSiO3']
 
 
 def _wb_solve(tmp_dir, surface_temperature, **params):
-    """Solve 1 M_earth with a Wolf & Bower mantle; return the result and the band warnings."""
+    """Solve 1 M_earth with a Wolf & Bower mantle; return the result and the band warnings.
+
+    The wall-clock limit is far above the solve time, so the iteration limits end the
+    solve on any runner.
+    """
     from zalmoxis.config import load_material_dictionaries, load_solidus_liquidus_functions
 
     for phase in ('melted_mantle', 'solid_mantle'):
@@ -419,7 +423,7 @@ def _wb_solve(tmp_dir, surface_temperature, **params):
     path = tmp_dir / 'wb.toml'
     path.write_text(text)
     cfg = load_zalmoxis_config(str(path))
-    cfg.update(params)
+    cfg.update({'wall_timeout': 3600.0, **params})
     melt = load_solidus_liquidus_functions(
         cfg['layer_eos_config'],
         cfg['rock_solidus'],
