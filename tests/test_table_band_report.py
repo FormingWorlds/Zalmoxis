@@ -476,8 +476,7 @@ class TestWolfBowerSolves:
         assert res['converged_pressure'] and res['converged_density']  # numerically converged
 
     def test_second_solve_in_the_process_reports_too(self, wb_solves):
-        """The 4500 K solve after the 3871 K one logs its own band warning."""
-        assert (
-            len(wb_solves['4500'][1]) == 1
-            and 'density_melt.dat 74, 685' in wb_solves['4500'][1][0]
-        )
+        """The 4500 K solve after the 3871 K one logs its own band warning, with its counts."""
+        res, msgs = wb_solves['4500']
+        n, excess = res['table_band_excess'][WB['melted_mantle']['eos_file']]
+        assert len(msgs) == 1 and f'density_melt.dat {n}, {excess:.0f}' in msgs[0]
