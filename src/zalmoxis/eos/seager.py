@@ -27,8 +27,6 @@ from .interpolation import (
 
 logger = logging.getLogger(__name__)
 
-_tdep_edge_warned: set[str] = set()
-
 
 def _fill_invalid_cells(density_grid, unique_temps):
     """Fill each pressure row's invalid cells with the row's nearest valid value along T.
@@ -66,40 +64,38 @@ def _fill_invalid_cells(density_grid, unique_temps):
     return filled, t_lo, t_hi
 
 
-def _warn_beyond_row_edge(cached, eos_file, pressure, temperature):
-    """Warn once per table when T lies outside the valid band of a pressure row that the query uses.
+def band_excess(cached, pressure, temperature):
+    """Return how far T lies outside the valid band of the pressure rows a query uses, in K.
 
     A row is used when its bilinear weight is not zero, so a query on a pressure node
-    looks only at that node's row; a row without a valid cell is not a band, and a
-    non-finite T is left to the lookup that fails on it.
+    looks only at that node's row; a row without a valid cell is not a band. The
+    pressure is clipped to the table range, as in the lookup.
 
     Parameters
     ----------
     cached : dict
         Regular-grid cache entry with 'unique_pressures', 't_lo' and 't_hi'.
-    eos_file : str
-        Table path, named in the warning.
     pressure : float
-        Pressure in Pa, already inside the table range.
+        Pressure in Pa.
     temperature : float
         Temperature in K.
+
+    Returns
+    -------
+    float
+        The largest distance below the lowest or above the highest valid T of a used
+        row, 0 inside every used band.
     """
-    if eos_file in _tdep_edge_warned or not np.isfinite(temperature):
-        return
     up = cached['unique_pressures']
+    pressure = min(max(pressure, up[0]), up[-1])
     i = min(max(int(np.searchsorted(up, pressure, side='right')) - 1, 0), len(up) - 2)
     rows = [r for r, w in ((i, up[i + 1] - pressure), (i + 1, pressure - up[i])) if w > 0]
+    excess = 0.0
     for r in rows:
         lo, hi = cached['t_lo'][r], cached['t_hi'][r]
-        if np.isfinite(lo) and not lo <= temperature <= hi:
-            _tdep_edge_warned.add(eos_file)
-            logger.warning(
-                f'{os.path.basename(eos_file)}: T={temperature:.0f} K at P={pressure:.2e} Pa is '
-                f'outside the valid band [{lo:.0f}, {hi:.0f}] K of the pressure row at '
-                f'{up[r]:.2e} Pa; the density is taken at the band edge. Further queries '
-                f'outside a band are not reported.'
-            )
-            return
+        if np.isfinite(lo):
+            excess = max(excess, lo - temperature, temperature - hi)
+    return excess
 
 
 def get_tabulated_eos(
@@ -292,7 +288,14 @@ def get_tabulated_eos(
                 pressure = np.clip(pressure, p_min, p_max)
 
             if grid_type == 'regular':
-                _warn_beyond_row_edge(cached, eos_file, pressure, temperature)
+                if logger.isEnabledFor(logging.DEBUG) and band_excess(
+                    cached, pressure, temperature
+                ):
+                    logger.debug(
+                        f'{os.path.basename(eos_file)}: T={temperature:.0f} K at '
+                        f'P={pressure:.2e} Pa is outside the valid band; the value is taken '
+                        f'at the band edge.'
+                    )
                 density = cached['interp']((pressure, temperature))
             else:
                 up = cached['unique_pressures']

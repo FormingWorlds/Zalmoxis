@@ -16,6 +16,7 @@ from __future__ import annotations
 import copy
 import logging
 import math
+import os
 import time
 
 import numpy as np
@@ -30,6 +31,7 @@ from .config import (
 from .constants import (
     CONDENSED_RHO_MIN_DEFAULT,
     CONDENSED_RHO_SCALE_DEFAULT,
+    MAX_BAND_EXCESS_DEFAULT,
     TDEP_EOS_NAMES,
     earth_center_pressure,
     earth_mass,
@@ -49,6 +51,7 @@ from .mixing import (
     calculate_mixed_density_batch,
     compute_melt_fraction,
     parse_all_layer_mixtures,
+    parse_layer_components,
     split_mantle_volatile_inventory,
     strong_partition_phi_floor,
 )
@@ -234,6 +237,105 @@ def _tighten_solver_params(params):
     return tightened
 
 
+def _report_table_bands(
+    result, config_params, material_dictionaries, melting_curves_functions, adiabat
+):
+    """Check the converged mantle profile against the valid T band of each regular-grid table.
+
+    A table counts at a mantle node when the density or gradient lookup there reads it:
+    the solid table at or below the solidus, below the liquidus, or where the melting
+    curves are undefined; the melt table above the solidus; the gradient table at every
+    node when the adiabat is computed. One warning names the tables with a node outside
+    their band.
+
+    Parameters
+    ----------
+    result : dict
+        Result of a structure solve; gets ``'table_band_excess'``, {table path: (nodes
+        outside the band, largest excess in K)}, and ``'converged'`` set to False when an
+        excess exceeds ``max_band_excess``.
+    config_params : dict
+        Configuration; ``max_band_excess`` in K, default ``MAX_BAND_EXCESS_DEFAULT``.
+    material_dictionaries : dict
+        EOS registry.
+    melting_curves_functions : tuple or None
+        (solidus_func, liquidus_func) of the mantle.
+    adiabat : bool
+        Whether the solve computed the adiabat from the gradient table.
+
+    Returns
+    -------
+    dict
+        ``result``, updated in place.
+    """
+    from .eos.seager import band_excess, get_tabulated_eos
+
+    limit = config_params.get('max_band_excess', MAX_BAND_EXCESS_DEFAULT)
+    layers = config_params['layer_eos_config']
+    tables = []
+    for comp in (
+        parse_layer_components(layers['mantle']).components if layers.get('mantle') else []
+    ):
+        mat = material_dictionaries.get(comp, {})
+        tables += [
+            (mat.get('solid_mantle', {}).get('eos_file'), 'solid'),
+            (mat.get('melted_mantle', {}).get('eos_file'), 'melt'),
+            (
+                mat.get('melted_mantle', {}).get('adiabat_grad_file'),
+                'grad' if adiabat else None,
+            ),
+        ]
+    tables = [(path, use) for path, use in tables if path and use]
+    report = {}
+    result['table_band_excess'] = report
+    if not tables:
+        return result
+    m, P, T = (np.asarray(result[k]) for k in ('mass_enclosed', 'pressure', 'temperature'))
+    mantle = (m >= result['cmb_mass']) & (P > 0)  # P = 0 is the padding above the surface
+    if layers.get('ice_layer'):
+        mantle &= m < result['core_mantle_mass']
+    sol, liq = melting_curves_functions or (None, None)
+    for path, use in tables:
+        if path not in _interpolation_cache:
+            get_tabulated_eos(
+                1e10,
+                {'melted_mantle': {'eos_file': path}},
+                'melted_mantle',
+                3000.0,
+                _interpolation_cache,
+            )
+        cached = _interpolation_cache.get(path)
+        if not cached or 't_lo' not in cached:
+            continue
+        excess = []
+        for p, t in zip(P[mantle], T[mantle]):
+            t_sol, t_liq = (sol(p), liq(p)) if sol else (np.nan, np.nan)
+            undefined = not (np.isfinite(t_sol) and np.isfinite(t_liq))
+            if (
+                use == 'grad'
+                or (use == 'solid' and (undefined or t <= t_sol or t < t_liq))
+                or (use == 'melt' and not undefined and t > t_sol)
+            ):
+                excess.append(band_excess(cached, p, t))
+        excess = np.asarray(excess)
+        report[path] = (int(np.sum(excess > 0)), float(excess.max(initial=0.0)))
+    outside = {os.path.basename(k): v for k, v in report.items() if v[0]}
+    if outside:
+        logger.warning(
+            'Converged mantle nodes outside the valid T band of a table (nodes, largest '
+            'excess in K): %s; the value there is taken at the band edge.',
+            ', '.join(f'{k} {n}, {x:.0f}' for k, (n, x) in outside.items()),
+        )
+    if any(x > limit for _, x in report.values()):
+        logger.warning(
+            'A mantle node lies more than max_band_excess = %.0f K beyond a table band; '
+            'the structure is returned with converged=False.',
+            limit,
+        )
+        result['converged'] = False
+    return result
+
+
 def main(
     config_params,
     material_dictionaries,
@@ -350,19 +452,29 @@ def main(
                 'change behaviour.',
                 ', '.join(_trigger),
             )
+    # The band check needs the adiabat only when no caller T replaces it.
+    adiabat = (
+        config_params['temperature_mode'] in ('adiabatic', 'adiabatic_from_cmb')
+        and temperature_function is None
+        and not (config_params.get('use_jax', False) and temperature_arrays is not None)
+    )
+    bands = (config_params, material_dictionaries, melting_curves_functions, adiabat)
     if outer_solver == 'newton':
-        return _solve_newton_outer(
-            config_params,
-            material_dictionaries,
-            melting_curves_functions,
-            input_dir,
-            layer_mixtures=layer_mixtures,
-            volatile_profile=volatile_profile,
-            temperature_function=temperature_function,
-            temperature_arrays=temperature_arrays,
-            p_center_hint=p_center_hint,
-            initial_density=initial_density,
-            initial_radii=initial_radii,
+        return _report_table_bands(
+            _solve_newton_outer(
+                config_params,
+                material_dictionaries,
+                melting_curves_functions,
+                input_dir,
+                layer_mixtures=layer_mixtures,
+                volatile_profile=volatile_profile,
+                temperature_function=temperature_function,
+                temperature_arrays=temperature_arrays,
+                p_center_hint=p_center_hint,
+                initial_density=initial_density,
+                initial_radii=initial_radii,
+            ),
+            *bands,
         )
 
     result = _solve(
@@ -463,7 +575,7 @@ def main(
                 'Returning best result with converged=False.'
             )
 
-    return result
+    return _report_table_bands(result, *bands)
 
 
 # Newton outer-loop defaults: 3-6 Newton iterations are typically

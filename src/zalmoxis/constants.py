@@ -41,5 +41,8 @@ TDEP_EOS_NAMES = {
 CONDENSED_RHO_MIN_DEFAULT = 322.0  # kg/m^3, sigmoid center = H2O critical density
 CONDENSED_RHO_SCALE_DEFAULT = 50.0  # kg/m^3, sigmoid transition width
 
+# Largest distance of a converged mantle node beyond a tabulated EOS's valid T band.
+MAX_BAND_EXCESS_DEFAULT = 200.0  # K
+
 # Other constants
 G = 6.67428e-11  # Gravitational constant (m^3 kg^-1 s^-2)

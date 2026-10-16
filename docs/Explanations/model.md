@@ -93,8 +93,8 @@ See [Equations of State](eos_physics.md) for detailed physics of each EOS family
 | `Seager2007:iron` | 0 to $10^{16}$ Pa | 300 K (fixed) | ~50 $M_\oplus$ | Vinet + DFT + TFD |
 | `Seager2007:MgSiO3` | 0 to $10^{16}$ Pa | 300 K (fixed) | ~50 $M_\oplus$ | 4th-order BME + DFT + TFD |
 | `Seager2007:H2O` | 0 to $10^{16}$ Pa | 300 K (fixed) | ~50 $M_\oplus$ | Experimental + DFT + TFD |
-| `WolfBower2018:MgSiO3` | 0 to $10^{12}$ Pa (1 TPa) | 0 to 16500 K | 7 $M_\oplus$ | RTpress; $P$ clamped at table edge; beyond the valid $T$ band of a pressure the band-edge density (see EOS physics) |
-| `RTPress100TPa:MgSiO3` | $10^3$ to $10^{14}$ Pa (100 TPa) | 400 to 50,000 K | 50 $M_\oplus$ | Extended melt table; solid from WB2018 (clamped at 1 TPa) |
+| `WolfBower2018:MgSiO3` | 0 to $10^{12}$ Pa (1 TPa) | 0 to 16500 K | 7 $M_\oplus$ | RTpress; $P$ clamped at table edge, $T$ outside 0 to 16500 K raises error; beyond the valid $T$ band of a pressure the band-edge density (see EOS physics) |
+| `RTPress100TPa:MgSiO3` | $10^3$ to $10^{14}$ Pa (100 TPa) | 400 to 50,000 K | 50 $M_\oplus$ | Extended melt table; solid from WB2018 (clamped at 1 TPa, band-edge fill) |
 | `PALEOS-2phase:MgSiO3` | 1 bar to 100 TPa | 300 to 100,000 K | 50 $M_\oplus$ | Solid + liquid with $\nabla_{\mathrm{ad}}$; 75%/53% grid fill |
 | `PALEOS:iron` | 1 bar to 100 TPa | 300 to 100,000 K | 50 $M_\oplus$ | Unified 5-phase Fe with $\nabla_{\mathrm{ad}}$ |
 | `PALEOS:MgSiO3` | 1 bar to 100 TPa | 300 to 100,000 K | 50 $M_\oplus$ | Unified 6-phase MgSiO$_3$ with $\nabla_{\mathrm{ad}}$ |

@@ -15,8 +15,7 @@ import numpy as np
 import pytest
 from scipy.interpolate import LinearNDInterpolator, RegularGridInterpolator, interp1d
 
-from zalmoxis.eos import seager
-from zalmoxis.eos.seager import _fill_invalid_cells, get_tabulated_eos
+from zalmoxis.eos.seager import _fill_invalid_cells, band_excess, get_tabulated_eos
 
 pytestmark = pytest.mark.unit
 
@@ -294,14 +293,13 @@ def _fill_table():
 
 
 def _write_table(path, rho):
-    """Write ``rho`` on (P_AX, T_AX) in the tab-separated P-T-rho format of the mantle tables."""
+    """Write ``rho`` on (P_AX, T_AX) in the tab-separated P-T-rho format of the mantle."""
     rows = [
         f'{p:.10e}\t{t:.10e}\t{rho[i, j]:.10e}'
         for i, p in enumerate(P_AX)
         for j, t in enumerate(T_AX)
     ]
     path.write_text('#pressure temperature density\n' + '\n'.join(rows) + '\n')
-    seager._tdep_edge_warned.discard(str(path))
     return {'melted_mantle': {'eos_file': str(path)}}
 
 
@@ -346,44 +344,42 @@ class TestFillCells:
         np.testing.assert_allclose(filled[0], [5.0e3, 9.0e3, 9.0e3, 9.0e3, 9.0e3])
 
     @pytest.mark.parametrize(
-        ('p', 't', 'band'),
+        ('p', 't', 'excess'),
         [
-            (5e8, 1000.0, None),  # both rows hold 1000 K
-            (5e8, 2500.0, None),  # the upper edge of row 0, inside row 1
-            (0.0, 2600.0, '[1000, 2500] K of the pressure row at 0.00e+00'),
-            (1e9, 1200.0, None),  # row-1 node: inside row 1, row 2 (from 1500 K) has no weight
-            (2e9, 1200.0, '[1500, 3000] K of the pressure row at 2.00e+09'),
-            (3e9, 3200.0, None),  # p_max node: inside row 3, row 2 (to 3000 K) has no weight
-            (3e9, 1000.0, '[1500, 3500] K of the pressure row at 3.00e+09'),
-            (1.5e9, 1200.0, '[1500, 3000] K of the pressure row at 2.00e+09'),
-            (1.5e9, 3200.0, '[1000, 3000] K of the pressure row at 1.00e+09'),
+            (5e8, 1000.0, 0.0),  # both rows hold 1000 K
+            (5e8, 2500.0, 0.0),  # the upper edge of row 0, inside row 1
+            (0.0, 2600.0, 100.0),  # row 0 ends at 2500 K
+            (1e9, 1200.0, 0.0),  # row-1 node: row 2 (from 1500 K) has no weight
+            (2e9, 1200.0, 300.0),  # row 2 starts at 1500 K
+            (3e9, 3200.0, 0.0),  # p_max node: row 2 (to 3000 K) has no weight
+            (3e9, 1000.0, 500.0),
+            (1.5e9, 1200.0, 300.0),  # the larger excess of the 2 used rows
+            (1.5e9, 3200.0, 200.0),
+            (4e9, 3600.0, 100.0),  # pressure clipped to the p_max row
+            (2.5e9, float('nan'), 0.0),  # a NaN T is left to the lookup
         ],
     )
-    def test_warning_names_the_band_of_a_used_row(self, fill_table, caplog, p, t, band):
-        """The warning fires only outside the band of a row with non-zero weight and names
-        that row; a pressure node uses only its own row."""
-        with caplog.at_level('WARNING', logger='zalmoxis.eos.seager'):
-            get_tabulated_eos(p, fill_table, 'melted_mantle', t, {})
-        msgs = [r.getMessage() for r in caplog.records if 'valid band' in r.getMessage()]
-        assert len(msgs) == (band is not None)
-        if band:
-            assert band in msgs[0]
-
-    def test_nan_temperature_does_not_spend_the_warning(self, fill_table, caplog):
-        """A NaN T fails its lookup without a band warning; a later real excursion still warns."""
+    def test_band_excess_uses_the_rows_with_weight(self, fill_table, p, t, excess):
+        """The excess is the largest distance beyond the band of a row with non-zero weight."""
         cache = {}
-        with caplog.at_level('WARNING', logger='zalmoxis.eos.seager'):
-            assert (
-                get_tabulated_eos(2.5e9, fill_table, 'melted_mantle', float('nan'), cache)
-                is None
-            )
-            assert fill_table['melted_mantle']['eos_file'] not in seager._tdep_edge_warned
-            get_tabulated_eos(2.5e9, fill_table, 'melted_mantle', 3400.0, cache)
-        msgs = [r.getMessage() for r in caplog.records if 'valid band' in r.getMessage()]
-        assert len(msgs) == 1 and 'T=3400 K' in msgs[0]
+        get_tabulated_eos(1e9, fill_table, 'melted_mantle', 2000.0, cache)
+        cached = cache[fill_table['melted_mantle']['eos_file']]
+        assert band_excess(cached, p, t) == pytest.approx(excess)
+
+    def test_query_beyond_the_band_logs_at_debug_only(self, fill_table, caplog):
+        """A lookup outside a band logs one DEBUG line per query and no warning."""
+        cache = {}
+        with caplog.at_level('DEBUG', logger='zalmoxis.eos.seager'):
+            for _ in range(2):
+                get_tabulated_eos(2.5e9, fill_table, 'melted_mantle', 3400.0, cache)
+            get_tabulated_eos(2.5e9, fill_table, 'melted_mantle', 2000.0, cache)
+            assert get_tabulated_eos(2.5e9, fill_table, 'melted_mantle', np.nan, cache) is None
+        band = [r for r in caplog.records if 'valid band' in r.getMessage()]
+        assert [r.levelname for r in band] == ['DEBUG', 'DEBUG']
+        assert 'T=3400 K' in band[0].getMessage() and 'value is taken' in band[0].getMessage()
 
     def test_row_without_valid_cell_gives_none(self, tmp_path, caplog):
-        """A row of fill stays NaN; a query next to it fails as a lookup, with no band warning."""
+        """A row of fill stays NaN; a query next to it fails as a lookup, with no warning."""
         rho = _fill_table()
         rho[1, :] = FILL
         filled, t_lo, _ = _fill_invalid_cells(rho, T_AX)
@@ -415,8 +411,8 @@ class TestFillCells:
             rho = get_tabulated_eos(p, fill_table, 'melted_mantle', t, cache)
             assert rho == pytest.approx(_plane(p, t), rel=1e-12)
 
-    def test_beyond_the_edge_combines_valid_values_and_warns_once(self, fill_table, caplog):
-        """Hot and cold queries combine each row's edge value; one warning names the table."""
+    def test_beyond_the_edge_combines_valid_values(self, fill_table, caplog):
+        """Hot and cold queries combine each row's edge value, with no warning."""
         cache = {}
         with caplog.at_level('WARNING', logger='zalmoxis.eos.seager'):
             hot = get_tabulated_eos(2.5e9, fill_table, 'melted_mantle', 3400.0, cache)
@@ -429,13 +425,7 @@ class TestFillCells:
         )
         plain = RegularGridInterpolator((P_AX, T_AX), _fill_table())((2.5e9, 3400.0))
         assert plain < hot - 500.0  # the raw grid mixes a fill corner in
-        msgs = [r.getMessage() for r in caplog.records if 'valid band' in r.getMessage()]
-        assert len(msgs) == 1
-        assert (
-            'density_melt.dat' in msgs[0]
-            and 'T=3400 K' in msgs[0]
-            and 'P=2.50e+09 Pa' in msgs[0]
-        )
+        assert not caplog.records
 
     def test_density_does_not_fall_with_pressure_at_fixed_hot_t(self, fill_table):
         """At a temperature above every band the density never falls with pressure."""

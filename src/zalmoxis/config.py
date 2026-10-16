@@ -16,6 +16,7 @@ from . import get_zalmoxis_root
 from .constants import (
     CONDENSED_RHO_MIN_DEFAULT,
     CONDENSED_RHO_SCALE_DEFAULT,
+    MAX_BAND_EXCESS_DEFAULT,
     TDEP_EOS_NAMES,
     earth_mass,
 )
@@ -445,6 +446,13 @@ def validate_config(config_params):
             f'Typical value: 50 K.'
         )
 
+    max_band_excess = config_params.get('max_band_excess', MAX_BAND_EXCESS_DEFAULT)
+    if not max_band_excess >= 0:
+        raise ValueError(
+            f'max_band_excess must be >= 0, got {max_band_excess} K. A converged mantle '
+            f"node further than this beyond a table's valid temperature band fails the solve."
+        )
+
     # ── Numerical parameters ────────────────────────────────────────
     num_layers = config_params['num_layers']
     if num_layers < 10:
@@ -734,6 +742,7 @@ def load_zalmoxis_config(temp_config_path=None):
     condensed_rho_scale = eos_section.get('condensed_rho_scale', CONDENSED_RHO_SCALE_DEFAULT)
     binodal_T_scale = eos_section.get('binodal_T_scale', BINODAL_T_SCALE_DEFAULT)
     partition_rule = eos_section.get('partition_rule', 'uniform')
+    max_band_excess = eos_section.get('max_band_excess', MAX_BAND_EXCESS_DEFAULT)
 
     # Build per-EOS mushy_zone_factors dict. Only include materials that are
     # actually configured in a layer; unused materials default to 1.0 so that
@@ -769,6 +778,7 @@ def load_zalmoxis_config(temp_config_path=None):
         'condensed_rho_scale': condensed_rho_scale,
         'binodal_T_scale': binodal_T_scale,
         'partition_rule': partition_rule,
+        'max_band_excess': max_band_excess,
         'num_layers': config['Calculations']['num_layers'],
         'target_surface_pressure': config.get('PressureAdjustment', {}).get(
             'target_surface_pressure',

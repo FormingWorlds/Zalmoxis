@@ -358,7 +358,7 @@ def solve_structure_via_jax(
             )
         mantle_cached = _ensure_unified_cache(_mantle_file, interpolation_cache)
     elif all(
-        str(mantle_mat.get(k, {}).get('format', '')).startswith('paleos')
+        mantle_mat.get(k, {}).get('format') == 'paleos'
         for k in ('melted_mantle', 'solid_mantle')
     ):
         # Lazy-load both sub-tables via numpy's get_tabulated_eos

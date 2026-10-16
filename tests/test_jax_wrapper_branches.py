@@ -78,8 +78,8 @@ def _common_fixtures(*, core_format='paleos_unified', mantle_2phase=True):
         mantle_mat = {
             'format': 'paleos_2phase',
             '_api_resolved': True,
-            'solid_mantle': {'eos_file': sol_cache_file, 'format': 'paleos_unified'},
-            'melted_mantle': {'eos_file': liq_cache_file, 'format': 'paleos_unified'},
+            'solid_mantle': {'eos_file': sol_cache_file, 'format': 'paleos'},
+            'melted_mantle': {'eos_file': liq_cache_file, 'format': 'paleos'},
         }
     else:
         # Neither supported representation: not unified, no sub-tables.
@@ -651,21 +651,23 @@ class TestNonPaleosTwoPhaseMantle:
     """A 2-phase mantle from P-T-rho tables (Wolf & Bower, RTPress) is refused, not crashed."""
 
     @pytest.mark.parametrize(
-        'mantle_eos', ['WolfBower2018:MgSiO3', 'RTPress100TPa:MgSiO3', 'mixed_format']
+        'mantle_eos',
+        ['WolfBower2018:MgSiO3', 'RTPress100TPa:MgSiO3', 'paleos_solid', 'paleos_melt'],
     )
     def test_tabulated_two_phase_mantle_raises_value_error(self, mantle_eos):
         """The real Wolf & Bower and RTPress registry entries, and a mantle with one PALEOS and
-        one tabulated sub-table, are refused with ValueError, so solve_structure falls back to
-        numpy; main raised KeyError."""
+        one tabulated sub-table (either way round), are refused with ValueError, so
+        solve_structure falls back to numpy."""
         import copy
 
         from zalmoxis.eos_properties import EOS_REGISTRY
 
         layer_mixtures, mds, cache = _common_fixtures()
         layer_mixtures['mantle'] = LayerMixture([mantle_eos], [1.0])
-        if mantle_eos == 'mixed_format':
+        if mantle_eos.startswith('paleos_'):
             entry = copy.deepcopy(EOS_REGISTRY['WolfBower2018:MgSiO3'])
-            entry['solid_mantle'] = {'eos_file': '/synthetic/sol.dat', 'format': 'paleos'}
+            phase = 'solid_mantle' if mantle_eos == 'paleos_solid' else 'melted_mantle'
+            entry[phase] = {'eos_file': '/synthetic/pal.dat', 'format': 'paleos'}
         else:
             entry = copy.deepcopy(EOS_REGISTRY[mantle_eos])
             assert (

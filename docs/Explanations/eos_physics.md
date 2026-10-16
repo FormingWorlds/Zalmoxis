@@ -147,17 +147,26 @@ Beyond $7\,M_\oplus$, the code raises a `ValueError`.
 Use PALEOS or RTPress100TPa for higher-mass planets.
 
 **Valid band.** At each pressure the tables hold a band of valid temperatures; outside it the files carry a fill density of $10^{-15}$ kg m$^{-3}$ (56% of the melt table and 23% of the solid table).
+Temperatures outside the table axis, 0 to 16500 K, raise an error.
 Before it interpolates, Zalmoxis replaces the fill cells of each pressure row by the row's nearest valid value along $T$, so a query never returns a fill value and the density at fixed $T$ does not fall with pressure.
-Below and above a row's band the density is that of the nearer band edge, and the first query outside the band of a row it uses logs one warning per table.
-For material hotter than the band this overestimates the density by about $\alpha\,\Delta T\,\rho$: for the melt table about 21% per 1000 K above the edge near 1 bar (edge at 3815 K), 7% at 1 GPa, 5.5% at 10 GPa, 1.6% at 100 GPa and 0.5% at 500 GPa.
+Below and above a row's band the density is that of the nearer band edge.
+For material hotter than the band this overestimates the density by about $\alpha\,\Delta T\,\rho$: for the melt table about 23% per 1000 K above the edge near 1 bar (edge at 3815 K), 7% at 1 GPa, 5.5% at 10 GPa, 1.6% at 100 GPa and 0.5% at 500 GPa.
+Near 1 bar the density falls ever faster towards the edge (13% per 1000 K over the last 500 K of the band, 23% over the last 17 K step), so the linear figure is a lower bound there.
 For material colder than the band it underestimates the density by the same measure: for the melt table about 6.7% per 1000 K below the edge near 1 bar (edge at 1008 K), 5.5% at 1 GPa, 2.6% at 10 GPa, 2.2% at 100 GPa and 1.3% at 500 GPa.
-The adiabatic gradient table `adiabat_temp_grad_melt.dat` takes the same row fill, so beyond the band $(dT/dP)_S$ keeps its edge value and $\nabla_{\mathrm{ad}} = (dT/dP)_S\,P/T$ falls as $1/T$.
+The adiabatic gradient table `adiabat_temp_grad_melt.dat` takes the same row fill, so beyond the band $(dT/dP)_S$ keeps its edge value and $\nabla_{\mathrm{ad}} = (dT/dP)_S\,P/T$ varies as $1/T$; above the band this makes a hot adiabat too shallow.
+The hot edge of the melt band rises more slowly with pressure than the liquidus, which crosses it at 462 GPa for `Stixrude14-liquidus`, 544 GPa for `Monteux16-liquidus-F-peridotitic` and 712 GPa for `Monteux16-liquidus-A-chondritic`; at higher pressures all of the liquid field lies above the melt band.
+Below 4.5 GPa the `Stixrude14-liquidus` power law lies under the cold edge of the melt band, so melt just above that liquidus reads the cold edge.
+
+**Band check.** After each solve, Zalmoxis checks every mantle node of the final profile against the band of each table that node reads (the solid table below the liquidus, the melt table above the solidus, the gradient table when it computes the adiabat).
+The result holds, per table, the number of nodes outside the band and the largest excess in K (`table_band_excess`), and one warning per solve names the tables.
+When a node lies more than `max_band_excess` (default 200 K) beyond a band, the solve returns `converged = False`.
 
 ### RTPress100TPa Extended Melt EOS
 
 The `RTPress100TPa:MgSiO3` EOS extends the WolfBower2018 melt phase coverage from 1 TPa to 100 TPa ($P$: $10^3$ to $10^{14}$ Pa, $T$: 400 to 50,000 K), enabling temperature-dependent modeling up to ~50 $M_\oplus$.
 
-The solid-phase EOS remains the [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) table (valid to 1 TPa, clamped at boundary).
+The solid-phase EOS remains the [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) table (valid to 1 TPa, clamped at boundary), with the band-edge fill and the band check described above.
+The extended melt table is not a regular grid and has no fill cells; above its local maximum temperature a query takes that maximum.
 At the high internal temperatures typical of massive rocky planets, the mantle is predominantly molten, so the solid table limitation is less constraining.
 The same [Monteux et al. (2016)](https://www.sciencedirect.com/science/article/pii/S0012821X16302199) solidus/liquidus melting curves are used for phase determination.
 

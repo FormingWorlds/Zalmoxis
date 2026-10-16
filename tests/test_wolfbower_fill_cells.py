@@ -13,7 +13,6 @@ import os
 import numpy as np
 import pytest
 
-from zalmoxis.eos import seager
 from zalmoxis.eos.seager import get_tabulated_eos
 from zalmoxis.eos_properties import EOS_REGISTRY
 
@@ -36,7 +35,6 @@ def test_melt_above_surface_band_lies_between_valid_neighbours(cache):
 
     The plain bilinear value at 3830 K mixes a fill corner in (about 228 kg m-3).
     """
-    seager._tdep_edge_warned.discard(WB['melted_mantle']['eos_file'])
     edge = get_tabulated_eos(1e5, WB, 'melted_mantle', 3815.0, cache)
     inner = get_tabulated_eos(1e5, WB, 'melted_mantle', 3800.0, cache)
     for t in (3830.0, 4000.0, 9000.0):
