@@ -277,7 +277,13 @@ def _report_table_bands(
     if layer_mixtures is None:
         layer_mixtures = parse_all_layer_mixtures(config_params['layer_eos_config'])
     tables = {}
-    for comp in layer_mixtures['mantle'].components if 'mantle' in layer_mixtures else []:
+    mantle_mix = layer_mixtures.get('mantle')
+    used = (
+        [c for c, f in zip(mantle_mix.components, mantle_mix.fractions) if f > 0]
+        if mantle_mix
+        else []
+    )
+    for comp in used:  # a component at fraction 0 reads no table in this solve
         mat = material_dictionaries.get(comp, {})
         melt = mat.get('melted_mantle', {})
         tables[mat.get('solid_mantle', {}).get('eos_file')] = 'solid'

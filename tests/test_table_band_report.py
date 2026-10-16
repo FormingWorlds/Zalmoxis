@@ -233,6 +233,17 @@ class TestReportTableBands:
         assert list(res['table_band_excess']) == [melt]
         assert solid not in solver._interpolation_cache
 
+    def test_component_at_zero_fraction_is_not_checked(self, mats):
+        """A W&B-like table cached by an earlier solve is not counted for a mantle that holds
+        it at fraction 0, while the earlier all-W&B mantle did count it."""
+        md, melt, _, _ = mats
+        first = _check(_result(HOT), md, _curves(500.0, 600.0))
+        assert first['table_band_excess'][melt][0] == 2 and first['converged'] is False
+        res = _result(HOT)
+        res['layer_eos_config']['mantle'] = 'Seager2007:MgSiO3:1.0+X:MgSiO3:0.0'
+        second = _check(res, md, _curves(500.0, 600.0))
+        assert second['table_band_excess'] == {} and second['converged'] is True
+
     def test_layer_mixtures_take_precedence_over_the_config(self, mats):
         """The mixtures the solve used choose the tables, not the config string."""
         md, melt, _, _ = mats

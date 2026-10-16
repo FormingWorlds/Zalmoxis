@@ -468,6 +468,7 @@ def test_generate_configs_creates_missing_section(tmp_path):
     # Confirm each generated config has the section now present with
     # the right value, and that the writer did not corrupt [Output].
     import toml as toml_mod
+
     for label, cfg_path in configs:
         cfg = toml_mod.load(cfg_path)
         assert 'PressureAdjustment' in cfg
@@ -1005,3 +1006,16 @@ def test_plot_grid_profiles_custom_colour_by(fake_grid_dir, tmp_path):
     out = tmp_path / 'profiles_by_pm.png'
     result = plot_grid_profiles(str(fake_grid_dir), out=str(out), colour_by='planet_mass')
     assert os.path.isfile(result)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    'module', ['plot_grid_pt', 'plot_grid_composition', 'plot_grid_profiles']
+)
+def test_band_columns_are_not_sweep_parameters(module):
+    """The grid summary's converged_bands and band_excess_K columns are results, not sweeps."""
+    import importlib
+
+    mod = importlib.import_module(f'tools.plots.{module}')
+    row = {'label': 'x', 'planet_mass': '1', 'converged_bands': 'True', 'band_excess_K': '56'}
+    assert mod._detect_sweep_params([row]) == ['planet_mass']
