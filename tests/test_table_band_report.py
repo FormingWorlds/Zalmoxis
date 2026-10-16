@@ -281,8 +281,8 @@ def wb_solves(tmp_path_factory):
         path = tmp_path_factory.mktemp('wb') / 'wb.toml'
         path.write_text(text)
         cfg = load_zalmoxis_config(str(path))
-        if outer:
-            cfg['outer_solver'] = outer
+        if outer:  # Newton needs tight integrator tolerances
+            cfg.update(outer_solver=outer, relative_tolerance=1e-9, absolute_tolerance=1e-10)
         melt = load_solidus_liquidus_functions(
             cfg['layer_eos_config'],
             cfg['rock_solidus'],
@@ -307,7 +307,7 @@ def wb_solves(tmp_path_factory):
 
 
 @pytest.mark.integration
-@pytest.mark.timeout(900)
+@pytest.mark.timeout(1500)  # 3 solves, the Newton one about 7 minutes
 class TestWolfBowerSolves:
     """Real solves: inside the limit the clamp stays, beyond it the solve fails."""
 
