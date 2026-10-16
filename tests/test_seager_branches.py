@@ -326,12 +326,7 @@ class TestFillCells:
         np.testing.assert_allclose(t_lo, [1000.0, 1000.0, 1500.0, 1500.0])
         np.testing.assert_allclose(t_hi, [2500.0, 3000.0, 3000.0, 3500.0])
         assert filled.min() > 2000.0
-        np.testing.assert_allclose(
-            filled[0, :2], rho[0, 1]
-        )  # 500 and 1000 K hold the 1000 K value
-        np.testing.assert_allclose(
-            filled[0, 4:], rho[0, 4]
-        )  # 2500 K and above hold the 2500 K value
+        np.testing.assert_allclose(filled[0], rho[0, [1, 1, 2, 3, 4, 4, 4]])  # band edges
         np.testing.assert_allclose(filled[3, 2:], rho[3, 2:])  # valid cells are unchanged
 
     def test_gap_takes_the_nearest_valid_node(self):
@@ -342,6 +337,33 @@ class TestFillCells:
         filled = _fill_invalid_cells(rho, T_AX)[0]
         assert filled[0, 3] == pytest.approx(rho[0, 2])
         assert (filled[1, 2], filled[1, 3]) == pytest.approx((rho[1, 1], rho[1, 4]))
+
+    def test_nearest_is_measured_in_temperature(self):
+        """On a non-uniform T axis a gap takes the node nearest in T, not in index."""
+        temps = np.array([0.0, 10.0, 11.0, 12.0, 13.0])
+        rho = np.array([[5.0e3, FILL, FILL, FILL, 9.0e3]])
+        filled = _fill_invalid_cells(rho, temps)[0]
+        np.testing.assert_allclose(filled[0], [5.0e3, 9.0e3, 9.0e3, 9.0e3, 9.0e3])
+
+    @pytest.mark.parametrize(
+        ('p', 't', 'band'),
+        [
+            (5e8, 1000.0, None),  # both rows hold 1000 K
+            (5e8, 2500.0, None),  # the upper edge of row 0, inside row 1
+            (0.0, 2600.0, '[1000, 2500]'),  # on the row-0 node only row 0 counts
+            (1e9, 2900.0, None),  # on the row-1 node: inside row 1, outside row 2 below 1500 K
+            (1.5e9, 1200.0, '[1500, 3000]'),  # inside row 1, below row 2
+            (1.5e9, 3200.0, '[1000, 3000]'),  # above both rows: the lower row is reported
+        ],
+    )
+    def test_warning_names_the_band_of_a_used_row(self, fill_table, caplog, p, t, band):
+        """The warning fires only outside the band of a row with non-zero weight and names it."""
+        with caplog.at_level('WARNING', logger='zalmoxis.eos.seager'):
+            get_tabulated_eos(p, fill_table, 'melted_mantle', t, {})
+        msgs = [r.getMessage() for r in caplog.records if 'valid band' in r.getMessage()]
+        assert len(msgs) == (band is not None)
+        if band:
+            assert band in msgs[0]
 
     def test_row_without_valid_cell_gives_none(self, tmp_path):
         """A row of fill stays NaN; a query next to it fails as a lookup, never as a fill density."""

@@ -35,8 +35,8 @@ def _fill_invalid_cells(density_grid, unique_temps):
 
     Cells that are not finite or at or below 1e-10 are table fill (the Wolf & Bower
     tables use 1e-15). Below and above a row's valid band the fill becomes the band
-    edge, and inside a gap the nearest valid node, so a bilinear query only ever
-    combines valid densities. A row with no valid cell stays NaN.
+    edge, and inside a gap the nearest valid node in T (the lower one on a tie), so a
+    bilinear query only ever combines valid densities. A row with no valid cell stays NaN.
 
     Parameters
     ----------
@@ -62,14 +62,20 @@ def _fill_invalid_cells(density_grid, unique_temps):
         k = np.arange(row.size)
         right = np.clip(np.searchsorted(j, k), 0, len(j) - 1)
         left = np.clip(right - 1, 0, len(j) - 1)
-        nearest = np.where(np.abs(j[left] - k) <= np.abs(j[right] - k), j[left], j[right])
+        t = unique_temps
+        nearest = np.where(
+            np.abs(t[j[left]] - t[k]) <= np.abs(t[j[right]] - t[k]), j[left], j[right]
+        )
         filled[i] = density_grid[i, nearest]
         t_lo[i], t_hi[i] = unique_temps[j[0]], unique_temps[j[-1]]
     return filled, t_lo, t_hi
 
 
 def _warn_beyond_row_edge(cached, eos_file, pressure, temperature):
-    """Warn once per table when T lies outside the valid band of a bracketing pressure row.
+    """Warn once per table when T lies outside the valid band of a pressure row that the query uses.
+
+    A row is used when its bilinear weight is not zero, so a query on a pressure node
+    looks only at that node's row; a row without a valid cell is not a band.
 
     Parameters
     ----------
@@ -86,15 +92,18 @@ def _warn_beyond_row_edge(cached, eos_file, pressure, temperature):
         return
     up = cached['unique_pressures']
     i = min(max(int(np.searchsorted(up, pressure, side='right')) - 1, 0), len(up) - 2)
-    lo, hi = np.nanmax(cached['t_lo'][i : i + 2]), np.nanmin(cached['t_hi'][i : i + 2])
-    if lo <= temperature <= hi:
-        return
-    _tdep_edge_warned.add(eos_file)
-    logger.warning(
-        f'{os.path.basename(eos_file)}: T={temperature:.0f} K at P={pressure:.2e} Pa is '
-        f'outside the valid band [{lo:.0f}, {hi:.0f}] K of the table; the density is '
-        f'taken at the band edge. Further queries outside the band are not reported.'
-    )
+    rows = [r for r, w in ((i, up[i + 1] - pressure), (i + 1, pressure - up[i])) if w > 0]
+    for r in rows:
+        lo, hi = cached['t_lo'][r], cached['t_hi'][r]
+        if np.isfinite(lo) and not lo <= temperature <= hi:
+            _tdep_edge_warned.add(eos_file)
+            logger.warning(
+                f'{os.path.basename(eos_file)}: T={temperature:.0f} K at P={pressure:.2e} Pa is '
+                f'outside the valid band [{lo:.0f}, {hi:.0f}] K of the pressure row at '
+                f'{up[r]:.2e} Pa; the density is taken at the band edge. Further queries '
+                f'outside a band are not reported.'
+            )
+            return
 
 
 def get_tabulated_eos(
@@ -314,11 +323,10 @@ def get_tabulated_eos(
         else:
             density = cached['interp'](pressure)
 
-        if density is None or not np.isfinite(
-            density
-        ):  # pragma: no cover - lookup-failed sentinel; defensive
+        if density is None or not np.isfinite(density):
             raise ValueError(
-                f'Density calculation failed for {material} at P={pressure:.2e} Pa, T={temperature}.'
+                f'Density calculation failed for {material} ({os.path.basename(eos_file)}) '
+                f'at P={pressure:.2e} Pa, T={temperature}.'
             )
 
         return density

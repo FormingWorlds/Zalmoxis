@@ -148,7 +148,7 @@ Use PALEOS or RTPress100TPa for higher-mass planets.
 
 **Valid band.** At each pressure the tables hold a band of valid temperatures; outside it the files carry a fill density of $10^{-15}$ kg m$^{-3}$ (56% of the melt table and 23% of the solid table).
 Before it interpolates, Zalmoxis replaces the fill cells of each pressure row by the row's nearest valid value along $T$, so a query never returns a fill value and the density at fixed $T$ does not fall with pressure.
-Beyond a row's band the density is that of the band edge, and the first such query of each table logs a warning.
+Below and above a row's band the density is that of the nearer band edge, and the first query outside the band of a row it uses logs one warning per table.
 For material hotter than the band this overestimates the density by about $\alpha\,\Delta T\,\rho$: for the melt table about 21% per 1000 K above the edge near 1 bar (edge at 3815 K), 7% at 1 GPa, 5.5% at 10 GPa, 1.6% at 100 GPa and 0.5% at 500 GPa.
 The adiabatic gradient table `adiabat_temp_grad_melt.dat` takes the same row fill, so beyond the band $(dT/dP)_S$ keeps its edge value and $\nabla_{\mathrm{ad}} = (dT/dP)_S\,P/T$ falls as $1/T$.
 
