@@ -86,6 +86,8 @@ jobs:
         run: fwl-io prune --delete --yes || echo "::warning::fwl-io prune did not run"
 
       - name: Run unit + smoke + integration tests with coverage
+        env:
+          ZALMOXIS_NEED_WOLFBOWER: ${{ matrix.suite == 'wolfbower' && '1' || '' }}
         run: |
           # --timeout kills any single hung test after 50 min, failing the
           # run and naming that test in the worker-crash report while the

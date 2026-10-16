@@ -13,6 +13,7 @@ import os
 import numpy as np
 import pytest
 
+from tests.test_table_band_report import _need_wb_tables
 from zalmoxis.eos.seager import get_tabulated_eos
 from zalmoxis.eos_properties import EOS_REGISTRY
 
@@ -24,9 +25,7 @@ WB = EOS_REGISTRY['WolfBower2018:MgSiO3']
 @pytest.fixture(scope='module')
 def cache():
     """One shared interpolation cache; skip when the tables are not installed."""
-    for phase in ('melted_mantle', 'solid_mantle'):
-        if not os.path.isfile(WB[phase]['eos_file']):
-            pytest.skip(f'Wolf & Bower table missing: {WB[phase]["eos_file"]}')
+    _need_wb_tables()
     return {}
 
 
@@ -81,9 +80,7 @@ def test_wolf_bower_mantle_on_the_jax_path_falls_back_to_numpy(tmp_path, caplog)
     )
     from zalmoxis.solver import main
 
-    for phase in ('melted_mantle', 'solid_mantle'):
-        if not os.path.isfile(WB[phase]['eos_file']):
-            pytest.skip(f'Wolf & Bower table missing: {WB[phase]["eos_file"]}')
+    _need_wb_tables()
     root = get_zalmoxis_root()
     text = open(os.path.join(root, 'input', 'default.toml')).read()
     for key, value in (

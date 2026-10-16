@@ -401,6 +401,15 @@ def test_main_checks_the_profile_with_the_mixtures_it_got(mats, monkeypatch, cap
 WB = EOS_REGISTRY['WolfBower2018:MgSiO3']
 
 
+def _need_wb_tables():
+    """Skip without the Wolf & Bower tables; fail instead where ZALMOXIS_NEED_WOLFBOWER is set."""
+    missing = [WB[p]['eos_file'] for p in ('melted_mantle', 'solid_mantle')]
+    missing = [f for f in missing if not os.path.isfile(f)]
+    if missing:
+        stop = pytest.fail if os.environ.get('ZALMOXIS_NEED_WOLFBOWER') else pytest.skip
+        stop(f'Wolf & Bower table missing: {missing[0]}')
+
+
 def _wb_solve(tmp_dir, surface_temperature, **params):
     """Solve 1 M_earth with a Wolf & Bower mantle; return the result and the band warnings.
 
@@ -409,9 +418,7 @@ def _wb_solve(tmp_dir, surface_temperature, **params):
     """
     from zalmoxis.config import load_material_dictionaries, load_solidus_liquidus_functions
 
-    for phase in ('melted_mantle', 'solid_mantle'):
-        if not os.path.isfile(WB[phase]['eos_file']):
-            pytest.skip(f'Wolf & Bower table missing: {WB[phase]["eos_file"]}')
+    _need_wb_tables()
     root = get_zalmoxis_root()
     text = open(os.path.join(root, 'input', 'default.toml')).read()
     for key, value in (
