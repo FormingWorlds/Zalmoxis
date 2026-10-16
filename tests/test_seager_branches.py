@@ -317,6 +317,14 @@ class TestFillCells:
         np.testing.assert_allclose(t_lo, [1000.0, 1500.0, 1500.0])
         np.testing.assert_allclose(t_hi, [2500.0, 3000.0, 3000.0])
 
+    def test_interval_without_valid_cell_has_nan_bounds(self):
+        """A pressure row of fill leaves both adjacent intervals without a band."""
+        rho = _fill_table()
+        rho[1, :] = FILL
+        t_lo, t_hi = _valid_t_bounds(rho, T_AX)
+        assert np.isnan(t_lo[:2]).all() and np.isnan(t_hi[:2]).all()
+        assert (t_lo[2], t_hi[2]) == pytest.approx((1500.0, 3000.0))
+
     def test_gap_in_band_raises(self):
         """A hole inside the valid band of an interval cannot be clamped."""
         rho = np.full((2, len(T_AX)), 3000.0)
