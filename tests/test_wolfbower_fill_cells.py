@@ -13,7 +13,7 @@ import os
 import numpy as np
 import pytest
 
-from tests.test_table_band_report import _need_wb_tables
+from tests.test_table_band_report import CUT_LOGS, _need_wb_tables
 from zalmoxis.eos.seager import get_tabulated_eos
 from zalmoxis.eos_properties import EOS_REGISTRY
 
@@ -111,8 +111,8 @@ def test_wolf_bower_mantle_on_the_jax_path_falls_back_to_numpy(tmp_path, caplog)
     ]
     assert fell_back and 'PALEOS-2phase' in fell_back[0]
     assert not [r for r in caplog.records if 'density_grid' in r.getMessage()]
-    assert not [r for r in caplog.records if 'Wall-clock timeout' in r.getMessage()]
-    assert not [r for r in caplog.records if 'Retrying with tighter' in r.getMessage()]
+    cut = [m for m in caplog.messages if any(text in m for text in CUT_LOGS)]
+    assert not cut, cut
     assert res['converged'] and res['converged_pressure'] and res['converged_density']
     inside = np.asarray(res['pressure']) > 0  # the surface padding node has zero density
     assert np.all(np.isfinite(res['density'])) and res['density'][inside].min() > 1000.0

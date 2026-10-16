@@ -292,9 +292,9 @@ file (enforced by ruff isort).
   threshold for any module: it does not increase above 90% even if real
   coverage exceeds it. Real coverage targets ~92% to give 2 percentage
   points of headroom for small future additions before the gate trips.
-- The nightly invocation in `.github/workflows/nightly.yml` passes
-  `--cov-fail-under=90` on the main job and `0` on the `wolfbower` job. The `[tool.coverage.report]` value is
-  the source of truth; the explicit flag is belt-and-braces.
+- `fail_under` in `[tool.coverage.report]` sets the 90% floor; in
+  `.github/workflows/nightly.yml` the main job repeats it with
+  `--cov-fail-under=90` and the `wolfbower` job turns it off with `0`.
 - A pre-flight check in `.github/workflows/CI.yml` rejects PRs that lower
   `fail_under` below the value on `origin/main`, mirroring PROTEUS's
   `.github/workflows/ci-pr-checks.yml` idiom.

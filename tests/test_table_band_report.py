@@ -11,6 +11,7 @@ table of ``tests/test_seager_branches.py``; the integration tests solve a 1 M_ea
 
 from __future__ import annotations
 
+import ast
 import logging
 import os
 import re
@@ -399,15 +400,55 @@ def test_main_checks_the_profile_with_the_mixtures_it_got(mats, monkeypatch, cap
 
 
 WB = EOS_REGISTRY['WolfBower2018:MgSiO3']
+CUT_LOGS = ('Wall-clock timeout', 'Retrying with tighter')  # a clock-dependent solve end
+
+
+@pytest.mark.unit
+def test_cut_logs_are_solver_messages():
+    """Each text the Wolf & Bower solves must not log is in a logger call of the solver."""
+    with open(solver.__file__) as f:
+        calls = [n for n in ast.walk(ast.parse(f.read())) if isinstance(n, ast.Call)]
+    logged = [
+        a.value
+        for c in calls
+        if isinstance(c.func, ast.Attribute) and getattr(c.func.value, 'id', '') == 'logger'
+        for a in c.args
+        if isinstance(a, ast.Constant) and isinstance(a.value, str)
+    ]
+    assert [sum(text in s for s in logged) for text in CUT_LOGS] == [
+        2,
+        1,
+    ]  # outer, inner; retry
 
 
 def _need_wb_tables():
-    """Skip without the Wolf & Bower tables; fail instead where ZALMOXIS_NEED_WOLFBOWER is set."""
-    missing = [WB[p]['eos_file'] for p in ('melted_mantle', 'solid_mantle')]
-    missing = [f for f in missing if not os.path.isfile(f)]
-    if missing:
-        stop = pytest.fail if os.environ.get('ZALMOXIS_NEED_WOLFBOWER') else pytest.skip
-        stop(f'Wolf & Bower table missing: {missing[0]}')
+    """Skip without the Wolf & Bower tables; fail if ZALMOXIS_NEED_WOLFBOWER is non-empty."""
+    for phase in ('melted_mantle', 'solid_mantle'):
+        if not os.path.isfile(WB[phase]['eos_file']):
+            stop = pytest.fail if os.environ.get('ZALMOXIS_NEED_WOLFBOWER') else pytest.skip
+            stop(f'Wolf & Bower table missing: {WB[phase]["eos_file"]}')
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('phase', ['melted_mantle', 'solid_mantle'])
+@pytest.mark.parametrize(
+    'env, outcome',
+    [
+        (None, pytest.skip.Exception),
+        ('', pytest.skip.Exception),
+        ('1', pytest.fail.Exception),
+        ('0', pytest.fail.Exception),
+    ],
+)
+def test_missing_tables_skip_or_fail(monkeypatch, phase, env, outcome):
+    """Without a table the solves skip, or fail where ZALMOXIS_NEED_WOLFBOWER is non-empty."""
+    monkeypatch.setitem(WB[phase], 'eos_file', '/nonexistent/table.dat')
+    monkeypatch.delenv('ZALMOXIS_NEED_WOLFBOWER', raising=False)
+    if env is not None:
+        monkeypatch.setenv('ZALMOXIS_NEED_WOLFBOWER', env)
+    with pytest.raises((pytest.skip.Exception, pytest.fail.Exception)) as stop:
+        _need_wb_tables()
+    assert stop.type is outcome
 
 
 def _wb_solve(tmp_dir, surface_temperature, **params):
@@ -451,7 +492,8 @@ def _wb_solve(tmp_dir, surface_temperature, **params):
     finally:
         logging.getLogger('zalmoxis.solver').removeHandler(handler)
     msgs = [r.getMessage() for r in records]
-    assert not [m for m in msgs if 'Wall-clock timeout' in m or 'Retrying with tighter' in m]
+    cut = [m for m in msgs if any(text in m for text in CUT_LOGS)]
+    assert not cut, cut
     return res, [m for m in msgs if 'valid T band' in m]
 
 
@@ -479,7 +521,8 @@ class TestWolfBowerSolves:
     def test_beyond_the_limit_returns_not_converged(self, wb_solves):
         """At 4500 K the excess passes 200 K and the solve returns converged=False."""
         res, msgs = wb_solves['4500']
-        _, excess = res['table_band_excess'][WB['melted_mantle']['eos_file']]
+        n, excess = res['table_band_excess'][WB['melted_mantle']['eos_file']]
+        assert n > 0
         assert excess == pytest.approx(4500.0 - 3815.3, abs=1.0)  # the 1-bar node, beyond 200 K
         assert res['converged'] is False and res['converged_bands'] is False
         assert res['converged_pressure'] and res['converged_density']  # numerically converged

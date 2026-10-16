@@ -217,7 +217,8 @@ MARKERS (mandatory; CI-invisible without one):
   (Zeng+2019, Seager+2007, PALEOS rocky 1 + 5 M_E).
 - @pytest.mark.slow: composition grids or tolerance studies that take
   minutes per test. Manual only.
-Pick the strictest marker the test fits. Do not double-mark.
+Pick the strictest marker the test fits. Give a test one tier marker only;
+`wolfbower`, `physics_invariant` and `reference_pinned` go beside it.
 
 FLOAT COMPARISONS:
 - Always pytest.approx, never ==.

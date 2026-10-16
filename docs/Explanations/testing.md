@@ -49,8 +49,10 @@ Total collected: ~1175 tests. The exact counts drift as new branches are
 covered; `pytest -o "addopts=" --collect-only -m <marker>` reports the live
 number.
 
-The four-marker scheme (`unit`, `smoke`, `integration`, `slow`) is identical
-to the PROTEUS main repo's, so a developer moving between Zalmoxis and the
+The `wolfbower` marker is added to the tier marker of a full solve on the
+Wolf & Bower tables and moves it into its own nightly job. The four tier
+markers (`unit`, `smoke`, `integration`, `slow`) are identical to the PROTEUS
+main repo's, so a developer moving between Zalmoxis and the
 parent project works against one mental model. Zalmoxis additionally enforces
 `--strict-markers` and `--strict-config` so a typo'd marker fails the run
 instead of silently passing as an "unknown marker" warning.
