@@ -2451,9 +2451,8 @@ def _solve(
             converged_pressure,
         )
 
-    if (
-        rho_eos is None and best_profiles is not None
-    ):  # cut before the pass's first pressure solve
+    # a wall-clock cut before the first pressure solve of the last pass: return the best pass
+    if rho_eos is None and best_profiles is not None:
         radii, density, gravity, pressure, mass_enclosed = (
             np.array(best_profiles[k])
             for k in ('radii', 'density', 'gravity', 'pressure', 'mass_enclosed')
