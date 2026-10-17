@@ -26,6 +26,15 @@ from zalmoxis.mixing import calculate_mixed_density, parse_all_layer_mixtures
 INPUT = os.path.join(ROOT, 'input')
 M_T = 6.0e24
 A, B = 6.0e18, -3.6e25  # M(R) = A R + B, root at R = 7e6 m
+ICE = {  # 3 layers: cmb_mass and core_mantle_mass differ
+    'mantle_mass_fraction': 0.6,
+    'num_layers': 200,  # the trapezoid error at the ice density jump stays below 1e-2
+    'layer_eos_config': {
+        'core': 'Analytic:iron',
+        'mantle': 'Analytic:MgSiO3',
+        'ice_layer': 'Analytic:H2O',
+    },
+}
 WALL = 1e6  # wall_timeout [s]: the test clock jumps by 1e9 s, a real solve never reaches it
 
 
@@ -221,15 +230,18 @@ def _assert_eos_density(r, eos=None, melt=(None, None), mzf=None):
 
 
 def _picard(integrated=True, **kwargs):
-    """Fast Picard solve (1 M_earth, analytic EOS) through ``main``; ``cmb_mass`` is the core
-    mass fraction of the returned mass. When ``mass_enclosed`` is the integral of the returned
-    profile (``integrated``), at the last node with P > 0 the gravity is G M / r^2 and the
-    trapezoid mass of the returned density matches ``mass_enclosed``."""
+    """Fast Picard solve (1 M_earth, analytic EOS) through ``main``; ``cmb_mass`` and
+    ``core_mantle_mass`` are 0.325 and 0.325 + ``mantle_mass_fraction`` of the returned mass.
+    When ``mass_enclosed`` is the integral of the returned profile (``integrated``), at the
+    last node with P > 0 the gravity is G M / r^2 and the trapezoid mass of the returned
+    density matches ``mass_enclosed``."""
     r = _run(_cfg(**{'wall_timeout': WALL, **kwargs}))
     m, rad = np.asarray(r['mass_enclosed']), np.asarray(r['radii'])
     assert r['mass_error_at_accept'] == pytest.approx(abs(m[-1] - earth_mass) / earth_mass)
-    _assert_eos_density(r)
-    assert r['cmb_mass'] == pytest.approx(0.325 * m[-1], rel=1e-12)
+    _assert_eos_density(r, kwargs.get('layer_eos_config'))
+    mmf = kwargs.get('mantle_mass_fraction', 0)
+    for key, f in (('cmb_mass', 0.325), ('core_mantle_mass', 0.325 + mmf)):
+        assert r[key] == pytest.approx(f * m[-1], rel=1e-12), key
     k = np.flatnonzero(np.asarray(r['pressure']) > 0)[-1] + 1  # padded nodes have P = 0
     m, rad, rho = m[:k], rad[:k], np.asarray(r['density'])[:k]
     if integrated:
@@ -338,17 +350,21 @@ class TestRealSolve:
         assert r['converged'] is False and r['accepted_on'] is None
         assert r['stopped_on_wall_clock'] is True and r['density_from_eos'] is False
 
-    def test_outer_wall_clock_restores_a_best_pass_that_is_not_the_last(self, monkeypatch):
+    @pytest.mark.parametrize('layers', [{}, {**ICE, '_initial_radius_guess': 6.37e6}])
+    def test_outer_wall_clock_restores_a_best_pass_that_is_not_the_last(
+        self, monkeypatch, layers
+    ):
         """Pass 2 lands farther from the target mass than pass 1; the clock runs out after it,
         and the outer check returns pass 1 with its own EOS density."""
         radius, real = _clock_after_lookup(monkeypatch, outer=2), zs.solve_structure
 
         def solve(*args, **kwargs):
             m, *rest = real(*args, **kwargs)
-            return (m * (1.02 if len(radius) == 3 else 1.0), *rest)
+            away = 1.02 if m[-1] > earth_mass else 0.98
+            return (m * (away if len(radius) == 3 else 1.0), *rest)
 
         monkeypatch.setattr(zs, 'solve_structure', solve)
-        r = _picard(max_iterations_outer=4, max_iterations_inner=1)
+        r = _picard(max_iterations_outer=4, max_iterations_inner=1, **layers)
         assert r['accepted_on'] == 'timeout'
         assert r['mass_error_at_accept'] == pytest.approx(r['best_mass_error'])
 
