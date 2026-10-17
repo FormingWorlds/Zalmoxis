@@ -26,6 +26,7 @@ from zalmoxis.mixing import calculate_mixed_density, parse_all_layer_mixtures
 INPUT = os.path.join(ROOT, 'input')
 M_T = 6.0e24
 A, B = 6.0e18, -3.6e25  # M(R) = A R + B, root at R = 7e6 m
+WALL = 1e6  # wall_timeout [s]: the test clock jumps by 1e9 s, a real solve never reaches it
 
 
 def _inner(R, *, pressure=True, density=True, eos=True, accepted_on='max_iter', wall=False):
@@ -224,7 +225,7 @@ def _picard(integrated=True, **kwargs):
     mass fraction of the returned mass. When ``mass_enclosed`` is the integral of the returned
     profile (``integrated``), at the last node with P > 0 the gravity is G M / r^2 and the
     trapezoid mass of the returned density matches ``mass_enclosed``."""
-    r = _run(_cfg(**kwargs))
+    r = _run(_cfg(**{'wall_timeout': WALL, **kwargs}))
     m, rad = np.asarray(r['mass_enclosed']), np.asarray(r['radii'])
     assert r['mass_error_at_accept'] == pytest.approx(abs(m[-1] - earth_mass) / earth_mass)
     _assert_eos_density(r)
@@ -260,8 +261,8 @@ def test_outer_wall_clock_is_timeout(monkeypatch, caplog):
     """The clock runs out after the single inner iteration of outer iteration 1, so only the
     outer check sees it; without the clock the stop is 'max_iter'."""
     _clock_after_lookup(monkeypatch, outer=1)
-    r = _picard(max_iterations_outer=3, max_iterations_inner=1, wall_timeout=100.0)
-    assert 'Wall-clock timeout (100s)' in caplog.text
+    r = _picard(max_iterations_outer=3, max_iterations_inner=1)
+    assert 'Wall-clock timeout (1000000s)' in caplog.text
     assert 'Wall-clock timeout in inner loop' not in caplog.text
     assert r['converged'] is True and r['accepted_on'] == 'timeout'
     assert r['stopped_on_wall_clock'] is True
@@ -306,14 +307,14 @@ class TestRealSolve:
     def test_inner_wall_clock_is_timeout(self, monkeypatch, caplog, inner, count, label):
         """The clock runs out in the inner loop of the last outer iteration, after ``count``
         density lookups; without the clock the same solve is accepted on ``label``."""
-        cfg = _cfg(max_iterations_inner=inner, wall_timeout=100.0)
+        cfg = _cfg(max_iterations_inner=inner, wall_timeout=WALL)
         radius = _count_outer_iterations(monkeypatch)
         assert _run(cfg)['accepted_on'] == label
         monkeypatch.undo()
         _clock_after_lookup(monkeypatch, outer=len(radius) - 1, count=count)
         r = _run(cfg)
         assert 'Wall-clock timeout in inner loop' in caplog.text
-        assert 'Wall-clock timeout (100s)' not in caplog.text
+        assert 'Wall-clock timeout (1000000s)' not in caplog.text
         assert bool(r['converged_density']) == (label == 'strict')
         assert r['converged'] is True and r['accepted_on'] == 'timeout'
 
@@ -325,7 +326,6 @@ class TestRealSolve:
         r = _picard(
             max_iterations_outer=1,
             max_iterations_inner=30,
-            wall_timeout=100.0,
             _initial_radius_guess=0.97 * 6432000.0,
         )
         assert 'Wall-clock timeout in inner loop' in caplog.text
@@ -348,7 +348,7 @@ class TestRealSolve:
             return (m * (1.02 if len(radius) == 3 else 1.0), *rest)
 
         monkeypatch.setattr(zs, 'solve_structure', solve)
-        r = _picard(max_iterations_outer=4, max_iterations_inner=1, wall_timeout=100.0)
+        r = _picard(max_iterations_outer=4, max_iterations_inner=1)
         assert r['accepted_on'] == 'timeout'
         assert r['mass_error_at_accept'] == pytest.approx(r['best_mass_error'])
 
@@ -366,7 +366,6 @@ class TestRealSolve:
         r = _picard(
             max_iterations_outer=outer,
             max_iterations_inner=1,
-            wall_timeout=100.0,
             _initial_radius_guess=6.15e6,
         )
         assert 'Wall-clock timeout in inner loop (outer=1, inner=0)' in caplog.text
@@ -383,7 +382,7 @@ class TestRealSolve:
         monkeypatch.setattr(
             zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * (len(radius) >= 2))
         )
-        cfg = _cfg(max_iterations_outer=2, max_iterations_inner=1, wall_timeout=100.0)
+        cfg = _cfg(max_iterations_outer=2, max_iterations_inner=1, wall_timeout=WALL)
         r = zs._solve(cfg, load_material_dictionaries(), None, INPUT)
         assert 'Wall-clock timeout in inner loop (outer=1, inner=0)' in caplog.text
         assert r['converged'] is False and r['density_from_eos'] is False
@@ -407,14 +406,13 @@ class TestRealSolve:
         r = _picard(
             max_iterations_outer=2,
             max_iterations_inner=1,
-            wall_timeout=100.0,
             _initial_radius_guess=0.8 * 6.43e6,
         )
         assert seeds == [0.8 * 6.43e6, radius[1]]
         assert r['converged'] is True and r['mass_error_at_accept'] < 1e-4
 
     def test_newton(self):
-        r = _run(_cfg(outer_solver='newton', max_iterations_inner=8))
+        r = _run(_cfg(outer_solver='newton', max_iterations_inner=8, wall_timeout=WALL))
         assert r['converged'] is True and r['accepted_on'] == 'newton_tol'
         assert r['mass_error_at_accept'] < 1e-4  # newton_tol
         _assert_eos_density(r)
@@ -423,7 +421,7 @@ class TestRealSolve:
     def test_newton_with_unconverged_density_flag(self, inner):
         """The inner caps at which the Picard density flag is False: the returned density is
         the EOS density, so the result is converged."""
-        r = _run(_cfg(outer_solver='newton', max_iterations_inner=inner))
+        r = _run(_cfg(outer_solver='newton', max_iterations_inner=inner, wall_timeout=WALL))
         assert not r['converged_density']
         assert r['converged'] is True and r['accepted_on'] == 'newton_tol'
         _assert_eos_density(r)
@@ -446,12 +444,12 @@ def test_wall_clock_in_the_adiabat_ramp_is_timeout(monkeypatch, caplog):
         layer_eos_config={'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'},
         tolerance_outer=0.02,
         max_iterations_inner=2,
-        wall_timeout=100.0,
+        wall_timeout=WALL,
     )
     melt = get_solidus_liquidus_functions()
     r = zs.main(cfg, load_material_dictionaries(), melt, '/tmp')
     _assert_eos_density(r, cfg['layer_eos_config'], melt)  # T-dependent mantle, restored pass
-    assert 'Wall-clock timeout (100s)' in caplog.text
+    assert 'Wall-clock timeout (1000000s)' in caplog.text
     assert r['best_mass_error'] < 0.02  # below tolerance_outer: the chain alone says mass_only
     assert r['converged'] is True and r['accepted_on'] == 'timeout'
 
@@ -473,6 +471,7 @@ def test_cool_paleos_surface_keeps_the_eos_density():
         center_temperature=5000.0,
         mushy_zone_factor=0.8,
         num_layers=100,
+        wall_timeout=WALL,
     )
     melt = get_solidus_liquidus_functions()
     r = zs.main(cfg, load_material_dictionaries(), melt, INPUT)
