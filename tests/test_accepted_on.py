@@ -27,7 +27,7 @@ M_T = 6.0e24
 A, B = 6.0e18, -3.6e25  # M(R) = A R + B, root at R = 7e6 m
 
 
-def _inner(R, *, pressure=True, density=True, accepted_on='timeout'):
+def _inner(R, *, pressure=True, density=True, accepted_on='max_iter', wall=False):
     """Inner Picard result at radius R on the linear M(R)."""
     M = A * R + B
     return {
@@ -38,6 +38,7 @@ def _inner(R, *, pressure=True, density=True, accepted_on='timeout'):
         'converged_density': density,
         'accepted_on': accepted_on,
         'mass_error_at_accept': abs(M - M_T) / M_T,
+        'stopped_on_wall_clock': wall,
     }
 
 
@@ -90,11 +91,20 @@ class TestNewton:
         assert r['converged'] is True and r['accepted_on'] == 'brentq_best'
         assert r['mass_error_at_accept'] == pytest.approx(0.1) and r['best_mass_error'] < 1e-6
 
+    @pytest.mark.parametrize('false', [False, np.False_])
     @pytest.mark.parametrize('flag', ['pressure', 'density'])
-    def test_inner_flag_false_is_not_converged(self, flag):
-        r = _newton(**{flag: False})
+    def test_inner_flag_false_is_not_converged(self, flag, false):
+        r = _newton(**{'pressure': np.True_, 'density': np.True_, flag: false})
         assert r['converged'] is False and r['converged_mass'] is True
         assert r['accepted_on'] is None
+
+    def test_numpy_flags_give_a_python_bool(self):
+        r = _newton(pressure=np.True_, density=np.True_)
+        assert type(r['converged']) is bool and r['accepted_on'] == 'newton_tol'
+
+    def test_inner_wall_clock_stop_is_timeout(self):
+        assert _newton(wall=True)['accepted_on'] == 'timeout'
+        assert _newton(wall=True, density=False)['accepted_on'] is None
 
 
 @pytest.mark.unit
@@ -127,6 +137,14 @@ class TestBrentq:
         assert r['converged'] is True and r['accepted_on'] == 'brentq_best'
         r = _brentq(_hist(6.0e6, 8.0e6), boom, _inner(6.0e6))
         assert r['converged'] is False and r['accepted_on'] is None
+
+    def test_root_on_a_wall_clock_stop_is_timeout(self):
+        r = _brentq(_hist(6.0e6, 8.0e6), lambda R: (A * R + B, _inner(R, wall=True)), None)
+        assert r['converged'] is True and r['accepted_on'] == 'timeout'
+
+    def test_result_without_a_profile_has_the_keys(self):
+        r = _brentq(_hist(7.0e6 - 0.2, 7.0e6 + 0.2), None, None)
+        assert r['accepted_on'] == 'brentq_best' and r['mass_error_at_accept'] is None
 
     def test_no_bracket_is_not_converged(self):
         """No sign change in [R_min, R_max]: not converged, also with a history entry at the
@@ -164,76 +182,125 @@ class TestRetry:
         r, n = self._main(_first_attempt(True, True))
         assert n == 1 and r['converged'] is True and r['accepted_on'] == 'retry_skip'
 
+    def test_retry_skip_on_a_wall_clock_stop_is_timeout(self):
+        first = _first_attempt(True, True)
+        first['stopped_on_wall_clock'] = True
+        r, n = self._main(first)
+        assert n == 1 and r['converged'] is True and r['accepted_on'] == 'timeout'
+
     def test_retry_reports_its_own_path(self):
         r, n = self._main(_first_attempt(True, False))
         assert n == 2 and r['accepted_on'] == 'strict'
 
 
-def _picard(monkeypatch, wall_at=None, **kwargs):
-    """Fast Picard solve (1 M_earth, analytic EOS); the clock jumps at outer iteration
-    ``wall_at``."""
-    if wall_at is not None:
-        radius = _count_outer_iterations(monkeypatch)
-        clock = time.time
-        monkeypatch.setattr(
-            zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * (len(radius) >= wall_at))
-        )
+def _picard(**kwargs):
+    """Fast Picard solve (1 M_earth, analytic EOS) through ``main``."""
     r = _run(_cfg(**kwargs))
     m = np.asarray(r['mass_enclosed'])
     assert r['mass_error_at_accept'] == pytest.approx(abs(m[-1] - earth_mass) / earth_mass)
     return r
 
 
+def _clock_after_lookup(monkeypatch, outer=0, count=1):
+    """The clock jumps by 1e9 s after ``count`` density lookups in outer iteration ``outer``
+    or later (0-based); returns the outer radius list."""
+    radius, lookups = _count_outer_iterations(monkeypatch), []
+    real, clock = zs.calculate_mixed_density_batch, time.time
+
+    def lookup(*args, **kwargs):
+        if len(radius) > outer:
+            lookups.append(1)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(zs, 'calculate_mixed_density_batch', lookup)
+    late = lambda: len(lookups) >= count  # noqa: E731
+    monkeypatch.setattr(zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * late()))
+    return radius
+
+
+@pytest.mark.unit
+@pytest.mark.timeout(60)
+def test_outer_wall_clock_is_timeout(monkeypatch, caplog):
+    """The clock runs out after the single inner iteration of outer iteration 1, so only the
+    outer check sees it; without the clock the stop is 'max_iter'."""
+    _clock_after_lookup(monkeypatch, outer=1)
+    r = _picard(max_iterations_outer=3, max_iterations_inner=1, wall_timeout=100.0)
+    assert 'Wall-clock timeout (100s)' in caplog.text
+    assert 'Wall-clock timeout in inner loop' not in caplog.text
+    assert r['converged'] is True and r['accepted_on'] == 'timeout'
+    assert r['stopped_on_wall_clock'] is True
+
+
 @pytest.mark.smoke
 @pytest.mark.timeout(120)
 class TestRealSolve:
-    def test_strict(self, monkeypatch):
-        r = _picard(monkeypatch, max_iterations_inner=5)
+    def test_strict(self):
+        r = _picard(max_iterations_inner=5)
         assert r['converged_density'] and r['converged_pressure']
-        assert r['accepted_on'] == 'strict'
+        assert r['accepted_on'] == 'strict' and r['stopped_on_wall_clock'] is False
 
-    def test_mass_only(self, monkeypatch):
-        r = _picard(monkeypatch, max_iterations_inner=1)
+    def test_mass_only(self):
+        r = _picard(max_iterations_inner=1)
         assert not r['converged_density'] and r['accepted_on'] == 'mass_only'
 
-    def test_iteration_cap_is_timeout(self, monkeypatch):
-        r = _picard(monkeypatch, max_iterations_outer=1, max_iterations_inner=1)
-        assert r['converged'] is True and r['accepted_on'] == 'timeout'
+    def test_iteration_cap_is_max_iter(self):
+        r = _picard(max_iterations_outer=1, max_iterations_inner=1)
+        assert r['converged'] is True and r['accepted_on'] == 'max_iter'
         assert r['mass_error_at_accept'] > 1e-3  # above tolerance_outer
 
-    def test_wall_clock_is_timeout(self, monkeypatch, caplog):
-        r = _picard(monkeypatch, wall_at=3, max_iterations_inner=1, wall_timeout=100.0)
-        assert 'Wall-clock timeout (100s)' in caplog.text
-        assert not r['converged_pressure'] and r['accepted_on'] == 'timeout'
+    def test_returned_profile_is_not_the_best(self, monkeypatch):
+        """The last outer iteration lands farther from the target mass than the one before;
+        ``mass_error_at_accept`` is that of the returned (last) profile."""
+        radius, real = _count_outer_iterations(monkeypatch), zs.solve_structure
 
-    def test_inner_wall_clock_is_timeout(self, monkeypatch, caplog):
-        """The clock runs out in the inner loop of the last outer iteration, after its first
-        density lookup; without the clock the same solve is mass_only."""
-        cfg = _cfg(max_iterations_inner=2, wall_timeout=100.0)
+        def solve(*args, **kwargs):
+            m, *rest = real(*args, **kwargs)
+            return (m * (1.02 if len(radius) == 3 else 1.0), *rest)
+
+        monkeypatch.setattr(zs, 'solve_structure', solve)
+        r = _picard(max_iterations_outer=3, max_iterations_inner=1)
+        assert r['accepted_on'] == 'max_iter'
+        assert r['mass_error_at_accept'] > 1.5 * r['best_mass_error']
+
+    @pytest.mark.parametrize(
+        'inner, count, label',
+        [(2, 1, 'mass_only'), (5, 8, 'strict')],
+        ids=['mass_only', 'strict'],
+    )
+    def test_inner_wall_clock_is_timeout(self, monkeypatch, caplog, inner, count, label):
+        """The clock runs out in the inner loop of the last outer iteration, after ``count``
+        density lookups; without the clock the same solve is accepted on ``label``."""
+        cfg = _cfg(max_iterations_inner=inner, wall_timeout=100.0)
         radius = _count_outer_iterations(monkeypatch)
-        assert _run(cfg)['accepted_on'] == 'mass_only'
-        last, lookups, real = len(radius), [], zs.calculate_mixed_density_batch
-        radius.clear()
-
-        def lookup(*args, **kwargs):
-            lookups.append(len(radius))
-            return real(*args, **kwargs)
-
-        def late():
-            return bool(lookups) and lookups[-1] >= last
-
-        clock = time.time
-        monkeypatch.setattr(zs, 'calculate_mixed_density_batch', lookup)
-        monkeypatch.setattr(zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * late()))
+        assert _run(cfg)['accepted_on'] == label
+        monkeypatch.undo()
+        _clock_after_lookup(monkeypatch, outer=len(radius) - 1, count=count)
         r = _run(cfg)
         assert 'Wall-clock timeout in inner loop' in caplog.text
         assert 'Wall-clock timeout (100s)' not in caplog.text
+        assert bool(r['converged_density']) == (label == 'strict')
+        assert r['converged'] is True and r['accepted_on'] == 'timeout'
+
+    def test_retry_skip_on_an_inner_wall_clock_cut_is_timeout(self, monkeypatch, caplog):
+        """One outer iteration cut by the clock in its inner loop, 5.6 % mass error: ``main``
+        skips the retry on the density flag of the cut."""
+        caplog.set_level(logging.INFO, logger='zalmoxis.solver')
+        _clock_after_lookup(monkeypatch, count=8)
+        r = _picard(
+            max_iterations_outer=1,
+            max_iterations_inner=30,
+            wall_timeout=100.0,
+            _initial_radius_guess=0.97 * 6432000.0,
+        )
+        assert 'Wall-clock timeout in inner loop' in caplog.text
+        assert 'Skipping retry' in caplog.text
         assert r['converged'] is True and r['accepted_on'] == 'timeout'
 
     def test_wall_clock_without_an_accept(self):
         """The clock runs out before the first profile: not accepted (``main`` would retry)."""
         r = zs._solve(_cfg(wall_timeout=-1.0), load_material_dictionaries(), None, INPUT)
         assert r['converged'] is False and r['accepted_on'] is None
+        assert r['stopped_on_wall_clock'] is True
 
     def test_newton(self):
         r = _run(_cfg(outer_solver='newton', max_iterations_inner=8))
