@@ -84,7 +84,8 @@ class TestNewton:
         assert r['mass_error_at_accept'] == pytest.approx(r['newton_history'][-1][2], abs=1e-15)
 
     def test_bracket_sweep_hit_is_brentq_best(self):
-        """One Newton step lands on the root; the bracket sweep meets it, the profile is the step before."""
+        """One Newton step lands on the root; the bracket sweep meets it there, and the profile
+        is that of the step before."""
         r = _newton({'_initial_radius_guess': 6.9e6, 'newton_max_iter': 1}, density=False)
         assert r['converged'] is True and r['accepted_on'] == 'brentq_best'
         assert r['mass_error_at_accept'] == pytest.approx(0.1) and r['best_mass_error'] < 1e-6
@@ -104,7 +105,9 @@ class TestBrentq:
         assert r['accepted_on'] == 'newton_tol'
 
     def test_root_does_not_read_inner_flags(self):
-        eval_M = lambda R: (A * R + B, _inner(R, density=False))  # noqa: E731
+        def eval_M(R):
+            return A * R + B, _inner(R, density=False)
+
         r = _brentq(_hist(6.0e6, 8.0e6), eval_M, _inner(8.0e6))
         assert r['converged'] is True and r['accepted_on'] == 'newton_tol'
         assert r['converged_density'] is False
@@ -126,7 +129,8 @@ class TestBrentq:
         assert r['converged'] is False and r['accepted_on'] is None
 
     def test_no_bracket_is_not_converged(self):
-        """No sign change in [R_min, R_max]: not converged, also with a history entry at the root."""
+        """No sign change in [R_min, R_max]: not converged, also with a history entry at the
+        root."""
         below = lambda R: (0.5 * M_T, _inner(R))  # noqa: E731
         r = _brentq(_hist(7.0e6), below, _inner(6.0e6))
         assert r['converged'] is False and r['accepted_on'] is None and r['converged_mass']
@@ -166,7 +170,8 @@ class TestRetry:
 
 
 def _picard(monkeypatch, wall_at=None, **kwargs):
-    """Fast Picard solve (1 M_earth, analytic EOS); the clock jumps at outer iteration ``wall_at``."""
+    """Fast Picard solve (1 M_earth, analytic EOS); the clock jumps at outer iteration
+    ``wall_at``."""
     if wall_at is not None:
         radius = _count_outer_iterations(monkeypatch)
         clock = time.time
@@ -202,18 +207,25 @@ class TestRealSolve:
         assert not r['converged_pressure'] and r['accepted_on'] == 'timeout'
 
     def test_inner_wall_clock_is_timeout(self, monkeypatch, caplog):
-        """The clock runs out in the inner loop of the last outer iteration, after 1 density update."""
+        """The clock runs out in the inner loop of the last outer iteration, after its first
+        density lookup; without the clock the same solve is mass_only."""
+        cfg = _cfg(max_iterations_inner=2, wall_timeout=100.0)
         radius = _count_outer_iterations(monkeypatch)
-        updates, real = [], zs.calculate_mixed_density_batch
-        monkeypatch.setattr(
-            zs,
-            'calculate_mixed_density_batch',
-            lambda *a, **k: updates.append(len(radius)) or real(*a, **k),
-        )
+        assert _run(cfg)['accepted_on'] == 'mass_only'
+        last, lookups, real = len(radius), [], zs.calculate_mixed_density_batch
+        radius.clear()
+
+        def lookup(*args, **kwargs):
+            lookups.append(len(radius))
+            return real(*args, **kwargs)
+
+        def late():
+            return bool(lookups) and lookups[-1] >= last
+
         clock = time.time
-        late = lambda: bool(updates) and updates[-1] >= 4  # noqa: E731
+        monkeypatch.setattr(zs, 'calculate_mixed_density_batch', lookup)
         monkeypatch.setattr(zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * late()))
-        r = _run(_cfg(max_iterations_inner=2, wall_timeout=100.0))
+        r = _run(cfg)
         assert 'Wall-clock timeout in inner loop' in caplog.text
         assert 'Wall-clock timeout (100s)' not in caplog.text
         assert r['converged'] is True and r['accepted_on'] == 'timeout'
@@ -238,7 +250,8 @@ class TestRealSolve:
 @pytest.mark.wolfbower
 @pytest.mark.timeout(300)
 def test_wall_clock_in_the_adiabat_ramp_is_timeout(monkeypatch, caplog):
-    """The clock runs out after the mass converged, in the adiabat blend ramp: still 'timeout'."""
+    """The clock runs out after the mass converged, in the adiabat blend ramp: still
+    'timeout'."""
     from zalmoxis.eos import get_solidus_liquidus_functions
 
     _need_wb_tables()

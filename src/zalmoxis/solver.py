@@ -218,7 +218,7 @@ def _mass_error(mass_enclosed, planet_mass):
 
 
 def _newton_verdict(result, converged, accepted_on):
-    """Set ``converged`` and ``accepted_on`` (None when not converged) of a Newton-outer result."""
+    """Set ``converged`` and ``accepted_on`` (None if not converged) of a Newton result."""
     result['converged'] = bool(converged)
     result['accepted_on'] = accepted_on if result['converged'] else None
 
@@ -1527,9 +1527,7 @@ def _solve(
     best_mass_error = float('inf')
     best_profiles = None
     oscillation_count = 0
-    stop_label = (
-        None  # 'timeout' once the wall clock stops a loop, 'oscillation' at the bailout
-    )
+    stop_label = None  # 'timeout' or 'oscillation' once a loop stops early
 
     # Initialize arrays to safe defaults. These are overwritten on the
     # first outer iteration, but must exist in case the wall-clock timeout

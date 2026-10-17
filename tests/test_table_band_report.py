@@ -376,8 +376,8 @@ def test_gradient_nodes_are_the_adiabat_reads(mats, monkeypatch, mode, ice, surf
 @pytest.mark.parametrize('outer', ['picard', 'newton'])
 def test_main_checks_the_profile_with_the_mixtures_it_got(mats, monkeypatch, caplog, outer):
     """main() runs the check on both outer solvers with the mixtures passed in; a band failure
-    leaves the numerical convergence flags and accepted_on as they are. A Newton solve that kept the linear
-    profile in an adiabatic mode logs a warning."""
+    leaves the numerical convergence flags and accepted_on as they are. A Newton solve that kept
+    the linear profile in an adiabatic mode logs a warning."""
     md, melt, grad, _ = mats
     res = {**_result(HOT, adiabat=True), 'converged_mass': True, 'converged_density': True}
     res['accepted_on'] = 'strict'

@@ -90,14 +90,14 @@ After convergence, these arrays are extracted for the density update step.
 - The inner loop converges when the maximum relative density change across all shells falls below `tolerance_inner`.
 - The pressure solver converges when (a) `brentq` reports convergence, (b) the surface pressure residual is within `pressure_tolerance` of the target, and (c) all pressures are non-negative ($P \geq 0$, allowing for zero-padded surface points from the terminal event).
 
-The numerical solve is accepted when one of the tests below passes: the result then has `converged = True`, and `accepted_on` names the test; it is None when no test passes.
+The numerical solve is accepted when one of the tests below passes: the result then has `converged = True`, and `accepted_on` names the test, or `timeout` when the wall clock stopped the solve; it is None when no test passes.
 The table band check (see [EOS physics](eos_physics.md)) runs after these tests: a band failure sets `converged = False` and keeps `accepted_on`, so read `converged` for the final verdict.
 
 | `accepted_on` | Outer solver | Test |
 |---|---|---|
-| `strict` | Picard | The mass, density and pressure flags are True; the inner loop also sets the density flag when it stops (stuck, at `max_iterations_inner`, on an oscillation or at `wall_timeout`) with a relative density change below 0.1 (a larger limit only when `tolerance_inner` is above 1e-3). |
+| `strict` | Picard | The mass, density and pressure flags are True. Besides a change below `tolerance_inner`, the inner loop sets the density flag when it stops stuck or at `max_iterations_inner` with a relative density change below `max(100 * tolerance_inner, 0.1)`, or after 15 oscillations below `max(10 * tolerance_inner, 0.1)`. |
 | `mass_only` | Picard | Mass converged and the smallest mass error is below `tolerance_outer`; density or pressure did not converge. |
-| `timeout` | Picard | The solve reached `wall_timeout` (in the outer or the inner loop) and was accepted, or the outer loop stopped at `max_iterations_outer` with the smallest mass error below 3 %. |
+| `timeout` | Picard | The solve reached `wall_timeout` (in the outer or the inner loop) and was accepted, which replaces `strict` and `mass_only`; or the outer loop stopped at `max_iterations_outer` with the smallest mass error below 3 %. |
 | `oscillation` | Picard | The mass error changed sign 10 times since its last improvement; the best profile is returned, with its mass error below `3 * tolerance_outer`. This test does not fire in the current code. |
 | `retry_skip` | Picard | The first solve was not accepted, density and pressure converged and its smallest mass error is below 7 %; `main` skips the retry. |
 | `newton_tol` | Newton | The smallest mass error of the Newton steps is below `newton_tol` and the inner solve of the returned profile reports converged pressure and density, or the mass error at the brentq root is below `newton_tol`. |
