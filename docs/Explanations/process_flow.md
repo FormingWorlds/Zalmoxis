@@ -95,17 +95,18 @@ The table band check (see [EOS physics](eos_physics.md)) runs after these tests:
 
 | `accepted_on` | Outer solver | Test |
 |---|---|---|
-| `strict` | Picard | Mass, density and pressure converged. |
+| `strict` | Picard | The mass, density and pressure flags are True; the inner loop also sets the density flag when it stops (stuck, at `max_iterations_inner`, on an oscillation or at `wall_timeout`) with a relative density change below 0.1 (a larger limit only when `tolerance_inner` is above 1e-3). |
 | `mass_only` | Picard | Mass converged and the smallest mass error is below `tolerance_outer`; density or pressure did not converge. |
-| `timeout` | Picard | The outer loop stopped at `max_iterations_outer` or `wall_timeout` with the smallest mass error below 3 %. |
+| `timeout` | Picard | The solve reached `wall_timeout` (in the outer or the inner loop) and was accepted, or the outer loop stopped at `max_iterations_outer` with the smallest mass error below 3 %. |
 | `oscillation` | Picard | The mass error changed sign 10 times since its last improvement; the best profile is returned, with its mass error below `3 * tolerance_outer`. This test does not fire in the current code. |
 | `retry_skip` | Picard | The first solve was not accepted, density and pressure converged and its smallest mass error is below 7 %; `main` skips the retry. |
 | `newton_tol` | Newton | The smallest mass error of the Newton steps is below `newton_tol` and the inner solve of the returned profile reports converged pressure and density, or the mass error at the brentq root is below `newton_tol`. |
 | `brentq_best` | Newton | The bracket search or brentq stopped early with the smallest mass error seen below `newton_tol`. The returned profile is that of the last Newton step, and its mass error can be much larger. |
 
 `mass_error_at_accept` is the relative error $|M - M_p| / M_p$ of the last value of `mass_enclosed` in the returned profile, also when no test passed, and None when that value is not finite.
-It can differ from `best_mass_error`, the smallest error over the outer iterations or Newton steps, because the returned profile is not always the one with that error.
-When density did not converge, the returned density does not integrate to exactly this mass: `mass_enclosed` comes from the last structure integration, before the last density update.
+It can differ from `best_mass_error`, the smallest error over the outer iterations or Newton evaluations (the error at the root on the brentq root exit), because the returned profile is not always the one with that error.
+`mass_enclosed` comes from the structure integration, which evaluates the EOS at each step, while `density` is the Picard iterate on the grid.
+When density did not converge the two can differ by a large factor, so `mass_error_at_accept` does not measure the mass of the returned density.
 
 ## Output
 

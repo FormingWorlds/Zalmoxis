@@ -8,6 +8,7 @@ and density.
 from __future__ import annotations
 
 import logging
+import os
 import time
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -16,10 +17,12 @@ import numpy as np
 import pytest
 
 import zalmoxis.solver as zs
-from tests.test_failed_structure_solve import _cfg, _count_outer_iterations, _run
+from tests.test_failed_structure_solve import ROOT, _cfg, _count_outer_iterations, _run
 from tests.test_table_band_report import _need_wb_tables
+from zalmoxis.config import load_material_dictionaries
 from zalmoxis.constants import earth_mass
 
+INPUT = os.path.join(ROOT, 'input')
 M_T = 6.0e24
 A, B = 6.0e18, -3.6e25  # M(R) = A R + B, root at R = 7e6 m
 
@@ -101,9 +104,7 @@ class TestBrentq:
         assert r['accepted_on'] == 'newton_tol'
 
     def test_root_does_not_read_inner_flags(self):
-        def eval_M(R):
-            return A * R + B, _inner(R, density=False)
-
+        eval_M = lambda R: (A * R + B, _inner(R, density=False))  # noqa: E731
         r = _brentq(_hist(6.0e6, 8.0e6), eval_M, _inner(8.0e6))
         assert r['converged'] is True and r['accepted_on'] == 'newton_tol'
         assert r['converged_density'] is False
@@ -200,6 +201,28 @@ class TestRealSolve:
         assert 'Wall-clock timeout (100s)' in caplog.text
         assert not r['converged_pressure'] and r['accepted_on'] == 'timeout'
 
+    def test_inner_wall_clock_is_timeout(self, monkeypatch, caplog):
+        """The clock runs out in the inner loop of the last outer iteration, after 1 density update."""
+        radius = _count_outer_iterations(monkeypatch)
+        updates, real = [], zs.calculate_mixed_density_batch
+        monkeypatch.setattr(
+            zs,
+            'calculate_mixed_density_batch',
+            lambda *a, **k: updates.append(len(radius)) or real(*a, **k),
+        )
+        clock = time.time
+        late = lambda: bool(updates) and updates[-1] >= 4  # noqa: E731
+        monkeypatch.setattr(zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * late()))
+        r = _run(_cfg(max_iterations_inner=2, wall_timeout=100.0))
+        assert 'Wall-clock timeout in inner loop' in caplog.text
+        assert 'Wall-clock timeout (100s)' not in caplog.text
+        assert r['converged'] is True and r['accepted_on'] == 'timeout'
+
+    def test_wall_clock_without_an_accept(self):
+        """The clock runs out before the first profile: not accepted (``main`` would retry)."""
+        r = zs._solve(_cfg(wall_timeout=-1.0), load_material_dictionaries(), None, INPUT)
+        assert r['converged'] is False and r['accepted_on'] is None
+
     def test_newton(self):
         r = _run(_cfg(outer_solver='newton', max_iterations_inner=8))
         assert r['converged'] is True and r['accepted_on'] == 'newton_tol'
@@ -216,7 +239,6 @@ class TestRealSolve:
 @pytest.mark.timeout(300)
 def test_wall_clock_in_the_adiabat_ramp_is_timeout(monkeypatch, caplog):
     """The clock runs out after the mass converged, in the adiabat blend ramp: still 'timeout'."""
-    from zalmoxis.config import load_material_dictionaries
     from zalmoxis.eos import get_solidus_liquidus_functions
 
     _need_wb_tables()
@@ -233,4 +255,5 @@ def test_wall_clock_in_the_adiabat_ramp_is_timeout(monkeypatch, caplog):
     )
     r = zs.main(cfg, load_material_dictionaries(), get_solidus_liquidus_functions(), '/tmp')
     assert 'Wall-clock timeout (100s)' in caplog.text
-    assert r['best_mass_error'] < 0.02 and r['accepted_on'] == 'timeout'
+    assert r['best_mass_error'] < 0.02  # below tolerance_outer: the chain alone says mass_only
+    assert r['converged'] is True and r['accepted_on'] == 'timeout'

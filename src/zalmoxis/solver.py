@@ -738,11 +738,15 @@ def _brentq_fallback_outer(
             )
         f0 = M_at_current - M_target
         history.append((R_current, M_at_current, abs(f0) / M_target))
-        if (
-            abs(f0) / M_target < tol
-        ):  # the profile is still last_result, not the one at R_current
+        if abs(f0) / M_target < tol:
+            # the profile is still last_result, not the one at R_current
             result = _attach_newton_bookkeeping(
-                last_result, history, start_time, used_brentq=True, n_newton_iter=n_newton_iter
+                last_result,
+                history,
+                start_time,
+                used_brentq=True,
+                tol=tol,
+                n_newton_iter=n_newton_iter,
             )
             _newton_verdict(result, True, 'brentq_best')
             return result
@@ -1523,7 +1527,9 @@ def _solve(
     best_mass_error = float('inf')
     best_profiles = None
     oscillation_count = 0
-    stop_label = None  # accepted_on of an accepted solve that stopped early
+    stop_label = (
+        None  # 'timeout' once the wall clock stops a loop, 'oscillation' at the bailout
+    )
 
     # Initialize arrays to safe defaults. These are overwritten on the
     # first outer iteration, but must exist in case the wall-clock timeout
@@ -1794,6 +1800,7 @@ def _solve(
         for inner_iter in range(max_iterations_inner):
             # Wall-clock timeout check (inner loop)
             if time.time() - wall_start > wall_timeout:
+                stop_label = 'timeout'
                 if _inner_best_density is not None:
                     density[:] = _inner_best_density
                     converged_density = _inner_best_diff < max(100 * tolerance_inner, 0.1)
