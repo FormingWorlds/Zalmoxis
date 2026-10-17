@@ -217,16 +217,9 @@ def _mass_error(mass_enclosed, planet_mass):
     return float(abs(m[-1] - planet_mass) / planet_mass)
 
 
-def _newton_verdict(result, mass_ok, accepted_on):
-    """Set ``converged`` and ``accepted_on`` of a Newton-outer result.
-
-    The result is converged when ``mass_ok`` holds and the last inner solve reports
-    converged pressure and density, with its flags as they are. ``accepted_on`` is
-    None for a result that is not converged.
-    """
-    result['converged'] = bool(
-        mass_ok and result.get('converged_pressure') and result.get('converged_density')
-    )
+def _newton_verdict(result, converged, accepted_on):
+    """Set ``converged`` and ``accepted_on`` (None when not converged) of a Newton-outer result."""
+    result['converged'] = bool(converged)
     result['accepted_on'] = accepted_on if result['converged'] else None
 
 
@@ -745,15 +738,14 @@ def _brentq_fallback_outer(
             )
         f0 = M_at_current - M_target
         history.append((R_current, M_at_current, abs(f0) / M_target))
-        if abs(f0) / M_target < tol:  # pragma: no cover - lucky-hit shortcut; defensive
-            return _attach_newton_bookkeeping(
-                last_result,
-                history,
-                start_time,
-                used_brentq=True,
-                tol=tol,
-                n_newton_iter=n_newton_iter,
+        if (
+            abs(f0) / M_target < tol
+        ):  # the profile is still last_result, not the one at R_current
+            result = _attach_newton_bookkeeping(
+                last_result, history, start_time, used_brentq=True, n_newton_iter=n_newton_iter
             )
+            _newton_verdict(result, True, 'brentq_best')
+            return result
         if f0 > 0:  # pragma: no cover - bracket sweep direction; defensive
             # M too large -> shrink R.
             R_test = R_current * 0.5
@@ -921,7 +913,7 @@ def _attach_newton_bookkeeping(
     The mass test compares the best history entry's relative mass error
     against ``tol`` if supplied; without ``tol`` it passes (legacy
     behaviour for callers that pre-checked). ``converged`` also needs the
-    pressure and density flags of the last inner solve (``_newton_verdict``).
+    pressure and density flags of the inner solve of the returned profile.
     New callers should always pass ``tol`` so a misroute through this
     helper does not silently flag a non-converged result as converged.
 
@@ -936,9 +928,10 @@ def _attach_newton_bookkeeping(
         # because +/-dR side-evaluations may have appended after the
         # main R-step on this iter, masking actual convergence.
         best_rel = min(h[2] for h in history)
-        converged = True if tol is None else bool(best_rel < tol)
-        _newton_verdict(result, converged, 'newton_tol')
-        result['converged_mass'] = converged
+        mass_ok = True if tol is None else bool(best_rel < tol)
+        inner_ok = result.get('converged_pressure') and result.get('converged_density')
+        _newton_verdict(result, mass_ok and inner_ok, 'newton_tol')
+        result['converged_mass'] = mass_ok
         result['best_mass_error'] = float(best_rel)
     result['total_time'] = time.time() - start_time
     result['newton_n_iter'] = int(n_newton_iter) if n_newton_iter is not None else len(history)
@@ -1530,7 +1523,7 @@ def _solve(
     best_mass_error = float('inf')
     best_profiles = None
     oscillation_count = 0
-    oscillation_accept = False
+    stop_label = None  # accepted_on of an accepted solve that stopped early
 
     # Initialize arrays to safe defaults. These are overwritten on the
     # first outer iteration, but must exist in case the wall-clock timeout
@@ -1558,6 +1551,7 @@ def _solve(
                 outer_iter,
                 best_mass_error * 100 if np.isfinite(best_mass_error) else float('inf'),
             )
+            stop_label = 'timeout'
             if best_profiles is not None:
                 converged_mass = best_mass_error < 3 * tolerance_outer
                 # Fresh writable copies: `pressure` / `mass_enclosed`
@@ -2336,7 +2330,7 @@ def _solve(
             if best_profiles['temperatures'] is not None:
                 temperatures = np.array(best_profiles['temperatures'])
             converged_mass = True
-            oscillation_accept = True
+            stop_label = 'oscillation'
             break
 
         # Reset frozen sigma for next outer iteration
@@ -2425,8 +2419,8 @@ def _solve(
         converged = True
         converged_mass = True
         accepted_on = 'timeout'
-    if converged and oscillation_accept:  # pragma: no cover - oscillation bailout; defensive
-        accepted_on = 'oscillation'
+    if converged and stop_label:
+        accepted_on = stop_label
 
     end_time = time.time()
     total_time = end_time - start_time

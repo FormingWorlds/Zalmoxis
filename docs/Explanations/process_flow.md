@@ -90,20 +90,22 @@ After convergence, these arrays are extracted for the density update step.
 - The inner loop converges when the maximum relative density change across all shells falls below `tolerance_inner`.
 - The pressure solver converges when (a) `brentq` reports convergence, (b) the surface pressure residual is within `pressure_tolerance` of the target, and (c) all pressures are non-negative ($P \geq 0$, allowing for zero-padded surface points from the terminal event).
 
-The result reports `converged = True` when one of the tests below accepts the solve; `accepted_on` names that test and is None when no test accepts it.
+The numerical solve is accepted when one of the tests below passes: the result then has `converged = True`, and `accepted_on` names the test; it is None when no test passes.
+The table band check (see [EOS physics](eos_physics.md)) runs after these tests: a band failure sets `converged = False` and keeps `accepted_on`, so read `converged` for the final verdict.
 
 | `accepted_on` | Outer solver | Test |
 |---|---|---|
 | `strict` | Picard | Mass, density and pressure converged. |
 | `mass_only` | Picard | Mass converged and the smallest mass error is below `tolerance_outer`; density or pressure did not converge. |
 | `timeout` | Picard | The outer loop stopped at `max_iterations_outer` or `wall_timeout` with the smallest mass error below 3 %. |
-| `oscillation` | Picard | The mass error changed sign 10 times; the best profile is returned, with its mass error below `3 * tolerance_outer`. |
-| `retry_skip` | Picard | The first solve was not accepted, density and pressure converged and its mass error is below 7 %; `main` skips the retry. |
-| `newton_tol` | Newton | The mass error is below `newton_tol` (Newton steps or the brentq root) and the last inner solve reports converged pressure and density. |
-| `brentq_best` | Newton | brentq stopped early; the smallest mass error seen is below `newton_tol` and the last inner solve reports converged pressure and density. |
+| `oscillation` | Picard | The mass error changed sign 10 times since its last improvement; the best profile is returned, with its mass error below `3 * tolerance_outer`. This test does not fire in the current code. |
+| `retry_skip` | Picard | The first solve was not accepted, density and pressure converged and its smallest mass error is below 7 %; `main` skips the retry. |
+| `newton_tol` | Newton | The smallest mass error of the Newton steps is below `newton_tol` and the inner solve of the returned profile reports converged pressure and density, or the mass error at the brentq root is below `newton_tol`. |
+| `brentq_best` | Newton | The bracket search or brentq stopped early with the smallest mass error seen below `newton_tol`. The returned profile is that of the last Newton step, and its mass error can be much larger. |
 
-`mass_error_at_accept` is the relative error $|M - M_p| / M_p$ of the total mass of the returned profile.
+`mass_error_at_accept` is the relative error $|M - M_p| / M_p$ of the last value of `mass_enclosed` in the returned profile, also when no test passed, and None when that value is not finite.
 It can differ from `best_mass_error`, the smallest error over the outer iterations or Newton steps, because the returned profile is not always the one with that error.
+When density did not converge, the returned density does not integrate to exactly this mass: `mass_enclosed` comes from the last structure integration, before the last density update.
 
 ## Output
 
