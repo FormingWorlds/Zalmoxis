@@ -222,16 +222,18 @@ def _assert_eos_density(r, eos=None, melt=(None, None), mzf=None):
 def _picard(integrated=True, **kwargs):
     """Fast Picard solve (1 M_earth, analytic EOS) through ``main``; ``cmb_mass`` is the core
     mass fraction of the returned mass. When ``mass_enclosed`` is the integral of the returned
-    profile (``integrated``), the surface gravity is G M / R^2 and the trapezoid mass of the
-    returned density matches it."""
+    profile (``integrated``), at the last node with P > 0 the gravity is G M / r^2 and the
+    trapezoid mass of the returned density matches ``mass_enclosed``."""
     r = _run(_cfg(**kwargs))
     m, rad = np.asarray(r['mass_enclosed']), np.asarray(r['radii'])
     assert r['mass_error_at_accept'] == pytest.approx(abs(m[-1] - earth_mass) / earth_mass)
     _assert_eos_density(r)
     assert r['cmb_mass'] == pytest.approx(0.325 * m[-1], rel=1e-12)
+    k = np.flatnonzero(np.asarray(r['pressure']) > 0)[-1] + 1  # padded nodes have P = 0
+    m, rad, rho = m[:k], rad[:k], np.asarray(r['density'])[:k]
     if integrated:
-        assert r['gravity'][-1] == pytest.approx(G * m[-1] / rad[-1] ** 2, rel=1e-6)
-        assert abs(np.trapezoid(4 * np.pi * rad**2 * r['density'], rad) / m[-1] - 1) < 1e-2
+        assert r['gravity'][k - 1] == pytest.approx(G * m[-1] / rad[-1] ** 2, rel=1e-6)
+        assert abs(np.trapezoid(4 * np.pi * rad**2 * rho, rad) / m[-1] - 1) < 1e-2
     return r
 
 
