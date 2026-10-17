@@ -78,8 +78,8 @@ def _common_fixtures(*, core_format='paleos_unified', mantle_2phase=True):
         mantle_mat = {
             'format': 'paleos_2phase',
             '_api_resolved': True,
-            'solid_mantle': {'eos_file': sol_cache_file, 'format': 'paleos_unified'},
-            'melted_mantle': {'eos_file': liq_cache_file, 'format': 'paleos_unified'},
+            'solid_mantle': {'eos_file': sol_cache_file, 'format': 'paleos'},
+            'melted_mantle': {'eos_file': liq_cache_file, 'format': 'paleos'},
         }
     else:
         # Neither supported representation: not unified, no sub-tables.
@@ -645,3 +645,58 @@ class TestCacheKeyIdentity:
             np.testing.assert_array_equal(got['T_values'], f())
             tables.append(got['log_T_liq_table'])
         assert len(tabulated) == 3 and tables[3] is tables[0]
+
+
+class TestNonPaleosTwoPhaseMantle:
+    """A 2-phase mantle from P-T-rho tables (Wolf & Bower, RTPress) is refused, not crashed."""
+
+    @pytest.mark.parametrize(
+        'mantle_eos',
+        ['WolfBower2018:MgSiO3', 'RTPress100TPa:MgSiO3', 'paleos_solid', 'paleos_melt'],
+    )
+    def test_tabulated_two_phase_mantle_raises_value_error(self, mantle_eos):
+        """The real Wolf & Bower and RTPress registry entries, and a mantle with one PALEOS and
+        one tabulated sub-table (either way round), are refused with ValueError, so
+        solve_structure falls back to numpy."""
+        import copy
+
+        from zalmoxis.eos_properties import EOS_REGISTRY
+
+        layer_mixtures, mds, cache = _common_fixtures()
+        layer_mixtures['mantle'] = LayerMixture([mantle_eos], [1.0])
+        if mantle_eos.startswith('paleos_'):
+            entry = copy.deepcopy(EOS_REGISTRY['WolfBower2018:MgSiO3'])
+            phase = 'solid_mantle' if mantle_eos == 'paleos_solid' else 'melted_mantle'
+            entry[phase] = {'eos_file': '/synthetic/pal.dat', 'format': 'paleos'}
+        else:
+            entry = copy.deepcopy(EOS_REGISTRY[mantle_eos])
+            assert (
+                'format' not in entry['melted_mantle'] and 'format' not in entry['solid_mantle']
+            )
+        mds[mantle_eos] = {**entry, '_api_resolved': True}
+        with pytest.raises(ValueError, match='PALEOS-2phase'):
+            jw.solve_structure_via_jax(
+                layer_mixtures=layer_mixtures,
+                cmb_mass=2e23,
+                core_mantle_mass=4e23,
+                radii=np.linspace(1.0, 1e6, 20),
+                adaptive_radial_fraction=0.5,
+                relative_tolerance=1e-6,
+                absolute_tolerance=1e-8,
+                maximum_step=1e5,
+                material_dictionaries=mds,
+                interpolation_cache=cache,
+                y0=[0.0, 0.0, 1e12],
+                solidus_func=_solidus_func,
+                liquidus_func=_liquidus_func,
+                temperature_function=_t_func,
+            )
+
+    def test_extract_sub_args_without_density_grid_raises_value_error(self):
+        """A regular-grid seager cache has no density_grid: ValueError, never KeyError."""
+        seager_cache = {'type': 'regular', 'interp': None, 'p_min': 0.0, 'p_max': 1e12}
+        with pytest.raises(ValueError, match='liq EOS table has no density grid'):
+            jw._extract_sub_args(seager_cache, 'liq')
+        out = jw._extract_sub_args(_build_min_cache_dict(), 'liq')
+        assert out['liq_n_p'] == 4
+        assert out['liq_density_grid'].shape == (4, 4)

@@ -7,6 +7,7 @@ parameter validation, material dictionary loading, and melting curve setup.
 from __future__ import annotations
 
 import logging
+import math
 import os
 import sys
 
@@ -16,6 +17,7 @@ from . import get_zalmoxis_root
 from .constants import (
     CONDENSED_RHO_MIN_DEFAULT,
     CONDENSED_RHO_SCALE_DEFAULT,
+    MAX_BAND_EXCESS_DEFAULT,
     TDEP_EOS_NAMES,
     earth_mass,
 )
@@ -186,6 +188,38 @@ def validate_layer_eos(layer_eos_config):
                 f'Valid Vinet: Vinet:<material> with '
                 f'{sorted(VALID_VINET_KEYS)}.'
             )
+
+
+def band_limit(config_params):
+    """Return ``max_band_excess`` in K.
+
+    Parameters
+    ----------
+    config_params : dict
+        Configuration; ``max_band_excess`` defaults to ``MAX_BAND_EXCESS_DEFAULT``.
+
+    Returns
+    -------
+    float
+        The limit.
+
+    Raises
+    ------
+    ValueError
+        If the value is a bool, not a number, not finite, or below 0.
+    """
+    value = config_params.get('max_band_excess', MAX_BAND_EXCESS_DEFAULT)
+    try:
+        limit = float('nan') if isinstance(value, bool) else float(value)
+    except (TypeError, ValueError):
+        limit = float('nan')
+    if not (math.isfinite(limit) and limit >= 0):
+        raise ValueError(
+            f'max_band_excess must be a finite number >= 0, got {value!r} K. A converged '
+            f"mantle node further than this beyond a table's valid temperature band fails "
+            f'the solve.'
+        )
+    return limit
 
 
 def validate_config(config_params):
@@ -444,6 +478,8 @@ def validate_config(config_params):
             f'This is the sigmoid width for H2 miscibility suppression. '
             f'Typical value: 50 K.'
         )
+
+    band_limit(config_params)
 
     # ── Numerical parameters ────────────────────────────────────────
     num_layers = config_params['num_layers']
@@ -734,6 +770,7 @@ def load_zalmoxis_config(temp_config_path=None):
     condensed_rho_scale = eos_section.get('condensed_rho_scale', CONDENSED_RHO_SCALE_DEFAULT)
     binodal_T_scale = eos_section.get('binodal_T_scale', BINODAL_T_SCALE_DEFAULT)
     partition_rule = eos_section.get('partition_rule', 'uniform')
+    max_band_excess = eos_section.get('max_band_excess', MAX_BAND_EXCESS_DEFAULT)
 
     # Build per-EOS mushy_zone_factors dict. Only include materials that are
     # actually configured in a layer; unused materials default to 1.0 so that
@@ -769,6 +806,7 @@ def load_zalmoxis_config(temp_config_path=None):
         'condensed_rho_scale': condensed_rho_scale,
         'binodal_T_scale': binodal_T_scale,
         'partition_rule': partition_rule,
+        'max_band_excess': max_band_excess,
         'num_layers': config['Calculations']['num_layers'],
         'target_surface_pressure': config.get('PressureAdjustment', {}).get(
             'target_surface_pressure',
@@ -883,9 +921,9 @@ def load_solidus_liquidus_functions(
     if all_comps & _PALEOS_2PHASE_NAMES and liquidus_id == _PALEOS_LIQUIDUS_ID:
         if solidus_id != 'Stixrude14-solidus':
             logger.warning(
-                "rock_solidus=%r is not used for a PALEOS 2-phase mantle with "
+                'rock_solidus=%r is not used for a PALEOS 2-phase mantle with '
                 "rock_liquidus='PALEOS-liquidus': the solidus is derived as "
-                "mushy_zone_factor * liquidus (mushy_zone_factor=%.3g).",
+                'mushy_zone_factor * liquidus (mushy_zone_factor=%.3g).',
                 solidus_id,
                 mushy_zone_factor,
             )

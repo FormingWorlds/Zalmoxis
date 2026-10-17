@@ -70,6 +70,8 @@ _FIXED_COLUMNS = {
     'converged_pressure',
     'converged_density',
     'converged_mass',
+    'converged_bands',
+    'band_excess_K',
     'time_s',
     'error',
 }

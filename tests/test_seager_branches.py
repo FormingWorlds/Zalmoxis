@@ -15,7 +15,8 @@ import numpy as np
 import pytest
 from scipy.interpolate import LinearNDInterpolator, RegularGridInterpolator, interp1d
 
-from zalmoxis.eos.seager import get_tabulated_eos
+from zalmoxis.eos import seager
+from zalmoxis.eos.seager import _fill_invalid_cells, band_excess, get_tabulated_eos
 
 pytestmark = pytest.mark.unit
 
@@ -35,6 +36,8 @@ def _regular_cache():
         'p_max': pressures[-1],
         't_min': temps[0],
         't_max': temps[-1],
+        'unique_pressures': pressures,
+        **dict(zip(('t_lo', 't_hi'), _fill_invalid_cells(rho, temps)[1:])),
     }
 
 
@@ -272,3 +275,184 @@ class TestUnexpectedExceptionPath:
             interpolation_functions=regular_cache['cache'],
         )
         assert rho is None
+
+
+FILL = 1e-15
+P_AX = np.array([0.0, 1e9, 2e9, 3e9])
+T_AX = np.array([500.0, 1000.0, 1500.0, 2000.0, 2500.0, 3000.0, 3500.0])
+# Valid T band per pressure node; fill cells below and above it, as in the Wolf & Bower tables.
+BAND = {0: (1000.0, 2500.0), 1: (1000.0, 3000.0), 2: (1500.0, 3000.0), 3: (1500.0, 3500.0)}
+
+
+def _fill_table():
+    """Density grid rho = 3000 + 1e-7 P - 0.2 T inside BAND, FILL outside."""
+    P, T = np.meshgrid(P_AX, T_AX, indexing='ij')
+    rho = 3000.0 + 1e-7 * P - 0.2 * T
+    for i, (lo, hi) in BAND.items():
+        rho[i, (T_AX < lo) | (T_AX > hi)] = FILL
+    return rho
+
+
+def _write_table(path, rho):
+    """Write ``rho`` on (P_AX, T_AX) in the tab-separated P-T-rho format of the mantle."""
+    rows = [
+        f'{p:.10e}\t{t:.10e}\t{rho[i, j]:.10e}'
+        for i, p in enumerate(P_AX)
+        for j, t in enumerate(T_AX)
+    ]
+    path.write_text('#pressure temperature density\n' + '\n'.join(rows) + '\n')
+    return {'melted_mantle': {'eos_file': str(path)}}
+
+
+def _plane(p, t):
+    """The valid density of the synthetic table."""
+    return 3000.0 + 1e-7 * p - 0.2 * t
+
+
+@pytest.fixture
+def fill_table(tmp_path):
+    """The fill table on disk."""
+    return _write_table(tmp_path / 'density_melt.dat', _fill_table())
+
+
+class TestFillCells:
+    """Fill cells of a regular mantle table never enter a density."""
+
+    def test_rows_take_their_own_edge_values(self):
+        """Below and above its band each row holds its own edge value; no fill is left."""
+        rho = _fill_table()
+        filled, t_lo, t_hi = _fill_invalid_cells(rho, T_AX)
+        np.testing.assert_allclose(t_lo, [1000.0, 1000.0, 1500.0, 1500.0])
+        np.testing.assert_allclose(t_hi, [2500.0, 3000.0, 3000.0, 3500.0])
+        assert filled.min() > 2000.0
+        np.testing.assert_allclose(filled[0], rho[0, [1, 1, 2, 3, 4, 4, 4]])  # band edges
+        np.testing.assert_allclose(filled[3, 2:], rho[3, 2:])  # valid cells are unchanged
+
+    def test_gap_takes_the_nearest_valid_node(self):
+        """A gap inside a band takes its nearest valid node, the lower one on a tie."""
+        rho = _fill_table()
+        rho[0, 3] = FILL  # 2000 K: 1500 and 2500 K are equally near
+        rho[1, 2:4] = FILL  # 1500 and 2000 K: nearest 1000 K and 2500 K
+        filled = _fill_invalid_cells(rho, T_AX)[0]
+        assert filled[0, 3] == pytest.approx(rho[0, 2])
+        assert (filled[1, 2], filled[1, 3]) == pytest.approx((rho[1, 1], rho[1, 4]))
+
+    def test_nearest_is_measured_in_temperature(self):
+        """On a non-uniform T axis a gap takes the node nearest in T, not in index."""
+        temps = np.array([0.0, 10.0, 11.0, 12.0, 13.0])
+        rho = np.array([[5.0e3, FILL, FILL, FILL, 9.0e3]])
+        filled = _fill_invalid_cells(rho, temps)[0]
+        np.testing.assert_allclose(filled[0], [5.0e3, 9.0e3, 9.0e3, 9.0e3, 9.0e3])
+
+    @pytest.mark.parametrize(
+        ('p', 't', 'excess'),
+        [
+            (5e8, 1000.0, 0.0),  # both rows hold 1000 K
+            (5e8, 2500.0, 0.0),  # the upper edge of row 0, inside row 1
+            (0.0, 2600.0, 100.0),  # row 0 ends at 2500 K
+            (1e9, 1200.0, 0.0),  # row-1 node: row 2 (from 1500 K) has no weight
+            (2e9, 1200.0, 300.0),  # row 2 starts at 1500 K
+            (3e9, 3200.0, 0.0),  # p_max node: row 2 (to 3000 K) has no weight
+            (3e9, 1000.0, 500.0),
+            (1.5e9, 1200.0, 150.0),  # 300 K below row 2 only, at weight 0.5
+            (1.5e9, 3200.0, 200.0),
+            (4e9, 3600.0, 100.0),  # pressure clipped to the p_max row
+            (2.5e9, float('nan'), np.nan),  # a NaN T has no distance
+            (float('nan'), 2000.0, np.nan),  # nor a NaN P
+        ],
+    )
+    def test_band_excess_uses_the_rows_with_weight(self, fill_table, p, t, excess):
+        """The excess weights each used row's distance beyond its band by the row's weight."""
+        cache = {}
+        get_tabulated_eos(1e9, fill_table, 'melted_mantle', 2000.0, cache)
+        cached = cache[fill_table['melted_mantle']['eos_file']]
+        assert band_excess(cached, p, t) == pytest.approx(excess, nan_ok=True)
+
+    def test_query_beyond_the_band_logs_at_debug_only(self, fill_table, caplog):
+        """Lookups outside a band log one DEBUG line per table until the memory is cleared,
+        as main() does at each call, and no warning."""
+        cache = {}
+        seager._band_debug_seen.clear()
+        with caplog.at_level('DEBUG', logger='zalmoxis.eos.seager'):
+            for _ in range(2):
+                get_tabulated_eos(2.5e9, fill_table, 'melted_mantle', 3400.0, cache)
+            get_tabulated_eos(2.5e9, fill_table, 'melted_mantle', 2000.0, cache)
+            assert get_tabulated_eos(2.5e9, fill_table, 'melted_mantle', np.nan, cache) is None
+            seager._band_debug_seen.clear()
+            get_tabulated_eos(2.5e9, fill_table, 'melted_mantle', 3400.0, cache)
+        band = [r for r in caplog.records if 'valid band' in r.getMessage()]
+        assert [r.levelname for r in band] == ['DEBUG', 'DEBUG']
+        assert 'T=3400 K' in band[0].getMessage() and 'value is taken' in band[0].getMessage()
+
+    def test_row_without_valid_cell_gives_none(self, tmp_path, caplog):
+        """A row of fill stays NaN; a query next to it fails as a lookup, with no warning."""
+        rho = _fill_table()
+        rho[1, :] = FILL
+        filled, t_lo, _ = _fill_invalid_cells(rho, T_AX)
+        assert np.isnan(filled[1]).all() and np.isnan(t_lo[1])
+        mat = _write_table(tmp_path / 'density_melt.dat', rho)
+        cache = {}
+        with caplog.at_level('WARNING', logger='zalmoxis.eos.seager'):
+            assert get_tabulated_eos(5e8, mat, 'melted_mantle', 2000.0, cache) is None
+        assert not [r for r in caplog.records if 'valid band' in r.getMessage()]
+        assert get_tabulated_eos(2.5e9, mat, 'melted_mantle', 2000.0, cache) == pytest.approx(
+            _plane(2.5e9, 2000.0)
+        )
+
+    def test_gap_through_the_loader_is_cached(self, tmp_path):
+        """A table with a gap loads once; a query at the gap takes the nearest valid node."""
+        rho = _fill_table()
+        rho[:2, 3] = FILL  # 2000 K in rows 0 and 1
+        mat = _write_table(tmp_path / 'density_melt.dat', rho)
+        cache = {}
+        got = get_tabulated_eos(5e8, mat, 'melted_mantle', 2000.0, cache)
+        assert mat['melted_mantle']['eos_file'] in cache
+        assert got == pytest.approx(0.5 * (_plane(0.0, 1500.0) + _plane(1e9, 1500.0)))
+        assert get_tabulated_eos(5e8, mat, 'melted_mantle', 2000.0, cache) == got
+
+    def test_inside_band_equals_plain_bilinear(self, fill_table):
+        """A query in a valid cell is unchanged and matches the analytic plane."""
+        cache = {}
+        for p, t in ((5e8, 1700.0), (2.5e9, 2900.0), (1.2e9, 1500.0), (0.0, 1000.0)):
+            rho = get_tabulated_eos(p, fill_table, 'melted_mantle', t, cache)
+            assert rho == pytest.approx(_plane(p, t), rel=1e-12)
+
+    def test_beyond_the_edge_combines_valid_values(self, fill_table, caplog):
+        """Hot and cold queries combine each row's edge value, with no warning."""
+        cache = {}
+        with caplog.at_level('WARNING', logger='zalmoxis.eos.seager'):
+            hot = get_tabulated_eos(2.5e9, fill_table, 'melted_mantle', 3400.0, cache)
+            cold = get_tabulated_eos(2.5e9, fill_table, 'melted_mantle', 600.0, cache)
+        assert hot == pytest.approx(
+            0.5 * (_plane(2e9, 3000.0) + _plane(3e9, 3400.0)), rel=1e-12
+        )
+        assert cold == pytest.approx(
+            0.5 * (_plane(2e9, 1500.0) + _plane(3e9, 1500.0)), rel=1e-12
+        )
+        plain = RegularGridInterpolator((P_AX, T_AX), _fill_table())((2.5e9, 3400.0))
+        assert plain < hot - 500.0  # the raw grid mixes a fill corner in
+        assert not caplog.records
+
+    def test_density_does_not_fall_with_pressure_at_fixed_hot_t(self, fill_table):
+        """At a temperature above every band the density never falls with pressure."""
+        cache = {}
+        for t in (3400.0, 3500.0):
+            rho = [
+                get_tabulated_eos(p, fill_table, 'melted_mantle', t, cache)
+                for p in np.linspace(0.0, 3e9, 301)
+            ]
+            assert np.min(np.diff(rho)) >= -1e-9
+
+    def test_sweep_is_finite_and_positive(self, fill_table):
+        """Every density over a P-T sweep of the table is finite and above the fill."""
+        cache = {}
+        vals = np.array(
+            [
+                get_tabulated_eos(p, fill_table, 'melted_mantle', t, cache)
+                for p in np.linspace(0.0, 3e9, 13)
+                for t in np.linspace(500.0, 3500.0, 25)
+            ]
+        )
+        assert np.all(np.isfinite(vals))
+        assert vals.min() > 2000.0
+        assert vals.max() < 3400.0

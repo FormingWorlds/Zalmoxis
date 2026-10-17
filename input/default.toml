@@ -101,6 +101,10 @@ mushy_zone_factor          = 1.0
 # mushy_zone_factor_MgSiO3   = 1.0    # override for PALEOS:MgSiO3
 # mushy_zone_factor_H2O      = 1.0    # override for PALEOS:H2O
 
+# Largest distance (K) of a converged mantle node beyond the valid T band of a
+# WolfBower2018 table; beyond it the solve returns converged = False.
+max_band_excess            = 200.0
+
 # Melting curves for phase routing in T-dependent mantle EOS.
 # Only relevant for WolfBower2018, RTPress100TPa, and PALEOS-2phase.
 # Unified PALEOS tables derive phase boundaries from the table itself.

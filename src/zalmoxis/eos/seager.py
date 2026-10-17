@@ -27,6 +27,79 @@ from .interpolation import (
 
 logger = logging.getLogger(__name__)
 
+_band_debug_seen: set[str] = set()  # tables with an out-of-band DEBUG line in this main() call
+
+
+def _fill_invalid_cells(density_grid, unique_temps):
+    """Fill each pressure row's invalid cells with the row's nearest valid value along T.
+
+    Cells that are not finite or at or below 1e-10 are table fill (the Wolf & Bower
+    tables use 1e-15). Below and above a row's valid band the fill becomes the band
+    edge, and inside a gap the nearest valid node in T (the lower one on a tie), so a
+    bilinear query only ever combines valid densities. A row with no valid cell stays NaN.
+
+    Parameters
+    ----------
+    density_grid : numpy.ndarray
+        Densities on the (pressure, temperature) grid, shape (n_p, n_t).
+    unique_temps : numpy.ndarray
+        Temperature axis, in K.
+
+    Returns
+    -------
+    tuple of numpy.ndarray
+        The filled grid, and the lowest and highest valid T of each row (NaN for a
+        row without a valid cell).
+    """
+    ok = np.isfinite(density_grid) & (density_grid > 1e-10)
+    filled = np.full(density_grid.shape, np.nan)
+    t_lo = np.full(len(density_grid), np.nan)
+    t_hi = np.full(len(density_grid), np.nan)
+    for i, row in enumerate(ok):
+        j = np.flatnonzero(row)
+        if len(j) == 0:
+            continue
+        t_ok = unique_temps[j]
+        mid = (t_ok[:-1] + t_ok[1:]) / 2  # a node on a midpoint takes the lower valid node
+        filled[i] = density_grid[i, j[np.searchsorted(mid, unique_temps)]]
+        t_lo[i], t_hi[i] = t_ok[0], t_ok[-1]
+    return filled, t_lo, t_hi
+
+
+def band_excess(cached, pressure, temperature):
+    """Return how far T lies outside the valid band of a regular table at P, in K.
+
+    The distance outside each pressure row's band (0 inside it) is weighted by that
+    row's bilinear weight, as the density there is; a row without a valid cell adds
+    nothing. The pressure is clipped to the table range, as in the lookup.
+
+    Parameters
+    ----------
+    cached : dict
+        Regular-grid cache entry with 'unique_pressures', 't_lo' and 't_hi'.
+    pressure : float
+        Pressure in Pa.
+    temperature : float
+        Temperature in K.
+
+    Returns
+    -------
+    float
+        The weighted distance in K, 0 inside the band, NaN for a non-finite P or T.
+    """
+    if not (np.isfinite(pressure) and np.isfinite(temperature)):
+        return np.nan
+    up = cached['unique_pressures']
+    pressure = min(max(pressure, up[0]), up[-1])
+    i = min(max(int(np.searchsorted(up, pressure, side='right')) - 1, 0), len(up) - 2)
+    w = (pressure - up[i]) / (up[i + 1] - up[i])
+    excess = 0.0
+    for r, weight in ((i, 1.0 - w), (i + 1, w)):
+        lo, hi = cached['t_lo'][r], cached['t_hi'][r]
+        if weight > 0 and np.isfinite(lo):
+            excess += weight * max(0.0, lo - temperature, temperature - hi)
+    return excess
+
 
 def get_tabulated_eos(
     pressure, material_dictionary, material, temperature=None, interpolation_functions=None
@@ -88,7 +161,10 @@ def get_tabulated_eos(
                         )
 
                     # Reshape densities to a 2D grid for interpolation
-                    density_grid = densities.reshape(len(unique_pressures), len(unique_temps))
+                    density_grid, t_lo, t_hi = _fill_invalid_cells(
+                        densities.reshape(len(unique_pressures), len(unique_temps)),
+                        unique_temps,
+                    )
 
                     # Create a RegularGridInterpolator for rho(P,T)
                     interpolator = RegularGridInterpolator(
@@ -104,6 +180,9 @@ def get_tabulated_eos(
                         'p_max': unique_pressures[-1],
                         't_min': unique_temps[0],
                         't_max': unique_temps[-1],
+                        'unique_pressures': unique_pressures,
+                        't_lo': t_lo,
+                        't_hi': t_hi,
                     }
                 else:
                     # Irregular grid (e.g. RTPress100TPa melt table where the
@@ -212,6 +291,17 @@ def get_tabulated_eos(
                 pressure = np.clip(pressure, p_min, p_max)
 
             if grid_type == 'regular':
+                if (
+                    logger.isEnabledFor(logging.DEBUG)
+                    and eos_file not in _band_debug_seen
+                    and band_excess(cached, pressure, temperature) > 0
+                ):
+                    _band_debug_seen.add(eos_file)
+                    logger.debug(
+                        f'{os.path.basename(eos_file)}: T={temperature:.0f} K at '
+                        f'P={pressure:.2e} Pa is outside the valid band; the value is taken '
+                        f'at the band edge.'
+                    )
                 density = cached['interp']((pressure, temperature))
             else:
                 up = cached['unique_pressures']
@@ -238,11 +328,10 @@ def get_tabulated_eos(
         else:
             density = cached['interp'](pressure)
 
-        if density is None or not np.isfinite(
-            density
-        ):  # pragma: no cover - lookup-failed sentinel; defensive
+        if density is None or not np.isfinite(density):
             raise ValueError(
-                f'Density calculation failed for {material} at P={pressure:.2e} Pa, T={temperature}.'
+                f'Density calculation failed for {material} ({os.path.basename(eos_file)}) '
+                f'at P={pressure:.2e} Pa, T={temperature}.'
             )
 
         return density

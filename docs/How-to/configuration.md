@@ -103,8 +103,8 @@ Rules:
 | `Seager2007:iron` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | Fe (epsilon phase) | Fixed 300 K | Yes | Vinet EOS + DFT, tabulated $\rho(P)$. |
 | `Seager2007:MgSiO3` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | MgSiO3 perovskite | Fixed 300 K | Yes | 4th-order Birch-Murnaghan + DFT, tabulated $\rho(P)$. |
 | `Seager2007:H2O` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | Water ice (phases VII, VIII, X) | Fixed 300 K | Yes | Experimental + DFT, tabulated $\rho(P)$. |
-| `WolfBower2018:MgSiO3` | [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) | MgSiO3 (melt + solid) | T-dependent | Yes | RTpress EOS with phase-aware melting (solid EOS derived from [Mosenfelder et al. 2009](https://doi.org/10.1029/2008JB005900)). **Limited to $\leq 7\,M_\oplus$** (table max ~1 TPa; out-of-bounds pressures clamped). Requires `temperature_mode` configuration. Uses [Monteux et al.](https://doi.org/10.1016/j.epsl.2016.05.010) solidus/liquidus curves. |
-| `RTPress100TPa:MgSiO3` | Extended RTpress melt table | MgSiO3 (melt + solid) | T-dependent | Yes | Extended melt EOS to 100 TPa ($P$: $10^3$ to $10^{14}$ Pa, $T$: 400 to 50000 K). Solid phase uses [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) table (clamped at 1 TPa). **Limited to $\leq 50\,M_\oplus$**. Requires `temperature_mode` configuration. |
+| `WolfBower2018:MgSiO3` | [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) | MgSiO3 (melt + solid) | T-dependent | Yes | RTpress EOS with phase-aware melting (solid EOS derived from [Mosenfelder et al. 2009](https://doi.org/10.1029/2008JB005900)). **Limited to $\leq 7\,M_\oplus$** (table max ~1 TPa; out-of-bounds pressures clamped; $T$ outside 0 to 16500 K raises an error; beyond the valid $T$ band of a pressure the band-edge density, see EOS physics). Requires `temperature_mode` configuration. Uses [Monteux et al.](https://doi.org/10.1016/j.epsl.2016.05.010) solidus/liquidus curves. |
+| `RTPress100TPa:MgSiO3` | Extended RTpress melt table | MgSiO3 (melt + solid) | T-dependent | Yes | Extended melt EOS to 100 TPa ($P$: $10^3$ to $10^{14}$ Pa, $T$: 400 to 50000 K). Solid phase uses [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) table (clamped at 1 TPa, band-edge fill as for `WolfBower2018:MgSiO3`). **Limited to $\leq 50\,M_\oplus$**. Requires `temperature_mode` configuration. |
 | `PALEOS-2phase:MgSiO3` | PALEOS (Zenodo 19680050, v1.1.0) | MgSiO3 (solid + liquid) | T-dependent | Yes | Separate solid and liquid tables providing density and $\nabla_{\mathrm{ad}}$ (P: 1 bar to 100 TPa, T: 300 to 100000 K, 150 ppd log-uniform grid). Enables phase-aware adiabatic temperature profiles using nabla_ad from both phases. **Limited to $\leq 50\,M_\oplus$**. Requires `temperature_mode` configuration. |
 | `PALEOS:iron` | PALEOS (Zenodo 22776069, v1.3.0) | Fe (5 phases) | T-dependent | Yes | Unified single-file table with all stable Fe phases (alpha-bcc, delta-bcc, gamma-fcc, epsilon-hcp, liquid). P: 1 bar to 100 TPa, T: 300 to 100000 K. Phase boundary encoded in table. **Limited to $\leq 50\,M_\oplus$**. Enables T-dependent core with its own adiabat. |
 | `PALEOS:MgSiO3` | PALEOS (Zenodo 22776069, v1.3.0) | MgSiO3 (6 phases) | T-dependent | Yes | Unified single-file table with all stable MgSiO3 phases (3 pyroxene, bridgmanite, postperovskite, liquid). P: 1 bar to 100 TPa, T: 300 to 100000 K. Phase boundary encoded in table. **Limited to $\leq 50\,M_\oplus$**. |
@@ -147,6 +147,12 @@ Per-material overrides take precedence over the global default. If a per-materia
 mushy_zone_factor          = 1.0   # global default
 mushy_zone_factor_MgSiO3   = 0.8   # wider mushy zone for silicate only
 ```
+
+#### Table band limit
+
+| Field | Required | Default | Unit | Description |
+|---|---|---|---|---|
+| `max_band_excess` | No | `200.0` | K | Largest distance of a mantle node of the converged profile beyond the valid $T$ band of a regular-grid table it reads (`WolfBower2018:MgSiO3`, and the solid table of `RTPress100TPa:MgSiO3`). Beyond it the result has `converged = False` and `converged_bands = False`; within it the band-edge value is used and the result reports the excess. Must be >= 0. See [EOS physics](../Explanations/eos_physics.md). |
 
 #### Phase-aware mixing parameters (multi-material only)
 

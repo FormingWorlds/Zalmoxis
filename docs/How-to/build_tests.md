@@ -12,7 +12,8 @@ the existing suite see [Testing suite](../Explanations/testing.md).
 
 The marker is the load-bearing decision. CI runs `-m unit` on every push and
 `-m "(unit or smoke or integration) and not slow"` nightly; an unmarked test
-is invisible to CI. Pick the strictest marker the test fits.
+is invisible to CI. Pick the strictest marker the test fits. A full solve on the Wolf &
+Bower tables also gets `wolfbower`, which runs it in its own nightly job.
 
 | Use ... | When ... |
 |---|---|
@@ -216,7 +217,8 @@ MARKERS (mandatory; CI-invisible without one):
   (Zeng+2019, Seager+2007, PALEOS rocky 1 + 5 M_E).
 - @pytest.mark.slow: composition grids or tolerance studies that take
   minutes per test. Manual only.
-Pick the strictest marker the test fits. Do not double-mark.
+Pick the strictest marker the test fits. Give a test one tier marker only;
+`wolfbower`, `physics_invariant` and `reference_pinned` go beside it.
 
 FLOAT COMPARISONS:
 - Always pytest.approx, never ==.
