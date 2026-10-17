@@ -277,8 +277,9 @@ class TestRealSolve:
         r = _picard(max_iterations_inner=1)
         assert not r['converged_density'] and r['accepted_on'] == 'mass_only'
 
-    def test_iteration_cap_is_max_iter(self):
-        r = _picard(max_iterations_outer=1, max_iterations_inner=1)
+    @pytest.mark.parametrize('outer', [1, 3])  # 3: the last node is padded (P = 0) on macOS
+    def test_iteration_cap_is_max_iter(self, outer):
+        r = _picard(max_iterations_outer=outer, max_iterations_inner=1)
         assert r['converged'] is True and r['accepted_on'] == 'max_iter'
         assert r['mass_error_at_accept'] > 1e-3  # above tolerance_outer
 
