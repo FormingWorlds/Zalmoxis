@@ -71,6 +71,7 @@ def _make_synthetic_M_solve(M_func):
             'converged': True,
             'converged_pressure': True,
             'converged_density': True,
+            'density_from_eos': True,
             'converged_mass': True,
             'best_mass_error': 0.0,
             'p_center': 1e11,
