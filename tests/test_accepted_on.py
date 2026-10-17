@@ -167,7 +167,7 @@ def _picard(monkeypatch, wall_at=None, **kwargs):
     return r
 
 
-@pytest.mark.unit
+@pytest.mark.smoke
 @pytest.mark.timeout(120)
 class TestPicard:
     def test_strict(self, monkeypatch):
