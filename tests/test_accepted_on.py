@@ -1,8 +1,8 @@
 """The ``accepted_on`` and ``mass_error_at_accept`` fields of a structure solve result.
 
-Each accept path of ``main`` names itself in ``accepted_on``; a Newton step result is
-converged only when the inner solve of its returned profile reports converged pressure
-and density.
+Each accept path of ``main`` names itself in ``accepted_on``; the returned density is
+rho_EOS(P, T) at the returned nodes, and a Newton step result is converged only when the
+inner solve of its returned profile reports converged pressure and that density.
 """
 
 from __future__ import annotations
@@ -151,6 +151,7 @@ class TestBrentq:
     def test_result_without_a_profile_has_the_keys(self):
         r = _brentq(_hist(7.0e6 - 0.2, 7.0e6 + 0.2), None, None)
         assert r['accepted_on'] == 'brentq_best' and r['mass_error_at_accept'] is None
+        assert r['stopped_on_wall_clock'] is False and r['density_from_eos'] is False
 
     def test_no_bracket_is_not_converged(self):
         """No sign change in [R_min, R_max]: not converged, also with a history entry at the
@@ -199,31 +200,37 @@ class TestRetry:
         assert n == 2 and r['accepted_on'] == 'strict'
 
 
-def _assert_eos_density(r):
-    """The returned density is rho_EOS(P, T) at the P > 0 nodes, from a direct EOS call, apart
-    from the 5 outermost ones that the surface cleanup can change. The core nodes form a block
-    from the centre (the returned ``cmb_mass`` is updated after the last pass)."""
-    mixes = parse_all_layer_mixtures(_cfg()['layer_eos_config'])
+def _assert_eos_density(r, eos=None, melt=(None, None), mzf=None):
+    """The returned density is rho_EOS(P, T) at every P > 0 node, from a direct EOS call;
+    the core nodes form a block from the centre (the returned ``cmb_mass`` is updated after
+    the last pass, so it does not place the boundary)."""
+    mixes = parse_all_layer_mixtures(eos or _cfg()['layer_eos_config'])
     md = load_material_dictionaries()
     P, T, rho = (np.asarray(r[k], float) for k in ('pressure', 'temperature', 'density'))
     assert r['density_from_eos'] is True
     core = []
-    for i in np.where(P > 0)[0][:-5]:
+    for i in np.where(P > 0)[0]:
         ref = {
-            k: calculate_mixed_density(P[i], T[i], mixes[k], md, None, None, {}) for k in mixes
+            k: calculate_mixed_density(P[i], T[i], mixes[k], md, *melt, {}, mzf) for k in mixes
         }
-        hit = [k for k, v in ref.items() if rho[i] == pytest.approx(v, rel=1e-12)]
+        hit = [k for k, v in ref.items() if rho[i] == pytest.approx(v, rel=1e-8)]  # table lookups
         assert hit, (i, rho[i], ref)
         core.append(hit[0] == 'core')
     assert core == sorted(core, reverse=True) and core[0]
 
 
-def _picard(**kwargs):
-    """Fast Picard solve (1 M_earth, analytic EOS) through ``main``."""
+def _picard(trapz=True, **kwargs):
+    """Fast Picard solve (1 M_earth, analytic EOS) through ``main``; ``trapz`` checks the
+    trapezoid mass of the returned density against ``mass_enclosed``."""
     r = _run(_cfg(**kwargs))
     m = np.asarray(r['mass_enclosed'])
     assert r['mass_error_at_accept'] == pytest.approx(abs(m[-1] - earth_mass) / earth_mass)
     _assert_eos_density(r)
+    rad = np.asarray(r['radii'])
+    assert (
+        not trapz
+        or abs(np.trapezoid(4 * np.pi * rad**2 * r['density'], rad) / m[-1] - 1) < 1e-2
+    )
     return r
 
 
@@ -284,7 +291,7 @@ class TestRealSolve:
             return (m * (1.02 if len(radius) == 3 else 1.0), *rest)
 
         monkeypatch.setattr(zs, 'solve_structure', solve)
-        r = _picard(max_iterations_outer=3, max_iterations_inner=1)
+        r = _picard(False, max_iterations_outer=3, max_iterations_inner=1)  # mass scaled
         assert r['accepted_on'] == 'max_iter'
         assert r['mass_error_at_accept'] > 1.5 * r['best_mass_error']
 
@@ -328,6 +335,37 @@ class TestRealSolve:
         assert r['converged'] is False and r['accepted_on'] is None
         assert r['stopped_on_wall_clock'] is True and r['density_from_eos'] is False
 
+    def test_outer_wall_clock_restores_a_best_pass_that_is_not_the_last(self, monkeypatch):
+        """Pass 2 lands farther from the target mass than pass 1; the clock runs out after it,
+        and the outer check returns pass 1 with its own EOS density."""
+        radius, real = _clock_after_lookup(monkeypatch, outer=2), zs.solve_structure
+
+        def solve(*args, **kwargs):
+            m, *rest = real(*args, **kwargs)
+            return (m * (1.02 if len(radius) == 3 else 1.0), *rest)
+
+        monkeypatch.setattr(zs, 'solve_structure', solve)
+        r = _picard(max_iterations_outer=4, max_iterations_inner=1, wall_timeout=100.0)
+        assert r['accepted_on'] == 'timeout'
+        assert r['mass_error_at_accept'] == pytest.approx(r['best_mass_error'])
+
+    def test_cut_before_the_first_pressure_solve_of_the_last_pass(self, monkeypatch, caplog):
+        """The clock runs out after the temperature profile of the last outer pass, before its
+        first pressure solve: the best pass comes back, not the reset arrays."""
+        radius, clock = _count_outer_iterations(monkeypatch), time.time
+        monkeypatch.setattr(
+            zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * (len(radius) >= 2))
+        )
+        r = _picard(
+            max_iterations_outer=2,
+            max_iterations_inner=1,
+            wall_timeout=100.0,
+            _initial_radius_guess=6.15e6,
+        )
+        assert 'Wall-clock timeout in inner loop (outer=1, inner=0)' in caplog.text
+        assert r['converged'] is True and r['accepted_on'] == 'timeout'
+        assert r['mass_error_at_accept'] == pytest.approx(r['best_mass_error'])
+
     def test_cut_before_the_first_pressure_solve_of_a_pass(self, monkeypatch, caplog):
         """The clock runs out after the temperature profile of the second outer pass, before
         its first pressure solve: the profile is not on the EOS of that grid."""
@@ -338,7 +376,8 @@ class TestRealSolve:
         cfg = _cfg(max_iterations_outer=2, max_iterations_inner=1, wall_timeout=100.0)
         r = zs._solve(cfg, load_material_dictionaries(), None, INPUT)
         assert 'Wall-clock timeout in inner loop (outer=1, inner=0)' in caplog.text
-        assert r['density_from_eos'] is False
+        assert r['converged'] is False and r['density_from_eos'] is True
+        assert r['mass_error_at_accept'] == pytest.approx(r['best_mass_error'])
 
     def test_newton(self):
         r = _run(_cfg(outer_solver='newton', max_iterations_inner=8))
@@ -376,7 +415,35 @@ def test_wall_clock_in_the_adiabat_ramp_is_timeout(monkeypatch, caplog):
         max_iterations_inner=2,
         wall_timeout=100.0,
     )
-    r = zs.main(cfg, load_material_dictionaries(), get_solidus_liquidus_functions(), '/tmp')
+    melt = get_solidus_liquidus_functions()
+    r = zs.main(cfg, load_material_dictionaries(), melt, '/tmp')
+    _assert_eos_density(r, cfg['layer_eos_config'], melt)  # T-dependent mantle, restored pass
     assert 'Wall-clock timeout (100s)' in caplog.text
     assert r['best_mass_error'] < 0.02  # below tolerance_outer: the chain alone says mass_only
     assert r['converged'] is True and r['accepted_on'] == 'timeout'
+
+
+@pytest.mark.smoke
+@pytest.mark.timeout(300)
+def test_cool_paleos_surface_keeps_the_eos_density():
+    """At a 1500 K surface rho_EOS of PALEOS-2phase MgSiO3 halves in the outermost shells;
+    the returned density keeps those values, which the structure integration used."""
+    from tests._paleos_helpers import _paleos_data_available
+    from zalmoxis.melting_curves import get_solidus_liquidus_functions
+
+    if not _paleos_data_available():
+        pytest.skip('PALEOS data files not found')
+    eos = {'core': 'PALEOS:iron', 'mantle': 'PALEOS-2phase:MgSiO3'}
+    cfg = _cfg(
+        layer_eos_config=eos,
+        temperature_mode='linear',
+        surface_temperature=1500.0,
+        center_temperature=5000.0,
+        mushy_zone_factor=0.8,
+        num_layers=100,
+    )
+    melt = get_solidus_liquidus_functions()
+    r = zs.main(cfg, load_material_dictionaries(), melt, INPUT)
+    rho = np.asarray(r['density'])[np.asarray(r['pressure']) > 0]
+    assert rho[-1] < 0.6 * rho[-4]  # the drop the surface smoothing would remove
+    _assert_eos_density(r, eos, melt, 0.8)

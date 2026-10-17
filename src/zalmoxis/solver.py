@@ -221,13 +221,16 @@ def _newton_verdict(result, converged, accepted_on):
     """Set ``converged`` and ``accepted_on`` of a Newton result.
 
     ``accepted_on`` is None if not converged, and 'timeout' if the inner solve of the
-    returned profile stopped on the wall clock.
+    returned profile stopped on the wall clock. A result built without a profile gets
+    the per-profile keys as None or False.
     """
     result['converged'] = bool(converged)
-    if result.get('stopped_on_wall_clock'):
-        accepted_on = 'timeout'
-    result['accepted_on'] = accepted_on if result['converged'] else None
+    wall = result.setdefault('stopped_on_wall_clock', False)
+    result['accepted_on'] = (
+        ('timeout' if wall else accepted_on) if result['converged'] else None
+    )
     result.setdefault('mass_error_at_accept', None)
+    result.setdefault('density_from_eos', False)
 
 
 def _tighten_solver_params(params):
@@ -1017,12 +1020,11 @@ def _solve_newton_outer(
         ``{radii, density, gravity, pressure, temperature, mass_enclosed,
         cmb_mass, core_mantle_mass, total_time, converged,
         converged_pressure, converged_density, converged_mass,
-        best_mass_error, p_center, layer_eos_config}``. ``converged`` needs the
-        mass test, the pressure flag and ``density_from_eos`` of the inner solve
-        of the returned profile; ``accepted_on`` is 'newton_tol', 'brentq_best' (see
-        :func:`_brentq_fallback_outer`) or 'timeout' when the wall clock stopped
-        that inner solve, and None when not converged. ``mass_error_at_accept``
-        is the relative mass error of the returned profile.
+        best_mass_error, p_center, layer_eos_config}``. A Newton step result is
+        converged on the mass test, the pressure flag and ``density_from_eos``, and
+        ``accepted_on`` is then 'newton_tol' ('timeout' when the wall clock stopped its
+        inner solve); the brentq exits (:func:`_brentq_fallback_outer`) test the mass
+        only. ``mass_error_at_accept`` is the relative mass error of the returned profile.
 
     Raises
     ------
@@ -1340,9 +1342,8 @@ def _solve(
         and None when the solve was not accepted. ``mass_error_at_accept`` is the
         relative mass error of the returned profile. ``stopped_on_wall_clock`` is True
         when the wall clock stopped the solve, also when it was not accepted.
-        ``density`` is rho_EOS(P, T) at the returned nodes (before the surface
-        cleanup), and ``density_from_eos`` is True, unless the solve stopped before
-        its first pressure solve on the returned grid.
+        ``density`` is rho_EOS(P, T) at the returned nodes and ``density_from_eos`` is
+        True, unless the wall clock stopped the solve before its first pressure solve.
     """
     # Initialize convergence flags
     converged = False
@@ -2437,17 +2438,29 @@ def _solve(
     elif best_mass_error < _TIMEOUT_ACCEPT_MASS_ERR and best_profiles is not None:
         # Wall clock or iteration cap within the loose-accept ceiling: the radius is
         # within 1 % and the caller's outer mass-radius loop corrects the residual.
+        converged = True
+        converged_mass = True
+        accepted_on = stop_label or 'max_iter'
         logger.warning(
-            'Accepting timeout solution: mass error %.4f%% (threshold %.1f%%), '
+            'Accepting %s solution: mass error %.4f%% (threshold %.1f%%), '
             'density_converged=%s, pressure_converged=%s.',
+            accepted_on,
             best_mass_error * 100,
             _TIMEOUT_ACCEPT_MASS_ERR * 100,
             converged_density,
             converged_pressure,
         )
-        converged = True
-        converged_mass = True
-        accepted_on = stop_label or 'max_iter'
+
+    if (
+        rho_eos is None and best_profiles is not None
+    ):  # cut before the pass's first pressure solve
+        radii, density, gravity, pressure, mass_enclosed = (
+            np.array(best_profiles[k])
+            for k in ('radii', 'density', 'gravity', 'pressure', 'mass_enclosed')
+        )
+        rho_eos = best_profiles['rho_eos']
+        if best_profiles['temperatures'] is not None:
+            temperatures = np.array(best_profiles['temperatures'])
 
     # Return rho_EOS(P, T) at the returned nodes, not the damped Picard iterate.
     density_from_eos = rho_eos is not None
@@ -2457,12 +2470,8 @@ def _solve(
     end_time = time.time()
     total_time = end_time - start_time
 
-    # Clean up surface artifacts. The Picard iteration can produce
-    # density jumps at the outermost shells where the pressure drops
-    # rapidly and the EOS lookup is sensitive to small P changes.
-    # Detect shells where the density gradient suddenly steepens
-    # (more than 3x the running average) and replace them with a
-    # linear extrapolation from the smooth interior.
+    # Smooth the outermost shells of a Picard iterate (sudden gradient changes are replaced
+    # by a linear extrapolation); rho_EOS is returned as the structure integration saw it.
     pressure = np.asarray(pressure)
     density = np.asarray(density)
 
@@ -2474,7 +2483,7 @@ def _solve(
     while i_surf > 0 and density[i_surf] <= 0:
         i_surf -= 1
 
-    if i_surf > 10:
+    if not density_from_eos and i_surf > 10:
         # Compute density gradient in the outer mantle.
         # Use the last 20 shells before the surface edge, but do not
         # cross layer boundaries (CMB, ice-layer transition) where

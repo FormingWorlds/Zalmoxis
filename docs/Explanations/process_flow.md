@@ -105,14 +105,12 @@ The table band check (see [EOS physics](eos_physics.md)) runs after these tests:
 | `newton_tol` | Newton | The smallest mass error of the Newton steps is below `newton_tol`, the inner solve of the returned profile reports converged pressure and its density is the EOS density (`density_from_eos`), or the mass error at the brentq root is below `newton_tol`. |
 | `brentq_best` | Newton | The bracket search or brentq stopped early with the smallest mass error seen below `newton_tol`. The returned profile is that of the last Newton step, and its mass error can be much larger. |
 
-A solve cut by the wall clock can pass the `newton_tol` test; it is then labelled `timeout`.
-
 `mass_error_at_accept` is the relative error $|M - M_p| / M_p$ of the last value of `mass_enclosed` in the returned profile, also when no test passed, and None when that value is not finite.
 It can differ from `best_mass_error`, the smallest error over the outer iterations or Newton evaluations (the error at the root on the brentq root exit), because the returned profile is not always the one with that error.
-The returned `density` is the EOS density $\rho_{\mathrm{EOS}}(P, T)$ at the returned pressure and temperature of each node, the quantity the structure integration evaluates, and not the damped Picard iterate; the surface cleanup then smooths the outermost shells.
-`density_from_eos` is False only when the solve stopped before its first pressure solve on the returned grid, and `density` is then the Picard iterate.
+The returned `density` is the EOS density $\rho_{\mathrm{EOS}}(P, T)$ at the returned pressure and temperature of each node, and not the damped Picard iterate.
+`density_from_eos` is False only when the wall clock stopped the solve before its first pressure solve; `density` is then the initial density, and only then are the outermost shells smoothed.
 `converged_density` reports the inner Picard loop and does not bound the difference between the iterate and the EOS density.
-A trapezoid integral of the returned `density` differs from `mass_enclosed[-1]` by the quadrature error of the grid, which is largest at the core-mantle density jump.
+A trapezoid integral of the returned `density` differs from `mass_enclosed[-1]` by the quadrature error of the grid, which is largest at density jumps such as the core-mantle boundary.
 
 ## Output
 
