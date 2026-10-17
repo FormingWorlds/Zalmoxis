@@ -102,15 +102,17 @@ The table band check (see [EOS physics](eos_physics.md)) runs after these tests:
 | `timeout` | Picard, Newton | The solve of the returned profile reached `wall_timeout` (in the outer or the inner loop) and one of the other tests passed; `timeout` replaces its label. |
 | `oscillation` | Picard | The mass error changed sign 10 times since its last improvement; the best profile is returned, with its mass error below `3 * tolerance_outer`. This test does not fire in the current code. |
 | `retry_skip` | Picard | The first solve was not accepted, density and pressure converged and its smallest mass error is below 7 %; `main` skips the retry. |
-| `newton_tol` | Newton | The smallest mass error of the Newton steps is below `newton_tol` and the inner solve of the returned profile reports converged pressure and density, or the mass error at the brentq root is below `newton_tol`. |
+| `newton_tol` | Newton | The smallest mass error of the Newton steps is below `newton_tol`, the inner solve of the returned profile reports converged pressure and its density is the EOS density (`density_from_eos`), or the mass error at the brentq root is below `newton_tol`. |
 | `brentq_best` | Newton | The bracket search or brentq stopped early with the smallest mass error seen below `newton_tol`. The returned profile is that of the last Newton step, and its mass error can be much larger. |
 
-For the Newton outer solver, the inner wall-clock stop sets the density flag from the best density change seen, with the same limit as the `strict` row, so a solve cut by the wall clock can pass the `newton_tol` test; it is then labelled `timeout`.
+A solve cut by the wall clock can pass the `newton_tol` test; it is then labelled `timeout`.
 
 `mass_error_at_accept` is the relative error $|M - M_p| / M_p$ of the last value of `mass_enclosed` in the returned profile, also when no test passed, and None when that value is not finite.
 It can differ from `best_mass_error`, the smallest error over the outer iterations or Newton evaluations (the error at the root on the brentq root exit), because the returned profile is not always the one with that error.
-`mass_enclosed` comes from the structure integration, which evaluates the EOS at each step, while `density` is the Picard iterate on the grid.
-When density did not converge the two can differ by a large factor, so `mass_error_at_accept` does not measure the mass of the returned density.
+The returned `density` is the EOS density $\rho_{\mathrm{EOS}}(P, T)$ at the returned pressure and temperature of each node, the quantity the structure integration evaluates, and not the damped Picard iterate; the surface cleanup then smooths the outermost shells.
+`density_from_eos` is False only when the solve stopped before its first pressure solve on the returned grid, and `density` is then the Picard iterate.
+`converged_density` reports the inner Picard loop and does not bound the difference between the iterate and the EOS density.
+A trapezoid integral of the returned `density` differs from `mass_enclosed[-1]` by the quadrature error of the grid, which is largest at the core-mantle density jump.
 
 ## Output
 

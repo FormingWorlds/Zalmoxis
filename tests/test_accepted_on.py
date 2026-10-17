@@ -21,13 +21,14 @@ from tests.test_failed_structure_solve import ROOT, _cfg, _count_outer_iteration
 from tests.test_table_band_report import _need_wb_tables
 from zalmoxis.config import load_material_dictionaries
 from zalmoxis.constants import earth_mass
+from zalmoxis.mixing import calculate_mixed_density, parse_all_layer_mixtures
 
 INPUT = os.path.join(ROOT, 'input')
 M_T = 6.0e24
 A, B = 6.0e18, -3.6e25  # M(R) = A R + B, root at R = 7e6 m
 
 
-def _inner(R, *, pressure=True, density=True, accepted_on='max_iter', wall=False):
+def _inner(R, *, pressure=True, density=True, eos=True, accepted_on='max_iter', wall=False):
     """Inner Picard result at radius R on the linear M(R)."""
     M = A * R + B
     return {
@@ -36,6 +37,7 @@ def _inner(R, *, pressure=True, density=True, accepted_on='max_iter', wall=False
         'converged': True,
         'converged_pressure': pressure,
         'converged_density': density,
+        'density_from_eos': eos,
         'accepted_on': accepted_on,
         'mass_error_at_accept': abs(M - M_T) / M_T,
         'stopped_on_wall_clock': wall,
@@ -87,24 +89,28 @@ class TestNewton:
     def test_bracket_sweep_hit_is_brentq_best(self):
         """One Newton step lands on the root; the bracket sweep meets it there, and the profile
         is that of the step before."""
-        r = _newton({'_initial_radius_guess': 6.9e6, 'newton_max_iter': 1}, density=False)
+        r = _newton({'_initial_radius_guess': 6.9e6, 'newton_max_iter': 1}, eos=False)
         assert r['converged'] is True and r['accepted_on'] == 'brentq_best'
         assert r['mass_error_at_accept'] == pytest.approx(0.1) and r['best_mass_error'] < 1e-6
 
     @pytest.mark.parametrize('false', [False, np.False_])
-    @pytest.mark.parametrize('flag', ['pressure', 'density'])
+    @pytest.mark.parametrize('flag', ['pressure', 'eos'])
     def test_inner_flag_false_is_not_converged(self, flag, false):
-        r = _newton(**{'pressure': np.True_, 'density': np.True_, flag: false})
+        r = _newton(**{'pressure': np.True_, 'eos': np.True_, flag: false})
         assert r['converged'] is False and r['converged_mass'] is True
         assert r['accepted_on'] is None
 
+    def test_density_flag_is_not_read(self):
+        r = _newton(density=False)
+        assert r['converged'] is True and r['accepted_on'] == 'newton_tol'
+
     def test_numpy_flags_give_a_python_bool(self):
-        r = _newton(pressure=np.True_, density=np.True_)
+        r = _newton(pressure=np.True_, eos=np.True_)
         assert type(r['converged']) is bool and r['accepted_on'] == 'newton_tol'
 
     def test_inner_wall_clock_stop_is_timeout(self):
         assert _newton(wall=True)['accepted_on'] == 'timeout'
-        assert _newton(wall=True, density=False)['accepted_on'] is None
+        assert _newton(wall=True, eos=False)['accepted_on'] is None
 
 
 @pytest.mark.unit
@@ -193,11 +199,31 @@ class TestRetry:
         assert n == 2 and r['accepted_on'] == 'strict'
 
 
+def _assert_eos_density(r):
+    """The returned density is rho_EOS(P, T) at the P > 0 nodes, from a direct EOS call, apart
+    from the 5 outermost ones that the surface cleanup can change. The core nodes form a block
+    from the centre (the returned ``cmb_mass`` is updated after the last pass)."""
+    mixes = parse_all_layer_mixtures(_cfg()['layer_eos_config'])
+    md = load_material_dictionaries()
+    P, T, rho = (np.asarray(r[k], float) for k in ('pressure', 'temperature', 'density'))
+    assert r['density_from_eos'] is True
+    core = []
+    for i in np.where(P > 0)[0][:-5]:
+        ref = {
+            k: calculate_mixed_density(P[i], T[i], mixes[k], md, None, None, {}) for k in mixes
+        }
+        hit = [k for k, v in ref.items() if rho[i] == pytest.approx(v, rel=1e-12)]
+        assert hit, (i, rho[i], ref)
+        core.append(hit[0] == 'core')
+    assert core == sorted(core, reverse=True) and core[0]
+
+
 def _picard(**kwargs):
     """Fast Picard solve (1 M_earth, analytic EOS) through ``main``."""
     r = _run(_cfg(**kwargs))
     m = np.asarray(r['mass_enclosed'])
     assert r['mass_error_at_accept'] == pytest.approx(abs(m[-1] - earth_mass) / earth_mass)
+    _assert_eos_density(r)
     return r
 
 
@@ -300,17 +326,34 @@ class TestRealSolve:
         """The clock runs out before the first profile: not accepted (``main`` would retry)."""
         r = zs._solve(_cfg(wall_timeout=-1.0), load_material_dictionaries(), None, INPUT)
         assert r['converged'] is False and r['accepted_on'] is None
-        assert r['stopped_on_wall_clock'] is True
+        assert r['stopped_on_wall_clock'] is True and r['density_from_eos'] is False
+
+    def test_cut_before_the_first_pressure_solve_of_a_pass(self, monkeypatch, caplog):
+        """The clock runs out after the temperature profile of the second outer pass, before
+        its first pressure solve: the profile is not on the EOS of that grid."""
+        radius, clock = _count_outer_iterations(monkeypatch), time.time
+        monkeypatch.setattr(
+            zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * (len(radius) >= 2))
+        )
+        cfg = _cfg(max_iterations_outer=2, max_iterations_inner=1, wall_timeout=100.0)
+        r = zs._solve(cfg, load_material_dictionaries(), None, INPUT)
+        assert 'Wall-clock timeout in inner loop (outer=1, inner=0)' in caplog.text
+        assert r['density_from_eos'] is False
 
     def test_newton(self):
         r = _run(_cfg(outer_solver='newton', max_iterations_inner=8))
         assert r['converged'] is True and r['accepted_on'] == 'newton_tol'
         assert r['mass_error_at_accept'] < 1e-4  # newton_tol
+        _assert_eos_density(r)
 
-    def test_newton_with_unconverged_density_is_not_converged(self):
-        r = _run(_cfg(outer_solver='newton', max_iterations_inner=1))
-        assert r['converged_mass'] and not r['converged_density']
-        assert r['converged'] is False and r['accepted_on'] is None
+    @pytest.mark.parametrize('inner', [3, 5])
+    def test_newton_with_unconverged_density_flag(self, inner):
+        """The inner caps at which the Picard density flag is False: the returned density is
+        the EOS density, so the result is converged."""
+        r = _run(_cfg(outer_solver='newton', max_iterations_inner=inner))
+        assert not r['converged_density']
+        assert r['converged'] is True and r['accepted_on'] == 'newton_tol'
+        _assert_eos_density(r)
 
 
 @pytest.mark.smoke
