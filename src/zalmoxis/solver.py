@@ -209,6 +209,27 @@ _VALID_OUTER_SOLVERS = ('picard', 'newton')
 _TIMEOUT_ACCEPT_MASS_ERR = 0.03
 
 
+def _mass_error(mass_enclosed, planet_mass):
+    """Return the relative error of the total mass of a profile, or None if it is not finite."""
+    m = np.asarray(mass_enclosed, dtype=float)
+    if m.size == 0 or not np.isfinite(m[-1]):
+        return None
+    return float(abs(m[-1] - planet_mass) / planet_mass)
+
+
+def _newton_verdict(result, mass_ok, accepted_on):
+    """Set ``converged`` and ``accepted_on`` of a Newton-outer result.
+
+    The result is converged when ``mass_ok`` holds and the last inner solve reports
+    converged pressure and density, with its flags as they are. ``accepted_on`` is
+    None for a result that is not converged.
+    """
+    result['converged'] = bool(
+        mass_ok and result.get('converged_pressure') and result.get('converged_density')
+    )
+    result['accepted_on'] = accepted_on if result['converged'] else None
+
+
 def _tighten_solver_params(params):
     """Return a copy of solver params with tighter settings for retry.
 
@@ -416,7 +437,11 @@ def main(
     -------
     dict
         Model results including radii, density, gravity, pressure, temperature,
-        mass enclosed, convergence status, and timing.
+        mass enclosed, convergence status, and timing. ``accepted_on`` names the
+        test that accepted the solve ('strict', 'mass_only', 'timeout',
+        'oscillation', 'retry_skip', 'newton_tol' or 'brentq_best'; None when it
+        was not accepted), and ``mass_error_at_accept`` is the relative mass error
+        of the returned profile.
 
     Raises
     ------
@@ -525,9 +550,7 @@ def main(
         and _first_mass_err is not None
         and _first_mass_err < _RETRY_SKIP_MASS_ERR
     )
-    if (
-        _retry_skipped
-    ):  # pragma: no cover - retry-skip diagnostic; reached only on borderline first-attempt
+    if _retry_skipped:
         logger.info(
             'Skipping retry: density and pressure converged, mass error '
             '%.4f%% < %.2f%% threshold. Accepting first-attempt solution.',
@@ -536,6 +559,7 @@ def main(
         )
         result['converged'] = True
         result['converged_mass'] = True
+        result['accepted_on'] = 'retry_skip'
 
     if not result['converged']:
         # Build tightened params for retry
@@ -770,7 +794,7 @@ def _brentq_fallback_outer(
             best_rel,
         )
         result = dict(last_result) if last_result else {}
-        result['converged'] = False
+        _newton_verdict(result, False, None)
         result['converged_mass'] = bool(best_rel < tol)
         result['best_mass_error'] = float(best_rel)
         result['total_time'] = time.time() - start_time
@@ -793,7 +817,7 @@ def _brentq_fallback_outer(
         best_idx = int(np.argmin([h[2] for h in history])) if history else 0
         best_R, best_M, best_rel = history[best_idx]
         result = dict(last_result) if last_result else {}
-        result['converged'] = bool(best_rel < tol)
+        _newton_verdict(result, best_rel < tol, 'brentq_best')
         result['converged_mass'] = bool(best_rel < tol)
         result['best_mass_error'] = float(best_rel)
         result['total_time'] = time.time() - start_time
@@ -857,7 +881,7 @@ def _brentq_fallback_outer(
         best_idx = int(np.argmin([h[2] for h in history])) if history else 0
         best_R, best_M, best_rel = history[best_idx]
         result = dict(last_result) if last_result else {}
-        result['converged'] = bool(best_rel < tol)
+        _newton_verdict(result, best_rel < tol, 'brentq_best')
         result['converged_mass'] = bool(best_rel < tol)
         result['best_mass_error'] = float(best_rel)
         result['total_time'] = time.time() - start_time
@@ -879,7 +903,7 @@ def _brentq_fallback_outer(
         rel,
     )
     result = dict(last_result) if last_result else {}
-    result['converged'] = bool(rel < tol)
+    _newton_verdict(result, rel < tol, 'newton_tol')
     result['converged_mass'] = bool(rel < tol)
     result['best_mass_error'] = float(rel)
     result['total_time'] = time.time() - start_time
@@ -894,12 +918,12 @@ def _attach_newton_bookkeeping(
 ):
     """Decorate an inner-Picard result dict with Newton-outer metadata.
 
-    Convergence is determined by comparing the LAST history entry's
-    relative mass error against ``tol`` if supplied. Without ``tol``,
-    converged=True is set unconditionally (legacy behaviour for
-    callers that pre-checked). New callers should always pass ``tol``
-    so a misroute through this helper does not silently flag a
-    non-converged result as converged.
+    The mass test compares the best history entry's relative mass error
+    against ``tol`` if supplied; without ``tol`` it passes (legacy
+    behaviour for callers that pre-checked). ``converged`` also needs the
+    pressure and density flags of the last inner solve (``_newton_verdict``).
+    New callers should always pass ``tol`` so a misroute through this
+    helper does not silently flag a non-converged result as converged.
 
     ``n_newton_iter`` is the number of completed outer Newton steps
     (NOT the length of ``history``: history also stores +/-dR side
@@ -912,11 +936,8 @@ def _attach_newton_bookkeeping(
         # because +/-dR side-evaluations may have appended after the
         # main R-step on this iter, masking actual convergence.
         best_rel = min(h[2] for h in history)
-        if tol is None:
-            converged = True
-        else:
-            converged = bool(best_rel < tol)
-        result['converged'] = converged
+        converged = True if tol is None else bool(best_rel < tol)
+        _newton_verdict(result, converged, 'newton_tol')
         result['converged_mass'] = converged
         result['best_mass_error'] = float(best_rel)
     result['total_time'] = time.time() - start_time
@@ -1509,6 +1530,7 @@ def _solve(
     best_mass_error = float('inf')
     best_profiles = None
     oscillation_count = 0
+    oscillation_accept = False
 
     # Initialize arrays to safe defaults. These are overwritten on the
     # first outer iteration, but must exist in case the wall-clock timeout
@@ -2314,6 +2336,7 @@ def _solve(
             if best_profiles['temperatures'] is not None:
                 temperatures = np.array(best_profiles['temperatures'])
             converged_mass = True
+            oscillation_accept = True
             break
 
         # Reset frozen sigma for next outer iteration
@@ -2366,8 +2389,10 @@ def _solve(
                 max_iterations_outer,
             )
 
+    accepted_on = None
     if converged_mass and converged_density and converged_pressure:
         converged = True
+        accepted_on = 'strict'
     elif converged_mass and best_mass_error < tolerance_outer:
         # Mass has converged to within tolerance. The density/pressure
         # Picard iteration may not reach strict convergence when EOS
@@ -2382,6 +2407,7 @@ def _solve(
             converged_pressure,
         )
         converged = True
+        accepted_on = 'mass_only'
     elif best_mass_error < _TIMEOUT_ACCEPT_MASS_ERR and best_profiles is not None:
         # Timeout or max-iterations within the loose-accept ceiling. The
         # structure is usable (radius accurate to < 1%) and better returned
@@ -2398,6 +2424,9 @@ def _solve(
         )
         converged = True
         converged_mass = True
+        accepted_on = 'timeout'
+    if converged and oscillation_accept:  # pragma: no cover - oscillation bailout; defensive
+        accepted_on = 'oscillation'
 
     end_time = time.time()
     total_time = end_time - start_time
@@ -2473,6 +2502,8 @@ def _solve(
         'converged_density': converged_density,
         'converged_mass': converged_mass,
         'best_mass_error': float(best_mass_error) if np.isfinite(best_mass_error) else None,
+        'accepted_on': accepted_on,
+        'mass_error_at_accept': _mass_error(mass_enclosed, planet_mass),
         'p_center': pressure[0] if len(pressure) > 0 else None,
         'adiabat_computed': _adiabat_computed,
     }

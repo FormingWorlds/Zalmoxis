@@ -90,7 +90,20 @@ After convergence, these arrays are extracted for the density update step.
 - The inner loop converges when the maximum relative density change across all shells falls below `tolerance_inner`.
 - The pressure solver converges when (a) `brentq` reports convergence, (b) the surface pressure residual is within `pressure_tolerance` of the target, and (c) all pressures are non-negative ($P \geq 0$, allowing for zero-padded surface points from the terminal event).
 
-The model reports overall convergence only when all three loops have converged.
+The result reports `converged = True` when one of the tests below accepts the solve; `accepted_on` names that test and is None when no test accepts it.
+
+| `accepted_on` | Outer solver | Test |
+|---|---|---|
+| `strict` | Picard | Mass, density and pressure converged. |
+| `mass_only` | Picard | Mass converged and the smallest mass error is below `tolerance_outer`; density or pressure did not converge. |
+| `timeout` | Picard | The outer loop stopped at `max_iterations_outer` or `wall_timeout` with the smallest mass error below 3 %. |
+| `oscillation` | Picard | The mass error changed sign 10 times; the best profile is returned, with its mass error below `3 * tolerance_outer`. |
+| `retry_skip` | Picard | The first solve was not accepted, density and pressure converged and its mass error is below 7 %; `main` skips the retry. |
+| `newton_tol` | Newton | The mass error is below `newton_tol` (Newton steps or the brentq root) and the last inner solve reports converged pressure and density. |
+| `brentq_best` | Newton | brentq stopped early; the smallest mass error seen is below `newton_tol` and the last inner solve reports converged pressure and density. |
+
+`mass_error_at_accept` is the relative error $|M - M_p| / M_p$ of the total mass of the returned profile.
+It can differ from `best_mass_error`, the smallest error over the outer iterations or Newton steps, because the returned profile is not always the one with that error.
 
 ## Output
 
