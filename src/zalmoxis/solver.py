@@ -224,11 +224,9 @@ def _newton_verdict(result, converged, accepted_on):
     returned profile stopped on the wall clock. A result built without a profile gets
     the per-profile keys as None or False.
     """
-    result['converged'] = bool(converged)
+    ok = result['converged'] = bool(converged)
     wall = result.setdefault('stopped_on_wall_clock', False)
-    result['accepted_on'] = (
-        ('timeout' if wall else accepted_on) if result['converged'] else None
-    )
+    result['accepted_on'] = ('timeout' if wall else accepted_on) if ok else None
     result.setdefault('mass_error_at_accept', None)
     result.setdefault('density_from_eos', False)
 
@@ -1343,7 +1341,10 @@ def _solve(
         relative mass error of the returned profile. ``stopped_on_wall_clock`` is True
         when the wall clock stopped the solve, also when it was not accepted.
         ``density`` is rho_EOS(P, T) at the returned nodes and ``density_from_eos`` is
-        True, unless the wall clock stopped the solve before its first pressure solve.
+        True, unless the wall clock stopped the last pass before its first pressure
+        solve and the solve was not accepted; that pass is then returned, with its
+        newest radius. An outer wall-clock stop, and an accepted solve cut in that way,
+        return the best pass with its gravity, ``cmb_mass`` and ``core_mantle_mass``.
     """
     # Initialize convergence flags
     converged = False
@@ -1553,6 +1554,7 @@ def _solve(
     best_profiles = None
     oscillation_count = 0
     stop_label = None  # 'timeout' (wall clock) or 'oscillation' once a loop stops early
+    restore_best = False  # an outer stop returns the best pass
     rho_eos = None  # rho_EOS(P, T) at the nodes of the current pressure profile
 
     # Initialize arrays to safe defaults. These are overwritten on the
@@ -1584,21 +1586,7 @@ def _solve(
             stop_label = 'timeout'
             if best_profiles is not None:
                 converged_mass = best_mass_error < 3 * tolerance_outer
-                # Fresh writable copies: `pressure` / `mass_enclosed`
-                # carry over from the previous outer iter and may be
-                # read-only views of JAX buffers (jax_eos/wrapper.py
-                # returns np.asarray(...) for speed; the host-device
-                # sync penalty of a writable np.array on every solve
-                # is 1 ms/call ~ 88 s/main() in coupled PROTEUS).
-                # Converting only on the rare timeout path keeps the
-                # hot loop fast.
-                radii = np.array(best_profiles['radii'])
-                density = np.array(best_profiles['density'])
-                pressure = np.array(best_profiles['pressure'])
-                mass_enclosed = np.array(best_profiles['mass_enclosed'])
-                rho_eos = best_profiles['rho_eos']
-                if best_profiles['temperatures'] is not None:
-                    temperatures = np.array(best_profiles['temperatures'])
+                restore_best = True
             break
 
         radii = np.linspace(0, radius_guess, num_layers)
@@ -2307,8 +2295,8 @@ def _solve(
             scale = (planet_mass / calculated_mass) ** (1.0 / 3.0)
             scale = max(0.5, min(scale, 2.0))
             radius_guess *= scale
-        cmb_mass = core_mass_fraction * calculated_mass
-        core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * calculated_mass
+            cmb_mass = core_mass_fraction * calculated_mass
+            core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * calculated_mass
 
         relative_diff_outer_mass = np.abs((calculated_mass - planet_mass) / planet_mass)
 
@@ -2340,6 +2328,8 @@ def _solve(
                 'mass_enclosed': np.asarray(mass_enclosed).copy(),
                 'temperatures': temperatures.copy() if temperatures is not None else None,
                 'rho_eos': rho_eos,
+                'cmb_mass': cmb_mass,
+                'core_mantle_mass': core_mantle_mass,
             }
             oscillation_count = 0
         elif (
@@ -2358,13 +2348,7 @@ def _solve(
                 best_mass_error * 100,
                 tolerance_outer * 100,
             )
-            radii = np.array(best_profiles['radii'])
-            density = np.array(best_profiles['density'])
-            pressure = np.array(best_profiles['pressure'])
-            mass_enclosed = np.array(best_profiles['mass_enclosed'])
-            rho_eos = best_profiles['rho_eos']
-            if best_profiles['temperatures'] is not None:
-                temperatures = np.array(best_profiles['temperatures'])
+            restore_best = True
             converged_mass = True
             stop_label = 'oscillation'
             break
@@ -2451,13 +2435,17 @@ def _solve(
             converged_pressure,
         )
 
-    # a wall-clock cut before the first pressure solve of the last pass: return the best pass
-    if rho_eos is None and best_profiles is not None:
+    # Return the best pass after an outer stop, or after an accepted cut before the first pressure
+    # solve of the last pass; an unaccepted cut returns the cut pass, so a retry starts from its
+    # radius. Fresh copies: the saved profiles can be read-only views of JAX buffers.
+    if best_profiles is not None and (restore_best or (rho_eos is None and converged)):
         radii, density, gravity, pressure, mass_enclosed = (
             np.array(best_profiles[k])
             for k in ('radii', 'density', 'gravity', 'pressure', 'mass_enclosed')
         )
-        rho_eos = best_profiles['rho_eos']
+        rho_eos, cmb_mass, core_mantle_mass = (
+            best_profiles[k] for k in ('rho_eos', 'cmb_mass', 'core_mantle_mass')
+        )
         if best_profiles['temperatures'] is not None:
             temperatures = np.array(best_profiles['temperatures'])
 

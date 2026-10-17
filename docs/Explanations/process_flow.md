@@ -108,8 +108,11 @@ The table band check (see [EOS physics](eos_physics.md)) runs after these tests:
 `mass_error_at_accept` is the relative error $|M - M_p| / M_p$ of the last value of `mass_enclosed` in the returned profile, also when no test passed, and None when that value is not finite.
 It can differ from `best_mass_error`, the smallest error over the outer iterations or Newton evaluations (the error at the root on the brentq root exit), because the returned profile is not always the one with that error.
 The returned `density` is the EOS density $\rho_{\mathrm{EOS}}(P, T)$ at the returned pressure and temperature of each node, and not the damped Picard iterate.
-`density_from_eos` is False only when the wall clock stopped the solve before its first pressure solve; `density` is then the initial density, and only then are the outermost shells smoothed.
+After a wall-clock stop in the outer loop, and after an accepted solve whose last pass the wall clock stopped before its first pressure solve, the outer pass with the smallest mass error is returned, with its own gravity, `cmb_mass` and `core_mantle_mass`.
+`density_from_eos` is False only when the wall clock stopped the last pass before its first pressure solve and no test passed; the result is then that pass, with its newest outer radius and its initial density, and only then are the outermost shells smoothed.
 `converged_density` reports the inner Picard loop and does not bound the difference between the iterate and the EOS density.
+When the first solve is not accepted, `main` retries with tighter parameters, seeded with the returned outer radius and `density`; that seed is the EOS density, and PROTEUS also seeds its next structure solve with the returned `density`.
+On the Newton path, a step whose mass test passes while its inner solve does not report converged pressure and the EOS density ends the search with `converged = False`; `main` and then PROTEUS retry, and PROTEUS stops the run when its retry is also not converged.
 A trapezoid integral of the returned `density` differs from `mass_enclosed[-1]` by the quadrature error of the grid, which is largest at density jumps such as the core-mantle boundary.
 
 ## Output

@@ -20,7 +20,7 @@ import zalmoxis.solver as zs
 from tests.test_failed_structure_solve import ROOT, _cfg, _count_outer_iterations, _run
 from tests.test_table_band_report import _need_wb_tables
 from zalmoxis.config import load_material_dictionaries
-from zalmoxis.constants import earth_mass
+from zalmoxis.constants import G, earth_mass
 from zalmoxis.mixing import calculate_mixed_density, parse_all_layer_mixtures
 
 INPUT = os.path.join(ROOT, 'input')
@@ -202,8 +202,7 @@ class TestRetry:
 
 def _assert_eos_density(r, eos=None, melt=(None, None), mzf=None):
     """The returned density is rho_EOS(P, T) at every P > 0 node, from a direct EOS call;
-    the core nodes form a block from the centre (the returned ``cmb_mass`` is updated after
-    the last pass, so it does not place the boundary)."""
+    the core nodes form a block from the centre."""
     mixes = parse_all_layer_mixtures(eos or _cfg()['layer_eos_config'])
     md = load_material_dictionaries()
     P, T, rho = (np.asarray(r[k], float) for k in ('pressure', 'temperature', 'density'))
@@ -213,24 +212,26 @@ def _assert_eos_density(r, eos=None, melt=(None, None), mzf=None):
         ref = {
             k: calculate_mixed_density(P[i], T[i], mixes[k], md, *melt, {}, mzf) for k in mixes
         }
-        hit = [k for k, v in ref.items() if rho[i] == pytest.approx(v, rel=1e-8)]  # table lookups
+        # rel 1e-8: batch and scalar table lookups differ
+        hit = [k for k, v in ref.items() if rho[i] == pytest.approx(v, rel=1e-8)]
         assert hit, (i, rho[i], ref)
         core.append(hit[0] == 'core')
     assert core == sorted(core, reverse=True) and core[0]
 
 
-def _picard(trapz=True, **kwargs):
-    """Fast Picard solve (1 M_earth, analytic EOS) through ``main``; ``trapz`` checks the
-    trapezoid mass of the returned density against ``mass_enclosed``."""
+def _picard(integrated=True, **kwargs):
+    """Fast Picard solve (1 M_earth, analytic EOS) through ``main``; ``cmb_mass`` is the core
+    mass fraction of the returned mass. When ``mass_enclosed`` is the integral of the returned
+    profile (``integrated``), the surface gravity is G M / R^2 and the trapezoid mass of the
+    returned density matches it."""
     r = _run(_cfg(**kwargs))
-    m = np.asarray(r['mass_enclosed'])
+    m, rad = np.asarray(r['mass_enclosed']), np.asarray(r['radii'])
     assert r['mass_error_at_accept'] == pytest.approx(abs(m[-1] - earth_mass) / earth_mass)
     _assert_eos_density(r)
-    rad = np.asarray(r['radii'])
-    assert (
-        not trapz
-        or abs(np.trapezoid(4 * np.pi * rad**2 * r['density'], rad) / m[-1] - 1) < 1e-2
-    )
+    assert r['cmb_mass'] == pytest.approx(0.325 * m[-1], rel=1e-12)
+    if integrated:
+        assert r['gravity'][-1] == pytest.approx(G * m[-1] / rad[-1] ** 2, rel=1e-6)
+        assert abs(np.trapezoid(4 * np.pi * rad**2 * r['density'], rad) / m[-1] - 1) < 1e-2
     return r
 
 
@@ -349,15 +350,19 @@ class TestRealSolve:
         assert r['accepted_on'] == 'timeout'
         assert r['mass_error_at_accept'] == pytest.approx(r['best_mass_error'])
 
-    def test_cut_before_the_first_pressure_solve_of_the_last_pass(self, monkeypatch, caplog):
-        """The clock runs out after the temperature profile of the last outer pass, before its
-        first pressure solve: the best pass comes back, not the reset arrays."""
+    @pytest.mark.parametrize('outer', [2, 4])
+    def test_cut_before_the_first_pressure_solve_of_the_last_pass(
+        self, monkeypatch, caplog, outer
+    ):
+        """The clock runs out after the temperature profile of outer pass 2, before its first
+        pressure solve (the last pass, or the outer check stops the next): the best pass comes
+        back, with its core mass and gravity."""
         radius, clock = _count_outer_iterations(monkeypatch), time.time
         monkeypatch.setattr(
             zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * (len(radius) >= 2))
         )
         r = _picard(
-            max_iterations_outer=2,
+            max_iterations_outer=outer,
             max_iterations_inner=1,
             wall_timeout=100.0,
             _initial_radius_guess=6.15e6,
@@ -365,10 +370,13 @@ class TestRealSolve:
         assert 'Wall-clock timeout in inner loop (outer=1, inner=0)' in caplog.text
         assert r['converged'] is True and r['accepted_on'] == 'timeout'
         assert r['mass_error_at_accept'] == pytest.approx(r['best_mass_error'])
+        m, rho = np.asarray(r['mass_enclosed']), np.asarray(r['density'])
+        assert np.argmax(m >= r['cmb_mass']) == np.argmax(np.diff(rho) < -0.2 * rho[:-1]) + 1
 
     def test_cut_before_the_first_pressure_solve_of_a_pass(self, monkeypatch, caplog):
         """The clock runs out after the temperature profile of the second outer pass, before
-        its first pressure solve: the profile is not on the EOS of that grid."""
+        its first pressure solve, and the solve is not accepted: the cut pass comes back, with
+        its newest radius and the core mass of the target mass."""
         radius, clock = _count_outer_iterations(monkeypatch), time.time
         monkeypatch.setattr(
             zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * (len(radius) >= 2))
@@ -376,8 +384,32 @@ class TestRealSolve:
         cfg = _cfg(max_iterations_outer=2, max_iterations_inner=1, wall_timeout=100.0)
         r = zs._solve(cfg, load_material_dictionaries(), None, INPUT)
         assert 'Wall-clock timeout in inner loop (outer=1, inner=0)' in caplog.text
-        assert r['converged'] is False and r['density_from_eos'] is True
-        assert r['mass_error_at_accept'] == pytest.approx(r['best_mass_error'])
+        assert r['converged'] is False and r['density_from_eos'] is False
+        assert r['radii'][-1] == radius[1]
+        assert r['cmb_mass'] == pytest.approx(0.325 * earth_mass)
+
+    def test_retry_after_an_unaccepted_cut_starts_from_the_newest_radius(self, monkeypatch):
+        """The first attempt of the cut above is not accepted; the retry starts from the
+        radius of the cut pass and converges."""
+        radius, clock = _count_outer_iterations(monkeypatch), time.time
+        monkeypatch.setattr(
+            zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * (len(radius) >= 2))
+        )
+        seeds, real = [], zs._solve
+
+        def solve(cp, *args, **kwargs):
+            seeds.append(cp['_initial_radius_guess'])
+            return real(cp, *args, **kwargs)
+
+        monkeypatch.setattr(zs, '_solve', solve)
+        r = _picard(
+            max_iterations_outer=2,
+            max_iterations_inner=1,
+            wall_timeout=100.0,
+            _initial_radius_guess=0.8 * 6.43e6,
+        )
+        assert seeds == [0.8 * 6.43e6, radius[1]]
+        assert r['converged'] is True and r['mass_error_at_accept'] < 1e-4
 
     def test_newton(self):
         r = _run(_cfg(outer_solver='newton', max_iterations_inner=8))
