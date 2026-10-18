@@ -985,6 +985,7 @@ def test_a_clock_stop_before_the_first_blended_pressure_solve_keeps_the_linear_p
         ('PALEOS', False, 0.0, True),
         ('PALEOS', True, 0.5, True),
         ('PALEOS', True, 1.0, False),
+        ('PALEOS', False, 1.0, True),  # a blend without a computed adiabat counts as 0
         ('Analytic', False, 0.0, False),  # no T-dependent component: no ramp by design
     ],
 )
@@ -1002,3 +1003,15 @@ def test_main_warns_on_an_accepted_profile_short_of_the_adiabat(
     }
     zs.main(cfg, {}, None, '/tmp')
     assert ('accepted a temperature profile at adiabat blend' in caplog.text) is warned
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('converged', [True, False])
+def test_only_an_accepted_result_gets_the_adiabat_warning(caplog, converged):
+    cfg = {
+        'temperature_mode': 'adiabatic',
+        'layer_eos_config': {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
+    }
+    result = {'converged': converged, 'adiabat_computed': True, 'adiabat_blend': 0.5}
+    zs._warn_adiabat(result, cfg, None, None, None)
+    assert ('at adiabat blend 0.50' in caplog.text) is converged
