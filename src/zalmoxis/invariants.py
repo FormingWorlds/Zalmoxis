@@ -118,7 +118,8 @@ def deviations(result, config_params, mass_limit, rtol, atol, density_at=None, i
         dg = np.abs(g[1:k] * r[1:k] ** 2 / (G * m[1:k]) - 1)
     dg[~np.isfinite(dg)] = np.inf
     i = int(np.argmax(dg)) + 1 if len(dg) else 0
-    bound = rtol + atol * (1 / m[1] + 1 / g[1]) if k >= 2 else 0.0
+    ok1 = k >= 2 and m[1] > 0 and g[1] > 0  # a first node without mass or gravity breaks it
+    bound = rtol + atol * (1 / m[1] + 1 / g[1]) if ok1 else 0.0
     put('gravity', dg.max(initial=np.inf if k < 2 else 0.0), i, TOLERANCES['gravity'] * bound)
     put('mass_closure', abs(m[-1] / M - 1), len(m) - 1, mass_limit)
     if density_at is not None and result.get('density_from_eos'):
