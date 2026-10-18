@@ -66,9 +66,13 @@ def deviations(result, config_params, mass_limit, rtol, atol, density_at=None, i
     rtol, atol : float
         ``relative_tolerance`` and ``absolute_tolerance`` of the structure integration of
         ``result``. The gravity tolerance is ``TOLERANCES['gravity']`` times
-        ``rtol + atol (1 / M_1 + 1 / g_1)`` at the first node off the centre: the dense
-        output of RK45 keeps ``g r^2 - G M`` to about 19.9 rtol + 13.6 atol (1/M_1 + 1/g_1)
-        relative to ``G M``.
+        ``rtol + atol (1 / M_1 + 1 / g_1)`` at the first node off the centre. The RK45 dense
+        output keeps ``g r^2 - G M`` per step to about 19.9 rtol + 13.6 atol (1/M_1 + 1/g_1)
+        relative to ``G M``, an estimate from the Butcher tableau; real solves of a 1 M_E
+        planet (analytic and tabulated EOS, 150 and 2000 nodes) reach 3 to 13 rtol, and the
+        factor 100 is an empirical margin. The ``atol / g_1`` term grows linearly with the
+        node count, since ``g_1`` scales with ``r_1``: at rtol 1e-5 and atol 1e-6 the
+        tolerance is about 1.6e-3 with 150 nodes and 1e-2 with 2000.
     density_at : callable or None
         ``(P, T, layer) -> rho`` from a scalar EOS call; the density check is skipped
         when None or when ``result['density_from_eos']`` is False.
