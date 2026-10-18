@@ -7,7 +7,8 @@ import numpy as np
 from .constants import G
 
 # Largest allowed deviation of each invariant; a count of bad nodes where the tolerance is 0.
-# gravity: a factor on relative_tolerance; density_eos: below the PALEOS table error of 1e-5.
+# gravity: a factor on the RK45 bound rtol + atol (1/M_1 + 1/g_1), whose constants are 19.9 and
+# 13.6; density_eos: below the PALEOS table interpolation error of 1e-5.
 TOLERANCES = {
     'padding': 0,
     'positive': 0,
@@ -48,7 +49,7 @@ def _layer(m, cmb_mass, core_mantle_mass, ice):
     return 'mantle'
 
 
-def deviations(result, config_params, mass_limit, rtol, density_at=None, ice=False):
+def deviations(result, config_params, mass_limit, rtol, atol, density_at=None, ice=False):
     """Return the deviation of each invariant of an accepted result.
 
     Parameters
@@ -60,9 +61,12 @@ def deviations(result, config_params, mass_limit, rtol, density_at=None, ice=Fal
         ``mantle_mass_fraction``.
     mass_limit : float
         Largest relative mass error that the accept path of ``result`` allows.
-    rtol : float
-        ``relative_tolerance`` of the structure integration of ``result``; the
-        gravity tolerance is ``TOLERANCES['gravity'] * rtol``.
+    rtol, atol : float
+        ``relative_tolerance`` and ``absolute_tolerance`` of the structure integration of
+        ``result``. The gravity tolerance is ``TOLERANCES['gravity']`` times
+        ``rtol + atol (1 / M_1 + 1 / g_1)`` at the first node off the centre: the dense
+        output of RK45 keeps ``g r^2 - G M`` to about 19.9 rtol + 13.6 atol (1/M_1 + 1/g_1)
+        relative to ``G M``.
     density_at : callable or None
         ``(P, T, layer) -> rho`` from a scalar EOS call; the density check is skipped
         when None or when ``result['density_from_eos']`` is False.
@@ -106,7 +110,8 @@ def deviations(result, config_params, mass_limit, rtol, density_at=None, ice=Fal
         dg = np.abs(g[1:k] * r[1:k] ** 2 / (G * m[1:k]) - 1)
     dg[~np.isfinite(dg)] = np.inf
     i = int(np.argmax(dg)) + 1 if len(dg) else 0
-    put('gravity', dg.max(initial=np.inf if k < 2 else 0.0), i, TOLERANCES['gravity'] * rtol)
+    bound = rtol + atol * (1 / m[1] + 1 / g[1]) if k >= 2 else 0.0
+    put('gravity', dg.max(initial=np.inf if k < 2 else 0.0), i, TOLERANCES['gravity'] * bound)
     put('mass_closure', abs(m[-1] / M - 1), len(m) - 1, mass_limit)
     if density_at is not None and result.get('density_from_eos'):
         ref = np.array(
@@ -126,7 +131,7 @@ def deviations(result, config_params, mass_limit, rtol, density_at=None, ice=Fal
     return out
 
 
-def check_accepted(result, config_params, mass_limit, rtol, density_at=None, ice=False):
+def check_accepted(result, config_params, mass_limit, rtol, atol, density_at=None, ice=False):
     """Raise StructureInvariantError when an accepted result breaks an invariant.
 
     See ``deviations`` for the parameters. A result with ``converged`` False is
@@ -147,7 +152,7 @@ def check_accepted(result, config_params, mass_limit, rtol, density_at=None, ice
             f'Accepted structure ({accepted_on=}) has no {", ".join(missing)}.'
         )
     for name, (dev, i, tol) in deviations(
-        result, config_params, mass_limit, rtol, density_at, ice
+        result, config_params, mass_limit, rtol, atol, density_at, ice
     ).items():
         if not dev <= tol:
             raise StructureInvariantError(

@@ -290,12 +290,15 @@ def _check_accepted(
     volatile_profile,
 ):
     """Run ``invariants.check_accepted`` on a result of ``main``, with a scalar EOS call
-    per node as the density reference and the ``relative_tolerance`` of ``run_params``, the
+    per node as the density reference and the integration tolerances of ``run_params``, the
     parameters of the solve that returned; returns ``result``."""
     if not result.get('converged'):
         return result
     defaults = _default_solver_params(config_params['planet_mass'])
-    rtol = float(run_params.get('relative_tolerance') or defaults['relative_tolerance'])
+    rtol, atol = (
+        float(run_params.get(k) or defaults[k])
+        for k in ('relative_tolerance', 'absolute_tolerance')
+    )
     mixes = layer_mixtures or parse_all_layer_mixtures(config_params['layer_eos_config'])
     melt, eos = melting_curves_functions or (None, None), _eos_params(config_params)
 
@@ -304,7 +307,9 @@ def _check_accepted(
         args = (mixes[layer], material_dictionaries, *melt, _interpolation_cache, *eos)
         return calculate_mixed_density(P, T, *args, volatile_profile=vp)
 
-    check_accepted(result, config_params, mass_limit, rtol, density_at, 'ice_layer' in mixes)
+    check_accepted(
+        result, config_params, mass_limit, rtol, atol, density_at, 'ice_layer' in mixes
+    )
     return result
 
 

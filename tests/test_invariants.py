@@ -23,7 +23,7 @@ from zalmoxis.invariants import (
 )
 from zalmoxis.mixing import calculate_mixed_density, parse_all_layer_mixtures
 
-RHO, N, CMF, RTOL = 5500.0, 50, 0.325, 1e-9
+RHO, N, CMF, RTOL, ATOL = 5500.0, 50, 0.325, 1e-9, 1e-10
 
 
 def _sphere(mmf=0.0):
@@ -54,7 +54,7 @@ def _sphere(mmf=0.0):
 
 
 def _check(result, cfg, limit=1e-3):
-    check_accepted(result, cfg, limit, RTOL, lambda P, T, layer: RHO)
+    check_accepted(result, cfg, limit, RTOL, ATOL, lambda P, T, layer: RHO)
 
 
 def _raises(result, cfg, name, limit=1e-3):
@@ -65,7 +65,7 @@ def _raises(result, cfg, name, limit=1e-3):
 @pytest.mark.unit
 def test_the_sphere_passes_with_every_deviation_inside_its_tolerance():
     result, cfg = _sphere(mmf=0.5)
-    devs = deviations(result, cfg, 1e-3, RTOL, lambda P, T, layer: RHO)
+    devs = deviations(result, cfg, 1e-3, RTOL, ATOL, lambda P, T, layer: RHO)
     assert set(devs) == set(TOLERANCES) | {'mass_closure'}
     assert all(dev <= tol for dev, _, tol in devs.values()), devs
     _check(result, cfg)
@@ -169,7 +169,7 @@ def test_density_layer_follows_cmb_mass():
     m = result['mass_enclosed']
     layers = []
     check_accepted(
-        result, cfg, 1e-3, RTOL, lambda P, T, layer: layers.append(layer) or RHO, ice=True
+        result, cfg, 1e-3, RTOL, ATOL, lambda P, T, layer: layers.append(layer) or RHO, ice=True
     )
     core = m[: len(layers)] < result['cmb_mass']
     ice = m[: len(layers)] >= result['core_mantle_mass']
@@ -200,7 +200,7 @@ def test_an_unconverged_result_or_a_picard_density_is_not_checked():
 def test_a_change_above_the_tolerance_raises_and_one_below_does_not(field, node, over, sign):
     """A relative change of ``over`` times the tolerance raises, one of 1/4 of it does not."""
     name = {'gravity': 'gravity', 'density': 'density_eos', 'cmb_mass': 'cmb_mass'}[field]
-    tol = TOLERANCES[name] * (RTOL if name == 'gravity' else 1)
+    tol = deviations(*_sphere(), 1e-3, RTOL, ATOL, lambda P, T, layer: RHO)[name][2]
     for factor, raises in ((over, True), (0.25, False)):
         result, cfg = _sphere()
         x = 1 + sign * min(factor * tol, 0.5)
