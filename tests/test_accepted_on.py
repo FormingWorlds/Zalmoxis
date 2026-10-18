@@ -526,6 +526,7 @@ class TestRealSolve:
         assert not rho[1:].any() and not m.any()
         assert r['mass_error_at_accept'] == pytest.approx(1.0)
 
+    @pytest.mark.usefixtures('no_check')
     def test_restored_pass_keeps_its_convergence_flags(self, monkeypatch):
         """Passes at 8, 6 and 9 % mass error, each with a converged inner loop; the clock cuts
         the third, and the outer check returns the second with its own density and pressure
