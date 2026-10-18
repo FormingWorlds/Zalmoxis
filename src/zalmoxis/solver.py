@@ -2416,6 +2416,25 @@ def _solve(
                 max_iterations_outer,
             )
 
+    def _best_pass():
+        # fresh copies: the saved profiles can be read-only views of JAX buffers
+        T = best_profiles['temperatures']
+        return (
+            *(np.array(best_profiles[k]) for k in ('radii', 'density', 'gravity', 'pressure')),
+            np.array(best_profiles['mass_enclosed']),
+            *(best_profiles[k] for k in ('rho_eos', 'converged_density', 'converged_pressure')),
+            best_profiles['adiabat_computed'],
+            temperatures if T is None else np.array(T),
+        )
+
+    # An outer stop returns the best pass, so the accept tests read that pass.
+    restored = restore_best and best_profiles is not None
+    if restored:
+        (
+            radii, density, gravity, pressure, mass_enclosed, rho_eos,
+            converged_density, converged_pressure, _adiabat_computed, temperatures,
+        ) = _best_pass()  # fmt: skip
+
     accepted_on = accept_mass_limit = None
     if converged_mass and converged_density and converged_pressure:
         converged = True
@@ -2449,20 +2468,18 @@ def _solve(
             converged_pressure,
         )
 
-    # Return the best pass after an outer stop, a max_iter accept, or an accepted cut before the first
-    # pressure solve of the last pass; an unaccepted cut returns the cut pass, so a retry starts
-    # from its radius. Fresh copies: the saved profiles can be read-only views of JAX buffers.
-    if best_profiles is not None and (restore_best or (rho_eos is None and converged)):
-        radii, density, gravity, pressure, mass_enclosed = (
-            np.array(best_profiles[k])
-            for k in ('radii', 'density', 'gravity', 'pressure', 'mass_enclosed')
-        )
-        rho_eos, converged_density, converged_pressure, _adiabat_computed = (
-            best_profiles[k]
-            for k in ('rho_eos', 'converged_density', 'converged_pressure', 'adiabat_computed')
-        )
-        if best_profiles['temperatures'] is not None:
-            temperatures = np.array(best_profiles['temperatures'])
+    # A max_iter accept, or an accepted cut before the first pressure solve of the last pass,
+    # also returns the best pass; an unaccepted cut returns the cut pass, so a retry starts from
+    # its radius.
+    if (
+        not restored
+        and best_profiles is not None
+        and (restore_best or (rho_eos is None and converged))
+    ):
+        (
+            radii, density, gravity, pressure, mass_enclosed, rho_eos,
+            converged_density, converged_pressure, _adiabat_computed, temperatures,
+        ) = _best_pass()  # fmt: skip
 
     # Return rho_EOS(P, T) at the returned nodes, not the damped Picard iterate.
     density_from_eos = rho_eos is not None
