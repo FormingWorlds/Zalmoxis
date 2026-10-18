@@ -718,7 +718,7 @@ def _brentq_fallback_outer(
     R_max,
     tol,
     start_time,
-    last_result,
+    best,
     n_newton_iter=None,
 ):
     """Brentq fall-back for the Newton outer mass-radius loop.
@@ -751,7 +751,7 @@ def _brentq_fallback_outer(
     M_target : float
         Target mass in kg.
     eval_M_at_R : callable
-        ``(R) -> (M, last_result)`` from ``_solve_newton_outer``'s
+        ``(R) -> (M, result)`` from ``_solve_newton_outer``'s
         ``_M_at_R`` closure. The full inner-Picard solve.
     history : list of (R, M, rel)
         Newton trajectory so far; reused for bracket if straddling.
@@ -762,9 +762,10 @@ def _brentq_fallback_outer(
     start_time : float
         ``time.time()`` from when ``_solve_newton_outer`` started; used
         to set ``total_time`` on return.
-    last_result : dict
-        The most recent inner-Picard result dict (from a previous
-        ``_M_at_R`` call); used as the seed for the returned dict.
+    best : dict
+        ``{'rel': smallest relative mass error over the evaluations, 'result': the
+        inner-Picard result dict of that evaluation}``, updated by ``_M_at_R`` on every
+        evaluation, also those of this function.
 
     Returns
     -------
@@ -773,12 +774,26 @@ def _brentq_fallback_outer(
         bookkeeping keys ``newton_n_iter``, ``newton_history``, and
         ``newton_used_brentq=True``. ``accepted_on`` is 'newton_tol' at the
         brentq root, 'brentq_best' when the bracket search or brentq stopped
-        early with the best history entry within ``tol`` (the profile is then
-        that of ``last_result``), 'timeout' when the wall clock stopped the
+        early with the best evaluation within ``tol`` (the profile is then
+        that of ``best``), 'timeout' when the wall clock stopped the
         inner solve of the returned profile, and None when not converged.
         ``mass_error_at_accept`` is the relative mass error of the returned
         profile.
     """
+
+    def _best_seen(converged, accepted_on):
+        result = dict(best['result'] or {})
+        _newton_verdict(result, converged, accepted_on)
+        result['converged_mass'] = bool(best['rel'] < tol)
+        result['best_mass_error'] = float(best['rel'])
+        result['total_time'] = time.time() - start_time
+        result['newton_n_iter'] = (
+            int(n_newton_iter) if n_newton_iter is not None else len(history)
+        )
+        result['newton_history'] = history
+        result['newton_used_brentq'] = True
+        return result
+
     # Step 1: try to reuse Newton history.
     R_lo, R_hi = None, None
     if len(history) >= 2:
@@ -820,9 +835,8 @@ def _brentq_fallback_outer(
         f0 = M_at_current - M_target
         history.append((R_current, M_at_current, abs(f0) / M_target))
         if abs(f0) / M_target < tol:
-            # the profile is still last_result, not the one at R_current
             result = _attach_newton_bookkeeping(
-                last_result,
+                best['result'],
                 history,
                 start_time,
                 used_brentq=True,
@@ -858,52 +872,26 @@ def _brentq_fallback_outer(
                     break
                 R_test *= 1.3
 
-    if R_lo is None or R_hi is None:  # pragma: no cover - exhausted physical bounds; defensive
-        best_idx = int(np.argmin([h[2] for h in history])) if history else 0
-        best_R, best_M, best_rel = history[best_idx]
+    if R_lo is None or R_hi is None:
         logger.warning(
-            'Brentq: no sign-flipping bracket in [%.2e, %.2e]; returning '
-            'best-seen R=%.4e M=%.4e rel=%.3e (converged=False).',
+            'Brentq: no sign-flipping bracket in [%.2e, %.2e]; returning the best '
+            'evaluation, rel=%.3e (converged=False).',
             R_min,
             R_max,
-            best_R,
-            best_M,
-            best_rel,
+            best['rel'],
         )
-        result = dict(last_result) if last_result else {}
-        _newton_verdict(result, False, None)
-        result['converged_mass'] = bool(best_rel < tol)
-        result['best_mass_error'] = float(best_rel)
-        result['total_time'] = time.time() - start_time
-        result['newton_n_iter'] = (
-            int(n_newton_iter) if n_newton_iter is not None else len(history)
-        )
-        result['newton_history'] = history
-        result['newton_used_brentq'] = True
-        return result
+        return _best_seen(False, None)
 
     # Step 3: brentq.
     # Guard against degenerate bracket (R_lo == R_hi or near-equal) which
     # would make brentq raise ValueError. This can happen if Newton's
     # trust region clamped two consecutive iterations to the same R.
-    if R_hi - R_lo < 1.0:  # pragma: no cover - degenerate bracket; defensive
+    if R_hi - R_lo < 1.0:
         logger.warning(
-            'Brentq: bracket width %.3e m too narrow; returning best-seen (converged=False).',
+            'Brentq: bracket width %.3e m too narrow; returning the best evaluation.',
             R_hi - R_lo,
         )
-        best_idx = int(np.argmin([h[2] for h in history])) if history else 0
-        best_R, best_M, best_rel = history[best_idx]
-        result = dict(last_result) if last_result else {}
-        _newton_verdict(result, best_rel < tol, 'brentq_best')
-        result['converged_mass'] = bool(best_rel < tol)
-        result['best_mass_error'] = float(best_rel)
-        result['total_time'] = time.time() - start_time
-        result['newton_n_iter'] = (
-            int(n_newton_iter) if n_newton_iter is not None else len(history)
-        )
-        result['newton_history'] = history
-        result['newton_used_brentq'] = True
-        return result
+        return _best_seen(best['rel'] < tol, 'brentq_best')
 
     # Estimate |dM/dR| from bracket endpoints to set xtol such that
     # the returned R yields M within `tol` of M_target. Lookup is by
@@ -946,31 +934,14 @@ def _brentq_fallback_outer(
         R_root = brentq(_f, R_lo, R_hi, xtol=xtol_target, rtol=tol)
     except StructureSolveError:
         raise
-    except (
-        ValueError,
-        RuntimeError,
-    ) as exc:  # pragma: no cover - stale-cache sign mismatch; defensive
+    except (ValueError, RuntimeError) as exc:
         logger.warning(
-            'Brentq raised %s: %s. Returning best-seen (converged=False).',
-            type(exc).__name__,
-            exc,
+            'Brentq raised %s: %s. Returning the best evaluation.', type(exc).__name__, exc
         )
-        best_idx = int(np.argmin([h[2] for h in history])) if history else 0
-        best_R, best_M, best_rel = history[best_idx]
-        result = dict(last_result) if last_result else {}
-        _newton_verdict(result, best_rel < tol, 'brentq_best')
-        result['converged_mass'] = bool(best_rel < tol)
-        result['best_mass_error'] = float(best_rel)
-        result['total_time'] = time.time() - start_time
-        result['newton_n_iter'] = (
-            int(n_newton_iter) if n_newton_iter is not None else len(history)
-        )
-        result['newton_history'] = history
-        result['newton_used_brentq'] = True
-        return result
+        return _best_seen(best['rel'] < tol, 'brentq_best')
 
     # Final eval at the converged root for the returned profiles.
-    M_root, last_result = eval_M_at_R(R_root)
+    M_root, root_result = eval_M_at_R(R_root)
     rel = abs(M_root - M_target) / M_target
     history.append((float(R_root), float(M_root), rel))
     logger.info(
@@ -979,7 +950,7 @@ def _brentq_fallback_outer(
         M_root,
         rel,
     )
-    result = dict(last_result) if last_result else {}
+    result = dict(root_result) if root_result else {}
     _newton_verdict(result, rel < tol, 'newton_tol')
     result['converged_mass'] = bool(rel < tol)
     result['best_mass_error'] = float(rel)
@@ -1164,12 +1135,16 @@ def _solve_newton_outer(
         )
         mass_arr = np.asarray(sub_result.get('mass_enclosed', [np.nan]))
         M_val = float(mass_arr[-1]) if mass_arr.size > 0 else float('nan')
+        rel = abs(M_val - M_target) / M_target
+        if rel < best['rel']:  # a NaN never replaces the best evaluation
+            best.update(rel=rel, result=sub_result)
         return M_val, sub_result
 
     # ----- Newton iteration -----
     history = []  # list of (R, M, |f|/M_target) per outer iter
     side_evals = []  # +/-dR evaluations, only for brentq bracket reuse
     last_result = None
+    best = {'rel': np.inf, 'result': None}  # the evaluation with the smallest mass error
 
     start_time = time.time()
     logger.info(
@@ -1199,7 +1174,7 @@ def _solve_newton_outer(
                 R_max=R_max,
                 tol=tol,
                 start_time=start_time,
-                last_result=last_result,
+                best=best,
                 n_newton_iter=k,
             )
         f_k = M_k - M_target
@@ -1260,7 +1235,7 @@ def _solve_newton_outer(
                 R_max=R_max,
                 tol=tol,
                 start_time=start_time,
-                last_result=last_result,
+                best=best,
                 n_newton_iter=k,
             )
         dMdR = (M_plus - M_minus) / (2.0 * dR)
@@ -1282,7 +1257,7 @@ def _solve_newton_outer(
                 R_max=R_max,
                 tol=tol,
                 start_time=start_time,
-                last_result=last_result,
+                best=best,
                 n_newton_iter=k + 1,
             )
 
@@ -1307,7 +1282,7 @@ def _solve_newton_outer(
                 R_max=R_max,
                 tol=tol,
                 start_time=start_time,
-                last_result=last_result,
+                best=best,
                 n_newton_iter=k + 1,
             )
 
@@ -1354,7 +1329,7 @@ def _solve_newton_outer(
         R_max=R_max,
         tol=tol,
         start_time=start_time,
-        last_result=last_result,
+        best=best,
         n_newton_iter=max_iter,
     )
 
