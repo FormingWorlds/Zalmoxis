@@ -1341,12 +1341,12 @@ def _solve(
         relative mass error of the returned profile. ``stopped_on_wall_clock`` is True
         when the wall clock stopped the solve, also when it was not accepted.
         ``density`` is rho_EOS(P, T) at the returned nodes and ``density_from_eos`` is
-        True, unless the wall clock stopped the last pass before its first pressure
-        solve and the solve was not accepted; that pass is then returned, with its
-        newest radius and a pressure, density and enclosed mass that are zero except at
-        the centre node. An outer wall-clock stop, accepted or not, and an accepted solve
-        cut in that way, return the best pass with its gravity, ``cmb_mass`` and
-        ``core_mantle_mass``.
+        True, unless the wall clock stopped the solve before the first pressure solve of
+        its last pass, or before its first pass, and the solve was not accepted; the
+        result then has the newest radius, a pressure and density that are zero except
+        at most at the centre node, and an enclosed mass of zero. An outer wall-clock
+        stop after at least one pass, accepted or not, and an accepted solve cut in that
+        way, return the best pass with its gravity, ``cmb_mass`` and ``core_mantle_mass``.
     """
     # Initialize convergence flags
     converged = False
@@ -2460,7 +2460,6 @@ def _solve(
     total_time = end_time - start_time
 
     pressure = np.asarray(pressure)
-    density = np.asarray(density)
     density[pressure <= 0] = 0.0  # padded nodes
 
     model_results = {
