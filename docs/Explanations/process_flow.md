@@ -103,8 +103,8 @@ The table band check (see [EOS physics](eos_physics.md)) runs after these tests:
 | `timeout` | Picard, Newton | The solve of the returned profile reached `wall_timeout` (in the outer or the inner loop) and one of the other tests passed; `timeout` replaces its label. |
 | `oscillation` | Picard | The mass error changed sign 10 times since its last improvement; the best profile is returned, with its mass error below `3 * tolerance_outer`. This test does not fire in the current code. |
 | `retry_skip` | Picard | The first solve was not accepted, density and pressure converged and the mass error of the returned profile is below 7 %; `main` skips the retry. |
-| `newton_tol` | Newton | The smallest mass error of the Newton steps is below `newton_tol`, the inner solve of the returned profile reports converged pressure and its density is the EOS density (`density_from_eos`), or the mass error at the brentq root is below `newton_tol`. |
-| `brentq_best` | Newton | The bracket search or brentq stopped early with the smallest mass error seen below `newton_tol`. The returned profile is that of the last Newton step, and its mass error can be much larger. |
+| `newton_tol` | Newton | The smallest mass error of the Newton steps, or the mass error at the brentq root, is below `newton_tol`, and the inner solve of the returned profile reports converged pressure and the EOS density (`density_from_eos`). |
+| `brentq_best` | Newton | The bracket search or brentq stopped early with the smallest mass error of the evaluations below `newton_tol`; the returned profile is that of the evaluation with that error, and its inner solve reports converged pressure and the EOS density. |
 
 `mass_error_at_accept` is the relative error $|M - M_p| / M_p$ of the last value of `mass_enclosed` in the returned profile, also when no test passed, and None when that value is not finite.
 It can differ from `best_mass_error`, the smallest error over the outer iterations or Newton evaluations (the error at the root on the brentq root exit), because the returned profile is not always the one with that error.

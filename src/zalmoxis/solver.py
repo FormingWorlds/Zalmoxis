@@ -221,12 +221,15 @@ def _mass_error(mass_enclosed, planet_mass):
 def _newton_verdict(result, converged, accepted_on, tol):
     """Set ``converged``, ``accepted_on`` and ``accept_mass_limit`` of a Newton result.
 
+    ``converged`` needs the mass test of the caller and, from the inner solve of the
+    returned profile, a converged pressure and the EOS density (``density_from_eos``).
     ``accepted_on`` is None if not converged, and 'timeout' if the inner solve of the
     returned profile stopped on the wall clock. ``accept_mass_limit`` is ``tol``, the
     newton_tol of the mass test, or None if not converged. A result built without a
     profile gets the per-profile keys as None or False.
     """
-    ok = result['converged'] = bool(converged)
+    inner_ok = result.get('converged_pressure') and result.get('density_from_eos')
+    ok = result['converged'] = bool(converged and inner_ok)
     wall = result.setdefault('stopped_on_wall_clock', False)
     result['accepted_on'] = ('timeout' if wall else accepted_on) if ok else None
     result['accept_mass_limit'] = tol if ok else None
@@ -774,7 +777,8 @@ def _brentq_fallback_outer(
         that of ``best``), 'timeout' when the wall clock stopped the
         inner solve of the returned profile, and None when not converged.
         ``mass_error_at_accept`` is the relative mass error of the returned
-        profile.
+        profile. Every label needs a converged pressure and the EOS density in the
+        inner solve of the returned profile.
     """
 
     def _best_seen(converged, accepted_on):
@@ -839,7 +843,7 @@ def _brentq_fallback_outer(
                 tol=tol,
                 n_newton_iter=n_newton_iter,
             )
-            _newton_verdict(result, True, 'brentq_best', tol)
+            _newton_verdict(result, best['rel'] < tol, 'brentq_best', tol)
             return result
         if f0 > 0:  # pragma: no cover - bracket sweep direction; defensive
             # M too large -> shrink R.
@@ -980,8 +984,7 @@ def _attach_newton_bookkeeping(
         # the best entry, not the last: +/-dR side evaluations follow the main step
         best_rel = min(h[2] for h in history)
         mass_ok = True if tol is None else bool(best_rel < tol)
-        inner_ok = result.get('converged_pressure') and result.get('density_from_eos')
-        _newton_verdict(result, mass_ok and inner_ok, 'newton_tol', tol)
+        _newton_verdict(result, mass_ok, 'newton_tol', tol)
         result['converged_mass'] = mass_ok
         result['best_mass_error'] = float(best_rel)
     result['total_time'] = time.time() - start_time
