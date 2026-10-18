@@ -298,7 +298,8 @@ class TestRealSolve:
 
     def test_iteration_cap_of_one_pass_is_max_iter(self):
         """``_solve`` itself: through ``main`` a first attempt that is not accepted would
-        reach the retry, with the outer cap doubled."""
+        reach the retry, with the outer cap doubled. The guess lies 0.4 % below the root
+        (6.114e6 m): one pass ends at about 1 % mass error, under the 3 % limit."""
         cfg = _cfg(max_iterations_outer=1, max_iterations_inner=1, _initial_radius_guess=6.09e6)
         r = zs._solve({**cfg, 'wall_timeout': WALL}, load_material_dictionaries(), None, INPUT)
         assert r['converged'] is True and r['accepted_on'] == 'max_iter'
@@ -356,6 +357,8 @@ class TestRealSolve:
         r = zs._solve(_cfg(wall_timeout=-1.0), load_material_dictionaries(), None, INPUT)
         assert r['converged'] is False and r['accepted_on'] is None
         assert r['stopped_on_wall_clock'] is True and r['density_from_eos'] is False
+        assert not any(np.any(r[k]) for k in ('pressure', 'density', 'mass_enclosed'))
+        assert r['mass_error_at_accept'] == pytest.approx(1.0)
 
     @pytest.mark.parametrize('layers', [{}, {**ICE, '_initial_radius_guess': 6.37e6}])
     def test_outer_wall_clock_restores_a_best_pass_that_is_not_the_last(
@@ -377,7 +380,8 @@ class TestRealSolve:
 
     def test_unaccepted_outer_wall_clock_stop_returns_the_best_pass(self, monkeypatch):
         """Each pass has a mass error of 6 to 9 %, above every accept limit, and the outer
-        check stops pass 3: the best pass 1 comes back unaccepted and seeds the retry."""
+        check stops the solve after the third pass: the best, second pass comes back
+        unaccepted and seeds the retry."""
         radius, real = _clock_after_lookup(monkeypatch, outer=2), zs.solve_structure
         errors = (0.08, 0.06, 0.09)
 
@@ -399,7 +403,7 @@ class TestRealSolve:
         assert len(radius) == 3
         assert r['converged'] is False and r['accepted_on'] is None
         assert r['stopped_on_wall_clock'] is True and r['density_from_eos'] is True
-        assert r['radii'][-1] == radius[1]
+        assert r['radii'][-1] == pytest.approx(radius[1], rel=1e-12)
         assert r['mass_error_at_accept'] == pytest.approx(0.06, rel=1e-9)
         assert r['cmb_mass'] == pytest.approx(0.325 * 1.06 * earth_mass, rel=1e-9)
         assert seeds == [None, radius[1]]
@@ -438,11 +442,38 @@ class TestRealSolve:
         r = zs._solve(cfg, load_material_dictionaries(), None, INPUT)
         assert 'Wall-clock timeout in inner loop (outer=1, inner=0)' in caplog.text
         assert r['converged'] is False and r['density_from_eos'] is False
-        assert r['radii'][-1] == radius[1]
+        assert r['radii'][-1] == pytest.approx(radius[1], rel=1e-12)
         assert r['cmb_mass'] == pytest.approx(0.325 * earth_mass)
         P, rho, m = (np.asarray(r[k]) for k in ('pressure', 'density', 'mass_enclosed'))
         assert np.flatnonzero(P > 0).tolist() == [0]  # no pressure solve in the cut pass
-        assert not rho[1:].any() and not m.any() and r['mass_error_at_accept'] == 1.0
+        assert (
+            not rho[1:].any()
+            and not m.any()
+            and r['mass_error_at_accept'] == pytest.approx(1.0)
+        )
+
+    def test_seeded_cut_keeps_a_density_only_where_the_pressure_is_set(
+        self, monkeypatch, caplog
+    ):
+        """A caller's density seed fills the first pass; the clock runs out before its first
+        pressure solve, and the density comes back zero wherever the pressure is zero."""
+        caplog.set_level(logging.INFO, logger='zalmoxis.solver')
+        radius, clock = _count_outer_iterations(monkeypatch), time.time
+        monkeypatch.setattr(
+            zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * (len(radius) >= 1))
+        )
+        seed = {
+            'initial_density': np.linspace(1.3e4, 4e3, 50),
+            'initial_radii': np.linspace(0, 6.4e6, 50),
+        }
+        cfg = _cfg(max_iterations_inner=1, wall_timeout=WALL)
+        r = zs._solve(cfg, load_material_dictionaries(), None, INPUT, **seed)
+        assert 'Wall-clock timeout in inner loop (outer=0, inner=0)' in caplog.text
+        assert 'Density seeded from previous solve' in caplog.text
+        assert r['converged'] is False and r['density_from_eos'] is False
+        P, rho = np.asarray(r['pressure']), np.asarray(r['density'])
+        assert np.flatnonzero(P > 0).tolist() == [0]
+        assert np.flatnonzero(rho > 0).tolist() == [0]
 
     def test_retry_after_an_unaccepted_cut_starts_from_the_newest_radius(self, monkeypatch):
         """The first attempt of the cut above is not accepted; the retry starts from the
@@ -531,5 +562,5 @@ def test_cool_paleos_surface_keeps_the_eos_density():
     melt = get_solidus_liquidus_functions()
     r = zs.main(cfg, load_material_dictionaries(), melt, INPUT)
     rho = np.asarray(r['density'])[np.asarray(r['pressure']) > 0]
-    assert rho[-1] < 0.6 * rho[-4]  # the drop the surface smoothing would remove
+    assert rho[-1] < 0.6 * rho[-4]  # the outer-shell density drop is kept
     _assert_eos_density(r, eos, melt, 0.8)
