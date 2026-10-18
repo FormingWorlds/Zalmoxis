@@ -453,7 +453,7 @@ class TestRealSolve:
         assert r['stopped_on_wall_clock'] is True and r['density_from_eos'] is True
         assert r['radii'][-1] == pytest.approx(radius[1], rel=1e-12)
         assert r['mass_error_at_accept'] == pytest.approx(0.06, rel=1e-9)
-        assert r['cmb_mass'] == pytest.approx(0.325 * 1.06 * earth_mass, rel=1e-9)
+        assert r['cmb_mass'] == pytest.approx(0.325 * earth_mass, rel=1e-12)
         assert seeds == [None, radius[1]]
 
     @pytest.mark.parametrize('outer', [2, 4])
@@ -500,7 +500,7 @@ class TestRealSolve:
     def test_cut_with_passes_left_returns_the_best_pass(self, monkeypatch):
         """The clock cuts the third pass before its first pressure solve, with passes left:
         the next outer check returns the best pass, the first (the second ends 50 % above
-        the target mass), with its radius, enclosed mass, core mass and EOS density."""
+        the target mass), with its radius, enclosed mass and EOS density."""
         radius, clock = _count_outer_iterations(monkeypatch), time.time
         monkeypatch.setattr(
             zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * (len(radius) >= 3))
@@ -520,7 +520,7 @@ class TestRealSolve:
         assert abs(mass[1] / earth_mass - 1) < 0.5  # the first pass is the best
         assert r['radii'][-1] == pytest.approx(radius[0], rel=1e-12)
         assert r['mass_enclosed'][-1] == pytest.approx(mass[1], rel=1e-12)
-        assert r['cmb_mass'] == pytest.approx(0.325 * mass[1], rel=1e-12)
+        assert r['cmb_mass'] == pytest.approx(0.325 * earth_mass, rel=1e-12)
         _assert_eos_density(r)
 
     @pytest.mark.parametrize('n_seed', [1, 2, 50])
