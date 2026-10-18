@@ -745,6 +745,44 @@ def test_wall_clock_in_the_adiabat_ramp_keeps_tolerance_outer_as_the_limit(monke
 
 
 @pytest.mark.smoke
+@pytest.mark.wolfbower
+@pytest.mark.usefixtures('no_check')
+def test_a_restored_linear_pass_reports_no_adiabat(monkeypatch):
+    """The passes after the adiabat blend starts end 5 % off the target mass, and the clock
+    stops the solve two passes later: the restored best pass is on the linear temperature
+    profile, so adiabat_computed is False."""
+    from zalmoxis.eos import get_solidus_liquidus_functions
+
+    _need_wb_tables()
+    radius, adiabat = _count_outer_iterations(monkeypatch), []
+    real_adi, real, clock = zs.compute_adiabatic_temperature, zs.solve_structure, time.time
+
+    def adi(*args, **kwargs):
+        adiabat.append(len(radius))
+        return real_adi(*args, **kwargs)
+
+    def solve(*args, **kwargs):
+        m, g, P = real(*args, **kwargs)
+        f = 1.05 * earth_mass / m[-1] if adiabat else 1.0
+        return m * f, g * f, P
+
+    late = lambda: bool(adiabat) and len(radius) >= adiabat[0] + 2  # noqa: E731
+    monkeypatch.setattr(zs, 'compute_adiabatic_temperature', adi)
+    monkeypatch.setattr(zs, 'solve_structure', solve)
+    monkeypatch.setattr(zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * late()))
+    cfg = _cfg(
+        temperature_mode='adiabatic',
+        layer_eos_config={'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'},
+        tolerance_outer=0.02,
+        max_iterations_inner=2,
+        wall_timeout=WALL,
+    )
+    r = zs._solve(cfg, load_material_dictionaries(), get_solidus_liquidus_functions(), '/tmp')
+    assert adiabat and r['stopped_on_wall_clock'] is True
+    assert r['adiabat_computed'] is False
+
+
+@pytest.mark.smoke
 def test_cool_paleos_surface_keeps_the_eos_density():
     """At a 1500 K surface rho_EOS of PALEOS-2phase MgSiO3 halves in the outermost shells;
     the returned density keeps those values, which the structure integration used."""
