@@ -229,14 +229,14 @@ class TestRetry:
         assert n == 2 and r['accepted_on'] == 'strict'
 
     @pytest.mark.parametrize(
-        'err, pressure, skipped',
-        [(0.0699, True, True), (0.07, True, False), (0.2, True, False), (None, True, False)]
-        + [(0.05, False, False)],
+        'err, pressure, density, skipped',
+        [(0.0699, True, True, True), (0.07, True, True, False), (0.2, True, True, False)]
+        + [(None, True, True, False), (0.05, False, True, False), (0.05, True, False, False)],
     )
-    def test_retry_skip_limit_and_flags(self, err, pressure, skipped):
+    def test_retry_skip_limit_and_flags(self, err, pressure, density, skipped):
         """The retry is skipped only below 7 % mass error of the returned profile, with the
         density and the pressure converged."""
-        first = _first_attempt(pressure, True)
+        first = _first_attempt(pressure, density)
         first['mass_error_at_accept'] = err
         r, n = self._main(first)
         assert n == (1 if skipped else 2)
@@ -506,6 +506,7 @@ class TestRealSolve:
         assert 'Wall-clock timeout in inner loop (outer=1, inner=0)' in caplog.text
         assert r['converged'] is True and r['accepted_on'] == 'timeout'
         assert r['mass_error_at_accept'] == pytest.approx(r['best_mass_error'])
+        assert r['converged_pressure'] and not r['converged_density']  # the best pass, 1 inner
         m, rho = np.asarray(r['mass_enclosed']), np.asarray(r['density'])
         assert np.argmax(m >= r['cmb_mass']) == np.argmax(np.diff(rho) < -0.2 * rho[:-1]) + 1
 
@@ -568,6 +569,32 @@ class TestRealSolve:
         assert len(radius) == 3 and r['stopped_on_wall_clock'] is True
         assert r['radii'][-1] == pytest.approx(radius[1], rel=1e-12)
         assert r['converged_pressure'] and not r['converged_density']
+
+    def test_restored_pass_keeps_an_unconverged_pressure(self, monkeypatch):
+        """As above with a pressure tolerance of 1e-3 Pa, which no pass meets: the restored pass
+        comes back with its pressure not converged, so main retries."""
+        radius, real = _clock_after_lookup(monkeypatch, outer=2), zs.solve_structure
+        errors = (0.08, 0.06, 0.09)
+
+        def solve(*args, **kwargs):
+            m, *rest = real(*args, **kwargs)
+            return (m * earth_mass * (1 + errors[min(len(radius), 3) - 1]) / m[-1], *rest)
+
+        seeds, first, real_solve = [], [], zs._solve
+
+        def spy(cp, *args, **kwargs):  # the retry only records its seed
+            seeds.append(cp.get('_initial_radius_guess'))
+            first.extend([] if first else [real_solve(cp, *args, **kwargs)])
+            return first[0]
+
+        monkeypatch.setattr(zs, 'solve_structure', solve)
+        monkeypatch.setattr(zs, '_solve', spy)
+        cfg = _cfg(max_iterations_outer=4, max_iterations_inner=50, pressure_tolerance=1e-3)
+        _run({**cfg, 'wall_timeout': WALL})
+        r = first[0]
+        assert r['radii'][-1] == pytest.approx(radius[1], rel=1e-12)
+        assert r['converged_density'] and not r['converged_pressure']
+        assert len(seeds) == 2
 
     def test_retry_skip_reads_the_returned_profile(self, monkeypatch):
         """Passes at 5, 4 and 10 % mass error with converged inner loops, the cap at 3: the
