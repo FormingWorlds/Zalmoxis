@@ -2459,56 +2459,9 @@ def _solve(
     end_time = time.time()
     total_time = end_time - start_time
 
-    # Smooth the outermost shells of a Picard iterate (sudden gradient changes are replaced
-    # by a linear extrapolation); rho_EOS is returned as the structure integration saw it.
     pressure = np.asarray(pressure)
     density = np.asarray(density)
-
-    # Zero out padded (P=0) shells
-    density[pressure <= 0] = 0.0
-
-    # Find the last shell with positive density
-    i_surf = len(density) - 1
-    while i_surf > 0 and density[i_surf] <= 0:
-        i_surf -= 1
-
-    if not density_from_eos and i_surf > 10:
-        # Compute density gradient in the outer mantle.
-        # Use the last 20 shells before the surface edge, but do not
-        # cross layer boundaries (CMB, ice-layer transition) where
-        # real density jumps exist.
-        # Find outermost layer boundary by detecting large density
-        # ratios (> 1.5x) walking inward from surface.
-        i_layer_base = max(0, i_surf - 40)
-        for _k in range(i_surf - 1, i_layer_base, -1):
-            if density[_k] > 0 and density[_k + 1] > 0:
-                ratio = density[_k] / density[_k + 1]
-                if ratio > 1.5 or ratio < 1.0 / 1.5:
-                    i_layer_base = _k + 1
-                    break
-        n_check = min(20, i_surf - i_layer_base)
-        if n_check < 6:
-            n_check = min(20, i_surf - 5)
-        i_start = i_surf - n_check
-        grads = np.diff(density[i_start : i_surf + 1])
-        # Find where the gradient suddenly changes
-        # (the smooth interior has nearly constant negative gradient).
-        if len(grads) > 5:
-            median_grad = np.median(grads[: n_check // 2])
-            if median_grad < 0:  # density decreasing outward (normal)
-                for j in range(len(grads)):
-                    i_global = i_start + j + 1
-                    # Catch both sudden drops (3x steeper) and sudden
-                    # increases (sign reversal). Both indicate the Picard
-                    # iteration produced unreliable density at the surface.
-                    is_sudden_drop = grads[j] < 3 * median_grad
-                    is_sudden_rise = grads[j] > 0 and abs(grads[j]) > abs(median_grad)
-                    if is_sudden_drop or is_sudden_rise:
-                        # Extrapolate linearly from the smooth region
-                        for k in range(i_global, i_surf + 1):
-                            extrap = density[i_global - 1] + median_grad * (k - i_global + 1)
-                            density[k] = max(extrap, 0.0)
-                        break
+    density[pressure <= 0] = 0.0  # padded nodes
 
     model_results = {
         'layer_eos_config': layer_eos_config,
