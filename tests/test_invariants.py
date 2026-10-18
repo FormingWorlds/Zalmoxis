@@ -272,33 +272,34 @@ def _canned(label, converged=True, **flags):
     return result, cfg
 
 
-TOL0 = zs._default_solver_params(_sphere()[1]['planet_mass'])['tolerance_outer']
 SKIP = {'converged_density': True, 'converged_pressure': True, 'best_mass_error': 0.05}
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize(
-    'first, retry, limit',
-    [
-        (('strict',), None, TOL0),
-        (('mass_only',), None, TOL0),
-        (('max_iter',), None, zs._TIMEOUT_ACCEPT_MASS_ERR),
-        (('oscillation',), None, zs._TIMEOUT_ACCEPT_MASS_ERR),
-        (('timeout',), None, zs._TIMEOUT_ACCEPT_MASS_ERR),
-        ((None, False), None, 0.07),  # retry_skip
-        ((None, False), ('strict',), 0.1 * TOL0),  # the retry has tightened tolerances
-    ],
-)
-def test_main_checks_with_the_limit_of_the_accept_path(monkeypatch, first, retry, limit):
-    calls = [first, retry]
-
-    def solve(*args, **kwargs):
-        return _canned(*calls.pop(0), **SKIP if retry is None else {})[0]
-
-    monkeypatch.setattr(zs, '_solve', solve)
+def test_main_checks_retry_skip_with_its_own_limit(monkeypatch):
+    monkeypatch.setattr(zs, '_solve', lambda *a, **k: _canned(None, False, **SKIP)[0])
     limits = _spy_limits(monkeypatch)
     _run(_cfg(planet_mass=_sphere()[1]['planet_mass']))
-    assert [x for _, x in limits] == [pytest.approx(limit, rel=1e-12)]
+    assert limits == [('retry_skip', 0.07)]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('label', ['strict', 'mass_only', 'max_iter', 'timeout'])
+@pytest.mark.parametrize('limit', [0.0123, None])
+def test_main_checks_the_limit_that_the_solve_wrote(monkeypatch, label, limit):
+    """main does not derive a limit from the label; a result without one fails."""
+    result = _canned(label)[0]
+    if limit is not None:
+        result['accept_mass_limit'] = limit
+    monkeypatch.setattr(zs, '_solve', lambda *a, **k: result)
+    limits = _spy_limits(monkeypatch)
+    cfg = _cfg(planet_mass=_sphere()[1]['planet_mass'])
+    if limit is None:
+        with pytest.raises(StructureInvariantError, match='accept_mass_limit'):
+            _run(cfg)
+    else:
+        _run(cfg)
+    assert limits == [(label, limit)]
 
 
 @pytest.mark.smoke
