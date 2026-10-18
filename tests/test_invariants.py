@@ -18,8 +18,10 @@ from tests.test_failed_structure_solve import _cfg, _run
 from zalmoxis.config import load_material_dictionaries
 from zalmoxis.constants import G, earth_mass
 from zalmoxis.invariants import (
+    _RTOL_LAYER,
     TOLERANCES,
     StructureInvariantError,
+    _layer,
     check_accepted,
     deviations,
 )
@@ -500,3 +502,105 @@ def test_a_chabrier_h2_mantle_passes_every_invariant():
     layers = {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3:0.97+Chabrier:H:0.03'}
     r = _run(_cfg(wall_timeout=1e6, layer_eos_config=layers))
     assert r['converged'] and r['density_from_eos']
+
+
+@pytest.mark.unit
+def test_the_tolerances_are_the_documented_values():
+    assert TOLERANCES == {
+        'padding': 0,
+        'positive': 0,
+        'pressure_monotone': 0.0,
+        'mass_monotone': 0.0,
+        'cmb_mass': 1e-12,
+        'core_mantle_mass': 1e-12,
+        'core_radius': 0,
+        'gravity': 100.0,
+        'density_eos': 1e-6,
+    }
+    assert _RTOL_LAYER == 1e-12
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    'key, value', [('gravity', 0.0), ('mass_enclosed', 0.0), ('gravity', np.nan)]
+)
+def test_a_first_node_without_gravity_or_mass_does_not_turn_the_gravity_check_off(key, value):
+    """g_1 or M_1 of 0 makes the bound infinite; the node itself breaks the check. (A NaN
+    M_1 breaks mass_monotone first.)"""
+    result, cfg = _sphere()
+    result[key][1] = value
+    _raises(result, cfg, 'gravity')
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    'field, node, value, name',
+    [
+        ('temperature', 7, 0.0, 'positive'),
+        ('temperature', 7, -5.0, 'positive'),
+        ('temperature', 7, np.nan, 'positive'),
+        ('density', 7, 0.0, 'positive'),
+        ('density', 7, np.nan, 'positive'),
+        ('pressure', 20, np.inf, 'padding'),
+    ],
+)
+def test_an_edge_value_at_one_node_raises(field, node, value, name):
+    result, cfg = _sphere()
+    result[field] = np.array(result[field], float)
+    result[field][node] = value
+    _raises(result, cfg, name)
+
+
+@pytest.mark.unit
+def test_a_profile_with_pressure_only_at_the_centre_raises_positive():
+    result, cfg = _sphere()
+    result['pressure'][1:] = 0.0
+    _raises(result, cfg, 'positive')
+
+
+@pytest.mark.unit
+def test_the_layer_of_a_node_on_each_boundary():
+    cmb, top = 2.0e24, 4.0e24
+    assert _layer(cmb * (1 - 5e-12), cmb, top, True) == 'core'
+    assert _layer(cmb * (1 - 1e-12), cmb, top, True) == 'mantle'
+    assert _layer(cmb, cmb, top, True) == 'mantle'
+    assert _layer(top * (1 - 5e-12), cmb, top, True) == 'mantle'
+    assert _layer(top * (1 - 1e-12), cmb, top, True) == 'ice_layer'
+    assert _layer(top, cmb, top, False) == 'mantle'
+
+
+@pytest.mark.unit
+def test_main_checks_a_retry_with_its_own_integration_tolerances(monkeypatch):
+    """The retry runs with rtol and atol tightened 10x; the check reads those."""
+    retry = {**_canned('strict')[0], 'accept_mass_limit': 1e-3}
+    calls = [_canned(None, False)[0], retry]
+    monkeypatch.setattr(zs, '_solve', lambda *a, **k: calls.pop(0))
+    seen = []
+    monkeypatch.setattr(
+        zs, 'check_accepted', lambda r, c, rtol, atol, *a, **k: seen.append((rtol, atol))
+    )
+    cfg = _cfg(
+        planet_mass=_sphere()[1]['planet_mass'],
+        relative_tolerance=1e-9,
+        absolute_tolerance=1e-10,
+    )
+    _run(cfg)
+    assert seen == [(pytest.approx(1e-10, rel=1e-12), pytest.approx(1e-11, rel=1e-12))]
+
+
+@pytest.mark.unit
+def test_the_density_check_gives_the_volatile_profile_only_to_the_mantle(monkeypatch):
+    """One batch call per layer of a 3-layer planet; only the mantle call gets the profile."""
+    result, cfg = _sphere(mmf=0.5)
+    result['accept_mass_limit'] = 1e-3
+    layers = {'core': 'Analytic:iron', 'mantle': 'Analytic:MgSiO3', 'ice_layer': 'Analytic:H2O'}
+    mixes, seen, vp = parse_all_layer_mixtures(layers), {}, object()
+
+    def batch(P, T, mix, *args, volatile_profile=None, **kwargs):
+        seen[next(name for name, x in mixes.items() if x is mix)] = volatile_profile
+        return np.full(len(P), RHO)
+
+    monkeypatch.setattr(zs, 'calculate_mixed_density_batch', batch)
+    run = {'relative_tolerance': RTOL, 'absolute_tolerance': ATOL}
+    zs._check_accepted(result, run, {**cfg, 'layer_eos_config': layers}, {}, None, mixes, vp)
+    assert seen == {'core': None, 'mantle': vp, 'ice_layer': None}
