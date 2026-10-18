@@ -78,17 +78,13 @@ def _newton(cp_over=(), **flags):
         return zs._solve_newton_outer(cp, {}, None, '/tmp')
 
 
-def _brentq(history, eval_M, last_result):
+def _brentq(history, eval_M, best_R):
+    """``best_R``: radius of the evaluation with the smallest mass error, or None for none."""
+    best = {'rel': np.inf, 'result': None}
+    if best_R is not None:
+        best = {'rel': abs(A * best_R + B - M_T) / M_T, 'result': _inner(best_R)}
     return zs._brentq_fallback_outer(
-        6.0e6,
-        M_T,
-        eval_M,
-        history,
-        R_min=2e6,
-        R_max=3e7,
-        tol=1e-6,
-        start_time=0.0,
-        last_result=last_result,
+        6.0e6, M_T, eval_M, history, R_min=2e6, R_max=3e7, tol=1e-6, start_time=0.0, best=best
     )
 
 
@@ -105,10 +101,12 @@ class TestNewton:
 
     def test_bracket_sweep_hit_is_brentq_best(self):
         """One Newton step lands on the root; the bracket sweep meets it there, and the profile
-        is that of the step before."""
+        is the one at the root."""
         r = _newton({'_initial_radius_guess': 6.9e6, 'newton_max_iter': 1}, eos=False)
         assert r['converged'] is True and r['accepted_on'] == 'brentq_best'
-        assert r['mass_error_at_accept'] == pytest.approx(0.1) and r['best_mass_error'] < 1e-6
+        assert r['radii'][-1] == pytest.approx(7.0e6, rel=1e-9)
+        assert r['mass_error_at_accept'] == pytest.approx(r['best_mass_error'], abs=1e-15)
+        assert r['best_mass_error'] < 1e-6
 
     @pytest.mark.parametrize('false', [False, np.False_])
     @pytest.mark.parametrize('flag', ['pressure', 'eos'])
@@ -133,7 +131,7 @@ class TestNewton:
 @pytest.mark.unit
 class TestBrentq:
     def test_root_is_newton_tol(self):
-        r = _brentq(_hist(6.0e6, 8.0e6), lambda R: (A * R + B, _inner(R)), _inner(8.0e6))
+        r = _brentq(_hist(6.0e6, 8.0e6), lambda R: (A * R + B, _inner(R)), 6.0e6)
         assert r['newton_used_brentq'] and r['converged'] is True
         assert r['accepted_on'] == 'newton_tol'
 
@@ -141,41 +139,47 @@ class TestBrentq:
         def eval_M(R):
             return A * R + B, _inner(R, density=False)
 
-        r = _brentq(_hist(6.0e6, 8.0e6), eval_M, _inner(8.0e6))
+        r = _brentq(_hist(6.0e6, 8.0e6), eval_M, 6.0e6)
         assert r['converged'] is True and r['accepted_on'] == 'newton_tol'
         assert r['converged_density'] is False
 
     def test_narrow_bracket_is_brentq_best(self):
-        r = _brentq(_hist(7.0e6 - 0.2, 7.0e6 + 0.2), None, _inner(6.5e6))
+        r = _brentq(_hist(7.0e6 - 0.2, 7.0e6 + 0.2), None, 7.0e6 - 0.2)
         assert r['converged'] is True and r['accepted_on'] == 'brentq_best'
-        # the returned profile is the last inner solve, far from the best R
-        assert r['mass_error_at_accept'] == pytest.approx(0.5)
+        assert r['radii'][-1] == 7.0e6 - 0.2  # the profile of the best entry
+        assert r['mass_error_at_accept'] == pytest.approx(r['best_mass_error'], abs=1e-15)
         assert r['best_mass_error'] < 1e-6
 
     def test_brentq_error_is_brentq_best(self):
         def boom(R):
             raise ValueError('stale bracket')
 
-        r = _brentq(_hist(6.0e6, 7.0e6 + 1e-3), boom, _inner(6.0e6))
+        r = _brentq(_hist(6.0e6, 7.0e6 + 1e-3), boom, 7.0e6 + 1e-3)
         assert r['converged'] is True and r['accepted_on'] == 'brentq_best'
-        r = _brentq(_hist(6.0e6, 8.0e6), boom, _inner(6.0e6))
+        assert r['radii'][-1] == 7.0e6 + 1e-3
+        assert r['mass_error_at_accept'] == pytest.approx(r['best_mass_error'], abs=1e-15)
+        r = _brentq(_hist(6.0e6, 8.0e6), boom, 6.0e6)
         assert r['converged'] is False and r['accepted_on'] is None
+        assert r['radii'][-1] == 6.0e6
 
     def test_root_on_a_wall_clock_stop_is_timeout(self):
         r = _brentq(_hist(6.0e6, 8.0e6), lambda R: (A * R + B, _inner(R, wall=True)), None)
         assert r['converged'] is True and r['accepted_on'] == 'timeout'
 
     def test_result_without_a_profile_has_the_keys(self):
+        """No evaluation, so no profile: not accepted, with the per-profile keys."""
         r = _brentq(_hist(7.0e6 - 0.2, 7.0e6 + 0.2), None, None)
-        assert r['accepted_on'] == 'brentq_best' and r['mass_error_at_accept'] is None
+        assert r['converged'] is False and r['accepted_on'] is None
+        assert r['mass_error_at_accept'] is None
         assert r['stopped_on_wall_clock'] is False and r['density_from_eos'] is False
 
     def test_no_bracket_is_not_converged(self):
         """No sign change in [R_min, R_max]: not converged, also with a history entry at the
         root."""
         below = lambda R: (0.5 * M_T, _inner(R))  # noqa: E731
-        r = _brentq(_hist(7.0e6), below, _inner(6.0e6))
+        r = _brentq(_hist(7.0e6), below, 7.0e6)
         assert r['converged'] is False and r['accepted_on'] is None and r['converged_mass']
+        assert r['radii'][-1] == 7.0e6 and r['mass_error_at_accept'] < 1e-15
 
 
 @pytest.mark.unit
@@ -569,6 +573,17 @@ class TestRealSolve:
         )
         assert seeds == [0.8 * 6.43e6, radius[1]]
         assert r['converged'] is True and r['mass_error_at_accept'] < 1e-4
+
+    def test_newton_cap_with_the_root_in_the_bracket_sweep(self):
+        """newton_max_iter = 1: the first evaluation of the bracket sweep lands within
+        newton_tol, and the result is the profile at that radius, not at the first step."""
+        cfg = _cfg(outer_solver='newton', newton_max_iter=1, newton_tol=2e-2, wall_timeout=WALL)
+        r = _run({**cfg, '_initial_radius_guess': 1.03 * 6.3e6, 'max_iterations_inner': 20})
+        assert r['converged'] is True and r['accepted_on'] == 'brentq_best'
+        best = min(r['newton_history'], key=lambda h: h[2])
+        assert r['radii'][-1] == pytest.approx(best[0], rel=1e-12)
+        assert r['mass_error_at_accept'] == pytest.approx(best[2], rel=1e-9)
+        assert best[2] < 2e-2  # newton_tol
 
     def test_newton(self):
         r = _run(_cfg(outer_solver='newton', max_iterations_inner=8, wall_timeout=WALL))
