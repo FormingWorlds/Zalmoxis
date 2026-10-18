@@ -55,13 +55,13 @@ def deviations(result, config_params, mass_limit, rtol, atol, density_at=None, i
     rtol, atol : float
         ``relative_tolerance`` and ``absolute_tolerance`` of the structure integration of
         ``result``. The gravity tolerance at node i is ``TOLERANCES['gravity']`` times
-        ``rtol + atol (1 / M_i + 1 / g_i)``. The RK45 dense output keeps ``g r^2 - G M`` per
+        ``rtol + atol (1 / M_i + 1 / g_i)``, with ``g_i = G M_i / r_i^2``. The RK45 dense output keeps ``g r^2 - G M`` per
         step to about 19.9 rtol + 13.6 atol (1/M_i + 1/g_i) relative to ``G M``, an estimate
         from the Butcher tableau, and an error made at one radius decays outward as
         ``(r_i / r)^2``, since the homogeneous part of ``dg/dr`` is ``-2 g / r``. The bound
         is per step and the factor 100 covers the sum over the steps: real solves of 0.1 to
         10 M_E planets (analytic and tabulated EOS, 150 and 2000 nodes) reach 3 to 14 times
-        the per-step bound, a margin of at least 7. At rtol 1e-5 and atol 1e-6 the tolerance
+        ``rtol + atol (1 / M_i + 1 / g_i)``, a margin of at least 7. At rtol 1e-5 and atol 1e-6 the tolerance
         at the surface is about 1e-3 for any node count.
     density_at : callable or None
         ``(P, T, layer) -> rho`` for the arrays of the nodes of one layer, by the EOS path
@@ -105,10 +105,12 @@ def deviations(result, config_params, mass_limit, rtol, atol, density_at=None, i
         n_core = int(np.count_nonzero(m[:k] < result['cmb_mass'] * (1.0 - _RTOL_LAYER)))
         put('core_radius', not 2 <= n_core < k + (cmf == 1), n_core)  # all nodes only at cmf 1
     with np.errstate(divide='ignore', invalid='ignore'):
-        dg = np.abs(g[1:k] * r[1:k] ** 2 / (G * m[1:k]) - 1)
-        tol_g = TOLERANCES['gravity'] * (rtol + atol * (1 / m[1:k] + 1 / g[1:k]))
-        # a node without mass or gravity breaks the check
-        ok_g = (m[1:k] > 0) & (g[1:k] > 0) & np.isfinite(dg)
+        # the bound takes G M / r^2, not the gravity under test, which could widen it
+        g_ref = G * m[1:k] / r[1:k] ** 2
+        dg = np.abs(g[1:k] / g_ref - 1)
+        tol_g = TOLERANCES['gravity'] * (rtol + atol * (1 / m[1:k] + 1 / g_ref))
+        # a node without mass breaks the check
+        ok_g = (m[1:k] > 0) & np.isfinite(dg)
         ratio = np.where(ok_g, dg / tol_g, np.inf)
     i = int(np.argmax(ratio)) if len(ratio) else -1
     dev, tol = (dg[i], tol_g[i]) if i >= 0 and ok_g[i] else (np.inf, 0.0)
