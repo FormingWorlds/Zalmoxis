@@ -7,6 +7,7 @@ the error that names it. ``main`` runs the check at its Picard and Newton exits.
 from __future__ import annotations
 
 import numbers
+from contextlib import nullcontext
 
 import numpy as np
 import pytest
@@ -708,12 +709,9 @@ def test_the_per_node_gravity_bound_over_the_tolerance_domain(rtol, atol, node, 
         rtol + atol * (1 / m[node] + 1 / g[node])
     )
     result['accept_mass_limit'] = 1e-3
-    run = lambda: check_accepted(result, cfg, rtol, atol, lambda P, T, layer: RHO)  # noqa: E731
-    if raises:
-        with pytest.raises(StructureInvariantError, match=f'breaks gravity: .* at node {node}'):
-            run()
-    else:
-        run()
+    expect = pytest.raises(StructureInvariantError, match=f'breaks gravity: .* at node {node}')
+    with expect if raises else nullcontext():
+        check_accepted(result, cfg, rtol, atol, lambda P, T, layer: RHO)
 
 
 @pytest.mark.unit
@@ -773,3 +771,15 @@ def test_the_layer_rule_is_that_of_the_structure_model():
                     m,
                     ice,
                 )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('node', [1, N // 2, N - 2])
+def test_a_gravity_near_zero_breaks_the_check(node):
+    """The atol term uses G M_i / r_i^2, not the gravity under test, so a gravity scaled
+    down by 1e-6 does not widen its own tolerance."""
+    result, cfg = _sphere()
+    result['gravity'][node] *= 1e-6
+    result['accept_mass_limit'] = 1e-3
+    with pytest.raises(StructureInvariantError, match=f'breaks gravity: .* at node {node}'):
+        check_accepted(result, cfg, 1e-5, 1e-6, lambda P, T, layer: RHO)

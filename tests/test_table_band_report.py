@@ -394,8 +394,8 @@ def test_main_checks_the_profile_with_the_mixtures_it_got(mats, monkeypatch, cap
         out = solver.main(cfg, md, _curves(500.0, 600.0), '/tmp', layer_mixtures=mixtures)
     tables = {melt, md['X:MgSiO3']['solid_mantle']['eos_file']}
     assert set(out['table_band_excess']) == (tables if outer == 'newton' else tables | {grad})
-    linear = [r for r in caplog.records if 'kept the linear' in r.getMessage()]
-    assert len(linear) == (outer == 'newton')
+    blend = [r for r in caplog.records if 'accepted a temperature profile' in r.getMessage()]
+    assert not blend  # the band check took the accept back, so no adiabat warning
     assert out['converged'] is False and out['converged_bands'] is False
     assert out['converged_mass'] is True and out['converged_density'] is True
     assert out['accepted_on'] == 'strict'

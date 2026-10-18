@@ -857,10 +857,10 @@ def test_a_restore_in_the_blend_ramp_stays_on_the_newest_temperature(monkeypatch
 
 @pytest.mark.smoke
 @pytest.mark.timeout(900)
-def test_a_max_iter_stop_in_the_blend_ramp_returns_a_pass_on_the_adiabat():
+def test_a_max_iter_stop_in_the_blend_ramp_returns_a_pass_on_the_adiabat(caplog):
     """PALEOS, adiabatic, 4 outer passes: the mass converges on the linear temperature, and
-    the cap stops the solve in the blend ramp. The returned pass is on the newest blend, not
-    the linear pass with the smallest mass error."""
+    the cap stops the solve in the blend ramp. The returned pass is on the newest blend (0.25),
+    not the linear pass with the smallest mass error, and main warns about the blend."""
     from tests.test_spider_coupling_convergence import _has_paleos_data
 
     if not _has_paleos_data():
@@ -874,12 +874,13 @@ def test_a_max_iter_stop_in_the_blend_ramp_returns_a_pass_on_the_adiabat():
         max_iterations_outer=4,
         wall_timeout=WALL,
     )
-    r = zs._solve(cfg, load_material_dictionaries(), None, INPUT)
+    r = zs.main(cfg, load_material_dictionaries(), None, INPUT)
     T = np.asarray(r['temperature'])
-    assert r['adiabat_computed'] is True
-    assert (
-        np.max(np.abs(T - np.linspace(6000.0, 3000.0, len(T)))) > 100.0
-    )  # not the linear guess
+    off_linear = np.max(np.abs(T - np.linspace(6000.0, 3000.0, len(T))))
+    assert r['converged'] is True and r['accepted_on'] == 'max_iter'
+    assert r['adiabat_computed'] is True and off_linear > 100.0
+    assert r['adiabat_blend'] == 0.25
+    assert 'accepted a temperature profile at adiabat blend 0.25' in caplog.text
 
 
 @pytest.mark.smoke
@@ -936,3 +937,64 @@ class TestNewtonExitsReadTheInnerFlags:
 
         r = _brentq(_hist(6.0e6, 7.0e6 + 1e-3), boom, 7.0e6 + 1e-3, **{flag: False})
         assert r['converged'] is False and r['accepted_on'] is None
+
+
+@pytest.mark.smoke
+@pytest.mark.timeout(900)
+def test_a_clock_stop_before_the_first_blended_pressure_solve_keeps_the_linear_pass(
+    monkeypatch,
+):
+    """PALEOS, adiabatic: the clock runs out when the first blended pass computes the adiabat,
+    before its first pressure solve. The linear pass that met the mass test comes back, with
+    its EOS density and adiabat_blend 0, not an empty profile."""
+    from tests.test_spider_coupling_convergence import _has_paleos_data
+
+    if not _has_paleos_data():
+        pytest.skip('PALEOS tables not on disk')
+    adiabat, real_adi, clock = [], zs.compute_adiabatic_temperature, time.time
+
+    def adi(*args, **kwargs):
+        adiabat.append(1)
+        return real_adi(*args, **kwargs)
+
+    monkeypatch.setattr(zs, 'compute_adiabatic_temperature', adi)
+    monkeypatch.setattr(zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * bool(adiabat)))
+    cfg = _cfg(
+        temperature_mode='adiabatic',
+        layer_eos_config={'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
+        num_layers=150,
+        relative_tolerance=1e-5,
+        absolute_tolerance=1e-6,
+        wall_timeout=WALL,
+    )
+    r = zs._solve(cfg, load_material_dictionaries(), None, INPUT)
+    assert adiabat and r['stopped_on_wall_clock'] is True
+    assert r['converged'] is True and r['density_from_eos'] is True
+    assert r['adiabat_blend'] == 0.0 and r['mass_error_at_accept'] < 1e-3
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures('no_check')
+@pytest.mark.parametrize(
+    'eos, computed, blend, warned',
+    [
+        ('PALEOS', False, 0.0, True),
+        ('PALEOS', True, 0.5, True),
+        ('PALEOS', True, 1.0, False),
+        ('Analytic', False, 0.0, False),  # no T-dependent component: no ramp by design
+    ],
+)
+def test_main_warns_on_an_accepted_profile_short_of_the_adiabat(
+    monkeypatch, caplog, eos, computed, blend, warned
+):
+    first = {**_inner(7.0e6, accepted_on='strict'), 'adiabat_computed': computed}
+    first['adiabat_blend'] = blend
+    monkeypatch.setattr(zs, '_solve', lambda *a, **k: dict(first))
+    monkeypatch.setattr(zs, '_report_table_bands', lambda r, *a: r)
+    cfg = {
+        'planet_mass': M_T,
+        'temperature_mode': 'adiabatic',
+        'layer_eos_config': {'core': f'{eos}:iron', 'mantle': f'{eos}:MgSiO3'},
+    }
+    zs.main(cfg, {}, None, '/tmp')
+    assert ('accepted a temperature profile at adiabat blend' in caplog.text) is warned
