@@ -273,8 +273,9 @@ file (enforced by ruff isort).
 - Unit tier: `pytest -o "addopts=" -m unit` (~1.5 min on the dev machine,
   ~1m54s ubuntu / ~2m29s macOS in CI).
 - Nightly tier: `pytest -o "addopts=" -m "(unit or smoke or integration) and not slow" -n auto`
-  with coverage; on ubuntu CI it runs as two jobs, the `wolfbower` solves and the rest
-  (90 min ceiling each).
+  with coverage; on ubuntu CI it runs as three jobs, the `wolfbower` solves, the
+  `paleos_adiabat` solves (5 M_earth with no reachable wall clock) and the rest (90 min
+  ceiling each).
 - The `-o "addopts="` override is needed because `pyproject.toml` defaults to
   `-n auto --dist loadfile` for parallel execution; a single-marker filter run
   is faster without the parallel split.
@@ -294,7 +295,7 @@ file (enforced by ruff isort).
   points of headroom for small future additions before the gate trips.
 - `fail_under` in `[tool.coverage.report]` sets the 90% floor; in
   `.github/workflows/nightly.yml` the main job repeats it with
-  `--cov-fail-under=90` and the `wolfbower` job turns it off with `0`.
+  `--cov-fail-under=90` and the `wolfbower` and `paleos_adiabat` jobs turn it off with `0`.
 - A pre-flight check in `.github/workflows/CI.yml` rejects PRs that lower
   `fail_under` below the value on `origin/main`, mirroring PROTEUS's
   `.github/workflows/ci-pr-checks.yml` idiom.

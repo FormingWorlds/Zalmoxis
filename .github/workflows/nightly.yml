@@ -17,23 +17,27 @@ on:
 permissions:
   contents: read
 
-# Nightly: unit + smoke + integration with coverage, as two parallel jobs. Not on push or PR
+# Nightly: unit + smoke + integration with coverage, as three parallel jobs. Not on push or PR
 # CI: each smoke or integration test runs a full solve (5-10 min on a 2-vCPU runner under
 # coverage), which adds no bug-finding signal to the unit suite.
 jobs:
   nightly:
     name: Zalmoxis-nightly ${{ matrix.suite }} (ubuntu-latest)
     runs-on: ubuntu-latest
-    # The full solves on the Wolf & Bower tables run in their own job, beside the rest of the suite.
+    # The full solves on the Wolf & Bower tables and the full adiabatic PALEOS solves at 5 M_earth
+    # run in their own jobs, beside the rest of the suite.
     strategy:
       fail-fast: false
       matrix:
         include:
           - suite: main
-            select: (unit or smoke or integration) and not slow and not wolfbower
+            select: (unit or smoke or integration) and not slow and not wolfbower and not paleos_adiabat
             args: --dist load --cov-fail-under=90
           - suite: wolfbower
             select: wolfbower
+            args: --dist loadfile --cov-fail-under=0
+          - suite: paleos_adiabat
+            select: paleos_adiabat
             args: --dist loadfile --cov-fail-under=0
     # A 90 min ceiling per job leaves wide margin for shared-runner variance.
     timeout-minutes: 90
