@@ -283,6 +283,23 @@ def _eos_params(config_params):
     )
 
 
+def _warn_no_adiabat(result, config_params, temperature_function, temperature_arrays):
+    """Warn when an accepted result kept the linear first-guess temperature profile of an
+    adiabatic temperature mode (the blend ramp never started)."""
+    asked = (
+        config_params.get('temperature_mode') in ('adiabatic', 'adiabatic_from_cmb')
+        and temperature_function is None
+        and not (config_params.get('use_jax', False) and temperature_arrays is not None)
+    )
+    if asked and result.get('converged') and not result.get('adiabat_computed'):
+        logger.warning(
+            "outer_solver='%s' accepted the linear first-guess temperature profile; "
+            "the adiabat of temperature_mode='%s' was not computed.",
+            config_params.get('outer_solver', 'picard'),
+            config_params['temperature_mode'],
+        )
+
+
 def _check_accepted(
     result,
     run_params,
@@ -298,9 +315,10 @@ def _check_accepted(
         return result
     defaults = _default_solver_params(config_params['planet_mass'])
     rtol, atol = (
-        float(run_params.get(k) or defaults[k])
+        float(run_params.get(k, defaults[k]))
         for k in ('relative_tolerance', 'absolute_tolerance')
     )
+    rtol = max(rtol, 100 * np.finfo(float).eps)  # the floor of scipy's RK45, as it integrated
     mixes = layer_mixtures or parse_all_layer_mixtures(config_params['layer_eos_config'])
     melt, eos = melting_curves_functions or (None, None), _eos_params(config_params)
 
@@ -569,17 +587,7 @@ def main(
             initial_density=initial_density,
             initial_radii=initial_radii,
         )
-        adiabat_asked = (
-            config_params.get('temperature_mode') in ('adiabatic', 'adiabatic_from_cmb')
-            and temperature_function is None
-            and not (config_params.get('use_jax', False) and temperature_arrays is not None)
-        )
-        if adiabat_asked and not result.get('adiabat_computed'):
-            logger.warning(
-                "outer_solver='newton' kept the linear first-guess temperature profile; "
-                "the adiabat of temperature_mode='%s' was not computed.",
-                config_params['temperature_mode'],
-            )
+        _warn_no_adiabat(result, config_params, temperature_function, temperature_arrays)
         result = _report_table_bands(result, *bands)
         return _check_accepted(result, config_params, *bands, volatile_profile)
 
@@ -680,6 +688,7 @@ def main(
                 'Returning best result with converged=False.'
             )
 
+    _warn_no_adiabat(result, config_params, temperature_function, temperature_arrays)
     result = _report_table_bands(result, *bands)
     return _check_accepted(result, run_params, *bands, volatile_profile)
 
@@ -1667,8 +1676,11 @@ def _solve(
             )
 
             if _using_adiabat and prev_pressure is not None:
-                # Bump blend toward full adiabat
-                _adiabat_blend = min(1.0, _adiabat_blend + _ADIABAT_BLEND_STEP)
+                # Bump blend toward full adiabat; the best pass restarts on each new blend
+                _new_blend = min(1.0, _adiabat_blend + _ADIABAT_BLEND_STEP)
+                if _new_blend != _adiabat_blend:
+                    best_mass_error, best_profiles = float('inf'), None
+                _adiabat_blend = _new_blend
                 logger.debug(
                     'Outer iter %d: adiabat blend = %.2f',
                     outer_iter,
