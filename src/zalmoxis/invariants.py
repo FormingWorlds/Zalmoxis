@@ -9,8 +9,8 @@ import numpy as np
 from .constants import G
 
 # Largest allowed deviation of each invariant; a count of bad nodes where the tolerance is 0.
-# gravity: a factor on the RK45 bound rtol + atol (1/M_1 + 1/g_1), whose constants are 19.9 and
-# 13.6; density_eos: below the PALEOS table interpolation error of 1e-5.
+# gravity: a factor on the RK45 bound of ``deviations``; density_eos: below the PALEOS table
+# interpolation error of 1e-5.
 TOLERANCES = {
     'padding': 0,
     'positive': 0,
@@ -23,15 +23,7 @@ TOLERANCES = {
     'density_eos': 1e-6,
 }
 _RTOL_LAYER = 1e-12  # the layer rule of structure_model.get_layer_mixture
-_PROFILE = (
-    'radii',
-    'mass_enclosed',
-    'gravity',
-    'pressure',
-    'density',
-    'cmb_mass',
-    'core_mantle_mass',
-)
+_PROFILE = 'radii mass_enclosed gravity pressure density cmb_mass core_mantle_mass'.split()
 
 
 class StructureInvariantError(Exception):
