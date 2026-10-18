@@ -1343,8 +1343,10 @@ def _solve(
         ``density`` is rho_EOS(P, T) at the returned nodes and ``density_from_eos`` is
         True, unless the wall clock stopped the last pass before its first pressure
         solve and the solve was not accepted; that pass is then returned, with its
-        newest radius. An outer wall-clock stop, and an accepted solve cut in that way,
-        return the best pass with its gravity, ``cmb_mass`` and ``core_mantle_mass``.
+        newest radius and a pressure, density and enclosed mass that are zero except at
+        the centre node. An outer wall-clock stop, accepted or not, and an accepted solve
+        cut in that way, return the best pass with its gravity, ``cmb_mass`` and
+        ``core_mantle_mass``.
     """
     # Initialize convergence flags
     converged = False
