@@ -178,6 +178,32 @@ def test_a_nan_raises():
 
 
 @pytest.mark.unit
+def test_a_nan_gravity_reports_an_infinite_deviation():
+    result, cfg = _sphere()
+    result['gravity'][N - 2] = np.nan
+    dev, node, _ = deviations(result, cfg, 1e-3, RTOL, ATOL)['gravity']
+    assert dev == np.inf and node == N - 2
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('key', ['cmb_mass', 'core_mantle_mass'])
+def test_a_nan_layer_boundary_raises_the_error_that_names_it(key):
+    result, cfg = _sphere(mmf=0.5)
+    result[key] = np.nan
+    _raises(result, cfg, key)
+
+
+@pytest.mark.unit
+def test_a_node_of_negative_mass_has_an_infinite_gravity_deviation():
+    """g = G m / r^2 holds at a negative m too, so only the sign of m marks the node."""
+    result, cfg = _sphere()
+    result['mass_enclosed'][5] *= -1
+    result['gravity'][5] *= -1
+    dev, node, _ = deviations(result, cfg, 1e-3, RTOL, ATOL)['gravity']
+    assert dev == np.inf and node == 5
+
+
+@pytest.mark.unit
 def test_density_layer_follows_cmb_mass():
     result, cfg = _sphere(mmf=0.5)
     m, P = result['mass_enclosed'][: N - 1], result['pressure'][: N - 1]  # node N - 1 has P = 0
