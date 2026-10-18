@@ -292,10 +292,8 @@ def _check_accepted(
     layer_mixtures,
     volatile_profile,
 ):
-    """Run ``invariants.check_accepted`` on a result of ``main``, with the batch EOS call of
-    the solve per layer as the density reference, the integration tolerances of ``run_params`` (the
-    parameters of the solve that returned) and the ``accept_mass_limit`` of the result;
-    returns ``result``."""
+    """Run ``invariants.check_accepted`` on an accepted result, with the batch EOS call of
+    the solve per layer as the density reference and the tolerances of ``run_params``."""
     if not result.get('converged'):
         return result
     defaults = _default_solver_params(config_params['planet_mass'])
@@ -781,13 +779,13 @@ def _brentq_fallback_outer(
         inner solve of the returned profile.
     """
 
-    def _best_seen(converged, accepted_on):
-        result = dict(best['result'] or {})
+    def _best_seen(converged, accepted_on, pick=best, n_iter=None):
+        result = dict(pick['result'] or {})
         _newton_verdict(result, converged, accepted_on, tol)
-        result['converged_mass'] = bool(best['rel'] < tol)
-        result['best_mass_error'] = float(best['rel'])
+        result['converged_mass'] = bool(pick['rel'] < tol)
+        result['best_mass_error'] = float(pick['rel'])
         result['total_time'] = time.time() - start_time
-        result['newton_n_iter'] = (
+        result['newton_n_iter'] = n_iter or (
             int(n_newton_iter) if n_newton_iter is not None else len(history)
         )
         result['newton_history'] = history
@@ -835,16 +833,7 @@ def _brentq_fallback_outer(
         f0 = M_at_current - M_target
         history.append((R_current, M_at_current, abs(f0) / M_target))
         if abs(f0) / M_target < tol:
-            result = _attach_newton_bookkeeping(
-                best['result'],
-                history,
-                start_time,
-                used_brentq=True,
-                tol=tol,
-                n_newton_iter=n_newton_iter,
-            )
-            _newton_verdict(result, best['rel'] < tol, 'brentq_best', tol)
-            return result
+            return _best_seen(best['rel'] < tol, 'brentq_best')
         if f0 > 0:  # pragma: no cover - bracket sweep direction; defensive
             # M too large -> shrink R.
             R_test = R_current * 0.5
@@ -950,47 +939,26 @@ def _brentq_fallback_outer(
         M_root,
         rel,
     )
-    result = dict(root_result) if root_result else {}
-    _newton_verdict(result, rel < tol, 'newton_tol', tol)
-    result['converged_mass'] = bool(rel < tol)
-    result['best_mass_error'] = float(rel)
-    result['total_time'] = time.time() - start_time
-    result['newton_n_iter'] = len(history)
-    result['newton_history'] = history
-    result['newton_used_brentq'] = True
-    return result
+    pick = {'rel': rel, 'result': root_result}
+    return _best_seen(rel < tol, 'newton_tol', pick, len(history))
 
 
-def _attach_newton_bookkeeping(
-    last_result, history, start_time, *, used_brentq=False, tol=None, n_newton_iter=None
-):
-    """Decorate an inner-Picard result dict with Newton-outer metadata.
+def _attach_newton_bookkeeping(last_result, history, start_time, tol, n_newton_iter):
+    """The result of the Newton converge path: ``last_result`` with the Newton bookkeeping.
 
-    The mass test compares the best history entry's relative mass error
-    against ``tol`` if supplied; without ``tol`` it passes (legacy
-    behaviour for callers that pre-checked). ``converged`` also needs the
-    pressure flag and ``density_from_eos`` of the inner solve of the returned
-    profile.
-    New callers should always pass ``tol`` so a misroute through this
-    helper does not silently flag a non-converged result as converged.
-
-    ``n_newton_iter`` is the number of completed outer Newton steps
-    (NOT the length of ``history``: history also stores +/-dR side
-    evaluations and any brentq probes). Defaults to ``len(history)``
-    only for legacy callers.
+    The mass test compares the best Newton step of ``history`` with ``tol``;
+    ``n_newton_iter`` is the number of completed outer Newton steps.
     """
-    result = dict(last_result) if last_result else {}
-    if history:
-        # the best entry, not the last: +/-dR side evaluations follow the main step
-        best_rel = min(h[2] for h in history)
-        mass_ok = True if tol is None else bool(best_rel < tol)
-        _newton_verdict(result, mass_ok, 'newton_tol', tol)
-        result['converged_mass'] = mass_ok
-        result['best_mass_error'] = float(best_rel)
+    result = dict(last_result)
+    best_rel = min(h[2] for h in history)
+    mass_ok = bool(best_rel < tol)
+    _newton_verdict(result, mass_ok, 'newton_tol', tol)
+    result['converged_mass'] = mass_ok
+    result['best_mass_error'] = float(best_rel)
     result['total_time'] = time.time() - start_time
-    result['newton_n_iter'] = int(n_newton_iter) if n_newton_iter is not None else len(history)
+    result['newton_n_iter'] = int(n_newton_iter)
     result['newton_history'] = history
-    result['newton_used_brentq'] = bool(used_brentq)
+    result['newton_used_brentq'] = False
     return result
 
 
@@ -1194,14 +1162,7 @@ def _solve_newton_outer(
                 rel,
                 tol,
             )
-            return _attach_newton_bookkeeping(
-                last_result,
-                history,
-                start_time,
-                used_brentq=False,
-                tol=tol,
-                n_newton_iter=k + 1,
-            )
+            return _attach_newton_bookkeeping(last_result, history, start_time, tol, k + 1)
 
         # Central-difference dM/dR.
         dR = dR_rel * R
@@ -1389,9 +1350,9 @@ def _solve(
         a pass without a pressure solve is never the best pass. The result then has the
         radius of that pass, a pressure and density that are zero except at most at the
         centre node, and an enclosed mass of zero. An outer wall-clock stop after at least
-        one pass, accepted or not, and an accepted solve cut in that way, return the best
-        pass with its gravity and its density and pressure convergence flags. ``cmb_mass``
-        and ``core_mantle_mass`` are the layer boundaries of every pass,
+        one pass, accepted or not, a ``max_iter`` accept and an accepted solve cut in that
+        way return the best pass, with its gravity and its density and pressure convergence
+        flags. ``cmb_mass`` and ``core_mantle_mass`` are the layer boundaries of every pass,
         ``core_mass_fraction`` and ``core_mass_fraction + mantle_mass_fraction`` times
         ``planet_mass``.
     """
@@ -2464,6 +2425,7 @@ def _solve(
         # within 1 % and the caller's outer mass-radius loop corrects the residual.
         converged = True
         converged_mass = True
+        restore_best = True  # return the pass that the test read
         accepted_on, accept_mass_limit = stop_label or 'max_iter', _TIMEOUT_ACCEPT_MASS_ERR
         logger.warning(
             'Accepting %s solution: mass error %.4f%% (threshold %.1f%%), '
@@ -2475,9 +2437,9 @@ def _solve(
             converged_pressure,
         )
 
-    # Return the best pass after an outer stop, or after an accepted cut before the first pressure
-    # solve of the last pass; an unaccepted cut returns the cut pass, so a retry starts from its
-    # radius. Fresh copies: the saved profiles can be read-only views of JAX buffers.
+    # Return the best pass after an outer stop, a max_iter accept, or an accepted cut before the first
+    # pressure solve of the last pass; an unaccepted cut returns the cut pass, so a retry starts
+    # from its radius. Fresh copies: the saved profiles can be read-only views of JAX buffers.
     if best_profiles is not None and (restore_best or (rho_eos is None and converged)):
         radii, density, gravity, pressure, mass_enclosed = (
             np.array(best_profiles[k])

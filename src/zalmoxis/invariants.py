@@ -9,8 +9,8 @@ import numpy as np
 from .constants import G
 
 # Largest allowed deviation of each invariant; a count of bad nodes where the tolerance is 0.
-# gravity: a factor on the RK45 bound of ``deviations``; density_eos: below the PALEOS table
-# interpolation error of 1e-5.
+# gravity: a factor on the per-node RK45 bound of ``deviations``; density_eos: below the PALEOS
+# table interpolation error of 1e-5.
 TOLERANCES = {
     'padding': 0,
     'positive': 0,
@@ -35,12 +35,9 @@ class StructureInvariantError(Exception):
 
 
 def _layer(m, cmb_mass, core_mantle_mass, ice):
-    """Layer name of a node with enclosed mass ``m``, by the rule of the solver."""
-    if m < cmb_mass * (1.0 - _RTOL_LAYER):
-        return 'core'
-    if ice and m >= core_mantle_mass * (1.0 - _RTOL_LAYER):
-        return 'ice_layer'
-    return 'mantle'
+    """Layer name of each node with enclosed mass ``m``, by the rule of the solver."""
+    top = np.where(ice & (m >= core_mantle_mass * (1.0 - _RTOL_LAYER)), 'ice_layer', 'mantle')
+    return np.where(m < cmb_mass * (1.0 - _RTOL_LAYER), 'core', top)
 
 
 def deviations(result, config_params, mass_limit, rtol, atol, density_at=None, ice=False):
@@ -57,14 +54,14 @@ def deviations(result, config_params, mass_limit, rtol, atol, density_at=None, i
         Largest relative mass error that the accept path of ``result`` allows.
     rtol, atol : float
         ``relative_tolerance`` and ``absolute_tolerance`` of the structure integration of
-        ``result``. The gravity tolerance is ``TOLERANCES['gravity']`` times
-        ``rtol + atol (1 / M_1 + 1 / g_1)`` at the first node off the centre. The RK45 dense
-        output keeps ``g r^2 - G M`` per step to about 19.9 rtol + 13.6 atol (1/M_1 + 1/g_1)
-        relative to ``G M``, an estimate from the Butcher tableau; real solves of a 1 M_E
-        planet (analytic and tabulated EOS, 150 and 2000 nodes) reach 3 to 13 rtol, and the
-        factor 100 is an empirical margin. The ``atol / g_1`` term grows linearly with the
-        node count, since ``g_1`` scales with ``r_1``: at rtol 1e-5 and atol 1e-6 the
-        tolerance is about 1.6e-3 with 150 nodes and 1e-2 with 2000.
+        ``result``. The gravity tolerance at node i is ``TOLERANCES['gravity']`` times
+        ``rtol + atol (1 / M_i + 1 / g_i)``. The RK45 dense output keeps ``g r^2 - G M`` per
+        step to about 19.9 rtol + 13.6 atol (1/M_i + 1/g_i) relative to ``G M``, an estimate
+        from the Butcher tableau, and an error made at one radius decays outward as
+        ``(r_i / r)^2``, since the homogeneous part of ``dg/dr`` is ``-2 g / r``. Real solves
+        of a 1 M_E planet (analytic and tabulated EOS, 150 and 2000 nodes) reach 3 to 13
+        times that bound, so the factor 100 leaves a margin of at least 7; at rtol 1e-5 and
+        atol 1e-6 the tolerance at the surface is about 1e-3 for any node count.
     density_at : callable or None
         ``(P, T, layer) -> rho`` for the arrays of the nodes of one layer, by the EOS path
         that the solver used at the returned nodes; called once per layer that has nodes.
@@ -108,16 +105,19 @@ def deviations(result, config_params, mass_limit, rtol, atol, density_at=None, i
         put('core_radius', not 2 <= n_core < k + (cmf == 1), n_core)  # all nodes only at cmf 1
     with np.errstate(divide='ignore', invalid='ignore'):
         dg = np.abs(g[1:k] * r[1:k] ** 2 / (G * m[1:k]) - 1)
-    dg[~np.isfinite(dg)] = np.inf
-    i = int(np.argmax(dg)) + 1 if len(dg) else 0
-    ok1 = k >= 2 and m[1] > 0 and g[1] > 0  # a first node without mass or gravity breaks it
-    bound = rtol + atol * (1 / m[1] + 1 / g[1]) if ok1 else 0.0
-    put('gravity', dg.max(initial=np.inf if k < 2 else 0.0), i, TOLERANCES['gravity'] * bound)
-    put('mass_closure', abs(m[-1] / M - 1), len(m) - 1, mass_limit)
+        tol_g = TOLERANCES['gravity'] * (rtol + atol * (1 / m[1:k] + 1 / g[1:k]))
+    ok_g = (
+        (m[1:k] > 0) & (g[1:k] > 0) & np.isfinite(dg)
+    )  # a node without mass or gravity breaks it
+    ratio = np.where(ok_g, dg / np.where(ok_g, tol_g, 1.0), np.inf)
+    i = int(np.argmax(ratio)) if len(ratio) else -1
+    dev, tol = (dg[i], tol_g[i]) if i >= 0 and ok_g[i] else (np.inf, 0.0)
+    put('gravity', dev, i + 1, tol)
+    put(
+        'mass_closure', abs(m[-1] - M) / M, len(m) - 1, mass_limit
+    )  # the form of the accept test
     if density_at is not None and result.get('density_from_eos'):
-        layer = np.array(
-            [_layer(x, result['cmb_mass'], result['core_mantle_mass'], ice) for x in m[:k]]
-        )
+        layer = _layer(m[:k], result['cmb_mass'], result['core_mantle_mass'], ice)
         ref = np.full(k, np.nan)
         for name in np.unique(layer):
             sel = layer == name
@@ -127,6 +127,10 @@ def deviations(result, config_params, mass_limit, rtol, atol, density_at=None, i
         d[~np.isfinite(d)] = np.inf
         put('density_eos', d.max(initial=0.0), int(np.argmax(d)) if k else 0)
     return out
+
+
+def _finite_positive(x):
+    return isinstance(x, numbers.Real) and not isinstance(x, bool) and 0 < x < np.inf
 
 
 def check_accepted(result, config_params, rtol, atol, density_at=None, ice=False):
@@ -140,7 +144,7 @@ def check_accepted(result, config_params, rtol, atol, density_at=None, ice=False
     StructureInvariantError
         Names the invariant, the node, the deviation, the tolerance and the
         ``accepted_on`` label; or the profile arrays that the result lacks; or an
-        ``accept_mass_limit`` that is missing or not a finite positive number.
+        ``accept_mass_limit``, ``rtol`` or ``atol`` that is not a finite positive number.
     """
     if not result.get('converged'):
         return
@@ -151,9 +155,14 @@ def check_accepted(result, config_params, rtol, atol, density_at=None, ice=False
             f'Accepted structure ({accepted_on=}) has no {", ".join(missing)}.'
         )
     limit = result.get('accept_mass_limit')
-    if isinstance(limit, bool) or not isinstance(limit, numbers.Real) or not 0 < limit < np.inf:
+    if not _finite_positive(limit):
         raise StructureInvariantError(
             f'Accepted structure ({accepted_on=}) has no valid accept_mass_limit: {limit!r}.'
+        )
+    if not (_finite_positive(rtol) and _finite_positive(atol)):
+        raise StructureInvariantError(
+            f'Accepted structure ({accepted_on=}) has invalid integration tolerances: '
+            f'rtol={rtol!r}, atol={atol!r}.'
         )
     for name, (dev, i, tol) in deviations(
         result, config_params, limit, rtol, atol, density_at, ice
