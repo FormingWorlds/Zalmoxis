@@ -376,10 +376,11 @@ def test_gradient_nodes_are_the_adiabat_reads(mats, monkeypatch, mode, ice, surf
 @pytest.mark.parametrize('outer', ['picard', 'newton'])
 def test_main_checks_the_profile_with_the_mixtures_it_got(mats, monkeypatch, caplog, outer):
     """main() runs the check on both outer solvers with the mixtures passed in; a band failure
-    leaves the numerical convergence flags as they are. A Newton solve that kept the linear
-    profile in an adiabatic mode logs a warning."""
+    leaves the numerical convergence flags and accepted_on as they are. A Newton solve that kept
+    the linear profile in an adiabatic mode logs a warning."""
     md, melt, grad, _ = mats
     res = {**_result(HOT, adiabat=True), 'converged_mass': True, 'converged_density': True}
+    res['accepted_on'] = 'strict'
     newton_res = {**res, 'adiabat_computed': False}
     monkeypatch.setattr(solver, '_solve', lambda *a, **k: dict(res))
     monkeypatch.setattr(solver, '_solve_newton_outer', lambda *a, **k: dict(newton_res))
@@ -397,6 +398,7 @@ def test_main_checks_the_profile_with_the_mixtures_it_got(mats, monkeypatch, cap
     assert len(linear) == (outer == 'newton')
     assert out['converged'] is False and out['converged_bands'] is False
     assert out['converged_mass'] is True and out['converged_density'] is True
+    assert out['accepted_on'] == 'strict'
 
 
 WB = EOS_REGISTRY['WolfBower2018:MgSiO3']
