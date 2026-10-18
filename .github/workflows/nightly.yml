@@ -17,7 +17,7 @@ on:
 permissions:
   contents: read
 
-# Nightly: unit + smoke + integration with coverage, as four parallel jobs. Not on push or PR
+# Nightly: unit + smoke + integration with coverage, as five parallel jobs. Not on push or PR
 # CI: each smoke or integration test runs a full solve (5-10 min on a 2-vCPU runner under
 # coverage), which adds no bug-finding signal to the unit suite.
 jobs:
@@ -25,7 +25,8 @@ jobs:
     name: Zalmoxis-nightly ${{ matrix.suite }} (ubuntu-latest)
     runs-on: ubuntu-latest
     # The full solves on the Wolf & Bower tables, the full adiabatic PALEOS solves at 5 M_earth and
-    # the real solves of the accept and invariant tests run in their own jobs, beside the rest.
+    # the real solves of the invariant and the accept tests (one job per file) run in their own
+    # jobs, beside the rest.
     strategy:
       fail-fast: false
       matrix:
@@ -39,9 +40,12 @@ jobs:
           - suite: paleos_adiabat
             select: paleos_adiabat
             args: --dist loadfile --cov-fail-under=0
-          - suite: accept_solves
+          - suite: accept_solves_invariants
             select: accept_solves and not wolfbower
-            args: --dist load --cov-fail-under=0 --durations=0
+            args: --dist load --cov-fail-under=0 --durations=0 tests/test_invariants.py
+          - suite: accept_solves_accepted_on
+            select: accept_solves and not wolfbower
+            args: --dist load --cov-fail-under=0 --durations=0 tests/test_accepted_on.py
     # A 90 min ceiling per job leaves wide margin for shared-runner variance.
     timeout-minutes: 90
     steps:

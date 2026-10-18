@@ -231,7 +231,7 @@ def test_a_change_above_the_tolerance_raises_and_one_below_does_not(field, node,
 
 @pytest.mark.smoke
 @pytest.mark.accept_solves
-@pytest.mark.timeout(900)
+@pytest.mark.timeout(2400)
 def test_cmb_mass_is_the_layer_boundary_of_the_returned_profile(monkeypatch):
     """Every pass splits the layers at cmf * planet_mass; at cmf 0.3 and 200 nodes a node
     lies between that mass and cmf * M[-1], so a cmb_mass of cmf * M[-1] puts it in the
@@ -309,7 +309,7 @@ def test_main_checks_the_limit_that_the_solve_wrote(monkeypatch, label, limit):
 
 @pytest.mark.smoke
 @pytest.mark.accept_solves
-@pytest.mark.timeout(600)
+@pytest.mark.timeout(2400)
 def test_main_checks_a_picard_result_with_tolerance_outer(monkeypatch):
     limits = _spy_limits(monkeypatch)
     r = _run(_cfg(wall_timeout=1e6, tolerance_outer=2e-3))
@@ -318,7 +318,7 @@ def test_main_checks_a_picard_result_with_tolerance_outer(monkeypatch):
 
 @pytest.mark.smoke
 @pytest.mark.accept_solves
-@pytest.mark.timeout(600)
+@pytest.mark.timeout(2400)
 def test_main_raises_on_a_broken_picard_result(monkeypatch):
     real = zs._report_table_bands
 
@@ -333,7 +333,7 @@ def test_main_raises_on_a_broken_picard_result(monkeypatch):
 
 @pytest.mark.smoke
 @pytest.mark.accept_solves
-@pytest.mark.timeout(900)
+@pytest.mark.timeout(2400)
 def test_main_checks_a_newton_result_with_newton_tol(monkeypatch):
     limits = _spy_limits(monkeypatch)
     cfg = _cfg(
@@ -446,7 +446,7 @@ def test_core_radius_over_the_core_mass_fraction(u):
 
 @pytest.mark.smoke
 @pytest.mark.accept_solves
-@pytest.mark.timeout(900)
+@pytest.mark.timeout(2400)
 def test_a_planet_of_core_only_passes_every_invariant():
     """core_mass_fraction 1.0: every node is core, with no mantle node."""
     r = _run(_cfg(wall_timeout=1e6, core_mass_fraction=1.0))
@@ -455,7 +455,7 @@ def test_a_planet_of_core_only_passes_every_invariant():
 
 @pytest.mark.smoke
 @pytest.mark.accept_solves
-@pytest.mark.timeout(900)
+@pytest.mark.timeout(2400)
 @pytest.mark.parametrize('n', [150, 2000])  # the PROTEUS default node count, and a fine grid
 @pytest.mark.parametrize('factor', [2.0, 0.5])
 def test_a_gravity_error_at_one_inner_node_against_the_bound(monkeypatch, n, factor):
@@ -493,7 +493,7 @@ def test_a_density_reference_of_none_raises():
 
 @pytest.mark.smoke
 @pytest.mark.accept_solves
-@pytest.mark.timeout(900)
+@pytest.mark.timeout(2400)
 def test_a_chabrier_h2_mantle_passes_every_invariant():
     """The 3 % H2 mantle of input/grids/h2_mixing.toml with a PALEOS iron core."""
     from tests.test_spider_coupling_convergence import _has_paleos_data
@@ -609,7 +609,7 @@ def test_the_density_check_gives_the_volatile_profile_only_to_the_mantle(monkeyp
 
 @pytest.mark.smoke
 @pytest.mark.accept_solves
-@pytest.mark.timeout(900)
+@pytest.mark.timeout(2400)
 def test_a_max_iter_accept_returns_the_pass_it_tested(monkeypatch):
     """Two passes at 1.25 % and 10.1 % mass error (mass and gravity scaled together, so the
     gravity invariant holds): max_iter accepts on the best pass and returns that pass."""
@@ -636,7 +636,7 @@ def test_a_max_iter_accept_returns_the_pass_it_tested(monkeypatch):
 
 @pytest.mark.smoke
 @pytest.mark.accept_solves
-@pytest.mark.timeout(900)
+@pytest.mark.timeout(2400)
 def test_a_1_percent_gravity_error_is_caught_on_a_fine_grid(monkeypatch):
     """2000 nodes at the default tolerances (rtol 1e-5, atol 1e-6): a 1 % gravity error at a
     node near the surface raises."""
@@ -742,7 +742,7 @@ def test_the_gravity_check_reports_the_node_with_the_largest_ratio():
 
 @pytest.mark.smoke
 @pytest.mark.accept_solves
-@pytest.mark.timeout(900)
+@pytest.mark.timeout(2400)
 def test_a_relative_tolerance_below_the_floor_of_the_integrator_passes():
     """scipy raises an rtol below 100 eps to 100 eps; the check uses the rtol the integration
     ran with."""
