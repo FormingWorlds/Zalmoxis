@@ -78,11 +78,12 @@ def _newton(cp_over=(), **flags):
         return zs._solve_newton_outer(cp, {}, None, '/tmp')
 
 
-def _brentq(history, eval_M, best_R):
-    """``best_R``: radius of the evaluation with the smallest mass error, or None for none."""
+def _brentq(history, eval_M, best_R, **flags):
+    """``best_R``: radius of the evaluation with the smallest mass error, or None for none;
+    ``flags`` go to the inner result of that evaluation."""
     best = {'rel': np.inf, 'result': None}
     if best_R is not None:
-        best = {'rel': abs(A * best_R + B - M_T) / M_T, 'result': _inner(best_R)}
+        best = {'rel': abs(A * best_R + B - M_T) / M_T, 'result': _inner(best_R, **flags)}
     return zs._brentq_fallback_outer(
         6.0e6, M_T, eval_M, history, R_min=2e6, R_max=3e7, tol=1e-6, start_time=0.0, best=best
     )
@@ -103,7 +104,7 @@ class TestNewton:
     def test_bracket_sweep_hit_is_brentq_best(self):
         """One Newton step lands on the root; the bracket sweep meets it there, and the profile
         is the one at the root."""
-        r = _newton({'_initial_radius_guess': 6.9e6, 'newton_max_iter': 1}, eos=False)
+        r = _newton({'_initial_radius_guess': 6.9e6, 'newton_max_iter': 1})
         assert r['converged'] is True and r['accepted_on'] == 'brentq_best'
         assert r['radii'][-1] == pytest.approx(7.0e6, rel=1e-9)
         assert r['mass_error_at_accept'] == pytest.approx(r['best_mass_error'], abs=1e-15)
@@ -823,3 +824,33 @@ def test_cool_paleos_surface_keeps_the_eos_density():
     rho = np.asarray(r['density'])[np.asarray(r['pressure']) > 0]
     assert rho[-1] < 0.6 * rho[-4]  # the outer-shell density drop is kept
     _assert_eos_density(r, eos, melt, 0.8)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('flag', ['pressure', 'eos'])
+class TestNewtonExitsReadTheInnerFlags:
+    """Every Newton exit accepts only a profile whose inner solve reports converged pressure
+    and the EOS density, as the Newton converge path does."""
+
+    def test_bracket_sweep_hit(self, flag):
+        r = _newton({'_initial_radius_guess': 6.9e6, 'newton_max_iter': 1}, **{flag: False})
+        assert r['newton_used_brentq'] and r['best_mass_error'] < 1e-6
+        assert r['converged'] is False and r['accepted_on'] is None
+
+    def test_root(self, flag):
+        r = _brentq(
+            _hist(6.0e6, 8.0e6), lambda R: (A * R + B, _inner(R, **{flag: False})), None
+        )
+        assert r['converged'] is False and r['accepted_on'] is None
+
+    def test_narrow_bracket(self, flag):
+        r = _brentq(_hist(7.0e6 - 0.2, 7.0e6 + 0.2), None, 7.0e6 - 0.2, **{flag: False})
+        assert r['best_mass_error'] < 1e-6
+        assert r['converged'] is False and r['accepted_on'] is None
+
+    def test_brentq_error(self, flag):
+        def boom(R):
+            raise ValueError('stale bracket')
+
+        r = _brentq(_hist(6.0e6, 7.0e6 + 1e-3), boom, 7.0e6 + 1e-3, **{flag: False})
+        assert r['converged'] is False and r['accepted_on'] is None
