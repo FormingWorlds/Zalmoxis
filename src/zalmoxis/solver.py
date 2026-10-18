@@ -591,11 +591,11 @@ def main(
         initial_radii=initial_radii,
     )
 
-    # Skip the retry when density and pressure converged and the mass error is within
-    # `_RETRY_SKIP_MASS_ERR`: on hot molten T(r) the retry takes 600+ s for no better
-    # mass, and the next resolve of the caller corrects the residual.
+    # Skip the retry when density and pressure converged and the mass error of the returned
+    # profile is within `_RETRY_SKIP_MASS_ERR`: on hot molten T(r) the retry takes 600+ s for
+    # no better mass, and the next resolve of the caller corrects the residual.
     _RETRY_SKIP_MASS_ERR = 0.07
-    _first_mass_err = result.get('best_mass_error')
+    _first_mass_err = result.get('mass_error_at_accept')
     run_params = config_params  # the parameters of the solve that returns
     _retry_skipped = (
         not result['converged']
@@ -1383,9 +1383,9 @@ def _solve(
         that pass, a pressure and density that are zero except at most at the centre
         node, and an enclosed mass of zero. An outer wall-clock stop after at least one
         pass, accepted or not, and an accepted solve cut in that way, return the best pass
-        with its gravity. ``cmb_mass`` and ``core_mantle_mass`` are the layer boundaries
-        of every pass, ``core_mass_fraction`` and ``core_mass_fraction +
-        mantle_mass_fraction`` times ``planet_mass``.
+        with its gravity and its density and pressure convergence flags. ``cmb_mass`` and
+        ``core_mantle_mass`` are the layer boundaries of every pass, ``core_mass_fraction``
+        and ``core_mass_fraction + mantle_mass_fraction`` times ``planet_mass``.
     """
     # Initialize convergence flags
     converged = False
@@ -2359,6 +2359,8 @@ def _solve(
                 'mass_enclosed': np.asarray(mass_enclosed).copy(),
                 'temperatures': temperatures.copy() if temperatures is not None else None,
                 'rho_eos': rho_eos,
+                'converged_density': converged_density,
+                'converged_pressure': converged_pressure,
             }
             oscillation_count = 0
         elif (
@@ -2473,7 +2475,9 @@ def _solve(
             np.array(best_profiles[k])
             for k in ('radii', 'density', 'gravity', 'pressure', 'mass_enclosed')
         )
-        rho_eos = best_profiles['rho_eos']
+        rho_eos, converged_density, converged_pressure = (
+            best_profiles[k] for k in ('rho_eos', 'converged_density', 'converged_pressure')
+        )
         if best_profiles['temperatures'] is not None:
             temperatures = np.array(best_profiles['temperatures'])
 
