@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import numbers
+
 import numpy as np
 
 from .constants import G
@@ -131,17 +133,18 @@ def deviations(result, config_params, mass_limit, rtol, atol, density_at=None, i
     return out
 
 
-def check_accepted(result, config_params, mass_limit, rtol, atol, density_at=None, ice=False):
+def check_accepted(result, config_params, rtol, atol, density_at=None, ice=False):
     """Raise StructureInvariantError when an accepted result breaks an invariant.
 
-    See ``deviations`` for the parameters. A result with ``converged`` False is
-    not checked.
+    See ``deviations`` for the parameters; the mass limit is ``result['accept_mass_limit']``,
+    which the accept path writes. A result with ``converged`` False is not checked.
 
     Raises
     ------
     StructureInvariantError
         Names the invariant, the node, the deviation, the tolerance and the
-        ``accepted_on`` label; or the profile arrays that the result lacks.
+        ``accepted_on`` label; or the profile arrays that the result lacks; or an
+        ``accept_mass_limit`` that is missing or not a finite positive number.
     """
     if not result.get('converged'):
         return
@@ -151,8 +154,13 @@ def check_accepted(result, config_params, mass_limit, rtol, atol, density_at=Non
         raise StructureInvariantError(
             f'Accepted structure ({accepted_on=}) has no {", ".join(missing)}.'
         )
+    limit = result.get('accept_mass_limit')
+    if isinstance(limit, bool) or not isinstance(limit, numbers.Real) or not 0 < limit < np.inf:
+        raise StructureInvariantError(
+            f'Accepted structure ({accepted_on=}) has no valid accept_mass_limit: {limit!r}.'
+        )
     for name, (dev, i, tol) in deviations(
-        result, config_params, mass_limit, rtol, atol, density_at, ice
+        result, config_params, limit, rtol, atol, density_at, ice
     ).items():
         if not dev <= tol:
             raise StructureInvariantError(

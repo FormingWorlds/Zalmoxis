@@ -219,16 +219,18 @@ def _mass_error(mass_enclosed, planet_mass):
     return float(abs(m[-1] - planet_mass) / planet_mass)
 
 
-def _newton_verdict(result, converged, accepted_on):
-    """Set ``converged`` and ``accepted_on`` of a Newton result.
+def _newton_verdict(result, converged, accepted_on, tol):
+    """Set ``converged``, ``accepted_on`` and ``accept_mass_limit`` of a Newton result.
 
     ``accepted_on`` is None if not converged, and 'timeout' if the inner solve of the
-    returned profile stopped on the wall clock. A result built without a profile gets
-    the per-profile keys as None or False.
+    returned profile stopped on the wall clock. ``accept_mass_limit`` is ``tol``, the
+    newton_tol of the mass test, or None if not converged. A result built without a
+    profile gets the per-profile keys as None or False.
     """
     ok = result['converged'] = bool(converged)
     wall = result.setdefault('stopped_on_wall_clock', False)
     result['accepted_on'] = ('timeout' if wall else accepted_on) if ok else None
+    result['accept_mass_limit'] = tol if ok else None
     result.setdefault('mass_error_at_accept', None)
     result.setdefault('density_from_eos', False)
 
@@ -281,7 +283,6 @@ def _eos_params(config_params):
 
 def _check_accepted(
     result,
-    mass_limit,
     run_params,
     config_params,
     material_dictionaries,
@@ -290,8 +291,9 @@ def _check_accepted(
     volatile_profile,
 ):
     """Run ``invariants.check_accepted`` on a result of ``main``, with a scalar EOS call
-    per node as the density reference and the integration tolerances of ``run_params``, the
-    parameters of the solve that returned; returns ``result``."""
+    per node as the density reference, the integration tolerances of ``run_params`` (the
+    parameters of the solve that returned) and the ``accept_mass_limit`` of the result;
+    returns ``result``."""
     if not result.get('converged'):
         return result
     defaults = _default_solver_params(config_params['planet_mass'])
@@ -307,9 +309,7 @@ def _check_accepted(
         args = (mixes[layer], material_dictionaries, *melt, _interpolation_cache, *eos)
         return calculate_mixed_density(P, T, *args, volatile_profile=vp)
 
-    check_accepted(
-        result, config_params, mass_limit, rtol, atol, density_at, 'ice_layer' in mixes
-    )
+    check_accepted(result, config_params, rtol, atol, density_at, 'ice_layer' in mixes)
     return result
 
 
@@ -574,9 +574,8 @@ def main(
                 "the adiabat of temperature_mode='%s' was not computed.",
                 config_params['temperature_mode'],
             )
-        tol = float(config_params.get('newton_tol', _NEWTON_DEFAULT_TOL))
         result = _report_table_bands(result, *bands)
-        return _check_accepted(result, tol, config_params, *bands, volatile_profile)
+        return _check_accepted(result, config_params, *bands, volatile_profile)
 
     result = _solve(
         config_params,
@@ -617,6 +616,7 @@ def main(
         result['accepted_on'] = (
             'timeout' if result.get('stopped_on_wall_clock') else 'retry_skip'
         )
+        result['accept_mass_limit'] = _RETRY_SKIP_MASS_ERR
 
     if not result['converged']:
         # Build tightened params for retry
@@ -675,16 +675,7 @@ def main(
             )
 
     result = _report_table_bands(result, *bands)
-    if not result['converged']:
-        return result
-    if _retry_skipped:
-        limit = _RETRY_SKIP_MASS_ERR
-    elif result.get('accepted_on') in ('strict', 'mass_only'):
-        defaults = _default_solver_params(config_params['planet_mass'])
-        limit = run_params.get('tolerance_outer', defaults['tolerance_outer'])
-    else:
-        limit = _TIMEOUT_ACCEPT_MASS_ERR
-    return _check_accepted(result, limit, run_params, *bands, volatile_profile)
+    return _check_accepted(result, run_params, *bands, volatile_profile)
 
 
 # Newton outer-loop defaults: 3-6 Newton iterations are typically
@@ -783,7 +774,7 @@ def _brentq_fallback_outer(
 
     def _best_seen(converged, accepted_on):
         result = dict(best['result'] or {})
-        _newton_verdict(result, converged, accepted_on)
+        _newton_verdict(result, converged, accepted_on, tol)
         result['converged_mass'] = bool(best['rel'] < tol)
         result['best_mass_error'] = float(best['rel'])
         result['total_time'] = time.time() - start_time
@@ -843,7 +834,7 @@ def _brentq_fallback_outer(
                 tol=tol,
                 n_newton_iter=n_newton_iter,
             )
-            _newton_verdict(result, True, 'brentq_best')
+            _newton_verdict(result, True, 'brentq_best', tol)
             return result
         if f0 > 0:  # pragma: no cover - bracket sweep direction; defensive
             # M too large -> shrink R.
@@ -951,7 +942,7 @@ def _brentq_fallback_outer(
         rel,
     )
     result = dict(root_result) if root_result else {}
-    _newton_verdict(result, rel < tol, 'newton_tol')
+    _newton_verdict(result, rel < tol, 'newton_tol', tol)
     result['converged_mass'] = bool(rel < tol)
     result['best_mass_error'] = float(rel)
     result['total_time'] = time.time() - start_time
@@ -985,7 +976,7 @@ def _attach_newton_bookkeeping(
         best_rel = min(h[2] for h in history)
         mass_ok = True if tol is None else bool(best_rel < tol)
         inner_ok = result.get('converged_pressure') and result.get('density_from_eos')
-        _newton_verdict(result, mass_ok and inner_ok, 'newton_tol')
+        _newton_verdict(result, mass_ok and inner_ok, 'newton_tol', tol)
         result['converged_mass'] = mass_ok
         result['best_mass_error'] = float(best_rel)
     result['total_time'] = time.time() - start_time
@@ -1597,6 +1588,7 @@ def _solve(
     best_profiles = None
     oscillation_count = 0
     stop_label = None  # 'timeout' (wall clock) or 'oscillation' once a loop stops early
+    mass_limit = tolerance_outer  # the mass test behind converged_mass
     restore_best = False  # an outer stop returns the best pass
     rho_eos = None  # rho_EOS(P, T) at the nodes of the current pressure profile
 
@@ -1629,6 +1621,7 @@ def _solve(
             stop_label = 'timeout'
             if best_profiles is not None:
                 converged_mass = best_mass_error < 3 * tolerance_outer
+                mass_limit = 3 * tolerance_outer
                 restore_best = True
             break
 
@@ -2386,6 +2379,7 @@ def _solve(
             )
             restore_best = True
             converged_mass = True
+            mass_limit = 3 * tolerance_outer
             stop_label = 'oscillation'
             break
 
@@ -2439,10 +2433,10 @@ def _solve(
                 max_iterations_outer,
             )
 
-    accepted_on = None
+    accepted_on = accept_mass_limit = None
     if converged_mass and converged_density and converged_pressure:
         converged = True
-        accepted_on = stop_label or 'strict'
+        accepted_on, accept_mass_limit = stop_label or 'strict', mass_limit
     elif converged_mass and best_mass_error < tolerance_outer:
         # Density/pressure Picard can stall on EOS table noise (e.g. PALEOS at high
         # T) while the integrated mass and radius are within tolerance.
@@ -2454,13 +2448,13 @@ def _solve(
             converged_pressure,
         )
         converged = True
-        accepted_on = stop_label or 'mass_only'
+        accepted_on, accept_mass_limit = stop_label or 'mass_only', tolerance_outer
     elif best_mass_error < _TIMEOUT_ACCEPT_MASS_ERR and best_profiles is not None:
         # Wall clock or iteration cap within the loose-accept ceiling: the radius is
         # within 1 % and the caller's outer mass-radius loop corrects the residual.
         converged = True
         converged_mass = True
-        accepted_on = stop_label or 'max_iter'
+        accepted_on, accept_mass_limit = stop_label or 'max_iter', _TIMEOUT_ACCEPT_MASS_ERR
         logger.warning(
             'Accepting %s solution: mass error %.4f%% (threshold %.1f%%), '
             'density_converged=%s, pressure_converged=%s.',
@@ -2513,6 +2507,7 @@ def _solve(
         'accepted_on': accepted_on,
         'mass_error_at_accept': _mass_error(mass_enclosed, planet_mass),
         'stopped_on_wall_clock': stop_label == 'timeout',
+        'accept_mass_limit': accept_mass_limit,
         'density_from_eos': density_from_eos,
         'p_center': pressure[0] if len(pressure) > 0 else None,
         'adiabat_computed': _adiabat_computed,
