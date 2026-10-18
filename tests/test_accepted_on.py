@@ -570,6 +570,26 @@ class TestRealSolve:
         assert r['radii'][-1] == pytest.approx(radius[1], rel=1e-12)
         assert r['converged_pressure'] and not r['converged_density']
 
+    def test_an_outer_stop_accepts_on_the_flags_of_the_best_pass(self, monkeypatch):
+        """Passes at 8, 4 and 9 % mass error with converged inner loops, tolerance_outer 0.02
+        and the clock in pass 3: the outer stop restores the 4 % pass before the accept tests,
+        which accept it on its own flags, as a timeout at 3 times tolerance_outer."""
+        radius, real = _clock_after_lookup(monkeypatch, outer=2), zs.solve_structure
+        errors = (0.08, 0.04, 0.09)
+
+        def solve(*args, **kwargs):
+            m, *rest = real(*args, **kwargs)
+            return (m * earth_mass * (1 + errors[min(len(radius), 3) - 1]) / m[-1], *rest)
+
+        monkeypatch.setattr(zs, 'solve_structure', solve)
+        cfg = _cfg(max_iterations_outer=4, max_iterations_inner=50, tolerance_outer=0.02)
+        r = zs._solve({**cfg, 'wall_timeout': WALL}, load_material_dictionaries(), None, INPUT)
+        assert len(radius) == 3 and r['radii'][-1] == pytest.approx(radius[1], rel=1e-12)
+        assert r['converged_density'] and r['converged_pressure']
+        assert r['converged'] is True and r['accepted_on'] == 'timeout'
+        assert r['accept_mass_limit'] == pytest.approx(0.06, rel=1e-12)
+        assert r['mass_error_at_accept'] == pytest.approx(0.04, rel=1e-9)
+
     def test_restored_pass_keeps_an_unconverged_pressure(self, monkeypatch):
         """As above with a pressure tolerance of 1e-3 Pa, which no pass meets: the restored pass
         comes back with its pressure not converged, so main retries."""
