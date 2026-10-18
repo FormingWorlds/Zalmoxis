@@ -74,8 +74,10 @@ def deviations(result, config_params, mass_limit, rtol, atol, density_at=None, i
         node count, since ``g_1`` scales with ``r_1``: at rtol 1e-5 and atol 1e-6 the
         tolerance is about 1.6e-3 with 150 nodes and 1e-2 with 2000.
     density_at : callable or None
-        ``(P, T, layer) -> rho`` from a scalar EOS call; the density check is skipped
-        when None or when ``result['density_from_eos']`` is False.
+        ``(P, T, layer) -> rho`` for the arrays of the nodes of one layer, by the EOS path
+        that the solver used at the returned nodes; called once per layer that has nodes.
+        A reply that is not a finite number breaks the check. The density check is skipped
+        when ``density_at`` is None or when ``result['density_from_eos']`` is False.
     ice : bool
         True when the planet has an ice layer.
 
@@ -120,16 +122,13 @@ def deviations(result, config_params, mass_limit, rtol, atol, density_at=None, i
     put('gravity', dg.max(initial=np.inf if k < 2 else 0.0), i, TOLERANCES['gravity'] * bound)
     put('mass_closure', abs(m[-1] / M - 1), len(m) - 1, mass_limit)
     if density_at is not None and result.get('density_from_eos'):
-        ref = np.array(
-            [
-                density_at(
-                    P[i],
-                    T[i],
-                    _layer(m[i], result['cmb_mass'], result['core_mantle_mass'], ice),
-                )
-                for i in range(k)
-            ]
+        layer = np.array(
+            [_layer(x, result['cmb_mass'], result['core_mantle_mass'], ice) for x in m[:k]]
         )
+        ref = np.full(k, np.nan)
+        for name in np.unique(layer):
+            sel = layer == name
+            ref[sel] = np.asarray(density_at(P[:k][sel], T[:k][sel], str(name)), dtype=float)
         with np.errstate(divide='ignore', invalid='ignore'):
             d = np.abs(rho[:k] / ref - 1)
         d[~np.isfinite(d)] = np.inf

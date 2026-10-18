@@ -50,7 +50,6 @@ from .mixing import (
     BINODAL_T_SCALE_DEFAULT,
     any_component_is_tdep,
     build_partition_profile,
-    calculate_mixed_density,
     calculate_mixed_density_batch,
     compute_melt_fraction,
     parse_all_layer_mixtures,
@@ -290,8 +289,8 @@ def _check_accepted(
     layer_mixtures,
     volatile_profile,
 ):
-    """Run ``invariants.check_accepted`` on a result of ``main``, with a scalar EOS call
-    per node as the density reference, the integration tolerances of ``run_params`` (the
+    """Run ``invariants.check_accepted`` on a result of ``main``, with the batch EOS call of
+    the solve per layer as the density reference, the integration tolerances of ``run_params`` (the
     parameters of the solve that returned) and the ``accept_mass_limit`` of the result;
     returns ``result``."""
     if not result.get('converged'):
@@ -307,7 +306,7 @@ def _check_accepted(
     def density_at(P, T, layer):
         vp = volatile_profile if layer == 'mantle' else None
         args = (mixes[layer], material_dictionaries, *melt, _interpolation_cache, *eos)
-        return calculate_mixed_density(P, T, *args, volatile_profile=vp)
+        return calculate_mixed_density_batch(P, T, *args, volatile_profile=vp)
 
     check_accepted(result, config_params, rtol, atol, density_at, 'ice_layer' in mixes)
     return result
