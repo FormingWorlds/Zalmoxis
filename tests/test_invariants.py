@@ -604,3 +604,29 @@ def test_the_density_check_gives_the_volatile_profile_only_to_the_mantle(monkeyp
     run = {'relative_tolerance': RTOL, 'absolute_tolerance': ATOL}
     zs._check_accepted(result, run, {**cfg, 'layer_eos_config': layers}, {}, None, mixes, vp)
     assert seen == {'core': None, 'mantle': vp, 'ice_layer': None}
+
+
+@pytest.mark.smoke
+@pytest.mark.timeout(900)
+def test_a_max_iter_accept_that_returns_a_worse_last_pass_raises(monkeypatch):
+    """Two passes at 1.25 % and 10.1 % mass error (mass and gravity scaled together, so the
+    gravity invariant holds): max_iter accepts on the best pass but returns the last one,
+    and the mass closure against the 3 % limit raises."""
+    radius, real_tp, real = [], zs.calculate_temperature_profile, zs.solve_structure
+    errors = (0.0125, 0.101)
+
+    def tp(radii, *args, **kwargs):
+        radius.append(radii[-1])
+        return real_tp(radii, *args, **kwargs)
+
+    def solve(*args, **kwargs):
+        m, g, P = real(*args, **kwargs)
+        f = earth_mass * (1 + errors[min(len(radius), 2) - 1]) / m[-1]
+        return m * f, g * f, P
+
+    monkeypatch.setattr(zs, 'calculate_temperature_profile', tp)
+    monkeypatch.setattr(zs, 'solve_structure', solve)
+    with pytest.raises(
+        StructureInvariantError, match=r"'max_iter'.* breaks mass_closure: deviation 1\.010e-01"
+    ):
+        _run(_cfg(wall_timeout=1e6, max_iterations_outer=2))
