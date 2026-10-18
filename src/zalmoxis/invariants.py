@@ -107,7 +107,7 @@ def deviations(result, config_params, mass_limit, rtol, atol, density_at=None, i
             put(name, abs(result[name] / (f * M) - 1), len(m) - 1)
     if cmf > 0:
         n_core = int(np.count_nonzero(m[:k] < result['cmb_mass'] * (1.0 - _RTOL_LAYER)))
-        put('core_radius', not 1 <= n_core < k, n_core)
+        put('core_radius', not 2 <= n_core < k + (cmf == 1), n_core)  # all nodes only at cmf 1
     with np.errstate(divide='ignore', invalid='ignore'):
         dg = np.abs(g[1:k] * r[1:k] ** 2 / (G * m[1:k]) - 1)
     dg[~np.isfinite(dg)] = np.inf
