@@ -576,6 +576,20 @@ class TestRealSolve:
         assert r['mass_error_at_accept'] == pytest.approx(0.10, rel=1e-9)
         assert len(seeds) == 2
 
+    def test_a_pass_without_a_pressure_solve_is_never_the_best_pass(self, monkeypatch):
+        """A start at 1.2e7 m: the first pass ends more than twice above the target mass, and
+        the clock cuts the second before its first pressure solve; the outer check returns
+        the first pass, with its EOS density, not the cut pass."""
+        radius, clock = _count_outer_iterations(monkeypatch), time.time
+        monkeypatch.setattr(
+            zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * (len(radius) >= 2))
+        )
+        cfg = _cfg(max_iterations_outer=4, max_iterations_inner=1, _initial_radius_guess=1.2e7)
+        r = zs._solve({**cfg, 'wall_timeout': WALL}, load_material_dictionaries(), None, INPUT)
+        assert len(radius) == 2 and r['converged'] is False
+        assert r['radii'][-1] == pytest.approx(1.2e7, rel=1e-12)
+        assert r['best_mass_error'] > 1 and r['density_from_eos'] is True
+
     def test_cut_with_passes_left_returns_the_best_pass(self, monkeypatch):
         """The clock cuts the third pass before its first pressure solve, with passes left:
         the next outer check returns the best pass, the first (the second ends 50 % above
