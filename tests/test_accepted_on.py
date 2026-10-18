@@ -209,6 +209,22 @@ class TestRetry:
         r, n = self._main(_first_attempt(True, False))
         assert n == 2 and r['accepted_on'] == 'strict'
 
+    @pytest.mark.parametrize(
+        'R, seed', [(1.26e6, None), (1.27e6, 1.27e6), (3.16e7, 3.16e7), (3.17e7, None)]
+    )
+    def test_retry_radius_seed_window(self, R, seed):
+        """The retry starts from the returned radius only between 0.2 and 5 times
+        R_E (M/M_E)^0.282, 1.2671e6 to 3.1677e7 m at 1 M_E."""
+        first = _first_attempt(True, False)
+        first['radii'] = np.array([0.0, R])
+        cfg = {
+            'planet_mass': earth_mass,
+            'layer_eos_config': {'core': 'Analytic:iron', 'mantle': 'Analytic:MgSiO3'},
+        }
+        with patch('zalmoxis.solver._solve', side_effect=[first, _inner(7.0e6)]) as solve:
+            zs.main(cfg, {}, None, '/tmp')
+        assert solve.call_args_list[1].args[0].get('_initial_radius_guess') == seed
+
 
 def _assert_eos_density(r, eos=None, melt=(None, None), mzf=None):
     """The returned density is rho_EOS(P, T) at every P > 0 node, from a direct EOS call;
@@ -446,34 +462,46 @@ class TestRealSolve:
         assert r['cmb_mass'] == pytest.approx(0.325 * earth_mass)
         P, rho, m = (np.asarray(r[k]) for k in ('pressure', 'density', 'mass_enclosed'))
         assert np.flatnonzero(P > 0).tolist() == [0]  # no pressure solve in the cut pass
-        assert (
-            not rho[1:].any()
-            and not m.any()
-            and r['mass_error_at_accept'] == pytest.approx(1.0)
-        )
+        assert not rho[1:].any() and not m.any()
+        assert r['mass_error_at_accept'] == pytest.approx(1.0)
 
+    def test_cut_with_passes_left_returns_the_best_pass(self, monkeypatch):
+        """The same cut with passes left: the next outer check stops the solve and returns
+        the best earlier pass, with its EOS density."""
+        radius, clock = _count_outer_iterations(monkeypatch), time.time
+        monkeypatch.setattr(
+            zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * (len(radius) >= 2))
+        )
+        cfg = _cfg(max_iterations_outer=4, max_iterations_inner=1, wall_timeout=WALL)
+        r = zs._solve(cfg, load_material_dictionaries(), None, INPUT)
+        assert len(radius) == 2 and r['converged'] is False
+        assert r['radii'][-1] == pytest.approx(radius[0], rel=1e-12)
+        _assert_eos_density(r)
+
+    @pytest.mark.parametrize('n_seed', [1, 50])
     def test_seeded_cut_keeps_a_density_only_where_the_pressure_is_set(
-        self, monkeypatch, caplog
+        self, monkeypatch, caplog, n_seed
     ):
-        """A caller's density seed fills the first pass; the clock runs out before its first
-        pressure solve, and the density comes back zero wherever the pressure is zero."""
+        """A caller's density seed fills the first pass when more than one of its nodes is
+        above zero; the clock runs out before its first pressure solve, and the density
+        comes back zero wherever the pressure is zero."""
         caplog.set_level(logging.INFO, logger='zalmoxis.solver')
         radius, clock = _count_outer_iterations(monkeypatch), time.time
         monkeypatch.setattr(
             zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * (len(radius) >= 1))
         )
         seed = {
-            'initial_density': np.linspace(1.3e4, 4e3, 50),
+            'initial_density': np.linspace(1.3e4, 4e3, 50) * (np.arange(50) < n_seed),
             'initial_radii': np.linspace(0, 6.4e6, 50),
         }
         cfg = _cfg(max_iterations_inner=1, wall_timeout=WALL)
         r = zs._solve(cfg, load_material_dictionaries(), None, INPUT, **seed)
         assert 'Wall-clock timeout in inner loop (outer=0, inner=0)' in caplog.text
-        assert 'Density seeded from previous solve' in caplog.text
+        assert ('Density seeded from previous solve' in caplog.text) is (n_seed > 1)
         assert r['converged'] is False and r['density_from_eos'] is False
-        P, rho = np.asarray(r['pressure']), np.asarray(r['density'])
-        assert np.flatnonzero(P > 0).tolist() == [0]
-        assert np.flatnonzero(rho > 0).tolist() == [0]
+        assert np.flatnonzero(r['pressure'] > 0).tolist() == [0]
+        assert r['density'][0] == pytest.approx(1.3e4 if n_seed > 1 else 0.0)
+        assert not r['density'][1:].any()
 
     def test_retry_after_an_unaccepted_cut_starts_from_the_newest_radius(self, monkeypatch):
         """The first attempt of the cut above is not accepted; the retry starts from the
