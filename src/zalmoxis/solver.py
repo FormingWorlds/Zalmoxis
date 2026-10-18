@@ -1341,10 +1341,11 @@ def _solve(
         relative mass error of the returned profile. ``stopped_on_wall_clock`` is True
         when the wall clock stopped the solve, also when it was not accepted.
         ``density`` is rho_EOS(P, T) at the returned nodes and ``density_from_eos`` is
-        True, unless the wall clock stopped the solve before the first pressure solve of
-        its last pass, or before its first pass, and the solve was not accepted; the
-        result then has the newest radius, a pressure and density that are zero except
-        at most at the centre node, and an enclosed mass of zero. An outer wall-clock
+        True, unless the solve was not accepted and the returned pass has no pressure
+        solve: the wall clock stopped the solve before its first pass, or before the
+        first pressure solve of the first pass or of the pass at ``max_iterations_outer``.
+        The result then has the radius of that pass, a pressure and density that are zero
+        except at most at the centre node, and an enclosed mass of zero. An outer wall-clock
         stop after at least one pass, accepted or not, and an accepted solve cut in that
         way, return the best pass with its gravity, ``cmb_mass`` and ``core_mantle_mass``.
     """
