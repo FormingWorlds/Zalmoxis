@@ -2365,6 +2365,7 @@ def _solve(
                 'rho_eos': rho_eos,
                 'converged_density': converged_density,
                 'converged_pressure': converged_pressure,
+                'adiabat_computed': _adiabat_computed,
             }
             oscillation_count = 0
         elif (
@@ -2479,8 +2480,9 @@ def _solve(
             np.array(best_profiles[k])
             for k in ('radii', 'density', 'gravity', 'pressure', 'mass_enclosed')
         )
-        rho_eos, converged_density, converged_pressure = (
-            best_profiles[k] for k in ('rho_eos', 'converged_density', 'converged_pressure')
+        rho_eos, converged_density, converged_pressure, _adiabat_computed = (
+            best_profiles[k]
+            for k in ('rho_eos', 'converged_density', 'converged_pressure', 'adiabat_computed')
         )
         if best_profiles['temperatures'] is not None:
             temperatures = np.array(best_profiles['temperatures'])
