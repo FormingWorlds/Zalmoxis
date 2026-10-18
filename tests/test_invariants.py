@@ -177,17 +177,17 @@ def test_a_nan_raises():
 @pytest.mark.unit
 def test_density_layer_follows_cmb_mass():
     result, cfg = _sphere(mmf=0.5)
-    m = result['mass_enclosed']
-    layers, result['accept_mass_limit'] = [], 1e-3
-    check_accepted(
-        result, cfg, RTOL, ATOL, lambda P, T, layer: layers.append(layer) or RHO, ice=True
-    )
-    core = m[: len(layers)] < result['cmb_mass']
-    ice = m[: len(layers)] >= result['core_mantle_mass']
-    assert layers == [
-        'core' if c else 'ice_layer' if i else 'mantle' for c, i in zip(core, ice)
-    ]
-    assert {'core', 'mantle', 'ice_layer'} <= set(layers)
+    m, P = result['mass_enclosed'][: N - 1], result['pressure'][: N - 1]  # node N - 1 has P = 0
+    calls, result['accept_mass_limit'] = {}, 1e-3
+
+    def density_at(P, T, layer):  # one call per layer, with the nodes of that layer
+        calls[layer] = np.array(P)
+        return np.full(len(P), RHO)
+
+    check_accepted(result, cfg, RTOL, ATOL, density_at, ice=True)
+    core, ice = m < result['cmb_mass'], m >= result['core_mantle_mass']
+    for layer, nodes in (('core', core), ('mantle', ~core & ~ice), ('ice_layer', ice)):
+        assert nodes.any() and np.array_equal(calls[layer], P[nodes]), layer
 
 
 @pytest.mark.unit
@@ -470,3 +470,33 @@ def test_a_gravity_error_at_one_inner_node_against_the_bound(monkeypatch, n, fac
             _run(cfg)
     else:
         assert _run(cfg)['converged']
+
+
+@pytest.mark.unit
+def test_a_density_reference_of_none_raises():
+    result, cfg = _sphere()
+    result['accept_mass_limit'] = 1e-3
+    with pytest.raises(StructureInvariantError, match='breaks density_eos:'):
+        check_accepted(result, cfg, RTOL, ATOL, lambda P, T, layer: None)
+
+
+@pytest.mark.smoke
+@pytest.mark.timeout(900)
+def test_the_density_check_uses_the_batch_eos_path_of_the_solver(monkeypatch):
+    """The scalar EOS call returns a wrong density; the check reads the batch path that the
+    solver used at the returned nodes, so the accepted result passes."""
+    monkeypatch.setattr(zs, 'calculate_mixed_density', lambda *a, **k: 1.0, raising=False)
+    assert _run(_cfg(wall_timeout=1e6))['converged']
+
+
+@pytest.mark.smoke
+@pytest.mark.timeout(900)
+def test_a_chabrier_h2_mantle_passes_every_invariant():
+    """The 3 % H2 mantle of input/grids/h2_mixing.toml with a PALEOS iron core."""
+    from tests.test_spider_coupling_convergence import _has_paleos_data
+
+    if not _has_paleos_data():
+        pytest.skip('PALEOS tables not on disk')
+    layers = {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3:0.97+Chabrier:H:0.03'}
+    r = _run(_cfg(wall_timeout=1e6, layer_eos_config=layers))
+    assert r['converged'] and r['density_from_eos']
