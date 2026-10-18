@@ -1409,12 +1409,17 @@ def _solve(
         relative mass error of the returned profile. ``stopped_on_wall_clock`` is True
         when the wall clock stopped the solve, also when it was not accepted.
         ``density`` is rho_EOS(P, T) at the returned nodes and ``density_from_eos`` is
-        True, unless the wall clock stopped the last pass before its first pressure
-        solve and the solve was not accepted; that pass is then returned, with its
-        newest radius. An outer wall-clock stop, and an accepted solve cut in that way,
-        return the best pass with its gravity. ``cmb_mass`` and ``core_mantle_mass`` are
-        the layer boundaries of every pass, ``core_mass_fraction`` and ``core_mass_fraction
-        + mantle_mass_fraction`` times ``planet_mass``.
+        True, unless the solve was not accepted and the returned pass has no pressure
+        solve: the wall clock stopped the solve before its first pass, or before the
+        first pressure solve of the pass at ``max_iterations_outer`` or of a pass after
+        passes that all have a mass error above 1 (such as the first pass), since a pass
+        without a pressure solve has a mass error of 1. The result then has the radius of
+        that pass, a pressure and density that are zero except at most at the centre
+        node, and an enclosed mass of zero. An outer wall-clock stop after at least one
+        pass, accepted or not, and an accepted solve cut in that way, return the best pass
+        with its gravity. ``cmb_mass`` and ``core_mantle_mass`` are the layer boundaries
+        of every pass, ``core_mass_fraction`` and ``core_mass_fraction +
+        mantle_mass_fraction`` times ``planet_mass``.
     """
     # Initialize convergence flags
     converged = False
@@ -2511,56 +2516,8 @@ def _solve(
     end_time = time.time()
     total_time = end_time - start_time
 
-    # Smooth the outermost shells of a Picard iterate (sudden gradient changes are replaced
-    # by a linear extrapolation); rho_EOS is returned as the structure integration saw it.
     pressure = np.asarray(pressure)
-    density = np.asarray(density)
-
-    # Zero out padded (P=0) shells
-    density[pressure <= 0] = 0.0
-
-    # Find the last shell with positive density
-    i_surf = len(density) - 1
-    while i_surf > 0 and density[i_surf] <= 0:
-        i_surf -= 1
-
-    if not density_from_eos and i_surf > 10:
-        # Compute density gradient in the outer mantle.
-        # Use the last 20 shells before the surface edge, but do not
-        # cross layer boundaries (CMB, ice-layer transition) where
-        # real density jumps exist.
-        # Find outermost layer boundary by detecting large density
-        # ratios (> 1.5x) walking inward from surface.
-        i_layer_base = max(0, i_surf - 40)
-        for _k in range(i_surf - 1, i_layer_base, -1):
-            if density[_k] > 0 and density[_k + 1] > 0:
-                ratio = density[_k] / density[_k + 1]
-                if ratio > 1.5 or ratio < 1.0 / 1.5:
-                    i_layer_base = _k + 1
-                    break
-        n_check = min(20, i_surf - i_layer_base)
-        if n_check < 6:
-            n_check = min(20, i_surf - 5)
-        i_start = i_surf - n_check
-        grads = np.diff(density[i_start : i_surf + 1])
-        # Find where the gradient suddenly changes
-        # (the smooth interior has nearly constant negative gradient).
-        if len(grads) > 5:
-            median_grad = np.median(grads[: n_check // 2])
-            if median_grad < 0:  # density decreasing outward (normal)
-                for j in range(len(grads)):
-                    i_global = i_start + j + 1
-                    # Catch both sudden drops (3x steeper) and sudden
-                    # increases (sign reversal). Both indicate the Picard
-                    # iteration produced unreliable density at the surface.
-                    is_sudden_drop = grads[j] < 3 * median_grad
-                    is_sudden_rise = grads[j] > 0 and abs(grads[j]) > abs(median_grad)
-                    if is_sudden_drop or is_sudden_rise:
-                        # Extrapolate linearly from the smooth region
-                        for k in range(i_global, i_surf + 1):
-                            extrap = density[i_global - 1] + median_grad * (k - i_global + 1)
-                            density[k] = max(extrap, 0.0)
-                        break
+    density[pressure <= 0] = 0.0  # padded nodes
 
     model_results = {
         'layer_eos_config': layer_eos_config,
