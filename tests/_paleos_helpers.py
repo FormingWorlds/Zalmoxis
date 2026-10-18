@@ -27,10 +27,10 @@ def _paleos_data_available():
 
 
 @lru_cache(maxsize=32)
-def _run_paleos(mass_earth, temperature_mode='linear'):
+def _run_paleos(mass_earth, temperature_mode='linear', wall_timeout=300.0):
     """Run Zalmoxis with PALEOS-2phase:MgSiO3 mantle for one (mass, T-mode).
 
-    Cached by ``(mass_earth, temperature_mode)`` so multiple tests sharing
+    Cached by ``(mass_earth, temperature_mode, wall_timeout)`` so multiple tests sharing
     the same configuration reuse one solver run. Tests must only read
     from the returned dict, never mutate it.
 
@@ -40,6 +40,8 @@ def _run_paleos(mass_earth, temperature_mode='linear'):
         Planet mass in Earth masses.
     temperature_mode : str
         Either ``'linear'`` or ``'adiabatic'``.
+    wall_timeout : float
+        Solver wall clock in s.
 
     Returns
     -------
@@ -65,6 +67,7 @@ def _run_paleos(mass_earth, temperature_mode='linear'):
         'mantle': 'PALEOS-2phase:MgSiO3',
     }
     config_params['temperature_mode'] = temperature_mode
+    config_params['wall_timeout'] = wall_timeout
     config_params['data_output_enabled'] = False
     config_params['plotting_enabled'] = False
 
