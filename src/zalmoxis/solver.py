@@ -536,11 +536,11 @@ def main(
         initial_radii=initial_radii,
     )
 
-    # Skip the retry when density and pressure converged and the mass error is within
-    # `_RETRY_SKIP_MASS_ERR`: on hot molten T(r) the retry takes 600+ s for no better
-    # mass, and the next resolve of the caller corrects the residual.
+    # Skip the retry when density and pressure converged and the mass error of the returned
+    # profile is within `_RETRY_SKIP_MASS_ERR`: on hot molten T(r) the retry takes 600+ s for
+    # no better mass, and the next resolve of the caller corrects the residual.
     _RETRY_SKIP_MASS_ERR = 0.07
-    _first_mass_err = result.get('best_mass_error')
+    _first_mass_err = result.get('mass_error_at_accept')
     _retry_skipped = (
         not result['converged']
         and result.get('converged_density', False)
@@ -1348,7 +1348,8 @@ def _solve(
         without a pressure solve has a mass error of 1. The result then has the radius of that pass, a pressure and density that are zero
         except at most at the centre node, and an enclosed mass of zero. An outer wall-clock
         stop after at least one pass, accepted or not, and an accepted solve cut in that
-        way, return the best pass with its gravity, ``cmb_mass`` and ``core_mantle_mass``.
+        way, return the best pass with its gravity, ``cmb_mass``, ``core_mantle_mass`` and
+        its density and pressure convergence flags.
     """
     # Initialize convergence flags
     converged = False
@@ -2334,6 +2335,8 @@ def _solve(
                 'rho_eos': rho_eos,
                 'cmb_mass': cmb_mass,
                 'core_mantle_mass': core_mantle_mass,
+                'converged_density': converged_density,
+                'converged_pressure': converged_pressure,
             }
             oscillation_count = 0
         elif (
@@ -2447,8 +2450,15 @@ def _solve(
             np.array(best_profiles[k])
             for k in ('radii', 'density', 'gravity', 'pressure', 'mass_enclosed')
         )
-        rho_eos, cmb_mass, core_mantle_mass = (
-            best_profiles[k] for k in ('rho_eos', 'cmb_mass', 'core_mantle_mass')
+        rho_eos, cmb_mass, core_mantle_mass, converged_density, converged_pressure = (
+            best_profiles[k]
+            for k in (
+                'rho_eos',
+                'cmb_mass',
+                'core_mantle_mass',
+                'converged_density',
+                'converged_pressure',
+            )
         )
         if best_profiles['temperatures'] is not None:
             temperatures = np.array(best_profiles['temperatures'])
