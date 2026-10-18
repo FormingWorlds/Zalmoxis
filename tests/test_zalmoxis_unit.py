@@ -7,7 +7,6 @@ Tests cover:
 - load_material_dictionaries(): returns expected registry structure
 - load_solidus_liquidus_functions(): returns callables or None depending on EOS
 - choose_config_file(): loads default config from TOML
-- Surface density smoothing: synthetic profile anomaly detection and repair
 - Post-processing computations: average density, CMB index from synthetic arrays
 
 References:
