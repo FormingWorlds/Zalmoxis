@@ -6,6 +6,8 @@ the error that names it. ``main`` runs the check at its Picard and Newton exits.
 
 from __future__ import annotations
 
+import numbers
+
 import numpy as np
 import pytest
 from hypothesis import given, settings
@@ -54,7 +56,16 @@ def _sphere(mmf=0.0):
 
 
 def _check(result, cfg, limit=1e-3):
-    check_accepted(result, cfg, limit, RTOL, ATOL, lambda P, T, layer: RHO)
+    result['accept_mass_limit'] = limit
+    check_accepted(result, cfg, RTOL, ATOL, lambda P, T, layer: RHO)
+
+
+def _sphere_off(err):
+    """The sphere as the result for a target mass ``1 + err`` times below its mass."""
+    result, cfg = _sphere()
+    cfg['planet_mass'] = result['mass_enclosed'][-1] / (1 + err)
+    result['cmb_mass'] = result['core_mantle_mass'] = CMF * cfg['planet_mass']
+    return result, cfg
 
 
 def _raises(result, cfg, name, limit=1e-3):
@@ -167,9 +178,9 @@ def test_a_nan_raises():
 def test_density_layer_follows_cmb_mass():
     result, cfg = _sphere(mmf=0.5)
     m = result['mass_enclosed']
-    layers = []
+    layers, result['accept_mass_limit'] = [], 1e-3
     check_accepted(
-        result, cfg, 1e-3, RTOL, ATOL, lambda P, T, layer: layers.append(layer) or RHO, ice=True
+        result, cfg, RTOL, ATOL, lambda P, T, layer: layers.append(layer) or RHO, ice=True
     )
     core = m[: len(layers)] < result['cmb_mass']
     ice = m[: len(layers)] >= result['core_mantle_mass']
@@ -243,12 +254,12 @@ def test_cmb_mass_is_the_layer_boundary_of_the_returned_profile(monkeypatch):
 
 
 def _spy_limits(monkeypatch):
-    """Record the mass limit of every check that main runs."""
+    """Record the accept label and mass limit of every check that main runs."""
     limits, real = [], zs.check_accepted
 
-    def spy(result, cfg, limit, *args, **kwargs):
-        limits.append((result['accepted_on'], limit))
-        return real(result, cfg, limit, *args, **kwargs)
+    def spy(result, *args, **kwargs):
+        limits.append((result['accepted_on'], result.get('accept_mass_limit')))
+        return real(result, *args, **kwargs)
 
     monkeypatch.setattr(zs, 'check_accepted', spy)
     return limits
@@ -325,3 +336,60 @@ def test_main_checks_a_newton_result_with_newton_tol(monkeypatch):
     )
     r = _run(cfg)
     assert r['converged'] and limits == [(r['accepted_on'], 2e-4)]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    'limit', ['missing', None, True, 0, 0.0, -1e-3, np.nan, np.inf, '0.05']
+)
+def test_an_accept_without_a_valid_mass_limit_raises(limit):
+    result, cfg = _sphere()
+    if not isinstance(limit, str) or limit != 'missing':
+        result['accept_mass_limit'] = limit
+    with pytest.raises(StructureInvariantError, match='accept_mass_limit'):
+        check_accepted(result, cfg, RTOL, ATOL, lambda P, T, layer: RHO)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    'limit, raises', [(0.06, False), (0.0401, False), (0.0399, True), (0.03, True)]
+)
+def test_mass_closure_reads_the_limit_of_the_result(limit, raises):
+    """A 4 % mass error against the limit that the accept path wrote."""
+    result, cfg = _sphere_off(0.04)
+    if raises:
+        _raises(result, cfg, 'mass_closure', limit)
+    else:
+        _check(result, cfg, limit)
+
+
+@pytest.mark.unit
+@settings(max_examples=80, deadline=None)
+@given(
+    limit=st.one_of(
+        st.none(),
+        st.booleans(),
+        st.text(max_size=4),
+        st.integers(max_value=0),
+        st.integers(min_value=1, max_value=10**6),
+        st.floats(max_value=0.0),
+        st.floats(min_value=1e-300, max_value=0.0399),
+        st.floats(min_value=0.0401, max_value=1e300),
+        st.sampled_from(
+            [np.nan, np.inf, -np.inf, np.float64(0.05), np.float32(0.05), np.int64(1)]
+        ),
+    )
+)
+def test_accept_mass_limit_domain(limit):
+    """Only a finite positive number is a limit; it then decides the 4 % mass error."""
+    result, cfg = _sphere_off(0.04)
+    result['accept_mass_limit'] = limit
+    number = isinstance(limit, numbers.Real) and not isinstance(limit, bool)
+    if not (number and 0 < limit < np.inf):
+        with pytest.raises(StructureInvariantError, match='accept_mass_limit'):
+            check_accepted(result, cfg, RTOL, ATOL, lambda P, T, layer: RHO)
+    elif limit < 0.04:
+        with pytest.raises(StructureInvariantError, match='breaks mass_closure:'):
+            check_accepted(result, cfg, RTOL, ATOL, lambda P, T, layer: RHO)
+    else:
+        check_accepted(result, cfg, RTOL, ATOL, lambda P, T, layer: RHO)

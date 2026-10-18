@@ -97,6 +97,7 @@ class TestNewton:
     def test_newton_tol(self):
         r = _newton()
         assert r['converged'] is True and r['accepted_on'] == 'newton_tol'
+        assert r['accept_mass_limit'] == 1e-6  # newton_tol
         assert r['mass_error_at_accept'] == pytest.approx(r['newton_history'][-1][2], abs=1e-15)
 
     def test_bracket_sweep_hit_is_brentq_best(self):
@@ -124,7 +125,8 @@ class TestNewton:
         assert type(r['converged']) is bool and r['accepted_on'] == 'newton_tol'
 
     def test_inner_wall_clock_stop_is_timeout(self):
-        assert _newton(wall=True)['accepted_on'] == 'timeout'
+        r = _newton(wall=True)
+        assert r['accepted_on'] == 'timeout' and r['accept_mass_limit'] == 1e-6
         assert _newton(wall=True, eos=False)['accepted_on'] is None
 
 
@@ -133,7 +135,7 @@ class TestBrentq:
     def test_root_is_newton_tol(self):
         r = _brentq(_hist(6.0e6, 8.0e6), lambda R: (A * R + B, _inner(R)), 6.0e6)
         assert r['newton_used_brentq'] and r['converged'] is True
-        assert r['accepted_on'] == 'newton_tol'
+        assert r['accepted_on'] == 'newton_tol' and r['accept_mass_limit'] == 1e-6
 
     def test_root_does_not_read_inner_flags(self):
         def eval_M(R):
@@ -146,6 +148,7 @@ class TestBrentq:
     def test_narrow_bracket_is_brentq_best(self):
         r = _brentq(_hist(7.0e6 - 0.2, 7.0e6 + 0.2), None, 7.0e6 - 0.2)
         assert r['converged'] is True and r['accepted_on'] == 'brentq_best'
+        assert r['accept_mass_limit'] == 1e-6
         assert r['radii'][-1] == 7.0e6 - 0.2  # the profile of the best entry
         assert r['mass_error_at_accept'] == pytest.approx(r['best_mass_error'], abs=1e-15)
         assert r['best_mass_error'] < 1e-6
@@ -180,6 +183,7 @@ class TestBrentq:
         r = _brentq(_hist(7.0e6), below, 7.0e6)
         assert r['converged'] is False and r['accepted_on'] is None and r['converged_mass']
         assert r['radii'][-1] == 7.0e6 and r['mass_error_at_accept'] < 1e-15
+        assert r['accept_mass_limit'] is None
 
 
 @pytest.mark.unit
@@ -210,12 +214,14 @@ class TestRetry:
     def test_retry_skip(self):
         r, n = self._main(_first_attempt(True, True))
         assert n == 1 and r['converged'] is True and r['accepted_on'] == 'retry_skip'
+        assert r['accept_mass_limit'] == 0.07
 
     def test_retry_skip_on_a_wall_clock_stop_is_timeout(self):
         first = _first_attempt(True, True)
         first['stopped_on_wall_clock'] = True
         r, n = self._main(first)
         assert n == 1 and r['converged'] is True and r['accepted_on'] == 'timeout'
+        assert r['accept_mass_limit'] == 0.07  # the retry-skip test it passed
 
     def test_retry_reports_its_own_path(self):
         r, n = self._main(_first_attempt(True, False))
@@ -333,18 +339,21 @@ def test_outer_wall_clock_is_timeout(monkeypatch, caplog):
 @pytest.mark.smoke
 class TestRealSolve:
     def test_strict(self):
-        r = _picard()  # inner cap 50: the density converges below tolerance_inner
+        r = _picard(tolerance_outer=4e-3)  # inner cap 50: the density converges
         assert r['converged_density'] and r['converged_pressure']
         assert r['accepted_on'] == 'strict' and r['stopped_on_wall_clock'] is False
+        assert r['accept_mass_limit'] == 4e-3
 
     def test_mass_only(self):
-        r = _picard(max_iterations_inner=1)
+        r = _picard(max_iterations_inner=1, tolerance_outer=4e-3)
         assert not r['converged_density'] and r['accepted_on'] == 'mass_only'
+        assert r['accept_mass_limit'] == 4e-3
 
     def test_iteration_cap_is_max_iter(self):  # the last node is padded (P = 0) on macOS
         r = _picard(max_iterations_outer=3, max_iterations_inner=1)
         assert r['converged'] is True and r['accepted_on'] == 'max_iter'
         assert r['mass_error_at_accept'] > 1e-3  # above tolerance_outer
+        assert r['accept_mass_limit'] == 0.03
 
     def test_iteration_cap_of_one_pass_is_max_iter(self):
         """``_solve`` itself: through ``main`` a first attempt that is not accepted would
@@ -378,7 +387,7 @@ class TestRealSolve:
     def test_inner_wall_clock_is_timeout(self, monkeypatch, caplog, inner, count, label):
         """The clock runs out in the inner loop of the last outer iteration, after ``count``
         density lookups; without the clock the same solve is accepted on ``label``."""
-        cfg = _cfg(max_iterations_inner=inner, wall_timeout=WALL)
+        cfg = _cfg(max_iterations_inner=inner, tolerance_outer=1e-3, wall_timeout=WALL)
         radius = _count_outer_iterations(monkeypatch)
         assert _run(cfg)['accepted_on'] == label
         monkeypatch.undo()
@@ -388,6 +397,7 @@ class TestRealSolve:
         assert 'Wall-clock timeout (1000000s)' not in caplog.text
         assert bool(r['converged_density']) == (label == 'strict')
         assert r['converged'] is True and r['accepted_on'] == 'timeout'
+        assert r['accept_mass_limit'] == 1e-3  # tolerance_outer, also where it replaces strict
 
     def test_retry_skip_on_an_inner_wall_clock_cut_is_timeout(self, monkeypatch, caplog):
         """One outer iteration cut by the clock in its inner loop, 5.6 % mass error: ``main``
@@ -402,6 +412,7 @@ class TestRealSolve:
         assert 'Wall-clock timeout in inner loop' in caplog.text
         assert 'Skipping retry' in caplog.text
         assert r['converged'] is True and r['accepted_on'] == 'timeout'
+        assert r['accept_mass_limit'] == 0.07
 
     def test_wall_clock_without_an_accept(self):
         """The clock runs out before the first profile: not accepted (``main`` would retry)."""
@@ -626,6 +637,33 @@ def test_wall_clock_in_the_adiabat_ramp_is_timeout(monkeypatch, caplog):
     assert 'Wall-clock timeout (1000000s)' in caplog.text
     assert r['best_mass_error'] < 0.02  # below tolerance_outer: the chain alone says mass_only
     assert r['converged'] is True and r['accepted_on'] == 'timeout'
+    assert r['accept_mass_limit'] == 0.02
+
+
+@pytest.mark.smoke
+@pytest.mark.wolfbower
+def test_wall_clock_in_the_adiabat_ramp_keeps_tolerance_outer_as_the_limit(monkeypatch, caplog):
+    """As above with tolerance_outer 0.05 and a 3.9 % mass error: accepted below
+    tolerance_outer, so the invariant check reads that limit and does not raise."""
+    from zalmoxis.eos import get_solidus_liquidus_functions
+
+    _need_wb_tables()
+    caplog.set_level(logging.INFO, logger='zalmoxis.solver')
+    ramp = lambda: any('activating adiabat blend' in m for m in caplog.messages)  # noqa: E731
+    clock = time.time
+    monkeypatch.setattr(zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * ramp()))
+    cfg = _cfg(
+        temperature_mode='adiabatic',
+        layer_eos_config={'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'},
+        tolerance_outer=0.05,
+        max_iterations_inner=2,
+        wall_timeout=WALL,
+        _initial_radius_guess=5.9e6,
+    )
+    r = zs.main(cfg, load_material_dictionaries(), get_solidus_liquidus_functions(), '/tmp')
+    assert r['converged'] is True and r['accepted_on'] == 'timeout'
+    assert 0.03 < r['mass_error_at_accept'] < 0.05
+    assert r['accept_mass_limit'] == 0.05
 
 
 @pytest.mark.smoke
