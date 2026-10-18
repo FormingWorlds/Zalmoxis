@@ -1376,15 +1376,15 @@ def _solve(
         ``density`` is rho_EOS(P, T) at the returned nodes and ``density_from_eos`` is
         True, unless the solve was not accepted and the returned pass has no pressure
         solve: the wall clock stopped the solve before its first pass, or before the
-        first pressure solve of the pass at ``max_iterations_outer`` or of a pass after
-        passes that all have a mass error above 1 (such as the first pass), since a pass
-        without a pressure solve has a mass error of 1. The result then has the radius of
-        that pass, a pressure and density that are zero except at most at the centre
-        node, and an enclosed mass of zero. An outer wall-clock stop after at least one
-        pass, accepted or not, and an accepted solve cut in that way, return the best pass
-        with its gravity and its density and pressure convergence flags. ``cmb_mass`` and
-        ``core_mantle_mass`` are the layer boundaries of every pass, ``core_mass_fraction``
-        and ``core_mass_fraction + mantle_mass_fraction`` times ``planet_mass``.
+        first pressure solve of the first pass or of the pass at ``max_iterations_outer``;
+        a pass without a pressure solve is never the best pass. The result then has the
+        radius of that pass, a pressure and density that are zero except at most at the
+        centre node, and an enclosed mass of zero. An outer wall-clock stop after at least
+        one pass, accepted or not, and an accepted solve cut in that way, return the best
+        pass with its gravity and its density and pressure convergence flags. ``cmb_mass``
+        and ``core_mantle_mass`` are the layer boundaries of every pass,
+        ``core_mass_fraction`` and ``core_mass_fraction + mantle_mass_fraction`` times
+        ``planet_mass``.
     """
     # Initialize convergence flags
     converged = False
@@ -2346,9 +2346,8 @@ def _solve(
                 _picard_alpha = min(0.7, _picard_alpha * 1.1)
         _prev_mass_error = mass_error_signed
 
-        # Track best solution for oscillation bailout (local variables,
-        # reset per _solve() call to avoid stale state between calls)
-        if relative_diff_outer_mass < best_mass_error:
+        # Track the best pass for the restore; a pass without a pressure solve never counts
+        if relative_diff_outer_mass < best_mass_error and rho_eos is not None:
             best_mass_error = relative_diff_outer_mass
             best_profiles = {
                 'radii': radii.copy(),
