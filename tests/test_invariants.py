@@ -394,3 +394,51 @@ def test_accept_mass_limit_domain(limit):
             check_accepted(result, cfg, RTOL, ATOL, lambda P, T, layer: RHO)
     else:
         check_accepted(result, cfg, RTOL, ATOL, lambda P, T, layer: RHO)
+
+
+def _sphere_core(f):
+    """The sphere with a core mass fraction ``f`` and no ice layer."""
+    result, cfg = _sphere()
+    cfg['core_mass_fraction'] = f
+    result['cmb_mass'] = result['core_mantle_mass'] = f * cfg['planet_mass']
+    return result, cfg
+
+
+@pytest.mark.unit
+def test_a_core_of_every_node_passes_only_at_core_mass_fraction_1():
+    _check(*_sphere_core(1.0))
+    _raises(*_sphere_core(0.97), 'core_radius')  # every node with P > 0 is below 0.97 M
+
+
+@pytest.mark.unit
+def test_a_core_of_one_node_raises():
+    m = _sphere()[0]['mass_enclosed']
+    _raises(*_sphere_core(0.5 * m[1] / m[-1]), 'core_radius')
+
+
+@pytest.mark.unit
+@settings(max_examples=60, deadline=None)
+@given(u=st.floats(0.0, 1.0))
+def test_core_radius_over_the_core_mass_fraction(u):
+    """Nodes 0 and 1 at least, and every node with P > 0 only at core_mass_fraction 1."""
+    m = _sphere()[0]['mass_enclosed'] / _sphere()[0]['mass_enclosed'][-1]
+    lo, hi = 1.01 * m[1], 0.99 * m[N - 2]  # the last node with P > 0 is N - 2
+    for f, raises in (
+        (lo + u * (hi - lo), False),
+        (u * 0.99 * m[1], True),
+        (1.01 * m[N - 2] + u * (0.99 - m[N - 2]), True),
+    ):
+        if f <= 0:
+            continue
+        if raises:
+            _raises(*_sphere_core(f), 'core_radius')
+        else:
+            _check(*_sphere_core(f))
+
+
+@pytest.mark.smoke
+@pytest.mark.timeout(900)
+def test_a_planet_of_core_only_passes_every_invariant():
+    """core_mass_fraction 1.0: every node is core, with no mantle node."""
+    r = _run(_cfg(wall_timeout=1e6, core_mass_fraction=1.0))
+    assert r['converged'] and r['cmb_mass'] == pytest.approx(earth_mass, rel=1e-12)
