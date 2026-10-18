@@ -505,6 +505,12 @@ def main(
         A structure solve gave a non-finite profile (a stop in the integration
         deep inside the planet), with either outer solver. Any trial central
         pressure counts, including a bracket end of the pressure search.
+    StructureInvariantError
+        An accepted result breaks a physical invariant of ``zalmoxis.invariants``:
+        the layer masses, the padding, positive and monotone profiles, gravity, the
+        mass closure within ``accept_mass_limit``, or the EOS density. It is not a
+        RuntimeError, so a caller that keeps its structure after a failed solve does
+        not catch it.
     """
     _interpolation_cache.pop('_jax_fell_back', None)  # set by solve_structure's numpy fallback
     _band_debug_seen.clear()

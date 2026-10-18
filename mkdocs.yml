@@ -37,6 +37,7 @@ nav:
           - Overview: Reference/api/index.md
           - Config: Reference/api/zalmoxis.config.md
           - Solver: Reference/api/zalmoxis.solver.md
+          - Invariants: Reference/api/zalmoxis.invariants.md
           - Output: Reference/api/zalmoxis.output.md
           - Structure model: Reference/api/zalmoxis.structure_model.md
           - Energetics: Reference/api/zalmoxis.energetics.md

@@ -8,6 +8,7 @@ This is a detailed overview of Zalmoxis' API for the user's reference. If you wa
 src/zalmoxis/
 ├── config.py             # Config loading, parsing, validation, EOS setup
 ├── solver.py             # main() solver loop (3 nested iterations)
+├── invariants.py         # Physical invariants of an accepted result
 ├── output.py             # post_processing(), file output
 ├── structure_model.py    # ODE system: coupled_odes(), solve_structure()
 ├── eos/                  # EOS package, organized by family
@@ -31,6 +32,7 @@ src/zalmoxis/
 ### Core
 - [`zalmoxis.config`](zalmoxis.config.md) - Configuration loading, parsing, validation
 - [`zalmoxis.solver`](zalmoxis.solver.md) - Solver loop (`main()`)
+- [`zalmoxis.invariants`](zalmoxis.invariants.md) - Invariant checks on an accepted result
 - [`zalmoxis.output`](zalmoxis.output.md) - Post-processing and file output
 - [`zalmoxis.structure_model`](zalmoxis.structure_model.md) - ODE system
 
