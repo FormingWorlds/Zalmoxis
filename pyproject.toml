@@ -133,6 +133,7 @@ markers = [
     "slow: Slow convergence tests (minutes, full composition grids)",
     "wolfbower: Full solves on the Wolf & Bower mantle tables, run in their own nightly job",
     "paleos_adiabat: Full adiabatic PALEOS solves at 5 M_earth with no reachable wall clock, run in their own nightly job",
+    "accept_solves: Real solves of the accept labels and the structure invariants, run in their own nightly job",
     "physics_invariant: Tests pinning a physical invariant independently of a reference implementation",
     "reference_pinned: Tests pinning behavior against a published benchmark, analytical limit, or cross-implementation cross-check (cite the reference in the test docstring)",
 ]

@@ -352,6 +352,7 @@ def test_outer_wall_clock_is_timeout(monkeypatch, caplog):
 
 
 @pytest.mark.smoke
+@pytest.mark.accept_solves
 class TestRealSolve:
     def test_strict(self):
         r = _picard(tolerance_outer=4e-3)  # inner cap 50: the density converges
@@ -856,6 +857,7 @@ def test_a_restore_in_the_blend_ramp_stays_on_the_newest_temperature(monkeypatch
 
 
 @pytest.mark.smoke
+@pytest.mark.accept_solves
 @pytest.mark.timeout(900)
 def test_a_max_iter_stop_in_the_blend_ramp_returns_a_pass_on_the_adiabat(caplog):
     """PALEOS, adiabatic, 4 outer passes: the mass converges on the linear temperature, and
@@ -884,6 +886,7 @@ def test_a_max_iter_stop_in_the_blend_ramp_returns_a_pass_on_the_adiabat(caplog)
 
 
 @pytest.mark.smoke
+@pytest.mark.accept_solves
 def test_cool_paleos_surface_keeps_the_eos_density():
     """At a 1500 K surface rho_EOS of PALEOS-2phase MgSiO3 halves in the outermost shells;
     the returned density keeps those values, which the structure integration used."""
@@ -940,6 +943,7 @@ class TestNewtonExitsReadTheInnerFlags:
 
 
 @pytest.mark.smoke
+@pytest.mark.accept_solves
 @pytest.mark.timeout(900)
 def test_a_clock_stop_before_the_first_blended_pressure_solve_keeps_the_linear_pass(
     monkeypatch,
