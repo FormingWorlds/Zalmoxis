@@ -380,9 +380,9 @@ class TestRealSolve:
         assert 1e-3 < r['mass_error_at_accept'] < 0.03  # above tolerance_outer
 
     @pytest.mark.usefixtures('no_check')
-    def test_returned_profile_is_not_the_best(self, monkeypatch):
+    def test_max_iter_returns_the_best_pass(self, monkeypatch):
         """The last outer iteration lands farther from the target mass than the one before;
-        ``mass_error_at_accept`` is that of the returned (last) profile."""
+        max_iter returns the best pass, whose error is ``mass_error_at_accept``."""
         radius, real = _count_outer_iterations(monkeypatch), zs.solve_structure
 
         def solve(*args, **kwargs):
@@ -392,7 +392,8 @@ class TestRealSolve:
         monkeypatch.setattr(zs, 'solve_structure', solve)
         r = _picard(False, max_iterations_outer=3, max_iterations_inner=1)  # mass scaled
         assert r['accepted_on'] == 'max_iter'
-        assert r['mass_error_at_accept'] > 1.5 * r['best_mass_error']
+        assert r['mass_error_at_accept'] == pytest.approx(r['best_mass_error'], rel=1e-12)
+        assert r['radii'][-1] == pytest.approx(radius[1], rel=1e-12)
 
     @pytest.mark.parametrize(
         'inner, count, label',

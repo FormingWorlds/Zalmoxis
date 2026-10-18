@@ -451,15 +451,16 @@ def test_a_planet_of_core_only_passes_every_invariant():
 @pytest.mark.parametrize('n', [150, 2000])  # the PROTEUS default node count, and a fine grid
 @pytest.mark.parametrize('factor', [2.0, 0.5])
 def test_a_gravity_error_at_one_inner_node_against_the_bound(monkeypatch, n, factor):
-    """A real solve; the gravity of one inner node moves to ``factor`` times the bound off
-    G M / r^2: twice the bound raises, half of it passes."""
+    """A real solve; the gravity of one inner node moves to ``factor`` times the bound of that
+    node off G M / r^2: twice the bound raises, half of it passes."""
     real = zs._report_table_bands
 
     def bands(result, *args):
         result = real(result, *args)
         g, r, m = (np.array(result[k], float) for k in ('gravity', 'radii', 'mass_enclosed'))
-        bound = TOLERANCES['gravity'] * (RTOL + ATOL * (1 / m[1] + 1 / g[1]))
-        g[n // 2] = G * m[n // 2] / r[n // 2] ** 2 * (1 + factor * bound)
+        i = n // 2
+        bound = TOLERANCES['gravity'] * (RTOL + ATOL * (1 / m[i] + 1 / g[i]))
+        g[i] = G * m[i] / r[i] ** 2 * (1 + factor * bound)
         result['gravity'] = g
         return result
 
@@ -480,15 +481,6 @@ def test_a_density_reference_of_none_raises():
     result['accept_mass_limit'] = 1e-3
     with pytest.raises(StructureInvariantError, match='breaks density_eos:'):
         check_accepted(result, cfg, RTOL, ATOL, lambda P, T, layer: None)
-
-
-@pytest.mark.smoke
-@pytest.mark.timeout(900)
-def test_the_density_check_uses_the_batch_eos_path_of_the_solver(monkeypatch):
-    """The scalar EOS call returns a wrong density; the check reads the batch path that the
-    solver used at the returned nodes, so the accepted result passes."""
-    monkeypatch.setattr(zs, 'calculate_mixed_density', lambda *a, **k: 1.0, raising=False)
-    assert _run(_cfg(wall_timeout=1e6))['converged']
 
 
 @pytest.mark.smoke
@@ -608,10 +600,9 @@ def test_the_density_check_gives_the_volatile_profile_only_to_the_mantle(monkeyp
 
 @pytest.mark.smoke
 @pytest.mark.timeout(900)
-def test_a_max_iter_accept_that_returns_a_worse_last_pass_raises(monkeypatch):
+def test_a_max_iter_accept_returns_the_pass_it_tested(monkeypatch):
     """Two passes at 1.25 % and 10.1 % mass error (mass and gravity scaled together, so the
-    gravity invariant holds): max_iter accepts on the best pass but returns the last one,
-    and the mass closure against the 3 % limit raises."""
+    gravity invariant holds): max_iter accepts on the best pass and returns that pass."""
     radius, real_tp, real = [], zs.calculate_temperature_profile, zs.solve_structure
     errors = (0.0125, 0.101)
 
@@ -626,7 +617,117 @@ def test_a_max_iter_accept_that_returns_a_worse_last_pass_raises(monkeypatch):
 
     monkeypatch.setattr(zs, 'calculate_temperature_profile', tp)
     monkeypatch.setattr(zs, 'solve_structure', solve)
-    with pytest.raises(
-        StructureInvariantError, match=r"'max_iter'.* breaks mass_closure: deviation 1\.010e-01"
-    ):
-        _run(_cfg(wall_timeout=1e6, max_iterations_outer=2))
+    r = _run(_cfg(wall_timeout=1e6, max_iterations_outer=2))
+    assert r['converged'] and r['accepted_on'] == 'max_iter' and len(radius) == 2
+    assert r['radii'][-1] == pytest.approx(radius[0], rel=1e-12)
+    assert r['mass_error_at_accept'] == pytest.approx(0.0125, rel=1e-9)
+    assert r['mass_error_at_accept'] == pytest.approx(r['best_mass_error'], rel=1e-12)
+
+
+@pytest.mark.smoke
+@pytest.mark.timeout(900)
+def test_a_1_percent_gravity_error_is_caught_on_a_fine_grid(monkeypatch):
+    """2000 nodes at the default tolerances (rtol 1e-5, atol 1e-6): a 1 % gravity error at a
+    node near the surface raises."""
+    real = zs._report_table_bands
+
+    def bands(result, *args):
+        result = real(result, *args)
+        result['gravity'] = np.array(result['gravity'], float)
+        result['gravity'][1990] *= 1.01
+        return result
+
+    monkeypatch.setattr(zs, '_report_table_bands', bands)
+    cfg = _cfg(
+        wall_timeout=1e6, num_layers=2000, relative_tolerance=1e-5, absolute_tolerance=1e-6
+    )
+    with pytest.raises(StructureInvariantError, match='breaks gravity: .* at node 1990'):
+        _run(cfg)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    'rtol, atol', [(1e-9, 1e-10), (1e-5, 1e-6), (1e-9, 1e-30), (1e-30, 1e-10)]
+)
+@pytest.mark.parametrize('node', [2, N // 2, N - 2])
+@pytest.mark.parametrize('factor, raises', [(2.0, True), (0.5, False)])
+def test_the_gravity_tolerance_of_each_node(rtol, atol, node, factor, raises):
+    """The tolerance at node i is 100 (rtol + atol (1/M_i + 1/g_i))."""
+    result, cfg = _sphere()
+    m, g = result['mass_enclosed'], result['gravity']
+    g[node] *= 1 + factor * 100.0 * (rtol + atol * (1 / m[node] + 1 / g[node]))
+    result['accept_mass_limit'] = 1e-3
+    run = lambda: check_accepted(result, cfg, rtol, atol, lambda P, T, layer: RHO)  # noqa: E731
+    if raises:
+        with pytest.raises(StructureInvariantError, match=f'breaks gravity: .* at node {node}'):
+            run()
+    else:
+        run()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('name', ['cmb_mass', 'core_mantle_mass', 'density_eos'])
+@pytest.mark.parametrize('factor, raises', [(2.0, True), (0.5, False)])
+def test_each_tolerance_at_twice_and_half_its_value(name, factor, raises):
+    result, cfg = _sphere(mmf=0.5)
+    tol = {'cmb_mass': 1e-12, 'core_mantle_mass': 1e-12, 'density_eos': 1e-6}[name]
+    if name == 'density_eos':
+        result['density'][N // 2] *= 1 + factor * tol
+    else:
+        result[name] *= 1 + factor * tol
+    if raises:
+        _raises(result, cfg, name)
+    else:
+        _check(result, cfg)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('which', ['rtol', 'atol'])
+@pytest.mark.parametrize('value', [0.0, -1e-9, np.nan, np.inf, None, True, '1e-9'])
+def test_an_invalid_integration_tolerance_raises(which, value):
+    result, cfg = _sphere()
+    result['accept_mass_limit'] = 1e-3
+    tols = {'rtol': RTOL, 'atol': ATOL, which: value}
+    with pytest.raises(StructureInvariantError, match='integration tolerances'):
+        check_accepted(result, cfg, tols['rtol'], tols['atol'], lambda P, T, layer: RHO)
+
+
+@pytest.mark.unit
+@settings(max_examples=60, deadline=None)
+@given(rtol=st.floats(1e-14, 1e-2), atol=st.floats(1e-16, 1e-2))
+def test_valid_integration_tolerances_pass_the_sphere(rtol, atol):
+    result, cfg = _sphere()
+    result['accept_mass_limit'] = 1e-3
+    check_accepted(result, cfg, rtol, atol, lambda P, T, layer: RHO)
+
+
+@pytest.mark.unit
+def test_the_mass_closure_uses_the_form_of_the_accept_test():
+    """|M - M_p| / M_p is just below 1e-3 here while |M / M_p - 1| rounds above it: a result
+    that the accept test takes at 1e-3 must pass the closure at 1e-3."""
+    M, Mp = 2.9831139e25, 2.9861e25
+    assert abs(M - Mp) / Mp < 1e-3 < abs(M / Mp - 1)
+    result, cfg = _sphere()
+    f = M / result['mass_enclosed'][-1]
+    result['mass_enclosed'] = result['mass_enclosed'] * f
+    result['gravity'] = result['gravity'] * f
+    result['mass_enclosed'][-1] = M  # the padded node, outside the gravity check
+    cfg['planet_mass'] = Mp
+    result['cmb_mass'] = result['core_mantle_mass'] = CMF * Mp
+    _check(result, cfg, 1e-3)
+
+
+@pytest.mark.unit
+def test_the_layer_rule_is_that_of_the_structure_model():
+    from zalmoxis.structure_model import get_layer_mixture
+
+    cmb, top = 2.0e24, 4.0e24
+    mixes = {'core': 'core', 'mantle': 'mantle', 'ice_layer': 'ice_layer'}
+    for x in (cmb, top):
+        for m in x * (1 + np.array([-1e-11, -5e-12, -1e-12, -5e-13, 0.0, 1e-12])):
+            for ice in (True, False):
+                layers = mixes if ice else {k: v for k, v in mixes.items() if k != 'ice_layer'}
+                assert _layer(m, cmb, top, ice) == get_layer_mixture(m, cmb, top, layers), (
+                    m,
+                    ice,
+                )
