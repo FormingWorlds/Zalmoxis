@@ -274,7 +274,7 @@ def _canned(label, converged=True, **flags):
     return result, cfg
 
 
-SKIP = {'converged_density': True, 'converged_pressure': True, 'best_mass_error': 0.05}
+SKIP = {'converged_density': True, 'converged_pressure': True, 'mass_error_at_accept': 0.05}
 
 
 @pytest.mark.unit
