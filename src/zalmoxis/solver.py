@@ -1361,7 +1361,9 @@ def _solve(
         'mass_only', 'max_iter' (the outer loop stopped at ``max_iterations_outer``),
         'timeout' (the wall clock stopped the outer or the inner loop) or 'oscillation',
         and None when the solve was not accepted. ``mass_error_at_accept`` is the
-        relative mass error of the returned profile. ``stopped_on_wall_clock`` is True
+        relative mass error of the returned profile. ``best_mass_error`` is the mass error of
+        the best pass, the smallest among the passes with a pressure solve on the newest
+        adiabat blend step (None before such a pass). ``stopped_on_wall_clock`` is True
         when the wall clock stopped the solve, also when it was not accepted.
         ``density`` is rho_EOS(P, T) at the returned nodes and ``density_from_eos`` is
         True, unless the solve was not accepted and the returned pass has no pressure
@@ -2337,8 +2339,8 @@ def _solve(
                 _picard_alpha = min(0.7, _picard_alpha * 1.1)
         _prev_mass_error = mass_error_signed
 
-        # Track the best pass for the restore, among the passes on the newest blend; a pass without
-        # a pressure solve never counts, so an older-blend best stays until one on the new blend has
+        # The best pass: the smallest error on the newest blend step. A pass without a
+        # pressure solve never counts; the older best stays until a new-step pass has one.
         if rho_eos is not None and (
             relative_diff_outer_mass < best_mass_error or _adiabat_blend != best_blend
         ):

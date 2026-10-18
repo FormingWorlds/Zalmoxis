@@ -232,8 +232,9 @@ def test_a_change_above_the_tolerance_raises_and_one_below_does_not(field, node,
 @pytest.mark.smoke
 @pytest.mark.timeout(900)
 def test_cmb_mass_is_the_layer_boundary_of_the_returned_profile(monkeypatch):
-    """Every pass splits the layers at cmf * planet_mass; at cmf 0.3 and 200 nodes a node lies
-    between that mass and cmf * M[-1], so a cmb_mass of cmf * M[-1] puts it in the wrong layer."""
+    """Every pass splits the layers at cmf * planet_mass; at cmf 0.3 and 200 nodes a node
+    lies between that mass and cmf * M[-1], so a cmb_mass of cmf * M[-1] puts it in the
+    wrong layer."""
     used, real = [], zs.solve_structure
     monkeypatch.setattr(
         zs, 'solve_structure', lambda *a, **k: (used.append(a[1]), real(*a, **k))[1]
