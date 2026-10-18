@@ -550,6 +550,23 @@ class TestRealSolve:
         assert r['accepted_on'] == 'timeout'  # the retry skip of a wall-clock stop
         assert r['mass_error_at_accept'] == pytest.approx(0.06, rel=1e-9)
 
+    def test_restored_pass_keeps_which_flag_converged(self, monkeypatch):
+        """As above with one inner iteration per pass: the restored pass comes back with its
+        pressure converged and its density not."""
+        radius, real = _clock_after_lookup(monkeypatch, outer=2), zs.solve_structure
+        errors = (0.08, 0.06, 0.09)
+
+        def solve(*args, **kwargs):
+            m, *rest = real(*args, **kwargs)
+            return (m * earth_mass * (1 + errors[min(len(radius), 3) - 1]) / m[-1], *rest)
+
+        monkeypatch.setattr(zs, 'solve_structure', solve)
+        cfg = _cfg(max_iterations_outer=4, max_iterations_inner=1, wall_timeout=WALL)
+        r = zs._solve(cfg, load_material_dictionaries(), None, INPUT)
+        assert len(radius) == 3 and r['stopped_on_wall_clock'] is True
+        assert r['radii'][-1] == pytest.approx(radius[1], rel=1e-12)
+        assert r['converged_pressure'] and not r['converged_density']
+
     def test_retry_skip_reads_the_returned_profile(self, monkeypatch):
         """Passes at 5, 4 and 10 % mass error with converged inner loops, the cap at 3: the
         last pass comes back at 10 %, above the 7 % of the retry skip, so main retries."""
