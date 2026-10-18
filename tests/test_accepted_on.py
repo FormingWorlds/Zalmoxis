@@ -766,15 +766,17 @@ def test_wall_clock_in_the_adiabat_ramp_keeps_tolerance_outer_as_the_limit(monke
 @pytest.mark.smoke
 @pytest.mark.wolfbower
 @pytest.mark.usefixtures('no_check')
-def test_a_restored_linear_pass_reports_no_adiabat(monkeypatch):
+def test_a_restore_in_the_blend_ramp_stays_on_the_newest_temperature(monkeypatch):
     """The passes after the adiabat blend starts end 5 % off the target mass, and the clock
-    stops the solve two passes later: the restored best pass is on the linear temperature
-    profile, so adiabat_computed is False."""
+    runs out after the first density lookup of the first blended pass: the best pass restarts
+    at each blend step, so the restored pass is that blended pass, not the linear pass that
+    ended closer to the mass."""
     from zalmoxis.eos import get_solidus_liquidus_functions
 
     _need_wb_tables()
-    radius, adiabat = _count_outer_iterations(monkeypatch), []
+    radius, adiabat, lookups = _count_outer_iterations(monkeypatch), [], []
     real_adi, real, clock = zs.compute_adiabatic_temperature, zs.solve_structure, time.time
+    real_lookup = zs.calculate_mixed_density_batch
 
     def adi(*args, **kwargs):
         adiabat.append(len(radius))
@@ -785,10 +787,14 @@ def test_a_restored_linear_pass_reports_no_adiabat(monkeypatch):
         f = 1.05 * earth_mass / m[-1] if adiabat else 1.0
         return m * f, g * f, P
 
-    late = lambda: bool(adiabat) and len(radius) >= adiabat[0] + 2  # noqa: E731
+    def lookup(*args, **kwargs):
+        lookups.extend([1] if adiabat else [])
+        return real_lookup(*args, **kwargs)
+
+    monkeypatch.setattr(zs, 'calculate_mixed_density_batch', lookup)
     monkeypatch.setattr(zs, 'compute_adiabatic_temperature', adi)
     monkeypatch.setattr(zs, 'solve_structure', solve)
-    monkeypatch.setattr(zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * late()))
+    monkeypatch.setattr(zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * bool(lookups)))
     cfg = _cfg(
         temperature_mode='adiabatic',
         layer_eos_config={'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'},
@@ -798,7 +804,35 @@ def test_a_restored_linear_pass_reports_no_adiabat(monkeypatch):
     )
     r = zs._solve(cfg, load_material_dictionaries(), get_solidus_liquidus_functions(), '/tmp')
     assert adiabat and r['stopped_on_wall_clock'] is True
-    assert r['adiabat_computed'] is False
+    assert r['adiabat_computed'] is True
+    assert r['mass_error_at_accept'] == pytest.approx(0.05, rel=1e-9)
+
+
+@pytest.mark.smoke
+@pytest.mark.timeout(900)
+def test_a_max_iter_stop_in_the_blend_ramp_returns_a_pass_on_the_adiabat():
+    """PALEOS, adiabatic, 4 outer passes: the mass converges on the linear temperature, and
+    the cap stops the solve in the blend ramp. The returned pass is on the newest blend, not
+    the linear pass with the smallest mass error."""
+    from tests.test_spider_coupling_convergence import _has_paleos_data
+
+    if not _has_paleos_data():
+        pytest.skip('PALEOS tables not on disk')
+    cfg = _cfg(
+        temperature_mode='adiabatic',
+        layer_eos_config={'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
+        num_layers=150,
+        relative_tolerance=1e-5,
+        absolute_tolerance=1e-6,
+        max_iterations_outer=4,
+        wall_timeout=WALL,
+    )
+    r = zs._solve(cfg, load_material_dictionaries(), None, INPUT)
+    T = np.asarray(r['temperature'])
+    assert r['adiabat_computed'] is True
+    assert (
+        np.max(np.abs(T - np.linspace(6000.0, 3000.0, len(T)))) > 100.0
+    )  # not the linear guess
 
 
 @pytest.mark.smoke

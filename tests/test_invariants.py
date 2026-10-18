@@ -517,8 +517,8 @@ def test_the_tolerances_are_the_documented_values():
     'key, value', [('gravity', 0.0), ('mass_enclosed', 0.0), ('gravity', np.nan)]
 )
 def test_a_first_node_without_gravity_or_mass_does_not_turn_the_gravity_check_off(key, value):
-    """g_1 or M_1 of 0 makes the bound infinite; the node itself breaks the check. (A NaN
-    M_1 breaks mass_monotone first.)"""
+    """A node with a gravity or a mass of 0 or NaN breaks the check at that node. (A NaN M_1
+    breaks mass_monotone first.)"""
     result, cfg = _sphere()
     result[key][1] = value
     _raises(result, cfg, 'gravity')
@@ -693,12 +693,54 @@ def test_an_invalid_integration_tolerance_raises(which, value):
 
 
 @pytest.mark.unit
-@settings(max_examples=60, deadline=None)
-@given(rtol=st.floats(1e-14, 1e-2), atol=st.floats(1e-16, 1e-2))
-def test_valid_integration_tolerances_pass_the_sphere(rtol, atol):
+@settings(max_examples=80, deadline=None)
+@given(
+    rtol=st.floats(1e-12, 1e-3),
+    atol=st.floats(1e-14, 1e-3),
+    node=st.integers(1, N - 2),
+    raises=st.booleans(),
+)
+def test_the_per_node_gravity_bound_over_the_tolerance_domain(rtol, atol, node, raises):
+    """Twice the bound of a node raises at that node, half of it passes."""
     result, cfg = _sphere()
+    m, g = result['mass_enclosed'], result['gravity']
+    g[node] *= 1 + (2.0 if raises else 0.5) * 100.0 * (
+        rtol + atol * (1 / m[node] + 1 / g[node])
+    )
     result['accept_mass_limit'] = 1e-3
-    check_accepted(result, cfg, rtol, atol, lambda P, T, layer: RHO)
+    run = lambda: check_accepted(result, cfg, rtol, atol, lambda P, T, layer: RHO)  # noqa: E731
+    if raises:
+        with pytest.raises(StructureInvariantError, match=f'breaks gravity: .* at node {node}'):
+            run()
+    else:
+        run()
+
+
+@pytest.mark.unit
+def test_the_gravity_check_reports_the_node_with_the_largest_ratio():
+    """A deviation of 0.9 times the loose bound of an inner node and of 2 times the tight bound
+    of an outer node: the outer node breaks the check, though its deviation is smaller."""
+    result, cfg = _sphere()
+    m, g = result['mass_enclosed'], result['gravity']
+    rtol, atol = 1e-9, 1e-8
+    bound = lambda i: 100.0 * (rtol + atol * (1 / m[i] + 1 / g[i]))  # noqa: E731
+    assert 0.9 * bound(2) > 2 * bound(N - 2)
+    g[2] *= 1 + 0.9 * bound(2)
+    g[N - 2] *= 1 + 2 * bound(N - 2)
+    result['accept_mass_limit'] = 1e-3
+    with pytest.raises(StructureInvariantError, match=f'breaks gravity: .* at node {N - 2}'):
+        check_accepted(result, cfg, rtol, atol, lambda P, T, layer: RHO)
+
+
+@pytest.mark.smoke
+@pytest.mark.timeout(900)
+def test_a_relative_tolerance_below_the_floor_of_the_integrator_passes():
+    """scipy raises an rtol below 100 eps to 100 eps; the check uses the rtol the integration
+    ran with."""
+    cfg = _cfg(
+        wall_timeout=1e6, relative_tolerance=1e-15, absolute_tolerance=1e-20, num_layers=150
+    )
+    assert _run(cfg)['converged']
 
 
 @pytest.mark.unit
