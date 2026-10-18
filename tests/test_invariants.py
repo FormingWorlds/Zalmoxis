@@ -13,13 +13,15 @@ from hypothesis import strategies as st
 
 import zalmoxis.solver as zs
 from tests.test_failed_structure_solve import _cfg, _run
-from zalmoxis.constants import G
+from zalmoxis.config import load_material_dictionaries
+from zalmoxis.constants import G, earth_mass
 from zalmoxis.invariants import (
     TOLERANCES,
     StructureInvariantError,
     check_accepted,
     deviations,
 )
+from zalmoxis.mixing import calculate_mixed_density, parse_all_layer_mixtures
 
 RHO, N, CMF = 5500.0, 50, 0.325
 
@@ -199,6 +201,33 @@ def test_a_change_above_the_tolerance_raises_and_one_below_does_not(field, node,
                 _check(result, cfg)
         else:
             _check(result, cfg)
+
+
+@pytest.mark.smoke
+@pytest.mark.timeout(900)
+def test_cmb_mass_is_the_layer_boundary_of_the_returned_profile(monkeypatch):
+    """Every pass splits the layers at cmf * planet_mass; at cmf 0.3 and 200 nodes a node lies
+    between that mass and cmf * M[-1], so a cmb_mass of cmf * M[-1] puts it in the wrong layer."""
+    used, real = [], zs.solve_structure
+    monkeypatch.setattr(
+        zs, 'solve_structure', lambda *a, **k: (used.append(a[1]), real(*a, **k))[1]
+    )
+    r = _run(_cfg(core_mass_fraction=0.3, num_layers=200, relative_tolerance=1e-8))
+    m, P = np.asarray(r['mass_enclosed']), np.asarray(r['pressure'])
+    target, last = 0.3 * earth_mass, 0.3 * m[-1]
+    assert set(used) == {target}
+    assert np.any((min(target, last) <= m) & (m < max(target, last)))  # the case discriminates
+    assert r['cmb_mass'] == pytest.approx(target, rel=1e-12)
+    mixes, md = (
+        parse_all_layer_mixtures(_cfg()['layer_eos_config']),
+        load_material_dictionaries(),
+    )
+    for i in np.flatnonzero(P > 0):
+        layer = 'core' if m[i] < r['cmb_mass'] * (1 - 1e-12) else 'mantle'
+        ref = calculate_mixed_density(
+            P[i], r['temperature'][i], mixes[layer], md, None, None, {}
+        )
+        assert r['density'][i] == pytest.approx(ref, rel=1e-8), (i, layer)
 
 
 def _spy_limits(monkeypatch):

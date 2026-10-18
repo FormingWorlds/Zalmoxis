@@ -231,7 +231,7 @@ def _assert_eos_density(r, eos=None, melt=(None, None), mzf=None):
 
 def _picard(integrated=True, **kwargs):
     """Fast Picard solve (1 M_earth, analytic EOS) through ``main``; ``cmb_mass`` and
-    ``core_mantle_mass`` are 0.325 and 0.325 + ``mantle_mass_fraction`` of the returned mass.
+    ``core_mantle_mass`` are 0.325 and 0.325 + ``mantle_mass_fraction`` of the planet mass.
     When ``mass_enclosed`` is the integral of the returned profile (``integrated``), at the
     last node with P > 0 the gravity is G M / r^2 and the trapezoid mass of the returned
     density matches ``mass_enclosed``."""
@@ -241,7 +241,7 @@ def _picard(integrated=True, **kwargs):
     _assert_eos_density(r, kwargs.get('layer_eos_config'))
     mmf = kwargs.get('mantle_mass_fraction', 0)
     for key, f in (('cmb_mass', 0.325), ('core_mantle_mass', 0.325 + mmf)):
-        assert r[key] == pytest.approx(f * m[-1], rel=1e-12), key
+        assert r[key] == pytest.approx(f * earth_mass, rel=1e-12), key
     k = np.flatnonzero(np.asarray(r['pressure']) > 0)[-1] + 1  # padded nodes have P = 0
     m, rad, rho = m[:k], rad[:k], np.asarray(r['density'])[:k]
     if integrated:
