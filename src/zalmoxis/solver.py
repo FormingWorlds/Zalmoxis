@@ -43,12 +43,14 @@ from .eos import (
     create_pressure_density_files,
 )
 from .eos.seager import _band_debug_seen
+from .invariants import check_accepted
 from .mixing import (
     _PALEOS_2PHASE_NAMES,
     _PALEOS_UNIFIED_NAMES,
     BINODAL_T_SCALE_DEFAULT,
     any_component_is_tdep,
     build_partition_profile,
+    calculate_mixed_density,
     calculate_mixed_density_batch,
     compute_melt_fraction,
     parse_all_layer_mixtures,
@@ -257,6 +259,53 @@ def _tighten_solver_params(params):
     tightened['pressure_tolerance'] = params['pressure_tolerance'] * 0.1
     tightened['wall_timeout'] = params.get('wall_timeout', 300.0) * 2
     return tightened
+
+
+def _eos_params(config_params):
+    """Return (mushy_zone_factors, condensed_rho_min, condensed_rho_scale, binodal_T_scale).
+
+    ``mushy_zone_factors`` is the per-material dict of the caller, or the single global
+    ``mushy_zone_factor`` for every mzf-aware EOS name.
+    """
+    if 'mushy_zone_factors' in config_params:
+        mzf = config_params['mushy_zone_factors']
+    else:
+        mzf = dict.fromkeys(_PALEOS_UNIFIED_NAMES, config_params.get('mushy_zone_factor', 1.0))
+    return (
+        mzf,
+        config_params.get('condensed_rho_min', CONDENSED_RHO_MIN_DEFAULT),
+        config_params.get('condensed_rho_scale', CONDENSED_RHO_SCALE_DEFAULT),
+        config_params.get('binodal_T_scale', BINODAL_T_SCALE_DEFAULT),
+    )
+
+
+def _check_accepted(
+    result,
+    mass_limit,
+    run_params,
+    config_params,
+    material_dictionaries,
+    melting_curves_functions,
+    layer_mixtures,
+    volatile_profile,
+):
+    """Run ``invariants.check_accepted`` on a result of ``main``, with a scalar EOS call
+    per node as the density reference and the ``relative_tolerance`` of ``run_params``, the
+    parameters of the solve that returned; returns ``result``."""
+    if not result.get('converged'):
+        return result
+    defaults = _default_solver_params(config_params['planet_mass'])
+    rtol = float(run_params.get('relative_tolerance') or defaults['relative_tolerance'])
+    mixes = layer_mixtures or parse_all_layer_mixtures(config_params['layer_eos_config'])
+    melt, eos = melting_curves_functions or (None, None), _eos_params(config_params)
+
+    def density_at(P, T, layer):
+        vp = volatile_profile if layer == 'mantle' else None
+        args = (mixes[layer], material_dictionaries, *melt, _interpolation_cache, *eos)
+        return calculate_mixed_density(P, T, *args, volatile_profile=vp)
+
+    check_accepted(result, config_params, mass_limit, rtol, density_at, 'ice_layer' in mixes)
+    return result
 
 
 def _report_table_bands(
@@ -520,7 +569,9 @@ def main(
                 "the adiabat of temperature_mode='%s' was not computed.",
                 config_params['temperature_mode'],
             )
-        return _report_table_bands(result, *bands)
+        tol = float(config_params.get('newton_tol', _NEWTON_DEFAULT_TOL))
+        result = _report_table_bands(result, *bands)
+        return _check_accepted(result, tol, config_params, *bands, volatile_profile)
 
     result = _solve(
         config_params,
@@ -541,6 +592,7 @@ def main(
     # mass, and the next resolve of the caller corrects the residual.
     _RETRY_SKIP_MASS_ERR = 0.07
     _first_mass_err = result.get('best_mass_error')
+    run_params = config_params  # the parameters of the solve that returns
     _retry_skipped = (
         not result['converged']
         and result.get('converged_density', False)
@@ -596,6 +648,7 @@ def main(
                 retry_density = result['density']
                 retry_radii = result['radii']
 
+        run_params = retry_params
         result = _solve(
             retry_params,
             material_dictionaries,
@@ -616,7 +669,17 @@ def main(
                 'Returning best result with converged=False.'
             )
 
-    return _report_table_bands(result, *bands)
+    result = _report_table_bands(result, *bands)
+    if not result['converged']:
+        return result
+    if _retry_skipped:
+        limit = _RETRY_SKIP_MASS_ERR
+    elif result.get('accepted_on') in ('strict', 'mass_only'):
+        defaults = _default_solver_params(config_params['planet_mass'])
+        limit = run_params.get('tolerance_outer', defaults['tolerance_outer'])
+    else:
+        limit = _TIMEOUT_ACCEPT_MASS_ERR
+    return _check_accepted(result, limit, run_params, *bands, volatile_profile)
 
 
 # Newton outer-loop defaults: 3-6 Newton iterations are typically
@@ -1344,7 +1407,9 @@ def _solve(
         True, unless the wall clock stopped the last pass before its first pressure
         solve and the solve was not accepted; that pass is then returned, with its
         newest radius. An outer wall-clock stop, and an accepted solve cut in that way,
-        return the best pass with its gravity, ``cmb_mass`` and ``core_mantle_mass``.
+        return the best pass with its gravity. ``cmb_mass`` and ``core_mantle_mass`` are
+        the layer boundaries of every pass, ``core_mass_fraction`` and ``core_mass_fraction
+        + mantle_mass_fraction`` times ``planet_mass``.
     """
     # Initialize convergence flags
     converged = False
@@ -1391,17 +1456,9 @@ def _solve(
     # Optional initial radius guess from a previous failed attempt
     initial_radius_guess = config_params.get('_initial_radius_guess', None)
 
-    # Build the per-EOS mushy_zone_factors dict. Use the per-material dict
-    # when the caller provides one; otherwise assign the single global
-    # 'mushy_zone_factor' float to every mzf-aware EOS name.
-    if 'mushy_zone_factors' in config_params:
-        mushy_zone_factors = config_params['mushy_zone_factors']
-    else:
-        _global_mzf = config_params.get('mushy_zone_factor', 1.0)
-        mushy_zone_factors = {name: _global_mzf for name in _PALEOS_UNIFIED_NAMES}
-    condensed_rho_min = config_params.get('condensed_rho_min', CONDENSED_RHO_MIN_DEFAULT)
-    condensed_rho_scale = config_params.get('condensed_rho_scale', CONDENSED_RHO_SCALE_DEFAULT)
-    binodal_T_scale = config_params.get('binodal_T_scale', BINODAL_T_SCALE_DEFAULT)
+    mushy_zone_factors, condensed_rho_min, condensed_rho_scale, binodal_T_scale = _eos_params(
+        config_params
+    )
     # JAX fast path: when True, solve_structure dispatches to the diffrax-
     # based implementation (jax_eos/wrapper.py) inside the Picard loop.
     # Supported configs: 2-layer single-component.
@@ -1475,8 +1532,9 @@ def _solve(
         radius_guess = (
             1000 * (7030 - 1840 * core_mass_fraction) * (planet_mass / earth_mass) ** 0.282
         )
-    cmb_mass = 0
-    core_mantle_mass = 0
+    # The layer boundaries of every pass and of the returned profile
+    cmb_mass = core_mass_fraction * planet_mass
+    core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * planet_mass
 
     logger.info(
         f'Starting structure model for a {planet_mass / earth_mass} Earth masses planet '
@@ -1772,9 +1830,6 @@ def _solve(
                 cmb_temperature=cmb_temperature,
             )
             temperatures = np.asarray(_output_tf(radii), dtype=float)
-
-        cmb_mass = core_mass_fraction * planet_mass
-        core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * planet_mass
 
         pressure[0] = earth_center_pressure
 
@@ -2295,8 +2350,6 @@ def _solve(
             scale = (planet_mass / calculated_mass) ** (1.0 / 3.0)
             scale = max(0.5, min(scale, 2.0))
             radius_guess *= scale
-            cmb_mass = core_mass_fraction * calculated_mass
-            core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * calculated_mass
 
         relative_diff_outer_mass = np.abs((calculated_mass - planet_mass) / planet_mass)
 
@@ -2328,8 +2381,6 @@ def _solve(
                 'mass_enclosed': np.asarray(mass_enclosed).copy(),
                 'temperatures': temperatures.copy() if temperatures is not None else None,
                 'rho_eos': rho_eos,
-                'cmb_mass': cmb_mass,
-                'core_mantle_mass': core_mantle_mass,
             }
             oscillation_count = 0
         elif (
@@ -2443,9 +2494,7 @@ def _solve(
             np.array(best_profiles[k])
             for k in ('radii', 'density', 'gravity', 'pressure', 'mass_enclosed')
         )
-        rho_eos, cmb_mass, core_mantle_mass = (
-            best_profiles[k] for k in ('rho_eos', 'cmb_mass', 'core_mantle_mass')
-        )
+        rho_eos = best_profiles['rho_eos']
         if best_profiles['temperatures'] is not None:
             temperatures = np.array(best_profiles['temperatures'])
 

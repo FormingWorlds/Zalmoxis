@@ -38,6 +38,13 @@ ICE = {  # 3 layers: cmb_mass and core_mantle_mass differ
 WALL = 1e6  # wall_timeout [s]: the test clock jumps by 1e9 s, a real solve never reaches it
 
 
+@pytest.fixture
+def no_check(monkeypatch):
+    """main skips the invariant check: the test builds a result or a profile the solver cannot
+    make (a canned result, or masses scaled by a spy)."""
+    monkeypatch.setattr(zs, 'check_accepted', lambda *args, **kwargs: None)
+
+
 def _inner(R, *, pressure=True, density=True, eos=True, accepted_on='max_iter', wall=False):
     """Inner Picard result at radius R on the linear M(R)."""
     M = A * R + B
@@ -185,6 +192,7 @@ def _first_attempt(pressure, density):
 
 
 @pytest.mark.unit
+@pytest.mark.usefixtures('no_check')
 class TestRetry:
     def _main(self, first):
         cfg = {
@@ -297,6 +305,7 @@ class TestRealSolve:
         assert r['converged'] is True and r['accepted_on'] == 'max_iter'
         assert r['mass_error_at_accept'] > 1e-3  # above tolerance_outer
 
+    @pytest.mark.usefixtures('no_check')
     def test_returned_profile_is_not_the_best(self, monkeypatch):
         """The last outer iteration lands farther from the target mass than the one before;
         ``mass_error_at_accept`` is that of the returned (last) profile."""
@@ -350,6 +359,7 @@ class TestRealSolve:
         assert r['converged'] is False and r['accepted_on'] is None
         assert r['stopped_on_wall_clock'] is True and r['density_from_eos'] is False
 
+    @pytest.mark.usefixtures('no_check')
     @pytest.mark.parametrize('layers', [{}, {**ICE, '_initial_radius_guess': 6.37e6}])
     def test_outer_wall_clock_restores_a_best_pass_that_is_not_the_last(
         self, monkeypatch, layers

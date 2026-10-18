@@ -58,6 +58,7 @@ changelog = "https://github.com/FormingWorlds/Zalmoxis/releases"
 [project.optional-dependencies]
 develop = [
     "coverage[toml]",
+    "hypothesis",
     "pip-tools",
     "pytest >= 8.1",
     "pytest-cov",

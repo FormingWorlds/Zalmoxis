@@ -23,7 +23,7 @@ from zalmoxis.invariants import (
 )
 from zalmoxis.mixing import calculate_mixed_density, parse_all_layer_mixtures
 
-RHO, N, CMF = 5500.0, 50, 0.325
+RHO, N, CMF, RTOL = 5500.0, 50, 0.325, 1e-9
 
 
 def _sphere(mmf=0.0):
@@ -54,7 +54,7 @@ def _sphere(mmf=0.0):
 
 
 def _check(result, cfg, limit=1e-3):
-    check_accepted(result, cfg, limit, lambda P, T, layer: RHO)
+    check_accepted(result, cfg, limit, RTOL, lambda P, T, layer: RHO)
 
 
 def _raises(result, cfg, name, limit=1e-3):
@@ -65,7 +65,7 @@ def _raises(result, cfg, name, limit=1e-3):
 @pytest.mark.unit
 def test_the_sphere_passes_with_every_deviation_inside_its_tolerance():
     result, cfg = _sphere(mmf=0.5)
-    devs = deviations(result, cfg, 1e-3, lambda P, T, layer: RHO)
+    devs = deviations(result, cfg, 1e-3, RTOL, lambda P, T, layer: RHO)
     assert set(devs) == set(TOLERANCES) | {'mass_closure'}
     assert all(dev <= tol for dev, _, tol in devs.values()), devs
     _check(result, cfg)
@@ -117,9 +117,8 @@ BREAKS = {
     'cmb_mass': _set('cmb_mass', lambda r: r['cmb_mass'] * (1 + 1e-9)),
     'core_mantle_mass': _set('core_mantle_mass', lambda r: r['core_mantle_mass'] * (1 + 1e-9)),
     'core_radius': _beyond_surface,
-    'surface_gravity': _break('gravity', N - 2, 1 + 1e-5),
     'gravity': _break('gravity', N // 2, 1 + 1e-5),
-    'density_eos': _break('density', N // 2, 1 + 1e-7),
+    'density_eos': _break('density', N // 2, 1 + 1e-5),
 }
 
 
@@ -142,15 +141,26 @@ def test_cmb_mass_zero_raises():
 def test_mass_closure_reads_the_limit_of_the_accept_path():
     result, cfg = _sphere()
     cfg['planet_mass'] *= 1.02
+    result['cmb_mass'] *= 1.02
+    result['core_mantle_mass'] *= 1.02
     _check(result, cfg, limit=0.03)
     _raises(result, cfg, 'mass_closure', limit=0.01)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('key', ['pressure', 'cmb_mass'])
+def test_a_converged_result_without_a_profile_raises(key):
+    result, cfg = _sphere()
+    del result[key]
+    with pytest.raises(StructureInvariantError, match=f'has no {key}'):
+        _check(result, cfg)
 
 
 @pytest.mark.unit
 def test_a_nan_raises():
     result, cfg = _sphere()
     result['gravity'][N - 2] = np.nan
-    _raises(result, cfg, 'surface_gravity')
+    _raises(result, cfg, 'gravity')
 
 
 @pytest.mark.unit
@@ -158,7 +168,9 @@ def test_density_layer_follows_cmb_mass():
     result, cfg = _sphere(mmf=0.5)
     m = result['mass_enclosed']
     layers = []
-    check_accepted(result, cfg, 1e-3, lambda P, T, layer: layers.append(layer) or RHO, ice=True)
+    check_accepted(
+        result, cfg, 1e-3, RTOL, lambda P, T, layer: layers.append(layer) or RHO, ice=True
+    )
     core = m[: len(layers)] < result['cmb_mass']
     ice = m[: len(layers)] >= result['core_mantle_mass']
     assert layers == [
@@ -188,7 +200,7 @@ def test_an_unconverged_result_or_a_picard_density_is_not_checked():
 def test_a_change_above_the_tolerance_raises_and_one_below_does_not(field, node, over, sign):
     """A relative change of ``over`` times the tolerance raises, one of 1/4 of it does not."""
     name = {'gravity': 'gravity', 'density': 'density_eos', 'cmb_mass': 'cmb_mass'}[field]
-    tol = TOLERANCES[name]
+    tol = TOLERANCES[name] * (RTOL if name == 'gravity' else 1)
     for factor, raises in ((over, True), (0.25, False)):
         result, cfg = _sphere()
         x = 1 + sign * min(factor * tol, 0.5)

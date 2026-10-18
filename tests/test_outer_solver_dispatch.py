@@ -31,6 +31,12 @@ from zalmoxis.solver import _VALID_OUTER_SOLVERS, _default_solver_params, main
 pytestmark = pytest.mark.unit
 
 
+@pytest.fixture(autouse=True)
+def _no_invariant_check(monkeypatch):
+    """The solves are stubbed with results that carry no profile."""
+    monkeypatch.setattr('zalmoxis.solver._check_accepted', lambda result, *args: result)
+
+
 # ----------------------------------------------------------------------
 # Minimal config fixture: enough for main() to reach the dispatch line
 # without actually solving anything.
