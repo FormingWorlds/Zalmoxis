@@ -442,3 +442,31 @@ def test_a_planet_of_core_only_passes_every_invariant():
     """core_mass_fraction 1.0: every node is core, with no mantle node."""
     r = _run(_cfg(wall_timeout=1e6, core_mass_fraction=1.0))
     assert r['converged'] and r['cmb_mass'] == pytest.approx(earth_mass, rel=1e-12)
+
+
+@pytest.mark.smoke
+@pytest.mark.timeout(900)
+@pytest.mark.parametrize('n', [150, 2000])  # the PROTEUS default node count, and a fine grid
+@pytest.mark.parametrize('factor', [2.0, 0.5])
+def test_a_gravity_error_at_one_inner_node_against_the_bound(monkeypatch, n, factor):
+    """A real solve; the gravity of one inner node moves to ``factor`` times the bound off
+    G M / r^2: twice the bound raises, half of it passes."""
+    real = zs._report_table_bands
+
+    def bands(result, *args):
+        result = real(result, *args)
+        g, r, m = (np.array(result[k], float) for k in ('gravity', 'radii', 'mass_enclosed'))
+        bound = TOLERANCES['gravity'] * (RTOL + ATOL * (1 / m[1] + 1 / g[1]))
+        g[n // 2] = G * m[n // 2] / r[n // 2] ** 2 * (1 + factor * bound)
+        result['gravity'] = g
+        return result
+
+    monkeypatch.setattr(zs, '_report_table_bands', bands)
+    cfg = _cfg(wall_timeout=1e6, num_layers=n, relative_tolerance=RTOL, absolute_tolerance=ATOL)
+    if factor > 1:
+        with pytest.raises(
+            StructureInvariantError, match=f'breaks gravity: .* at node {n // 2}'
+        ):
+            _run(cfg)
+    else:
+        assert _run(cfg)['converged']
