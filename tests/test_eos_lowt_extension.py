@@ -112,7 +112,7 @@ class TestMergeLowTExtension:
     def test_seam_guard_raises_on_a_mismatch(self, tmp_path, ds, drho):
         """s or rho at the seam differing by more than 1e-6 relative stops the load."""
         pal = _paleos(tmp_path, [6, 6, 6, 6])
-        with pytest.raises(ValueError, match='seam'):
+        with pytest.raises(ValueError, match='seam mismatch in'):
             eos_export.load_paleos_with_lowt_extension(pal, _ext(tmp_path, ds=ds, drho=drho))
 
     def test_seam_guard_accepts_a_round_off_difference(self, tmp_path):
@@ -125,7 +125,7 @@ class TestMergeLowTExtension:
     def test_extension_without_the_seam_node_is_an_error(self, tmp_path):
         """The seam can only be checked when the extension holds the PALEOS row minimum."""
         pal = _paleos(tmp_path, [6, 6, 6, 6])
-        with pytest.raises(ValueError, match='seam'):
+        with pytest.raises(ValueError, match='no finite seam value'):
             eos_export.load_paleos_with_lowt_extension(pal, _ext(tmp_path, k_top=5))
 
     def test_row_without_extension_values_keeps_paleos(self, tmp_path):
@@ -147,7 +147,7 @@ class TestMergeLowTExtension:
         pal = _paleos(tmp_path, [6, 6, 6, 6])
         T_off = 10.0 ** (np.log10(300.0) - 0.03 * np.arange(0, 7))
         cells = [(P, T) for P in _P for T in T_off]
-        with pytest.raises(ValueError, match='grid'):
+        with pytest.raises(ValueError, match='do not continue the PALEOS log-T grid'):
             eos_export.load_paleos_with_lowt_extension(pal, _write(tmp_path / 'e.dat', cells))
 
     def test_merged_arrays_are_read_only(self, tmp_path):
@@ -281,7 +281,7 @@ class TestGenerateSpiderTablesLowT:
 
     def test_extension_needs_the_two_phase_tables(self, tmp_path):
         solid, _, ext = _gen_tables(tmp_path)
-        with pytest.raises(ValueError, match='two-phase'):
+        with pytest.raises(ValueError, match='needs the two-phase tables'):
             eos_export.generate_spider_eos_tables(
                 eos_file=solid,
                 solidus_func=lambda P: 1500.0,
@@ -306,7 +306,7 @@ class TestLowTInvariants:
                 vals[2] = _props(P, _T[0])[2] - 1.0
 
         pal = _paleos(tmp_path, [6, 6, 6, 6])
-        with pytest.raises(ValueError, match='increase'):
+        with pytest.raises(ValueError, match='s does not increase with T'):
             eos_export.load_paleos_with_lowt_extension(pal, self._ext_with(tmp_path, edit))
 
     def test_equal_entropy_on_two_nodes_is_an_error(self, tmp_path):
@@ -315,7 +315,7 @@ class TestLowTInvariants:
                 vals[2] = _props(P, _T[2])[2]
 
         pal = _paleos(tmp_path, [6, 6, 6, 6])
-        with pytest.raises(ValueError, match='increase'):
+        with pytest.raises(ValueError, match='s does not increase with T'):
             eos_export.load_paleos_with_lowt_extension(pal, self._ext_with(tmp_path, edit))
 
     @pytest.mark.parametrize('cp', [0.0, -5.0])
@@ -325,7 +325,7 @@ class TestLowTInvariants:
                 vals[3] = cp
 
         pal = _paleos(tmp_path, [6, 6, 6, 6])
-        with pytest.raises(ValueError, match='cp'):
+        with pytest.raises(ValueError, match='rho, cp or cv is not positive'):
             eos_export.load_paleos_with_lowt_extension(pal, self._ext_with(tmp_path, edit))
 
     def test_a_bad_cell_that_paleos_covers_is_ignored(self, tmp_path):
@@ -365,13 +365,13 @@ class TestLowTMergeGuards:
         """A missing node between the lowest used node and the seam stops the load."""
         pal = _paleos(tmp_path, [6, 6, 6, 6])
         ext = _ext_cells(tmp_path, lambda i, k, v: not (i == 1 and k == 3))
-        with pytest.raises(ValueError, match='hole'):
+        with pytest.raises(ValueError, match='a missing or non-finite extension cell'):
             eos_export.load_paleos_with_lowt_extension(pal, ext)
         assert np.isfinite(
             eos_export.load_paleos_with_lowt_extension(pal, _ext(tmp_path))['s']
         ).all()
 
-    @pytest.mark.parametrize('col', [0, 2, 3, 4, 5, 6])
+    @pytest.mark.parametrize('col', [0, 1, 2, 3, 4, 5, 6])
     def test_nan_seam_value_is_an_error(self, tmp_path, col):
         """A NaN in any property at the seam node is refused, not compared as 'no mismatch'."""
 
@@ -380,7 +380,7 @@ class TestLowTMergeGuards:
                 v[col] = float('nan')
 
         pal = _paleos(tmp_path, [6, 6, 6, 6])
-        with pytest.raises(ValueError, match='seam'):
+        with pytest.raises(ValueError, match='no finite seam value'):
             eos_export.load_paleos_with_lowt_extension(pal, _ext_cells(tmp_path, edit))
 
     @pytest.mark.parametrize(
@@ -396,6 +396,8 @@ class TestLowTMergeGuards:
             (5, float('inf')),
             (6, float('nan')),
             (1, float('nan')),
+            (2, float('nan')),
+            (4, -1.0),
         ],
     )
     def test_used_cell_that_is_not_finite_or_not_positive_is_an_error(
@@ -408,8 +410,55 @@ class TestLowTMergeGuards:
                 v[col] = value
 
         pal = _paleos(tmp_path, [6, 6, 6, 6])
-        with pytest.raises(ValueError, match='not finite|not positive'):
+        with pytest.raises(
+            ValueError,
+            match='a missing or non-finite extension cell|rho, cp or cv is not positive',
+        ):
             eos_export.load_paleos_with_lowt_extension(pal, _ext_cells(tmp_path, edit))
+
+    @pytest.mark.parametrize('col', [1, 3, 4, 5, 6])
+    def test_seam_mismatch_in_any_property_is_an_error(self, tmp_path, col):
+        """Every property, not only s and rho, must join PALEOS at the seam to 1e-6."""
+
+        def edit(i, k, v):
+            if k == 6:
+                v[col] *= 1.0 + 1.0e-3
+
+        pal = _paleos(tmp_path, [6, 6, 6, 6])
+        with pytest.raises(ValueError, match='seam mismatch in'):
+            eos_export.load_paleos_with_lowt_extension(pal, _ext_cells(tmp_path, edit))
+        assert np.isfinite(
+            eos_export.load_paleos_with_lowt_extension(pal, _ext(tmp_path))['s']
+        ).all()
+
+    def test_node_missing_on_every_extension_row_is_a_hole(self, tmp_path):
+        """A node that PALEOS holds on one row but the extension leaves out leaves a gap below the
+        seam of the other rows."""
+        pal = _paleos(tmp_path, [6, 6, 6, 4])
+        ext = _ext_cells(tmp_path, lambda i, k, v: k not in (4, 5))
+        with pytest.raises(ValueError, match='a missing or non-finite extension cell'):
+            eos_export.load_paleos_with_lowt_extension(pal, ext)
+        assert np.isfinite(
+            eos_export.load_paleos_with_lowt_extension(pal, _ext(tmp_path))['s']
+        ).all()
+
+    def test_row_starting_above_the_extension_top_is_an_error(self, tmp_path):
+        """A PALEOS row whose lowest temperature lies above the extension has no seam node."""
+        pal = _paleos(tmp_path, [8, 6, 6, 6])
+        with pytest.raises(ValueError, match='no finite seam value'):
+            eos_export.load_paleos_with_lowt_extension(pal, _ext(tmp_path))
+        assert np.isfinite(
+            eos_export.load_paleos_with_lowt_extension(
+                _paleos(tmp_path, [6, 6, 6, 6], name='p6.dat'), _ext(tmp_path)
+            )['s']
+        ).all()
+
+    def test_paleos_table_with_one_temperature_is_an_error(self, tmp_path):
+        """One PALEOS temperature gives no log-T step for the extension to continue."""
+        pal = _write(tmp_path / 'one_t.dat', [(P, _T[6]) for P in _P])
+        with pytest.raises(ValueError, match='needs at least two temperatures'):
+            eos_export.load_paleos_with_lowt_extension(pal, _ext(tmp_path))
+        assert pal.read_text().count('solid-lpcen') == len(_P)
 
     def test_missing_nodes_below_the_used_run_are_not_a_hole(self, tmp_path):
         """Nodes absent below the lowest used node only shorten the row."""
@@ -456,7 +505,7 @@ def test_extension_without_data_rows_is_an_error(tmp_path):
     """An extension file that holds only comments is refused with a named error."""
     ext = tmp_path / 'empty.dat'
     ext.write_text('# only a header\n')
-    with pytest.raises(ValueError, match='no data'):
+    with pytest.raises(ValueError, match='holds no data rows'):
         eos_export.load_paleos_with_lowt_extension(_paleos(tmp_path, [6, 6, 6, 6]), ext)
     assert ext.read_text().startswith('#')
 
@@ -473,7 +522,7 @@ def test_extension_needs_two_entropy_nodes(tmp_path):
         solid_eos_file=solid,
         liquid_eos_file=liquid,
     )
-    with pytest.raises(ValueError, match='n_S'):
+    with pytest.raises(ValueError, match='needs n_S >= 2'):
         eos_export.generate_spider_eos_tables(**kw, n_S=1, solid_lowt_file=ext)
     assert (
         eos_export.generate_spider_eos_tables(**kw, n_S=2, solid_lowt_file=ext)['S_solid'].size
@@ -489,7 +538,7 @@ def test_missing_two_phase_tables_stop_before_the_extension_is_read(tmp_path, mo
         raise ValueError('extension loaded')
 
     monkeypatch.setattr(eos_export, 'load_paleos_with_lowt_extension', loaded)
-    with pytest.raises(ValueError, match='two-phase'):
+    with pytest.raises(ValueError, match='needs the two-phase tables'):
         eos_export.generate_spider_eos_tables(
             eos_file=solid,
             solidus_func=lambda P: 1500.0,
