@@ -661,7 +661,7 @@ def test_a_pin_of_an_unknown_algorithm_stops(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(registry_guard, '_pins', registry_guard._pins.__wrapped__)
     (tmp_path / NAME).write_text(_table_text())
-    with pytest.raises(StaleTableError, match='crc32'):
+    with pytest.raises(StaleTableError, match='crc32:abcd .* cannot be checked'):
         registry_guard.verify(str(tmp_path / NAME))
 
 
@@ -857,7 +857,7 @@ def test_the_hash_key_holds_the_size(tmp_path, pinned, monkeypatch):
     calls = []
     real_md5 = registry_guard._md5
     monkeypatch.setattr(registry_guard, '_md5', lambda p: calls.append(p) or real_md5(p))
-    sizes = iter([100, 100, 101])
+    sizes = iter([100, 100, 101])  # then 101 for any later stat, a traceback's included
 
     class _Stat:
         st_dev = st_ino = st_mtime_ns = st_ctime_ns = 1
@@ -868,7 +868,7 @@ def test_the_hash_key_holds_the_size(tmp_path, pinned, monkeypatch):
 
     def fake_stat(p):
         st = _Stat()
-        st._size = next(sizes)
+        st._size = next(sizes, 101)
         return st
 
     monkeypatch.setattr(registry_guard.os, 'stat', fake_stat)
