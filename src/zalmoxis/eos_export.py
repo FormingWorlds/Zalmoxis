@@ -27,6 +27,7 @@ import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 
 from zalmoxis.eos.interpolation import read_table_columns, require_eos_file
+from zalmoxis.eos.registry_guard import verify
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +95,7 @@ def load_paleos_all_properties(eos_file):
     except OSError as exc:
         require_eos_file(eos_file)
         raise FileNotFoundError(msg) from exc
+    verify(eos_file)
     if not stat.S_ISREG(st.st_mode):
         raise FileNotFoundError(msg)
     file_id = (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)

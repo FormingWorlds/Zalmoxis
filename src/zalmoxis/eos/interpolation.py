@@ -596,6 +596,10 @@ def _paleos_clamp_temperature(log_p, log_t, cached):
     return log_t, False
 
 
+# Layout of the cached entry; a change to load_paleos_unified_table raises it.
+CACHE_FORMAT = 1
+
+
 def cache_path_for(eos_file):
     """Return the binary cache path of a unified PALEOS table: ``<table>.cache.pkl``."""
     return os.path.splitext(eos_file)[0] + '.cache.pkl'
@@ -635,14 +639,13 @@ def _ensure_unified_cache(eos_file, interpolation_functions):
             source_md5 = file_md5(eos_file)
         cache_path = cache_path_for(eos_file)
         try:
-            # The cache carries the md5 of the table it was built from.
             with open(cache_path, 'rb') as f:
                 stored = pickle.load(f)
-            if not isinstance(stored, dict) or 'entry' not in stored:
+            if not isinstance(stored, dict) or stored.get('format') != CACHE_FORMAT:
                 raise _StaleCache(cache_path)
             if source_md5 is None:
-                verify_digest(eos_file, stored['source_md5'])
-            elif stored['source_md5'] != source_md5:
+                verify_digest(eos_file, stored.get('source_md5'))
+            elif stored.get('source_md5') != source_md5:
                 raise _StaleCache(cache_path)
             interpolation_functions[eos_file] = stored['entry']
             logger.debug('Loaded PALEOS cache from %s', cache_path)
@@ -680,7 +683,11 @@ def _ensure_unified_cache(eos_file, interpolation_functions):
             try:
                 with open(cache_path, 'wb') as f:
                     pickle.dump(
-                        {'source_md5': source_md5, 'entry': interpolation_functions[eos_file]},
+                        {
+                            'format': CACHE_FORMAT,
+                            'source_md5': source_md5,
+                            'entry': interpolation_functions[eos_file],
+                        },
                         f,
                         protocol=4,
                     )

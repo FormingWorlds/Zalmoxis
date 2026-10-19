@@ -28,6 +28,8 @@ import tempfile
 import numpy as np
 import pytest
 
+from zalmoxis.eos.interpolation import CACHE_FORMAT
+
 
 def _paleos_unified_data_available():
     """Check if unified PALEOS data files are available."""
@@ -398,7 +400,9 @@ class TestEnsureUnifiedCache:
         cached = {'type': 'paleos_unified', 'p_min': 2.0e5, 'p_max': 5.0e11}
         with open(cache_path, 'wb') as f:
             digest = hashlib.md5(open(eos_file, 'rb').read()).hexdigest()
-            pickle.dump({'source_md5': digest, 'entry': cached}, f, protocol=4)
+            pickle.dump(
+                {'format': CACHE_FORMAT, 'source_md5': digest, 'entry': cached}, f, protocol=4
+            )
 
         cache = {}
         with patch('zalmoxis.eos.interpolation.load_paleos_unified_table') as mock_load:
@@ -466,7 +470,9 @@ class TestEnsureUnifiedCache:
             f.write('# current table\n')
         with open(cache_path, 'wb') as f:
             digest = hashlib.md5(open(eos_file, 'rb').read()).hexdigest()
-            pickle.dump({'source_md5': digest, 'entry': cached}, f, protocol=4)
+            pickle.dump(
+                {'format': CACHE_FORMAT, 'source_md5': digest, 'entry': cached}, f, protocol=4
+            )
         os.utime(cache_path, (1_000_000, 1_000_000))
         os.utime(eos_file, (2_000_000, 2_000_000))
 

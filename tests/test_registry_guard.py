@@ -180,11 +180,9 @@ def test_stale_table_in_its_version_directory_is_fetched_again(tmp_path, pinned,
     path = root / rel / NAME
     path.write_text(pinned.replace('8.0e+03', '8.1e+03', 1))
     monkeypatch.setenv('FWL_DATA_CACHE', str(cache_root))
-    monkeypatch.setenv('FWL_IO_OFFLINE', '1')
+    monkeypatch.setenv('FWL_DATA', str(root))
     monkeypatch.setattr(
-        registry_guard,
-        '_datasets',
-        lambda: {KEY: (KEY.replace('.', '/'), f'10.5281/zenodo.{rid}', None, None)},
+        registry_guard, '_manifest', lambda: (_Dataset(KEY, {}, f'10.5281/zenodo.{rid}'),)
     )
     registry_guard.verify(str(path))
     assert path.read_text() == pinned
@@ -197,11 +195,9 @@ def test_refetch_that_fails_offline_raises_stale(tmp_path, pinned, monkeypatch):
     path = tmp_path / rel / NAME
     path.write_text(pinned.replace('8.0e+03', '8.1e+03', 1))
     monkeypatch.delenv('FWL_DATA_CACHE', raising=False)
-    monkeypatch.setenv('FWL_IO_OFFLINE', '1')
+    monkeypatch.setenv('FWL_DATA', str(tmp_path))
     monkeypatch.setattr(
-        registry_guard,
-        '_datasets',
-        lambda: {KEY: (KEY.replace('.', '/'), f'10.5281/zenodo.{rid}', None, None)},
+        registry_guard, '_manifest', lambda: (_Dataset(KEY, {}, f'10.5281/zenodo.{rid}'),)
     )
     with pytest.raises(StaleTableError, match='offline'):
         registry_guard.verify(str(path))
@@ -228,14 +224,9 @@ def test_any_changed_byte_raises(tmp_path, pinned, pos, byte):
 class _Dataset:
     """A manifest dataset with a fixed registry."""
 
-    def __init__(self, key, registry):
-        self.key, self._registry = key, registry
-        self.subdir, self.zenodo, self.dataverse, self.extract = (
-            key.replace('.', '/'),
-            None,
-            None,
-            None,
-        )
+    def __init__(self, key, registry, zenodo=None):
+        self.key, self._registry, self.zenodo = key, registry, zenodo
+        self.subdir, self.dataverse, self.extract = key.replace('.', '/'), None, None
 
     def registry(self):
         return self._registry
@@ -422,3 +413,29 @@ def test_a_cache_without_its_md5_or_of_another_format_is_rebuilt(tmp_path, pinne
     with open(interpolation.cache_path_for(str(path)), 'wb') as f:
         pickle.dump(full, f)
     assert interpolation._ensure_unified_cache(str(path), {})['p_min'] == pytest.approx(1e9)
+
+
+def test_without_fwl_data_a_stale_table_is_not_fetched(tmp_path, pinned, monkeypatch):
+    """With no FWL_DATA there is no tree to fetch into: the stale table raises."""
+    rel = 'interior/eos/paleos_iron/r22776069'
+    (tmp_path / rel).mkdir(parents=True)
+    path = tmp_path / rel / NAME
+    path.write_text(pinned.replace('8.0e+03', '8.1e+03', 1))
+    monkeypatch.delenv('FWL_DATA', raising=False)
+    monkeypatch.setattr(
+        registry_guard, '_manifest', lambda: (_Dataset(KEY, {}, '10.5281/zenodo.22776069'),)
+    )
+    with pytest.raises(StaleTableError, match='get_zalmoxis.sh'):
+        registry_guard.verify(str(path))
+
+
+def test_a_dataset_without_a_zenodo_pin_is_not_fetched(tmp_path, pinned, monkeypatch):
+    """A dataset with no Zenodo record has no version directory: the stale table raises."""
+    rel = 'interior/eos/paleos_iron/r22776069'
+    (tmp_path / rel).mkdir(parents=True)
+    path = tmp_path / rel / NAME
+    path.write_text(pinned.replace('8.0e+03', '8.1e+03', 1))
+    monkeypatch.setenv('FWL_DATA', str(tmp_path))
+    monkeypatch.setattr(registry_guard, '_manifest', lambda: (_Dataset(KEY, {}),))
+    with pytest.raises(StaleTableError, match='get_zalmoxis.sh'):
+        registry_guard.verify(str(path))

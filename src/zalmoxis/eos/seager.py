@@ -24,6 +24,7 @@ from .interpolation import (
     load_paleos_table,
     require_eos_file,
 )
+from .registry_guard import StaleTableError
 
 logger = logging.getLogger(__name__)
 
@@ -336,6 +337,8 @@ def get_tabulated_eos(
 
         return density
 
+    except StaleTableError:
+        raise
     except (ValueError, OSError) as e:
         logger.error(
             f'Error with tabulated EOS for {material} at P={pressure:.2e} Pa, T={temperature}: {e}'
