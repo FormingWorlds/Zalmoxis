@@ -161,12 +161,16 @@ def test_load_phase_grid_missing_file_returns_none(tmp_path):
 def test_load_phase_grid_uses_pkl_cache_when_dat_absent(tmp_path, monkeypatch):
     """A pickle-only installation (``.pkl`` present, ``.dat`` absent) still
     produces phase labels rather than ``unknown``."""
-    import pickle
 
     import zalmoxis.phase_columns as pc
 
     eos_file = str(tmp_path / 'pkl_only.dat')  # NB: never created
-    from zalmoxis.eos.interpolation import CACHE_FORMAT, cache_path_for
+    from zalmoxis.eos.interpolation import (
+        CACHE_FORMAT,
+        cache_builder,
+        cache_path_for,
+        write_cache,
+    )
 
     pkl_path = cache_path_for(eos_file)
 
@@ -183,10 +187,15 @@ def test_load_phase_grid_uses_pkl_cache_when_dat_absent(tmp_path, monkeypatch):
         'n_t': 5,
         'phase_grid': np.array([['solid'] * 5 for _ in range(5)], dtype=object),
     }
-    with open(pkl_path, 'wb') as fh:
-        pickle.dump(
-            {'format': CACHE_FORMAT, 'source_md5': '0' * 32, 'entry': payload}, fh, protocol=4
-        )
+    write_cache(
+        pkl_path,
+        {
+            'format': CACHE_FORMAT,
+            'builder': cache_builder(),
+            'source_md5': '0' * 32,
+            'entry': payload,
+        },
+    )
 
     pc._PHASE_GRID_CACHE.pop(eos_file, None)
     cached = _load_phase_grid(eos_file)

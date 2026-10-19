@@ -28,7 +28,23 @@ import tempfile
 import numpy as np
 import pytest
 
-from zalmoxis.eos.interpolation import CACHE_FORMAT
+from zalmoxis.eos.interpolation import (
+    CACHE_FORMAT,
+    cache_builder,
+    read_cache,
+    write_cache,
+    write_cache_bytes,
+)
+
+
+def _valid(source_md5, entry):
+    """A cache payload of this code for a table of md5 ``source_md5``."""
+    return {
+        'format': CACHE_FORMAT,
+        'builder': cache_builder(),
+        'source_md5': source_md5,
+        'entry': entry,
+    }
 
 
 def _paleos_unified_data_available():
@@ -361,8 +377,7 @@ class TestEnsureUnifiedCache:
         bad_pickle = b'\x80\x04c__zalmoxis_absent_module__\nFoo\n.'
         with pytest.raises(ModuleNotFoundError):
             pickle.loads(bad_pickle)
-        with open(cache_path, 'wb') as f:
-            f.write(bad_pickle)
+        write_cache_bytes(cache_path, bad_pickle)  # a valid digest line, so loads runs
 
         rebuilt = {'type': 'paleos_unified', 'p_min': 1.0e5, 'p_max': 1.0e12}
         cache = {}
@@ -378,8 +393,7 @@ class TestEnsureUnifiedCache:
         assert result is rebuilt
         assert cache[eos_file] is rebuilt
         # The unusable binary cache is replaced on disk by the rebuilt entry.
-        with open(cache_path, 'rb') as f:
-            assert pickle.load(f)['entry']['type'] == 'paleos_unified'
+        assert read_cache(cache_path)['entry']['type'] == 'paleos_unified'
         # The rejection reason is recorded so ops can distinguish a version
         # mismatch from a corrupt cache: the message names the offending cache
         # and the concrete exception type, not a generic 'rebuilding' line.
@@ -398,11 +412,8 @@ class TestEnsureUnifiedCache:
         with open(eos_file, 'w') as f:
             f.write('# good table\n')
         cached = {'type': 'paleos_unified', 'p_min': 2.0e5, 'p_max': 5.0e11}
-        with open(cache_path, 'wb') as f:
-            digest = hashlib.md5(open(eos_file, 'rb').read()).hexdigest()
-            pickle.dump(
-                {'format': CACHE_FORMAT, 'source_md5': digest, 'entry': cached}, f, protocol=4
-            )
+        digest = hashlib.md5(open(eos_file, 'rb').read()).hexdigest()
+        write_cache(cache_path, _valid(digest, cached))
 
         cache = {}
         with patch('zalmoxis.eos.interpolation.load_paleos_unified_table') as mock_load:
@@ -427,8 +438,7 @@ class TestEnsureUnifiedCache:
         eos_file = str(tmp_path / 'refreshed_table.dat')
         cache_path = str(tmp_path / 'refreshed_table.cache.pkl')
         superseded = {'type': 'paleos_unified', 'p_min': 1.0e5, 'p_max': 1.0e12}
-        with open(cache_path, 'wb') as f:
-            pickle.dump({'source_md5': '0' * 32, 'entry': superseded}, f, protocol=4)
+        write_cache(cache_path, _valid('0' * 32, superseded))
         with open(eos_file, 'w') as f:
             f.write('# replacement table\n')
         os.utime(eos_file, (1_000_000, 1_000_000))
@@ -450,8 +460,7 @@ class TestEnsureUnifiedCache:
         assert result['p_min'] != pytest.approx(superseded['p_min'])
         # The refreshed entry replaces the superseded cache on disk, so the
         # next process does not pay the text load again.
-        with open(cache_path, 'rb') as f:
-            assert pickle.load(f)['entry']['p_min'] == pytest.approx(3.0e5)
+        assert read_cache(cache_path)['entry']['p_min'] == pytest.approx(3.0e5)
         # Ops logs must name the discarded cache and the table that outranked it.
         assert 'was not built from' in caplog.text
         assert cache_path in caplog.text
@@ -468,11 +477,8 @@ class TestEnsureUnifiedCache:
         cached = {'type': 'paleos_unified', 'p_min': 4.0e5, 'p_max': 9.0e11}
         with open(eos_file, 'w') as f:
             f.write('# current table\n')
-        with open(cache_path, 'wb') as f:
-            digest = hashlib.md5(open(eos_file, 'rb').read()).hexdigest()
-            pickle.dump(
-                {'format': CACHE_FORMAT, 'source_md5': digest, 'entry': cached}, f, protocol=4
-            )
+        digest = hashlib.md5(open(eos_file, 'rb').read()).hexdigest()
+        write_cache(cache_path, _valid(digest, cached))
         os.utime(cache_path, (1_000_000, 1_000_000))
         os.utime(eos_file, (2_000_000, 2_000_000))
 
