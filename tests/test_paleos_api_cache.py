@@ -33,9 +33,10 @@ _GRID_A = GridSpec(p_lo=1.3e5, p_hi=4.7e13, n_p=37, t_lo=311.0, t_hi=1.13e4, n_t
 _GRID_B = GridSpec(p_lo=1.3e5, p_hi=4.7e13, n_p=37, t_lo=311.0, t_hi=1.13e4, n_t=31)
 _SHA_FAKE = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'  # 40-char synthetic
 _SHA_OTHER = '0fedcba98765432100112233445566778899aabb'
+_BUILD = 'b0b1b2b3'
 
 
-def _fake_paleos_unified_content(sha: str, material: str = 'iron') -> str:
+def _fake_paleos_unified_content(sha: str, material: str = 'iron', build: str = _BUILD) -> str:
     """Return synthetic .dat content with a PALEOS_SHA header line.
 
     Ten-column rows are accepted unchanged by downstream readers. Values are
@@ -45,6 +46,7 @@ def _fake_paleos_unified_content(sha: str, material: str = 'iron') -> str:
     return (
         f'# Synthetic test cache file ({material})\n'
         f'# PALEOS_SHA: {sha}\n'
+        f'# BUILD_KEY: {build}\n'
         f'# grid_hash: deadbeefca\n'
         '1.300000e+05 3.110000e+02 4173.5 5.83e3 1142.7 '
         '1183.0 1093.0 2.71e-5 0.293 solid\n'
@@ -67,7 +69,12 @@ def patched_sha(monkeypatch):
         'zalmoxis.eos.paleos_api_cache.paleos_installed_sha',
         lambda: _SHA_FAKE,
     )
-    monkeypatch.setattr('zalmoxis.eos.paleos_api_cache._check_paleos_once', lambda sha: 'tested')
+    monkeypatch.setattr(
+        'zalmoxis.eos.paleos_api_cache._check_paleos_once', lambda sha: 'tested'
+    )
+    monkeypatch.setattr(
+        'zalmoxis.eos.paleos_api_cache.build_key', lambda material, h2o_table_path=None: _BUILD
+    )
     return _SHA_FAKE
 
 
@@ -225,6 +232,21 @@ class TestHeaderShaMatches:
         # ``Path.exists`` is True for directories; the OSError lives in open().
         assert pac._header_sha_matches(d, _SHA_FAKE) is False
 
+    def test_another_build_key_returns_false(self, tmp_path):
+        """A file of the same commit built with other inputs (RTpress, AQUA, numpy, scipy,
+        sympy) is not reused; without a build key to compare, the SHA alone decides."""
+        f = tmp_path / 'other_build.dat'
+        f.write_text(_fake_paleos_unified_content(_SHA_FAKE, build='c0c1c2c3'))
+        assert pac._header_sha_matches(f, _SHA_FAKE, _BUILD) is False
+        assert pac._header_sha_matches(f, _SHA_FAKE, 'c0c1c2c3') is True
+        assert pac._header_sha_matches(f, _SHA_FAKE) is True
+
+    def test_a_file_without_a_build_key_returns_false_for_a_build(self, tmp_path):
+        """A file written before build keys existed is rebuilt."""
+        f = tmp_path / 'no_build.dat'
+        f.write_text(f'# PALEOS_SHA: {_SHA_FAKE}\n1 2 3 4 5 6 7 8 9 solid\n')
+        assert pac._header_sha_matches(f, _SHA_FAKE, _BUILD) is False
+
     def test_empty_file_returns_false(self, tmp_path):
         """Edge case: empty file (zero iterations of the header loop) → False."""
         f = tmp_path / 'empty.dat'
@@ -250,7 +272,7 @@ class TestResolveUnified:
         # File name carries sha10 + grid_hash; check the structure.
         sha10 = _SHA_FAKE[:10]
         ghash = _GRID_A.hash_short()
-        assert path.name == f'unified_iron_{sha10}_{ghash}.dat'
+        assert path.name == f'unified_iron_{sha10}_{_BUILD}_{ghash}.dat'
         assert path.parent == patched_cache_root
 
     def test_cache_hit_skips_generator(
@@ -270,7 +292,7 @@ class TestResolveUnified:
         # Pre-place a file at the expected path with a *different* SHA.
         sha10 = _SHA_FAKE[:10]
         ghash = _GRID_A.hash_short()
-        stale = patched_cache_root / f'unified_mgsio3_{sha10}_{ghash}.dat'
+        stale = patched_cache_root / f'unified_mgsio3_{sha10}_{_BUILD}_{ghash}.dat'
         stale.write_text(_fake_paleos_unified_content(_SHA_OTHER))
         path = pac.resolve_paleos_api_unified('mgsio3', _GRID_A)
         assert path == stale
@@ -284,6 +306,26 @@ class TestResolveUnified:
         assert patched_generators['unified'] == 1
         pac.resolve_paleos_api_unified('iron', _GRID_A, force=True)
         assert patched_generators['unified'] == 2
+
+    def test_another_build_regenerates_and_the_aqua_path_reaches_the_key(
+        self, patched_cache_root, patched_sha, patched_generators, monkeypatch
+    ):
+        """The build key is taken for the material and AQUA table, and a file of the same
+        commit with another build key is regenerated."""
+        seen = []
+        monkeypatch.setattr(
+            pac,
+            'build_key',
+            lambda material, h2o_table_path=None: (
+                seen.append((material, h2o_table_path)) or _BUILD
+            ),
+        )
+        sha10, ghash = _SHA_FAKE[:10], _GRID_A.hash_short()
+        old = patched_cache_root / f'unified_h2o_{sha10}_{_BUILD}_{ghash}.dat'
+        old.write_text(_fake_paleos_unified_content(_SHA_FAKE, 'h2o', build='c0c1c2c3'))
+        assert pac.resolve_paleos_api_unified('h2o', _GRID_A, h2o_table_path='/a.dat') == old
+        assert patched_generators['unified'] == 1
+        assert seen == [('h2o', '/a.dat')]
 
     def test_h2o_table_path_forwarded_to_generator(
         self, patched_cache_root, patched_sha, patched_generators
@@ -356,8 +398,8 @@ class TestResolveTwoPhase:
         """Edge case: solid header SHA wrong → both regenerated."""
         sha10 = _SHA_FAKE[:10]
         ghash = _GRID_A.hash_short()
-        solid = patched_cache_root / f'2phase_solid_{sha10}_{ghash}.dat'
-        liquid = patched_cache_root / f'2phase_liquid_{sha10}_{ghash}.dat'
+        solid = patched_cache_root / f'2phase_solid_{sha10}_{_BUILD}_{ghash}.dat'
+        liquid = patched_cache_root / f'2phase_liquid_{sha10}_{_BUILD}_{ghash}.dat'
         # Place a stale solid + a fresh liquid: still regenerates both.
         solid.write_text(_fake_paleos_unified_content(_SHA_OTHER))
         liquid.write_text(_fake_paleos_unified_content(_SHA_FAKE))
