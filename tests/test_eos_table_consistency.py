@@ -423,6 +423,14 @@ def test_aragog_pt_files_on_a_reversed_axis_are_rejected(pt_files):
 
 
 @pytest.mark.unit
+def test_aragog_pt_values_off_the_grid_shape_are_rejected(pt_files):
+    t = pt_files['murnaghan']
+    t = {**t, 'entropy': {**t['entropy'], 'values': t['entropy']['values'][:, :-1]}}
+    with pytest.raises(ValueError, match='entropy values do not have the shape'):
+        c.check_pt(t, EPS9)
+
+
+@pytest.mark.unit
 def test_aragog_pt_files_on_different_grids_are_rejected(pt_files):
     t = pt_files['murnaghan']
     t = {**t, 'entropy': {**t['entropy'], 'T': t['entropy']['T'] * 1.01}}
