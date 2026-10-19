@@ -20,8 +20,8 @@ def _git(repo, *args):
 
 
 def _commit(repo, text):
-    (repo / 'eos.py').write_text(text)
-    _git(repo, 'add', 'eos.py')
+    (repo / 'paleos' / 'eos.py').write_text(text)
+    _git(repo, 'add', 'paleos/eos.py')
     _git(
         repo,
         *('-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false'),
@@ -82,8 +82,9 @@ def test_a_tested_commit_missing_from_the_clone_stops(history):
         check_paleos_commit(repo, 'f' * 40)
 
 
-def test_a_checkout_without_git_stops(tmp_path):
+def test_a_checkout_without_git_stops(tmp_path, monkeypatch):
     """PALEOS outside a git checkout has no commit to check, so the check stops."""
+    monkeypatch.setenv('GIT_CEILING_DIRECTORIES', str(tmp_path.parent))
     with pytest.raises(PaleosVersionError, match='cannot tell') as err:
         check_paleos_commit(tmp_path, 'a' * 40)
     assert 'not a git repository' in str(err.value)
@@ -100,15 +101,15 @@ def test_a_dirty_tree_gets_its_own_sha_and_cache_name(history, monkeypatch):
     monkeypatch.setattr(paleos_api, '_paleos_repo_dir', lambda: repo)
     clean = paleos_api.paleos_installed_sha()
     assert clean == c['new']
-    (repo / 'eos.py').write_text('edited')
+    (repo / 'paleos' / 'eos.py').write_text('edited')
     dirty = paleos_api.paleos_installed_sha()
     assert dirty.startswith(c['new'] + '-dirty-') and len(dirty) == 40 + 7 + 8
     assert paleos_api_cache._sha_short(dirty) != paleos_api_cache._sha_short(clean)
     assert paleos_api_cache._sha_short(dirty) == c['new'][:10] + dirty[40:]
 
 
-def test_an_untracked_file_does_not_make_the_tree_dirty(history, monkeypatch):
-    """An untracked file is no change to the PALEOS code, so the SHA stays clean."""
+def test_a_file_outside_the_package_does_not_make_the_tree_dirty(history, monkeypatch):
+    """A file outside the paleos package is no change to the PALEOS code."""
     repo, c = history
     monkeypatch.setattr(paleos_api, '_paleos_repo_dir', lambda: repo)
     (repo / 'notes.txt').write_text('scratch')
@@ -124,21 +125,23 @@ def test_the_pin_is_a_full_commit_sha():
 def test_the_cache_checks_the_commit_before_it_resolves(monkeypatch, tmp_path):
     """Resolving a PALEOS-API table runs the commit check first."""
     calls = []
-    monkeypatch.setattr(paleos_api_cache, '_check_paleos_once', lambda sha: calls.append(1))
+    monkeypatch.setattr(paleos_api_cache, '_check_paleos_once', lambda sha: calls.append(sha))
     monkeypatch.setattr(paleos_api_cache, 'paleos_installed_sha', lambda: 'a' * 40)
     monkeypatch.setattr(paleos_api_cache, '_cache_root', lambda: tmp_path)
-    monkeypatch.setattr(paleos_api_cache, 'generate_paleos_api_unified_table', lambda **k: None)
+    monkeypatch.setattr(
+        paleos_api_cache, 'generate_paleos_api_unified_table', lambda **k: calls.append('gen')
+    )
     paleos_api_cache.resolve_paleos_api_unified('iron', paleos_api.make_default_grid_iron())
-    assert calls == [1]
+    assert calls == ['a' * 40, 'gen']
 
 
 def test_two_different_edits_get_two_cache_names(history, monkeypatch):
     """Each set of uncommitted changes has its own key, so one edit never reads another's tables."""
     repo, c = history
     monkeypatch.setattr(paleos_api, '_paleos_repo_dir', lambda: repo)
-    (repo / 'eos.py').write_text('edit A')
+    (repo / 'paleos' / 'eos.py').write_text('edit A')
     a = paleos_api.paleos_installed_sha()
-    (repo / 'eos.py').write_text('edit B')
+    (repo / 'paleos' / 'eos.py').write_text('edit B')
     b = paleos_api.paleos_installed_sha()
     assert a != b and a[:40] == b[:40] == c['new']
     assert paleos_api_cache._sha_short(a) != paleos_api_cache._sha_short(b)
@@ -148,7 +151,7 @@ def test_a_dirty_tree_runs_with_a_warning(history, caplog):
     """Changes to tracked files at or after the tested commit run, with a warning that says so."""
     repo, c = history
     _git(repo, 'checkout', '-q', c['tested'])
-    (repo / 'eos.py').write_text('local change')
+    (repo / 'paleos' / 'eos.py').write_text('local change')
     assert check_paleos_commit(repo, c['tested']) == 'dirty'
     assert 'uncommitted changes' in caplog.text
 
@@ -224,3 +227,65 @@ def test_the_two_phase_cache_checks_the_commit_too(monkeypatch, tmp_path):
     )
     paleos_api_cache.resolve_paleos_api_2phase_mgsio3(paleos_api.make_default_grid_mgsio3())
     assert calls == ['a' * 40]
+
+
+def _dirty_key(repo, monkeypatch):
+    monkeypatch.setattr(paleos_api, '_paleos_repo_dir', lambda: repo)
+    return paleos_api.paleos_installed_sha()
+
+
+def test_an_untracked_module_in_the_package_changes_the_key(history, monkeypatch):
+    """A new module not yet added to git is code: two contents of it give two keys."""
+    repo, c = history
+    (repo / 'paleos' / 'helper.py').write_text('K = 1\n')
+    a = _dirty_key(repo, monkeypatch)
+    (repo / 'paleos' / 'helper.py').write_text('K = 2\n')
+    b = _dirty_key(repo, monkeypatch)
+    assert a.startswith(c['new'] + '-dirty-') and b.startswith(c['new'] + '-dirty-')
+    assert a != b
+
+
+def test_an_edit_git_is_told_to_hide_still_changes_the_key(history, monkeypatch):
+    """--assume-unchanged hides an edit from git status, not from the files on disk."""
+    repo, c = history
+    _git(repo, 'update-index', '--assume-unchanged', 'paleos/eos.py')
+    (repo / 'paleos' / 'eos.py').write_text('hidden edit')
+    assert _dirty_key(repo, monkeypatch).startswith(c['new'] + '-dirty-')
+    assert check_paleos_commit(repo, c['new']) == 'dirty'
+
+
+def test_a_non_utf8_edit_and_an_external_diff_tool_still_give_a_key(history, monkeypatch):
+    """Bytes that are not UTF-8 and a configured external diff tool do not break or hide the key."""
+    repo, c = history
+    _git(repo, 'config', 'diff.external', 'true')
+    (repo / 'paleos' / 'eos.py').write_bytes(b'caf\xe9\n')
+    key = _dirty_key(repo, monkeypatch)
+    assert key.startswith(c['new'] + '-dirty-') and len(key) == 40 + 7 + 8
+
+
+def test_compiled_files_do_not_make_the_tree_dirty(history, monkeypatch):
+    """__pycache__ and .pyc files are written by Python, not code changes."""
+    repo, c = history
+    (repo / 'paleos' / '__pycache__').mkdir()
+    (repo / 'paleos' / '__pycache__' / 'eos.cpython-312.pyc').write_bytes(b'\x00\x01')
+    assert _dirty_key(repo, monkeypatch) == c['new']
+    assert check_paleos_commit(repo, c['new']) == 'tested'
+
+
+def test_a_dirty_newer_tree_runs_as_dirty_with_two_warnings(history, caplog):
+    """A descendant with an edit warns that it is newer and that it has changes."""
+    repo, c = history
+    (repo / 'paleos' / 'eos.py').write_text('edit')
+    assert check_paleos_commit(repo, c['tested']) == 'dirty'
+    assert 'newer than the commit' in caplog.text and 'uncommitted changes' in caplog.text
+
+
+def test_a_key_the_check_did_not_make_is_refused(monkeypatch):
+    """A fallback key such as version-<x> names no commit, so no cache is read or built for it."""
+    monkeypatch.setattr(paleos_api_cache, 'check_paleos_commit', lambda: 'tested')
+    paleos_api_cache._check_paleos_once.cache_clear()
+    try:
+        with pytest.raises(PaleosVersionError, match='version-0.1'):
+            paleos_api_cache._check_paleos_once('version-0.1.0')
+    finally:
+        paleos_api_cache._check_paleos_once.cache_clear()

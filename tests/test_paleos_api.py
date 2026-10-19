@@ -255,14 +255,18 @@ class TestPaleosInstalledSha:
         Discriminating: the fallback string carries the version prefix so a
         wrong branch (e.g. always returning 'unknown') is detectable.
         """
-        import subprocess as real_subprocess
+        import sys
+        import types
 
-        def fake_check_output(*args, **kwargs):
-            raise real_subprocess.CalledProcessError(128, ['git'])
-
-        monkeypatch.setattr(paleos_api._subprocess, 'check_output', fake_check_output)
-        sha = paleos_api.paleos_installed_sha()
-        assert sha.startswith('version-')
+        fake = types.ModuleType('paleos')
+        fake.__file__, fake.__version__ = '/nowhere/paleos/__init__.py', '9.9'
+        monkeypatch.setitem(sys.modules, 'paleos', fake)
+        monkeypatch.setattr(
+            paleos_api,
+            '_git',
+            lambda repo, *a, **k: paleos_api._subprocess.CompletedProcess(a, 128, b'', b'boom'),
+        )
+        assert paleos_api.paleos_installed_sha() == 'version-9.9'
 
 
 # ---------------------------------------------------------------------------
