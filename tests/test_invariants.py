@@ -1009,3 +1009,43 @@ def test_cmb_node_names_cmb_mass_and_the_largest_enclosed_mass():
     msg = _message(result, cfg, limit=0.03)
     assert f'cmb_mass {result["cmb_mass"]:.6e}' in msg and 'at node' not in msg
     assert f'largest mass_enclosed {result["mass_enclosed"].max():.6e}' in msg
+
+
+def _paleos_eos_cfg(**kwargs):
+    """PALEOS iron core and unified PALEOS MgSiO3 mantle on a linear 3000 to 6000 K profile."""
+    from tests.test_spider_coupling_convergence import _has_paleos_data
+
+    if not _has_paleos_data():
+        pytest.skip('PALEOS tables not on disk')
+    base = dict(
+        wall_timeout=1e6,
+        layer_eos_config={'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
+        temperature_mode='linear',
+        num_layers=100,
+    )
+    return _cfg(**{**base, **kwargs})
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.timeout(2400)
+@pytest.mark.parametrize(
+    'kwargs',
+    [
+        {'mushy_zone_factor': 0.8},
+        {'mushy_zone_factors': {'PALEOS:iron': 1.0, 'PALEOS:MgSiO3': 0.8, 'PALEOS:H2O': 1.0}},
+        {
+            'layer_eos_config': {
+                'core': 'PALEOS:iron',
+                'mantle': 'PALEOS:MgSiO3:0.97+Chabrier:H:0.03',
+            },
+            'binodal_T_scale': 500.0,
+        },
+    ],
+    ids=['mushy_zone_factor', 'mushy_zone_factors', 'binodal_T_scale'],
+)
+def test_the_density_reference_takes_the_eos_parameters_of_the_solve(kwargs):
+    """The reference density is the EOS of the solve with its parameters; a reference at the
+    default parameters breaks density_eos on these planets."""
+    r = _run(_paleos_eos_cfg(**kwargs))
+    assert r['converged'] and r['density_from_eos']
