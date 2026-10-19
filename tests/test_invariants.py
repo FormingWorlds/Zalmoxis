@@ -214,6 +214,7 @@ def test_density_layer_follows_cmb_mass():
         return np.full(len(P), RHO)
 
     check_accepted(result, cfg, RTOL, ATOL, density_at, ice=True)
+    assert set(calls) == {'core', 'mantle', 'ice_layer'}
     core, ice = m < result['cmb_mass'], m >= result['core_mantle_mass']
     for layer, nodes in (('core', core), ('mantle', ~core & ~ice), ('ice_layer', ice)):
         assert nodes.any() and np.array_equal(calls[layer], P[nodes]), layer

@@ -215,14 +215,14 @@ class TestRetry:
     def test_retry_skip(self):
         r, n = self._main(_first_attempt(True, True))
         assert n == 1 and r['converged'] is True and r['accepted_on'] == 'retry_skip'
-        assert r['accept_mass_limit'] == 0.07
+        assert r.get('accept_mass_limit') == 0.07
 
     def test_retry_skip_on_a_wall_clock_stop_is_timeout(self):
         first = _first_attempt(True, True)
         first['stopped_on_wall_clock'] = True
         r, n = self._main(first)
         assert n == 1 and r['converged'] is True and r['accepted_on'] == 'timeout'
-        assert r['accept_mass_limit'] == 0.07  # the retry-skip test it passed
+        assert r.get('accept_mass_limit') == 0.07  # the retry-skip test it passed
 
     def test_retry_reports_its_own_path(self):
         r, n = self._main(_first_attempt(True, False))
@@ -351,6 +351,17 @@ def test_outer_wall_clock_is_timeout(monkeypatch, caplog):
     assert r['stopped_on_wall_clock'] is True
 
 
+@pytest.mark.unit
+@pytest.mark.timeout(60)
+@pytest.mark.usefixtures('no_check')
+def test_outer_wall_clock_above_tolerance_outer_accepts_on_the_loose_limit(monkeypatch):
+    """The same stop, with the mass error above tolerance_outer, accepts on the 3 % limit."""
+    _clock_after_lookup(monkeypatch, outer=1)
+    r = _picard(max_iterations_outer=3, max_iterations_inner=1)
+    assert r['mass_error_at_accept'] > 1e-3  # above tolerance_outer
+    assert r['accepted_on'] == 'timeout' and r['accept_mass_limit'] == 0.03
+
+
 @pytest.mark.smoke
 @pytest.mark.accept_solves
 class TestRealSolve:
@@ -429,7 +440,7 @@ class TestRealSolve:
         assert 'Wall-clock timeout in inner loop' in caplog.text
         assert 'Skipping retry' in caplog.text
         assert r['converged'] is True and r['accepted_on'] == 'timeout'
-        assert r['accept_mass_limit'] == 0.07
+        assert r.get('accept_mass_limit') == 0.07
 
     def test_wall_clock_without_an_accept(self):
         """The clock runs out before the first profile: not accepted (``main`` would retry)."""
