@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 import pickle
+import time
 
 import numpy as np
 import pytest
@@ -74,6 +75,9 @@ def test_current_table_is_read(tmp_path, pinned):
 def test_stale_table_raises_before_it_is_read(tmp_path, pinned, monkeypatch):
     path = tmp_path / NAME
     path.write_text(pinned.replace('8.0e+03', '8.1e+03', 1))
+    monkeypatch.setattr(
+        interpolation, 'open', lambda *a, **k: pytest.fail('table opened'), raising=False
+    )
     with pytest.raises(StaleTableError) as err:
         interpolation.load_paleos_unified_table(str(path))
     text = str(err.value)
@@ -164,7 +168,9 @@ def test_binary_cache_of_another_table_is_rebuilt(tmp_path, pinned):
     other = interpolation.load_paleos_unified_table(str(path))
     other['p_min'] = -1.0
     with open(pkl, 'wb') as f:
-        pickle.dump({'source_md5': '0' * 32, 'entry': other}, f)
+        pickle.dump(
+            {'format': interpolation.CACHE_FORMAT, 'source_md5': '0' * 32, 'entry': other}, f
+        )
     os.utime(path, ns=(1, 1))
     cached = interpolation._ensure_unified_cache(str(path), {})
     assert cached['p_min'] == pytest.approx(1e9)
@@ -276,6 +282,37 @@ def test_the_binary_cache_has_its_own_file_name(tmp_path):
     assert not interpolation.cache_path_for('a/b.dat').endswith('b.pkl')
 
 
+# Keys of the entry load_paleos_unified_table returns, for CACHE_FORMAT 1.
+_ENTRY_KEYS_FORMAT_1 = set(
+    [
+        'density_grid',
+        'density_interp',
+        'density_nn',
+        'dlog_p',
+        'dlog_t',
+        'liquidus_log_p',
+        'liquidus_log_t',
+        'logp_max',
+        'logp_min',
+        'logt_max',
+        'logt_min',
+        'logt_valid_max',
+        'logt_valid_min',
+        'n_p',
+        'n_t',
+        'nabla_ad_grid',
+        'nabla_ad_interp',
+        'nabla_ad_nn',
+        'p_max',
+        'p_min',
+        'phase_grid',
+        't_max',
+        't_min',
+        'type',
+        'unique_log_p',
+        'unique_log_t',
+    ]
+)
 TWO_PHASE = 'paleos_mgsio3_tables_pt_proteus_solid.dat'
 TWO_PHASE_KEY = 'interior.eos.paleos_mgsio3'
 
@@ -327,6 +364,7 @@ def test_a_same_size_rewrite_with_the_mtime_kept_is_seen(tmp_path, pinned):
     path.write_text(pinned)
     os.utime(path, ns=(5, 5))
     registry_guard.verify(str(path))
+    time.sleep(0.05)  # past a coarse ctime tick
     path.write_text(pinned.replace('8.0e+03', '8.1e+03', 1))
     os.utime(path, ns=(5, 5))
     with pytest.raises(StaleTableError):
@@ -400,19 +438,146 @@ def test_a_fetcher_that_cannot_be_built_gives_the_stale_error(tmp_path, pinned, 
 
 @pytest.mark.parametrize(
     'stored',
-    [{'entry': {'p_min': -1.0}}, {'format': 0, 'entry': {'p_min': -1.0}}],
-    ids=['no source md5', 'another format'],
+    [
+        {'format': 0, 'source_md5': None, 'entry': {'p_min': -1.0}},
+        {'format': 1, 'source_md5': '0' * 32, 'entry': {'p_min': -1.0}},
+        {'format': 1, 'entry': {'p_min': -1.0}},
+        {'format': 1, 'source_md5': None},
+    ],
+    ids=['another format', 'another md5', 'no md5', 'no entry'],
 )
-def test_a_cache_without_its_md5_or_of_another_format_is_rebuilt(tmp_path, pinned, stored):
-    """A cache that lacks the md5 or carries another format number is rebuilt, not used."""
+def test_a_cache_of_another_format_md5_or_without_an_entry_is_rebuilt(tmp_path, pinned, stored):
+    """With the table present, a cache whose format or md5 differs, or that lacks either or its
+    entry, is rebuilt from the text table, not used."""
     path = tmp_path / NAME
     path.write_text(pinned)
-    full = {'source_md5': _md5(pinned.encode()), **stored}
-    if 'format' not in stored:
-        full.pop('source_md5')
+    full = {**stored}
+    if full.get('source_md5') is None and 'source_md5' in full:
+        full['source_md5'] = _md5(pinned.encode())
     with open(interpolation.cache_path_for(str(path)), 'wb') as f:
         pickle.dump(full, f)
     assert interpolation._ensure_unified_cache(str(path), {})['p_min'] == pytest.approx(1e9)
+
+
+def test_a_cache_without_its_table_and_without_an_md5_is_refused(tmp_path, pinned):
+    """With no table on disk, a cache of a pinned name that holds no md5 cannot be trusted."""
+    path = tmp_path / NAME
+    with open(interpolation.cache_path_for(str(path)), 'wb') as f:
+        pickle.dump({'format': interpolation.CACHE_FORMAT, 'entry': {'p_min': -1.0}}, f)
+    with pytest.raises(StaleTableError, match='md5 None'):
+        interpolation._ensure_unified_cache(str(path), {})
+
+
+@pytest.mark.parametrize(
+    'link, target',
+    [
+        (NAME, 'paleos_water_eos_table_pt.dat'),
+        (
+            'paleos_mgsio3_tables_pt_proteus_solid.dat',
+            'paleos_mgsio3_tables_pt_proteus_liquid.dat',
+        ),
+    ],
+    ids=['iron name to water', 'solid name to liquid'],
+)
+def test_a_link_named_like_one_table_to_another_table_raises(
+    tmp_path, monkeypatch, link, target
+):
+    """A link must hold a release pinned for its own name as well as for the target's name."""
+    texts = {link: _table_text(), target: _table_text().replace('8.0e+03', '9.0e+03')}
+    pins = {
+        link: {'interior.eos.a': _md5(texts[link].encode())},
+        target: {'interior.eos.a': _md5(texts[target].encode())},
+    }
+    monkeypatch.setattr(registry_guard, '_pins', lambda: pins)
+    registry_guard._HASHES.clear()
+    (tmp_path / target).write_text(texts[target])
+    (tmp_path / 'links').mkdir()
+    (tmp_path / 'links' / link).symlink_to(tmp_path / target)
+    with pytest.raises(StaleTableError):
+        registry_guard.verify(str(tmp_path / 'links' / link))
+    registry_guard.verify(str(tmp_path / target))
+
+
+def test_a_name_in_other_letter_case_is_checked(tmp_path, pinned):
+    """A pinned name written in other case (one file on a case-insensitive disk) is checked."""
+    path = tmp_path / NAME.upper()
+    path.write_text(pinned.replace('8.0e+03', '8.1e+03', 1))
+    with pytest.raises(StaleTableError):
+        registry_guard.verify(str(path))
+
+
+def test_a_fetch_that_leaves_the_file_stale_raises(tmp_path, pinned, monkeypatch):
+    """After a fetch the file is checked again: a fetch that did not replace it is no pass."""
+    import fwl_io
+
+    rel = 'interior/eos/paleos_iron/r22776069'
+    (tmp_path / rel).mkdir(parents=True)
+    path = tmp_path / rel / NAME
+    path.write_text(pinned.replace('8.0e+03', '8.1e+03', 1))
+    monkeypatch.setenv('FWL_DATA', str(tmp_path))
+    monkeypatch.setattr(
+        registry_guard, '_manifest', lambda: (_Dataset(KEY, {}, '10.5281/zenodo.22776069'),)
+    )
+
+    class _NoOp:
+        def fetch(self, name):
+            return None
+
+    monkeypatch.setattr(fwl_io, 'create_fetcher', lambda **k: _NoOp())
+    with pytest.raises(StaleTableError):
+        registry_guard.verify(str(path))
+
+
+def test_a_stale_table_below_a_linked_dataset_folder_is_fetched_again(
+    tmp_path, pinned, monkeypatch
+):
+    """A dataset folder that links to another disk is still the version directory."""
+    root, elsewhere = tmp_path / 'data', tmp_path / 'scratch' / 'paleos_iron'
+    (root / 'interior/eos').mkdir(parents=True)
+    (elsewhere / 'r22776069').mkdir(parents=True)
+    (root / 'interior/eos/paleos_iron').symlink_to(elsewhere)
+    rel = 'interior/eos/paleos_iron/r22776069'
+    (tmp_path / 'cache' / rel).mkdir(parents=True)
+    (tmp_path / 'cache' / rel / NAME).write_text(pinned)
+    path = root / rel / NAME
+    path.write_text(pinned.replace('8.0e+03', '8.1e+03', 1))
+    monkeypatch.setenv('FWL_DATA', str(root))
+    monkeypatch.setenv('FWL_DATA_CACHE', str(tmp_path / 'cache'))
+    monkeypatch.setattr(
+        registry_guard, '_manifest', lambda: (_Dataset(KEY, {}, '10.5281/zenodo.22776069'),)
+    )
+    registry_guard.verify(str(path))
+    assert path.read_text() == pinned
+
+
+def test_a_pinned_name_of_no_manifest_dataset_is_not_fetched(tmp_path, pinned, monkeypatch):
+    """A pin whose dataset key the manifest does not list gives the stale error, not StopIteration."""
+    rel = 'interior/eos/paleos_iron/r22776069'
+    (tmp_path / rel).mkdir(parents=True)
+    path = tmp_path / rel / NAME
+    path.write_text(pinned.replace('8.0e+03', '8.1e+03', 1))
+    monkeypatch.setenv('FWL_DATA', str(tmp_path))
+    monkeypatch.setattr(registry_guard, '_manifest', lambda: ())
+    with pytest.raises(StaleTableError):
+        registry_guard.verify(str(path))
+
+
+def test_the_export_reader_says_a_folder_is_not_a_file(tmp_path, pinned):
+    """A folder under a pinned name is not a file: FileNotFoundError, not an md5 of a folder."""
+    from zalmoxis import eos_export
+
+    (tmp_path / NAME).mkdir()
+    with pytest.raises(FileNotFoundError, match='is not a file'):
+        eos_export.load_paleos_all_properties(str(tmp_path / NAME))
+
+
+def test_the_cache_entry_layout_is_that_of_cache_format(tmp_path, pinned):
+    """A change of the cached entry keys must come with a new CACHE_FORMAT."""
+    path = tmp_path / NAME
+    path.write_text(pinned)
+    keys = set(interpolation.load_paleos_unified_table(str(path)))
+    assert interpolation.CACHE_FORMAT == 1, 'update the key set below with the new format'
+    assert keys == _ENTRY_KEYS_FORMAT_1, 'the entry keys changed: raise CACHE_FORMAT'
 
 
 def test_without_fwl_data_a_stale_table_is_not_fetched(tmp_path, pinned, monkeypatch):
