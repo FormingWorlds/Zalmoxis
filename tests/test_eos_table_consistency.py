@@ -143,7 +143,7 @@ def test_an_exact_table_breaks_no_sign_condition(stored):
 @pytest.mark.unit
 @pytest.mark.parametrize(
     'col, value, name',
-    [('rho', -1.0, 'rho'), ('cp', 0.0, 'cp'), ('cv', np.nan, 'cv'), ('cv', 2.0e4, 'cp_ge_cv')],
+    [('rho', -1.0, 'rho'), ('cp', 0.0, 'cp'), ('cv', -5.0, 'cv'), ('cv', 2.0e4, 'cp_ge_cv')],
 )
 def test_a_cell_that_breaks_a_sign_condition_is_flagged(stored, col, value, name):
     t = {**stored['murnaghan'], col: stored['murnaghan'][col].copy()}
@@ -231,3 +231,10 @@ def test_the_fill_value_counts_as_a_missing_cell(pt_files):
 @pytest.mark.unit
 def test_a_coordinate_grid_shorter_than_the_stencil_gives_no_derivative():
     assert np.isnan(c._coord_stencil(np.ones((3, 4)), np.arange(3.0), 0, 2, -1.0)).all()
+
+
+@pytest.mark.unit
+def test_a_missing_value_breaks_no_sign_condition(stored):
+    t = {**stored['murnaghan'], 'rho': stored['murnaghan']['rho'].copy()}
+    t['rho'][300, 50] = np.nan
+    assert not any(v[300, 50] for v in c.signs(t, EPS9).values())
