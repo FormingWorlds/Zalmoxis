@@ -632,9 +632,12 @@ def _set(t, col, at, value):
 @pytest.mark.parametrize('col', ['rho', 'cp', 'cv', 'u', 's', 'alpha', 'nabla_ad'])
 @pytest.mark.parametrize('value', [np.inf, -np.inf])
 def test_an_isolated_infinite_value_fails_every_identity_at_its_cell(stored, col, value):
-    """An inf among numbers is a table fault: every identity fails at the cell, none skipped."""
+    """An inf among numbers is a table fault: every identity that reads the cell fails there
+    (nabla_ad reads only rho, cp, alpha and nabla_ad), and none is skipped."""
     res = c.check(_set(stored['murnaghan'], col, (300, 50), value), EPS9)
-    assert {n for n, v in res.items() if v['fail'][300, 50]} == set(c.IDENTITIES)
+    reads = {'rho', 'cp', 'alpha', 'nabla_ad'}
+    expected = set(c.IDENTITIES) - (set() if col in reads else {'nabla_ad'})
+    assert {n for n, v in res.items() if v['fail'][300, 50]} == expected
     assert not any(v['skipped'] for v in res.values())
 
 

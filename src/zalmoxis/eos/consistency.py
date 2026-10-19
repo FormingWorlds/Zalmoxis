@@ -14,7 +14,7 @@ import numpy as np
 IDENTITIES = ('cp', 'maxwell', 'alpha', 'dudt', 'nabla_ad', 'cp_cv')
 COLUMNS = ('rho', 'u', 's', 'cp', 'cv', 'alpha', 'nabla_ad')
 EPS_FLOOR = 5e-9  # 9 significant digits, the precision of the shipped tables
-FACTOR = 2.0  # allowed multiple of the h^4 term; a fault 2 cells away is found only below 3
+FACTOR = 2.0  # allowed multiple of the h^4 term; with a negligible floor a fault 2 cells away is found only below 3
 
 
 def segments(table, axis, cols=COLUMNS):
@@ -164,24 +164,40 @@ def _eps(eps):
     return max(x, EPS_FLOOR)
 
 
-def _verdict(rx, bound):
-    """The result of one identity: ``rx`` tested against ``bound`` where both are finite."""
+# Column values that make every residual finite; a table of them marks where values are present.
+_PRESENT = {
+    'rho': 1.0,
+    'u': 1.0,
+    's': 1.0,
+    'cp': 1.0,
+    'cv': 0.5,
+    'alpha': 1e-30,
+    'nabla_ad': 1.0,
+}
+
+
+def _verdict(rx, bound, present):
+    """The result of one identity: ``rx`` tested against ``bound`` where both are finite.
+
+    A cell where every value is ``present`` but ``rx`` or ``bound`` is not finite fails too,
+    unless the identity tests no cell (``skipped``).
+    """
     tested = np.isfinite(rx) & np.isfinite(bound)
-    return {'rx': rx, 'bound': bound, 'tested': tested, 'fail': tested & (np.abs(rx) > bound)}
+    skipped = not tested.any()
+    fail = (tested & (np.abs(rx) > bound)) | (present & ~tested & (not skipped))
+    return {'rx': rx, 'bound': bound, 'tested': tested, 'fail': fail, 'skipped': skipped}
 
 
-def _richardson(r1, r2, r4, f1, f2):
-    """``_verdict`` of the Richardson residual from steps 1, 2, 4 with floors ``f1``, ``f2``."""
+def _richardson(r1, r2, r4, f1, f2, p1, p2, p4):
+    """``_verdict`` of the Richardson residual from steps 1, 2, 4 with floors ``f1``, ``f2``;
+    ``p1``, ``p2``, ``p4`` are the residuals of the present-values table at those steps."""
     rx = (4 * r1 - r2) / 3
     est = np.abs((4 * r2 - r4) / 3 - rx) / 15
-    return _verdict(rx, (4 * f1 + f2) / 3 + FACTOR * est)
+    return _verdict(rx, (4 * f1 + f2) / 3 + FACTOR * est, np.isfinite(p1 + p2 + p4))
 
 
 def _nonempty(out):
-    """``out`` with ``skipped`` set on each identity that tests no cell; ValueError if none
-    tests a cell."""
-    for v in out.values():
-        v['skipped'] = not v['tested'].any()
+    """``out``, or ValueError if no identity tests a cell."""
     if all(v['skipped'] for v in out.values()):
         raise ValueError(f'no cell tested for {", ".join(out)}')
     return out
@@ -199,7 +215,10 @@ def check(table, eps):
     The floor uses eps_eff = max(eps, EPS_FLOOR): every table is checked at the 9-digit
     floor at best, so a single value off by about 1e-8 (relative) or less is out of reach on any
     table. A derivative identity is tested only where 4 cells on each side along its axis hold
-    values of one phase. On a coarse grid a cell can lie outside the range where the
+    values of one phase; NaN marks a missing value. Where all values an identity needs are
+    present but its residual or bound is not finite (a stored inf, or alpha = 0 at a cell), the
+    cell fails, unless the identity tests no cell at all: it is then skipped, as a column of zeros
+    would make it. On a coarse grid a cell can lie outside the range where the
     Richardson estimate holds (R_x(2h) / R_x(h) far from 16), and an exact table can fail there:
     8 dudt cells of the Murnaghan table at 20 points per decade over P 1e5 to 1e14 Pa and T 300
     to 1e5 K.
@@ -215,9 +234,10 @@ def check(table, eps):
     Returns
     -------
     dict
-        Identity name -> dict with ``rx`` (the tested residual), ``bound``, ``tested`` (both
-        finite) and ``fail`` (tested and above the bound) arrays, and ``skipped``, True when
-        the identity tests no cell.
+        Identity name -> dict with ``rx`` (the Richardson residual, defined also at untested
+        cells), ``bound``, ``tested`` (both finite), ``fail`` (tested and above the bound, or
+        with all values present and a residual or bound that is not finite) arrays, and
+        ``skipped``, True when the identity tests no cell.
 
     Raises
     ------
@@ -228,13 +248,19 @@ def check(table, eps):
     """
     eps = _eps(eps)
     r = {k: residuals(table, k) for k in (1, 2, 4)}
+    const = {**table}
+    for col, value in _PRESENT.items():
+        const[col] = np.where(np.isnan(np.asarray(table[col], float)), np.nan, value)
+    p = {k: residuals(const, k) for k in (1, 2, 4)}
     f1, f2 = floors(table, eps, 1), floors(table, eps, 2)
     with np.errstate(invalid='ignore'):
         return _nonempty(
             {
-                n: _verdict(r[1][n], f1[n])
+                n: _verdict(r[1][n], f1[n], np.isfinite(p[1][n]))
                 if n == 'nabla_ad'
-                else _richardson(r[1][n], r[2][n], r[4][n], f1[n], f2[n])
+                else _richardson(
+                    r[1][n], r[2][n], r[4][n], f1[n], f2[n], p[1][n], p[2][n], p[4][n]
+                )
                 for n in IDENTITIES
             }
         )
@@ -367,14 +393,20 @@ def check_pt(tables, eps):
     """
     eps = _eps(eps)
     parts = {k: _pt_parts(tables, k) for k in (1, 2, 4)}
+    const = {}
+    for q, t in tables.items():
+        v = np.asarray(t['values'], float)
+        const[q] = {**t, 'values': np.where(np.isnan(v) | (v == PT_FILL), PT_FILL, 1.0)}
+    present = {k: _pt_parts(const, k) for k in (1, 2, 4)}
     out = {}
     with np.errstate(divide='ignore', invalid='ignore'):
         for n in PT_IDENTITIES:
+            p = [present[k][n][0] / present[k][n][2] for k in (1, 2, 4)]
             r = {k: parts[k][n][0] / parts[k][n][2] - 1 for k in (1, 2, 4)}
             fl = {
                 k: (parts[k][n][1] / np.abs(parts[k][n][2]) + np.abs(r[k] + 1) * parts[k][n][3])
                 * eps
                 for k in (1, 2)
             }
-            out[n] = _richardson(r[1], r[2], r[4], fl[1], fl[2])
+            out[n] = _richardson(r[1], r[2], r[4], fl[1], fl[2], *p)
     return _nonempty(out)
