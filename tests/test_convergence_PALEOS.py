@@ -18,7 +18,12 @@ from functools import lru_cache
 import numpy as np
 import pytest
 
-from tests._paleos_helpers import _paleos_data_available, _run_paleos
+from tests._paleos_helpers import (
+    WALL_TIMEOUT,
+    _assert_full_adiabat,
+    _paleos_data_available,
+    _run_paleos,
+)
 from zalmoxis.constants import earth_radius
 
 
@@ -65,6 +70,7 @@ def _run_paleos_mzf(mzf, mass_earth=1.0, temperature_mode='linear'):
         melting_curves_functions=melting_curves,
         input_dir=os.path.join(root, 'input'),
     )
+
 
 # ── Linear mode convergence ────────────────────────────────────────────
 
@@ -122,10 +128,13 @@ def test_PALEOS_adiabatic_differs_from_linear():
         pytest.skip('PALEOS data files not found')
 
     results_linear = _run_paleos(1.0, temperature_mode='linear')
-    results_adiabatic = _run_paleos(1.0, temperature_mode='adiabatic')
+    results_adiabatic = _run_paleos(
+        1.0, temperature_mode='adiabatic', wall_timeout=WALL_TIMEOUT
+    )
 
     assert results_linear['converged'], 'Linear mode did not converge'
     assert results_adiabatic['converged'], 'Adiabatic mode did not converge'
+    _assert_full_adiabat(results_adiabatic, 1)
 
     R_linear = results_linear['radii'][-1]
     R_adiabatic = results_adiabatic['radii'][-1]
@@ -153,8 +162,9 @@ def test_PALEOS_adiabatic_physically_reasonable():
     if not _paleos_data_available():
         pytest.skip('PALEOS data files not found')
 
-    results = _run_paleos(1.0, temperature_mode='adiabatic')
+    results = _run_paleos(1.0, temperature_mode='adiabatic', wall_timeout=WALL_TIMEOUT)
     assert results['converged'], 'Adiabatic mode did not converge'
+    _assert_full_adiabat(results, 1)
 
     T = results['temperature']
 

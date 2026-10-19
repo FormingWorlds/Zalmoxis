@@ -13,6 +13,8 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 
+import pytest
+
 
 def _paleos_data_available():
     """Check whether the PALEOS-2phase MgSiO3 tables exist on disk."""
@@ -24,6 +26,16 @@ def _paleos_data_available():
         root, 'data', 'EOS_PALEOS_MgSiO3', 'paleos_mgsio3_tables_pt_proteus_liquid.dat'
     )
     return os.path.isfile(solid) and os.path.isfile(liquid)
+
+
+# A wall clock the solve cannot reach on the CI runner, so the tests read the full adiabat.
+WALL_TIMEOUT = 2400.0
+
+
+def _assert_full_adiabat(results, mass):
+    """Assert that the solve accepted on the strict test with the full adiabat."""
+    got = (results['accepted_on'], results['adiabat_blend'])
+    assert got == ('strict', pytest.approx(1.0)), f'{mass} M_earth: accept label, blend {got}'
 
 
 @lru_cache(maxsize=32)
