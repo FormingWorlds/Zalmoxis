@@ -107,14 +107,12 @@ def _set(field, value):
     return edit
 
 
-def _beyond_surface(result, cfg):
-    """cmb_mass consistent with mass_enclosed[-1] but beyond the last node with P > 0: the
-    CMB index is 0 for a caller that reads argmax(m >= cmb_mass), so R_core = 0."""
-    m = result['mass_enclosed']
-    m[-1] = 4 * m[-2]
-    result['cmb_mass'] = CMF * m[-1]
-    result['core_mantle_mass'] = (CMF + cfg['mantle_mass_fraction']) * m[-1]
-    cfg['planet_mass'] = m[-1]
+def _no_node_at_cmb(result, cfg, f=0.99, deficit=0.02):
+    """A planet ``deficit`` below its target mass with core mass fraction ``f``: when no
+    node reaches cmb_mass, argmax(m >= cmb_mass) of the caller is 0 and R_core = 0."""
+    cfg['core_mass_fraction'], cfg['mantle_mass_fraction'] = f, 0.0
+    cfg['planet_mass'] = result['mass_enclosed'][-1] * (1 + deficit)
+    result['cmb_mass'] = result['core_mantle_mass'] = f * cfg['planet_mass']
 
 
 BREAKS = {
@@ -130,7 +128,7 @@ BREAKS = {
     ),
     'cmb_mass': _set('cmb_mass', lambda r: r['cmb_mass'] * (1 + 1e-9)),
     'core_mantle_mass': _set('core_mantle_mass', lambda r: r['core_mantle_mass'] * (1 + 1e-9)),
-    'core_radius': _beyond_surface,
+    'cmb_node': _no_node_at_cmb,
     'gravity': _break('gravity', N // 2, 1 + 1e-5),
     'density_eos': _break('density', N // 2, 1 + 1e-5),
 }
@@ -440,35 +438,62 @@ def _sphere_core(f):
 
 
 @pytest.mark.unit
-def test_a_core_of_every_node_passes_only_at_core_mass_fraction_1():
-    _check(*_sphere_core(1.0))
-    _raises(*_sphere_core(0.97), 'core_radius')  # every node with P > 0 is below 0.97 M
+def test_a_core_below_the_first_node_passes():
+    """The caller's CMB index is 1 and R_core = r[1] > 0."""
+    m = _sphere()[0]['mass_enclosed']
+    _check(*_sphere_core(0.5 * m[1] / m[-1]))
 
 
 @pytest.mark.unit
-def test_a_core_of_one_node_raises():
-    m = _sphere()[0]['mass_enclosed']
-    _raises(*_sphere_core(0.5 * m[1] / m[-1]), 'core_radius')
+@pytest.mark.parametrize('deficit, raises', [(0.0, False), (1e-4, True)])
+def test_a_core_of_the_whole_mass_needs_a_node_at_cmb_mass(deficit, raises):
+    result, cfg = _sphere()
+    _no_node_at_cmb(result, cfg, f=1.0, deficit=deficit)
+    with (
+        pytest.raises(StructureInvariantError, match='breaks cmb_node:')
+        if raises
+        else nullcontext()
+    ):
+        _check(result, cfg, limit=0.03)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('ice', [True, False])
+def test_the_top_of_the_mantle_needs_a_node_only_with_an_ice_layer(ice):
+    result, cfg = _sphere(mmf=0.4)
+    cfg['planet_mass'] = result['mass_enclosed'][-1] * 1.02
+    cfg['core_mass_fraction'], cfg['mantle_mass_fraction'] = 0.39, 0.6
+    result['cmb_mass'] = 0.39 * cfg['planet_mass']
+    result['core_mantle_mass'] = 0.99 * cfg['planet_mass']
+    result['accept_mass_limit'] = 0.03
+    with (
+        pytest.raises(StructureInvariantError, match='breaks core_mantle_node:')
+        if ice
+        else nullcontext()
+    ):
+        check_accepted(result, cfg, RTOL, ATOL, lambda P, T, layer: RHO, ice=ice)
 
 
 @pytest.mark.unit
 @settings(max_examples=60, deadline=None)
-@given(u=st.floats(0.0, 1.0))
-def test_core_radius_over_the_core_mass_fraction(u):
-    """Nodes 0 and 1 at least, and every node with P > 0 only at core_mass_fraction 1."""
-    m = _sphere()[0]['mass_enclosed'] / _sphere()[0]['mass_enclosed'][-1]
-    lo, hi = 1.01 * m[1], 0.99 * m[N - 2]  # the last node with P > 0 is N - 2
-    for f, raises in (
-        (lo + u * (hi - lo), False),
-        (u * 0.99 * m[1], True),
-        (1.01 * m[N - 2] + u * (0.99 - m[N - 2]), True),
-    ):
-        if f <= 0:
-            continue
-        if raises:
-            _raises(*_sphere_core(f), 'core_radius')
-        else:
-            _check(*_sphere_core(f))
+@given(f=st.floats(1e-9, 1.0), deficit=st.floats(0.0, 0.029))
+def test_cmb_node_over_the_core_mass_fraction_and_the_mass_deficit(f, deficit):
+    """The check raises exactly when no node reaches cmb_mass, as argmax of the caller sees it."""
+    result, cfg = _sphere()
+    _no_node_at_cmb(result, cfg, f=f, deficit=deficit)
+    reached = result['mass_enclosed'][-1] >= result['cmb_mass'] * (1 - _RTOL_LAYER)
+    with nullcontext() if reached else pytest.raises(StructureInvariantError, match='cmb_node'):
+        _check(result, cfg, limit=0.03)
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.timeout(2400)
+def test_a_real_solve_with_a_core_below_the_first_node_passes():
+    """core_mass_fraction 2e-6: cmb_mass lies below m[1], so the CMB index is 1."""
+    r = _run(_cfg(wall_timeout=1e6, core_mass_fraction=2e-6))
+    m = np.asarray(r['mass_enclosed'])
+    assert r['converged'] and m[1] >= r['cmb_mass']
 
 
 @pytest.mark.smoke
@@ -541,7 +566,8 @@ def test_the_tolerances_are_the_documented_values():
         'mass_monotone': 0.0,
         'cmb_mass': 1e-12,
         'core_mantle_mass': 1e-12,
-        'core_radius': 0,
+        'cmb_node': 0,
+        'core_mantle_node': 0,
         'gravity': 100.0,
         'density_eos': 1e-6,
     }
