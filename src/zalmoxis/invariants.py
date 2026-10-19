@@ -63,10 +63,10 @@ def deviations(
         ``result``. The gravity tolerance at node i is ``TOLERANCES['gravity']`` times
         ``rtol + atol (1 / M_i + 1 / g_i)``, with ``g_i = G M_i / r_i^2``. The RK45 dense
         output keeps ``g r^2 - G M`` per step to about 19.9 rtol + 13.6 atol (1/M_i + 1/g_i)
-        relative to ``G M``, an estimate from the Butcher tableau, and an error made at one
-        radius decays outward as ``(r_i / r)^2``, since the homogeneous part of ``dg/dr`` is
-        ``-2 g / r``. The bound is per step and the factor 100 covers the sum over the
-        steps: accepted real solves through ``main`` of 26 setups, 0.1 to 10 M_E, reach 2.83 to
+        relative to ``G M``, an estimate from the Butcher tableau. ``g r^2 - G M`` is constant
+        under the exact equations for any density, so a step error stays, the step errors add,
+        and relative to ``G M`` an error made at mass M_i falls outward only as ``M_i / M``.
+        The factor 100 is an empirical bound on that sum: accepted real solves through ``main`` of 26 setups, 0.1 to 10 M_E, reach 2.83 to
         20.78 times ``rtol + atol (1 / M_i + 1 / g_i)``, a margin of at least 4.8. They cover
         the analytic, Wolf & Bower (isothermal 3000 and 4000 K, linear), PALEOS, PALEOS-2phase
         (linear, adiabatic), PALEOS with 3 % Chabrier H and 3-layer PALEOS ice EOS, 150 and 2000
