@@ -16,6 +16,13 @@ from zalmoxis.eos.registry_guard import StaleTableError
 
 pytestmark = pytest.mark.unit
 
+
+@pytest.fixture(autouse=True)
+def _offline(monkeypatch):
+    """No test reaches a mirror: a fetch that is not served from a local cache fails at once."""
+    monkeypatch.setenv('FWL_IO_OFFLINE', '1')
+
+
 NAME = 'paleos_iron_eos_table_pt.dat'
 KEY = 'interior.eos.paleos_iron'
 
@@ -225,3 +232,63 @@ def test_any_changed_byte_raises(tmp_path, pinned, pos, byte):
     os.utime(path, ns=(stamp, stamp))
     with pytest.raises(StaleTableError):
         registry_guard.verify(str(path))
+
+
+class _Dataset:
+    """A manifest dataset with a fixed registry."""
+
+    def __init__(self, key, registry):
+        self.key, self._registry = key, registry
+        self.subdir, self.zenodo, self.dataverse, self.extract = (
+            key.replace('.', '/'),
+            None,
+            None,
+            None,
+        )
+
+    def registry(self):
+        return self._registry
+
+
+def test_only_md5_entries_are_pinned_with_their_digest(monkeypatch):
+    """A sha256 entry is not pinned; an md5 entry keeps its digest unchanged."""
+    ds = _Dataset(
+        'interior.eos.paleos_iron', {NAME: 'md5:' + 'a' * 32, 'x.dat': 'sha256:' + 'b' * 64}
+    )
+    monkeypatch.setattr(registry_guard, '_manifest', lambda: (ds,))
+    assert registry_guard._pins.__wrapped__() == {NAME: {'interior.eos.paleos_iron': 'a' * 32}}
+
+
+def test_the_installed_manifests_list_only_paleos_datasets():
+    """_manifest keeps PALEOS datasets only, so tables of other EOS are not checked here."""
+    keys = [ds.key for ds in registry_guard._manifest()]
+    assert keys and all('paleos' in k for k in keys)
+    assert 'density_melt.dat' not in registry_guard._pins()
+
+
+def test_the_installed_registry_pins_the_v1_3_0_iron_table():
+    """The pin is the digest itself: PALEOS v1.3.0 iron (Zenodo 22776069) has md5 259a2267..."""
+    assert (
+        registry_guard._pins()[NAME]['interior.eos.paleos_iron']
+        == '259a2267dcf58af3b2c4dd389105b597'
+    )
+
+
+def test_a_file_of_another_size_with_the_same_mtime_is_hashed_again(tmp_path, pinned):
+    """The hash cache key holds the size: a change of length with the mtime kept is seen."""
+    path = tmp_path / NAME
+    path.write_text(pinned)
+    os.utime(path, ns=(5, 5))
+    registry_guard.verify(str(path))
+    path.write_text(pinned + '# one more line\n')
+    os.utime(path, ns=(5, 5))
+    with pytest.raises(StaleTableError):
+        registry_guard.verify(str(path))
+
+
+def test_the_binary_cache_has_its_own_file_name(tmp_path):
+    """The cache is <table>.cache.pkl, so older code that reads <table>.pkl never reads it."""
+    assert interpolation.cache_path_for(str(tmp_path / NAME)) == str(
+        tmp_path / 'paleos_iron_eos_table_pt.cache.pkl'
+    )
+    assert not interpolation.cache_path_for('a/b.dat').endswith('b.pkl')
