@@ -289,3 +289,28 @@ def test_a_key_the_check_did_not_make_is_refused(monkeypatch):
             paleos_api_cache._check_paleos_once('version-0.1.0')
     finally:
         paleos_api_cache._check_paleos_once.cache_clear()
+
+
+def test_a_commit_git_cannot_list_falls_back_to_the_version_and_the_check_stops(
+    history, monkeypatch
+):
+    """If the package of the commit cannot be listed, the key is the version fallback (which
+    no cache accepts) and the check stops with PaleosVersionError."""
+    import sys
+    import types
+
+    repo, c = history
+    fake = types.ModuleType('paleos')
+    fake.__file__, fake.__version__ = str(repo / 'paleos' / '__init__.py'), '1.0'
+    monkeypatch.setitem(sys.modules, 'paleos', fake)
+    real = paleos_api._git
+
+    def git(repo_dir, *args):
+        if args[:1] == ('ls-tree',):
+            return paleos_api._subprocess.CompletedProcess(args, 128, '', 'fatal: bad tree')
+        return real(repo_dir, *args)
+
+    monkeypatch.setattr(paleos_api, '_git', git)
+    assert paleos_api.paleos_installed_sha() == 'version-1.0'
+    with pytest.raises(PaleosVersionError, match='cannot list the paleos package'):
+        check_paleos_commit(repo, c['new'])
