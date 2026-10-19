@@ -9,8 +9,8 @@ import numpy as np
 from .constants import G
 
 # Largest allowed deviation of each invariant; a count of bad nodes where the tolerance is 0.
-# gravity: a factor on the per-node RK45 bound of ``deviations``; density_eos: below the PALEOS
-# table interpolation error of 1e-5.
+# gravity: a factor on the per-node RK45 bound of ``deviations``; density_eos: round-off, since
+# both sides call the same batch EOS at the same (P, T).
 TOLERANCES = {
     'padding': 0,
     'centre': 0,
@@ -92,7 +92,10 @@ def deviations(
         before the first node with P <= 0; the nodes after it are padding with P = 0.
         ``cmb_node`` and ``core_mantle_node`` mirror the PROTEUS reading of the profile: the
         layer boundary is the first node with m >= cmb_mass (core_mantle_mass with an ice
-        layer), and a result where no node reaches it would give the caller R_core = 0.
+        layer), compared exactly, and a result where no node reaches it would give the caller
+        R_core = 0; its node index is then -1. So a standalone core_mass_fraction 1 run passes
+        only with a mass surplus. A density lookup that raises breaks ``density_eos`` with an
+        infinite deviation and the error in its text.
     """
     P, rho, m, r, g, T = (
         np.asarray(result[k], float)
@@ -160,7 +163,7 @@ def deviations(
         ('core_mantle_node', cmf + mmf, 'core_mantle_mass'),
     ):
         if f > 0 and (name == 'cmb_node' or ice):
-            reach = m >= result[key] * (1.0 - _RTOL_LAYER)
+            reach = m >= result[key]
             i = int(np.argmax(reach)) if reach.any() else -1
             put(
                 name,
@@ -177,18 +180,15 @@ def deviations(
         # a node without mass breaks the check
         ok_g = (m[1:k] > 0) & np.isfinite(dg)
         ratio = np.where(ok_g, dg / tol_g, np.inf)
-    i = int(np.argmax(ratio)) if len(ratio) else -1
-    dev, tol = (dg[i], tol_g[i]) if i >= 0 and ok_g[i] else (np.inf, 0.0)
-    j = i + 1
-    put(
-        'gravity',
-        dev,
-        j,
-        tol,
-        text=f'gravity {g[j]:.6e} m/s^2, expected {G * m[j] / r[j] ** 2:.6e} (G m / r^2)'
-        if 0 < j < len(g)
-        else '',
-    )
+        i = int(np.argmax(ratio)) if len(ratio) else -1
+        dev, tol = (dg[i], tol_g[i]) if i >= 0 and ok_g[i] else (np.inf, 0.0)
+        j = i + 1
+        text = (
+            f'gravity {g[j]:.6e} m/s^2, expected {G * m[j] / r[j] ** 2:.6e} (G m / r^2)'
+            if i >= 0
+            else ''
+        )
+    put('gravity', dev, j, tol, text=text)
     # the form of the accept test
     put(
         'mass_closure',
@@ -206,10 +206,10 @@ def deviations(
                 ref[sel] = np.asarray(
                     density_at(P[:k][sel], T[:k][sel], str(name)), dtype=float
                 )
-            except Exception as err:
-                raise StructureInvariantError(
-                    f'Accepted structure: density lookup of the {name} layer failed: {err}'
-                ) from err
+            except Exception as err:  # noqa: BLE001 -- reported as the density_eos deviation
+                failed = f'density lookup of the {name} layer failed: {err}'
+                put('density_eos', np.inf, int(np.argmax(sel)), text=failed)
+                return out
         with np.errstate(divide='ignore', invalid='ignore'):
             d = np.abs(rho[:k] / ref - 1)
         d[~np.isfinite(d)] = np.inf
@@ -227,6 +227,11 @@ def _finite_positive(x):
     return isinstance(x, numbers.Real) and not isinstance(x, bool) and 0 < x < np.inf
 
 
+def _real_scalar(x):
+    """Whether ``x`` is one integer or floating number (a 0-d array included), not a bool."""
+    return np.ndim(x) == 0 and np.asarray(x).dtype.kind in 'iuf'
+
+
 def check_accepted(result, config_params, rtol, atol, density_at=None, ice=False):
     """Raise StructureInvariantError when an accepted result breaks an invariant.
 
@@ -236,9 +241,12 @@ def check_accepted(result, config_params, rtol, atol, density_at=None, ice=False
     Raises
     ------
     StructureInvariantError
-        Names the invariant, the node, the deviation, the tolerance and the
-        ``accepted_on`` label; or the profile arrays that the result lacks; or an
-        ``accept_mass_limit``, ``rtol`` or ``atol`` that is not a finite positive number.
+        Names the first broken invariant in the order of ``deviations``, its deviation and
+        tolerance, the node for the profile invariants, the values that enter it and the
+        ``accepted_on`` label; or the profile arrays that the result lacks; or a malformed
+        result (arrays of more than one shape or dimension, fewer than 2 nodes, a layer mass
+        that is not one real number); or an ``accept_mass_limit``, ``rtol`` or ``atol`` that
+        is not a finite positive number.
     """
     if not result.get('converged'):
         return
@@ -250,16 +258,17 @@ def check_accepted(result, config_params, rtol, atol, density_at=None, ice=False
         )
     try:
         shapes = [np.asarray(result[k], float).shape for k in _PROFILE[:6]]
-        scalars = [np.ndim(np.asarray(result[k], float)) for k in _PROFILE[6:]]
     except (TypeError, ValueError) as err:
         raise StructureInvariantError(
             f'Accepted structure ({accepted_on=}) is malformed: {err}'
         ) from err
-    if len(set(shapes)) != 1 or len(shapes[0]) != 1 or shapes[0][0] < 2 or any(scalars):
+    scalars = [_real_scalar(result[k]) for k in _PROFILE[6:]]
+    if len(set(shapes)) != 1 or len(shapes[0]) != 1 or shapes[0][0] < 2 or not all(scalars):
         raise StructureInvariantError(
             f'Accepted structure ({accepted_on=}) is malformed: the profile arrays need one '
-            f'1-D shape of at least 2 nodes and cmb_mass, core_mantle_mass scalars; got {shapes}, '
-            f'{scalars} dimensions.'
+            f'1-D shape of at least 2 nodes and cmb_mass, core_mantle_mass one real number '
+            f'each; got shapes {shapes}, cmb_mass {result["cmb_mass"]!r}, core_mantle_mass '
+            f'{result["core_mantle_mass"]!r}.'
         )
     limit = result.get('accept_mass_limit')
     if not _finite_positive(limit):

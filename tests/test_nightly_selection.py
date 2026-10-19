@@ -4,6 +4,8 @@ would run in no job. See docs/How-to/build_tests.md for the test tiers."""
 from __future__ import annotations
 
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -11,22 +13,35 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _marked(tests_dir):
+    """Files under ``tests_dir``, as paths below it, with a test that pytest selects by
+    ``-m accept_solves``."""
+    done = subprocess.run(
+        [sys.executable, '-m', 'pytest', '--collect-only', '-q', '-m', 'accept_solves']
+        + ['-o', 'addopts=', '-p', 'no:cacheprovider', '--rootdir', str(tests_dir), '.'],
+        cwd=tests_dir,
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+    assert done.returncode in (0, 5), done.stdout[-2000:] + done.stderr[-2000:]
+    return {line.split('::')[0] for line in done.stdout.splitlines() if '::' in line}
+
+
 def _unselected(tests_dir, workflow):
-    """Files under ``tests_dir`` that carry the accept_solves marker but are named in no
-    nightly job whose select takes accept_solves."""
+    """Marked files (``_marked``) that no nightly job whose select takes accept_solves names."""
     named = set()
     for job in re.split(r'\n\s*- suite:', workflow):
         select = re.search(r'select:(.*)', job)
         if select and re.search(r'(?<!not )\baccept_solves\b', select.group(1)):
-            named |= set(re.findall(r'tests/(test_\w+\.py)', job))
-    mark = re.compile(r'^\s*(@pytest\.mark\.accept_solves\b|pytestmark\b.*accept_solves)', re.M)
-    marked = {p.name for p in tests_dir.glob('test_*.py') if mark.search(p.read_text())}
-    return sorted(marked - named)
+            named |= set(re.findall(r'tests/([\w/]+\.py)', job))
+    return sorted(_marked(tests_dir) - named)
 
 
 @pytest.mark.unit
 def test_every_accept_solves_file_runs_in_a_nightly_job():
     workflow = (ROOT / '.github' / 'workflows' / 'nightly.yml').read_text()
+    assert {'test_invariants.py', 'test_accepted_on.py'} <= _marked(ROOT / 'tests')
     assert _unselected(ROOT / 'tests', workflow) == []
 
 
