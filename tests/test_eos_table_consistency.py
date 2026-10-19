@@ -197,21 +197,24 @@ def test_coordinates_stored_at_9_digits_pass(stored):
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize('change', ['reverse', 'nan'])
+@pytest.mark.parametrize('change', ['reverse', 'nan', 'repeat'])
 def test_an_axis_that_is_not_finite_and_increasing_is_rejected(stored, change):
     m = stored['murnaghan']
     lp = m['unique_log_p'][::-1] if change == 'reverse' else m['unique_log_p'].copy()
     if change == 'nan':
         lp[10] = np.nan
+    if change == 'repeat':
+        lp[11] = lp[10]
     with pytest.raises(ValueError, match='finite and strictly increasing'):
         c.check({**m, 'unique_log_p': lp}, EPS9)
 
 
 @pytest.mark.unit
-def test_a_column_off_the_shape_of_the_grid_is_rejected(stored):
+@pytest.mark.parametrize('key', ['u', 'phase'])
+def test_a_column_off_the_shape_of_the_grid_is_rejected(stored, key):
     m = stored['murnaghan']
     with pytest.raises(ValueError, match='shape'):
-        c.check({**m, 'u': m['u'][:-1]}, EPS9)
+        c.check({**m, key: m[key][:-1]}, EPS9)
 
 
 @pytest.mark.unit
@@ -228,7 +231,10 @@ def test_a_check_that_tests_no_cell_raises(stored):
 @pytest.mark.unit
 def test_an_identity_that_cannot_be_tested_is_skipped_and_the_others_run(stored):
     t = {**stored['murnaghan'], 'alpha': np.zeros_like(stored['murnaghan']['alpha'])}
-    res = c.check(t, EPS9)
+    try:
+        res = c.check(t, EPS9)
+    except ValueError as err:
+        pytest.fail(f'a table with testable identities raised: {err}')
     skipped = {n for n, v in res.items() if v['skipped']}
     assert skipped == {'maxwell', 'alpha', 'nabla_ad', 'cp_cv'}
     assert not res['cp']['skipped'] and res['cp']['tested'].sum() > 100_000
@@ -315,7 +321,13 @@ def test_an_exact_table_breaks_no_sign_condition(stored):
 @pytest.mark.unit
 @pytest.mark.parametrize(
     'col, value, name',
-    [('rho', -1.0, 'rho'), ('cp', 0.0, 'cp'), ('cv', -5.0, 'cv'), ('cv', 2.0e4, 'cp_ge_cv')],
+    [
+        ('rho', -1.0, 'rho'),
+        ('rho', 0.0, 'rho'),
+        ('cp', 0.0, 'cp'),
+        ('cv', -5.0, 'cv'),
+        ('cv', 2.0e4, 'cp_ge_cv'),
+    ],
 )
 def test_a_cell_that_breaks_a_sign_condition_is_flagged(stored, col, value, name):
     t = {**stored['murnaghan'], col: stored['murnaghan'][col].copy()}
@@ -438,7 +450,8 @@ def test_a_missing_value_breaks_no_sign_condition(stored, col):
 def test_an_infinite_value_breaks_its_sign_condition(stored, col, value, name):
     t = {**stored['murnaghan'], col: stored['murnaghan'][col].copy()}
     t[col][300, 50] = value
-    assert c.signs(t, EPS9)[name]['fail'][300, 50]
+    res = c.signs(t, EPS9)[name]
+    assert res['tested'][300, 50] and res['fail'][300, 50]
 
 
 @pytest.mark.unit
@@ -558,3 +571,38 @@ def test_a_time_interval_is_not_a_precision(stored, eps):
     for call in (c.check, c.signs):
         with pytest.raises(ValueError, match='eps'):
             call(stored['murnaghan'], eps)
+
+
+# Per identity: (stored column, offsets of its derivative ends along the axis), and the
+# columns of its algebraic factor at the cell; a log column carries eps as an absolute error.
+_FLOOR_PARTS = {
+    'cp': ([('s', 1)], ['cp']),
+    'maxwell': ([('s', 0)], ['alpha', 'rho']),
+    'alpha': ([('rho', 1)], ['alpha']),
+    'dudt': ([('u', 1)], ['cp', 'alpha', 'rho']),
+    'cp_cv': ([('rho', 0)], ['alpha', 'rho', 'cp', 'cv']),
+}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('name', list(_FLOOR_PARTS) + ['nabla_ad'])
+@pytest.mark.parametrize('cell', [(300, 50), (600, 100)])
+def test_the_floor_is_the_first_order_round_off_of_each_stored_value(stored, name, cell):
+    """Moving each stored value that enters the identity by eps alone, the sum of the changes
+    of R at the cell is its floor (first order): no term of the floor is lost or doubled."""
+    m, eps, (i, j) = stored['murnaghan'], 1e-9, cell
+    base = c.residuals(m, 1)[name][i, j]
+    if name == 'nabla_ad':
+        moves = [(col, (i, j)) for col in ('nabla_ad', 'rho', 'cp', 'alpha')]
+    else:
+        ends, factors = _FLOOR_PARTS[name]
+        moves = [
+            (col, (i + o, j) if ax == 0 else (i, j + o)) for col, ax in ends for o in (-1, 1)
+        ]
+        moves += [(col, (i, j)) for col in factors]
+    total = 0.0
+    for col, at in moves:
+        t = {**m, col: m[col].copy()}
+        t[col][at] *= 1 + eps
+        total += abs(c.residuals(t, 1)[name][i, j] - base)
+    assert total == pytest.approx(c.floors(m, eps, 1)[name][i, j], rel=0.02)
