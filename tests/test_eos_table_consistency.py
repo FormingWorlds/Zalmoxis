@@ -595,7 +595,8 @@ _FLOOR_PARTS = {
 @pytest.mark.unit
 @pytest.mark.parametrize('name', list(_FLOOR_PARTS) + ['nabla_ad'])
 @pytest.mark.parametrize('cell', [(300, 50), (600, 100)])
-def test_the_floor_is_the_first_order_round_off_of_each_stored_value(stored, name, cell):
+@pytest.mark.parametrize('k', [1, 2])
+def test_the_floor_is_the_first_order_round_off_of_each_stored_value(stored, name, cell, k):
     """Moving each stored value that enters the identity by eps alone, the sum of the changes
     of R at the cell is its floor (first order): no term of the floor is lost or doubled. On the
     ideal gas with s and u shifted to 0 at the cell (no identity changes), the stencil term is
@@ -603,18 +604,65 @@ def test_the_floor_is_the_first_order_round_off_of_each_stored_value(stored, nam
     m, eps, (i, j) = dict(stored['ideal']), 1e-9, cell
     for col in ('s', 'u'):
         m[col] = m[col] - m[col][i, j]
-    base = c.residuals(m, 1)[name][i, j]
+    base = c.residuals(m, k)[name][i, j]
     if name == 'nabla_ad':
         moves = [(col, (i, j)) for col in ('nabla_ad', 'rho', 'cp', 'alpha')]
     else:
         ends, factors = _FLOOR_PARTS[name]
         moves = [
-            (col, (i + o, j) if ax == 0 else (i, j + o)) for col, ax in ends for o in (-1, 1)
+            (col, (i + o, j) if ax == 0 else (i, j + o)) for col, ax in ends for o in (-k, k)
         ]
         moves += [(col, (i, j)) for col in factors]
     total = 0.0
     for col, at in moves:
         t = {**m, col: m[col].copy()}
         t[col][at] *= 1 + eps
-        total += abs(c.residuals(t, 1)[name][i, j] - base)
-    assert total == pytest.approx(c.floors(m, eps, 1)[name][i, j], rel=1e-4)
+        total += abs(c.residuals(t, k)[name][i, j] - base)
+    assert total == pytest.approx(c.floors(m, eps, k)[name][i, j], rel=1e-4)
+
+
+def _set(t, col, at, value):
+    """``t`` with ``col`` set to ``value`` at ``at``."""
+    v = np.array(t[col], float)
+    v[at] = value
+    return {**t, col: v}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('col', ['rho', 'cp', 'cv', 'u', 's', 'alpha', 'nabla_ad'])
+@pytest.mark.parametrize('value', [np.inf, -np.inf])
+def test_an_isolated_infinite_value_fails_every_identity_at_its_cell(stored, col, value):
+    """An inf among numbers is a table fault: every identity fails at the cell, none skipped."""
+    res = c.check(_set(stored['murnaghan'], col, (300, 50), value), EPS9)
+    assert {n for n, v in res.items() if v['fail'][300, 50]} == set(c.IDENTITIES)
+    assert not any(v['skipped'] for v in res.values())
+
+
+@pytest.mark.unit
+def test_an_isolated_zero_alpha_fails_the_identities_it_divides(stored):
+    """alpha = 0 at one cell makes maxwell, alpha, nabla_ad and cp_cv infinite there: they fail."""
+    res = c.check(_set(stored['murnaghan'], 'alpha', (300, 50), 0.0), EPS9)
+    failing = {n for n, v in res.items() if v['fail'][300, 50]}
+    assert {'maxwell', 'alpha', 'nabla_ad', 'cp_cv'} <= failing
+    assert not any(v['skipped'] for v in res.values())
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('col, still', [('rho', set()), ('s', {'nabla_ad'}), ('alpha', set())])
+def test_a_missing_value_is_not_a_failure(stored, col, still):
+    """NaN marks a missing value: nothing fails, and only nabla_ad, which has no s, still tests
+    the cell of a missing entropy."""
+    res = c.check(_set(stored['murnaghan'], col, (300, 50), np.nan), EPS9)
+    assert not any(v['fail'].any() for v in res.values())
+    assert {n for n, v in res.items() if v['tested'][300, 50]} == still
+
+
+@pytest.mark.unit
+def test_an_infinite_density_fails_the_aragog_pt_check(pt_files):
+    """In the Aragog P-T files an inf among numbers fails, the fill value stays missing."""
+    t = pt_files['murnaghan']
+    t = {**t, 'density': {**t['density'], 'values': np.array(t['density']['values'], float)}}
+    t['density']['values'][30, 30] = np.inf
+    res = c.check_pt(t, 5e-11)
+    assert {n for n, v in res.items() if v['fail'][30, 30]} >= {'maxwell'}
+    assert not any(v['skipped'] for v in res.values())
