@@ -28,14 +28,15 @@ _COLS = ('rho', 'u', 's', 'cp', 'cv', 'alpha', 'nabla_ad')
 
 def _props(P, T, ds=0.0, drho=0.0):
     """Synthetic solid properties; ``ds`` and ``drho`` offset s and rho."""
+    lt = np.log10(T)
     return (
-        4000.0 + 1.0e-7 * P - 0.05 * T + drho,
+        4000.0 + 1.0e-7 * P - 20.0 * lt + drho,
         1.0e3 * T,
         1000.0 * np.log(T / 300.0) + 2.0 * np.log10(P) + 2000.0 + ds,
-        1200.0,
-        1100.0,
-        1.0e-5,
-        0.3,
+        900.0 + 100.0 * lt,
+        800.0 + 100.0 * lt,
+        1.0e-5 * (1.0 + lt),
+        0.2 + 0.01 * lt,
     )
 
 
@@ -241,6 +242,24 @@ class TestGenerateSpiderTablesLowT:
         s_back = 1000.0 * np.log(T / 300.0) + 2.0 * np.log10(out['P_Pa'])[None, :] + 2000.0
         np.testing.assert_allclose(s_back[cold], S[cold], atol=0.05)
 
+    def test_cells_below_300_k_carry_the_extension_properties(self, tmp_path):
+        """rho, cp, alpha and nabla_ad of the new cells are those of the extension at the inverted T."""
+        out = _generate(_gen_tables(tmp_path), lowt=True)
+        T, v = out['solid']['temperature'], out['valid']['solid']
+        checked = 0
+        for j in (0, T.shape[1] - 1):
+            P = out['P_Pa'][j]
+            cold = v[:, j] & (T[:, j] < 299.0)
+            expect = np.array([_props(P, t) for t in T[cold, j]])
+            np.testing.assert_allclose(out['solid']['rho'][cold, j], expect[:, 0], rtol=1e-6)
+            np.testing.assert_allclose(out['solid']['cp'][cold, j], expect[:, 3], rtol=1e-6)
+            np.testing.assert_allclose(out['solid']['alpha'][cold, j], expect[:, 5], rtol=1e-6)
+            np.testing.assert_allclose(
+                out['solid']['nabla_ad'][cold, j], expect[:, 6] * T[cold, j] / P, rtol=1e-6
+            )
+            checked += cold.sum()
+        assert checked >= 4
+
     def test_extension_needs_the_two_phase_tables(self, tmp_path):
         solid, _, ext = _gen_tables(tmp_path)
         with pytest.raises(ValueError, match='two-phase'):
@@ -308,7 +327,7 @@ class TestLowTInvariants:
 
         pal = _paleos(tmp_path, [5, 6, 6, 6])
         out = eos_export.load_paleos_with_lowt_extension(pal, self._ext_with(tmp_path, edit))
-        assert out['cp'][0, 5] == pytest.approx(1200.0)
+        assert out['cp'][0, 5] == pytest.approx(_props(_P[0], _T[5])[3], rel=1e-8)
 
 
 def test_no_solid_node_below_the_lowest_extension_entropy(tmp_path):
