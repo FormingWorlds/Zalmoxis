@@ -566,8 +566,10 @@ def test_a_first_node_without_gravity_or_mass_does_not_turn_the_gravity_check_of
         ('temperature', 7, 0.0, 'positive'),
         ('temperature', 7, -5.0, 'positive'),
         ('temperature', 7, np.nan, 'positive'),
+        ('temperature', 7, np.inf, 'positive'),
         ('density', 7, 0.0, 'positive'),
         ('density', 7, np.nan, 'positive'),
+        ('density', 7, np.inf, 'positive'),
         ('pressure', 20, np.inf, 'padding'),
     ],
 )
