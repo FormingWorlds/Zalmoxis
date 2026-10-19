@@ -889,3 +889,71 @@ def test_a_failing_density_lookup_raises_the_invariant_error_with_its_cause():
     with pytest.raises(StructureInvariantError, match='density lookup') as info:
         check_accepted(result, cfg, RTOL, ATOL, broken)
     assert isinstance(info.value.__cause__, ValueError)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('value', [-1.0, np.nan])
+def test_a_padding_node_without_zero_pressure_raises(value):
+    result, cfg = _sphere()
+    result['pressure'][-1] = value
+    _raises(result, cfg, 'padding')
+
+
+def _padded(n_pad):
+    """The sphere cut at node N - 1 - n_pad and padded as the solver pads a surface stop."""
+    result, cfg = _sphere()
+    k = N - 1 - n_pad
+    for key, fill in (('pressure', 0.0), ('density', 0.0)):
+        result[key][k:] = fill
+    for key in ('mass_enclosed', 'gravity'):
+        result[key][k:] = result[key][k]
+    cfg['planet_mass'] = result['mass_enclosed'][-1]
+    result['cmb_mass'] = result['core_mantle_mass'] = CMF * cfg['planet_mass']
+    return result, cfg
+
+
+@pytest.mark.unit
+def test_a_padding_of_constant_mass_and_gravity_passes():
+    _check(*_padded(3))
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('key', ['mass_enclosed', 'gravity'])
+def test_a_padding_where_mass_or_gravity_changes_raises(key):
+    result, cfg = _padded(3)
+    result[key][-1] *= 1.001
+    cfg['planet_mass'] = result['mass_enclosed'][-1]
+    result['cmb_mass'] = result['core_mantle_mass'] = CMF * cfg['planet_mass']
+    _raises(result, cfg, 'padding')
+
+
+@pytest.mark.unit
+def test_a_mass_that_falls_at_the_first_padding_node_raises():
+    result, cfg = _sphere()
+    result['mass_enclosed'][-1] = 0.99 * result['mass_enclosed'][-2]
+    cfg['planet_mass'] = result['mass_enclosed'][-1]
+    result['cmb_mass'] = result['core_mantle_mass'] = CMF * cfg['planet_mass']
+    _raises(result, cfg, 'mass_monotone')
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('key', ['radii', 'mass_enclosed', 'gravity'])
+def test_a_centre_node_off_zero_raises(key):
+    result, cfg = _sphere()
+    result[key][0] = 1.0
+    _raises(result, cfg, 'centre')
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('value, raises', [(0.0, False), (1e-30, True)])
+def test_a_layer_mass_at_a_zero_fraction_must_be_zero(value, raises):
+    result, cfg = _sphere()
+    cfg['core_mass_fraction'] = 0.0
+    result['cmb_mass'] = value
+    result['core_mantle_mass'] = 0.0
+    with (
+        pytest.raises(StructureInvariantError, match='breaks cmb_mass:')
+        if raises
+        else nullcontext()
+    ):
+        _check(result, cfg)
