@@ -465,3 +465,32 @@ class TestLowTMergeGuards:
         out = eos_export.load_paleos_with_lowt_extension(pal, _ext_cells(tmp_path, edit))
         assert out['t_min'] == pytest.approx(_T[1], rel=1e-8)
         assert out['unique_log_t'].size == _T.size - 1
+
+
+def test_extension_without_data_rows_is_an_error(tmp_path):
+    """An extension file that holds only comments is refused with a named error."""
+    ext = tmp_path / 'empty.dat'
+    ext.write_text('# only a header\n')
+    with pytest.raises(ValueError, match='no data'):
+        eos_export.load_paleos_with_lowt_extension(_paleos(tmp_path, [6, 6, 6, 6]), ext)
+    assert ext.read_text().startswith('#')
+
+
+def test_extension_needs_two_entropy_nodes(tmp_path):
+    """With one entropy node the axis has no step, so the extension cannot add nodes."""
+    solid, liquid, ext = _gen_tables(tmp_path)
+    kw = dict(
+        eos_file=solid,
+        solidus_func=lambda P: 1500.0,
+        liquidus_func=lambda P: 1800.0,
+        P_range=(1.0e6, 1.0e10),
+        n_P=6,
+        solid_eos_file=solid,
+        liquid_eos_file=liquid,
+    )
+    with pytest.raises(ValueError, match='n_S'):
+        eos_export.generate_spider_eos_tables(**kw, n_S=1, solid_lowt_file=ext)
+    assert (
+        eos_export.generate_spider_eos_tables(**kw, n_S=2, solid_lowt_file=ext)['S_solid'].size
+        >= 2
+    )

@@ -151,3 +151,12 @@ def test_command_line_writes_the_commit_and_the_dirty_state(tmp_path, monkeypatc
     head = out.read_text().splitlines()[:5]
     assert f'# PALEOS commit: {sha} (uncommitted changes)' in head
     assert np.isfinite(eos_export.load_paleos_with_lowt_extension(table, out)['s']).all()
+
+
+@pytest.mark.parametrize('t_min', [0.0, -10.0, 300.0, 350.0, float('nan')])
+def test_grid_refuses_a_lowest_temperature_outside_the_extension_range(tmp_path, t_min):
+    """t_min must lie strictly between 0 K and the lowest temperature of the table."""
+    table = _paleos(tmp_path, [6, 6, 6, 6])
+    with pytest.raises(ValueError, match='t_min'):
+        tool.extension_grid(table, t_min=t_min)
+    assert tool.extension_grid(table, t_min=299.0)[1].size == 2
