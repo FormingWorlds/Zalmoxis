@@ -4,7 +4,7 @@ Thermodynamic identities of a regular (log10 P, log10 T) table, written as relat
 
 `check` tests every cell: a derivative identity fails where the Richardson residual `R_x = (4 R_h - R_2h) / 3` exceeds the round-off floor of the stored values plus twice the h^4 term measured at that cell, `(R_x(2h) - R_x(h)) / 15`; `nabla_ad` is held to its floor alone. `floors` gives that floor for a stored relative precision `eps` (`5e-9` for 9 significant digits). `signs` flags cells with a non-positive density or heat capacity, `cv` above `cp`, or a density that falls with pressure.
 
-Resolution at 9 stored digits, measured at one cell of an exact Murnaghan table at 150 points per decade (P = 46 MPa, T = 1,581 K): a single stored value off by `2e-8` (relative) or more fails at the cells one step from it, and by `3e-7` (entropy) or `1e-6` (density) or more also at the cells two steps from it. The exact ideal gas and Murnaghan tables give no failing cell at this precision.
+Resolution at 9 stored digits, measured at one cell of an exact Murnaghan table at 150 points per decade (P = 46 MPa, T = 1,581 K): a single stored value off by `2e-8` (relative) or more fails at the cells one step from it, and by `3e-7` (entropy) or `1e-6` (density) or more also at the cells two steps from it. The exact ideal gas and Murnaghan tables give no failing cell at this precision. `check` raises a smaller `eps` to `EPS_FLOOR = 5e-9`, so every table, also one stored in full double precision, is checked at the 9-digit floor, and faults below about `2e-8` (relative) are out of reach on any table.
 
 ::: zalmoxis.eos.consistency
     options:

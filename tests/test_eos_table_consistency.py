@@ -157,3 +157,11 @@ def test_a_density_that_falls_with_pressure_breaks_kappa_t(stored):
     t['rho'][301, 50] = t['rho'][299, 50] * (1 - 1e-6)
     flags = c.signs(t, EPS9)['kappa_T']
     assert flags[300, 50] and int(flags.sum()) == 1
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('eos', [a.murnaghan, a.ideal_gas])
+def test_a_float64_table_is_checked_at_the_9_digit_floor(eos):
+    """eps below EPS_FLOOR is raised to it, so an exact float64 table has no failing cell."""
+    res = c.check(a.table(eos, LP, LT), np.finfo(float).eps)
+    assert sum(int(v['fail'].sum()) for v in res.values()) == 0

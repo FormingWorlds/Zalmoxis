@@ -10,6 +10,7 @@ from __future__ import annotations
 import numpy as np
 
 IDENTITIES = ('cp', 'maxwell', 'alpha', 'dudt', 'nabla_ad', 'cp_cv')
+EPS_FLOOR = 5e-9  # 9 significant digits, the precision of the shipped tables
 
 
 def segments(table, axis):
@@ -137,11 +138,8 @@ def check(table, eps, factor=2.0):
     digits (eps 5e-9) the exact ideal gas and Murnaghan tables give no failing cell, and one
     planted value is found at the cells one and two steps from it.
 
-    Limits for tables in full double precision (eps 4 x machine eps, 150 points per decade):
-    one exact Murnaghan cell fails cp_cv at 0.67 MPa, where R_x is round-off scatter at the
-    floor and the h^4 estimate of that cell is small by chance. The exact ideal gas fails cp_cv
-    in 33,686 cells: its truncation is zero, and the steps of ln(10**log10 P) depart from the
-    mean step by up to 3e-13, beyond the floor, which models only the stored values.
+    The floor uses eps_eff = max(eps, EPS_FLOOR): every table is checked at the 9-digit
+    floor at best, so faults below about 2e-8 (relative) are out of reach on any table.
 
     Parameters
     ----------
@@ -158,6 +156,7 @@ def check(table, eps, factor=2.0):
         Identity name -> dict with ``rx`` (the tested residual), ``bound``, ``tested`` (both
         finite) and ``fail`` (tested and above the bound) arrays.
     """
+    eps = max(eps, EPS_FLOOR)
     r = {k: residuals(table, k) for k in (1, 2, 4)}
     f1, f2 = floors(table, eps, 1), floors(table, eps, 2)
     out = {}
