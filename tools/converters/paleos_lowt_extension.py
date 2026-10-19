@@ -6,7 +6,8 @@ table) below the table's lowest temperature. Its temperatures continue the table
 grid downward from that temperature, which is the seam node, to the first node at or below
 ``t_min``; its pressures are the table rows below ``p_max``. The output has the 10-column
 PALEOS format, written at ``%.8e``, and is merged under the table by
-``zalmoxis.eos_export.load_paleos_with_lowt_extension``.
+``zalmoxis.eos_export.load_paleos_with_lowt_extension``; the command line checks that merge
+before it reports success, and removes an output that does not merge.
 
 Usage::
 
@@ -131,12 +132,15 @@ def main(argv=None):
         '--paleos-commit', help='commit of --paleos-src when it is not a git checkout'
     )
     args = ap.parse_args(argv)
+    if not args.out.parent.is_dir():
+        ap.error(f'the output folder {args.out.parent} does not exist')
 
     src = args.paleos_src.resolve()
     commit = args.paleos_commit
     if commit is not None:
-        if not re.fullmatch(r'[0-9a-f]{7,40}', commit):
+        if not re.fullmatch(r'[0-9a-fA-F]{7,64}', commit):
             ap.error(f'--paleos-commit {commit!r} is not a commit hash')
+        commit = commit.lower()
     else:
         top = _git(src, 'rev-parse', '--show-toplevel')
         if top is None or Path(top).resolve() != src:
@@ -162,6 +166,16 @@ def main(argv=None):
         f'Generated: {datetime.datetime.now(datetime.UTC):%Y-%m-%d %H:%M:%S} UTC',
     ]
     n = write_extension(MgSiO3EoS(), args.table, args.out, header, args.t_min, args.p_max)
+    if n == 0:
+        args.out.unlink()
+        ap.error(f'no extension rows: no table row has 0 < P < {args.p_max:g} Pa')
+    from zalmoxis.eos_export import load_paleos_with_lowt_extension
+
+    try:
+        load_paleos_with_lowt_extension(args.table, args.out)
+    except ValueError as exc:
+        args.out.unlink()
+        ap.error(f'the extension does not merge under the table: {exc}')
     print(f'wrote {n} rows to {args.out}')
 
 

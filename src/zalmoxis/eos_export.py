@@ -177,6 +177,10 @@ def load_paleos_with_lowt_extension(eos_file, lowt_file):
             )
         for key in _LOWT_PROPS:
             e, b = ext[key][j, seam[0]], out[key][i, k0]
+            if not np.isfinite(b):
+                raise ValueError(
+                    f'{eos_file}: PALEOS seam value is not finite: {key} at P = {P_row:.6e} Pa'
+                )
             if not abs(e - b) <= _SEAM_RTOL * abs(b):
                 raise ValueError(
                     f'{lowt_file}: seam mismatch in {key} at P = {P_row:.6e} Pa, '
