@@ -6,12 +6,15 @@ Thermodynamic identities of a regular (log10 P, log10 T) table, written as relat
 
 Resolution at 9 stored digits, measured at one cell of an exact Murnaghan table at 150 points per decade (P = 46 MPa, T = 1,581 K): a single stored value off by `2e-8` (relative) or more fails at the cells one step from it, and by `3e-7` (entropy) or `1e-6` (density) or more also at the cells two steps from it. The exact ideal gas and Murnaghan tables give no failing cell at this precision. `check` raises a smaller `eps` to `EPS_FLOOR = 5e-9`, so every table, also one stored in full double precision, is checked at the 9-digit floor, and faults below about `2e-8` (relative) are out of reach on any table.
 
+Detection of a `1e-6` fault depends on the grid: on the Aragog P-T layout (`check_pt`), a planted `1e-6` entropy or density was found one and two steps away on the 200 x 200 grid that PROTEUS writes, but two such faults were missed on a 60 x 60 grid, where the measured h^4 term is larger. `tools/validation/eos_table_consistency_report.py` writes every failing cell of a PALEOS-format table to a CSV file.
+
 ::: zalmoxis.eos.consistency
     options:
       inherited_members: false
       show_source: true
       members:
         - check
+        - check_pt
         - floors
         - signs
         - residuals

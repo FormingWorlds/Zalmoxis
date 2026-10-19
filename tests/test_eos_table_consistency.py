@@ -238,3 +238,26 @@ def test_a_missing_value_breaks_no_sign_condition(stored):
     t = {**stored['murnaghan'], 'rho': stored['murnaghan']['rho'].copy()}
     t['rho'][300, 50] = np.nan
     assert not any(v[300, 50] for v in c.signs(t, EPS9).values())
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('planted', [0.0, 1e-4])
+def test_the_csv_report_lists_exactly_the_failing_cells(tmp_path, planted):
+    from tools.validation.eos_table_consistency_report import report
+
+    lp, lt = np.arange(8.0, 9.0 + 1e-9, 1 / 150), np.arange(3.0, 3.3 + 1e-9, 1 / 150)
+    PP, TT = np.meshgrid(10.0**lp, 10.0**lt, indexing='ij')
+    cols = a.murnaghan(PP, TT)
+    cols['s'][75, 20] *= 1 + planted
+    path = tmp_path / 'table.dat'
+    with open(path, 'w') as f:
+        f.write('# P T rho u s cp cv alpha nabla_ad phase\n')
+        for i in range(PP.shape[0]):
+            for j in range(PP.shape[1]):
+                vals = [PP[i, j], TT[i, j]] + [cols[k][i, j] for k in a.COLUMNS]
+                f.write(' '.join(f'{v:.8e}' for v in vals) + ' solid\n')
+    counts = report(str(path), str(tmp_path / 'out.csv'))
+    rows = (tmp_path / 'out.csv').read_text().strip().splitlines()
+    assert rows[0] == 'condition,P_Pa,T_K,phase,residual,bound' and counts['cp'][0] > 1000
+    assert len(rows) - 1 == sum(failing for _, failing in counts.values())
+    assert (counts['cp'][1] > 0) is (planted > 0)
