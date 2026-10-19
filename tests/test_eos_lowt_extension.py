@@ -309,3 +309,13 @@ class TestLowTInvariants:
         pal = _paleos(tmp_path, [5, 6, 6, 6])
         out = eos_export.load_paleos_with_lowt_extension(pal, self._ext_with(tmp_path, edit))
         assert out['cp'][0, 5] == pytest.approx(1200.0)
+
+
+def test_no_solid_node_below_the_lowest_extension_entropy(tmp_path):
+    """Each added entropy node holds an inverted cell on some column, so none is only a fill."""
+    tables = _gen_tables(tmp_path)
+    out = _generate(tables, lowt=True)
+    base_nodes = _generate(tables)['S_solid'].size
+    n_add = out['S_solid'].size - base_nodes
+    assert n_add > 0
+    assert out['valid']['solid'][:n_add].any(axis=1).all()
