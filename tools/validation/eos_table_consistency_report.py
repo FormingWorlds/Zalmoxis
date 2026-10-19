@@ -37,12 +37,17 @@ def report(path, out, digits=9):
     -------
     dict
         Condition name -> (cells tested, cells failing).
+
     Raises
     ------
     ValueError
         If digits is not an integer from 1 to 17.
     """
-    if isinstance(digits, bool) or not isinstance(digits, int) or not 1 <= digits <= 17:
+    if (
+        isinstance(digits, bool)
+        or not isinstance(digits, (int, np.integer))
+        or not 1 <= digits <= 17
+    ):
         raise ValueError(f'digits must be an integer from 1 to 17, got {digits!r}')
     t = load_paleos_all_properties(path)
     eps = 0.5 * 10.0 ** (1 - digits)
@@ -55,9 +60,9 @@ def report(path, out, digits=9):
             rows.append(
                 (name, P[i, j], T[i, j], t['phase'][i, j], v['rx'][i, j], v['bound'][i, j])
             )
-    for name, flags in c.signs(t, eps).items():
-        counts[f'sign_{name}'] = (int(np.isfinite(t['rho']).sum()), int(flags.sum()))
-        for i, j in np.argwhere(flags):
+    for name, v in c.signs(t, eps).items():
+        counts[f'sign_{name}'] = (int(v['tested'].sum()), int(v['fail'].sum()))
+        for i, j in np.argwhere(v['fail']):
             rows.append((f'sign_{name}', P[i, j], T[i, j], t['phase'][i, j], '', ''))
     with open(out, 'w', newline='') as f:
         w = csv.writer(f)

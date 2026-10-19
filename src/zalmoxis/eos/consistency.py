@@ -11,6 +11,7 @@ import numpy as np
 
 IDENTITIES = ('cp', 'maxwell', 'alpha', 'dudt', 'nabla_ad', 'cp_cv')
 EPS_FLOOR = 5e-9  # 9 significant digits, the precision of the shipped tables
+FACTOR = 2.0  # allowed multiple of the h^4 term; a fault 2 cells away is found only below 3
 
 
 def segments(table, axis):
@@ -50,6 +51,9 @@ def derivative(f, seg, axis, k, h):
 
 def _grid(table):
     lp, lt = np.asarray(table['unique_log_p'], float), np.asarray(table['unique_log_t'], float)
+    for name, d in (('unique_log_p', np.diff(lp)), ('unique_log_t', np.diff(lt))):
+        if d.size > 1 and np.ptp(d) > 1e-3 * np.abs(d).mean():
+            raise ValueError(f'{name} is not a uniform grid')
     P, T = np.meshgrid(10.0**lp, 10.0**lt, indexing='ij')
     cols = (
         np.asarray(table[c], float) for c in ('rho', 'u', 's', 'cp', 'cv', 'alpha', 'nabla_ad')
@@ -129,54 +133,50 @@ def floors(table, eps, k=1):
     return {n: out[n] for n in IDENTITIES}
 
 
-def _number(name, value, ok, rule):
-    """``value`` as a float when it is a finite real number with ``ok(value)``, else ValueError."""
-    real = isinstance(value, (int, float, np.integer, np.floating)) and not isinstance(
-        value, (bool, np.bool_)
-    )
-    if not (real and np.isfinite(value) and ok(value)):
-        raise ValueError(f'{name} must be a finite number {rule}, got {value!r}')
-    return float(value)
+def _eps(eps):
+    """``eps`` raised to ``EPS_FLOOR``; ValueError unless it is a finite number in [0, 1)."""
+    try:
+        x = float(eps)
+    except (TypeError, ValueError, OverflowError):
+        x = np.nan
+    if isinstance(eps, (bool, np.bool_, str, bytes)) or not 0 <= x < 1:
+        raise ValueError(f'eps must be a finite number in [0, 1), got {eps!r}')
+    return max(x, EPS_FLOOR)
 
 
-def _eps_factor(eps, factor):
-    """The checked eps, raised to ``EPS_FLOOR``, and the checked factor."""
-    eps = _number('eps', eps, lambda x: 0 <= x < 1, 'in [0, 1)')
-    return max(eps, EPS_FLOOR), _number('factor', factor, lambda x: x > 0, 'above 0')
+def check(table, eps):
+    """Test each cell against the Richardson bound of each identity.
 
-
-def check(table, eps, factor=2.0):
-    """Test every cell against the Richardson bound of each identity.
-
-    A derivative identity fails where |R_x(h)| > floor_x + factor * est, with R_x(kh) =
+    A derivative identity fails where |R_x(h)| > floor_x + FACTOR * est, with R_x(kh) =
     (4 R_k - R_2k) / 3, floor_x = (4 floor_1 + floor_2) / 3 and est = |R_x(2h) - R_x(h)| / 15,
     the measured h^4 term of R_x(h) at the cell. nabla_ad fails where |R| > floor. At 9 stored
     digits (eps 5e-9) the exact ideal gas and Murnaghan tables give no failing cell, and one
     planted value is found at the cells one and two steps from it.
 
     The floor uses eps_eff = max(eps, EPS_FLOOR): every table is checked at the 9-digit
-    floor at best, so faults below about 2e-8 (relative) are out of reach on any table.
+    floor at best, so faults below about 2e-8 (relative) are out of reach on any table. A
+    derivative identity is tested only at cells 4 or more steps from an edge, a phase boundary
+    or a missing cell along its axis.
 
     Parameters
     ----------
     table : dict
-        As for ``residuals``.
+        As for ``residuals``, on a grid uniform in log10 P and log10 T.
     eps : float
         Relative precision of the stored columns (0.5 x 10^(1 - n) for n significant digits).
-    factor : float
-        Allowed multiple of the h^4 term.
 
     Returns
     -------
     dict
         Identity name -> dict with ``rx`` (the tested residual), ``bound``, ``tested`` (both
         finite) and ``fail`` (tested and above the bound) arrays.
+
     Raises
     ------
     ValueError
-        If eps is not a finite number in [0, 1) or factor is not a finite number above 0.
+        If eps is not a finite number in [0, 1), or an axis is not uniform.
     """
-    eps, factor = _eps_factor(eps, factor)
+    eps = _eps(eps)
     r = {k: residuals(table, k) for k in (1, 2, 4)}
     f1, f2 = floors(table, eps, 1), floors(table, eps, 2)
     out = {}
@@ -187,7 +187,7 @@ def check(table, eps, factor=2.0):
             else:
                 rx = (4 * r[1][n] - r[2][n]) / 3
                 est = np.abs((4 * r[2][n] - r[4][n]) / 3 - rx) / 15
-                bound = (4 * f1[n] + f2[n]) / 3 + factor * est
+                bound = (4 * f1[n] + f2[n]) / 3 + FACTOR * est
             tested = np.isfinite(rx) & np.isfinite(bound)
             out[n] = {
                 'rx': rx,
@@ -206,33 +206,38 @@ def signs(table, eps):
     table : dict
         As for ``residuals``.
     eps : float
-        Relative precision of the stored columns.
+        Relative precision of the stored columns; raised to ``EPS_FLOOR`` at least.
 
     Returns
     -------
     dict
-        Condition name -> boolean array, True where the cell breaks it (a missing value breaks
-        none): ``rho``, ``cp`` and ``cv`` not positive; ``cp_ge_cv``: cv above cp by more than eps (|cp| + |cv|);
+        Condition name -> dict with ``tested`` and ``fail`` boolean arrays. ``rho``, ``cp``
+        and ``cv`` not positive; ``cp_ge_cv``: cv above cp by more than eps (|cp| + |cv|);
         ``kappa_T``: rho falls with P at fixed T by more than the rounding of its two
-        neighbours (central difference over one cell on each side, one phase).
+        neighbours (central difference over one cell on each side, one phase). A condition
+        tests only the cells that hold its values.
+
     Raises
     ------
     ValueError
         If eps is not a finite number in [0, 1).
     """
-    eps = _number('eps', eps, lambda x: 0 <= x < 1, 'in [0, 1)')
+    eps = _eps(eps)
     rho, cp, cv = (np.asarray(table[c], float) for c in ('rho', 'cp', 'cv'))
     seg = segments(table, 0)
     rise = _stencil(rho, seg, 0, 1, 0.5, -1.0)  # rho[i+1] - rho[i-1]
     noise = _stencil(np.abs(rho), seg, 0, 1, 0.5, 1.0) * eps
     with np.errstate(invalid='ignore'):
-        return {
-            'rho': rho <= 0,
-            'cp': cp <= 0,
-            'cv': cv <= 0,
-            'cp_ge_cv': cv - cp > eps * (np.abs(cp) + np.abs(cv)),
-            'kappa_T': rise < -noise,
+        cond = {
+            'rho': (rho, rho <= 0),
+            'cp': (cp, cp <= 0),
+            'cv': (cv, cv <= 0),
+            'cp_ge_cv': (cp - cv, cv - cp > eps * (np.abs(cp) + np.abs(cv))),
+            'kappa_T': (rise, rise < -noise),
         }
+    return {
+        n: {'tested': np.isfinite(v), 'fail': np.isfinite(v) & f} for n, (v, f) in cond.items()
+    }
 
 
 PT_IDENTITIES = ('cp', 'maxwell', 'alpha')
@@ -264,6 +269,12 @@ def _coord_stencil(f, x, axis, k, sign):
 def _pt_parts(tables, k):
     """(D, E, Q, q) per identity of the Aragog P-T tables, with R + 1 = D / Q."""
     P, T = np.asarray(tables['density']['P'], float), np.asarray(tables['density']['T'], float)
+    for q in PT_QUANTITIES:
+        t = tables[q]
+        if not (np.array_equal(t['P'], P) and np.array_equal(t['T'], T)):
+            raise ValueError(f'{q} is not on the (P, T) grid of density')
+        if np.shape(t['values']) != (P.size, T.size):
+            raise ValueError(f'{q} values do not have the shape of the (P, T) grid')
     rho, cp, alpha, s = (
         np.where(np.asarray(tables[q]['values'], float) == PT_FILL, np.nan, tables[q]['values'])
         for q in PT_QUANTITIES
@@ -284,7 +295,7 @@ def _pt_parts(tables, k):
         }
 
 
-def check_pt(tables, eps, factor=2.0):
+def check_pt(tables, eps):
     """``check`` for the Aragog P-T tables that eos_export writes (no u, cv or nabla_ad).
 
     Parameters
@@ -294,20 +305,19 @@ def check_pt(tables, eps, factor=2.0):
         of shape (n_P, n_T); the fill value ``PT_FILL`` counts as a missing cell.
     eps : float
         Relative precision of the stored values; raised to ``EPS_FLOOR`` at least.
-    factor : float
-        Allowed multiple of the h^4 term.
 
     Returns
     -------
     dict
         As for ``check``, for the identities cp = T (ds/dT)_P, (ds/dP)_T = -alpha / rho and
         alpha = -(dln rho/dT)_P.
+
     Raises
     ------
     ValueError
-        If eps is not a finite number in [0, 1) or factor is not a finite number above 0.
+        If eps is not a finite number in [0, 1), or the four tables are not on one grid.
     """
-    eps, factor = _eps_factor(eps, factor)
+    eps = _eps(eps)
     parts = {k: _pt_parts(tables, k) for k in (1, 2, 4)}
     out = {}
     with np.errstate(divide='ignore', invalid='ignore'):
@@ -320,7 +330,7 @@ def check_pt(tables, eps, factor=2.0):
             }
             rx = (4 * r[1] - r[2]) / 3
             est = np.abs((4 * r[2] - r[4]) / 3 - rx) / 15
-            bound = (4 * fl[1] + fl[2]) / 3 + factor * est
+            bound = (4 * fl[1] + fl[2]) / 3 + FACTOR * est
             tested = np.isfinite(rx) & np.isfinite(bound)
             out[n] = {
                 'rx': rx,
