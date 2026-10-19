@@ -25,6 +25,7 @@ TOLERANCES = {
     'density_eos': 1e-6,
 }
 _RTOL_LAYER = 1e-12  # the layer rule of structure_model.get_layer_mixture
+_SCALAR = ('cmb_mass', 'core_mantle_mass', 'mass_closure')  # no node in the message
 _PROFILE = (
     'radii mass_enclosed gravity pressure density temperature cmb_mass core_mantle_mass'.split()
 )
@@ -44,7 +45,9 @@ def _layer(m, cmb_mass, core_mantle_mass, ice):
     return np.where(m < cmb_mass * (1.0 - _RTOL_LAYER), 'core', top)
 
 
-def deviations(result, config_params, mass_limit, rtol, atol, density_at=None, ice=False):
+def deviations(
+    result, config_params, mass_limit, rtol, atol, density_at=None, ice=False, details=None
+):
     """Return the deviation of each invariant of an accepted result.
 
     Parameters
@@ -75,6 +78,9 @@ def deviations(result, config_params, mass_limit, rtol, atol, density_at=None, i
         when ``density_at`` is None or when ``result['density_from_eos']`` is False.
     ice : bool
         True when the planet has an ice layer.
+    details : dict or None
+        If given, filled with {invariant: text} naming the values that enter the deviation and
+        their expected values, for the error message.
 
     Returns
     -------
@@ -93,18 +99,49 @@ def deviations(result, config_params, mass_limit, rtol, atol, density_at=None, i
     k = len(P) if ok.all() else int(np.argmin(ok))
     out = {}
 
-    def put(name, dev, i, tol=None):
+    def put(name, dev, i, tol=None, text=''):
         out[name] = (float(dev), int(i), TOLERANCES[name] if tol is None else tol)
+        if details is not None:
+            details[name] = text
 
-    put('centre', np.count_nonzero(np.array([r[0], m[0], g[0]]) != 0), 0)
+    put(
+        'centre',
+        np.count_nonzero(np.array([r[0], m[0], g[0]]) != 0),
+        0,
+        text=f'radius, mass, gravity {r[0]:.6e}, {m[0]:.6e}, {g[0]:.6e}, expected 0',
+    )
     bad = ~(np.isfinite(rho[:k]) & (rho[:k] > 0) & np.isfinite(T[:k]) & (T[:k] > 0))
-    put('positive', np.count_nonzero(bad) + (k < 2), int(np.argmax(bad)) if bad.any() else k)
+    i = int(np.argmax(bad)) if bad.any() else k
+    put(
+        'positive',
+        np.count_nonzero(bad) + (k < 2),
+        i,
+        text=f'density {rho[i]:.6e}, temperature {T[i]:.6e}'
+        if i < k
+        else f'{k} nodes with P > 0',
+    )
     # the solver pads a surface stop with zero pressure and the mass and gravity at the stop
+    off = (P[k:] != 0) | (m[k:] != m[k : k + 1]) | (g[k:] != g[k : k + 1])
+    i = k + int(np.argmax(off)) if off.any() else k
     pad = np.count_nonzero(P[k:] != 0) + np.count_nonzero(m[k:] != m[k : k + 1])
-    put('padding', pad + np.count_nonzero(g[k:] != g[k : k + 1]), k)
+    put(
+        'padding',
+        pad + np.count_nonzero(g[k:] != g[k : k + 1]),
+        i,
+        text=f'pressure, mass, gravity {P[i]:.6e}, {m[i]:.6e}, {g[i]:.6e}; expected 0 and '
+        f'the mass and gravity of node {k}'
+        if off.any()
+        else '',
+    )
     for name, x, sign in (('pressure_monotone', P[:k], 1), ('mass_monotone', m, -1)):
         rise = sign * np.diff(x) / np.abs(x).max(initial=1.0)
-        put(name, max(rise.max(initial=0.0), 0.0), int(np.argmax(rise)) + 1 if len(rise) else 0)
+        i = int(np.argmax(rise)) + 1 if len(rise) else 0
+        put(
+            name,
+            max(rise.max(initial=0.0), 0.0),
+            i,
+            text=f'{x[i - 1]:.6e} at node {i - 1}, {x[i]:.6e} here' if i else '',
+        )
     M, cmf = config_params['planet_mass'], config_params['core_mass_fraction']
     mmf = config_params.get('mantle_mass_fraction', 0.0)
     for name, f in (('cmb_mass', cmf), ('core_mantle_mass', cmf + mmf)):
@@ -112,6 +149,7 @@ def deviations(result, config_params, mass_limit, rtol, atol, density_at=None, i
             name,
             abs(result[name] / (f * M) - 1) if f > 0 else float(result[name] != 0),
             len(m) - 1,
+            text=f'{name} {result[name]:.13e} kg, expected {f * M:.13e} kg',
         )
     # PROTEUS takes the CMB (and with an ice layer the mantle top) at argmax(m >= mass)
     for name, f, key in (
@@ -120,8 +158,14 @@ def deviations(result, config_params, mass_limit, rtol, atol, density_at=None, i
     ):
         if f > 0 and (name == 'cmb_node' or ice):
             reach = m >= result[key] * (1.0 - _RTOL_LAYER)
-            i = int(np.argmax(reach))
-            put(name, not (reach.any() and r[i] > 0), i)
+            i = int(np.argmax(reach)) if reach.any() else -1
+            put(
+                name,
+                not (reach.any() and r[i] > 0),
+                i,
+                text=f'{key} {result[key]:.6e} kg, largest mass_enclosed {m.max():.6e} kg, '
+                f'radius of the first node at or above it {r[i] if reach.any() else "none"}',
+            )
     with np.errstate(divide='ignore', invalid='ignore'):
         # the bound takes G M / r^2, not the gravity under test, which could widen it
         g_ref = G * m[1:k] / r[1:k] ** 2
@@ -132,9 +176,24 @@ def deviations(result, config_params, mass_limit, rtol, atol, density_at=None, i
         ratio = np.where(ok_g, dg / tol_g, np.inf)
     i = int(np.argmax(ratio)) if len(ratio) else -1
     dev, tol = (dg[i], tol_g[i]) if i >= 0 and ok_g[i] else (np.inf, 0.0)
-    put('gravity', dev, i + 1, tol)
+    j = i + 1
+    put(
+        'gravity',
+        dev,
+        j,
+        tol,
+        text=f'gravity {g[j]:.6e} m/s^2, expected {G * m[j] / r[j] ** 2:.6e} (G m / r^2)'
+        if 0 < j < len(g)
+        else '',
+    )
     # the form of the accept test
-    put('mass_closure', abs(m[-1] - M) / M, len(m) - 1, mass_limit)
+    put(
+        'mass_closure',
+        abs(m[-1] - M) / M,
+        len(m) - 1,
+        mass_limit,
+        text=f'mass_enclosed[-1] {m[-1]:.6e} kg, target {M:.6e} kg',
+    )
     if density_at is not None and result.get('density_from_eos'):
         layer = _layer(m[:k], result['cmb_mass'], result['core_mantle_mass'], ice)
         ref = np.full(k, np.nan)
@@ -151,7 +210,13 @@ def deviations(result, config_params, mass_limit, rtol, atol, density_at=None, i
         with np.errstate(divide='ignore', invalid='ignore'):
             d = np.abs(rho[:k] / ref - 1)
         d[~np.isfinite(d)] = np.inf
-        put('density_eos', d.max(initial=0.0), int(np.argmax(d)) if k else 0)
+        i = int(np.argmax(d)) if k else 0
+        put(
+            'density_eos',
+            d.max(initial=0.0),
+            i,
+            text=f'density {rho[i]:.6e}, expected {ref[i]:.6e} ({layer[i]} EOS)' if k else '',
+        )
     return out
 
 
@@ -203,11 +268,13 @@ def check_accepted(result, config_params, rtol, atol, density_at=None, ice=False
             f'Accepted structure ({accepted_on=}) has invalid integration tolerances: '
             f'rtol={rtol!r}, atol={atol!r}.'
         )
+    details = {}
     for name, (dev, i, tol) in deviations(
-        result, config_params, limit, rtol, atol, density_at, ice
+        result, config_params, limit, rtol, atol, density_at, ice, details
     ).items():
         if not dev <= tol:
+            node = '' if name in _SCALAR or i < 0 else f' at node {i}'
             raise StructureInvariantError(
-                f'Accepted structure ({accepted_on=}) breaks '
-                f'{name}: deviation {dev:.3e} > {tol:.1e} at node {i}.'
+                f'Accepted structure ({accepted_on=}) breaks {name}: deviation {dev:.3e} > '
+                f'tolerance {tol:.3e}{node}; {details[name]}.'
             )

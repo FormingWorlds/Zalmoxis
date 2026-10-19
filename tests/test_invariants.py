@@ -971,8 +971,8 @@ def test_a_scalar_invariant_names_its_value_and_the_expected_value_without_a_nod
     result, cfg = _sphere()
     result['cmb_mass'] *= 1 + 1e-9
     msg = _message(result, cfg)
-    assert f'cmb_mass {result["cmb_mass"]:.6e}' in msg
-    assert f'expected {CMF * cfg["planet_mass"]:.6e}' in msg
+    assert f'cmb_mass {result["cmb_mass"]:.13e}' in msg
+    assert f'expected {CMF * cfg["planet_mass"]:.13e}' in msg
     assert 'tolerance 1.000e-12' in msg and 'node' not in msg
 
 
@@ -1007,5 +1007,5 @@ def test_cmb_node_names_cmb_mass_and_the_largest_enclosed_mass():
     result, cfg = _sphere()
     _no_node_at_cmb(result, cfg)
     msg = _message(result, cfg, limit=0.03)
-    assert f'cmb_mass {result["cmb_mass"]:.6e}' in msg
+    assert f'cmb_mass {result["cmb_mass"]:.6e}' in msg and 'at node' not in msg
     assert f'largest mass_enclosed {result["mass_enclosed"].max():.6e}' in msg
