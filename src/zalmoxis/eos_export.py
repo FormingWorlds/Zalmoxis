@@ -953,6 +953,28 @@ def generate_spider_eos_tables(
                     S_global_min_solid,
                     S_solid_grid[0],
                 )
+            elif not np.isfinite(S_lo):
+                logger.warning(
+                    'Low-T extension %s gives no finite entropy at the output pressures; '
+                    'the solid entropy axis is unchanged',
+                    solid_lowt_file,
+                )
+            else:
+                logger.warning(
+                    'Low-T extension %s: no solid entropy node fits below %.1f J/(kg*K) '
+                    '(lowest extended entropy %.1f, node step %.1f); the axis is unchanged',
+                    solid_lowt_file,
+                    S_global_min_solid,
+                    S_lo,
+                    dS,
+                )
+        else:
+            logger.warning(
+                'Low-T extension %s reaches no temperature below %.1f K; '
+                'the solid entropy axis is unchanged',
+                solid_lowt_file,
+                T_lo_global,
+            )
 
     logger.info(
         'Entropy ranges: solid [%.0f, %.0f], melt [%.0f, %.0f] J/(kg*K)',
