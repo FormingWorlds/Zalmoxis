@@ -1,6 +1,6 @@
 # EOS interpolation
 
-Shared infrastructure for PALEOS-format tables: file readers (`load_paleos_table` for the 2-phase format, `load_paleos_unified_table` for the single-file-per-material format), the log-uniform grid builder used by both, and the inner kernels `_fast_bilinear` (O(1) bilinear lookup) and `_paleos_clamp_temperature` (per-cell temperature clamp to the table's valid range). These kernels are called millions of times per Zalmoxis solve, so they avoid `np.interp` binary searches by exploiting the log-uniform grid. The cache populated by `_ensure_unified_cache` is reused across calls within the same process.
+Shared infrastructure for PALEOS-format tables: file readers (`load_paleos_table` for the 2-phase format, `load_paleos_unified_table` for the single-file-per-material format), the log-uniform grid builder used by both, and the inner kernels `_fast_bilinear` (O(1) bilinear lookup) and `_paleos_clamp_temperature` (per-cell temperature clamp to the table's valid range). These kernels are called millions of times per Zalmoxis solve, so they avoid `np.interp` binary searches by exploiting the log-uniform grid. The cache populated by `_ensure_unified_cache` is reused across calls within the same process; its binary copy `<table>.cache.pkl` holds the md5 of the table it was built from and is used only for that table.
 
 ::: zalmoxis.eos.interpolation
     options:

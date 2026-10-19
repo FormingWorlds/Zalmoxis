@@ -25,7 +25,9 @@ def _table_text():
     rows = ['# a small unified table']
     for p in np.logspace(9, 10, 4):
         for t in np.logspace(3, 3.5, 4):
-            rows.append(f'{p:.8e} {t:.8e} 8.0e+03 1.0e+06 2.0e+03 5.0e+02 4.5e+02 2.0e-05 3.0e-01 liquid')
+            rows.append(
+                f'{p:.8e} {t:.8e} 8.0e+03 1.0e+06 2.0e+03 5.0e+02 4.5e+02 2.0e-05 3.0e-01 liquid'
+            )
     return '\n'.join(rows) + '\n'
 
 
@@ -83,13 +85,17 @@ def test_stale_table_raises_before_it_is_read(tmp_path, pinned, monkeypatch):
 
 
 def test_stale_error_is_not_caught_as_a_solver_failure():
-    assert not issubclass(StaleTableError, (RuntimeError, ValueError, OSError, FloatingPointError))
+    assert not issubclass(
+        StaleTableError, (RuntimeError, ValueError, OSError, FloatingPointError)
+    )
 
 
 def test_unpinned_name_is_read_without_a_hash(tmp_path, pinned, monkeypatch):
     path = tmp_path / 'my_table.dat'
     path.write_text(pinned.replace('8.0e+03', '8.1e+03'))
-    monkeypatch.setattr(registry_guard, '_md5', lambda p: pytest.fail('hashed an unpinned table'))
+    monkeypatch.setattr(
+        registry_guard, '_md5', lambda p: pytest.fail('hashed an unpinned table')
+    )
     interpolation.require_eos_file(str(path))
 
 
@@ -114,26 +120,49 @@ def test_binary_cache_of_a_stale_table_is_not_used(tmp_path, pinned):
     path.write_text(pinned)
     cache = {}
     interpolation._ensure_unified_cache(str(path), cache)
-    assert (tmp_path / NAME.replace('.dat', '.pkl')).is_file()
+    assert os.path.isfile(interpolation.cache_path_for(str(tmp_path / NAME)))
     path.write_text(pinned.replace('8.0e+03', '8.1e+03', 1))
     os.utime(path, ns=(1, 1))
     with pytest.raises(StaleTableError):
         interpolation._ensure_unified_cache(str(path), {})
 
 
-def test_binary_cache_without_its_table_is_not_used(tmp_path, pinned):
+def test_binary_cache_without_its_table_needs_a_pinned_source(tmp_path, pinned):
     path = tmp_path / NAME
     path.write_text(pinned)
     interpolation._ensure_unified_cache(str(path), {})
     path.unlink()
-    with pytest.raises(FileNotFoundError):
+    assert interpolation._ensure_unified_cache(str(path), {})['p_min'] == pytest.approx(1e9)
+    path.write_text(pinned.replace('8.0e+03', '8.1e+03', 1))
+    with pytest.raises(StaleTableError):
         interpolation._ensure_unified_cache(str(path), {})
+    os.utime(path, ns=(1, 1))
+    registry_guard._HASHES.clear()
+    pkl = interpolation.cache_path_for(str(tmp_path / NAME))
+    with open(pkl, 'rb') as f:
+        stored = pickle.load(f)
+    stored['source_md5'] = _md5(path.read_bytes())
+    with open(pkl, 'wb') as f:
+        pickle.dump(stored, f)
+    path.unlink()
+    with pytest.raises(StaleTableError):
+        interpolation._ensure_unified_cache(str(path), {})
+
+
+def test_binary_cache_in_the_old_layout_is_rebuilt(tmp_path, pinned):
+    path = tmp_path / NAME
+    path.write_text(pinned)
+    entry = interpolation.load_paleos_unified_table(str(path))
+    entry['p_min'] = -1.0
+    with open(interpolation.cache_path_for(str(tmp_path / NAME)), 'wb') as f:
+        pickle.dump(entry, f)
+    assert interpolation._ensure_unified_cache(str(path), {})['p_min'] == pytest.approx(1e9)
 
 
 def test_binary_cache_of_another_table_is_rebuilt(tmp_path, pinned):
     path = tmp_path / 'my_table.dat'
     path.write_text(pinned)
-    pkl = tmp_path / 'my_table.pkl'
+    pkl = interpolation.cache_path_for(str(path))
     other = interpolation.load_paleos_unified_table(str(path))
     other['p_min'] = -1.0
     with open(pkl, 'wb') as f:
@@ -180,8 +209,12 @@ def test_refetch_that_fails_offline_raises_stale(tmp_path, pinned, monkeypatch):
         registry_guard.verify(str(path))
 
 
-@settings(max_examples=40, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
-@given(pos=st.integers(min_value=0, max_value=10_000), byte=st.integers(min_value=1, max_value=255))
+@settings(
+    max_examples=40, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture]
+)
+@given(
+    pos=st.integers(min_value=0, max_value=10_000), byte=st.integers(min_value=1, max_value=255)
+)
 def test_any_changed_byte_raises(tmp_path, pinned, pos, byte):
     data = bytearray(pinned.encode())
     i = pos % len(data)

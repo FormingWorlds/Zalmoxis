@@ -11,6 +11,8 @@ bash tools/setup/get_zalmoxis.sh
 This invokes `tools/setup/setup_zalmoxis.py`, which fetches the required data through fwl-io into `$FWL_DATA` and links each folder of the `data/` directory to its dataset. Set `FWL_DATA` first.
 See Installation Step 4 of the [installation guide](../How-to/installation.md) for details.
 
+Zalmoxis reads a PALEOS table only when its md5 is the one the fwl-io registry pins for that file name (`zalmoxis.eos.registry_guard`). A table in its fwl-io version directory that differs is fetched again; a table anywhere else that differs, for example an older copy in a real `data/` folder, stops the run with `StaleTableError`, which names the file, both md5 values and the refresh command. A table of your own must therefore not carry the file name of a registry table: give it another name and point the EOS entry at it.
+
 ## Data inventory
 
 The table below lists every data file used by Zalmoxis, organised by subdirectory.

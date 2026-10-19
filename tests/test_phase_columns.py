@@ -159,18 +159,16 @@ def test_load_phase_grid_missing_file_returns_none(tmp_path):
 
 
 def test_load_phase_grid_uses_pkl_cache_when_dat_absent(tmp_path, monkeypatch):
-    """``_load_phase_grid`` must route through ``_ensure_unified_cache``
-    so a pickle-only installation (``.pkl`` present, ``.dat`` absent)
-    still produces phase labels rather than ``unknown``. This is the
-    Codex P2 fix: the prior implementation gated on ``os.path.isfile``
-    on the ``.dat`` path and returned None whenever the text table
-    was missing, even when the ``.pkl`` binary cache existed."""
+    """A pickle-only installation (``.pkl`` present, ``.dat`` absent) still
+    produces phase labels rather than ``unknown``."""
     import pickle
 
     import zalmoxis.phase_columns as pc
 
     eos_file = str(tmp_path / 'pkl_only.dat')  # NB: never created
-    pkl_path = eos_file.replace('.dat', '.pkl')
+    from zalmoxis.eos.interpolation import cache_path_for
+
+    pkl_path = cache_path_for(eos_file)
 
     # Hand-built minimal cache entry covering the keys
     # ``_phase_from_unified_grid`` reads.
@@ -186,7 +184,7 @@ def test_load_phase_grid_uses_pkl_cache_when_dat_absent(tmp_path, monkeypatch):
         'phase_grid': np.array([['solid'] * 5 for _ in range(5)], dtype=object),
     }
     with open(pkl_path, 'wb') as fh:
-        pickle.dump(payload, fh, protocol=4)
+        pickle.dump({'source_md5': '0' * 32, 'entry': payload}, fh, protocol=4)
 
     pc._PHASE_GRID_CACHE.pop(eos_file, None)
     cached = _load_phase_grid(eos_file)
