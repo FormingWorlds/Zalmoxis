@@ -227,7 +227,7 @@ class TestPaleosInstalledSha:
         assert isinstance(sha, str)
         # Valid outcomes: 40-hex git SHA, 'paleos-not-installed',
         # or 'version-...' (paleos.__version__ fallback).
-        is_hex_sha = bool(re.fullmatch(r'[0-9a-f]{40}', sha))
+        is_hex_sha = bool(re.fullmatch(r'[0-9a-f]{40}(-dirty-[0-9a-f]{8})?', sha))
         is_fallback = sha == 'paleos-not-installed' or sha.startswith('version-')
         assert is_hex_sha or is_fallback
 

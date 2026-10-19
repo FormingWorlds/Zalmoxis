@@ -46,3 +46,46 @@ def test_an_answer_that_is_no_sha_exits_three(capsys):
     """A reply without a 40-character commit SHA is treated as unread."""
     assert check.main(fetch=lambda: 'rate limited') == 3
     assert 'rate limited' in capsys.readouterr().out
+
+
+def test_a_main_that_is_not_found_fails_with_exit_4(capsys):
+    """A 404 (repository renamed or private) is no transient fault: exit 4 fails the job."""
+    import urllib.error
+
+    def fetch():
+        raise urllib.error.HTTPError(check._MAIN, 404, 'Not Found', {}, None)
+
+    assert check.main(fetch=fetch) == 4
+    assert 'not found' in capsys.readouterr().out
+
+
+def test_the_request_carries_the_token_when_one_is_set(monkeypatch):
+    """With GITHUB_TOKEN set the request is authenticated, which lifts the rate limit."""
+    seen = {}
+
+    class _Reply:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b'{"sha": "' + b'c' * 40 + b'"}'
+
+    def urlopen(request, timeout):
+        seen['auth'] = request.get_header('Authorization')
+        return _Reply()
+
+    monkeypatch.setattr(check.urllib.request, 'urlopen', urlopen)
+    monkeypatch.setenv('GITHUB_TOKEN', 'abc')
+    assert check.main_sha() == 'c' * 40
+    assert seen['auth'] == 'Bearer abc'
+
+
+def test_an_annotated_pin_is_read(tmp_path, monkeypatch):
+    """PALEOS_TESTED_SHA: str = '...' is read like a plain assignment."""
+    src = tmp_path / 'paleos_api.py'
+    src.write_text("PALEOS_TESTED_SHA: str = '" + 'd' * 40 + "'\n")
+    monkeypatch.setattr(check, '_SOURCE', src)
+    assert check.tested_sha() == 'd' * 40
