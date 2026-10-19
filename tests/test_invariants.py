@@ -958,3 +958,54 @@ def test_a_layer_mass_at_a_zero_fraction_must_be_zero(value, raises):
         else nullcontext()
     ):
         _check(result, cfg)
+
+
+def _message(result, cfg, limit=1e-3):
+    with pytest.raises(StructureInvariantError) as info:
+        _check(result, cfg, limit)
+    return str(info.value)
+
+
+@pytest.mark.unit
+def test_a_scalar_invariant_names_its_value_and_the_expected_value_without_a_node():
+    result, cfg = _sphere()
+    result['cmb_mass'] *= 1 + 1e-9
+    msg = _message(result, cfg)
+    assert f'cmb_mass {result["cmb_mass"]:.6e}' in msg
+    assert f'expected {CMF * cfg["planet_mass"]:.6e}' in msg
+    assert 'tolerance 1.000e-12' in msg and 'node' not in msg
+
+
+@pytest.mark.unit
+def test_mass_closure_names_the_mass_the_target_and_the_limit_in_3_digits():
+    result, cfg = _sphere_off(0.05)
+    msg = _message(result, cfg, limit=0.0399)
+    assert f'{result["mass_enclosed"][-1]:.6e}' in msg and f'{cfg["planet_mass"]:.6e}' in msg
+    assert 'tolerance 3.990e-02' in msg and 'node' not in msg
+
+
+@pytest.mark.unit
+def test_gravity_names_the_value_and_g_m_over_r2_at_its_node():
+    result, cfg = _sphere()
+    result['gravity'][N // 2] *= 1 + 1e-5
+    m, r = result['mass_enclosed'][N // 2], result['radii'][N // 2]
+    msg = _message(result, cfg)
+    assert f'at node {N // 2}' in msg and f'gravity {result["gravity"][N // 2]:.6e}' in msg
+    assert f'expected {G * m / r**2:.6e}' in msg
+
+
+@pytest.mark.unit
+def test_padding_names_a_node_inside_the_profile():
+    result, cfg = _sphere()
+    result['pressure'][N - 3] = 0.0
+    msg = _message(result, cfg)
+    assert f'at node {N - 2}' in msg and 'pressure' in msg
+
+
+@pytest.mark.unit
+def test_cmb_node_names_cmb_mass_and_the_largest_enclosed_mass():
+    result, cfg = _sphere()
+    _no_node_at_cmb(result, cfg)
+    msg = _message(result, cfg, limit=0.03)
+    assert f'cmb_mass {result["cmb_mass"]:.6e}' in msg
+    assert f'largest mass_enclosed {result["mass_enclosed"].max():.6e}' in msg
