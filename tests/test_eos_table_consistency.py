@@ -165,3 +165,69 @@ def test_a_float64_table_is_checked_at_the_9_digit_floor(eos):
     """eps below EPS_FLOOR is raised to it, so an exact float64 table has no failing cell."""
     res = c.check(a.table(eos, LP, LT), np.finfo(float).eps)
     assert sum(int(v['fail'].sum()) for v in res.values()) == 0
+
+
+_PT_NAMES = {'density': 'rho', 'heat_capacity': 'cp', 'thermal_exp': 'alpha', 'entropy': 's'}
+
+
+@pytest.fixture(scope='module')
+def pt_files(tmp_path_factory):
+    """Exact tables written as the Aragog P-T files of eos_export ('%.10e', P slowest)."""
+    P, T = np.linspace(1e5, 3.5e11, 200), np.linspace(300.0, 6000.0, 200)  # the PROTEUS grid
+    PP, TT = np.meshgrid(P, T, indexing='ij')
+    out = {}
+    for name, eos in (('murnaghan', a.murnaghan), ('ideal', a.ideal_gas)):
+        d, cols, tabs = tmp_path_factory.mktemp(name), eos(PP, TT), {}
+        for q, key in _PT_NAMES.items():
+            path = d / f'{q}_solid.dat'
+            with open(path, 'w') as f:
+                f.write(f'#pressure\ttemperature\t{q}\n')
+                rows = np.column_stack([PP.ravel(), TT.ravel(), cols[key].ravel()])
+                np.savetxt(f, rows, fmt='%.10e', delimiter='\t')
+            r = np.loadtxt(path)
+            Pu, Tu = np.unique(r[:, 0]), np.unique(r[:, 1])
+            tabs[q] = {'P': Pu, 'T': Tu, 'values': r[:, 2].reshape(len(Pu), len(Tu))}
+        out[name] = tabs
+    return out
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('name', ['murnaghan', 'ideal'])
+def test_an_exact_aragog_pt_table_has_no_failing_cell(pt_files, name):
+    res = c.check_pt(pt_files[name], 5e-11)
+    assert {n: int(v['fail'].sum()) for n, v in res.items()} == dict.fromkeys(
+        c.PT_IDENTITIES, 0
+    )
+    assert all(v['tested'].sum() > 30_000 for v in res.values())
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('name', ['murnaghan', 'ideal'])
+@pytest.mark.parametrize(
+    'quantity, identity, axis',
+    [('entropy', 'cp', 1), ('density', 'alpha', 1), ('entropy', 'maxwell', 0)],
+)
+@pytest.mark.parametrize('size', [1e-4, 1e-6])
+def test_a_planted_value_in_aragog_pt_files_fails_one_and_two_steps_away(
+    pt_files, name, quantity, identity, axis, size
+):
+    t = pt_files[name]
+    t = {**t, quantity: {**t[quantity], 'values': t[quantity]['values'].copy()}}
+    t[quantity]['values'][100, 100] *= 1 + size
+    fail = c.check_pt(t, 5e-11)[identity]['fail']
+    cells = [(100 + o, 100) if axis == 0 else (100, 100 + o) for o in (-2, -1, 1, 2)]
+    assert [bool(fail[x]) for x in cells] == [True] * 4
+
+
+@pytest.mark.unit
+def test_the_fill_value_counts_as_a_missing_cell(pt_files):
+    t = pt_files['murnaghan']
+    t = {**t, 'entropy': {**t['entropy'], 'values': t['entropy']['values'].copy()}}
+    t['entropy']['values'][30, 30] = c.PT_FILL
+    res = c.check_pt(t, 5e-11)['cp']
+    assert not res['tested'][30, 29:32].any() and not res['fail'].any()
+
+
+@pytest.mark.unit
+def test_a_coordinate_grid_shorter_than_the_stencil_gives_no_derivative():
+    assert np.isnan(c._coord_stencil(np.ones((3, 4)), np.arange(3.0), 0, 2, -1.0)).all()

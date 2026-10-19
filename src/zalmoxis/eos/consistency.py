@@ -208,3 +208,95 @@ def signs(table, eps):
             'cp_ge_cv': cv - cp > eps * (np.abs(cp) + np.abs(cv)),
             'kappa_T': rise < -noise,
         }
+
+
+PT_IDENTITIES = ('cp', 'maxwell', 'alpha')
+PT_QUANTITIES = ('density', 'heat_capacity', 'thermal_exp', 'entropy')
+PT_FILL = 1e-15  # the value eos_export writes for a cell without data
+
+
+def _coord_stencil(f, x, axis, k, sign):
+    """(f[i+k] + sign f[i-k]) / (x[i+k] - x[i-k]), NaN where a stencil cell is missing."""
+    n = f.shape[axis]
+    out = np.full(f.shape, np.nan)
+    if n <= 2 * k:
+        return out
+    run = np.cumsum(~np.isfinite(f), axis=axis)
+
+    def cut(a, b):
+        return tuple(slice(a, b) if ax == axis else slice(None) for ax in range(f.ndim))
+
+    shape = [1] * f.ndim
+    shape[axis] = n - 2 * k
+    dx = (x[2 * k :] - x[: n - 2 * k]).reshape(shape)
+    ok = np.isfinite(f[cut(0, n - 2 * k)]) & (run[cut(2 * k, n)] == run[cut(0, n - 2 * k)])
+    out[cut(k, n - k)] = np.where(
+        ok, (f[cut(2 * k, n)] + sign * f[cut(0, n - 2 * k)]) / dx, np.nan
+    )
+    return out
+
+
+def _pt_parts(tables, k):
+    """(D, E, Q, q) per identity of the Aragog P-T tables, with R + 1 = D / Q."""
+    P, T = np.asarray(tables['density']['P'], float), np.asarray(tables['density']['T'], float)
+    rho, cp, alpha, s = (
+        np.where(np.asarray(tables[q]['values'], float) == PT_FILL, np.nan, tables[q]['values'])
+        for q in PT_QUANTITIES
+    )
+    TT = np.broadcast_to(T[None, :], rho.shape)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        ln_rho = np.log(rho)
+        one = np.where(np.isfinite(ln_rho), 1.0, np.nan)
+
+        def d(f, x, ax, log=False):
+            ends = one if log else np.abs(f)
+            return _coord_stencil(f, x, ax, k, -1.0), _coord_stencil(ends, x, ax, k, 1.0)
+
+        return {
+            'cp': (*d(s, T, 1), cp / TT, 1.0),
+            'maxwell': (*d(s, P, 0), -alpha / rho, 2.0),
+            'alpha': (*d(ln_rho, T, 1, log=True), -alpha, 1.0),
+        }
+
+
+def check_pt(tables, eps, factor=2.0):
+    """``check`` for the Aragog P-T tables that eos_export writes (no u, cv or nabla_ad).
+
+    Parameters
+    ----------
+    tables : dict
+        ``PT_QUANTITIES`` name -> dict with ``P`` (Pa) and ``T`` (K) grid vectors and ``values``
+        of shape (n_P, n_T); the fill value ``PT_FILL`` counts as a missing cell.
+    eps : float
+        Relative precision of the stored values; raised to ``EPS_FLOOR`` at least.
+    factor : float
+        Allowed multiple of the h^4 term.
+
+    Returns
+    -------
+    dict
+        As for ``check``, for the identities cp = T (ds/dT)_P, (ds/dP)_T = -alpha / rho and
+        alpha = -(dln rho/dT)_P.
+    """
+    eps = max(eps, EPS_FLOOR)
+    parts = {k: _pt_parts(tables, k) for k in (1, 2, 4)}
+    out = {}
+    with np.errstate(divide='ignore', invalid='ignore'):
+        for n in PT_IDENTITIES:
+            r = {k: parts[k][n][0] / parts[k][n][2] - 1 for k in (1, 2, 4)}
+            fl = {
+                k: (parts[k][n][1] / np.abs(parts[k][n][2]) + np.abs(r[k] + 1) * parts[k][n][3])
+                * eps
+                for k in (1, 2)
+            }
+            rx = (4 * r[1] - r[2]) / 3
+            est = np.abs((4 * r[2] - r[4]) / 3 - rx) / 15
+            bound = (4 * fl[1] + fl[2]) / 3 + factor * est
+            tested = np.isfinite(rx) & np.isfinite(bound)
+            out[n] = {
+                'rx': rx,
+                'bound': bound,
+                'tested': tested,
+                'fail': tested & (np.abs(rx) > bound),
+            }
+    return out
