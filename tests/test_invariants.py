@@ -1049,3 +1049,52 @@ def test_the_density_reference_takes_the_eos_parameters_of_the_solve(kwargs):
     default parameters breaks density_eos on these planets."""
     r = _run(_paleos_eos_cfg(**kwargs))
     assert r['converged'] and r['density_from_eos']
+
+
+def _spy_checks(monkeypatch):
+    """Record the ``ice`` argument of every check that main runs."""
+    seen, real = [], zs.check_accepted
+
+    def spy(result, cfg, rtol, atol, density_at=None, ice=False):
+        seen.append(ice)
+        return real(result, cfg, rtol, atol, density_at, ice)
+
+    monkeypatch.setattr(zs, 'check_accepted', spy)
+    return seen
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.timeout(2400)
+def test_an_ice_planet_passes_the_check_with_its_mantle_top_node(monkeypatch):
+    """A real 3-layer solve (PALEOS iron, MgSiO3, H2O): main checks it with the ice layer, and
+    a node reaches core_mantle_mass, the mantle top that PROTEUS reads."""
+    seen = _spy_checks(monkeypatch)
+    layers = {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3', 'ice_layer': 'PALEOS:H2O'}
+    r = _run(
+        _paleos_eos_cfg(
+            layer_eos_config=layers, core_mass_fraction=0.3, mantle_mass_fraction=0.4
+        )
+    )
+    assert r['converged'] and r['density_from_eos'] and seen and all(seen)
+    assert np.max(r['mass_enclosed']) >= r['core_mantle_mass'] * (1 - _RTOL_LAYER)
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.timeout(2400)
+def test_a_jax_solve_through_main_runs_the_kernel_and_the_check(monkeypatch):
+    """A real solve with use_jax runs the JAX kernel and main checks its accepted result."""
+    import zalmoxis.jax_eos.wrapper as jw
+
+    ran, real = [], jw.solve_structure_via_jax
+
+    def kernel(*args, **kwargs):
+        ran.append(1)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(jw, 'solve_structure_via_jax', kernel)
+    seen = _spy_checks(monkeypatch)
+    r = _run(_paleos_eos_cfg(outer_solver='picard', use_jax=True, relative_tolerance=1e-8))
+    assert r['converged'] and r['density_from_eos']
+    assert ran and seen == [False]
