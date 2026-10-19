@@ -216,8 +216,13 @@ def test_a_column_off_the_shape_of_the_grid_is_rejected(stored):
 
 @pytest.mark.unit
 def test_a_check_that_tests_no_cell_raises(stored):
+    res = c.check(
+        a.table(a.murnaghan, LP[:8], LT[:8], digits=9), EPS9
+    )  # too short to differentiate
+    assert {n for n, v in res.items() if v['skipped']} == set(c.IDENTITIES) - {'nabla_ad'}
+    t = {**stored['murnaghan'], 'rho': np.full_like(stored['murnaghan']['rho'], np.nan)}
     with pytest.raises(ValueError, match='no cell'):
-        c.check(a.table(a.murnaghan, LP[:8], LT[:8], digits=9), EPS9)
+        c.check(t, EPS9)
 
 
 @pytest.mark.unit

@@ -51,18 +51,32 @@ def derivative(f, seg, axis, k, h):
     return _stencil(f, seg, axis, k, h, -1.0)
 
 
-def _grid(table):
+GRID_FIT = 2e-8  # log10 departure from a uniform grid; 9-digit coordinates give up to ~2e-9
+
+
+def _axes(table):
+    """The two log10 axes, checked: at least 2 points, finite, increasing, within GRID_FIT of
+    a uniform grid, and every column on their shape."""
     lp, lt = np.asarray(table['unique_log_p'], float), np.asarray(table['unique_log_t'], float)
     for name, x in (('unique_log_p', lp), ('unique_log_t', lt)):
-        d = np.diff(x)
-        if not (np.isfinite(x).all() and (d > 0).all()):
+        if x.size < 2:
+            raise ValueError(f'{name} needs at least 2 points')
+        if not (np.isfinite(x).all() and (np.diff(x) > 0).all()):
             raise ValueError(f'{name} must be finite and strictly increasing')
-        if d.size > 1 and np.ptp(d) > 1e-5 * d.mean():  # 9-digit coordinates spread up to ~5e-6
-            raise ValueError(f'{name} is not a uniform grid')
+        i = np.arange(x.size)
+        off = np.abs(x - np.polyval(np.polyfit(i, x, 1), i)).max()
+        if off > GRID_FIT:
+            raise ValueError(f'{name} is not a uniform grid: {off:.1e} off a linear fit')
+    shape = (lp.size, lt.size)
+    if any(np.shape(table[c]) != shape for c in (*COLUMNS, 'phase')):
+        raise ValueError('a column does not have the shape of the (P, T) grid')
+    return lp, lt
+
+
+def _grid(table):
+    lp, lt = _axes(table)
     P, T = np.meshgrid(10.0**lp, 10.0**lt, indexing='ij')
     cols = [np.asarray(table[c], float) for c in COLUMNS]
-    if any(np.shape(v) != P.shape for v in (*cols, table['phase'])):
-        raise ValueError('a column does not have the shape of the (P, T) grid')
     return np.log(10.0) * np.diff(lp).mean(), np.log(10.0) * np.diff(lt).mean(), P, T, *cols
 
 
@@ -140,9 +154,9 @@ def floors(table, eps, k=1):
 
 def _eps(eps):
     """``eps`` raised to ``EPS_FLOOR``; ValueError unless it is a real number in [0, 1)."""
-    real = isinstance(eps, (numbers.Real, np.integer, np.floating))
+    real = isinstance(eps, numbers.Real) and not isinstance(eps, (bool, np.timedelta64))
     try:
-        x = float(eps) if real and not isinstance(eps, (bool, np.bool_)) else np.nan
+        x = float(eps) if real else np.nan
     except OverflowError:
         x = np.nan
     if not 0 <= x < 1:
@@ -164,10 +178,12 @@ def _richardson(r1, r2, r4, f1, f2):
 
 
 def _nonempty(out):
-    """``out``; ValueError if an identity tests no cell."""
-    empty = [n for n, v in out.items() if not v['tested'].any()]
-    if empty:
-        raise ValueError(f'no cell tested for {", ".join(empty)}')
+    """``out`` with ``skipped`` set on each identity that tests no cell; ValueError if none
+    tests a cell."""
+    for v in out.values():
+        v['skipped'] = not v['tested'].any()
+    if all(v['skipped'] for v in out.values()):
+        raise ValueError(f'no cell tested for {", ".join(out)}')
     return out
 
 
@@ -183,15 +199,16 @@ def check(table, eps):
     The floor uses eps_eff = max(eps, EPS_FLOOR): every table is checked at the 9-digit
     floor at best, so a single value off by about 1e-8 (relative) or less is out of reach on any
     table. A derivative identity is tested only where 4 cells on each side along its axis hold
-    values of one phase. On a coarse grid the h^4 term can change sign at a cell where the
-    h^6 term remains, and an exact table then fails there: 8 dudt cells of the Murnaghan table at
-    20 points per decade over P 1e5 to 1e14 Pa and T 300 to 1e5 K.
+    values of one phase. On a coarse grid a cell can lie outside the range where the
+    Richardson estimate holds (R_x(2h) / R_x(h) far from 16), and an exact table can fail there:
+    8 dudt cells of the Murnaghan table at 20 points per decade over P 1e5 to 1e14 Pa and T 300
+    to 1e5 K.
 
     Parameters
     ----------
     table : dict
-        As for ``residuals``, on a grid uniform in log10 P and log10 T (step spread at most
-        1e-5 of the step).
+        As for ``residuals``, on a grid uniform in log10 P and log10 T: each axis within
+        ``GRID_FIT`` of a linear fit, as 9-digit coordinates are.
     eps : float
         Relative precision of the stored columns (0.5 x 10^(1 - n) for n significant digits).
 
@@ -199,13 +216,15 @@ def check(table, eps):
     -------
     dict
         Identity name -> dict with ``rx`` (the tested residual), ``bound``, ``tested`` (both
-        finite) and ``fail`` (tested and above the bound) arrays.
+        finite) and ``fail`` (tested and above the bound) arrays, and ``skipped``, True when
+        the identity tests no cell.
 
     Raises
     ------
     ValueError
-        If eps is not a real number in [0, 1), an axis is not finite, increasing and uniform,
-        a column is off the shape of the grid, or an identity tests no cell.
+        If eps is not a real number in [0, 1), an axis has fewer than 2 points or is not
+        finite, increasing and uniform, a column is off the shape of the grid, or no identity
+        tests a cell.
     """
     eps = _eps(eps)
     r = {k: residuals(table, k) for k in (1, 2, 4)}
@@ -238,14 +257,16 @@ def signs(table, eps):
         and ``cv`` not positive; ``cp_ge_cv``: cv above cp by more than eps (|cp| + |cv|);
         ``kappa_T``: rho falls with P at fixed T by more than the rounding of its two
         neighbours (central difference over one cell on each side, one phase). A condition
-        tests the cells where its values are not NaN; an infinite value breaks it.
+        tests the cells where its values are not NaN; an infinite value breaks the rho, cp, cv
+        and cp_ge_cv conditions, and kappa_T does not test it.
 
     Raises
     ------
     ValueError
-        If eps is not a real number in [0, 1).
+        If eps is not a real number in [0, 1), or the axes or shapes fail as for ``check``.
     """
     eps = _eps(eps)
+    _axes(table)
     rho, cp, cv = (np.asarray(table[c], float) for c in ('rho', 'cp', 'cv'))
     seg = segments(table, 0, ('rho',))
     rise = _stencil(rho, seg, 0, 1, 0.5, -1.0)  # rho[i+1] - rho[i-1]
@@ -341,7 +362,8 @@ def check_pt(tables, eps):
     Raises
     ------
     ValueError
-        If eps is not a finite number in [0, 1), or the four tables are not on one grid.
+        If eps is not a real number in [0, 1), the four tables are not on one grid of
+        strictly increasing P and T or off its shape, or no identity tests a cell.
     """
     eps = _eps(eps)
     parts = {k: _pt_parts(tables, k) for k in (1, 2, 4)}
