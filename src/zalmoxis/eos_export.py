@@ -133,7 +133,8 @@ def load_paleos_with_lowt_extension(eos_file, lowt_file):
         If the extension pressure rows differ from the PALEOS rows, if an extension node
         does not continue the PALEOS log-T grid below it, or if on a row that uses the
         extension the seam node is missing or its s or rho differs from the PALEOS value by
-        more than 1e-6 relative.
+        more than 1e-6 relative, or if below the seam s does not increase strictly with T
+        or an extension cell used has cp <= 0.
     """
     base = load_paleos_all_properties(eos_file)
     ext = load_paleos_all_properties(lowt_file)
@@ -179,6 +180,15 @@ def load_paleos_with_lowt_extension(eos_file, lowt_file):
         use = np.flatnonzero(col < k0)
         for key in (*_LOWT_PROPS, 'phase'):
             out[key][i, col[use]] = ext[key][j, use]
+        s_row = out['s'][i, : k0 + 1]
+        if np.any(np.diff(s_row[np.isfinite(s_row)]) <= 0.0):
+            raise ValueError(
+                f'{lowt_file}: s does not increase with T below P = {P_row:.6e} Pa'
+            )
+        if np.any(out['cp'][i, col[use]] <= 0.0):
+            raise ValueError(
+                f'{lowt_file}: cp is not positive below the seam at P = {P_row:.6e} Pa'
+            )
 
     first = np.flatnonzero(np.isfinite(out['s']).any(axis=0))[0]
     out = {key: grid[:, first:] for key, grid in out.items()}
