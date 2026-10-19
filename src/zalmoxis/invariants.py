@@ -23,7 +23,9 @@ TOLERANCES = {
     'density_eos': 1e-6,
 }
 _RTOL_LAYER = 1e-12  # the layer rule of structure_model.get_layer_mixture
-_PROFILE = 'radii mass_enclosed gravity pressure density cmb_mass core_mantle_mass'.split()
+_PROFILE = (
+    'radii mass_enclosed gravity pressure density temperature cmb_mass core_mantle_mass'.split()
+)
 
 
 class StructureInvariantError(Exception):
@@ -78,12 +80,10 @@ def deviations(result, config_params, mass_limit, rtol, atol, density_at=None, i
         {invariant: (deviation, node index, tolerance)}. The checks use the nodes
         before the first node with P <= 0; the nodes after it are padding with P = 0.
     """
-    P, rho, m, r, g = (
+    P, rho, m, r, g, T = (
         np.asarray(result[k], float)
-        for k in ('pressure', 'density', 'mass_enclosed', 'radii', 'gravity')
+        for k in ('pressure', 'density', 'mass_enclosed', 'radii', 'gravity', 'temperature')
     )
-    T = result.get('temperature')
-    T = np.full(len(P), 300.0) if T is None else np.asarray(T, float)
     ok = np.isfinite(P) & (P > 0)
     k = len(P) if ok.all() else int(np.argmin(ok))
     out = {}
@@ -164,8 +164,8 @@ def check_accepted(result, config_params, rtol, atol, density_at=None, ice=False
             f'Accepted structure ({accepted_on=}) has no {", ".join(missing)}.'
         )
     try:
-        shapes = [np.asarray(result[k], float).shape for k in _PROFILE[:5]]
-        scalars = [np.ndim(np.asarray(result[k], float)) for k in _PROFILE[5:]]
+        shapes = [np.asarray(result[k], float).shape for k in _PROFILE[:6]]
+        scalars = [np.ndim(np.asarray(result[k], float)) for k in _PROFILE[6:]]
     except (TypeError, ValueError) as err:
         raise StructureInvariantError(
             f'Accepted structure ({accepted_on=}) is malformed: {err}'
