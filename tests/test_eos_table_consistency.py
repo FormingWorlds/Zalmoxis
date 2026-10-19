@@ -589,8 +589,12 @@ _FLOOR_PARTS = {
 @pytest.mark.parametrize('cell', [(300, 50), (600, 100)])
 def test_the_floor_is_the_first_order_round_off_of_each_stored_value(stored, name, cell):
     """Moving each stored value that enters the identity by eps alone, the sum of the changes
-    of R at the cell is its floor (first order): no term of the floor is lost or doubled."""
-    m, eps, (i, j) = stored['murnaghan'], 1e-9, cell
+    of R at the cell is its floor (first order): no term of the floor is lost or doubled. On the
+    ideal gas with s and u shifted to 0 at the cell (no identity changes), the stencil term is
+    small enough that the algebraic-factor term weighs in."""
+    m, eps, (i, j) = dict(stored['ideal']), 1e-9, cell
+    for col in ('s', 'u'):
+        m[col] = m[col] - m[col][i, j]
     base = c.residuals(m, 1)[name][i, j]
     if name == 'nabla_ad':
         moves = [(col, (i, j)) for col in ('nabla_ad', 'rho', 'cp', 'alpha')]
