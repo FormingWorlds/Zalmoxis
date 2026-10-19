@@ -59,6 +59,10 @@ def extension_grid(table_file, t_min=50.0, p_max=12.0e9):
     """
     data = np.loadtxt(table_file, usecols=(0, 1), comments='#')
     P, T_tab = np.unique(data[:, 0]), np.unique(data[:, 1])
+    if not 0.0 < t_min < T_tab[0]:
+        raise ValueError(
+            f't_min = {t_min} K must lie between 0 K and the table minimum {T_tab[0]} K'
+        )
     log_t = np.log10(T_tab)
     step = np.diff(log_t).mean()
     n = int(np.ceil((log_t[0] - np.log10(t_min)) / step - 1.0e-9))

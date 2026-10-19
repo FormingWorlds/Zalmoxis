@@ -467,6 +467,7 @@ class TestLowTMergeGuards:
         assert out['unique_log_t'].size == _T.size - 1
 
 
+@pytest.mark.filterwarnings('ignore:loadtxt. input contained no data')
 def test_extension_without_data_rows_is_an_error(tmp_path):
     """An extension file that holds only comments is refused with a named error."""
     ext = tmp_path / 'empty.dat'

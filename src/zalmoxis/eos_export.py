@@ -83,7 +83,7 @@ def load_paleos_all_properties(eos_file):
         If a data line holds a token that is not a number (``N/A``, ``---``,
         ``1.0D+00``, a byte-order mark, ``1_0``) or a phase label of 32
         characters or longer. Every ``#`` line is a comment; a header line
-        without ``#`` is such a token.
+        without ``#`` is such a token. Also if the table holds no data row with P > 0.
     """
     path = os.path.realpath(str(eos_file))
     msg = f'PALEOS table {str(eos_file)!r} is not a file'
@@ -231,6 +231,8 @@ def _parse_paleos_table(eos_file, file_id):
     temps = temps[valid]
     data = data[valid]
     phase_strings = np.char.strip(phase_strings[valid])
+    if pressures.size == 0:
+        raise ValueError(f'{eos_file}: the table holds no data rows with P > 0')
 
     log_p = np.log10(pressures)
     log_t = np.log10(temps)
@@ -786,6 +788,8 @@ def generate_spider_eos_tables(
     logger.info('Generating SPIDER P-S EOS tables from %s', eos_file)
     if solid_lowt_file is not None and not (solid_eos_file and liquid_eos_file):
         raise ValueError('a low-temperature solid extension needs the two-phase tables')
+    if solid_lowt_file is not None and n_S < 2:
+        raise ValueError('a low-temperature solid extension needs n_S >= 2')
     table = load_paleos_all_properties(eos_file)
 
     log_p_grid = table['unique_log_p']
