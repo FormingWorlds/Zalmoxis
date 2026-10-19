@@ -20,6 +20,7 @@ References:
 
 from __future__ import annotations
 
+import hashlib
 import os
 import pickle
 import tempfile
@@ -389,7 +390,6 @@ class TestEnsureUnifiedCache:
         from unittest.mock import patch
 
         from zalmoxis.eos import _ensure_unified_cache
-        from zalmoxis.eos.registry_guard import file_md5
 
         eos_file = str(tmp_path / 'good_table.dat')
         cache_path = str(tmp_path / 'good_table.cache.pkl')
@@ -397,7 +397,8 @@ class TestEnsureUnifiedCache:
             f.write('# good table\n')
         cached = {'type': 'paleos_unified', 'p_min': 2.0e5, 'p_max': 5.0e11}
         with open(cache_path, 'wb') as f:
-            pickle.dump({'source_md5': file_md5(eos_file), 'entry': cached}, f, protocol=4)
+            digest = hashlib.md5(open(eos_file, 'rb').read()).hexdigest()
+            pickle.dump({'source_md5': digest, 'entry': cached}, f, protocol=4)
 
         cache = {}
         with patch('zalmoxis.eos.interpolation.load_paleos_unified_table') as mock_load:
@@ -457,7 +458,6 @@ class TestEnsureUnifiedCache:
         from unittest.mock import patch
 
         from zalmoxis.eos import _ensure_unified_cache
-        from zalmoxis.eos.registry_guard import file_md5
 
         eos_file = str(tmp_path / 'current_table.dat')
         cache_path = str(tmp_path / 'current_table.cache.pkl')
@@ -465,7 +465,8 @@ class TestEnsureUnifiedCache:
         with open(eos_file, 'w') as f:
             f.write('# current table\n')
         with open(cache_path, 'wb') as f:
-            pickle.dump({'source_md5': file_md5(eos_file), 'entry': cached}, f, protocol=4)
+            digest = hashlib.md5(open(eos_file, 'rb').read()).hexdigest()
+            pickle.dump({'source_md5': digest, 'entry': cached}, f, protocol=4)
         os.utime(cache_path, (1_000_000, 1_000_000))
         os.utime(eos_file, (2_000_000, 2_000_000))
 
