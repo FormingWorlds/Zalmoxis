@@ -387,34 +387,130 @@ class TestLowTMergeGuards:
         ('col', 'value'),
         [
             (0, float('nan')),
-            (0, 0.0),
-            (0, -1.0),
+            (1, float('nan')),
+            (2, float('nan')),
             (3, float('nan')),
             (4, float('nan')),
-            (4, 0.0),
             (5, float('nan')),
             (5, float('inf')),
             (6, float('nan')),
-            (1, float('nan')),
-            (2, float('nan')),
-            (4, -1.0),
         ],
     )
-    def test_used_cell_that_is_not_finite_or_not_positive_is_an_error(
-        self, tmp_path, col, value
-    ):
-        """Used cells need finite properties, and rho, cp and cv above 0."""
+    def test_used_cell_that_is_not_finite_is_an_error(self, tmp_path, col, value):
+        """Every property of a used cell must be finite."""
 
         def edit(i, k, v):
             if i == 0 and k == 2:
                 v[col] = value
 
         pal = _paleos(tmp_path, [6, 6, 6, 6])
-        with pytest.raises(
-            ValueError,
-            match='a missing or non-finite extension cell|rho, cp or cv is not positive',
-        ):
+        with pytest.raises(ValueError, match='a missing or non-finite extension cell'):
             eos_export.load_paleos_with_lowt_extension(pal, _ext_cells(tmp_path, edit))
+        assert np.isfinite(
+            eos_export.load_paleos_with_lowt_extension(pal, _ext(tmp_path))['s']
+        ).all()
+
+    @pytest.mark.parametrize(
+        ('col', 'value'), [(0, 0.0), (0, -1.0), (3, 0.0), (4, 0.0), (4, -1.0)]
+    )
+    def test_used_cell_with_rho_cp_or_cv_not_positive_is_an_error(self, tmp_path, col, value):
+        """rho, cp and cv of a used cell must be above 0."""
+
+        def edit(i, k, v):
+            if i == 0 and k == 2:
+                v[col] = value
+
+        pal = _paleos(tmp_path, [6, 6, 6, 6])
+        with pytest.raises(ValueError, match='rho, cp or cv is not positive'):
+            eos_export.load_paleos_with_lowt_extension(pal, _ext_cells(tmp_path, edit))
+        assert np.isfinite(
+            eos_export.load_paleos_with_lowt_extension(pal, _ext(tmp_path))['s']
+        ).all()
+
+    @pytest.mark.parametrize(('col', 'value'), [(5, -1.0e-6), (5, 0.0), (6, -0.1), (6, 0.0)])
+    def test_used_cell_may_hold_alpha_or_nabla_ad_of_either_sign(self, tmp_path, col, value):
+        """alpha and nabla_ad may be zero or negative in a used cell; only finiteness is required."""
+
+        def edit(i, k, v):
+            if i == 0 and k == 2:
+                v[col] = value
+
+        pal = _paleos(tmp_path, [6, 6, 6, 6])
+        try:
+            out = eos_export.load_paleos_with_lowt_extension(pal, _ext_cells(tmp_path, edit))
+        except ValueError as exc:
+            pytest.fail(f'the extension was refused: {exc}')
+        key = ('alpha', 'nabla_ad')[col - 5]
+        assert out[key][0, 2] == value
+        assert np.isfinite(out['s']).all()
+
+    def test_entropy_not_rising_into_the_seam_is_an_error(self, tmp_path):
+        """The step from the highest extension node into the seam must rise in s as well."""
+
+        def edit(i, k, v):
+            if i == 1 and k == 5:
+                v[2] = _props(_P[1], _T[6])[2]
+
+        pal = _paleos(tmp_path, [6, 6, 6, 6])
+        with pytest.raises(ValueError, match='s does not increase with T'):
+            eos_export.load_paleos_with_lowt_extension(pal, _ext_cells(tmp_path, edit))
+        assert np.isfinite(
+            eos_export.load_paleos_with_lowt_extension(pal, _ext(tmp_path))['s']
+        ).all()
+
+    def test_extension_phase_labels_reach_the_merged_cells(self, tmp_path):
+        """Below the seam the merged table takes the phase label of the extension."""
+        pal = _paleos(tmp_path, [6, 6, 6, 6])
+        ext = _write(
+            tmp_path / 'ext_hp.dat', [(P, T) for P in _P for T in _T[:7]], phase='solid-hpcen'
+        )
+        out = eos_export.load_paleos_with_lowt_extension(pal, ext)
+        assert set(out['phase'][:, :6].ravel()) == {'solid-hpcen'}
+        assert set(out['phase'][:, 6:].ravel()) == {'solid-lpcen'}
+
+    def test_non_finite_paleos_value_at_the_seam_is_named(self, tmp_path):
+        """A PALEOS seam cell with a finite s but another non-finite property is named as such."""
+
+        def nan_cp(P, T, v):
+            if P == _P[2] and T == _T[6]:
+                v[3] = float('nan')
+
+        pal = _write(
+            tmp_path / 'pal_nan.dat', [(P, T) for P in _P for T in _T[6:]], edit=nan_cp
+        )
+        with pytest.raises(ValueError, match='PALEOS seam value is not finite'):
+            eos_export.load_paleos_with_lowt_extension(pal, _ext(tmp_path))
+        assert np.isfinite(
+            eos_export.load_paleos_with_lowt_extension(
+                _paleos(tmp_path, [6, 6, 6, 6]), _ext(tmp_path)
+            )['s']
+        ).all()
+
+    @pytest.mark.parametrize(
+        ('k', 'frac', 'ok'), [(6, 5.0e-4, True), (6, 5.0e-3, False), (3, 5.0e-3, False)]
+    )
+    def test_node_offsets_against_the_grid_tolerances(self, tmp_path, k, frac, ok):
+        """A node off the PALEOS grid by 5e-4 of a step maps onto it; 5e-3 of a step is refused,
+        at the seam node (node matching) and below it (grid continuation)."""
+        pal = _paleos(tmp_path, [6, 6, 6, 6])
+        T_k = 10.0 ** (np.log10(_T[k]) + frac * _DLOGT)
+        lines = ['# extension with one node off the grid\n']
+        for P in _P:
+            for kk, T in enumerate(_T[:7]):
+                vals = ' '.join(f'{v:.8e}' for v in _props(P, T))
+                lines.append(f'{P:.8e} {T_k if kk == k else T:.8e} {vals} solid-lpcen\n')
+        ext = tmp_path / 'ext_off.dat'
+        ext.write_text(''.join(lines))
+        if ok:
+            out = eos_export.load_paleos_with_lowt_extension(pal, ext)
+            assert out['unique_log_t'].size == _T.size
+            assert np.isfinite(out['s']).all()
+        else:
+            with pytest.raises(ValueError, match='do not continue the PALEOS log-T grid'):
+                eos_export.load_paleos_with_lowt_extension(pal, ext)
+            assert np.isfinite(
+                eos_export.load_paleos_with_lowt_extension(pal, _ext(tmp_path))['s']
+            ).all()
 
     @pytest.mark.parametrize('col', [1, 3, 4, 5, 6])
     def test_seam_mismatch_in_any_property_is_an_error(self, tmp_path, col):
@@ -458,7 +554,10 @@ class TestLowTMergeGuards:
         pal = _write(tmp_path / 'one_t.dat', [(P, _T[6]) for P in _P])
         with pytest.raises(ValueError, match='needs at least two temperatures'):
             eos_export.load_paleos_with_lowt_extension(pal, _ext(tmp_path))
-        assert pal.read_text().count('solid-lpcen') == len(_P)
+        two = _write(tmp_path / 'two_t.dat', [(P, T) for P in _P for T in _T[6:8]])
+        assert np.isfinite(
+            eos_export.load_paleos_with_lowt_extension(two, _ext(tmp_path))['s']
+        ).all()
 
     def test_missing_nodes_below_the_used_run_are_not_a_hole(self, tmp_path):
         """Nodes absent below the lowest used node only shorten the row."""
@@ -500,7 +599,11 @@ def test_extension_without_data_rows_is_an_error(tmp_path):
     ext.write_text('# only a header\n')
     with pytest.raises(ValueError, match='holds no data rows'):
         eos_export.load_paleos_with_lowt_extension(_paleos(tmp_path, [6, 6, 6, 6]), ext)
-    assert ext.read_text().startswith('#')
+    assert np.isfinite(
+        eos_export.load_paleos_with_lowt_extension(
+            _paleos(tmp_path, [6, 6, 6, 6]), _ext(tmp_path)
+        )['s']
+    ).all()
 
 
 def test_extension_needs_two_entropy_nodes(tmp_path):
@@ -527,7 +630,10 @@ def test_missing_two_phase_tables_stop_before_the_extension_is_read(tmp_path, mo
     """The two-phase check comes before the extension load: the loader is never reached."""
     solid, _, ext = _gen_tables(tmp_path)
 
+    calls = []
+
     def loaded(*args):
+        calls.append(args)
         raise ValueError('extension loaded')
 
     monkeypatch.setattr(eos_export, 'load_paleos_with_lowt_extension', loaded)
@@ -541,4 +647,4 @@ def test_missing_two_phase_tables_stop_before_the_extension_is_read(tmp_path, mo
             n_S=40,
             solid_lowt_file=ext,
         )
-    assert ext.is_file()
+    assert calls == []

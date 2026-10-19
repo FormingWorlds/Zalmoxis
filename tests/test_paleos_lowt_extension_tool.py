@@ -72,11 +72,14 @@ def test_point_with_a_non_finite_property_is_left_out(tmp_path):
     assert 'nan' not in out.read_text()
 
 
-def test_command_line_needs_a_commit_outside_a_git_checkout(tmp_path):
+def test_command_line_needs_a_commit_outside_a_git_checkout(tmp_path, capsys):
+    """A plain folder as --paleos-src needs --paleos-commit."""
     src = tmp_path / 'paleos_src'
     src.mkdir()
     with pytest.raises(SystemExit):
         tool.main(['--paleos-src', str(src), '--table', 'x', '--out', str(tmp_path / 'o')])
+    assert 'is not the top of a git checkout' in capsys.readouterr().err
+    assert not (tmp_path / 'o').exists()
 
 
 def _git(path, *args):
@@ -99,26 +102,32 @@ def _git_repo(path, commit=True):
     return _git(path, 'rev-parse', 'HEAD')
 
 
-def _stub_paleos(src):
-    """A paleos package under ``src`` whose MgSiO3EoS returns the synthetic properties."""
+def _stub_paleos(src, ds=0.0):
+    """A paleos package under ``src`` whose MgSiO3EoS returns the synthetic properties, with
+    ``ds`` added to s."""
     (src / 'paleos').mkdir()
     (src / 'paleos' / '__init__.py').write_text('')
     stub = ['from tests.test_eos_lowt_extension import _props', '', 'class MgSiO3EoS:']
     for i, m in enumerate(tool._METHODS):
-        stub.append(f'    def {m}(self, P, T):\n        return _props(P, T)[{i}]')
+        add = f' + {ds!r}' if m == 'specific_entropy' else ''
+        stub.append(f'    def {m}(self, P, T):\n        return _props(P, T)[{i}]{add}')
     stub.append("    def phase(self, P, T):\n        return 'solid-lpcen'")
     (src / 'paleos' / 'mgsio3_eos.py').write_text('\n'.join(stub) + '\n')
 
 
 @pytest.fixture
 def clean_import(monkeypatch):
-    """main() inserts --paleos-src into sys.path and imports paleos: restore both afterwards."""
+    """main() inserts --paleos-src into sys.path and imports paleos: restore both afterwards,
+    including the removal of paleos modules that the test added."""
     import sys
 
+    before = {k for k in sys.modules if k.split('.')[0] == 'paleos'}
     monkeypatch.setattr(sys, 'path', list(sys.path))
     for name in ('paleos', 'paleos.mgsio3_eos'):
         monkeypatch.delitem(sys.modules, name, raising=False)
-    return monkeypatch
+    yield monkeypatch
+    for k in [k for k in sys.modules if k.split('.')[0] == 'paleos' and k not in before]:
+        del sys.modules[k]
 
 
 def _main(src, table, out, *extra):
@@ -146,9 +155,11 @@ def test_command_line_refuses_a_checkout_without_a_commit(tmp_path, capsys):
     assert not (tmp_path / 'o').exists()
 
 
-@pytest.mark.parametrize('commit', ['', 'abc', 'abcdef1\n# T 1', 'g000000', 'abcdef1 x'])
+@pytest.mark.parametrize(
+    'commit', ['', 'abc', 'abcdef', 'a' * 65, 'abcdef1\n# T 1', 'g000000', 'abcdef1 x']
+)
 def test_command_line_refuses_a_commit_that_is_not_a_hash(tmp_path, capsys, commit):
-    """--paleos-commit must be 7 to 40 hex digits, so it cannot break the header."""
+    """--paleos-commit must be 7 to 64 hex digits, so it cannot break the header."""
     with pytest.raises(SystemExit):
         _main(
             tmp_path, _paleos(tmp_path, [6, 6, 6, 6]), tmp_path / 'o', '--paleos-commit', commit
@@ -175,49 +186,122 @@ def test_command_line_refuses_a_paleos_imported_from_elsewhere(tmp_path, capsys,
     assert not (tmp_path / 'o').exists()
 
 
-def test_command_line_writes_the_commit_and_the_dirty_state(tmp_path, clean_import):
-    """Uncommitted changes in the PALEOS checkout are marked next to its HEAD."""
-    src = tmp_path / 'paleos_src'
-    sha = _git_repo(src)
-    _stub_paleos(src)
-    table, out = _paleos(tmp_path, [6, 6, 6, 6]), tmp_path / 'ext.dat'
-    _main(src, table, out, '--t-min', '150.4')
-    assert f'# PALEOS commit: {sha} (uncommitted changes)' in out.read_text().splitlines()[:5]
-    assert np.isfinite(eos_export.load_paleos_with_lowt_extension(table, out)['s']).all()
-
-
-def test_command_line_writes_a_clean_commit(tmp_path, clean_import):
-    """A clean PALEOS checkout gives its HEAD alone."""
+@pytest.mark.parametrize('dirty', [True, False])
+def test_command_line_writes_the_commit_and_the_dirty_state(tmp_path, clean_import, dirty):
+    """The PALEOS HEAD goes in the header, marked when the checkout has uncommitted changes."""
     src = tmp_path / 'paleos_src'
     _git_repo(src)
     _stub_paleos(src)
-    _git(src, 'add', 'paleos')
-    _git(src, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'stub')
-    sha = _git(src, 'rev-parse', 'HEAD')
-    out = tmp_path / 'ext.dat'
-    _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, '--t-min', '150.4')
-    head = out.read_text().splitlines()[:5]
-    assert f'# PALEOS commit: {sha}' in head
-    assert not any('uncommitted' in line for line in head)
+    if not dirty:
+        _git(src, 'add', 'paleos')
+        _git(src, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'stub')
+    table, out = _paleos(tmp_path, [6, 6, 6, 6]), tmp_path / 'ext.dat'
+    _main(src, table, out, '--t-min', '150.4')
+    expect = (
+        '# PALEOS commit: ' + _git(src, 'rev-parse', 'HEAD') + dirty * ' (uncommitted changes)'
+    )
+    assert expect in out.read_text().splitlines()[:5]
+    assert np.isfinite(eos_export.load_paleos_with_lowt_extension(table, out)['s']).all()
 
 
-def test_command_line_takes_a_given_commit_outside_a_checkout(tmp_path, clean_import):
-    """--paleos-commit names the source of a PALEOS tree that is not a git checkout."""
+@pytest.mark.parametrize(
+    ('given', 'written'), [('654aca9', '654aca9'), ('ABCDEF1', 'abcdef1'), ('a' * 64, 'a' * 64)]
+)
+def test_command_line_takes_a_given_commit_outside_a_checkout(
+    tmp_path, clean_import, given, written
+):
+    """--paleos-commit names the source of a PALEOS tree that is not a git checkout; hex
+    digits of either case, 7 to 64 of them, are written in lower case."""
     src = tmp_path / 'paleos_src'
     src.mkdir()
     _stub_paleos(src)
-    out = tmp_path / 'ext.dat'
-    _main(
-        src,
-        _paleos(tmp_path, [6, 6, 6, 6]),
-        out,
-        '--t-min',
-        '150.4',
-        '--paleos-commit',
-        '654aca9',
-    )
-    assert '# PALEOS commit: 654aca9' in out.read_text().splitlines()[:5]
+    table, out = _paleos(tmp_path, [6, 6, 6, 6]), tmp_path / 'ext.dat'
+    _main(src, table, out, '--t-min', '150.4', '--paleos-commit', given)
+    assert f'# PALEOS commit: {written}' in out.read_text().splitlines()[:5]
     assert out.read_text().count('solid-lpcen') == len(_P) * 7
+
+
+def test_command_line_refuses_a_failed_git_status(tmp_path, capsys, clean_import, monkeypatch):
+    """A git status that fails leaves the dirty state unknown, so nothing is written."""
+    src = tmp_path / 'paleos_src'
+    _git_repo(src)
+    _stub_paleos(src)
+    real = tool._git
+    monkeypatch.setattr(
+        tool, '_git', lambda path, *a: None if a[0] == 'status' else real(path, *a)
+    )
+    with pytest.raises(SystemExit):
+        _main(src, _paleos(tmp_path, [6, 6, 6, 6]), tmp_path / 'o', '--t-min', '150.4')
+    assert 'git status failed' in capsys.readouterr().err
+    assert not (tmp_path / 'o').exists()
+
+
+def test_command_line_without_git_needs_a_commit(tmp_path, capsys, clean_import, monkeypatch):
+    """Without a git program the source counts as no checkout."""
+    src = tmp_path / 'paleos_src'
+    _git_repo(src)
+
+    def no_git(*a, **k):
+        raise FileNotFoundError('git')
+
+    monkeypatch.setattr(tool.subprocess, 'run', no_git)
+    with pytest.raises(SystemExit):
+        _main(src, _paleos(tmp_path, [6, 6, 6, 6]), tmp_path / 'o')
+    assert 'is not the top of a git checkout' in capsys.readouterr().err
+    assert not (tmp_path / 'o').exists()
+
+
+def test_command_line_refuses_an_extension_with_no_rows(tmp_path, capsys, clean_import):
+    """A p_max below every table row gives no extension rows, which is an error, not a file."""
+    src = tmp_path / 'paleos_src'
+    src.mkdir()
+    _stub_paleos(src)
+    with pytest.raises(SystemExit):
+        _main(
+            src,
+            _paleos(tmp_path, [6, 6, 6, 6]),
+            tmp_path / 'o',
+            '--t-min',
+            '150.4',
+            '--paleos-commit',
+            '654aca9',
+            '--p-max',
+            '1e5',
+        )
+    assert 'no extension rows' in capsys.readouterr().err
+    assert not (tmp_path / 'o').exists()
+
+
+def test_command_line_refuses_a_missing_output_folder_first(tmp_path, capsys, clean_import):
+    """The output folder is checked before PALEOS is evaluated."""
+    src = tmp_path / 'paleos_src'
+    src.mkdir()
+    _stub_paleos(src)
+    out = tmp_path / 'absent' / 'ext.dat'
+    with pytest.raises(SystemExit):
+        _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, '--paleos-commit', '654aca9')
+    assert 'output folder' in capsys.readouterr().err
+    assert not out.parent.exists()
+
+
+def test_command_line_refuses_an_extension_that_does_not_merge(tmp_path, capsys, clean_import):
+    """The writer loads its result under the table; a seam mismatch removes the file and fails."""
+    src = tmp_path / 'paleos_src'
+    src.mkdir()
+    _stub_paleos(src, ds=1.0)
+    out = tmp_path / 'ext.dat'
+    with pytest.raises(SystemExit):
+        _main(
+            src,
+            _paleos(tmp_path, [6, 6, 6, 6]),
+            out,
+            '--t-min',
+            '150.4',
+            '--paleos-commit',
+            '654aca9',
+        )
+    assert 'does not merge under the table' in capsys.readouterr().err
+    assert not out.exists()
 
 
 @pytest.mark.parametrize('t_min', [0.0, -10.0, 300.0, 350.0, float('nan')])
@@ -229,9 +313,10 @@ def test_grid_refuses_a_lowest_temperature_outside_the_extension_range(tmp_path,
     assert tool.extension_grid(table, t_min=299.0)[1].size == 2
 
 
-def test_grid_refuses_a_table_with_one_temperature(tmp_path):
-    """A table with one temperature has no log-T step to continue."""
-    one = _write(tmp_path / 'one.dat', [(P, 300.0) for P in _P])
-    with pytest.raises(ValueError, match='needs at least two temperatures'):
+@pytest.mark.parametrize('cells', [[(1.0e6, 300.0)], [(P, 300.0) for P in _P]])
+def test_grid_refuses_a_table_with_one_temperature(tmp_path, cells):
+    """A table with one temperature, also one with a single data row, has no log-T step."""
+    one = _write(tmp_path / 'one.dat', cells)
+    with pytest.raises((ValueError, IndexError), match='needs at least two temperatures'):
         tool.extension_grid(one, t_min=100.0)
-    assert one.read_text().count(' 3.00000000e+02 ') == len(_P)
+    assert tool.extension_grid(_paleos(tmp_path, [6, 6, 6, 6]), t_min=299.0)[1].size == 2
