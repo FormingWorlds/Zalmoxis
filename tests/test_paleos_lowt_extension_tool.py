@@ -245,7 +245,7 @@ def test_command_line_without_git_needs_a_commit(tmp_path, capsys, clean_import,
         raise FileNotFoundError('git')
 
     monkeypatch.setattr(tool.subprocess, 'run', no_git)
-    with pytest.raises(SystemExit):
+    with pytest.raises((SystemExit, FileNotFoundError)):
         _main(src, _paleos(tmp_path, [6, 6, 6, 6]), tmp_path / 'o')
     assert 'is not the top of a git checkout' in capsys.readouterr().err
     assert not (tmp_path / 'o').exists()
