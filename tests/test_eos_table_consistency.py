@@ -165,6 +165,26 @@ def test_a_smooth_drift_of_the_grid_step_is_rejected(stored):
 
 
 @pytest.mark.unit
+def test_a_drift_of_2e_6_of_the_step_is_rejected(stored):
+    """A smooth drift with a step spread of 2e-6 gives false maxwell failures on an exact
+    table checked with the mean step; it departs from a linear fit by 8e-7 in log10 P."""
+    m, i = stored['murnaghan'], np.arange(stored['murnaghan']['unique_log_p'].size)
+    lp = m['unique_log_p'] + 1e-4 * np.sin(i / 100) / 150
+    with pytest.raises(ValueError, match='uniform'):
+        c.check({**m, 'unique_log_p': lp}, EPS9)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('ppd', [600, 1000, 2000])
+def test_9_digit_coordinates_pass_at_every_density(ppd):
+    lp, lt = np.arange(8.0, 9.0 + 1e-9, 1 / ppd), np.arange(3.0, 3.3 + 1e-9, 1 / ppd)
+    t = a.table(a.murnaghan, lp, lt, digits=9)
+    r9 = np.vectorize(lambda x: float(f'{x:.8e}'))
+    t['unique_log_p'], t['unique_log_t'] = np.log10(r9(10.0**lp)), np.log10(r9(10.0**lt))
+    assert not any(v['fail'].any() for v in c.check(t, EPS9).values())
+
+
+@pytest.mark.unit
 def test_coordinates_stored_at_9_digits_pass(stored):
     m = stored['murnaghan']
     r9 = np.vectorize(lambda x: float(f'{x:.8e}'))
@@ -201,16 +221,60 @@ def test_a_check_that_tests_no_cell_raises(stored):
 
 
 @pytest.mark.unit
-def test_the_bound_is_the_floor_plus_twice_the_h4_term(stored):
+def test_an_identity_that_cannot_be_tested_is_skipped_and_the_others_run(stored):
+    t = {**stored['murnaghan'], 'alpha': np.zeros_like(stored['murnaghan']['alpha'])}
+    res = c.check(t, EPS9)
+    skipped = {n for n, v in res.items() if v['skipped']}
+    assert skipped == {'maxwell', 'alpha', 'nabla_ad', 'cp_cv'}
+    assert not res['cp']['skipped'] and res['cp']['tested'].sum() > 100_000
+
+
+@pytest.mark.unit
+def test_a_one_point_axis_is_rejected_by_name(stored):
     m = stored['murnaghan']
-    r = {k: c.residuals(m, k)['cp'] for k in (1, 2, 4)}
-    f1, f2 = (c.floors(m, EPS9, k)['cp'] for k in (1, 2))
+    t = {k: v[:1] if k != 'unique_log_t' else v for k, v in m.items()}
+    with pytest.raises(ValueError, match='unique_log_p needs at least 2 points'):
+        c.check(t, EPS9)
+
+
+@pytest.mark.unit
+def test_signs_rejects_a_reversed_pressure_axis(stored):
+    m = stored['murnaghan']
+    t = {k: v[::-1] if k != 'unique_log_t' else v for k, v in m.items()}
+    with pytest.raises(ValueError, match='strictly increasing'):
+        c.signs(t, EPS9)
+
+
+@pytest.mark.unit
+def test_signs_rejects_a_column_off_the_shape_of_the_grid(stored):
+    m = stored['murnaghan']
+    with pytest.raises(ValueError, match='shape'):
+        c.signs({**m, 'cv': m['cv'][:1]}, EPS9)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('name', ['cp', 'maxwell', 'alpha', 'dudt', 'cp_cv'])
+def test_the_bound_is_the_floor_plus_twice_the_h4_term(stored, name):
+    m = stored['murnaghan']
+    r = {k: c.residuals(m, k)[name] for k in (1, 2, 4)}
+    f1, f2 = (c.floors(m, EPS9, k)[name] for k in (1, 2))
     rx = (4 * r[1] - r[2]) / 3
     est = np.abs((4 * r[2] - r[4]) / 3 - rx) / 15
     np.testing.assert_allclose(
-        c.check(m, 0.0)['cp']['bound'], (4 * f1 + f2) / 3 + 2 * est, rtol=1e-12
+        c.check(m, 0.0)[name]['bound'], (4 * f1 + f2) / 3 + 2 * est, rtol=1e-12
     )
     assert c.EPS_FLOOR == 5e-9
+
+
+@pytest.mark.unit
+def test_a_factor_of_1_misses_a_fault_two_cells_away_that_2_finds(stored, monkeypatch):
+    t = {**stored['murnaghan'], 's': stored['murnaghan']['s'].copy()}
+    t['s'][400, 75] *= 1 + 1e-6
+    assert c.check(t, EPS9)['cp']['fail'][400, 77]
+    monkeypatch.setattr(c, 'FACTOR', 1.0)
+    assert c.check(t, EPS9)['cp']['fail'][400, 77]  # a smaller factor still finds it
+    monkeypatch.setattr(c, 'FACTOR', 3.0)
+    assert not c.check(t, EPS9)['cp']['fail'][400, 77]
 
 
 @pytest.mark.unit
@@ -480,3 +544,12 @@ def test_the_csv_report_takes_a_numpy_digit_count(tmp_path):
 
     with pytest.raises(FileNotFoundError):
         report(str(tmp_path / 'missing.dat'), str(tmp_path / 'out.csv'), np.int64(9))
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('eps', [np.timedelta64(0), np.timedelta64(3, 's')])
+def test_a_time_interval_is_not_a_precision(stored, eps):
+    """np.timedelta64 is a NumPy integer type but no number."""
+    for call in (c.check, c.signs):
+        with pytest.raises(ValueError, match='eps'):
+            call(stored['murnaghan'], eps)
