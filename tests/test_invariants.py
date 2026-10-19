@@ -79,7 +79,7 @@ def _raises(result, cfg, name, limit=1e-3):
 @pytest.mark.unit
 def test_the_sphere_passes_with_every_deviation_inside_its_tolerance():
     result, cfg = _sphere(mmf=0.5)
-    devs = deviations(result, cfg, 1e-3, RTOL, ATOL, lambda P, T, layer: RHO)
+    devs = deviations(result, cfg, 1e-3, RTOL, ATOL, lambda P, T, layer: RHO, ice=True)
     assert set(devs) == set(TOLERANCES) | {'mass_closure'}
     assert all(dev <= tol for dev, _, tol in devs.values()), devs
     _check(result, cfg)

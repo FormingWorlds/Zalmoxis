@@ -18,7 +18,8 @@ TOLERANCES = {
     'mass_monotone': 0.0,
     'cmb_mass': 1e-12,
     'core_mantle_mass': 1e-12,
-    'core_radius': 0,
+    'cmb_node': 0,
+    'core_mantle_node': 0,
     'gravity': 100.0,
     'density_eos': 1e-6,
 }
@@ -79,6 +80,9 @@ def deviations(result, config_params, mass_limit, rtol, atol, density_at=None, i
     dict
         {invariant: (deviation, node index, tolerance)}. The checks use the nodes
         before the first node with P <= 0; the nodes after it are padding with P = 0.
+        ``cmb_node`` and ``core_mantle_node`` mirror the PROTEUS reading of the profile: the
+        layer boundary is the first node with m >= cmb_mass (core_mantle_mass with an ice
+        layer), and a result where no node reaches it would give the caller R_core = 0.
     """
     P, rho, m, r, g, T = (
         np.asarray(result[k], float)
@@ -102,9 +106,15 @@ def deviations(result, config_params, mass_limit, rtol, atol, density_at=None, i
     for name, f in (('cmb_mass', cmf), ('core_mantle_mass', cmf + mmf)):
         if f > 0:
             put(name, abs(result[name] / (f * M) - 1), len(m) - 1)
-    if cmf > 0:
-        n_core = int(np.count_nonzero(m[:k] < result['cmb_mass'] * (1.0 - _RTOL_LAYER)))
-        put('core_radius', not 2 <= n_core < k + (cmf == 1), n_core)  # all nodes only at cmf 1
+    # PROTEUS takes the CMB (and with an ice layer the mantle top) at argmax(m >= mass)
+    for name, f, key in (
+        ('cmb_node', cmf, 'cmb_mass'),
+        ('core_mantle_node', cmf + mmf, 'core_mantle_mass'),
+    ):
+        if f > 0 and (name == 'cmb_node' or ice):
+            reach = m >= result[key] * (1.0 - _RTOL_LAYER)
+            i = int(np.argmax(reach))
+            put(name, not (reach.any() and r[i] > 0), i)
     with np.errstate(divide='ignore', invalid='ignore'):
         # the bound takes G M / r^2, not the gravity under test, which could widen it
         g_ref = G * m[1:k] / r[1:k] ** 2
