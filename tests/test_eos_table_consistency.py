@@ -7,6 +7,8 @@ the central differences alone. See docs/How-to/build_tests.md for the test tiers
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import numpy as np
 import pytest
 from hypothesis import given, settings
@@ -155,6 +157,81 @@ def test_a_table_off_a_uniform_log_grid_is_rejected(stored):
 
 
 @pytest.mark.unit
+def test_a_smooth_drift_of_the_grid_step_is_rejected(stored):
+    m = stored['murnaghan']
+    lp = m['unique_log_p'] + 1e-4 / 150 * np.sin(np.arange(m['unique_log_p'].size) / 50)
+    with pytest.raises(ValueError, match='uniform'):
+        c.check({**m, 'unique_log_p': lp}, EPS9)
+
+
+@pytest.mark.unit
+def test_coordinates_stored_at_9_digits_pass(stored):
+    m = stored['murnaghan']
+    r9 = np.vectorize(lambda x: float(f'{x:.8e}'))
+    t = {
+        **m,
+        'unique_log_p': np.log10(r9(10.0 ** m['unique_log_p'])),
+        'unique_log_t': np.log10(r9(10.0 ** m['unique_log_t'])),
+    }
+    assert not any(v['fail'].any() for v in c.check(t, EPS9).values())
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('change', ['reverse', 'nan'])
+def test_an_axis_that_is_not_finite_and_increasing_is_rejected(stored, change):
+    m = stored['murnaghan']
+    lp = m['unique_log_p'][::-1] if change == 'reverse' else m['unique_log_p'].copy()
+    if change == 'nan':
+        lp[10] = np.nan
+    with pytest.raises(ValueError, match='finite and strictly increasing'):
+        c.check({**m, 'unique_log_p': lp}, EPS9)
+
+
+@pytest.mark.unit
+def test_a_column_off_the_shape_of_the_grid_is_rejected(stored):
+    m = stored['murnaghan']
+    with pytest.raises(ValueError, match='shape'):
+        c.check({**m, 'u': m['u'][:-1]}, EPS9)
+
+
+@pytest.mark.unit
+def test_a_check_that_tests_no_cell_raises(stored):
+    with pytest.raises(ValueError, match='no cell'):
+        c.check(a.table(a.murnaghan, LP[:8], LT[:8], digits=9), EPS9)
+
+
+@pytest.mark.unit
+def test_the_bound_is_the_floor_plus_twice_the_h4_term(stored):
+    m = stored['murnaghan']
+    r = {k: c.residuals(m, k)['cp'] for k in (1, 2, 4)}
+    f1, f2 = (c.floors(m, EPS9, k)['cp'] for k in (1, 2))
+    rx = (4 * r[1] - r[2]) / 3
+    est = np.abs((4 * r[2] - r[4]) / 3 - rx) / 15
+    np.testing.assert_allclose(
+        c.check(m, 0.0)['cp']['bound'], (4 * f1 + f2) / 3 + 2 * est, rtol=1e-12
+    )
+    assert c.EPS_FLOOR == 5e-9
+
+
+@pytest.mark.unit
+def test_an_exact_table_on_a_coarse_grid_passes_by_its_h4_term():
+    lp, lt = (
+        np.arange(5.0, 11.0 + 1e-9, 1 / 20),
+        np.arange(np.log10(500.0), np.log10(5000.0) + 1e-9, 1 / 20),
+    )
+    res = c.check(a.table(a.murnaghan, lp, lt, digits=9), EPS9)
+    assert not any(v['fail'].any() for v in res.values())
+
+
+@pytest.mark.unit
+def test_a_missing_cell_leaves_four_untested_cells_on_each_side(stored):
+    t = {**stored['murnaghan'], 's': stored['murnaghan']['s'].copy()}
+    t['s'][400, 75] = np.nan
+    tested = c.check(t, EPS9)['cp']['tested']
+    assert not tested[400, 71:80].any() and tested[400, [70, 80]].all()
+
+
+@pytest.mark.unit
 def test_the_floor_grows_with_the_stored_precision(stored):
     f9, f12 = (c.floors(stored['murnaghan'], e)['cp'] for e in (EPS9, 5e-12))
     assert np.nanmedian(f9 / f12) == pytest.approx(1000.0)
@@ -255,6 +332,16 @@ def test_the_fill_value_counts_as_a_missing_cell(pt_files):
 
 
 @pytest.mark.unit
+def test_aragog_pt_files_on_a_reversed_axis_are_rejected(pt_files):
+    t = {
+        q: {**v, 'P': v['P'][::-1], 'values': v['values'][::-1]}
+        for q, v in pt_files['murnaghan'].items()
+    }
+    with pytest.raises(ValueError, match='strictly increasing'):
+        c.check_pt(t, EPS9)
+
+
+@pytest.mark.unit
 def test_aragog_pt_files_on_different_grids_are_rejected(pt_files):
     t = pt_files['murnaghan']
     t = {**t, 'entropy': {**t['entropy'], 'T': t['entropy']['T'] * 1.01}}
@@ -273,6 +360,27 @@ def test_a_missing_value_breaks_no_sign_condition(stored, col):
     t = {**stored['murnaghan'], col: stored['murnaghan'][col].copy()}
     t[col][300, 50] = np.nan
     assert not any(v['fail'][300, 50] for v in c.signs(t, EPS9).values())
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    'col, value, name', [('rho', -np.inf, 'rho'), ('cv', np.inf, 'cp_ge_cv')]
+)
+def test_an_infinite_value_breaks_its_sign_condition(stored, col, value, name):
+    t = {**stored['murnaghan'], col: stored['murnaghan'][col].copy()}
+    t[col][300, 50] = value
+    assert c.signs(t, EPS9)[name]['fail'][300, 50]
+
+
+@pytest.mark.unit
+def test_kappa_t_needs_only_the_density_of_its_stencil(stored):
+    t = {
+        k: stored['murnaghan'][k].copy() if k in ('rho', 'u') else v
+        for k, v in stored['murnaghan'].items()
+    }
+    t['u'][300, 50] = np.nan
+    t['rho'][301, 50] = t['rho'][299, 50] * (1 - 1e-6)
+    assert c.signs(t, EPS9)['kappa_T']['fail'][300, 50]
 
 
 @pytest.mark.unit
@@ -316,6 +424,7 @@ def test_the_csv_report_lists_exactly_the_failing_cells(tmp_path, planted):
         assert float(P) == pytest.approx(PP[75, 20], rel=1e-8) and abs(float(rx)) > float(bound)
         assert min(abs(float(T) / TT[75, j] - 1) for j in (18, 19, 21, 22)) < 1e-8
     assert counts['sign_kappa_T'][0] < counts['sign_rho'][0] == PP.size
+    assert report(str(path), str(tmp_path / 'out8.csv'), np.uint8(9)) == counts
 
 
 _BAD_EPS = st.one_of(
@@ -324,7 +433,8 @@ _BAD_EPS = st.one_of(
     st.floats(min_value=1.0),
     st.integers(min_value=1),
     st.integers(max_value=-1),
-    st.sampled_from([10**400, -(10**400), np.int64(2)]),
+    st.sampled_from([10**400, -(10**400), np.int64(2), np.False_, b'1e-3']),
+    st.sampled_from([bytearray(b'1e-3'), memoryview(b'1e-3'), np.array(1e-3), Decimal('1e-3')]),
 )
 
 
