@@ -135,7 +135,7 @@ class TestMergeLowTExtension:
         """The extension must sit on the PALEOS pressure rows."""
         pal = _paleos(tmp_path, [6, 6, 6, 6])
         cells = [(P * 1.01, T) for P in _P for T in _T[:7]]
-        with pytest.raises(ValueError, match='pressure'):
+        with pytest.raises(ValueError, match='is not one of those'):
             eos_export.load_paleos_with_lowt_extension(pal, _write(tmp_path / 'e.dat', cells))
 
     def test_temperature_off_the_paleos_grid_is_an_error(self, tmp_path):
@@ -319,3 +319,112 @@ def test_no_solid_node_below_the_lowest_extension_entropy(tmp_path):
     n_add = out['S_solid'].size - base_nodes
     assert n_add > 0
     assert out['valid']['solid'][:n_add].any(axis=1).all()
+
+
+def _ext_cells(tmp_path, edit, rows=None, nodes=None, name='ext_cells.dat'):
+    """Extension over grid indices 0..6 with ``edit(i, k, vals)`` applied per cell; a cell is left
+    out where ``edit`` returns False."""
+    lines = ['# extension with edited cells\n']
+    for i in range(len(_P)) if rows is None else rows:
+        for k in range(7) if nodes is None else nodes:
+            vals = list(_props(_P[i], _T[k]))
+            if edit(i, k, vals) is False:
+                continue
+            body = ' '.join(f'{v:.8e}' for v in vals)
+            lines.append(f'{_P[i]:.8e} {_T[k]:.8e} {body} solid-lpcen\n')
+    path = tmp_path / name
+    path.write_text(''.join(lines))
+    return path
+
+
+class TestLowTMergeGuards:
+    """A used extension row must be complete and finite from its lowest used node up to the seam."""
+
+    def test_hole_inside_a_used_row_is_an_error(self, tmp_path):
+        """A missing node between the lowest used node and the seam stops the load."""
+        pal = _paleos(tmp_path, [6, 6, 6, 6])
+        ext = _ext_cells(tmp_path, lambda i, k, v: not (i == 1 and k == 3))
+        with pytest.raises(ValueError, match='hole'):
+            eos_export.load_paleos_with_lowt_extension(pal, ext)
+        assert np.isfinite(
+            eos_export.load_paleos_with_lowt_extension(pal, _ext(tmp_path))['s']
+        ).all()
+
+    @pytest.mark.parametrize('col', [0, 2, 3, 4, 5, 6])
+    def test_nan_seam_value_is_an_error(self, tmp_path, col):
+        """A NaN in any property at the seam node is refused, not compared as 'no mismatch'."""
+
+        def edit(i, k, v):
+            if i == 2 and k == 6:
+                v[col] = float('nan')
+
+        pal = _paleos(tmp_path, [6, 6, 6, 6])
+        with pytest.raises(ValueError, match='seam'):
+            eos_export.load_paleos_with_lowt_extension(pal, _ext_cells(tmp_path, edit))
+
+    @pytest.mark.parametrize(
+        ('col', 'value'),
+        [
+            (0, float('nan')),
+            (0, 0.0),
+            (0, -1.0),
+            (3, float('nan')),
+            (4, float('nan')),
+            (4, 0.0),
+            (5, float('nan')),
+            (5, float('inf')),
+            (6, float('nan')),
+            (1, float('nan')),
+        ],
+    )
+    def test_used_cell_that_is_not_finite_or_not_positive_is_an_error(
+        self, tmp_path, col, value
+    ):
+        """Used cells need finite properties, and rho, cp and cv above 0."""
+
+        def edit(i, k, v):
+            if i == 0 and k == 2:
+                v[col] = value
+
+        pal = _paleos(tmp_path, [6, 6, 6, 6])
+        with pytest.raises(ValueError, match='not finite|not positive'):
+            eos_export.load_paleos_with_lowt_extension(pal, _ext_cells(tmp_path, edit))
+
+    def test_missing_nodes_below_the_used_run_are_not_a_hole(self, tmp_path):
+        """Nodes absent below the lowest used node only shorten the row."""
+        pal = _paleos(tmp_path, [6, 6, 6, 6])
+        out = eos_export.load_paleos_with_lowt_extension(
+            pal, _ext_cells(tmp_path, lambda i, k, v: not (i == 3 and k < 2))
+        )
+        assert np.isnan(out['s'][3, :2]).all()
+        assert np.isfinite(out['s'][3, 2:]).all()
+
+    def test_nodes_off_by_written_precision_still_match(self, tmp_path):
+        """A node that differs from the PALEOS node by 2e-7 relative maps onto it."""
+        pal = _paleos(tmp_path, [6, 6, 6, 6])
+        lines = ['# extension written from its own grid\n']
+        for P in _P:
+            for k in range(7):
+                T = _T[k] * (1.0 + 2.0e-7) if k == 6 else _T[k]
+                lines.append(
+                    f'{P:.8e} {T:.8e} '
+                    + ' '.join(f'{v:.8e}' for v in _props(P, _T[k]))
+                    + ' solid-lpcen\n'
+                )
+        ext = tmp_path / 'ext_off.dat'
+        ext.write_text(''.join(lines))
+        out = eos_export.load_paleos_with_lowt_extension(pal, ext)
+        assert out['unique_log_t'].size == _T.size
+        np.testing.assert_allclose(10.0 ** out['unique_log_t'], _T, rtol=1e-8)
+
+    def test_leading_column_without_a_finite_value_is_dropped(self, tmp_path):
+        """A lowest node that holds NaN on every row leaves no empty column in the table."""
+
+        def edit(i, k, v):
+            if k == 0:
+                v[2] = float('nan')
+
+        pal = _paleos(tmp_path, [6, 6, 6, 6])
+        out = eos_export.load_paleos_with_lowt_extension(pal, _ext_cells(tmp_path, edit))
+        assert out['t_min'] == pytest.approx(_T[1], rel=1e-8)
+        assert out['unique_log_t'].size == _T.size - 1
