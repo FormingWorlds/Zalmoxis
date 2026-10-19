@@ -67,7 +67,7 @@ def patched_sha(monkeypatch):
         'zalmoxis.eos.paleos_api_cache.paleos_installed_sha',
         lambda: _SHA_FAKE,
     )
-    monkeypatch.setattr('zalmoxis.eos.paleos_api_cache._check_paleos_once', lambda: 'tested')
+    monkeypatch.setattr('zalmoxis.eos.paleos_api_cache._check_paleos_once', lambda sha: 'tested')
     return _SHA_FAKE
 
 

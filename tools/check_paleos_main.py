@@ -1,8 +1,9 @@
 """Compare PALEOS upstream main with the commit the PALEOS-API path is tested with.
 
 Exit 0 when main is at ``PALEOS_TESTED_SHA``, 1 when it is at another commit (test the
-PALEOS-API path on it and move the pin), 3 when GitHub could not be read. One request,
-no retry.
+PALEOS-API path on it and move the pin), 4 when GitHub does not find the repository or its
+main, 3 when GitHub could not be read for another reason. One request, no retry; with
+GITHUB_TOKEN set the request is authenticated.
 
 Usage: python tools/check_paleos_main.py
 """
@@ -11,8 +12,10 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -23,8 +26,11 @@ _MAIN = 'https://api.github.com/repos/maraattia/PALEOS/commits/main'
 def tested_sha() -> str:
     """Return ``PALEOS_TESTED_SHA`` as ``paleos_api.py`` assigns it, without importing it."""
     for node in ast.parse(_SOURCE.read_text()).body:
-        if isinstance(node, ast.Assign) and any(
-            getattr(t, 'id', None) == 'PALEOS_TESTED_SHA' for t in node.targets
+        targets = (
+            node.targets if isinstance(node, ast.Assign) else [getattr(node, 'target', None)]
+        )
+        if isinstance(node, (ast.Assign, ast.AnnAssign)) and any(
+            getattr(t, 'id', None) == 'PALEOS_TESTED_SHA' for t in targets
         ):
             return ast.literal_eval(node.value)
     raise LookupError(f'PALEOS_TESTED_SHA is not assigned in {_SOURCE}')
@@ -32,7 +38,10 @@ def tested_sha() -> str:
 
 def main_sha() -> str:
     """Return the commit SHA of PALEOS upstream main (one GitHub request)."""
-    request = urllib.request.Request(_MAIN, headers={'Accept': 'application/vnd.github+json'})
+    headers = {'Accept': 'application/vnd.github+json'}
+    if os.environ.get('GITHUB_TOKEN'):
+        headers['Authorization'] = f'Bearer {os.environ["GITHUB_TOKEN"]}'
+    request = urllib.request.Request(_MAIN, headers=headers)
     with urllib.request.urlopen(request, timeout=30) as reply:
         return json.load(reply)['sha']
 
@@ -42,6 +51,12 @@ def main(fetch=main_sha) -> int:
     tested = tested_sha()
     try:
         upstream = str(fetch())
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            print(f'PALEOS main not found at {_MAIN}: {exc}')
+            return 4
+        print(f'PALEOS main could not be read: {exc}')
+        return 3
     except Exception as exc:  # noqa: BLE001 -- one attempt, reported, never retried
         print(f'PALEOS main could not be read: {exc}')
         return 3

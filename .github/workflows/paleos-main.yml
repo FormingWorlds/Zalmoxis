@@ -1,8 +1,8 @@
 name: PALEOS main at the tested commit
 
-# One GitHub request, no retry, no token. PALEOS main at another commit than
-# PALEOS_TESTED_SHA fails the run, so the scheduled run sends its failure notice;
-# a reply that could not be read leaves a warning and passes.
+# One GitHub request with the workflow token, no retry. PALEOS main at another commit
+# than PALEOS_TESTED_SHA, or a repository or branch that is not found, fails the run, so
+# the scheduled run sends its failure notice; another reply that could not be read warns.
 
 on:
   schedule:
@@ -25,6 +25,8 @@ jobs:
 
       - name: Compare PALEOS main with PALEOS_TESTED_SHA
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set +e
           python tools/check_paleos_main.py | tee -a "${GITHUB_STEP_SUMMARY}"

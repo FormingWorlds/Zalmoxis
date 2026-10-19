@@ -49,14 +49,15 @@ def _cache_root() -> Path:
 
 
 def _sha_short(sha: str) -> str:
-    """First 10 chars of the SHA, keeping a ``-dirty`` suffix, or the full string if shorter."""
-    suffix = '-dirty' if sha.endswith('-dirty') else ''
-    return sha.removesuffix(suffix)[:10] + suffix
+    """First 10 chars of the SHA, keeping a ``-dirty-<hash>`` suffix."""
+    head, sep, rest = sha.partition('-dirty-')
+    return head[:10] + sep + rest
 
 
 @functools.cache
-def _check_paleos_once() -> str:
-    """Check the installed PALEOS commit once per process (:func:`check_paleos_commit`)."""
+def _check_paleos_once(sha: str) -> str:
+    """Check the installed PALEOS commit once per process and PALEOS SHA
+    (:func:`check_paleos_commit`)."""
     return check_paleos_commit()
 
 
@@ -107,8 +108,8 @@ def resolve_paleos_api_unified(
         ``os.cpu_count()`` (cold-cache builds should use all cores; cache hits
         don't run the generator at all).
     """
-    _check_paleos_once()
     sha = paleos_installed_sha()
+    _check_paleos_once(sha)
     sha_s = _sha_short(sha)
     grid_s = grid.hash_short()
 
@@ -153,8 +154,8 @@ def resolve_paleos_api_2phase_mgsio3(
         Parallelism for the generator on cache-miss. Default ``-1`` =
         ``os.cpu_count()``.
     """
-    _check_paleos_once()
     sha = paleos_installed_sha()
+    _check_paleos_once(sha)
     sha_s = _sha_short(sha)
     grid_s = grid.hash_short()
 
