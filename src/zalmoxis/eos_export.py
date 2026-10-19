@@ -85,6 +85,8 @@ def load_paleos_all_properties(eos_file):
         ``1.0D+00``, a byte-order mark, ``1_0``) or a phase label of 32
         characters or longer. Every ``#`` line is a comment; a header line
         without ``#`` is such a token.
+    StaleTableError
+        If the table is not the release its registry pins.
     """
     path = os.path.realpath(str(eos_file))
     msg = f'PALEOS table {str(eos_file)!r} is not a file'
@@ -95,9 +97,10 @@ def load_paleos_all_properties(eos_file):
     except OSError as exc:
         require_eos_file(eos_file)
         raise FileNotFoundError(msg) from exc
-    verify(eos_file)
     if not stat.S_ISREG(st.st_mode):
         raise FileNotFoundError(msg)
+    verify(eos_file)
+    st = os.stat(path)  # a fetch in verify may have replaced the file
     file_id = (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
     cached = _parse_paleos_table(path, file_id)
     return {k: v.view() if isinstance(v, np.ndarray) else v for k, v in cached.items()}

@@ -63,6 +63,11 @@ def get_paleos_unified_density(
     -------
     float or None
         Density in kg/m^3, or None on failure.
+
+    Raises
+    ------
+    StaleTableError
+        If the table is not the release its registry pins.
     """
     eos_file = material_dict['eos_file']
     try:

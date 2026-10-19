@@ -528,10 +528,11 @@ def test_a_fetch_that_leaves_the_file_stale_raises(tmp_path, pinned, monkeypatch
         registry_guard.verify(str(path))
 
 
-def test_a_stale_table_below_a_linked_dataset_folder_is_fetched_again(
+def test_a_stale_table_below_a_linked_dataset_folder_names_the_fwl_io_refusal(
     tmp_path, pinned, monkeypatch
 ):
-    """A dataset folder that links to another disk is still the version directory."""
+    """A dataset folder that links out of FWL_DATA is its version directory, but fwl-io does
+    not write outside its data root: the stale table raises with that reason and stays."""
     root, elsewhere = tmp_path / 'data', tmp_path / 'scratch' / 'paleos_iron'
     (root / 'interior/eos').mkdir(parents=True)
     (elsewhere / 'r22776069').mkdir(parents=True)
@@ -540,14 +541,16 @@ def test_a_stale_table_below_a_linked_dataset_folder_is_fetched_again(
     (tmp_path / 'cache' / rel).mkdir(parents=True)
     (tmp_path / 'cache' / rel / NAME).write_text(pinned)
     path = root / rel / NAME
-    path.write_text(pinned.replace('8.0e+03', '8.1e+03', 1))
+    stale = pinned.replace('8.0e+03', '8.1e+03', 1)
+    path.write_text(stale)
     monkeypatch.setenv('FWL_DATA', str(root))
     monkeypatch.setenv('FWL_DATA_CACHE', str(tmp_path / 'cache'))
     monkeypatch.setattr(
         registry_guard, '_manifest', lambda: (_Dataset(KEY, {}, '10.5281/zenodo.22776069'),)
     )
-    registry_guard.verify(str(path))
-    assert path.read_text() == pinned
+    with pytest.raises(StaleTableError, match='escapes the data root'):
+        registry_guard.verify(str(path))
+    assert path.read_text() == stale
 
 
 def test_a_pinned_name_of_no_manifest_dataset_is_not_fetched(tmp_path, pinned, monkeypatch):

@@ -128,6 +128,11 @@ def get_tabulated_eos(
     -------
     float or None
         Density in kg/m^3 if the interpolation succeeds, otherwise ``None``.
+
+    Raises
+    ------
+    StaleTableError
+        If a PALEOS table is not the release its registry pins.
     """
     if interpolation_functions is None:
         interpolation_functions = {}

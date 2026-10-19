@@ -641,7 +641,11 @@ def _ensure_unified_cache(eos_file, interpolation_functions):
         try:
             with open(cache_path, 'rb') as f:
                 stored = pickle.load(f)
-            if not isinstance(stored, dict) or stored.get('format') != CACHE_FORMAT:
+            if (
+                not isinstance(stored, dict)
+                or stored.get('format') != CACHE_FORMAT
+                or 'entry' not in stored
+            ):
                 raise _StaleCache(cache_path)
             if source_md5 is None:
                 verify_digest(eos_file, stored.get('source_md5'))

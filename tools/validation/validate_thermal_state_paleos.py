@@ -31,6 +31,7 @@ from zalmoxis.constants import earth_mass, earth_radius
 from zalmoxis.energetics import (
     initial_thermal_state,
 )
+from zalmoxis.eos.registry_guard import verify
 from zalmoxis.solver import main as zalmoxis_main
 
 # ── Output ───────────────────────────────────────────────────────────
@@ -114,6 +115,7 @@ def build_paleos_cp():
         return None
 
     # Load the full table to get cp
+    verify(eos_file)
     data = np.genfromtxt(eos_file, usecols=range(9), comments='#')
     pressures = data[:, 0]
     temps = data[:, 1]

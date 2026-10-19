@@ -18,7 +18,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# md5 per (real path, device, inode, size, mtime, ctime), so each table is hashed once.
+# md5 per (device, inode, size, mtime, ctime), so each table is hashed once.
 _HASHES: dict[tuple, str] = {}
 
 
@@ -58,12 +58,22 @@ def _pins() -> dict[str, dict[str, str]]:
     return pins
 
 
-def _pinned(eos_file: str) -> dict[str, str]:
-    """Return the pinned md5 per dataset key of the name of ``eos_file`` and of the file it
-    resolves to, so a link of another name is checked as the file it reads."""
-    pins = _pins()
+def _pinned(name: str) -> dict[str, str]:
+    """Return the pinned md5 per dataset key of a file name, compared case-insensitively."""
+    return next((v for n, v in _pins().items() if n.casefold() == name.casefold()), {})
+
+
+def _accepted(eos_file: str) -> tuple[set[str], list[str]] | None:
+    """Return the md5 values pinned for every pinned name among the name of ``eos_file`` and
+    the name of the file it resolves to, and those dataset keys; None when neither is pinned.
+    A link of one pinned name to another pinned table therefore accepts no md5."""
     names = {os.path.basename(eos_file), os.path.basename(os.path.realpath(eos_file))}
-    return {k: v for n in names for k, v in pins.get(n, {}).items()}
+    pinned = [p for p in map(_pinned, names) if p]
+    if not pinned:
+        return None
+    return set.intersection(*(set(p.values()) for p in pinned)), sorted(
+        {k for p in pinned for k in p}
+    )
 
 
 def _md5(path: str) -> str:
@@ -75,14 +85,7 @@ def _md5(path: str) -> str:
 def file_md5(path: str) -> str:
     """Return the md5 of ``path``, hashed again when the file changes on disk."""
     st = os.stat(path)
-    key = (
-        os.path.realpath(path),
-        st.st_dev,
-        st.st_ino,
-        st.st_size,
-        st.st_mtime_ns,
-        st.st_ctime_ns,
-    )
+    key = (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
     if key not in _HASHES:
         _HASHES[key] = _md5(path)
     return _HASHES[key]
@@ -102,17 +105,17 @@ def _refetch(real: Path, key: str, digest: str) -> bool:
     import fwl_io
     from fwl_io.doi import zenodo_record_id
 
-    ds = next(d for d in _manifest() if d.key == key)
+    ds = next((d for d in _manifest() if d.key == key), None)
     try:
         root = os.path.realpath(fwl_io.resolve_data_root(create=False))
-    except Exception:  # no FWL_DATA: nothing to fetch into
+    except fwl_io.MissingDataRootError:  # no FWL_DATA: nothing to fetch into
         return False
-    if not ds.zenodo:
-        return False
-    rel = os.path.join(root, ds.subdir, f'r{zenodo_record_id(ds.zenodo)}')
-    if str(real.parent) != rel:
+    if ds is None or not ds.zenodo:
         return False
     try:
+        version_dir = Path(root, ds.subdir, f'r{zenodo_record_id(ds.zenodo)}').resolve()
+        if real.parent != version_dir:
+            return False
         fwl_io.create_fetcher(
             subdir=ds.subdir,
             zenodo=ds.zenodo,
@@ -129,7 +132,7 @@ def _refetch(real: Path, key: str, digest: str) -> bool:
     return True
 
 
-def verify_digest(eos_file: str, digest: str) -> None:
+def verify_digest(eos_file: str, digest: str | None) -> None:
     """Raise unless ``digest`` is a pinned md5 of the name of ``eos_file``.
 
     Used for a binary cache whose text table is absent: the cache carries the
@@ -140,46 +143,48 @@ def verify_digest(eos_file: str, digest: str) -> None:
     StaleTableError
         If the name is pinned and ``digest`` is none of its pinned md5 values.
     """
-    pinned = _pinned(eos_file)
+    pinned = _pinned(os.path.basename(eos_file))
     if pinned and digest not in pinned.values():
-        raise _stale(eos_file, pinned, digest)
+        raise _stale(eos_file, sorted(pinned), set(pinned.values()), digest)
 
 
-def _stale(eos_file: str, pinned: dict[str, str], digest: str) -> StaleTableError:
+def _stale(eos_file: str, keys: list[str], want: set[str], digest) -> StaleTableError:
     """Return the error for a table whose md5 is not a pinned one."""
     return StaleTableError(
-        f'{eos_file} is not the release the registry pins for '
-        f'{", ".join(sorted(pinned))}: md5 {digest}, '
-        f'pinned {", ".join(sorted(set(pinned.values())))}. Move it aside and fetch the '
-        'pinned table: under data/, run bash tools/setup/get_zalmoxis.sh; elsewhere, '
-        'fwl-io fetch --key <key>. A table of your own must not use a registry file name.'
+        f'{eos_file} is not the release the registry pins for {", ".join(keys)}: '
+        f'md5 {digest}, pinned {", ".join(sorted(want)) or "no md5 common to its names"}. '
+        'Move it aside and fetch the pinned table: under data/, run bash '
+        'tools/setup/get_zalmoxis.sh; elsewhere, fwl-io fetch --key <key>. A table of your '
+        'own must not use a registry file name.'
     )
 
 
 def verify(eos_file: str) -> None:
     """Raise unless ``eos_file`` is the release its registry pins.
 
-    A file in its version directory under the current FWL_DATA is fetched again
-    first. A file whose name, and the name of the file it resolves to, no PALEOS
-    registry lists is not checked.
+    The md5 must be pinned for the file name and, for a link, also for the name of the
+    file it resolves to. A file in its version directory under the current FWL_DATA is
+    fetched again first and checked once more. A file whose names no PALEOS registry
+    lists is not checked; names are compared case-insensitively.
 
     Raises
     ------
     StaleTableError
-        If the md5 of the file differs from every pinned md5 of its name and the
-        pinned file cannot be put in its place.
+        If the md5 of the file is not pinned for its names and the pinned file cannot be
+        put in its place.
     """
-    pinned = _pinned(eos_file)
-    if not pinned:
+    found = _accepted(eos_file)
+    if found is None:
         return
+    accepted, keys = found
     digest = file_md5(eos_file)
-    if digest in pinned.values():
+    if digest in accepted:
         return
     real = Path(os.path.realpath(eos_file))
-    for key, want in pinned.items():
-        if _refetch(real, key, want):
+    for key, want in _pinned(real.name).items():
+        if want in accepted and _refetch(real, key, want) and file_md5(eos_file) in accepted:
             logger.warning(
                 '%s differed from the pinned release of %s; fetched it again', real, key
             )
             return
-    raise _stale(eos_file, pinned, digest)
+    raise _stale(eos_file, keys, accepted, digest)
