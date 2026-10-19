@@ -77,3 +77,77 @@ def test_command_line_needs_a_commit_outside_a_git_checkout(tmp_path):
     src.mkdir()
     with pytest.raises(SystemExit):
         tool.main(['--paleos-src', str(src), '--table', 'x', '--out', str(tmp_path / 'o')])
+
+
+def _git_repo(path):
+    """A git repository at ``path`` with one commit; returns its HEAD sha."""
+    import subprocess
+
+    path.mkdir(parents=True, exist_ok=True)
+
+    def run(*a):
+        return subprocess.run(
+            ['git', '-C', str(path), *a], check=True, capture_output=True, text=True
+        )
+
+    run('init', '-q')
+    (path / 'README').write_text('paleos\n')
+    run('add', 'README')
+    run('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'init')
+    return run('rev-parse', 'HEAD').stdout.strip()
+
+
+def test_command_line_does_not_take_the_commit_of_an_enclosing_repository(tmp_path):
+    """A source folder inside another checkout needs --paleos-commit; the outer HEAD is not taken."""
+    _git_repo(tmp_path / 'outer')
+    src = tmp_path / 'outer' / 'paleos_src'
+    src.mkdir()
+    table = _paleos(tmp_path, [6, 6, 6, 6])
+    with pytest.raises(SystemExit):
+        tool.main(
+            ['--paleos-src', str(src), '--table', str(table), '--out', str(tmp_path / 'o')]
+        )
+    assert not (tmp_path / 'o').exists()
+
+
+def test_command_line_refuses_a_paleos_imported_from_elsewhere(tmp_path):
+    """The PALEOS module that is used must come from --paleos-src."""
+    src = tmp_path / 'paleos_src'
+    _git_repo(src)
+    table = _paleos(tmp_path, [6, 6, 6, 6])
+    with pytest.raises(SystemExit):
+        tool.main(
+            ['--paleos-src', str(src), '--table', str(table), '--out', str(tmp_path / 'o')]
+        )
+    assert not (tmp_path / 'o').exists()
+
+
+def test_command_line_writes_the_commit_and_the_dirty_state(tmp_path, monkeypatch):
+    """A PALEOS checkout at --paleos-src: its HEAD and its uncommitted state go in the header."""
+    import sys
+
+    src = tmp_path / 'paleos_src'
+    sha = _git_repo(src)
+    (src / 'paleos').mkdir()
+    (src / 'paleos' / '__init__.py').write_text('')
+    stub = [
+        'import numpy as np',
+        'from tests.test_eos_lowt_extension import _props',
+        '',
+        'class MgSiO3EoS:',
+    ]
+    for i, m in enumerate(tool._METHODS):
+        stub.append(f'    def {m}(self, P, T):\n        return _props(P, T)[{i}]')
+    stub.append("    def phase(self, P, T):\n        return 'solid-lpcen'")
+    (src / 'paleos' / 'mgsio3_eos.py').write_text('\n'.join(stub) + '\n')
+    for name in ('paleos', 'paleos.mgsio3_eos'):
+        monkeypatch.delitem(sys.modules, name, raising=False)
+    monkeypatch.setattr(sys, 'path', list(sys.path))
+    table = _paleos(tmp_path, [6, 6, 6, 6])
+    out = tmp_path / 'ext.dat'
+    tool.main(
+        ['--paleos-src', str(src), '--table', str(table), '--out', str(out), '--t-min', '150.4']
+    )
+    head = out.read_text().splitlines()[:5]
+    assert f'# PALEOS commit: {sha} (uncommitted changes)' in head
+    assert np.isfinite(eos_export.load_paleos_with_lowt_extension(table, out)['s']).all()
