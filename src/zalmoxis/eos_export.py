@@ -763,7 +763,8 @@ def generate_spider_eos_tables(
     solid_lowt_file : str or Path or None
         Low-temperature extension of the solid table, merged by
         :func:`load_paleos_with_lowt_extension`; needs the two-phase tables. The solid
-        entropy axis keeps its nodes and gains nodes of the same step below them. Every
+        entropy axis keeps its nodes and gains nodes of the same step below them, down to
+        the lowest node that is not below the lowest entropy of the merged table. Every
         cell the PALEOS table inverts is computed as without the extension; the cells
         below the PALEOS minimum temperature are inverted on the merged table.
 
@@ -927,7 +928,7 @@ def generate_spider_eos_tables(
                 if np.isfinite(S_arr).any():
                     S_lo = min(S_lo, np.nanmin(S_arr))
             dS = (S_global_max_solid - S_global_min_solid) / (n_S - 1)
-            n_add = int(np.ceil((S_global_min_solid - S_lo) / dS)) if np.isfinite(S_lo) else 0
+            n_add = int(np.floor((S_global_min_solid - S_lo) / dS)) if np.isfinite(S_lo) else 0
             if n_add > 0:
                 below = S_global_min_solid - dS * np.arange(n_add, 0, -1)
                 S_solid_grid = np.concatenate([below, S_solid_grid])
