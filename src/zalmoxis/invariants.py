@@ -123,7 +123,14 @@ def deviations(result, config_params, mass_limit, rtol, atol, density_at=None, i
         ref = np.full(k, np.nan)
         for name in np.unique(layer):
             sel = layer == name
-            ref[sel] = np.asarray(density_at(P[:k][sel], T[:k][sel], str(name)), dtype=float)
+            try:
+                ref[sel] = np.asarray(
+                    density_at(P[:k][sel], T[:k][sel], str(name)), dtype=float
+                )
+            except Exception as err:
+                raise StructureInvariantError(
+                    f'Accepted structure: density lookup of the {name} layer failed: {err}'
+                ) from err
         with np.errstate(divide='ignore', invalid='ignore'):
             d = np.abs(rho[:k] / ref - 1)
         d[~np.isfinite(d)] = np.inf
@@ -155,6 +162,19 @@ def check_accepted(result, config_params, rtol, atol, density_at=None, ice=False
     if missing:
         raise StructureInvariantError(
             f'Accepted structure ({accepted_on=}) has no {", ".join(missing)}.'
+        )
+    try:
+        shapes = [np.asarray(result[k], float).shape for k in _PROFILE[:5]]
+        scalars = [np.ndim(np.asarray(result[k], float)) for k in _PROFILE[5:]]
+    except (TypeError, ValueError) as err:
+        raise StructureInvariantError(
+            f'Accepted structure ({accepted_on=}) is malformed: {err}'
+        ) from err
+    if len(set(shapes)) != 1 or len(shapes[0]) != 1 or shapes[0][0] < 2 or any(scalars):
+        raise StructureInvariantError(
+            f'Accepted structure ({accepted_on=}) is malformed: the profile arrays need one '
+            f'1-D shape of at least 2 nodes and cmb_mass, core_mantle_mass scalars; got {shapes}, '
+            f'{scalars} dimensions.'
         )
     limit = result.get('accept_mass_limit')
     if not _finite_positive(limit):
