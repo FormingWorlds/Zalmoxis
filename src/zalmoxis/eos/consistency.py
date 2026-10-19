@@ -129,6 +129,22 @@ def floors(table, eps, k=1):
     return {n: out[n] for n in IDENTITIES}
 
 
+def _number(name, value, ok, rule):
+    """``value`` as a float when it is a finite real number with ``ok(value)``, else ValueError."""
+    real = isinstance(value, (int, float, np.integer, np.floating)) and not isinstance(
+        value, (bool, np.bool_)
+    )
+    if not (real and np.isfinite(value) and ok(value)):
+        raise ValueError(f'{name} must be a finite number {rule}, got {value!r}')
+    return float(value)
+
+
+def _eps_factor(eps, factor):
+    """The checked eps, raised to ``EPS_FLOOR``, and the checked factor."""
+    eps = _number('eps', eps, lambda x: 0 <= x < 1, 'in [0, 1)')
+    return max(eps, EPS_FLOOR), _number('factor', factor, lambda x: x > 0, 'above 0')
+
+
 def check(table, eps, factor=2.0):
     """Test every cell against the Richardson bound of each identity.
 
@@ -155,8 +171,12 @@ def check(table, eps, factor=2.0):
     dict
         Identity name -> dict with ``rx`` (the tested residual), ``bound``, ``tested`` (both
         finite) and ``fail`` (tested and above the bound) arrays.
+    Raises
+    ------
+    ValueError
+        If eps is not a finite number in [0, 1) or factor is not a finite number above 0.
     """
-    eps = max(eps, EPS_FLOOR)
+    eps, factor = _eps_factor(eps, factor)
     r = {k: residuals(table, k) for k in (1, 2, 4)}
     f1, f2 = floors(table, eps, 1), floors(table, eps, 2)
     out = {}
@@ -195,7 +215,12 @@ def signs(table, eps):
         none): ``rho``, ``cp`` and ``cv`` not positive; ``cp_ge_cv``: cv above cp by more than eps (|cp| + |cv|);
         ``kappa_T``: rho falls with P at fixed T by more than the rounding of its two
         neighbours (central difference over one cell on each side, one phase).
+    Raises
+    ------
+    ValueError
+        If eps is not a finite number in [0, 1).
     """
+    eps = _number('eps', eps, lambda x: 0 <= x < 1, 'in [0, 1)')
     rho, cp, cv = (np.asarray(table[c], float) for c in ('rho', 'cp', 'cv'))
     seg = segments(table, 0)
     rise = _stencil(rho, seg, 0, 1, 0.5, -1.0)  # rho[i+1] - rho[i-1]
@@ -277,8 +302,12 @@ def check_pt(tables, eps, factor=2.0):
     dict
         As for ``check``, for the identities cp = T (ds/dT)_P, (ds/dP)_T = -alpha / rho and
         alpha = -(dln rho/dT)_P.
+    Raises
+    ------
+    ValueError
+        If eps is not a finite number in [0, 1) or factor is not a finite number above 0.
     """
-    eps = max(eps, EPS_FLOOR)
+    eps, factor = _eps_factor(eps, factor)
     parts = {k: _pt_parts(tables, k) for k in (1, 2, 4)}
     out = {}
     with np.errstate(divide='ignore', invalid='ignore'):
