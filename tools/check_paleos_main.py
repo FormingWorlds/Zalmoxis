@@ -1,9 +1,10 @@
 """Compare PALEOS upstream main with the commit the PALEOS-API path is tested with.
 
 Exit 0 when main is at ``PALEOS_TESTED_SHA``, 1 when it is at another commit (test the
-PALEOS-API path on it and move the pin), 4 when GitHub does not find the repository or its
-main, 3 when GitHub could not be read for another reason. One request, no retry; with
-GITHUB_TOKEN set the request is authenticated.
+PALEOS-API path on it and move the pin), 2 when the pin cannot be read from the source,
+4 when GitHub does not find the repository or its main (404, 422), 3 when GitHub could
+not be read for another reason. One request, no retry; with GITHUB_TOKEN set the request
+is authenticated.
 
 Usage: python tools/check_paleos_main.py
 """
@@ -29,8 +30,10 @@ def tested_sha() -> str:
         targets = (
             node.targets if isinstance(node, ast.Assign) else [getattr(node, 'target', None)]
         )
-        if isinstance(node, (ast.Assign, ast.AnnAssign)) and any(
-            getattr(t, 'id', None) == 'PALEOS_TESTED_SHA' for t in targets
+        if (
+            isinstance(node, (ast.Assign, ast.AnnAssign))
+            and node.value is not None
+            and any(getattr(t, 'id', None) == 'PALEOS_TESTED_SHA' for t in targets)
         ):
             return ast.literal_eval(node.value)
     raise LookupError(f'PALEOS_TESTED_SHA is not assigned in {_SOURCE}')
@@ -48,11 +51,15 @@ def main_sha() -> str:
 
 def main(fetch=main_sha) -> int:
     """Print the verdict and return the exit status."""
-    tested = tested_sha()
+    try:
+        tested = tested_sha()
+    except (LookupError, ValueError) as exc:
+        print(f'PALEOS_TESTED_SHA could not be read: {exc}')
+        return 2
     try:
         upstream = str(fetch())
     except urllib.error.HTTPError as exc:
-        if exc.code == 404:
+        if exc.code in (404, 422):
             print(f'PALEOS main not found at {_MAIN}: {exc}')
             return 4
         print(f'PALEOS main could not be read: {exc}')

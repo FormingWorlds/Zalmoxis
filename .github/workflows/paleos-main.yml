@@ -1,8 +1,9 @@
 name: PALEOS main at the tested commit
 
 # One GitHub request with the workflow token, no retry. PALEOS main at another commit
-# than PALEOS_TESTED_SHA, or a repository or branch that is not found, fails the run, so
-# the scheduled run sends its failure notice; another reply that could not be read warns.
+# than PALEOS_TESTED_SHA, a repository or branch that is not found, or a pin that cannot be
+# read fails the run, so the scheduled run sends its failure notice; another reply that
+# could not be read (a rate limit, a server error) warns.
 
 on:
   schedule:

@@ -184,7 +184,9 @@ PALEOS_TESTED_SHA = '654aca9ec6116d2ad319d984a3f68e11ddef2fb4'
 
 
 class PaleosVersionError(Exception):
-    """The installed PALEOS code does not contain ``PALEOS_TESTED_SHA``.
+    """The installed PALEOS code cannot be shown to contain ``PALEOS_TESTED_SHA``: it is
+    older or unrelated, not installed, not a tracked package of a git checkout, or git
+    cannot read it.
 
     Not a RuntimeError or ValueError, so a caller that turns those into a failed
     structure solve does not hide it.
@@ -201,31 +203,69 @@ def _paleos_repo_dir() -> Path | None:
 
 
 def _git(repo_dir: Path, *args: str) -> _subprocess.CompletedProcess:
-    """Run git in ``repo_dir``; a git that cannot be started gives return code 127."""
+    """Run git in ``repo_dir`` with C messages; the output is decoded without failing on any
+    byte, and a git that cannot be started gives return code 127."""
     try:
-        return _subprocess.run(
-            ['git', '-C', str(repo_dir), *args], capture_output=True, text=True, check=False
+        done = _subprocess.run(
+            ['git', '-C', str(repo_dir), *args],
+            capture_output=True,
+            check=False,
+            env={**_os.environ, 'LC_ALL': 'C'},
         )
     except OSError as exc:
         return _subprocess.CompletedProcess(args, 127, '', str(exc))
+    out, err = (x.decode('utf-8', 'surrogateescape') for x in (done.stdout, done.stderr))
+    return _subprocess.CompletedProcess(args, done.returncode, out, err)
+
+
+def _code_file(path: Path) -> bool:
+    """Whether a file of the package counts as code: not a compiled Python file."""
+    return '__pycache__' not in path.parts and path.suffix not in ('.pyc', '.pyo')
+
+
+def _changes_hash(repo_dir: Path, head_sha: str) -> str | None:
+    """Return an 8-character hash of the package files on disk when they differ from the
+    files of ``head_sha``, else None. The files are compared by their bytes, so untracked
+    files, edits git is told to ignore and any encoding count; compiled files do not."""
+    listing = _git(repo_dir, 'ls-tree', '-r', '-z', head_sha, '--', 'paleos/')
+    if listing.returncode != 0:
+        raise PaleosVersionError(f'cannot list the paleos package of {head_sha} in {repo_dir}')
+    committed = {}
+    for entry in filter(None, listing.stdout.split('\0')):
+        meta, path = entry.split('\t', 1)
+        if _code_file(Path(path)):
+            committed[path] = meta.split()[2]
+    on_disk = {}
+    for f in sorted(Path(repo_dir, 'paleos').rglob('*')):
+        if f.is_file() and _code_file(f.relative_to(repo_dir)):
+            data = f.read_bytes()
+            blob = _hashlib.sha1(b'blob %d\0' % len(data) + data).hexdigest()
+            on_disk[f.relative_to(repo_dir).as_posix()] = blob
+    if on_disk == committed:
+        return None
+    return _hashlib.sha256(repr(sorted(on_disk.items())).encode()).hexdigest()[:8]
 
 
 def paleos_installed_sha() -> str:
     """Return the git SHA of the installed PALEOS checkout, or a fallback string.
 
-    A checkout with changes to tracked files gets ``-dirty-<8 hex of the diff>`` after the
-    SHA, so each set of changes has its own cache. Without git the result is
-    ``version-<paleos.__version__>``, and without PALEOS ``paleos-not-installed``.
+    A checkout whose package files differ from its commit gets ``-dirty-<8 hex>`` after
+    the SHA, a hash of those files, so each set of changes has its own cache. Without git
+    the result is ``version-<paleos.__version__>``, and without PALEOS
+    ``paleos-not-installed``.
     """
     repo_dir = _paleos_repo_dir()
     if repo_dir is None:
         return 'paleos-not-installed'
-    head, diff = _git(repo_dir, 'rev-parse', 'HEAD'), _git(repo_dir, 'diff', 'HEAD', '--binary')
-    if head.returncode == 0 and head.stdout.strip() and diff.returncode == 0:
+    head = _git(repo_dir, 'rev-parse', 'HEAD')
+    if head.returncode == 0 and head.stdout.strip():
         sha = head.stdout.strip()
-        if not diff.stdout:
-            return sha
-        return f'{sha}-dirty-{_hashlib.sha256(diff.stdout.encode()).hexdigest()[:8]}'
+        try:
+            changes = _changes_hash(repo_dir, sha)
+        except PaleosVersionError:
+            changes = 'unknown'
+        if changes != 'unknown':
+            return sha if changes is None else f'{sha}-dirty-{changes}'
 
     import paleos as _paleos
 
@@ -236,8 +276,13 @@ def check_paleos_commit(repo_dir: Path | None = None, tested: str | None = None)
     """Return ``'tested'``, ``'newer'`` or ``'dirty'`` for the PALEOS checkout in ``repo_dir``.
 
     A checkout at ``tested`` (default ``PALEOS_TESTED_SHA``) runs; one that descends
-    from it runs with a warning, and one with changes to tracked files runs with a
-    warning that says so (``'dirty'``).
+    from it runs with a warning, and one whose package files differ from its commit runs
+    with a warning that says so.
+
+    Returns
+    -------
+    str
+        ``'tested'``, ``'newer'``, or ``'dirty'`` for a checkout with changes.
 
     Raises
     ------
@@ -275,8 +320,8 @@ def check_paleos_commit(repo_dir: Path | None = None, tested: str | None = None)
             head_sha,
             tested,
         )
-    if _git(repo_dir, 'status', '--porcelain', '--untracked-files=no').stdout.strip():
-        logger.warning('PALEOS in %s has uncommitted changes to tracked files', repo_dir)
+    if _changes_hash(repo_dir, head_sha) is not None:
+        logger.warning('PALEOS in %s has uncommitted changes to its package files', repo_dir)
         return 'dirty'
     return 'tested' if head_sha == tested else 'newer'
 

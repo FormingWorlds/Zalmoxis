@@ -9,6 +9,9 @@ Cache layout under ``$ZALMOXIS_ROOT/data/EOS_PALEOS_API/``::
     2phase_solid_<sha10>_<gridhash>.dat
     2phase_liquid_<sha10>_<gridhash>.dat
 
+``<sha10>`` is the first 10 characters of the PALEOS commit, followed by
+``-dirty-<8 hex>`` for a checkout whose package files differ from that commit;
+each such state keeps its own files, which ``invalidate_cache`` removes.
 Cache key is ``(PALEOS_SHA, GridSpec.hash_short())``. Both are stamped in
 the generated file's header, so:
 
@@ -26,10 +29,12 @@ from __future__ import annotations
 import functools
 import logging
 import os
+import re
 from pathlib import Path
 
 from .paleos_api import (
     GridSpec,
+    PaleosVersionError,
     check_paleos_commit,
     generate_paleos_api_2phase_mgsio3_tables,
     generate_paleos_api_unified_table,
@@ -56,9 +61,18 @@ def _sha_short(sha: str) -> str:
 
 @functools.cache
 def _check_paleos_once(sha: str) -> str:
-    """Check the installed PALEOS commit once per process and PALEOS SHA
-    (:func:`check_paleos_commit`)."""
-    return check_paleos_commit()
+    """Check the installed PALEOS commit (:func:`check_paleos_commit`) once per process and
+    cache key ``sha``, and refuse a key that names no commit (a ``version-`` fallback).
+
+    Raises
+    ------
+    PaleosVersionError
+        As :func:`check_paleos_commit`, or for a key that is not a commit SHA.
+    """
+    verdict = check_paleos_commit()
+    if not re.fullmatch(r'[0-9a-f]{40}(-dirty-[0-9a-f]{8})?', sha):
+        raise PaleosVersionError(f'the PALEOS cache key {sha} names no commit')
+    return verdict
 
 
 def _header_sha_matches(path: Path, expected_sha: str) -> bool:
