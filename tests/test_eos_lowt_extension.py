@@ -40,12 +40,15 @@ def _props(P, T, ds=0.0, drho=0.0):
     )
 
 
-def _write(path: Path, cells, ds=0.0, drho=0.0):
-    """Write a 10-column table from an iterable of (P, T) cells."""
-    lines = ['# synthetic solid table\n']
+def _write(path: Path, cells, ds=0.0, drho=0.0, edit=None, phase='solid-lpcen'):
+    """Write a 10-column table from (P, T) cells; ``edit(P, T, vals)`` may change a cell's
+    values in place, or leave the cell out by returning False."""
+    lines = ['# synthetic table\n']
     for P, T in cells:
-        vals = ' '.join(f'{v:.8e}' for v in _props(P, T, ds, drho))
-        lines.append(f'{P:.8e} {T:.8e} {vals} solid-lpcen\n')
+        vals = list(_props(P, T, ds, drho))
+        if edit is not None and edit(P, T, vals) is False:
+            continue
+        lines.append(f'{P:.8e} {T:.8e} ' + ' '.join(f'{v:.8e}' for v in vals) + f' {phase}\n')
     path.write_text(''.join(lines))
     return path
 
@@ -179,15 +182,13 @@ _TG = 10.0 ** (np.log10(300.0) + np.arange(-6, 21) * _DLOGT)
 def _gen_tables(tmp_path):
     """Solid and liquid PALEOS tables from 300 K, and a solid extension down to 150 K."""
     solid = _write(tmp_path / 'solid.dat', [(P, T) for P in _P for T in _TG[6:]])
-    lines = ['# synthetic liquid table\n']
-    for P in _P:
-        for T in _TG[6:]:
-            vals = list(_props(P, T))
-            vals[0] *= 0.95
-            vals[2] *= 1.08
-            lines.append(f'{P:.8e} {T:.8e} ' + ' '.join(f'{v:.8e}' for v in vals) + ' liquid\n')
-    liquid = tmp_path / 'liquid.dat'
-    liquid.write_text(''.join(lines))
+
+    def denser_hotter(P, T, vals):
+        vals[0] *= 0.95
+        vals[2] *= 1.08
+
+    cells = [(P, T) for P in _P for T in _TG[6:]]
+    liquid = _write(tmp_path / 'liquid.dat', cells, edit=denser_hotter, phase='liquid')
     ext = _write(tmp_path / 'ext.dat', [(P, T) for P in _P for T in _TG[:7]])
     return solid, liquid, ext
 
@@ -297,16 +298,7 @@ class TestLowTInvariants:
 
     def _ext_with(self, tmp_path, edit):
         cells = [(P, T) for P in _P for T in _T[:7]]
-        lines = ['# extension with one edited cell\n']
-        for P, T in cells:
-            vals = list(_props(P, T))
-            edit(P, T, vals)
-            lines.append(
-                f'{P:.8e} {T:.8e} ' + ' '.join(f'{v:.8e}' for v in vals) + ' solid-lpcen\n'
-            )
-        path = tmp_path / 'ext_edit.dat'
-        path.write_text(''.join(lines))
-        return path
+        return _write(tmp_path / 'ext_edit.dat', cells, edit=edit)
 
     def test_entropy_that_falls_with_temperature_is_an_error(self, tmp_path):
         def edit(P, T, vals):
@@ -358,20 +350,12 @@ def test_no_solid_node_below_the_lowest_extension_entropy(tmp_path):
     assert out['valid']['solid'][:n_add].any(axis=1).all()
 
 
-def _ext_cells(tmp_path, edit, rows=None, nodes=None, name='ext_cells.dat'):
-    """Extension over grid indices 0..6 with ``edit(i, k, vals)`` applied per cell; a cell is left
-    out where ``edit`` returns False."""
-    lines = ['# extension with edited cells\n']
-    for i in range(len(_P)) if rows is None else rows:
-        for k in range(7) if nodes is None else nodes:
-            vals = list(_props(_P[i], _T[k]))
-            if edit(i, k, vals) is False:
-                continue
-            body = ' '.join(f'{v:.8e}' for v in vals)
-            lines.append(f'{_P[i]:.8e} {_T[k]:.8e} {body} solid-lpcen\n')
-    path = tmp_path / name
-    path.write_text(''.join(lines))
-    return path
+def _ext_cells(tmp_path, edit):
+    """Extension over grid indices 0..6 with ``edit(i, k, vals)`` per cell (row i, node k)."""
+    index = {(P, T): (i, k) for i, P in enumerate(_P) for k, T in enumerate(_T[:7])}
+    return _write(
+        tmp_path / 'ext_cells.dat', index, edit=lambda P, T, v: edit(*index[(P, T)], v)
+    )
 
 
 class TestLowTMergeGuards:
