@@ -923,20 +923,17 @@ def generate_spider_eos_tables(
     S_solid_grid = np.linspace(S_global_min_solid, S_global_max_solid, n_S)
     S_melt_grid = np.linspace(S_global_min_melt, S_global_max_melt, n_S)
 
-    T_lo_paleos = max(table['t_min'], 300.0)
     lowt = None
     if solid_lowt_file is not None:
         merged = load_paleos_with_lowt_extension(solid_eos_file, solid_lowt_file)
-        if merged['t_min'] < T_lo_paleos:
+        if merged['t_min'] < T_lo_global:
             mlp, mlt = merged['unique_log_p'], merged['unique_log_t']
             lowt = {k: _build_interpolator(mlp, mlt, merged[k]) for k in _LOWT_INTERP}
-            T_ext = np.linspace(merged['t_min'], T_lo_paleos, n_T_sample)
-            S_lo = np.inf
-            for P_Pa in P_out:
-                pts = np.column_stack([np.full(n_T_sample, np.log10(P_Pa)), np.log10(T_ext)])
-                S_arr = lowt['s'](pts)
-                if np.isfinite(S_arr).any():
-                    S_lo = min(S_lo, np.nanmin(S_arr))
+            log_T = np.log10(np.linspace(merged['t_min'], T_lo_global, n_T_sample))
+            pts = np.column_stack(
+                [np.repeat(np.log10(P_out), n_T_sample), np.tile(log_T, P_out.size)]
+            )
+            S_lo = np.nanmin(lowt['s'](pts), initial=np.inf)
             dS = (S_global_max_solid - S_global_min_solid) / (n_S - 1)
             n_add = int(np.floor((S_global_min_solid - S_lo) / dS)) if np.isfinite(S_lo) else 0
             if n_add > 0:
@@ -1087,7 +1084,7 @@ def generate_spider_eos_tables(
 
     # Fill solid and melt phase grids in parallel (independent computations)
     def _T_lo_solid(P):
-        return T_lo_paleos
+        return T_lo_global
 
     def _T_hi_melt(P):
         return min(table['t_max'], 1e5)
@@ -1129,12 +1126,11 @@ def generate_spider_eos_tables(
         melt_grids, melt_nad_finite = fut_melt.result()
 
     if lowt is not None:
-        T_ext_min = 10.0 ** merged['unique_log_t'][0]
         ext_grids, ext_nad_finite = _fill_phase_grid(
             P_out,
             S_solid_grid,
-            lambda P: T_ext_min,
-            lambda P: np.minimum(T_lo_paleos, solidus_func(P)),
+            lambda P: merged['t_min'],
+            lambda P: np.minimum(T_lo_global, solidus_func(P)),
             'solid below the PALEOS minimum temperature',
             *(lowt[k] for k in _LOWT_INTERP),
         )
