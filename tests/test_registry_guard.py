@@ -871,7 +871,13 @@ def test_the_hash_key_holds_the_size(tmp_path, pinned, monkeypatch):
         st._size = next(sizes, 101)
         return st
 
-    monkeypatch.setattr(registry_guard.os, 'stat', fake_stat)
+    class _Os:  # only the guard sees the fake stat; pytest keeps the real one
+        stat = staticmethod(fake_stat)
+
+        def __getattr__(self, name):
+            return getattr(os, name)
+
+    monkeypatch.setattr(registry_guard, 'os', _Os())
     for _ in range(3):
         registry_guard.file_md5(str(path))
     assert len(calls) == 2
