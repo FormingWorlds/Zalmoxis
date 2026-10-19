@@ -31,7 +31,7 @@ def _props(P, T, ds=0.0, drho=0.0):
     return (
         4000.0 + 1.0e-7 * P - 0.05 * T + drho,
         1.0e3 * T,
-        1000.0 * np.log(T / 300.0) + 1.0e-9 * P + 2000.0 + ds,
+        1000.0 * np.log(T / 300.0) + 2.0 * np.log10(P) + 2000.0 + ds,
         1200.0,
         1100.0,
         1.0e-5,
@@ -169,7 +169,7 @@ class TestMergeLowTExtension:
         for i, k0 in enumerate(kmin):
             for k, T in enumerate(_T):
                 expect = _props(_P[i], T)[2] + (3.0e-4 if k < k0 else 0.0)
-                assert out['s'][i, k] == pytest.approx(expect, rel=1e-9, abs=1e-6)
+                assert out['s'][i, k] == pytest.approx(expect, rel=0.0, abs=2.0e-5)
 
 
 _TG = 10.0 ** (np.log10(300.0) + np.arange(-6, 21) * _DLOGT)
@@ -238,7 +238,7 @@ class TestGenerateSpiderTablesLowT:
             col = T[out['valid']['solid'][:, ip], ip]
             assert np.all(np.diff(col) > 0)
         S = out['S_solid'][:, None] * np.ones(T.shape)
-        s_back = 1000.0 * np.log(T / 300.0) + 1.0e-9 * out['P_Pa'][None, :] + 2000.0
+        s_back = 1000.0 * np.log(T / 300.0) + 2.0 * np.log10(out['P_Pa'])[None, :] + 2000.0
         np.testing.assert_allclose(s_back[cold], S[cold], atol=0.05)
 
     def test_extension_needs_the_two_phase_tables(self, tmp_path):

@@ -101,6 +101,102 @@ def load_paleos_all_properties(eos_file):
     return {k: v.view() if isinstance(v, np.ndarray) else v for k, v in cached.items()}
 
 
+_LOWT_PROPS = ('rho', 'u', 's', 'cp', 'cv', 'alpha', 'nabla_ad')
+_LOWT_INTERP = ('s', 'rho', 'cp', 'alpha', 'nabla_ad')
+_SEAM_RTOL = 1.0e-6
+
+
+def load_paleos_with_lowt_extension(eos_file, lowt_file):
+    """Load a PALEOS table with a low-temperature extension merged below it.
+
+    The extension continues the PALEOS log-T grid downward on the PALEOS pressure rows.
+    On each row an extension cell is used only below the lowest temperature at which the
+    PALEOS row holds a finite entropy, so PALEOS keeps priority wherever it covers a cell;
+    a PALEOS table that covers every extension cell gives the PALEOS table unchanged.
+
+    Parameters
+    ----------
+    eos_file : str or Path
+        PALEOS table (10-column format).
+    lowt_file : str or Path
+        Extension table in the same format, holding the PALEOS row minimum temperature
+        of every row it extends (the seam node).
+
+    Returns
+    -------
+    dict
+        The keys of :func:`load_paleos_all_properties`, on the merged temperature axis.
+
+    Raises
+    ------
+    ValueError
+        If the extension pressure rows differ from the PALEOS rows, if an extension node
+        does not continue the PALEOS log-T grid below it, or if on a row that uses the
+        extension the seam node is missing or its s or rho differs from the PALEOS value by
+        more than 1e-6 relative.
+    """
+    base = load_paleos_all_properties(eos_file)
+    ext = load_paleos_all_properties(lowt_file)
+    lp, lt_b, lt_e = base['unique_log_p'], base['unique_log_t'], ext['unique_log_t']
+    row = np.searchsorted(lp, ext['unique_log_p']).clip(max=lp.size - 1)
+    if not np.array_equal(lp[row], ext['unique_log_p']):
+        raise ValueError(f'{lowt_file}: a pressure row is not one of those of {eos_file}')
+    step = np.diff(lt_b).mean()
+    near = np.abs(lt_e[:, None] - lt_b[None, :])
+    match = np.where(near.min(axis=1) < 1.0e-3 * step, near.argmin(axis=1), -1)
+    new = lt_e[match < 0]
+    lt = np.concatenate([new, lt_b])
+    if np.any(new >= lt_b[0]) or np.any(np.abs(np.diff(lt) / step - 1.0) > 1.0e-4):
+        raise ValueError(f'{lowt_file}: the temperatures do not continue the PALEOS log-T grid')
+    n_new = new.size
+    col = np.where(match < 0, np.searchsorted(new, lt_e), match + n_new)
+
+    out = {}
+    for key in (*_LOWT_PROPS, 'phase'):
+        fill = '' if key == 'phase' else np.nan
+        grid = np.full((lp.size, lt.size), fill, dtype=base[key].dtype)
+        grid[:, n_new:] = base[key]
+        out[key] = grid
+    for j, i in enumerate(row):
+        finite = np.flatnonzero(np.isfinite(out['s'][i]))
+        ext_cols = col[np.isfinite(ext['s'][j])]
+        if finite.size == 0 or not np.any(ext_cols < finite[0]):
+            continue
+        k0 = finite[0]
+        seam = np.flatnonzero(col == k0)
+        P_row = 10.0 ** lp[i]
+        if seam.size == 0 or not np.isfinite(ext['s'][j, seam[0]]):
+            raise ValueError(
+                f'{lowt_file}: no seam value at P = {P_row:.6e} Pa, T = {10.0 ** lt[k0]:.6e} K'
+            )
+        for key in ('s', 'rho'):
+            e, b = ext[key][j, seam[0]], out[key][i, k0]
+            if abs(e - b) > _SEAM_RTOL * abs(b):
+                raise ValueError(
+                    f'{lowt_file}: seam mismatch in {key} at P = {P_row:.6e} Pa, '
+                    f'T = {10.0 ** lt[k0]:.6e} K: extension {e!r}, PALEOS {b!r}'
+                )
+        use = np.flatnonzero(col < k0)
+        for key in (*_LOWT_PROPS, 'phase'):
+            out[key][i, col[use]] = ext[key][j, use]
+
+    first = np.flatnonzero(np.isfinite(out['s']).any(axis=0))[0]
+    out = {key: grid[:, first:] for key, grid in out.items()}
+    lt = lt[first:]
+    out.update(
+        unique_log_p=np.array(lp),
+        unique_log_t=lt,
+        p_min=base['p_min'],
+        p_max=base['p_max'],
+        t_min=10.0 ** lt[0],
+        t_max=base['t_max'],
+    )
+    for value in out.values():
+        if isinstance(value, np.ndarray):
+            value.setflags(write=False)
+    return out
+
+
 @lru_cache(maxsize=_TABLE_CACHE_SIZE)
 def _parse_paleos_table(eos_file, file_id):
     """Parse one table file; ``file_id`` only keys the cache."""
@@ -610,6 +706,7 @@ def generate_spider_eos_tables(
     output_dir=None,
     solid_eos_file=None,
     liquid_eos_file=None,
+    solid_lowt_file=None,
 ):
     """Generate full SPIDER P-S EOS lookup tables from a PALEOS unified table.
 
@@ -651,6 +748,14 @@ def generate_spider_eos_tables(
         Number of entropy points in the output grid.
     output_dir : str or Path or None
         Directory for output files. If None, returns data without writing.
+    solid_eos_file, liquid_eos_file : str or Path or None
+        Two-phase PALEOS solid and liquid tables, used for every lookup when both are set.
+    solid_lowt_file : str or Path or None
+        Low-temperature extension of the solid table, merged by
+        :func:`load_paleos_with_lowt_extension`; needs the two-phase tables. The solid
+        entropy axis keeps its nodes and gains nodes of the same step below them. Every
+        cell the PALEOS table inverts is computed as without the extension; the cells
+        below the PALEOS minimum temperature are inverted on the merged table.
 
     Returns
     -------
@@ -662,6 +767,8 @@ def generate_spider_eos_tables(
         An empty dict when the table gives no entropy range for a phase.
     """
     logger.info('Generating SPIDER P-S EOS tables from %s', eos_file)
+    if solid_lowt_file is not None and not (solid_eos_file and liquid_eos_file):
+        raise ValueError('a low-temperature solid extension needs the two-phase tables')
     table = load_paleos_all_properties(eos_file)
 
     log_p_grid = table['unique_log_p']
@@ -794,6 +901,32 @@ def generate_spider_eos_tables(
 
     S_solid_grid = np.linspace(S_global_min_solid, S_global_max_solid, n_S)
     S_melt_grid = np.linspace(S_global_min_melt, S_global_max_melt, n_S)
+
+    T_lo_paleos = max(table['t_min'], 300.0)
+    lowt = None
+    if solid_lowt_file is not None:
+        merged = load_paleos_with_lowt_extension(solid_eos_file, solid_lowt_file)
+        if merged['t_min'] < T_lo_paleos:
+            mlp, mlt = merged['unique_log_p'], merged['unique_log_t']
+            lowt = {k: _build_interpolator(mlp, mlt, merged[k]) for k in _LOWT_INTERP}
+            T_ext = np.linspace(merged['t_min'], T_lo_paleos, n_T_sample)
+            S_lo = np.inf
+            for P_Pa in P_out:
+                pts = np.column_stack([np.full(n_T_sample, np.log10(P_Pa)), np.log10(T_ext)])
+                S_arr = lowt['s'](pts)
+                if np.isfinite(S_arr).any():
+                    S_lo = min(S_lo, np.nanmin(S_arr))
+            dS = (S_global_max_solid - S_global_min_solid) / (n_S - 1)
+            n_add = int(np.ceil((S_global_min_solid - S_lo) / dS)) if np.isfinite(S_lo) else 0
+            if n_add > 0:
+                below = S_global_min_solid - dS * np.arange(n_add, 0, -1)
+                S_solid_grid = np.concatenate([below, S_solid_grid])
+                logger.info(
+                    'Low-T extension: %d solid entropy nodes below %.0f J/(kg*K), down to %.0f',
+                    n_add,
+                    S_global_min_solid,
+                    S_solid_grid[0],
+                )
 
     logger.info(
         'Entropy ranges: solid [%.0f, %.0f], melt [%.0f, %.0f] J/(kg*K)',
@@ -933,7 +1066,7 @@ def generate_spider_eos_tables(
 
     # Fill solid and melt phase grids in parallel (independent computations)
     def _T_lo_solid(P):
-        return max(table['t_min'], 300.0)
+        return T_lo_paleos
 
     def _T_hi_melt(P):
         return min(table['t_max'], 1e5)
@@ -973,6 +1106,21 @@ def generate_spider_eos_tables(
         fut_melt = pool.submit(_fill_melt)
         solid_grids, solid_nad_finite = fut_solid.result()
         melt_grids, melt_nad_finite = fut_melt.result()
+
+    if lowt is not None:
+        T_ext_min = 10.0 ** merged['unique_log_t'][0]
+        ext_grids, ext_nad_finite = _fill_phase_grid(
+            P_out,
+            S_solid_grid,
+            lambda P: T_ext_min,
+            lambda P: min(T_lo_paleos, solidus_func(P)),
+            'solid below the PALEOS minimum temperature',
+            *(lowt[k] for k in _LOWT_INTERP),
+        )
+        gap = ~np.isfinite(solid_grids['temperature']) & np.isfinite(ext_grids['temperature'])
+        for prop in _SPIDER_TABLE_PROPERTIES:
+            solid_grids[prop][gap] = ext_grids[prop][gap]
+        solid_nad_finite[gap] = ext_nad_finite[gap]
 
     # Record the valid cells before the fill below overwrites the gaps.
     valid_masks = {
