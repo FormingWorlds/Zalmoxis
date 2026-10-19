@@ -260,6 +260,24 @@ class TestGenerateSpiderTablesLowT:
             checked += cold.sum()
         assert checked >= 4
 
+    def test_column_without_a_solidus_gets_no_low_temperature_cells(self, tmp_path):
+        """Where the solidus is NaN the PALEOS pass skips the column, and so does the extension pass."""
+        solid, liquid, ext = _gen_tables(tmp_path)
+        out = eos_export.generate_spider_eos_tables(
+            eos_file=solid,
+            solidus_func=lambda P: np.nan if P > 5.0e9 else 1500.0,
+            liquidus_func=lambda P: 1800.0,
+            P_range=(1.0e6, 1.0e10),
+            n_P=6,
+            n_S=40,
+            solid_eos_file=solid,
+            liquid_eos_file=liquid,
+            solid_lowt_file=ext,
+        )
+        high = out['P_Pa'] > 5.0e9
+        assert high.any() and not out['valid']['solid'][:, high].any()
+        assert out['valid']['solid'][:, ~high].any()
+
     def test_extension_needs_the_two_phase_tables(self, tmp_path):
         solid, _, ext = _gen_tables(tmp_path)
         with pytest.raises(ValueError, match='two-phase'):
