@@ -399,7 +399,8 @@ def test_an_eol_filter_leaves_a_fresh_checkout_clean(history, monkeypatch):
     """With eol=crlf the files on disk differ from the blobs by line ends only; git's own
     filters decide, so the checkout is clean."""
     repo, _ = history
-    head = _commit_files(repo, {'.gitattributes': '*.py text eol=crlf\n'}, 'eol')
+    files = {'.gitattributes': '*.py text eol=crlf\n', 'paleos/eos.py': 'A = 1\n'}
+    head = _commit_files(repo, files, 'eol')
     (repo / 'paleos' / 'eos.py').unlink()
     _git(repo, 'checkout', '--', 'paleos/eos.py')
     assert (repo / 'paleos' / 'eos.py').read_bytes().endswith(b'\r\n')

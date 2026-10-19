@@ -975,9 +975,11 @@ class TestGenerate2PhaseMgsio3Tables:
         )
         solid_path = tmp_dir / 'solid.dat'
         liquid_path = tmp_dir / 'liquid.dat'
-        result = paleos_api.generate_paleos_api_2phase_mgsio3_tables(
-            solid_path, liquid_path, gs, n_workers=1, log_every=0
-        )
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(paleos_api, '_check_paleos_once', lambda sha: 'tested')
+            result = paleos_api.generate_paleos_api_2phase_mgsio3_tables(
+                solid_path, liquid_path, gs, n_workers=1, log_every=0
+            )
         return solid_path, liquid_path, result, gs
 
     def test_both_files_written_with_correct_row_counts(self, two_phase_outputs):
