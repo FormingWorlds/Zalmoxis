@@ -62,11 +62,12 @@ def patched_cache_root(monkeypatch, tmp_path):
 
 @pytest.fixture
 def patched_sha(monkeypatch):
-    """Replace ``paleos_installed_sha`` with a deterministic SHA."""
+    """Replace ``paleos_installed_sha`` with a deterministic SHA at the tested commit."""
     monkeypatch.setattr(
         'zalmoxis.eos.paleos_api_cache.paleos_installed_sha',
         lambda: _SHA_FAKE,
     )
+    monkeypatch.setattr('zalmoxis.eos.paleos_api_cache._check_paleos_once', lambda: 'tested')
     return _SHA_FAKE
 
 

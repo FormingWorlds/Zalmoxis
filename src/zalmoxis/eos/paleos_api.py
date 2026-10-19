@@ -178,20 +178,45 @@ def make_default_grid_h2o() -> GridSpec:
     return make_grid_at_resolution(1e-1, 1e14, 150.0, 1.0e5)
 
 
-def paleos_installed_sha() -> str:
-    """Return the git SHA of the installed PALEOS checkout, or ``'unknown'``.
+# PALEOS commit the PALEOS-API path is tested with; a Zalmoxis change moves it after the
+# PALEOS-API tests pass on a newer commit.
+PALEOS_TESTED_SHA = '654aca9ec6116d2ad319d984a3f68e11ddef2fb4'
 
-    PALEOS does not expose ``__commit_sha__``; we fall back to
-    ``git rev-parse HEAD`` against the directory holding ``paleos``.
-    If both fail, we use ``paleos.__version__`` as a coarse identifier.
+
+class PaleosVersionError(Exception):
+    """The installed PALEOS code does not contain ``PALEOS_TESTED_SHA``.
+
+    Not a RuntimeError or ValueError, so a caller that turns those into a failed
+    structure solve does not hide it.
     """
+
+
+def _paleos_repo_dir() -> Path | None:
+    """Return the directory that holds the installed ``paleos`` package, or None."""
     try:
         import paleos as _paleos
     except ImportError:
-        return 'paleos-not-installed'
+        return None
+    return Path(_paleos.__file__).resolve().parent.parent
 
-    pkg_dir = Path(_paleos.__file__).resolve().parent
-    repo_dir = pkg_dir.parent
+
+def _git(repo_dir: Path, *args: str) -> _subprocess.CompletedProcess:
+    """Run git in ``repo_dir`` and return the completed process."""
+    return _subprocess.run(
+        ['git', '-C', str(repo_dir), *args], capture_output=True, text=True, check=False
+    )
+
+
+def paleos_installed_sha() -> str:
+    """Return the git SHA of the installed PALEOS checkout, or a fallback string.
+
+    A checkout with changes to tracked files gets ``-dirty`` after the SHA, so its
+    tables never share a cache with the clean commit. Without git the result is
+    ``version-<paleos.__version__>``, and without PALEOS ``paleos-not-installed``.
+    """
+    repo_dir = _paleos_repo_dir()
+    if repo_dir is None:
+        return 'paleos-not-installed'
     try:
         sha = _subprocess.check_output(
             ['git', '-C', str(repo_dir), 'rev-parse', 'HEAD'],
@@ -199,11 +224,52 @@ def paleos_installed_sha() -> str:
             text=True,
         ).strip()
         if sha:
-            return sha
+            changes = _subprocess.check_output(
+                ['git', '-C', str(repo_dir), 'status', '--porcelain', '--untracked-files=no'],
+                stderr=_subprocess.DEVNULL,
+                text=True,
+            )
+            return f'{sha}-dirty' if changes.strip() else sha
     except (_subprocess.CalledProcessError, FileNotFoundError, OSError):
         pass
 
+    import paleos as _paleos
+
     return f'version-{getattr(_paleos, "__version__", "unknown")}'
+
+
+def check_paleos_commit(repo_dir: Path | None = None, tested: str = PALEOS_TESTED_SHA) -> str:
+    """Return ``'tested'`` or ``'newer'`` for the PALEOS checkout in ``repo_dir``.
+
+    A checkout at ``tested`` runs; one that descends from it runs with a warning.
+
+    Raises
+    ------
+    PaleosVersionError
+        If the checkout does not contain ``tested`` (an older or unrelated commit,
+        or a clone that lacks it), or its commit cannot be read.
+    """
+    repo_dir = _paleos_repo_dir() if repo_dir is None else Path(repo_dir)
+    head = _git(repo_dir, 'rev-parse', 'HEAD') if repo_dir is not None else None
+    if head is None or head.returncode != 0 or not head.stdout.strip():
+        raise PaleosVersionError(
+            f'cannot tell the PALEOS commit of {repo_dir}: the PALEOS-API path needs '
+            f'PALEOS installed from a git checkout at {tested} or later'
+        )
+    head_sha = head.stdout.strip()
+    if head_sha == tested:
+        return 'tested'
+    if _git(repo_dir, 'merge-base', '--is-ancestor', tested, head_sha).returncode == 0:
+        logger.warning(
+            'PALEOS %s is newer than the commit the PALEOS-API path is tested with (%s)',
+            head_sha,
+            tested,
+        )
+        return 'newer'
+    raise PaleosVersionError(
+        f'PALEOS in {repo_dir} is at {head_sha}, which does not contain the tested commit '
+        f'{tested}: update it, for example git -C {repo_dir} pull'
+    )
 
 
 def _write_header(

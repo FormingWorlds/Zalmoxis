@@ -1,0 +1,62 @@
+"""Compare PALEOS upstream main with the commit the PALEOS-API path is tested with.
+
+Exit 0 when main is at ``PALEOS_TESTED_SHA``, 1 when it is at another commit (test the
+PALEOS-API path on it and move the pin), 3 when GitHub could not be read. One request,
+no retry.
+
+Usage: python tools/check_paleos_main.py
+"""
+
+from __future__ import annotations
+
+import ast
+import json
+import re
+import sys
+import urllib.request
+from pathlib import Path
+
+_SOURCE = Path(__file__).resolve().parents[1] / 'src' / 'zalmoxis' / 'eos' / 'paleos_api.py'
+_MAIN = 'https://api.github.com/repos/maraattia/PALEOS/commits/main'
+
+
+def tested_sha() -> str:
+    """Return ``PALEOS_TESTED_SHA`` as ``paleos_api.py`` assigns it, without importing it."""
+    for node in ast.parse(_SOURCE.read_text()).body:
+        if isinstance(node, ast.Assign) and any(
+            getattr(t, 'id', None) == 'PALEOS_TESTED_SHA' for t in node.targets
+        ):
+            return ast.literal_eval(node.value)
+    raise LookupError(f'PALEOS_TESTED_SHA is not assigned in {_SOURCE}')
+
+
+def main_sha() -> str:
+    """Return the commit SHA of PALEOS upstream main (one GitHub request)."""
+    request = urllib.request.Request(_MAIN, headers={'Accept': 'application/vnd.github+json'})
+    with urllib.request.urlopen(request, timeout=30) as reply:
+        return json.load(reply)['sha']
+
+
+def main(fetch=main_sha) -> int:
+    """Print the verdict and return the exit status."""
+    tested = tested_sha()
+    try:
+        upstream = str(fetch())
+    except Exception as exc:  # noqa: BLE001 -- one attempt, reported, never retried
+        print(f'PALEOS main could not be read: {exc}')
+        return 3
+    if not re.fullmatch(r'[0-9a-f]{40}', upstream):
+        print(f'PALEOS main could not be read: no commit SHA in the reply ({upstream!r})')
+        return 3
+    if upstream == tested:
+        print(f'PALEOS main is at the tested commit {tested}')
+        return 0
+    print(
+        f'PALEOS main is at {upstream}, not at the tested commit {tested}: run the '
+        'PALEOS-API tests on it and move PALEOS_TESTED_SHA in src/zalmoxis/eos/paleos_api.py'
+    )
+    return 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

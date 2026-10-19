@@ -42,12 +42,14 @@ def history(tmp_path):
 
 
 def test_the_tested_commit_runs(history):
+    """A checkout at the tested commit runs."""
     repo, c = history
     _git(repo, 'checkout', '-q', c['tested'])
     assert check_paleos_commit(repo, c['tested']) == 'tested'
 
 
 def test_a_newer_commit_runs_with_a_warning(history, caplog):
+    """A descendant of the tested commit runs and the log names both commits."""
     repo, c = history
     _git(repo, 'checkout', '-q', c['new'])
     assert check_paleos_commit(repo, c['tested']) == 'newer'
@@ -56,6 +58,7 @@ def test_a_newer_commit_runs_with_a_warning(history, caplog):
 
 @pytest.mark.parametrize('which', ['old', 'unrelated'])
 def test_an_older_or_unrelated_commit_stops(history, which):
+    """An ancestor or an unrelated commit stops with both SHAs and the update command."""
     repo, c = history
     _git(repo, 'checkout', '-q', c[which])
     with pytest.raises(PaleosVersionError) as err:
@@ -65,21 +68,25 @@ def test_an_older_or_unrelated_commit_stops(history, which):
 
 
 def test_a_tested_commit_missing_from_the_clone_stops(history):
+    """A clone without the tested commit cannot contain it, so the check stops."""
     repo, c = history
     with pytest.raises(PaleosVersionError, match='does not contain'):
         check_paleos_commit(repo, 'f' * 40)
 
 
 def test_a_checkout_without_git_stops(tmp_path):
+    """PALEOS outside a git checkout has no commit to check, so the check stops."""
     with pytest.raises(PaleosVersionError, match='cannot tell'):
         check_paleos_commit(tmp_path, 'a' * 40)
 
 
 def test_the_version_error_is_not_caught_as_a_solver_failure():
+    """PaleosVersionError passes the handlers that turn solver errors into a failed solve."""
     assert not issubclass(PaleosVersionError, (RuntimeError, ValueError, OSError))
 
 
 def test_a_dirty_tree_gets_its_own_sha_and_cache_name(history, monkeypatch):
+    """A change to a tracked file adds -dirty to the SHA and to the cache file name."""
     repo, c = history
     monkeypatch.setattr(paleos_api, '_paleos_repo_dir', lambda: repo)
     clean = paleos_api.paleos_installed_sha()
@@ -92,6 +99,7 @@ def test_a_dirty_tree_gets_its_own_sha_and_cache_name(history, monkeypatch):
 
 
 def test_an_untracked_file_does_not_make_the_tree_dirty(history, monkeypatch):
+    """An untracked file is no change to the PALEOS code, so the SHA stays clean."""
     repo, c = history
     monkeypatch.setattr(paleos_api, '_paleos_repo_dir', lambda: repo)
     (repo / 'notes.txt').write_text('scratch')
@@ -99,11 +107,13 @@ def test_an_untracked_file_does_not_make_the_tree_dirty(history, monkeypatch):
 
 
 def test_the_pin_is_a_full_commit_sha():
+    """The pin is a full 40-character hex commit SHA."""
     assert len(paleos_api.PALEOS_TESTED_SHA) == 40
-    int(paleos_api.PALEOS_TESTED_SHA, 16)
+    assert int(paleos_api.PALEOS_TESTED_SHA, 16) > 0
 
 
 def test_the_cache_checks_the_commit_before_it_resolves(monkeypatch, tmp_path):
+    """Resolving a PALEOS-API table runs the commit check first."""
     calls = []
     monkeypatch.setattr(paleos_api_cache, '_check_paleos_once', lambda: calls.append(1))
     monkeypatch.setattr(paleos_api_cache, 'paleos_installed_sha', lambda: 'a' * 40)

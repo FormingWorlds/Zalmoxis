@@ -23,12 +23,14 @@ produce a different SHA even if the on-disk file still exists.
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
 from pathlib import Path
 
 from .paleos_api import (
     GridSpec,
+    check_paleos_commit,
     generate_paleos_api_2phase_mgsio3_tables,
     generate_paleos_api_unified_table,
     paleos_installed_sha,
@@ -47,8 +49,15 @@ def _cache_root() -> Path:
 
 
 def _sha_short(sha: str) -> str:
-    """First 10 chars of the SHA, or the full string if shorter."""
-    return sha[:10] if len(sha) >= 10 else sha
+    """First 10 chars of the SHA, keeping a ``-dirty`` suffix, or the full string if shorter."""
+    suffix = '-dirty' if sha.endswith('-dirty') else ''
+    return sha.removesuffix(suffix)[:10] + suffix
+
+
+@functools.cache
+def _check_paleos_once() -> str:
+    """Check the installed PALEOS commit once per process (:func:`check_paleos_commit`)."""
+    return check_paleos_commit()
 
 
 def _header_sha_matches(path: Path, expected_sha: str) -> bool:
@@ -98,6 +107,7 @@ def resolve_paleos_api_unified(
         ``os.cpu_count()`` (cold-cache builds should use all cores; cache hits
         don't run the generator at all).
     """
+    _check_paleos_once()
     sha = paleos_installed_sha()
     sha_s = _sha_short(sha)
     grid_s = grid.hash_short()
@@ -143,6 +153,7 @@ def resolve_paleos_api_2phase_mgsio3(
         Parallelism for the generator on cache-miss. Default ``-1`` =
         ``os.cpu_count()``.
     """
+    _check_paleos_once()
     sha = paleos_installed_sha()
     sha_s = _sha_short(sha)
     grid_s = grid.hash_short()

@@ -1,0 +1,36 @@
+name: PALEOS main at the tested commit
+
+# One GitHub request, no retry, no token. PALEOS main at another commit than
+# PALEOS_TESTED_SHA fails the run, so the scheduled run sends its failure notice;
+# a reply that could not be read leaves a warning and passes.
+
+on:
+  schedule:
+    - cron: "37 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  paleos-main:
+    name: PALEOS main is the tested commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compare PALEOS main with PALEOS_TESTED_SHA
+        shell: bash
+        run: |
+          set +e
+          python tools/check_paleos_main.py | tee -a "${GITHUB_STEP_SUMMARY}"
+          code=${PIPESTATUS[0]}
+          if [ "${code}" -eq 3 ]; then
+            echo "::warning title=PALEOS main not read::GitHub did not answer; see the summary"
+            exit 0
+          fi
+          exit "${code}"
