@@ -717,7 +717,7 @@ def test_a_1_percent_gravity_error_is_caught_on_a_fine_grid(monkeypatch):
     'rtol, atol', [(1e-9, 1e-10), (1e-5, 1e-6), (1e-9, 1e-30), (1e-30, 1e-10)]
 )
 @pytest.mark.parametrize('node', [2, N // 2, N - 2])
-@pytest.mark.parametrize('factor, raises', [(2.0, True), (0.5, False)])
+@pytest.mark.parametrize('factor, raises', [(1.05, True), (0.95, False)])
 def test_the_gravity_tolerance_of_each_node(rtol, atol, node, factor, raises):
     """The tolerance at node i is 100 (rtol + atol (1/M_i + 1/g_i))."""
     result, cfg = _sphere()
@@ -734,8 +734,8 @@ def test_the_gravity_tolerance_of_each_node(rtol, atol, node, factor, raises):
 
 @pytest.mark.unit
 @pytest.mark.parametrize('name', ['cmb_mass', 'core_mantle_mass', 'density_eos'])
-@pytest.mark.parametrize('factor, raises', [(2.0, True), (0.5, False)])
-def test_each_tolerance_at_twice_and_half_its_value(name, factor, raises):
+@pytest.mark.parametrize('factor, raises', [(1.05, True), (0.95, False)])
+def test_each_tolerance_5_percent_above_and_below_its_value(name, factor, raises):
     result, cfg = _sphere(mmf=0.5)
     tol = {'cmb_mass': 1e-12, 'core_mantle_mass': 1e-12, 'density_eos': 1e-6}[name]
     if name == 'density_eos':
