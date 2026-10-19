@@ -63,8 +63,7 @@ def test_written_extension_columns_match_independent_mapping(tmp_path):
 
 def test_paleos_mgsio3_eos_has_all_method_names():
     """Verify paleos.mgsio3_eos.MgSiO3EoS implements all required methods when available."""
-    paleos = pytest.importorskip('paleos')
-    eos_cls = paleos.mgsio3_eos.MgSiO3EoS
+    eos_cls = pytest.importorskip('paleos.mgsio3_eos').MgSiO3EoS
     for name in tool._METHODS:
         assert hasattr(eos_cls, name), f'MgSiO3EoS is missing method {name}'
     assert hasattr(eos_cls, 'phase'), 'MgSiO3EoS is missing phase method'

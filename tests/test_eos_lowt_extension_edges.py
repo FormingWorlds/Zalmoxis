@@ -26,9 +26,6 @@ from zalmoxis.melting_curves import derive_solidus_from_liquidus, paleos_liquidu
 pytestmark = pytest.mark.unit
 
 
-# ── F3: Seam and continuation tolerance boundaries ──────────────────────────
-
-
 @pytest.mark.parametrize(
     ('prop_name', 'prop_idx'),
     [
@@ -38,8 +35,9 @@ pytestmark = pytest.mark.unit
         ('nabla_ad', 6),
     ],
 )
-def test_seam_tolerance_boundary_5e7_accepted_2e6_refused(tmp_path, prop_name, prop_idx):
-    """Relative seam offsets of 5e-7 are accepted while 2e-6 are refused across properties."""
+def test_seam_offsets_just_inside_and_outside_the_tolerance(tmp_path, prop_name, prop_idx):
+    """A relative seam offset of 5e-7 is accepted and one of 1.8e-6 refused, for s, rho, alpha and
+    nabla_ad: the 1e-6 tolerance is pinned from both sides."""
     pal = _paleos(tmp_path, [6, 6, 6, 6], name=f'pal_{prop_name}.dat')
 
     def _offset_cell(factor):
@@ -56,7 +54,7 @@ def test_seam_tolerance_boundary_5e7_accepted_2e6_refused(tmp_path, prop_name, p
     merged = eos_export.load_paleos_with_lowt_extension(pal, ext_ok)
     assert np.isfinite(merged['s']).all()
 
-    # Relative offset approaching 2.0e-6 (1.8e-6) must be refused by the 1.0e-6 tolerance guard.
+    # 1.8e-6 relative must be refused by the 1e-6 tolerance.
     ext_bad = tmp_path / f'ext_bad_{prop_name}.dat'
     _write(ext_bad, cells, edit=_offset_cell(1.0 + 1.8e-6))
     with pytest.raises(ValueError, match='seam mismatch in'):
@@ -92,9 +90,6 @@ def test_continuation_tolerance_boundary_5e5_accepted_5e4_refused(tmp_path):
     ext_bad = _build_ext(5.0e-4 * step, 'ext_cont_bad.dat')
     with pytest.raises(ValueError, match='continue the PALEOS log-T grid'):
         eos_export.load_paleos_with_lowt_extension(pal, ext_bad)
-
-
-# ── F4: Generator pressure layout and output_dir ────────────────────────────
 
 
 def test_generate_spider_tables_with_p_out_beyond_extension_rows(tmp_path):
@@ -181,9 +176,6 @@ def test_generate_spider_tables_with_output_dir_unequal_solid_melt_axes(tmp_path
     assert mask_melt.shape == (n_s_melt, n_p)
 
 
-# ── F5: Production numbers and clinoenstatite s-jump ────────────────────────
-
-
 @pytest.mark.slow
 def test_real_paleos_table_lowt_extension_numbers():
     """Verify production PALEOS table extension reproduces documented S_min, n_add and coldest T."""
@@ -225,47 +217,48 @@ def test_real_paleos_table_lowt_extension_numbers():
     assert abs(coldest_t - 67.08) < 0.01
 
 
-def test_extension_s_jump_maintains_monotone_t(tmp_path):
-    """An s jump of 45 J/kg/K in an extension row maintains monotonically rising T with S."""
+def test_an_entropy_jump_in_an_extension_row_keeps_t_monotone_and_close_to_inversion(tmp_path):
+    """An extension row whose s jumps by 45 J/kg/K between two nodes, like the clinoenstatite
+    boundary, gives a column on that row with T rising in S, finite properties, node temperatures
+    equal to a direct inversion of the row, and midpoint temperatures within the documented 19 %."""
     solid, liquid, _ = _gen_tables(tmp_path)
 
-    # Introduce a 45 J/kg/K jump on row 1 between T[2] and T[3] below the 300 K seam.
     def _jump_edit(P, T, vals):
         if np.isclose(P, _P[1]) and T <= _TG[2]:
             vals[2] -= 45.0
 
     ext_jump = _write(
-        tmp_path / 'ext_jump.dat',
-        [(P, T) for P in _P for T in _TG[:7]],
-        edit=_jump_edit,
+        tmp_path / 'ext_jump.dat', [(P, T) for P in _P for T in _TG[:7]], edit=_jump_edit
     )
-
     out = eos_export.generate_spider_eos_tables(
         eos_file=solid,
         solidus_func=lambda P: 1500.0,
         liquidus_func=lambda P: 1800.0,
-        P_range=(1.0e6, 1.0e10),
+        P_range=(_P[1], _P[-1]),
         n_P=6,
         n_S=40,
         solid_eos_file=solid,
         liquid_eos_file=liquid,
         solid_lowt_file=ext_jump,
     )
+    assert out['P_Pa'][0] == pytest.approx(_P[1], rel=1e-12)
+    merged = eos_export.load_paleos_with_lowt_extension(solid, ext_jump)
+    s_row, lt_row = np.asarray(merged['s'])[1], np.asarray(merged['unique_log_t'])
+    keep = np.isfinite(s_row)
+    s_row, lt_row = s_row[keep], lt_row[keep]
+    assert np.diff(s_row).max() - np.diff(s_row).min() == pytest.approx(45.0, rel=1e-6)
 
-    t_solid = out['solid']['temperature']
-    valid_solid = out['valid']['solid']
-
-    # On column 1, temperature must rise monotonically with S across all valid cells,
-    # reaching into the cold extension below 300 K.
-    t_col = t_solid[valid_solid[:, 1], 1]
-    assert t_col.size > 0
-    assert t_col[0] < 300.0
-    assert np.all(np.diff(t_col) > 0)
+    S, T = out['S_solid'], out['solid']['temperature'][:, 0]
+    valid = np.flatnonzero(out['valid']['solid'][:, 0])
+    cold = valid[T[valid] < 300.0]
+    assert cold.size > 2 and np.all(np.diff(T[valid]) > 0)
     for prop in ('rho', 'cp', 'alpha', 'nabla_ad', 'temperature'):
-        assert np.all(np.isfinite(out['solid'][prop][valid_solid]))
-
-
-# ── F6: Bound propagation and all-NaN PALEOS row ────────────────────────────
+        assert np.isfinite(out['solid'][prop][valid, 0]).all()
+    direct = 10.0 ** np.interp(S[cold], s_row, lt_row)
+    np.testing.assert_allclose(T[cold], direct, rtol=1e-4)
+    mid_s = 0.5 * (S[cold[:-1]] + S[cold[1:]])
+    mid_t = 0.5 * (T[cold[:-1]] + T[cold[1:]])
+    assert np.all(np.abs(mid_t / 10.0 ** np.interp(mid_s, s_row, lt_row) - 1.0) < 0.19)
 
 
 def test_merged_bounds_pmin_pmax_tmin_tmax_full_and_partial_coverage(tmp_path):
@@ -320,9 +313,6 @@ def test_all_nan_paleos_row_is_skipped_and_extension_ignored(tmp_path):
     assert np.isfinite(merged['s'][2, :6]).all()
 
 
-# ── F7: Converter grid boundary conditions ──────────────────────────────────
-
-
 def test_extension_grid_with_t_min_on_node(tmp_path):
     """t_min lying exactly on a grid node terminates at that node with exact expected count."""
     table = tmp_path / 'pal_node.dat'
@@ -354,9 +344,6 @@ def test_extension_grid_excludes_row_exactly_at_p_max(tmp_path):
 
     assert target_p_max not in P
     assert np.all(P < target_p_max)
-
-
-# ── F8: Two-phase gate parametrization ──────────────────────────────────────
 
 
 @pytest.mark.parametrize(
