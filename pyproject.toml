@@ -64,7 +64,8 @@ develop = [
     "pre-commit",
     "ruff",
     "pytest-rich",
-    "pytest-xdist"
+    "pytest-xdist",
+    "hypothesis"
 ]
 
 docs = [

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
 
 from tests import _analytic_eos as a
 from zalmoxis.eos import consistency as c
@@ -261,3 +263,71 @@ def test_the_csv_report_lists_exactly_the_failing_cells(tmp_path, planted):
     assert rows[0] == 'condition,P_Pa,T_K,phase,residual,bound' and counts['cp'][0] > 1000
     assert len(rows) - 1 == sum(failing for _, failing in counts.values())
     assert (counts['cp'][1] > 0) is (planted > 0)
+
+
+_BAD_EPS = st.one_of(
+    st.sampled_from([np.nan, np.inf, -np.inf, True, False, None, '5e-9', 1.0]),
+    st.floats(max_value=0.0, exclude_max=True),
+    st.floats(min_value=1.0),
+)
+_BAD_FACTOR = st.one_of(
+    st.sampled_from([np.nan, np.inf, -np.inf, True, None, '2', 0.0]),
+    st.floats(max_value=0.0),
+)
+
+
+@pytest.fixture(scope='module')
+def small():
+    return a.table(a.murnaghan, LP[:40], LT[:40], digits=9)
+
+
+@pytest.mark.unit
+@settings(
+    max_examples=60, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture]
+)
+@given(eps=_BAD_EPS)
+def test_a_precision_that_is_not_a_finite_fraction_is_rejected(small, pt_files, eps):
+    """A NaN or infinite eps would make every bound NaN or infinite and hide every cell."""
+    for call in (
+        lambda: c.check(small, eps),
+        lambda: c.signs(small, eps),
+        lambda: c.check_pt(pt_files['murnaghan'], eps),
+    ):
+        with pytest.raises(ValueError, match='eps'):
+            call()
+
+
+@pytest.mark.unit
+@settings(
+    max_examples=40, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture]
+)
+@given(factor=_BAD_FACTOR)
+def test_a_factor_that_is_not_finite_and_positive_is_rejected(small, pt_files, factor):
+    for call in (
+        lambda: c.check(small, EPS9, factor),
+        lambda: c.check_pt(pt_files['murnaghan'], EPS9, factor),
+    ):
+        with pytest.raises(ValueError, match='factor'):
+            call()
+
+
+@pytest.mark.unit
+@settings(
+    max_examples=15, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture]
+)
+@given(
+    eps=st.one_of(st.just(0.0), st.floats(min_value=1e-300, max_value=1e-3)),
+    factor=st.floats(1e-3, 1e3),
+)
+def test_a_valid_precision_and_factor_test_cells(small, eps, factor):
+    res = c.check(small, eps, factor)
+    assert all(int(v['tested'].sum()) > 0 for v in res.values())
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('digits', [0, -1, 18, True, 9.0])
+def test_the_csv_report_rejects_a_digit_count_outside_1_to_17(tmp_path, digits):
+    from tools.validation.eos_table_consistency_report import report
+
+    with pytest.raises(ValueError, match='digits'):
+        report('unused.dat', str(tmp_path / 'out.csv'), digits)
