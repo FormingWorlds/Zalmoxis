@@ -1130,7 +1130,7 @@ def generate_spider_eos_tables(
             P_out,
             S_solid_grid,
             lambda P: T_ext_min,
-            lambda P: min(T_lo_paleos, solidus_func(P)),
+            lambda P: np.minimum(T_lo_paleos, solidus_func(P)),
             'solid below the PALEOS minimum temperature',
             *(lowt[k] for k in _LOWT_INTERP),
         )
