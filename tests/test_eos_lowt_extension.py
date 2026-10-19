@@ -253,3 +253,59 @@ class TestGenerateSpiderTablesLowT:
                 n_S=40,
                 solid_lowt_file=ext,
             )
+
+
+class TestLowTInvariants:
+    """The merge refuses an extension that the S -> T inversion cannot use."""
+
+    def _ext_with(self, tmp_path, edit):
+        cells = [(P, T) for P in _P for T in _T[:7]]
+        lines = ['# extension with one edited cell\n']
+        for P, T in cells:
+            vals = list(_props(P, T))
+            edit(P, T, vals)
+            lines.append(
+                f'{P:.8e} {T:.8e} ' + ' '.join(f'{v:.8e}' for v in vals) + ' solid-lpcen\n'
+            )
+        path = tmp_path / 'ext_edit.dat'
+        path.write_text(''.join(lines))
+        return path
+
+    def test_entropy_that_falls_with_temperature_is_an_error(self, tmp_path):
+        def edit(P, T, vals):
+            if P == _P[1] and T == _T[2]:
+                vals[2] = _props(P, _T[0])[2] - 1.0
+
+        pal = _paleos(tmp_path, [6, 6, 6, 6])
+        with pytest.raises(ValueError, match='increase'):
+            eos_export.load_paleos_with_lowt_extension(pal, self._ext_with(tmp_path, edit))
+
+    def test_equal_entropy_on_two_nodes_is_an_error(self, tmp_path):
+        def edit(P, T, vals):
+            if P == _P[2] and T == _T[3]:
+                vals[2] = _props(P, _T[2])[2]
+
+        pal = _paleos(tmp_path, [6, 6, 6, 6])
+        with pytest.raises(ValueError, match='increase'):
+            eos_export.load_paleos_with_lowt_extension(pal, self._ext_with(tmp_path, edit))
+
+    @pytest.mark.parametrize('cp', [0.0, -5.0])
+    def test_heat_capacity_not_positive_is_an_error(self, tmp_path, cp):
+        def edit(P, T, vals):
+            if P == _P[0] and T == _T[1]:
+                vals[3] = cp
+
+        pal = _paleos(tmp_path, [6, 6, 6, 6])
+        with pytest.raises(ValueError, match='cp'):
+            eos_export.load_paleos_with_lowt_extension(pal, self._ext_with(tmp_path, edit))
+
+    def test_a_bad_cell_that_paleos_covers_is_ignored(self, tmp_path):
+        """An extension cell PALEOS covers is never used, so it is not checked."""
+
+        def edit(P, T, vals):
+            if P == _P[0] and T == _T[5]:
+                vals[3] = -1.0
+
+        pal = _paleos(tmp_path, [5, 6, 6, 6])
+        out = eos_export.load_paleos_with_lowt_extension(pal, self._ext_with(tmp_path, edit))
+        assert out['cp'][0, 5] == pytest.approx(1200.0)
