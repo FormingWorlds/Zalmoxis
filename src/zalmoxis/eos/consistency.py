@@ -191,8 +191,8 @@ def signs(table, eps):
     Returns
     -------
     dict
-        Condition name -> boolean array, True where the cell breaks it: ``rho``, ``cp`` and
-        ``cv`` not positive; ``cp_ge_cv``: cv above cp by more than eps (|cp| + |cv|);
+        Condition name -> boolean array, True where the cell breaks it (a missing value breaks
+        none): ``rho``, ``cp`` and ``cv`` not positive; ``cp_ge_cv``: cv above cp by more than eps (|cp| + |cv|);
         ``kappa_T``: rho falls with P at fixed T by more than the rounding of its two
         neighbours (central difference over one cell on each side, one phase).
     """
@@ -202,9 +202,9 @@ def signs(table, eps):
     noise = _stencil(np.abs(rho), seg, 0, 1, 0.5, 1.0) * eps
     with np.errstate(invalid='ignore'):
         return {
-            'rho': ~(rho > 0),
-            'cp': ~(cp > 0),
-            'cv': ~(cv > 0),
+            'rho': rho <= 0,
+            'cp': cp <= 0,
+            'cv': cv <= 0,
             'cp_ge_cv': cv - cp > eps * (np.abs(cp) + np.abs(cv)),
             'kappa_T': rise < -noise,
         }
