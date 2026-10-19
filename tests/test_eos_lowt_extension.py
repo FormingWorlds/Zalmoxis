@@ -332,12 +332,12 @@ class TestLowTInvariants:
         """An extension cell PALEOS covers is never used, so it is not checked."""
 
         def edit(P, T, vals):
-            if P == _P[0] and T == _T[5]:
+            if P == _P[0] and T == _T[6]:
                 vals[3] = -1.0
 
         pal = _paleos(tmp_path, [5, 6, 6, 6])
         out = eos_export.load_paleos_with_lowt_extension(pal, self._ext_with(tmp_path, edit))
-        assert out['cp'][0, 5] == pytest.approx(_props(_P[0], _T[5])[3], rel=1e-8)
+        assert out['cp'][0, 6] == pytest.approx(_props(_P[0], _T[6])[3], rel=1e-8)
 
 
 def test_no_solid_node_below_the_lowest_extension_entropy(tmp_path):
@@ -472,17 +472,10 @@ class TestLowTMergeGuards:
     def test_nodes_off_by_written_precision_still_match(self, tmp_path):
         """A node that differs from the PALEOS node by 2e-7 relative maps onto it."""
         pal = _paleos(tmp_path, [6, 6, 6, 6])
-        lines = ['# extension written from its own grid\n']
-        for P in _P:
-            for k in range(7):
-                T = _T[k] * (1.0 + 2.0e-7) if k == 6 else _T[k]
-                lines.append(
-                    f'{P:.8e} {T:.8e} '
-                    + ' '.join(f'{v:.8e}' for v in _props(P, _T[k]))
-                    + ' solid-lpcen\n'
-                )
-        ext = tmp_path / 'ext_off.dat'
-        ext.write_text(''.join(lines))
+        cells = [
+            (P, T * (1.0 + 2.0e-7) if k == 6 else T) for P in _P for k, T in enumerate(_T[:7])
+        ]
+        ext = _write(tmp_path / 'ext_off.dat', cells)
         out = eos_export.load_paleos_with_lowt_extension(pal, ext)
         assert out['unique_log_t'].size == _T.size
         np.testing.assert_allclose(10.0 ** out['unique_log_t'], _T, rtol=1e-8)

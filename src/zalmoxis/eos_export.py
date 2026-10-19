@@ -130,12 +130,14 @@ def load_paleos_with_lowt_extension(eos_file, lowt_file):
     Raises
     ------
     ValueError
-        If the extension pressure rows differ from the PALEOS rows, if an extension node
-        does not continue the PALEOS log-T grid below it, or if on a row that uses the
-        extension the seam node is missing or its s or rho differs from the PALEOS value by
-        more than 1e-6 relative or is not finite, or if the used cells of a row (from its
-        lowest node with a finite extension s up to the seam) miss a node, hold a value
-        that is not finite, have rho, cp or cv <= 0, or do not rise strictly in s with T.
+        If the PALEOS table has fewer than two temperatures, if the extension pressure rows
+        differ from the PALEOS rows, if an extension node does not continue the PALEOS
+        log-T grid below it, or if on a row that uses the extension the seam node is
+        missing, not finite, or differs from PALEOS by more than 1e-6 relative in any
+        property, or if the used cells of a row (from its lowest node with a finite
+        extension s up to the seam) miss a node, hold a value that is not finite, have rho,
+        cp or cv <= 0, or do not rise strictly in s with T. alpha and nabla_ad may take
+        either sign.
     """
     base = load_paleos_all_properties(eos_file)
     ext = load_paleos_all_properties(lowt_file)
@@ -143,6 +145,8 @@ def load_paleos_with_lowt_extension(eos_file, lowt_file):
     row = np.searchsorted(lp, ext['unique_log_p']).clip(max=lp.size - 1)
     if not np.array_equal(lp[row], ext['unique_log_p']):
         raise ValueError(f'{lowt_file}: a pressure row is not one of those of {eos_file}')
+    if lt_b.size < 2:
+        raise ValueError(f'{eos_file}: the PALEOS table needs at least two temperatures')
     step = np.diff(lt_b).mean()
     near = np.abs(lt_e[:, None] - lt_b[None, :])
     match = np.where(near.min(axis=1) < 1.0e-3 * step, near.argmin(axis=1), -1)
@@ -171,7 +175,7 @@ def load_paleos_with_lowt_extension(eos_file, lowt_file):
             raise ValueError(
                 f'{lowt_file}: no finite seam value at P = {P_row:.6e} Pa, T = {10.0 ** lt[k0]:.6e} K'
             )
-        for key in ('s', 'rho'):
+        for key in _LOWT_PROPS:
             e, b = ext[key][j, seam[0]], out[key][i, k0]
             if not abs(e - b) <= _SEAM_RTOL * abs(b):
                 raise ValueError(
@@ -180,17 +184,17 @@ def load_paleos_with_lowt_extension(eos_file, lowt_file):
                 )
         lo = ext_cols.min()
         use = np.flatnonzero((col >= lo) & (col < k0))
-        if use.size != k0 - lo:
-            raise ValueError(f'{lowt_file}: a hole in the extension row at P = {P_row:.6e} Pa')
-        vals = np.array([ext[key][j, use] for key in _LOWT_PROPS])
-        if not np.isfinite(vals).all():
-            raise ValueError(f'{lowt_file}: a used cell is not finite at P = {P_row:.6e} Pa')
-        if np.any(vals[[0, 3, 4]] <= 0.0):
+        for key in (*_LOWT_PROPS, 'phase'):
+            out[key][i, col[use]] = ext[key][j, use]
+        block = np.array([out[key][i, lo:k0] for key in _LOWT_PROPS])
+        if not np.isfinite(block).all():
+            raise ValueError(
+                f'{lowt_file}: a missing or non-finite extension cell at P = {P_row:.6e} Pa'
+            )
+        if np.any(block[[0, 3, 4]] <= 0.0):
             raise ValueError(
                 f'{lowt_file}: rho, cp or cv is not positive at P = {P_row:.6e} Pa'
             )
-        for key in (*_LOWT_PROPS, 'phase'):
-            out[key][i, col[use]] = ext[key][j, use]
         if np.any(np.diff(out['s'][i, lo : k0 + 1]) <= 0.0):
             raise ValueError(
                 f'{lowt_file}: s does not increase with T below P = {P_row:.6e} Pa'
@@ -1083,9 +1087,6 @@ def generate_spider_eos_tables(
         return result, nad_finite
 
     # Fill solid and melt phase grids in parallel (independent computations)
-    def _T_lo_solid(P):
-        return T_lo_global
-
     def _T_hi_melt(P):
         return min(table['t_max'], 1e5)
 
@@ -1095,7 +1096,7 @@ def generate_spider_eos_tables(
         return _fill_phase_grid(
             P_out,
             S_solid_grid,
-            _T_lo_solid,
+            lambda P: T_lo_global,
             solidus_func,
             'solid',
             s_phase_interp=s_solid_interp,

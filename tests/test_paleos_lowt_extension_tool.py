@@ -234,4 +234,4 @@ def test_grid_refuses_a_table_with_one_temperature(tmp_path):
     one = _write(tmp_path / 'one.dat', [(P, 300.0) for P in _P])
     with pytest.raises(ValueError, match='needs at least two temperatures'):
         tool.extension_grid(one, t_min=100.0)
-    assert one.read_text().count('300') >= len(_P)
+    assert one.read_text().count(' 3.00000000e+02 ') == len(_P)

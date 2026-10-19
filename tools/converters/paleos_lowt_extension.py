@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -57,8 +58,10 @@ def extension_grid(table_file, t_min=50.0, p_max=12.0e9):
     T : ndarray
         Temperatures from the table minimum (the seam node) downward [K].
     """
-    data = np.loadtxt(table_file, usecols=(0, 1), comments='#')
+    data = np.loadtxt(table_file, usecols=(0, 1), comments='#', ndmin=2)
     P, T_tab = np.unique(data[:, 0]), np.unique(data[:, 1])
+    if T_tab.size < 2:
+        raise ValueError(f'{table_file}: the table needs at least two temperatures')
     if not 0.0 < t_min < T_tab[0]:
         raise ValueError(
             f't_min = {t_min} K must lie between 0 K and the table minimum {T_tab[0]} K'
@@ -108,12 +111,12 @@ def write_extension(eos, table_file, out_file, header, t_min=50.0, p_max=12.0e9)
 
 
 def _git(path, *args):
-    """Output of ``git -C path args``, or '' when git fails or is not installed."""
+    """Output of ``git -C path args``, or None when git fails or is not installed."""
     try:
         res = subprocess.run(['git', '-C', str(path), *args], capture_output=True, text=True)
     except FileNotFoundError:
-        return ''
-    return res.stdout.strip() if res.returncode == 0 else ''
+        return None
+    return res.stdout.strip() if res.returncode == 0 else None
 
 
 def main(argv=None):
@@ -131,11 +134,19 @@ def main(argv=None):
 
     src = args.paleos_src.resolve()
     commit = args.paleos_commit
-    if not commit:
-        top, commit = (_git(src, 'rev-parse', a) for a in ('--show-toplevel', 'HEAD'))
-        if not top or Path(top).resolve() != src:
+    if commit is not None:
+        if not re.fullmatch(r'[0-9a-f]{7,40}', commit):
+            ap.error(f'--paleos-commit {commit!r} is not a commit hash')
+    else:
+        top = _git(src, 'rev-parse', '--show-toplevel')
+        if top is None or Path(top).resolve() != src:
             ap.error('--paleos-src is not the top of a git checkout; give --paleos-commit')
-        if _git(src, 'status', '--porcelain'):
+        commit, status = _git(src, 'rev-parse', 'HEAD'), _git(src, 'status', '--porcelain')
+        if not commit:
+            ap.error('--paleos-src has no commit; give --paleos-commit')
+        if status is None:
+            ap.error('git status failed in --paleos-src')
+        if status:
             commit += ' (uncommitted changes)'
     sys.path.insert(0, str(src))
     from paleos.mgsio3_eos import MgSiO3EoS
