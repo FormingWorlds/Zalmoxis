@@ -149,5 +149,9 @@ def test_a_pin_that_cannot_be_read_exits_2(tmp_path, monkeypatch, capsys, source
     if source is not None:
         src.write_text(source)
     monkeypatch.setattr(check, '_SOURCE', src)
-    assert check.main(fetch=lambda: 'c' * 40) == 2
+    try:
+        code = check.main(fetch=lambda: 'c' * 40)
+    except Exception as exc:  # noqa: BLE001 -- an escaped error is the failure under test
+        pytest.fail(f'main raised {exc!r} instead of exiting 2')
+    assert code == 2
     assert capsys.readouterr().out.startswith('PALEOS_TESTED_SHA could not be read')

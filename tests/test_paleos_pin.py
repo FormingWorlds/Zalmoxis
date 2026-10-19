@@ -544,3 +544,49 @@ def test_a_symlink_git_cannot_hash_stops_the_check(history, monkeypatch):
     monkeypatch.setattr(paleos_api, '_git', git)
     with pytest.raises(PaleosVersionError, match='cannot hash paleos/link.py'):
         check_paleos_commit(repo, head)
+
+
+def test_a_replace_ref_does_not_make_an_unrelated_commit_contain_the_tested_one(history):
+    """git replace can graft the tested commit under any commit; the check ignores replace
+    refs, so an unrelated checkout still stops."""
+    repo, c = history
+    _git(repo, 'checkout', '-q', c['unrelated'])
+    _git(repo, 'replace', '--graft', c['unrelated'], c['tested'])
+    assert _git(repo, 'merge-base', '--is-ancestor', c['tested'], c['unrelated']) == ''
+    with pytest.raises(PaleosVersionError, match='does not contain'):
+        check_paleos_commit(repo, c['tested'])
+
+
+def test_a_committed_path_that_is_not_utf8_gives_a_version_error(history):
+    """git output with bytes that are not UTF-8 is decoded without failing, so a committed
+    module with such a name, absent on disk, is a change and stops the check."""
+    import subprocess
+
+    repo, _ = history
+    blob = _git(repo, 'hash-object', '-w', '--stdin', '--path', 'x.py')
+    name = b'paleos/caf\xe9.py'
+    subprocess.run(
+        [
+            b'git',
+            b'-C',
+            str(repo).encode(),
+            b'update-index',
+            b'--add',
+            b'--cacheinfo',
+            b'100644,' + blob.encode() + b',' + name,
+        ],
+        check=True,
+    )
+    _git(
+        repo,
+        *('-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false'),
+        *('-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'bytes'),
+    )
+    head = _git(repo, 'rev-parse', 'HEAD')
+    err = None
+    try:
+        check_paleos_commit(repo, head)
+    except Exception as exc:  # noqa: BLE001 -- the error type is the assertion
+        err = exc
+    assert isinstance(err, PaleosVersionError), repr(err)
+    assert 'differ from its commit' in str(err)
