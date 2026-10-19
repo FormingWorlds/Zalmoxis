@@ -103,6 +103,9 @@ def test_an_exact_table_at_9_digits_has_no_failing_cell(stored, name):
         ('rho', 'cp_cv', 0, 1e-4),
         ('s', 'cp', 1, 1e-6),
         ('rho', 'cp_cv', 0, 1e-6),
+        ('s', 'maxwell', 0, 1e-6),
+        ('rho', 'alpha', 1, 1e-6),
+        ('u', 'dudt', 1, 1e-6),
     ],
 )
 def test_a_planted_value_fails_one_and_two_steps_away(stored, col, name, axis, size):
@@ -132,6 +135,26 @@ def test_nabla_ad_is_tested_against_its_floor(stored):
 
 
 @pytest.mark.unit
+def test_a_coarse_precision_hides_a_fault_the_9_digit_floor_finds(stored):
+    t = {**stored['murnaghan'], 's': stored['murnaghan']['s'].copy()}
+    t['s'][400, 75] *= 1 + 1e-6
+    assert c.check(t, 0.0)['cp']['fail'][400, 76]
+    assert not c.check(t, 1e-4)['cp']['fail'][400, 76]
+
+
+@pytest.mark.unit
+def test_a_table_off_a_uniform_log_grid_is_rejected(stored):
+    t = {
+        k: np.delete(v, 10, axis=0)
+        for k, v in stored['murnaghan'].items()
+        if k != 'unique_log_t'
+    }
+    t['unique_log_t'] = stored['murnaghan']['unique_log_t']
+    with pytest.raises(ValueError, match='uniform'):
+        c.check(t, EPS9)
+
+
+@pytest.mark.unit
 def test_the_floor_grows_with_the_stored_precision(stored):
     f9, f12 = (c.floors(stored['murnaghan'], e)['cp'] for e in (EPS9, 5e-12))
     assert np.nanmedian(f9 / f12) == pytest.approx(1000.0)
@@ -139,7 +162,8 @@ def test_the_floor_grows_with_the_stored_precision(stored):
 
 @pytest.mark.unit
 def test_an_exact_table_breaks_no_sign_condition(stored):
-    assert all(not v.any() for v in c.signs(stored['murnaghan'], EPS9).values())
+    res = c.signs(stored['murnaghan'], EPS9)
+    assert all(not v['fail'].any() and v['tested'].sum() > 100_000 for v in res.values())
 
 
 @pytest.mark.unit
@@ -150,14 +174,14 @@ def test_an_exact_table_breaks_no_sign_condition(stored):
 def test_a_cell_that_breaks_a_sign_condition_is_flagged(stored, col, value, name):
     t = {**stored['murnaghan'], col: stored['murnaghan'][col].copy()}
     t[col][300, 50] = value
-    assert c.signs(t, EPS9)[name][300, 50]
+    assert c.signs(t, EPS9)[name]['fail'][300, 50]
 
 
 @pytest.mark.unit
 def test_a_density_that_falls_with_pressure_breaks_kappa_t(stored):
     t = {**stored['murnaghan'], 'rho': stored['murnaghan']['rho'].copy()}
     t['rho'][301, 50] = t['rho'][299, 50] * (1 - 1e-6)
-    flags = c.signs(t, EPS9)['kappa_T']
+    flags = c.signs(t, EPS9)['kappa_T']['fail']
     assert flags[300, 50] and int(flags.sum()) == 1
 
 
@@ -231,15 +255,39 @@ def test_the_fill_value_counts_as_a_missing_cell(pt_files):
 
 
 @pytest.mark.unit
+def test_aragog_pt_files_on_different_grids_are_rejected(pt_files):
+    t = pt_files['murnaghan']
+    t = {**t, 'entropy': {**t['entropy'], 'T': t['entropy']['T'] * 1.01}}
+    with pytest.raises(ValueError, match='grid'):
+        c.check_pt(t, EPS9)
+
+
+@pytest.mark.unit
 def test_a_coordinate_grid_shorter_than_the_stencil_gives_no_derivative():
     assert np.isnan(c._coord_stencil(np.ones((3, 4)), np.arange(3.0), 0, 2, -1.0)).all()
 
 
 @pytest.mark.unit
-def test_a_missing_value_breaks_no_sign_condition(stored):
-    t = {**stored['murnaghan'], 'rho': stored['murnaghan']['rho'].copy()}
-    t['rho'][300, 50] = np.nan
-    assert not any(v[300, 50] for v in c.signs(t, EPS9).values())
+@pytest.mark.parametrize('col', ['rho', 'cp', 'cv', 'u', 's', 'alpha', 'nabla_ad'])
+def test_a_missing_value_breaks_no_sign_condition(stored, col):
+    t = {**stored['murnaghan'], col: stored['murnaghan'][col].copy()}
+    t[col][300, 50] = np.nan
+    assert not any(v['fail'][300, 50] for v in c.signs(t, EPS9).values())
+
+
+@pytest.mark.unit
+def test_kappa_t_is_tested_only_where_its_stencil_exists(stored):
+    res = c.signs(stored['murnaghan'], EPS9)
+    assert not res['kappa_T']['tested'][[0, -1]].any() and res['kappa_T']['tested'][1:-1].all()
+    assert res['rho']['tested'].all()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('excess, flagged', [(5e-9, False), (3e-8, True)])
+def test_the_sign_conditions_use_the_9_digit_floor(stored, excess, flagged):
+    t = {**stored['murnaghan'], 'cv': stored['murnaghan']['cv'].copy()}
+    t['cv'][300, 50] = t['cp'][300, 50] * (1 + excess)
+    assert bool(c.signs(t, 1e-12)['cp_ge_cv']['fail'][300, 50]) is flagged
 
 
 @pytest.mark.unit
@@ -262,17 +310,21 @@ def test_the_csv_report_lists_exactly_the_failing_cells(tmp_path, planted):
     rows = (tmp_path / 'out.csv').read_text().strip().splitlines()
     assert rows[0] == 'condition,P_Pa,T_K,phase,residual,bound' and counts['cp'][0] > 1000
     assert len(rows) - 1 == sum(failing for _, failing in counts.values())
-    assert (counts['cp'][1] > 0) is (planted > 0)
+    cp = [r.split(',') for r in rows[1:] if r.startswith('cp,')]
+    assert len(cp) == (4 if planted else 0)
+    for _, P, T, _, rx, bound in cp:
+        assert float(P) == pytest.approx(PP[75, 20], rel=1e-8) and abs(float(rx)) > float(bound)
+        assert min(abs(float(T) / TT[75, j] - 1) for j in (18, 19, 21, 22)) < 1e-8
+    assert counts['sign_kappa_T'][0] < counts['sign_rho'][0] == PP.size
 
 
 _BAD_EPS = st.one_of(
     st.sampled_from([np.nan, np.inf, -np.inf, True, False, None, '5e-9', 1.0]),
     st.floats(max_value=0.0, exclude_max=True),
     st.floats(min_value=1.0),
-)
-_BAD_FACTOR = st.one_of(
-    st.sampled_from([np.nan, np.inf, -np.inf, True, None, '2', 0.0]),
-    st.floats(max_value=0.0),
+    st.integers(min_value=1),
+    st.integers(max_value=-1),
+    st.sampled_from([10**400, -(10**400), np.int64(2)]),
 )
 
 
@@ -299,35 +351,26 @@ def test_a_precision_that_is_not_a_finite_fraction_is_rejected(small, pt_files, 
 
 @pytest.mark.unit
 @settings(
-    max_examples=40, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture]
-)
-@given(factor=_BAD_FACTOR)
-def test_a_factor_that_is_not_finite_and_positive_is_rejected(small, pt_files, factor):
-    for call in (
-        lambda: c.check(small, EPS9, factor),
-        lambda: c.check_pt(pt_files['murnaghan'], EPS9, factor),
-    ):
-        with pytest.raises(ValueError, match='factor'):
-            call()
-
-
-@pytest.mark.unit
-@settings(
     max_examples=15, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture]
 )
-@given(
-    eps=st.one_of(st.just(0.0), st.floats(min_value=1e-300, max_value=1e-3)),
-    factor=st.floats(1e-3, 1e3),
-)
-def test_a_valid_precision_and_factor_test_cells(small, eps, factor):
-    res = c.check(small, eps, factor)
-    assert all(int(v['tested'].sum()) > 0 for v in res.values())
+@given(eps=st.one_of(st.just(0), st.floats(min_value=0.0, max_value=0.99)))
+def test_an_exact_table_passes_at_every_valid_precision(small, eps):
+    res = c.check(small, eps)
+    assert all(v['tested'].sum() > 0 and not v['fail'].any() for v in res.values())
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize('digits', [0, -1, 18, True, 9.0])
+@pytest.mark.parametrize('digits', [0, -1, 18, True, 9.0, np.int64(0)])
 def test_the_csv_report_rejects_a_digit_count_outside_1_to_17(tmp_path, digits):
     from tools.validation.eos_table_consistency_report import report
 
     with pytest.raises(ValueError, match='digits'):
         report('unused.dat', str(tmp_path / 'out.csv'), digits)
+
+
+@pytest.mark.unit
+def test_the_csv_report_takes_a_numpy_digit_count(tmp_path):
+    from tools.validation.eos_table_consistency_report import report
+
+    with pytest.raises(FileNotFoundError):
+        report(str(tmp_path / 'missing.dat'), str(tmp_path / 'out.csv'), np.int64(9))
