@@ -62,7 +62,7 @@ def _grid(table):
 
 
 def _parts(table, k):
-    """Per derivative identity (D, E, Q, q, axis) with R + 1 = D / Q: E bounds the error of D per
+    """Per derivative identity (D, E, Q, q) with R + 1 = D / Q: E bounds the error of D per
     unit of stored precision, q the relative error of Q per unit of stored precision."""
     hx, hy, P, T, rho, u, s, cp, cv, alpha, _ = _grid(table)
     seg = {0: segments(table, 0), 1: segments(table, 1)}
@@ -79,11 +79,11 @@ def _parts(table, k):
 
         cpcv = (np.abs(cp) + np.abs(cv)) / np.abs(cp - cv) + 3
         return {
-            'cp': (*d(s, 1), cp, 1.0, 1),
-            'maxwell': (*d(s, 0), -a, 2.0, 0),
-            'alpha': (*d(ln_rho, 1, log=True), -T * alpha, 1.0, 1),
-            'dudt': (*d(u, 1), T * (cp - a), (np.abs(cp) + 2 * np.abs(a)) / np.abs(cp - a), 1),
-            'cp_cv': (*d(ln_rho, 0, log=True), P * T * alpha**2 / ((cp - cv) * rho), cpcv, 0),
+            'cp': (*d(s, 1), cp, 1.0),
+            'maxwell': (*d(s, 0), -a, 2.0),
+            'alpha': (*d(ln_rho, 1, log=True), -T * alpha, 1.0),
+            'dudt': (*d(u, 1), T * (cp - a), (np.abs(cp) + 2 * np.abs(a)) / np.abs(cp - a)),
+            'cp_cv': (*d(ln_rho, 0, log=True), P * T * alpha**2 / ((cp - cv) * rho), cpcv),
         }
 
 
@@ -111,7 +111,7 @@ def residuals(table, k=1):
     _, _, P, _, rho, _, _, cp, _, alpha, nab = _grid(table)
     parts = _parts(table, k)
     with np.errstate(divide='ignore', invalid='ignore'):
-        out = {n: D / Q - 1 for n, (D, _, Q, _, _) in parts.items()}
+        out = {n: D / Q - 1 for n, (D, _, Q, _) in parts.items()}
         out['nabla_ad'] = nab * rho * cp / (P * alpha) - 1
     return {n: out[n] for n in IDENTITIES}
 
@@ -127,7 +127,7 @@ def floors(table, eps, k=1):
     with np.errstate(divide='ignore', invalid='ignore'):
         out = {
             n: (E / np.abs(Q) + np.abs(D / Q) * q) * eps
-            for n, (D, E, Q, q, _) in _parts(table, k).items()
+            for n, (D, E, Q, q) in _parts(table, k).items()
         }
         out['nabla_ad'] = np.abs(nab * rho * cp / (P * alpha)) * 4 * eps
     return {n: out[n] for n in IDENTITIES}

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from tests import _analytic_eos as a
@@ -334,9 +334,7 @@ def small():
 
 
 @pytest.mark.unit
-@settings(
-    max_examples=60, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture]
-)
+@settings(max_examples=60, deadline=None)
 @given(eps=_BAD_EPS)
 def test_a_precision_that_is_not_a_finite_fraction_is_rejected(small, pt_files, eps):
     """A NaN or infinite eps would make every bound NaN or infinite and hide every cell."""
@@ -350,9 +348,7 @@ def test_a_precision_that_is_not_a_finite_fraction_is_rejected(small, pt_files, 
 
 
 @pytest.mark.unit
-@settings(
-    max_examples=15, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture]
-)
+@settings(max_examples=15, deadline=None)
 @given(eps=st.one_of(st.just(0), st.floats(min_value=0.0, max_value=0.99)))
 def test_an_exact_table_passes_at_every_valid_precision(small, eps):
     res = c.check(small, eps)
