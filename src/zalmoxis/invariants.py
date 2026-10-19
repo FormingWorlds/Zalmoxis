@@ -13,6 +13,7 @@ from .constants import G
 # table interpolation error of 1e-5.
 TOLERANCES = {
     'padding': 0,
+    'centre': 0,
     'positive': 0,
     'pressure_monotone': 0.0,
     'mass_monotone': 0.0,
@@ -95,17 +96,23 @@ def deviations(result, config_params, mass_limit, rtol, atol, density_at=None, i
     def put(name, dev, i, tol=None):
         out[name] = (float(dev), int(i), TOLERANCES[name] if tol is None else tol)
 
-    put('padding', np.count_nonzero(P[k:] != 0), k)
+    put('centre', np.count_nonzero(np.array([r[0], m[0], g[0]]) != 0), 0)
     bad = ~(np.isfinite(rho[:k]) & (rho[:k] > 0) & np.isfinite(T[:k]) & (T[:k] > 0))
     put('positive', np.count_nonzero(bad) + (k < 2), int(np.argmax(bad)) if bad.any() else k)
-    for name, x, sign in (('pressure_monotone', P, 1), ('mass_monotone', m, -1)):
-        rise = sign * np.diff(x[:k]) / np.abs(x[:k]).max(initial=1.0)
+    # the solver pads a surface stop with zero pressure and the mass and gravity at the stop
+    pad = np.count_nonzero(P[k:] != 0) + np.count_nonzero(m[k:] != m[k : k + 1])
+    put('padding', pad + np.count_nonzero(g[k:] != g[k : k + 1]), k)
+    for name, x, sign in (('pressure_monotone', P[:k], 1), ('mass_monotone', m, -1)):
+        rise = sign * np.diff(x) / np.abs(x).max(initial=1.0)
         put(name, max(rise.max(initial=0.0), 0.0), int(np.argmax(rise)) + 1 if len(rise) else 0)
     M, cmf = config_params['planet_mass'], config_params['core_mass_fraction']
     mmf = config_params.get('mantle_mass_fraction', 0.0)
     for name, f in (('cmb_mass', cmf), ('core_mantle_mass', cmf + mmf)):
-        if f > 0:
-            put(name, abs(result[name] / (f * M) - 1), len(m) - 1)
+        put(
+            name,
+            abs(result[name] / (f * M) - 1) if f > 0 else float(result[name] != 0),
+            len(m) - 1,
+        )
     # PROTEUS takes the CMB (and with an ice layer the mantle top) at argmax(m >= mass)
     for name, f, key in (
         ('cmb_node', cmf, 'cmb_mass'),

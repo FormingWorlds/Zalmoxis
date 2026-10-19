@@ -561,6 +561,7 @@ def test_a_chabrier_h2_mantle_passes_every_invariant():
 def test_the_tolerances_are_the_documented_values():
     assert TOLERANCES == {
         'padding': 0,
+        'centre': 0,
         'positive': 0,
         'pressure_monotone': 0.0,
         'mass_monotone': 0.0,
