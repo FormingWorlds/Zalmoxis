@@ -103,6 +103,15 @@ def write_extension(eos, table_file, out_file, header, t_min=50.0, p_max=12.0e9)
     return n
 
 
+def _git(path, *args):
+    """Output of ``git -C path args``, or '' when git fails or is not installed."""
+    try:
+        res = subprocess.run(['git', '-C', str(path), *args], capture_output=True, text=True)
+    except FileNotFoundError:
+        return ''
+    return res.stdout.strip() if res.returncode == 0 else ''
+
+
 def main(argv=None):
     """Command line: import PALEOS from ``--paleos-src`` and write the extension."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -116,19 +125,20 @@ def main(argv=None):
     )
     args = ap.parse_args(argv)
 
-    sys.path.insert(0, str(args.paleos_src))
+    src = args.paleos_src.resolve()
+    commit = args.paleos_commit
+    if not commit:
+        top, commit = (_git(src, 'rev-parse', a) for a in ('--show-toplevel', 'HEAD'))
+        if not top or Path(top).resolve() != src:
+            ap.error('--paleos-src is not the top of a git checkout; give --paleos-commit')
+        if _git(src, 'status', '--porcelain'):
+            commit += ' (uncommitted changes)'
+    sys.path.insert(0, str(src))
     from paleos.mgsio3_eos import MgSiO3EoS
 
-    commit = (
-        args.paleos_commit
-        or subprocess.run(
-            ['git', '-C', str(args.paleos_src), 'rev-parse', 'HEAD'],
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-    )
-    if not commit:
-        ap.error('--paleos-src is not a git checkout; give its commit with --paleos-commit')
+    origin = getattr(sys.modules['paleos.mgsio3_eos'], '__file__', None)
+    if origin is None or not Path(origin).resolve().is_relative_to(src):
+        ap.error(f'paleos was imported from {origin}, not from --paleos-src')
     header = [
         'PALEOS MgSiO3 solid low-temperature extension',
         f'PALEOS commit: {commit}',
