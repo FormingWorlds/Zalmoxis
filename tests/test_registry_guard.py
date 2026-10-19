@@ -231,13 +231,20 @@ class _Dataset:
         return self._registry
 
 
-def test_only_md5_entries_are_pinned_with_their_digest(monkeypatch):
-    """A sha256 entry is not pinned; an md5 entry keeps its digest unchanged."""
+def test_pins_keep_their_algorithm_and_digest(monkeypatch):
+    """An md5 pin keeps its bare digest; another algorithm keeps its prefix, and a bare
+    registry hash is sha256."""
     ds = _Dataset(
-        'interior.eos.paleos_iron', {NAME: 'md5:' + 'a' * 32, 'x.dat': 'sha256:' + 'b' * 64}
+        'interior.eos.paleos_iron',
+        {NAME: 'MD5:' + 'A' * 32, 'x.dat': 'sha256:' + 'b' * 64, 'y.dat': 'c' * 64},
     )
     monkeypatch.setattr(registry_guard, '_manifest', lambda: (ds,))
-    assert registry_guard._pins.__wrapped__() == {NAME: {'interior.eos.paleos_iron': 'a' * 32}}
+    key = 'interior.eos.paleos_iron'
+    assert registry_guard._pins.__wrapped__() == {
+        NAME: {key: 'a' * 32},
+        'x.dat': {key: 'sha256:' + 'b' * 64},
+        'y.dat': {key: 'sha256:' + 'c' * 64},
+    }
 
 
 def test_the_installed_manifests_list_only_paleos_datasets():
@@ -868,3 +875,16 @@ def test_the_hash_key_holds_the_size(tmp_path, pinned, monkeypatch):
     for _ in range(3):
         registry_guard.file_md5(str(path))
     assert len(calls) == 2
+
+
+def test_a_failed_cache_write_leaves_no_temporary_file(tmp_path, pinned, monkeypatch):
+    """When the rename fails, the temporary file is removed and the table is still returned."""
+    path = tmp_path / NAME
+    path.write_text(pinned)
+
+    def fail(a, b):
+        raise OSError('disk full')
+
+    monkeypatch.setattr(interpolation.os, 'replace', fail)
+    assert interpolation._ensure_unified_cache(str(path), {})['p_min'] == pytest.approx(1e9)
+    assert sorted(p.name for p in tmp_path.iterdir()) == [NAME]
