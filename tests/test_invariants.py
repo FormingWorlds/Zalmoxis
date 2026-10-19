@@ -823,3 +823,43 @@ def test_a_gravity_near_zero_breaks_the_check(node):
     result['accept_mass_limit'] = 1e-3
     with pytest.raises(StructureInvariantError, match=f'breaks gravity: .* at node {node}'):
         check_accepted(result, cfg, 1e-5, 1e-6, lambda P, T, layer: RHO)
+
+
+def _malformed_arrays(result):
+    result['pressure'] = result['pressure'].reshape(5, 10)
+
+
+def _short_radii(result):
+    result['radii'] = result['radii'][:-1]
+
+
+def _one_node(result):
+    for key in ('radii', 'mass_enclosed', 'gravity', 'pressure', 'density', 'temperature'):
+        result[key] = result[key][:1]
+
+
+def _vector_cmb(result):
+    result['cmb_mass'] = np.array([result['cmb_mass']] * 2)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('edit', [_malformed_arrays, _short_radii, _one_node, _vector_cmb])
+def test_a_malformed_result_raises_the_invariant_error(edit):
+    """A ValueError, IndexError or TypeError would be caught and rolled back by the caller."""
+    result, cfg = _sphere()
+    edit(result)
+    with pytest.raises(StructureInvariantError, match='malformed'):
+        _check(result, cfg)
+
+
+@pytest.mark.unit
+def test_a_failing_density_lookup_raises_the_invariant_error_with_its_cause():
+    result, cfg = _sphere()
+    result['accept_mass_limit'] = 1e-3
+
+    def broken(P, T, layer):
+        raise ValueError('table lookup failed')
+
+    with pytest.raises(StructureInvariantError, match='density lookup') as info:
+        check_accepted(result, cfg, RTOL, ATOL, broken)
+    assert isinstance(info.value.__cause__, ValueError)
