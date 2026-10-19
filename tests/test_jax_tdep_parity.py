@@ -178,7 +178,9 @@ def test_get_tdep_density_parity_at_collapsed_boundary():
 
         for frac in (1.0 - 1e-9, 1.0, 1.0 + 1e-9):
             temperature = frac * t_star
-            nv = get_Tdep_density(pressure, temperature, mat, const_sol, const_liq, interp_cache)
+            nv = get_Tdep_density(
+                pressure, temperature, mat, const_sol, const_liq, interp_cache
+            )
             jv = float(get_tdep_density_jax(pressure, temperature, t_star, t_star, **jax_args))
             assert nv is not None and np.isfinite(jv)
             rel = abs(nv - jv) / max(abs(nv), 1e-30)

@@ -481,7 +481,7 @@ def test_cmb_node_over_the_core_mass_fraction_and_the_mass_deficit(f, deficit):
     """The check raises exactly when no node reaches cmb_mass, as argmax of the caller sees it."""
     result, cfg = _sphere()
     _no_node_at_cmb(result, cfg, f=f, deficit=deficit)
-    reached = result['mass_enclosed'][-1] >= result['cmb_mass'] * (1 - _RTOL_LAYER)
+    reached = result['mass_enclosed'][-1] >= result['cmb_mass']
     with nullcontext() if reached else pytest.raises(StructureInvariantError, match='cmb_node'):
         _check(result, cfg, limit=0.03)
 
@@ -869,8 +869,19 @@ def _vector_cmb(result):
     result['cmb_mass'] = np.array([result['cmb_mass']] * 2)
 
 
+def _string_cmb(result):
+    result['cmb_mass'] = str(result['cmb_mass'])
+
+
+def _bool_core_mantle(result):
+    result['core_mantle_mass'] = True
+
+
 @pytest.mark.unit
-@pytest.mark.parametrize('edit', [_malformed_arrays, _short_radii, _one_node, _vector_cmb])
+@pytest.mark.parametrize(
+    'edit',
+    [_malformed_arrays, _short_radii, _one_node, _vector_cmb, _string_cmb, _bool_core_mantle],
+)
 def test_a_malformed_result_raises_the_invariant_error(edit):
     """A ValueError, IndexError or TypeError would be caught and rolled back by the caller."""
     result, cfg = _sphere()
@@ -879,17 +890,29 @@ def test_a_malformed_result_raises_the_invariant_error(edit):
         _check(result, cfg)
 
 
+def _broken(P, T, layer):
+    raise ValueError('table lookup failed')
+
+
 @pytest.mark.unit
-def test_a_failing_density_lookup_raises_the_invariant_error_with_its_cause():
+def test_a_failing_density_lookup_breaks_density_eos_with_its_error_and_label():
     result, cfg = _sphere()
     result['accept_mass_limit'] = 1e-3
+    with pytest.raises(StructureInvariantError, match='breaks density_eos:') as info:
+        check_accepted(result, cfg, RTOL, ATOL, _broken)
+    msg = str(info.value)
+    assert 'density lookup of the core layer failed: table lookup failed' in msg
+    assert "accepted_on='strict'" in msg
 
-    def broken(P, T, layer):
-        raise ValueError('table lookup failed')
 
-    with pytest.raises(StructureInvariantError, match='density lookup') as info:
-        check_accepted(result, cfg, RTOL, ATOL, broken)
-    assert isinstance(info.value.__cause__, ValueError)
+@pytest.mark.unit
+def test_a_failing_density_lookup_does_not_hide_an_earlier_invariant():
+    """A NaN temperature breaks positive, which comes first, even when the lookup fails."""
+    result, cfg = _sphere()
+    result['temperature'][3] = np.nan
+    result['accept_mass_limit'] = 1e-3
+    with pytest.raises(StructureInvariantError, match='breaks positive:'):
+        check_accepted(result, cfg, RTOL, ATOL, _broken)
 
 
 @pytest.mark.unit
@@ -1090,11 +1113,51 @@ def test_a_jax_solve_through_main_runs_the_kernel_and_the_check(monkeypatch):
     ran, real = [], jw.solve_structure_via_jax
 
     def kernel(*args, **kwargs):
+        out = real(*args, **kwargs)
         ran.append(1)
-        return real(*args, **kwargs)
+        return out
 
     monkeypatch.setattr(jw, 'solve_structure_via_jax', kernel)
     seen = _spy_checks(monkeypatch)
     r = _run(_paleos_eos_cfg(outer_solver='picard', use_jax=True, relative_tolerance=1e-8))
     assert r['converged'] and r['density_from_eos']
     assert ran and seen == [False]
+    assert not zs._interpolation_cache.get('_jax_fell_back')
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('ice', [False, True])
+def test_the_layer_nodes_use_the_exact_comparison_of_the_caller(ice):
+    """PROTEUS takes argmax(m >= mass) with no tolerance: a last node 5e-13 below the layer
+    mass reaches no node there, so the check stops."""
+    result, cfg = _sphere(mmf=0.6 if ice else 0.0)
+    f = 0.4 if ice else 1.0
+    key = 'core_mantle_mass' if ice else 'cmb_mass'
+    if ice:
+        cfg['core_mass_fraction'], cfg['mantle_mass_fraction'] = 0.4, 0.6
+        result['cmb_mass'] = 0.4 * cfg['planet_mass']
+    else:
+        cfg['core_mass_fraction'] = 1.0
+    result[key] = result['mass_enclosed'][-1] * (1 + 5e-13)
+    cfg['planet_mass'] = result[key] / (f + (0.6 if ice else 0.0))
+    if ice:
+        result['cmb_mass'] = 0.4 * cfg['planet_mass']
+    else:
+        result['core_mantle_mass'] = result['cmb_mass']
+    result['accept_mass_limit'] = 1e-3
+    name = 'core_mantle_node' if ice else 'cmb_node'
+    with pytest.raises(StructureInvariantError, match=f'breaks {name}:'):
+        check_accepted(result, cfg, RTOL, ATOL, lambda P, T, layer: RHO, ice=ice)
+
+
+@pytest.mark.unit
+def test_the_gravity_message_of_a_node_at_radius_zero_gives_no_warning():
+    """G m / r^2 for the message is computed with the arithmetic warnings off."""
+    import warnings
+
+    result, cfg = _sphere()
+    result['radii'][3] = 0.0
+    with warnings.catch_warnings():
+        warnings.simplefilter('error')
+        msg = _message(result, cfg)
+    assert 'breaks gravity:' in msg
