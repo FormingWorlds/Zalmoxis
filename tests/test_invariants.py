@@ -162,7 +162,7 @@ def test_mass_closure_reads_the_limit_of_the_accept_path():
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize('key', ['pressure', 'cmb_mass'])
+@pytest.mark.parametrize('key', ['pressure', 'cmb_mass', 'temperature'])
 def test_a_converged_result_without_a_profile_raises(key):
     result, cfg = _sphere()
     del result[key]
