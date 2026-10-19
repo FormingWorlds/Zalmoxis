@@ -149,8 +149,9 @@ def test_command_line_refuses_a_checkout_without_a_commit(tmp_path, capsys):
     """A checkout with no commit gives no commit to record."""
     src = tmp_path / 'paleos_src'
     _git_repo(src, commit=False)
-    with pytest.raises(SystemExit):
+    with pytest.raises(BaseException) as exc:
         _main(src, _paleos(tmp_path, [6, 6, 6, 6]), tmp_path / 'o')
+    assert exc.type is SystemExit, repr(exc.value)
     assert 'has no commit' in capsys.readouterr().err
     assert not (tmp_path / 'o').exists()
 
@@ -180,8 +181,9 @@ def test_command_line_refuses_a_paleos_imported_from_elsewhere(tmp_path, capsys,
     other.MgSiO3EoS = object
     clean_import.setitem(sys.modules, 'paleos', types.ModuleType('paleos'))
     clean_import.setitem(sys.modules, 'paleos.mgsio3_eos', other)
-    with pytest.raises(SystemExit):
+    with pytest.raises(BaseException) as exc:
         _main(src, _paleos(tmp_path, [6, 6, 6, 6]), tmp_path / 'o')
+    assert exc.type is SystemExit, repr(exc.value)
     assert 'paleos was imported from' in capsys.readouterr().err
     assert not (tmp_path / 'o').exists()
 
@@ -278,8 +280,9 @@ def test_command_line_refuses_a_missing_output_folder_first(tmp_path, capsys, cl
     src.mkdir()
     _stub_paleos(src)
     out = tmp_path / 'absent' / 'ext.dat'
-    with pytest.raises(SystemExit):
+    with pytest.raises(BaseException) as exc:
         _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, '--paleos-commit', '654aca9')
+    assert exc.type is SystemExit, repr(exc.value)
     assert 'output folder' in capsys.readouterr().err
     assert not out.parent.exists()
 

@@ -102,7 +102,10 @@ class TestMergeLowTExtension:
         ext = _ext(tmp_path, ds=50.0, drho=-30.0)
         alone = {k: np.array(v) for k, v in eos_export.load_paleos_all_properties(pal).items()}
         eos_export._parse_paleos_table.cache_clear()
-        out = eos_export.load_paleos_with_lowt_extension(pal, ext)
+        try:
+            out = eos_export.load_paleos_with_lowt_extension(pal, ext)
+        except ValueError as exc:
+            pytest.fail(f'full PALEOS coverage was refused: {exc}')
         for key in ('unique_log_p', 'unique_log_t', *_COLS):
             assert np.array_equal(out[key], alone[key], equal_nan=True), key
         assert np.array_equal(out['phase'], alone['phase'])
@@ -597,8 +600,10 @@ def test_extension_without_data_rows_is_an_error(tmp_path):
     """An extension file that holds only comments is refused with a named error."""
     ext = tmp_path / 'empty.dat'
     ext.write_text('# only a header\n')
-    with pytest.raises(ValueError, match='holds no data rows'):
+    with pytest.raises(Exception) as exc:
         eos_export.load_paleos_with_lowt_extension(_paleos(tmp_path, [6, 6, 6, 6]), ext)
+    assert exc.type is ValueError, repr(exc.value)
+    assert 'holds no data rows' in str(exc.value)
     assert np.isfinite(
         eos_export.load_paleos_with_lowt_extension(
             _paleos(tmp_path, [6, 6, 6, 6]), _ext(tmp_path)
