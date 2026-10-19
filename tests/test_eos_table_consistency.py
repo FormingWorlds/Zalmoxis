@@ -159,7 +159,7 @@ def test_a_table_off_a_uniform_log_grid_is_rejected(stored):
 @pytest.mark.unit
 def test_a_smooth_drift_of_the_grid_step_is_rejected(stored):
     m = stored['murnaghan']
-    lp = m['unique_log_p'] + 1e-4 / 150 * np.sin(np.arange(m['unique_log_p'].size) / 50)
+    lp = m['unique_log_p'] + 1e-5 * np.sin(np.arange(m['unique_log_p'].size) / 50)
     with pytest.raises(ValueError, match='uniform'):
         c.check({**m, 'unique_log_p': lp}, EPS9)
 

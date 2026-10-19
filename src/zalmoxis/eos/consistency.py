@@ -7,16 +7,18 @@ when all its cells hold numbers of one phase, so a phase boundary never enters a
 
 from __future__ import annotations
 
+import numbers
+
 import numpy as np
 
 IDENTITIES = ('cp', 'maxwell', 'alpha', 'dudt', 'nabla_ad', 'cp_cv')
+COLUMNS = ('rho', 'u', 's', 'cp', 'cv', 'alpha', 'nabla_ad')
 EPS_FLOOR = 5e-9  # 9 significant digits, the precision of the shipped tables
 FACTOR = 2.0  # allowed multiple of the h^4 term; a fault 2 cells away is found only below 3
 
 
-def segments(table, axis):
-    """Label runs of valid cells of one phase along ``axis``; invalid cells get -1."""
-    cols = ('rho', 'u', 's', 'cp', 'cv', 'alpha', 'nabla_ad')
+def segments(table, axis, cols=COLUMNS):
+    """Label runs of cells of one phase with all ``cols`` finite along ``axis``; others get -1."""
     valid = np.logical_and.reduce([np.isfinite(table[c]) for c in cols])
     _, code = np.unique(table['phase'].astype(str), return_inverse=True)
     code = np.where(valid, code.reshape(valid.shape), -1)
@@ -51,13 +53,16 @@ def derivative(f, seg, axis, k, h):
 
 def _grid(table):
     lp, lt = np.asarray(table['unique_log_p'], float), np.asarray(table['unique_log_t'], float)
-    for name, d in (('unique_log_p', np.diff(lp)), ('unique_log_t', np.diff(lt))):
-        if d.size > 1 and np.ptp(d) > 1e-3 * np.abs(d).mean():
+    for name, x in (('unique_log_p', lp), ('unique_log_t', lt)):
+        d = np.diff(x)
+        if not (np.isfinite(x).all() and (d > 0).all()):
+            raise ValueError(f'{name} must be finite and strictly increasing')
+        if d.size > 1 and np.ptp(d) > 1e-5 * d.mean():  # 9-digit coordinates spread up to ~5e-6
             raise ValueError(f'{name} is not a uniform grid')
     P, T = np.meshgrid(10.0**lp, 10.0**lt, indexing='ij')
-    cols = (
-        np.asarray(table[c], float) for c in ('rho', 'u', 's', 'cp', 'cv', 'alpha', 'nabla_ad')
-    )
+    cols = [np.asarray(table[c], float) for c in COLUMNS]
+    if any(np.shape(v) != P.shape for v in (*cols, table['phase'])):
+        raise ValueError('a column does not have the shape of the (P, T) grid')
     return np.log(10.0) * np.diff(lp).mean(), np.log(10.0) * np.diff(lt).mean(), P, T, *cols
 
 
@@ -134,14 +139,36 @@ def floors(table, eps, k=1):
 
 
 def _eps(eps):
-    """``eps`` raised to ``EPS_FLOOR``; ValueError unless it is a finite number in [0, 1)."""
+    """``eps`` raised to ``EPS_FLOOR``; ValueError unless it is a real number in [0, 1)."""
+    real = isinstance(eps, (numbers.Real, np.integer, np.floating))
     try:
-        x = float(eps)
-    except (TypeError, ValueError, OverflowError):
+        x = float(eps) if real and not isinstance(eps, (bool, np.bool_)) else np.nan
+    except OverflowError:
         x = np.nan
-    if isinstance(eps, (bool, np.bool_, str, bytes)) or not 0 <= x < 1:
-        raise ValueError(f'eps must be a finite number in [0, 1), got {eps!r}')
+    if not 0 <= x < 1:
+        raise ValueError(f'eps must be a real number in [0, 1), got {eps!r}')
     return max(x, EPS_FLOOR)
+
+
+def _verdict(rx, bound):
+    """The result of one identity: ``rx`` tested against ``bound`` where both are finite."""
+    tested = np.isfinite(rx) & np.isfinite(bound)
+    return {'rx': rx, 'bound': bound, 'tested': tested, 'fail': tested & (np.abs(rx) > bound)}
+
+
+def _richardson(r1, r2, r4, f1, f2):
+    """``_verdict`` of the Richardson residual from steps 1, 2, 4 with floors ``f1``, ``f2``."""
+    rx = (4 * r1 - r2) / 3
+    est = np.abs((4 * r2 - r4) / 3 - rx) / 15
+    return _verdict(rx, (4 * f1 + f2) / 3 + FACTOR * est)
+
+
+def _nonempty(out):
+    """``out``; ValueError if an identity tests no cell."""
+    empty = [n for n, v in out.items() if not v['tested'].any()]
+    if empty:
+        raise ValueError(f'no cell tested for {", ".join(empty)}')
+    return out
 
 
 def check(table, eps):
@@ -154,14 +181,17 @@ def check(table, eps):
     planted value is found at the cells one and two steps from it.
 
     The floor uses eps_eff = max(eps, EPS_FLOOR): every table is checked at the 9-digit
-    floor at best, so faults below about 2e-8 (relative) are out of reach on any table. A
-    derivative identity is tested only at cells 4 or more steps from an edge, a phase boundary
-    or a missing cell along its axis.
+    floor at best, so a single value off by about 1e-8 (relative) or less is out of reach on any
+    table. A derivative identity is tested only where 4 cells on each side along its axis hold
+    values of one phase. On a coarse grid the h^4 term can change sign at a cell where the
+    h^6 term remains, and an exact table then fails there: 8 dudt cells of the Murnaghan table at
+    20 points per decade over P 1e5 to 1e14 Pa and T 300 to 1e5 K.
 
     Parameters
     ----------
     table : dict
-        As for ``residuals``, on a grid uniform in log10 P and log10 T.
+        As for ``residuals``, on a grid uniform in log10 P and log10 T (step spread at most
+        1e-5 of the step).
     eps : float
         Relative precision of the stored columns (0.5 x 10^(1 - n) for n significant digits).
 
@@ -174,28 +204,21 @@ def check(table, eps):
     Raises
     ------
     ValueError
-        If eps is not a finite number in [0, 1), or an axis is not uniform.
+        If eps is not a real number in [0, 1), an axis is not finite, increasing and uniform,
+        a column is off the shape of the grid, or an identity tests no cell.
     """
     eps = _eps(eps)
     r = {k: residuals(table, k) for k in (1, 2, 4)}
     f1, f2 = floors(table, eps, 1), floors(table, eps, 2)
-    out = {}
     with np.errstate(invalid='ignore'):
-        for n in IDENTITIES:
-            if n == 'nabla_ad':
-                rx, bound = r[1][n], f1[n]
-            else:
-                rx = (4 * r[1][n] - r[2][n]) / 3
-                est = np.abs((4 * r[2][n] - r[4][n]) / 3 - rx) / 15
-                bound = (4 * f1[n] + f2[n]) / 3 + FACTOR * est
-            tested = np.isfinite(rx) & np.isfinite(bound)
-            out[n] = {
-                'rx': rx,
-                'bound': bound,
-                'tested': tested,
-                'fail': tested & (np.abs(rx) > bound),
+        return _nonempty(
+            {
+                n: _verdict(r[1][n], f1[n])
+                if n == 'nabla_ad'
+                else _richardson(r[1][n], r[2][n], r[4][n], f1[n], f2[n])
+                for n in IDENTITIES
             }
-    return out
+        )
 
 
 def signs(table, eps):
@@ -215,16 +238,16 @@ def signs(table, eps):
         and ``cv`` not positive; ``cp_ge_cv``: cv above cp by more than eps (|cp| + |cv|);
         ``kappa_T``: rho falls with P at fixed T by more than the rounding of its two
         neighbours (central difference over one cell on each side, one phase). A condition
-        tests only the cells that hold its values.
+        tests the cells where its values are not NaN; an infinite value breaks it.
 
     Raises
     ------
     ValueError
-        If eps is not a finite number in [0, 1).
+        If eps is not a real number in [0, 1).
     """
     eps = _eps(eps)
     rho, cp, cv = (np.asarray(table[c], float) for c in ('rho', 'cp', 'cv'))
-    seg = segments(table, 0)
+    seg = segments(table, 0, ('rho',))
     rise = _stencil(rho, seg, 0, 1, 0.5, -1.0)  # rho[i+1] - rho[i-1]
     noise = _stencil(np.abs(rho), seg, 0, 1, 0.5, 1.0) * eps
     with np.errstate(invalid='ignore'):
@@ -236,7 +259,8 @@ def signs(table, eps):
             'kappa_T': (rise, rise < -noise),
         }
     return {
-        n: {'tested': np.isfinite(v), 'fail': np.isfinite(v) & f} for n, (v, f) in cond.items()
+        n: {'tested': ~np.isnan(v), 'fail': ~np.isnan(v) & (f | np.isinf(v))}
+        for n, (v, f) in cond.items()
     }
 
 
@@ -269,6 +293,8 @@ def _coord_stencil(f, x, axis, k, sign):
 def _pt_parts(tables, k):
     """(D, E, Q, q) per identity of the Aragog P-T tables, with R + 1 = D / Q."""
     P, T = np.asarray(tables['density']['P'], float), np.asarray(tables['density']['T'], float)
+    if not (np.diff(P) > 0).all() or not (np.diff(T) > 0).all():
+        raise ValueError('P and T must be strictly increasing')
     for q in PT_QUANTITIES:
         t = tables[q]
         if not (np.array_equal(t['P'], P) and np.array_equal(t['T'], T)):
@@ -328,14 +354,5 @@ def check_pt(tables, eps):
                 * eps
                 for k in (1, 2)
             }
-            rx = (4 * r[1] - r[2]) / 3
-            est = np.abs((4 * r[2] - r[4]) / 3 - rx) / 15
-            bound = (4 * fl[1] + fl[2]) / 3 + FACTOR * est
-            tested = np.isfinite(rx) & np.isfinite(bound)
-            out[n] = {
-                'rx': rx,
-                'bound': bound,
-                'tested': tested,
-                'fail': tested & (np.abs(rx) > bound),
-            }
-    return out
+            out[n] = _richardson(r[1], r[2], r[4], fl[1], fl[2])
+    return _nonempty(out)

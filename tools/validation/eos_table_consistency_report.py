@@ -49,6 +49,7 @@ def report(path, out, digits=9):
         or not 1 <= digits <= 17
     ):
         raise ValueError(f'digits must be an integer from 1 to 17, got {digits!r}')
+    digits = int(digits)
     t = load_paleos_all_properties(path)
     eps = 0.5 * 10.0 ** (1 - digits)
     P = np.broadcast_to((10.0 ** t['unique_log_p'])[:, None], t['rho'].shape)
