@@ -512,3 +512,35 @@ def test_the_key_at_the_first_import_is_kept(history, monkeypatch):
     (repo / 'paleos' / 'eos.py').write_text('edited later')
     assert paleos_api.paleos_installed_sha().startswith(c['new'] + '-dirty-')
     assert paleos_api._KEY_AT_IMPORT == {'key': c['new']}
+
+
+def test_an_unreadable_untracked_module_stops_the_check(history):
+    """An untracked module that cannot be read is a PaleosVersionError that names it."""
+    repo, c = history
+    extra = repo / 'paleos' / 'extra.py'
+    extra.write_text('X = 1\n')
+    extra.chmod(0)
+    try:
+        with pytest.raises(PaleosVersionError, match='cannot read paleos/extra.py'):
+            check_paleos_commit(repo, c['new'])
+    finally:
+        extra.chmod(0o644)
+
+
+def test_a_symlink_git_cannot_hash_stops_the_check(history, monkeypatch):
+    """A failed hash of a symlink target is a PaleosVersionError that names the link."""
+    import os
+
+    repo, _ = history
+    os.symlink('eos.py', repo / 'paleos' / 'link.py')
+    head = _commit_files(repo, {}, 'link')
+    real = paleos_api._git
+
+    def git(repo_dir, *args, stdin=None):
+        if args[:2] == ('hash-object', '--no-filters'):
+            return paleos_api._subprocess.CompletedProcess(args, 128, '', 'fatal: no hash')
+        return real(repo_dir, *args, stdin=stdin)
+
+    monkeypatch.setattr(paleos_api, '_git', git)
+    with pytest.raises(PaleosVersionError, match='cannot hash paleos/link.py'):
+        check_paleos_commit(repo, head)
