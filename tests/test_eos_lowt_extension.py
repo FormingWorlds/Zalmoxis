@@ -479,3 +479,24 @@ def test_extension_needs_two_entropy_nodes(tmp_path):
         eos_export.generate_spider_eos_tables(**kw, n_S=2, solid_lowt_file=ext)['S_solid'].size
         >= 2
     )
+
+
+def test_missing_two_phase_tables_stop_before_the_extension_is_read(tmp_path, monkeypatch):
+    """The two-phase check comes before the extension load: the loader is never reached."""
+    solid, _, ext = _gen_tables(tmp_path)
+
+    def loaded(*args):
+        raise ValueError('extension loaded')
+
+    monkeypatch.setattr(eos_export, 'load_paleos_with_lowt_extension', loaded)
+    with pytest.raises(ValueError, match='two-phase'):
+        eos_export.generate_spider_eos_tables(
+            eos_file=solid,
+            solidus_func=lambda P: 1500.0,
+            liquidus_func=lambda P: 1800.0,
+            P_range=(1.0e6, 1.0e10),
+            n_P=6,
+            n_S=40,
+            solid_lowt_file=ext,
+        )
+    assert ext.is_file()
