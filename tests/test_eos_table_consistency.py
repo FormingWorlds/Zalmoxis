@@ -213,7 +213,7 @@ def test_an_axis_that_is_not_finite_and_increasing_is_rejected(stored, change):
 @pytest.mark.parametrize('key', ['u', 'phase'])
 def test_a_column_off_the_shape_of_the_grid_is_rejected(stored, key):
     m = stored['murnaghan']
-    with pytest.raises(ValueError, match='shape'):
+    with pytest.raises(ValueError, match='does not have the shape of the'):
         c.check({**m, key: m[key][:-1]}, EPS9)
 
 
@@ -605,4 +605,4 @@ def test_the_floor_is_the_first_order_round_off_of_each_stored_value(stored, nam
         t = {**m, col: m[col].copy()}
         t[col][at] *= 1 + eps
         total += abs(c.residuals(t, 1)[name][i, j] - base)
-    assert total == pytest.approx(c.floors(m, eps, 1)[name][i, j], rel=0.02)
+    assert total == pytest.approx(c.floors(m, eps, 1)[name][i, j], rel=1e-4)
