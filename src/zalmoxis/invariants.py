@@ -66,13 +66,15 @@ def deviations(
         relative to ``G M``, an estimate from the Butcher tableau, and an error made at one
         radius decays outward as ``(r_i / r)^2``, since the homogeneous part of ``dg/dr`` is
         ``-2 g / r``. The bound is per step and the factor 100 covers the sum over the
-        steps: real solves through ``main`` of 0.1 to 10 M_E planets reach 2.8 to 13.0 times
-        ``rtol + atol (1 / M_i + 1 / g_i)``, a margin of at least 7.6. They cover the analytic,
-        Wolf & Bower, PALEOS, PALEOS with 3 % Chabrier H and 3-layer PALEOS ice EOS, 150 and
-        2000 nodes, rtol 1e-5 and 1e-9, Picard, Newton and the JAX kernel. The largest is a
-        1 M_E planet with a Seager iron core and a Wolf & Bower mantle, isothermal at 3000 K,
-        2000 nodes, rtol 1e-5 and atol 1e-6. At rtol 1e-5 and atol 1e-6 the tolerance at
-        the surface is about 1e-3 for any node count.
+        steps: accepted real solves through ``main`` of 26 setups, 0.1 to 10 M_E, reach 2.83 to
+        20.78 times ``rtol + atol (1 / M_i + 1 / g_i)``, a margin of at least 4.8. They cover
+        the analytic, Wolf & Bower (isothermal 3000 and 4000 K, linear), PALEOS, PALEOS-2phase
+        (linear, adiabatic), PALEOS with 3 % Chabrier H and 3-layer PALEOS ice EOS, 150 and 2000
+        nodes, rtol 1e-5 and 1e-9, Picard, Newton and the JAX kernel. The largest is the 1 M_E
+        planet of ``input/default.toml`` with a Seager iron core, a PALEOS-2phase mantle and the
+        adiabatic profile, at the default tolerances; the smallest is a 3 % Chabrier H mantle at
+        rtol 1e-9. At rtol 1e-5 and atol 1e-6 the tolerance at the surface is about 1e-3 for
+        any node count.
     density_at : callable or None
         ``(P, T, layer) -> rho`` for the arrays of the nodes of one layer, by the EOS path
         that the solver used at the returned nodes; called once per layer that has nodes.

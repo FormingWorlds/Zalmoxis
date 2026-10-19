@@ -1161,3 +1161,23 @@ def test_the_gravity_message_of_a_node_at_radius_zero_gives_no_warning():
         warnings.simplefilter('error')
         msg = _message(result, cfg)
     assert 'breaks gravity:' in msg
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.timeout(2400)
+def test_the_gravity_margin_of_the_paleos_adiabat_fixture():
+    """The 1 M_E PALEOS-2phase adiabat of the smoke tests is the largest measured gravity
+    ratio (20.8 times rtol + atol (1/M_i + 1/g_i)); below 50 keeps a margin of 2 to the
+    factor 100."""
+    from tests._paleos_helpers import WALL_TIMEOUT, _paleos_data_available, _run_paleos
+
+    if not _paleos_data_available():
+        pytest.skip('PALEOS data files not found')
+    r = _run_paleos(1.0, temperature_mode='adiabatic', wall_timeout=WALL_TIMEOUT)
+    assert r['converged'] and r['accepted_on'] == 'strict'
+    defaults = zs._default_solver_params(earth_mass)
+    rtol, atol = defaults['relative_tolerance'], defaults['absolute_tolerance']
+    cfg = {'planet_mass': earth_mass, 'core_mass_fraction': 0.325, 'mantle_mass_fraction': 0}
+    dev, _, tol = deviations(r, cfg, r['accept_mass_limit'], rtol, atol)['gravity']
+    assert 1.0 < dev / (tol / TOLERANCES['gravity']) < 50.0
