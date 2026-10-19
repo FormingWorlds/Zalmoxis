@@ -26,9 +26,8 @@ TOLERANCES = {
 }
 _RTOL_LAYER = 1e-12  # the layer rule of structure_model.get_layer_mixture
 _SCALAR = ('cmb_mass', 'core_mantle_mass', 'mass_closure')  # no node in the message
-_PROFILE = (
-    'radii mass_enclosed gravity pressure density temperature cmb_mass core_mantle_mass'.split()
-)
+_ARRAYS = 'radii mass_enclosed gravity pressure density temperature'.split()
+_MASSES = ['cmb_mass', 'core_mantle_mass']
 
 
 class StructureInvariantError(Exception):
@@ -112,7 +111,7 @@ def deviations(
 
     put(
         'centre',
-        np.count_nonzero(np.array([r[0], m[0], g[0]]) != 0),
+        np.count_nonzero([r[0], m[0], g[0]]),
         0,
         text=f'radius, mass, gravity {r[0]:.6e}, {m[0]:.6e}, {g[0]:.6e}, expected 0',
     )
@@ -144,7 +143,7 @@ def deviations(
         i = int(np.argmax(rise)) + 1 if len(rise) else 0
         put(
             name,
-            max(rise.max(initial=0.0), 0.0),
+            rise.max(initial=0.0),
             i,
             text=f'{x[i - 1]:.6e} at node {i - 1}, {x[i]:.6e} here' if i else '',
         )
@@ -167,10 +166,10 @@ def deviations(
             i = int(np.argmax(reach)) if reach.any() else -1
             put(
                 name,
-                not (reach.any() and r[i] > 0),
+                not (reach[i] and r[i] > 0),
                 i,
                 text=f'{key} {result[key]:.6e} kg, largest mass_enclosed {m.max():.6e} kg, '
-                f'radius of the first node at or above it {r[i] if reach.any() else "none"}',
+                f'radius of the first node at or above it {r[i] if reach[i] else "none"}',
             )
     with np.errstate(divide='ignore', invalid='ignore'):
         # the bound takes G M / r^2, not the gravity under test, which could widen it
@@ -251,18 +250,18 @@ def check_accepted(result, config_params, rtol, atol, density_at=None, ice=False
     if not result.get('converged'):
         return
     accepted_on = result.get('accepted_on')
-    missing = [k for k in _PROFILE if result.get(k) is None]
+    missing = [k for k in _ARRAYS + _MASSES if result.get(k) is None]
     if missing:
         raise StructureInvariantError(
             f'Accepted structure ({accepted_on=}) has no {", ".join(missing)}.'
         )
     try:
-        shapes = [np.asarray(result[k], float).shape for k in _PROFILE[:6]]
+        shapes = [np.asarray(result[k], float).shape for k in _ARRAYS]
     except (TypeError, ValueError) as err:
         raise StructureInvariantError(
             f'Accepted structure ({accepted_on=}) is malformed: {err}'
         ) from err
-    scalars = [_real_scalar(result[k]) for k in _PROFILE[6:]]
+    scalars = [_real_scalar(result[k]) for k in _MASSES]
     if len(set(shapes)) != 1 or len(shapes[0]) != 1 or shapes[0][0] < 2 or not all(scalars):
         raise StructureInvariantError(
             f'Accepted structure ({accepted_on=}) is malformed: the profile arrays need one '
