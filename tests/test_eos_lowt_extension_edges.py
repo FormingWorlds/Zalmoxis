@@ -1,0 +1,395 @@
+"""Edge cases and boundary tests for the low-temperature PALEOS solid extension."""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+from tests.test_eos_lowt_extension import (
+    _DLOGT,
+    _P,
+    _T,
+    _TG,
+    _ext,
+    _gen_tables,
+    _paleos,
+    _props,
+    _write,
+)
+from tools.converters import paleos_lowt_extension as tool
+from zalmoxis import eos_export
+from zalmoxis.melting_curves import derive_solidus_from_liquidus, paleos_liquidus
+
+pytestmark = pytest.mark.unit
+
+
+# ── F3: Seam and continuation tolerance boundaries ──────────────────────────
+
+
+@pytest.mark.parametrize(
+    ('prop_name', 'prop_idx'),
+    [
+        ('s', 2),
+        ('rho', 0),
+        ('alpha', 5),
+        ('nabla_ad', 6),
+    ],
+)
+def test_seam_tolerance_boundary_5e7_accepted_2e6_refused(tmp_path, prop_name, prop_idx):
+    """Relative seam offsets of 5e-7 are accepted while 2e-6 are refused across properties."""
+    pal = _paleos(tmp_path, [6, 6, 6, 6], name=f'pal_{prop_name}.dat')
+
+    def _offset_cell(factor):
+        def _edit(P, T, vals):
+            if np.isclose(T, _T[6]):
+                vals[prop_idx] *= factor
+
+        return _edit
+
+    # 5.0e-7 relative offset must be accepted within the 1.0e-6 tolerance.
+    ext_ok = tmp_path / f'ext_ok_{prop_name}.dat'
+    cells = [(_P[i], T) for i in range(len(_P)) for T in _T[:7]]
+    _write(ext_ok, cells, edit=_offset_cell(1.0 + 5.0e-7))
+    merged = eos_export.load_paleos_with_lowt_extension(pal, ext_ok)
+    assert np.isfinite(merged['s']).all()
+
+    # Relative offset approaching 2.0e-6 (1.8e-6) must be refused by the 1.0e-6 tolerance guard.
+    ext_bad = tmp_path / f'ext_bad_{prop_name}.dat'
+    _write(ext_bad, cells, edit=_offset_cell(1.0 + 1.8e-6))
+    with pytest.raises(ValueError, match='seam mismatch in'):
+        eos_export.load_paleos_with_lowt_extension(pal, ext_bad)
+
+
+def test_continuation_tolerance_boundary_5e5_accepted_5e4_refused(tmp_path):
+    """Continuation step offset of 5e-5 is accepted while 5e-4 is refused by the grid guard."""
+    pal = _paleos(tmp_path, [6, 6, 6, 6], name='pal_cont.dat')
+    step = _DLOGT
+
+    def _build_ext(logt_offset, name):
+        lines = ['# synthetic\n']
+        for P in _P:
+            for k in range(7):
+                T = _T[k]
+                if k == 0:
+                    T = 10.0 ** (np.log10(T) + logt_offset)
+                vals = list(_props(P, T))
+                lines.append(
+                    f'{P:.8e} {T:.8e} ' + ' '.join(f'{v:.8e}' for v in vals) + ' solid\n'
+                )
+        fpath = tmp_path / name
+        fpath.write_text(''.join(lines))
+        return fpath
+
+    # Offset 5e-5 of step is <= 1.0e-4 tolerance and must be accepted.
+    ext_ok = _build_ext(5.0e-5 * step, 'ext_cont_ok.dat')
+    merged = eos_export.load_paleos_with_lowt_extension(pal, ext_ok)
+    assert np.isfinite(merged['s']).all()
+
+    # Offset 5e-4 of step is > 1.0e-4 tolerance and must be refused.
+    ext_bad = _build_ext(5.0e-4 * step, 'ext_cont_bad.dat')
+    with pytest.raises(ValueError, match='continue the PALEOS log-T grid'):
+        eos_export.load_paleos_with_lowt_extension(pal, ext_bad)
+
+
+# ── F4: Generator pressure layout and output_dir ────────────────────────────
+
+
+def test_generate_spider_tables_with_p_out_beyond_extension_rows(tmp_path):
+    """Columns above the last extension row have invalid added cells filled from lowest inverted cell."""
+    solid, liquid, _ = _gen_tables(tmp_path)
+    # Extension only covers rows 0 and 1, stopping below _P[2].
+    ext = _write(tmp_path / 'ext_partial.dat', [(P, T) for P in _P[:2] for T in _TG[:7]])
+
+    base = eos_export.generate_spider_eos_tables(
+        eos_file=solid,
+        solidus_func=lambda P: 1500.0,
+        liquidus_func=lambda P: 1800.0,
+        P_range=(_P[0], _P[-1]),
+        n_P=6,
+        n_S=40,
+        solid_eos_file=solid,
+        liquid_eos_file=liquid,
+    )
+    ext_out = eos_export.generate_spider_eos_tables(
+        eos_file=solid,
+        solidus_func=lambda P: 1500.0,
+        liquidus_func=lambda P: 1800.0,
+        P_range=(_P[0], _P[-1]),
+        n_P=6,
+        n_S=40,
+        solid_eos_file=solid,
+        liquid_eos_file=liquid,
+        solid_lowt_file=ext,
+    )
+
+    n_add = ext_out['S_solid'].size - base['S_solid'].size
+    assert n_add > 0
+    p_out = ext_out['P_Pa']
+    t_solid = ext_out['solid']['temperature']
+    valid_solid = ext_out['valid']['solid']
+
+    # For columns above the last extension row pressure (_P[1]), added rows must be invalid.
+    high_p_cols = np.flatnonzero(p_out > _P[1])
+    assert high_p_cols.size > 0
+    for ip in high_p_cols:
+        assert not np.any(valid_solid[:n_add, ip])
+        # Added rows are finite and carry the flat fill from the lowest inverted cell of the column.
+        assert np.isfinite(t_solid[:n_add, ip]).all()
+        first_valid_idx = np.flatnonzero(valid_solid[:, ip])[0]
+        np.testing.assert_allclose(t_solid[:n_add, ip], t_solid[first_valid_idx, ip], rtol=1e-8)
+
+
+def test_generate_spider_tables_with_output_dir_unequal_solid_melt_axes(tmp_path):
+    """Writers format file headers and mask shapes correctly when solid and melt S axes differ."""
+    tables = _gen_tables(tmp_path)
+    outdir = tmp_path / 'spider_tables_out'
+    res = eos_export.generate_spider_eos_tables(
+        eos_file=tables[0],
+        solidus_func=lambda P: 1500.0,
+        liquidus_func=lambda P: 1800.0,
+        P_range=(1.0e6, 1.0e10),
+        n_P=5,
+        n_S=30,
+        output_dir=outdir,
+        solid_eos_file=tables[0],
+        liquid_eos_file=tables[1],
+        solid_lowt_file=tables[2],
+    )
+
+    n_p = res['P_Pa'].size
+    n_s_solid = res['S_solid'].size
+    n_s_melt = res['S_melt'].size
+    assert n_s_solid > n_s_melt
+
+    # Verify solid temperature file header: # 5 nP nS_solid.
+    t_sol_path = outdir / 'temperature_solid.dat'
+    header_sol = t_sol_path.read_text().splitlines()[0].strip()
+    assert header_sol == f'# 5 {n_p} {n_s_solid}'
+
+    # Verify melt temperature file header: # 5 nP nS_melt.
+    t_melt_path = outdir / 'temperature_melt.dat'
+    header_melt = t_melt_path.read_text().splitlines()[0].strip()
+    assert header_melt == f'# 5 {n_p} {n_s_melt}'
+
+    # Verify valid mask shape against solid and melt S axis lengths.
+    mask_sol = np.loadtxt(outdir / 'valid_mask_solid.dat')
+    assert mask_sol.shape == (n_s_solid, n_p)
+    mask_melt = np.loadtxt(outdir / 'valid_mask_melt.dat')
+    assert mask_melt.shape == (n_s_melt, n_p)
+
+
+# ── F5: Production numbers and clinoenstatite s-jump ────────────────────────
+
+
+@pytest.mark.slow
+def test_real_paleos_table_lowt_extension_numbers():
+    """Verify production PALEOS table extension reproduces documented S_min, n_add and coldest T."""
+    fwl_dir = os.environ.get('FWL_DATA')
+    if not fwl_dir:
+        pytest.skip('FWL_DATA environment variable is not set')
+
+    base_dir = Path(fwl_dir) / 'zalmoxis_eos'
+    mgsio3_dir = base_dir / 'EOS_PALEOS_MgSiO3'
+    solid = mgsio3_dir / 'paleos_mgsio3_tables_pt_proteus_solid.dat'
+    ext = mgsio3_dir / 'paleos_mgsio3_tables_pt_proteus_solid_lowT.dat'
+    liquid = mgsio3_dir / 'paleos_mgsio3_tables_pt_proteus_liquid.dat'
+    uni = base_dir / 'EOS_PALEOS_MgSiO3_unified' / 'paleos_mgsio3_eos_table_pt.dat'
+
+    for fpath in (solid, ext, liquid, uni):
+        if not fpath.is_file():
+            pytest.skip(f'Required real PALEOS table missing: {fpath}')
+
+    kw = dict(
+        eos_file=str(uni),
+        solidus_func=derive_solidus_from_liquidus(paleos_liquidus, 0.8),
+        liquidus_func=paleos_liquidus,
+        P_range=(1.0e5, 3.5e11),
+        n_P=1350,
+        n_S=280,
+        solid_eos_file=str(solid),
+        liquid_eos_file=str(liquid),
+    )
+
+    base = eos_export.generate_spider_eos_tables(**kw)
+    ext_out = eos_export.generate_spider_eos_tables(**kw, solid_lowt_file=str(ext))
+
+    n_add = ext_out['S_solid'].size - base['S_solid'].size
+    s_min = float(ext_out['S_solid'][0])
+    coldest_t = float(ext_out['solid']['temperature'][ext_out['valid']['solid']].min())
+
+    assert n_add == 1
+    assert abs(s_min - 25.99) < 0.01
+    assert abs(coldest_t - 67.08) < 0.01
+
+
+def test_extension_s_jump_maintains_monotone_t(tmp_path):
+    """An s jump of 45 J/kg/K in an extension row maintains monotonically rising T with S."""
+    solid, liquid, _ = _gen_tables(tmp_path)
+
+    # Introduce a 45 J/kg/K jump on row 1 between T[2] and T[3] below the 300 K seam.
+    def _jump_edit(P, T, vals):
+        if np.isclose(P, _P[1]) and T <= _TG[2]:
+            vals[2] -= 45.0
+
+    ext_jump = _write(
+        tmp_path / 'ext_jump.dat',
+        [(P, T) for P in _P for T in _TG[:7]],
+        edit=_jump_edit,
+    )
+
+    out = eos_export.generate_spider_eos_tables(
+        eos_file=solid,
+        solidus_func=lambda P: 1500.0,
+        liquidus_func=lambda P: 1800.0,
+        P_range=(1.0e6, 1.0e10),
+        n_P=6,
+        n_S=40,
+        solid_eos_file=solid,
+        liquid_eos_file=liquid,
+        solid_lowt_file=ext_jump,
+    )
+
+    t_solid = out['solid']['temperature']
+    valid_solid = out['valid']['solid']
+
+    # On column 1, temperature must rise monotonically with S across all valid cells,
+    # reaching into the cold extension below 300 K.
+    t_col = t_solid[valid_solid[:, 1], 1]
+    assert t_col.size > 0
+    assert t_col[0] < 300.0
+    assert np.all(np.diff(t_col) > 0)
+    for prop in ('rho', 'cp', 'alpha', 'nabla_ad', 'temperature'):
+        assert np.all(np.isfinite(out['solid'][prop][valid_solid]))
+
+
+# ── F6: Bound propagation and all-NaN PALEOS row ────────────────────────────
+
+
+def test_merged_bounds_pmin_pmax_tmin_tmax_full_and_partial_coverage(tmp_path):
+    """p_min, p_max, t_min and t_max match base PALEOS bounds across coverage configurations."""
+    # Full coverage: PALEOS covers all temperatures down to index 0.
+    pal_full = _paleos(tmp_path, [0, 0, 0, 0], name='pal_full.dat')
+    ext = _ext(tmp_path, ds=0.0)
+    base_full = eos_export.load_paleos_all_properties(pal_full)
+    merged_full = eos_export.load_paleos_with_lowt_extension(pal_full, ext)
+
+    assert merged_full['p_min'] == base_full['p_min']
+    assert merged_full['p_max'] == base_full['p_max']
+    assert merged_full['t_min'] == base_full['t_min']
+    assert merged_full['t_max'] == base_full['t_max']
+
+    # Partial coverage: PALEOS stops at index 6 while extension covers rows 1..3 down to index 0.
+    pal_part = _paleos(tmp_path, [6, 6, 6, 6], name='pal_part.dat')
+    ext_part = _ext(tmp_path, rows=[1, 2, 3], ds=0.0, name='ext_part.dat')
+    base_part = eos_export.load_paleos_all_properties(pal_part)
+    merged_part = eos_export.load_paleos_with_lowt_extension(pal_part, ext_part)
+
+    assert merged_part['p_min'] == base_part['p_min']
+    assert merged_part['p_max'] == base_part['p_max']
+    assert merged_part['t_max'] == base_part['t_max']
+    assert merged_part['t_min'] == pytest.approx(_T[0], rel=1e-8)
+
+
+def test_all_nan_paleos_row_is_skipped_and_extension_ignored(tmp_path):
+    """An all-NaN PALEOS row is skipped by the merge loop and its extension cells are ignored."""
+    lines = ['# table with all-nan row\n']
+    for i, P in enumerate(_P):
+        for T in _T[6:]:
+            if i == 1:
+                # Row 1 holds all NaNs.
+                body = ' '.join('nan' for _ in range(7))
+            else:
+                body = ' '.join(f'{v:.8e}' for v in _props(P, T))
+            lines.append(f'{P:.8e} {T:.8e} {body} solid\n')
+    pal = tmp_path / 'pal_nan.dat'
+    pal.write_text(''.join(lines))
+
+    ext = _ext(tmp_path)
+    try:
+        merged = eos_export.load_paleos_with_lowt_extension(pal, ext)
+    except Exception as exc:
+        pytest.fail(f'Merge raised unexpected exception on all-NaN row: {exc}')
+
+    # Row 1 must remain all-NaN; extension was not applied to it.
+    assert np.isnan(merged['s'][1]).all()
+    # Row 0 and row 2 must be extended and have finite cells below 300 K.
+    assert np.isfinite(merged['s'][0, :6]).all()
+    assert np.isfinite(merged['s'][2, :6]).all()
+
+
+# ── F7: Converter grid boundary conditions ──────────────────────────────────
+
+
+def test_extension_grid_with_t_min_on_node(tmp_path):
+    """t_min lying exactly on a grid node terminates at that node with exact expected count."""
+    table = tmp_path / 'pal_node.dat'
+    t_nodes = [300.0 * (10.0 ** (0.05 * i)) for i in range(5)]
+    lines = ['# P T rho u s cp cv alpha nabla_ad phase\n']
+    for t_val in t_nodes:
+        lines.append(f'1.0e6 {t_val:.12e} 3000 1e5 2000 1000 800 1e-5 0.2 solid\n')
+    table.write_text(''.join(lines))
+
+    data = np.loadtxt(table, usecols=(0, 1), comments='#', ndmin=2)
+    t_tab = np.unique(data[:, 1])
+    log_t = np.log10(t_tab)
+    step = np.diff(log_t).mean()
+    target_t_min = 10.0 ** (log_t[0] - 2 * step)
+
+    _, T = tool.extension_grid(table, t_min=target_t_min, p_max=1.0e11)
+
+    # Starting at table minimum and descending 2 steps gives 3 nodes (indices 0, 1, 2).
+    assert len(T) == 3
+    assert T[-1] == pytest.approx(target_t_min, rel=1e-8)
+
+
+def test_extension_grid_excludes_row_exactly_at_p_max(tmp_path):
+    """A pressure row exactly equal to p_max is strictly excluded by extension_grid."""
+    table = _paleos(tmp_path, [6, 6, 6, 6])
+    data = np.loadtxt(table, usecols=0, comments='#', ndmin=1)
+    target_p_max = float(np.unique(data)[2])
+    P, _ = tool.extension_grid(table, t_min=180.0, p_max=target_p_max)
+
+    assert target_p_max not in P
+    assert np.all(P < target_p_max)
+
+
+# ── F8: Two-phase gate parametrization ──────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ('solid_file', 'liquid_file'),
+    [
+        ('solid.dat', None),
+        (None, 'liquid.dat'),
+        (None, None),
+    ],
+)
+def test_extension_two_phase_gate_parametrized(tmp_path, solid_file, liquid_file):
+    """Missing either or both of the two-phase tables refuses low-T extension with ValueError."""
+    solid, liquid, ext = _gen_tables(tmp_path)
+    sol_arg = solid if solid_file else None
+    liq_arg = liquid if liquid_file else None
+
+    try:
+        eos_export.generate_spider_eos_tables(
+            eos_file=solid,
+            solidus_func=lambda P: 1500.0,
+            liquidus_func=lambda P: 1800.0,
+            P_range=(1.0e6, 1.0e10),
+            n_P=6,
+            n_S=40,
+            solid_eos_file=sol_arg,
+            liquid_eos_file=liq_arg,
+            solid_lowt_file=ext,
+        )
+    except ValueError as exc:
+        assert 'needs the two-phase tables' in str(exc)
+    except Exception as exc:
+        pytest.fail(
+            f"Expected ValueError('needs the two-phase tables') but raised {type(exc).__name__}: {exc}"
+        )
+    else:
+        pytest.fail("DID NOT RAISE ValueError('needs the two-phase tables')")
