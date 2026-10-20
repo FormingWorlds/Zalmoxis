@@ -87,8 +87,7 @@ def test_an_annotated_pin_is_read(tmp_path, monkeypatch):
     ids=['404', '422', '500'],
 )
 def test_github_codes_map_to_their_exit(capsys, code, exit_code, text):
-    """404 and 422 (no repository or branch) fail with exit 4; a 403 rate limit or a 5xx
-    only warns with exit 3."""
+    """404 and 422 (no repository or branch) fail with exit 4; a 5xx only warns with exit 3."""
 
     def fetch():
         raise urllib.error.HTTPError(check._MAIN, code, 'x', {}, None)
@@ -160,11 +159,18 @@ def test_a_pin_that_cannot_be_read_exits_2(tmp_path, monkeypatch, capsys, source
     'code, headers, exit_code, text',
     [
         (403, {'X-RateLimit-Remaining': '0'}, 3, 'PALEOS main could not be read'),
+        (403, {'Retry-After': '60'}, 3, 'PALEOS main could not be read'),
         (403, {'X-RateLimit-Remaining': '42'}, 5, 'GitHub refused the request'),
         (403, {}, 5, 'GitHub refused the request'),
         (401, {}, 5, 'GitHub refused the request'),
     ],
-    ids=['403 rate limit', '403 with requests left', '403 without the header', '401'],
+    ids=[
+        '403 rate limit',
+        '403 secondary limit',
+        '403 with requests left',
+        '403 without the header',
+        '401',
+    ],
 )
 def test_a_refused_request_fails_unless_it_is_the_rate_limit(
     capsys, code, headers, exit_code, text

@@ -324,7 +324,7 @@ def test_a_dirty_tree_stops_unless_it_is_allowed(history, monkeypatch, value):
     (repo / 'paleos' / 'eos.py').write_text('local change')
     with pytest.raises(PaleosVersionError, match='ZALMOXIS_PALEOS_ALLOW_DIRTY=1') as err:
         check_paleos_commit(repo, c['tested'])
-    assert c['new'] in str(err.value)
+    assert c['new'] in str(err.value) and 'core.autocrlf' in str(err.value)
 
 
 def test_old_package_files_at_a_newer_commit_stop(history):
@@ -593,11 +593,12 @@ def test_a_committed_path_that_is_not_utf8_gives_a_version_error(history):
 
 
 @pytest.mark.parametrize('kind', ['symlink', 'nested repository'])
-def test_an_untracked_directory_in_the_package_changes_the_key(
-    history, monkeypatch, tmp_path, kind
+@pytest.mark.usefixtures('allow_dirty')
+def test_a_link_to_a_directory_or_a_nested_repository_stops_even_when_allowed(
+    history, tmp_path, kind
 ):
     """An untracked link to a directory or a nested repository under paleos/ can hold code
-    Python imports: it counts as a change."""
+    Python imports that no key can describe: the check stops, also with the opt-in."""
     repo, c = history
     ext = repo / 'paleos' / 'ext'
     if kind == 'symlink':
@@ -608,7 +609,17 @@ def test_an_untracked_directory_in_the_package_changes_the_key(
         ext.mkdir()
         (ext / 'mod.py').write_text('K = 1\n')
         _git(ext, 'init', '-q')
-    assert _dirty_key(repo, monkeypatch).startswith(c['new'] + '-dirty-')
+    with pytest.raises(PaleosVersionError, match='no key can describe'):
+        check_paleos_commit(repo, c['new'])
+
+
+@pytest.mark.usefixtures('allow_dirty')
+def test_a_plain_untracked_directory_without_modules_is_no_change(history):
+    """An untracked directory of data files under paleos/ holds nothing Python imports."""
+    repo, c = history
+    (repo / 'paleos' / 'notes').mkdir()
+    (repo / 'paleos' / 'notes' / 'readme.txt').write_text('notes')
+    assert check_paleos_commit(repo, c['new']) == 'tested'
 
 
 def test_a_package_below_the_top_level_is_compared(tmp_path):
@@ -670,18 +681,5 @@ def test_a_paleos_imported_before_the_first_key_is_covered_from_then_on(
     assert paleos_api._KEY_AT_IMPORT == {'key': c['new']}
     assert 'imported before' in caplog.text
     (repo / 'paleos' / 'eos.py').write_text('edited later')
-    with pytest.raises(PaleosVersionError, match='changed on disk'):
+    with pytest.raises(PaleosVersionError, match='changed on disk since the first key'):
         paleos_api._same_code_as_import(paleos_api.paleos_installed_sha())
-
-
-def test_two_link_targets_give_two_keys(history, monkeypatch, tmp_path):
-    """An untracked link under paleos/ is keyed by its target, so two targets never share a cache."""
-    repo, _ = history
-    for name in ('one', 'two'):
-        (tmp_path / name).mkdir()
-    ext = repo / 'paleos' / 'ext'
-    ext.symlink_to(tmp_path / 'one', target_is_directory=True)
-    first = _dirty_key(repo, monkeypatch)
-    ext.unlink()
-    ext.symlink_to(tmp_path / 'two', target_is_directory=True)
-    assert _dirty_key(repo, monkeypatch) != first
