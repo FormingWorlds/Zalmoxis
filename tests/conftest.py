@@ -24,6 +24,12 @@ from tests import _paleos_mock
 _paleos_mock.install_if_missing()
 
 
+@pytest.fixture(autouse=True)
+def _fresh_paleos_key(monkeypatch):
+    """Each test starts as a new process: no PALEOS code key is recorded yet."""
+    monkeypatch.setattr('zalmoxis.eos.paleos_api._KEY_AT_IMPORT', {})
+
+
 @pytest.fixture(scope='session')
 def zalmoxis_root():
     """Root directory of the Zalmoxis repository.
