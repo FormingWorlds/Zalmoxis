@@ -961,6 +961,18 @@ def test_a_stop_that_cannot_return_a_better_earlier_pass_keeps_its_own(
 @pytest.mark.smoke
 @pytest.mark.wolfbower
 @pytest.mark.usefixtures('no_check')
+def test_an_inner_clock_stop_on_the_last_pass_returns_a_better_earlier_pass(monkeypatch):
+    """tolerance_outer 0.05: the clock runs out in the inner loop of the last outer pass, the
+    blended pass is 4.5 % off and the linear pass 4 %: the linear pass is returned and the mass
+    test of the stop accepts it, although it is above the 3 % ceiling."""
+    r = _wb_blended(monkeypatch, 1.045, 0.05, outer=3, clock_after=2, linear=1.04)
+    assert r['accepted_on'] == 'timeout' and r['adiabat_blend'] == 0.0
+    assert r['mass_error_at_accept'] == pytest.approx(0.04, rel=1e-9)
+
+
+@pytest.mark.smoke
+@pytest.mark.wolfbower
+@pytest.mark.usefixtures('no_check')
 def test_an_accepted_mass_break_returns_its_own_pass_without_a_fallback(monkeypatch, caplog):
     """tolerance_outer 0.05 and blended passes 4 % off: the mass test breaks at blend 1.0 and
     accepts that pass, so no earlier pass replaces it and best_mass_error describes it."""
