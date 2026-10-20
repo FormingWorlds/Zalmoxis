@@ -60,7 +60,7 @@ def test_written_extension_merges_under_the_table(tmp_path):
     """The tool output passes the seam check and fills every cell below 300 K."""
     table = _paleos(tmp_path, [6, 6, 6, 6])
     out = tmp_path / 'ext.dat'
-    n = tool.write_extension(_StubEoS(), table, out, ['test header'], t_min=150.4)
+    n, _ = tool.write_extension(_StubEoS(), table, out, ['test header'], t_min=150.4)
     assert n == _P.size * 7
     assert out.read_text().startswith('# test header\n')
     merged = eos_export.load_paleos_with_lowt_extension(table, out)
@@ -71,7 +71,7 @@ def test_written_extension_merges_under_the_table(tmp_path):
 def test_point_with_a_non_finite_property_is_left_out(tmp_path):
     table = _paleos(tmp_path, [6, 6, 6, 6])
     out = tmp_path / 'ext.dat'
-    n = tool.write_extension(_StubEoS(nan_at=(_P[1], _T[2])), table, out, [], t_min=150.4)
+    n, _ = tool.write_extension(_StubEoS(nan_at=(_P[1], _T[2])), table, out, [], t_min=150.4)
     assert n == _P.size * 7 - 1
     assert 'nan' not in out.read_text()
 
@@ -80,16 +80,47 @@ def test_point_with_a_non_finite_property_is_left_out(tmp_path):
 @pytest.mark.parametrize('exc', [RuntimeError, ArithmeticError, ValueError])
 def test_point_where_paleos_raises_is_left_out(tmp_path, method, exc):
     """A PALEOS point that does not converge (an exception from a property or the phase) is
-    left out, as a non-finite one is; the other points are written and merge."""
+    left out, as a non-finite one is, and the other points are written."""
     table = _paleos(tmp_path, [6, 6, 6, 6])
     out = tmp_path / 'ext.dat'
     eos = _StubEoS(raise_at=(_P[1], _T[2]), method=method, exc=exc)
     try:
-        n = tool.write_extension(eos, table, out, [], t_min=150.4)
+        n, _ = tool.write_extension(eos, table, out, [], t_min=150.4)
     except Exception as err:  # the point must be left out, not stop the converter
         pytest.fail(f'a non-converging point stopped the converter: {err!r}')
     assert n == _P.size * 7 - 1
     assert f'{_P[1]:.8e} {_T[2]:.8e}' not in out.read_text()
+
+
+def test_left_out_points_are_returned_and_named_in_the_header(tmp_path):
+    """write_extension returns the left-out (P, T) points; the header gives their number and
+    each point, and says 0 points when none is left out."""
+    table = _paleos(tmp_path, [6, 6, 6, 6])
+    out, full = tmp_path / 'ext.dat', tmp_path / 'full.dat'
+    n, left = tool.write_extension(
+        _StubEoS(raise_at=(_P[1], _T[2])), table, out, ['h'], t_min=150.4
+    )
+    assert (n, len(left)) == (_P.size * 7 - 1, 1)
+    np.testing.assert_allclose(left[0], (_P[1], _T[2]), rtol=1e-8)
+    head = [x for x in out.read_text().splitlines() if x.startswith('#')]
+    assert '# Left out: 1 point (no convergence or not finite)' in head
+    assert f'# Left out at P T: {left[0][0]:.8e} {left[0][1]:.8e}' in head
+    assert tool.write_extension(_StubEoS(), table, full, [], t_min=150.4)[1] == []
+    assert '# Left out: 0 points (no convergence or not finite)' in full.read_text()
+
+
+def test_a_hole_inside_a_row_stops_the_merge_and_one_at_the_lowest_node_does_not(tmp_path):
+    """The merge refuses a left-out point between two written ones and accepts one at the
+    lowest node of a row, where the row then starts one node higher."""
+    table = _paleos(tmp_path, [6, 6, 6, 6])
+    mid, low = tmp_path / 'mid.dat', tmp_path / 'low.dat'
+    tool.write_extension(_StubEoS(raise_at=(_P[1], _T[2])), table, mid, [], t_min=150.4)
+    with pytest.raises(ValueError, match='a missing or non-finite extension cell at P = '):
+        eos_export.load_paleos_with_lowt_extension(table, mid)
+    tool.write_extension(_StubEoS(raise_at=(_P[1], _T[0])), table, low, [], t_min=150.4)
+    s = eos_export.load_paleos_with_lowt_extension(table, low)['s']
+    assert np.isnan(s[1, 0]) and np.isfinite(s[1, 1:]).all()
+    assert np.isfinite(np.delete(s, 1, axis=0)).all()
 
 
 def test_a_programming_error_in_paleos_is_not_hidden(tmp_path):
@@ -129,15 +160,22 @@ def _git_repo(path, commit=True):
     return _git(path, 'rev-parse', 'HEAD')
 
 
-def _stub_paleos(src, ds=0.0):
+def _stub_paleos(src, ds=0.0, raise_at=None):
     """A paleos package under ``src`` whose MgSiO3EoS returns the synthetic properties, with
-    ``ds`` added to s."""
+    ``ds`` added to s; its density raises RuntimeError at the (P, T) ``raise_at``."""
     (src / 'paleos').mkdir()
     (src / 'paleos' / '__init__.py').write_text('')
     stub = ['from tests.test_eos_lowt_extension import _props', '', 'class MgSiO3EoS:']
     for i, m in enumerate(tool._METHODS):
         add = f' + {ds!r}' if m == 'specific_entropy' else ''
-        stub.append(f'    def {m}(self, P, T):\n        return _props(P, T)[{i}]{add}')
+        stub.append(f'    def {m}(self, P, T):')
+        if raise_at is not None and m == 'density':
+            P0, T0 = (float(x) for x in raise_at)
+            stub.append(
+                f'        if abs(P / {P0!r} - 1) < 1e-8 and abs(T / {T0!r} - 1) < 1e-8:'
+            )
+            stub.append("            raise RuntimeError('no convergence')")
+        stub.append(f'        return _props(P, T)[{i}]{add}')
     stub.append("    def phase(self, P, T):\n        return 'solid-lpcen'")
     (src / 'paleos' / 'mgsio3_eos.py').write_text('\n'.join(stub) + '\n')
 
@@ -372,3 +410,44 @@ def test_command_line_header_holds_the_input_hashes_and_versions(tmp_path, clean
     eos_py = (src / 'paleos' / 'mgsio3_eos.py').read_bytes()
     assert f'# paleos/mgsio3_eos.py sha256: {hashlib.sha256(eos_py).hexdigest()}' in head
     assert f'# numpy {np.__version__}, scipy {scipy.__version__}' in head
+
+
+def test_command_line_names_a_left_out_point_that_stops_the_merge(
+    tmp_path, capsys, clean_import
+):
+    """A point left out inside a row makes the merge check refuse the file: the command line
+    removes it and exits with an error that names the point."""
+    src = tmp_path / 'paleos_src'
+    src.mkdir()
+    _stub_paleos(src, raise_at=(_P[1], _T[2]))
+    out = tmp_path / 'ext.dat'
+    with pytest.raises(SystemExit) as exc:
+        _main(
+            src,
+            _paleos(tmp_path, [6, 6, 6, 6]),
+            out,
+            '--t-min',
+            '150.4',
+            '--paleos-commit',
+            '654aca9',
+        )
+    assert exc.value.code not in (0, None)
+    err = capsys.readouterr().err
+    assert 'does not merge under the table' in err
+    assert f'left-out points: P = {_P[1]:.6e} Pa, T = {_T[2]:.6e} K' in err
+    assert not out.exists()
+
+
+def test_command_line_reports_a_left_out_lowest_node_and_keeps_the_file(
+    tmp_path, capsys, clean_import
+):
+    """A point left out at the lowest node of a row merges; the header and the output give it."""
+    src = tmp_path / 'paleos_src'
+    src.mkdir()
+    _stub_paleos(src, raise_at=(_P[1], _T[0]))
+    table, out = _paleos(tmp_path, [6, 6, 6, 6]), tmp_path / 'ext.dat'
+    _main(src, table, out, '--t-min', '150.4', '--paleos-commit', '654aca9')
+    assert '# Left out: 1 point (no convergence or not finite)' in out.read_text().splitlines()
+    printed = capsys.readouterr().out
+    assert f'left out 1 point: P = {_P[1]:.6e} Pa, T = {_T[0]:.6e} K' in printed
+    assert np.isnan(eos_export.load_paleos_with_lowt_extension(table, out)['s'][1, 0])
