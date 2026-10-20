@@ -672,3 +672,16 @@ def test_a_paleos_imported_before_the_first_key_is_covered_from_then_on(
     (repo / 'paleos' / 'eos.py').write_text('edited later')
     with pytest.raises(PaleosVersionError, match='changed on disk'):
         paleos_api._same_code_as_import(paleos_api.paleos_installed_sha())
+
+
+def test_two_link_targets_give_two_keys(history, monkeypatch, tmp_path):
+    """An untracked link under paleos/ is keyed by its target, so two targets never share a cache."""
+    repo, _ = history
+    for name in ('one', 'two'):
+        (tmp_path / name).mkdir()
+    ext = repo / 'paleos' / 'ext'
+    ext.symlink_to(tmp_path / 'one', target_is_directory=True)
+    first = _dirty_key(repo, monkeypatch)
+    ext.unlink()
+    ext.symlink_to(tmp_path / 'two', target_is_directory=True)
+    assert _dirty_key(repo, monkeypatch) != first
