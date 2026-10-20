@@ -20,7 +20,7 @@ from scipy.interpolate import (
     RegularGridInterpolator,
 )
 
-from .registry_guard import file_md5, verify, verify_digest
+from .registry_guard import StaleTableError, file_md5, verify, verify_digest
 
 logger = logging.getLogger(__name__)
 
@@ -71,10 +71,10 @@ def read_table_columns(eos_file, usecols, dtype=float):
     ``np.loadtxt`` parses these 50-140 MB files several times faster than
     ``np.genfromtxt`` and returns the same arrays for numeric input. A token
     that is not a number (``N/A``, ``---``) raises ``ValueError`` where
-    ``genfromtxt`` gave NaN. A PALEOS table must be its pinned release
-    (:func:`zalmoxis.eos.registry_guard.verify`).
+    ``genfromtxt`` gave NaN. The file must exist, and a PALEOS table must be its pinned
+    release (:func:`require_eos_file`).
     """
-    verify(eos_file)
+    require_eos_file(eos_file)
     return np.loadtxt(eos_file, usecols=usecols, dtype=dtype, comments='#')
 
 
@@ -621,11 +621,12 @@ def _code_text(code):
 
 
 def _code_identity(fn):
-    """Return the source of ``fn``, or without source its :func:`_code_text`."""
+    """Return the source of ``fn``, or when it cannot be read its :func:`_code_text` and the
+    repr of its defaults."""
     try:
         return inspect.getsource(fn)
-    except (OSError, TypeError):
-        return _code_text(fn.__code__)
+    except Exception:  # no source, or a source file that changed and no longer tokenizes
+        return _code_text(fn.__code__) + repr((fn.__defaults__, fn.__kwdefaults__))
 
 
 # The identity of the loader that builds a cache entry, taken once at import
@@ -711,10 +712,10 @@ def _ensure_unified_cache(eos_file, interpolation_functions):
         The cache entry for this file.
     """
     if eos_file not in interpolation_functions:
-        source_md5, before = None, _stat_key(eos_file)
+        source_md5 = before = None
         if os.path.isfile(eos_file) and os.access(eos_file, os.R_OK):
-            require_eos_file(eos_file)
-            source_md5 = file_md5(eos_file)
+            require_eos_file(eos_file)  # can fetch the table again
+            before, source_md5 = _stat_key(eos_file), file_md5(eos_file)
         cache_path = cache_path_for(eos_file)
         try:
             stored = read_cache(cache_path)
@@ -760,12 +761,15 @@ def _ensure_unified_cache(eos_file, interpolation_functions):
                     exc,
                 )
                 logger.debug('PALEOS cache load failure traceback', exc_info=True)
-            interpolation_functions[eos_file] = load_paleos_unified_table(eos_file)
+            entry = load_paleos_unified_table(eos_file)
             if _stat_key(eos_file) != before:
-                logger.warning(
-                    '%s changed while it was read; no binary cache written', eos_file
-                )
-                return interpolation_functions[eos_file]
+                logger.warning('%s changed while it was read; reading it again', eos_file)
+                require_eos_file(eos_file)
+                before, source_md5 = _stat_key(eos_file), file_md5(eos_file)
+                entry = load_paleos_unified_table(eos_file)
+                if _stat_key(eos_file) != before:
+                    raise StaleTableError(f'{eos_file} changed while it was read, twice')
+            interpolation_functions[eos_file] = entry
             try:
                 write_cache(
                     cache_path,
