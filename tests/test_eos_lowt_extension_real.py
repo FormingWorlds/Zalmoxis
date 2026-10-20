@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from zalmoxis import eos_export
+from zalmoxis import eos_export, get_zalmoxis_root
 from zalmoxis.melting_curves import derive_solidus_from_liquidus, paleos_liquidus
 
 pytestmark = pytest.mark.slow
@@ -17,11 +16,7 @@ pytestmark = pytest.mark.slow
 def test_real_paleos_table_lowt_extension_numbers():
     """The real PALEOS tables with the extension give the documented S_min, n_add, coldest T and
     conductive gradient bias of the two lowest entropy intervals."""
-    fwl_dir = os.environ.get('FWL_DATA')
-    if not fwl_dir:
-        pytest.skip('FWL_DATA environment variable is not set')
-
-    base_dir = Path(fwl_dir) / 'zalmoxis_eos'
+    base_dir = Path(get_zalmoxis_root()) / 'data'
     mgsio3_dir = base_dir / 'EOS_PALEOS_MgSiO3'
     solid = mgsio3_dir / 'paleos_mgsio3_tables_pt_proteus_solid.dat'
     ext = mgsio3_dir / 'paleos_mgsio3_tables_pt_proteus_solid_lowT.dat'
