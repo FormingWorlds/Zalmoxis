@@ -734,6 +734,35 @@ def _find_valid_T_bounds(logP, T_lo, T_hi, s_interp, n_probe=50):
     return valid_T[0], valid_T[-1]
 
 
+def _column_window(logP, T_lo, T_hi, s_interp):
+    """Temperature bounds and entropy range that one pressure column can invert.
+
+    Parameters
+    ----------
+    logP : float
+        log10(pressure in Pa).
+    T_lo, T_hi : float
+        Temperature limits of the phase at this pressure [K].
+    s_interp : RegularGridInterpolator
+        Entropy interpolator on (log10P, log10T) grid.
+
+    Returns
+    -------
+    tuple or None
+        (T_lo_valid, T_hi_valid, S_lo, S_hi), or None when the column cannot be inverted.
+    """
+    if not (T_lo > 0 and T_hi > T_lo):  # also False for NaN
+        return None
+    T_lo_valid, T_hi_valid = _find_valid_T_bounds(logP, T_lo, T_hi, s_interp)
+    if T_lo_valid is None:
+        return None
+    Sa = float(s_interp((logP, np.log10(T_lo_valid))))
+    Sb = float(s_interp((logP, np.log10(T_hi_valid))))
+    if np.isnan(Sa) or np.isnan(Sb):
+        return None
+    return T_lo_valid, T_hi_valid, min(Sa, Sb), max(Sa, Sb)
+
+
 def generate_spider_eos_tables(
     eos_file,
     solidus_func,
@@ -792,12 +821,12 @@ def generate_spider_eos_tables(
         Low-temperature extension of the solid table, merged by
         :func:`load_paleos_with_lowt_extension`; needs the two-phase tables. The solid
         entropy axis keeps its nodes and gains nodes of the same step below them, down to
-        the lowest node that is not below the lowest entropy of the merged table. Every
-        cell the PALEOS table inverts is computed as without the extension; the cells
-        below the PALEOS minimum temperature are inverted on the merged table, also when
-        no node is added. A warning names an extension that adds no node; when the
-        extension reaches below the PALEOS minimum temperature, the log gives the
-        number of filled cells.
+        the lowest node that is not below the lowest entropy a pressure column can invert
+        on the merged table. Every cell the PALEOS table inverts is computed as without
+        the extension; the cells below the PALEOS minimum temperature are inverted on the
+        merged table, also when no node is added. A warning names an extension that adds
+        no node; when the extension reaches below the PALEOS minimum temperature, the log
+        gives the number of filled cells.
 
     Returns
     -------
@@ -953,17 +982,20 @@ def generate_spider_eos_tables(
     S_solid_grid = np.linspace(S_global_min_solid, S_global_max_solid, n_S)
     S_melt_grid = np.linspace(S_global_min_melt, S_global_max_melt, n_S)
 
+    def _T_hi_ext(P):
+        return np.minimum(T_lo_global, solidus_func(P))
+
     lowt = None
     if solid_lowt_file is not None:
         merged = load_paleos_with_lowt_extension(solid_eos_file, solid_lowt_file)
         if merged['t_min'] < T_lo_global:
             mlp, mlt = merged['unique_log_p'], merged['unique_log_t']
             lowt = {k: _build_interpolator(mlp, mlt, merged[k]) for k in _LOWT_INTERP}
-            log_T = np.log10(np.linspace(merged['t_min'], T_lo_global, n_T_sample))
-            pts = np.column_stack(
-                [np.repeat(np.log10(P_out), n_T_sample), np.tile(log_T, P_out.size)]
-            )
-            S_lo = np.nanmin(lowt['s'](pts), initial=np.inf)
+            windows = [
+                _column_window(np.log10(P), merged['t_min'], _T_hi_ext(P), lowt['s'])
+                for P in P_out
+            ]
+            S_lo = min((w[2] for w in windows if w is not None), default=np.inf)
             dS = (S_global_max_solid - S_global_min_solid) / (n_S - 1)
             n_add = int(np.floor((S_global_min_solid - S_lo) / dS)) if np.isfinite(S_lo) else 0
             if n_add > 0:
@@ -977,8 +1009,8 @@ def generate_spider_eos_tables(
                 )
             elif not np.isfinite(S_lo):
                 logger.warning(
-                    'Low-T extension %s gives no finite entropy at the output pressures; '
-                    'the solid entropy axis is unchanged',
+                    'Low-T extension %s gives no entropy that a column can invert at the '
+                    'output pressures; the solid entropy axis is unchanged',
                     solid_lowt_file,
                 )
             else:
@@ -1066,25 +1098,10 @@ def generate_spider_eos_tables(
         for ip in range(nP_out):
             P_Pa = P_grid[ip]
             logP = np.log10(P_Pa)
-            T_lo = T_lo_func(P_Pa)
-            T_hi = T_hi_func(P_Pa)
-
-            if np.isnan(T_lo) or np.isnan(T_hi) or T_lo <= 0 or T_hi <= 0:
+            window = _column_window(logP, T_lo_func(P_Pa), T_hi_func(P_Pa), s_phase_interp)
+            if window is None:
                 continue
-            if T_lo >= T_hi:
-                continue
-
-            T_lo_valid, T_hi_valid = _find_valid_T_bounds(logP, T_lo, T_hi, s_phase_interp)
-            if T_lo_valid is None:
-                continue
-
-            Sa = float(s_phase_interp((logP, np.log10(T_lo_valid))))
-            Sb = float(s_phase_interp((logP, np.log10(T_hi_valid))))
-
-            if np.isnan(Sa) or np.isnan(Sb):
-                continue
-
-            S_lo, S_hi = min(Sa, Sb), max(Sa, Sb)
+            T_lo_valid, T_hi_valid, S_lo, S_hi = window
 
             # Vectorized bisection: invert S(P,T) -> T for all S values at once
             valid_s = (S_grid >= S_lo) & (S_grid <= S_hi)
@@ -1180,7 +1197,7 @@ def generate_spider_eos_tables(
             P_out,
             S_solid_grid,
             lambda P: merged['t_min'],
-            lambda P: np.minimum(T_lo_global, solidus_func(P)),
+            _T_hi_ext,
             'solid below the PALEOS minimum temperature',
             *(lowt[k] for k in _LOWT_INTERP),
         )
