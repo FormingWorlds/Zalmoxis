@@ -457,15 +457,47 @@ class TestLowTInvariants:
         assert out['cp'][0, 6] == pytest.approx(_props(_P[0], _T[6])[3], rel=1e-8)
 
 
-@pytest.mark.parametrize('T_lo, T_hi', [(300.0, 200.0), (250.0, 250.0), (np.nan, 300.0)])
-def test_a_column_window_needs_rising_finite_limits(T_lo, T_hi):
-    """Crossed, equal or NaN temperature limits give no window, even where the entropy is finite."""
+@pytest.mark.parametrize(
+    'T_lo, T_hi',
+    [
+        (300.0, 200.0),
+        (250.0, 250.0),
+        (np.nan, 300.0),
+        (200.0, np.nan),
+        (0.0, 300.0),
+        (-5.0, 300.0),
+    ],
+)
+def test_a_column_window_needs_rising_positive_limits(T_lo, T_hi):
+    """Crossed, equal, NaN or non-positive temperature limits give no window, even where the
+    entropy is finite at every temperature; rising limits give the entropy range in order."""
 
-    def s(pt):
-        return 1.0e3 + 0.0 * np.asarray(pt, dtype=float).sum()
+    def flat(pt):
+        return 1.0e3
 
-    assert eos_export._column_window(9.0, T_lo, T_hi, s) is None
-    assert eos_export._column_window(9.0, 200.0, 300.0, s) == (200.0, 300.0, 1.0e3, 1.0e3)
+    def falling(pt):
+        return 2.0e3 - 1.0e3 * pt[1]
+
+    try:
+        window = eos_export._column_window(9.0, T_lo, T_hi, flat)
+    except ValueError:
+        window = 'raised'
+    assert window is None
+    lo, hi = 2.0e3 - 1.0e3 * np.log10(300.0), 2.0e3 - 1.0e3 * np.log10(200.0)
+    assert eos_export._column_window(9.0, 200.0, 300.0, falling) == pytest.approx(
+        (200, 300, lo, hi)
+    )
+
+
+def test_the_lowest_node_follows_the_column_with_the_lowest_extended_entropy(tmp_path):
+    """Extension rows reach 150 K only at the two lowest pressures: the added nodes reach down to
+    the lowest entropy of those columns, not to that of the others."""
+    solid, liquid, _ = _gen_tables(tmp_path)
+    cells = [(P, T) for i, P in enumerate(_P) for T in (_TG[:7] if i < 2 else _TG[5:7])]
+    out = _generate_from(solid, liquid, _write(tmp_path / 'ext_low_p.dat', cells))
+    S_lo = 1000.0 * np.log(_TG[0] / 300.0) + 2.0 * np.log10(out['P_Pa'][0]) + 2000.0
+    S0, dS = out['S_solid'][0], out['S_solid'][1] - out['S_solid'][0]
+    assert S_lo - 1e-3 <= S0 < S_lo + dS
 
 
 def test_no_solid_node_below_the_lowest_extension_entropy(tmp_path):
