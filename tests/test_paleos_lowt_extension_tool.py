@@ -150,11 +150,27 @@ def test_command_line_needs_a_commit_outside_a_git_checkout(tmp_path, capsys):
     assert not (tmp_path / 'o').exists()
 
 
+_GIT_ENV = ('GIT_DIR', 'GIT_INDEX_FILE', 'GIT_WORK_TREE')
+
+
 def _git(path, *args):
     import subprocess
 
+    env = {k: v for k, v in os.environ.items() if k not in _GIT_ENV}
+    off = [
+        '-c',
+        'commit.gpgsign=false',
+        '-c',
+        'tag.gpgsign=false',
+        '-c',
+        'core.hooksPath=/dev/null',
+    ]
     return subprocess.run(
-        ['git', '-C', str(path), *args], check=True, capture_output=True, text=True
+        ['git', *off, '-C', str(path), *args],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
     ).stdout.strip()
 
 
@@ -869,7 +885,7 @@ def test_command_line_accepts_the_zalmoxis_src_spelled_in_another_case(
         pytest.skip('the file system tells letter case apart')
     pkg = Path(zalmoxis.__file__).resolve().parent
     monkeypatch.setattr(
-        zalmoxis, '__file__', str(pkg.parent / 'SRC' / 'zalmoxis' / '__init__.py')
+        zalmoxis, '__file__', str(pkg.parent.parent / 'SRC' / 'zalmoxis' / '__init__.py')
     )
     src = tmp_path / 'paleos_src'
     src.mkdir()

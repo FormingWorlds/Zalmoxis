@@ -211,15 +211,15 @@ def main(argv=None):
         ap.error(f'--out {args.out} is a folder')
     if not args.table.is_file():
         ap.error(f'--table {args.table} is not a file')
-    if out == args.table.resolve():
+    if out == args.table.resolve() or (out.exists() and out.samefile(args.table)):
         ap.error('--out must not be the --table file')
     import zalmoxis
 
     root = Path(__file__).resolve().parents[2]
-    pkg = Path(zalmoxis.__file__).resolve().parent
-    if pkg != root / 'src' / 'zalmoxis':
+    pkg, want = Path(zalmoxis.__file__).resolve().parent, root / 'src' / 'zalmoxis'
+    if not (pkg.is_dir() and want.is_dir() and pkg.samefile(want)):
         ap.error(
-            f'zalmoxis was imported from {pkg}, not from {root / "src" / "zalmoxis"} of the '
+            f'zalmoxis was imported from {pkg}, not from {want} of the '
             'converter checkout; install that checkout editable or set PYTHONPATH to its src'
         )
     from zalmoxis.eos.registry_guard import verify
@@ -279,9 +279,11 @@ def main(argv=None):
         f'T from the table minimum down to the first node <= {args.t_min:g} K',
         f'Generated: {datetime.datetime.now(datetime.UTC):%Y-%m-%d %H:%M:%S} UTC',
     ]
-    tmp = out.with_name(f'.{out.name}.{secrets.token_hex(8)}.tmp')
-    os.close(os.open(tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666))
+    tmp, made = out.with_name(f'.{out.name}.{secrets.token_hex(8)}.tmp'), False
     try:
+        fd = os.open(tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
+        made = True
+        os.close(fd)
         n, left = write_extension(MgSiO3EoS(), args.table, tmp, header, args.t_min, args.p_max)
         where = ', '.join(f'P = {P:.6e} Pa, T = {T:.6e} K' for P, T in left)
         if n == 0:
@@ -298,7 +300,8 @@ def main(argv=None):
             )
         os.replace(tmp, out)
     except BaseException:
-        tmp.unlink(missing_ok=True)
+        if made:
+            tmp.unlink(missing_ok=True)
         raise
     print(f'wrote {n} rows to {args.out}')
     if left:
