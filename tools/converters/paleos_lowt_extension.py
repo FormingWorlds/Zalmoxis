@@ -46,6 +46,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import hashlib
+import importlib.metadata
 import os
 import platform
 import re
@@ -159,6 +160,14 @@ def _git(path, *args):
     return res.stdout.strip() if res.returncode == 0 else None
 
 
+def _version(dist):
+    """Installed version of ``dist``, or 'not installed'."""
+    try:
+        return importlib.metadata.version(dist)
+    except importlib.metadata.PackageNotFoundError:
+        return 'not installed'
+
+
 def _checkout(path):
     """HEAD and ``git status --porcelain`` (each None when git fails) of the checkout whose top
     is ``path``, or None when ``path`` is not the top of a git checkout."""
@@ -254,7 +263,6 @@ def main(argv=None):
     if origin is None or not Path(origin).resolve().is_relative_to(src):
         ap.error(f'paleos was imported from {origin}, not from --paleos-src')
     import scipy
-    import sympy
 
     data = ''.join(x for x in args.table.read_text().splitlines(True) if not x.startswith('#'))
     header = [
@@ -262,7 +270,7 @@ def main(argv=None):
         f'PALEOS commit: {commit}',
         f'Table data sha256: {hashlib.sha256(data.encode()).hexdigest()}',
         f'paleos/mgsio3_eos.py sha256: {hashlib.sha256(Path(origin).read_bytes()).hexdigest()}',
-        f'numpy {np.__version__}, scipy {scipy.__version__}, sympy {sympy.__version__}, '
+        f'numpy {np.__version__}, scipy {scipy.__version__}, sympy {_version("sympy")}, '
         f'Python {platform.python_version()}',
         f'Converter sha256: {hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}',
         f'Zalmoxis commit of the converter: {_zalmoxis_commit(root)}',
