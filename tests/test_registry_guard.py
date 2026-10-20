@@ -1122,3 +1122,25 @@ def test_read_table_columns_names_a_missing_table_and_its_relink(tmp_path):
         interpolation.read_table_columns(str(tmp_path / 'nowhere' / NAME), range(9))
     assert type(info.value) is FileNotFoundError
     assert 'get_zalmoxis.sh' in str(info.value)
+
+
+def test_a_cache_behind_a_dangling_alias_needs_a_pin_of_the_target_name(tmp_path, pinned):
+    """A link with a name of its own to a missing pinned table: the cache beside the link is
+    used only when its md5 is a pin of the target name."""
+    alias = tmp_path / 'my_iron.dat'
+    alias.symlink_to(tmp_path / NAME)
+    cache = interpolation.cache_path_for(str(alias))
+    interpolation.write_cache(cache, _valid('f' * 32, {'old': True}))
+    with pytest.raises(Exception) as info:
+        interpolation._ensure_unified_cache(str(alias), {})
+    assert type(info.value) is StaleTableError
+    interpolation.write_cache(cache, _valid(_md5(pinned.encode()), {'current': True}))
+    assert interpolation._ensure_unified_cache(str(alias), {}) == {'current': True}
+
+
+def test_a_dangling_alias_to_an_unpinned_name_without_cache_is_missing(tmp_path, pinned):
+    """A link to a missing table that no registry names, with no cache, is a missing file."""
+    alias = tmp_path / 'my_iron.dat'
+    alias.symlink_to(tmp_path / 'my_own_table.dat')
+    with pytest.raises(FileNotFoundError):
+        interpolation._ensure_unified_cache(str(alias), {})
