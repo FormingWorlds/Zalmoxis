@@ -132,8 +132,9 @@ def load_paleos_with_lowt_extension(eos_file, lowt_file):
     ValueError
         If the PALEOS table has fewer than two temperatures, if the extension pressure rows
         differ from the PALEOS rows, if an extension node does not continue the PALEOS
-        log-T grid below it, or if on a row that uses the extension the seam node is
-        missing, not finite, or differs from PALEOS by more than 1e-6 relative in any
+        log-T grid below it, or if on a row that uses the extension the two files share
+        no seam node (the PALEOS row starts above the extension, or the extension ends below
+        the row), or the seam node is not finite, or differs from PALEOS by more than 1e-6 relative in any
         property, or if the used cells of a row (from its lowest node with a finite
         extension s up to the seam) miss a node, hold a value that is not finite, have rho,
         cp or cv <= 0, or do not rise strictly in s with T. alpha and nabla_ad may take
@@ -171,7 +172,13 @@ def load_paleos_with_lowt_extension(eos_file, lowt_file):
         k0 = finite[0]
         seam = np.flatnonzero(col == k0)
         P_row = 10.0 ** lp[i]
-        if seam.size == 0 or not all(np.isfinite(ext[key][j, seam[0]]) for key in _LOWT_PROPS):
+        if seam.size == 0:
+            raise ValueError(
+                f'{eos_file}: the PALEOS row at P = {P_row:.6e} Pa starts at T = '
+                f'{10.0 ** lt[k0]:.6e} K and {lowt_file} ends at T = '
+                f'{10.0 ** lt[ext_cols.max()]:.6e} K on that row: no common seam node'
+            )
+        if not all(np.isfinite(ext[key][j, seam[0]]) for key in _LOWT_PROPS):
             raise ValueError(
                 f'{lowt_file}: no finite seam value at P = {P_row:.6e} Pa, T = {10.0 ** lt[k0]:.6e} K'
             )

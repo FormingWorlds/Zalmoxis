@@ -14,14 +14,21 @@ Usage::
     python -m tools.converters.paleos_lowt_extension --paleos-src <PALEOS checkout> \\
         --table <paleos_mgsio3_tables_pt_proteus_solid.dat> --out <extension.dat>
 
-The PALEOS commit of ``--paleos-src`` goes into the header; the extension is valid only for
-a table made by the same commit, which the seam check of the merge tests on every row.
+The header names the PALEOS commit of ``--paleos-src`` (a commit given with
+``--paleos-commit`` is written as not verified), sha256 of the data lines of the extended
+table and of ``paleos/mgsio3_eos.py``, and the numpy and scipy versions. The merge checks on
+every extended row that the extension and the table agree to 1e-6 at the seam node, the
+table minimum; it does not test that both come from the same PALEOS commit.
+
+``MgSiO3EoS`` builds every PALEOS MgSiO3 phase, the liquid Wolf18 model (RTpress, compiled
+with sympy) too, so its dependencies must be installed although no extension point is liquid.
 """
 
 from __future__ import annotations
 
 import argparse
 import datetime
+import hashlib
 import re
 import subprocess
 import sys
@@ -92,8 +99,9 @@ def write_extension(eos, table_file, out_file, header, t_min=50.0, p_max=12.0e9)
     Returns
     -------
     int
-        Number of (P, T) rows written; a point where a property is not finite is left out,
-        as PALEOS leaves out points that do not converge.
+        Number of (P, T) rows written; a point where a property is not finite, or where
+        PALEOS raises RuntimeError, ArithmeticError or ValueError (no convergence), is left
+        out, as PALEOS leaves out points that do not converge.
     """
     P_rows, T_nodes = extension_grid(table_file, t_min, p_max)
     lines = [f'# {h}\n' for h in header]
@@ -101,11 +109,15 @@ def write_extension(eos, table_file, out_file, header, t_min=50.0, p_max=12.0e9)
     n = 0
     for P in P_rows:
         for T in T_nodes:
-            vals = [float(getattr(eos, m)(P, T)) for m in _METHODS]
+            try:
+                vals = [float(getattr(eos, m)(P, T)) for m in _METHODS]
+                phase = eos.phase(P, T)
+            except (RuntimeError, ArithmeticError, ValueError):
+                continue
             if not np.all(np.isfinite(vals)):
                 continue
             body = ' '.join(f'{v:.8e}' for v in vals)
-            lines.append(f'{P:.8e} {T:.8e} {body} {eos.phase(P, T)}\n')
+            lines.append(f'{P:.8e} {T:.8e} {body} {phase}\n')
             n += 1
     Path(out_file).write_text(''.join(lines))
     return n
@@ -140,7 +152,7 @@ def main(argv=None):
     if commit is not None:
         if not re.fullmatch(r'[0-9a-fA-F]{7,64}', commit):
             ap.error(f'--paleos-commit {commit!r} is not a commit hash')
-        commit = commit.lower()
+        commit = commit.lower() + ' (given, not verified)'
     else:
         top = _git(src, 'rev-parse', '--show-toplevel')
         if top is None or Path(top).resolve() != src:
@@ -158,9 +170,15 @@ def main(argv=None):
     origin = getattr(sys.modules['paleos.mgsio3_eos'], '__file__', None)
     if origin is None or not Path(origin).resolve().is_relative_to(src):
         ap.error(f'paleos was imported from {origin}, not from --paleos-src')
+    import scipy
+
+    data = ''.join(x for x in args.table.read_text().splitlines(True) if not x.startswith('#'))
     header = [
         'PALEOS MgSiO3 solid low-temperature extension',
         f'PALEOS commit: {commit}',
+        f'Table data sha256: {hashlib.sha256(data.encode()).hexdigest()}',
+        f'paleos/mgsio3_eos.py sha256: {hashlib.sha256(Path(origin).read_bytes()).hexdigest()}',
+        f'numpy {np.__version__}, scipy {scipy.__version__}',
         f'Extends: {args.table.name}, rows 0 < P < {args.p_max:.6e} Pa, '
         f'T from the table minimum down to the first node <= {args.t_min:g} K',
         f'Generated: {datetime.datetime.now(datetime.UTC):%Y-%m-%d %H:%M:%S} UTC',
