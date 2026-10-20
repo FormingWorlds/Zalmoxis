@@ -17,7 +17,8 @@ Usage::
 A ``--table`` under a registry file name that is not its pinned release is fetched again when
 it sits in its version folder under FWL_DATA; otherwise StaleTableError stops the tool before it
 imports PALEOS. A missing ``--table``, an ``--out`` that is a folder or the ``--table`` file,
-and a ``zalmoxis`` package imported from outside the converter's checkout are refused.
+and a ``zalmoxis`` package other than ``src/zalmoxis`` of the converter's checkout (install
+that checkout editable or set PYTHONPATH to its ``src``) are refused.
 A ``--paleos-src`` with uncommitted or untracked files, or a commit given with
 ``--paleos-commit`` that the tool cannot check, is refused unless ``--allow-unverified-paleos``
 is set; the header then records that state. The header names the PALEOS commit, sha256 of the
@@ -33,7 +34,8 @@ left out at the lowest node of a row (the row then starts one node higher) and r
 inside a row; the command line then stops with an error that names the left-out points. The
 tool writes a temporary file of its own next to the file ``--out`` names (a link at ``--out``
 is followed and kept), checks the merge on it and only then moves it onto that file: a Python
-exception of any type removes the temporary file and keeps an earlier ``--out``.
+exception of any type removes the temporary file and keeps an earlier ``--out``. The new file
+gets the mode 0666 less the umask; the mode and owner of an earlier ``--out`` are not kept.
 
 ``MgSiO3EoS`` builds every PALEOS MgSiO3 phase, the liquid Wolf18 model (RTpress, compiled
 with sympy) too, so its dependencies must be installed although no extension point is liquid.
@@ -47,9 +49,9 @@ import hashlib
 import os
 import platform
 import re
+import secrets
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -169,10 +171,10 @@ def _checkout(path):
 def _zalmoxis_commit(root):
     """HEAD of the checkout whose top is ``root``, marked when it has uncommitted or untracked
     files; 'unknown (not a git checkout)' otherwise."""
-    state = _checkout(root)
-    if state is None or not state[0] or state[1] is None:
+    head, status = _checkout(root) or (None, None)
+    if not head or status is None:
         return 'unknown (not a git checkout)'
-    return state[0] + (' (uncommitted changes)' if state[1] else '')
+    return head + (' (uncommitted changes)' if status else '')
 
 
 def main(argv=None):
@@ -193,22 +195,23 @@ def main(argv=None):
         'cannot be checked; the header records the state',
     )
     args = ap.parse_args(argv)
-    if not args.out.parent.is_dir():
-        ap.error(f'the output folder {args.out.parent} does not exist')
+    out = args.out.resolve()
+    if not out.parent.is_dir():
+        ap.error(f'the output folder {out.parent} does not exist')
     if args.out.is_dir():
         ap.error(f'--out {args.out} is a folder')
     if not args.table.is_file():
         ap.error(f'--table {args.table} is not a file')
-    if args.out.resolve() == args.table.resolve():
+    if out == args.table.resolve():
         ap.error('--out must not be the --table file')
     import zalmoxis
 
     root = Path(__file__).resolve().parents[2]
     pkg = Path(zalmoxis.__file__).resolve().parent
-    if not pkg.is_relative_to(root):
+    if pkg != root / 'src' / 'zalmoxis':
         ap.error(
-            f'zalmoxis was imported from {pkg}, not from the checkout of the converter {root}; '
-            'install it editable or set PYTHONPATH to its src'
+            f'zalmoxis was imported from {pkg}, not from {root / "src" / "zalmoxis"} of the '
+            'converter checkout; install that checkout editable or set PYTHONPATH to its src'
         )
     from zalmoxis.eos.registry_guard import verify
 
@@ -268,12 +271,8 @@ def main(argv=None):
         f'T from the table minimum down to the first node <= {args.t_min:g} K',
         f'Generated: {datetime.datetime.now(datetime.UTC):%Y-%m-%d %H:%M:%S} UTC',
     ]
-    out = args.out.resolve()
-    fd, name = tempfile.mkstemp(dir=out.parent, prefix=f'.{out.name}.', suffix='.tmp')
-    os.close(fd)
-    tmp, mask = Path(name), os.umask(0)
-    os.umask(mask)
-    os.chmod(tmp, 0o666 & ~mask)
+    tmp = out.with_name(f'.{out.name}.{secrets.token_hex(8)}.tmp')
+    os.close(os.open(tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666))
     try:
         n, left = write_extension(MgSiO3EoS(), args.table, tmp, header, args.t_min, args.p_max)
         where = ', '.join(f'P = {P:.6e} Pa, T = {T:.6e} K' for P, T in left)
