@@ -317,7 +317,8 @@ def _check_accepted(
     volatile_profile,
 ):
     """Run ``invariants.check_accepted`` on an accepted result, with the batch EOS call of
-    the solve per layer as the density reference and the tolerances of ``run_params``."""
+    the solve per layer as the density reference and the tolerances of ``run_params``, which
+    the result keeps as ``integration_tolerances`` (rtol, atol)."""
     if not result.get('converged'):
         return result
     defaults = _default_solver_params(config_params['planet_mass'])
@@ -334,6 +335,7 @@ def _check_accepted(
         args = (mixes[layer], material_dictionaries, *melt, _interpolation_cache, *eos)
         return calculate_mixed_density_batch(P, T, *args, volatile_profile=vp)
 
+    result['integration_tolerances'] = (rtol, atol)
     check_accepted(result, config_params, rtol, atol, density_at, 'ice_layer' in mixes)
     return result
 

@@ -13,11 +13,14 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
+_SELECT = 'accept_solves and not wolfbower'  # the select of the accept_solves jobs
+
+
 def _marked(tests_dir):
-    """Files under ``tests_dir``, as paths below it, with a test that pytest selects by
-    ``-m accept_solves``."""
+    """Files under ``tests_dir``, as paths below it, with a test that the accept_solves jobs
+    select. A file that skips at import (a module-level importorskip) is not collected."""
     done = subprocess.run(
-        [sys.executable, '-m', 'pytest', '--collect-only', '-q', '-m', 'accept_solves']
+        [sys.executable, '-m', 'pytest', '--collect-only', '-q', '-m', _SELECT]
         + ['-o', 'addopts=', '-p', 'no:cacheprovider', '--rootdir', str(tests_dir), '.'],
         cwd=tests_dir,
         capture_output=True,
@@ -58,8 +61,11 @@ def test_a_marked_file_outside_the_named_jobs_is_found(tmp_path):
 
 
 _FORMS = {
-    'list': 'import pytest\n\npytestmark = [\n    pytest.mark.unit,\n    pytest.mark.accept_solves,\n]\n\n\ndef test_x():\n    pass\n',
-    'param': 'import pytest\n\n\n@pytest.mark.parametrize(\n    "a", [pytest.param(1, marks=pytest.mark.accept_solves)]\n)\ndef test_x(a):\n    pass\n',
+    'list': 'import pytest\n\npytestmark = [\n    pytest.mark.unit,\n'
+    '    pytest.mark.accept_solves,\n]\n\n\ndef test_x():\n    pass\n',
+    'param': 'import pytest\n\n\n@pytest.mark.parametrize(\n'
+    '    "a", [pytest.param(1, marks=pytest.mark.accept_solves)]\n)\n'
+    'def test_x(a):\n    pass\n',
     'alias': 'from pytest import mark\n\n\n@mark.accept_solves\ndef test_x():\n    pass\n',
     'sub/': 'import pytest\n\n\n@pytest.mark.accept_solves\ndef test_x():\n    pass\n',
 }

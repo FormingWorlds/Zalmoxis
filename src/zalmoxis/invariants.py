@@ -9,8 +9,8 @@ import numpy as np
 from .constants import G
 
 # Largest allowed deviation of each invariant; a count of bad nodes where the tolerance is 0.
-# gravity: a factor on the per-node RK45 bound of ``deviations``; density_eos: round-off, since
-# both sides call the same batch EOS at the same (P, T).
+# gravity: a factor on the per-node RK45 bound of ``deviations``; density_eos: both sides call
+# the same batch EOS, so real solves give 0, and 1e-6 lies below the 1e-5 table error.
 TOLERANCES = {
     'padding': 0,
     'centre': 0,
@@ -64,17 +64,20 @@ def deviations(
         ``rtol + atol (1 / M_i + 1 / g_i)``, with ``g_i = G M_i / r_i^2``. The RK45 dense
         output keeps ``g r^2 - G M`` per step to about 19.9 rtol + 13.6 atol (1/M_i + 1/g_i)
         relative to ``G M``, an estimate from the Butcher tableau. ``g r^2 - G M`` is constant
-        under the exact equations for any density, so a step error stays, the step errors add,
-        and relative to ``G M`` an error made at mass M_i falls outward only as ``M_i / M``.
-        The factor 100 is an empirical bound on that sum: accepted real solves through ``main`` of 26 setups, 0.1 to 10 M_E, reach 2.83 to
-        20.78 times ``rtol + atol (1 / M_i + 1 / g_i)``, a margin of at least 4.8. They cover
-        the analytic, Wolf & Bower (isothermal 3000 and 4000 K, linear), PALEOS, PALEOS-2phase
-        (linear, adiabatic), PALEOS with 3 % Chabrier H and 3-layer PALEOS ice EOS, 150 and 2000
-        nodes, rtol 1e-5 and 1e-9, Picard, Newton and the JAX kernel. The largest is the 1 M_E
-        planet of ``input/default.toml`` with a Seager iron core, a PALEOS-2phase mantle and the
-        adiabatic profile, at the default tolerances; the smallest is a 3 % Chabrier H mantle at
-        rtol 1e-9. At rtol 1e-5 and atol 1e-6 the tolerance at the surface is about 1e-3 for
-        any node count.
+        under the exact equations for any density, so an error left at a step end stays, and
+        relative to ``G M`` it falls outward as ``M_i / M``. The largest node deviation is the
+        dense-output error inside a long step: on the PALEOS-2phase adiabat below it is
+        ``+6.4e-6 G M`` at r/R 0.22 in the core, 20.8 units, and ``1.4e-7 G M`` at the surface.
+        The factor 100 is therefore an empirical bound: accepted real solves through ``main``
+        of 26 setups, 0.1 to 10 M_E, reach 2.83 to 20.78 times ``rtol + atol (1 / M_i +
+        1 / g_i)``, a margin of at least 4.8. They cover the analytic, Wolf & Bower (isothermal
+        3000 and 4000 K, linear), PALEOS, PALEOS-2phase (linear, adiabatic), PALEOS with 3 %
+        Chabrier H and 3-layer PALEOS ice EOS, 150 and 2000 nodes, rtol 1e-5 and 1e-9, Picard,
+        Newton and the JAX kernel. The largest is ``input/default.toml`` at 1 M_E with the
+        layers of the PALEOS smoke tests (``Seager2007:iron``, ``PALEOS-2phase:MgSiO3``), the
+        adiabatic profile and the default tolerances; the smallest is a 3 % Chabrier H mantle
+        at rtol 1e-9. At rtol 1e-5 and atol 1e-6 the tolerance at the surface is about 1e-3
+        for any node count, so the check sees only gravity faults of about 0.1 % or more.
     density_at : callable or None
         ``(P, T, layer) -> rho`` for the arrays of the nodes of one layer, by the EOS path
         that the solver used at the returned nodes; called once per layer that has nodes.
@@ -207,9 +210,13 @@ def deviations(
                 ref[sel] = np.asarray(
                     density_at(P[:k][sel], T[:k][sel], str(name)), dtype=float
                 )
-            except Exception as err:  # noqa: BLE001 -- reported as the density_eos deviation
-                failed = f'density lookup of the {name} layer failed: {err}'
+            except Exception as err:  # reported as the density_eos deviation
+                failed = (
+                    f'density lookup of the {name} layer failed: {type(err).__name__}: {err}'
+                )
                 put('density_eos', np.inf, int(np.argmax(sel)), text=failed)
+                if details is not None:
+                    details['density_eos cause'] = err
                 return out
         with np.errstate(divide='ignore', invalid='ignore'):
             d = np.abs(rho[:k] / ref - 1)
@@ -229,8 +236,10 @@ def _finite_positive(x):
 
 
 def _real_scalar(x):
-    """Whether ``x`` is one integer or floating number (a 0-d array included), not a bool."""
-    return np.ndim(x) == 0 and np.asarray(x).dtype.kind in 'iuf'
+    """Whether ``x`` is one real number of any numeric type, a 0-d array too, not a bool."""
+    if isinstance(x, np.ndarray):
+        return x.ndim == 0 and x.dtype.kind in 'iuf'
+    return isinstance(x, numbers.Real) and not isinstance(x, (bool, np.bool_))
 
 
 def check_accepted(result, config_params, rtol, atol, density_at=None, ice=False):
@@ -290,4 +299,4 @@ def check_accepted(result, config_params, rtol, atol, density_at=None, ice=False
             raise StructureInvariantError(
                 f'Accepted structure ({accepted_on=}) breaks {name}: deviation {dev:.3e} > '
                 f'tolerance {tol:.3e}{node}; {details[name]}.'
-            )
+            ) from details.get(f'{name} cause')
