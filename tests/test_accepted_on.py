@@ -1077,3 +1077,44 @@ def test_an_iteration_cap_whose_newest_blend_step_diverges_returns_an_earlier_be
     assert r['adiabat_blend'] == 0.0
     assert r['mass_error_at_accept'] < 1e-3
     assert r['radii'][-1] == pytest.approx(1.2978e7, rel=1e-3)
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.timeout(2400)
+def test_a_single_pass_between_the_two_ceilings_is_a_retry_skip(monkeypatch):
+    """0.5 M_E PALEOS iron/MgSiO3, linear T, one outer pass: the pass misses the mass by about
+    5 %, above the 3 % max_iter ceiling and below the retry skip one, so main accepts it as
+    retry_skip without a second solve, and the invariant check passes."""
+    from tests.test_spider_coupling_convergence import _has_paleos_data
+    from zalmoxis.config import load_solidus_liquidus_functions, load_zalmoxis_config
+
+    if not _has_paleos_data():
+        pytest.skip('PALEOS tables not on disk')
+    cfg = load_zalmoxis_config(os.path.join(ROOT, 'input', 'default.toml'))
+    cfg.update(
+        data_output_enabled=False,
+        plotting_enabled=False,
+        planet_mass=0.5 * earth_mass,
+        temperature_mode='linear',
+        max_iterations_outer=1,
+        wall_timeout=WALL,
+        layer_eos_config={'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
+    )
+    melt = load_solidus_liquidus_functions(
+        cfg['layer_eos_config'],
+        'Stixrude14-solidus',
+        'Stixrude14-liquidus',
+        cfg['mushy_zone_factor'],
+    )
+    calls, real = [], zs._solve
+
+    def once(*args, **kwargs):
+        calls.append(1)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(zs, '_solve', once)
+    r = zs.main(cfg, load_material_dictionaries(), melt, os.path.join(ROOT, 'input'))
+    assert r['converged'] and r['accepted_on'] == 'retry_skip' and len(calls) == 1
+    assert r['accept_mass_limit'] == 0.07
+    assert 0.03 < r['mass_error_at_accept'] < 0.07
