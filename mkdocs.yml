@@ -43,6 +43,7 @@ nav:
           - EOS package: Reference/api/zalmoxis.eos.md
           - EOS dispatch: Reference/api/zalmoxis.eos.dispatch.md
           - EOS interpolation: Reference/api/zalmoxis.eos.interpolation.md
+          - EOS table registry check: Reference/api/zalmoxis.eos.registry_guard.md
           - EOS output: Reference/api/zalmoxis.eos.output.md
           - PALEOS tables: Reference/api/zalmoxis.eos.paleos.md
           - PALEOS API: Reference/api/zalmoxis.eos.paleos_api.md
