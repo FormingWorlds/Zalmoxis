@@ -822,10 +822,13 @@ def test_wall_clock_in_the_adiabat_ramp_keeps_tolerance_outer_as_the_limit(monke
     assert r['accept_mass_limit'] == 0.05
 
 
-def _wb_blended(monkeypatch, factor, tol, clock_stop=True, inner=2, outer=100):
+def _wb_blended(
+    monkeypatch, factor, tol, clock_stop=True, inner=2, outer=100, clock_after=None
+):
     """A Wolf & Bower adiabatic _solve whose passes after the adiabat blend starts end ``factor``
     times the target mass; with ``clock_stop`` the clock runs out after the first density
-    lookup of the first blended pass."""
+    lookup of the first blended pass, or with ``clock_after`` once the adiabat was computed
+    that many times."""
     from zalmoxis.eos import get_solidus_liquidus_functions
 
     _need_wb_tables()
@@ -851,7 +854,15 @@ def _wb_blended(monkeypatch, factor, tol, clock_stop=True, inner=2, outer=100):
     monkeypatch.setattr(zs, 'solve_structure', solve)
     if clock_stop:
         monkeypatch.setattr(
-            zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * bool(lookups))
+            zs,
+            'time',
+            SimpleNamespace(
+                time=lambda: (
+                    clock()
+                    + 1e9
+                    * (bool(lookups) if clock_after is None else len(adiabat) >= clock_after)
+                )
+            ),
         )
     cfg = _cfg(
         temperature_mode='adiabatic',
@@ -891,6 +902,32 @@ def test_a_clock_stop_beyond_its_limit_returns_the_linear_pass_under_that_limit(
     assert r['stopped_on_wall_clock'] is True and r['accepted_on'] == 'timeout'
     assert r['adiabat_blend'] == 0.0
     assert r['accept_mass_limit'] == pytest.approx(0.02)
+    assert r['mass_error_at_accept'] < 0.02
+
+
+@pytest.mark.smoke
+@pytest.mark.wolfbower
+@pytest.mark.usefixtures('no_check')
+def test_a_clock_stop_keeps_a_blended_pass_whose_inner_solves_converged(monkeypatch):
+    """Blended passes 5 % off, inside the 6 % limit of a clock stop but above tolerance_outer
+    0.02 and the 3 % ceiling: the first blended pass ran its inner solves to convergence, so
+    the strict test of the stop accepts it and no earlier pass replaces it."""
+    r = _wb_blended(monkeypatch, 1.05, 0.02, inner=100, clock_after=2)
+    assert r['accepted_on'] == 'timeout' and r['accept_mass_limit'] == pytest.approx(0.06)
+    assert r['converged_density'] and r['converged_pressure']
+    assert r['adiabat_blend'] == 0.25
+    assert r['mass_error_at_accept'] == pytest.approx(0.05, rel=1e-9)
+
+
+@pytest.mark.smoke
+@pytest.mark.wolfbower
+@pytest.mark.usefixtures('no_check')
+def test_a_clock_stop_inside_its_limit_without_converged_inner_solves_falls_back(monkeypatch):
+    """Blended passes 5 % off, inside the 6 % limit of a clock stop, with inner solves cut at 2
+    passes: no accept test takes the newest pass, so the linear pass is returned."""
+    r = _wb_blended(monkeypatch, 1.05, 0.02)
+    assert r['stopped_on_wall_clock'] is True and r['accepted_on'] == 'timeout'
+    assert r['adiabat_blend'] == 0.0
     assert r['mass_error_at_accept'] < 0.02
 
 
