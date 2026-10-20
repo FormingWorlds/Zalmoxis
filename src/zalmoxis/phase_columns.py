@@ -111,14 +111,8 @@ def _canonicalize_paleos_phase(raw: str) -> str:
     return PHASE_UNKNOWN
 
 
-# Per-process cache for unified PALEOS phase grids. Keyed by absolute
-# path of the table file. Built once on first hit and reused for every
-# subsequent radial shell across every grid cell run by this worker.
-# Entries are the full ``load_paleos_unified_table`` cache so that this
-# loader hits the same ``.pkl`` binary cache that the solver path uses
-# via ``_ensure_unified_cache``: cold ``.pkl`` skips the slow text reparse
-# of the 50-140 MB ``.dat`` file, and an installation that has only the
-# ``.pkl`` (no ``.dat``) still yields phase labels rather than ``unknown``.
+# Per-process cache of unified PALEOS phase grids by table path; the entries come from
+# ``_ensure_unified_cache``, so this loader shares the solver's ``<table>.cache.pkl``.
 _PHASE_GRID_CACHE: dict[str, Optional[dict]] = {}
 
 
@@ -126,15 +120,15 @@ def _load_phase_grid(eos_file: str) -> Optional[dict]:
     """Load (and cache) the (P-major, T-minor) phase string grid.
 
     Routes through the shared ``_ensure_unified_cache`` so the lookup
-    benefits from the existing ``.pkl`` binary cache. Falls back to
-    ``None`` if neither the ``.pkl`` nor the ``.dat`` file is reachable
-    (e.g. on a CI runner without the bootstrapped ``data/`` tree).
+    uses the ``<table>.cache.pkl`` binary cache. Falls back to ``None`` if
+    neither the cache nor the ``.dat`` file is reachable (e.g. on a CI
+    runner without the bootstrapped ``data/`` tree).
 
     Parameters
     ----------
     eos_file : str
         Absolute path to a unified PALEOS table (``.dat`` filename; the
-        cached ``.pkl`` is derived from it by ``_ensure_unified_cache``).
+        cache file is derived from it by ``_ensure_unified_cache``).
 
     Returns
     -------

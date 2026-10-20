@@ -17,6 +17,7 @@ from .interpolation import (
     _paleos_clamp_warned,
     load_paleos_table,
 )
+from .registry_guard import StaleTableError
 from .seager import get_tabulated_eos
 
 logger = logging.getLogger(__name__)
@@ -35,12 +36,15 @@ def load_melting_curve(melt_file):
     -------
     scipy.interpolate.interp1d or None
         One-dimensional interpolation function returning temperature as a
-        function of pressure. Returns ``None`` if the file cannot be loaded.
+        function of pressure. Returns ``None`` if the file cannot be loaded; a
+        :class:`~zalmoxis.eos.registry_guard.StaleTableError` is passed on.
     """
     from ..melting_curves import _load_tabulated_curve
 
     try:
         return _load_tabulated_curve(melt_file)
+    except StaleTableError:
+        raise
     except Exception as e:
         print(f'Error loading melting curve data: {e}')
         return None

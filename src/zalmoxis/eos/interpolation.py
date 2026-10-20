@@ -6,14 +6,21 @@ clamping used by all PALEOS-based EOS lookups.
 
 from __future__ import annotations
 
+import functools
+import hashlib
+import inspect
 import logging
 import os
+import pickle
+import types
 
 import numpy as np
 from scipy.interpolate import (
     NearestNDInterpolator,
     RegularGridInterpolator,
 )
+
+from .registry_guard import StaleTableError, file_md5, verify, verify_digest
 
 logger = logging.getLogger(__name__)
 
@@ -23,18 +30,22 @@ _paleos_clamp_warned = set()
 
 
 def require_eos_file(eos_file):
-    """Raise FileNotFoundError naming the cause when an EOS or melting-curve file is missing.
+    """Raise unless an EOS or melting-curve file is present and, for a PALEOS table, current.
 
     A ``data/`` folder is a link into FWL_DATA, so a table behind a link whose
     target is gone (a moved FWL_DATA or a pruned version) names that link and
-    the setup script that remakes it.
+    the setup script that remakes it. A PALEOS table must have the md5 the
+    fwl-io registry pins (:func:`zalmoxis.eos.registry_guard.verify`).
 
     Raises
     ------
     FileNotFoundError
         If ``eos_file`` is not a file.
+    StaleTableError
+        If ``eos_file`` is a PALEOS table that differs from its pinned release.
     """
     if os.path.isfile(eos_file):
+        verify(eos_file)
         return
     path = os.path.abspath(eos_file)
     while path != os.path.dirname(path):
@@ -60,8 +71,10 @@ def read_table_columns(eos_file, usecols, dtype=float):
     ``np.loadtxt`` parses these 50-140 MB files several times faster than
     ``np.genfromtxt`` and returns the same arrays for numeric input. A token
     that is not a number (``N/A``, ``---``) raises ``ValueError`` where
-    ``genfromtxt`` gave NaN.
+    ``genfromtxt`` gave NaN. The file must exist, and a PALEOS table must be its pinned
+    release (:func:`require_eos_file`).
     """
+    require_eos_file(eos_file)
     return np.loadtxt(eos_file, usecols=usecols, dtype=dtype, comments='#')
 
 
@@ -590,8 +603,90 @@ def _paleos_clamp_temperature(log_p, log_t, cached):
     return log_t, False
 
 
+# Layout of the cached entry; a change to load_paleos_unified_table raises it.
+CACHE_FORMAT = 1
+
+
+def _code_text(code):
+    """Return the bytecode, constants and names of ``code`` (nested code objects by the same
+    rule, frozensets sorted), without its file name or line numbers."""
+    consts = []
+    for c in code.co_consts:
+        if isinstance(c, types.CodeType):
+            c = _code_text(c)
+        elif isinstance(c, frozenset):
+            c = sorted(map(repr, c))
+        consts.append(repr(c))
+    return f'{code.co_code.hex()}|{",".join(consts)}|{code.co_names}'
+
+
+def _code_identity(fn):
+    """Return the source of ``fn``, or when it cannot be read its :func:`_code_text` and the
+    repr of its defaults."""
+    try:
+        return inspect.getsource(fn)
+    except Exception:  # no source, or a source file that changed and no longer tokenizes
+        return _code_text(fn.__code__) + repr((fn.__defaults__, fn.__kwdefaults__))
+
+
+# The identity of the loader that builds a cache entry, taken once at import
+_CACHE_LOADER_CODE = _code_identity(load_paleos_unified_table)
+
+
+@functools.cache
+def cache_builder():
+    """Return the identity of the code that builds a cache entry: a digest of the identity of
+    ``load_paleos_unified_table`` at import (:func:`_code_identity`) and the numpy and scipy
+    versions."""
+    import scipy
+
+    text = f'{_CACHE_LOADER_CODE}\nnumpy {np.__version__}\nscipy {scipy.__version__}'
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def write_cache_bytes(cache_path, body):
+    """Write ``body`` after a line with its sha256, to a temporary file renamed into place."""
+    tmp = f'{cache_path}.tmp.{os.getpid()}'
+    try:
+        with open(tmp, 'wb') as f:
+            f.write(hashlib.sha256(body).hexdigest().encode() + b'\n' + body)
+        os.replace(tmp, cache_path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
+def write_cache(cache_path, stored):
+    """Write a cache payload with :func:`write_cache_bytes`."""
+    write_cache_bytes(cache_path, pickle.dumps(stored, protocol=4))
+
+
+def read_cache(cache_path):
+    """Return a cache payload; ``_StaleCache`` unless its bytes match their sha256 line,
+    so damaged bytes are never unpickled."""
+    with open(cache_path, 'rb') as f:
+        head, sep, body = f.read().partition(b'\n')
+    if not sep or hashlib.sha256(body).hexdigest().encode() != head:
+        raise _StaleCache(cache_path)
+    return pickle.loads(body)
+
+
+def cache_path_for(eos_file):
+    """Return the binary cache path of a unified PALEOS table: ``x.cache.pkl`` for ``x.dat``."""
+    return os.path.splitext(eos_file)[0] + '.cache.pkl'
+
+
 class _StaleCache(Exception):
-    """Raised when a binary cache predates the text table it was built from."""
+    """Raised when a binary cache was not built from the text table beside it."""
+
+
+def _stat_key(path):
+    """Return (device, inode, size, mtime, ctime) of ``path``, or None when it cannot be read."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    return st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns
 
 
 def _ensure_unified_cache(eos_file, interpolation_functions):
@@ -599,6 +694,10 @@ def _ensure_unified_cache(eos_file, interpolation_functions):
 
     Tries loading from a binary pickle cache first (fast), then falls back
     to the text table (slow). Saves a pickle cache after the first text load.
+    The cache holds the md5 of its table and the identity of the code that built it
+    (:func:`cache_builder`), and is used only for that table and that code. A readable
+    table must be current (:func:`require_eos_file`); without a readable table, the md5
+    the cache holds must be a pinned one.
 
     Parameters
     ----------
@@ -613,20 +712,25 @@ def _ensure_unified_cache(eos_file, interpolation_functions):
         The cache entry for this file.
     """
     if eos_file not in interpolation_functions:
-        import pickle
-
-        cache_path = eos_file.replace('.dat', '.pkl')
+        source_md5 = before = None
+        if os.path.isfile(eos_file) and os.access(eos_file, os.R_OK):
+            require_eos_file(eos_file)  # can fetch the table again
+            before, source_md5 = _stat_key(eos_file), file_md5(eos_file)
+        cache_path = cache_path_for(eos_file)
         try:
-            # A cache older than its text table describes a superseded release.
-            # The PROTEUS data layer replaces the .dat in place when its Zenodo
-            # pin moves, so without this check every run keeps reading the
-            # previous table through a cache that never expires.
-            if os.path.exists(eos_file) and os.path.getmtime(cache_path) < os.path.getmtime(
-                eos_file
+            stored = read_cache(cache_path)
+            if (
+                not isinstance(stored, dict)
+                or stored.get('format') != CACHE_FORMAT
+                or stored.get('builder') != cache_builder()
+                or 'entry' not in stored
             ):
                 raise _StaleCache(cache_path)
-            with open(cache_path, 'rb') as f:
-                interpolation_functions[eos_file] = pickle.load(f)
+            if source_md5 is None:
+                verify_digest(eos_file, stored.get('source_md5'), label=cache_path)
+            elif stored.get('source_md5') != source_md5:
+                raise _StaleCache(cache_path)
+            interpolation_functions[eos_file] = stored['entry']
             logger.debug('Loaded PALEOS cache from %s', cache_path)
         except (
             _StaleCache,
@@ -636,19 +740,13 @@ def _ensure_unified_cache(eos_file, interpolation_functions):
             ImportError,
             AttributeError,
         ) as exc:
-            # FileNotFoundError is the normal first-load case (no cache yet),
-            # and _StaleCache means the table was replaced after the cache was
-            # written. The remaining errors mean a cache file exists but cannot
-            # be unpickled, most often because it was written by a different
-            # scipy build whose interpolator classes or vendored submodules
-            # (e.g. scipy._lib.array_api_compat) no longer resolve. Rebuilding
-            # from the text table always produces a cache valid for the current
-            # scipy, so an unusable cache degrades to a slow load, not a crash.
+            # No cache yet, a cache of another table, or one an other scipy build
+            # wrote: rebuilding from the text table gives a slow load, not a crash.
             if isinstance(exc, FileNotFoundError):
                 logger.info('Loading PALEOS table from text: %s', eos_file)
             elif isinstance(exc, _StaleCache):
                 logger.info(
-                    'PALEOS binary cache %s is older than %s; rebuilding from text table',
+                    'PALEOS binary cache %s was not built from %s; rebuilding from text table',
                     cache_path,
                     eos_file,
                 )
@@ -663,11 +761,25 @@ def _ensure_unified_cache(eos_file, interpolation_functions):
                     exc,
                 )
                 logger.debug('PALEOS cache load failure traceback', exc_info=True)
-            interpolation_functions[eos_file] = load_paleos_unified_table(eos_file)
-            # Save binary cache for next time
+            entry = load_paleos_unified_table(eos_file)
+            if _stat_key(eos_file) != before:
+                logger.warning('%s changed while it was read; reading it again', eos_file)
+                require_eos_file(eos_file)
+                before, source_md5 = _stat_key(eos_file), file_md5(eos_file)
+                entry = load_paleos_unified_table(eos_file)
+                if _stat_key(eos_file) != before:
+                    raise StaleTableError(f'{eos_file} changed while it was read, twice')
+            interpolation_functions[eos_file] = entry
             try:
-                with open(cache_path, 'wb') as f:
-                    pickle.dump(interpolation_functions[eos_file], f, protocol=4)
+                write_cache(
+                    cache_path,
+                    {
+                        'format': CACHE_FORMAT,
+                        'builder': cache_builder(),
+                        'source_md5': source_md5,
+                        'entry': interpolation_functions[eos_file],
+                    },
+                )
                 logger.info('Saved PALEOS binary cache: %s', cache_path)
             except OSError:
                 logger.debug('Could not save cache to %s', cache_path)
