@@ -421,11 +421,11 @@ def test_command_line_header_holds_the_input_hashes_and_versions(tmp_path, clean
     mgsio3_eos.py and of the converter, the numpy, scipy, sympy and Python versions, HEAD of
     the Zalmoxis checkout of the converter and the version of the Zalmoxis package."""
     import hashlib
+    import importlib.metadata
     import platform
     import re
 
     import scipy
-    import sympy
 
     import zalmoxis
 
@@ -444,7 +444,11 @@ def test_command_line_header_holds_the_input_hashes_and_versions(tmp_path, clean
     assert f'# Table data sha256: {hashlib.sha256(data.encode()).hexdigest()}' in head
     eos_py = (src / 'paleos' / 'mgsio3_eos.py').read_bytes()
     assert f'# paleos/mgsio3_eos.py sha256: {hashlib.sha256(eos_py).hexdigest()}' in head
-    versions = f'numpy {np.__version__}, scipy {scipy.__version__}, sympy {sympy.__version__}'
+    try:
+        sympy = importlib.metadata.version('sympy')
+    except importlib.metadata.PackageNotFoundError:
+        sympy = 'not installed'
+    versions = f'numpy {np.__version__}, scipy {scipy.__version__}, sympy {sympy}'
     assert f'# {versions}, Python {platform.python_version()}' in head
     assert f'# Converter sha256: {hashlib.sha256(conv.read_bytes()).hexdigest()}' in head
     commit = tool._git(root, 'rev-parse', 'HEAD')
@@ -780,3 +784,25 @@ def test_command_line_refuses_an_output_link_into_a_missing_folder(
     with pytest.raises(SystemExit):
         _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, *_GIVEN)
     assert 'nodir does not exist' in capsys.readouterr().err
+
+
+def test_command_line_runs_without_sympy_and_says_so(tmp_path, clean_import, monkeypatch):
+    """The converter itself needs no sympy (real PALEOS does); without it the header says
+    'sympy not installed'."""
+    import importlib.metadata
+    import sys
+
+    def version(dist):
+        raise importlib.metadata.PackageNotFoundError(dist)
+
+    monkeypatch.setitem(sys.modules, 'sympy', None)
+    monkeypatch.setattr(importlib.metadata, 'version', version)
+    src = tmp_path / 'paleos_src'
+    src.mkdir()
+    _stub_paleos(src)
+    out = tmp_path / 'ext.dat'
+    try:
+        _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, '--t-min', '150.4', *_GIVEN)
+    except ImportError as err:  # the run must not need sympy
+        pytest.fail(f'the converter needs sympy: {err!r}')
+    assert any(', sympy not installed, Python ' in x for x in out.read_text().splitlines())
