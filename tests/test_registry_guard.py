@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import pathlib
 import time
 
 import numpy as np
@@ -937,7 +938,7 @@ def test_the_builder_identity_is_taken_at_import(monkeypatch):
         interpolation.cache_builder.cache_clear()
 
 
-_SRC = "def f(x):\n    s = {'a', 'b', 'c'}\n    return [y * 2 for y in x if y in s]\n"
+_SRC = "def f(x):\n    s = {'a', 'b', 'c'}\n    g = lambda y: y * 2\n    return [g(y) for y in x if y in s]\n"
 
 
 def _load(path, text, name):
@@ -978,44 +979,23 @@ def test_without_source_the_identity_is_taken_from_the_code(tmp_path):
     one = identity(compiled(_SRC, '/nowhere/a.py'))
     assert one == identity(compiled('\n\n' + _SRC, '/elsewhere/b.py'))
     assert one != identity(compiled(_SRC.replace('* 2', '* 3'), '/nowhere/a.py'))
+    k2, k3 = (_SRC.replace('def f(x):', f'def f(x, k={k}):') for k in (2, 3))
+    assert identity(compiled(k2, '/n.py')) != identity(compiled(k3, '/n.py'))
     probe = (
         'from zalmoxis.eos import interpolation as i\n'
         f'scope = {{}}; exec(compile({_SRC!r}, "/nowhere/a.py", "exec"), scope)\n'
         "print(i._code_identity(scope['f']))\n"
     )
-    env = dict(os.environ, PYTHONHASHSEED='1')
-    first = subprocess.run(
-        [sys.executable, '-c', probe], capture_output=True, text=True, env=env
-    )
-    env['PYTHONHASHSEED'] = '2'
-    second = subprocess.run(
-        [sys.executable, '-c', probe], capture_output=True, text=True, env=env
-    )
-    assert first.stdout.strip() == second.stdout.strip() == one
-
-
-def test_a_table_that_changes_during_the_parse_gets_no_cache(tmp_path, caplog):
-    """When the table changes between the md5 and the end of the parse, no cache is written."""
-    import logging
-
-    path = tmp_path / 'own_table.dat'
-    path.write_text(_table_text())
-    real = interpolation.load_paleos_unified_table
-
-    def parse_then_replace(eos_file):
-        entry = real(eos_file)
-        with open(eos_file, 'a') as f:
-            f.write('# replaced during the parse\n')
-        return entry
-
-    with caplog.at_level(logging.WARNING, logger='zalmoxis.eos.interpolation'):
-        interpolation.load_paleos_unified_table = parse_then_replace
-        try:
-            interpolation._ensure_unified_cache(str(path), {})
-        finally:
-            interpolation.load_paleos_unified_table = real
-    assert not os.path.exists(interpolation.cache_path_for(str(path)))
-    assert 'changed while it was read' in caplog.text
+    src = str(pathlib.Path(interpolation.__file__).parents[2])
+    runs = []
+    for seed in ('1', '2'):
+        env = dict(os.environ, PYTHONHASHSEED=seed, PYTHONPATH=src)
+        done = subprocess.run(
+            [sys.executable, '-c', probe], capture_output=True, text=True, env=env
+        )
+        assert done.returncode == 0, done.stderr
+        runs.append(done.stdout.strip())
+    assert runs == [one, one]
 
 
 def test_a_stale_melting_curve_error_is_passed_on(monkeypatch):
@@ -1051,3 +1031,94 @@ def test_a_name_pinned_md5_and_sha256_names_the_sha256_pin(tmp_path, monkeypatch
     (tmp_path / NAME).write_text(text)
     with pytest.raises(StaleTableError, match='pinned as sha256:.*only md5'):
         registry_guard.verify(str(tmp_path / NAME))
+
+
+def _changing_parse(changes):
+    """A table parser that appends a comment to the table during its first ``changes`` parses."""
+    real, seen = interpolation.load_paleos_unified_table, []
+
+    def parse(eos_file):
+        entry = real(eos_file)
+        if len(seen) < changes:
+            with open(eos_file, 'a') as f:
+                f.write('# changed during the parse\n')
+        seen.append(eos_file)
+        return entry
+
+    return parse, seen
+
+
+def test_a_table_changed_once_during_the_parse_is_read_again(tmp_path, monkeypatch, caplog):
+    """One change during the parse: the table is checked and parsed again, and that pass is
+    cached under the md5 of the new text."""
+    import logging
+
+    path = tmp_path / 'own_table.dat'
+    path.write_text(_table_text())
+    parse, seen = _changing_parse(1)
+    monkeypatch.setattr(interpolation, 'load_paleos_unified_table', parse)
+    with caplog.at_level(logging.WARNING, logger='zalmoxis.eos.interpolation'):
+        entry = interpolation._ensure_unified_cache(str(path), {})
+    assert len(seen) == 2 and entry['p_min'] == pytest.approx(1e9)
+    stored = interpolation.read_cache(interpolation.cache_path_for(str(path)))
+    assert stored['source_md5'] == _md5(path.read_bytes())
+    assert 'changed while it was read' in caplog.text
+
+
+def test_a_table_changed_during_both_parses_stops(tmp_path, monkeypatch):
+    """A change during the second parse too raises StaleTableError and writes no cache."""
+    path = tmp_path / 'own_table.dat'
+    path.write_text(_table_text())
+    parse, _ = _changing_parse(2)
+    monkeypatch.setattr(interpolation, 'load_paleos_unified_table', parse)
+    with pytest.raises(Exception) as info:
+        interpolation._ensure_unified_cache(str(path), {})
+    assert type(info.value) is StaleTableError
+    assert not os.path.exists(interpolation.cache_path_for(str(path)))
+
+
+def test_a_refetch_before_the_parse_is_no_change_during_it(
+    tmp_path, pinned, monkeypatch, caplog
+):
+    """A stale table that the check fetches again (os.replace) is parsed and cached on its first
+    load, without the warning of a change during the parse."""
+    import logging
+
+    path = tmp_path / NAME
+    path.write_text(pinned.replace('8.0e+03', '8.1e+03', 1))
+    good = tmp_path / 'good.dat'
+
+    def refetch(real, key, digest):
+        good.write_text(pinned)
+        os.replace(good, real)
+        return True
+
+    monkeypatch.setattr(registry_guard, '_refetch', refetch)
+    with caplog.at_level(logging.WARNING, logger='zalmoxis.eos.interpolation'):
+        interpolation._ensure_unified_cache(str(path), {})
+    assert os.path.exists(interpolation.cache_path_for(str(path)))
+    assert 'changed while it was read' not in caplog.text
+
+
+def test_an_unreadable_loader_source_falls_back_to_the_code(tmp_path):
+    """A source file that no longer tokenizes (an unterminated string) gives the code identity."""
+    import linecache
+
+    f = _load(tmp_path / 'm.py', _SRC, 'zal_m_broken')
+    (tmp_path / 'm.py').write_text("def f(x):\n    return 'open\n")
+    linecache.checkcache(str(tmp_path / 'm.py'))
+    try:
+        identity = interpolation._code_identity(f)
+    except Exception as exc:
+        pytest.fail(f'_code_identity raised {type(exc).__name__}: {exc}')
+    assert identity == interpolation._code_text(f.__code__) + repr(
+        (f.__defaults__, f.__kwdefaults__)
+    )
+
+
+def test_read_table_columns_names_a_missing_table_and_its_relink(tmp_path):
+    """A missing table with a registry name is reported as missing, with the relink hint."""
+    with pytest.raises(Exception) as info:
+        interpolation.read_table_columns(str(tmp_path / 'nowhere' / NAME), range(9))
+    assert type(info.value) is FileNotFoundError
+    assert 'get_zalmoxis.sh' in str(info.value)
