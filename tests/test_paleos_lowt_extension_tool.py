@@ -806,3 +806,133 @@ def test_command_line_runs_without_sympy_and_says_so(tmp_path, clean_import, mon
     except ImportError as err:  # the run must not need sympy
         pytest.fail(f'the converter needs sympy: {err!r}')
     assert any(', sympy not installed, Python ' in x for x in out.read_text().splitlines())
+
+
+def _case_blind(folder):
+    """True when the file system of ``folder`` does not tell letter case apart."""
+    probe = folder / 'CaseProbe'
+    probe.write_text('x')
+    blind = (folder / 'caseprobe').exists()
+    probe.unlink()
+    return blind
+
+
+def test_command_line_refuses_an_output_that_is_a_hard_link_to_the_table(
+    tmp_path, capsys, clean_import
+):
+    """An --out that is the --table file under another name (a hard link) is refused, and
+    the table keeps its bytes."""
+    src = tmp_path / 'paleos_src'
+    src.mkdir()
+    _stub_paleos(src)
+    table = _paleos(tmp_path, [6, 6, 6, 6])
+    out = tmp_path / 'ext.dat'
+    os.link(table, out)
+    before = table.read_bytes()
+    with pytest.raises(SystemExit):
+        _main(src, table, out, *_GIVEN)
+    assert '--out must not be the --table file' in capsys.readouterr().err
+    assert table.read_bytes() == before
+
+
+@pytest.mark.parametrize('form', ['case', 'nfd'])
+def test_command_line_refuses_another_spelling_of_the_table(
+    tmp_path, capsys, clean_import, form
+):
+    """On a file system that ignores letter case and Unicode form (the macOS default), an --out
+    spelled differently from --table names the same file and is refused."""
+    import unicodedata
+
+    if not _case_blind(tmp_path):
+        pytest.skip('the file system tells letter case apart')
+    src = tmp_path / 'paleos_src'
+    src.mkdir()
+    _stub_paleos(src)
+    name = 'Table.dat' if form == 'case' else unicodedata.normalize('NFC', 'tablé.dat')
+    table = _paleos(tmp_path, [6, 6, 6, 6], name=name)
+    other = 'table.dat' if form == 'case' else unicodedata.normalize('NFD', name)
+    before = table.read_bytes()
+    with pytest.raises(SystemExit):
+        _main(src, table, tmp_path / other, *_GIVEN)
+    assert '--out must not be the --table file' in capsys.readouterr().err
+    assert table.read_bytes() == before
+
+
+def test_command_line_accepts_the_zalmoxis_src_spelled_in_another_case(
+    tmp_path, clean_import, monkeypatch
+):
+    """The tree check compares files, not spellings: src/zalmoxis of the checkout reached by
+    a path in another letter case is accepted on a case-blind file system."""
+    import zalmoxis
+
+    if not _case_blind(tmp_path):
+        pytest.skip('the file system tells letter case apart')
+    pkg = Path(zalmoxis.__file__).resolve().parent
+    monkeypatch.setattr(
+        zalmoxis, '__file__', str(pkg.parent / 'SRC' / 'zalmoxis' / '__init__.py')
+    )
+    src = tmp_path / 'paleos_src'
+    src.mkdir()
+    _stub_paleos(src)
+    out = tmp_path / 'ext.dat'
+    _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, '--t-min', '150.4', *_GIVEN)
+    assert out.is_file()
+
+
+def test_the_git_helper_ignores_a_signing_config_of_the_machine(tmp_path, monkeypatch):
+    """The test repositories are made with commit signing and hooks off, whatever the
+    machine's git config says."""
+    import subprocess
+
+    for k, v in {'GIT_CONFIG_COUNT': '2', 'GIT_CONFIG_KEY_0': 'commit.gpgsign',
+                 'GIT_CONFIG_VALUE_0': 'true', 'GIT_CONFIG_KEY_1': 'gpg.program',
+                 'GIT_CONFIG_VALUE_1': '/usr/bin/false'}.items():  # fmt: skip
+        monkeypatch.setenv(k, v)
+    try:
+        head = _git_repo(tmp_path / 'repo')
+    except subprocess.CalledProcessError as err:
+        pytest.fail(f'the machine git config broke the test repository: {err!r}')
+    assert len(head) == 40
+
+
+def test_an_interrupt_after_the_temporary_file_is_made_leaves_no_file(
+    tmp_path, clean_import, monkeypatch
+):
+    """An interrupt between creating the temporary file and writing it leaves no file."""
+    src = tmp_path / 'paleos_src'
+    src.mkdir()
+    _stub_paleos(src)
+    real_open, real_close, made = os.open, os.close, []
+
+    def open_(path, *args):
+        fd = real_open(path, *args)
+        if str(path).endswith('.tmp'):
+            made.append(fd)
+        return fd
+
+    def close(fd):
+        real_close(fd)
+        if fd in made:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(tool.os, 'open', open_)
+    monkeypatch.setattr(tool.os, 'close', close)
+    with pytest.raises(KeyboardInterrupt):
+        _main(src, _paleos(tmp_path, [6, 6, 6, 6]), tmp_path / 'ext.dat', *_GIVEN)
+    assert len(made) == 1 and _files(tmp_path) == ['paleos.dat']
+
+
+def test_a_failed_create_of_the_temporary_file_removes_nothing(
+    tmp_path, clean_import, monkeypatch
+):
+    """When the temporary name is taken (os.open raises FileExistsError) the file at that name
+    is kept."""
+    src = tmp_path / 'paleos_src'
+    src.mkdir()
+    _stub_paleos(src)
+    monkeypatch.setattr(tool.secrets, 'token_hex', lambda n: 'fixed')
+    taken = tmp_path / '.ext.dat.fixed.tmp'
+    taken.write_text('not ours\n')
+    with pytest.raises(FileExistsError):
+        _main(src, _paleos(tmp_path, [6, 6, 6, 6]), tmp_path / 'ext.dat', *_GIVEN)
+    assert taken.read_text() == 'not ours\n'
