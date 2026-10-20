@@ -2456,8 +2456,14 @@ def _solve(
             temperatures if T is None else np.array(T),
         )
 
+    # An inner clock stop that ends the loop takes the mass verdict of the outer clock stop.
+    if stop_label == 'timeout' and not (restore_best or converged_mass) and best_profiles:
+        converged_mass = best_mass_error < 3 * tolerance_outer
+        mass_limit = 3 * tolerance_outer
+        restore_best = True
+
     # When no accept test below takes the newest best pass, a better earlier pass replaces it if
-    # the stop returns it: a restore or a clock stop does, an iteration cap only by the 3 % test.
+    # the stop returns it: a restore does, an iteration cap only by the 3 % test.
     newest_ok = best_mass_error < _TIMEOUT_ACCEPT_MASS_ERR or (
         converged_mass
         and best_profiles is not None
@@ -2470,11 +2476,7 @@ def _solve(
         earlier_best is not None
         and not newest_ok
         and earlier_best[0] < best_mass_error
-        and (
-            restore_best
-            or stop_label == 'timeout'
-            or earlier_best[0] < _TIMEOUT_ACCEPT_MASS_ERR
-        )
+        and (restore_best or earlier_best[0] < _TIMEOUT_ACCEPT_MASS_ERR)
     ):
         logger.warning(
             'No pass of adiabat blend %.2f passes an accept test of this stop (mass error '
@@ -2487,7 +2489,6 @@ def _solve(
         best_mass_error, best_profiles = earlier_best
         if stop_label == 'timeout':
             converged_mass = best_mass_error < 3 * tolerance_outer
-            restore_best = True
 
     # An outer stop returns the best pass, so the accept tests read that pass.
     restored = restore_best and best_profiles is not None
