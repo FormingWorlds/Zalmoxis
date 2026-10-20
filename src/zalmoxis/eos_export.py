@@ -758,8 +758,6 @@ def _column_window(logP, T_lo, T_hi, s_interp):
         return None
     Sa = float(s_interp((logP, np.log10(T_lo_valid))))
     Sb = float(s_interp((logP, np.log10(T_hi_valid))))
-    if np.isnan(Sa) or np.isnan(Sb):
-        return None
     return T_lo_valid, T_hi_valid, min(Sa, Sb), max(Sa, Sb)
 
 
