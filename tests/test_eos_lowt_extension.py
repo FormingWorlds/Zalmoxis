@@ -261,7 +261,7 @@ class TestLowTExtensionThatAddsNothing:
 
         monkeypatch.setattr(eos_export, 'load_paleos_with_lowt_extension', load)
         warns, changed = self._run(tmp_path, caplog, _gen_tables(tmp_path)[2])
-        assert any('gives no finite entropy at the output' in r.getMessage() for r in warns)
+        assert any('no entropy that a column can invert' in r.getMessage() for r in warns)
         assert changed == 0
 
     def test_an_extension_too_shallow_for_one_node_warns(self, tmp_path, caplog):
@@ -371,6 +371,30 @@ class TestGenerateSpiderTablesLowT:
         high = out['P_Pa'] > 5.0e9
         assert high.any() and not out['valid']['solid'][:, high].any()
         assert out['valid']['solid'][:, ~high].any()
+
+    def test_coverage_only_in_skipped_columns_adds_no_node(self, tmp_path, caplog):
+        """Extension rows only where the solidus is NaN: every column that holds them is skipped,
+        so no node is added and the warning says that no column can invert the extension."""
+        solid, liquid, _ = _gen_tables(tmp_path)
+        ext = _write(tmp_path / 'ext_top.dat', [(P, T) for P in _P[2:] for T in _TG[:7]])
+        kw = dict(
+            eos_file=solid,
+            solidus_func=lambda P: np.nan if P > 1.0e8 else 1500.0,
+            liquidus_func=lambda P: 1800.0,
+            P_range=(1.0e6, 1.0e10),
+            n_P=6,
+            n_S=40,
+            solid_eos_file=solid,
+            liquid_eos_file=liquid,
+        )
+        base = eos_export.generate_spider_eos_tables(**kw)
+        eos_export._parse_paleos_table.cache_clear()
+        with caplog.at_level(logging.WARNING, logger='zalmoxis.eos_export'):
+            out = eos_export.generate_spider_eos_tables(**kw, solid_lowt_file=ext)
+        assert np.array_equal(out['S_solid'], base['S_solid'])
+        assert any(
+            'no entropy that a column can invert' in r.getMessage() for r in caplog.records
+        )
 
     def test_extension_needs_the_two_phase_tables(self, tmp_path):
         solid, _, ext = _gen_tables(tmp_path)
