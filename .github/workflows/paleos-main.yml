@@ -1,7 +1,7 @@
 name: PALEOS main at the tested commit
 
-# One GitHub request with the workflow token, no retry. Fails on a moved PALEOS main, a
-# missing repository or branch and an unreadable pin (exits 1, 4, 2), so the scheduled run
+# One GitHub request, no retry. Fails on a moved main, a missing repository or branch, a
+# refused token or permission and an unreadable pin (exits 1, 4, 5, 2), so the scheduled run
 # sends its failure notice; a rate limit or a server error (exit 3) only warns.
 
 on:

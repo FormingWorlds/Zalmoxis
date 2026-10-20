@@ -260,8 +260,7 @@ def _changes_hash(repo_dir: Path, head_sha: str) -> str | None:
 
     Tracked files are hashed by git without filters, so a line-end conversion or a clean
     filter counts as a change, and a symlink by its target text; a deleted file counts.
-    Untracked files, ignored ones included, count when Python can import them, and an
-    untracked directory, link to one or nested repository always counts. Paths are taken
+    Untracked files, ignored ones included, count when Python can import them. Paths are taken
     relative to ``repo_dir``, which may lie below the top of the repository. Only content
     is compared, not modes.
 
@@ -297,8 +296,10 @@ def _changes_hash(repo_dir: Path, head_sha: str) -> str | None:
     for path in filter(None, others.stdout.split('\0')):
         f = Path(repo_dir, path)
         if f.is_dir():
-            on_disk[path] = 'untracked directory ' + (_os.readlink(f) if f.is_symlink() else '')
-            continue
+            raise PaleosVersionError(
+                f'{path} in {repo_dir} is a link to a directory or a nested repository: no key '
+                'can describe the code in it, so remove it'
+            )
         if not _importable(path):
             continue
         try:
@@ -358,13 +359,13 @@ def paleos_installed_sha() -> str:
 
 
 def _same_code_as_import(sha: str) -> None:
-    """Refuse a key that moved since this process imported paleos: the code in memory is
+    """Refuse a key that moved since the first key of this process: the code in memory is
     still the code of the import, so a table built in this process would carry a key that
     does not describe it."""
     imported = _KEY_AT_IMPORT.get('key', sha)
     if imported != sha:
         raise PaleosVersionError(
-            f'the PALEOS code changed on disk since this process imported it ({imported} '
+            f'the PALEOS code changed on disk since the first key of this process ({imported} '
             f'then, {sha} now): start a new process to build tables with it'
         )
 
@@ -455,7 +456,8 @@ def check_paleos_commit(repo_dir: Path | None = None, tested: str | None = None)
             raise PaleosVersionError(
                 f'the paleos package files in {repo_dir} differ from its commit {head_sha}: '
                 f'commit or remove the changes, or set {ALLOW_DIRTY_ENV}=1 to run them '
-                'with their own cache'
+                'with their own cache; in a clean checkout, a line-end conversion such as '
+                'core.autocrlf is a likely cause'
             )
         logger.warning('PALEOS in %s has uncommitted changes to its package files', repo_dir)
         return 'dirty'
