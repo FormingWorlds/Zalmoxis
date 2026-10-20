@@ -891,7 +891,10 @@ def test_command_line_accepts_the_zalmoxis_src_spelled_in_another_case(
     src.mkdir()
     _stub_paleos(src)
     out = tmp_path / 'ext.dat'
-    _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, '--t-min', '150.4', *_GIVEN)
+    try:
+        _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, '--t-min', '150.4', *_GIVEN)
+    except SystemExit as err:  # the same tree in another letter case must pass
+        pytest.fail(f'the tree check refused src/zalmoxis in another case: {err!r}')
     assert out.is_file()
 
 
@@ -951,4 +954,4 @@ def test_a_failed_create_of_the_temporary_file_removes_nothing(
     taken.write_text('not ours\n')
     with pytest.raises(FileExistsError):
         _main(src, _paleos(tmp_path, [6, 6, 6, 6]), tmp_path / 'ext.dat', *_GIVEN)
-    assert taken.read_text() == 'not ours\n'
+    assert taken.is_file() and taken.read_text() == 'not ours\n'
