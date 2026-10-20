@@ -208,3 +208,17 @@ def test_a_gap_in_the_nightly_partition_is_found(old, new):
     workflow = WORKFLOW.read_text()
     assert old in workflow
     assert _partition_faults(workflow.replace(old, new))
+
+
+@pytest.mark.unit
+def test_every_file_with_the_accept_solves_mark_is_named_in_the_workflow():
+    """A text scan with no collection: each test file that uses the accept_solves mark appears
+    in nightly.yml, so a renamed or new file is not left out of the accept jobs."""
+    workflow = WORKFLOW.read_text()
+    marked = sorted(
+        p.relative_to(ROOT).as_posix()
+        for p in (ROOT / 'tests').rglob('test_*.py')
+        if p != Path(__file__) and re.search(r'\bmark\.accept_solves\b', p.read_text())
+    )
+    assert 'tests/test_invariants.py' in marked and 'tests/test_accepted_on.py' in marked
+    assert [m for m in marked if m not in workflow] == []

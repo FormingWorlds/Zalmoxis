@@ -822,29 +822,24 @@ def test_wall_clock_in_the_adiabat_ramp_keeps_tolerance_outer_as_the_limit(monke
     assert r['accept_mass_limit'] == 0.05
 
 
-@pytest.mark.smoke
-@pytest.mark.wolfbower
-@pytest.mark.usefixtures('no_check')
-def test_a_restore_in_the_blend_ramp_returns_the_linear_pass_when_no_blended_one_is_close(
-    monkeypatch,
-):
-    """The passes after the adiabat blend starts end 5 % off the target mass, and the clock
-    runs out after the first density lookup of the first blended pass: no pass of the newest
-    blend step is within 3 %, so the restored pass is the linear pass that ended closer."""
+def _wb_blended(monkeypatch, factor, tol, clock_stop=True, inner=2, outer=100):
+    """A Wolf & Bower adiabatic _solve whose passes after the adiabat blend starts end ``factor``
+    times the target mass; with ``clock_stop`` the clock runs out after the first density
+    lookup of the first blended pass."""
     from zalmoxis.eos import get_solidus_liquidus_functions
 
     _need_wb_tables()
-    radius, adiabat, lookups = _count_outer_iterations(monkeypatch), [], []
+    adiabat, lookups = [], []
     real_adi, real, clock = zs.compute_adiabatic_temperature, zs.solve_structure, time.time
     real_lookup = zs.calculate_mixed_density_batch
 
     def adi(*args, **kwargs):
-        adiabat.append(len(radius))
+        adiabat.append(1)
         return real_adi(*args, **kwargs)
 
     def solve(*args, **kwargs):
         m, g, P = real(*args, **kwargs)
-        f = 1.05 * earth_mass / m[-1] if adiabat else 1.0
+        f = factor * earth_mass / m[-1] if adiabat else 1.0
         return m * f, g * f, P
 
     def lookup(*args, **kwargs):
@@ -854,18 +849,63 @@ def test_a_restore_in_the_blend_ramp_returns_the_linear_pass_when_no_blended_one
     monkeypatch.setattr(zs, 'calculate_mixed_density_batch', lookup)
     monkeypatch.setattr(zs, 'compute_adiabatic_temperature', adi)
     monkeypatch.setattr(zs, 'solve_structure', solve)
-    monkeypatch.setattr(zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * bool(lookups)))
+    if clock_stop:
+        monkeypatch.setattr(
+            zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * bool(lookups))
+        )
     cfg = _cfg(
         temperature_mode='adiabatic',
         layer_eos_config={'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'},
-        tolerance_outer=0.02,
-        max_iterations_inner=2,
+        tolerance_outer=tol,
+        max_iterations_inner=inner,
+        max_iterations_outer=outer,
         wall_timeout=WALL,
     )
     r = zs._solve(cfg, load_material_dictionaries(), get_solidus_liquidus_functions(), '/tmp')
-    assert adiabat and r['stopped_on_wall_clock'] is True
+    assert adiabat
+    return r
+
+
+@pytest.mark.smoke
+@pytest.mark.wolfbower
+@pytest.mark.usefixtures('no_check')
+def test_a_clock_stop_keeps_a_blended_pass_that_its_mass_test_accepts(monkeypatch, caplog):
+    """tolerance_outer 0.05 and blended passes 4 % off: the mass test of the clock stop accepts
+    the newest pass above the 3 % ceiling, so it is returned, not the linear one."""
+    with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+        r = _wb_blended(monkeypatch, 1.04, 0.05)
+    assert r['stopped_on_wall_clock'] is True and r['accepted_on'] == 'timeout'
+    assert r['adiabat_blend'] == 0.25
+    assert r['mass_error_at_accept'] == pytest.approx(0.04, rel=1e-9)
+    assert 'No pass of adiabat blend' not in caplog.text
+
+
+@pytest.mark.smoke
+@pytest.mark.wolfbower
+@pytest.mark.usefixtures('no_check')
+def test_a_clock_stop_beyond_its_limit_returns_the_linear_pass_under_that_limit(monkeypatch):
+    """The blended passes end 10 % off, beyond the 6 % limit of a clock stop: the linear pass
+    that started the ramp is returned, and its mass verdict is taken again, so the mass test of
+    tolerance_outer accepts it (its inner flags are not both converged), not the 3 % ceiling."""
+    r = _wb_blended(monkeypatch, 1.10, 0.02)
+    assert r['stopped_on_wall_clock'] is True and r['accepted_on'] == 'timeout'
     assert r['adiabat_blend'] == 0.0
-    assert r['mass_error_at_accept'] < 0.03
+    assert r['accept_mass_limit'] == pytest.approx(0.02)
+    assert r['mass_error_at_accept'] < 0.02
+
+
+@pytest.mark.smoke
+@pytest.mark.wolfbower
+@pytest.mark.usefixtures('no_check')
+def test_an_accepted_mass_break_returns_its_own_pass_without_a_fallback(monkeypatch, caplog):
+    """tolerance_outer 0.05 and blended passes 4 % off: the mass test breaks at blend 1.0 and
+    accepts that pass, so no earlier pass replaces it and best_mass_error describes it."""
+    with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+        r = _wb_blended(monkeypatch, 1.04, 0.05, clock_stop=False, outer=50)
+    assert r['accepted_on'] == 'mass_only' and r['adiabat_blend'] == 1.0
+    assert r['best_mass_error'] == pytest.approx(r['mass_error_at_accept'], rel=1e-9)
+    assert r['mass_error_at_accept'] == pytest.approx(0.04, rel=1e-9)
+    assert 'No pass of adiabat blend' not in caplog.text
 
 
 @pytest.mark.smoke
@@ -1033,12 +1073,14 @@ def test_only_an_accepted_result_gets_the_adiabat_warning(caplog, converged):
 @pytest.mark.accept_solves
 @pytest.mark.timeout(2400)
 def test_an_iteration_cap_whose_newest_blend_step_diverges_returns_an_earlier_best_pass(
-    monkeypatch,
+    monkeypatch, caplog
 ):
-    """3-layer PALEOS ice planet (cmf 0.3, mmf 0.4), adiabatic Picard, 20 outer passes: every pass
-    of the newest blend step misses the mass by more than 3 %, so the cap returns the best pass of
-    an earlier step (blend 0, R about 1.2978e7 m; 7.6e-4 locally, 2.4e-3 on the CI runner) and
-    main does not retry."""
+    """3-layer PALEOS ice planet (cmf 0.3, mmf 0.4), adiabatic Picard, 20 outer passes and
+    tolerance_outer 1e-2, so a linear pass starts the blend ramp also on the CI runner (whose
+    linear passes end near 2.4e-3, above the default 1e-3): every pass of the newest blend step
+    misses the mass by more than 3 %, so the cap returns the best pass of an earlier step (blend
+    0, R about 1.2978e7 m), the log names the ramp start and the fallback, and main does not
+    retry."""
     from tests.test_spider_coupling_convergence import _has_paleos_data
     from zalmoxis.config import load_solidus_liquidus_functions, load_zalmoxis_config
 
@@ -1057,6 +1099,7 @@ def test_an_iteration_cap_whose_newest_blend_step_diverges_returns_an_earlier_be
         },
         wall_timeout=WALL,
         max_iterations_outer=20,
+        tolerance_outer=1e-2,
     )
     assert cfg['temperature_mode'] == 'adiabatic'
     melt = load_solidus_liquidus_functions(
@@ -1074,10 +1117,13 @@ def test_an_iteration_cap_whose_newest_blend_step_diverges_returns_an_earlier_be
         return real(*args, **kwargs)
 
     monkeypatch.setattr(zs, '_solve', once)
-    r = zs.main(cfg, load_material_dictionaries(), melt, os.path.join(ROOT, 'input'))
+    with caplog.at_level(logging.INFO, logger='zalmoxis.solver'):
+        r = zs.main(cfg, load_material_dictionaries(), melt, os.path.join(ROOT, 'input'))
+    assert 'activating adiabat blend' in caplog.text
+    assert 'No pass of adiabat blend' in caplog.text
     assert r['converged'] and r['accepted_on'] == 'max_iter'
     assert r['adiabat_blend'] == 0.0
-    assert r['mass_error_at_accept'] < 0.03
+    assert r['mass_error_at_accept'] < 1e-2
     assert r['radii'][-1] == pytest.approx(1.2978e7, rel=1e-2)
 
 
