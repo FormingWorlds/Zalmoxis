@@ -1368,7 +1368,10 @@ def _solve(
         and None when the solve was not accepted. ``mass_error_at_accept`` is the
         relative mass error of the returned profile. ``best_mass_error`` is the mass error of
         the best pass, the smallest among the passes with a pressure solve on the newest
-        adiabat blend step (None before such a pass). ``stopped_on_wall_clock`` is True
+        adiabat blend step (None before such a pass); when a stop that returns the best pass
+        has a newest best pass that no accept test of the stop would take, the best pass of
+        the earlier steps takes its place, with its blend, a warning and its own mass error in
+        ``best_mass_error``. ``stopped_on_wall_clock`` is True
         when the wall clock stopped the solve, also when it was not accepted.
         ``density`` is rho_EOS(P, T) at the returned nodes and ``density_from_eos`` is
         True, unless the solve was not accepted and the returned pass has no pressure
@@ -2452,22 +2455,25 @@ def _solve(
             temperatures if T is None else np.array(T),
         )
 
-    # A stop whose newest blend step has no pass below the loose ceiling falls back to the best
-    # pass of an earlier step, with its blend.
-    strict = converged_mass and converged_density and converged_pressure and not restore_best
-    if (
-        not strict
-        and earlier_best is not None
-        and earlier_best[0] < min(best_mass_error, _TIMEOUT_ACCEPT_MASS_ERR)
-        and not best_mass_error < _TIMEOUT_ACCEPT_MASS_ERR
-    ):
+    # A stop that returns the best pass, whose newest best pass no accept test below takes, returns
+    # the best earlier pass: it ended below tolerance_outer, as the blend ramp needs.
+    newest_ok = best_mass_error < _TIMEOUT_ACCEPT_MASS_ERR or (
+        converged_mass
+        and best_profiles is not None
+        and (
+            best_mass_error < tolerance_outer
+            or (best_profiles['converged_density'] and best_profiles['converged_pressure'])
+        )
+    )
+    if earlier_best is not None and (restore_best or not converged_mass) and not newest_ok:
+        newest = (best_blend, best_mass_error)
         best_mass_error, best_profiles = earlier_best
         best_blend = best_profiles['adiabat_blend']
         logger.warning(
-            'No pass of adiabat blend %.2f is within %.1f%% of the mass; returning the best pass '
-            'of blend %.2f (mass error %.4f%%).',
-            _adiabat_blend,
-            _TIMEOUT_ACCEPT_MASS_ERR * 100,
+            'No pass of adiabat blend %.2f passes an accept test of this stop (mass error '
+            '%.4f%%); returning the best pass of blend %.2f (mass error %.4f%%).',
+            newest[0],
+            newest[1] * 100,
             best_blend,
             best_mass_error * 100,
         )
