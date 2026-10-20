@@ -756,6 +756,18 @@ def test_a_cache_of_other_builder_code_is_rebuilt(tmp_path, pinned, monkeypatch)
         interpolation.cache_builder.cache_clear()
 
 
+def test_the_builder_reads_the_loader_code_when_its_name_is_patched(monkeypatch):
+    """A first builder call while load_paleos_unified_table is patched gives the same identity."""
+    interpolation.cache_builder.cache_clear()
+    builder = interpolation.cache_builder()
+    interpolation.cache_builder.cache_clear()
+    monkeypatch.setattr(interpolation, 'load_paleos_unified_table', lambda eos_file: {})
+    try:
+        assert interpolation.cache_builder() == builder
+    finally:
+        interpolation.cache_builder.cache_clear()
+
+
 def test_the_refetch_is_logged_and_a_failed_one_leaves_the_file(
     tmp_path, pinned, monkeypatch, caplog
 ):
