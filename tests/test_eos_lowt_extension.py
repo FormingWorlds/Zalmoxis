@@ -129,8 +129,9 @@ class TestMergeLowTExtension:
     def test_extension_without_the_seam_node_is_an_error(self, tmp_path):
         """The seam can only be checked when the extension holds the PALEOS row minimum."""
         pal = _paleos(tmp_path, [6, 6, 6, 6])
-        with pytest.raises(ValueError, match='no finite seam value'):
+        with pytest.raises(ValueError, match='no common seam node') as err:
             eos_export.load_paleos_with_lowt_extension(pal, _ext(tmp_path, k_top=5))
+        assert str(pal) in str(err.value) and 'ext.dat ends at T = 2.818' in str(err.value)
 
     def test_row_without_extension_values_keeps_paleos(self, tmp_path):
         """A pressure row the extension leaves out stays as PALEOS has it, NaN below."""
@@ -631,8 +632,12 @@ class TestLowTMergeGuards:
     def test_row_starting_above_the_extension_top_is_an_error(self, tmp_path):
         """A PALEOS row whose lowest temperature lies above the extension has no seam node."""
         pal = _paleos(tmp_path, [8, 6, 6, 6])
-        with pytest.raises(ValueError, match='no finite seam value'):
+        with pytest.raises(ValueError, match='no common seam node') as err:
             eos_export.load_paleos_with_lowt_extension(pal, _ext(tmp_path))
+        assert f'{pal}: the PALEOS row at P = 1.000000e+06 Pa starts at T = 3.776' in str(
+            err.value
+        )
+        assert 'ext.dat ends at T = 3.000000e+02 K' in str(err.value)
         assert np.isfinite(
             eos_export.load_paleos_with_lowt_extension(
                 _paleos(tmp_path, [6, 6, 6, 6], name='p6.dat'), _ext(tmp_path)

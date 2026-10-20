@@ -13,17 +13,19 @@ pytestmark = pytest.mark.unit
 
 
 class _StubEoS:
-    """The synthetic properties of the merge tests; NaN at one point if asked."""
+    """The synthetic properties of the merge tests; NaN at one point, or an exception raised
+    by one method at one point, if asked."""
 
-    def __init__(self, nan_at=None):
-        self.nan_at = nan_at
+    def __init__(self, nan_at=None, raise_at=None, method='density', exc=RuntimeError):
+        self.nan_at, self.raise_at, self.method, self.exc = nan_at, raise_at, method, exc
+
+    def _hit(self, at, P, T):
+        return at is not None and np.isclose(P, at[0]) and np.isclose(T, at[1])
 
     def _get(self, i, P, T):
-        if (
-            self.nan_at is not None
-            and np.isclose(P, self.nan_at[0])
-            and np.isclose(T, self.nan_at[1])
-        ):
+        if self._hit(self.raise_at, P, T) and tool._METHODS[i] == self.method:
+            raise self.exc('no convergence')
+        if self._hit(self.nan_at, P, T):
             return np.nan
         return _props(P, T)[i]
 
@@ -33,6 +35,8 @@ class _StubEoS:
         raise AttributeError(name)
 
     def phase(self, P, T):
+        if self._hit(self.raise_at, P, T) and self.method == 'phase':
+            raise self.exc('no convergence')
         return 'solid-lpcen'
 
 
@@ -70,6 +74,26 @@ def test_point_with_a_non_finite_property_is_left_out(tmp_path):
     n = tool.write_extension(_StubEoS(nan_at=(_P[1], _T[2])), table, out, [], t_min=150.4)
     assert n == _P.size * 7 - 1
     assert 'nan' not in out.read_text()
+
+
+@pytest.mark.parametrize('method', ['density', 'specific_entropy', 'phase'])
+@pytest.mark.parametrize('exc', [RuntimeError, ArithmeticError, ValueError])
+def test_point_where_paleos_raises_is_left_out(tmp_path, method, exc):
+    """A PALEOS point that does not converge (an exception from a property or the phase) is
+    left out, as a non-finite one is; the other points are written and merge."""
+    table = _paleos(tmp_path, [6, 6, 6, 6])
+    out = tmp_path / 'ext.dat'
+    eos = _StubEoS(raise_at=(_P[1], _T[2]), method=method, exc=exc)
+    n = tool.write_extension(eos, table, out, [], t_min=150.4)
+    assert n == _P.size * 7 - 1
+    assert f'{_P[1]:.8e} {_T[2]:.8e}' not in out.read_text()
+
+
+def test_a_programming_error_in_paleos_is_not_hidden(tmp_path):
+    table = _paleos(tmp_path, [6, 6, 6, 6])
+    eos = _StubEoS(raise_at=(_P[1], _T[2]), exc=TypeError)
+    with pytest.raises(TypeError, match='no convergence'):
+        tool.write_extension(eos, table, tmp_path / 'ext.dat', [], t_min=150.4)
 
 
 def test_command_line_needs_a_commit_outside_a_git_checkout(tmp_path, capsys):
@@ -202,7 +226,7 @@ def test_command_line_writes_the_commit_and_the_dirty_state(tmp_path, clean_impo
     expect = (
         '# PALEOS commit: ' + _git(src, 'rev-parse', 'HEAD') + dirty * ' (uncommitted changes)'
     )
-    assert expect in out.read_text().splitlines()[:5]
+    assert expect in out.read_text().splitlines()[:9]
     assert np.isfinite(eos_export.load_paleos_with_lowt_extension(table, out)['s']).all()
 
 
@@ -219,7 +243,9 @@ def test_command_line_takes_a_given_commit_outside_a_checkout(
     _stub_paleos(src)
     table, out = _paleos(tmp_path, [6, 6, 6, 6]), tmp_path / 'ext.dat'
     _main(src, table, out, '--t-min', '150.4', '--paleos-commit', given)
-    assert f'# PALEOS commit: {written}' in out.read_text().splitlines()[:5]
+    assert (
+        f'# PALEOS commit: {written} (given, not verified)' in out.read_text().splitlines()[:9]
+    )
     assert out.read_text().count('solid-lpcen') == len(_P) * 7
 
 
@@ -323,3 +349,23 @@ def test_grid_refuses_a_table_with_one_temperature(tmp_path, cells):
     with pytest.raises((ValueError, IndexError), match='needs at least two temperatures'):
         tool.extension_grid(one, t_min=100.0)
     assert tool.extension_grid(_paleos(tmp_path, [6, 6, 6, 6]), t_min=299.0)[1].size == 2
+
+
+def test_command_line_header_holds_the_input_hashes_and_versions(tmp_path, clean_import):
+    """The header names sha256 of the data lines of the extended table and of the PALEOS
+    mgsio3_eos.py that wrote the values, and the numpy and scipy versions."""
+    import hashlib
+
+    import scipy
+
+    src = tmp_path / 'paleos_src'
+    src.mkdir()
+    _stub_paleos(src)
+    table, out = _paleos(tmp_path, [6, 6, 6, 6]), tmp_path / 'ext.dat'
+    _main(src, table, out, '--t-min', '150.4', '--paleos-commit', '654aca9')
+    data = ''.join(x for x in table.read_text().splitlines(True) if not x.startswith('#'))
+    head = out.read_text().splitlines()[:9]
+    assert f'# Table data sha256: {hashlib.sha256(data.encode()).hexdigest()}' in head
+    eos_py = (src / 'paleos' / 'mgsio3_eos.py').read_bytes()
+    assert f'# paleos/mgsio3_eos.py sha256: {hashlib.sha256(eos_py).hexdigest()}' in head
+    assert f'# numpy {np.__version__}, scipy {scipy.__version__}' in head
