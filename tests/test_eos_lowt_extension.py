@@ -131,7 +131,9 @@ class TestMergeLowTExtension:
         pal = _paleos(tmp_path, [6, 6, 6, 6])
         with pytest.raises(ValueError, match='no common seam node') as err:
             eos_export.load_paleos_with_lowt_extension(pal, _ext(tmp_path, k_top=5))
-        assert str(pal) in str(err.value) and 'ext.dat ends at T = 2.673753e+02 K' in str(err.value)
+        assert str(pal) in str(err.value) and 'ext.dat ends at T = 2.673753e+02 K' in str(
+            err.value
+        )
 
     def test_row_without_extension_values_keeps_paleos(self, tmp_path):
         """A pressure row the extension leaves out stays as PALEOS has it, NaN below."""
@@ -745,3 +747,28 @@ def test_missing_two_phase_tables_stop_before_the_extension_is_read(tmp_path, mo
             solid_lowt_file=ext,
         )
     assert calls == []
+
+
+def test_a_stale_paleos_table_under_the_extension_raises(tmp_path, monkeypatch):
+    """The PALEOS table under the extension is checked against its registry pin: the pinned
+    release merges, a stale one raises StaleTableError; the extension file, which no registry
+    lists, is not checked."""
+    import hashlib
+
+    from zalmoxis.eos import registry_guard
+    from zalmoxis.eos.registry_guard import StaleTableError
+
+    monkeypatch.setenv('FWL_IO_OFFLINE', '1')
+    table = _paleos(tmp_path, [6, 6, 6, 6], name='paleos_mgsio3_tables_pt_proteus_solid.dat')
+    ext = _ext(tmp_path)
+    pins = {
+        table.name: {'interior.eos.paleos_mgsio3': hashlib.md5(table.read_bytes()).hexdigest()}
+    }
+    monkeypatch.setattr(registry_guard, '_pins', lambda: pins)
+    registry_guard._HASHES.clear()
+    assert np.isfinite(eos_export.load_paleos_with_lowt_extension(table, ext)['s']).all()
+    pins[table.name] = {'interior.eos.paleos_mgsio3': '0' * 32}
+    registry_guard._HASHES.clear()
+    eos_export._parse_paleos_table.cache_clear()
+    with pytest.raises(StaleTableError, match='paleos_mgsio3_tables_pt_proteus_solid.dat'):
+        eos_export.load_paleos_with_lowt_extension(table, ext)
