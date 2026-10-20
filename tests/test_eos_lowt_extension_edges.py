@@ -188,19 +188,19 @@ def test_real_paleos_table_lowt_extension_numbers():
     def bias(k, cols):
         slope = (T[k + 1, cols] - T[k, cols]) / (S[k + 1] - S[k])
         ends = np.stack([T[j, cols] / cp[j, cols] for j in (k, k + 1)]) / slope - 1.0
-        return round(100 * ends.min(), 1), round(100 * ends.max(), 1)
+        return 100 * ends.min(), 100 * ends.max()
 
     both, nxt = valid[0] & valid[1], valid[1] & valid[2]
     assert P[both].max() < 6.75e9 < 7.0e9 < P[~valid[0]].min()
-    assert bias(0, both) == (-16.0, 39.7)
-    assert bias(1, nxt & both) == (-3.4, 5.4)
-    assert bias(1, nxt & ~valid[0]) == (-8.0, 13.0)
+    assert bias(0, both) == pytest.approx((-16.01, 39.71), abs=0.05)
+    assert bias(1, nxt & both) == pytest.approx((-3.43, 5.44), abs=0.05)
+    assert bias(1, nxt & ~valid[0]) == pytest.approx((-8.02, 13.01), abs=0.05)
 
 
 def test_an_entropy_jump_in_an_extension_row_keeps_t_monotone_and_close_to_inversion(tmp_path):
     """An extension row whose s jumps by 45 J/kg/K between two nodes, like the clinoenstatite
     boundary, gives a column on that row with T rising in S, finite properties, node temperatures
-    equal to a direct inversion of the row, and midpoint temperatures within 1 % of it (0.37 %
+    equal to a direct inversion of the row, and midpoint temperatures within 0.5 % of it (0.37 %
     here, against 0.06 % without the jump)."""
     solid, liquid, _ = _gen_tables(tmp_path)
 
@@ -229,7 +229,7 @@ def test_an_entropy_jump_in_an_extension_row_keeps_t_monotone_and_close_to_inver
     np.testing.assert_allclose(T[cold], direct, rtol=1e-4)
     mid_s = 0.5 * (S[cold[:-1]] + S[cold[1:]])
     mid_t = 0.5 * (T[cold[:-1]] + T[cold[1:]])
-    assert np.all(np.abs(mid_t / 10.0 ** np.interp(mid_s, s_row, lt_row) - 1.0) < 0.01)
+    assert np.all(np.abs(mid_t / 10.0 ** np.interp(mid_s, s_row, lt_row) - 1.0) < 0.005)
 
 
 def test_merged_bounds_pmin_pmax_tmin_tmax_full_and_partial_coverage(tmp_path):

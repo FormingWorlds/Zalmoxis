@@ -270,18 +270,23 @@ class TestLowTExtensionThatAddsNothing:
         assert changed > 0
         assert any(
             'no solid entropy node fits below' in r.getMessage()
-            and 'still fills' in r.getMessage()
+            and 'can still fill' in r.getMessage()
             for r in warns
         )
         msgs = [r.getMessage() for r in caplog.records]
         assert any(f'Low-T extension: {changed} solid cells' in m for m in msgs), msgs
 
     def test_an_extension_that_adds_nodes_logs_the_new_minimum(self, tmp_path, caplog):
-        """The added nodes and the new lowest solid entropy are logged at INFO, with no warning."""
+        """The added nodes, the new lowest solid entropy and the number of filled cells (the gain in
+        valid solid cells) are logged at INFO, with no warning."""
         solid, liquid, ext = _gen_tables(tmp_path)
+        base = _generate_from(solid, liquid, None)
+        eos_export._parse_paleos_table.cache_clear()
         with caplog.at_level(logging.INFO, logger='zalmoxis.eos_export'):
             out = _generate_from(solid, liquid, ext)
         msgs = [r.getMessage() for r in caplog.records]
+        gain = int(out['valid']['solid'].sum() - base['valid']['solid'].sum())
+        assert gain > 0 and any(f'Low-T extension: {gain} solid cells' in m for m in msgs)
         assert any(f'down to {out["S_solid"][0]:.0f}' in m for m in msgs)
         assert any(
             m.startswith(f'Entropy ranges: solid [{out["S_solid"][0]:.0f},') for m in msgs
