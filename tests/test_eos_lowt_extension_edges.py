@@ -49,7 +49,10 @@ def test_seam_offsets_just_inside_and_outside_the_tolerance(tmp_path, prop_name,
 
         return _write(tmp_path / f'ext_{prop_name}_{factor}.dat', cells, edit=edit)
 
-    merged = eos_export.load_paleos_with_lowt_extension(pal, ext_with(1.0 + 0.9e-6))
+    try:
+        merged = eos_export.load_paleos_with_lowt_extension(pal, ext_with(1.0 + 0.9e-6))
+    except ValueError as exc:
+        pytest.fail(f'refused a seam offset inside the tolerance: {exc}')
     assert np.isfinite(merged['s']).all()
     with pytest.raises(ValueError, match='seam mismatch in'):
         eos_export.load_paleos_with_lowt_extension(pal, ext_with(1.0 + 1.1e-6))
@@ -65,7 +68,10 @@ def test_continuation_offsets_just_inside_and_outside_the_tolerance(tmp_path):
         cells = [(P, T) for P in _P for T in (cold, *_T[1:7])]
         return _write(tmp_path / f'ext_cont_{frac}.dat', cells)
 
-    merged = eos_export.load_paleos_with_lowt_extension(pal, ext_shifted(0.9e-4))
+    try:
+        merged = eos_export.load_paleos_with_lowt_extension(pal, ext_shifted(0.9e-4))
+    except ValueError as exc:
+        pytest.fail(f'refused a grid offset inside the tolerance: {exc}')
     assert np.isfinite(merged['s']).all()
     with pytest.raises(ValueError, match='continue the PALEOS log-T grid'):
         eos_export.load_paleos_with_lowt_extension(pal, ext_shifted(1.1e-4))
