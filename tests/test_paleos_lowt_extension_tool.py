@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -202,6 +204,11 @@ def clean_import(monkeypatch):
 
 
 _GIVEN = ('--paleos-commit', '654aca9', '--allow-unverified-paleos')
+
+
+def _files(folder):
+    """Names in ``folder`` except the PALEOS source, hidden files included."""
+    return sorted(p.name for p in folder.iterdir() if p.name != 'paleos_src')
 
 
 def _main(src, table, out, *extra):
@@ -406,17 +413,22 @@ def test_grid_refuses_a_table_with_one_temperature(tmp_path, cells):
 
 def test_command_line_header_holds_the_input_hashes_and_versions(tmp_path, clean_import):
     """The header names sha256 of the data lines of the extended table, of the PALEOS
-    mgsio3_eos.py and of the converter, the numpy, scipy, sympy and Python versions, the
-    Zalmoxis commit of the converter and the Zalmoxis package that checks the merge."""
+    mgsio3_eos.py and of the converter, the numpy, scipy, sympy and Python versions, HEAD of
+    the Zalmoxis checkout of the converter and the version of the Zalmoxis package."""
     import hashlib
     import platform
-    from pathlib import Path
+    import re
 
     import scipy
     import sympy
 
     import zalmoxis
 
+    conv = Path(tool.__file__).resolve()
+    root = conv.parents[2]
+    top = tool._git(root, 'rev-parse', '--show-toplevel')
+    if top is None or Path(top).resolve() != root:
+        pytest.skip('the converter is not in a git checkout of Zalmoxis')
     src = tmp_path / 'paleos_src'
     src.mkdir()
     _stub_paleos(src)
@@ -429,58 +441,46 @@ def test_command_line_header_holds_the_input_hashes_and_versions(tmp_path, clean
     assert f'# paleos/mgsio3_eos.py sha256: {hashlib.sha256(eos_py).hexdigest()}' in head
     versions = f'numpy {np.__version__}, scipy {scipy.__version__}, sympy {sympy.__version__}'
     assert f'# {versions}, Python {platform.python_version()}' in head
-    conv = Path(tool.__file__).resolve()
     assert f'# Converter sha256: {hashlib.sha256(conv.read_bytes()).hexdigest()}' in head
-    root = conv.parents[2]
-    commit, dirty = (
-        tool._git(root, 'rev-parse', 'HEAD'),
-        tool._git(root, 'status', '--porcelain'),
-    )
-    assert commit and len(commit) == 40
-    assert (
+    commit = tool._git(root, 'rev-parse', 'HEAD')
+    dirty = tool._git(root, 'status', '--porcelain')
+    want = (
         f'# Zalmoxis commit of the converter: {commit}' + bool(dirty) * ' (uncommitted changes)'
-        in head
     )
-    pkg = Path(zalmoxis.__file__).resolve().parent
-    assert f'# Zalmoxis package of the merge check: {zalmoxis.__version__} ({pkg})' in head
+    assert re.fullmatch(r'[0-9a-f]{40}([0-9a-f]{24})?', commit) and want in head
+    pkg = f'# Zalmoxis package of the merge check: {zalmoxis.__version__}, from that checkout'
+    assert pkg in head
 
 
-@pytest.mark.parametrize(
-    ('top', 'status', 'want'),
-    [
-        ('root', '', '{commit}'),
-        ('root', ' M x.py', '{commit} (uncommitted changes)'),
-        ('root', '?? new.py', '{commit} (uncommitted changes)'),
-        ('other', '', 'unknown (not a git checkout)'),
-        (None, '', 'unknown (not a git checkout)'),
-        ('root', None, 'unknown (not a git checkout)'),
-    ],
-)
-def test_command_line_header_names_the_converter_commit_only_in_its_own_checkout(
-    tmp_path, clean_import, monkeypatch, top, status, want
-):
-    """The commit is HEAD of the checkout whose top is the Zalmoxis root of the converter,
-    marked for uncommitted or untracked files; another repository, no git or a failed status
+def _repo(path):
+    """A git repository at ``path`` with one commit; returns its HEAD."""
+    _git_repo(path)
+    return _git(path, 'rev-parse', 'HEAD')
+
+
+def test_zalmoxis_commit_is_head_of_the_checkout_whose_top_is_the_root(tmp_path):
+    """HEAD of a clean checkout; marked for a tracked change and for an untracked file."""
+    head = _repo(tmp_path / 'zal')
+    assert tool._zalmoxis_commit(tmp_path / 'zal') == head
+    (tmp_path / 'zal' / 'new.py').write_text('x = 1\n')
+    assert tool._zalmoxis_commit(tmp_path / 'zal') == head + ' (uncommitted changes)'
+    (tmp_path / 'zal' / 'new.py').unlink()
+    (tmp_path / 'zal' / 'README').write_text('changed\n')
+    assert tool._zalmoxis_commit(tmp_path / 'zal') == head + ' (uncommitted changes)'
+
+
+def test_zalmoxis_commit_is_unknown_outside_its_own_checkout(tmp_path, monkeypatch):
+    """A folder inside another repository, a folder in no repository, and a failed git status
     give 'unknown'."""
-    from pathlib import Path
-
-    root = Path(tool.__file__).resolve().parents[2]
+    _repo(tmp_path / 'outer')
+    (tmp_path / 'outer' / 'zal').mkdir()
+    (tmp_path / 'plain').mkdir()
+    unknown = 'unknown (not a git checkout)'
+    assert tool._zalmoxis_commit(tmp_path / 'outer' / 'zal') == unknown
+    assert tool._zalmoxis_commit(tmp_path / 'plain') == unknown
     real = tool._git
-    tops = {'root': str(root), 'other': str(tmp_path), None: None}
-
-    def fake(path, *args):
-        if Path(path).resolve() != root:
-            return real(path, *args)
-        return {'--show-toplevel': tops[top], 'HEAD': 'c' * 40, '--porcelain': status}[args[-1]]
-
-    monkeypatch.setattr(tool, '_git', fake)
-    src = tmp_path / 'paleos_src'
-    src.mkdir()
-    _stub_paleos(src)
-    out = tmp_path / 'ext.dat'
-    _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, '--t-min', '150.4', *_GIVEN)
-    line = '# Zalmoxis commit of the converter: ' + want.format(commit='c' * 40)
-    assert line in out.read_text().splitlines()
+    monkeypatch.setattr(tool, '_git', lambda p, *a: None if a[0] == 'status' else real(p, *a))
+    assert tool._zalmoxis_commit(tmp_path / 'outer') == unknown
 
 
 def test_command_line_names_a_left_out_point_that_stops_the_merge(
@@ -541,10 +541,10 @@ def test_command_line_refuses_a_stale_pinned_table_and_writes_no_file(
     assert not out.exists()
 
 
-def test_command_line_removes_the_output_on_any_error_after_writing(
+def test_command_line_removes_its_temporary_file_on_any_error(
     tmp_path, clean_import, monkeypatch
 ):
-    """An error of any type from the merge check removes the written file."""
+    """An error of any type from the merge check (here an interrupt) leaves no file."""
     src = tmp_path / 'paleos_src'
     src.mkdir()
     _stub_paleos(src)
@@ -556,7 +556,7 @@ def test_command_line_removes_the_output_on_any_error_after_writing(
     out = tmp_path / 'ext.dat'
     with pytest.raises(KeyboardInterrupt):
         _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, '--t-min', '150.4', *_GIVEN)
-    assert not out.exists()
+    assert _files(tmp_path) == ['paleos.dat']
 
 
 def test_command_line_refuses_a_dirty_checkout_by_default(tmp_path, capsys, clean_import):
@@ -611,10 +611,8 @@ def test_an_error_during_the_write_leaves_no_partial_output(
     src.mkdir()
     _stub_paleos(src)
 
-    def partial(eos, table_file, out_file, header, t_min, p_max):
-        from pathlib import Path
-
-        Path(out_file).write_text('# partial\n')
+    def partial(eos, table_file, out_file, *args):
+        out_file.write_text('# partial\n')
         raise OSError(28, 'No space left on device')
 
     monkeypatch.setattr(tool, 'write_extension', partial)
@@ -624,15 +622,22 @@ def test_an_error_during_the_write_leaves_no_partial_output(
     assert sorted(p.name for p in tmp_path.iterdir()) == ['paleos.dat', 'paleos_src']
 
 
-def test_command_line_refuses_an_output_that_is_the_table(tmp_path, capsys, clean_import):
-    """--out naming the --table file stops the tool before anything is written."""
+@pytest.mark.parametrize('form', ['link', 'dotdot'])
+def test_command_line_refuses_an_output_that_is_the_table(tmp_path, capsys, clean_import, form):
+    """--out naming the --table file through a link or a '..' path stops the tool before
+    anything is written."""
     src = tmp_path / 'paleos_src'
     src.mkdir()
     _stub_paleos(src)
     table = _paleos(tmp_path, [6, 6, 6, 6])
+    (tmp_path / 'sub').mkdir()
+    out = tmp_path / 'sub' / '..' / table.name
+    if form == 'link':
+        out = tmp_path / 'sub' / 'link.dat'
+        out.symlink_to(table)
     before = table.read_text()
     with pytest.raises(SystemExit):
-        _main(src, table, tmp_path / '.' / table.name, *_GIVEN)
+        _main(src, table, out, *_GIVEN)
     assert '--out must not be the --table file' in capsys.readouterr().err
     assert table.read_text() == before
 
@@ -645,3 +650,89 @@ def test_command_line_refuses_a_missing_table(tmp_path, capsys, clean_import):
         _main(src, tmp_path / 'absent.dat', tmp_path / 'ext.dat', *_GIVEN)
     assert 'absent.dat is not a file' in capsys.readouterr().err
     assert not (tmp_path / 'ext.dat').exists()
+
+
+@pytest.mark.parametrize('case', ['link', 'table', 'user'])
+def test_a_file_at_the_old_temporary_name_is_never_touched(tmp_path, clean_import, case):
+    """A link to the table at <out>.tmp, a table named <out>.tmp, and a file of the user at
+    that name keep their content; the tool uses a temporary name of its own."""
+    src = tmp_path / 'paleos_src'
+    src.mkdir()
+    _stub_paleos(src)
+    out = tmp_path / 'ext.dat'
+    old = tmp_path / 'ext.dat.tmp'
+    if case == 'table':
+        table = _paleos(tmp_path, [6, 6, 6, 6], name=old.name)
+    else:
+        table = _paleos(tmp_path, [6, 6, 6, 6])
+        old.symlink_to(table) if case == 'link' else old.write_text('user data\n')
+    keep = {p.name: p.read_bytes() for p in (table, old)}
+    extra = ('--p-max', '1e5') if case == 'user' else ()
+    if case == 'user':
+        with pytest.raises(SystemExit):
+            _main(src, table, out, '--t-min', '150.4', *extra, *_GIVEN)
+    else:
+        _main(src, table, out, '--t-min', '150.4', *_GIVEN)
+        assert out.is_file() and not out.is_symlink()
+    assert {p.name: p.read_bytes() for p in (table, old)} == keep
+    assert case != 'link' or old.is_symlink()
+
+
+def test_command_line_refuses_an_output_that_is_a_folder(tmp_path, capsys, clean_import):
+    """An --out that is a folder stops the tool before PALEOS is imported."""
+    src = tmp_path / 'paleos_src'
+    src.mkdir()
+    _stub_paleos(src)
+    (src / 'paleos' / '__init__.py').write_text("raise AssertionError('PALEOS was imported')\n")
+    (tmp_path / 'ext.dat').mkdir()
+    with pytest.raises(SystemExit):
+        _main(src, _paleos(tmp_path, [6, 6, 6, 6]), tmp_path / 'ext.dat', *_GIVEN)
+    assert 'is a folder' in capsys.readouterr().err
+
+
+def test_an_output_link_is_followed_and_kept(tmp_path, clean_import):
+    """An --out that is a link keeps the link; the file it points to gets the extension."""
+    src = tmp_path / 'paleos_src'
+    src.mkdir()
+    _stub_paleos(src)
+    (tmp_path / 'store').mkdir()
+    real = tmp_path / 'store' / 'real.dat'
+    real.write_text('old\n')
+    out = tmp_path / 'ext.dat'
+    out.symlink_to(real)
+    _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, '--t-min', '150.4', *_GIVEN)
+    assert out.is_symlink() and out.resolve() == real.resolve()
+    assert real.read_text().startswith('# PALEOS MgSiO3 solid low-temperature extension')
+    assert _files(tmp_path / 'store') == ['real.dat']
+
+
+def test_a_merge_error_names_the_output_not_the_temporary_file(tmp_path, capsys, clean_import):
+    src = tmp_path / 'paleos_src'
+    src.mkdir()
+    _stub_paleos(src, ds=1.0)
+    out = tmp_path / 'ext.dat'
+    with pytest.raises(SystemExit):
+        _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, '--t-min', '150.4', *_GIVEN)
+    err = capsys.readouterr().err
+    assert 'does not merge under the table' in err and str(out) in err and '.tmp' not in err
+    assert _files(tmp_path) == ['paleos.dat']
+
+
+def test_command_line_refuses_a_zalmoxis_package_from_another_tree(
+    tmp_path, capsys, clean_import, monkeypatch
+):
+    """The merge check must run the Zalmoxis of the converter's checkout, whose commit the
+    header names."""
+    import zalmoxis
+
+    src = tmp_path / 'paleos_src'
+    src.mkdir()
+    _stub_paleos(src)
+    monkeypatch.setattr(
+        zalmoxis, '__file__', str(tmp_path / 'site' / 'zalmoxis' / '__init__.py')
+    )
+    out = tmp_path / 'ext.dat'
+    with pytest.raises(SystemExit):
+        _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, *_GIVEN)
+    assert 'zalmoxis was imported from' in capsys.readouterr().err
+    assert not out.exists()
