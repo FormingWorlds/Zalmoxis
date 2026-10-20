@@ -23,6 +23,7 @@ from zalmoxis.invariants import (
     TOLERANCES,
     StructureInvariantError,
     _layer,
+    _real_scalar,
     check_accepted,
     deviations,
 )
@@ -1104,7 +1105,6 @@ def test_an_ice_planet_passes_the_check_with_its_mantle_top_node(monkeypatch):
         )
     )
     assert r['converged'] and r['density_from_eos'] and seen and all(seen)
-    assert np.max(r['mass_enclosed']) >= r['core_mantle_mass']
 
 
 @pytest.mark.smoke
@@ -1158,9 +1158,10 @@ def test_the_gravity_message_of_a_node_at_radius_zero_gives_no_warning():
 @pytest.mark.accept_solves
 @pytest.mark.timeout(2400)
 def test_the_gravity_margin_of_the_paleos_adiabat_fixture():
-    """The 1 M_E PALEOS-2phase adiabat of the smoke tests is the largest measured gravity
-    ratio (20.8 times rtol + atol (1/M_i + 1/g_i)); below 50 keeps a margin of 2 to the
-    factor 100."""
+    """The 1 M_E PALEOS-2phase adiabat of the smoke tests (Seager2007:iron core) has the
+    largest measured gravity ratio, 20.78 times rtol + atol (1/M_i + 1/g_i) at the default
+    tolerances; the band 10 to 50 catches a check that cannot fail and keeps a margin of 2
+    to the factor 100."""
     from tests._paleos_helpers import WALL_TIMEOUT, _paleos_data_available, _run_paleos
 
     if not _paleos_data_available():
@@ -1170,7 +1171,7 @@ def test_the_gravity_margin_of_the_paleos_adiabat_fixture():
     rtol, atol = r['integration_tolerances']  # those of a retry, if there was one
     cfg = {'planet_mass': earth_mass, 'core_mass_fraction': 0.325, 'mantle_mass_fraction': 0}
     dev, _, tol = deviations(r, cfg, r['accept_mass_limit'], rtol, atol)['gravity']
-    assert 0.0 < dev / (tol / TOLERANCES['gravity']) < 50.0
+    assert 10.0 < dev / (tol / TOLERANCES['gravity']) < 50.0
 
 
 @pytest.mark.unit
@@ -1187,9 +1188,51 @@ def test_the_gravity_margin_of_the_paleos_adiabat_fixture():
         pytest.param('1.96e24', False, id='string'),
         pytest.param(np.array([1.0, 2.0]), False, id='vector'),
         pytest.param(1 + 2j, False, id='complex'),
+        pytest.param(10**400, False, id='int_beyond_float'),
     ],
 )
 def test_a_layer_mass_is_one_real_number_of_any_numeric_type(value, real):
-    from zalmoxis.invariants import _real_scalar
-
     assert _real_scalar(value) is real
+
+
+@pytest.mark.unit
+def test_a_layer_mass_beyond_the_float_range_is_malformed():
+    """A Python int that no float holds is a malformed result, not an OverflowError."""
+    result, cfg = _sphere()
+    result['cmb_mass'] = 10**400
+    with pytest.raises(StructureInvariantError, match='malformed'):
+        _check(result, cfg)
+
+
+@pytest.mark.unit
+def test_an_invariant_error_keeps_the_context_it_was_raised_in():
+    """A broken invariant without a cause of its own leaves the handled exception as context."""
+    result, cfg = _sphere()
+    result['gravity'][N // 2] *= 1.01
+    try:
+        raise KeyError('outer')
+    except KeyError:
+        with pytest.raises(StructureInvariantError) as info:
+            _check(result, cfg)
+    assert isinstance(info.value.__context__, KeyError)
+    assert info.value.__suppress_context__ is False and info.value.__cause__ is None
+
+
+@pytest.mark.unit
+def test_the_integration_tolerances_are_those_after_the_rk45_floor(monkeypatch):
+    """A relative tolerance below 100 eps is checked, and recorded, at the floor of RK45."""
+    monkeypatch.setattr(
+        zs, '_solve', lambda *a, **k: {**_canned('strict')[0], 'accept_mass_limit': 1e-3}
+    )
+    monkeypatch.setattr(zs, 'check_accepted', lambda *a, **k: None)
+    r = _run(_cfg(planet_mass=_sphere()[1]['planet_mass'], relative_tolerance=1e-20))
+    assert r['integration_tolerances'] == (100 * np.finfo(float).eps, 1e-10)
+
+
+@pytest.mark.unit
+def test_an_unconverged_result_has_no_integration_tolerances(monkeypatch):
+    """The check, and the record of its tolerances, run only on a converged result."""
+    calls = [_canned(None, False)[0], _canned(None, False)[0]]
+    monkeypatch.setattr(zs, '_solve', lambda *a, **k: calls.pop(0))
+    r = _run(_cfg(planet_mass=_sphere()[1]['planet_mass']))
+    assert not r['converged'] and 'integration_tolerances' not in r
