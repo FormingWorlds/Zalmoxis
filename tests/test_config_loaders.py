@@ -524,8 +524,7 @@ class TestLoadSolidusLiquidusFunctions:
                 mushy_zone_factor=0.8,
             )
         assert not any(
-            'is not used for a PALEOS 2-phase mantle' in r.getMessage()
-            for r in caplog.records
+            'is not used for a PALEOS 2-phase mantle' in r.getMessage() for r in caplog.records
         )
 
 

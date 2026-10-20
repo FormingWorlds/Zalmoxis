@@ -37,15 +37,21 @@ call.
 from __future__ import annotations
 
 import datetime as _dt
+import functools as _functools
 import hashlib as _hashlib
+import importlib.metadata as _metadata
 import json as _json
 import logging
 import math as _math
 import multiprocessing as _mp
 import os as _os
+import re as _re
 import subprocess as _subprocess
+import sys as _sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from urllib.parse import unquote as _unquote
+from urllib.parse import urlparse as _urlparse
 
 import numpy as np
 
@@ -178,32 +184,309 @@ def make_default_grid_h2o() -> GridSpec:
     return make_grid_at_resolution(1e-1, 1e14, 150.0, 1.0e5)
 
 
-def paleos_installed_sha() -> str:
-    """Return the git SHA of the installed PALEOS checkout, or ``'unknown'``.
+# PALEOS commit the PALEOS-API path is tested with; a Zalmoxis change moves it after the
+# PALEOS-API tests pass on a newer commit.
+PALEOS_TESTED_SHA = '654aca9ec6116d2ad319d984a3f68e11ddef2fb4'
 
-    PALEOS does not expose ``__commit_sha__``; we fall back to
-    ``git rev-parse HEAD`` against the directory holding ``paleos``.
-    If both fail, we use ``paleos.__version__`` as a coarse identifier.
+
+class PaleosVersionError(Exception):
+    """The installed PALEOS code cannot be shown to contain ``PALEOS_TESTED_SHA``: it is
+    older or unrelated, not installed, not a tracked package of a git checkout, or git
+    cannot read it.
+
+    Not a RuntimeError or ValueError, so a caller that turns those into a failed
+    structure solve does not hide it.
     """
+
+
+def _paleos_repo_dir() -> Path | None:
+    """Return the directory that holds the installed ``paleos`` package, or None."""
     try:
         import paleos as _paleos
     except ImportError:
-        return 'paleos-not-installed'
+        return None
+    return Path(_paleos.__file__).resolve().parent.parent
 
-    pkg_dir = Path(_paleos.__file__).resolve().parent
-    repo_dir = pkg_dir.parent
+
+# Repository variables of a calling git (a hook, a worktree) would point git at another tree.
+_GIT_REPO_VARS = (
+    'GIT_DIR',
+    'GIT_WORK_TREE',
+    'GIT_INDEX_FILE',
+    'GIT_OBJECT_DIRECTORY',
+    'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+    'GIT_COMMON_DIR',
+    'GIT_NAMESPACE',
+    'GIT_REPLACE_REF_BASE',
+)
+
+# Opt-in to run PALEOS package files that differ from their commit (a custom phase map).
+ALLOW_DIRTY_ENV = 'ZALMOXIS_PALEOS_ALLOW_DIRTY'
+
+# Key of the PALEOS code when this process first imported paleos (see _same_code_as_import).
+_KEY_AT_IMPORT: dict = {}
+
+
+def _git(repo_dir: Path, *args: str, stdin: str | None = None) -> _subprocess.CompletedProcess:
+    """Run git in ``repo_dir`` with C messages and no repository variables of the caller;
+    the output is decoded without failing on any byte, and a git that cannot be started
+    gives return code 127."""
+    env = {k: v for k, v in _os.environ.items() if k not in _GIT_REPO_VARS}
     try:
-        sha = _subprocess.check_output(
-            ['git', '-C', str(repo_dir), 'rev-parse', 'HEAD'],
-            stderr=_subprocess.DEVNULL,
+        return _subprocess.run(
+            ['git', '--no-replace-objects', '-C', str(repo_dir), *args],
+            input=stdin,
+            capture_output=True,
             text=True,
-        ).strip()
-        if sha:
-            return sha
-    except (_subprocess.CalledProcessError, FileNotFoundError, OSError):
-        pass
+            errors='surrogateescape',
+            env={**env, 'LC_ALL': 'C'},
+        )
+    except OSError as exc:
+        return _subprocess.CompletedProcess(args, 127, '', str(exc))
 
-    return f'version-{getattr(_paleos, "__version__", "unknown")}'
+
+def _importable(path: str) -> bool:
+    """Whether Python can import a file of the package: source, an extension module, or a
+    compiled file outside ``__pycache__`` (which Python runs without its source)."""
+    parts = Path(path)
+    if parts.suffix in ('.py', '.so', '.pyd'):
+        return True
+    return parts.suffix == '.pyc' and '__pycache__' not in parts.parts
+
+
+def _changes_hash(repo_dir: Path, head_sha: str) -> str | None:
+    """Return an 8-character hash of the package code on disk when it differs from the code
+    of ``head_sha``, else None.
+
+    Tracked files are hashed by git without filters, so a line-end conversion or a clean
+    filter counts as a change, and a symlink by its target text; a deleted file counts.
+    Untracked files, ignored ones included, and files added to the index but not committed
+    count when Python can import them. A link to a directory, a nested repository or a
+    submodule under paleos/, committed or not, stops the check. Paths are taken
+    relative to ``repo_dir``, which may lie below the top of the repository. Only content
+    is compared, not modes.
+
+    Raises
+    ------
+    PaleosVersionError
+        If git cannot list or hash the package, a file cannot be read, or a link to a
+        directory, a nested repository or a submodule is under paleos/.
+    """
+    listing = _git(repo_dir, 'ls-tree', '-r', '-z', head_sha, '--', 'paleos/')
+    others = _git(repo_dir, 'ls-files', '-z', '--others', '--', 'paleos/')
+    cached = _git(repo_dir, 'ls-files', '-z', '--', 'paleos/')
+    if any(done.returncode != 0 for done in (listing, others, cached)):
+        raise PaleosVersionError(f'cannot list the paleos package of {head_sha} in {repo_dir}')
+    entries = [e.split('\t', 1) for e in filter(None, listing.stdout.split('\0'))]
+    committed = {path: meta.split()[2] for meta, path in entries}
+    on_disk, files = {}, []
+    for meta, path in entries:
+        f = Path(repo_dir, path)
+        if meta.split()[1] == 'commit' or (f.is_symlink() and f.is_dir()):
+            raise _no_key(path, repo_dir)
+        if f.is_symlink():
+            on_disk[path] = _hash_blob(repo_dir, path, stdin=_os.readlink(f))
+        elif f.is_file():
+            files.append(path)
+    if files:
+        prefix = _git(repo_dir, 'rev-parse', '--show-prefix').stdout.strip()
+        paths = ''.join(f'{prefix}{f}\n' for f in files)
+        hashed = _git(repo_dir, 'hash-object', '--no-filters', '--stdin-paths', stdin=paths)
+        if hashed.returncode != 0:
+            raise PaleosVersionError(
+                f'cannot read the paleos package in {repo_dir}: {hashed.stderr.strip()[:200]}'
+            )
+        on_disk.update(zip(files, hashed.stdout.split()))
+    staged = [p for p in filter(None, cached.stdout.split('\0')) if p not in committed]
+    for path in [*filter(None, others.stdout.split('\0')), *staged]:
+        if Path(repo_dir, path).is_dir():
+            raise _no_key(path, repo_dir)
+        if not _importable(path):
+            continue
+        try:
+            data = Path(repo_dir, path).read_bytes()
+        except OSError as exc:
+            raise PaleosVersionError(f'cannot read {path} in {repo_dir}: {exc}') from exc
+        on_disk[path] = 'untracked ' + _hashlib.sha256(data).hexdigest()
+    if on_disk == committed:
+        return None
+    text = repr(sorted(on_disk.items())).encode('utf-8', 'surrogateescape')
+    return _hashlib.sha256(text).hexdigest()[:8]
+
+
+def _no_key(path: str, repo_dir: Path) -> PaleosVersionError:
+    """Return the error for a folder link, nested repository or submodule under paleos/."""
+    return PaleosVersionError(
+        f'{path} in {repo_dir} is a link to a directory, a nested repository or a submodule: '
+        'no key can describe the code in it, so remove it'
+    )
+
+
+def _hash_blob(repo_dir: Path, path: str, stdin: str) -> str:
+    """Return git's blob id of ``stdin`` as the content of ``path``, with no filters."""
+    done = _git(repo_dir, 'hash-object', '--no-filters', '--stdin', stdin=stdin)
+    if done.returncode != 0:
+        raise PaleosVersionError(f'cannot hash {path} in {repo_dir}: {done.stderr.strip()}')
+    return done.stdout.strip()
+
+
+def paleos_installed_sha() -> str:
+    """Return the git SHA of the installed PALEOS checkout, or a fallback string.
+
+    A checkout whose package code differs from its commit gets ``-dirty-<8 hex>`` after
+    the SHA, a hash of that code, so each set of changes has its own cache. Without git
+    the result is ``version-<paleos.__version__>``, and without PALEOS
+    ``paleos-not-installed``. The first result is kept for :func:`_same_code_as_import`;
+    when paleos was imported before it, a warning says that changes before this call are
+    not covered.
+    """
+    fresh = 'paleos' not in _sys.modules
+    repo_dir = _paleos_repo_dir()
+    if repo_dir is None:
+        return 'paleos-not-installed'
+    key = None
+    head = _git(repo_dir, 'rev-parse', 'HEAD')
+    if head.returncode == 0 and head.stdout.strip():
+        sha = head.stdout.strip()
+        try:
+            changes = _changes_hash(repo_dir, sha)
+            key = sha if changes is None else f'{sha}-dirty-{changes}'
+        except PaleosVersionError:
+            pass
+    if key is None:
+        import paleos as _paleos
+
+        key = f'version-{getattr(_paleos, "__version__", "unknown")}'
+    if 'key' not in _KEY_AT_IMPORT:
+        if not fresh:
+            logger.warning(
+                'paleos was imported before its code key was taken; a change on disk before '
+                'this call is not covered'
+            )
+        _KEY_AT_IMPORT['key'] = key
+    return key
+
+
+def _same_code_as_import(sha: str) -> None:
+    """Refuse a key that moved since the first key of this process: the code in memory is
+    still the code of the import, so a table built in this process would carry a key that
+    does not describe it."""
+    imported = _KEY_AT_IMPORT.get('key', sha)
+    if imported != sha:
+        raise PaleosVersionError(
+            f'the PALEOS code changed on disk since the first key of this process ({imported} '
+            f'then, {sha} now): start a new process to build tables with it'
+        )
+
+
+def _dist_id(name: str) -> str:
+    """Return ``<version>@<commit>`` of an installed distribution (the VCS commit, or the
+    HEAD of an editable clone), its version alone, or ``not-installed``."""
+    try:
+        dist = _metadata.distribution(name)
+    except _metadata.PackageNotFoundError:
+        return 'not-installed'
+    info = _json.loads(dist.read_text('direct_url.json') or '{}')
+    commit = info.get('vcs_info', {}).get('commit_id')
+    if commit is None and info.get('dir_info', {}).get('editable'):
+        head = _git(Path(_unquote(_urlparse(info['url']).path)), 'rev-parse', 'HEAD')
+        commit = head.stdout.strip() if head.returncode == 0 else 'unknown'
+    return f'{dist.version}@{commit}' if commit else str(dist.version)
+
+
+def build_inputs(material: str, h2o_table_path: str | None = None) -> dict:
+    """Return what a PALEOS-API table depends on besides the PALEOS code and the grid: the
+    RTpress install (the Wolf18 liquid), the md5 of the AQUA table of H2O, and the numpy,
+    scipy and sympy versions."""
+    aqua = None
+    if material == 'h2o' and h2o_table_path is not None:
+        aqua = _hashlib.md5(Path(h2o_table_path).read_bytes()).hexdigest()
+    ids = {name: _dist_id(name) for name in ('RTpress', 'numpy', 'scipy', 'sympy')}
+    return {**ids, 'aqua_md5': aqua}
+
+
+def build_key(material: str, h2o_table_path: str | None = None) -> str:
+    """Return an 8-character hash of :func:`build_inputs`, part of the cache key."""
+    text = _json.dumps(build_inputs(material, h2o_table_path), sort_keys=True)
+    return _hashlib.sha256(text.encode()).hexdigest()[:8]
+
+
+def check_paleos_commit(repo_dir: Path | None = None, tested: str | None = None) -> str:
+    """Return ``'tested'``, ``'newer'`` or ``'dirty'`` for the PALEOS checkout in ``repo_dir``.
+
+    A checkout at ``tested`` (default ``PALEOS_TESTED_SHA``) runs; one that descends
+    from it runs with a warning. Package code that differs from its commit stops, unless
+    ``ZALMOXIS_PALEOS_ALLOW_DIRTY=1`` lets it run with a warning.
+
+    Returns
+    -------
+    str
+        ``'tested'``, ``'newer'``, or ``'dirty'`` for an allowed checkout with changes.
+
+    Raises
+    ------
+    PaleosVersionError
+        If PALEOS is not installed, its package is not a tracked file of a git checkout,
+        the checkout does not contain ``tested`` (an older or unrelated commit, or a
+        clone that lacks it), its commit or files cannot be read, or its package code
+        differs from the commit without the opt-in.
+    """
+    tested = PALEOS_TESTED_SHA if tested is None else tested
+    repo_dir = _paleos_repo_dir() if repo_dir is None else Path(repo_dir)
+    if repo_dir is None:
+        raise PaleosVersionError('PALEOS is not installed; the PALEOS-API path needs it')
+    head = _git(repo_dir, 'rev-parse', 'HEAD')
+    if head.returncode != 0 or not head.stdout.strip():
+        raise PaleosVersionError(
+            f'cannot tell the PALEOS commit of {repo_dir} ({head.stderr.strip()[:200]}): the '
+            f'PALEOS-API path needs PALEOS installed from a git checkout at {tested} or later'
+        )
+    if _git(repo_dir, 'ls-files', '--error-unmatch', 'paleos/__init__.py').returncode != 0:
+        raise PaleosVersionError(
+            f'the paleos package in {repo_dir} is not tracked by the git checkout that holds '
+            'it, so its commit cannot be told; install PALEOS with pip install -e from a clone'
+        )
+    head_sha = head.stdout.strip()
+    if head_sha != tested:
+        if _git(repo_dir, 'merge-base', '--is-ancestor', tested, head_sha).returncode != 0:
+            shallow = _git(repo_dir, 'rev-parse', '--is-shallow-repository').stdout.strip()
+            fix = 'fetch --unshallow' if shallow == 'true' else 'pull'
+            raise PaleosVersionError(
+                f'PALEOS in {repo_dir} is at {head_sha}, which does not contain the tested '
+                f'commit {tested}: update it, for example git -C {repo_dir} {fix}'
+            )
+        logger.warning(
+            'PALEOS %s is newer than the commit the PALEOS-API path is tested with (%s)',
+            head_sha,
+            tested,
+        )
+    if _changes_hash(repo_dir, head_sha) is not None:
+        if _os.environ.get(ALLOW_DIRTY_ENV) != '1':
+            raise PaleosVersionError(
+                f'the paleos package files in {repo_dir} differ from its commit {head_sha}: '
+                f'commit or remove the changes, or set {ALLOW_DIRTY_ENV}=1 to run them '
+                'with their own cache; in a clean checkout, a line-end conversion such as '
+                'core.autocrlf is a likely cause'
+            )
+        logger.warning('PALEOS in %s has uncommitted changes to its package files', repo_dir)
+        return 'dirty'
+    return 'tested' if head_sha == tested else 'newer'
+
+
+@_functools.cache
+def _check_paleos_once(sha: str) -> str:
+    """Run :func:`check_paleos_commit` once per process and cache key ``sha``.
+
+    Raises
+    ------
+    PaleosVersionError
+        As :func:`check_paleos_commit`, or for a key that is not a commit SHA (such as a
+        ``version-`` fallback).
+    """
+    verdict = check_paleos_commit()
+    if not _re.fullmatch(r'[0-9a-f]{40}(-dirty-[0-9a-f]{8})?', sha):
+        raise PaleosVersionError(f'the PALEOS cache key {sha} names no commit')
+    return verdict
 
 
 def _write_header(
@@ -215,6 +498,7 @@ def _write_header(
     n_valid: int,
     n_skipped: int,
     extra_lines=None,
+    build: str | None = None,
 ):
     """Emit the commented header block. Matches shipped-table conventions."""
     timestamp = _dt.datetime.now(_dt.timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
@@ -224,6 +508,8 @@ def _write_header(
     f.write(f'# Kind: {kind}\n')
     f.write('# Generator: zalmoxis.eos.paleos_api\n')
     f.write(f'# PALEOS_SHA: {paleos_sha}\n')
+    if build is not None:
+        f.write(f'# BUILD_KEY: {build}\n')
     f.write(f'# grid_hash: {grid.hash_short()}\n')
     f.write(f'# generated: {timestamp}\n#\n')
     f.write(f'# P grid: {grid.n_p} pts log-uniform in [{grid.p_lo:.8e}, {grid.p_hi:.8e}] Pa\n')
@@ -442,6 +728,8 @@ def generate_paleos_api_unified_table(
     human_material = _HUMAN_MATERIAL[material]
     n_workers = _resolve_n_workers(n_workers)
     sha = paleos_installed_sha()
+    _check_paleos_once(sha)
+    build = build_key(material, h2o_table_path)
     P_axis, T_axis = grid.axes()
     T_axis_list = T_axis.tolist()  # avoid repeated numpy scalar conversions in workers
 
@@ -458,6 +746,7 @@ def generate_paleos_api_unified_table(
 
     if n_workers == 1:
         # Serial path: no Pool, no worker init — tabulate in-process.
+        _same_code_as_import(sha)
         _worker_init(material, h2o_table_path=h2o_table_path)
         iterator = (_worker_unified_row(t) for t in tasks)
     else:
@@ -498,6 +787,7 @@ def generate_paleos_api_unified_table(
             'unified (stable-phase)',
             grid,
             sha,
+            build=build,
             n_valid=n_valid,
             n_skipped=n_skipped,
         )
@@ -605,6 +895,8 @@ def generate_paleos_api_2phase_mgsio3_tables(
 
     n_workers = _resolve_n_workers(n_workers)
     sha = paleos_installed_sha()
+    _check_paleos_once(sha)
+    build = build_key('mgsio3')
     P_axis, T_axis = grid.axes()
     T_axis_list = T_axis.tolist()
 
@@ -624,6 +916,7 @@ def generate_paleos_api_2phase_mgsio3_tables(
     n_done = 0
 
     if n_workers == 1:
+        _same_code_as_import(sha)
         _worker_init('mgsio3')
         iterator = (_worker_2phase_row(t) for t in tasks)
     else:
@@ -668,6 +961,7 @@ def generate_paleos_api_2phase_mgsio3_tables(
             'solid (metastable extension above liquidus)',
             grid,
             sha,
+            build=build,
             n_valid=n_valid_s,
             n_skipped=n_skip_s,
             extra_lines=[
@@ -686,6 +980,7 @@ def generate_paleos_api_2phase_mgsio3_tables(
             'liquid (Wolf18, metastable extension below solidus)',
             grid,
             sha,
+            build=build,
             n_valid=n_valid_l,
             n_skipped=n_skip_l,
             extra_lines=[
