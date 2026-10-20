@@ -20,6 +20,12 @@ table and of ``paleos/mgsio3_eos.py``, and the numpy and scipy versions. The mer
 every extended row that the extension and the table agree to 1e-6 at the seam node, the
 table minimum; it does not test that both come from the same PALEOS commit.
 
+A point where PALEOS does not converge or gives a non-finite property is left out; the header
+and the output give the number of left-out points and each (P, T). The merge accepts a point
+left out at the lowest node of a row (the row then starts one node higher) and refuses one
+inside a row; the command line then removes the output and stops with an error that names the
+left-out points.
+
 ``MgSiO3EoS`` builds every PALEOS MgSiO3 phase, the liquid Wolf18 model (RTpress, compiled
 with sympy) too, so its dependencies must be installed although no extension point is liquid.
 """
@@ -98,29 +104,36 @@ def write_extension(eos, table_file, out_file, header, t_min=50.0, p_max=12.0e9)
 
     Returns
     -------
-    int
-        Number of (P, T) rows written; a point where a property is not finite, or where
-        PALEOS raises RuntimeError, ArithmeticError or ValueError (no convergence), is left
-        out, as PALEOS leaves out points that do not converge.
+    n : int
+        Number of (P, T) rows written.
+    left : list of tuple
+        The (P, T) points left out, also named in the header: a point where a property is
+        not finite, or where PALEOS raises RuntimeError, ArithmeticError or ValueError (no
+        convergence), as PALEOS leaves out points that do not converge.
     """
     P_rows, T_nodes = extension_grid(table_file, t_min, p_max)
-    lines = [f'# {h}\n' for h in header]
-    lines.append('# P T rho u s cp cv alpha nabla_ad phase\n')
-    n = 0
+    rows, left = [], []
     for P in P_rows:
         for T in T_nodes:
             try:
                 vals = [float(getattr(eos, m)(P, T)) for m in _METHODS]
                 phase = eos.phase(P, T)
             except (RuntimeError, ArithmeticError, ValueError):
-                continue
+                vals = [np.nan]
             if not np.all(np.isfinite(vals)):
+                left.append((P, T))
                 continue
             body = ' '.join(f'{v:.8e}' for v in vals)
-            lines.append(f'{P:.8e} {T:.8e} {body} {phase}\n')
-            n += 1
+            rows.append(f'{P:.8e} {T:.8e} {body} {phase}\n')
+    k = len(left)
+    head = [
+        *header,
+        f'Left out: {k} point{"" if k == 1 else "s"} (no convergence or not finite)',
+    ]
+    head += [f'Left out at P T: {P:.8e} {T:.8e}' for P, T in left]
+    lines = [f'# {h}\n' for h in head] + ['# P T rho u s cp cv alpha nabla_ad phase\n'] + rows
     Path(out_file).write_text(''.join(lines))
-    return n
+    return len(rows), left
 
 
 def _git(path, *args):
@@ -183,7 +196,8 @@ def main(argv=None):
         f'T from the table minimum down to the first node <= {args.t_min:g} K',
         f'Generated: {datetime.datetime.now(datetime.UTC):%Y-%m-%d %H:%M:%S} UTC',
     ]
-    n = write_extension(MgSiO3EoS(), args.table, args.out, header, args.t_min, args.p_max)
+    n, left = write_extension(MgSiO3EoS(), args.table, args.out, header, args.t_min, args.p_max)
+    where = ', '.join(f'P = {P:.6e} Pa, T = {T:.6e} K' for P, T in left)
     if n == 0:
         args.out.unlink()
         ap.error(f'no extension rows: no table row has 0 < P < {args.p_max:g} Pa')
@@ -193,8 +207,13 @@ def main(argv=None):
         load_paleos_with_lowt_extension(args.table, args.out)
     except ValueError as exc:
         args.out.unlink()
-        ap.error(f'the extension does not merge under the table: {exc}')
+        ap.error(
+            f'the extension does not merge under the table: {exc}'
+            + (f'; left-out points: {where}' if left else '')
+        )
     print(f'wrote {n} rows to {args.out}')
+    if left:
+        print(f'left out {len(left)} point{"" if len(left) == 1 else "s"}: {where}')
 
 
 if __name__ == '__main__':

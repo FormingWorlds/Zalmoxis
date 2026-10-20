@@ -89,7 +89,8 @@ def test_point_where_paleos_raises_is_left_out(tmp_path, method, exc):
     except Exception as err:  # the point must be left out, not stop the converter
         pytest.fail(f'a non-converging point stopped the converter: {err!r}')
     assert n == _P.size * 7 - 1
-    assert f'{_P[1]:.8e} {_T[2]:.8e}' not in out.read_text()
+    data = [x for x in out.read_text().splitlines() if not x.startswith('#')]
+    assert not any(x.startswith(f'{_P[1]:.8e} {_T[2]:.8e} ') for x in data)
 
 
 def test_left_out_points_are_returned_and_named_in_the_header(tmp_path):
