@@ -90,6 +90,7 @@ def test_command_line_measures_the_synthetic_tables(tmp_path, monkeypatch, capsy
     import shutil
 
     from tests.test_eos_lowt_extension import _gen_tables, _generate_from
+    from zalmoxis.eos import registry_guard
 
     solid, liquid, ext = _gen_tables(tmp_path)
     d = tmp_path / 'root' / 'data' / 'EOS_PALEOS_MgSiO3'
@@ -106,6 +107,9 @@ def test_command_line_measures_the_synthetic_tables(tmp_path, monkeypatch, capsy
         / 'EOS_PALEOS_MgSiO3_unified'
         / 'paleos_mgsio3_eos_table_pt.dat',
     )
+    # the synthetic tables use the registry file names; no pin applies to them here
+    monkeypatch.setattr(registry_guard, '_pins', lambda: {})
+    registry_guard._HASHES.clear()
     monkeypatch.setattr(acc, 'get_zalmoxis_root', lambda: str(tmp_path / 'root'))
     monkeypatch.setattr(acc, 'N_P', 6)
     monkeypatch.setattr(acc, 'N_S', 40)
