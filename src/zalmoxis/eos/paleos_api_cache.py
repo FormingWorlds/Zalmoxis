@@ -5,16 +5,21 @@ on-disk ``.dat`` path, regenerating via ``paleos_api.py`` on cache miss.
 
 Cache layout under ``$ZALMOXIS_ROOT/data/EOS_PALEOS_API/``::
 
-    unified_<material>_<sha10>_<gridhash>.dat
-    2phase_solid_<sha10>_<gridhash>.dat
-    2phase_liquid_<sha10>_<gridhash>.dat
+    unified_<material>_<sha10>_<build>_<gridhash>.dat
+    2phase_solid_<sha10>_<build>_<gridhash>.dat
+    2phase_liquid_<sha10>_<build>_<gridhash>.dat
 
-Cache key is ``(PALEOS_SHA, GridSpec.hash_short())``. Both are stamped in
+``<sha10>`` is the first 10 characters of the PALEOS commit, followed by
+``-dirty-<8 hex>`` for an allowed checkout whose package code differs from that
+commit; each such state keeps its own files, which ``invalidate_cache`` removes.
+``<build>`` is :func:`~zalmoxis.eos.paleos_api.build_key`: RTpress, the AQUA
+table md5 (H2O) and the numpy, scipy and sympy versions.
+Cache key is ``(PALEOS_SHA, BUILD_KEY, GridSpec.hash_short())``. All are stamped in
 the generated file's header, so:
 
 1. A missing file → regenerate.
-2. An existing file whose header SHA does not match the currently installed
-   PALEOS → regenerate (caught by `_header_sha_matches`).
+2. An existing file whose header SHA or build key does not match the currently
+   installed PALEOS and its inputs → regenerate (caught by `_header_sha_matches`).
 
 The SHA guard is the backstop for upstream PALEOS changes:
 renaming ``_phase_eos_map`` or a boundary function on upstream will
@@ -29,6 +34,8 @@ from pathlib import Path
 
 from .paleos_api import (
     GridSpec,
+    _check_paleos_once,
+    build_key,
     generate_paleos_api_2phase_mgsio3_tables,
     generate_paleos_api_unified_table,
     paleos_installed_sha,
@@ -47,31 +54,36 @@ def _cache_root() -> Path:
 
 
 def _sha_short(sha: str) -> str:
-    """First 10 chars of the SHA, or the full string if shorter."""
-    return sha[:10] if len(sha) >= 10 else sha
+    """First 10 chars of the SHA, keeping a ``-dirty-<hash>`` suffix."""
+    head, sep, rest = sha.partition('-dirty-')
+    return head[:10] + sep + rest
 
 
-def _header_sha_matches(path: Path, expected_sha: str) -> bool:
-    """Return True iff the file exists and its header carries ``expected_sha``.
+def _header_sha_matches(path: Path, expected_sha: str, build: str | None = None) -> bool:
+    """Return True iff the file exists and its header carries ``expected_sha`` and, when
+    ``build`` is given, that ``BUILD_KEY``.
 
     Reads only the comment prefix; stops at the first non-comment line.
-    Tolerates files without the PALEOS_SHA tag (legacy or hand-placed) by
-    returning False so they get regenerated.
+    Tolerates files without the tags (legacy or hand-placed) by returning False
+    so they get regenerated.
     """
     if not path.exists():
         return False
+    tags = {}
     try:
         with open(path) as f:
             for line in f:
                 if not line.startswith('#'):
                     break
-                if 'PALEOS_SHA:' in line:
-                    shipped = line.split('PALEOS_SHA:', 1)[1].strip()
-                    return shipped == expected_sha
+                for tag in ('PALEOS_SHA:', 'BUILD_KEY:'):
+                    if tag in line:
+                        tags.setdefault(tag, line.split(tag, 1)[1].strip())
     except OSError as e:
         logger.warning('paleos_api_cache: could not read %s (%s); regenerating', path, e)
         return False
-    return False
+    return tags.get('PALEOS_SHA:') == expected_sha and (
+        build is None or tags.get('BUILD_KEY:') == build
+    )
 
 
 def resolve_paleos_api_unified(
@@ -99,13 +111,15 @@ def resolve_paleos_api_unified(
         don't run the generator at all).
     """
     sha = paleos_installed_sha()
+    _check_paleos_once(sha)
+    build = build_key(material, h2o_table_path)
     sha_s = _sha_short(sha)
     grid_s = grid.hash_short()
 
-    fname = f'unified_{material}_{sha_s}_{grid_s}.dat'
+    fname = f'unified_{material}_{sha_s}_{build}_{grid_s}.dat'
     path = _cache_root() / fname
 
-    if not force and _header_sha_matches(path, sha):
+    if not force and _header_sha_matches(path, sha, build):
         logger.debug('paleos_api_cache hit: %s', path)
         return path
 
@@ -144,13 +158,19 @@ def resolve_paleos_api_2phase_mgsio3(
         ``os.cpu_count()``.
     """
     sha = paleos_installed_sha()
+    _check_paleos_once(sha)
+    build = build_key('mgsio3')
     sha_s = _sha_short(sha)
     grid_s = grid.hash_short()
 
-    solid = _cache_root() / f'2phase_solid_{sha_s}_{grid_s}.dat'
-    liquid = _cache_root() / f'2phase_liquid_{sha_s}_{grid_s}.dat'
+    solid = _cache_root() / f'2phase_solid_{sha_s}_{build}_{grid_s}.dat'
+    liquid = _cache_root() / f'2phase_liquid_{sha_s}_{build}_{grid_s}.dat'
 
-    if not force and _header_sha_matches(solid, sha) and _header_sha_matches(liquid, sha):
+    if (
+        not force
+        and _header_sha_matches(solid, sha, build)
+        and _header_sha_matches(liquid, sha, build)
+    ):
         logger.debug('paleos_api_cache 2-phase hit: %s, %s', solid, liquid)
         return solid, liquid
 
