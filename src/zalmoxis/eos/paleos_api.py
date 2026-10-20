@@ -260,26 +260,30 @@ def _changes_hash(repo_dir: Path, head_sha: str) -> str | None:
 
     Tracked files are hashed by git without filters, so a line-end conversion or a clean
     filter counts as a change, and a symlink by its target text; a deleted file counts.
-    Untracked files, ignored ones included, count when Python can import them. Paths are taken
+    Untracked files, ignored ones included, and files added to the index but not committed
+    count when Python can import them. A link to a directory, a nested repository or a
+    submodule under paleos/, committed or not, stops the check. Paths are taken
     relative to ``repo_dir``, which may lie below the top of the repository. Only content
     is compared, not modes.
 
     Raises
     ------
     PaleosVersionError
-        If git cannot list or hash the package, or a file cannot be read.
+        If git cannot list or hash the package, a file cannot be read, or a link to a
+        directory, a nested repository or a submodule is under paleos/.
     """
     listing = _git(repo_dir, 'ls-tree', '-r', '-z', head_sha, '--', 'paleos/')
     others = _git(repo_dir, 'ls-files', '-z', '--others', '--', 'paleos/')
-    if listing.returncode != 0 or others.returncode != 0:
+    cached = _git(repo_dir, 'ls-files', '-z', '--', 'paleos/')
+    if any(done.returncode != 0 for done in (listing, others, cached)):
         raise PaleosVersionError(f'cannot list the paleos package of {head_sha} in {repo_dir}')
-    committed = dict(
-        (path, meta.split()[2])
-        for meta, path in (e.split('\t', 1) for e in filter(None, listing.stdout.split('\0')))
-    )
+    entries = [e.split('\t', 1) for e in filter(None, listing.stdout.split('\0'))]
+    committed = {path: meta.split()[2] for meta, path in entries}
     on_disk, files = {}, []
-    for path in committed:
+    for meta, path in entries:
         f = Path(repo_dir, path)
+        if meta.split()[1] == 'commit' or (f.is_symlink() and f.is_dir()):
+            raise _no_key(path, repo_dir)
         if f.is_symlink():
             on_disk[path] = _hash_blob(repo_dir, path, stdin=_os.readlink(f))
         elif f.is_file():
@@ -293,13 +297,10 @@ def _changes_hash(repo_dir: Path, head_sha: str) -> str | None:
                 f'cannot read the paleos package in {repo_dir}: {hashed.stderr.strip()[:200]}'
             )
         on_disk.update(zip(files, hashed.stdout.split()))
-    for path in filter(None, others.stdout.split('\0')):
-        f = Path(repo_dir, path)
-        if f.is_dir():
-            raise PaleosVersionError(
-                f'{path} in {repo_dir} is a link to a directory or a nested repository: no key '
-                'can describe the code in it, so remove it'
-            )
+    staged = [p for p in filter(None, cached.stdout.split('\0')) if p not in committed]
+    for path in [*filter(None, others.stdout.split('\0')), *staged]:
+        if Path(repo_dir, path).is_dir():
+            raise _no_key(path, repo_dir)
         if not _importable(path):
             continue
         try:
@@ -311,6 +312,14 @@ def _changes_hash(repo_dir: Path, head_sha: str) -> str | None:
         return None
     text = repr(sorted(on_disk.items())).encode('utf-8', 'surrogateescape')
     return _hashlib.sha256(text).hexdigest()[:8]
+
+
+def _no_key(path: str, repo_dir: Path) -> PaleosVersionError:
+    """Return the error for a folder link, nested repository or submodule under paleos/."""
+    return PaleosVersionError(
+        f'{path} in {repo_dir} is a link to a directory, a nested repository or a submodule: '
+        'no key can describe the code in it, so remove it'
+    )
 
 
 def _hash_blob(repo_dir: Path, path: str, stdin: str) -> str:
