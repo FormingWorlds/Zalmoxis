@@ -81,3 +81,47 @@ def test_the_table_has_one_row_per_mass_and_names_band_columns_and_crossing_rows
         '| 5.60 % at 6.931 GPa | 5.6 % at 6.918 GPa |'
     )
     assert table[3] == '| 10 | 0 | 48.5, 125.8 | 0 | none | none | none |'
+
+
+def test_command_line_measures_the_synthetic_tables(tmp_path, monkeypatch, capsys):
+    """On the synthetic tables of the extension tests, read from a Zalmoxis root with the
+    extension next to the solid table, the tool writes one row per mass whose added nodes
+    and node entropies are those of the table generator."""
+    import shutil
+
+    from tests.test_eos_lowt_extension import _gen_tables, _generate_from
+
+    solid, liquid, ext = _gen_tables(tmp_path)
+    d = tmp_path / 'root' / 'data' / 'EOS_PALEOS_MgSiO3'
+    d.mkdir(parents=True)
+    shutil.copy(solid, d / 'paleos_mgsio3_tables_pt_proteus_solid.dat')
+    shutil.copy(liquid, d / 'paleos_mgsio3_tables_pt_proteus_liquid.dat')
+    shutil.copy(ext, d / 'paleos_mgsio3_tables_pt_proteus_solid_lowT.dat')
+    (tmp_path / 'root' / 'data' / 'EOS_PALEOS_MgSiO3_unified').mkdir()
+    shutil.copy(
+        solid,
+        tmp_path
+        / 'root'
+        / 'data'
+        / 'EOS_PALEOS_MgSiO3_unified'
+        / 'paleos_mgsio3_eos_table_pt.dat',
+    )
+    monkeypatch.setattr(acc, 'get_zalmoxis_root', lambda: str(tmp_path / 'root'))
+    monkeypatch.setattr(acc, 'N_P', 6)
+    monkeypatch.setattr(acc, 'N_S', 40)
+    monkeypatch.setattr(acc, 'p_max', lambda mass: 1.0e10 * mass)
+    monkeypatch.setattr(acc, 'paleos_liquidus', lambda P: 1800.0)
+    monkeypatch.setattr(acc, 'derive_solidus_from_liquidus', lambda liq, mzf: lambda P: 1500.0)
+    want = _generate_from(solid, liquid, ext, p_range=(1.0e5, 1.0e10))
+    out = tmp_path / 'table.md'
+    acc.main(['--masses', '1', '0.5', '--out', str(out)])
+    rows = out.read_text().splitlines()
+    added = want['S_solid'].size - 40
+    assert len(rows) == 4 and added > 0
+    S0, S1 = want['S_solid'][:2]
+    assert rows[2].startswith(f'| 1 | {added} | {S0:.1f}, {S1:.1f} | ')
+    assert rows[3].startswith('| 0.5 | ')
+    assert rows[2].endswith(' | none | none |')
+    printed = capsys.readouterr().out
+    assert 'M = 1: ' in printed and 'not measured: none' in printed
+    assert printed.endswith(out.read_text())
