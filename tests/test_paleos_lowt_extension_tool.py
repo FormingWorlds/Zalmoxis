@@ -84,7 +84,10 @@ def test_point_where_paleos_raises_is_left_out(tmp_path, method, exc):
     table = _paleos(tmp_path, [6, 6, 6, 6])
     out = tmp_path / 'ext.dat'
     eos = _StubEoS(raise_at=(_P[1], _T[2]), method=method, exc=exc)
-    n = tool.write_extension(eos, table, out, [], t_min=150.4)
+    try:
+        n = tool.write_extension(eos, table, out, [], t_min=150.4)
+    except Exception as err:  # the point must be left out, not stop the converter
+        pytest.fail(f'a non-converging point stopped the converter: {err!r}')
     assert n == _P.size * 7 - 1
     assert f'{_P[1]:.8e} {_T[2]:.8e}' not in out.read_text()
 
