@@ -184,7 +184,9 @@ def main(argv=None):
         '--ext', type=Path, help='the extension table (default: next to the solid table)'
     )
     ap.add_argument('--masses', type=float, nargs='+', default=MASSES)
-    ap.add_argument('--out', type=Path, help='Markdown file to write (default: print)')
+    ap.add_argument(
+        '--out', type=Path, help='Markdown file to write; the table is printed in any case'
+    )
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.WARNING)
     d = Path(get_zalmoxis_root()) / 'data'

@@ -438,7 +438,7 @@ def test_command_line_header_holds_the_input_hashes_and_versions(tmp_path, clean
     )
     assert commit and len(commit) == 40
     assert (
-        f'# Zalmoxis commit of the converter: {commit}' + dirty * ' (uncommitted changes)'
+        f'# Zalmoxis commit of the converter: {commit}' + bool(dirty) * ' (uncommitted changes)'
         in head
     )
     pkg = Path(zalmoxis.__file__).resolve().parent
