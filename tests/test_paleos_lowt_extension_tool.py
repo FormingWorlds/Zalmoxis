@@ -135,9 +135,14 @@ def test_command_line_needs_a_commit_outside_a_git_checkout(tmp_path, capsys):
     """A plain folder as --paleos-src needs --paleos-commit."""
     src = tmp_path / 'paleos_src'
     src.mkdir()
+    table = _paleos(tmp_path, [6, 6, 6, 6])
     with pytest.raises(SystemExit):
-        tool.main(['--paleos-src', str(src), '--table', 'x', '--out', str(tmp_path / 'o')])
-    assert 'is not the top of a git checkout' in capsys.readouterr().err
+        tool.main(
+            ['--paleos-src', str(src), '--table', str(table), '--out', str(tmp_path / 'o')]
+        )
+    err = capsys.readouterr().err
+    assert 'is not the top of a git checkout' in err
+    assert 'give --paleos-commit with --allow-unverified-paleos' in err
     assert not (tmp_path / 'o').exists()
 
 
@@ -194,6 +199,9 @@ def clean_import(monkeypatch):
     yield monkeypatch
     for k in [k for k in sys.modules if k.split('.')[0] == 'paleos' and k not in before]:
         del sys.modules[k]
+
+
+_GIVEN = ('--paleos-commit', '654aca9', '--allow-unverified-paleos')
 
 
 def _main(src, table, out, *extra):
@@ -345,9 +353,7 @@ def test_command_line_refuses_an_extension_with_no_rows(tmp_path, capsys, clean_
             tmp_path / 'o',
             '--t-min',
             '150.4',
-            '--paleos-commit',
-            '654aca9',
-            '--allow-unverified-paleos',
+            *_GIVEN,
             '--p-max',
             '1e5',
         )
@@ -362,14 +368,7 @@ def test_command_line_refuses_a_missing_output_folder_first(tmp_path, capsys, cl
     _stub_paleos(src)
     out = tmp_path / 'absent' / 'ext.dat'
     with pytest.raises(BaseException) as exc:
-        _main(
-            src,
-            _paleos(tmp_path, [6, 6, 6, 6]),
-            out,
-            '--paleos-commit',
-            '654aca9',
-            '--allow-unverified-paleos',
-        )
+        _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, *_GIVEN)
     assert exc.type is SystemExit, repr(exc.value)
     assert 'output folder' in capsys.readouterr().err
     assert not out.parent.exists()
@@ -382,16 +381,7 @@ def test_command_line_refuses_an_extension_that_does_not_merge(tmp_path, capsys,
     _stub_paleos(src, ds=1.0)
     out = tmp_path / 'ext.dat'
     with pytest.raises(SystemExit):
-        _main(
-            src,
-            _paleos(tmp_path, [6, 6, 6, 6]),
-            out,
-            '--t-min',
-            '150.4',
-            '--paleos-commit',
-            '654aca9',
-            '--allow-unverified-paleos',
-        )
+        _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, '--t-min', '150.4', *_GIVEN)
     assert 'does not merge under the table' in capsys.readouterr().err
     assert not out.exists()
 
@@ -415,41 +405,82 @@ def test_grid_refuses_a_table_with_one_temperature(tmp_path, cells):
 
 
 def test_command_line_header_holds_the_input_hashes_and_versions(tmp_path, clean_import):
-    """The header names sha256 of the data lines of the extended table and of the PALEOS
-    mgsio3_eos.py that wrote the values, the numpy, scipy, sympy and Python versions, and the
-    Zalmoxis commit of the converter with its dirty state."""
+    """The header names sha256 of the data lines of the extended table, of the PALEOS
+    mgsio3_eos.py and of the converter, the numpy, scipy, sympy and Python versions, the
+    Zalmoxis commit of the converter and the Zalmoxis package that checks the merge."""
     import hashlib
-    import importlib.metadata
     import platform
     from pathlib import Path
 
     import scipy
+    import sympy
+
+    import zalmoxis
 
     src = tmp_path / 'paleos_src'
     src.mkdir()
     _stub_paleos(src)
     table, out = _paleos(tmp_path, [6, 6, 6, 6]), tmp_path / 'ext.dat'
-    _main(
-        src,
-        table,
-        out,
-        '--t-min',
-        '150.4',
-        '--paleos-commit',
-        '654aca9',
-        '--allow-unverified-paleos',
-    )
+    _main(src, table, out, '--t-min', '150.4', *_GIVEN)
     data = ''.join(x for x in table.read_text().splitlines(True) if not x.startswith('#'))
     head = [x for x in out.read_text().splitlines() if x.startswith('#')]
     assert f'# Table data sha256: {hashlib.sha256(data.encode()).hexdigest()}' in head
     eos_py = (src / 'paleos' / 'mgsio3_eos.py').read_bytes()
     assert f'# paleos/mgsio3_eos.py sha256: {hashlib.sha256(eos_py).hexdigest()}' in head
-    sympy = importlib.metadata.version('sympy')
-    versions = f'numpy {np.__version__}, scipy {scipy.__version__}, sympy {sympy}'
+    versions = f'numpy {np.__version__}, scipy {scipy.__version__}, sympy {sympy.__version__}'
     assert f'# {versions}, Python {platform.python_version()}' in head
-    tool_dir = Path(tool.__file__).resolve().parent
-    zal = _git(tool_dir, 'describe', '--always', '--dirty', '--abbrev=40')
-    assert f'# Zalmoxis commit of the converter: {zal}' in head
+    conv = Path(tool.__file__).resolve()
+    assert f'# Converter sha256: {hashlib.sha256(conv.read_bytes()).hexdigest()}' in head
+    root = conv.parents[2]
+    commit, dirty = (
+        tool._git(root, 'rev-parse', 'HEAD'),
+        tool._git(root, 'status', '--porcelain'),
+    )
+    assert commit and len(commit) == 40
+    assert (
+        f'# Zalmoxis commit of the converter: {commit}' + dirty * ' (uncommitted changes)'
+        in head
+    )
+    pkg = Path(zalmoxis.__file__).resolve().parent
+    assert f'# Zalmoxis package of the merge check: {zalmoxis.__version__} ({pkg})' in head
+
+
+@pytest.mark.parametrize(
+    ('top', 'status', 'want'),
+    [
+        ('root', '', '{commit}'),
+        ('root', ' M x.py', '{commit} (uncommitted changes)'),
+        ('root', '?? new.py', '{commit} (uncommitted changes)'),
+        ('other', '', 'unknown (not a git checkout)'),
+        (None, '', 'unknown (not a git checkout)'),
+        ('root', None, 'unknown (not a git checkout)'),
+    ],
+)
+def test_command_line_header_names_the_converter_commit_only_in_its_own_checkout(
+    tmp_path, clean_import, monkeypatch, top, status, want
+):
+    """The commit is HEAD of the checkout whose top is the Zalmoxis root of the converter,
+    marked for uncommitted or untracked files; another repository, no git or a failed status
+    give 'unknown'."""
+    from pathlib import Path
+
+    root = Path(tool.__file__).resolve().parents[2]
+    real = tool._git
+    tops = {'root': str(root), 'other': str(tmp_path), None: None}
+
+    def fake(path, *args):
+        if Path(path).resolve() != root:
+            return real(path, *args)
+        return {'--show-toplevel': tops[top], 'HEAD': 'c' * 40, '--porcelain': status}[args[-1]]
+
+    monkeypatch.setattr(tool, '_git', fake)
+    src = tmp_path / 'paleos_src'
+    src.mkdir()
+    _stub_paleos(src)
+    out = tmp_path / 'ext.dat'
+    _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, '--t-min', '150.4', *_GIVEN)
+    line = '# Zalmoxis commit of the converter: ' + want.format(commit='c' * 40)
+    assert line in out.read_text().splitlines()
 
 
 def test_command_line_names_a_left_out_point_that_stops_the_merge(
@@ -462,16 +493,7 @@ def test_command_line_names_a_left_out_point_that_stops_the_merge(
     _stub_paleos(src, raise_at=(_P[1], _T[2]))
     out = tmp_path / 'ext.dat'
     with pytest.raises(SystemExit) as exc:
-        _main(
-            src,
-            _paleos(tmp_path, [6, 6, 6, 6]),
-            out,
-            '--t-min',
-            '150.4',
-            '--paleos-commit',
-            '654aca9',
-            '--allow-unverified-paleos',
-        )
+        _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, '--t-min', '150.4', *_GIVEN)
     assert exc.value.code not in (0, None)
     err = capsys.readouterr().err
     assert 'does not merge under the table' in err
@@ -487,16 +509,7 @@ def test_command_line_reports_a_left_out_lowest_node_and_keeps_the_file(
     src.mkdir()
     _stub_paleos(src, raise_at=(_P[1], _T[0]))
     table, out = _paleos(tmp_path, [6, 6, 6, 6]), tmp_path / 'ext.dat'
-    _main(
-        src,
-        table,
-        out,
-        '--t-min',
-        '150.4',
-        '--paleos-commit',
-        '654aca9',
-        '--allow-unverified-paleos',
-    )
+    _main(src, table, out, '--t-min', '150.4', *_GIVEN)
     assert '# Left out: 1 point (no convergence or not finite)' in out.read_text().splitlines()
     printed = capsys.readouterr().out
     assert f'left out 1 point: P = {_P[1]:.6e} Pa, T = {_T[0]:.6e} K' in printed
@@ -507,7 +520,7 @@ def test_command_line_refuses_a_stale_pinned_table_and_writes_no_file(
     tmp_path, clean_import, monkeypatch
 ):
     """A --table under a registry name whose md5 is not the pinned one raises StaleTableError
-    before PALEOS is evaluated, so no output is written."""
+    before PALEOS is imported, so no output is written."""
     from zalmoxis.eos import registry_guard
     from zalmoxis.eos.registry_guard import StaleTableError
 
@@ -515,17 +528,13 @@ def test_command_line_refuses_a_stale_pinned_table_and_writes_no_file(
     src = tmp_path / 'paleos_src'
     _git_repo(src)
     _stub_paleos(src)
+    (src / 'paleos' / '__init__.py').write_text("raise AssertionError('PALEOS was imported')\n")
     _git(src, 'add', 'paleos')
     _git(src, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'stub')
     table = _paleos(tmp_path, [6, 6, 6, 6], name='paleos_mgsio3_tables_pt_proteus_solid.dat')
     pins = {table.name: {'interior.eos.paleos_mgsio3': '0' * 32}}
     monkeypatch.setattr(registry_guard, '_pins', lambda: pins)
     registry_guard._HASHES.clear()
-
-    def no_write(*args):
-        raise AssertionError('the stale table reached write_extension')
-
-    monkeypatch.setattr(tool, 'write_extension', no_write)
     out = tmp_path / 'ext.dat'
     with pytest.raises(StaleTableError, match=table.name):
         _main(src, table, out, '--t-min', '150.4')
@@ -546,16 +555,7 @@ def test_command_line_removes_the_output_on_any_error_after_writing(
     monkeypatch.setattr(eos_export, 'load_paleos_with_lowt_extension', broken)
     out = tmp_path / 'ext.dat'
     with pytest.raises(KeyboardInterrupt):
-        _main(
-            src,
-            _paleos(tmp_path, [6, 6, 6, 6]),
-            out,
-            '--t-min',
-            '150.4',
-            '--paleos-commit',
-            '654aca9',
-            '--allow-unverified-paleos',
-        )
+        _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, '--t-min', '150.4', *_GIVEN)
     assert not out.exists()
 
 
@@ -568,7 +568,7 @@ def test_command_line_refuses_a_dirty_checkout_by_default(tmp_path, capsys, clea
     with pytest.raises(SystemExit) as exc:
         _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, '--t-min', '150.4')
     assert exc.value.code not in (0, None)
-    assert 'uncommitted changes' in capsys.readouterr().err
+    assert 'uncommitted or untracked files' in capsys.readouterr().err
     assert not out.exists()
 
 
@@ -582,5 +582,66 @@ def test_command_line_refuses_a_given_commit_by_default(tmp_path, capsys, clean_
     with pytest.raises(SystemExit) as exc:
         _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, '--paleos-commit', '654aca9')
     assert exc.value.code not in (0, None)
-    assert '--allow-unverified-paleos' in capsys.readouterr().err
+    assert '--paleos-commit cannot be checked' in capsys.readouterr().err
     assert not out.exists()
+
+
+def test_a_failed_run_keeps_an_earlier_output_and_leaves_no_temporary_file(
+    tmp_path, capsys, clean_import
+):
+    """A run that fails after the write keeps the output of an earlier run unchanged."""
+    src = tmp_path / 'paleos_src'
+    src.mkdir()
+    _stub_paleos(src)
+    table, out = _paleos(tmp_path, [6, 6, 6, 6]), tmp_path / 'ext.dat'
+    _main(src, table, out, '--t-min', '150.4', *_GIVEN)
+    before = out.read_text()
+    with pytest.raises(SystemExit):
+        _main(src, table, out, '--t-min', '150.4', '--p-max', '1e5', *_GIVEN)
+    assert 'no extension rows' in capsys.readouterr().err
+    assert out.read_text() == before
+    assert sorted(p.name for p in tmp_path.iterdir()) == ['ext.dat', 'paleos.dat', 'paleos_src']
+
+
+def test_an_error_during_the_write_leaves_no_partial_output(
+    tmp_path, clean_import, monkeypatch
+):
+    """A write that stops part way (a full disk) leaves no output and no temporary file."""
+    src = tmp_path / 'paleos_src'
+    src.mkdir()
+    _stub_paleos(src)
+
+    def partial(eos, table_file, out_file, header, t_min, p_max):
+        from pathlib import Path
+
+        Path(out_file).write_text('# partial\n')
+        raise OSError(28, 'No space left on device')
+
+    monkeypatch.setattr(tool, 'write_extension', partial)
+    out = tmp_path / 'ext.dat'
+    with pytest.raises(OSError, match='No space left'):
+        _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, '--t-min', '150.4', *_GIVEN)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ['paleos.dat', 'paleos_src']
+
+
+def test_command_line_refuses_an_output_that_is_the_table(tmp_path, capsys, clean_import):
+    """--out naming the --table file stops the tool before anything is written."""
+    src = tmp_path / 'paleos_src'
+    src.mkdir()
+    _stub_paleos(src)
+    table = _paleos(tmp_path, [6, 6, 6, 6])
+    before = table.read_text()
+    with pytest.raises(SystemExit):
+        _main(src, table, tmp_path / '.' / table.name, *_GIVEN)
+    assert '--out must not be the --table file' in capsys.readouterr().err
+    assert table.read_text() == before
+
+
+def test_command_line_refuses_a_missing_table(tmp_path, capsys, clean_import):
+    src = tmp_path / 'paleos_src'
+    src.mkdir()
+    _stub_paleos(src)
+    with pytest.raises(SystemExit):
+        _main(src, tmp_path / 'absent.dat', tmp_path / 'ext.dat', *_GIVEN)
+    assert 'absent.dat is not a file' in capsys.readouterr().err
+    assert not (tmp_path / 'ext.dat').exists()
