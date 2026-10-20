@@ -14,9 +14,12 @@ Usage::
     python -m tools.converters.paleos_lowt_extension --paleos-src <PALEOS checkout> \\
         --table <paleos_mgsio3_tables_pt_proteus_solid.dat> --out <extension.dat>
 
-The header names the PALEOS commit of ``--paleos-src`` (a commit given with
-``--paleos-commit`` is written as not verified), sha256 of the data lines of the extended
-table and of ``paleos/mgsio3_eos.py``, and the numpy and scipy versions. The merge checks on
+A ``--table`` under a registry file name that is not its pinned release stops the tool before
+it writes (StaleTableError). A ``--paleos-src`` with uncommitted changes, or a commit given with
+``--paleos-commit`` that the tool cannot check, is refused unless ``--allow-unverified-paleos``
+is set; the header then records that state. The header names the PALEOS commit, sha256 of the
+data lines of the extended table and of ``paleos/mgsio3_eos.py``, the numpy, scipy, sympy and
+Python versions, and the Zalmoxis commit of the converter. The merge checks on
 every extended row that the extension and the table agree to 1e-6 at the seam node, the
 table minimum; it does not test that both come from the same PALEOS commit.
 
@@ -24,7 +27,7 @@ A point where PALEOS does not converge or gives a non-finite property is left ou
 and the output give the number of left-out points and each (P, T). The merge accepts a point
 left out at the lowest node of a row (the row then starts one node higher) and refuses one
 inside a row; the command line then removes the output and stops with an error that names the
-left-out points.
+left-out points. Any error after the write removes the output.
 
 ``MgSiO3EoS`` builds every PALEOS MgSiO3 phase, the liquid Wolf18 model (RTpress, compiled
 with sympy) too, so its dependencies must be installed although no extension point is liquid.
@@ -35,6 +38,8 @@ from __future__ import annotations
 import argparse
 import datetime
 import hashlib
+import importlib.metadata
+import platform
 import re
 import subprocess
 import sys
@@ -136,6 +141,14 @@ def write_extension(eos, table_file, out_file, header, t_min=50.0, p_max=12.0e9)
     return len(rows), left
 
 
+def _version(dist):
+    """Installed version of ``dist``, or 'not installed'."""
+    try:
+        return importlib.metadata.version(dist)
+    except importlib.metadata.PackageNotFoundError:
+        return 'not installed'
+
+
 def _git(path, *args):
     """Output of ``git -C path args``, or None when git fails or is not installed."""
     try:
@@ -156,15 +169,26 @@ def main(argv=None):
     ap.add_argument(
         '--paleos-commit', help='commit of --paleos-src when it is not a git checkout'
     )
+    ap.add_argument(
+        '--allow-unverified-paleos',
+        action='store_true',
+        help='accept a PALEOS checkout with uncommitted changes or a --paleos-commit that '
+        'cannot be checked; the header records the state',
+    )
     args = ap.parse_args(argv)
     if not args.out.parent.is_dir():
         ap.error(f'the output folder {args.out.parent} does not exist')
+    from zalmoxis.eos.registry_guard import verify
+
+    verify(str(args.table))
 
     src = args.paleos_src.resolve()
     commit = args.paleos_commit
     if commit is not None:
         if not re.fullmatch(r'[0-9a-fA-F]{7,64}', commit):
             ap.error(f'--paleos-commit {commit!r} is not a commit hash')
+        if not args.allow_unverified_paleos:
+            ap.error('--paleos-commit cannot be checked; add --allow-unverified-paleos')
         commit = commit.lower() + ' (given, not verified)'
     else:
         top = _git(src, 'rev-parse', '--show-toplevel')
@@ -175,6 +199,10 @@ def main(argv=None):
             ap.error('--paleos-src has no commit; give --paleos-commit')
         if status is None:
             ap.error('git status failed in --paleos-src')
+        if status and not args.allow_unverified_paleos:
+            ap.error(
+                '--paleos-src has uncommitted changes; commit them or add --allow-unverified-paleos'
+            )
         if status:
             commit += ' (uncommitted changes)'
     sys.path.insert(0, str(src))
@@ -186,31 +214,38 @@ def main(argv=None):
     import scipy
 
     data = ''.join(x for x in args.table.read_text().splitlines(True) if not x.startswith('#'))
+    zal = _git(
+        Path(__file__).resolve().parent, 'describe', '--always', '--dirty', '--abbrev=40'
+    )
     header = [
         'PALEOS MgSiO3 solid low-temperature extension',
         f'PALEOS commit: {commit}',
         f'Table data sha256: {hashlib.sha256(data.encode()).hexdigest()}',
         f'paleos/mgsio3_eos.py sha256: {hashlib.sha256(Path(origin).read_bytes()).hexdigest()}',
-        f'numpy {np.__version__}, scipy {scipy.__version__}',
+        f'numpy {np.__version__}, scipy {scipy.__version__}, sympy {_version("sympy")}, '
+        f'Python {platform.python_version()}',
+        f'Zalmoxis commit of the converter: {zal or "unknown (not a git checkout)"}',
         f'Extends: {args.table.name}, rows 0 < P < {args.p_max:.6e} Pa, '
         f'T from the table minimum down to the first node <= {args.t_min:g} K',
         f'Generated: {datetime.datetime.now(datetime.UTC):%Y-%m-%d %H:%M:%S} UTC',
     ]
     n, left = write_extension(MgSiO3EoS(), args.table, args.out, header, args.t_min, args.p_max)
     where = ', '.join(f'P = {P:.6e} Pa, T = {T:.6e} K' for P, T in left)
-    if n == 0:
-        args.out.unlink()
-        ap.error(f'no extension rows: no table row has 0 < P < {args.p_max:g} Pa')
-    from zalmoxis.eos_export import load_paleos_with_lowt_extension
-
     try:
-        load_paleos_with_lowt_extension(args.table, args.out)
-    except ValueError as exc:
-        args.out.unlink()
-        ap.error(
-            f'the extension does not merge under the table: {exc}'
-            + (f'; left-out points: {where}' if left else '')
-        )
+        if n == 0:
+            ap.error(f'no extension rows: no table row has 0 < P < {args.p_max:g} Pa')
+        from zalmoxis import eos_export
+
+        try:
+            eos_export.load_paleos_with_lowt_extension(args.table, args.out)
+        except ValueError as exc:
+            ap.error(
+                f'the extension does not merge under the table: {exc}'
+                + (f'; left-out points: {where}' if left else '')
+            )
+    except BaseException:
+        args.out.unlink(missing_ok=True)
+        raise
     print(f'wrote {n} rows to {args.out}')
     if left:
         print(f'left out {len(left)} point{"" if len(left) == 1 else "s"}: {where}')
