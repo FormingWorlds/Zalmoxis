@@ -82,10 +82,9 @@ def test_an_annotated_pin_is_read(tmp_path, monkeypatch):
     [
         (404, 4, 'PALEOS main not found'),
         (422, 4, 'PALEOS main not found'),
-        (403, 3, 'PALEOS main could not be read'),
         (500, 3, 'PALEOS main could not be read'),
     ],
-    ids=['404', '422', '403', '500'],
+    ids=['404', '422', '500'],
 )
 def test_github_codes_map_to_their_exit(capsys, code, exit_code, text):
     """404 and 422 (no repository or branch) fail with exit 4; a 403 rate limit or a 5xx
@@ -155,3 +154,26 @@ def test_a_pin_that_cannot_be_read_exits_2(tmp_path, monkeypatch, capsys, source
         pytest.fail(f'main raised {exc!r} instead of exiting 2')
     assert code == 2
     assert capsys.readouterr().out.startswith('PALEOS_TESTED_SHA could not be read')
+
+
+@pytest.mark.parametrize(
+    'code, headers, exit_code, text',
+    [
+        (403, {'X-RateLimit-Remaining': '0'}, 3, 'PALEOS main could not be read'),
+        (403, {'X-RateLimit-Remaining': '42'}, 5, 'GitHub refused the request'),
+        (403, {}, 5, 'GitHub refused the request'),
+        (401, {}, 5, 'GitHub refused the request'),
+    ],
+    ids=['403 rate limit', '403 with requests left', '403 without the header', '401'],
+)
+def test_a_refused_request_fails_unless_it_is_the_rate_limit(
+    capsys, code, headers, exit_code, text
+):
+    """A 401, or a 403 that is not a used-up rate limit, is a token or permission fault that
+    stays: exit 5 fails the workflow; a 403 with no requests left only warns with exit 3."""
+
+    def fetch():
+        raise urllib.error.HTTPError(check._MAIN, code, 'x', headers, None)
+
+    assert check.main(fetch=fetch) == exit_code
+    assert capsys.readouterr().out.startswith(text)

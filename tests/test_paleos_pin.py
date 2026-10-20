@@ -395,16 +395,16 @@ def test_a_tracked_symlink_leaves_the_key_clean(history, monkeypatch):
     assert _dirty_key(repo, monkeypatch).startswith(head + '-dirty-')
 
 
-def test_an_eol_filter_leaves_a_fresh_checkout_clean(history, monkeypatch):
-    """With eol=crlf the files on disk differ from the blobs by line ends only; git's own
-    filters decide, so the checkout is clean."""
+def test_an_eol_filter_makes_a_fresh_checkout_dirty(history, monkeypatch):
+    """With eol=crlf the files on disk differ from the blobs by line ends; files are hashed
+    without git filters, so the checkout counts as changed."""
     repo, _ = history
     files = {'.gitattributes': '*.py text eol=crlf\n', 'paleos/eos.py': 'A = 1\n'}
     head = _commit_files(repo, files, 'eol')
     (repo / 'paleos' / 'eos.py').unlink()
     _git(repo, 'checkout', '--', 'paleos/eos.py')
     assert (repo / 'paleos' / 'eos.py').read_bytes().endswith(b'\r\n')
-    assert _dirty_key(repo, monkeypatch) == head
+    assert _dirty_key(repo, monkeypatch).startswith(head + '-dirty-')
 
 
 def test_a_deleted_tracked_module_makes_the_key_dirty(history, monkeypatch):
@@ -590,3 +590,85 @@ def test_a_committed_path_that_is_not_utf8_gives_a_version_error(history):
         err = exc
     assert isinstance(err, PaleosVersionError), repr(err)
     assert 'differ from its commit' in str(err)
+
+
+@pytest.mark.parametrize('kind', ['symlink', 'nested repository'])
+def test_an_untracked_directory_in_the_package_changes_the_key(
+    history, monkeypatch, tmp_path, kind
+):
+    """An untracked link to a directory or a nested repository under paleos/ can hold code
+    Python imports: it counts as a change."""
+    repo, c = history
+    ext = repo / 'paleos' / 'ext'
+    if kind == 'symlink':
+        (tmp_path / 'outside').mkdir()
+        (tmp_path / 'outside' / 'mod.py').write_text('K = 1\n')
+        ext.symlink_to(tmp_path / 'outside', target_is_directory=True)
+    else:
+        ext.mkdir()
+        (ext / 'mod.py').write_text('K = 1\n')
+        _git(ext, 'init', '-q')
+    assert _dirty_key(repo, monkeypatch).startswith(c['new'] + '-dirty-')
+
+
+def test_a_package_below_the_top_level_is_compared(tmp_path):
+    """With paleos/ under src/, the files are hashed by their path in the repository."""
+    repo = tmp_path / 'PALEOS'
+    (repo / 'src' / 'paleos').mkdir(parents=True)
+    _git(repo, 'init', '-q')
+    (repo / 'src' / 'paleos' / '__init__.py').write_text('')
+    (repo / 'src' / 'paleos' / 'eos.py').write_text('A = 1\n')
+    _git(repo, 'add', '.')
+    _git(
+        repo,
+        *('-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false'),
+        *('-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'src'),
+    )
+    head = _git(repo, 'rev-parse', 'HEAD')
+    try:
+        clean = paleos_api._changes_hash(repo / 'src', head)
+    except PaleosVersionError as exc:
+        pytest.fail(f'a src layout is refused: {exc}')
+    assert clean is None
+    (repo / 'src' / 'paleos' / 'eos.py').write_text('A = 2\n')
+    assert paleos_api._changes_hash(repo / 'src', head) is not None
+
+
+def test_a_clean_filter_from_the_environment_does_not_hide_an_edit(
+    history, monkeypatch, tmp_path
+):
+    """A clean filter that git config from the environment applies cannot map edited code
+    back to its commit: files are hashed without filters."""
+    repo, c = history
+    attributes = tmp_path / 'attributes'
+    attributes.write_text('*.py filter=hide\n')
+    for i, (key, value) in enumerate(
+        [('filter.hide.clean', 'sed s/nex/new/'), ('core.attributesFile', str(attributes))]
+    ):
+        monkeypatch.setenv(f'GIT_CONFIG_KEY_{i}', key)
+        monkeypatch.setenv(f'GIT_CONFIG_VALUE_{i}', value)
+    monkeypatch.setenv('GIT_CONFIG_COUNT', '2')
+    (repo / 'paleos' / 'eos.py').write_text('nex')
+    assert _dirty_key(repo, monkeypatch).startswith(c['new'] + '-dirty-')
+
+
+def test_a_paleos_imported_before_the_first_key_is_covered_from_then_on(
+    history, monkeypatch, caplog
+):
+    """When paleos is imported before the first key, that key is recorded with a warning, so
+    an edit after it is refused."""
+    import sys
+
+    repo, c = history
+    monkeypatch.delitem(sys.modules, 'paleos', raising=False)
+    monkeypatch.syspath_prepend(str(repo))
+    monkeypatch.setattr(paleos_api, '_KEY_AT_IMPORT', {})
+    import paleos  # noqa: F401
+
+    with caplog.at_level('WARNING', logger=paleos_api.logger.name):
+        assert paleos_api.paleos_installed_sha() == c['new']
+    assert paleos_api._KEY_AT_IMPORT == {'key': c['new']}
+    assert 'imported before' in caplog.text
+    (repo / 'paleos' / 'eos.py').write_text('edited later')
+    with pytest.raises(PaleosVersionError, match='changed on disk'):
+        paleos_api._same_code_as_import(paleos_api.paleos_installed_sha())
