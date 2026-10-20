@@ -228,7 +228,8 @@ def _generate_from(solid, liquid, ext, p_range=(1.0e6, 1.0e10), n_S=40):
 
 
 class TestLowTExtensionThatAddsNothing:
-    """An extension that adds no solid entropy node says so instead of passing silently."""
+    """An extension that adds no solid entropy node says so instead of passing silently, and
+    states how many cells it still fills."""
 
     def _run(self, tmp_path, caplog, ext, n_S=40):
         solid, liquid, _ = _gen_tables(tmp_path)
@@ -237,13 +238,15 @@ class TestLowTExtensionThatAddsNothing:
         with caplog.at_level(logging.INFO, logger='zalmoxis.eos_export'):
             out = _generate_from(solid, liquid, ext, n_S=n_S)
         assert np.array_equal(out['S_solid'], base['S_solid'])
-        return [r for r in caplog.records if r.levelno == logging.WARNING]
+        changed = int(np.sum(out['solid']['temperature'] != base['solid']['temperature']))
+        return [r for r in caplog.records if r.levelno == logging.WARNING], changed
 
     def test_an_extension_with_only_the_seam_temperature_warns(self, tmp_path, caplog):
         """An extension whose rows hold only the 300 K seam node reaches no lower temperature."""
         ext = _write(tmp_path / 'seam.dat', [(P, _TG[6]) for P in _P])
-        warns = self._run(tmp_path, caplog, ext)
+        warns, changed = self._run(tmp_path, caplog, ext)
         assert any('reaches no temperature below' in r.getMessage() for r in warns)
+        assert changed == 0
 
     def test_an_extension_with_no_finite_entropy_warns(self, tmp_path, caplog, monkeypatch):
         """An extended entropy that is NaN at every sampled output point adds no node."""
@@ -264,15 +267,25 @@ class TestLowTExtensionThatAddsNothing:
 
         monkeypatch.setattr(eos_export, 'load_paleos_with_lowt_extension', load)
         monkeypatch.setattr(eos_export, '_build_interpolator', build)
-        warns = self._run(tmp_path, caplog, _gen_tables(tmp_path)[2])
+        warns, changed = self._run(tmp_path, caplog, _gen_tables(tmp_path)[2])
         assert 's' in seen
+        assert changed == 0
         assert any('gives no finite entropy at the output' in r.getMessage() for r in warns)
 
     def test_an_extension_too_shallow_for_one_node_warns(self, tmp_path, caplog):
-        """One temperature step below 300 K lowers the entropy by less than one node step."""
+        """One temperature step below 300 K lowers the entropy by less than one node step: the
+        axis keeps its nodes, but the extension still fills cells that PALEOS cannot invert, and
+        the log gives their number."""
         ext = _write(tmp_path / 'one.dat', [(P, T) for P in _P for T in _TG[5:7]])
-        warns = self._run(tmp_path, caplog, ext, n_S=4)
-        assert any('no solid entropy node fits below' in r.getMessage() for r in warns)
+        warns, changed = self._run(tmp_path, caplog, ext, n_S=4)
+        assert changed > 0
+        assert any(
+            'no solid entropy node fits below' in r.getMessage()
+            and 'still fills' in r.getMessage()
+            for r in warns
+        )
+        msgs = [r.getMessage() for r in caplog.records]
+        assert any(f'Low-T extension: {changed} solid cells' in m for m in msgs), msgs
 
     def test_an_extension_that_adds_nodes_logs_the_new_minimum(self, tmp_path, caplog):
         """The added nodes and the new lowest solid entropy are logged at INFO, with no warning."""
@@ -281,6 +294,9 @@ class TestLowTExtensionThatAddsNothing:
             out = _generate_from(solid, liquid, ext)
         msgs = [r.getMessage() for r in caplog.records]
         assert any(f'down to {out["S_solid"][0]:.0f}' in m for m in msgs)
+        assert any(
+            m.startswith(f'Entropy ranges: solid [{out["S_solid"][0]:.0f},') for m in msgs
+        )
         assert not [
             r
             for r in caplog.records
