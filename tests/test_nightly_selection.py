@@ -28,21 +28,22 @@ def _marked(tests_dir):
     return {line.split('::')[0] for line in done.stdout.splitlines() if '::' in line}
 
 
-def _unselected(tests_dir, workflow):
-    """Marked files (``_marked``) that no nightly job whose select takes accept_solves names."""
+def _unselected(marked, workflow):
+    """Files of ``marked`` that no nightly job whose select takes accept_solves names."""
     named = set()
     for job in re.split(r'\n\s*- suite:', workflow):
         select = re.search(r'select:(.*)', job)
         if select and re.search(r'(?<!not )\baccept_solves\b', select.group(1)):
             named |= set(re.findall(r'tests/([\w/]+\.py)', job))
-    return sorted(_marked(tests_dir) - named)
+    return sorted(marked - named)
 
 
 @pytest.mark.unit
 def test_every_accept_solves_file_runs_in_a_nightly_job():
     workflow = (ROOT / '.github' / 'workflows' / 'nightly.yml').read_text()
-    assert {'test_invariants.py', 'test_accepted_on.py'} <= _marked(ROOT / 'tests')
-    assert _unselected(ROOT / 'tests', workflow) == []
+    marked = _marked(ROOT / 'tests')
+    assert {'test_invariants.py', 'test_accepted_on.py'} <= marked
+    assert _unselected(marked, workflow) == []
 
 
 @pytest.mark.unit
@@ -53,7 +54,7 @@ def test_a_marked_file_outside_the_named_jobs_is_found(tmp_path):
             'import pytest\n\n@pytest.mark.accept_solves\ndef test_x(): pass\n'
         )
     (tmp_path / 'test_plain.py').write_text('def test_y(): pass\n')
-    assert _unselected(tmp_path, workflow) == ['test_third.py']
+    assert _unselected(_marked(tmp_path), workflow) == ['test_third.py']
 
 
 _FORMS = {
@@ -74,4 +75,16 @@ def test_every_form_of_the_marker_is_found(tmp_path, form):
     (tmp_path / name).parent.mkdir(exist_ok=True)
     (tmp_path / name).write_text(_FORMS[form])
     (tmp_path / 'test_plain.py').write_text('def test_y():\n    pass\n')
-    assert _unselected(tmp_path, workflow) == [name]
+    assert _unselected(_marked(tmp_path), workflow) == [name]
+
+
+@pytest.mark.unit
+def test_a_marked_wolfbower_test_runs_in_the_wolfbower_job(tmp_path):
+    """The accept_solves jobs select accept_solves and not wolfbower; a test with both marks
+    runs in the wolfbower job, so it is not reported."""
+    workflow = (ROOT / '.github' / 'workflows' / 'nightly.yml').read_text()
+    (tmp_path / 'test_third.py').write_text(
+        'import pytest\n\n\n@pytest.mark.accept_solves\n@pytest.mark.wolfbower\n'
+        'def test_x():\n    pass\n'
+    )
+    assert _unselected(_marked(tmp_path), workflow) == []

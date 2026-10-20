@@ -503,6 +503,8 @@ def test_a_planet_of_core_only_passes_every_invariant():
     """core_mass_fraction 1.0: every node is core, with no mantle node."""
     r = _run(_cfg(wall_timeout=1e6, core_mass_fraction=1.0))
     assert r['converged'] and r['cmb_mass'] == pytest.approx(earth_mass, rel=1e-12)
+    # passes only with a mass surplus: no node reaches cmb_mass on a deficit
+    assert r['mass_enclosed'][-1] >= r['cmb_mass']
 
 
 @pytest.mark.smoke
@@ -641,8 +643,9 @@ def test_main_checks_a_retry_with_its_own_integration_tolerances(monkeypatch):
         relative_tolerance=1e-9,
         absolute_tolerance=1e-10,
     )
-    _run(cfg)
+    r = _run(cfg)
     assert seen == [(pytest.approx(1e-10, rel=1e-12), pytest.approx(1e-11, rel=1e-12))]
+    assert r['integration_tolerances'] == seen[0]
 
 
 @pytest.mark.unit
@@ -901,8 +904,9 @@ def test_a_failing_density_lookup_breaks_density_eos_with_its_error_and_label():
     with pytest.raises(StructureInvariantError, match='breaks density_eos:') as info:
         check_accepted(result, cfg, RTOL, ATOL, _broken)
     msg = str(info.value)
-    assert 'density lookup of the core layer failed: table lookup failed' in msg
+    assert 'density lookup of the core layer failed: ValueError: table lookup failed' in msg
     assert "accepted_on='strict'" in msg
+    assert isinstance(info.value.__cause__, ValueError)
 
 
 @pytest.mark.unit
@@ -1100,7 +1104,7 @@ def test_an_ice_planet_passes_the_check_with_its_mantle_top_node(monkeypatch):
         )
     )
     assert r['converged'] and r['density_from_eos'] and seen and all(seen)
-    assert np.max(r['mass_enclosed']) >= r['core_mantle_mass'] * (1 - _RTOL_LAYER)
+    assert np.max(r['mass_enclosed']) >= r['core_mantle_mass']
 
 
 @pytest.mark.smoke
@@ -1131,19 +1135,10 @@ def test_the_layer_nodes_use_the_exact_comparison_of_the_caller(ice):
     """PROTEUS takes argmax(m >= mass) with no tolerance: a last node 5e-13 below the layer
     mass reaches no node there, so the check stops."""
     result, cfg = _sphere(mmf=0.6 if ice else 0.0)
-    f = 0.4 if ice else 1.0
-    key = 'core_mantle_mass' if ice else 'cmb_mass'
-    if ice:
-        cfg['core_mass_fraction'], cfg['mantle_mass_fraction'] = 0.4, 0.6
-        result['cmb_mass'] = 0.4 * cfg['planet_mass']
-    else:
-        cfg['core_mass_fraction'] = 1.0
-    result[key] = result['mass_enclosed'][-1] * (1 + 5e-13)
-    cfg['planet_mass'] = result[key] / (f + (0.6 if ice else 0.0))
-    if ice:
-        result['cmb_mass'] = 0.4 * cfg['planet_mass']
-    else:
-        result['core_mantle_mass'] = result['cmb_mass']
+    cmf = 0.4 if ice else 1.0
+    cfg['core_mass_fraction'], cfg['mantle_mass_fraction'] = cmf, 1.0 - cmf
+    cfg['planet_mass'] = result['core_mantle_mass'] = result['mass_enclosed'][-1] * (1 + 5e-13)
+    result['cmb_mass'] = cmf * cfg['planet_mass']
     result['accept_mass_limit'] = 1e-3
     name = 'core_mantle_node' if ice else 'cmb_node'
     with pytest.raises(StructureInvariantError, match=f'breaks {name}:'):
@@ -1151,16 +1146,12 @@ def test_the_layer_nodes_use_the_exact_comparison_of_the_caller(ice):
 
 
 @pytest.mark.unit
+@pytest.mark.filterwarnings('error')
 def test_the_gravity_message_of_a_node_at_radius_zero_gives_no_warning():
     """G m / r^2 for the message is computed with the arithmetic warnings off."""
-    import warnings
-
     result, cfg = _sphere()
     result['radii'][3] = 0.0
-    with warnings.catch_warnings():
-        warnings.simplefilter('error')
-        msg = _message(result, cfg)
-    assert 'breaks gravity:' in msg
+    assert 'breaks gravity:' in _message(result, cfg)
 
 
 @pytest.mark.smoke
@@ -1181,3 +1172,25 @@ def test_the_gravity_margin_of_the_paleos_adiabat_fixture():
     cfg = {'planet_mass': earth_mass, 'core_mass_fraction': 0.325, 'mantle_mass_fraction': 0}
     dev, _, tol = deviations(r, cfg, r['accept_mass_limit'], rtol, atol)['gravity']
     assert 1.0 < dev / (tol / TOLERANCES['gravity']) < 50.0
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    'value, real',
+    [
+        pytest.param(int(1.96e24), True, id='python_int_above_int64'),
+        pytest.param(np.float32(1.96e24), True, id='float32'),
+        pytest.param(np.int64(7), True, id='int64'),
+        pytest.param(np.asarray(1.96e24), True, id='zero_d_array'),
+        pytest.param(1.96e24, True, id='float'),
+        pytest.param(True, False, id='bool'),
+        pytest.param(np.bool_(True), False, id='numpy_bool'),
+        pytest.param('1.96e24', False, id='string'),
+        pytest.param(np.array([1.0, 2.0]), False, id='vector'),
+        pytest.param(1 + 2j, False, id='complex'),
+    ],
+)
+def test_a_layer_mass_is_one_real_number_of_any_numeric_type(value, real):
+    from zalmoxis.invariants import _real_scalar
+
+    assert _real_scalar(value) is real
