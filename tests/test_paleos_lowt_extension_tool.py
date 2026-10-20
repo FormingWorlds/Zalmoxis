@@ -159,7 +159,8 @@ def _git(path, *args):
 
 
 def _git_repo(path, commit=True):
-    """A git repository at ``path``, with one commit unless ``commit`` is False; returns HEAD."""
+    """A git repository at ``path``, with one commit unless ``commit`` is False; returns
+    HEAD."""
     path.mkdir(parents=True, exist_ok=True)
     _git(path, 'init', '-q')
     (path / 'README').write_text('paleos\n')
@@ -218,7 +219,8 @@ def _main(src, table, out, *extra):
 
 
 def test_command_line_does_not_take_the_commit_of_an_enclosing_repository(tmp_path, capsys):
-    """A source folder inside another checkout needs --paleos-commit; the outer HEAD is not taken."""
+    """A source folder inside another checkout needs --paleos-commit; the outer HEAD is not
+    taken."""
     _git_repo(tmp_path / 'outer')
     src = tmp_path / 'outer' / 'paleos_src'
     src.mkdir()
@@ -384,7 +386,8 @@ def test_command_line_refuses_a_missing_output_folder_first(tmp_path, capsys, cl
 
 
 def test_command_line_refuses_an_extension_that_does_not_merge(tmp_path, capsys, clean_import):
-    """The writer loads its result under the table; a seam mismatch removes the file and fails."""
+    """The writer loads its result under the table; a seam mismatch stops the tool and leaves
+    no output."""
     src = tmp_path / 'paleos_src'
     src.mkdir()
     _stub_paleos(src, ds=1.0)
@@ -506,7 +509,8 @@ def test_command_line_names_a_left_out_point_that_stops_the_merge(
 def test_command_line_reports_a_left_out_lowest_node_and_keeps_the_file(
     tmp_path, capsys, clean_import
 ):
-    """A point left out at the lowest node of a row merges; the header and the output give it."""
+    """A point left out at the lowest node of a row merges; the header and the output give
+    it."""
     src = tmp_path / 'paleos_src'
     src.mkdir()
     _stub_paleos(src, raise_at=(_P[1], _T[0]))
