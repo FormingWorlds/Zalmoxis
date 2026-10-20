@@ -783,8 +783,9 @@ def generate_spider_eos_tables(
         the lowest node that is not below the lowest entropy of the merged table. Every
         cell the PALEOS table inverts is computed as without the extension; the cells
         below the PALEOS minimum temperature are inverted on the merged table, also when
-        no node is added. A warning names an extension that adds no node, and the log
-        gives the number of filled cells.
+        no node is added. A warning names an extension that adds no node; when the
+        extension reaches below the PALEOS minimum temperature, the log gives the
+        number of filled cells.
 
     Returns
     -------
@@ -972,7 +973,7 @@ def generate_spider_eos_tables(
                 logger.warning(
                     'Low-T extension %s: no solid entropy node fits below %.1f J/(kg*K) '
                     '(lowest extended entropy %.1f, node step %.1f); the axis keeps its nodes '
-                    'and the extension still fills the cells PALEOS cannot invert',
+                    'and the extension can still fill cells PALEOS cannot invert',
                     solid_lowt_file,
                     S_global_min_solid,
                     S_lo,
