@@ -249,28 +249,17 @@ class TestLowTExtensionThatAddsNothing:
         assert changed == 0
 
     def test_an_extension_with_no_finite_entropy_warns(self, tmp_path, caplog, monkeypatch):
-        """An extended entropy that is NaN at every sampled output point adds no node."""
-        real_load, real_build, seen = (
-            eos_export.load_paleos_with_lowt_extension,
-            eos_export._build_interpolator,
-            {},
-        )
+        """An extended entropy that is NaN everywhere adds no node and changes no cell."""
+        real_load = eos_export.load_paleos_with_lowt_extension
 
         def load(solid, ext):
-            seen['s'] = (merged := real_load(solid, ext))['s']
-            return merged
-
-        def build(lp, lt, values):
-            f = real_build(lp, lt, values)
-            nan = lambda pts: np.full(np.shape(pts)[:-1], np.nan)  # noqa: E731
-            return nan if values is seen.get('s') else f
+            merged = real_load(solid, ext)
+            return merged | {'s': np.full_like(merged['s'], np.nan)}
 
         monkeypatch.setattr(eos_export, 'load_paleos_with_lowt_extension', load)
-        monkeypatch.setattr(eos_export, '_build_interpolator', build)
         warns, changed = self._run(tmp_path, caplog, _gen_tables(tmp_path)[2])
-        assert 's' in seen
-        assert changed == 0
         assert any('gives no finite entropy at the output' in r.getMessage() for r in warns)
+        assert changed == 0
 
     def test_an_extension_too_shallow_for_one_node_warns(self, tmp_path, caplog):
         """One temperature step below 300 K lowers the entropy by less than one node step: the

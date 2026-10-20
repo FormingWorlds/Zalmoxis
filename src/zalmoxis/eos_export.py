@@ -782,7 +782,9 @@ def generate_spider_eos_tables(
         entropy axis keeps its nodes and gains nodes of the same step below them, down to
         the lowest node that is not below the lowest entropy of the merged table. Every
         cell the PALEOS table inverts is computed as without the extension; the cells
-        below the PALEOS minimum temperature are inverted on the merged table.
+        below the PALEOS minimum temperature are inverted on the merged table, also when
+        no node is added. A warning names an extension that adds no node, and the log
+        gives the number of filled cells.
 
     Returns
     -------
@@ -792,6 +794,13 @@ def generate_spider_eos_tables(
         masks under ``'valid'`` (keys ``'solid'`` and ``'melt'``, shape
         (nS, nP)), and ``'output_dir'`` (None when nothing was written).
         An empty dict when the table gives no entropy range for a phase.
+
+    Raises
+    ------
+    ValueError
+        When ``solid_lowt_file`` is set without both two-phase tables or with
+        ``n_S < 2``, or when :func:`load_paleos_with_lowt_extension` refuses the
+        extension (seam mismatch, grid or row guards).
     """
     logger.info('Generating SPIDER P-S EOS tables from %s', eos_file)
     if solid_lowt_file is not None and not (solid_eos_file and liquid_eos_file):
@@ -962,7 +971,8 @@ def generate_spider_eos_tables(
             else:
                 logger.warning(
                     'Low-T extension %s: no solid entropy node fits below %.1f J/(kg*K) '
-                    '(lowest extended entropy %.1f, node step %.1f); the axis is unchanged',
+                    '(lowest extended entropy %.1f, node step %.1f); the axis keeps its nodes '
+                    'and the extension still fills the cells PALEOS cannot invert',
                     solid_lowt_file,
                     S_global_min_solid,
                     S_lo,
@@ -978,7 +988,7 @@ def generate_spider_eos_tables(
 
     logger.info(
         'Entropy ranges: solid [%.0f, %.0f], melt [%.0f, %.0f] J/(kg*K)',
-        S_global_min_solid,
+        S_solid_grid[0],
         S_global_max_solid,
         S_global_min_melt,
         S_global_max_melt,
@@ -1165,6 +1175,11 @@ def generate_spider_eos_tables(
         for prop in _SPIDER_TABLE_PROPERTIES:
             solid_grids[prop][gap] = ext_grids[prop][gap]
         solid_nad_finite[gap] = ext_nad_finite[gap]
+        logger.info(
+            'Low-T extension: %d solid cells below %.0f K filled from the extension',
+            int(gap.sum()),
+            T_lo_global,
+        )
 
     # Record the valid cells before the fill below overwrites the gaps.
     valid_masks = {

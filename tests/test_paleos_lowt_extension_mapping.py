@@ -36,17 +36,8 @@ class _IndependentStubEoS:
 
 
 def test_methods_tuple_matches_exact_paleos_methods():
-    """Verify tool._METHODS strictly matches the literal expected tuple in order."""
-    expected = (
-        'density',
-        'specific_internal_energy',
-        'specific_entropy',
-        'isobaric_heat_capacity',
-        'isochoric_heat_capacity',
-        'thermal_expansion',
-        'adiabatic_gradient',
-    )
-    assert tool._METHODS == expected
+    """tool._METHODS lists the PALEOS methods in the column order of the independent literal."""
+    assert tool._METHODS == tuple(sorted(_INDEPENDENT_METHODS, key=_INDEPENDENT_METHODS.get))
 
 
 def test_written_extension_columns_match_independent_mapping(tmp_path):
