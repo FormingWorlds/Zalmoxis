@@ -1583,6 +1583,7 @@ def _solve(
     best_mass_error = float('inf')
     best_profiles = None
     best_blend = None  # the adiabat blend of the best pass
+    earlier_best = None  # (mass error, profiles) of the best pass of the earlier blend steps
     oscillation_count = 0
     stop_label = None  # 'timeout' (wall clock) or 'oscillation' once a loop stops early
     mass_limit = tolerance_outer  # the mass test behind converged_mass
@@ -2349,6 +2350,9 @@ def _solve(
         if rho_eos is not None and (
             relative_diff_outer_mass < best_mass_error or _adiabat_blend != best_blend
         ):
+            if _adiabat_blend != best_blend and best_profiles is not None:
+                if earlier_best is None or best_mass_error < earlier_best[0]:
+                    earlier_best = (best_mass_error, best_profiles)
             best_mass_error, best_blend = relative_diff_outer_mass, _adiabat_blend
             best_profiles = {
                 'radii': radii.copy(),
@@ -2447,6 +2451,29 @@ def _solve(
             best_profiles['adiabat_blend'],
             temperatures if T is None else np.array(T),
         )
+
+    # A stop whose newest blend step has no pass below the loose ceiling falls back to the best
+    # pass of an earlier step, with its blend.
+    strict = converged_mass and converged_density and converged_pressure and not restore_best
+    if (
+        not strict
+        and earlier_best is not None
+        and earlier_best[0] < min(best_mass_error, _TIMEOUT_ACCEPT_MASS_ERR)
+        and not best_mass_error < _TIMEOUT_ACCEPT_MASS_ERR
+    ):
+        best_mass_error, best_profiles = earlier_best
+        best_blend = best_profiles['adiabat_blend']
+        logger.warning(
+            'No pass of adiabat blend %.2f is within %.1f%% of the mass; returning the best pass '
+            'of blend %.2f (mass error %.4f%%).',
+            _adiabat_blend,
+            _TIMEOUT_ACCEPT_MASS_ERR * 100,
+            best_blend,
+            best_mass_error * 100,
+        )
+        if stop_label == 'timeout':
+            converged_mass = best_mass_error < 3 * tolerance_outer
+            restore_best = True
 
     # An outer stop returns the best pass, so the accept tests read that pass.
     restored = restore_best and best_profiles is not None
