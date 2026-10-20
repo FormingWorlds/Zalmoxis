@@ -10,7 +10,7 @@ from .constants import G
 
 # Largest allowed deviation of each invariant; a count of bad nodes where the tolerance is 0.
 # gravity: a factor on the per-node RK45 bound of ``deviations``; density_eos: both sides call
-# the same batch EOS, so real solves give 0, and 1e-6 lies below the 1e-5 table error.
+# the same batch EOS, so real solves give 0.
 TOLERANCES = {
     'padding': 0,
     'centre': 0,
@@ -67,7 +67,8 @@ def deviations(
         under the exact equations for any density, so an error left at a step end stays, and
         relative to ``G M`` it falls outward as ``M_i / M``. The largest node deviation is the
         dense-output error inside a long step: on the PALEOS-2phase adiabat below it is
-        ``+6.4e-6 G M`` at r/R 0.22 in the core, 20.8 units, and ``1.4e-7 G M`` at the surface.
+        ``+6.4e-6 G M`` at r/R 0.22 in the core, 20.8 units, and ``1.4e-7 G M`` at the last node
+        with P > 0.
         The factor 100 is therefore an empirical bound: accepted real solves through ``main``
         of 26 setups, 0.1 to 10 M_E, reach 2.83 to 20.78 times ``rtol + atol (1 / M_i +
         1 / g_i)``, a margin of at least 4.8. They cover the analytic, Wolf & Bower (isothermal
@@ -77,7 +78,8 @@ def deviations(
         layers of the PALEOS smoke tests (``Seager2007:iron``, ``PALEOS-2phase:MgSiO3``), the
         adiabatic profile and the default tolerances; the smallest is a 3 % Chabrier H mantle
         at rtol 1e-9. At rtol 1e-5 and atol 1e-6 the tolerance at the surface is about 1e-3
-        for any node count, so the check sees only gravity faults of about 0.1 % or more.
+        for any node count, so there the check sees gravity faults of about 0.1 % or more;
+        at the first nodes of a fine mesh it is several percent (2.1e-2 at node 1 of 2000).
     density_at : callable or None
         ``(P, T, layer) -> rho`` for the arrays of the nodes of one layer, by the EOS path
         that the solver used at the returned nodes; called once per layer that has nodes.
@@ -98,8 +100,10 @@ def deviations(
         layer boundary is the first node with m >= cmb_mass (core_mantle_mass with an ice
         layer), compared exactly, and a result where no node reaches it would give the caller
         R_core = 0; its node index is then -1. So a standalone core_mass_fraction 1 run passes
-        only with a mass surplus. A density lookup that raises breaks ``density_eos`` with an
-        infinite deviation and the error in its text.
+        only with a mass surplus, and with an ice layer so does a run with core_mass_fraction
+        plus mantle_mass_fraction 1: a mass deficit is a fault even where no caller reads
+        that node. A density lookup that raises breaks ``density_eos`` with an infinite
+        deviation and the error in its text.
     """
     P, rho, m, r, g, T = (
         np.asarray(result[k], float)
@@ -236,10 +240,17 @@ def _finite_positive(x):
 
 
 def _real_scalar(x):
-    """Whether ``x`` is one real number of any numeric type, a 0-d array too, not a bool."""
+    """Whether ``x`` is one real number of any numeric type that a float holds, a 0-d array
+    too, not a bool."""
     if isinstance(x, np.ndarray):
         return x.ndim == 0 and x.dtype.kind in 'iuf'
-    return isinstance(x, numbers.Real) and not isinstance(x, (bool, np.bool_))
+    if not isinstance(x, numbers.Real) or isinstance(x, bool):
+        return False
+    try:
+        float(x)
+    except OverflowError:
+        return False
+    return True
 
 
 def check_accepted(result, config_params, rtol, atol, density_at=None, ice=False):
@@ -296,7 +307,11 @@ def check_accepted(result, config_params, rtol, atol, density_at=None, ice=False
     ).items():
         if not dev <= tol:
             node = '' if name in _SCALAR or i < 0 else f' at node {i}'
-            raise StructureInvariantError(
+            err = StructureInvariantError(
                 f'Accepted structure ({accepted_on=}) breaks {name}: deviation {dev:.3e} > '
                 f'tolerance {tol:.3e}{node}; {details[name]}.'
-            ) from details.get(f'{name} cause')
+            )
+            cause = details.get(f'{name} cause')
+            if cause is not None:
+                raise err from cause
+            raise err

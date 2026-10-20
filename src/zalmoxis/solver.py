@@ -525,7 +525,10 @@ def main(
         was not accepted), and ``mass_error_at_accept`` is the relative mass error
         of the returned profile. 'timeout' replaces the other labels when the wall
         clock stopped the solve of the returned profile. A failed table band check
-        sets ``converged`` to False and leaves ``accepted_on`` as it is.
+        sets ``converged`` to False and leaves ``accepted_on`` as it is. A converged
+        result has ``integration_tolerances``, the (rtol, atol) of the solve that
+        returned, with rtol at least the RK45 floor of 100 eps, which the invariant
+        check used; an unconverged result has none.
 
     Raises
     ------
