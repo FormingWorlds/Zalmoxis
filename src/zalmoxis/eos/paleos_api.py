@@ -296,7 +296,7 @@ def _changes_hash(repo_dir: Path, head_sha: str) -> str | None:
         on_disk.update(zip(files, hashed.stdout.split()))
     for path in filter(None, others.stdout.split('\0')):
         f = Path(repo_dir, path)
-        if path.endswith('/') or f.is_dir():
+        if f.is_dir():
             on_disk[path] = 'untracked directory ' + (_os.readlink(f) if f.is_symlink() else '')
             continue
         if not _importable(path):
