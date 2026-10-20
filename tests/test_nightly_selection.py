@@ -3,6 +3,7 @@ would run in no job. See docs/How-to/build_tests.md for the test tiers."""
 
 from __future__ import annotations
 
+import itertools
 import re
 import subprocess
 import sys
@@ -66,8 +67,9 @@ def _unselected(marked, workflow):
     return sorted(marked - named)
 
 
-@pytest.mark.unit
+@pytest.mark.smoke
 def test_every_accept_solves_file_runs_in_a_nightly_job():
+    """Collects the whole test tree (about 20 s), so it runs with the smoke tests."""
     workflow = WORKFLOW.read_text()
     marked = _marked(ROOT / 'tests', _accept_select(workflow))
     assert {'test_invariants.py', 'test_accepted_on.py'} <= marked
@@ -143,3 +145,66 @@ def test_a_workflow_that_drops_the_wolfbower_split_is_caught(old, new):
     workflow = WORKFLOW.read_text()
     assert old in workflow
     assert not _wolfbower_covered(workflow.replace(old, new))
+
+
+_MARKS = (
+    'unit',
+    'smoke',
+    'integration',
+    'slow',
+    'wolfbower',
+    'paleos_adiabat',
+    'accept_solves',
+)
+_SPECIAL = {'wolfbower', 'paleos_adiabat', 'accept_solves'}
+
+
+def _partition_faults(workflow):
+    """Marker sets, with the file for accept_solves, that no job or more than one job selects.
+    A set counts when it has a special mark, or unit, smoke or integration without slow."""
+    from _pytest.mark.expression import Expression
+
+    jobs = [(Expression.compile(sel), files) for sel, files in _jobs(workflow)]
+    named = sorted({f for _, files in jobs for f in files})
+    faults = []
+    for bits in itertools.product((False, True), repeat=len(_MARKS)):
+        marks = {m for m, on in zip(_MARKS, bits) if on}
+        if not (
+            marks & _SPECIAL
+            or (marks & {'unit', 'smoke', 'integration'} and 'slow' not in marks)
+        ):
+            continue
+        for f in named if 'accept_solves' in marks else ['other.py']:
+            n = sum(
+                e.evaluate(marks.__contains__) for e, files in jobs if not files or f in files
+            )
+            if n != 1:
+                faults.append((sorted(marks), f, n))
+    return faults
+
+
+@pytest.mark.unit
+def test_the_nightly_jobs_select_each_marked_test_once():
+    """Every combination of marks a test can carry runs in exactly one nightly job."""
+    assert _partition_faults(WORKFLOW.read_text()) == []
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    'old, new',
+    [
+        pytest.param('select: paleos_adiabat', 'select: paleos_adiabatt', id='typo'),
+        pytest.param('(unit or smoke or integration)', '(unit or smoke)', id='no_integration'),
+        pytest.param(
+            'suite: paleos_adiabat\n            select:',
+            'suite: paleos_adiabat\n            selected:',
+            id='no_paleos_job',
+        ),
+    ],
+)
+def test_a_gap_in_the_nightly_partition_is_found(old, new):
+    """A typo in a select, a tier dropped from the main job or a job without a select leaves
+    a combination of marks in no job."""
+    workflow = WORKFLOW.read_text()
+    assert old in workflow
+    assert _partition_faults(workflow.replace(old, new))

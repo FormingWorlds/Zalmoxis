@@ -1236,3 +1236,58 @@ def test_an_unconverged_result_has_no_integration_tolerances(monkeypatch):
     monkeypatch.setattr(zs, '_solve', lambda *a, **k: calls.pop(0))
     r = _run(_cfg(planet_mass=_sphere()[1]['planet_mass']))
     assert not r['converged'] and 'integration_tolerances' not in r
+
+
+def _newton_main(monkeypatch, result, cfg, melt):
+    """Run main with outer_solver='newton' on a stubbed Newton result; the batch density
+    lookup returns RHO and records its arguments."""
+    calls = []
+
+    def batch(P, T, *args, volatile_profile=None):
+        calls.append(args)
+        return np.full(np.shape(P), RHO)
+
+    monkeypatch.setattr(zs, '_solve_newton_outer', lambda *a, **k: result)
+    monkeypatch.setattr(zs, '_report_table_bands', lambda r, *a: r)
+    monkeypatch.setattr(zs, '_warn_adiabat', lambda *a, **k: None)
+    monkeypatch.setattr(zs, 'calculate_mixed_density_batch', batch)
+    config = {
+        **cfg,
+        'outer_solver': 'newton',
+        'layer_eos_config': {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
+        'temperature_mode': 'isothermal',
+        'surface_temperature': 3000.0,
+        'num_layers': N,
+        'relative_tolerance': RTOL,
+        'absolute_tolerance': ATOL,
+        'mushy_zone_factor': 0.8,
+    }
+    result['accepted_on'], result['accept_mass_limit'] = 'newton_tol', 1e-4
+    return zs.main(config, {}, melt, '/tmp'), calls, config
+
+
+@pytest.mark.unit
+def test_main_checks_the_newton_result():
+    """A Newton result that breaks an invariant raises at the Newton exit of main."""
+    mp = pytest.MonkeyPatch()
+    result, cfg = _sphere()
+    BREAKS['mass_monotone'](result, cfg)
+    try:
+        with pytest.raises(StructureInvariantError, match='breaks mass_monotone:'):
+            _newton_main(mp, result, cfg, None)
+    finally:
+        mp.undo()
+
+
+@pytest.mark.unit
+def test_the_newton_check_reads_the_melt_curves_and_eos_parameters_of_the_solve(monkeypatch):
+    """The density reference of the Newton check gets the melting curves and the EOS
+    parameters of the solve, not None or the defaults."""
+    solidus, liquidus = (lambda P: 2000.0), (lambda P: 2500.0)
+    result, cfg = _sphere()
+    out, calls, config = _newton_main(monkeypatch, result, cfg, (solidus, liquidus))
+    assert out['converged'] and calls
+    for args in calls:
+        assert args[2:4] == (solidus, liquidus)
+        assert args[5:] == zs._eos_params(config)
+    assert zs._eos_params(config) != zs._eos_params({})
