@@ -659,8 +659,9 @@ def test_command_line_refuses_a_missing_table(tmp_path, capsys, clean_import):
     src = tmp_path / 'paleos_src'
     src.mkdir()
     _stub_paleos(src)
-    with pytest.raises(SystemExit):
+    with pytest.raises(BaseException) as exc:
         _main(src, tmp_path / 'absent.dat', tmp_path / 'ext.dat', *_GIVEN)
+    assert exc.type is SystemExit, repr(exc.value)
     assert 'absent.dat is not a file' in capsys.readouterr().err
     assert not (tmp_path / 'ext.dat').exists()
 
@@ -679,7 +680,10 @@ def test_a_file_at_the_old_temporary_name_is_never_touched(tmp_path, clean_impor
     elif case == 'user':
         old.write_text('user data\n')
     keep = {p.name: p.read_bytes() for p in (table, old)}
-    _main(src, table, out, '--t-min', '150.4', *_GIVEN)
+    try:
+        _main(src, table, out, '--t-min', '150.4', *_GIVEN)
+    except Exception as err:  # a file at the old name must not stop the run
+        pytest.fail(f'a file at the old temporary name stopped the run: {err!r}')
     assert out.is_file() and not out.is_symlink()
     assert {p.name: p.read_bytes() for p in (table, old)} == keep
     assert old.is_symlink() == (case == 'link')
