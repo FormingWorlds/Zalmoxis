@@ -258,9 +258,12 @@ def _changes_hash(repo_dir: Path, head_sha: str) -> str | None:
     """Return an 8-character hash of the package code on disk when it differs from the code
     of ``head_sha``, else None.
 
-    Tracked files are hashed by git with its own filters (line ends, attributes), and a
-    symlink by its target text; a deleted file counts. Untracked files, ignored ones
-    included, count when Python can import them. Only content is compared, not modes.
+    Tracked files are hashed by git without filters, so a line-end conversion or a clean
+    filter counts as a change, and a symlink by its target text; a deleted file counts.
+    Untracked files, ignored ones included, count when Python can import them, and an
+    untracked directory, link to one or nested repository always counts. Paths are taken
+    relative to ``repo_dir``, which may lie below the top of the repository. Only content
+    is compared, not modes.
 
     Raises
     ------
@@ -283,13 +286,21 @@ def _changes_hash(repo_dir: Path, head_sha: str) -> str | None:
         elif f.is_file():
             files.append(path)
     if files:
-        hashed = _git(repo_dir, 'hash-object', '--stdin-paths', stdin='\n'.join(files) + '\n')
+        prefix = _git(repo_dir, 'rev-parse', '--show-prefix').stdout.strip()
+        paths = ''.join(f'{prefix}{f}\n' for f in files)
+        hashed = _git(repo_dir, 'hash-object', '--no-filters', '--stdin-paths', stdin=paths)
         if hashed.returncode != 0:
             raise PaleosVersionError(
                 f'cannot read the paleos package in {repo_dir}: {hashed.stderr.strip()[:200]}'
             )
         on_disk.update(zip(files, hashed.stdout.split()))
-    for path in filter(_importable, filter(None, others.stdout.split('\0'))):
+    for path in filter(None, others.stdout.split('\0')):
+        f = Path(repo_dir, path)
+        if path.endswith('/') or f.is_dir():
+            on_disk[path] = 'untracked directory ' + (_os.readlink(f) if f.is_symlink() else '')
+            continue
+        if not _importable(path):
+            continue
         try:
             data = Path(repo_dir, path).read_bytes()
         except OSError as exc:
@@ -315,8 +326,9 @@ def paleos_installed_sha() -> str:
     A checkout whose package code differs from its commit gets ``-dirty-<8 hex>`` after
     the SHA, a hash of that code, so each set of changes has its own cache. Without git
     the result is ``version-<paleos.__version__>``, and without PALEOS
-    ``paleos-not-installed``. The first result after this process imports paleos is kept
-    for :func:`_same_code_as_import`.
+    ``paleos-not-installed``. The first result is kept for :func:`_same_code_as_import`;
+    when paleos was imported before it, a warning says that changes before this call are
+    not covered.
     """
     fresh = 'paleos' not in _sys.modules
     repo_dir = _paleos_repo_dir()
@@ -335,8 +347,13 @@ def paleos_installed_sha() -> str:
         import paleos as _paleos
 
         key = f'version-{getattr(_paleos, "__version__", "unknown")}'
-    if fresh:
-        _KEY_AT_IMPORT.setdefault('key', key)
+    if 'key' not in _KEY_AT_IMPORT:
+        if not fresh:
+            logger.warning(
+                'paleos was imported before its code key was taken; a change on disk before '
+                'this call is not covered'
+            )
+        _KEY_AT_IMPORT['key'] = key
     return key
 
 

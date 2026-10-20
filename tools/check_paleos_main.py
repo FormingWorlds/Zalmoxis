@@ -3,8 +3,9 @@
 Exit 0 when main is at ``PALEOS_TESTED_SHA``, 1 when it is at another commit (test the
 PALEOS-API path on it and move the pin), 2 when the source cannot be read or holds no
 40-character lowercase commit SHA as the pin,
-4 when GitHub does not find the repository or its main (404, 422), 3 when GitHub could
-not be read for another reason. One request, no retry; with GITHUB_TOKEN set the request
+4 when GitHub does not find the repository or its main (404, 422), 5 when GitHub refuses
+the request (401, or 403 with requests left: a token or permission fault), 3 when GitHub
+could not be read for another reason (a used-up rate limit, a 5xx, the network). One request, no retry; with GITHUB_TOKEN set the request
 is authenticated.
 
 Usage: python tools/check_paleos_main.py
@@ -74,6 +75,11 @@ def main(fetch=main_sha) -> int:
         if exc.code in (404, 422):
             print(f'PALEOS main not found at {_MAIN}: {exc}')
             return 4
+        if exc.code == 401 or (
+            exc.code == 403 and (exc.headers or {}).get('X-RateLimit-Remaining') != '0'
+        ):
+            print(f'GitHub refused the request for {_MAIN}: {exc}')
+            return 5
         print(f'PALEOS main could not be read: {exc}')
         return 3
     except Exception as exc:  # noqa: BLE001 -- one attempt, reported, never retried
