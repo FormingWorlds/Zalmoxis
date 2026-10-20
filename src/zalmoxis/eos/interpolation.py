@@ -603,6 +603,9 @@ def _paleos_clamp_temperature(log_p, log_t, cached):
 # Layout of the cached entry; a change to load_paleos_unified_table raises it.
 CACHE_FORMAT = 1
 
+# The loader whose source keys the cache, bound once so a patched module name never changes it
+_CACHE_LOADER = load_paleos_unified_table
+
 
 @functools.cache
 def cache_builder():
@@ -610,7 +613,7 @@ def cache_builder():
     ``load_paleos_unified_table`` and the numpy and scipy versions."""
     import scipy
 
-    source = inspect.getsource(load_paleos_unified_table)
+    source = inspect.getsource(_CACHE_LOADER)
     text = f'{source}\nnumpy {np.__version__}\nscipy {scipy.__version__}'
     return hashlib.sha256(text.encode()).hexdigest()
 
