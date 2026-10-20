@@ -131,7 +131,7 @@ class TestMergeLowTExtension:
         pal = _paleos(tmp_path, [6, 6, 6, 6])
         with pytest.raises(ValueError, match='no common seam node') as err:
             eos_export.load_paleos_with_lowt_extension(pal, _ext(tmp_path, k_top=5))
-        assert str(pal) in str(err.value) and 'ext.dat ends at T = 2.818' in str(err.value)
+        assert str(pal) in str(err.value) and 'ext.dat ends at T = 2.673753e+02 K' in str(err.value)
 
     def test_row_without_extension_values_keeps_paleos(self, tmp_path):
         """A pressure row the extension leaves out stays as PALEOS has it, NaN below."""
