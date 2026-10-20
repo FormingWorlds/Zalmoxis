@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import stat
 from pathlib import Path
 
 import numpy as np
@@ -589,13 +591,17 @@ def test_command_line_refuses_a_given_commit_by_default(tmp_path, capsys, clean_
 def test_a_failed_run_keeps_an_earlier_output_and_leaves_no_temporary_file(
     tmp_path, capsys, clean_import
 ):
-    """A run that fails after the write keeps the output of an earlier run unchanged."""
+    """A run that fails after the write keeps the output of an earlier run unchanged; the
+    written file has the mode the umask gives a new file."""
     src = tmp_path / 'paleos_src'
     src.mkdir()
     _stub_paleos(src)
     table, out = _paleos(tmp_path, [6, 6, 6, 6]), tmp_path / 'ext.dat'
     _main(src, table, out, '--t-min', '150.4', *_GIVEN)
     before = out.read_text()
+    mask = os.umask(0)
+    os.umask(mask)
+    assert stat.S_IMODE(out.stat().st_mode) == 0o666 & ~mask
     with pytest.raises(SystemExit):
         _main(src, table, out, '--t-min', '150.4', '--p-max', '1e5', *_GIVEN)
     assert 'no extension rows' in capsys.readouterr().err
