@@ -1026,3 +1026,54 @@ def test_only_an_accepted_result_gets_the_adiabat_warning(caplog, converged):
     result = {'converged': converged, 'adiabat_computed': True, 'adiabat_blend': 0.5}
     zs._warn_adiabat(result, cfg, None, None, None)
     assert ('at adiabat blend 0.50' in caplog.text) is converged
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.timeout(2400)
+def test_an_iteration_cap_whose_newest_blend_step_diverges_returns_an_earlier_best_pass(
+    monkeypatch,
+):
+    """3-layer PALEOS ice planet (cmf 0.3, mmf 0.4), adiabatic Picard, 20 outer passes: every pass
+    of the newest blend step misses the mass by more than 3 %, so the cap returns the best pass of
+    an earlier step (blend 0, about 7.6e-4, R about 1.2978e7 m) and main does not retry."""
+    from tests.test_spider_coupling_convergence import _has_paleos_data
+    from zalmoxis.config import load_solidus_liquidus_functions, load_zalmoxis_config
+
+    if not _has_paleos_data():
+        pytest.skip('PALEOS tables not on disk')
+    cfg = load_zalmoxis_config(os.path.join(ROOT, 'input', 'default.toml'))
+    cfg.update(
+        data_output_enabled=False,
+        plotting_enabled=False,
+        core_mass_fraction=0.3,
+        mantle_mass_fraction=0.4,
+        layer_eos_config={
+            'core': 'PALEOS:iron',
+            'mantle': 'PALEOS:MgSiO3',
+            'ice_layer': 'PALEOS:H2O',
+        },
+        wall_timeout=WALL,
+        max_iterations_outer=20,
+    )
+    assert cfg['temperature_mode'] == 'adiabatic'
+    melt = load_solidus_liquidus_functions(
+        cfg['layer_eos_config'],
+        'Stixrude14-solidus',
+        'Stixrude14-liquidus',
+        cfg['mushy_zone_factor'],
+    )
+    calls, real = [], zs._solve
+
+    def once(*args, **kwargs):
+        if calls:
+            pytest.fail('main retried the solve')
+        calls.append(1)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(zs, '_solve', once)
+    r = zs.main(cfg, load_material_dictionaries(), melt, os.path.join(ROOT, 'input'))
+    assert r['converged'] and r['accepted_on'] == 'max_iter'
+    assert r['adiabat_blend'] == 0.0
+    assert r['mass_error_at_accept'] < 1e-3
+    assert r['radii'][-1] == pytest.approx(1.2978e7, rel=1e-3)
