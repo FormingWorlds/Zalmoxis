@@ -457,6 +457,17 @@ class TestLowTInvariants:
         assert out['cp'][0, 6] == pytest.approx(_props(_P[0], _T[6])[3], rel=1e-8)
 
 
+@pytest.mark.parametrize('T_lo, T_hi', [(300.0, 200.0), (250.0, 250.0), (np.nan, 300.0)])
+def test_a_column_window_needs_rising_finite_limits(T_lo, T_hi):
+    """Crossed, equal or NaN temperature limits give no window, even where the entropy is finite."""
+
+    def s(pt):
+        return 1.0e3 + 0.0 * np.asarray(pt, dtype=float).sum()
+
+    assert eos_export._column_window(9.0, T_lo, T_hi, s) is None
+    assert eos_export._column_window(9.0, 200.0, 300.0, s) == (200.0, 300.0, 1.0e3, 1.0e3)
+
+
 def test_no_solid_node_below_the_lowest_extension_entropy(tmp_path):
     """Each added entropy node holds an inverted cell on some column, so none is only a fill."""
     tables = _gen_tables(tmp_path)
