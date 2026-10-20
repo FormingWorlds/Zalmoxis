@@ -393,22 +393,34 @@ def test_a_link_to_a_stale_table_under_another_name_raises(tmp_path, pinned):
         registry_guard.verify(str(alias))
 
 
-def test_a_stale_table_in_another_data_root_is_not_replaced(tmp_path, pinned, monkeypatch):
-    """Only a table under the current FWL_DATA is fetched again; elsewhere it stays as it is."""
+@pytest.mark.parametrize(
+    'rel',
+    ['interior/eos/paleos_iron/r22776069', 'elsewhere/r22776069'],
+    ids=['same layout', 'other folder of the same version'],
+)
+def test_a_stale_table_in_another_data_root_is_not_replaced(tmp_path, pinned, monkeypatch, rel):
+    """Only a table in its version directory under the current FWL_DATA is fetched again; a table
+    under another root stays as it is, no fetch starts and the current root stays empty."""
+    import fwl_io
+
     rid = '22776069'
     old_root = tmp_path / 'old'
-    rel = f'interior/eos/paleos_iron/r{rid}'
     (old_root / rel).mkdir(parents=True)
+    monkeypatch.setattr(fwl_io, 'create_fetcher', lambda **k: pytest.fail('fetch started'))
+    monkeypatch.setattr(
+        registry_guard,
+        '_manifest',
+        lambda: (_Dataset(KEY, {NAME: 'md5:x'}, zenodo=f'10.5281/zenodo.{rid}'),),
+    )
     path = old_root / rel / NAME
     stale = pinned.replace('8.0e+03', '8.1e+03', 1)
     path.write_text(stale)
-    (tmp_path / 'cache' / rel).mkdir(parents=True)
-    (tmp_path / 'cache' / rel / NAME).write_text(pinned)
+    (tmp_path / 'current').mkdir()
     monkeypatch.setenv('FWL_DATA', str(tmp_path / 'current'))
-    monkeypatch.setenv('FWL_DATA_CACHE', str(tmp_path / 'cache'))
     with pytest.raises(StaleTableError):
         registry_guard.verify(str(path))
     assert path.read_text() == stale
+    assert list((tmp_path / 'current').iterdir()) == []
 
 
 def test_the_refetch_uses_the_location_the_manifest_gives(tmp_path, pinned, monkeypatch):
@@ -638,8 +650,9 @@ def _digest(text, alg):
     ['sha256:{sha256}', '{sha256}', 'MD5:{md5}', 'SHA256:{sha256}'],
     ids=['sha256', 'bare (sha256)', 'upper MD5', 'upper SHA256'],
 )
-def test_a_pin_in_another_hash_form_is_checked(tmp_path, monkeypatch, pin):
-    """A sha256 pin, a bare hash (sha256, as fwl-io reads it) or an upper-case prefix checks."""
+def test_a_pin_in_another_hash_form_stops_and_names_it(tmp_path, monkeypatch, pin):
+    """A sha256 pin or a bare hash (sha256, as fwl-io reads it) stops with the pin named; an
+    upper-case MD5 prefix is an md5 pin and checks."""
     text = _table_text()
     value = pin.format(sha256=_digest(text, 'sha256'), md5=_digest(text, 'md5'))
     monkeypatch.setattr(registry_guard, '_manifest', lambda: (_Dataset(KEY, {NAME: value}),))
@@ -649,7 +662,11 @@ def test_a_pin_in_another_hash_form_is_checked(tmp_path, monkeypatch, pin):
     good.mkdir(), bad.mkdir()
     (good / NAME).write_text(text)
     (bad / NAME).write_text(text.replace('8.0e+03', '8.1e+03', 1))
-    registry_guard.verify(str(good / NAME))
+    if pin.startswith('MD5'):
+        registry_guard.verify(str(good / NAME))
+    else:
+        with pytest.raises(StaleTableError, match=f'pinned as sha256:{value[-64:]}.*only md5'):
+            registry_guard.verify(str(good / NAME))
     with pytest.raises(StaleTableError):
         registry_guard.verify(str(bad / NAME))
 
@@ -661,7 +678,7 @@ def test_a_pin_of_an_unknown_algorithm_stops(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(registry_guard, '_pins', registry_guard._pins.__wrapped__)
     (tmp_path / NAME).write_text(_table_text())
-    with pytest.raises(StaleTableError, match='crc32:abcd .* cannot be checked'):
+    with pytest.raises(StaleTableError, match='pinned as crc32:abcd by .*only md5'):
         registry_guard.verify(str(tmp_path / NAME))
 
 
@@ -906,3 +923,131 @@ def test_a_failed_cache_write_leaves_no_temporary_file(tmp_path, pinned, monkeyp
     monkeypatch.setattr(interpolation.os, 'replace', fail)
     assert interpolation._ensure_unified_cache(str(path), {})['p_min'] == pytest.approx(1e9)
     assert sorted(p.name for p in tmp_path.iterdir()) == [NAME]
+
+
+def test_the_builder_identity_is_taken_at_import(monkeypatch):
+    """Source read after import (an edited checkout under old code in memory) is not used."""
+    interpolation.cache_builder.cache_clear()
+    builder = interpolation.cache_builder()
+    interpolation.cache_builder.cache_clear()
+    monkeypatch.setattr(interpolation.inspect, 'getsource', lambda fn: 'def edited(): pass\n')
+    try:
+        assert interpolation.cache_builder() == builder
+    finally:
+        interpolation.cache_builder.cache_clear()
+
+
+_SRC = "def f(x):\n    s = {'a', 'b', 'c'}\n    return [y * 2 for y in x if y in s]\n"
+
+
+def _load(path, text, name):
+    import importlib.util
+
+    path.write_text(text)
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.f
+
+
+def test_the_same_loader_source_at_two_paths_has_one_identity(tmp_path):
+    """The identity holds no file name or line number: the same source at 2 paths agrees."""
+    identity = getattr(interpolation, '_code_identity', None)
+    assert identity is not None
+    (tmp_path / 'a').mkdir(), (tmp_path / 'b').mkdir()
+    fa = _load(tmp_path / 'a' / 'm.py', _SRC, 'zal_m_a')
+    fb = _load(tmp_path / 'b' / 'm.py', _SRC, 'zal_m_b')
+    assert identity(fa) == identity(fb)
+
+
+def test_without_source_the_identity_is_taken_from_the_code(tmp_path):
+    """Without source the identity comes from co_code, co_consts and co_names: the same code at
+    other paths and lines agrees, other code differs, and the value is the same in a process with
+    another hash seed."""
+    import subprocess
+    import sys
+
+    identity = getattr(interpolation, '_code_identity', None)
+    assert identity is not None
+
+    def compiled(text, filename):
+        scope = {}
+        exec(compile(text, filename, 'exec'), scope)
+        return scope['f']
+
+    one = identity(compiled(_SRC, '/nowhere/a.py'))
+    assert one == identity(compiled('\n\n' + _SRC, '/elsewhere/b.py'))
+    assert one != identity(compiled(_SRC.replace('* 2', '* 3'), '/nowhere/a.py'))
+    probe = (
+        'from zalmoxis.eos import interpolation as i\n'
+        f'scope = {{}}; exec(compile({_SRC!r}, "/nowhere/a.py", "exec"), scope)\n'
+        "print(i._code_identity(scope['f']))\n"
+    )
+    env = dict(os.environ, PYTHONHASHSEED='1')
+    first = subprocess.run(
+        [sys.executable, '-c', probe], capture_output=True, text=True, env=env
+    )
+    env['PYTHONHASHSEED'] = '2'
+    second = subprocess.run(
+        [sys.executable, '-c', probe], capture_output=True, text=True, env=env
+    )
+    assert first.stdout.strip() == second.stdout.strip() == one
+
+
+def test_a_table_that_changes_during_the_parse_gets_no_cache(tmp_path, caplog):
+    """When the table changes between the md5 and the end of the parse, no cache is written."""
+    import logging
+
+    path = tmp_path / 'own_table.dat'
+    path.write_text(_table_text())
+    real = interpolation.load_paleos_unified_table
+
+    def parse_then_replace(eos_file):
+        entry = real(eos_file)
+        with open(eos_file, 'a') as f:
+            f.write('# replaced during the parse\n')
+        return entry
+
+    with caplog.at_level(logging.WARNING, logger='zalmoxis.eos.interpolation'):
+        interpolation.load_paleos_unified_table = parse_then_replace
+        try:
+            interpolation._ensure_unified_cache(str(path), {})
+        finally:
+            interpolation.load_paleos_unified_table = real
+    assert not os.path.exists(interpolation.cache_path_for(str(path)))
+    assert 'changed while it was read' in caplog.text
+
+
+def test_a_stale_melting_curve_error_is_passed_on(monkeypatch):
+    """load_melting_curve turns a read failure into None, but never a StaleTableError."""
+    from zalmoxis import melting_curves
+    from zalmoxis.eos import tdep
+
+    def stale(path):
+        raise StaleTableError('stale curve')
+
+    monkeypatch.setattr(melting_curves, '_load_tabulated_curve', stale)
+    with pytest.raises(StaleTableError, match='stale curve'):
+        tdep.load_melting_curve('any.dat')
+
+
+def test_read_table_columns_refuses_a_stale_table(tmp_path, pinned):
+    """The public column reader checks a pinned table too."""
+    path = tmp_path / NAME
+    path.write_text(pinned.replace('8.0e+03', '8.1e+03', 1))
+    with pytest.raises(StaleTableError):
+        interpolation.read_table_columns(str(path), range(9))
+
+
+def test_a_name_pinned_md5_and_sha256_names_the_sha256_pin(tmp_path, monkeypatch):
+    """Two datasets that pin one file as md5 and as sha256 stop on the sha256 pin, not 'disagree'."""
+    text = _table_text()
+    manifest = (
+        _Dataset(KEY, {NAME: 'md5:' + _digest(text, 'md5')}),
+        _Dataset('interior.eos.paleos_iron_sha', {NAME: 'sha256:' + _digest(text, 'sha256')}),
+    )
+    monkeypatch.setattr(registry_guard, '_manifest', lambda: manifest)
+    monkeypatch.setattr(registry_guard, '_pins', registry_guard._pins.__wrapped__)
+    (tmp_path / NAME).write_text(text)
+    with pytest.raises(StaleTableError, match='pinned as sha256:.*only md5'):
+        registry_guard.verify(str(tmp_path / NAME))
