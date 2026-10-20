@@ -8,9 +8,9 @@ import numpy as np
 
 from .constants import G
 
-# Largest allowed deviation of each invariant; a count of bad nodes where the tolerance is 0.
-# gravity: a factor on the per-node RK45 bound of ``deviations``; density_eos: both sides call
-# the same batch EOS, so real solves give 0.
+# Largest deviation: a count of bad nodes (padding, centre, positive, *_node), a relative rise
+# (monotone) or a relative difference; gravity is a factor on the RK45 bound of ``deviations``;
+# density_eos is about 50 times the batch vs scalar EOS gap on T-dependent tables (1.8e-8).
 TOLERANCES = {
     'padding': 0,
     'centre': 0,
@@ -89,13 +89,17 @@ def deviations(
         True when the planet has an ice layer.
     details : dict or None
         If given, filled with {invariant: text} naming the values that enter the deviation and
-        their expected values, for the error message.
+        their expected values, for the error message, and with ``'density_eos cause'``: the
+        exception of a density lookup that raised.
 
     Returns
     -------
     dict
-        {invariant: (deviation, node index, tolerance)}. The checks use the nodes
-        before the first node with P <= 0; the nodes after it are padding with P = 0.
+        {invariant: (deviation, node index, tolerance)}. ``positive``, ``pressure_monotone``,
+        ``gravity`` and ``density_eos`` use the nodes before the first node with P <= 0, and
+        ``padding`` the nodes from there on, which must have P = 0; ``mass_monotone``, the
+        layer masses, the node checks and ``mass_closure`` read all nodes or the last one, and
+        ``centre`` reads node 0.
         ``cmb_node`` and ``core_mantle_node`` mirror the PROTEUS reading of the profile: the
         layer boundary is the first node with m >= cmb_mass (core_mantle_mass with an ice
         layer), compared exactly, and a result where no node reaches it would give the caller
@@ -264,10 +268,10 @@ def check_accepted(result, config_params, rtol, atol, density_at=None, ice=False
     StructureInvariantError
         Names the first broken invariant in the order of ``deviations``, its deviation and
         tolerance, the node for the profile invariants, the values that enter it and the
-        ``accepted_on`` label; or the profile arrays that the result lacks; or a malformed
-        result (arrays of more than one shape or dimension, fewer than 2 nodes, a layer mass
-        that is not one real number); or an ``accept_mass_limit``, ``rtol`` or ``atol`` that
-        is not a finite positive number.
+        ``accepted_on`` label; or the profile arrays or layer masses that the result lacks; or
+        a malformed result (arrays that are not numeric, of more than one shape or dimension,
+        fewer than 2 nodes, a layer mass that is not one real number); or an
+        ``accept_mass_limit``, ``rtol`` or ``atol`` that is not a finite positive number.
     """
     if not result.get('converged'):
         return

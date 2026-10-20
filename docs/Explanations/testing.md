@@ -105,7 +105,7 @@ matrix runs the unit tier without xdist contention on small runners.
 | Trigger | Markers | Budget | Coverage |
 |---|---|---|---|
 | Push / PR (`CI.yml`) | `unit and not slow and not skip` | < 10 min | None (gate pre-flight only) |
-| Nightly cron (`nightly.yml`, 02:00 UTC) | `(unit or smoke or integration) and not slow`, in two jobs: `wolfbower` (the full solves on the Wolf & Bower tables) and the rest | 90 min ceiling per job | Yes; the rest gates on 90%, both upload to Codecov with the `nightly` flag |
+| Nightly cron (`nightly.yml`, 02:00 UTC) | `(unit or smoke or integration) and not slow`, in five jobs that select disjoint sets: `wolfbower` (the full solves on the Wolf & Bower tables), `paleos_adiabat` (the adiabatic PALEOS solves at 5 $M_\oplus$), one `accept_solves` job each for `tests/test_invariants.py` and `tests/test_accepted_on.py`, and `main` (the rest) | 90 min ceiling per job | Yes; `main` gates on 90%, all upload to Codecov with the `nightly` flag |
 | Manual `workflow_dispatch` | as above | as above | Yes |
 
 Push CI is intentionally unit-only because each smoke or integration test
