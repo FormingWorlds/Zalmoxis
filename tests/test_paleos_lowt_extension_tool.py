@@ -592,8 +592,9 @@ def test_command_line_refuses_a_given_commit_by_default(tmp_path, capsys, clean_
     assert not out.exists()
 
 
+@pytest.mark.parametrize('mask', [0o022, 0o002])
 def test_a_failed_run_keeps_an_earlier_output_and_leaves_no_temporary_file(
-    tmp_path, capsys, clean_import
+    tmp_path, capsys, clean_import, mask
 ):
     """A run that fails after the write keeps the output of an earlier run unchanged; the
     written file has the mode the umask gives a new file."""
@@ -601,10 +602,12 @@ def test_a_failed_run_keeps_an_earlier_output_and_leaves_no_temporary_file(
     src.mkdir()
     _stub_paleos(src)
     table, out = _paleos(tmp_path, [6, 6, 6, 6]), tmp_path / 'ext.dat'
-    _main(src, table, out, '--t-min', '150.4', *_GIVEN)
+    old = os.umask(mask)
+    try:
+        _main(src, table, out, '--t-min', '150.4', *_GIVEN)
+    finally:
+        os.umask(old)
     before = out.read_text()
-    mask = os.umask(0)
-    os.umask(mask)
     assert stat.S_IMODE(out.stat().st_mode) == 0o666 & ~mask
     with pytest.raises(SystemExit):
         _main(src, table, out, '--t-min', '150.4', '--p-max', '1e5', *_GIVEN)
@@ -669,23 +672,17 @@ def test_a_file_at_the_old_temporary_name_is_never_touched(tmp_path, clean_impor
     src = tmp_path / 'paleos_src'
     src.mkdir()
     _stub_paleos(src)
-    out = tmp_path / 'ext.dat'
-    old = tmp_path / 'ext.dat.tmp'
-    if case == 'table':
-        table = _paleos(tmp_path, [6, 6, 6, 6], name=old.name)
-    else:
-        table = _paleos(tmp_path, [6, 6, 6, 6])
-        old.symlink_to(table) if case == 'link' else old.write_text('user data\n')
+    out, old = tmp_path / 'ext.dat', tmp_path / 'ext.dat.tmp'
+    table = _paleos(tmp_path, [6, 6, 6, 6], name=old.name if case == 'table' else 'paleos.dat')
+    if case == 'link':
+        old.symlink_to(table)
+    elif case == 'user':
+        old.write_text('user data\n')
     keep = {p.name: p.read_bytes() for p in (table, old)}
-    extra = ('--p-max', '1e5') if case == 'user' else ()
-    if case == 'user':
-        with pytest.raises(SystemExit):
-            _main(src, table, out, '--t-min', '150.4', *extra, *_GIVEN)
-    else:
-        _main(src, table, out, '--t-min', '150.4', *_GIVEN)
-        assert out.is_file() and not out.is_symlink()
+    _main(src, table, out, '--t-min', '150.4', *_GIVEN)
+    assert out.is_file() and not out.is_symlink()
     assert {p.name: p.read_bytes() for p in (table, old)} == keep
-    assert case != 'link' or old.is_symlink()
+    assert old.is_symlink() == (case == 'link')
 
 
 def test_command_line_refuses_an_output_that_is_a_folder(tmp_path, capsys, clean_import):
@@ -717,6 +714,9 @@ def test_an_output_link_is_followed_and_kept(tmp_path, clean_import):
 
 
 def test_a_merge_error_names_the_output_not_the_temporary_file(tmp_path, capsys, clean_import):
+    """A seam mismatch names --out in the error, not the temporary file, and leaves no file."""
+    import re
+
     src = tmp_path / 'paleos_src'
     src.mkdir()
     _stub_paleos(src, ds=1.0)
@@ -724,25 +724,55 @@ def test_a_merge_error_names_the_output_not_the_temporary_file(tmp_path, capsys,
     with pytest.raises(SystemExit):
         _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, '--t-min', '150.4', *_GIVEN)
     err = capsys.readouterr().err
-    assert 'does not merge under the table' in err and str(out) in err and '.tmp' not in err
+    assert 'does not merge under the table' in err and str(out) in err
+    assert not re.search(r'\.ext\.dat\.\w+\.tmp', err)
     assert _files(tmp_path) == ['paleos.dat']
 
 
+@pytest.mark.parametrize('where', ['site', 'venv', 'build'])
 def test_command_line_refuses_a_zalmoxis_package_from_another_tree(
-    tmp_path, capsys, clean_import, monkeypatch
+    tmp_path, capsys, clean_import, monkeypatch, where
 ):
-    """The merge check must run the Zalmoxis of the converter's checkout, whose commit the
-    header names."""
+    """The merge check must run src/zalmoxis of the converter's checkout, whose commit the
+    header names; an installed copy elsewhere or inside the checkout is refused before the
+    table check and before PALEOS is imported."""
     import zalmoxis
+    from zalmoxis.eos import registry_guard
 
+    root = Path(tool.__file__).resolve().parents[2]
+    pkg = {
+        'site': tmp_path / 'site',
+        'venv': root / '.venv' / 'lib' / 'python3.12' / 'site-packages',
+        'build': root / 'build' / 'lib',
+    }[where]
     src = tmp_path / 'paleos_src'
     src.mkdir()
     _stub_paleos(src)
-    monkeypatch.setattr(
-        zalmoxis, '__file__', str(tmp_path / 'site' / 'zalmoxis' / '__init__.py')
-    )
+    (src / 'paleos' / '__init__.py').write_text("raise AssertionError('PALEOS was imported')\n")
+
+    def no_verify(*args):
+        raise AssertionError('the table check ran before the tree check')
+
+    monkeypatch.setattr(registry_guard, 'verify', no_verify)
+    monkeypatch.setattr(zalmoxis, '__file__', str(pkg / 'zalmoxis' / '__init__.py'))
     out = tmp_path / 'ext.dat'
     with pytest.raises(SystemExit):
         _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, *_GIVEN)
     assert 'zalmoxis was imported from' in capsys.readouterr().err
     assert not out.exists()
+
+
+def test_command_line_refuses_an_output_link_into_a_missing_folder(
+    tmp_path, capsys, clean_import
+):
+    """An --out link whose target folder does not exist stops the tool before PALEOS is
+    imported."""
+    src = tmp_path / 'paleos_src'
+    src.mkdir()
+    _stub_paleos(src)
+    (src / 'paleos' / '__init__.py').write_text("raise AssertionError('PALEOS was imported')\n")
+    out = tmp_path / 'ext.dat'
+    out.symlink_to(tmp_path / 'nodir' / 'real.dat')
+    with pytest.raises(SystemExit):
+        _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, *_GIVEN)
+    assert 'nodir does not exist' in capsys.readouterr().err
