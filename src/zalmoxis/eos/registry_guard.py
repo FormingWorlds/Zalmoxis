@@ -159,20 +159,21 @@ def _refetch(real: Path, key: str, digest: str) -> bool:
 
 
 def verify_digest(eos_file: str, digest: str | None, label: str | None = None) -> None:
-    """Raise unless ``digest`` is a pinned md5 of the name of ``eos_file``.
+    """Raise unless ``digest`` is a pin common to the pinned names of ``eos_file``: its own
+    name and, for a link, the name of the file it resolves to, also when that file is gone.
 
     Used for a binary cache whose text table is absent or unreadable: the cache carries
     the md5 of the table it was built from, and ``label`` (the cache file) names it in the
-    error. A name no PALEOS registry lists passes.
+    error. A file whose names no PALEOS registry lists passes.
 
     Raises
     ------
     StaleTableError
-        If the name is pinned and ``digest`` is none of its pinned md5 values.
+        If a name is pinned and ``digest`` is not a pin common to the pinned names.
     """
-    pinned = _pinned(os.path.basename(eos_file))
-    if pinned and digest not in pinned.values():
-        raise _stale(label or eos_file, sorted(pinned), set(pinned.values()), digest)
+    found = _accepted(eos_file)
+    if found is not None and digest not in found[0]:
+        raise _stale(label or eos_file, found[1], found[0], digest)
 
 
 def _stale(eos_file: str, keys: list[str], want: set[str], digest) -> StaleTableError:
