@@ -939,35 +939,50 @@ def test_a_clock_stop_inside_its_limit_without_converged_inner_solves_falls_back
 @pytest.mark.wolfbower
 @pytest.mark.usefixtures('no_check')
 @pytest.mark.parametrize(
-    ('linear', 'factor', 'outer', 'clock_after'),
-    [(1.04, 1.10, 8, None), (1.04, 1.035, 2, None), (1.045, 1.035, 3, 2)],
+    ('linear', 'factor', 'outer', 'clock_after', 'label', 'blend'),
+    [
+        (1.04, 1.10, 8, None, None, 1.0),
+        (1.04, 1.035, 2, None, None, 0.25),
+        (1.045, 1.035, 3, 2, 'timeout', 0.25),
+    ],
     ids=['cap-earlier-above-ceiling', 'cap-earlier-worse', 'inner-clock-earlier-worse'],
 )
 def test_a_stop_that_cannot_return_a_better_earlier_pass_keeps_its_own(
-    monkeypatch, caplog, linear, factor, outer, clock_after
+    monkeypatch, caplog, linear, factor, outer, clock_after, label, blend
 ):
     """tolerance_outer 0.05 above the 3 % ceiling: an iteration cap whose earlier pass is not
-    under 3 %, or whose earlier pass is worse, and an inner clock stop on the last pass whose
-    earlier pass is worse, keep the newest best pass; no warning names an earlier one."""
+    under 3 %, or whose earlier pass is worse, returns its newest best pass unaccepted; an inner
+    clock stop on the last pass takes the mass verdict of a clock stop and accepts its newest
+    best pass. No warning names an earlier pass."""
     with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
         r = _wb_blended(
             monkeypatch, factor, 0.05, clock_stop=clock_after is not None, outer=outer,
             clock_after=clock_after, linear=linear,
         )  # fmt: skip
     assert 'No pass of adiabat blend' not in caplog.text
+    assert r['accepted_on'] == label and r['adiabat_blend'] == blend
     assert r['best_mass_error'] == pytest.approx(factor - 1, rel=1e-9)
+    assert r['mass_error_at_accept'] == pytest.approx(factor - 1, rel=1e-9)
 
 
 @pytest.mark.smoke
 @pytest.mark.wolfbower
 @pytest.mark.usefixtures('no_check')
-def test_an_inner_clock_stop_on_the_last_pass_returns_a_better_earlier_pass(monkeypatch):
-    """tolerance_outer 0.05: the clock runs out in the inner loop of the last outer pass, the
-    blended pass is 4.5 % off and the linear pass 4 %: the linear pass is returned and the mass
-    test of the stop accepts it, although it is above the 3 % ceiling."""
-    r = _wb_blended(monkeypatch, 1.045, 0.05, outer=3, clock_after=2, linear=1.04)
-    assert r['accepted_on'] == 'timeout' and r['adiabat_blend'] == 0.0
-    assert r['mass_error_at_accept'] == pytest.approx(0.04, rel=1e-9)
+@pytest.mark.parametrize('clock_after', [None, 2], ids=['iteration-cap', 'inner-clock'])
+def test_a_stop_returns_a_better_earlier_pass_it_can_accept(monkeypatch, caplog, clock_after):
+    """tolerance_outer 0.05, blended passes 10 % off: an iteration cap returns the 2 % linear
+    pass through the 3 % ceiling; an inner clock stop on the last pass returns the 4 % linear
+    pass through the mass test of the stop; both warn."""
+    linear = 1.02 if clock_after is None else 1.04
+    with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+        r = _wb_blended(
+            monkeypatch, 1.10, 0.05, clock_stop=clock_after is not None,
+            outer=8 if clock_after is None else 3, clock_after=clock_after, linear=linear,
+        )  # fmt: skip
+    assert r['accepted_on'] == ('max_iter' if clock_after is None else 'timeout')
+    assert r['adiabat_blend'] == 0.0
+    assert r['mass_error_at_accept'] == pytest.approx(linear - 1, rel=1e-9)
+    assert f'best pass of blend 0.00 (mass error {(linear - 1) * 100:.4f}%)' in caplog.text
 
 
 @pytest.mark.smoke
