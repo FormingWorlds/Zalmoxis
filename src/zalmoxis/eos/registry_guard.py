@@ -49,7 +49,8 @@ def _manifest() -> tuple:
 @functools.cache
 def _pins() -> dict[str, dict[str, str]]:
     """Return the pin of each PALEOS file name per dataset key: a bare md5, or
-    ``<algorithm>:<digest>`` for another algorithm (a bare registry hash is sha256)."""
+    ``<algorithm>:<digest>`` for another form (a bare registry hash is sha256), which
+    :func:`_pinned` refuses."""
     pins: dict[str, dict[str, str]] = {}
     for ds in _manifest():
         for name, known in ds.registry().items():
@@ -68,9 +69,15 @@ def _pinned(name: str) -> dict[str, str]:
     Raises
     ------
     StaleTableError
-        If two datasets pin the name to different releases.
+        If a pin of the name is not an md5, or two datasets pin it to different releases.
     """
     pinned = next((v for n, v in _pins().items() if n.casefold() == name.casefold()), {})
+    for key, pin in pinned.items():
+        if ':' in pin:
+            raise StaleTableError(
+                f'{name} is pinned as {pin} by {key}; only md5 pins are checked, so the table '
+                'is not read'
+            )
     if len(set(pinned.values())) > 1:
         raise StaleTableError(f'the registries disagree for {name}: {pinned}')
     return pinned
@@ -89,47 +96,32 @@ def _accepted(eos_file: str) -> tuple[set[str], list[str]] | None:
     )
 
 
-def _hash(path: str, algorithm: str = 'md5') -> str:
-    """Return the hex digest of a file."""
+def _md5(path: str) -> str:
+    """Return the md5 hex digest of a file."""
     with open(path, 'rb') as f:
-        return hashlib.file_digest(f, algorithm).hexdigest()
-
-
-_md5 = _hash
-
-
-def file_hash(path: str, algorithm: str = 'md5') -> str:
-    """Return the digest of ``path``, hashed again when the file changes on disk."""
-    st = os.stat(path)
-    key = (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns, algorithm)
-    if key not in _HASHES:
-        _HASHES[key] = _md5(path) if algorithm == 'md5' else _hash(path, algorithm)
-    return _HASHES[key]
+        return hashlib.file_digest(f, 'md5').hexdigest()
 
 
 def file_md5(path: str) -> str:
     """Return the md5 of ``path``, hashed again when the file changes on disk."""
-    return file_hash(path)
+    st = os.stat(path)
+    key = (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+    if key not in _HASHES:
+        _HASHES[key] = _md5(path)
+    return _HASHES[key]
 
 
 def _matches(path: str, pins: set[str]) -> bool:
-    """Whether the file has the digest of one of ``pins`` (a bare md5 or ``alg:digest``)."""
-    for pin in pins:
-        algorithm, sep, digest = pin.partition(':')
-        algorithm, digest = (algorithm, digest) if sep else ('md5', pin)
-        try:
-            if file_hash(path, algorithm) == digest:
-                return True
-        except ValueError as exc:  # an algorithm hashlib does not know
-            raise StaleTableError(f'the pin {pin} of {path} cannot be checked: {exc}') from exc
-    return False
+    """Whether the md5 of the file is one of ``pins``."""
+    return file_md5(path) in pins
 
 
 def _refetch(real: Path, key: str, digest: str) -> bool:
     """Fetch ``real`` again through fwl-io when it sits in the version directory of ``key``
     under the current FWL_DATA; fwl-io places the file only once it matches the pin ``digest``.
 
-    Returns False when ``real`` is not in that version directory.
+    Returns False when ``real`` is not in that version directory, when no FWL_DATA is set,
+    or when the manifest has no dataset ``key`` or no Zenodo record for it.
 
     Raises
     ------
@@ -154,7 +146,7 @@ def _refetch(real: Path, key: str, digest: str) -> bool:
             subdir=ds.subdir,
             zenodo=ds.zenodo,
             dataverse=ds.dataverse,
-            registry={real.name: digest if ':' in digest else f'md5:{digest}'},
+            registry={real.name: f'md5:{digest}'},
             data_root=root,
             extract=ds.extract,
         ).fetch(real.name)

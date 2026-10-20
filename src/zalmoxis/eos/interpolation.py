@@ -12,6 +12,7 @@ import inspect
 import logging
 import os
 import pickle
+import types
 
 import numpy as np
 from scipy.interpolate import (
@@ -70,8 +71,10 @@ def read_table_columns(eos_file, usecols, dtype=float):
     ``np.loadtxt`` parses these 50-140 MB files several times faster than
     ``np.genfromtxt`` and returns the same arrays for numeric input. A token
     that is not a number (``N/A``, ``---``) raises ``ValueError`` where
-    ``genfromtxt`` gave NaN.
+    ``genfromtxt`` gave NaN. A PALEOS table must be its pinned release
+    (:func:`zalmoxis.eos.registry_guard.verify`).
     """
+    verify(eos_file)
     return np.loadtxt(eos_file, usecols=usecols, dtype=dtype, comments='#')
 
 
@@ -603,18 +606,40 @@ def _paleos_clamp_temperature(log_p, log_t, cached):
 # Layout of the cached entry; a change to load_paleos_unified_table raises it.
 CACHE_FORMAT = 1
 
-# The loader whose source keys the cache, bound once so a patched module name never changes it
-_CACHE_LOADER = load_paleos_unified_table
+
+def _code_text(code):
+    """Return the bytecode, constants and names of ``code`` (nested code objects by the same
+    rule, frozensets sorted), without its file name or line numbers."""
+    consts = []
+    for c in code.co_consts:
+        if isinstance(c, types.CodeType):
+            c = _code_text(c)
+        elif isinstance(c, frozenset):
+            c = sorted(map(repr, c))
+        consts.append(repr(c))
+    return f'{code.co_code.hex()}|{",".join(consts)}|{code.co_names}'
+
+
+def _code_identity(fn):
+    """Return the source of ``fn``, or without source its :func:`_code_text`."""
+    try:
+        return inspect.getsource(fn)
+    except (OSError, TypeError):
+        return _code_text(fn.__code__)
+
+
+# The identity of the loader that builds a cache entry, taken once at import
+_CACHE_LOADER_CODE = _code_identity(load_paleos_unified_table)
 
 
 @functools.cache
 def cache_builder():
-    """Return the identity of the code that builds a cache entry: a digest of the source of
-    ``load_paleos_unified_table`` and the numpy and scipy versions."""
+    """Return the identity of the code that builds a cache entry: a digest of the identity of
+    ``load_paleos_unified_table`` at import (:func:`_code_identity`) and the numpy and scipy
+    versions."""
     import scipy
 
-    source = inspect.getsource(_CACHE_LOADER)
-    text = f'{source}\nnumpy {np.__version__}\nscipy {scipy.__version__}'
+    text = f'{_CACHE_LOADER_CODE}\nnumpy {np.__version__}\nscipy {scipy.__version__}'
     return hashlib.sha256(text.encode()).hexdigest()
 
 
@@ -646,12 +671,21 @@ def read_cache(cache_path):
 
 
 def cache_path_for(eos_file):
-    """Return the binary cache path of a unified PALEOS table: ``<table>.cache.pkl``."""
+    """Return the binary cache path of a unified PALEOS table: ``x.cache.pkl`` for ``x.dat``."""
     return os.path.splitext(eos_file)[0] + '.cache.pkl'
 
 
 class _StaleCache(Exception):
     """Raised when a binary cache was not built from the text table beside it."""
+
+
+def _stat_key(path):
+    """Return (device, inode, size, mtime, ctime) of ``path``, or None when it cannot be read."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    return st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns
 
 
 def _ensure_unified_cache(eos_file, interpolation_functions):
@@ -677,7 +711,7 @@ def _ensure_unified_cache(eos_file, interpolation_functions):
         The cache entry for this file.
     """
     if eos_file not in interpolation_functions:
-        source_md5 = None
+        source_md5, before = None, _stat_key(eos_file)
         if os.path.isfile(eos_file) and os.access(eos_file, os.R_OK):
             require_eos_file(eos_file)
             source_md5 = file_md5(eos_file)
@@ -727,7 +761,11 @@ def _ensure_unified_cache(eos_file, interpolation_functions):
                 )
                 logger.debug('PALEOS cache load failure traceback', exc_info=True)
             interpolation_functions[eos_file] = load_paleos_unified_table(eos_file)
-            # Save binary cache for next time
+            if _stat_key(eos_file) != before:
+                logger.warning(
+                    '%s changed while it was read; no binary cache written', eos_file
+                )
+                return interpolation_functions[eos_file]
             try:
                 write_cache(
                     cache_path,
