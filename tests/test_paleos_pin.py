@@ -683,3 +683,45 @@ def test_a_paleos_imported_before_the_first_key_is_covered_from_then_on(
     (repo / 'paleos' / 'eos.py').write_text('edited later')
     with pytest.raises(PaleosVersionError, match='changed on disk since the first key'):
         paleos_api._same_code_as_import(paleos_api.paleos_installed_sha())
+
+
+def test_a_staged_new_module_is_a_change(history, monkeypatch):
+    """A module added to the index but not committed is code the commit does not hold: it is
+    refused without the opt-in, and keyed by its content on disk with it."""
+    repo, c = history
+    (repo / 'paleos' / 'helper.py').write_text('K = 1\n')
+    _git(repo, 'add', 'paleos/helper.py')
+    with pytest.raises(PaleosVersionError, match='differ from its commit'):
+        check_paleos_commit(repo, c['new'])
+    monkeypatch.setenv('ZALMOXIS_PALEOS_ALLOW_DIRTY', '1')
+    a = _dirty_key(repo, monkeypatch)
+    (repo / 'paleos' / 'helper.py').write_text('K = 2\n')
+    b = _dirty_key(repo, monkeypatch)
+    assert a.startswith(c['new'] + '-dirty-') and b.startswith(c['new'] + '-dirty-') and a != b
+
+
+@pytest.mark.usefixtures('allow_dirty')
+@pytest.mark.parametrize('kind', ['symlink', 'submodule'])
+def test_a_committed_link_to_a_directory_or_submodule_stops_even_when_allowed(
+    history, tmp_path, kind
+):
+    """A committed link to a directory or a committed submodule under paleos/ holds code that no
+    key can describe: the check stops, also with the opt-in."""
+    repo, _ = history
+    if kind == 'symlink':
+        (tmp_path / 'outside').mkdir()
+        (tmp_path / 'outside' / 'mod.py').write_text('K = 1\n')
+        (repo / 'paleos' / 'ext').symlink_to(tmp_path / 'outside', target_is_directory=True)
+        _git(repo, 'add', 'paleos/ext')
+    else:
+        sha = _git(repo, 'rev-parse', 'HEAD')
+        (repo / 'paleos' / 'sub').mkdir()
+        _git(repo, 'update-index', '--add', '--cacheinfo', f'160000,{sha},paleos/sub')
+    _git(
+        repo,
+        *('-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false'),
+        *('-c', 'core.hooksPath=/dev/null', 'commit', '-qm', kind),
+    )
+    head = _git(repo, 'rev-parse', 'HEAD')
+    with pytest.raises(PaleosVersionError, match='no key can describe'):
+        check_paleos_commit(repo, head)
