@@ -38,13 +38,13 @@ jobs:
             select: wolfbower
             args: --dist loadfile --cov-fail-under=0
           - suite: paleos_adiabat
-            select: paleos_adiabat
+            select: paleos_adiabat and not wolfbower
             args: --dist loadfile --cov-fail-under=0
           - suite: accept_solves_invariants
-            select: accept_solves and not wolfbower
+            select: accept_solves and not wolfbower and not paleos_adiabat
             args: --dist load --cov-fail-under=0 --durations=0 tests/test_invariants.py
           - suite: accept_solves_accepted_on
-            select: accept_solves and not wolfbower
+            select: accept_solves and not wolfbower and not paleos_adiabat
             args: --dist load --cov-fail-under=0 --durations=0 tests/test_accepted_on.py
     # A 90 min ceiling per job leaves wide margin for shared-runner variance.
     timeout-minutes: 90
