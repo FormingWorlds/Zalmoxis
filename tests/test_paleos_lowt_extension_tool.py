@@ -507,7 +507,7 @@ def test_command_line_refuses_a_stale_pinned_table_and_writes_no_file(
     tmp_path, clean_import, monkeypatch
 ):
     """A --table under a registry name whose md5 is not the pinned one raises StaleTableError
-    before any output is written."""
+    before PALEOS is evaluated, so no output is written."""
     from zalmoxis.eos import registry_guard
     from zalmoxis.eos.registry_guard import StaleTableError
 
@@ -521,6 +521,11 @@ def test_command_line_refuses_a_stale_pinned_table_and_writes_no_file(
     pins = {table.name: {'interior.eos.paleos_mgsio3': '0' * 32}}
     monkeypatch.setattr(registry_guard, '_pins', lambda: pins)
     registry_guard._HASHES.clear()
+
+    def no_write(*args):
+        raise AssertionError('the stale table reached write_extension')
+
+    monkeypatch.setattr(tool, 'write_extension', no_write)
     out = tmp_path / 'ext.dat'
     with pytest.raises(StaleTableError, match=table.name):
         _main(src, table, out, '--t-min', '150.4')
