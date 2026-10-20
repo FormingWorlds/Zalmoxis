@@ -161,15 +161,6 @@ def test_mass_closure_reads_the_limit_of_the_accept_path():
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize('key', ['pressure', 'cmb_mass', 'temperature'])
-def test_a_converged_result_without_a_profile_raises(key):
-    result, cfg = _sphere()
-    del result[key]
-    with pytest.raises(StructureInvariantError, match=f'has no {key}'):
-        _check(result, cfg)
-
-
-@pytest.mark.unit
 def test_a_nan_raises():
     result, cfg = _sphere()
     result['gravity'][N - 2] = np.nan
@@ -237,8 +228,11 @@ def test_an_unconverged_result_or_a_picard_density_is_not_checked():
     over=st.floats(2.0, 1e6),
     sign=st.sampled_from([-1, 1]),
 )
-def test_a_change_above_the_tolerance_raises_and_one_below_does_not(field, node, over, sign):
-    """A relative change of ``over`` times the tolerance raises, one of 1/4 of it does not."""
+def test_a_change_above_the_code_tolerance_raises_and_one_below_does_not(
+    field, node, over, sign
+):
+    """A relative change of ``over`` times the tolerance that the code reports raises, one of 1/4
+    of it does not; test_the_tolerances_are_the_documented_values pins the values."""
     name = {'gravity': 'gravity', 'density': 'density_eos', 'cmb_mass': 'cmb_mass'}[field]
     tol = deviations(*_sphere(), 1e-3, RTOL, ATOL, lambda P, T, layer: RHO)[name][2]
     for factor, raises in ((over, True), (0.25, False)):
@@ -881,10 +875,22 @@ def _bool_core_mantle(result):
     result['core_mantle_mass'] = True
 
 
+def _text_pressure(result):
+    result['pressure'] = ['abc'] * N
+
+
 @pytest.mark.unit
 @pytest.mark.parametrize(
     'edit',
-    [_malformed_arrays, _short_radii, _one_node, _vector_cmb, _string_cmb, _bool_core_mantle],
+    [
+        _malformed_arrays,
+        _short_radii,
+        _one_node,
+        _vector_cmb,
+        _string_cmb,
+        _bool_core_mantle,
+        _text_pressure,
+    ],
 )
 def test_a_malformed_result_raises_the_invariant_error(edit):
     """A ValueError, IndexError or TypeError would be caught and rolled back by the caller."""
@@ -1291,3 +1297,47 @@ def test_the_newton_check_reads_the_melt_curves_and_eos_parameters_of_the_solve(
         assert args[2:4] == (solidus, liquidus)
         assert args[5:] == zs._eos_params(config)
     assert zs._eos_params(config) != zs._eos_params({})
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    'error', [ValueError, KeyError, TypeError, ZeroDivisionError, RuntimeError]
+)
+def test_any_error_of_the_density_lookup_breaks_density_eos(error):
+    """Every exception of the lookup becomes the density_eos break with that cause."""
+
+    def lookup(P, T, layer):
+        raise error('lookup failed')
+
+    result, cfg = _sphere()
+    result['accept_mass_limit'] = 1e-3
+    with pytest.raises(Exception) as info:
+        check_accepted(result, cfg, RTOL, ATOL, lookup)
+    assert type(info.value) is StructureInvariantError
+    assert 'breaks density_eos:' in str(info.value)
+    assert type(info.value.__cause__) is error
+
+
+@pytest.mark.unit
+def test_without_a_density_lookup_density_eos_is_not_checked():
+    """density_at None skips the density check: a density 1 % off the EOS passes."""
+    result, cfg = _sphere()
+    result['density'] = np.array(result['density']) * 1.01
+    assert 'density_eos' not in deviations(result, cfg, 1e-3, RTOL, ATOL, None)
+    result['accept_mass_limit'] = 1e-3
+    check_accepted(result, cfg, RTOL, ATOL, None)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    'key',
+    ['radii', 'mass_enclosed', 'gravity', 'pressure', 'density', 'temperature']
+    + ['cmb_mass', 'core_mantle_mass'],
+)
+def test_a_result_without_a_profile_array_or_layer_mass_names_it(key):
+    result, cfg = _sphere()
+    del result[key]
+    with pytest.raises(Exception) as info:
+        _check(result, cfg)
+    assert type(info.value) is StructureInvariantError
+    assert f'has no {key}' in str(info.value)
