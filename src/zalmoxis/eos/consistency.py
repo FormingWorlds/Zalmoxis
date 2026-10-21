@@ -164,17 +164,26 @@ def residuals(table, k=1):
 def floors(table, eps, k=1):
     """Round-off bound of each residual at step ``k`` for columns stored to relative ``eps``.
 
-    For R + 1 = D / Q the bound is (E / |Q| + |D / Q| q) eps, with E the error of the central
-    difference from its two stored ends and q the relative error of Q. nabla_ad, with no
-    derivative, gets |R + 1| (4 eps + e_P) from its four stored factors and from P, with e_P
-    ln 10 times the departure of log10 P from its linear fit; in the derivative identities the
-    coordinate rounding stays below a few percent of the floor and is left out.
+    For R + 1 = D / Q the bound is (E / |Q| + |D / Q| q) eps + |D / Q| c, with E the error of
+    the central difference from its two stored ends, q the relative error of Q, and c the
+    relative error of Q from the stored P and T coordinates (e_P and e_T: ln 10 times the
+    departure of log10 P and log10 T from their linear fit). nabla_ad, with no derivative, gets
+    |R + 1| (4 eps + e_P) from its four stored factors and P.
     """
     _, _, P, _, rho, _, _, cp, _, alpha, nab = _grid(table)
     eP = np.log(10.0) * _departure(np.asarray(table['unique_log_p'], float))[:, None]
+    eT = np.log(10.0) * _departure(np.asarray(table['unique_log_t'], float))[None, :]
     with np.errstate(divide='ignore', invalid='ignore'):
+        a = P * alpha / rho
+        c = {
+            'cp': 0.0,
+            'maxwell': eP,
+            'alpha': eT,
+            'dudt': eT + eP * np.abs(a / (cp - a)),
+            'cp_cv': eP + eT,
+        }
         out = {
-            n: (E / np.abs(Q) + np.abs(D / Q) * q) * eps
+            n: (E / np.abs(Q) + np.abs(D / Q) * q) * eps + np.abs(D / Q) * c[n]
             for n, (D, E, Q, q) in _parts(table, k).items()
         }
         out['nabla_ad'] = np.abs(nab * rho * cp / (P * alpha)) * (4 * eps + eP)
@@ -387,7 +396,7 @@ def _axis_error(x, eps):
 
 def _pt_axes(tables, eps):
     """The P and T axes of density, checked: 1-D, at least 2 points, finite, increasing, T
-    positive, and uniform or geometric."""
+    positive, P not negative, and uniform or geometric."""
     P, T = np.asarray(tables['density']['P'], float), np.asarray(tables['density']['T'], float)
     for name, x in (('P', P), ('T', T)):
         if x.ndim != 1:
@@ -398,6 +407,8 @@ def _pt_axes(tables, eps):
             raise ValueError(f'{name} must be finite and strictly increasing')
         if name == 'T' and x[0] <= 0:
             raise ValueError('T must be positive')
+        if name == 'P' and x[0] < 0:
+            raise ValueError('P must not be negative')
         if _axis_error(x, eps) is None:
             raise ValueError(f'{name} is neither uniform nor geometric')
     return P, T
@@ -461,8 +472,9 @@ def check_pt(tables, eps):
     ValueError
         If eps is not a real number in [0, 1), an axis is not 1-D, has fewer than 2 points, is
         not finite and increasing, or departs from a uniform or geometric grid by more than
-        ``PT_GRID_FIT`` of its step plus its stored precision, T is not positive, the four
-        tables are not on one grid or off its shape, or every identity is skipped.
+        ``PT_GRID_FIT`` of its step plus its stored precision, T is not positive or P is
+        negative, the four tables are not on one grid or off its shape, or every identity is
+        skipped.
 
     Notes
     -----
