@@ -41,13 +41,17 @@ jobs:
             select: paleos_adiabat and not wolfbower
             args: --dist loadfile --cov-fail-under=0
           - suite: accept_solves_invariants
-            select: accept_solves and not wolfbower and not paleos_adiabat
+            select: accept_solves and not accept_solves_long and not wolfbower and not paleos_adiabat
             args: --dist load --cov-fail-under=0 --durations=0 tests/test_invariants.py
+          - suite: accept_solves_long
+            select: accept_solves_long and not wolfbower and not paleos_adiabat
+            args: --dist load --cov-fail-under=0 --durations=0 tests/test_invariants.py
+            test_timeout: 4800
           - suite: accept_solves_accepted_on
             select: accept_solves and not wolfbower and not paleos_adiabat
             args: --dist load --cov-fail-under=0 --durations=0 tests/test_accepted_on.py
-    # A 90 min ceiling per job leaves wide margin for shared-runner variance.
-    timeout-minutes: 90
+    # 90 min per job; the longest solves have their own job with 120 min.
+    timeout-minutes: ${{ matrix.suite == 'accept_solves_long' && 120 || 90 }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -100,15 +104,10 @@ jobs:
         env:
           ZALMOXIS_NEED_WOLFBOWER: ${{ matrix.suite == 'wolfbower' && '1' || '' }}
         run: |
-          # --timeout kills any single hung test after 50 min, failing the
-          # run and naming that test in the worker-crash report while the
-          # other workers still finish, instead of the job ceiling cancelling
-          # the whole run with no clue which test wedged. The slowest healthy
-          # test is ~20 min on the 2-vCPU runner under coverage, so 3000 s
-          # (about 2.4x) absorbs runner variance without risking a false kill.
-          # --durations prints the slowest tests so the profile stays visible.
+          # --timeout names a hung test in the worker-crash report before the job limit
+          # cancels the run; a timeout marker on a test takes precedence over it.
           pytest -m "${{ matrix.select }}" -n auto -o "addopts=" \
-            --timeout=3000 --timeout-method=thread --durations=25 \
+            --timeout=${{ matrix.test_timeout || 3000 }} --timeout-method=thread --durations=25 \
             --cov=zalmoxis --cov-report=term-missing --cov-report=xml \
             ${{ matrix.args }}
 

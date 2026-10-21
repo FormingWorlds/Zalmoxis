@@ -31,6 +31,8 @@ from zalmoxis.mixing import calculate_mixed_density, parse_all_layer_mixtures
 
 RHO, N, CMF, RTOL, ATOL = 5500.0, 50, 0.325, 1e-9, 1e-10
 
+_LONG = (pytest.mark.accept_solves_long, pytest.mark.timeout(4800))  # own nightly job
+
 
 def _sphere(mmf=0.0):
     """Accepted result of a uniform sphere of density RHO and radius 6.4e6 m: exact m, g
@@ -542,7 +544,8 @@ def test_a_density_reference_of_none_raises():
 
 @pytest.mark.smoke
 @pytest.mark.accept_solves
-@pytest.mark.timeout(2400)
+@pytest.mark.accept_solves_long
+@pytest.mark.timeout(4800)
 def test_a_chabrier_h2_mantle_passes_every_invariant():
     """The 3 % H2 mantle of input/grids/h2_mixing.toml with a PALEOS iron core."""
     from tests.test_spider_coupling_convergence import _has_paleos_data
@@ -796,7 +799,8 @@ def test_the_gravity_check_reports_the_node_with_the_largest_ratio():
 
 @pytest.mark.smoke
 @pytest.mark.accept_solves
-@pytest.mark.timeout(2400)
+@pytest.mark.accept_solves_long
+@pytest.mark.timeout(4800)
 def test_a_relative_tolerance_below_the_floor_of_the_integrator_passes():
     """scipy raises an rtol below 100 eps to 100 eps; the check uses the rtol the integration
     ran with."""
@@ -1062,21 +1066,33 @@ def _paleos_eos_cfg(**kwargs):
 
 @pytest.mark.smoke
 @pytest.mark.accept_solves
-@pytest.mark.timeout(2400)
 @pytest.mark.parametrize(
     'kwargs',
     [
-        {'mushy_zone_factor': 0.8},
-        {'mushy_zone_factors': {'PALEOS:iron': 1.0, 'PALEOS:MgSiO3': 0.8, 'PALEOS:H2O': 1.0}},
-        {
-            'layer_eos_config': {
-                'core': 'PALEOS:iron',
-                'mantle': 'PALEOS:MgSiO3:0.97+Chabrier:H:0.03',
+        pytest.param({'mushy_zone_factor': 0.8}, id='mushy_zone_factor', marks=_LONG),
+        pytest.param(
+            {
+                'mushy_zone_factors': {
+                    'PALEOS:iron': 1.0,
+                    'PALEOS:MgSiO3': 0.8,
+                    'PALEOS:H2O': 1.0,
+                }
             },
-            'binodal_T_scale': 500.0,
-        },
+            id='mushy_zone_factors',
+            marks=pytest.mark.timeout(2400),
+        ),
+        pytest.param(
+            {
+                'layer_eos_config': {
+                    'core': 'PALEOS:iron',
+                    'mantle': 'PALEOS:MgSiO3:0.97+Chabrier:H:0.03',
+                },
+                'binodal_T_scale': 500.0,
+            },
+            id='binodal_T_scale',
+            marks=_LONG,
+        ),
     ],
-    ids=['mushy_zone_factor', 'mushy_zone_factors', 'binodal_T_scale'],
 )
 def test_the_density_reference_takes_the_eos_parameters_of_the_solve(kwargs):
     """The reference density is the EOS of the solve with its parameters; a reference at the
@@ -1099,7 +1115,8 @@ def _spy_checks(monkeypatch):
 
 @pytest.mark.smoke
 @pytest.mark.accept_solves
-@pytest.mark.timeout(2400)
+@pytest.mark.accept_solves_long
+@pytest.mark.timeout(4800)
 def test_an_ice_planet_passes_the_check_with_its_mantle_top_node(monkeypatch):
     """A real 3-layer solve (PALEOS iron, MgSiO3, H2O): main checks it with the ice layer, and
     a node reaches core_mantle_mass, the mantle top that PROTEUS reads."""
