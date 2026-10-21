@@ -166,21 +166,23 @@ def floors(table, eps, k=1):
 
     For R + 1 = D / Q the bound is (E / |Q| + |D / Q| q) eps + |D / Q| c, with E the error of
     the central difference from its two stored ends, q the relative error of Q, and c the
-    relative error of Q from the stored P and T coordinates (e_P and e_T: ln 10 times the
-    departure of log10 P and log10 T from their linear fit). nabla_ad, with no derivative, gets
-    |R + 1| (4 eps + e_P) from its four stored factors and P.
+    relative error from the stored P and T coordinates: in Q (e_P and e_T, ln 10 times the
+    departure of log10 P and log10 T from their linear fit) and in the mean step of the
+    derivative axis (2 eps / span, span = (n - 1) h in ln units). nabla_ad, with no
+    derivative, gets |R + 1| (4 eps + e_P) from its four stored factors and P.
     """
-    _, _, P, _, rho, _, _, cp, _, alpha, nab = _grid(table)
+    hx, hy, P, _, rho, _, _, cp, _, alpha, nab = _grid(table)
+    sP, sT = 2 * eps / (hx * (rho.shape[0] - 1)), 2 * eps / (hy * (rho.shape[1] - 1))
     eP = np.log(10.0) * _departure(np.asarray(table['unique_log_p'], float))[:, None]
     eT = np.log(10.0) * _departure(np.asarray(table['unique_log_t'], float))[None, :]
     with np.errstate(divide='ignore', invalid='ignore'):
         a = P * alpha / rho
         c = {
-            'cp': 0.0,
-            'maxwell': eP,
-            'alpha': eT,
-            'dudt': eT + eP * np.abs(a / (cp - a)),
-            'cp_cv': eP + eT,
+            'cp': sT,
+            'maxwell': eP + sP,
+            'alpha': eT + sT,
+            'dudt': eT + sT + eP * np.abs(a / (cp - a)),
+            'cp_cv': eP + eT + sP,
         }
         out = {
             n: (E / np.abs(Q) + np.abs(D / Q) * q) * eps + np.abs(D / Q) * c[n]
