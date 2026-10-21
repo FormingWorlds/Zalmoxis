@@ -671,6 +671,33 @@ def test_a_narrow_axis_stored_to_9_digits_passes_and_still_finds_a_fault():
     assert c.check(planted, EPS9)['cp']['fail'][4, 4]
 
 
+@pytest.mark.unit
+@pytest.mark.parametrize('name', ['cp', 'maxwell'])
+def test_the_floor_on_a_narrow_axis_is_the_first_order_round_off(name):
+    """On exact 9-point axes at 0.001 dex, where the mean-step term 2 eps / span is most of the
+    floor, the sum of the changes of R from moving each stored value and each end coordinate
+    of the derivative axis by eps is the floor."""
+    lp, lt = 5.0 + 0.001 * np.arange(-4, 5), np.log10(1500.0) + 0.001 * np.arange(-4, 5)
+    m = a.table(lambda P, T: a.ideal_gas(P, T, cp=1000.0, T0=1500.0, s0=0.0), lp, lt)
+    eps, (ends, factors) = 1e-9, _FLOOR_PARTS[name]
+    ax = ends[0][1]
+    moves = [(col, (4 + o, 4) if ax == 0 else (4, 4 + o)) for col, _ in ends for o in (-1, 1)]
+    moves += [(col, (4, 4)) for col in factors]
+    moves += [(('unique_log_p', 'unique_log_t')[ax], at) for at in (0, -1)]
+    base = c.residuals(m, 1)[name][4, 4]
+    total = 0.0
+    for col, at in moves:
+        t = {**m, col: np.array(m[col], float)}
+        if col.startswith('unique'):
+            t[col][at] += np.log10(1 + eps)
+        else:
+            t[col][at] *= 1 + eps
+        total += abs(c.residuals(t, 1)[name][4, 4] - base)
+    floor = c.floors(m, eps, 1)[name][4, 4]
+    assert total == pytest.approx(floor, rel=1e-4)
+    assert floor > 20 * eps
+
+
 def _set(t, col, at, value):
     """``t`` with ``col`` set to ``value`` at ``at``."""
     v = np.array(t[col], float)
