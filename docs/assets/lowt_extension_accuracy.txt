@@ -1,0 +1,11 @@
+| Mass ($M_\oplus$) | Nodes added | $S_0$, $S_1$ (J kg$^{-1}$ K$^{-1}$) | Columns with both nodes inverted | Largest deviation outside a band | Columns in a band | Crossing rows |
+|---|---|---|---|---|---|---|
+| 0.5 | 1 | 48.5, 125.8 | 59, up to 11.82 GPa | 9.97 % at 9.38 GPa | 5.60 % at 6.931 GPa | 5.6 % at 6.918 GPa |
+| 1 | 1 | 26.0, 106.1 | 27, up to 6.746 GPa | 2.65 % at 0.778 GPa | none | 20.2 % at 6.918 GPa |
+| 2.25 | 0 | 75.9, 160.7 | 31, up to 537.5 GPa (not measured at 537.5 GPa) | 2.11 % at 7.97 GPa | none | none |
+| 2.75 | 0 | 68.0, 154.1 | 28, up to 612.5 GPa (not measured at 612.5 GPa) | 2.98 % at 11.8 GPa | none | none |
+| 3 | 0 | 64.5, 151.8 | 26, up to 650 GPa (not measured at 650 GPa) | 3.53 % at 7.23 GPa | none | none |
+| 3.75 | 0 | 56.0, 144.9 | 22, up to 762.5 GPa (not measured at 762.5 GPa) | 5.77 % at 9.04 GPa | none | none |
+| 4.75 | 0 | 47.4, 138.2 | 12, up to 912.5 GPa (not measured at 912.5 GPa) | 1.37 % at 2.71 GPa | none | 5.8 % at 6.918 GPa |
+| 5 | 0 | 45.6, 136.4 | 11, up to 950 GPa (not measured at 950 GPa) | 1.45 % at 0.704 GPa | none | 5.6 % at 6.918 GPa |
+| 10 | 0 | 24.9, 116.2 | 7, up to 1700 GPa (not measured at 1700 GPa) | 3.13 % at 0.0001 GPa | none | 20.8 % at 6.918 GPa |
