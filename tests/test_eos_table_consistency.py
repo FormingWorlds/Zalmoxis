@@ -526,14 +526,16 @@ def test_the_csv_report_lists_exactly_the_failing_cells(tmp_path, planted):
                 f.write(' '.join(f'{v:.8e}' for v in vals) + ' solid\n')
     counts = report(str(path), str(tmp_path / 'out.csv'))
     rows = (tmp_path / 'out.csv').read_text().strip().splitlines()
-    assert rows[0] == 'condition,P_Pa,T_K,phase,residual,bound' and counts['cp'][0] > 1000
-    assert len(rows) - 1 == sum(failing for _, failing, _ in counts.values())
+    assert (
+        rows[0] == 'condition,P_Pa,T_K,phase,residual,bound' and counts['cp']['tested'] > 1000
+    )
+    assert len(rows) - 1 == sum(v['failing'] for v in counts.values())
     cp = [r.split(',') for r in rows[1:] if r.startswith('cp,')]
     assert len(cp) == (4 if planted else 0)
     for _, P, T, _, rx, bound in cp:
         assert float(P) == pytest.approx(PP[75, 20], rel=1e-8) and abs(float(rx)) > float(bound)
         assert min(abs(float(T) / TT[75, j] - 1) for j in (18, 19, 21, 22)) < 1e-8
-    assert counts['sign_kappa_T'][0] < counts['sign_rho'][0] == PP.size
+    assert counts['sign_kappa_T']['tested'] < counts['sign_rho']['tested'] == PP.size
     assert report(str(path), str(tmp_path / 'out8.csv'), np.uint8(9)) == counts
 
 
@@ -841,17 +843,25 @@ def test_the_report_main_prints_the_reason_instead_of_zero_counts(monkeypatch, c
     import tools.validation.eos_table_consistency_report as tool
 
     counts = {
-        'cp': (10, 1, ''),
-        'dudt': (0, 0, 'skipped: u holds no value'),
-        'alpha': (5, 5, 'x'),
+        'cp': {'present': 12, 'tested': 10, 'blind': 2, 'failing': 3, 'note': ''},
+        'dudt': {
+            'present': 0,
+            'tested': 0,
+            'blind': 0,
+            'failing': 0,
+            'note': 'skipped: u holds no value',
+        },
+        'alpha': {'present': 5, 'tested': 5, 'blind': 0, 'failing': 5, 'note': 'x'},
+        'sign_rho': {'tested': 7, 'failing': 1, 'note': ''},
     }
     monkeypatch.setattr(tool, 'report', lambda *_: counts)
     monkeypatch.setattr('sys.argv', ['tool', 'in.dat', 'out.csv'])
     tool.main()
     assert capsys.readouterr().out.splitlines() == [
-        'cp: tested 10, failing 1',
+        'cp: present 12, tested 10 (2 with a bound of 1 or more), failing 3',
         'dudt: skipped: u holds no value',
-        'alpha: tested 5, failing 5 (x)',
+        'alpha: present 5, tested 5 (0 with a bound of 1 or more), failing 5 (x)',
+        'sign_rho: tested 7, failing 1',
     ]
 
 
@@ -1128,3 +1138,57 @@ def test_with_eps_0_a_pt_axis_is_regular_within_1e_6_of_its_step(kind, fraction,
         ly = np.log(np.geomspace(1e5, 3.5e11, 200))
         x = np.exp(ly + fraction * 1e-6 * np.diff(ly).mean() * sign)
     assert (c._axis_error(x, 0.0) is not None) is regular
+
+
+@pytest.mark.unit
+def test_a_geometric_temperature_axis_at_9_digits_passes_the_aragog_pt_check():
+    """The departure of each stored T from the geometric fit covers its 9-digit rounding."""
+    res = c.check_pt(_pt_tables(a.murnaghan, 9, T=np.geomspace(300.0, 6000.0, 200)), 5e-9)
+    assert all(v['tested'].sum() > 30_000 and not v['fail'].any() for v in res.values())
+
+
+@pytest.mark.unit
+def test_a_nan_in_the_entropy_file_is_missing_in_the_aragog_pt_check(pt_files):
+    t = pt_files['murnaghan']
+    t = {**t, 'entropy': {**t['entropy'], 'values': np.array(t['entropy']['values'], float)}}
+    t['entropy']['values'][100, 100] = np.nan
+    res = c.check_pt(t, 5e-11)
+    assert not any(v['fail'].any() for v in res.values())
+    assert (
+        not res['cp']['tested'][100, 96:105].any()
+        and not res['maxwell']['tested'][96:105, 100].any()
+    )
+
+
+_LP20 = np.arange(5.0, 11.0 + 1e-9, 1 / 20)
+_LT20 = np.arange(np.log10(500.0), np.log10(5000.0) + 1e-9, 1 / 20)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('s_value, blind', [(1e10, True), (2200.0, False)])
+def test_maxwell_cells_with_a_bound_of_1_or_more_are_counted_apart(s_value, blind):
+    """Murnaghan at 20 points per decade (log P 5 to 11, log T log10 500 to log10 5000, 9
+    digits) with a constant s: there R_x = -1, so a cell detects the missing derivative only
+    where its maxwell bound is below 1; s = 1e10 makes every bound 1 or more."""
+    m = a.table(a.murnaghan, _LP20, _LT20, digits=9)
+    v = c.check({**m, 's': np.full_like(m['s'], s_value)}, EPS9)['maxwell']
+    assert v['tested'].sum() == 2373
+    assert v['blind'].sum() == (2373 if blind else 0)
+    assert v['fail'].sum() == (0 if blind else 2373)
+
+
+@pytest.mark.unit
+def test_the_report_counts_add_up_when_present_cells_are_not_finite(
+    stored, tmp_path, monkeypatch
+):
+    """rho = 0 leaves alpha with no tested cell; its failing cells are counted among the
+    present cells, so failing never exceeds present."""
+    import tools.validation.eos_table_consistency_report as tool
+
+    m = stored['murnaghan']
+    monkeypatch.setattr(
+        tool, 'load_paleos_all_properties', lambda _: {**m, 'rho': np.zeros_like(m['rho'])}
+    )
+    counts = tool.report('in.dat', str(tmp_path / 'out.csv'))
+    alpha = counts['alpha']
+    assert alpha['tested'] == 0 and 0 < alpha['failing'] <= alpha['present']
