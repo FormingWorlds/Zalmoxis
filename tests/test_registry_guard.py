@@ -708,8 +708,11 @@ def test_any_other_failure_of_the_check_is_a_stale_error(tmp_path, pinned, monke
         raise ValueError('registry does not match its files')
 
     monkeypatch.setattr(registry_guard, '_pins', broken)
-    with pytest.raises(StaleTableError, match='registry does not match'):
+    with pytest.raises(Exception) as excinfo:
         registry_guard.verify(str(path))
+
+    assert isinstance(excinfo.value, StaleTableError), type(excinfo.value)
+    assert 'registry does not match' in str(excinfo.value)
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason='root reads a file of mode 000')
@@ -1186,7 +1189,7 @@ def test_a_missing_fwl_io_says_so_and_how_to_install_it(tmp_path, name):
 
     with pytest.MonkeyPatch.context() as mp:
         _block(mp, 'fwl_io', 'fwl_io.manifest')
-        with pytest.raises(registry_guard.MissingFwlIoError) as excinfo:
+        with pytest.raises(StaleTableError) as excinfo:
             registry_guard.verify(str(path))
 
     _assert_missing_fwl_io(excinfo.value, path)
@@ -1197,7 +1200,7 @@ def test_a_missing_fwl_io_says_so_and_how_to_install_it(tmp_path, name):
 
 def test_a_missing_fwl_io_stops_the_cache_check_the_same_way(tmp_path, no_fwl_io):
     """verify_digest, used for a binary cache without its table, gives the same error."""
-    with pytest.raises(registry_guard.MissingFwlIoError) as excinfo:
+    with pytest.raises(StaleTableError) as excinfo:
         registry_guard.verify_digest(str(tmp_path / NAME), '0' * 32)
 
     _assert_missing_fwl_io(excinfo.value, tmp_path / NAME)
@@ -1210,7 +1213,7 @@ def test_an_fwl_io_without_its_doi_module_is_named_too(tmp_path, monkeypatch):
     path = tmp_path / NAME
     path.write_text(_table_text())
 
-    with pytest.raises(registry_guard.MissingFwlIoError) as excinfo:
+    with pytest.raises(StaleTableError) as excinfo:
         registry_guard.verify(str(path))
 
     _assert_missing_fwl_io(excinfo.value, path)
@@ -1246,9 +1249,10 @@ def test_every_reader_passes_a_missing_fwl_io_on(tmp_path, no_fwl_io, name, read
     path = tmp_path / name
     path.write_text(_table_text())
 
-    with pytest.raises(registry_guard.MissingFwlIoError) as excinfo:
+    with pytest.raises(StaleTableError) as excinfo:
         read(str(path))
 
+    assert isinstance(excinfo.value, registry_guard.MissingFwlIoError), type(excinfo.value)
     assert str(path) in str(excinfo.value)
 
 
@@ -1267,7 +1271,7 @@ def test_the_cache_reader_does_not_rebuild_on_a_missing_fwl_io(tmp_path, monkeyp
     path = _cache_without_table(tmp_path)
     _block(monkeypatch, 'fwl_io', 'fwl_io.manifest')
 
-    with pytest.raises(registry_guard.MissingFwlIoError) as excinfo:
+    with pytest.raises(StaleTableError) as excinfo:
         interpolation._ensure_unified_cache(str(path), {})
 
     _assert_missing_fwl_io(excinfo.value, interpolation.cache_path_for(str(path)))
@@ -1302,7 +1306,7 @@ def test_an_fwl_io_without_a_name_the_guard_uses_is_named(tmp_path, monkeypatch,
     path = tmp_path / NAME
     path.write_text(_table_text())
 
-    with pytest.raises(registry_guard.MissingFwlIoError) as excinfo:
+    with pytest.raises(StaleTableError) as excinfo:
         registry_guard.verify(str(path))
 
     _assert_missing_fwl_io(excinfo.value, path)
@@ -1315,12 +1319,14 @@ def test_the_refetch_needs_fwl_io_doi_after_the_manifest_was_read(tmp_path, monk
     registry_guard._manifest()
     monkeypatch.setitem(sys.modules, 'fwl_io.doi', None)
     try:
-        with pytest.raises(registry_guard.MissingFwlIoError, match='fwl_io.doi') as excinfo:
+        with pytest.raises(StaleTableError) as excinfo:
             registry_guard._refetch(tmp_path / NAME, KEY, '0' * 32)
     finally:
         registry_guard._manifest.cache_clear()
         registry_guard._pins.cache_clear()
 
+    assert isinstance(excinfo.value, registry_guard.MissingFwlIoError), type(excinfo.value)
+    assert 'fwl_io.doi' in str(excinfo.value)
     assert isinstance(excinfo.value.__cause__, ImportError)
 
 
