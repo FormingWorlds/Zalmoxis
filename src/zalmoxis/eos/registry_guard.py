@@ -12,6 +12,7 @@ pinned, so every checked read raises MissingFwlIoError.
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import hashlib
 import logging
@@ -214,12 +215,11 @@ def verify_digest(eos_file: str, digest: str | None, label: str | None = None) -
     MissingFwlIoError
         If fwl-io cannot be imported.
     StaleTableError
-        If a name is pinned and ``digest`` is not a pin common to the pinned names.
+        If a name is pinned and ``digest`` is not a pin common to the pinned names, or if
+        the check itself fails (a broken registry, a pin that cannot be checked).
     """
-    try:
+    with _checking(label or eos_file):
         found = _accepted(eos_file)
-    except MissingFwlIoError as exc:
-        raise MissingFwlIoError(f'{label or eos_file} is not read: {exc}') from exc.__cause__
     if found is not None and digest not in found[0]:
         raise _stale(label or eos_file, found[1], found[0], digest)
 
@@ -252,14 +252,22 @@ def verify(eos_file: str) -> None:
         put in its place, or if the check itself fails (an unreadable file, a broken
         registry, a pin that cannot be checked).
     """
-    try:
+    with _checking(eos_file):
         _verify(eos_file)
+
+
+@contextlib.contextmanager
+def _checking(name: str):
+    """Name ``name`` in a MissingFwlIoError and turn any other failure of the check that is
+    not a StaleTableError into the cannot-check StaleTableError."""
+    try:
+        yield
     except MissingFwlIoError as exc:
-        raise MissingFwlIoError(f'{eos_file} is not read: {exc}') from exc.__cause__
+        raise MissingFwlIoError(f'{name} is not read: {exc}') from exc.__cause__
     except StaleTableError:
         raise
     except Exception as exc:
-        raise StaleTableError(f'cannot check {eos_file} against its registry: {exc}') from exc
+        raise StaleTableError(f'cannot check {name} against its registry: {exc}') from exc
 
 
 def _verify(eos_file: str) -> None:
