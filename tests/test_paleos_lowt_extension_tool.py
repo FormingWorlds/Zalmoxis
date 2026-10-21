@@ -1127,8 +1127,10 @@ def test_command_line_needs_the_flag_for_package_changes_git_status_hides(
         assert 'differ from its commit' in err and 'add --allow-unverified-paleos' in err
         assert not out.exists()
         assert 'paleos.mgsio3_eos' not in sys.modules
+        assert os.environ.get(paleos_api.ALLOW_DIRTY_ENV) == ('1' if env else None)
         return
     _main(src, table, out, *args, '--allow-unverified-paleos')
+    assert os.environ.get(paleos_api.ALLOW_DIRTY_ENV) == ('1' if env else None)
     assert f'{_CHECK}{sha}: dirty' in _head(out)
     assert f'# PALEOS commit: {sha} (uncommitted changes)' in _head(out)
 

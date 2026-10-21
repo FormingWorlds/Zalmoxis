@@ -22,8 +22,10 @@ that checkout editable or set PYTHONPATH to its ``src``) are refused.
 A ``--paleos-src`` with uncommitted or untracked files, one whose HEAD does not contain
 ``PALEOS_TESTED_SHA`` (``zalmoxis.eos.paleos_api.check_paleos_commit``; a descendant runs with a
 warning), or a commit given with ``--paleos-commit`` that the tool cannot check, is refused
-unless ``--allow-unverified-paleos`` is set; the header then records that state. The header
-names the PALEOS commit and the result of the check against the tested commit, sha256 of the
+unless ``--allow-unverified-paleos`` is set; the header then records that state. Package
+changes that git status does not show (an assume-unchanged edit, an ignored package file) count
+as uncommitted changes. The header names the PALEOS commit and the result of the check against
+the tested commit (tested, newer, dirty, or not verified with the reason), sha256 of the
 data lines of the extended table, of ``paleos/mgsio3_eos.py`` and of the converter, the numpy,
 scipy, sympy and Python versions, the Zalmoxis commit of the converter and the version of the
 Zalmoxis package that checks the merge. The merge checks on every extended row that the
@@ -258,21 +260,27 @@ def main(argv=None):
                 '--paleos-src has uncommitted or untracked files; '
                 'commit them or add --allow-unverified-paleos'
             )
-        if status:
-            commit += ' (uncommitted changes)'
+        # With the PALEOS-API opt-in set, changed package files come back as 'dirty' (also ones
+        # git status does not show), whatever the caller set; only the flag accepts them here.
+        caller = os.environ.get(paleos_api.ALLOW_DIRTY_ENV)
+        os.environ[paleos_api.ALLOW_DIRTY_ENV] = '1'
         try:
             pin = paleos_api.check_paleos_commit(src)
         except paleos_api.PaleosVersionError as exc:
             if not args.allow_unverified_paleos:
                 ap.error(f'{exc}; add --allow-unverified-paleos to write the extension anyway')
             pin = 'not verified: ' + ' '.join(str(exc).split())
-        # The opt-in ZALMOXIS_PALEOS_ALLOW_DIRTY of the PALEOS-API path does not replace the flag.
+        finally:
+            if caller is None:
+                del os.environ[paleos_api.ALLOW_DIRTY_ENV]
+            else:
+                os.environ[paleos_api.ALLOW_DIRTY_ENV] = caller
         if pin == 'dirty' and not args.allow_unverified_paleos:
             ap.error(
                 f'the paleos package files in {src} differ from its commit; '
                 'commit them or add --allow-unverified-paleos'
             )
-        if pin == 'dirty' and not status:
+        if status or pin == 'dirty':
             commit += ' (uncommitted changes)'
     sys.path.insert(0, str(src))
     from paleos.mgsio3_eos import MgSiO3EoS
