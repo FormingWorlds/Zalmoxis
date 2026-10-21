@@ -21,6 +21,8 @@ import numpy as np
 from zalmoxis.eos import consistency as c
 from zalmoxis.eos_export import load_paleos_all_properties
 
+STENCIL = ' where the derivative has 4 cells on each side in one phase'
+
 
 def notes(table, res):
     """One note per identity of ``res``.
@@ -44,16 +46,13 @@ def notes(table, res):
         cols = c.INPUTS[name]
         if v['skipped']:
             empty = [col for col in cols if np.isnan(np.asarray(table[col], float)).all()]
-            if empty:
-                out[name] = (
-                    f'skipped: {", ".join(empty)} {"holds" if len(empty) == 1 else "hold"} no value'
-                )
-            elif name == 'nabla_ad':
-                out[name] = f'skipped: no cell with {", ".join(cols)} present'
-            else:
-                out[name] = (
-                    f'skipped: no cell with {", ".join(cols)} present on 4 cells each side in one phase'
-                )
+            where = '' if name == 'nabla_ad' else STENCIL
+            verb = 'holds' if len(empty) == 1 else 'hold'
+            out[name] = (
+                f'skipped: {", ".join(empty)} {verb} no value'
+                if empty
+                else f'skipped: no cell with {", ".join(cols)} present{where}'
+            )
             continue
         bad = []
         for col in cols:
@@ -104,9 +103,12 @@ def report(path, out, digits=9):
     try:
         res = c.check(t, eps)
     except ValueError as err:
+        if not str(err).startswith('no cell tested'):
+            raise
         empty = [col for col in c.COLUMNS if np.isnan(np.asarray(t[col], float)).all()]
+        why = f'columns without a value: {", ".join(empty)}; ' if empty else ''
         raise ValueError(
-            f'{err}; columns without a value: {", ".join(empty) or "none"}'
+            f'{err}; {why}a derivative needs 4 cells on each side in one phase'
         ) from err
     note = notes(t, res)
     for name, v in res.items():

@@ -68,6 +68,12 @@ def derivative(f, seg, axis, k, h):
 GRID_FIT = 4e-9  # log10 departure from a uniform grid; 9-digit coordinates give up to ~2e-9
 
 
+def _departure(x):
+    """Absolute departure of each point of the axis ``x`` from its linear fit."""
+    i = np.arange(x.size)
+    return np.abs(x - np.polyval(np.polyfit(i, x, 1), i))
+
+
 def _axes(table):
     """The two log10 axes, checked: at least 2 points, finite, increasing, within GRID_FIT of
     a uniform grid, and every column on their shape."""
@@ -77,8 +83,7 @@ def _axes(table):
             raise ValueError(f'{name} needs at least 2 points')
         if not (np.isfinite(x).all() and (np.diff(x) > 0).all()):
             raise ValueError(f'{name} must be finite and strictly increasing')
-        i = np.arange(x.size)
-        off = np.abs(x - np.polyval(np.polyfit(i, x, 1), i)).max()
+        off = _departure(x).max()
         if off > GRID_FIT:
             raise ValueError(f'{name} is not a uniform grid: {off:.1e} off a linear fit')
     shape = (lp.size, lt.size)
@@ -159,33 +164,17 @@ def residuals(table, k=1):
 def floors(table, eps, k=1):
     """Round-off bound of each residual at step ``k`` for columns stored to relative ``eps``.
 
-    For R + 1 = D / Q the bound is (E / |Q| + |D / Q| q) eps + |D / Q| c, with E the error of
-    the central difference from its two stored ends, q the relative error of Q, and c the
-    relative error of Q from the stored P and T coordinates: ln 10 times the departure of
-    log10 P and log10 T from their linear fit. nabla_ad, with no derivative, gets
-    |R + 1| (4 eps + c) from its four stored factors and P.
+    For R + 1 = D / Q the bound is (E / |Q| + |D / Q| q) eps, with E the error of the central
+    difference from its two stored ends and q the relative error of Q. nabla_ad, with no
+    derivative, gets |R + 1| (4 eps + e_P) from its four stored factors and from P, with e_P
+    ln 10 times the departure of log10 P from its linear fit; in the derivative identities the
+    coordinate rounding stays below a few percent of the floor and is left out.
     """
-    _, _, P, T, rho, _, _, cp, _, alpha, nab = _grid(table)
-    eP, eT = (
-        np.log(10.0)
-        * np.abs(x - np.polyval(np.polyfit(np.arange(x.size), x, 1), np.arange(x.size)))
-        for x in (
-            np.asarray(table['unique_log_p'], float),
-            np.asarray(table['unique_log_t'], float),
-        )
-    )
-    eP, eT = eP[:, None], eT[None, :]
+    _, _, P, _, rho, _, _, cp, _, alpha, nab = _grid(table)
+    eP = np.log(10.0) * _departure(np.asarray(table['unique_log_p'], float))[:, None]
     with np.errstate(divide='ignore', invalid='ignore'):
-        a = P * alpha / rho
-        c = {
-            'cp': 0.0,
-            'maxwell': eP,
-            'alpha': eT,
-            'dudt': eT + eP * np.abs(a / (cp - a)),
-            'cp_cv': eP + eT,
-        }
         out = {
-            n: (E / np.abs(Q) + np.abs(D / Q) * q) * eps + np.abs(D / Q) * c[n]
+            n: (E / np.abs(Q) + np.abs(D / Q) * q) * eps
             for n, (D, E, Q, q) in _parts(table, k).items()
         }
         out['nabla_ad'] = np.abs(nab * rho * cp / (P * alpha)) * (4 * eps + eP)
@@ -397,16 +386,18 @@ def _axis_error(x, eps):
 
 
 def _pt_axes(tables, eps):
-    """The P and T axes of density, checked: 1-D, at least 2 points, finite, positive,
-    increasing and uniform or geometric."""
+    """The P and T axes of density, checked: 1-D, at least 2 points, finite, increasing, T
+    positive, and uniform or geometric."""
     P, T = np.asarray(tables['density']['P'], float), np.asarray(tables['density']['T'], float)
     for name, x in (('P', P), ('T', T)):
         if x.ndim != 1:
             raise ValueError(f'{name} must be one-dimensional')
         if x.size < 2:
             raise ValueError(f'{name} needs at least 2 points')
-        if not (np.isfinite(x).all() and (x > 0).all() and (np.diff(x) > 0).all()):
-            raise ValueError(f'{name} must be finite, positive and strictly increasing')
+        if not (np.isfinite(x).all() and (np.diff(x) > 0).all()):
+            raise ValueError(f'{name} must be finite and strictly increasing')
+        if name == 'T' and x[0] <= 0:
+            raise ValueError('T must be positive')
         if _axis_error(x, eps) is None:
             raise ValueError(f'{name} is neither uniform nor geometric')
     return P, T
@@ -468,10 +459,10 @@ def check_pt(tables, eps):
     Raises
     ------
     ValueError
-        If eps is not a real number in [0, 1), an axis has fewer than 2 points, is not finite
-        and increasing, or departs from a uniform or geometric grid by more than
-        ``PT_GRID_FIT`` of its step plus its stored precision, the four tables are not on one
-        grid or off its shape, or every identity is skipped.
+        If eps is not a real number in [0, 1), an axis is not 1-D, has fewer than 2 points, is
+        not finite and increasing, or departs from a uniform or geometric grid by more than
+        ``PT_GRID_FIT`` of its step plus its stored precision, T is not positive, the four
+        tables are not on one grid or off its shape, or every identity is skipped.
 
     Notes
     -----

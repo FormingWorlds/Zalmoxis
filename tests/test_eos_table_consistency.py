@@ -893,9 +893,9 @@ def test_9_digit_aragog_pt_tables_with_9_digit_axes_pass(eos):
 @pytest.mark.parametrize(
     'change, message',
     [
-        ('inf end', 'must be finite, positive and strictly increasing'),
-        ('nan', 'must be finite, positive and strictly increasing'),
-        ('zero T start', 'must be finite, positive and strictly increasing'),
+        ('inf end', 'must be finite and strictly increasing'),
+        ('nan', 'must be finite and strictly increasing'),
+        ('zero T start', 'must be positive'),
         ('one point', 'needs at least 2 points'),
         ('2-D', 'must be one-dimensional'),
         ('jitter', 'is neither uniform nor geometric'),
@@ -991,12 +991,19 @@ def test_the_axis_error_is_none_for_an_axis_that_is_neither_uniform_nor_geometri
 
 
 @pytest.mark.unit
-def test_an_exact_table_with_stored_pressure_3_9e_9_off_its_fit_passes():
-    """GRID_FIT accepts this wobble: the floor covers the rounding of P in each identity."""
+@pytest.mark.parametrize(
+    'axes', [('unique_log_p',), ('unique_log_t',), ('unique_log_p', 'unique_log_t')]
+)
+def test_an_exact_table_with_stored_axes_3_9e_9_off_their_fit_passes(axes):
+    """GRID_FIT accepts this wobble: the nabla_ad floor covers the rounding of P, and in the
+    derivative identities the coordinate rounding stays below their floor."""
     lp, lt = np.linspace(5.0, 14.0, 1351), np.linspace(np.log10(300.0), 5.0, 380)
     m = a.table(a.murnaghan, lp, lt, digits=9)
-    wobble = 3.9e-9 * np.where(np.arange(lp.size) % 4 < 2, 1.0, -1.0)
-    res = c.check({**m, 'unique_log_p': m['unique_log_p'] + wobble}, EPS9)
+    t = {**m}
+    for key in axes:
+        x = m[key]
+        t[key] = x + 3.9e-9 * np.where(np.arange(x.size) % 4 < 2, 1.0, -1.0)
+    res = c.check(t, EPS9)
     assert {n: int(v['fail'].sum()) for n, v in res.items()} == dict.fromkeys(c.IDENTITIES, 0)
 
 
