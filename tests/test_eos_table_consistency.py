@@ -888,19 +888,21 @@ def test_9_digit_aragog_pt_tables_with_9_digit_axes_pass(eos):
     )
 
 
-@pytest.mark.unit
-@pytest.mark.parametrize('axis', ['P', 'T'])
-@pytest.mark.parametrize(
-    'change, message',
-    [
+_AXIS_CASES = [
+    (axis, change, message)
+    for axis in ('P', 'T')
+    for change, message in (
         ('inf end', 'must be finite and strictly increasing'),
         ('nan', 'must be finite and strictly increasing'),
-        ('zero T start', 'must be positive'),
         ('one point', 'needs at least 2 points'),
         ('2-D', 'must be one-dimensional'),
         ('jitter', 'is neither uniform nor geometric'),
-    ],
-)
+    )
+] + [('T', 'zero start', 'must be positive'), ('P', 'negative start', 'must not be negative')]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('axis, change, message', _AXIS_CASES)
 def test_aragog_pt_axes_that_are_not_finite_long_and_regular_are_rejected(
     pt_files, axis, change, message
 ):
@@ -910,10 +912,10 @@ def test_aragog_pt_axes_that_are_not_finite_long_and_regular_are_rejected(
         x[-1] = np.inf
     elif change == 'nan':
         x[50] = np.nan
-    elif change == 'zero T start':
-        if axis == 'P':
-            pytest.skip('a P axis may start at 0')
+    elif change == 'zero start':
         x[0] = 0.0
+    elif change == 'negative start':
+        x = x - x[1]  # uniform from minus one step
     elif change == 'one point':
         x = x[:1]
     elif change == 'jitter':
@@ -1044,3 +1046,25 @@ def test_a_1e_5_fault_is_found_on_a_geometric_pressure_axis():
 def test_an_exact_aragog_pt_table_on_a_pressure_axis_from_zero_passes():
     t = _pt_tables(a.murnaghan, 11, P=np.linspace(0.0, 3.5e11, 200))
     assert not any(v['fail'].any() for v in c.check_pt(t, 5e-11).values())
+
+
+def _power_law(m):
+    """Murnaghan columns with rho ~ T^-m and alpha = m / T, so that T alpha = m."""
+
+    def eos(P, T):
+        cols = a.murnaghan(P, T)
+        cols['rho'] = 3000.0 * (T / 1000.0) ** (-m)
+        cols['alpha'] = m / T
+        return cols
+
+    return eos
+
+
+@pytest.mark.unit
+def test_a_table_with_t_alpha_200_and_t_axis_2_1e_9_off_its_fit_passes():
+    """The floor of alpha covers the rounding of the stored T, which a large T alpha amplifies."""
+    lp, lt = np.linspace(5.0, 14.0, 1351), np.linspace(np.log10(300.0), np.log10(3000.0), 151)
+    t = a.table(_power_law(200.0), lp, lt, digits=9)
+    t['unique_log_t'] = t['unique_log_t'] + 2.1e-9 * np.where(np.arange(lt.size) % 4 < 2, 1, -1)
+    res = c.check(t, EPS9)['alpha']
+    assert res['tested'].sum() > 100_000 and not res['fail'].any()
