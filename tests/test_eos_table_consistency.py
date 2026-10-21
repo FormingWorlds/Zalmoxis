@@ -619,10 +619,11 @@ _FLOOR_PARTS = {
 @pytest.mark.parametrize('cell', [(300, 50), (600, 100)])
 @pytest.mark.parametrize('k', [1, 2])
 def test_the_floor_is_the_first_order_round_off_of_each_stored_value(stored, name, cell, k):
-    """Moving each stored value that enters the identity by eps alone, the sum of the changes
-    of R at the cell is its floor (first order): no term of the floor is lost or doubled. On the
-    ideal gas with s and u shifted to 0 at the cell (no identity changes), the stencil term is
-    small enough that the algebraic-factor term weighs in."""
+    """Moving each stored value that enters the identity, and the two end coordinates of the
+    axis of its derivative, by eps alone, the sum of the changes of R at the cell is its floor
+    (first order): no term of the floor is lost or doubled. On the ideal gas with s and u
+    shifted to 0 at the cell (no identity changes), the stencil term is small enough that the
+    algebraic-factor term weighs in."""
     m, eps, (i, j) = dict(stored['ideal']), 1e-9, cell
     for col in ('s', 'u'):
         m[col] = m[col] - m[col][i, j]
@@ -635,12 +636,39 @@ def test_the_floor_is_the_first_order_round_off_of_each_stored_value(stored, nam
             (col, (i + o, j) if ax == 0 else (i, j + o)) for col, ax in ends for o in (-k, k)
         ]
         moves += [(col, (i, j)) for col in factors]
+        axis = ('unique_log_p', 'unique_log_t')[ends[0][1]]
+        moves += [(axis, 0), (axis, -1)]
     total = 0.0
     for col, at in moves:
-        t = {**m, col: m[col].copy()}
-        t[col][at] *= 1 + eps
+        t = {**m, col: np.array(m[col], float)}
+        if col.startswith('unique'):
+            t[col][at] += np.log10(1 + eps)
+        else:
+            t[col][at] *= 1 + eps
         total += abs(c.residuals(t, k)[name][i, j] - base)
     assert total == pytest.approx(c.floors(m, eps, k)[name][i, j], rel=1e-4)
+
+
+def _narrow_ideal_gas():
+    """9 x 9 ideal gas around P = 1e5 Pa and T = 1500 K at a step of 0.001 dex, s = 0 at the
+    centre, values at the exact points, every column and both axes stored to 9 digits."""
+    lp, lt = 5.0 + 0.001 * np.arange(-4, 5), np.log10(1500.0) + 0.001 * np.arange(-4, 5)
+    t = a.table(lambda P, T: a.ideal_gas(P, T, cp=1000.0, T0=1500.0, s0=0.0), lp, lt, digits=9)
+    for key, x in (('unique_log_p', lp), ('unique_log_t', lt)):
+        t[key] = np.log10([float(f'{v:.8e}') for v in 10.0**x])
+    return t
+
+
+@pytest.mark.unit
+def test_a_narrow_axis_stored_to_9_digits_passes_and_still_finds_a_fault():
+    """On axes spanning 0.008 dex, 9-digit coordinates move the mean step by up to 2 eps / span
+    (5e-7 here); the floor covers that, and a 1e-5 fault in s next to the centre is still found."""
+    t = _narrow_ideal_gas()
+    res = c.check(t, EPS9)
+    assert res['cp']['tested'].sum() == 9
+    assert sum(int(v['fail'].sum()) for v in res.values()) == 0
+    planted = _set(t, 's', (4, 5), t['s'][4, 5] * (1 + 1e-5))
+    assert c.check(planted, EPS9)['cp']['fail'][4, 4]
 
 
 def _set(t, col, at, value):
