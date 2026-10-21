@@ -1124,7 +1124,8 @@ def test_command_line_needs_the_flag_for_package_changes_git_status_hides(
             _main(src, table, out, *args)
         assert exc.value.code == 2
         err = capsys.readouterr().err
-        assert 'differ from its commit' in err and 'add --allow-unverified-paleos' in err
+        assert f'the paleos package files in {src.resolve()} differ from its commit;' in err
+        assert paleos_api.ALLOW_DIRTY_ENV not in err
         assert not out.exists()
         assert 'paleos.mgsio3_eos' not in sys.modules
         assert os.environ.get(paleos_api.ALLOW_DIRTY_ENV) == ('1' if env else None)
@@ -1142,13 +1143,7 @@ def test_command_line_marks_a_visible_package_change_once(tmp_path, clean_import
     eos = src / 'paleos' / 'mgsio3_eos.py'
     eos.write_text(eos.read_text() + '# changed\n')
     clean_import.setenv(paleos_api.ALLOW_DIRTY_ENV, '1')
-    _main(
-        src,
-        _paleos(tmp_path, [6, 6, 6, 6]),
-        out,
-        '--t-min',
-        '150.4',
-        '--allow-unverified-paleos',
-    )
+    table = _paleos(tmp_path, [6, 6, 6, 6])
+    _main(src, table, out, '--t-min', '150.4', '--allow-unverified-paleos')
     assert f'# PALEOS commit: {sha} (uncommitted changes)' in _head(out)
     assert f'{_CHECK}{sha}: dirty' in _head(out)
