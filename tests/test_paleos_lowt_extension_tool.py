@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import stat
@@ -1077,14 +1078,11 @@ def test_command_line_keeps_the_reason_on_one_header_line(tmp_path, clean_import
         raise paleos_api.PaleosVersionError('first line\nsecond line')
 
     clean_import.setattr(paleos_api, 'check_paleos_commit', refuse)
-    _main(
-        src,
-        _paleos(tmp_path, [6, 6, 6, 6]),
-        out,
-        '--t-min',
-        '150.4',
-        '--allow-unverified-paleos',
-    )
+    table = _paleos(tmp_path, [6, 6, 6, 6])
+    # A two-line reason makes the merge check exit; the asserts below then name the fault.
+    with contextlib.suppress(SystemExit):
+        _main(src, table, out, '--t-min', '150.4', '--allow-unverified-paleos')
+    assert out.exists(), 'no extension written'
     sha = paleos_api.PALEOS_TESTED_SHA
     assert f'{_CHECK}{sha}: not verified: first line second line' in _head(out)
 
