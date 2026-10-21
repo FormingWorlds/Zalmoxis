@@ -175,6 +175,14 @@ def test_a_drift_of_2e_6_of_the_step_is_rejected(stored):
 
 
 @pytest.mark.unit
+def test_a_wobble_of_6e_9_off_a_uniform_grid_is_rejected(stored):
+    """GRID_FIT is 4e-9: the shipped PALEOS axes lie at most about 2.1e-9 off a linear fit."""
+    m, i = stored['murnaghan'], np.arange(stored['murnaghan']['unique_log_p'].size)
+    with pytest.raises(ValueError, match='uniform'):
+        c.check({**m, 'unique_log_p': m['unique_log_p'] + 6e-9 * np.sin(i / 7)}, EPS9)
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize('ppd', [600, 1000, 2000])
 def test_9_digit_coordinates_pass_at_every_density(ppd):
     lp, lt = np.arange(8.0, 9.0 + 1e-9, 1 / ppd), np.arange(3.0, 3.3 + 1e-9, 1 / ppd)
@@ -280,7 +288,7 @@ def test_the_bound_is_the_floor_plus_twice_the_h4_term(stored, name):
 
 
 @pytest.mark.unit
-def test_a_factor_of_1_misses_a_fault_two_cells_away_that_2_finds(stored, monkeypatch):
+def test_factors_1_and_2_find_a_fault_two_cells_away_that_3_misses(stored, monkeypatch):
     t = {**stored['murnaghan'], 's': stored['murnaghan']['s'].copy()}
     t['s'][400, 75] *= 1 + 1e-6
     assert c.check(t, EPS9)['cp']['fail'][400, 77]
@@ -288,6 +296,16 @@ def test_a_factor_of_1_misses_a_fault_two_cells_away_that_2_finds(stored, monkey
     assert c.check(t, EPS9)['cp']['fail'][400, 77]  # a smaller factor still finds it
     monkeypatch.setattr(c, 'FACTOR', 3.0)
     assert not c.check(t, EPS9)['cp']['fail'][400, 77]
+
+
+@pytest.mark.unit
+def test_an_exact_table_at_10_points_per_decade_fails_one_cp_cell():
+    """The coarse-grid example of the check docstring: cp and cv are positive everywhere."""
+    lp, lt = np.arange(5.0, 11.5 + 1e-9, 0.1), np.arange(np.log10(300.0), np.log10(8000.0), 0.1)
+    t = a.table(a.murnaghan, lp, lt, digits=9)
+    assert np.nanmin(t['cp']) > 0 and np.nanmin(t['cv']) > 0
+    res = c.check(t, EPS9)
+    assert {n: int(v['fail'].sum()) for n, v in res.items() if v['fail'].any()} == {'cp': 1}
 
 
 @pytest.mark.unit
@@ -509,7 +527,7 @@ def test_the_csv_report_lists_exactly_the_failing_cells(tmp_path, planted):
     counts = report(str(path), str(tmp_path / 'out.csv'))
     rows = (tmp_path / 'out.csv').read_text().strip().splitlines()
     assert rows[0] == 'condition,P_Pa,T_K,phase,residual,bound' and counts['cp'][0] > 1000
-    assert len(rows) - 1 == sum(failing for _, failing in counts.values())
+    assert len(rows) - 1 == sum(failing for _, failing, _ in counts.values())
     cp = [r.split(',') for r in rows[1:] if r.startswith('cp,')]
     assert len(cp) == (4 if planted else 0)
     for _, P, T, _, rx, bound in cp:
@@ -633,13 +651,15 @@ def _set(t, col, at, value):
 @pytest.mark.unit
 @pytest.mark.parametrize('col', ['rho', 'cp', 'cv', 'u', 's', 'alpha', 'nabla_ad'])
 @pytest.mark.parametrize('value', [np.inf, -np.inf])
-def test_an_isolated_infinite_value_fails_every_identity_at_its_cell(stored, col, value):
-    """An inf among numbers is a table fault: every identity that reads the cell fails there
-    (nabla_ad reads only rho, cp, alpha and nabla_ad), and none is skipped."""
+def test_an_isolated_infinite_value_fails_the_identities_that_read_it_near_its_cell(
+    stored, col, value
+):
+    """An inf among numbers is a table fault: every identity that reads the column fails at
+    the cell or the cells whose stencil holds it, the others fail nowhere, none is skipped."""
     res = c.check(_set(stored['murnaghan'], col, (300, 50), value), EPS9)
-    reads = {'rho', 'cp', 'alpha', 'nabla_ad'}
-    expected = set(c.IDENTITIES) - (set() if col in reads else {'nabla_ad'})
-    assert {n for n, v in res.items() if v['fail'][300, 50]} == expected
+    near = {n for n, v in res.items() if v['fail'][296:305, 46:55].any()}
+    assert near == {n for n in c.IDENTITIES if col in c.INPUTS[n]}
+    assert not any(v['fail'].any() for n, v in res.items() if n not in near)
     assert not any(v['skipped'] for v in res.values())
 
 
@@ -822,3 +842,48 @@ def test_the_aragog_pt_check_counts_the_fill_cells_of_each_file(pt_files):
     res = c.check_pt(t, 5e-11)
     expected = {'density': 1, 'heat_capacity': 0, 'thermal_exp': 0, 'entropy': 3}
     assert all(v['fill'] == expected for v in res.values())
+
+
+def _plant_pt(t, quantity, at, size):
+    v = np.array(t[quantity]['values'], float)
+    v[at] *= 1 + size
+    return {**t, quantity: {**t[quantity], 'values': v}}
+
+
+def _found_pt(res, identity, axis, at=(100, 100)):
+    i, j = at
+    cells = [(i + o, j) if axis == 0 else (i, j + o) for o in (-2, -1, 1, 2)]
+    return [bool(res[identity]['fail'][x]) for x in cells]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    'quantity, identity, axis',
+    [('entropy', 'cp', 1), ('density', 'alpha', 1), ('entropy', 'maxwell', 0)],
+)
+def test_a_1e_6_fault_is_found_in_9_digit_aragog_pt_tables(quantity, identity, axis):
+    t = _plant_pt(_pt_tables(a.murnaghan, 9), quantity, (100, 100), 1e-6)
+    assert _found_pt(c.check_pt(t, 5e-9), identity, axis) == [True] * 4
+
+
+@pytest.mark.unit
+def test_an_axis_off_its_fit_by_half_the_limit_raises_the_pt_floor_and_keeps_detection():
+    """A jitter of 0.5 PT_GRID_FIT steps on T still counts as uniform: the floor grows, the
+    exact table passes, and a 1e-4 entropy fault is found one and two steps away."""
+    T = np.linspace(300.0, 6000.0, 200)
+    rng = np.random.default_rng(5)
+    T2 = T + 0.5 * c.PT_GRID_FIT * np.diff(T).mean() * rng.uniform(-1, 1, T.size)
+    clean, jit = _pt_tables(a.murnaghan, 11), _pt_tables(a.murnaghan, 11, T=T2)
+    a0, a1 = (np.nanmedian(c._pt_parts(t, 1, 5e-11)['cp'][4]) for t in (clean, jit))
+    assert a1 > 10 * a0
+    assert not any(v['fail'].any() for v in c.check_pt(jit, 5e-11).values())
+    planted = c.check_pt(_plant_pt(jit, 'entropy', (100, 100), 1e-4), 5e-11)
+    assert _found_pt(planted, 'cp', 1) == [True] * 4
+
+
+@pytest.mark.unit
+def test_the_axis_error_is_none_for_an_axis_that_is_neither_uniform_nor_geometric():
+    irregular = np.cumsum(np.r_[1.0, np.tile([1.0, 3.0], 20)])
+    assert c._axis_error(irregular, 5e-9) is None
+    x = np.linspace(1.0, 2.0, 11)
+    assert (c._axis_error(x, 5e-9) < 1e-14).all()

@@ -13,13 +13,22 @@ import numpy as np
 
 IDENTITIES = ('cp', 'maxwell', 'alpha', 'dudt', 'nabla_ad', 'cp_cv')
 COLUMNS = ('rho', 'u', 's', 'cp', 'cv', 'alpha', 'nabla_ad')
+INPUTS = {
+    'cp': ('s', 'cp'),
+    'maxwell': ('s', 'rho', 'alpha'),
+    'alpha': ('rho', 'alpha'),
+    'dudt': ('u', 'cp', 'rho', 'alpha'),
+    'nabla_ad': ('nabla_ad', 'rho', 'cp', 'alpha'),
+    'cp_cv': ('rho', 'alpha', 'cp', 'cv'),
+}
 EPS_FLOOR = 5e-9  # 9 significant digits, the precision of the shipped tables
-FACTOR = 2.0  # allowed multiple of the h^4 term; with a negligible floor a fault 2 cells away is found only below 3
+FACTOR = 2.0  # multiple of the h^4 term; a fault 2 cells away is found only below 3
 
 
-def segments(table, axis, cols=COLUMNS):
-    """Label runs of cells of one phase with all ``cols`` finite along ``axis``; others get -1."""
-    valid = np.logical_and.reduce([np.isfinite(table[c]) for c in cols])
+def segments(table, axis, cols=COLUMNS, valid=np.isfinite):
+    """Label runs of cells of one phase with ``valid`` true for all ``cols`` along ``axis``;
+    others get -1."""
+    valid = np.logical_and.reduce([valid(np.asarray(table[c], float)) for c in cols])
     _, code = np.unique(table['phase'].astype(str), return_inverse=True)
     code = np.where(valid, code.reshape(valid.shape), -1)
     start = np.ones(code.shape, bool)
@@ -51,7 +60,7 @@ def derivative(f, seg, axis, k, h):
     return _stencil(f, seg, axis, k, h, -1.0)
 
 
-GRID_FIT = 2e-8  # log10 departure from a uniform grid; 9-digit coordinates give up to ~2e-9
+GRID_FIT = 4e-9  # log10 departure from a uniform grid; 9-digit coordinates give up to ~2e-9
 
 
 def _axes(table):
@@ -84,25 +93,31 @@ def _parts(table, k):
     """Per derivative identity (D, E, Q, q) with R + 1 = D / Q: E bounds the error of D per
     unit of stored precision, q the relative error of Q per unit of stored precision."""
     hx, hy, P, T, rho, u, s, cp, cv, alpha, _ = _grid(table)
-    seg = {0: segments(table, 0), 1: segments(table, 1)}
     h = {0: hx, 1: hy}
     one = np.ones_like(rho)
     with np.errstate(divide='ignore', invalid='ignore'):
         ln_rho, a = np.log(rho), P * alpha / rho
 
-        def d(f, ax, log=False):  # a stored log has an absolute error of 1 per unit precision
+        def d(f, col, ax, log=False):  # the stencil needs only ``col``; a stored log errs by 1
+            seg = segments(table, ax, (col,), lambda v: ~np.isnan(v))
             ends = one if log else np.abs(f)
-            return derivative(f, seg[ax], ax, k, h[ax]), _stencil(
-                ends, seg[ax], ax, k, h[ax], 1.0
-            )
+            return derivative(f, seg, ax, k, h[ax]), _stencil(ends, seg, ax, k, h[ax], 1.0)
 
         cpcv = (np.abs(cp) + np.abs(cv)) / np.abs(cp - cv) + 3
         return {
-            'cp': (*d(s, 1), cp, 1.0),
-            'maxwell': (*d(s, 0), -a, 2.0),
-            'alpha': (*d(ln_rho, 1, log=True), -T * alpha, 1.0),
-            'dudt': (*d(u, 1), T * (cp - a), (np.abs(cp) + 2 * np.abs(a)) / np.abs(cp - a)),
-            'cp_cv': (*d(ln_rho, 0, log=True), P * T * alpha**2 / ((cp - cv) * rho), cpcv),
+            'cp': (*d(s, 's', 1), cp, 1.0),
+            'maxwell': (*d(s, 's', 0), -a, 2.0),
+            'alpha': (*d(ln_rho, 'rho', 1, log=True), -T * alpha, 1.0),
+            'dudt': (
+                *d(u, 'u', 1),
+                T * (cp - a),
+                (np.abs(cp) + 2 * np.abs(a)) / np.abs(cp - a),
+            ),
+            'cp_cv': (
+                *d(ln_rho, 'rho', 0, log=True),
+                P * T * alpha**2 / ((cp - cv) * rho),
+                cpcv,
+            ),
         }
 
 
@@ -179,12 +194,12 @@ _PRESENT = {
 def _verdict(rx, bound, present):
     """The result of one identity: ``rx`` tested against ``bound`` where both are finite.
 
-    A cell where every value is ``present`` but ``rx`` or ``bound`` is not finite fails too,
-    unless the identity tests no cell (``skipped``).
+    A cell where every input is ``present`` but ``rx`` or ``bound`` is not finite fails too;
+    the identity is ``skipped`` when no cell has its inputs present.
     """
     tested = np.isfinite(rx) & np.isfinite(bound)
-    skipped = not tested.any()
-    fail = (tested & (np.abs(rx) > bound)) | (present & ~tested & (not skipped))
+    skipped = not present.any()
+    fail = (tested & (np.abs(rx) > bound)) | (present & ~tested)
     return {'rx': rx, 'bound': bound, 'tested': tested, 'fail': fail, 'skipped': skipped}
 
 
@@ -197,7 +212,7 @@ def _richardson(r1, r2, r4, f1, f2, p1, p2, p4):
 
 
 def _nonempty(out):
-    """``out``, or ValueError if no identity tests a cell."""
+    """``out``, or ValueError if every identity is skipped."""
     if all(v['skipped'] for v in out.values()):
         raise ValueError(f'no cell tested for {", ".join(out)}')
     return out
@@ -214,14 +229,14 @@ def check(table, eps):
 
     The floor uses eps_eff = max(eps, EPS_FLOOR): every table is checked at the 9-digit
     floor at best, so a single value off by about 1e-8 (relative) or less is out of reach on any
-    table. A derivative identity is tested only where 4 cells on each side along its axis hold
-    values of one phase; NaN marks a missing value. Where all values an identity needs are
-    present but its residual or bound is not finite (a stored inf, or alpha = 0 at a cell), the
-    cell fails, unless the identity tests no cell at all: it is then skipped, as a column of zeros
-    would make it. On a coarse grid a cell can lie outside the range where the
-    Richardson estimate holds (R_x(2h) / R_x(h) far from 16), and an exact table can fail there:
-    8 dudt cells of the Murnaghan table at 20 points per decade over P 1e5 to 1e14 Pa and T 300
-    to 1e5 K.
+    table. Each identity reads only its own columns (``INPUTS``). A derivative identity is
+    tested only where 4 cells on each side along its axis hold its differentiated column in one
+    phase; NaN marks a missing value, and a stored 0 or inf is a value. Where all values an
+    identity reads are present but its residual or bound is not finite, the cell fails; an
+    identity is skipped only when no cell holds all values it reads. On a coarse grid a cell can
+    lie outside the range where the Richardson estimate holds (R_x(2h) / R_x(h) far from 16),
+    and an exact table can fail there: 1 cp cell of the Murnaghan table at 10 points per decade
+    over P 1e5 to 10^11.5 Pa and T 300 to 8000 K, where cp and cv are positive.
 
     Parameters
     ----------
@@ -237,14 +252,14 @@ def check(table, eps):
         Identity name -> dict with ``rx`` (the Richardson residual, defined also at untested
         cells), ``bound``, ``tested`` (both finite), ``fail`` (tested and above the bound, or
         with all values present and a residual or bound that is not finite) arrays, and
-        ``skipped``, True when the identity tests no cell.
+        ``skipped``, True when no cell holds all values the identity reads.
 
     Raises
     ------
     ValueError
         If eps is not a real number in [0, 1), an axis has fewer than 2 points or is not
-        finite, increasing and uniform, a column is off the shape of the grid, or no identity
-        tests a cell.
+        finite, increasing and uniform, a column is off the shape of the grid, or every
+        identity is skipped.
     """
     eps = _eps(eps)
     r = {k: residuals(table, k) for k in (1, 2, 4)}
@@ -314,6 +329,7 @@ def signs(table, eps):
 PT_IDENTITIES = ('cp', 'maxwell', 'alpha')
 PT_QUANTITIES = ('density', 'heat_capacity', 'thermal_exp', 'entropy')
 PT_FILL = 1e-15  # the value eos_export writes for a cell without data
+PT_GRID_FIT = 1e-6  # allowed departure from a uniform or geometric axis, in units of its step
 
 
 def _coord_stencil(f, x, axis, k, sign):
@@ -337,11 +353,42 @@ def _coord_stencil(f, x, axis, k, sign):
     return out
 
 
-def _pt_parts(tables, k):
-    """(D, E, Q, q) per identity of the Aragog P-T tables, with R + 1 = D / Q."""
+def _axis_error(x, eps):
+    """Rounding error of each stored coordinate of an axis that is uniform, or uniform in log,
+    within PT_GRID_FIT of its step plus its precision ``eps``: its departure from that fit plus
+    4 ulp. None for any other axis."""
+    i = np.arange(x.size)
+    tiny = 4 * np.finfo(float).eps * np.abs(x)
+    lin = np.polyval(np.polyfit(i, x, 1), i)
+    if (np.abs(x - lin) <= PT_GRID_FIT * np.abs(np.diff(x)).mean() + eps * np.abs(x)).all():
+        return np.abs(x - lin) + tiny
+    if (x > 0).all():
+        ly = np.log(x)
+        fit = np.polyval(np.polyfit(i, ly, 1), i)
+        if (np.abs(ly - fit) <= PT_GRID_FIT * np.abs(np.diff(ly)).mean() + eps).all():
+            return np.abs(x - np.exp(fit)) + tiny
+    return None
+
+
+def _pt_axes(tables, eps):
+    """The P and T axes of density, checked: 1-D, at least 2 points, finite, increasing and
+    uniform or geometric."""
     P, T = np.asarray(tables['density']['P'], float), np.asarray(tables['density']['T'], float)
-    if not (np.diff(P) > 0).all() or not (np.diff(T) > 0).all():
-        raise ValueError('P and T must be strictly increasing')
+    for name, x in (('P', P), ('T', T)):
+        if x.ndim != 1 or x.size < 2:
+            raise ValueError(f'{name} needs at least 2 points on one axis')
+        if not (np.isfinite(x).all() and (np.diff(x) > 0).all()):
+            raise ValueError(f'{name} must be finite and strictly increasing')
+        if _axis_error(x, eps) is None:
+            raise ValueError(f'{name} is neither uniform nor geometric')
+    return P, T
+
+
+def _pt_parts(tables, k, eps):
+    """(D, E, Q, q, A) per identity of the Aragog P-T tables, with R + 1 = D / Q, E and q per
+    unit of stored precision as in ``_parts``, and A the relative error of D from the rounding
+    of its two coordinates."""
+    P, T = _pt_axes(tables, eps)
     for q in PT_QUANTITIES:
         t = tables[q]
         if not (np.array_equal(t['P'], P) and np.array_equal(t['T'], T)):
@@ -359,12 +406,17 @@ def _pt_parts(tables, k):
 
         def d(f, x, ax, log=False):
             ends = one if log else np.abs(f)
-            return _coord_stencil(f, x, ax, k, -1.0), _coord_stencil(ends, x, ax, k, 1.0)
+            err = np.broadcast_to(
+                _axis_error(x, eps).reshape((-1, 1) if ax == 0 else (1, -1)), f.shape
+            )
+            A = _coord_stencil(err, x, ax, k, 1.0)
+            return _coord_stencil(f, x, ax, k, -1.0), _coord_stencil(ends, x, ax, k, 1.0), A
 
+        cp_d, mx_d, al_d = d(s, T, 1), d(s, P, 0), d(ln_rho, T, 1, log=True)
         return {
-            'cp': (*d(s, T, 1), cp / TT, 1.0),
-            'maxwell': (*d(s, P, 0), -alpha / rho, 2.0),
-            'alpha': (*d(ln_rho, T, 1, log=True), -alpha, 1.0),
+            'cp': (*cp_d[:2], cp / TT, 2.0, cp_d[2]),
+            'maxwell': (*mx_d[:2], -alpha / rho, 2.0, mx_d[2]),
+            'alpha': (*al_d[:2], -alpha, 1.0, al_d[2]),
         }
 
 
@@ -383,21 +435,32 @@ def check_pt(tables, eps):
     -------
     dict
         As for ``check``, for the identities cp = T (ds/dT)_P, (ds/dP)_T = -alpha / rho and
-        alpha = -(dln rho/dT)_P.
+        alpha = -(dln rho/dT)_P, each with ``fill``: quantity -> number of ``PT_FILL`` cells.
 
     Raises
     ------
     ValueError
-        If eps is not a real number in [0, 1), the four tables are not on one grid of
-        strictly increasing P and T or off its shape, or no identity tests a cell.
+        If eps is not a real number in [0, 1), an axis has fewer than 2 points, is not finite
+        and increasing, or departs from a uniform or geometric grid by more than
+        ``PT_GRID_FIT`` of its step plus its stored precision, the four tables are not on one
+        grid or off its shape, or every identity is skipped.
+
+    Notes
+    -----
+    The floor includes the rounding of the stored P and T coordinates: a central difference
+    over x[i-k], x[i+k] gains |D| (e[i+k] + e[i-k]) / (x[i+k] - x[i-k]), with e the departure
+    of each coordinate from the uniform or geometric fit of its axis plus 4 ulp.
     """
     eps = _eps(eps)
-    parts = {k: _pt_parts(tables, k) for k in (1, 2, 4)}
+    parts = {k: _pt_parts(tables, k, eps) for k in (1, 2, 4)}
     const = {}
     for q, t in tables.items():
         v = np.asarray(t['values'], float)
         const[q] = {**t, 'values': np.where(np.isnan(v) | (v == PT_FILL), PT_FILL, 1.0)}
-    present = {k: _pt_parts(const, k) for k in (1, 2, 4)}
+    present = {k: _pt_parts(const, k, eps) for k in (1, 2, 4)}
+    fill = {
+        q: int((np.asarray(tables[q]['values'], float) == PT_FILL).sum()) for q in PT_QUANTITIES
+    }
     out = {}
     with np.errstate(divide='ignore', invalid='ignore'):
         for n in PT_IDENTITIES:
@@ -406,7 +469,8 @@ def check_pt(tables, eps):
             fl = {
                 k: (parts[k][n][1] / np.abs(parts[k][n][2]) + np.abs(r[k] + 1) * parts[k][n][3])
                 * eps
+                + np.abs(r[k] + 1) * parts[k][n][4]
                 for k in (1, 2)
             }
-            out[n] = _richardson(r[1], r[2], r[4], fl[1], fl[2], *p)
+            out[n] = {**_richardson(r[1], r[2], r[4], fl[1], fl[2], *p), 'fill': dict(fill)}
     return _nonempty(out)
