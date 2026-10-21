@@ -48,7 +48,7 @@ jobs:
             args: --dist load --cov-fail-under=0 --durations=0 tests/test_invariants.py
             test_timeout: 4800
           - suite: accept_solves_accepted_on
-            select: accept_solves and not wolfbower and not paleos_adiabat
+            select: accept_solves and not accept_solves_long and not wolfbower and not paleos_adiabat
             args: --dist load --cov-fail-under=0 --durations=0 tests/test_accepted_on.py
     # 90 min per job; the longest solves have their own job with 120 min.
     timeout-minutes: ${{ matrix.suite == 'accept_solves_long' && 120 || 90 }}
