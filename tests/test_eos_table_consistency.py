@@ -770,8 +770,51 @@ def test_the_report_names_a_stencil_too_short_as_the_reason_for_a_skip():
 
     t = a.table(a.murnaghan, LP[:8], LT[:8], digits=9)
     out = notes(t, c.check(t, EPS9))
-    reason = 'skipped: no cell with s, cp present on 4 cells each side in one phase'
-    assert out['cp'] == reason and out['nabla_ad'] == ''
+    stencil = ' present where the derivative has 4 cells on each side in one phase'
+    assert out == {
+        **{n: f'skipped: no cell with {", ".join(c.INPUTS[n])}{stencil}' for n in c.IDENTITIES},
+        'nabla_ad': '',
+    }
+
+
+@pytest.mark.unit
+def test_the_report_names_two_empty_columns_and_a_nabla_ad_skip_without_a_stencil(stored):
+    from tools.validation.eos_table_consistency_report import notes
+
+    m = stored['murnaghan']
+    t = {**m, 'cp': np.full_like(m['cp'], np.nan), 'cv': np.full_like(m['cv'], np.nan)}
+    assert notes(t, c.check(t, EPS9))['cp_cv'] == 'skipped: cp, cv hold no value'
+    rho, alpha = np.array(m['rho'], float), np.array(m['alpha'], float)
+    rho[:, ::2], alpha[:, 1::2] = np.nan, np.nan  # no cell holds both
+    t = {**m, 'rho': rho, 'alpha': alpha}
+    assert notes(t, c.check(t, EPS9))['nabla_ad'] == (
+        'skipped: no cell with nabla_ad, rho, cp, alpha present'
+    )
+
+
+@pytest.mark.unit
+def test_the_report_leaves_other_check_errors_unchanged(stored, tmp_path, monkeypatch):
+    import tools.validation.eos_table_consistency_report as tool
+
+    m = stored['murnaghan']
+    t = {**m, 'unique_log_p': m['unique_log_p'] + 1e-3 * np.sin(np.arange(LP.size))}
+    monkeypatch.setattr(tool, 'load_paleos_all_properties', lambda _: t)
+    with pytest.raises(ValueError, match='not a uniform grid') as err:
+        tool.report('in.dat', str(tmp_path / 'out.csv'))
+    assert 'columns without a value' not in str(err.value)
+
+
+@pytest.mark.unit
+def test_the_report_names_the_short_stencil_when_no_column_is_empty(tmp_path, monkeypatch):
+    import tools.validation.eos_table_consistency_report as tool
+
+    t = a.table(a.murnaghan, LP[:8], LT[:8], digits=9)
+    t = {**t, 'nabla_ad': np.full_like(t['nabla_ad'], np.nan)}
+    monkeypatch.setattr(tool, 'load_paleos_all_properties', lambda _: t)
+    with pytest.raises(
+        ValueError, match='columns without a value: nabla_ad; a derivative needs'
+    ):
+        tool.report('in.dat', str(tmp_path / 'out.csv'))
 
 
 @pytest.mark.unit
@@ -852,7 +895,7 @@ def test_9_digit_aragog_pt_tables_with_9_digit_axes_pass(eos):
     [
         ('inf end', 'must be finite, positive and strictly increasing'),
         ('nan', 'must be finite, positive and strictly increasing'),
-        ('zero start', 'must be finite, positive and strictly increasing'),
+        ('zero T start', 'must be finite, positive and strictly increasing'),
         ('one point', 'needs at least 2 points'),
         ('2-D', 'must be one-dimensional'),
         ('jitter', 'is neither uniform nor geometric'),
@@ -867,7 +910,9 @@ def test_aragog_pt_axes_that_are_not_finite_long_and_regular_are_rejected(
         x[-1] = np.inf
     elif change == 'nan':
         x[50] = np.nan
-    elif change == 'zero start':
+    elif change == 'zero T start':
+        if axis == 'P':
+            pytest.skip('a P axis may start at 0')
         x[0] = 0.0
     elif change == 'one point':
         x = x[:1]
@@ -986,3 +1031,9 @@ def test_a_1e_5_fault_is_found_on_a_geometric_pressure_axis():
         c.check_pt(_plant_pt(t, 'entropy', (100, 100), 1e-5), 5e-11), 'maxwell', 0
     )
     assert found == [True] * 4
+
+
+@pytest.mark.unit
+def test_an_exact_aragog_pt_table_on_a_pressure_axis_from_zero_passes():
+    t = _pt_tables(a.murnaghan, 11, P=np.linspace(0.0, 3.5e11, 200))
+    assert not any(v['fail'].any() for v in c.check_pt(t, 5e-11).values())
