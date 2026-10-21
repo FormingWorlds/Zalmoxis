@@ -973,6 +973,44 @@ def test_an_inner_clock_stop_on_the_last_pass_returns_a_better_earlier_pass(monk
 @pytest.mark.smoke
 @pytest.mark.wolfbower
 @pytest.mark.usefixtures('no_check')
+def test_a_clock_stop_swap_returns_the_pass_its_mass_test_read(monkeypatch):
+    """tolerance_outer 0.05, the clock runs out in the first blended pass, 6 % off, and the
+    linear pass is 4.5 % off: the swap returns the linear pass, and the accepted mass error is
+    the one of the returned pass, not of the blended pass."""
+    r = _wb_blended(monkeypatch, 1.06, 0.05, inner=5, outer=2, linear=1.045)
+    assert r['accepted_on'] == 'timeout' and r['adiabat_blend'] == 0.0
+    assert r['mass_error_at_accept'] == pytest.approx(r['best_mass_error'], rel=1e-9)
+    assert r['mass_error_at_accept'] == pytest.approx(0.045, rel=1e-9)
+
+
+@pytest.mark.smoke
+@pytest.mark.wolfbower
+@pytest.mark.usefixtures('no_check')
+def test_a_clock_stop_with_converged_density_but_not_pressure_falls_back(monkeypatch):
+    """Blended passes 5 % off, inside the 6 % limit of a clock stop but above tolerance_outer
+    0.02 and the 3 % ceiling; their inner density converges but their pressure solve reports
+    no root, so the strict test cannot take the newest pass and the linear pass is returned."""
+    blended, real_adi, real_brentq = [], zs.compute_adiabatic_temperature, zs.brentq
+
+    def adi(*args, **kwargs):
+        blended.append(1)
+        return real_adi(*args, **kwargs)
+
+    def brent(*args, **kwargs):
+        x, info = real_brentq(*args, **kwargs)
+        cut = SimpleNamespace(converged=False, function_calls=info.function_calls)
+        return x, cut if blended else info
+
+    monkeypatch.setattr(zs, 'compute_adiabatic_temperature', adi)
+    monkeypatch.setattr(zs, 'brentq', brent)
+    r = _wb_blended(monkeypatch, 1.05, 0.02, inner=100, clock_after=2)
+    assert r['accepted_on'] == 'timeout' and r['adiabat_blend'] == 0.0
+    assert r['mass_error_at_accept'] < 0.02
+
+
+@pytest.mark.smoke
+@pytest.mark.wolfbower
+@pytest.mark.usefixtures('no_check')
 def test_an_accepted_mass_break_returns_its_own_pass_without_a_fallback(monkeypatch, caplog):
     """tolerance_outer 0.05 and blended passes 4 % off: the mass test breaks at blend 1.0 and
     accepts that pass, so no earlier pass replaces it and best_mass_error describes it."""
