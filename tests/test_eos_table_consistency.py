@@ -945,8 +945,12 @@ def test_aragog_pt_axes_that_are_not_finite_long_and_regular_are_rejected(
     for q, v in t.items():
         vals = v['values'][:n] if axis == 'P' else v['values'][:, :n]
         new[q] = {**v, axis: x.reshape(1, -1) if change == '2-D' else x, 'values': vals}
-    with pytest.raises(ValueError, match=f'{axis} {message}'):
+    try:
         c.check_pt(new, 5e-11)
+    except Exception as err:  # any other exception type fails the assertion below
+        assert type(err) is ValueError and f'{axis} {message}' in str(err), repr(err)
+    else:
+        pytest.fail('the axis was accepted')
 
 
 @pytest.mark.unit
@@ -1065,7 +1069,10 @@ def test_a_1e_5_fault_is_found_on_a_geometric_pressure_axis():
 @pytest.mark.unit
 def test_an_exact_aragog_pt_table_on_a_pressure_axis_from_zero_passes():
     t = _pt_tables(a.murnaghan, 11, P=np.linspace(0.0, 3.5e11, 200))
-    res = c.check_pt(t, 5e-11)
+    try:
+        res = c.check_pt(t, 5e-11)
+    except ValueError as err:
+        pytest.fail(f'a P axis from 0 was rejected: {err}')
     assert all(v['tested'].sum() > 30_000 and not v['fail'].any() for v in res.values())
     assert res['maxwell']['tested'][4, 100]  # the first row with a full P stencil
 
@@ -1090,3 +1097,34 @@ def test_a_table_with_t_alpha_200_and_t_axis_2_1e_9_off_its_fit_passes():
     t['unique_log_t'] = t['unique_log_t'] + 2.1e-9 * np.where(np.arange(lt.size) % 4 < 2, 1, -1)
     res = c.check(t, EPS9)['alpha']
     assert res['tested'].sum() > 100_000 and not res['fail'].any()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    'key, amplitude, grown',
+    [
+        ('unique_log_p', 3.9e-9, ('maxwell', 'dudt', 'cp_cv')),
+        ('unique_log_t', 3.0e-9, ('alpha', 'dudt', 'cp_cv')),
+    ],
+)
+def test_the_floor_grows_with_the_departure_of_the_stored_axes(stored, key, amplitude, grown):
+    """Each identity whose algebraic factor holds P or T gains the rounding of that axis."""
+    m = stored['murnaghan']
+    w = {**m, key: m[key] + amplitude * np.where(np.arange(m[key].size) % 4 < 2, 1.0, -1.0)}
+    f0, f1 = c.floors(m, EPS9), c.floors(w, EPS9)
+    for n in grown:
+        assert np.nanmedian(f1[n] / f0[n]) - 1 > 5e-7, n
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('kind', ['linear', 'geometric'])
+@pytest.mark.parametrize('fraction, regular', [(0.9, True), (1.1, False)])
+def test_with_eps_0_a_pt_axis_is_regular_within_1e_6_of_its_step(kind, fraction, regular):
+    sign = np.where(np.arange(200) % 2, 1.0, -1.0)
+    if kind == 'linear':
+        x = np.linspace(300.0, 6000.0, 200)
+        x = x + fraction * 1e-6 * np.diff(x).mean() * sign
+    else:
+        ly = np.log(np.geomspace(1e5, 3.5e11, 200))
+        x = np.exp(ly + fraction * 1e-6 * np.diff(ly).mean() * sign)
+    assert (c._axis_error(x, 0.0) is not None) is regular
