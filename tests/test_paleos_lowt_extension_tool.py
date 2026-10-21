@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import stat
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -1031,7 +1032,7 @@ def test_command_line_refuses_an_older_paleos_commit_unless_allowed(
         assert f'which does not contain the tested commit {tested}' in err
         assert 'add --allow-unverified-paleos to write the extension anyway' in err
         assert not out.exists()
-        assert 'paleos.mgsio3_eos' not in __import__('sys').modules
+        assert 'paleos.mgsio3_eos' not in sys.modules
         return
     table = _paleos(tmp_path, [6, 6, 6, 6])
     _main(src, table, out, *args)
@@ -1088,33 +1089,57 @@ def test_command_line_keeps_the_reason_on_one_header_line(tmp_path, clean_import
     assert f'{_CHECK}{sha}: not verified: first line second line' in _head(out)
 
 
-def _hidden_change(src):
-    """Change a stub package file while git status stays clean (assume-unchanged)."""
-    _git(src, 'update-index', '--assume-unchanged', 'paleos/mgsio3_eos.py')
-    eos = src / 'paleos' / 'mgsio3_eos.py'
-    eos.write_text(eos.read_text() + '# changed\n')
+def _hidden_change(src, how):
+    """Change the stub package while git status stays clean: an edit of a tracked file marked
+    assume-unchanged, or a new package file that .git/info/exclude ignores."""
+    if how == 'assume-unchanged':
+        _git(src, 'update-index', '--assume-unchanged', 'paleos/mgsio3_eos.py')
+        eos = src / 'paleos' / 'mgsio3_eos.py'
+        eos.write_text(eos.read_text() + '# changed\n')
+    else:
+        (src / '.git' / 'info' / 'exclude').write_text('paleos/extra.py\n')
+        (src / 'paleos' / 'extra.py').write_text('X = 1\n')
     assert _git(src, 'status', '--porcelain') == ''
 
 
+@pytest.mark.parametrize('how', ['assume-unchanged', 'ignored'])
+@pytest.mark.parametrize('env', [False, True])
 @pytest.mark.parametrize('allow', [False, True])
-def test_command_line_needs_the_flag_for_changed_package_files_with_the_env_opt_in(
-    tmp_path, capsys, clean_import, allow
+def test_command_line_needs_the_flag_for_package_changes_git_status_hides(
+    tmp_path, capsys, clean_import, allow, env, how
 ):
-    """ZALMOXIS_PALEOS_ALLOW_DIRTY=1 of the PALEOS-API path does not replace
-    --allow-unverified-paleos: package changes that git status does not show stop the tool,
-    and with the flag the header says dirty and marks the commit."""
+    """Package changes that git status does not show stop the tool unless
+    --allow-unverified-paleos, also with ZALMOXIS_PALEOS_ALLOW_DIRTY=1 of the PALEOS-API path;
+    with the flag the header says dirty and marks the commit, with or without that variable."""
     src, out = tmp_path / 'paleos_src', tmp_path / 'ext.dat'
     sha = _tested_stub(src, clean_import)
-    _hidden_change(src)
-    clean_import.setenv(paleos_api.ALLOW_DIRTY_ENV, '1')
+    _hidden_change(src, how)
+    if env:
+        clean_import.setenv(paleos_api.ALLOW_DIRTY_ENV, '1')
+    else:
+        clean_import.delenv(paleos_api.ALLOW_DIRTY_ENV, raising=False)
+    table, args = _paleos(tmp_path, [6, 6, 6, 6]), ['--t-min', '150.4']
     if not allow:
         with pytest.raises(SystemExit) as exc:
-            _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, '--t-min', '150.4')
+            _main(src, table, out, *args)
         assert exc.value.code == 2
         err = capsys.readouterr().err
         assert 'differ from its commit' in err and 'add --allow-unverified-paleos' in err
         assert not out.exists()
+        assert 'paleos.mgsio3_eos' not in sys.modules
         return
+    _main(src, table, out, *args, '--allow-unverified-paleos')
+    assert f'{_CHECK}{sha}: dirty' in _head(out)
+    assert f'# PALEOS commit: {sha} (uncommitted changes)' in _head(out)
+
+
+def test_command_line_marks_a_visible_package_change_once(tmp_path, clean_import):
+    """A package edit that git status shows, with the flag, marks the commit line once."""
+    src, out = tmp_path / 'paleos_src', tmp_path / 'ext.dat'
+    sha = _tested_stub(src, clean_import)
+    eos = src / 'paleos' / 'mgsio3_eos.py'
+    eos.write_text(eos.read_text() + '# changed\n')
+    clean_import.setenv(paleos_api.ALLOW_DIRTY_ENV, '1')
     _main(
         src,
         _paleos(tmp_path, [6, 6, 6, 6]),
@@ -1123,5 +1148,5 @@ def test_command_line_needs_the_flag_for_changed_package_files_with_the_env_opt_
         '150.4',
         '--allow-unverified-paleos',
     )
-    assert f'{_CHECK}{sha}: dirty' in _head(out)
     assert f'# PALEOS commit: {sha} (uncommitted changes)' in _head(out)
+    assert f'{_CHECK}{sha}: dirty' in _head(out)
