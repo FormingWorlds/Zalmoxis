@@ -223,22 +223,23 @@ def test_a_check_that_tests_no_cell_raises(stored):
         a.table(a.murnaghan, LP[:8], LT[:8], digits=9), EPS9
     )  # too short to differentiate
     assert {n for n, v in res.items() if v['skipped']} == set(c.IDENTITIES) - {'nabla_ad'}
-    t = {**stored['murnaghan'], 'rho': np.full_like(stored['murnaghan']['rho'], np.nan)}
+    m = stored['murnaghan']
+    t = {**m, **{col: np.full_like(m[col], np.nan) for col in c.COLUMNS}}
     with pytest.raises(ValueError, match='no cell'):
         c.check(t, EPS9)
 
 
 @pytest.mark.unit
-def test_an_identity_that_cannot_be_tested_is_skipped_and_the_others_run(stored):
-    t = {**stored['murnaghan'], 'alpha': np.zeros_like(stored['murnaghan']['alpha'])}
-    try:
-        res = c.check(t, EPS9)
-    except ValueError as err:
-        pytest.fail(f'a table with testable identities raised: {err}')
-    skipped = {n for n, v in res.items() if v['skipped']}
-    assert skipped == {'maxwell', 'alpha', 'nabla_ad', 'cp_cv'}
-    assert not any(res[n]['fail'].any() for n in skipped)
-    assert not res['cp']['skipped'] and res['cp']['tested'].sum() > 100_000
+def test_a_column_of_zero_alpha_fails_the_identities_it_divides_and_skips_none(stored):
+    """A stored 0 is a value: maxwell, alpha, nabla_ad and cp_cv fail in every cell where
+    alpha is 0, no identity is skipped, and cp, which does not read alpha, is unchanged."""
+    m = stored['murnaghan']
+    res = c.check({**m, 'alpha': np.zeros_like(m['alpha'])}, EPS9)
+    clean = c.check(m, EPS9)['cp']
+    assert not any(v['skipped'] for v in res.values())
+    for n in ('maxwell', 'alpha', 'nabla_ad', 'cp_cv'):
+        assert res[n]['fail'].sum() > 100_000
+    assert np.array_equal(res['cp']['tested'], clean['tested']) and not res['cp']['fail'].any()
 
 
 @pytest.mark.unit
@@ -652,10 +653,13 @@ def test_an_isolated_zero_alpha_fails_the_identities_it_divides(stored):
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize('col, still', [('rho', set()), ('s', {'nabla_ad'}), ('alpha', set())])
+@pytest.mark.parametrize(
+    'col, still',
+    [('rho', {'cp'}), ('s', {'alpha', 'dudt', 'nabla_ad', 'cp_cv'}), ('alpha', {'cp'})],
+)
 def test_a_missing_value_is_not_a_failure(stored, col, still):
-    """NaN marks a missing value: nothing fails, and only nabla_ad, which has no s, still tests
-    the cell of a missing entropy."""
+    """NaN marks a missing value: nothing fails, and the identities that do not read the column
+    still test the cell."""
     res = c.check(_set(stored['murnaghan'], col, (300, 50), np.nan), EPS9)
     assert not any(v['fail'].any() for v in res.values())
     assert {n for n, v in res.items() if v['tested'][300, 50]} == still
@@ -670,3 +674,151 @@ def test_an_infinite_density_fails_the_aragog_pt_check(pt_files):
     res = c.check_pt(t, 5e-11)
     assert {n for n, v in res.items() if v['fail'][30, 30]} >= {'maxwell'}
     assert not any(v['skipped'] for v in res.values())
+
+
+READS = {
+    'cp': {'s', 'cp'},
+    'maxwell': {'s', 'rho', 'alpha'},
+    'alpha': {'rho', 'alpha'},
+    'dudt': {'u', 'cp', 'rho', 'alpha'},
+    'nabla_ad': {'nabla_ad', 'rho', 'cp', 'alpha'},
+    'cp_cv': {'rho', 'alpha', 'cp', 'cv'},
+}
+
+
+@pytest.fixture(scope='module')
+def clean(stored):
+    return c.check(stored['murnaghan'], EPS9)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('col', c.COLUMNS)
+@pytest.mark.parametrize('value', [np.inf, 0.0])
+def test_a_column_of_inf_or_zero_fails_the_identities_that_read_it_and_no_other(
+    stored, clean, col, value
+):
+    """A stored inf or 0 is a value: no identity is skipped, those that read the column fail,
+    and the others test and pass exactly the cells they test on the clean table."""
+    m = stored['murnaghan']
+    res = c.check({**m, col: np.full_like(m[col], value)}, EPS9)
+    assert not any(v['skipped'] for v in res.values())
+    for n, v in res.items():
+        if col in READS[n]:
+            assert v['fail'].any(), n
+        else:
+            assert np.array_equal(v['tested'], clean[n]['tested']) and not v['fail'].any(), n
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('col', c.COLUMNS)
+def test_a_column_of_nan_skips_the_identities_that_read_it_and_no_other(stored, clean, col):
+    """NaN is a missing value: an identity is skipped when none of its cells has its inputs."""
+    m = stored['murnaghan']
+    res = c.check({**m, col: np.full_like(m[col], np.nan)}, EPS9)
+    assert {n for n, v in res.items() if v['skipped']} == {n for n in READS if col in READS[n]}
+    assert not any(v['fail'].any() for v in res.values())
+    for n in READS:
+        if col not in READS[n]:
+            assert np.array_equal(res[n]['tested'], clean[n]['tested']), n
+
+
+@pytest.mark.unit
+def test_a_missing_energy_in_one_temperature_column_leaves_cp_unchanged(stored, clean):
+    m = stored['murnaghan']
+    u = np.array(m['u'], float)
+    u[:, 75] = np.nan
+    res = c.check({**m, 'u': u}, EPS9)
+    assert np.array_equal(res['cp']['tested'], clean['cp']['tested'])
+    assert res['dudt']['tested'].sum() < clean['dudt']['tested'].sum()
+
+
+@pytest.mark.unit
+def test_the_report_names_a_skipped_identity_and_a_column_of_inf(stored):
+    from tools.validation.eos_table_consistency_report import notes
+
+    m = stored['murnaghan']
+    t = {**m, 'u': np.full_like(m['u'], np.inf), 'cv': np.full_like(m['cv'], np.nan)}
+    out = notes(t, c.check(t, EPS9))
+    assert out['cp_cv'] == 'skipped: no cell with rho, alpha, cp, cv present'
+    assert out['dudt'] == 'u is 0 or inf in every cell that holds a value'
+    assert out['cp'] == ''
+
+
+def _rounded(x, digits):
+    fmt = f'{{:.{digits - 1}e}}'
+    return np.array([float(fmt.format(v)) for v in np.ravel(x)]).reshape(np.shape(x))
+
+
+def _pt_tables(eos, digits, P=None, T=None):
+    """Exact Aragog P-T tables with values and axes rounded to ``digits`` digits."""
+    P = np.linspace(1e5, 3.5e11, 200) if P is None else P
+    T = np.linspace(300.0, 6000.0, 200) if T is None else T
+    PP, TT = np.meshgrid(P, T, indexing='ij')
+    cols = eos(PP, TT)
+    Pr, Tr = _rounded(P, digits), _rounded(T, digits)
+    return {
+        q: {'P': Pr, 'T': Tr, 'values': _rounded(cols[key], digits)}
+        for q, key in _PT_NAMES.items()
+    }
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('name', ['murnaghan', 'ideal'])
+def test_11_digit_aragog_pt_files_pass_at_their_own_precision(pt_files, name, monkeypatch):
+    """With the floor lowered to the stored 11 digits, the axis term alone covers the rounding
+    of the stored P and T coordinates."""
+    monkeypatch.setattr(c, 'EPS_FLOOR', 5e-11)
+    res = c.check_pt(pt_files[name], 5e-11)
+    assert {n: int(v['fail'].sum()) for n, v in res.items()} == dict.fromkeys(
+        c.PT_IDENTITIES, 0
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('eos', [a.murnaghan, a.ideal_gas], ids=['murnaghan', 'ideal'])
+def test_9_digit_aragog_pt_tables_with_9_digit_axes_pass(eos):
+    res = c.check_pt(_pt_tables(eos, 9), 5e-9)
+    assert {n: int(v['fail'].sum()) for n, v in res.items()} == dict.fromkeys(
+        c.PT_IDENTITIES, 0
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('axis', ['P', 'T'])
+@pytest.mark.parametrize('change', ['inf end', 'one point', 'jitter'])
+def test_aragog_pt_axes_that_are_not_finite_long_and_regular_are_rejected(
+    pt_files, axis, change
+):
+    t = pt_files['murnaghan']
+    x = np.array(t['density'][axis], float)
+    if change == 'inf end':
+        x[-1] = np.inf
+    elif change == 'one point':
+        x = x[:1]
+    else:
+        rng = np.random.default_rng(1)
+        x = x + 0.2 * np.diff(x).mean() * rng.uniform(-1, 1, x.size)
+    n = x.size
+    new = {}
+    for q, v in t.items():
+        vals = v['values'][:n] if axis == 'P' else v['values'][:, :n]
+        new[q] = {**v, axis: x, 'values': vals}
+    with pytest.raises(ValueError, match=f'{axis} '):
+        c.check_pt(new, 5e-11)
+
+
+@pytest.mark.unit
+def test_an_exact_aragog_pt_table_on_a_geometric_pressure_axis_passes():
+    res = c.check_pt(_pt_tables(a.murnaghan, 11, P=np.geomspace(1e5, 3.5e11, 200)), 5e-11)
+    assert all(v['tested'].sum() > 30_000 and not v['fail'].any() for v in res.values())
+
+
+@pytest.mark.unit
+def test_the_aragog_pt_check_counts_the_fill_cells_of_each_file(pt_files):
+    t = pt_files['murnaghan']
+    t = {q: {**v, 'values': np.array(v['values'], float)} for q, v in t.items()}
+    t['entropy']['values'][30, 30:33] = c.PT_FILL
+    t['density']['values'][50, 50] = c.PT_FILL
+    res = c.check_pt(t, 5e-11)
+    expected = {'density': 1, 'heat_capacity': 0, 'thermal_exp': 0, 'entropy': 3}
+    assert all(v['fill'] == expected for v in res.values())
