@@ -486,19 +486,25 @@ def test_a_column_window_needs_rising_positive_limits(T_lo, T_hi):
     )
 
 
-def test_a_column_window_starts_at_the_first_finite_entropy():
-    """Below 250 K the entropy is NaN: the window starts at the first finite probe and its range
-    is the entropy there; an entropy that is NaN everywhere gives no window."""
+def test_a_column_window_runs_between_the_first_and_last_finite_entropy():
+    """With the entropy NaN below 250 K or above 280 K the window and its range run between the
+    first and the last finite probe; one finite probe, or none, gives no window."""
 
-    def s(pt):
-        return np.nan if pt[1] < np.log10(250.0) else 1.0e3 * pt[1]
+    def finite_between(lo, hi):
+        return lambda pt: 1.0e3 * pt[1] if np.log10(lo) <= pt[1] <= np.log10(hi) else np.nan
 
-    T_lo, T_hi, S_lo, S_hi = eos_export._column_window(9.0, 200.0, 300.0, s)
-    assert 250.0 <= T_lo < 252.0 and T_hi == 300.0
-    assert S_lo == pytest.approx(1.0e3 * np.log10(T_lo)) and S_hi == pytest.approx(
-        1.0e3 * np.log10(300)
+    T_lo, T_hi, S_lo, S_hi = eos_export._column_window(
+        9.0, 200.0, 300.0, finite_between(250, 300)
     )
-    assert eos_export._column_window(9.0, 200.0, 300.0, lambda pt: np.nan) is None
+    assert 250.0 <= T_lo < 252.0 and T_hi == pytest.approx(300.0)
+    assert (S_lo, S_hi) == pytest.approx(1.0e3 * np.log10([T_lo, 300.0]))
+    T_lo, T_hi, S_lo, S_hi = eos_export._column_window(
+        9.0, 200.0, 300.0, finite_between(200, 280)
+    )
+    assert T_lo == pytest.approx(200.0) and 278.0 < T_hi <= 280.0
+    assert (S_lo, S_hi) == pytest.approx(1.0e3 * np.log10([200.0, T_hi]))
+    for s in (finite_between(250, 251), lambda pt: np.nan):
+        assert eos_export._column_window(9.0, 200.0, 300.0, s) is None
 
 
 def test_the_lowest_node_follows_the_column_with_the_lowest_extended_entropy(tmp_path):
@@ -516,8 +522,7 @@ def test_the_lowest_node_follows_the_column_with_the_lowest_extended_entropy(tmp
         solid, liquid, _write(tmp_path / 'ext_mid.dat', cells, edit=lower_third_row)
     )
     P = out['P_Pa'][1]
-    w = (np.log10(P) - np.log10(_P[2])) / (np.log10(_P[3]) - np.log10(_P[2]))
-    S_lo = 1000.0 * np.log(_TG[0] / 300.0) + 2.0 * np.log10(P) + 2000.0 - 300.0 * (1.0 - w)
+    S_lo = _props(P, _TG[0])[2] - np.interp(np.log10(P), np.log10(_P[2:]), [300.0, 0.0])
     S0, dS = out['S_solid'][0], out['S_solid'][1] - out['S_solid'][0]
     assert S_lo - 1e-3 <= S0 < S_lo + dS
 

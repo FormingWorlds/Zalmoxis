@@ -21,7 +21,7 @@ def test_real_paleos_table_lowt_extension_numbers():
     conductive gradient bias of the two lowest entropy intervals."""
     names = [f'EOS_PALEOS_MgSiO3/paleos_mgsio3_tables_pt_proteus_{n}.dat' for n in _PHASES]
     names.append('EOS_PALEOS_MgSiO3_unified/paleos_mgsio3_eos_table_pt.dat')
-    roots = []  # the data folder PROTEUS reads first; all 4 files from one root
+    roots = []  # the Zalmoxis data folder first, then FWL_DATA; all 4 files from one root
     try:
         roots.append(Path(get_zalmoxis_root()) / 'data')
     except RuntimeError:
