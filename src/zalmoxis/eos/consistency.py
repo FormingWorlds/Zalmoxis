@@ -25,16 +25,21 @@ EPS_FLOOR = 5e-9  # 9 significant digits, the precision of the shipped tables
 FACTOR = 2.0  # multiple of the h^4 term; a fault 2 cells away is found only below 3
 
 
-def segments(table, axis, cols=COLUMNS, valid=np.isfinite):
-    """Label runs of cells of one phase with ``valid`` true for all ``cols`` along ``axis``;
-    others get -1."""
-    valid = np.logical_and.reduce([valid(np.asarray(table[c], float)) for c in cols])
+def _phase_code(table):
+    """Integer code of the phase of each cell."""
     _, code = np.unique(table['phase'].astype(str), return_inverse=True)
-    code = np.where(valid, code.reshape(valid.shape), -1)
+    return code.reshape(np.shape(table['phase']))
+
+
+def segments(table, axis, cols=COLUMNS, valid=np.isfinite, code=None):
+    """Label runs of cells of one phase along ``axis``; cells where ``valid`` (a function of a
+    column) is false for one of ``cols`` get -1. ``code`` is ``_phase_code(table)`` if given."""
+    ok = np.logical_and.reduce([valid(np.asarray(table[c], float)) for c in cols])
+    code = np.where(ok, _phase_code(table) if code is None else code, -1)
     start = np.ones(code.shape, bool)
     inner = tuple(slice(1, None) if a == axis else slice(None) for a in range(code.ndim))
     start[inner] = np.diff(code, axis=axis) != 0
-    return np.where(valid, np.cumsum(start, axis=axis), -1)
+    return np.where(ok, np.cumsum(start, axis=axis), -1)
 
 
 def _stencil(f, seg, axis, k, h, sign):
@@ -95,11 +100,12 @@ def _parts(table, k):
     hx, hy, P, T, rho, u, s, cp, cv, alpha, _ = _grid(table)
     h = {0: hx, 1: hy}
     one = np.ones_like(rho)
+    code = _phase_code(table)
     with np.errstate(divide='ignore', invalid='ignore'):
         ln_rho, a = np.log(rho), P * alpha / rho
 
         def d(f, col, ax, log=False):  # the stencil needs only ``col``; a stored log errs by 1
-            seg = segments(table, ax, (col,), lambda v: ~np.isnan(v))
+            seg = segments(table, ax, (col,), lambda v: ~np.isnan(v), code)
             ends = one if log else np.abs(f)
             return derivative(f, seg, ax, k, h[ax]), _stencil(ends, seg, ax, k, h[ax], 1.0)
 
@@ -153,17 +159,36 @@ def residuals(table, k=1):
 def floors(table, eps, k=1):
     """Round-off bound of each residual at step ``k`` for columns stored to relative ``eps``.
 
-    For R + 1 = D / Q the bound is (E / |Q| + |D / Q| q) eps, with E the error of the central
-    difference from its two stored ends and q the relative error of Q; nabla_ad, with no
-    derivative, gets |R + 1| 4 eps from its four stored factors.
+    For R + 1 = D / Q the bound is (E / |Q| + |D / Q| q) eps + |D / Q| c, with E the error of
+    the central difference from its two stored ends, q the relative error of Q, and c the
+    relative error of Q from the stored P and T coordinates: ln 10 times the departure of
+    log10 P and log10 T from their linear fit. nabla_ad, with no derivative, gets
+    |R + 1| (4 eps + c) from its four stored factors and P.
     """
-    _, _, P, _, rho, _, _, cp, _, alpha, nab = _grid(table)
+    _, _, P, T, rho, _, _, cp, _, alpha, nab = _grid(table)
+    eP, eT = (
+        np.log(10.0)
+        * np.abs(x - np.polyval(np.polyfit(np.arange(x.size), x, 1), np.arange(x.size)))
+        for x in (
+            np.asarray(table['unique_log_p'], float),
+            np.asarray(table['unique_log_t'], float),
+        )
+    )
+    eP, eT = eP[:, None], eT[None, :]
     with np.errstate(divide='ignore', invalid='ignore'):
+        a = P * alpha / rho
+        c = {
+            'cp': 0.0,
+            'maxwell': eP,
+            'alpha': eT,
+            'dudt': eT + eP * np.abs(a / (cp - a)),
+            'cp_cv': eP + eT,
+        }
         out = {
-            n: (E / np.abs(Q) + np.abs(D / Q) * q) * eps
+            n: (E / np.abs(Q) + np.abs(D / Q) * q) * eps + np.abs(D / Q) * c[n]
             for n, (D, E, Q, q) in _parts(table, k).items()
         }
-        out['nabla_ad'] = np.abs(nab * rho * cp / (P * alpha)) * 4 * eps
+        out['nabla_ad'] = np.abs(nab * rho * cp / (P * alpha)) * (4 * eps + eP)
     return {n: out[n] for n in IDENTITIES}
 
 
@@ -194,8 +219,8 @@ _PRESENT = {
 def _verdict(rx, bound, present):
     """The result of one identity: ``rx`` tested against ``bound`` where both are finite.
 
-    A cell where every input is ``present`` but ``rx`` or ``bound`` is not finite fails too;
-    the identity is ``skipped`` when no cell has its inputs present.
+    A cell where every input is ``present`` (on the full stencil of a derivative identity) but
+    ``rx`` or ``bound`` is not finite fails too; the identity is ``skipped`` when no cell is.
     """
     tested = np.isfinite(rx) & np.isfinite(bound)
     skipped = not present.any()
@@ -233,10 +258,11 @@ def check(table, eps):
     tested only where 4 cells on each side along its axis hold its differentiated column in one
     phase; NaN marks a missing value, and a stored 0 or inf is a value. Where all values an
     identity reads are present but its residual or bound is not finite, the cell fails; an
-    identity is skipped only when no cell holds all values it reads. On a coarse grid a cell can
-    lie outside the range where the Richardson estimate holds (R_x(2h) / R_x(h) far from 16),
-    and an exact table can fail there: 1 cp cell of the Murnaghan table at 10 points per decade
-    over P 1e5 to 10^11.5 Pa and T 300 to 8000 K, where cp and cv are positive.
+    identity is skipped only when no cell holds all values it reads, on the full stencil of a
+    derivative identity (4 cells on each side in one phase). On a coarse grid a cell can lie
+    outside the range where the Richardson estimate holds (R_x(2h) / R_x(h) far from 16), and
+    an exact table can fail there: 1 cp cell of the Murnaghan table at 10 points per decade over
+    P 1e5 to 10^11.5 Pa and T 300 to 7.5e3 K, where cp and cv are positive.
 
     Parameters
     ----------
@@ -252,7 +278,7 @@ def check(table, eps):
         Identity name -> dict with ``rx`` (the Richardson residual, defined also at untested
         cells), ``bound``, ``tested`` (both finite), ``fail`` (tested and above the bound, or
         with all values present and a residual or bound that is not finite) arrays, and
-        ``skipped``, True when no cell holds all values the identity reads.
+        ``skipped``, True when no cell holds all values the identity reads on its stencil.
 
     Raises
     ------
@@ -371,14 +397,16 @@ def _axis_error(x, eps):
 
 
 def _pt_axes(tables, eps):
-    """The P and T axes of density, checked: 1-D, at least 2 points, finite, increasing and
-    uniform or geometric."""
+    """The P and T axes of density, checked: 1-D, at least 2 points, finite, positive,
+    increasing and uniform or geometric."""
     P, T = np.asarray(tables['density']['P'], float), np.asarray(tables['density']['T'], float)
     for name, x in (('P', P), ('T', T)):
-        if x.ndim != 1 or x.size < 2:
-            raise ValueError(f'{name} needs at least 2 points on one axis')
-        if not (np.isfinite(x).all() and (np.diff(x) > 0).all()):
-            raise ValueError(f'{name} must be finite and strictly increasing')
+        if x.ndim != 1:
+            raise ValueError(f'{name} must be one-dimensional')
+        if x.size < 2:
+            raise ValueError(f'{name} needs at least 2 points')
+        if not (np.isfinite(x).all() and (x > 0).all() and (np.diff(x) > 0).all()):
+            raise ValueError(f'{name} must be finite, positive and strictly increasing')
         if _axis_error(x, eps) is None:
             raise ValueError(f'{name} is neither uniform nor geometric')
     return P, T

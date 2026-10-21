@@ -23,19 +23,37 @@ from zalmoxis.eos_export import load_paleos_all_properties
 
 
 def notes(table, res):
-    """One note per identity of ``res`` (the result of ``check`` on ``table``).
+    """One note per identity of ``res``.
+
+    Parameters
+    ----------
+    table : dict
+        The table, as from ``load_paleos_all_properties``.
+    res : dict
+        The result of ``check`` on ``table``.
 
     Returns
     -------
     dict
-        Identity name -> why it is skipped, the input columns that are 0 or inf in every cell
-        that holds a value, or ''.
+        Identity name -> why it is skipped (the input columns that hold no value, or no cell
+        with all inputs on a full stencil of one phase), the input columns that are 0 or inf
+        in every cell that holds a value, or ''.
     """
     out = {}
     for name, v in res.items():
         cols = c.INPUTS[name]
         if v['skipped']:
-            out[name] = f'skipped: no cell with {", ".join(cols)} present'
+            empty = [col for col in cols if np.isnan(np.asarray(table[col], float)).all()]
+            if empty:
+                out[name] = (
+                    f'skipped: {", ".join(empty)} {"holds" if len(empty) == 1 else "hold"} no value'
+                )
+            elif name == 'nabla_ad':
+                out[name] = f'skipped: no cell with {", ".join(cols)} present'
+            else:
+                out[name] = (
+                    f'skipped: no cell with {", ".join(cols)} present on 4 cells each side in one phase'
+                )
             continue
         bad = []
         for col in cols:
@@ -68,7 +86,8 @@ def report(path, out, digits=9):
     Raises
     ------
     ValueError
-        If digits is not an integer from 1 to 17.
+        If digits is not an integer from 1 to 17, or every identity is skipped (the message
+        names the columns without a value).
     """
     if (
         isinstance(digits, bool)
@@ -82,7 +101,13 @@ def report(path, out, digits=9):
     P = np.broadcast_to((10.0 ** t['unique_log_p'])[:, None], t['rho'].shape)
     T = np.broadcast_to((10.0 ** t['unique_log_t'])[None, :], t['rho'].shape)
     rows, counts = [], {}
-    res = c.check(t, eps)
+    try:
+        res = c.check(t, eps)
+    except ValueError as err:
+        empty = [col for col in c.COLUMNS if np.isnan(np.asarray(t[col], float)).all()]
+        raise ValueError(
+            f'{err}; columns without a value: {", ".join(empty) or "none"}'
+        ) from err
     note = notes(t, res)
     for name, v in res.items():
         counts[name] = (int(v['tested'].sum()), int(v['fail'].sum()), note[name])
