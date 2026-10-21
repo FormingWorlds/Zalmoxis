@@ -35,6 +35,12 @@ from zalmoxis.eos import paleos_api
 pytestmark = pytest.mark.unit
 
 
+@pytest.fixture(autouse=True)
+def _commit_checked(monkeypatch):
+    """The generators check the PALEOS commit; the mock PALEOS has none, so it passes here."""
+    monkeypatch.setattr(paleos_api, '_check_paleos_once', lambda sha: 'tested')
+
+
 # ---------------------------------------------------------------------------
 # Shared minimal grids
 # ---------------------------------------------------------------------------
@@ -227,7 +233,7 @@ class TestPaleosInstalledSha:
         assert isinstance(sha, str)
         # Valid outcomes: 40-hex git SHA, 'paleos-not-installed',
         # or 'version-...' (paleos.__version__ fallback).
-        is_hex_sha = bool(re.fullmatch(r'[0-9a-f]{40}', sha))
+        is_hex_sha = bool(re.fullmatch(r'[0-9a-f]{40}(-dirty-[0-9a-f]{8})?', sha))
         is_fallback = sha == 'paleos-not-installed' or sha.startswith('version-')
         assert is_hex_sha or is_fallback
 
@@ -255,14 +261,18 @@ class TestPaleosInstalledSha:
         Discriminating: the fallback string carries the version prefix so a
         wrong branch (e.g. always returning 'unknown') is detectable.
         """
-        import subprocess as real_subprocess
+        import sys
+        import types
 
-        def fake_check_output(*args, **kwargs):
-            raise real_subprocess.CalledProcessError(128, ['git'])
-
-        monkeypatch.setattr(paleos_api._subprocess, 'check_output', fake_check_output)
-        sha = paleos_api.paleos_installed_sha()
-        assert sha.startswith('version-')
+        fake = types.ModuleType('paleos')
+        fake.__file__, fake.__version__ = '/nowhere/paleos/__init__.py', '9.9'
+        monkeypatch.setitem(sys.modules, 'paleos', fake)
+        monkeypatch.setattr(
+            paleos_api,
+            '_git',
+            lambda repo, *a, **k: paleos_api._subprocess.CompletedProcess(a, 128, b'', b'boom'),
+        )
+        assert paleos_api.paleos_installed_sha() == 'version-9.9'
 
 
 # ---------------------------------------------------------------------------
@@ -965,9 +975,11 @@ class TestGenerate2PhaseMgsio3Tables:
         )
         solid_path = tmp_dir / 'solid.dat'
         liquid_path = tmp_dir / 'liquid.dat'
-        result = paleos_api.generate_paleos_api_2phase_mgsio3_tables(
-            solid_path, liquid_path, gs, n_workers=1, log_every=0
-        )
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(paleos_api, '_check_paleos_once', lambda sha: 'tested')
+            result = paleos_api.generate_paleos_api_2phase_mgsio3_tables(
+                solid_path, liquid_path, gs, n_workers=1, log_every=0
+            )
         return solid_path, liquid_path, result, gs
 
     def test_both_files_written_with_correct_row_counts(self, two_phase_outputs):
@@ -1067,3 +1079,170 @@ class TestGenerate2PhaseMgsio3Tables:
         assert result['liquid']['n_valid'] + result['liquid']['n_skipped'] == gs.n_p * gs.n_t
         assert Path(result['solid']['path']) == s_path
         assert Path(result['liquid']['path']) == l_path
+
+
+# ---------------------------------------------------------------------------
+# build key, generator check
+# ---------------------------------------------------------------------------
+
+
+_IDS = {'RTpress': '1.0@aaa', 'numpy': '2.0', 'scipy': '1.14', 'sympy': '1.13'}
+
+
+@pytest.mark.parametrize('name', sorted(_IDS))
+def test_each_build_input_changes_the_build_key(monkeypatch, name):
+    """RTpress and the numpy, scipy and sympy versions each move the key."""
+    ids = dict(_IDS)
+    monkeypatch.setattr(paleos_api, '_dist_id', lambda n: ids[n])
+    before = paleos_api.build_key('mgsio3')
+    ids[name] += '.1'
+    assert paleos_api.build_key('mgsio3') != before
+    assert re.fullmatch(r'[0-9a-f]{8}', before)
+
+
+def test_the_aqua_table_md5_is_in_the_h2o_build_key(monkeypatch, tmp_path):
+    """Two AQUA tables give two H2O keys; the md5 is the file's; other materials ignore it."""
+    import hashlib
+
+    monkeypatch.setattr(paleos_api, '_dist_id', lambda n: _IDS[n])
+    a, b = tmp_path / 'a.dat', tmp_path / 'b.dat'
+    a.write_bytes(b'aqua 1')
+    b.write_bytes(b'aqua 2')
+    assert paleos_api.build_key('h2o', str(a)) != paleos_api.build_key('h2o', str(b))
+    md5 = paleos_api.build_inputs('h2o', str(a))['aqua_md5']
+    assert md5 == hashlib.md5(b'aqua 1').hexdigest()
+    assert paleos_api.build_key('iron', str(a)) == paleos_api.build_key('iron', str(b))
+    assert paleos_api.build_inputs('h2o', None)['aqua_md5'] is None
+
+
+class _Dist:
+    def __init__(self, version, direct_url):
+        self.version, self._direct = version, direct_url
+
+    def read_text(self, name):
+        return self._direct if name == 'direct_url.json' else None
+
+
+def test_dist_id_names_a_vcs_commit_an_editable_head_or_the_version(monkeypatch, tmp_path):
+    """A VCS install gives version@commit, an editable clone version@HEAD, a plain install
+    its version and a missing package not-installed."""
+    import importlib.metadata as md
+    import json
+    import subprocess
+
+    clone = tmp_path / 'rt'
+    clone.mkdir()
+    subprocess.run(['git', '-C', str(clone), 'init', '-q'], check=True)
+    subprocess.run(
+        [
+            'git',
+            '-C',
+            str(clone),
+            '-c',
+            'user.name=t',
+            '-c',
+            'user.email=t@t',
+            '-c',
+            'commit.gpgsign=false',
+            'commit',
+            '-q',
+            '--allow-empty',
+            '-m',
+            'x',
+        ],
+        check=True,
+    )
+    head = subprocess.run(
+        ['git', '-C', str(clone), 'rev-parse', 'HEAD'], capture_output=True, text=True
+    ).stdout.strip()
+    dists = {
+        'vcs': _Dist(
+            '1.0', json.dumps({'url': 'https://x', 'vcs_info': {'commit_id': 'c' * 40}})
+        ),
+        'edit': _Dist(
+            '2.0', json.dumps({'url': clone.as_uri(), 'dir_info': {'editable': True}})
+        ),
+        'plain': _Dist('3.0', None),
+    }
+
+    def distribution(name):
+        if name not in dists:
+            raise md.PackageNotFoundError(name)
+        return dists[name]
+
+    monkeypatch.setattr(paleos_api._metadata, 'distribution', distribution)
+    assert paleos_api._dist_id('vcs') == '1.0@' + 'c' * 40
+    assert paleos_api._dist_id('edit') == f'2.0@{head}'
+    assert paleos_api._dist_id('plain') == '3.0'
+    assert paleos_api._dist_id('gone') == 'not-installed'
+
+
+def test_the_generator_header_carries_the_build_key(tmp_path, monkeypatch):
+    """The written table names its build key, which the cache compares."""
+    monkeypatch.setattr(
+        paleos_api, 'build_key', lambda material, h2o_table_path=None: 'feed0123'
+    )
+    out_path = tmp_path / 'iron.dat'
+    paleos_api.generate_paleos_api_unified_table(
+        'iron', out_path, _tiny_grid(), n_workers=1, log_every=0
+    )
+    assert '# BUILD_KEY: feed0123\n' in out_path.read_text()
+
+
+@pytest.mark.parametrize('two_phase', [False, True], ids=['unified', '2phase'])
+def test_a_generator_checks_the_commit_once_and_stops_before_writing(
+    tmp_path, monkeypatch, two_phase
+):
+    """A direct generator call runs the commit check once; a failed check writes no file."""
+    calls = []
+    monkeypatch.setattr(paleos_api, '_check_paleos_once', lambda sha: calls.append(sha))
+    monkeypatch.setattr(paleos_api, 'paleos_installed_sha', lambda: 'a' * 40)
+    outs = [tmp_path / 's.dat', tmp_path / 'l.dat']
+
+    def generate():
+        if two_phase:
+            return paleos_api.generate_paleos_api_2phase_mgsio3_tables(
+                *outs, _tiny_grid(), n_workers=1, log_every=0
+            )
+        return paleos_api.generate_paleos_api_unified_table(
+            'iron', outs[0], _tiny_grid(), n_workers=1, log_every=0
+        )
+
+    generate()
+    assert calls == ['a' * 40]
+
+    def refuse(sha):
+        raise paleos_api.PaleosVersionError('old')
+
+    monkeypatch.setattr(paleos_api, '_check_paleos_once', refuse)
+    for f in outs:
+        f.unlink(missing_ok=True)
+    with pytest.raises(paleos_api.PaleosVersionError, match='old'):
+        generate()
+    assert not any(f.exists() for f in outs)
+
+
+@pytest.mark.parametrize('two_phase', [False, True], ids=['unified', '2phase'])
+def test_a_serial_build_refuses_code_that_changed_since_import(
+    tmp_path, monkeypatch, two_phase
+):
+    """In one process the code in memory is the code of the import; a key that moved since
+    then would label old code with the new key, so the serial build stops."""
+    monkeypatch.setattr(paleos_api, '_KEY_AT_IMPORT', {'key': 'b' * 40})
+    monkeypatch.setattr(paleos_api, 'paleos_installed_sha', lambda: 'a' * 40)
+    outs = [tmp_path / 's.dat', tmp_path / 'l.dat']
+    with pytest.raises(paleos_api.PaleosVersionError, match='changed on disk'):
+        if two_phase:
+            paleos_api.generate_paleos_api_2phase_mgsio3_tables(
+                *outs, _tiny_grid(), n_workers=1
+            )
+        else:
+            paleos_api.generate_paleos_api_unified_table(
+                'iron', outs[0], _tiny_grid(), n_workers=1
+            )
+    assert not any(f.exists() for f in outs)
+    monkeypatch.setattr(paleos_api, '_KEY_AT_IMPORT', {'key': 'a' * 40})
+    paleos_api.generate_paleos_api_unified_table(
+        'iron', outs[0], _tiny_grid(), n_workers=1, log_every=0
+    )
+    assert outs[0].is_file()

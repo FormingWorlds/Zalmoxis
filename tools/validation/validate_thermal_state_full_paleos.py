@@ -27,6 +27,7 @@ from zalmoxis import get_zalmoxis_root
 from zalmoxis.config import load_material_dictionaries, load_zalmoxis_config
 from zalmoxis.constants import earth_mass
 from zalmoxis.energetics import initial_thermal_state
+from zalmoxis.eos.registry_guard import verify
 from zalmoxis.solver import main as zalmoxis_main
 
 OUTPUT_DIR = os.path.join(get_zalmoxis_root(), 'output', 'validation_thermal_state_full_paleos')
@@ -79,6 +80,7 @@ def build_paleos_cp_func(material='MgSiO3'):
     if not os.path.isfile(eos_file):
         return None
 
+    verify(eos_file)
     data = np.genfromtxt(eos_file, usecols=range(9), comments='#')
     P, T, cp = data[:, 0], data[:, 1], data[:, 5]
     valid = (P > 0) & np.isfinite(cp) & (cp > 0) & (cp < 5000)
@@ -144,6 +146,7 @@ def get_paleos_cp_at_conditions(P_Pa, T_K, material='MgSiO3'):
     else:
         return None
 
+    verify(path)
     data = np.genfromtxt(path, usecols=range(9), comments='#')
     P, T, cp = data[:, 0], data[:, 1], data[:, 5]
 

@@ -19,6 +19,7 @@ from .interpolation import (
     _paleos_clamp_warned,
     fast_bilinear_batch,
 )
+from .registry_guard import StaleTableError
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,11 @@ def get_paleos_unified_density(
     -------
     float or None
         Density in kg/m^3, or None on failure.
+
+    Raises
+    ------
+    StaleTableError
+        If the table is not the release its registry pins.
     """
     eos_file = material_dict['eos_file']
     try:
@@ -228,6 +234,8 @@ def get_paleos_unified_density(
         specific_volume = phi * (1.0 / rho_liq) + (1.0 - phi) * (1.0 / rho_sol)
         return 1.0 / specific_volume
 
+    except StaleTableError:
+        raise
     except Exception as e:
         logger.error(
             f'Error in PALEOS unified density at P={pressure:.2e} Pa, '
