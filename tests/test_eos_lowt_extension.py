@@ -472,14 +472,11 @@ def test_a_column_window_needs_rising_positive_limits(T_lo, T_hi):
     """Crossed, equal, NaN or non-positive temperature limits give no window, even where the
     entropy is finite at every temperature; rising limits give the entropy range in order."""
 
-    def flat(pt):
-        return 1.0e3
-
     def falling(pt):
         return 2.0e3 - 1.0e3 * pt[1]
 
     try:
-        window = eos_export._column_window(9.0, T_lo, T_hi, flat)
+        window = eos_export._column_window(9.0, T_lo, T_hi, lambda pt: 1.0e3)
     except ValueError:
         window = 'raised'
     assert window is None
@@ -489,13 +486,38 @@ def test_a_column_window_needs_rising_positive_limits(T_lo, T_hi):
     )
 
 
+def test_a_column_window_starts_at_the_first_finite_entropy():
+    """Below 250 K the entropy is NaN: the window starts at the first finite probe and its range
+    is the entropy there; an entropy that is NaN everywhere gives no window."""
+
+    def s(pt):
+        return np.nan if pt[1] < np.log10(250.0) else 1.0e3 * pt[1]
+
+    T_lo, T_hi, S_lo, S_hi = eos_export._column_window(9.0, 200.0, 300.0, s)
+    assert 250.0 <= T_lo < 252.0 and T_hi == 300.0
+    assert S_lo == pytest.approx(1.0e3 * np.log10(T_lo)) and S_hi == pytest.approx(
+        1.0e3 * np.log10(300)
+    )
+    assert eos_export._column_window(9.0, 200.0, 300.0, lambda pt: np.nan) is None
+
+
 def test_the_lowest_node_follows_the_column_with_the_lowest_extended_entropy(tmp_path):
-    """Extension rows reach 150 K only at the two lowest pressures: the added nodes reach down to
-    the lowest entropy of those columns, not to that of the others."""
+    """The extension reaches 150 K on every row, and the third row holds 300 J/kg/K less below
+    300 K: the lowest extended entropy is in a middle column, not the first or the last, and the
+    added nodes reach down to it."""
     solid, liquid, _ = _gen_tables(tmp_path)
-    cells = [(P, T) for i, P in enumerate(_P) for T in (_TG[:7] if i < 2 else _TG[5:7])]
-    out = _generate_from(solid, liquid, _write(tmp_path / 'ext_low_p.dat', cells))
-    S_lo = 1000.0 * np.log(_TG[0] / 300.0) + 2.0 * np.log10(out['P_Pa'][0]) + 2000.0
+
+    def lower_third_row(P, T, vals):
+        if P == _P[2] and T < _TG[6]:
+            vals[2] -= 300.0
+
+    cells = [(P, T) for P in _P for T in _TG[:7]]
+    out = _generate_from(
+        solid, liquid, _write(tmp_path / 'ext_mid.dat', cells, edit=lower_third_row)
+    )
+    P = out['P_Pa'][1]
+    w = (np.log10(P) - np.log10(_P[2])) / (np.log10(_P[3]) - np.log10(_P[2]))
+    S_lo = 1000.0 * np.log(_TG[0] / 300.0) + 2.0 * np.log10(P) + 2000.0 - 300.0 * (1.0 - w)
     S0, dS = out['S_solid'][0], out['S_solid'][1] - out['S_solid'][0]
     assert S_lo - 1e-3 <= S0 < S_lo + dS
 

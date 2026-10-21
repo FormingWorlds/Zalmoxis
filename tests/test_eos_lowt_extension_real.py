@@ -21,13 +21,17 @@ def test_real_paleos_table_lowt_extension_numbers():
     conductive gradient bias of the two lowest entropy intervals."""
     names = [f'EOS_PALEOS_MgSiO3/paleos_mgsio3_tables_pt_proteus_{n}.dat' for n in _PHASES]
     names.append('EOS_PALEOS_MgSiO3_unified/paleos_mgsio3_eos_table_pt.dat')
-    roots = [Path(get_zalmoxis_root()) / 'data']
+    roots = []  # the data folder PROTEUS reads first; all 4 files from one root
+    try:
+        roots.append(Path(get_zalmoxis_root()) / 'data')
+    except RuntimeError:
+        pass
     if os.environ.get('FWL_DATA'):
         roots.append(Path(os.environ['FWL_DATA']) / 'zalmoxis_eos')
-    base = next((r for r in roots if all((r / n).is_file() for n in names)), None)
-    if base is None:
+    root = next((r for r in roots if all((r / n).is_file() for n in names)), None)
+    if root is None:
         pytest.skip(f'Real PALEOS tables with the extension missing under {roots}')
-    solid, ext, liquid, uni = (base / n for n in names)
+    solid, ext, liquid, uni = (root / n for n in names)
 
     kw = dict(
         eos_file=str(uni),
