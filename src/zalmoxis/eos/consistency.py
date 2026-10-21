@@ -219,11 +219,22 @@ def _verdict(rx, bound, present):
 
     A cell where every input is ``present`` (on the full stencil of a derivative identity) but
     ``rx`` or ``bound`` is not finite fails too; the identity is ``skipped`` when no cell is.
+    ``blind`` marks tested cells whose bound is 1 or more: a missing derivative (R = -1) passes
+    there.
     """
     tested = np.isfinite(rx) & np.isfinite(bound)
     skipped = not present.any()
     fail = (tested & (np.abs(rx) > bound)) | (present & ~tested)
-    return {'rx': rx, 'bound': bound, 'tested': tested, 'fail': fail, 'skipped': skipped}
+    blind = tested & (bound >= 1)
+    return {
+        'rx': rx,
+        'bound': bound,
+        'present': present,
+        'tested': tested,
+        'blind': blind,
+        'fail': fail,
+        'skipped': skipped,
+    }
 
 
 def _richardson(r1, r2, r4, f1, f2, p1, p2, p4):
@@ -264,7 +275,8 @@ def check(table, eps):
     derivative identity (4 cells on each side in one phase). On a coarse grid a cell can lie
     outside the range where the Richardson estimate holds (R_x(2h) / R_x(h) far from 16), and
     an exact table can fail there: 1 cp cell of the Murnaghan table at 10 points per decade over
-    P 1e5 to 10^11.5 Pa and T 300 to 7.5e3 K, where cp and cv are positive.
+    P 1e5 to 10^11.5 Pa and T 300 to 7.5e3 K, and 29 cp_cv cells of the 60 x 60 Murnaghan table
+    over P 1e5 to 1e11 Pa and T 500 to 5000 K, where cp and cv are positive.
 
     Parameters
     ----------
@@ -278,9 +290,10 @@ def check(table, eps):
     -------
     dict
         Identity name -> dict with ``rx`` (the Richardson residual, defined also at untested
-        cells), ``bound``, ``tested`` (both finite), ``fail`` (tested and above the bound, or
-        with all values present and a residual or bound that is not finite) arrays, and
-        ``skipped``, True when no cell holds all values the identity reads on its stencil.
+        cells), ``bound``, ``present`` (all values the identity reads on its stencil),
+        ``tested`` (both finite), ``blind`` (tested with a bound of 1 or more, where a missing
+        derivative passes), ``fail`` (tested and above the bound, or present with a residual
+        or bound that is not finite) arrays, and ``skipped``, True when no cell is present.
 
     Raises
     ------

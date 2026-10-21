@@ -83,8 +83,9 @@ def report(path, out, digits=9):
     Returns
     -------
     dict
-        Condition name -> (cells tested, cells failing, note); the note is from ``notes`` for
-        an identity and '' for a sign condition.
+        Condition name -> dict of cell counts: ``tested``, ``failing`` and ``note`` (from
+        ``notes`` for an identity, '' for a sign condition); an identity also has ``present``
+        (failing never exceeds it) and ``blind`` (tested cells with a bound of 1 or more).
 
     Raises
     ------
@@ -112,13 +113,23 @@ def report(path, out, digits=9):
         raise ValueError(f'{err}; {why}{NEEDS}') from err
     note = notes(t, res)
     for name, v in res.items():
-        counts[name] = (int(v['tested'].sum()), int(v['fail'].sum()), note[name])
+        counts[name] = {
+            'present': int(v['present'].sum()),
+            'tested': int(v['tested'].sum()),
+            'blind': int(v['blind'].sum()),
+            'failing': int(v['fail'].sum()),
+            'note': note[name],
+        }
         for i, j in np.argwhere(v['fail']):
             rows.append(
                 (name, P[i, j], T[i, j], t['phase'][i, j], v['rx'][i, j], v['bound'][i, j])
             )
     for name, v in c.signs(t, eps).items():
-        counts[f'sign_{name}'] = (int(v['tested'].sum()), int(v['fail'].sum()), '')
+        counts[f'sign_{name}'] = {
+            'tested': int(v['tested'].sum()),
+            'failing': int(v['fail'].sum()),
+            'note': '',
+        }
         for i, j in np.argwhere(v['fail']):
             rows.append((f'sign_{name}', P[i, j], T[i, j], t['phase'][i, j], '', ''))
     with open(out, 'w', newline='') as f:
@@ -135,13 +146,17 @@ def main():
     ap.add_argument('out')
     ap.add_argument('--digits', type=int, default=9)
     args = ap.parse_args()
-    for name, (tested, failing, note) in report(args.table, args.out, args.digits).items():
-        if note.startswith('skipped'):
-            print(f'{name}: {note}')
-        else:
-            print(
-                f'{name}: tested {tested}, failing {failing}' + (f' ({note})' if note else '')
+    for name, v in report(args.table, args.out, args.digits).items():
+        if v['note'].startswith('skipped'):
+            print(f'{name}: {v["note"]}')
+            continue
+        line = f'tested {v["tested"]}, failing {v["failing"]}'
+        if 'present' in v:
+            line = (
+                f'present {v["present"]}, tested {v["tested"]} ({v["blind"]} with a bound of 1'
+                f' or more), failing {v["failing"]}'
             )
+        print(f'{name}: {line}' + (f' ({v["note"]})' if v['note'] else ''))
 
 
 if __name__ == '__main__':
