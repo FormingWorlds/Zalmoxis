@@ -42,7 +42,9 @@ def require_eos_file(eos_file):
     FileNotFoundError
         If ``eos_file`` is not a file.
     StaleTableError
-        If ``eos_file`` is a PALEOS table that differs from its pinned release.
+        If ``eos_file`` is a PALEOS table that differs from its pinned release, or
+        (:class:`~zalmoxis.eos.registry_guard.MissingFwlIoError`) if fwl-io cannot be
+        imported.
     """
     if os.path.isfile(eos_file):
         verify(eos_file)

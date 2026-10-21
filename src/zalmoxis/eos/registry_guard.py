@@ -5,11 +5,14 @@ only when its md5 is a pinned one. A table that differs is fetched again when it
 sits in its version directory under the current FWL_DATA and is refused anywhere
 else, so an older release is never read without notice. A file whose name no
 registry lists (a table of your own, a PALEOS-API table) is not checked, so a
-table of your own must not carry the name of a registry file.
+table of your own must not carry the name of a registry file. Without an
+importable fwl-io no file can be checked, since the manifest says which names are
+pinned, so every checked read raises MissingFwlIoError.
 """
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import hashlib
 import logging
@@ -30,18 +33,59 @@ class StaleTableError(Exception):
     """
 
 
+class MissingFwlIoError(StaleTableError):
+    """fwl-io cannot be imported, so no PALEOS table can be checked against its registry.
+
+    A StaleTableError, so the PALEOS, Seager and melting-curve readers, which pass
+    StaleTableError on and turn other errors into None, stop; not an ImportError, so the
+    binary-cache reader, which rebuilds a cache it cannot unpickle, does not take it for
+    a broken cache.
+    """
+
+
+def _fwl_io():
+    """Return the fwl_io module once every part of it this module uses imports.
+
+    Raises
+    ------
+    MissingFwlIoError
+        If fwl-io, or a part of it this module uses, cannot be imported.
+    """
+    try:
+        import fwl_io
+        from fwl_io import (  # noqa: F401
+            MissingDataRootError,
+            create_fetcher,
+            load_manifest,
+            resolve_data_root,
+        )
+        from fwl_io.doi import zenodo_record_id  # noqa: F401
+        from fwl_io.manifest import shared_manifest_path  # noqa: F401
+    except ImportError as exc:
+        raise MissingFwlIoError(
+            f'fwl-io cannot be imported ({exc}), so no EOS table can be checked against the '
+            'fwl-io registry. Install it with pip install "fwl-io>=26.10.7", or '
+            'pip install -e <your fwl-io checkout>.'
+        ) from exc
+    return fwl_io
+
+
 @functools.cache
 def _manifest() -> tuple:
-    """Return the PALEOS datasets of the fwl-io shared manifest and the Zalmoxis manifest."""
-    from fwl_io import load_manifest
-    from fwl_io.manifest import shared_manifest_path
+    """Return the PALEOS datasets of the fwl-io shared manifest and the Zalmoxis manifest.
 
+    Raises
+    ------
+    MissingFwlIoError
+        If fwl-io, or a part of it this module uses, cannot be imported.
+    """
+    fwl_io = _fwl_io()
     from zalmoxis.datasets import manifest_path
 
     return tuple(
         ds
-        for path in (shared_manifest_path(), manifest_path())
-        for ds in load_manifest(path)
+        for path in (fwl_io.manifest.shared_manifest_path(), manifest_path())
+        for ds in fwl_io.load_manifest(path)
         if 'paleos' in ds.key
     )
 
@@ -128,9 +172,7 @@ def _refetch(real: Path, key: str, digest: str) -> bool:
     StaleTableError
         If fwl-io cannot fetch the pinned file (offline, or no mirror serves it).
     """
-    import fwl_io
-    from fwl_io.doi import zenodo_record_id
-
+    fwl_io = _fwl_io()
     ds = next((d for d in _manifest() if d.key == key), None)
     try:
         root = os.path.realpath(fwl_io.resolve_data_root(create=False))
@@ -139,7 +181,9 @@ def _refetch(real: Path, key: str, digest: str) -> bool:
     if ds is None or not ds.zenodo:
         return False
     try:
-        version_dir = Path(root, ds.subdir, f'r{zenodo_record_id(ds.zenodo)}').resolve()
+        version_dir = Path(
+            root, ds.subdir, f'r{fwl_io.doi.zenodo_record_id(ds.zenodo)}'
+        ).resolve()
         if real.parent != version_dir:
             return False
         fwl_io.create_fetcher(
@@ -168,12 +212,16 @@ def verify_digest(eos_file: str, digest: str | None, label: str | None = None) -
 
     Raises
     ------
+    MissingFwlIoError
+        If fwl-io cannot be imported.
     StaleTableError
-        If a name is pinned and ``digest`` is not a pin common to the pinned names.
+        If a name is pinned and ``digest`` is not a pin common to the pinned names, or if
+        the check itself fails (a broken registry, a pin that cannot be checked).
     """
-    found = _accepted(eos_file)
-    if found is not None and digest not in found[0]:
-        raise _stale(label or eos_file, found[1], found[0], digest)
+    with _checking(label or eos_file):
+        found = _accepted(eos_file)
+        if found is not None and digest not in found[0]:
+            raise _stale(label or eos_file, found[1], found[0], digest)
 
 
 def _stale(eos_file: str, keys: list[str], want: set[str], digest) -> StaleTableError:
@@ -197,17 +245,29 @@ def verify(eos_file: str) -> None:
 
     Raises
     ------
+    MissingFwlIoError
+        If fwl-io cannot be imported; the message names ``eos_file``.
     StaleTableError
         If the file is not a release pinned for its names and the pinned file cannot be
         put in its place, or if the check itself fails (an unreadable file, a broken
         registry, a pin that cannot be checked).
     """
-    try:
+    with _checking(eos_file):
         _verify(eos_file)
+
+
+@contextlib.contextmanager
+def _checking(name: str):
+    """Name ``name`` in a MissingFwlIoError and turn any other failure of the check that is
+    not a StaleTableError into the cannot-check StaleTableError."""
+    try:
+        yield
+    except MissingFwlIoError as exc:
+        raise MissingFwlIoError(f'{name} is not read: {exc}') from exc.__cause__
     except StaleTableError:
         raise
     except Exception as exc:
-        raise StaleTableError(f'cannot check {eos_file} against its registry: {exc}') from exc
+        raise StaleTableError(f'cannot check {name} against its registry: {exc}') from exc
 
 
 def _verify(eos_file: str) -> None:
