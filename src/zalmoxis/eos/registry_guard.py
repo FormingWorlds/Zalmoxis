@@ -220,8 +220,8 @@ def verify_digest(eos_file: str, digest: str | None, label: str | None = None) -
     """
     with _checking(label or eos_file):
         found = _accepted(eos_file)
-    if found is not None and digest not in found[0]:
-        raise _stale(label or eos_file, found[1], found[0], digest)
+        if found is not None and digest not in found[0]:
+            raise _stale(label or eos_file, found[1], found[0], digest)
 
 
 def _stale(eos_file: str, keys: list[str], want: set[str], digest) -> StaleTableError:
