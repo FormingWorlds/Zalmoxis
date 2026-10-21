@@ -23,9 +23,11 @@ A ``--paleos-src`` with uncommitted or untracked files, one whose HEAD does not 
 ``PALEOS_TESTED_SHA`` (``zalmoxis.eos.paleos_api.check_paleos_commit``; a descendant runs with a
 warning), or a commit given with ``--paleos-commit`` that the tool cannot check, is refused
 unless ``--allow-unverified-paleos`` is set; the header then records that state. Package
-changes that git status does not show (an assume-unchanged edit, an ignored package file) count
-as uncommitted changes. The header names the PALEOS commit and the result of the check against
-the tested commit (tested, newer, dirty, or not verified with the reason), sha256 of the
+changes that git status does not show (an assume-unchanged edit, an ignored package file) are
+refused too; with the flag they mark the commit as uncommitted, with the result dirty, when the
+checkout contains the tested commit, and an older or unrelated checkout gets not verified with
+the reason and no such mark. The header names the PALEOS commit and the result of the check
+against the tested commit (tested, newer, dirty, or not verified with the reason), sha256 of the
 data lines of the extended table, of ``paleos/mgsio3_eos.py`` and of the converter, the numpy,
 scipy, sympy and Python versions, the Zalmoxis commit of the converter and the version of the
 Zalmoxis package that checks the merge. The merge checks on every extended row that the
