@@ -1192,3 +1192,22 @@ def test_the_report_counts_add_up_when_present_cells_are_not_finite(
     counts = tool.report('in.dat', str(tmp_path / 'out.csv'))
     alpha = counts['alpha']
     assert alpha['tested'] == 0 and 0 < alpha['failing'] <= alpha['present']
+
+
+@pytest.mark.unit
+def test_only_tested_cells_count_as_blind(stored):
+    """An inf entropy makes the maxwell bound infinite at untested cells; they are not blind."""
+    res = c.check(_set(stored['murnaghan'], 's', (300, 50), np.inf), EPS9)['maxwell']
+    assert (res['bound'][~res['tested']] >= 1).any()
+    assert not (res['blind'] & ~res['tested']).any()
+
+
+@pytest.mark.unit
+def test_the_report_counts_the_blind_maxwell_cells(tmp_path, monkeypatch):
+    import tools.validation.eos_table_consistency_report as tool
+
+    m = a.table(a.murnaghan, _LP20, _LT20, digits=9)
+    t = {**m, 's': np.full_like(m['s'], 1e10)}
+    monkeypatch.setattr(tool, 'load_paleos_all_properties', lambda _: t)
+    maxwell = tool.report('in.dat', str(tmp_path / 'out.csv'))['maxwell']
+    assert maxwell['blind'] == maxwell['tested'] == 2373
