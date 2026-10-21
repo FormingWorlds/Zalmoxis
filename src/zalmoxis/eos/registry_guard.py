@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 # md5 per (device, inode, size, mtime, ctime), so each table is hashed once.
 _HASHES: dict[tuple, str] = {}
+# The fwl-io release Zalmoxis requires (pyproject.toml); named in MissingFwlIoError.
+FWL_IO_REQUIREMENT = 'fwl-io>=26.10.7'
 
 
 class StaleTableError(Exception):
@@ -30,11 +32,33 @@ class StaleTableError(Exception):
     """
 
 
+class MissingFwlIoError(StaleTableError):
+    """fwl-io cannot be imported, so no PALEOS table can be checked against its registry.
+
+    A StaleTableError, so the readers that pass StaleTableError on stop; not an
+    ImportError, so a caller that handles a missing optional module does not take it
+    for one.
+    """
+
+
 @functools.cache
 def _manifest() -> tuple:
-    """Return the PALEOS datasets of the fwl-io shared manifest and the Zalmoxis manifest."""
-    from fwl_io import load_manifest
-    from fwl_io.manifest import shared_manifest_path
+    """Return the PALEOS datasets of the fwl-io shared manifest and the Zalmoxis manifest.
+
+    Raises
+    ------
+    MissingFwlIoError
+        If fwl-io, or a part of it this module uses, cannot be imported.
+    """
+    try:
+        from fwl_io import load_manifest
+        from fwl_io.manifest import shared_manifest_path
+    except ImportError as exc:
+        raise MissingFwlIoError(
+            f'fwl-io cannot be imported ({exc}), so the PALEOS tables cannot be checked '
+            f'against their registry. Install it with pip install "{FWL_IO_REQUIREMENT}", '
+            'or pip install -e <your fwl-io checkout>.'
+        ) from exc
 
     from zalmoxis.datasets import manifest_path
 
@@ -168,6 +192,8 @@ def verify_digest(eos_file: str, digest: str | None, label: str | None = None) -
 
     Raises
     ------
+    MissingFwlIoError
+        If fwl-io cannot be imported.
     StaleTableError
         If a name is pinned and ``digest`` is not a pin common to the pinned names.
     """
@@ -197,6 +223,8 @@ def verify(eos_file: str) -> None:
 
     Raises
     ------
+    MissingFwlIoError
+        If fwl-io cannot be imported; passed on as it is.
     StaleTableError
         If the file is not a release pinned for its names and the pinned file cannot be
         put in its place, or if the check itself fails (an unreadable file, a broken
