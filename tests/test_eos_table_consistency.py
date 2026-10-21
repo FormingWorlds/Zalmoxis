@@ -658,7 +658,7 @@ def test_an_isolated_infinite_value_fails_the_identities_that_read_it_near_its_c
     the cell or the cells whose stencil holds it, the others fail nowhere, none is skipped."""
     res = c.check(_set(stored['murnaghan'], col, (300, 50), value), EPS9)
     near = {n for n, v in res.items() if v['fail'][296:305, 46:55].any()}
-    assert near == {n for n in c.IDENTITIES if col in c.INPUTS[n]}
+    assert near == {n for n in c.IDENTITIES if col in READS[n]}
     assert not any(v['fail'].any() for n, v in res.items() if n not in near)
     assert not any(v['skipped'] for v in res.values())
 
@@ -724,7 +724,7 @@ def test_a_column_of_inf_or_zero_fails_the_identities_that_read_it_and_no_other(
     assert not any(v['skipped'] for v in res.values())
     for n, v in res.items():
         if col in READS[n]:
-            assert v['fail'].any(), n
+            assert v['fail'].sum() >= 0.8 * clean[n]['tested'].sum(), n  # finite rests can pass
         else:
             assert np.array_equal(v['tested'], clean[n]['tested']) and not v['fail'].any(), n
 
@@ -759,9 +759,51 @@ def test_the_report_names_a_skipped_identity_and_a_column_of_inf(stored):
     m = stored['murnaghan']
     t = {**m, 'u': np.full_like(m['u'], np.inf), 'cv': np.full_like(m['cv'], np.nan)}
     out = notes(t, c.check(t, EPS9))
-    assert out['cp_cv'] == 'skipped: no cell with rho, alpha, cp, cv present'
+    assert out['cp_cv'] == 'skipped: cv holds no value'
     assert out['dudt'] == 'u is 0 or inf in every cell that holds a value'
     assert out['cp'] == ''
+
+
+@pytest.mark.unit
+def test_the_report_names_a_stencil_too_short_as_the_reason_for_a_skip():
+    from tools.validation.eos_table_consistency_report import notes
+
+    t = a.table(a.murnaghan, LP[:8], LT[:8], digits=9)
+    out = notes(t, c.check(t, EPS9))
+    reason = 'skipped: no cell with s, cp present on 4 cells each side in one phase'
+    assert out['cp'] == reason and out['nabla_ad'] == ''
+
+
+@pytest.mark.unit
+def test_the_report_main_prints_the_reason_instead_of_zero_counts(monkeypatch, capsys):
+    import tools.validation.eos_table_consistency_report as tool
+
+    counts = {
+        'cp': (10, 1, ''),
+        'dudt': (0, 0, 'skipped: u holds no value'),
+        'alpha': (5, 5, 'x'),
+    }
+    monkeypatch.setattr(tool, 'report', lambda *_: counts)
+    monkeypatch.setattr('sys.argv', ['tool', 'in.dat', 'out.csv'])
+    tool.main()
+    assert capsys.readouterr().out.splitlines() == [
+        'cp: tested 10, failing 1',
+        'dudt: skipped: u holds no value',
+        'alpha: tested 5, failing 5 (x)',
+    ]
+
+
+@pytest.mark.unit
+def test_the_report_names_the_empty_columns_when_every_identity_is_skipped(
+    stored, tmp_path, monkeypatch
+):
+    import tools.validation.eos_table_consistency_report as tool
+
+    m = stored['murnaghan']
+    t = {**m, **{col: np.full_like(m[col], np.nan) for col in ('rho', 's', 'u')}}
+    monkeypatch.setattr(tool, 'load_paleos_all_properties', lambda _: t)
+    with pytest.raises(ValueError, match='columns without a value: rho, u, s'):
+        tool.report('in.dat', str(tmp_path / 'out.csv'))
 
 
 def _rounded(x, digits):
@@ -805,25 +847,39 @@ def test_9_digit_aragog_pt_tables_with_9_digit_axes_pass(eos):
 
 @pytest.mark.unit
 @pytest.mark.parametrize('axis', ['P', 'T'])
-@pytest.mark.parametrize('change', ['inf end', 'one point', 'jitter'])
+@pytest.mark.parametrize(
+    'change, message',
+    [
+        ('inf end', 'must be finite, positive and strictly increasing'),
+        ('nan', 'must be finite, positive and strictly increasing'),
+        ('zero start', 'must be finite, positive and strictly increasing'),
+        ('one point', 'needs at least 2 points'),
+        ('2-D', 'must be one-dimensional'),
+        ('jitter', 'is neither uniform nor geometric'),
+    ],
+)
 def test_aragog_pt_axes_that_are_not_finite_long_and_regular_are_rejected(
-    pt_files, axis, change
+    pt_files, axis, change, message
 ):
     t = pt_files['murnaghan']
     x = np.array(t['density'][axis], float)
     if change == 'inf end':
         x[-1] = np.inf
+    elif change == 'nan':
+        x[50] = np.nan
+    elif change == 'zero start':
+        x[0] = 0.0
     elif change == 'one point':
         x = x[:1]
-    else:
+    elif change == 'jitter':
         rng = np.random.default_rng(1)
         x = x + 0.2 * np.diff(x).mean() * rng.uniform(-1, 1, x.size)
     n = x.size
     new = {}
     for q, v in t.items():
         vals = v['values'][:n] if axis == 'P' else v['values'][:, :n]
-        new[q] = {**v, axis: x, 'values': vals}
-    with pytest.raises(ValueError, match=f'{axis} '):
+        new[q] = {**v, axis: x.reshape(1, -1) if change == '2-D' else x, 'values': vals}
+    with pytest.raises(ValueError, match=f'{axis} {message}'):
         c.check_pt(new, 5e-11)
 
 
@@ -887,3 +943,46 @@ def test_the_axis_error_is_none_for_an_axis_that_is_neither_uniform_nor_geometri
     assert c._axis_error(irregular, 5e-9) is None
     x = np.linspace(1.0, 2.0, 11)
     assert (c._axis_error(x, 5e-9) < 1e-14).all()
+
+
+@pytest.mark.unit
+def test_an_exact_table_with_stored_pressure_3_9e_9_off_its_fit_passes():
+    """GRID_FIT accepts this wobble: the floor covers the rounding of P in each identity."""
+    lp, lt = np.linspace(5.0, 14.0, 1351), np.linspace(np.log10(300.0), 5.0, 380)
+    m = a.table(a.murnaghan, lp, lt, digits=9)
+    wobble = 3.9e-9 * np.where(np.arange(lp.size) % 4 < 2, 1.0, -1.0)
+    res = c.check({**m, 'unique_log_p': m['unique_log_p'] + wobble}, EPS9)
+    assert {n: int(v['fail'].sum()) for n, v in res.items()} == dict.fromkeys(c.IDENTITIES, 0)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('fraction, accepted', [(0.9, True), (2.0, False)])
+def test_the_pt_grid_fit_edge(fraction, accepted):
+    T = np.linspace(300.0, 6000.0, 200)
+    T2 = T + fraction * c.PT_GRID_FIT * np.diff(T).mean() * np.where(
+        np.arange(T.size) % 2, 1, -1
+    )
+    t = _pt_tables(a.murnaghan, 17, T=T2)
+    if accepted:
+        assert not any(v['fail'].any() for v in c.check_pt(t, 5e-11).values())
+    else:
+        with pytest.raises(ValueError, match='neither uniform nor geometric'):
+            c.check_pt(t, 5e-11)
+
+
+@pytest.mark.unit
+def test_the_axis_term_is_at_most_the_rounding_of_the_stored_coordinates(pt_files):
+    """A <= (e[i+k] + e[i-k]) / dx with e at most eps |x|: bounded by eps max|T| / min dT."""
+    t = pt_files['murnaghan']
+    T = t['density']['T']
+    A = c._pt_parts(t, 1, 5e-11)['cp'][4]
+    assert 0 < np.nanmax(A) <= 1.05 * 5e-11 * T.max() / np.diff(T).min()
+
+
+@pytest.mark.unit
+def test_a_1e_5_fault_is_found_on_a_geometric_pressure_axis():
+    t = _pt_tables(a.murnaghan, 11, P=np.geomspace(1e5, 3.5e11, 200))
+    found = _found_pt(
+        c.check_pt(_plant_pt(t, 'entropy', (100, 100), 1e-5), 5e-11), 'maxwell', 0
+    )
+    assert found == [True] * 4
