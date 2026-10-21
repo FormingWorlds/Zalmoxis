@@ -8,7 +8,6 @@ import pathlib
 import sys
 import time
 import tomllib
-import types
 
 import numpy as np
 import pytest
@@ -1149,71 +1148,112 @@ def test_a_dangling_alias_to_an_unpinned_name_without_cache_is_missing(tmp_path,
         interpolation._ensure_unified_cache(str(alias), {})
 
 
+def _block(monkeypatch, *modules):
+    """Make ``modules`` unimportable and drop any earlier manifest read."""
+    for mod in modules:
+        monkeypatch.setitem(sys.modules, mod, None)
+    registry_guard._manifest.cache_clear()
+    registry_guard._pins.cache_clear()
+
+
 @pytest.fixture
 def no_fwl_io(monkeypatch):
     """fwl_io cannot be imported, and no earlier manifest read is cached."""
-    monkeypatch.setitem(sys.modules, 'fwl_io', None)
-    monkeypatch.setitem(sys.modules, 'fwl_io.manifest', None)
-    registry_guard._manifest.cache_clear()
-    registry_guard._pins.cache_clear()
-    yield
-    registry_guard._manifest.cache_clear()
-    registry_guard._pins.cache_clear()
+    _block(monkeypatch, 'fwl_io', 'fwl_io.manifest')
 
 
-def _fwl_io_floor():
-    """The fwl-io requirement of Zalmoxis, read from pyproject.toml."""
+def _assert_missing_fwl_io(exc, path):
+    """The error says fwl-io is missing, which file was not read and how to install fwl-io."""
     deps = tomllib.loads((pathlib.Path(__file__).parents[1] / 'pyproject.toml').read_text())
-    return next(d for d in deps['project']['dependencies'] if d.startswith('fwl-io'))
-
-
-def _assert_missing_fwl_io(exc):
-    """The error says fwl-io is missing and how to install it, and does not call the table stale."""
+    floor = next(d for d in deps['project']['dependencies'] if d.startswith('fwl-io>='))
     msg = str(exc)
-    assert type(exc).__name__ == 'MissingFwlIoError', type(exc)
     assert isinstance(exc, StaleTableError)
     assert not isinstance(exc, ImportError)
-    assert f'pip install "{_fwl_io_floor()}"' in msg
-    assert 'cannot check' not in msg and 'stale' not in msg.lower()
+    assert isinstance(exc.__cause__, ImportError)
+    assert str(path) in msg
+    assert f'pip install "{floor}"' in msg
+    assert 'cannot check' not in msg and 'is not the release' not in msg
 
 
-def test_a_missing_fwl_io_says_so_and_how_to_install_it(tmp_path, no_fwl_io):
-    """verify names the missing dependency, not a stale table; the error stays a
-    StaleTableError, so the readers that pass StaleTableError on still stop."""
-    path = tmp_path / NAME
+@pytest.mark.parametrize('name', [NAME, 'my_own_table.dat'], ids=['pinned', 'own_name'])
+def test_a_missing_fwl_io_says_so_and_how_to_install_it(tmp_path, monkeypatch, no_fwl_io, name):
+    """verify names the missing dependency and the file, for a pinned name and for a name
+    of your own, since the manifest is needed to know which names are pinned; once fwl-io
+    can be imported again, a file of your own is read without an error."""
+    path = tmp_path / name
     path.write_text(_table_text())
 
-    with pytest.raises(Exception) as excinfo:
+    with pytest.raises(registry_guard.MissingFwlIoError) as excinfo:
         registry_guard.verify(str(path))
 
-    _assert_missing_fwl_io(excinfo.value)
+    _assert_missing_fwl_io(excinfo.value, path)
+    monkeypatch.undo()
+    own = tmp_path / 'my_own_table.dat'
+    own.write_text(_table_text())
+    assert registry_guard.verify(str(own)) is None
 
 
 def test_a_missing_fwl_io_stops_the_cache_check_the_same_way(tmp_path, no_fwl_io):
     """verify_digest, used for a binary cache without its table, gives the same error."""
-    with pytest.raises(Exception) as excinfo:
+    with pytest.raises(registry_guard.MissingFwlIoError) as excinfo:
         registry_guard.verify_digest(str(tmp_path / NAME), '0' * 32)
 
-    _assert_missing_fwl_io(excinfo.value)
+    _assert_missing_fwl_io(excinfo.value, tmp_path / NAME)
 
 
-def test_an_fwl_io_without_the_shared_manifest_is_named_too(tmp_path, monkeypatch):
-    """An installed fwl-io that is too old to provide shared_manifest_path gives the
+def test_an_fwl_io_without_its_doi_module_is_named_too(tmp_path, monkeypatch):
+    """An fwl-io release without fwl_io.doi, which the refetch of a table needs, gives the
     missing-fwl-io error with the import failure in it."""
-    monkeypatch.setitem(sys.modules, 'fwl_io.manifest', types.ModuleType('fwl_io.manifest'))
-    registry_guard._manifest.cache_clear()
-    registry_guard._pins.cache_clear()
+    _block(monkeypatch, 'fwl_io.doi')
     path = tmp_path / NAME
     path.write_text(_table_text())
-    try:
-        with pytest.raises(Exception) as excinfo:
-            registry_guard.verify(str(path))
-    finally:
-        registry_guard._manifest.cache_clear()
-        registry_guard._pins.cache_clear()
 
-    _assert_missing_fwl_io(excinfo.value)
-    assert 'shared_manifest_path' in str(excinfo.value)
+    with pytest.raises(registry_guard.MissingFwlIoError) as excinfo:
+        registry_guard.verify(str(path))
+
+    _assert_missing_fwl_io(excinfo.value, path)
+    assert 'fwl_io.doi' in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    'reader',
+    [
+        'load_paleos_table',
+        'load_paleos_unified_table',
+        'load_paleos_all_properties',
+        'get_paleos_unified_density',
+        'get_tabulated_eos',
+        'load_melting_curve',
+    ],
+)
+def test_every_reader_passes_a_missing_fwl_io_on(tmp_path, no_fwl_io, reader):
+    """The readers that turn other errors into None or a rebuild pass MissingFwlIoError on."""
+    from zalmoxis import eos_export
+    from zalmoxis.eos import paleos, seager, tdep
+
+    two_phase = reader in ('load_paleos_table', 'get_tabulated_eos')
+    path = tmp_path / (TWO_PHASE if two_phase else NAME)
+    path.write_text(_table_text())
+    calls = {
+        'load_paleos_table': lambda: interpolation.load_paleos_table(str(path)),
+        'load_paleos_unified_table': lambda: interpolation.load_paleos_unified_table(str(path)),
+        'load_paleos_all_properties': lambda: eos_export.load_paleos_all_properties(str(path)),
+        'get_paleos_unified_density': lambda: paleos.get_paleos_unified_density(
+            5e9, 2000.0, {'eos_file': str(path)}, 1.0, {}
+        ),
+        'get_tabulated_eos': lambda: seager.get_tabulated_eos(
+            5e9,
+            {'solid_mantle': {'eos_file': str(path), 'format': 'paleos'}},
+            'solid_mantle',
+            2000.0,
+            {},
+        ),
+        'load_melting_curve': lambda: tdep.load_melting_curve(str(path)),
+    }
+    with pytest.raises(registry_guard.MissingFwlIoError) as excinfo:
+        calls[reader]()
+
+    assert str(path) in str(excinfo.value)
 
 
 def test_an_unreadable_pinned_table_keeps_the_cannot_check_error(tmp_path, pinned):
