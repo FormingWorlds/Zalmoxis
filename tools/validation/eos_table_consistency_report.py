@@ -22,6 +22,10 @@ from zalmoxis.eos import consistency as c
 from zalmoxis.eos_export import load_paleos_all_properties
 
 STENCIL = ' where the derivative has 4 cells on each side in one phase'
+NEEDS = (
+    'each identity needs its inputs in one cell, a derivative identity also 4 cells on each side'
+    ' in one phase'
+)
 
 
 def notes(table, res):
@@ -86,7 +90,7 @@ def report(path, out, digits=9):
     ------
     ValueError
         If digits is not an integer from 1 to 17, or every identity is skipped (the message
-        names the columns without a value).
+        names the columns without a value, if any, and what each identity needs).
     """
     if (
         isinstance(digits, bool)
@@ -102,14 +106,10 @@ def report(path, out, digits=9):
     rows, counts = [], {}
     try:
         res = c.check(t, eps)
-    except ValueError as err:
-        if not str(err).startswith('no cell tested'):
-            raise
+    except c.NoCellTested as err:
         empty = [col for col in c.COLUMNS if np.isnan(np.asarray(t[col], float)).all()]
         why = f'columns without a value: {", ".join(empty)}; ' if empty else ''
-        raise ValueError(
-            f'{err}; {why}a derivative needs 4 cells on each side in one phase'
-        ) from err
+        raise ValueError(f'{err}; {why}{NEEDS}') from err
     note = notes(t, res)
     for name, v in res.items():
         counts[name] = (int(v['tested'].sum()), int(v['fail'].sum()), note[name])

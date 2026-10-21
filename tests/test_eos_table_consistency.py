@@ -798,23 +798,42 @@ def test_the_report_leaves_other_check_errors_unchanged(stored, tmp_path, monkey
 
     m = stored['murnaghan']
     t = {**m, 'unique_log_p': m['unique_log_p'] + 1e-3 * np.sin(np.arange(LP.size))}
+    with pytest.raises(ValueError) as expected:
+        c.check(t, EPS9)
     monkeypatch.setattr(tool, 'load_paleos_all_properties', lambda _: t)
-    with pytest.raises(ValueError, match='not a uniform grid') as err:
+    with pytest.raises(ValueError) as err:
         tool.report('in.dat', str(tmp_path / 'out.csv'))
-    assert 'columns without a value' not in str(err.value)
+    assert str(err.value) == str(expected.value)
 
 
 @pytest.mark.unit
-def test_the_report_names_the_short_stencil_when_no_column_is_empty(tmp_path, monkeypatch):
+def test_the_report_names_an_empty_column_and_what_each_identity_needs(tmp_path, monkeypatch):
     import tools.validation.eos_table_consistency_report as tool
 
     t = a.table(a.murnaghan, LP[:8], LT[:8], digits=9)
     t = {**t, 'nabla_ad': np.full_like(t['nabla_ad'], np.nan)}
     monkeypatch.setattr(tool, 'load_paleos_all_properties', lambda _: t)
     with pytest.raises(
-        ValueError, match='columns without a value: nabla_ad; a derivative needs'
+        ValueError, match='columns without a value: nabla_ad; each identity needs'
     ):
         tool.report('in.dat', str(tmp_path / 'out.csv'))
+
+
+@pytest.mark.unit
+def test_the_report_gives_what_each_identity_needs_when_no_column_is_empty(
+    tmp_path, monkeypatch
+):
+    import tools.validation.eos_table_consistency_report as tool
+
+    t = a.table(a.murnaghan, LP[:8], LT[:8], digits=9)
+    rho, alpha = np.array(t['rho'], float), np.array(t['alpha'], float)
+    rho[:, ::2], alpha[:, 1::2] = np.nan, np.nan  # no cell holds both
+    t = {**t, 'rho': rho, 'alpha': alpha}
+    monkeypatch.setattr(tool, 'load_paleos_all_properties', lambda _: t)
+    with pytest.raises(ValueError, match='no cell tested') as err:
+        tool.report('in.dat', str(tmp_path / 'out.csv'))
+    assert 'columns without a value' not in str(err.value)
+    assert str(err.value).endswith(tool.NEEDS)
 
 
 @pytest.mark.unit
@@ -1007,6 +1026,7 @@ def test_an_exact_table_with_stored_axes_3_9e_9_off_their_fit_passes(axes):
         t[key] = x + 3.9e-9 * np.where(np.arange(x.size) % 4 < 2, 1.0, -1.0)
     res = c.check(t, EPS9)
     assert {n: int(v['fail'].sum()) for n, v in res.items()} == dict.fromkeys(c.IDENTITIES, 0)
+    assert all(v['tested'].sum() > 400_000 for v in res.values())
 
 
 @pytest.mark.unit
@@ -1045,7 +1065,9 @@ def test_a_1e_5_fault_is_found_on_a_geometric_pressure_axis():
 @pytest.mark.unit
 def test_an_exact_aragog_pt_table_on_a_pressure_axis_from_zero_passes():
     t = _pt_tables(a.murnaghan, 11, P=np.linspace(0.0, 3.5e11, 200))
-    assert not any(v['fail'].any() for v in c.check_pt(t, 5e-11).values())
+    res = c.check_pt(t, 5e-11)
+    assert all(v['tested'].sum() > 30_000 and not v['fail'].any() for v in res.values())
+    assert res['maxwell']['tested'][4, 100]  # the first row with a full P stencil
 
 
 def _power_law(m):

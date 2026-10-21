@@ -234,10 +234,14 @@ def _richardson(r1, r2, r4, f1, f2, p1, p2, p4):
     return _verdict(rx, (4 * f1 + f2) / 3 + FACTOR * est, np.isfinite(p1 + p2 + p4))
 
 
+class NoCellTested(ValueError):
+    """Every identity of a check is skipped."""
+
+
 def _nonempty(out):
-    """``out``, or ValueError if every identity is skipped."""
+    """``out``, or NoCellTested if every identity is skipped."""
     if all(v['skipped'] for v in out.values()):
-        raise ValueError(f'no cell tested for {", ".join(out)}')
+        raise NoCellTested(f'no cell tested for {", ".join(out)}')
     return out
 
 
