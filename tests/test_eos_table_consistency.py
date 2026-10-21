@@ -237,6 +237,7 @@ def test_an_identity_that_cannot_be_tested_is_skipped_and_the_others_run(stored)
         pytest.fail(f'a table with testable identities raised: {err}')
     skipped = {n for n, v in res.items() if v['skipped']}
     assert skipped == {'maxwell', 'alpha', 'nabla_ad', 'cp_cv'}
+    assert not any(res[n]['fail'].any() for n in skipped)
     assert not res['cp']['skipped'] and res['cp']['tested'].sum() > 100_000
 
 
