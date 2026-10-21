@@ -1168,7 +1168,7 @@ def _assert_missing_fwl_io(exc, path):
     deps = tomllib.loads((pathlib.Path(__file__).parents[1] / 'pyproject.toml').read_text())
     floor = next(d for d in deps['project']['dependencies'] if d.startswith('fwl-io>='))
     msg = str(exc)
-    assert isinstance(exc, StaleTableError)
+    assert isinstance(exc, registry_guard.MissingFwlIoError)
     assert not isinstance(exc, ImportError)
     assert isinstance(exc.__cause__, ImportError)
     assert str(path) in msg
@@ -1338,7 +1338,7 @@ def test_an_fwl_io_without_its_manifest_module_is_named(tmp_path, monkeypatch, h
     path = tmp_path / NAME
     path.write_text(_table_text())
 
-    with pytest.raises(registry_guard.MissingFwlIoError) as excinfo:
+    with pytest.raises(StaleTableError) as excinfo:
         registry_guard.verify(str(path))
 
     _assert_missing_fwl_io(excinfo.value, path)
@@ -1366,9 +1366,11 @@ def test_a_stale_table_keeps_its_own_message_through_the_check(tmp_path, pinned)
 def test_a_cache_digest_that_cannot_be_compared_is_a_cannot_check_error(tmp_path, pinned):
     """A cache md5 that is not a string, as in a foreign pickle, stops the check with the
     cannot-check error, so the density lookup does not turn a TypeError into None."""
-    with pytest.raises(StaleTableError, match='cannot check') as excinfo:
+    with pytest.raises(Exception) as excinfo:
         registry_guard.verify_digest(str(tmp_path / NAME), ['0' * 32])
 
+    assert isinstance(excinfo.value, StaleTableError), type(excinfo.value)
+    assert 'cannot check' in str(excinfo.value)
     assert isinstance(excinfo.value.__cause__, TypeError)
 
 
