@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import stat
 from pathlib import Path
@@ -12,6 +13,7 @@ import pytest
 from tests.test_eos_lowt_extension import _DLOGT, _P, _T, _paleos, _props, _write
 from tools.converters import paleos_lowt_extension as tool
 from zalmoxis import eos_export
+from zalmoxis.eos import paleos_api
 
 pytestmark = pytest.mark.unit
 
@@ -282,6 +284,7 @@ def test_command_line_refuses_a_paleos_imported_from_elsewhere(tmp_path, capsys,
     other.MgSiO3EoS = object
     clean_import.setitem(sys.modules, 'paleos', types.ModuleType('paleos'))
     clean_import.setitem(sys.modules, 'paleos.mgsio3_eos', other)
+    clean_import.setattr(paleos_api, 'check_paleos_commit', lambda src: 'tested')
     with pytest.raises(BaseException) as exc:
         _main(src, _paleos(tmp_path, [6, 6, 6, 6]), tmp_path / 'o')
     assert exc.type is SystemExit, repr(exc.value)
@@ -299,6 +302,7 @@ def test_command_line_writes_the_commit_and_the_dirty_state(tmp_path, clean_impo
     if not dirty:
         _git(src, 'add', 'paleos')
         _git(src, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'stub')
+        clean_import.setattr(paleos_api, 'PALEOS_TESTED_SHA', _git(src, 'rev-parse', 'HEAD'))
     table, out = _paleos(tmp_path, [6, 6, 6, 6]), tmp_path / 'ext.dat'
     _main(
         src, table, out, '--t-min', '150.4', *(['--allow-unverified-paleos'] if dirty else [])
@@ -955,3 +959,121 @@ def test_a_failed_create_of_the_temporary_file_removes_nothing(
     with pytest.raises(FileExistsError):
         _main(src, _paleos(tmp_path, [6, 6, 6, 6]), tmp_path / 'ext.dat', *_GIVEN)
     assert taken.is_file() and taken.read_text() == 'not ours\n'
+
+
+_CHECK = '# PALEOS check against the tested commit '
+
+
+def _commit(src, message, *extra):
+    _git(
+        src, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', *extra, '-m', message
+    )
+    return _git(src, 'rev-parse', 'HEAD')
+
+
+def _tested_stub(src, monkeypatch):
+    """A PALEOS checkout with the stub package committed; its HEAD is the tested commit."""
+    _git_repo(src)
+    _stub_paleos(src)
+    _git(src, 'add', 'paleos')
+    sha = _commit(src, 'stub')
+    monkeypatch.setattr(paleos_api, 'PALEOS_TESTED_SHA', sha)
+    return sha
+
+
+def _head(out):
+    return [x for x in out.read_text().splitlines() if x.startswith('#')]
+
+
+def test_command_line_accepts_the_tested_paleos_commit(tmp_path, clean_import):
+    src, out = tmp_path / 'paleos_src', tmp_path / 'ext.dat'
+    sha = _tested_stub(src, clean_import)
+    _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, '--t-min', '150.4')
+    assert f'{_CHECK}{sha}: tested' in _head(out)
+
+
+def test_command_line_accepts_a_newer_paleos_commit_with_a_warning(
+    tmp_path, clean_import, caplog
+):
+    """A checkout that descends from the tested commit runs, as on the PALEOS-API path."""
+    src, out = tmp_path / 'paleos_src', tmp_path / 'ext.dat'
+    sha = _tested_stub(src, clean_import)
+    _commit(src, 'newer', '--allow-empty')
+    with caplog.at_level(logging.WARNING):
+        _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, '--t-min', '150.4')
+    assert f'{_CHECK}{sha}: newer' in _head(out)
+    assert f'is newer than the commit the PALEOS-API path is tested with ({sha})' in caplog.text
+
+
+@pytest.mark.parametrize('allow', [False, True])
+def test_command_line_refuses_an_older_paleos_commit_unless_allowed(
+    tmp_path, capsys, clean_import, allow
+):
+    """A checkout that does not contain the tested commit stops the tool; with
+    --allow-unverified-paleos it runs and the header gives the reason."""
+    src, out = tmp_path / 'paleos_src', tmp_path / 'ext.dat'
+    old = _tested_stub(src, clean_import)
+    tested = _commit(src, 'tested', '--allow-empty')
+    clean_import.setattr(paleos_api, 'PALEOS_TESTED_SHA', tested)
+    _git(src, 'checkout', '-q', '--detach', old)
+    args = ['--t-min', '150.4'] + allow * ['--allow-unverified-paleos']
+    if not allow:
+        with pytest.raises(SystemExit) as exc:
+            _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, *args)
+        assert exc.value.code not in (0, None)
+        err = capsys.readouterr().err
+        assert f'which does not contain the tested commit {tested}' in err
+        assert 'add --allow-unverified-paleos to write the extension anyway' in err
+        assert not out.exists()
+        return
+    _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, *args)
+    lines = [x for x in _head(out) if x.startswith(_CHECK)]
+    assert len(lines) == 1 and lines[0].startswith(
+        f'{_CHECK}{tested}: not verified: PALEOS in '
+    )
+    assert f'which does not contain the tested commit {tested}' in lines[0]
+
+
+def test_command_line_refuses_an_unrelated_paleos_commit(tmp_path, capsys, clean_import):
+    src, out = tmp_path / 'paleos_src', tmp_path / 'ext.dat'
+    _tested_stub(src, clean_import)
+    unrelated = tmp_path / 'other'
+    _git_repo(unrelated, commit=False)
+    (unrelated / 'README').write_text('another history\n')
+    _git(unrelated, 'add', 'README')
+    other = _commit(unrelated, 'unrelated root')
+    clean_import.setattr(paleos_api, 'PALEOS_TESTED_SHA', other)
+    with pytest.raises(SystemExit):
+        _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, '--t-min', '150.4')
+    assert f'which does not contain the tested commit {other}' in capsys.readouterr().err
+    assert not out.exists()
+
+
+def test_command_line_records_a_given_commit_as_not_verified(tmp_path, clean_import):
+    src, out = tmp_path / 'paleos_src', tmp_path / 'ext.dat'
+    src.mkdir()
+    _stub_paleos(src)
+    _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, '--t-min', '150.4', *_GIVEN)
+    tested = paleos_api.PALEOS_TESTED_SHA
+    assert f'{_CHECK}{tested}: not verified (given commit)' in _head(out)
+
+
+def test_command_line_keeps_the_reason_on_one_header_line(tmp_path, clean_import):
+    """A refusal reason with a line break (git stderr) is written on one header line."""
+    src, out = tmp_path / 'paleos_src', tmp_path / 'ext.dat'
+    _tested_stub(src, clean_import)
+
+    def refuse(src):
+        raise paleos_api.PaleosVersionError('first line\nsecond line')
+
+    clean_import.setattr(paleos_api, 'check_paleos_commit', refuse)
+    _main(
+        src,
+        _paleos(tmp_path, [6, 6, 6, 6]),
+        out,
+        '--t-min',
+        '150.4',
+        '--allow-unverified-paleos',
+    )
+    sha = paleos_api.PALEOS_TESTED_SHA
+    assert f'{_CHECK}{sha}: not verified: first line second line' in _head(out)
