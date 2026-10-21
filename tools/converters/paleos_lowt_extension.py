@@ -19,9 +19,11 @@ it sits in its version folder under FWL_DATA; otherwise StaleTableError stops th
 imports PALEOS. A missing ``--table``, an ``--out`` that is a folder or the ``--table`` file,
 and a ``zalmoxis`` package other than ``src/zalmoxis`` of the converter's checkout (install
 that checkout editable or set PYTHONPATH to its ``src``) are refused.
-A ``--paleos-src`` with uncommitted or untracked files, or a commit given with
-``--paleos-commit`` that the tool cannot check, is refused unless ``--allow-unverified-paleos``
-is set; the header then records that state. The header names the PALEOS commit, sha256 of the
+A ``--paleos-src`` with uncommitted or untracked files, one whose HEAD does not contain
+``PALEOS_TESTED_SHA`` (``zalmoxis.eos.paleos_api.check_paleos_commit``; a descendant runs with a
+warning), or a commit given with ``--paleos-commit`` that the tool cannot check, is refused
+unless ``--allow-unverified-paleos`` is set; the header then records that state. The header
+names the PALEOS commit and the result of the check against the tested commit, sha256 of the
 data lines of the extended table, of ``paleos/mgsio3_eos.py`` and of the converter, the numpy,
 scipy, sympy and Python versions, the Zalmoxis commit of the converter and the version of the
 Zalmoxis package that checks the merge. The merge checks on every extended row that the
@@ -200,8 +202,8 @@ def main(argv=None):
     ap.add_argument(
         '--allow-unverified-paleos',
         action='store_true',
-        help='accept a PALEOS checkout with uncommitted changes or a --paleos-commit that '
-        'cannot be checked; the header records the state',
+        help='accept PALEOS code that cannot be shown to contain the tested commit (uncommitted '
+        'changes, an older or unrelated commit, or a --paleos-commit); the header records why',
     )
     args = ap.parse_args(argv)
     out = args.out.resolve()
@@ -256,6 +258,17 @@ def main(argv=None):
             )
         if status:
             commit += ' (uncommitted changes)'
+    from zalmoxis.eos import paleos_api
+
+    if args.paleos_commit is not None:
+        pin = 'not verified (given commit)'
+    else:
+        try:
+            pin = paleos_api.check_paleos_commit(src)
+        except paleos_api.PaleosVersionError as exc:
+            if not args.allow_unverified_paleos:
+                ap.error(f'{exc}; add --allow-unverified-paleos to write the extension anyway')
+            pin = 'not verified: ' + ' '.join(str(exc).split())
     sys.path.insert(0, str(src))
     from paleos.mgsio3_eos import MgSiO3EoS
 
@@ -268,6 +281,7 @@ def main(argv=None):
     header = [
         'PALEOS MgSiO3 solid low-temperature extension',
         f'PALEOS commit: {commit}',
+        f'PALEOS check against the tested commit {paleos_api.PALEOS_TESTED_SHA}: {pin}',
         f'Table data sha256: {hashlib.sha256(data.encode()).hexdigest()}',
         f'paleos/mgsio3_eos.py sha256: {hashlib.sha256(Path(origin).read_bytes()).hexdigest()}',
         f'numpy {np.__version__}, scipy {scipy.__version__}, sympy {_version("sympy")}, '
