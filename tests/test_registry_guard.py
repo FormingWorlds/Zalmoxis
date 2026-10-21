@@ -1314,9 +1314,62 @@ def test_the_refetch_needs_fwl_io_doi_after_the_manifest_was_read(tmp_path, monk
     gives the missing-fwl-io error without it."""
     registry_guard._manifest()
     monkeypatch.setitem(sys.modules, 'fwl_io.doi', None)
+    try:
+        with pytest.raises(registry_guard.MissingFwlIoError, match='fwl_io.doi') as excinfo:
+            registry_guard._refetch(tmp_path / NAME, KEY, '0' * 32)
+    finally:
+        registry_guard._manifest.cache_clear()
+        registry_guard._pins.cache_clear()
 
-    with pytest.raises(registry_guard.MissingFwlIoError, match='fwl_io.doi'):
-        registry_guard._refetch(tmp_path / NAME, KEY, '0' * 32)
+    assert isinstance(excinfo.value.__cause__, ImportError)
+
+
+@pytest.mark.parametrize('how', ['module', 'name'])
+def test_an_fwl_io_without_its_manifest_module_is_named(tmp_path, monkeypatch, how):
+    """An fwl-io whose fwl_io.manifest cannot be imported, or lacks shared_manifest_path,
+    gives the missing-fwl-io error with that part in it."""
+    import fwl_io.manifest
+
+    if how == 'module':
+        _block(monkeypatch, 'fwl_io.manifest')
+    else:
+        monkeypatch.delattr(fwl_io.manifest, 'shared_manifest_path')
+        _block(monkeypatch)
+    path = tmp_path / NAME
+    path.write_text(_table_text())
+
+    with pytest.raises(registry_guard.MissingFwlIoError) as excinfo:
+        registry_guard.verify(str(path))
+
+    _assert_missing_fwl_io(excinfo.value, path)
+    assert ('fwl_io.manifest' if how == 'module' else 'shared_manifest_path') in str(
+        excinfo.value
+    )
+
+
+def test_a_stale_table_keeps_its_own_message_through_the_check(tmp_path, pinned):
+    """A stale table and a cache of a wrong digest give the plain stale message, not a
+    cannot-check error that wraps it."""
+    path = tmp_path / NAME
+    path.write_text(pinned.replace('8.0e+03', '8.1e+03', 1))
+
+    for check in (
+        lambda: registry_guard.verify(str(path)),
+        lambda: registry_guard.verify_digest(str(path), '0' * 32),
+    ):
+        with pytest.raises(StaleTableError, match='is not the release') as excinfo:
+            check()
+        assert 'cannot check' not in str(excinfo.value)
+        assert excinfo.value.__cause__ is None
+
+
+def test_a_cache_digest_that_cannot_be_compared_is_a_cannot_check_error(tmp_path, pinned):
+    """A cache md5 that is not a string, as in a foreign pickle, stops the check with the
+    cannot-check error, so the density lookup does not turn a TypeError into None."""
+    with pytest.raises(StaleTableError, match='cannot check') as excinfo:
+        registry_guard.verify_digest(str(tmp_path / NAME), ['0' * 32])
+
+    assert isinstance(excinfo.value.__cause__, TypeError)
 
 
 def test_an_unreadable_pinned_table_keeps_the_cannot_check_error(tmp_path, pinned):
