@@ -297,12 +297,11 @@ def test_command_line_writes_the_commit_and_the_dirty_state(tmp_path, clean_impo
     """The PALEOS HEAD goes in the header, marked when the checkout has uncommitted changes
     (accepted only with --allow-unverified-paleos)."""
     src = tmp_path / 'paleos_src'
-    _git_repo(src)
-    _stub_paleos(src)
-    if not dirty:
-        _git(src, 'add', 'paleos')
-        _git(src, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'stub')
-        clean_import.setattr(paleos_api, 'PALEOS_TESTED_SHA', _git(src, 'rev-parse', 'HEAD'))
+    if dirty:
+        _git_repo(src)
+        _stub_paleos(src)
+    else:
+        _tested_stub(src, clean_import)
     table, out = _paleos(tmp_path, [6, 6, 6, 6]), tmp_path / 'ext.dat'
     _main(
         src, table, out, '--t-min', '150.4', *(['--allow-unverified-paleos'] if dirty else [])
@@ -311,6 +310,13 @@ def test_command_line_writes_the_commit_and_the_dirty_state(tmp_path, clean_impo
         '# PALEOS commit: ' + _git(src, 'rev-parse', 'HEAD') + dirty * ' (uncommitted changes)'
     )
     assert expect in out.read_text().splitlines()[:9]
+    check = f'{_CHECK}{paleos_api.PALEOS_TESTED_SHA}: '
+    if dirty:
+        line = next((x for x in _head(out) if x.startswith(check)), '')
+        assert line.startswith(check + 'not verified: the paleos package in ')
+        assert 'is not tracked by the git checkout' in line
+    else:
+        assert check + 'tested' in _head(out)
     assert np.isfinite(eos_export.load_paleos_with_lowt_extension(table, out)['s']).all()
 
 
@@ -1020,13 +1026,16 @@ def test_command_line_refuses_an_older_paleos_commit_unless_allowed(
     if not allow:
         with pytest.raises(SystemExit) as exc:
             _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, *args)
-        assert exc.value.code not in (0, None)
+        assert exc.value.code == 2
         err = capsys.readouterr().err
         assert f'which does not contain the tested commit {tested}' in err
         assert 'add --allow-unverified-paleos to write the extension anyway' in err
         assert not out.exists()
+        assert 'paleos.mgsio3_eos' not in __import__('sys').modules
         return
-    _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, *args)
+    table = _paleos(tmp_path, [6, 6, 6, 6])
+    _main(src, table, out, *args)
+    assert np.isfinite(eos_export.load_paleos_with_lowt_extension(table, out)['s']).all()
     lines = [x for x in _head(out) if x.startswith(_CHECK)]
     assert len(lines) == 1 and lines[0].startswith(
         f'{_CHECK}{tested}: not verified: PALEOS in '
@@ -1077,3 +1086,42 @@ def test_command_line_keeps_the_reason_on_one_header_line(tmp_path, clean_import
     )
     sha = paleos_api.PALEOS_TESTED_SHA
     assert f'{_CHECK}{sha}: not verified: first line second line' in _head(out)
+
+
+def _hidden_change(src):
+    """Change a stub package file while git status stays clean (assume-unchanged)."""
+    _git(src, 'update-index', '--assume-unchanged', 'paleos/mgsio3_eos.py')
+    eos = src / 'paleos' / 'mgsio3_eos.py'
+    eos.write_text(eos.read_text() + '# changed\n')
+    assert _git(src, 'status', '--porcelain') == ''
+
+
+@pytest.mark.parametrize('allow', [False, True])
+def test_command_line_needs_the_flag_for_changed_package_files_with_the_env_opt_in(
+    tmp_path, capsys, clean_import, allow
+):
+    """ZALMOXIS_PALEOS_ALLOW_DIRTY=1 of the PALEOS-API path does not replace
+    --allow-unverified-paleos: package changes that git status does not show stop the tool,
+    and with the flag the header says dirty and marks the commit."""
+    src, out = tmp_path / 'paleos_src', tmp_path / 'ext.dat'
+    sha = _tested_stub(src, clean_import)
+    _hidden_change(src)
+    clean_import.setenv(paleos_api.ALLOW_DIRTY_ENV, '1')
+    if not allow:
+        with pytest.raises(SystemExit) as exc:
+            _main(src, _paleos(tmp_path, [6, 6, 6, 6]), out, '--t-min', '150.4')
+        assert exc.value.code == 2
+        err = capsys.readouterr().err
+        assert 'differ from its commit' in err and 'add --allow-unverified-paleos' in err
+        assert not out.exists()
+        return
+    _main(
+        src,
+        _paleos(tmp_path, [6, 6, 6, 6]),
+        out,
+        '--t-min',
+        '150.4',
+        '--allow-unverified-paleos',
+    )
+    assert f'{_CHECK}{sha}: dirty' in _head(out)
+    assert f'# PALEOS commit: {sha} (uncommitted changes)' in _head(out)
