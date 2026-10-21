@@ -5,7 +5,10 @@ from __future__ import annotations
 import hashlib
 import os
 import pathlib
+import sys
 import time
+import tomllib
+import types
 
 import numpy as np
 import pytest
@@ -1144,3 +1147,82 @@ def test_a_dangling_alias_to_an_unpinned_name_without_cache_is_missing(tmp_path,
     alias.symlink_to(tmp_path / 'my_own_table.dat')
     with pytest.raises(FileNotFoundError):
         interpolation._ensure_unified_cache(str(alias), {})
+
+
+@pytest.fixture
+def no_fwl_io(monkeypatch):
+    """fwl_io cannot be imported, and no earlier manifest read is cached."""
+    monkeypatch.setitem(sys.modules, 'fwl_io', None)
+    monkeypatch.setitem(sys.modules, 'fwl_io.manifest', None)
+    registry_guard._manifest.cache_clear()
+    registry_guard._pins.cache_clear()
+    yield
+    registry_guard._manifest.cache_clear()
+    registry_guard._pins.cache_clear()
+
+
+def _fwl_io_floor():
+    """The fwl-io requirement of Zalmoxis, read from pyproject.toml."""
+    deps = tomllib.loads((pathlib.Path(__file__).parents[1] / 'pyproject.toml').read_text())
+    return next(d for d in deps['project']['dependencies'] if d.startswith('fwl-io'))
+
+
+def _assert_missing_fwl_io(exc):
+    """The error says fwl-io is missing and how to install it, and does not call the table stale."""
+    msg = str(exc)
+    assert type(exc).__name__ == 'MissingFwlIoError', type(exc)
+    assert isinstance(exc, StaleTableError)
+    assert not isinstance(exc, ImportError)
+    assert f'pip install "{_fwl_io_floor()}"' in msg
+    assert 'cannot check' not in msg and 'stale' not in msg.lower()
+
+
+def test_a_missing_fwl_io_says_so_and_how_to_install_it(tmp_path, no_fwl_io):
+    """verify names the missing dependency, not a stale table; the error stays a
+    StaleTableError, so the readers that pass StaleTableError on still stop."""
+    path = tmp_path / NAME
+    path.write_text(_table_text())
+
+    with pytest.raises(Exception) as excinfo:
+        registry_guard.verify(str(path))
+
+    _assert_missing_fwl_io(excinfo.value)
+
+
+def test_a_missing_fwl_io_stops_the_cache_check_the_same_way(tmp_path, no_fwl_io):
+    """verify_digest, used for a binary cache without its table, gives the same error."""
+    with pytest.raises(Exception) as excinfo:
+        registry_guard.verify_digest(str(tmp_path / NAME), '0' * 32)
+
+    _assert_missing_fwl_io(excinfo.value)
+
+
+def test_an_fwl_io_without_the_shared_manifest_is_named_too(tmp_path, monkeypatch):
+    """An installed fwl-io that is too old to provide shared_manifest_path gives the
+    missing-fwl-io error with the import failure in it."""
+    monkeypatch.setitem(sys.modules, 'fwl_io.manifest', types.ModuleType('fwl_io.manifest'))
+    registry_guard._manifest.cache_clear()
+    registry_guard._pins.cache_clear()
+    path = tmp_path / NAME
+    path.write_text(_table_text())
+    try:
+        with pytest.raises(Exception) as excinfo:
+            registry_guard.verify(str(path))
+    finally:
+        registry_guard._manifest.cache_clear()
+        registry_guard._pins.cache_clear()
+
+    _assert_missing_fwl_io(excinfo.value)
+    assert 'shared_manifest_path' in str(excinfo.value)
+
+
+def test_an_unreadable_pinned_table_keeps_the_cannot_check_error(tmp_path, pinned):
+    """A failure other than a missing fwl-io still becomes StaleTableError 'cannot check'."""
+    path = tmp_path / NAME
+    path.mkdir()
+
+    with pytest.raises(StaleTableError, match='cannot check') as excinfo:
+        registry_guard.verify(str(path))
+
+    assert type(excinfo.value) is StaleTableError
+    assert str(path) in str(excinfo.value)
