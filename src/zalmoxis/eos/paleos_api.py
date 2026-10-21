@@ -184,8 +184,8 @@ def make_default_grid_h2o() -> GridSpec:
     return make_grid_at_resolution(1e-1, 1e14, 150.0, 1.0e5)
 
 
-# PALEOS commit the PALEOS-API path is tested with; a Zalmoxis change moves it after the
-# PALEOS-API tests pass on a newer commit.
+# PALEOS commit the PALEOS-API path is tested with, also the floor of the PALEOS checkout of
+# the low-T converter; a Zalmoxis change moves it after the PALEOS-API tests pass on a newer one.
 PALEOS_TESTED_SHA = '654aca9ec6116d2ad319d984a3f68e11ddef2fb4'
 
 

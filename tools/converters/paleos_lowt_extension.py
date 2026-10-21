@@ -224,6 +224,7 @@ def main(argv=None):
             f'zalmoxis was imported from {pkg}, not from {want} of the '
             'converter checkout; install that checkout editable or set PYTHONPATH to its src'
         )
+    from zalmoxis.eos import paleos_api
     from zalmoxis.eos.registry_guard import verify
 
     verify(str(args.table))
@@ -236,6 +237,7 @@ def main(argv=None):
         if not args.allow_unverified_paleos:
             ap.error('--paleos-commit cannot be checked; add --allow-unverified-paleos')
         commit = commit.lower() + ' (given, not verified)'
+        pin = 'not verified (given commit)'
     else:
         state = _checkout(src)
         if state is None:
@@ -258,17 +260,20 @@ def main(argv=None):
             )
         if status:
             commit += ' (uncommitted changes)'
-    from zalmoxis.eos import paleos_api
-
-    if args.paleos_commit is not None:
-        pin = 'not verified (given commit)'
-    else:
         try:
             pin = paleos_api.check_paleos_commit(src)
         except paleos_api.PaleosVersionError as exc:
             if not args.allow_unverified_paleos:
                 ap.error(f'{exc}; add --allow-unverified-paleos to write the extension anyway')
             pin = 'not verified: ' + ' '.join(str(exc).split())
+        # The opt-in ZALMOXIS_PALEOS_ALLOW_DIRTY of the PALEOS-API path does not replace the flag.
+        if pin == 'dirty' and not args.allow_unverified_paleos:
+            ap.error(
+                f'the paleos package files in {src} differ from its commit; '
+                'commit them or add --allow-unverified-paleos'
+            )
+        if pin == 'dirty' and not status:
+            commit += ' (uncommitted changes)'
     sys.path.insert(0, str(src))
     from paleos.mgsio3_eos import MgSiO3EoS
 
