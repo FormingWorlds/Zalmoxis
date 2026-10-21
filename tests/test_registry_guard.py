@@ -5,14 +5,17 @@ from __future__ import annotations
 import hashlib
 import os
 import pathlib
+import sys
 import time
+import tomllib
 
 import numpy as np
 import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from zalmoxis.eos import interpolation, registry_guard
+from zalmoxis import eos_export
+from zalmoxis.eos import interpolation, paleos, registry_guard, seager, tdep
 from zalmoxis.eos.registry_guard import StaleTableError
 
 pytestmark = pytest.mark.unit
@@ -705,8 +708,11 @@ def test_any_other_failure_of_the_check_is_a_stale_error(tmp_path, pinned, monke
         raise ValueError('registry does not match its files')
 
     monkeypatch.setattr(registry_guard, '_pins', broken)
-    with pytest.raises(StaleTableError, match='registry does not match'):
+    with pytest.raises(Exception) as excinfo:
         registry_guard.verify(str(path))
+
+    assert isinstance(excinfo.value, StaleTableError), type(excinfo.value)
+    assert 'registry does not match' in str(excinfo.value)
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason='root reads a file of mode 000')
@@ -1144,3 +1150,243 @@ def test_a_dangling_alias_to_an_unpinned_name_without_cache_is_missing(tmp_path,
     alias.symlink_to(tmp_path / 'my_own_table.dat')
     with pytest.raises(FileNotFoundError):
         interpolation._ensure_unified_cache(str(alias), {})
+
+
+def _block(monkeypatch, *modules):
+    """Make ``modules`` unimportable and drop any earlier manifest read."""
+    for mod in modules:
+        monkeypatch.setitem(sys.modules, mod, None)
+    registry_guard._manifest.cache_clear()
+    registry_guard._pins.cache_clear()
+
+
+@pytest.fixture
+def no_fwl_io(monkeypatch):
+    """fwl_io cannot be imported, and no earlier manifest read is cached."""
+    _block(monkeypatch, 'fwl_io', 'fwl_io.manifest')
+
+
+def _assert_missing_fwl_io(exc, path):
+    """The error says fwl-io is missing, which file was not read and how to install fwl-io."""
+    deps = tomllib.loads((pathlib.Path(__file__).parents[1] / 'pyproject.toml').read_text())
+    floor = next(d for d in deps['project']['dependencies'] if d.startswith('fwl-io>='))
+    msg = str(exc)
+    assert isinstance(exc, registry_guard.MissingFwlIoError)
+    assert not isinstance(exc, ImportError)
+    assert isinstance(exc.__cause__, ImportError)
+    assert str(path) in msg
+    assert f'pip install "{floor}"' in msg
+    assert 'cannot check' not in msg and 'is not the release' not in msg
+
+
+@pytest.mark.parametrize('name', [NAME, 'my_own_table.dat'], ids=['pinned', 'own_name'])
+def test_a_missing_fwl_io_says_so_and_how_to_install_it(tmp_path, name):
+    """verify names the missing dependency and the file, for a pinned name and for a name
+    of your own, since the manifest is needed to know which names are pinned; once fwl-io
+    can be imported again, a file of your own is read without an error."""
+    path = tmp_path / name
+    path.write_text(_table_text())
+
+    with pytest.MonkeyPatch.context() as mp:
+        _block(mp, 'fwl_io', 'fwl_io.manifest')
+        with pytest.raises(StaleTableError) as excinfo:
+            registry_guard.verify(str(path))
+
+    _assert_missing_fwl_io(excinfo.value, path)
+    own = tmp_path / 'my_own_table.dat'
+    own.write_text(_table_text())
+    assert registry_guard.verify(str(own)) is None
+
+
+def test_a_missing_fwl_io_stops_the_cache_check_the_same_way(tmp_path, no_fwl_io):
+    """verify_digest, used for a binary cache without its table, gives the same error."""
+    with pytest.raises(StaleTableError) as excinfo:
+        registry_guard.verify_digest(str(tmp_path / NAME), '0' * 32)
+
+    _assert_missing_fwl_io(excinfo.value, tmp_path / NAME)
+
+
+def test_an_fwl_io_without_its_doi_module_is_named_too(tmp_path, monkeypatch):
+    """An fwl-io release without fwl_io.doi, which the refetch of a table needs, gives the
+    missing-fwl-io error with the import failure in it."""
+    _block(monkeypatch, 'fwl_io.doi')
+    path = tmp_path / NAME
+    path.write_text(_table_text())
+
+    with pytest.raises(StaleTableError) as excinfo:
+        registry_guard.verify(str(path))
+
+    _assert_missing_fwl_io(excinfo.value, path)
+    assert 'fwl_io.doi' in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    ('name', 'read'),
+    [
+        (TWO_PHASE, interpolation.load_paleos_table),
+        (NAME, interpolation.load_paleos_unified_table),
+        (NAME, eos_export.load_paleos_all_properties),
+        (
+            NAME,
+            lambda p: paleos.get_paleos_unified_density(5e9, 2000.0, {'eos_file': p}, 1.0, {}),
+        ),
+        (
+            TWO_PHASE,
+            lambda p: seager.get_tabulated_eos(
+                5e9,
+                {'solid_mantle': {'eos_file': p, 'format': 'paleos'}},
+                'solid_mantle',
+                2000.0,
+                {},
+            ),
+        ),
+        (NAME, tdep.load_melting_curve),
+    ],
+    ids=['table', 'unified', 'export', 'density', 'tabulated', 'melting'],
+)
+def test_every_reader_passes_a_missing_fwl_io_on(tmp_path, no_fwl_io, name, read):
+    """The readers that turn other errors into None or a rebuild pass MissingFwlIoError on."""
+    path = tmp_path / name
+    path.write_text(_table_text())
+
+    with pytest.raises(StaleTableError) as excinfo:
+        read(str(path))
+
+    assert isinstance(excinfo.value, registry_guard.MissingFwlIoError), type(excinfo.value)
+    assert str(path) in str(excinfo.value)
+
+
+def _cache_without_table(tmp_path):
+    """A binary cache of a table of your own whose text table is then removed."""
+    path = tmp_path / 'my_own_table.dat'
+    path.write_text(_table_text())
+    interpolation._ensure_unified_cache(str(path), {})
+    path.unlink()
+    return path
+
+
+def test_the_cache_reader_does_not_rebuild_on_a_missing_fwl_io(tmp_path, monkeypatch):
+    """Without its table, the binary-cache reader asks the registry about the cache md5;
+    a missing fwl-io stops it with the cache file in the message, not with a rebuild."""
+    path = _cache_without_table(tmp_path)
+    _block(monkeypatch, 'fwl_io', 'fwl_io.manifest')
+
+    with pytest.raises(StaleTableError) as excinfo:
+        interpolation._ensure_unified_cache(str(path), {})
+
+    _assert_missing_fwl_io(excinfo.value, interpolation.cache_path_for(str(path)))
+
+
+def test_a_broken_registry_stops_the_cache_reader_too(tmp_path, monkeypatch):
+    """A registry that cannot be read is a cannot-check StaleTableError on the cache path
+    as on the table path, so the density lookup does not return None."""
+    path = _cache_without_table(tmp_path)
+
+    def broken():
+        raise ValueError('a broken registry')
+
+    monkeypatch.setattr(registry_guard, '_pins', broken)
+    with pytest.raises(StaleTableError, match='cannot check') as excinfo:
+        paleos.get_paleos_unified_density(5e9, 2000.0, {'eos_file': str(path)}, 1.0, {})
+
+    assert 'a broken registry' in str(excinfo.value)
+    assert interpolation.cache_path_for(str(path)) in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    'missing', ['create_fetcher', 'resolve_data_root', 'MissingDataRootError', 'load_manifest']
+)
+def test_an_fwl_io_without_a_name_the_guard_uses_is_named(tmp_path, monkeypatch, missing):
+    """An fwl-io that lacks one name the guard imports gives the missing-fwl-io error
+    with that name in it."""
+    import fwl_io
+
+    monkeypatch.delattr(fwl_io, missing)
+    _block(monkeypatch)
+    path = tmp_path / NAME
+    path.write_text(_table_text())
+
+    with pytest.raises(StaleTableError) as excinfo:
+        registry_guard.verify(str(path))
+
+    _assert_missing_fwl_io(excinfo.value, path)
+    assert missing in str(excinfo.value)
+
+
+def test_the_refetch_needs_fwl_io_doi_after_the_manifest_was_read(tmp_path, monkeypatch):
+    """With the manifest already read, the refetch of a table still asks for fwl_io.doi and
+    gives the missing-fwl-io error without it."""
+    registry_guard._manifest()
+    monkeypatch.setitem(sys.modules, 'fwl_io.doi', None)
+    try:
+        with pytest.raises(StaleTableError) as excinfo:
+            registry_guard._refetch(tmp_path / NAME, KEY, '0' * 32)
+    finally:
+        registry_guard._manifest.cache_clear()
+        registry_guard._pins.cache_clear()
+
+    assert isinstance(excinfo.value, registry_guard.MissingFwlIoError), type(excinfo.value)
+    assert 'fwl_io.doi' in str(excinfo.value)
+    assert isinstance(excinfo.value.__cause__, ImportError)
+
+
+@pytest.mark.parametrize('how', ['module', 'name'])
+def test_an_fwl_io_without_its_manifest_module_is_named(tmp_path, monkeypatch, how):
+    """An fwl-io whose fwl_io.manifest cannot be imported, or lacks shared_manifest_path,
+    gives the missing-fwl-io error with that part in it."""
+    import fwl_io.manifest
+
+    if how == 'module':
+        _block(monkeypatch, 'fwl_io.manifest')
+    else:
+        monkeypatch.delattr(fwl_io.manifest, 'shared_manifest_path')
+        _block(monkeypatch)
+    path = tmp_path / NAME
+    path.write_text(_table_text())
+
+    with pytest.raises(StaleTableError) as excinfo:
+        registry_guard.verify(str(path))
+
+    _assert_missing_fwl_io(excinfo.value, path)
+    assert ('fwl_io.manifest' if how == 'module' else 'shared_manifest_path') in str(
+        excinfo.value
+    )
+
+
+def test_a_stale_table_keeps_its_own_message_through_the_check(tmp_path, pinned):
+    """A stale table and a cache of a wrong digest give the plain stale message, not a
+    cannot-check error that wraps it."""
+    path = tmp_path / NAME
+    path.write_text(pinned.replace('8.0e+03', '8.1e+03', 1))
+
+    for check in (
+        lambda: registry_guard.verify(str(path)),
+        lambda: registry_guard.verify_digest(str(path), '0' * 32),
+    ):
+        with pytest.raises(StaleTableError, match='is not the release') as excinfo:
+            check()
+        assert 'cannot check' not in str(excinfo.value)
+        assert excinfo.value.__cause__ is None
+
+
+def test_a_cache_digest_that_cannot_be_compared_is_a_cannot_check_error(tmp_path, pinned):
+    """A cache md5 that is not a string, as in a foreign pickle, stops the check with the
+    cannot-check error, so the density lookup does not turn a TypeError into None."""
+    with pytest.raises(Exception) as excinfo:
+        registry_guard.verify_digest(str(tmp_path / NAME), ['0' * 32])
+
+    assert isinstance(excinfo.value, StaleTableError), type(excinfo.value)
+    assert 'cannot check' in str(excinfo.value)
+    assert isinstance(excinfo.value.__cause__, TypeError)
+
+
+def test_an_unreadable_pinned_table_keeps_the_cannot_check_error(tmp_path, pinned):
+    """A failure other than a missing fwl-io still becomes StaleTableError 'cannot check'."""
+    path = tmp_path / NAME
+    path.mkdir()
+
+    with pytest.raises(StaleTableError, match='cannot check') as excinfo:
+        registry_guard.verify(str(path))
+
+    assert type(excinfo.value) is StaleTableError
+    assert str(path) in str(excinfo.value)
