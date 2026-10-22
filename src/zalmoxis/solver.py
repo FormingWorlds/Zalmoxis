@@ -1589,6 +1589,7 @@ def _solve(
     best_blend = None  # the adiabat blend of the best pass
     earlier_best = None  # (mass error, profiles) of the best pass of the earlier blend steps
     oscillation_count = 0
+    _prev_mass_error = None  # signed mass error of the previous outer pass
     stop_label = None  # 'timeout' (wall clock) or 'oscillation' once a loop stops early
     mass_limit = tolerance_outer  # the mass test behind converged_mass
     restore_best = False  # an outer stop returns the best pass
@@ -1815,7 +1816,6 @@ def _solve(
 
         # Adaptive Picard blending: start at 0.5, reduce if mass oscillates
         _picard_alpha = 0.5
-        _prev_mass_error = None
         _prev_brent_solution = None  # Persist Brent bracket across outer iterations
         _frozen_sigma = {}  # Reserved for suppression-weight freezing
 
@@ -2347,7 +2347,6 @@ def _solve(
                 )
             elif relative_diff_outer_mass < abs(_prev_mass_error):
                 _picard_alpha = min(0.7, _picard_alpha * 1.1)
-        _prev_mass_error = mass_error_signed
 
         # The best pass: the smallest error on the newest blend step. A pass without a
         # pressure solve never counts; the older best stays until a new-step pass has one.
@@ -2372,15 +2371,12 @@ def _solve(
                 'adiabat_blend': _adiabat_blend,
             }
             oscillation_count = 0
-        elif (
-            _prev_mass_error is not None and mass_error_signed * _prev_mass_error < 0
-        ):  # pragma: no cover - mass-oscillation counter; defensive
+        elif _prev_mass_error is not None and mass_error_signed * _prev_mass_error < 0:
             oscillation_count += 1
+        _prev_mass_error = mass_error_signed
 
         # Bailout: if oscillating for 10+ iterations, accept best solution
-        if (
-            oscillation_count >= 10 and best_mass_error < 3 * tolerance_outer
-        ):  # pragma: no cover - oscillation bailout; defensive
+        if oscillation_count >= 10 and best_mass_error < 3 * tolerance_outer:
             logger.warning(
                 'Accepting best solution after %d oscillations (mass error %.4f%%, '
                 'target %.4f%%)',
