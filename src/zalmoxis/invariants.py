@@ -25,6 +25,7 @@ TOLERANCES = {
     'density_eos': 1e-6,
 }
 _RTOL_LAYER = 1e-12  # the layer rule of structure_model.get_layer_mixture
+_RTOL_GAUSS = 1e-12  # padded gravity against G m_stop / r^2, both computed in floats
 _SCALAR = ('cmb_mass', 'core_mantle_mass', 'mass_closure')  # no node in the message
 _ARRAYS = 'radii mass_enclosed gravity pressure density temperature'.split()
 _MASSES = ['cmb_mass', 'core_mantle_mass']
@@ -98,10 +99,9 @@ def deviations(
     dict
         {invariant: (deviation, node index, tolerance)}. ``pressure_monotone`` uses the nodes
         before the first node with P <= 0, and ``padding`` the nodes from there on, the surface
-        past a stop of the integration, which must have P = 0 and the mass of that first node.
-        No mass lies above the stop, so the gravity of a padded node is that of the stop mass at
-        its own radius (Gauss), not the gravity at the stop; ``gravity`` checks it there as at
-        every node but the centre. ``positive`` and ``density_eos`` read every node, ``density_eos``
+        past a stop of the integration, which must have P = 0, the mass of that first node and,
+        since no mass lies above the stop, the gravity of that mass at their own radius (Gauss),
+        not the gravity at the stop; ``gravity`` checks them too, as every node but the centre. ``positive`` and ``density_eos`` read every node, ``density_eos``
         with the lookup of a padded node at ``target_surface_pressure``, the surface pressure
         that the solve targets; ``mass_monotone``, the layer masses, the node checks and
         ``mass_closure`` read all nodes or the last one, and ``centre`` reads node 0.
@@ -143,14 +143,19 @@ def deviations(
         if bad.any()
         else f'{k} nodes with P > 0',
     )
-    # the solver pads a surface stop with zero pressure and the mass at the stop
-    off = (P[k:] != 0) | (m[k:] != m[k : k + 1])
+    # the solver pads a surface stop with zero pressure, the stop mass and its gravity at r
+    with np.errstate(divide='ignore', invalid='ignore'):
+        gauss = np.abs(g[k:] * r[k:] ** 2 / (G * m[k : k + 1]) - 1) <= _RTOL_GAUSS
+    off = (P[k:] != 0) | (m[k:] != m[k : k + 1]) | ~gauss
     i = k + int(np.argmax(off)) if off.any() else k
     put(
         'padding',
-        np.count_nonzero(P[k:] != 0) + np.count_nonzero(m[k:] != m[k : k + 1]),
+        np.count_nonzero(P[k:] != 0)
+        + np.count_nonzero(m[k:] != m[k : k + 1])
+        + np.count_nonzero(~gauss),
         i,
-        text=f'pressure, mass {P[i]:.6e}, {m[i]:.6e}; expected 0 and the mass of node {k}'
+        text=f'pressure, mass, gravity {P[i]:.6e}, {m[i]:.6e}, {g[i]:.6e}; expected 0, the mass '
+        f'of node {k} and G m / r^2 {G * m[k] / r[i] ** 2:.6e}'
         if off.any()
         else '',
     )
@@ -234,12 +239,12 @@ def deviations(
         with np.errstate(divide='ignore', invalid='ignore'):
             d = np.abs(rho / ref - 1)
         d[~np.isfinite(d)] = np.inf
-        i = int(np.argmax(d)) if n else 0
+        i = int(np.argmax(d))
         put(
             'density_eos',
             d.max(initial=0.0),
             i,
-            text=f'density {rho[i]:.6e}, expected {ref[i]:.6e} ({layer[i]} EOS)' if n else '',
+            text=f'density {rho[i]:.6e}, expected {ref[i]:.6e} ({layer[i]} EOS)',
         )
     return out
 

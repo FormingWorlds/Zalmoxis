@@ -977,6 +977,7 @@ def test_a_padding_where_the_mass_changes_raises():
 def test_a_mass_that_falls_at_the_first_padding_node_raises():
     result, cfg = _sphere()
     result['mass_enclosed'][-1] = 0.99 * result['mass_enclosed'][-2]
+    result['gravity'][-1] = G * result['mass_enclosed'][-1] / result['radii'][-1] ** 2
     cfg['planet_mass'] = result['mass_enclosed'][-1]
     result['cmb_mass'] = result['core_mantle_mass'] = CMF * cfg['planet_mass']
     _raises(result, cfg, 'mass_monotone')
@@ -1396,12 +1397,12 @@ def test_density_eos_reads_a_padded_node_at_the_target_surface_pressure(lookup, 
 
 
 @pytest.mark.unit
-def test_a_padded_node_with_the_gravity_at_the_stop_raises_gravity():
-    """The gravity invariant reads the padded nodes: there g must be G m / r^2 of the stop mass."""
+def test_a_padded_node_with_the_gravity_at_the_stop_raises_padding():
+    """A padded node must carry G m / r^2 of the stop mass, not the gravity at the stop."""
     result, cfg = _padded(3)
     k = N - 4
     result['gravity'][k:] = result['gravity'][k]
-    _raises(result, cfg, 'gravity')
+    _raises(result, cfg, 'padding')
 
 
 @pytest.mark.unit

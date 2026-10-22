@@ -1319,6 +1319,36 @@ def _solve_newton_outer(
     )
 
 
+def _surface_density(
+    T, m_stop, p_surface, cmb_mass, core_mantle_mass, layer_mixtures, eos_args, volatile_profile
+):
+    """rho_EOS at the target surface pressure ``p_surface`` for the padded surface nodes.
+
+    The padded nodes share the stop mass ``m_stop``, so its layer holds them all; the volatile
+    profile applies only to the mantle. ``eos_args`` are the arguments of
+    ``calculate_mixed_density_batch`` after the mixture, ``T`` the temperatures of the nodes.
+
+    Raises
+    ------
+    StructureSolveError
+        When a density is not finite.
+    """
+    mix = get_layer_mixture(m_stop, cmb_mass, core_mantle_mass, layer_mixtures)
+    vp = volatile_profile if mix is layer_mixtures.get('mantle') else None
+    rho = np.asarray(
+        calculate_mixed_density_batch(
+            np.full(len(T), float(p_surface)), T, mix, *eos_args, volatile_profile=vp
+        ),
+        dtype=float,
+    )
+    if not np.all(np.isfinite(rho)):
+        raise StructureSolveError(
+            f'Structure solve failed: surface density not finite at P = {p_surface:.3e} Pa, '
+            f'T = {np.min(T):.1f} to {np.max(T):.1f} K.'
+        )
+    return rho
+
+
 def _solve(
     config_params,
     material_dictionaries,
@@ -1763,11 +1793,19 @@ def _solve(
                     _blend = _adiabat_blend
 
                     def _temperature_func(
-                        r, P, _b=_blend, _lp=_logP_sorted, _ts=_T_sorted, _ltf=_linear_tf
+                        r,
+                        P,
+                        _b=_blend,
+                        _lp=_logP_sorted,
+                        _ts=_T_sorted,
+                        _ltf=_linear_tf,
+                        _cmb=_anchor == 'cmb',
                     ):
                         T_lin = _ltf(r)
                         if P <= 0:
-                            return T_lin
+                            if not _cmb:
+                                return T_lin
+                            P = target_surface_pressure  # the surface of a CMB-anchored adiabat
                         # W5: math.log10 avoids numpy scalar dispatch (~1 us/call)
                         T_adi = float(np.interp(math.log10(P), _lp, _ts))
                         T_adi = max(_T_MIN_CLAMP, min(T_adi, _T_MAX_CLAMP))
@@ -1775,9 +1813,13 @@ def _solve(
 
                 else:
 
-                    def _temperature_func(r, P, _lp=_logP_sorted, _ts=_T_sorted):
+                    def _temperature_func(
+                        r, P, _lp=_logP_sorted, _ts=_T_sorted, _cmb=_anchor == 'cmb'
+                    ):
                         if P <= 0:
-                            return surface_temperature
+                            if not _cmb:
+                                return surface_temperature
+                            P = target_surface_pressure  # the surface of a CMB-anchored adiabat
                         # W5: math.log10 avoids numpy scalar dispatch (~1 us/call)
                         T_val = float(np.interp(math.log10(P), _lp, _ts))
                         return max(_T_MIN_CLAMP, min(T_val, _T_MAX_CLAMP))
@@ -2563,23 +2605,24 @@ def _solve(
     pad = pressure <= 0  # padded nodes past a surface stop
     density[pad] = 0.0
     if density_from_eos and pad.any():
-        # The padded nodes are the surface: rho_EOS at the target surface pressure.
-        mix = get_layer_mixture(
-            float(np.asarray(mass_enclosed)[pad][0]), cmb_mass, core_mantle_mass, layer_mixtures
-        )
-        density[pad] = calculate_mixed_density_batch(
-            np.full(int(pad.sum()), float(target_surface_pressure)),
+        density[pad] = _surface_density(
             np.asarray(temperatures, float)[pad],
-            mix,
-            material_dictionaries,
-            solidus_func,
-            liquidus_func,
-            interpolation_cache,
-            mushy_zone_factors,
-            condensed_rho_min,
-            condensed_rho_scale,
-            binodal_T_scale,
-            volatile_profile=volatile_profile if mix is layer_mixtures.get('mantle') else None,
+            float(np.asarray(mass_enclosed)[pad][0]),
+            target_surface_pressure,
+            cmb_mass,
+            core_mantle_mass,
+            layer_mixtures,
+            (
+                material_dictionaries,
+                solidus_func,
+                liquidus_func,
+                interpolation_cache,
+                mushy_zone_factors,
+                condensed_rho_min,
+                condensed_rho_scale,
+                binodal_T_scale,
+            ),
+            volatile_profile,
         )
 
     model_results = {
