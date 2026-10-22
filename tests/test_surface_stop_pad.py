@@ -485,6 +485,16 @@ class TestPadAfterStop:
             )
         assert 'at r = 0;' in caplog.text and np.all(np.isnan(p)) and len(m) == 5
 
+    def test_a_surface_stop_at_the_centre_keeps_the_stop_gravity_there(self):
+        """A stop before the first node at or below the surface pressure pads every node; at
+        r = 0 the gravity is that of the stop, elsewhere G m_stop / r^2."""
+        radii = np.linspace(0.0, 1.0, 5)
+        m, g, p = sm.pad_after_stop(
+            radii, np.ones(0), np.ones(0), np.ones(0), [2.0, 3.0, 0.0], 1e11, 1e5
+        )
+        assert g[0] == 3.0 and np.all(m == 2.0) and np.all(p == 0.0)
+        assert g[1:] == pytest.approx(G * 2.0 / radii[1:] ** 2, rel=1e-15)
+
     @pytest.mark.parametrize('y_stop', [[np.nan, 3.0, 0.0], [2.0, np.inf, 0.0]])
     def test_non_finite_stop_state_fails(self, y_stop):
         """A stop at zero pressure with a non-finite mass or gravity is a failed solve."""

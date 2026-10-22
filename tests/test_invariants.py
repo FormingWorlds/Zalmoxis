@@ -1402,3 +1402,19 @@ def test_a_padded_node_with_the_gravity_at_the_stop_raises_gravity():
     k = N - 4
     result['gravity'][k:] = result['gravity'][k]
     _raises(result, cfg, 'gravity')
+
+
+@pytest.mark.unit
+def test_a_padded_node_with_the_gravity_at_a_stop_3_km_below_raises_padding_at_rtol_1e5():
+    """At the Picard tolerance the gravity check allows about 1e-3, so padding itself holds the
+    padded gravity to G m_stop / r^2: the fill with the gravity at a stop 3 km below R breaks it."""
+    result, cfg = _sphere()
+    r_s = result['radii'][-1] - 3.0e3
+    m_s = 4 / 3 * np.pi * RHO * r_s**3
+    result['mass_enclosed'][-1] = m_s
+    result['gravity'][-1] = G * m_s / r_s**2
+    cfg['planet_mass'] = m_s
+    result['cmb_mass'] = result['core_mantle_mass'] = CMF * m_s
+    result['accept_mass_limit'] = 1e-3
+    with pytest.raises(StructureInvariantError, match='breaks padding:'):
+        check_accepted(result, cfg, 1e-5, 1e-6, lambda P, T, layer: RHO)
