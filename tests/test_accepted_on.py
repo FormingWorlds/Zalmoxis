@@ -1428,17 +1428,20 @@ def test_no_oscillation_stop_above_the_3_percent_limit(monkeypatch, caplog):
 
 @pytest.mark.unit
 def test_a_new_best_pass_resets_the_oscillation_count(monkeypatch, caplog):
-    """The sign alternates every pass and every third pass is a new best (0.29 % shrinking
-    by 5 %, above tolerance_outer 1e-3): the count never reaches 10, the cap stops the loop."""
+    """Pass 0 ends 0.25 % heavy, passes 1 to 8 alternate at 0.29 % (8 sign changes), pass 9
+    is a new best at 0.24 % with the sign of pass 8, later passes alternate at 0.29 %: the
+    new best resets the count, so it stays below 10 and the cap stops the loop."""
+
+    def factor(n):
+        if n in (0, 9):
+            return 1.0025 if n == 0 else 1.0024
+        return 1 + (-1) ** (n + (n > 9)) * 0.0029 * (1 - 1e-6 * n)
+
     r, radius = _oscillating_solve(
-        monkeypatch,
-        caplog,
-        lambda n: 1 + (-1) ** n * 0.0029 * 0.95 ** (n // 3),
-        max_iterations_outer=16,
-        tolerance_outer=1e-3,
+        monkeypatch, caplog, factor, max_iterations_outer=14, tolerance_outer=1e-3
     )
     assert STOP not in caplog.text
-    assert r['accepted_on'] == 'max_iter' and len(radius) == 16
+    assert r['accepted_on'] == 'max_iter' and len(radius) == 14
 
 
 @pytest.mark.unit
