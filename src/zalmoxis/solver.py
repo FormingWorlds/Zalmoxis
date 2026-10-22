@@ -2372,8 +2372,8 @@ def _solve(
         elif (
             _prev_mass_error is not None
             and mass_error_signed * _prev_mass_error < 0
-            and abs(mass_error_signed) >= abs(_prev_mass_error)
-        ):  # a sign change that shrinks the error is progress, not a stall
+            and abs(mass_error_signed) >= 0.99 * abs(_prev_mass_error)
+        ):  # a sign change that shrinks the error by more than 1 % is progress, not a stall
             oscillation_count += 1
         _prev_mass_error = mass_error_signed
 
