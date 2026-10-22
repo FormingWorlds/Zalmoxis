@@ -1323,3 +1323,269 @@ def test_the_adiabat_of_the_default_solve_reads_the_layer_boundaries_of_its_prof
     assert set(seen) == {tuple(f * cfg['planet_mass'] for f in fractions)}
     assert r['accepted_on'] == 'strict' and r['adiabat_blend'] == 1.0
     assert r['mass_error_at_accept'] < r['accept_mass_limit'] == 1e-3
+
+
+def _oscillating_solve(
+    monkeypatch,
+    caplog,
+    factor,
+    temperature_function=None,
+    cut_on=None,
+    cut_before=None,
+    **kwargs,
+):
+    """Run _solve on 20 layers with the mass of outer pass n scaled to factor(n) Earth
+    masses; the pass index is keyed on the outer radius. The test clock jumps past
+    wall_timeout at the first structure solve of pass cut_on, or at the temperature profile
+    of pass cut_before, before its first structure solve. Returns the result and the outer
+    radii of the passes."""
+    real, index, cut = zs.solve_structure, {}, [False]
+    real_time, real_profile = time.time, zs.calculate_temperature_profile
+
+    def solve(*args, **kw):
+        m, g, P = real(*args, **kw)
+        n = index.setdefault(float(args[3][-1]), len(index))
+        cut[0] |= n == cut_on
+        f = factor(n) * earth_mass / m[-1]
+        return m * f, g * f, P
+
+    def profile(*args, **kw):
+        cut[0] |= len(index) == cut_before
+        return real_profile(*args, **kw)
+
+    monkeypatch.setattr(zs, 'solve_structure', solve)
+    monkeypatch.setattr(zs, 'calculate_temperature_profile', profile)
+    monkeypatch.setattr(zs, 'time', SimpleNamespace(time=lambda: real_time() + 1e9 * cut[0]))
+    opts = {'max_iterations_inner': 5, 'num_layers': 20, **kwargs}
+    cfg = _cfg(outer_solver='picard', wall_timeout=WALL, **opts)
+    with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+        r = zs._solve(
+            cfg,
+            load_material_dictionaries(),
+            None,
+            INPUT,
+            temperature_function=temperature_function,
+        )
+    return r, list(index)
+
+
+def _first_then_alternating(first, later):
+    """Pass 0 at 1 + first, later passes at 1 +- later with alternating sign, shrinking by
+    1e-6 per pass: far above round-off, far below the 1 % slack of the oscillation count."""
+    return lambda n: 1 + first if n == 0 else 1 + (1 if n % 2 else -1) * later * (1 - 1e-6 * n)
+
+
+STOP = 'Accepting best solution after'
+PALEOS = {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'}
+
+
+def _need_paleos():
+    from tests.test_spider_coupling_convergence import _has_paleos_data
+
+    if not _has_paleos_data():
+        pytest.skip('PALEOS tables not on disk')
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.parametrize('inner', [5, 1])
+def test_ten_mass_sign_changes_stop_the_outer_loop(monkeypatch, caplog, inner):
+    """Pass 0 ends 0.2 % heavy, later passes 2 % off with alternating sign: they never beat
+    pass 0, so after 10 sign changes the stop returns it. Adiabatic mode on the Analytic EOS
+    has no blend ramp. A converged density accepts on 3 tolerance_outer, an unconverged
+    one (1 inner iteration) on the 3 % limit of a timeout."""
+    r, radius = _oscillating_solve(
+        monkeypatch,
+        caplog,
+        _first_then_alternating(0.002, 0.02),
+        max_iterations_outer=14,
+        max_iterations_inner=inner,
+        tolerance_outer=1e-3,
+        temperature_mode='adiabatic',
+    )
+    assert r['accepted_on'] == 'oscillation', (r['accepted_on'], len(radius))
+    assert 'Accepting best solution after 10 oscillations' in caplog.text
+    assert r['mass_error_at_accept'] == pytest.approx(0.002, rel=1e-6)
+    assert r['converged'] and r['converged_mass']
+    assert r['converged_density'] == (inner == 5)
+    assert r['accept_mass_limit'] == pytest.approx(3e-3 if inner == 5 else 0.03)
+    assert len(radius) == 12  # the best pass, one more on its side, 10 sign changes
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+def test_no_oscillation_stop_while_the_best_pass_is_above_3_tolerance_outer(
+    monkeypatch, caplog
+):
+    """Pass 0 at 5 %, later passes 6 % with alternating sign, tolerance_outer 1e-3: the
+    best pass stays above 3 tolerance_outer, so the loop runs to its cap."""
+    r, radius = _oscillating_solve(
+        monkeypatch,
+        caplog,
+        _first_then_alternating(0.05, 0.06),
+        max_iterations_outer=14,
+        tolerance_outer=1e-3,
+    )
+    assert STOP not in caplog.text
+    assert r['accepted_on'] is None and len(radius) == 14
+
+
+@pytest.mark.unit
+def test_no_oscillation_stop_above_the_3_percent_limit(monkeypatch, caplog):
+    """tolerance_outer 0.015, 1 inner iteration: the best pass (3.5 %) is below 3
+    tolerance_outer but above the 3 % limit of an unconverged density, so no stop fires and
+    the mass is not marked converged."""
+    r, radius = _oscillating_solve(
+        monkeypatch,
+        caplog,
+        _first_then_alternating(0.035, 0.05),
+        max_iterations_outer=14,
+        max_iterations_inner=1,
+        tolerance_outer=0.015,
+    )
+    assert STOP not in caplog.text and len(radius) == 14
+    assert r['accepted_on'] is None and not r['converged_mass'] and not r['converged']
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+def test_a_new_best_pass_resets_the_oscillation_count(monkeypatch, caplog):
+    """Pass 0 ends 0.25 % heavy, passes 1 to 8 alternate at 0.29 % (8 sign changes), pass 9
+    is a new best at 0.24 % with the sign of pass 8, later passes alternate at 0.29 %: the
+    new best resets the count, so it stays below 10 and the cap stops the loop."""
+
+    def factor(n):
+        if n in (0, 9):
+            return 1.0025 if n == 0 else 1.0024
+        return 1 + (-1) ** (n + (n > 9)) * 0.0029 * (1 - 1e-6 * n)
+
+    r, radius = _oscillating_solve(
+        monkeypatch, caplog, factor, max_iterations_outer=14, tolerance_outer=1e-3
+    )
+    assert STOP not in caplog.text
+    assert r['accepted_on'] == 'max_iter' and len(radius) == 14
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+def test_a_contracting_oscillation_is_not_stopped(monkeypatch, caplog):
+    """Pass 0 ends 0.2 % heavy, later passes 2 % x 0.85^n with alternating sign: the error
+    shrinks at every sign change, so the stop waits and the mass reaches tolerance_outer."""
+    r, radius = _oscillating_solve(
+        monkeypatch,
+        caplog,
+        lambda n: 1.002 if n == 0 else 1 + (-1) ** n * 0.02 * 0.85**n,
+        max_iterations_outer=24,
+        tolerance_outer=1e-3,
+    )
+    assert STOP not in caplog.text
+    assert r['mass_error_at_accept'] < 1e-3 and len(radius) == 20
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.parametrize('mode', ['adiabatic', 'adiabatic_from_cmb'])
+def test_the_oscillation_stop_waits_for_the_adiabat_blend_ramp(monkeypatch, caplog, mode):
+    """PALEOS: pass 0 ends 0.2 % heavy, later passes 2 % off with alternating sign, so no
+    pass reaches tolerance_outer and the blend ramp never starts. The stop must not return
+    the linear temperature pass; the loop ends at its cap on blend 0 as max_iter."""
+    _need_paleos()
+    r, radius = _oscillating_solve(
+        monkeypatch,
+        caplog,
+        _first_then_alternating(0.002, 0.02),
+        max_iterations_outer=14,
+        tolerance_outer=1e-3,
+        temperature_mode=mode,
+        layer_eos_config=PALEOS,
+    )
+    assert STOP not in caplog.text
+    assert r['accepted_on'] == 'max_iter' and r['adiabat_blend'] == pytest.approx(0.0)
+    assert len(radius) == 14
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+def test_the_oscillation_stop_fires_after_the_adiabat_blend_ramp(monkeypatch, caplog):
+    """PALEOS, adiabatic: pass 0 reaches tolerance_outer and starts the ramp, pass 4 ends on
+    blend 1.0 0.2 % heavy, later passes 2 % off with alternating sign: the stop fires on
+    blend 1.0 and returns pass 4."""
+    _need_paleos()
+    sched = {0: 1.0005, 1: 1.05, 2: 1.05, 3: 1.05, 4: 1.002}
+    r, radius = _oscillating_solve(
+        monkeypatch,
+        caplog,
+        lambda n: sched.get(n, _first_then_alternating(0, 0.02)(n)),
+        max_iterations_outer=22,
+        tolerance_outer=1e-3,
+        temperature_mode='adiabatic',
+        layer_eos_config=PALEOS,
+    )
+    assert r['accepted_on'] == 'oscillation', (r['accepted_on'], len(radius))
+    assert r['adiabat_blend'] == pytest.approx(1.0)
+    assert r['mass_error_at_accept'] == pytest.approx(0.002, rel=1e-6)
+    assert len(radius) == 16
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.parametrize('mode', ['isothermal', 'adiabatic'])
+def test_the_oscillation_stop_fires_on_a_tdep_eos_without_a_blend_ramp(
+    monkeypatch, caplog, mode
+):
+    """PALEOS with no internal adiabat (isothermal, or an external temperature function):
+    the schedule of test_ten_mass_sign_changes_stop_the_outer_loop stops on oscillation."""
+    _need_paleos()
+    r, radius = _oscillating_solve(
+        monkeypatch,
+        caplog,
+        _first_then_alternating(0.002, 0.02),
+        temperature_function=None if mode == 'isothermal' else lambda r, P: 4000.0,
+        max_iterations_outer=14,
+        tolerance_outer=1e-3,
+        temperature_mode=mode,
+        layer_eos_config=PALEOS,
+    )
+    assert r['accepted_on'] == 'oscillation', (r['accepted_on'], len(radius))
+    assert len(radius) == 12
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+def test_a_wall_clock_cut_on_the_tenth_sign_change_stops_on_timeout(monkeypatch, caplog):
+    """The schedule of test_ten_mass_sign_changes_stop_the_outer_loop with the clock cutting
+    the inner loop of pass 11, the pass of the tenth sign change, after its first pressure
+    solve: the stop is the wall clock's, and the best pass is returned as timeout."""
+    r, radius = _oscillating_solve(
+        monkeypatch,
+        caplog,
+        _first_then_alternating(0.002, 0.02),
+        cut_on=11,
+        max_iterations_outer=14,
+        tolerance_outer=1e-3,
+        temperature_mode='adiabatic',
+    )
+    assert STOP not in caplog.text and len(radius) == 12
+    assert r['accepted_on'] == 'timeout' and r['stopped_on_wall_clock']
+    assert r['mass_error_at_accept'] == pytest.approx(0.002, rel=1e-6)
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+def test_a_pass_cut_before_its_pressure_solve_does_not_stop_on_oscillation(monkeypatch, caplog):
+    """Pass 0 ends 0.2 % light, later passes 2 % off with alternating sign, and the clock
+    cuts pass 11 before its first pressure solve: its mass of zero (error -1) would be the
+    tenth sign change, but the stop is the wall clock's."""
+    r, radius = _oscillating_solve(
+        monkeypatch,
+        caplog,
+        lambda n: 0.998 if n == 0 else 1 + (-1 if n % 2 else 1) * 0.02 * (1 - 1e-6 * n),
+        cut_before=11,
+        max_iterations_outer=14,
+        tolerance_outer=1e-3,
+        temperature_mode='adiabatic',
+    )
+    assert STOP not in caplog.text and len(radius) == 11
+    assert r['accepted_on'] == 'timeout' and r['stopped_on_wall_clock']
+    assert r['density_from_eos']
+    assert r['mass_error_at_accept'] == pytest.approx(0.002, rel=1e-6)

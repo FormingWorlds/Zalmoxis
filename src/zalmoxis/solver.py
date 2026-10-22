@@ -1589,6 +1589,7 @@ def _solve(
     best_blend = None  # the adiabat blend of the best pass
     earlier_best = None  # (mass error, profiles) of the best pass of the earlier blend steps
     oscillation_count = 0
+    _prev_mass_error = None  # signed mass error of the previous outer pass
     stop_label = None  # 'timeout' (wall clock) or 'oscillation' once a loop stops early
     mass_limit = tolerance_outer  # the mass test behind converged_mass
     restore_best = False  # an outer stop returns the best pass
@@ -1815,7 +1816,6 @@ def _solve(
 
         # Adaptive Picard blending: start at 0.5, reduce if mass oscillates
         _picard_alpha = 0.5
-        _prev_mass_error = None
         _prev_brent_solution = None  # Persist Brent bracket across outer iterations
         _frozen_sigma = {}  # Reserved for suppression-weight freezing
 
@@ -2336,9 +2336,7 @@ def _solve(
         # Adaptive Picard alpha: detect mass oscillation
         mass_error_signed = (calculated_mass - planet_mass) / planet_mass
         if _prev_mass_error is not None:
-            if (
-                mass_error_signed * _prev_mass_error < 0
-            ):  # pragma: no cover - mass-oscillation alpha reduction; defensive smoothing
+            if mass_error_signed * _prev_mass_error < 0:
                 _picard_alpha = max(0.2, _picard_alpha * 0.7)
                 logger.debug(
                     'Outer iter %d: mass oscillation detected, reducing Picard alpha to %.2f',
@@ -2347,7 +2345,6 @@ def _solve(
                 )
             elif relative_diff_outer_mass < abs(_prev_mass_error):
                 _picard_alpha = min(0.7, _picard_alpha * 1.1)
-        _prev_mass_error = mass_error_signed
 
         # The best pass: the smallest error on the newest blend step. A pass without a
         # pressure solve never counts; the older best stays until a new-step pass has one.
@@ -2373,14 +2370,28 @@ def _solve(
             }
             oscillation_count = 0
         elif (
-            _prev_mass_error is not None and mass_error_signed * _prev_mass_error < 0
-        ):  # pragma: no cover - mass-oscillation counter; defensive
+            _prev_mass_error is not None
+            and mass_error_signed * _prev_mass_error < 0
+            and abs(mass_error_signed) >= 0.99 * abs(_prev_mass_error)
+        ):  # a sign change that shrinks the error by more than 1 % is progress, not a stall
             oscillation_count += 1
+        _prev_mass_error = mass_error_signed
 
+        # The internal adiabat blend is below 1: both stops wait for the end of the ramp
+        ramp_incomplete = (
+            temperature_mode in ('adiabatic', 'adiabatic_from_cmb')
+            and _adiabat_blend < 1.0
+            and uses_Tdep
+            and temperature_function is None
+            and not arrays_give_T
+        )
         # Bailout: if oscillating for 10+ iterations, accept best solution
         if (
-            oscillation_count >= 10 and best_mass_error < 3 * tolerance_outer
-        ):  # pragma: no cover - oscillation bailout; defensive
+            oscillation_count >= 10
+            and best_mass_error < min(3 * tolerance_outer, _TIMEOUT_ACCEPT_MASS_ERR)
+            and not ramp_incomplete
+            and stop_label is None  # a pass the clock cut ends at the next clock check
+        ):
             logger.warning(
                 'Accepting best solution after %d oscillations (mass error %.4f%%, '
                 'target %.4f%%)',
@@ -2419,13 +2430,7 @@ def _solve(
         # falls back to the linear profile (see the T-independent branch
         # around the _temperature_func construction).
         if relative_diff_outer_mass < tolerance_outer:
-            if (
-                temperature_mode in ('adiabatic', 'adiabatic_from_cmb')
-                and _adiabat_blend < 1.0
-                and uses_Tdep
-                and temperature_function is None
-                and not arrays_give_T
-            ):
+            if ramp_incomplete:
                 if not _using_adiabat:
                     _using_adiabat = True
                     logger.info(
