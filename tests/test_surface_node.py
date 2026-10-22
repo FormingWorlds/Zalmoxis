@@ -53,8 +53,8 @@ def test_a_padded_surface_node_has_the_gravity_of_the_planet_mass_at_its_radius(
 @pytest.mark.timeout(900)
 def test_a_padded_node_of_a_cmb_anchored_adiabat_takes_the_top_of_the_adiabat():
     """With the adiabat integrated from the CMB, the configured surface_temperature is not the
-    temperature at the surface: the padded node takes the adiabat at the target pressure, close to
-    the node below it, and its EOS density there."""
+    temperature at the surface: the padded node takes the adiabat continued from the node below
+    to the target pressure (checked against a 4000-step integration), and its EOS density there."""
     import os
 
     import zalmoxis.solver as zs
@@ -81,7 +81,28 @@ def test_a_padded_node_of_a_cmb_anchored_adiabat_takes_the_top_of_the_adiabat():
     r = zs.main(cfg, load_material_dictionaries(), melt, os.path.join(root, 'input'))
     P, T, rho = (np.asarray(r[k], float) for k in ('pressure', 'temperature', 'density'))
     assert r['converged'] and P[-1] == 0.0 and P[-2] > 0.0
-    assert abs(T[-1] - T[-2]) < 0.03 * T[-2]
+    from zalmoxis.mixing import get_mixed_nabla_ad
+
+    mixes = parse_all_layer_mixtures(cfg['layer_eos_config'])
+    mzf, rho_min, rho_scale, bts = zs._eos_params(cfg)
+    md, sol_liq, cache = load_material_dictionaries(), (melt or (None, None)), {}
+    t_ref, lnp = T[-2], np.linspace(np.log(P[-2]), np.log(cfg['target_surface_pressure']), 4001)
+    for lo, hi in zip(lnp[:-1], lnp[1:]):  # explicit Euler in ln P
+        nab = get_mixed_nabla_ad(
+            np.exp(lo),
+            t_ref,
+            mixes['mantle'],
+            md,
+            cache,
+            *sol_liq,
+            mzf,
+            rho_min,
+            rho_scale,
+            bts,
+        )
+        t_ref *= np.exp(nab * (hi - lo))
+    assert t_ref < T[-2] - 50.0
+    assert T[-1] == pytest.approx(t_ref, abs=1.0)
     mix = parse_all_layer_mixtures(cfg['layer_eos_config'])['mantle']
     ref = calculate_mixed_density(
         cfg['target_surface_pressure'],

@@ -1419,3 +1419,12 @@ def test_a_padded_node_with_the_gravity_at_a_stop_3_km_below_raises_padding_at_r
     result['accept_mass_limit'] = 1e-3
     with pytest.raises(StructureInvariantError, match='breaks padding:'):
         check_accepted(result, cfg, 1e-5, 1e-6, lambda P, T, layer: RHO)
+
+
+@pytest.mark.unit
+def test_a_padded_gravity_1e9_off_g_r2_equal_g_m_raises_padding():
+    """padding holds a padded node to g r^2 = G m_stop within rounding, not within a loose
+    bound: a relative error of 1e-9 breaks it."""
+    result, cfg = _padded(3)
+    result['gravity'][-1] *= 1.0 + 1e-9
+    _raises(result, cfg, 'padding')

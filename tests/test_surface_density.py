@@ -2,7 +2,8 @@
 
 ``zalmoxis.solver._surface_density`` looks the padded nodes up at the target surface pressure
 and their own temperatures, in the layer of the stop mass, with the volatile profile only in
-the mantle; a density that is not finite stops the solve.
+the mantle. ``_adiabat_to_surface`` continues a CMB-anchored adiabat from the last node with
+P > 0 to the target surface pressure.
 """
 
 from __future__ import annotations
@@ -56,16 +57,70 @@ def test_the_lookup_reads_the_target_pressure_the_node_temperatures_and_the_stop
 
 
 @pytest.mark.parametrize('bad', [np.nan, np.inf, -np.inf])
-def test_a_surface_density_that_is_not_finite_stops_the_solve(monkeypatch, bad):
+def test_a_surface_density_that_is_not_finite_is_returned_for_the_invariants(monkeypatch, bad):
+    """An accepted result with it breaks positive; an unaccepted trial keeps it, as other
+    failed profiles do, so a Newton trial does not stop the solve."""
     _lookup(monkeypatch, rho=lambda P, T: np.where(T > 3000.0, bad, 2300.0))
-    with pytest.raises(zs.StructureSolveError, match='surface density not finite'):
-        zs._surface_density(
-            np.array([2900.0, 3100.0]),
-            3.0e24,
-            101325.0,
-            CMB,
-            TOP,
-            {'core': 1, 'mantle': 2},
-            EOS_ARGS,
-            None,
-        )
+    rho = zs._surface_density(
+        np.array([2900.0, 3100.0]),
+        3.0e24,
+        101325.0,
+        CMB,
+        TOP,
+        {'core': 1, 'mantle': 2},
+        EOS_ARGS,
+        None,
+    )
+    assert rho[0] == 2300.0 and (np.isnan(rho[1]) if np.isnan(bad) else rho[1] == bad)
+
+
+class _Mix:
+    def __init__(self, tdep=True):
+        self.tdep = tdep
+
+    def has_tdep(self):
+        return self.tdep
+
+
+NABLA_ARGS = ('md', 'cache', 'sol', 'liq', 'mzf', 'rho_min', 'rho_scale', 'binodal')
+
+
+def _nabla(monkeypatch, f):
+    calls = []
+
+    def nabla(P, T, mix, *args):
+        calls.append((P, T, mix, args))
+        return f(P, T)
+
+    monkeypatch.setattr(zs, 'get_mixed_nabla_ad', nabla)
+    return calls
+
+
+@pytest.mark.parametrize('a, b', [(0.03, 0.0), (0.05, -1e-3)])
+def test_the_surface_continuation_integrates_d_ln_t_d_ln_p_exactly(monkeypatch, a, b):
+    """For nabla = a + b ln P, ln T = ln T0 + a ln(p / P0) + b / 2 (ln^2 p - ln^2 P0), which
+    the midpoint rule in ln P integrates exactly."""
+    calls = _nabla(monkeypatch, lambda P, T: a + b * np.log(P))
+    P0, T0, ps = 3.77e9, 2493.6, 101325.0
+    T = zs._adiabat_to_surface(P0, T0, ps, _Mix(), NABLA_ARGS)
+    exact = T0 * np.exp(a * np.log(ps / P0) + b / 2 * (np.log(ps) ** 2 - np.log(P0) ** 2))
+    assert T == pytest.approx(exact, rel=1e-12) and T < T0
+    assert calls and all(c[3] == NABLA_ARGS for c in calls)
+    assert min(c[0] for c in calls) >= ps and max(c[0] for c in calls) <= P0
+
+
+@pytest.mark.parametrize(
+    'P0, ps, mix, f',
+    [
+        (3.77e9, 101325.0, _Mix(tdep=False), lambda P, T: 0.03),
+        (3.77e9, 101325.0, _Mix(), lambda P, T: None),
+        (3.77e9, 101325.0, _Mix(), lambda P, T: -0.01),
+        (1.0e5, 101325.0, _Mix(), lambda P, T: 0.03),
+        (3.77e9, 0.0, _Mix(), lambda P, T: 0.03),
+    ],
+)
+def test_the_surface_continuation_holds_t_without_a_gradient_or_a_pressure_drop(
+    monkeypatch, P0, ps, mix, f
+):
+    _nabla(monkeypatch, f)
+    assert zs._adiabat_to_surface(P0, 2493.6, ps, mix, NABLA_ARGS) == 2493.6
