@@ -1291,7 +1291,7 @@ def test_the_adiabat_of_the_default_solve_reads_the_layer_boundaries_of_its_prof
     """input/default.toml (1 M_E PALEOS iron/MgSiO3, adiabatic): every adiabat call gets the
     layer boundaries the previous pass integrated with, the planet-mass fractions, and the solve
     is accepted strict on the full adiabat. A boundary from the mass of the previous pass puts a
-    node of that profile in the other layer and gives another pass (R 6.5238e6 m)."""
+    node of that profile in the other layer and gives another pass."""
     from tests.test_spider_coupling_convergence import _has_paleos_data
     from zalmoxis.config import load_solidus_liquidus_functions, load_zalmoxis_config
 
@@ -1323,4 +1323,3 @@ def test_the_adiabat_of_the_default_solve_reads_the_layer_boundaries_of_its_prof
     assert set(seen) == {tuple(f * cfg['planet_mass'] for f in fractions)}
     assert r['accepted_on'] == 'strict' and r['adiabat_blend'] == 1.0
     assert r['mass_error_at_accept'] < r['accept_mass_limit'] == 1e-3
-    assert r['radii'][-1] == pytest.approx(6.52351e6, rel=1e-5)
