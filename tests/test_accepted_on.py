@@ -1323,3 +1323,32 @@ def test_the_adiabat_of_the_default_solve_reads_the_layer_boundaries_of_its_prof
     assert set(seen) == {tuple(f * cfg['planet_mass'] for f in fractions)}
     assert r['accepted_on'] == 'strict' and r['adiabat_blend'] == 1.0
     assert r['mass_error_at_accept'] < r['accept_mass_limit'] == 1e-3
+
+
+@pytest.mark.unit
+def test_ten_mass_sign_changes_stop_the_outer_loop(monkeypatch, caplog):
+    """The first outer pass ends 0.2 % heavy and every later pass 2 % off with alternating
+    sign: the passes never beat the first, so after 10 sign changes the oscillation stop
+    returns the first pass, which is within 3 tolerance_outer."""
+    radius, real, factors = _count_outer_iterations(monkeypatch), zs.solve_structure, {}
+
+    def solve(*args, **kwargs):
+        m, g, P = real(*args, **kwargs)
+        n = factors.setdefault(float(args[3][-1]), len(factors))
+        f = (1.002 if n == 0 else 1.02 if n % 2 else 0.98) * earth_mass / m[-1]
+        return m * f, g * f, P
+
+    monkeypatch.setattr(zs, 'solve_structure', solve)
+    cfg = _cfg(
+        outer_solver='picard',
+        max_iterations_outer=14,
+        max_iterations_inner=5,
+        tolerance_outer=1e-3,
+        wall_timeout=WALL,
+    )
+    with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+        r = zs._solve(cfg, load_material_dictionaries(), None, INPUT)
+    assert r['accepted_on'] == 'oscillation', (r['accepted_on'], len(radius))
+    assert 'Accepting best solution after 10 oscillations' in caplog.text
+    assert r['mass_error_at_accept'] == pytest.approx(0.002, rel=1e-6)
+    assert len(radius) == 12  # the best pass, one more on its side, 10 sign changes
