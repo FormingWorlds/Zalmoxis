@@ -2369,12 +2369,16 @@ def _solve(
                 'adiabat_blend': _adiabat_blend,
             }
             oscillation_count = 0
-        elif _prev_mass_error is not None and mass_error_signed * _prev_mass_error < 0:
+        elif (
+            _prev_mass_error is not None
+            and mass_error_signed * _prev_mass_error < 0
+            and abs(mass_error_signed) >= abs(_prev_mass_error)
+        ):  # a sign change that shrinks the error is progress, not a stall
             oscillation_count += 1
         _prev_mass_error = mass_error_signed
 
-        # A blend step is due: the adiabat ramp starts after a pass below tolerance_outer
-        ramp_pending = (
+        # The internal adiabat blend is below 1: both stops wait for the end of the ramp
+        ramp_incomplete = (
             temperature_mode in ('adiabatic', 'adiabatic_from_cmb')
             and _adiabat_blend < 1.0
             and uses_Tdep
@@ -2384,8 +2388,8 @@ def _solve(
         # Bailout: if oscillating for 10+ iterations, accept best solution
         if (
             oscillation_count >= 10
-            and best_mass_error < 3 * tolerance_outer
-            and not ramp_pending
+            and best_mass_error < min(3 * tolerance_outer, _TIMEOUT_ACCEPT_MASS_ERR)
+            and not ramp_incomplete
         ):
             logger.warning(
                 'Accepting best solution after %d oscillations (mass error %.4f%%, '
@@ -2425,7 +2429,7 @@ def _solve(
         # falls back to the linear profile (see the T-independent branch
         # around the _temperature_func construction).
         if relative_diff_outer_mass < tolerance_outer:
-            if ramp_pending:
+            if ramp_incomplete:
                 if not _using_adiabat:
                     _using_adiabat = True
                     logger.info(
