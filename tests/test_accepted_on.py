@@ -1280,3 +1280,47 @@ def test_a_single_pass_between_the_two_ceilings_is_a_retry_skip(monkeypatch):
     assert r['converged'] and r['accepted_on'] == 'retry_skip' and len(calls) == 1
     assert r['accept_mass_limit'] == 0.07
     assert 0.03 < r['mass_error_at_accept'] < 0.07
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.timeout(2400)
+def test_the_adiabat_of_the_default_solve_reads_the_layer_boundaries_of_its_profile(
+    monkeypatch,
+):
+    """input/default.toml (1 M_E PALEOS iron/MgSiO3, adiabatic): every adiabat call gets the
+    layer boundaries the previous pass integrated with, the planet-mass fractions, and the solve
+    is accepted strict on the full adiabat. A boundary from the mass of the previous pass puts a
+    node of that profile in the other layer and gives another pass (R 6.5238e6 m)."""
+    from tests.test_spider_coupling_convergence import _has_paleos_data
+    from zalmoxis.config import load_solidus_liquidus_functions, load_zalmoxis_config
+
+    if not _has_paleos_data():
+        pytest.skip('PALEOS tables not on disk')
+    cfg = load_zalmoxis_config(os.path.join(ROOT, 'input', 'default.toml'))
+    cfg.update(data_output_enabled=False, plotting_enabled=False, wall_timeout=WALL)
+    melt = load_solidus_liquidus_functions(
+        cfg['layer_eos_config'],
+        cfg['rock_solidus'],
+        cfg['rock_liquidus'],
+        cfg['mushy_zone_factor'],
+    )
+    seen, real = [], zs.compute_adiabatic_temperature
+
+    def adiabat(radii, pressure, mass, surface_T, cmb_mass, core_mantle_mass, *args, **kwargs):
+        seen.append((cmb_mass, core_mantle_mass))
+        return real(
+            radii, pressure, mass, surface_T, cmb_mass, core_mantle_mass, *args, **kwargs
+        )
+
+    monkeypatch.setattr(zs, 'compute_adiabatic_temperature', adiabat)
+    r = zs.main(cfg, load_material_dictionaries(), melt, INPUT)
+    fractions = (
+        cfg['core_mass_fraction'],
+        cfg['core_mass_fraction'] + cfg['mantle_mass_fraction'],
+    )
+    assert len(seen) >= 4  # the blend ramp ran
+    assert set(seen) == {tuple(f * cfg['planet_mass'] for f in fractions)}
+    assert r['accepted_on'] == 'strict' and r['adiabat_blend'] == 1.0
+    assert r['mass_error_at_accept'] < r['accept_mass_limit'] == 1e-3
+    assert r['radii'][-1] == pytest.approx(6.52351e6, rel=1e-5)
