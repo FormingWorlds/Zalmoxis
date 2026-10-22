@@ -56,7 +56,7 @@ from .mixing import (
     split_mantle_volatile_inventory,
     strong_partition_phi_floor,
 )
-from .structure_model import solve_structure, temperature_from_arrays
+from .structure_model import get_layer_mixture, solve_structure, temperature_from_arrays
 
 logger = logging.getLogger(__name__)
 
@@ -1374,7 +1374,8 @@ def _solve(
         iteration cap only below 3 %), with its blend, a warning and its own mass error in
         ``best_mass_error``. ``stopped_on_wall_clock`` is True
         when the wall clock stopped the solve, also when it was not accepted.
-        ``density`` is rho_EOS(P, T) at the returned nodes and ``density_from_eos`` is
+        ``density`` is rho_EOS(P, T) at the returned nodes, at the target surface pressure on
+        the padded nodes (P = 0 past a surface stop), and ``density_from_eos`` is
         True, unless the solve was not accepted and the returned pass has no pressure
         solve: the wall clock stopped the solve before its first pass, or before the
         first pressure solve of the first pass or of the pass at ``max_iterations_outer``;
@@ -2559,7 +2560,27 @@ def _solve(
     total_time = end_time - start_time
 
     pressure = np.asarray(pressure)
-    density[pressure <= 0] = 0.0  # padded nodes
+    pad = pressure <= 0  # padded nodes past a surface stop
+    density[pad] = 0.0
+    if density_from_eos and pad.any():
+        # The padded nodes are the surface: rho_EOS at the target surface pressure.
+        mix = get_layer_mixture(
+            float(np.asarray(mass_enclosed)[pad][0]), cmb_mass, core_mantle_mass, layer_mixtures
+        )
+        density[pad] = calculate_mixed_density_batch(
+            np.full(int(pad.sum()), float(target_surface_pressure)),
+            np.asarray(temperatures, float)[pad],
+            mix,
+            material_dictionaries,
+            solidus_func,
+            liquidus_func,
+            interpolation_cache,
+            mushy_zone_factors,
+            condensed_rho_min,
+            condensed_rho_scale,
+            binodal_T_scale,
+            volatile_profile=volatile_profile if mix is layer_mixtures.get('mantle') else None,
+        )
 
     model_results = {
         'layer_eos_config': layer_eos_config,
