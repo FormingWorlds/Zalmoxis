@@ -12,6 +12,7 @@ import pytest
 
 from tests.test_failed_structure_solve import _cfg, _run
 from zalmoxis.config import load_material_dictionaries
+from zalmoxis.constants import G
 from zalmoxis.mixing import calculate_mixed_density, parse_all_layer_mixtures
 
 pytestmark = pytest.mark.smoke
@@ -41,3 +42,9 @@ def test_a_padded_surface_node_has_the_eos_density_at_the_target_pressure(padded
     )
     assert ref > 0
     assert padded['density'][-1] == pytest.approx(ref, rel=1e-8)
+
+
+@pytest.mark.timeout(600)
+def test_a_padded_surface_node_has_the_gravity_of_the_planet_mass_at_its_radius(padded):
+    m, r, g = (np.asarray(padded[k]) for k in ('mass_enclosed', 'radii', 'gravity'))
+    assert g[-1] == pytest.approx(G * m[-1] / r[-1] ** 2, rel=1e-12)

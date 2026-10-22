@@ -1393,3 +1393,12 @@ def test_density_eos_reads_a_padded_node_at_the_target_surface_pressure(lookup, 
         else nullcontext()
     ):
         check_accepted(result, cfg, RTOL, ATOL, lambda P, T, layer: rho(P))
+
+
+@pytest.mark.unit
+def test_a_padded_node_with_the_gravity_at_the_stop_raises_gravity():
+    """The gravity invariant reads the padded nodes: there g must be G m / r^2 of the stop mass."""
+    result, cfg = _padded(3)
+    k = N - 4
+    result['gravity'][k:] = result['gravity'][k]
+    _raises(result, cfg, 'gravity')
