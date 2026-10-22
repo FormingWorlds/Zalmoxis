@@ -55,7 +55,8 @@ def deviations(
         Result of ``main`` with ``converged`` True.
     config_params : dict
         Configuration; reads ``planet_mass``, ``core_mass_fraction`` and
-        ``mantle_mass_fraction``.
+        ``mantle_mass_fraction``, and ``target_surface_pressure`` for the density check of
+        padded nodes.
     mass_limit : float
         Largest relative mass error that the accept path of ``result`` allows.
     rtol, atol : float
@@ -95,11 +96,15 @@ def deviations(
     Returns
     -------
     dict
-        {invariant: (deviation, node index, tolerance)}. ``positive``, ``pressure_monotone``,
-        ``gravity`` and ``density_eos`` use the nodes before the first node with P <= 0, and
-        ``padding`` the nodes from there on, which must have P = 0; ``mass_monotone``, the
-        layer masses, the node checks and ``mass_closure`` read all nodes or the last one, and
-        ``centre`` reads node 0.
+        {invariant: (deviation, node index, tolerance)}. ``pressure_monotone`` and ``gravity``
+        use the nodes before the first node with P <= 0, and ``padding`` the nodes from there
+        on, the surface past a stop of the integration, which must have P = 0 and the mass of
+        that first node. No mass lies above the stop, so the gravity of a padded node is that
+        of the stop mass at its own radius (Gauss), not the gravity at the stop; ``padding``
+        does not read it. ``positive`` and ``density_eos`` read every node, ``density_eos``
+        with the lookup of a padded node at ``target_surface_pressure``, the surface pressure
+        that the solve targets; ``mass_monotone``, the layer masses, the node checks and
+        ``mass_closure`` read all nodes or the last one, and ``centre`` reads node 0.
         ``cmb_node`` and ``core_mantle_node`` mirror the PROTEUS reading of the profile: the
         layer boundary is the first node with m >= cmb_mass (core_mantle_mass with an ice
         layer), compared exactly, and a result where no node reaches it would give the caller
@@ -128,26 +133,24 @@ def deviations(
         0,
         text=f'radius, mass, gravity {r[0]:.6e}, {m[0]:.6e}, {g[0]:.6e}, expected 0',
     )
-    bad = ~(np.isfinite(rho[:k]) & (rho[:k] > 0) & np.isfinite(T[:k]) & (T[:k] > 0))
+    bad = ~(np.isfinite(rho) & (rho > 0) & np.isfinite(T) & (T > 0))
     i = int(np.argmax(bad)) if bad.any() else k
     put(
         'positive',
         np.count_nonzero(bad) + (k < 2),
         i,
         text=f'density {rho[i]:.6e}, temperature {T[i]:.6e}'
-        if i < k
+        if bad.any()
         else f'{k} nodes with P > 0',
     )
-    # the solver pads a surface stop with zero pressure and the mass and gravity at the stop
-    off = (P[k:] != 0) | (m[k:] != m[k : k + 1]) | (g[k:] != g[k : k + 1])
+    # the solver pads a surface stop with zero pressure and the mass at the stop
+    off = (P[k:] != 0) | (m[k:] != m[k : k + 1])
     i = k + int(np.argmax(off)) if off.any() else k
-    pad = np.count_nonzero(P[k:] != 0) + np.count_nonzero(m[k:] != m[k : k + 1])
     put(
         'padding',
-        pad + np.count_nonzero(g[k:] != g[k : k + 1]),
+        np.count_nonzero(P[k:] != 0) + np.count_nonzero(m[k:] != m[k : k + 1]),
         i,
-        text=f'pressure, mass, gravity {P[i]:.6e}, {m[i]:.6e}, {g[i]:.6e}; expected 0 and '
-        f'the mass and gravity of node {k}'
+        text=f'pressure, mass {P[i]:.6e}, {m[i]:.6e}; expected 0 and the mass of node {k}'
         if off.any()
         else '',
     )
@@ -210,14 +213,16 @@ def deviations(
         text=f'mass_enclosed[-1] {m[-1]:.6e} kg, target {M:.6e} kg',
     )
     if density_at is not None and result.get('density_from_eos'):
-        layer = _layer(m[:k], result['cmb_mass'], result['core_mantle_mass'], ice)
-        ref = np.full(k, np.nan)
+        n = len(P)
+        lookup = P.copy()
+        if k < n:  # a padded node is the surface, at the target surface pressure
+            lookup[k:] = config_params['target_surface_pressure']
+        layer = _layer(m, result['cmb_mass'], result['core_mantle_mass'], ice)
+        ref = np.full(n, np.nan)
         for name in np.unique(layer):
             sel = layer == name
             try:
-                ref[sel] = np.asarray(
-                    density_at(P[:k][sel], T[:k][sel], str(name)), dtype=float
-                )
+                ref[sel] = np.asarray(density_at(lookup[sel], T[sel], str(name)), dtype=float)
             except Exception as err:  # reported as the density_eos deviation
                 failed = (
                     f'density lookup of the {name} layer failed: {type(err).__name__}: {err}'
@@ -227,14 +232,14 @@ def deviations(
                     details['density_eos cause'] = err
                 return out
         with np.errstate(divide='ignore', invalid='ignore'):
-            d = np.abs(rho[:k] / ref - 1)
+            d = np.abs(rho / ref - 1)
         d[~np.isfinite(d)] = np.inf
-        i = int(np.argmax(d)) if k else 0
+        i = int(np.argmax(d)) if n else 0
         put(
             'density_eos',
             d.max(initial=0.0),
             i,
-            text=f'density {rho[i]:.6e}, expected {ref[i]:.6e} ({layer[i]} EOS)' if k else '',
+            text=f'density {rho[i]:.6e}, expected {ref[i]:.6e} ({layer[i]} EOS)' if n else '',
         )
     return out
 
