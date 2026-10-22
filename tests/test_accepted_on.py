@@ -1367,7 +1367,8 @@ def _need_paleos():
         pytest.skip('PALEOS tables not on disk')
 
 
-@pytest.mark.unit
+@pytest.mark.smoke
+@pytest.mark.accept_solves
 @pytest.mark.parametrize('inner', [5, 1])
 def test_ten_mass_sign_changes_stop_the_outer_loop(monkeypatch, caplog, inner):
     """Pass 0 ends 0.2 % heavy, later passes 2 % off with alternating sign: they never beat
@@ -1392,7 +1393,8 @@ def test_ten_mass_sign_changes_stop_the_outer_loop(monkeypatch, caplog, inner):
     assert len(radius) == 12  # the best pass, one more on its side, 10 sign changes
 
 
-@pytest.mark.unit
+@pytest.mark.smoke
+@pytest.mark.accept_solves
 def test_no_oscillation_stop_while_the_best_pass_is_above_3_tolerance_outer(
     monkeypatch, caplog
 ):
@@ -1426,7 +1428,8 @@ def test_no_oscillation_stop_above_the_3_percent_limit(monkeypatch, caplog):
     assert r['accepted_on'] is None and not r['converged_mass'] and not r['converged']
 
 
-@pytest.mark.unit
+@pytest.mark.smoke
+@pytest.mark.accept_solves
 def test_a_new_best_pass_resets_the_oscillation_count(monkeypatch, caplog):
     """Pass 0 ends 0.25 % heavy, passes 1 to 8 alternate at 0.29 % (8 sign changes), pass 9
     is a new best at 0.24 % with the sign of pass 8, later passes alternate at 0.29 %: the
@@ -1444,7 +1447,8 @@ def test_a_new_best_pass_resets_the_oscillation_count(monkeypatch, caplog):
     assert r['accepted_on'] == 'max_iter' and len(radius) == 14
 
 
-@pytest.mark.unit
+@pytest.mark.smoke
+@pytest.mark.accept_solves
 def test_a_contracting_oscillation_is_not_stopped(monkeypatch, caplog):
     """Pass 0 ends 0.2 % heavy, later passes 2 % x 0.85^n with alternating sign: the error
     shrinks at every sign change, so the stop waits and the mass reaches tolerance_outer."""
