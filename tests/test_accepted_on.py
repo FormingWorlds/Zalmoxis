@@ -1325,18 +1325,37 @@ def test_the_adiabat_of_the_default_solve_reads_the_layer_boundaries_of_its_prof
     assert r['mass_error_at_accept'] < r['accept_mass_limit'] == 1e-3
 
 
-def _oscillating_solve(monkeypatch, caplog, factor, temperature_function=None, **kwargs):
+def _oscillating_solve(
+    monkeypatch,
+    caplog,
+    factor,
+    temperature_function=None,
+    cut_on=None,
+    cut_before=None,
+    **kwargs,
+):
     """Run _solve on 20 layers with the mass of outer pass n scaled to factor(n) Earth
-    masses; the pass index is keyed on the outer radius. Returns the result and the outer
+    masses; the pass index is keyed on the outer radius. The test clock jumps past
+    wall_timeout at the first structure solve of pass cut_on, or at the temperature profile
+    of pass cut_before, before its first structure solve. Returns the result and the outer
     radii of the passes."""
-    real, index = zs.solve_structure, {}
+    real, index, cut = zs.solve_structure, {}, [False]
+    real_time, real_profile = time.time, zs.calculate_temperature_profile
 
     def solve(*args, **kw):
         m, g, P = real(*args, **kw)
-        f = factor(index.setdefault(float(args[3][-1]), len(index))) * earth_mass / m[-1]
+        n = index.setdefault(float(args[3][-1]), len(index))
+        cut[0] |= n == cut_on
+        f = factor(n) * earth_mass / m[-1]
         return m * f, g * f, P
 
+    def profile(*args, **kw):
+        cut[0] |= len(index) == cut_before
+        return real_profile(*args, **kw)
+
     monkeypatch.setattr(zs, 'solve_structure', solve)
+    monkeypatch.setattr(zs, 'calculate_temperature_profile', profile)
+    monkeypatch.setattr(zs, 'time', SimpleNamespace(time=lambda: real_time() + 1e9 * cut[0]))
     opts = {'max_iterations_inner': 5, 'num_layers': 20, **kwargs}
     cfg = _cfg(outer_solver='picard', wall_timeout=WALL, **opts)
     with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
@@ -1529,3 +1548,44 @@ def test_the_oscillation_stop_fires_on_a_tdep_eos_without_a_blend_ramp(
     )
     assert r['accepted_on'] == 'oscillation', (r['accepted_on'], len(radius))
     assert len(radius) == 12
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+def test_a_wall_clock_cut_on_the_tenth_sign_change_stops_on_timeout(monkeypatch, caplog):
+    """The schedule of test_ten_mass_sign_changes_stop_the_outer_loop with the clock cutting
+    the inner loop of pass 11, the pass of the tenth sign change, after its first pressure
+    solve: the stop is the wall clock's, and the best pass is returned as timeout."""
+    r, radius = _oscillating_solve(
+        monkeypatch,
+        caplog,
+        _first_then_alternating(0.002, 0.02),
+        cut_on=11,
+        max_iterations_outer=14,
+        tolerance_outer=1e-3,
+        temperature_mode='adiabatic',
+    )
+    assert STOP not in caplog.text and len(radius) == 12
+    assert r['accepted_on'] == 'timeout' and r['stopped_on_wall_clock']
+    assert r['mass_error_at_accept'] == pytest.approx(0.002, rel=1e-6)
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+def test_a_pass_cut_before_its_pressure_solve_does_not_stop_on_oscillation(monkeypatch, caplog):
+    """Pass 0 ends 0.2 % light, later passes 2 % off with alternating sign, and the clock
+    cuts pass 11 before its first pressure solve: its mass of zero (error -1) would be the
+    tenth sign change, but the stop is the wall clock's."""
+    r, radius = _oscillating_solve(
+        monkeypatch,
+        caplog,
+        lambda n: 0.998 if n == 0 else 1 + (-1 if n % 2 else 1) * 0.02 * (1 - 1e-6 * n),
+        cut_before=11,
+        max_iterations_outer=14,
+        tolerance_outer=1e-3,
+        temperature_mode='adiabatic',
+    )
+    assert STOP not in caplog.text and len(radius) == 11
+    assert r['accepted_on'] == 'timeout' and r['stopped_on_wall_clock']
+    assert r['density_from_eos']
+    assert r['mass_error_at_accept'] == pytest.approx(0.002, rel=1e-6)
