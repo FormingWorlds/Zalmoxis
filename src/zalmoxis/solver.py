@@ -2336,9 +2336,7 @@ def _solve(
         # Adaptive Picard alpha: detect mass oscillation
         mass_error_signed = (calculated_mass - planet_mass) / planet_mass
         if _prev_mass_error is not None:
-            if (
-                mass_error_signed * _prev_mass_error < 0
-            ):  # pragma: no cover - mass-oscillation alpha reduction; defensive smoothing
+            if mass_error_signed * _prev_mass_error < 0:
                 _picard_alpha = max(0.2, _picard_alpha * 0.7)
                 logger.debug(
                     'Outer iter %d: mass oscillation detected, reducing Picard alpha to %.2f',
@@ -2375,8 +2373,20 @@ def _solve(
             oscillation_count += 1
         _prev_mass_error = mass_error_signed
 
+        # A blend step is due: the adiabat ramp starts after a pass below tolerance_outer
+        ramp_pending = (
+            temperature_mode in ('adiabatic', 'adiabatic_from_cmb')
+            and _adiabat_blend < 1.0
+            and uses_Tdep
+            and temperature_function is None
+            and not arrays_give_T
+        )
         # Bailout: if oscillating for 10+ iterations, accept best solution
-        if oscillation_count >= 10 and best_mass_error < 3 * tolerance_outer:
+        if (
+            oscillation_count >= 10
+            and best_mass_error < 3 * tolerance_outer
+            and not ramp_pending
+        ):
             logger.warning(
                 'Accepting best solution after %d oscillations (mass error %.4f%%, '
                 'target %.4f%%)',
@@ -2415,13 +2425,7 @@ def _solve(
         # falls back to the linear profile (see the T-independent branch
         # around the _temperature_func construction).
         if relative_diff_outer_mass < tolerance_outer:
-            if (
-                temperature_mode in ('adiabatic', 'adiabatic_from_cmb')
-                and _adiabat_blend < 1.0
-                and uses_Tdep
-                and temperature_function is None
-                and not arrays_give_T
-            ):
+            if ramp_pending:
                 if not _using_adiabat:
                     _using_adiabat = True
                     logger.info(
