@@ -11,20 +11,27 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from tests._paleos_helpers import _paleos_data_available, _run_paleos
+from tests._paleos_helpers import (
+    WALL_TIMEOUT,
+    _assert_full_adiabat,
+    _paleos_data_available,
+    _run_paleos,
+)
 from zalmoxis.constants import earth_mass, earth_radius
 
 
 @pytest.mark.smoke
+@pytest.mark.paleos_adiabat
 def test_PALEOS_adiabatic_5Mearth_converges():
     """PALEOS adiabatic mode should converge for a 5 M_earth super-Earth."""
     mass = 5
     if not _paleos_data_available():
         pytest.skip('PALEOS data files not found')
 
-    results = _run_paleos(float(mass), temperature_mode='adiabatic')
+    results = _run_paleos(float(mass), temperature_mode='adiabatic', wall_timeout=WALL_TIMEOUT)
 
     assert results['converged'], f'PALEOS adiabatic did not converge for {mass} M_earth'
+    _assert_full_adiabat(results, mass)
 
     R = results['radii'][-1] / earth_radius
     T = results['temperature']
@@ -43,6 +50,7 @@ def test_PALEOS_adiabatic_5Mearth_converges():
 
 
 @pytest.mark.smoke
+@pytest.mark.paleos_adiabat
 def test_PALEOS_adiabatic_radius_increases_with_mass():
     """Planet radius should increase with mass for Earth-like composition.
 
@@ -53,8 +61,9 @@ def test_PALEOS_adiabatic_radius_increases_with_mass():
 
     radii = []
     for mass in [1.0, 5.0]:
-        results = _run_paleos(mass, temperature_mode='adiabatic')
+        results = _run_paleos(mass, temperature_mode='adiabatic', wall_timeout=WALL_TIMEOUT)
         assert results['converged'], f'{mass} M_earth did not converge'
+        _assert_full_adiabat(results, mass)
         radii.append(results['radii'][-1])
 
     assert radii[1] > radii[0], (

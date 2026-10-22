@@ -17,26 +17,41 @@ on:
 permissions:
   contents: read
 
-# Nightly: unit + smoke + integration with coverage, as two parallel jobs. Not on push or PR
+# Nightly: unit + smoke + integration with coverage, as five parallel jobs. Not on push or PR
 # CI: each smoke or integration test runs a full solve (5-10 min on a 2-vCPU runner under
 # coverage), which adds no bug-finding signal to the unit suite.
 jobs:
   nightly:
     name: Zalmoxis-nightly ${{ matrix.suite }} (ubuntu-latest)
     runs-on: ubuntu-latest
-    # The full solves on the Wolf & Bower tables run in their own job, beside the rest of the suite.
+    # The full solves on the Wolf & Bower tables, the full adiabatic PALEOS solves at 5 M_earth and
+    # the real solves of the invariant and the accept tests (one job per file) run in their own
+    # jobs, beside the rest.
     strategy:
       fail-fast: false
       matrix:
         include:
           - suite: main
-            select: (unit or smoke or integration) and not slow and not wolfbower
+            select: (unit or smoke or integration) and not slow and not wolfbower and not paleos_adiabat and not accept_solves
             args: --dist load --cov-fail-under=90
           - suite: wolfbower
             select: wolfbower
             args: --dist loadfile --cov-fail-under=0
-    # A 90 min ceiling per job leaves wide margin for shared-runner variance.
-    timeout-minutes: 90
+          - suite: paleos_adiabat
+            select: paleos_adiabat and not wolfbower
+            args: --dist loadfile --cov-fail-under=0
+          - suite: accept_solves_invariants
+            select: accept_solves and not accept_solves_long and not wolfbower and not paleos_adiabat
+            args: --dist load --cov-fail-under=0 --durations=0 tests/test_invariants.py
+          - suite: accept_solves_long
+            select: accept_solves_long and not wolfbower and not paleos_adiabat
+            args: --dist load --cov-fail-under=0 --durations=0 tests/test_invariants.py
+            test_timeout: 4800
+          - suite: accept_solves_accepted_on
+            select: accept_solves and not accept_solves_long and not wolfbower and not paleos_adiabat
+            args: --dist load --cov-fail-under=0 --durations=0 tests/test_accepted_on.py
+    # 90 min per job; the longest solves have their own job with 120 min.
+    timeout-minutes: ${{ matrix.suite == 'accept_solves_long' && 120 || 90 }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -89,15 +104,10 @@ jobs:
         env:
           ZALMOXIS_NEED_WOLFBOWER: ${{ matrix.suite == 'wolfbower' && '1' || '' }}
         run: |
-          # --timeout kills any single hung test after 50 min, failing the
-          # run and naming that test in the worker-crash report while the
-          # other workers still finish, instead of the job ceiling cancelling
-          # the whole run with no clue which test wedged. The slowest healthy
-          # test is ~20 min on the 2-vCPU runner under coverage, so 3000 s
-          # (about 2.4x) absorbs runner variance without risking a false kill.
-          # --durations prints the slowest tests so the profile stays visible.
+          # --timeout names a hung test in the worker-crash report before the job limit
+          # cancels the run; a timeout marker on a test takes precedence over it.
           pytest -m "${{ matrix.select }}" -n auto -o "addopts=" \
-            --timeout=3000 --timeout-method=thread --durations=25 \
+            --timeout=${{ matrix.test_timeout || 3000 }} --timeout-method=thread --durations=25 \
             --cov=zalmoxis --cov-report=term-missing --cov-report=xml \
             ${{ matrix.args }}
 

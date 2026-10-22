@@ -43,6 +43,7 @@ from .eos import (
     create_pressure_density_files,
 )
 from .eos.seager import _band_debug_seen
+from .invariants import check_accepted
 from .mixing import (
     _PALEOS_2PHASE_NAMES,
     _PALEOS_UNIFIED_NAMES,
@@ -217,16 +218,21 @@ def _mass_error(mass_enclosed, planet_mass):
     return float(abs(m[-1] - planet_mass) / planet_mass)
 
 
-def _newton_verdict(result, converged, accepted_on):
-    """Set ``converged`` and ``accepted_on`` of a Newton result.
+def _newton_verdict(result, converged, accepted_on, tol):
+    """Set ``converged``, ``accepted_on`` and ``accept_mass_limit`` of a Newton result.
 
+    ``converged`` needs the mass test of the caller and, from the inner solve of the
+    returned profile, a converged pressure and the EOS density (``density_from_eos``).
     ``accepted_on`` is None if not converged, and 'timeout' if the inner solve of the
-    returned profile stopped on the wall clock. A result built without a profile gets
-    the per-profile keys as None or False.
+    returned profile stopped on the wall clock. ``accept_mass_limit`` is ``tol``, the
+    newton_tol of the mass test, or None if not converged. A result built without a
+    profile gets the per-profile keys as None or False.
     """
-    ok = result['converged'] = bool(converged)
+    inner_ok = result.get('converged_pressure') and result.get('density_from_eos')
+    ok = result['converged'] = bool(converged and inner_ok)
     wall = result.setdefault('stopped_on_wall_clock', False)
     result['accepted_on'] = ('timeout' if wall else accepted_on) if ok else None
+    result['accept_mass_limit'] = tol if ok else None
     result.setdefault('mass_error_at_accept', None)
     result.setdefault('density_from_eos', False)
 
@@ -257,6 +263,81 @@ def _tighten_solver_params(params):
     tightened['pressure_tolerance'] = params['pressure_tolerance'] * 0.1
     tightened['wall_timeout'] = params.get('wall_timeout', 300.0) * 2
     return tightened
+
+
+def _eos_params(config_params):
+    """Return (mushy_zone_factors, condensed_rho_min, condensed_rho_scale, binodal_T_scale).
+
+    ``mushy_zone_factors`` is the per-material dict of the caller, or the single global
+    ``mushy_zone_factor`` for every mzf-aware EOS name.
+    """
+    if 'mushy_zone_factors' in config_params:
+        mzf = config_params['mushy_zone_factors']
+    else:
+        mzf = dict.fromkeys(_PALEOS_UNIFIED_NAMES, config_params.get('mushy_zone_factor', 1.0))
+    return (
+        mzf,
+        config_params.get('condensed_rho_min', CONDENSED_RHO_MIN_DEFAULT),
+        config_params.get('condensed_rho_scale', CONDENSED_RHO_SCALE_DEFAULT),
+        config_params.get('binodal_T_scale', BINODAL_T_SCALE_DEFAULT),
+    )
+
+
+def _warn_adiabat(
+    result, config_params, layer_mixtures, temperature_function, temperature_arrays
+):
+    """Warn when an accepted result of an adiabatic temperature mode with a T-dependent EOS
+    has a temperature profile short of the full adiabat (``adiabat_blend`` below 1; 0 when the
+    blend ramp never started)."""
+    mixes = layer_mixtures or parse_all_layer_mixtures(config_params['layer_eos_config'])
+    asked = (
+        config_params.get('temperature_mode') in ('adiabatic', 'adiabatic_from_cmb')
+        and temperature_function is None
+        and not (config_params.get('use_jax', False) and temperature_arrays is not None)
+        and any_component_is_tdep(mixes)
+    )
+    blend = result.get('adiabat_blend', 0.0) if result.get('adiabat_computed') else 0.0
+    if asked and result.get('converged') and blend < 1.0:
+        logger.warning(
+            "outer_solver='%s' accepted a temperature profile at adiabat blend %.2f; "
+            "temperature_mode='%s' asks for the full adiabat.",
+            config_params.get('outer_solver', 'picard'),
+            blend,
+            config_params['temperature_mode'],
+        )
+
+
+def _check_accepted(
+    result,
+    run_params,
+    config_params,
+    material_dictionaries,
+    melting_curves_functions,
+    layer_mixtures,
+    volatile_profile,
+):
+    """Run ``invariants.check_accepted`` on an accepted result, with the batch EOS call of
+    the solve per layer as the density reference and the tolerances of ``run_params``, which
+    the result keeps as ``integration_tolerances`` (rtol, atol)."""
+    if not result.get('converged'):
+        return result
+    defaults = _default_solver_params(config_params['planet_mass'])
+    rtol, atol = (
+        float(run_params.get(k, defaults[k]))
+        for k in ('relative_tolerance', 'absolute_tolerance')
+    )
+    rtol = max(rtol, 100 * np.finfo(float).eps)  # the floor of scipy's RK45, as it integrated
+    mixes = layer_mixtures or parse_all_layer_mixtures(config_params['layer_eos_config'])
+    melt, eos = melting_curves_functions or (None, None), _eos_params(config_params)
+
+    def density_at(P, T, layer):
+        vp = volatile_profile if layer == 'mantle' else None
+        args = (mixes[layer], material_dictionaries, *melt, _interpolation_cache, *eos)
+        return calculate_mixed_density_batch(P, T, *args, volatile_profile=vp)
+
+    result['integration_tolerances'] = (rtol, atol)
+    check_accepted(result, config_params, rtol, atol, density_at, 'ice_layer' in mixes)
+    return result
 
 
 def _report_table_bands(
@@ -444,7 +525,10 @@ def main(
         was not accepted), and ``mass_error_at_accept`` is the relative mass error
         of the returned profile. 'timeout' replaces the other labels when the wall
         clock stopped the solve of the returned profile. A failed table band check
-        sets ``converged`` to False and leaves ``accepted_on`` as it is.
+        sets ``converged`` to False and leaves ``accepted_on`` as it is. A converged
+        result has ``integration_tolerances``, the (rtol, atol) of the solve that
+        returned, with rtol at least the RK45 floor of 100 eps, which the invariant
+        check used; an unconverged result has none.
 
     Raises
     ------
@@ -452,6 +536,12 @@ def main(
         A structure solve gave a non-finite profile (a stop in the integration
         deep inside the planet), with either outer solver. Any trial central
         pressure counts, including a bracket end of the pressure search.
+    StructureInvariantError
+        An accepted result breaks a physical invariant of ``zalmoxis.invariants``:
+        the layer masses, the padding, positive and monotone profiles, gravity, the
+        mass closure within ``accept_mass_limit``, or the EOS density. It is not a
+        RuntimeError, so a caller that keeps its structure after a failed solve does
+        not catch it.
     """
     _interpolation_cache.pop('_jax_fell_back', None)  # set by solve_structure's numpy fallback
     _band_debug_seen.clear()
@@ -509,18 +599,11 @@ def main(
             initial_density=initial_density,
             initial_radii=initial_radii,
         )
-        adiabat_asked = (
-            config_params.get('temperature_mode') in ('adiabatic', 'adiabatic_from_cmb')
-            and temperature_function is None
-            and not (config_params.get('use_jax', False) and temperature_arrays is not None)
+        result = _report_table_bands(result, *bands)
+        _warn_adiabat(
+            result, config_params, layer_mixtures, temperature_function, temperature_arrays
         )
-        if adiabat_asked and not result.get('adiabat_computed'):
-            logger.warning(
-                "outer_solver='newton' kept the linear first-guess temperature profile; "
-                "the adiabat of temperature_mode='%s' was not computed.",
-                config_params['temperature_mode'],
-            )
-        return _report_table_bands(result, *bands)
+        return _check_accepted(result, config_params, *bands, volatile_profile)
 
     result = _solve(
         config_params,
@@ -541,6 +624,7 @@ def main(
     # no better mass, and the next resolve of the caller corrects the residual.
     _RETRY_SKIP_MASS_ERR = 0.07
     _first_mass_err = result.get('mass_error_at_accept')
+    run_params = config_params  # the parameters of the solve that returns
     _retry_skipped = (
         not result['converged']
         and result.get('converged_density', False)
@@ -560,6 +644,7 @@ def main(
         result['accepted_on'] = (
             'timeout' if result.get('stopped_on_wall_clock') else 'retry_skip'
         )
+        result['accept_mass_limit'] = _RETRY_SKIP_MASS_ERR
 
     if not result['converged']:
         # Build tightened params for retry
@@ -596,6 +681,7 @@ def main(
                 retry_density = result['density']
                 retry_radii = result['radii']
 
+        run_params = retry_params
         result = _solve(
             retry_params,
             material_dictionaries,
@@ -616,7 +702,11 @@ def main(
                 'Returning best result with converged=False.'
             )
 
-    return _report_table_bands(result, *bands)
+    result = _report_table_bands(result, *bands)
+    _warn_adiabat(
+        result, config_params, layer_mixtures, temperature_function, temperature_arrays
+    )
+    return _check_accepted(result, run_params, *bands, volatile_profile)
 
 
 # Newton outer-loop defaults: 3-6 Newton iterations are typically
@@ -650,7 +740,7 @@ def _brentq_fallback_outer(
     R_max,
     tol,
     start_time,
-    last_result,
+    best,
     n_newton_iter=None,
 ):
     """Brentq fall-back for the Newton outer mass-radius loop.
@@ -683,7 +773,7 @@ def _brentq_fallback_outer(
     M_target : float
         Target mass in kg.
     eval_M_at_R : callable
-        ``(R) -> (M, last_result)`` from ``_solve_newton_outer``'s
+        ``(R) -> (M, result)`` from ``_solve_newton_outer``'s
         ``_M_at_R`` closure. The full inner-Picard solve.
     history : list of (R, M, rel)
         Newton trajectory so far; reused for bracket if straddling.
@@ -694,9 +784,10 @@ def _brentq_fallback_outer(
     start_time : float
         ``time.time()`` from when ``_solve_newton_outer`` started; used
         to set ``total_time`` on return.
-    last_result : dict
-        The most recent inner-Picard result dict (from a previous
-        ``_M_at_R`` call); used as the seed for the returned dict.
+    best : dict
+        ``{'rel': smallest relative mass error over the evaluations, 'result': the
+        inner-Picard result dict of that evaluation}``, updated by ``_M_at_R`` on every
+        evaluation, also those of this function.
 
     Returns
     -------
@@ -705,12 +796,27 @@ def _brentq_fallback_outer(
         bookkeeping keys ``newton_n_iter``, ``newton_history``, and
         ``newton_used_brentq=True``. ``accepted_on`` is 'newton_tol' at the
         brentq root, 'brentq_best' when the bracket search or brentq stopped
-        early with the best history entry within ``tol`` (the profile is then
-        that of ``last_result``), 'timeout' when the wall clock stopped the
+        early with the best evaluation within ``tol`` (the profile is then
+        that of ``best``), 'timeout' when the wall clock stopped the
         inner solve of the returned profile, and None when not converged.
         ``mass_error_at_accept`` is the relative mass error of the returned
-        profile.
+        profile. Every label needs a converged pressure and the EOS density in the
+        inner solve of the returned profile.
     """
+
+    def _best_seen(converged, accepted_on, pick=best, n_iter=None):
+        result = dict(pick['result'] or {})
+        _newton_verdict(result, converged, accepted_on, tol)
+        result['converged_mass'] = bool(pick['rel'] < tol)
+        result['best_mass_error'] = float(pick['rel'])
+        result['total_time'] = time.time() - start_time
+        result['newton_n_iter'] = n_iter or (
+            int(n_newton_iter) if n_newton_iter is not None else len(history)
+        )
+        result['newton_history'] = history
+        result['newton_used_brentq'] = True
+        return result
+
     # Step 1: try to reuse Newton history.
     R_lo, R_hi = None, None
     if len(history) >= 2:
@@ -752,17 +858,7 @@ def _brentq_fallback_outer(
         f0 = M_at_current - M_target
         history.append((R_current, M_at_current, abs(f0) / M_target))
         if abs(f0) / M_target < tol:
-            # the profile is still last_result, not the one at R_current
-            result = _attach_newton_bookkeeping(
-                last_result,
-                history,
-                start_time,
-                used_brentq=True,
-                tol=tol,
-                n_newton_iter=n_newton_iter,
-            )
-            _newton_verdict(result, True, 'brentq_best')
-            return result
+            return _best_seen(best['rel'] < tol, 'brentq_best')
         if f0 > 0:  # pragma: no cover - bracket sweep direction; defensive
             # M too large -> shrink R.
             R_test = R_current * 0.5
@@ -790,52 +886,26 @@ def _brentq_fallback_outer(
                     break
                 R_test *= 1.3
 
-    if R_lo is None or R_hi is None:  # pragma: no cover - exhausted physical bounds; defensive
-        best_idx = int(np.argmin([h[2] for h in history])) if history else 0
-        best_R, best_M, best_rel = history[best_idx]
+    if R_lo is None or R_hi is None:
         logger.warning(
-            'Brentq: no sign-flipping bracket in [%.2e, %.2e]; returning '
-            'best-seen R=%.4e M=%.4e rel=%.3e (converged=False).',
+            'Brentq: no sign-flipping bracket in [%.2e, %.2e]; returning the best '
+            'evaluation, rel=%.3e (converged=False).',
             R_min,
             R_max,
-            best_R,
-            best_M,
-            best_rel,
+            best['rel'],
         )
-        result = dict(last_result) if last_result else {}
-        _newton_verdict(result, False, None)
-        result['converged_mass'] = bool(best_rel < tol)
-        result['best_mass_error'] = float(best_rel)
-        result['total_time'] = time.time() - start_time
-        result['newton_n_iter'] = (
-            int(n_newton_iter) if n_newton_iter is not None else len(history)
-        )
-        result['newton_history'] = history
-        result['newton_used_brentq'] = True
-        return result
+        return _best_seen(False, None)
 
     # Step 3: brentq.
     # Guard against degenerate bracket (R_lo == R_hi or near-equal) which
     # would make brentq raise ValueError. This can happen if Newton's
     # trust region clamped two consecutive iterations to the same R.
-    if R_hi - R_lo < 1.0:  # pragma: no cover - degenerate bracket; defensive
+    if R_hi - R_lo < 1.0:
         logger.warning(
-            'Brentq: bracket width %.3e m too narrow; returning best-seen (converged=False).',
+            'Brentq: bracket width %.3e m too narrow; returning the best evaluation.',
             R_hi - R_lo,
         )
-        best_idx = int(np.argmin([h[2] for h in history])) if history else 0
-        best_R, best_M, best_rel = history[best_idx]
-        result = dict(last_result) if last_result else {}
-        _newton_verdict(result, best_rel < tol, 'brentq_best')
-        result['converged_mass'] = bool(best_rel < tol)
-        result['best_mass_error'] = float(best_rel)
-        result['total_time'] = time.time() - start_time
-        result['newton_n_iter'] = (
-            int(n_newton_iter) if n_newton_iter is not None else len(history)
-        )
-        result['newton_history'] = history
-        result['newton_used_brentq'] = True
-        return result
+        return _best_seen(best['rel'] < tol, 'brentq_best')
 
     # Estimate |dM/dR| from bracket endpoints to set xtol such that
     # the returned R yields M within `tol` of M_target. Lookup is by
@@ -878,31 +948,14 @@ def _brentq_fallback_outer(
         R_root = brentq(_f, R_lo, R_hi, xtol=xtol_target, rtol=tol)
     except StructureSolveError:
         raise
-    except (
-        ValueError,
-        RuntimeError,
-    ) as exc:  # pragma: no cover - stale-cache sign mismatch; defensive
+    except (ValueError, RuntimeError) as exc:
         logger.warning(
-            'Brentq raised %s: %s. Returning best-seen (converged=False).',
-            type(exc).__name__,
-            exc,
+            'Brentq raised %s: %s. Returning the best evaluation.', type(exc).__name__, exc
         )
-        best_idx = int(np.argmin([h[2] for h in history])) if history else 0
-        best_R, best_M, best_rel = history[best_idx]
-        result = dict(last_result) if last_result else {}
-        _newton_verdict(result, best_rel < tol, 'brentq_best')
-        result['converged_mass'] = bool(best_rel < tol)
-        result['best_mass_error'] = float(best_rel)
-        result['total_time'] = time.time() - start_time
-        result['newton_n_iter'] = (
-            int(n_newton_iter) if n_newton_iter is not None else len(history)
-        )
-        result['newton_history'] = history
-        result['newton_used_brentq'] = True
-        return result
+        return _best_seen(best['rel'] < tol, 'brentq_best')
 
     # Final eval at the converged root for the returned profiles.
-    M_root, last_result = eval_M_at_R(R_root)
+    M_root, root_result = eval_M_at_R(R_root)
     rel = abs(M_root - M_target) / M_target
     history.append((float(R_root), float(M_root), rel))
     logger.info(
@@ -911,48 +964,26 @@ def _brentq_fallback_outer(
         M_root,
         rel,
     )
-    result = dict(last_result) if last_result else {}
-    _newton_verdict(result, rel < tol, 'newton_tol')
-    result['converged_mass'] = bool(rel < tol)
-    result['best_mass_error'] = float(rel)
-    result['total_time'] = time.time() - start_time
-    result['newton_n_iter'] = len(history)
-    result['newton_history'] = history
-    result['newton_used_brentq'] = True
-    return result
+    pick = {'rel': rel, 'result': root_result}
+    return _best_seen(rel < tol, 'newton_tol', pick, len(history))
 
 
-def _attach_newton_bookkeeping(
-    last_result, history, start_time, *, used_brentq=False, tol=None, n_newton_iter=None
-):
-    """Decorate an inner-Picard result dict with Newton-outer metadata.
+def _attach_newton_bookkeeping(last_result, history, start_time, tol, n_newton_iter):
+    """The result of the Newton converge path: ``last_result`` with the Newton bookkeeping.
 
-    The mass test compares the best history entry's relative mass error
-    against ``tol`` if supplied; without ``tol`` it passes (legacy
-    behaviour for callers that pre-checked). ``converged`` also needs the
-    pressure flag and ``density_from_eos`` of the inner solve of the returned
-    profile.
-    New callers should always pass ``tol`` so a misroute through this
-    helper does not silently flag a non-converged result as converged.
-
-    ``n_newton_iter`` is the number of completed outer Newton steps
-    (NOT the length of ``history``: history also stores +/-dR side
-    evaluations and any brentq probes). Defaults to ``len(history)``
-    only for legacy callers.
+    The mass test compares the best Newton step of ``history`` with ``tol``;
+    ``n_newton_iter`` is the number of completed outer Newton steps.
     """
-    result = dict(last_result) if last_result else {}
-    if history:
-        # the best entry, not the last: +/-dR side evaluations follow the main step
-        best_rel = min(h[2] for h in history)
-        mass_ok = True if tol is None else bool(best_rel < tol)
-        inner_ok = result.get('converged_pressure') and result.get('density_from_eos')
-        _newton_verdict(result, mass_ok and inner_ok, 'newton_tol')
-        result['converged_mass'] = mass_ok
-        result['best_mass_error'] = float(best_rel)
+    result = dict(last_result)
+    best_rel = min(h[2] for h in history)
+    mass_ok = bool(best_rel < tol)
+    _newton_verdict(result, mass_ok, 'newton_tol', tol)
+    result['converged_mass'] = mass_ok
+    result['best_mass_error'] = float(best_rel)
     result['total_time'] = time.time() - start_time
-    result['newton_n_iter'] = int(n_newton_iter) if n_newton_iter is not None else len(history)
+    result['newton_n_iter'] = int(n_newton_iter)
     result['newton_history'] = history
-    result['newton_used_brentq'] = bool(used_brentq)
+    result['newton_used_brentq'] = False
     return result
 
 
@@ -1096,12 +1127,16 @@ def _solve_newton_outer(
         )
         mass_arr = np.asarray(sub_result.get('mass_enclosed', [np.nan]))
         M_val = float(mass_arr[-1]) if mass_arr.size > 0 else float('nan')
+        rel = abs(M_val - M_target) / M_target
+        if rel < best['rel']:  # a NaN never replaces the best evaluation
+            best.update(rel=rel, result=sub_result)
         return M_val, sub_result
 
     # ----- Newton iteration -----
     history = []  # list of (R, M, |f|/M_target) per outer iter
     side_evals = []  # +/-dR evaluations, only for brentq bracket reuse
     last_result = None
+    best = {'rel': np.inf, 'result': None}  # the evaluation with the smallest mass error
 
     start_time = time.time()
     logger.info(
@@ -1131,7 +1166,7 @@ def _solve_newton_outer(
                 R_max=R_max,
                 tol=tol,
                 start_time=start_time,
-                last_result=last_result,
+                best=best,
                 n_newton_iter=k,
             )
         f_k = M_k - M_target
@@ -1152,14 +1187,7 @@ def _solve_newton_outer(
                 rel,
                 tol,
             )
-            return _attach_newton_bookkeeping(
-                last_result,
-                history,
-                start_time,
-                used_brentq=False,
-                tol=tol,
-                n_newton_iter=k + 1,
-            )
+            return _attach_newton_bookkeeping(last_result, history, start_time, tol, k + 1)
 
         # Central-difference dM/dR.
         dR = dR_rel * R
@@ -1192,7 +1220,7 @@ def _solve_newton_outer(
                 R_max=R_max,
                 tol=tol,
                 start_time=start_time,
-                last_result=last_result,
+                best=best,
                 n_newton_iter=k,
             )
         dMdR = (M_plus - M_minus) / (2.0 * dR)
@@ -1214,7 +1242,7 @@ def _solve_newton_outer(
                 R_max=R_max,
                 tol=tol,
                 start_time=start_time,
-                last_result=last_result,
+                best=best,
                 n_newton_iter=k + 1,
             )
 
@@ -1239,7 +1267,7 @@ def _solve_newton_outer(
                 R_max=R_max,
                 tol=tol,
                 start_time=start_time,
-                last_result=last_result,
+                best=best,
                 n_newton_iter=k + 1,
             )
 
@@ -1286,7 +1314,7 @@ def _solve_newton_outer(
         R_max=R_max,
         tol=tol,
         start_time=start_time,
-        last_result=last_result,
+        best=best,
         n_newton_iter=max_iter,
     )
 
@@ -1338,19 +1366,26 @@ def _solve(
         'mass_only', 'max_iter' (the outer loop stopped at ``max_iterations_outer``),
         'timeout' (the wall clock stopped the outer or the inner loop) or 'oscillation',
         and None when the solve was not accepted. ``mass_error_at_accept`` is the
-        relative mass error of the returned profile. ``stopped_on_wall_clock`` is True
+        relative mass error of the returned profile. ``best_mass_error`` is the mass error of
+        the best pass, the smallest among the passes with a pressure solve on the newest
+        adiabat blend step (None before such a pass); when no accept test of the stop would take
+        the newest best pass, the best pass of the earlier steps takes its place if it has a
+        smaller mass error and the stop returns it (a restore or a wall-clock stop, an
+        iteration cap only below 3 %), with its blend, a warning and its own mass error in
+        ``best_mass_error``. ``stopped_on_wall_clock`` is True
         when the wall clock stopped the solve, also when it was not accepted.
         ``density`` is rho_EOS(P, T) at the returned nodes and ``density_from_eos`` is
         True, unless the solve was not accepted and the returned pass has no pressure
         solve: the wall clock stopped the solve before its first pass, or before the
-        first pressure solve of the pass at ``max_iterations_outer`` or of a pass after
-        passes that all have a mass error above 1 (such as the first pass), since a pass
-        without a pressure solve has a mass error of 1. The result then has the radius of
-        that pass, a pressure and density that are zero except at most at the centre node,
-        and an enclosed mass of zero. An outer wall-clock stop after at least one pass,
-        accepted or not, and an accepted solve cut in that way, return the best pass with
-        its gravity, ``cmb_mass``, ``core_mantle_mass`` and its density and pressure
-        convergence flags.
+        first pressure solve of the first pass or of the pass at ``max_iterations_outer``;
+        a pass without a pressure solve is never the best pass. The result then has the
+        radius of that pass, a pressure and density that are zero except at most at the
+        centre node, and an enclosed mass of zero. An outer wall-clock stop after at least
+        one pass, accepted or not, a ``max_iter`` accept and an accepted solve cut in that
+        way return the best pass, with its gravity and its density and pressure convergence
+        flags. ``cmb_mass`` and ``core_mantle_mass`` are the layer boundaries of every pass,
+        ``core_mass_fraction`` and ``core_mass_fraction + mantle_mass_fraction`` times
+        ``planet_mass``.
     """
     # Initialize convergence flags
     converged = False
@@ -1397,17 +1432,9 @@ def _solve(
     # Optional initial radius guess from a previous failed attempt
     initial_radius_guess = config_params.get('_initial_radius_guess', None)
 
-    # Build the per-EOS mushy_zone_factors dict. Use the per-material dict
-    # when the caller provides one; otherwise assign the single global
-    # 'mushy_zone_factor' float to every mzf-aware EOS name.
-    if 'mushy_zone_factors' in config_params:
-        mushy_zone_factors = config_params['mushy_zone_factors']
-    else:
-        _global_mzf = config_params.get('mushy_zone_factor', 1.0)
-        mushy_zone_factors = {name: _global_mzf for name in _PALEOS_UNIFIED_NAMES}
-    condensed_rho_min = config_params.get('condensed_rho_min', CONDENSED_RHO_MIN_DEFAULT)
-    condensed_rho_scale = config_params.get('condensed_rho_scale', CONDENSED_RHO_SCALE_DEFAULT)
-    binodal_T_scale = config_params.get('binodal_T_scale', BINODAL_T_SCALE_DEFAULT)
+    mushy_zone_factors, condensed_rho_min, condensed_rho_scale, binodal_T_scale = _eos_params(
+        config_params
+    )
     # JAX fast path: when True, solve_structure dispatches to the diffrax-
     # based implementation (jax_eos/wrapper.py) inside the Picard loop.
     # Supported configs: 2-layer single-component.
@@ -1481,8 +1508,9 @@ def _solve(
         radius_guess = (
             1000 * (7030 - 1840 * core_mass_fraction) * (planet_mass / earth_mass) ** 0.282
         )
-    cmb_mass = 0
-    core_mantle_mass = 0
+    # The layer boundaries of every pass and of the returned profile
+    cmb_mass = core_mass_fraction * planet_mass
+    core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * planet_mass
 
     logger.info(
         f'Starting structure model for a {planet_mass / earth_mass} Earth masses planet '
@@ -1558,8 +1586,11 @@ def _solve(
     # Outer-loop oscillation tracking (local to this call, not function-level).
     best_mass_error = float('inf')
     best_profiles = None
+    best_blend = None  # the adiabat blend of the best pass
+    earlier_best = None  # (mass error, profiles) of the best pass of the earlier blend steps
     oscillation_count = 0
     stop_label = None  # 'timeout' (wall clock) or 'oscillation' once a loop stops early
+    mass_limit = tolerance_outer  # the mass test behind converged_mass
     restore_best = False  # an outer stop returns the best pass
     rho_eos = None  # rho_EOS(P, T) at the nodes of the current pressure profile
 
@@ -1592,6 +1623,7 @@ def _solve(
             stop_label = 'timeout'
             if best_profiles is not None:
                 converged_mass = best_mass_error < 3 * tolerance_outer
+                mass_limit = 3 * tolerance_outer
                 restore_best = True
             break
 
@@ -1778,9 +1810,6 @@ def _solve(
                 cmb_temperature=cmb_temperature,
             )
             temperatures = np.asarray(_output_tf(radii), dtype=float)
-
-        cmb_mass = core_mass_fraction * planet_mass
-        core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * planet_mass
 
         pressure[0] = earth_center_pressure
 
@@ -2301,8 +2330,6 @@ def _solve(
             scale = (planet_mass / calculated_mass) ** (1.0 / 3.0)
             scale = max(0.5, min(scale, 2.0))
             radius_guess *= scale
-            cmb_mass = core_mass_fraction * calculated_mass
-            core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * calculated_mass
 
         relative_diff_outer_mass = np.abs((calculated_mass - planet_mass) / planet_mass)
 
@@ -2322,10 +2349,15 @@ def _solve(
                 _picard_alpha = min(0.7, _picard_alpha * 1.1)
         _prev_mass_error = mass_error_signed
 
-        # Track best solution for oscillation bailout (local variables,
-        # reset per _solve() call to avoid stale state between calls)
-        if relative_diff_outer_mass < best_mass_error:
-            best_mass_error = relative_diff_outer_mass
+        # The best pass: the smallest error on the newest blend step. A pass without a
+        # pressure solve never counts; the older best stays until a new-step pass has one.
+        if rho_eos is not None and (
+            relative_diff_outer_mass < best_mass_error or _adiabat_blend != best_blend
+        ):
+            if _adiabat_blend != best_blend and best_profiles is not None:
+                if earlier_best is None or best_mass_error < earlier_best[0]:
+                    earlier_best = (best_mass_error, best_profiles)
+            best_mass_error, best_blend = relative_diff_outer_mass, _adiabat_blend
             best_profiles = {
                 'radii': radii.copy(),
                 'density': density.copy(),
@@ -2334,10 +2366,10 @@ def _solve(
                 'mass_enclosed': np.asarray(mass_enclosed).copy(),
                 'temperatures': temperatures.copy() if temperatures is not None else None,
                 'rho_eos': rho_eos,
-                'cmb_mass': cmb_mass,
-                'core_mantle_mass': core_mantle_mass,
                 'converged_density': converged_density,
                 'converged_pressure': converged_pressure,
+                'adiabat_computed': _adiabat_computed,
+                'adiabat_blend': _adiabat_blend,
             }
             oscillation_count = 0
         elif (
@@ -2358,6 +2390,7 @@ def _solve(
             )
             restore_best = True
             converged_mass = True
+            mass_limit = 3 * tolerance_outer
             stop_label = 'oscillation'
             break
 
@@ -2411,10 +2444,64 @@ def _solve(
                 max_iterations_outer,
             )
 
-    accepted_on = None
+    def _best_pass():
+        # fresh copies: the saved profiles can be read-only views of JAX buffers
+        T = best_profiles['temperatures']
+        return (
+            *(np.array(best_profiles[k]) for k in ('radii', 'density', 'gravity', 'pressure')),
+            np.array(best_profiles['mass_enclosed']),
+            *(best_profiles[k] for k in ('rho_eos', 'converged_density', 'converged_pressure')),
+            best_profiles['adiabat_computed'],
+            best_profiles['adiabat_blend'],
+            temperatures if T is None else np.array(T),
+        )
+
+    # When no accept test below takes the newest best pass, a better earlier pass replaces it if
+    # the stop returns it: a restore or a clock stop does, an iteration cap only by the 3 % test.
+    newest_ok = best_mass_error < _TIMEOUT_ACCEPT_MASS_ERR or (
+        converged_mass
+        and best_profiles is not None
+        and (
+            best_mass_error < tolerance_outer
+            or (best_profiles['converged_density'] and best_profiles['converged_pressure'])
+        )
+    )
+    if (
+        earlier_best is not None
+        and not newest_ok
+        and earlier_best[0] < best_mass_error
+        and (
+            restore_best
+            or stop_label == 'timeout'
+            or earlier_best[0] < _TIMEOUT_ACCEPT_MASS_ERR
+        )
+    ):
+        logger.warning(
+            'No pass of adiabat blend %.2f passes an accept test of this stop (mass error '
+            '%.4f%%); returning the best pass of blend %.2f (mass error %.4f%%).',
+            best_blend,
+            best_mass_error * 100,
+            earlier_best[1]['adiabat_blend'],
+            earlier_best[0] * 100,
+        )
+        best_mass_error, best_profiles = earlier_best
+        if stop_label == 'timeout':
+            converged_mass = best_mass_error < 3 * tolerance_outer
+            restore_best = True
+
+    # An outer stop returns the best pass, so the accept tests read that pass.
+    restored = restore_best and best_profiles is not None
+    if restored:
+        (
+            radii, density, gravity, pressure, mass_enclosed, rho_eos,
+            converged_density, converged_pressure, _adiabat_computed, _adiabat_blend,
+            temperatures,
+        ) = _best_pass()  # fmt: skip
+
+    accepted_on = accept_mass_limit = None
     if converged_mass and converged_density and converged_pressure:
         converged = True
-        accepted_on = stop_label or 'strict'
+        accepted_on, accept_mass_limit = stop_label or 'strict', mass_limit
     elif converged_mass and best_mass_error < tolerance_outer:
         # Density/pressure Picard can stall on EOS table noise (e.g. PALEOS at high
         # T) while the integrated mass and radius are within tolerance.
@@ -2426,13 +2513,14 @@ def _solve(
             converged_pressure,
         )
         converged = True
-        accepted_on = stop_label or 'mass_only'
+        accepted_on, accept_mass_limit = stop_label or 'mass_only', tolerance_outer
     elif best_mass_error < _TIMEOUT_ACCEPT_MASS_ERR and best_profiles is not None:
         # Wall clock or iteration cap within the loose-accept ceiling: the radius is
         # within 1 % and the caller's outer mass-radius loop corrects the residual.
         converged = True
         converged_mass = True
-        accepted_on = stop_label or 'max_iter'
+        restore_best = True  # return the pass that the test read
+        accepted_on, accept_mass_limit = stop_label or 'max_iter', _TIMEOUT_ACCEPT_MASS_ERR
         logger.warning(
             'Accepting %s solution: mass error %.4f%% (threshold %.1f%%), '
             'density_converged=%s, pressure_converged=%s.',
@@ -2443,26 +2531,19 @@ def _solve(
             converged_pressure,
         )
 
-    # Return the best pass after an outer stop, or after an accepted cut before the first pressure
-    # solve of the last pass; an unaccepted cut returns the cut pass, so a retry starts from its
-    # radius. Fresh copies: the saved profiles can be read-only views of JAX buffers.
-    if best_profiles is not None and (restore_best or (rho_eos is None and converged)):
-        radii, density, gravity, pressure, mass_enclosed = (
-            np.array(best_profiles[k])
-            for k in ('radii', 'density', 'gravity', 'pressure', 'mass_enclosed')
-        )
-        rho_eos, cmb_mass, core_mantle_mass, converged_density, converged_pressure = (
-            best_profiles[k]
-            for k in (
-                'rho_eos',
-                'cmb_mass',
-                'core_mantle_mass',
-                'converged_density',
-                'converged_pressure',
-            )
-        )
-        if best_profiles['temperatures'] is not None:
-            temperatures = np.array(best_profiles['temperatures'])
+    # A max_iter accept, or an accepted cut before the first pressure solve of the last pass,
+    # also returns the best pass; an unaccepted cut returns the cut pass, so a retry starts from
+    # its radius.
+    if (
+        not restored
+        and best_profiles is not None
+        and (restore_best or (rho_eos is None and converged))
+    ):
+        (
+            radii, density, gravity, pressure, mass_enclosed, rho_eos,
+            converged_density, converged_pressure, _adiabat_computed, _adiabat_blend,
+            temperatures,
+        ) = _best_pass()  # fmt: skip
 
     # Return rho_EOS(P, T) at the returned nodes, not the damped Picard iterate.
     density_from_eos = rho_eos is not None
@@ -2494,9 +2575,11 @@ def _solve(
         'accepted_on': accepted_on,
         'mass_error_at_accept': _mass_error(mass_enclosed, planet_mass),
         'stopped_on_wall_clock': stop_label == 'timeout',
+        'accept_mass_limit': accept_mass_limit,
         'density_from_eos': density_from_eos,
         'p_center': pressure[0] if len(pressure) > 0 else None,
         'adiabat_computed': _adiabat_computed,
+        'adiabat_blend': _adiabat_blend,
     }
     return model_results
 

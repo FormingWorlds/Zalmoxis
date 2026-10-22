@@ -394,8 +394,8 @@ def test_main_checks_the_profile_with_the_mixtures_it_got(mats, monkeypatch, cap
         out = solver.main(cfg, md, _curves(500.0, 600.0), '/tmp', layer_mixtures=mixtures)
     tables = {melt, md['X:MgSiO3']['solid_mantle']['eos_file']}
     assert set(out['table_band_excess']) == (tables if outer == 'newton' else tables | {grad})
-    linear = [r for r in caplog.records if 'kept the linear' in r.getMessage()]
-    assert len(linear) == (outer == 'newton')
+    blend = [r for r in caplog.records if 'accepted a temperature profile' in r.getMessage()]
+    assert not blend  # the band check took the accept back, so no adiabat warning
     assert out['converged'] is False and out['converged_bands'] is False
     assert out['converged_mass'] is True and out['converged_density'] is True
     assert out['accepted_on'] == 'strict'
@@ -523,9 +523,13 @@ class TestWolfBowerSolves:
     def test_beyond_the_limit_returns_not_converged(self, wb_solves):
         """At 4500 K the excess passes 200 K and the solve returns converged=False."""
         res, msgs = wb_solves['4500']
-        n, excess = res['table_band_excess'][WB['melted_mantle']['eos_file']]
-        assert n > 0
-        assert excess == pytest.approx(4500.0 - 3815.3, abs=1.0)  # the 1-bar node, beyond 200 K
+        melt = WB['melted_mantle']['eos_file']
+        n, excess = res['table_band_excess'][melt]
+        P, T = res['pressure'][-1], res['temperature'][-1]
+        surface = seager.band_excess(solver._interpolation_cache[melt], P, T)
+        assert surface == pytest.approx(4500.0 - 3815.3, abs=1.0)  # the 1-bar node
+        # an inner node of the hot adiabat can lie further outside than the 1-bar node
+        assert n > 0 and excess >= surface > band_limit({})
         assert res['converged'] is False and res['converged_bands'] is False
         assert res['converged_pressure'] and res['converged_density']  # numerically converged
 

@@ -38,6 +38,13 @@ ICE = {  # 3 layers: cmb_mass and core_mantle_mass differ
 WALL = 1e6  # wall_timeout [s]: the test clock jumps by 1e9 s, a real solve never reaches it
 
 
+@pytest.fixture
+def no_check(monkeypatch):
+    """main skips the invariant check: the test builds a result or a profile the solver cannot
+    make (a canned result, or masses scaled by a spy)."""
+    monkeypatch.setattr(zs, 'check_accepted', lambda *args, **kwargs: None)
+
+
 def _inner(R, *, pressure=True, density=True, eos=True, accepted_on='max_iter', wall=False):
     """Inner Picard result at radius R on the linear M(R)."""
     M = A * R + B
@@ -71,17 +78,14 @@ def _newton(cp_over=(), **flags):
         return zs._solve_newton_outer(cp, {}, None, '/tmp')
 
 
-def _brentq(history, eval_M, last_result):
+def _brentq(history, eval_M, best_R, **flags):
+    """``best_R``: radius of the evaluation with the smallest mass error, or None for none;
+    ``flags`` go to the inner result of that evaluation."""
+    best = {'rel': np.inf, 'result': None}
+    if best_R is not None:
+        best = {'rel': abs(A * best_R + B - M_T) / M_T, 'result': _inner(best_R, **flags)}
     return zs._brentq_fallback_outer(
-        6.0e6,
-        M_T,
-        eval_M,
-        history,
-        R_min=2e6,
-        R_max=3e7,
-        tol=1e-6,
-        start_time=0.0,
-        last_result=last_result,
+        6.0e6, M_T, eval_M, history, R_min=2e6, R_max=3e7, tol=1e-6, start_time=0.0, best=best
     )
 
 
@@ -94,14 +98,17 @@ class TestNewton:
     def test_newton_tol(self):
         r = _newton()
         assert r['converged'] is True and r['accepted_on'] == 'newton_tol'
+        assert r['accept_mass_limit'] == 1e-6  # newton_tol
         assert r['mass_error_at_accept'] == pytest.approx(r['newton_history'][-1][2], abs=1e-15)
 
     def test_bracket_sweep_hit_is_brentq_best(self):
         """One Newton step lands on the root; the bracket sweep meets it there, and the profile
-        is that of the step before."""
-        r = _newton({'_initial_radius_guess': 6.9e6, 'newton_max_iter': 1}, eos=False)
+        is the one at the root."""
+        r = _newton({'_initial_radius_guess': 6.9e6, 'newton_max_iter': 1})
         assert r['converged'] is True and r['accepted_on'] == 'brentq_best'
-        assert r['mass_error_at_accept'] == pytest.approx(0.1) and r['best_mass_error'] < 1e-6
+        assert r['radii'][-1] == pytest.approx(7.0e6, rel=1e-9)
+        assert r['mass_error_at_accept'] == pytest.approx(r['best_mass_error'], abs=1e-15)
+        assert r['best_mass_error'] < 1e-6
 
     @pytest.mark.parametrize('false', [False, np.False_])
     @pytest.mark.parametrize('flag', ['pressure', 'eos'])
@@ -119,56 +126,65 @@ class TestNewton:
         assert type(r['converged']) is bool and r['accepted_on'] == 'newton_tol'
 
     def test_inner_wall_clock_stop_is_timeout(self):
-        assert _newton(wall=True)['accepted_on'] == 'timeout'
+        r = _newton(wall=True)
+        assert r['accepted_on'] == 'timeout' and r['accept_mass_limit'] == 1e-6
         assert _newton(wall=True, eos=False)['accepted_on'] is None
 
 
 @pytest.mark.unit
 class TestBrentq:
     def test_root_is_newton_tol(self):
-        r = _brentq(_hist(6.0e6, 8.0e6), lambda R: (A * R + B, _inner(R)), _inner(8.0e6))
+        r = _brentq(_hist(6.0e6, 8.0e6), lambda R: (A * R + B, _inner(R)), 6.0e6)
         assert r['newton_used_brentq'] and r['converged'] is True
-        assert r['accepted_on'] == 'newton_tol'
+        assert r['accepted_on'] == 'newton_tol' and r['accept_mass_limit'] == 1e-6
 
     def test_root_does_not_read_inner_flags(self):
         def eval_M(R):
             return A * R + B, _inner(R, density=False)
 
-        r = _brentq(_hist(6.0e6, 8.0e6), eval_M, _inner(8.0e6))
+        r = _brentq(_hist(6.0e6, 8.0e6), eval_M, 6.0e6)
         assert r['converged'] is True and r['accepted_on'] == 'newton_tol'
         assert r['converged_density'] is False
 
     def test_narrow_bracket_is_brentq_best(self):
-        r = _brentq(_hist(7.0e6 - 0.2, 7.0e6 + 0.2), None, _inner(6.5e6))
+        r = _brentq(_hist(7.0e6 - 0.2, 7.0e6 + 0.2), None, 7.0e6 - 0.2)
         assert r['converged'] is True and r['accepted_on'] == 'brentq_best'
-        # the returned profile is the last inner solve, far from the best R
-        assert r['mass_error_at_accept'] == pytest.approx(0.5)
+        assert r['accept_mass_limit'] == 1e-6
+        assert r['radii'][-1] == 7.0e6 - 0.2  # the profile of the best entry
+        assert r['mass_error_at_accept'] == pytest.approx(r['best_mass_error'], abs=1e-15)
         assert r['best_mass_error'] < 1e-6
 
     def test_brentq_error_is_brentq_best(self):
         def boom(R):
             raise ValueError('stale bracket')
 
-        r = _brentq(_hist(6.0e6, 7.0e6 + 1e-3), boom, _inner(6.0e6))
+        r = _brentq(_hist(6.0e6, 7.0e6 + 1e-3), boom, 7.0e6 + 1e-3)
         assert r['converged'] is True and r['accepted_on'] == 'brentq_best'
-        r = _brentq(_hist(6.0e6, 8.0e6), boom, _inner(6.0e6))
+        assert r['radii'][-1] == 7.0e6 + 1e-3
+        assert r['mass_error_at_accept'] == pytest.approx(r['best_mass_error'], abs=1e-15)
+        r = _brentq(_hist(6.0e6, 8.0e6), boom, 6.0e6)
         assert r['converged'] is False and r['accepted_on'] is None
+        assert r['radii'][-1] == 6.0e6
 
     def test_root_on_a_wall_clock_stop_is_timeout(self):
         r = _brentq(_hist(6.0e6, 8.0e6), lambda R: (A * R + B, _inner(R, wall=True)), None)
         assert r['converged'] is True and r['accepted_on'] == 'timeout'
 
     def test_result_without_a_profile_has_the_keys(self):
+        """No evaluation, so no profile: not accepted, with the per-profile keys."""
         r = _brentq(_hist(7.0e6 - 0.2, 7.0e6 + 0.2), None, None)
-        assert r['accepted_on'] == 'brentq_best' and r['mass_error_at_accept'] is None
+        assert r['converged'] is False and r['accepted_on'] is None
+        assert r['mass_error_at_accept'] is None
         assert r['stopped_on_wall_clock'] is False and r['density_from_eos'] is False
 
     def test_no_bracket_is_not_converged(self):
         """No sign change in [R_min, R_max]: not converged, also with a history entry at the
         root."""
         below = lambda R: (0.5 * M_T, _inner(R))  # noqa: E731
-        r = _brentq(_hist(7.0e6), below, _inner(6.0e6))
+        r = _brentq(_hist(7.0e6), below, 7.0e6)
         assert r['converged'] is False and r['accepted_on'] is None and r['converged_mass']
+        assert r['radii'][-1] == 7.0e6 and r['mass_error_at_accept'] < 1e-15
+        assert r['accept_mass_limit'] is None
 
 
 @pytest.mark.unit
@@ -185,6 +201,7 @@ def _first_attempt(pressure, density):
 
 
 @pytest.mark.unit
+@pytest.mark.usefixtures('no_check')
 class TestRetry:
     def _main(self, first, planet_mass=earth_mass):
         cfg = {
@@ -198,12 +215,14 @@ class TestRetry:
     def test_retry_skip(self):
         r, n = self._main(_first_attempt(True, True))
         assert n == 1 and r['converged'] is True and r['accepted_on'] == 'retry_skip'
+        assert r.get('accept_mass_limit') == 0.07
 
     def test_retry_skip_on_a_wall_clock_stop_is_timeout(self):
         first = _first_attempt(True, True)
         first['stopped_on_wall_clock'] = True
         r, n = self._main(first)
         assert n == 1 and r['converged'] is True and r['accepted_on'] == 'timeout'
+        assert r.get('accept_mass_limit') == 0.07  # the retry-skip test it passed
 
     def test_retry_reports_its_own_path(self):
         r, n = self._main(_first_attempt(True, False))
@@ -283,7 +302,7 @@ def _assert_eos_density(r, eos=None, melt=(None, None), mzf=None):
 
 def _picard(integrated=True, **kwargs):
     """Fast Picard solve (1 M_earth, analytic EOS) through ``main``; ``cmb_mass`` and
-    ``core_mantle_mass`` are 0.325 and 0.325 + ``mantle_mass_fraction`` of the returned mass.
+    ``core_mantle_mass`` are 0.325 and 0.325 + ``mantle_mass_fraction`` of the planet mass.
     When ``mass_enclosed`` is the integral of the returned profile (``integrated``), at the
     last node with P > 0 the gravity is G M / r^2 and the trapezoid mass of the returned
     density matches ``mass_enclosed``."""
@@ -293,7 +312,7 @@ def _picard(integrated=True, **kwargs):
     _assert_eos_density(r, kwargs.get('layer_eos_config'))
     mmf = kwargs.get('mantle_mass_fraction', 0)
     for key, f in (('cmb_mass', 0.325), ('core_mantle_mass', 0.325 + mmf)):
-        assert r[key] == pytest.approx(f * m[-1], rel=1e-12), key
+        assert r[key] == pytest.approx(f * earth_mass, rel=1e-12), key
     k = np.flatnonzero(np.asarray(r['pressure']) > 0)[-1] + 1  # padded nodes have P = 0
     m, rad, rho = m[:k], rad[:k], np.asarray(r['density'])[:k]
     if integrated:
@@ -332,21 +351,36 @@ def test_outer_wall_clock_is_timeout(monkeypatch, caplog):
     assert r['stopped_on_wall_clock'] is True
 
 
+@pytest.mark.unit
+@pytest.mark.timeout(60)
+@pytest.mark.usefixtures('no_check')
+def test_outer_wall_clock_above_tolerance_outer_accepts_on_the_loose_limit(monkeypatch):
+    """The same stop, with the mass error above tolerance_outer, accepts on the 3 % limit."""
+    _clock_after_lookup(monkeypatch, outer=1)
+    r = _picard(max_iterations_outer=3, max_iterations_inner=1)
+    assert r['mass_error_at_accept'] > 1e-3  # above tolerance_outer
+    assert r['accepted_on'] == 'timeout' and r['accept_mass_limit'] == 0.03
+
+
 @pytest.mark.smoke
+@pytest.mark.accept_solves
 class TestRealSolve:
     def test_strict(self):
-        r = _picard()  # inner cap 50: the density converges below tolerance_inner
+        r = _picard(tolerance_outer=4e-3)  # inner cap 50: the density converges
         assert r['converged_density'] and r['converged_pressure']
         assert r['accepted_on'] == 'strict' and r['stopped_on_wall_clock'] is False
+        assert r['accept_mass_limit'] == 4e-3
 
     def test_mass_only(self):
-        r = _picard(max_iterations_inner=1)
+        r = _picard(max_iterations_inner=1, tolerance_outer=4e-3)
         assert not r['converged_density'] and r['accepted_on'] == 'mass_only'
+        assert r['accept_mass_limit'] == 4e-3
 
     def test_iteration_cap_is_max_iter(self):  # the last node is padded (P = 0) on macOS
         r = _picard(max_iterations_outer=3, max_iterations_inner=1)
         assert r['converged'] is True and r['accepted_on'] == 'max_iter'
         assert r['mass_error_at_accept'] > 1e-3  # above tolerance_outer
+        assert r['accept_mass_limit'] == 0.03
 
     def test_iteration_cap_of_one_pass_is_max_iter(self):
         """``_solve`` itself: through ``main`` a first attempt that is not accepted would
@@ -357,9 +391,10 @@ class TestRealSolve:
         assert r['converged'] is True and r['accepted_on'] == 'max_iter'
         assert 1e-3 < r['mass_error_at_accept'] < 0.03  # above tolerance_outer
 
-    def test_returned_profile_is_not_the_best(self, monkeypatch):
+    @pytest.mark.usefixtures('no_check')
+    def test_max_iter_returns_the_best_pass(self, monkeypatch):
         """The last outer iteration lands farther from the target mass than the one before;
-        ``mass_error_at_accept`` is that of the returned (last) profile."""
+        max_iter returns the best pass, whose error is ``mass_error_at_accept``."""
         radius, real = _count_outer_iterations(monkeypatch), zs.solve_structure
 
         def solve(*args, **kwargs):
@@ -369,7 +404,8 @@ class TestRealSolve:
         monkeypatch.setattr(zs, 'solve_structure', solve)
         r = _picard(False, max_iterations_outer=3, max_iterations_inner=1)  # mass scaled
         assert r['accepted_on'] == 'max_iter'
-        assert r['mass_error_at_accept'] > 1.5 * r['best_mass_error']
+        assert r['mass_error_at_accept'] == pytest.approx(r['best_mass_error'], rel=1e-12)
+        assert r['radii'][-1] == pytest.approx(radius[1], rel=1e-12)
 
     @pytest.mark.parametrize(
         'inner, count, label',
@@ -379,7 +415,7 @@ class TestRealSolve:
     def test_inner_wall_clock_is_timeout(self, monkeypatch, caplog, inner, count, label):
         """The clock runs out in the inner loop of the last outer iteration, after ``count``
         density lookups; without the clock the same solve is accepted on ``label``."""
-        cfg = _cfg(max_iterations_inner=inner, wall_timeout=WALL)
+        cfg = _cfg(max_iterations_inner=inner, tolerance_outer=1e-3, wall_timeout=WALL)
         radius = _count_outer_iterations(monkeypatch)
         assert _run(cfg)['accepted_on'] == label
         monkeypatch.undo()
@@ -389,6 +425,7 @@ class TestRealSolve:
         assert 'Wall-clock timeout (1000000s)' not in caplog.text
         assert bool(r['converged_density']) == (label == 'strict')
         assert r['converged'] is True and r['accepted_on'] == 'timeout'
+        assert r['accept_mass_limit'] == 1e-3  # tolerance_outer, also where it replaces strict
 
     def test_retry_skip_on_an_inner_wall_clock_cut_is_timeout(self, monkeypatch, caplog):
         """One outer iteration cut by the clock in its inner loop, 5.6 % mass error: ``main``
@@ -403,6 +440,7 @@ class TestRealSolve:
         assert 'Wall-clock timeout in inner loop' in caplog.text
         assert 'Skipping retry' in caplog.text
         assert r['converged'] is True and r['accepted_on'] == 'timeout'
+        assert r.get('accept_mass_limit') == 0.07
 
     def test_wall_clock_without_an_accept(self):
         """The clock runs out before the first profile: not accepted (``main`` would retry)."""
@@ -412,6 +450,7 @@ class TestRealSolve:
         assert not any(np.any(r[k]) for k in ('pressure', 'density', 'mass_enclosed'))
         assert r['mass_error_at_accept'] == pytest.approx(1.0)
 
+    @pytest.mark.usefixtures('no_check')
     @pytest.mark.parametrize('layers', [{}, {**ICE, '_initial_radius_guess': 6.37e6}])
     def test_outer_wall_clock_restores_a_best_pass_that_is_not_the_last(
         self, monkeypatch, layers
@@ -457,7 +496,7 @@ class TestRealSolve:
         assert r['stopped_on_wall_clock'] is True and r['density_from_eos'] is True
         assert r['radii'][-1] == pytest.approx(radius[1], rel=1e-12)
         assert r['mass_error_at_accept'] == pytest.approx(0.06, rel=1e-9)
-        assert r['cmb_mass'] == pytest.approx(0.325 * 1.06 * earth_mass, rel=1e-9)
+        assert r['cmb_mass'] == pytest.approx(0.325 * earth_mass, rel=1e-12)
         assert seeds == [None, radius[1]]
 
     @pytest.mark.parametrize('outer', [2, 4])
@@ -502,6 +541,7 @@ class TestRealSolve:
         assert not rho[1:].any() and not m.any()
         assert r['mass_error_at_accept'] == pytest.approx(1.0)
 
+    @pytest.mark.usefixtures('no_check')
     def test_restored_pass_keeps_its_convergence_flags(self, monkeypatch):
         """Passes at 8, 6 and 9 % mass error, each with a converged inner loop; the clock cuts
         the third, and the outer check returns the second with its own density and pressure
@@ -541,6 +581,26 @@ class TestRealSolve:
         assert len(radius) == 3 and r['stopped_on_wall_clock'] is True
         assert r['radii'][-1] == pytest.approx(radius[1], rel=1e-12)
         assert r['converged_pressure'] and not r['converged_density']
+
+    def test_an_outer_stop_accepts_on_the_flags_of_the_best_pass(self, monkeypatch):
+        """Passes at 8, 4 and 9 % mass error with converged inner loops, tolerance_outer 0.02
+        and the clock in pass 3: the outer stop restores the 4 % pass before the accept tests,
+        which accept it on its own flags, as a timeout at 3 times tolerance_outer."""
+        radius, real = _clock_after_lookup(monkeypatch, outer=2), zs.solve_structure
+        errors = (0.08, 0.04, 0.09)
+
+        def solve(*args, **kwargs):
+            m, *rest = real(*args, **kwargs)
+            return (m * earth_mass * (1 + errors[min(len(radius), 3) - 1]) / m[-1], *rest)
+
+        monkeypatch.setattr(zs, 'solve_structure', solve)
+        cfg = _cfg(max_iterations_outer=4, max_iterations_inner=50, tolerance_outer=0.02)
+        r = zs._solve({**cfg, 'wall_timeout': WALL}, load_material_dictionaries(), None, INPUT)
+        assert len(radius) == 3 and r['radii'][-1] == pytest.approx(radius[1], rel=1e-12)
+        assert r['converged_density'] and r['converged_pressure']
+        assert r['converged'] is True and r['accepted_on'] == 'timeout'
+        assert r['accept_mass_limit'] == pytest.approx(0.06, rel=1e-12)
+        assert r['mass_error_at_accept'] == pytest.approx(0.04, rel=1e-9)
 
     def test_restored_pass_keeps_an_unconverged_pressure(self, monkeypatch):
         """As above with a pressure tolerance of 1e-3 Pa, which no pass meets: the restored pass
@@ -594,10 +654,24 @@ class TestRealSolve:
         assert r['mass_error_at_accept'] == pytest.approx(0.10, rel=1e-9)
         assert len(seeds) == 2
 
+    def test_a_pass_without_a_pressure_solve_is_never_the_best_pass(self, monkeypatch):
+        """A start at 1.2e7 m: the first pass ends more than twice above the target mass, and
+        the clock cuts the second before its first pressure solve; the outer check returns
+        the first pass, with its EOS density, not the cut pass."""
+        radius, clock = _count_outer_iterations(monkeypatch), time.time
+        monkeypatch.setattr(
+            zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * (len(radius) >= 2))
+        )
+        cfg = _cfg(max_iterations_outer=4, max_iterations_inner=1, _initial_radius_guess=1.2e7)
+        r = zs._solve({**cfg, 'wall_timeout': WALL}, load_material_dictionaries(), None, INPUT)
+        assert len(radius) == 2 and r['converged'] is False
+        assert r['radii'][-1] == pytest.approx(1.2e7, rel=1e-12)
+        assert r['best_mass_error'] > 1 and r['density_from_eos'] is True
+
     def test_cut_with_passes_left_returns_the_best_pass(self, monkeypatch):
         """The clock cuts the third pass before its first pressure solve, with passes left:
         the next outer check returns the best pass, the first (the second ends 50 % above
-        the target mass), with its radius, enclosed mass, core mass and EOS density."""
+        the target mass), with its radius, enclosed mass and EOS density."""
         radius, clock = _count_outer_iterations(monkeypatch), time.time
         monkeypatch.setattr(
             zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * (len(radius) >= 3))
@@ -617,7 +691,7 @@ class TestRealSolve:
         assert abs(mass[1] / earth_mass - 1) < 0.5  # the first pass is the best
         assert r['radii'][-1] == pytest.approx(radius[0], rel=1e-12)
         assert r['mass_enclosed'][-1] == pytest.approx(mass[1], rel=1e-12)
-        assert r['cmb_mass'] == pytest.approx(0.325 * mass[1], rel=1e-12)
+        assert r['cmb_mass'] == pytest.approx(0.325 * earth_mass, rel=1e-12)
         _assert_eos_density(r)
 
     @pytest.mark.parametrize('n_seed', [1, 2, 50])
@@ -667,6 +741,17 @@ class TestRealSolve:
         assert seeds == [0.8 * 6.43e6, radius[1]]
         assert r['converged'] is True and r['mass_error_at_accept'] < 1e-4
 
+    def test_newton_cap_with_the_root_in_the_bracket_sweep(self):
+        """newton_max_iter = 1: the first evaluation of the bracket sweep lands within
+        newton_tol, and the result is the profile at that radius, not at the first step."""
+        cfg = _cfg(outer_solver='newton', newton_max_iter=1, newton_tol=2e-2, wall_timeout=WALL)
+        r = _run({**cfg, '_initial_radius_guess': 1.03 * 6.3e6, 'max_iterations_inner': 20})
+        assert r['converged'] is True and r['accepted_on'] == 'brentq_best'
+        best = min(r['newton_history'], key=lambda h: h[2])
+        assert r['radii'][-1] == pytest.approx(best[0], rel=1e-12)
+        assert r['mass_error_at_accept'] == pytest.approx(best[2], rel=1e-9)
+        assert best[2] < 2e-2  # newton_tol
+
     def test_newton(self):
         r = _run(_cfg(outer_solver='newton', max_iterations_inner=8, wall_timeout=WALL))
         assert r['converged'] is True and r['accepted_on'] == 'newton_tol'
@@ -708,9 +793,266 @@ def test_wall_clock_in_the_adiabat_ramp_is_timeout(monkeypatch, caplog):
     assert 'Wall-clock timeout (1000000s)' in caplog.text
     assert r['best_mass_error'] < 0.02  # below tolerance_outer: the chain alone says mass_only
     assert r['converged'] is True and r['accepted_on'] == 'timeout'
+    assert r['accept_mass_limit'] == 0.02
 
 
 @pytest.mark.smoke
+@pytest.mark.wolfbower
+def test_wall_clock_in_the_adiabat_ramp_keeps_tolerance_outer_as_the_limit(monkeypatch, caplog):
+    """As above with tolerance_outer 0.05 and a 3.9 % mass error: accepted below
+    tolerance_outer, so the invariant check reads that limit and does not raise."""
+    from zalmoxis.eos import get_solidus_liquidus_functions
+
+    _need_wb_tables()
+    caplog.set_level(logging.INFO, logger='zalmoxis.solver')
+    ramp = lambda: any('activating adiabat blend' in m for m in caplog.messages)  # noqa: E731
+    clock = time.time
+    monkeypatch.setattr(zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * ramp()))
+    cfg = _cfg(
+        temperature_mode='adiabatic',
+        layer_eos_config={'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'},
+        tolerance_outer=0.05,
+        max_iterations_inner=2,
+        wall_timeout=WALL,
+        _initial_radius_guess=5.9e6,
+    )
+    r = zs.main(cfg, load_material_dictionaries(), get_solidus_liquidus_functions(), '/tmp')
+    assert r['converged'] is True and r['accepted_on'] == 'timeout'
+    assert 0.03 < r['mass_error_at_accept'] < 0.05
+    assert r['accept_mass_limit'] == 0.05
+
+
+def _wb_blended(
+    monkeypatch, factor, tol, clock_stop=True, inner=2, outer=100, clock_after=None, linear=None
+):
+    """A Wolf & Bower adiabatic _solve whose passes after the adiabat blend starts end ``factor``
+    times the target mass, and the passes before it ``linear`` times (unscaled when None); with
+    ``clock_stop`` the clock runs out after the first density lookup of the first blended pass,
+    or with ``clock_after`` once the adiabat was computed that many times."""
+    from zalmoxis.eos import get_solidus_liquidus_functions
+
+    _need_wb_tables()
+    adiabat, lookups = [], []
+    real_adi, real, clock = zs.compute_adiabatic_temperature, zs.solve_structure, time.time
+    real_lookup = zs.calculate_mixed_density_batch
+
+    def adi(*args, **kwargs):
+        adiabat.append(1)
+        return real_adi(*args, **kwargs)
+
+    def solve(*args, **kwargs):
+        m, g, P = real(*args, **kwargs)
+        scale = factor if adiabat else linear
+        f = scale * earth_mass / m[-1] if scale else 1.0
+        return m * f, g * f, P
+
+    def lookup(*args, **kwargs):
+        lookups.extend([1] if adiabat else [])
+        return real_lookup(*args, **kwargs)
+
+    monkeypatch.setattr(zs, 'calculate_mixed_density_batch', lookup)
+    monkeypatch.setattr(zs, 'compute_adiabatic_temperature', adi)
+    monkeypatch.setattr(zs, 'solve_structure', solve)
+
+    def stopped():
+        return bool(lookups) if clock_after is None else len(adiabat) >= clock_after
+
+    if clock_stop:
+        monkeypatch.setattr(zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * stopped()))
+    cfg = _cfg(
+        temperature_mode='adiabatic',
+        layer_eos_config={'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'},
+        tolerance_outer=tol,
+        max_iterations_inner=inner,
+        max_iterations_outer=outer,
+        wall_timeout=WALL,
+    )
+    r = zs._solve(cfg, load_material_dictionaries(), get_solidus_liquidus_functions(), '/tmp')
+    assert adiabat
+    return r
+
+
+@pytest.mark.smoke
+@pytest.mark.wolfbower
+@pytest.mark.usefixtures('no_check')
+def test_a_clock_stop_keeps_a_blended_pass_that_its_mass_test_accepts(monkeypatch, caplog):
+    """tolerance_outer 0.05 and blended passes 4 % off: the mass test of the clock stop accepts
+    the newest pass above the 3 % ceiling, so it is returned, not the linear one."""
+    with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+        r = _wb_blended(monkeypatch, 1.04, 0.05)
+    assert r['stopped_on_wall_clock'] is True and r['accepted_on'] == 'timeout'
+    assert r['adiabat_blend'] == 0.25
+    assert r['mass_error_at_accept'] == pytest.approx(0.04, rel=1e-9)
+    assert 'No pass of adiabat blend' not in caplog.text
+
+
+@pytest.mark.smoke
+@pytest.mark.wolfbower
+@pytest.mark.usefixtures('no_check')
+def test_a_clock_stop_beyond_its_limit_returns_the_linear_pass_under_that_limit(monkeypatch):
+    """The blended passes end 10 % off, beyond the 6 % limit of a clock stop: the linear pass
+    that started the ramp is returned, and its mass verdict is taken again, so the mass test of
+    tolerance_outer accepts it (its inner flags are not both converged), not the 3 % ceiling."""
+    r = _wb_blended(monkeypatch, 1.10, 0.02)
+    assert r['stopped_on_wall_clock'] is True and r['accepted_on'] == 'timeout'
+    assert r['adiabat_blend'] == 0.0
+    assert r['accept_mass_limit'] == pytest.approx(0.02)
+    assert r['mass_error_at_accept'] < 0.02
+
+
+@pytest.mark.smoke
+@pytest.mark.wolfbower
+@pytest.mark.usefixtures('no_check')
+def test_a_clock_stop_keeps_a_blended_pass_whose_inner_solves_converged(monkeypatch):
+    """Blended passes 5 % off, inside the 6 % limit of a clock stop but above tolerance_outer
+    0.02 and the 3 % ceiling: the first blended pass ran its inner solves to convergence, so
+    the strict test of the stop accepts it and no earlier pass replaces it."""
+    r = _wb_blended(monkeypatch, 1.05, 0.02, inner=100, clock_after=2)
+    assert r['accepted_on'] == 'timeout' and r['accept_mass_limit'] == pytest.approx(0.06)
+    assert r['converged_density'] and r['converged_pressure']
+    assert r['adiabat_blend'] == 0.25
+    assert r['mass_error_at_accept'] == pytest.approx(0.05, rel=1e-9)
+
+
+@pytest.mark.smoke
+@pytest.mark.wolfbower
+@pytest.mark.usefixtures('no_check')
+def test_a_clock_stop_inside_its_limit_without_converged_inner_solves_falls_back(
+    monkeypatch, caplog
+):
+    """Blended passes 5 % off, inside the 6 % limit of a clock stop, with inner solves cut at 2
+    passes: no accept test takes the newest pass, so the linear pass is returned; the warning
+    names both blends and best_mass_error describes the returned pass."""
+    with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+        r = _wb_blended(monkeypatch, 1.05, 0.02)
+    assert r['stopped_on_wall_clock'] is True and r['accepted_on'] == 'timeout'
+    assert r['adiabat_blend'] == 0.0
+    assert r['mass_error_at_accept'] < 0.02
+    assert r['best_mass_error'] == pytest.approx(r['mass_error_at_accept'], rel=1e-9)
+    assert 'No pass of adiabat blend 0.25' in caplog.text
+    assert (
+        f'best pass of blend 0.00 (mass error {r["best_mass_error"] * 100:.4f}%)' in caplog.text
+    )
+
+
+@pytest.mark.smoke
+@pytest.mark.wolfbower
+@pytest.mark.usefixtures('no_check')
+@pytest.mark.parametrize(
+    ('linear', 'factor', 'outer', 'clock_after'),
+    [(1.04, 1.10, 8, None), (1.04, 1.035, 2, None), (1.045, 1.035, 3, 2)],
+    ids=['cap-earlier-above-ceiling', 'cap-earlier-worse', 'inner-clock-earlier-worse'],
+)
+def test_a_stop_that_cannot_return_a_better_earlier_pass_keeps_its_own(
+    monkeypatch, caplog, linear, factor, outer, clock_after
+):
+    """tolerance_outer 0.05 above the 3 % ceiling: an iteration cap whose earlier pass is not
+    under 3 %, or whose earlier pass is worse, and an inner clock stop on the last pass whose
+    earlier pass is worse, keep the newest best pass; no warning names an earlier one."""
+    with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+        r = _wb_blended(
+            monkeypatch, factor, 0.05, clock_stop=clock_after is not None, outer=outer,
+            clock_after=clock_after, linear=linear,
+        )  # fmt: skip
+    assert 'No pass of adiabat blend' not in caplog.text
+    assert r['best_mass_error'] == pytest.approx(factor - 1, rel=1e-9)
+
+
+@pytest.mark.smoke
+@pytest.mark.wolfbower
+@pytest.mark.usefixtures('no_check')
+def test_an_inner_clock_stop_on_the_last_pass_returns_a_better_earlier_pass(monkeypatch):
+    """tolerance_outer 0.05: the clock runs out in the inner loop of the last outer pass, the
+    blended pass is 4.5 % off and the linear pass 4 %: the linear pass is returned and the mass
+    test of the stop accepts it, although it is above the 3 % ceiling."""
+    r = _wb_blended(monkeypatch, 1.045, 0.05, outer=3, clock_after=2, linear=1.04)
+    assert r['accepted_on'] == 'timeout' and r['adiabat_blend'] == 0.0
+    assert r['mass_error_at_accept'] == pytest.approx(0.04, rel=1e-9)
+
+
+@pytest.mark.smoke
+@pytest.mark.wolfbower
+@pytest.mark.usefixtures('no_check')
+def test_a_clock_stop_swap_returns_the_pass_its_mass_test_read(monkeypatch):
+    """tolerance_outer 0.05, the clock runs out in the first blended pass, 6 % off, and the
+    linear pass is 4.5 % off: the swap returns the linear pass, and the accepted mass error is
+    the one of the returned pass, not of the blended pass."""
+    r = _wb_blended(monkeypatch, 1.06, 0.05, inner=5, outer=2, linear=1.045)
+    assert r['accepted_on'] == 'timeout' and r['adiabat_blend'] == 0.0
+    assert r['mass_error_at_accept'] == pytest.approx(r['best_mass_error'], rel=1e-9)
+    assert r['mass_error_at_accept'] == pytest.approx(0.045, rel=1e-9)
+
+
+@pytest.mark.smoke
+@pytest.mark.wolfbower
+@pytest.mark.usefixtures('no_check')
+def test_a_clock_stop_with_converged_density_but_not_pressure_falls_back(monkeypatch):
+    """Blended passes 5 % off, inside the 6 % limit of a clock stop but above tolerance_outer
+    0.02 and the 3 % ceiling; their inner density converges but their pressure solve reports
+    no root, so the strict test cannot take the newest pass and the linear pass is returned."""
+    blended, real_adi, real_brentq = [], zs.compute_adiabatic_temperature, zs.brentq
+
+    def adi(*args, **kwargs):
+        blended.append(1)
+        return real_adi(*args, **kwargs)
+
+    def brent(*args, **kwargs):
+        x, info = real_brentq(*args, **kwargs)
+        cut = SimpleNamespace(converged=False, function_calls=info.function_calls)
+        return x, cut if blended else info
+
+    monkeypatch.setattr(zs, 'compute_adiabatic_temperature', adi)
+    monkeypatch.setattr(zs, 'brentq', brent)
+    r = _wb_blended(monkeypatch, 1.05, 0.02, inner=100, clock_after=2)
+    assert r['accepted_on'] == 'timeout' and r['adiabat_blend'] == 0.0
+    assert r['mass_error_at_accept'] < 0.02
+
+
+@pytest.mark.smoke
+@pytest.mark.wolfbower
+@pytest.mark.usefixtures('no_check')
+def test_an_accepted_mass_break_returns_its_own_pass_without_a_fallback(monkeypatch, caplog):
+    """tolerance_outer 0.05 and blended passes 4 % off: the mass test breaks at blend 1.0 and
+    accepts that pass, so no earlier pass replaces it and best_mass_error describes it."""
+    with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+        r = _wb_blended(monkeypatch, 1.04, 0.05, clock_stop=False, outer=50)
+    assert r['accepted_on'] == 'mass_only' and r['adiabat_blend'] == 1.0
+    assert r['best_mass_error'] == pytest.approx(r['mass_error_at_accept'], rel=1e-9)
+    assert r['mass_error_at_accept'] == pytest.approx(0.04, rel=1e-9)
+    assert 'No pass of adiabat blend' not in caplog.text
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.timeout(900)
+def test_a_max_iter_stop_in_the_blend_ramp_returns_a_pass_on_the_adiabat(caplog):
+    """PALEOS, adiabatic, 4 outer passes: the mass converges on the linear temperature, and
+    the cap stops the solve in the blend ramp. The returned pass is on the newest blend (0.25),
+    not the linear pass with the smallest mass error, and main warns about the blend."""
+    from tests.test_spider_coupling_convergence import _has_paleos_data
+
+    if not _has_paleos_data():
+        pytest.skip('PALEOS tables not on disk')
+    cfg = _cfg(
+        temperature_mode='adiabatic',
+        layer_eos_config={'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
+        num_layers=150,
+        relative_tolerance=1e-5,
+        absolute_tolerance=1e-6,
+        max_iterations_outer=4,
+        wall_timeout=WALL,
+    )
+    r = zs.main(cfg, load_material_dictionaries(), None, INPUT)
+    T = np.asarray(r['temperature'])
+    off_linear = np.max(np.abs(T - np.linspace(6000.0, 3000.0, len(T))))
+    assert r['converged'] is True and r['accepted_on'] == 'max_iter'
+    assert r['adiabat_computed'] is True and off_linear > 100.0
+    assert r['adiabat_blend'] == 0.25
+    assert 'accepted a temperature profile at adiabat blend 0.25' in caplog.text
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
 def test_cool_paleos_surface_keeps_the_eos_density():
     """At a 1500 K surface rho_EOS of PALEOS-2phase MgSiO3 halves in the outermost shells;
     the returned density keeps those values, which the structure integration used."""
@@ -734,3 +1076,250 @@ def test_cool_paleos_surface_keeps_the_eos_density():
     rho = np.asarray(r['density'])[np.asarray(r['pressure']) > 0]
     assert rho[-1] < 0.6 * rho[-4]  # the outer-shell density drop is kept
     _assert_eos_density(r, eos, melt, 0.8)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('flag', ['pressure', 'eos'])
+class TestNewtonExitsReadTheInnerFlags:
+    """Every Newton exit accepts only a profile whose inner solve reports converged pressure
+    and the EOS density, as the Newton converge path does."""
+
+    def test_bracket_sweep_hit(self, flag):
+        r = _newton({'_initial_radius_guess': 6.9e6, 'newton_max_iter': 1}, **{flag: False})
+        assert r['newton_used_brentq'] and r['best_mass_error'] < 1e-6
+        assert r['converged'] is False and r['accepted_on'] is None
+
+    def test_root(self, flag):
+        r = _brentq(
+            _hist(6.0e6, 8.0e6), lambda R: (A * R + B, _inner(R, **{flag: False})), None
+        )
+        assert r['converged'] is False and r['accepted_on'] is None
+
+    def test_narrow_bracket(self, flag):
+        r = _brentq(_hist(7.0e6 - 0.2, 7.0e6 + 0.2), None, 7.0e6 - 0.2, **{flag: False})
+        assert r['best_mass_error'] < 1e-6
+        assert r['converged'] is False and r['accepted_on'] is None
+
+    def test_brentq_error(self, flag):
+        def boom(R):
+            raise ValueError('stale bracket')
+
+        r = _brentq(_hist(6.0e6, 7.0e6 + 1e-3), boom, 7.0e6 + 1e-3, **{flag: False})
+        assert r['converged'] is False and r['accepted_on'] is None
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.timeout(900)
+def test_a_clock_stop_before_the_first_blended_pressure_solve_keeps_the_linear_pass(
+    monkeypatch,
+):
+    """PALEOS, adiabatic: the clock runs out when the first blended pass computes the adiabat,
+    before its first pressure solve. The linear pass that met the mass test comes back, with
+    its EOS density and adiabat_blend 0, not an empty profile."""
+    from tests.test_spider_coupling_convergence import _has_paleos_data
+
+    if not _has_paleos_data():
+        pytest.skip('PALEOS tables not on disk')
+    adiabat, real_adi, clock = [], zs.compute_adiabatic_temperature, time.time
+
+    def adi(*args, **kwargs):
+        adiabat.append(1)
+        return real_adi(*args, **kwargs)
+
+    monkeypatch.setattr(zs, 'compute_adiabatic_temperature', adi)
+    monkeypatch.setattr(zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * bool(adiabat)))
+    cfg = _cfg(
+        temperature_mode='adiabatic',
+        layer_eos_config={'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
+        num_layers=150,
+        relative_tolerance=1e-5,
+        absolute_tolerance=1e-6,
+        wall_timeout=WALL,
+    )
+    r = zs._solve(cfg, load_material_dictionaries(), None, INPUT)
+    assert adiabat and r['stopped_on_wall_clock'] is True
+    assert r['converged'] is True and r['density_from_eos'] is True
+    assert r['adiabat_blend'] == 0.0 and r['mass_error_at_accept'] < 1e-3
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures('no_check')
+@pytest.mark.parametrize(
+    'eos, computed, blend, warned',
+    [
+        ('PALEOS', False, 0.0, True),
+        ('PALEOS', True, 0.5, True),
+        ('PALEOS', True, 1.0, False),
+        ('PALEOS', False, 1.0, True),  # a blend without a computed adiabat counts as 0
+        ('Analytic', False, 0.0, False),  # no T-dependent component: no ramp by design
+    ],
+)
+def test_main_warns_on_an_accepted_profile_short_of_the_adiabat(
+    monkeypatch, caplog, eos, computed, blend, warned
+):
+    first = {**_inner(7.0e6, accepted_on='strict'), 'adiabat_computed': computed}
+    first['adiabat_blend'] = blend
+    monkeypatch.setattr(zs, '_solve', lambda *a, **k: dict(first))
+    monkeypatch.setattr(zs, '_report_table_bands', lambda r, *a: r)
+    cfg = {
+        'planet_mass': M_T,
+        'temperature_mode': 'adiabatic',
+        'layer_eos_config': {'core': f'{eos}:iron', 'mantle': f'{eos}:MgSiO3'},
+    }
+    zs.main(cfg, {}, None, '/tmp')
+    assert ('accepted a temperature profile at adiabat blend' in caplog.text) is warned
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('converged', [True, False])
+def test_only_an_accepted_result_gets_the_adiabat_warning(caplog, converged):
+    cfg = {
+        'temperature_mode': 'adiabatic',
+        'layer_eos_config': {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
+    }
+    result = {'converged': converged, 'adiabat_computed': True, 'adiabat_blend': 0.5}
+    zs._warn_adiabat(result, cfg, None, None, None)
+    assert ('at adiabat blend 0.50' in caplog.text) is converged
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.timeout(2400)
+def test_an_iteration_cap_whose_newest_blend_step_diverges_returns_an_earlier_best_pass(
+    monkeypatch, caplog
+):
+    """3-layer PALEOS ice planet (cmf 0.3, mmf 0.4), adiabatic Picard, 20 outer passes and
+    tolerance_outer 1e-2, so a linear pass starts the blend ramp also on the CI runner (whose
+    linear passes end near 2.4e-3, above the default 1e-3): every pass of the newest blend step
+    misses the mass by more than 3 %, so the cap returns the best pass of an earlier step (blend
+    0, R about 1.2978e7 m), the log names the ramp start and the fallback, and main does not
+    retry."""
+    from tests.test_spider_coupling_convergence import _has_paleos_data
+    from zalmoxis.config import load_solidus_liquidus_functions, load_zalmoxis_config
+
+    if not _has_paleos_data():
+        pytest.skip('PALEOS tables not on disk')
+    cfg = load_zalmoxis_config(os.path.join(ROOT, 'input', 'default.toml'))
+    cfg.update(
+        data_output_enabled=False,
+        plotting_enabled=False,
+        core_mass_fraction=0.3,
+        mantle_mass_fraction=0.4,
+        layer_eos_config={
+            'core': 'PALEOS:iron',
+            'mantle': 'PALEOS:MgSiO3',
+            'ice_layer': 'PALEOS:H2O',
+        },
+        wall_timeout=WALL,
+        max_iterations_outer=20,
+        tolerance_outer=1e-2,
+    )
+    assert cfg['temperature_mode'] == 'adiabatic'
+    melt = load_solidus_liquidus_functions(
+        cfg['layer_eos_config'],
+        'Stixrude14-solidus',
+        'Stixrude14-liquidus',
+        cfg['mushy_zone_factor'],
+    )
+    calls, real = [], zs._solve
+
+    def once(*args, **kwargs):
+        if calls:
+            pytest.fail('main retried the solve')
+        calls.append(1)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(zs, '_solve', once)
+    with caplog.at_level(logging.INFO, logger='zalmoxis.solver'):
+        r = zs.main(cfg, load_material_dictionaries(), melt, os.path.join(ROOT, 'input'))
+    assert 'activating adiabat blend' in caplog.text
+    assert 'No pass of adiabat blend' in caplog.text
+    assert r['converged'] and r['accepted_on'] == 'max_iter'
+    assert r['adiabat_blend'] == 0.0
+    assert r['mass_error_at_accept'] < 1e-2
+    assert r['radii'][-1] == pytest.approx(1.2978e7, rel=1e-2)
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.timeout(2400)
+def test_a_single_pass_between_the_two_ceilings_is_a_retry_skip(monkeypatch):
+    """0.5 M_E PALEOS iron/MgSiO3, linear T, one outer pass: the pass misses the mass by about
+    5 %, above the 3 % max_iter ceiling and below the retry skip one, so main accepts it as
+    retry_skip without a second solve, and the invariant check passes."""
+    from tests.test_spider_coupling_convergence import _has_paleos_data
+    from zalmoxis.config import load_solidus_liquidus_functions, load_zalmoxis_config
+
+    if not _has_paleos_data():
+        pytest.skip('PALEOS tables not on disk')
+    cfg = load_zalmoxis_config(os.path.join(ROOT, 'input', 'default.toml'))
+    cfg.update(
+        data_output_enabled=False,
+        plotting_enabled=False,
+        planet_mass=0.5 * earth_mass,
+        temperature_mode='linear',
+        max_iterations_outer=1,
+        wall_timeout=WALL,
+        layer_eos_config={'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
+    )
+    melt = load_solidus_liquidus_functions(
+        cfg['layer_eos_config'],
+        'Stixrude14-solidus',
+        'Stixrude14-liquidus',
+        cfg['mushy_zone_factor'],
+    )
+    calls, real = [], zs._solve
+
+    def once(*args, **kwargs):
+        calls.append(1)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(zs, '_solve', once)
+    r = zs.main(cfg, load_material_dictionaries(), melt, os.path.join(ROOT, 'input'))
+    assert r['converged'] and r['accepted_on'] == 'retry_skip' and len(calls) == 1
+    assert r['accept_mass_limit'] == 0.07
+    assert 0.03 < r['mass_error_at_accept'] < 0.07
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.timeout(2400)
+def test_the_adiabat_of_the_default_solve_reads_the_layer_boundaries_of_its_profile(
+    monkeypatch,
+):
+    """input/default.toml (1 M_E PALEOS iron/MgSiO3, adiabatic): every adiabat call gets the
+    layer boundaries the previous pass integrated with, the planet-mass fractions, and the solve
+    is accepted strict on the full adiabat. A boundary from the mass of the previous pass puts a
+    node of that profile in the other layer and gives another pass."""
+    from tests.test_spider_coupling_convergence import _has_paleos_data
+    from zalmoxis.config import load_solidus_liquidus_functions, load_zalmoxis_config
+
+    if not _has_paleos_data():
+        pytest.skip('PALEOS tables not on disk')
+    cfg = load_zalmoxis_config(os.path.join(ROOT, 'input', 'default.toml'))
+    cfg.update(data_output_enabled=False, plotting_enabled=False, wall_timeout=WALL)
+    melt = load_solidus_liquidus_functions(
+        cfg['layer_eos_config'],
+        cfg['rock_solidus'],
+        cfg['rock_liquidus'],
+        cfg['mushy_zone_factor'],
+    )
+    seen, real = [], zs.compute_adiabatic_temperature
+
+    def adiabat(radii, pressure, mass, surface_T, cmb_mass, core_mantle_mass, *args, **kwargs):
+        seen.append((cmb_mass, core_mantle_mass))
+        return real(
+            radii, pressure, mass, surface_T, cmb_mass, core_mantle_mass, *args, **kwargs
+        )
+
+    monkeypatch.setattr(zs, 'compute_adiabatic_temperature', adiabat)
+    r = zs.main(cfg, load_material_dictionaries(), melt, INPUT)
+    fractions = (
+        cfg['core_mass_fraction'],
+        cfg['core_mass_fraction'] + cfg['mantle_mass_fraction'],
+    )
+    assert len(seen) >= 4  # the blend ramp ran
+    assert set(seen) == {tuple(f * cfg['planet_mass'] for f in fractions)}
+    assert r['accepted_on'] == 'strict' and r['adiabat_blend'] == 1.0
+    assert r['mass_error_at_accept'] < r['accept_mass_limit'] == 1e-3
