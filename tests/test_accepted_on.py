@@ -1325,30 +1325,100 @@ def test_the_adiabat_of_the_default_solve_reads_the_layer_boundaries_of_its_prof
     assert r['mass_error_at_accept'] < r['accept_mass_limit'] == 1e-3
 
 
+def _oscillating_solve(monkeypatch, caplog, factor, **kwargs):
+    """Run _solve with the mass of outer pass n scaled to factor(n) Earth masses; the pass
+    index is keyed on the outer radius. Returns the result and the outer radii."""
+    radius, real, index = _count_outer_iterations(monkeypatch), zs.solve_structure, {}
+
+    def solve(*args, **kw):
+        m, g, P = real(*args, **kw)
+        f = factor(index.setdefault(float(args[3][-1]), len(index))) * earth_mass / m[-1]
+        return m * f, g * f, P
+
+    monkeypatch.setattr(zs, 'solve_structure', solve)
+    cfg = _cfg(outer_solver='picard', max_iterations_inner=5, wall_timeout=WALL)
+    cfg.update(kwargs)
+    with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+        r = zs._solve(cfg, load_material_dictionaries(), None, INPUT)
+    return r, radius
+
+
+def _first_then_alternating(first, later):
+    """Pass 0 at 1 + first, later passes at 1 +- later with alternating sign."""
+    return lambda n: 1 + first if n == 0 else 1 + later if n % 2 else 1 - later
+
+
 @pytest.mark.unit
 def test_ten_mass_sign_changes_stop_the_outer_loop(monkeypatch, caplog):
     """The first outer pass ends 0.2 % heavy and every later pass 2 % off with alternating
     sign: the passes never beat the first, so after 10 sign changes the oscillation stop
-    returns the first pass, which is within 3 tolerance_outer."""
-    radius, real, factors = _count_outer_iterations(monkeypatch), zs.solve_structure, {}
-
-    def solve(*args, **kwargs):
-        m, g, P = real(*args, **kwargs)
-        n = factors.setdefault(float(args[3][-1]), len(factors))
-        f = (1.002 if n == 0 else 1.02 if n % 2 else 0.98) * earth_mass / m[-1]
-        return m * f, g * f, P
-
-    monkeypatch.setattr(zs, 'solve_structure', solve)
-    cfg = _cfg(
-        outer_solver='picard',
+    returns the first pass, accepted on 3 tolerance_outer."""
+    r, radius = _oscillating_solve(
+        monkeypatch,
+        caplog,
+        _first_then_alternating(0.002, 0.02),
         max_iterations_outer=14,
-        max_iterations_inner=5,
         tolerance_outer=1e-3,
-        wall_timeout=WALL,
     )
-    with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
-        r = zs._solve(cfg, load_material_dictionaries(), None, INPUT)
     assert r['accepted_on'] == 'oscillation', (r['accepted_on'], len(radius))
     assert 'Accepting best solution after 10 oscillations' in caplog.text
     assert r['mass_error_at_accept'] == pytest.approx(0.002, rel=1e-6)
+    assert r['accept_mass_limit'] == pytest.approx(3e-3)
+    assert r['converged'] and r['converged_mass']
     assert len(radius) == 12  # the best pass, one more on its side, 10 sign changes
+
+
+@pytest.mark.unit
+def test_no_oscillation_stop_while_the_best_pass_is_above_3_tolerance_outer(
+    monkeypatch, caplog
+):
+    """Pass 0 at 5 %, later passes 6 % with alternating sign, tolerance_outer 1e-3: the
+    best pass stays above 3 tolerance_outer, so the loop runs to its cap."""
+    r, radius = _oscillating_solve(
+        monkeypatch,
+        caplog,
+        _first_then_alternating(0.05, 0.06),
+        max_iterations_outer=14,
+        tolerance_outer=1e-3,
+    )
+    assert 'Accepting best solution after' not in caplog.text
+    assert r['accepted_on'] != 'oscillation' and len(radius) == 14
+
+
+@pytest.mark.unit
+def test_a_new_best_pass_resets_the_oscillation_count(monkeypatch, caplog):
+    """The sign alternates every pass and every third pass is a new best (0.29 % shrinking
+    by 5 %, above tolerance_outer 1e-3): the count never reaches 10, the cap stops the loop."""
+    r, radius = _oscillating_solve(
+        monkeypatch,
+        caplog,
+        lambda n: 1 + (-1) ** n * 0.0029 * 0.95 ** (n // 3),
+        max_iterations_outer=30,
+        tolerance_outer=1e-3,
+    )
+    assert 'Accepting best solution after' not in caplog.text
+    assert r['accepted_on'] == 'max_iter' and len(radius) == 30
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+def test_the_oscillation_stop_waits_for_the_adiabat_blend_ramp(monkeypatch, caplog):
+    """PALEOS, adiabatic: the schedule of the test above never brings a pass below
+    tolerance_outer, so the blend ramp never starts. The stop must not return the linear
+    temperature pass; the loop ends at its cap on blend 0 as max_iter."""
+    from tests.test_spider_coupling_convergence import _has_paleos_data
+
+    if not _has_paleos_data():
+        pytest.skip('PALEOS tables not on disk')
+    r, radius = _oscillating_solve(
+        monkeypatch,
+        caplog,
+        _first_then_alternating(0.002, 0.02),
+        max_iterations_outer=14,
+        tolerance_outer=1e-3,
+        temperature_mode='adiabatic',
+        layer_eos_config={'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
+    )
+    assert 'Accepting best solution after' not in caplog.text
+    assert r['accepted_on'] == 'max_iter' and r['adiabat_blend'] == 0.0
+    assert len(radius) == 14
