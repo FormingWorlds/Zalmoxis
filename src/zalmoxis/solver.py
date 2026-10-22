@@ -52,6 +52,7 @@ from .mixing import (
     build_partition_profile,
     calculate_mixed_density_batch,
     compute_melt_fraction,
+    get_mixed_nabla_ad,
     parse_all_layer_mixtures,
     split_mantle_volatile_inventory,
     strong_partition_phi_floor,
@@ -1322,31 +1323,79 @@ def _solve_newton_outer(
 def _surface_density(
     T, m_stop, p_surface, cmb_mass, core_mantle_mass, layer_mixtures, eos_args, volatile_profile
 ):
-    """rho_EOS at the target surface pressure ``p_surface`` for the padded surface nodes.
+    """Return rho_EOS at the target surface pressure for the padded surface nodes.
 
-    The padded nodes share the stop mass ``m_stop``, so its layer holds them all; the volatile
-    profile applies only to the mantle. ``eos_args`` are the arguments of
-    ``calculate_mixed_density_batch`` after the mixture, ``T`` the temperatures of the nodes.
+    The padded nodes share the stop mass, so its layer holds them all. A density that is not
+    finite is returned as it is: in an accepted result it breaks the ``positive`` invariant.
 
-    Raises
-    ------
-    StructureSolveError
-        When a density is not finite.
+    Parameters
+    ----------
+    T : numpy.ndarray
+        Temperatures of the padded nodes [K].
+    m_stop : float
+        Mass at the stop [kg].
+    p_surface : float
+        Target surface pressure [Pa].
+    cmb_mass, core_mantle_mass : float
+        Layer boundaries [kg].
+    layer_mixtures : dict
+        Per-layer mixtures.
+    eos_args : tuple
+        Arguments of ``calculate_mixed_density_batch`` after the mixture.
+    volatile_profile : VolatileProfile or None
+        Applied only when the stop lies in the mantle.
+
+    Returns
+    -------
+    numpy.ndarray
+        Density of each padded node [kg/m^3].
     """
     mix = get_layer_mixture(m_stop, cmb_mass, core_mantle_mass, layer_mixtures)
     vp = volatile_profile if mix is layer_mixtures.get('mantle') else None
-    rho = np.asarray(
-        calculate_mixed_density_batch(
-            np.full(len(T), float(p_surface)), T, mix, *eos_args, volatile_profile=vp
-        ),
-        dtype=float,
+    return calculate_mixed_density_batch(
+        np.full(len(T), p_surface), T, mix, *eos_args, volatile_profile=vp
     )
-    if not np.all(np.isfinite(rho)):
-        raise StructureSolveError(
-            f'Structure solve failed: surface density not finite at P = {p_surface:.3e} Pa, '
-            f'T = {np.min(T):.1f} to {np.max(T):.1f} K.'
-        )
-    return rho
+
+
+def _adiabat_to_surface(P0, T0, p_surface, mix, nabla_args, n_steps=64):
+    """Continue an adiabat from (``P0``, ``T0``) down to the target surface pressure.
+
+    Integrates d ln T / d ln P = nabla_ad(P, T) with the midpoint rule in ln P. T is held
+    where the mixture has no T-dependent component, nabla_ad is missing or not positive, or
+    there is no pressure drop.
+
+    Parameters
+    ----------
+    P0, T0 : float
+        Pressure [Pa] and temperature [K] of the last node with P > 0.
+    p_surface : float
+        Target surface pressure [Pa].
+    mix : LayerMixture
+        Mixture of the layer at the surface.
+    nabla_args : tuple
+        Arguments of ``get_mixed_nabla_ad`` after the mixture.
+    n_steps : int, optional
+        Number of steps in ln P.
+
+    Returns
+    -------
+    float
+        Temperature at ``p_surface`` [K].
+    """
+    if not mix.has_tdep() or not 0 < p_surface < P0:
+        return T0
+    h = np.log(p_surface / P0) / n_steps
+    lnp, T = np.log(P0), T0
+    for _ in range(n_steps):
+        n1 = get_mixed_nabla_ad(np.exp(lnp), T, mix, *nabla_args)
+        if n1 is None or not n1 > 0:
+            return T
+        n2 = get_mixed_nabla_ad(np.exp(lnp + h / 2), T * np.exp(n1 * h / 2), mix, *nabla_args)
+        if n2 is None or not n2 > 0:
+            return T
+        T = min(max(T * np.exp(n2 * h), 100.0), 100000.0)
+        lnp += h
+    return T
 
 
 def _solve(
@@ -1793,19 +1842,11 @@ def _solve(
                     _blend = _adiabat_blend
 
                     def _temperature_func(
-                        r,
-                        P,
-                        _b=_blend,
-                        _lp=_logP_sorted,
-                        _ts=_T_sorted,
-                        _ltf=_linear_tf,
-                        _cmb=_anchor == 'cmb',
+                        r, P, _b=_blend, _lp=_logP_sorted, _ts=_T_sorted, _ltf=_linear_tf
                     ):
                         T_lin = _ltf(r)
                         if P <= 0:
-                            if not _cmb:
-                                return T_lin
-                            P = target_surface_pressure  # the surface of a CMB-anchored adiabat
+                            return T_lin
                         # W5: math.log10 avoids numpy scalar dispatch (~1 us/call)
                         T_adi = float(np.interp(math.log10(P), _lp, _ts))
                         T_adi = max(_T_MIN_CLAMP, min(T_adi, _T_MAX_CLAMP))
@@ -1813,13 +1854,9 @@ def _solve(
 
                 else:
 
-                    def _temperature_func(
-                        r, P, _lp=_logP_sorted, _ts=_T_sorted, _cmb=_anchor == 'cmb'
-                    ):
+                    def _temperature_func(r, P, _lp=_logP_sorted, _ts=_T_sorted):
                         if P <= 0:
-                            if not _cmb:
-                                return surface_temperature
-                            P = target_surface_pressure  # the surface of a CMB-anchored adiabat
+                            return surface_temperature
                         # W5: math.log10 avoids numpy scalar dispatch (~1 us/call)
                         T_val = float(np.interp(math.log10(P), _lp, _ts))
                         return max(_T_MIN_CLAMP, min(T_val, _T_MAX_CLAMP))
@@ -2605,8 +2642,36 @@ def _solve(
     pad = pressure <= 0  # padded nodes past a surface stop
     density[pad] = 0.0
     if density_from_eos and pad.any():
+        temperatures = np.asarray(temperatures, dtype=float)
+        k = int(np.argmax(pad))
+        if (
+            k > 0
+            and _adiabat_computed
+            and temperature_mode == 'adiabatic_from_cmb'
+            and temperature_function is None
+            and not arrays_give_T
+        ):
+            # the surface of a CMB-anchored adiabat: its continuation to the target pressure
+            temperatures[pad] = _adiabat_to_surface(
+                float(pressure[k - 1]),
+                float(temperatures[k - 1]),
+                target_surface_pressure,
+                get_layer_mixture(
+                    float(mass_enclosed[k]), cmb_mass, core_mantle_mass, layer_mixtures
+                ),
+                (
+                    material_dictionaries,
+                    interpolation_cache,
+                    solidus_func,
+                    liquidus_func,
+                    mushy_zone_factors,
+                    condensed_rho_min,
+                    condensed_rho_scale,
+                    binodal_T_scale,
+                ),
+            )
         density[pad] = _surface_density(
-            np.asarray(temperatures, float)[pad],
+            temperatures[pad],
             float(np.asarray(mass_enclosed)[pad][0]),
             target_surface_pressure,
             cmb_mass,

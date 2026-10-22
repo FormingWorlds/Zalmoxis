@@ -1407,8 +1407,9 @@ def test_a_padded_node_with_the_gravity_at_the_stop_raises_padding():
 
 @pytest.mark.unit
 def test_a_padded_node_with_the_gravity_at_a_stop_3_km_below_raises_padding_at_rtol_1e5():
-    """At the Picard tolerance the gravity check allows about 1e-3, so padding itself holds the
-    padded gravity to G m_stop / r^2: the fill with the gravity at a stop 3 km below R breaks it."""
+    """At the Picard tolerance the gravity check allows about 1e-3, so padding itself holds
+    the padded gravity to G m_stop / r^2: the fill with the gravity at a stop 3 km below R
+    breaks it."""
     result, cfg = _sphere()
     r_s = result['radii'][-1] - 3.0e3
     m_s = 4 / 3 * np.pi * RHO * r_s**3

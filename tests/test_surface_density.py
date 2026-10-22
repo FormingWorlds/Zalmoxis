@@ -106,7 +106,7 @@ def test_the_surface_continuation_integrates_d_ln_t_d_ln_p_exactly(monkeypatch, 
     exact = T0 * np.exp(a * np.log(ps / P0) + b / 2 * (np.log(ps) ** 2 - np.log(P0) ** 2))
     assert T == pytest.approx(exact, rel=1e-12) and T < T0
     assert calls and all(c[3] == NABLA_ARGS for c in calls)
-    assert min(c[0] for c in calls) >= ps and max(c[0] for c in calls) <= P0
+    assert min(c[0] for c in calls) >= ps and max(c[0] for c in calls) <= P0 * (1 + 1e-12)
 
 
 @pytest.mark.parametrize(

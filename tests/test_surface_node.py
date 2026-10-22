@@ -53,8 +53,9 @@ def test_a_padded_surface_node_has_the_gravity_of_the_planet_mass_at_its_radius(
 @pytest.mark.timeout(900)
 def test_a_padded_node_of_a_cmb_anchored_adiabat_takes_the_top_of_the_adiabat():
     """With the adiabat integrated from the CMB, the configured surface_temperature is not the
-    temperature at the surface: the padded node takes the adiabat continued from the node below
-    to the target pressure (checked against a 4000-step integration), and its EOS density there."""
+    temperature at the surface: the padded node takes the adiabat continued from the node
+    below to the target pressure (checked against a 4000-step integration), and its EOS
+    density there."""
     import os
 
     import zalmoxis.solver as zs

@@ -99,12 +99,13 @@ def deviations(
     dict
         {invariant: (deviation, node index, tolerance)}. ``pressure_monotone`` uses the nodes
         before the first node with P <= 0, and ``padding`` the nodes from there on, the surface
-        past a stop of the integration, which must have P = 0, the mass of that first node and,
-        since no mass lies above the stop, the gravity of that mass at their own radius (Gauss),
-        not the gravity at the stop; ``gravity`` checks them too, as every node but the centre. ``positive`` and ``density_eos`` read every node, ``density_eos``
-        with the lookup of a padded node at ``target_surface_pressure``, the surface pressure
-        that the solve targets; ``mass_monotone``, the layer masses, the node checks and
-        ``mass_closure`` read all nodes or the last one, and ``centre`` reads node 0.
+        past a stop of the integration, which must have P = 0, the mass of that first node
+        and, since no mass lies above the stop, the gravity of that mass at their own radius
+        (Gauss), not the gravity at the stop; ``gravity`` checks every node but the centre.
+        ``positive`` and ``density_eos`` read every node, ``density_eos`` with the lookup of a
+        padded node at ``target_surface_pressure``, the surface pressure that the solve targets;
+        ``mass_monotone``, the layer masses, the node checks and ``mass_closure`` read all nodes
+        or the last one, and ``centre`` reads node 0.
         ``cmb_node`` and ``core_mantle_node`` mirror the PROTEUS reading of the profile: the
         layer boundary is the first node with m >= cmb_mass (core_mantle_mass with an ice
         layer), compared exactly, and a result where no node reaches it would give the caller
@@ -154,8 +155,8 @@ def deviations(
         + np.count_nonzero(m[k:] != m[k : k + 1])
         + np.count_nonzero(~gauss),
         i,
-        text=f'pressure, mass, gravity {P[i]:.6e}, {m[i]:.6e}, {g[i]:.6e}; expected 0, the mass '
-        f'of node {k} and G m / r^2 {G * m[k] / r[i] ** 2:.6e}'
+        text=f'pressure, mass, gravity {P[i]:.6e}, {m[i]:.6e}, {g[i]:.6e}; expected 0, '
+        f'the mass of node {k} and G m / r^2 {G * m[k] / r[i] ** 2:.6e}'
         if off.any()
         else '',
     )
