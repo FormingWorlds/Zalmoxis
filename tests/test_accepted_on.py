@@ -1351,8 +1351,9 @@ def _oscillating_solve(monkeypatch, caplog, factor, temperature_function=None, *
 
 
 def _first_then_alternating(first, later):
-    """Pass 0 at 1 + first, later passes at 1 +- later with alternating sign."""
-    return lambda n: 1 + first if n == 0 else 1 + later if n % 2 else 1 - later
+    """Pass 0 at 1 + first, later passes at 1 +- later with alternating sign, shrinking by
+    1e-6 per pass: far above round-off, far below the 1 % slack of the oscillation count."""
+    return lambda n: 1 + first if n == 0 else 1 + (1 if n % 2 else -1) * later * (1 - 1e-6 * n)
 
 
 STOP = 'Accepting best solution after'
@@ -1488,7 +1489,7 @@ def test_the_oscillation_stop_fires_after_the_adiabat_blend_ramp(monkeypatch, ca
     r, radius = _oscillating_solve(
         monkeypatch,
         caplog,
-        lambda n: sched.get(n, 1.02 if n % 2 else 0.98),
+        lambda n: sched.get(n, _first_then_alternating(0, 0.02)(n)),
         max_iterations_outer=22,
         tolerance_outer=1e-3,
         temperature_mode='adiabatic',
