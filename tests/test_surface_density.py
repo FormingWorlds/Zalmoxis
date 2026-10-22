@@ -82,6 +82,7 @@ class _Mix:
         return self.tdep
 
 
+# get_mixed_nabla_ad takes the interpolation cache before the melting curves
 NABLA_ARGS = ('md', 'cache', 'sol', 'liq', 'mzf', 'rho_min', 'rho_scale', 'binodal')
 
 
@@ -102,7 +103,7 @@ def test_the_surface_continuation_integrates_d_ln_t_d_ln_p_exactly(monkeypatch, 
     the midpoint rule in ln P integrates exactly."""
     calls = _nabla(monkeypatch, lambda P, T: a + b * np.log(P))
     P0, T0, ps = 3.77e9, 2493.6, 101325.0
-    T = zs._adiabat_to_surface(P0, T0, ps, _Mix(), NABLA_ARGS)
+    T = zs._adiabat_to_surface(P0, T0, ps, _Mix(), EOS_ARGS)
     exact = T0 * np.exp(a * np.log(ps / P0) + b / 2 * (np.log(ps) ** 2 - np.log(P0) ** 2))
     assert T == pytest.approx(exact, rel=1e-12) and T < T0
     assert calls and all(c[3] == NABLA_ARGS for c in calls)
@@ -123,4 +124,24 @@ def test_the_surface_continuation_holds_t_without_a_gradient_or_a_pressure_drop(
     monkeypatch, P0, ps, mix, f
 ):
     _nabla(monkeypatch, f)
-    assert zs._adiabat_to_surface(P0, 2493.6, ps, mix, NABLA_ARGS) == 2493.6
+    assert zs._adiabat_to_surface(P0, 2493.6, ps, mix, EOS_ARGS) == 2493.6
+
+
+def test_the_surface_continuation_predicts_the_midpoint_temperature(monkeypatch):
+    """For nabla = a T / T0, T = T0 / (1 - a ln(p / P0)); the midpoint step needs the
+    predicted temperature to reach it within 1e-4 (without it the error is about 1e-3)."""
+    a, P0, T0, ps = 0.05, 3.77e9, 2493.6, 101325.0
+    _nabla(monkeypatch, lambda P, T: a * T / T0)
+    T = zs._adiabat_to_surface(P0, T0, ps, _Mix(), EOS_ARGS)
+    assert T == pytest.approx(T0 / (1 - a * np.log(ps / P0)), rel=1e-4)
+
+
+def test_the_surface_continuation_holds_t_when_the_midpoint_gradient_is_missing(monkeypatch):
+    _nabla(monkeypatch, lambda P, T: 0.03 if P >= 3.76e9 else None)  # valid at P0 only
+    assert zs._adiabat_to_surface(3.77e9, 2493.6, 101325.0, _Mix(), EOS_ARGS) == 2493.6
+
+
+def test_the_surface_continuation_returns_a_non_finite_start_temperature_as_it_is(monkeypatch):
+    calls = _nabla(monkeypatch, lambda P, T: 0.03)
+    T = zs._adiabat_to_surface(3.77e9, np.nan, 101325.0, _Mix(), EOS_ARGS)
+    assert np.isnan(T) and not calls
