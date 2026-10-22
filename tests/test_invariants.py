@@ -827,7 +827,7 @@ def test_the_mass_closure_uses_the_form_of_the_accept_test():
     f = M / result['mass_enclosed'][-1]
     result['mass_enclosed'] = result['mass_enclosed'] * f
     result['gravity'] = result['gravity'] * f
-    result['mass_enclosed'][-1] = M  # the padded node, outside the gravity check
+    result['mass_enclosed'][-1] = M  # the padded node: m and g scaled by one factor
     cfg['planet_mass'] = Mp
     result['cmb_mass'] = result['core_mantle_mass'] = CMF * Mp
     _check(result, cfg, 1e-3)

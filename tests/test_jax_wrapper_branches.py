@@ -20,6 +20,7 @@ from unittest import mock
 import numpy as np
 import pytest
 
+from zalmoxis.constants import G
 from zalmoxis.jax_eos import wrapper as jw
 from zalmoxis.mixing import LayerMixture
 
@@ -394,8 +395,8 @@ class TestTemperatureArraysPath:
 
 class TestPostEventPadding:
     """Diffrax returns ``inf`` for save-points past a stop. The wrapper pads them
-    as numpy does: mass/gravity at the stop and pressure 0 for a stop at the
-    surface, NaN for a stop deep inside."""
+    as numpy does: the mass at the stop, the gravity of that mass at each radius
+    and pressure 0 for a stop at the surface, NaN for a stop deep inside."""
 
     @staticmethod
     def _run(y_end):
@@ -428,7 +429,7 @@ class TestPostEventPadding:
         mass, gravity, pressure = self._run(y_end)
         # Padded entries hold the event state, not the last pre-event node
         assert mass[5:] == pytest.approx(np.full(5, y_end[0]))
-        assert gravity[5:] == pytest.approx(np.full(5, y_end[1]))
+        assert gravity[5:] == pytest.approx(G * y_end[0] / np.linspace(1.0, 1e6, 10)[5:] ** 2)
         assert mass[4] == pytest.approx(1e23)
         assert np.all(pressure[5:] == 0.0)
 

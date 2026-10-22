@@ -96,12 +96,12 @@ def deviations(
     Returns
     -------
     dict
-        {invariant: (deviation, node index, tolerance)}. ``pressure_monotone`` and ``gravity``
-        use the nodes before the first node with P <= 0, and ``padding`` the nodes from there
-        on, the surface past a stop of the integration, which must have P = 0 and the mass of
-        that first node. No mass lies above the stop, so the gravity of a padded node is that
-        of the stop mass at its own radius (Gauss), not the gravity at the stop; ``padding``
-        does not read it. ``positive`` and ``density_eos`` read every node, ``density_eos``
+        {invariant: (deviation, node index, tolerance)}. ``pressure_monotone`` uses the nodes
+        before the first node with P <= 0, and ``padding`` the nodes from there on, the surface
+        past a stop of the integration, which must have P = 0 and the mass of that first node.
+        No mass lies above the stop, so the gravity of a padded node is that of the stop mass at
+        its own radius (Gauss), not the gravity at the stop; ``gravity`` checks it there as at
+        every node but the centre. ``positive`` and ``density_eos`` read every node, ``density_eos``
         with the lookup of a padded node at ``target_surface_pressure``, the surface pressure
         that the solve targets; ``mass_monotone``, the layer masses, the node checks and
         ``mass_closure`` read all nodes or the last one, and ``centre`` reads node 0.
@@ -189,11 +189,11 @@ def deviations(
             )
     with np.errstate(divide='ignore', invalid='ignore'):
         # the bound takes G M / r^2, not the gravity under test, which could widen it
-        g_ref = G * m[1:k] / r[1:k] ** 2
-        dg = np.abs(g[1:k] / g_ref - 1)
-        tol_g = TOLERANCES['gravity'] * (rtol + atol * (1 / m[1:k] + 1 / g_ref))
+        g_ref = G * m[1:] / r[1:] ** 2
+        dg = np.abs(g[1:] / g_ref - 1)
+        tol_g = TOLERANCES['gravity'] * (rtol + atol * (1 / m[1:] + 1 / g_ref))
         # a node without mass breaks the check
-        ok_g = (m[1:k] > 0) & np.isfinite(dg)
+        ok_g = (m[1:] > 0) & np.isfinite(dg)
         ratio = np.where(ok_g, dg / tol_g, np.inf)
         i = int(np.argmax(ratio)) if len(ratio) else -1
         dev, tol = (dg[i], tol_g[i]) if i >= 0 and ok_g[i] else (np.inf, 0.0)

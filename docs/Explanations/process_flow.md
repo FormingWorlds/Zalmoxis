@@ -72,8 +72,8 @@ The terminal event reduces evaluation time for bad guesses from minutes to milli
 
 **Early termination handling.**
 When the terminal event fires, or the step size collapses, the ODE integration stops short of the outermost grid point.
-A stop at a pressure of at most $10^{-6} P_c$, or below the target surface pressure, is treated as the surface: the remaining points take the mass and gravity at the stop and zero pressure, so the enclosed mass is continuous as the stop moves through the last shell.
-The returned density at these points is the EOS density at the target surface pressure and the temperature of the point.
+A stop at a pressure of at most $10^{-6} P_c$, or below the target surface pressure, is treated as the surface: the remaining points take the mass at the stop and zero pressure, so the enclosed mass is continuous as the stop moves through the last shell, and the gravity of that mass at their own radius, since no mass lies above the stop.
+The returned density at these points is the EOS density at the target surface pressure and the temperature of the point. A consumer that integrates this density over the nodes, as Aragog does with a trapezoid, counts the shell between the stop and the outer radius at that density, while the enclosed mass of the structure does not include it.
 After a step-size collapse, the stop state comes from a re-integration of the one shell in which the integration stopped, which applies the same rule; a re-integration that passes the last shell completes the profile.
 A stop at a higher pressure, or with a non-finite mass, gravity or pressure, is a failed solve: the remaining points are NaN and a warning names the stop.
 A failed solve is an error: at the first structure solve of the pressure search, or the re-solve at its root, that is not finite, `main` raises `StructureSolveError` with the radius, the outer and inner iteration, the central pressure and the stop, for both the Picard and the Newton outer solver.
