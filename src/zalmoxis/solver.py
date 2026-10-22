@@ -2390,6 +2390,7 @@ def _solve(
             oscillation_count >= 10
             and best_mass_error < min(3 * tolerance_outer, _TIMEOUT_ACCEPT_MASS_ERR)
             and not ramp_incomplete
+            and stop_label is None  # a pass the clock cut ends at the next clock check
         ):
             logger.warning(
                 'Accepting best solution after %d oscillations (mass error %.4f%%, '
