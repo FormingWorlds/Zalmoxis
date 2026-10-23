@@ -149,6 +149,16 @@ class TestNewtonOnSyntheticMR:
         rels = [h[2] for h in result['newton_history']]
         assert rels[-1] < rels[0], 'final |f|/M_target must beat initial'
 
+    def test_every_probe_solve_is_marked(self, newton_config):
+        """Each M(R) probe carries ``_newton_probe`` so its progress lines log at DEBUG."""
+        cp = dict(newton_config, planet_mass=6.0e24, _initial_radius_guess=6.0e6)
+        side = _make_synthetic_M_solve(lambda R: 6.0e18 * R - 3.6e25)
+        with patch('zalmoxis.solver._solve', side_effect=side) as solve:
+            _solve_newton_outer(cp, {}, None, '/tmp')
+        assert solve.call_count > 1
+        assert all(c.args[0].get('_newton_probe') is True for c in solve.call_args_list)
+        assert '_newton_probe' not in cp
+
     def test_converges_on_cubic_M_of_R(self, newton_config):
         """Cubic M(R) ~ rho * R^3: realistic physics, smooth, monotonic.
 

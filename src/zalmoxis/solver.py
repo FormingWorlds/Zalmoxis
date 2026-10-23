@@ -1112,6 +1112,7 @@ def _solve_newton_outer(
         # outer_solver knob would route us back here; force picard for
         # the inner _solve call so we hit the actual inner Picard.
         cp['outer_solver'] = 'picard'
+        cp['_newton_probe'] = True
         sub_result = _solve(
             cp,
             material_dictionaries,
@@ -1431,6 +1432,8 @@ def _solve(
     )
     # Optional initial radius guess from a previous failed attempt
     initial_radius_guess = config_params.get('_initial_radius_guess', None)
+    # A Newton probe is one of many solves per structure, so its progress lines go to DEBUG
+    progress = logging.DEBUG if config_params.get('_newton_probe') else logging.INFO
 
     mushy_zone_factors, condensed_rho_min, condensed_rho_scale, binodal_T_scale = _eos_params(
         config_params
@@ -1512,9 +1515,10 @@ def _solve(
     cmb_mass = core_mass_fraction * planet_mass
     core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * planet_mass
 
-    logger.debug(
+    logger.log(
+        progress,
         f'Starting structure model for a {planet_mass / earth_mass} Earth masses planet '
-        f"with EOS config {layer_eos_config} and temperature mode '{temperature_mode}'."
+        f"with EOS config {layer_eos_config} and temperature mode '{temperature_mode}'.",
     )
 
     start_time = time.time()
@@ -2433,14 +2437,16 @@ def _solve(
             if ramp_incomplete:
                 if not _using_adiabat:
                     _using_adiabat = True
-                    logger.debug(
+                    logger.log(
+                        progress,
                         f'Outer iter {outer_iter}: mass converged with linear T, '
-                        f'activating adiabat blend.'
+                        f'activating adiabat blend.',
                     )
                 # Continue iterating to let the blend ramp up
                 continue
-            logger.debug(
-                f'Outer loop (total mass) converged after {outer_iter + 1} iterations.'
+            logger.log(
+                progress,
+                f'Outer loop (total mass) converged after {outer_iter + 1} iterations.',
             )
             converged_mass = True
             break
