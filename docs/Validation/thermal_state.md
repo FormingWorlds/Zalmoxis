@@ -17,7 +17,7 @@ Plot 2: $U_d$, $U_u$ and $\Delta U = U_d - U_u$ against planet mass.
 - References: Seager et al. (2007); Boujibar et al. (2020) and White & Li (2025), reference named in the script docstring.
 - Tolerance: none (no test).
 - Test id: none; status: script figure, no test, not run in CI.
-- Command: `python tools/validation/validate_thermal_state.py`
+- Command: `python tools/validation/validate_thermal_state.py`. The script does not run with the current `initial_thermal_state`, which returns `T_surf_accr` and no `T_surface` key.
 
 ## Constant and PALEOS material properties
 
@@ -35,4 +35,4 @@ The script also highlights the surface temperature issue: for 1 $M_\oplus$ plane
 - References: White & Li (2025) and Boujibar et al. (2020), reference named in the script docstring.
 - Tolerance: none (no test).
 - Test id: none; status: script figure, no test, not run in CI.
-- Command: `python tools/validation/validate_thermal_state_paleos.py`
+- Command: `python tools/validation/validate_thermal_state_paleos.py`. The script does not run with the current `initial_thermal_state`, which returns `T_surf_accr` and no `T_surface` key.
