@@ -17,6 +17,36 @@ def _reply():
     return io.BytesIO(b'{"sha": "' + b'c' * 40 + b'"}')
 
 
+def _compare(status, ahead=0, behind=0, commits=()):
+    """A GitHub compare reply of the tested commit against main."""
+    return {
+        'status': status,
+        'ahead_by': ahead,
+        'behind_by': behind,
+        'merge_base_commit': {'sha': 'e' * 40},
+        'commits': [
+            {
+                'sha': sha,
+                'commit': {
+                    'committer': {'date': '2026-10-22T15:20:45Z'},
+                    'message': f'Subject {sha[:4]}\n\nbody',
+                },
+            }
+            for sha in commits
+        ],
+    }
+
+
+def test_main_ahead_of_the_pin_warns_and_exits_six(capsys):
+    """Upstream main ahead of the tested commit (the pin is in its history): exit 6, which
+    the workflow turns into a warning, and the summary names every new commit."""
+    new = ['a' * 40, 'b' * 40, 'f' * 40]
+    assert check.main(fetch=lambda *a: _compare('ahead', 3, 0, new)) == 6
+    out = capsys.readouterr().out
+    assert 'PALEOS main is 3 commits ahead of the tested commit' in out
+    assert all(sha[:9] in out for sha in new) and 'Subject aaaa' in out
+
+
 def test_the_pin_is_read_from_the_source_without_importing_it():
     """The script reads PALEOS_TESTED_SHA from paleos_api.py as the module defines it."""
     assert check.tested_sha() == PALEOS_TESTED_SHA
