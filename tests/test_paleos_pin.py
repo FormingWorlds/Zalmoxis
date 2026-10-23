@@ -118,20 +118,27 @@ def test_a_tested_commit_missing_from_a_full_clone_names_both_causes(history):
         check_paleos_commit(repo, 'f' * 40)
     assert f'git -C {repo} fetch && git -C {repo} checkout {"f" * 40}' in str(err.value)
     assert f'git -C {repo} pull' not in str(err.value)
+    assert 'still missing after the fetch, no branch this clone fetches holds it' in str(
+        err.value
+    )
     assert 'main was rewritten' in str(err.value) and 'PALEOS_TESTED_SHA' in str(err.value)
 
 
+@pytest.mark.parametrize(('remote', 'detach'), [('origin', False), ('upstream', True)])
 def test_a_clone_from_before_a_rewrite_runs_after_the_named_commands(
-    history, tmp_path, monkeypatch
+    history, tmp_path, monkeypatch, remote, detach
 ):
     """A clone made before main was rewritten (the tested commit amended to a new SHA
     with the same tree) cannot pull the new history; the commands the message names
-    fetch the rewritten commit and give a checkout the check accepts."""
+    fetch the rewritten commit and give a checkout the check accepts, also from a
+    detached head of a clone whose remote is not called origin."""
     monkeypatch.setenv('GIT_CONFIG_GLOBAL', '/dev/null')
     monkeypatch.setenv('GIT_CONFIG_NOSYSTEM', '1')
     repo, c = history
     clone = tmp_path / 'clone'
-    _git(tmp_path, 'clone', '-q', f'file://{repo}', str(clone))
+    _git(tmp_path, 'clone', '-q', '-o', remote, f'file://{repo}', str(clone))
+    if detach:
+        _git(clone, 'checkout', '-q', '--detach', 'HEAD')
     _git(repo, 'reset', '-q', '--hard', c['tested'])
     _git(
         repo,
