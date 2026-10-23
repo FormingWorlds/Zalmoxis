@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   paleos-main:
-    name: PALEOS main is the tested commit
+    name: PALEOS main contains the tested commit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

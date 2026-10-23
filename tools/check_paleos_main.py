@@ -94,11 +94,6 @@ def main(fetch=compare) -> int:
         ahead, behind = int(reply['ahead_by']), int(reply['behind_by'])
         if status not in _STATUSES:
             raise ValueError(status)
-        new = [
-            (c['sha'][:9], c['commit']['committer']['date'][:10], c['commit']['message'])
-            for c in reply['commits']
-        ]
-        base = reply['merge_base_commit']['sha']
     except (KeyError, TypeError, ValueError) as exc:
         print(f'PALEOS main could not be read: no comparison in the reply ({exc!r})')
         return 3
@@ -106,18 +101,34 @@ def main(fetch=compare) -> int:
         print(f'PALEOS main is at the tested commit {tested}')
         return 0
     if status == 'ahead':
+        try:
+            new = [
+                (c['sha'][:9], c['commit']['committer']['date'][:10], c['commit']['message'])
+                for c in reply['commits']
+            ]
+        except (KeyError, TypeError) as exc:
+            print(f'PALEOS main could not be read: no commit list in the reply ({exc!r})')
+            return 3
+        listed = f' ({len(new)} of {ahead} listed)' if len(new) < ahead else ''
         print(
             f'PALEOS main is {ahead} commit{"s" * (ahead != 1)} ahead of the tested commit '
-            f'{tested}; the pin moves after the PALEOS-API tests pass on the new commit:'
+            f'{tested}; the pin moves after the PALEOS-API tests pass on the new commit'
+            f'{listed}:'
         )
         for sha, date, message in new:
             print(f'  {sha} {date} {message.splitlines()[0] if message else ""}')
         return 6
+    base = (reply.get('merge_base_commit') or {}).get('sha', 'unknown')
+    cause = (
+        'as after a rewrite of main: run the PALEOS-API tests on main and move '
+        if status == 'diverged'
+        else 'main is older than the tested commit (main moved back, or the pin is not on '
+        'main yet): keep or move '
+    )
     print(
         f'PALEOS main does not contain the tested commit {tested} ({status}: {ahead} '
-        f'commits ahead, {behind} behind, merge base {base}), as after a rewrite of main: '
-        'run the PALEOS-API tests on main and move PALEOS_TESTED_SHA in '
-        'src/zalmoxis/eos/paleos_api.py'
+        f'commits ahead, {behind} behind, merge base {base}), {cause}PALEOS_TESTED_SHA in '
+        'src/zalmoxis/eos/paleos_api.py to a commit on main'
     )
     return 1
 
