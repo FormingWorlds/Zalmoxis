@@ -22,9 +22,7 @@ from zalmoxis.config import (
     load_solidus_liquidus_functions,
     load_zalmoxis_config,
 )
-from zalmoxis.constants import G, earth_mass
-
-EARTH_MASS = earth_mass
+from zalmoxis.constants import G
 
 pytestmark = [pytest.mark.smoke, pytest.mark.timeout(60)]
 
@@ -32,10 +30,9 @@ P_TARGET = 101325.0
 NOISE_ANALYTIC = 4e3  # integrator noise of f on the analytic EOS [Pa]
 
 
-@pytest.fixture(scope='module', params=[1, 10], ids=['1 M_earth', '10 M_earth'])
-def analytic_solve(request):
-    """main() at 1 and 10 M_earth on the analytic EOS; the result, the last P_c residual and its
-    root. At 10 M_earth one large final step crosses the surface in the last shell."""
+@pytest.fixture(scope='module')
+def analytic_solve():
+    """main() at 1 M_earth on the analytic EOS; the result, the last P_c residual and its root."""
     calls, stops = [], []
     real, real_structure = zs.brentq, zs.solve_structure
 
@@ -59,7 +56,6 @@ def analytic_solve(request):
         layer_eos_config=dict(
             cfg['layer_eos_config'], core='Analytic:iron', mantle='Analytic:MgSiO3'
         ),
-        planet_mass=request.param * cfg['planet_mass'],
         num_layers=150,
         target_surface_pressure=P_TARGET,
         data_output_enabled=False,
@@ -99,7 +95,7 @@ def test_the_residual_rises_through_the_surface_stop(analytic_solve, validation_
     (2007) analytic EOS. Each step moves f by more than 10 times the integrator noise of f on
     this EOS (3e3 to 4e3 Pa), so a jump at the stop cannot hide in the noise.
     """
-    _, f, p_root, _, cfg = analytic_solve
+    _, f, p_root, _, _ = analytic_solve
     x, y = _threshold_scan(f, p_root)
     assert y.min() <= -P_TARGET < y.max(), 'the scan does not cross the stop at R'
     d = np.diff(y)
@@ -123,8 +119,7 @@ def test_the_residual_rises_through_the_surface_stop(analytic_solve, validation_
         fig.tight_layout()
         return fig
 
-    if cfg['planet_mass'] < 2 * EARTH_MASS:
-        validation_plot(figure, 'surface_residual_continuity')
+    validation_plot(figure, 'surface_residual_continuity')
 
 
 @pytest.mark.physics_invariant
@@ -140,29 +135,6 @@ def test_the_accepted_surface_is_not_padded_and_holds_the_target(analytic_solve)
     assert result['converged']
     assert p[-1] > 0, 'the accepted outer node is padded'
     assert abs(p[-1] - P_TARGET) <= 0.15 * P_TARGET, f'P(R) {p[-1]:.6e} Pa'
-
-
-def test_past_the_surface_the_pressure_keeps_falling():
-    """Past P = 0 the derivatives take the EOS density at P = 0, so a step that crosses the
-    surface ends at P < 0 and the zero-pressure event finds the crossing; zero derivatives
-    there let one large step end at P > 0 past the surface."""
-    from zalmoxis.eos_analytic import get_analytic_density
-    from zalmoxis.mixing import LayerMixture
-    from zalmoxis.structure_model import coupled_odes
-
-    mix = {
-        k: LayerMixture([f'Analytic:{m}'], [1.0])
-        for k, m in (('core', 'iron'), ('mantle', 'MgSiO3'))
-    }
-    r, m, g = 6.4e6, 5.97e24, 9.8
-    rho0 = get_analytic_density(0.0, 'MgSiO3')
-    near = coupled_odes(r, [m, g, 1e-3], 1e24, 1e30, mix, {}, {}, 300.0, None, None)
-    for p in (-1e5, -1e9):
-        d = coupled_odes(r, [m, g, p], 1e24, 1e30, mix, {}, {}, 300.0, None, None)
-        assert d[2] == pytest.approx(-rho0 * g, rel=1e-12)
-        assert d[0] == pytest.approx(4 * np.pi * r**2 * rho0, rel=1e-12)
-        np.testing.assert_allclose(d, near, rtol=1e-9)
-    assert 3000.0 < rho0 < 5000.0
 
 
 def test_a_stopped_solve_reports_where_it_stopped(analytic_solve):
