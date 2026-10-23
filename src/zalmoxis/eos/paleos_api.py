@@ -456,10 +456,10 @@ def check_paleos_commit(repo_dir: Path | None = None, tested: str | None = None)
                 fix = f'update it, for example git -C {repo_dir} fetch --unshallow'
             elif not known:
                 fix = (
-                    f'fetch and check it out, for example git -C {repo_dir} fetch origin && '
-                    f'git -C {repo_dir} checkout {tested}; if the fetch does not bring it, '
-                    'PALEOS main was rewritten without it: use a Zalmoxis whose '
-                    'PALEOS_TESTED_SHA is on main'
+                    f'fetch and check it out, for example git -C {repo_dir} fetch && '
+                    f'git -C {repo_dir} checkout {tested}; if it is still missing after the '
+                    'fetch, it is on no branch of the remote, as when PALEOS main was rewritten '
+                    'without it: use a Zalmoxis whose PALEOS_TESTED_SHA is on main'
                 )
             elif older.returncode == 0:
                 fix = f'update it, for example git -C {repo_dir} pull'
