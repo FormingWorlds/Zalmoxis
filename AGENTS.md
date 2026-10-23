@@ -97,7 +97,7 @@ Package layout and module responsibilities: `docs/Explanations/code_architecture
 
 ## Solver architecture
 
-Three nested fixed-point loops: outer mass-radius search, middle density Picard, inner structure ODE. `docs/Explanations/code_architecture.md` describes each loop, the Anderson mixing, the adiabat anchor and the JAX kernels. Two points it does not state:
+Three nested fixed-point loops: outer mass-radius search, middle density Picard, inner structure ODE. `docs/Explanations/code_architecture.md` describes each loop, the Anderson mixing and the adiabat anchor; its JAX section names an older support envelope. The Newton tolerances and the current JAX envelope:
 
 - `outer_solver = 'newton'` (PROTEUS schema default, `proteus.config._struct`) auto-tightens the integrator tolerances (rel=1e-9, abs=1e-10) so the central-difference dM/dR is smooth.
 - **JAX path (opt-in, `use_jax = True`):** dispatches to `jax_eos/` for the
@@ -171,7 +171,7 @@ EOS-table generation:
   `generate_aragog_pt_tables` (or `_2phase`). Aragog requires rectangular
   P-T grids; phase-filtering breaks `scipy.RegularGridInterpolator`.
 
-Recommended PROTEUS-side knobs (in priority order):
+Recommended PROTEUS-side settings (in priority order):
 
 1. `interior_struct.module = 'zalmoxis'` + `interior_energetics.module = 'aragog'`
    for new production runs; `'spider'` for legacy parity comparisons.
@@ -190,9 +190,9 @@ Recommended PROTEUS-side knobs (in priority order):
 
 Pitfalls:
 
-- *Deleted `dilatation` field*: removed from PROTEUS on 2026-05-04; any
-  config that sets `dilatation = true` or `dilatation = false` is rejected
-  by the schema validator.
+- *No `dilatation` field*: PROTEUS has no `dilatation` field; a config
+  that sets `dilatation = true` or `dilatation = false` is rejected by the
+  schema validator.
 - *Resume + ULP radius drift*: a resumed run can hit single-ULP mismatch
   between saved Zalmoxis radii and Aragog's mesh bounds at
   `aragog/src/aragog/solver/entropy_solver.py:91-110`.
