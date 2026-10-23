@@ -1,7 +1,7 @@
 """The JAX and numpy structure solves report the same stop radius.
 
 A solve whose pressure reaches zero before R fills its ``stop`` dict with the stop radius and
-the gravity there. The JAX event root finder works to 1e-3 m in radius, so on a profile where
+the stop pressure, zero at the terminal event. The JAX event root finder works to 1e-3 m in radius, so on a profile where
 both right-hand sides agree, the two stop radii agree within 1 m at rtol 1e-10. The profile is
 the PALEOS setup of ``test_jax_rhs_parity`` with T at 0.6 of its values, below the per-cell
 clamp region, where numpy and JAX differ by about 1e6 Pa near the surface.
@@ -81,10 +81,10 @@ def test_the_numpy_and_jax_stop_radii_agree_within_a_metre(stopped_solves):
     assert dp < 0.5 * RHO_G_SURFACE, (
         f'the profiles differ by {dp:.3e} Pa, more than 0.5 m of rho g'
     )
-    assert set(stop_np) == set(stop_jx) == {'r', 'g'}
+    assert set(stop_np) == set(stop_jx) == {'r', 'p'}
     for stop in (stop_np, stop_jx):
         assert radii[n - 1] < stop['r'] <= radii[n]
     assert abs(stop_np['r'] - stop_jx['r']) <= 1.0, (
         f'{stop_np["r"]:.4f} m vs {stop_jx["r"]:.4f} m'
     )
-    assert stop_jx['g'] == pytest.approx(stop_np['g'], rel=1e-6)
+    assert stop_np['p'] == stop_jx['p'] == 0.0
