@@ -291,6 +291,7 @@ def solve_structure(
     temperature_arrays=None,
     volatile_profile=None,
     surface_pressure=0.0,
+    stop=None,
 ):
     """Solve the coupled ODEs for the planetary structure model.
 
@@ -348,6 +349,10 @@ def solve_structure(
         Binodal sigmoid width in K for H2 miscibility suppression.
     surface_pressure : float, optional
         Target surface pressure [Pa], passed to ``pad_after_stop``.
+    stop : dict or None, optional
+        Filled when the solve is padded as the surface: ``'r'`` the radius of the stop [m]
+        and ``'p'`` the pressure there [Pa], clipped at 0. Left empty when the solve reaches
+        the outer radius.
 
     Returns
     -------
@@ -402,6 +407,7 @@ def solve_structure(
                 binodal_T_scale=binodal_T_scale,
                 volatile_profile=volatile_profile,
                 surface_pressure=surface_pressure,
+                stop=stop,
             )
         except ValueError as exc:
             interpolation_cache['_jax_fell_back'] = True  # numpy for the rest of this main()
@@ -518,9 +524,10 @@ def solve_structure(
     n = len(mass_enclosed)
     if n < len(radii):
         if sol_end.status == 1:
-            y_stop = sol_end.y_events[0][-1]
+            y_stop, r_stop = sol_end.y_events[0][-1], sol_end.t_events[0][-1]
         else:
             y_stop = [mass_enclosed[-1], gravity[-1], pressure[-1]] if n else y0
+            r_stop = radii[n - 1] if n else radii[0]
             # The failure lies between radii[n - 1] and radii[n]; re-integrate only that shell
             # to find where it stops (scipy never ends a step from a non-finite RHS).
             nonfinite[0] = 0
@@ -535,13 +542,15 @@ def solve_structure(
                     method='RK45',
                     events=_pressure_zero,
                 )
-                y_stop = tail.y[:, -1]  # at a terminal event this is the event state
+                y_stop, r_stop = tail.y[:, -1], tail.t[-1]  # the event state at an event
                 if tail.status == 0 and n == len(radii) - 1:
                     # The re-integration passed the last shell: its end state completes the profile.
                     return tuple(
                         np.append(a, v)
                         for a, v in zip((mass_enclosed, gravity, pressure), y_stop)
                     )
+        if stop is not None and stop_is_surface(y_stop, y0[2], surface_pressure):
+            stop.update(r=float(r_stop), p=max(float(y_stop[2]), 0.0))
         mass_enclosed, gravity, pressure = pad_after_stop(
             radii, mass_enclosed, gravity, pressure, y_stop, y0[2], surface_pressure
         )

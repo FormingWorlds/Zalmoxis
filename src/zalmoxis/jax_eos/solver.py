@@ -70,11 +70,9 @@ def _build_diffeqsolve_jit(
 
     term = diffrax.ODETerm(_ode_rhs)
     solver = diffrax.Tsit5()
-    # Newton is the natural choice for a scalar condition on the
-    # solver's own interpolation; tolerances 1e-6 match the structure
-    # ODE's default rtol/atol and are finer than scipy's internal
-    # event-bracket tolerance (1e-8 of the step; scipy uses brentq).
-    root_finder = optx.Newton(rtol=1e-6, atol=1e-6)
+    # Newton on the solver's own interpolation, to 1 mm in radius: the surface
+    # residual of the pressure solve moves by rho g (about 2e4 Pa/m) per metre of stop radius.
+    root_finder = optx.Newton(rtol=0.0, atol=1e-3)
     event = diffrax.Event(
         cond_fn=_pressure_cond,
         root_finder=root_finder,
@@ -99,7 +97,7 @@ def _build_diffeqsolve_jit(
             max_steps=200000,
             throw=False,
         )
-        return sol.ys[0], sol.ys[1][0]
+        return sol.ys[0], sol.ys[1][0], sol.ts[1][0]
 
     return _solve
 
@@ -128,6 +126,7 @@ def solve_structure_jax(
     T_axis_is_radius: bool = False,
     has_volatile: bool = False,
     mantle_is_unified: bool = False,
+    end: dict | None = None,
     **rhs_kwargs,
 ):
     """Integrate the structure ODE from radii[0] to radii[-1].
@@ -146,6 +145,8 @@ def solve_structure_jax(
         ``coupled_odes_jax``. False (default): ``T_axis_grid`` is
         ``log10(P)``. True: ``T_axis_grid`` is a radial grid. Routes to
         a separately-compiled diffeqsolve variant.
+    end : dict or None
+        Filled with ``'r'``, the radius where the integration stopped [m].
     **rhs_kwargs :
         All the cache + adiabat + Stixrude14 parameters that
         coupled_odes_jax needs. Passed through as a dict pytree.
@@ -165,10 +166,13 @@ def solve_structure_jax(
     accepted state, and the later save points are not finite.
     """
     solve = _get_solve(T_axis_is_radius, has_volatile, mantle_is_unified)
-    return solve(
+    ys, y_end, r_end = solve(
         jnp.asarray(radii, dtype=jnp.float64),
         jnp.asarray(y0, dtype=jnp.float64),
         jnp.asarray(rtol, dtype=jnp.float64),
         jnp.asarray(atol, dtype=jnp.float64),
         rhs_kwargs,
     )
+    if end is not None:
+        end['r'] = float(r_end)
+    return ys, y_end

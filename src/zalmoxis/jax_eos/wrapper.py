@@ -229,6 +229,7 @@ def solve_structure_via_jax(
     binodal_T_scale=None,
     volatile_profile=None,  # VolatileProfile: single-volatile wet mantle
     surface_pressure=0.0,  # target surface pressure [Pa], for pad_after_stop
+    stop=None,  # filled as in solve_structure when the solve is padded as the surface
 ):
     """Drop-in replacement for ``solve_structure`` using the JAX path.
 
@@ -570,6 +571,7 @@ def solve_structure_via_jax(
     global _CALL_COUNT, _TOTAL_WALL
     _CALL_COUNT += 1
     _t0 = _time.perf_counter()
+    end = {} if stop is not None else None
     ys, y_end = solve_structure_jax(
         radii_arr,
         np.asarray(y0, dtype=float),
@@ -578,6 +580,7 @@ def solve_structure_via_jax(
         T_axis_is_radius=T_axis_is_radius,
         has_volatile=has_volatile,
         mantle_is_unified=mantle_is_unified,
+        **({} if end is None else {'end': end}),
         **jax_args,
     )
     # np.asarray on a jnp.ndarray yields a read-only view of the JAX
@@ -627,6 +630,8 @@ def solve_structure_via_jax(
                 f'JAX solve stopped at P = {float(y_end[2]):.3e} Pa before '
                 f'r = {radii_arr[n]:.6e} m, which is not the surface'
             )
+        if stop is not None:
+            stop.update(r=end['r'], p=max(float(y_end[2]), 0.0))
         return pad_after_stop(
             radii_arr,
             mass_enclosed[:n],

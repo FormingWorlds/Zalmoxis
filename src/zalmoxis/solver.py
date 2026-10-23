@@ -33,6 +33,7 @@ from .constants import (
     CONDENSED_RHO_MIN_DEFAULT,
     CONDENSED_RHO_SCALE_DEFAULT,
     TDEP_EOS_NAMES,
+    G,
     earth_center_pressure,
     earth_mass,
     earth_radius,
@@ -77,6 +78,69 @@ def _require_finite(radii, profiles, reason, outer_iter, inner_iter):
         f'Structure solve failed at R = {radii[-1]:.6e} m (outer iteration {outer_iter}, '
         f'inner {inner_iter}): {reason}; stop {stop}.'
     )
+
+
+def _is_number(x):
+    """True for a finite float or int that is not a bool."""
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+
+
+def _stopped_residual(p_stop, p_target, radius, r_stop, k):
+    """Surface residual of a solve that stops at ``r_stop`` <= ``radius`` at ``p_stop`` [Pa].
+
+    ``p_stop - p_target - k (radius - r_stop)``, which meets ``P(R) - p_target`` where the stop
+    reaches the outer radius and falls below it for a stop farther in.
+
+    Raises
+    ------
+    ValueError
+        If ``k`` is not a finite positive number, ``r_stop`` lies outside [0, ``radius``], or
+        ``p_stop`` is not a finite pressure >= 0.
+    """
+    if not (_is_number(k) and k > 0):
+        raise ValueError(f'k must be a finite positive number, got {k!r}')
+    if not (_is_number(r_stop) and 0.0 <= r_stop <= radius):
+        raise ValueError(f'r_stop must be in [0, {radius!r}] m, got {r_stop!r}')
+    if not (_is_number(p_stop) and p_stop >= 0.0):
+        raise ValueError(f'p_stop must be a finite pressure >= 0, got {p_stop!r}')
+    return p_stop - p_target - k * (radius - r_stop)
+
+
+def _surface_residual(pressure, stop, p_target, radius, k):
+    """Surface residual f(P_c) of one structure solve [Pa].
+
+    ``P(R) - p_target`` when the solve reaches ``radius``, else the stopped branch of
+    :func:`_stopped_residual` at the stop in ``stop`` (``'r'``, ``'p'``), which
+    ``solve_structure`` fills for a solve padded as the surface.
+
+    Raises
+    ------
+    ValueError
+        If the outer node is padded but ``stop`` holds no stop.
+    RuntimeError
+        If the stopped branch is not below its own stop residual ``p_stop - p_target``.
+    """
+    if pressure[-1] > 0:
+        return float(pressure[-1]) - p_target
+    if not stop:
+        raise ValueError('the outer node is padded but the solve reports no stop')
+    f = _stopped_residual(stop['p'], p_target, radius, stop['r'], k)
+    if not f <= stop['p'] - p_target:
+        raise RuntimeError(f'stopped residual {f:.6e} Pa is above P_stop - P_target')
+    return f
+
+
+def _pressure_xtol(slope, p_target, xtol_first):
+    """Central pressure tolerance [Pa] that holds |P(R) - p_target| to 0.1 ``p_target``.
+
+    ``0.1 p_target / slope`` with ``slope`` = dP(R)/dP_c. None when the slope or the target is
+    not a finite positive number, or when the tolerance is no finer than ``xtol_first``, the
+    tolerance of the first brentq call: a second call would then change nothing.
+    """
+    if not (_is_number(slope) and slope > 0 and _is_number(p_target) and p_target > 0):
+        return None
+    xtol = 0.1 * p_target / slope
+    return xtol if xtol < xtol_first else None
 
 
 # Module-level EOS interpolation cache. Persists across multiple main() calls
@@ -1974,14 +2038,25 @@ def _solve(
             # results, only the root)
             _state = {'mass_enclosed': None, 'gravity': None, 'pressure': None, 'n_evals': 0}
 
+            # Slope of the stopped branch, fixed for this pressure solve: the outermost
+            # density of the iterate and the gravity of the target mass at the target radius.
+            _filled = np.flatnonzero(np.isfinite(density) & (density > 0))
+            _rho_ref = (
+                float(density[_filled[-1]])
+                if _filled.size
+                else 3.0 * planet_mass / (4.0 * np.pi * radii[-1] ** 3)
+            )
+            _k_stop = _rho_ref * G * planet_mass / radii[-1] ** 2
+            _evals = {}
+
             def _pressure_residual(p_center):
                 """Surface pressure residual f(P_c) = P_surface(P_c) - P_target.
 
-                When the ODE integration terminates early (pressure hit zero
-                before reaching the planet surface), P_center is too low and
-                the residual is negative.
+                A solve that stops before R gives the stopped branch of
+                ``_surface_residual``, below P_stop - P_target: P_center is too low.
                 """
                 y0 = [0, 0, p_center]
+                stop = {}
                 m, g, p = solve_structure(
                     layer_mixtures,
                     cmb_mass,
@@ -2005,6 +2080,7 @@ def _solve(
                     temperature_arrays=temperature_arrays,
                     volatile_profile=volatile_profile,
                     surface_pressure=target_surface_pressure,
+                    stop=stop,
                 )
                 if logger.isEnabledFor(
                     logging.DEBUG
@@ -2023,13 +2099,9 @@ def _solve(
                 _state['gravity'] = g
                 _state['pressure'] = p
                 _state['n_evals'] += 1
-
-                # Early termination: pressure reached zero before the
-                # surface (padded with zeros) → P_center is too low
-                if p[-1] <= 0:
-                    return -target_surface_pressure
-
-                return p[-1] - target_surface_pressure
+                f = _surface_residual(p, stop, target_surface_pressure, radii[-1], _k_stop)
+                _evals[float(p_center)] = f
+                return f
 
             # Bracket: use previous solution to narrow the search.
             # If the narrow bracket from the previous solve does not
@@ -2083,15 +2155,35 @@ def _solve(
                         f'final f({_last_pl:.2e})={_fl:.2e}, '
                         f'f({_last_ph:.2e})={_fh:.2e}.'
                     )
+                xtol_first = 1e6
                 p_solution, root_info = brentq(
                     _pressure_residual,
                     p_low,
                     p_high,
-                    xtol=1e6,
+                    xtol=xtol_first,
                     rtol=1e-10,
                     maxiter=max_iterations_pressure,
                     full_output=True,
                 )
+                # A root farther than 0.1 P_target from the target: refine on the closest
+                # bracket with the tolerance its secant slope gives.
+                if abs(_evals.get(p_solution, 0.0)) > 0.1 * target_surface_pressure:
+                    xs = sorted(_evals)
+                    pairs = [(a, b) for a, b in zip(xs, xs[1:]) if _evals[a] < 0.0 < _evals[b]]
+                    if pairs:
+                        x_lo, x_hi = min(pairs, key=lambda ab: abs(ab[0] - p_solution))
+                        slope = (_evals[x_hi] - _evals[x_lo]) / (x_hi - x_lo)
+                        xtol2 = _pressure_xtol(slope, target_surface_pressure, xtol_first)
+                        if xtol2 is not None:
+                            p_solution, root_info = brentq(
+                                _pressure_residual,
+                                x_lo,
+                                x_hi,
+                                xtol=xtol2,
+                                rtol=1e-10,
+                                maxiter=max_iterations_pressure,
+                                full_output=True,
+                            )
                 _prev_brent_solution = p_solution  # Persist for next iteration
                 # Re-run solve_structure at the exact root to get clean profiles
                 # (brentq may have evaluated _state at a slightly different P)
