@@ -10,7 +10,7 @@ The verification strategy follows a tiered approach:
 2. **Tier 2 (integration tests):** Test the full solver chain (ODE + Picard + Brent + mass-radius loop) using the Seager et al. (2007) analytic EOS, which is a closed-form formula requiring no tabulated data. Compare against known physical benchmarks (Earth's radius, gravity, central pressure) and scaling laws.
 3. **Tier 3 (convergence tests):** Verify that the numerical error decreases systematically with grid refinement and tolerance tightening, confirming that the solver converges to the correct solution rather than a nearby but wrong one.
 
-All tests are implemented in [`tests/test_first_principles.py`](https://github.com/FormingWorlds/Zalmoxis) (25 pytest tests). A standalone plotting script at `tools/validation/run_first_principles_validation.py` makes the figures on the [hydrostatic structure](hydrostatic_structure.md) and [mass-radius relation](mass_radius.md) pages.
+All tests are implemented in [`tests/test_first_principles.py`](https://github.com/FormingWorlds/Zalmoxis) (25 pytest tests). A standalone plotting script at `tools/validation/run_first_principles_validation.py` makes the first-principles figures on the [hydrostatic structure](hydrostatic_structure.md) and [mass-radius relation](mass_radius.md) pages.
 
 ## Cases by process
 

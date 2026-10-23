@@ -55,6 +55,7 @@ Six individual assertions verify specific aspects:
 5. **Gravity slope at center:** $dg/dr|_{r=0}$ matches the analytic limit $\frac{4}{3}\pi G \rho$ to $< 10^{-4}$, verifying the singularity handling
 6. **Pressure monotonicity:** $dP/dr < 0$ everywhere $P > 0$, as required by hydrostatic equilibrium with positive density and gravity
 
+- Reference: closed-form solution of the uniform-density sphere
 - Tolerance: `rtol=1e-6` on the mass, gravity and pressure profiles; `rel=1e-4` on the central gravity slope
 - Test id: `tests/test_first_principles.py::TestUniformDensitySphere`
 - Command: `pytest -o "addopts=" tests/test_first_principles.py::TestUniformDensitySphere`
@@ -86,6 +87,7 @@ $$
 
 The smooth transition across the CMB confirms that `get_layer_mixture()` correctly assigns shells to layers and that the ODE integrator handles the density discontinuity without introducing spurious oscillations.
 
+- Reference: piecewise closed-form solution of the two-layer sphere
 - Tolerance: `rtol=1e-5` on the mass profile, `rtol=1e-4` on Gauss's law
 - Test id: `tests/test_first_principles.py::TestTwoLayerSphere`
 - Command: `pytest -o "addopts=" tests/test_first_principles.py::TestTwoLayerSphere`
@@ -104,6 +106,7 @@ The smooth transition across the CMB confirms that `get_layer_mixture()` correct
 
 The left panel shows the Gauss's law residual hovering around $10^{-11}$ to $10^{-9}$, far below the solver tolerance. The right panel shows the hydrostatic balance residual at $10^{-8}$ to $10^{-5}$, consistent with the second-order accuracy of the central-difference approximation on a 500-point grid.
 
+- Reference: Gauss's law $g = GM/r^2$ and hydrostatic balance $dP/dr + \rho g = 0$
 - Tolerance: `rtol=1e-5` on Gauss's law, largest relative hydrostatic residual below `1e-4`
 - Test id: `tests/test_first_principles.py::TestGaussLaw`, `tests/test_first_principles.py::TestHydrostaticBalance`
 - Command: `pytest -o "addopts=" tests/test_first_principles.py::TestGaussLaw tests/test_first_principles.py::TestHydrostaticBalance`
@@ -122,6 +125,7 @@ For uniform density, this integral evaluates to the well-known result $E_\mathrm
 
 This test is complementary to Tests 1-3: it verifies that errors do not cancel when integrated over the full planetary volume.
 
+- Reference: uniform-sphere binding energy $E_\mathrm{grav} = -\frac{3}{5} G M_p^2 / R$
 - Tolerance: `rel=0.01`
 - Test id: `tests/test_first_principles.py::TestGravitationalBindingEnergy`
 - Command: `pytest -o "addopts=" tests/test_first_principles.py::TestGravitationalBindingEnergy`
@@ -144,6 +148,7 @@ For the full solver (including Picard iteration and Brent root-finding), the pla
 
 Reducing `rtol` from $10^{-6}$ to $10^{-12}$ drives the mass error from $\sim 10^{-12}$ to $\sim 10^{-15}$ (machine precision), confirming that the solver tolerance propagates correctly through the integration. The error saturates at machine precision because the analytical solution and the numerical solution both use 64-bit floating-point arithmetic, and the difference between them reaches the fundamental representability limit.
 
+- Reference: closed-form solution of the uniform-density sphere
 - Tolerance: mass error below `1e-8` and pressure error below `1e-6` at $N = 400$; full-solver radius at $N = 200$ and $N = 400$ within 1%; mass error below `1e-10` at `rtol=1e-12`
 - Test id: `tests/test_first_principles.py::TestGridConvergence`, `tests/test_first_principles.py::TestToleranceConvergence`
 - Command: `pytest -o "addopts=" tests/test_first_principles.py::TestGridConvergence tests/test_first_principles.py::TestToleranceConvergence`
@@ -152,7 +157,7 @@ Reducing `rtol` from $10^{-6}$ to $10^{-12}$ drives the mass error from $\sim 10
 
 **What it tests:** The optional JAX path (`use_jax = True`) evaluates the right-hand side of the structure equations in `zalmoxis.jax_eos.rhs.coupled_odes_jax`. These cases compare it with the numpy `zalmoxis.structure_model.coupled_odes` on the same states. Two implementations of the same equations must give the same $dM/dr$, $dg/dr$ and $dP/dr$, so this is a cross-code check.
 
-**Setup:** The table cases draw random states with a fixed seed: $r$ from $10^5$ to $6.4 \times 10^6$ m, $M$ from 0 to $1\, M_\oplus$, $g$ from 0.5 to 25 m/s$^2$ and $P$ from $10^6$ to $3 \times 10^{11}$ Pa, with a PALEOS iron core and a PALEOS MgSiO$_3$ mantle. A state counts when both implementations return a nonzero right-hand side. JAX must never return a nonzero value where numpy returns zero; numpy may return a nonzero value where JAX returns zero in at most 4 of 200 states (the nearest-neighbour fallback of the numpy tables, which the JAX path does not have); at least 100 states must count. The synthetic cases build small tables in memory, so they need no EOS files and run in the unit tier.
+**Setup:** The table cases draw random states with a fixed seed: $r$ from $10^5$ to $6.4 \times 10^6$ m, $M$ from 0 to $1\, M_\oplus$, $g$ from 0.5 to 25 m/s$^2$ and $P$ from $10^6$ to $3 \times 10^{11}$ Pa, with a PALEOS iron core and a PALEOS MgSiO$_3$ mantle. A state counts when both implementations return a nonzero right-hand side. JAX must never return a nonzero value where numpy returns zero; numpy may return a nonzero value where JAX returns zero in at most 4 of 200 states (the nearest-neighbour fallback of the numpy tables, which the JAX path does not have); more than 100 states must count. The synthetic cases build small tables in memory, so they need no EOS files and run in the unit tier.
 
 | Test id | Mantle | Tolerance | Tier |
 |---|---|---|---|
@@ -177,7 +182,7 @@ Largest relative difference of the three right-hand-side terms between `coupled_
 
 ## Reproducing the results
 
-All figures can be regenerated with:
+The first-principles figures can be regenerated with:
 
 ```console
 python -m tools.validation.run_first_principles_validation

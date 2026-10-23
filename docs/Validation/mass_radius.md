@@ -20,6 +20,7 @@ These cases run the full solver with the Seager et al. (2007) analytic EOS and c
 
 The 4-7% deviations are expected and physically understood. The Seager modified polytrope is a temperature-independent, zero-Kelvin EOS fit to the merged Vinet/Birch-Murnaghan (low pressure) and Thomas-Fermi-Dirac (high pressure) equations of state. It does not account for thermal expansion, which makes real Earth's mantle less dense (and therefore larger) than the zero-temperature prediction. The density profile (panel a) shows the characteristic core-mantle discontinuity at ~3400 km radius, with iron densities of 8,000-13,000 kg/m$^3$ in the core and silicate densities of 4,000-5,500 kg/m$^3$ in the mantle. The gravity profile (panel c) peaks near the CMB (as expected for Earth-like planets where the dense core concentrates mass) and decreases toward the surface.
 
+- Reference: Earth: radius $1\,R_\oplus$, surface gravity 9.8 m/s$^2$, central pressure 360 GPa
 - Tolerance: radius within `abs=0.05` of $1\,R_\oplus$, surface gravity within `rel=0.10` of 9.8 m/s$^2$, central pressure within `rel=0.15` of 360 GPa
 - Test id: `tests/test_first_principles.py::TestEarthBenchmark`
 - Command: `pytest -o "addopts=" tests/test_first_principles.py::TestEarthBenchmark`
@@ -56,13 +57,14 @@ The integration tests also verify three conservation properties of the full solv
 - **Surface pressure:** $P(R_\mathrm{surface}) = P_\mathrm{target}$ (101,325 Pa) to within the Brent solver's pressure tolerance.
 - **Gauss's law:** $g = GM/r^2$ satisfied to $< 10^{-3}$ relative error at all radii in the converged solution, verifying that the Picard iteration and Brent solver do not introduce conservation violations.
 
+- Reference: [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346): $\alpha \approx 0.27$ and $0.77\,R_\oplus$ for a pure-iron planet; CMF monotonicity and the conservation laws
 - Tolerance: exponent within `abs=0.04` of 0.27; strictly decreasing radius with CMF; pure-iron radius within `abs=0.05` of $0.77\,R_\oplus$; mass within 1% (2% by trapezoidal integration); surface pressure within 2e9 Pa of the target; Gauss's law `rtol=1e-3`
 - Test id: `tests/test_first_principles.py::TestMassRadiusScaling`, `tests/test_first_principles.py::TestCMFMonotonicity`, `tests/test_first_principles.py::TestPureIronPlanet`, `tests/test_first_principles.py::TestConservationLaws`
 - Command: `pytest -o "addopts=" tests/test_first_principles.py::TestMassRadiusScaling tests/test_first_principles.py::TestCMFMonotonicity tests/test_first_principles.py::TestPureIronPlanet tests/test_first_principles.py::TestConservationLaws`
 
 ## Reproducing the results
 
-All figures can be regenerated with:
+The first-principles figures can be regenerated with:
 
 ```console
 python -m tools.validation.run_first_principles_validation
