@@ -21,6 +21,7 @@ from zalmoxis.config import (
     load_solidus_liquidus_functions,
     load_zalmoxis_config,
 )
+from zalmoxis.constants import G
 
 P_TARGET = 101325.0
 
@@ -28,13 +29,21 @@ P_TARGET = 101325.0
 @pytest.fixture(scope='module')
 def analytic_solve():
     """main() at 1 M_earth on the analytic EOS; the result, the last P_c residual and its root."""
-    calls = []
-    real = zs.brentq
+    calls, stops = [], []
+    real, real_structure = zs.brentq, zs.solve_structure
 
     def spy(f, a, b, *args, **kwargs):
         out = real(f, a, b, *args, **kwargs)
         if a > 1e8:  # the central pressure solve, not the outer radius search
             calls.append((f, float(out[0])))
+        return out
+
+    def structure_spy(*args, **kwargs):
+        out = real_structure(*args, **kwargs)
+        if isinstance(kwargs.get('stop'), dict):
+            stops.append(
+                (dict(kwargs['stop']), np.asarray(args[3], float), *map(np.array, out))
+            )
         return out
 
     root = get_zalmoxis_root()
@@ -56,10 +65,11 @@ def analytic_solve():
     )
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(zs, 'brentq', spy)
+        mp.setattr(zs, 'solve_structure', structure_spy)
         result = zs.main(cfg, load_material_dictionaries(), melt, os.path.join(root, 'input'))
     assert calls, 'no central pressure solve was seen'
     f, p_root = calls[-1]
-    return result, f, p_root
+    return result, f, p_root, stops
 
 
 def _threshold_scan(f, p_root, n=201):
@@ -75,7 +85,7 @@ def _threshold_scan(f, p_root, n=201):
 @pytest.mark.physics_invariant
 def test_the_residual_rises_through_the_surface_stop(analytic_solve):
     """f rises at every step across the stop at R, with no jump; a flat padded branch fails."""
-    _, f, p_root = analytic_solve
+    _, f, p_root, _ = analytic_solve
     x, y = _threshold_scan(f, p_root)
     assert y.min() <= -P_TARGET < y.max(), 'the scan does not cross the stop at R'
     d = np.diff(y)
@@ -87,8 +97,27 @@ def test_the_residual_rises_through_the_surface_stop(analytic_solve):
 @pytest.mark.physics_invariant
 def test_the_accepted_surface_is_not_padded_and_holds_the_target(analytic_solve):
     """The accepted profile reaches R with P(R) within 0.15 P_target of the target."""
-    result, _, _ = analytic_solve
+    result, _, _, _ = analytic_solve
     p = np.asarray(result['pressure'], float)
     assert result['converged']
     assert p[-1] > 0, 'the accepted outer node is padded'
     assert abs(p[-1] - P_TARGET) <= 0.15 * P_TARGET, f'P(R) {p[-1]:.6e} Pa'
+
+
+@pytest.mark.smoke
+def test_a_stopped_solve_reports_where_it_stopped(analytic_solve):
+    """The pressure solve passes a stop dict; a padded solve fills it with the stop radius in its
+    first padded shell and the gravity G m / r^2 there; a solve that reaches R leaves it empty."""
+    *_, stops = analytic_solve
+    assert stops, 'no structure solve was given a stop dict'
+    padded = [s for s in stops if s[4][-1] == 0.0]
+    assert padded and len(padded) < len(stops), 'the scan has no padded or no unpadded solve'
+    for stop, radii, mass, gravity, pressure in stops:
+        if pressure[-1] > 0.0:
+            assert stop == {}
+            continue
+        n = int(np.argmax(pressure == 0.0))
+        assert radii[n - 1] < stop['r'] <= radii[n]
+        assert stop['g'] == pytest.approx(
+            G * mass[n] / stop['r'] ** 2, rel=1e-3
+        )  # RK45 g r^2 error
