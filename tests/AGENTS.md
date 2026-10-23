@@ -40,7 +40,7 @@ A module-level constant read from an environment variable at import time does no
 
 This repository has no `tools/check_test_quality.py`; the marker check is `bash tools/validate_test_structure.sh`.
 
-- 2547 tests collected: 2356 unit, 126 smoke, 19 integration, 46 slow (a test can carry 2 markers).
+- 2547 tests collected with the EOS data linked: 2356 unit, 126 smoke, 19 integration, 46 slow.
 - Unit tier: `pytest -o "addopts=" -m unit` (~1.5 min on the dev machine,
   ~1m54s ubuntu / ~2m29s macOS in CI).
 - Nightly tier: `pytest -o "addopts=" -m "(unit or smoke or integration) and not slow" -n auto`
@@ -55,8 +55,9 @@ This repository has no `tools/check_test_quality.py`; the marker check is `bash 
   `-m smoke`. Tests without a marker are invisible to CI.
 - Use `pytest.approx` for float comparisons, never `==`.
 - First-principles verification suite: `tests/test_first_principles.py`
-  (~25 tests against analytic solutions; conservation laws, ideal-gas limit,
-  small-mass polytrope).
+  (25 tests: uniform and two-layer spheres, Gauss's law, hydrostatic balance,
+  binding energy, Earth benchmark, mass-radius scaling, CMF trend, pure iron,
+  conservation, grid and tolerance convergence).
 
 ### Coverage gate
 

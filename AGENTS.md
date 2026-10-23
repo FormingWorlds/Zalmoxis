@@ -191,8 +191,8 @@ Recommended PROTEUS-side settings (in priority order):
 Pitfalls:
 
 - *No `dilatation` field*: PROTEUS has no `dilatation` field; a config
-  that sets `dilatation = true` or `dilatation = false` is rejected by the
-  schema validator.
+  that sets `interior_struct.zalmoxis.dilatation` is rejected with
+  `UnknownConfigKeyError`.
 - *Resume + ULP radius drift*: a resumed run can hit single-ULP mismatch
   between saved Zalmoxis radii and Aragog's mesh bounds at
   `aragog/src/aragog/solver/entropy_solver.py:91-110`.
