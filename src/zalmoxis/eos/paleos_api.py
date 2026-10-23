@@ -46,6 +46,7 @@ import math as _math
 import multiprocessing as _mp
 import os as _os
 import re as _re
+import shlex as _shlex
 import subprocess as _subprocess
 import sys as _sys
 from dataclasses import asdict, dataclass
@@ -452,21 +453,22 @@ def check_paleos_commit(repo_dir: Path | None = None, tested: str | None = None)
             shallow = _git(repo_dir, 'rev-parse', '--is-shallow-repository').stdout.strip()
             known = _git(repo_dir, 'cat-file', '-e', f'{tested}^{{commit}}').returncode == 0
             older = _git(repo_dir, 'merge-base', '--is-ancestor', head_sha, tested)
+            q = _shlex.quote(str(repo_dir))
             if shallow == 'true':
-                fix = f'update it, for example git -C {repo_dir} fetch --unshallow'
+                fix = f'update it, for example git -C {q} fetch --unshallow; then run again'
             elif not known:
                 fix = (
-                    f'fetch and check it out, for example git -C {repo_dir} fetch && '
-                    f'git -C {repo_dir} checkout {tested}; if it is still missing after the '
-                    'fetch, no branch this clone fetches holds it, as when PALEOS main was '
+                    f'fetch and check it out, for example git -C {q} fetch --all && '
+                    f'git -C {q} checkout {tested}; if it is still missing after git fetch '
+                    '--all, no branch this clone fetches holds it, as when PALEOS main was '
                     'rewritten without it: use a Zalmoxis whose PALEOS_TESTED_SHA is on main'
                 )
             elif older.returncode == 0:
-                fix = f'update it, for example git -C {repo_dir} pull'
+                fix = f'check it out, for example git -C {q} checkout {tested}'
             else:
                 fix = (
                     'the tested commit is not in the history of this checkout (another '
-                    f'branch, or a rewritten main): git -C {repo_dir} checkout {tested}'
+                    f'branch, or a rewritten main): git -C {q} checkout {tested}'
                 )
             raise PaleosVersionError(
                 f'PALEOS in {repo_dir} is at {head_sha}, which does not contain the tested '
