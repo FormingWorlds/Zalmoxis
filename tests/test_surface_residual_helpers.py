@@ -75,12 +75,14 @@ def test_the_surface_residual_joins_both_branches_for_any_stop_pressure():
     zero-pressure event and for a stop above zero pressure."""
     radius, p_target, k = 6.4e6, 1e7, 2e4
     for p_stop in (0.0, 5e6):
-        reached = np.array([3e11, 1e9, p_stop])
+        reached = np.array([3e11, 1e9, p_stop + 1e-3])
         stopped = np.array([3e11, 1e9, 0.0])
         near = _surface_residual(
             stopped, {'r': radius - 1e-3, 'p': p_stop}, p_target, radius, k
         )
-        assert _surface_residual(reached, {}, p_target, radius, k) == p_stop - p_target
+        assert _surface_residual(reached, {}, p_target, radius, k) == pytest.approx(
+            p_stop - p_target + 1e-3, rel=1e-12
+        )
         assert near == pytest.approx(p_stop - p_target - k * 1e-3, rel=1e-12)
         # The flat branch the stop replaces: -p_target whatever the stop pressure.
         if p_stop:

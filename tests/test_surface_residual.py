@@ -107,7 +107,10 @@ def test_the_residual_rises_through_the_surface_stop(analytic_solve, validation_
         import matplotlib.pyplot as plt
 
         fig, ax = plt.subplots()
-        ax.plot((x - p_root) / 1e6, y / P_TARGET, 'o', ms=3, label='surface residual')
+        px, py = (x[::2] - p_root) / 1e6, y[::2] / P_TARGET  # every second point, under 60 kB
+        stopped = py <= -1.0  # stops below 1 Pa: the stopped branch lies at or below -1
+        ax.plot(px[stopped], py[stopped], 'o', ms=3, label='stopped below R')
+        ax.plot(px[~stopped], py[~stopped], 's', ms=3, label='reaches R')
         ax.axhline(-1, color=plt.rcParams['text.color'], ls='--', label='stop at R')
         ax.set(
             xlabel='Central pressure minus the root [MPa]', ylabel='Residual / target pressure'
@@ -136,8 +139,8 @@ def test_the_accepted_surface_is_not_padded_and_holds_the_target(analytic_solve)
 
 def test_a_stopped_solve_reports_where_it_stopped(analytic_solve):
     """The pressure solve passes a stop dict; a padded solve fills it with the stop radius in its
-    first padded shell and the pressure there, zero at the terminal event; a solve that reaches
-    R leaves it empty."""
+    first padded shell and the pressure there, below 1 Pa on this profile, where the stops end
+    at zero pressure within round-off; a solve that reaches R leaves it empty."""
     _, _, _, stops, _ = analytic_solve
     assert stops, 'no structure solve was given a stop dict'
     padded = [s for s in stops if s[4][-1] == 0.0]
@@ -149,7 +152,7 @@ def test_a_stopped_solve_reports_where_it_stopped(analytic_solve):
         n = int(np.argmax(pressure == 0.0))
         assert set(stop) == {'r', 'p'}
         assert radii[n - 1] < stop['r'] <= radii[n]
-        assert stop['p'] == 0.0
+        assert 0.0 <= stop['p'] < 1.0
 
 
 def test_the_stopped_branch_slope_is_fixed_for_the_pressure_solve(analytic_solve, monkeypatch):

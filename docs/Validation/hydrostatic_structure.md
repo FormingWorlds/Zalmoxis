@@ -191,6 +191,35 @@ Largest relative difference of the three right-hand-side terms between `coupled_
 - Test id: `tests/test_jax_unified_mantle_parity.py::test_unified_mantle_dry_parity`
 - Command: `pytest -m reference_pinned tests/test_jax_unified_mantle_parity.py --validation-plots`
 
+## Surface residual of the central pressure solve
+
+The central pressure solve finds the root of $f(P_c) = P(R) - P_\mathrm{target}$. A solve whose pressure ends at $r_\mathrm{stop} < R$, at the pressure $P_\mathrm{stop}$ (zero within round-off at the zero-pressure event, or up to $\max(10^{-6} P_c, P_\mathrm{target})$ where the right-hand side fails near the surface), takes
+$f = P_\mathrm{stop} - P_\mathrm{target} - k (R - r_\mathrm{stop})$ with $k = \rho_\mathrm{ref} G M_\mathrm{target} / R^2$, where $\rho_\mathrm{ref}$ is the outermost density of the density iterate; $k$ is fixed for one pressure solve. Where the stop reaches $R$, $P(R)$ falls to $P_\mathrm{stop}$, so the two branches meet, and their slopes differ by the factor $\rho_\mathrm{ref} g_\mathrm{ref} / (\rho_s g_s)$, close to 1 once the mass loop has converged. The steps of the integrator still move $f$ by up to its noise (about 4e3 Pa on the analytic EOS, 2e5 Pa on PALEOS at `rtol = 1e-9`), so $f$ is continuous at the stop but not smooth everywhere.
+
+### Plot: continuity at a zero-pressure stop
+
+![Surface residual across the central pressure where the stop reaches R](../assets/validation/surface_residual_continuity.svg#only-light){ width="80%" }
+![Surface residual across the central pressure where the stop reaches R](../assets/validation/surface_residual_continuity_dark.svg#only-dark){ width="80%" }
+
+Surface residual over the target pressure at 201 central pressures (every second one drawn) around the root of a 1 Earth-mass planet on the Seager et al. (2007) analytic iron and MgSiO$_3$ EOS, 150 nodes, target 101325 Pa. Circles: solves that stop below $R$; squares: solves that reach $R$; the dashed line marks $-1$, where the stop reaches $R$. Each step of 2.9e5 Pa in $P_c$ moves $f$ by 9.7e4 to 1.2e5 Pa, so a jump at the stop would show far above the integrator noise.
+
+- Reference: the closed form of the stopped branch above, equal to $-P_\mathrm{target}$ at $r_\mathrm{stop} = R$ for a zero-pressure stop.
+- Tolerance: every step rises; the median step exceeds 10 times the noise of 4e3 Pa; no step exceeds 3 times the median step.
+- Test id: `tests/test_surface_residual.py::test_the_residual_rises_through_the_surface_stop`
+- Command: `pytest -m reference_pinned tests/test_surface_residual.py --validation-plots`
+
+### Plot: continuity at a stop above zero pressure
+
+![Surface residual across a stop at 5 MPa](../assets/validation/surface_residual_stop_pressure.svg#only-light){ width="80%" }
+![Surface residual across a stop at 5 MPa](../assets/validation/surface_residual_stop_pressure_dark.svg#only-dark){ width="80%" }
+
+Surface residual at 41 central pressures, 1e5 Pa apart, across the central pressure where the stop reaches $R$, for the PALEOS profile of the JAX parity tests with the temperature at 0.6 of its values, a target surface pressure of 1e7 Pa, and a temperature undefined below 5e6 Pa, which stands for an EOS or temperature failure near the surface. Circles: solves that stop below $R$, all at $P_\mathrm{stop} = 5.0$ MPa; squares: solves that reach $R$. The dashed line is the stopped branch without $P_\mathrm{stop}$, at $-P_\mathrm{target}$: it would put a step of 5.0e6 Pa at the junction, where the measured step is 2.9e4 Pa.
+
+- Reference: the closed form of the stopped branch above, equal to $P(R) - P_\mathrm{target}$ at $r_\mathrm{stop} = R$.
+- Tolerance: no step, the junction step included, exceeds $0.1 P_\mathrm{stop}$ = 5e5 Pa.
+- Test id: `tests/test_surface_residual_stop_pressure.py::test_the_residual_has_no_jump_at_a_stop_above_zero_pressure`
+- Command: `pytest -m reference_pinned tests/test_surface_residual_stop_pressure.py --validation-plots`
+
 ## Reproducing the results
 
 The first-principles figures can be made again, as PDF files, with:

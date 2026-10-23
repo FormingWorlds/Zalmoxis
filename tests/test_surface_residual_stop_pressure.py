@@ -25,6 +25,7 @@ M_EARTH = 5.972e24
 P_TARGET = 1e7  # a thick atmosphere: stops up to P_TARGET count as the surface [Pa]
 P_FLOOR = 5e6  # T is undefined below this pressure [Pa]
 RADIUS = 6.37e6
+DP_CENTER = 1e5  # scan step in P_c; it moves f by about S DP_CENTER, well below P_stop [Pa]
 
 
 @pytest.fixture(scope='module')
@@ -70,9 +71,13 @@ def junction_scan():
         return _surface_residual(np.asarray(p), stop, P_TARGET, RADIUS, k), dict(stop)
 
     coarse = np.linspace(2.5e11, 3.5e11, 21)
-    fc = [residual(p)[0] for p in coarse]
-    i = int(np.flatnonzero(np.diff(np.sign(np.array(fc) - (P_FLOOR - P_TARGET))) != 0)[0])
-    x = np.linspace(coarse[i], coarse[i + 1], 41)
+    reached = [not residual(p)[1] for p in coarse]
+    i = reached.index(True)
+    lo, hi = coarse[i - 1], coarse[i]
+    while hi - lo > DP_CENTER:  # bisect to the central pressure where the stop reaches R
+        mid = 0.5 * (lo + hi)
+        lo, hi = (lo, mid) if not residual(mid)[1] else (mid, hi)
+    x = hi + DP_CENTER * np.arange(-20, 21)
     out = [residual(p) for p in x]
     return x, np.array([f for f, _ in out]), [s for _, s in out]
 
@@ -100,12 +105,14 @@ def test_the_residual_has_no_jump_at_a_stop_above_zero_pressure(junction_scan, v
         import matplotlib.pyplot as plt
 
         fig, ax = plt.subplots()
-        ax.plot(x[stopped] / 1e9, y[stopped] / 1e6, 'o', ms=3, label='stopped below R')
-        ax.plot(x[~stopped] / 1e9, y[~stopped] / 1e6, 's', ms=3, label='reaches R')
+        ax.plot((x[stopped] - x[0]) / 1e6, y[stopped] / 1e6, 'o', ms=3, label='stopped below R')
+        ax.plot((x[~stopped] - x[0]) / 1e6, y[~stopped] / 1e6, 's', ms=3, label='reaches R')
         ax.axhline(
             -P_TARGET / 1e6, color=plt.rcParams['text.color'], ls='--', label='without P_stop'
         )
-        ax.set(xlabel='Central pressure [GPa]', ylabel='Surface residual [MPa]')
+        ax.set(
+            xlabel='Central pressure from the scan start [MPa]', ylabel='Surface residual [MPa]'
+        )
         ax.legend()
         fig.tight_layout()
         return fig
