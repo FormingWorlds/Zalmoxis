@@ -23,6 +23,8 @@ from zalmoxis.config import (
 )
 from zalmoxis.constants import G
 
+pytestmark = [pytest.mark.smoke, pytest.mark.timeout(60)]
+
 P_TARGET = 101325.0
 
 
@@ -81,10 +83,14 @@ def _threshold_scan(f, p_root, n=201):
     return x, np.array([f(p) for p in x])
 
 
-@pytest.mark.smoke
 @pytest.mark.physics_invariant
-def test_the_residual_rises_through_the_surface_stop(analytic_solve):
-    """f rises at every step across the stop at R, with no jump; a flat padded branch fails."""
+@pytest.mark.reference_pinned
+def test_the_residual_rises_through_the_surface_stop(analytic_solve, validation_plot):
+    """f rises at every step across the stop at R, with no jump; a flat padded branch fails.
+
+    Reference: the closed form of the stopped branch, f = -P_target - rho_s g_s (R - r_stop),
+    which equals -P_target at r_stop = R, on the Seager et al. (2007) analytic EOS.
+    """
     _, f, p_root, _ = analytic_solve
     x, y = _threshold_scan(f, p_root)
     assert y.min() <= -P_TARGET < y.max(), 'the scan does not cross the stop at R'
@@ -92,11 +98,30 @@ def test_the_residual_rises_through_the_surface_stop(analytic_solve):
     assert np.all(d > 0), f'{int(np.sum(d <= 0))} of {d.size} steps do not rise'
     assert d.max() < 3 * np.median(d), f'jump {d.max():.3e} Pa, median step {np.median(d):.3e}'
 
+    def figure():
+        import matplotlib.pyplot as plt
 
-@pytest.mark.smoke
+        fig, ax = plt.subplots()
+        ax.plot((x - p_root) / 1e6, y / P_TARGET, 'o', ms=3, label='surface residual')
+        ax.axhline(-1, color=plt.rcParams['text.color'], ls='--', label='stop at R')
+        ax.set(
+            xlabel='Central pressure minus the root [MPa]', ylabel='Residual / target pressure'
+        )
+        ax.legend()
+        fig.tight_layout()
+        return fig
+
+    validation_plot(figure, 'surface_residual_continuity')
+
+
 @pytest.mark.physics_invariant
+@pytest.mark.reference_pinned
 def test_the_accepted_surface_is_not_padded_and_holds_the_target(analytic_solve):
-    """The accepted profile reaches R with P(R) within 0.15 P_target of the target."""
+    """The accepted profile reaches R with P(R) within 0.15 P_target of the target.
+
+    Reference: the target surface pressure on the Seager et al. (2007) analytic EOS; a padded
+    accept gives P(R) = 0, a deviation of P_target.
+    """
     result, _, _, _ = analytic_solve
     p = np.asarray(result['pressure'], float)
     assert result['converged']
@@ -104,7 +129,6 @@ def test_the_accepted_surface_is_not_padded_and_holds_the_target(analytic_solve)
     assert abs(p[-1] - P_TARGET) <= 0.15 * P_TARGET, f'P(R) {p[-1]:.6e} Pa'
 
 
-@pytest.mark.smoke
 def test_a_stopped_solve_reports_where_it_stopped(analytic_solve):
     """The pressure solve passes a stop dict; a padded solve fills it with the stop radius in its
     first padded shell and the gravity G m / r^2 there; a solve that reaches R leaves it empty."""

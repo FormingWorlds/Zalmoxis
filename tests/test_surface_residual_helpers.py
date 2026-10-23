@@ -16,10 +16,11 @@ from hypothesis import strategies as st
 
 from zalmoxis.solver import _pressure_xtol, _stopped_residual
 
+pytestmark = [pytest.mark.unit, pytest.mark.timeout(30)]
+
 XTOL_CAP = 1e6
 
 
-@pytest.mark.unit
 @pytest.mark.physics_invariant
 @settings(max_examples=300, deadline=None)
 @given(
@@ -41,7 +42,6 @@ def test_a_stopped_solve_lies_below_the_target_and_meets_it_at_the_radius(
     assert _stopped_residual(p_target, radius, farther, k) >= f
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize('k', [0.0, -1.0, math.nan, math.inf, True, '1e4', None])
 def test_a_slope_that_is_not_a_positive_number_is_refused(k):
     """k must be a finite positive number: zero gives the flat branch back."""
@@ -49,7 +49,6 @@ def test_a_slope_that_is_not_a_positive_number_is_refused(k):
         _stopped_residual(1e5, 6.4e6, 6.0e6, k)
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize('r_stop', [-1.0, 6.4e6 + 1.0, math.nan, math.inf, True, None])
 def test_a_stop_outside_the_planet_is_refused(r_stop):
     """r_stop must lie in [0, R]."""
@@ -57,7 +56,6 @@ def test_a_stop_outside_the_planet_is_refused(r_stop):
         _stopped_residual(1e5, 6.4e6, r_stop, 1e4)
 
 
-@pytest.mark.unit
 @settings(max_examples=300, deadline=None)
 @given(slope=st.floats(1e-4, 1e4), p_target=st.floats(1e2, 1e8))
 def test_the_tolerance_holds_the_surface_residual_to_a_tenth_of_the_target(slope, p_target):
@@ -67,14 +65,12 @@ def test_the_tolerance_holds_the_surface_residual_to_a_tenth_of_the_target(slope
     assert x * slope <= 0.1 * p_target * (1 + 1e-12)
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize('slope', [0.0, -0.2, math.nan, math.inf, -math.inf, True, None])
 def test_a_slope_that_is_not_positive_keeps_the_coarse_tolerance(slope):
     """Without a usable slope the first brentq tolerance stays."""
     assert _pressure_xtol(slope, 1e5) == XTOL_CAP
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize('p_target', [0.0, -1.0, math.nan, math.inf, True, None])
 def test_a_target_that_is_not_positive_keeps_the_coarse_tolerance(p_target):
     """Without a usable target the first brentq tolerance stays."""
