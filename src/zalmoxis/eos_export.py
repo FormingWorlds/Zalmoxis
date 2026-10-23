@@ -1767,7 +1767,7 @@ def compute_entropy_adiabat(
             s_liquid_interp = _build_interpolator(
                 liquid_tab['unique_log_p'], liquid_tab['unique_log_t'], liquid_tab['s']
             )
-            logger.info('Using PALEOS-2phase tables for entropy adiabat')
+            logger.debug('Using PALEOS-2phase tables for entropy adiabat')
 
     def entropy_single_phase(P, T):
         """Evaluate single-phase entropy from PALEOS."""
@@ -1820,7 +1820,7 @@ def compute_entropy_adiabat(
 
     # Compute target entropy at the surface
     S_target = entropy_total(P_surface, T_surface)
-    logger.info(
+    logger.debug(
         'Entropy adiabat: T_surf=%.1f K, P_surf=%.2e Pa, S_target=%.2f J/(kg*K)',
         T_surface,
         P_surface,
@@ -1904,7 +1904,7 @@ def compute_entropy_adiabat(
         )
 
     S_drift = abs(S_profile[-1] - S_target) / abs(S_target) * 100
-    logger.info('Entropy adiabat: T_cmb=%.1f K, S_drift=%.4f%%', T_profile[-1], S_drift)
+    logger.debug('Entropy adiabat: T_cmb=%.1f K, S_drift=%.4f%%', T_profile[-1], S_drift)
 
     return {
         'P': P_grid,

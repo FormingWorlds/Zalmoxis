@@ -776,7 +776,7 @@ def test_wall_clock_in_the_adiabat_ramp_is_timeout(monkeypatch, caplog):
     from zalmoxis.eos import get_solidus_liquidus_functions
 
     _need_wb_tables()
-    caplog.set_level(logging.INFO, logger='fwl.zalmoxis.solver')
+    caplog.set_level(logging.DEBUG, logger='fwl.zalmoxis.solver')
     ramp = lambda: any('activating adiabat blend' in m for m in caplog.messages)  # noqa: E731
     clock = time.time
     monkeypatch.setattr(zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * ramp()))
@@ -804,7 +804,7 @@ def test_wall_clock_in_the_adiabat_ramp_keeps_tolerance_outer_as_the_limit(monke
     from zalmoxis.eos import get_solidus_liquidus_functions
 
     _need_wb_tables()
-    caplog.set_level(logging.INFO, logger='fwl.zalmoxis.solver')
+    caplog.set_level(logging.DEBUG, logger='fwl.zalmoxis.solver')
     ramp = lambda: any('activating adiabat blend' in m for m in caplog.messages)  # noqa: E731
     clock = time.time
     monkeypatch.setattr(zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * ramp()))
@@ -1231,7 +1231,7 @@ def test_an_iteration_cap_whose_newest_blend_step_diverges_returns_an_earlier_be
         return real(*args, **kwargs)
 
     monkeypatch.setattr(zs, '_solve', once)
-    with caplog.at_level(logging.INFO, logger='fwl.zalmoxis.solver'):
+    with caplog.at_level(logging.DEBUG, logger='fwl.zalmoxis.solver'):
         r = zs.main(cfg, load_material_dictionaries(), melt, os.path.join(ROOT, 'input'))
     assert 'activating adiabat blend' in caplog.text
     assert 'No pass of adiabat blend' in caplog.text
