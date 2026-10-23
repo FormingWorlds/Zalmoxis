@@ -8,6 +8,8 @@ P > 0 to the target surface pressure.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
@@ -74,12 +76,8 @@ def test_a_surface_density_that_is_not_finite_is_returned_for_the_invariants(mon
     assert rho[0] == 2300.0 and (np.isnan(rho[1]) if np.isnan(bad) else rho[1] == bad)
 
 
-class _Mix:
-    def __init__(self, tdep=True):
-        self.tdep = tdep
-
-    def has_tdep(self):
-        return self.tdep
+def _Mix(tdep=True):
+    return SimpleNamespace(has_tdep=lambda: tdep)
 
 
 # get_mixed_nabla_ad takes the interpolation cache before the melting curves

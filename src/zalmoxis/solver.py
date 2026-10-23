@@ -1357,12 +1357,12 @@ def _surface_density(
     )
 
 
-def _adiabat_to_surface(P0, T0, p_surface, mix, nabla_args, n_steps=64):
+def _adiabat_to_surface(P0, T0, p_surface, mix, eos_args, n_steps=64):
     """Continue an adiabat from (``P0``, ``T0``) down to the target surface pressure.
 
-    Integrates d ln T / d ln P = nabla_ad(P, T) with the midpoint rule in ln P. T is held
-    where the mixture has no T-dependent component, nabla_ad is missing or not positive, or
-    there is no pressure drop.
+    Integrates d ln T / d ln P = nabla_ad(P, T) with the midpoint rule in ln P. T0 is returned
+    when it is not finite, the mixture has no T-dependent component or there is no pressure
+    drop; T is held from the first step where nabla_ad is missing or not positive.
 
     Parameters
     ----------
@@ -1372,8 +1372,9 @@ def _adiabat_to_surface(P0, T0, p_surface, mix, nabla_args, n_steps=64):
         Target surface pressure [Pa].
     mix : LayerMixture
         Mixture of the layer at the surface.
-    nabla_args : tuple
-        Arguments of ``get_mixed_nabla_ad`` after the mixture.
+    eos_args : tuple
+        The ``eos_args`` of ``_surface_density``; ``get_mixed_nabla_ad`` takes them with the
+        interpolation cache before the melting curves.
     n_steps : int, optional
         Number of steps in ln P.
 
@@ -1382,8 +1383,10 @@ def _adiabat_to_surface(P0, T0, p_surface, mix, nabla_args, n_steps=64):
     float
         Temperature at ``p_surface`` [K].
     """
-    if not mix.has_tdep() or not 0 < p_surface < P0:
+    if not np.isfinite(T0) or not mix.has_tdep() or not 0 < p_surface < P0:
         return T0
+    md, solidus, liquidus, cache, *rest = eos_args
+    nabla_args = (md, cache, solidus, liquidus, *rest)
     h = np.log(p_surface / P0) / n_steps
     lnp, T = np.log(P0), T0
     for _ in range(n_steps):
@@ -2644,49 +2647,39 @@ def _solve(
     if density_from_eos and pad.any():
         temperatures = np.asarray(temperatures, dtype=float)
         k = int(np.argmax(pad))
+        m_stop = float(mass_enclosed[k])
+        eos_args = (
+            material_dictionaries,
+            solidus_func,
+            liquidus_func,
+            interpolation_cache,
+            mushy_zone_factors,
+            condensed_rho_min,
+            condensed_rho_scale,
+            binodal_T_scale,
+        )
+        # a CMB-anchored adiabat at blend 1: continued to the target surface pressure
         if (
             k > 0
             and _adiabat_computed
+            and _adiabat_blend >= 1.0
             and temperature_mode == 'adiabatic_from_cmb'
-            and temperature_function is None
-            and not arrays_give_T
         ):
-            # the surface of a CMB-anchored adiabat: its continuation to the target pressure
             temperatures[pad] = _adiabat_to_surface(
                 float(pressure[k - 1]),
-                float(temperatures[k - 1]),
+                temperatures[k - 1],
                 target_surface_pressure,
-                get_layer_mixture(
-                    float(mass_enclosed[k]), cmb_mass, core_mantle_mass, layer_mixtures
-                ),
-                (
-                    material_dictionaries,
-                    interpolation_cache,
-                    solidus_func,
-                    liquidus_func,
-                    mushy_zone_factors,
-                    condensed_rho_min,
-                    condensed_rho_scale,
-                    binodal_T_scale,
-                ),
+                get_layer_mixture(m_stop, cmb_mass, core_mantle_mass, layer_mixtures),
+                eos_args,
             )
         density[pad] = _surface_density(
             temperatures[pad],
-            float(np.asarray(mass_enclosed)[pad][0]),
+            m_stop,
             target_surface_pressure,
             cmb_mass,
             core_mantle_mass,
             layer_mixtures,
-            (
-                material_dictionaries,
-                solidus_func,
-                liquidus_func,
-                interpolation_cache,
-                mushy_zone_factors,
-                condensed_rho_min,
-                condensed_rho_scale,
-                binodal_T_scale,
-            ),
+            eos_args,
             volatile_profile,
         )
 
