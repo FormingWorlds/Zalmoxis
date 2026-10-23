@@ -41,6 +41,14 @@ def _compare(status, ahead=0, behind=0, commits=()):
     }
 
 
+def _exit(reply):
+    """Exit status of main() on ``reply``, or the exception that escapes it (a traceback)."""
+    try:
+        return check.main(fetch=lambda tested: reply)
+    except Exception as exc:  # noqa: BLE001 -- an escaped error is the failure under test
+        return exc
+
+
 def test_main_ahead_of_the_pin_warns_and_exits_six(capsys):
     """Upstream main ahead of the tested commit (the pin is in its history): exit 6, which
     the workflow turns into a warning, and the summary names every new commit."""
@@ -84,16 +92,54 @@ def test_main_without_the_pin_in_its_history_fails(capsys, status, ahead, behind
 
 @pytest.mark.parametrize(
     'broken',
-    [{'commits': [{'sha': 'a' * 40}]}, {'commits': None}, {'merge_base_commit': None}],
-    ids=['commit-without-fields', 'no-commit-list', 'no-merge-base'],
+    [
+        {'commits': [{'sha': 'a' * 40}]},
+        {'commits': None},
+        {'merge_base_commit': None},
+        {'merge_base_commit': 'e' * 40},
+    ],
+    ids=['commit-without-fields', 'no-commit-list', 'no-merge-base', 'merge-base-text'],
 )
 def test_a_diverged_main_fails_whatever_its_commit_list_holds(capsys, broken):
     """The verdict rests on the status and the counts: a diverged reply with a broken
     commit list or merge base still fails with exit 1, and never turns into the warning of
     an unread reply."""
     reply = {**_compare('diverged', 8, 5, ['a' * 40]), **broken}
-    assert check.main(fetch=lambda tested: reply) == 1
+    assert _exit(reply) == 1
     assert 'PALEOS main does not contain the tested commit' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    'broken',
+    [
+        {'ahead_by': float('inf')},
+        {
+            'commits': [
+                {
+                    'sha': 'a' * 40,
+                    'commit': {'committer': {'date': '2026-10-22T15:20:45Z'}, 'message': 5},
+                }
+            ]
+        },
+    ],
+    ids=['infinite-count', 'message-not-text'],
+)
+def test_a_malformed_ahead_reply_exits_three_without_a_traceback(capsys, broken):
+    """A count that is no integer or a commit message that is no text is an unread reply:
+    exit 3 with the reason, not a traceback and the exit 1 of a rewritten main."""
+    assert _exit({**_compare('ahead', 1, 0, ['a' * 40]), **broken}) == 3
+    assert capsys.readouterr().out.startswith('PALEOS main could not be read')
+
+
+def test_the_new_commits_are_listed_in_a_code_block(capsys):
+    """One new commit is singular, and the commit lines sit in a fenced code block after a
+    blank line, so markdown in an upstream subject does not change the summary."""
+    reply = _compare('ahead', 1, 0, ['a' * 40])
+    reply['commits'][0]['commit']['message'] = 'Fix `x` | y\n\nbody'
+    assert _exit(reply) == 6
+    out = capsys.readouterr().out
+    assert 'PALEOS main is 1 commit ahead of the tested commit' in out
+    assert out.endswith(':\n\n```\n  aaaaaaaaa 2026-10-22 Fix `x` | y\n```\n'), out
 
 
 def test_a_long_ahead_list_says_how_many_commits_it_shows(capsys):
