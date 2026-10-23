@@ -248,4 +248,4 @@ Browse `input/grids/` for richer examples: `mass_radius.toml` is a 7-point versi
 - For the full set of TOML keys, validators, and defaults, read [Configuration](../How-to/configuration.md).
 - For the equations behind the structure ODE, the EOS dispatch, and the mushy-zone mixing model, read [Model overview](../Explanations/model.md) and [Equation of state physics](../Explanations/eos_physics.md).
 - For the function-call coupling used when Zalmoxis runs inside PROTEUS (the `python -m zalmoxis` invocation in this tutorial does *not* apply there), read [Coupling Zalmoxis to PROTEUS](../How-to/proteus_coupling.md) and [Coupling to PROTEUS (theory)](../Explanations/proteus_coupling.md).
-- For first-principles verification cases (analytic polytropes, hydrostatic equilibrium tests, mass conservation), read [Verification](../Explanations/verification.md).
+- For first-principles verification cases (analytic polytropes, hydrostatic equilibrium tests, mass conservation), read the [Validation](../Validation/index.md) tab.
