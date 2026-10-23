@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import re
+import subprocess
 import urllib.error
 from pathlib import Path
 
@@ -61,16 +62,46 @@ def test_main_at_the_pin_exits_zero(capsys):
     assert 'PALEOS main is at the tested commit' in capsys.readouterr().out
 
 
-@pytest.mark.parametrize('status, ahead, behind', [('diverged', 8, 5), ('behind', 0, 2)])
-def test_main_without_the_pin_in_its_history_fails(capsys, status, ahead, behind):
-    """Upstream main that does not contain the tested commit (diverged as after the rewrite
-    of main, or behind it) fails with exit 1 and names the counts and the merge base."""
+@pytest.mark.parametrize(
+    'status, ahead, behind, cause',
+    [
+        ('diverged', 8, 5, 'as after a rewrite of main: run the PALEOS-API tests on main'),
+        ('behind', 0, 2, 'main is older than the tested commit (main moved back, or the pin'),
+    ],
+)
+def test_main_without_the_pin_in_its_history_fails(capsys, status, ahead, behind, cause):
+    """Upstream main that does not contain the tested commit fails with exit 1, names the
+    counts and the merge base, and gives the cause of its own status: a rewrite for
+    diverged, an older main for behind, where moving the pin to main would go back."""
     reply = _compare(status, ahead, behind)
     assert check.main(fetch=lambda tested: reply) == 1
     out = capsys.readouterr().out
     assert f'PALEOS main does not contain the tested commit {PALEOS_TESTED_SHA}' in out
     assert f'{status}: {ahead} commits ahead, {behind} behind, merge base {"e" * 40}' in out
-    assert 'PALEOS_TESTED_SHA in src/zalmoxis/eos/paleos_api.py' in out
+    assert cause in out and 'PALEOS_TESTED_SHA in src/zalmoxis/eos/paleos_api.py' in out
+    assert ('rewrite' in out) == (status == 'diverged')
+
+
+@pytest.mark.parametrize(
+    'broken',
+    [{'commits': [{'sha': 'a' * 40}]}, {'commits': None}, {'merge_base_commit': None}],
+    ids=['commit-without-fields', 'no-commit-list', 'no-merge-base'],
+)
+def test_a_diverged_main_fails_whatever_its_commit_list_holds(capsys, broken):
+    """The verdict rests on the status and the counts: a diverged reply with a broken
+    commit list or merge base still fails with exit 1, and never turns into the warning of
+    an unread reply."""
+    reply = {**_compare('diverged', 8, 5, ['a' * 40]), **broken}
+    assert check.main(fetch=lambda tested: reply) == 1
+    assert 'PALEOS main does not contain the tested commit' in capsys.readouterr().out
+
+
+def test_a_long_ahead_list_says_how_many_commits_it_shows(capsys):
+    """When the reply lists fewer commits than main is ahead, the summary says so."""
+    reply = _compare('ahead', 300, 0, ['a' * 40, 'b' * 40])
+    assert check.main(fetch=lambda tested: reply) == 6
+    out = capsys.readouterr().out
+    assert 'PALEOS main is 300 commits ahead' in out and '(2 of 300 listed)' in out
 
 
 def test_an_unread_main_exits_three(capsys):
@@ -230,15 +261,25 @@ def test_a_refused_request_fails_unless_it_is_the_rate_limit(
     assert capsys.readouterr().out.startswith(text)
 
 
-def test_the_workflow_warns_on_exit_3_and_6_and_fails_on_every_other_code():
-    """The scheduled job turns exit 3 (GitHub not read) and exit 6 (main ahead of the tested
-    commit) into a warning and a passed run, and fails with every other exit status."""
+@pytest.mark.parametrize('code', range(8))
+def test_the_workflow_warns_on_exit_3_and_6_and_fails_on_every_other_code(tmp_path, code):
+    """The run step of the scheduled job, executed with the script replaced by one that
+    exits with ``code``, passes with a warning on 3 (GitHub not read) and 6 (main ahead of
+    the tested commit) and fails with the script's own status on every other code."""
     workflow = (
         Path(check.__file__).resolve().parents[1] / '.github/workflows/paleos-main.yml'
     ).read_text()
-    tests = re.findall(r'-eq (\d+) \]', workflow)
-    warned = re.findall(
-        r'-eq (\d+) \]; then\n\s+echo "::warning [^\n]+\n\s+exit 0\n\s+fi\n', workflow
+    step = re.search(r'\n        run: \|\n((?:          [^\n]*\n|\n)+)', workflow)[1]
+    script = '\n'.join(line[10:] for line in step.splitlines())
+    assert script.count('python tools/check_paleos_main.py') == 1, script
+    script = script.replace('python tools/check_paleos_main.py', f'(echo verdict; exit {code})')
+    summary = tmp_path / 'summary.md'
+    done = subprocess.run(
+        ['bash', '-e', '-c', script],
+        env={'GITHUB_STEP_SUMMARY': str(summary), 'PATH': '/usr/bin:/bin'},
+        capture_output=True,
+        text=True,
     )
-    assert tests == warned == ['3', '6'], (tests, warned)
-    assert workflow.rstrip().endswith('exit "${code}"')
+    assert done.returncode == (0 if code in (0, 3, 6) else code), done
+    assert ('::warning' in done.stdout) == (code in (3, 6)), done.stdout
+    assert summary.read_text() == 'verdict\n'
