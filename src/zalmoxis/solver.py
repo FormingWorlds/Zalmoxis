@@ -52,11 +52,12 @@ from .mixing import (
     build_partition_profile,
     calculate_mixed_density_batch,
     compute_melt_fraction,
+    get_mixed_nabla_ad,
     parse_all_layer_mixtures,
     split_mantle_volatile_inventory,
     strong_partition_phi_floor,
 )
-from .structure_model import solve_structure, temperature_from_arrays
+from .structure_model import get_layer_mixture, solve_structure, temperature_from_arrays
 
 logger = logging.getLogger(__name__)
 
@@ -1319,6 +1320,95 @@ def _solve_newton_outer(
     )
 
 
+def _surface_density(
+    T, m_stop, p_surface, cmb_mass, core_mantle_mass, layer_mixtures, eos_args, volatile_profile
+):
+    """Return rho_EOS at the target surface pressure for the padded surface nodes.
+
+    The padded nodes share the stop mass, so its layer holds them all. A density that is not
+    finite is returned as it is: in an accepted result it breaks the ``positive`` invariant.
+
+    Parameters
+    ----------
+    T : numpy.ndarray
+        Temperatures of the padded nodes [K].
+    m_stop : float
+        Mass at the stop [kg].
+    p_surface : float
+        Target surface pressure [Pa].
+    cmb_mass, core_mantle_mass : float
+        Layer boundaries [kg].
+    layer_mixtures : dict
+        Per-layer mixtures.
+    eos_args : tuple
+        Arguments of ``calculate_mixed_density_batch`` after the mixture.
+    volatile_profile : VolatileProfile or None
+        Applied only when the stop lies in the mantle.
+
+    Returns
+    -------
+    numpy.ndarray
+        Density of each padded node [kg/m^3].
+    """
+    mix = get_layer_mixture(m_stop, cmb_mass, core_mantle_mass, layer_mixtures)
+    vp = volatile_profile if mix is layer_mixtures.get('mantle') else None
+    return calculate_mixed_density_batch(
+        np.full(len(T), p_surface), T, mix, *eos_args, volatile_profile=vp
+    )
+
+
+def _adiabat_to_surface(P0, T0, p_surface, mix, eos_args, n_steps=64):
+    """Continue an adiabat from (``P0``, ``T0``) down to the target surface pressure.
+
+    Integrates d ln T / d ln P = nabla_ad(P, T) with the midpoint rule in ln P. T0 is returned
+    when it is not finite, the mixture has no T-dependent component or there is no pressure
+    drop; T is held from the first step where nabla_ad is missing or not positive.
+
+    Parameters
+    ----------
+    P0, T0 : float
+        Pressure [Pa] and temperature [K] of the last node with P > 0.
+    p_surface : float
+        Target surface pressure [Pa].
+    mix : LayerMixture
+        Mixture of the layer at the surface.
+    eos_args : tuple
+        The ``eos_args`` of ``_surface_density``; ``get_mixed_nabla_ad`` takes them with the
+        interpolation cache before the melting curves.
+    n_steps : int, optional
+        Number of steps in ln P.
+
+    Returns
+    -------
+    float
+        Temperature at ``p_surface`` [K].
+    """
+    if not np.isfinite(T0) or not mix.has_tdep() or not 0 < p_surface < P0:
+        return T0
+    md, solidus, liquidus, cache, *rest = eos_args
+    nabla_args = (md, cache, solidus, liquidus, *rest)
+    h = np.log(p_surface / P0) / n_steps
+    lnp, T = np.log(P0), T0
+    for _ in range(n_steps):
+        n1 = get_mixed_nabla_ad(np.exp(lnp), T, mix, *nabla_args)
+        n2 = (
+            get_mixed_nabla_ad(np.exp(lnp + h / 2), T * np.exp(n1 * h / 2), mix, *nabla_args)
+            if n1 is not None and n1 > 0
+            else None
+        )
+        if n2 is None or not n2 > 0:
+            logger.warning(
+                'Surface adiabat continuation holds T = %.1f K from P = %.3e Pa: nabla_ad '
+                'missing or not positive.',
+                T,
+                np.exp(lnp),
+            )
+            return T
+        T = min(max(T * np.exp(n2 * h), 100.0), 100000.0)
+        lnp += h
+    return T
+
+
 def _solve(
     config_params,
     material_dictionaries,
@@ -1374,7 +1464,8 @@ def _solve(
         iteration cap only below 3 %), with its blend, a warning and its own mass error in
         ``best_mass_error``. ``stopped_on_wall_clock`` is True
         when the wall clock stopped the solve, also when it was not accepted.
-        ``density`` is rho_EOS(P, T) at the returned nodes and ``density_from_eos`` is
+        ``density`` is rho_EOS(P, T) at the returned nodes, at the target surface pressure on
+        the padded nodes (P = 0 past a surface stop), and ``density_from_eos`` is
         True, unless the solve was not accepted and the returned pass has no pressure
         solve: the wall clock stopped the solve before its first pass, or before the
         first pressure solve of the first pass or of the pass at ``max_iterations_outer``;
@@ -2559,7 +2650,46 @@ def _solve(
     total_time = end_time - start_time
 
     pressure = np.asarray(pressure)
-    density[pressure <= 0] = 0.0  # padded nodes
+    pad = pressure <= 0  # padded nodes past a surface stop
+    density[pad] = 0.0
+    if density_from_eos and pad.any():
+        temperatures = np.asarray(temperatures, dtype=float)
+        k = int(np.argmax(pad))
+        m_stop = float(mass_enclosed[k])
+        eos_args = (
+            material_dictionaries,
+            solidus_func,
+            liquidus_func,
+            interpolation_cache,
+            mushy_zone_factors,
+            condensed_rho_min,
+            condensed_rho_scale,
+            binodal_T_scale,
+        )
+        # a CMB-anchored adiabat at blend 1: continued to the target surface pressure
+        if (
+            k > 0
+            and _adiabat_computed
+            and _adiabat_blend >= 1.0
+            and temperature_mode == 'adiabatic_from_cmb'
+        ):
+            temperatures[pad] = _adiabat_to_surface(
+                float(pressure[k - 1]),
+                temperatures[k - 1],
+                target_surface_pressure,
+                get_layer_mixture(m_stop, cmb_mass, core_mantle_mass, layer_mixtures),
+                eos_args,
+            )
+        density[pad] = _surface_density(
+            temperatures[pad],
+            m_stop,
+            target_surface_pressure,
+            cmb_mass,
+            core_mantle_mass,
+            layer_mixtures,
+            eos_args,
+            volatile_profile,
+        )
 
     model_results = {
         'layer_eos_config': layer_eos_config,

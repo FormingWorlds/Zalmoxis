@@ -27,8 +27,11 @@ def _node_temperatures(monkeypatch, cfg, **main_kwargs):
         return out
 
     def rho(pressure, temperature, *args, **kwargs):
-        radii, profile = next(s for s in reversed(solves) if np.all(np.isin(pressure, s[1])))
-        nodes.extend(zip(radii[np.searchsorted(-profile, -pressure)], temperature))
+        # a lookup at no solved pressure is the padded surface node, not a density update
+        match = next((s for s in reversed(solves) if np.all(np.isin(pressure, s[1]))), None)
+        if match is not None:
+            radii, profile = match
+            nodes.extend(zip(radii[np.searchsorted(-profile, -pressure)], temperature))
         return real_rho(pressure, temperature, *args, **kwargs)
 
     monkeypatch.setattr(zs, 'solve_structure', solve)
