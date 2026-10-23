@@ -116,34 +116,27 @@ def test_a_tested_commit_missing_from_a_full_clone_names_both_causes(history):
     repo, _ = history
     with pytest.raises(PaleosVersionError) as err:
         check_paleos_commit(repo, 'f' * 40)
-    assert f'git -C {repo} fetch origin && git -C {repo} checkout {"f" * 40}' in str(err.value)
+    assert f'git -C {repo} fetch && git -C {repo} checkout {"f" * 40}' in str(err.value)
     assert f'git -C {repo} pull' not in str(err.value)
     assert 'main was rewritten' in str(err.value) and 'PALEOS_TESTED_SHA' in str(err.value)
 
 
-def test_a_clone_from_before_a_rewrite_runs_after_the_named_commands(history, tmp_path):
+def test_a_clone_from_before_a_rewrite_runs_after_the_named_commands(
+    history, tmp_path, monkeypatch
+):
     """A clone made before main was rewritten (the tested commit amended to a new SHA
     with the same tree) cannot pull the new history; the commands the message names
     fetch the rewritten commit and give a checkout the check accepts."""
+    monkeypatch.setenv('GIT_CONFIG_GLOBAL', '/dev/null')
+    monkeypatch.setenv('GIT_CONFIG_NOSYSTEM', '1')
     repo, c = history
     clone = tmp_path / 'clone'
     _git(tmp_path, 'clone', '-q', f'file://{repo}', str(clone))
     _git(repo, 'reset', '-q', '--hard', c['tested'])
     _git(
         repo,
-        '-c',
-        'user.name=t',
-        '-c',
-        'user.email=t@t',
-        '-c',
-        'commit.gpgsign=false',
-        '-c',
-        'core.hooksPath=/dev/null',
-        'commit',
-        '-q',
-        '--amend',
-        '-m',
-        'tested, rewritten',
+        *('-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false'),
+        *('-c', 'core.hooksPath=/dev/null', 'commit', '-q', '--amend', '-m', 'rewritten'),
     )
     rewritten = _git(repo, 'rev-parse', 'HEAD')
     assert _git(repo, 'rev-parse', f'{rewritten}^{{tree}}') == _git(
@@ -153,7 +146,7 @@ def test_a_clone_from_before_a_rewrite_runs_after_the_named_commands(history, tm
         check_paleos_commit(clone, rewritten)
     message = str(err.value)
     assert f'git -C {clone} pull' not in message
-    fix = f'git -C {clone} fetch origin && git -C {clone} checkout {rewritten}'
+    fix = f'git -C {clone} fetch && git -C {clone} checkout {rewritten}'
     assert fix in message
     for command in fix.split(' && '):
         subprocess.run(command.split(), check=True, capture_output=True)
