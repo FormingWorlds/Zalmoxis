@@ -35,7 +35,7 @@ from .mixing import (
     parse_layer_components,
 )
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('fwl.' + __name__)
 
 # Mapping from legacy global EOS choice strings to per-layer config dicts
 LEGACY_EOS_MAP = {

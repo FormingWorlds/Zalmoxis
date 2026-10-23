@@ -99,7 +99,7 @@ def test_wolf_bower_mantle_on_the_jax_path_falls_back_to_numpy(tmp_path, caplog)
         cfg.get('rock_liquidus', 'Stixrude14-liquidus'),
         cfg.get('mushy_zone_factor', 1.0),
     )
-    with caplog.at_level(logging.WARNING, logger='zalmoxis'):
+    with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis'):
         res = main(
             cfg,
             material_dictionaries=load_material_dictionaries(),

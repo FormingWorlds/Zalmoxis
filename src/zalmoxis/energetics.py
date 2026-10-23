@@ -46,7 +46,7 @@ import numpy as np
 
 from .constants import G
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('fwl.' + __name__)
 
 
 def gravitational_binding_energy(radii, mass_enclosed):

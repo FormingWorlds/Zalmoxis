@@ -483,4 +483,4 @@ Controls what the model writes after a run.
 | `data_enabled` | bool | true | Write the computed radial profiles (radius, density, gravity, pressure, temperature, enclosed mass) to a text file in `output/`. |
 | `plots_enabled` | bool | false | Generate profile plots after the run. |
 
-Convergence diagnostics are controlled by the Python logging level. Set `logging.getLogger('zalmoxis').setLevel(logging.DEBUG)` to see per-iteration convergence info and write iteration pressure/density profiles.
+Convergence diagnostics are controlled by the Python logging level. Set `logging.getLogger('fwl.zalmoxis').setLevel(logging.DEBUG)` to see per-iteration convergence info and write iteration pressure/density profiles.

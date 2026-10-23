@@ -31,8 +31,7 @@ logging.basicConfig(
     datefmt='%H:%M:%S',
 )
 logger = logging.getLogger('phase_regimes')
-logging.getLogger('zalmoxis.eos').setLevel(logging.WARNING)
-logging.getLogger('zalmoxis.zalmoxis').setLevel(logging.WARNING)
+logging.getLogger('fwl.zalmoxis.eos').setLevel(logging.WARNING)
 
 ZALMOXIS_ROOT = os.environ.get('ZALMOXIS_ROOT')
 if not ZALMOXIS_ROOT:

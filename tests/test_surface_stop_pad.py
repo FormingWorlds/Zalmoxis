@@ -187,7 +187,7 @@ class TestInteriorStopFails:
         'band, tdep', [((0.34, 0.1), False), ((0.38, 0.1), False), ((0.34, 0.1), True)]
     )
     def test_nan_band_is_a_failed_solve(self, monkeypatch, caplog, band, tdep):
-        with caplog.at_level('WARNING', logger='zalmoxis.structure_model'):
+        with caplog.at_level('WARNING', logger='fwl.zalmoxis.structure_model'):
             radii, r_lo, m, g, p = self._solve(monkeypatch, band, tdep)
         live = radii <= r_lo
         assert np.all(np.isfinite(m[live])) and np.all(p[live] > 0)
@@ -371,7 +371,7 @@ class TestInteriorStopFails:
             return sol
 
         monkeypatch.setattr(sm, 'solve_ivp', spy)
-        with caplog.at_level('WARNING', logger='zalmoxis.structure_model'):
+        with caplog.at_level('WARNING', logger='fwl.zalmoxis.structure_model'):
             _, _, m, g, p = self._solve(monkeypatch, (0.46, 0.3))
         assert tails == [0] and 'treating the solve as failed' in caplog.text
         n = int(np.argmax(np.isnan(p)))
@@ -468,7 +468,7 @@ class TestPadAfterStop:
             assert np.all(np.isnan(m[3:])) and np.all(np.isnan(p[3:]))
 
     def test_stop_before_the_first_node_names_the_centre(self, caplog):
-        with caplog.at_level('WARNING', logger='zalmoxis.structure_model'):
+        with caplog.at_level('WARNING', logger='fwl.zalmoxis.structure_model'):
             m, _, p = sm.pad_after_stop(
                 np.linspace(0.0, 1.0, 5),
                 np.ones(0),

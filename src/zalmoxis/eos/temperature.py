@@ -15,7 +15,7 @@ import numpy as np
 from ..constants import CONDENSED_RHO_MIN_DEFAULT, CONDENSED_RHO_SCALE_DEFAULT
 from .tdep import _get_paleos_nabla_ad
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('fwl.' + __name__)
 
 
 def compute_adiabatic_temperature(

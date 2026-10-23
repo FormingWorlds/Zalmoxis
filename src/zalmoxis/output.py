@@ -14,7 +14,7 @@ from .constants import earth_mass, earth_radius
 from .eos import get_Tdep_material
 from .mixing import parse_layer_components
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('fwl.' + __name__)
 
 
 def post_processing(config_params, id_mass=None, output_file=None, model_results=None):

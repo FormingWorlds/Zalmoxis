@@ -28,7 +28,7 @@ import numpy as np
 from .binodal import gupta2025_suppression_weight, rogers2025_suppression_weight
 from .constants import CONDENSED_RHO_MIN_DEFAULT, CONDENSED_RHO_SCALE_DEFAULT, TDEP_EOS_NAMES
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('fwl.' + __name__)
 
 # All unified PALEOS EOS names whose density blend applies mushy_zone_factor
 # through this dict. The two-phase variants (PALEOS-2phase, PALEOS-API-2phase)

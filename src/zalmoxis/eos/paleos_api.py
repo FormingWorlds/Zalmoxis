@@ -55,7 +55,7 @@ from urllib.parse import urlparse as _urlparse
 
 import numpy as np
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('fwl.' + __name__)
 
 # Module-global EoS instances populated inside worker processes by
 # ``_worker_init``. Lets workers avoid pickling EoS instances (Wolf18 /

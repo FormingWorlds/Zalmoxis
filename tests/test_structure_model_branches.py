@@ -435,7 +435,7 @@ class TestSolveStructureJAXFallback:
                 return_value=5000.0,
             ),
         ):
-            with caplog.at_level('WARNING', logger='zalmoxis.structure_model'):
+            with caplog.at_level('WARNING', logger='fwl.zalmoxis.structure_model'):
                 mass, gravity, pressure = solve_structure(
                     layer_mixtures=two_layer_mixtures,
                     cmb_mass=2e23,

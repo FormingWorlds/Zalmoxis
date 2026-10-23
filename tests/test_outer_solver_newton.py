@@ -637,7 +637,7 @@ class TestNewtonWithFailedRadius:
         def M(R):
             return 0.5 * Mt if R < 6.5e6 else Mt * R / 8.0e6
 
-        with caplog.at_level('INFO', logger='zalmoxis.solver'):
+        with caplog.at_level('INFO', logger='fwl.zalmoxis.solver'):
             with pytest.raises(StructureSolveError):
                 self._run(newton_config, M, lambda R: abs(R - 8.0e6) < 2.0e5, 6.0e6)
         assert 'Brentq: xtol' in caplog.text

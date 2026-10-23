@@ -58,7 +58,7 @@ from .mixing import (
 )
 from .structure_model import solve_structure, temperature_from_arrays
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('fwl.' + __name__)
 
 
 class StructureSolveError(RuntimeError):

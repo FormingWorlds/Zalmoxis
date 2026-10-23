@@ -430,7 +430,7 @@ class TestRealSolve:
     def test_retry_skip_on_an_inner_wall_clock_cut_is_timeout(self, monkeypatch, caplog):
         """One outer iteration cut by the clock in its inner loop, 5.6 % mass error: ``main``
         skips the retry on the density flag of the cut."""
-        caplog.set_level(logging.INFO, logger='zalmoxis.solver')
+        caplog.set_level(logging.INFO, logger='fwl.zalmoxis.solver')
         _clock_after_lookup(monkeypatch, count=8)
         r = _picard(
             max_iterations_outer=1,
@@ -701,7 +701,7 @@ class TestRealSolve:
         """A caller's density seed fills the first pass when more than one of its nodes is
         above zero; the clock runs out before its first pressure solve, and the density
         comes back zero wherever the pressure is zero."""
-        caplog.set_level(logging.INFO, logger='zalmoxis.solver')
+        caplog.set_level(logging.INFO, logger='fwl.zalmoxis.solver')
         radius, clock = _count_outer_iterations(monkeypatch), time.time
         monkeypatch.setattr(
             zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * (len(radius) >= 1))
@@ -776,7 +776,7 @@ def test_wall_clock_in_the_adiabat_ramp_is_timeout(monkeypatch, caplog):
     from zalmoxis.eos import get_solidus_liquidus_functions
 
     _need_wb_tables()
-    caplog.set_level(logging.INFO, logger='zalmoxis.solver')
+    caplog.set_level(logging.INFO, logger='fwl.zalmoxis.solver')
     ramp = lambda: any('activating adiabat blend' in m for m in caplog.messages)  # noqa: E731
     clock = time.time
     monkeypatch.setattr(zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * ramp()))
@@ -804,7 +804,7 @@ def test_wall_clock_in_the_adiabat_ramp_keeps_tolerance_outer_as_the_limit(monke
     from zalmoxis.eos import get_solidus_liquidus_functions
 
     _need_wb_tables()
-    caplog.set_level(logging.INFO, logger='zalmoxis.solver')
+    caplog.set_level(logging.INFO, logger='fwl.zalmoxis.solver')
     ramp = lambda: any('activating adiabat blend' in m for m in caplog.messages)  # noqa: E731
     clock = time.time
     monkeypatch.setattr(zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * ramp()))
@@ -878,7 +878,7 @@ def _wb_blended(
 def test_a_clock_stop_keeps_a_blended_pass_that_its_mass_test_accepts(monkeypatch, caplog):
     """tolerance_outer 0.05 and blended passes 4 % off: the mass test of the clock stop accepts
     the newest pass above the 3 % ceiling, so it is returned, not the linear one."""
-    with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+    with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.solver'):
         r = _wb_blended(monkeypatch, 1.04, 0.05)
     assert r['stopped_on_wall_clock'] is True and r['accepted_on'] == 'timeout'
     assert r['adiabat_blend'] == 0.25
@@ -923,7 +923,7 @@ def test_a_clock_stop_inside_its_limit_without_converged_inner_solves_falls_back
     """Blended passes 5 % off, inside the 6 % limit of a clock stop, with inner solves cut at 2
     passes: no accept test takes the newest pass, so the linear pass is returned; the warning
     names both blends and best_mass_error describes the returned pass."""
-    with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+    with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.solver'):
         r = _wb_blended(monkeypatch, 1.05, 0.02)
     assert r['stopped_on_wall_clock'] is True and r['accepted_on'] == 'timeout'
     assert r['adiabat_blend'] == 0.0
@@ -949,7 +949,7 @@ def test_a_stop_that_cannot_return_a_better_earlier_pass_keeps_its_own(
     """tolerance_outer 0.05 above the 3 % ceiling: an iteration cap whose earlier pass is not
     under 3 %, or whose earlier pass is worse, and an inner clock stop on the last pass whose
     earlier pass is worse, keep the newest best pass; no warning names an earlier one."""
-    with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+    with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.solver'):
         r = _wb_blended(
             monkeypatch, factor, 0.05, clock_stop=clock_after is not None, outer=outer,
             clock_after=clock_after, linear=linear,
@@ -1014,7 +1014,7 @@ def test_a_clock_stop_with_converged_density_but_not_pressure_falls_back(monkeyp
 def test_an_accepted_mass_break_returns_its_own_pass_without_a_fallback(monkeypatch, caplog):
     """tolerance_outer 0.05 and blended passes 4 % off: the mass test breaks at blend 1.0 and
     accepts that pass, so no earlier pass replaces it and best_mass_error describes it."""
-    with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+    with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.solver'):
         r = _wb_blended(monkeypatch, 1.04, 0.05, clock_stop=False, outer=50)
     assert r['accepted_on'] == 'mass_only' and r['adiabat_blend'] == 1.0
     assert r['best_mass_error'] == pytest.approx(r['mass_error_at_accept'], rel=1e-9)
@@ -1231,7 +1231,7 @@ def test_an_iteration_cap_whose_newest_blend_step_diverges_returns_an_earlier_be
         return real(*args, **kwargs)
 
     monkeypatch.setattr(zs, '_solve', once)
-    with caplog.at_level(logging.INFO, logger='zalmoxis.solver'):
+    with caplog.at_level(logging.INFO, logger='fwl.zalmoxis.solver'):
         r = zs.main(cfg, load_material_dictionaries(), melt, os.path.join(ROOT, 'input'))
     assert 'activating adiabat blend' in caplog.text
     assert 'No pass of adiabat blend' in caplog.text
@@ -1358,7 +1358,7 @@ def _oscillating_solve(
     monkeypatch.setattr(zs, 'time', SimpleNamespace(time=lambda: real_time() + 1e9 * cut[0]))
     opts = {'max_iterations_inner': 5, 'num_layers': 20, **kwargs}
     cfg = _cfg(outer_solver='picard', wall_timeout=WALL, **opts)
-    with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+    with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.solver'):
         r = zs._solve(
             cfg,
             load_material_dictionaries(),

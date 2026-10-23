@@ -29,7 +29,7 @@ from scipy.interpolate import RegularGridInterpolator
 from zalmoxis.eos.interpolation import read_table_columns, require_eos_file
 from zalmoxis.eos.registry_guard import verify
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('fwl.' + __name__)
 
 
 # ── PALEOS unified table loader ─────────────────────────────────────

@@ -63,7 +63,7 @@ class TestParseLayerComponents:
     def test_normalization_warning(self, caplog):
         import logging
 
-        with caplog.at_level(logging.WARNING, logger='zalmoxis.mixing'):
+        with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.mixing'):
             m = parse_layer_components('PALEOS:MgSiO3:0.8+PALEOS:H2O:0.1')
         assert sum(m.fractions) == pytest.approx(1.0)
         assert 'normalizing' in caplog.text.lower()

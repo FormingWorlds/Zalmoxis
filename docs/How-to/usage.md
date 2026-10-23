@@ -95,7 +95,7 @@ When the Python logging level is set to `DEBUG`, the solver writes per-iteration
 - **`pressure_profiles.txt`**: Pressure vs. radius for every iteration of the pressure adjustment loop.
 - **`density_profiles.txt`**: Density vs. radius for every iteration.
 
-Enable with `logging.getLogger('zalmoxis').setLevel(logging.DEBUG)`. These files are useful for diagnosing convergence behavior. They grow large quickly and are overwritten at the start of each new run.
+Enable with `logging.getLogger('fwl.zalmoxis').setLevel(logging.DEBUG)`. These files are useful for diagnosing convergence behavior. They grow large quickly and are overwritten at the start of each new run.
 
 Adjust `tolerance_outer`, `tolerance_inner`, `max_iterations_outer`, `max_iterations_inner` in the `[IterativeProcess]` block (see [Configuration](configuration.md#iterativeprocess)) if convergence is slow.
 

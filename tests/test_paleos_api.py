@@ -945,7 +945,7 @@ class TestGenerateUnifiedTable:
         """
         gs = _tiny_grid()
         out_path = tmp_path / 'iron_logs.dat'
-        with caplog.at_level('INFO', logger='zalmoxis.eos.paleos_api'):
+        with caplog.at_level('INFO', logger='fwl.zalmoxis.eos.paleos_api'):
             paleos_api.generate_paleos_api_unified_table(
                 'iron', out_path, gs, n_workers=1, log_every=1
             )
@@ -1062,7 +1062,7 @@ class TestGenerate2PhaseMgsio3Tables:
         )
         s_path = tmp_path / 'solid_logs.dat'
         l_path = tmp_path / 'liquid_logs.dat'
-        with caplog.at_level('INFO', logger='zalmoxis.eos.paleos_api'):
+        with caplog.at_level('INFO', logger='fwl.zalmoxis.eos.paleos_api'):
             paleos_api.generate_paleos_api_2phase_mgsio3_tables(
                 s_path, l_path, gs, n_workers=1, log_every=1
             )

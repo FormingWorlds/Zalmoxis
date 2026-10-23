@@ -259,7 +259,7 @@ def test_advisory_fires_on_super_earth(minimal_config, caplog):
     # surface_temperature stays at fixture default 1500 K (cool)
     sentinel = _patch_solvers_to_sentinel()
     with (
-        caplog.at_level('INFO', logger='zalmoxis.solver'),
+        caplog.at_level('INFO', logger='fwl.zalmoxis.solver'),
         patch('zalmoxis.solver._solve', return_value=sentinel),
     ):
         main(cp, material_dictionaries={}, melting_curves_functions=None, input_dir='/tmp')
@@ -281,7 +281,7 @@ def test_advisory_fires_on_hot_surface(minimal_config, caplog):
     cp['surface_temperature'] = 3500.0  # hot fully-molten
     sentinel = _patch_solvers_to_sentinel()
     with (
-        caplog.at_level('INFO', logger='zalmoxis.solver'),
+        caplog.at_level('INFO', logger='fwl.zalmoxis.solver'),
         patch('zalmoxis.solver._solve', return_value=sentinel),
     ):
         main(cp, material_dictionaries={}, melting_curves_functions=None, input_dir='/tmp')
@@ -300,7 +300,7 @@ def test_advisory_fires_on_both_triggers_and_lists_both(minimal_config, caplog):
     cp['surface_temperature'] = 4000.0
     sentinel = _patch_solvers_to_sentinel()
     with (
-        caplog.at_level('INFO', logger='zalmoxis.solver'),
+        caplog.at_level('INFO', logger='fwl.zalmoxis.solver'),
         patch('zalmoxis.solver._solve', return_value=sentinel),
     ):
         main(cp, material_dictionaries={}, melting_curves_functions=None, input_dir='/tmp')
@@ -317,7 +317,7 @@ def test_advisory_silent_on_earth_like(minimal_config, caplog):
     """1 M_E + 1500 K (fixture defaults) -> no advisory."""
     sentinel = _patch_solvers_to_sentinel()
     with (
-        caplog.at_level('INFO', logger='zalmoxis.solver'),
+        caplog.at_level('INFO', logger='fwl.zalmoxis.solver'),
         patch('zalmoxis.solver._solve', return_value=sentinel),
     ):
         main(
@@ -350,7 +350,7 @@ def test_advisory_silent_when_outer_solver_explicit(minimal_config, caplog, oute
         cp['absolute_tolerance'] = 1.0e-10
     sentinel = _patch_solvers_to_sentinel()
     with (
-        caplog.at_level('INFO', logger='zalmoxis.solver'),
+        caplog.at_level('INFO', logger='fwl.zalmoxis.solver'),
         patch('zalmoxis.solver._solve', return_value=sentinel),
         patch('zalmoxis.solver._solve_newton_outer', return_value=sentinel),
     ):
@@ -375,7 +375,7 @@ def test_advisory_boundary_2_M_E_and_3000_K_silent(minimal_config, caplog):
     cp['surface_temperature'] = 3000.0  # exactly at threshold
     sentinel = _patch_solvers_to_sentinel()
     with (
-        caplog.at_level('INFO', logger='zalmoxis.solver'),
+        caplog.at_level('INFO', logger='fwl.zalmoxis.solver'),
         patch('zalmoxis.solver._solve', return_value=sentinel),
     ):
         main(cp, material_dictionaries={}, melting_curves_functions=None, input_dir='/tmp')
@@ -396,7 +396,7 @@ def test_advisory_handles_missing_keys_gracefully(minimal_config, caplog):
     cp.pop('surface_temperature', None)
     sentinel = _patch_solvers_to_sentinel()
     with (
-        caplog.at_level('INFO', logger='zalmoxis.solver'),
+        caplog.at_level('INFO', logger='fwl.zalmoxis.solver'),
         patch('zalmoxis.solver._solve', return_value=sentinel),
     ):
         # Note: missing planet_mass would crash deeper in main(); we

@@ -26,7 +26,7 @@ from .interpolation import (
 )
 from .registry_guard import StaleTableError
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('fwl.' + __name__)
 
 _band_debug_seen: set[str] = set()  # tables with an out-of-band DEBUG line in this main() call
 

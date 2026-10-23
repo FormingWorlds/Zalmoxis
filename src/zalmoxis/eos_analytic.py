@@ -18,7 +18,7 @@ import numpy as np
 
 from .constants import G, earth_radius
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('fwl.' + __name__)
 
 # Maximum pressure for which the analytic fit is valid (Pa)
 P_MAX = 1e16
