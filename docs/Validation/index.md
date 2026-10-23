@@ -7,8 +7,8 @@ First-principles verification addresses this by testing each component against p
 The verification strategy follows a tiered approach:
 
 1. **Tier 1 (unit tests):** Test the ODE integrator in isolation by patching the density function to return a constant. No EOS data files, no Picard iteration, no Brent solver. Pure mathematics.
-2. **Tier 2 (integration tests):** Test the full solver chain (ODE + Picard + Brent + mass-radius loop) using the Seager et al. (2007) analytic EOS, which is a closed-form formula requiring no tabulated data. Compare against known physical benchmarks (Earth's radius, gravity, central pressure) and scaling laws.
-3. **Tier 3 (convergence tests):** Verify that the numerical error decreases systematically with grid refinement and tolerance tightening, confirming that the solver converges to the correct solution rather than a nearby but wrong one.
+2. **Tier 2 (smoke tests):** Test the full solver chain (ODE + Picard + Brent + mass-radius loop) using the Seager et al. (2007) analytic EOS, which is a closed-form formula requiring no tabulated data. Compare against known physical benchmarks (Earth's radius, gravity, central pressure) and scaling laws.
+3. **Tier 3 (convergence tests):** Check the error over several grids and solver tolerances, and the full-solver radius on two grids.
 
 All tests are implemented in [`tests/test_first_principles.py`](https://github.com/FormingWorlds/Zalmoxis) (25 pytest tests). A standalone plotting script at `tools/validation/run_first_principles_validation.py` makes PDF versions of the first-principles figures on the [hydrostatic structure](hydrostatic_structure.md) and [mass-radius relation](mass_radius.md) pages.
 
@@ -20,6 +20,7 @@ All tests are implemented in [`tests/test_first_principles.py`](https://github.c
 | [Hydrostatic structure](hydrostatic_structure.md) | Two-layer sphere | `tests/test_first_principles.py::TestTwoLayerSphere` | piecewise closed-form solution | unit tier; script figure |
 | [Hydrostatic structure](hydrostatic_structure.md) | Conservation diagnostics | `tests/test_first_principles.py::TestGaussLaw`, `::TestHydrostaticBalance` | Gauss's law, hydrostatic balance | unit tier; script figure |
 | [Hydrostatic structure](hydrostatic_structure.md) | Gravitational binding energy | `tests/test_first_principles.py::TestGravitationalBindingEnergy` | $-\frac{3}{5} G M_p^2 / R$ | unit tier |
+| [Hydrostatic structure](hydrostatic_structure.md) | n = 1 polytrope | `tests/test_polytrope_verification.py` | analytic Lane-Emden solution | smoke tier |
 | [Hydrostatic structure](hydrostatic_structure.md) | Numerical convergence | `tests/test_first_principles.py::TestGridConvergence`, `::TestToleranceConvergence` | closed-form solution of the uniform sphere | slow tier; script figure |
 | [Hydrostatic structure](hydrostatic_structure.md) | JAX and numpy right-hand sides | `tests/test_jax_unified_mantle_parity.py::test_unified_mantle_dry_parity` and 5 more | numpy `coupled_odes` (cross-code check) | unit and integration tiers; plot pair |
 | [Mass-radius relation](mass_radius.md) | Earth benchmark | `tests/test_first_principles.py::TestEarthBenchmark` | Earth radius, surface gravity, central pressure | smoke tier; script figure |
@@ -31,22 +32,22 @@ All tests are implemented in [`tests/test_first_principles.py`](https://github.c
 
 | Test | Target | Key metric | Result |
 |------|--------|------------|--------|
-| 1. Uniform sphere | ODE integration | $\|M_\mathrm{num} - M_\mathrm{exact}\|/M_\mathrm{exact}$ | $< 10^{-6}$ |
-| 2. Two-layer sphere | Layer transitions | $\|M_\mathrm{num} - M_\mathrm{exact}\|/M_\mathrm{exact}$ | $< 10^{-5}$ |
-| 3. Conservation | Gauss + hydrostatic | Pointwise residuals | $< 10^{-4}$ |
-| 4. Binding energy | Energy integral | $\|E_\mathrm{num} - E_\mathrm{exact}\|/\|E_\mathrm{exact}\|$ | $< 1\%$ |
-| 5. Earth benchmark | Full solver | $R_p$, $P_c$, $g_\mathrm{surf}$ | 4%, 7%, 5% |
-| 6. M-R scaling | Physics | $\alpha$ in $R \propto M^\alpha$ | 0.294 (expected $\sim 0.27$) |
-| 7. Convergence | Numerics | Error at $N = 400$ | $\sim 10^{-15}$ (machine prec.) |
+| 1. Uniform sphere | ODE integration | $\|M_\mathrm{num} - M_\mathrm{exact}\|/M_\mathrm{exact}$ | $3 \times 10^{-15}$ (test: $< 10^{-6}$) |
+| 2. Two-layer sphere | Layer transitions | $\|M_\mathrm{num} - M_\mathrm{exact}\|/M_\mathrm{exact}$ | $3 \times 10^{-9}$ (test: $< 10^{-5}$) |
+| 3. Conservation | Gauss + hydrostatic | Pointwise residuals | $\le 1.4 \times 10^{-13}$ (test: $< 10^{-5}$, $< 10^{-4}$) |
+| 4. Binding energy | Energy integral | $\|E_\mathrm{num} - E_\mathrm{exact}\|/\|E_\mathrm{exact}\|$ | $7 \times 10^{-6}$ (test: $< 1\%$) |
+| 5. Earth benchmark | Full solver | $R_p$, $P_c$, $g_\mathrm{surf}$ against 6371 km, 365 GPa, 9.81 m/s$^2$ | 4%, 7%, 9% |
+| 6. M-R scaling | Physics | $\alpha$ in $R \propto M^\alpha$ | 0.293 (expected $\sim 0.27$) |
+| 7. Convergence | Numerics | Mass error at $N = 25$ to 800 | $2$ to $3 \times 10^{-15}$ (round-off) |
 
 Together, these seven tests establish that:
 
-- The ODE integrator reproduces exact analytical solutions to $< 10^{-6}$ (Tests 1-2).
-- Conservation laws (Gauss's law, hydrostatic equilibrium) hold pointwise to $< 10^{-4}$ (Test 3).
-- Integral quantities (binding energy) are consistent to $< 1\%$ (Test 4).
-- The full solver chain (Picard + Brent + mass-radius) reproduces Earth to 4-7% with a simplified EOS (Test 5).
+- The ODE integrator reproduces the exact uniform-sphere solution to round-off and the two-layer solution to $3 \times 10^{-9}$ (Tests 1-2).
+- Conservation laws (Gauss's law, hydrostatic equilibrium) hold pointwise to round-off for the uniform sphere (Test 3).
+- The binding energy agrees with the analytic value to $7 \times 10^{-6}$ (Test 4).
+- The full solver chain (Picard + Brent + mass-radius) reproduces Earth to 4-9% with a simplified EOS (Test 5).
 - Physical scaling laws and monotonicity constraints are respected (Test 6).
-- Numerical convergence reaches machine precision (Test 7).
+- The uniform-sphere error stays at round-off level over every grid and tolerance tested (Test 7).
 
 These tests are independent of any tabulated EOS data, melting curves, or coupled atmosphere models. They verify the numerical machinery of Zalmoxis from first principles.
 
@@ -58,4 +59,4 @@ A case with a plot pair shows the tested values against their reference in a lig
 pytest -m reference_pinned tests --validation-plots
 ```
 
-Without `--validation-plots` the tests assert and write nothing. The command makes every plot again; commit only the pair of the case you changed, because the bytes match only for the same matplotlib and Pillow versions. The other figures on these pages are PNG files made by the scripts under `tools/validation/`.
+Without `--validation-plots` the tests assert and write nothing. The command makes every plot again; commit only the pair of the case you changed, because the bytes match only for the same matplotlib and Pillow versions. The other figures on these pages are script figures: PNG files made by the scripts under `tools/validation/` and kept in `docs/img/validation/`. No test writes or checks them, and they are not limited to 60 kB.
