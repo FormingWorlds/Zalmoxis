@@ -1402,7 +1402,10 @@ def test_a_padded_node_with_the_gravity_at_the_stop_raises_padding():
     result, cfg = _padded(3)
     k = N - 4
     result['gravity'][k:] = result['gravity'][k]
-    _raises(result, cfg, 'padding')
+    with pytest.raises(
+        StructureInvariantError, match=r'breaks padding:.*expected 0, the mass of node'
+    ):
+        _check(result, cfg)
 
 
 @pytest.mark.unit

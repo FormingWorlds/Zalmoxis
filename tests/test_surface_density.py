@@ -166,3 +166,10 @@ def test_the_surface_continuation_holds_t_from_the_first_step_without_a_gradient
 def test_the_surface_continuation_holds_t_when_the_midpoint_gradient_is_negative(monkeypatch):
     _nabla(monkeypatch, lambda P, T: 0.03 if P >= 3.76e9 else -0.01)
     assert zs._adiabat_to_surface(3.77e9, 2493.6, 101325.0, _Mix(), EOS_ARGS) == 2493.6
+
+
+def test_the_surface_continuation_clamps_t_at_100_k(monkeypatch):
+    """A steep gradient that would take T below 100 K stops at 100 K, the floor of the
+    interior adiabat."""
+    _nabla(monkeypatch, lambda P, T: 5.0)
+    assert zs._adiabat_to_surface(1.0e10, 2000.0, 1.0e5, _Mix(), EOS_ARGS) == 100.0
