@@ -1391,10 +1391,18 @@ def _adiabat_to_surface(P0, T0, p_surface, mix, eos_args, n_steps=64):
     lnp, T = np.log(P0), T0
     for _ in range(n_steps):
         n1 = get_mixed_nabla_ad(np.exp(lnp), T, mix, *nabla_args)
-        if n1 is None or not n1 > 0:
-            return T
-        n2 = get_mixed_nabla_ad(np.exp(lnp + h / 2), T * np.exp(n1 * h / 2), mix, *nabla_args)
+        n2 = (
+            get_mixed_nabla_ad(np.exp(lnp + h / 2), T * np.exp(n1 * h / 2), mix, *nabla_args)
+            if n1 is not None and n1 > 0
+            else None
+        )
         if n2 is None or not n2 > 0:
+            logger.warning(
+                'Surface adiabat continuation holds T = %.1f K from P = %.3e Pa: nabla_ad '
+                'missing or not positive.',
+                T,
+                np.exp(lnp),
+            )
             return T
         T = min(max(T * np.exp(n2 * h), 100.0), 100000.0)
         lnp += h
