@@ -143,3 +143,26 @@ def test_the_surface_continuation_returns_a_non_finite_start_temperature_as_it_i
     calls = _nabla(monkeypatch, lambda P, T: 0.03)
     T = zs._adiabat_to_surface(3.77e9, np.nan, 101325.0, _Mix(), EOS_ARGS)
     assert np.isnan(T) and not calls
+
+
+def test_the_surface_continuation_holds_t_from_the_first_step_without_a_gradient(
+    monkeypatch, caplog
+):
+    """nabla = a down to a mid-range cutoff, missing below: the continuation keeps the
+    temperature of the completed steps, T0 (p_j / P0)^a, and logs one warning naming p_j."""
+    a, P0, T0, ps, cut = 0.03, 3.77e9, 2493.6, 101325.0, 1.0e8
+    _nabla(monkeypatch, lambda P, T: a if P > cut else None)
+    h = np.log(ps / P0) / 64
+    j = next(
+        i for i in range(64) if P0 * np.exp((i + 0.5) * h) <= cut or P0 * np.exp(i * h) <= cut
+    )
+    with caplog.at_level('WARNING', logger='zalmoxis.solver'):
+        T = zs._adiabat_to_surface(P0, T0, ps, _Mix(), EOS_ARGS)
+    assert 0 < j < 64 and T == pytest.approx(T0 * np.exp(a * j * h), rel=1e-12)
+    msgs = [rec.getMessage() for rec in caplog.records if 'holds T' in rec.getMessage()]
+    assert len(msgs) == 1 and f'{P0 * np.exp(j * h):.3e}' in msgs[0]
+
+
+def test_the_surface_continuation_holds_t_when_the_midpoint_gradient_is_negative(monkeypatch):
+    _nabla(monkeypatch, lambda P, T: 0.03 if P >= 3.76e9 else -0.01)
+    assert zs._adiabat_to_surface(3.77e9, 2493.6, 101325.0, _Mix(), EOS_ARGS) == 2493.6
