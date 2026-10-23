@@ -148,8 +148,8 @@ For the full solver (including Picard iteration and Brent root-finding), the pla
 
 Reducing `rtol` from $10^{-6}$ to $10^{-12}$ drives the mass error from $\sim 10^{-12}$ to $\sim 10^{-15}$ (machine precision), confirming that the solver tolerance propagates correctly through the integration. The error saturates at machine precision because the analytical solution and the numerical solution both use 64-bit floating-point arithmetic, and the difference between them reaches the fundamental representability limit.
 
-- Reference: closed-form solution of the uniform-density sphere
-- Tolerance: mass error below `1e-8` and pressure error below `1e-6` at $N = 400$; full-solver radius at $N = 200$ and $N = 400$ within 1%; mass error below `1e-10` at `rtol=1e-12`
+- Reference: closed-form solution of the uniform-density sphere; for the full solver, the radius at $N = 200$ against $N = 400$ (self-consistency)
+- Tolerance: the error may rise by at most a factor 1.5 from one grid or tolerance step to the next above a `1e-13` floor; mass error below `1e-8` and pressure error below `1e-6` at $N = 400$; full-solver radius at $N = 200$ and $N = 400$ within 1%; mass error below `1e-10` at `rtol=1e-12`
 - Test id: `tests/test_first_principles.py::TestGridConvergence`, `tests/test_first_principles.py::TestToleranceConvergence`
 - Command: `pytest -o "addopts=" tests/test_first_principles.py::TestGridConvergence tests/test_first_principles.py::TestToleranceConvergence`
 
@@ -182,7 +182,7 @@ Largest relative difference of the three right-hand-side terms between `coupled_
 
 ## Reproducing the results
 
-The first-principles figures can be regenerated with:
+The first-principles figures can be made again, as PDF files, with:
 
 ```console
 python -m tools.validation.run_first_principles_validation
