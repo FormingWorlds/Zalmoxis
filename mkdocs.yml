@@ -30,7 +30,13 @@ nav:
       - Coupling to PROTEUS: Explanations/proteus_coupling.md
       - Code architecture: Explanations/code_architecture.md
       - Testing suite: Explanations/testing.md
-      - First-principles verification: Explanations/verification.md
+
+  - Validation:
+      - Overview: Validation/index.md
+      - Hydrostatic structure: Validation/hydrostatic_structure.md
+      - Mass-radius relation: Validation/mass_radius.md
+      - Equation of state: Validation/equation_of_state.md
+      - Thermal state: Validation/thermal_state.md
 
   - Reference:
       - API reference:
