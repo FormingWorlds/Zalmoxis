@@ -82,7 +82,7 @@ The columns are:
 | `temperature` | K | Local temperature |
 | `mass_enclosed` | kg | Total mass enclosed within this radius |
 
-The first row is the center (r = 0) and the last row is the surface. Shells beyond the planet surface (where the ODE terminal event fired) are padded with zeros.
+The first row is the center (r = 0) and the last row is the surface. Rows beyond the point where the ODE terminal event fired are the surface: they keep the mass at the stop and zero pressure, their gravity is that of the stop mass at their radius, and their density is the EOS density at the target surface pressure (zero for a result without a pressure solve, `density_from_eos` False).
 
 ### Summary file
 
