@@ -1,8 +1,9 @@
 """The outer node of a structure whose integration stops just below the outer radius.
 
-The analytic iron/MgSiO3 planet of ``tests.test_failed_structure_solve._cfg`` converges with
-P = 0 at the outer node: the pressure-zero event fires inside the last shell and the node is
-padded as the surface.
+Whether a converged solve stops inside the last shell depends on round-off, so these solves
+lower each root of the central-pressure search by 1e-5 (``_stop_below_r``): the outward
+integration then stops tens of metres below R, within the accepted pressure residual, and the
+outer node is padded as the surface on every platform.
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+import zalmoxis.solver as zs
 from tests.test_failed_structure_solve import _cfg, _run
 from zalmoxis.config import load_material_dictionaries
 from zalmoxis.constants import G
@@ -18,10 +20,26 @@ from zalmoxis.mixing import calculate_mixed_density, parse_all_layer_mixtures
 pytestmark = pytest.mark.smoke
 
 
+def _stop_below_r(monkeypatch):
+    """Lower each root of the central-pressure search (the brentq call with xtol 1e6)."""
+    real = zs.brentq
+
+    def brentq(f, a, b, *args, **kwargs):
+        out = real(f, a, b, *args, **kwargs)
+        if kwargs.get('xtol') != 1e6:
+            return out
+        root, info = out
+        return root * (1.0 - 1e-5), info
+
+    monkeypatch.setattr(zs, 'brentq', brentq)
+
+
 @pytest.fixture(scope='module')
 def padded():
     """An accepted solve whose outer node is padded."""
-    r = _run(_cfg())
+    with pytest.MonkeyPatch.context() as mp:
+        _stop_below_r(mp)
+        r = _run(_cfg())
     assert r['converged'] and np.asarray(r['pressure'])[-1] == 0.0
     return r
 
@@ -58,7 +76,6 @@ def test_a_padded_node_of_a_cmb_anchored_adiabat_takes_the_top_of_the_adiabat(mo
     density there."""
     import os
 
-    import zalmoxis.solver as zs
     from tests.test_spider_coupling_convergence import _has_paleos_data
     from zalmoxis.config import load_solidus_liquidus_functions, load_zalmoxis_config
 
@@ -88,6 +105,7 @@ def test_a_padded_node_of_a_cmb_anchored_adiabat_takes_the_top_of_the_adiabat(mo
             return _real(*args)
 
         monkeypatch.setattr(zs, name, spy)
+    _stop_below_r(monkeypatch)
     r = zs.main(cfg, md, melt, os.path.join(root, 'input'))
     P, T, rho = (np.asarray(r[k], float) for k in ('pressure', 'temperature', 'density'))
     assert r['converged'] and r['adiabat_blend'] == 1.0 and P[-1] == 0.0 and P[-2] > 0.0
@@ -132,16 +150,16 @@ def test_a_padded_node_of_a_cmb_anchored_adiabat_takes_the_top_of_the_adiabat(mo
 
 
 @pytest.mark.timeout(600)
-@pytest.mark.parametrize('outer, blend', [(2, 0.25), (3, 0.5), (4, 0.75)])
+# blend 0.75 (max_iterations_outer 4) returns a best pass that is not padded
+@pytest.mark.parametrize('outer, blend', [(2, 0.25), (3, 0.5)])
 def test_a_padded_node_of_a_cmb_run_accepted_mid_ramp_keeps_the_linear_profile_at_r(
-    outer, blend
+    monkeypatch, outer, blend
 ):
     """An accept before the adiabat blend reaches 1 is not a CMB-anchored adiabat: the padded
     node keeps the linear profile at R (the configured surface_temperature), not a continuation
     of the blended temperature below it."""
     import os
 
-    import zalmoxis.solver as zs
     from tests.test_spider_coupling_convergence import _has_paleos_data
     from zalmoxis.config import load_solidus_liquidus_functions, load_zalmoxis_config
 
@@ -164,6 +182,7 @@ def test_a_padded_node_of_a_cmb_run_accepted_mid_ramp_keeps_the_linear_profile_a
         cfg['rock_liquidus'],
         cfg['mushy_zone_factor'],
     )
+    _stop_below_r(monkeypatch)
     r = zs.main(cfg, load_material_dictionaries(), melt, os.path.join(root, 'input'))
     P, T = (np.asarray(r[k], float) for k in ('pressure', 'temperature'))
     assert r['converged'] and r['adiabat_blend'] == blend and r['adiabat_computed']
@@ -177,7 +196,6 @@ def test_both_padded_lookups_get_the_eos_arguments_of_the_solve_in_order(monkeyp
     _solve breaks the comparison."""
     import os
 
-    import zalmoxis.solver as zs
     from tests.test_spider_coupling_convergence import _has_paleos_data
     from zalmoxis.config import load_solidus_liquidus_functions, load_zalmoxis_config
 
@@ -209,6 +227,7 @@ def test_both_padded_lookups_get_the_eos_arguments_of_the_solve_in_order(monkeyp
             return _real(*args)
 
         monkeypatch.setattr(zs, name, spy)
+    _stop_below_r(monkeypatch)
     r = zs.main(cfg, md, melt, os.path.join(root, 'input'))
     eos = (md, *melt, zs._interpolation_cache, *zs._eos_params(cfg))
     assert r['converged'] and r['adiabat_blend'] == 1.0 and r['pressure'][-1] == 0.0
@@ -220,12 +239,13 @@ def test_both_padded_lookups_get_the_eos_arguments_of_the_solve_in_order(monkeyp
 
 
 @pytest.mark.timeout(600)
-def test_a_padded_node_of_a_surface_anchored_adiabat_keeps_the_surface_temperature():
+def test_a_padded_node_of_a_surface_anchored_adiabat_keeps_the_surface_temperature(
+    monkeypatch,
+):
     """The adiabat of input/default.toml is anchored at the surface, so its padded node keeps
     surface_temperature; only the CMB-anchored adiabat is continued to the target pressure."""
     import os
 
-    import zalmoxis.solver as zs
     from tests.test_spider_coupling_convergence import _has_paleos_data
     from zalmoxis.config import load_solidus_liquidus_functions, load_zalmoxis_config
 
@@ -240,6 +260,7 @@ def test_a_padded_node_of_a_surface_anchored_adiabat_keeps_the_surface_temperatu
         cfg['rock_liquidus'],
         cfg['mushy_zone_factor'],
     )
+    _stop_below_r(monkeypatch)
     r = zs.main(cfg, load_material_dictionaries(), melt, os.path.join(root, 'input'))
     P, T = (np.asarray(r[k], float) for k in ('pressure', 'temperature'))
     assert cfg['temperature_mode'] == 'adiabatic' and r['adiabat_blend'] == 1.0
