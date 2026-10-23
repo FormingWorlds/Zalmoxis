@@ -111,13 +111,53 @@ def test_a_rewritten_upstream_names_the_missing_history(history):
 
 
 def test_a_tested_commit_missing_from_a_full_clone_names_both_causes(history):
-    """A clone that lacks the tested commit is either older or from a rewritten main;
-    the message names the pull for the first and the pin move for the second."""
+    """A clone that lacks the tested commit gets a fetch and a checkout of it, and the
+    pin move for a main that no longer holds it."""
     repo, _ = history
     with pytest.raises(PaleosVersionError) as err:
         check_paleos_commit(repo, 'f' * 40)
-    assert f'git -C {repo} pull' in str(err.value)
+    assert f'git -C {repo} fetch origin && git -C {repo} checkout {"f" * 40}' in str(err.value)
+    assert f'git -C {repo} pull' not in str(err.value)
     assert 'main was rewritten' in str(err.value) and 'PALEOS_TESTED_SHA' in str(err.value)
+
+
+def test_a_clone_from_before_a_rewrite_runs_after_the_named_commands(history, tmp_path):
+    """A clone made before main was rewritten (the tested commit amended to a new SHA
+    with the same tree) cannot pull the new history; the commands the message names
+    fetch the rewritten commit and give a checkout the check accepts."""
+    repo, c = history
+    clone = tmp_path / 'clone'
+    _git(tmp_path, 'clone', '-q', f'file://{repo}', str(clone))
+    _git(repo, 'reset', '-q', '--hard', c['tested'])
+    _git(
+        repo,
+        '-c',
+        'user.name=t',
+        '-c',
+        'user.email=t@t',
+        '-c',
+        'commit.gpgsign=false',
+        '-c',
+        'core.hooksPath=/dev/null',
+        'commit',
+        '-q',
+        '--amend',
+        '-m',
+        'tested, rewritten',
+    )
+    rewritten = _git(repo, 'rev-parse', 'HEAD')
+    assert _git(repo, 'rev-parse', f'{rewritten}^{{tree}}') == _git(
+        repo, 'rev-parse', f'{c["tested"]}^{{tree}}'
+    )
+    with pytest.raises(PaleosVersionError) as err:
+        check_paleos_commit(clone, rewritten)
+    message = str(err.value)
+    assert f'git -C {clone} pull' not in message
+    fix = f'git -C {clone} fetch origin && git -C {clone} checkout {rewritten}'
+    assert fix in message
+    for command in fix.split(' && '):
+        subprocess.run(command.split(), check=True, capture_output=True)
+    assert check_paleos_commit(clone, rewritten) == 'tested'
 
 
 def test_a_checkout_without_git_stops(tmp_path, monkeypatch):
