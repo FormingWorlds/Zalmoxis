@@ -94,7 +94,7 @@ def main(fetch=compare) -> int:
         ahead, behind = int(reply['ahead_by']), int(reply['behind_by'])
         if status not in _STATUSES:
             raise ValueError(status)
-    except (KeyError, TypeError, ValueError) as exc:
+    except Exception as exc:  # noqa: BLE001 -- any malformed reply is an unread one
         print(f'PALEOS main could not be read: no comparison in the reply ({exc!r})')
         return 3
     if status == 'identical':
@@ -103,22 +103,23 @@ def main(fetch=compare) -> int:
     if status == 'ahead':
         try:
             new = [
-                (c['sha'][:9], c['commit']['committer']['date'][:10], c['commit']['message'])
+                f'  {c["sha"][:9]} {c["commit"]["committer"]["date"][:10]} '
+                + c['commit']['message'].partition('\n')[0]
                 for c in reply['commits']
             ]
-        except (KeyError, TypeError) as exc:
+        except Exception as exc:  # noqa: BLE001
             print(f'PALEOS main could not be read: no commit list in the reply ({exc!r})')
             return 3
         listed = f' ({len(new)} of {ahead} listed)' if len(new) < ahead else ''
         print(
             f'PALEOS main is {ahead} commit{"s" * (ahead != 1)} ahead of the tested commit '
             f'{tested}; the pin moves after the PALEOS-API tests pass on the new commit'
-            f'{listed}:'
+            f'{listed}:\n\n```'
         )
-        for sha, date, message in new:
-            print(f'  {sha} {date} {message.splitlines()[0] if message else ""}')
+        print(*new, '```', sep='\n')
         return 6
-    base = (reply.get('merge_base_commit') or {}).get('sha', 'unknown')
+    base = reply.get('merge_base_commit')
+    base = base.get('sha', 'unknown') if isinstance(base, dict) else 'unknown'
     cause = (
         'as after a rewrite of main: run the PALEOS-API tests on main and move '
         if status == 'diverged'
