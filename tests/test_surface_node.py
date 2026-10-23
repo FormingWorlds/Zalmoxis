@@ -21,23 +21,29 @@ from zalmoxis.mixing import calculate_mixed_density, parse_all_layer_mixtures
 pytestmark = pytest.mark.smoke
 
 
-def _stop_below_r(monkeypatch, target=101325.0):
-    """Take each root of the central-pressure search (the brentq call with xtol 1e6), or lower
-    it until the residual is that of a padded solve; return the roots that no shift up to 1e-2
-    pads."""
-    real, misses = zs.brentq, []
+def _stop_below_r(monkeypatch):
+    """Take each root of the central-pressure search (every brentq call on P_c), or lower it
+    until the solve stops below R, which fills its stop dict; return the roots that no shift up
+    to 1e-2 pads."""
+    real, real_residual, misses, stopped = zs.brentq, zs._surface_residual, [], []
+
+    def residual(pressure, stop, p_target, radius, k):
+        stopped.append(bool(stop))
+        return real_residual(pressure, stop, p_target, radius, k)
 
     def brentq(f, a, b, *args, **kwargs):
         out = real(f, a, b, *args, **kwargs)
-        if kwargs.get('xtol') != 1e6:
+        if a <= 1e8:  # the outer radius search, not the central pressure solve
             return out
         root, info = out
         for k in (0.0, 1e-5, 1e-4, 1e-3, 1e-2):
-            if f(root * (1.0 - k)) == -target:
+            f(root * (1.0 - k))
+            if stopped[-1]:
                 return root * (1.0 - k), info
         misses.append(root)
         return root, info
 
+    monkeypatch.setattr(zs, '_surface_residual', residual)
     monkeypatch.setattr(zs, 'brentq', brentq)
     return misses
 
