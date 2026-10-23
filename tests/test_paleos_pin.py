@@ -88,6 +88,38 @@ def test_a_tested_commit_missing_from_the_clone_stops(history):
         check_paleos_commit(repo, 'f' * 40)
 
 
+def test_an_older_checkout_names_the_pull(history):
+    """A checkout behind the tested commit gets the pull, and no rewrite is named."""
+    repo, c = history
+    _git(repo, 'checkout', '-q', c['old'])
+    with pytest.raises(PaleosVersionError) as err:
+        check_paleos_commit(repo, c['tested'])
+    assert f'git -C {repo} pull' in str(err.value)
+    assert 'main was rewritten' not in str(err.value)
+
+
+def test_a_rewritten_upstream_names_the_missing_history(history):
+    """A main rewritten past the tested commit keeps it out of the history of the
+    checkout, so the message says that and names a checkout instead of a pull."""
+    repo, c = history
+    _git(repo, 'checkout', '-q', c['unrelated'])
+    with pytest.raises(PaleosVersionError) as err:
+        check_paleos_commit(repo, c['tested'])
+    assert 'not in the history of this checkout' in str(err.value)
+    assert f'git -C {repo} checkout {c["tested"]}' in str(err.value)
+    assert f'git -C {repo} pull' not in str(err.value)
+
+
+def test_a_tested_commit_missing_from_a_full_clone_names_both_causes(history):
+    """A clone that lacks the tested commit is either older or from a rewritten main;
+    the message names the pull for the first and the pin move for the second."""
+    repo, _ = history
+    with pytest.raises(PaleosVersionError) as err:
+        check_paleos_commit(repo, 'f' * 40)
+    assert f'git -C {repo} pull' in str(err.value)
+    assert 'main was rewritten' in str(err.value) and 'PALEOS_TESTED_SHA' in str(err.value)
+
+
 def test_a_checkout_without_git_stops(tmp_path, monkeypatch):
     """PALEOS outside a git checkout has no commit to check, so the check stops."""
     monkeypatch.setenv('GIT_CEILING_DIRECTORIES', str(tmp_path.parent))
