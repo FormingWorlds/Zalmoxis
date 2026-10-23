@@ -1,8 +1,8 @@
 name: PALEOS main at the tested commit
 
-# One GitHub request, no retry. Fails on a moved main, a missing repository or branch, a
-# refused token or permission and an unreadable pin (exits 1, 4, 5, 2), so the scheduled run
-# sends its failure notice; a rate limit or a server error (exit 3) only warns.
+# One GitHub request, no retry. Fails when main does not contain the tested commit, on a
+# missing repository, branch or commit, a refused token or permission and an unreadable pin
+# (exits 1, 4, 5, 2); main ahead of the tested commit (exit 6) and an unread GitHub (3) warn.
 
 on:
   schedule:
@@ -33,6 +33,10 @@ jobs:
           code=${PIPESTATUS[0]}
           if [ "${code}" -eq 3 ]; then
             echo "::warning title=PALEOS main not read::GitHub did not answer; see the summary"
+            exit 0
+          fi
+          if [ "${code}" -eq 6 ]; then
+            echo "::warning title=PALEOS main ahead of the tested commit::The pin moves after the PALEOS-API tests pass on the new commits; see the summary"
             exit 0
           fi
           exit "${code}"
