@@ -82,24 +82,32 @@ This includes a trial central pressure at a bracket end: one failed solve stops 
 The JAX path applies the same rule to the state where `diffeqsolve` stopped, at the event or at its last accepted step, without a re-integration, so near the $10^{-6} P_c$ limit a stop can pad on one path and fail on the other.
 The residual function detects a surface stop ($P_{\mathrm{surface}} \leq 0$) and returns $-P_{\mathrm{target}}$, which is negative because the configuration requires $P_{\mathrm{target}} > 0$; this signals to Brent's method that $P_c$ is too low and keeps the bracket valid.
 
-**Padded accepts.**
-The pressure test (b) in [Convergence Checks](#convergence-checks) compares the outermost pressure with the target, and a padded profile has $P(R) = 0$ there, so its residual is $P_{\mathrm{target}}$.
-With the default `pressure_tolerance` of $10^9$ Pa, and $10^8$ Pa on the retry, the test passes a padded profile for any target below the tolerance, and the solve can return $P(R) = 0$ instead of `target_surface_pressure`.
-The cause is the integration error of the structure ODE.
-At the default `relative_tolerance` of $10^{-5}$, the surface pressure of a solve that reaches the outer radius has an error of tens of MPa, and it does not follow $P_c$ smoothly.
-For `input/default.toml` ($P_c = 3.86 \times 10^{11}$ Pa), of 161 central pressures evenly spaced over $\pm 2 \times 10^{-5}$ about the root, 113 stop before the outer radius and 48 reach it with $P(R)$ between 2.3 and 56 MPa, and the residual changes sign 47 times.
-No central pressure then gives a surface pressure near 1 atm, so Brent's method ends at a step between a stopped and a reached solve, and the profile at its root is either padded or reached with $P(R)$ of order 10 MPa; both pass the test.
-`python -m zalmoxis -c input/default.toml` accepts a padded profile: its outermost point has $P = 0$, and the point below it, 44 km deeper, has $9.5 \times 10^8$ Pa.
-
 **Closure state capture.**
 Since `brentq` only returns the root value (not intermediate ODE solutions), the residual function uses a mutable closure dict to capture the mass, gravity, and pressure arrays from the last evaluation.
 After convergence, these arrays are extracted for the density update step.
+
+### Padded accepts
+
+A padded profile is the result of a surface stop as described above: the integration stopped before the outer radius, and the remaining points have $P = 0$.
+The pressure test (b) in [Convergence Checks](#convergence-checks) passes such a profile for any target below `pressure_tolerance` ($10^9$ Pa by default, $10^8$ Pa on the retry), because its $\lvert P(R) - P_{\mathrm{target}} \rvert$ is $P_{\mathrm{target}}$.
+Brent's method can end on a padded profile even when the residual is smooth in $P_c$.
+It stops when its bracket is narrower than `xtol` $= 10^6$ Pa and returns the end with the smaller $\lvert f \rvert$.
+The residual function gives $-P_{\mathrm{target}}$ on the whole stopped branch, so the padded end is returned whenever the reached end has $P(R) > 2 P_{\mathrm{target}}$.
+On a smooth residual with slope $S = dP(R)/dP_c$, that is possible when $S \times 10^6$ Pa exceeds $2 P_{\mathrm{target}}$, that is $S > 0.2$ for a target of 1 atm.
+A tighter `relative_tolerance` does not remove padded accepts: the Newton outer solver at `relative_tolerance` $10^{-9}$ accepts a padded profile on the Analytic EOS at 1 Earth mass.
+
+Integration error of the structure ODE makes a padded accept more frequent.
+For `input/default.toml` (150 radial points, PALEOS iron core and MgSiO$_3$ mantle, $P_c = 3.86 \times 10^{11}$ Pa) at the default `relative_tolerance` of $10^{-5}$, the surface pressure of a reached solve scatters by 13 MPa rms about a linear fit in $P_c$ over the window below.
+Of 161 central pressures evenly spaced over $\pm 2 \times 10^{-5} P_c$ ($\pm 7.7$ MPa) about the root, 113 stop before the outer radius and 48 reach it with $P(R)$ between 2.3 and 56 MPa, so no sampled solve has $P(R)$ near the target.
+The Brent root of 292 of the 293 pressure solves of that run is padded.
+The solve is accepted on `strict`, and `python -m zalmoxis -c input/default.toml` writes the padded profile: its outermost point has $P = 0$, and the point below it, 44 km deeper, has $9.5 \times 10^8$ Pa.
+The result does not mark a padded accept; `pressure[-1] == 0` identifies one.
 
 ## Convergence Checks
 
 - The outer loop converges when the relative mass difference falls below `tolerance_outer`.
 - The inner loop converges when the maximum relative density change across all shells falls below `tolerance_inner`.
-- The pressure solver converges when (a) `brentq` reports convergence, (b) the surface pressure residual is within `pressure_tolerance` of the target, which a padded profile with $P(R) = 0$ passes for any target below the tolerance (see [Padded accepts](#pressure-solver-brents-method)), and (c) all pressures are non-negative ($P \geq 0$, allowing for zero-padded surface points from the terminal event).
+- The pressure solver converges when (a) `brentq` reports convergence, (b) the surface pressure residual is within `pressure_tolerance` of the target (a padded profile passes this test, see [Padded accepts](#padded-accepts)), and (c) all pressures are non-negative ($P \geq 0$, allowing for zero-padded surface points from the terminal event).
 
 The numerical solve is accepted when one of the tests below passes: the result then has `converged = True`, and `accepted_on` names the test, or `timeout` when the wall clock stopped the solve of the returned profile; it is None when no test passes.
 `stopped_on_wall_clock` is True when the wall clock stopped that solve, also when no test passed.
