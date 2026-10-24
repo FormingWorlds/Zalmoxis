@@ -67,16 +67,18 @@ def test_a_padded_root_on_a_smooth_kink_is_replaced_by_the_reached_root():
 
 
 @pytest.mark.physics_invariant
-def test_a_jump_beyond_the_cap_keeps_the_padded_root_and_warns(caplog):
+def test_a_jump_beyond_the_cap_keeps_the_padded_root_and_logs_it(caplog):
     """A jump from the stop to P(R) = 1.956e8 Pa leaves no reached point near P_t: the reached
     end misses by 1930 P_t, above the cap of 1 P_t, so the padded root stays."""
     res = _Residual(_jump())
     res(1.999e11)
     res(2.001e11)
-    with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+    with caplog.at_level(logging.DEBUG, logger='zalmoxis.solver'):
         root = _refine(res, 1.999e11)
     assert res.f(root) == -P_T
-    assert 'keeps the padded root' in caplog.text
+    kept = [r for r in caplog.records if 'keeps the padded root' in r.getMessage()]
+    assert [r.levelno for r in kept] == [logging.DEBUG]
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
 
 
 @pytest.mark.physics_invariant
@@ -141,3 +143,19 @@ def test_the_sign_pair_is_the_nearest_adjacent_finite_bracket(points, root):
         a, b = pair
         assert pair in brackets
         assert abs(a - root) == min(abs(x - root) for x, _ in brackets)
+
+
+@pytest.mark.parametrize('padded', [True, False])
+def test_main_warns_once_when_the_accepted_profile_is_padded(monkeypatch, caplog, padded):
+    """A Picard run can keep hundreds of padded pressure roots on its way, logged at DEBUG;
+    main warns once, and only when the profile it returns is padded."""
+    from tests.test_invariants import _canned, _cfg, _run, _sphere
+
+    result = _canned('strict')[0]
+    result.update(accept_mass_limit=1e-3, padded=padded)
+    monkeypatch.setattr(zs, '_solve', lambda *a, **k: result)
+    with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+        out = _run(_cfg(planet_mass=_sphere()[1]['planet_mass']))
+    hits = [r for r in caplog.records if 'padded' in r.getMessage()]
+    assert out['padded'] is padded
+    assert len(hits) == (1 if padded else 0)
