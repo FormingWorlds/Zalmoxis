@@ -82,6 +82,15 @@ This includes a trial central pressure at a bracket end: one failed solve stops 
 The JAX path applies the same rule to the state where `diffeqsolve` stopped, at the event or at its last accepted step, without a re-integration, so near the $10^{-6} P_c$ limit a stop can pad on one path and fail on the other.
 The residual function detects a surface stop ($P_{\mathrm{surface}} \leq 0$) and returns $-P_{\mathrm{target}}$, which is negative because the configuration requires $P_{\mathrm{target}} > 0$; this signals to Brent's method that $P_c$ is too low and keeps the bracket valid.
 
+**Padded accepts.**
+The pressure test (b) in [Convergence Checks](#convergence-checks) compares the outermost pressure with the target, and a padded profile has $P(R) = 0$ there, so its residual is $P_{\mathrm{target}}$.
+With the default `pressure_tolerance` of $10^9$ Pa, and $10^8$ Pa on the retry, the test passes a padded profile for any target below the tolerance, and the solve can return $P(R) = 0$ instead of `target_surface_pressure`.
+The cause is the integration error of the structure ODE.
+At the default `relative_tolerance` of $10^{-5}$, the surface pressure of a solve that reaches the outer radius has an error of tens of MPa, and it does not follow $P_c$ smoothly.
+For `input/default.toml` ($P_c = 3.86 \times 10^{11}$ Pa), of 161 central pressures evenly spaced over $\pm 2 \times 10^{-5}$ about the root, 113 stop before the outer radius and 48 reach it with $P(R)$ between 2.3 and 56 MPa, and the residual changes sign 47 times.
+No central pressure then gives a surface pressure near 1 atm, so Brent's method ends at a step between a stopped and a reached solve, and the profile at its root is either padded or reached with $P(R)$ of order 10 MPa; both pass the test.
+`python -m zalmoxis -c input/default.toml` accepts a padded profile: its outermost point has $P = 0$, and the point below it, 44 km deeper, has $9.5 \times 10^8$ Pa.
+
 **Closure state capture.**
 Since `brentq` only returns the root value (not intermediate ODE solutions), the residual function uses a mutable closure dict to capture the mass, gravity, and pressure arrays from the last evaluation.
 After convergence, these arrays are extracted for the density update step.
@@ -90,7 +99,7 @@ After convergence, these arrays are extracted for the density update step.
 
 - The outer loop converges when the relative mass difference falls below `tolerance_outer`.
 - The inner loop converges when the maximum relative density change across all shells falls below `tolerance_inner`.
-- The pressure solver converges when (a) `brentq` reports convergence, (b) the surface pressure residual is within `pressure_tolerance` of the target, and (c) all pressures are non-negative ($P \geq 0$, allowing for zero-padded surface points from the terminal event).
+- The pressure solver converges when (a) `brentq` reports convergence, (b) the surface pressure residual is within `pressure_tolerance` of the target, which a padded profile with $P(R) = 0$ passes for any target below the tolerance (see [Padded accepts](#pressure-solver-brents-method)), and (c) all pressures are non-negative ($P \geq 0$, allowing for zero-padded surface points from the terminal event).
 
 The numerical solve is accepted when one of the tests below passes: the result then has `converged = True`, and `accepted_on` names the test, or `timeout` when the wall clock stopped the solve of the returned profile; it is None when no test passes.
 `stopped_on_wall_clock` is True when the wall clock stopped that solve, also when no test passed.
