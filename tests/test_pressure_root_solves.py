@@ -131,3 +131,59 @@ def test_the_accepted_root_meets_the_surface_boundary_condition(monkeypatch, val
         return fig
 
     validation_plot(figure, 'pressure_root_boundary_condition')
+
+
+# The 6 Newton setups of the sweep, the PROTEUS default outer solver: name, EOS, mass [M_earth], JAX.
+NEWTON_SETUPS = (
+    ('Analytic 1', ANALYTIC, 1.0, False),
+    ('PALEOS 1', PALEOS, 1.0, False),
+    ('PALEOS 1 JAX', PALEOS, 1.0, True),
+    ('PALEOS 3 JAX', PALEOS, 3.0, True),
+    ('PALEOS 5', PALEOS, 5.0, False),
+    ('PALEOS 10', PALEOS, 10.0, False),
+)
+
+
+@pytest.mark.accept_solves_long
+@pytest.mark.timeout(4800)
+@pytest.mark.reference_pinned
+@pytest.mark.physics_invariant
+def test_every_newton_setup_meets_the_surface_boundary_condition(validation_plot):
+    """Boundary condition P(R) = P_t on the 6 Newton setups (rtol 1e-9, 150 layers): each
+    accepted profile reaches the surface and misses P_t by under 0.5 P_t. A JAX setup takes
+    T(r) from a numpy Picard solve at rtol 1e-5, as PROTEUS hands it the interior profile.
+    See ``docs/Validation/hydrostatic_structure.md``."""
+    zroot = zalmoxis.get_zalmoxis_root()
+    md, misses = load_material_dictionaries(), []
+    for _, eos, mass, jax in NEWTON_SETUPS:
+        cfg = _case(zroot, layer_eos_config=dict(eos), planet_mass=5.972e24 * mass)
+        tarr = None
+        if jax:
+            pre = dict(
+                cfg, outer_solver='picard', relative_tolerance=1e-5, absolute_tolerance=1e-6
+            )
+            r0 = zs.main(pre, md, None, os.path.join(zroot, 'input'))
+            tarr = (np.asarray(r0['radii'], float), np.asarray(r0['temperature'], float))
+            cfg['use_jax'] = True
+        r = zs.main(cfg, md, None, os.path.join(zroot, 'input'), temperature_arrays=tarr)
+        P = np.asarray(r['pressure'], dtype=float)
+        assert r['converged'] and r['padded'] is False and P[-1] > 0.0
+        misses.append(abs(P[-1] - P_T) / P_T)
+    assert max(misses) < 0.5, misses
+
+    def figure():
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.plot(range(len(misses)), misses, 'o', ms=7, label='Accepted profile')
+        ax.axhline(0.5, ls='--', label='Tolerance')
+        ax.set_xticks(
+            range(len(misses)), [s[0] for s in NEWTON_SETUPS], rotation=30, ha='right'
+        )
+        ax.set_ylim(0.0, 0.6)
+        ax.set_ylabel(r'$|P(R) - P_t| / P_t$')
+        ax.legend()
+        fig.tight_layout()
+        return fig
+
+    validation_plot(figure, 'pressure_root_newton_setups')

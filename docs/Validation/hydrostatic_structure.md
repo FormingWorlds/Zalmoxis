@@ -207,6 +207,18 @@ Surface pressure $P(R)$ of each evaluated central pressure at most 10 MPa from t
 - Test id: `tests/test_pressure_root_solves.py::test_the_accepted_root_meets_the_surface_boundary_condition`
 - Command: `pytest -m reference_pinned tests/test_pressure_root_solves.py --validation-plots`
 
+### Plot: Newton setups
+
+![Surface pressure miss of the accepted profile for the 6 Newton setups](../assets/validation/pressure_root_newton_setups.svg#only-light){ width="80%" }
+![Surface pressure miss of the accepted profile for the 6 Newton setups](../assets/validation/pressure_root_newton_setups_dark.svg#only-dark){ width="80%" }
+
+$\lvert P(R) - P_t \rvert / P_t$ of the accepted profile for the 6 setups with the Newton outer solver at `relative_tolerance` $10^{-9}$, the outer solver PROTEUS uses by default: the Analytic EOS at 1 Earth mass, and PALEOS at 1, 3, 5 and 10 Earth masses, the 1 and 3 Earth-mass ones also on the JAX path with $T(r)$ from a numpy Picard solve. The dashed line is the tolerance. No accepted profile is padded.
+
+- Reference: the boundary condition $P(R) = P_t$.
+- Tolerance: $\lvert P(R) - P_t \rvert < 0.5 P_t$ for every setup, and no padded node.
+- Test id: `tests/test_pressure_root_solves.py::test_every_newton_setup_meets_the_surface_boundary_condition`
+- Command: `pytest -m reference_pinned tests/test_pressure_root_solves.py --validation-plots`
+
 ## Reproducing the results
 
 The first-principles figures can be made again, as PDF files, with:
