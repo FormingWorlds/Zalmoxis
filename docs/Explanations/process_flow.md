@@ -39,7 +39,8 @@ The model uses three nested convergence loops:
    For multi-material layers, the density is computed via the phase-aware suppressed harmonic mean (see [multi-material mixing](mixing.md)): each component's contribution is weighted by a sigmoid function of its density, preventing non-condensed volatiles from inflating the mixture density.
    Density updates are damped by averaging with the previous iteration.
 
-3. **Pressure solver (Brent's method):** Finds the central pressure $P_c$ such that the surface pressure matches the target boundary condition up to `pressure_tolerance`; the accepted profile can be padded (see [Padded accepts](#padded-accepts)). See [Pressure Solver](#pressure-solver-brents-method) below.
+3. **Pressure solver (Brent's method):** Searches with `brentq` for the central pressure $P_c$ at which the surface pressure equals the target boundary condition, and accepts the profile at the root it returns by the tests in [Convergence Checks](#convergence-checks); a [padded profile](#padded-accepts) can pass them.
+   See [Pressure Solver](#pressure-solver-brents-method) below.
 
 ## Pressure Solver (Brent's Method)
 
@@ -88,31 +89,42 @@ After convergence, these arrays are extracted for the density update step.
 
 ### Padded accepts
 
-A padded profile is the result of a surface stop (see **Early termination handling** above): the integration stopped before the outer radius, and the remaining points have $P = 0$.
-It does not meet the surface condition.
-The pressure test (b) in [Convergence Checks](#convergence-checks) still passes it for any target below `pressure_tolerance`, because its $\lvert P(R) - P_{\mathrm{target}} \rvert$ is $P_{\mathrm{target}}$.
-The default `pressure_tolerance` is $10^9$ Pa, and the retry of the Picard outer solver uses 0.1 times the configured value.
-The result dictionary has no flag for a padded accept; `result['pressure'][-1] == 0` identifies one.
+A padded profile is the result of a surface stop (see the Early termination handling paragraph above): the integration stopped before the outer radius $R$, and the remaining points have $P = 0$.
+A padded profile has the pressure $P(R) = 0$ at the outer radius, so it does not meet the surface condition.
+The pressure test (b) in [Convergence Checks](#convergence-checks) still passes it for any target below `pressure_tolerance`, because a padded profile has $\lvert P(R) - P_{\mathrm{target}} \rvert = P_{\mathrm{target}}$.
+The default `pressure_tolerance` is $10^9$ Pa, and the retry of the Picard outer solver uses 0.1 times the tolerance, $10^8$ Pa by default, so there a padded profile passes for a target below that value.
+The result returned by `main` has no flag for a padded accept; `result['pressure'][-1] == 0` identifies one.
 
-Call a bracket end of Brent's method padded when its solve stops before the outer radius, and reached when its solve reaches the outer radius.
+Each evaluation of the residual function integrates the structure for one trial central pressure.
+A trial is stopped when its integration ends before the outer radius, and reached when it reaches the outer radius.
+The residual function gives $-P_{\mathrm{target}}$ for every stopped trial.
 Brent's method stops when its bracket is narrower than `xtol` $= 10^6$ Pa.
-It then returns the bracket end with the smaller $\lvert f \rvert$.
-The residual function gives $-P_{\mathrm{target}}$ on the whole stopped branch, so Brent's method returns the padded end when the reached end has $P(R) > 2 P_{\mathrm{target}}$.
-If $P(R)$ rises from 0 with slope $S = dP(R)/dP_c$ above the stop, the reached end has $P(R)$ of at most $S \times 10^6$ Pa.
-A padded root is then possible only when $S > 2 P_{\mathrm{target}} / 10^6$ Pa, that is $S > 0.2$ for a target of 1 atm.
+It then returns the bracket end with the smaller $\lvert f \rvert$, so it returns a stopped end, with a padded profile at the root, when the reached end has $P(R) > 2 P_{\mathrm{target}}$.
 
-For the Analytic EOS at 1 Earth mass with the Newton outer solver at `relative_tolerance` $10^{-9}$, $P(R)$ rises from the stop with $S = 0.47$ and scatters by 6 kPa rms about that line.
-In that solve 43 of the 190 Brent roots are padded, and the accepted profile is padded.
-At a smaller slope, $P(R)$ can still exceed $2 P_{\mathrm{target}}$ at the reached end, because it can jump at the stop or scatter.
-For the Analytic EOS at 10 Earth masses ($P_c = 3.58 \times 10^{12}$ Pa, $S = 0.12$) at the default `relative_tolerance` of $10^{-5}$, the first reached solve has $P(R) = 2.0 \times 10^8$ Pa, $9 \times 10^5$ Pa in $P_c$ above a stopped solve.
-That planet is accepted padded at $10^{-5}$, and reached with $\lvert P(R) - P_{\mathrm{target}} \rvert = 7.5 \times 10^4$ Pa at $10^{-7}$.
+Take a $P(R)$ that is continuous at the stop and rises from 0 with a slope $dP(R)/dP_c$ of at most $S$ over the reached trials.
+The reached end of a final bracket then has $P(R)$ of at most $S \times 10^6$ Pa, so a padded root needs $S > 2 P_{\mathrm{target}} / 10^6$ Pa, that is $S > 0.2$ for a target of 1 atm.
+The condition is necessary and not sufficient.
+For the Analytic EOS at 1 Earth mass with the Newton outer solver at `relative_tolerance` $10^{-9}$, $P(R)$ rises with $S = 0.47$ and deviates by 6 kPa rms from a linear fit in $P_c$.
+In that run 43 of the 190 Brent roots are padded, and the accepted profile is padded.
+The limit does not apply when $P(R)$ jumps at the stop or scatters about a linear fit.
 
-In `input/default.toml`, $P(R)$ scatters at the default `relative_tolerance`.
-Of 161 central pressures evenly spaced over $\pm 7.7$ MPa ($\pm 2 \times 10^{-5} P_c$) about the root, 113 stop before the outer radius, and 48 reach it with $P(R)$ between 2.3 and 56 MPa and 13 MPa rms about a linear fit.
-Every reached solve in this window has $P(R)$ above 20 times the target, so Brent's method returns the padded end of any final bracket in it with a stopped and a reached end.
-In a full solve of `input/default.toml` (150 radial points, PALEOS iron core and MgSiO$_3$ mantle, $P_c = 3.86 \times 10^{11}$ Pa), 292 of the 293 Brent roots are padded, and the solve is accepted on `strict`.
+For the Analytic EOS at 10 Earth masses ($P_c = 3.58 \times 10^{12}$ Pa, $S = 0.12$) at the default `relative_tolerance` of $10^{-5}$, $P(R)$ jumps at the stop.
+The final bracket of the Brent search is $5.0 \times 10^5$ Pa wide: its lower end is stopped, and its upper end reaches the outer radius with $P(R) = 2.0 \times 10^8$ Pa.
+A continuous rise with $S = 0.12$ gives at most $6 \times 10^4$ Pa over that width.
+At `relative_tolerance` $10^{-5}$ the accepted profile of this setup is padded, and at $10^{-7}$ it reaches the outer radius with $\lvert P(R) - P_{\mathrm{target}} \rvert = 7.5 \times 10^4$ Pa.
+A tighter `relative_tolerance` moves accepts both ways.
+For the Analytic EOS with the Picard outer solver, the accepted profile at 0.1 Earth mass is reached at $10^{-5}$ and padded at $10^{-7}$, and at 1 Earth mass it is reached at $10^{-5}$ and padded at $10^{-9}$.
+
+In `input/default.toml` (150 radial points, PALEOS iron core and MgSiO$_3$ mantle), $P(R)$ scatters at the default `relative_tolerance`.
+The final pressure solve of a full run has its Brent root at $P_c = 3.86 \times 10^{11}$ Pa.
+Of 161 trials evenly spaced over $\pm 7.7$ MPa ($\pm 2 \times 10^{-5} P_c$) about that root, 113 are stopped, and 48 reach the outer radius with $P(R)$ between 2.3 and 56 MPa.
+The reached trials deviate by 13 MPa rms from a linear fit, and each has $P(R)$ above $2 P_{\mathrm{target}}$, so a final bracket with a stopped and a reached end among these trials returns the stopped end.
+In that run 292 of the 293 Brent roots are padded, and the run is accepted on `strict`.
 `python -m zalmoxis -c input/default.toml` writes the padded profile: its outermost point has $P = 0$, and the point below it, 44 km deeper, has $9.5 \times 10^8$ Pa.
-At `relative_tolerance` $10^{-9}$ the same residual function scatters by 0.2 MPa rms with $S = 0.25$, above the limit of 0.2, and a solve of `input/default.toml` at that tolerance (`absolute_tolerance` $10^{-10}$) still accepts a padded profile.
+
+At `relative_tolerance` $10^{-9}$ the residual function of that final pressure solve has no reached trial within $\pm 7.7$ MPa of the root.
+Its first reached trial is about $1.2 \times 10^8$ Pa higher in $P_c$, and above it $P(R)$ rises with $S = 0.25$ and deviates by 0.2 MPa rms from a linear fit, which alone is about $2 P_{\mathrm{target}}$.
+A full run of `input/default.toml` at `relative_tolerance` $10^{-9}$ (`absolute_tolerance` $10^{-10}$, `wall_timeout` 1800 s; the run took 358.9 s) also accepts a padded profile, on `strict`.
 
 ## Convergence Checks
 
