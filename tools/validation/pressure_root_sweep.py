@@ -164,11 +164,13 @@ def plot(outdir: str, assets: str) -> None:
         import matplotlib.pyplot as plt
 
         x = np.arange(len(rows))
-        fig, ax = plt.subplots(figsize=(7, 4.5))
+        fig, ax = plt.subplots(figsize=(6, 4))
         ax.semilogy(x[~padded], miss[~padded], 'o', ms=6, label='Reached')
         ax.semilogy(x[padded], miss[padded], 's', ms=6, label='Padded')
-        ax.axhline(1.0, ls='--', label='Cap of the reached end')
-        ax.set_xticks(x, [r['name'] for r in rows], rotation=90, fontsize=7)
+        ax.axhline(1.0, ls='--', label='Cap')
+        ax.set_xticks(x[::5], [str(i) for i in x[::5]])
+        ax.set_xlabel('Setup')
+        ax.set_yticks([1e-4, 1e-2, 1.0])
         ax.set_ylabel(r'$|P(R) - P_t| / P_t$')
         ax.legend(fontsize=8)
         fig.tight_layout()

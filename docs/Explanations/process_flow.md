@@ -111,32 +111,18 @@ A padded root then needs $S > 2 P_{\mathrm{target}} / 10^6$ Pa, that is $S > 0.2
 The condition is necessary, not sufficient.
 It does not apply when $P(R)$ jumps at the stop or scatters.
 
-The table lists runs of `main` on this code.
-For the runs that logged the final Brent call, it gives the width of the final bracket, $P(R)$ at its reached end, and the padded Brent roots of all Brent calls of the run.
-"Not recorded" marks a value that a run did not log.
+The figure shows $\lvert P(R) - P_{\mathrm{target}} \rvert / P_{\mathrm{target}}$ of the accepted profile for 26 setups built from `input/default.toml`.
+All 6 setups with the Newton outer solver at `relative_tolerance` $10^{-9}$ reach the outer radius.
+13 of the 20 setups with the Picard outer solver at the tolerances of `input/default.toml` end padded, `input/default.toml` itself (setup 8) among them: there $P(R)$ jumps at the stop or scatters by more than $P_{\mathrm{target}}$, so no reached evaluation lies within $P_{\mathrm{target}}$ of the target.
+Every padded profile has one padded point, the outermost.
+The 13 reached profiles miss $P_{\mathrm{target}}$ by at most $0.62 P_{\mathrm{target}}$ (median $0.065 P_{\mathrm{target}}$).
 
-| Setup | Outer solver | `relative_tolerance` | Padded Brent roots | Final bracket width | $P(R)$ at the reached end | Accepted profile |
-|---|---|---|---|---|---|---|
-| `input/default.toml` (PALEOS iron core and MgSiO$_3$ mantle, 1 Earth mass, 150 points) | Picard | $10^{-5}$ | 292 of 293 | $5.0 \times 10^5$ Pa | $3.5 \times 10^7$ Pa | padded (`strict`) |
-| `input/default.toml` | Picard | $10^{-7}$ | not recorded | not recorded | not recorded | padded (`strict`) |
-| `input/default.toml` | Picard | $10^{-9}$ | not recorded | not recorded | not recorded | padded (`strict`) |
-| Analytic EOS, 1 Earth mass | Newton | $10^{-9}$ | 43 of 190 | $5.0 \times 10^5$ Pa | $2.3 \times 10^5$ Pa | padded (`newton_tol`) |
-| Analytic EOS, 10 Earth masses | Picard | $10^{-5}$ | 28 of 42 | $5.0 \times 10^5$ Pa | $2.0 \times 10^8$ Pa | padded (`strict`) |
-| Analytic EOS, 10 Earth masses | Picard | $10^{-7}$ | not recorded | not recorded | not recorded | reached, $\lvert P(R) - P_{\mathrm{target}} \rvert = 7.5 \times 10^4$ Pa (`strict`) |
-| Analytic EOS, 10 Earth masses | Picard | $10^{-9}$ | not recorded | not recorded | not recorded | reached, $8.5 \times 10^3$ Pa (`strict`) |
-| Analytic EOS, 1 Earth mass | Picard | $10^{-5}$ | not recorded | not recorded | not recorded | reached, $2.3 \times 10^4$ Pa (`strict`) |
-| Analytic EOS, 1 Earth mass | Picard | $10^{-7}$ | not recorded | not recorded | not recorded | reached, $9.5 \times 10^4$ Pa (`mass_only`) |
-| Analytic EOS, 1 Earth mass | Picard | $10^{-9}$ | not recorded | not recorded | not recorded | padded (`strict`) |
-| Analytic EOS, 0.1 Earth mass | Picard | $10^{-5}$ | not recorded | not recorded | not recorded | reached, $5.0 \times 10^4$ Pa (`strict`) |
-| Analytic EOS, 0.1 Earth mass | Picard | $10^{-7}$ | not recorded | not recorded | not recorded | padded (`strict`) |
-| Analytic EOS, 0.1 Earth mass | Picard | $10^{-9}$ | not recorded | not recorded | not recorded | reached, $9.2 \times 10^4$ Pa (`strict`) |
+![Surface pressure miss of the accepted profile for 26 solver setups](../assets/validation/pressure_root_sweep.svg#only-light){ width="80%" }
+![Surface pressure miss of the accepted profile for 26 solver setups](../assets/validation/pressure_root_sweep_dark.svg#only-dark){ width="80%" }
 
-Every run uses 150 radial points, `absolute_tolerance` of 0.1 times `relative_tolerance` and a `wall_timeout` of at least 1800 s, and none logged a retry.
-Only the $10^{-9}$ run of `input/default.toml` took longer than the default `wall_timeout` of 300 s (358.9 s).
-In the 3 runs that logged the final Brent call, the bracket is $5.0 \times 10^5$ Pa wide, its lower end ends in a surface stop, and its reached end has $P(R)$ above $2 P_{\mathrm{target}}$.
-In every padded run only the outermost point is padded.
-A tighter `relative_tolerance` changes the accepted profile in both directions, and it does not remove the padded accept of `input/default.toml`.
-`python -m zalmoxis -c input/default.toml` writes a padded profile: its outermost point has $P = 0$, and the point below it, 44 km deeper, has $9.5 \times 10^8$ Pa.
+$\lvert P(R) - P_{\mathrm{target}} \rvert / P_{\mathrm{target}}$ of the accepted profile per setup: reached (circles) and padded (squares, at 1 since $P(R) = 0$); the dashed line is the cap of the reached end that may replace a padded root.
+Setups: 0 Analytic 0.1, 1 Analytic 1, 2 Analytic 10, 3 Analytic 1, 2000 layers, 4 Analytic 1, Newton, 5 WB isothermal 3000 K, 6 WB isothermal 4000 K, 7 WB linear, 8 PALEOS 1 (default.toml), 9 PALEOS 1, Newton, 10 PALEOS 1, JAX Newton, 11 PALEOS 0.1, 12 PALEOS 3, 13 PALEOS 3, JAX Newton, 14 PALEOS 10, Newton, 15 PALEOS linear 1, 16 PALEOS isothermal 1, 17 PALEOS 1, 2000 layers, 18 PALEOS 1, P_t 1e7 Pa, 19 PALEOS 1, P_t 1e3 Pa, 20 PALEOS-2phase linear 1, 21 PALEOS-2phase 1, 22 PALEOS-2phase 3, 23 PALEOS + 3 % H 1, 24 PALEOS 3-layer ice 1, 25 PALEOS 5, Newton.
+Made with `python -m tools.validation.pressure_root_sweep run <dir> -j 2`, then `python -m tools.validation.pressure_root_sweep plot <dir>`.
 
 ## Convergence Checks
 
