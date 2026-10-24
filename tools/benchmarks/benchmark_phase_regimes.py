@@ -32,6 +32,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger('phase_regimes')
 logging.getLogger('fwl.zalmoxis.eos').setLevel(logging.WARNING)
+logging.getLogger('fwl.zalmoxis.solver').setLevel(logging.WARNING)
 
 ZALMOXIS_ROOT = os.environ.get('ZALMOXIS_ROOT')
 if not ZALMOXIS_ROOT:
