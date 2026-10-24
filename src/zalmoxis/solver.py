@@ -330,6 +330,56 @@ def _tighten_solver_params(params):
     return tightened
 
 
+# A converged accept whose P(R) misses the target by more than this many target pressures is
+# solved once more at 1/100 of the integrator tolerances (integration noise of order rtol P_c).
+_RETRY_RESIDUAL_TARGETS = 10.0
+
+
+def _noise_retry(result, params, p_target, resolve):
+    """Solve a converged accept far from the target surface pressure once more, tighter.
+
+    Parameters
+    ----------
+    result : dict
+        Result of the solve.
+    params : dict
+        Its solver parameters, with ``relative_tolerance`` and ``absolute_tolerance``.
+    p_target : float
+        Target surface pressure [Pa].
+    resolve : callable
+        ``resolve(params)`` returns the result of a solve with those parameters.
+
+    Returns
+    -------
+    tuple
+        The result and parameters to keep: the retry's when it converges closer to the
+        target, else the first.
+    """
+
+    def miss(res):
+        return abs(float(np.asarray(res['pressure'])[-1]) - p_target)
+
+    if not result['converged'] or miss(result) <= _RETRY_RESIDUAL_TARGETS * p_target:
+        return result, params
+    tighter = dict(
+        params,
+        relative_tolerance=0.01 * params['relative_tolerance'],
+        absolute_tolerance=0.01 * params['absolute_tolerance'],
+    )
+    logger.warning(
+        'Accepted P(R) = %.3e Pa misses the target %.3e Pa by more than %g target pressures; '
+        'solving once more at rtol %.1e.',
+        float(np.asarray(result['pressure'])[-1]),
+        p_target,
+        _RETRY_RESIDUAL_TARGETS,
+        tighter['relative_tolerance'],
+    )
+    retry = resolve(tighter)
+    if retry['converged'] and miss(retry) < miss(result):
+        return retry, tighter
+    return result, params
+
+
 def _eos_params(config_params):
     """Return (mushy_zone_factors, condensed_rho_min, condensed_rho_scale, binodal_T_scale).
 
@@ -767,6 +817,25 @@ def main(
                 'Returning best result with converged=False.'
             )
 
+    effective = {**_default_solver_params(config_params['planet_mass']), **run_params}
+    result, run_params = _noise_retry(
+        result,
+        effective,
+        config_params['target_surface_pressure'],
+        lambda params: _solve(
+            params,
+            material_dictionaries,
+            melting_curves_functions,
+            input_dir,
+            layer_mixtures=layer_mixtures,
+            volatile_profile=volatile_profile,
+            temperature_function=temperature_function,
+            temperature_arrays=temperature_arrays,
+            p_center_hint=p_center_hint,
+            initial_density=result.get('density'),
+            initial_radii=result.get('radii'),
+        ),
+    )
     result = _report_table_bands(result, *bands)
     _warn_adiabat(
         result, config_params, layer_mixtures, temperature_function, temperature_arrays
