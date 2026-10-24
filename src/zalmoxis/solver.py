@@ -79,6 +79,103 @@ def _require_finite(radii, profiles, reason, outer_iter, inner_iter):
     )
 
 
+# A pressure root that misses P_t by more than this share of P_t is solved again on its
+# nearest sign pair with an xtol of this share of P_t over the slope of that pair.
+_REFINE_MISS_PT = 0.1
+
+# A reached end replaces a padded pressure root only when it misses P_t by at most this many P_t.
+E_MAX_MISS_PT = 1.0
+
+
+def _nearest_sign_pair(evals, root):
+    """Adjacent evaluated central pressures (a, b) with finite f(a) < 0 < f(b), nearest the root.
+
+    Parameters
+    ----------
+    evals : dict
+        Surface pressure residual f [Pa] of each evaluated central pressure P_c [Pa].
+    root : float
+        Central pressure [Pa] the pair is chosen nearest to, by its lower end.
+
+    Returns
+    -------
+    tuple of float or None
+        The pair (a, b) with a < b, or None when no adjacent pair brackets the target.
+    """
+    xs = sorted(evals)
+    pairs = [
+        (a, b)
+        for a, b in zip(xs, xs[1:])
+        if np.isfinite(evals[a]) and np.isfinite(evals[b]) and evals[a] < 0.0 < evals[b]
+    ]
+    return min(pairs, key=lambda ab: abs(ab[0] - root)) if pairs else None
+
+
+def _refine_pressure_root(root, info, evals, residual, p_target, maxiter):
+    """Refine the brentq root of the surface pressure residual.
+
+    brentq with xtol 1e6 Pa returns the end of its last bracket with the smaller |f|,
+    which is a stopped (padded) profile with f = -P_t when the reached end has
+    P(R) > 2 P_t. A root that misses P_t by more than ``_REFINE_MISS_PT`` P_t is solved
+    again on its nearest sign pair with xtol = ``_REFINE_MISS_PT`` P_t over the slope of
+    that pair, when that xtol is below 1e6 Pa. A root that is still padded is replaced by
+    the reached end of its nearest sign pair when that end misses P_t by at most
+    ``E_MAX_MISS_PT`` P_t; otherwise the padded root stays, with a warning.
+
+    Parameters
+    ----------
+    root : float
+        Central pressure brentq returned [Pa].
+    info : RootResults
+        brentq convergence record of ``root``.
+    evals : dict
+        f [Pa] of every evaluated central pressure [Pa]; ``residual`` adds to it.
+    residual : callable
+        Surface pressure residual f(P_c) = P(R) - P_t [Pa].
+    p_target : float
+        Target surface pressure P_t [Pa].
+    maxiter : int
+        Iteration limit of the second brentq.
+
+    Returns
+    -------
+    tuple
+        The refined root [Pa] and its brentq record.
+    """
+    f_root = evals.get(root)
+    if f_root is not None and abs(f_root) > _REFINE_MISS_PT * p_target:
+        pair = _nearest_sign_pair(evals, root)
+        if pair is not None:
+            a, b = pair
+            xtol = _REFINE_MISS_PT * p_target * (b - a) / (evals[b] - evals[a])
+            if xtol < 1e6:
+                root, info = brentq(
+                    residual, a, b, xtol=xtol, rtol=1e-10, maxiter=maxiter, full_output=True
+                )
+    if evals.get(root) == -p_target:
+        pair = _nearest_sign_pair(evals, root)
+        miss = abs(evals[pair[1]]) if pair is not None else math.inf
+        if miss <= E_MAX_MISS_PT * p_target:
+            logger.info(
+                'Pressure root at P_c = %.6e Pa is padded; taking the reached end P_c = %.6e Pa '
+                '(|P(R) - P_t| = %.3e Pa).',
+                root,
+                pair[1],
+                miss,
+            )
+            root = pair[1]
+        else:
+            logger.warning(
+                'Pressure root at P_c = %.6e Pa stops before the surface and no reached '
+                'evaluation lies within %.3g P_t of the target (nearest misses by %.3e Pa); '
+                'the solve keeps the padded root.',
+                root,
+                E_MAX_MISS_PT,
+                miss,
+            )
+    return root, info
+
+
 # Module-level EOS interpolation cache. Persists across multiple main() calls
 # within the same Python process (e.g., PROTEUS coupling loop), avoiding
 # repeated parsing of large PALEOS text tables (~3s per table per reload).
@@ -1973,6 +2070,7 @@ def _solve(
             # the residual function (brentq doesn't return intermediate
             # results, only the root)
             _state = {'mass_enclosed': None, 'gravity': None, 'pressure': None, 'n_evals': 0}
+            _evals = {}  # f(P_c) [Pa] of each evaluated central pressure of this solve
 
             def _pressure_residual(p_center):
                 """Surface pressure residual f(P_c) = P_surface(P_c) - P_target.
@@ -2026,10 +2124,9 @@ def _solve(
 
                 # Early termination: pressure reached zero before the
                 # surface (padded with zeros) → P_center is too low
-                if p[-1] <= 0:
-                    return -target_surface_pressure
-
-                return p[-1] - target_surface_pressure
+                f = -target_surface_pressure if p[-1] <= 0 else p[-1] - target_surface_pressure
+                _evals[float(p_center)] = f
+                return f
 
             # Bracket: use previous solution to narrow the search.
             # If the narrow bracket from the previous solve does not
@@ -2091,6 +2188,14 @@ def _solve(
                     rtol=1e-10,
                     maxiter=max_iterations_pressure,
                     full_output=True,
+                )
+                p_solution, root_info = _refine_pressure_root(
+                    p_solution,
+                    root_info,
+                    _evals,
+                    _pressure_residual,
+                    target_surface_pressure,
+                    max_iterations_pressure,
                 )
                 _prev_brent_solution = p_solution  # Persist for next iteration
                 # Re-run solve_structure at the exact root to get clean profiles
@@ -2713,6 +2818,7 @@ def _solve(
         'accept_mass_limit': accept_mass_limit,
         'density_from_eos': density_from_eos,
         'p_center': pressure[0] if len(pressure) > 0 else None,
+        'padded': bool(len(pressure) > 0 and pressure[-1] == 0.0),
         'adiabat_computed': _adiabat_computed,
         'adiabat_blend': _adiabat_blend,
     }

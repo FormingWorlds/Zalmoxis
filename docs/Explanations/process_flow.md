@@ -94,12 +94,17 @@ A padded profile is the result of a surface stop (see the Early termination hand
 Its pressure at the outer radius is $P(R) = 0$ instead of $P_{\mathrm{target}}$, so $\lvert P(R) - P_{\mathrm{target}} \rvert = P_{\mathrm{target}}$.
 The pressure test (b) in [Convergence Checks](#convergence-checks) passes such a profile for any target below `pressure_tolerance`, $10^9$ Pa by default.
 The retry that the Picard outer solver runs after an unconverged solve uses 0.1 times this tolerance, so there a padded profile passes for a target below that value.
-The result returned by `main` has no flag for a padded accept; `result['pressure'][-1] == 0` identifies one.
+`result['padded']` is True when the returned profile is padded.
 
 A trial central pressure whose integration ends in a surface stop gives $f = -P_{\mathrm{target}}$; one that stops at a higher pressure or reaches a non-finite state raises `StructureSolveError`.
 Brent's method stops when its bracket is narrower than `xtol` $+$ `rtol` $\lvert P_c \rvert$, with `xtol` $= 10^6$ Pa and `rtol` $= 10^{-10}$.
 It then returns the bracket end with the smaller $\lvert f \rvert$.
-It therefore returns the end with a surface stop, and the profile at the root is padded, when the other end reaches the outer radius with $P(R) > 2 P_{\mathrm{target}}$.
+It therefore returns the end with a surface stop when the other end reaches the outer radius with $P(R) > 2 P_{\mathrm{target}}$.
+
+The solve then refines the root in 2 steps (`_refine_pressure_root`).
+When the root misses $P_{\mathrm{target}}$ by more than $0.1 P_{\mathrm{target}}$, a second Brent solve runs on the nearest pair of evaluated central pressures whose residuals bracket the target, with `xtol` $= 0.1 P_{\mathrm{target}}$ divided by the slope of $f$ over that pair, when that `xtol` is below $10^6$ Pa.
+When the root still ends in a surface stop, the reached end of that pair replaces it if its $\lvert P(R) - P_{\mathrm{target}} \rvert$ is at most $P_{\mathrm{target}}$ (`E_MAX_MISS_PT` $= 1$).
+Otherwise the padded root stays, and the solve logs a warning.
 
 If $P(R)$ is continuous at the stop and rises with a slope $dP(R)/dP_c$ of at most $S$, the reached end of the final bracket has $P(R)$ of at most about $S \times 10^6$ Pa.
 A padded root then needs $S > 2 P_{\mathrm{target}} / 10^6$ Pa, that is $S > 0.2$ for a target of 1 atm.
