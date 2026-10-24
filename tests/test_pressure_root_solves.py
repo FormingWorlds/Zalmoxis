@@ -187,3 +187,26 @@ def test_every_newton_setup_meets_the_surface_boundary_condition(validation_plot
         return fig
 
     validation_plot(figure, 'pressure_root_newton_setups')
+
+
+def test_a_jump_at_the_stop_returns_a_flagged_padded_profile(caplog):
+    """Analytic 10 M_earth with the Picard outer solver at rtol 1e-5: P(R) jumps from 0 at the
+    stop to about 2e8 Pa, so no reached evaluation lies within 1 P_t and the padded root
+    stays. The result is flagged padded, P(R) = 0, and main warns once."""
+    import logging
+
+    root = zalmoxis.get_zalmoxis_root()
+    cfg = _case(
+        root,
+        layer_eos_config=dict(ANALYTIC),
+        planet_mass=10 * 5.972e24,
+        outer_solver='picard',
+        relative_tolerance=1e-5,
+        absolute_tolerance=1e-6,
+    )
+    with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+        r = zs.main(cfg, load_material_dictionaries(), None, os.path.join(root, 'input'))
+    P = np.asarray(r['pressure'], dtype=float)
+    assert r['converged'] and P[-1] == 0.0
+    assert r['padded'] is True
+    assert sum('surface stop' in rec.getMessage() for rec in caplog.records) == 1
