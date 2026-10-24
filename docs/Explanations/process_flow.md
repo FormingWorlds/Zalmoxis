@@ -104,7 +104,7 @@ It therefore returns the end with a surface stop when the other end reaches the 
 The solve then refines the root in 2 steps (`_refine_pressure_root`).
 When the root misses $P_{\mathrm{target}}$ by more than $0.1 P_{\mathrm{target}}$, a second Brent solve runs on the nearest pair of evaluated central pressures whose residuals bracket the target, with `xtol` $= 0.1 P_{\mathrm{target}}$ divided by the slope of $f$ over that pair, when that `xtol` is below $10^6$ Pa.
 When the root still ends in a surface stop, the reached end of that pair replaces it if its $\lvert P(R) - P_{\mathrm{target}} \rvert$ is at most $P_{\mathrm{target}}$ (`E_MAX_MISS_PT` $= 1$).
-Otherwise the padded root stays, and the solve logs a warning.
+Otherwise the padded root stays. Both steps log at the DEBUG level, since a Picard run can keep a padded root in hundreds of pressure solves; `main` logs one warning when the profile it returns is padded.
 
 If $P(R)$ is continuous at the stop and rises with a slope $dP(R)/dP_c$ of at most $S$, the reached end of the final bracket has $P(R)$ of at most about $S \times 10^6$ Pa.
 A padded root then needs $S > 2 P_{\mathrm{target}} / 10^6$ Pa, that is $S > 0.2$ for a target of 1 atm.

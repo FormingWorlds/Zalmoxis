@@ -120,7 +120,9 @@ def _refine_pressure_root(root, info, evals, residual, p_target, maxiter):
     again on its nearest sign pair with xtol = ``_REFINE_MISS_PT`` P_t over the slope of
     that pair, when that xtol is below 1e6 Pa. A root that is still padded is replaced by
     the reached end of its nearest sign pair when that end misses P_t by at most
-    ``E_MAX_MISS_PT`` P_t; otherwise the padded root stays, with a warning.
+    ``E_MAX_MISS_PT`` P_t; otherwise the padded root stays. Both outcomes log at DEBUG,
+    since a Picard run can keep a padded root in hundreds of pressure solves; ``main``
+    warns once when the profile it returns is padded.
 
     Parameters
     ----------
@@ -156,7 +158,7 @@ def _refine_pressure_root(root, info, evals, residual, p_target, maxiter):
         pair = _nearest_sign_pair(evals, root)
         miss = abs(evals[pair[1]]) if pair is not None else math.inf
         if miss <= E_MAX_MISS_PT * p_target:
-            logger.info(
+            logger.debug(
                 'Pressure root at P_c = %.6e Pa is padded; taking the reached end P_c = %.6e Pa '
                 '(|P(R) - P_t| = %.3e Pa).',
                 root,
@@ -165,7 +167,7 @@ def _refine_pressure_root(root, info, evals, residual, p_target, maxiter):
             )
             root = pair[1]
         else:
-            logger.warning(
+            logger.debug(
                 'Pressure root at P_c = %.6e Pa stops before the surface and no reached '
                 'evaluation lies within %.3g P_t of the target (nearest misses by %.3e Pa); '
                 'the solve keeps the padded root.',
@@ -435,6 +437,12 @@ def _check_accepted(
 
     result['integration_tolerances'] = (rtol, atol)
     check_accepted(result, config_params, rtol, atol, density_at, 'ice_layer' in mixes)
+    if result.get('padded'):
+        logger.warning(
+            'The accepted profile ends in a surface stop: P = 0 at the outer radius instead '
+            'of the target surface pressure %.4g Pa (padded).',
+            config_params.get('target_surface_pressure', float('nan')),
+        )
     return result
 
 
