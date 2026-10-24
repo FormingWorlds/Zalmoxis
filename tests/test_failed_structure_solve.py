@@ -135,15 +135,15 @@ class TestFailedPressureSolve:
             _run(_cfg(outer_solver='picard'))
 
     def test_failure_at_the_brent_root_raises(self, monkeypatch):
-        """Every solve succeeds except the re-solve at the root brentq returns."""
-        calls, real_brentq = {'root': None}, zs.brentq
+        """Every solve succeeds except the re-solve at the refined pressure root."""
+        calls, real_refine = {'root': None}, zs._refine_pressure_root
 
-        def brentq(*args, **kwargs):
-            out = real_brentq(*args, **kwargs)
+        def refine(*args, **kwargs):
+            out = real_refine(*args, **kwargs)
             calls['root'] = out[0]
             return out
 
-        monkeypatch.setattr(zs, 'brentq', brentq)
+        monkeypatch.setattr(zs, '_refine_pressure_root', refine)
         _spy_solve(monkeypatch, lambda radii, y0: y0[2] == calls['root'])
         with pytest.raises(StructureSolveError, match='solve at the Brent root'):
             _run(_cfg(outer_solver='picard'))
@@ -177,10 +177,14 @@ class TestFailedPressureSolve:
     @pytest.mark.parametrize('outer_solver', ['picard', 'newton'])
     def test_non_finite_mass_at_the_brent_root_raises(self, monkeypatch, outer_solver):
         """The re-solve at the root has NaN mass in its last nodes and finite pressure."""
-        state, real_solve, real_brentq = {'root': False}, zs.solve_structure, zs.brentq
+        state, real_solve, real_refine = (
+            {'root': False},
+            zs.solve_structure,
+            zs._refine_pressure_root,
+        )
 
-        def brentq(*args, **kwargs):
-            out = real_brentq(*args, **kwargs)
+        def refine(*args, **kwargs):
+            out = real_refine(*args, **kwargs)
             state['root'] = True
             return out
 
@@ -191,7 +195,7 @@ class TestFailedPressureSolve:
                 m[-3:] = np.nan
             return m, g, p
 
-        monkeypatch.setattr(zs, 'brentq', brentq)
+        monkeypatch.setattr(zs, '_refine_pressure_root', refine)
         monkeypatch.setattr(zs, 'solve_structure', solve)
         with pytest.raises(StructureSolveError, match='solve at the Brent root'):
             _run(_cfg(outer_solver=outer_solver, max_iterations_outer=1))
