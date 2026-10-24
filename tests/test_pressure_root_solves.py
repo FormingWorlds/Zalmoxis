@@ -108,15 +108,23 @@ def test_the_accepted_root_meets_the_surface_boundary_condition(monkeypatch, val
         import matplotlib.pyplot as plt
 
         x = np.array(sorted(evals))
-        pr = np.array([evals[k] for k in x]) + P_T
+        near = np.abs(x - first) < 1e7
+        dx = (x[near] - first) / 1e6
+        pr = (np.array([evals[k] for k in x[near]]) + P_T) / 1e5
         fig, ax = plt.subplots(figsize=(6, 4))
-        ax.plot(x / 1e9, pr / 1e5, 'o', ms=4, label='Evaluations')
+        ax.plot(dx, pr, 'o', ms=4, label='Evaluations')
         ax.axhline(P_T / 1e5, ls='--', label=r'$P_t$')
-        ax.plot([first / 1e9], [0.0], 's', ms=8, label='brentq root')
-        ax.plot([refined / 1e9], [(evals[refined] + P_T) / 1e5], '*', ms=12, label='Refined')
-        ax.set_xlim(first / 1e9 - 0.02, first / 1e9 + 0.02)
-        ax.set_ylim(-0.2, 5.0)
-        ax.set_xlabel('Central pressure [GPa]')
+        ax.plot([0.0], [0.0], 's', ms=8, label='brentq root')
+        ax.plot(
+            [(refined - first) / 1e6],
+            [(evals[refined] + P_T) / 1e5],
+            '*',
+            ms=12,
+            label='Refined',
+        )
+        ax.set_ylim(-0.2, 3.0)
+        ax.set_yticks([0, 1, 2, 3])
+        ax.set_xlabel(r'$P_c$ - brentq root [MPa]')
         ax.set_ylabel('Surface pressure [bar]')
         ax.legend()
         fig.tight_layout()

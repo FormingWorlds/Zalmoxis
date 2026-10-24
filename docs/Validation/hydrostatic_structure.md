@@ -191,6 +191,22 @@ Largest relative difference of the three right-hand-side terms between `coupled_
 - Test id: `tests/test_jax_unified_mantle_parity.py::test_unified_mantle_dry_parity`
 - Command: `pytest -m reference_pinned tests/test_jax_unified_mantle_parity.py --validation-plots`
 
+## Surface boundary condition of the pressure solve
+
+The central pressure $P_c$ is the root of $f(P_c) = P(R) - P_t$. A trial $P_c$ whose integration stops before the outer radius gives $f = -P_t$, and Brent's method with `xtol` $= 10^6$ Pa can return such a padded root; the solve then refines it ([padded accepts](../Explanations/process_flow.md#padded-accepts)). The case runs the Analytic 1 Earth-mass planet with the Newton outer solver at `relative_tolerance` $10^{-9}$, at planet-mass shifts of 0 and $\pm 10^{-9}$ until a pressure solve has a padded brentq root, and checks that the refined root and the accepted profile meet the boundary condition $P(R) = P_t$.
+
+### Plot: surface boundary condition
+
+![Surface pressure of the evaluated central pressures of one pressure solve](../assets/validation/pressure_root_boundary_condition.svg#only-light){ width="80%" }
+![Surface pressure of the evaluated central pressures of one pressure solve](../assets/validation/pressure_root_boundary_condition_dark.svg#only-dark){ width="80%" }
+
+Surface pressure $P(R)$ of each evaluated central pressure at most 10 MPa from the brentq root (circles) in one pressure solve whose brentq root is padded (square, $P(R) = 0$), and the refined root (star), against the offset of $P_c$ from the brentq root. The dashed line is $P_t$ = 1 atm.
+
+- Reference: the boundary condition $P(R) = P_t$.
+- Tolerance: $\lvert P(R) - P_t \rvert \le 0.1 P_t$ at the refined root; below $0.5 P_t$ for the accepted profile, which is not padded.
+- Test id: `tests/test_pressure_root_solves.py::test_the_accepted_root_meets_the_surface_boundary_condition`
+- Command: `pytest -m reference_pinned tests/test_pressure_root_solves.py --validation-plots`
+
 ## Reproducing the results
 
 The first-principles figures can be made again, as PDF files, with:
