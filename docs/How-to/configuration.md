@@ -463,13 +463,13 @@ The default values work well for Earth-mass planets with the default EOS. For ot
 ### `PressureAdjustment`
 
 Controls the Brent root-finding solver that determines the central pressure.
-The solver finds $P_c$ such that the surface pressure after ODE integration matches the target.
+The solver searches with `brentq` for the central pressure $P_c$ at which the surface pressure after ODE integration equals the target; `pressure_tolerance` is the accept test of the profile at the root it returns.
 See the [process flow documentation](../Explanations/process_flow.md#pressure-solver-brents-method) for details on the algorithm.
 
 | Parameter | Type | Unit | Default | Description |
 |---|---|---|---|---|
 | `target_surface_pressure` | float | Pa | 101325 | Target pressure at the planetary surface, > 0. Default is 1 atm. |
-| `pressure_tolerance` | float | Pa | 1e9 | Convergence criterion: the solver iterates until $\lvert P_\mathrm{surface} - P_\mathrm{target} \rvert$ falls below this value. |
+| `pressure_tolerance` | float | Pa | 1e9 | Accept test of the pressure solve: the profile at the Brent root passes when $\lvert P_\mathrm{surface} - P_\mathrm{target} \rvert$ is below this value. A padded profile (integration stopped before the outer radius) has $P_\mathrm{surface} = 0$ and passes for any target below this value ([padded accepts](../Explanations/process_flow.md#padded-accepts)). |
 | `max_iterations_pressure` | int | -- | 200 | Maximum number of function evaluations for the Brent solver. Typical convergence requires 20 to 36 evaluations. |
 
 ---

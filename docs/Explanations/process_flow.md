@@ -39,7 +39,8 @@ The model uses three nested convergence loops:
    For multi-material layers, the density is computed via the phase-aware suppressed harmonic mean (see [multi-material mixing](mixing.md)): each component's contribution is weighted by a sigmoid function of its density, preventing non-condensed volatiles from inflating the mixture density.
    Density updates are damped by averaging with the previous iteration.
 
-3. **Pressure solver (Brent's method):** Finds the central pressure $P_c$ such that the surface pressure matches the target boundary condition. See [Pressure Solver](#pressure-solver-brents-method) below.
+3. **Pressure solver (Brent's method):** Searches with `brentq` for the central pressure $P_c$ at which the surface pressure equals the target boundary condition, and accepts the profile at the root it returns by the tests in [Convergence Checks](#convergence-checks); a [padded profile](#padded-accepts) can pass them.
+   See [Pressure Solver](#pressure-solver-brents-method) below.
 
 ## Pressure Solver (Brent's Method)
 
@@ -83,14 +84,61 @@ The JAX path applies the same rule to the state where `diffeqsolve` stopped, at 
 The residual function detects a surface stop ($P_{\mathrm{surface}} \leq 0$) and returns $-P_{\mathrm{target}}$, which is negative because the configuration requires $P_{\mathrm{target}} > 0$; this signals to Brent's method that $P_c$ is too low and keeps the bracket valid.
 
 **Closure state capture.**
-Since `brentq` only returns the root value (not intermediate ODE solutions), the residual function uses a mutable closure dict to capture the mass, gravity, and pressure arrays from the last evaluation.
-After convergence, these arrays are extracted for the density update step.
+Since `brentq` only returns the root value (not intermediate ODE solutions), the residual function stores the mass, gravity, and pressure arrays of each evaluation in a mutable closure dict.
+After Brent's method returns, `solve_structure` runs once more at the root, and that profile goes to the accept test and the density update.
+The stored arrays of the last evaluation are used only when the bracket is invalid.
+
+### Padded accepts
+
+A padded profile is the result of a surface stop (see the Early termination handling paragraph above): the integration stopped before the outer radius $R$, and the remaining points have $P = 0$.
+Its pressure at the outer radius is $P(R) = 0$ instead of $P_{\mathrm{target}}$, so $\lvert P(R) - P_{\mathrm{target}} \rvert = P_{\mathrm{target}}$.
+The pressure test (b) in [Convergence Checks](#convergence-checks) passes such a profile for any target below `pressure_tolerance`, $10^9$ Pa by default.
+The retry that the Picard outer solver runs after an unconverged solve uses 0.1 times this tolerance, so there a padded profile passes for a target below that value.
+The result returned by `main` has no flag for a padded accept; `result['pressure'][-1] == 0` identifies one.
+
+A trial central pressure whose integration ends in a surface stop gives $f = -P_{\mathrm{target}}$; one that stops at a higher pressure or reaches a non-finite state raises `StructureSolveError`.
+Brent's method stops when its bracket is narrower than `xtol` $+$ `rtol` $\lvert P_c \rvert$, with `xtol` $= 10^6$ Pa and `rtol` $= 10^{-10}$.
+It then returns the bracket end with the smaller $\lvert f \rvert$.
+It therefore returns the end with a surface stop, and the profile at the root is padded, when the other end reaches the outer radius with $P(R) > 2 P_{\mathrm{target}}$.
+
+If $P(R)$ is continuous at the stop and rises with a slope $dP(R)/dP_c$ of at most $S$, the reached end of the final bracket has $P(R)$ of at most about $S \times 10^6$ Pa.
+A padded root then needs $S > 2 P_{\mathrm{target}} / 10^6$ Pa, that is $S > 0.2$ for a target of 1 atm.
+The condition is necessary, not sufficient.
+It does not apply when $P(R)$ jumps at the stop or scatters.
+
+The table lists runs of `main` on this code.
+For the runs that logged the final Brent call, it gives the width of the final bracket, $P(R)$ at its reached end, and the padded Brent roots of all Brent calls of the run.
+"Not recorded" marks a value that a run did not log.
+
+| Setup | Outer solver | `relative_tolerance` | Padded Brent roots | Final bracket width | $P(R)$ at the reached end | Accepted profile |
+|---|---|---|---|---|---|---|
+| `input/default.toml` (PALEOS iron core and MgSiO$_3$ mantle, 1 Earth mass, 150 points) | Picard | $10^{-5}$ | 292 of 293 | $5.0 \times 10^5$ Pa | $3.5 \times 10^7$ Pa | padded (`strict`) |
+| `input/default.toml` | Picard | $10^{-7}$ | not recorded | not recorded | not recorded | padded (`strict`) |
+| `input/default.toml` | Picard | $10^{-9}$ | not recorded | not recorded | not recorded | padded (`strict`) |
+| Analytic EOS, 1 Earth mass | Newton | $10^{-9}$ | 43 of 190 | $5.0 \times 10^5$ Pa | $2.3 \times 10^5$ Pa | padded (`newton_tol`) |
+| Analytic EOS, 10 Earth masses | Picard | $10^{-5}$ | 28 of 42 | $5.0 \times 10^5$ Pa | $2.0 \times 10^8$ Pa | padded (`strict`) |
+| Analytic EOS, 10 Earth masses | Picard | $10^{-7}$ | not recorded | not recorded | not recorded | reached, $\lvert P(R) - P_{\mathrm{target}} \rvert = 7.5 \times 10^4$ Pa (`strict`) |
+| Analytic EOS, 10 Earth masses | Picard | $10^{-9}$ | not recorded | not recorded | not recorded | reached, $8.5 \times 10^3$ Pa (`strict`) |
+| Analytic EOS, 1 Earth mass | Picard | $10^{-5}$ | not recorded | not recorded | not recorded | reached, $2.3 \times 10^4$ Pa (`strict`) |
+| Analytic EOS, 1 Earth mass | Picard | $10^{-7}$ | not recorded | not recorded | not recorded | reached, $9.5 \times 10^4$ Pa (`mass_only`) |
+| Analytic EOS, 1 Earth mass | Picard | $10^{-9}$ | not recorded | not recorded | not recorded | padded (`strict`) |
+| Analytic EOS, 0.1 Earth mass | Picard | $10^{-5}$ | not recorded | not recorded | not recorded | reached, $5.0 \times 10^4$ Pa (`strict`) |
+| Analytic EOS, 0.1 Earth mass | Picard | $10^{-7}$ | not recorded | not recorded | not recorded | padded (`strict`) |
+| Analytic EOS, 0.1 Earth mass | Picard | $10^{-9}$ | not recorded | not recorded | not recorded | reached, $9.2 \times 10^4$ Pa (`strict`) |
+
+Every run uses 150 radial points, `absolute_tolerance` of 0.1 times `relative_tolerance` and a `wall_timeout` of at least 1800 s, and none logged a retry.
+Only the $10^{-9}$ run of `input/default.toml` took longer than the default `wall_timeout` of 300 s (358.9 s).
+In the 3 runs that logged the final Brent call, the bracket is $5.0 \times 10^5$ Pa wide, its lower end ends in a surface stop, and its reached end has $P(R)$ above $2 P_{\mathrm{target}}$.
+In every padded run only the outermost point is padded.
+A tighter `relative_tolerance` changes the accepted profile in both directions, and it does not remove the padded accept of `input/default.toml`.
+`python -m zalmoxis -c input/default.toml` writes a padded profile: its outermost point has $P = 0$, and the point below it, 44 km deeper, has $9.5 \times 10^8$ Pa.
 
 ## Convergence Checks
 
 - The outer loop converges when the relative mass difference falls below `tolerance_outer`.
 - The inner loop converges when the maximum relative density change across all shells falls below `tolerance_inner`.
 - The pressure solver converges when (a) `brentq` reports convergence, (b) the surface pressure residual is within `pressure_tolerance` of the target, and (c) all pressures are non-negative ($P \geq 0$, allowing for zero-padded surface points from the terminal event).
+  A padded profile passes test (b); see [Padded accepts](#padded-accepts).
 
 The numerical solve is accepted when one of the tests below passes: the result then has `converged = True`, and `accepted_on` names the test, or `timeout` when the wall clock stopped the solve of the returned profile; it is None when no test passes.
 `stopped_on_wall_clock` is True when the wall clock stopped that solve, also when no test passed.
