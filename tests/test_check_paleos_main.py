@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import io
+import json
+import re
+import subprocess
 import urllib.error
+from pathlib import Path
 
 import pytest
 
@@ -14,7 +18,45 @@ pytestmark = pytest.mark.unit
 
 
 def _reply():
-    return io.BytesIO(b'{"sha": "' + b'c' * 40 + b'"}')
+    return io.BytesIO(json.dumps(_compare('identical')).encode())
+
+
+def _compare(status, ahead=0, behind=0, commits=()):
+    """A GitHub compare reply of the tested commit against main."""
+    return {
+        'status': status,
+        'ahead_by': ahead,
+        'behind_by': behind,
+        'merge_base_commit': {'sha': 'e' * 40},
+        'commits': [
+            {
+                'sha': sha,
+                'commit': {
+                    'committer': {'date': '2026-10-22T15:20:45Z'},
+                    'message': f'Subject {sha[:4]}\n\nbody',
+                },
+            }
+            for sha in commits
+        ],
+    }
+
+
+def _exit(reply):
+    """Exit status of main() on ``reply``, or the exception that escapes it (a traceback)."""
+    try:
+        return check.main(fetch=lambda tested: reply)
+    except Exception as exc:  # noqa: BLE001 -- an escaped error is the failure under test
+        return exc
+
+
+def test_main_ahead_of_the_pin_warns_and_exits_six(capsys):
+    """Upstream main ahead of the tested commit (the pin is in its history): exit 6, which
+    the workflow turns into a warning, and the summary names every new commit."""
+    new = ['a' * 40, 'b' * 40, 'f' * 40]
+    assert check.main(fetch=lambda *a: _compare('ahead', 3, 0, new)) == 6
+    out = capsys.readouterr().out
+    assert 'PALEOS main is 3 commits ahead of the tested commit' in out
+    assert all(sha[:9] in out for sha in new) and 'Subject aaaa' in out
 
 
 def test_the_pin_is_read_from_the_source_without_importing_it():
@@ -24,35 +66,112 @@ def test_the_pin_is_read_from_the_source_without_importing_it():
 
 def test_main_at_the_pin_exits_zero(capsys):
     """Upstream main at the tested commit: in order, exit 0."""
-    assert check.main(fetch=lambda: PALEOS_TESTED_SHA) == 0
+    assert check.main(fetch=lambda tested: _compare('identical')) == 0
     assert 'PALEOS main is at the tested commit' in capsys.readouterr().out
 
 
-def test_main_ahead_of_the_pin_exits_one(capsys):
-    """Upstream main at another commit: the job fails and names both commits."""
-    assert check.main(fetch=lambda: 'b' * 40) == 1
+@pytest.mark.parametrize(
+    'status, ahead, behind, cause',
+    [
+        ('diverged', 8, 5, 'as after a rewrite of main: run the PALEOS-API tests on main'),
+        ('behind', 0, 2, 'main is older than the tested commit (main moved back, or the pin'),
+    ],
+)
+def test_main_without_the_pin_in_its_history_fails(capsys, status, ahead, behind, cause):
+    """Upstream main that does not contain the tested commit fails with exit 1, names the
+    counts and the merge base, and gives the cause of its own status: a rewrite for
+    diverged, an older main for behind, where moving the pin to main would go back."""
+    reply = _compare(status, ahead, behind)
+    assert check.main(fetch=lambda tested: reply) == 1
     out = capsys.readouterr().out
-    assert 'b' * 40 in out and PALEOS_TESTED_SHA in out
-    assert 'PALEOS_TESTED_SHA' in out
+    assert f'PALEOS main does not contain the tested commit {PALEOS_TESTED_SHA}' in out
+    assert f'{status}: {ahead} commits ahead, {behind} behind, merge base {"e" * 40}' in out
+    assert cause in out and 'PALEOS_TESTED_SHA in src/zalmoxis/eos/paleos_api.py' in out
+    assert ('rewrite' in out) == (status == 'diverged')
+
+
+@pytest.mark.parametrize(
+    'broken',
+    [
+        {'commits': [{'sha': 'a' * 40}]},
+        {'commits': None},
+        {'merge_base_commit': None},
+        {'merge_base_commit': 'e' * 40},
+    ],
+    ids=['commit-without-fields', 'no-commit-list', 'no-merge-base', 'merge-base-text'],
+)
+def test_a_diverged_main_fails_whatever_its_commit_list_holds(capsys, broken):
+    """The verdict rests on the status and the counts: a diverged reply with a broken
+    commit list or merge base still fails with exit 1, and never turns into the warning of
+    an unread reply."""
+    reply = {**_compare('diverged', 8, 5, ['a' * 40]), **broken}
+    assert _exit(reply) == 1
+    assert 'PALEOS main does not contain the tested commit' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    'broken',
+    [
+        {'ahead_by': float('inf')},
+        {
+            'commits': [
+                {
+                    'sha': 'a' * 40,
+                    'commit': {'committer': {'date': '2026-10-22T15:20:45Z'}, 'message': 5},
+                }
+            ]
+        },
+    ],
+    ids=['infinite-count', 'message-not-text'],
+)
+def test_a_malformed_ahead_reply_exits_three_without_a_traceback(capsys, broken):
+    """A count that is no integer or a commit message that is no text is an unread reply:
+    exit 3 with the reason, not a traceback and the exit 1 of a rewritten main."""
+    assert _exit({**_compare('ahead', 1, 0, ['a' * 40]), **broken}) == 3
+    assert capsys.readouterr().out.startswith('PALEOS main could not be read')
+
+
+def test_the_new_commits_are_listed_in_a_code_block(capsys):
+    """One new commit is singular, and the commit lines sit in a fenced code block after a
+    blank line, so markdown in an upstream subject does not change the summary."""
+    reply = _compare('ahead', 1, 0, ['a' * 40])
+    reply['commits'][0]['commit']['message'] = 'Fix `x` | y\n\nbody'
+    assert _exit(reply) == 6
+    out = capsys.readouterr().out
+    assert 'PALEOS main is 1 commit ahead of the tested commit' in out
+    assert out.endswith(':\n\n```\n  aaaaaaaaa 2026-10-22 Fix `x` | y\n```\n'), out
+
+
+def test_a_long_ahead_list_says_how_many_commits_it_shows(capsys):
+    """When the reply lists fewer commits than main is ahead, the summary says so."""
+    reply = _compare('ahead', 300, 0, ['a' * 40, 'b' * 40])
+    assert check.main(fetch=lambda tested: reply) == 6
+    out = capsys.readouterr().out
+    assert 'PALEOS main is 300 commits ahead' in out and '(2 of 300 listed)' in out
 
 
 def test_an_unread_main_exits_three(capsys):
     """GitHub not answering is no evidence either way: exit 3, no retry."""
     calls = []
 
-    def fetch():
-        calls.append(1)
+    def fetch(tested):
+        calls.append(tested)
         raise OSError('no answer')
 
     assert check.main(fetch=fetch) == 3
-    assert calls == [1]
+    assert calls == [PALEOS_TESTED_SHA]
     assert 'no answer' in capsys.readouterr().out
 
 
-def test_an_answer_that_is_no_sha_exits_three(capsys):
-    """A reply without a 40-character commit SHA is treated as unread."""
-    assert check.main(fetch=lambda: 'rate limited') == 3
-    assert 'rate limited' in capsys.readouterr().out
+@pytest.mark.parametrize(
+    'reply',
+    [{'message': 'rate limited'}, _compare('unknown'), 'not a mapping'],
+    ids=['no-status', 'unknown', 'text'],
+)
+def test_a_reply_without_a_comparison_exits_three(capsys, reply):
+    """A reply without a known comparison status is treated as unread."""
+    assert check.main(fetch=lambda tested: reply) == 3
+    assert capsys.readouterr().out.startswith('PALEOS main could not be read: no comparison')
 
 
 def test_the_request_carries_the_token_when_one_is_set(monkeypatch):
@@ -61,12 +180,14 @@ def test_the_request_carries_the_token_when_one_is_set(monkeypatch):
 
     def urlopen(request, timeout):
         seen['auth'] = request.get_header('Authorization')
+        seen['url'] = request.full_url
         return _reply()
 
     monkeypatch.setattr(check.urllib.request, 'urlopen', urlopen)
     monkeypatch.setenv('GITHUB_TOKEN', 'abc')
-    assert check.main_sha() == 'c' * 40
+    assert check.compare(PALEOS_TESTED_SHA)['status'] == 'identical'
     assert seen['auth'] == 'Bearer abc'
+    assert seen['url'].endswith(f'/repos/maraattia/PALEOS/compare/{PALEOS_TESTED_SHA}...main')
 
 
 def test_an_annotated_pin_is_read(tmp_path, monkeypatch):
@@ -80,17 +201,18 @@ def test_an_annotated_pin_is_read(tmp_path, monkeypatch):
 @pytest.mark.parametrize(
     'code, exit_code, text',
     [
-        (404, 4, 'PALEOS main not found'),
-        (422, 4, 'PALEOS main not found'),
+        (404, 4, 'PALEOS main or the tested commit'),
+        (422, 4, 'PALEOS main or the tested commit'),
         (500, 3, 'PALEOS main could not be read'),
     ],
     ids=['404', '422', '500'],
 )
 def test_github_codes_map_to_their_exit(capsys, code, exit_code, text):
-    """404 and 422 (no repository or branch) fail with exit 4; a 5xx only warns with exit 3."""
+    """404 and 422 (no repository, branch or tested commit) fail with exit 4; a 5xx only
+    warns with exit 3."""
 
-    def fetch():
-        raise urllib.error.HTTPError(check._MAIN, code, 'x', {}, None)
+    def fetch(tested):
+        raise urllib.error.HTTPError(check._COMPARE, code, 'x', {}, None)
 
     assert check.main(fetch=fetch) == exit_code
     assert capsys.readouterr().out.startswith(text)
@@ -105,9 +227,9 @@ def test_without_a_token_no_authorization_header_is_sent(monkeypatch):
         lambda request, timeout: seen.append(request.get_header('Authorization')) or _reply(),
     )
     monkeypatch.delenv('GITHUB_TOKEN', raising=False)
-    check.main_sha()
+    check.compare(PALEOS_TESTED_SHA)
     monkeypatch.setenv('GITHUB_TOKEN', '')
-    check.main_sha()
+    check.compare(PALEOS_TESTED_SHA)
     assert seen == [None, None]
 
 
@@ -148,7 +270,7 @@ def test_a_pin_that_cannot_be_read_exits_2(tmp_path, monkeypatch, capsys, source
         src.write_text(source)
     monkeypatch.setattr(check, '_SOURCE', src)
     try:
-        code = check.main(fetch=lambda: 'c' * 40)
+        code = check.main(fetch=lambda tested: _compare('identical'))
     except Exception as exc:  # noqa: BLE001 -- an escaped error is the failure under test
         pytest.fail(f'main raised {exc!r} instead of exiting 2')
     assert code == 2
@@ -178,8 +300,32 @@ def test_a_refused_request_fails_unless_it_is_the_rate_limit(
     """A 401, or a 403 that is not a used-up rate limit, is a token or permission fault that
     stays: exit 5 fails the workflow; a 403 with no requests left only warns with exit 3."""
 
-    def fetch():
-        raise urllib.error.HTTPError(check._MAIN, code, 'x', headers, None)
+    def fetch(tested):
+        raise urllib.error.HTTPError(check._COMPARE, code, 'x', headers, None)
 
     assert check.main(fetch=fetch) == exit_code
     assert capsys.readouterr().out.startswith(text)
+
+
+@pytest.mark.parametrize('code', range(8))
+def test_the_workflow_warns_on_exit_3_and_6_and_fails_on_every_other_code(tmp_path, code):
+    """The run step of the scheduled job, executed with the script replaced by one that
+    exits with ``code``, passes with a warning on 3 (GitHub not read) and 6 (main ahead of
+    the tested commit) and fails with the script's own status on every other code."""
+    workflow = (
+        Path(check.__file__).resolve().parents[1] / '.github/workflows/paleos-main.yml'
+    ).read_text()
+    step = re.search(r'\n        run: \|\n((?:          [^\n]*\n|\n)+)', workflow)[1]
+    script = '\n'.join(line[10:] for line in step.splitlines())
+    assert script.count('python tools/check_paleos_main.py') == 1, script
+    script = script.replace('python tools/check_paleos_main.py', f'(echo verdict; exit {code})')
+    summary = tmp_path / 'summary.md'
+    done = subprocess.run(
+        ['bash', '-e', '-c', script],
+        env={'GITHUB_STEP_SUMMARY': str(summary), 'PATH': '/usr/bin:/bin'},
+        capture_output=True,
+        text=True,
+    )
+    assert done.returncode == (0 if code in (0, 3, 6) else code), done
+    assert ('::warning' in done.stdout) == (code in (3, 6)), done.stdout
+    assert summary.read_text() == 'verdict\n'
