@@ -21,29 +21,7 @@ def _write(outdir, error_at=None):
         (outdir / f'setup_{i}.json').write_text(json.dumps(rec))
 
 
-def test_the_plot_names_a_failed_setup_instead_of_a_key_error(tmp_path):
-    """A setup that raised has no P(R): the plot stops with its index, name and error."""
-    _write(tmp_path, error_at=3)
-    with pytest.raises(SystemExit, match='3 Analytic 1, 2000 layers: StructureSolveError'):
-        tool.plot(str(tmp_path), str(tmp_path / 'assets'))
-
-
-@pytest.mark.parametrize('fault', ['missing', 'not_converged'])
-def test_the_plot_names_a_setup_without_a_record_or_an_accepted_profile(tmp_path, fault):
-    """A setup whose process died writes no record; one that did not converge has no accepted
-    profile. The plot stops and names it."""
-    _write(tmp_path)
-    path = tmp_path / 'setup_5.json'
-    if fault == 'missing':
-        path.unlink()
-    else:
-        path.write_text(json.dumps(dict(json.loads(path.read_text()), converged=False)))
-    with pytest.raises(SystemExit, match='5 WB isothermal 3000 K: '):
-        tool.plot(str(tmp_path), str(tmp_path / 'assets'))
-
-
-def test_the_plot_writes_its_files_with_the_run_and_plot_commands(tmp_path, monkeypatch):
-    """Every setup accepted: the plot is saved with the run and plot commands as provenance."""
+def _capture_save(monkeypatch):
     import proteus_mpl.validation as pv
 
     seen = {}
@@ -53,9 +31,49 @@ def test_the_plot_writes_its_files_with_the_run_and_plot_commands(tmp_path, monk
         return []
 
     monkeypatch.setattr(pv, 'save', save)
+    return seen
+
+
+@pytest.mark.parametrize('fault', ['error', 'not_converged'])
+def test_the_plot_marks_and_names_a_setup_without_an_accepted_profile(
+    tmp_path, monkeypatch, capsys, fault
+):
+    """A setup that raised or did not converge has no P(R): the plot draws a cross above the
+    cap at its index and prints its index, name and error."""
+    seen = _capture_save(monkeypatch)
+    _write(tmp_path, error_at=3)
+    if fault == 'not_converged':
+        path = tmp_path / 'setup_3.json'
+        rec = dict(json.loads(path.read_text()), error=None, P_R=1.2e5, padded=0)
+        path.write_text(json.dumps(rec))
+    tool.plot(str(tmp_path), str(tmp_path / 'assets'))
+    lines = {line.get_label(): line for line in seen['fig'].axes[0].lines}
+    assert sorted(lines) == ['Cap', 'Failed', 'Padded', 'Reached']
+    failed = lines['Failed']
+    assert (
+        list(failed.get_xdata()) == [3] and failed.get_ydata()[0] > lines['Cap'].get_ydata()[0]
+    )
+    assert failed.get_marker() == 'x'
+    assert (len(lines['Reached'].get_xdata()), len(lines['Padded'].get_xdata())) == (13, 12)
+    want = 'StructureSolveError' if fault == 'error' else 'not converged'
+    assert f'3 Analytic 1, 2000 layers: {want}' in capsys.readouterr().out
+
+
+def test_the_plot_stops_on_a_setup_without_a_record(tmp_path):
+    """A setup whose process died writes no record: the plot stops and names it."""
+    _write(tmp_path)
+    (tmp_path / 'setup_5.json').unlink()
+    with pytest.raises(SystemExit, match='5 WB isothermal 3000 K: no record'):
+        tool.plot(str(tmp_path), str(tmp_path / 'assets'))
+
+
+def test_the_plot_writes_its_files_with_the_run_and_plot_commands(tmp_path, monkeypatch):
+    """Every setup accepted: the plot is saved with the run and plot commands as provenance."""
+    seen = _capture_save(monkeypatch)
     _write(tmp_path)
     tool.plot(str(tmp_path), str(tmp_path / 'assets'))
     assert seen['stem'] == 'pressure_root_sweep'
     assert seen['command'].count('python -m tools.validation.pressure_root_sweep') == 2
-    reached, padded, cap = seen['fig'].axes[0].lines
-    assert (len(reached.get_xdata()), len(padded.get_xdata())) == (13, 13)
+    lines = {line.get_label(): line for line in seen['fig'].axes[0].lines}
+    assert sorted(lines) == ['Cap', 'Padded', 'Reached']
+    assert (len(lines['Reached'].get_xdata()), len(lines['Padded'].get_xdata())) == (13, 13)
