@@ -22,6 +22,7 @@ from .constants import (
     earth_mass,
 )
 from .eos import get_solidus_liquidus_functions
+from .eos.core_alloy import ALLOY_PREFIX, is_alloy_mixture, split_alloy
 from .eos_analytic import USER_SELECTABLE_MATERIALS
 from .eos_properties import EOS_REGISTRY
 from .eos_vinet import VALID_VINET_KEYS
@@ -159,8 +160,15 @@ def validate_layer_eos(layer_eos_config):
     """
     for layer, eos_str in layer_eos_config.items():
         mixture = parse_layer_components(eos_str)
+        if is_alloy_mixture(mixture):
+            if layer != 'core':
+                raise ValueError(f"CoreAlloy components belong in the core, not in '{layer}'")
+            if split_alloy(mixture)[0] != 'PALEOS:iron':
+                raise ValueError(
+                    f'a light-element core needs the PALEOS:iron base: {eos_str!r}'
+                )
         for comp in mixture.components:
-            if comp in VALID_TABULATED_EOS:
+            if comp in VALID_TABULATED_EOS or comp.startswith(ALLOY_PREFIX):
                 continue
             if comp.startswith('Analytic:'):
                 material_key = comp.split(':', 1)[1]
@@ -589,7 +597,11 @@ def validate_config(config_params):
 
         # Warn about mixing T-dependent and T-independent EOS
         tdep_comps_in_layer = [c for c in mixture.components if c in TDEP_EOS_NAMES]
-        tindep_comps = [c for c in mixture.components if c not in TDEP_EOS_NAMES]
+        tindep_comps = [
+            c
+            for c in mixture.components
+            if c not in TDEP_EOS_NAMES and not c.startswith(ALLOY_PREFIX)
+        ]
         if tdep_comps_in_layer and tindep_comps:
             # Only warn for non-Analytic T-independent components
             tindep_tabulated = [
@@ -615,7 +627,7 @@ def validate_config(config_params):
         for comp in core_mix.components:
             comp_material = comp.split(':')[-1] if ':' in comp else comp
             if not any(kw in comp_material for kw in iron_keywords):
-                if not comp.startswith('Analytic:') and not comp.startswith('Vinet:'):
+                if not comp.startswith(('Analytic:', 'Vinet:', ALLOY_PREFIX)):
                     logger.warning(
                         f"Core EOS component '{comp}' does not appear to be "
                         f'an iron EOS. Core is typically iron (Fe). '
