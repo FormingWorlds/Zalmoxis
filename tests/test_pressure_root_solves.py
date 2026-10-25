@@ -200,7 +200,7 @@ def test_every_newton_setup_meets_the_surface_boundary_condition(monkeypatch, va
         r = zs.main(cfg, md, None, os.path.join(zroot, 'input'), temperature_arrays=tarr)
         P = np.asarray(r['pressure'], dtype=float)
         first_pair, root, evals = calls[-1]
-        assert r['converged'] and P[-1] >= 0.0 and r['padded'] is (evals[root] == -P_T)
+        assert r['converged'] and P[-1] >= 0.0 and r['padded'] is bool(evals[root] == -P_T)
         if r['padded']:
             assert name in MAY_PAD, name
             ends = [p[1] for p in (first_pair, zs._nearest_sign_pair(evals, root)) if p]
