@@ -743,6 +743,22 @@ class TestConfig:
                 validate_layer_eos(cfg)
 
 
+class TestZeroCarrier:
+    """A core without H returns the linear law without evaluating the carrier volume."""
+
+    def test_zero_light_elements_return_the_iron_density(self):
+        """With H and O at 0 the density is rho_Fe at 200 random states, without the carrier."""
+        from unittest import mock
+
+        rng = np.random.default_rng(0)
+        states = zip(
+            rng.uniform(1.0, 3e4, 200), rng.uniform(1e9, 3e12, 200), rng.uniform(500, 3e4, 200)
+        )
+        with mock.patch.object(ca, 'carrier_excess_volume', side_effect=AssertionError):
+            for rho_fe, p, t in states:
+                assert ca.alloy_density(rho_fe, {'H': 0.0, 'O': 0.0}, p, t) == rho_fe
+
+
 class TestDispatchWithoutData:
     """The alloy branches of the mixing functions, with the iron EOS patched."""
 
