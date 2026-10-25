@@ -41,7 +41,7 @@ These cases check how Zalmoxis reads the equation-of-state tables. The [overview
 
 - Reference: the volume-additive limits of the mixing rule (analytical).
 - Tolerance: identical arrays for no light element; relative 1e-12 for the harmonic mean; relative 1e-9 between the scalar and batch branches.
-- Test id: `tests/test_core_alloy.py::TestPaleosCore::test_core_mixture_limits_on_paleos_iron` (unit tier)
+- Test id: `tests/test_core_alloy.py::TestPaleosCore::test_core_mixture_limits_on_paleos_iron` (unit tier; it needs the PALEOS iron table under `data/` and skips without it)
 - Command: `pytest -o "addopts=" tests/test_core_alloy.py -k limits`
 
 ![Core density on the PALEOS iron table with 0, 0.5 and 1 wt% H](../assets/validation/core_alloy_paleos_iron_limits.svg#only-light){ width="80%" }
