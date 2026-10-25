@@ -86,28 +86,26 @@ def run_setup(index: int) -> dict:
     root = zalmoxis.get_zalmoxis_root()
     name, spec = SETUPS[index]
     spec = dict(spec)
-    cfg = load_zalmoxis_config(os.path.join(root, 'input', 'default.toml'))
     eos, jax = spec.pop('eos'), spec.pop('jax', False)
     target = spec.pop('target', 101325.0)
-    cfg['layer_eos_config'] = dict(eos)
-    cfg.update(
-        planet_mass=spec.pop('m') * E,
-        num_layers=spec.pop('n', 150),
-        target_surface_pressure=target,
-        wall_timeout=1800.0,
-        data_output_enabled=False,
-        plotting_enabled=False,
-        **spec,
-    )
-    eos_cfg = cfg['layer_eos_config']
-    melt = load_solidus_liquidus_functions(
-        eos_cfg, cfg['rock_solidus'], cfg['rock_liquidus'], cfg['mushy_zone_factor']
-    )
-    mats, indir = load_material_dictionaries(), os.path.join(root, 'input')
-    tarr = None
     out = {'index': index, 'name': name, 'target': target, 'zalmoxis': zs.__file__}
     t0 = time.time()
     try:
+        cfg = load_zalmoxis_config(os.path.join(root, 'input', 'default.toml'))
+        cfg['layer_eos_config'] = dict(eos)
+        cfg.update(
+            planet_mass=spec.pop('m') * E,
+            num_layers=spec.pop('n', 150),
+            target_surface_pressure=target,
+            wall_timeout=1800.0,
+            data_output_enabled=False,
+            plotting_enabled=False,
+            **spec,
+        )
+        melt = load_solidus_liquidus_functions(
+            dict(eos), cfg['rock_solidus'], cfg['rock_liquidus'], cfg['mushy_zone_factor']
+        )
+        mats, indir, tarr = load_material_dictionaries(), os.path.join(root, 'input'), None
         if jax:
             pre = dict(
                 cfg, outer_solver='picard', relative_tolerance=1e-5, absolute_tolerance=1e-6
@@ -156,11 +154,16 @@ def plot(outdir: str, assets: str) -> None:
     """Write the light and dark plot of |P(R) - P_t| / P_t per setup; a failed setup stops it."""
     from proteus_mpl.validation import save
 
-    rows = []
-    for i in range(len(SETUPS)):
-        with open(os.path.join(outdir, f'setup_{i}.json')) as f:
+    rows, failed = [], []
+    for i, (name, _) in enumerate(SETUPS):
+        path = os.path.join(outdir, f'setup_{i}.json')
+        if not os.path.exists(path):
+            failed.append(f'{i} {name}: no record (the setup process died)')
+            continue
+        with open(path) as f:
             rows.append(json.load(f))
-    failed = [f'{r["index"]} {r["name"]}: {r["error"]}' for r in rows if r.get('error')]
+        if rows[-1].get('error') or not rows[-1].get('converged'):
+            failed.append(f'{i} {name}: {rows[-1].get("error") or "not converged"}')
     if failed:
         raise SystemExit('setups without an accepted profile:\n' + '\n'.join(failed))
     miss = np.array([abs(r['P_R'] - r['target']) / r['target'] for r in rows])
@@ -183,7 +186,7 @@ def plot(outdir: str, assets: str) -> None:
         return fig
 
     mod = 'python -m tools.validation.pressure_root_sweep'
-    cmd = f'{mod} run <out dir> && {mod} plot <out dir>'
+    cmd = f'{mod} run OUTDIR && {mod} plot OUTDIR'
     for path in save(figure, 'pressure_root_sweep', assets, command=cmd):
         print(path, os.path.getsize(path))
 

@@ -84,7 +84,8 @@ def _require_finite(radii, profiles, reason, outer_iter, inner_iter):
 _REFINE_MISS_PT = 0.1
 
 # dP(R)/dP_c of a smooth profile whose density does not fall with pressure at fixed radius
-# is at most 1; a steeper sign pair holds a jump or scatter at the stop: no second solve.
+# is at most 1; a steeper sign pair whose reached end misses P_t by more than the cap holds a
+# jump at the stop or scatter of P(R), and gets no second solve.
 _MAX_PAIR_SLOPE = 1.0
 
 # A reached end replaces a padded pressure root only when it misses P_t by at most this many P_t.
@@ -122,10 +123,11 @@ def _refine_pressure_root(root, info, evals, residual, p_target, maxiter):
     which is a stopped (padded) profile with f = -P_t when the reached end has
     P(R) > 2 P_t. A root that misses P_t by more than ``_REFINE_MISS_PT`` P_t is solved
     again on its nearest sign pair with xtol = ``_REFINE_MISS_PT`` P_t over the secant slope
-    of that pair, when that xtol is below 1e6 Pa and the slope is at most
-    ``_MAX_PAIR_SLOPE``. The second solve takes f at the pair ends
-    from ``evals``; its root replaces the first one only when it misses P_t by no more,
-    and a second solve that raises keeps the first root. A root that is still padded is
+    of that pair, when that xtol is below 1e6 Pa and either the slope is at most
+    ``_MAX_PAIR_SLOPE`` or the reached end misses P_t by at most
+    ``_PADDED_REPLACE_MAX_MISS_PT`` P_t. The second solve takes f at the pair ends from
+    ``evals``; its root replaces the first one only when it misses P_t by no more, and a
+    second solve that raises keeps the first root. A root that is still padded is
     replaced by the reached end of its nearest sign pair when that end misses P_t by at
     most ``_PADDED_REPLACE_MAX_MISS_PT`` P_t; otherwise the padded root stays. The
     replacement, the kept padded root and a failed second solve log at DEBUG.
@@ -151,35 +153,33 @@ def _refine_pressure_root(root, info, evals, residual, p_target, maxiter):
         The refined root [Pa] and the brentq record of the solve that gave it; a padded
         root replaced by a reached end keeps the record of the solve that returned it.
     """
-    f_root = evals[root]
-    if abs(f_root) > _REFINE_MISS_PT * p_target:
-        pair = _nearest_sign_pair(evals, root)
-        if pair is not None:
-            a, b = pair
-            slope = (evals[b] - evals[a]) / (b - a)
-            xtol = _REFINE_MISS_PT * p_target / slope
-            if xtol < 1e6 and slope <= _MAX_PAIR_SLOPE:
-                try:
-                    new, new_info = brentq(
-                        lambda x: evals[x] if x in evals else residual(x),
-                        a,
-                        b,
-                        xtol=xtol,
-                        rtol=1e-10,
-                        maxiter=maxiter,
-                        full_output=True,
-                    )
-                except (RuntimeError, ValueError) as err:
-                    logger.debug(
-                        'Second pressure solve failed (%s); keeping P_c = %.6e Pa.', err, root
-                    )
-                else:
-                    if abs(evals[new]) <= abs(f_root):
-                        root, info = new, new_info
+    f_root, pair = evals[root], _nearest_sign_pair(evals, root)
+    cap = _PADDED_REPLACE_MAX_MISS_PT * p_target
+    if pair is not None and abs(f_root) > _REFINE_MISS_PT * p_target:
+        a, b = pair
+        slope = (evals[b] - evals[a]) / (b - a)
+        xtol = _REFINE_MISS_PT * p_target / slope
+        if xtol < 1e6 and (slope <= _MAX_PAIR_SLOPE or evals[b] <= cap):
+            try:
+                new, new_info = brentq(
+                    lambda x: evals[x] if x in evals else residual(x),
+                    a,
+                    b,
+                    xtol=xtol,
+                    rtol=1e-10,
+                    maxiter=maxiter,
+                    full_output=True,
+                )
+                if abs(evals[new]) <= abs(f_root):
+                    root, info = new, new_info
+            except (RuntimeError, ValueError) as err:
+                logger.debug(
+                    'Second pressure solve failed (%s); keeping P_c = %.6e Pa.', err, root
+                )
     if evals[root] == -p_target:
         pair = _nearest_sign_pair(evals, root)
         miss = evals[pair[1]] if pair is not None else math.inf
-        take = miss <= _PADDED_REPLACE_MAX_MISS_PT * p_target
+        take = miss <= cap
         logger.debug(
             'Padded pressure root P_c = %.6e Pa: the nearest reached end misses P_t by %.3e Pa; %s.',
             root,
