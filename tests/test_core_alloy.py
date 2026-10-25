@@ -289,6 +289,26 @@ class TestLuoMembers:
 class TestCarrier:
     """The Fe-H-O carrier with its O counted against the core O."""
 
+    @pytest.mark.physics_invariant
+    def test_remaining_alloy_fractions_are_normalised(self):
+        """With the carrier, the linear law acts on w_i / (1 - w_c) of the remaining alloy.
+
+        1 wt% H, 3 wt% Si, no core O at 136 GPa, 8000 K: the linear sum without the
+        1 / (1 - w_c) factor gives a density 0.45 % off, far outside the 1e-12 pin.
+        """
+        rho_fe, w_h, w_si = 1.0e4, 0.01, 0.03
+        w_c = w_h * ca.CARRIER_PER_H
+        o_rest = 0.0 - (w_c - w_h)
+        dv_c = ca.carrier_excess_volume(P_CMB, T_LUO)
+
+        def density(lin):
+            return 1.0 / ((1 - w_c) / (rho_fe * (1 - lin)) + w_c * dv_c)
+
+        right = density((0.7 * w_si + 1.1 * o_rest) / (1 - w_c))
+        got = ca.alloy_density(rho_fe, {'H': w_h, 'Si': w_si}, P_CMB, T_LUO)
+        assert got == pytest.approx(right, rel=1e-12)
+        assert abs(density(0.7 * w_si + 1.1 * o_rest) / right - 1) > 1e-3
+
     def test_carrier_that_leaves_no_alloy_mass_is_refused(self):
         """A carrier mass fraction 8.94 w_H of 1 or more is no core: CoreAlloyError, also at 1."""
         w_full = 1.0 / ca.CARRIER_PER_H
