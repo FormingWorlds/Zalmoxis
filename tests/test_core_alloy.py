@@ -259,11 +259,20 @@ class TestLuoMembers:
             hot = ca.luo_pressure(table['V0'], ca.LUO_T0 + 1000.0, table)
             assert hot == pytest.approx((table['a'] + table['b'] + table['c']) * GPA, rel=1e-12)
 
-    def test_no_root_in_the_bracket_returns_none(self):
-        """A pressure above the bracket has no volume, and the carrier then has no density."""
+    def test_no_root_in_the_bracket_returns_none(self, monkeypatch):
+        """A pressure above the bracket has no volume; a member without one gives no density."""
         assert ca.luo_cell_volume(1e15, T_LUO, ca.LUO_DRY) is None
-        assert ca.carrier_excess_volume(1e15, T_LUO) is None
-        assert ca.alloy_density(1.0e4, {'H': 0.005}, 1e15, T_LUO) is None
+        assert ca.luo_density(1e15, T_LUO, ca.LUO_WET) is None
+        monkeypatch.setattr(ca, 'luo_cell_volume', lambda p, t, member: None)
+        assert ca.carrier_excess_volume(P_CMB, T_LUO) is None
+        assert ca.alloy_density(1.0e4, {'H': 0.005}, P_CMB, T_LUO) is None
+
+    def test_every_point_of_the_fit_box_has_both_volumes(self):
+        """The bracket holds a root for both members on a grid over the whole Luo box."""
+        for p in np.geomspace(*ca.LUO_P_RANGE, 9):
+            for t in np.linspace(*ca.LUO_T_RANGE, 7):
+                assert ca.luo_cell_volume(p, t, ca.LUO_DRY) is not None
+                assert ca.luo_cell_volume(p, t, ca.LUO_WET) is not None
 
 
 class TestCarrier:
@@ -311,16 +320,49 @@ class TestCarrier:
         linear_h = ca.alloy_density(rho_fe, {'H-linear': w_h, 'O': w_oc - eps}, P_CMB, T_LUO)
         assert abs(linear_h - at) > 1e4 * abs(below - at)
 
-    def test_out_of_range_point_is_counted_and_warned_once(self, caplog, monkeypatch):
-        """A point outside 8000-14000 K, 50-1300 GPa is evaluated, counted and warned once."""
+    def test_out_of_range_point_is_clamped_counted_and_warned_once(self, caplog, monkeypatch):
+        """Outside 8000-14000 K, 50-1300 GPa the carrier volume is the one at the nearest box point."""
         monkeypatch.setitem(ca.LUO_OUT_OF_RANGE, 'count', 0)
+        dv = ca.carrier_excess_volume
         with caplog.at_level('WARNING', logger='zalmoxis.eos.core_alloy'):
-            inside = ca.carrier_excess_volume(P_CMB, T_LUO)
-            cold = ca.carrier_excess_volume(P_CMB, 4000.0)
-            ca.carrier_excess_volume(20 * GPA, 9000.0)
-        assert ca.LUO_OUT_OF_RANGE['count'] == 2
+            inside = dv(P_CMB, T_LUO)
+            assert dv(P_CMB, 4000.0) == inside
+            assert dv(5 * GPA, 3000.0) == dv(50 * GPA, 8000.0)
+            assert dv(2000 * GPA, 20000.0) == dv(1300 * GPA, 14000.0)
+        assert ca.LUO_OUT_OF_RANGE['count'] == 3
         assert sum('outside the Luo' in m for m in caplog.messages) == 1
-        assert inside > 0 and cold > 0
+        # the extrapolated Eq. 14 value at 4000 K differs: the clamp is not a no-op
+        v = {
+            m: ca.luo_cell_volume(P_CMB, 4000.0, ca.LUO_WET if m else ca.LUO_DRY)
+            for m in (0, 1)
+        }
+        extrapolated = (v[1] - v[0]) * 1e-30 / (8 * 18.015 * 1.66053906660e-27)
+        assert abs(extrapolated / inside - 1) > 0.05
+
+    @pytest.mark.physics_invariant
+    @pytest.mark.parametrize(
+        'edge, step',
+        [
+            ((50 * GPA, 9000.0), (1e-6 * GPA, 0.0)),
+            ((1300 * GPA, 9000.0), (1e-6 * GPA, 0.0)),
+            ((P_CMB, 8000.0), (0.0, 1e-6)),
+            ((P_CMB, 14000.0), (0.0, 1e-6)),
+        ],
+        ids=['p_low', 'p_high', 't_low', 't_high'],
+    )
+    def test_carrier_volume_is_continuous_across_each_box_edge(self, edge, step):
+        """Across each face of the Luo box the clamped carrier volume has no step."""
+        (p, t), (dp, dt) = edge, step
+        below = ca.carrier_excess_volume(p - dp, t - dt)
+        above = ca.carrier_excess_volume(p + dp, t + dt)
+        assert below == pytest.approx(above, rel=1e-8)
+        assert 1e-4 < below < 6e-4
+
+    def test_low_pressure_cool_core_point_has_a_density(self):
+        """At 5 GPa, 3000 K (no Eq. 14 root for dry Fe) the 1 wt% H core still has a density."""
+        assert ca.luo_cell_volume(5 * GPA, 3000.0, ca.LUO_DRY) is None
+        rho = ca.alloy_density(7.0e3, {'H': 0.01}, 5 * GPA, 3000.0)
+        assert 0.8 * 7.0e3 < rho < 7.0e3
 
     @settings(derandomize=True, max_examples=150, deadline=None)
     @given(
@@ -375,8 +417,11 @@ class TestPaleosCore:
             harmonic = 1.0 / ((1 - w_c) / iron + w_c / rho_c)
             np.testing.assert_allclose(got, harmonic, rtol=1e-12)
             assert np.all(np.abs(got - ((1 - w_c) * iron + w_c * rho_c)) > 0.01 * got)
-            scalar = calculate_mixed_density(pressures[3], T_LUO, mix, md, None, None, cache)
-            assert scalar == pytest.approx(got[3], rel=1e-9)
+            # the scalar branch (structure RHS) and the batch branch (node update) agree
+            scalar = [
+                calculate_mixed_density(p, T_LUO, mix, md, None, None, cache) for p in pressures
+            ]
+            np.testing.assert_allclose(scalar, got, rtol=1e-9)
             curves[w_h] = got
 
         def figure():
