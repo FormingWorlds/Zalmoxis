@@ -31,9 +31,10 @@ class _Residual:
     """A residual f(P_c) [Pa] that records every evaluation, as the solver's closure does."""
 
     def __init__(self, f):
-        self.f, self.evals = f, {}
+        self.f, self.evals, self.calls = f, {}, []
 
     def __call__(self, x):
+        self.calls.append(float(x))
         v = float(self.f(x))
         self.evals[float(x)] = v
         return v
@@ -159,3 +160,66 @@ def test_main_warns_once_when_the_accepted_profile_is_padded(monkeypatch, caplog
     hits = [r for r in caplog.records if 'padded' in r.getMessage()]
     assert out['padded'] is padded
     assert len(hits) == (1 if padded else 0)
+
+
+@pytest.mark.physics_invariant
+def test_the_second_solve_never_returns_a_worse_root():
+    """A residual that is not monotone near the stop: stopped below x0, P(R) = 3 P_t on
+    [x0, b) and 1.5 P_t at b. The second solve converges on the jump at x0 and returns its
+    padded end; the brentq root b (miss 0.5 P_t) is the better one and stays."""
+    x0, a, b = 2.0e11, 2.0e11 - 1e6, 2.0e11 + 1e6
+
+    def f(x):
+        if x < x0:
+            return -P_T
+        return 2.0 * P_T if x < b else 0.5 * P_T
+
+    res = _Residual(f)
+    res(a)
+    res(b)
+    root = _refine(res, b)
+    np.testing.assert_equal(root, b)
+    assert len(res.evals) > 2  # the second solve ran
+
+
+def test_a_failing_second_solve_keeps_the_first_root():
+    """The second solve evaluates new central pressures; one that raises (a stop deep in the
+    planet, or a non-converged brentq) leaves the first root, not a failed pressure solve."""
+    from zalmoxis.solver import StructureSolveError
+
+    a, b = 1.999e11, 2.003e11
+
+    def f(x):
+        if x not in (a, b):
+            raise StructureSolveError('solve at P_c not finite')
+        return -P_T if x == a else 1.41e8 - P_T
+
+    res = _Residual(f)
+    res(a)
+    res(b)
+    np.testing.assert_equal(_refine(res, a), a)
+    assert len(res.evals) == 2
+
+
+@pytest.mark.physics_invariant
+def test_a_reached_root_far_from_p_t_is_refined():
+    """A reached brentq root that misses P_t by 0.5 P_t on the smooth kink is solved again
+    on its sign pair and ends within 0.1 P_t."""
+    res = _Residual(_kink())
+    far = 2.0e11 + (1.5 * P_T - 2.7e4) / 0.47  # P(R) = 1.5 P_t
+    res(2.0e11 - 1e6)
+    res(far)
+    root = _refine(res, far)
+    assert res.f(root) != -P_T
+    assert abs(res.f(root)) <= 0.1 * P_T
+
+
+def test_the_second_solve_reuses_the_ends_of_its_pair():
+    """Each residual call is a full structure solve: the second solve takes f(a) and f(b)
+    from the evaluations and solves the structure only at new central pressures."""
+    res = _Residual(_kink())
+    res(1.999e11)
+    res(2.003e11)
+    _refine(res, 1.999e11)
+    assert len(res.calls) > 2
+    assert len(res.calls) == len(set(res.calls))
