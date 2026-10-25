@@ -231,8 +231,8 @@ class TestLinearLaw:
     def test_linear_bound_over_the_composition_domain(self, w):
         """Without H, a core with iron passes exactly when sum(beta_i w_i) is at most 0.2."""
         lin = sum(ca.LINEAR_BETA[el] * f for el, f in w.items())
-        if sum(w.values()) >= 1:
-            with pytest.raises(ca.CoreAlloyError, match='sum to'):
+        if sum(w.values()) >= 1:  # no iron left, or a negative iron fraction
+            with pytest.raises(ca.CoreAlloyError, match='sum to|mass fraction'):
                 ca.split_alloy(_mix(**w))
         elif lin <= 0.2:
             assert ca.split_alloy(_mix(**w))[1] == pytest.approx(w)
