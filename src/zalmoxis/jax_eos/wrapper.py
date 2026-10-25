@@ -271,6 +271,7 @@ def solve_structure_via_jax(
         numpy. Such a solve costs the diffrax ``max_steps`` spin (about 10 s)
         plus a numpy solve.
     """
+    from ..eos.core_alloy import is_alloy_mixture, split_alloy
     from ..eos.interpolation import _ensure_unified_cache
     from ..eos.seager import get_tabulated_eos
 
@@ -280,12 +281,16 @@ def solve_structure_via_jax(
 
     # Core cache: paleos_unified (load via _ensure_unified_cache)
     core_lm = layer_mixtures['core']
-    # The core kernel reads one EOS table; a light-element core solves on numpy.
-    if len(core_lm.components) != 1:
+    # The core kernel reads one EOS table; a core with light elements solves on numpy.
+    core_eos = core_lm.components[0]
+    if is_alloy_mixture(core_lm):
+        core_eos, w = split_alloy(core_lm)
+        if any(w.values()):
+            raise ValueError(f'JAX path requires a core without light elements, got {w!r}')
+    elif len(core_lm.components) != 1:
         raise ValueError(
             f'JAX path requires a single-component core, got {core_lm.components!r}'
         )
-    core_eos = core_lm.components[0]
     core_mat = material_dictionaries.get(core_eos)
     if core_mat is None:
         # Same fallback contract as the mantle guard below.
