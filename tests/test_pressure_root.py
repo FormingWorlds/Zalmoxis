@@ -4,10 +4,11 @@
 brentq with xtol 1e6 Pa returns the end of its last bracket with the smaller |f|, so it
 can return a stopped (padded) end. ``_refine_pressure_root`` then solves again on the
 nearest sign pair with an xtol of 0.1 P_t over the slope, and replaces a root that is
-still padded by the reached end of that pair when that end misses P_t by at most
-``_PADDED_REPLACE_MAX_MISS_PT`` P_t. Invariants: the refined root is never further from P_t than the
-first one, a reached end that misses by more than the cap never replaces a padded root,
-and the returned result flags a padded surface node.
+still padded by a reached end of its nearest sign pair within the cap
+``_REACHED_END_MAX_MISS_PT`` P_t. Invariants: the refined root is never further from
+P_t than the first one or than the result without the second solve, a reached end that
+misses by more than the cap never replaces a padded root, and the returned result flags
+a padded surface node.
 """
 
 from __future__ import annotations
@@ -85,12 +86,12 @@ def test_a_jump_beyond_the_cap_keeps_the_padded_root_and_logs_it(caplog):
 )
 def test_the_reached_end_replaces_a_padded_root_only_within_the_cap(miss_pt, replaced):
     """With a pair 1e8 Pa wide the second solve stands aside (xtol >= 1e6 Pa); the reached
-    end then replaces the padded root when it misses P_t by at most _PADDED_REPLACE_MAX_MISS_PT P_t."""
+    end then replaces the padded root when it misses P_t by at most the cap of 1 P_t."""
     res = _Residual(lambda x: -P_T if x < 1.05e9 else miss_pt * P_T)
     res(1.0e9)
     res(1.1e9)
     root = _refine(res, 1.0e9)
-    assert zs._PADDED_REPLACE_MAX_MISS_PT == 1.0
+    assert zs._REACHED_END_MAX_MISS_PT == 1.0
     np.testing.assert_equal(root, 1.1e9 if replaced else 1.0e9)
     assert len(res.evals) == 2  # no second solve
 
@@ -255,9 +256,9 @@ def test_the_second_solve_runs_only_on_a_pair_no_steeper_than_a_smooth_profile(s
 
 @pytest.mark.physics_invariant
 def test_a_steep_narrow_pair_over_a_small_jump_is_still_refined():
-    """A jump of 0.95 P_t at the stop, then P(R) rising at slope 0.47: a pair 1.41e5 Pa wide has a
-    secant slope of 1.15 but a reached end within P_t of the target, so it is no large jump and
-    the second solve reaches P_t within 0.1 P_t."""
+    """A jump of 0.95 P_t at the stop, then P(R) rising at slope 0.47: a pair 1.41e5 Pa wide
+    has a secant slope of 1.15 but a reached end within P_t of the target, so it is no large
+    jump and the second solve reaches P_t within 0.1 P_t."""
     x0 = 2.0e11
     res = _Residual(lambda x: -P_T if x < x0 else 0.95 * P_T + 0.47 * (x - x0) - P_T)
     res(x0 - 1e3)
@@ -268,7 +269,8 @@ def test_a_steep_narrow_pair_over_a_small_jump_is_still_refined():
 
 
 def test_the_returned_record_is_that_of_the_solve_that_gave_the_root():
-    """A root from the second solve comes with that solve's record; a kept root keeps the first."""
+    """A root from the second solve comes with that solve's record; a kept root keeps the
+    first."""
     res = _Residual(_kink())
     res(1.999e11)
     res(2.003e11)
@@ -284,7 +286,8 @@ def test_the_returned_record_is_that_of_the_solve_that_gave_the_root():
 
 
 def test_a_steep_pair_whose_reached_end_is_at_the_cap_is_solved():
-    """Slope 2 and f(b) = P_t exactly: the reached end is within the cap, so the second solve runs."""
+    """Slope 2 and f(b) = P_t exactly: the reached end is within the cap, so the second solve
+    runs."""
     a, b = 2.0e11, 2.0e11 + P_T
     res = _Residual(lambda x: -P_T if x < a + 0.5 * P_T else -P_T + 2.0 * (x - a))
     res(a)
@@ -295,20 +298,24 @@ def test_a_steep_pair_whose_reached_end_is_at_the_cap_is_solved():
 
 
 @pytest.mark.physics_invariant
-@pytest.mark.parametrize(('width', 'high'), [(5e4, 2.0), (1e5, 1.5), (3e5, 1.5)])
-def test_a_second_solve_into_a_jump_keeps_the_reached_end_within_the_cap(width, high):
-    """Padded first root a, reached end b at 0.5 P_t, and P(R) = high P_t on the first 0.8 of
+@pytest.mark.parametrize(
+    ('width', 'high', 'end'),
+    [(5e4, 2.0, 0.5), (1e5, 1.5, 0.5), (3e5, 1.5, 0.5), (5e4, 2.0, 1.0)],
+)
+def test_a_second_solve_into_a_jump_keeps_the_reached_end_within_the_cap(width, high, end):
+    """Padded first root a, reached end b at end P_t, and P(R) = high P_t on the first 0.8 of
     the pair: the second solve ends on the jump at its padded end. The result is b, the
-    root step (e) gives without the second solve, not the padded end."""
+    root step (e) gives without the second solve, not the padded end; at end = 1 the tie
+    of |f| goes to the reached end."""
     x0 = 2.0e11
     res = _Residual(
-        lambda x: -P_T if x < x0 else (0.5 * P_T if x >= x0 + 0.8 * width else high * P_T)
+        lambda x: -P_T if x < x0 else (end * P_T if x >= x0 + 0.8 * width else high * P_T)
     )
     res(x0 - 1e3)
     res(x0 + width)
     root = _refine(res, x0 - 1e3)
     assert len(res.evals) > 2  # the second solve ran
-    assert res.evals[root] == 0.5 * P_T
+    assert res.evals[root] == end * P_T
 
 
 @pytest.mark.physics_invariant
@@ -335,3 +342,16 @@ def test_the_second_solve_is_never_worse_than_none(width, levels):
             res(x0 + width)
             out[name] = abs(res.evals[_refine(res, x0 - 1e3)])
     assert out['with'] <= out['without']
+
+
+def test_a_tie_of_padded_roots_returns_the_second_solve_root():
+    """A jump to 1.5 P_t at x0 over a pair 1e6 Pa wide: the second solve ends on the padded
+    end of the jump, no reached end lies within the cap, and the tie of the two padded roots
+    goes to the later one, as the first-root guard did."""
+    x0, a = 2.0e11, 2.0e11 - 5e5
+    res = _Residual(lambda x: -P_T if x < x0 else 1.5 * P_T)
+    res(a)
+    res(x0 + 5e5)
+    root = _refine(res, a)
+    assert len(res.evals) > 2
+    assert res.evals[root] == -P_T and root != a

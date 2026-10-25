@@ -9,12 +9,13 @@ ones.
 Usage::
 
     python -m tools.validation.pressure_root_sweep run <out dir> [-j 2]
-    python -m tools.validation.pressure_root_sweep plot <out dir> [--assets docs/assets/validation]
+    python -m tools.validation.pressure_root_sweep plot <out dir> [--assets <assets dir>]
 """
 
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import os
 import subprocess
@@ -74,7 +75,7 @@ SETUPS = (
 
 
 def run_setup(index: int) -> dict:
-    """Run setup ``index`` and return its outcome: accept label, P(R) [Pa], padded nodes, time [s]."""
+    """Run setup ``index``; return its accept label, P(R) [Pa], padded nodes and time [s]."""
     import zalmoxis
     import zalmoxis.solver as zs
     from zalmoxis.config import (
@@ -131,8 +132,11 @@ def run_setup(index: int) -> dict:
 
 
 def run_all(outdir: str, workers: int) -> None:
-    """Run every setup in its own process, ``workers`` at a time, writing setup_<i>.json."""
+    """Run every setup in its own process, ``workers`` at a time, writing setup_<i>.json;
+    records an earlier run left in ``outdir`` are removed first."""
     os.makedirs(outdir, exist_ok=True)
+    for old in glob.glob(os.path.join(outdir, 'setup_*.json')):
+        os.remove(old)
 
     def one(i):
         cmd = [
@@ -151,8 +155,9 @@ def run_all(outdir: str, workers: int) -> None:
 
 
 def plot(outdir: str, assets: str) -> None:
-    """Write the light and dark plot of |P(R) - P_t| / P_t per setup. A setup without an accepted
-    profile is a cross above the cap and is printed; a setup without a record stops the plot."""
+    """Write the light and dark plot of |P(R) - P_t| / P_t per setup. A setup without an
+    accepted profile is a cross above the cap and is printed; a setup without a record stops
+    the plot."""
     from proteus_mpl.validation import save
 
     rows, missing = [], []
@@ -165,17 +170,16 @@ def plot(outdir: str, assets: str) -> None:
             rows.append(json.load(f))
     if missing:
         raise SystemExit('setups without a record:\n' + '\n'.join(missing))
-    failed = np.array([bool(r.get('error')) or not r.get('converged') for r in rows])
+    failed = np.array([not r.get('converged') for r in rows])
     for r in (r for r, f in zip(rows, failed) if f):
         print(f'{r["index"]} {r["name"]}: {r.get("error") or "not converged"}')
-    miss = np.array(
-        [
-            np.nan if f else abs(r['P_R'] - r['target']) / r['target']
-            for r, f in zip(rows, failed)
-        ]
-    )
-    padded = np.array([not f and r['padded'] > 0 for r, f in zip(rows, failed)])
+    miss = np.array([abs(r.get('P_R', np.nan) - r['target']) / r['target'] for r in rows])
+    padded = np.array([r.get('padded', 0) > 0 for r in rows]) & ~failed
     reached = ~failed & ~padded
+    print(
+        f'reached {reached.sum()}, padded {padded.sum()}, failed {failed.sum()}; reached miss '
+        f'median {np.median(miss[reached]):.3f}, max {miss[reached].max():.3f} P_t'
+    )
 
     def figure():
         import matplotlib.pyplot as plt

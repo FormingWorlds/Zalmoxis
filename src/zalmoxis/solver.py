@@ -84,16 +84,17 @@ def _require_finite(radii, profiles, reason, outer_iter, inner_iter):
 _REFINE_MISS_PT = 0.1
 
 # dP(R)/dP_c of a smooth profile whose density does not fall with pressure at fixed radius
-# is at most 1; a steeper sign pair whose reached end misses P_t by more than the cap holds a
-# jump at the stop or scatter of P(R), and gets no second solve.
+# is at most 1; a steeper sign pair whose reached end misses P_t by more than the cap is
+# treated as a jump at the stop or scatter of P(R), and gets no second solve.
 _MAX_PAIR_SLOPE = 1.0
 
-# A reached end replaces a padded pressure root only when it misses P_t by at most this many P_t.
-_PADDED_REPLACE_MAX_MISS_PT = 1.0
+# A reached pair end replaces a padded root, or lets a steep pair be solved again, only when
+# it misses P_t by at most this many P_t.
+_REACHED_END_MAX_MISS_PT = 1.0
 
 
 def _nearest_sign_pair(evals, root):
-    """Adjacent evaluated central pressures (a, b) with finite f(a) < 0 < f(b), nearest the root.
+    """Adjacent evaluated central pressures (a, b), finite f(a) < 0 < f(b), nearest the root.
 
     Parameters
     ----------
@@ -125,12 +126,13 @@ def _refine_pressure_root(root, info, evals, residual, p_target, maxiter):
     again on its nearest sign pair with xtol = ``_REFINE_MISS_PT`` P_t over the secant slope
     of that pair, when that xtol is below 1e6 Pa and either the slope is at most
     ``_MAX_PAIR_SLOPE`` or the reached end misses P_t by at most
-    ``_PADDED_REPLACE_MAX_MISS_PT`` P_t. The second solve takes f at the pair ends from
-    ``evals``; its root replaces the first one only when it misses P_t by no more, and a
-    second solve that raises keeps the first root. A root that is still padded is
-    replaced by the reached end of its nearest sign pair when that end misses P_t by at
-    most ``_PADDED_REPLACE_MAX_MISS_PT`` P_t; otherwise the padded root stays. The
-    replacement, the kept padded root and a failed second solve log at DEBUG.
+    ``_REACHED_END_MAX_MISS_PT`` P_t. The second solve takes f at the pair ends from
+    ``evals``; one that raises adds no root. The result is the candidate with the smallest
+    |f| (on a tie a reached one, then the later one): the first root, the second-solve
+    root, and for a padded one the reached end of its nearest sign pair, before and after
+    the second solve, when that end misses P_t by at most ``_REACHED_END_MAX_MISS_PT``
+    P_t. So the result never misses P_t by more than the first root or than the result
+    without the second solve. A padded first root and a failed second solve log at DEBUG.
 
     Parameters
     ----------
@@ -154,7 +156,8 @@ def _refine_pressure_root(root, info, evals, residual, p_target, maxiter):
         root replaced by a reached end keeps the record of the solve that returned it.
     """
     f_root, pair = evals[root], _nearest_sign_pair(evals, root)
-    cap = _PADDED_REPLACE_MAX_MISS_PT * p_target
+    cap = _REACHED_END_MAX_MISS_PT * p_target
+    found = [(root, info, pair)]
     if pair is not None and abs(f_root) > _REFINE_MISS_PT * p_target:
         a, b = pair
         slope = (evals[b] - evals[a]) / (b - a)
@@ -170,25 +173,31 @@ def _refine_pressure_root(root, info, evals, residual, p_target, maxiter):
                     maxiter=maxiter,
                     full_output=True,
                 )
-                if abs(evals[new]) <= abs(f_root):
-                    root, info = new, new_info
+                found.append((new, new_info, None))
             except (RuntimeError, ValueError) as err:
                 logger.debug(
                     'Second pressure solve failed (%s); keeping P_c = %.6e Pa.', err, root
                 )
+    # A padded root also offers the reached end of its nearest sign pair, before and after
+    # the second solve, within the cap; the smallest |f| wins, then a reached, then a later one.
+    cands = []
+    for r, i, first_pair in found:
+        cands.append((r, i))
+        if evals[r] == -p_target:
+            ends = [p[1] for p in (first_pair, _nearest_sign_pair(evals, r)) if p is not None]
+            cands += [(e, i) for e in ends if evals[e] <= cap]
+    best, best_info = min(
+        reversed(cands), key=lambda c: (abs(evals[c[0]]), evals[c[0]] == -p_target)
+    )
     if evals[root] == -p_target:
-        pair = _nearest_sign_pair(evals, root)
-        miss = evals[pair[1]] if pair is not None else math.inf
-        take = miss <= cap
         logger.debug(
-            'Padded pressure root P_c = %.6e Pa: the nearest reached end misses P_t by %.3e Pa; %s.',
+            'Padded pressure root P_c = %.6e Pa: %s.',
             root,
-            miss,
-            'taking it' if take else 'the solve keeps the padded root',
+            'the solve keeps the padded root'
+            if evals[best] == -p_target
+            else f'taking P_c = {best:.6e} Pa, which misses P_t by {abs(evals[best]):.3e} Pa',
         )
-        if take:
-            root = pair[1]
-    return root, info
+    return best, best_info
 
 
 # Module-level EOS interpolation cache. Persists across multiple main() calls
