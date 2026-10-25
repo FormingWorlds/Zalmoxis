@@ -75,6 +75,8 @@ LUO_CARRIER_FRACTION = _M_CARRIER_CELL / (_M_DRY_CELL + _M_CARRIER_CELL)
 _CELL_WARNED = [False]
 # lowest O rest (w_O - 7.94 w_H) / (1 - w_c) of the first-order carrier split (w_H 0.0206 at w_O 0)
 O_REST_MIN = -0.2
+# lowest linear-law factor 1 - lin: above it the density falls with w_H (onset 0.768 at most)
+LIN_FACTOR_MIN = 0.8
 
 
 class CoreAlloyError(ValueError):
@@ -149,7 +151,7 @@ def _linear_factor(w):
     ------
     CoreAlloyError
         ``w_c >= 1`` (no alloy mass left), an O rest below :data:`O_REST_MIN` of the
-        remaining alloy, or ``1 - lin`` not positive and finite.
+        remaining alloy, or ``1 - lin`` below :data:`LIN_FACTOR_MIN` or not finite.
     """
     w_c = w.get(CARRIER, 0.0) * CARRIER_PER_H
     if w_c >= 1.0:
@@ -163,8 +165,11 @@ def _linear_factor(w):
         )
     lin = sum(LINEAR_BETA[el] * f for el, f in w.items() if el not in (CARRIER, 'O'))
     lin = (lin + LINEAR_BETA['O'] * o_rem) / (1.0 - w_c)
-    if not np.isfinite(lin) or 1.0 - lin <= 0:
-        raise CoreAlloyError(f'linear-law core density factor {1.0 - lin!r} for {w!r}')
+    if not 1.0 - lin >= LIN_FACTOR_MIN:
+        raise CoreAlloyError(
+            f'linear-law core density factor {1.0 - lin:.4f} is below the bound '
+            f'{LIN_FACTOR_MIN} for {w!r}'
+        )
     return w_c, lin
 
 

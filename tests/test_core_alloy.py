@@ -229,9 +229,12 @@ class TestLinearLaw:
         st.dictionaries(st.sampled_from(['C', 'O', 'S', 'Si']), st.floats(0.0, 0.3), min_size=1)
     )
     def test_linear_bound_over_the_composition_domain(self, w):
-        """Without H, a core passes exactly when sum(beta_i w_i) is at most 0.2."""
+        """Without H, a core with iron passes exactly when sum(beta_i w_i) is at most 0.2."""
         lin = sum(ca.LINEAR_BETA[el] * f for el, f in w.items())
-        if lin <= 0.2:
+        if sum(w.values()) >= 1:
+            with pytest.raises(ca.CoreAlloyError, match='sum to'):
+                ca.split_alloy(_mix(**w))
+        elif lin <= 0.2:
             assert ca.split_alloy(_mix(**w))[1] == pytest.approx(w)
         else:
             with pytest.raises(ca.CoreAlloyError, match='bound 0.8'):
