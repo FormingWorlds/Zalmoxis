@@ -72,6 +72,7 @@ def test_a_jump_beyond_the_cap_keeps_the_padded_root_and_logs_it(caplog):
     with caplog.at_level(logging.DEBUG, logger='zalmoxis.solver'):
         root = _refine(res, 1.999e11)
     assert res.f(root) == -P_T
+    assert len(res.evals) == 2  # a slope of 1e3 is a jump: no second solve
     kept = [r for r in caplog.records if 'keeps the padded root' in r.getMessage()]
     assert [r.levelno for r in kept] == [logging.DEBUG]
     assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
@@ -224,3 +225,16 @@ def test_the_second_solve_reuses_the_ends_of_its_pair():
     _refine(res, 1.999e11)
     assert len(res.calls) > 2
     assert len(res.calls) == len(set(res.calls))
+
+
+@pytest.mark.physics_invariant
+@pytest.mark.parametrize(('slope', 'solved'), [(1.0, True), (1.0 + 1e-6, False), (50.0, False)])
+def test_the_second_solve_runs_only_on_a_pair_no_steeper_than_a_smooth_profile(slope, solved):
+    """dP(R)/dP_c of a smooth profile is at most 1; a steeper pair holds a jump or scatter at
+    the stop, where the second solve costs solves and keeps the padded root."""
+    a, b = 2.0e11, 2.0e11 + 1.5 * P_T / slope  # f(b) = P_t / 2 at the secant slope
+    res = _Residual(lambda x: -P_T if x < (a + b) / 2 else -P_T + slope * (x - a))
+    res(a)
+    res(b)
+    _refine(res, a)
+    assert (len(res.evals) > 2) is solved
