@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -77,3 +78,29 @@ def test_the_plot_writes_its_files_with_the_run_and_plot_commands(tmp_path, monk
     lines = {line.get_label(): line for line in seen['fig'].axes[0].lines}
     assert sorted(lines) == ['Cap', 'Padded', 'Reached']
     assert (len(lines['Reached'].get_xdata()), len(lines['Padded'].get_xdata())) == (13, 13)
+
+
+@pytest.mark.parametrize(('error_at', 'counts'), [(None, (13, 13, 0)), (3, (13, 12, 1))])
+def test_the_plot_prints_the_counts_and_the_reached_miss(
+    tmp_path, monkeypatch, capsys, error_at, counts
+):
+    """The plot prints the reached, padded and failed counts and the median and largest miss of
+    the reached setups, the numbers the docs quote."""
+    _capture_save(monkeypatch)
+    _write(tmp_path, error_at=error_at)
+    tool.plot(str(tmp_path), str(tmp_path / 'assets'))
+    want = 'reached {}, padded {}, failed {}; reached miss median 0.184, max 0.184 P_t'
+    assert want.format(*counts) in capsys.readouterr().out
+
+
+def test_a_run_removes_the_records_of_an_earlier_run(tmp_path, monkeypatch):
+    """A setup whose process dies writes no record, so a run first removes the records an
+    earlier run left in the same directory."""
+    monkeypatch.setattr(tool, 'SETUPS', tool.SETUPS[:2])
+    monkeypatch.setattr(
+        tool.subprocess, 'run', lambda cmd, check: SimpleNamespace(returncode=1)
+    )
+    (tmp_path / 'setup_1.json').write_text('{}')
+    (tmp_path / 'notes.txt').write_text('kept')
+    tool.run_all(str(tmp_path), 1)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ['notes.txt']
