@@ -357,8 +357,8 @@ def test_a_tie_of_padded_roots_returns_the_second_solve_root():
     assert res.evals[root] == -P_T and root != a
 
 
-@pytest.mark.parametrize(('first', 'want'), [('padded', 0.5), ('reached', 0.5)])
-def test_a_second_solve_root_with_a_non_finite_residual_never_wins(first, want):
+@pytest.mark.parametrize('first', ['padded', 'reached'])
+def test_a_second_solve_root_with_a_non_finite_residual_never_wins(first):
     """A second-solve root whose recorded f is NaN never wins: a padded first root still takes
     its pair's reached end at 0.5 P_t, and a reached first root at 0.5 P_t stays."""
     x0 = 2.0e11
@@ -374,4 +374,24 @@ def test_a_second_solve_root_with_a_non_finite_residual_never_wins(first, want):
 
     with patch.object(zs, 'brentq', nan_root):
         out, info = zs._refine_pressure_root(root, 'first', res.evals, res, P_T, 100)
-    assert res.evals[out] == want * P_T and info == 'first'
+    assert res.evals[out] == 0.5 * P_T and info == 'first'
+
+
+def test_a_failed_second_solve_keeps_its_reached_evaluation_within_the_cap():
+    """The second solve evaluates a reached point at 0.3 P_t and then raises: that point is
+    the reached end of the padded root's nearest sign pair, so it is the result."""
+    x0, calls = 2.0e11, []
+
+    def f(x):
+        if len(calls) > 3:
+            raise zs.StructureSolveError('non-finite trial profile')
+        if len(calls) == 3:
+            return 0.3 * P_T if x >= x0 else -P_T
+        return -P_T if x < x0 else 1.5 * P_T
+
+    res = _Residual(lambda x: (calls.append(x), f(x))[1])
+    res(x0 - 1e3)
+    res(x0 + 5e5)
+    root = _refine(res, x0 - 1e3)
+    assert len(res.evals) == 3
+    assert res.evals[root] == 0.3 * P_T

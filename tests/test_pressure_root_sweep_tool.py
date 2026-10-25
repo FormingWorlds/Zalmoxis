@@ -13,7 +13,8 @@ pytestmark = [pytest.mark.unit, pytest.mark.timeout(30)]
 
 
 def _write(outdir, error_at=None, all_padded=False):
-    """Even setups reach the surface with a miss of (i + 1) / 100 P_t, odd ones are padded."""
+    """Even setups reach the surface with a miss of ((i + 1) / 10)^2 / 10 P_t, odd ones are
+    padded: the reached misses have different median, mean and largest values."""
     for i, (name, _) in enumerate(tool.SETUPS):
         rec = {'index': i, 'name': name, 'target': 101325.0, 'error': None}
         if i == error_at:
@@ -21,7 +22,9 @@ def _write(outdir, error_at=None, all_padded=False):
         elif i % 2 or all_padded:
             rec.update(converged=True, P_R=0.0, padded=1)
         else:
-            rec.update(converged=True, P_R=101325.0 * (1.0 + (i + 1) / 100), padded=0)
+            rec.update(
+                converged=True, P_R=101325.0 * (1.0 + ((i + 1) / 10) ** 2 / 10), padded=0
+            )
         (outdir / f'setup_{i}.json').write_text(json.dumps(rec))
 
 
@@ -92,7 +95,7 @@ def test_the_plot_prints_the_counts_and_the_reached_miss(
     _capture_save(monkeypatch)
     _write(tmp_path, error_at=error_at)
     tool.plot(str(tmp_path), str(tmp_path / 'assets'))
-    want = 'reached {}, padded {}, failed {}; reached miss median 0.130, max 0.250 P_t'
+    want = 'reached {}, padded {}, failed {}; reached miss median 0.169, max 0.625 P_t'
     assert want.format(*counts) in capsys.readouterr().out
 
 
