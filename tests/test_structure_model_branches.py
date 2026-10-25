@@ -455,3 +455,37 @@ class TestSolveStructureJAXFallback:
         assert len(mass) == len(radii)
         # Warning must be emitted on fallback so users notice unsupported configs
         assert any('fell back to numpy path' in m for m in caplog.messages)
+
+    def test_light_element_core_runs_on_numpy(self, caplog):
+        """A core with 1 wt% H goes from the real JAX guard to numpy for the rest of main()."""
+        mixtures = {
+            'core': LayerMixture(['PALEOS:iron', 'CoreAlloy:H'], [0.99, 0.01]),
+            'mantle': LayerMixture(['Seager2007:MgSiO3'], [1.0]),
+        }
+        radii = np.linspace(1.0, 1e6, 30)
+        cache = {}
+        with mock.patch(
+            'zalmoxis.structure_model.calculate_mixed_density', return_value=5000.0
+        ):
+            with caplog.at_level('WARNING', logger='zalmoxis.structure_model'):
+                mass, _, pressure = solve_structure(
+                    layer_mixtures=mixtures,
+                    cmb_mass=2e23,
+                    core_mantle_mass=4e23,
+                    radii=radii,
+                    adaptive_radial_fraction=0.5,
+                    relative_tolerance=1e-6,
+                    absolute_tolerance=1e-8,
+                    maximum_step=1e5,
+                    material_dictionaries={},
+                    interpolation_cache=cache,
+                    y0=[0.0, 0.0, 1e12],
+                    solidus_func=None,
+                    liquidus_func=None,
+                    use_jax=True,
+                )
+        assert cache['_jax_fell_back'] is True
+        assert any('light elements' in m for m in caplog.messages)
+        # numpy integrated the 5000 kg/m3 sphere: mass grows outward from the centre
+        assert mass[-1] > mass[1] > 0.0
+        assert pressure[0] == pytest.approx(1e12)

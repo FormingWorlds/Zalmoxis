@@ -50,6 +50,7 @@ nav:
           - EOS package: Reference/api/zalmoxis.eos.md
           - EOS dispatch: Reference/api/zalmoxis.eos.dispatch.md
           - EOS consistency: Reference/api/zalmoxis.eos.consistency.md
+          - Light-element core: Reference/api/zalmoxis.eos.core_alloy.md
           - EOS interpolation: Reference/api/zalmoxis.eos.interpolation.md
           - EOS table registry check: Reference/api/zalmoxis.eos.registry_guard.md
           - EOS output: Reference/api/zalmoxis.eos.output.md

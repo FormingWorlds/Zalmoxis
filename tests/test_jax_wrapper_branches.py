@@ -132,6 +132,70 @@ class TestCoreFormatValidation:
             )
 
 
+class TestCoreComponentCount:
+    """The JAX core kernel holds one EOS table, so a light-element core is rejected."""
+
+    def _call(self, layer_mixtures, mds, cache):
+        return jw.solve_structure_via_jax(
+            layer_mixtures=layer_mixtures,
+            cmb_mass=2e23,
+            core_mantle_mass=4e23,
+            radii=np.linspace(1.0, 1e6, 20),
+            adaptive_radial_fraction=0.5,
+            relative_tolerance=1e-6,
+            absolute_tolerance=1e-8,
+            maximum_step=1e5,
+            material_dictionaries=mds,
+            interpolation_cache=cache,
+            y0=[0.0, 0.0, 1e12],
+            solidus_func=_solidus_func,
+            liquidus_func=_liquidus_func,
+            temperature_function=_t_func,
+        )
+
+    def test_two_component_core_raises_before_the_solve(self):
+        """A 1 wt% second core component must reach numpy, not solve as pure iron."""
+        layer_mixtures, mds, cache = _common_fixtures()
+        layer_mixtures['core'] = LayerMixture(['PALEOS:iron', 'PALEOS:FeH'], [0.99, 0.01])
+        fake = mock.Mock(return_value=(np.zeros((20, 3)), np.zeros(3)))
+        with mock.patch.object(jw, 'solve_structure_jax', fake):
+            with pytest.raises(ValueError) as exc:
+                self._call(layer_mixtures, mds, cache)
+        assert 'single-component core' in str(exc.value)
+        assert "'PALEOS:FeH'" in str(exc.value)
+        assert fake.call_count == 0
+
+    def test_zero_alloy_core_reaches_the_solve_on_its_iron_base(self):
+        """A light-element core with every fraction 0 is pure iron and stays on JAX."""
+        layer_mixtures, mds, cache = _common_fixtures()
+        layer_mixtures['core'] = LayerMixture(
+            ['PALEOS:iron', 'CoreAlloy:H', 'CoreAlloy:O'], [1.0, 0.0, 0.0]
+        )
+        fake = mock.Mock(return_value=(np.zeros((20, 3)), np.zeros(3)))
+        with mock.patch.object(jw, 'solve_structure_jax', fake):
+            self._call(layer_mixtures, mds, cache)
+        assert fake.call_count == 1
+
+    def test_alloy_core_with_light_elements_raises_before_the_solve(self):
+        """A core with 1 wt% H must reach numpy."""
+        layer_mixtures, mds, cache = _common_fixtures()
+        layer_mixtures['core'] = LayerMixture(['PALEOS:iron', 'CoreAlloy:H'], [0.99, 0.01])
+        fake = mock.Mock(return_value=(np.zeros((20, 3)), np.zeros(3)))
+        with mock.patch.object(jw, 'solve_structure_jax', fake):
+            with pytest.raises(ValueError, match='light elements'):
+                self._call(layer_mixtures, mds, cache)
+        assert fake.call_count == 0
+
+    def test_single_component_core_reaches_the_solve(self):
+        """The guard leaves the supported pure-iron core on the JAX path."""
+        layer_mixtures, mds, cache = _common_fixtures()
+        fake = mock.Mock(return_value=(np.zeros((20, 3)), np.zeros(3)))
+        with mock.patch.object(jw, 'solve_structure_jax', fake):
+            self._call(layer_mixtures, mds, cache)
+        assert fake.call_count == 1
+        assert layer_mixtures['core'].components == ['PALEOS:iron']
+
+
 class TestMantleFormatValidation:
     """Mantle must be paleos_unified or PALEOS-2phase (sub-table keys)."""
 
