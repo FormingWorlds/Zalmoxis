@@ -280,7 +280,12 @@ def solve_structure_via_jax(
 
     # Core cache: paleos_unified (load via _ensure_unified_cache)
     core_lm = layer_mixtures['core']
-    core_eos = core_lm.components[0]  # single-component assumption
+    # The core kernel reads one EOS table; a light-element core solves on numpy.
+    if len(core_lm.components) != 1:
+        raise ValueError(
+            f'JAX path requires a single-component core, got {core_lm.components!r}'
+        )
+    core_eos = core_lm.components[0]
     core_mat = material_dictionaries.get(core_eos)
     if core_mat is None:
         # Same fallback contract as the mantle guard below.
