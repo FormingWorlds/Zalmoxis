@@ -1,6 +1,15 @@
 # Hydrostatic structure
 
-These cases check the integration of the structure equations against closed-form solutions, conservation laws and a second implementation of the same equations. The [overview](index.md) lists every case of the tab.
+## What this page checks
+
+This page checks how Zalmoxis computes the inside of a planet in hydrostatic equilibrium: the mass, the gravity and the pressure at each radius.
+Validation here means that we run the code on a case where another source gives the right answer.
+The test then checks that the code gives that answer within a stated tolerance.
+The right answer comes from closed-form solutions, from conservation laws, from a second implementation of the same equations, or from the pressure that the planet must have at its surface.
+If this part of the code is wrong, every structure that Zalmoxis returns is wrong, for example to PROTEUS: the radius of the planet and the pressure and gravity at each depth.
+The cases on the surface boundary condition say why the check exists, what it tests, how we know the right answer and why it matters.
+Their box "Test details" gives the reference, the tolerance, the test id and the command.
+The [overview](index.md) lists every case of the tab.
 
 ## Governing equations
 
@@ -193,35 +202,52 @@ Largest relative difference of the three right-hand-side terms between `coupled_
 
 ## Surface boundary condition of the pressure solve
 
-The central pressure $P_c$ is the root of $f(P_c) = P(R) - P_t$. A trial $P_c$ whose integration stops before the outer radius gives $f = -P_t$, and Brent's method with `xtol` $= 10^6$ Pa can return such a padded root; the solve then refines it ([padded accepts](../Explanations/process_flow.md#padded-accepts)).
+**Why this check exists.** Zalmoxis searches for the central pressure that gives the right pressure at the surface. The search can return a central pressure for which the integration stops below the surface. The profile then ends in a padded point, with a pressure of 0 at the outer radius instead of the surface pressure.
 
-### Plot: surface boundary condition
+**What it tests.** The central pressure $P_c$ is the root of the residual $f(P_c) = P(R) - P_t$. Here $P(R)$ is the pressure at the outer radius $R$, and $P_t$ is the target surface pressure, 1 atm here. A trial $P_c$ whose integration stops before the outer radius gives $f = -P_t$, and the remaining points get zero pressure: this is a padded profile. Brent's method stops when its bracket is narrower than `xtol` $= 10^6$ Pa, and it can then return such a padded root. The solve then refines the root ([padded accepts](../Explanations/process_flow.md#padded-accepts)). The test uses an analytic residual that needs no structure solve. Below a central pressure $x_0$ the integration stops; above it, $P(R)$ rises from $0.95\,P_t$ at a slope $dP(R)/dP_c$ of 0.47. The Brent root of the first solve is then padded, and the refined root must reach the outer radius and miss $P_t$ by at most $0.1 P_t$.
+
+A second test checks the same rule with real structure solves. It uses the Analytic 1 Earth-mass planet with the Newton outer solver at `relative_tolerance` $10^{-9}$, and shifts the planet mass by 0 and $\pm 10^{-9}$ until a pressure solve has a padded Brent root. The refined root must then miss $P_t$ by at most $0.1 P_t$. The accepted profile must not be padded, and it must miss $P_t$ by at most $P_t$.
+
+**How we know the right answer.** The boundary condition $P(R) = P_t$ gives the right answer. A profile that reaches the outer radius with $P(R)$ close to $P_t$ meets it. A padded profile has $P(R) = 0$, so it misses by the full $P_t$.
+
+**Why it matters.** The accepted profile is the structure that Zalmoxis returns, for example to PROTEUS. Its outer point must have the surface pressure that the run asks for, not a padded pressure of 0.
 
 ![Surface pressure of the evaluated central pressures of one pressure solve](../assets/validation/pressure_root_boundary_condition.svg#only-light){ width="80%" }
 ![Surface pressure of the evaluated central pressures of one pressure solve](../assets/validation/pressure_root_boundary_condition_dark.svg#only-dark){ width="80%" }
 
-Surface pressure $P(R)$ of each evaluated central pressure (circles) on an analytic residual that stops below a central pressure $x_0$ and above it rises from $0.95\,P_t$ at a slope $dP(R)/dP_c$ of 0.47: the brentq root of the first solve is padded (square, $P(R) = 0$), and the refined root (star) is reached. Evaluations above 3 bar are drawn as triangles at the top of the axis. The dashed line is $P_t$ = 1 atm. The residual needs no structure solve.
+**How to read the plot.** The x-axis is the central pressure relative to the Brent root of the first solve, in MPa, and the y-axis is the surface pressure $P(R)$ in bar. Each circle is one evaluated central pressure. The square is the padded Brent root of the first solve ($P(R) = 0$), and the star is the refined root, which reaches the outer radius. Evaluations above 3 bar are drawn as triangles at the top of the axis, and the dashed line is $P_t$ = 1 atm. A pass means that the star lies close to the dashed line.
 
-- Reference: the boundary condition $P(R) = P_t$.
-- Tolerance: $\lvert P(R) - P_t \rvert \le 0.1 P_t$ at the refined root, which is reached.
-- Test id: `tests/test_pressure_root.py::test_the_refined_root_meets_the_surface_boundary_condition`
-- Command: `pytest -m reference_pinned tests/test_pressure_root.py --validation-plots`
+**Known limit.** Whether a real solve pads depends on round-off, so the test with real structure solves has no plot.
 
-A real-solve test checks the same rule on the Analytic 1 Earth-mass planet with the Newton outer solver at `relative_tolerance` $10^{-9}$: at planet-mass shifts of 0 and $\pm 10^{-9}$ until a pressure solve has a padded brentq root, the refined root misses $P_t$ by at most $0.1 P_t$, and the accepted profile is not padded and misses $P_t$ by at most $P_t$. Whether a solve pads depends on round-off, so this test has no plot (`tests/test_pressure_root_solves.py::test_the_accepted_root_meets_the_surface_boundary_condition`).
+??? info "Test details"
+    - Reference: the boundary condition $P(R) = P_t$.
+    - Tolerance: $\lvert P(R) - P_t \rvert \le 0.1 P_t$ at the refined root, which is reached.
+    - Test id: `tests/test_pressure_root.py::test_the_refined_root_meets_the_surface_boundary_condition`
+    - Command: `pytest -m reference_pinned tests/test_pressure_root.py --validation-plots`
+    - Test id of the real-solve test: `tests/test_pressure_root_solves.py::test_the_accepted_root_meets_the_surface_boundary_condition`
 
-### Plot: solver setups
+## Surface boundary condition in every Newton setup
+
+**Why this check exists.** The refinement must also work on the real equations of state of a planet, not only on an analytic residual. Near the stop, $P(R)$ can jump or scatter. The accepted profile must then still meet the surface pressure within the cap of $P_t$.
+
+**What it tests.** The test runs the 6 Newton setups: the Analytic EOS (equation of state) at 1 Earth mass, PALEOS at 1, 5 and 10 Earth masses, and PALEOS on the JAX path with $T(r)$ from a numpy Picard solve at 1 and 3 Earth masses. Every setup must accept on the Newton tolerance. Every reached profile must miss $P_t$ by at most $P_t$, and no profile may have a padded node, except on the JAX path at 1 Earth mass. On that path $P(R)$ near the stop scatters, and the accepted profile can be padded. The case then requires one of 2 things: the reached end of the first sign pair of that pressure solve misses $P_t$ by more than $P_t$, or the solve has no sign pair.
+
+**How we know the right answer.** As in the case above, the boundary condition $P(R) = P_t$ gives the right answer.
+
+**Why it matters.** The Newton outer solver at `relative_tolerance` $10^{-9}$ is the outer solver that PROTEUS uses by default. These setups run it on the PALEOS tables from 1 to 10 Earth masses, on the numpy and the JAX path.
 
 ![Surface pressure miss of the accepted profile for 26 solver setups](../assets/validation/pressure_root_sweep.svg#only-light){ width="80%" }
 ![Surface pressure miss of the accepted profile for 26 solver setups](../assets/validation/pressure_root_sweep_dark.svg#only-dark){ width="80%" }
 
-$\lvert P(R) - P_t \rvert / P_t$ of the accepted profile for 26 setups built from `input/default.toml`: reached (circles), padded (squares, at 1 since $P(R) = 0$) and without an accepted profile (cross above the cap); the dashed line is the cap of $P_t$. Setups 4, 9, 10, 13, 14 and 25 use the Newton outer solver at `relative_tolerance` $10^{-9}$, the outer solver PROTEUS uses by default; [padded accepts](../Explanations/process_flow.md#padded-accepts) lists every setup. The miss of a reached profile depends on round-off, so another platform gives other values: over planet-mass changes of $k \times 10^{-13}$ ($k$ = 1 to 5), the PALEOS 1 Earth-mass Newton setup misses by 0.008 to 0.87 $P_t$.
+**How to read the plot.** The x-axis is the number of the setup, for 26 setups built from `input/default.toml`. The y-axis is $\lvert P(R) - P_t \rvert / P_t$ of the accepted profile, on a log scale. Circles are reached profiles, squares are padded profiles (at 1, since $P(R) = 0$), and a cross above the cap marks a setup without an accepted profile. The dashed line is the cap of $P_t$. Setups 4, 9, 10, 13, 14 and 25 use the Newton outer solver at `relative_tolerance` $10^{-9}$; [padded accepts](../Explanations/process_flow.md#padded-accepts) lists every setup. A pass means that every Newton setup lies at or below the dashed line, or, for setup 10, meets the rule of the JAX path above.
 
-The test runs the 6 Newton setups: the Analytic EOS at 1 Earth mass, PALEOS at 1, 5 and 10 Earth masses, and PALEOS on the JAX path with $T(r)$ from a numpy Picard solve at 1 and 3 Earth masses. On the JAX path at 1 Earth mass, $P(R)$ near the stop scatters, and the accepted profile can be padded; the case then requires that the reached end of the first sign pair of that pressure solve misses $P_t$ by more than $P_t$, or that the solve has no sign pair.
+**Known limit.** The miss of a reached profile depends on round-off, so another platform gives other values. Over planet-mass changes of $k \times 10^{-13}$ ($k$ = 1 to 5), the PALEOS 1 Earth-mass Newton setup misses by 0.008 to 0.87 $P_t$.
 
-- Reference: the boundary condition $P(R) = P_t$.
-- Tolerance: every setup accepts on the Newton tolerance; $\lvert P(R) - P_t \rvert \le P_t$ for every reached profile; no padded node except on the JAX path at 1 Earth mass; the padded flag matches the root of the last pressure solve.
-- Test id: `tests/test_pressure_root_solves.py::test_every_newton_setup_meets_the_surface_boundary_condition`
-- Command: `pytest -m accept_solves_newton_setups tests/test_pressure_root_solves.py`; the figure: `python -m tools.validation.pressure_root_sweep run <dir> -j 2`, then `python -m tools.validation.pressure_root_sweep plot <dir>`.
+??? info "Test details"
+    - Reference: the boundary condition $P(R) = P_t$.
+    - Tolerance: every setup accepts on the Newton tolerance; $\lvert P(R) - P_t \rvert \le P_t$ for every reached profile; no padded node except on the JAX path at 1 Earth mass; the padded flag matches the root of the last pressure solve.
+    - Test id: `tests/test_pressure_root_solves.py::test_every_newton_setup_meets_the_surface_boundary_condition`
+    - Command: `pytest -m accept_solves_newton_setups tests/test_pressure_root_solves.py`; the figure: `python -m tools.validation.pressure_root_sweep run <dir> -j 2`, then `python -m tools.validation.pressure_root_sweep plot <dir>`.
 
 ## Reproducing the results
 
