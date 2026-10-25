@@ -1057,7 +1057,7 @@ def test_a_max_iter_stop_in_the_blend_ramp_returns_a_pass_on_the_adiabat(caplog)
     assert r['adiabat_computed'] is True and off_linear > 100.0
     steps = [float(m.rsplit('= ', 1)[1]) for m in caplog.messages if 'adiabat blend = ' in m]
     assert steps and 0.0 < steps[-1] < 1.0, steps
-    assert r['adiabat_blend'] == steps[-1]
+    assert round(r['adiabat_blend'], 2) == steps[-1]  # the log prints %.2f
     assert f'accepted a temperature profile at adiabat blend {steps[-1]:.2f}' in caplog.text
 
 
