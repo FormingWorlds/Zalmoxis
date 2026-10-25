@@ -354,6 +354,7 @@ class TestCarrier:
             ca.split_alloy(_mix(H=0.999 * w_cell))
             assert caplog.messages == []
             ca.split_alloy(_mix(H=1.001 * w_cell))
+            assert len(caplog.messages) == 1
             ca.split_alloy(_mix(H=0.01))
         assert len([m for m in caplog.messages if 'Luo' in m and 'cell' in m]) == 1
 
@@ -688,11 +689,80 @@ class TestConfig:
             'base_without_fraction',
         ],
     )
-    def test_invalid_light_element_core_raises(self, cfg, message):
+    def test_invalid_light_element_core_raises(self, cfg, message, caplog):
         """Each misplaced or malformed light-element core is refused with its reason."""
         from zalmoxis.config import validate_layer_eos
 
-        with pytest.raises(ValueError) as exc:
+        with caplog.at_level('WARNING'), pytest.raises(ValueError) as exc:
             validate_layer_eos(cfg)
         assert message in str(exc.value)
         assert 'Invalid EOS component' not in str(exc.value)
+        # the refusal comes before the parser can report a renormalisation
+        assert not [m for m in caplog.messages if 'normalizing' in m]
+
+    @pytest.mark.parametrize('excess, ok', [(1e-8, False), (1e-10, True)])
+    def test_fraction_sum_tolerance_is_1e_9(self, excess, ok):
+        """Fractions that miss 1 by 1e-8 are refused, by 1e-10 accepted."""
+        from zalmoxis.config import validate_layer_eos
+
+        cfg = {'core': f'PALEOS:iron:{0.99 + excess!r}+CoreAlloy:H:0.01'}
+        if ok:
+            assert validate_layer_eos(cfg) is None
+        else:
+            with pytest.raises(ValueError, match='sum to 1'):
+                validate_layer_eos(cfg)
+
+
+class TestDispatchWithoutData:
+    """The alloy branches of the mixing functions, with the iron EOS patched."""
+
+    MIX = 'PALEOS:iron:0.98+CoreAlloy:H:0.005+CoreAlloy:O:0.015'
+
+    def test_scalar_density_applies_the_alloy_law_to_the_iron_base(self):
+        """calculate_mixed_density gives alloy_density of the base iron density and its mzf."""
+        from unittest import mock
+
+        from zalmoxis.mixing import calculate_mixed_density
+
+        mix = parse_layer_components(self.MIX)
+        with mock.patch('zalmoxis.eos.calculate_density', return_value=11000.0) as iron:
+            got = calculate_mixed_density(
+                P_CMB, T_LUO, mix, {}, None, None, {}, mushy_zone_factors={'PALEOS:iron': 0.8}
+            )
+        assert iron.call_args.args[2] == 'PALEOS:iron'
+        assert iron.call_args.args[-1] == 0.8
+        assert got == ca.alloy_density(11000.0, ca.split_alloy(mix)[1], P_CMB, T_LUO)
+        assert got < 0.95 * 11000.0
+
+    def test_batch_density_applies_the_alloy_law_to_the_iron_base(self):
+        """calculate_mixed_density_batch gives alloy_density_batch of the base densities."""
+        from unittest import mock
+
+        from zalmoxis.mixing import calculate_mixed_density_batch
+
+        mix = parse_layer_components(self.MIX)
+        p, t = np.full(3, P_CMB), np.array([5000.0, 8000.0, 9000.0])
+        rho_fe = np.array([11000.0, 10400.0, 10300.0])
+        with mock.patch('zalmoxis.eos.calculate_density_batch', return_value=rho_fe) as iron:
+            got = calculate_mixed_density_batch(
+                p, t, mix, {}, None, None, {}, mushy_zone_factors={'PALEOS:iron': 0.8}
+            )
+        assert iron.call_args.args[3] == 'PALEOS:iron'
+        assert iron.call_args.args[-1] == 0.8
+        want = ca.alloy_density_batch(rho_fe, ca.split_alloy(mix)[1], p, t)
+        assert np.array_equal(got, want)
+        assert np.all(got < 0.95 * rho_fe)
+
+    def test_nabla_ad_is_that_of_the_iron_base(self):
+        """get_mixed_nabla_ad of an alloy core is the adiabatic gradient of its iron base."""
+        from unittest import mock
+
+        from zalmoxis.mixing import get_mixed_nabla_ad
+
+        mix = parse_layer_components(self.MIX)
+        values = {'PALEOS:iron': 0.3}
+        with mock.patch(
+            'zalmoxis.mixing._nabla_ad_for_component',
+            side_effect=lambda comp, *a, **k: values.get(comp, 0.9),
+        ):
+            assert get_mixed_nabla_ad(P_CMB, T_LUO, mix, {}, {}) == 0.3
