@@ -231,12 +231,46 @@ The floor follows from the inventory and is not user-tunable.
 
 ---
 
+## Light-element core
+
+A core layer can carry H, C, N, O, Si and S as `CoreAlloy:<element>` components next to one iron base, which must be `PALEOS:iron`:
+
+```toml
+core = "PALEOS:iron:0.96+CoreAlloy:H:0.005+CoreAlloy:O:0.02+CoreAlloy:Si:0.015"
+```
+
+Such a core does not use the harmonic mean and the vapour sigmoid above. `zalmoxis.eos.core_alloy` takes the iron density $\rho_\mathrm{Fe}(P, T)$ from the PALEOS table and changes it with the light-element mass fractions $w_i$; the core adiabat stays that of iron. The JAX structure path holds one core table, so a light-element core is solved on the numpy path.
+
+**Linear law.** For C, N, O, Si, S and `H-linear`, each element lowers the density by $\beta_i$ percent per wt% ([Li et al. 2019](https://doi.org/10.1017/9781108677950.003), Table 3.3):
+
+$$\rho_\mathrm{lin} = \rho_\mathrm{Fe}\,\Bigl(1 - \sum_i \beta_i\, w_i\Bigr),$$
+
+with $\beta$ = 1.3 (C), 1.1 (O), 0.7 (Si) and 0.8 (S), the values for the liquid at the core-mantle boundary. The table gives no liquid value for H, so `CoreAlloy:H-linear` uses the solid value 8.7, and no value for N, so N does not change the density.
+
+**Fe-H-O member.** `CoreAlloy:H` uses the liquid Fe (64 Fe) and Fe-water (64 Fe + 8 H$_2$O) equations of state of [Luo et al. (2024)](https://doi.org/10.1038/s41550-024-02347-z), Methods Eq. 14. Their volume difference at the same $(P, T)$, per kg of water, is the excess specific volume $\Delta v_c$ of a water carrier in liquid iron. The core H enters as this carrier, mass fraction $w_c = w_\mathrm{H} M_{\mathrm{H_2O}} / (2 M_\mathrm{H}) = 8.94\, w_\mathrm{H}$. The carrier O, $w_c - w_\mathrm{H} = 7.94\, w_\mathrm{H}$, counts against the core O; the rest of the O, $w_\mathrm{O} - 7.94\, w_\mathrm{H}$, enters the linear law with $\beta_\mathrm{O}$, also when it is negative because the core holds less O than the carrier. The linear law then applies to the alloy without the carrier, with fractions $w_i / (1 - w_c)$, and
+
+$$\frac{1}{\rho} = \frac{1 - w_c}{\rho_\mathrm{lin}} + w_c\, \Delta v_c(P, T).$$
+
+The density is continuous in $w_\mathrm{H}$ and $w_\mathrm{O}$, also where the O rest changes sign. To first order, a negative O rest splits $\Delta v_c$ into an H part and the linear-law O part. In a core with no O, 1 wt% H then lowers the density by an effective $\beta_\mathrm{H}$ = 12.83 % at 136 GPa and 8000 K (with the Luo dry Fe density there, 10389.8 kg/m$^3$), against the solid linear value of 8.7 %.
+
+**Fit range.** The Luo fits cover 8000 to 14000 K and 50 to 1300 GPa. Outside that box, $\Delta v_c$ takes its value at the nearest point of the box, while the iron base stays at the true $(P, T)$; the first such point of a run gives a warning. The core-mantle boundary of Earth-like planets and super-Earths, at about 4000 to 6000 K, lies below the box, so there the carrier volume is its 8000 K value. At 136 GPa and 4000 K that is 3.28 $\times 10^{-4}$ m$^3$/kg, 8.4 % above the 3.03 $\times 10^{-4}$ m$^3$/kg that Eq. 14 gives when extrapolated to 4000 K; at low pressure and temperature the dry Fe fit has no volume at all, for example below 11 GPa at 3000 K and below 5.5 GPa at 4500 K. Inside the box:
+
+| $\Delta v_c$ (10$^{-4}$ m$^3$/kg) | 50 GPa | 136 GPa | 360 GPa | 1300 GPa |
+|---|---|---|---|---|
+| 8000 K | 4.36 | 3.28 | 2.30 | 1.31 |
+| 11000 K | 4.70 | 3.46 | 2.42 | 1.39 |
+| 14000 K | 5.19 | 3.63 | 2.54 | 1.47 |
+
+A composition with no iron left, a negative or non-finite fraction, two iron bases or both H forms raises `CoreAlloyError`, as does a density at or below zero. The [equation-of-state validation page](../Validation/equation_of_state.md) holds the test cases.
+
+---
+
 ## Future extensions
 
 The mixing framework supports several planned extensions without requiring changes to the upstream solver code:
 
 - Depth-dependent fractions via the `LayerMixture.update_fractions()` interface (already supported for PROTEUS/CALLIOPE coupling).
-- Non-ideal mixing corrections (excess volume) in `calculate_mixed_density()`.
+- Non-ideal mixing corrections (excess volume) in `calculate_mixed_density()` for mantle mixtures.
 - H$_2$O-MgSiO$_3$ binodal suppression, once a generalizable miscibility model for this system becomes available.
 - Additional volatile EOS (He, CO$_2$, NH$_3$) with their own per-component sigmoid parameters.
 - Physically-motivated partition laws (`D_const`, `solubility`) plugging into the `partition_rule` hook, together with a low-density hydrous-melt phase or partial-molar-volume treatment for dissolved water.
