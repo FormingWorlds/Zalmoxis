@@ -151,31 +151,41 @@ def run_all(outdir: str, workers: int) -> None:
 
 
 def plot(outdir: str, assets: str) -> None:
-    """Write the light and dark plot of |P(R) - P_t| / P_t per setup; a failed setup stops it."""
+    """Write the light and dark plot of |P(R) - P_t| / P_t per setup. A setup without an accepted
+    profile is a cross above the cap and is printed; a setup without a record stops the plot."""
     from proteus_mpl.validation import save
 
-    rows, failed = [], []
+    rows, missing = [], []
     for i, (name, _) in enumerate(SETUPS):
         path = os.path.join(outdir, f'setup_{i}.json')
         if not os.path.exists(path):
-            failed.append(f'{i} {name}: no record (the setup process died)')
+            missing.append(f'{i} {name}: no record (the setup process died)')
             continue
         with open(path) as f:
             rows.append(json.load(f))
-        if rows[-1].get('error') or not rows[-1].get('converged'):
-            failed.append(f'{i} {name}: {rows[-1].get("error") or "not converged"}')
-    if failed:
-        raise SystemExit('setups without an accepted profile:\n' + '\n'.join(failed))
-    miss = np.array([abs(r['P_R'] - r['target']) / r['target'] for r in rows])
-    padded = np.array([r['padded'] > 0 for r in rows])
+    if missing:
+        raise SystemExit('setups without a record:\n' + '\n'.join(missing))
+    failed = np.array([bool(r.get('error')) or not r.get('converged') for r in rows])
+    for r in (r for r, f in zip(rows, failed) if f):
+        print(f'{r["index"]} {r["name"]}: {r.get("error") or "not converged"}')
+    miss = np.array(
+        [
+            np.nan if f else abs(r['P_R'] - r['target']) / r['target']
+            for r, f in zip(rows, failed)
+        ]
+    )
+    padded = np.array([not f and r['padded'] > 0 for r, f in zip(rows, failed)])
+    reached = ~failed & ~padded
 
     def figure():
         import matplotlib.pyplot as plt
 
         x = np.arange(len(rows))
         fig, ax = plt.subplots(figsize=(6, 4))
-        ax.semilogy(x[~padded], miss[~padded], 'o', ms=6, label='Reached')
+        ax.semilogy(x[reached], miss[reached], 'o', ms=6, label='Reached')
         ax.semilogy(x[padded], miss[padded], 's', ms=6, label='Padded')
+        if failed.any():
+            ax.semilogy(x[failed], np.full(failed.sum(), 3.0), 'x', ms=7, label='Failed')
         ax.axhline(1.0, ls='--', label='Cap')
         ax.set_xticks(x[::5], [str(i) for i in x[::5]])
         ax.set_xlabel('Setup')
