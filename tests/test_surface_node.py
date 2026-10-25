@@ -2,8 +2,8 @@
 
 Whether a converged solve stops inside the last shell depends on round-off, so these solves
 take each root of the central-pressure search, or the root lowered by the smallest of 1e-5 to
-1e-2 that makes the outward integration stop below R (``_stop_below_r``); the outer node is
-then padded as the surface on every platform. They also lift the 300 s wall clock, whose
+1e-2 that makes the outward integration stop below R (``_stop_below_r``), without the root
+refinement; the outer node is then padded as the surface on every platform. They also lift the 300 s wall clock, whose
 accept returns a best pass that need not be padded.
 """
 
@@ -23,8 +23,8 @@ pytestmark = pytest.mark.smoke
 
 def _stop_below_r(monkeypatch, target=101325.0):
     """Take each root of the central-pressure search (the brentq call with xtol 1e6), or lower
-    it until the residual is that of a padded solve; return the roots that no shift up to 1e-2
-    pads."""
+    it until the residual is that of a padded solve, and keep it from the root refinement;
+    return the roots that no shift up to 1e-2 pads."""
     real, misses = zs.brentq, []
 
     def brentq(f, a, b, *args, **kwargs):
@@ -39,6 +39,7 @@ def _stop_below_r(monkeypatch, target=101325.0):
         return root, info
 
     monkeypatch.setattr(zs, 'brentq', brentq)
+    monkeypatch.setattr(zs, '_refine_pressure_root', lambda root, info, *args: (root, info))
     return misses
 
 
