@@ -126,9 +126,9 @@ def test_the_accepted_root_meets_the_surface_boundary_condition(monkeypatch, val
         pr = (np.array([evals[k] for k in x[near]]) + P_T) / 1e5
         top = pr > 3.0
         fig, ax = plt.subplots(figsize=(6, 4))
-        ax.plot(dx[~top], pr[~top], 'o', ms=4, label='Evaluated')
+        ax.plot(dx[~top], pr[~top], 'o', ms=4, label='evaluated')
         if top.any():
-            ax.plot(dx[top], np.full(top.sum(), 2.9), '^', ms=6, label='Over 3 bar')
+            ax.plot(dx[top], np.full(top.sum(), 2.9), '^', ms=6, label='over 3 bar')
         ax.axhline(P_T / 1e5, ls='--', label=r'$P_t$')
         ax.plot([0.0], [0.0], 's', ms=8, label='brentq root')
         ax.plot(
@@ -136,7 +136,7 @@ def test_the_accepted_root_meets_the_surface_boundary_condition(monkeypatch, val
             [(evals[refined] + P_T) / 1e5],
             '*',
             ms=12,
-            label='Refined',
+            label='refined',
         )
         ax.set_ylim(-0.2, 3.0)
         ax.set_yticks([0, 1, 2, 3])
