@@ -177,11 +177,8 @@ class TestFailedPressureSolve:
     @pytest.mark.parametrize('outer_solver', ['picard', 'newton'])
     def test_non_finite_mass_at_the_brent_root_raises(self, monkeypatch, outer_solver):
         """The re-solve at the root has NaN mass in its last nodes and finite pressure."""
-        state, real_solve, real_refine = (
-            {'root': False},
-            zs.solve_structure,
-            zs._refine_pressure_root,
-        )
+        state = {'root': False}
+        real_solve, real_refine = zs.solve_structure, zs._refine_pressure_root
 
         def refine(*args, **kwargs):
             out = real_refine(*args, **kwargs)

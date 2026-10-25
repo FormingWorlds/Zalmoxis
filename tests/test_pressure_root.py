@@ -45,11 +45,6 @@ def _kink(x0=2.0e11, p_stop=2.7e4, slope=0.47):
     return lambda x: -P_T if x < x0 else p_stop + slope * (x - x0) - P_T
 
 
-def _jump(x0=2.0e11, p_reached=1.956e8):
-    """Stopped below x0 and reached far above P_t above it, with nothing in between."""
-    return lambda x: -P_T if x < x0 else p_reached - P_T
-
-
 def _refine(res, root):
     return zs._refine_pressure_root(root, None, res.evals, res, P_T, 100)[0]
 
@@ -71,7 +66,7 @@ def test_a_padded_root_on_a_smooth_kink_is_replaced_by_the_reached_root():
 def test_a_jump_beyond_the_cap_keeps_the_padded_root_and_logs_it(caplog):
     """A jump from the stop to P(R) = 1.956e8 Pa leaves no reached point near P_t: the reached
     end misses by 1930 P_t, above the cap of 1 P_t, so the padded root stays."""
-    res = _Residual(_jump())
+    res = _Residual(lambda x: -P_T if x < 2.0e11 else 1.956e8 - P_T)  # a jump at the stop
     res(1.999e11)
     res(2.001e11)
     with caplog.at_level(logging.DEBUG, logger='zalmoxis.solver'):
@@ -133,11 +128,13 @@ def test_the_sign_pair_is_the_nearest_adjacent_finite_bracket(points, root):
     """The pair holds adjacent evaluations with finite f(a) < 0 < f(b), the one nearest the
     root; a non-finite or zero residual never ends a pair, and no bracket gives None."""
     pair = zs._nearest_sign_pair(points, root)
-    xs = sorted(points)
     brackets = [
         (a, b)
-        for a, b in zip(xs, xs[1:])
-        if np.isfinite(points[a]) and np.isfinite(points[b]) and points[a] < 0.0 < points[b]
+        for a in points
+        for b in points
+        if a < b
+        and not any(a < x < b for x in points)
+        and -math.inf < points[a] < 0.0 < points[b] < math.inf
     ]
     assert (pair is None) == (not brackets)
     if pair is not None:

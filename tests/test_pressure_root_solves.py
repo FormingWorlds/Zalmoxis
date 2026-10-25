@@ -2,11 +2,12 @@
 
 Sweep setups from ``input/default.toml`` whose first brentq root can be padded: the accepted
 profile must reach the surface. Padding depends on round-off, so each case runs at several
-planet-mass shifts; on the code before the refinement at least one shift pads.
+planet-mass shifts.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 
 import numpy as np
@@ -113,8 +114,10 @@ def test_the_accepted_root_meets_the_surface_boundary_condition(monkeypatch, val
         near = np.abs(x - first) < 1e7
         dx = (x[near] - first) / 1e6
         pr = (np.array([evals[k] for k in x[near]]) + P_T) / 1e5
+        top = pr > 3.0
         fig, ax = plt.subplots(figsize=(6, 4))
-        ax.plot(dx, pr, 'o', ms=4, label='Evaluations')
+        ax.plot(dx[~top], pr[~top], 'o', ms=4, label='Evaluations')
+        ax.plot(dx[top], np.full(top.sum(), 2.9), '^', ms=6, label='Above 3 bar')
         ax.axhline(P_T / 1e5, ls='--', label=r'$P_t$')
         ax.plot([0.0], [0.0], 's', ms=8, label='brentq root')
         ax.plot(
@@ -195,8 +198,6 @@ def test_a_jump_at_the_stop_returns_a_flagged_padded_profile(caplog):
     """Analytic 10 M_earth with the Picard outer solver at rtol 1e-5: P(R) jumps from 0 at the
     stop to about 2e8 Pa, so no reached evaluation lies within 1 P_t and the padded root
     stays. The result is flagged padded, P(R) = 0, and main warns once."""
-    import logging
-
     root = zalmoxis.get_zalmoxis_root()
     cfg = _case(
         root,

@@ -200,7 +200,7 @@ The central pressure $P_c$ is the root of $f(P_c) = P(R) - P_t$. A trial $P_c$ w
 ![Surface pressure of the evaluated central pressures of one pressure solve](../assets/validation/pressure_root_boundary_condition.svg#only-light){ width="80%" }
 ![Surface pressure of the evaluated central pressures of one pressure solve](../assets/validation/pressure_root_boundary_condition_dark.svg#only-dark){ width="80%" }
 
-Surface pressure $P(R)$ of each evaluated central pressure at most 10 MPa from the brentq root (circles) in one pressure solve whose brentq root is padded (square, $P(R) = 0$), and the refined root (star), against the offset of $P_c$ from the brentq root. The dashed line is $P_t$ = 1 atm.
+Surface pressure $P(R)$ of each evaluated central pressure at most 10 MPa from the brentq root (circles) in one pressure solve whose brentq root is padded (square, $P(R) = 0$), and the refined root (star), against the offset of $P_c$ from the brentq root. Evaluations above 3 bar are drawn as triangles at the top of the axis. The dashed line is $P_t$ = 1 atm.
 
 - Reference: the boundary condition $P(R) = P_t$.
 - Tolerance: $\lvert P(R) - P_t \rvert \le 0.1 P_t$ at the refined root; at most $P_t$ for the accepted profile, which is not padded.

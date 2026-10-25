@@ -94,23 +94,23 @@ A padded profile is the result of a surface stop (see the Early termination hand
 Its pressure at the outer radius is $P(R) = 0$ instead of $P_{\mathrm{target}}$, so $\lvert P(R) - P_{\mathrm{target}} \rvert = P_{\mathrm{target}}$.
 The pressure test (b) in [Convergence Checks](#convergence-checks) passes such a profile for any target below `pressure_tolerance`, $10^9$ Pa by default.
 The retry that the Picard outer solver runs after an unconverged solve uses 0.1 times this tolerance, so there a padded profile passes for a target below that value.
-`result['padded']` is True when the returned profile is padded.
+`result['padded']` is True when the returned pressure is 0 at the outer radius.
 
 A trial central pressure whose integration ends in a surface stop gives $f = -P_{\mathrm{target}}$; one that stops at a higher pressure or reaches a non-finite state raises `StructureSolveError`.
 Brent's method stops when its bracket is narrower than `xtol` $+$ `rtol` $\lvert P_c \rvert$, with `xtol` $= 10^6$ Pa and `rtol` $= 10^{-10}$.
 It then returns the bracket end with the smaller $\lvert f \rvert$.
 It therefore returns the end with a surface stop when the other end reaches the outer radius with $P(R) > 2 P_{\mathrm{target}}$.
 
+If $P(R)$ is continuous at the stop and rises with a slope $dP(R)/dP_c$ of at most $S$, the reached end of the final bracket has $P(R)$ of at most about $S \times 10^6$ Pa.
+A padded first root then needs $S > 2 P_{\mathrm{target}} / 10^6$ Pa, that is $S > 0.2$ for a target of 1 atm.
+The condition is necessary, not sufficient.
+It does not apply when $P(R)$ jumps at the stop or scatters.
+
 The solve then refines the root in 2 steps (`_refine_pressure_root`).
 When the root misses $P_{\mathrm{target}}$ by more than $0.1 P_{\mathrm{target}}$, a second Brent solve runs on the nearest pair of evaluated central pressures whose residuals bracket the target, with `xtol` $= 0.1 P_{\mathrm{target}}$ divided by the slope of $f$ over that pair, when that `xtol` is below $10^6$ Pa.
 Its root replaces the first one only when it misses $P_{\mathrm{target}}$ by no more; a second solve that raises keeps the first root.
 When the root still ends in a surface stop, the reached end of that pair replaces it if its $\lvert P(R) - P_{\mathrm{target}} \rvert$ is at most $P_{\mathrm{target}}$ (`_PADDED_REPLACE_MAX_MISS_PT` $= 1$).
-Otherwise the padded root stays. The replacement, the kept padded root and a failed second solve log at the DEBUG level, since a Picard run can keep a padded root in hundreds of pressure solves; `main` logs one warning when the profile it returns is padded.
-
-If $P(R)$ is continuous at the stop and rises with a slope $dP(R)/dP_c$ of at most $S$, the reached end of the final bracket has $P(R)$ of at most about $S \times 10^6$ Pa.
-A padded root then needs $S > 2 P_{\mathrm{target}} / 10^6$ Pa, that is $S > 0.2$ for a target of 1 atm.
-The condition is necessary, not sufficient.
-It does not apply when $P(R)$ jumps at the stop or scatters.
+Otherwise the padded root stays. The replacement, the kept padded root and a failed second solve log at the DEBUG level, since a Picard run can keep a padded root in hundreds of pressure solves; `main` logs one warning when it accepts a padded profile.
 
 The figure shows $\lvert P(R) - P_{\mathrm{target}} \rvert / P_{\mathrm{target}}$ of the accepted profile for 26 setups built from `input/default.toml`.
 All 6 setups with the Newton outer solver at `relative_tolerance` $10^{-9}$ reach the outer radius.
