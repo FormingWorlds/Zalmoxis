@@ -180,11 +180,10 @@ def test_the_second_solve_never_returns_a_worse_root():
     assert len(res.evals) > 2  # the second solve ran
 
 
-@pytest.mark.parametrize('error', ['StructureSolveError', 'ValueError'])
-def test_a_failing_second_solve_keeps_the_first_root(error):
-    """The second solve evaluates new central pressures; one that raises (a stop deep in the
-    planet, or a non-converged brentq) leaves the first root, not a failed pressure solve."""
-    exc = getattr(zs, error, None) or ValueError
+@pytest.mark.parametrize('exc', [zs.StructureSolveError, ValueError])
+def test_a_failing_second_solve_keeps_the_first_root(exc):
+    """The second solve evaluates new central pressures; a structure solve that fails there
+    (StructureSolveError) or an EOS lookup that raises ValueError leaves the first root."""
     a, b = 1.999e11, 2.003e11
 
     def f(x):
@@ -201,6 +200,19 @@ def test_a_failing_second_solve_keeps_the_first_root(error):
         pytest.fail(f'the second solve raised through the refinement: {err!r}')
     np.testing.assert_equal(root, a)
     assert len(res.evals) == 2
+
+
+def test_a_second_solve_that_does_not_converge_keeps_the_first_root():
+    """brentq raises RuntimeError when it does not converge in maxiter iterations."""
+    res = _Residual(_kink())
+    res(1.999e11)
+    res(2.003e11)
+    try:
+        root = zs._refine_pressure_root(1.999e11, None, res.evals, res, P_T, 1)[0]
+    except RuntimeError as err:
+        pytest.fail(f'the non-converged second solve raised through the refinement: {err!r}')
+    np.testing.assert_equal(root, 1.999e11)  # the reached end misses by 1390 P_t, above the cap
+    assert len(res.evals) == 3  # one evaluation before brentq gave up
 
 
 @pytest.mark.physics_invariant
@@ -238,3 +250,33 @@ def test_the_second_solve_runs_only_on_a_pair_no_steeper_than_a_smooth_profile(s
     res(b)
     _refine(res, a)
     assert (len(res.evals) > 2) is solved
+
+
+@pytest.mark.physics_invariant
+def test_a_steep_narrow_pair_over_a_small_jump_is_still_refined():
+    """A jump of 0.95 P_t at the stop, then P(R) rising at slope 0.47: a pair 1.41e5 Pa wide has a
+    secant slope of 1.15 but a reached end within P_t of the target, so it is no large jump and
+    the second solve reaches P_t within 0.1 P_t."""
+    x0 = 2.0e11
+    res = _Residual(lambda x: -P_T if x < x0 else 0.95 * P_T + 0.47 * (x - x0) - P_T)
+    res(x0 - 1e3)
+    res(x0 + 1.4e5)
+    root = _refine(res, x0 - 1e3)
+    assert res.f(root) != -P_T
+    assert abs(res.f(root)) <= 0.1 * P_T
+
+
+def test_the_returned_record_is_that_of_the_solve_that_gave_the_root():
+    """A root from the second solve comes with that solve's record; a kept root keeps the first."""
+    res = _Residual(_kink())
+    res(1.999e11)
+    res(2.003e11)
+    first = object()
+    root, info = zs._refine_pressure_root(1.999e11, first, res.evals, res, P_T, 100)
+    assert info is not first and info.converged
+    np.testing.assert_equal(info.root, root)
+    near = _Residual(_kink())
+    x = 2.0e11 + (1.05 * P_T - 2.7e4) / 0.47
+    near(1.0e11)
+    near(x)
+    assert zs._refine_pressure_root(x, first, near.evals, near, P_T, 100)[1] is first

@@ -8,7 +8,7 @@ import pytest
 
 from tools.validation import pressure_root_sweep as tool
 
-pytestmark = pytest.mark.unit
+pytestmark = [pytest.mark.unit, pytest.mark.timeout(30)]
 
 
 def _write(outdir, error_at=None):
@@ -28,7 +28,21 @@ def test_the_plot_names_a_failed_setup_instead_of_a_key_error(tmp_path):
         tool.plot(str(tmp_path), str(tmp_path / 'assets'))
 
 
-def test_the_plot_writes_its_files_with_a_runnable_command(tmp_path, monkeypatch):
+@pytest.mark.parametrize('fault', ['missing', 'not_converged'])
+def test_the_plot_names_a_setup_without_a_record_or_an_accepted_profile(tmp_path, fault):
+    """A setup whose process died writes no record; one that did not converge has no accepted
+    profile. The plot stops and names it."""
+    _write(tmp_path)
+    path = tmp_path / 'setup_5.json'
+    if fault == 'missing':
+        path.unlink()
+    else:
+        path.write_text(json.dumps(dict(json.loads(path.read_text()), converged=False)))
+    with pytest.raises(SystemExit, match='5 WB isothermal 3000 K: '):
+        tool.plot(str(tmp_path), str(tmp_path / 'assets'))
+
+
+def test_the_plot_writes_its_files_with_the_run_and_plot_commands(tmp_path, monkeypatch):
     """Every setup accepted: the plot is saved with the run and plot commands as provenance."""
     import proteus_mpl.validation as pv
 
@@ -43,4 +57,5 @@ def test_the_plot_writes_its_files_with_a_runnable_command(tmp_path, monkeypatch
     tool.plot(str(tmp_path), str(tmp_path / 'assets'))
     assert seen['stem'] == 'pressure_root_sweep'
     assert seen['command'].count('python -m tools.validation.pressure_root_sweep') == 2
-    assert len(seen['fig'].axes[0].lines) == 3  # reached, padded, cap
+    reached, padded, cap = seen['fig'].axes[0].lines
+    assert (len(reached.get_xdata()), len(padded.get_xdata())) == (13, 13)

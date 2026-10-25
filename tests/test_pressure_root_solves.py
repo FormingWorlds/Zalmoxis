@@ -63,10 +63,19 @@ PALEOS = {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'}
 
 
 @pytest.mark.physics_invariant
-def test_the_paleos_newton_planet_reaches_its_surface_within_the_cap():
+def test_the_paleos_newton_planet_reaches_its_surface_within_the_cap(monkeypatch):
     """PALEOS adiabatic 1 M_earth with the Newton outer solver at rtol 1e-9: the accepted
     profile is not padded and misses P_t by at most 1 P_t, the cap of a padded root replaced
-    by its reached end: at planet_mass (1 + 1e-13) M_earth that replacement ends at 0.536 P_t."""
+    by its reached end: at planet_mass (1 + 1e-13) M_earth that replacement ends at 0.536 P_t.
+    Second solves move roots closer to P_t, and none ends further from it."""
+    moves, real = [], zs._refine_pressure_root
+
+    def spy(root, info, evals, residual, p_target, maxiter):
+        out = real(root, info, evals, residual, p_target, maxiter)
+        moves.append(abs(evals[out[0]]) - abs(evals[root]))
+        return out
+
+    monkeypatch.setattr(zs, '_refine_pressure_root', spy)
     root = zalmoxis.get_zalmoxis_root()
     cfg = _case(root, layer_eos_config=dict(PALEOS), planet_mass=5.972e24)
     r = zs.main(cfg, load_material_dictionaries(), None, os.path.join(root, 'input'))
@@ -74,6 +83,7 @@ def test_the_paleos_newton_planet_reaches_its_surface_within_the_cap():
     assert r['converged'] and r['accepted_on'] == 'newton_tol'
     assert r['padded'] is False and P[-1] > 0.0
     assert abs(P[-1] - P_T) <= CAP * P_T
+    assert sum(m < 0.0 for m in moves) > len(moves) // 2 and max(moves) <= 0.0
 
 
 @pytest.mark.reference_pinned
@@ -117,7 +127,8 @@ def test_the_accepted_root_meets_the_surface_boundary_condition(monkeypatch, val
         top = pr > 3.0
         fig, ax = plt.subplots(figsize=(6, 4))
         ax.plot(dx[~top], pr[~top], 'o', ms=4, label='Evaluations')
-        ax.plot(dx[top], np.full(top.sum(), 2.9), '^', ms=6, label='Above 3 bar')
+        if top.any():
+            ax.plot(dx[top], np.full(top.sum(), 2.9), '^', ms=6, label='Above 3 bar')
         ax.axhline(P_T / 1e5, ls='--', label=r'$P_t$')
         ax.plot([0.0], [0.0], 's', ms=8, label='brentq root')
         ax.plot(
@@ -185,7 +196,7 @@ def test_every_newton_setup_meets_the_surface_boundary_condition(validation_plot
         ax.set_xticks(
             range(len(misses)), [s[0] for s in NEWTON_SETUPS], rotation=30, ha='right'
         )
-        ax.set_ylim(0.0, 0.6)
+        ax.set_ylim(0.0, 1.1 * CAP)
         ax.set_ylabel(r'$|P(R) - P_t| / P_t$')
         ax.legend()
         fig.tight_layout()
