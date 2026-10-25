@@ -83,6 +83,10 @@ def _require_finite(radii, profiles, reason, outer_iter, inner_iter):
 # nearest sign pair with an xtol of this share of P_t over the slope of that pair.
 _REFINE_MISS_PT = 0.1
 
+# dP(R)/dP_c of a smooth profile whose density does not fall with pressure is at most 1; a
+# steeper sign pair holds a jump or scatter at the stop and gets no second solve.
+_MAX_PAIR_SLOPE = 1.0
+
 # A reached end replaces a padded pressure root only when it misses P_t by at most this many P_t.
 _PADDED_REPLACE_MAX_MISS_PT = 1.0
 
@@ -117,15 +121,14 @@ def _refine_pressure_root(root, info, evals, residual, p_target, maxiter):
     brentq with xtol 1e6 Pa returns the end of its last bracket with the smaller |f|,
     which is a stopped (padded) profile with f = -P_t when the reached end has
     P(R) > 2 P_t. A root that misses P_t by more than ``_REFINE_MISS_PT`` P_t is solved
-    again on its nearest sign pair with xtol = ``_REFINE_MISS_PT`` P_t over the slope of
-    that pair, when that xtol is below 1e6 Pa. The second solve takes f at the pair ends
+    again on its nearest sign pair with xtol = ``_REFINE_MISS_PT`` P_t over the secant slope
+    of that pair, when that xtol is below 1e6 Pa and the slope is at most
+    ``_MAX_PAIR_SLOPE``. The second solve takes f at the pair ends
     from ``evals``; its root replaces the first one only when it misses P_t by no more,
     and a second solve that raises keeps the first root. A root that is still padded is
     replaced by the reached end of its nearest sign pair when that end misses P_t by at
     most ``_PADDED_REPLACE_MAX_MISS_PT`` P_t; otherwise the padded root stays. The
-    replacement, the kept padded root and a failed second solve log at DEBUG, since a
-    Picard run can keep a padded root in hundreds of pressure solves; ``main`` warns once
-    when the profile it returns is padded.
+    replacement, the kept padded root and a failed second solve log at DEBUG.
 
     Parameters
     ----------
@@ -148,13 +151,14 @@ def _refine_pressure_root(root, info, evals, residual, p_target, maxiter):
         The refined root [Pa] and the brentq record of the solve that gave it; a padded
         root replaced by a reached end keeps the record of the solve that returned it.
     """
-    f_root = evals.get(root)
-    if f_root is not None and abs(f_root) > _REFINE_MISS_PT * p_target:
+    f_root = evals[root]
+    if abs(f_root) > _REFINE_MISS_PT * p_target:
         pair = _nearest_sign_pair(evals, root)
         if pair is not None:
             a, b = pair
-            xtol = _REFINE_MISS_PT * p_target * (b - a) / (evals[b] - evals[a])
-            if xtol < 1e6:
+            slope = (evals[b] - evals[a]) / (b - a)
+            xtol = _REFINE_MISS_PT * p_target / slope
+            if xtol < 1e6 and slope <= _MAX_PAIR_SLOPE:
                 try:
                     new, new_info = brentq(
                         lambda x: evals[x] if x in evals else residual(x),
@@ -172,27 +176,18 @@ def _refine_pressure_root(root, info, evals, residual, p_target, maxiter):
                 else:
                     if abs(evals[new]) <= abs(f_root):
                         root, info = new, new_info
-    if evals.get(root) == -p_target:
+    if evals[root] == -p_target:
         pair = _nearest_sign_pair(evals, root)
-        miss = abs(evals[pair[1]]) if pair is not None else math.inf
-        if miss <= _PADDED_REPLACE_MAX_MISS_PT * p_target:
-            logger.debug(
-                'Pressure root at P_c = %.6e Pa is padded; taking the reached end P_c = %.6e Pa '
-                '(|P(R) - P_t| = %.3e Pa).',
-                root,
-                pair[1],
-                miss,
-            )
+        miss = evals[pair[1]] if pair is not None else math.inf
+        take = miss <= _PADDED_REPLACE_MAX_MISS_PT * p_target
+        logger.debug(
+            'Padded pressure root P_c = %.6e Pa: the nearest reached end misses P_t by %.3e Pa; %s.',
+            root,
+            miss,
+            'taking it' if take else 'the solve keeps the padded root',
+        )
+        if take:
             root = pair[1]
-        else:
-            logger.debug(
-                'Pressure root at P_c = %.6e Pa stops before the surface and no reached '
-                'evaluation lies within %.3g P_t of the target (nearest misses by %.3e Pa); '
-                'the solve keeps the padded root.',
-                root,
-                _PADDED_REPLACE_MAX_MISS_PT,
-                miss,
-            )
     return root, info
 
 
@@ -459,7 +454,7 @@ def _check_accepted(
         logger.warning(
             'The accepted profile ends in a surface stop: P = 0 at the outer radius instead '
             'of the target surface pressure %.4g Pa (padded).',
-            config_params.get('target_surface_pressure', float('nan')),
+            config_params['target_surface_pressure'],
         )
     return result
 

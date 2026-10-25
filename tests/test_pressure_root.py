@@ -67,12 +67,12 @@ def test_a_jump_beyond_the_cap_keeps_the_padded_root_and_logs_it(caplog):
     """A jump from the stop to P(R) = 1.956e8 Pa leaves no reached point near P_t: the reached
     end misses by 1930 P_t, above the cap of 1 P_t, so the padded root stays."""
     res = _Residual(lambda x: -P_T if x < 2.0e11 else 1.956e8 - P_T)  # a jump at the stop
-    res(1.999e11)
-    res(2.001e11)
+    res(2.0e11 - 5e5)
+    res(2.0e11 + 5e5)
     with caplog.at_level(logging.DEBUG, logger='zalmoxis.solver'):
-        root = _refine(res, 1.999e11)
+        root = _refine(res, 2.0e11 - 5e5)
     assert res.f(root) == -P_T
-    assert len(res.evals) == 2  # a slope of 1e3 is a jump: no second solve
+    assert len(res.evals) == 2  # a slope of 196 over the 1e6 Pa pair: no second solve
     kept = [r for r in caplog.records if 'keeps the padded root' in r.getMessage()]
     assert [r.levelno for r in kept] == [logging.DEBUG]
     assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
