@@ -407,3 +407,50 @@ def test_a_cap_below_one_keeps_a_padded_root_whose_reached_end_misses_more():
         with patch.object(zs, '_REACHED_END_MAX_MISS_PT', cap):
             root = _refine(res, 1.0e9)
         assert (res.evals[root] == 0.75 * P_T) is replaced, cap
+
+
+@pytest.mark.reference_pinned
+@pytest.mark.physics_invariant
+def test_the_refined_root_meets_the_surface_boundary_condition(validation_plot):
+    """Boundary condition P(R) = P_t on an analytic smooth kink: stopped below x0, then P(R)
+    rising from 0.95 P_t at slope 0.47. brentq with xtol 1e6 Pa, as in the pressure solve,
+    returns the padded end of its last bracket; the refined root is reached and misses P_t by
+    at most 0.1 P_t. The plot shows P(R) of every evaluated central pressure with both roots.
+    See ``docs/Validation/hydrostatic_structure.md``."""
+    x0 = 2.0e11
+    res = _Residual(_kink(x0=x0, p_stop=0.95 * P_T))
+    first, info = zs.brentq(res, x0 - 4e6, x0 + 4e6, xtol=1e6, rtol=1e-10, full_output=True)
+    assert res.evals[first] == -P_T
+    refined = zs._refine_pressure_root(first, info, res.evals, res, P_T, 100)[0]
+    assert res.evals[refined] != -P_T and abs(res.evals[refined]) <= 0.1 * P_T
+    evals = res.evals
+
+    def figure():
+        import matplotlib.pyplot as plt
+
+        x = np.array(sorted(evals))
+        dx = (x - first) / 1e6
+        pr = (np.array([evals[k] for k in x]) + P_T) / 1e5
+        top = pr > 3.0
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.plot(dx[~top], pr[~top], 'o', ms=4, label='evaluated')
+        if top.any():
+            ax.plot(dx[top], np.full(top.sum(), 2.9), '^', ms=6, label='over 3 bar')
+        ax.axhline(P_T / 1e5, ls='--', label=r'$P_t$')
+        ax.plot([0.0], [0.0], 's', ms=8, label='brentq root')
+        ax.plot(
+            [(refined - first) / 1e6],
+            [(evals[refined] + P_T) / 1e5],
+            '*',
+            ms=12,
+            label='refined',
+        )
+        ax.set_ylim(-0.2, 3.0)
+        ax.set_yticks([0, 1, 2, 3])
+        ax.set_xlabel(r'$P_c$ - brentq root [MPa]')
+        ax.set_ylabel('Surface pressure [bar]')
+        ax.legend()
+        fig.tight_layout()
+        return fig
+
+    validation_plot(figure, 'pressure_root_boundary_condition')
