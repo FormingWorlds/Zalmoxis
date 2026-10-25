@@ -54,7 +54,7 @@ def test_one_wt_percent_hydrogen_core_solves(caplog):
         np.asarray(res[k]) for k in ('mass_enclosed', 'pressure', 'temperature', 'density')
     )
     core = m < res['cmb_mass']
-    iron = calculate_density_batch(p[core], t[core], md, 'PALEOS:iron', *melt, {}, 1.0)
+    iron = calculate_density_batch(p[core], t[core], md, 'PALEOS:iron', None, None, {}, 1.0)
     ratio = rho[core] / iron
     # 1 wt% H as the carrier with no core O: 0.869-0.908 of iron on the pure-iron profile
     assert np.all((0.85 < ratio) & (ratio < 0.92))

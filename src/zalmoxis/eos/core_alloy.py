@@ -25,8 +25,11 @@ linear law for the remaining alloy, with fractions ``w_i / (1 - w_c)``. To first
 order the negative O remainder splits ``dv_c`` into an H part and the linear-law O
 part, so the H effect is that of an effective ``beta_H`` of about 12.8 % per wt% at
 136 GPa and 8000 K, against the solid linear value of 8.7. The Luo fits cover
-8000-14000 K and 50-1300 GPa; outside that box the density is evaluated and the
-point is counted in :data:`LUO_OUT_OF_RANGE` with one warning per process.
+8000-14000 K and 50-1300 GPa; outside that box ``dv_c`` is taken at the nearest
+point of the box (the iron base stays at the true P, T), and the point is counted in
+:data:`LUO_OUT_OF_RANGE` with one warning per process. Core-mantle boundary
+temperatures of Earth-like planets, about 4000-6000 K, lie below the box, so there the
+carrier volume is its 8000 K value.
 """
 
 from __future__ import annotations
@@ -165,23 +168,22 @@ def luo_cell_volume(pressure, temperature, member):
 def carrier_excess_volume(pressure, temperature):
     """Excess specific volume of the H2O carrier in liquid iron, m^3 per kg of H2O.
 
-    Returns None when either Luo member has no volume at (P, T). Counts a point
-    outside the Luo fit range in :data:`LUO_OUT_OF_RANGE`.
+    Evaluated at (P [Pa], T [K]) clamped into the Luo fit box; a clamped point is counted
+    in :data:`LUO_OUT_OF_RANGE`. Returns None when a Luo member has no volume there.
     """
-    if not (
-        LUO_T_RANGE[0] <= temperature <= LUO_T_RANGE[1]
-        and LUO_P_RANGE[0] <= pressure <= LUO_P_RANGE[1]
-    ):
+    p = min(max(pressure, LUO_P_RANGE[0]), LUO_P_RANGE[1])
+    t = min(max(temperature, LUO_T_RANGE[0]), LUO_T_RANGE[1])
+    if (p, t) != (pressure, temperature):
         if LUO_OUT_OF_RANGE['count'] == 0:
             logger.warning(
-                'Core Fe-H-O density evaluated outside the Luo et al. (2024) fit range '
-                '(8000-14000 K, 50-1300 GPa) at P = %.3e Pa, T = %.0f K',
+                'Core Fe-H-O carrier at P = %.3e Pa, T = %.0f K is outside the Luo et al. '
+                '(2024) fit range (8000-14000 K, 50-1300 GPa); its volume is taken at the edge',
                 pressure,
                 temperature,
             )
         LUO_OUT_OF_RANGE['count'] += 1
-    v_dry = luo_cell_volume(pressure, temperature, LUO_DRY)
-    v_wet = luo_cell_volume(pressure, temperature, LUO_WET)
+    v_dry = luo_cell_volume(p, t, LUO_DRY)
+    v_wet = luo_cell_volume(p, t, LUO_WET)
     if v_dry is None or v_wet is None:
         return None
     return (v_wet - v_dry) * _A3 / _M_CARRIER_CELL
