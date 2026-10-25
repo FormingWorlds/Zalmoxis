@@ -1030,7 +1030,7 @@ def test_an_accepted_mass_break_returns_its_own_pass_without_a_fallback(monkeypa
 @pytest.mark.smoke
 @pytest.mark.accept_solves
 @pytest.mark.timeout(900)
-def test_a_max_iter_stop_in_the_blend_ramp_returns_a_pass_on_the_adiabat(caplog):
+def test_a_max_iter_stop_in_the_blend_ramp_returns_a_pass_on_the_adiabat(caplog, monkeypatch):
     """PALEOS, adiabatic, 4 outer passes: the mass converges on the linear temperature, and
     the cap stops the solve in the blend ramp. The returned pass is on the newest blend the
     solver logged, not the linear pass with the smallest mass error, and main warns about the
@@ -1062,9 +1062,11 @@ def test_a_max_iter_stop_in_the_blend_ramp_returns_a_pass_on_the_adiabat(caplog)
             for f in profiles
         ]
 
+    dumps = []
+    monkeypatch.setattr(zs, 'create_pressure_density_files', lambda *a: dumps.append(a[:3]))
     before = stamps()
     r = zs.main(cfg, load_material_dictionaries(), None, INPUT)
-    assert stamps() == before  # the solve leaves the DEBUG profile files untouched
+    assert dumps and stamps() == before  # the DEBUG profile dump runs and writes no file
     T = np.asarray(r['temperature'])
     off_linear = np.max(np.abs(T - np.linspace(6000.0, 3000.0, len(T))))
     assert r['converged'] is True and r['accepted_on'] == 'max_iter'
