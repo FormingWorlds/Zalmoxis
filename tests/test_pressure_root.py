@@ -355,3 +355,23 @@ def test_a_tie_of_padded_roots_returns_the_second_solve_root():
     root = _refine(res, a)
     assert len(res.evals) > 2
     assert res.evals[root] == -P_T and root != a
+
+
+@pytest.mark.parametrize(('first', 'want'), [('padded', 0.5), ('reached', 0.5)])
+def test_a_second_solve_root_with_a_non_finite_residual_never_wins(first, want):
+    """A second-solve root whose recorded f is NaN never wins: a padded first root still takes
+    its pair's reached end at 0.5 P_t, and a reached first root at 0.5 P_t stays."""
+    x0 = 2.0e11
+    res = _Residual(lambda x: -P_T if x < x0 else 0.5 * P_T)
+    res(x0 - 1e3)
+    res(x0 + 5e4)
+    root = x0 - 1e3 if first == 'padded' else x0 + 5e4
+
+    def nan_root(f, a, b, **kw):
+        x = 0.5 * (a + b)
+        res.evals[x] = math.nan
+        return x, 'second'
+
+    with patch.object(zs, 'brentq', nan_root):
+        out, info = zs._refine_pressure_root(root, 'first', res.evals, res, P_T, 100)
+    assert res.evals[out] == want * P_T and info == 'first'

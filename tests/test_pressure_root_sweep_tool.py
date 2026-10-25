@@ -12,13 +12,16 @@ from tools.validation import pressure_root_sweep as tool
 pytestmark = [pytest.mark.unit, pytest.mark.timeout(30)]
 
 
-def _write(outdir, error_at=None):
+def _write(outdir, error_at=None, all_padded=False):
+    """Even setups reach the surface with a miss of (i + 1) / 100 P_t, odd ones are padded."""
     for i, (name, _) in enumerate(tool.SETUPS):
         rec = {'index': i, 'name': name, 'target': 101325.0, 'error': None}
         if i == error_at:
             rec.update(converged=False, error='StructureSolveError: no root')
+        elif i % 2 or all_padded:
+            rec.update(converged=True, P_R=0.0, padded=1)
         else:
-            rec.update(converged=True, P_R=1.2e5, padded=int(i % 2))
+            rec.update(converged=True, P_R=101325.0 * (1.0 + (i + 1) / 100), padded=0)
         (outdir / f'setup_{i}.json').write_text(json.dumps(rec))
 
 
@@ -89,18 +92,30 @@ def test_the_plot_prints_the_counts_and_the_reached_miss(
     _capture_save(monkeypatch)
     _write(tmp_path, error_at=error_at)
     tool.plot(str(tmp_path), str(tmp_path / 'assets'))
-    want = 'reached {}, padded {}, failed {}; reached miss median 0.184, max 0.184 P_t'
+    want = 'reached {}, padded {}, failed {}; reached miss median 0.130, max 0.250 P_t'
     assert want.format(*counts) in capsys.readouterr().out
 
 
+def test_the_plot_of_a_sweep_without_a_reached_setup_prints_its_counts(
+    tmp_path, monkeypatch, capsys
+):
+    """Every setup padded: no reached miss to summarise, and the plot is still written."""
+    seen = _capture_save(monkeypatch)
+    _write(tmp_path, all_padded=True)
+    tool.plot(str(tmp_path), str(tmp_path / 'assets'))
+    assert 'reached 0, padded 26, failed 0\n' in capsys.readouterr().out
+    assert seen['stem'] == 'pressure_root_sweep'
+
+
 def test_a_run_removes_the_records_of_an_earlier_run(tmp_path, monkeypatch):
-    """A setup whose process dies writes no record, so a run first removes the records an
-    earlier run left in the same directory."""
+    """A setup whose process dies writes no record, so a run first removes the records of
+    its own setups that an earlier run left; other files stay."""
     monkeypatch.setattr(tool, 'SETUPS', tool.SETUPS[:2])
     monkeypatch.setattr(
         tool.subprocess, 'run', lambda cmd, check: SimpleNamespace(returncode=1)
     )
     (tmp_path / 'setup_1.json').write_text('{}')
+    (tmp_path / 'setup_99.json').write_text('{}')
     (tmp_path / 'notes.txt').write_text('kept')
     tool.run_all(str(tmp_path), 1)
-    assert sorted(p.name for p in tmp_path.iterdir()) == ['notes.txt']
+    assert sorted(p.name for p in tmp_path.iterdir()) == ['notes.txt', 'setup_99.json']
