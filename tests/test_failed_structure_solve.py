@@ -174,6 +174,22 @@ class TestFailedPressureSolve:
             _run(_cfg(outer_solver='picard', target_surface_pressure=2e5))
         assert len(pressures) > 2 and set(pressures) == {2e5}
 
+    def test_the_pressure_solve_records_every_evaluated_central_pressure(self, monkeypatch):
+        """The residual records f at each central pressure it evaluates: the brentq root and
+        both ends of its bracket are in the record the refinement reads."""
+        seen, real = [], zs._refine_pressure_root
+
+        def refine(root, info, evals, residual, p_target, maxiter):
+            seen.append(root in evals and len(evals) >= 2)
+            return real(root, info, evals, residual, p_target, maxiter)
+
+        monkeypatch.setattr(zs, '_refine_pressure_root', refine)
+        try:
+            _run(_cfg(outer_solver='picard'))
+        except KeyError as err:
+            pytest.fail(f'the refinement read an unrecorded central pressure: {err}')
+        assert seen and all(seen)
+
     @pytest.mark.parametrize('outer_solver', ['picard', 'newton'])
     def test_non_finite_mass_at_the_brent_root_raises(self, monkeypatch, outer_solver):
         """The re-solve at the root has NaN mass in its last nodes and finite pressure."""
