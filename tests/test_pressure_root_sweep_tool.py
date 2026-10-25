@@ -102,7 +102,10 @@ def test_the_plot_of_a_sweep_without_a_reached_setup_prints_its_counts(
     """Every setup padded: no reached miss to summarise, and the plot is still written."""
     seen = _capture_save(monkeypatch)
     _write(tmp_path, all_padded=True)
-    tool.plot(str(tmp_path), str(tmp_path / 'assets'))
+    try:
+        tool.plot(str(tmp_path), str(tmp_path / 'assets'))
+    except ValueError as err:
+        pytest.fail(f'plot raised ValueError: {err}')
     assert 'reached 0, padded 26, failed 0\n' in capsys.readouterr().out
     assert seen['stem'] == 'pressure_root_sweep'
 

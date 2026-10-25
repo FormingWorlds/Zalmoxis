@@ -15,7 +15,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
-import glob
+import contextlib
 import json
 import os
 import subprocess
@@ -133,10 +133,11 @@ def run_setup(index: int) -> dict:
 
 def run_all(outdir: str, workers: int) -> None:
     """Run every setup in its own process, ``workers`` at a time, writing setup_<i>.json;
-    records an earlier run left in ``outdir`` are removed first."""
+    the records of these setups an earlier run left in ``outdir`` are removed first."""
     os.makedirs(outdir, exist_ok=True)
-    for old in glob.glob(os.path.join(outdir, 'setup_*.json')):
-        os.remove(old)
+    for i in range(len(SETUPS)):
+        with contextlib.suppress(FileNotFoundError):
+            os.remove(os.path.join(outdir, f'setup_{i}.json'))
 
     def one(i):
         cmd = [
@@ -176,10 +177,11 @@ def plot(outdir: str, assets: str) -> None:
     miss = np.array([abs(r.get('P_R', np.nan) - r['target']) / r['target'] for r in rows])
     padded = np.array([r.get('padded', 0) > 0 for r in rows]) & ~failed
     reached = ~failed & ~padded
-    print(
-        f'reached {reached.sum()}, padded {padded.sum()}, failed {failed.sum()}; reached miss '
-        f'median {np.median(miss[reached]):.3f}, max {miss[reached].max():.3f} P_t'
-    )
+    counts = f'reached {reached.sum()}, padded {padded.sum()}, failed {failed.sum()}'
+    if reached.any():
+        m = miss[reached]
+        counts += f'; reached miss median {np.median(m):.3f}, max {m.max():.3f} P_t'
+    print(counts)
 
     def figure():
         import matplotlib.pyplot as plt

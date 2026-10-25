@@ -4,7 +4,7 @@
 brentq with xtol 1e6 Pa returns the end of its last bracket with the smaller |f|, so it
 can return a stopped (padded) end. ``_refine_pressure_root`` then solves again on the
 nearest sign pair with an xtol of 0.1 P_t over the slope, and replaces a root that is
-still padded by a reached end of its nearest sign pair within the cap
+still padded by the reached end of its first sign pair within the cap
 ``_REACHED_END_MAX_MISS_PT`` P_t. Invariants: the refined root is never further from
 P_t than the first one or than the result without the second solve, a reached end that
 misses by more than the cap never replaces a padded root, and the returned result flags

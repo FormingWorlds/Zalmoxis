@@ -111,13 +111,13 @@ When the root misses $P_{\mathrm{target}}$ by more than $0.1 P_{\mathrm{target}}
 A smooth profile whose density does not fall with pressure at a fixed radius, along its temperature profile, has $dP(R)/dP_c \le 1$ while the enclosed mass at every radius rises with $P_c$, also across the layer boundaries at fixed enclosed mass.
 A steeper pair whose reached end misses by more than $P_{\mathrm{target}}$ is treated as a jump at the stop or scatter of $P(R)$ over the pair, where a second solve costs structure solves; the second solve is skipped there.
 Where the density falls with pressure (a mushy zone, the condensed-density or binodal weights of a mixture), a smooth pair can also be steeper than 1, and the same skip applies to it.
-The result is the candidate with the smallest $\lvert P(R) - P_{\mathrm{target}} \rvert$, a reached profile on a tie: the first root, the root of the second solve, and for a padded root the reached end of its nearest sign pair, before and after the second solve, when that end misses $P_{\mathrm{target}}$ by at most $P_{\mathrm{target}}$ (`_REACHED_END_MAX_MISS_PT` $= 1$).
+The result is the candidate with the smallest finite $\lvert P(R) - P_{\mathrm{target}} \rvert$, on a tie a reached profile and then the later candidate: the first root, for a padded first root the reached end of its nearest sign pair when that end misses $P_{\mathrm{target}}$ by at most $P_{\mathrm{target}}$ (`_REACHED_END_MAX_MISS_PT` $= 1$), and the root of the second solve.
 The result is therefore never further from the target than the first root or than the result without the second solve; a second solve that raises adds no candidate.
 A padded first root and a failed second solve log at the DEBUG level, since a Picard run can keep a padded root in hundreds of pressure solves; `main` logs one warning when it accepts a padded profile.
 
 The figure shows $\lvert P(R) - P_{\mathrm{target}} \rvert / P_{\mathrm{target}}$ of the accepted profile for 26 setups built from `input/default.toml`.
 5 of the 6 setups with the Newton outer solver at `relative_tolerance` $10^{-9}$ reach the outer radius; setup 10 (PALEOS 1 on the JAX path) ends padded, since $P(R)$ near the stop scatters on that path.
-15 of the 19 setups with the Picard outer solver at the tolerances of `input/default.toml` that return a profile end padded, `input/default.toml` itself (setup 8) among them: for each, no reached end of a nearest sign pair lies within $P_{\mathrm{target}}$ of the target.
+15 of the 19 setups with the Picard outer solver at the tolerances of `input/default.toml` that return a profile end padded, `input/default.toml` itself (setup 8) among them.
 Every padded profile has one padded point, the outermost.
 Setup 24 (PALEOS 3-layer ice 1) returns no profile: a trial central pressure gives a non-finite profile, and the solve raises `StructureSolveError`.
 This setup fails in 2 of 6 starts whose planet mass differs by $k \times 10^{-13}$ of its value ($k$ = 0 to 5), with and without the root refinement.
