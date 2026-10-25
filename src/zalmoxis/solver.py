@@ -83,8 +83,8 @@ def _require_finite(radii, profiles, reason, outer_iter, inner_iter):
 # nearest sign pair with an xtol of this share of P_t over the slope of that pair.
 _REFINE_MISS_PT = 0.1
 
-# dP(R)/dP_c of a smooth profile whose density does not fall with pressure is at most 1; a
-# steeper sign pair holds a jump or scatter at the stop and gets no second solve.
+# dP(R)/dP_c of a smooth profile whose density does not fall with pressure at fixed radius
+# is at most 1; a steeper sign pair holds a jump or scatter at the stop: no second solve.
 _MAX_PAIR_SLOPE = 1.0
 
 # A reached end replaces a padded pressure root only when it misses P_t by at most this many P_t.

@@ -108,7 +108,7 @@ It does not apply when $P(R)$ jumps at the stop or scatters.
 
 The solve then refines the root in 2 steps (`_refine_pressure_root`).
 When the root misses $P_{\mathrm{target}}$ by more than $0.1 P_{\mathrm{target}}$, a second Brent solve runs on the nearest pair of evaluated central pressures whose residuals bracket the target, with `xtol` $= 0.1 P_{\mathrm{target}}$ divided by the secant slope of $f$ over that pair, when that `xtol` is below $10^6$ Pa and the slope is at most 1.
-A smooth profile whose density does not fall with pressure has $dP(R)/dP_c \le 1$; a steeper pair holds a jump or scatter of $P(R)$ at the stop, where a second solve keeps the padded root at the cost of more structure solves.
+A smooth profile whose density does not fall with pressure at a fixed radius, along its temperature profile, has $dP(R)/dP_c \le 1$, also across the layer boundaries at fixed enclosed mass; a steeper pair holds a jump or scatter of $P(R)$ at the stop, where a second solve keeps the padded root at the cost of more structure solves.
 Its root replaces the first one only when it misses $P_{\mathrm{target}}$ by no more; a second solve that raises keeps the first root.
 When the root still ends in a surface stop, the reached end of that pair replaces it if its $\lvert P(R) - P_{\mathrm{target}} \rvert$ is at most $P_{\mathrm{target}}$ (`_PADDED_REPLACE_MAX_MISS_PT` $= 1$).
 Otherwise the padded root stays. The replacement, the kept padded root and a failed second solve log at the DEBUG level, since a Picard run can keep a padded root in hundreds of pressure solves; `main` logs one warning when it accepts a padded profile.

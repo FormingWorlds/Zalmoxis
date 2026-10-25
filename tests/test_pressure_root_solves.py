@@ -65,8 +65,8 @@ PALEOS = {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'}
 @pytest.mark.physics_invariant
 def test_the_paleos_newton_planet_reaches_its_surface_within_the_cap():
     """PALEOS adiabatic 1 M_earth with the Newton outer solver at rtol 1e-9: the accepted
-    profile is not padded and misses P_t by at most 1 P_t. A padded root replaced by its
-    reached end can miss by more than 0.5 P_t at a round-off change of the start."""
+    profile is not padded and misses P_t by at most 1 P_t, the cap of a padded root replaced
+    by its reached end: at planet_mass (1 + 1e-13) M_earth that replacement ends at 0.536 P_t."""
     root = zalmoxis.get_zalmoxis_root()
     cfg = _case(root, layer_eos_config=dict(PALEOS), planet_mass=5.972e24)
     r = zs.main(cfg, load_material_dictionaries(), None, os.path.join(root, 'input'))
