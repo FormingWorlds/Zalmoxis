@@ -129,7 +129,7 @@ class TestSplitAlloy:
         mixture.fractions = [0.0, 1.0]
         with pytest.raises(ca.CoreAlloyError, match='sum to'):
             ca.split_alloy(mixture)
-        assert ca.split_alloy(_mix(S=0.999))[1]['S'] == pytest.approx(0.999)
+        assert ca.split_alloy(_mix(N=0.999))[1]['N'] == pytest.approx(0.999)
 
     @pytest.mark.parametrize('bad', [math.nan, math.inf])
     def test_non_finite_fraction_raises(self, bad):
@@ -144,7 +144,7 @@ class TestSplitAlloy:
     @given(
         st.dictionaries(
             st.sampled_from(sorted(ca.ALLOY_ELEMENTS - {'H-linear'})),
-            st.floats(0.0, 0.15, allow_nan=False),
+            st.floats(0.0, 0.03, allow_nan=False),
             min_size=1,
         )
     )
@@ -206,16 +206,43 @@ class TestLinearLaw:
         bad_base = LayerMixture(['Seager2007:iron', 'CoreAlloy:S'], [0.99, 0.01])
         with pytest.raises(ca.CoreAlloyError, match='PALEOS:iron'):
             ca.split_alloy(bad_base)
-        assert ca.split_alloy(_mix(H_linear=0.1))[0] == 'PALEOS:iron'
+        assert ca.split_alloy(_mix(H_linear=0.02))[0] == 'PALEOS:iron'
 
     @pytest.mark.physics_invariant
-    def test_linear_alloy_without_positive_density_raises(self):
-        """A linear law that drives the density to or below zero fails the composition."""
+    @pytest.mark.parametrize(
+        'el, refused, admitted',
+        [('O', 0.182, 0.181), ('C', 0.154, 0.153), ('S', 0.251, 0.249)]
+        + [('Si', 0.286, 0.285), ('H-linear', 0.0231, 0.0229)],
+    )
+    def test_linear_factor_below_0p8_is_refused(self, el, refused, admitted):
+        """1 - lin below 0.8 raises with the value and the bound; just above it passes."""
+        key = el.replace('-', '_')
         with pytest.raises(ca.CoreAlloyError) as exc:
-            ca.alloy_density(1.0e4, {'H-linear': 0.2}, P_CMB, 4000.0)
-        assert 'linear-law core density' in str(exc.value)
-        rho = ca.alloy_density(1.0e4, {'H-linear': 0.1}, P_CMB, 4000.0)
-        assert rho == pytest.approx(1.0e4 * (1 - 0.87), rel=1e-12)
+            ca.alloy_density(1.0e4, ca.split_alloy(_mix(**{key: refused}))[1], P_CMB, 4000.0)
+        assert f'{1 - ca.LINEAR_BETA[el] * refused:.4f}' in str(exc.value)
+        assert 'bound 0.8' in str(exc.value)
+        rho = ca.alloy_density(1.0e4, ca.split_alloy(_mix(**{key: admitted}))[1], P_CMB, 4000.0)
+        assert rho == pytest.approx(1.0e4 * (1 - ca.LINEAR_BETA[el] * admitted), rel=1e-12)
+
+    @settings(derandomize=True, max_examples=200, deadline=None)
+    @given(
+        st.dictionaries(st.sampled_from(['C', 'O', 'S', 'Si']), st.floats(0.0, 0.3), min_size=1)
+    )
+    def test_linear_bound_over_the_composition_domain(self, w):
+        """Without H, a core passes exactly when sum(beta_i w_i) is at most 0.2."""
+        lin = sum(ca.LINEAR_BETA[el] * f for el, f in w.items())
+        if lin <= 0.2:
+            assert ca.split_alloy(_mix(**w))[1] == pytest.approx(w)
+        else:
+            with pytest.raises(ca.CoreAlloyError, match='bound 0.8'):
+                ca.split_alloy(_mix(**w))
+
+    def test_mostly_oxygen_core_is_refused_at_validation(self):
+        """PALEOS:iron:0.1+CoreAlloy:O:0.9 (rho/rho_Fe 0.01 by the linear law) is refused."""
+        from zalmoxis.config import validate_layer_eos
+
+        with pytest.raises(ca.CoreAlloyError, match='bound 0.8'):
+            validate_layer_eos({'core': 'PALEOS:iron:0.1+CoreAlloy:O:0.9'})
 
 
 class TestLuoMembers:
