@@ -129,9 +129,11 @@ def _refine_pressure_root(root, info, evals, residual, p_target, maxiter):
     ``_REACHED_END_MAX_MISS_PT`` P_t. The second solve takes f at the pair ends from
     ``evals``; one that raises adds no root. The result is the candidate with the smallest
     finite |f| (on a tie a reached one, then the later one): the first root, for a padded
-    first root the reached end of its nearest sign pair when that end misses P_t by at
-    most ``_REACHED_END_MAX_MISS_PT`` P_t, and the second-solve root. So the result never
-    misses P_t by more than the first root or than the result without the second solve.
+    first root the reached ends of its first sign pair and of its nearest sign pair after
+    the second solve when they miss P_t by at most ``_REACHED_END_MAX_MISS_PT`` P_t, so the
+    evaluations of a failed second solve count, and the second-solve root. For finite
+    residuals the result never misses P_t by more than the first root or than the result
+    without the second solve.
     A padded first root and a failed second solve log at DEBUG.
 
     Parameters
@@ -157,16 +159,14 @@ def _refine_pressure_root(root, info, evals, residual, p_target, maxiter):
     """
     f_root, pair = evals[root], _nearest_sign_pair(evals, root)
     cap = _REACHED_END_MAX_MISS_PT * p_target
-    cands = [(root, info)]
-    if f_root == -p_target and pair is not None and evals[pair[1]] <= cap:
-        cands.append((pair[1], info))
+    second = []
     if pair is not None and abs(f_root) > _REFINE_MISS_PT * p_target:
         a, b = pair
         slope = (evals[b] - evals[a]) / (b - a)
         xtol = _REFINE_MISS_PT * p_target / slope
         if xtol < 1e6 and (slope <= _MAX_PAIR_SLOPE or evals[b] <= cap):
             try:
-                cands.append(
+                second.append(
                     brentq(
                         lambda x: evals[x] if x in evals else residual(x),
                         a,
@@ -179,6 +179,13 @@ def _refine_pressure_root(root, info, evals, residual, p_target, maxiter):
                 )
             except (RuntimeError, ValueError) as err:
                 logger.debug('Second pressure solve failed (%s).', err)
+    # A padded first root also offers the reached end of its first pair and of its nearest
+    # pair after the second solve, which counts the evaluations of a failed second solve.
+    cands = [(root, info)]
+    if f_root == -p_target:
+        ends = [q[1] for q in (pair, _nearest_sign_pair(evals, root)) if q is not None]
+        cands += [(e, info) for e in ends if evals[e] <= cap]
+    cands += second
     # Smallest |f| wins (a non-finite f never), then a reached root, then the later one.
     best, best_info = min(
         reversed(cands),

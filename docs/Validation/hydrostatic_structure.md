@@ -212,10 +212,10 @@ Surface pressure $P(R)$ of each evaluated central pressure at most 10 MPa from t
 ![Surface pressure miss of the accepted profile for the 6 Newton setups](../assets/validation/pressure_root_newton_setups.svg#only-light){ width="80%" }
 ![Surface pressure miss of the accepted profile for the 6 Newton setups](../assets/validation/pressure_root_newton_setups_dark.svg#only-dark){ width="80%" }
 
-$\lvert P(R) - P_t \rvert / P_t$ of the accepted profile for the 6 setups with the Newton outer solver at `relative_tolerance` $10^{-9}$, the outer solver PROTEUS uses by default: the Analytic EOS at 1 Earth mass, PALEOS at 1, 5 and 10 Earth masses, and PALEOS on the JAX path with $T(r)$ from a numpy Picard solve at 1 and 3 Earth masses. Reached profiles are circles; a padded profile is a square at 1, since $P(R) = 0$. The dashed line is the tolerance. On the JAX path at 1 Earth mass, $P(R)$ near the stop scatters, and the accepted profile can be padded; the case then requires that the reached end of the first sign pair of that pressure solve misses $P_t$ by more than $P_t$.
+$\lvert P(R) - P_t \rvert / P_t$ of the accepted profile for the 6 setups with the Newton outer solver at `relative_tolerance` $10^{-9}$, the outer solver PROTEUS uses by default: the Analytic EOS at 1 Earth mass, PALEOS at 1, 5 and 10 Earth masses, and PALEOS on the JAX path with $T(r)$ from a numpy Picard solve at 1 and 3 Earth masses. Reached profiles are circles; a padded profile is a square at 1, since $P(R) = 0$. The dashed line is the tolerance. On the JAX path at 1 Earth mass, $P(R)$ near the stop scatters, and the accepted profile can be padded; the case then requires that the reached end of the first sign pair of that pressure solve misses $P_t$ by more than $P_t$, or that the solve has no sign pair.
 
 - Reference: the boundary condition $P(R) = P_t$.
-- Tolerance: $\lvert P(R) - P_t \rvert \le P_t$ for every reached profile; no padded node except on the JAX path at 1 Earth mass.
+- Tolerance: every setup accepts on the Newton tolerance; $\lvert P(R) - P_t \rvert \le P_t$ for every reached profile; no padded node except on the JAX path at 1 Earth mass; the padded flag matches the root of the last pressure solve.
 - Test id: `tests/test_pressure_root_solves.py::test_every_newton_setup_meets_the_surface_boundary_condition`
 - Command: `pytest -m reference_pinned tests/test_pressure_root_solves.py --validation-plots`
 

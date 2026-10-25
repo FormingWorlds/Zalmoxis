@@ -395,3 +395,15 @@ def test_a_failed_second_solve_keeps_its_reached_evaluation_within_the_cap():
     root = _refine(res, x0 - 1e3)
     assert len(res.evals) == 3
     assert res.evals[root] == 0.3 * P_T
+
+
+def test_a_cap_below_one_keeps_a_padded_root_whose_reached_end_misses_more():
+    """With the cap at 0.5 P_t, a reached end at 0.75 P_t does not replace the padded root,
+    although its |f| is below P_t; at the cap of 1 P_t it does."""
+    for cap, replaced in ((0.5, False), (1.0, True)):
+        res = _Residual(lambda x: -P_T if x < 1.05e9 else 0.75 * P_T)
+        res(1.0e9)
+        res(1.1e9)
+        with patch.object(zs, '_REACHED_END_MAX_MISS_PT', cap):
+            root = _refine(res, 1.0e9)
+        assert (res.evals[root] == 0.75 * P_T) is replaced, cap
