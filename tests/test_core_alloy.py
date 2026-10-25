@@ -197,6 +197,15 @@ class TestLinearLaw:
             ca.alloy_density(1.0e4, {'S': 0.01}, P_CMB, 4000.0), rel=1e-15
         )
 
+    def test_composition_checks_run_in_split_alloy(self):
+        """The linear-law sign and the PALEOS:iron base fail the mixture itself, at any (P, T)."""
+        with pytest.raises(ca.CoreAlloyError, match='linear-law core density'):
+            ca.split_alloy(_mix(H_linear=0.2))
+        bad_base = LayerMixture(['Seager2007:iron', 'CoreAlloy:S'], [0.99, 0.01])
+        with pytest.raises(ca.CoreAlloyError, match='PALEOS:iron'):
+            ca.split_alloy(bad_base)
+        assert ca.split_alloy(_mix(H_linear=0.1))[0] == 'PALEOS:iron'
+
     @pytest.mark.physics_invariant
     def test_linear_alloy_without_positive_density_raises(self):
         """A linear law that drives the density to or below zero fails the composition."""
@@ -277,6 +286,43 @@ class TestLuoMembers:
 
 class TestCarrier:
     """The Fe-H-O carrier with its O counted against the core O."""
+
+    def test_carrier_that_leaves_no_alloy_mass_is_refused(self):
+        """A carrier mass fraction 8.94 w_H of 1 or more is no core: CoreAlloyError, also at 1."""
+        w_full = 1.0 / ca.CARRIER_PER_H
+        for w_h in (w_full, math.nextafter(w_full, 1.0), 0.15):
+            try:
+                ca.alloy_density(1.1e4, {'H': w_h}, P_CMB, T_LUO)
+                raised = None
+            except Exception as err:
+                raised = err
+            assert isinstance(raised, ca.CoreAlloyError), (w_h, raised)
+            assert 'carrier' in str(raised)
+            with pytest.raises(ca.CoreAlloyError, match='carrier'):
+                ca.split_alloy(_mix(H=w_h))
+        # 0.43 wt% H, the carrier fraction of the Luo wet cell, is accepted
+        assert ca.split_alloy(_mix(H=0.0043))[1] == {'H': pytest.approx(0.0043)}
+
+    def test_carrier_above_the_luo_cell_fraction_warns_once(self, caplog, monkeypatch):
+        """A carrier fraction above that of the Luo wet cell (0.0388) warns once per process."""
+        monkeypatch.setattr(ca, '_CELL_WARNED', [False])
+        assert ca.LUO_CARRIER_FRACTION == pytest.approx(0.0388, abs=5e-5)
+        w_cell = ca.LUO_CARRIER_FRACTION / ca.CARRIER_PER_H
+        with caplog.at_level('WARNING', logger='zalmoxis.eos.core_alloy'):
+            ca.split_alloy(_mix(H=0.999 * w_cell))
+            assert caplog.messages == []
+            ca.split_alloy(_mix(H=1.001 * w_cell))
+            ca.split_alloy(_mix(H=0.01))
+        assert len([m for m in caplog.messages if 'Luo' in m and 'cell' in m]) == 1
+
+    def test_member_cell_mass_travels_with_the_member(self):
+        """A copy of a Luo member gives the same density as the member itself."""
+        for member in (ca.LUO_DRY, ca.LUO_WET):
+            same = ca.luo_density(P_CMB, T_LUO, dict(member))
+            assert same == ca.luo_density(P_CMB, T_LUO, member)
+        # the wet cell carries 8 H2O more than the dry cell: about 4 % more mass per cell
+        wet, dry = ca.LUO_WET['cell_mass'], ca.LUO_DRY['cell_mass']
+        assert wet / dry - 1 == pytest.approx(8 * 18.015 / (64 * 55.845), rel=1e-3)
 
     @pytest.mark.physics_invariant
     def test_carrier_mixture_without_positive_density_raises(self, monkeypatch):
@@ -373,16 +419,18 @@ class TestCarrier:
         ],
         ids=['p_low', 'p_high', 't_low', 't_high'],
     )
-    def test_carrier_volume_is_continuous_across_each_box_edge(self, edge, step):
+    def test_carrier_volume_is_continuous_across_each_box_edge(self, edge, step, monkeypatch):
         """Across each face of the Luo box the clamped carrier volume has no step."""
+        monkeypatch.setitem(ca.LUO_OUT_OF_RANGE, 'count', 0)
         (p, t), (dp, dt) = edge, step
         below = ca.carrier_excess_volume(p - dp, t - dt)
         above = ca.carrier_excess_volume(p + dp, t + dt)
         assert below == pytest.approx(above, rel=1e-8)
         assert 1e-4 < below < 6e-4
 
-    def test_low_pressure_cool_core_point_has_a_density(self):
+    def test_low_pressure_cool_core_point_has_a_density(self, monkeypatch):
         """At 5 GPa, 3000 K (no Eq. 14 root for dry Fe) the 1 wt% H core still has a density."""
+        monkeypatch.setitem(ca.LUO_OUT_OF_RANGE, 'count', 0)
         assert ca.luo_cell_volume(5 * GPA, 3000.0, ca.LUO_DRY) is None
         rho = ca.alloy_density(7.0e3, {'H': 0.01}, 5 * GPA, 3000.0)
         assert 0.8 * 7.0e3 < rho < 7.0e3
@@ -463,6 +511,65 @@ class TestPaleosCore:
 
         validation_plot(figure, 'core_alloy_paleos_iron_limits')
 
+    def test_alloy_branch_uses_the_mushy_zone_factor_of_the_base(self):
+        """At 136 GPa, 4000 K a mushy-zone factor 0.8 on the base moves the alloy with the iron."""
+        from zalmoxis.eos import calculate_density
+        from zalmoxis.mixing import calculate_mixed_density, calculate_mixed_density_batch
+
+        md, cache, mix = _paleos_iron(), {}, _mix(H=0.005, O=0.005 * ca.CARRIER_PER_H - 0.005)
+        got = {}
+        for mzf in (0.8, 1.0):
+            iron = calculate_density(P_CMB, md, 'PALEOS:iron', 4000.0, None, None, cache, mzf)
+            ref = ca.alloy_density(iron, ca.split_alloy(mix)[1], P_CMB, 4000.0)
+            factors = {'PALEOS:iron': mzf}
+            scalar = calculate_mixed_density(P_CMB, 4000.0, mix, md, None, None, cache, factors)
+            batch = calculate_mixed_density_batch(
+                np.array([P_CMB]), np.array([4000.0]), mix, md, None, None, cache, factors
+            )
+            assert scalar == pytest.approx(ref, rel=1e-9)
+            assert batch[0] == pytest.approx(ref, rel=1e-9)
+            got[mzf] = scalar
+        assert abs(got[0.8] / got[1.0] - 1) > 0.01
+
+    def test_batch_gives_nan_where_a_point_has_no_density(self, monkeypatch):
+        """alloy_density_batch: NaN at a non-finite iron density and where dv_c is None."""
+        rho_fe = np.array([1.1e4, np.nan, 1.1e4, 1.1e4])
+        p = np.full(4, P_CMB)
+        t = np.array([T_LUO, T_LUO, 9000.0, T_LUO])
+        real = ca.carrier_excess_volume
+        monkeypatch.setattr(
+            ca, 'carrier_excess_volume', lambda pp, tt: None if tt == 9000.0 else real(pp, tt)
+        )
+        out = ca.alloy_density_batch(rho_fe, {'H': 0.005}, p, t)
+        assert np.isnan(out[1]) and np.isnan(out[2])
+        assert out[0] == pytest.approx(ca.alloy_density(1.1e4, {'H': 0.005}, P_CMB, T_LUO))
+        assert out[3] == out[0]
+
+    @pytest.mark.physics_invariant
+    @pytest.mark.reference_pinned
+    def test_luo_dry_member_equals_paleos_liquid_iron(self):
+        """Cross-code: Eq. 14 dry Fe here equals the PALEOS liquid iron table to 1e-5.
+
+        At the PALEOS solid points of the grid the two differ by more than 1e-3, and the wet
+        member misses the liquid points by more than 3 %.
+        """
+        from zalmoxis.eos import calculate_density
+        from zalmoxis.phase_columns import phase_for_component
+
+        md, cache, worst, solid = _paleos_iron(), {}, 0.0, []
+        for p in (60, 136, 360, 700, 1300):
+            for t in (8000.0, 11000.0, 14000.0):
+                pal = calculate_density(p * GPA, md, 'PALEOS:iron', t, None, None, cache, 1.0)
+                rel = abs(pal / ca.luo_density(p * GPA, t, ca.LUO_DRY) - 1)
+                if phase_for_component('PALEOS:iron', p * GPA, t) == 'liquid':
+                    worst = max(worst, rel)
+                    wet = ca.luo_density(p * GPA, t, ca.LUO_WET)
+                    assert abs(pal / wet - 1) > 0.03
+                else:
+                    solid.append(rel)
+        assert worst < 1e-5
+        assert solid and min(solid) > 1e-3
+
     @pytest.mark.physics_invariant
     def test_core_adiabat_is_that_of_iron(self):
         """The light elements leave nabla_ad at the iron value; a non-alloy mixture is unchanged."""
@@ -479,6 +586,28 @@ class TestPaleosCore:
 
 class TestConfig:
     """Config checks of a light-element core."""
+
+    def test_validate_config_gives_no_eos_warning_for_an_alloy_core(self, caplog):
+        """CoreAlloy components are neither T-independent nor non-iron for the config warnings."""
+        from zalmoxis import get_zalmoxis_root
+        from zalmoxis.config import load_zalmoxis_config, validate_config
+
+        root = get_zalmoxis_root()
+        cfg = load_zalmoxis_config(os.path.join(root, 'input', 'default.toml'))
+        cfg['layer_eos_config'] = dict(
+            cfg['layer_eos_config'],
+            core='PALEOS:iron:0.96+CoreAlloy:H:0.005+CoreAlloy:Si:0.035',
+        )
+        with caplog.at_level('WARNING', logger='zalmoxis.config'):
+            validate_config(cfg)
+        eos_warnings = [m for m in caplog.messages if 'T-independent' in m or 'iron EOS' in m]
+        assert eos_warnings == []
+        # a real non-iron core component still warns
+        caplog.clear()
+        cfg['layer_eos_config'] = dict(cfg['layer_eos_config'], core='PALEOS:MgSiO3')
+        with caplog.at_level('WARNING', logger='zalmoxis.config'):
+            validate_config(cfg)
+        assert any('iron EOS' in m for m in caplog.messages)
 
     def test_light_element_core_passes_validation(self):
         """A PALEOS iron core with CoreAlloy components is a valid core."""
@@ -503,8 +632,19 @@ class TestConfig:
             ({'core': 'Seager2007:iron:0.99+CoreAlloy:S:0.01'}, 'PALEOS:iron base'),
             ({'core': 'PALEOS:iron:0.99+CoreAlloy:nan:0.01'}, 'unknown core light element'),
             ({'core': 'PALEOS:iron:0.99+CoreAlloy:C:nan'}, 'mass fraction'),
+            ({'core': 'PALEOS:iron:0.9+CoreAlloy:H:0.005'}, 'sum to 1'),
+            ({'core': 'PALEOS:iron:0.99+CoreAlloy:H'}, 'explicit fraction'),
+            ({'core': 'PALEOS:iron+CoreAlloy:H:0.005'}, 'explicit fraction'),
         ],
-        ids=['alloy_in_mantle', 'seager_base', 'unknown_element', 'nan_fraction'],
+        ids=[
+            'alloy_in_mantle',
+            'seager_base',
+            'unknown_element',
+            'nan_fraction',
+            'fractions_sum_0p905',
+            'alloy_without_fraction',
+            'base_without_fraction',
+        ],
     )
     def test_invalid_light_element_core_raises(self, cfg, message):
         """Each misplaced or malformed light-element core is refused with its reason."""

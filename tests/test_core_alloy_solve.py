@@ -16,7 +16,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.timeout(600)]
 
 
 @pytest.mark.physics_invariant
-def test_one_wt_percent_hydrogen_core_solves(caplog):
+def test_one_wt_percent_hydrogen_core_solves(caplog, monkeypatch):
     """The core with 1 wt% H, which samples 4-30 GPa below 8000 K in its first trials, solves."""
     from zalmoxis import get_zalmoxis_root
     from zalmoxis.config import (
@@ -45,6 +45,7 @@ def test_one_wt_percent_hydrogen_core_solves(caplog):
         cfg['mushy_zone_factor'],
     )
     mixes = parse_all_layer_mixtures(cfg['layer_eos_config'])
+    monkeypatch.setitem(ca.LUO_OUT_OF_RANGE, 'count', 0)
     with caplog.at_level('WARNING'):
         res = main(cfg, md, melt, os.path.join(root, 'input'), layer_mixtures=mixes)
 
@@ -58,6 +59,8 @@ def test_one_wt_percent_hydrogen_core_solves(caplog):
     ratio = rho[core] / iron
     # 1 wt% H as the carrier with no core O: 0.869-0.908 of iron on the pure-iron profile
     assert np.all((0.85 < ratio) & (ratio < 0.92))
+    # the linear H law (solid beta 8.7 per unit mass fraction) gives 0.913 at every node
+    assert ratio.mean() < 0.905 and ratio.max() < 0.91
     assert np.all(np.isfinite(rho)) and np.all(rho[core] > 0)
     # a lighter core gives a larger planet than pure iron (6.5266e6 m on the same config)
     assert np.asarray(res['radii'])[-1] > 6.5266e6
