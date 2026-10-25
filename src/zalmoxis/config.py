@@ -172,11 +172,12 @@ def validate_layer_eos(layer_eos_config):
         If any layer EOS string or component is invalid.
     """
     for layer, eos_str in layer_eos_config.items():
-        mixture = parse_layer_components(eos_str)
-        if is_alloy_mixture(mixture):
+        if ALLOY_PREFIX in eos_str:  # before the parser renormalises the fractions
             if layer != 'core':
                 raise ValueError(f"CoreAlloy components belong in the core, not in '{layer}'")
             _check_alloy_fractions(eos_str)
+        mixture = parse_layer_components(eos_str)
+        if is_alloy_mixture(mixture):
             split_alloy(mixture)
         for comp in mixture.components:
             if comp in VALID_TABULATED_EOS or comp.startswith(ALLOY_PREFIX):
