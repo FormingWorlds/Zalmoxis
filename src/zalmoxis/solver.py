@@ -84,7 +84,7 @@ def _require_finite(radii, profiles, reason, outer_iter, inner_iter):
 _REFINE_MISS_PT = 0.1
 
 # A reached end replaces a padded pressure root only when it misses P_t by at most this many P_t.
-E_MAX_MISS_PT = 1.0
+_PADDED_REPLACE_MAX_MISS_PT = 1.0
 
 
 def _nearest_sign_pair(evals, root):
@@ -118,17 +118,20 @@ def _refine_pressure_root(root, info, evals, residual, p_target, maxiter):
     which is a stopped (padded) profile with f = -P_t when the reached end has
     P(R) > 2 P_t. A root that misses P_t by more than ``_REFINE_MISS_PT`` P_t is solved
     again on its nearest sign pair with xtol = ``_REFINE_MISS_PT`` P_t over the slope of
-    that pair, when that xtol is below 1e6 Pa. A root that is still padded is replaced by
-    the reached end of its nearest sign pair when that end misses P_t by at most
-    ``E_MAX_MISS_PT`` P_t; otherwise the padded root stays. Both outcomes log at DEBUG,
-    since a Picard run can keep a padded root in hundreds of pressure solves; ``main``
-    warns once when the profile it returns is padded.
+    that pair, when that xtol is below 1e6 Pa. The second solve takes f at the pair ends
+    from ``evals``; its root replaces the first one only when it misses P_t by no more,
+    and a second solve that raises keeps the first root. A root that is still padded is
+    replaced by the reached end of its nearest sign pair when that end misses P_t by at
+    most ``_PADDED_REPLACE_MAX_MISS_PT`` P_t; otherwise the padded root stays. The
+    replacement, the kept padded root and a failed second solve log at DEBUG, since a
+    Picard run can keep a padded root in hundreds of pressure solves; ``main`` warns once
+    when the profile it returns is padded.
 
     Parameters
     ----------
     root : float
         Central pressure brentq returned [Pa].
-    info : RootResults
+    info : RootResults or None
         brentq convergence record of ``root``.
     evals : dict
         f [Pa] of every evaluated central pressure [Pa]; ``residual`` adds to it.
@@ -142,7 +145,8 @@ def _refine_pressure_root(root, info, evals, residual, p_target, maxiter):
     Returns
     -------
     tuple
-        The refined root [Pa] and its brentq record.
+        The refined root [Pa] and the brentq record of the solve that gave it; a padded
+        root replaced by a reached end keeps the record of the solve that returned it.
     """
     f_root = evals.get(root)
     if f_root is not None and abs(f_root) > _REFINE_MISS_PT * p_target:
@@ -151,13 +155,27 @@ def _refine_pressure_root(root, info, evals, residual, p_target, maxiter):
             a, b = pair
             xtol = _REFINE_MISS_PT * p_target * (b - a) / (evals[b] - evals[a])
             if xtol < 1e6:
-                root, info = brentq(
-                    residual, a, b, xtol=xtol, rtol=1e-10, maxiter=maxiter, full_output=True
-                )
+                try:
+                    new, new_info = brentq(
+                        lambda x: evals[x] if x in evals else residual(x),
+                        a,
+                        b,
+                        xtol=xtol,
+                        rtol=1e-10,
+                        maxiter=maxiter,
+                        full_output=True,
+                    )
+                except (RuntimeError, ValueError) as err:
+                    logger.debug(
+                        'Second pressure solve failed (%s); keeping P_c = %.6e Pa.', err, root
+                    )
+                else:
+                    if abs(evals[new]) <= abs(f_root):
+                        root, info = new, new_info
     if evals.get(root) == -p_target:
         pair = _nearest_sign_pair(evals, root)
         miss = abs(evals[pair[1]]) if pair is not None else math.inf
-        if miss <= E_MAX_MISS_PT * p_target:
+        if miss <= _PADDED_REPLACE_MAX_MISS_PT * p_target:
             logger.debug(
                 'Pressure root at P_c = %.6e Pa is padded; taking the reached end P_c = %.6e Pa '
                 '(|P(R) - P_t| = %.3e Pa).',
@@ -172,7 +190,7 @@ def _refine_pressure_root(root, info, evals, residual, p_target, maxiter):
                 'evaluation lies within %.3g P_t of the target (nearest misses by %.3e Pa); '
                 'the solve keeps the padded root.',
                 root,
-                E_MAX_MISS_PT,
+                _PADDED_REPLACE_MAX_MISS_PT,
                 miss,
             )
     return root, info

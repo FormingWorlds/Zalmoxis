@@ -5,7 +5,7 @@ brentq with xtol 1e6 Pa returns the end of its last bracket with the smaller |f|
 can return a stopped (padded) end. ``_refine_pressure_root`` then solves again on the
 nearest sign pair with an xtol of 0.1 P_t over the slope, and replaces a root that is
 still padded by the reached end of that pair when that end misses P_t by at most
-``E_MAX_MISS_PT`` P_t. Invariants: the refined root is never further from P_t than the
+``_PADDED_REPLACE_MAX_MISS_PT`` P_t. Invariants: the refined root is never further from P_t than the
 first one, a reached end that misses by more than the cap never replaces a padded root,
 and the returned result flags a padded surface node.
 """
@@ -88,12 +88,12 @@ def test_a_jump_beyond_the_cap_keeps_the_padded_root_and_logs_it(caplog):
 )
 def test_the_reached_end_replaces_a_padded_root_only_within_the_cap(miss_pt, replaced):
     """With a pair 1e8 Pa wide the second solve stands aside (xtol >= 1e6 Pa); the reached
-    end then replaces the padded root when it misses P_t by at most E_MAX_MISS_PT P_t."""
+    end then replaces the padded root when it misses P_t by at most _PADDED_REPLACE_MAX_MISS_PT P_t."""
     res = _Residual(lambda x: -P_T if x < 1.05e9 else miss_pt * P_T)
     res(1.0e9)
     res(1.1e9)
     root = _refine(res, 1.0e9)
-    assert zs.E_MAX_MISS_PT == 1.0
+    assert zs._PADDED_REPLACE_MAX_MISS_PT == 1.0
     np.testing.assert_equal(root, 1.1e9 if replaced else 1.0e9)
     assert len(res.evals) == 2  # no second solve
 

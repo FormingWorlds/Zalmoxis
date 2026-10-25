@@ -105,14 +105,16 @@ def run_setup(index: int) -> dict:
     )
     mats, indir = load_material_dictionaries(), os.path.join(root, 'input')
     tarr = None
-    if jax:
-        pre = dict(cfg, outer_solver='picard', relative_tolerance=1e-5, absolute_tolerance=1e-6)
-        r0 = zs.main(pre, mats, melt, indir)
-        tarr = (np.asarray(r0['radii'], float), np.asarray(r0['temperature'], float))
-        cfg['use_jax'] = True
     out = {'index': index, 'name': name, 'target': target, 'zalmoxis': zs.__file__}
     t0 = time.time()
     try:
+        if jax:
+            pre = dict(
+                cfg, outer_solver='picard', relative_tolerance=1e-5, absolute_tolerance=1e-6
+            )
+            r0 = zs.main(pre, mats, melt, indir)
+            tarr = (np.asarray(r0['radii'], float), np.asarray(r0['temperature'], float))
+            cfg['use_jax'] = True
         res = zs.main(cfg, mats, melt, indir, temperature_arrays=tarr)
         P = np.asarray(res['pressure'], float)
         out.update(
@@ -151,12 +153,16 @@ def run_all(outdir: str, workers: int) -> None:
 
 
 def plot(outdir: str, assets: str) -> None:
-    """Write the light and dark plot of |P(R) - P_t| / P_t per setup."""
+    """Write the light and dark plot of |P(R) - P_t| / P_t per setup; a failed setup stops it."""
     from proteus_mpl.validation import save
 
-    rows = [
-        json.load(open(os.path.join(outdir, f'setup_{i}.json'))) for i in range(len(SETUPS))
-    ]
+    rows = []
+    for i in range(len(SETUPS)):
+        with open(os.path.join(outdir, f'setup_{i}.json')) as f:
+            rows.append(json.load(f))
+    failed = [f'{r["index"]} {r["name"]}: {r["error"]}' for r in rows if r.get('error')]
+    if failed:
+        raise SystemExit('setups without an accepted profile:\n' + '\n'.join(failed))
     miss = np.array([abs(r['P_R'] - r['target']) / r['target'] for r in rows])
     padded = np.array([r['padded'] > 0 for r in rows])
 
@@ -176,7 +182,8 @@ def plot(outdir: str, assets: str) -> None:
         fig.tight_layout()
         return fig
 
-    cmd = f'python -m tools.validation.pressure_root_sweep run {outdir} && plot'
+    mod = 'python -m tools.validation.pressure_root_sweep'
+    cmd = f'{mod} run <out dir> && {mod} plot <out dir>'
     for path in save(figure, 'pressure_root_sweep', assets, command=cmd):
         print(path, os.path.getsize(path))
 
