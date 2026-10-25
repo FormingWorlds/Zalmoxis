@@ -280,3 +280,14 @@ def test_the_returned_record_is_that_of_the_solve_that_gave_the_root():
     near(1.0e11)
     near(x)
     assert zs._refine_pressure_root(x, first, near.evals, near, P_T, 100)[1] is first
+
+
+def test_a_steep_pair_whose_reached_end_is_at_the_cap_is_solved():
+    """Slope 2 and f(b) = P_t exactly: the reached end is within the cap, so the second solve runs."""
+    a, b = 2.0e11, 2.0e11 + P_T
+    res = _Residual(lambda x: -P_T if x < a + 0.5 * P_T else -P_T + 2.0 * (x - a))
+    res(a)
+    res(b)
+    assert res.evals[b] == P_T
+    _refine(res, a)
+    assert len(res.evals) > 2
