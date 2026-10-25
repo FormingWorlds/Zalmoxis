@@ -239,7 +239,7 @@ A core layer can carry H, C, N, O, Si and S as `CoreAlloy:<element>` components 
 core = "PALEOS:iron:0.96+CoreAlloy:H:0.005+CoreAlloy:O:0.02+CoreAlloy:Si:0.015"
 ```
 
-Such a core does not use the harmonic mean and the vapour sigmoid above. `zalmoxis.eos.core_alloy` takes the iron density $\rho_\mathrm{Fe}(P, T)$ from the PALEOS table and changes it with the light-element mass fractions $w_i$; the core adiabat stays that of iron. The JAX structure path holds one core table, so a light-element core is solved on the numpy path.
+Such a core does not use the harmonic mean and the vapour sigmoid above. `zalmoxis.eos.core_alloy` takes the iron density $\rho_\mathrm{Fe}(P, T)$ from the PALEOS table and changes it with the light-element mass fractions $w_i$; the core adiabat stays that of iron. The JAX structure path holds one core table, so a core with a light-element fraction above 0 is solved on the numpy path; a core whose `CoreAlloy` fractions are all 0 stays on the JAX path as its iron base.
 
 **Linear law.** For C, N, O, Si, S and `H-linear`, each element lowers the density by $\beta_i$ percent per wt% ([Li et al. 2019](https://doi.org/10.1017/9781108677950.003), Table 3.3):
 
@@ -251,9 +251,9 @@ with $\beta$ = 1.3 (C), 1.1 (O), 0.7 (Si) and 0.8 (S), the values for the liquid
 
 $$\frac{1}{\rho} = \frac{1 - w_c}{\rho_\mathrm{lin}} + w_c\, \Delta v_c(P, T).$$
 
-The density is continuous in $w_\mathrm{H}$ and $w_\mathrm{O}$, also where the O rest changes sign. To first order, a negative O rest splits $\Delta v_c$ into an H part and the linear-law O part. In a core with no O, 1 wt% H then lowers the density by an effective $\beta_\mathrm{H}$ = 12.83 % at 136 GPa and 8000 K (with the Luo dry Fe density there, 10389.8 kg/m$^3$), against the solid linear value of 8.7 %.
+The density is continuous in $w_\mathrm{H}$ and $w_\mathrm{O}$, also where the O rest changes sign. To first order, a negative O rest splits $\Delta v_c$ into an H part and the linear-law O part. In a core with no O at 136 GPa and 8000 K (with the Luo dry Fe density there, 10389.8 kg/m$^3$), H then lowers the density by an effective $\beta_\mathrm{H}$ of 12.83 % per wt% as $w_\mathrm{H} \to 0$, against the solid linear value of 8.7 %; 1 wt% H lowers it by 11.97 %.
 
-**Fit range.** The Luo fits cover 8000 to 14000 K and 50 to 1300 GPa. Outside that box, $\Delta v_c$ takes its value at the nearest point of the box, while the iron base stays at the true $(P, T)$; the first such point in a process gives a warning. The core-mantle boundary of Earth-like planets and super-Earths, at about 4000 to 6000 K, lies below the box, so there the carrier volume is its 8000 K value. At 136 GPa and 4000 K that is 3.28 $\times 10^{-4}$ m$^3$/kg, 8.4 % above the 3.03 $\times 10^{-4}$ m$^3$/kg that Eq. 14 gives when extrapolated to 4000 K; at low pressure and temperature the dry Fe fit has no volume at all, for example below 11 GPa at 3000 K and below 5.5 GPa at 4500 K. Inside the box:
+**Fit range.** The Luo fits cover 8000 to 14000 K and 50 to 1300 GPa. Outside that box, $\Delta v_c$ takes its value at the nearest point of the box, while the iron base stays at the true $(P, T)$; the first such point in a process gives a warning. The core-mantle boundary of Earth-like planets and super-Earths, at about 4000 to 6000 K, lies below the box, so there the carrier volume is its 8000 K value. At 136 GPa and 4000 K that is 3.28 $\times 10^{-4}$ m$^3$/kg, 8.4 % above the 3.03 $\times 10^{-4}$ m$^3$/kg that Eq. 14 gives when extrapolated to 4000 K; at low pressure and temperature the dry Fe fit has no volume at all, for example below 11.07 GPa at 3000 K and below 5.54 GPa at 4500 K. Inside the box:
 
 | $\Delta v_c$ (10$^{-4}$ m$^3$/kg) | 50 GPa | 136 GPa | 360 GPa | 1300 GPa |
 |---|---|---|---|---|
@@ -263,20 +263,30 @@ The density is continuous in $w_\mathrm{H}$ and $w_\mathrm{O}$, also where the O
 
 **Composition range.** The Luo wet cell has a carrier mass fraction of 0.0388 (0.43 wt% H); above it $\Delta v_c$ is used beyond the composition of the fit, and the first such core in a process gives a warning. The $\beta$ values and both Luo members describe liquid iron; at nodes where the PALEOS iron table is solid (for example 136 GPa and 4000 K) the same laws apply.
 
-The split of $\Delta v_c$ into an H part and a linear-law O part is first order in the O rest of the remaining alloy, $(w_\mathrm{O} - 7.94\, w_\mathrm{H}) / (1 - w_c)$. A core whose O rest is below -0.2 raises `CoreAlloyError`; with no core O that is $w_\mathrm{H}$ above 0.0206. The Luo cell (-0.036) and 1 wt% H (-0.087) lie inside the bound. Core density over the PALEOS iron density for the carrier, at the outermost core node of the default 1 $M_\oplus$ pure-iron structure (141.96 GPa, 5205 K) and at 135 GPa and 4000 K (all fractions are mass fractions; 0.0252 is the core O of the 50 GPa case of Tsutsumi et al. 2025):
+The split of $\Delta v_c$ into an H part and a linear-law O part is first order in the O rest of the remaining alloy, $(w_\mathrm{O} - 7.94\, w_\mathrm{H}) / (1 - w_c)$. A core whose O rest is below -0.2 raises `CoreAlloyError`; with no core O that is $w_\mathrm{H}$ above 0.0206. The Luo cell (-0.036) and 1 wt% H (-0.087) lie inside the bound. Core density over the PALEOS iron density for the carrier, at the outermost core node (node 77 of 150) of the default 1 $M_\oplus$ pure-iron structure on the numpy path (136.589 GPa, 5131.89 K) and at 135 GPa and 4000 K (all fractions are mass fractions; 0.0252 is the core O of the 50 GPa case of Tsutsumi et al. 2025):
 
-| $w_\mathrm{H}$ | $w_\mathrm{O}$ | $w_c$ | O rest / $(1 - w_c)$ | $\rho/\rho_\mathrm{Fe}$, 141.96 GPa, 5205 K | $\rho/\rho_\mathrm{Fe}$, 135 GPa, 4000 K |
+| $w_\mathrm{H}$ | $w_\mathrm{O}$ | $w_c$ | O rest / $(1 - w_c)$ | $\rho/\rho_\mathrm{Fe}$, 136.589 GPa, 5131.89 K | $\rho/\rho_\mathrm{Fe}$, 135 GPa, 4000 K |
 |---|---|---|---|---|---|
-| 0.0043 | 0.0 | 0.0384 | -0.0355 | 0.9416 | 0.9359 |
-| 0.01 | 0.0 | 0.0894 | -0.0871 | 0.8706 | 0.8594 |
-| 0.02 | 0.0 | 0.1787 | -0.1933 | 0.7619 | 0.7448 |
+| 0.0043 | 0.0 | 0.0384 | -0.0355 | 0.9409 | 0.9359 |
+| 0.01 | 0.0 | 0.0894 | -0.0871 | 0.8693 | 0.8594 |
+| 0.02 | 0.0 | 0.1787 | -0.1933 | 0.7598 | 0.7448 |
 | 0.05 | 0.0 | 0.4468 | -0.7173 | refused | refused |
-| 0.0043 | 0.0252 | 0.0384 | -0.0093 | 0.9188 | 0.9133 |
-| 0.01 | 0.0252 | 0.0894 | -0.0595 | 0.8530 | 0.8422 |
-| 0.02 | 0.0252 | 0.1787 | -0.1626 | 0.7508 | 0.7342 |
+| 0.0043 | 0.0252 | 0.0384 | -0.0093 | 0.9181 | 0.9133 |
+| 0.01 | 0.0252 | 0.0894 | -0.0595 | 0.8517 | 0.8422 |
+| 0.02 | 0.0252 | 0.1787 | -0.1626 | 0.7488 | 0.7342 |
 | 0.05 | 0.0252 | 0.4468 | -0.6717 | refused | refused |
 
-The fractions of a light-element core are given explicitly for every component, including the iron base, and sum to 1. A composition with no iron left, a carrier fraction of 1 or more ($w_\mathrm{H} \geq 1/8.94 = 0.1119$), a linear law without positive density, a negative or non-finite fraction, a base other than `PALEOS:iron`, two iron bases or both H forms raises `CoreAlloyError`, as does a density at or below zero. The [equation-of-state validation page](../Validation/equation_of_state.md) holds the test cases.
+**Linear-law bound.** Write $r = 1 - \mathrm{lin} = \rho_\mathrm{lin}/\rho_\mathrm{Fe}$ for the remaining alloy, $k = 8.94$ and $c_1 = k - \beta_\mathrm{O}(k - 1) = 0.206$. Then $\partial(1/\rho)/\partial w_\mathrm{H} = (c_1 - 2 k r)/(\rho_\mathrm{Fe} r^2) + k\,\Delta v_c$ at any $w_\mathrm{H}$, so the density rises with $w_\mathrm{H}$ for $r$ below $r^* = \bigl(k + \sqrt{k^2 - \rho_\mathrm{Fe} k \Delta v_c c_1}\bigr)/(\rho_\mathrm{Fe} k \Delta v_c)$. A core with $r$ below 0.8 raises `CoreAlloyError`, also without H. On the PALEOS iron base:
+
+| State | $\rho_\mathrm{Fe}$ (kg/m$^3$) | $\Delta v_c$ (10$^{-4}$ m$^3$/kg) | $r^*$ |
+|---|---|---|---|
+| Outermost core node, default 1 $M_\oplus$, numpy path (136.589 GPa, 5131.89 K) | 10897.25 | 3.2803 | 0.5477 |
+| 135 GPa, 4000 K | 11304.25 | 3.2929 | 0.5255 |
+| 136 GPa, 8000 K | 10389.75 | 3.2849 | 0.5742 |
+
+Over 20-3000 GPa and 3000-14000 K, $r^*$ lies between 0.484 and 0.768, with the largest value at 1300 GPa and 8000 K, the corner of the Luo fit box; the bound 0.8 keeps a margin of 0.032 above it. Alone in the remaining alloy, each element reaches the bound at 18.2 wt% O, 15.4 wt% C, 25 wt% S, 28.6 wt% Si and 2.3 wt% `H-linear`.
+
+The fractions of a light-element core are given explicitly for every component, including the iron base, and sum to 1. A composition with no iron left, a carrier fraction of 1 or more ($w_\mathrm{H} \geq 1/8.94 = 0.1119$), a linear-law factor $1 - \mathrm{lin}$ below 0.8 (below), a negative or non-finite fraction, a base other than `PALEOS:iron`, two iron bases or both H forms raises `CoreAlloyError`, as does a density at or below zero. The [equation-of-state validation page](../Validation/equation_of_state.md) holds the test cases.
 
 ---
 

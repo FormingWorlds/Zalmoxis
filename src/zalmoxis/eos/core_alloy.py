@@ -23,9 +23,10 @@ when the core holds less O than the carrier, enters the linear law. The core
 density is ``1/rho = (1 - w_c)/rho_lin + w_c dv_c``, where ``rho_lin`` is the
 linear law for the remaining alloy, with fractions ``w_i / (1 - w_c)``. To first
 order the negative O remainder splits ``dv_c`` into an H part and the linear-law O
-part, so the H effect is that of an effective ``beta_H`` of about 12.8 % per wt% at
-136 GPa and 8000 K, against the solid linear value of 8.7. The Luo fits cover
-8000-14000 K and 50-1300 GPa; outside that box ``dv_c`` is taken at the nearest
+part, so the H effect is that of an effective ``beta_H`` of about 12.8 % per wt%
+(w_H -> 0) at 136 GPa and 8000 K, against the solid linear value of 8.7. A remaining
+alloy with ``1 - lin`` below 0.8, where the density can rise with H, is refused. The
+Luo fits cover 8000-14000 K and 50-1300 GPa; outside that box ``dv_c`` is taken at the nearest
 point of the box (the iron base stays at the true P, T), and the point is counted in
 :data:`LUO_OUT_OF_RANGE` with one warning per process. The wet cell has a carrier mass
 fraction of 0.0388 (0.43 wt% H); a core above it warns once per process. Core-mantle boundary
@@ -272,8 +273,8 @@ def alloy_density(rho_fe, w, pressure, temperature):
     Raises
     ------
     CoreAlloyError
-        A carrier that leaves no alloy mass, a linear law without positive density, or a
-        core without positive finite density.
+        A carrier that leaves no alloy mass, a composition outside the bounds of
+        :func:`_linear_factor`, or a core without positive finite density.
     """
     w_c, lin = _linear_factor(w)
     if rho_fe is None or not np.isfinite(rho_fe) or rho_fe <= 0:
