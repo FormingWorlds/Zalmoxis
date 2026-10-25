@@ -193,19 +193,21 @@ Largest relative difference of the three right-hand-side terms between `coupled_
 
 ## Surface boundary condition of the pressure solve
 
-The central pressure $P_c$ is the root of $f(P_c) = P(R) - P_t$. A trial $P_c$ whose integration stops before the outer radius gives $f = -P_t$, and Brent's method with `xtol` $= 10^6$ Pa can return such a padded root; the solve then refines it ([padded accepts](../Explanations/process_flow.md#padded-accepts)). The case runs the Analytic 1 Earth-mass planet with the Newton outer solver at `relative_tolerance` $10^{-9}$, at planet-mass shifts of 0 and $\pm 10^{-9}$ until a pressure solve has a padded brentq root, and checks that the refined root and the accepted profile meet the boundary condition $P(R) = P_t$.
+The central pressure $P_c$ is the root of $f(P_c) = P(R) - P_t$. A trial $P_c$ whose integration stops before the outer radius gives $f = -P_t$, and Brent's method with `xtol` $= 10^6$ Pa can return such a padded root; the solve then refines it ([padded accepts](../Explanations/process_flow.md#padded-accepts)).
 
 ### Plot: surface boundary condition
 
 ![Surface pressure of the evaluated central pressures of one pressure solve](../assets/validation/pressure_root_boundary_condition.svg#only-light){ width="80%" }
 ![Surface pressure of the evaluated central pressures of one pressure solve](../assets/validation/pressure_root_boundary_condition_dark.svg#only-dark){ width="80%" }
 
-Surface pressure $P(R)$ of each evaluated central pressure at most 10 MPa from the brentq root (circles) in one pressure solve whose brentq root is padded (square, $P(R) = 0$), and the refined root (star), against the offset of $P_c$ from the brentq root. Evaluations above 3 bar are drawn as triangles at the top of the axis. The dashed line is $P_t$ = 1 atm.
+Surface pressure $P(R)$ of each evaluated central pressure (circles) on an analytic residual that stops below a central pressure $x_0$ and above it rises from $0.95\,P_t$ at a slope $dP(R)/dP_c$ of 0.47: the brentq root of the first solve is padded (square, $P(R) = 0$), and the refined root (star) is reached. Evaluations above 3 bar are drawn as triangles at the top of the axis. The dashed line is $P_t$ = 1 atm. The residual needs no structure solve.
 
 - Reference: the boundary condition $P(R) = P_t$.
-- Tolerance: $\lvert P(R) - P_t \rvert \le 0.1 P_t$ at the refined root; at most $P_t$ for the accepted profile, which is not padded.
-- Test id: `tests/test_pressure_root_solves.py::test_the_accepted_root_meets_the_surface_boundary_condition`
-- Command: `pytest -m reference_pinned tests/test_pressure_root_solves.py --validation-plots`
+- Tolerance: $\lvert P(R) - P_t \rvert \le 0.1 P_t$ at the refined root, which is reached.
+- Test id: `tests/test_pressure_root.py::test_the_refined_root_meets_the_surface_boundary_condition`
+- Command: `pytest -m reference_pinned tests/test_pressure_root.py --validation-plots`
+
+A real-solve test checks the same rule on the Analytic 1 Earth-mass planet with the Newton outer solver at `relative_tolerance` $10^{-9}$: at planet-mass shifts of 0 and $\pm 10^{-9}$ until a pressure solve has a padded brentq root, the refined root misses $P_t$ by at most $0.1 P_t$, and the accepted profile is not padded and misses $P_t$ by at most $P_t$. Whether a solve pads depends on round-off, so this test has no plot (`tests/test_pressure_root_solves.py::test_the_accepted_root_meets_the_surface_boundary_condition`).
 
 ### Plot: solver setups
 

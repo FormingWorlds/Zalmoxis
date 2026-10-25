@@ -86,14 +86,13 @@ def test_the_paleos_newton_planet_reaches_its_surface_within_the_cap(monkeypatch
     assert sum(m < 0.0 for m in moves) > len(moves) // 2 and max(moves) <= 0.0
 
 
-@pytest.mark.reference_pinned
 @pytest.mark.physics_invariant
-def test_the_accepted_root_meets_the_surface_boundary_condition(monkeypatch, validation_plot):
+def test_the_accepted_root_meets_the_surface_boundary_condition(monkeypatch):
     """Boundary condition P(R) = P_t: on the smooth-kink planet (Analytic 1 M_earth, Newton
     rtol 1e-9) a pressure solve whose brentq root is padded, P(R) = 0, ends at a refined
-    root within 0.1 P_t of P_t. The shifts run until one solve has a padded brentq root.
-    The plot shows P(R) of every evaluated central pressure of that solve with both roots.
-    See ``docs/Validation/hydrostatic_structure.md``."""
+    root within 0.1 P_t of P_t. The shifts run until one solve has a padded brentq root,
+    which depends on round-off, so the plot of the case comes from an analytic residual
+    (``tests/test_pressure_root.py``). See ``docs/Validation/hydrostatic_structure.md``."""
     calls, real = [], zs._refine_pressure_root
 
     def spy(root, info, evals, residual, p_target, maxiter):
@@ -116,37 +115,6 @@ def test_the_accepted_root_meets_the_surface_boundary_condition(monkeypatch, val
     assert padded, 'no pressure solve had a padded brentq root at any shift'
     first, refined, evals = padded[-1]
     assert abs(evals[refined]) <= 0.1 * P_T
-
-    def figure():
-        import matplotlib.pyplot as plt
-
-        x = np.array(sorted(evals))
-        near = np.abs(x - first) < 1e7
-        dx = (x[near] - first) / 1e6
-        pr = (np.array([evals[k] for k in x[near]]) + P_T) / 1e5
-        top = pr > 3.0
-        fig, ax = plt.subplots(figsize=(6, 4))
-        ax.plot(dx[~top], pr[~top], 'o', ms=4, label='evaluated')
-        if top.any():
-            ax.plot(dx[top], np.full(top.sum(), 2.9), '^', ms=6, label='over 3 bar')
-        ax.axhline(P_T / 1e5, ls='--', label=r'$P_t$')
-        ax.plot([0.0], [0.0], 's', ms=8, label='brentq root')
-        ax.plot(
-            [(refined - first) / 1e6],
-            [(evals[refined] + P_T) / 1e5],
-            '*',
-            ms=12,
-            label='refined',
-        )
-        ax.set_ylim(-0.2, 3.0)
-        ax.set_yticks([0, 1, 2, 3])
-        ax.set_xlabel(r'$P_c$ - brentq root [MPa]')
-        ax.set_ylabel('Surface pressure [bar]')
-        ax.legend()
-        fig.tight_layout()
-        return fig
-
-    validation_plot(figure, 'pressure_root_boundary_condition')
 
 
 # The 6 Newton setups of the sweep (the PROTEUS default outer solver):
