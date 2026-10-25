@@ -140,8 +140,8 @@ def test_a_marked_wolfbower_test_runs_in_the_wolfbower_job(tmp_path):
             'select: wolfbower\n', 'select: wolfbower and slow\n', id='no_wolfbower_job'
         ),
         pytest.param(
-            'not accept_solves_long and not wolfbower',
-            'not accept_solves_long',
+            'not accept_solves_newton_setups and not wolfbower',
+            'not accept_solves_newton_setups',
             id='accept_takes_wolfbower',
         ),
     ],

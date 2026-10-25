@@ -221,7 +221,7 @@ The test runs the 6 Newton setups: the Analytic EOS at 1 Earth mass, PALEOS at 1
 - Reference: the boundary condition $P(R) = P_t$.
 - Tolerance: every setup accepts on the Newton tolerance; $\lvert P(R) - P_t \rvert \le P_t$ for every reached profile; no padded node except on the JAX path at 1 Earth mass; the padded flag matches the root of the last pressure solve.
 - Test id: `tests/test_pressure_root_solves.py::test_every_newton_setup_meets_the_surface_boundary_condition`
-- Command: `pytest -m accept_solves_long tests/test_pressure_root_solves.py`; the figure: `python -m tools.validation.pressure_root_sweep run <dir> -j 2`, then `python -m tools.validation.pressure_root_sweep plot <dir>`.
+- Command: `pytest -m accept_solves_newton_setups tests/test_pressure_root_solves.py`; the figure: `python -m tools.validation.pressure_root_sweep run <dir> -j 2`, then `python -m tools.validation.pressure_root_sweep plot <dir>`.
 
 ## Reproducing the results
 

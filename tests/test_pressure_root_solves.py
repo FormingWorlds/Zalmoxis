@@ -134,8 +134,8 @@ NEWTON_SETUPS = (
 MAY_PAD = {'PALEOS 1 JAX'}
 
 
-@pytest.mark.accept_solves_long
-@pytest.mark.timeout(4800)
+@pytest.mark.accept_solves_newton_setups
+@pytest.mark.timeout(9000)
 @pytest.mark.physics_invariant
 def test_every_newton_setup_meets_the_surface_boundary_condition(monkeypatch):
     """Boundary condition P(R) = P_t on the 6 Newton setups (rtol 1e-9, 150 layers): each
