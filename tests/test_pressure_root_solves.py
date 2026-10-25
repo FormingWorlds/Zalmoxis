@@ -15,6 +15,7 @@ import pytest
 
 import zalmoxis
 import zalmoxis.solver as zs
+from tests.test_spider_coupling_convergence import _has_paleos_data
 from zalmoxis.config import load_material_dictionaries, load_zalmoxis_config
 
 pytestmark = [pytest.mark.smoke, pytest.mark.accept_solves, pytest.mark.timeout(2400)]
@@ -68,6 +69,8 @@ def test_the_paleos_newton_planet_reaches_its_surface_within_the_cap(monkeypatch
     profile is not padded and misses P_t by at most 1 P_t, the cap of a padded root replaced
     by its reached end. Refinements (second solves and replacements) move more than half the
     roots closer to P_t, and none further from it."""
+    if not _has_paleos_data():
+        pytest.skip('PALEOS tables not on disk')
     moves, real = [], zs._refine_pressure_root
 
     def spy(root, info, evals, residual, p_target, maxiter):
@@ -143,6 +146,8 @@ def test_every_newton_setup_meets_the_surface_boundary_condition(monkeypatch):
     interior profile.
     Without ``_refine_pressure_root`` the Analytic 1 and PALEOS 3 JAX setups end padded,
     so the case fails. See ``docs/Validation/hydrostatic_structure.md``."""
+    if not _has_paleos_data():
+        pytest.skip('PALEOS tables not on disk')
     calls, real = [], zs._refine_pressure_root
 
     def spy(root, info, evals, residual, p_target, maxiter):
