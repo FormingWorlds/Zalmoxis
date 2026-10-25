@@ -165,9 +165,8 @@ MAY_PAD = {'PALEOS 1 JAX'}
 
 @pytest.mark.accept_solves_long
 @pytest.mark.timeout(4800)
-@pytest.mark.reference_pinned
 @pytest.mark.physics_invariant
-def test_every_newton_setup_meets_the_surface_boundary_condition(monkeypatch, validation_plot):
+def test_every_newton_setup_meets_the_surface_boundary_condition(monkeypatch):
     """Boundary condition P(R) = P_t on the 6 Newton setups (rtol 1e-9, 150 layers): each
     accepted profile outside ``MAY_PAD`` reaches the surface, the padded flag matches the
     root of the last pressure solve (Newton accepts it), a padded one has no reached end of
@@ -209,25 +208,6 @@ def test_every_newton_setup_meets_the_surface_boundary_condition(monkeypatch, va
         misses.append(abs(P[-1] - P_T) / P_T)
         padded.append(r['padded'])
     assert max(m for m, p in zip(misses, padded) if not p) <= CAP, misses
-
-    def figure():
-        import matplotlib.pyplot as plt
-
-        fig, ax = plt.subplots(figsize=(6, 4))
-        x = range(len(misses))
-        for mark, want, label in (('o', False, 'reached'), ('s', True, 'padded')):
-            pts = [(i, m) for i, m, p in zip(x, misses, padded) if p is want]
-            if pts:
-                ax.plot(*zip(*pts), mark, ms=7, label=label)
-        ax.axhline(CAP, ls='--', label='tolerance')
-        ax.set_xticks(x, [s[0] for s in NEWTON_SETUPS], rotation=30, ha='right')
-        ax.set_ylim(0.0, 1.1 * CAP)
-        ax.set_ylabel(r'$|P(R) - P_t| / P_t$')
-        ax.legend(loc='center right')
-        fig.tight_layout()
-        return fig
-
-    validation_plot(figure, 'pressure_root_newton_setups')
 
 
 def test_a_jump_at_the_stop_returns_a_flagged_padded_profile(caplog):

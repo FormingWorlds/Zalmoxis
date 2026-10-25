@@ -207,17 +207,19 @@ Surface pressure $P(R)$ of each evaluated central pressure at most 10 MPa from t
 - Test id: `tests/test_pressure_root_solves.py::test_the_accepted_root_meets_the_surface_boundary_condition`
 - Command: `pytest -m reference_pinned tests/test_pressure_root_solves.py --validation-plots`
 
-### Plot: Newton setups
+### Plot: solver setups
 
-![Surface pressure miss of the accepted profile for the 6 Newton setups](../assets/validation/pressure_root_newton_setups.svg#only-light){ width="80%" }
-![Surface pressure miss of the accepted profile for the 6 Newton setups](../assets/validation/pressure_root_newton_setups_dark.svg#only-dark){ width="80%" }
+![Surface pressure miss of the accepted profile for 26 solver setups](../assets/validation/pressure_root_sweep.svg#only-light){ width="80%" }
+![Surface pressure miss of the accepted profile for 26 solver setups](../assets/validation/pressure_root_sweep_dark.svg#only-dark){ width="80%" }
 
-$\lvert P(R) - P_t \rvert / P_t$ of the accepted profile for the 6 setups with the Newton outer solver at `relative_tolerance` $10^{-9}$, the outer solver PROTEUS uses by default: the Analytic EOS at 1 Earth mass, PALEOS at 1, 5 and 10 Earth masses, and PALEOS on the JAX path with $T(r)$ from a numpy Picard solve at 1 and 3 Earth masses. Reached profiles are circles; a padded profile is a square at 1, since $P(R) = 0$. The dashed line is the tolerance. On the JAX path at 1 Earth mass, $P(R)$ near the stop scatters, and the accepted profile can be padded; the case then requires that the reached end of the first sign pair of that pressure solve misses $P_t$ by more than $P_t$, or that the solve has no sign pair.
+$\lvert P(R) - P_t \rvert / P_t$ of the accepted profile for 26 setups built from `input/default.toml`: reached (circles), padded (squares, at 1 since $P(R) = 0$) and without an accepted profile (cross above the cap); the dashed line is the cap of $P_t$. Setups 4, 9, 10, 13, 14 and 25 use the Newton outer solver at `relative_tolerance` $10^{-9}$, the outer solver PROTEUS uses by default; [padded accepts](../Explanations/process_flow.md#padded-accepts) lists every setup. The miss of a reached profile depends on round-off, so another platform gives other values: over planet-mass changes of $k \times 10^{-13}$ ($k$ = 1 to 5), the PALEOS 1 Earth-mass Newton setup misses by 0.008 to 0.87 $P_t$.
+
+The test runs the 6 Newton setups: the Analytic EOS at 1 Earth mass, PALEOS at 1, 5 and 10 Earth masses, and PALEOS on the JAX path with $T(r)$ from a numpy Picard solve at 1 and 3 Earth masses. On the JAX path at 1 Earth mass, $P(R)$ near the stop scatters, and the accepted profile can be padded; the case then requires that the reached end of the first sign pair of that pressure solve misses $P_t$ by more than $P_t$, or that the solve has no sign pair.
 
 - Reference: the boundary condition $P(R) = P_t$.
 - Tolerance: every setup accepts on the Newton tolerance; $\lvert P(R) - P_t \rvert \le P_t$ for every reached profile; no padded node except on the JAX path at 1 Earth mass; the padded flag matches the root of the last pressure solve.
 - Test id: `tests/test_pressure_root_solves.py::test_every_newton_setup_meets_the_surface_boundary_condition`
-- Command: `pytest -m reference_pinned tests/test_pressure_root_solves.py --validation-plots`
+- Command: `pytest -m accept_solves_long tests/test_pressure_root_solves.py`; the figure: `python -m tools.validation.pressure_root_sweep run <dir> -j 2`, then `python -m tools.validation.pressure_root_sweep plot <dir>`.
 
 ## Reproducing the results
 
