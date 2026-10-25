@@ -197,15 +197,15 @@ def test_every_newton_setup_meets_the_surface_boundary_condition(validation_plot
 
         fig, ax = plt.subplots(figsize=(6, 4))
         x = range(len(misses))
-        for mark, want, label in (('o', False, 'Reached'), ('s', True, 'Padded, $P(R) = 0$')):
+        for mark, want, label in (('o', False, 'reached'), ('s', True, 'padded')):
             pts = [(i, m) for i, m, p in zip(x, misses, padded) if p is want]
             if pts:
                 ax.plot(*zip(*pts), mark, ms=7, label=label)
-        ax.axhline(CAP, ls='--', label='Tolerance')
+        ax.axhline(CAP, ls='--', label='tolerance')
         ax.set_xticks(x, [s[0] for s in NEWTON_SETUPS], rotation=30, ha='right')
         ax.set_ylim(0.0, 1.1 * CAP)
         ax.set_ylabel(r'$|P(R) - P_t| / P_t$')
-        ax.legend()
+        ax.legend(loc='center right')
         fig.tight_layout()
         return fig
 
