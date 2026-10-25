@@ -44,5 +44,16 @@ CONDENSED_RHO_SCALE_DEFAULT = 50.0  # kg/m^3, sigmoid transition width
 # Largest distance of a converged mantle node beyond a tabulated EOS's valid T band.
 MAX_BAND_EXCESS_DEFAULT = 200.0  # K
 
+# Molar masses [kg/mol], IUPAC conventional atomic weights
+MOLAR_MASS = {
+    'H': 1.008e-3,
+    'C': 12.011e-3,
+    'N': 14.007e-3,
+    'O': 15.999e-3,
+    'Si': 28.085e-3,
+    'S': 32.06e-3,
+    'Fe': 55.845e-3,
+}
+
 # Other constants
 G = 6.67428e-11  # Gravitational constant (m^3 kg^-1 s^-2)
