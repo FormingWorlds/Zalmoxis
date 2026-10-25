@@ -418,9 +418,12 @@ class TestPaleosCore:
             np.testing.assert_allclose(got, harmonic, rtol=1e-12)
             assert np.all(np.abs(got - ((1 - w_c) * iron + w_c * rho_c)) > 0.01 * got)
             # the scalar branch (structure RHS) and the batch branch (node update) agree
-            scalar = [
-                calculate_mixed_density(p, T_LUO, mix, md, None, None, cache) for p in pressures
-            ]
+            scalar = []
+            for p in pressures:
+                try:
+                    scalar.append(calculate_mixed_density(p, T_LUO, mix, md, None, None, cache))
+                except ValueError as err:
+                    pytest.fail(f'scalar core-alloy density raised at {p:.3e} Pa: {err}')
             np.testing.assert_allclose(scalar, got, rtol=1e-9)
             curves[w_h] = got
 
