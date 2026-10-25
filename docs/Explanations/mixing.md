@@ -235,7 +235,7 @@ The floor follows from the inventory and is not user-tunable.
 
 How much lighter than pure iron is a core that holds H, C, N, O, Si or S, and how does Zalmoxis compute its density?
 
-A core with 1 wt% H (1 wt%, one weight percent, is a mass fraction of 0.01) is about 13 % lighter than pure iron at the outermost core node of an Earth-mass planet, at about 136.6 GPa and 5130 K (table below). Zalmoxis takes the density of pure iron from the PALEOS table and lowers it with the mass fractions of the light elements. C, O, Si and S, and H in the form `H-linear`, each lower it by a fixed percentage per wt%; N has no effect. H in the form `CoreAlloy:H` enters as water dissolved in liquid iron, with the volume that water adds to iron from [Luo et al. (2024)](https://doi.org/10.1038/s41550-024-02347-z).
+One weight percent (1 wt%) is a mass fraction of 0.01. A core with 1 wt% H and no other light element is about 13 % lighter than PALEOS iron at the same pressure and temperature. This holds at the outermost core node of an Earth-mass planet, at about 136.6 GPa and 5130 K (table below). Zalmoxis takes the density of pure iron from the PALEOS table and lowers it with the mass fractions of the light elements. C, O, Si and S, and H in the form `H-linear`, each lower it by a fixed percentage per wt%; N does not change the density. H in the form `CoreAlloy:H` enters as water dissolved in liquid iron, with the volume that water adds to iron from [Luo et al. (2024)](https://doi.org/10.1038/s41550-024-02347-z).
 
 **How to set up the core.** A core layer holds the light elements as `CoreAlloy:<element>` components next to one iron base, which must be `PALEOS:iron`:
 
@@ -247,7 +247,7 @@ The fractions are mass fractions. They are given explicitly for every component,
 
 **Which code computes it.** Such a core does not use the multi-component harmonic mean and the vapour sigmoid above. `zalmoxis.eos.core_alloy` takes the iron density $\rho_\mathrm{Fe}(P, T)$ at pressure $P$ and temperature $T$ from the PALEOS table. It changes this density with the light-element mass fractions $w_i$ (dimensionless). The core adiabat stays that of iron.
 
-Zalmoxis can solve the structure equations in 2 ways: with numpy (the default) or with JAX, a compiled path that `config_params['use_jax']` turns on. The JAX path holds one core table, so a core with a light-element fraction above 0 is solved with numpy. A core whose `CoreAlloy` fractions are all 0 stays on the JAX path as its iron base.
+Zalmoxis can solve the structure equations in 2 ways: with numpy or with JAX, a compiled path that the setting `use_jax` turns on. Zalmoxis on its own uses numpy by default; under PROTEUS, `use_jax = true` is the default ([PROTEUS coupling](proteus_coupling.md)). The JAX path holds one core table, so a core with a light-element fraction above 0 is solved with numpy. A core whose `CoreAlloy` fractions are all 0 stays on the JAX path as its iron base.
 
 **Linear law.** For C, N, O, Si, S and `H-linear`, each element lowers the density by $\beta_i$ percent per wt% ([Li et al. 2019](https://doi.org/10.1017/9781108677950.003), Table 3.3). With $w_i$ as a mass fraction, the product $\beta_i w_i$ is the fractional drop of the density, and the drops add:
 
@@ -269,7 +269,7 @@ The density is continuous in $w_\mathrm{H}$ and $w_\mathrm{O}$, also where the O
 
 **Worked example.** Take a core with no O at 136 GPa and 8000 K, with the Luo dry Fe density there, 10389.8 kg/m$^3$. H then lowers the density by an effective $\beta_\mathrm{H}$ of 12.83 % per wt% as $w_\mathrm{H} \to 0$, against the solid linear value of 8.7 %. 1 wt% H lowers it by 11.97 %. The outermost core node of the default 1 $M_\oplus$ structure is a different state, at about 136.6 GPa and 5130 K. There 1 wt% H with no core O gives $w_c$ = 0.0894 and a density of 0.869 times the iron density (table below).
 
-**Fit range of Luo et al.** The Luo fits cover 8000 to 14000 K and 50 to 1300 GPa. Outside this box, Zalmoxis clamps the point to the nearest point of the box to get $\Delta v_c$ (see the limits below). The core-mantle boundary of Earth-like planets and super-Earths, at about 4000 to 6000 K, lies below the box, so there the carrier volume is its 8000 K value. At 136 GPa and 4000 K that is 3.28 $\times 10^{-4}$ m$^3$/kg, 8.4 % above the 3.03 $\times 10^{-4}$ m$^3$/kg that Eq. 14 gives when extrapolated to 4000 K. Eq. 14 extrapolated to low pressure and temperature has no dry Fe volume at all, for example below 11.075 GPa at 3000 K and below 5.545 GPa at 4500 K. The table gives $\Delta v_c$ inside the box:
+**Fit range of Luo et al.** The Luo fits cover 8000 to 14000 K and 50 to 1300 GPa. Outside this box, Zalmoxis takes $\Delta v_c$ at the nearest point of the box (see the limits below). The core-mantle boundary of Earth-like planets and super-Earths, at about 4000 to 6000 K, lies below the box. There the carrier volume is its value at 8000 K and the same pressure. At 136 GPa and 4000 K that is 3.28 $\times 10^{-4}$ m$^3$/kg, 8.4 % above the 3.03 $\times 10^{-4}$ m$^3$/kg that Eq. 14 gives when extrapolated to 4000 K. The root search of `luo_cell_volume` looks between 0.15 and 1.5 times the reference volume. At low pressure and temperature it finds no dry Fe volume in that range, for example below 11.075 GPa at 3000 K and below 5.545 GPa at 4500 K. The table gives $\Delta v_c$ inside the box:
 
 | $\Delta v_c$ (10$^{-4}$ m$^3$/kg) | 50 GPa | 136 GPa | 360 GPa | 1300 GPa |
 |---|---|---|---|---|
@@ -295,7 +295,7 @@ All fractions are mass fractions; 0.0252 is the core O of the 50 GPa case of Tsu
 | 0.02 | 0.0252 | 0.1787 | -0.1626 | 0.749 | 0.734 |
 | 0.05 | 0.0252 | 0.4468 | -0.6717 | refused | refused |
 
-**Linear-law bound.** For a very light remaining alloy, more H can make the core denser instead of lighter. Zalmoxis keeps cores out of that range with a bound on the linear law. Write $\mathrm{lin} = \sum_i \beta_i w_i$ for the remaining alloy, so that $r = 1 - \mathrm{lin} = \rho_\mathrm{lin}/\rho_\mathrm{Fe}$ is its density over the iron density. Write $k = 8.94$ (carrier mass per H mass) and $c_1 = k - \beta_\mathrm{O}(k - 1) = 0.206$. Then, at any $w_\mathrm{H}$,
+**Linear-law bound.** For a very light remaining alloy, more H can make the core denser instead of lighter. A bound on the linear law keeps most cores out of that range (see below). Write $\mathrm{lin}$ for the linear-law sum $\sum_i \beta_i w_i$ of the remaining alloy. Its fractions are $w_i / (1 - w_c)$, and O enters as the O rest. Then $r = 1 - \mathrm{lin} = \rho_\mathrm{lin}/\rho_\mathrm{Fe}$ is the density of the remaining alloy over the iron density. Write $k = 8.94$ (carrier mass per H mass) and $c_1 = k - \beta_\mathrm{O}(k - 1) = 0.206$. Then, at any $w_\mathrm{H}$,
 
 $$\frac{\partial(1/\rho)}{\partial w_\mathrm{H}} = \frac{c_1 - 2 k r}{\rho_\mathrm{Fe} r^2} + k\,\Delta v_c .$$
 

@@ -68,5 +68,5 @@ This page checks how Zalmoxis gets the density of each layer of a planet. An equ
 Other tests of the light-element core:
 
 - `tests/test_core_alloy.py` pins the linear law at 1 wt% against [Li et al. (2019)](https://doi.org/10.1017/9781108677950.003) Table 3.3.
-- The same file pins the effective $\beta_\mathrm{H}$ of the Fe-H-O carrier and the composition and density bounds. It also pins that the density is continuous across the faces of the Luo fit box and where the O rest changes sign. The O rest is the core O left after the carrier takes its share.
+- The same file pins the effective $\beta_\mathrm{H}$ of the Fe-H-O carrier and the composition and density bounds. It also pins that the carrier volume $\Delta v_c$ is continuous across the faces of the Luo fit box, and that the density is continuous where the O rest changes sign. The O rest is the core O left after the carrier takes its share.
 - `tests/test_core_alloy_solve.py` (integration tier) solves a 1 $M_\oplus$ planet with 1 wt% H in the core. Its first trials sample the outer core below the Luo fit range. The solve converges, passes the accepted-structure checks and keeps the core 8 to 15 % lighter than iron at every core node.
