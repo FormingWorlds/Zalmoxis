@@ -279,6 +279,29 @@ class TestCarrier:
     """The Fe-H-O carrier with its O counted against the core O."""
 
     @pytest.mark.physics_invariant
+    def test_carrier_mixture_without_positive_density_raises(self, monkeypatch):
+        """A carrier excess volume that drives 1/rho to or below zero fails the composition.
+
+        The Luo members give a positive excess volume; the stand-in values reach the guard.
+        """
+        w_c = 0.01 * ca.CARRIER_PER_H
+        # core O equal to the carrier O: no O remainder, so the linear base is rho_fe
+        w, rho_fe = {'H': 0.01, 'O': w_c - 0.01}, 1.0e4
+        dv_zero = -(1.0 - w_c) / (rho_fe * w_c)  # 1/rho = 0 at this excess volume
+        for dv in (10 * dv_zero, dv_zero * (1 + 1e-9)):
+            monkeypatch.setattr(ca, 'carrier_excess_volume', lambda p, t, dv=dv: dv)
+            try:
+                ca.alloy_density(rho_fe, w, P_CMB, 4000.0)
+                raised = None
+            except Exception as err:
+                raised = err
+            assert isinstance(raised, ca.CoreAlloyError), raised
+            assert 'core alloy density' in str(raised)
+        monkeypatch.setattr(ca, 'carrier_excess_volume', lambda p, t: 0.5 * dv_zero)
+        rho = ca.alloy_density(rho_fe, w, P_CMB, 4000.0)
+        assert rho == pytest.approx(2 * rho_fe / (1 - w_c), rel=1e-12)
+
+    @pytest.mark.physics_invariant
     @pytest.mark.reference_pinned
     def test_effective_beta_h_at_136_gpa_8000_k(self):
         """With no core O the carrier lowers the density by about 12.8 % per wt% H (docs value)."""
