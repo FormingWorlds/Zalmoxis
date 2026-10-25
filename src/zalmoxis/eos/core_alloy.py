@@ -76,7 +76,7 @@ LUO_CARRIER_FRACTION = _M_CARRIER_CELL / (_M_DRY_CELL + _M_CARRIER_CELL)
 _CELL_WARNED = [False]
 # lowest O rest (w_O - 7.94 w_H) / (1 - w_c) of the first-order carrier split (w_H 0.0206 at w_O 0)
 O_REST_MIN = -0.2
-# lowest linear-law factor 1 - lin: above it the density falls with w_H (onset 0.768 at most)
+# lowest linear-law factor 1 - lin: above it the density falls with w_H (onset at most 0.796)
 LIN_FACTOR_MIN = 0.8
 
 
