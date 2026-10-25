@@ -19,6 +19,7 @@ import pytest
 import zalmoxis.solver as zs
 from tests.test_failed_structure_solve import ROOT, _cfg, _count_outer_iterations, _run
 from tests.test_table_band_report import _need_wb_tables
+from zalmoxis import get_zalmoxis_root
 from zalmoxis.config import load_material_dictionaries
 from zalmoxis.constants import G, earth_mass, earth_radius
 from zalmoxis.mixing import calculate_mixed_density, parse_all_layer_mixtures
@@ -1050,7 +1051,20 @@ def test_a_max_iter_stop_in_the_blend_ramp_returns_a_pass_on_the_adiabat(caplog)
         max_iterations_outer=4,
         wall_timeout=WALL,
     )
+    profiles = [
+        os.path.join(get_zalmoxis_root(), 'output', f'{q}_profiles.txt')
+        for q in ('pressure', 'density')
+    ]
+
+    def stamps():
+        return [
+            (os.stat(f).st_mtime_ns, os.stat(f).st_size) if os.path.exists(f) else None
+            for f in profiles
+        ]
+
+    before = stamps()
     r = zs.main(cfg, load_material_dictionaries(), None, INPUT)
+    assert stamps() == before  # the solve leaves the DEBUG profile files untouched
     T = np.asarray(r['temperature'])
     off_linear = np.max(np.abs(T - np.linspace(6000.0, 3000.0, len(T))))
     assert r['converged'] is True and r['accepted_on'] == 'max_iter'
