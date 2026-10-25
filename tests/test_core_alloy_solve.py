@@ -63,7 +63,7 @@ def test_one_wt_percent_hydrogen_core_solves(caplog, monkeypatch):
     # the linear H law (solid beta 8.7 per unit mass fraction) gives 0.913 at every node
     assert ratio.mean() < 0.905 and ratio.max() < 0.91
     assert np.all(np.isfinite(rho)) and np.all(rho[core] > 0)
-    # a lighter core gives a larger planet than pure iron (6.52602e6 m on the numpy path)
+    # pure iron gives 6.5235e6-6.5260e6 m on numpy, by environment; a lighter core is larger
     assert np.asarray(res['radii'])[-1] > 6.52602e6
     assert ca.LUO_OUT_OF_RANGE['count'] > 0
 

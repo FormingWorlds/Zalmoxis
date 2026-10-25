@@ -25,9 +25,10 @@ linear law for the remaining alloy, with fractions ``w_i / (1 - w_c)``. To first
 order the negative O remainder splits ``dv_c`` into an H part and the linear-law O
 part, so the H effect is that of an effective ``beta_H`` of about 12.8 % per wt%
 (w_H -> 0) at 136 GPa and 8000 K, against the solid linear value of 8.7. A remaining
-alloy with ``1 - lin`` below 0.8, where the density can rise with H, is refused. The
-Luo fits cover 8000-14000 K and 50-1300 GPa; outside that box ``dv_c`` is taken at the nearest
-point of the box (the iron base stays at the true P, T), and the point is counted in
+alloy with ``1 - lin`` below 0.8 is refused; above it the density falls with H at every
+pressure up to 16000 K. The Luo fits cover 8000-14000 K and 50-1300 GPa; outside that
+box ``dv_c`` is taken at the nearest point of the box (the iron base stays at the true
+P, T), and the point is counted in
 :data:`LUO_OUT_OF_RANGE` with one warning per process. The wet cell has a carrier mass
 fraction of 0.0388 (0.43 wt% H); a core above it warns once per process. Core-mantle boundary
 temperatures of Earth-like planets, about 4000-6000 K, lie below the box, so there the
@@ -76,7 +77,7 @@ LUO_CARRIER_FRACTION = _M_CARRIER_CELL / (_M_DRY_CELL + _M_CARRIER_CELL)
 _CELL_WARNED = [False]
 # lowest O rest (w_O - 7.94 w_H) / (1 - w_c) of the first-order carrier split (w_H 0.0206 at w_O 0)
 O_REST_MIN = -0.2
-# lowest linear-law factor 1 - lin: above it the density falls with w_H (onset at most 0.796)
+# lowest linear-law factor 1 - lin: above it the density falls with w_H up to 16000 K
 LIN_FACTOR_MIN = 0.8
 
 
