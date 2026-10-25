@@ -2853,7 +2853,7 @@ def _solve(
         'accept_mass_limit': accept_mass_limit,
         'density_from_eos': density_from_eos,
         'p_center': pressure[0] if len(pressure) > 0 else None,
-        'padded': bool(len(pressure) > 0 and pressure[-1] == 0.0),
+        'padded': bool(pad.size and pad[-1]),
         'adiabat_computed': _adiabat_computed,
         'adiabat_blend': _adiabat_blend,
     }
