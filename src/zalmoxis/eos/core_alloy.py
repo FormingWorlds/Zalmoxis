@@ -27,7 +27,8 @@ part, so the H effect is that of an effective ``beta_H`` of about 12.8 % per wt%
 136 GPa and 8000 K, against the solid linear value of 8.7. The Luo fits cover
 8000-14000 K and 50-1300 GPa; outside that box ``dv_c`` is taken at the nearest
 point of the box (the iron base stays at the true P, T), and the point is counted in
-:data:`LUO_OUT_OF_RANGE` with one warning per process. Core-mantle boundary
+:data:`LUO_OUT_OF_RANGE` with one warning per process. The wet cell has a carrier mass
+fraction of 0.0388 (0.43 wt% H); a core above it warns once per process. Core-mantle boundary
 temperatures of Earth-like planets, about 4000-6000 K, lie below the box, so there the
 carrier volume is its 8000 K value.
 """
@@ -67,6 +68,11 @@ CARRIER_PER_H = _M_H2O / (2 * MOLAR_MASS['H'])
 _M_DRY_CELL = LUO_N_FE * MOLAR_MASS['Fe'] / Avogadro  # kg
 _M_CARRIER_CELL = LUO_N_H2O * _M_H2O / Avogadro  # kg
 _A3 = 1e-30  # m^3 per A^3
+LUO_DRY['cell_mass'] = _M_DRY_CELL
+LUO_WET['cell_mass'] = _M_DRY_CELL + _M_CARRIER_CELL
+# carrier mass fraction of the Luo wet cell (0.0388, 0.43 wt% H): the composition of the fit
+LUO_CARRIER_FRACTION = _M_CARRIER_CELL / (_M_DRY_CELL + _M_CARRIER_CELL)
+_CELL_WARNED = [False]
 
 
 class CoreAlloyError(ValueError):
@@ -114,11 +120,44 @@ def split_alloy(mixture):
         w[el] = float(frac)
     if len(base) != 1:
         raise CoreAlloyError(f'a light-element core needs exactly one iron base, got {base!r}')
+    if base[0] != 'PALEOS:iron':
+        raise CoreAlloyError(
+            f'a light-element core needs the PALEOS:iron base, got {base[0]!r}'
+        )
     if 'H' in w and 'H-linear' in w:
         raise CoreAlloyError('CoreAlloy:H and CoreAlloy:H-linear exclude each other')
     if sum(w.values()) >= 1.0:
         raise CoreAlloyError(f'light-element mass fractions sum to {sum(w.values())!r} >= 1')
+    w_c, _ = _linear_factor(w)
+    if w_c > LUO_CARRIER_FRACTION and not _CELL_WARNED[0]:
+        _CELL_WARNED[0] = True
+        logger.warning(
+            'Core Fe-H-O carrier mass fraction %.4f is above that of the Luo et al. (2024) '
+            'wet cell (%.4f); its excess volume is used beyond the cell composition',
+            w_c,
+            LUO_CARRIER_FRACTION,
+        )
     return base[0], w
+
+
+def _linear_factor(w):
+    """Carrier mass fraction ``w_c`` and linear-law sum ``lin`` of the remaining alloy.
+
+    Raises
+    ------
+    CoreAlloyError
+        ``w_c >= 1`` (no alloy mass left) or ``1 - lin`` not positive and finite.
+    """
+    w_c = w.get(CARRIER, 0.0) * CARRIER_PER_H
+    if w_c >= 1.0:
+        raise CoreAlloyError(f'carrier mass fraction {w_c!r} leaves no alloy mass for {w!r}')
+    # Total core O is w['O'] >= 0 (split_alloy); only the remainder can be negative.
+    o_rem = w.get('O', 0.0) - (w_c - w.get(CARRIER, 0.0))
+    lin = sum(LINEAR_BETA[el] * f for el, f in w.items() if el not in (CARRIER, 'O'))
+    lin = (lin + LINEAR_BETA['O'] * o_rem) / (1.0 - w_c)
+    if not np.isfinite(lin) or 1.0 - lin <= 0:
+        raise CoreAlloyError(f'linear-law core density factor {1.0 - lin!r} for {w!r}')
+    return w_c, lin
 
 
 def luo_pressure(volume, temperature, member):
@@ -194,8 +233,7 @@ def luo_density(pressure, temperature, member):
     v = luo_cell_volume(pressure, temperature, member)
     if v is None:
         return None
-    mass = _M_DRY_CELL + (_M_CARRIER_CELL if member is LUO_WET else 0.0)
-    return mass / (v * _A3)
+    return member['cell_mass'] / (v * _A3)
 
 
 def alloy_density(rho_fe, w, pressure, temperature):
@@ -221,18 +259,13 @@ def alloy_density(rho_fe, w, pressure, temperature):
     Raises
     ------
     CoreAlloyError
-        A linear-law alloy or a core without positive finite density.
+        A carrier that leaves no alloy mass, a linear law without positive density, or a
+        core without positive finite density.
     """
+    w_c, lin = _linear_factor(w)
     if rho_fe is None or not np.isfinite(rho_fe) or rho_fe <= 0:
         return None
-    # Total core O is w['O'] >= 0 (split_alloy); only the remainder can be negative.
-    w_c = w.get(CARRIER, 0.0) * CARRIER_PER_H
-    o_rem = w.get('O', 0.0) - (w_c - w.get(CARRIER, 0.0))
-    lin = sum(LINEAR_BETA[el] * f for el, f in w.items() if el not in (CARRIER, 'O'))
-    lin = (lin + LINEAR_BETA['O'] * o_rem) / (1.0 - w_c)
     rho_lin = rho_fe * (1.0 - lin)
-    if not np.isfinite(rho_lin) or rho_lin <= 0:
-        raise CoreAlloyError(f'linear-law core density {rho_lin!r} kg/m^3 for {w!r}')
     if w_c <= 0:
         return rho_lin
     dv_c = carrier_excess_volume(pressure, temperature)
@@ -246,9 +279,5 @@ def alloy_density(rho_fe, w, pressure, temperature):
 
 def alloy_density_batch(rho_fe, w, pressures, temperatures):
     """Vectorised :func:`alloy_density`; NaN where a point has no density."""
-    out = np.full(len(pressures), np.nan)
-    for i, (r, p, t) in enumerate(zip(rho_fe, pressures, temperatures)):
-        val = alloy_density(r, w, p, t)
-        if val is not None:
-            out[i] = val
-    return out
+    rho = (alloy_density(r, w, p, t) for r, p, t in zip(rho_fe, pressures, temperatures))
+    return np.array(list(rho), dtype=float)  # None becomes NaN

@@ -253,7 +253,7 @@ $$\frac{1}{\rho} = \frac{1 - w_c}{\rho_\mathrm{lin}} + w_c\, \Delta v_c(P, T).$$
 
 The density is continuous in $w_\mathrm{H}$ and $w_\mathrm{O}$, also where the O rest changes sign. To first order, a negative O rest splits $\Delta v_c$ into an H part and the linear-law O part. In a core with no O, 1 wt% H then lowers the density by an effective $\beta_\mathrm{H}$ = 12.83 % at 136 GPa and 8000 K (with the Luo dry Fe density there, 10389.8 kg/m$^3$), against the solid linear value of 8.7 %.
 
-**Fit range.** The Luo fits cover 8000 to 14000 K and 50 to 1300 GPa. Outside that box, $\Delta v_c$ takes its value at the nearest point of the box, while the iron base stays at the true $(P, T)$; the first such point of a run gives a warning. The core-mantle boundary of Earth-like planets and super-Earths, at about 4000 to 6000 K, lies below the box, so there the carrier volume is its 8000 K value. At 136 GPa and 4000 K that is 3.28 $\times 10^{-4}$ m$^3$/kg, 8.4 % above the 3.03 $\times 10^{-4}$ m$^3$/kg that Eq. 14 gives when extrapolated to 4000 K; at low pressure and temperature the dry Fe fit has no volume at all, for example below 11 GPa at 3000 K and below 5.5 GPa at 4500 K. Inside the box:
+**Fit range.** The Luo fits cover 8000 to 14000 K and 50 to 1300 GPa. Outside that box, $\Delta v_c$ takes its value at the nearest point of the box, while the iron base stays at the true $(P, T)$; the first such point in a process gives a warning. The core-mantle boundary of Earth-like planets and super-Earths, at about 4000 to 6000 K, lies below the box, so there the carrier volume is its 8000 K value. At 136 GPa and 4000 K that is 3.28 $\times 10^{-4}$ m$^3$/kg, 8.4 % above the 3.03 $\times 10^{-4}$ m$^3$/kg that Eq. 14 gives when extrapolated to 4000 K; at low pressure and temperature the dry Fe fit has no volume at all, for example below 11 GPa at 3000 K and below 5.5 GPa at 4500 K. Inside the box:
 
 | $\Delta v_c$ (10$^{-4}$ m$^3$/kg) | 50 GPa | 136 GPa | 360 GPa | 1300 GPa |
 |---|---|---|---|---|
@@ -261,7 +261,9 @@ The density is continuous in $w_\mathrm{H}$ and $w_\mathrm{O}$, also where the O
 | 11000 K | 4.70 | 3.46 | 2.42 | 1.39 |
 | 14000 K | 5.19 | 3.63 | 2.54 | 1.47 |
 
-A composition with no iron left, a negative or non-finite fraction, two iron bases or both H forms raises `CoreAlloyError`, as does a density at or below zero. The [equation-of-state validation page](../Validation/equation_of_state.md) holds the test cases.
+**Composition range.** The Luo wet cell has a carrier mass fraction of 0.0388 (0.43 wt% H); above it $\Delta v_c$ is used beyond the composition of the fit, and the first such core in a process gives a warning. The $\beta$ values and both Luo members describe liquid iron; at nodes where the PALEOS iron table is solid (for example 136 GPa and 4000 K) the same laws apply.
+
+The fractions of a light-element core are given explicitly for every component, including the iron base, and sum to 1. A composition with no iron left, a carrier fraction of 1 or more ($w_\mathrm{H} \geq 1/8.94 = 0.1119$), a linear law without positive density, a negative or non-finite fraction, a base other than `PALEOS:iron`, two iron bases or both H forms raises `CoreAlloyError`, as does a density at or below zero. The [equation-of-state validation page](../Validation/equation_of_state.md) holds the test cases.
 
 ---
 

@@ -33,6 +33,7 @@ from .mixing import (
     _PALEOS_UNIFIED_TOML_KEYS,
     _SILICATE_EOS_NAMES,
     BINODAL_T_SCALE_DEFAULT,
+    _parse_single_component,
     parse_layer_components,
 )
 
@@ -145,6 +146,18 @@ def parse_eos_config(eos_section):
     )
 
 
+def _check_alloy_fractions(eos_str):
+    """Require an explicit fraction on every component of a light-element core, sum 1."""
+    fracs = []
+    for seg in eos_str.split('+'):
+        name, frac = _parse_single_component(seg)
+        if name == seg.strip():
+            raise ValueError(f'a light-element core needs an explicit fraction on {seg!r}')
+        fracs.append(frac)
+    if abs(sum(fracs) - 1.0) > 1e-9:
+        raise ValueError(f'light-element core fractions must sum to 1, got {sum(fracs)!r}')
+
+
 def validate_layer_eos(layer_eos_config):
     """Validate all per-layer EOS strings, including multi-material mixtures.
 
@@ -163,10 +176,8 @@ def validate_layer_eos(layer_eos_config):
         if is_alloy_mixture(mixture):
             if layer != 'core':
                 raise ValueError(f"CoreAlloy components belong in the core, not in '{layer}'")
-            if split_alloy(mixture)[0] != 'PALEOS:iron':
-                raise ValueError(
-                    f'a light-element core needs the PALEOS:iron base: {eos_str!r}'
-                )
+            _check_alloy_fractions(eos_str)
+            split_alloy(mixture)
         for comp in mixture.components:
             if comp in VALID_TABULATED_EOS or comp.startswith(ALLOY_PREFIX):
                 continue
@@ -597,17 +608,13 @@ def validate_config(config_params):
 
         # Warn about mixing T-dependent and T-independent EOS
         tdep_comps_in_layer = [c for c in mixture.components if c in TDEP_EOS_NAMES]
-        tindep_comps = [
-            c
-            for c in mixture.components
-            if c not in TDEP_EOS_NAMES and not c.startswith(ALLOY_PREFIX)
-        ]
+        tindep_comps = [c for c in mixture.components if c not in TDEP_EOS_NAMES]
         if tdep_comps_in_layer and tindep_comps:
             # Only warn for non-Analytic T-independent components
             tindep_tabulated = [
                 c
                 for c in tindep_comps
-                if not c.startswith('Analytic:') and not c.startswith('Vinet:')
+                if not c.startswith(('Analytic:', 'Vinet:', ALLOY_PREFIX))
             ]
             if tindep_tabulated:
                 logger.warning(

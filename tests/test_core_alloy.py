@@ -150,6 +150,8 @@ class TestSplitAlloy:
     )
     def test_any_valid_fraction_set_round_trips(self, w):
         """Over the valid domain every fraction comes back and the iron base keeps the rest."""
+        # the carrier must leave alloy mass: w_c = 8.94 w_H below 1
+        w['H'] = min(w.get('H', 0.0), 0.11)
         base, out = ca.split_alloy(_mix(**w))
         assert base == 'PALEOS:iron'
         assert set(out) == set(w)

@@ -17,7 +17,7 @@ These cases check how Zalmoxis reads the equation-of-state tables. The [overview
 
 ## Liquid iron and iron-water members of Luo et al. (2024)
 
-**What it tests:** `zalmoxis.eos.core_alloy.luo_density` solves Methods Eq. 14 of [Luo et al. (2024)](https://doi.org/10.1038/s41550-024-02347-z) for the cell volume of liquid Fe (64 Fe) and of Fe with water (64 Fe + 8 H$_2$O). The test solves the same equation by bisection with constants typed again from the paper, so this is a check of the root solve and of the constants against an independent reading.
+**What it tests:** `zalmoxis.eos.core_alloy.luo_density` solves Methods Eq. 14 of [Luo et al. (2024)](https://doi.org/10.1038/s41550-024-02347-z) for the cell volume of liquid Fe (64 Fe) and of Fe with water (64 Fe + 8 H$_2$O). The test solves the same equation by bisection with constants typed again from the paper, so this is a check of the root solve and of the transcription; `test_luo_dry_member_equals_paleos_liquid_iron` compares the dry member with the PALEOS liquid iron table, an independent implementation, which agrees to 4e-6 at the liquid points of 60 to 1300 GPa and 8000 to 14000 K. The wet member has no external anchor here.
 
 **Setup:** 15 pressures from 50 to 1300 GPa and 8000, 11000 and 14000 K, the fit range.
 
