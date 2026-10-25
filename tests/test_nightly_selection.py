@@ -17,15 +17,20 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / '.github' / 'workflows' / 'nightly.yml'
 
 
+def _suites(workflow):
+    """Matrix entry of each nightly suite, by suite name."""
+    return {j.split('\n', 1)[0].strip(): j for j in re.split(r'\n\s*- suite:', workflow)[1:]}
+
+
+def _entry(job):
+    """(select, test files named in the job) of one matrix entry."""
+    select = re.search(r'select:(.*)', job)
+    return select.group(1).strip() if select else '', re.findall(r'tests/([\w/]+\.py)', job)
+
+
 def _jobs(workflow):
     """(select, test files named in the job) of each nightly suite."""
-    out = []
-    for job in re.split(r'\n\s*- suite:', workflow)[1:]:
-        select = re.search(r'select:(.*)', job)
-        out.append(
-            (select.group(1).strip() if select else '', re.findall(r'tests/([\w/]+\.py)', job))
-        )
-    return out
+    return [_entry(job) for job in _suites(workflow).values()]
 
 
 def _accept_select(workflow):
@@ -224,3 +229,44 @@ def test_every_file_with_the_accept_solves_mark_is_named_in_the_workflow():
     )
     assert 'tests/test_invariants.py' in marked and 'tests/test_accepted_on.py' in marked
     assert [m for m in marked if m not in workflow] == []
+
+
+NEWTON = (
+    'test_pressure_root_solves.py::test_every_newton_setup_meets_the_surface_boundary_condition'
+)
+
+
+def _solves_nodes(select, files):
+    """Node ids of tests/test_pressure_root_solves.py that a job with ``select`` runs."""
+    if files and 'test_pressure_root_solves.py' not in files:
+        return set()
+    done = subprocess.run(
+        [sys.executable, '-m', 'pytest', '--collect-only', '-q', '-m', select]
+        + ['-o', 'addopts=', '-p', 'no:cacheprovider', '--rootdir', str(ROOT / 'tests')]
+        + ['test_pressure_root_solves.py'],
+        cwd=ROOT / 'tests',
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+    assert done.returncode in (0, 5), done.stdout[-2000:] + done.stderr[-2000:]
+    return {line for line in done.stdout.splitlines() if '::' in line}
+
+
+@pytest.mark.unit
+def test_the_newton_setup_sweep_runs_alone_in_its_own_job():
+    """The sweep over every Newton setup is the longest real solve: it runs in one job, alone,
+    and its timeout marker fires before the job limit, so a slow runner names the test."""
+    from tests.test_pressure_root_solves import (
+        test_every_newton_setup_meets_the_surface_boundary_condition as sweep,
+    )
+
+    suites = _suites(WORKFLOW.read_text())
+    nodes = {name: _solves_nodes(*_entry(job)) for name, job in suites.items()}
+    assert [name for name, ids in nodes.items() if NEWTON in ids] == [
+        'accept_solves_newton_setups'
+    ]
+    assert nodes['accept_solves_newton_setups'] == {NEWTON}
+    (marker,) = [m.args[0] for m in sweep.pytestmark if m.name == 'timeout']
+    job = suites['accept_solves_newton_setups']
+    assert marker == 9000 < 60 * int(re.search(r'job_timeout: (\d+)', job).group(1))
