@@ -150,8 +150,8 @@ class TestSplitAlloy:
     )
     def test_any_valid_fraction_set_round_trips(self, w):
         """Over the valid domain every fraction comes back and the iron base keeps the rest."""
-        # the carrier must leave alloy mass: w_c = 8.94 w_H below 1
-        w['H'] = min(w.get('H', 0.0), 0.11)
+        # the normalised O rest of the carrier stays above -0.2 up to w_H 0.0205
+        w['H'] = min(w.get('H', 0.0), 0.0205)
         base, out = ca.split_alloy(_mix(**w))
         assert base == 'PALEOS:iron'
         assert set(out) == set(w)
@@ -304,6 +304,26 @@ class TestCarrier:
                 ca.split_alloy(_mix(H=w_h))
         # 0.43 wt% H, the carrier fraction of the Luo wet cell, is accepted
         assert ca.split_alloy(_mix(H=0.0043))[1] == {'H': pytest.approx(0.0043)}
+
+    @pytest.mark.parametrize(
+        ('w_h', 'w_o', 'admitted'),
+        [(0.02, 0.0, True), (0.0205, 0.0, True), (0.0207, 0.0, False), (0.05, 0.0252, False)],
+    )
+    def test_normalised_o_rest_bound(self, w_h, w_o, admitted):
+        """The first-order carrier split holds to an O rest of -0.2 of the remaining alloy."""
+        w_c = w_h * ca.CARRIER_PER_H
+        rest = (w_o - (w_c - w_h)) / (1 - w_c)
+        assert (rest >= -0.2) is admitted
+        try:
+            ca.split_alloy(_mix(H=w_h, O=w_o))
+            raised = None
+        except Exception as err:
+            raised = err
+        if admitted:
+            assert raised is None, raised
+        else:
+            assert isinstance(raised, ca.CoreAlloyError), raised
+            assert '-0.2' in str(raised) and f'{rest:.3f}' in str(raised)
 
     def test_carrier_above_the_luo_cell_fraction_warns_once(self, caplog, monkeypatch):
         """A carrier fraction above that of the Luo wet cell (0.0388) warns once per process."""
