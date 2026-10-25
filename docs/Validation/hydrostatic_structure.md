@@ -202,7 +202,7 @@ Largest relative difference of the three right-hand-side terms between `coupled_
 
 ## Surface boundary condition of the pressure solve
 
-**Why this check exists.** Zalmoxis searches for the central pressure that gives the right pressure at the surface. The search can return a central pressure for which the integration stops below the surface. The profile then ends in a padded point, with a pressure of 0 at the outer radius instead of the surface pressure.
+**Why this check exists.** Brent's method can return a central pressure for which the integration stops below the surface, and the solve must then refine that root. If the refinement does not run, or keeps the padded root, the profile ends with a pressure of 0 at the outer radius instead of the surface pressure.
 
 **What it tests.** The central pressure $P_c$ is the root of the residual $f(P_c) = P(R) - P_t$. Here $P(R)$ is the pressure at the outer radius $R$, and $P_t$ is the target surface pressure, 1 atm here. A trial $P_c$ whose integration stops before the outer radius gives $f = -P_t$, and the remaining points get zero pressure: this is a padded profile. Brent's method stops when its bracket is narrower than `xtol` $= 10^6$ Pa, and it can then return such a padded root. The solve then refines the root ([padded accepts](../Explanations/process_flow.md#padded-accepts)). The test uses an analytic residual that needs no structure solve. Below a central pressure $x_0$ the integration stops; above it, $P(R)$ rises from $0.95\,P_t$ at a slope $dP(R)/dP_c$ of 0.47. The Brent root of the first solve is then padded, and the refined root must reach the outer radius and miss $P_t$ by at most $0.1 P_t$.
 
@@ -228,7 +228,7 @@ A second test checks the same rule with real structure solves. It uses the Analy
 
 ## Surface boundary condition in every Newton setup
 
-**Why this check exists.** The refinement must also work on the real equations of state of a planet, not only on an analytic residual. Near the stop, $P(R)$ can jump or scatter. The accepted profile must then still meet the surface pressure within the cap of $P_t$.
+**Why this check exists.** The refinement must also work on the real equations of state of a planet, not only on an analytic residual. If it fails there, the accepted profile of a Newton run ends padded, or it misses the surface pressure by more than $P_t$.
 
 **What it tests.** The test runs the 6 Newton setups: the Analytic EOS (equation of state) at 1 Earth mass, PALEOS at 1, 5 and 10 Earth masses, and PALEOS on the JAX path with $T(r)$ from a numpy Picard solve at 1 and 3 Earth masses. Every setup must accept on the Newton tolerance. Every reached profile must miss $P_t$ by at most $P_t$, and no profile may have a padded node, except on the JAX path at 1 Earth mass. On that path $P(R)$ near the stop scatters, and the accepted profile can be padded. The case then requires one of 2 things: the reached end of the first sign pair of that pressure solve misses $P_t$ by more than $P_t$, or the solve has no sign pair.
 
