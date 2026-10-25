@@ -40,7 +40,6 @@ from .constants import MOLAR_MASS
 # ── Molar masses ─────────────────────────────────────────────────────
 MU_H2 = 2 * MOLAR_MASS['H']  # kg/mol
 MU_MGSIO3 = 100.39e-3  # kg/mol
-MU_H2O = 2 * MOLAR_MASS['H'] + MOLAR_MASS['O']  # kg/mol
 
 # ── Universal gas constant ───────────────────────────────────────────
 R_GAS = 8.314462  # J/(mol K)
