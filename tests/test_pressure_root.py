@@ -182,22 +182,26 @@ def test_the_second_solve_never_returns_a_worse_root():
     assert len(res.evals) > 2  # the second solve ran
 
 
-def test_a_failing_second_solve_keeps_the_first_root():
+@pytest.mark.parametrize('error', ['StructureSolveError', 'ValueError'])
+def test_a_failing_second_solve_keeps_the_first_root(error):
     """The second solve evaluates new central pressures; one that raises (a stop deep in the
     planet, or a non-converged brentq) leaves the first root, not a failed pressure solve."""
-    from zalmoxis.solver import StructureSolveError
-
+    exc = getattr(zs, error, None) or ValueError
     a, b = 1.999e11, 2.003e11
 
     def f(x):
         if x not in (a, b):
-            raise StructureSolveError('solve at P_c not finite')
+            raise exc('solve at P_c not finite')
         return -P_T if x == a else 1.41e8 - P_T
 
     res = _Residual(f)
     res(a)
     res(b)
-    np.testing.assert_equal(_refine(res, a), a)
+    try:
+        root = _refine(res, a)
+    except exc as err:
+        pytest.fail(f'the second solve raised through the refinement: {err!r}')
+    np.testing.assert_equal(root, a)
     assert len(res.evals) == 2
 
 
