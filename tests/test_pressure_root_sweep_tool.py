@@ -41,17 +41,19 @@ def _capture_save(monkeypatch):
     return seen
 
 
-@pytest.mark.parametrize('fault', ['error', 'not_converged'])
+@pytest.mark.parametrize('fault', ['error', 'not_converged', 'not_converged_padded'])
 def test_the_plot_marks_and_names_a_setup_without_an_accepted_profile(
     tmp_path, monkeypatch, capsys, fault
 ):
     """A setup that raised or did not converge has no P(R): the plot draws a cross above the
-    cap at its index and prints its index, name and error."""
+    cap at its index, prints its index, name and error, and counts it as failed only, also
+    when its record says padded."""
     seen = _capture_save(monkeypatch)
     _write(tmp_path, error_at=3)
-    if fault == 'not_converged':
+    if fault != 'error':
         path = tmp_path / 'setup_3.json'
-        rec = dict(json.loads(path.read_text()), error=None, P_R=1.2e5, padded=0)
+        p_r, flag = (0.0, 1) if fault == 'not_converged_padded' else (1.2e5, 0)
+        rec = dict(json.loads(path.read_text()), error=None, P_R=p_r, padded=flag)
         path.write_text(json.dumps(rec))
     tool.plot(str(tmp_path), str(tmp_path / 'assets'))
     lines = {line.get_label(): line for line in seen['fig'].axes[0].lines}
@@ -63,7 +65,9 @@ def test_the_plot_marks_and_names_a_setup_without_an_accepted_profile(
     assert failed.get_marker() == 'x'
     assert (len(lines['Reached'].get_xdata()), len(lines['Padded'].get_xdata())) == (13, 12)
     want = 'StructureSolveError' if fault == 'error' else 'not converged'
-    assert f'3 Analytic 1, 2000 layers: {want}' in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert f'3 Analytic 1, 2000 layers: {want}' in out
+    assert 'reached 13, padded 12, failed 1;' in out
 
 
 def test_the_plot_stops_on_a_setup_without_a_record(tmp_path):
