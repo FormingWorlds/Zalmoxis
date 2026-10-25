@@ -263,6 +263,19 @@ The density is continuous in $w_\mathrm{H}$ and $w_\mathrm{O}$, also where the O
 
 **Composition range.** The Luo wet cell has a carrier mass fraction of 0.0388 (0.43 wt% H); above it $\Delta v_c$ is used beyond the composition of the fit, and the first such core in a process gives a warning. The $\beta$ values and both Luo members describe liquid iron; at nodes where the PALEOS iron table is solid (for example 136 GPa and 4000 K) the same laws apply.
 
+The split of $\Delta v_c$ into an H part and a linear-law O part is first order in the O rest of the remaining alloy, $(w_\mathrm{O} - 7.94\, w_\mathrm{H}) / (1 - w_c)$. A core whose O rest is below -0.2 raises `CoreAlloyError`; with no core O that is $w_\mathrm{H}$ above 0.0206. The Luo cell (-0.036) and 1 wt% H (-0.087) lie inside the bound. Core density over the PALEOS iron density for the carrier, at the outermost core node of the default 1 $M_\oplus$ pure-iron structure (141.96 GPa, 5205 K) and at 135 GPa and 4000 K (all fractions are mass fractions; 0.0252 is the core O of the 50 GPa case of Tsutsumi et al. 2025):
+
+| $w_\mathrm{H}$ | $w_\mathrm{O}$ | $w_c$ | O rest / $(1 - w_c)$ | $\rho/\rho_\mathrm{Fe}$, 141.96 GPa, 5205 K | $\rho/\rho_\mathrm{Fe}$, 135 GPa, 4000 K |
+|---|---|---|---|---|---|
+| 0.0043 | 0.0 | 0.0384 | -0.0355 | 0.9416 | 0.9359 |
+| 0.01 | 0.0 | 0.0894 | -0.0871 | 0.8706 | 0.8594 |
+| 0.02 | 0.0 | 0.1787 | -0.1933 | 0.7619 | 0.7448 |
+| 0.05 | 0.0 | 0.4468 | -0.7173 | refused | refused |
+| 0.0043 | 0.0252 | 0.0384 | -0.0093 | 0.9188 | 0.9133 |
+| 0.01 | 0.0252 | 0.0894 | -0.0595 | 0.8530 | 0.8422 |
+| 0.02 | 0.0252 | 0.1787 | -0.1626 | 0.7508 | 0.7342 |
+| 0.05 | 0.0252 | 0.4468 | -0.6717 | refused | refused |
+
 The fractions of a light-element core are given explicitly for every component, including the iron base, and sum to 1. A composition with no iron left, a carrier fraction of 1 or more ($w_\mathrm{H} \geq 1/8.94 = 0.1119$), a linear law without positive density, a negative or non-finite fraction, a base other than `PALEOS:iron`, two iron bases or both H forms raises `CoreAlloyError`, as does a density at or below zero. The [equation-of-state validation page](../Validation/equation_of_state.md) holds the test cases.
 
 ---

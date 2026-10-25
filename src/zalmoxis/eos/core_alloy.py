@@ -73,6 +73,8 @@ LUO_WET['cell_mass'] = _M_DRY_CELL + _M_CARRIER_CELL
 # carrier mass fraction of the Luo wet cell (0.0388, 0.43 wt% H): the composition of the fit
 LUO_CARRIER_FRACTION = _M_CARRIER_CELL / (_M_DRY_CELL + _M_CARRIER_CELL)
 _CELL_WARNED = [False]
+# lowest O rest (w_O - 7.94 w_H) / (1 - w_c) of the first-order carrier split (w_H 0.0206 at w_O 0)
+O_REST_MIN = -0.2
 
 
 class CoreAlloyError(ValueError):
@@ -146,13 +148,19 @@ def _linear_factor(w):
     Raises
     ------
     CoreAlloyError
-        ``w_c >= 1`` (no alloy mass left) or ``1 - lin`` not positive and finite.
+        ``w_c >= 1`` (no alloy mass left), an O rest below :data:`O_REST_MIN` of the
+        remaining alloy, or ``1 - lin`` not positive and finite.
     """
     w_c = w.get(CARRIER, 0.0) * CARRIER_PER_H
     if w_c >= 1.0:
         raise CoreAlloyError(f'carrier mass fraction {w_c!r} leaves no alloy mass for {w!r}')
     # Total core O is w['O'] >= 0 (split_alloy); only the remainder can be negative.
     o_rem = w.get('O', 0.0) - (w_c - w.get(CARRIER, 0.0))
+    if o_rem / (1.0 - w_c) < O_REST_MIN:
+        raise CoreAlloyError(
+            f'normalised O rest {o_rem / (1.0 - w_c):.3f} of the carrier is below the bound '
+            f'{O_REST_MIN} of its first-order split, for {w!r}'
+        )
     lin = sum(LINEAR_BETA[el] * f for el, f in w.items() if el not in (CARRIER, 'O'))
     lin = (lin + LINEAR_BETA['O'] * o_rem) / (1.0 - w_c)
     if not np.isfinite(lin) or 1.0 - lin <= 0:
