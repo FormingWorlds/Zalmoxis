@@ -17,7 +17,7 @@ on:
 permissions:
   contents: read
 
-# Nightly: unit + smoke + integration with coverage, as five parallel jobs. Not on push or PR
+# Nightly: unit + smoke + integration with coverage, as seven parallel jobs. Not on push or PR
 # CI: each smoke or integration test runs a full solve (5-10 min on a 2-vCPU runner under
 # coverage), which adds no bug-finding signal to the unit suite.
 jobs:
