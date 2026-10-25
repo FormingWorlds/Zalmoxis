@@ -165,6 +165,27 @@ class TestCoreComponentCount:
         assert "'PALEOS:FeH'" in str(exc.value)
         assert fake.call_count == 0
 
+    def test_zero_alloy_core_reaches_the_solve_on_its_iron_base(self):
+        """A light-element core with every fraction 0 is pure iron and stays on JAX."""
+        layer_mixtures, mds, cache = _common_fixtures()
+        layer_mixtures['core'] = LayerMixture(
+            ['PALEOS:iron', 'CoreAlloy:H', 'CoreAlloy:O'], [1.0, 0.0, 0.0]
+        )
+        fake = mock.Mock(return_value=(np.zeros((20, 3)), np.zeros(3)))
+        with mock.patch.object(jw, 'solve_structure_jax', fake):
+            self._call(layer_mixtures, mds, cache)
+        assert fake.call_count == 1
+
+    def test_alloy_core_with_light_elements_raises_before_the_solve(self):
+        """A core with 1 wt% H must reach numpy."""
+        layer_mixtures, mds, cache = _common_fixtures()
+        layer_mixtures['core'] = LayerMixture(['PALEOS:iron', 'CoreAlloy:H'], [0.99, 0.01])
+        fake = mock.Mock(return_value=(np.zeros((20, 3)), np.zeros(3)))
+        with mock.patch.object(jw, 'solve_structure_jax', fake):
+            with pytest.raises(ValueError, match='light elements'):
+                self._call(layer_mixtures, mds, cache)
+        assert fake.call_count == 0
+
     def test_single_component_core_reaches_the_solve(self):
         """The guard leaves the supported pure-iron core on the JAX path."""
         layer_mixtures, mds, cache = _common_fixtures()

@@ -457,9 +457,9 @@ class TestSolveStructureJAXFallback:
         assert any('fell back to numpy path' in m for m in caplog.messages)
 
     def test_light_element_core_runs_on_numpy(self, caplog):
-        """A 2-component core passes the real JAX guard to numpy for the rest of main()."""
+        """A core with 1 wt% H goes from the real JAX guard to numpy for the rest of main()."""
         mixtures = {
-            'core': LayerMixture(['PALEOS:iron', 'PALEOS:FeH'], [0.99, 0.01]),
+            'core': LayerMixture(['PALEOS:iron', 'CoreAlloy:H'], [0.99, 0.01]),
             'mantle': LayerMixture(['Seager2007:MgSiO3'], [1.0]),
         }
         radii = np.linspace(1.0, 1e6, 30)
@@ -485,7 +485,7 @@ class TestSolveStructureJAXFallback:
                     use_jax=True,
                 )
         assert cache['_jax_fell_back'] is True
-        assert any('single-component core' in m for m in caplog.messages)
+        assert any('light elements' in m for m in caplog.messages)
         # numpy integrated the 5000 kg/m3 sphere: mass grows outward from the centre
         assert mass[-1] > mass[1] > 0.0
         assert pressure[0] == pytest.approx(1e12)
