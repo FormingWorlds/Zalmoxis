@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import math
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -291,3 +292,46 @@ def test_a_steep_pair_whose_reached_end_is_at_the_cap_is_solved():
     assert res.evals[b] == P_T
     _refine(res, a)
     assert len(res.evals) > 2
+
+
+@pytest.mark.physics_invariant
+@pytest.mark.parametrize(('width', 'high'), [(5e4, 2.0), (1e5, 1.5), (3e5, 1.5)])
+def test_a_second_solve_into_a_jump_keeps_the_reached_end_within_the_cap(width, high):
+    """Padded first root a, reached end b at 0.5 P_t, and P(R) = high P_t on the first 0.8 of
+    the pair: the second solve ends on the jump at its padded end. The result is b, the
+    root step (e) gives without the second solve, not the padded end."""
+    x0 = 2.0e11
+    res = _Residual(
+        lambda x: -P_T if x < x0 else (0.5 * P_T if x >= x0 + 0.8 * width else high * P_T)
+    )
+    res(x0 - 1e3)
+    res(x0 + width)
+    root = _refine(res, x0 - 1e3)
+    assert len(res.evals) > 2  # the second solve ran
+    assert res.evals[root] == 0.5 * P_T
+
+
+@pytest.mark.physics_invariant
+@settings(derandomize=True, deadline=None, max_examples=300)
+@given(
+    width=st.floats(1e4, 1e6),
+    levels=st.lists(st.floats(0.01, 3.0), min_size=1, max_size=6),
+)
+def test_the_second_solve_is_never_worse_than_none(width, levels):
+    """Stopped below x0, then P(R) - P_t in steps of ``levels`` P_t over the pair: the
+    refined root misses P_t by no more than the result without the second solve."""
+    x0 = 2.0e11
+
+    def f(x):
+        if x < x0:
+            return -P_T
+        return levels[min(int((x - x0) / width * len(levels)), len(levels) - 1)] * P_T
+
+    out = {}
+    for name, miss_pt in (('with', zs._REFINE_MISS_PT), ('without', math.inf)):
+        with patch.object(zs, '_REFINE_MISS_PT', miss_pt):
+            res = _Residual(f)
+            res(x0 - 1e3)
+            res(x0 + width)
+            out[name] = abs(res.evals[_refine(res, x0 - 1e3)])
+    assert out['with'] <= out['without']
