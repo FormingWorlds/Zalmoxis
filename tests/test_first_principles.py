@@ -28,6 +28,9 @@ from zalmoxis.constants import G, earth_mass, earth_radius
 from zalmoxis.mixing import LayerMixture
 from zalmoxis.structure_model import solve_structure
 
+# Seager et al. (2007): a 1 Earth-mass pure iron planet has R ~ 0.77 R_Earth.
+PURE_IRON_R, PURE_IRON_TOL = 0.77, 0.05
+
 # ============================================================================
 # Helpers
 # ============================================================================
@@ -450,7 +453,8 @@ class TestHydrostaticBalance:
         P_scale = (2.0 / 3.0) * math.pi * G * rho**2 * R
         relative_residual = np.abs(residual) / P_scale
 
-        assert np.max(relative_residual) < 1e-4, (
+        bound = 1e-4
+        assert np.max(relative_residual) < bound, (
             f'Max relative hydrostatic residual = {np.max(relative_residual):.2e}, '
             f'expected < 1e-4'
         )
@@ -465,7 +469,7 @@ class TestHydrostaticBalance:
                 np.maximum(relative_residual, 1e-12),
                 label='code residual, clipped at 1e-12',
             )
-            left.axhline(1e-4, ls=':', color='0.5', label='bound 1e-4')
+            left.axhline(bound, ls=':', color='0.5', label='bound 1e-4')
             left.set(xlabel='r / R', ylabel='relative residual', yscale='log')
             left.legend(fontsize='small')
             right.plot(radii[2:] / R, G * mass[2:] / radii[2:] ** 2, label=r'$GM/r^2$')
@@ -617,7 +621,8 @@ class TestGravitationalBindingEnergy:
         # Use the outermost radius where pressure is still positive
         E_analytic = -(3.0 / 5.0) * G * M_total**2 / R
 
-        assert E_numerical == pytest.approx(E_analytic, rel=0.01), (
+        rel_tol = 0.01
+        assert E_numerical == pytest.approx(E_analytic, rel=rel_tol), (
             f'Binding energy: numerical={E_numerical:.4e} J, analytic={E_analytic:.4e} J'
         )
 
@@ -631,7 +636,7 @@ class TestGravitationalBindingEnergy:
             ax.errorbar(
                 [r[-1] / R],
                 [E_analytic],
-                yerr=abs(E_analytic) * 0.01,
+                yerr=abs(E_analytic) * rel_tol,
                 fmt='s',
                 mfc='none',
                 capsize=4,
@@ -655,6 +660,10 @@ class TestGravitationalBindingEnergy:
 class TestEarthBenchmark:
     """Verify the full solver against known Earth properties using Analytic EOS."""
 
+    R_TOL = 0.05
+    G_REF, G_RTOL = 9.8, 0.10
+    P_REF_GPA, P_RTOL = 360.0, 0.15
+
     def test_earth_radius(self, validation_plot):
         """1 M_Earth with CMF=0.325 must give R ~ 1.0 R_Earth (+/- 5%)."""
         results = _run_analytic_eos_solver(1.0, cmf=0.325)
@@ -662,7 +671,7 @@ class TestEarthBenchmark:
 
         R_planet = results['radii'][-1]
         R_ratio = R_planet / earth_radius
-        assert R_ratio == pytest.approx(1.0, abs=0.05), (
+        assert R_ratio == pytest.approx(1.0, abs=self.R_TOL), (
             f'Earth radius ratio = {R_ratio:.4f}, expected ~1.0 +/- 0.05'
         )
 
@@ -674,18 +683,22 @@ class TestEarthBenchmark:
             ref = dict(fmt='s', mfc='none', capsize=4)
             fig, axes = plt.subplots(3, 1, sharex=True, figsize=(6.4, 6.4))
             axes[0].plot(radii, results['mass_enclosed'] / earth_mass, label='code profile')
-            axes[0].errorbar([1.0], [1.0], xerr=0.05, label='reference and tolerance', **ref)
+            axes[0].errorbar(
+                [1.0], [1.0], xerr=self.R_TOL, label='reference and tolerance', **ref
+            )
             axes[0].plot(
                 [R_ratio], [results['mass_enclosed'][-1] / earth_mass], 'o', label='code value'
             )
             axes[0].set_ylabel(r'M [$M_\oplus$]')
             axes[0].legend(fontsize='small')
             axes[1].plot(radii, results['gravity'])
-            axes[1].errorbar([radii[i_surf]], [9.8], yerr=9.8 * 0.10, **ref)
+            axes[1].errorbar(
+                [radii[i_surf]], [self.G_REF], yerr=self.G_REF * self.G_RTOL, **ref
+            )
             axes[1].plot([radii[i_surf]], [results['gravity'][i_surf]], 'o')
             axes[1].set_ylabel(r'g [m s$^{-2}$]')
             axes[2].plot(radii, results['pressure'] / 1e9)
-            axes[2].errorbar([0.0], [360.0], yerr=360.0 * 0.15, **ref)
+            axes[2].errorbar([0.0], [self.P_REF_GPA], yerr=self.P_REF_GPA * self.P_RTOL, **ref)
             axes[2].plot([0.0], [results['pressure'][0] / 1e9], 'o')
             axes[2].set(xlabel=r'r [$R_\oplus$]', ylabel='P [GPa]')
             fig.tight_layout()
@@ -704,7 +717,7 @@ class TestEarthBenchmark:
         i_surf = np.where(valid)[0][-1]
         g_surf = results['gravity'][i_surf]
 
-        assert g_surf == pytest.approx(9.8, rel=0.10), (
+        assert g_surf == pytest.approx(self.G_REF, rel=self.G_RTOL), (
             f'Surface gravity = {g_surf:.2f} m/s^2, expected ~9.8 +/- 10%'
         )
 
@@ -715,7 +728,7 @@ class TestEarthBenchmark:
 
         P_center = results['pressure'][0]
         P_center_GPa = P_center / 1e9
-        assert P_center_GPa == pytest.approx(360, rel=0.15), (
+        assert P_center_GPa == pytest.approx(self.P_REF_GPA, rel=self.P_RTOL), (
             f'Central pressure = {P_center_GPa:.1f} GPa, expected ~360 +/- 15%'
         )
 
@@ -739,7 +752,8 @@ class TestMassRadiusScaling:
         coeffs = np.polyfit(log_m, log_r, 1)
         alpha = coeffs[0]
 
-        assert alpha == pytest.approx(0.27, abs=0.04), (
+        alpha_ref, alpha_tol = 0.27, 0.04
+        assert alpha == pytest.approx(alpha_ref, abs=alpha_tol), (
             f'M-R scaling exponent alpha = {alpha:.3f}, expected ~0.27 +/- 0.04 (Seager+2007)'
         )
 
@@ -750,7 +764,7 @@ class TestMassRadiusScaling:
             grid = np.linspace(log_m[0], log_m[-1], 2)
             fig, ax = plt.subplots()
             ax.plot(10**grid, 10 ** np.polyval(coeffs, grid), label=f'fit, slope {alpha:.3f}')
-            for slope, ls in ((0.23, ':'), (0.31, ':')):
+            for slope, ls in ((alpha_ref - alpha_tol, ':'), (alpha_ref + alpha_tol, ':')):
                 ax.plot(
                     10**grid, 10 ** (pivot_r + slope * (grid - pivot_m)), ls=ls, color='0.5'
                 )
@@ -795,8 +809,8 @@ class TestCMFMonotonicity:
             )
             ax.errorbar(
                 [1.0],
-                [0.77],
-                yerr=0.05,
+                [PURE_IRON_R],
+                yerr=PURE_IRON_TOL,
                 fmt='s',
                 mfc='none',
                 capsize=4,
@@ -824,7 +838,7 @@ class TestPureIronPlanet:
         R_planet = results['radii'][-1]
         R_ratio = R_planet / earth_radius
         # Seager+2007 pure iron at 1 M_Earth gives R ~ 0.77 R_Earth
-        assert R_ratio == pytest.approx(0.77, abs=0.05), (
+        assert R_ratio == pytest.approx(PURE_IRON_R, abs=PURE_IRON_TOL), (
             f'Pure iron radius ratio = {R_ratio:.4f}, expected ~0.77 +/- 0.05'
         )
 
@@ -832,6 +846,8 @@ class TestPureIronPlanet:
 @pytest.mark.smoke
 class TestConservationLaws:
     """Verify mass conservation and surface pressure boundary condition."""
+
+    MASS_TOL, TRAPZ_TOL, P_SURF_TOL = 0.01, 0.02, 2e9
 
     def test_mass_conservation(self, validation_plot):
         """M(R_surface) must equal input planet_mass to within tolerance."""
@@ -841,7 +857,7 @@ class TestConservationLaws:
         M_surface = results['mass_enclosed'][-1]
         M_input = 1.0 * earth_mass
         rel_diff = abs(M_surface - M_input) / M_input
-        assert rel_diff < 0.01, (
+        assert rel_diff < self.MASS_TOL, (
             f'Mass conservation: M_surface/M_input = {M_surface / M_input:.6f}, '
             f'rel_diff = {rel_diff:.2e}'
         )
@@ -857,7 +873,7 @@ class TestConservationLaws:
             left.errorbar(
                 [0, 1],
                 [1.0, 1.0],
-                yerr=[0.01, 0.02],
+                yerr=[self.MASS_TOL, self.TRAPZ_TOL],
                 fmt='s',
                 mfc='none',
                 capsize=4,
@@ -872,7 +888,7 @@ class TestConservationLaws:
             )
             left.legend(fontsize='small')
             right.plot(radii / earth_radius, pressure / 1e9, label='code, pressure')
-            right.axhline(2.0, ls=':', color='0.5', label='2 GPa bound')
+            right.axhline(self.P_SURF_TOL / 1e9, ls=':', color='0.5', label='2 GPa bound')
             right.plot(
                 [radii[i_surf] / earth_radius],
                 [pressure[i_surf] / 1e9],
@@ -899,7 +915,7 @@ class TestConservationLaws:
         M_input = 1.0 * earth_mass
 
         rel_diff = abs(M_trapz - M_input) / M_input
-        assert rel_diff < 0.02, (
+        assert rel_diff < self.TRAPZ_TOL, (
             f'Trapezoidal mass: M_trapz/M_input = {M_trapz / M_input:.6f}, '
             f'rel_diff = {rel_diff:.2e}'
         )
@@ -921,7 +937,7 @@ class TestConservationLaws:
         P_surface = pressure[i_surf]
         target = 101325  # Pa
 
-        assert abs(P_surface - target) < 2e9, (
+        assert abs(P_surface - target) < self.P_SURF_TOL, (
             f'Surface pressure = {P_surface:.2e} Pa, '
             f'target = {target:.2e} Pa, '
             f'difference = {abs(P_surface - target):.2e} Pa (limit 2 GPa)'
@@ -965,6 +981,7 @@ class TestGridConvergence:
     the ODE integrator from the Picard and Brent loops.
     """
 
+    MASS_BOUND, PRESSURE_BOUND, NOISE_FLOOR = 1e-8, 1e-6, 1e-13
     RHO = 5000.0
     R = 6.4e6
     P_CENTER = 3.6e11
@@ -984,7 +1001,7 @@ class TestGridConvergence:
             errors.append(rel_err)
 
         # Check monotonic improvement only above noise floor
-        noise_floor = 1e-13
+        noise_floor = self.NOISE_FLOOR
         for i in range(1, len(errors)):
             if errors[i - 1] > noise_floor:
                 assert errors[i] <= errors[i - 1] * 1.5, (
@@ -993,7 +1010,9 @@ class TestGridConvergence:
                 )
 
         # At the finest grid, error should be well below solver tolerance
-        assert errors[-1] < 1e-8, f'ODE mass error at N=400: {errors[-1]:.2e}, expected < 1e-8'
+        assert errors[-1] < self.MASS_BOUND, (
+            f'ODE mass error at N=400: {errors[-1]:.2e}, expected < 1e-8'
+        )
 
         def figure():
             import matplotlib.pyplot as plt
@@ -1018,10 +1037,13 @@ class TestGridConvergence:
                 label='code, mass error',
             )
             ax.plot(resolutions, np.maximum(p_errors, 1e-14), 'x', label='code, pressure error')
-            ax.axhline(1e-8, ls='--', color='0.4', label='mass bound 1e-8')
-            ax.axhline(1e-6, ls='-.', color='0.4', label='pressure bound 1e-6')
+            ax.axhline(self.MASS_BOUND, ls='--', color='0.4', label='mass bound 1e-8')
+            ax.axhline(self.PRESSURE_BOUND, ls='-.', color='0.4', label='pressure bound 1e-6')
             ax.axhline(
-                1e-13, ls=':', color='0.6', label='noise floor 1e-13; marks clipped at 1e-14'
+                self.NOISE_FLOOR,
+                ls=':',
+                color='0.6',
+                label='noise floor 1e-13; marks clipped at 1e-14',
             )
             ax.set(
                 xscale='log',
@@ -1047,7 +1069,7 @@ class TestGridConvergence:
             rel_err = np.max(np.abs(pressure[valid] - P_exact[valid]) / P_exact[valid])
             errors.append(rel_err)
 
-        assert errors[-1] < 1e-6, (
+        assert errors[-1] < self.PRESSURE_BOUND, (
             f'ODE pressure error at N=400: {errors[-1]:.2e}, expected < 1e-6'
         )
 

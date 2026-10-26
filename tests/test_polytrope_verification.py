@@ -105,7 +105,8 @@ def test_surface_radius_matches_exact_lane_emden(validation_plot):
     r_surf, _mass, radii, density = _integrate_polytrope(earth_mass)
     assert r_surf == pytest.approx(_R_LE, rel=1e-4)
     # Discrimination guard: a factor-2 error in K would put R at sqrt(2) R_earth (~41% off).
-    assert abs(r_surf / _R_LE - np.sqrt(2.0)) > 0.1
+    wrong_ratio = np.sqrt(2.0)
+    assert abs(r_surf / _R_LE - wrong_ratio) > 0.1
 
     def figure():
         import matplotlib.pyplot as plt
@@ -119,7 +120,7 @@ def test_surface_radius_matches_exact_lane_emden(validation_plot):
         )
         ax.plot([1.0], [0.0], 's', mfc='none', ms=10, label='exact radius R_Earth')
         ax.plot([r_surf / _R_LE], [0.0], 'o', label='code surface radius')
-        ax.plot([np.sqrt(2.0)], [0.0], 'x', label=r'$\sqrt{2}$ R (K off by 2)')
+        ax.plot([wrong_ratio], [0.0], 'x', label=r'$\sqrt{2}$ R (K off by 2)')
         ax.set(xlabel=r'r / $R_\oplus$', ylabel=r'$\rho / \rho_c$')
         ax.legend(fontsize='small')
         fig.tight_layout()
