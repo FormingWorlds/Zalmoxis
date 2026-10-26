@@ -169,7 +169,7 @@ $$
 
 **Why this check exists.** Tests 1 to 3 check the profiles point by point. An integral over the whole planet checks that the mass and density profiles agree as a whole. A wrong factor in $dM/dr$ makes this test fail.
 
-**What it tests.** The gravitational binding energy $E_\mathrm{grav}$ [J], the energy needed to disperse the planet to infinity, is
+**What it tests.** The gravitational binding energy $E_\mathrm{grav}$ \[J\], the energy needed to disperse the planet to infinity, is
 
 $$
 E_\mathrm{grav} = -\int_0^R \frac{G\,M(r)}{r}\, 4\pi r^2 \rho\, dr
