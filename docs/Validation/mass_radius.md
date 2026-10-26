@@ -8,7 +8,7 @@ This page checks the full structure solver of Zalmoxis: the radius, the central 
 
 **Why this check exists.** The solver has 3 nested loops: the mass-radius convergence, the Picard iteration of the density and the Brent root search of the central pressure. An error in any loop can still give a converged but wrong planet, without an error message.
 
-**What it tests.** The complete solver chain against the best-known planet in the solar system. Setup: $M_p = 1\, M_\oplus$, $f_c = 0.325$, Seager et al. (2007) analytic EOS (iron core, MgSiO$_3$ mantle). No tabulated data files needed. The analytic EOS uses the modified polytrope $\rho(P) = \rho_0 + c P^n$ with published coefficients.
+**What it tests.** The complete solver chain against the best-known planet in the solar system. Setup: planet mass $M_p = 1\, M_\oplus$, core mass fraction $f_c = 0.325$, Seager et al. (2007) analytic EOS (iron core, MgSiO$_3$ mantle). No tabulated data files needed. The analytic EOS uses the modified polytrope $\rho(P) = \rho_0 + c P^n$ with published coefficients.
 
 The results:
 
@@ -58,15 +58,17 @@ Zalmoxis produces a strictly decreasing curve from $R \approx 1.02\, R_\oplus$ a
 
 ![CMF sweep](../img/validation/cmf_sweep.png)
 
-A pure iron planet ($f_c = 1$) has $0.80\, R_\oplus$, against the Seager et al. (2007) value of $0.77\, R_\oplus$ for a 1 $M_\oplus$ iron planet; the test accepts `abs=0.05`. The radius falls faster with CMF at high CMF: by 0.043 $R_\oplus$ from $f_c = 0.3$ to 0.5 and by 0.046 $R_\oplus$ from 0.5 to 0.7.
+A pure iron planet ($f_c = 1$) has $0.80\, R_\oplus$, against the Seager et al. (2007) value of $0.77\, R_\oplus$ for a 1 $M_\oplus$ iron planet; the test accepts `abs=0.05`. The radius falls faster with CMF at high CMF: by 0.043 $R_\oplus$ from $f_c = 0.3$ to 0.5 and by 0.047 $R_\oplus$ from 0.5 to 0.7.
 
 ### Conservation checks on full solver output
 
 The smoke tests of `TestConservationLaws` also verify three conservation properties of the full solver output:
 
 - **Mass conservation:** $M(R_\mathrm{surface}) = M_p$ to within 1 %, and to within 2 % by trapezoidal integration of $4\pi r^2 \rho(r)$ over the solver's own density and radii.
-- **Surface pressure:** $P(R_\mathrm{surface}) = P_\mathrm{target}$ (101,325 Pa) to within 2 GPa, twice the pressure tolerance of 1 GPa that the Brent solver uses.
+- **Surface pressure:** $P(R_\mathrm{surface}) = P_\mathrm{target}$ (101,325 Pa) to within 2 GPa, twice the surface-pressure tolerance of the solver (1 GPa).
 - **Gauss's law:** the integrated $g$ equals $GM/r^2$ to $< 10^{-3}$ relative error at every radius except the first 6 grid points and the points with $P \leq 0$.
+
+**Known limit.** The surface-pressure check allows 2 GPa against a target of 101,325 Pa, so it cannot tell a correct surface pressure from one wrong by 1e4 times; the solver itself refuses a residual above 1 GPa. The mass checks allow 1 % and 2 %.
 
 **How we know the right answer.** The scaling law and the pure-iron radius of Seager et al. (2007), and physical constraints (monotonicity, mass, surface pressure, Gauss's law) with no published reference.
 
