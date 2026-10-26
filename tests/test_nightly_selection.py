@@ -19,8 +19,17 @@ WORKFLOW = ROOT / '.github' / 'workflows' / 'nightly.yml'
 
 
 def _suites(workflow):
-    """Matrix entry of each nightly suite, by suite name."""
-    return {j.split('\n', 1)[0].strip(): j for j in re.split(r'\n\s*- suite:', workflow)[1:]}
+    """Matrix entry of each nightly suite, by suite name; the matrix ends at the first line
+    indented by 4 spaces or less after ``include:``."""
+    matrix = re.split(r'\n {0,4}\S', workflow[workflow.index('include:') :], maxsplit=1)[0]
+    return {j.split('\n', 1)[0].strip(): j for j in re.split(r'\n\s*- suite:', matrix)[1:]}
+
+
+def _job_limit(job):
+    """The job_timeout [min] of one matrix entry (quotes and a trailing comment allowed)."""
+    limit = re.search(r'^ +job_timeout:\s*["\']?(\d+)["\']?\s*(#.*)?$', job, re.M)
+    assert limit, f'no job_timeout in {job.splitlines()[0].strip()}'
+    return int(limit.group(1))
 
 
 def _entry(job):
@@ -166,21 +175,18 @@ _MARKS = (
     'accept_solves_long',
     'accept_solves_newton_setups',
 )
-_SPECIAL = {
-    'wolfbower',
-    'paleos_adiabat',
-    'accept_solves',
-    'accept_solves_long',
-    'accept_solves_newton_setups',
-}
+_SPECIAL = set(_MARKS) - {'unit', 'smoke', 'integration', 'slow'}
 
 
 def _partition_faults(workflow):
-    """Marker sets, with the file for accept_solves, that no job or more than one job selects.
-    A set counts when it has a special mark, or unit, smoke or integration without slow."""
+    """Marker sets, with each named file and an unnamed one, that no job or more than one job
+    selects. A set counts when it has a special mark, or unit, smoke or integration without
+    slow. In an unnamed file, a set that the per-file accept jobs take runs in no job; the
+    collection tests above cover that case."""
     from _pytest.mark.expression import Expression
 
     jobs = [(Expression.compile(sel), files) for sel, files in _jobs(workflow)]
+    accept = Expression.compile(_accept_select(workflow))
     named = sorted({f for _, files in jobs for f in files})
     faults = []
     for bits in itertools.product((False, True), repeat=len(_MARKS)):
@@ -190,22 +196,32 @@ def _partition_faults(workflow):
             or (marks & {'unit', 'smoke', 'integration'} and 'slow' not in marks)
         ):
             continue
-        for f in named if 'accept_solves' in marks else ['other.py']:
+        for f in named + ['other.py']:
             n = sum(
                 e.evaluate(marks.__contains__) for e, files in jobs if not files or f in files
             )
-            if n != 1:
+            if n != 1 and not (
+                n == 0 and f == 'other.py' and accept.evaluate(marks.__contains__)
+            ):
                 faults.append((sorted(marks), f, n))
     return faults
 
 
 @pytest.mark.unit
 def test_the_nightly_jobs_select_each_marked_test_once():
-    """Every combination of marks a test can carry runs in exactly one nightly job, and every
-    select names only marks that the partition enumerates."""
+    """Every combination of marks a test can carry runs in exactly one nightly job; every
+    select is set and names only registered marks that the partition enumerates, and every
+    named file exists."""
+    import tomllib
+
     workflow = WORKFLOW.read_text()
-    names = {w for sel, _ in _jobs(workflow) for w in re.findall(r'\w+', sel)}
+    jobs = _jobs(workflow)
+    assert all(sel for sel, _ in jobs)  # pytest -m '' would run every test
+    names = {w for sel, _ in jobs for w in re.findall(r'\w+', sel)}
     assert names - {'and', 'or', 'not'} <= set(_MARKS)
+    ini = tomllib.loads((ROOT / 'pyproject.toml').read_text())['tool']['pytest']['ini_options']
+    assert set(_MARKS) <= {m.split(':')[0] for m in ini['markers']}
+    assert all((ROOT / 'tests' / f).is_file() for _, files in jobs for f in files)
     assert _partition_faults(workflow) == []
 
 
@@ -221,9 +237,15 @@ def test_the_nightly_jobs_select_each_marked_test_once():
             id='no_paleos_job',
         ),
         pytest.param(
-            'and not accept_solves and not accept_solves_long and not accept_solves_newton_setups',
+            'and not accept_solves and not accept_solves_long'
+            ' and not accept_solves_newton_setups',
             'and not accept_solves',
             id='main_takes_sub_marks',
+        ),
+        pytest.param(
+            'select: accept_solves and not accept_solves_long',
+            'select: (accept_solves or unit) and not accept_solves_long',
+            id='file_job_takes_unit',
         ),
         pytest.param(
             'select: accept_solves_long and not accept_solves_newton_setups and',
@@ -233,8 +255,8 @@ def test_the_nightly_jobs_select_each_marked_test_once():
     ],
 )
 def test_a_gap_in_the_nightly_partition_is_found(old, new):
-    """A typo in a select, a tier dropped from the main job or a job without a select leaves
-    a combination of marks in no job."""
+    """A typo in a select, a tier dropped from the main job, a job without a select or a job
+    that takes another job's marks leaves a combination of marks in no job or in two."""
     workflow = WORKFLOW.read_text()
     assert old in workflow
     assert _partition_faults(workflow.replace(old, new))
@@ -280,6 +302,7 @@ def _solves_nodes(select, files):
 def test_the_newton_setup_sweep_runs_alone_in_its_own_job():
     """The sweep over every Newton setup is the longest real solve: it runs in one job, alone,
     and its timeout marker fires before the job limit, so a slow runner names the test."""
+    from tests.test_invariants import _LONG
     from tests.test_pressure_root_solves import (
         test_every_newton_setup_meets_the_surface_boundary_condition as sweep,
     )
@@ -295,18 +318,17 @@ def test_the_newton_setup_sweep_runs_alone_in_its_own_job():
         not _entry(suites['accept_solves_newton_setups'])[1]
         + _entry(suites['accept_solves_long'])[1]
     ), 'the long and Newton setup jobs select over the whole tree'
-    limit = re.search(r'^ +job_timeout: (\d+)$', suites['accept_solves_newton_setups'], re.M)
-    assert limit, 'the accept_solves_newton_setups job sets no job_timeout'
-    limits = re.findall(r'^ *timeout-minutes:.*$', WORKFLOW.read_text(), re.M)
-    assert limits == ['    timeout-minutes: ${{ matrix.job_timeout || 90 }}'], limits
-    assert marker == 9000 < 60 * int(limit.group(1))
+    key = r'^( *)["\']?timeout-minutes["\']?:\s*(.*?)\s*(?:#.*)?$'
+    limits = re.findall(key, WORKFLOW.read_text(), re.M)
+    assert limits == [('    ', '${{ matrix.job_timeout || 90 }}')], limits
+    assert marker == 9000 < 60 * _job_limit(suites['accept_solves_newton_setups'])
+    assert _LONG[1].args[0] == 4800 < 60 * _job_limit(suites['accept_solves_long'])
 
 
 @pytest.mark.smoke
 def test_only_the_newton_setup_sweep_carries_its_mark():
-    """The Newton setup job selects over the whole tree (about 20 s to collect): the mark is
-    on one file, and that file holds only the sweep with it."""
+    """The Newton setup job selects over the whole tree (about 20 s to collect), and the
+    mark is on one file only; the unit test above checks the tests of that file."""
     assert _marked(ROOT / 'tests', 'accept_solves_newton_setups') == {
         'test_pressure_root_solves.py'
     }
-    assert _solves_nodes('accept_solves_newton_setups', []) == {NEWTON}
