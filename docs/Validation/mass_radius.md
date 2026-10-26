@@ -22,9 +22,11 @@ The test compares the radius with the Earth radius of `zalmoxis.constants`, 6335
 
 ![Earth benchmark](../img/validation/earth_benchmark.png)
 
-**How we know the right answer.** The measured radius, central pressure and surface gravity of the Earth. The 4-9% deviations are expected and physically understood. The Seager modified polytrope is a temperature-independent, zero-Kelvin EOS fit to the merged Vinet/Birch-Murnaghan (low pressure) and Thomas-Fermi-Dirac (high pressure) equations of state. It does not account for thermal expansion, which makes real Earth's mantle less dense (and therefore larger) than the zero-temperature prediction. The density profile (panel a) shows the core-mantle discontinuity at about 3380 km radius, with iron densities of 11,100-12,900 kg/m$^3$ in the core and silicate densities of 4,100-5,900 kg/m$^3$ in the mantle. The gravity profile (panel c) peaks near the CMB (as expected for Earth-like planets where the dense core concentrates mass) and decreases toward the surface.
+**How we know the right answer.** The radius and surface gravity of the Earth, and its central pressure from models (360 GPa in the test; `zalmoxis.constants` cites 365 GPa from Nimmo 2015). The 4-9% deviations are expected and physically understood. The Seager modified polytrope is a temperature-independent, zero-Kelvin EOS fit to the merged Vinet/Birch-Murnaghan (low pressure) and Thomas-Fermi-Dirac (high pressure) equations of state. It does not account for thermal expansion, which makes real Earth's mantle less dense (and therefore larger) than the zero-temperature prediction. The density profile (panel a) shows the core-mantle discontinuity at about 3380 km radius, with iron densities of 11,100-12,900 kg/m$^3$ in the core and silicate densities of 4,100-5,900 kg/m$^3$ in the mantle. The gravity profile (panel c) peaks at the CMB, at about 11.2 m/s$^2$, falls to about 10.4 m/s$^2$ near 4700 km and rises again to 10.67 m/s$^2$ at the surface.
 
 **Why it matters.** This case checks all 3 loops of the solver at once.
+
+**Known limit.** The tolerances are wide (radius 5 %, gravity 10 %, central pressure 15 %), because the zero-temperature EOS is 4-9 % from the Earth. A loop error that moves the radius by about 1 % passes this case.
 
 ??? info "Test details"
     - Reference: Earth values as the test pins them: radius $1\,R_\oplus$, surface gravity 9.8 m/s$^2$, central pressure 360 GPa (the test names no source; the table above compares with 6371 km, 9.81 m/s$^2$ and 365 GPa)
@@ -34,7 +36,7 @@ The test compares the radius with the Earth radius of `zalmoxis.constants`, 6335
 
 ## Test 6: Mass-radius scaling and CMF sensitivity
 
-**Why this check exists.** A solver can match one planet and still give wrong trends with mass or composition. Wrong trends move every planet away from that point.
+**Why this check exists.** A solver can match one planet and still give wrong trends with mass or composition. Gross errors in a trend fail these checks; the exponent test accepts 0.23 to 0.31, so a small slope error passes.
 
 **What it tests.** Whether the solver gives physically correct trends across parameter space, not just a single point: the mass-radius relation, the radius against the CMF, and conservation checks.
 
@@ -62,9 +64,9 @@ A pure iron planet ($f_c = 1$) has $0.80\, R_\oplus$, against the Seager et al. 
 
 The smoke tests of `TestConservationLaws` also verify three conservation properties of the full solver output:
 
-- **Mass conservation:** $M(R_\mathrm{surface}) = M_p$ to within the solver's mass-convergence tolerance, confirmed independently by trapezoidal integration of $4\pi r^2 \rho(r)$.
+- **Mass conservation:** $M(R_\mathrm{surface}) = M_p$ to within 1 %, and to within 2 % by trapezoidal integration of $4\pi r^2 \rho(r)$ over the solver's own density and radii.
 - **Surface pressure:** $P(R_\mathrm{surface}) = P_\mathrm{target}$ (101,325 Pa) to within 2 GPa, twice the pressure tolerance of 1 GPa that the Brent solver uses.
-- **Gauss's law:** $g = GM/r^2$ satisfied to $< 10^{-3}$ relative error at all radii in the converged solution, verifying that the Picard iteration and Brent solver do not introduce conservation violations.
+- **Gauss's law:** the integrated $g$ equals $GM/r^2$ to $< 10^{-3}$ relative error at every radius except the first 6 grid points and the points with $P \leq 0$.
 
 **How we know the right answer.** The scaling law and the pure-iron radius of Seager et al. (2007), and physical constraints (monotonicity, mass, surface pressure, Gauss's law) with no published reference.
 

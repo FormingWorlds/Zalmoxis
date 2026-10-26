@@ -6,9 +6,9 @@ This page shows how the initial thermal state of a planet depends on its mass an
 
 ## Mass dependence with the Seager et al. (2007) EOS
 
-**Why this check exists.** The initial temperatures depend on the planet mass through the gravitational energy released in accretion. A wrong energy term changes the temperatures of every planet mass.
+**Why this comparison exists.** The initial temperatures depend on the planet mass through the gravitational energy released in accretion; the figures show that dependence.
 
-**What it tests.** `tools/validation/validate_thermal_state.py` runs Zalmoxis with the [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) analytic EOS for 5 planet masses (0.5, 1, 2, 3, 5 $M_\oplus$) and computes the initial thermal state for each.
+**What it shows.** `tools/validation/validate_thermal_state.py` runs Zalmoxis with the [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) analytic EOS for 5 planet masses (0.5, 1, 2, 3, 5 $M_\oplus$) and computes the initial thermal state for each.
 
 ![Initial thermal state against planet mass](../img/validation/validate_thermal_state_mass.png)
 
@@ -32,9 +32,9 @@ Plot 2: $U_d$, $U_u$ and $\Delta U = U_d - U_u$ against planet mass.
 
 ## Constant and PALEOS material properties
 
-**Why this check exists.** Constant material properties and PALEOS properties give different initial temperatures. The comparison shows how large that difference is.
+**Why this comparison exists.** Constant material properties and PALEOS properties give different initial temperatures; the comparison shows how large that difference is.
 
-**What it tests.** `tools/validation/validate_thermal_state_paleos.py` compares the initial thermal state from the Seager et al. (2007) EOS with PALEOS material properties. It reproduces the mass-temperature trend from White & Li (2025, Fig. 3) using:
+**What it shows.** `tools/validation/validate_thermal_state_paleos.py` compares the initial thermal state from the Seager et al. (2007) EOS with PALEOS material properties. It reproduces the mass-temperature trend from White & Li (2025, Fig. 3) using:
 
 1. Constant material properties (C_Fe=840, C_sil=1200, nabla_ad=0.3)
 2. PALEOS-derived material properties (nabla_ad from unified table, C_p from table, pressure-dependent heat capacities)
@@ -45,7 +45,7 @@ The script also highlights the surface temperature issue: for 1 $M_\oplus$ plane
 
 ![Energy budget, constant and PALEOS material properties](../img/validation/thermal_state_energy_comparison.png)
 
-**How we know the right answer.** The mass-temperature trend of White & Li (2025, Fig. 3).
+**How we know the right answer.** The script compares with the trend of White & Li (2025, Fig. 3) in style only, and overlays the Boujibar et al. (2020) polynomial; it plots no White & Li numbers.
 
 **Why it matters.** It shows which material properties the initial thermal state needs.
 
@@ -59,17 +59,18 @@ The script also highlights the surface temperature issue: for 1 $M_\oplus$ plane
 
 ## Three tiers of material properties
 
-**Why this check exists.** The structure and the material properties can each come from the simple or the PALEOS model. The comparison separates their effects.
+**Why this comparison exists.** The structure and the material properties can each come from the simple or the PALEOS model; the comparison separates their effects.
 
-**What it tests.** `tools/validation/validate_thermal_state_full_paleos.py` compares 3 tiers: the Seager et al. (2007) structure with constant properties, the same structure with the PALEOS adiabatic gradient, and the PALEOS structure with PALEOS properties at the CMB. It also sweeps the accretion heat retention efficiency $f_a$ from 0.01 to 0.40 for the full PALEOS case. It writes `thermal_state_three_tiers`, `thermal_state_fa_full_paleos` and `thermal_state_whiteli_comparison`; this page shows none of them.
+**What it shows.** `tools/validation/validate_thermal_state_full_paleos.py` compares 3 tiers: the Seager et al. (2007) structure with constant properties, the same structure with the PALEOS adiabatic gradient, and the PALEOS structure with PALEOS properties at the CMB. It also sweeps the accretion heat retention efficiency $f_a$ from 0.01 to 0.40 for the full PALEOS case. It writes `thermal_state_three_tiers`, `thermal_state_fa_full_paleos` and `thermal_state_whiteli_comparison`; this page shows none of them.
 
-**How we know the right answer.** The comparison with White & Li (2025) in `thermal_state_whiteli_comparison`.
+**How we know the right answer.** The Boujibar et al. (2020) polynomial, and a run with the accretion efficiency of White & Li (2025), $f_a$ = 0.04 (other parameters of their model are not passed through).
 
-**Why it matters.** It shows the effect of the accretion heat retention $f_a$ on the start temperatures.
+**Why it matters.** The script writes the effect of the accretion heat retention $f_a$ on the start temperatures to `thermal_state_fa_full_paleos`, which this page does not show.
 
 **Known limit.** No test asserts these results, the page shows none of the figures, and the script does not run with the current `initial_thermal_state`.
 
 ??? info "Test details"
+    - References: Boujibar et al. (2020) polynomial; White & Li (2025), accretion efficiency $f_a$ = 0.04.
     - Tolerance: none (no test).
     - Test id: none; status: script figure, no test, not run in CI.
     - Command: `python tools/validation/validate_thermal_state_full_paleos.py`. Like the 2 scripts above, it reads the `T_surface` key, which the current `initial_thermal_state` does not return.
