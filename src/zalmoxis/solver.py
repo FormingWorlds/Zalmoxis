@@ -661,7 +661,10 @@ def main(
         sets ``converged`` to False and leaves ``accepted_on`` as it is. A converged
         result has ``integration_tolerances``, the (rtol, atol) of the solve that
         returned, with rtol at least the RK45 floor of 100 eps, which the invariant
-        check used; an unconverged result has none.
+        check used; an unconverged result has none. ``padded`` (bool) is True when
+        the pressure at the outer radius is 0: the integration stopped at P = 0 before
+        the outer radius, and the nodes past the stop hold P = 0. ``main`` logs one
+        warning when it returns a converged padded result.
 
     Raises
     ------
