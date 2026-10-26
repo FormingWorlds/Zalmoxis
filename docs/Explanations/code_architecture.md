@@ -153,14 +153,14 @@ Two implementations, both convergent on the same fixed point.
 
 **Picard (default, `outer_solver = 'picard'`)**: at each iteration, solve the structure for the current $R$, measure $M(R)$, and update via damped cube-root scaling clamped to $[0.5, 2.0]$. Robust on Earth-like and rocky cases; cheap per iteration.
 
-**Newton + brentq fallback (`outer_solver = 'newton'`)**: implemented in `_solve_newton_outer` (`solver.py:751`). Recommended on hot fully-molten profiles ($T_{\mathrm{surf}} > 3000$ K) and on super-Earth scales ($M_p > 2 M_\oplus$), where damped Picard has a known basin attractor and the outer R-search oscillates without converging. The advisory at `solver.py:285` logs a one-line INFO suggestion when it detects this regime under the default Picard setting.
+**Newton + brentq fallback (`outer_solver = 'newton'`)**: implemented in `_solve_newton_outer` in `solver.py`. Recommended on hot fully-molten profiles ($T_{\mathrm{surf}} > 3000$ K) and on super-Earth scales ($M_p > 2 M_\oplus$), where damped Picard has a known basin attractor and the outer R-search oscillates without converging. An advisory in `main` logs a one-line INFO suggestion when it detects this regime under the default Picard setting.
 
 !!! note "Default is Picard standalone, Newton when run from PROTEUS"
-    The Zalmoxis-side default is `'picard'` (`solver.py:165`) because Newton requires tighter integrator tolerances. For Earth-like configurations Picard converges in a handful of iterations. For hot or massive cases, set `outer_solver = 'newton'` in your TOML. The PROTEUS-side schema (`proteus.config._struct.Zalmoxis`) overrides this default to `'newton'` because PROTEUS-coupled runs routinely include hot fully-molten profiles and super-Earth scales where Picard hits a known basin attractor; see [Coupling to PROTEUS](proteus_coupling.md#outer-solver-and-jax-path).
+    The Zalmoxis-side default is `'picard'` (set in `main`) because Newton requires tighter integrator tolerances. For Earth-like configurations Picard converges in a handful of iterations. For hot or massive cases, set `outer_solver = 'newton'` in your TOML. The PROTEUS-side schema (`proteus.config._struct.Zalmoxis`) overrides this default to `'newton'` because PROTEUS-coupled runs routinely include hot fully-molten profiles and super-Earth scales where Picard hits a known basin attractor; see [Coupling to PROTEUS](proteus_coupling.md#outer-solver-and-jax-path).
 
 ### Middle: density Picard
 
-Inside a fixed $R$, alternate between integrating the structure ODE (yielding $P(r)$) and re-evaluating $\rho(P, T)$ from the EOS. The trivial update is the damped fixed point $\rho_{k+1} = \alpha\,\rho_{\mathrm{EOS}}(P_k, T_k) + (1-\alpha)\,\rho_k$ with $\alpha = 0.5$. With `use_anderson = True`, `_anderson_mix` (`solver.py:59-118`) accelerates by least-squares-combining the residual history (Walker & Ni 2011, Type-II form, default window $m_{\max} = 5$). On a singular Anderson matrix or non-finite output the helper returns `None` and the caller falls back to damped Picard for that step.
+Inside a fixed $R$, alternate between integrating the structure ODE (yielding $P(r)$) and re-evaluating $\rho(P, T)$ from the EOS. The trivial update is the damped fixed point $\rho_{k+1} = \alpha\,\rho_{\mathrm{EOS}}(P_k, T_k) + (1-\alpha)\,\rho_k$ with $\alpha = 0.5$. With `use_anderson = True`, `_anderson_mix` in `solver.py` accelerates by least-squares-combining the residual history (Walker & Ni 2011, Type-II form, default window $m_{\max} = 5$). On a singular Anderson matrix or non-finite output the helper returns `None` and the caller falls back to damped Picard for that step.
 
 ### Innermost: structure ODE
 
@@ -188,18 +188,18 @@ Scope today is the Stage-1b two-layer config (PALEOS:iron core + PALEOS-2phase:M
 
 **Float64 enforcement.** `jax_eos/__init__.py` calls `jax.config.update('jax_enable_x64', True)` at import. Without this, JAX defaults to float32 and downstream density / pressure / temperature accumulate ~$10^{-7}$ relative error, far above the parity tolerance.
 
-**Parity guarantee.** The JAX kernels match their numpy reference to FP-rounding precision (rtol $\leq 10^{-12}$ on bilinear, rtol $\leq 10^{-6}$ on the full RHS, end-to-end rtol $\leq 10^{-5}$ at solver tolerance). Tests in `tests/test_jax_*_parity.py`.
+**Parity guarantee.** The JAX kernels match their numpy reference to FP-rounding precision (rtol $\leq 10^{-12}$ on bilinear, rtol $\leq 10^{-6}$ on the full RHS, rtol $\leq 10^{-5}$ on the full solve at solver tolerance). Tests in `tests/test_jax_*_parity.py`.
 
-**SPIDER-coupling specialisation.** `jax_eos/wrapper.py:123-260` accepts both `temperature_function` (callable in $r, P$) and `temperature_arrays = (r_arr, T_arr)` (an explicit r-indexed profile). The latter is preferred when the caller's $T$ is naturally indexed by radius (e.g. SPIDER or Aragog supplying $T(r)$): the P-indexed adiabat tabulation inside the wrapper would collapse to a constant for P-ignoring callables and break convergence.
+**SPIDER-coupling specialisation.** `solve_structure_via_jax` in `jax_eos/wrapper.py` accepts both `temperature_function` (callable in $r, P$) and `temperature_arrays = (r_arr, T_arr)` (an explicit r-indexed profile). The latter is preferred when the caller's $T$ is naturally indexed by radius (e.g. SPIDER or Aragog supplying $T(r)$): the P-indexed adiabat tabulation inside the wrapper would collapse to a constant for P-ignoring callables and break convergence.
 
 ## Performance hotspots
 
 | Hotspot | Location | Why it matters |
 |---|---|---|
-| Anderson Type-II acceleration | `solver.py:59-118` | Cuts the density Picard loop from ~20 to ~5 iterations on hot profiles |
-| Lazy PALEOS table loader | `eos/interpolation.py:158`, `eos/paleos_api_cache.py` | First-touch only; SHA-validated cache avoids re-parsing 100 MB+ text tables |
-| In-table PALEOS T-clamping | `eos/interpolation.py:481-540` | O(1) per-cell index on the log-uniform grid; replaces `np.interp` in the inner loop |
-| Bilinear kernel | `eos/interpolation.py:349-417`, `jax_eos/bilinear.py` | Called millions of times; the JAX port specialises this for JIT |
+| Anderson Type-II acceleration | `_anderson_mix` in `solver.py` | Cuts the density Picard loop from ~20 to ~5 iterations on hot profiles |
+| Lazy PALEOS table loader | `load_paleos_table` and `load_paleos_unified_table` in `eos/interpolation.py`, `eos/paleos_api_cache.py` | First-touch only; SHA-validated cache avoids re-parsing 100 MB+ text tables |
+| In-table PALEOS T-clamping | `_paleos_clamp_temperature` in `eos/interpolation.py` | O(1) per-cell index on the log-uniform grid; replaces `np.interp` in the inner loop |
+| Bilinear kernel | `_fast_bilinear` and `fast_bilinear_batch` in `eos/interpolation.py`, `jax_eos/bilinear.py` | Called millions of times; the JAX port specialises this for JIT |
 | Module-level interpolation cache | `solver.py:_interpolation_cache` | Persists across `main()` calls in the same process (PROTEUS coupling loop) |
 
 ## What is NOT in Zalmoxis
