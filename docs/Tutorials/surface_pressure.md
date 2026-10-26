@@ -67,9 +67,9 @@ padded True, nodes with P = 0: 1 of 150
 The solve accepted the profile, but its outer node has $P = 0$, not $P_t$: the profile is **padded**.
 The integration from the accepted $P_c$ stopped at $P = 0$ just below the outer radius, and the node past the stop got $P = 0$.
 The solver logs one warning for such a result (`The accepted profile ends in a surface stop: ...`).
-The accept test of the pressure solve passes a profile when $\lvert P(R) - P_t \rvert$ is below `pressure_tolerance` ($10^9$ Pa by default), so it passes this one, whose miss is $P_t$.
+The accept test of the pressure solve passes a profile when its Brent solve converged, no node has a negative pressure, and $\lvert P(R) - P_t \rvert$ is below `pressure_tolerance` ($10^9$ Pa by default), so it passes this one, whose miss is $P_t$.
 `accepted_on` names the test that accepted the structure: `strict` means that the mass, density and pressure tests all passed ([Convergence Checks](../Explanations/process_flow.md#convergence-checks) lists every label).
-Whether a profile ends padded depends on round-off, so your run can end reached; Step 2 shows the trials that decide it.
+Whether a profile ends padded depends on round-off, so your run can end reached (the integration reaches $R$); Step 2 shows the trials that decide it. If your run ends reached, the trials of Step 2 have no padded rows near the accepted $P_c$, and the last one has $P(R)$ close to $P_t$.
 
 ## Step 2: look at the central pressures the solve tried
 
@@ -136,7 +136,7 @@ These trials show a jump of $f$: the padded trials sit at $f = -P_t$, and the fi
 These two trials are the sign pair around the root.
 Brent's method, the root finder of the pressure solve, stops when its bracket is narrower than $10^6$ Pa and returns the end with the smaller $\lvert f \rvert$.
 When the reached end has $P(R) > 2 P_t$, its $\lvert f \rvert$ is larger than $P_t$, so Brent's method returns the padded end.
-Here the reached end misses $P_t$ by much more than $P_t$, so the refinement of Step 3 has no reached candidate within $P_t$, and the solve keeps the padded root.
+Here the reached end misses $P_t$ by much more than $P_t$, so the solve skips the second Brent solve and keeps the padded root; Step 3 shows the rule.
 The plot below shows the trials near the root.
 
 ```python
@@ -229,7 +229,11 @@ setup 8 PALEOS 1 (default.toml): strict, P(R) = 0 Pa, miss 1.000 P_t, padded nod
 setup 9 PALEOS 1, Newton: newton_tol, P(R) = 1.393e+05 Pa, miss 0.375 P_t, padded nodes 0
 ```
 
-The command `python -m tools.validation.pressure_root_sweep run <dir> -j 2` runs all 26 setups (about 30 minutes with 2 processes), and `python -m tools.validation.pressure_root_sweep plot <dir> --assets <dir>` draws them into `<dir>` (it needs the `proteus_mpl` package and a record of every setup; without `--assets` it writes over the figures under `docs/assets/validation/`); the figure of all 26 setups is on the [validation page](../Validation/hydrostatic_structure.md#surface-boundary-condition-in-every-newton-setup).
+The command `python -m tools.validation.pressure_root_sweep run <dir> -j 2` runs all 26 setups; their solves took 2718 s in total on a workstation, so at least 23 minutes with 2 processes.
+The command `python -m tools.validation.pressure_root_sweep plot <dir> --assets <dir>` draws them into `<dir>`.
+It needs the `proteus_mpl` package and a record of every setup.
+Without `--assets` it writes over the figures under `docs/assets/validation/`.
+The figure of all 26 setups is on the [validation page](../Validation/hydrostatic_structure.md#surface-boundary-condition-in-every-newton-setup).
 In it, 15 of the 19 Picard setups that return a profile end padded, and 5 of the 6 Newton setups at `relative_tolerance` $10^{-9}$ reach the outer radius; setup 10 (PALEOS on the JAX path) ends padded.
 Reached means that the integration reaches $R$, not that $P(R) = P_t$: setup 9 above misses $P_t$ by 0.375 $P_t$.
 
@@ -239,7 +243,7 @@ First decide whether the surface values matter for your use.
 A padded result passed the accept tests of the solve, and in this tutorial only its outermost node has $P = 0$ instead of $P_t$.
 If you need $P(R) = P_t$, these settings matter:
 
-- **The outer solver.** `outer_solver = "newton"` with `relative_tolerance = 1e-9` reached the outer radius in setup 9 above, where the default Picard solve ended padded; it still missed $P_t$ by 0.375 $P_t$. PROTEUS uses the Newton outer solver by default. It takes longer (about 4 minutes here against 1.5).
+- **The outer solver.** `outer_solver = "newton"` needs `relative_tolerance` at or below `1e-7` (it raises `ValueError` otherwise); setup 9 uses `relative_tolerance = 1e-9` and `absolute_tolerance = 1e-10`. It reached the outer radius in setup 9 above, where the default Picard solve ended padded; it still missed $P_t$ by 0.375 $P_t$. PROTEUS uses the Newton outer solver by default. It takes longer (about 4 minutes here against 1.5).
 - **`pressure_tolerance`.** This is the accept test of the pressure solve, $\lvert P(R) - P_t \rvert$ below it. A value below $P_t$ makes the test refuse a padded profile, but the outer loop can still accept the structure on its mass test, as the block below shows.
 - **The integration tolerances** (`relative_tolerance`, `absolute_tolerance`). They change where the integration stops, and so whether the trials near the root pad. Setup 9 changes them together with the outer solver, so this tutorial does not separate the two effects.
 

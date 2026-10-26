@@ -167,7 +167,7 @@ The 9 reached profiles miss $P_{\mathrm{target}}$ by at most $0.38 P_{\mathrm{ta
 
 $\lvert P(R) - P_{\mathrm{target}} \rvert / P_{\mathrm{target}}$ of the accepted profile per setup: reached (circles), padded (squares, at 1 since $P(R) = 0$) and without an accepted profile (cross above the cap); the dashed line is the cap of the reached end that may replace a padded root.
 Setups: 0 Analytic 0.1, 1 Analytic 1, 2 Analytic 10, 3 Analytic 1, 2000 layers, 4 Analytic 1, Newton, 5 WB isothermal 3000 K, 6 WB isothermal 4000 K, 7 WB linear, 8 PALEOS 1 (default.toml), 9 PALEOS 1, Newton, 10 PALEOS 1, JAX Newton, 11 PALEOS 0.1, 12 PALEOS 3, 13 PALEOS 3, JAX Newton, 14 PALEOS 10, Newton, 15 PALEOS linear 1, 16 PALEOS isothermal 1, 17 PALEOS 1, 2000 layers, 18 PALEOS 1, P_t 1e7 Pa, 19 PALEOS 1, P_t 1e3 Pa, 20 PALEOS-2phase linear 1, 21 PALEOS-2phase 1, 22 PALEOS-2phase 3, 23 PALEOS + 3 % H 1, 24 PALEOS 3-layer ice 1, 25 PALEOS 5, Newton.
-Made with `python -m tools.validation.pressure_root_sweep run <dir> -j 2`, then `python -m tools.validation.pressure_root_sweep plot <dir>`.
+Made with `python -m tools.validation.pressure_root_sweep run <dir> -j 2`, then `python -m tools.validation.pressure_root_sweep plot <dir> --assets <dir>`.
 
 **Where this is checked.** The cases [Surface boundary condition of the pressure solve](../Validation/hydrostatic_structure.md#surface-boundary-condition-of-the-pressure-solve) and [Surface boundary condition in every Newton setup](../Validation/hydrostatic_structure.md#surface-boundary-condition-in-every-newton-setup) on the Validation tab.
 

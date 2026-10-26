@@ -6,7 +6,7 @@ This page checks how Zalmoxis computes the inside of a planet in hydrostatic equ
 Validation here means that we run the code on a case where another source gives the right answer.
 The test then checks that the code gives that answer within a stated tolerance.
 The right answer comes from closed-form solutions, from conservation laws, from a second implementation of the same equations, or from the pressure that the planet must have at its surface.
-If this part of the code is wrong, every structure that Zalmoxis returns is wrong, also the structures it gives to PROTEUS: the radius of the planet and the pressure and gravity at each depth.
+If this part of the code is wrong, every structure that Zalmoxis returns is wrong. This holds also for the structures it gives to PROTEUS: the radius of the planet and the pressure and gravity at each depth.
 Each case below says why the check exists, what it tests, how we know the right answer and why it matters.
 The box "Test details" at the end of each case gives the reference, the tolerance, the test id and the command.
 The [overview](index.md) lists every case of the tab.
@@ -19,7 +19,6 @@ The [overview](index.md) lists every case of the tab.
 - EOS (equation of state): the relation $\rho(P, T)$ between the density, the pressure and the temperature of a material.
 - CMB: the core-mantle boundary.
 - $N$ and `rtol`: the number of radial grid points, and the relative tolerance of the ODE integrator (RK45, an adaptive Runge-Kutta method of order 4 and 5); the configuration key is `relative_tolerance`.
-- Newton tolerance (`newton_tol`): the Newton outer solver accepts a structure when its relative mass error is below this value (`accepted_on = 'newton_tol'`).
 - Relative error: $|x_\mathrm{num} - x_\mathrm{exact}| / |x_\mathrm{exact}|$, the difference between the computed and the exact value, divided by the exact value.
 - Round-off level: a relative error of about $10^{-16}$ to $10^{-13}$, the size of the rounding error of floating-point arithmetic. A result at this level is exact within the precision of the computer.
 - Central pressure $P_c$: the pressure at the centre of the planet.
@@ -32,7 +31,8 @@ The [overview](index.md) lists every case of the tab.
 - PALEOS: the tabulated equations of state for iron, MgSiO$_3$ and water that Zalmoxis uses as its standard ([EOS physics](../Explanations/eos_physics.md)).
 - JAX path: an optional version of the structure integration in JAX, a Python library for compiled numerical code; it is off by default.
 - Picard outer solver: the default outer loop. It solves the structure for a trial radius, compares the computed mass with the planet mass, and rescales the radius.
-- Newton outer solver: the outer loop with Newton steps and a Brent fallback (`outer_solver = 'newton'`); PROTEUS uses it by default.
+- Newton outer solver: the outer loop with Newton steps and a Brent fallback (`outer_solver = 'newton'`); PROTEUS uses it by default. It needs `relative_tolerance` at or below $10^{-7}$.
+- Newton tolerance (`newton_tol`, default $10^{-4}$): the Newton outer solver accepts a structure when its relative mass error is below this value and its pressure solve converged (`accepted_on = 'newton_tol'`).
 
 ## Governing equations
 
@@ -110,7 +110,7 @@ $$
 R_\mathrm{cmb} = \left(\frac{3\, f_c\, M_p}{4\pi \rho_\mathrm{core}}\right)^{1/3} = 3291 \text{ km}
 $$
 
-This is close to the Earth's CMB radius of 3480 km, and the planet radius is 6513 km (1.02 times the IAU Earth radius of 6371 km). The central pressure of this profile, 380 GPa, comes from integrating the hydrostatic equation over the known density profile. The integration starts 5 % above it, at 399 GPa, so that the pressure stays positive out to the surface. The test compares the enclosed mass with the exact solution and checks Gauss's law ($g = GM/r^2$) in both layers.
+This is close to the Earth's CMB radius of 3480 km, and the planet radius is 6513 km (1.03 $R_\oplus$, or 1.02 times the mean Earth radius of 6371 km). The central pressure of this profile, 380 GPa, comes from integrating the hydrostatic equation over the known density profile. The integration starts 5 % above it, at 399 GPa, so that the pressure stays positive out to the surface. The test compares the enclosed mass with the exact solution and checks Gauss's law ($g = GM/r^2$) in both layers.
 
 **How we know the right answer.** With two constant densities, the enclosed mass has an exact piecewise solution:
 
@@ -180,13 +180,11 @@ The test integrates it with the trapezoidal rule over the $M(r)$ and $\rho(r)$ p
 
 ## n = 1 polytrope
 
-Tests 5 and 6 are on the [mass-radius page](mass_radius.md).
-
 **Why this check exists.** Tests 1 to 4 fix the density. This case lets the density follow the pressure through an equation of state, as in a real planet. A wrong factor in $dM/dr$ or $dg/dr$, or the wrong sign of $dP/dr$, moves the surface radius or the integrated mass, and the test fails.
 
-**What it tests.** `solve_structure` with the `Analytic:polytrope_n1` verification material, $P = K \rho^2$ (a polytrope of index $n = 1$, with $K$ a constant). The test runs 600 radial points from the centre to $1.03\,R_\oplus$; the surface radius comes from extrapolating the density to zero. For $n = 1$ the radius $R = \pi \sqrt{K / 2\pi G}$ depends on $K$ only, not on the central density; $K$ is set so that $R$ is one Earth radius.
+**What it tests.** `solve_structure` with the `Analytic:polytrope_n1` verification material, $P = K \rho^2$ (a polytrope of index $n = 1$, with $K$ a constant). The test runs 600 radial points from the centre to $1.03\,R_\oplus$; the surface radius comes from extrapolating the density to zero. For $n = 1$ the radius $R = \pi \sqrt{K / 2\pi G}$ depends on $K$ only, not on the central density; $K$ is set so that $R$ is one Earth radius. The test also checks the mass: the central density is chosen so that the exact mass is $2\,M_\oplus$, and the integrated mass must match it. It runs the case at 1 and $2\,M_\oplus$ and checks that both give the same radius.
 
-**How we know the right answer.** For $n = 1$ the Lane-Emden equation of a polytrope has the closed-form solution $\rho(r) = \rho_c \sin\xi / \xi$ with $\xi = \pi r / R$.
+**How we know the right answer.** The Lane-Emden equation is the dimensionless hydrostatic equation of a polytrope. For $n = 1$ it has the closed-form solution $\rho(r) = \rho_c \sin\xi / \xi$ with $\xi = \pi r / R$, and the mass $M = 4\rho_c R^3/\pi$.
 
 **Why it matters.** Here the density follows the pressure and the right answer is still known in closed form, so this case checks the link between the integrator and an equation of state.
 
@@ -198,9 +196,17 @@ Tests 5 and 6 are on the [mass-radius page](mass_radius.md).
 
 ## Test 7: Numerical convergence
 
-**Why this check exists.** A finer grid or a tighter tolerance must not make the solution worse. The test fails when the mass error at $N = 400$ reaches $10^{-8}$, the pressure error at $N = 400$ reaches $10^{-6}$, or the mass error at `rtol` $= 10^{-12}$ reaches $10^{-10}$; above $10^{-13}$ it also fails when the mass error grows by more than a factor 1.5 from one grid or tolerance step to the next. A wrong factor in $dM/dr$ or $dg/dr$, or the wrong sign of $dP/dr$, also makes the grid convergence test fail.
+**Why this check exists.** A finer grid or a tighter tolerance must not make the solution worse. The test fails in these cases:
 
-**What it tests.** The uniform-density sphere of Test 1 on several grids and with several tolerances, and the full solver (Picard iteration and Brent root-finding) with the Analytic EOS at $1\,M_\oplus$ on 3 grids.
+- the mass error at $N = 400$ reaches $10^{-8}$;
+- the pressure error at $N = 400$ reaches $10^{-6}$;
+- the mass error at `rtol` $= 10^{-12}$ reaches $10^{-10}$;
+- the mass error grows by more than a factor 1.5 from one grid or tolerance step to the next, but only above $10^{-13}$, so at the measured errors of about $2 \times 10^{-15}$ this rule does not act;
+- a full-solver run does not converge, or the radii at $N = 200$ and $N = 400$ differ by 1 % or more.
+
+A wrong factor in $dM/dr$ or $dg/dr$, or the wrong sign of $dP/dr$, also makes the grid convergence test fail.
+
+**What it tests.** The uniform-density sphere of Test 1 on several grids and with several tolerances, and the full solver (the Picard outer solver and Brent's method) with the Analytic EOS at $1\,M_\oplus$ on 3 grids.
 
 - **Grid convergence:** the uniform sphere at $N$ from 50 to 400 (the figure uses 25 to 800) with `rtol` $= 10^{-10}$. The mass error is $2$ to $3 \times 10^{-15}$ and the pressure error about $4 \times 10^{-16}$ at every $N$. The uniform-sphere solution is a cubic and a parabola in $r$, which the integrator reproduces to round-off on every grid, so this case shows no convergence rate.
 - **Full solver:** the planet radius is the same, $0.96512\,R_\oplus$ (6114.5 km), at $N = 100$, 200 and 400.
@@ -212,7 +218,7 @@ Tests 5 and 6 are on the [mass-radius page](mass_radius.md).
 
 ![Grid convergence: largest relative mass and pressure error against the number of radial grid points](../img/validation/grid_convergence.png)
 
-**How to read the plot.** The figure shows the grid part, with $N$ from 25 to 800. The x-axis is the number of radial grid points and the y-axis the largest relative error, both on log scales. The blue line is the mass error and the red line the pressure error. The y-axis covers only a factor of about 3, so the changes of 10 to 20 % between grids are not a trend. Both errors stay near $10^{-15}$ and $10^{-16}$, the round-off level, because the exact solution is a cubic and a parabola in $r$, which the integrator reproduces on every grid. These values lie far below the caps of the test.
+**How to read the plot.** The figure shows the grid part, with $N$ from 25 to 800. The x-axis is the number of radial grid points and the y-axis the largest relative error, both on log scales. The blue line is the mass error and the red line the pressure error. From $N = 25$ to 800 the mass error rises by about 14 % (from $2.29$ to $2.62 \times 10^{-15}$) and the pressure error by about 18 % (from $3.59$ to $4.24 \times 10^{-16}$). Both stay at the round-off level, because the exact solution is a cubic and a parabola in $r$, which the integrator reproduces on every grid. These values lie far below the caps of the test.
 
 ??? info "Test details"
     - Reference: closed-form solution of the uniform-density sphere; for the full solver, the radius at $N = 200$ against $N = 400$ (self-consistency)
@@ -224,7 +230,7 @@ Tests 5 and 6 are on the [mass-radius page](mass_radius.md).
 
 **Why this check exists.** The optional JAX path (`use_jax = True`) evaluates the right-hand side of the structure equations in its own code, `zalmoxis.jax_eos.rhs.coupled_odes_jax`. If it differs from the numpy `zalmoxis.structure_model.coupled_odes` by more than the tolerance, a JAX run gives another structure than a numpy run, and these tests fail.
 
-**What it tests.** The cases compare $dM/dr$, $dg/dr$ and $dP/dr$ of the two codes on the same states. Each table case draws random states with a fixed seed: $r$ from $10^5$ to $6.4 \times 10^6$ m, $M$ from 0 to $1\, M_\oplus$, $g$ from 0.5 to 25 m/s$^2$ and $P$ from $10^6$ to $3 \times 10^{11}$ Pa, with a PALEOS iron core and a PALEOS MgSiO$_3$ mantle. A state counts when both codes return a nonzero right-hand side, and more than 100 states must count. JAX must never return a nonzero value where numpy returns zero. Numpy may return a nonzero value where JAX returns zero in at most 4 of 200 states: the numpy tables have a nearest-neighbour fallback, and the JAX path has none. The synthetic cases build small tables in memory, so they need no EOS files and run in the unit tier.
+**What it tests.** The cases compare $dM/dr$, $dg/dr$ and $dP/dr$ of the two codes on the same states. Each table case draws random states with a fixed seed: $r$ from $10^5$ to $6.4 \times 10^6$ m, $M$ from 0 to $1\, M_\oplus$, $g$ from 0.5 to 25 m/s$^2$ and $P$ from $10^6$ to $3 \times 10^{11}$ Pa, with a PALEOS iron core and a PALEOS MgSiO$_3$ mantle. A state counts when both codes return a nonzero right-hand side, and more than 100 states must count. JAX must never return a nonzero value where numpy returns zero. The Tier column names the test group: unit tests need no table data, and integration tests need the PALEOS tables. The synthetic cases build small tables in memory, so they need no EOS files and run in the unit tier.
 
 | Test id | Mantle | Tolerance | Tier |
 |---|---|---|---|
@@ -243,6 +249,8 @@ Tests 5 and 6 are on the [mass-radius page](mass_radius.md).
 ![Relative difference between the JAX and numpy right-hand sides](../assets/validation/jax_unified_mantle_dry_parity_dark.svg#only-dark){ width="80%" }
 
 **How to read the plot.** Each marker is one compared state of the dry unified mantle case: the largest relative difference of the three right-hand-side terms between `coupled_odes_jax` and `coupled_odes`, against the pressure of that state, for the PALEOS iron core and the unified PALEOS MgSiO$_3$ mantle. The dashed line is the tolerance. A pass means that every marker lies below the dashed line.
+
+**Known limit.** In at most 4 of 200 states numpy returns a nonzero value where JAX returns zero: the numpy tables fall back to the nearest table cell outside their range, and the JAX path has no such fallback.
 
 ??? info "Test details"
     - Reference: numpy `coupled_odes` (cross-code check).
@@ -297,12 +305,11 @@ A second test checks the same rule with real structure solves. It uses the Analy
     - Reference: the boundary condition $P(R) = P_t$.
     - Tolerance: every setup accepts on the Newton tolerance; $\lvert P(R) - P_t \rvert \le P_t$ for every reached profile; no padded node except on the JAX path at 1 Earth mass; the padded flag matches the root of the last pressure solve.
     - Test id: `tests/test_pressure_root_solves.py::test_every_newton_setup_meets_the_surface_boundary_condition`
-    - Command: `pytest -m accept_solves_newton_setups tests/test_pressure_root_solves.py`; the figure: `python -m tools.validation.pressure_root_sweep run <dir> -j 2`, then `python -m tools.validation.pressure_root_sweep plot <dir>`.
+    - Command: `pytest -m accept_solves_newton_setups tests/test_pressure_root_solves.py`; the figure: `python -m tools.validation.pressure_root_sweep run <dir> -j 2`, then `python -m tools.validation.pressure_root_sweep plot <dir> --assets <dir>`.
 
 ## Reproducing the results
 
-Every figure on this page can be made again from the code.
-The first-principles figures (Tests 1, 2, 3 and 7) come out as PDF files with:
+The first-principles figures (Tests 1, 2, 3 and 7) can be made again with the command below; it writes PDF files, and the page shows PNG renderings of the same plots:
 
 ```console
 python -m tools.validation.run_first_principles_validation

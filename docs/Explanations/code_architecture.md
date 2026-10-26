@@ -184,7 +184,7 @@ What it specialises:
 - The PALEOS-2phase mantle density (`get_Tdep_density_jax`, solid + liquid sub-tables, volume-average mushy mix).
 - The coupled RHS (`coupled_odes_jax`) and the diffrax-driven integration with an event-based pressure-zero terminator.
 
-Scope today is the Stage-1b two-layer config (PALEOS:iron core + PALEOS-2phase:MgSiO$_3$ mantle). Anything outside that envelope (3-layer ice, multi-component layers, non-Stixrude14 melting) automatically falls back to the numpy path at the caller (`solver._solve`).
+The JAX path covers the two-layer configuration (PALEOS:iron core + PALEOS-2phase:MgSiO$_3$ mantle). Anything outside that envelope (3-layer ice, multi-component layers, non-Stixrude14 melting) automatically falls back to the numpy path at the caller (`solver._solve`).
 
 **Float64 enforcement.** `jax_eos/__init__.py` calls `jax.config.update('jax_enable_x64', True)` at import. Without this, JAX defaults to float32 and downstream density / pressure / temperature accumulate ~$10^{-7}$ relative error, far above the parity tolerance.
 
