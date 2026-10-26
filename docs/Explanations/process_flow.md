@@ -93,14 +93,18 @@ The stored arrays of the last evaluation are used only when the bracket is inval
 When can the pressure solve accept a profile whose integration stopped below the surface, and how does the solve refine such a root?
 
 Brent's method can return a central pressure whose integration stops before the outer radius.
-Its profile is padded: the outermost point gets a pressure of 0 instead of the target surface pressure, and the accept test still passes it when the target is below `pressure_tolerance` ($10^9$ Pa by default).
+Its profile is padded: the points above the stop, the padded nodes, get a pressure of 0, so the outermost point has 0 instead of the target surface pressure.
+A profile whose integration reaches the outer radius is reached.
+The accept test still passes a padded profile when the target is below `pressure_tolerance` ($10^9$ Pa by default).
 For a padded or a reached root that misses the target by more than $0.1 P_{\mathrm{target}}$, a second Brent solve can run between 2 evaluated central pressures that bracket the target, and it evaluates new central pressures there.
-The solve then keeps the candidate that comes closest to the target; for a padded root, the candidates also hold the reached ends of its first sign pair and of its nearest sign pair after the second solve that lie within $P_{\mathrm{target}}$ of the target.
+The solve then keeps the candidate that comes closest to the target.
+A sign pair is 2 neighbouring evaluated central pressures with a negative residual at the lower one and a positive residual at the higher one, its reached end (details below).
+For a padded root, the candidates also hold the reached ends of its first sign pair and of its nearest sign pair after the second solve that lie within $P_{\mathrm{target}}$ of the target.
+The Picard and Newton outer solvers, the JAX path and PALEOS are defined in the terms of the [hydrostatic structure validation page](../Validation/hydrostatic_structure.md#what-this-page-checks).
 
 A padded profile is the result of a surface stop (see the Early termination handling paragraph above).
 The integration stopped before the outer radius $R$, and the remaining points, the padded nodes, have $P = 0$.
 Its pressure at the outer radius is $P(R) = 0$ instead of $P_{\mathrm{target}}$, so $\lvert P(R) - P_{\mathrm{target}} \rvert = P_{\mathrm{target}}$.
-A profile whose integration reaches the outer radius is reached.
 `result['padded']` is True when the returned pressure is 0 at the outer radius.
 
 The pressure test (b) in [Convergence Checks](#convergence-checks) passes such a profile for any target below `pressure_tolerance`, $10^9$ Pa by default.
