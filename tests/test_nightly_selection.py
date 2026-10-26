@@ -298,14 +298,40 @@ def _solves_nodes(select, files):
     return {line for line in done.stdout.splitlines() if '::' in line}
 
 
+# pytest-timeout applies the closest timeout marker of a test; this run prints it per test.
+_TIMEOUTS = """
+import sys, pytest
+class Closest:
+    def pytest_collection_finish(self, session):
+        for item in session.items:
+            m = item.get_closest_marker('timeout')
+            print('TIMEOUT', item.nodeid, m.args[0] if m else None)
+sys.exit(pytest.main(sys.argv[1:], plugins=[Closest()]))
+"""
+
+
+def _timeouts(select):
+    """Closest timeout marker [s] of each test in the whole tree that ``select`` takes."""
+    done = subprocess.run(
+        [sys.executable, '-c', _TIMEOUTS, '--collect-only', '-q', '-m', select]
+        + ['-o', 'addopts=', '-p', 'no:cacheprovider', '--rootdir', str(ROOT / 'tests')],
+        cwd=ROOT / 'tests',
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+    assert done.returncode == 0, done.stdout[-2000:] + done.stderr[-2000:]
+    rows = [
+        line.split()[1:] for line in done.stdout.splitlines() if line.startswith('TIMEOUT ')
+    ]
+    return {node: None if t == 'None' else float(t) for node, t in rows}
+
+
 @pytest.mark.unit
 def test_the_newton_setup_sweep_runs_alone_in_its_own_job():
     """The sweep over every Newton setup is the longest real solve: it runs in one job, alone,
-    and its timeout marker fires before the job limit, so a slow runner names the test."""
-    from tests.test_invariants import _LONG
-    from tests.test_pressure_root_solves import (
-        test_every_newton_setup_meets_the_surface_boundary_condition as sweep,
-    )
+    and the closest timeout marker of each test in the long and Newton setup jobs fires before
+    the job limit, so a slow runner names the test."""
 
     suites = _suites(WORKFLOW.read_text())
     nodes = {name: _solves_nodes(*_entry(job)) for name, job in suites.items()}
@@ -313,7 +339,6 @@ def test_the_newton_setup_sweep_runs_alone_in_its_own_job():
         'accept_solves_newton_setups'
     ]
     assert nodes['accept_solves_newton_setups'] == {NEWTON}
-    (marker,) = [m.args[0] for m in sweep.pytestmark if m.name == 'timeout']
     assert (
         not _entry(suites['accept_solves_newton_setups'])[1]
         + _entry(suites['accept_solves_long'])[1]
@@ -321,8 +346,10 @@ def test_the_newton_setup_sweep_runs_alone_in_its_own_job():
     key = r'^( *)["\']?timeout-minutes["\']?:\s*(.*?)\s*(?:#.*)?$'
     limits = re.findall(key, WORKFLOW.read_text(), re.M)
     assert limits == [('    ', '${{ matrix.job_timeout || 90 }}')], limits
-    assert marker == 9000 < 60 * _job_limit(suites['accept_solves_newton_setups'])
-    assert _LONG[1].args[0] == 4800 < 60 * _job_limit(suites['accept_solves_long'])
+    for name in ('accept_solves_newton_setups', 'accept_solves_long'):
+        marks = _timeouts(_entry(suites[name])[0])
+        assert marks and None not in marks.values(), (name, marks)
+        assert max(marks.values()) < 60 * _job_limit(suites[name]), (name, marks)
 
 
 @pytest.mark.smoke
