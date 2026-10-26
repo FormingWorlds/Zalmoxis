@@ -162,8 +162,11 @@ _MARKS = (
     'wolfbower',
     'paleos_adiabat',
     'accept_solves',
+    'accept_solves_long',
+    'accept_solves_newton_setups',
 )
-_SPECIAL = {'wolfbower', 'paleos_adiabat', 'accept_solves'}
+_SUB = {'accept_solves_long', 'accept_solves_newton_setups'}  # always beside accept_solves
+_SPECIAL = {'wolfbower', 'paleos_adiabat', 'accept_solves'} | _SUB
 
 
 def _partition_faults(workflow):
@@ -176,6 +179,8 @@ def _partition_faults(workflow):
     faults = []
     for bits in itertools.product((False, True), repeat=len(_MARKS)):
         marks = {m for m, on in zip(_MARKS, bits) if on}
+        if marks & _SUB and 'accept_solves' not in marks:
+            continue
         if not (
             marks & _SPECIAL
             or (marks & {'unit', 'smoke', 'integration'} and 'slow' not in marks)
@@ -268,5 +273,7 @@ def test_the_newton_setup_sweep_runs_alone_in_its_own_job():
     ]
     assert nodes['accept_solves_newton_setups'] == {NEWTON}
     (marker,) = [m.args[0] for m in sweep.pytestmark if m.name == 'timeout']
-    job = suites['accept_solves_newton_setups']
-    assert marker == 9000 < 60 * int(re.search(r'job_timeout: (\d+)', job).group(1))
+    limit = re.search(r'job_timeout: (\d+)', suites['accept_solves_newton_setups'])
+    assert limit, 'the accept_solves_newton_setups job sets no job_timeout'
+    assert 'timeout-minutes: ${{ matrix.job_timeout || 90 }}' in WORKFLOW.read_text()
+    assert marker == 9000 < 60 * int(limit.group(1))
