@@ -71,7 +71,7 @@ This repository has no `tools/check_test_quality.py`; the marker check is `bash 
   points of headroom for small future additions before the gate trips.
 - `fail_under` in `[tool.coverage.report]` sets the 90% floor; in
   `.github/workflows/nightly.yml` the main job repeats it with
-  `--cov-fail-under=90` and the `wolfbower`, `paleos_adiabat` and both `accept_solves` jobs
+  `--cov-fail-under=90` and the `wolfbower`, `paleos_adiabat` and the 5 `accept_solves` jobs
   turn it off with `0`.
 - A pre-flight check in `.github/workflows/CI.yml` rejects PRs that lower
   `fail_under` below the value on `origin/main`, mirroring PROTEUS's

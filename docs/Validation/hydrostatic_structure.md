@@ -6,10 +6,22 @@ This page checks how Zalmoxis computes the inside of a planet in hydrostatic equ
 Validation here means that we run the code on a case where another source gives the right answer.
 The test then checks that the code gives that answer within a stated tolerance.
 The right answer comes from closed-form solutions, from conservation laws, from a second implementation of the same equations, or from the pressure that the planet must have at its surface.
-If this part of the code is wrong, every structure that Zalmoxis returns is wrong, for example to PROTEUS: the radius of the planet and the pressure and gravity at each depth.
+If this part of the code is wrong, every structure that Zalmoxis returns is wrong, also the structures it gives to PROTEUS: the radius of the planet and the pressure and gravity at each depth.
 The cases on the surface boundary condition say why the check exists, what it tests, how we know the right answer and why it matters.
 Their box "Test details" gives the reference, the tolerance, the test id and the command.
 The [overview](index.md) lists every case of the tab.
+
+**Terms of the surface boundary cases.**
+
+- Central pressure $P_c$: the pressure at the centre of the planet, the unknown of the pressure solve.
+- Residual $f(P_c) = P(R) - P_t$: the pressure $P(R)$ at the outer radius $R$ minus the target surface pressure $P_t$.
+- Reached: the integration from a trial $P_c$ reaches the outer radius.
+- Padded: the integration stops before the outer radius, and the remaining nodes, the padded nodes, get zero pressure. The residual is then $-P_t$.
+- Sign pair: 2 evaluated central pressures whose residuals have opposite signs, so the root lies between them.
+- PALEOS: the tabulated equations of state for iron, MgSiO$_3$ and water that Zalmoxis uses as its standard ([EOS physics](../Explanations/eos_physics.md)).
+- JAX path: an optional version of the structure integration in JAX, a Python library for compiled numerical code; it is off by default.
+- Picard outer solver: the default outer loop; it solves the structure for the current radius, measures the mass and updates the radius by damped cube-root scaling.
+- Newton outer solver: the outer loop with Newton steps and a Brent fallback (`outer_solver = 'newton'`); PROTEUS uses it by default.
 
 ## Governing equations
 
@@ -228,7 +240,7 @@ A second test checks the same rule with real structure solves. It uses the Analy
 
 ## Surface boundary condition in every Newton setup
 
-**Why this check exists.** The refinement must also work on the real equations of state of a planet, not only on an analytic residual. If it fails there, the accepted profile of a Newton run ends padded, or it misses the surface pressure by more than $P_t$.
+**Why this check exists.** The refinement must also work on the real equations of state of a planet, not only on an analytic residual. If it fails there, the accepted profile of a Newton run ends padded, or it misses the surface pressure by more than $P_t$. The test allows one padded setup: PALEOS on the JAX path at 1 Earth mass, when no reached end of its first sign pair lies within $P_t$.
 
 **What it tests.** The test runs the 6 Newton setups: the Analytic EOS (equation of state) at 1 Earth mass, PALEOS at 1, 5 and 10 Earth masses, and PALEOS on the JAX path with $T(r)$ from a numpy Picard solve at 1 and 3 Earth masses. Every setup must accept on the Newton tolerance. Every reached profile must miss $P_t$ by at most $P_t$, and no profile may have a padded node, except on the JAX path at 1 Earth mass. On that path $P(R)$ near the stop scatters, and the accepted profile can be padded. The case then requires one of 2 things: the reached end of the first sign pair of that pressure solve misses $P_t$ by more than $P_t$, or the solve has no sign pair.
 
@@ -239,9 +251,9 @@ A second test checks the same rule with real structure solves. It uses the Analy
 ![Surface pressure miss of the accepted profile for 26 solver setups](../assets/validation/pressure_root_sweep.svg#only-light){ width="80%" }
 ![Surface pressure miss of the accepted profile for 26 solver setups](../assets/validation/pressure_root_sweep_dark.svg#only-dark){ width="80%" }
 
-**How to read the plot.** The x-axis is the number of the setup, for 26 setups built from `input/default.toml`. The y-axis is $\lvert P(R) - P_t \rvert / P_t$ of the accepted profile, on a log scale. Circles are reached profiles, squares are padded profiles (at 1, since $P(R) = 0$), and a cross above the cap marks a setup without an accepted profile. The dashed line is the cap of $P_t$. Setups 4, 9, 10, 13, 14 and 25 use the Newton outer solver at `relative_tolerance` $10^{-9}$; [padded accepts](../Explanations/process_flow.md#padded-accepts) lists every setup. A pass means that every Newton setup lies at or below the dashed line, or, for setup 10, meets the rule of the JAX path above.
+**How to read the plot.** The x-axis is the number of the setup, for 26 setups built from `input/default.toml`. The y-axis is $\lvert P(R) - P_t \rvert / P_t$ of the accepted profile, on a log scale. Circles are reached profiles, squares are padded profiles (at 1, since $P(R) = 0$), and a cross above the cap marks a setup without an accepted profile. The dashed line is the cap of $P_t$. Setups 4, 9, 10, 13, 14 and 25 use the Newton outer solver at `relative_tolerance` $10^{-9}$; [padded accepts](../Explanations/process_flow.md#padded-accepts) lists every setup. A pass means that every Newton setup is a circle at or below the dashed line. Only setup 10 may be a square, and only under the rule of the JAX path above.
 
-**Known limit.** The miss of a reached profile depends on round-off, so another platform gives other values. Over planet-mass changes of $k \times 10^{-13}$ ($k$ = 1 to 5), the PALEOS 1 Earth-mass Newton setup misses by 0.008 to 0.87 $P_t$.
+**Known limit.** The miss of a reached profile depends on round-off, so another platform gives other values. Over planet-mass changes of $k \times 10^{-13}$ ($k$ = 1 to 5), the PALEOS 1 Earth-mass Newton setup misses by 0.008 to 0.87 $P_t$. The test skips when the PALEOS tables are not under `data/`.
 
 ??? info "Test details"
     - Reference: the boundary condition $P(R) = P_t$.
