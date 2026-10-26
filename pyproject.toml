@@ -137,6 +137,7 @@ markers = [
     "paleos_adiabat: Full adiabatic PALEOS solves at 5 M_earth with no reachable wall clock, run in their own nightly job",
     "accept_solves: Real solves of the accept labels and the structure invariants, run in their own nightly job",
     "accept_solves_long: The accept_solves real solves that take longest, run in their own nightly job with a longer per-test timeout",
+    "accept_solves_newton_setups: The sweep over every Newton setup of the pressure-root solves, alone in its own nightly job with the longest per-test timeout",
     "physics_invariant: Tests pinning a physical invariant independently of a reference implementation",
     "reference_pinned: Tests pinning behavior against a published benchmark, analytical limit, or cross-implementation cross-check (cite the reference in the test docstring)",
 ]

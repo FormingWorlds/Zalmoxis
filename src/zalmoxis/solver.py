@@ -79,6 +79,132 @@ def _require_finite(radii, profiles, reason, outer_iter, inner_iter):
     )
 
 
+# A pressure root that misses P_t by more than this share of P_t is solved again on its
+# nearest sign pair with an xtol of this share of P_t over the slope of that pair.
+_REFINE_MISS_PT = 0.1
+
+# dP(R)/dP_c of a smooth profile whose density does not fall with pressure at fixed radius
+# is at most 1; a steeper sign pair whose reached end misses P_t by more than the cap is
+# treated as a jump at the stop or scatter of P(R), and gets no second solve.
+_MAX_PAIR_SLOPE = 1.0
+
+# A reached pair end replaces a padded root, or lets a steep pair be solved again, only when
+# it misses P_t by at most this many P_t.
+_REACHED_END_MAX_MISS_PT = 1.0
+
+
+def _nearest_sign_pair(evals, root):
+    """Adjacent evaluated central pressures (a, b), finite f(a) < 0 < f(b), nearest the root.
+
+    Parameters
+    ----------
+    evals : dict
+        Surface pressure residual f [Pa] of each evaluated central pressure P_c [Pa].
+    root : float
+        Central pressure [Pa] the pair is chosen nearest to, by its lower end.
+
+    Returns
+    -------
+    tuple of float or None
+        The pair (a, b) with a < b, or None when no adjacent pair brackets the target.
+    """
+    xs = sorted(evals)
+    pairs = [
+        (a, b)
+        for a, b in zip(xs, xs[1:])
+        if np.isfinite(evals[a]) and np.isfinite(evals[b]) and evals[a] < 0.0 < evals[b]
+    ]
+    return min(pairs, key=lambda ab: abs(ab[0] - root)) if pairs else None
+
+
+def _refine_pressure_root(root, info, evals, residual, p_target, maxiter):
+    """Refine the brentq root of the surface pressure residual.
+
+    brentq with xtol 1e6 Pa returns the end of its last bracket with the smaller |f|,
+    which is a stopped (padded) profile with f = -P_t when the reached end has
+    P(R) > 2 P_t. A root that misses P_t by more than ``_REFINE_MISS_PT`` P_t is solved
+    again on its nearest sign pair with xtol = ``_REFINE_MISS_PT`` P_t over the secant slope
+    of that pair, when that xtol is below 1e6 Pa and either the slope is at most
+    ``_MAX_PAIR_SLOPE`` or the reached end misses P_t by at most
+    ``_REACHED_END_MAX_MISS_PT`` P_t. The second solve takes f at the pair ends from
+    ``evals``; one that raises adds no root. The result is the candidate with the smallest
+    finite |f| (on a tie a reached one, then the later one): the first root, for a padded
+    first root the reached ends of its first sign pair and of its nearest sign pair after
+    the second solve when they miss P_t by at most ``_REACHED_END_MAX_MISS_PT`` P_t, so the
+    evaluations of a failed second solve count, and the second-solve root. For finite
+    residuals the result never misses P_t by more than the first root or than the result
+    without the second solve.
+    A padded first root and a failed second solve log at DEBUG.
+
+    Parameters
+    ----------
+    root : float
+        Central pressure brentq returned [Pa].
+    info : RootResults or None
+        brentq convergence record of ``root``.
+    evals : dict
+        f [Pa] of every evaluated central pressure [Pa]; ``residual`` adds to it.
+    residual : callable
+        Surface pressure residual f(P_c) = P(R) - P_t [Pa].
+    p_target : float
+        Target surface pressure P_t [Pa].
+    maxiter : int
+        Iteration limit of the second brentq.
+
+    Returns
+    -------
+    tuple
+        The refined root [Pa] and the brentq record of the solve that gave it; a padded
+        root replaced by a reached end keeps the record of the solve that returned it.
+    """
+    f_root, pair = evals[root], _nearest_sign_pair(evals, root)
+    cap = _REACHED_END_MAX_MISS_PT * p_target
+    second = []
+    if pair is not None and abs(f_root) > _REFINE_MISS_PT * p_target:
+        a, b = pair
+        slope = (evals[b] - evals[a]) / (b - a)
+        xtol = _REFINE_MISS_PT * p_target / slope
+        if xtol < 1e6 and (slope <= _MAX_PAIR_SLOPE or evals[b] <= cap):
+            try:
+                second.append(
+                    brentq(
+                        lambda x: evals[x] if x in evals else residual(x),
+                        a,
+                        b,
+                        xtol=xtol,
+                        rtol=1e-10,
+                        maxiter=maxiter,
+                        full_output=True,
+                    )
+                )
+            except (RuntimeError, ValueError) as err:
+                logger.debug('Second pressure solve failed (%s).', err)
+    # A padded first root also offers the reached end of its first pair and of its nearest
+    # pair after the second solve, which counts the evaluations of a failed second solve.
+    cands = [(root, info)]
+    if f_root == -p_target:
+        ends = [q[1] for q in (pair, _nearest_sign_pair(evals, root)) if q is not None]
+        cands += [(e, info) for e in ends if evals[e] <= cap]
+    cands += second
+    # Smallest |f| wins (a non-finite f never), then a reached root, then the later one.
+    best, best_info = min(
+        reversed(cands),
+        key=lambda c: (
+            abs(evals[c[0]]) if math.isfinite(evals[c[0]]) else math.inf,
+            evals[c[0]] == -p_target,
+        ),
+    )
+    if f_root == -p_target:
+        logger.debug(
+            'Padded pressure root P_c = %.6e Pa: %s.',
+            root,
+            'the solve keeps the padded root'
+            if evals[best] == -p_target
+            else f'taking P_c = {best:.6e} Pa, which misses P_t by {abs(evals[best]):.3e} Pa',
+        )
+    return best, best_info
+
+
 # Module-level EOS interpolation cache. Persists across multiple main() calls
 # within the same Python process (e.g., PROTEUS coupling loop), avoiding
 # repeated parsing of large PALEOS text tables (~3s per table per reload).
@@ -338,6 +464,12 @@ def _check_accepted(
 
     result['integration_tolerances'] = (rtol, atol)
     check_accepted(result, config_params, rtol, atol, density_at, 'ice_layer' in mixes)
+    if result.get('padded'):
+        logger.warning(
+            'The accepted profile ends in a surface stop: P = 0 at the outer radius instead '
+            'of the target surface pressure %.4g Pa (padded).',
+            config_params['target_surface_pressure'],
+        )
     return result
 
 
@@ -529,7 +661,10 @@ def main(
         sets ``converged`` to False and leaves ``accepted_on`` as it is. A converged
         result has ``integration_tolerances``, the (rtol, atol) of the solve that
         returned, with rtol at least the RK45 floor of 100 eps, which the invariant
-        check used; an unconverged result has none.
+        check used; an unconverged result has none. ``padded`` (bool) is True when
+        the pressure at the outer radius is 0: the integration stopped at P = 0 before
+        the outer radius, and the nodes past the stop hold P = 0. ``main`` logs one
+        warning when it returns a converged padded result.
 
     Raises
     ------
@@ -1973,6 +2108,7 @@ def _solve(
             # the residual function (brentq doesn't return intermediate
             # results, only the root)
             _state = {'mass_enclosed': None, 'gravity': None, 'pressure': None, 'n_evals': 0}
+            _evals = {}  # f(P_c) [Pa] of each evaluated central pressure of this solve
 
             def _pressure_residual(p_center):
                 """Surface pressure residual f(P_c) = P_surface(P_c) - P_target.
@@ -2026,10 +2162,9 @@ def _solve(
 
                 # Early termination: pressure reached zero before the
                 # surface (padded with zeros) → P_center is too low
-                if p[-1] <= 0:
-                    return -target_surface_pressure
-
-                return p[-1] - target_surface_pressure
+                f = -target_surface_pressure if p[-1] <= 0 else p[-1] - target_surface_pressure
+                _evals[float(p_center)] = f
+                return f
 
             # Bracket: use previous solution to narrow the search.
             # If the narrow bracket from the previous solve does not
@@ -2091,6 +2226,14 @@ def _solve(
                     rtol=1e-10,
                     maxiter=max_iterations_pressure,
                     full_output=True,
+                )
+                p_solution, root_info = _refine_pressure_root(
+                    p_solution,
+                    root_info,
+                    _evals,
+                    _pressure_residual,
+                    target_surface_pressure,
+                    max_iterations_pressure,
                 )
                 _prev_brent_solution = p_solution  # Persist for next iteration
                 # Re-run solve_structure at the exact root to get clean profiles
@@ -2713,6 +2856,7 @@ def _solve(
         'accept_mass_limit': accept_mass_limit,
         'density_from_eos': density_from_eos,
         'p_center': pressure[0] if len(pressure) > 0 else None,
+        'padded': bool(pad.size and pad[-1]),
         'adiabat_computed': _adiabat_computed,
         'adiabat_blend': _adiabat_blend,
     }

@@ -2,9 +2,9 @@
 
 Whether a converged solve stops inside the last shell depends on round-off, so these solves
 take each root of the central-pressure search, or the root lowered by the smallest of 1e-5 to
-1e-2 that makes the outward integration stop below R (``_stop_below_r``); the outer node is
-then padded as the surface on every platform. They also lift the 300 s wall clock, whose
-accept returns a best pass that need not be padded.
+1e-2 that makes the outward integration stop below R (``_stop_below_r``), without the root
+refinement; the outer node is then padded as the surface on every platform. They also lift
+the 300 s wall clock, whose accept returns a best pass that need not be padded.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 
 import zalmoxis.solver as zs
-from tests.test_failed_structure_solve import _cfg, _run
+from tests.test_failed_structure_solve import ROOT, _cfg, _run
 from zalmoxis.config import load_material_dictionaries
 from zalmoxis.constants import G
 from zalmoxis.mixing import calculate_mixed_density, parse_all_layer_mixtures
@@ -23,8 +23,8 @@ pytestmark = pytest.mark.smoke
 
 def _stop_below_r(monkeypatch, target=101325.0):
     """Take each root of the central-pressure search (the brentq call with xtol 1e6), or lower
-    it until the residual is that of a padded solve; return the roots that no shift up to 1e-2
-    pads."""
+    it until the residual is that of a padded solve, and keep it from the root refinement;
+    return the roots that no shift up to 1e-2 pads."""
     real, misses = zs.brentq, []
 
     def brentq(f, a, b, *args, **kwargs):
@@ -39,6 +39,7 @@ def _stop_below_r(monkeypatch, target=101325.0):
         return root, info
 
     monkeypatch.setattr(zs, 'brentq', brentq)
+    monkeypatch.setattr(zs, '_refine_pressure_root', lambda root, info, *args: (root, info))
     return misses
 
 
@@ -80,6 +81,24 @@ def test_a_padded_surface_node_has_the_eos_density_at_the_target_pressure(padded
 def test_a_padded_surface_node_has_the_gravity_of_the_planet_mass_at_its_radius(padded):
     m, r, g = (np.asarray(padded[k]) for k in ('mass_enclosed', 'radii', 'gravity'))
     assert g[-1] == pytest.approx(G * m[-1] / r[-1] ** 2, rel=1e-12)
+
+
+@pytest.mark.timeout(2400)
+def test_a_padded_node_below_zero_pressure_is_flagged_as_padded(monkeypatch):
+    """The padded flag of ``_solve`` follows the pad mask (P <= 0): an outer node padded at
+    -1e-300 Pa, which leaves every residual P(R) - P_t unchanged, is flagged as padded.
+    ``main`` rejects that profile (the padding invariant needs P = 0)."""
+    misses, real = _stop_below_r(monkeypatch), zs.solve_structure
+
+    def solve(*args, **kwargs):
+        m, g, p = real(*args, **kwargs)
+        return m, g, np.where(p == 0.0, -1e-300, p)
+
+    monkeypatch.setattr(zs, 'solve_structure', solve)
+    r = zs._solve(_cfg(wall_timeout=1e6), load_material_dictionaries(), None, f'{ROOT}/input')
+    P = np.asarray(r['pressure'])
+    assert r['converged'] and not misses and P[-1] < 0.0 < P[-2]
+    assert r['padded'] is True
 
 
 @pytest.mark.timeout(2400)
