@@ -153,7 +153,7 @@ Each grid run produces:
 
     The comment header carries the scalar mass diagnostics (`cmb_mass`, `core_mantle_mass`), the `converged` flag, the run label, and the per-layer EOS and melting-curve identifiers (`core_eos`, `mantle_eos`, `ice_layer_eos`, `rock_solidus_id`, `rock_liquidus_id`).
 
-    CSVs are written for non-converged grid points too (useful for debugging), but the last row of `radius_m` and `mass_enclosed_kg` in those cases is the last Picard iterate, not the planet's converged structure, and `density_kg_m3` can contain NaN or zero in failed or padded shells. Filter on `converged == True` before plotting.
+    CSVs are written for non-converged grid points too (useful for debugging), but the last row of `radius_m` and `mass_enclosed_kg` in those cases is the last Picard iterate, not the planet's converged structure, and `density_kg_m3` can contain NaN in failed shells, and zero in the shells past a surface stop of a result without a pressure solve. The padded nodes of a converged profile have zero pressure but the EOS density at the target surface pressure. Filter on `converged == True` before plotting. A converged profile can still be padded: its last `pressure_Pa` row is 0 instead of the target surface pressure ([padded accepts](../Explanations/process_flow.md#padded-accepts)), so check that row when you use the surface values.
 
 Plotting is always disabled during grid runs for speed. To generate the per-planet matplotlib plots for a specific parameter combination, run that case individually (`python -m zalmoxis -c <cfg>.toml`) with `plots_enabled = true`.
 

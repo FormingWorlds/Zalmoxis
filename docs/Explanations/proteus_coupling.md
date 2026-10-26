@@ -118,6 +118,12 @@ Zalmoxis reads the current planet state from `hf_row`, runs its structure solve,
 | `_initial_T_profile`, `_initial_T_radii`, `_initial_T_pressure` | Adiabatic T(r) profile arrays for the energetics solver IC |
 | `R_solvus`, `T_solvus`, `P_solvus`, `X_H2_int` | Global-miscibility binodal outputs (only when `global_miscibility = true`) |
 
+**Padded profiles in a coupled run.** A structure whose integration stops at $P = 0$ before the outer radius is padded: the nodes past the stop hold $P = 0$, and the result has `padded = True` ([Padded accepts](process_flow.md#padded-accepts)).
+PROTEUS does not read `padded`.
+It reads the profiles and the convergence flags.
+On the JAX path with Aragog temperature arrays, `zalmoxis_solver` in `src/proteus/interior_struct/zalmoxis.py` rebuilds the density and temperature columns and evaluates a node with $P = 0$ at the target surface pressure; on the other paths a padded node keeps $P = 0$.
+Zalmoxis logs one warning when it returns a converged padded profile.
+
 The full set of TOML-derived inputs the wrapper translates is in `load_zalmoxis_configuration` (see `interior_struct/zalmoxis.py` lines ~420-564). Every TOML key from `[interior_struct]` and `[interior_struct.zalmoxis]` lands either in the Zalmoxis dict, in a derived helper (`mushy_zone_factors`, `_resolve_zalmoxis_temperature_mode`, `_resolve_zalmoxis_cmb_temperature`), or in a runtime gate (the JAX-disable path on init / equilibration calls is gated on whether the caller supplied `temperature_arrays`).
 
 ## Initial-condition anchors
