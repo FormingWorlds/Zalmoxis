@@ -68,7 +68,7 @@ Loads TOML, validates schema (per-layer and legacy global EOS strings, mass and 
 
 #### `solver.py`
 
-Houses `main()` (the user-facing entry), `_solve()` (damped-Picard outer loop, default), `_solve_newton_outer()` (Newton + brentq fallback), `_anderson_mix()` (Walker & Ni 2011 Type-II Anderson acceleration for the density Picard loop), and the mass-adaptive `_default_solver_params` / `_tighten_solver_params` helpers used by the auto-retry path. See [`zalmoxis.solver`](../Reference/api/zalmoxis.solver.md).
+Houses `main()` (the user-facing entry), `_solve()` (damped-Picard outer loop, default), `_solve_newton_outer()` (Newton + brentq fallback), `_anderson_mix()` (Walker & Ni 2011 Type-II Anderson acceleration for the density Picard loop), `_refine_pressure_root()` and `_nearest_sign_pair()` (the refinement of the Brent root of the pressure solve, see [Padded accepts](process_flow.md#padded-accepts)), and the mass-adaptive `_default_solver_params` / `_tighten_solver_params` helpers used by the auto-retry path. See [`zalmoxis.solver`](../Reference/api/zalmoxis.solver.md).
 
 #### `structure_model.py`
 
@@ -164,7 +164,7 @@ Inside a fixed $R$, alternate between integrating the structure ODE (yielding $P
 
 ### Innermost: structure ODE
 
-`solve_structure` integrates the coupled ODEs from surface to centre with adaptive RK45 (or Tsit5 on the JAX path). A terminal event at $P = 0$ stops the integration cleanly when the central-pressure guess is too low. The central pressure $P_c$ that satisfies $P(R) = P_{\mathrm{target}}$ is found by `scipy.optimize.brentq` over a guarded bracket. `coupled_odes()` returns $[0, 0, 0]$ at non-physical trial points so the adaptive controller rejects the step rather than crashing.
+`solve_structure` integrates the coupled ODEs from the centre to the surface with adaptive RK45 (or Tsit5 on the JAX path). A terminal event at $P = 0$ stops the integration cleanly when the central-pressure guess is too low. The central pressure $P_c$ that satisfies $P(R) = P_{\mathrm{target}}$ is found by `scipy.optimize.brentq` over a guarded bracket. `_solve` passes each Brent root to `_refine_pressure_root` (`solver.py:2227`), which solves again on the nearest sign pair when the root misses $P_{\mathrm{target}}$ by more than $0.1 P_{\mathrm{target}}$, and `main` returns `padded = True` when the accepted profile has $P = 0$ at the outer radius ([Padded accepts](process_flow.md#padded-accepts)). `coupled_odes()` returns $[0, 0, 0]$ at non-physical trial points so the adaptive controller rejects the step rather than crashing.
 
 ### Adiabat anchor: surface vs CMB
 

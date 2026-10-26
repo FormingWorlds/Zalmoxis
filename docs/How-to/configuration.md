@@ -464,6 +464,7 @@ The default values work well for Earth-mass planets with the default EOS. For ot
 
 Controls the Brent root-finding solver that determines the central pressure.
 The solver searches with `brentq` for the central pressure $P_c$ at which the surface pressure after ODE integration equals the target; `pressure_tolerance` is the accept test of the profile at the root it returns.
+Before this test, a root that misses the target by more than $0.1 P_\mathrm{target}$ can get a second Brent solve on its nearest sign pair, and the retry after an unconverged Picard solve runs with 0.1 times `pressure_tolerance` ([padded accepts](../Explanations/process_flow.md#padded-accepts)).
 See the [process flow documentation](../Explanations/process_flow.md#pressure-solver-brents-method) for details on the algorithm.
 
 | Parameter | Type | Unit | Default | Description |
