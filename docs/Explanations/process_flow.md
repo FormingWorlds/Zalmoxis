@@ -100,8 +100,8 @@ A second Brent solve runs between 2 evaluated central pressures that bracket the
 
 A padded profile is the result of a surface stop (see the Early termination handling paragraph above).
 The integration stopped before the outer radius $R$, and the remaining points, the padded nodes, have $P = 0$.
-A profile whose integration reaches the outer radius is reached.
 Its pressure at the outer radius is $P(R) = 0$ instead of $P_{\mathrm{target}}$, so $\lvert P(R) - P_{\mathrm{target}} \rvert = P_{\mathrm{target}}$.
+A profile whose integration reaches the outer radius is reached.
 `result['padded']` is True when the returned pressure is 0 at the outer radius.
 
 The pressure test (b) in [Convergence Checks](#convergence-checks) passes such a profile for any target below `pressure_tolerance`, $10^9$ Pa by default.
