@@ -17,7 +17,7 @@ The [overview](index.md) lists every case of the tab.
 - Residual $f(P_c) = P(R) - P_t$: the pressure $P(R)$ at the outer radius $R$ minus the target surface pressure $P_t$.
 - Reached: the integration from a trial $P_c$ reaches the outer radius.
 - Padded: the integration stops before the outer radius, and the remaining nodes, the padded nodes, get zero pressure. The residual is then $-P_t$.
-- Sign pair: 2 evaluated central pressures whose residuals have opposite signs, so the root lies between them.
+- Sign pair: 2 neighbouring evaluated central pressures, with a finite negative residual at the lower one and a finite positive residual at the higher one, so the root lies between them. The higher one is the reached end.
 - PALEOS: the tabulated equations of state for iron, MgSiO$_3$ and water that Zalmoxis uses as its standard ([EOS physics](../Explanations/eos_physics.md)).
 - JAX path: an optional version of the structure integration in JAX, a Python library for compiled numerical code; it is off by default.
 - Picard outer solver: the default outer loop; it solves the structure for the current radius, measures the mass and updates the radius by damped cube-root scaling.
@@ -240,7 +240,7 @@ A second test checks the same rule with real structure solves. It uses the Analy
 
 ## Surface boundary condition in every Newton setup
 
-**Why this check exists.** The refinement must also work on the real equations of state of a planet, not only on an analytic residual. If it fails there, the accepted profile of a Newton run ends padded, or it misses the surface pressure by more than $P_t$. The test allows one padded setup: PALEOS on the JAX path at 1 Earth mass, when no reached end of its first sign pair lies within $P_t$.
+**Why this check exists.** The refinement must also work on the real equations of state of a planet, not only on an analytic residual. If it fails there, the accepted profile of a Newton run ends padded, or it misses the surface pressure by more than $P_t$. The test allows one padded setup: PALEOS on the JAX path at 1 Earth mass, when the reached end of its first sign pair misses $P_t$ by more than $P_t$, or the solve has no sign pair.
 
 **What it tests.** The test runs the 6 Newton setups: the Analytic EOS (equation of state) at 1 Earth mass, PALEOS at 1, 5 and 10 Earth masses, and PALEOS on the JAX path with $T(r)$ from a numpy Picard solve at 1 and 3 Earth masses. Every setup must accept on the Newton tolerance. Every reached profile must miss $P_t$ by at most $P_t$, and no profile may have a padded node, except on the JAX path at 1 Earth mass. On that path $P(R)$ near the stop scatters, and the accepted profile can be padded. The case then requires one of 2 things: the reached end of the first sign pair of that pressure solve misses $P_t$ by more than $P_t$, or the solve has no sign pair.
 

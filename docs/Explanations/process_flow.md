@@ -93,10 +93,10 @@ The stored arrays of the last evaluation are used only when the bracket is inval
 When can the pressure solve accept a profile whose integration stopped below the surface, and how does the solve refine such a root?
 
 Brent's method can return a central pressure whose integration stops before the outer radius.
-Its profile is padded: the outermost point gets a pressure of 0 instead of the target surface pressure.
-The pressure accept test still passes it when the target is below `pressure_tolerance`, which holds with the default of $10^9$ Pa.
-The solve therefore tries to refine a root that misses the target by more than $0.1 P_{\mathrm{target}}$, padded or reached, under the conditions listed below.
-A second Brent solve runs between 2 evaluated central pressures that bracket the target and evaluates new ones there, and the solve keeps the candidate that comes closest to the target.
+Its profile is padded: the outermost point gets a pressure of 0 instead of the target surface pressure, and with the default `pressure_tolerance` the accept test still passes it.
+To avoid such a profile, the solve refines the root in 2 steps.
+For a padded or a reached root that misses the target by more than $0.1 P_{\mathrm{target}}$, a second Brent solve can run between 2 evaluated central pressures that bracket the target, and it evaluates new central pressures there.
+The solve then keeps the candidate that comes closest to the target; for a padded root, the candidates also hold the reached ends of its sign pairs that lie within $P_{\mathrm{target}}$ of the target.
 
 A padded profile is the result of a surface stop (see the Early termination handling paragraph above).
 The integration stopped before the outer radius $R$, and the remaining points, the padded nodes, have $P = 0$.
@@ -121,8 +121,7 @@ The condition is necessary, not sufficient.
 It does not apply when $P(R)$ jumps at the stop or scatters.
 
 The solve then refines the root in 2 steps (`_refine_pressure_root`).
-In the first step, a second Brent solve runs on the nearest sign pair: 2 evaluated central pressures whose residuals have opposite signs, so they bracket the target.
-It evaluates new central pressures between them.
+In the first step, a second Brent solve runs on the nearest sign pair: 2 neighbouring evaluated central pressures, with a finite negative residual at the lower one and a finite positive residual at the higher one, the reached end.
 Its `xtol` is $0.1 P_{\mathrm{target}}$ divided by the secant slope of $f$ over that pair.
 The second solve runs only when all of these conditions hold; otherwise the solve skips it:
 
