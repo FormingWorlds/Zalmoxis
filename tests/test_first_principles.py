@@ -879,7 +879,8 @@ class TestConservationLaws:
                 capsize=4,
                 label='input mass, 1 % and 2 %',
             )
-            left.plot([0, 1], [M_surface / M_input, M_trapz / M_input], 'o', label='code')
+            ratios = np.round([M_surface / M_input, M_trapz / M_input], 4)
+            left.plot([0, 1], ratios, 'o', label='code, to 4 decimals')
             left.set(
                 xticks=[0, 1],
                 xticklabels=['ODE', 'trapezoid'],
@@ -887,13 +888,16 @@ class TestConservationLaws:
                 ylabel='M / input mass',
             )
             left.legend(fontsize='small')
-            right.plot(radii / earth_radius, pressure / 1e9, label='code, pressure')
+            floor = 1.0  # GPa; the solver-sensitive surface values sit below it
+            right.plot(
+                radii / earth_radius, np.maximum(pressure / 1e9, floor), label='code, pressure'
+            )
             right.axhline(self.P_SURF_TOL / 1e9, ls=':', color='0.5', label='2 GPa bound')
             right.plot(
                 [radii[i_surf] / earth_radius],
-                [pressure[i_surf] / 1e9],
+                [max(pressure[i_surf] / 1e9, floor)],
                 'o',
-                label='code, surface',
+                label='code, surface, drawn at 1 GPa',
             )
             right.set(xlabel=r'r [$R_\oplus$]', ylabel='P [GPa]', yscale='log')
             right.legend(fontsize='small')
