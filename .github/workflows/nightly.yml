@@ -44,13 +44,13 @@ jobs:
             select: accept_solves and not accept_solves_long and not accept_solves_newton_setups and not wolfbower and not paleos_adiabat
             args: --dist load --cov-fail-under=0 --durations=0 tests/test_invariants.py
           - suite: accept_solves_long
-            select: accept_solves_long and not wolfbower and not paleos_adiabat
-            args: --dist load --cov-fail-under=0 --durations=0 tests/test_invariants.py tests/test_pressure_root_solves.py
+            select: accept_solves_long and not accept_solves_newton_setups and not wolfbower and not paleos_adiabat
+            args: --dist load --cov-fail-under=0 --durations=0
             test_timeout: 4800
             job_timeout: 120
           - suite: accept_solves_newton_setups
             select: accept_solves_newton_setups and not wolfbower and not paleos_adiabat
-            args: --dist load --cov-fail-under=0 --durations=0 tests/test_pressure_root_solves.py
+            args: --dist load --cov-fail-under=0 --durations=0
             job_timeout: 170
           - suite: accept_solves_accepted_on
             select: accept_solves and not accept_solves_long and not accept_solves_newton_setups and not wolfbower and not paleos_adiabat
