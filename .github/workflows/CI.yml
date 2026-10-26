@@ -47,7 +47,7 @@ jobs:
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12.9"
+          python-version: "3.12"
 
       - name: Prevent coverage threshold decreases vs main
         # Pre-flight check: fail the PR if pyproject.toml's coverage
