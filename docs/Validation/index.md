@@ -38,7 +38,7 @@ All tests are implemented in [`tests/test_first_principles.py`](https://github.c
 |------|--------|------------|--------|
 | 1. Uniform sphere | ODE integration | $\|M_\mathrm{num} - M_\mathrm{exact}\|/M_\mathrm{exact}$ | $2 \times 10^{-15}$ (test: $< 10^{-6}$) |
 | 2. Two-layer sphere | Layer transitions | $\|M_\mathrm{num} - M_\mathrm{exact}\|/M_\mathrm{exact}$ | $3 \times 10^{-9}$ (test: $< 10^{-5}$) |
-| 3. Conservation | Gauss + hydrostatic | Pointwise residuals | $\le 1.5 \times 10^{-13}$ (test: $< 10^{-5}$, $< 10^{-4}$) |
+| 3. Conservation | Gauss + hydrostatic | Pointwise residuals | $\le 1.45 \times 10^{-13}$ (test: $< 10^{-5}$, $< 10^{-4}$) |
 | 4. Binding energy | Energy integral | $\|E_\mathrm{num} - E_\mathrm{exact}\|/\|E_\mathrm{exact}\|$ | $7 \times 10^{-6}$ (test: $< 1\%$) |
 | 5. Earth benchmark | Full solver | $R_p$, $P_c$, $g_\mathrm{surf}$ against 6371 km, 365 GPa, 9.81 m/s$^2$ | 4%, 7%, 9% |
 | 6. M-R scaling | Physics | $\alpha$ in $R \propto M^\alpha$ | 0.293 (expected $\sim 0.27$) |

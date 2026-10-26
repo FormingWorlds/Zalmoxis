@@ -5,7 +5,7 @@ You will run a 1 $M_\oplus$ planet, read the pressure at its outer radius, look 
 
 You need a working installation with the PALEOS tables under `data/` (see [First run](firstrun.md), Step 1).
 Run every block from the repository root, in one Python session, in the order of the steps.
-The whole tutorial took about 10 minutes on our machine; most of it is in Step 4 (about 5.5 minutes).
+The whole tutorial took about 10 minutes on a workstation; Step 4 takes about 5.5 minutes of it.
 
 ## Step 1: solve a structure and read its surface pressure
 
@@ -67,7 +67,7 @@ padded True, nodes with P = 0: 1 of 150
 The solve accepted the profile, but its outer node has $P = 0$, not $P_t$: the profile is **padded**.
 The integration from the accepted $P_c$ stopped at $P = 0$ just below the outer radius, and the node past the stop got $P = 0$.
 The solver logs one warning for such a result (`The accepted profile ends in a surface stop: ...`).
-The accept test passes it because the miss, $P_t$, is below `pressure_tolerance` ($10^9$ Pa by default).
+The accept test of the pressure solve passes a profile when $\lvert P(R) - P_t \rvert$ is below `pressure_tolerance` ($10^9$ Pa by default), so it passes this one, whose miss is $P_t$.
 `accepted_on` names the test that accepted the structure: `strict` means that the mass, density and pressure tests all passed ([Convergence Checks](../Explanations/process_flow.md#convergence-checks) lists every label).
 Whether a profile ends padded depends on round-off, so your run can end reached; Step 2 shows the trials that decide it.
 
@@ -131,7 +131,8 @@ P_c = 3.861934e+11 Pa  P(R) =  4.169e+07 Pa  f = +4.159e+07 Pa  reached
 P_c = 3.861945e+11 Pa  P(R) =  4.439e+07 Pa  f = +4.429e+07 Pa  reached
 ```
 
-The trials close to the accepted $P_c$ show a jump of $f$: the padded trials sit at $f = -P_t$, and the first reached trial, only 0.5 MPa higher, has $P(R) = 4.2 \times 10^7$ Pa, about 400 times $P_t$.
+The loop prints only the trials within 20 MPa of the accepted $P_c$; the others are far from the root.
+These trials show a jump of $f$: the padded trials sit at $f = -P_t$, and the first reached trial, only 0.5 MPa higher, has $P(R) = 4.2 \times 10^7$ Pa, about 400 times $P_t$.
 These two trials are the sign pair around the root.
 Brent's method, the root finder of the pressure solve, stops when its bracket is narrower than $10^6$ Pa and returns the end with the smaller $\lvert f \rvert$.
 When the reached end has $P(R) > 2 P_t$, its $\lvert f \rvert$ is larger than $P_t$, so Brent's method returns the padded end.
@@ -189,6 +190,7 @@ Brent root: P_c - x0 = -0.7362 MPa, P(R) = 0 Pa, miss 1.000 P_t
 refined root: P_c - x0 = +0.0262 MPa, P(R) = 1.0857e+05 Pa, miss 0.071 P_t
 ```
 
+The arguments of `_refine_pressure_root` are the Brent root, its Brent record `info`, the recorded residuals `evals`, the function `residual`, the target `P_t`, and 100, the iteration limit of the second Brent solve.
 The Brent root is padded: $P(R) = 0$, a miss of the full $P_t$.
 The second solve on the sign pair around $x_0$ finds a reached root that misses $P_t$ by less than $0.1 P_t$.
 
@@ -197,7 +199,7 @@ The second solve on the sign pair around $x_0$ finds a reached root that misses 
 The script `tools/validation/pressure_root_sweep.py` runs 26 solver setups built from `input/default.toml` and records how each accepted profile meets $P_t$.
 The `case` command runs one setup and writes its record.
 The setups are numbered from 0 to 25. Run 3 of them: 1 (the Analytic EOS, a closed-form equation of state without tables, at 1 $M_\oplus$ with the Picard outer solver), 8 (`input/default.toml` itself, PALEOS tables and the Picard outer solver) and 9 (the same planet with the Newton outer solver at `relative_tolerance` $10^{-9}$).
-The Picard outer solver, the default, rescales the radius until the computed mass equals the planet mass; the Newton outer solver takes Newton steps on the radius.
+The outer solver finds the radius at which the computed mass equals the planet mass. The Picard outer solver, the default, rescales the radius after each structure solve; the Newton outer solver uses Newton's method, which follows the slope of the mass error with the radius. `relative_tolerance` is the relative tolerance of the ODE integrator, and the label `newton_tol` means that the Newton outer solver accepted the structure on its mass error.
 Setup 9 takes about 4 minutes.
 
 ```console
@@ -227,7 +229,7 @@ setup 8 PALEOS 1 (default.toml): strict, P(R) = 0 Pa, miss 1.000 P_t, padded nod
 setup 9 PALEOS 1, Newton: newton_tol, P(R) = 1.393e+05 Pa, miss 0.375 P_t, padded nodes 0
 ```
 
-The command `python -m tools.validation.pressure_root_sweep run <dir> -j 2` runs all 26 setups, and `python -m tools.validation.pressure_root_sweep plot <dir>` draws them; the figure of all 26 setups is on the [validation page](../Validation/hydrostatic_structure.md#surface-boundary-condition-in-every-newton-setup).
+The command `python -m tools.validation.pressure_root_sweep run <dir> -j 2` runs all 26 setups (about 30 minutes with 2 processes), and `python -m tools.validation.pressure_root_sweep plot <dir> --assets <dir>` draws them into `<dir>` (it needs the `proteus_mpl` package and a record of every setup; without `--assets` it writes over the figures under `docs/assets/validation/`); the figure of all 26 setups is on the [validation page](../Validation/hydrostatic_structure.md#surface-boundary-condition-in-every-newton-setup).
 In it, 15 of the 19 Picard setups that return a profile end padded, and 5 of the 6 Newton setups at `relative_tolerance` $10^{-9}$ reach the outer radius; setup 10 (PALEOS on the JAX path) ends padded.
 Reached means that the integration reaches $R$, not that $P(R) = P_t$: setup 9 above misses $P_t$ by 0.375 $P_t$.
 
