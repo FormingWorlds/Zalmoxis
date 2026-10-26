@@ -25,8 +25,8 @@ jobs:
     name: Zalmoxis-nightly ${{ matrix.suite }} (ubuntu-latest)
     runs-on: ubuntu-latest
     # The full solves on the Wolf & Bower tables, the full adiabatic PALEOS solves at 5 M_earth,
-    # the real accept solves (one job per file) and the longest of them (2 whole-tree jobs) run in
-    # their own jobs, beside the rest.
+    # the real accept solves (one job per file) and the longest of them (2 whole-tree jobs)
+    # run in their own jobs, beside the rest.
     strategy:
       fail-fast: false
       matrix:

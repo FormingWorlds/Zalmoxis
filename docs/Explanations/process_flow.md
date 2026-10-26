@@ -93,10 +93,9 @@ The stored arrays of the last evaluation are used only when the bracket is inval
 When can the pressure solve accept a profile whose integration stopped below the surface, and how does the solve refine such a root?
 
 Brent's method can return a central pressure whose integration stops before the outer radius.
-Its profile is padded: the outermost point gets a pressure of 0 instead of the target surface pressure, and with the default `pressure_tolerance` the accept test still passes it.
-To avoid such a profile, the solve refines the root in 2 steps.
+Its profile is padded: the outermost point gets a pressure of 0 instead of the target surface pressure, and the accept test still passes it when the target is below `pressure_tolerance` ($10^9$ Pa by default).
 For a padded or a reached root that misses the target by more than $0.1 P_{\mathrm{target}}$, a second Brent solve can run between 2 evaluated central pressures that bracket the target, and it evaluates new central pressures there.
-The solve then keeps the candidate that comes closest to the target; for a padded root, the candidates also hold the reached ends of its sign pairs that lie within $P_{\mathrm{target}}$ of the target.
+The solve then keeps the candidate that comes closest to the target; for a padded root, the candidates also hold the reached ends of its first sign pair and of its nearest sign pair after the second solve that lie within $P_{\mathrm{target}}$ of the target.
 
 A padded profile is the result of a surface stop (see the Early termination handling paragraph above).
 The integration stopped before the outer radius $R$, and the remaining points, the padded nodes, have $P = 0$.

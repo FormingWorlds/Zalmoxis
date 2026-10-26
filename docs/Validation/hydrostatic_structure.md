@@ -17,7 +17,7 @@ The [overview](index.md) lists every case of the tab.
 - Residual $f(P_c) = P(R) - P_t$: the pressure $P(R)$ at the outer radius $R$ minus the target surface pressure $P_t$.
 - Reached: the integration from a trial $P_c$ reaches the outer radius.
 - Padded: the integration stops before the outer radius, and the remaining nodes, the padded nodes, get zero pressure. The residual is then $-P_t$.
-- Sign pair: 2 neighbouring evaluated central pressures, with a finite negative residual at the lower one and a finite positive residual at the higher one, so the root lies between them. The higher one is the reached end.
+- Sign pair: 2 neighbouring evaluated central pressures, with a finite negative residual at the lower one and a finite positive residual at the higher one, so $f$ changes sign between them. The higher one is the reached end.
 - PALEOS: the tabulated equations of state for iron, MgSiO$_3$ and water that Zalmoxis uses as its standard ([EOS physics](../Explanations/eos_physics.md)).
 - JAX path: an optional version of the structure integration in JAX, a Python library for compiled numerical code; it is off by default.
 - Picard outer solver: the default outer loop; it solves the structure for the current radius, measures the mass and updates the radius by damped cube-root scaling.
