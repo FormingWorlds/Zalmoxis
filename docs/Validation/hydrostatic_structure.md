@@ -7,12 +7,19 @@ Validation here means that we run the code on a case where another source gives 
 The test then checks that the code gives that answer within a stated tolerance.
 The right answer comes from closed-form solutions, from conservation laws, from a second implementation of the same equations, or from the pressure that the planet must have at its surface.
 If this part of the code is wrong, every structure that Zalmoxis returns is wrong, also the structures it gives to PROTEUS: the radius of the planet and the pressure and gravity at each depth.
-The cases on the surface boundary condition say why the check exists, what it tests, how we know the right answer and why it matters.
-Their box "Test details" gives the reference, the tolerance, the test id and the command.
+Each case below says why the check exists, what it tests, how we know the right answer and why it matters.
+The box "Test details" at the end of each case gives the reference, the tolerance, the test id and the command.
 The [overview](index.md) lists every case of the tab.
 
-**Terms of the surface boundary cases.**
+**Terms of this page.**
 
+- $r$ and $R$: the radius, from 0 at the centre, and the outer radius of the planet.
+- $M(r)$, $g(r)$, $P(r)$, $\rho(r)$: the mass inside radius $r$ (the enclosed mass, kg), the gravitational acceleration (m/s$^2$), the pressure (Pa) and the density (kg/m$^3$) at radius $r$; $G$ is the gravitational constant.
+- EOS (equation of state): the relation $\rho(P, T)$ between the density, the pressure and the temperature of a material.
+- CMB: the core-mantle boundary.
+- $N$ and `rtol`: the number of radial grid points, and the relative tolerance of the ODE integrator (RK45, an adaptive Runge-Kutta method of order 4 and 5).
+- Relative error: $|x_\mathrm{num} - x_\mathrm{exact}| / |x_\mathrm{exact}|$, the difference between the computed and the exact value, divided by the exact value.
+- Round-off level: a relative error of about $10^{-16}$ to $10^{-13}$, the size of the rounding error of floating-point arithmetic. A result at this level is exact within the precision of the computer.
 - Central pressure $P_c$: the pressure at the centre of the planet, the unknown of the pressure solve.
 - Residual $f(P_c) = P(R) - P_t$: the pressure $P(R)$ at the outer radius $R$ minus the target surface pressure $P_t$.
 - Reached: the integration from a trial $P_c$ reaches the outer radius.
@@ -25,7 +32,8 @@ The [overview](index.md) lists every case of the tab.
 
 ## Governing equations
 
-Zalmoxis solves three coupled ordinary differential equations for the radial structure of a self-gravitating, spherically symmetric body in hydrostatic equilibrium:
+Every case on this page checks one part of the solution of these equations.
+Zalmoxis solves three coupled ordinary differential equations (ODEs) for the radial structure of a self-gravitating, spherically symmetric body in hydrostatic equilibrium:
 
 $$
 \frac{dM}{dr} = 4\pi r^2 \rho(r)
@@ -39,19 +47,30 @@ $$
 \frac{dP}{dr} = -\rho(r)\, g(r)
 $$
 
-where $M(r)$ is the enclosed mass, $g(r)$ is gravitational acceleration, $P(r)$ is pressure, and $\rho(r)$ is density. These are integrated outward from the center ($r = 0$) with initial conditions $M(0) = 0$, $g(0) = 0$, $P(0) = P_c$.
+The first equation adds the mass of each thin shell, the second gives the gravity from the enclosed mass, and the third says that the pressure falls outward by the weight of the material above.
+The integration runs outward from the centre ($r = 0$) with the initial conditions $M(0) = 0$, $g(0) = 0$ and $P(0) = P_c$.
 
-Note that the gravity equation is singular at $r = 0$ due to the $2g/r$ term. L'Hopital's rule gives the analytic limit $dg/dr|_{r=0} = \frac{4}{3}\pi G \rho_c$, which `coupled_odes` in `zalmoxis.structure_model` uses at $r = 0$.
+The gravity equation is singular at $r = 0$ because of the $2g/r$ term.
+L'Hopital's rule gives the limit $dg/dr|_{r=0} = \frac{4}{3}\pi G \rho_c$, and `coupled_odes` in `zalmoxis.structure_model` uses this limit at $r = 0$.
 
-The system is closed by an equation of state $\rho = \rho(P, T)$, but for verification purposes we either fix $\rho$ to a constant (Tests 1-4) or use the Seager et al. (2007) analytic polytrope $\rho(P) = \rho_0 + c P^n$ (Tests 5-7), both of which eliminate any dependence on tabulated EOS data.
+An equation of state $\rho = \rho(P, T)$ closes the system.
+To check the equations without table data, Tests 1 to 4 fix $\rho$ to a constant, and Tests 5 to 7 use the Seager et al. (2007) analytic polytrope $\rho(P) = \rho_0 + c P^n$.
+Tests 5 and 6 are on the [mass-radius page](mass_radius.md).
 
 ## Test 1: Uniform-density sphere
 
-**What it tests:** The ODE integrator in complete isolation from any EOS complexity. By patching `calculate_mixed_density()` to return a constant, we test only the RK45 integration of the three coupled ODEs.
+**Why this check exists.** The integrator of the three equations must use the right coefficients and signs. A wrong factor in $dM/dr$ or $dg/dr$ (for example $2\pi$ in place of $4\pi$, or $g/r$ in place of $2g/r$), or the wrong sign of $dP/dr$, makes the computed mass, gravity or pressure differ from the exact solution, and this test fails.
 
-**Why it matters:** If the ODE coefficients (the $4\pi$ factors, the $2g/r$ singularity handling at $r = 0$, the signs) contain any error, this test will catch it with zero ambiguity. The analytic solution is a textbook result with no free parameters.
+**What it tests.** The density is fixed: the test replaces `calculate_mixed_density()` by a function that returns a constant $\rho$, so no EOS table is used and only the RK45 integration of the three equations is tested. The setup is $\rho = 5000$ kg/m$^3$ (an average rocky planet), $R = 6.4 \times 10^6$ m (about $1\, R_\oplus$), $P_c = 360$ GPa, $N = 300$ radial grid points and `rtol` $= 10^{-10}$. The test makes six checks:
 
-For a sphere of constant density $\rho$, the governing equations have exact closed-form solutions:
+1. **Mass profile:** $|M_\mathrm{num} - M_\mathrm{exact}| / M_\mathrm{exact} < 10^{-6}$ at all $r > 0$.
+2. **Gravity profile:** $|g_\mathrm{num} - g_\mathrm{exact}| / g_\mathrm{exact} < 10^{-6}$ at all $r > 0$.
+3. **Pressure profile:** $|P_\mathrm{num} - P_\mathrm{exact}| / P_\mathrm{exact} < 10^{-6}$ where $P > 0$.
+4. **Central boundary conditions:** $M(0) = 0$, $g(0) = 0$ and $P(0) = P_c$ to machine precision.
+5. **Gravity slope at the centre:** the slope of the computed gravity over the first two grid steps matches $\frac{4}{3}\pi G \rho$ to $< 10^{-4}$.
+6. **Pressure monotonicity:** $dP/dr < 0$ everywhere $P > 0$, as hydrostatic equilibrium requires with positive density and gravity.
+
+**How we know the right answer.** For a sphere of constant density the equations have an exact closed-form solution, a textbook result with no free parameters:
 
 $$
 M(r) = \frac{4}{3}\pi \rho\, r^3, \qquad
@@ -59,41 +78,35 @@ g(r) = \frac{4}{3}\pi G \rho\, r, \qquad
 P(r) = P_c - \frac{2}{3}\pi G \rho^2 r^2
 $$
 
-The mass grows as $r^3$ (volume of a sphere), gravity is linear in $r$ (Gauss's law for a uniform sphere), and pressure is a downward parabola (hydrostatic equilibrium with linearly increasing gravity).
+The mass grows as $r^3$ (the volume of a sphere), gravity is linear in $r$ (Gauss's law for a uniform sphere), and the pressure falls as a parabola (hydrostatic equilibrium with a gravity that grows linearly).
 
-**Setup:** $\rho = 5000$ kg/m$^3$ (representative rocky planet average), $R = 6.4 \times 10^6$ m ($\approx 1\, R_\oplus$), $P_c = 360$ GPa, $N = 300$ radial grid points, `rtol` $= 10^{-10}$.
+**Why it matters.** Every structure that Zalmoxis returns comes from this integrator. An error here enters every profile, for every equation of state.
 
-**Results:** At $N = 300$ the largest relative errors are $3 \times 10^{-15}$ for the mass, $1 \times 10^{-15}$ for gravity and $4 \times 10^{-16}$ for pressure, the round-off level; the test asserts $< 10^{-6}$. The curves are visually indistinguishable:
+![Uniform-density sphere: mass, gravity and pressure against radius, numerical and analytic](../img/validation/uniform_sphere_profiles.png)
 
-![Uniform-density sphere profiles](../img/validation/uniform_sphere_profiles.png)
+**How to read the plot.** The three panels show (a) the enclosed mass, (b) the gravity and (c) the pressure against the radius in km. The solid line is the numerical solution and the dashed line is the analytic solution. A pass means that the two lines lie on top of each other. At $N = 300$ the largest relative errors are $2 \times 10^{-15}$ for the mass and the gravity and $4 \times 10^{-16}$ for the pressure, the round-off level.
 
-Six individual assertions verify specific aspects:
+**Known limit.** This test does not check the value of the centre limit of $dg/dr$: when `coupled_odes` uses $\pi G \rho_c$ in place of $\frac{4}{3}\pi G \rho_c$ at $r = 0$, every case on this page still passes.
 
-1. **Mass profile accuracy:** $|M_\mathrm{num} - M_\mathrm{exact}| / M_\mathrm{exact} < 10^{-6}$ at all $r > 0$
-2. **Gravity profile accuracy:** $|g_\mathrm{num} - g_\mathrm{exact}| / g_\mathrm{exact} < 10^{-6}$ at all $r > 0$
-3. **Pressure profile accuracy:** $|P_\mathrm{num} - P_\mathrm{exact}| / P_\mathrm{exact} < 10^{-6}$ where $P > 0$
-4. **Central boundary conditions:** $M(0) = 0$, $g(0) = 0$, $P(0) = P_c$ to machine precision
-5. **Gravity slope at center:** $dg/dr|_{r=0}$ matches the analytic limit $\frac{4}{3}\pi G \rho$ to $< 10^{-4}$, verifying the singularity handling
-6. **Pressure monotonicity:** $dP/dr < 0$ everywhere $P > 0$, as required by hydrostatic equilibrium with positive density and gravity
-
-- Reference: closed-form solution of the uniform-density sphere
-- Tolerance: `rtol=1e-6` on the mass, gravity and pressure profiles; `rel=1e-4` on the central gravity slope
-- Test id: `tests/test_first_principles.py::TestUniformDensitySphere`
-- Command: `pytest -o "addopts=" tests/test_first_principles.py::TestUniformDensitySphere`
+??? info "Test details"
+    - Reference: closed-form solution of the uniform-density sphere
+    - Tolerance: `rtol=1e-6` on the mass, gravity and pressure profiles; `rel=1e-4` on the central gravity slope
+    - Test id: `tests/test_first_principles.py::TestUniformDensitySphere`
+    - Command: `pytest -o "addopts=" tests/test_first_principles.py::TestUniformDensitySphere`
 
 ## Test 2: Two-layer sphere
 
-**What it tests:** The layer transition logic at the core-mantle boundary (CMB). Zalmoxis assigns each radial shell to a layer (core or mantle) based on the enclosed mass. A density discontinuity at the CMB is the sharpest feature the integrator must handle, and errors in the boundary comparison (e.g., off-by-one in the mass threshold, wrong tolerance for floating-point comparison) would produce visible deviations from the piecewise analytical solution.
+**Why this check exists.** Zalmoxis assigns each radial shell to a layer (core or mantle) by the enclosed mass. If this assignment is wrong, for example if the core ends at 90 % of its mass, the mass profile differs from the piecewise exact solution and this test fails. Wrong coefficients in $dM/dr$ or $dg/dr$ also make it fail.
 
-**Setup:** A two-layer sphere with constant densities $\rho_c = 13{,}000$ kg/m$^3$ (iron-like core) and $\rho_m = 4000$ kg/m$^3$ (silicate-like mantle), $M_p = 1\, M_\oplus$, core mass fraction $f_c = 0.325$. The CMB radius is:
+**What it tests.** A sphere of two layers with constant densities: $\rho_c = 13{,}000$ kg/m$^3$ (an iron-like core) and $\rho_m = 4000$ kg/m$^3$ (a silicate-like mantle), with planet mass $M_p = 1\, M_\oplus$ and core mass fraction $f_c = 0.325$. The density jumps at the core-mantle boundary (CMB), the sharpest feature that the integrator must handle. The CMB radius is
 
 $$
 R_\mathrm{cmb} = \left(\frac{3\, f_c\, M_p}{4\pi \rho_c}\right)^{1/3} = 3291 \text{ km}
 $$
 
-This is close to Earth's actual CMB radius of 3480 km, and the total planet radius is 6513 km (1.02 times 6371 km). The central pressure of this profile, 380 GPa, comes from integrating the hydrostatic equation over the known density profile; the integration starts at 5% above it, 399 GPa, so that the pressure stays positive out to the surface.
+This is close to the Earth's CMB radius of 3480 km, and the planet radius is 6513 km (1.02 times 6371 km). The central pressure of this profile, 380 GPa, comes from integrating the hydrostatic equation over the known density profile. The integration starts 5 % above it, at 399 GPa, so that the pressure stays positive out to the surface. The test compares the enclosed mass with the exact solution and checks Gauss's law ($g = GM/r^2$) in both layers.
 
-The enclosed mass profile is piecewise:
+**How we know the right answer.** With two constant densities, the enclosed mass has an exact piecewise solution:
 
 $$
 M(r) = \begin{cases}
@@ -102,94 +115,108 @@ f_c M_p + \frac{4}{3}\pi \rho_m (r^3 - R_\mathrm{cmb}^3) & r > R_\mathrm{cmb}
 \end{cases}
 $$
 
-**Results:** The largest relative error of the mass profile against the piecewise formula is $3 \times 10^{-9}$, and Gauss's law ($g = GM/r^2$) holds to $1 \times 10^{-10}$ across both layers including the CMB transition; the test asserts $< 10^{-5}$ and $< 10^{-4}$. The left panel shows the mass profile with the CMB location marked; the right panel overlays the numerical gravity with the Gauss's law prediction:
+**Why it matters.** Every Zalmoxis planet has at least a core and a mantle. A wrong layer boundary puts the wrong material at a radius, so the density, the radius and the pressure at the CMB are wrong.
 
-![Two-layer sphere](../img/validation/two_layer_sphere.png)
+![Two-layer sphere: enclosed mass against the piecewise solution, and gravity against Gauss's law](../img/validation/two_layer_sphere.png)
 
-The smooth transition across the CMB confirms that `get_layer_mixture()` correctly assigns shells to layers and that the ODE integrator handles the density discontinuity without introducing spurious oscillations.
+**How to read the plot.** Panel (a) shows the enclosed mass against the radius in km, numerical (solid) and analytic (dashed), with the CMB as a dotted line. Panel (b) shows the numerical gravity and $GM(r)/r^2$. A pass means that the lines lie on top of each other on both sides of the CMB. The largest relative error of the mass is $3 \times 10^{-9}$, and Gauss's law holds to $1 \times 10^{-10}$ in both layers, so `get_layer_mixture()` assigns the shells correctly and the integrator crosses the density jump without oscillations.
 
-- Reference: piecewise closed-form solution of the two-layer sphere
-- Tolerance: `rtol=1e-5` on the mass profile, `rtol=1e-4` on Gauss's law
-- Test id: `tests/test_first_principles.py::TestTwoLayerSphere`
-- Command: `pytest -o "addopts=" tests/test_first_principles.py::TestTwoLayerSphere`
+??? info "Test details"
+    - Reference: piecewise closed-form solution of the two-layer sphere
+    - Tolerance: `rtol=1e-5` on the mass profile, `rtol=1e-4` on Gauss's law
+    - Test id: `tests/test_first_principles.py::TestTwoLayerSphere`
+    - Command: `pytest -o "addopts=" tests/test_first_principles.py::TestTwoLayerSphere`
 
 ## Test 3: Conservation diagnostics
 
-**What it tests:** Pointwise satisfaction of two fundamental conservation laws that must hold for any physically consistent solution, independent of the EOS.
+**Why this check exists.** Zalmoxis integrates $M(r)$ and $g(r)$ as two separate ODE components; it does not compute $g$ from $M$. A wrong factor in $dM/dr$ or $dg/dr$ makes them disagree, and the Gauss's law check fails. A wrong sign of $dP/dr$ breaks hydrostatic balance, and the balance check fails.
 
-**Gauss's law:** $g(r) = G\,M(r) / r^2$ for all $r > 0$. This is an algebraic identity relating the gravitational acceleration to the enclosed mass. Since Zalmoxis integrates both $M(r)$ and $g(r)$ as separate ODE components (rather than computing $g$ algebraically from $M$), any drift in the integration would cause the two to disagree. The relative residual $|g - GM/r^2| / (GM/r^2)$ quantifies this drift.
+**What it tests.** Two conservation laws must hold at every point of any physically consistent solution, for any EOS. The test checks them on the uniform-density sphere of Test 1.
 
-**Hydrostatic balance:** $dP/dr + \rho\, g = 0$ at every interior point. This is the defining equation of the solver; the residual is evaluated with central finite differences. For the uniform sphere $P(r)$ is a parabola, so the central difference is exact and the residual shows the integration error alone.
+- **Gauss's law:** $g(r) = G\,M(r) / r^2$ for all $r > 0$. The relative residual $|g - GM/r^2| / (GM/r^2)$ measures how far the two integrated components drift apart.
+- **Hydrostatic balance:** $dP/dr + \rho\, g = 0$ at every interior point. This is the defining equation of the solver. The test computes $dP/dr$ by central finite differences and divides the residual by $P_\mathrm{scale} = \frac{2}{3}\pi G \rho^2 R$. For the uniform sphere $P(r)$ is a parabola, so the central difference is exact and the residual shows the integration error alone.
 
-**Results:** Both residuals are at round-off level at all radii, far below the asserted $10^{-5}$ and $10^{-4}$:
+**How we know the right answer.** Gauss's law and hydrostatic balance follow from the equations themselves, so the exact residual is zero.
 
-![Conservation diagnostics](../img/validation/conservation_diagnostics.png)
+**Why it matters.** These laws must hold for every planet that Zalmoxis computes, also where no closed-form solution exists.
 
-On the 500-point grid of the figure, the Gauss's law residual (left) is at most $2.7 \times 10^{-15}$ and the hydrostatic residual (right) at most $1.4 \times 10^{-13}$.
+![Conservation diagnostics: Gauss's law residual and hydrostatic balance residual against radius](../img/validation/conservation_diagnostics.png)
 
-- Reference: Gauss's law $g = GM/r^2$ and hydrostatic balance $dP/dr + \rho g = 0$
-- Tolerance: `rtol=1e-5` on Gauss's law, largest relative hydrostatic residual below `1e-4`
-- Test id: `tests/test_first_principles.py::TestGaussLaw`, `tests/test_first_principles.py::TestHydrostaticBalance`
-- Command: `pytest -o "addopts=" tests/test_first_principles.py::TestGaussLaw tests/test_first_principles.py::TestHydrostaticBalance`
+**How to read the plot.** Panel (a) shows the relative Gauss's law residual and panel (b) the relative hydrostatic residual against the radius in km, on log scales. A pass means that both stay far below the tolerances of $10^{-5}$ and $10^{-4}$. On the 500-point grid of the figure the Gauss's law residual is at most $3.4 \times 10^{-15}$ and the hydrostatic residual at most $1.4 \times 10^{-13}$, the round-off level.
+
+??? info "Test details"
+    - Reference: Gauss's law $g = GM/r^2$ and hydrostatic balance $dP/dr + \rho g = 0$
+    - Tolerance: `rtol=1e-5` on Gauss's law, largest relative hydrostatic residual below `1e-4`
+    - Test id: `tests/test_first_principles.py::TestGaussLaw`, `tests/test_first_principles.py::TestHydrostaticBalance`
+    - Command: `pytest -o "addopts=" tests/test_first_principles.py::TestGaussLaw tests/test_first_principles.py::TestHydrostaticBalance`
 
 ## Test 4: Gravitational binding energy
 
-**What it tests:** Global consistency of the mass and density profiles via an integral quantity.
+**Why this check exists.** Tests 1 to 3 check the profiles point by point. An integral over the whole planet checks that the mass and density profiles agree as a whole. A wrong factor in $dM/dr$ makes this test fail.
 
-The gravitational binding energy, the energy required to disperse the planet to infinity, is:
+**What it tests.** The gravitational binding energy, the energy needed to disperse the planet to infinity, is
 
 $$
 E_\mathrm{grav} = -\int_0^R \frac{G\,M(r)}{r}\, 4\pi r^2 \rho\, dr
 $$
 
-For uniform density, this integral evaluates to the well-known result $E_\mathrm{grav} = -\frac{3}{5}\, G\, M_p^2 / R$. Numerical trapezoidal integration over the $M(r)$ and $\rho(r)$ profiles ($N = 500$) agrees with the analytical value to $7 \times 10^{-6}$; the test asserts $< 1\%$.
+The test integrates it with the trapezoidal rule over the $M(r)$ and $\rho(r)$ profiles of the uniform-density sphere ($N = 500$).
 
-This test is complementary to Tests 1-3: it verifies that errors do not cancel when integrated over the full planetary volume.
+**How we know the right answer.** For uniform density the integral has the closed form $E_\mathrm{grav} = -\frac{3}{5}\, G\, M_p^2 / R$. The numerical value agrees with it to $7 \times 10^{-6}$; the test asserts $< 1\%$.
 
-- Reference: uniform-sphere binding energy $E_\mathrm{grav} = -\frac{3}{5} G M_p^2 / R$
-- Tolerance: `rel=0.01`
-- Test id: `tests/test_first_principles.py::TestGravitationalBindingEnergy`
-- Command: `pytest -o "addopts=" tests/test_first_principles.py::TestGravitationalBindingEnergy`
+**Why it matters.** The binding energy is an integral of the whole profile, the kind of quantity that the energy budget of a planet uses.
+
+??? info "Test details"
+    - Reference: uniform-sphere binding energy $E_\mathrm{grav} = -\frac{3}{5} G M_p^2 / R$
+    - Tolerance: `rel=0.01`
+    - Test id: `tests/test_first_principles.py::TestGravitationalBindingEnergy`
+    - Command: `pytest -o "addopts=" tests/test_first_principles.py::TestGravitationalBindingEnergy`
 
 ## n = 1 polytrope
 
-**What it tests:** `solve_structure` with the `Analytic:polytrope_n1` verification material, $P = K \rho^2$, against the closed-form Lane-Emden solution $\rho(r) = \rho_c \sin\xi / \xi$ with $\xi = \pi r / R$. For $n = 1$ the radius $R = \pi \sqrt{K / 2\pi G}$ depends on $K$ only, not on the central density; $K$ is set so that $R$ is one Earth radius.
+**Why this check exists.** Tests 1 to 4 fix the density. This case lets the density follow the pressure through an equation of state, as in a real planet. A wrong factor in $dM/dr$ or $dg/dr$, or the wrong sign of $dP/dr$, moves the surface radius or the integrated mass, and the test fails.
 
-**Setup:** 600 radial points from the centre to $1.03\,R_\oplus$; the surface radius comes from extrapolating the density to zero.
+**What it tests.** `solve_structure` with the `Analytic:polytrope_n1` verification material, $P = K \rho^2$ (a polytrope of index $n = 1$, with $K$ a constant). The test runs 600 radial points from the centre to $1.03\,R_\oplus$; the surface radius comes from extrapolating the density to zero. For $n = 1$ the radius $R = \pi \sqrt{K / 2\pi G}$ depends on $K$ only, not on the central density; $K$ is set so that $R$ is one Earth radius.
 
-- Reference: the analytic $n = 1$ Lane-Emden solution (Chandrasekhar 1939, reference named in the test docstring)
-- Tolerance: surface radius within `rel=1e-4` of $1\,R_\oplus$; integrated mass within `rel=1e-4` of the seeded $2\,M_\oplus$; radius at $1\,M_\oplus$ and $2\,M_\oplus$ equal within `rel=1e-4` and within `rel=1e-3` of $1\,R_\oplus$
-- Test id: `tests/test_polytrope_verification.py`
-- Command: `pytest -o "addopts=" tests/test_polytrope_verification.py`
+**How we know the right answer.** For $n = 1$ the Lane-Emden equation of a polytrope has the closed-form solution $\rho(r) = \rho_c \sin\xi / \xi$ with $\xi = \pi r / R$.
+
+**Why it matters.** This is the only case on this page where the density depends on the pressure, so it checks the coupling of the integrator to an equation of state.
+
+??? info "Test details"
+    - Reference: the analytic $n = 1$ Lane-Emden solution (Chandrasekhar 1939, reference named in the test docstring)
+    - Tolerance: surface radius within `rel=1e-4` of $1\,R_\oplus$; integrated mass within `rel=1e-4` of the seeded $2\,M_\oplus$; radius at $1\,M_\oplus$ and $2\,M_\oplus$ equal within `rel=1e-4` and within `rel=1e-3` of $1\,R_\oplus$
+    - Test id: `tests/test_polytrope_verification.py`
+    - Command: `pytest -o "addopts=" tests/test_polytrope_verification.py`
 
 ## Test 7: Numerical convergence
 
-**What it tests:** That the error does not grow as the grid is refined and the tolerances are tightened, and that the full solver gives the same radius on two grids.
+**Why this check exists.** A finer grid or a tighter tolerance must not make the solution worse. If the error grew with $N$ or with a smaller `rtol`, the integrator settings would hide a fault. A wrong factor in $dM/dr$ or $dg/dr$, or the wrong sign of $dP/dr$, also makes the grid convergence test fail.
 
-### Grid convergence
+**What it tests.** The uniform-density sphere of Test 1 on several grids and with several tolerances, and the full solver (Picard iteration and Brent root-finding) with the Analytic EOS at $1\,M_\oplus$ on 3 grids.
 
-Running the uniform-density sphere at $N = 25, 50, 100, 200, 400, 800$ with `rtol` $= 10^{-10}$:
+- **Grid convergence:** the uniform sphere at $N$ from 50 to 400 (the figure uses 25 to 800) with `rtol` $= 10^{-10}$. The mass error is $2$ to $3 \times 10^{-15}$ and the pressure error about $4 \times 10^{-16}$ at every $N$. The uniform-sphere solution is a cubic and a parabola in $r$, which the integrator reproduces to round-off on every grid, so this case shows no convergence rate.
+- **Full solver:** the planet radius is the same, $0.96512\,R_\oplus$, at $N = 100$, 200 and 400.
+- **Tolerance convergence:** for `rtol` from $10^{-6}$ to $10^{-12}$ at $N = 200$ the mass error stays between $2$ and $4 \times 10^{-15}$, with no trend: the error is at round-off level for every tolerance tested.
 
-![Grid convergence](../img/validation/grid_convergence.png)
+**How we know the right answer.** The closed-form solution of Test 1 gives the error. For the full solver, the radius on the finer grid ($N = 400$) is the reference for the radius at $N = 200$ (self-consistency).
 
-The mass error is $2$ to $3 \times 10^{-15}$ and the pressure error about $4 \times 10^{-16}$ at every $N$ from 25 to 800. The uniform-sphere solution is a cubic and a parabola in $r$, which the integrator reproduces to round-off on every grid, so this case shows no convergence rate.
+**Why it matters.** The default grid and tolerances of Zalmoxis must give a result that does not change when they are refined.
 
-For the full solver (including Picard iteration and Brent root-finding) at $1\,M_\oplus$, the planet radius is the same, $0.96544\,R_\oplus$, at $N = 100$, 200 and 400; the test asserts that $N = 200$ and $N = 400$ agree to $< 1\%$.
+![Grid convergence: largest relative mass and pressure error against the number of radial grid points](../img/validation/grid_convergence.png)
 
-### Tolerance convergence
+**How to read the plot.** The x-axis is the number of radial grid points and the y-axis the largest relative error, both on log scales. A pass means that the errors do not grow with $N$.
 
-For `rtol` from $10^{-6}$ to $10^{-12}$ at $N = 200$ the mass error stays between $1.5$ and $3.5 \times 10^{-15}$, with no trend: the error is at round-off level for every tolerance tested.
-
-- Reference: closed-form solution of the uniform-density sphere; for the full solver, the radius at $N = 200$ against $N = 400$ (self-consistency)
-- Tolerance: the error may rise by at most a factor 1.5 from one grid or tolerance step to the next above a `1e-13` floor; mass error below `1e-8` and pressure error below `1e-6` at $N = 400$; full-solver radius at $N = 200$ and $N = 400$ within 1%; mass error below `1e-10` at `rtol=1e-12`
-- Test id: `tests/test_first_principles.py::TestGridConvergence`, `tests/test_first_principles.py::TestToleranceConvergence`
-- Command: `pytest -o "addopts=" tests/test_first_principles.py::TestGridConvergence tests/test_first_principles.py::TestToleranceConvergence`
+??? info "Test details"
+    - Reference: closed-form solution of the uniform-density sphere; for the full solver, the radius at $N = 200$ against $N = 400$ (self-consistency)
+    - Tolerance: the error may rise by at most a factor 1.5 from one grid or tolerance step to the next above a `1e-13` floor; mass error below `1e-8` and pressure error below `1e-6` at $N = 400$; full-solver radius at $N = 200$ and $N = 400$ within 1%; mass error below `1e-10` at `rtol=1e-12`
+    - Test id: `tests/test_first_principles.py::TestGridConvergence`, `tests/test_first_principles.py::TestToleranceConvergence`
+    - Command: `pytest -o "addopts=" tests/test_first_principles.py::TestGridConvergence tests/test_first_principles.py::TestToleranceConvergence`
 
 ## JAX and numpy right-hand sides
 
-**What it tests:** The optional JAX path (`use_jax = True`) evaluates the right-hand side of the structure equations in `zalmoxis.jax_eos.rhs.coupled_odes_jax`. These cases compare it with the numpy `zalmoxis.structure_model.coupled_odes` on the same states. Two implementations of the same equations must give the same $dM/dr$, $dg/dr$ and $dP/dr$, so this is a cross-code check.
+**Why this check exists.** The optional JAX path (`use_jax = True`) evaluates the right-hand side of the structure equations in its own code, `zalmoxis.jax_eos.rhs.coupled_odes_jax`. If it differs from the numpy `zalmoxis.structure_model.coupled_odes` by more than the tolerance, a JAX run gives another structure than a numpy run, and these tests fail.
 
-**Setup:** The table cases draw random states with a fixed seed: $r$ from $10^5$ to $6.4 \times 10^6$ m, $M$ from 0 to $1\, M_\oplus$, $g$ from 0.5 to 25 m/s$^2$ and $P$ from $10^6$ to $3 \times 10^{11}$ Pa, with a PALEOS iron core and a PALEOS MgSiO$_3$ mantle. A state counts when both implementations return a nonzero right-hand side. JAX must never return a nonzero value where numpy returns zero; numpy may return a nonzero value where JAX returns zero in at most 4 of 200 states (the nearest-neighbour fallback of the numpy tables, which the JAX path does not have); more than 100 states must count. The synthetic cases build small tables in memory, so they need no EOS files and run in the unit tier.
+**What it tests.** The cases compare $dM/dr$, $dg/dr$ and $dP/dr$ of the two codes on the same states. The table cases draw random states with a fixed seed: $r$ from $10^5$ to $6.4 \times 10^6$ m, $M$ from 0 to $1\, M_\oplus$, $g$ from 0.5 to 25 m/s$^2$ and $P$ from $10^6$ to $3 \times 10^{11}$ Pa, with a PALEOS iron core and a PALEOS MgSiO$_3$ mantle. A state counts when both implementations return a nonzero right-hand side. JAX must never return a nonzero value where numpy returns zero; numpy may return a nonzero value where JAX returns zero in at most 4 of 200 states (the nearest-neighbour fallback of the numpy tables, which the JAX path does not have); more than 100 states must count. The synthetic cases build small tables in memory, so they need no EOS files and run in the unit tier.
 
 | Test id | Mantle | Tolerance | Tier |
 |---|---|---|---|
@@ -200,17 +227,20 @@ For `rtol` from $10^{-6}$ to $10^{-12}$ at $N = 200$ the mass error stays betwee
 | `tests/test_jax_parity_synthetic.py::test_unified_kernel_parity_synthetic` | synthetic unified table, density kernel | `rel=1e-12` | unit |
 | `tests/test_jax_parity_synthetic.py::test_rhs_parity_synthetic_unified_wet_and_dry` | synthetic unified mantle, dry and wet | `rtol=1e-10` | unit |
 
-### Plot: dry unified mantle
+**How we know the right answer.** Two codes of the same equations must give the same $dM/dr$, $dg/dr$ and $dP/dr$, so the numpy `coupled_odes` is the reference (a cross-code check).
+
+**Why it matters.** Every run with `use_jax = True` integrates the structure with the JAX right-hand side, also when PROTEUS calls Zalmoxis on the JAX path.
 
 ![Relative difference between the JAX and numpy right-hand sides](../assets/validation/jax_unified_mantle_dry_parity.svg#only-light){ width="80%" }
 ![Relative difference between the JAX and numpy right-hand sides](../assets/validation/jax_unified_mantle_dry_parity_dark.svg#only-dark){ width="80%" }
 
-Largest relative difference of the three right-hand-side terms between `coupled_odes_jax` and `coupled_odes` at each compared state (markers), against the pressure of that state, for the PALEOS iron core and the unified PALEOS MgSiO$_3$ mantle. The dashed line is the tolerance.
+**How to read the plot.** Each marker is one compared state of the dry unified mantle case: the largest relative difference of the three right-hand-side terms between `coupled_odes_jax` and `coupled_odes`, against the pressure of that state, for the PALEOS iron core and the unified PALEOS MgSiO$_3$ mantle. The dashed line is the tolerance. A pass means that every marker lies below the dashed line.
 
-- Reference: numpy `coupled_odes` (cross-code check).
-- Tolerance: largest relative difference `1e-6` over all compared states.
-- Test id: `tests/test_jax_unified_mantle_parity.py::test_unified_mantle_dry_parity`
-- Command: `pytest -m reference_pinned tests/test_jax_unified_mantle_parity.py --validation-plots`
+??? info "Test details"
+    - Reference: numpy `coupled_odes` (cross-code check).
+    - Tolerance: largest relative difference `1e-6` over all compared states.
+    - Test id: `tests/test_jax_unified_mantle_parity.py::test_unified_mantle_dry_parity`
+    - Command: `pytest -m reference_pinned tests/test_jax_unified_mantle_parity.py --validation-plots`
 
 ## Surface boundary condition of the pressure solve
 
@@ -263,7 +293,8 @@ A second test checks the same rule with real structure solves. It uses the Analy
 
 ## Reproducing the results
 
-The first-principles figures can be made again, as PDF files, with:
+Every figure on this page can be made again from the code.
+The first-principles figures (Tests 1, 2, 3 and 7) come out as PDF files with:
 
 ```console
 python -m tools.validation.run_first_principles_validation

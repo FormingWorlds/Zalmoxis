@@ -34,7 +34,7 @@ All tests are implemented in [`tests/test_first_principles.py`](https://github.c
 
 | Test | Target | Key metric | Result |
 |------|--------|------------|--------|
-| 1. Uniform sphere | ODE integration | $\|M_\mathrm{num} - M_\mathrm{exact}\|/M_\mathrm{exact}$ | $3 \times 10^{-15}$ (test: $< 10^{-6}$) |
+| 1. Uniform sphere | ODE integration | $\|M_\mathrm{num} - M_\mathrm{exact}\|/M_\mathrm{exact}$ | $2 \times 10^{-15}$ (test: $< 10^{-6}$) |
 | 2. Two-layer sphere | Layer transitions | $\|M_\mathrm{num} - M_\mathrm{exact}\|/M_\mathrm{exact}$ | $3 \times 10^{-9}$ (test: $< 10^{-5}$) |
 | 3. Conservation | Gauss + hydrostatic | Pointwise residuals | $\le 1.4 \times 10^{-13}$ (test: $< 10^{-5}$, $< 10^{-4}$) |
 | 4. Binding energy | Energy integral | $\|E_\mathrm{num} - E_\mathrm{exact}\|/\|E_\mathrm{exact}\|$ | $7 \times 10^{-6}$ (test: $< 1\%$) |
