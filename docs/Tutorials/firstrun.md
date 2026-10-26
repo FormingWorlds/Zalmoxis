@@ -85,7 +85,7 @@ A few notes on what each block does:
   `ice_layer = ""` keeps the model two-layer (core + mantle).
 - `[Calculations]` controls the radial grid resolution.
   150 points is enough for a 3 % radius match; double it for tighter convergence at high mass.
-- `[PressureAdjustment]` sets the target surface pressure that the outer mass-radius loop drives towards.
+- `[PressureAdjustment]` sets the target surface pressure that the outer mass-radius loop drives towards. The tutorial [Check that a structure meets its surface pressure](surface_pressure.md) shows how to check that a result meets it.
 - `[Output]` turns on the CSV/text writers.
   Leave `plots_enabled = false` for now; we will plot the profile by hand in Step 4.
 

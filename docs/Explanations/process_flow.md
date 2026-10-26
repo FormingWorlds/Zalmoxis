@@ -90,48 +90,86 @@ The stored arrays of the last evaluation are used only when the bracket is inval
 
 ### Padded accepts
 
-A padded profile is the result of a surface stop (see the Early termination handling paragraph above): the integration stopped before the outer radius $R$, and the remaining points have $P = 0$.
-Its pressure at the outer radius is $P(R) = 0$ instead of $P_{\mathrm{target}}$, so $\lvert P(R) - P_{\mathrm{target}} \rvert = P_{\mathrm{target}}$.
-The pressure test (b) in [Convergence Checks](#convergence-checks) passes such a profile for any target below `pressure_tolerance`, $10^9$ Pa by default.
-The retry that the Picard outer solver runs after an unconverged solve uses 0.1 times this tolerance, so there a padded profile passes for a target below that value.
-The result returned by `main` has no flag for a padded accept; `result['pressure'][-1] == 0` identifies one.
+When can the pressure solve accept a profile whose integration stopped below the surface, and how does the solve refine such a root?
 
-A trial central pressure whose integration ends in a surface stop gives $f = -P_{\mathrm{target}}$; one that stops at a higher pressure or reaches a non-finite state raises `StructureSolveError`.
+Brent's method can return a central pressure whose integration stops before the outer radius.
+Its profile is padded: the points above the stop, the padded nodes, get a pressure of 0, so the outermost point has 0 instead of the target surface pressure.
+A profile whose integration reaches the outer radius is reached.
+The accept test still passes a padded profile when the target is below `pressure_tolerance` ($10^9$ Pa by default).
+For a padded or a reached root that misses the target by more than $0.1 P_{\mathrm{target}}$, a second Brent solve can run between 2 evaluated central pressures that bracket the target, and it evaluates new central pressures there.
+The solve then keeps the candidate that comes closest to the target.
+A sign pair is 2 neighbouring evaluated central pressures with a negative residual at the lower one and a positive residual at the higher one, its reached end (details below).
+For a padded root, the candidates also hold the reached ends of its first sign pair and of its nearest sign pair after the second solve that lie within $P_{\mathrm{target}}$ of the target.
+The Picard and Newton outer solvers, the JAX path and PALEOS are defined in the terms of the [hydrostatic structure validation page](../Validation/hydrostatic_structure.md#what-this-page-checks).
+
+A padded profile is the result of a surface stop (see the Early termination handling paragraph above).
+The integration stopped before the outer radius $R$, and the remaining points, the padded nodes, have $P = 0$.
+Its pressure at the outer radius is $P(R) = 0$ instead of $P_{\mathrm{target}}$, so $\lvert P(R) - P_{\mathrm{target}} \rvert = P_{\mathrm{target}}$.
+`result['padded']` is True when the returned pressure is 0 at the outer radius.
+
+The pressure test (b) in [Convergence Checks](#convergence-checks) passes such a profile for any target below `pressure_tolerance`, $10^9$ Pa by default.
+The retry that the Picard outer solver runs after an unconverged solve uses 0.1 times this tolerance.
+There a padded profile passes for a target below that value.
+
+A trial central pressure whose integration ends in a surface stop gives $f = -P_{\mathrm{target}}$.
+One that stops at a higher pressure, or reaches a non-finite state, raises `StructureSolveError`.
 Brent's method stops when its bracket is narrower than `xtol` $+$ `rtol` $\lvert P_c \rvert$, with `xtol` $= 10^6$ Pa and `rtol` $= 10^{-10}$.
 It then returns the bracket end with the smaller $\lvert f \rvert$.
-It therefore returns the end with a surface stop, and the profile at the root is padded, when the other end reaches the outer radius with $P(R) > 2 P_{\mathrm{target}}$.
+It therefore returns the end with a surface stop when the other end reaches the outer radius with $P(R) > 2 P_{\mathrm{target}}$.
 
 If $P(R)$ is continuous at the stop and rises with a slope $dP(R)/dP_c$ of at most $S$, the reached end of the final bracket has $P(R)$ of at most about $S \times 10^6$ Pa.
-A padded root then needs $S > 2 P_{\mathrm{target}} / 10^6$ Pa, that is $S > 0.2$ for a target of 1 atm.
+A padded first root then needs $S > 2 P_{\mathrm{target}} / 10^6$ Pa, that is $S > 0.2$ for a target of 1 atm.
+For example, at $S = 0.47$ the reached end can have $P(R)$ up to about $4.7 \times 10^5$ Pa, above $2 P_{\mathrm{target}} \approx 2.0 \times 10^5$ Pa, so Brent's method can return the padded end.
 The condition is necessary, not sufficient.
 It does not apply when $P(R)$ jumps at the stop or scatters.
 
-The table lists runs of `main` on this code.
-For the runs that logged the final Brent call, it gives the width of the final bracket, $P(R)$ at its reached end, and the padded Brent roots of all Brent calls of the run.
-"Not recorded" marks a value that a run did not log.
+The solve then refines the root in 2 steps (`_refine_pressure_root`).
+In the first step, a second Brent solve runs on the nearest sign pair: 2 neighbouring evaluated central pressures, with a finite negative residual at the lower one and a finite positive residual at the higher one, the reached end.
+Its `xtol` is $0.1 P_{\mathrm{target}}$ divided by the secant slope of $f$ over that pair.
+The second solve runs only when all of these conditions hold; otherwise the solve skips it:
 
-| Setup | Outer solver | `relative_tolerance` | Padded Brent roots | Final bracket width | $P(R)$ at the reached end | Accepted profile |
-|---|---|---|---|---|---|---|
-| `input/default.toml` (PALEOS iron core and MgSiO$_3$ mantle, 1 Earth mass, 150 points) | Picard | $10^{-5}$ | 292 of 293 | $5.0 \times 10^5$ Pa | $3.5 \times 10^7$ Pa | padded (`strict`) |
-| `input/default.toml` | Picard | $10^{-7}$ | not recorded | not recorded | not recorded | padded (`strict`) |
-| `input/default.toml` | Picard | $10^{-9}$ | not recorded | not recorded | not recorded | padded (`strict`) |
-| Analytic EOS, 1 Earth mass | Newton | $10^{-9}$ | 43 of 190 | $5.0 \times 10^5$ Pa | $2.3 \times 10^5$ Pa | padded (`newton_tol`) |
-| Analytic EOS, 10 Earth masses | Picard | $10^{-5}$ | 28 of 42 | $5.0 \times 10^5$ Pa | $2.0 \times 10^8$ Pa | padded (`strict`) |
-| Analytic EOS, 10 Earth masses | Picard | $10^{-7}$ | not recorded | not recorded | not recorded | reached, $\lvert P(R) - P_{\mathrm{target}} \rvert = 7.5 \times 10^4$ Pa (`strict`) |
-| Analytic EOS, 10 Earth masses | Picard | $10^{-9}$ | not recorded | not recorded | not recorded | reached, $8.5 \times 10^3$ Pa (`strict`) |
-| Analytic EOS, 1 Earth mass | Picard | $10^{-5}$ | not recorded | not recorded | not recorded | reached, $2.3 \times 10^4$ Pa (`strict`) |
-| Analytic EOS, 1 Earth mass | Picard | $10^{-7}$ | not recorded | not recorded | not recorded | reached, $9.5 \times 10^4$ Pa (`mass_only`) |
-| Analytic EOS, 1 Earth mass | Picard | $10^{-9}$ | not recorded | not recorded | not recorded | padded (`strict`) |
-| Analytic EOS, 0.1 Earth mass | Picard | $10^{-5}$ | not recorded | not recorded | not recorded | reached, $5.0 \times 10^4$ Pa (`strict`) |
-| Analytic EOS, 0.1 Earth mass | Picard | $10^{-7}$ | not recorded | not recorded | not recorded | padded (`strict`) |
-| Analytic EOS, 0.1 Earth mass | Picard | $10^{-9}$ | not recorded | not recorded | not recorded | reached, $9.2 \times 10^4$ Pa (`strict`) |
+- the evaluated central pressures hold a sign pair;
+- the first root misses $P_{\mathrm{target}}$ by more than $0.1 P_{\mathrm{target}}$;
+- that `xtol` is below $10^6$ Pa;
+- the slope is at most 1, or the reached end of the pair misses $P_{\mathrm{target}}$ by at most $P_{\mathrm{target}}$.
 
-Every run uses 150 radial points, `absolute_tolerance` of 0.1 times `relative_tolerance` and a `wall_timeout` of at least 1800 s, and none logged a retry.
-Only the $10^{-9}$ run of `input/default.toml` took longer than the default `wall_timeout` of 300 s (358.9 s).
-In the 3 runs that logged the final Brent call, the bracket is $5.0 \times 10^5$ Pa wide, its lower end ends in a surface stop, and its reached end has $P(R)$ above $2 P_{\mathrm{target}}$.
-In every padded run only the outermost point is padded.
-A tighter `relative_tolerance` changes the accepted profile in both directions, and it does not remove the padded accept of `input/default.toml`.
-`python -m zalmoxis -c input/default.toml` writes a padded profile: its outermost point has $P = 0$, and the point below it, 44 km deeper, has $9.5 \times 10^8$ Pa.
+The limit of 1 on the slope comes from the structure equations.
+A smooth profile whose density does not fall with pressure at a fixed radius, along its temperature profile, has $dP(R)/dP_c \le 1$ while the enclosed mass at every radius rises with $P_c$.
+This also holds across the layer boundaries at fixed enclosed mass.
+A steeper pair whose reached end misses by more than $P_{\mathrm{target}}$ is treated as a jump at the stop or as scatter of $P(R)$ over the pair.
+There a second solve costs structure solves, so the solve skips it.
+Where the density falls with pressure (a mushy zone, the condensed-density or binodal weights of a mixture), a smooth pair can also be steeper than 1, and the same skip applies to it.
+
+In the second step, the solve picks the result from these candidates:
+
+- the first root;
+- for a padded first root, the reached ends of its first sign pair and of its nearest sign pair after the second solve, when they miss $P_{\mathrm{target}}$ by at most $P_{\mathrm{target}}$ (`_REACHED_END_MAX_MISS_PT` $= 1$);
+- the root of the second solve.
+
+The result is the candidate with the smallest finite $\lvert P(R) - P_{\mathrm{target}} \rvert$.
+On a tie, a reached profile wins, and then the later candidate.
+For a padded first root the evaluations of a second solve that raises therefore still count.
+For finite residuals, the result is never further from the target than the first root, or than the result without the second solve.
+A padded first root and a failed second solve log at the DEBUG level, since a Picard run can keep a padded root in hundreds of pressure solves.
+`main` logs one warning when it accepts a padded profile.
+
+The figure shows $\lvert P(R) - P_{\mathrm{target}} \rvert / P_{\mathrm{target}}$ of the accepted profile for 26 setups built from `input/default.toml`.
+5 of the 6 setups with the Newton outer solver at `relative_tolerance` $10^{-9}$ reach the outer radius.
+Setup 10 (PALEOS 1 on the JAX path) ends padded, since $P(R)$ near the stop scatters on that path.
+15 of the 19 setups with the Picard outer solver at the tolerances of `input/default.toml` that return a profile end padded, `input/default.toml` itself (setup 8) among them.
+Every padded profile has one padded point, the outermost.
+Setup 24 (PALEOS 3-layer ice 1) returns no profile: a trial central pressure gives a non-finite profile, and the solve raises `StructureSolveError`.
+This setup fails in 2 of 6 starts whose planet mass differs by $k \times 10^{-13}$ of its value ($k$ = 0 to 5), with and without the root refinement.
+The 9 reached profiles miss $P_{\mathrm{target}}$ by at most $0.38 P_{\mathrm{target}}$ (median $0.077 P_{\mathrm{target}}$).
+
+![Surface pressure miss of the accepted profile for 26 solver setups](../assets/validation/pressure_root_sweep.svg#only-light){ width="80%" }
+![Surface pressure miss of the accepted profile for 26 solver setups](../assets/validation/pressure_root_sweep_dark.svg#only-dark){ width="80%" }
+
+$\lvert P(R) - P_{\mathrm{target}} \rvert / P_{\mathrm{target}}$ of the accepted profile per setup: reached (circles), padded (squares, at 1 since $P(R) = 0$) and without an accepted profile (cross above the cap); the dashed line is the cap of the reached end that may replace a padded root.
+Setups: 0 Analytic 0.1, 1 Analytic 1, 2 Analytic 10, 3 Analytic 1, 2000 layers, 4 Analytic 1, Newton, 5 WB isothermal 3000 K, 6 WB isothermal 4000 K, 7 WB linear, 8 PALEOS 1 (default.toml), 9 PALEOS 1, Newton, 10 PALEOS 1, JAX Newton, 11 PALEOS 0.1, 12 PALEOS 3, 13 PALEOS 3, JAX Newton, 14 PALEOS 10, Newton, 15 PALEOS linear 1, 16 PALEOS isothermal 1, 17 PALEOS 1, 2000 layers, 18 PALEOS 1, P_t 1e7 Pa, 19 PALEOS 1, P_t 1e3 Pa, 20 PALEOS-2phase linear 1, 21 PALEOS-2phase 1, 22 PALEOS-2phase 3, 23 PALEOS + 3 % H 1, 24 PALEOS 3-layer ice 1, 25 PALEOS 5, Newton.
+Made with `python -m tools.validation.pressure_root_sweep run <dir> -j 2`, then `python -m tools.validation.pressure_root_sweep plot <dir> --assets <dir>`.
+
+**Where this is checked.** The cases [Surface boundary condition of the pressure solve](../Validation/hydrostatic_structure.md#surface-boundary-condition-of-the-pressure-solve) and [Surface boundary condition in every Newton setup](../Validation/hydrostatic_structure.md#surface-boundary-condition-in-every-newton-setup) on the Validation tab.
 
 ## Convergence Checks
 

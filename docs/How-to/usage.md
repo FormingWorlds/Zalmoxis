@@ -84,6 +84,13 @@ The columns are:
 
 The first row is the center (r = 0) and the last row is the surface. Rows beyond the point where the ODE terminal event fired are the surface: they keep the mass at the stop and zero pressure, their gravity is that of the stop mass at their radius, and their density is the EOS density at the target surface pressure (zero for a result without a pressure solve, `density_from_eos` False).
 
+### Check the surface pressure of a result
+
+`zalmoxis.solver.main()` returns a dict with the same profiles: `result['pressure'][-1]` is the pressure $P(R)$ at the outer radius, and the target is `target_surface_pressure` of the configuration.
+A profile whose integration stopped before the outer radius is padded: `result['padded']` is True and the rows past the stop hold zero pressure. When the solver accepts a padded profile, it logs one warning (`The accepted profile ends in a surface stop: ...`).
+The accept test passes a padded profile when the target is below `pressure_tolerance` ($10^9$ Pa by default), so read `padded` and compare $P(R)$ with the target before you use the surface values.
+[Padded accepts](../Explanations/process_flow.md#padded-accepts) explains when this happens, and the tutorial [Check that a structure meets its surface pressure](../Tutorials/surface_pressure.md) shows the check step by step.
+
 ### Summary file
 
 - **`calculated_planet_mass_radius.txt`**: Two-column summary (calculated mass in kg, calculated radius in m). Each row corresponds to one completed simulation. Appended across successive runs, so multiple runs accumulate in one file.

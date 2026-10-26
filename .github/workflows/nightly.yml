@@ -17,22 +17,22 @@ on:
 permissions:
   contents: read
 
-# Nightly: unit + smoke + integration with coverage, as five parallel jobs. Not on push or PR
+# Nightly: unit + smoke + integration with coverage, as eight parallel jobs. Not on push or PR
 # CI: each smoke or integration test runs a full solve (5-10 min on a 2-vCPU runner under
 # coverage), which adds no bug-finding signal to the unit suite.
 jobs:
   nightly:
     name: Zalmoxis-nightly ${{ matrix.suite }} (ubuntu-latest)
     runs-on: ubuntu-latest
-    # The full solves on the Wolf & Bower tables, the full adiabatic PALEOS solves at 5 M_earth and
-    # the real solves of the invariant and the accept tests (one job per file) run in their own
-    # jobs, beside the rest.
+    # The full solves on the Wolf & Bower tables, the full adiabatic PALEOS solves at 5 M_earth,
+    # the real accept solves (one job per file) and the longest of them (2 whole-tree jobs)
+    # run in their own jobs, beside the rest.
     strategy:
       fail-fast: false
       matrix:
         include:
           - suite: main
-            select: (unit or smoke or integration) and not slow and not wolfbower and not paleos_adiabat and not accept_solves
+            select: (unit or smoke or integration) and not slow and not wolfbower and not paleos_adiabat and not accept_solves and not accept_solves_long and not accept_solves_newton_setups
             args: --dist load --cov-fail-under=90
           - suite: wolfbower
             select: wolfbower
@@ -41,17 +41,25 @@ jobs:
             select: paleos_adiabat and not wolfbower
             args: --dist loadfile --cov-fail-under=0
           - suite: accept_solves_invariants
-            select: accept_solves and not accept_solves_long and not wolfbower and not paleos_adiabat
+            select: accept_solves and not accept_solves_long and not accept_solves_newton_setups and not wolfbower and not paleos_adiabat
             args: --dist load --cov-fail-under=0 --durations=0 tests/test_invariants.py
           - suite: accept_solves_long
-            select: accept_solves_long and not wolfbower and not paleos_adiabat
-            args: --dist load --cov-fail-under=0 --durations=0 tests/test_invariants.py
+            select: accept_solves_long and not accept_solves_newton_setups and not wolfbower and not paleos_adiabat
+            args: --dist load --cov-fail-under=0 --durations=0
             test_timeout: 4800
+            job_timeout: 120
+          - suite: accept_solves_newton_setups
+            select: accept_solves_newton_setups and not wolfbower and not paleos_adiabat
+            args: --dist load --cov-fail-under=0 --durations=0
+            job_timeout: 170
           - suite: accept_solves_accepted_on
-            select: accept_solves and not accept_solves_long and not wolfbower and not paleos_adiabat
+            select: accept_solves and not accept_solves_long and not accept_solves_newton_setups and not wolfbower and not paleos_adiabat
             args: --dist load --cov-fail-under=0 --durations=0 tests/test_accepted_on.py
-    # 90 min per job; the longest solves have their own job with 120 min.
-    timeout-minutes: ${{ matrix.suite == 'accept_solves_long' && 120 || 90 }}
+          - suite: accept_solves_pressure_root
+            select: accept_solves and not accept_solves_long and not accept_solves_newton_setups and not wolfbower and not paleos_adiabat
+            args: --dist load --cov-fail-under=0 --durations=0 tests/test_pressure_root_solves.py
+    # 90 min per job; the longest solves have their own jobs with 120 and 170 min.
+    timeout-minutes: ${{ matrix.job_timeout || 90 }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
