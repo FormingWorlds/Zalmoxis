@@ -12,24 +12,24 @@ The verification strategy follows a tiered approach:
 2. **Tier 2 (smoke tests):** Test the full solver chain (ODE + Picard + Brent + mass-radius loop) using the Seager et al. (2007) analytic EOS, which is a closed-form formula requiring no tabulated data. Compare against known physical benchmarks (Earth's radius, gravity, central pressure) and scaling laws.
 3. **Tier 3 (convergence tests):** Check the error over several grids and solver tolerances, and the full-solver radius on two grids.
 
-All tests are implemented in [`tests/test_first_principles.py`](https://github.com/FormingWorlds/Zalmoxis) (25 pytest tests). A standalone plotting script at `tools/validation/run_first_principles_validation.py` makes PDF versions of the first-principles figures on the [hydrostatic structure](hydrostatic_structure.md) and [mass-radius relation](mass_radius.md) pages.
+All tests are implemented in [`tests/test_first_principles.py`](https://github.com/FormingWorlds/Zalmoxis) (25 pytest tests). The tests of these cases draw their own plot pairs.
 
 ## Cases by process
 
 | Process | Case | Test id | Reference | Status |
 |---|---|---|---|---|
-| [Hydrostatic structure](hydrostatic_structure.md) | Uniform-density sphere | `tests/test_first_principles.py::TestUniformDensitySphere` | closed-form solution | unit tier; script figure |
-| [Hydrostatic structure](hydrostatic_structure.md) | Two-layer sphere | `tests/test_first_principles.py::TestTwoLayerSphere` | piecewise closed-form solution | unit tier; script figure |
-| [Hydrostatic structure](hydrostatic_structure.md) | Conservation diagnostics | `tests/test_first_principles.py::TestGaussLaw`, `::TestHydrostaticBalance` | Gauss's law, hydrostatic balance | unit tier; script figure |
-| [Hydrostatic structure](hydrostatic_structure.md) | Gravitational binding energy | `tests/test_first_principles.py::TestGravitationalBindingEnergy` | $-\frac{3}{5} G M_p^2 / R$ | unit tier |
-| [Hydrostatic structure](hydrostatic_structure.md) | n = 1 polytrope | `tests/test_polytrope_verification.py` | analytic Lane-Emden solution | smoke tier |
-| [Hydrostatic structure](hydrostatic_structure.md) | Numerical convergence | `tests/test_first_principles.py::TestGridConvergence`, `::TestToleranceConvergence` | closed-form solution of the uniform sphere | slow tier; script figure |
+| [Hydrostatic structure](hydrostatic_structure.md) | Uniform-density sphere | `tests/test_first_principles.py::TestUniformDensitySphere` | closed-form solution | unit tier; plot pair |
+| [Hydrostatic structure](hydrostatic_structure.md) | Two-layer sphere | `tests/test_first_principles.py::TestTwoLayerSphere` | piecewise closed-form solution | unit tier; plot pair |
+| [Hydrostatic structure](hydrostatic_structure.md) | Conservation diagnostics | `tests/test_first_principles.py::TestGaussLaw`, `::TestHydrostaticBalance` | Gauss's law, hydrostatic balance | unit tier; plot pair |
+| [Hydrostatic structure](hydrostatic_structure.md) | Gravitational binding energy | `tests/test_first_principles.py::TestGravitationalBindingEnergy` | $-\frac{3}{5} G M_p^2 / R$ | unit tier; plot pair |
+| [Hydrostatic structure](hydrostatic_structure.md) | n = 1 polytrope | `tests/test_polytrope_verification.py` | analytic Lane-Emden solution | smoke tier; plot pair |
+| [Hydrostatic structure](hydrostatic_structure.md) | Numerical convergence | `tests/test_first_principles.py::TestGridConvergence`, `::TestToleranceConvergence` | closed-form solution of the uniform sphere | slow tier; plot pair |
 | [Hydrostatic structure](hydrostatic_structure.md) | JAX and numpy right-hand sides | `tests/test_jax_unified_mantle_parity.py::test_unified_mantle_dry_parity` and 5 more | numpy `coupled_odes` (cross-code check) | unit and integration tiers; plot pair |
 | [Hydrostatic structure](hydrostatic_structure.md) | Surface boundary condition of the pressure solve | `tests/test_pressure_root.py::test_the_refined_root_meets_the_surface_boundary_condition`, `tests/test_pressure_root_solves.py::test_the_accepted_root_meets_the_surface_boundary_condition` | boundary condition $P(R) = P_t$ | unit and smoke tiers; plot pair |
 | [Hydrostatic structure](hydrostatic_structure.md) | Surface boundary condition in every Newton setup | `tests/test_pressure_root_solves.py::test_every_newton_setup_meets_the_surface_boundary_condition` | boundary condition $P(R) = P_t$ | nightly job `accept_solves_newton_setups`; script figure |
-| [Mass-radius relation](mass_radius.md) | Earth benchmark | `tests/test_first_principles.py::TestEarthBenchmark` | Earth radius, surface gravity, central pressure | smoke tier; script figure |
-| [Mass-radius relation](mass_radius.md) | Mass-radius scaling and CMF sensitivity | `tests/test_first_principles.py::TestMassRadiusScaling`, `::TestCMFMonotonicity`, `::TestPureIronPlanet`, `::TestConservationLaws` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | smoke tier; script figures |
-| [Equation of state](equation_of_state.md) | PALEOS table loader | `tests/test_eos_export_real_tables.py`, `tests/test_eos_export_highres.py` | `numpy.genfromtxt` reading of the same tables (cross-code check) | integration and slow tiers |
+| [Mass-radius relation](mass_radius.md) | Earth benchmark | `tests/test_first_principles.py::TestEarthBenchmark` | Earth radius, surface gravity, central pressure | smoke tier; plot pair |
+| [Mass-radius relation](mass_radius.md) | Mass-radius scaling and CMF sensitivity | `tests/test_first_principles.py::TestMassRadiusScaling`, `::TestCMFMonotonicity`, `::TestPureIronPlanet`, `::TestConservationLaws` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | smoke tier; script figures; plot pair |
+| [Equation of state](equation_of_state.md) | PALEOS table loader | `tests/test_eos_export_real_tables.py`, `tests/test_eos_export_highres.py` | `numpy.genfromtxt` reading of the same tables (cross-code check) | integration and slow tiers; no plot (identity of 2 readers) |
 | [Equation of state](equation_of_state.md) | Liquid Fe and Fe-water members | `tests/test_core_alloy.py::TestLuoMembers::test_eq14_density_matches_an_independent_bisection` | [Luo et al. (2024)](https://doi.org/10.1038/s41550-024-02347-z) Eq. 14 (analytical) | unit tier; plot pair |
 | [Equation of state](equation_of_state.md) | Light-element core on PALEOS iron | `tests/test_core_alloy.py::TestPaleosCore::test_core_mixture_limits_on_paleos_iron` | volume-additive limits (analytical) | unit tier; plot pair |
 | [Thermal state](thermal_state.md) | Initial thermal state | none | named in the script docstrings | script figure, no test, not run in CI |

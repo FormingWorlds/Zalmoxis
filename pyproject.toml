@@ -67,7 +67,7 @@ develop = [
     "pytest-rich",
     "pytest-xdist",
     "hypothesis",
-    "proteus-mpl>=1.4.0"
+    "proteus-mpl>=1.5.0"
 ]
 
 docs = [

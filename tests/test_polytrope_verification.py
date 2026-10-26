@@ -43,8 +43,8 @@ def _rho_c_for_mass(mass_kg: float) -> float:
     return np.pi * mass_kg / (4.0 * _R_LE**3)
 
 
-def _integrate_polytrope(mass_kg: float, num_layers: int = 600) -> tuple[float, float]:
-    """Integrate the structure ODEs with the polytrope EOS; return (R_surf, M_total).
+def _integrate_polytrope(mass_kg: float, num_layers: int = 600) -> tuple:
+    """Integrate the structure ODEs with the polytrope EOS; return (R_surf, M_total, radii, density).
 
     A single ``core`` layer carries the whole planet. The surface radius is the linear
     extrapolation of the density zero-crossing: density vanishes linearly at the n=1
@@ -60,8 +60,8 @@ def _integrate_polytrope(mass_kg: float, num_layers: int = 600) -> tuple[float, 
 
     Returns
     -------
-    tuple of float
-        Emergent surface radius [m] and integrated total mass [kg].
+    tuple
+        Emergent surface radius [m], integrated total mass [kg], radial grid [m] and density [kg/m^3].
     """
     rho_c = _rho_c_for_mass(mass_kg)
     central_pressure = K * rho_c**2
@@ -89,10 +89,10 @@ def _integrate_polytrope(mass_kg: float, num_layers: int = 600) -> tuple[float, 
     i = int(np.where(pressure > 0)[0][-1])
     drho_dr = (density[i] - density[i - 1]) / (radii[i] - radii[i - 1])
     r_surf = radii[i] + density[i] / (-drho_dr)
-    return float(r_surf), float(mass[i])
+    return float(r_surf), float(mass[i]), radii, density
 
 
-def test_surface_radius_matches_exact_lane_emden():
+def test_surface_radius_matches_exact_lane_emden(validation_plot):
     """The emergent radius reproduces the exact n=1 radius R = R_earth.
 
     Reference-pinned against the closed-form Lane-Emden surface. The 1e-4 tolerance is tight
@@ -102,10 +102,30 @@ def test_surface_radius_matches_exact_lane_emden():
     tolerance rejects. A mis-set K (which scales R as sqrt(K)) or a wrong density exponent would
     move the radius by percent-level, far outside the tolerance.
     """
-    r_surf, _mass = _integrate_polytrope(earth_mass)
+    r_surf, _mass, radii, density = _integrate_polytrope(earth_mass)
     assert r_surf == pytest.approx(_R_LE, rel=1e-4)
     # Discrimination guard: a factor-2 error in K would put R at sqrt(2) R_earth (~41% off).
     assert abs(r_surf / _R_LE - np.sqrt(2.0)) > 0.1
+
+    def figure():
+        import matplotlib.pyplot as plt
+
+        rho_c = _rho_c_for_mass(earth_mass)
+        xi = np.linspace(1e-6, np.pi, 200)
+        fig, ax = plt.subplots()
+        ax.plot(xi / np.pi, np.sin(xi) / xi, label=r'Lane-Emden $\sin\xi / \xi$')
+        ax.plot(
+            radii[::25] / _R_LE, density[::25] / rho_c, 'o', ms=3, label='code, every 25th node'
+        )
+        ax.plot([1.0], [0.0], 's', mfc='none', ms=10, label='exact radius R_Earth')
+        ax.plot([r_surf / _R_LE], [0.0], 'o', label='code surface radius')
+        ax.plot([np.sqrt(2.0)], [0.0], 'x', label=r'$\sqrt{2}$ R (K off by 2)')
+        ax.set(xlabel=r'r / $R_\oplus$', ylabel=r'$\rho / \rho_c$')
+        ax.legend(fontsize='small')
+        fig.tight_layout()
+        return fig
+
+    validation_plot(figure, 'zalmoxis_polytrope_n1')
 
 
 def test_integrated_mass_matches_analytic_mass():
@@ -114,7 +134,7 @@ def test_integrated_mass_matches_analytic_mass():
     Closes the mass budget of the ODE integration: the emergent total mass equals the mass
     implied by the seeded central density, verifying mass conservation through the solve.
     """
-    _r_surf, mass_total = _integrate_polytrope(2.0 * earth_mass)
+    _r_surf, mass_total, _, _ = _integrate_polytrope(2.0 * earth_mass)
     assert mass_total == pytest.approx(2.0 * earth_mass, rel=1e-4)
     # Discrimination guard: dropping the 4 pi in dM/dr = 4 pi rho r^2 would scale the integrated
     # mass by 1/(4 pi) ~ 0.08 of the seeded value, far below the pinned ratio of 1.
@@ -129,8 +149,8 @@ def test_radius_is_mass_independent():
     density, so agreement across a factor-2 mass change is a strong, non-trivially
     derivable invariant, not a coincidence of a single run.
     """
-    r1, _ = _integrate_polytrope(1.0 * earth_mass)
-    r2, _ = _integrate_polytrope(2.0 * earth_mass)
+    r1, *_ = _integrate_polytrope(1.0 * earth_mass)
+    r2, *_ = _integrate_polytrope(2.0 * earth_mass)
     assert r1 == pytest.approx(r2, rel=1e-4)
     # Both land at one Earth radius, not merely equal to each other at some other radius.
     assert r1 == pytest.approx(_R_LE, rel=1e-3)

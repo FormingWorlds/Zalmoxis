@@ -22,7 +22,7 @@ Plot 2: $U_d$, $U_u$ and $\Delta U = U_d - U_u$ against planet mass.
 
 **Why it matters.** The initial thermal state sets the start temperatures of the interior.
 
-**Known limit.** No test asserts these figures, and the script does not run with the current `initial_thermal_state`.
+**Known limit.** The figures come from a script; no test asserts them, and the script does not run with the current `initial_thermal_state`.
 
 ??? info "Test details"
     - References: Seager et al. (2007); Boujibar et al. (2020) and White & Li (2025), reference named in the script docstring.
@@ -49,7 +49,7 @@ The script also highlights the surface temperature issue: for 1 $M_\oplus$ plane
 
 **Why it matters.** It shows which material properties the initial thermal state needs.
 
-**Known limit.** No test asserts these figures, and the script does not run with the current `initial_thermal_state`.
+**Known limit.** The figures come from a script; no test asserts them, and the script does not run with the current `initial_thermal_state`.
 
 ??? info "Test details"
     - References: White & Li (2025) and Boujibar et al. (2020), reference named in the script docstring.
@@ -67,7 +67,7 @@ The script also highlights the surface temperature issue: for 1 $M_\oplus$ plane
 
 **Why it matters.** The script writes the effect of the accretion heat retention $f_a$ on the start temperatures to `thermal_state_fa_full_paleos`, which this page does not show.
 
-**Known limit.** No test asserts these results, the page shows none of the figures, and the script does not run with the current `initial_thermal_state`.
+**Known limit.** The results come from a script; no test asserts them, the page shows none of the figures, and the script does not run with the current `initial_thermal_state`.
 
 ??? info "Test details"
     - References: Boujibar et al. (2020) polynomial; White & Li (2025), accretion efficiency $f_a$ = 0.04.

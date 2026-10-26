@@ -10,6 +10,8 @@ These cases check how Zalmoxis reads the equation-of-state tables. The [overview
 
 **Result asserted:** The pressure and temperature axes, every grid cell of density, internal energy, entropy, $c_p$, $c_v$, thermal expansivity and $\nabla_\mathrm{ad}$, and every phase label are identical to the `genfromtxt` reading. Every grid cell that no table row fills is NaN, with an empty phase label.
 
+This case has no plot: it checks that 2 readers give identical arrays, an identity with nothing to draw.
+
 - Reference: `numpy.genfromtxt` reading of the same table (cross-code check).
 - Tolerance: identical arrays (`assert_array_equal`), no tolerance.
 - Test id: `tests/test_eos_export_real_tables.py::test_shipped_tables_are_identical_to_the_genfromtxt_reader` (integration tier), `tests/test_eos_export_highres.py::test_highres_tables_are_identical_to_the_genfromtxt_reader` (slow tier)

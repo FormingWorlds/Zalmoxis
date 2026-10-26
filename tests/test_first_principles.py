@@ -330,7 +330,7 @@ class TestUniformDensitySphere:
             err_msg='Gravity deviates from (4/3) pi G rho r',
         )
 
-    def test_pressure_profile(self):
+    def test_pressure_profile(self, validation_plot):
         """P(r) must match P_c - (2/3) pi G rho^2 r^2."""
         radii, _, _, pressure = _solve_uniform_sphere(self.RHO, self.R, self.P_CENTER, self.N)
         _, _, P_exact = _analytic_uniform_sphere(self.RHO, self.R, self.P_CENTER, radii)
@@ -342,6 +342,32 @@ class TestUniformDensitySphere:
             rtol=1e-6,
             err_msg='Pressure deviates from P_c - (2/3) pi G rho^2 r^2',
         )
+
+        def figure():
+            import matplotlib.pyplot as plt
+
+            _, mass, gravity, _ = _solve_uniform_sphere(self.RHO, self.R, self.P_CENTER, self.N)
+            M_exact, g_exact, _ = _analytic_uniform_sphere(
+                self.RHO, self.R, self.P_CENTER, radii
+            )
+            x = radii / self.R
+            every = slice(0, None, 15)
+            fig, axes = plt.subplots(3, 1, sharex=True, figsize=(6.4, 6.4))
+            rows = (
+                (axes[0], M_exact / earth_mass, mass / earth_mass, r'M [$M_\oplus$]'),
+                (axes[1], g_exact, gravity, r'g [m s$^{-2}$]'),
+                (axes[2], P_exact / 1e9, pressure / 1e9, 'P [GPa]'),
+            )
+            for ax, exact, numerical, label in rows:
+                ax.plot(x, exact, label='analytic')
+                ax.plot(x[every], numerical[every], 'o', ms=3, label='code, every 15th node')
+                ax.set_ylabel(label)
+            axes[0].legend(fontsize='small')
+            axes[-1].set_xlabel('r / R')
+            fig.tight_layout()
+            return fig
+
+        validation_plot(figure, 'zalmoxis_uniform_sphere')
 
     def test_central_boundary_conditions(self):
         """Initial conditions: M(0) = 0, g(0) = 0, P(0) = P_center."""
@@ -403,7 +429,7 @@ class TestGaussLaw:
 class TestHydrostaticBalance:
     """Verify dP/dr + rho * g = 0 pointwise (hydrostatic equilibrium)."""
 
-    def test_hydrostatic_residual_uniform_sphere(self):
+    def test_hydrostatic_residual_uniform_sphere(self, validation_plot):
         """Hydrostatic balance residual for uniform-density sphere."""
         rho, R, P_c = 5000.0, 6.4e6, 3.6e11
         N = 500  # finer grid for better finite differences
@@ -428,6 +454,28 @@ class TestHydrostaticBalance:
             f'Max relative hydrostatic residual = {np.max(relative_residual):.2e}, '
             f'expected < 1e-4'
         )
+
+        def figure():
+            import matplotlib.pyplot as plt
+
+            _, mass, _, _ = _solve_uniform_sphere(rho, R, P_c, N)
+            fig, (left, right) = plt.subplots(1, 2, figsize=(8.0, 3.6))
+            left.plot(
+                radii[interior] / R,
+                np.maximum(relative_residual, 1e-12),
+                label='code residual, clipped at 1e-12',
+            )
+            left.axhline(1e-4, ls=':', color='0.5', label='bound 1e-4')
+            left.set(xlabel='r / R', ylabel='relative residual', yscale='log')
+            left.legend(fontsize='small')
+            right.plot(radii[2:] / R, G * mass[2:] / radii[2:] ** 2, label=r'$GM/r^2$')
+            right.plot(radii[2::25] / R, gravity[2::25], 'o', ms=3, label='code gravity')
+            right.set(xlabel='r / R', ylabel=r'g [m s$^{-2}$]')
+            right.legend(fontsize='small')
+            fig.tight_layout()
+            return fig
+
+        validation_plot(figure, 'zalmoxis_conservation_diagnostics')
 
 
 @pytest.mark.unit
@@ -486,9 +534,9 @@ class TestTwoLayerSphere:
             )
         return radii, mass, gravity, pressure, cmb_mass, R_cmb, R_total
 
-    def test_two_layer_mass_profile(self):
+    def test_two_layer_mass_profile(self, validation_plot):
         """Mass profile must match piecewise analytic formula."""
-        radii, mass, _, _, cmb_mass, R_cmb, _ = self._run()
+        radii, mass, _, _, cmb_mass, R_cmb, R_total = self._run()
 
         M_exact = np.zeros_like(radii)
         for i, r in enumerate(radii):
@@ -505,6 +553,30 @@ class TestTwoLayerSphere:
             rtol=1e-5,
             err_msg='Two-layer mass profile deviates from analytic formula',
         )
+
+        def figure():
+            import matplotlib.pyplot as plt
+
+            _, _, gravity, _, _, _, _ = self._run()
+            x = radii / R_total
+            every = slice(1, None, 20)
+            fig, (top, bottom) = plt.subplots(2, 1, sharex=True, figsize=(6.4, 5.2))
+            top.plot(x, M_exact / earth_mass, label='piecewise analytic mass')
+            top.plot(
+                x[every], mass[every] / earth_mass, 'o', ms=3, label='code, every 20th node'
+            )
+            top.axvline(R_cmb / R_total, ls=':', color='0.5', label='core-mantle boundary')
+            top.set_ylabel(r'M [$M_\oplus$]')
+            top.legend(fontsize='small')
+            bottom.plot(x[3:], G * mass[3:] / radii[3:] ** 2, label=r'Gauss law $GM/r^2$')
+            bottom.plot(x[3::20], gravity[3::20], 'o', ms=3, label='code gravity')
+            bottom.axvline(R_cmb / R_total, ls=':', color='0.5')
+            bottom.set(xlabel='r / R', ylabel=r'g [m s$^{-2}$]')
+            bottom.legend(fontsize='small')
+            fig.tight_layout()
+            return fig
+
+        validation_plot(figure, 'zalmoxis_two_layer_sphere')
 
     def test_two_layer_gauss_law(self):
         """Gauss's law must hold at every point in both layers."""
@@ -527,7 +599,7 @@ class TestGravitationalBindingEnergy:
     E_grav = -(3/5) G M^2 / R (exact for uniform density).
     """
 
-    def test_binding_energy(self):
+    def test_binding_energy(self, validation_plot):
         """Numerically integrated binding energy must match analytic formula."""
         rho, R, P_c = 5000.0, 6.4e6, 3.6e11
         N = 500
@@ -549,6 +621,30 @@ class TestGravitationalBindingEnergy:
             f'Binding energy: numerical={E_numerical:.4e} J, analytic={E_analytic:.4e} J'
         )
 
+        def figure():
+            import matplotlib.pyplot as plt
+            from scipy.integrate import cumulative_trapezoid
+
+            cumulative = -cumulative_trapezoid(integrand, r, initial=0.0)
+            fig, ax = plt.subplots()
+            ax.plot(r / R, cumulative, label='code, running integral')
+            ax.errorbar(
+                [r[-1] / R],
+                [E_analytic],
+                yerr=abs(E_analytic) * 0.01,
+                fmt='s',
+                mfc='none',
+                capsize=4,
+                label=r'$-(3/5) G M^2 / R$, 1 %',
+            )
+            ax.plot([r[-1] / R], [E_numerical], 'o', label='code, full integral')
+            ax.set(xlabel='r / R', ylabel='binding energy [J]')
+            ax.legend(fontsize='small')
+            fig.tight_layout()
+            return fig
+
+        validation_plot(figure, 'zalmoxis_binding_energy')
+
 
 # ============================================================================
 # Tier 2: Analytic-EOS Full Solver
@@ -559,7 +655,7 @@ class TestGravitationalBindingEnergy:
 class TestEarthBenchmark:
     """Verify the full solver against known Earth properties using Analytic EOS."""
 
-    def test_earth_radius(self):
+    def test_earth_radius(self, validation_plot):
         """1 M_Earth with CMF=0.325 must give R ~ 1.0 R_Earth (+/- 5%)."""
         results = _run_analytic_eos_solver(1.0, cmf=0.325)
         assert results['converged'], 'Solver did not converge for 1 M_Earth'
@@ -569,6 +665,33 @@ class TestEarthBenchmark:
         assert R_ratio == pytest.approx(1.0, abs=0.05), (
             f'Earth radius ratio = {R_ratio:.4f}, expected ~1.0 +/- 0.05'
         )
+
+        def figure():
+            import matplotlib.pyplot as plt
+
+            radii = results['radii'] / earth_radius
+            i_surf = np.where(results['pressure'] > 0)[0][-1]
+            ref = dict(fmt='s', mfc='none', capsize=4)
+            fig, axes = plt.subplots(3, 1, sharex=True, figsize=(6.4, 6.4))
+            axes[0].plot(radii, results['mass_enclosed'] / earth_mass, label='code profile')
+            axes[0].errorbar([1.0], [1.0], xerr=0.05, label='reference and tolerance', **ref)
+            axes[0].plot(
+                [R_ratio], [results['mass_enclosed'][-1] / earth_mass], 'o', label='code value'
+            )
+            axes[0].set_ylabel(r'M [$M_\oplus$]')
+            axes[0].legend(fontsize='small')
+            axes[1].plot(radii, results['gravity'])
+            axes[1].errorbar([radii[i_surf]], [9.8], yerr=9.8 * 0.10, **ref)
+            axes[1].plot([radii[i_surf]], [results['gravity'][i_surf]], 'o')
+            axes[1].set_ylabel(r'g [m s$^{-2}$]')
+            axes[2].plot(radii, results['pressure'] / 1e9)
+            axes[2].errorbar([0.0], [360.0], yerr=360.0 * 0.15, **ref)
+            axes[2].plot([0.0], [results['pressure'][0] / 1e9], 'o')
+            axes[2].set(xlabel=r'r [$R_\oplus$]', ylabel='P [GPa]')
+            fig.tight_layout()
+            return fig
+
+        validation_plot(figure, 'zalmoxis_earth_benchmark')
 
     def test_earth_surface_gravity(self):
         """Surface gravity must be ~9.8 m/s^2 (+/- 10%)."""
@@ -601,7 +724,7 @@ class TestEarthBenchmark:
 class TestMassRadiusScaling:
     """Verify the mass-radius scaling exponent against Seager+2007."""
 
-    def test_scaling_exponent(self):
+    def test_scaling_exponent(self, validation_plot):
         """R ~ M^alpha with alpha ~ 0.27 for rocky planets (Seager+2007)."""
         masses = [0.5, 1.0, 2.0, 5.0, 10.0]
         radii = []
@@ -620,12 +743,34 @@ class TestMassRadiusScaling:
             f'M-R scaling exponent alpha = {alpha:.3f}, expected ~0.27 +/- 0.04 (Seager+2007)'
         )
 
+        def figure():
+            import matplotlib.pyplot as plt
+
+            pivot_m, pivot_r = log_m.mean(), np.polyval(coeffs, log_m.mean())
+            grid = np.linspace(log_m[0], log_m[-1], 2)
+            fig, ax = plt.subplots()
+            ax.plot(10**grid, 10 ** np.polyval(coeffs, grid), label=f'fit, slope {alpha:.3f}')
+            for slope, ls in ((0.23, ':'), (0.31, ':')):
+                ax.plot(
+                    10**grid, 10 ** (pivot_r + slope * (grid - pivot_m)), ls=ls, color='0.5'
+                )
+            ax.plot([], [], ls=':', color='0.5', label='slopes 0.23 and 0.31')
+            ax.plot(masses, np.array(radii) / earth_radius, 'o', label='code radius')
+            ax.set(
+                xscale='log', yscale='log', xlabel=r'M [$M_\oplus$]', ylabel=r'R [$R_\oplus$]'
+            )
+            ax.legend(fontsize='small')
+            fig.tight_layout()
+            return fig
+
+        validation_plot(figure, 'zalmoxis_mass_radius_scaling')
+
 
 @pytest.mark.smoke
 class TestCMFMonotonicity:
     """Radius must decrease monotonically with increasing core mass fraction."""
 
-    def test_cmf_monotonicity(self):
+    def test_cmf_monotonicity(self, validation_plot):
         """R(CMF) must be strictly decreasing (iron is denser than silicate)."""
         cmfs = [0.1, 0.2, 0.3, 0.5, 0.7]
         radii = []
@@ -639,6 +784,31 @@ class TestCMFMonotonicity:
                 f'Radius not decreasing: R(CMF={cmfs[i]}) = {radii[i]:.0f} m '
                 f'>= R(CMF={cmfs[i - 1]}) = {radii[i - 1]:.0f} m'
             )
+
+        def figure():
+            import matplotlib.pyplot as plt
+
+            iron = _run_analytic_eos_solver(1.0, cmf=1.0)['radii'][-1] / earth_radius
+            fig, ax = plt.subplots()
+            ax.plot(
+                cmfs, np.array(radii) / earth_radius, 'o-', label='code radius at 1 Earth mass'
+            )
+            ax.errorbar(
+                [1.0],
+                [0.77],
+                yerr=0.05,
+                fmt='s',
+                mfc='none',
+                capsize=4,
+                label='pure iron 0.77 +- 0.05',
+            )
+            ax.plot([1.0], [iron], '^', label='code, pure iron')
+            ax.set(xlabel='core mass fraction', ylabel=r'R [$R_\oplus$]')
+            ax.legend(fontsize='small')
+            fig.tight_layout()
+            return fig
+
+        validation_plot(figure, 'zalmoxis_cmf_sweep')
 
 
 @pytest.mark.smoke
@@ -663,7 +833,7 @@ class TestPureIronPlanet:
 class TestConservationLaws:
     """Verify mass conservation and surface pressure boundary condition."""
 
-    def test_mass_conservation(self):
+    def test_mass_conservation(self, validation_plot):
         """M(R_surface) must equal input planet_mass to within tolerance."""
         results = _run_analytic_eos_solver(1.0, cmf=0.325)
         assert results['converged'], 'Solver did not converge'
@@ -675,6 +845,46 @@ class TestConservationLaws:
             f'Mass conservation: M_surface/M_input = {M_surface / M_input:.6f}, '
             f'rel_diff = {rel_diff:.2e}'
         )
+
+        def figure():
+            import matplotlib.pyplot as plt
+
+            radii = results['radii']
+            M_trapz = np.trapezoid(4 * math.pi * radii**2 * results['density'], radii)
+            pressure = results['pressure']
+            i_surf = np.where(pressure > 0)[0][-1]
+            fig, (left, right) = plt.subplots(1, 2, figsize=(8.0, 3.6))
+            left.errorbar(
+                [0, 1],
+                [1.0, 1.0],
+                yerr=[0.01, 0.02],
+                fmt='s',
+                mfc='none',
+                capsize=4,
+                label='input mass, 1 % and 2 %',
+            )
+            left.plot([0, 1], [M_surface / M_input, M_trapz / M_input], 'o', label='code')
+            left.set(
+                xticks=[0, 1],
+                xticklabels=['ODE', 'trapezoid'],
+                xlim=(-0.5, 1.5),
+                ylabel='M / input mass',
+            )
+            left.legend(fontsize='small')
+            right.plot(radii / earth_radius, pressure / 1e9, label='code, pressure')
+            right.axhline(2.0, ls=':', color='0.5', label='2 GPa bound')
+            right.plot(
+                [radii[i_surf] / earth_radius],
+                [pressure[i_surf] / 1e9],
+                'o',
+                label='code, surface',
+            )
+            right.set(xlabel=r'r [$R_\oplus$]', ylabel='P [GPa]', yscale='log')
+            right.legend(fontsize='small')
+            fig.tight_layout()
+            return fig
+
+        validation_plot(figure, 'zalmoxis_conservation_full_solver')
 
     def test_mass_conservation_trapezoidal(self):
         """Independent trapezoidal integration of 4 pi r^2 rho(r) dr."""
@@ -759,7 +969,7 @@ class TestGridConvergence:
     R = 6.4e6
     P_CENTER = 3.6e11
 
-    def test_mass_error_decreases_with_grid(self):
+    def test_mass_error_decreases_with_grid(self, validation_plot):
         """Max relative error in M(r) must decrease with increasing N.
 
         Monotonicity is only checked above the floating-point noise floor
@@ -784,6 +994,47 @@ class TestGridConvergence:
 
         # At the finest grid, error should be well below solver tolerance
         assert errors[-1] < 1e-8, f'ODE mass error at N=400: {errors[-1]:.2e}, expected < 1e-8'
+
+        def figure():
+            import matplotlib.pyplot as plt
+
+            p_errors = []
+            for n in resolutions:
+                radii, _, _, pressure = _solve_uniform_sphere(
+                    self.RHO, self.R, self.P_CENTER, n
+                )
+                _, _, P_exact = _analytic_uniform_sphere(self.RHO, self.R, self.P_CENTER, radii)
+                valid = pressure > 0
+                p_errors.append(
+                    np.max(np.abs(pressure[valid] - P_exact[valid]) / P_exact[valid])
+                )
+            fig, ax = plt.subplots()
+            ax.plot(
+                resolutions,
+                np.maximum(errors, 1e-14),
+                'o',
+                mfc='none',
+                ms=10,
+                label='code, mass error',
+            )
+            ax.plot(resolutions, np.maximum(p_errors, 1e-14), 'x', label='code, pressure error')
+            ax.axhline(1e-8, ls='--', color='0.4', label='mass bound 1e-8')
+            ax.axhline(1e-6, ls='-.', color='0.4', label='pressure bound 1e-6')
+            ax.axhline(
+                1e-13, ls=':', color='0.6', label='noise floor 1e-13; marks clipped at 1e-14'
+            )
+            ax.set(
+                xscale='log',
+                yscale='log',
+                xlabel='grid points N',
+                ylabel='largest relative error',
+                ylim=(3e-15, 1e-5),
+            )
+            ax.legend(fontsize='small')
+            fig.tight_layout()
+            return fig
+
+        validation_plot(figure, 'zalmoxis_grid_convergence')
 
     def test_pressure_error_decreases_with_grid(self):
         """Max relative error in P(r) must decrease with increasing N."""
