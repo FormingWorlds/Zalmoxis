@@ -1,5 +1,6 @@
-"""The nightly jobs that select ``accept_solves`` name their files; a marked test elsewhere
-would run in no job. See docs/How-to/build_tests.md for the test tiers."""
+"""The per-file nightly jobs that select ``accept_solves`` name their files, so a marked test
+elsewhere would run in no job; the ``accept_solves_long`` and ``accept_solves_newton_setups``
+jobs select over the whole tree. See docs/How-to/build_tests.md for the test tiers."""
 
 from __future__ import annotations
 
@@ -165,8 +166,13 @@ _MARKS = (
     'accept_solves_long',
     'accept_solves_newton_setups',
 )
-_SUB = {'accept_solves_long', 'accept_solves_newton_setups'}  # always beside accept_solves
-_SPECIAL = {'wolfbower', 'paleos_adiabat', 'accept_solves'} | _SUB
+_SPECIAL = {
+    'wolfbower',
+    'paleos_adiabat',
+    'accept_solves',
+    'accept_solves_long',
+    'accept_solves_newton_setups',
+}
 
 
 def _partition_faults(workflow):
@@ -179,8 +185,6 @@ def _partition_faults(workflow):
     faults = []
     for bits in itertools.product((False, True), repeat=len(_MARKS)):
         marks = {m for m, on in zip(_MARKS, bits) if on}
-        if marks & _SUB and 'accept_solves' not in marks:
-            continue
         if not (
             marks & _SPECIAL
             or (marks & {'unit', 'smoke', 'integration'} and 'slow' not in marks)
@@ -197,8 +201,12 @@ def _partition_faults(workflow):
 
 @pytest.mark.unit
 def test_the_nightly_jobs_select_each_marked_test_once():
-    """Every combination of marks a test can carry runs in exactly one nightly job."""
-    assert _partition_faults(WORKFLOW.read_text()) == []
+    """Every combination of marks a test can carry runs in exactly one nightly job, and every
+    select names only marks that the partition enumerates."""
+    workflow = WORKFLOW.read_text()
+    names = {w for sel, _ in _jobs(workflow) for w in re.findall(r'\w+', sel)}
+    assert names - {'and', 'or', 'not'} <= set(_MARKS)
+    assert _partition_faults(workflow) == []
 
 
 @pytest.mark.unit
@@ -211,6 +219,16 @@ def test_the_nightly_jobs_select_each_marked_test_once():
             'suite: paleos_adiabat\n            select:',
             'suite: paleos_adiabat\n            selected:',
             id='no_paleos_job',
+        ),
+        pytest.param(
+            'and not accept_solves and not accept_solves_long and not accept_solves_newton_setups',
+            'and not accept_solves',
+            id='main_takes_sub_marks',
+        ),
+        pytest.param(
+            'select: accept_solves_long and not accept_solves_newton_setups and',
+            'select: accept_solves_long and',
+            id='long_takes_newton',
         ),
     ],
 )
@@ -273,7 +291,22 @@ def test_the_newton_setup_sweep_runs_alone_in_its_own_job():
     ]
     assert nodes['accept_solves_newton_setups'] == {NEWTON}
     (marker,) = [m.args[0] for m in sweep.pytestmark if m.name == 'timeout']
-    limit = re.search(r'job_timeout: (\d+)', suites['accept_solves_newton_setups'])
+    assert (
+        not _entry(suites['accept_solves_newton_setups'])[1]
+        + _entry(suites['accept_solves_long'])[1]
+    ), 'the long and Newton setup jobs select over the whole tree'
+    limit = re.search(r'^ +job_timeout: (\d+)$', suites['accept_solves_newton_setups'], re.M)
     assert limit, 'the accept_solves_newton_setups job sets no job_timeout'
-    assert 'timeout-minutes: ${{ matrix.job_timeout || 90 }}' in WORKFLOW.read_text()
+    limits = re.findall(r'^ *timeout-minutes:.*$', WORKFLOW.read_text(), re.M)
+    assert limits == ['    timeout-minutes: ${{ matrix.job_timeout || 90 }}'], limits
     assert marker == 9000 < 60 * int(limit.group(1))
+
+
+@pytest.mark.smoke
+def test_only_the_newton_setup_sweep_carries_its_mark():
+    """The Newton setup job selects over the whole tree (about 20 s to collect): the mark is
+    on one file, and that file holds only the sweep with it."""
+    assert _marked(ROOT / 'tests', 'accept_solves_newton_setups') == {
+        'test_pressure_root_solves.py'
+    }
+    assert _solves_nodes('accept_solves_newton_setups', []) == {NEWTON}
