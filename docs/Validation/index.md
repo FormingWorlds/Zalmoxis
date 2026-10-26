@@ -28,7 +28,7 @@ All tests are implemented in [`tests/test_first_principles.py`](https://github.c
 | [Hydrostatic structure](hydrostatic_structure.md) | Surface boundary condition of the pressure solve | `tests/test_pressure_root.py::test_the_refined_root_meets_the_surface_boundary_condition`, `tests/test_pressure_root_solves.py::test_the_accepted_root_meets_the_surface_boundary_condition` | boundary condition $P(R) = P_t$ | unit and smoke tiers; plot pair |
 | [Hydrostatic structure](hydrostatic_structure.md) | Surface boundary condition in every Newton setup | `tests/test_pressure_root_solves.py::test_every_newton_setup_meets_the_surface_boundary_condition` | boundary condition $P(R) = P_t$ | nightly job `accept_solves_newton_setups`; script figure |
 | [Mass-radius relation](mass_radius.md) | Earth benchmark | `tests/test_first_principles.py::TestEarthBenchmark` | Earth radius, surface gravity, central pressure | smoke tier; plot pair |
-| [Mass-radius relation](mass_radius.md) | Mass-radius scaling and CMF sensitivity | `tests/test_first_principles.py::TestMassRadiusScaling`, `::TestCMFMonotonicity`, `::TestPureIronPlanet`, `::TestConservationLaws` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | smoke tier; script figures; plot pair |
+| [Mass-radius relation](mass_radius.md) | Mass-radius scaling and CMF sensitivity | `tests/test_first_principles.py::TestMassRadiusScaling`, `::TestCMFMonotonicity`, `::TestPureIronPlanet`, `::TestConservationLaws` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | smoke tier; plot pair |
 | [Equation of state](equation_of_state.md) | PALEOS table loader | `tests/test_eos_export_real_tables.py`, `tests/test_eos_export_highres.py` | `numpy.genfromtxt` reading of the same tables (cross-code check) | integration and slow tiers; no plot (identity of 2 readers) |
 | [Equation of state](equation_of_state.md) | Liquid Fe and Fe-water members | `tests/test_core_alloy.py::TestLuoMembers::test_eq14_density_matches_an_independent_bisection` | [Luo et al. (2024)](https://doi.org/10.1038/s41550-024-02347-z) Eq. 14 (analytical) | unit tier; plot pair |
 | [Equation of state](equation_of_state.md) | Light-element core on PALEOS iron | `tests/test_core_alloy.py::TestPaleosCore::test_core_mixture_limits_on_paleos_iron` | volume-additive limits (analytical) | unit tier; plot pair |
@@ -65,4 +65,10 @@ A case with a plot pair shows the tested values against their reference in a lig
 pytest -m reference_pinned tests --validation-plots
 ```
 
-Without `--validation-plots` the tests assert and write nothing. The command makes every plot again; commit only the pair of the case you changed, because the bytes match only for the same matplotlib and Pillow versions. The other figures on these pages are script figures: PNG files made by the scripts under `tools/validation/` and kept in `docs/img/validation/`. No test writes or checks them, and they are not limited to 60 kB.
+The first-principles cases are not `reference_pinned`; this command writes their pairs:
+
+```console
+pytest -o "addopts=" tests/test_first_principles.py tests/test_polytrope_verification.py --validation-plots
+```
+
+Without `--validation-plots` the tests write nothing: each compares the data of its plot with the committed pair, and a missing or stale file fails the test. The other figures on these pages are script figures: PNG files made by the scripts under `tools/validation/` and kept in `docs/img/validation/`. No test writes or checks them, and they are not limited to 60 kB.

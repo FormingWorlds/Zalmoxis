@@ -100,7 +100,7 @@ The mass grows as $r^3$ (the volume of a sphere), gravity is linear in $r$ (Gaus
 ![Uniform-density sphere: mass, gravity and pressure against radius, code and analytic](../assets/validation/zalmoxis_uniform_sphere.svg#only-light){ width="80%" }
 ![Uniform-density sphere: mass, gravity and pressure against radius, code and analytic](../assets/validation/zalmoxis_uniform_sphere_dark.svg#only-dark){ width="80%" }
 
-**How to read the plot.** The 3 panels show the enclosed mass, the gravity and the pressure against $r/R$. The lines are the analytic solution and the marks are the code values, every 15th node. The tests of the class assert all 3 profiles against the analytic solution to a relative 1e-6, too small to see. The plot is drawn in the pressure test; the mass and gravity tests run the same solve. A pass means that every mark lies on its line. The tests of the centre values and of the falling pressure are not drawn.
+**How to read the plot.** The 3 panels show the enclosed mass, the gravity and the pressure against $r/R$. The lines are the analytic solution and the marks are the code values, every 15th node. The tests of the class assert all 3 profiles against the analytic solution to a relative tolerance of $10^{-6}$, too small to see. The plot is drawn in the pressure test; the mass and gravity tests run the same solve. A pass means that every mark lies on its line. The tests of the centre values and of the falling pressure are not drawn.
 
 **Known limit.** This test does not check the value of the centre limit of $dg/dr$: when `coupled_odes` uses $\pi G \rho_c$ in place of $\frac{4}{3}\pi G \rho_c$ at $r = 0$, every test of Tests 1 to 4, Test 7 and the $n = 1$ polytrope case still passes.
 
@@ -136,7 +136,7 @@ $$
 ![Two-layer sphere: enclosed mass against the piecewise solution, and gravity against Gauss's law](../assets/validation/zalmoxis_two_layer_sphere.svg#only-light){ width="80%" }
 ![Two-layer sphere: enclosed mass against the piecewise solution, and gravity against Gauss's law](../assets/validation/zalmoxis_two_layer_sphere_dark.svg#only-dark){ width="80%" }
 
-**How to read the plot.** The top panel shows the piecewise analytic mass (line) and the code mass (marks, every 20th node). The bottom panel shows $GM/r^2$ from the code mass (line) and the code gravity (marks). The dotted line is the core-mantle boundary. The test asserts the mass to a relative 1e-5 and Gauss's law to a relative 1e-4, both too small to see. A pass means that every mark lies on its line, on both sides of the boundary.
+**How to read the plot.** The top panel shows the piecewise analytic mass (line) and the code mass (marks, every 20th node). The bottom panel shows $GM/r^2$ from the code mass (line) and the code gravity (marks). The dotted line is the core-mantle boundary. The test asserts the mass to a relative tolerance of $10^{-5}$ and Gauss's law to $10^{-4}$, both too small to see. A pass means that every mark lies on its line, on both sides of the boundary.
 
 ??? info "Test details"
     - Reference: piecewise closed-form solution of the two-layer sphere
@@ -160,7 +160,7 @@ $$
 ![Hydrostatic residual against radius with its bound, and gravity against GM/r^2](../assets/validation/zalmoxis_conservation_diagnostics.svg#only-light){ width="80%" }
 ![Hydrostatic residual against radius with its bound, and gravity against GM/r^2](../assets/validation/zalmoxis_conservation_diagnostics_dark.svg#only-dark){ width="80%" }
 
-**How to read the plot.** The left panel shows the relative hydrostatic residual against $r/R$ on a log scale, with the bound of 1e-4 (dotted). The residual is round-off, at most 1.5e-13, so the plot draws it clipped at 1e-12. The right panel shows $GM/r^2$ from the code mass (line) and the code gravity (marks, every 25th node). Both come from the 500-point grid of the balance test. Gauss's law is asserted to a relative 1e-5 in its own test, on a 300-point grid. Its residual is round-off too, so the plot draws the 2 quantities and not their difference. A pass means that the residual line stays below the bound and the marks lie on the line.
+**How to read the plot.** The left panel shows the relative hydrostatic residual against $r/R$ on a log scale, with the bound $10^{-4}$ (dotted). The residual is round-off, at most $1.5 \times 10^{-13}$. So that the plot is the same on every platform, it is drawn at $10^{-12}$, above its true value. The right panel shows $GM/r^2$ from the code mass (line) and the code gravity (marks, every 25th node). Both come from the 500-point grid of the balance test. Gauss's law is asserted to a relative tolerance of $10^{-5}$ in its own test, on a 300-point grid; its residual is round-off too, so the plot draws the 2 quantities. A pass means that the residual line stays below the bound and the marks lie on the line.
 
 ??? info "Test details"
     - Reference: Gauss's law $g = GM/r^2$ and hydrostatic balance $dP/dr + \rho g = 0$
@@ -187,7 +187,7 @@ The test integrates it with the trapezoidal rule over the $M(r)$ and $\rho(r)$ p
 ![Running binding-energy integral of the uniform sphere against radius, with the closed form](../assets/validation/zalmoxis_binding_energy.svg#only-light){ width="80%" }
 ![Running binding-energy integral of the uniform sphere against radius, with the closed form](../assets/validation/zalmoxis_binding_energy_dark.svg#only-dark){ width="80%" }
 
-**How to read the plot.** The line is the running integral of the binding energy from the centre outward, from the code mass profile. The test asserts the full integral (circle) against $-\frac{3}{5} G M_p^2 / R$ (square, with its error bar of 1 %). A pass means that the circle lies inside the error bar.
+**How to read the plot.** The line shows how the binding-energy integral builds up from the centre outward, from the code mass profile; it is not asserted. The test asserts the full integral (circle) against $-\frac{3}{5} G M_p^2 / R$ (square, with its error bar of 1 %). A pass means that the circle lies inside the error bar.
 
 ??? info "Test details"
     - Reference: uniform-sphere binding energy $E_\mathrm{grav} = -\frac{3}{5} G M_p^2 / R$
@@ -210,7 +210,7 @@ Tests 5 and 6 (the Earth benchmark and the mass-radius scaling) are on the [mass
 ![Density of the n = 1 polytrope against radius, code and Lane-Emden, with the surface radius](../assets/validation/zalmoxis_polytrope_n1.svg#only-light){ width="80%" }
 ![Density of the n = 1 polytrope against radius, code and Lane-Emden, with the surface radius](../assets/validation/zalmoxis_polytrope_n1_dark.svg#only-dark){ width="80%" }
 
-**How to read the plot.** The line is the Lane-Emden density $\sin\xi/\xi$ against $r/R_\oplus$ and gives context. The marks are the density that the test derives from the code pressure, over the central density, every 25th node, for 1 Earth mass. The test asserts the code surface radius (circle) against the exact radius $R_\oplus$ (square) to a relative 1e-4, too small to see. The cross is $\sqrt{2}\,R_\oplus$, the radius with $K$ off by a factor 2. A pass means that the circle sits in the square, far from the cross. The mass test and the mass-independence test are not drawn.
+**How to read the plot.** The line is the Lane-Emden density $\sin\xi/\xi$ against $r/R_\oplus$ and gives context. The marks are the density that the test derives from the code pressure, over the central density, every 25th node, for 1 Earth mass. The test asserts the code surface radius (circle) against the exact radius $R_\oplus$ (square) to a relative tolerance of $10^{-4}$, too small to see. The cross is $\sqrt{2}\,R_\oplus$, the radius with $K$ off by a factor 2. A pass means that the circle sits in the square, far from the cross. The mass test and the mass-independence test are not drawn.
 
 ??? info "Test details"
     - Reference: the analytic $n = 1$ Lane-Emden solution (Chandrasekhar 1939, reference named in the test docstring)
@@ -232,7 +232,7 @@ A wrong factor in $dM/dr$ or $dg/dr$, or the wrong sign of $dP/dr$, also makes t
 
 **What it tests.** The uniform-density sphere of Test 1 on several grids and with several tolerances, and the full solver (the Picard outer solver and Brent's method) with the Analytic EOS at $1\,M_\oplus$ on 3 grids.
 
-- **Grid convergence:** the uniform sphere at $N$ from 50 to 400 (the figure uses 25 to 800) with `rtol` $= 10^{-10}$. The mass error is $2$ to $3 \times 10^{-15}$ and the pressure error about $4 \times 10^{-16}$ at every $N$. The uniform-sphere solution is a cubic and a parabola in $r$, which the integrator reproduces to round-off on every grid, so this case shows no convergence rate.
+- **Grid convergence:** the uniform sphere at $N$ from 50 to 400 with `rtol` $= 10^{-10}$. The mass error is $2$ to $3 \times 10^{-15}$ and the pressure error about $4 \times 10^{-16}$ at every $N$. The uniform-sphere solution is a cubic and a parabola in $r$, which the integrator reproduces to round-off on every grid, so this case shows no convergence rate.
 - **Full solver:** the planet radius is the same, $0.96512\,R_\oplus$ (6114.5 km), at $N = 100$, 200 and 400.
 - **Tolerance convergence:** for `rtol` from $10^{-6}$ to $10^{-12}$ at $N = 200$ the mass error stays between $2$ and $4 \times 10^{-15}$, with no trend: the error is at round-off level for every tolerance tested.
 
@@ -243,9 +243,9 @@ A wrong factor in $dM/dr$ or $dg/dr$, or the wrong sign of $dP/dr$, also makes t
 ![Largest relative mass and pressure error of the uniform sphere against the number of grid points, with the asserted bounds](../assets/validation/zalmoxis_grid_convergence.svg#only-light){ width="80%" }
 ![Largest relative mass and pressure error of the uniform sphere against the number of grid points, with the asserted bounds](../assets/validation/zalmoxis_grid_convergence_dark.svg#only-dark){ width="80%" }
 
-**How to read the plot.** Both axes are logarithmic. The marks are the largest relative mass error (circles) and pressure error (crosses) of the uniform sphere at $N$ = 50, 100, 200 and 400. Every error is round-off: 2.3e-15 to 2.6e-15 for the mass and about 4e-16 for the pressure. The plot draws them clipped at 1e-14. The dashed and dash-dotted lines are the asserted bounds at $N = 400$: 1e-8 for the mass and 1e-6 for the pressure. The dotted line is the 1e-13 noise floor of the 1.5 factor rule. A pass means that the marks at $N = 400$ lie below their bounds. The full-solver and tolerance tests are not drawn.
+**How to read the plot.** Both axes are logarithmic. The plot is drawn in the mass-error test; it computes the pressure errors as the pressure-error test does. The marks are the errors of the uniform sphere at $N$ = 50, 100, 200 and 400: the largest relative mass error (circles) and pressure error (crosses). Every error is round-off: $2.3$ to $2.6 \times 10^{-15}$ for the mass and about $4 \times 10^{-16}$ for the pressure. So that the plot is the same on every platform, the marks are drawn at $10^{-14}$, above their true values. The dashed line is the mass bound $10^{-8}$ and the dash-dotted line the pressure bound $10^{-6}$ of the pressure-error test, both at $N = 400$. The test allows each error to rise by at most a factor 1.5 from one $N$ to the next, but only above $10^{-13}$ (dotted line). A pass means that the marks at $N = 400$ lie below their bounds. The full-solver and tolerance tests are not drawn.
 
-**Known limit.** The uniform sphere is solved to round-off at every $N$, so the test shows no order of convergence. Its 1.5 factor rule passes through the noise-floor branch, because no error is above 1e-13.
+**Known limit.** The uniform sphere is solved to round-off at every $N$, so the test shows no order of convergence. All errors are below $10^{-13}$, so the factor 1.5 check is never applied.
 
 ??? info "Test details"
     - Reference: closed-form solution of the uniform-density sphere; for the full solver, the radius at $N = 200$ against $N = 400$ (self-consistency)
