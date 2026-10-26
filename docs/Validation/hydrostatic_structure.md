@@ -136,7 +136,7 @@ $$
 ![Two-layer sphere: enclosed mass against the piecewise solution, and gravity against Gauss's law](../assets/validation/zalmoxis_two_layer_sphere.svg#only-light){ width="80%" }
 ![Two-layer sphere: enclosed mass against the piecewise solution, and gravity against Gauss's law](../assets/validation/zalmoxis_two_layer_sphere_dark.svg#only-dark){ width="80%" }
 
-**How to read the plot.** The top panel shows the piecewise analytic mass (line) and the code mass (marks, every 20th node). The bottom panel shows $GM/r^2$ from the code mass (line) and the code gravity (marks). The dotted line is the core-mantle boundary. The test asserts the mass to a relative tolerance of $10^{-5}$ and Gauss's law to $10^{-4}$, both too small to see. A pass means that every mark lies on its line, on both sides of the boundary.
+**How to read the plot.** The top panel shows the piecewise analytic mass (line) and the code mass (marks, every 20th node). The bottom panel shows $GM/r^2$ from the code mass (line) and the code gravity (marks). The dotted line is the core-mantle boundary. This test asserts the mass to a relative tolerance of $10^{-5}$, too small to see. The Gauss's law test asserts the bottom panel to $10^{-4}$ on the same solve. A pass means that every mark lies on its line.
 
 ??? info "Test details"
     - Reference: piecewise closed-form solution of the two-layer sphere
@@ -157,10 +157,15 @@ $$
 
 **Why it matters.** These laws must hold for every planet that Zalmoxis computes, also where no closed-form solution exists.
 
-![Hydrostatic residual against radius with its bound, and gravity against GM/r^2](../assets/validation/zalmoxis_conservation_diagnostics.svg#only-light){ width="80%" }
-![Hydrostatic residual against radius with its bound, and gravity against GM/r^2](../assets/validation/zalmoxis_conservation_diagnostics_dark.svg#only-dark){ width="80%" }
+![Pressure gradient of the uniform sphere against radius, code dP/dr and minus rho g](../assets/validation/zalmoxis_conservation_diagnostics.svg#only-light){ width="80%" }
+![Pressure gradient of the uniform sphere against radius, code dP/dr and minus rho g](../assets/validation/zalmoxis_conservation_diagnostics_dark.svg#only-dark){ width="80%" }
 
-**How to read the plot.** The left panel shows the relative hydrostatic residual against $r/R$ on a log scale, with the bound $10^{-4}$ (dotted). The residual is round-off, at most $1.5 \times 10^{-13}$. So that the plot is the same on every platform, it is drawn at $10^{-12}$, above its true value. The right panel shows $GM/r^2$ from the code mass (line) and the code gravity (marks, every 25th node). Both come from the 500-point grid of the balance test. Gauss's law is asserted to a relative tolerance of $10^{-5}$ in its own test, on a 300-point grid; its residual is round-off too, so the plot draws the 2 quantities. A pass means that the residual line stays below the bound and the marks lie on the line.
+**How to read the plot.** The line is $-\rho g$ and the marks are the code $dP/dr$ by central differences, every 20th interior node, against $r/R$. The balance test asserts that their difference stays below $10^{-4}$ of the gradient scale $\frac{2}{3}\pi G \rho^2 R$. The difference is round-off, at most $1.5 \times 10^{-13}$ of that scale, so the marks lie on the line. A pass means that every mark lies on the line.
+
+![Gravity of the uniform sphere against radius, code gravity and GM/r^2](../assets/validation/zalmoxis_gauss_law.svg#only-light){ width="80%" }
+![Gravity of the uniform sphere against radius, code gravity and GM/r^2](../assets/validation/zalmoxis_gauss_law_dark.svg#only-dark){ width="80%" }
+
+**How to read the plot.** The line is $GM/r^2$ from the code mass and the marks are the code gravity, every 25th node, on the 300-point grid. The Gauss's law test asserts that they agree to a relative tolerance of $10^{-5}$, too small to see. A pass means that every mark lies on the line.
 
 ??? info "Test details"
     - Reference: Gauss's law $g = GM/r^2$ and hydrostatic balance $dP/dr + \rho g = 0$
@@ -243,7 +248,7 @@ A wrong factor in $dM/dr$ or $dg/dr$, or the wrong sign of $dP/dr$, also makes t
 ![Largest relative mass and pressure error of the uniform sphere against the number of grid points, with the asserted bounds](../assets/validation/zalmoxis_grid_convergence.svg#only-light){ width="80%" }
 ![Largest relative mass and pressure error of the uniform sphere against the number of grid points, with the asserted bounds](../assets/validation/zalmoxis_grid_convergence_dark.svg#only-dark){ width="80%" }
 
-**How to read the plot.** Both axes are logarithmic. The plot is drawn in the mass-error test; it computes the pressure errors as the pressure-error test does. The marks are the errors of the uniform sphere at $N$ = 50, 100, 200 and 400: the largest relative mass error (circles) and pressure error (crosses). Every error is round-off: $2.3$ to $2.6 \times 10^{-15}$ for the mass and about $4 \times 10^{-16}$ for the pressure. So that the plot is the same on every platform, the marks are drawn at $10^{-14}$, above their true values. The dashed line is the mass bound $10^{-8}$ and the dash-dotted line the pressure bound $10^{-6}$ of the pressure-error test, both at $N = 400$. The test allows each error to rise by at most a factor 1.5 from one $N$ to the next, but only above $10^{-13}$ (dotted line). A pass means that the marks at $N = 400$ lie below their bounds. The full-solver and tolerance tests are not drawn.
+**How to read the plot.** Both axes are logarithmic. The circles are the largest relative mass errors and the crosses the pressure errors of the uniform sphere at $N$ = 50 to 400. All are round-off, below $3 \times 10^{-15}$, and are drawn at $10^{-14}$ so that the plot is the same on every platform. The dashed and dash-dotted lines are the bounds at $N = 400$: $10^{-8}$ for the mass and $10^{-6}$ for the pressure. The dotted line at $10^{-13}$ is the floor above which an error may grow by at most a factor 1.5 per step. A pass means that the marks at $N = 400$ lie below their bounds; the full-solver and tolerance tests are not drawn.
 
 **Known limit.** The uniform sphere is solved to round-off at every $N$, so the test shows no order of convergence. All errors are below $10^{-13}$, so the factor 1.5 check is never applied.
 

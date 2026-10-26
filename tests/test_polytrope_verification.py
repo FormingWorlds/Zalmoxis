@@ -43,8 +43,10 @@ def _rho_c_for_mass(mass_kg: float) -> float:
     return np.pi * mass_kg / (4.0 * _R_LE**3)
 
 
-def _integrate_polytrope(mass_kg: float, num_layers: int = 600) -> tuple:
-    """Integrate the structure ODEs with the polytrope EOS; return (R_surf, M_total, radii, density).
+def _integrate_polytrope(
+    mass_kg: float, num_layers: int = 600
+) -> tuple[float, float, np.ndarray, np.ndarray]:
+    """Integrate the structure ODEs with the polytrope EOS; return the surface and profile.
 
     A single ``core`` layer carries the whole planet. The surface radius is the linear
     extrapolation of the density zero-crossing: density vanishes linearly at the n=1
@@ -61,7 +63,8 @@ def _integrate_polytrope(mass_kg: float, num_layers: int = 600) -> tuple:
     Returns
     -------
     tuple
-        Emergent surface radius [m], integrated total mass [kg], radial grid [m] and density [kg/m^3].
+        Emergent surface radius [m], integrated total mass [kg], radial grid [m]
+        and density [kg/m^3].
     """
     rho_c = _rho_c_for_mass(mass_kg)
     central_pressure = K * rho_c**2
@@ -114,13 +117,14 @@ def test_surface_radius_matches_exact_lane_emden(validation_plot):
         rho_c = _rho_c_for_mass(earth_mass)
         xi = np.linspace(1e-6, np.pi, 200)
         fig, ax = plt.subplots()
-        ax.plot(xi / np.pi, np.sin(xi) / xi, label=r'Lane-Emden $\sin\xi / \xi$')
+        unit = earth_radius
+        ax.plot(xi / np.pi * _R_LE / unit, np.sin(xi) / xi, label=r'Lane-Emden $\sin\xi / \xi$')
         ax.plot(
-            radii[::25] / _R_LE, density[::25] / rho_c, 'o', ms=3, label='code, every 25th node'
+            radii[::25] / unit, density[::25] / rho_c, 'o', ms=3, label='code, every 25th node'
         )
-        ax.plot([1.0], [0.0], 's', mfc='none', ms=10, label='exact radius R_Earth')
-        ax.plot([r_surf / _R_LE], [0.0], 'o', label='code surface radius')
-        ax.plot([wrong_ratio], [0.0], 'x', label=r'$\sqrt{2}$ R (K off by 2)')
+        ax.plot([_R_LE / unit], [0.0], 's', mfc='none', ms=10, label='exact radius')
+        ax.plot([r_surf / unit], [0.0], 'o', label='code surface radius')
+        ax.plot([wrong_ratio * _R_LE / unit], [0.0], 'x', label=r'$\sqrt{2}$ R (K off by 2)')
         ax.set(xlabel=r'r / $R_\oplus$', ylabel=r'$\rho / \rho_c$')
         ax.legend(fontsize='small')
         fig.tight_layout()

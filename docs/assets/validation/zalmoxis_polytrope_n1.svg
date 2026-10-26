@@ -6,7 +6,7 @@
   <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
    <cc:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
-    <dc:description>test: tests/test_polytrope_verification.py::test_surface_radius_matches_exact_lane_emden; command: pytest tests/test_polytrope_verification.py::test_surface_radius_matches_exact_lane_emden --validation-plots; summary: {"v": 1, "axes": [{"scales": ["linear", "linear"], "categories": [null, null], "lines": [[200, 3.1830988618379064e-07, 1.0, 0.5000001591549431, 0.1683416549578835, 3.8981718325193755e-17, 0.9999999999998334, 0.5890401990558807, -0.18579038008451645], [24, 0.0, 0.9887312186978299, 0.4943656093489149, 0.17911797440178076, 0.011394830969668824, 1.0, 0.5922225112501184, -0.19517442869083293], [1, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1, 0.9999974708885745, 0.9999974708885745, 0.9999974708885745, 0.0, 0.0, 0.0, 0.0, 0.0], [1, 1.4142135623730951, 1.4142135623730951, 1.4142135623730951, 0.0, 0.0, 0.0, 0.0, 0.0]], "collections": [], "values": [], "value_scales": [], "patches": [], "images": [], "image_scales": [], "extents": []}]}</dc:description>
+    <dc:description>test: tests/test_polytrope_verification.py::test_surface_radius_matches_exact_lane_emden; command: pytest tests/test_polytrope_verification.py::test_surface_radius_matches_exact_lane_emden --validation-plots; summary: {"v": 1, "axes": [{"scales": ["linear", "linear"], "categories": [null, null], "lines": [[200, 3.1830988618379064e-07, 1.0, 0.5000001591549431, 0.1683416549578835, 3.8981718325193755e-17, 0.9999999999998334, 0.5890401990558807, -0.18579038008451645], [24, 0.0, 0.9887312186978299, 0.4943656093489149, 0.17911797440178076, 0.011394830969668824, 1.0, 0.5922225112501184, -0.19517442869083293], [1, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1, 0.9999974708885745, 0.9999974708885745, 0.9999974708885745, 0.0, 0.0, 0.0, 0.0, 0.0], [1, 1.414213562373095, 1.414213562373095, 1.414213562373095, 0.0, 0.0, 0.0, 0.0, 0.0]], "collections": [], "values": [], "value_scales": [], "patches": [], "images": [], "image_scales": [], "extents": []}]}</dc:description>
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <cc:Agent>
@@ -1377,7 +1377,7 @@ z
      </g>
     </g>
     <g id="text_19">
-     <!-- exact radius R_Earth -->
+     <!-- exact radius -->
      <g style="fill: #10151b" transform="translate(415.270597 61.855212) scale(0.120785 -0.120785)">
       <defs>
        <path id="InstrumentSans-Regular-78" d="M 2726 0 
@@ -1470,40 +1470,6 @@ Q 2848 416 2521 176
 Q 2195 -64 1619 -64 
 z
 " transform="scale(0.015625)"/>
-       <path id="InstrumentSans-Regular-52" d="M 550 0 
-L 550 4608 
-L 2253 4608 
-Q 2746 4608 3091 4448 
-Q 3437 4288 3619 4003 
-Q 3802 3718 3802 3328 
-Q 3802 2938 3619 2646 
-Q 3437 2355 3091 2192 
-Q 2746 2029 2253 2029 
-L 934 2029 
-L 934 2490 
-L 2234 2490 
-Q 2746 2490 3011 2714 
-Q 3277 2938 3277 3328 
-Q 3277 3712 3014 3929 
-Q 2752 4147 2234 4147 
-L 1075 4147 
-L 1075 0 
-L 550 0 
-z
-M 3251 0 
-L 800 2285 
-L 1517 2285 
-L 4045 0 
-L 3251 0 
-z
-" transform="scale(0.015625)"/>
-       <path id="InstrumentSans-Regular-5f" d="M 0 -781 
-L 0 -346 
-L 2726 -346 
-L 2726 -781 
-L 0 -781 
-z
-" transform="scale(0.015625)"/>
       </defs>
       <use xlink:href="#InstrumentSans-Regular-65"/>
       <use xlink:href="#InstrumentSans-Regular-78" transform="translate(56.399994 0)"/>
@@ -1517,14 +1483,6 @@ z
       <use xlink:href="#InstrumentSans-Regular-69" transform="translate(427.199905 0)"/>
       <use xlink:href="#InstrumentSans-Regular-75" transform="translate(451.19989 0)"/>
       <use xlink:href="#InstrumentSans-Regular-73" transform="translate(510.099884 0)"/>
-      <use xlink:href="#InstrumentSans-Regular-20" transform="translate(557.399872 0)"/>
-      <use xlink:href="#InstrumentSans-Regular-52" transform="translate(577.399857 0)"/>
-      <use xlink:href="#InstrumentSans-Regular-5f" transform="translate(642.999847 0)"/>
-      <use xlink:href="#InstrumentSans-Regular-45" transform="translate(685.599838 0)"/>
-      <use xlink:href="#InstrumentSans-Regular-61" transform="translate(749.399826 0)"/>
-      <use xlink:href="#InstrumentSans-Regular-72" transform="translate(802.699814 0)"/>
-      <use xlink:href="#InstrumentSans-Regular-74" transform="translate(840.199799 0)"/>
-      <use xlink:href="#InstrumentSans-Regular-68" transform="translate(877.899796 0)"/>
      </g>
     </g>
     <g id="line2d_37">
@@ -1626,6 +1584,33 @@ Q 3406 3131 3298 2873
 Q 3191 2616 2906 2266 
 Q 2828 2175 2409 1742 
 Q 1991 1309 1228 531 
+z
+" transform="scale(0.015625)"/>
+       <path id="InstrumentSans-Regular-52" d="M 550 0 
+L 550 4608 
+L 2253 4608 
+Q 2746 4608 3091 4448 
+Q 3437 4288 3619 4003 
+Q 3802 3718 3802 3328 
+Q 3802 2938 3619 2646 
+Q 3437 2355 3091 2192 
+Q 2746 2029 2253 2029 
+L 934 2029 
+L 934 2490 
+L 2234 2490 
+Q 2746 2490 3011 2714 
+Q 3277 2938 3277 3328 
+Q 3277 3712 3014 3929 
+Q 2752 4147 2234 4147 
+L 1075 4147 
+L 1075 0 
+L 550 0 
+z
+M 3251 0 
+L 800 2285 
+L 1517 2285 
+L 4045 0 
+L 3251 0 
 z
 " transform="scale(0.015625)"/>
        <path id="InstrumentSans-Regular-28" d="M 1786 -704 

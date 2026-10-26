@@ -20,10 +20,20 @@ The results:
 
 The test compares the radius with the Earth radius of `zalmoxis.constants`, 6335.4 km: 6116 km is 0.965 of that value.
 
-![Earth benchmark: enclosed mass, gravity and pressure against radius, with the reference values and tolerances](../assets/validation/zalmoxis_earth_benchmark.svg#only-light){ width="80%" }
-![Earth benchmark: enclosed mass, gravity and pressure against radius, with the reference values and tolerances](../assets/validation/zalmoxis_earth_benchmark_dark.svg#only-dark){ width="80%" }
+![Enclosed mass of the 1 Earth-mass solve against radius, with the planet radius and its tolerance](../assets/validation/zalmoxis_earth_benchmark.svg#only-light){ width="80%" }
+![Enclosed mass of the 1 Earth-mass solve against radius, with the planet radius and its tolerance](../assets/validation/zalmoxis_earth_benchmark_dark.svg#only-dark){ width="80%" }
 
-**How to read the plot.** The plot is drawn in the radius test; the gravity and central pressure tests assert their values on the same cached solve. The 3 panels show the enclosed mass, the gravity and the pressure against the radius in Earth radii; the lines are the code profiles and give context. The squares with error bars are the reference values and their tolerances. In the top panel only the horizontal bar is a tolerance, $1\,R_\oplus \pm 0.05$; the height of the square is the input mass. The middle square is 9.8 m/s$^2 \pm 10$ %, the bottom square 360 GPa $\pm 15$ %. The circles are the code values. The gravity circle, 10.67 m/s$^2$, lies close to the upper end of its bar, 10.78 m/s$^2$. A pass means that each circle lies inside its error bar.
+**How to read the plot.** The line is the enclosed mass of the 1 Earth-mass solve against radius and gives context. The radius test asserts the planet radius (circle) against $1\,R_\oplus$ (square, with the horizontal error bar 0.05). A pass means that the circle lies inside the error bar.
+
+![Gravity of the 1 Earth-mass solve against radius, with the surface gravity and its tolerance](../assets/validation/zalmoxis_earth_gravity.svg#only-light){ width="80%" }
+![Gravity of the 1 Earth-mass solve against radius, with the surface gravity and its tolerance](../assets/validation/zalmoxis_earth_gravity_dark.svg#only-dark){ width="80%" }
+
+**How to read the plot.** The line is the gravity of the same solve. The gravity test asserts the surface gravity (circle) against 9.8 m/s$^2$ (square, with its error bar of 10 %). The circle, 10.67 m/s$^2$, lies close to the upper end of the bar, 10.78 m/s$^2$. A pass means that the circle lies inside the error bar.
+
+![Pressure of the 1 Earth-mass solve against radius, with the central pressure and its tolerance](../assets/validation/zalmoxis_earth_central_pressure.svg#only-light){ width="80%" }
+![Pressure of the 1 Earth-mass solve against radius, with the central pressure and its tolerance](../assets/validation/zalmoxis_earth_central_pressure_dark.svg#only-dark){ width="80%" }
+
+**How to read the plot.** The line is the pressure of the same solve. The pressure test asserts the central pressure (circle) against 360 GPa (square, with its error bar of 15 %). A pass means that the circle lies inside the error bar.
 
 **How we know the right answer.** The radius and surface gravity of the Earth, and its central pressure from models (360 GPa in the test; `zalmoxis.constants` cites 365 GPa from Nimmo 2015). The 4-9% deviations are expected and physically understood. The Seager modified polytrope is a temperature-independent, zero-Kelvin EOS fit to the merged Vinet/Birch-Murnaghan (low pressure) and Thomas-Fermi-Dirac (high pressure) equations of state. It does not account for thermal expansion, which makes real Earth's mantle less dense (and therefore larger) than the zero-temperature prediction. In this solve the density jumps at the core-mantle boundary at about 3380 km radius, with iron densities of 11,100-12,900 kg/m$^3$ in the core and silicate densities of 4,100-5,900 kg/m$^3$ in the mantle. The gravity (middle panel of the plot) peaks at the CMB, at about 11.2 m/s$^2$, falls to about 10.4 m/s$^2$ near 4700 km and rises again to 10.67 m/s$^2$ at the surface.
 
@@ -62,10 +72,15 @@ At fixed mass ($1\, M_\oplus$), increasing the core mass fraction (replacing les
 
 Zalmoxis produces a strictly decreasing curve from $R \approx 1.02\, R_\oplus$ at $f_c = 0.05$ (nearly pure silicate) to $R \approx 0.81\, R_\oplus$ at $f_c = 0.95$ (nearly pure iron), in units of the 6335.4 km Earth radius of `zalmoxis.constants`. The plot shows the solves of the test.
 
-![Radius of a 1 Earth-mass planet against core mass fraction, with the pure-iron radius](../assets/validation/zalmoxis_cmf_sweep.svg#only-light){ width="80%" }
-![Radius of a 1 Earth-mass planet against core mass fraction, with the pure-iron radius](../assets/validation/zalmoxis_cmf_sweep_dark.svg#only-dark){ width="80%" }
+![Radius of a 1 Earth-mass planet against core mass fraction](../assets/validation/zalmoxis_cmf_sweep.svg#only-light){ width="80%" }
+![Radius of a 1 Earth-mass planet against core mass fraction](../assets/validation/zalmoxis_cmf_sweep_dark.svg#only-dark){ width="80%" }
 
-**How to read the plot.** The circles joined by the line are the code radii at the core mass fractions 0.1, 0.2, 0.3, 0.5 and 0.7. The monotonicity test asserts that each radius is smaller than the one before. At a core mass fraction of 1, the triangle is the code radius of a pure iron planet. It comes from the same cached solve that the pure-iron test asserts against $0.77\,R_\oplus$ (square, with its error bar of 0.05). A pass means that the line falls at every step and the triangle lies inside the error bar.
+**How to read the plot.** The circles joined by the line are the code radii of 1 Earth-mass planets at the core mass fractions 0.1, 0.2, 0.3, 0.5 and 0.7. The test asserts that each radius is smaller than the one before. A pass means that the line falls at every step.
+
+![Radius of a 1 Earth-mass pure iron planet with the Seager et al. (2007) value](../assets/validation/zalmoxis_pure_iron.svg#only-light){ width="80%" }
+![Radius of a 1 Earth-mass pure iron planet with the Seager et al. (2007) value](../assets/validation/zalmoxis_pure_iron_dark.svg#only-dark){ width="80%" }
+
+**How to read the plot.** The pure-iron test asserts the code radius of a pure iron planet (circle) against $0.77\,R_\oplus$ (square). The square is the Seager et al. (2007) value, with its error bar of 0.05. A pass means that the circle lies inside the error bar; it lies at $0.80\,R_\oplus$.
 
 A pure iron planet ($f_c = 1$) has $0.80\, R_\oplus$, against the Seager et al. (2007) value of $0.77\, R_\oplus$ for a 1 $M_\oplus$ iron planet; the test accepts `abs=0.05`. The radius falls faster with CMF at high CMF: by 0.043 $R_\oplus$ from $f_c = 0.3$ to 0.5 and by 0.047 $R_\oplus$ from 0.5 to 0.7.
 
@@ -77,10 +92,20 @@ The smoke tests of `TestConservationLaws` also verify three conservation propert
 - **Surface pressure:** $P(R_\mathrm{surface}) = P_\mathrm{target}$ (101,325 Pa) to within 2 GPa, twice the default surface-pressure tolerance of the solver (1 GPa).
 - **Gauss's law:** the integrated $g$ equals $GM/r^2$ to $< 10^{-3}$ relative error at every radius except the first 6 grid points and the points with $P \leq 0$.
 
-![Mass of the solve over the input mass by 2 integrations, and pressure against radius with the 2 GPa bound](../assets/validation/zalmoxis_conservation_full_solver.svg#only-light){ width="80%" }
-![Mass of the solve over the input mass by 2 integrations, and pressure against radius with the 2 GPa bound](../assets/validation/zalmoxis_conservation_full_solver_dark.svg#only-dark){ width="80%" }
+![Enclosed mass of the 1 Earth-mass solve over the input mass against radius](../assets/validation/zalmoxis_conservation_mass.svg#only-light){ width="80%" }
+![Enclosed mass of the 1 Earth-mass solve over the input mass against radius](../assets/validation/zalmoxis_conservation_mass_dark.svg#only-dark){ width="80%" }
 
-**How to read the plot.** The plot is drawn in the mass conservation test; the trapezoid, surface pressure and Gauss's law tests use the same cached solve. The left panel shows the mass of the solve over the input mass (circles, to 4 decimals) against 1 (squares). The ODE circle has the error bar of 1 % of the mass conservation test. The trapezoid circle has the error bar of 2 % of the trapezoid test. The right panel shows the code pressure against the radius on a log scale, with the surface value (circle) and the 2 GPa line. Pressures below 1 GPa are drawn at 1 GPa, so that the plot is the same on every platform; the surface value itself is about $10^5$ Pa. The test asserts that the surface pressure differs from 101325 Pa by less than 2 GPa; at this scale that is the same as lying below the line. A pass means that each circle lies inside its error bar and the surface circle lies below the line. The Gauss's law check is not drawn.
+**How to read the plot.** The line is the enclosed mass of the solve over the input mass, to 4 decimals, against radius. The mass test asserts the outermost mass (circle) against the input mass (square, with its error bar of 1 %). A pass means that the circle lies inside the error bar.
+
+![Mass from the trapezoidal integral of the density over the input mass](../assets/validation/zalmoxis_conservation_trapezoid.svg#only-light){ width="80%" }
+![Mass from the trapezoidal integral of the density over the input mass](../assets/validation/zalmoxis_conservation_trapezoid_dark.svg#only-dark){ width="80%" }
+
+**How to read the plot.** The trapezoid test integrates $4\pi r^2 \rho$ over the radius with the trapezoidal rule. It asserts the result (circle, to 4 decimals) against the input mass (square, with its error bar of 2 %). A pass means that the circle lies inside the error bar.
+
+![Pressure of the 1 Earth-mass solve against radius, with the surface value and the 2 GPa bound](../assets/validation/zalmoxis_surface_pressure.svg#only-light){ width="80%" }
+![Pressure of the 1 Earth-mass solve against radius, with the surface value and the 2 GPa bound](../assets/validation/zalmoxis_surface_pressure_dark.svg#only-dark){ width="80%" }
+
+**How to read the plot.** The line is the pressure of the solve on a log axis. Pressures below 1 GPa are drawn at 1 GPa, so that the plot is the same on every platform. The surface value itself is about $10^5$ Pa. The surface-pressure test asserts that it differs from 101325 Pa by less than 2 GPa (dotted line). A pass means that the surface circle lies below the dotted line.
 
 **Known limit.** The surface-pressure check allows 2 GPa against a target of 101,325 Pa, so it cannot tell a correct surface pressure from one 10000 times too large. The solver treats a residual below 1 GPa as pressure-converged, but it can also accept a solution on mass convergence alone, so this 2 GPa check is then the only guard. The mass checks allow 1 % and 2 %.
 
