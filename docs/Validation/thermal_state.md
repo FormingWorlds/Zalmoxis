@@ -36,8 +36,8 @@ Plot 2: $U_d$, $U_u$ and $\Delta U = U_d - U_u$ against planet mass.
 
 **What it shows.** `tools/validation/validate_thermal_state_paleos.py` compares the initial thermal state from the Seager et al. (2007) EOS with PALEOS material properties. It reproduces the mass-temperature trend from White & Li (2025, Fig. 3) using:
 
-1. The Seager et al. (2007) structure with the default material properties of `initial_thermal_state` (heat capacities 450 J/kg/K for iron and 1250 J/kg/K for silicate) and the Gruneisen adiabat ($\gamma$ = 1.3). The script docstring names other constants (C_Fe=840, C_sil=1200, nabla_ad=0.3), which the code does not pass.
-2. The same structure with the adiabatic gradient `nabla_ad` from the PALEOS unified table and the default heat capacities. The script defines a PALEOS heat-capacity function (`build_paleos_cp`) but does not call it.
+1. The Seager et al. (2007) structure with the default material properties of `initial_thermal_state`: heat capacities of 450 J/kg/K for iron and 1250 J/kg/K for silicate. The temperature follows the Gruneisen adiabat, an adiabat set by the Gruneisen parameter $\gamma$ = 1.3. The script docstring names other constants (C_Fe=840, C_sil=1200, nabla_ad=0.3), but the script does not pass them to `initial_thermal_state`.
+2. The same structure with the adiabatic gradient `nabla_ad` from the PALEOS unified table and the default heat capacities. A step falls back to the Gruneisen step where the PALEOS change exceeds it by more than 50 %. The script defines a PALEOS heat-capacity function (`build_paleos_cp`) but does not call it.
 
 The script also highlights the surface temperature issue: for 1 $M_\oplus$ planets, $T_\mathrm{surface}$ from the adiabatic integration can be well below the solidus, meaning the surface would accrete solid (not as a magma ocean).
 
@@ -63,7 +63,7 @@ The script also highlights the surface temperature issue: for 1 $M_\oplus$ plane
 
 **What it shows.** `tools/validation/validate_thermal_state_full_paleos.py` compares 3 tiers: the Seager et al. (2007) structure with constant properties, the same structure with the PALEOS adiabatic gradient, and the PALEOS structure with PALEOS properties at the CMB. It also sweeps the accretion heat retention efficiency $f_a$ from 0.01 to 0.40 for the full PALEOS case. It writes `thermal_state_three_tiers`, `thermal_state_fa_full_paleos` and `thermal_state_whiteli_comparison`; this page shows none of them.
 
-**How we know the right answer.** The Boujibar et al. (2020) polynomial, and a run with the accretion efficiency of White & Li (2025), $f_a$ = 0.04 (with $f_d$ = 0.50). The script also runs a case with the parameters of Boujibar et al. (2020), $f_a$ = $f_d$ = 0.40.
+**How we know the right answer.** The Boujibar et al. (2020) polynomial, and a run with the accretion efficiency of White & Li (2025), $f_a$ = 0.04 (with the differentiation efficiency $f_d$ = 0.50). The script also runs a case with the parameters of Boujibar et al. (2020): $f_a$ = $f_d$ = 0.40, with heat capacities of 840 and 1200 J/kg/K.
 
 **Why it matters.** The script writes the effect of the accretion heat retention $f_a$ on the start temperatures to `thermal_state_fa_full_paleos`, which this page does not show.
 

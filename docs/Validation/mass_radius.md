@@ -65,10 +65,10 @@ A pure iron planet ($f_c = 1$) has $0.80\, R_\oplus$, against the Seager et al. 
 The smoke tests of `TestConservationLaws` also verify three conservation properties of the full solver output:
 
 - **Mass conservation:** $M(R_\mathrm{surface}) = M_p$ to within 1 %, and to within 2 % by trapezoidal integration of $4\pi r^2 \rho(r)$ over the solver's own density and radii.
-- **Surface pressure:** $P(R_\mathrm{surface}) = P_\mathrm{target}$ (101,325 Pa) to within 2 GPa, twice the surface-pressure tolerance of the solver (1 GPa).
+- **Surface pressure:** $P(R_\mathrm{surface}) = P_\mathrm{target}$ (101,325 Pa) to within 2 GPa, twice the default surface-pressure tolerance of the solver (1 GPa).
 - **Gauss's law:** the integrated $g$ equals $GM/r^2$ to $< 10^{-3}$ relative error at every radius except the first 6 grid points and the points with $P \leq 0$.
 
-**Known limit.** The surface-pressure check allows 2 GPa against a target of 101,325 Pa, so it cannot tell a correct surface pressure from one wrong by 1e4 times; the solver itself refuses a residual above 1 GPa. The mass checks allow 1 % and 2 %.
+**Known limit.** The surface-pressure check allows 2 GPa against a target of 101,325 Pa, so it cannot tell a correct surface pressure from one 10000 times too large. The solver treats a residual below 1 GPa as pressure-converged, but it can also accept a solution on mass convergence alone, so this 2 GPa check is then the only guard. The mass checks allow 1 % and 2 %.
 
 **How we know the right answer.** The scaling law and the pure-iron radius of Seager et al. (2007), and physical constraints (monotonicity, mass, surface pressure, Gauss's law) with no published reference.
 
