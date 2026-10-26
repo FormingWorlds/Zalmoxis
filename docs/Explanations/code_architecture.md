@@ -38,7 +38,7 @@ Zalmoxis/
       __init__.py           # Enables jax_enable_x64 at import
       bilinear.py           # fast_bilinear_jax, paleos_clamp_temperature_jax
       paleos.py             # get_paleos_unified_density_jax (mushy-zone branches)
-      tdep.py               # get_Tdep_density_jax (PALEOS-2phase mantle)
+      tdep.py               # get_tdep_density_jax (PALEOS-2phase mantle)
       rhs.py                # coupled_odes_jax (jax-traceable RHS)
       solver.py             # diffrax Tsit5 integrator + event-based termination
       wrapper.py            # solve_structure_via_jax (numpy-signature entry)
@@ -181,10 +181,10 @@ What it specialises:
 
 - The bilinear inner kernel (`fast_bilinear_jax`) and PALEOS T-clamp.
 - The PALEOS unified density (`get_paleos_unified_density_jax`) including the five mushy-zone branches.
-- The PALEOS-2phase mantle density (`get_Tdep_density_jax`, solid + liquid sub-tables, volume-average mushy mix).
+- The PALEOS-2phase mantle density (`get_tdep_density_jax`, solid + liquid sub-tables, volume-average mushy mix).
 - The coupled RHS (`coupled_odes_jax`) and the diffrax-driven integration with an event-based pressure-zero terminator.
 
-The JAX path covers the two-layer configuration (PALEOS:iron core + PALEOS-2phase:MgSiO$_3$ mantle). Anything outside that envelope (3-layer ice, multi-component layers, non-Stixrude14 melting) automatically falls back to the numpy path at the caller (`solver._solve`).
+The JAX path covers two layers: a PALEOS iron core (`paleos_unified`, without light elements) and a PALEOS MgSiO$_3$ mantle in the unified table (`PALEOS:MgSiO3`) or the 2-phase tables (`PALEOS-2phase:MgSiO3`), dry or wet with exactly one active `paleos_unified` volatile. Anything outside that envelope (a third layer such as ice, other mixtures, a Chabrier H$_2$ volatile, a global-miscibility or `x_interior` profile, several volatiles) raises `ValueError` in `solve_structure_via_jax`, and `solve_structure` falls back to the numpy path for the rest of the `main` call.
 
 **Float64 enforcement.** `jax_eos/__init__.py` calls `jax.config.update('jax_enable_x64', True)` at import. Without this, JAX defaults to float32 and downstream density / pressure / temperature accumulate ~$10^{-7}$ relative error, far above the parity tolerance.
 

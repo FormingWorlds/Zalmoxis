@@ -14,21 +14,30 @@ The [overview](index.md) lists every case of the tab.
 **Terms of this page.**
 
 - $r$ and $R$: the radius, from 0 at the centre, and the outer radius of the planet.
-- $R_\oplus$: the Earth radius of `zalmoxis.constants`, 6335.4 km (the mean Earth radius is 6371 km).
+- $R_\oplus$: the Earth radius of `zalmoxis.constants`, 6335.4 km (the mean Earth radius is 6371 km); $M_\oplus$: the Earth mass, $5.972 \times 10^{24}$ kg.
 - $M(r)$, $g(r)$, $P(r)$, $\rho(r)$: the mass inside radius $r$ (the enclosed mass, kg), the gravitational acceleration (m/s$^2$), the pressure (Pa) and the density (kg/m$^3$) at radius $r$; $G$ is the gravitational constant.
 - EOS (equation of state): the relation $\rho(P, T)$ between the density, the pressure and the temperature of a material.
-- CMB: the core-mantle boundary.
+- CMB: the core-mantle boundary. $\rho_c$: the density at the centre.
+- ODE integrator: the code that steps the three structure equations (ordinary differential equations) outward in $r$.
 - $N$ and `rtol`: the number of radial grid points, and the relative tolerance of the ODE integrator (RK45, an adaptive Runge-Kutta method of order 4 and 5); the configuration key is `relative_tolerance`.
 - Relative error: $|x_\mathrm{num} - x_\mathrm{exact}| / |x_\mathrm{exact}|$, the difference between the computed and the exact value, divided by the exact value.
 - Round-off level: a relative error of about $10^{-16}$ to $10^{-13}$, the size of the rounding error of floating-point arithmetic. A result at this level is exact within the precision of the computer.
 - Central pressure $P_c$: the pressure at the centre of the planet.
 - Pressure solve: the loop that adjusts $P_c$ until the pressure at the outer radius equals the target surface pressure $P_t$ (written $P_\mathrm{target}$ on the process-flow page).
-- Brent's method (`scipy.optimize.brentq`): the root finder of the pressure solve. It narrows a bracket around a sign change of the residual and stops when the bracket is narrower than `xtol`.
+- Brent's method (`scipy.optimize.brentq`): the root finder of the pressure solve. It narrows a bracket around a sign change of the residual and stops when the bracket is narrower than `xtol`, $10^6$ Pa in the pressure solve. Newton's method, used by the Newton outer solver, instead steps towards the zero of a function along its slope.
 - Residual $f(P_c) = P(R) - P_t$: the pressure $P(R)$ at the outer radius $R$ minus the target surface pressure $P_t$.
+- Target surface pressure $P_t$: 1 atm, 101325 Pa, unless a case says otherwise.
 - Reached: the integration from a trial $P_c$ reaches the outer radius.
+- Surface stop: the integration ends where the pressure reaches 0 before the outer radius.
+- Miss: $\lvert P(R) - P_t \rvert$, often given in units of $P_t$.
+- Converged: the outer solver met one of its accept tests; `accepted_on` names the test.
+- Relative planet-mass change: a change of the planet mass divided by the planet mass, for example $10^{-9}$.
 - Padded: the integration stops before the outer radius, and the remaining nodes, the padded nodes, get zero pressure. The residual is then $-P_t$.
 - Sign pair: 2 neighbouring evaluated central pressures, with a finite negative residual at the lower one and a finite positive residual at the higher one, so $f$ changes sign between them. The higher one is the reached end.
 - PALEOS: the tabulated equations of state for iron, MgSiO$_3$ and water that Zalmoxis uses as its standard ([EOS physics](../Explanations/eos_physics.md)).
+- Unified and 2-phase PALEOS mantle: one table for all phases of MgSiO$_3$ (unified), or separate tables for the solid and the melt (2-phase). The mushy zone factor sets the solidus as a fraction of the liquidus (0.8 in the JAX cases).
+- Wet mantle: a mantle with a dissolved volatile, here 1 % PALEOS H$_2$O.
+- State (JAX cases): one set of $r$, $M$, $g$ and $P$ at which both codes evaluate the right-hand side.
 - JAX path: an optional version of the structure integration in JAX, a Python library for compiled numerical code; it is off by default.
 - Picard outer solver: the default outer loop. It solves the structure for a trial radius, compares the computed mass with the planet mass, and rescales the radius.
 - Newton outer solver: the outer loop with Newton steps and a Brent fallback (`outer_solver = 'newton'`); PROTEUS uses it by default. It needs `relative_tolerance` at or below $10^{-7}$.
@@ -160,7 +169,7 @@ $$
 
 **Why this check exists.** Tests 1 to 3 check the profiles point by point. An integral over the whole planet checks that the mass and density profiles agree as a whole. A wrong factor in $dM/dr$ makes this test fail.
 
-**What it tests.** The gravitational binding energy, the energy needed to disperse the planet to infinity, is
+**What it tests.** The gravitational binding energy $E_\mathrm{grav}$ [J], the energy needed to disperse the planet to infinity, is
 
 $$
 E_\mathrm{grav} = -\int_0^R \frac{G\,M(r)}{r}\, 4\pi r^2 \rho\, dr
@@ -178,13 +187,15 @@ The test integrates it with the trapezoidal rule over the $M(r)$ and $\rho(r)$ p
     - Test id: `tests/test_first_principles.py::TestGravitationalBindingEnergy`
     - Command: `pytest -o "addopts=" tests/test_first_principles.py::TestGravitationalBindingEnergy`
 
+Tests 5 and 6 (the Earth benchmark and the mass-radius scaling) are on the [mass-radius page](mass_radius.md).
+
 ## n = 1 polytrope
 
 **Why this check exists.** Tests 1 to 4 fix the density. This case lets the density follow the pressure through an equation of state, as in a real planet. A wrong factor in $dM/dr$ or $dg/dr$, or the wrong sign of $dP/dr$, moves the surface radius or the integrated mass, and the test fails.
 
-**What it tests.** `solve_structure` with the `Analytic:polytrope_n1` verification material, $P = K \rho^2$ (a polytrope of index $n = 1$, with $K$ a constant). The test runs 600 radial points from the centre to $1.03\,R_\oplus$; the surface radius comes from extrapolating the density to zero. For $n = 1$ the radius $R = \pi \sqrt{K / 2\pi G}$ depends on $K$ only, not on the central density; $K$ is set so that $R$ is one Earth radius. The test also checks the mass: the central density is chosen so that the exact mass is $2\,M_\oplus$, and the integrated mass must match it. It runs the case at 1 and $2\,M_\oplus$ and checks that both give the same radius.
+**What it tests.** `solve_structure` with the `Analytic:polytrope_n1` verification material, $P = K \rho^2$ (a polytrope of index $n = 1$, with $K$ a constant in Pa m$^6$ kg$^{-2}$). The test runs 600 radial points from the centre to $1.03\,R_\oplus$; the surface radius comes from extrapolating the density to zero. For $n = 1$ the radius $R = \pi \sqrt{K / 2\pi G}$ depends on $K$ only, not on the central density; $K$ is set so that $R$ is one Earth radius. The test also checks the mass: the central density is chosen so that the exact mass is $2\,M_\oplus$, and the integrated mass must match it. It runs the case at 1 and $2\,M_\oplus$ and checks that both give the same radius.
 
-**How we know the right answer.** The Lane-Emden equation is the dimensionless hydrostatic equation of a polytrope. For $n = 1$ it has the closed-form solution $\rho(r) = \rho_c \sin\xi / \xi$ with $\xi = \pi r / R$, and the mass $M = 4\rho_c R^3/\pi$.
+**How we know the right answer.** The Lane-Emden equation is the dimensionless hydrostatic equation of a polytrope. For $n = 1$ it has the closed-form solution $\rho(r) = \rho_c \sin\xi / \xi$ with the dimensionless radius $\xi = \pi r / R$, and the mass $M = 4\rho_c R^3/\pi$.
 
 **Why it matters.** Here the density follows the pressure and the right answer is still known in closed form, so this case checks the link between the integrator and an equation of state.
 
@@ -218,7 +229,7 @@ A wrong factor in $dM/dr$ or $dg/dr$, or the wrong sign of $dP/dr$, also makes t
 
 ![Grid convergence: largest relative mass and pressure error against the number of radial grid points](../img/validation/grid_convergence.png)
 
-**How to read the plot.** The figure shows the grid part, with $N$ from 25 to 800. The x-axis is the number of radial grid points and the y-axis the largest relative error, both on log scales. The blue line is the mass error and the red line the pressure error. From $N = 25$ to 800 the mass error rises by about 14 % (from $2.29$ to $2.62 \times 10^{-15}$) and the pressure error by about 18 % (from $3.59$ to $4.24 \times 10^{-16}$). Both stay at the round-off level, because the exact solution is a cubic and a parabola in $r$, which the integrator reproduces on every grid. These values lie far below the caps of the test.
+**How to read the plot.** The figure shows the grid part, with $N$ from 25 to 800. The x-axis is the number of radial grid points and the y-axis the largest relative error, both on log scales. The blue line is the mass error and the red line the pressure error. From $N = 25$ to 800 the mass error stays between $2.29$ and $2.62 \times 10^{-15}$ (2.29, 2.29, 2.43, 2.51, 2.62 and 2.59 at $N$ = 25, 50, 100, 200, 400 and 800) and the pressure error between $3.59$ and $4.24 \times 10^{-16}$. This is round-off scatter, not convergence: the exact solution is a cubic and a parabola in $r$, which the integrator reproduces on every grid. These values lie far below the tolerances of the test ($10^{-8}$ for the mass and $10^{-6}$ for the pressure at $N = 400$).
 
 ??? info "Test details"
     - Reference: closed-form solution of the uniform-density sphere; for the full solver, the radius at $N = 200$ against $N = 400$ (self-consistency)
@@ -230,7 +241,11 @@ A wrong factor in $dM/dr$ or $dg/dr$, or the wrong sign of $dP/dr$, also makes t
 
 **Why this check exists.** The optional JAX path (`use_jax = True`) evaluates the right-hand side of the structure equations in its own code, `zalmoxis.jax_eos.rhs.coupled_odes_jax`. If it differs from the numpy `zalmoxis.structure_model.coupled_odes` by more than the tolerance, a JAX run gives another structure than a numpy run, and these tests fail.
 
-**What it tests.** The cases compare $dM/dr$, $dg/dr$ and $dP/dr$ of the two codes on the same states. Each table case draws random states with a fixed seed: $r$ from $10^5$ to $6.4 \times 10^6$ m, $M$ from 0 to $1\, M_\oplus$, $g$ from 0.5 to 25 m/s$^2$ and $P$ from $10^6$ to $3 \times 10^{11}$ Pa, with a PALEOS iron core and a PALEOS MgSiO$_3$ mantle. A state counts when both codes return a nonzero right-hand side, and more than 100 states must count. JAX must never return a nonzero value where numpy returns zero. The Tier column names the test group: unit tests need no table data, and integration tests need the PALEOS tables. The synthetic cases build small tables in memory, so they need no EOS files and run in the unit tier.
+**What it tests.** The cases compare $dM/dr$, $dg/dr$ and $dP/dr$ of the two codes on the same states.
+
+Each table case draws random states with a fixed seed: $r$ from $10^5$ to $6.4 \times 10^6$ m, $M$ from 0 to $1\, M_\oplus$, $g$ from 0.5 to 25 m/s$^2$ and $P$ from $10^6$ to $3 \times 10^{11}$ Pa, with a PALEOS iron core and a PALEOS MgSiO$_3$ mantle. A state counts when both codes return a nonzero right-hand side, and more than 100 states must count. JAX must never return a nonzero value where numpy returns zero.
+
+The Tier column names the test group: unit tests need no table data, and integration tests need the PALEOS tables. The synthetic cases build small tables in memory, so they need no EOS files and run in the unit tier.
 
 | Test id | Mantle | Tolerance | Tier |
 |---|---|---|---|
@@ -262,7 +277,11 @@ A wrong factor in $dM/dr$ or $dg/dr$, or the wrong sign of $dP/dr$, also makes t
 
 **Why this check exists.** Brent's method can return a central pressure for which the integration stops below the surface, and the solve must then refine that root. If the refinement does not run, or keeps the padded root, the profile ends with a pressure of 0 at the outer radius instead of the surface pressure.
 
-**What it tests.** The central pressure $P_c$ is the root of the residual $f(P_c) = P(R) - P_t$. Here $P(R)$ is the pressure at the outer radius $R$, and $P_t$ is the target surface pressure, 1 atm here. A trial $P_c$ whose integration stops before the outer radius gives $f = -P_t$, and the remaining points get zero pressure: this is a padded profile. Brent's method stops when its bracket is narrower than `xtol` $= 10^6$ Pa, and it can then return such a padded root. The solve then refines the root ([padded accepts](../Explanations/process_flow.md#padded-accepts)). The test uses an analytic residual that needs no structure solve. Below a central pressure $x_0$ the integration stops; above it, $P(R)$ rises from $0.95\,P_t$ at a slope $dP(R)/dP_c$ of 0.47. The Brent root of the first solve is then padded, and the refined root must reach the outer radius and miss $P_t$ by at most $0.1 P_t$.
+**What it tests.** The central pressure $P_c$ is the root of the residual $f(P_c) = P(R) - P_t$. Here $P(R)$ is the pressure at the outer radius $R$, and $P_t$ is the target surface pressure, 1 atm here.
+
+A trial $P_c$ whose integration stops before the outer radius gives $f = -P_t$, and the remaining points get zero pressure: this is a padded profile. Brent's method stops when its bracket is narrower than `xtol` $= 10^6$ Pa, and it can then return such a padded root. The solve then refines the root ([padded accepts](../Explanations/process_flow.md#padded-accepts)).
+
+The test uses an analytic residual that needs no structure solve. Below a central pressure $x_0$ the integration stops; above it, $P(R)$ rises from $0.95\,P_t$ at a slope $dP(R)/dP_c$ of 0.47. The Brent root of the first solve is then padded, and the refined root must reach the outer radius and miss $P_t$ by at most $0.1 P_t$.
 
 A second test checks the same rule with real structure solves. It uses the Analytic 1 Earth-mass planet with the Newton outer solver at `relative_tolerance` $10^{-9}$, and shifts the planet mass by a relative amount of 0 and $\pm 10^{-9}$ until a pressure solve has a padded Brent root. The refined root must then miss $P_t$ by at most $0.1 P_t$. The accepted profile must not be padded, and it must miss $P_t$ by at most $P_t$.
 
@@ -283,12 +302,18 @@ A second test checks the same rule with real structure solves. It uses the Analy
     - Test id: `tests/test_pressure_root.py::test_the_refined_root_meets_the_surface_boundary_condition`
     - Command: `pytest -m reference_pinned tests/test_pressure_root.py --validation-plots`
     - Test id of the real-solve test: `tests/test_pressure_root_solves.py::test_the_accepted_root_meets_the_surface_boundary_condition`
+    - Tolerance of the real-solve test: $\lvert P(R) - P_t \rvert \le 0.1 P_t$ at the refined root of a padded Brent root; the accepted profile is not padded and misses $P_t$ by at most $P_t$.
+    - Command of the real-solve test: `pytest tests/test_pressure_root_solves.py::test_the_accepted_root_meets_the_surface_boundary_condition`
 
 ## Surface boundary condition in every Newton setup
 
 **Why this check exists.** The refinement must also work on the real equations of state of a planet, not only on an analytic residual. If it fails there, the accepted profile of a Newton run ends padded, or it misses the surface pressure by more than $P_t$.
 
-**What it tests.** The test runs the 6 Newton setups: the Analytic EOS (equation of state) at 1 Earth mass, PALEOS at 1, 5 and 10 Earth masses, and PALEOS on the JAX path with $T(r)$ from a numpy Picard solve at 1 and 3 Earth masses. Every setup must accept on the Newton tolerance. Every reached profile must miss $P_t$ by at most $P_t$, and no profile may have a padded node, except on the JAX path at 1 Earth mass. On that path $P(R)$ varies irregularly from one trial central pressure to the next near the surface stop, where the integration ends before the outer radius, and the accepted profile can be padded. The case then requires one of 2 things: the reached end of the first sign pair of that pressure solve misses $P_t$ by more than $P_t$, or the solve has no sign pair.
+**What it tests.** The test runs the 6 Newton setups: the Analytic EOS (equation of state) at 1 Earth mass, PALEOS at 1, 5 and 10 Earth masses, and PALEOS on the JAX path with $T(r)$ from a numpy Picard solve at 1 and 3 Earth masses.
+
+Every setup must accept on the Newton tolerance. Every reached profile must miss $P_t$ by at most $P_t$, and no profile may have a padded node, except on the JAX path at 1 Earth mass.
+
+On that path $P(R)$ varies irregularly from one trial central pressure to the next near the surface stop, where the integration ends before the outer radius, and the accepted profile can be padded. The case then requires one of 2 things: the reached end of the first sign pair of that pressure solve misses $P_t$ by more than $P_t$, or the solve has no sign pair.
 
 **How we know the right answer.** As in the case above, the boundary condition $P(R) = P_t$ gives the right answer.
 
@@ -297,7 +322,7 @@ A second test checks the same rule with real structure solves. It uses the Analy
 ![Surface pressure miss of the accepted profile for 26 solver setups](../assets/validation/pressure_root_sweep.svg#only-light){ width="80%" }
 ![Surface pressure miss of the accepted profile for 26 solver setups](../assets/validation/pressure_root_sweep_dark.svg#only-dark){ width="80%" }
 
-**How to read the plot.** The x-axis is the number of the setup, for 26 setups built from `input/default.toml` and numbered from 0 to 25. The y-axis is $\lvert P(R) - P_t \rvert / P_t$ of the accepted profile, on a log scale. Circles are reached profiles, squares are padded profiles (at 1, since $P(R) = 0$), and a cross above the cap marks a setup without an accepted profile. The dashed line is the cap of $P_t$. Setups 4, 9, 10, 13, 14 and 25 use the Newton outer solver at `relative_tolerance` $10^{-9}$; [padded accepts](../Explanations/process_flow.md#padded-accepts) lists every setup. A pass means that every Newton setup is a circle at or below the dashed line. Only setup 10 may be a square, and only under the rule of the JAX path above.
+**How to read the plot.** The x-axis is the number of the setup, for 26 setups built from `input/default.toml` and numbered from 0 to 25. The y-axis is $\lvert P(R) - P_t \rvert / P_t$ of the accepted profile, on a log scale. Circles are reached profiles, squares are padded profiles (at 1, since $P(R) = 0$), and a cross above the cap marks a setup without an accepted profile. The dashed line is the cap of $P_t$. Setups 4, 9, 10, 13, 14 and 25 use the Newton outer solver at `relative_tolerance` $10^{-9}$, and the test asserts only these 6; the other 20 setups are shown for comparison; [padded accepts](../Explanations/process_flow.md#padded-accepts) lists every setup. A pass means that every Newton setup is a circle at or below the dashed line. Only setup 10 may be a square, and only under the rule of the JAX path above.
 
 **Known limit.** The miss of a reached profile depends on round-off, so another platform gives other values. Over planet-mass changes of $k \times 10^{-13}$ ($k$ = 1 to 5), the PALEOS 1 Earth-mass Newton setup misses by 0.008 to 0.87 $P_t$. The test skips when the PALEOS tables are not under `data/`.
 

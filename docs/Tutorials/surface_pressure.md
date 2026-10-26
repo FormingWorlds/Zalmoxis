@@ -69,7 +69,7 @@ The integration from the accepted $P_c$ stopped at $P = 0$ just below the outer 
 The solver logs one warning for such a result (`The accepted profile ends in a surface stop: ...`).
 The accept test of the pressure solve passes a profile when its Brent solve converged, no node has a negative pressure, and $\lvert P(R) - P_t \rvert$ is below `pressure_tolerance` ($10^9$ Pa by default), so it passes this one, whose miss is $P_t$.
 `accepted_on` names the test that accepted the structure: `strict` means that the mass, density and pressure tests all passed ([Convergence Checks](../Explanations/process_flow.md#convergence-checks) lists every label).
-Whether a profile ends padded depends on round-off, so your run can end reached (the integration reaches $R$); Step 2 shows the trials that decide it. If your run ends reached, the trials of Step 2 have no padded rows near the accepted $P_c$, and the last one has $P(R)$ close to $P_t$.
+Whether a profile ends padded depends on round-off, so your run can end reached (the integration reaches $R$); Step 2 shows the trials that decide it. If your run ends reached, find the trial of Step 2 whose $P_c$ equals `result['p_center']`; its $P(R)$ is the surface pressure of your result.
 
 ## Step 2: look at the central pressures the solve tried
 
@@ -136,7 +136,8 @@ These trials show a jump of $f$: the padded trials sit at $f = -P_t$, and the fi
 These two trials are the sign pair around the root.
 Brent's method, the root finder of the pressure solve, stops when its bracket is narrower than $10^6$ Pa and returns the end with the smaller $\lvert f \rvert$.
 When the reached end has $P(R) > 2 P_t$, its $\lvert f \rvert$ is larger than $P_t$, so Brent's method returns the padded end.
-Here the reached end misses $P_t$ by much more than $P_t$, so the solve skips the second Brent solve and keeps the padded root; Step 3 shows the rule.
+Here the reached end misses $P_t$ by much more than $P_t$, so the solve skips the second Brent solve and keeps the padded root.
+It skips it because the sign pair is steep (its slope $dP(R)/dP_c$ is about 77, above the limit of 1) and its reached end misses $P_t$ by more than $P_t$ (about 410 times); Step 3 shows a case where the second solve runs.
 The plot below shows the trials near the root.
 
 ```python
@@ -199,7 +200,12 @@ The second solve on the sign pair around $x_0$ finds a reached root that misses 
 The script `tools/validation/pressure_root_sweep.py` runs 26 solver setups built from `input/default.toml` and records how each accepted profile meets $P_t$.
 The `case` command runs one setup and writes its record.
 The setups are numbered from 0 to 25. Run 3 of them: 1 (the Analytic EOS, a closed-form equation of state without tables, at 1 $M_\oplus$ with the Picard outer solver), 8 (`input/default.toml` itself, PALEOS tables and the Picard outer solver) and 9 (the same planet with the Newton outer solver at `relative_tolerance` $10^{-9}$).
-The outer solver finds the radius at which the computed mass equals the planet mass. The Picard outer solver, the default, rescales the radius after each structure solve; the Newton outer solver uses Newton's method, which follows the slope of the mass error with the radius. `relative_tolerance` is the relative tolerance of the ODE integrator, and the label `newton_tol` means that the Newton outer solver accepted the structure on its mass error.
+The outer solver finds the radius at which the computed mass equals the planet mass.
+
+- The Picard outer solver, the default, rescales the radius after each structure solve.
+- The Newton outer solver uses Newton's method, which follows the slope of the mass error with the radius.
+- `relative_tolerance` is the relative tolerance of the integrator of the structure equations.
+- The label `newton_tol` means that the Newton outer solver accepted the structure on its mass error.
 Setup 9 takes about 4 minutes.
 
 ```console
@@ -229,7 +235,7 @@ setup 8 PALEOS 1 (default.toml): strict, P(R) = 0 Pa, miss 1.000 P_t, padded nod
 setup 9 PALEOS 1, Newton: newton_tol, P(R) = 1.393e+05 Pa, miss 0.375 P_t, padded nodes 0
 ```
 
-The command `python -m tools.validation.pressure_root_sweep run <dir> -j 2` runs all 26 setups; their solves took 2718 s in total on a workstation, so at least 23 minutes with 2 processes.
+The command `python -m tools.validation.pressure_root_sweep run <dir> -j 2` runs all 26 setups; their solves took 2718 s in total on a workstation, so about 23 minutes with 2 processes.
 The command `python -m tools.validation.pressure_root_sweep plot <dir> --assets <dir>` draws them into `<dir>`.
 It needs the `proteus_mpl` package and a record of every setup.
 Without `--assets` it writes over the figures under `docs/assets/validation/`.
@@ -243,7 +249,10 @@ First decide whether the surface values matter for your use.
 A padded result passed the accept tests of the solve, and in this tutorial only its outermost node has $P = 0$ instead of $P_t$.
 If you need $P(R) = P_t$, these settings matter:
 
-- **The outer solver.** `outer_solver = "newton"` needs `relative_tolerance` at or below `1e-7` (it raises `ValueError` otherwise); setup 9 uses `relative_tolerance = 1e-9` and `absolute_tolerance = 1e-10`. It reached the outer radius in setup 9 above, where the default Picard solve ended padded; it still missed $P_t$ by 0.375 $P_t$. PROTEUS uses the Newton outer solver by default. It takes longer (about 4 minutes here against 1.5).
+- **The outer solver.** `outer_solver = "newton"` needs `relative_tolerance` at or below `1e-7`; it raises `ValueError` otherwise.
+  Setup 9 uses `relative_tolerance = 1e-9` and `absolute_tolerance = 1e-10`.
+  It reached the outer radius, where the default Picard solve ended padded, but it still missed $P_t$ by 0.375 $P_t$.
+  PROTEUS uses the Newton outer solver by default. It takes longer: about 4 minutes here against 1.5.
 - **`pressure_tolerance`.** This is the accept test of the pressure solve, $\lvert P(R) - P_t \rvert$ below it. A value below $P_t$ makes the test refuse a padded profile, but the outer loop can still accept the structure on its mass test, as the block below shows.
 - **The integration tolerances** (`relative_tolerance`, `absolute_tolerance`). They change where the integration stops, and so whether the trials near the root pad. Setup 9 changes them together with the outer solver, so this tutorial does not separate the two effects.
 
