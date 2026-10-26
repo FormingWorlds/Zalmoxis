@@ -14,20 +14,23 @@ The [overview](index.md) lists every case of the tab.
 **Terms of this page.**
 
 - $r$ and $R$: the radius, from 0 at the centre, and the outer radius of the planet.
+- $R_\oplus$: the Earth radius of `zalmoxis.constants`, 6335.4 km (the IAU value is 6371 km).
 - $M(r)$, $g(r)$, $P(r)$, $\rho(r)$: the mass inside radius $r$ (the enclosed mass, kg), the gravitational acceleration (m/s$^2$), the pressure (Pa) and the density (kg/m$^3$) at radius $r$; $G$ is the gravitational constant.
 - EOS (equation of state): the relation $\rho(P, T)$ between the density, the pressure and the temperature of a material.
 - CMB: the core-mantle boundary.
 - $N$ and `rtol`: the number of radial grid points, and the relative tolerance of the ODE integrator (RK45, an adaptive Runge-Kutta method of order 4 and 5).
 - Relative error: $|x_\mathrm{num} - x_\mathrm{exact}| / |x_\mathrm{exact}|$, the difference between the computed and the exact value, divided by the exact value.
 - Round-off level: a relative error of about $10^{-16}$ to $10^{-13}$, the size of the rounding error of floating-point arithmetic. A result at this level is exact within the precision of the computer.
-- Central pressure $P_c$: the pressure at the centre of the planet, the unknown of the pressure solve.
+- Central pressure $P_c$: the pressure at the centre of the planet.
+- Pressure solve: the loop that adjusts $P_c$ until the pressure at the outer radius equals the target surface pressure $P_t$ (written $P_\mathrm{target}$ on the process-flow page).
+- Brent's method (`scipy.optimize.brentq`): the root finder of the pressure solve. It narrows a bracket around a sign change of the residual and stops when the bracket is narrower than `xtol`.
 - Residual $f(P_c) = P(R) - P_t$: the pressure $P(R)$ at the outer radius $R$ minus the target surface pressure $P_t$.
 - Reached: the integration from a trial $P_c$ reaches the outer radius.
 - Padded: the integration stops before the outer radius, and the remaining nodes, the padded nodes, get zero pressure. The residual is then $-P_t$.
 - Sign pair: 2 neighbouring evaluated central pressures, with a finite negative residual at the lower one and a finite positive residual at the higher one, so $f$ changes sign between them. The higher one is the reached end.
 - PALEOS: the tabulated equations of state for iron, MgSiO$_3$ and water that Zalmoxis uses as its standard ([EOS physics](../Explanations/eos_physics.md)).
 - JAX path: an optional version of the structure integration in JAX, a Python library for compiled numerical code; it is off by default.
-- Picard outer solver: the default outer loop; it solves the structure for the current radius, measures the mass and updates the radius by damped cube-root scaling.
+- Picard outer solver: the default outer loop. It solves the structure for a trial radius, compares the computed mass with the planet mass, and rescales the radius.
 - Newton outer solver: the outer loop with Newton steps and a Brent fallback (`outer_solver = 'newton'`); PROTEUS uses it by default.
 
 ## Governing equations
@@ -47,15 +50,17 @@ $$
 \frac{dP}{dr} = -\rho(r)\, g(r)
 $$
 
-The first equation adds the mass of each thin shell, the second gives the gravity from the enclosed mass, and the third says that the pressure falls outward by the weight of the material above.
+The first equation adds the mass of each thin shell, the second is the derivative of $g = GM/r^2$, and the third says that the pressure falls outward by the weight of the material above.
 The integration runs outward from the centre ($r = 0$) with the initial conditions $M(0) = 0$, $g(0) = 0$ and $P(0) = P_c$.
 
 The gravity equation is singular at $r = 0$ because of the $2g/r$ term.
 L'Hopital's rule gives the limit $dg/dr|_{r=0} = \frac{4}{3}\pi G \rho_c$, and `coupled_odes` in `zalmoxis.structure_model` uses this limit at $r = 0$.
 
 An equation of state $\rho = \rho(P, T)$ closes the system.
-To check the equations without table data, Tests 1 to 4 fix $\rho$ to a constant, and Tests 5 to 7 use the Seager et al. (2007) analytic polytrope $\rho(P) = \rho_0 + c P^n$.
-Tests 5 and 6 are on the [mass-radius page](mass_radius.md).
+Tests 1 to 4 and the grid and tolerance parts of Test 7 fix $\rho$ to a constant.
+The n = 1 polytrope case uses $P = K\rho^2$.
+The full-solver part of Test 7, and Tests 5 and 6 on the [mass-radius page](mass_radius.md), use the Analytic EOS, the Seager et al. (2007) polytrope $\rho(P) = \rho_0 + c P^n$.
+None of these needs table data; the JAX cases and the Newton setups of the surface cases use the PALEOS tables.
 
 ## Test 1: Uniform-density sphere
 
@@ -67,7 +72,7 @@ Tests 5 and 6 are on the [mass-radius page](mass_radius.md).
 2. **Gravity profile:** $|g_\mathrm{num} - g_\mathrm{exact}| / g_\mathrm{exact} < 10^{-6}$ at all $r > 0$.
 3. **Pressure profile:** $|P_\mathrm{num} - P_\mathrm{exact}| / P_\mathrm{exact} < 10^{-6}$ where $P > 0$.
 4. **Central boundary conditions:** $M(0) = 0$, $g(0) = 0$ and $P(0) = P_c$ to machine precision.
-5. **Gravity slope at the centre:** the slope of the computed gravity over the first two grid steps matches $\frac{4}{3}\pi G \rho$ to $< 10^{-4}$.
+5. **Gravity slope at the centre:** the slope of the computed gravity over the first two grid steps matches $\frac{4}{3}\pi G \rho$ to $< 10^{-4}$. This is the slope that the integration produces, not the value that `coupled_odes` uses at $r = 0$.
 6. **Pressure monotonicity:** $dP/dr < 0$ everywhere $P > 0$, as hydrostatic equilibrium requires with positive density and gravity.
 
 **How we know the right answer.** For a sphere of constant density the equations have an exact closed-form solution, a textbook result with no free parameters:
@@ -86,7 +91,7 @@ The mass grows as $r^3$ (the volume of a sphere), gravity is linear in $r$ (Gaus
 
 **How to read the plot.** The three panels show (a) the enclosed mass, (b) the gravity and (c) the pressure against the radius in km. The solid line is the numerical solution and the dashed line is the analytic solution. A pass means that the two lines lie on top of each other. At $N = 300$ the largest relative errors are $2 \times 10^{-15}$ for the mass and the gravity and $4 \times 10^{-16}$ for the pressure, the round-off level.
 
-**Known limit.** This test does not check the value of the centre limit of $dg/dr$: when `coupled_odes` uses $\pi G \rho_c$ in place of $\frac{4}{3}\pi G \rho_c$ at $r = 0$, every case on this page still passes.
+**Known limit.** This test does not check the value of the centre limit of $dg/dr$: when `coupled_odes` uses $\pi G \rho_c$ in place of $\frac{4}{3}\pi G \rho_c$ at $r = 0$, every test of `tests/test_first_principles.py` and `tests/test_polytrope_verification.py` still passes.
 
 ??? info "Test details"
     - Reference: closed-form solution of the uniform-density sphere
@@ -98,20 +103,20 @@ The mass grows as $r^3$ (the volume of a sphere), gravity is linear in $r$ (Gaus
 
 **Why this check exists.** Zalmoxis assigns each radial shell to a layer (core or mantle) by the enclosed mass. If this assignment is wrong, for example if the core ends at 90 % of its mass, the mass profile differs from the piecewise exact solution and this test fails. Wrong coefficients in $dM/dr$ or $dg/dr$ also make it fail.
 
-**What it tests.** A sphere of two layers with constant densities: $\rho_c = 13{,}000$ kg/m$^3$ (an iron-like core) and $\rho_m = 4000$ kg/m$^3$ (a silicate-like mantle), with planet mass $M_p = 1\, M_\oplus$ and core mass fraction $f_c = 0.325$. The density jumps at the core-mantle boundary (CMB), the sharpest feature that the integrator must handle. The CMB radius is
+**What it tests.** A sphere of two layers with constant densities: $\rho_\mathrm{core} = 13{,}000$ kg/m$^3$ (an iron-like core) and $\rho_\mathrm{mantle} = 4000$ kg/m$^3$ (a silicate-like mantle), with planet mass $M_p = 1\, M_\oplus$ and core mass fraction $f_c = 0.325$. The density jumps at the core-mantle boundary (CMB), the sharpest feature that the integrator must handle. The CMB radius is
 
 $$
-R_\mathrm{cmb} = \left(\frac{3\, f_c\, M_p}{4\pi \rho_c}\right)^{1/3} = 3291 \text{ km}
+R_\mathrm{cmb} = \left(\frac{3\, f_c\, M_p}{4\pi \rho_\mathrm{core}}\right)^{1/3} = 3291 \text{ km}
 $$
 
-This is close to the Earth's CMB radius of 3480 km, and the planet radius is 6513 km (1.02 times 6371 km). The central pressure of this profile, 380 GPa, comes from integrating the hydrostatic equation over the known density profile. The integration starts 5 % above it, at 399 GPa, so that the pressure stays positive out to the surface. The test compares the enclosed mass with the exact solution and checks Gauss's law ($g = GM/r^2$) in both layers.
+This is close to the Earth's CMB radius of 3480 km, and the planet radius is 6513 km (1.02 times the IAU Earth radius of 6371 km). The central pressure of this profile, 380 GPa, comes from integrating the hydrostatic equation over the known density profile. The integration starts 5 % above it, at 399 GPa, so that the pressure stays positive out to the surface. The test compares the enclosed mass with the exact solution and checks Gauss's law ($g = GM/r^2$) in both layers.
 
 **How we know the right answer.** With two constant densities, the enclosed mass has an exact piecewise solution:
 
 $$
 M(r) = \begin{cases}
-\frac{4}{3}\pi \rho_c\, r^3 & r \le R_\mathrm{cmb} \\
-f_c M_p + \frac{4}{3}\pi \rho_m (r^3 - R_\mathrm{cmb}^3) & r > R_\mathrm{cmb}
+\frac{4}{3}\pi \rho_\mathrm{core}\, r^3 & r \le R_\mathrm{cmb} \\
+f_c M_p + \frac{4}{3}\pi \rho_\mathrm{mantle} (r^3 - R_\mathrm{cmb}^3) & r > R_\mathrm{cmb}
 \end{cases}
 $$
 
@@ -119,7 +124,7 @@ $$
 
 ![Two-layer sphere: enclosed mass against the piecewise solution, and gravity against Gauss's law](../img/validation/two_layer_sphere.png)
 
-**How to read the plot.** Panel (a) shows the enclosed mass against the radius in km, numerical (solid) and analytic (dashed), with the CMB as a dotted line. Panel (b) shows the numerical gravity and $GM(r)/r^2$. A pass means that the lines lie on top of each other on both sides of the CMB. The largest relative error of the mass is $3 \times 10^{-9}$, and Gauss's law holds to $1 \times 10^{-10}$ in both layers, so `get_layer_mixture()` assigns the shells correctly and the integrator crosses the density jump without oscillations.
+**How to read the plot.** Panel (a) shows the enclosed mass against the radius in km, numerical (solid) and analytic (dashed), with the CMB as a dotted line. Panel (b) shows the numerical gravity and $GM(r)/r^2$. A pass means that the lines lie on top of each other on both sides of the CMB. The largest relative error of the mass is $3 \times 10^{-9}$, and Gauss's law holds to $1.3 \times 10^{-10}$ in both layers, so `get_layer_mixture()` assigns the shells correctly and the integrator crosses the density jump without oscillations.
 
 ??? info "Test details"
     - Reference: piecewise closed-form solution of the two-layer sphere
@@ -134,7 +139,7 @@ $$
 **What it tests.** Two conservation laws must hold at every point of any physically consistent solution, for any EOS. The test checks them on the uniform-density sphere of Test 1.
 
 - **Gauss's law:** $g(r) = G\,M(r) / r^2$ for all $r > 0$. The relative residual $|g - GM/r^2| / (GM/r^2)$ measures how far the two integrated components drift apart.
-- **Hydrostatic balance:** $dP/dr + \rho\, g = 0$ at every interior point. This is the defining equation of the solver. The test computes $dP/dr$ by central finite differences and divides the residual by $P_\mathrm{scale} = \frac{2}{3}\pi G \rho^2 R$. For the uniform sphere $P(r)$ is a parabola, so the central difference is exact and the residual shows the integration error alone.
+- **Hydrostatic balance:** $dP/dr + \rho\, g = 0$ at every interior point. This is the defining equation of the solver. The test computes $dP/dr$ by central finite differences and divides the residual by $P_\mathrm{scale} = \frac{2}{3}\pi G \rho^2 R$, a pressure gradient scale in Pa/m. For the uniform sphere $P(r)$ is a parabola, so the central difference is exact and the residual shows the integration error alone.
 
 **How we know the right answer.** Gauss's law and hydrostatic balance follow from the equations themselves, so the exact residual is zero.
 
@@ -142,7 +147,7 @@ $$
 
 ![Conservation diagnostics: Gauss's law residual and hydrostatic balance residual against radius](../img/validation/conservation_diagnostics.png)
 
-**How to read the plot.** Panel (a) shows the relative Gauss's law residual and panel (b) the relative hydrostatic residual against the radius in km, on log scales. A pass means that both stay far below the tolerances of $10^{-5}$ and $10^{-4}$. On the 500-point grid of the figure the Gauss's law residual is at most $3.4 \times 10^{-15}$ and the hydrostatic residual at most $1.4 \times 10^{-13}$, the round-off level.
+**How to read the plot.** Panel (a) shows the relative Gauss's law residual and panel (b) the relative hydrostatic residual against the radius in km, on log scales. A pass means that both stay far below the tolerances of $10^{-5}$ and $10^{-4}$. On the 500-point grid of the figure the Gauss's law residual is at most $3.4 \times 10^{-15}$ and the hydrostatic residual at most $1.5 \times 10^{-13}$, the round-off level.
 
 ??? info "Test details"
     - Reference: Gauss's law $g = GM/r^2$ and hydrostatic balance $dP/dr + \rho g = 0$
@@ -164,7 +169,7 @@ The test integrates it with the trapezoidal rule over the $M(r)$ and $\rho(r)$ p
 
 **How we know the right answer.** For uniform density the integral has the closed form $E_\mathrm{grav} = -\frac{3}{5}\, G\, M_p^2 / R$. The numerical value agrees with it to $7 \times 10^{-6}$; the test asserts $< 1\%$.
 
-**Why it matters.** The binding energy is an integral of the whole profile, the kind of quantity that the energy budget of a planet uses.
+**Why it matters.** The binding energy integrates the whole profile, so an error that adds up over the planet shows here even when each point looks right.
 
 ??? info "Test details"
     - Reference: uniform-sphere binding energy $E_\mathrm{grav} = -\frac{3}{5} G M_p^2 / R$
@@ -180,7 +185,7 @@ The test integrates it with the trapezoidal rule over the $M(r)$ and $\rho(r)$ p
 
 **How we know the right answer.** For $n = 1$ the Lane-Emden equation of a polytrope has the closed-form solution $\rho(r) = \rho_c \sin\xi / \xi$ with $\xi = \pi r / R$.
 
-**Why it matters.** This is the only case on this page where the density depends on the pressure, so it checks the coupling of the integrator to an equation of state.
+**Why it matters.** Here the density follows the pressure and the right answer is still known in closed form, so this case checks the link between the integrator and an equation of state.
 
 ??? info "Test details"
     - Reference: the analytic $n = 1$ Lane-Emden solution (Chandrasekhar 1939, reference named in the test docstring)
@@ -190,12 +195,12 @@ The test integrates it with the trapezoidal rule over the $M(r)$ and $\rho(r)$ p
 
 ## Test 7: Numerical convergence
 
-**Why this check exists.** A finer grid or a tighter tolerance must not make the solution worse. If the error grew with $N$ or with a smaller `rtol`, the integrator settings would hide a fault. A wrong factor in $dM/dr$ or $dg/dr$, or the wrong sign of $dP/dr$, also makes the grid convergence test fail.
+**Why this check exists.** A finer grid or a tighter tolerance must not make the solution worse. An error that grew with $N$ or with a smaller `rtol` would show a fault in the step control of the integrator. A wrong factor in $dM/dr$ or $dg/dr$, or the wrong sign of $dP/dr$, also makes the grid convergence test fail.
 
 **What it tests.** The uniform-density sphere of Test 1 on several grids and with several tolerances, and the full solver (Picard iteration and Brent root-finding) with the Analytic EOS at $1\,M_\oplus$ on 3 grids.
 
 - **Grid convergence:** the uniform sphere at $N$ from 50 to 400 (the figure uses 25 to 800) with `rtol` $= 10^{-10}$. The mass error is $2$ to $3 \times 10^{-15}$ and the pressure error about $4 \times 10^{-16}$ at every $N$. The uniform-sphere solution is a cubic and a parabola in $r$, which the integrator reproduces to round-off on every grid, so this case shows no convergence rate.
-- **Full solver:** the planet radius is the same, $0.96512\,R_\oplus$, at $N = 100$, 200 and 400.
+- **Full solver:** the planet radius is the same, $0.96512\,R_\oplus$ (6114.5 km), at $N = 100$, 200 and 400.
 - **Tolerance convergence:** for `rtol` from $10^{-6}$ to $10^{-12}$ at $N = 200$ the mass error stays between $2$ and $4 \times 10^{-15}$, with no trend: the error is at round-off level for every tolerance tested.
 
 **How we know the right answer.** The closed-form solution of Test 1 gives the error. For the full solver, the radius on the finer grid ($N = 400$) is the reference for the radius at $N = 200$ (self-consistency).
@@ -204,7 +209,7 @@ The test integrates it with the trapezoidal rule over the $M(r)$ and $\rho(r)$ p
 
 ![Grid convergence: largest relative mass and pressure error against the number of radial grid points](../img/validation/grid_convergence.png)
 
-**How to read the plot.** The x-axis is the number of radial grid points and the y-axis the largest relative error, both on log scales. A pass means that the errors do not grow with $N$.
+**How to read the plot.** The figure shows the grid part, with $N$ from 25 to 800. The x-axis is the number of radial grid points and the y-axis the largest relative error, both on log scales. The blue line is the mass error and the red line the pressure error. Both are flat, because the exact solution is a cubic and a parabola in $r$, which the integrator reproduces to round-off on every grid. A line that rose with $N$ would fail the test.
 
 ??? info "Test details"
     - Reference: closed-form solution of the uniform-density sphere; for the full solver, the radius at $N = 200$ against $N = 400$ (self-consistency)
@@ -216,7 +221,7 @@ The test integrates it with the trapezoidal rule over the $M(r)$ and $\rho(r)$ p
 
 **Why this check exists.** The optional JAX path (`use_jax = True`) evaluates the right-hand side of the structure equations in its own code, `zalmoxis.jax_eos.rhs.coupled_odes_jax`. If it differs from the numpy `zalmoxis.structure_model.coupled_odes` by more than the tolerance, a JAX run gives another structure than a numpy run, and these tests fail.
 
-**What it tests.** The cases compare $dM/dr$, $dg/dr$ and $dP/dr$ of the two codes on the same states. The table cases draw random states with a fixed seed: $r$ from $10^5$ to $6.4 \times 10^6$ m, $M$ from 0 to $1\, M_\oplus$, $g$ from 0.5 to 25 m/s$^2$ and $P$ from $10^6$ to $3 \times 10^{11}$ Pa, with a PALEOS iron core and a PALEOS MgSiO$_3$ mantle. A state counts when both implementations return a nonzero right-hand side. JAX must never return a nonzero value where numpy returns zero; numpy may return a nonzero value where JAX returns zero in at most 4 of 200 states (the nearest-neighbour fallback of the numpy tables, which the JAX path does not have); more than 100 states must count. The synthetic cases build small tables in memory, so they need no EOS files and run in the unit tier.
+**What it tests.** The cases compare $dM/dr$, $dg/dr$ and $dP/dr$ of the two codes on the same states. Each table case draws random states with a fixed seed: $r$ from $10^5$ to $6.4 \times 10^6$ m, $M$ from 0 to $1\, M_\oplus$, $g$ from 0.5 to 25 m/s$^2$ and $P$ from $10^6$ to $3 \times 10^{11}$ Pa, with a PALEOS iron core and a PALEOS MgSiO$_3$ mantle. A state counts when both codes return a nonzero right-hand side, and more than 100 states must count. JAX must never return a nonzero value where numpy returns zero. Numpy may return a nonzero value where JAX returns zero in at most 4 of 200 states: the numpy tables have a nearest-neighbour fallback, and the JAX path has none. The synthetic cases build small tables in memory, so they need no EOS files and run in the unit tier.
 
 | Test id | Mantle | Tolerance | Tier |
 |---|---|---|---|
@@ -281,7 +286,7 @@ A second test checks the same rule with real structure solves. It uses the Analy
 ![Surface pressure miss of the accepted profile for 26 solver setups](../assets/validation/pressure_root_sweep.svg#only-light){ width="80%" }
 ![Surface pressure miss of the accepted profile for 26 solver setups](../assets/validation/pressure_root_sweep_dark.svg#only-dark){ width="80%" }
 
-**How to read the plot.** The x-axis is the number of the setup, for 26 setups built from `input/default.toml`. The y-axis is $\lvert P(R) - P_t \rvert / P_t$ of the accepted profile, on a log scale. Circles are reached profiles, squares are padded profiles (at 1, since $P(R) = 0$), and a cross above the cap marks a setup without an accepted profile. The dashed line is the cap of $P_t$. Setups 4, 9, 10, 13, 14 and 25 use the Newton outer solver at `relative_tolerance` $10^{-9}$; [padded accepts](../Explanations/process_flow.md#padded-accepts) lists every setup. A pass means that every Newton setup is a circle at or below the dashed line. Only setup 10 may be a square, and only under the rule of the JAX path above.
+**How to read the plot.** The x-axis is the number of the setup, for 26 setups built from `input/default.toml` and numbered from 0 to 25. The y-axis is $\lvert P(R) - P_t \rvert / P_t$ of the accepted profile, on a log scale. Circles are reached profiles, squares are padded profiles (at 1, since $P(R) = 0$), and a cross above the cap marks a setup without an accepted profile. The dashed line is the cap of $P_t$. Setups 4, 9, 10, 13, 14 and 25 use the Newton outer solver at `relative_tolerance` $10^{-9}$; [padded accepts](../Explanations/process_flow.md#padded-accepts) lists every setup. A pass means that every Newton setup is a circle at or below the dashed line. Only setup 10 may be a square, and only under the rule of the JAX path above.
 
 **Known limit.** The miss of a reached profile depends on round-off, so another platform gives other values. Over planet-mass changes of $k \times 10^{-13}$ ($k$ = 1 to 5), the PALEOS 1 Earth-mass Newton setup misses by 0.008 to 0.87 $P_t$. The test skips when the PALEOS tables are not under `data/`.
 

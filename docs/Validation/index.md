@@ -23,6 +23,8 @@ All tests are implemented in [`tests/test_first_principles.py`](https://github.c
 | [Hydrostatic structure](hydrostatic_structure.md) | n = 1 polytrope | `tests/test_polytrope_verification.py` | analytic Lane-Emden solution | smoke tier |
 | [Hydrostatic structure](hydrostatic_structure.md) | Numerical convergence | `tests/test_first_principles.py::TestGridConvergence`, `::TestToleranceConvergence` | closed-form solution of the uniform sphere | slow tier; script figure |
 | [Hydrostatic structure](hydrostatic_structure.md) | JAX and numpy right-hand sides | `tests/test_jax_unified_mantle_parity.py::test_unified_mantle_dry_parity` and 5 more | numpy `coupled_odes` (cross-code check) | unit and integration tiers; plot pair |
+| [Hydrostatic structure](hydrostatic_structure.md) | Surface boundary condition of the pressure solve | `tests/test_pressure_root.py::test_the_refined_root_meets_the_surface_boundary_condition`, `tests/test_pressure_root_solves.py::test_the_accepted_root_meets_the_surface_boundary_condition` | boundary condition $P(R) = P_t$ | unit and smoke tiers; plot pair |
+| [Hydrostatic structure](hydrostatic_structure.md) | Surface boundary condition in every Newton setup | `tests/test_pressure_root_solves.py::test_every_newton_setup_meets_the_surface_boundary_condition` | boundary condition $P(R) = P_t$ | nightly job `accept_solves_newton_setups`; script figure |
 | [Mass-radius relation](mass_radius.md) | Earth benchmark | `tests/test_first_principles.py::TestEarthBenchmark` | Earth radius, surface gravity, central pressure | smoke tier; script figure |
 | [Mass-radius relation](mass_radius.md) | Mass-radius scaling and CMF sensitivity | `tests/test_first_principles.py::TestMassRadiusScaling`, `::TestCMFMonotonicity`, `::TestPureIronPlanet`, `::TestConservationLaws` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | smoke tier; script figures |
 | [Equation of state](equation_of_state.md) | PALEOS table loader | `tests/test_eos_export_real_tables.py`, `tests/test_eos_export_highres.py` | `numpy.genfromtxt` reading of the same tables (cross-code check) | integration and slow tiers |
@@ -36,7 +38,7 @@ All tests are implemented in [`tests/test_first_principles.py`](https://github.c
 |------|--------|------------|--------|
 | 1. Uniform sphere | ODE integration | $\|M_\mathrm{num} - M_\mathrm{exact}\|/M_\mathrm{exact}$ | $2 \times 10^{-15}$ (test: $< 10^{-6}$) |
 | 2. Two-layer sphere | Layer transitions | $\|M_\mathrm{num} - M_\mathrm{exact}\|/M_\mathrm{exact}$ | $3 \times 10^{-9}$ (test: $< 10^{-5}$) |
-| 3. Conservation | Gauss + hydrostatic | Pointwise residuals | $\le 1.4 \times 10^{-13}$ (test: $< 10^{-5}$, $< 10^{-4}$) |
+| 3. Conservation | Gauss + hydrostatic | Pointwise residuals | $\le 1.5 \times 10^{-13}$ (test: $< 10^{-5}$, $< 10^{-4}$) |
 | 4. Binding energy | Energy integral | $\|E_\mathrm{num} - E_\mathrm{exact}\|/\|E_\mathrm{exact}\|$ | $7 \times 10^{-6}$ (test: $< 1\%$) |
 | 5. Earth benchmark | Full solver | $R_p$, $P_c$, $g_\mathrm{surf}$ against 6371 km, 365 GPa, 9.81 m/s$^2$ | 4%, 7%, 9% |
 | 6. M-R scaling | Physics | $\alpha$ in $R \propto M^\alpha$ | 0.293 (expected $\sim 0.27$) |

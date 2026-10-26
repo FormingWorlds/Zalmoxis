@@ -5,7 +5,7 @@ You will run a 1 $M_\oplus$ planet, read the pressure at its outer radius, look 
 
 You need a working installation with the PALEOS tables under `data/` (see [First run](firstrun.md), Step 1).
 Run every block from the repository root, in one Python session, in the order of the steps.
-The whole tutorial takes about 10 minutes on a laptop; most of it is in Steps 2 and 4.
+The whole tutorial took about 10 minutes on our machine; most of it is in Step 4 (about 5.5 minutes).
 
 ## Step 1: solve a structure and read its surface pressure
 
@@ -68,7 +68,8 @@ The solve accepted the profile, but its outer node has $P = 0$, not $P_t$: the p
 The integration from the accepted $P_c$ stopped at $P = 0$ just below the outer radius, and the node past the stop got $P = 0$.
 The solver logs one warning for such a result (`The accepted profile ends in a surface stop: ...`).
 The accept test passes it because the miss, $P_t$, is below `pressure_tolerance` ($10^9$ Pa by default).
-Whether a profile ends padded depends on round-off, so your run can end reached; the steps below show why.
+`accepted_on` names the test that accepted the structure: `strict` means that the mass, density and pressure tests all passed ([Convergence Checks](../Explanations/process_flow.md#convergence-checks) lists every label).
+Whether a profile ends padded depends on round-off, so your run can end reached; Step 2 shows the trials that decide it.
 
 ## Step 2: look at the central pressures the solve tried
 
@@ -79,13 +80,13 @@ f(P_c) = P(R) - P_t,
 $$
 
 the pressure at the outer radius minus the target, as a function of the trial central pressure.
-A trial $P_c$ that is too low lets the pressure reach 0 before $R$: the integration stops, the profile is padded, and $f = -P_t$.
+A trial $P_c$ that is too low lets the pressure reach 0 before $R$: the integration stops there (a **surface stop**), the profile is padded, and $f = -P_t$.
 A trial $P_c$ whose integration reaches the outer radius gives a **reached** profile with $f = P(R) - P_t$.
 Two neighbouring trial pressures with a negative residual at the lower one and a positive residual at the higher one form a **sign pair**: the root lies between them, and the higher one is the reached end.
 
 The solver does not return its trials, but at the `DEBUG` log level it writes the pressure profile of every trial to `output/pressure_profiles.txt`.
 The first row of each profile is $P_c$ and the last row is $P(R)$.
-The block below solves the planet again with that file (about 50 MB), and reads the trials of the last pressure solve of the run.
+The block below solves the planet again at that level, which writes this file and `output/density_profiles.txt` (about 50 MB each), and reads the trials of the last pressure solve of the run.
 
 ```python
 import logging
@@ -150,15 +151,15 @@ ax.axhline(0.0, ls='--', color='grey')
 ax.set_xlabel(r'$P_c$ - accepted $P_c$ [MPa]')
 ax.set_ylabel(r'$f = P(R) - P_t$ [bar]')
 fig.tight_layout()
-fig.savefig('surface_pressure_residual.png')
+fig.savefig(os.path.join(root, 'output', 'surface_pressure_residual.png'))
 ```
 
-Open `surface_pressure_residual.png`: the padded trials lie at $-1.01$ bar, just below the dashed zero line, and the 2 reached trials lie at about 416 and 443 bar.
+Open `output/surface_pressure_residual.png`: the padded trials lie at $-1.01$ bar, just below the dashed zero line, and the 2 reached trials lie at about 416 and 443 bar.
 
 ## Step 3: see how the solve refines a padded root
 
 After Brent's method returns a root that misses $P_t$ by more than $0.1 P_t$, the solve can run a second, finer Brent solve on the nearest sign pair, and it keeps the candidate closest to the target ([Padded accepts](../Explanations/process_flow.md#padded-accepts) gives the full rule).
-Whether a real solve needs this depends on round-off, so this step uses a residual written down by hand, the one of the validation case [Surface boundary condition of the pressure solve](../Validation/hydrostatic_structure.md#surface-boundary-condition-of-the-pressure-solve).
+Whether a real solve needs this depends on round-off, so this step uses a residual written down by hand (and `P_t` from Step 2), the one of the validation case [Surface boundary condition of the pressure solve](../Validation/hydrostatic_structure.md#surface-boundary-condition-of-the-pressure-solve).
 Below $x_0 = 2 \times 10^{11}$ Pa the integration stops; above it $P(R)$ rises from $0.95\,P_t$ with a slope $dP(R)/dP_c$ of 0.47.
 The refinement is the private function `solver._refine_pressure_root`; the block calls it directly to show the rule, and a real solve calls it for you.
 
@@ -195,7 +196,8 @@ The second solve on the sign pair around $x_0$ finds a reached root that misses 
 
 The script `tools/validation/pressure_root_sweep.py` runs 26 solver setups built from `input/default.toml` and records how each accepted profile meets $P_t$.
 The `case` command runs one setup and writes its record.
-Run 3 setups: 1 (the Analytic EOS at 1 $M_\oplus$ with the Picard outer solver), 8 (`input/default.toml` itself) and 9 (the same planet with the Newton outer solver at `relative_tolerance` $10^{-9}$).
+The setups are numbered from 0 to 25. Run 3 of them: 1 (the Analytic EOS, a closed-form equation of state without tables, at 1 $M_\oplus$ with the Picard outer solver), 8 (`input/default.toml` itself, PALEOS tables and the Picard outer solver) and 9 (the same planet with the Newton outer solver at `relative_tolerance` $10^{-9}$).
+The Picard outer solver, the default, rescales the radius until the computed mass equals the planet mass; the Newton outer solver takes Newton steps on the radius.
 Setup 9 takes about 4 minutes.
 
 ```console
@@ -226,7 +228,8 @@ setup 9 PALEOS 1, Newton: newton_tol, P(R) = 1.393e+05 Pa, miss 0.375 P_t, padde
 ```
 
 The command `python -m tools.validation.pressure_root_sweep run <dir> -j 2` runs all 26 setups, and `python -m tools.validation.pressure_root_sweep plot <dir>` draws them; the figure of all 26 setups is on the [validation page](../Validation/hydrostatic_structure.md#surface-boundary-condition-in-every-newton-setup).
-In it, most Picard setups end padded, and the Newton setups at `relative_tolerance` $10^{-9}$ reach the outer radius.
+In it, 15 of the 19 Picard setups that return a profile end padded, and 5 of the 6 Newton setups at `relative_tolerance` $10^{-9}$ reach the outer radius; setup 10 (PALEOS on the JAX path) ends padded.
+Reached means that the integration reaches $R$, not that $P(R) = P_t$: setup 9 above misses $P_t$ by 0.375 $P_t$.
 
 ## Step 5: what to do with a padded or missing surface pressure
 
@@ -234,7 +237,7 @@ First decide whether the surface values matter for your use.
 A padded result passed the accept tests of the solve, and in this tutorial only its outermost node has $P = 0$ instead of $P_t$.
 If you need $P(R) = P_t$, these settings matter:
 
-- **The outer solver.** `outer_solver = "newton"` with `relative_tolerance = 1e-9` reached the outer radius in setup 9 above, where the default Picard solve ended padded. PROTEUS uses the Newton outer solver by default. It takes longer (about 4 minutes here against 1.5).
+- **The outer solver.** `outer_solver = "newton"` with `relative_tolerance = 1e-9` reached the outer radius in setup 9 above, where the default Picard solve ended padded; it still missed $P_t$ by 0.375 $P_t$. PROTEUS uses the Newton outer solver by default. It takes longer (about 4 minutes here against 1.5).
 - **`pressure_tolerance`.** This is the accept test of the pressure solve, $\lvert P(R) - P_t \rvert$ below it. A value below $P_t$ makes the test refuse a padded profile, but the outer loop can still accept the structure on its mass test, as the block below shows.
 - **The integration tolerances** (`relative_tolerance`, `absolute_tolerance`). They change where the integration stops, and so whether the trials near the root pad. Setup 9 changes them together with the outer solver, so this tutorial does not separate the two effects.
 
@@ -253,7 +256,7 @@ padded True, nodes with P = 0: 1 of 150
 pressure test passed: False
 ```
 
-With `pressure_tolerance` below $P_t$ the pressure test fails, and the outer loop accepts the structure on its mass test (`mass_only`): the profile stays padded.
+With `pressure_tolerance` below $P_t$ the pressure test fails, and the outer loop accepts the structure on its mass test alone (`mass_only`: the mass converged, the density or the pressure did not): the profile stays padded.
 So check `padded` and $P(R)$ of every result whose surface values you use, as in Step 1.
 
 ## Summary
@@ -261,6 +264,6 @@ So check `padded` and $P(R)$ of every result whose surface values you use, as in
 - `result['pressure'][-1]` is $P(R)$; compare it with `target_surface_pressure`.
 - `result['padded']` is True when the outer node has $P = 0$; Zalmoxis then logs one warning.
 - The pressure solve refines a root that misses $P_t$ by more than $0.1 P_t$, and keeps the candidate closest to $P_t$.
-- The Newton outer solver at `relative_tolerance` $10^{-9}$ reached the outer radius in this tutorial; a lower `pressure_tolerance` alone did not.
+- The Newton outer solver at `relative_tolerance` $10^{-9}$ reached the outer radius in this tutorial, with a miss of 0.375 $P_t$; a lower `pressure_tolerance` alone did not reach it.
 
 [Padded accepts](../Explanations/process_flow.md#padded-accepts) explains the full rule, and the [validation page](../Validation/hydrostatic_structure.md#surface-boundary-condition-of-the-pressure-solve) shows how it is tested.
