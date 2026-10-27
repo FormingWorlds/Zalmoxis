@@ -32,7 +32,7 @@ zensical build --clean      # full build for CI parity
 
 CI (`.github/workflows/CI.yml`) runs `ruff check`, `bash tools/validate_test_structure.sh`, `pytest -m "unit and not slow and not skip" -n auto -o "addopts="`, `zensical build --clean` and `python tools/agents/check_agents_md.py`; the nightly runs the other tiers with the coverage gate. Test rules: `tests/AGENTS.md`.
 
-<!-- fwl-core:begin sha256=1adfa510a4f117ec -->
+<!-- fwl-core:begin sha256=a068b422083dfd1c -->
 ## PROTEUS ecosystem rules
 
 PROTEUS couples separate module repositories into one model of the evolution of rocky planets and their atmospheres. Its config selects one module per process; the config values are the lowercase names:
@@ -54,7 +54,9 @@ A module change to anything PROTEUS calls or reads (a function signature, a conf
 
 ### Validation
 
-A new or changed physics routine gets the validation cases named in its confirmed plan: an analytical law, a published figure or table, or a cross-code check. Each case is a `reference_pinned` test that runs the real code on real data, with no mocks, asserts the tolerance, and writes its light and dark plot through the `validation_plot` fixture of proteus-mpl. `pytest -m reference_pinned --validation-plots` makes all plots again. Line plots are SVG, maps are AVIF; each file is at most 60 kB, under `docs/assets/validation/`. Each case has a subsection on its page in the Validation tab, with the reference, the tolerance, the test id and the command. Data read from a published figure comes from 2 independent figlab reads that agree within the stated error, as a CSV with its provenance under `tests/validation/data/`.
+A new or changed physics routine gets the validation cases named in its confirmed plan: an analytical law, a published figure or table, or a cross-code check. Each case is a `reference_pinned` test that runs the real code on real data, with no mocks, asserts the tolerance, and writes its light and dark plot through the `validation_plot` fixture of proteus-mpl. `pytest -m reference_pinned --validation-plots` makes all plots again. Line plots are SVG, maps are AVIF; each file is at most 60 kB, under `docs/assets/validation/`. Data read from a published figure comes from 2 independent figlab reads that agree within the stated error, as a CSV with its provenance under `tests/validation/data/`.
+
+Write the Validation pages and each new Explanation section for a student who knows physics but not this code, in simple English. A Validation page opens with `## What this page checks`. Each case has the bold lead-ins **Why this check exists.**, **What it tests.**, **How we know the right answer.** and **Why it matters.**, the plot pair with **How to read the plot.**, and a collapsed `??? info "Test details"` box with the reference, the tolerance, the test id and the command. The full layout is in [Writing Validation and Explanation pages](https://proteus-framework.org/PROTEUS/Community/CONTRIBUTING.html#writing-validation-and-explanation-pages).
 
 ### Code
 
