@@ -82,7 +82,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install .
-          pip install pytest pytest-cov pytest-xdist pytest-timeout hypothesis "proteus-mpl>=1.4.0"
+          pip install pytest pytest-cov pytest-xdist pytest-timeout hypothesis "proteus-mpl>=1.5.0"
 
       # The pins live in the installed fwl-io and in src/zalmoxis/datasets.
       - name: Resolve the data cache key
@@ -114,7 +114,7 @@ jobs:
         run: |
           # --timeout names a hung test in the worker-crash report before the job limit
           # cancels the run; a timeout marker on a test takes precedence over it.
-          pytest -m "${{ matrix.select }}" -n auto -o "addopts=" \
+          pytest -m "${{ matrix.select }}" -n auto -o "addopts=" -rs \
             --timeout=${{ matrix.test_timeout || 3000 }} --timeout-method=thread --durations=25 \
             --cov=zalmoxis --cov-report=term-missing --cov-report=xml \
             ${{ matrix.args }}
