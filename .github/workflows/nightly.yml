@@ -36,7 +36,7 @@ jobs:
             args: --dist load --cov-fail-under=90
           - suite: wolfbower
             select: wolfbower
-            args: --dist loadgroup --cov-fail-under=0 -v
+            args: --dist loadgroup --loadscope-reorder --cov-fail-under=0 -v
           - suite: paleos_adiabat
             select: paleos_adiabat and not wolfbower
             args: --dist loadfile --cov-fail-under=0

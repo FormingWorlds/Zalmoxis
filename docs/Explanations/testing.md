@@ -208,9 +208,9 @@ session-scoped per worker, (b) module-level imports and setup run once per
 file, (c) different test files run concurrently on separate cores.
 
 The nightly `wolfbower` job uses `--dist loadgroup` instead, so the tests of
-`tests/test_accepted_on.py` spread over all workers. Tests that share a module
-fixture carry one `xdist_group` mark and run on one worker; the two Wolf & Bower
-solves of `wb_solves` in `tests/test_table_band_report.py` then run once.
+`tests/test_accepted_on.py` spread over all workers. In that job, the three tests
+of `TestWolfBowerSolves` in `tests/test_table_band_report.py` carry one
+`xdist_group` mark, so the two Wolf & Bower solves of `wb_solves` run once.
 
 ## Local coverage runs
 
