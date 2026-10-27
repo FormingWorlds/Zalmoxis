@@ -4,6 +4,7 @@ jobs select over the whole tree. See docs/How-to/build_tests.md for the test tie
 
 from __future__ import annotations
 
+import ast
 import itertools
 import re
 import subprocess
@@ -359,3 +360,22 @@ def test_only_the_newton_setup_sweep_carries_its_mark():
     assert _marked(ROOT / 'tests', 'accept_solves_newton_setups') == {
         'test_pressure_root_solves.py'
     }
+
+
+@pytest.mark.unit
+def test_the_shared_wolf_bower_solves_run_once_in_the_wolfbower_job():
+    """The wolfbower job spreads its tests by xdist group, and every test that asks for the
+    module fixture wb_solves sits in the one class with the wb_solves group."""
+    args = re.search(r'args:(.*)', _suites(WORKFLOW.read_text())['wolfbower']).group(1).split()
+    assert args[args.index('--dist') + 1] == 'loadgroup'
+    tree = ast.parse((ROOT / 'tests' / 'test_table_band_report.py').read_text())
+    users = {
+        getattr(cls, 'name', 'module')
+        for cls in [tree, *(c for c in ast.walk(tree) if isinstance(c, ast.ClassDef))]
+        for f in cls.body
+        if isinstance(f, ast.FunctionDef) and 'wb_solves' in [a.arg for a in f.args.args]
+    }
+    assert users == {'TestWolfBowerSolves'}, users
+    cls = next(c for c in tree.body if getattr(c, 'name', '') == 'TestWolfBowerSolves')
+    groups = [ast.unparse(d) for d in cls.decorator_list if 'xdist_group' in ast.unparse(d)]
+    assert groups == ["pytest.mark.xdist_group('wb_solves')"], groups

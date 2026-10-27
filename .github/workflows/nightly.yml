@@ -36,7 +36,7 @@ jobs:
             args: --dist load --cov-fail-under=90
           - suite: wolfbower
             select: wolfbower
-            args: --dist loadfile --cov-fail-under=0
+            args: --dist loadgroup --loadscope-reorder --cov-fail-under=0 -v
           - suite: paleos_adiabat
             select: paleos_adiabat and not wolfbower
             args: --dist loadfile --cov-fail-under=0
@@ -107,6 +107,9 @@ jobs:
       # only costs cache space, so it warns instead of failing the tests.
       - name: Prune superseded data versions
         run: fwl-io prune --delete --yes || echo "::warning::fwl-io prune did not run"
+
+      - name: Show the runner CPU
+        run: nproc; lscpu | grep -E '^(Model name|CPU\(s\))' || true
 
       - name: Run unit + smoke + integration tests with coverage
         env:
