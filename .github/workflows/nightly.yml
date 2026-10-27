@@ -37,7 +37,6 @@ jobs:
           - suite: wolfbower
             select: wolfbower
             args: --dist loadgroup --cov-fail-under=0 -v
-            test_timeout: 2700
           - suite: paleos_adiabat
             select: paleos_adiabat and not wolfbower
             args: --dist loadfile --cov-fail-under=0
