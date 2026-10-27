@@ -2,7 +2,7 @@
 
 ## What this page checks
 
-This page checks how Zalmoxis reads the equation-of-state (EOS) tables and how it computes the density of an iron core that holds light elements. An EOS gives the density and other properties of a material as functions of pressure and temperature. Validation means that a test runs the code on a case with a known right answer and checks the result within a stated tolerance. If this part of the code is wrong, every density in the structure solve is wrong, and so are the radius and the interior profiles of the planet. Each case below says why the check exists, what it tests, how we know the right answer and why it matters, and ends with a box "Test details". The [overview](index.md) lists every case of the tab.
+This page checks 2 parts of Zalmoxis. The first is the export reader of the PALEOS equation-of-state (EOS) tables; Zalmoxis uses it to write the tables for Aragog and SPIDER. The second is the density of an iron core that holds light elements. An EOS gives the density and other properties of a material as functions of pressure and temperature. Validation means that a test runs the code on a case with a known right answer and checks the result within a stated tolerance. If the core density is wrong, the structure solve uses the wrong value at every core node. The radius and the interior profiles of the planet are then wrong too. Each case below says why the check exists, what it tests, how we know the right answer and why it matters, and ends with a box "Test details". The [overview](index.md) lists every case of the tab.
 
 ## PALEOS table loader
 
