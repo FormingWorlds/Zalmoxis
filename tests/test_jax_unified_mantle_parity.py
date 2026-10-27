@@ -202,7 +202,9 @@ def test_unified_mantle_dry_parity(validation_plot):
         import matplotlib.pyplot as plt
 
         fig, ax = plt.subplots()
-        ax.plot(pressure / 1e9, rel.max(axis=1), 'o', ms=3, label='JAX vs numpy')
+        # Platform round-off: differences below half the tolerance are drawn at that floor.
+        drawn = np.maximum(rel.max(axis=1), 0.5 * tol)
+        ax.plot(pressure / 1e9, drawn, 'o', ms=3, label='JAX vs numpy, floor at tolerance / 2')
         ax.axhline(tol, color=plt.rcParams['text.color'], ls='--', label='tolerance')
         ax.set(xscale='log', yscale='log', xlabel='Pressure [GPa]')
         ax.minorticks_off()
