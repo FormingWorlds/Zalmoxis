@@ -6,9 +6,9 @@ This page checks how Zalmoxis reads the equation-of-state (EOS) tables and how i
 
 ## PALEOS table loader
 
-**Why this check exists.** A table reader can put a value in the wrong grid cell, drop a column or mislabel a phase. The structure solve then reads wrong properties without an error message.
+**Why this check exists.** A table reader can put a value in the wrong grid cell, drop a column or mislabel a phase. The EOS tables that Zalmoxis writes for Aragog and SPIDER then hold wrong properties without an error message.
 
-**What it tests.** `zalmoxis.eos_export.load_paleos_all_properties` reads a PALEOS pressure-temperature table into grids over the unique $\log_{10} P$ and $\log_{10} T$ values. The shipped tables are the unified MgSiO$_3$ table and the solid and liquid MgSiO$_3$ sub-tables; the highres tables are larger solid and liquid sub-tables. A table is taken from `$FWL_DATA/zalmoxis_eos` or from the `data/` directory; a table that is in neither place is not tested.
+**What it tests.** `zalmoxis.eos_export.load_paleos_all_properties` reads a PALEOS pressure-temperature table into grids over the unique $\log_{10} P$ and $\log_{10} T$ values. It is the export reader: the functions that write the EOS tables for Aragog and SPIDER call it. The structure solve has its own reader, `zalmoxis.eos.interpolation.load_paleos_unified_table`, which this case does not test. The shipped tables are the unified MgSiO$_3$ table and the solid and liquid MgSiO$_3$ sub-tables; the highres tables are larger solid and liquid sub-tables. A table is taken from `$FWL_DATA/zalmoxis_eos` or from the `data/` directory; a table that is in neither place is not tested.
 
 The test reads the same file with `numpy.genfromtxt` and compares the 2 readings. These must be identical:
 
@@ -20,7 +20,7 @@ Every grid cell that no table row fills must be NaN, with an empty phase label.
 
 **How we know the right answer.** A second reader of the same file, `numpy.genfromtxt`, gives the reference. This is a cross-code check between 2 readers of one file.
 
-**Why it matters.** The structure solve takes its PALEOS densities and thermal properties from these grids.
+**Why it matters.** The EOS tables that Zalmoxis writes for Aragog and SPIDER take their densities and thermal properties from these grids.
 
 This case has no plot: it checks that 2 readers give identical arrays, an identity with nothing to draw.
 
