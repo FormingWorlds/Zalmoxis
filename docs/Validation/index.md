@@ -10,9 +10,9 @@ The verification has 3 steps, each in one pytest tier:
 
 1. **Integrator alone (unit tier):** Test the ODE integrator in isolation by patching the density function to return a constant. No EOS data files, no Picard iteration, no Brent solver. Pure mathematics.
 2. **Full solver with the analytic EOS (smoke tier):** Test the full solver chain (ODE + Picard + Brent + mass-radius loop) using the Seager et al. (2007) analytic EOS, which is a closed-form formula requiring no tabulated data. Compare against known physical benchmarks (Earth's radius, gravity, central pressure) and scaling laws.
-3. **Grids and tolerances (slow tier):** Check the error over several grids and solver tolerances, and the full-solver radius on two grids.
+3. **Grids and tolerances (slow tier):** Check the error over several grids and solver tolerances, and the full-solver radius on 3 grids.
 
-All tests are implemented in [`tests/test_first_principles.py`](https://github.com/FormingWorlds/Zalmoxis) (25 pytest tests). The tests of these cases draw their own plot pairs.
+All tests are implemented in [`tests/test_first_principles.py`](https://github.com/FormingWorlds/Zalmoxis/blob/main/tests/test_first_principles.py) (25 pytest tests). The tests of these cases draw their own plot pairs.
 
 ## Cases by process
 
@@ -59,10 +59,10 @@ These tests are independent of any tabulated EOS data, melting curves, or couple
 
 ## Plots written by the tests
 
-A case with a plot pair shows the tested values against their reference in a light and a dark version. The test writes the pair with the same numbers it asserts, through the `validation_plot` fixture of proteus-mpl. This command writes all pairs to `docs/assets/validation/`:
+A case with a plot pair shows the tested values against their reference in a light and a dark version. The test writes the pair with the same numbers it asserts, or with a second solve of the same case where the note says so, through the `validation_plot` fixture of proteus-mpl. This command writes all pairs to `docs/assets/validation/`:
 
 ```console
-pytest -m reference_pinned tests --validation-plots
+pytest -o "addopts=" -m reference_pinned tests --validation-plots
 ```
 
 The first-principles cases are not `reference_pinned`; this command writes their pairs:

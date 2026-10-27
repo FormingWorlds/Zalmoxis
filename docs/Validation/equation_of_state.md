@@ -34,7 +34,7 @@ This case has no plot: it checks that 2 readers give identical arrays, an identi
 
 **Why this check exists.** The density of liquid iron comes from a root solve of an equation with many fit constants. A wrong constant or a root solve that stops early gives a wrong core density without an error message.
 
-**What it tests.** `zalmoxis.eos.core_alloy.luo_density` solves Methods Eq. 14 of [Luo et al. (2024)](https://doi.org/10.1038/s41550-024-02347-z) for the cell volume of liquid Fe (64 Fe) and of Fe with water (64 Fe + 8 H$_2$O). The 2 materials are the members of the fit. The test uses 15 pressures from 50 to 1300 GPa at 8000, 11000 and 14000 K, the fit range. It solves the same equation by bisection, with the constants typed again from the paper. Both members must agree with the bisection. Water must lower the density at every point, and heating must lower it at fixed pressure. Liquid Fe at 136 GPa and 8000 K must lie between 10.3 and 10.5 g/cm$^3$. A second test checks that both members have zero pressure at their reference volume and temperature.
+**What it tests.** `zalmoxis.eos.core_alloy.luo_density` solves Methods Eq. 14 of [Luo et al. (2024)](https://doi.org/10.1038/s41550-024-02347-z) for the cell volume of liquid Fe (64 Fe) and of Fe with water (64 Fe + 8 H$_2$O). The 2 materials are the members of the fit. The test uses 15 pressures from 50 to 1300 GPa at 8000, 11000 and 14000 K, the fit range. It solves the same equation by bisection, with the constants typed again from the paper. Both members must agree with the bisection. At 8000 K, Fe with water must be less dense than liquid Fe at every pressure, and liquid Fe at 14000 K less dense than at 8000 K. Liquid Fe at 136 GPa and 8000 K must lie between 10.3 and 10.5 g/cm$^3$. A second test checks that both members have zero pressure at their reference volume and temperature.
 
 **How we know the right answer.** Eq. 14 of Luo et al. (2024), solved by bisection, gives the reference; this checks the root solve and the transcription of the constants. `test_luo_dry_member_equals_paleos_liquid_iron` compares the dry member with the PALEOS liquid iron table, an independent implementation. They agree to 4e-6 at the liquid points of 60 to 1300 GPa and 8000 to 14000 K.
 
@@ -67,6 +67,8 @@ This case has no plot: it checks that 2 readers give identical arrays, an identi
 ![Core density on the PALEOS iron table with 0, 0.5 and 1 wt% H](../assets/validation/core_alloy_paleos_iron_limits_dark.svg#only-dark){ width="80%" }
 
 **How to read the plot.** The x-axis is the pressure in GPa, and the y-axis the core density in g/cm$^3$ at 8000 K. The solid line is pure PALEOS iron, and the dashed and dotted lines are 0.5 and 1 wt% H with the carrier O. Each line is the asserted code density. The harmonic mean agrees to a relative 1e-12, too small to see, so it is not drawn. A pass means that each line meets its asserted limit; more H then gives a lower density at every pressure.
+
+**Known limit.** The test takes the carrier density from the code's own `carrier_excess_volume`, so it checks the mixing rule, not the carrier volume. The only physical anchor is `tests/test_core_alloy_solve.py`: a 1 $M_\oplus$ planet with 1 wt% H keeps its core between 0.85 and 0.92 of the iron density.
 
 ??? info "Test details"
     - Reference: the volume-additive limits of the mixing rule (analytical).
