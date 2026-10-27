@@ -507,6 +507,7 @@ def wb_solves(tmp_path_factory):
 
 @pytest.mark.integration
 @pytest.mark.wolfbower
+@pytest.mark.xdist_group('wb_solves')  # one worker, so the module fixture solves once
 class TestWolfBowerSolves:
     """Real solves: inside the limit the clamp stays, beyond it the solve fails."""
 
