@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 import subprocess
 
 import pytest
@@ -86,6 +87,99 @@ def test_a_tested_commit_missing_from_the_clone_stops(history):
     repo, c = history
     with pytest.raises(PaleosVersionError, match='does not contain'):
         check_paleos_commit(repo, 'f' * 40)
+
+
+def _run_commands(message, repo):
+    """Run the git commands the message names for ``repo``, parsed as a shell would."""
+    fix = message.split('for example ', 1)[1].split(';', 1)[0]
+    for command in fix.split(' && '):
+        argv = shlex.split(command)
+        assert argv[:3] == ['git', '-C', str(repo)], argv
+        subprocess.run(argv, check=True, capture_output=True)
+
+
+@pytest.mark.parametrize('detach', [False, True])
+def test_an_older_checkout_runs_after_the_named_checkout(history, detach):
+    """A checkout behind the tested commit, on a branch or on a detached head, gets a
+    checkout of the tested commit, which works in both states, and no rewrite is named."""
+    repo, c = history
+    _git(repo, 'checkout', '-q', *(('--detach',) if detach else ('-B', 'main')), c['old'])
+    with pytest.raises(PaleosVersionError) as err:
+        check_paleos_commit(repo, c['tested'])
+    assert f'git -C {repo} checkout {c["tested"]}' in str(err.value)
+    assert 'pull' not in str(err.value).split(c['tested'])[-1]
+    assert 'main was rewritten' not in str(err.value)
+    _run_commands(str(err.value), repo)
+    assert check_paleos_commit(repo, c['tested']) == 'tested'
+
+
+def test_a_rewritten_upstream_names_the_missing_history(history):
+    """A main rewritten past the tested commit keeps it out of the history of the
+    checkout, so the message says that and names a checkout instead of a pull."""
+    repo, c = history
+    _git(repo, 'checkout', '-q', c['unrelated'])
+    with pytest.raises(PaleosVersionError) as err:
+        check_paleos_commit(repo, c['tested'])
+    assert 'not in the history of this checkout' in str(err.value)
+    assert f'git -C {repo} checkout {c["tested"]}' in str(err.value)
+    assert f'git -C {repo} pull' not in str(err.value)
+
+
+def test_a_tested_commit_missing_from_a_full_clone_names_both_causes(history):
+    """A clone that lacks the tested commit gets a fetch from all remotes and a checkout
+    of it, and the pin move for a main that no longer holds it."""
+    repo, _ = history
+    with pytest.raises(PaleosVersionError) as err:
+        check_paleos_commit(repo, 'f' * 40)
+    fix = f'git -C {repo} fetch --all && git -C {repo} checkout {"f" * 40}'
+    assert fix in str(err.value)
+    assert 'still missing after git fetch --all, no branch this clone fetches holds it' in str(
+        err.value
+    )
+    assert 'main was rewritten' in str(err.value) and 'PALEOS_TESTED_SHA' in str(err.value)
+
+
+@pytest.mark.parametrize(
+    ('remotes', 'detach', 'folder'),
+    [
+        (['origin'], False, 'clone'),
+        (['upstream'], True, 'a space/clone'),
+        (['up', 'fork'], True, 'clone'),
+    ],
+)
+def test_a_clone_from_before_a_rewrite_runs_after_the_named_commands(
+    history, tmp_path, monkeypatch, remotes, detach, folder
+):
+    """A clone made before main was rewritten (the tested commit amended to a new SHA
+    with the same tree) cannot pull the new history; the commands the message names,
+    parsed as a shell would, fetch the rewritten commit and give a checkout the check
+    accepts: on a branch, from a detached head, in a folder whose path holds a space,
+    and with two remotes of which none is called origin."""
+    monkeypatch.setenv('GIT_CONFIG_GLOBAL', '/dev/null')
+    monkeypatch.setenv('GIT_CONFIG_NOSYSTEM', '1')
+    repo, c = history
+    clone = tmp_path / folder
+    clone.parent.mkdir(parents=True, exist_ok=True)
+    _git(tmp_path, 'clone', '-q', '-o', remotes[0], f'file://{repo}', str(clone))
+    for extra in remotes[1:]:
+        _git(clone, 'remote', 'add', extra, f'file://{repo}')
+    if detach:
+        _git(clone, 'checkout', '-q', '--detach', 'HEAD')
+    _git(repo, 'reset', '-q', '--hard', c['tested'])
+    _git(
+        repo,
+        *('-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false'),
+        *('-c', 'core.hooksPath=/dev/null', 'commit', '-q', '--amend', '-m', 'rewritten'),
+    )
+    rewritten = _git(repo, 'rev-parse', 'HEAD')
+    assert _git(repo, 'rev-parse', f'{rewritten}^{{tree}}') == _git(
+        repo, 'rev-parse', f'{c["tested"]}^{{tree}}'
+    )
+    with pytest.raises(PaleosVersionError) as err:
+        check_paleos_commit(clone, rewritten)
+    assert 'pull' not in str(err.value).split(rewritten)[-1]
+    _run_commands(str(err.value), clone)
+    assert check_paleos_commit(clone, rewritten) == 'tested'
 
 
 def test_a_checkout_without_git_stops(tmp_path, monkeypatch):
@@ -186,8 +280,9 @@ def test_a_shallow_clone_without_the_tested_commit_names_the_fetch(history, tmp_
     repo, c = history
     shallow = tmp_path / 'shallow'
     _git(tmp_path, 'clone', '-q', '--depth', '1', f'file://{repo}', str(shallow))
-    with pytest.raises(PaleosVersionError, match='fetch --unshallow'):
+    with pytest.raises(PaleosVersionError, match='fetch --unshallow') as err:
         check_paleos_commit(shallow, c['tested'])
+    assert 'then run again' in str(err.value)
 
 
 def test_without_paleos_the_check_names_it(monkeypatch):

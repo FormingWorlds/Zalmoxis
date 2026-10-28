@@ -49,7 +49,8 @@ def pad_after_stop(radii, mass, gravity, pressure, y_stop, p_center, p_surface=0
     the length of the profiles. A stop at a pressure of at most
     ``SURFACE_STOP_P_FRACTION * p_center``, or below the target surface
     pressure ``p_surface``, is padded as the surface: the remaining nodes take
-    mass and gravity at the stop and zero pressure. Below the target the
+    the mass at the stop, the gravity of that mass at their own radius (no
+    mass lies above the stop) and zero pressure. Below the target the
     pressure has fallen short before the outer radius, so the zero surface
     pressure gives the pressure solve the right sign (central pressure too
     low). A stop at a higher pressure, or with a non-finite state, is a failed
@@ -75,9 +76,11 @@ def pad_after_stop(radii, mass, gravity, pressure, y_stop, p_center, p_surface=0
         Mass, gravity and pressure on the full grid.
     """
     n = len(mass)
+    tail = np.asarray(radii, dtype=float)[n:]
     m_stop, g_stop, p_stop = (float(v) for v in y_stop)
     if stop_is_surface(y_stop, p_center, p_surface):
-        fill = (m_stop, g_stop, 0.0)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            fill = (m_stop, np.where(tail > 0, G * m_stop / tail**2, g_stop), 0.0)
     else:
         where = f'between r = {radii[n - 1]:.6e} and {radii[n]:.6e} m' if n else 'at r = 0'
         logger.warning(
@@ -89,7 +92,7 @@ def pad_after_stop(radii, mass, gravity, pressure, y_stop, p_center, p_surface=0
         )
         fill = (np.nan, np.nan, np.nan)
     return tuple(
-        np.concatenate([a, np.full(len(radii) - n, f)])
+        np.concatenate([a, np.broadcast_to(f, tail.shape)])
         for a, f in zip((mass, gravity, pressure), fill)
     )
 

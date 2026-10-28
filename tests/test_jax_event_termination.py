@@ -4,8 +4,8 @@ in the JAX structure-ODE path.
 Verifies:
   (1) When pressure crosses zero mid-grid, diffrax terminates and
       the wrapper pads the post-event shells to match numpy's
-      solve_structure contract (pressure = 0, mass/gravity hold
-      their values at the event).
+      solve_structure contract (pressure = 0, the mass at the event,
+      and the gravity G m / r^2 of that mass at each padded radius).
   (2) The wrapper's post-event padding handler produces no `inf`
       or `NaN` in the returned arrays.
   (3) Physics drift between the JAX+Event path and the numpy path
@@ -171,26 +171,35 @@ class TestEventTermination:
         )
 
     def test_pad_holds_the_event_state(self, jax_event_result):
-        """Padded shells hold one (m, g), and it is the state inside the stop shell.
+        """Padded nodes hold the stop mass and its gravity G m / r^2, and the stop lies in the
+        shell after the last live node.
 
-        At the stop g = G m / r^2, so r = sqrt(G m / g) must lie after the last
-        live node and at or before the first padded node.
+        The mass gained past the last live node at most at the density of that node, which the
+        density falling outward bounds from above, gives the smallest stop radius
+        r^3 = r_live^3 + 3 dm / (4 pi rho_live); it must lie inside the shell.
         """
         from zalmoxis.constants import G
 
         P_jx = np.asarray(jax_event_result['pressure'])
         mass_jx = np.asarray(jax_event_result['mass_enclosed'])
         g_jx = np.asarray(jax_event_result['gravity'])
+        rho_jx = np.asarray(jax_event_result['density'])
         radii = np.asarray(jax_event_result['radii'])
 
         pad_idx = np.flatnonzero(P_jx == 0.0)
         assert pad_idx.size > 0, 'bench_performance.toml is expected to stop below R'
         k = pad_idx[0]
-        assert np.all(mass_jx[pad_idx] == mass_jx[k])
-        assert np.all(g_jx[pad_idx] == g_jx[k])
-        r_stop = np.sqrt(G * mass_jx[k] / g_jx[k])
-        assert radii[k - 1] < r_stop <= radii[k] * (1 + 1e-9)
-        assert mass_jx[k] > mass_jx[k - 1]
+        np.testing.assert_array_equal(pad_idx, np.arange(k, P_jx.size))
+        assert np.all(mass_jx[pad_idx] == mass_jx[k]) and mass_jx[k] > mass_jx[k - 1]
+        np.testing.assert_allclose(
+            g_jx[pad_idx] * radii[pad_idx] ** 2, G * mass_jx[k], rtol=1e-12
+        )
+        assert rho_jx[k - 2] > rho_jx[k - 1]
+        r_lo = np.cbrt(
+            radii[k - 1] ** 3
+            + 3.0 * (mass_jx[k] - mass_jx[k - 1]) / (4.0 * np.pi * rho_jx[k - 1])
+        )
+        assert radii[k - 1] < r_lo <= radii[k]
 
     def test_profile_drift_at_solver_tolerance(self, numpy_result, jax_event_result):
         """Profile drift between numpy and JAX+Event paths must be

@@ -20,6 +20,7 @@ from unittest import mock
 import numpy as np
 import pytest
 
+from zalmoxis.constants import G
 from zalmoxis.jax_eos import wrapper as jw
 from zalmoxis.mixing import LayerMixture
 
@@ -129,6 +130,70 @@ class TestCoreFormatValidation:
                 liquidus_func=_liquidus_func,
                 temperature_function=_t_func,
             )
+
+
+class TestCoreComponentCount:
+    """The JAX core kernel holds one EOS table, so a light-element core is rejected."""
+
+    def _call(self, layer_mixtures, mds, cache):
+        return jw.solve_structure_via_jax(
+            layer_mixtures=layer_mixtures,
+            cmb_mass=2e23,
+            core_mantle_mass=4e23,
+            radii=np.linspace(1.0, 1e6, 20),
+            adaptive_radial_fraction=0.5,
+            relative_tolerance=1e-6,
+            absolute_tolerance=1e-8,
+            maximum_step=1e5,
+            material_dictionaries=mds,
+            interpolation_cache=cache,
+            y0=[0.0, 0.0, 1e12],
+            solidus_func=_solidus_func,
+            liquidus_func=_liquidus_func,
+            temperature_function=_t_func,
+        )
+
+    def test_two_component_core_raises_before_the_solve(self):
+        """A 1 wt% second core component must reach numpy, not solve as pure iron."""
+        layer_mixtures, mds, cache = _common_fixtures()
+        layer_mixtures['core'] = LayerMixture(['PALEOS:iron', 'PALEOS:FeH'], [0.99, 0.01])
+        fake = mock.Mock(return_value=(np.zeros((20, 3)), np.zeros(3)))
+        with mock.patch.object(jw, 'solve_structure_jax', fake):
+            with pytest.raises(ValueError) as exc:
+                self._call(layer_mixtures, mds, cache)
+        assert 'single-component core' in str(exc.value)
+        assert "'PALEOS:FeH'" in str(exc.value)
+        assert fake.call_count == 0
+
+    def test_zero_alloy_core_reaches_the_solve_on_its_iron_base(self):
+        """A light-element core with every fraction 0 is pure iron and stays on JAX."""
+        layer_mixtures, mds, cache = _common_fixtures()
+        layer_mixtures['core'] = LayerMixture(
+            ['PALEOS:iron', 'CoreAlloy:H', 'CoreAlloy:O'], [1.0, 0.0, 0.0]
+        )
+        fake = mock.Mock(return_value=(np.zeros((20, 3)), np.zeros(3)))
+        with mock.patch.object(jw, 'solve_structure_jax', fake):
+            self._call(layer_mixtures, mds, cache)
+        assert fake.call_count == 1
+
+    def test_alloy_core_with_light_elements_raises_before_the_solve(self):
+        """A core with 1 wt% H must reach numpy."""
+        layer_mixtures, mds, cache = _common_fixtures()
+        layer_mixtures['core'] = LayerMixture(['PALEOS:iron', 'CoreAlloy:H'], [0.99, 0.01])
+        fake = mock.Mock(return_value=(np.zeros((20, 3)), np.zeros(3)))
+        with mock.patch.object(jw, 'solve_structure_jax', fake):
+            with pytest.raises(ValueError, match='light elements'):
+                self._call(layer_mixtures, mds, cache)
+        assert fake.call_count == 0
+
+    def test_single_component_core_reaches_the_solve(self):
+        """The guard leaves the supported pure-iron core on the JAX path."""
+        layer_mixtures, mds, cache = _common_fixtures()
+        fake = mock.Mock(return_value=(np.zeros((20, 3)), np.zeros(3)))
+        with mock.patch.object(jw, 'solve_structure_jax', fake):
+            self._call(layer_mixtures, mds, cache)
+        assert fake.call_count == 1
+        assert layer_mixtures['core'].components == ['PALEOS:iron']
 
 
 class TestMantleFormatValidation:
@@ -394,8 +459,8 @@ class TestTemperatureArraysPath:
 
 class TestPostEventPadding:
     """Diffrax returns ``inf`` for save-points past a stop. The wrapper pads them
-    as numpy does: mass/gravity at the stop and pressure 0 for a stop at the
-    surface, NaN for a stop deep inside."""
+    as numpy does: the mass at the stop, the gravity of that mass at each radius
+    and pressure 0 for a stop at the surface, NaN for a stop deep inside."""
 
     @staticmethod
     def _run(y_end):
@@ -428,7 +493,7 @@ class TestPostEventPadding:
         mass, gravity, pressure = self._run(y_end)
         # Padded entries hold the event state, not the last pre-event node
         assert mass[5:] == pytest.approx(np.full(5, y_end[0]))
-        assert gravity[5:] == pytest.approx(np.full(5, y_end[1]))
+        assert gravity[5:] == pytest.approx(G * y_end[0] / np.linspace(1.0, 1e6, 10)[5:] ** 2)
         assert mass[4] == pytest.approx(1e23)
         assert np.all(pressure[5:] == 0.0)
 

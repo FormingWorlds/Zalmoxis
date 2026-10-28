@@ -132,12 +132,13 @@ def _compare_rhs(setup, layer_mixtures, mat_dicts, profile, jax_extra, seed, tol
     M_planet = 5.972e24
     cmb_mass = setup['cmb_mass']
 
-    numpy_dydr, jax_dydr = [], []
+    numpy_dydr, jax_dydr, pressures = [], [], []
     for _ in range(200):
         r = rng.uniform(1e5, 6.4e6)
         y = np.array(
             [rng.uniform(0.0, M_planet), rng.uniform(0.5, 25.0), rng.uniform(1e6, 3e11)]
         )
+        pressures.append(y[2])
         nv = coupled_odes(
             r,
             y,
@@ -178,11 +179,12 @@ def _compare_rhs(setup, layer_mixtures, mat_dicts, profile, jax_extra, seed, tol
     max_rel = float(rel.max()) if rel.size else 0.0
     print(f'n_both={n_both}/200, max_rel={max_rel:.3e}')
     assert max_rel <= tol, f'unified-mantle parity failed: max_rel={max_rel:.3e}'
+    return np.asarray(pressures)[both], rel
 
 
 @pytest.mark.integration
 @pytest.mark.reference_pinned
-def test_unified_mantle_dry_parity():
+def test_unified_mantle_dry_parity(validation_plot):
     """Dry unified mantle: JAX RHS matches numpy, mushy zone included."""
     from zalmoxis.mixing import LayerMixture
 
@@ -191,7 +193,27 @@ def test_unified_mantle_dry_parity():
         'core': LayerMixture(['PALEOS:iron'], [1.0]),
         'mantle': LayerMixture(['PALEOS:MgSiO3'], [1.0]),
     }
-    _compare_rhs(setup, layer_mixtures, setup['mat_dicts'], None, {}, seed=317, tol=1e-6)
+    tol = 1e-6
+    pressure, rel = _compare_rhs(
+        setup, layer_mixtures, setup['mat_dicts'], None, {}, seed=317, tol=tol
+    )
+
+    def figure():
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots()
+        # Platform round-off: differences below half the tolerance are drawn at that floor.
+        drawn = np.maximum(rel.max(axis=1), 0.5 * tol)
+        ax.plot(pressure / 1e9, drawn, 'o', ms=3, label='JAX vs numpy, floor at tolerance / 2')
+        ax.axhline(tol, color=plt.rcParams['text.color'], ls='--', label='tolerance')
+        ax.set(xscale='log', yscale='log', xlabel='Pressure [GPa]')
+        ax.minorticks_off()
+        ax.set_ylabel('Largest relative difference')
+        ax.legend()
+        fig.tight_layout()
+        return fig
+
+    validation_plot(figure, 'jax_unified_mantle_dry_parity')
 
 
 @pytest.mark.integration

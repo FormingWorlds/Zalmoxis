@@ -105,7 +105,7 @@ matrix runs the unit tier without xdist contention on small runners.
 | Trigger | Markers | Budget | Coverage |
 |---|---|---|---|
 | Push / PR (`CI.yml`) | `unit and not slow and not skip` | < 10 min | None (gate pre-flight only) |
-| Nightly cron (`nightly.yml`, 02:00 UTC) | `(unit or smoke or integration) and not slow` in `main`, and every test with its mark in the special jobs (slow ones included), in five jobs that select disjoint sets: `wolfbower` (the full solves on the Wolf & Bower tables), `paleos_adiabat` (the adiabatic PALEOS solves at 5 $M_\oplus$), one `accept_solves` job each for `tests/test_invariants.py` and `tests/test_accepted_on.py`, and `main` (the rest) | 90 min ceiling per job | Yes; `main` gates on 90%, all upload to Codecov with the `nightly` flag |
+| Nightly cron (`nightly.yml`, 02:00 UTC) | `(unit or smoke or integration) and not slow` in `main`, and every test with its mark in the special jobs (slow ones included), in eight jobs that select disjoint sets: `wolfbower` (the full solves on the Wolf & Bower tables), `paleos_adiabat` (the adiabatic PALEOS solves at 5 $M_\oplus$), one `accept_solves` job each for `tests/test_invariants.py`, `tests/test_accepted_on.py` and `tests/test_pressure_root_solves.py`, `accept_solves_long` (every test with the `accept_solves_long` mark and none of `accept_solves_newton_setups`, `wolfbower` and `paleos_adiabat`, from the whole test tree), `accept_solves_newton_setups` (every test with the `accept_solves_newton_setups` mark and neither `wolfbower` nor `paleos_adiabat`, from the whole test tree: the sweep over every Newton setup in `tests/test_pressure_root_solves.py`, alone), and `main` (the rest) | 90 min ceiling per job, 120 min for `accept_solves_long`, 170 min for `accept_solves_newton_setups` | Yes; `main` gates on 90%, all upload to Codecov with the `nightly` flag |
 | Manual `workflow_dispatch` | as above | as above | Yes |
 
 Push CI is intentionally unit-only because each smoke or integration test
@@ -206,6 +206,11 @@ the solver.
 ensures (a) the `cached_solver` fixture works correctly because it is
 session-scoped per worker, (b) module-level imports and setup run once per
 file, (c) different test files run concurrently on separate cores.
+
+The nightly `wolfbower` job uses `--dist loadgroup` instead, so the tests of
+`tests/test_accepted_on.py` spread over all workers. In that job, the three tests
+of `TestWolfBowerSolves` in `tests/test_table_band_report.py` carry one
+`xdist_group` mark, so the two Wolf & Bower solves of `wb_solves` run once.
 
 ## Local coverage runs
 

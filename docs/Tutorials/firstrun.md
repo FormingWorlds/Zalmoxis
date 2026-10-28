@@ -85,7 +85,7 @@ A few notes on what each block does:
   `ice_layer = ""` keeps the model two-layer (core + mantle).
 - `[Calculations]` controls the radial grid resolution.
   150 points is enough for a 3 % radius match; double it for tighter convergence at high mass.
-- `[PressureAdjustment]` sets the target surface pressure that the outer mass-radius loop drives towards.
+- `[PressureAdjustment]` sets the target surface pressure that the outer mass-radius loop drives towards. The tutorial [Check that a structure meets its surface pressure](surface_pressure.md) shows how to check that a result meets it.
 - `[Output]` turns on the CSV/text writers.
   Leave `plots_enabled = false` for now; we will plot the profile by hand in Step 4.
 
@@ -248,4 +248,4 @@ Browse `input/grids/` for richer examples: `mass_radius.toml` is a 7-point versi
 - For the full set of TOML keys, validators, and defaults, read [Configuration](../How-to/configuration.md).
 - For the equations behind the structure ODE, the EOS dispatch, and the mushy-zone mixing model, read [Model overview](../Explanations/model.md) and [Equation of state physics](../Explanations/eos_physics.md).
 - For the function-call coupling used when Zalmoxis runs inside PROTEUS (the `python -m zalmoxis` invocation in this tutorial does *not* apply there), read [Coupling Zalmoxis to PROTEUS](../How-to/proteus_coupling.md) and [Coupling to PROTEUS (theory)](../Explanations/proteus_coupling.md).
-- For first-principles verification cases (analytic polytropes, hydrostatic equilibrium tests, mass conservation), read [Verification](../Explanations/verification.md).
+- For first-principles verification cases (analytic polytropes, hydrostatic equilibrium tests, mass conservation), read the [Validation](../Validation/index.md) tab.

@@ -20,6 +20,7 @@ nav:
 
   - Tutorials:
       - First run: Tutorials/firstrun.md
+      - Surface pressure check: Tutorials/surface_pressure.md
 
   - Explanations:
       - Model overview: Explanations/model.md
@@ -30,7 +31,13 @@ nav:
       - Coupling to PROTEUS: Explanations/proteus_coupling.md
       - Code architecture: Explanations/code_architecture.md
       - Testing suite: Explanations/testing.md
-      - First-principles verification: Explanations/verification.md
+
+  - Validation:
+      - Overview: Validation/index.md
+      - Hydrostatic structure: Validation/hydrostatic_structure.md
+      - Mass-radius relation: Validation/mass_radius.md
+      - Equation of state: Validation/equation_of_state.md
+      - Thermal state: Validation/thermal_state.md
 
   - Reference:
       - API reference:
@@ -44,6 +51,7 @@ nav:
           - EOS package: Reference/api/zalmoxis.eos.md
           - EOS dispatch: Reference/api/zalmoxis.eos.dispatch.md
           - EOS consistency: Reference/api/zalmoxis.eos.consistency.md
+          - Light-element core: Reference/api/zalmoxis.eos.core_alloy.md
           - EOS interpolation: Reference/api/zalmoxis.eos.interpolation.md
           - EOS table registry check: Reference/api/zalmoxis.eos.registry_guard.md
           - EOS output: Reference/api/zalmoxis.eos.output.md
@@ -138,6 +146,7 @@ extra_css:
 
 markdown_extensions:
   - admonition
+  - pymdownx.details
   - attr_list
   - markdown_include.include:
       base_path: docs

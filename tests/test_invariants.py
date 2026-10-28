@@ -30,20 +30,21 @@ from zalmoxis.invariants import (
 from zalmoxis.mixing import calculate_mixed_density, parse_all_layer_mixtures
 
 RHO, N, CMF, RTOL, ATOL = 5500.0, 50, 0.325, 1e-9, 1e-10
+P_T = 101325.0  # target surface pressure [Pa]
 
 _LONG = (pytest.mark.accept_solves_long, pytest.mark.timeout(4800))  # own nightly job
 
 
 def _sphere(mmf=0.0):
     """Accepted result of a uniform sphere of density RHO and radius 6.4e6 m: exact m, g
-    and P; the last node has P = 0 and density 0, as the solver returns it."""
+    and P; the last node has P = 0 and, as the solver returns a padded surface node, the
+    density of the EOS at the target surface pressure (RHO, the reference of ``_check``)."""
     R = 6.4e6
     r = np.linspace(0.0, R, N)
     m = 4 / 3 * np.pi * RHO * r**3
     g = np.zeros(N)
     g[1:] = G * m[1:] / r[1:] ** 2
     rho = np.full(N, RHO)
-    rho[-1] = 0.0
     result = {
         'radii': r,
         'mass_enclosed': m,
@@ -57,7 +58,12 @@ def _sphere(mmf=0.0):
         'accepted_on': 'strict',
         'density_from_eos': True,
     }
-    cfg = {'planet_mass': m[-1], 'core_mass_fraction': CMF, 'mantle_mass_fraction': mmf}
+    cfg = {
+        'planet_mass': m[-1],
+        'core_mass_fraction': CMF,
+        'mantle_mass_fraction': mmf,
+        'target_surface_pressure': P_T,
+    }
     return result, cfg
 
 
@@ -198,7 +204,8 @@ def test_a_node_of_negative_mass_has_an_infinite_gravity_deviation():
 @pytest.mark.unit
 def test_density_layer_follows_cmb_mass():
     result, cfg = _sphere(mmf=0.5)
-    m, P = result['mass_enclosed'][: N - 1], result['pressure'][: N - 1]  # node N - 1 has P = 0
+    m, P = result['mass_enclosed'], result['pressure'].copy()
+    P[-1] = P_T  # the padded node N - 1 is looked up at the target surface pressure
     calls, result['accept_mass_limit'] = {}, 1e-3
 
     def density_at(P, T, layer):  # one call per layer, with the nodes of that layer
@@ -820,7 +827,7 @@ def test_the_mass_closure_uses_the_form_of_the_accept_test():
     f = M / result['mass_enclosed'][-1]
     result['mass_enclosed'] = result['mass_enclosed'] * f
     result['gravity'] = result['gravity'] * f
-    result['mass_enclosed'][-1] = M  # the padded node, outside the gravity check
+    result['mass_enclosed'][-1] = M  # the padded node: m and g scaled by one factor
     cfg['planet_mass'] = Mp
     result['cmb_mass'] = result['core_mantle_mass'] = CMF * Mp
     _check(result, cfg, 1e-3)
@@ -939,28 +946,28 @@ def test_a_padding_node_without_zero_pressure_raises(value):
 
 
 def _padded(n_pad):
-    """The sphere cut at node N - 1 - n_pad and padded as the solver pads a surface stop."""
+    """The sphere cut at node N - 1 - n_pad and padded as the solver pads a surface stop: zero
+    pressure, the mass at the stop, the gravity of that mass at each node's radius and the
+    density of the EOS at the target surface pressure."""
     result, cfg = _sphere()
     k = N - 1 - n_pad
-    for key, fill in (('pressure', 0.0), ('density', 0.0)):
-        result[key][k:] = fill
-    for key in ('mass_enclosed', 'gravity'):
-        result[key][k:] = result[key][k]
+    result['pressure'][k:] = 0.0
+    result['mass_enclosed'][k:] = result['mass_enclosed'][k]
+    result['gravity'][k:] = G * result['mass_enclosed'][k] / result['radii'][k:] ** 2
     cfg['planet_mass'] = result['mass_enclosed'][-1]
     result['cmb_mass'] = result['core_mantle_mass'] = CMF * cfg['planet_mass']
     return result, cfg
 
 
 @pytest.mark.unit
-def test_a_padding_of_constant_mass_and_gravity_passes():
+def test_a_padding_of_constant_mass_and_the_gravity_of_that_mass_passes():
     _check(*_padded(3))
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize('key', ['mass_enclosed', 'gravity'])
-def test_a_padding_where_mass_or_gravity_changes_raises(key):
+def test_a_padding_where_the_mass_changes_raises():
     result, cfg = _padded(3)
-    result[key][-1] *= 1.001
+    result['mass_enclosed'][-1] *= 1.001
     cfg['planet_mass'] = result['mass_enclosed'][-1]
     result['cmb_mass'] = result['core_mantle_mass'] = CMF * cfg['planet_mass']
     _raises(result, cfg, 'padding')
@@ -970,6 +977,7 @@ def test_a_padding_where_mass_or_gravity_changes_raises(key):
 def test_a_mass_that_falls_at_the_first_padding_node_raises():
     result, cfg = _sphere()
     result['mass_enclosed'][-1] = 0.99 * result['mass_enclosed'][-2]
+    result['gravity'][-1] = G * result['mass_enclosed'][-1] / result['radii'][-1] ** 2
     cfg['planet_mass'] = result['mass_enclosed'][-1]
     result['cmb_mass'] = result['core_mantle_mass'] = CMF * cfg['planet_mass']
     _raises(result, cfg, 'mass_monotone')
@@ -1358,3 +1366,69 @@ def test_a_result_without_a_profile_array_or_layer_mass_names_it(key):
         _check(result, cfg)
     assert type(info.value) is StructureInvariantError
     assert f'has no {key}' in str(info.value)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('value', [0.0, -1.0, np.nan, np.inf])
+def test_a_padded_node_without_a_finite_positive_density_raises_positive(value):
+    result, cfg = _padded(3)
+    result['density'][-1] = value
+    _raises(result, cfg, 'positive')
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('lookup, raises', [(P_T, False), (0.0, True)])
+def test_density_eos_reads_a_padded_node_at_the_target_surface_pressure(lookup, raises):
+    """The reference depends on P, so a padded density from a lookup at P = 0 breaks it."""
+    result, cfg = _padded(3)
+    k = N - 4
+
+    def rho(P):
+        return RHO * (1.0 + np.asarray(P, float) / 1e7)
+
+    result['density'] = rho(np.where(np.arange(N) < k, result['pressure'], lookup))
+    result['accept_mass_limit'] = 1e-3
+    with (
+        pytest.raises(StructureInvariantError, match='breaks density_eos:')
+        if raises
+        else nullcontext()
+    ):
+        check_accepted(result, cfg, RTOL, ATOL, lambda P, T, layer: rho(P))
+
+
+@pytest.mark.unit
+def test_a_padded_node_with_the_gravity_at_the_stop_raises_padding():
+    """A padded node must carry G m / r^2 of the stop mass, not the gravity at the stop."""
+    result, cfg = _padded(3)
+    k = N - 4
+    result['gravity'][k:] = result['gravity'][k]
+    with pytest.raises(
+        StructureInvariantError, match=r'breaks padding:.*expected 0, the mass of node'
+    ):
+        _check(result, cfg)
+
+
+@pytest.mark.unit
+def test_a_padded_node_with_the_gravity_at_a_stop_3_km_below_raises_padding_at_rtol_1e5():
+    """At the Picard tolerance the gravity check allows about 1e-3, so padding itself holds
+    the padded gravity to G m_stop / r^2: the fill with the gravity at a stop 3 km below R
+    breaks it."""
+    result, cfg = _sphere()
+    r_s = result['radii'][-1] - 3.0e3
+    m_s = 4 / 3 * np.pi * RHO * r_s**3
+    result['mass_enclosed'][-1] = m_s
+    result['gravity'][-1] = G * m_s / r_s**2
+    cfg['planet_mass'] = m_s
+    result['cmb_mass'] = result['core_mantle_mass'] = CMF * m_s
+    result['accept_mass_limit'] = 1e-3
+    with pytest.raises(StructureInvariantError, match='breaks padding:'):
+        check_accepted(result, cfg, 1e-5, 1e-6, lambda P, T, layer: RHO)
+
+
+@pytest.mark.unit
+def test_a_padded_gravity_1e9_off_g_r2_equal_g_m_raises_padding():
+    """padding holds a padded node to g r^2 = G m_stop within rounding, not within a loose
+    bound: a relative error of 1e-9 breaks it."""
+    result, cfg = _padded(3)
+    result['gravity'][-1] *= 1.0 + 1e-9
+    _raises(result, cfg, 'padding')

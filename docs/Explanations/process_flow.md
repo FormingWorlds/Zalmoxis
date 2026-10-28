@@ -39,7 +39,8 @@ The model uses three nested convergence loops:
    For multi-material layers, the density is computed via the phase-aware suppressed harmonic mean (see [multi-material mixing](mixing.md)): each component's contribution is weighted by a sigmoid function of its density, preventing non-condensed volatiles from inflating the mixture density.
    Density updates are damped by averaging with the previous iteration.
 
-3. **Pressure solver (Brent's method):** Finds the central pressure $P_c$ such that the surface pressure matches the target boundary condition. See [Pressure Solver](#pressure-solver-brents-method) below.
+3. **Pressure solver (Brent's method):** Searches with `brentq` for the central pressure $P_c$ at which the surface pressure equals the target boundary condition, and accepts the profile at the root it returns by the tests in [Convergence Checks](#convergence-checks); a [padded profile](#padded-accepts) can pass them.
+   See [Pressure Solver](#pressure-solver-brents-method) below.
 
 ## Pressure Solver (Brent's Method)
 
@@ -72,7 +73,8 @@ The terminal event reduces evaluation time for bad guesses from minutes to milli
 
 **Early termination handling.**
 When the terminal event fires, or the step size collapses, the ODE integration stops short of the outermost grid point.
-A stop at a pressure of at most $10^{-6} P_c$, or below the target surface pressure, is treated as the surface: the remaining points take the mass and gravity at the stop and zero pressure, so the enclosed mass is continuous as the stop moves through the last shell.
+A stop at a pressure of at most $10^{-6} P_c$, or below the target surface pressure, is treated as the surface: the remaining points take the mass at the stop and zero pressure, so the enclosed mass is continuous as the stop moves through the last shell, and the gravity of that mass at their own radius, since no mass lies above the stop.
+The returned density at these points is the EOS density at the target surface pressure and the temperature of the point; with the adiabat integrated from the core-mantle boundary, that temperature is the adiabat continued from the last point with positive pressure to the target surface pressure, once the adiabat blend has reached 1. A result accepted earlier in the blend keeps the linear profile at the outer radius, the value of the temperature function at zero pressure, so its padded temperature can lie above the point below it: by 112, 244 and 373 K at blend 0.25, 0.5 and 0.75 for 1 Earth mass on 50 points with the CMB at 4000 K. A trapezoid sum of this density over the points, as in Aragog, counts the shell between the stop and the outer radius at that density, while the enclosed mass of the structure does not include it; the midpoint mantle integrals of `solve_strong_partition` and `solve_miscible_interior` take the shell that crosses the stop at the mean of its two point densities and temperatures.
 After a step-size collapse, the stop state comes from a re-integration of the one shell in which the integration stopped, which applies the same rule; a re-integration that passes the last shell completes the profile.
 A stop at a higher pressure, or with a non-finite mass, gravity or pressure, is a failed solve: the remaining points are NaN and a warning names the stop.
 A failed solve is an error: at the first structure solve of the pressure search, or the re-solve at its root, that is not finite, `main` raises `StructureSolveError` with the radius, the outer and inner iteration, the central pressure and the stop, for both the Picard and the Newton outer solver.
@@ -82,14 +84,99 @@ The JAX path applies the same rule to the state where `diffeqsolve` stopped, at 
 The residual function detects a surface stop ($P_{\mathrm{surface}} \leq 0$) and returns $-P_{\mathrm{target}}$, which is negative because the configuration requires $P_{\mathrm{target}} > 0$; this signals to Brent's method that $P_c$ is too low and keeps the bracket valid.
 
 **Closure state capture.**
-Since `brentq` only returns the root value (not intermediate ODE solutions), the residual function uses a mutable closure dict to capture the mass, gravity, and pressure arrays from the last evaluation.
-After convergence, these arrays are extracted for the density update step.
+Since `brentq` only returns the root value (not intermediate ODE solutions), the residual function stores the mass, gravity, and pressure arrays of each evaluation in a mutable closure dict.
+After Brent's method returns, `solve_structure` runs once more at the root, and that profile goes to the accept test and the density update.
+The stored arrays of the last evaluation are used only when the bracket is invalid.
+
+### Padded accepts
+
+When can the pressure solve accept a profile whose integration stopped below the surface, and how does the solve refine such a root?
+
+Brent's method can return a central pressure whose integration stops before the outer radius.
+Its profile is padded: the points above the stop, the padded nodes, get a pressure of 0, so the outermost point has 0 instead of the target surface pressure.
+A profile whose integration reaches the outer radius is reached.
+The accept test still passes a padded profile when the target is below `pressure_tolerance` ($10^9$ Pa by default).
+For a padded or a reached root that misses the target by more than $0.1 P_{\mathrm{target}}$, a second Brent solve can run between 2 evaluated central pressures that bracket the target, and it evaluates new central pressures there.
+The solve then keeps the candidate that comes closest to the target.
+A sign pair is 2 neighbouring evaluated central pressures with a negative residual at the lower one and a positive residual at the higher one, its reached end (details below).
+For a padded root, the candidates also hold the reached ends of its first sign pair and of its nearest sign pair after the second solve that lie within $P_{\mathrm{target}}$ of the target.
+The Picard and Newton outer solvers, the JAX path and PALEOS are defined in the terms of the [hydrostatic structure validation page](../Validation/hydrostatic_structure.md#what-this-page-checks).
+
+A padded profile is the result of a surface stop (see the Early termination handling paragraph above).
+The integration stopped before the outer radius $R$, and the remaining points, the padded nodes, have $P = 0$.
+Its pressure at the outer radius is $P(R) = 0$ instead of $P_{\mathrm{target}}$, so $\lvert P(R) - P_{\mathrm{target}} \rvert = P_{\mathrm{target}}$.
+`result['padded']` is True when the returned pressure is 0 at the outer radius.
+
+The pressure test (b) in [Convergence Checks](#convergence-checks) passes such a profile for any target below `pressure_tolerance`, $10^9$ Pa by default.
+The retry that the Picard outer solver runs after an unconverged solve uses 0.1 times this tolerance.
+There a padded profile passes for a target below that value.
+
+A trial central pressure whose integration ends in a surface stop gives $f = -P_{\mathrm{target}}$.
+One that stops at a higher pressure, or reaches a non-finite state, raises `StructureSolveError`.
+Brent's method stops when its bracket is narrower than `xtol` $+$ `rtol` $\lvert P_c \rvert$, with `xtol` $= 10^6$ Pa and `rtol` $= 10^{-10}$.
+It then returns the bracket end with the smaller $\lvert f \rvert$.
+It therefore returns the end with a surface stop when the other end reaches the outer radius with $P(R) > 2 P_{\mathrm{target}}$.
+
+If $P(R)$ is continuous at the stop and rises with a slope $dP(R)/dP_c$ of at most $S$, the reached end of the final bracket has $P(R)$ of at most about $S \times 10^6$ Pa.
+A padded first root then needs $S > 2 P_{\mathrm{target}} / 10^6$ Pa, that is $S > 0.2$ for a target of 1 atm.
+For example, at $S = 0.47$ the reached end can have $P(R)$ up to about $4.7 \times 10^5$ Pa, above $2 P_{\mathrm{target}} \approx 2.0 \times 10^5$ Pa, so Brent's method can return the padded end.
+The condition is necessary, not sufficient.
+It does not apply when $P(R)$ jumps at the stop or scatters.
+
+The solve then refines the root in 2 steps (`_refine_pressure_root`).
+In the first step, a second Brent solve runs on the nearest sign pair: 2 neighbouring evaluated central pressures, with a finite negative residual at the lower one and a finite positive residual at the higher one, the reached end.
+Its `xtol` is $0.1 P_{\mathrm{target}}$ divided by the secant slope of $f$ over that pair.
+The second solve runs only when all of these conditions hold; otherwise the solve skips it:
+
+- the evaluated central pressures hold a sign pair;
+- the first root misses $P_{\mathrm{target}}$ by more than $0.1 P_{\mathrm{target}}$;
+- that `xtol` is below $10^6$ Pa;
+- the slope is at most 1, or the reached end of the pair misses $P_{\mathrm{target}}$ by at most $P_{\mathrm{target}}$.
+
+The limit of 1 on the slope comes from the structure equations.
+A smooth profile whose density does not fall with pressure at a fixed radius, along its temperature profile, has $dP(R)/dP_c \le 1$ while the enclosed mass at every radius rises with $P_c$.
+This also holds across the layer boundaries at fixed enclosed mass.
+A steeper pair whose reached end misses by more than $P_{\mathrm{target}}$ is treated as a jump at the stop or as scatter of $P(R)$ over the pair.
+There a second solve costs structure solves, so the solve skips it.
+Where the density falls with pressure (a mushy zone, the condensed-density or binodal weights of a mixture), a smooth pair can also be steeper than 1, and the same skip applies to it.
+
+In the second step, the solve picks the result from these candidates:
+
+- the first root;
+- for a padded first root, the reached ends of its first sign pair and of its nearest sign pair after the second solve, when they miss $P_{\mathrm{target}}$ by at most $P_{\mathrm{target}}$ (`_REACHED_END_MAX_MISS_PT` $= 1$);
+- the root of the second solve.
+
+The result is the candidate with the smallest finite $\lvert P(R) - P_{\mathrm{target}} \rvert$.
+On a tie, a reached profile wins, and then the later candidate.
+For a padded first root the evaluations of a second solve that raises therefore still count.
+For finite residuals, the result is never further from the target than the first root, or than the result without the second solve.
+A padded first root and a failed second solve log at the DEBUG level, since a Picard run can keep a padded root in hundreds of pressure solves.
+`main` logs one warning when it accepts a padded profile.
+
+The figure shows $\lvert P(R) - P_{\mathrm{target}} \rvert / P_{\mathrm{target}}$ of the accepted profile for 26 setups built from `input/default.toml`.
+5 of the 6 setups with the Newton outer solver at `relative_tolerance` $10^{-9}$ reach the outer radius.
+Setup 10 (PALEOS 1 on the JAX path) ends padded, since $P(R)$ near the stop scatters on that path.
+15 of the 19 setups with the Picard outer solver at the tolerances of `input/default.toml` that return a profile end padded, `input/default.toml` itself (setup 8) among them.
+Every padded profile has one padded point, the outermost.
+Setup 24 (PALEOS 3-layer ice 1) returns no profile: a trial central pressure gives a non-finite profile, and the solve raises `StructureSolveError`.
+This setup fails in 2 of 6 starts whose planet mass differs by $k \times 10^{-13}$ of its value ($k$ = 0 to 5), with and without the root refinement.
+The 9 reached profiles miss $P_{\mathrm{target}}$ by at most $0.38 P_{\mathrm{target}}$ (median $0.077 P_{\mathrm{target}}$).
+
+![Surface pressure miss of the accepted profile for 26 solver setups](../assets/validation/pressure_root_sweep.svg#only-light){ width="80%" }
+![Surface pressure miss of the accepted profile for 26 solver setups](../assets/validation/pressure_root_sweep_dark.svg#only-dark){ width="80%" }
+
+$\lvert P(R) - P_{\mathrm{target}} \rvert / P_{\mathrm{target}}$ of the accepted profile per setup: reached (circles), padded (squares, at 1 since $P(R) = 0$) and without an accepted profile (cross above the cap); the dashed line is the cap of the reached end that may replace a padded root.
+Setups: 0 Analytic 0.1, 1 Analytic 1, 2 Analytic 10, 3 Analytic 1, 2000 layers, 4 Analytic 1, Newton, 5 WB isothermal 3000 K, 6 WB isothermal 4000 K, 7 WB linear, 8 PALEOS 1 (default.toml), 9 PALEOS 1, Newton, 10 PALEOS 1, JAX Newton, 11 PALEOS 0.1, 12 PALEOS 3, 13 PALEOS 3, JAX Newton, 14 PALEOS 10, Newton, 15 PALEOS linear 1, 16 PALEOS isothermal 1, 17 PALEOS 1, 2000 layers, 18 PALEOS 1, P_t 1e7 Pa, 19 PALEOS 1, P_t 1e3 Pa, 20 PALEOS-2phase linear 1, 21 PALEOS-2phase 1, 22 PALEOS-2phase 3, 23 PALEOS + 3 % H 1, 24 PALEOS 3-layer ice 1, 25 PALEOS 5, Newton.
+Made with `python -m tools.validation.pressure_root_sweep run <dir> -j 2`, then `python -m tools.validation.pressure_root_sweep plot <dir> --assets <dir>`.
+
+**Where this is checked.** The cases [Surface boundary condition of the pressure solve](../Validation/hydrostatic_structure.md#surface-boundary-condition-of-the-pressure-solve) and [Surface boundary condition in every Newton setup](../Validation/hydrostatic_structure.md#surface-boundary-condition-in-every-newton-setup) on the Validation tab.
 
 ## Convergence Checks
 
 - The outer loop converges when the relative mass difference falls below `tolerance_outer`.
 - The inner loop converges when the maximum relative density change across all shells falls below `tolerance_inner`.
 - The pressure solver converges when (a) `brentq` reports convergence, (b) the surface pressure residual is within `pressure_tolerance` of the target, and (c) all pressures are non-negative ($P \geq 0$, allowing for zero-padded surface points from the terminal event).
+  A padded profile passes test (b); see [Padded accepts](#padded-accepts).
 
 The numerical solve is accepted when one of the tests below passes: the result then has `converged = True`, and `accepted_on` names the test, or `timeout` when the wall clock stopped the solve of the returned profile; it is None when no test passes.
 `stopped_on_wall_clock` is True when the wall clock stopped that solve, also when no test passed.

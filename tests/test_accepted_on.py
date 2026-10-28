@@ -758,10 +758,14 @@ class TestRealSolve:
         assert r['mass_error_at_accept'] < 1e-4  # newton_tol
         _assert_eos_density(r)
 
-    @pytest.mark.parametrize('inner', [3, 5])
+    @pytest.mark.parametrize('inner', [2, 3])
     def test_newton_with_unconverged_density_flag(self, inner):
         """The inner caps at which the Picard density flag is False: the returned density is
-        the EOS density, so the result is converged."""
+        the EOS density, so the result is converged. Measured flags for caps 2 to 6: False,
+        False, True, True, True on macOS arm64 and Linux amd64, True from cap 4 on since the
+        refined pressure root lets the density converge; without the refinement False, False,
+        True, False, True on macOS and False, False, False, False, True on Linux. Caps 2 and 3
+        are False with and without the refinement on both platforms."""
         r = _run(_cfg(outer_solver='newton', max_iterations_inner=inner, wall_timeout=WALL))
         assert not r['converged_density']
         assert r['converged'] is True and r['accepted_on'] == 'newton_tol'
@@ -1027,9 +1031,13 @@ def test_an_accepted_mass_break_returns_its_own_pass_without_a_fallback(monkeypa
 @pytest.mark.timeout(900)
 def test_a_max_iter_stop_in_the_blend_ramp_returns_a_pass_on_the_adiabat(caplog):
     """PALEOS, adiabatic, 4 outer passes: the mass converges on the linear temperature, and
-    the cap stops the solve in the blend ramp. The returned pass is on the newest blend (0.25),
-    not the linear pass with the smallest mass error, and main warns about the blend."""
+    the cap stops the solve in the blend ramp. The returned pass is on the newest blend the
+    solver logged, not the linear pass with the smallest mass error, and main warns about the
+    blend. Measured newest blend: 0.25 without the root refinement on macOS and Linux; with
+    it 0.5 on macOS and 0.25 on Linux."""
     from tests.test_spider_coupling_convergence import _has_paleos_data
+
+    caplog.set_level(logging.DEBUG, logger='zalmoxis.solver')
 
     if not _has_paleos_data():
         pytest.skip('PALEOS tables not on disk')
@@ -1042,13 +1050,17 @@ def test_a_max_iter_stop_in_the_blend_ramp_returns_a_pass_on_the_adiabat(caplog)
         max_iterations_outer=4,
         wall_timeout=WALL,
     )
-    r = zs.main(cfg, load_material_dictionaries(), None, INPUT)
+    with patch.object(zs, 'create_pressure_density_files') as dump:
+        r = zs.main(cfg, load_material_dictionaries(), None, INPUT)
+    assert dump.called  # the DEBUG profile dump of the solve ran into the stub
     T = np.asarray(r['temperature'])
     off_linear = np.max(np.abs(T - np.linspace(6000.0, 3000.0, len(T))))
     assert r['converged'] is True and r['accepted_on'] == 'max_iter'
     assert r['adiabat_computed'] is True and off_linear > 100.0
-    assert r['adiabat_blend'] == 0.25
-    assert 'accepted a temperature profile at adiabat blend 0.25' in caplog.text
+    steps = [float(m.rsplit('= ', 1)[1]) for m in caplog.messages if 'adiabat blend = ' in m]
+    assert steps and 0.0 < steps[-1] < 1.0, steps
+    assert round(r['adiabat_blend'], 2) == steps[-1]  # the log prints %.2f
+    assert f'accepted a temperature profile at adiabat blend {steps[-1]:.2f}' in caplog.text
 
 
 @pytest.mark.smoke

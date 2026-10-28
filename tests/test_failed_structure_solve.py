@@ -135,15 +135,15 @@ class TestFailedPressureSolve:
             _run(_cfg(outer_solver='picard'))
 
     def test_failure_at_the_brent_root_raises(self, monkeypatch):
-        """Every solve succeeds except the re-solve at the root brentq returns."""
-        calls, real_brentq = {'root': None}, zs.brentq
+        """Every solve succeeds except the re-solve at the refined pressure root."""
+        calls, real_refine = {'root': None}, zs._refine_pressure_root
 
-        def brentq(*args, **kwargs):
-            out = real_brentq(*args, **kwargs)
+        def refine(*args, **kwargs):
+            out = real_refine(*args, **kwargs)
             calls['root'] = out[0]
             return out
 
-        monkeypatch.setattr(zs, 'brentq', brentq)
+        monkeypatch.setattr(zs, '_refine_pressure_root', refine)
         _spy_solve(monkeypatch, lambda radii, y0: y0[2] == calls['root'])
         with pytest.raises(StructureSolveError, match='solve at the Brent root'):
             _run(_cfg(outer_solver='picard'))
@@ -174,13 +174,30 @@ class TestFailedPressureSolve:
             _run(_cfg(outer_solver='picard', target_surface_pressure=2e5))
         assert len(pressures) > 2 and set(pressures) == {2e5}
 
+    def test_the_pressure_solve_records_every_evaluated_central_pressure(self, monkeypatch):
+        """The residual records f at each central pressure it evaluates: the brentq root and
+        both ends of its bracket are in the record the refinement reads."""
+        seen, real = [], zs._refine_pressure_root
+
+        def refine(root, info, evals, residual, p_target, maxiter):
+            seen.append(root in evals and len(evals) >= 2)
+            return real(root, info, evals, residual, p_target, maxiter)
+
+        monkeypatch.setattr(zs, '_refine_pressure_root', refine)
+        try:
+            _run(_cfg(outer_solver='picard'))
+        except KeyError as err:
+            pytest.fail(f'the refinement read an unrecorded central pressure: {err}')
+        assert seen and all(seen)
+
     @pytest.mark.parametrize('outer_solver', ['picard', 'newton'])
     def test_non_finite_mass_at_the_brent_root_raises(self, monkeypatch, outer_solver):
         """The re-solve at the root has NaN mass in its last nodes and finite pressure."""
-        state, real_solve, real_brentq = {'root': False}, zs.solve_structure, zs.brentq
+        state = {'root': False}
+        real_solve, real_refine = zs.solve_structure, zs._refine_pressure_root
 
-        def brentq(*args, **kwargs):
-            out = real_brentq(*args, **kwargs)
+        def refine(*args, **kwargs):
+            out = real_refine(*args, **kwargs)
             state['root'] = True
             return out
 
@@ -191,7 +208,7 @@ class TestFailedPressureSolve:
                 m[-3:] = np.nan
             return m, g, p
 
-        monkeypatch.setattr(zs, 'brentq', brentq)
+        monkeypatch.setattr(zs, '_refine_pressure_root', refine)
         monkeypatch.setattr(zs, 'solve_structure', solve)
         with pytest.raises(StructureSolveError, match='solve at the Brent root'):
             _run(_cfg(outer_solver=outer_solver, max_iterations_outer=1))

@@ -15,7 +15,10 @@ The marker is the load-bearing decision. CI runs `-m unit` on every push and
 is invisible to CI. Pick the strictest marker the test fits. A full solve on the Wolf &
 Bower tables also gets `wolfbower`, an adiabatic PALEOS solve at 5 $M_\oplus$ without a
 reachable wall clock gets `paleos_adiabat`, and a real solve of an accept label or of the
-structure invariants gets `accept_solves`; each runs in its own nightly job.
+structure invariants gets `accept_solves`; each runs in its own nightly job. Beside
+`accept_solves`, a real solve that takes longest also gets `accept_solves_long`, and the
+sweep over every Newton setup gets `accept_solves_newton_setups`; each of these runs in its
+own job too.
 
 | Use ... | When ... |
 |---|---|
@@ -220,8 +223,8 @@ MARKERS (mandatory; CI-invisible without one):
 - @pytest.mark.slow: composition grids or tolerance studies that take
   minutes per test. Manual only.
 Pick the strictest marker the test fits. Give a test one tier marker only;
-`wolfbower`, `paleos_adiabat`, `accept_solves`, `physics_invariant` and
-`reference_pinned` go beside it.
+`wolfbower`, `paleos_adiabat`, `accept_solves`, `accept_solves_long`,
+`accept_solves_newton_setups`, `physics_invariant` and `reference_pinned` go beside it.
 
 FLOAT COMPARISONS:
 - Always pytest.approx, never ==.

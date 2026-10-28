@@ -27,6 +27,7 @@ import numpy as np
 
 from .binodal import gupta2025_suppression_weight, rogers2025_suppression_weight
 from .constants import CONDENSED_RHO_MIN_DEFAULT, CONDENSED_RHO_SCALE_DEFAULT, TDEP_EOS_NAMES
+from .eos.core_alloy import alloy_density, alloy_density_batch, is_alloy_mixture, split_alloy
 
 logger = logging.getLogger('fwl.' + __name__)
 
@@ -496,6 +497,21 @@ def calculate_mixed_density(
             mzf,
         )
 
+    if is_alloy_mixture(mixture):
+        base, w = split_alloy(mixture)
+        mzf = _get_mushy_zone_factor(base, mushy_zone_factors)
+        rho_fe = calculate_density(
+            pressure,
+            material_dictionaries,
+            base,
+            temperature,
+            solidus_func,
+            liquidus_func,
+            interpolation_functions,
+            mzf,
+        )
+        return alloy_density(rho_fe, w, pressure, temperature)
+
     # Per-shell fractions: phi-blended through the partition-law hook
     # when a profile is provided, otherwise the bulk LayerMixture
     # fractions (existing uniform-spread behavior).
@@ -624,6 +640,21 @@ def calculate_mixed_density_batch(
             interpolation_functions,
             mzf,
         )
+
+    if is_alloy_mixture(mixture):
+        base, w = split_alloy(mixture)
+        mzf = _get_mushy_zone_factor(base, mushy_zone_factors)
+        rho_fe = calculate_density_batch(
+            pressures,
+            temperatures,
+            material_dictionaries,
+            base,
+            solidus_func,
+            liquidus_func,
+            interpolation_functions,
+            mzf,
+        )
+        return alloy_density_batch(rho_fe, w, pressures, temperatures)
 
     # Per-shell fractions: when a volatile_profile is provided, evaluate
     # phi(P_j, T_j) per shell and apply the phi-blend; otherwise broadcast
@@ -784,6 +815,17 @@ def get_mixed_nabla_ad(
     if mixture.is_single():
         return _nabla_ad_for_component(
             mixture.components[0],
+            pressure,
+            temperature,
+            material_dictionaries,
+            interpolation_functions,
+            solidus_func,
+            liquidus_func,
+        )
+
+    if is_alloy_mixture(mixture):  # light elements keep the iron adiabat
+        return _nabla_ad_for_component(
+            split_alloy(mixture)[0],
             pressure,
             temperature,
             material_dictionaries,

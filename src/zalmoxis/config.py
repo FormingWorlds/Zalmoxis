@@ -22,6 +22,7 @@ from .constants import (
     earth_mass,
 )
 from .eos import get_solidus_liquidus_functions
+from .eos.core_alloy import ALLOY_PREFIX, is_alloy_mixture, split_alloy
 from .eos_analytic import USER_SELECTABLE_MATERIALS
 from .eos_properties import EOS_REGISTRY
 from .eos_vinet import VALID_VINET_KEYS
@@ -32,6 +33,7 @@ from .mixing import (
     _PALEOS_UNIFIED_TOML_KEYS,
     _SILICATE_EOS_NAMES,
     BINODAL_T_SCALE_DEFAULT,
+    _parse_single_component,
     parse_layer_components,
 )
 
@@ -144,6 +146,18 @@ def parse_eos_config(eos_section):
     )
 
 
+def _check_alloy_fractions(eos_str):
+    """Require an explicit fraction on every component of a light-element core, sum 1."""
+    fracs = []
+    for seg in eos_str.split('+'):
+        name, frac = _parse_single_component(seg)
+        if name == seg.strip():
+            raise ValueError(f'a light-element core needs an explicit fraction on {seg!r}')
+        fracs.append(frac)
+    if abs(sum(fracs) - 1.0) > 1e-9:
+        raise ValueError(f'light-element core fractions must sum to 1, got {sum(fracs)!r}')
+
+
 def validate_layer_eos(layer_eos_config):
     """Validate all per-layer EOS strings, including multi-material mixtures.
 
@@ -158,9 +172,15 @@ def validate_layer_eos(layer_eos_config):
         If any layer EOS string or component is invalid.
     """
     for layer, eos_str in layer_eos_config.items():
+        if ALLOY_PREFIX in eos_str:  # before the parser renormalises the fractions
+            if layer != 'core':
+                raise ValueError(f"CoreAlloy components belong in the core, not in '{layer}'")
+            _check_alloy_fractions(eos_str)
         mixture = parse_layer_components(eos_str)
+        if is_alloy_mixture(mixture):
+            split_alloy(mixture)
         for comp in mixture.components:
-            if comp in VALID_TABULATED_EOS:
+            if comp in VALID_TABULATED_EOS or comp.startswith(ALLOY_PREFIX):
                 continue
             if comp.startswith('Analytic:'):
                 material_key = comp.split(':', 1)[1]
@@ -595,7 +615,7 @@ def validate_config(config_params):
             tindep_tabulated = [
                 c
                 for c in tindep_comps
-                if not c.startswith('Analytic:') and not c.startswith('Vinet:')
+                if not c.startswith(('Analytic:', 'Vinet:', ALLOY_PREFIX))
             ]
             if tindep_tabulated:
                 logger.warning(
@@ -615,7 +635,7 @@ def validate_config(config_params):
         for comp in core_mix.components:
             comp_material = comp.split(':')[-1] if ':' in comp else comp
             if not any(kw in comp_material for kw in iron_keywords):
-                if not comp.startswith('Analytic:') and not comp.startswith('Vinet:'):
+                if not comp.startswith(('Analytic:', 'Vinet:', ALLOY_PREFIX)):
                     logger.warning(
                         f"Core EOS component '{comp}' does not appear to be "
                         f'an iron EOS. Core is typically iron (Fe). '

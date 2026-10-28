@@ -47,7 +47,7 @@ jobs:
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12.9"
+          python-version: "3.12"
 
       - name: Prevent coverage threshold decreases vs main
         # Pre-flight check: fail the PR if pyproject.toml's coverage
@@ -120,7 +120,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install .  # from pyproject.toml
-          pip install pytest pytest-xdist hypothesis ruff zensical markdown-include mkdocstrings[python] pymdown-extensions
+          pip install pytest pytest-xdist hypothesis "proteus-mpl>=1.5.0" ruff zensical markdown-include mkdocstrings[python] pymdown-extensions
 
       # The pins live in the installed fwl-io and in src/zalmoxis/datasets.
       - name: Resolve the data cache key
@@ -159,6 +159,10 @@ jobs:
         if: ${{ matrix.os == 'ubuntu-latest' }}
         run: |
           bash tools/validate_test_structure.sh
+
+      - name: Check agent instruction files
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        run: python tools/agents/check_agents_md.py
 
       - name: Run unit tests
         # Exclude slow tests at the marker-expression level. Several

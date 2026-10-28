@@ -38,6 +38,11 @@ where $M(r)$ is the enclosed mass within radius $r$, $\rho(r)$ is the local dens
 
 The density $\rho(P)$ (or $\rho(P, T)$ when a temperature-dependent EOS is used) closes the system at each radial shell.
 
+The integration starts at the centre with $M = 0$, $g = 0$ and a trial central pressure $P_c$.
+The pressure solve then adjusts $P_c$ until the pressure at the outer radius $R$ equals the target surface pressure $P_t$, the surface boundary condition $P(R) = P_t$.
+A trial $P_c$ that is too low lets the pressure reach 0 before $R$; the integration stops there, and the profile is padded with $P = 0$ up to $R$.
+How the solve finds $P_c$, when it accepts a padded profile and how it refines such a root is explained in [Pressure solver](process_flow.md#pressure-solver-brents-method) and [Padded accepts](process_flow.md#padded-accepts).
+
 ---
 
 ## Per-Layer EOS Architecture

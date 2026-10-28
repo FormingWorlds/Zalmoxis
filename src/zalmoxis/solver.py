@@ -52,11 +52,12 @@ from .mixing import (
     build_partition_profile,
     calculate_mixed_density_batch,
     compute_melt_fraction,
+    get_mixed_nabla_ad,
     parse_all_layer_mixtures,
     split_mantle_volatile_inventory,
     strong_partition_phi_floor,
 )
-from .structure_model import solve_structure, temperature_from_arrays
+from .structure_model import get_layer_mixture, solve_structure, temperature_from_arrays
 
 logger = logging.getLogger('fwl.' + __name__)
 
@@ -76,6 +77,132 @@ def _require_finite(radii, profiles, reason, outer_iter, inner_iter):
         f'Structure solve failed at R = {radii[-1]:.6e} m (outer iteration {outer_iter}, '
         f'inner {inner_iter}): {reason}; stop {stop}.'
     )
+
+
+# A pressure root that misses P_t by more than this share of P_t is solved again on its
+# nearest sign pair with an xtol of this share of P_t over the slope of that pair.
+_REFINE_MISS_PT = 0.1
+
+# dP(R)/dP_c of a smooth profile whose density does not fall with pressure at fixed radius
+# is at most 1; a steeper sign pair whose reached end misses P_t by more than the cap is
+# treated as a jump at the stop or scatter of P(R), and gets no second solve.
+_MAX_PAIR_SLOPE = 1.0
+
+# A reached pair end replaces a padded root, or lets a steep pair be solved again, only when
+# it misses P_t by at most this many P_t.
+_REACHED_END_MAX_MISS_PT = 1.0
+
+
+def _nearest_sign_pair(evals, root):
+    """Adjacent evaluated central pressures (a, b), finite f(a) < 0 < f(b), nearest the root.
+
+    Parameters
+    ----------
+    evals : dict
+        Surface pressure residual f [Pa] of each evaluated central pressure P_c [Pa].
+    root : float
+        Central pressure [Pa] the pair is chosen nearest to, by its lower end.
+
+    Returns
+    -------
+    tuple of float or None
+        The pair (a, b) with a < b, or None when no adjacent pair brackets the target.
+    """
+    xs = sorted(evals)
+    pairs = [
+        (a, b)
+        for a, b in zip(xs, xs[1:])
+        if np.isfinite(evals[a]) and np.isfinite(evals[b]) and evals[a] < 0.0 < evals[b]
+    ]
+    return min(pairs, key=lambda ab: abs(ab[0] - root)) if pairs else None
+
+
+def _refine_pressure_root(root, info, evals, residual, p_target, maxiter):
+    """Refine the brentq root of the surface pressure residual.
+
+    brentq with xtol 1e6 Pa returns the end of its last bracket with the smaller |f|,
+    which is a stopped (padded) profile with f = -P_t when the reached end has
+    P(R) > 2 P_t. A root that misses P_t by more than ``_REFINE_MISS_PT`` P_t is solved
+    again on its nearest sign pair with xtol = ``_REFINE_MISS_PT`` P_t over the secant slope
+    of that pair, when that xtol is below 1e6 Pa and either the slope is at most
+    ``_MAX_PAIR_SLOPE`` or the reached end misses P_t by at most
+    ``_REACHED_END_MAX_MISS_PT`` P_t. The second solve takes f at the pair ends from
+    ``evals``; one that raises adds no root. The result is the candidate with the smallest
+    finite |f| (on a tie a reached one, then the later one): the first root, for a padded
+    first root the reached ends of its first sign pair and of its nearest sign pair after
+    the second solve when they miss P_t by at most ``_REACHED_END_MAX_MISS_PT`` P_t, so the
+    evaluations of a failed second solve count, and the second-solve root. For finite
+    residuals the result never misses P_t by more than the first root or than the result
+    without the second solve.
+    A padded first root and a failed second solve log at DEBUG.
+
+    Parameters
+    ----------
+    root : float
+        Central pressure brentq returned [Pa].
+    info : RootResults or None
+        brentq convergence record of ``root``.
+    evals : dict
+        f [Pa] of every evaluated central pressure [Pa]; ``residual`` adds to it.
+    residual : callable
+        Surface pressure residual f(P_c) = P(R) - P_t [Pa].
+    p_target : float
+        Target surface pressure P_t [Pa].
+    maxiter : int
+        Iteration limit of the second brentq.
+
+    Returns
+    -------
+    tuple
+        The refined root [Pa] and the brentq record of the solve that gave it; a padded
+        root replaced by a reached end keeps the record of the solve that returned it.
+    """
+    f_root, pair = evals[root], _nearest_sign_pair(evals, root)
+    cap = _REACHED_END_MAX_MISS_PT * p_target
+    second = []
+    if pair is not None and abs(f_root) > _REFINE_MISS_PT * p_target:
+        a, b = pair
+        slope = (evals[b] - evals[a]) / (b - a)
+        xtol = _REFINE_MISS_PT * p_target / slope
+        if xtol < 1e6 and (slope <= _MAX_PAIR_SLOPE or evals[b] <= cap):
+            try:
+                second.append(
+                    brentq(
+                        lambda x: evals[x] if x in evals else residual(x),
+                        a,
+                        b,
+                        xtol=xtol,
+                        rtol=1e-10,
+                        maxiter=maxiter,
+                        full_output=True,
+                    )
+                )
+            except (RuntimeError, ValueError) as err:
+                logger.debug('Second pressure solve failed (%s).', err)
+    # A padded first root also offers the reached end of its first pair and of its nearest
+    # pair after the second solve, which counts the evaluations of a failed second solve.
+    cands = [(root, info)]
+    if f_root == -p_target:
+        ends = [q[1] for q in (pair, _nearest_sign_pair(evals, root)) if q is not None]
+        cands += [(e, info) for e in ends if evals[e] <= cap]
+    cands += second
+    # Smallest |f| wins (a non-finite f never), then a reached root, then the later one.
+    best, best_info = min(
+        reversed(cands),
+        key=lambda c: (
+            abs(evals[c[0]]) if math.isfinite(evals[c[0]]) else math.inf,
+            evals[c[0]] == -p_target,
+        ),
+    )
+    if f_root == -p_target:
+        logger.debug(
+            'Padded pressure root P_c = %.6e Pa: %s.',
+            root,
+            'the solve keeps the padded root'
+            if evals[best] == -p_target
+            else f'taking P_c = {best:.6e} Pa, which misses P_t by {abs(evals[best]):.3e} Pa',
+        )
+    return best, best_info
 
 
 # Module-level EOS interpolation cache. Persists across multiple main() calls
@@ -337,6 +464,12 @@ def _check_accepted(
 
     result['integration_tolerances'] = (rtol, atol)
     check_accepted(result, config_params, rtol, atol, density_at, 'ice_layer' in mixes)
+    if result.get('padded'):
+        logger.warning(
+            'The accepted profile ends in a surface stop: P = 0 at the outer radius instead '
+            'of the target surface pressure %.4g Pa (padded).',
+            config_params['target_surface_pressure'],
+        )
     return result
 
 
@@ -528,7 +661,10 @@ def main(
         sets ``converged`` to False and leaves ``accepted_on`` as it is. A converged
         result has ``integration_tolerances``, the (rtol, atol) of the solve that
         returned, with rtol at least the RK45 floor of 100 eps, which the invariant
-        check used; an unconverged result has none.
+        check used; an unconverged result has none. ``padded`` (bool) is True when
+        the pressure at the outer radius is 0: the integration stopped at P = 0 before
+        the outer radius, and the nodes past the stop hold P = 0. ``main`` logs one
+        warning when it returns a converged padded result.
 
     Raises
     ------
@@ -1320,6 +1456,95 @@ def _solve_newton_outer(
     )
 
 
+def _surface_density(
+    T, m_stop, p_surface, cmb_mass, core_mantle_mass, layer_mixtures, eos_args, volatile_profile
+):
+    """Return rho_EOS at the target surface pressure for the padded surface nodes.
+
+    The padded nodes share the stop mass, so its layer holds them all. A density that is not
+    finite is returned as it is: in an accepted result it breaks the ``positive`` invariant.
+
+    Parameters
+    ----------
+    T : numpy.ndarray
+        Temperatures of the padded nodes [K].
+    m_stop : float
+        Mass at the stop [kg].
+    p_surface : float
+        Target surface pressure [Pa].
+    cmb_mass, core_mantle_mass : float
+        Layer boundaries [kg].
+    layer_mixtures : dict
+        Per-layer mixtures.
+    eos_args : tuple
+        Arguments of ``calculate_mixed_density_batch`` after the mixture.
+    volatile_profile : VolatileProfile or None
+        Applied only when the stop lies in the mantle.
+
+    Returns
+    -------
+    numpy.ndarray
+        Density of each padded node [kg/m^3].
+    """
+    mix = get_layer_mixture(m_stop, cmb_mass, core_mantle_mass, layer_mixtures)
+    vp = volatile_profile if mix is layer_mixtures.get('mantle') else None
+    return calculate_mixed_density_batch(
+        np.full(len(T), p_surface), T, mix, *eos_args, volatile_profile=vp
+    )
+
+
+def _adiabat_to_surface(P0, T0, p_surface, mix, eos_args, n_steps=64):
+    """Continue an adiabat from (``P0``, ``T0``) down to the target surface pressure.
+
+    Integrates d ln T / d ln P = nabla_ad(P, T) with the midpoint rule in ln P. T0 is returned
+    when it is not finite, the mixture has no T-dependent component or there is no pressure
+    drop; T is held from the first step where nabla_ad is missing or not positive.
+
+    Parameters
+    ----------
+    P0, T0 : float
+        Pressure [Pa] and temperature [K] of the last node with P > 0.
+    p_surface : float
+        Target surface pressure [Pa].
+    mix : LayerMixture
+        Mixture of the layer at the surface.
+    eos_args : tuple
+        The ``eos_args`` of ``_surface_density``; ``get_mixed_nabla_ad`` takes them with the
+        interpolation cache before the melting curves.
+    n_steps : int, optional
+        Number of steps in ln P.
+
+    Returns
+    -------
+    float
+        Temperature at ``p_surface`` [K].
+    """
+    if not np.isfinite(T0) or not mix.has_tdep() or not 0 < p_surface < P0:
+        return T0
+    md, solidus, liquidus, cache, *rest = eos_args
+    nabla_args = (md, cache, solidus, liquidus, *rest)
+    h = np.log(p_surface / P0) / n_steps
+    lnp, T = np.log(P0), T0
+    for _ in range(n_steps):
+        n1 = get_mixed_nabla_ad(np.exp(lnp), T, mix, *nabla_args)
+        n2 = (
+            get_mixed_nabla_ad(np.exp(lnp + h / 2), T * np.exp(n1 * h / 2), mix, *nabla_args)
+            if n1 is not None and n1 > 0
+            else None
+        )
+        if n2 is None or not n2 > 0:
+            logger.warning(
+                'Surface adiabat continuation holds T = %.1f K from P = %.3e Pa: nabla_ad '
+                'missing or not positive.',
+                T,
+                np.exp(lnp),
+            )
+            return T
+        T = min(max(T * np.exp(n2 * h), 100.0), 100000.0)
+        lnp += h
+    return T
+
+
 def _solve(
     config_params,
     material_dictionaries,
@@ -1375,7 +1600,8 @@ def _solve(
         iteration cap only below 3 %), with its blend, a warning and its own mass error in
         ``best_mass_error``. ``stopped_on_wall_clock`` is True
         when the wall clock stopped the solve, also when it was not accepted.
-        ``density`` is rho_EOS(P, T) at the returned nodes and ``density_from_eos`` is
+        ``density`` is rho_EOS(P, T) at the returned nodes, at the target surface pressure on
+        the padded nodes (P = 0 past a surface stop), and ``density_from_eos`` is
         True, unless the solve was not accepted and the returned pass has no pressure
         solve: the wall clock stopped the solve before its first pass, or before the
         first pressure solve of the first pass or of the pass at ``max_iterations_outer``;
@@ -1886,6 +2112,7 @@ def _solve(
             # the residual function (brentq doesn't return intermediate
             # results, only the root)
             _state = {'mass_enclosed': None, 'gravity': None, 'pressure': None, 'n_evals': 0}
+            _evals = {}  # f(P_c) [Pa] of each evaluated central pressure of this solve
 
             def _pressure_residual(p_center):
                 """Surface pressure residual f(P_c) = P_surface(P_c) - P_target.
@@ -1939,10 +2166,9 @@ def _solve(
 
                 # Early termination: pressure reached zero before the
                 # surface (padded with zeros) → P_center is too low
-                if p[-1] <= 0:
-                    return -target_surface_pressure
-
-                return p[-1] - target_surface_pressure
+                f = -target_surface_pressure if p[-1] <= 0 else p[-1] - target_surface_pressure
+                _evals[float(p_center)] = f
+                return f
 
             # Bracket: use previous solution to narrow the search.
             # If the narrow bracket from the previous solve does not
@@ -2004,6 +2230,14 @@ def _solve(
                     rtol=1e-10,
                     maxiter=max_iterations_pressure,
                     full_output=True,
+                )
+                p_solution, root_info = _refine_pressure_root(
+                    p_solution,
+                    root_info,
+                    _evals,
+                    _pressure_residual,
+                    target_surface_pressure,
+                    max_iterations_pressure,
                 )
                 _prev_brent_solution = p_solution  # Persist for next iteration
                 # Re-run solve_structure at the exact root to get clean profiles
@@ -2567,7 +2801,46 @@ def _solve(
     total_time = end_time - start_time
 
     pressure = np.asarray(pressure)
-    density[pressure <= 0] = 0.0  # padded nodes
+    pad = pressure <= 0  # padded nodes past a surface stop
+    density[pad] = 0.0
+    if density_from_eos and pad.any():
+        temperatures = np.asarray(temperatures, dtype=float)
+        k = int(np.argmax(pad))
+        m_stop = float(mass_enclosed[k])
+        eos_args = (
+            material_dictionaries,
+            solidus_func,
+            liquidus_func,
+            interpolation_cache,
+            mushy_zone_factors,
+            condensed_rho_min,
+            condensed_rho_scale,
+            binodal_T_scale,
+        )
+        # a CMB-anchored adiabat at blend 1: continued to the target surface pressure
+        if (
+            k > 0
+            and _adiabat_computed
+            and _adiabat_blend >= 1.0
+            and temperature_mode == 'adiabatic_from_cmb'
+        ):
+            temperatures[pad] = _adiabat_to_surface(
+                float(pressure[k - 1]),
+                temperatures[k - 1],
+                target_surface_pressure,
+                get_layer_mixture(m_stop, cmb_mass, core_mantle_mass, layer_mixtures),
+                eos_args,
+            )
+        density[pad] = _surface_density(
+            temperatures[pad],
+            m_stop,
+            target_surface_pressure,
+            cmb_mass,
+            core_mantle_mass,
+            layer_mixtures,
+            eos_args,
+            volatile_profile,
+        )
 
     model_results = {
         'layer_eos_config': layer_eos_config,
@@ -2591,6 +2864,7 @@ def _solve(
         'accept_mass_limit': accept_mass_limit,
         'density_from_eos': density_from_eos,
         'p_center': pressure[0] if len(pressure) > 0 else None,
+        'padded': bool(pad.size and pad[-1]),
         'adiabat_computed': _adiabat_computed,
         'adiabat_blend': _adiabat_blend,
     }

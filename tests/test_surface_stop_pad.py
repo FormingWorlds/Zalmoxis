@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 import zalmoxis.structure_model as sm
 from zalmoxis.constants import G
@@ -96,7 +98,8 @@ class TestNumpyStopPad:
         i_stop = node % N + 1
         assert np.all(p[i_stop:] == 0.0)
         assert m[i_stop:] == pytest.approx(np.full(N - i_stop, _mass(r0)), rel=1e-6)
-        assert g[-1] == pytest.approx(G * _mass(r0) / r0**2, rel=1e-6)
+        # no mass above the stop: the padded gravity is that of m(r0) at each node (Gauss)
+        assert g[i_stop:] == pytest.approx(G * _mass(r0) / radii[i_stop:] ** 2, rel=1e-6)
         # Nodes below the stop keep their own values; only the pad changes.
         assert m[1:i_stop] == pytest.approx(_mass(radii[1:i_stop]), rel=1e-6)
 
@@ -117,7 +120,7 @@ class TestNumpyStopPad:
         )
         k = node + 1
         assert m[k:] == pytest.approx(np.full(N - k, _mass(r0)), rel=1e-6)
-        assert g[-1] == pytest.approx(G * _mass(r0) / r0**2, rel=1e-6)
+        assert g[k:] == pytest.approx(G * _mass(r0) / radii[k:] ** 2, rel=1e-6)
         assert np.all(p[k:] == 0.0)
         assert m[1:k] == pytest.approx(_mass(radii[1:k]), rel=1e-6)
 
@@ -432,7 +435,9 @@ class TestInteriorStopFails:
         assert tails == [1]
         m0, g0, _ = clean.y_events[0][0]
         assert m[38:] == pytest.approx(np.full(N - 38, m0), rel=1e-8)
-        assert g[-1] == pytest.approx(g0, rel=1e-8) and np.all(p[38:] == 0.0)
+        assert g[38:] == pytest.approx(G * m0 / np.linspace(0.0, R_OUT, N)[38:] ** 2, rel=1e-8)
+        assert g0 == pytest.approx(G * m0 / clean.t_events[0][0] ** 2, rel=1e-8)
+        assert np.all(p[38:] == 0.0)
 
     def test_restart_that_reaches_the_outer_radius(self, monkeypatch):
         """A restart that passes a failure in the last shell completes the profile."""
@@ -462,7 +467,8 @@ class TestPadAfterStop:
         )
         assert len(m) == 5
         if padded:
-            assert list(m[3:]) == [2.0, 2.0] and list(g[3:]) == [3.0, 3.0]
+            assert list(m[3:]) == [2.0, 2.0]
+            assert g[3:] == pytest.approx(G * 2.0 / radii[3:] ** 2, rel=1e-15)
             assert list(p[3:]) == [0.0, 0.0]
         else:
             assert np.all(np.isnan(m[3:])) and np.all(np.isnan(p[3:]))
@@ -479,6 +485,16 @@ class TestPadAfterStop:
             )
         assert 'at r = 0;' in caplog.text and np.all(np.isnan(p)) and len(m) == 5
 
+    def test_a_surface_stop_at_the_centre_keeps_the_stop_gravity_there(self):
+        """A stop before the first node at or below the surface pressure pads every node; at
+        r = 0 the gravity is that of the stop, elsewhere G m_stop / r^2."""
+        radii = np.linspace(0.0, 1.0, 5)
+        m, g, p = sm.pad_after_stop(
+            radii, np.ones(0), np.ones(0), np.ones(0), [2.0, 3.0, 0.0], 1e11, 1e5
+        )
+        assert g[0] == 3.0 and np.all(m == 2.0) and np.all(p == 0.0)
+        assert g[1:] == pytest.approx(G * 2.0 / radii[1:] ** 2, rel=1e-15)
+
     @pytest.mark.parametrize('y_stop', [[np.nan, 3.0, 0.0], [2.0, np.inf, 0.0]])
     def test_non_finite_stop_state_fails(self, y_stop):
         """A stop at zero pressure with a non-finite mass or gravity is a failed solve."""
@@ -486,6 +502,32 @@ class TestPadAfterStop:
             np.linspace(0.0, 1.0, 5), np.ones(3), np.ones(3), np.ones(3), y_stop, 1e11
         )
         assert np.all(np.isnan(m[3:])) and np.all(np.isnan(g[3:])) and np.all(np.isnan(p[3:]))
+
+
+@settings(max_examples=200, deadline=None)
+@given(
+    n=st.integers(min_value=1, max_value=9),
+    m_stop=st.floats(min_value=1e10, max_value=1e27),
+    g_stop=st.floats(min_value=1e-3, max_value=1e4),
+    p_frac=st.floats(min_value=0.0, max_value=1e-6),
+    p_surface=st.floats(min_value=0.0, max_value=1e9),
+)
+def test_a_surface_pad_holds_the_stop_mass_and_its_gravity_at_each_radius(
+    n, m_stop, g_stop, p_frac, p_surface
+):
+    """Over the stop state and the surface pressure limit, a surface pad has zero pressure,
+    the stop mass and g r^2 = G m_stop at every padded node, whatever the gravity at the
+    stop; the nodes below the stop keep their values."""
+    radii = np.linspace(0.0, 6.4e6, 10)
+    below = np.arange(1.0, n + 1.0)
+    p_c = 3.6e11
+    m, g, p = sm.pad_after_stop(
+        radii, below, below, below, [m_stop, g_stop, p_frac * p_c], p_c, p_surface
+    )
+    assert np.all(p[n:] == 0.0) and np.all(m[n:] == m_stop)
+    assert g[n:] * radii[n:] ** 2 == pytest.approx(np.full(10 - n, G * m_stop), rel=1e-14)
+    for a in (m, g, p):
+        assert np.array_equal(a[:n], below)
 
 
 class TestJaxStopState:
