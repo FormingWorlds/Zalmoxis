@@ -73,7 +73,7 @@ class TestValidateConfigMixWarnings:
                 'mantle': 'PALEOS-2phase:MgSiO3:0.7+Seager2007:H2O:0.3',
             },
         )
-        with caplog.at_level(logging.WARNING, logger='zalmoxis.config'):
+        with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.config'):
             validate_config(cfg)
         assert any(
             'T-dependent' in r.message and 'T-independent' in r.message for r in caplog.records
@@ -89,7 +89,7 @@ class TestValidateConfigMixWarnings:
                 'mantle': 'Seager2007:MgSiO3',
             }
         )
-        with caplog.at_level(logging.WARNING, logger='zalmoxis.config'):
+        with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.config'):
             validate_config(cfg)
         assert any('Core EOS' in r.message and 'iron' in r.message for r in caplog.records)
 
@@ -101,7 +101,7 @@ class TestValidateConfigMixWarnings:
                 'mantle': 'PALEOS:MgSiO3:0.7+Chabrier:H:0.3',
             }
         )
-        with caplog.at_level(logging.WARNING, logger='zalmoxis.config'):
+        with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.config'):
             validate_config(cfg)
         assert any('H2' in r.message and 'validated' in r.message for r in caplog.records)
 
@@ -153,6 +153,6 @@ class TestValidateConfigMixWarnings:
                 }
             )
         )
-        with caplog.at_level(logging.WARNING, logger='zalmoxis.config'):
+        with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.config'):
             validate_config(cfg)
         assert any('40% H2O' in r.message for r in caplog.records)

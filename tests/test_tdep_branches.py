@@ -194,7 +194,7 @@ class TestPaleosNablaAdScalar:
         material = {'mantle': {'eos_file': eos_file}}
         # Reset the warned-set so we cleanly observe the first emission.
         _tdep._paleos_clamp_warned.discard(eos_file)
-        with caplog.at_level(logging.WARNING, logger='zalmoxis.eos.tdep'):
+        with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.eos.tdep'):
             val = _get_paleos_nabla_ad(1e10, 9000.0, material, 'mantle', cache)
             assert any('clamping' in r.message for r in caplog.records)
         assert val == pytest.approx(0.25)

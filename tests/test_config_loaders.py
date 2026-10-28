@@ -498,7 +498,7 @@ class TestLoadSolidusLiquidusFunctions:
         ``mushy_zone_factor * liquidus``. The loader must warn so a user who
         sets ``rock_solidus`` learns it has no effect.
         """
-        with caplog.at_level('WARNING', logger='zalmoxis.config'):
+        with caplog.at_level('WARNING', logger='fwl.zalmoxis.config'):
             out = load_solidus_liquidus_functions(
                 {'core': 'PALEOS:iron', 'mantle': 'PALEOS-2phase:MgSiO3'},
                 solidus_id='WolfBower2018-solidus',
@@ -516,7 +516,7 @@ class TestLoadSolidusLiquidusFunctions:
         """The default ``rock_solidus`` carries no user intent to override,
         so the loader stays silent even though the value is still ignored.
         """
-        with caplog.at_level('WARNING', logger='zalmoxis.config'):
+        with caplog.at_level('WARNING', logger='fwl.zalmoxis.config'):
             load_solidus_liquidus_functions(
                 {'core': 'PALEOS:iron', 'mantle': 'PALEOS-2phase:MgSiO3'},
                 solidus_id='Stixrude14-solidus',

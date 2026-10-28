@@ -38,7 +38,7 @@ import numpy as np
 
 from .mixing import parse_layer_components
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('fwl.' + __name__)
 
 PHASE_UNKNOWN = 'unknown'
 

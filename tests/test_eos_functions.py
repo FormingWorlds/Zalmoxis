@@ -381,7 +381,7 @@ class TestEnsureUnifiedCache:
 
         rebuilt = {'type': 'paleos_unified', 'p_min': 1.0e5, 'p_max': 1.0e12}
         cache = {}
-        with caplog.at_level(logging.INFO, logger='zalmoxis.eos.interpolation'):
+        with caplog.at_level(logging.INFO, logger='fwl.zalmoxis.eos.interpolation'):
             with patch(
                 'zalmoxis.eos.interpolation.load_paleos_unified_table',
                 return_value=rebuilt,
@@ -446,7 +446,7 @@ class TestEnsureUnifiedCache:
 
         rebuilt = {'type': 'paleos_unified', 'p_min': 3.0e5, 'p_max': 7.0e11}
         cache = {}
-        with caplog.at_level(logging.INFO, logger='zalmoxis.eos.interpolation'):
+        with caplog.at_level(logging.INFO, logger='fwl.zalmoxis.eos.interpolation'):
             with patch(
                 'zalmoxis.eos.interpolation.load_paleos_unified_table',
                 return_value=rebuilt,

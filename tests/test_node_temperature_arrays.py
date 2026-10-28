@@ -94,7 +94,7 @@ def test_temperature_arrays_skip_the_adiabat_blend(monkeypatch, caplog):
         max_iterations_inner=1,
         tolerance_outer=0.05,
     )
-    with caplog.at_level('INFO', logger='zalmoxis'):
+    with caplog.at_level('INFO', logger='fwl.zalmoxis'):
         _node_temperatures(monkeypatch, cfg, temperature_arrays=(r_arr, T_arr))
     assert 'Outer loop (total mass) converged' in caplog.text
     assert 'activating adiabat blend' not in caplog.text

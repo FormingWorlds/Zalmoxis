@@ -88,7 +88,7 @@ class TestReportTableBands:
     def test_melt_nodes_report_count_and_largest_excess(self, mats, caplog):
         """Molten nodes read the melt table; 3300 K at 1 GPa is 300 K beyond its band."""
         md, melt, grad, solid = mats
-        with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+        with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.solver'):
             res = _check(_result(HOT), md, _curves(500.0, 600.0))
         assert res['table_band_excess'] == {melt: (2, pytest.approx(300.0)), solid: (0, 0.0)}
         assert res['converged'] is False and res['converged_bands'] is False
@@ -102,7 +102,7 @@ class TestReportTableBands:
         md, _, _, _ = mats
         for limit in (300.0, '300'):
             caplog.clear()
-            with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+            with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.solver'):
                 res = _check(_result(HOT), md, _curves(500.0, 600.0), max_band_excess=limit)
             assert res['converged'] is True and res['converged_bands'] is True
             assert len(caplog.records) == 1
@@ -111,7 +111,7 @@ class TestReportTableBands:
         """A profile inside every band reports zeros and logs nothing."""
         md, melt, grad, solid = mats
         res = _result([9999.0, 2000.0, 2000.0, 2000.0], adiabat=True)
-        with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+        with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.solver'):
             _check(res, md, _curves(1800.0, 2200.0))
         assert res['table_band_excess'] == {melt: (0, 0.0), solid: (0, 0.0), grad: (0, 0.0)}
         assert res['converged'] is True and not caplog.records
@@ -390,7 +390,7 @@ def test_main_checks_the_profile_with_the_mixtures_it_got(mats, monkeypatch, cap
         'outer_solver': outer,
     }
     mixtures = parse_all_layer_mixtures({'core': 'Seager2007:iron', 'mantle': 'X:MgSiO3'})
-    with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+    with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.solver'):
         out = solver.main(cfg, md, _curves(500.0, 600.0), '/tmp', layer_mixtures=mixtures)
     tables = {melt, md['X:MgSiO3']['solid_mantle']['eos_file']}
     assert set(out['table_band_excess']) == (tables if outer == 'newton' else tables | {grad})
@@ -483,7 +483,7 @@ def _wb_solve(tmp_dir, surface_temperature, **params):
     records = []
     handler = logging.Handler()
     handler.emit = records.append
-    logging.getLogger('zalmoxis.solver').addHandler(handler)
+    logging.getLogger('fwl.zalmoxis.solver').addHandler(handler)
     try:
         res = solver.main(
             cfg,
@@ -492,7 +492,7 @@ def _wb_solve(tmp_dir, surface_temperature, **params):
             input_dir=os.path.join(root, 'input'),
         )
     finally:
-        logging.getLogger('zalmoxis.solver').removeHandler(handler)
+        logging.getLogger('fwl.zalmoxis.solver').removeHandler(handler)
     msgs = [r.getMessage() for r in records]
     cut = [m for m in msgs if any(text in m for text in CUT_LOGS)]
     assert not cut, cut

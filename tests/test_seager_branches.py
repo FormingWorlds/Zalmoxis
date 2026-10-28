@@ -373,7 +373,7 @@ class TestFillCells:
         as main() does at each call, and no warning."""
         cache = {}
         seager._band_debug_seen.clear()
-        with caplog.at_level('DEBUG', logger='zalmoxis.eos.seager'):
+        with caplog.at_level('DEBUG', logger='fwl.zalmoxis.eos.seager'):
             for _ in range(2):
                 get_tabulated_eos(2.5e9, fill_table, 'melted_mantle', 3400.0, cache)
             get_tabulated_eos(2.5e9, fill_table, 'melted_mantle', 2000.0, cache)
@@ -392,7 +392,7 @@ class TestFillCells:
         assert np.isnan(filled[1]).all() and np.isnan(t_lo[1])
         mat = _write_table(tmp_path / 'density_melt.dat', rho)
         cache = {}
-        with caplog.at_level('WARNING', logger='zalmoxis.eos.seager'):
+        with caplog.at_level('WARNING', logger='fwl.zalmoxis.eos.seager'):
             assert get_tabulated_eos(5e8, mat, 'melted_mantle', 2000.0, cache) is None
         assert not [r for r in caplog.records if 'valid band' in r.getMessage()]
         assert get_tabulated_eos(2.5e9, mat, 'melted_mantle', 2000.0, cache) == pytest.approx(
@@ -420,7 +420,7 @@ class TestFillCells:
     def test_beyond_the_edge_combines_valid_values(self, fill_table, caplog):
         """Hot and cold queries combine each row's edge value, with no warning."""
         cache = {}
-        with caplog.at_level('WARNING', logger='zalmoxis.eos.seager'):
+        with caplog.at_level('WARNING', logger='fwl.zalmoxis.eos.seager'):
             hot = get_tabulated_eos(2.5e9, fill_table, 'melted_mantle', 3400.0, cache)
             cold = get_tabulated_eos(2.5e9, fill_table, 'melted_mantle', 600.0, cache)
         assert hot == pytest.approx(

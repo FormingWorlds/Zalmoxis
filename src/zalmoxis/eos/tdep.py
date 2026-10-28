@@ -20,7 +20,7 @@ from .interpolation import (
 from .registry_guard import StaleTableError
 from .seager import get_tabulated_eos
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('fwl.' + __name__)
 
 
 def load_melting_curve(melt_file):

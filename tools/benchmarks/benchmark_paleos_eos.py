@@ -41,8 +41,8 @@ logging.basicConfig(
 logger = logging.getLogger('benchmark_paleos')
 
 # Suppress verbose EOS loader messages
-logging.getLogger('zalmoxis.eos').setLevel(logging.WARNING)
-logging.getLogger('zalmoxis.zalmoxis').setLevel(logging.WARNING)
+logging.getLogger('fwl.zalmoxis.eos').setLevel(logging.WARNING)
+logging.getLogger('fwl.zalmoxis.solver').setLevel(logging.WARNING)
 
 # ── Ensure ZALMOXIS_ROOT is set ──────────────────────────────────────
 ZALMOXIS_ROOT = os.environ.get('ZALMOXIS_ROOT')
