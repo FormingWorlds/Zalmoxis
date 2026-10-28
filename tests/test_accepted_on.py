@@ -1037,7 +1037,7 @@ def test_a_max_iter_stop_in_the_blend_ramp_returns_a_pass_on_the_adiabat(caplog)
     it 0.5 on macOS and 0.25 on Linux."""
     from tests.test_spider_coupling_convergence import _has_paleos_data
 
-    caplog.set_level(logging.DEBUG, logger='zalmoxis.solver')
+    caplog.set_level(logging.DEBUG, logger='fwl.zalmoxis.solver')
 
     if not _has_paleos_data():
         pytest.skip('PALEOS tables not on disk')

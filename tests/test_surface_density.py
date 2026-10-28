@@ -156,7 +156,7 @@ def test_the_surface_continuation_holds_t_from_the_first_step_without_a_gradient
     j = next(
         i for i in range(64) if P0 * np.exp((i + 0.5) * h) <= cut or P0 * np.exp(i * h) <= cut
     )
-    with caplog.at_level('WARNING', logger='zalmoxis.solver'):
+    with caplog.at_level('WARNING', logger='fwl.zalmoxis.solver'):
         T = zs._adiabat_to_surface(P0, T0, ps, _Mix(), EOS_ARGS)
     assert 0 < j < 64 and T == pytest.approx(T0 * np.exp(a * j * h), rel=1e-12)
     msgs = [rec.getMessage() for rec in caplog.records if 'holds T' in rec.getMessage()]

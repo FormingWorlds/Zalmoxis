@@ -380,7 +380,7 @@ class TestCarrier:
         monkeypatch.setattr(ca, '_CELL_WARNED', [False])
         assert ca.LUO_CARRIER_FRACTION == pytest.approx(0.0388, abs=5e-5)
         w_cell = ca.LUO_CARRIER_FRACTION / ca.CARRIER_PER_H
-        with caplog.at_level('WARNING', logger='zalmoxis.eos.core_alloy'):
+        with caplog.at_level('WARNING', logger='fwl.zalmoxis.eos.core_alloy'):
             ca.split_alloy(_mix(H=0.999 * w_cell))
             assert caplog.messages == []
             ca.split_alloy(_mix(H=1.001 * w_cell))
@@ -466,7 +466,7 @@ class TestCarrier:
         """Outside 8000-14000 K, 50-1300 GPa the carrier volume is the one at the nearest box point."""
         monkeypatch.setitem(ca.LUO_OUT_OF_RANGE, 'count', 0)
         dv = ca.carrier_excess_volume
-        with caplog.at_level('WARNING', logger='zalmoxis.eos.core_alloy'):
+        with caplog.at_level('WARNING', logger='fwl.zalmoxis.eos.core_alloy'):
             inside = dv(P_CMB, T_LUO)
             assert dv(P_CMB, 4000.0) == inside
             assert dv(5 * GPA, 3000.0) == dv(50 * GPA, 8000.0)
@@ -671,14 +671,14 @@ class TestConfig:
             cfg['layer_eos_config'],
             core='PALEOS:iron:0.96+CoreAlloy:H:0.005+CoreAlloy:Si:0.035',
         )
-        with caplog.at_level('WARNING', logger='zalmoxis.config'):
+        with caplog.at_level('WARNING', logger='fwl.zalmoxis.config'):
             validate_config(cfg)
         eos_warnings = [m for m in caplog.messages if 'T-independent' in m or 'iron EOS' in m]
         assert eos_warnings == []
         # a real non-iron core component still warns
         caplog.clear()
         cfg['layer_eos_config'] = dict(cfg['layer_eos_config'], core='PALEOS:MgSiO3')
-        with caplog.at_level('WARNING', logger='zalmoxis.config'):
+        with caplog.at_level('WARNING', logger='fwl.zalmoxis.config'):
             validate_config(cfg)
         assert any('iron EOS' in m for m in caplog.messages)
 
