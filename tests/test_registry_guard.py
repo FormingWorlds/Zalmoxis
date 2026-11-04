@@ -813,7 +813,7 @@ def test_the_refetch_is_logged_and_a_failed_one_leaves_the_file(
     (tmp_path / 'cache' / rel).mkdir(parents=True)
     (tmp_path / 'cache' / rel / NAME).write_text(pinned)
     monkeypatch.setenv('FWL_DATA_CACHE', str(tmp_path / 'cache'))
-    with caplog.at_level('WARNING', logger='zalmoxis.eos.registry_guard'):
+    with caplog.at_level('WARNING', logger='fwl.zalmoxis.eos.registry_guard'):
         registry_guard.verify(str(path))
     assert 'fetched it again' in caplog.text and KEY in caplog.text
 
@@ -1063,7 +1063,7 @@ def test_a_table_changed_once_during_the_parse_is_read_again(tmp_path, monkeypat
     path.write_text(_table_text())
     parse, seen = _changing_parse(1)
     monkeypatch.setattr(interpolation, 'load_paleos_unified_table', parse)
-    with caplog.at_level(logging.WARNING, logger='zalmoxis.eos.interpolation'):
+    with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.eos.interpolation'):
         entry = interpolation._ensure_unified_cache(str(path), {})
     assert len(seen) == 2 and entry['p_min'] == pytest.approx(1e9)
     stored = interpolation.read_cache(interpolation.cache_path_for(str(path)))
@@ -1100,7 +1100,7 @@ def test_a_refetch_before_the_parse_is_no_change_during_it(
         return True
 
     monkeypatch.setattr(registry_guard, '_refetch', refetch)
-    with caplog.at_level(logging.WARNING, logger='zalmoxis.eos.interpolation'):
+    with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.eos.interpolation'):
         interpolation._ensure_unified_cache(str(path), {})
     assert os.path.exists(interpolation.cache_path_for(str(path)))
     assert 'changed while it was read' not in caplog.text

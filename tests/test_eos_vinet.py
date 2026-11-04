@@ -322,7 +322,7 @@ class TestVinetEdgeCases:
         from zalmoxis.eos_vinet import P_MAX_VINET
 
         # 100x P_MAX_VINET = absolutely beyond physical validity
-        with caplog.at_level('WARNING', logger='zalmoxis.eos_vinet'):
+        with caplog.at_level('WARNING', logger='fwl.zalmoxis.eos_vinet'):
             rho = get_vinet_density(P_MAX_VINET * 100, 'iron')
 
         assert any('exceeds Vinet validity limit' in rec.message for rec in caplog.records)

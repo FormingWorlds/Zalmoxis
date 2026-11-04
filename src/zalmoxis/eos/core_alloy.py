@@ -46,7 +46,7 @@ from scipy.optimize import brentq
 
 from ..constants import MOLAR_MASS
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('fwl.' + __name__)
 
 ALLOY_PREFIX = 'CoreAlloy:'
 

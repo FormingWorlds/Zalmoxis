@@ -22,7 +22,7 @@ from scipy.interpolate import (
 
 from .registry_guard import StaleTableError, file_md5, verify, verify_digest
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('fwl.' + __name__)
 
 # Track whether the per-cell clamping warning has been issued for each file,
 # to avoid flooding the log with repeated messages.

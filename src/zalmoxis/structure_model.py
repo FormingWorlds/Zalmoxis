@@ -18,7 +18,7 @@ from .constants import CONDENSED_RHO_MIN_DEFAULT, CONDENSED_RHO_SCALE_DEFAULT, G
 from .mixing import BINODAL_T_SCALE_DEFAULT, any_component_is_tdep, calculate_mixed_density
 
 # Set up logging
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('fwl.' + __name__)
 
 # A stop in the integration at or below this fraction of the central pressure
 # is the planet's surface; a stop at a higher pressure is a failed solve.

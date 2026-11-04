@@ -21,7 +21,7 @@ from .interpolation import (
 )
 from .registry_guard import StaleTableError
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('fwl.' + __name__)
 
 # Phase-boundary guard offset (K).  When evaluating endpoint properties in
 # the mushy zone, solid-side queries are clamped to at most T_melt - dT and

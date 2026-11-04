@@ -41,7 +41,7 @@ from .paleos_api import (
     paleos_installed_sha,
 )
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('fwl.' + __name__)
 
 _CACHE_DIR_NAME = 'EOS_PALEOS_API'
 

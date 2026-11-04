@@ -91,9 +91,9 @@ The block below solves the planet again at that level, which writes this file an
 ```python
 import logging
 
-logging.getLogger('zalmoxis').setLevel(logging.DEBUG)
+logging.getLogger('fwl.zalmoxis').setLevel(logging.DEBUG)
 cfg, result = solve()
-logging.getLogger('zalmoxis').setLevel(logging.WARNING)
+logging.getLogger('fwl.zalmoxis').setLevel(logging.WARNING)
 
 
 def last_pressure_solve(path):

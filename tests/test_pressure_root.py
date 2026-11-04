@@ -71,7 +71,7 @@ def test_a_jump_beyond_the_cap_keeps_the_padded_root_and_logs_it(caplog):
     res = _Residual(lambda x: -P_T if x < 2.0e11 else 1.956e8 - P_T)  # a jump at the stop
     res(2.0e11 - 5e5)
     res(2.0e11 + 5e5)
-    with caplog.at_level(logging.DEBUG, logger='zalmoxis.solver'):
+    with caplog.at_level(logging.DEBUG, logger='fwl.zalmoxis.solver'):
         root = _refine(res, 2.0e11 - 5e5)
     assert res.f(root) == -P_T
     assert len(res.evals) == 2  # a slope of 196 over the 1e6 Pa pair: no second solve
@@ -155,7 +155,7 @@ def test_main_warns_once_when_the_accepted_profile_is_padded(monkeypatch, caplog
     result = _canned('strict')[0]
     result.update(accept_mass_limit=1e-3, padded=padded)
     monkeypatch.setattr(zs, '_solve', lambda *a, **k: result)
-    with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+    with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.solver'):
         out = _run(_cfg(planet_mass=_sphere()[1]['planet_mass']))
     hits = [r for r in caplog.records if 'padded' in r.getMessage()]
     assert out['padded'] is padded

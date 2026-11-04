@@ -393,7 +393,7 @@ class TestNonFiniteDensityJax:
                 raise
 
         monkeypatch.setattr(jw, 'solve_structure_via_jax', spy)
-        with caplog.at_level('WARNING', logger='zalmoxis.structure_model'):
+        with caplog.at_level('WARNING', logger='fwl.zalmoxis.structure_model'):
             result = zs.main(self._cfg(), world['mats'], None, os.path.join(ROOT, 'input'))
         return result, raised, len(ran)
 
@@ -461,7 +461,7 @@ class TestNonFiniteDensityJax:
             raise ValueError('forced JAX failure')  # the filled band no longer fails on JAX
 
         monkeypatch.setattr('zalmoxis.jax_eos.wrapper.solve_structure_via_jax', fail)
-        with caplog.at_level('WARNING', logger='zalmoxis.structure_model'):
+        with caplog.at_level('WARNING', logger='fwl.zalmoxis.structure_model'):
             fell = sm.solve_structure(
                 *args, **dict(kwargs, use_jax=True, temperature_arrays=(r_arr, T_arr))
             )

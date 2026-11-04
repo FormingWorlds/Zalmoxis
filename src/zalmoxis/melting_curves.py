@@ -50,7 +50,7 @@ from scipy.interpolate import interp1d
 from . import get_zalmoxis_root
 from .eos.interpolation import require_eos_file
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('fwl.' + __name__)
 
 # ── Valid identifiers ──────────────────────────────────────────────────
 

@@ -16,7 +16,7 @@ from .paleos import get_paleos_unified_density, get_paleos_unified_density_batch
 from .seager import get_tabulated_eos
 from .tdep import get_Tdep_density
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('fwl.' + __name__)
 
 
 def _is_paleos_api(mat: dict) -> bool:

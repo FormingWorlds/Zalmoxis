@@ -196,7 +196,7 @@ def test_a_jump_at_the_stop_returns_a_flagged_padded_profile(caplog):
         relative_tolerance=1e-5,
         absolute_tolerance=1e-6,
     )
-    with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+    with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.solver'):
         r = zs.main(cfg, load_material_dictionaries(), None, os.path.join(root, 'input'))
     P = np.asarray(r['pressure'], dtype=float)
     assert r['converged'] and P[-1] == 0.0

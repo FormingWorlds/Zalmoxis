@@ -36,7 +36,7 @@ import logging
 import numpy as np
 from scipy.optimize import brentq
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('fwl.' + __name__)
 
 
 # ── Material parameters ──────────────────────────────────────────────

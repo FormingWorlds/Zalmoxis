@@ -59,7 +59,7 @@ from .mixing import (
 )
 from .structure_model import get_layer_mixture, solve_structure, temperature_from_arrays
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('fwl.' + __name__)
 
 
 class StructureSolveError(RuntimeError):
@@ -1248,6 +1248,7 @@ def _solve_newton_outer(
         # outer_solver knob would route us back here; force picard for
         # the inner _solve call so we hit the actual inner Picard.
         cp['outer_solver'] = 'picard'
+        cp['_newton_probe'] = True
         sub_result = _solve(
             cp,
             material_dictionaries,
@@ -1308,7 +1309,7 @@ def _solve_newton_outer(
         f_k = M_k - M_target
         rel = abs(f_k) / M_target
         history.append((R, M_k, rel))
-        logger.info(
+        logger.debug(
             'Newton iter %2d: R=%.5e M=%.5e f=%+.3e rel=%.3e',
             k,
             R,
@@ -1657,6 +1658,8 @@ def _solve(
     )
     # Optional initial radius guess from a previous failed attempt
     initial_radius_guess = config_params.get('_initial_radius_guess', None)
+    # A Newton probe is one of many solves per structure, so its progress lines go to DEBUG
+    progress = logging.DEBUG if config_params.get('_newton_probe') else logging.INFO
 
     mushy_zone_factors, condensed_rho_min, condensed_rho_scale, binodal_T_scale = _eos_params(
         config_params
@@ -1738,9 +1741,10 @@ def _solve(
     cmb_mass = core_mass_fraction * planet_mass
     core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * planet_mass
 
-    logger.info(
+    logger.log(
+        progress,
         f'Starting structure model for a {planet_mass / earth_mass} Earth masses planet '
-        f"with EOS config {layer_eos_config} and temperature mode '{temperature_mode}'."
+        f"with EOS config {layer_eos_config} and temperature mode '{temperature_mode}'.",
     )
 
     start_time = time.time()
@@ -2478,7 +2482,7 @@ def _solve(
             # fire) and the loop runs all 100 inner iters per outer.
             # Bailing after no improvement saves the bulk of the wall.
             if _inner_stuck_count >= _STUCK_BAIL_LIMIT and _inner_best_density is not None:
-                logger.info(
+                logger.debug(
                     'Inner loop: stuck-bail after %d iters w/o improvement '
                     '(best diff=%.2e, target=%.2e). Outer loop will iterate.',
                     _inner_stuck_count,
@@ -2667,13 +2671,17 @@ def _solve(
             if ramp_incomplete:
                 if not _using_adiabat:
                     _using_adiabat = True
-                    logger.info(
+                    logger.log(
+                        progress,
                         f'Outer iter {outer_iter}: mass converged with linear T, '
-                        f'activating adiabat blend.'
+                        f'activating adiabat blend.',
                     )
                 # Continue iterating to let the blend ramp up
                 continue
-            logger.info(f'Outer loop (total mass) converged after {outer_iter + 1} iterations.')
+            logger.log(
+                progress,
+                f'Outer loop (total mass) converged after {outer_iter + 1} iterations.',
+            )
             converged_mass = True
             break
 

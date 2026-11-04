@@ -9,7 +9,7 @@ import numpy as np
 
 from .. import get_zalmoxis_root
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('fwl.' + __name__)
 
 
 def create_pressure_density_files(

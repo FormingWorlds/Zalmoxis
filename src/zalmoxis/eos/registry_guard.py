@@ -19,7 +19,7 @@ import logging
 import os
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('fwl.' + __name__)
 
 # md5 per (device, inode, size, mtime, ctime), so each table is hashed once.
 _HASHES: dict[tuple, str] = {}

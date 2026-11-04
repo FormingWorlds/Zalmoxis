@@ -238,7 +238,7 @@ class TestLowTExtensionThatAddsNothing:
         solid, liquid, _ = _gen_tables(tmp_path)
         base = _generate_from(solid, liquid, None, n_S=n_S)
         eos_export._parse_paleos_table.cache_clear()
-        with caplog.at_level(logging.INFO, logger='zalmoxis.eos_export'):
+        with caplog.at_level(logging.INFO, logger='fwl.zalmoxis.eos_export'):
             out = _generate_from(solid, liquid, ext, n_S=n_S)
         assert np.array_equal(out['S_solid'], base['S_solid'])
         changed = int(np.sum(out['solid']['temperature'] != base['solid']['temperature']))
@@ -285,7 +285,7 @@ class TestLowTExtensionThatAddsNothing:
         solid, liquid, ext = _gen_tables(tmp_path)
         base = _generate_from(solid, liquid, None)
         eos_export._parse_paleos_table.cache_clear()
-        with caplog.at_level(logging.INFO, logger='zalmoxis.eos_export'):
+        with caplog.at_level(logging.INFO, logger='fwl.zalmoxis.eos_export'):
             out = _generate_from(solid, liquid, ext)
         msgs = [r.getMessage() for r in caplog.records]
         gain = int(out['valid']['solid'].sum() - base['valid']['solid'].sum())
@@ -389,7 +389,7 @@ class TestGenerateSpiderTablesLowT:
         )
         base = eos_export.generate_spider_eos_tables(**kw)
         eos_export._parse_paleos_table.cache_clear()
-        with caplog.at_level(logging.WARNING, logger='zalmoxis.eos_export'):
+        with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.eos_export'):
             out = eos_export.generate_spider_eos_tables(**kw, solid_lowt_file=ext)
         assert np.array_equal(out['S_solid'], base['S_solid'])
         assert any(

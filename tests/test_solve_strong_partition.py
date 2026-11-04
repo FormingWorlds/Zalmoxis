@@ -411,7 +411,7 @@ class TestSolveStrongPartitionMassAndLayers:
         liq = lambda _p: 9000.0  # noqa: E731
 
         with patch('zalmoxis.solver.main', return_value=result_template):
-            with caplog.at_level(logging.WARNING, logger='zalmoxis.solver'):
+            with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.solver'):
                 result = solve_strong_partition(
                     config_params={'layer_eos_config': {}},
                     material_dictionaries={},

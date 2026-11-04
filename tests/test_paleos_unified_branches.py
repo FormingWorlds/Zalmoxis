@@ -424,7 +424,7 @@ class TestPerCellClampLogger:
 
         # Reset module-level warned-set so the first call definitely warns
         _paleos._paleos_clamp_warned.discard(s['eos_file'])
-        with caplog.at_level(logging.WARNING, logger='zalmoxis.eos.paleos'):
+        with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.eos.paleos'):
             get_paleos_unified_density(1e10, 9000.0, s['mat'], 1.0, s['cache'])
             n_first = len(caplog.records)
             get_paleos_unified_density(1e10, 9000.0, s['mat'], 1.0, s['cache'])
@@ -565,7 +565,7 @@ class TestNablaAdScalar:
         s = synthetic_cache
         s['entry']['logt_valid_max'] = np.full_like(s['entry']['logt_valid_max'], 3.5)
         _paleos._paleos_clamp_warned.discard(s['eos_file'])
-        with caplog.at_level(logging.WARNING, logger='zalmoxis.eos.paleos'):
+        with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.eos.paleos'):
             _get_paleos_unified_nabla_ad(1e10, 9000.0, s['mat'], s['cache'])
             assert any('clamping' in r.message for r in caplog.records)
 

@@ -67,7 +67,7 @@ def test_the_paleos_loaders_report_the_dangling_link(dangling, loader):
 def test_the_tabulated_eos_logs_the_cause_and_returns_none(dangling, caplog):
     table, link, _ = dangling
     materials = {'core': {'eos_file': str(table)}}
-    with caplog.at_level(logging.ERROR, logger='zalmoxis.eos.seager'):
+    with caplog.at_level(logging.ERROR, logger='fwl.zalmoxis.eos.seager'):
         assert get_tabulated_eos(1e10, materials, 'core', temperature=300.0) is None
     assert f'{link} links to' in caplog.text
     assert 'get_zalmoxis.sh' in caplog.text
