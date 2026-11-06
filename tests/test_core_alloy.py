@@ -674,11 +674,12 @@ class TestCompoundBounds:
         self, w, p_gpa, warned, caplog, monkeypatch
     ):
         """Fe3S (16.06 wt% S), FeO (22.27 wt% O), Fe3C below 255 GPa (6.69 wt% C) and Fe7C3
-        above (8.44 wt% C), the units of the alloy liquidus; Si has no bound."""
+        above (8.44 wt% C), the units of the alloy liquidus; Si has no bound. The pressure is a
+        NumPy scalar, as in a structure solve."""
         monkeypatch.setattr(ca, '_COMPOUND_WARNED', set())
         with caplog.at_level('WARNING', logger='fwl.zalmoxis.eos.core_alloy'):
             for _ in range(2):
-                assert ca.alloy_density(1.0e4, w, p_gpa * GPA, 4000.0) > 0.0
+                assert ca.alloy_density(1.0e4, w, np.float64(p_gpa * GPA), 4000.0) > 0.0
         assert sum('end compound' in m for m in caplog.messages) == int(warned)
 
 
