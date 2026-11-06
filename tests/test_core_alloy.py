@@ -165,7 +165,7 @@ class TestSplitAlloy:
 
 
 class TestLinearLaw:
-    """Linear density decrease: Hirose et al. (2021) calibration, Li et al. (2019) for C and N."""
+    """Linear law: Hirose et al. (2021) calibration, Li et al. (2019) for C and N."""
 
     @pytest.mark.physics_invariant
     def test_no_light_element_returns_the_iron_density_exactly(self):
@@ -183,7 +183,7 @@ class TestLinearLaw:
         + [(el, 7.0 / mid, 7.0 / mid * 1.01) for el, mid in HIROSE_MID.items()],
     )
     def test_one_wt_percent_lowers_the_density_by_beta_percent(self, element, beta, wrong_beta):
-        """1 wt% lowers the density by beta percent: Li et al. 2019 for C, Hirose et al. 2021 else."""
+        """1 wt% lowers the density by beta %: Li et al. 2019 for C, else Hirose et al. 2021."""
         rho_fe = 1.0e4
         rho = ca.alloy_density(rho_fe, {element: 0.01}, P_CMB, 4000.0)
         assert rho == pytest.approx(rho_fe * (1 - beta / 100), rel=1e-12)
@@ -423,7 +423,7 @@ class TestCarrier:
     @pytest.mark.physics_invariant
     @pytest.mark.reference_pinned
     def test_effective_beta_h_at_136_gpa_8000_k(self):
-        """With no core O the carrier lowers the density by about 15.1 % per wt% H (docs value)."""
+        """With no core O the carrier lowers the density by about 15.1 % per wt% H."""
         rho_fe = ca.luo_density(P_CMB, T_LUO, ca.LUO_DRY)
         h = 1e-6
         beta_h = (1 - ca.alloy_density(rho_fe, {'H': h}, P_CMB, T_LUO) / rho_fe) / h
@@ -577,9 +577,10 @@ class TestHiroseCalibration:
     def test_each_single_element_outer_core_is_7_percent_lighter_than_iron(
         self, validation_plot, monkeypatch
     ):
-        """Hirose et al. 2021, p. 3: on the PALEOS iron table, solid at both states, each midpoint
-        core is 7 % lighter (1e-12 percentage points) and the range ends 6-8 %; the default H law
-        gives more than 8 % for their H core (regression pins, table version dependent).
+        """Hirose et al. 2021, p. 3: on the PALEOS iron table, solid at both states, each
+        midpoint core is 7 % lighter (1e-12 percentage points) and the range ends 6-8 %; the
+        default H law gives more than 8 % for their H core (regression pins, table version
+        dependent).
         """
         from zalmoxis.eos import calculate_density
         from zalmoxis.phase_columns import phase_for_component
@@ -681,14 +682,16 @@ class TestCompoundBounds:
             ({'C': 0.075}, 255.0, False),
             ({'S': 0.10, 'C': 0.05}, 136, True),
         ]
-        + [({'S': 0.08, 'O': 0.10}, 136, False), ({'S': 0.10, 'O': 0.10}, 136, True)],
+        + [({'S': 0.08, 'O': 0.10}, 136, False), ({'S': 0.10, 'O': 0.10}, 136, True)]
+        + [({'S': 0.155}, 136, False), ({'S': 0.155, 'Si': 0.05}, 136, True)],
     )
     def test_a_core_past_the_end_compound_of_its_binary_warns(
         self, w, p_gpa, warned, caplog, monkeypatch
     ):
-        """The S, O and C units of the alloy liquidus (Fe3S, FeO, Fe3C below 255 GPa and Fe7C3 at
-        or above) together need more Fe than the core holds: 16.06 wt% S, 22.27 wt% O, 6.69 or
-        8.44 wt% C alone; Si takes no Fe. The pressure is a NumPy scalar, as in a structure solve."""
+        """The S, O and C units of the alloy liquidus (Fe3S, FeO, Fe3C below 255 GPa and Fe7C3
+        at or above) together need more Fe than the core holds: 16.06 wt% S, 22.27 wt% O, 6.69
+        or 8.44 wt% C alone; Si takes no Fe. The pressure is a NumPy scalar, as in a structure
+        solve."""
         monkeypatch.setattr(ca, '_COMPOUND_WARNED', set())
         with caplog.at_level('WARNING', logger='fwl.zalmoxis.eos.core_alloy'):
             for _ in range(2):
@@ -718,8 +721,9 @@ class TestPaleosCore:
         + [(p, (3000.0, 8000.0, 14000.0, 59000.0)) for p in (1300.0, 3000.0)],
     )
     def test_the_density_falls_with_h_where_the_bound_admits_the_core(self, p_gpa, temps):
-        """Up to 16000 K at every pressure and up to 59000 K above 20 GPa, the core density falls
-        with w_H for every admitted core, down to the linear-factor bound 0.8 set by Si."""
+        """Up to 16000 K at every pressure and up to 59000 K above 20 GPa, the core density
+        falls with w_H for every admitted core, down to the linear-factor bound 0.8 set by
+        Si."""
         from zalmoxis.eos import calculate_density
 
         md, cache = _paleos_iron(), {}
@@ -743,7 +747,8 @@ class TestPaleosCore:
     @pytest.mark.physics_invariant
     def test_without_the_bound_the_density_can_rise_with_h(self, monkeypatch):
         """The scan above can fail: with the linear-factor bound removed, a core with Si far
-        below the bound (factor 0.56, below r* = 0.595 at 1300 GPa and 8000 K) gets denser with H."""
+        below the bound (factor 0.56, below r* = 0.595 at 1300 GPa and 8000 K) gets denser with
+        H."""
         from zalmoxis.eos import calculate_density
 
         monkeypatch.setattr(ca, 'LIN_FACTOR_MIN', 0.0)
