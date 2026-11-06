@@ -32,6 +32,7 @@ All tests are implemented in [`tests/test_first_principles.py`](https://github.c
 | [Equation of state](equation_of_state.md) | PALEOS table loader | `tests/test_eos_export_real_tables.py`, `tests/test_eos_export_highres.py` | `numpy.genfromtxt` reading of the same tables (cross-code check) | integration and slow tiers; no plot (identity of 2 readers) |
 | [Equation of state](equation_of_state.md) | Liquid Fe and Fe-water members | `tests/test_core_alloy.py::TestLuoMembers::test_eq14_density_matches_an_independent_bisection` | [Luo et al. (2024)](https://doi.org/10.1038/s41550-024-02347-z) Eq. 14 (analytical) | unit tier; plot pair |
 | [Equation of state](equation_of_state.md) | Light-element core on PALEOS iron | `tests/test_core_alloy.py::TestPaleosCore::test_core_mixture_limits_on_paleos_iron` | volume-additive limits (analytical) | unit tier; plot pair |
+| [Equation of state](equation_of_state.md) | Light-element cores against the outer core | `tests/test_core_alloy.py::TestHiroseCalibration` | [Hirose et al. (2021)](https://doi.org/10.1038/s43017-021-00203-6), p. 3 (published estimate) | unit tier; plot pair |
 | [Thermal state](thermal_state.md) | Initial thermal state | none | named in the script docstrings | script figure, no test, not run in CI |
 
 ## Summary of the first-principles cases

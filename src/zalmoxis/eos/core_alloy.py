@@ -6,34 +6,35 @@ fractions, for example ``PALEOS:iron:0.97+CoreAlloy:H:0.005+CoreAlloy:O:0.025``.
 The base density comes from the iron table at (P, T); the light elements change it
 by one of two laws.
 
-Linear law (Li et al. 2019, Table 3.3): each element ``i`` lowers the iron density
-by ``beta_i`` percent per wt%, ``rho_lin = rho_Fe (1 - sum_i beta_i w_i)`` with
-``beta_i`` as a fraction per unit mass fraction. ``beta`` values are those of the
-liquid at the core-mantle boundary for C, O, Si and S. Table 3.3 gives no liquid
-value for H, so ``CoreAlloy:H-linear`` uses the solid value 8.7, and no value for
-N, so N does not change the density.
+Linear law: each element ``i`` lowers the iron density by ``beta_i`` percent per wt%,
+``rho_lin = rho_Fe (1 - sum_i beta_i w_i)`` with ``beta_i`` as a fraction per unit mass
+fraction. For S, Si, O and H (``CoreAlloy:H``, the default H law) the single-element outer cores
+of Hirose et al. (2021, p. 3), 13.3-14.4 wt% S, 9.3-9.8 wt% Si, 8.4-8.9 wt% O or 0.96-0.99 wt%
+H, each fit the seismic outer core 6-8 % below liquid iron; ``beta_i`` gives 7 % at the
+midpoint, a calibration at Earth core pressures. C keeps the liquid value 1.3 of Li et al.
+(2019, Table 3.3), and N, with no value there, does not change the density; both are not
+calibrated against the outer core.
 
-Fe-H-O member (``CoreAlloy:H``): Luo, Dorn & Deng (2024), Methods Eq. 14, give the
-equations of state of liquid Fe (64 Fe) and of liquid Fe with water (64 Fe + 8
-H2O). Their volume difference at the same (P, T), per kg of H2O, is the excess
-specific volume ``dv_c`` of an H2O carrier dissolved in iron. The H of the core
-enters as this carrier, mass fraction ``w_c = w_H M_H2O / (2 M_H)``; the carrier O,
-``w_c - w_H``, counts against the core O, and the remaining O, which is negative
-when the core holds less O than the carrier, enters the linear law. The core
-density is ``1/rho = (1 - w_c)/rho_lin + w_c dv_c``, where ``rho_lin`` is the
-linear law for the remaining alloy, with fractions ``w_i / (1 - w_c)``. To first
-order the negative O remainder splits ``dv_c`` into an H part and the linear-law O
-part, so the H effect is that of an effective ``beta_H`` of about 12.8 % per wt%
-(w_H -> 0) at 136 GPa and 8000 K, against the solid linear value of 8.7. A remaining
-alloy with ``1 - lin`` below 0.8 is refused; above it the density falls with H at every
-pressure up to 16000 K. The Luo fits cover 8000-14000 K and 50-1300 GPa; outside that
-box ``dv_c`` is taken at the nearest point of the box (the iron base stays at the true
-P, T), and the point is counted in
-:data:`LUO_OUT_OF_RANGE` with one warning per process. The wet cell has a carrier mass
-fraction of 0.0388 (0.43 wt% H); a core above it warns once per process. Core-mantle boundary
-temperatures of Earth-like planets, about 4000-6000 K, lie below the box, so there the
-carrier volume is its 8000 K value.
-"""
+Fe-H-O member (``CoreAlloy:H-Luo``): Luo, Dorn & Deng (2024), Methods Eq. 14, give the equations
+of state of liquid Fe (64 Fe) and of liquid Fe with water (64 Fe + 8 H2O). Their volume
+difference at the same (P, T), per kg of H2O, is the excess specific volume ``dv_c`` of an H2O
+carrier dissolved in iron. The H of the core enters as this carrier, mass fraction ``w_c = w_H
+M_H2O / (2 M_H)``; the carrier O, ``w_c - w_H``, counts against the core O, and the remaining O,
+which is negative when the core holds less O than the carrier, enters the linear law. The core
+density is ``1/rho = (1 - w_c)/rho_lin + w_c dv_c``, where ``rho_lin`` is the linear law for the
+remaining alloy, with fractions ``w_i / (1 - w_c)``. To first order the negative O remainder
+splits ``dv_c`` into an H part and the linear-law O part, so the H effect is that of an
+effective ``beta_H`` of about 15.1 % per wt% (w_H -> 0) at 136 GPa and 8000 K, against the
+linear value of 7.18. A remaining alloy with ``1 - lin`` below 0.8 is refused; above it the
+density falls with H at every pressure up to 16000 K and above 20 GPa up to 59000 K. A core
+whose S, O and C together need more Fe than it holds in the units of the alloy liquidus (Fe3S,
+FeO, and Fe3C below 255 GPa or Fe7C3 at or above it) gives one warning per process; for one
+element alone this bound is its end compound. The Luo fits cover 8000-14000 K and 50-1300 GPa;
+outside that box ``dv_c`` is taken at the nearest point of the box (the iron base stays at the
+true P, T), and the point is counted in :data:`LUO_OUT_OF_RANGE` with one warning per process.
+The wet cell has a carrier mass fraction of 0.0388 (0.43 wt% H); a core above it warns once per
+process. Core-mantle boundary temperatures of Earth-like planets, about 4000-6000 K, lie below
+the box, so there the carrier volume is its 8000 K value."""
 
 from __future__ import annotations
 
@@ -50,9 +51,17 @@ logger = logging.getLogger('fwl.' + __name__)
 
 ALLOY_PREFIX = 'CoreAlloy:'
 
-# Li et al. 2019, Table 3.3 [% density decrease per wt%], as fractions per unit mass fraction
-LINEAR_BETA = {'H-linear': 8.7, 'C': 1.3, 'N': 0.0, 'O': 1.1, 'Si': 0.7, 'S': 0.8}
-CARRIER = 'H'
+# [% density decrease per wt%], as fractions per unit mass fraction: 7 % at the midpoint of the
+# Hirose et al. 2021 (p. 3) outer cores for H, O, Si, S; Li et al. 2019 (Table 3.3) for C and N
+LINEAR_BETA = {
+    'H': 7.0 / 0.975,
+    'C': 1.3,
+    'N': 0.0,
+    'O': 7.0 / 8.65,
+    'Si': 7.0 / 9.55,
+    'S': 7.0 / 13.85,
+}
+CARRIER = 'H-Luo'
 ALLOY_ELEMENTS = frozenset(LINEAR_BETA) | {CARRIER}
 
 # Luo, Dorn & Deng 2024, Methods Eq. 14: K [GPa], V0 [A^3 per cell], a, b, c [GPa]
@@ -75,10 +84,17 @@ LUO_WET['cell_mass'] = _M_DRY_CELL + _M_CARRIER_CELL
 # carrier mass fraction of the Luo wet cell (0.0388, 0.43 wt% H): the composition of the fit
 LUO_CARRIER_FRACTION = _M_CARRIER_CELL / (_M_DRY_CELL + _M_CARRIER_CELL)
 _CELL_WARNED = [False]
-# lowest O rest (w_O - 7.94 w_H) / (1 - w_c) of the first-order carrier split (w_H 0.0206 at w_O 0)
+# lowest O rest (w_O - 7.94 w_H) / (1 - w_c) of the first-order carrier split
+# (w_H 0.02057 at w_O 0)
 O_REST_MIN = -0.2
-# lowest linear-law factor 1 - lin: above it the density falls with w_H up to 16000 K
+# lowest linear-law factor 1 - lin: above it the density falls with w_H up to 16000 K at every
+# pressure and up to 59000 K above 20 GPa
 LIN_FACTOR_MIN = 0.8
+# Fe_k X_m unit (k, m) of each binary of the alloy liquidus of aragog; C takes Fe7C3 (7, 3) at
+# or above C_UNIT_SWITCH_PA
+LIQUIDUS_UNITS = {'S': (3, 1), 'O': (1, 1), 'C': (3, 1)}
+C_UNIT_SWITCH_PA = 255e9
+_COMPOUND_WARNED = [False]
 
 
 class CoreAlloyError(ValueError):
@@ -108,7 +124,8 @@ def split_alloy(mixture):
     Raises
     ------
     CoreAlloyError
-        Unknown element, element given twice, both H forms, not exactly one base,
+        Unknown element (``H-linear`` with the names of both H laws), element given twice,
+        both H laws, not exactly one base,
         a negative or non-finite fraction, or light elements that leave no iron.
     """
     base, w = [], {}
@@ -119,6 +136,11 @@ def split_alloy(mixture):
             base.append(comp)
             continue
         el = comp[len(ALLOY_PREFIX) :]
+        if el == 'H-linear':
+            raise CoreAlloyError(
+                f'{comp!r} is not a core component: use CoreAlloy:H (the calibrated linear law, '
+                'the default) or CoreAlloy:H-Luo (the Fe-H2O carrier law of Luo et al. 2024)'
+            )
         if el not in ALLOY_ELEMENTS:
             raise CoreAlloyError(f'unknown core light element {el!r} in {comp!r}')
         if el in w:
@@ -130,8 +152,8 @@ def split_alloy(mixture):
         raise CoreAlloyError(
             f'a light-element core needs the PALEOS:iron base, got {base[0]!r}'
         )
-    if 'H' in w and 'H-linear' in w:
-        raise CoreAlloyError('CoreAlloy:H and CoreAlloy:H-linear exclude each other')
+    if 'H' in w and CARRIER in w:
+        raise CoreAlloyError('CoreAlloy:H and CoreAlloy:H-Luo exclude each other')
     if sum(w.values()) >= 1.0:
         raise CoreAlloyError(f'light-element mass fractions sum to {sum(w.values())!r} >= 1')
     w_c, _ = _linear_factor(w)
@@ -173,6 +195,37 @@ def _linear_factor(w):
             f'{LIN_FACTOR_MIN} for {w!r}'
         )
     return w_c, lin
+
+
+def _free_iron(w, pressure):
+    """Mass fraction of Fe left after the S, O and C units of the alloy liquidus take theirs.
+
+    All O counts as FeO, as in the liquidus; Si, H and N take no Fe. Negative where the units
+    need more Fe than the core holds.
+    """
+    free = 1.0 - sum(w.values())
+    for el, (k, m) in LIQUIDUS_UNITS.items():
+        if el == 'C' and pressure >= C_UNIT_SWITCH_PA:
+            k, m = 7, 3
+        free -= w.get(el, 0.0) * k * MOLAR_MASS['Fe'] / (m * MOLAR_MASS[el])
+    return free
+
+
+def _warn_past_compound(w, pressure):
+    """Warn once per process where the liquidus units exceed the Fe (no refusal)."""
+    if _COMPOUND_WARNED[0]:
+        return
+    free = _free_iron(w, pressure)
+    if free < 0.0:
+        _COMPOUND_WARNED[0] = True
+        logger.warning(
+            'Core S, O and C (%s) need more Fe than the core holds in the units of the alloy '
+            'liquidus (Fe3S, FeO, Fe3C below 255 GPa, Fe7C3 at or above): free Fe %.4f at '
+            '%.3e Pa; the density law is used beyond them',
+            {el: w[el] for el in LIQUIDUS_UNITS if w.get(el)},
+            free,
+            pressure,
+        )
 
 
 def luo_pressure(volume, temperature, member):
@@ -278,6 +331,7 @@ def alloy_density(rho_fe, w, pressure, temperature):
         :func:`_linear_factor`, or a core without positive finite density.
     """
     w_c, lin = _linear_factor(w)
+    _warn_past_compound(w, pressure)
     if rho_fe is None or not np.isfinite(rho_fe) or rho_fe <= 0:
         return None
     rho_lin = rho_fe * (1.0 - lin)
