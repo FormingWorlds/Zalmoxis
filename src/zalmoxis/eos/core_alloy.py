@@ -28,10 +28,10 @@ order the negative O remainder splits ``dv_c`` into an H part and the linear-law
 part, so the H effect is that of an effective ``beta_H`` of about 15.1 % per wt%
 (w_H -> 0) at 136 GPa and 8000 K, against the linear value of 7.18. A remaining
 alloy with ``1 - lin`` below 0.8 is refused; above it the density falls with H at every
-pressure up to 16000 K and above 20 GPa up to 59000 K. A fraction of S, O or C above the end
-compound of its binary in the alloy liquidus (Fe3S, FeO, Fe3C below 255 GPa, Fe7C3 above) warns
-once per process. The Luo fits cover 8000-14000 K and 50-1300 GPa; outside that
-box ``dv_c`` is taken at the nearest point of the box (the iron base stays at the true
+pressure up to 16000 K and above 20 GPa up to 59000 K. S, O and C that together need more Fe
+than the core holds in the units of the alloy liquidus (Fe3S, FeO, Fe3C below 255 GPa, Fe7C3
+above), for one element alone its end compound, warn once per process. The Luo fits cover
+8000-14000 K and 50-1300 GPa; outside that box ``dv_c`` is taken at the nearest point of the box (the iron base stays at the true
 P, T), and the point is counted in
 :data:`LUO_OUT_OF_RANGE` with one warning per process. The wet cell has a carrier mass
 fraction of 0.0388 (0.43 wt% H); a core above it warns once per process. Core-mantle boundary
@@ -92,9 +92,9 @@ O_REST_MIN = -0.2
 # lowest linear-law factor 1 - lin: above it the density falls with w_H up to 16000 K at every
 # pressure and up to 59000 K above 20 GPa
 LIN_FACTOR_MIN = 0.8
-# Fe_k X_m end compound (k, m) of each binary of the alloy liquidus (aragog.core.alloy); C takes
-# Fe3C below C_UNIT_SWITCH_PA and Fe7C3 above
-END_COMPOUND = {'S': (3, 1), 'O': (1, 1), 'C': ((3, 1), (7, 3))}
+# Fe_k X_m unit (k, m) of each binary of the alloy liquidus of aragog; C takes Fe7C3 (7, 3) at or
+# above C_UNIT_SWITCH_PA
+END_COMPOUND = {'S': (3, 1), 'O': (1, 1), 'C': (3, 1)}
 C_UNIT_SWITCH_PA = 255e9
 _COMPOUND_WARNED = set()
 
@@ -193,29 +193,35 @@ def _linear_factor(w):
     return w_c, lin
 
 
-def compound_fraction(el, pressure):
-    """Mass fraction of ``el`` in the end compound of its Fe-``el`` binary at ``pressure`` [Pa]."""
-    k, m = (
-        END_COMPOUND[el] if el != 'C' else END_COMPOUND['C'][int(pressure >= C_UNIT_SWITCH_PA)]
-    )
-    return m * MOLAR_MASS[el] / (k * MOLAR_MASS['Fe'] + m * MOLAR_MASS[el])
+def free_iron(w, pressure):
+    """Mass fraction of Fe left after the S, O and C units of the alloy liquidus take theirs.
+
+    All O counts as FeO, as in the liquidus; Si, H and N take no Fe. Negative where the units need
+    more Fe than the core holds.
+    """
+    free = 1.0 - sum(w.values())
+    for el, (k, m) in END_COMPOUND.items():
+        if el == 'C' and pressure >= C_UNIT_SWITCH_PA:
+            k, m = 7, 3
+        free -= w.get(el, 0.0) * k * MOLAR_MASS['Fe'] / (m * MOLAR_MASS[el])
+    return free
 
 
 def _warn_past_compound(w, pressure):
-    """Warn once per element and process for a fraction above its end compound (no refusal)."""
-    for el in END_COMPOUND:
-        frac = w.get(el, 0.0)
-        if el not in _COMPOUND_WARNED and frac > compound_fraction(el, pressure):
-            _COMPOUND_WARNED.add(el)
-            logger.warning(
-                'Core %s mass fraction %.4f is above the end compound of the Fe-%s binary '
-                '(%.4f at %.3e Pa); the density law is used beyond it',
-                el,
-                frac,
-                el,
-                compound_fraction(el, pressure),
-                pressure,
-            )
+    """Warn once per process where the units of the alloy liquidus exceed the Fe (no refusal)."""
+    if 'compound' in _COMPOUND_WARNED or not any(w.get(el, 0.0) for el in END_COMPOUND):
+        return
+    free = free_iron(w, pressure)
+    if free < 0.0:
+        _COMPOUND_WARNED.add('compound')
+        logger.warning(
+            'Core S, O and C (%s) need more Fe than the core holds in the units of the alloy '
+            'liquidus (Fe3S, FeO, Fe3C below 255 GPa, Fe7C3 above): free Fe %.4f at %.3e Pa; '
+            'the density law is used beyond them',
+            {el: w[el] for el in END_COMPOUND if w.get(el)},
+            free,
+            pressure,
+        )
 
 
 def luo_pressure(volume, temperature, member):

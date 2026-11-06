@@ -693,7 +693,7 @@ class TestCompoundBounds:
         with caplog.at_level('WARNING', logger='fwl.zalmoxis.eos.core_alloy'):
             for _ in range(2):
                 assert ca.alloy_density(1.0e4, w, np.float64(p_gpa * GPA), 4000.0) > 0.0
-        assert sum('end compound' in m for m in caplog.messages) == int(warned)
+        assert sum('more Fe than the core holds' in m for m in caplog.messages) == int(warned)
 
     def test_the_compound_warning_comes_once_per_process(self, caplog, monkeypatch):
         """A second composition past the bound, also with another element, warns no more."""
