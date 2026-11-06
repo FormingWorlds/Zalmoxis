@@ -92,7 +92,7 @@ O_REST_MIN = -0.2
 LIN_FACTOR_MIN = 0.8
 # Fe_k X_m unit (k, m) of each binary of the alloy liquidus of aragog; C takes Fe7C3 (7, 3) at
 # or above C_UNIT_SWITCH_PA
-END_COMPOUND = {'S': (3, 1), 'O': (1, 1), 'C': (3, 1)}
+LIQUIDUS_UNITS = {'S': (3, 1), 'O': (1, 1), 'C': (3, 1)}
 C_UNIT_SWITCH_PA = 255e9
 _COMPOUND_WARNED = set()
 
@@ -198,7 +198,7 @@ def free_iron(w, pressure):
     need more Fe than the core holds.
     """
     free = 1.0 - sum(w.values())
-    for el, (k, m) in END_COMPOUND.items():
+    for el, (k, m) in LIQUIDUS_UNITS.items():
         if el == 'C' and pressure >= C_UNIT_SWITCH_PA:
             k, m = 7, 3
         free -= w.get(el, 0.0) * k * MOLAR_MASS['Fe'] / (m * MOLAR_MASS[el])
@@ -207,7 +207,7 @@ def free_iron(w, pressure):
 
 def _warn_past_compound(w, pressure):
     """Warn once per process where the liquidus units exceed the Fe (no refusal)."""
-    if 'compound' in _COMPOUND_WARNED or not any(w.get(el, 0.0) for el in END_COMPOUND):
+    if 'compound' in _COMPOUND_WARNED:
         return
     free = free_iron(w, pressure)
     if free < 0.0:
@@ -216,7 +216,7 @@ def _warn_past_compound(w, pressure):
             'Core S, O and C (%s) need more Fe than the core holds in the units of the alloy '
             'liquidus (Fe3S, FeO, Fe3C below 255 GPa, Fe7C3 above): free Fe %.4f at %.3e Pa; '
             'the density law is used beyond them',
-            {el: w[el] for el in END_COMPOUND if w.get(el)},
+            {el: w[el] for el in LIQUIDUS_UNITS if w.get(el)},
             free,
             pressure,
         )
