@@ -61,7 +61,7 @@ def test_one_wt_percent_hydrogen_core_solves(caplog, monkeypatch):
     # 1 wt% H as the carrier with no core O: 0.852-0.886 of iron on the pure-iron profile
     assert np.all((0.83 < ratio) & (ratio < 0.90))
     # the linear H law (beta 7.18 per unit mass fraction) gives 0.928 at every node
-    assert ratio.mean() < 0.89 and ratio.max() < 0.92
+    assert ratio.mean() < 0.88 and ratio.max() < 0.89
     assert np.all(np.isfinite(rho)) and np.all(rho[core] > 0)
     # pure iron gives 6.5235e6-6.5260e6 m on numpy, by environment; a lighter core is larger
     assert np.asarray(res['radii'])[-1] > 6.52602e6

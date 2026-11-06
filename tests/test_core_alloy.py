@@ -2,7 +2,8 @@
 
 Invariants and contract clauses: the light-element fractions of a core mixture
 (one iron base, known elements, non-negative and finite, sum below 1, total O
-never negative); the linear law of Li et al. (2019); the Luo et al. (2024) Eq. 14
+never negative); the linear law, calibrated on the outer cores of Hirose et al. (2021) for S,
+Si, O and H-linear and from Li et al. (2019) for C and N; the Luo et al. (2024) Eq. 14
 members against an independent bisection; the Fe-H-O carrier with its O counted
 against the core O, continuous where the O remainder changes sign; the bounds
 that fail a composition without positive density; the limits of the core
@@ -164,7 +165,7 @@ class TestSplitAlloy:
 
 
 class TestLinearLaw:
-    """Li et al. (2019) Table 3.3 linear density decrease."""
+    """Linear density decrease: Hirose et al. (2021) calibration, Li et al. (2019) for C and N."""
 
     @pytest.mark.physics_invariant
     def test_no_light_element_returns_the_iron_density_exactly(self):
@@ -186,7 +187,7 @@ class TestLinearLaw:
         rho_fe = 1.0e4
         rho = ca.alloy_density(rho_fe, {element: 0.01}, P_CMB, 4000.0)
         assert rho == pytest.approx(rho_fe * (1 - beta / 100), rel=1e-12)
-        # the solid Li value (C) or a 1 % slip lands outside
+        # 1.4 for C or a 1 % slip in a calibrated beta lands outside
         assert abs(rho - rho_fe * (1 - wrong_beta / 100)) > 1e-12 * rho_fe
         assert rho < rho_fe
 
@@ -548,31 +549,46 @@ class TestHiroseCalibration:
     @staticmethod
     def _deficit(md, cache, w, p, t):
         """Percent density deficit of the core mixture against the PALEOS iron table."""
-        from zalmoxis.mixing import calculate_mixed_density
+        from zalmoxis.mixing import calculate_mixed_density as rho
 
-        iron = calculate_mixed_density(
-            p, t, parse_layer_components('PALEOS:iron'), md, None, None, cache
-        )
-        key = {'H-linear': 'H_linear'}
-        alloy = _mix(**{key.get(el, el): f for el, f in w.items()})
-        return 100 * (1 - calculate_mixed_density(p, t, alloy, md, None, None, cache) / iron)
+        iron = rho(p, t, _mix(), md, None, None, cache)
+        return 100 * (1 - rho(p, t, _mix(**w), md, None, None, cache) / iron)
+
+    @pytest.mark.reference_pinned
+    def test_the_calibration_gives_7_percent_on_any_iron_base(self):
+        """Calibration check: beta = 7 / midpoint gives 7 % at each Hirose midpoint (1e-12
+        percentage points) on any iron density, 6-8 % at the range ends; the Li et al. (2019)
+        values miss the band for S, O and H-linear."""
+        for el, (lo, hi) in HIROSE_RANGE.items():
+            for rho_fe in (1.0e4, 1.2345e4):
+                rho = ca.alloy_density(rho_fe, {el: HIROSE_MID[el] / 100}, P_CMB, 4000.0)
+                assert abs(100 * (1 - rho / rho_fe) - 7.0) < 1e-12
+            ends = [100 * ca.LINEAR_BETA[el] * x / 100 for x in (lo, hi)]
+            assert 6.0 < ends[0] < 7.0 < ends[1] < 8.0
+            if el != 'Si':
+                assert self.LI_2019[el] * lo > 8.0
 
     @pytest.mark.physics_invariant
     @pytest.mark.reference_pinned
     def test_each_single_element_outer_core_is_7_percent_lighter_than_iron(
-        self, validation_plot
+        self, validation_plot, monkeypatch
     ):
-        """Hirose et al. 2021, p. 3: each midpoint core is 7 % lighter (1e-12); the range ends 6-8 %.
-
-        Checked on the PALEOS iron table at the core-mantle and inner-core boundaries of their
-        estimate; the Li et al. (2019) values miss the band for S and O.
+        """Hirose et al. 2021, p. 3: on the PALEOS iron table, solid at both states, each midpoint
+        core is 7 % lighter (1e-12 percentage points) and the range ends 6-8 %; the default H law
+        gives more than 8 % for their H core (regression pins, table version dependent).
         """
+        from zalmoxis.phase_columns import phase_for_component
+
+        monkeypatch.setitem(ca.LUO_OUT_OF_RANGE, 'count', 0)
+        monkeypatch.setattr(ca, '_CELL_WARNED', [False])
         md, cache = _paleos_iron(), {}
+        for p, t in HIROSE_STATES.values():
+            assert phase_for_component('PALEOS:iron', p, t).startswith('solid')
         bars = {}
         for el, (lo, hi) in HIROSE_RANGE.items():
             for state, (p, t) in HIROSE_STATES.items():
                 mid = self._deficit(md, cache, {el: HIROSE_MID[el] / 100}, p, t)
-                assert abs(mid - 7.0) < 1e-12 * 100
+                assert abs(mid - 7.0) < 1e-12
                 ends = [self._deficit(md, cache, {el: x / 100}, p, t) for x in (lo, hi)]
                 assert 6.0 < ends[0] < 7.0 < ends[1] < 8.0
             bars[el] = (ends, [self.LI_2019[el] * x for x in (lo, hi)])
@@ -582,6 +598,7 @@ class TestHiroseCalibration:
                 self._deficit(md, cache, {'H': x / 100}, p, t) for x in HIROSE_RANGE['H-linear']
             ]
             np.testing.assert_allclose(luo, self.LUO_H_DEFICIT[(state, 'paleos')], atol=1e-3)
+            assert min(luo) > 8.0
             bars[f'H\n{state}'] = (luo, None)
 
         def figure():
@@ -589,7 +606,7 @@ class TestHiroseCalibration:
 
             fig, ax = plt.subplots(figsize=(6.4, 3.4))
             ax.axhspan(6.0, 8.0, alpha=0.15, lw=0, label='Hirose 2021')
-            colour = ax._get_lines.get_next_color()
+            colour = plt.rcParams['axes.prop_cycle'].by_key()['color'][0]
             for i, (name, (new, old)) in enumerate(bars.items()):
                 ax.plot(
                     [i + 0.1] * 2,
@@ -628,8 +645,10 @@ class TestHiroseCalibration:
 
     @pytest.mark.physics_invariant
     @pytest.mark.reference_pinned
-    def test_luo_h_law_deficit_on_a_liquid_iron_base(self):
-        """The default H law on the Luo liquid iron at 8000 K, where the carrier volume is taken."""
+    def test_luo_h_law_deficit_on_a_liquid_iron_base(self, monkeypatch):
+        """The default H law on the Luo liquid iron at 8000 K, where the carrier volume is taken
+        (regression pins)."""
+        monkeypatch.setattr(ca, '_CELL_WARNED', [False])
         for state, (p, _) in HIROSE_STATES.items():
             rho_fe = ca.luo_density(p, T_LUO, ca.LUO_DRY)
             got = [
@@ -642,8 +661,62 @@ class TestHiroseCalibration:
             assert min(got) > 8.0
 
 
+class TestCompoundBounds:
+    """A composition past the end compound of its binary warns once and is not refused."""
+
+    @pytest.mark.parametrize(
+        ('w', 'p_gpa', 'warned'),
+        [({'S': 0.1606}, 136, False), ({'S': 0.1607}, 136, True), ({'O': 0.2226}, 136, False)]
+        + [({'O': 0.2228}, 136, True), ({'C': 0.0668}, 100, False), ({'C': 0.0670}, 100, True)]
+        + [({'C': 0.0843}, 300, False), ({'C': 0.0845}, 300, True), ({'Si': 0.25}, 136, False)],
+    )
+    def test_a_core_past_the_end_compound_of_its_binary_warns(
+        self, w, p_gpa, warned, caplog, monkeypatch
+    ):
+        """Fe3S (16.06 wt% S), FeO (22.27 wt% O), Fe3C below 255 GPa (6.69 wt% C) and Fe7C3
+        above (8.44 wt% C), the units of the alloy liquidus; Si has no bound."""
+        monkeypatch.setattr(ca, '_COMPOUND_WARNED', set())
+        with caplog.at_level('WARNING', logger='fwl.zalmoxis.eos.core_alloy'):
+            for _ in range(2):
+                assert ca.alloy_density(1.0e4, w, p_gpa * GPA, 4000.0) > 0.0
+        assert sum('end compound' in m for m in caplog.messages) == int(warned)
+
+
 class TestPaleosCore:
     """The core-alloy branch of the mixing rules on the PALEOS iron table."""
+
+    @pytest.mark.physics_invariant
+    @pytest.mark.parametrize(
+        ('p_gpa', 'temps'),
+        [(1e-4, (3000.0, 8000.0, 16000.0)), (10.0, (3000.0, 8000.0, 16000.0))]
+        + [
+            (p, (3000.0, 8000.0, 14000.0, 16000.0, 35000.0, 59000.0))
+            for p in (20.0, 136.0, 360.0)
+        ]
+        + [(p, (3000.0, 8000.0, 14000.0, 59000.0)) for p in (1300.0, 3000.0)],
+    )
+    def test_the_density_falls_with_h_where_the_bound_admits_the_core(self, p_gpa, temps):
+        """Up to 16000 K at every pressure and up to 59000 K above 20 GPa, the core density falls
+        with w_H for every admitted core, down to the linear-factor bound 0.8 set by Si."""
+        from zalmoxis.eos import calculate_density
+
+        md, cache = _paleos_iron(), {}
+        w_h = np.linspace(0.0, 0.02, 41)
+        for t in temps:
+            rho_fe = calculate_density(
+                p_gpa * GPA, md, 'PALEOS:iron', t, None, None, cache, 1.0
+            )
+            for w_si in (0.0, 0.1, 0.2, 0.27):
+                rho = []
+                for h in w_h:
+                    try:
+                        rho.append(
+                            ca.alloy_density(rho_fe, {'H': h, 'Si': w_si}, p_gpa * GPA, t)
+                        )
+                    except ca.CoreAlloyError:
+                        break
+                assert len(rho) > 5, (p_gpa, t, w_si)
+                assert np.all(np.diff(rho) < 0.0), (p_gpa, t, w_si)
 
     @pytest.mark.physics_invariant
     @pytest.mark.reference_pinned
