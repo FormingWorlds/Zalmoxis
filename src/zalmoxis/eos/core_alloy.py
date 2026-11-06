@@ -85,7 +85,7 @@ LUO_WET['cell_mass'] = _M_DRY_CELL + _M_CARRIER_CELL
 LUO_CARRIER_FRACTION = _M_CARRIER_CELL / (_M_DRY_CELL + _M_CARRIER_CELL)
 _CELL_WARNED = [False]
 # lowest O rest (w_O - 7.94 w_H) / (1 - w_c) of the first-order carrier split
-# (w_H 0.0206 at w_O 0)
+# (w_H 0.02057 at w_O 0)
 O_REST_MIN = -0.2
 # lowest linear-law factor 1 - lin: above it the density falls with w_H up to 16000 K at every
 # pressure and up to 59000 K above 20 GPa
@@ -94,7 +94,7 @@ LIN_FACTOR_MIN = 0.8
 # or above C_UNIT_SWITCH_PA
 LIQUIDUS_UNITS = {'S': (3, 1), 'O': (1, 1), 'C': (3, 1)}
 C_UNIT_SWITCH_PA = 255e9
-_COMPOUND_WARNED = set()
+_COMPOUND_WARNED = [False]
 
 
 class CoreAlloyError(ValueError):
@@ -197,7 +197,7 @@ def _linear_factor(w):
     return w_c, lin
 
 
-def free_iron(w, pressure):
+def _free_iron(w, pressure):
     """Mass fraction of Fe left after the S, O and C units of the alloy liquidus take theirs.
 
     All O counts as FeO, as in the liquidus; Si, H and N take no Fe. Negative where the units
@@ -213,11 +213,11 @@ def free_iron(w, pressure):
 
 def _warn_past_compound(w, pressure):
     """Warn once per process where the liquidus units exceed the Fe (no refusal)."""
-    if 'compound' in _COMPOUND_WARNED:
+    if _COMPOUND_WARNED[0]:
         return
-    free = free_iron(w, pressure)
+    free = _free_iron(w, pressure)
     if free < 0.0:
-        _COMPOUND_WARNED.add('compound')
+        _COMPOUND_WARNED[0] = True
         logger.warning(
             'Core S, O and C (%s) need more Fe than the core holds in the units of the alloy '
             'liquidus (Fe3S, FeO, Fe3C below 255 GPa, Fe7C3 at or above): free Fe %.4f at '

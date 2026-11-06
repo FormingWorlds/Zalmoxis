@@ -607,22 +607,23 @@ class TestHiroseCalibration:
             ]
             np.testing.assert_allclose(luo, self.LUO_H_DEFICIT[(state, 'paleos')], atol=1e-3)
             assert min(luo) > 8.0
-            bars[f'H\n{state}'] = (luo, None)
+            bars[f'H-Luo\n{state}'] = (luo, None)
 
         def figure():
             import matplotlib.pyplot as plt
 
-            fig, ax = plt.subplots(figsize=(6.4, 3.4))
+            fig, ax = plt.subplots(figsize=(7.6, 3.4))
             ax.axhspan(6.0, 8.0, alpha=0.15, lw=0, label='Hirose 2021')
-            colour = plt.rcParams['axes.prop_cycle'].by_key()['color'][0]
+            colour, luo_colour = plt.rcParams['axes.prop_cycle'].by_key()['color'][:2]
             for i, (name, (new, old)) in enumerate(bars.items()):
+                is_luo = name.startswith('H-Luo')
                 ax.plot(
                     [i + 0.1] * 2,
                     new,
-                    '-o',
-                    color=colour,
+                    '-s' if is_luo else '-o',
+                    color=luo_colour if is_luo else colour,
                     ms=4,
-                    label='calibrated' if i == 0 else None,
+                    label={0: 'calibrated', len(bars) - 1: 'H-Luo'}.get(i),
                 )
                 if old is not None:
                     ax.plot(
@@ -635,8 +636,9 @@ class TestHiroseCalibration:
                         alpha=0.6,
                         label='Li 2019' if i == 0 else None,
                     )
-            ax.set_xticks(range(len(bars)), [{'H': 'H\nlinear'}.get(n, n) for n in bars])
+            ax.set_xticks(range(len(bars)), list(bars))
             ax.set(ylabel='Density deficit [%]', xlim=(-0.5, len(bars) - 0.5))
+            ax.yaxis.set_major_locator(plt.MaxNLocator(4))
             ax.grid(False)
             ax.legend(loc='upper left', bbox_to_anchor=(1.02, 1.0), frameon=False)
             fig.tight_layout()
@@ -692,7 +694,7 @@ class TestCompoundBounds:
         at or above) together need more Fe than the core holds: 16.06 wt% S, 22.27 wt% O, 6.69
         or 8.44 wt% C alone; Si takes no Fe. The pressure is a NumPy scalar, as in a structure
         solve."""
-        monkeypatch.setattr(ca, '_COMPOUND_WARNED', set())
+        monkeypatch.setattr(ca, '_COMPOUND_WARNED', [False])
         with caplog.at_level('WARNING', logger='fwl.zalmoxis.eos.core_alloy'):
             for _ in range(2):
                 assert ca.alloy_density(1.0e4, w, np.float64(p_gpa * GPA), 4000.0) > 0.0
@@ -700,7 +702,7 @@ class TestCompoundBounds:
 
     def test_the_compound_warning_comes_once_per_process(self, caplog, monkeypatch):
         """A second composition past the bound, also with another element, warns no more."""
-        monkeypatch.setattr(ca, '_COMPOUND_WARNED', set())
+        monkeypatch.setattr(ca, '_COMPOUND_WARNED', [False])
         with caplog.at_level('WARNING', logger='fwl.zalmoxis.eos.core_alloy'):
             ca.alloy_density(1.0e4, {'S': 0.17}, np.float64(136 * GPA), 4000.0)
             ca.alloy_density(1.0e4, {'O': 0.23}, np.float64(136 * GPA), 4000.0)
@@ -1072,6 +1074,6 @@ class TestHNames:
             - ca.alloy_density(rho_fe, ca.split_alloy(_mix(H_Luo=0.01))[1], P_CMB, T_LUO)
             / rho_fe
         )
-        assert luo > 0.12 and luo != pytest.approx(0.0718, abs=0.01)
+        assert luo > 0.12
         with pytest.raises(ca.CoreAlloyError, match='exclude each other'):
             ca.split_alloy(_mix(H=0.005, H_Luo=0.005))
