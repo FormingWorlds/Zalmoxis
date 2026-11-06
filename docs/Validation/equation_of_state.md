@@ -96,7 +96,7 @@ This case has no plot: it checks that 2 readers give identical arrays, an identi
 ??? info "Test details"
     - Reference: Hirose et al. (2021), p. 3.
     - Tolerance: $10^{-12}$ percentage points at the midpoints; 6 to 8 % at the ends; $10^{-3}$ percentage points for the default H law.
-    - Test id: `tests/test_core_alloy.py::TestHiroseCalibration` (unit tier; the tests on the PALEOS iron table need it under `data/` and skip without it; `::test_the_calibration_gives_7_percent_on_any_iron_base` needs no table)
+    - Test id: `tests/test_core_alloy.py::TestHiroseCalibration`, its plot from `tests/test_core_alloy.py::TestHiroseCalibration::test_each_single_element_outer_core_is_7_percent_lighter_than_iron` (unit tier; the tests on the PALEOS iron table need it under `data/` and skip without it; `::test_the_calibration_gives_7_percent_on_any_iron_base` needs no table)
     - Command: `pytest -o "addopts=" tests/test_core_alloy.py -k Hirose`
 
 ## Related tests
