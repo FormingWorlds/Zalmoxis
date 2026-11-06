@@ -993,7 +993,7 @@ class TestZeroCarrier:
 class TestDispatchWithoutData:
     """The alloy branches of the mixing functions, with the iron EOS patched."""
 
-    MIX = 'PALEOS:iron:0.98+CoreAlloy:H:0.005+CoreAlloy:O:0.015'
+    MIX = 'PALEOS:iron:0.98+CoreAlloy:H-Luo:0.005+CoreAlloy:O:0.015'
 
     def test_scalar_density_applies_the_alloy_law_to_the_iron_base(self):
         """calculate_mixed_density gives alloy_density of the base iron density and its mzf."""
