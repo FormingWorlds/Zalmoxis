@@ -18,7 +18,8 @@ pytestmark = [pytest.mark.integration, pytest.mark.timeout(600)]
 
 @pytest.mark.physics_invariant
 def test_one_wt_percent_hydrogen_core_solves(caplog, monkeypatch):
-    """The core with 1 wt% H, which samples 4-30 GPa below 8000 K in its first trials, solves."""
+    """The core with 1 wt% H as the Luo carrier (CoreAlloy:H-Luo), which samples 4-30 GPa below
+    8000 K in its first trials, solves."""
     from zalmoxis import get_zalmoxis_root
     from zalmoxis.config import (
         load_material_dictionaries,
@@ -37,7 +38,7 @@ def test_one_wt_percent_hydrogen_core_solves(caplog, monkeypatch):
     cfg = load_zalmoxis_config(os.path.join(root, 'input', 'default.toml'))
     cfg['use_jax'] = True
     cfg['layer_eos_config'] = dict(
-        cfg['layer_eos_config'], core='PALEOS:iron:0.99+CoreAlloy:H:0.01'
+        cfg['layer_eos_config'], core='PALEOS:iron:0.99+CoreAlloy:H-Luo:0.01'
     )
     melt = load_solidus_liquidus_functions(
         cfg['layer_eos_config'],

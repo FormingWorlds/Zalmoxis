@@ -3,7 +3,7 @@
 Invariants and contract clauses: the light-element fractions of a core mixture
 (one iron base, known elements, non-negative and finite, sum below 1, total O
 never negative); the linear law, calibrated on the outer cores of Hirose et al. (2021) for S,
-Si, O and H-linear and from Li et al. (2019) for C and N; the Luo et al. (2024) Eq. 14
+Si, O and H and from Li et al. (2019) for C and N; the Luo et al. (2024) Eq. 14
 members against an independent bisection; the Fe-H-O carrier with its O counted
 against the core O, continuous where the O remainder changes sign; the bounds
 that fail a composition without positive density; the limits of the core
@@ -33,7 +33,7 @@ GPA = 1e9
 # 136 GPa, 8000 K: inside the Luo fit box, near the Earth core-mantle boundary pressure
 P_CMB, T_LUO = 136 * GPA, 8000.0
 # Hirose et al. 2021, PDF p. 3: single-element outer cores [wt%] at T_CMB 4137 K, T_ICB 5400 K
-HIROSE_RANGE = {'S': (13.3, 14.4), 'Si': (9.3, 9.8), 'O': (8.4, 8.9), 'H-linear': (0.96, 0.99)}
+HIROSE_RANGE = {'S': (13.3, 14.4), 'Si': (9.3, 9.8), 'O': (8.4, 8.9), 'H': (0.96, 0.99)}
 HIROSE_MID = {el: 0.5 * (lo + hi) for el, (lo, hi) in HIROSE_RANGE.items()}
 HIROSE_STATES = {'CMB': (136 * GPA, 4137.0), 'ICB': (330 * GPA, 5400.0)}
 
@@ -73,11 +73,11 @@ class TestSplitAlloy:
     """Composition checks of a light-element core."""
 
     def test_valid_mixture_returns_base_and_fractions(self):
-        """The base and each element fraction come back unchanged, H-linear by its key."""
-        base, w = ca.split_alloy(_mix(H_linear=0.004, Si=0.03, S=0.02))
+        """The base and each element fraction come back unchanged, H by its key."""
+        base, w = ca.split_alloy(_mix(H=0.004, Si=0.03, S=0.02))
         assert base == 'PALEOS:iron'
         assert w == {
-            'H-linear': pytest.approx(0.004),
+            'H': pytest.approx(0.004),
             'Si': pytest.approx(0.03),
             'S': pytest.approx(0.02),
         }
@@ -106,7 +106,7 @@ class TestSplitAlloy:
             ),
             (
                 LayerMixture(
-                    ['PALEOS:iron', 'CoreAlloy:H', 'CoreAlloy:H-linear'], [0.98, 0.01, 0.01]
+                    ['PALEOS:iron', 'CoreAlloy:H', 'CoreAlloy:H-Luo'], [0.98, 0.01, 0.01]
                 ),
                 'exclude each other',
             ),
@@ -148,7 +148,7 @@ class TestSplitAlloy:
     @settings(derandomize=True, max_examples=200, deadline=None)
     @given(
         st.dictionaries(
-            st.sampled_from(sorted(ca.ALLOY_ELEMENTS - {'H-linear'})),
+            st.sampled_from(sorted(ca.ALLOY_ELEMENTS - {'H'})),
             st.floats(0.0, 0.03, allow_nan=False),
             min_size=1,
         )
@@ -156,7 +156,7 @@ class TestSplitAlloy:
     def test_any_valid_fraction_set_round_trips(self, w):
         """Over the valid domain every fraction comes back and the iron base keeps the rest."""
         # the normalised O rest of the carrier stays above -0.2 up to w_H 0.0205
-        w['H'] = min(w.get('H', 0.0), 0.0205)
+        w['H-Luo'] = min(w.get('H-Luo', 0.0), 0.0205)
         base, out = ca.split_alloy(_mix(**w))
         assert base == 'PALEOS:iron'
         assert set(out) == set(w)
@@ -202,17 +202,17 @@ class TestLinearLaw:
     def test_composition_checks_run_in_split_alloy(self):
         """The linear-law sign and the PALEOS:iron base fail the mixture itself, at any (P, T)."""
         with pytest.raises(ca.CoreAlloyError, match='linear-law core density'):
-            ca.split_alloy(_mix(H_linear=0.2))
+            ca.split_alloy(_mix(H=0.2))
         bad_base = LayerMixture(['Seager2007:iron', 'CoreAlloy:S'], [0.99, 0.01])
         with pytest.raises(ca.CoreAlloyError, match='PALEOS:iron'):
             ca.split_alloy(bad_base)
-        assert ca.split_alloy(_mix(H_linear=0.02))[0] == 'PALEOS:iron'
+        assert ca.split_alloy(_mix(H=0.02))[0] == 'PALEOS:iron'
 
     @pytest.mark.physics_invariant
     @pytest.mark.parametrize(
         'el, refused, admitted',
         [('O', 0.248, 0.246), ('C', 0.154, 0.153), ('S', 0.396, 0.395)]
-        + [('Si', 0.273, 0.272), ('H-linear', 0.0279, 0.0278)],
+        + [('Si', 0.273, 0.272), ('H', 0.0279, 0.0278)],
     )
     def test_linear_factor_below_0p8_is_refused(self, el, refused, admitted):
         """1 - lin below 0.8 raises with the value and the bound; just above it passes."""
@@ -306,7 +306,7 @@ class TestLuoMembers:
         assert ca.luo_density(1e15, T_LUO, ca.LUO_WET) is None
         monkeypatch.setattr(ca, 'luo_cell_volume', lambda p, t, member: None)
         assert ca.carrier_excess_volume(P_CMB, T_LUO) is None
-        assert ca.alloy_density(1.0e4, {'H': 0.005}, P_CMB, T_LUO) is None
+        assert ca.alloy_density(1.0e4, {'H-Luo': 0.005}, P_CMB, T_LUO) is None
 
     def test_every_point_of_the_fit_box_has_both_volumes(self):
         """The bracket holds a root for both members on a grid over the whole Luo box."""
@@ -335,7 +335,7 @@ class TestCarrier:
             return 1.0 / ((1 - w_c) / (rho_fe * (1 - lin)) + w_c * dv_c)
 
         right = density((7.0 / 9.55 * w_si + 7.0 / 8.65 * o_rest) / (1 - w_c))
-        got = ca.alloy_density(rho_fe, {'H': w_h, 'Si': w_si}, P_CMB, T_LUO)
+        got = ca.alloy_density(rho_fe, {'H-Luo': w_h, 'Si': w_si}, P_CMB, T_LUO)
         assert got == pytest.approx(right, rel=1e-12)
         assert abs(density(7.0 / 9.55 * w_si + 7.0 / 8.65 * o_rest) / right - 1) > 1e-3
 
@@ -344,16 +344,16 @@ class TestCarrier:
         w_full = 1.0 / ca.CARRIER_PER_H
         for w_h in (w_full, math.nextafter(w_full, 1.0), 0.15):
             try:
-                ca.alloy_density(1.1e4, {'H': w_h}, P_CMB, T_LUO)
+                ca.alloy_density(1.1e4, {'H-Luo': w_h}, P_CMB, T_LUO)
                 raised = None
             except Exception as err:
                 raised = err
             assert isinstance(raised, ca.CoreAlloyError), (w_h, raised)
             assert 'carrier' in str(raised)
             with pytest.raises(ca.CoreAlloyError, match='carrier'):
-                ca.split_alloy(_mix(H=w_h))
+                ca.split_alloy(_mix(H_Luo=w_h))
         # 0.43 wt% H, the carrier fraction of the Luo wet cell, is accepted
-        assert ca.split_alloy(_mix(H=0.0043))[1] == {'H': pytest.approx(0.0043)}
+        assert ca.split_alloy(_mix(H_Luo=0.0043))[1] == {'H-Luo': pytest.approx(0.0043)}
 
     @pytest.mark.parametrize(
         ('w_h', 'w_o', 'admitted'),
@@ -365,7 +365,7 @@ class TestCarrier:
         rest = (w_o - (w_c - w_h)) / (1 - w_c)
         assert (rest >= -0.2) is admitted
         try:
-            ca.split_alloy(_mix(H=w_h, O=w_o))
+            ca.split_alloy(_mix(H_Luo=w_h, O=w_o))
             raised = None
         except Exception as err:
             raised = err
@@ -381,11 +381,11 @@ class TestCarrier:
         assert ca.LUO_CARRIER_FRACTION == pytest.approx(0.0388, abs=5e-5)
         w_cell = ca.LUO_CARRIER_FRACTION / ca.CARRIER_PER_H
         with caplog.at_level('WARNING', logger='fwl.zalmoxis.eos.core_alloy'):
-            ca.split_alloy(_mix(H=0.999 * w_cell))
+            ca.split_alloy(_mix(H_Luo=0.999 * w_cell))
             assert caplog.messages == []
-            ca.split_alloy(_mix(H=1.001 * w_cell))
+            ca.split_alloy(_mix(H_Luo=1.001 * w_cell))
             assert len(caplog.messages) == 1
-            ca.split_alloy(_mix(H=0.01))
+            ca.split_alloy(_mix(H_Luo=0.01))
         assert len([m for m in caplog.messages if 'Luo' in m and 'cell' in m]) == 1
 
     def test_member_cell_mass_travels_with_the_member(self):
@@ -405,7 +405,7 @@ class TestCarrier:
         """
         w_c = 0.01 * ca.CARRIER_PER_H
         # core O equal to the carrier O: no O remainder, so the linear base is rho_fe
-        w, rho_fe = {'H': 0.01, 'O': w_c - 0.01}, 1.0e4
+        w, rho_fe = {'H-Luo': 0.01, 'O': w_c - 0.01}, 1.0e4
         dv_zero = -(1.0 - w_c) / (rho_fe * w_c)  # 1/rho = 0 at this excess volume
         for dv in (10 * dv_zero, dv_zero * (1 + 1e-9)):
             monkeypatch.setattr(ca, 'carrier_excess_volume', lambda p, t, dv=dv: dv)
@@ -426,10 +426,10 @@ class TestCarrier:
         """With no core O the carrier lowers the density by about 15.1 % per wt% H."""
         rho_fe = ca.luo_density(P_CMB, T_LUO, ca.LUO_DRY)
         h = 1e-6
-        beta_h = (1 - ca.alloy_density(rho_fe, {'H': h}, P_CMB, T_LUO) / rho_fe) / h
+        beta_h = (1 - ca.alloy_density(rho_fe, {'H-Luo': h}, P_CMB, T_LUO) / rho_fe) / h
         assert beta_h == pytest.approx(15.14, abs=0.01)
         # the linear value 7.18 and the carrier without the O correction (21.6) lie outside
-        assert abs(beta_h - ca.LINEAR_BETA['H-linear']) > 1.0
+        assert abs(beta_h - ca.LINEAR_BETA['H']) > 1.0
         k = ca.CARRIER_PER_H
         no_o_correction = k * ca.carrier_excess_volume(P_CMB, T_LUO) * rho_fe - k
         assert abs(beta_h - no_o_correction) > 1.0
@@ -442,7 +442,7 @@ class TestCarrier:
         w_h = 0.005
         w_c = w_h * ca.CARRIER_PER_H
         rho_c = 1.0 / ca.carrier_excess_volume(P_CMB, T_LUO)
-        rho = ca.alloy_density(rho_fe, {'H': w_h, 'O': w_c - w_h}, P_CMB, T_LUO)
+        rho = ca.alloy_density(rho_fe, {'H-Luo': w_h, 'O': w_c - w_h}, P_CMB, T_LUO)
         assert rho == pytest.approx(1.0 / ((1 - w_c) / rho_fe + w_c / rho_c), rel=1e-12)
         assert abs(rho - ((1 - w_c) * rho_fe + w_c * rho_c)) > 0.01 * rho
         assert rho_c < rho < rho_fe
@@ -453,13 +453,13 @@ class TestCarrier:
         rho_fe, w_h = 1.12e4, 0.004
         w_oc = w_h * (ca.CARRIER_PER_H - 1)
         eps = 1e-7
-        below = ca.alloy_density(rho_fe, {'H': w_h, 'O': w_oc - eps}, P_CMB, T_LUO)
-        at = ca.alloy_density(rho_fe, {'H': w_h, 'O': w_oc}, P_CMB, T_LUO)
-        above = ca.alloy_density(rho_fe, {'H': w_h, 'O': w_oc + eps}, P_CMB, T_LUO)
+        below = ca.alloy_density(rho_fe, {'H-Luo': w_h, 'O': w_oc - eps}, P_CMB, T_LUO)
+        at = ca.alloy_density(rho_fe, {'H-Luo': w_h, 'O': w_oc}, P_CMB, T_LUO)
+        above = ca.alloy_density(rho_fe, {'H-Luo': w_h, 'O': w_oc + eps}, P_CMB, T_LUO)
         slope_below, slope_above = (at - below) / eps, (above - at) / eps
         assert slope_below == pytest.approx(slope_above, rel=1e-3)
         # the step the alternative rule (linear H below the carrier O) would make
-        linear_h = ca.alloy_density(rho_fe, {'H-linear': w_h, 'O': w_oc - eps}, P_CMB, T_LUO)
+        linear_h = ca.alloy_density(rho_fe, {'H': w_h, 'O': w_oc - eps}, P_CMB, T_LUO)
         assert abs(linear_h - at) > 1e4 * abs(below - at)
 
     def test_out_of_range_point_is_clamped_counted_and_warned_once(self, caplog, monkeypatch):
@@ -505,19 +505,19 @@ class TestCarrier:
         """At 5 GPa, 3000 K (no Eq. 14 root for dry Fe) the 1 wt% H core still has a density."""
         monkeypatch.setitem(ca.LUO_OUT_OF_RANGE, 'count', 0)
         assert ca.luo_cell_volume(5 * GPA, 3000.0, ca.LUO_DRY) is None
-        rho = ca.alloy_density(7.0e3, {'H': 0.01}, 5 * GPA, 3000.0)
+        rho = ca.alloy_density(7.0e3, {'H-Luo': 0.01}, 5 * GPA, 3000.0)
         assert 0.8 * 7.0e3 < rho < 7.0e3
 
     @settings(derandomize=True, max_examples=150, deadline=None)
     @given(
         st.floats(0.0, 0.01),
         st.floats(0.0, 0.08),
-        st.sampled_from(['C', 'Si', 'S', 'O', 'H']),
+        st.sampled_from(['C', 'Si', 'S', 'O', 'H-Luo']),
     )
     def test_more_light_element_never_raises_the_density(self, w_h, w_o, extra):
         """At 136 GPa, 8000 K adding any light element lowers or keeps the density."""
         rho_fe = 1.12e4
-        w = {'H': w_h, 'O': w_o}
+        w = {'H-Luo': w_h, 'O': w_o}
         base = ca.alloy_density(rho_fe, w, P_CMB, T_LUO)
         more = dict(w)
         more[extra] = more.get(extra, 0.0) + 0.002
@@ -537,7 +537,7 @@ def _paleos_iron():
 class TestHiroseCalibration:
     """The linear law against the single-element outer cores of Hirose et al. (2021)."""
 
-    LI_2019 = {'S': 0.8, 'Si': 0.7, 'O': 1.1, 'H-linear': 8.7}
+    LI_2019 = {'S': 0.8, 'Si': 0.7, 'O': 1.1, 'H': 8.7}
     # Luo-law deficit [%] of 0.96 and 0.99 wt% H with no core O, on 2 iron bases (docs table)
     LUO_H_DEFICIT = {
         ('CMB', 'paleos'): (14.904, 15.308),
@@ -559,7 +559,7 @@ class TestHiroseCalibration:
     def test_the_calibration_gives_7_percent_on_any_iron_base(self):
         """Calibration check: beta = 7 / midpoint gives 7 % at each Hirose midpoint (1e-12
         percentage points) on any iron density, 6-8 % at the range ends; the Li et al. (2019)
-        values miss the band for S, O and H-linear."""
+        values miss the band for S, O and H."""
         for el, (lo, hi) in HIROSE_RANGE.items():
             for rho_fe in (1.0e4, 1.2345e4):
                 rho = ca.alloy_density(rho_fe, {el: HIROSE_MID[el] / 100}, P_CMB, 4000.0)
@@ -579,8 +579,8 @@ class TestHiroseCalibration:
     ):
         """Hirose et al. 2021, p. 3: on the PALEOS iron table, solid at both states, each
         midpoint core is 7 % lighter (1e-12 percentage points) and the range ends 6-8 %; the
-        default H law gives more than 8 % for their H core (regression pins, table version
-        dependent).
+        Luo H law (``CoreAlloy:H-Luo``) gives more than 8 % for their H core (regression pins,
+        table version dependent).
         """
         from zalmoxis.eos import calculate_density
         from zalmoxis.phase_columns import phase_for_component
@@ -603,7 +603,7 @@ class TestHiroseCalibration:
         assert bars['S'][1][0] > 8.0 and bars['O'][1][0] > 8.0
         for state, (p, t) in HIROSE_STATES.items():
             luo = [
-                self._deficit(md, cache, {'H': x / 100}, p, t) for x in HIROSE_RANGE['H-linear']
+                self._deficit(md, cache, {'H-Luo': x / 100}, p, t) for x in HIROSE_RANGE['H']
             ]
             np.testing.assert_allclose(luo, self.LUO_H_DEFICIT[(state, 'paleos')], atol=1e-3)
             assert min(luo) > 8.0
@@ -635,7 +635,7 @@ class TestHiroseCalibration:
                         alpha=0.6,
                         label='Li 2019' if i == 0 else None,
                     )
-            ax.set_xticks(range(len(bars)), [n.replace('H-linear', 'H\nlinear') for n in bars])
+            ax.set_xticks(range(len(bars)), [{'H': 'H\nlinear'}.get(n, n) for n in bars])
             ax.set(ylabel='Density deficit [%]', xlim=(-0.5, len(bars) - 0.5))
             ax.grid(False)
             ax.legend(loc='upper left', bbox_to_anchor=(1.02, 1.0), frameon=False)
@@ -654,14 +654,14 @@ class TestHiroseCalibration:
     @pytest.mark.physics_invariant
     @pytest.mark.reference_pinned
     def test_luo_h_law_deficit_on_a_liquid_iron_base(self, monkeypatch):
-        """The default H law on the Luo liquid iron at 8000 K, where the carrier volume is taken
-        (regression pins)."""
+        """The Luo H law (``CoreAlloy:H-Luo``) on the Luo liquid iron at 8000 K, where the carrier
+        volume is taken (regression pins)."""
         monkeypatch.setattr(ca, '_CELL_WARNED', [False])
         for state, (p, _) in HIROSE_STATES.items():
             rho_fe = ca.luo_density(p, T_LUO, ca.LUO_DRY)
             got = [
-                100 * (1 - ca.alloy_density(rho_fe, {'H': x / 100}, p, T_LUO) / rho_fe)
-                for x in HIROSE_RANGE['H-linear']
+                100 * (1 - ca.alloy_density(rho_fe, {'H-Luo': x / 100}, p, T_LUO) / rho_fe)
+                for x in HIROSE_RANGE['H']
             ]
             np.testing.assert_allclose(
                 got, self.LUO_H_DEFICIT[(state, 'luo_liquid_8000K')], atol=1e-3
@@ -737,7 +737,7 @@ class TestPaleosCore:
                 for h in w_h:
                     try:
                         rho.append(
-                            ca.alloy_density(rho_fe, {'H': h, 'Si': w_si}, p_gpa * GPA, t)
+                            ca.alloy_density(rho_fe, {'H-Luo': h, 'Si': w_si}, p_gpa * GPA, t)
                         )
                     except ca.CoreAlloyError:
                         break
@@ -757,7 +757,7 @@ class TestPaleosCore:
             1300 * GPA, md, 'PALEOS:iron', 8000.0, None, None, cache, 1.0
         )
         rho = [
-            ca.alloy_density(rho_fe, {'H': h, 'Si': 0.6}, 1300 * GPA, 8000.0)
+            ca.alloy_density(rho_fe, {'H-Luo': h, 'Si': 0.6}, 1300 * GPA, 8000.0)
             for h in (0.0, 0.002)
         ]
         assert rho[1] > rho[0]
@@ -774,13 +774,13 @@ class TestPaleosCore:
         iron = calculate_mixed_density_batch(
             pressures, temps, parse_layer_components('PALEOS:iron'), md, None, None, cache
         )
-        zero = _mix(H=0.0, O=0.0)
+        zero = _mix(H_Luo=0.0, O=0.0)
         same = calculate_mixed_density_batch(pressures, temps, zero, md, None, None, cache)
         np.testing.assert_array_equal(same, iron)
         curves = {0.0: iron}
         for w_h in (0.005, 0.01):
             w_c = w_h * ca.CARRIER_PER_H
-            mix = _mix(H=w_h, O=w_c - w_h)
+            mix = _mix(H_Luo=w_h, O=w_c - w_h)
             got = calculate_mixed_density_batch(pressures, temps, mix, md, None, None, cache)
             rho_c = np.array([1.0 / ca.carrier_excess_volume(p, T_LUO) for p in pressures])
             harmonic = 1.0 / ((1 - w_c) / iron + w_c / rho_c)
@@ -814,7 +814,11 @@ class TestPaleosCore:
         from zalmoxis.eos import calculate_density
         from zalmoxis.mixing import calculate_mixed_density, calculate_mixed_density_batch
 
-        md, cache, mix = _paleos_iron(), {}, _mix(H=0.005, O=0.005 * ca.CARRIER_PER_H - 0.005)
+        md, cache, mix = (
+            _paleos_iron(),
+            {},
+            _mix(H_Luo=0.005, O=0.005 * ca.CARRIER_PER_H - 0.005),
+        )
         got = {}
         for mzf in (0.8, 1.0):
             iron = calculate_density(P_CMB, md, 'PALEOS:iron', 4000.0, None, None, cache, mzf)
@@ -838,9 +842,9 @@ class TestPaleosCore:
         monkeypatch.setattr(
             ca, 'carrier_excess_volume', lambda pp, tt: None if tt == 9000.0 else real(pp, tt)
         )
-        out = ca.alloy_density_batch(rho_fe, {'H': 0.005}, p, t)
+        out = ca.alloy_density_batch(rho_fe, {'H-Luo': 0.005}, p, t)
         assert np.isnan(out[1]) and np.isnan(out[2])
-        assert out[0] == pytest.approx(ca.alloy_density(1.1e4, {'H': 0.005}, P_CMB, T_LUO))
+        assert out[0] == pytest.approx(ca.alloy_density(1.1e4, {'H-Luo': 0.005}, P_CMB, T_LUO))
         assert out[3] == out[0]
 
     @pytest.mark.physics_invariant
@@ -877,7 +881,9 @@ class TestPaleosCore:
         iron = get_mixed_nabla_ad(
             P_CMB, 4000.0, parse_layer_components('PALEOS:iron'), md, cache, None, None
         )
-        alloy = get_mixed_nabla_ad(P_CMB, 4000.0, _mix(H=0.005, Si=0.03), md, cache, None, None)
+        alloy = get_mixed_nabla_ad(
+            P_CMB, 4000.0, _mix(H_Luo=0.005, Si=0.03), md, cache, None, None
+        )
         assert alloy == iron
         assert 0.0 < iron < 1.0
 
@@ -981,7 +987,7 @@ class TestZeroCarrier:
         )
         with mock.patch.object(ca, 'carrier_excess_volume', side_effect=AssertionError):
             for rho_fe, p, t in states:
-                assert ca.alloy_density(rho_fe, {'H': 0.0, 'O': 0.0}, p, t) == rho_fe
+                assert ca.alloy_density(rho_fe, {'H-Luo': 0.0, 'O': 0.0}, p, t) == rho_fe
 
 
 class TestDispatchWithoutData:
@@ -1037,3 +1043,35 @@ class TestDispatchWithoutData:
             side_effect=lambda comp, *a, **k: values.get(comp, 0.9),
         ):
             assert get_mixed_nabla_ad(P_CMB, T_LUO, mix, {}, {}) == 0.3
+
+
+class TestHNames:
+    """``CoreAlloy:H`` is the calibrated linear law, ``CoreAlloy:H-Luo`` the Luo carrier law."""
+
+    def test_the_old_h_linear_name_is_refused_naming_both_h_laws(self):
+        """A core that still names CoreAlloy:H-linear fails with a message naming both H laws."""
+        with pytest.raises(ca.CoreAlloyError, match=r'CoreAlloy:H .*CoreAlloy:H-Luo'):
+            ca.split_alloy(LayerMixture(['PALEOS:iron', 'CoreAlloy:H-linear'], [0.99, 0.01]))
+
+    @pytest.mark.physics_invariant
+    def test_the_default_h_law_gives_7_percent_for_the_hirose_h_core(self):
+        """CoreAlloy:H at the midpoint of the Hirose et al. (2021) H core, 0.975 wt%, lowers the
+        density by 7 % at any state, as the linear law with beta 7.18 per unit mass fraction."""
+        base, w = ca.split_alloy(_mix(H=0.00975))
+        assert (base, w) == ('PALEOS:iron', {'H': pytest.approx(0.00975)})
+        for p, t in ((P_CMB, 4000.0), (330 * GPA, 6000.0), (P_CMB, T_LUO)):
+            assert ca.alloy_density(1.0e4, w, p, t) == pytest.approx(0.93e4, rel=1e-12)
+
+    @pytest.mark.physics_invariant
+    def test_the_luo_h_law_keeps_its_carrier_under_its_own_name(self):
+        """CoreAlloy:H-Luo is the Fe-H2O carrier law: 1 wt% H with no core O at 136 GPa, 8000 K
+        is lighter than the linear law's 7.18 %, and H and H-Luo exclude each other."""
+        rho_fe = ca.luo_density(P_CMB, T_LUO, ca.LUO_DRY)
+        luo = (
+            1
+            - ca.alloy_density(rho_fe, ca.split_alloy(_mix(H_Luo=0.01))[1], P_CMB, T_LUO)
+            / rho_fe
+        )
+        assert luo > 0.12 and luo != pytest.approx(0.0718, abs=0.01)
+        with pytest.raises(ca.CoreAlloyError, match='exclude each other'):
+            ca.split_alloy(_mix(H=0.005, H_Luo=0.005))
