@@ -61,7 +61,7 @@ def test_one_wt_percent_hydrogen_core_solves(caplog, monkeypatch):
     ratio = rho[core] / iron
     # 1 wt% H as the carrier with no core O: 0.852-0.886 of iron on the pure-iron profile
     assert np.all((0.83 < ratio) & (ratio < 0.90))
-    # the linear H law (beta 7.18 per unit mass fraction) gives 0.928 at every node
+    # the default linear H law gives 0.9282 at every node (next test)
     assert ratio.mean() < 0.88 and ratio.max() < 0.89
     assert np.all(np.isfinite(rho)) and np.all(rho[core] > 0)
     # pure iron gives 6.5235e6-6.5260e6 m on numpy, by environment; a lighter core is larger
@@ -96,6 +96,27 @@ def _solve_default(core, use_jax, caplog):
     mixes = parse_all_layer_mixtures(cfg['layer_eos_config'])
     with caplog.at_level('WARNING'):
         return main(cfg, md, melt, os.path.join(root, 'input'), layer_mixtures=mixes)
+
+
+@pytest.mark.physics_invariant
+def test_one_wt_percent_default_hydrogen_core_follows_the_linear_law(caplog):
+    """The default H law (CoreAlloy:H, beta 7/0.975 % per wt%) with 1 wt% H solves, and its
+    core is 1 - 0.07/0.975 of PALEOS iron at every core node (measured 0.928205128205 on 80
+    nodes); the Luo law (CoreAlloy:H-Luo) gives 0.852-0.886 there."""
+    from zalmoxis.config import load_material_dictionaries
+    from zalmoxis.eos import calculate_density_batch
+
+    res = _solve_default('PALEOS:iron:0.99+CoreAlloy:H:0.01', True, caplog)
+    assert res['converged']
+    m, p, t, rho = (
+        np.asarray(res[k]) for k in ('mass_enclosed', 'pressure', 'temperature', 'density')
+    )
+    core = m < res['cmb_mass']
+    iron = calculate_density_batch(
+        p[core], t[core], load_material_dictionaries(), 'PALEOS:iron', None, None, {}, 1.0
+    )
+    assert core.sum() > 10
+    np.testing.assert_allclose(rho[core] / iron, 1.0 - 0.07 / 0.975, rtol=1e-12)
 
 
 @pytest.mark.physics_invariant
