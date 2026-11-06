@@ -333,10 +333,10 @@ class TestCarrier:
         def density(lin):
             return 1.0 / ((1 - w_c) / (rho_fe * (1 - lin)) + w_c * dv_c)
 
-        right = density((0.7 * w_si + 1.1 * o_rest) / (1 - w_c))
+        right = density((7.0 / 9.55 * w_si + 7.0 / 8.65 * o_rest) / (1 - w_c))
         got = ca.alloy_density(rho_fe, {'H': w_h, 'Si': w_si}, P_CMB, T_LUO)
         assert got == pytest.approx(right, rel=1e-12)
-        assert abs(density(0.7 * w_si + 1.1 * o_rest) / right - 1) > 1e-3
+        assert abs(density(7.0 / 9.55 * w_si + 7.0 / 8.65 * o_rest) / right - 1) > 1e-3
 
     def test_carrier_that_leaves_no_alloy_mass_is_refused(self):
         """A carrier mass fraction 8.94 w_H of 1 or more is no core: CoreAlloyError, also at 1."""
@@ -582,13 +582,13 @@ class TestHiroseCalibration:
                 self._deficit(md, cache, {'H': x / 100}, p, t) for x in HIROSE_RANGE['H-linear']
             ]
             np.testing.assert_allclose(luo, self.LUO_H_DEFICIT[(state, 'paleos')], atol=1e-3)
-            bars[f'H, Luo law, {state}'] = (luo, None)
+            bars[f'H\n{state}'] = (luo, None)
 
         def figure():
             import matplotlib.pyplot as plt
 
-            fig, ax = plt.subplots(figsize=(7.0, 3.6))
-            ax.axhspan(6.0, 8.0, alpha=0.15, lw=0, label='Hirose et al. 2021: 6-8 %')
+            fig, ax = plt.subplots(figsize=(6.4, 3.4))
+            ax.axhspan(6.0, 8.0, alpha=0.15, lw=0, label='Hirose 2021')
             colour = ax._get_lines.get_next_color()
             for i, (name, (new, old)) in enumerate(bars.items()):
                 ax.plot(
@@ -597,7 +597,7 @@ class TestHiroseCalibration:
                     '-o',
                     color=colour,
                     ms=4,
-                    label='Zalmoxis' if i == 0 else None,
+                    label='calibrated' if i == 0 else None,
                 )
                 if old is not None:
                     ax.plot(
@@ -608,15 +608,20 @@ class TestHiroseCalibration:
                         mfc='none',
                         ms=4,
                         alpha=0.6,
-                        label='Li et al. 2019 $\\beta$' if i == 0 else None,
+                        label='Li 2019' if i == 0 else None,
                     )
-            ax.set_xticks(range(len(bars)), [n.replace(', ', '\n', 1) for n in bars])
+            ax.set_xticks(range(len(bars)), [n.replace('H-linear', 'H\nlinear') for n in bars])
             ax.set(ylabel='Density deficit [%]', xlim=(-0.5, len(bars) - 0.5))
+            ax.grid(False)
             ax.legend(loc='upper left', bbox_to_anchor=(1.02, 1.0), frameon=False)
             fig.tight_layout()
             fig.canvas.draw()
             box = ax.get_legend().get_window_extent()
             assert box.x0 >= ax.get_window_extent().x1
+            ticks = [lab.get_window_extent() for lab in ax.get_xticklabels()]
+            assert all(a.x1 + 5 < b.x0 for a, b in zip(ticks, ticks[1:])), [
+                (b.x0, b.x1) for b in ticks
+            ]
             return fig
 
         validation_plot(figure, 'core_alloy_hirose2021_deficit')

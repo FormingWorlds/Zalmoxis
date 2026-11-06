@@ -68,7 +68,7 @@ This case has no plot: it checks that 2 readers give identical arrays, an identi
 
 **How to read the plot.** The x-axis is the pressure in GPa, and the y-axis the core density in g/cm$^3$ at 8000 K. The solid line is pure PALEOS iron, and the dashed and dotted lines are 0.5 and 1 wt% H with the carrier O. Each line is the asserted code density. The harmonic mean agrees to a relative 1e-12, too small to see, so it is not drawn. A pass means that each line meets its asserted limit; more H then gives a lower density at every pressure.
 
-**Known limit.** The test takes the carrier density from the code's own `carrier_excess_volume`, so it checks the mixing rule, not the carrier volume. The only physical anchor is `tests/test_core_alloy_solve.py`: a 1 $M_\oplus$ planet with 1 wt% H keeps its core between 0.85 and 0.92 of the iron density.
+**Known limit.** The test takes the carrier density from the code's own `carrier_excess_volume`, so it checks the mixing rule, not the carrier volume. The only physical anchor is `tests/test_core_alloy_solve.py`: a 1 $M_\oplus$ planet with 1 wt% H keeps its core between 0.83 and 0.90 of the iron density.
 
 ??? info "Test details"
     - Reference: the volume-additive limits of the mixing rule (analytical).
@@ -76,6 +76,29 @@ This case has no plot: it checks that 2 readers give identical arrays, an identi
     - Test id: `tests/test_core_alloy.py::TestPaleosCore::test_core_mixture_limits_on_paleos_iron` (unit tier; it needs the PALEOS iron table under `data/` and skips without it)
     - Command: `pytest -o "addopts=" tests/test_core_alloy.py -k limits`
 
+## Light-element cores against the outer core of Hirose et al. (2021)
+
+**Why this check exists.** The light elements set how much less dense than iron the core of a planet is, and with it the core radius. A wrong $\beta$ gives a core that is too light or too heavy for its composition, and no error message.
+
+**What it tests.** The linear law of the [light-element core](../Explanations/mixing.md#light-element-core) on the PALEOS iron table, at the core-mantle boundary (136 GPa, 4137 K) and the inner-core boundary (330 GPa, 5400 K) of the estimate of Hirose et al. (2021). For each of S, Si, O and `H-linear`, the core at the midpoint of its range must be 7 % less dense than the iron, to $10^{-12}$ percentage points, and the cores at the ends of the range 6 to 8 % less dense. The $\beta$ values of Li et al. (2019) must miss the band for S and O. The test also pins the deficit of the default `CoreAlloy:H` law for 0.96 and 0.99 wt% H with no O, to $10^{-3}$ percentage points, on the PALEOS table and on the Luo liquid iron at 8000 K.
+
+**How we know the right answer.** [Hirose et al. (2021)](https://doi.org/10.1038/s43017-021-00203-6), p. 3: an outer core with only S, Si, O or H fits the seismic outer core with 13.3-14.4 wt% S, 9.3-9.8 wt% Si, 8.4-8.9 wt% O or 0.96-0.99 wt% H, and is 6 to 8 % less dense than pure liquid iron.
+
+**Why it matters.** The structure solve takes the core density from this law, so the core radius of a planet with light elements follows it.
+
+![Density deficit of the single-element outer cores of Hirose et al. 2021 against the PALEOS iron table](../assets/validation/core_alloy_hirose2021_deficit.svg#only-light){ width="80%" }
+![Density deficit of the single-element outer cores of Hirose et al. 2021 against the PALEOS iron table](../assets/validation/core_alloy_hirose2021_deficit_dark.svg#only-dark){ width="80%" }
+
+**How to read the plot.** Each column is one light element; the y-axis is the density deficit against the PALEOS iron table in percent. Each vertical segment runs from the deficit at the low end of the range of Hirose et al. (2021) to that at the high end; for these 4 the deficit is the same at both boundaries, since the linear law does not depend on pressure and temperature. Filled markers are the calibrated $\beta$, open markers the $\beta$ of Li et al. (2019). The grey band is the 6 to 8 % of Hirose et al. (2021). The last 2 columns are the default `CoreAlloy:H` law of Luo et al. (2024) at the core-mantle and inner-core boundaries, on the PALEOS table, which is solid at those temperatures. A pass means that every filled S, Si, O and `H-linear` segment lies inside the band, with 7 % at its midpoint.
+
+**Known limit.** The calibration holds at Earth core pressures and keeps the same $\beta$ at other pressures. C and N are not calibrated against the outer core. The default H law gives 11 to 15 % for the H core of Hirose et al. (2021), above their range.
+
+??? info "Test details"
+    - Reference: Hirose et al. (2021), p. 3.
+    - Tolerance: $10^{-12}$ percentage points at the midpoints; 6 to 8 % at the ends; $10^{-3}$ percentage points for the default H law.
+    - Test id: `tests/test_core_alloy.py::TestHiroseCalibration` (unit tier; the first test needs the PALEOS iron table under `data/` and skips without it)
+    - Command: `pytest -o "addopts=" tests/test_core_alloy.py -k Hirose`
+
 ## Related tests
 
-The other tests in `tests/test_core_alloy.py` pin the linear law at 1 wt% against [Li et al. (2019)](https://doi.org/10.1017/9781108677950.003) Table 3.3, the effective $\beta_\mathrm{H}$ of the Fe-H-O carrier, its continuity where the O rest changes sign and across the faces of the Luo fit box, and the composition and density bounds. `tests/test_core_alloy_solve.py` (integration tier) solves a 1 $M_\oplus$ planet with 1 wt% H in the core, whose first trials sample the outer core below the Luo fit range; it converges, passes the accepted-structure checks and keeps the core 8 to 15 % lighter than iron at every core node.
+The other tests in `tests/test_core_alloy.py` pin the linear law at 1 wt% against the $\beta$ values of the [mixing page](../Explanations/mixing.md#light-element-core), the effective $\beta_\mathrm{H}$ of the Fe-H-O carrier, its continuity where the O rest changes sign and across the faces of the Luo fit box, and the composition and density bounds. `tests/test_core_alloy_solve.py` (integration tier) solves a 1 $M_\oplus$ planet with 1 wt% H in the core, whose first trials sample the outer core below the Luo fit range; it converges, passes the accepted-structure checks and keeps the core 10 to 17 % lighter than iron at every core node.

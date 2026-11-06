@@ -6,12 +6,14 @@ fractions, for example ``PALEOS:iron:0.97+CoreAlloy:H:0.005+CoreAlloy:O:0.025``.
 The base density comes from the iron table at (P, T); the light elements change it
 by one of two laws.
 
-Linear law (Li et al. 2019, Table 3.3): each element ``i`` lowers the iron density
-by ``beta_i`` percent per wt%, ``rho_lin = rho_Fe (1 - sum_i beta_i w_i)`` with
-``beta_i`` as a fraction per unit mass fraction. ``beta`` values are those of the
-liquid at the core-mantle boundary for C, O, Si and S. Table 3.3 gives no liquid
-value for H, so ``CoreAlloy:H-linear`` uses the solid value 8.7, and no value for
-N, so N does not change the density.
+Linear law: each element ``i`` lowers the iron density by ``beta_i`` percent per wt%,
+``rho_lin = rho_Fe (1 - sum_i beta_i w_i)`` with ``beta_i`` as a fraction per unit mass
+fraction. For S, Si, O and ``H-linear`` the single-element outer cores of Hirose et al.
+(2021, p. 3), 13.3-14.4 wt% S, 9.3-9.8 wt% Si, 8.4-8.9 wt% O or 0.96-0.99 wt% H, each
+fit the seismic outer core 6-8 % below liquid iron; ``beta_i`` gives 7 % at the midpoint,
+a calibration at Earth core pressures. C keeps the liquid value 1.3 of Li et al. (2019,
+Table 3.3), and N, with no value there, does not change the density; both are not
+calibrated against the outer core.
 
 Fe-H-O member (``CoreAlloy:H``): Luo, Dorn & Deng (2024), Methods Eq. 14, give the
 equations of state of liquid Fe (64 Fe) and of liquid Fe with water (64 Fe + 8
@@ -23,8 +25,8 @@ when the core holds less O than the carrier, enters the linear law. The core
 density is ``1/rho = (1 - w_c)/rho_lin + w_c dv_c``, where ``rho_lin`` is the
 linear law for the remaining alloy, with fractions ``w_i / (1 - w_c)``. To first
 order the negative O remainder splits ``dv_c`` into an H part and the linear-law O
-part, so the H effect is that of an effective ``beta_H`` of about 12.8 % per wt%
-(w_H -> 0) at 136 GPa and 8000 K, against the solid linear value of 8.7. A remaining
+part, so the H effect is that of an effective ``beta_H`` of about 15.1 % per wt%
+(w_H -> 0) at 136 GPa and 8000 K, against the linear value of 7.18. A remaining
 alloy with ``1 - lin`` below 0.8 is refused; above it the density falls with H at every
 pressure up to 16000 K. The Luo fits cover 8000-14000 K and 50-1300 GPa; outside that
 box ``dv_c`` is taken at the nearest point of the box (the iron base stays at the true
@@ -50,8 +52,16 @@ logger = logging.getLogger('fwl.' + __name__)
 
 ALLOY_PREFIX = 'CoreAlloy:'
 
-# Li et al. 2019, Table 3.3 [% density decrease per wt%], as fractions per unit mass fraction
-LINEAR_BETA = {'H-linear': 8.7, 'C': 1.3, 'N': 0.0, 'O': 1.1, 'Si': 0.7, 'S': 0.8}
+# [% density decrease per wt%], as fractions per unit mass fraction: 7 % at the midpoint of the
+# Hirose et al. 2021 (p. 3) outer cores for H, O, Si, S; Li et al. 2019 (Table 3.3) for C and N
+LINEAR_BETA = {
+    'H-linear': 7.0 / 0.975,
+    'C': 1.3,
+    'N': 0.0,
+    'O': 7.0 / 8.65,
+    'Si': 7.0 / 9.55,
+    'S': 7.0 / 13.85,
+}
 CARRIER = 'H'
 ALLOY_ELEMENTS = frozenset(LINEAR_BETA) | {CARRIER}
 
