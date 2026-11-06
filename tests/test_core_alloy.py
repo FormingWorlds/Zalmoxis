@@ -31,6 +31,10 @@ pytestmark = [pytest.mark.unit, pytest.mark.timeout(30)]
 GPA = 1e9
 # 136 GPa, 8000 K: inside the Luo fit box, near the Earth core-mantle boundary pressure
 P_CMB, T_LUO = 136 * GPA, 8000.0
+# Hirose et al. 2021, PDF p. 3: single-element outer cores [wt%] at T_CMB 4137 K, T_ICB 5400 K
+HIROSE_RANGE = {'S': (13.3, 14.4), 'Si': (9.3, 9.8), 'O': (8.4, 8.9), 'H-linear': (0.96, 0.99)}
+HIROSE_MID = {el: 0.5 * (lo + hi) for el, (lo, hi) in HIROSE_RANGE.items()}
+HIROSE_STATES = {'CMB': (136 * GPA, 4137.0), 'ICB': (330 * GPA, 5400.0)}
 
 # Luo, Dorn & Deng 2024, Nat. Astron., Methods Eq. 14 (PDF p6), retyped from the paper
 _EQ14 = {
@@ -174,27 +178,22 @@ class TestLinearLaw:
     @pytest.mark.reference_pinned
     @pytest.mark.parametrize(
         'element, beta, wrong_beta',
-        [
-            ('C', 1.3, 1.4),
-            ('O', 1.1, 1.2),
-            ('Si', 0.7, 0.8),
-            ('S', 0.8, 0.8 * 0.9),
-            ('H-linear', 8.7, 8.7 / 2),
-        ],
+        [('C', 1.3, 1.4)]
+        + [(el, 7.0 / mid, 7.0 / mid * 1.01) for el, mid in HIROSE_MID.items()],
     )
-    def test_one_wt_percent_matches_li_2019_table_3_3(self, element, beta, wrong_beta):
-        """Li et al. 2019 Table 3.3: 1 wt% lowers the density by beta percent (liquid CMB; H solid)."""
+    def test_one_wt_percent_lowers_the_density_by_beta_percent(self, element, beta, wrong_beta):
+        """1 wt% lowers the density by beta percent: Li et al. 2019 for C, Hirose et al. 2021 else."""
         rho_fe = 1.0e4
         rho = ca.alloy_density(rho_fe, {element: 0.01}, P_CMB, 4000.0)
         assert rho == pytest.approx(rho_fe * (1 - beta / 100), rel=1e-12)
-        # the solid value (C, O, Si), a 10 % slip (S) or a factor 2 (H) lands outside
+        # the solid Li value (C) or a 1 % slip lands outside
         assert abs(rho - rho_fe * (1 - wrong_beta / 100)) > 1e-12 * rho_fe
         assert rho < rho_fe
 
     def test_nitrogen_leaves_the_density_unchanged(self):
         """Table 3.3 has no N row, so N is carried at zero density effect."""
         rho = ca.alloy_density(1.0e4, {'N': 0.02, 'S': 0.01}, P_CMB, 4000.0)
-        assert rho == pytest.approx(1.0e4 * (1 - 0.008), rel=1e-12)
+        assert rho == pytest.approx(1.0e4 * (1 - 0.07 / 13.85), rel=1e-12)
         assert rho == pytest.approx(
             ca.alloy_density(1.0e4, {'S': 0.01}, P_CMB, 4000.0), rel=1e-15
         )
@@ -211,8 +210,8 @@ class TestLinearLaw:
     @pytest.mark.physics_invariant
     @pytest.mark.parametrize(
         'el, refused, admitted',
-        [('O', 0.182, 0.181), ('C', 0.154, 0.153), ('S', 0.251, 0.249)]
-        + [('Si', 0.286, 0.285), ('H-linear', 0.0231, 0.0229)],
+        [('O', 0.248, 0.246), ('C', 0.154, 0.153), ('S', 0.396, 0.395)]
+        + [('Si', 0.273, 0.272), ('H-linear', 0.0279, 0.0278)],
     )
     def test_linear_factor_below_0p8_is_refused(self, el, refused, admitted):
         """1 - lin below 0.8 raises with the value and the bound; just above it passes."""
@@ -423,13 +422,13 @@ class TestCarrier:
     @pytest.mark.physics_invariant
     @pytest.mark.reference_pinned
     def test_effective_beta_h_at_136_gpa_8000_k(self):
-        """With no core O the carrier lowers the density by about 12.8 % per wt% H (docs value)."""
+        """With no core O the carrier lowers the density by about 15.1 % per wt% H (docs value)."""
         rho_fe = ca.luo_density(P_CMB, T_LUO, ca.LUO_DRY)
         h = 1e-6
         beta_h = (1 - ca.alloy_density(rho_fe, {'H': h}, P_CMB, T_LUO) / rho_fe) / h
-        assert beta_h == pytest.approx(12.83, abs=0.01)
-        # the solid linear value 8.7 and the carrier without the O correction (21.6) lie outside
-        assert abs(beta_h - 8.7) > 1.0
+        assert beta_h == pytest.approx(15.14, abs=0.01)
+        # the linear value 7.18 and the carrier without the O correction (21.6) lie outside
+        assert abs(beta_h - ca.LINEAR_BETA['H-linear']) > 1.0
         k = ca.CARRIER_PER_H
         no_o_correction = k * ca.carrier_excess_volume(P_CMB, T_LUO) * rho_fe - k
         assert abs(beta_h - no_o_correction) > 1.0
@@ -532,6 +531,110 @@ def _paleos_iron():
     if not os.path.isfile(md['PALEOS:iron'].get('eos_file', '')):
         pytest.skip('PALEOS iron table not linked under data/')
     return md
+
+
+class TestHiroseCalibration:
+    """The linear law against the single-element outer cores of Hirose et al. (2021)."""
+
+    LI_2019 = {'S': 0.8, 'Si': 0.7, 'O': 1.1, 'H-linear': 8.7}
+    # Luo-law deficit [%] of 0.96 and 0.99 wt% H with no core O, on 2 iron bases (docs table)
+    LUO_H_DEFICIT = {
+        ('CMB', 'paleos'): (14.904, 15.308),
+        ('ICB', 'paleos'): (11.602, 11.931),
+        ('CMB', 'luo_liquid_8000K'): (12.986, 13.347),
+        ('ICB', 'luo_liquid_8000K'): (10.822, 11.133),
+    }
+
+    @staticmethod
+    def _deficit(md, cache, w, p, t):
+        """Percent density deficit of the core mixture against the PALEOS iron table."""
+        from zalmoxis.mixing import calculate_mixed_density
+
+        iron = calculate_mixed_density(
+            p, t, parse_layer_components('PALEOS:iron'), md, None, None, cache
+        )
+        key = {'H-linear': 'H_linear'}
+        alloy = _mix(**{key.get(el, el): f for el, f in w.items()})
+        return 100 * (1 - calculate_mixed_density(p, t, alloy, md, None, None, cache) / iron)
+
+    @pytest.mark.physics_invariant
+    @pytest.mark.reference_pinned
+    def test_each_single_element_outer_core_is_7_percent_lighter_than_iron(
+        self, validation_plot
+    ):
+        """Hirose et al. 2021, p. 3: each midpoint core is 7 % lighter (1e-12); the range ends 6-8 %.
+
+        Checked on the PALEOS iron table at the core-mantle and inner-core boundaries of their
+        estimate; the Li et al. (2019) values miss the band for S and O.
+        """
+        md, cache = _paleos_iron(), {}
+        bars = {}
+        for el, (lo, hi) in HIROSE_RANGE.items():
+            for state, (p, t) in HIROSE_STATES.items():
+                mid = self._deficit(md, cache, {el: HIROSE_MID[el] / 100}, p, t)
+                assert abs(mid - 7.0) < 1e-12 * 100
+                ends = [self._deficit(md, cache, {el: x / 100}, p, t) for x in (lo, hi)]
+                assert 6.0 < ends[0] < 7.0 < ends[1] < 8.0
+            bars[el] = (ends, [self.LI_2019[el] * x for x in (lo, hi)])
+        assert bars['S'][1][0] > 8.0 and bars['O'][1][0] > 8.0
+        for state, (p, t) in HIROSE_STATES.items():
+            luo = [
+                self._deficit(md, cache, {'H': x / 100}, p, t) for x in HIROSE_RANGE['H-linear']
+            ]
+            np.testing.assert_allclose(luo, self.LUO_H_DEFICIT[(state, 'paleos')], atol=1e-3)
+            bars[f'H, Luo law, {state}'] = (luo, None)
+
+        def figure():
+            import matplotlib.pyplot as plt
+
+            fig, ax = plt.subplots(figsize=(7.0, 3.6))
+            ax.axhspan(6.0, 8.0, alpha=0.15, lw=0, label='Hirose et al. 2021: 6-8 %')
+            colour = ax._get_lines.get_next_color()
+            for i, (name, (new, old)) in enumerate(bars.items()):
+                ax.plot(
+                    [i + 0.1] * 2,
+                    new,
+                    '-o',
+                    color=colour,
+                    ms=4,
+                    label='Zalmoxis' if i == 0 else None,
+                )
+                if old is not None:
+                    ax.plot(
+                        [i - 0.1] * 2,
+                        old,
+                        '--o',
+                        color=colour,
+                        mfc='none',
+                        ms=4,
+                        alpha=0.6,
+                        label='Li et al. 2019 $\\beta$' if i == 0 else None,
+                    )
+            ax.set_xticks(range(len(bars)), [n.replace(', ', '\n', 1) for n in bars])
+            ax.set(ylabel='Density deficit [%]', xlim=(-0.5, len(bars) - 0.5))
+            ax.legend(loc='upper left', bbox_to_anchor=(1.02, 1.0), frameon=False)
+            fig.tight_layout()
+            fig.canvas.draw()
+            box = ax.get_legend().get_window_extent()
+            assert box.x0 >= ax.get_window_extent().x1
+            return fig
+
+        validation_plot(figure, 'core_alloy_hirose2021_deficit')
+
+    @pytest.mark.physics_invariant
+    @pytest.mark.reference_pinned
+    def test_luo_h_law_deficit_on_a_liquid_iron_base(self):
+        """The default H law on the Luo liquid iron at 8000 K, where the carrier volume is taken."""
+        for state, (p, _) in HIROSE_STATES.items():
+            rho_fe = ca.luo_density(p, T_LUO, ca.LUO_DRY)
+            got = [
+                100 * (1 - ca.alloy_density(rho_fe, {'H': x / 100}, p, T_LUO) / rho_fe)
+                for x in HIROSE_RANGE['H-linear']
+            ]
+            np.testing.assert_allclose(
+                got, self.LUO_H_DEFICIT[(state, 'luo_liquid_8000K')], atol=1e-3
+            )
+            assert min(got) > 8.0
 
 
 class TestPaleosCore:
