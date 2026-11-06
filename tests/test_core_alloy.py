@@ -554,6 +554,7 @@ class TestHiroseCalibration:
         iron = rho(p, t, _mix(), md, None, None, cache)
         return 100 * (1 - rho(p, t, _mix(**w), md, None, None, cache) / iron)
 
+    @pytest.mark.physics_invariant
     @pytest.mark.reference_pinned
     def test_the_calibration_gives_7_percent_on_any_iron_base(self):
         """Calibration check: beta = 7 / midpoint gives 7 % at each Hirose midpoint (1e-12
@@ -563,7 +564,10 @@ class TestHiroseCalibration:
             for rho_fe in (1.0e4, 1.2345e4):
                 rho = ca.alloy_density(rho_fe, {el: HIROSE_MID[el] / 100}, P_CMB, 4000.0)
                 assert abs(100 * (1 - rho / rho_fe) - 7.0) < 1e-12
-            ends = [100 * ca.LINEAR_BETA[el] * x / 100 for x in (lo, hi)]
+            ends = [
+                100 * (1 - ca.alloy_density(1.0e4, {el: x / 100}, P_CMB, 4000.0) / 1.0e4)
+                for x in (lo, hi)
+            ]
             assert 6.0 < ends[0] < 7.0 < ends[1] < 8.0
             if el != 'Si':
                 assert self.LI_2019[el] * lo > 8.0
@@ -577,13 +581,16 @@ class TestHiroseCalibration:
         core is 7 % lighter (1e-12 percentage points) and the range ends 6-8 %; the default H law
         gives more than 8 % for their H core (regression pins, table version dependent).
         """
+        from zalmoxis.eos import calculate_density
         from zalmoxis.phase_columns import phase_for_component
 
         monkeypatch.setitem(ca.LUO_OUT_OF_RANGE, 'count', 0)
         monkeypatch.setattr(ca, '_CELL_WARNED', [False])
         md, cache = _paleos_iron(), {}
-        for p, t in HIROSE_STATES.values():
+        for (p, t), ratio in zip(HIROSE_STATES.values(), (1.0227, 1.0124)):
             assert phase_for_component('PALEOS:iron', p, t).startswith('solid')
+            solid = calculate_density(p, md, 'PALEOS:iron', t, None, None, cache, 1.0)
+            assert solid / ca.luo_density(p, t, ca.LUO_DRY) == pytest.approx(ratio, abs=1e-4)
         bars = {}
         for el, (lo, hi) in HIROSE_RANGE.items():
             for state, (p, t) in HIROSE_STATES.items():
@@ -668,19 +675,33 @@ class TestCompoundBounds:
         ('w', 'p_gpa', 'warned'),
         [({'S': 0.1606}, 136, False), ({'S': 0.1607}, 136, True), ({'O': 0.2226}, 136, False)]
         + [({'O': 0.2228}, 136, True), ({'C': 0.0668}, 100, False), ({'C': 0.0670}, 100, True)]
-        + [({'C': 0.0843}, 300, False), ({'C': 0.0845}, 300, True), ({'Si': 0.25}, 136, False)],
+        + [({'C': 0.0843}, 300, False), ({'C': 0.0845}, 300, True), ({'Si': 0.25}, 136, False)]
+        + [
+            ({'C': 0.075}, 254.9, True),
+            ({'C': 0.075}, 255.0, False),
+            ({'S': 0.10, 'C': 0.05}, 136, True),
+        ]
+        + [({'S': 0.08, 'O': 0.10}, 136, False), ({'S': 0.10, 'O': 0.10}, 136, True)],
     )
     def test_a_core_past_the_end_compound_of_its_binary_warns(
         self, w, p_gpa, warned, caplog, monkeypatch
     ):
-        """Fe3S (16.06 wt% S), FeO (22.27 wt% O), Fe3C below 255 GPa (6.69 wt% C) and Fe7C3
-        above (8.44 wt% C), the units of the alloy liquidus; Si has no bound. The pressure is a
-        NumPy scalar, as in a structure solve."""
+        """The S, O and C units of the alloy liquidus (Fe3S, FeO, Fe3C below 255 GPa and Fe7C3 at
+        or above) together need more Fe than the core holds: 16.06 wt% S, 22.27 wt% O, 6.69 or
+        8.44 wt% C alone; Si takes no Fe. The pressure is a NumPy scalar, as in a structure solve."""
         monkeypatch.setattr(ca, '_COMPOUND_WARNED', set())
         with caplog.at_level('WARNING', logger='fwl.zalmoxis.eos.core_alloy'):
             for _ in range(2):
                 assert ca.alloy_density(1.0e4, w, np.float64(p_gpa * GPA), 4000.0) > 0.0
         assert sum('end compound' in m for m in caplog.messages) == int(warned)
+
+    def test_the_compound_warning_comes_once_per_process(self, caplog, monkeypatch):
+        """A second composition past the bound, also with another element, warns no more."""
+        monkeypatch.setattr(ca, '_COMPOUND_WARNED', set())
+        with caplog.at_level('WARNING', logger='fwl.zalmoxis.eos.core_alloy'):
+            ca.alloy_density(1.0e4, {'S': 0.17}, np.float64(136 * GPA), 4000.0)
+            ca.alloy_density(1.0e4, {'O': 0.23}, np.float64(136 * GPA), 4000.0)
+        assert sum('more Fe than the core holds' in m for m in caplog.messages) == 1
 
 
 class TestPaleosCore:
@@ -707,7 +728,7 @@ class TestPaleosCore:
             rho_fe = calculate_density(
                 p_gpa * GPA, md, 'PALEOS:iron', t, None, None, cache, 1.0
             )
-            for w_si in (0.0, 0.1, 0.2, 0.27):
+            for w_si in (0.0, 0.1, 0.2, (0.2 - 1e-4) / ca.LINEAR_BETA['Si']):
                 rho = []
                 for h in w_h:
                     try:
@@ -718,6 +739,23 @@ class TestPaleosCore:
                         break
                 assert len(rho) > 5, (p_gpa, t, w_si)
                 assert np.all(np.diff(rho) < 0.0), (p_gpa, t, w_si)
+
+    @pytest.mark.physics_invariant
+    def test_without_the_bound_the_density_can_rise_with_h(self, monkeypatch):
+        """The scan above can fail: with the linear-factor bound removed, a core with Si far
+        below the bound (factor 0.56, below r* = 0.595 at 1300 GPa and 8000 K) gets denser with H."""
+        from zalmoxis.eos import calculate_density
+
+        monkeypatch.setattr(ca, 'LIN_FACTOR_MIN', 0.0)
+        md, cache = _paleos_iron(), {}
+        rho_fe = calculate_density(
+            1300 * GPA, md, 'PALEOS:iron', 8000.0, None, None, cache, 1.0
+        )
+        rho = [
+            ca.alloy_density(rho_fe, {'H': h, 'Si': 0.6}, 1300 * GPA, 8000.0)
+            for h in (0.0, 0.002)
+        ]
+        assert rho[1] > rho[0]
 
     @pytest.mark.physics_invariant
     @pytest.mark.reference_pinned
