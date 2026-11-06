@@ -1049,7 +1049,7 @@ class TestHNames:
     """``CoreAlloy:H`` is the calibrated linear law, ``CoreAlloy:H-Luo`` the Luo carrier law."""
 
     def test_the_old_h_linear_name_is_refused_naming_both_h_laws(self):
-        """A core that still names CoreAlloy:H-linear fails with a message naming both H laws."""
+        """A core that names CoreAlloy:H-linear fails with a message naming both H laws."""
         with pytest.raises(ca.CoreAlloyError, match=r'CoreAlloy:H .*CoreAlloy:H-Luo'):
             ca.split_alloy(LayerMixture(['PALEOS:iron', 'CoreAlloy:H-linear'], [0.99, 0.01]))
 
