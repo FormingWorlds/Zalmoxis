@@ -93,7 +93,8 @@ def test_an_isothermal_core_has_its_icb_where_iron_melts(setup):
     )
     core = res['core']
     p_icb = _anzellini_inverse(5000.0)
-    assert core['P_icb'] == pytest.approx(p_icb, rel=1e-12)
+    # the ICB scalars belong to the solved layers: P_icb is the pressure at M_ic
+    assert core['P_icb'] == np.interp(core['M_ic'], core['m'], core['P'])
     inner = core['phase'] == 1
     assert inner[0] and not inner[-1]
     assert np.all(core['P'][inner] > p_icb * (1 - 1e-3))
@@ -106,6 +107,25 @@ def test_an_isothermal_core_has_its_icb_where_iron_melts(setup):
     m_at = np.interp(np.log(p_icb), np.log(core['P'][::-1]), core['m'][::-1])
     assert abs(core['M_ic'] - m_at) <= tol * res['cmb_mass']
     assert core['solid_above_icb_mass_fraction'] == 0.0
+
+
+def test_main_refuses_the_liquidus_rule_with_the_newton_outer_solver(setup):
+    """main itself refuses the pair, also when the caller skips validate_config."""
+    from zalmoxis.mixing import parse_all_layer_mixtures
+    from zalmoxis.solver import main
+
+    md, cfg, input_dir = setup
+    cfg = dict(cfg, core_liquidus='Anzellini13-iron', outer_solver='newton')
+    cfg.update(relative_tolerance=1e-9, absolute_tolerance=1e-10)  # what Newton needs
+    cfg['layer_eos_config'] = dict(cfg['layer_eos_config'], core=LIQ, inner_core=SOL)
+    with pytest.raises(ValueError, match='core_liquidus needs the picard'):
+        main(
+            cfg,
+            md,
+            None,
+            input_dir,
+            layer_mixtures=parse_all_layer_mixtures(cfg['layer_eos_config']),
+        )
 
 
 def test_a_given_inner_core_mass_sets_the_icb(setup):

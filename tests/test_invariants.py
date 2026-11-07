@@ -85,6 +85,7 @@ def _sphere_with_core_arrays(icb_frac=0.4):
     side_m = np.r_[m[:n], cmb * (1.0 - 4.0 * _RTOL_LAYER)]  # the layer rule of core_arrays
     core['phase'] = (side_m < core['M_ic'] * (1.0 - _RTOL_LAYER)).astype(np.int8)
     core['w_S'] = np.where(core['phase'] == 1, 0.02, 0.1)
+    core['w_layers'] = {'inner_core': {'S': 0.02}, 'core': {'S': 0.1}}
     result['core'] = core
     return result, cfg
 
@@ -144,6 +145,17 @@ def test_a_core_node_in_the_wrong_layer_breaks_core_element_mass(where, value):
     node = {'cmb': -1, 'centre': 0, 'outer': int(np.argmax(phase == 0)) + 1}[where]
     assert phase[0] == 1 and phase[node] == (where == 'centre')
     result['core']['w_S'][node] = value
+    _raises(result, cfg, 'core_element_mass')
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('layer', [1, 0])
+def test_a_whole_layer_off_its_composition_breaks_core_element_mass(layer):
+    """Every node of a layer with a fraction other than the composition of that layer, which
+    the fractions of the nodes alone cannot show."""
+    result, cfg = _sphere_with_core_arrays()
+    core = result['core']
+    core['w_S'] = np.where(core['phase'] == layer, 0.3, core['w_S'])
     _raises(result, cfg, 'core_element_mass')
 
 
