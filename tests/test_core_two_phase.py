@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import numbers
 
 import numpy as np
 import pytest
@@ -137,8 +138,8 @@ def test_inner_core_mass_fraction_takes_a_float_in_0_1(value):
     """Wrong types (a TOML true, a string), NaN, inf, negative and above 1 are refused."""
     params = _params(core_liquidus='', inner_core_mass_fraction=value)
     ok = (
-        isinstance(value, (int, float))
-        and not isinstance(value, bool)
+        isinstance(value, numbers.Real)
+        and not isinstance(value, (bool, np.bool_))
         and math.isfinite(value)
         and 0.0 <= value <= 1.0
     )
@@ -373,10 +374,67 @@ def test_a_given_icb_mass_reports_its_pressure_and_the_solid_above_it():
     assert got[2] == pytest.approx(float(np.sum(np.diff(m)[seg])), rel=1e-15) and got[2] > 0
 
 
-def test_the_icb_rule_takes_numpy_numbers_and_no_layer_config():
-    """inner_core_mass_fraction may be a NumPy number, and a config without layers has no
-    inner core."""
+@pytest.mark.parametrize(
+    ('value', 'ok'),
+    [
+        (np.float32(0.05), True),
+        (np.int64(0), True),
+        (np.float64(1.0), True),
+        (np.bool_(True), False),
+        (np.float32('nan'), False),
+        (np.float32(1.5), False),
+        (np.float32(-0.01), False),
+    ],
+)
+def test_the_icb_rule_takes_numpy_numbers_in_0_1(value, ok):
+    """inner_core_mass_fraction may be a NumPy real in [0, 1]; a NumPy bool, NaN or a value
+    outside the range is refused."""
+    params = _params(core_liquidus='', inner_core_mass_fraction=value)
+    if ok:
+        validate_config(params)
+    else:
+        with pytest.raises(ValueError, match='inner_core_mass_fraction'):
+            validate_config(params)
+
+
+def test_the_icb_rule_needs_no_layer_config():
+    """A config without layers has no inner core and no rule to check."""
     from zalmoxis.config import _check_icb_rule
 
-    validate_config(_params(core_liquidus='', inner_core_mass_fraction=np.float32(0.05)))
     assert _check_icb_rule({'layer_eos_config': None}) is None
+
+
+def test_main_returns_an_unconverged_icb_after_a_failed_retry(monkeypatch, caplog):
+    """When the ICB stays off the liquidus root in the first solve and in the retry, main
+    neither takes the first result back by its retry skip nor hides the second: it returns the
+    retry result, not converged, and says so."""
+    from zalmoxis import solver as zs
+    from zalmoxis.mixing import parse_all_layer_mixtures
+
+    calls = []
+
+    def fake_solve(params, *args, **kwargs):
+        calls.append(params)
+        return {
+            'converged': False,
+            'icb_converged': False,
+            'converged_density': True,
+            'converged_pressure': True,
+            'converged_mass': False,
+            'mass_error_at_accept': 0.01,
+            'radii': np.linspace(0.0, 6.4e6, 5),
+            'density': np.full(5, 5e3),
+            'call': len(calls),
+        }
+
+    monkeypatch.setattr(zs, '_solve', fake_solve)
+    monkeypatch.setattr(zs, '_report_table_bands', lambda r, *a: r)
+    monkeypatch.setattr(zs, '_warn_adiabat', lambda *a: None)
+    monkeypatch.setattr(zs, '_check_accepted', lambda r, *a: r)
+    cfg = _params()
+    caplog.set_level('WARNING', logger='fwl.zalmoxis.solver')
+    res = zs.main(
+        cfg, None, None, '', layer_mixtures=parse_all_layer_mixtures(cfg['layer_eos_config'])
+    )
+    assert len(calls) == 2 and res['call'] == 2 and res['converged'] is False
+    assert 'did not converge after retry' in caplog.text

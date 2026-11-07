@@ -170,10 +170,12 @@ def test_an_accept_with_an_icb_off_the_liquidus_is_not_converged(setup, caplog):
     )
     cfg['layer_eos_config'] = dict(cfg['layer_eos_config'], core=LIQ, inner_core=SOL)
     mixes = parse_all_layer_mixtures(cfg['layer_eos_config'])
+    caplog.set_level('WARNING', logger='fwl.zalmoxis.solver')
     res = zs._solve(cfg, md, None, input_dir, layer_mixtures=mixes)
     assert res['converged'] is False and res['icb_converged'] is False
     assert 'inner-core boundary' in caplog.text
     assert res['converged_mass'] is False and res['accept_mass_limit'] is None
+    assert res['accepted_on'] is None
     res = zs.main(cfg, md, None, input_dir, layer_mixtures=mixes)
     assert (
         res['accepted_on'] != 'retry_skip' and 'Retrying with tighter parameters' in caplog.text
@@ -226,10 +228,12 @@ def test_solve_ignores_a_liquidus_without_an_inner_core(setup):
     assert res['converged'] and res['core']['M_ic'] == 0.0
 
 
-def test_a_given_inner_core_mass_sets_the_icb(setup):
-    res = _solve(setup, inner=SOL, core_liquidus='', inner_core_mass_fraction=0.05)
+@pytest.mark.parametrize('frac', [0.05, np.float32(0.05)])
+def test_a_given_inner_core_mass_sets_the_icb(setup, frac):
+    """The ICB lies at the given mass, also for a NumPy float32 fraction, in double precision."""
+    res = _solve(setup, inner=SOL, core_liquidus='', inner_core_mass_fraction=frac)
     core = res['core']
-    assert core['M_ic'] == 0.05 * res['cmb_mass']
+    assert core['M_ic'] == float(frac) * res['cmb_mass'] and isinstance(core['M_ic'], float)
     inner = core['phase'] == 1
     assert np.all(core['m'][inner] < core['M_ic'])
     assert np.all(core['m'][~inner] >= core['M_ic'] * (1 - 1e-12))
@@ -422,12 +426,12 @@ def test_an_earth_core_against_prem(setup, validation_plot):
     validation_plot(lambda: figure('r', 1e-3, 'Radius [km]'), 'core_two_phase_prem_radius')
 
 
-@pytest.mark.reference_pinned
 def test_the_bulk_s_of_the_core_follows_the_icb(setup):
     """The layer compositions are inputs, so the bulk S of a Fe-S core changes with the ICB: an
     isothermal core at 5000 and 5500 K puts 0.480 and 0.159 of the core mass in the inner core
     (pins to 0.01, 3 times the spread over 5 perturbed starts at 5000 K), and the bulk S falls
-    from 13.85 wt% of the outer core to 7.20 and 11.65 wt% of the core."""
+    from 13.85 wt% of the outer core to 7.20 and 11.65 wt% of the core, read on the core arrays.
+    The pins are regression values of this code, not an outside reference."""
     w_oc = 0.1385
     for t, f_pin, s_pin in ((5000.0, 0.480, 0.0720), (5500.0, 0.159, 0.1165)):
         res = _solve(
@@ -441,4 +445,10 @@ def test_the_bulk_s_of_the_core_follows_the_icb(setup):
         core = res['core']
         f = core['M_ic'] / res['cmb_mass']
         assert f == pytest.approx(f_pin, abs=0.01)
-        assert (1 - f) * w_oc == pytest.approx(s_pin, abs=0.01 * w_oc)
+        # the S mass of the core arrays: trapezoid over the nodes, whose mixed ICB segment
+        # errs by at most w_oc dm / 2, about 1e-3 of the core mass here
+        m, w = core['m'], core['w_S']
+        s_mass = float(np.sum(0.5 * (w[1:] + w[:-1]) * np.diff(m))) / res['cmb_mass']
+        assert s_mass == pytest.approx(s_pin, abs=2e-3) and (1 - f) * w_oc == pytest.approx(
+            s_pin, abs=0.01 * w_oc
+        )
