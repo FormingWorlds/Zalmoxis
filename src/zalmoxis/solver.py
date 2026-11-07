@@ -1769,7 +1769,7 @@ def _solve(
             )
         core_liq = get_melting_curve_function(core_liq)
     icb_frac = config_params.get('inner_core_mass_fraction')
-    icb_mass = icb_frac * cmb_mass if two_layer and icb_frac is not None else 0.0
+    icb_mass = float(icb_frac) * cmb_mass if two_layer and icb_frac is not None else 0.0
 
     logger.log(
         progress,
