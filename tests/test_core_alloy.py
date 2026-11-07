@@ -14,6 +14,7 @@ iron; and the config checks of a light-element core.
 
 from __future__ import annotations
 
+import importlib.util
 import math
 import os
 
@@ -669,6 +670,110 @@ class TestHiroseCalibration:
                 got, self.LUO_H_DEFICIT[(state, 'luo_liquid_8000K')], atol=1e-3
             )
             assert min(got) > 8.0
+
+    @pytest.mark.physics_invariant
+    @pytest.mark.reference_pinned
+    def test_the_outer_cores_on_the_liquid_iron_side(
+        self, tmp_path, validation_plot, monkeypatch
+    ):
+        """Consistency check of the liquid side table, 7 % by construction (Hirose et al. 2021,
+        p. 3): at both states the table, made on the nodes of the default side grid around the
+        state, is the PALEOS liquid (Luo24) within the bilinear bound of its nodes; each midpoint
+        core is 7 % below it (1e-12) and the range ends 6-8 %. On the solid PALEOS base the same
+        cores lie 4.890 and 5.845 % below that liquid (regression pins, table version dependent).
+        """
+        if importlib.util.find_spec('paleos') is None:
+            pytest.skip('PALEOS not installed')
+        from zalmoxis.eos import paleos_api as pa
+        from zalmoxis.mixing import calculate_mixed_density as rho
+
+        monkeypatch.setattr(ca, '_CELL_WARNED', [False])
+        md, side = _paleos_iron(), 'PALEOS-API-2phase:iron-liquid'
+        p_ax, t_ax = pa.make_default_grid_iron_2phase().axes()
+        bars = {}
+        for (state, (p, t)), pinned in zip(HIROSE_STATES.items(), (4.890, 5.845)):
+            i, j = np.searchsorted(p_ax, p) - 1, np.searchsorted(t_ax, t) - 1
+            grid = pa.GridSpec(
+                p_lo=p_ax[i - 1],
+                p_hi=p_ax[i + 2],
+                n_p=4,
+                t_lo=t_ax[j - 1],
+                t_hi=t_ax[j + 2],
+                n_t=4,
+            )
+            np.testing.assert_allclose(grid.axes()[0], p_ax[i - 1 : i + 3], rtol=1e-13)
+            np.testing.assert_allclose(grid.axes()[1], t_ax[j - 1 : j + 3], rtol=1e-13)
+            out = pa.generate_paleos_api_2phase_iron_tables(
+                tmp_path / f'{state}_s.dat', tmp_path / f'{state}_l.dat', grid
+            )
+            from paleos.iron_eos import IronEoS
+
+            table = np.loadtxt(out['liquid']['path'], usecols=(0, 2))
+            assert np.all(table[:, 0].reshape(4, 4).T == table[::4, 0])
+            node = table[:, 1].reshape(4, 4)
+            bound = (np.abs(np.diff(node, 2, 0)).max() + np.abs(np.diff(node, 2, 1)).max()) / 8
+            md_l = {**md, side: {**md[side], 'format': 'paleos_unified'}}
+            md_l[side]['eos_file'] = out['liquid']['path']
+            cache, fe_luo = {}, float(IronEoS()._eos_liquid.density(p, t))
+            fe_side = rho(p, t, LayerMixture([side], [1.0]), md_l, None, None, cache)
+            assert abs(fe_side - fe_luo) < bound + 1e-4 < 1e-5 * fe_luo
+            for el, (lo, hi) in HIROSE_RANGE.items():
+                ws = (lo, HIROSE_MID[el], hi)
+                core = [
+                    LayerMixture([side, f'CoreAlloy:{el}'], [1 - x / 100, x / 100]) for x in ws
+                ]
+                d_side = [
+                    100 * (1 - rho(p, t, m, md_l, None, None, cache) / fe_side) for m in core
+                ]
+                assert abs(d_side[1] - 7.0) < 1e-12
+                assert 6.0 < d_side[0] < 7.0 < d_side[2] < 8.0
+                solid = [rho(p, t, _mix(**{el: x / 100}), md, None, None, cache) for x in ws]
+                d_solid = [100 * (1 - r / fe_luo) for r in solid]
+                assert d_solid[1] == pytest.approx(pinned, abs=1e-3)
+                bars[f'{el}\n{state}'] = ([d_side[0], d_side[2]], [d_solid[0], d_solid[2]])
+
+        def figure():
+            import matplotlib.pyplot as plt
+
+            fig, ax = plt.subplots(figsize=(7.6, 3.8))
+            ax.axhspan(6.0, 8.0, alpha=0.15, lw=0, label='Hirose 2021')
+            colour = plt.rcParams['axes.prop_cycle'].by_key()['color'][0]
+            for k, (dx, style, label) in enumerate(
+                ((0.1, '-', 'liquid side'), (-0.1, '--', 'solid base'))
+            ):
+                x = [[i + dx] * 2 + [np.nan] for i in range(len(bars))]
+                y = [list(pair[k]) + [np.nan] for pair in bars.values()]
+                ax.plot(
+                    np.ravel(x),
+                    np.ravel(y),
+                    style,
+                    marker='_',
+                    ms=7,
+                    mew=1.5,
+                    color=colour,
+                    alpha=1.0 if k == 0 else 0.6,
+                    label=label,
+                )
+            ax.set_xticks(range(len(bars)), [k.split()[0] for k in bars])
+            ax.set_xticks([1.5, 5.5], list(HIROSE_STATES), minor=True)
+            ax.tick_params(axis='x', which='minor', length=0, pad=30)
+            ax.axvline(3.5, color=colour, lw=0.5, alpha=0.4)
+            ax.set(ylabel='Deficit to liquid Fe [%]', xlim=(-0.5, len(bars) - 0.5))
+            ax.set_ylim(4.0, 8.5)
+            ax.yaxis.set_major_locator(plt.MaxNLocator(4))
+            ax.grid(False)
+            ax.legend(loc='upper left', bbox_to_anchor=(1.02, 1.0), frameon=False)
+            fig.tight_layout()
+            fig.canvas.draw()
+            assert ax.get_legend().get_window_extent().x0 >= ax.get_window_extent().x1
+            assert ax.yaxis.label.get_window_extent().y1 <= fig.bbox.y1
+            ticks = [lab.get_window_extent() for lab in ax.get_xticklabels()]
+            assert all(a.x1 + 5 < b.x0 for a, b in zip(ticks, ticks[1:]))
+            groups = [lab.get_window_extent() for lab in ax.get_xticklabels(minor=True)]
+            assert max(g.y1 for g in groups) < min(t.y0 for t in ticks)
+            return fig
+
+        validation_plot(figure, 'core_two_phase_hirose_liquid_side')
 
 
 class TestCompoundBounds:
