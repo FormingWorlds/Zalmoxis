@@ -9,5 +9,6 @@ On-disk cache for `PALEOS-API:*` tables under `$ZALMOXIS_ROOT/data/EOS_PALEOS_AP
       members:
         - resolve_paleos_api_unified
         - resolve_paleos_api_2phase_mgsio3
+        - resolve_paleos_api_2phase_iron
         - resolve_registry_entry
         - invalidate_cache

@@ -2,7 +2,7 @@
 
 ## What this page checks
 
-This page checks the full structure solver of Zalmoxis: the radius, the central pressure and the gravity of a planet of given mass and core mass fraction (CMF, the mass fraction of the iron core). The cases run the full solver with the Seager et al. (2007) analytic equation of state (EOS) and compare the planet with the Earth, published scaling laws and physical trends. Validation means that a test runs the code on a case with a known right answer and checks the result within a stated tolerance. If the solver is wrong, every planet radius and interior profile of Zalmoxis is wrong. Each case below says why the check exists, what it tests, how we know the right answer and why it matters, and ends with a box "Test details". The [overview](index.md) lists every case of the tab.
+This page checks the full structure solver of Zalmoxis: the radius, the central pressure and the gravity of a planet of given mass and core mass fraction (CMF, the mass fraction of the iron core). The cases run the full solver with the Seager et al. (2007) analytic equation of state (EOS), the PREM case with the PALEOS tables, and compare the planet with the Earth, published scaling laws and physical trends. Validation means that a test runs the code on a case with a known right answer and checks the result within a stated tolerance. If the solver is wrong, every planet radius and interior profile of Zalmoxis is wrong. Each case below says why the check exists, what it tests, how we know the right answer and why it matters, and ends with a box "Test details". The [overview](index.md) lists every case of the tab.
 
 ## Earth benchmark
 
@@ -118,6 +118,52 @@ The smoke tests of `TestConservationLaws` also verify three conservation propert
     - Tolerance: exponent to `abs=0.04` of 0.27; strictly decreasing radius with CMF; pure-iron radius to `abs=0.05` of $0.77\,R_\oplus$; mass within 1% (2% by trapezoidal integration); surface pressure at most 2e9 Pa from the target; Gauss's law `rtol=1e-3`
     - Test id: `tests/test_first_principles.py::TestMassRadiusScaling`, `tests/test_first_principles.py::TestCMFMonotonicity`, `tests/test_first_principles.py::TestPureIronPlanet`, `tests/test_first_principles.py::TestConservationLaws`
     - Command: `pytest -o "addopts=" tests/test_first_principles.py::TestMassRadiusScaling tests/test_first_principles.py::TestCMFMonotonicity tests/test_first_principles.py::TestPureIronPlanet tests/test_first_principles.py::TestConservationLaws`
+
+## A two-layer Earth core against PREM
+
+**Why this check exists.** A core model can meet its own consistency checks and still give a core much denser than the core of the Earth. This case shows how far the core of a 1 $M_\oplus$ planet lies from the seismic Earth model PREM, with and without a two-layer core and light elements.
+
+**What it tests.** The test solves the default 1 $M_\oplus$ planet (core mass fraction 0.325, `PALEOS:MgSiO3` mantle, adiabatic profile from 3000 K at the surface) with 3 cores:
+
+1. `PALEOS:iron`, a one-layer iron core.
+2. A two-layer iron core: a solid inner core on `PALEOS-API-2phase:iron-solid` and a liquid outer core on `PALEOS-API-2phase:iron-liquid`.
+3. The same two-layer core with the 13.85 wt% S outer core of Hirose et al. (2021).
+
+The two-layer cores take the inner-core mass fraction of PREM, 0.0508. At each core node the test compares the density with the PREM density at the same pressure in the same region, inner or outer core. It pins the median and the largest relative difference per region. It also checks the PREM reference against Table II of the paper.
+
+**How we know the right answer.** PREM ([Dziewonski & Anderson 1981](https://doi.org/10.1016/0031-9201(81)90046-7)): the core density polynomials of Table I. The pressure comes from a hydrostatic integral of that density inward from the CMB pressure of Table II, 135.751 GPa. It meets the centre and ICB pressures of Table II to $4.1 \times 10^{-4}$ and $3.9 \times 10^{-4}$ and the gravity at the CMB to $6.5 \times 10^{-4}$. The comparison is at equal pressure, since the radii of the planet and of its CMB differ from those of the Earth. There is no tolerance against PREM: the test pins the differences of the code as regression values. For comparison, [Attia et al. (2026)](https://ui.adsabs.harvard.edu/abs/2026arXiv260503741A/abstract) find the iron core of their PALEOS Earth denser than PREM by a median of 10.6 % and at most 12.1 %.
+
+| Core | Inner core: median | Inner core: largest | Outer core: median | Outer core: largest |
+| --- | --- | --- | --- | --- |
+| Fe, 1 layer | $+2.02$ % (13 nodes) | $+2.12$ % | $+8.05$ % | $+9.90$ % |
+| Fe, 2 layers | $+3.02$ % (6 nodes) | $+3.10$ % | $+8.05$ % | $+9.90$ % |
+| Fe-S, 2 layers | $+3.15$ % | $+3.45$ % | $+0.43$ % | $+2.13$ % |
+
+| Core | Radius | CMB radius | CMB pressure | Centre pressure | By radius: median, largest |
+| --- | --- | --- | --- | --- | --- |
+| PREM | 6371 km | 3480 km | 135.75 GPa | 363.85 GPa | |
+| Fe, 1 layer | 6525 km | 3381 km | 135.5 GPa | 386.2 GPa | $+8.51$ %, $+8.66$ % |
+| Fe-S, 2 layers | 6562 km | 3477 km | 128.2 GPa | 358.5 GPa | $+0.41$ %, $+3.00$ % |
+
+The iron cores reach 386 GPa at the centre, above the 364 GPa of PREM, so only their nodes up to 364 GPa enter the inner-core numbers. The outer cores of the 2 iron cores are the same: on this adiabat the outer core lies above the melting curve of iron, where `PALEOS:iron` is the PALEOS liquid. The S, Si, O and H midpoint cores of Hirose et al. (2021) have the same density by the calibration of the linear law ([case](equation_of_state.md#light-element-outer-cores-on-the-liquid-iron-side)), so the S core stands for all 4.
+
+**Why it matters.** The core density sets the core radius and the gravity of the planet. An iron outer core is 8 % denser than the core of the Earth, and its light elements close most of that gap.
+
+![Core density against pressure for PREM and the 3 cores of the default 1 Earth-mass planet](../assets/validation/core_two_phase_prem_pressure.svg#only-light){ width="80%" }
+![Core density against pressure for PREM and the 3 cores of the default 1 Earth-mass planet](../assets/validation/core_two_phase_prem_pressure_dark.svg#only-dark){ width="80%" }
+
+![Core density against radius for PREM and the 3 cores of the default 1 Earth-mass planet](../assets/validation/core_two_phase_prem_radius.svg#only-light){ width="80%" }
+![Core density against radius for PREM and the 3 cores of the default 1 Earth-mass planet](../assets/validation/core_two_phase_prem_radius_dark.svg#only-dark){ width="80%" }
+
+**How to read the plots.** The first plot gives the core density against pressure, with the centre on the left; the test numbers come from it. The second plot gives the same densities against radius. The dashed line is PREM, with its density step at the ICB. The lines of the 2 iron cores lie on each other in the outer core, and the Fe-S line lies close to PREM there. The two-layer cores step down at their ICB, from the solid to the liquid side.
+
+**Known limit.** The two-layer cores take the inner-core mass of PREM, not their own ICB. On this adiabat the centre is at 7700 to 8100 K, above the Anzellini melting curve (6403 K at 349 GPa), so the liquidus rule would give no inner core, and the solid inner core lies above the melting curve of iron. The test runs on side tables of 40 points per decade over $10^9$ to $3 \times 10^{12}$ Pa and $10^3$ to $2 \times 10^4$ K, made in a scratch folder, not on the default grid of 150 points per decade. The pins hold to $10^{-3}$, 17 times their largest spread over 5 starts with round-off changes of the planet mass and surface temperature.
+
+??? info "Test details"
+    - Reference: PREM, Dziewonski & Anderson (1981), Table I (density) and Table II (pressure and gravity checks), `tests/validation/data/prem_core_polynomials.csv` and `prem_core_table2.csv`.
+    - Tolerance: PREM against Table II, $10^{-3}$ in pressure and gravity and $10^{-5}$ in density; the medians and largest differences pinned to $10^{-3}$; at least 5 compared nodes per region.
+    - Test id: `tests/test_core_two_phase_solve.py::test_an_earth_core_against_prem` (integration tier; needs PALEOS and the PALEOS tables under `data/`)
+    - Command: `pytest -o "addopts=" tests/test_core_two_phase_solve.py -k prem`; the plots: `pytest -o "addopts=" tests/test_core_two_phase_solve.py -k prem --validation-plots`
 
 ## Reproducing the results
 

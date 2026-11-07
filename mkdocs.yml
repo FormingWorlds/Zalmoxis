@@ -21,6 +21,7 @@ nav:
   - Tutorials:
       - First run: Tutorials/firstrun.md
       - Surface pressure check: Tutorials/surface_pressure.md
+      - Two-layer Earth core: Tutorials/two_layer_core.md
 
   - Explanations:
       - Model overview: Explanations/model.md
@@ -45,6 +46,7 @@ nav:
           - Config: Reference/api/zalmoxis.config.md
           - Solver: Reference/api/zalmoxis.solver.md
           - Invariants: Reference/api/zalmoxis.invariants.md
+          - Core arrays: Reference/api/zalmoxis.core_profile.md
           - Output: Reference/api/zalmoxis.output.md
           - Structure model: Reference/api/zalmoxis.structure_model.md
           - Energetics: Reference/api/zalmoxis.energetics.md

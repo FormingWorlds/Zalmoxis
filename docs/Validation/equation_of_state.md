@@ -93,9 +93,9 @@ This case has no plot: it checks that 2 readers give identical arrays, an identi
 
 **Known limits.**
 
-- On a solid PALEOS base the calibrated core is less than 7 % below liquid iron. The PALEOS iron table is solid at both states (the test asserts the phase), and there the calibrated core is 4.9 % (136 GPa) and 5.8 % (330 GPa) less dense than the liquid iron of Luo et al. (2024, Eq. 14), extrapolated below its 8000 K fit range, as the solid base is 2.3 and 1.2 % denser (the test pins these ratios); at 600 to 1000 GPa and 8000 K, where the table is also solid, it is 4.6 to 5.6 % less dense.
+- On a solid PALEOS base the calibrated core is less than 7 % below liquid iron. The PALEOS iron table is solid at both states (the test asserts the phase), and there the calibrated core is 4.9 % (136 GPa) and 5.8 % (330 GPa) less dense than the liquid iron of Luo et al. (2024, Eq. 14), extrapolated below its 8000 K fit range, as the solid base is 2.3 and 1.2 % denser (the test pins these ratios); at 600 to 1000 GPa and 8000 K, where the table is also solid, it is 4.6 to 5.6 % less dense. A two-layer core reads its outer core from the liquid side instead ([next case](#light-element-outer-cores-on-the-liquid-iron-side)).
 - The 2 sources of the H laws disagree on the pressure dependence. Hirose et al. (2021) give a density deficit of the outer core that is uniform with depth, over 136 to 330 GPa; the Luo H law falls over the same range from 13.2 to 11.0 % for 0.975 wt% H (on the Luo liquid iron at 8000 K), and to 6.6 % at 1300 GPa. The default H law follows Hirose et al. (2021), and its constant $\beta$ above 330 GPa is an extrapolation.
-- The core takes the solid or liquid phase of pure Fe from the PALEOS table, so it changes phase at the melting curve of pure Fe (between 4220 and 4230 K at 136 GPa, and between 6280 and 6290 K at 330 GPa), not at the alloy liquidus. A core above its alloy liquidus but below the melting temperature of pure Fe is computed on the solid branch.
+- The core takes the solid or liquid phase of pure Fe from the PALEOS table, so it changes phase at the melting curve of pure Fe (between 4220 and 4230 K at 136 GPa, and between 6280 and 6290 K at 330 GPa), not at the alloy liquidus. A core above its alloy liquidus but below the melting temperature of pure Fe is computed on the solid branch. A two-layer core takes its phase from the inner-core boundary instead ([two-layer core](../Explanations/mixing.md#two-layer-core)).
 - C and N are not calibrated against the outer core. The Luo H law (`CoreAlloy:H-Luo`) gives 11 to 15 % for the H core of Hirose et al. (2021), above their range.
 
 ??? info "Test details"
@@ -103,6 +103,39 @@ This case has no plot: it checks that 2 readers give identical arrays, an identi
     - Tolerance: $10^{-12}$ percentage points at the midpoints; 6 to 8 % at the ends; $10^{-3}$ percentage points for the Luo H law.
     - Test id: `tests/test_core_alloy.py::TestHiroseCalibration`, its plot from `tests/test_core_alloy.py::TestHiroseCalibration::test_each_single_element_outer_core_is_7_percent_lighter_than_iron` (unit tier; the tests on the PALEOS iron table need it under `data/` and skip without it; `::test_the_calibration_gives_7_percent_on_any_iron_base` needs no table)
     - Command: `pytest -o "addopts=" tests/test_core_alloy.py -k Hirose`
+
+## Light-element outer cores on the liquid iron side
+
+**Why this check exists.** A two-layer core reads its outer core from the liquid side table of PALEOS iron (`PALEOS-API-2phase:iron-liquid`). A wrong side table, a wrong read of it or a wrong light-element law on it gives a wrong outer-core density, and no error message.
+
+**What it tests.** The test takes the 2 states of the case above: the core-mantle boundary (136 GPa, 4137 K) and the inner-core boundary (330 GPa, 5400 K) of Hirose et al. (2021). At each state it makes the liquid side table on the 4 by 4 nodes of the default side grid around the state and reads it through the `PALEOS-API-2phase:iron-liquid` entry. The table density must equal the PALEOS liquid of Luo et al. (2024) at the state, within the bilinear interpolation bound of its nodes. Each single-element outer core at the midpoint of its range must be 7 % less dense than the liquid side, to $10^{-12}$ percentage points, and the cores at the ends of the range 6 to 8 %. On the solid base `PALEOS:iron` the deficit of the midpoint cores against the PALEOS liquid is pinned.
+
+**How we know the right answer.** This is a consistency check, not an independent validation. $\beta$ is set to $7/w_\mathrm{mid}$ ([light-element core](../Explanations/mixing.md#light-element-core)), so 7 % holds on any iron base by construction. The case shows that the liquid side table is the PALEOS liquid and that the light-element law acts on it. The bound of the bilinear interpolation in $\log_{10} P$ and $\log_{10} T$ is $(\max|\Delta^2_P \rho| + \max|\Delta^2_T \rho|)/8$, from the second differences of the node densities, plus $10^{-4}$ kg/m$^3$ for the 9 digits of the table.
+
+| State | Liquid side table | PALEOS liquid | Difference | Bound |
+| --- | --- | --- | --- | --- |
+| 136 GPa, 4137 K | 11058.173 kg/m$^3$ | 11058.187 kg/m$^3$ | $-0.014$ kg/m$^3$ | 0.050 kg/m$^3$ |
+| 330 GPa, 5400 K | 13300.153 kg/m$^3$ | 13300.134 kg/m$^3$ | $+0.019$ kg/m$^3$ | 0.058 kg/m$^3$ |
+
+| Midpoint cores | 136 GPa | 330 GPa |
+| --- | --- | --- |
+| On the liquid side, below the liquid side | 7 % | 7 % |
+| On the solid base, below the PALEOS liquid | 4.890 % | 5.845 % |
+
+**Why it matters.** In a two-layer core the outer core is liquid. On the solid base the outer cores of Hirose et al. (2021) would be 4.9 to 5.8 % less dense than liquid iron, not 6 to 8 %, so the outer core would be too dense and the core radius too small.
+
+![Density deficit of the single-element outer cores of Hirose et al. 2021 on the liquid iron side and on the solid PALEOS base](../assets/validation/core_two_phase_hirose_liquid_side.svg#only-light){ width="80%" }
+![Density deficit of the single-element outer cores of Hirose et al. 2021 on the liquid iron side and on the solid PALEOS base](../assets/validation/core_two_phase_hirose_liquid_side_dark.svg#only-dark){ width="80%" }
+
+**How to read the plot.** The x-axis gives the light element at the core-mantle boundary (CMB, left) and at the inner-core boundary (ICB, right). The y-axis is the density deficit against liquid iron in percent. Each solid segment runs from the low to the high end of the range of Hirose et al. (2021) on the liquid side. Each dashed segment is the same range on the solid base, against the PALEOS liquid. The grey band is the 6 to 8 % of Hirose et al. (2021). A pass means that every solid segment lies inside the band, with 7 % at its midpoint.
+
+**Known limit.** Both states lie below the PALEOS melting curve of pure iron (case above), so the liquid side there is the metastable extension of the PALEOS liquid. The test makes the table on 16 nodes around each state, not on the full default grid; the nodes are those of the default grid, so the values are those of the cached table of the same PALEOS version.
+
+??? info "Test details"
+    - Reference: Hirose et al. (2021), p. 3, and the PALEOS liquid of Luo et al. (2024) (consistency check).
+    - Tolerance: the bilinear bound plus $10^{-4}$ kg/m$^3$, below $10^{-5}$ of the density; $10^{-12}$ percentage points at the midpoints; 6 to 8 % at the ends; $10^{-3}$ percentage points for the pinned solid-base deficits.
+    - Test id: `tests/test_core_alloy.py::TestHiroseCalibration::test_the_outer_cores_on_the_liquid_iron_side` (unit tier; needs PALEOS and the PALEOS iron table under `data/`, skips without them)
+    - Command: `pytest -o "addopts=" tests/test_core_alloy.py -k liquid_iron_side`; the plot: `pytest -o "addopts=" tests/test_core_alloy.py -k liquid_iron_side --validation-plots`
 
 ## Related tests
 

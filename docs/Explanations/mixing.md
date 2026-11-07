@@ -233,7 +233,7 @@ The floor follows from the inventory and is not user-tunable.
 
 ## Light-element core
 
-A core layer can carry H, C, N, O, Si and S as `CoreAlloy:<element>` components next to one iron base, which must be `PALEOS:iron`:
+A core layer can carry H, C, N, O, Si and S as `CoreAlloy:<element>` components next to one iron base, `PALEOS:iron` or one of the 2 iron side tables of the [two-layer core](#two-layer-core):
 
 ```toml
 core = "PALEOS:iron:0.96+CoreAlloy:H:0.005+CoreAlloy:O:0.02+CoreAlloy:Si:0.015"
@@ -286,7 +286,43 @@ The split of $\Delta v_c$ into an H part and a linear-law O part is first order 
 
 Over 20-3000 GPa and 3000-14000 K, $r^*$ is at most 0.595, at 1300 GPa and 8000 K, the corner of the Luo fit box; on a grid of 160 log-spaced pressures by 120 temperatures, a fifth of the states have no root. Below 20 GPa (2000-16000 K) $r^*$ is at most 0.626, at 0.1 MPa and 8000 K, where the carrier volume is that of the box edge at 50 GPa. Above 14000 K the carrier volume is that of 14000 K and $r^*$ grows with temperature: over 20-3000 GPa it is at most 0.537 at 16000 K, 0.611 at 35000 K, 0.654 at 40000 K and 0.796 at 59000 K, and above 0.8 from 60000 K. The bound 0.8 therefore holds at every pressure for temperatures up to 16000 K, and above 20 GPa up to 59000 K. Alone in the remaining alloy, each element reaches the bound at 24.7 wt% O, 15.4 wt% C, 39.6 wt% S, 27.3 wt% Si and 2.79 wt% H. These limits lie above the end compounds of the binaries of the alloy liquidus. A core whose S, O and C together need more Fe than it holds in the units of the alloy liquidus (Fe$_3$S, FeO, and Fe$_3$C below 255 GPa or Fe$_7$C$_3$ at and above it, with all O counted as FeO) gives one warning per process, and its density is used. For one element alone this bound is 16.06 wt% S, 22.27 wt% O, or 6.69 and 8.44 wt% C. It is a bound on the Fe of the core: Si, H and N take no Fe but reduce the Fe mass, while the liquidus counts Si atoms with its solvent.
 
-The fractions of a light-element core are given explicitly for every component, including the iron base, and sum to 1. A composition with no iron left, a carrier fraction of 1 or more ($w_\mathrm{H} \geq 1/8.94 = 0.1119$), a linear-law factor $1 - \mathrm{lin}$ below 0.8 (below), a negative or non-finite fraction, a base other than `PALEOS:iron`, two iron bases or both H laws raises `CoreAlloyError`, as does a density at or below zero. The [equation-of-state validation page](../Validation/equation_of_state.md) holds the test cases.
+The fractions of a light-element core are given explicitly for every component, including the iron base, and sum to 1. A composition with no iron left, a carrier fraction of 1 or more ($w_\mathrm{H} \geq 1/8.94 = 0.1119$), a linear-law factor $1 - \mathrm{lin}$ below 0.8 (below), a negative or non-finite fraction, a base other than `PALEOS:iron` or an iron side table, two iron bases or both H laws raises `CoreAlloyError`, as does a density at or below zero. The [equation-of-state validation page](../Validation/equation_of_state.md) holds the test cases.
+
+## Two-layer core
+
+Which part of the core is solid, and which density does each part take? With `inner_core` set, the core has 2 layers. The inner core reads the solid side of PALEOS iron and the outer core the liquid side. The inner-core boundary (ICB) between them comes from an iron melting curve on the temperature profile, or from a given inner-core mass.
+
+```toml
+core          = "PALEOS-API-2phase:iron-liquid:0.8615+CoreAlloy:S:0.1385"
+inner_core    = "PALEOS-API-2phase:iron-solid"
+core_liquidus = "Anzellini13-iron"
+```
+
+**The 2 side tables.** `PALEOS-API-2phase:iron-solid` is the solid iron of PALEOS on every node: the phase of the PALEOS phase diagram without its melting test, so above the melting curve it is the metastable solid. `PALEOS-API-2phase:iron-liquid` is the PALEOS liquid (Luo et al. 2024) on every node, below the melting curve its metastable extension. Both tables cover the box of the unified iron table, $10^5$ to $10^{14}$ Pa and 300 to $10^5$ K, at 150 points per decade (1351 by 379 nodes). Zalmoxis makes them on first use in the PALEOS API cache under `FWL_DATA`, one pair per PALEOS version and build key, and reads each side as a unified table. Each layer can carry `CoreAlloy` light elements on its side, as in the [light-element core](#light-element-core); an inner core without them is pure iron.
+
+**The ICB.** With `core_liquidus`, the ICB pressure $P_\mathrm{ICB}$ is the first root, from the centre outward, of
+
+$$T(P) - T_\mathrm{liq}(P) = 0$$
+
+on the temperature profile of the previous outer pass, found by Brent's method on the profile interpolated in $\ln P$. $T_\mathrm{liq}$ is a named iron melting curve (`Anzellini13-iron`, `Sinmyo19-iron`) or a callable `T_liq(P)` [K] that a caller such as PROTEUS sets as `core_liquidus` for the liquidus of the outer-core alloy. Core shells with an enclosed mass below the mass at $P_\mathrm{ICB}$ take `inner_core`, the others `core`. With `inner_core_mass_fraction` $f$, the inner core is the mass $f M_\mathrm{core}$ instead. With the liquidus rule, the outer loop stops only when the inner-core mass moves by less than `tolerance_outer` of the core mass between 2 passes.
+
+**Temperature.** The core temperature keeps the path of the one-layer core. The adiabatic gradient of each node comes from the side of its layer, and the temperature is continuous at the ICB, with no latent heat in the structure temperature.
+
+**Core arrays.** Every solve returns `result['core']`: `r`, `m`, `P`, `rho`, `g`, `T` (m, kg, Pa, kg/m$^3$, m/s$^2$, K) at the core nodes plus a node at the core mass, the core-mantle boundary (CMB); `phase` per node (1 inner core, 0 outer core); `w_<el>` per light element; and `M_ic` [kg], `R_icb` [m], `P_icb` [Pa], `solid_above_icb_mass_fraction` and the flag `solid_above_icb`. The CMB node comes from an event of the structure integration at the core mass. Every accepted solve asserts that this node holds the core mass to $10^{-10}$ (`core_cmb_node`), that each core-array density is that of its layer EOS to $10^{-6}$ (`core_density_eos`) and that no core node lies outside the table of its side (`core_table_box`). The node at the core mass takes the layer of the core just below it for its density and phase.
+
+**A worked example.** Take the default 1 $M_\oplus$ planet with the core of the example above. The adiabat from 3000 K at the surface reaches 7735 K at the centre, at 349 GPa, where the Anzellini curve is at 6403 K. The centre is above the liquidus, so the liquidus rule gives no inner core. With `inner_core_mass_fraction = 0.0508`, the value of PREM, the ICB lies at 1211 km and 322 GPa, and the density falls there from 13164 to 12049 kg/m$^3$. That inner core is solid at 7708 K at the centre, above the melting curve of iron: the mass rule sets the boundary, not the phase. On an isothermal 5000 K core the liquidus rule puts the ICB at 206 GPa, where the Anzellini curve is at 5000 K. The [tutorial](../Tutorials/two_layer_core.md) runs the first 2 cases.
+
+**Where this is checked.** [Light-element outer cores on the liquid iron side](../Validation/equation_of_state.md#light-element-outer-cores-on-the-liquid-iron-side) and [the two-layer Earth core against PREM](../Validation/mass_radius.md#a-two-layer-earth-core-against-prem); the solves of `tests/test_core_two_phase_solve.py` check the ICB rules, the core arrays and the cores wholly above or below the liquidus.
+
+**Bounds and what happens outside them.**
+
+- **Layers.** A two-layer core needs the liquid side as the base of `core` and the solid side as the base of `inner_core`. A core on the liquid side without an inner core, or a layer on the wrong side, is refused with a `ValueError`.
+- **ICB rule.** A two-layer core needs exactly one of `core_liquidus` and `inner_core_mass_fraction`; a one-layer core takes neither. `inner_core_mass_fraction` must be a number in $[0, 1]$, `core_liquidus` a named iron melting curve or a callable. Otherwise the configuration is refused.
+- **Centre above the liquidus.** The core has no inner core ($M_\mathrm{ic} = 0$).
+- **Whole core below the liquidus.** The whole core is the inner core.
+- **Solid above the ICB.** Nodes above the ICB that lie below the liquidus, as in a profile that crosses the liquidus more than once, stay in the outer core. Their mass, as a fraction of the core mass, is `solid_above_icb_mass_fraction`, and `solid_above_icb` is set.
+- **Outside a side table.** A core node outside the box of its side table, or where the table has no finite value, fails the accepted solve (`core_table_box`).
+- **JAX path.** The JAX structure path refuses an `inner_core` layer; a two-layer core is solved on the numpy path.
 
 ---
 
