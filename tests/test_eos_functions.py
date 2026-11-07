@@ -1684,6 +1684,28 @@ class TestCreatePressureDensityFiles:
         }
         assert after == before
 
+    def test_first_call_of_a_run_replaces_old_dumps_in_the_given_folder(self, tmp_path):
+        """Old dump files in the folder go at (0, 0, 0); a later call of the run appends."""
+        from zalmoxis.eos import create_pressure_density_files
+
+        radii, pressure, density = (
+            np.array([0, 1e6]),
+            np.array([3e11, 1e5]),
+            np.array([1.3e4, 3e3]),
+        )
+        for name in ('pressure_profiles.txt', 'density_profiles.txt'):
+            (tmp_path / name).write_text('stale\n')
+        create_pressure_density_files(0, 0, 0, radii, pressure, density, str(tmp_path))
+        create_pressure_density_files(0, 0, 1, radii, pressure, density, str(tmp_path))
+        for name in ('pressure_profiles.txt', 'density_profiles.txt'):
+            text = (tmp_path / name).read_text()
+            assert 'stale' not in text
+            assert (
+                text.count('# Pressure iteration 0')
+                == text.count('# Pressure iteration 1')
+                == 1
+            )
+
 
 # =====================================================================
 # get_solidus_liquidus_functions tests
