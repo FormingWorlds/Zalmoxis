@@ -1663,7 +1663,9 @@ class TestCreatePressureDensityFiles:
         radii = np.array([0, 1e6, 2e6, 3e6])
         pressure = np.array([300e9, 200e9, 100e9, 1e5])
         density = np.array([13000, 10000, 5000, 3000], dtype=float)
-        tree = os.path.join(os.environ['ZALMOXIS_ROOT'], 'output')
+        from zalmoxis import get_zalmoxis_root
+
+        tree = os.path.join(get_zalmoxis_root(), 'output')
         before = {
             f: os.stat(os.path.join(tree, f)).st_mtime_ns
             for f in ('pressure_profiles.txt', 'density_profiles.txt')
@@ -1674,7 +1676,7 @@ class TestCreatePressureDensityFiles:
         create_pressure_density_files(0, 0, 1, radii, pressure, density, str(tmp_path))
         content = (tmp_path / 'pressure_profiles.txt').read_text()
         assert 'Pressure iteration 0' in content and 'Pressure iteration 1' in content
-        assert (tmp_path / 'density_profiles.txt').is_file()
+        assert (tmp_path / 'density_profiles.txt').read_text().count('radius density') == 2
         after = {
             f: os.stat(os.path.join(tree, f)).st_mtime_ns
             for f in ('pressure_profiles.txt', 'density_profiles.txt')

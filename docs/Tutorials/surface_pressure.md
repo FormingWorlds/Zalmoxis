@@ -90,6 +90,7 @@ The block below solves the planet again at that level with a temporary folder as
 
 ```python
 import logging
+import shutil
 import tempfile
 
 dump = tempfile.mkdtemp()
@@ -111,6 +112,7 @@ def last_pressure_solve(path):
 
 
 trials = last_pressure_solve(os.path.join(dump, 'pressure_profiles.txt'))
+shutil.rmtree(dump)  # the 2 dump files take about 100 MB
 P_t = cfg['target_surface_pressure']
 f = trials[:, 1] - P_t
 print(f'{len(trials)} trials; accepted P_c = {result["p_center"]:.6e} Pa')

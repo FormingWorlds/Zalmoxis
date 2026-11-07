@@ -338,18 +338,21 @@ class TestNonIronCoreWarning:
 class TestDebugProfileDir:
     """The optional debug_profile_dir: a folder that exists, or absent."""
 
-    @pytest.mark.parametrize('value', [123, True, ['x']], ids=['int', 'bool', 'list'])
+    @pytest.mark.parametrize(
+        'value', [123, True, ['x'], b'/tmp'], ids=['int', 'bool', 'list', 'bytes']
+    )
     def test_wrong_type_is_refused_by_name(self, value):
-        """A value that is not a path string raises ValueError naming the key."""
-        with pytest.raises(ValueError, match='debug_profile_dir'):
+        """A value that is not a path string raises ValueError naming the key and the value."""
+        with pytest.raises(ValueError, match='debug_profile_dir') as err:
             validate_config(_make_minimal_config(debug_profile_dir=value))
-        assert 'debug_profile_dir' not in _make_minimal_config()
+        assert repr(value) in str(err.value)
 
     def test_empty_string_is_refused_by_name(self):
         """An empty string is not a folder: ValueError naming the key."""
         with pytest.raises(ValueError, match='debug_profile_dir.*empty'):
             validate_config(_make_minimal_config(debug_profile_dir=''))
-        assert validate_config(_make_minimal_config()) is None
+        with pytest.raises(ValueError, match='is not an existing folder'):
+            validate_config(_make_minimal_config(debug_profile_dir=' '))
 
     def test_missing_folder_is_refused_by_name(self, tmp_path):
         """A path that is not an existing folder raises ValueError naming it."""
@@ -372,6 +375,7 @@ class TestDebugProfileDir:
             st.floats(allow_nan=True, allow_infinity=True),
             st.lists(st.text(max_size=3), max_size=2),
             st.dictionaries(st.text(max_size=2), st.integers(), max_size=1),
+            st.binary(max_size=4),
         )
     )
     def test_any_non_path_value_is_refused(self, value):
@@ -396,3 +400,35 @@ class TestDebugProfileDir:
         with pytest.raises(ValueError, match='is not an existing folder'):
             validate_config(_make_minimal_config(debug_profile_dir=str(afile)))
         assert sorted(p.name for p in tmp_path.iterdir()) == ['a_file.txt']
+
+
+class TestDebugProfileDirFromToml:
+    """load_zalmoxis_config reads debug_profile_dir from the [Output] table and validates it."""
+
+    @staticmethod
+    def _toml(tmp_path, line):
+        from zalmoxis import get_zalmoxis_root
+
+        text = open(os.path.join(get_zalmoxis_root(), 'input', 'default.toml')).read()
+        assert text.count('[Output]\n') == 1
+        path = tmp_path / 'cfg.toml'
+        path.write_text(text.replace('[Output]\n', f'[Output]\n{line}\n'))
+        return str(path)
+
+    def test_key_set_in_the_toml_reaches_the_config(self, tmp_path):
+        """A folder named in [Output] is in the returned dict; without the line the key is absent."""
+        from zalmoxis.config import load_zalmoxis_config
+
+        folder = tmp_path / 'dump'
+        folder.mkdir()
+        cfg = load_zalmoxis_config(self._toml(tmp_path, f"debug_profile_dir = '{folder}'"))
+        assert cfg['debug_profile_dir'] == str(folder)
+        assert 'debug_profile_dir' not in load_zalmoxis_config(self._toml(tmp_path, ''))
+
+    def test_empty_key_in_the_toml_is_refused_by_name(self, tmp_path):
+        """An empty string in [Output] raises the named ValueError at load time."""
+        from zalmoxis.config import load_zalmoxis_config
+
+        with pytest.raises(ValueError, match='debug_profile_dir must not be empty'):
+            load_zalmoxis_config(self._toml(tmp_path, "debug_profile_dir = ''"))
+        assert sorted(p.name for p in tmp_path.iterdir()) == ['cfg.toml']
