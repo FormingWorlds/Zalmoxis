@@ -1,0 +1,5 @@
+# PREM core density, Dziewonski & Anderson (1981), Phys. Earth Planet. Inter. 25, 297-356, doi:10.1016/0031-9201(81)90046-7
+# Table I, journal p. 308: density [g/cm^3] = a0 + a1 x + a2 x^2 + a3 x^3 with x = r / 6371 km; typed from the page image
+region,r_lo_km,r_hi_km,a0,a1,a2,a3
+inner_core,0.0,1221.5,13.0885,0.0,-8.8381,0.0
+outer_core,1221.5,3480.0,12.5815,-1.2638,-3.6426,-5.5281

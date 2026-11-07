@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import copy
 import os
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -177,3 +178,124 @@ def test_the_core_arrays_of_a_two_layer_core(setup):
         core['P'][-1], core['T'][-1], outer, setup[0], None, None, {}
     )
     assert core['rho'][-1] == pytest.approx(rho_cmb, rel=1e-6) and core['phase'][-1] == 0
+
+
+PREM_DATA = Path(__file__).parent / 'validation' / 'data'
+# Hirose et al. 2021, PDF p. 3: midpoints of the single-element outer cores [wt%]
+HIROSE_MID = {'S': 13.85, 'Si': 9.55, 'O': 8.65, 'H': 0.975}
+
+
+def _prem_core(n=40001):
+    """PREM core (Dziewonski & Anderson 1981): Table I density, and pressure and gravity by
+    hydrostatics inward from the Table II CMB pressure; ``region`` 0 inner, 1 outer core."""
+    from scipy.integrate import cumulative_trapezoid
+
+    from zalmoxis.constants import G
+
+    read = dict(delimiter=',', names=True, dtype=None, encoding=None, skip_header=2)
+    poly = np.genfromtxt(PREM_DATA / 'prem_core_polynomials.csv', **read)
+    tab = np.genfromtxt(PREM_DATA / 'prem_core_table2.csv', **read)
+    r_icb, r_cmb = poly['r_hi_km'] * 1e3
+    r = np.r_[np.linspace(0.0, r_icb, n), np.linspace(r_icb, r_cmb, n)]
+    region = np.repeat([0, 1], n)
+    rho = 1e3 * sum(poly[f'a{i}'][region] * (r / 6371e3) ** i for i in range(4))
+    m = cumulative_trapezoid(4 * np.pi * r**2 * rho, r, initial=0.0)
+    g = np.divide(G * m, r**2, out=np.zeros_like(r), where=r > 0)
+    w = cumulative_trapezoid(rho * g, r, initial=0.0)
+    p = tab['pressure_kbar'][-1] * 1e8 + w[-1] - w
+    return dict(r=r, rho=rho, P=p, g=g, m=m, region=region, tab=tab)
+
+
+def _against_prem(core, prem, by_phase):
+    """Median and largest rho / rho_PREM - 1 per region at equal pressure, and the node count;
+    the region of a node is its phase (two-layer core) or its side of the PREM ICB pressure."""
+    P, rho = core['P'], core['rho']
+    p_icb = prem['P'][prem['region'] == 0][-1]
+    region = np.where(core['phase'] == 1, 0, 1) if by_phase else np.where(P > p_icb, 0, 1)
+    out = {}
+    for k, name in enumerate(('inner', 'outer')):
+        sel = prem['region'] == k
+        p_k, rho_k = prem['P'][sel][::-1], prem['rho'][sel][::-1]
+        hit = (region == k) & (P >= p_k[0]) & (P <= p_k[-1])
+        d = rho[hit] / np.interp(P[hit], p_k, rho_k) - 1.0
+        out[name] = (float(np.median(d)), float(d[np.argmax(np.abs(d))]), int(hit.sum()))
+    return out
+
+
+# median and largest rho / rho_PREM - 1 per region at equal pressure, macOS arm64 reference
+PREM_PINS = {
+    'Fe, 1 layer': {'inner': (0.020196, 0.021164), 'outer': (0.080497, 0.098991)},
+    'Fe, 2 layers': {'inner': (0.030165, 0.030997), 'outer': (0.080461, 0.098956)},
+    'Fe-S, 2 layers': {'inner': (0.031505, 0.034530), 'outer': (0.004332, 0.021273)},
+}
+
+
+@pytest.mark.physics_invariant
+@pytest.mark.reference_pinned
+def test_an_earth_core_against_prem(setup, validation_plot):
+    """PREM (Dziewonski & Anderson 1981): the hydrostatic PREM core meets Table II, and the core
+    of the default 1 M_E planet differs from it at equal pressure by the pinned medians and
+    largest values per region. The 3 cores: one-layer PALEOS:iron, a two-layer pure-iron core
+    and a two-layer core with the 13.85 wt% S outer core of Hirose et al. (2021), both with the
+    PREM inner-core mass fraction. The Si, O and H midpoint cores have the S density by the
+    calibration of the linear law, so they give the same planet."""
+    prem = _prem_core()
+    tab, inner = prem['tab'], prem['region'] == 0
+    np.testing.assert_allclose(
+        np.interp(tab['radius_km'] * 1e3, prem['r'], prem['rho'])[[0, 3]],
+        tab['density_g_cm3'][[0, 3]] * 1e3,
+        rtol=1e-5,
+    )
+    for got, want in (
+        (prem['P'][0], tab['pressure_kbar'][0] * 1e8),
+        (prem['P'][inner][-1], tab['pressure_kbar'][1] * 1e8),
+        (prem['g'][-1], tab['gravity_cm_s2'][3] / 100),
+    ):
+        assert abs(got / want - 1) < 1e-3
+    f_ic = prem['m'][inner][-1] / prem['m'][-1]
+    s_core = f'{LIQ}:{1 - HIROSE_MID["S"] / 100:.4f}+CoreAlloy:S:{HIROSE_MID["S"] / 100:.4f}'
+    cores = {
+        'Fe, 1 layer': _solve(setup, core='PALEOS:iron')['core'],
+        'Fe, 2 layers': _solve(setup, inner=SOL, inner_core_mass_fraction=f_ic)['core'],
+        'Fe-S, 2 layers': _solve(setup, inner=SOL, core=s_core, inner_core_mass_fraction=f_ic)[
+            'core'
+        ],
+    }
+    for name, core in cores.items():
+        got = _against_prem(core, prem, by_phase=name != 'Fe, 1 layer')
+        for region, (median, largest, n) in got.items():
+            assert n >= 5, (name, region, n)
+            np.testing.assert_allclose(
+                (median, largest), PREM_PINS[name][region], atol=1e-3, err_msg=name
+            )
+
+    def figure(x, scale, label):
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(figsize=(7.6, 3.6))
+        for k in (0, 1):
+            sel = prem['region'] == k
+            ax.plot(
+                prem[x][sel] * scale,
+                prem['rho'][sel],
+                '--',
+                lw=1.2,
+                color=plt.rcParams['axes.edgecolor'],
+                label='PREM' if k == 0 else None,
+            )
+        colours = plt.rcParams['axes.prop_cycle'].by_key()['color'][1:]
+        for (name, core), colour in zip(cores.items(), colours):
+            ax.plot(core[x][:-1] * scale, core['rho'][:-1], lw=1.2, color=colour, label=name)
+        ax.set(xlabel=label, ylabel='Density [kg/m$^3$]')
+        ax.xaxis.set_major_locator(plt.MaxNLocator(4))
+        ax.grid(False)
+        if x == 'P':  # centre on the left, as by radius
+            ax.invert_xaxis()
+        ax.legend(loc='upper left', bbox_to_anchor=(1.02, 1.0), frameon=False)
+        fig.tight_layout()
+        fig.canvas.draw()
+        assert ax.get_legend().get_window_extent().x0 >= ax.get_window_extent().x1
+        return fig
+
+    validation_plot(lambda: figure('P', 1e-9, 'Pressure [GPa]'), 'core_two_phase_prem_pressure')
+    validation_plot(lambda: figure('r', 1e-3, 'Radius [km]'), 'core_two_phase_prem_radius')
