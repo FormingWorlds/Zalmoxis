@@ -164,3 +164,58 @@ def test_core_liquidus_may_be_a_callable():
     validate_config(_params(core_liquidus=lambda p: 4000.0 + 1e-8 * p))
     with pytest.raises(ValueError, match='exactly one'):
         validate_config(_params(core_liquidus=lambda p: 4000.0, inner_core_mass_fraction=0.1))
+
+
+def _profile(t_of_p, n=41):
+    """Centre-first nodes of a core of 1e24 kg with P from 360 to 136 GPa, mass linear in ln P
+    (the ICB rule interpolates in ln P)."""
+    import numpy as np
+
+    p = np.linspace(360e9, 136e9, n)
+    m = 1e24 * np.log(360e9 / p) / np.log(360 / 136)
+    return m * (1 - 1e-9), p, t_of_p(p)  # the last node just below the core mass
+
+
+def _liq(p):
+    return 4000.0 + 1e-8 * (p - 136e9)  # 4000 K at 136 GPa, 6240 K at 360 GPa
+
+
+@pytest.mark.physics_invariant
+def test_the_icb_is_where_the_profile_meets_the_liquidus():
+    """An isothermal 5000 K core meets the linear liquidus at 236 GPa; the ICB mass is the
+    enclosed mass there, and no solid lies above it."""
+    from zalmoxis.core_profile import icb_from_profile
+
+    m, p, t = _profile(lambda p: 0 * p + 5000.0)
+    m_icb, p_icb, solid = icb_from_profile(m, p, t, 1e24, _liq)
+    assert p_icb == pytest.approx(236e9, rel=1e-12)
+    assert m_icb == pytest.approx(
+        1e24 * math.log(360 / 236) / math.log(360 / 136) * (1 - 1e-9), rel=1e-12
+    )
+    assert solid == 0.0
+
+
+def test_a_core_above_or_below_the_liquidus_everywhere():
+    """A centre at or above the liquidus gives no inner core; a core below it everywhere is
+    the inner core, with the pressure of its last core node."""
+    from zalmoxis.core_profile import icb_from_profile
+
+    m, p, t = _profile(lambda p: 0 * p + 7000.0)
+    assert icb_from_profile(m, p, t, 1e24, _liq)[:2] == (0.0, p[0])
+    m, p, t = _profile(lambda p: 0 * p + 3000.0)
+    assert icb_from_profile(m, p, t, 1e24, _liq) == (1e24, p[-1], 0.0)
+
+
+def test_solid_above_a_liquid_centre_is_the_mass_of_its_segments():
+    """A centre above the liquidus with a cold top: the solid mass above the ICB is the mass of
+    the node segments whose 2 ends lie below the liquidus."""
+    import numpy as np
+
+    from zalmoxis.core_profile import icb_from_profile
+
+    m, p, t = _profile(lambda p: np.where(p > 200e9, 7000.0, 3000.0))
+    m_icb, _, solid = icb_from_profile(m, p, t, 1e24, _liq)
+    below = p <= 200e9
+    seg = below[:-1] & below[1:]
+    assert m_icb == 0.0 and solid == pytest.approx(float(np.sum(np.diff(m)[seg])), rel=1e-15)
+    assert 0.0 < solid < 1e24
