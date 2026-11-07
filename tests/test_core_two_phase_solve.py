@@ -147,7 +147,7 @@ def test_main_refuses_the_liquidus_rule_with_the_newton_outer_solver(setup):
     cfg = dict(cfg, core_liquidus='Anzellini13-iron', outer_solver='newton')
     cfg.update(relative_tolerance=1e-9, absolute_tolerance=1e-10)  # what Newton needs
     cfg['layer_eos_config'] = dict(cfg['layer_eos_config'], core=LIQ, inner_core=SOL)
-    with pytest.raises(ValueError, match='core_liquidus needs the picard'):
+    with pytest.raises(ValueError, match="core_liquidus needs outer_solver = 'picard'"):
         main(
             cfg,
             md,
@@ -177,17 +177,27 @@ def test_a_two_layer_core_keeps_the_mass_limit_of_the_paleos_tables(setup):
 
 
 def test_an_accept_with_an_icb_off_the_liquidus_is_not_converged(setup, caplog):
-    """2 outer passes end on the max_iter accept while the ICB still moves: the result is not
-    converged, and says why."""
-    res = _solve_raw(
-        setup,
-        inner=SOL,
+    """2 outer passes end on the max_iter accept while the ICB still moves: _solve returns the
+    result as not converged and says why, and main does not take it back by its retry skip."""
+    from zalmoxis import solver as zs
+    from zalmoxis.mixing import parse_all_layer_mixtures
+
+    md, cfg, input_dir = setup
+    cfg = dict(
+        cfg,
         temperature_mode='isothermal',
         surface_temperature=5000.0,
         core_liquidus='Anzellini13-iron',
         max_iterations_outer=2,
     )
-    assert res['converged'] is False and 'inner-core boundary' in caplog.text
+    cfg['layer_eos_config'] = dict(cfg['layer_eos_config'], core=LIQ, inner_core=SOL)
+    mixes = parse_all_layer_mixtures(cfg['layer_eos_config'])
+    res = zs._solve(cfg, md, None, input_dir, layer_mixtures=mixes)
+    assert res['converged'] is False and res['icb_converged'] is False
+    assert 'inner-core boundary' in caplog.text
+    res = zs.main(cfg, md, None, input_dir, layer_mixtures=mixes)
+    assert res['accepted_on'] != 'retry_skip'
+    assert res['icb_converged'] or not res['converged']
 
 
 def test_main_refuses_an_icb_rule_without_an_inner_core(setup):
