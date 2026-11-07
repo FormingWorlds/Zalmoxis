@@ -328,8 +328,9 @@ def _element_mass_deviation(core, cmb_mass):
         w = np.asarray(core[f'w_{el}'], float)
         w_ic, w_oc = (layers.get(k, {}).get(el, 0.0) for k in ('inner_core', 'core'))
         got = float(np.sum(0.5 * (w[1:] + w[:-1]) * np.diff(m)))
-        for j in np.flatnonzero((m[:-1] < m_ic) & (m[1:] > m_ic)):  # the step inside a segment
-            exact = w_ic * (m_ic - m[j]) + w_oc * (m[j + 1] - m_ic)
+        step = m_ic * (1.0 - _RTOL_LAYER)  # where the layer rule changes from inner to outer
+        for j in np.flatnonzero((m[:-1] < step) & (m[1:] >= step)):  # the step inside a segment
+            exact = w_ic * (step - m[j]) + w_oc * (m[j + 1] - step)
             got += exact - 0.5 * (w[j] + w[j + 1]) * (m[j + 1] - m[j])
         want = m_ic * w_ic + (m[-1] - m_ic) * w_oc
         scale = cmb_mass * max(w_ic, w_oc, float(np.abs(w).max()))
