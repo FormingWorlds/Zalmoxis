@@ -71,30 +71,6 @@ def _solve(setup, inner='', core=LIQ, **over):
     return res
 
 
-def _solve_raw(setup, inner='', core=LIQ, **over):
-    """As _solve, without the converged assert."""
-    from zalmoxis.config import load_solidus_liquidus_functions, validate_config
-    from zalmoxis.mixing import parse_all_layer_mixtures
-    from zalmoxis.solver import main
-
-    md, cfg, input_dir = setup
-    cfg = dict(cfg, **over)
-    cfg['layer_eos_config'] = dict(cfg['layer_eos_config'], core=core)
-    if inner:
-        cfg['layer_eos_config']['inner_core'] = inner
-    validate_config(cfg)
-    melt = load_solidus_liquidus_functions(
-        cfg['layer_eos_config'], cfg['rock_solidus'], cfg['rock_liquidus'], 1.0
-    )
-    return main(
-        cfg,
-        md,
-        melt,
-        input_dir,
-        layer_mixtures=parse_all_layer_mixtures(cfg['layer_eos_config']),
-    )
-
-
 def _anzellini_inverse(t):
     from zalmoxis.melting_curves import iron_melting_anzellini13
 
@@ -122,7 +98,9 @@ def test_an_isothermal_core_has_its_icb_where_iron_melts(setup, caplog):
     assert core['P_icb'] == pytest.approx(
         np.interp(core['M_ic'], core['m'], core['P']), rel=1e-12
     )
-    assert abs(core['P_icb'] / p_icb - 1) < 5e-3  # the liquidus root, to the outer tolerance
+    # M_ic is within tolerance_outer (1e-3 of the core mass) of the root and dlnP/d(m/M_core) is
+    # about 1 here, so P_icb is within about 1e-3 of the root: 5e-3 keeps a factor 5
+    assert abs(core['P_icb'] / p_icb - 1) < 5e-3
     assert 'pure-iron curve' not in caplog.text  # a pure-iron outer core: no warning
     inner = core['phase'] == 1
     assert inner[0] and not inner[-1]
@@ -195,13 +173,17 @@ def test_an_accept_with_an_icb_off_the_liquidus_is_not_converged(setup, caplog):
     res = zs._solve(cfg, md, None, input_dir, layer_mixtures=mixes)
     assert res['converged'] is False and res['icb_converged'] is False
     assert 'inner-core boundary' in caplog.text
+    assert res['converged_mass'] is False and res['accept_mass_limit'] is None
     res = zs.main(cfg, md, None, input_dir, layer_mixtures=mixes)
-    assert res['accepted_on'] != 'retry_skip'
-    assert res['icb_converged'] or not res['converged']
+    assert (
+        res['accepted_on'] != 'retry_skip' and 'Retrying with tighter parameters' in caplog.text
+    )
+    assert res['converged'] and res['icb_converged']
 
 
 def test_main_refuses_an_icb_rule_without_an_inner_core(setup):
-    """main itself refuses core_liquidus without an inner core, and takes None as unset."""
+    """main itself refuses core_liquidus without an inner core; the rule check takes None as
+    unset and an empty inner_core as no inner core."""
     from zalmoxis.mixing import parse_all_layer_mixtures
     from zalmoxis.solver import main
 
@@ -217,7 +199,31 @@ def test_main_refuses_an_icb_rule_without_an_inner_core(setup):
         )
     from zalmoxis.config import _check_icb_rule
 
-    _check_icb_rule(dict(cfg, core_liquidus=None))
+    assert _check_icb_rule(dict(cfg, core_liquidus=None)) is None  # None counts as unset
+    one_layer = {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3', 'inner_core': ''}
+    assert _check_icb_rule({'layer_eos_config': one_layer}) is None  # '' is no inner core
+
+
+def test_solve_ignores_a_liquidus_without_an_inner_core(setup):
+    """_solve, called past the checks of main, solves a one-layer core with no inner core."""
+    from zalmoxis import solver as zs
+    from zalmoxis.mixing import parse_all_layer_mixtures
+
+    md, cfg, input_dir = setup
+    cfg = dict(
+        cfg,
+        core_liquidus='Anzellini13-iron',
+        temperature_mode='isothermal',
+        surface_temperature=5000.0,
+    )
+    res = zs._solve(
+        cfg,
+        md,
+        None,
+        input_dir,
+        layer_mixtures=parse_all_layer_mixtures(cfg['layer_eos_config']),
+    )
+    assert res['converged'] and res['core']['M_ic'] == 0.0
 
 
 def test_a_given_inner_core_mass_sets_the_icb(setup):
@@ -264,9 +270,9 @@ def test_solid_above_a_liquid_centre_is_reported(setup):
 
 @pytest.mark.physics_invariant
 def test_the_core_arrays_of_a_two_layer_core(setup, caplog):
-    caplog.set_level('WARNING', logger='fwl.zalmoxis.solver')
     """The core arrays hold r, m, P, rho, g, T, phase and w_S per node from the centre to a CMB
     node at the core mass; the outer core carries its S, the inner core none."""
+    caplog.set_level('WARNING', logger='fwl.zalmoxis.solver')
     res = _solve(
         setup,
         inner=SOL,

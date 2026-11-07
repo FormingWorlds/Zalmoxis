@@ -160,17 +160,31 @@ def test_a_whole_layer_off_its_composition_breaks_core_element_mass(layer):
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize('fault', ['column without composition', 'nan'])
+@pytest.mark.parametrize(
+    'fault', ['column without composition', 'composition without column', 'nan']
+)
 def test_core_element_mass_reads_every_element_column(fault):
-    """An element column absent from w_layers, or a NaN node fraction, breaks the check."""
+    """An element column absent from w_layers, a layer element without a column, or a NaN node
+    fraction breaks the check."""
     result, cfg = _sphere_with_core_arrays()
     core = result['core']
     if fault == 'nan':
         core['w_S'][2] = np.nan
+    elif fault == 'composition without column':
+        del core['w_S']
     else:
         core['w_O'] = np.full(len(core['m']), 0.05)
     dev = deviations(result, cfg, 1e-3, RTOL, ATOL, box_at=_no_box)['core_element_mass'][0]
-    assert dev > 1e-10
+    assert dev > 1e-10 if fault == 'column without composition' else dev == np.inf
+
+
+@pytest.mark.unit
+def test_an_accepted_structure_without_core_arrays_is_refused():
+    """A result that has the core key with no arrays is not an accepted structure."""
+    result, cfg = _sphere_with_core_arrays()
+    result['core'] = None
+    with pytest.raises(StructureInvariantError, match='no core arrays'):
+        _check(result, cfg)
 
 
 @pytest.mark.unit

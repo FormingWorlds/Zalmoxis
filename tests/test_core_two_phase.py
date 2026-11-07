@@ -342,16 +342,21 @@ def test_core_arrays_refuse_a_core_mass_out_of_reach():
         core_arrays(res, mix, light, lambda r, p: 5000.0, 0.0, 0.0)
 
 
-@pytest.mark.parametrize('frac', [1.0, 0.5])
+@pytest.mark.parametrize('frac', [1.0, 0.37])
 def test_p_icb_is_the_pressure_of_the_core_arrays_at_m_ic(frac):
-    """P_icb is read on the core arrays at M_ic, as R_icb: at the core mass it is the pressure
-    of the CMB node."""
+    """P_icb meets the analytic pressure of the uniform sphere at M_ic to 1e-3, which both
+    neighbour nodes miss at 0.37 of the core mass; at the core mass it is the CMB node."""
     res, rhs = _sphere_result(41, 1.0)
     mix = {'core': LayerMixture([LIQ], [1.0]), 'inner_core': LayerMixture([SOL], [1.0])}
     core = core_arrays(res, mix, rhs, lambda r, p: 5000.0, frac * res['cmb_mass'], 0.0)
-    want = np.interp(core['M_ic'], core['m'], core['P'])
-    assert core['P_icb'] == pytest.approx(want, rel=1e-12)
-    if frac == 1.0:
+    rho, big_r = 1.0e4, 4.0e6
+    r = (3 * core['M_ic'] / (4 * np.pi * rho)) ** (1 / 3)
+    want = 2 / 3 * np.pi * G * rho**2 * (big_r**2 - r**2)
+    assert core['P_icb'] == pytest.approx(want, rel=1e-3)
+    i = int(np.searchsorted(core['m'], core['M_ic']))
+    if frac < 1.0:
+        assert all(abs(core['P'][k] / want - 1) > 5e-3 for k in (i - 1, i))
+    else:
         assert core['P_icb'] == pytest.approx(core['P'][-1], rel=1e-12)
 
 
@@ -366,3 +371,12 @@ def test_a_given_icb_mass_reports_its_pressure_and_the_solid_above_it():
     seg = below[:-1] & below[1:] & (m[:-1] >= m_icb)
     assert got[0] == m_icb and got[1] == pytest.approx(p_true, rel=1e-3)
     assert got[2] == pytest.approx(float(np.sum(np.diff(m)[seg])), rel=1e-15) and got[2] > 0
+
+
+def test_the_icb_rule_takes_numpy_numbers_and_no_layer_config():
+    """inner_core_mass_fraction may be a NumPy number, and a config without layers has no
+    inner core."""
+    from zalmoxis.config import _check_icb_rule
+
+    validate_config(_params(core_liquidus='', inner_core_mass_fraction=np.float32(0.05)))
+    assert _check_icb_rule({'layer_eos_config': None}) is None
