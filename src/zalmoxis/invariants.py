@@ -26,6 +26,7 @@ TOLERANCES = {
     'core_cmb_node': 1e-10,
     'core_table_box': 0,
     'core_density_eos': 1e-6,
+    'core_element_mass': 1e-10,
 }
 _RTOL_LAYER = 1e-12  # the layer rule of structure_model.get_layer_mixture
 _RTOL_GAUSS = 1e-12  # padded gravity against G m_stop / r^2, both computed in floats
@@ -247,6 +248,12 @@ def deviations(
             len(core['m']) - 1,
             text=f'core array mass {core["m"][-1]:.6e} kg, cmb_mass {result["cmb_mass"]:.6e} kg',
         )
+        put(
+            'core_element_mass',
+            _element_mass_deviation(core, result['cmb_mass']),
+            len(core['m']) - 1,
+            text='light-element masses of the core arrays against M_ic w_ic + M_oc w_oc',
+        )
     if core and box_at is not None:
         names = np.where(core['phase'] == 1, 'inner_core', 'core')
         bad = np.zeros(len(names), bool)
@@ -305,6 +312,24 @@ def deviations(
             text=f'core array density {core["rho"][i]:.6e}, expected {ref[i]:.6e} ({names[i]} EOS)',
         )
     return out
+
+
+def _element_mass_deviation(core, cmb_mass):
+    """Largest error, over cmb_mass times the largest fraction, of the light-element masses of
+    the core arrays: the trapezoid of each ``w_<el>`` over ``m``, exact across the step at
+    ``M_ic``, against ``M_ic w_ic + (m_end - M_ic) w_oc`` with the median fraction of each layer."""
+    m, inner, m_ic = np.asarray(core['m'], float), np.asarray(core['phase']) == 1, core['M_ic']
+    dev = 0.0
+    for key in [k for k in core if k.startswith('w_')]:
+        w = np.asarray(core[key], float)
+        w_ic, w_oc = (float(np.median(w[sel])) if sel.any() else 0.0 for sel in (inner, ~inner))
+        got = float(np.sum(0.5 * (w[1:] + w[:-1]) * np.diff(m)))
+        for j in np.flatnonzero((m[:-1] < m_ic) & (m[1:] > m_ic)):  # the step inside a segment
+            exact = w_ic * (m_ic - m[j]) + w_oc * (m[j + 1] - m_ic)
+            got += exact - 0.5 * (w[j] + w[j + 1]) * (m[j + 1] - m[j])
+        want = m_ic * w_ic + (m[-1] - m_ic) * w_oc
+        dev = max(dev, abs(got - want) / (cmb_mass * max(float(np.abs(w).max()), 1e-300)))
+    return dev
 
 
 def _finite_positive(x):
