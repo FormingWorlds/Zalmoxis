@@ -128,6 +128,25 @@ def test_main_refuses_the_liquidus_rule_with_the_newton_outer_solver(setup):
         )
 
 
+def test_a_two_layer_core_keeps_the_mass_limit_of_the_paleos_tables(setup):
+    """The side tables span the box of the unified iron table, so they take its 50 M_E limit;
+    the mantle has no limit here, so the refusal names a side table."""
+    from zalmoxis.mixing import parse_all_layer_mixtures
+    from zalmoxis.solver import main
+
+    md, cfg, input_dir = setup
+    cfg = dict(cfg, inner_core_mass_fraction=0.05, planet_mass=60 * 5.972e24)
+    cfg['layer_eos_config'] = {'core': LIQ, 'inner_core': SOL, 'mantle': 'Seager2007:MgSiO3'}
+    with pytest.raises(ValueError, match='PALEOS-API-2phase:iron-.* EOS is limited to planets'):
+        main(
+            cfg,
+            md,
+            None,
+            input_dir,
+            layer_mixtures=parse_all_layer_mixtures(cfg['layer_eos_config']),
+        )
+
+
 def test_a_given_inner_core_mass_sets_the_icb(setup):
     res = _solve(setup, inner=SOL, core_liquidus='', inner_core_mass_fraction=0.05)
     core = res['core']
@@ -150,7 +169,7 @@ def test_a_core_wholly_above_or_below_the_liquidus(setup, t, all_solid):
     )
     core = res['core']
     assert core['M_ic'] == (res['cmb_mass'] if all_solid else 0.0)
-    assert np.all(core['phase'][:-1] == int(all_solid))
+    assert np.all(core['phase'] == int(all_solid))  # the node at the core mass too
 
 
 def test_solid_above_a_liquid_centre_is_reported(setup):
@@ -171,7 +190,7 @@ def test_solid_above_a_liquid_centre_is_reported(setup):
 
 
 @pytest.mark.physics_invariant
-def test_the_core_arrays_of_a_two_layer_core(setup):
+def test_the_core_arrays_of_a_two_layer_core(setup, caplog):
     """The core arrays hold r, m, P, rho, g, T, phase and w_S per node from the centre to a CMB
     node at the core mass; the outer core carries its S, the inner core none."""
     res = _solve(
@@ -183,6 +202,8 @@ def test_the_core_arrays_of_a_two_layer_core(setup):
         surface_temperature=5000.0,
     )
     core = res['core']
+    assert 'pure-iron curve' in caplog.text  # a named curve with an alloy outer core
+    assert core['w_layers'] == {'core': {'S': 0.1385}, 'inner_core': {}}
     for k in ('r', 'm', 'P', 'rho', 'g', 'T', 'phase', 'w_S'):
         assert core[k].shape == core['r'].shape, k
     assert core['r'][0] == 0.0 and np.all(np.diff(core['r']) > 0)

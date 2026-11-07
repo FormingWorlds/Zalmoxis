@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from zalmoxis.config import parse_eos_config, validate_config, validate_layer_eos
+from zalmoxis.constants import G
+from zalmoxis.core_profile import core_arrays, icb_from_profile
 from zalmoxis.eos import core_alloy as ca
 from zalmoxis.eos.paleos_api import make_default_grid_iron_2phase
 from zalmoxis.eos_properties import EOS_REGISTRY
 from zalmoxis.mixing import LayerMixture
+from zalmoxis.phase_columns import compute_layer_phase_columns
 
 pytestmark = pytest.mark.unit
 
@@ -169,8 +173,6 @@ def test_core_liquidus_may_be_a_callable():
 def _profile(t_of_p, n=41):
     """Centre-first nodes of a core of 1e24 kg with P from 360 to 136 GPa, mass linear in ln P
     (the ICB rule interpolates in ln P)."""
-    import numpy as np
-
     p = np.linspace(360e9, 136e9, n)
     m = 1e24 * np.log(360e9 / p) / np.log(360 / 136)
     return m * (1 - 1e-9), p, t_of_p(p)  # the last node just below the core mass
@@ -184,8 +186,6 @@ def _liq(p):
 def test_the_icb_is_where_the_profile_meets_the_liquidus():
     """An isothermal 5000 K core meets the linear liquidus at 236 GPa; the ICB mass is the
     enclosed mass there, and no solid lies above it."""
-    from zalmoxis.core_profile import icb_from_profile
-
     m, p, t = _profile(lambda p: 0 * p + 5000.0)
     m_icb, p_icb, solid = icb_from_profile(m, p, t, 1e24, _liq)
     assert p_icb == pytest.approx(236e9, rel=1e-12)
@@ -198,8 +198,6 @@ def test_the_icb_is_where_the_profile_meets_the_liquidus():
 def test_a_core_above_or_below_the_liquidus_everywhere():
     """A centre at or above the liquidus gives no inner core; a core below it everywhere is
     the inner core, with the pressure of its last core node."""
-    from zalmoxis.core_profile import icb_from_profile
-
     m, p, t = _profile(lambda p: 0 * p + 7000.0)
     assert icb_from_profile(m, p, t, 1e24, _liq)[:2] == (0.0, p[0])
     m, p, t = _profile(lambda p: 0 * p + 3000.0)
@@ -209,10 +207,6 @@ def test_a_core_above_or_below_the_liquidus_everywhere():
 def test_solid_above_a_liquid_centre_is_the_mass_of_its_segments():
     """A centre above the liquidus with a cold top: the solid mass above the ICB is the mass of
     the node segments whose 2 ends lie below the liquidus."""
-    import numpy as np
-
-    from zalmoxis.core_profile import icb_from_profile
-
     m, p, t = _profile(lambda p: np.where(p > 200e9, 7000.0, 3000.0))
     m_icb, _, solid = icb_from_profile(m, p, t, 1e24, _liq)
     below = p <= 200e9
@@ -255,10 +249,6 @@ def test_the_side_of_a_core_layer_is_its_iron_base_in_any_order(layers, ok):
 def test_a_non_finite_liquidus_or_temperature_is_refused(bad):
     """A NaN in the liquidus or the profile would read as below the liquidus everywhere and make
     the whole core the inner core."""
-    import numpy as np
-
-    from zalmoxis.core_profile import icb_from_profile
-
     m, p, t = _profile(lambda p: 0 * p + 7000.0)
     liq = (lambda p: np.nan) if bad == 'liquidus' else _liq
     if bad == 'temperature':
@@ -272,10 +262,6 @@ def test_the_icb_on_a_profile_that_falls_outward():
     5500 K at the centre to 4500 K at the top, the liquidus from 6240 to 4000 K, so they meet
     at P = 136 GPa (360/136)^(500/1240): below the liquidus at the centre, above it at the top,
     no solid above the ICB."""
-    import numpy as np
-
-    from zalmoxis.core_profile import icb_from_profile
-
     k = math.log(360 / 136)
     m, p, t = _profile(lambda p: 4500.0 + 1000.0 / k * np.log(p / 136e9))
     m_icb, p_icb, solid = icb_from_profile(
@@ -289,10 +275,6 @@ def test_the_icb_on_a_profile_that_falls_outward():
 def _sphere_result(n_nodes, cmb_scale):
     """A uniform 10000 kg/m^3 sphere on n_nodes nodes, its rhs, and a core mass of cmb_scale
     times the mass of node n_nodes // 2."""
-    import numpy as np
-
-    from zalmoxis.constants import G
-
     rho, r = 1.0e4, np.linspace(0.0, 4.0e6, n_nodes)
     m = 4 / 3 * np.pi * rho * r**3
     g = np.divide(G * m, r**2, out=np.zeros_like(r), where=r > 0)
@@ -309,10 +291,6 @@ def _sphere_result(n_nodes, cmb_scale):
 def test_a_node_just_below_the_core_mass_still_gives_a_cmb_node_at_the_core_mass():
     """With a node within 1e-12 below the core mass, the CMB node holds the core mass and the
     radii keep rising."""
-    import numpy as np
-
-    from zalmoxis.core_profile import core_arrays
-
     res, rhs = _sphere_result(41, 1.0 / (1.0 - 5e-13))
     mix = {'core': LayerMixture(['PALEOS:iron'], [1.0])}
     core = core_arrays(res, mix, rhs, lambda r, p: 5000.0, 0.0, 0.0, 0.0)
@@ -321,8 +299,6 @@ def test_a_node_just_below_the_core_mass_still_gives_a_cmb_node_at_the_core_mass
 
 
 def test_core_arrays_without_a_node_past_the_core_mass_are_refused():
-    from zalmoxis.core_profile import core_arrays
-
     res, rhs = _sphere_result(41, 10.0)
     mix = {'core': LayerMixture(['PALEOS:iron'], [1.0])}
     with pytest.raises(ValueError, match='core mass'):
@@ -332,10 +308,6 @@ def test_core_arrays_without_a_node_past_the_core_mass_are_refused():
 def test_the_phase_columns_label_the_inner_core_by_its_side():
     """Shells below the ICB mass take the inner-core EOS: the solid side is solid, the liquid
     side liquid."""
-    import numpy as np
-
-    from zalmoxis.phase_columns import compute_layer_phase_columns
-
     m = np.linspace(0.0, 10.0, 11)
     _, phases = compute_layer_phase_columns(
         pressure=np.full(11, 2e11),
@@ -347,3 +319,9 @@ def test_the_phase_columns_label_the_inner_core_by_its_side():
         layer_eos_config={'core': LIQ, 'inner_core': SOL, 'mantle': 'Seager2007:MgSiO3'},
     )
     assert phases[:3] == ['solid'] * 3 and phases[3:6] == ['liquid'] * 3
+
+
+def test_a_profile_without_core_nodes_is_refused():
+    m, p, t = _profile(lambda p: 0 * p + 5000.0)
+    with pytest.raises(ValueError, match='no core node'):
+        icb_from_profile(m, 0 * p, t, 1e24, _liq)

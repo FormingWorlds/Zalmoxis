@@ -190,7 +190,7 @@ def test_inner_core_nodes_are_checked_against_the_inner_core_eos():
         check_accepted(
             result, cfg, RTOL, ATOL, lambda P, T, lay: RHO * (1 + (lay == 'inner_core'))
         )
-    check_accepted(result, cfg, RTOL, ATOL, lambda P, T, lay: RHO * (1 + (lay == 'mantle') * 0))
+    check_accepted(result, cfg, RTOL, ATOL, lambda P, T, lay: RHO)
 
 
 def _check(result, cfg, limit=1e-3):
