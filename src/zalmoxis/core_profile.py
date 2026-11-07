@@ -79,7 +79,7 @@ def _solid_mass(m, f, m_icb):
     return float(np.sum(np.diff(m)[seg]))
 
 
-def core_arrays(result, layer_mixtures, rhs, temperature_at, icb_mass, p_icb, solid_above):
+def core_arrays(result, layer_mixtures, rhs, temperature_at, icb_mass, solid_above):
     """Arrays of the core from the centre to a node at the core mass, and its ICB scalars.
 
     Parameters
@@ -93,8 +93,8 @@ def core_arrays(result, layer_mixtures, rhs, temperature_at, icb_mass, p_icb, so
         ``rhs(r, y)`` of the structure equations with the core mixture, y = (m, g, P).
     temperature_at : callable
         ``T(r, P)`` [K] of the solve.
-    icb_mass, p_icb, solid_above : float
-        Inner-core mass [kg], ICB pressure [Pa] and core mass below the liquidus above the ICB.
+    icb_mass, solid_above : float
+        Inner-core mass [kg] and the core mass below the liquidus above the ICB [kg].
 
     Returns
     -------
@@ -162,7 +162,7 @@ def core_arrays(result, layer_mixtures, rhs, temperature_at, icb_mass, p_icb, so
         out[f'w_{el}'] = np.where(out['phase'] == 1, w[1], np.where(in_core, w[0], 0.0))
     out['M_ic'] = float(icb_mass)
     out['R_icb'] = float(np.interp(icb_mass, out['m'], out['r']))
-    out['P_icb'] = float(p_icb)
+    out['P_icb'] = float(np.interp(icb_mass, out['m'], out['P']))
     out['solid_above_icb_mass_fraction'] = float(solid_above) / cmb_mass
     out['solid_above_icb'] = bool(solid_above > 0.0)
     return out

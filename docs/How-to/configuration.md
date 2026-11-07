@@ -64,7 +64,7 @@ ice_layer = ""  # Empty string = 2-layer model
 | `mantle` | Yes | EOS for the mantle layer. |
 | `ice_layer` | No | EOS for an outer volatile layer. If empty or omitted, the model uses a 2-layer structure (core + mantle). If set, the model uses a 3-layer structure and `mantle_mass_fraction` must be > 0 in `[AssumptionsAndInitialGuesses]`. |
 | `inner_core` | No | EOS of the inner core of a two-layer core, on `PALEOS-API-2phase:iron-solid` with optional `CoreAlloy` components. If set, `core` is the outer core and must be on `PALEOS-API-2phase:iron-liquid`. Empty by default: a one-layer core. See [two-layer core](../Explanations/mixing.md#two-layer-core). |
-| `core_liquidus` | No | Iron melting curve that sets the inner-core boundary of a two-layer core on the temperature profile: `"Anzellini13-iron"` or `"Sinmyo19-iron"`. A caller can set a callable `T_liq(P)` [K] instead. Exclusive with `inner_core_mass_fraction`; needs `outer_solver = "picard"`. Empty by default. |
+| `core_liquidus` | No | Iron melting curve that sets the inner-core boundary of a two-layer core on the temperature profile: `"Anzellini13-iron"` or `"Sinmyo19-iron"`. A caller can set a callable `T_liq(P)` [K] instead. Exclusive with `inner_core_mass_fraction`; needs `outer_solver = "picard"`, the Zalmoxis default (PROTEUS defaults to newton). Empty by default. |
 
 #### Naming convention
 

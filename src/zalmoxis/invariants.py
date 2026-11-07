@@ -320,8 +320,11 @@ def _element_mass_deviation(core, cmb_mass):
     ``M_ic``, against ``M_ic w_ic + (m_end - M_ic) w_oc`` with the layer compositions
     ``w_layers``."""
     m, m_ic, layers = np.asarray(core['m'], float), core['M_ic'], core.get('w_layers', {})
+    columns = {k[2:] for k in core if k.startswith('w_') and k != 'w_layers'}
     dev = 0.0
-    for el in set().union(*layers.values()):
+    for el in columns | set().union(*layers.values()):
+        if el not in columns:
+            return np.inf
         w = np.asarray(core[f'w_{el}'], float)
         w_ic, w_oc = (layers.get(k, {}).get(el, 0.0) for k in ('inner_core', 'core'))
         got = float(np.sum(0.5 * (w[1:] + w[:-1]) * np.diff(m)))
@@ -329,7 +332,9 @@ def _element_mass_deviation(core, cmb_mass):
             exact = w_ic * (m_ic - m[j]) + w_oc * (m[j + 1] - m_ic)
             got += exact - 0.5 * (w[j] + w[j + 1]) * (m[j + 1] - m[j])
         want = m_ic * w_ic + (m[-1] - m_ic) * w_oc
-        dev = max(dev, abs(got - want) / (cmb_mass * max(w_ic, w_oc, float(np.abs(w).max()))))
+        scale = cmb_mass * max(w_ic, w_oc, float(np.abs(w).max()))
+        ratio = abs(got - want) / scale if scale > 0 else abs(got - want)
+        dev = max(dev, ratio if np.isfinite(ratio) else np.inf)
     return dev
 
 

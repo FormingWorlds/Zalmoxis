@@ -71,9 +71,9 @@ VALID_TABULATED_EOS = {
 } | set(IRON_SIDES)
 CORE_LAYERS = ('core', 'inner_core')
 NEWTON_LIQUIDUS = (
-    'core_liquidus needs the picard outer solver (the default): a newton probe solves one outer '
-    'pass, with no profile of a previous pass for the liquidus rule; use the default outer solver, '
-    'or inner_core_mass_fraction with newton'
+    "core_liquidus needs outer_solver = 'picard' (the Zalmoxis default; PROTEUS defaults to "
+    'newton and must set picard): a newton probe solves one outer pass, with no profile of a '
+    'previous pass for the liquidus rule; with newton use inner_core_mass_fraction'
 )
 
 # WolfBower2018 tables are valid up to ~1 TPa. The Brent pressure solver with
@@ -250,7 +250,7 @@ def _check_icb_rule(config_params):
     """An inner core takes its boundary from exactly one of core_liquidus (an iron melting curve
     name, or a callable T_liq(P) [K]) and inner_core_mass_fraction; a one-layer core takes
     neither."""
-    liq = config_params.get('core_liquidus', '')
+    liq = config_params.get('core_liquidus') or ''
     frac = config_params.get('inner_core_mass_fraction')
     if callable(liq):  # T_liq(P) [K] of the outer core, from a caller such as PROTEUS
         liq = 'callable'
@@ -262,7 +262,7 @@ def _check_icb_rule(config_params):
         isinstance(frac, bool) or not isinstance(frac, (int, float)) or not 0.0 <= frac <= 1.0
     ):
         raise ValueError(f'inner_core_mass_fraction must be a number in [0, 1], got {frac!r}')
-    if 'inner_core' in config_params['layer_eos_config']:
+    if 'inner_core' in config_params.get('layer_eos_config', {}):
         if bool(liq) == (frac is not None):
             raise ValueError(
                 'a two-layer core needs exactly one of core_liquidus and inner_core_mass_fraction'

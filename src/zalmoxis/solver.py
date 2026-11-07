@@ -23,11 +23,11 @@ import numpy as np
 from scipy.optimize import brentq
 
 from .config import (
-    NEWTON_LIQUIDUS,
     PALEOS_MAX_MASS_EARTH,
     PALEOS_UNIFIED_MAX_MASS_EARTH,
     RTPRESS100TPA_MAX_MASS_EARTH,
     WOLFBOWER2018_MAX_MASS_EARTH,
+    _check_icb_rule,
     band_limit,
 )
 from .constants import (
@@ -735,11 +735,7 @@ def main(
                 ', '.join(_trigger),
             )
     band_limit(config_params)  # a bad limit fails before the solve, not after it
-    two_layer_liq = config_params.get('layer_eos_config', {}).get(
-        'inner_core'
-    ) and config_params.get('core_liquidus')
-    if outer_solver == 'newton' and two_layer_liq:
-        raise ValueError(NEWTON_LIQUIDUS)
+    _check_icb_rule(config_params)  # also for callers that skip validate_config
     bands = (config_params, material_dictionaries, melting_curves_functions, layer_mixtures)
     if outer_solver == 'newton':
         result = _solve_newton_outer(
@@ -783,6 +779,7 @@ def main(
     run_params = config_params  # the parameters of the solve that returns
     _retry_skipped = (
         not result['converged']
+        and result.get('icb_converged', True)
         and result.get('converged_density', False)
         and result.get('converged_pressure', False)
         and _first_mass_err is not None
@@ -1762,7 +1759,7 @@ def _solve(
     core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * planet_mass
     # Inner core: a given mass, or the liquidus rule on the profile of the previous pass
     two_layer = 'inner_core' in layer_mixtures
-    core_liq = config_params.get('core_liquidus') or None
+    core_liq = (config_params.get('core_liquidus') or None) if two_layer else None
     if isinstance(core_liq, str):
         if is_alloy_mixture(layer_mixtures['core']):
             logger.warning(
@@ -2651,6 +2648,7 @@ def _solve(
                 'adiabat_computed': _adiabat_computed,
                 'adiabat_blend': _adiabat_blend,
                 'icb_mass': icb_mass,
+                'temperature_func': _temperature_func,
             }
             oscillation_count = 0
         elif (
@@ -2746,8 +2744,11 @@ def _solve(
             )
 
     def _best_pass():
-        nonlocal icb_mass
-        icb_mass = best_profiles['icb_mass']  # the inner core that pass was solved with
+        nonlocal icb_mass, _temperature_func  # the inner core and T profile of that pass
+        icb_mass, _temperature_func = (
+            best_profiles['icb_mass'],
+            best_profiles['temperature_func'],
+        )
         # fresh copies: the saved profiles can be read-only views of JAX buffers
         T = best_profiles['temperatures']
         return (
@@ -2848,6 +2849,19 @@ def _solve(
             temperatures,
         ) = _best_pass()  # fmt: skip
 
+    icb_converged = True  # the ICB of the liquidus rule meets the root of the returned profile
+    if core_liq is not None and np.all(np.isfinite(pressure)) and pressure[0] > 0:
+        moved = icb_from_profile(mass_enclosed, pressure, temperatures, cmb_mass, core_liq)[0]
+        icb_converged = abs(moved - icb_mass) <= tolerance_outer * cmb_mass
+        if converged and not icb_converged:  # an accept path that skipped the ICB test
+            logger.warning(
+                'Not converged: the inner-core boundary lies %.3g of the core mass off the '
+                'liquidus root of the returned profile (accepted_on=%s).',
+                abs(moved - icb_mass) / cmb_mass,
+                accepted_on,
+            )
+            converged, accepted_on = False, None
+
     # Return rho_EOS(P, T) at the returned nodes, not the damped Picard iterate.
     density_from_eos = rho_eos is not None
     if density_from_eos:
@@ -2919,6 +2933,7 @@ def _solve(
         'stopped_on_wall_clock': stop_label == 'timeout',
         'accept_mass_limit': accept_mass_limit,
         'density_from_eos': density_from_eos,
+        'icb_converged': bool(icb_converged),
         'p_center': pressure[0] if len(pressure) > 0 else None,
         'padded': bool(pad.size and pad[-1]),
         'adiabat_computed': _adiabat_computed,
@@ -2957,7 +2972,7 @@ def _core_result(res, layer_mixtures, core_liq, icb_mass, temperature_func, **eo
         np.asarray(res[k], dtype=float) for k in ('mass_enclosed', 'pressure', 'temperature')
     )
     cmb_mass = res['cmb_mass']
-    p_icb, solid_above = float(np.interp(icb_mass, m, p)), 0.0
+    solid_above = 0.0
     if core_liq is not None:  # the solid above the ICB of the solved layers
         solid_above = icb_from_profile(m, p, t, cmb_mass, core_liq, icb_mass)[2]
 
@@ -2978,7 +2993,7 @@ def _core_result(res, layer_mixtures, core_liq, icb_mass, temperature_func, **eo
             **eos_args,
         )
 
-    return core_arrays(res, layer_mixtures, rhs, t_at, icb_mass, p_icb, solid_above)
+    return core_arrays(res, layer_mixtures, rhs, t_at, icb_mass, solid_above)
 
 
 def solve_miscible_interior(

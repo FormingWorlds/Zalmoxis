@@ -218,7 +218,7 @@ def test_solid_above_a_liquid_centre_is_the_mass_of_its_segments():
 def test_the_liquidus_rule_is_refused_with_the_newton_outer_solver():
     """Each Newton probe solves one outer pass, so the liquidus rule would have no profile of a
     previous pass; the mass rule needs none."""
-    with pytest.raises(ValueError, match='core_liquidus needs the picard'):
+    with pytest.raises(ValueError, match="core_liquidus needs outer_solver = 'picard'"):
         validate_config(_params(outer_solver='newton'))
     validate_config(
         _params(outer_solver='newton', core_liquidus='', inner_core_mass_fraction=0.05)
