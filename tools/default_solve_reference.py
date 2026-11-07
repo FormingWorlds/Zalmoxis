@@ -14,7 +14,7 @@ import sys
 
 import numpy as np
 
-SKIP = ('core', 'layer_eos_config', 'newton_history', 'total_time')
+SKIP = ('core', 'icb_converged', 'layer_eos_config', 'newton_history', 'total_time')
 
 
 def solve_arrays():
