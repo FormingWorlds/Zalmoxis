@@ -137,7 +137,8 @@ def test_main_refuses_the_liquidus_rule_with_the_newton_outer_solver(setup):
 
 def test_a_two_layer_core_keeps_the_mass_limit_of_the_paleos_tables(setup):
     """The side tables span the box of the unified iron table, so they take its 50 M_E limit;
-    the mantle has no limit here, so the refusal names a side table."""
+    the mantle has no limit here, so the refusal names a side table, also for the solid side
+    alone."""
     from zalmoxis.mixing import parse_all_layer_mixtures
     from zalmoxis.solver import main
 
@@ -145,6 +146,18 @@ def test_a_two_layer_core_keeps_the_mass_limit_of_the_paleos_tables(setup):
     cfg = dict(cfg, inner_core_mass_fraction=0.05, planet_mass=60 * 5.972e24)
     cfg['layer_eos_config'] = {'core': LIQ, 'inner_core': SOL, 'mantle': 'Seager2007:MgSiO3'}
     with pytest.raises(ValueError, match='PALEOS-API-2phase:iron-.* EOS is limited to planets'):
+        main(
+            cfg,
+            md,
+            None,
+            input_dir,
+            layer_mixtures=parse_all_layer_mixtures(cfg['layer_eos_config']),
+        )
+    cfg = dict(cfg, inner_core_mass_fraction=None)  # the solid side alone, as a one-layer core
+    cfg['layer_eos_config'] = {'core': SOL, 'mantle': 'Seager2007:MgSiO3'}
+    with pytest.raises(
+        ValueError, match='PALEOS-API-2phase:iron-solid EOS is limited to planets'
+    ):
         main(
             cfg,
             md,

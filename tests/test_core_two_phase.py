@@ -233,6 +233,7 @@ def test_the_liquidus_rule_is_refused_with_the_newton_outer_solver():
         ({'core': f'CoreAlloy:S:0.1385+{LIQ}:0.8615', 'inner_core': SOL}, None),
         ({'core': f'PALEOS:iron:0.5+{LIQ}:0.5'}, "needs an 'inner_core'"),
         ({'core': f'PALEOS:iron:0.5+{LIQ}:0.5', 'inner_core': SOL}, 'base alone'),
+        ({'core': f'{LIQ}:0.5+PALEOS:iron:0.5', 'inner_core': SOL}, 'base alone'),
         ({'core': LIQ, 'inner_core': f'CoreAlloy:Si:0.01+{SOL}:0.99'}, None),
         ({'core': SOL, 'inner_core': LIQ}, "belongs in 'inner_core'"),
     ],
@@ -470,3 +471,36 @@ def test_outside_side_tables_flags_nodes_off_the_table(tmp_path):
     assert got.tolist() == [False, True, True, True]
     none = outside_side_tables(p, t, LayerMixture(['PALEOS:iron'], [1.0]), md, {})
     assert not none.any()
+
+
+def test_solid_above_counts_only_segments_cold_at_both_ends():
+    """A hot centre, a cold band, a hot band and a cold top: only the segments with both ends
+    below the liquidus count, not those that end in the hot band."""
+    bands = lambda p: np.where((p > 300e9) | ((p > 200e9) & (p <= 250e9)), 7000.0, 3000.0)  # noqa: E731
+    m, p, t = _profile(bands)
+    m_icb, _, solid = icb_from_profile(m, p, t, 1e24, _liq)
+    cold = t < _liq(p)
+    seg = cold[:-1] & cold[1:]
+    assert m_icb == 0.0 and solid == pytest.approx(float(np.sum(np.diff(m)[seg])), rel=1e-15)
+    assert (cold[:-1] & ~cold[1:]).any()  # the profile has cold-to-hot segments to leave out
+
+
+def test_a_given_icb_mass_counts_no_solid_below_it():
+    """On a core below the liquidus everywhere, the solid above a given ICB mass is the mass of
+    the segments above it, not of the whole core."""
+    m, p, t = _profile(lambda p: 0 * p + 3000.0)
+    m_icb = 0.4e24
+    solid = icb_from_profile(m, p, t, 1e24, _liq, m_icb)[2]
+    assert solid == pytest.approx(float(np.sum(np.diff(m)[m[:-1] >= m_icb])), rel=1e-15)
+    assert solid < m[-1] - m_icb + 0.1e24
+
+
+def test_the_solid_picker_keeps_the_delta_boundary_of_paleos():
+    """PALEOS takes bcc delta iron up to and including 5.2 GPa above T_delta_gamma (1998 K
+    there): the picker gives delta at exactly 5.2 GPa and gamma just above it."""
+    if importlib.util.find_spec('paleos') is None:
+        pytest.skip('PALEOS not installed')
+    from zalmoxis.eos.paleos_api import _get_iron_solid_phase
+
+    assert _get_iron_solid_phase(5.2e9, 2000.0) == 'solid-delta'
+    assert _get_iron_solid_phase(5.21e9, 2000.0) == 'solid-gamma'
