@@ -366,40 +366,50 @@ class TestDebugProfileDir:
         assert validate_config(_make_minimal_config(debug_profile_dir=str(tmp_path))) is None
         assert validate_config(_make_minimal_config(debug_profile_dir=tmp_path)) is None
 
-    @settings(max_examples=60, deadline=None)
-    @given(
-        st.one_of(
-            st.none(),
-            st.booleans(),
-            st.integers(),
-            st.floats(allow_nan=True, allow_infinity=True),
-            st.lists(st.text(max_size=3), max_size=2),
-            st.dictionaries(st.text(max_size=2), st.integers(), max_size=1),
-            st.binary(max_size=4),
-        )
-    )
-    def test_any_non_path_value_is_refused(self, value):
-        """None, bool, int, float (0, negative, NaN, inf) and containers raise ValueError."""
-        with pytest.raises(ValueError, match='debug_profile_dir must be a folder path'):
-            validate_config(_make_minimal_config(debug_profile_dir=value))
+    def test_empty_path_object_is_refused_like_the_empty_string(self):
+        """Path('') is Path('.') and would dump into the working directory: refused as empty."""
+        from pathlib import Path
 
-    @settings(
-        max_examples=60,
-        deadline=None,
-        suppress_health_check=[HealthCheck.function_scoped_fixture],
+        with pytest.raises(ValueError, match='debug_profile_dir must not be empty'):
+            validate_config(_make_minimal_config(debug_profile_dir=Path('')))
+        assert validate_config(_make_minimal_config(debug_profile_dir='.')) is None
+
+
+@settings(max_examples=60, deadline=None)
+@given(
+    st.one_of(
+        st.none(),
+        st.booleans(),
+        st.integers(),
+        st.floats(allow_nan=True, allow_infinity=True),
+        st.lists(st.text(max_size=3), max_size=2),
+        st.dictionaries(st.text(max_size=2), st.integers(), max_size=1),
+        st.binary(max_size=4),
     )
-    @given(st.text(alphabet='abcXYZ019_- .', min_size=1, max_size=12))
-    def test_any_path_that_is_not_a_folder_is_refused(self, tmp_path, name):
-        """A name under a missing folder, and a regular file, raise ValueError; nothing is created."""
-        with pytest.raises(ValueError, match='is not an existing folder'):
-            validate_config(
-                _make_minimal_config(debug_profile_dir=os.path.join(tmp_path, 'absent', name))
-            )
-        afile = tmp_path / 'a_file.txt'
-        afile.write_text('x')
-        with pytest.raises(ValueError, match='is not an existing folder'):
-            validate_config(_make_minimal_config(debug_profile_dir=str(afile)))
-        assert sorted(p.name for p in tmp_path.iterdir()) == ['a_file.txt']
+)
+def test_any_non_path_debug_profile_dir_is_refused(value):
+    """None, bool, int, float (0, negative, NaN, inf) and containers raise ValueError."""
+    with pytest.raises(ValueError, match='debug_profile_dir must be a folder path'):
+        validate_config(_make_minimal_config(debug_profile_dir=value))
+
+
+@settings(
+    max_examples=60,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+@given(st.text(alphabet='abcXYZ019_- .', min_size=1, max_size=12))
+def test_any_debug_profile_dir_that_is_not_a_folder_is_refused(tmp_path, name):
+    """A name under a missing folder, and a regular file, raise ValueError; nothing is created."""
+    with pytest.raises(ValueError, match='is not an existing folder'):
+        validate_config(
+            _make_minimal_config(debug_profile_dir=os.path.join(tmp_path, 'absent', name))
+        )
+    afile = tmp_path / 'a_file.txt'
+    afile.write_text('x')
+    with pytest.raises(ValueError, match='is not an existing folder'):
+        validate_config(_make_minimal_config(debug_profile_dir=str(afile)))
+    assert sorted(p.name for p in tmp_path.iterdir()) == ['a_file.txt']
 
 
 class TestDebugProfileDirFromToml:

@@ -1706,6 +1706,27 @@ class TestCreatePressureDensityFiles:
                 == 1
             )
 
+    def test_only_the_first_call_of_a_structure_solve_starts_the_dumps_again(self, tmp_path):
+        """Calls (0, 0, 0), (0, 0, 1), (0, 1, 0) keep all 3 profiles: only (0, 0, 0) deletes old files."""
+        from zalmoxis.eos import create_pressure_density_files
+
+        radii, pressure, density = (
+            np.array([0, 1e6]),
+            np.array([3e11, 1e5]),
+            np.array([1.3e4, 3e3]),
+        )
+        for outer, inner, trial in ((0, 0, 0), (0, 0, 1), (0, 1, 0)):
+            create_pressure_density_files(
+                outer, inner, trial, radii, pressure, density, str(tmp_path)
+            )
+        for name, header in (
+            ('pressure_profiles.txt', 'radius pressure'),
+            ('density_profiles.txt', 'radius density'),
+        ):
+            text = (tmp_path / name).read_text()
+            assert text.count(header) == 3
+            assert text.count('# Pressure iteration 0') == 2
+
 
 # =====================================================================
 # get_solidus_liquidus_functions tests
