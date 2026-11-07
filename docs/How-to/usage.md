@@ -61,7 +61,8 @@ output/
 ├── grid_results/                 # grid runner output (if using run_grid)
 │   ├── grid_summary.csv
 │   └── *.json
-└── pressure_profiles.txt         # iteration diagnostics (if enabled)
+├── pressure_profiles.txt         # iteration diagnostics (DEBUG, command-line run)
+└── density_profiles.txt          # iteration diagnostics (DEBUG, command-line run)
 ```
 
 ### Profile files
@@ -97,12 +98,12 @@ The accept test passes a padded profile when the target is below `pressure_toler
 
 ### Iteration profiles (optional)
 
-When the Python logging level is set to `DEBUG`, the solver writes per-iteration profiles:
+When the Python logging level is set to `DEBUG` and the configuration names a folder in `debug_profile_dir`, the solver writes per-iteration profiles into that folder:
 
 - **`pressure_profiles.txt`**: Pressure vs. radius for every iteration of the pressure adjustment loop.
 - **`density_profiles.txt`**: Density vs. radius for every iteration.
 
-Enable with `logging.getLogger('fwl.zalmoxis').setLevel(logging.DEBUG)`. These files are useful for diagnosing convergence behavior. They grow large quickly and are overwritten at the start of each new run.
+Enable with `logging.getLogger('fwl.zalmoxis').setLevel(logging.DEBUG)`. Set `debug_profile_dir` in the `[Output]` table of the TOML file, or as a key of the configuration dict that you pass to `solver.main()`; it must name a folder that exists. The command-line run (`python -m zalmoxis`) uses `output/` when the key is not set. Without the key, a `DEBUG` solve logs and writes no profile file. These files are useful for diagnosing convergence behavior. They grow large quickly (about 50 MB each for a 1 Earth-mass planet) and are overwritten at the start of each new run.
 
 Adjust `tolerance_outer`, `tolerance_inner`, `max_iterations_outer`, `max_iterations_inner` in the `[IterativeProcess]` block (see [Configuration](configuration.md#iterativeprocess)) if convergence is slow.
 
