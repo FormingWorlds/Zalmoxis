@@ -717,7 +717,7 @@ def validate_config(config_params):
         folder = config_params['debug_profile_dir']
         if not isinstance(folder, str | os.PathLike):
             raise ValueError(f'debug_profile_dir must be a folder path, got {folder!r}.')
-        if not os.fspath(folder):
+        if not os.fspath(folder) or (not isinstance(folder, str) and os.fspath(folder) == '.'):
             raise ValueError('debug_profile_dir must not be empty; leave it out for no dump.')
         if not os.path.isdir(folder):
             raise ValueError(

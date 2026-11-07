@@ -484,6 +484,6 @@ Controls what the model writes after a run.
 |---|---|---|---|
 | `data_enabled` | bool | true | Write the computed radial profiles (radius, density, gravity, pressure, temperature, enclosed mass) to a text file in `output/`. |
 | `plots_enabled` | bool | false | Generate profile plots after the run. |
-| `debug_profile_dir` | string | not set | Existing folder for the iteration pressure and density profiles of a `DEBUG` run. Not set: no profile file (the command-line run uses `output/`). `load_zalmoxis_config` and `validate_config` raise `ValueError` on a wrong type, an empty string or a missing folder. |
+| `debug_profile_dir` | string | not set | Existing folder for the iteration pressure and density profiles of a `DEBUG` run. Not set: no profile file (the command-line run uses `output/`). `load_zalmoxis_config` and `validate_config` raise `ValueError` on a wrong type, an empty string or `Path('')`, or a missing folder. |
 
 Convergence diagnostics are controlled by the Python logging level. Set `logging.getLogger('fwl.zalmoxis').setLevel(logging.DEBUG)` to see per-iteration convergence info; with `debug_profile_dir` set, the run also writes the iteration pressure and density profiles.
