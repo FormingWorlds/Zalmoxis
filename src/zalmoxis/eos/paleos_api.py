@@ -578,12 +578,17 @@ def _worker_init(material: str, h2o_table_path: str | None = None):
         from paleos.iron_eos import IronEoS
 
         _WORKER_EOS['unified'] = IronEoS()
+        _WORKER_EOS['phase_map'] = _WORKER_EOS['unified']._phase_eos_map
+        _WORKER_EOS['liquid'] = _WORKER_EOS['unified']._eos_liquid
+        _WORKER_EOS['picker'] = _get_iron_solid_phase
     elif material == 'mgsio3':
         from paleos.mgsio3_eos import MgSiO3EoS, Wolf18
 
         _WORKER_EOS['unified'] = MgSiO3EoS()
         _WORKER_EOS['wolf18'] = Wolf18()
         _WORKER_EOS['phase_map'] = _WORKER_EOS['unified']._phase_eos_map
+        _WORKER_EOS['liquid'] = _WORKER_EOS['wolf18']
+        _WORKER_EOS['picker'] = _get_mgsio3_solid_phase
     elif material == 'h2o':
         from paleos.water_eos import WaterEoS
 
@@ -622,13 +627,13 @@ def _worker_unified_row(args):
 
 
 def _worker_2phase_row(args):
-    """Tabulate one P-row for the 2-phase MgSiO3 generator inside a worker.
+    """Tabulate one P-row for the 2-phase generators (MgSiO3, iron) inside a worker.
 
     Returns ``(i_P, solid_rows_text, liquid_rows_text, nv_s, ns_s, nv_l, ns_l)``.
     """
     i_P, P_value, T_axis = args
-    phase_map = _WORKER_EOS['phase_map']
-    liquid_eos = _WORKER_EOS['wolf18']
+    phase_map, liquid_eos = _WORKER_EOS['phase_map'], _WORKER_EOS['liquid']
+    picker = _WORKER_EOS['picker']
 
     out_s = []
     out_l = []
@@ -637,7 +642,7 @@ def _worker_2phase_row(args):
     for T in T_axis:
         Tf = float(T)
 
-        solid_phase = _get_mgsio3_solid_phase(Pf, Tf)
+        solid_phase = picker(Pf, Tf)
         solid_eos = phase_map[solid_phase]
         props_s = _evaluate_eos(solid_eos, Pf, Tf)
         if np.isnan(props_s[0]):
@@ -865,6 +870,37 @@ def _get_mgsio3_solid_phase(P: float, T: float) -> str:
     return 'solid-lpcen'
 
 
+def _get_iron_solid_phase(P: float, T: float) -> str:
+    """Pick the solid iron phase at (P, T), ignoring the melting curve.
+
+    ``paleos.iron_eos.get_iron_phase`` without its ``T >= T_melt`` return: epsilon from the
+    98.5 GPa triple point up, below it the solid-solid lines of Dorogokupets et al. (2017), so
+    above melting the solid side is fcc (gamma) or, at up to 5.2 GPa, bcc (delta).
+    """
+    from paleos.iron_eos import (
+        _PT_MELT,
+        T_alpha_epsilon,
+        T_alpha_gamma,
+        T_delta_gamma,
+        T_gamma_epsilon,
+    )
+
+    p_gpa = P / 1e9  # the GPa comparisons of PALEOS, for the same labels at the boundaries
+    if P >= _PT_MELT:
+        return 'solid-epsilon'
+    if p_gpa > 15.8:
+        return 'solid-epsilon' if T < T_gamma_epsilon(P) else 'solid-gamma'
+    if p_gpa >= 7.3:
+        if T < T_alpha_epsilon(P):
+            return 'solid-alpha'
+        return 'solid-epsilon' if T < T_gamma_epsilon(P) else 'solid-gamma'
+    if T < T_alpha_gamma(P):
+        return 'solid-alpha'
+    if p_gpa <= 5.2 and T >= T_delta_gamma(P):
+        return 'solid-delta'
+    return 'solid-gamma'
+
+
 def generate_paleos_api_2phase_mgsio3_tables(
     out_solid: str | Path,
     out_liquid: str | Path,
@@ -909,13 +945,77 @@ def generate_paleos_api_2phase_mgsio3_tables(
     gets a solid-polymorph EoS evaluated metastably above the liquidus if
     needed.
     """
+    return _generate_2phase(
+        'mgsio3',
+        out_solid,
+        out_liquid,
+        grid,
+        log_every,
+        n_workers,
+        {
+            'solid': 'solid (metastable extension above liquidus)',
+            'solid_lines': [
+                'Solid polymorph picked by _get_mgsio3_solid_phase; melting-curve test suppressed.',
+                'Phase column is the polymorph label even if (P, T) is above the liquidus.',
+            ],
+            'liquid': 'liquid (Wolf18, metastable extension below solidus)',
+            'liquid_lines': [
+                'Wolf18 RTpress evaluated everywhere; phase column is always "liquid".'
+            ],
+        },
+    )
+
+
+def generate_paleos_api_2phase_iron_tables(
+    out_solid: str | Path,
+    out_liquid: str | Path,
+    grid: GridSpec,
+    *,
+    log_every: int = 50,
+    n_workers: int = 1,
+) -> dict:
+    """Generate the solid and liquid iron P-T tables, each side on the full grid.
+
+    The solid side takes the phase of :func:`_get_iron_solid_phase` (the PALEOS phase diagram
+    without its melting test) through ``IronEoS()._phase_eos_map``; the liquid side evaluates
+    the PALEOS liquid (``Luo24``, Luo et al. 2024) at every node, below melting included. Same
+    10-column format, header and arguments as :func:`generate_paleos_api_2phase_mgsio3_tables`;
+    a node where an EoS has no value is written as NaN with the label ``out-of-range``.
+
+    Returns
+    -------
+    dict
+        Per-side ``n_valid``, ``n_skipped`` and ``path``, and the installed PALEOS ``sha``.
+    """
+    return _generate_2phase(
+        'iron',
+        out_solid,
+        out_liquid,
+        grid,
+        log_every,
+        n_workers,
+        {
+            'solid': 'solid (metastable extension above melting)',
+            'solid_lines': [
+                'Solid phase picked by _get_iron_solid_phase; melting-curve test suppressed.',
+            ],
+            'liquid': 'liquid (Luo24, metastable extension below melting)',
+            'liquid_lines': ['Luo24 evaluated everywhere; phase column is always "liquid".'],
+        },
+    )
+
+
+def _generate_2phase(material, out_solid, out_liquid, grid, log_every, n_workers, texts):
+    """Write the solid and liquid side tables of ``material`` (the body of both 2-phase
+    generators); ``texts`` holds the header text and extra lines of each side."""
+    human = _HUMAN_MATERIAL[material]
     if grid.p_lo <= 0:
         raise ValueError('GridSpec.p_lo must be > 0 (log spacing)')
 
     n_workers = _resolve_n_workers(n_workers)
     sha = paleos_installed_sha()
     _check_paleos_once(sha)
-    build = build_key('mgsio3')
+    build = build_key(material)
     P_axis, T_axis = grid.axes()
     T_axis_list = T_axis.tolist()
 
@@ -936,14 +1036,14 @@ def generate_paleos_api_2phase_mgsio3_tables(
 
     if n_workers == 1:
         _same_code_as_import(sha)
-        _worker_init('mgsio3')
+        _worker_init(material)
         iterator = (_worker_2phase_row(t) for t in tasks)
     else:
         ctx = _mp.get_context('spawn')
         pool = ctx.Pool(
             processes=n_workers,
             initializer=_worker_init,
-            initargs=('mgsio3',),
+            initargs=(material,),
         )
         chunksize = max(1, len(tasks) // (n_workers * 16))
         iterator = pool.imap_unordered(_worker_2phase_row, tasks, chunksize=chunksize)
@@ -959,8 +1059,9 @@ def generate_paleos_api_2phase_mgsio3_tables(
             n_done += 1
             if log_every and (n_done % log_every == 0):
                 logger.info(
-                    'paleos_api MgSiO3 2-phase: %d / %d P rows done '
+                    'paleos_api %s 2-phase: %d / %d P rows done '
                     '(solid valid=%d skipped=%d | liquid valid=%d skipped=%d)',
+                    human,
                     n_done,
                     grid.n_p,
                     n_valid_s,
@@ -976,17 +1077,14 @@ def generate_paleos_api_2phase_mgsio3_tables(
     with open(tmp_solid, 'w') as f:
         _write_header(
             f,
-            'MgSiO3',
-            'solid (metastable extension above liquidus)',
+            human,
+            texts['solid'],
             grid,
             sha,
             build=build,
             n_valid=n_valid_s,
             n_skipped=n_skip_s,
-            extra_lines=[
-                'Solid polymorph picked by _get_mgsio3_solid_phase; melting-curve test suppressed.',
-                'Phase column is the polymorph label even if (P, T) is above the liquidus.',
-            ],
+            extra_lines=texts['solid_lines'],
         )
         for i in range(grid.n_p):
             f.write(solid_by_i[i])
@@ -995,24 +1093,23 @@ def generate_paleos_api_2phase_mgsio3_tables(
     with open(tmp_liquid, 'w') as f:
         _write_header(
             f,
-            'MgSiO3',
-            'liquid (Wolf18, metastable extension below solidus)',
+            human,
+            texts['liquid'],
             grid,
             sha,
             build=build,
             n_valid=n_valid_l,
             n_skipped=n_skip_l,
-            extra_lines=[
-                'Wolf18 RTpress evaluated everywhere; phase column is always "liquid".',
-            ],
+            extra_lines=texts['liquid_lines'],
         )
         for i in range(grid.n_p):
             f.write(liquid_by_i[i])
     _os.replace(tmp_liquid, out_liquid)
 
     logger.info(
-        'paleos_api MgSiO3 2-phase: wrote %s (valid=%d/%d) and %s (valid=%d/%d) '
+        'paleos_api %s 2-phase: wrote %s (valid=%d/%d) and %s (valid=%d/%d) '
         'sha=%s n_workers=%d',
+        human,
         out_solid,
         n_valid_s,
         grid.n_p * grid.n_t,
