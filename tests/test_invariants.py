@@ -67,7 +67,7 @@ def _sphere(mmf=0.0):
     return result, cfg
 
 
-_CORE_CHECKS = ('core_cmb_node', 'core_table_box', 'core_density_eos')
+_CORE_CHECKS = ('core_cmb_node', 'core_table_box', 'core_density_eos', 'core_element_mass')
 
 
 def _sphere_with_core_arrays(icb_frac=0.4):
@@ -83,6 +83,7 @@ def _sphere_with_core_arrays(icb_frac=0.4):
     core['rho'] = np.full(n + 1, RHO)
     core['M_ic'] = icb_frac * cmb
     core['phase'] = (core['m'] < core['M_ic'] * (1.0 - _RTOL_LAYER)).astype(np.int8)
+    core['w_S'] = np.where(core['phase'] == 1, 0.02, 0.1)
     result['core'] = core
     return result, cfg
 
@@ -120,6 +121,28 @@ def test_a_core_array_density_off_its_layer_eos_breaks_core_density_eos():
     )
     dev, node, tol = devs['core_density_eos']
     assert dev == pytest.approx(0.5) and result['core']['phase'][node] == 1 and tol == 1e-6
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('icb_frac', [0.0, 0.4, 0.4 + 1e-3, 1.0])
+def test_the_core_element_masses_close_against_the_layer_compositions(icb_frac):
+    """The trapezoid of w_S over the core-array mass, exact across the step at the ICB, is
+    M_ic w_ic + (M_core - M_ic) w_oc, with the ICB on a node, inside a segment or at an end."""
+    result, cfg = _sphere_with_core_arrays(icb_frac)
+    dev, _, tol = deviations(result, cfg, 1e-3, RTOL, ATOL, box_at=_no_box)['core_element_mass']
+    assert dev <= tol == 1e-10
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('node', [-1, 0, 7])
+def test_a_core_node_in_the_wrong_layer_breaks_core_element_mass(node):
+    """A node with the fractions of another layer, as the node at the core mass in the mantle
+    (w_S 0), an outer-core value in the inner core or an inner-core value in the outer core."""
+    result, cfg = _sphere_with_core_arrays()
+    w = result['core']['w_S']
+    w[node] = {-1: 0.0, 0: 0.1, 7: 0.02}[node]
+    assert result['core']['phase'][7] == 0
+    _raises(result, cfg, 'core_element_mass')
 
 
 @pytest.mark.unit
@@ -670,6 +693,7 @@ def test_the_tolerances_are_the_documented_values():
         'core_cmb_node': 1e-10,
         'core_table_box': 0,
         'core_density_eos': 1e-6,
+        'core_element_mass': 1e-10,
     }
     assert _RTOL_LAYER == 1e-12
 
