@@ -652,3 +652,80 @@ class TestInvalidateCache:
         n_removed = pac.invalidate_cache('iron')
         # One succeeded, one raised → count is 1.
         assert n_removed == 1
+
+
+# ---------------------------------------------------------------------------
+# Iron 2-phase sides
+# ---------------------------------------------------------------------------
+
+_IRON_GRID = GridSpec(p_lo=1e9, p_hi=1e12, n_p=4, t_lo=1000.0, t_hi=8000.0, n_t=3)
+
+
+@pytest.fixture
+def patched_iron_generator(monkeypatch):
+    """Replace the iron 2-phase generator with a file-writing fake; returns its call counter."""
+    calls = {'n': 0}
+
+    def fake(out_solid, out_liquid, grid, n_workers=-1):
+        calls['n'] += 1
+        Path(out_solid).write_text(_fake_paleos_unified_content(_SHA_FAKE, 'iron-solid'))
+        Path(out_liquid).write_text(_fake_paleos_unified_content(_SHA_FAKE, 'iron-liquid'))
+
+    monkeypatch.setattr(
+        'zalmoxis.eos.paleos_api_cache.generate_paleos_api_2phase_iron_tables', fake
+    )
+    return calls
+
+
+class TestResolveTwoPhaseIron:
+    """The iron sides are cached as a pair under their own names, apart from the MgSiO3 pair."""
+
+    def test_cold_then_warm_cache(
+        self, patched_cache_root, patched_sha, patched_iron_generator
+    ):
+        solid, liquid = pac.resolve_paleos_api_2phase_iron(_IRON_GRID)
+        assert solid.name.startswith('2phase_iron_solid_')
+        assert liquid.name.startswith('2phase_iron_liquid_')
+        assert _IRON_GRID.hash_short() in solid.name and _BUILD in liquid.name
+        assert pac.resolve_paleos_api_2phase_iron(_IRON_GRID) == (solid, liquid)
+        assert patched_iron_generator['n'] == 1
+
+    def test_stale_side_regenerates_the_pair(
+        self, patched_cache_root, patched_sha, patched_iron_generator
+    ):
+        solid, _ = pac.resolve_paleos_api_2phase_iron(_IRON_GRID)
+        solid.write_text(_fake_paleos_unified_content('f' * 40))
+        pac.resolve_paleos_api_2phase_iron(_IRON_GRID)
+        assert patched_iron_generator['n'] == 2
+
+    @pytest.mark.parametrize('side', ['solid', 'liquid'])
+    def test_side_entry_resolves_to_its_unified_file(
+        self, patched_cache_root, patched_sha, patched_iron_generator, side
+    ):
+        """A side entry becomes a ``paleos_unified`` entry on the file of its side."""
+        entry = {
+            'format': 'paleos_api_2phase_side',
+            'material': 'iron',
+            'side': side,
+            'grid_spec': _IRON_GRID,
+        }
+        from zalmoxis.eos.dispatch import _is_paleos_api
+
+        assert _is_paleos_api(entry)
+        out = pac.resolve_registry_entry(entry)
+        assert out is entry and entry['format'] == 'paleos_unified'
+        assert Path(entry['eos_file']).name.startswith(f'2phase_iron_{side}_')
+
+    def test_invalidate_separates_iron_and_mgsio3_pairs(self, patched_cache_root):
+        iron = [
+            'unified_iron_a_b.dat',
+            '2phase_iron_solid_a_b.dat',
+            '2phase_iron_liquid_a_b.dat',
+        ]
+        mg = ['unified_mgsio3_a_b.dat', '2phase_solid_a_b.dat', '2phase_liquid_a_b.dat']
+        for n in iron + mg:
+            (patched_cache_root / n).write_text('# stub\n')
+        assert pac.invalidate_cache('mgsio3') == 3
+        assert all((patched_cache_root / n).exists() for n in iron)
+        assert pac.invalidate_cache('iron') == 3
+        assert not any(patched_cache_root.iterdir())
