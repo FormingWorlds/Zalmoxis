@@ -233,11 +233,14 @@ def _check_two_layer_core(layer_eos_config):
 
 
 def _check_icb_rule(config_params):
-    """An inner core takes its boundary from exactly one of core_liquidus and
-    inner_core_mass_fraction; a one-layer core takes neither."""
+    """An inner core takes its boundary from exactly one of core_liquidus (an iron melting curve
+    name, or a callable T_liq(P) [K]) and inner_core_mass_fraction; a one-layer core takes
+    neither."""
     liq = config_params.get('core_liquidus', '')
     frac = config_params.get('inner_core_mass_fraction')
-    if not isinstance(liq, str) or (liq and liq not in VALID_IRON_MELTING):
+    if callable(liq):  # T_liq(P) [K] of the outer core, from a caller such as PROTEUS
+        liq = 'callable'
+    elif not isinstance(liq, str) or (liq and liq not in VALID_IRON_MELTING):
         raise ValueError(
             f'core_liquidus must be one of {sorted(VALID_IRON_MELTING)} or empty, got {liq!r}'
         )

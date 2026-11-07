@@ -36,6 +36,7 @@ def compute_adiabatic_temperature(
     binodal_T_scale=50.0,
     anchor='surface',
     cmb_temperature=None,
+    icb_mass=0.0,
 ):
     """Compute an adiabatic temperature profile using native EOS gradient tables.
 
@@ -91,6 +92,8 @@ def compute_adiabatic_temperature(
     cmb_temperature : float, optional
         Temperature at the core-mantle boundary, in K. Required when
         ``anchor='cmb'``.
+    icb_mass : float, optional
+        Inner-core mass [kg] of a two-layer core: its nodes take nabla_ad of the inner core.
 
     Returns
     -------
@@ -138,6 +141,7 @@ def compute_adiabatic_temperature(
                 cmb_mass,
                 core_mantle_mass,
                 layer_mixtures,
+                icb_mass,
             )
 
             if not mixture.has_tdep():
@@ -185,6 +189,7 @@ def compute_adiabatic_temperature(
             cmb_mass,
             core_mantle_mass,
             layer_mixtures,
+            icb_mass,
         )
 
         if not mixture.has_tdep():

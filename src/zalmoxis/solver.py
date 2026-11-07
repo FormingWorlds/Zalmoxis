@@ -37,6 +37,7 @@ from .constants import (
     earth_mass,
     earth_radius,
 )
+from .core_profile import core_arrays, icb_from_profile, outside_side_tables
 from .eos import (
     calculate_temperature_profile,
     compute_adiabatic_temperature,
@@ -44,6 +45,7 @@ from .eos import (
 )
 from .eos.seager import _band_debug_seen
 from .invariants import check_accepted
+from .melting_curves import get_melting_curve_function
 from .mixing import (
     _PALEOS_2PHASE_NAMES,
     _PALEOS_UNIFIED_NAMES,
@@ -57,7 +59,12 @@ from .mixing import (
     split_mantle_volatile_inventory,
     strong_partition_phi_floor,
 )
-from .structure_model import get_layer_mixture, solve_structure, temperature_from_arrays
+from .structure_model import (
+    coupled_odes,
+    get_layer_mixture,
+    solve_structure,
+    temperature_from_arrays,
+)
 
 logger = logging.getLogger('fwl.' + __name__)
 
@@ -463,7 +470,13 @@ def _check_accepted(
         return calculate_mixed_density_batch(P, T, *args, volatile_profile=vp)
 
     result['integration_tolerances'] = (rtol, atol)
-    check_accepted(result, config_params, rtol, atol, density_at, 'ice_layer' in mixes)
+
+    def box_at(P, T, layer):
+        return outside_side_tables(
+            P, T, mixes[layer], material_dictionaries, _interpolation_cache
+        )
+
+    check_accepted(result, config_params, rtol, atol, density_at, 'ice_layer' in mixes, box_at)
     if result.get('padded'):
         logger.warning(
             'The accepted profile ends in a surface stop: P = 0 at the outer radius instead '
@@ -1740,6 +1753,13 @@ def _solve(
     # The layer boundaries of every pass and of the returned profile
     cmb_mass = core_mass_fraction * planet_mass
     core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * planet_mass
+    # Inner core: a given mass, or the liquidus rule on the profile of the previous pass
+    two_layer = 'inner_core' in layer_mixtures
+    core_liq = config_params.get('core_liquidus') or None
+    if isinstance(core_liq, str):
+        core_liq = get_melting_curve_function(core_liq)
+    icb_frac = config_params.get('inner_core_mass_fraction')
+    icb_mass = icb_frac * cmb_mass if two_layer and icb_frac is not None else 0.0
 
     logger.log(
         progress,
@@ -1784,6 +1804,7 @@ def _solve(
     prev_radii = None
     prev_pressure = None
     prev_mass_enclosed = None
+    _temperature_func = None
 
     # Adiabat blending state.
     _using_adiabat = False
@@ -1963,6 +1984,7 @@ def _solve(
                     binodal_T_scale,
                     anchor=_anchor,
                     cmb_temperature=cmb_temperature,
+                    icb_mass=icb_mass,
                 )
 
                 # Build T(P) interpolator from the previous iteration's
@@ -2042,6 +2064,11 @@ def _solve(
             )
             temperatures = np.asarray(_output_tf(radii), dtype=float)
 
+        if core_liq is not None and prev_pressure is not None:
+            t_prev = [_temperature_func(r_, p_) for r_, p_ in zip(prev_radii, prev_pressure)]
+            icb_mass = icb_from_profile(
+                prev_mass_enclosed, prev_pressure, t_prev, cmb_mass, core_liq
+            )[0]
         pressure[0] = earth_center_pressure
 
         # Adaptive Picard blending: start at 0.5, reduce if mass oscillates
@@ -2145,6 +2172,7 @@ def _solve(
                     temperature_arrays=temperature_arrays,
                     volatile_profile=volatile_profile,
                     surface_pressure=target_surface_pressure,
+                    icb_mass=icb_mass,
                 )
                 if logger.isEnabledFor(
                     logging.DEBUG
@@ -2266,6 +2294,7 @@ def _solve(
                     temperature_arrays=temperature_arrays,
                     volatile_profile=volatile_profile,
                     surface_pressure=target_surface_pressure,
+                    icb_mass=icb_mass,
                 )
                 _require_finite(
                     radii,
@@ -2345,8 +2374,11 @@ def _solve(
                 m_valid >= core_mantle_mass * (1.0 - rtol)
             )
             in_mantle = ~in_core & ~in_ice
+            in_inner = in_core & two_layer & (m_valid < icb_mass * (1.0 - rtol))
+            in_core = in_core & ~in_inner
 
             for layer_name, mask in [
+                ('inner_core', in_inner),
                 ('core', in_core),
                 ('mantle', in_mantle),
                 ('ice_layer', in_ice),
@@ -2667,7 +2699,15 @@ def _solve(
         # convergence; the T output for T-independent EOS in adiabatic mode
         # falls back to the linear profile (see the T-independent branch
         # around the _temperature_func construction).
-        if relative_diff_outer_mass < tolerance_outer:
+        icb_moving = (
+            core_liq is not None
+            and abs(
+                icb_from_profile(mass_enclosed, pressure, temperatures, cmb_mass, core_liq)[0]
+                - icb_mass
+            )
+            > tolerance_outer * cmb_mass
+        )
+        if relative_diff_outer_mass < tolerance_outer and not icb_moving:
             if ramp_incomplete:
                 if not _using_adiabat:
                     _using_adiabat = True
@@ -2868,7 +2908,58 @@ def _solve(
         'adiabat_computed': _adiabat_computed,
         'adiabat_blend': _adiabat_blend,
     }
+    model_results['core'] = _core_result(
+        model_results,
+        layer_mixtures,
+        core_liq,
+        icb_mass,
+        _temperature_func,
+        (interpolation_cache, material_dictionaries),
+        (
+            solidus_func,
+            liquidus_func,
+            mushy_zone_factors,
+            condensed_rho_min,
+            condensed_rho_scale,
+        )
+        + (binodal_T_scale,),
+    )
     return model_results
+
+
+def _core_result(res, layer_mixtures, core_liq, icb_mass, temperature_func, head, tail):
+    """``core_profile.core_arrays`` of a finished solve: the core nodes, a CMB node and the ICB.
+
+    ``head`` and ``tail`` are the arguments of ``coupled_odes`` before and after the temperature.
+    """
+    m, p, t = (
+        np.asarray(res[k], dtype=float) for k in ('mass_enclosed', 'pressure', 'temperature')
+    )
+    cmb_mass = res['cmb_mass']
+    if core_liq is not None:
+        _, p_icb, solid_above = icb_from_profile(m, p, t, cmb_mass, core_liq)
+    else:
+        p_icb, solid_above = float(np.interp(icb_mass, m, p)), 0.0
+
+    def t_at(r, pres):
+        if temperature_func is not None:
+            return temperature_func(r, pres)
+        return float(np.interp(r, res['radii'], t))
+
+    def rhs(r, y):
+        return coupled_odes(
+            r,
+            y,
+            cmb_mass,
+            res['core_mantle_mass'],
+            layer_mixtures,
+            *head,
+            t_at(r, y[2]),
+            *tail,
+            icb_mass=icb_mass,
+        )
+
+    return core_arrays(res, layer_mixtures, rhs, t_at, icb_mass, p_icb, solid_above)
 
 
 def solve_miscible_interior(

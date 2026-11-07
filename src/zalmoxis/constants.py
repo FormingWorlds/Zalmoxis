@@ -32,6 +32,9 @@ TDEP_EOS_NAMES = {
     'PALEOS-API:MgSiO3',
     'PALEOS-API:H2O',
     'PALEOS-API-2phase:MgSiO3',
+    # Iron side tables of a two-layer core.
+    'PALEOS-API-2phase:iron-liquid',
+    'PALEOS-API-2phase:iron-solid',
 }
 
 # Phase-aware mixing: smooth density suppression defaults.

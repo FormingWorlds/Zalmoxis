@@ -119,7 +119,7 @@ def temperature_from_arrays(temperature_arrays):
     return temperature_function
 
 
-def get_layer_mixture(mass, cmb_mass, core_mantle_mass, layer_mixtures):
+def get_layer_mixture(mass, cmb_mass, core_mantle_mass, layer_mixtures, icb_mass=0.0):
     """Determine the per-layer mixture based on enclosed mass (purely geometric).
 
     Parameters
@@ -133,6 +133,9 @@ def get_layer_mixture(mass, cmb_mass, core_mantle_mass, layer_mixtures):
     layer_mixtures : dict
         Per-layer LayerMixture objects, e.g.
         ``{"core": LayerMixture(...), "mantle": LayerMixture(...)}``.
+    icb_mass : float
+        Inner-core mass [kg]: shells below it take ``layer_mixtures['inner_core']``; 0 (the
+        default) gives no inner core.
 
     Returns
     -------
@@ -144,6 +147,8 @@ def get_layer_mixture(mass, cmb_mass, core_mantle_mass, layer_mixtures):
     # the CMB or core-mantle boundary.
     rtol = 1e-12
     if mass < cmb_mass * (1.0 - rtol):
+        if mass < icb_mass * (1.0 - rtol) and 'inner_core' in layer_mixtures:
+            return layer_mixtures['inner_core']
         return layer_mixtures['core']
     elif 'ice_layer' in layer_mixtures and mass >= core_mantle_mass * (1.0 - rtol):
         return layer_mixtures['ice_layer']
@@ -168,6 +173,7 @@ def coupled_odes(
     condensed_rho_scale=CONDENSED_RHO_SCALE_DEFAULT,
     binodal_T_scale=BINODAL_T_SCALE_DEFAULT,
     volatile_profile=None,
+    icb_mass=0.0,
 ):
     """Calculate derivatives of mass, gravity, and pressure w.r.t. radius.
 
@@ -205,6 +211,8 @@ def coupled_odes(
     volatile_profile : VolatileProfile or None
         Phi-aware mantle profile from the partition-law hook. Applied
         only to the mantle layer; the core and ice layers ignore it.
+    icb_mass : float
+        Inner-core mass [kg] of a two-layer core (see :func:`get_layer_mixture`).
 
     Returns
     -------
@@ -215,7 +223,7 @@ def coupled_odes(
     mass, gravity, pressure = y
 
     # Determine per-layer mixture for the current enclosed mass
-    mixture = get_layer_mixture(mass, cmb_mass, core_mantle_mass, layer_mixtures)
+    mixture = get_layer_mixture(mass, cmb_mass, core_mantle_mass, layer_mixtures, icb_mass)
 
     # Past the surface (P <= 0) zero derivatives keep the trial state finite; the
     # pressure-zero event locates the downcrossing inside the step that reaches it.
@@ -291,6 +299,7 @@ def solve_structure(
     temperature_arrays=None,
     volatile_profile=None,
     surface_pressure=0.0,
+    icb_mass=0.0,
 ):
     """Solve the coupled ODEs for the planetary structure model.
 
@@ -348,6 +357,8 @@ def solve_structure(
         Binodal sigmoid width in K for H2 miscibility suppression.
     surface_pressure : float, optional
         Target surface pressure [Pa], passed to ``pad_after_stop``.
+    icb_mass : float, optional
+        Inner-core mass [kg] of a two-layer core; 0 gives none.
 
     Returns
     -------
@@ -444,6 +455,7 @@ def solve_structure(
             condensed_rho_scale,
             binodal_T_scale,
             volatile_profile=volatile_profile,
+            icb_mass=icb_mass,
         )
         nonfinite[0] += not np.all(np.isfinite(dydr))
         return dydr

@@ -281,6 +281,8 @@ def solve_structure_via_jax(
 
     # Core cache: paleos_unified (load via _ensure_unified_cache)
     core_lm = layer_mixtures['core']
+    if 'inner_core' in layer_mixtures:
+        raise ValueError('JAX path requires a one-layer core, got an inner_core layer')
     # The core kernel reads one EOS table; a core with light elements solves on numpy.
     core_eos = core_lm.components[0]
     if is_alloy_mixture(core_lm):

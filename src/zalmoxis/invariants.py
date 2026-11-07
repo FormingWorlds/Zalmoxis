@@ -23,6 +23,8 @@ TOLERANCES = {
     'core_mantle_node': 0,
     'gravity': 100.0,
     'density_eos': 1e-6,
+    'core_cmb_node': 1e-10,
+    'core_table_box': 0,
 }
 _RTOL_LAYER = 1e-12  # the layer rule of structure_model.get_layer_mixture
 _RTOL_GAUSS = 1e-12  # padded gravity against G m_stop / r^2, both computed in floats
@@ -39,14 +41,23 @@ class StructureInvariantError(Exception):
     """
 
 
-def _layer(m, cmb_mass, core_mantle_mass, ice):
+def _layer(m, cmb_mass, core_mantle_mass, ice, icb_mass=0.0):
     """Layer name of each node with enclosed mass ``m``, by the rule of the solver."""
     top = np.where(ice & (m >= core_mantle_mass * (1.0 - _RTOL_LAYER)), 'ice_layer', 'mantle')
-    return np.where(m < cmb_mass * (1.0 - _RTOL_LAYER), 'core', top)
+    core = np.where(m < icb_mass * (1.0 - _RTOL_LAYER), 'inner_core', 'core')
+    return np.where(m < cmb_mass * (1.0 - _RTOL_LAYER), core, top)
 
 
 def deviations(
-    result, config_params, mass_limit, rtol, atol, density_at=None, ice=False, details=None
+    result,
+    config_params,
+    mass_limit,
+    rtol,
+    atol,
+    density_at=None,
+    ice=False,
+    details=None,
+    box_at=None,
 ):
     """Return the deviation of each invariant of an accepted result.
 
@@ -89,6 +100,12 @@ def deviations(
         when ``density_at`` is None or when ``result['density_from_eos']`` is False.
     ice : bool
         True when the planet has an ice layer.
+    box_at : callable or None
+        ``(P, T, layer) -> bool array`` of the core nodes of one layer that its EOS table clamps
+        or cannot read; with ``result['core']`` (the core arrays of
+        :func:`zalmoxis.core_profile.core_arrays`) ``core_table_box`` counts them and
+        ``core_cmb_node`` is the relative difference of the last core-array mass from
+        ``cmb_mass``. The layer of a node takes the inner core below ``result['core']['M_ic']``.
     details : dict or None
         If given, filled with {invariant: text} naming the values that enter the deviation and
         their expected values, for the error message, and with ``'density_eos cause'``: the
@@ -218,12 +235,33 @@ def deviations(
         mass_limit,
         text=f'mass_enclosed[-1] {m[-1]:.6e} kg, target {M:.6e} kg',
     )
+    core = result.get('core')
+    icb = core['M_ic'] if core else 0.0
+    if core:
+        put(
+            'core_cmb_node',
+            abs(core['m'][-1] / result['cmb_mass'] - 1.0),
+            len(core['m']) - 1,
+            text=f'core array mass {core["m"][-1]:.6e} kg, cmb_mass {result["cmb_mass"]:.6e} kg',
+        )
+    if core and box_at is not None:
+        names = np.where(core['phase'] == 1, 'inner_core', 'core')
+        bad = np.zeros(len(names), bool)
+        for name in np.unique(names):
+            sel = names == name
+            bad[sel] = box_at(core['P'][sel], core['T'][sel], str(name))
+        put(
+            'core_table_box',
+            bad.sum(),
+            int(np.argmax(bad)),
+            text='core nodes outside the table',
+        )
     if density_at is not None and result.get('density_from_eos'):
         n = len(P)
         lookup = P.copy()
         if k < n:  # a padded node is the surface, at the target surface pressure
             lookup[k:] = config_params['target_surface_pressure']
-        layer = _layer(m, result['cmb_mass'], result['core_mantle_mass'], ice)
+        layer = _layer(m, result['cmb_mass'], result['core_mantle_mass'], ice, icb)
         ref = np.full(n, np.nan)
         for name in np.unique(layer):
             sel = layer == name
@@ -268,7 +306,7 @@ def _real_scalar(x):
     return True
 
 
-def check_accepted(result, config_params, rtol, atol, density_at=None, ice=False):
+def check_accepted(result, config_params, rtol, atol, density_at=None, ice=False, box_at=None):
     """Raise StructureInvariantError when an accepted result breaks an invariant.
 
     See ``deviations`` for the parameters; the mass limit is ``result['accept_mass_limit']``,
@@ -318,7 +356,7 @@ def check_accepted(result, config_params, rtol, atol, density_at=None, ice=False
         )
     details = {}
     for name, (dev, i, tol) in deviations(
-        result, config_params, limit, rtol, atol, density_at, ice, details
+        result, config_params, limit, rtol, atol, density_at, ice, details, box_at
     ).items():
         if not dev <= tol:
             node = '' if name in _SCALAR or i < 0 else f' at node {i}'
