@@ -84,6 +84,16 @@ jobs:
           pip install .
           pip install pytest pytest-cov pytest-xdist pytest-timeout hypothesis "proteus-mpl>=1.5.0"
 
+      # The real PALEOS at the commit Zalmoxis tests against, for the iron side tables and their
+      # solves; without it those tests skip on the in-process mock.
+      - name: Install PALEOS at the tested commit
+        run: |
+          sha=$(python -c "import re, pathlib; print(re.search(r\"PALEOS_TESTED_SHA = '([0-9a-f]{40})'\", pathlib.Path('src/zalmoxis/eos/paleos_api.py').read_text()).group(1))")
+          git clone -q https://github.com/maraattia/PALEOS.git "$RUNNER_TEMP/PALEOS"
+          git -C "$RUNNER_TEMP/PALEOS" checkout -q "$sha"
+          pip install -e "$RUNNER_TEMP/PALEOS"
+          python -c "import paleos, zalmoxis.eos.paleos_api as a; print(paleos.__file__, a.paleos_installed_sha())"
+
       # The pins live in the installed fwl-io and in src/zalmoxis/datasets.
       - name: Resolve the data cache key
         id: datakey
