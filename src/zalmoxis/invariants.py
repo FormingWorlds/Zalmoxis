@@ -376,6 +376,8 @@ def check_accepted(result, config_params, rtol, atol, density_at=None, ice=False
         return
     accepted_on = result.get('accepted_on')
     missing = [k for k in _ARRAYS + _MASSES if result.get(k) is None]
+    if 'core' in result and result['core'] is None:
+        missing.append('core arrays')
     if missing:
         raise StructureInvariantError(
             f'Accepted structure ({accepted_on=}) has no {", ".join(missing)}.'

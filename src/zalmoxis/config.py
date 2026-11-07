@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import math
+import numbers
 import os
 import sys
 
@@ -259,10 +260,10 @@ def _check_icb_rule(config_params):
             f'core_liquidus must be one of {sorted(VALID_IRON_MELTING)} or empty, got {liq!r}'
         )
     if frac is not None and (
-        isinstance(frac, bool) or not isinstance(frac, (int, float)) or not 0.0 <= frac <= 1.0
+        isinstance(frac, bool) or not isinstance(frac, numbers.Real) or not 0.0 <= frac <= 1.0
     ):
         raise ValueError(f'inner_core_mass_fraction must be a number in [0, 1], got {frac!r}')
-    if 'inner_core' in config_params.get('layer_eos_config', {}):
+    if (config_params.get('layer_eos_config') or {}).get('inner_core'):
         if bool(liq) == (frac is not None):
             raise ValueError(
                 'a two-layer core needs exactly one of core_liquidus and inner_core_mass_fraction'

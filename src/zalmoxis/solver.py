@@ -849,7 +849,7 @@ def main(
             initial_radii=retry_radii,
         )
 
-        if not result['converged']:  # pragma: no cover - retry also failed; defensive
+        if not result['converged']:  # the retry also failed
             logger.warning(
                 'Structure solve did not converge after retry. '
                 'Returning best result with converged=False.'
@@ -1763,8 +1763,8 @@ def _solve(
     if isinstance(core_liq, str):
         if is_alloy_mixture(layer_mixtures['core']):
             logger.warning(
-                'core_liquidus %s is a pure-iron curve; an alloy outer core melts below it, so '
-                'the inner core comes out too large: pass the alloy liquidus as a callable',
+                'core_liquidus %s is a pure-iron curve; an alloy outer core can melt below it, '
+                'so the inner core can come out too large: pass the alloy liquidus as a callable',
                 core_liq,
             )
         core_liq = get_melting_curve_function(core_liq)
@@ -2860,7 +2860,7 @@ def _solve(
                 abs(moved - icb_mass) / cmb_mass,
                 accepted_on,
             )
-            converged, accepted_on = False, None
+            converged, converged_mass, accepted_on, accept_mass_limit = False, False, None, None
 
     # Return rho_EOS(P, T) at the returned nodes, not the damped Picard iterate.
     density_from_eos = rho_eos is not None

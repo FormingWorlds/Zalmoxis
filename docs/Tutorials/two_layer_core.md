@@ -58,7 +58,7 @@ if __name__ == '__main__':
         print(f"  solid above the ICB: {core['solid_above_icb_mass_fraction']:.3f} of the core mass")
 ```
 
-`inner_core_mass_fraction = 0.0508` is the inner-core mass fraction of PREM. `core_liquidus = "Anzellini13-iron"` puts the ICB where the temperature profile reaches the melting curve of pure iron of Anzellini et al. (2013). S lowers the melting point of iron, so a Fe-S outer core melts below that curve and the solve warns that the inner core comes out too large; a caller with the liquidus of the alloy passes it as a callable. A two-layer core takes exactly one of the 2.
+`inner_core_mass_fraction = 0.0508` is the inner-core mass fraction of PREM. `core_liquidus = "Anzellini13-iron"` puts the ICB where the temperature profile reaches the melting curve of pure iron of Anzellini et al. (2013). S lowers the melting point of iron ([Mori et al. 2017](https://doi.org/10.1016/j.epsl.2017.02.021)), so a Fe-S outer core can melt below that curve and the solve warns that the inner core can come out too large; a caller with the liquidus of the alloy passes it as a callable. A two-layer core takes exactly one of the 2.
 
 ## Step 2: run it
 
