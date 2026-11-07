@@ -13,7 +13,10 @@ With the real package available (local dev), this module is a no-op.
 Surface mocked:
 
 - ``paleos`` (top-level): ``__file__``, ``__version__``.
-- ``paleos.iron_eos.IronEoS``: 7 EoS scalar properties + ``phase`` method.
+- ``paleos.iron_eos.IronEoS``: 7 EoS scalar properties + ``phase`` method, plus
+  ``_phase_eos_map`` (the 4 solid labels) and ``_eos_liquid``; ``Luo24``; ``_PT_MELT`` and the
+  boundary functions ``T_gamma_epsilon``, ``T_alpha_epsilon``, ``T_alpha_gamma``,
+  ``T_delta_gamma`` (P [Pa] to T [K]), lines through the PALEOS values at 0 and 60 GPa (or 6 GPa).
 - ``paleos.mgsio3_eos`` module:
   - ``MgSiO3EoS``: same 7 properties + ``phase``, plus ``_phase_eos_map``
     dict keyed by the 5 polymorph labels the picker can return.
@@ -138,8 +141,28 @@ class _FakeIronEoS(_BaseFakeEoS):
     _RHO = 8000.0
     _S = 200.0
 
+    def __init__(self):
+        self._eos_liquid = _FakeLuo24()
+        self._phase_eos_map = {
+            label: type(f'_FakeIron_{label}', (_BaseFakeEoS,), {'_RHO': 8000.0, '_S': s})()
+            for label, s in (
+                ('solid-alpha', 110.0),
+                ('solid-delta', 120.0),
+                ('solid-gamma', 130.0),
+                ('solid-epsilon', 140.0),
+            )
+        }
+        self._phase_eos_map['liquid'] = self._eos_liquid
+
     def phase(self, P, T):  # noqa: ARG002
         return 'hcp-Fe'
+
+
+class _FakeLuo24(_BaseFakeEoS):
+    """Mock liquid iron EoS (Luo et al. 2024)."""
+
+    _RHO = 7800.0
+    _S = 900.0
 
 
 class _FakeWolf18(_BaseFakeEoS):
@@ -153,6 +176,12 @@ def _register_iron_module() -> None:
     """Build and register ``paleos.iron_eos`` with ``IronEoS``."""
     iron = types.ModuleType('paleos.iron_eos')
     iron.IronEoS = _FakeIronEoS
+    iron.Luo24 = _FakeLuo24
+    iron._PT_MELT = 98.5e9
+    iron.T_gamma_epsilon = lambda P: 679.5 + 27.64e-9 * P
+    iron.T_alpha_epsilon = lambda P: 1266.6 - 61.19e-9 * P
+    iron.T_alpha_gamma = lambda P: 1120.0 - 41.1e-9 * P
+    iron.T_delta_gamma = lambda P: 1580.0 + 80.4e-9 * P
     sys.modules['paleos.iron_eos'] = iron
     sys.modules['paleos'].iron_eos = iron
 
