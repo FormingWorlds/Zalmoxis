@@ -157,3 +157,10 @@ def test_core_liquidus_takes_an_iron_melting_curve_name(value):
     else:
         with pytest.raises(ValueError, match='core_liquidus|exactly one'):
             validate_config(params)
+
+
+def test_core_liquidus_may_be_a_callable():
+    """A caller passes the liquidus of the outer composition as T_liq(P)."""
+    validate_config(_params(core_liquidus=lambda p: 4000.0 + 1e-8 * p))
+    with pytest.raises(ValueError, match='exactly one'):
+        validate_config(_params(core_liquidus=lambda p: 4000.0, inner_core_mass_fraction=0.1))

@@ -67,6 +67,79 @@ def _sphere(mmf=0.0):
     return result, cfg
 
 
+_CORE_CHECKS = ('core_cmb_node', 'core_table_box')
+
+
+def _sphere_with_core_arrays(icb_frac=0.4):
+    """The sphere with core arrays: its core nodes, a node at the core mass, and an inner core
+    of ``icb_frac`` of the core mass."""
+    result, cfg = _sphere()
+    m, cmb = result['mass_enclosed'], result['cmb_mass']
+    n = int(np.count_nonzero(m < cmb * (1.0 - _RTOL_LAYER)))
+    r_c = (3.0 * cmb / (4.0 * np.pi * RHO)) ** (1.0 / 3.0)
+    p_c = 2 / 3 * np.pi * G * RHO**2 * (result['radii'][-1] ** 2 - r_c**2)
+    core = {'m': np.r_[m[:n], cmb], 'P': np.r_[result['pressure'][:n], p_c]}
+    core['T'] = np.full(n + 1, 3000.0)
+    core['M_ic'] = icb_frac * cmb
+    core['phase'] = (core['m'] < core['M_ic'] * (1.0 - _RTOL_LAYER)).astype(np.int8)
+    result['core'] = core
+    return result, cfg
+
+
+def _no_box(P, T, layer):
+    return np.zeros(len(P), dtype=bool)
+
+
+@pytest.mark.unit
+def test_the_core_arrays_of_the_sphere_pass_every_check():
+    result, cfg = _sphere_with_core_arrays()
+    devs = deviations(result, cfg, 1e-3, RTOL, ATOL, lambda P, T, layer: RHO, box_at=_no_box)
+    plain = deviations(*_sphere(), 1e-3, RTOL, ATOL, lambda P, T, layer: RHO)
+    assert set(devs) == set(plain) | set(_CORE_CHECKS)
+    assert all(dev <= tol for dev, _, tol in devs.values()), devs
+
+
+@pytest.mark.unit
+def test_core_arrays_off_the_core_mass_break_core_cmb_node():
+    result, cfg = _sphere_with_core_arrays()
+    result['core']['m'][-1] *= 1.0 + 1e-9
+    _raises(result, cfg, 'core_cmb_node')
+
+
+@pytest.mark.unit
+def test_a_core_node_outside_its_table_breaks_core_table_box():
+    """One inner-core node that its table clamps is counted."""
+    result, cfg = _sphere_with_core_arrays()
+    result['accept_mass_limit'] = 1e-3
+
+    def box_at(P, T, layer):
+        out = np.zeros(len(P), dtype=bool)
+        out[0] = layer == 'inner_core'
+        return out
+
+    with pytest.raises(StructureInvariantError, match='breaks core_table_box:'):
+        check_accepted(result, cfg, RTOL, ATOL, lambda P, T, layer: RHO, box_at=box_at)
+
+
+@pytest.mark.unit
+def test_inner_core_nodes_are_checked_against_the_inner_core_eos():
+    """Below the ICB mass a node takes the inner_core layer: an inner-core EOS that differs from
+    the node density breaks density_eos, an outer-core one does not."""
+    result, cfg = _sphere_with_core_arrays()
+    m = result['mass_enclosed']
+    layer = _layer(
+        m, result['cmb_mass'], result['core_mantle_mass'], False, result['core']['M_ic']
+    )
+    assert set(layer[m < result['core']['M_ic'] * (1 - 1e-12)]) == {'inner_core'}
+    assert 'inner_core' not in set(layer[m >= result['core']['M_ic']])
+    result['accept_mass_limit'] = 1e-3
+    with pytest.raises(StructureInvariantError, match='breaks density_eos:.*inner_core EOS'):
+        check_accepted(
+            result, cfg, RTOL, ATOL, lambda P, T, lay: RHO * (1 + (lay == 'inner_core'))
+        )
+    check_accepted(result, cfg, RTOL, ATOL, lambda P, T, lay: RHO * (1 + (lay == 'mantle') * 0))
+
+
 def _check(result, cfg, limit=1e-3):
     result['accept_mass_limit'] = limit
     check_accepted(result, cfg, RTOL, ATOL, lambda P, T, layer: RHO)
@@ -89,7 +162,7 @@ def _raises(result, cfg, name, limit=1e-3):
 def test_the_sphere_passes_with_every_deviation_inside_its_tolerance():
     result, cfg = _sphere(mmf=0.5)
     devs = deviations(result, cfg, 1e-3, RTOL, ATOL, lambda P, T, layer: RHO, ice=True)
-    assert set(devs) == set(TOLERANCES) | {'mass_closure'}
+    assert set(devs) == set(TOLERANCES) - set(_CORE_CHECKS) | {'mass_closure'}
     assert all(dev <= tol for dev, _, tol in devs.values()), devs
     _check(result, cfg)
 
@@ -578,6 +651,8 @@ def test_the_tolerances_are_the_documented_values():
         'core_mantle_node': 0,
         'gravity': 100.0,
         'density_eos': 1e-6,
+        'core_cmb_node': 1e-10,
+        'core_table_box': 0,
     }
     assert _RTOL_LAYER == 1e-12
 

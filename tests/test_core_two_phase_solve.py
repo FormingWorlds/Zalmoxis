@@ -81,7 +81,8 @@ def _anzellini_inverse(t):
 @pytest.mark.physics_invariant
 def test_an_isothermal_core_has_its_icb_where_iron_melts(setup):
     """At 5000 K everywhere the ICB lies at the pressure where the Anzellini curve is 5000 K
-    (206 GPa), inner-core nodes above it and outer-core nodes below it in pressure."""
+    (206 GPa), inner-core nodes above it and outer-core nodes below it in pressure, and the ICB
+    mass at that pressure on the final profile to the outer-loop tolerance."""
     res = _solve(
         setup,
         inner=SOL,
@@ -96,8 +97,13 @@ def test_an_isothermal_core_has_its_icb_where_iron_melts(setup):
     assert inner[0] and not inner[-1]
     assert np.all(core['P'][inner] > p_icb * (1 - 1e-3))
     assert np.all(core['P'][~inner] < p_icb * (1 + 1e-3))
+    # the ICB mass comes from the previous pass; the outer loop stops when it moves by less
+    # than tolerance_outer of the core mass
+    from zalmoxis.solver import _default_solver_params
+
+    tol = _default_solver_params(res['mass_enclosed'][-1])['tolerance_outer']
     m_at = np.interp(np.log(p_icb), np.log(core['P'][::-1]), core['m'][::-1])
-    assert core['M_ic'] == pytest.approx(m_at, rel=1e-3)
+    assert abs(core['M_ic'] - m_at) <= tol * res['cmb_mass']
     assert core['solid_above_icb_mass_fraction'] == 0.0
 
 
