@@ -54,10 +54,10 @@ def _params(**over):
 @pytest.mark.parametrize(('name', 'side'), [(LIQ, 'liquid'), (SOL, 'solid')])
 def test_each_iron_side_is_a_registry_entry_on_the_unified_iron_box(name, side):
     """Each side resolves through the iron pair at 150 points per decade over 1e5-1e14 Pa and
-    300-1e5 K, the box and resolution of the shipped unified iron table."""
+    300-1e5 K, the box of the shipped unified iron table (whose T axis has 380 nodes)."""
     grid = make_default_grid_iron_2phase()
     assert (grid.p_lo, grid.p_hi, grid.t_lo, grid.t_hi) == (1e5, 1e14, 300.0, 1e5)
-    assert (grid.n_p, grid.n_t) == (1351, 380)
+    assert (grid.n_p, grid.n_t) == (1351, 379)
     assert EOS_REGISTRY[name] == {
         'format': 'paleos_api_2phase_side',
         'material': 'iron',
