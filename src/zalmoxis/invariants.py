@@ -25,6 +25,7 @@ TOLERANCES = {
     'density_eos': 1e-6,
     'core_cmb_node': 1e-10,
     'core_table_box': 0,
+    'core_density_eos': 1e-6,
 }
 _RTOL_LAYER = 1e-12  # the layer rule of structure_model.get_layer_mixture
 _RTOL_GAUSS = 1e-12  # padded gravity against G m_stop / r^2, both computed in floats
@@ -106,6 +107,8 @@ def deviations(
         :func:`zalmoxis.core_profile.core_arrays`) ``core_table_box`` counts them and
         ``core_cmb_node`` is the relative difference of the last core-array mass from
         ``cmb_mass``. The layer of a node takes the inner core below ``result['core']['M_ic']``.
+        With ``density_at``, ``core_density_eos`` compares each core-array density with the
+        EOS of its layer, the inner core where ``phase`` is 1.
     details : dict or None
         If given, filled with {invariant: text} naming the values that enter the deviation and
         their expected values, for the error message, and with ``'density_eos cause'``: the
@@ -284,6 +287,22 @@ def deviations(
             d.max(initial=0.0),
             i,
             text=f'density {rho[i]:.6e}, expected {ref[i]:.6e} ({layer[i]} EOS)',
+        )
+    if core and density_at is not None and result.get('density_from_eos'):
+        names = np.where(core['phase'] == 1, 'inner_core', 'core')
+        ref = np.full(len(names), np.nan)
+        for name in np.unique(names):
+            sel = names == name
+            ref[sel] = np.asarray(density_at(core['P'][sel], core['T'][sel], str(name)), float)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            d = np.abs(np.asarray(core['rho'], float) / ref - 1)
+        d[~np.isfinite(d)] = np.inf
+        i = int(np.argmax(d))
+        put(
+            'core_density_eos',
+            d.max(initial=0.0),
+            i,
+            text=f'core array density {core["rho"][i]:.6e}, expected {ref[i]:.6e} ({names[i]} EOS)',
         )
     return out
 

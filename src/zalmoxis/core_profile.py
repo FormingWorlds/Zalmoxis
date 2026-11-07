@@ -94,6 +94,8 @@ def core_arrays(result, layer_mixtures, rhs, temperature_at, icb_mass, p_icb, so
         0 outer core) per node, ``w_<el>`` (mass fraction) per light element of either layer,
         and ``M_ic`` [kg], ``R_icb`` [m], ``P_icb`` [Pa], ``solid_above_icb_mass_fraction`` and
         the flag ``solid_above_icb``.
+        The node at the core mass takes the core side of the layer rule for its phase and
+        density.
     """
     r, m, g, p, rho, t = (
         np.asarray(result[k], dtype=float)
@@ -119,7 +121,8 @@ def core_arrays(result, layer_mixtures, rhs, temperature_at, icb_mass, p_icb, so
     else:  # the mass of the last core node rounds to the core mass
         r_c, m_c, g_c, p_c = r[n - 1], m[n - 1], g[n - 1], p[n - 1]
     t_c = float(temperature_at(r_c, p_c))
-    rho_c = float(rhs(r_c, [m_c, g_c, p_c])[0]) / (4.0 * np.pi * r_c**2)
+    m_in = min(m_c, cmb_mass * (1.0 - 4.0 * _RTOL_LAYER))  # the core side of the layer rule
+    rho_c = float(rhs(r_c, [m_in, g_c, p_c])[0]) / (4.0 * np.pi * r_c**2)
     out = {
         'r': np.r_[r[:n], r_c],
         'm': np.r_[m[:n], m_c],
@@ -129,7 +132,8 @@ def core_arrays(result, layer_mixtures, rhs, temperature_at, icb_mass, p_icb, so
         'T': np.r_[t[:n], t_c],
     }
     inner = 'inner_core' in layer_mixtures
-    out['phase'] = (inner & (out['m'] < icb_mass * (1.0 - _RTOL_LAYER))).astype(np.int8)
+    side_m = np.r_[m[:n], m_in]
+    out['phase'] = (inner & (side_m < icb_mass * (1.0 - _RTOL_LAYER))).astype(np.int8)
     comps = {
         layer: split_alloy(mix)[1] if is_alloy_mixture(mix) else {}
         for layer, mix in layer_mixtures.items()
