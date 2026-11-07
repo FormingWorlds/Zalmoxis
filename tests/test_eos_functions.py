@@ -1656,38 +1656,31 @@ class TestLoadMeltingCurve:
 class TestCreatePressureDensityFiles:
     """Tests for the output file creation function."""
 
-    def test_creates_files(self):
-        """Should create pressure and density profile files."""
+    def test_creates_files_in_the_given_folder_only(self, tmp_path):
+        """The profiles go to the folder passed, appended per call; the package tree gets none."""
         from zalmoxis.eos import create_pressure_density_files
 
         radii = np.array([0, 1e6, 2e6, 3e6])
         pressure = np.array([300e9, 200e9, 100e9, 1e5])
         density = np.array([13000, 10000, 5000, 3000], dtype=float)
+        tree = os.path.join(os.environ['ZALMOXIS_ROOT'], 'output')
+        before = {
+            f: os.stat(os.path.join(tree, f)).st_mtime_ns
+            for f in ('pressure_profiles.txt', 'density_profiles.txt')
+            if os.path.exists(os.path.join(tree, f))
+        }
 
-        root = os.environ['ZALMOXIS_ROOT']
-        p_file = os.path.join(root, 'output', 'pressure_profiles.txt')
-        d_file = os.path.join(root, 'output', 'density_profiles.txt')
-
-        # Clean up any pre-existing files
-        for f in [p_file, d_file]:
-            if os.path.exists(f):
-                os.remove(f)
-
-        try:
-            create_pressure_density_files(0, 0, 0, radii, pressure, density)
-            assert os.path.isfile(p_file)
-            assert os.path.isfile(d_file)
-
-            # Second call should append
-            create_pressure_density_files(0, 0, 1, radii, pressure, density)
-            with open(p_file) as f:
-                content = f.read()
-            assert 'Pressure iteration 0' in content
-            assert 'Pressure iteration 1' in content
-        finally:
-            for f in [p_file, d_file]:
-                if os.path.exists(f):
-                    os.remove(f)
+        create_pressure_density_files(0, 0, 0, radii, pressure, density, str(tmp_path))
+        create_pressure_density_files(0, 0, 1, radii, pressure, density, str(tmp_path))
+        content = (tmp_path / 'pressure_profiles.txt').read_text()
+        assert 'Pressure iteration 0' in content and 'Pressure iteration 1' in content
+        assert (tmp_path / 'density_profiles.txt').is_file()
+        after = {
+            f: os.stat(os.path.join(tree, f)).st_mtime_ns
+            for f in ('pressure_profiles.txt', 'density_profiles.txt')
+            if os.path.exists(os.path.join(tree, f))
+        }
+        assert after == before
 
 
 # =====================================================================

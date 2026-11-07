@@ -329,3 +329,32 @@ class TestNonIronCoreWarning:
         assert any(
             'does not appear to be' in r.message and 'iron' in r.message for r in caplog.records
         )
+
+
+class TestDebugProfileDir:
+    """The optional debug_profile_dir: a folder that exists, or absent."""
+
+    @pytest.mark.parametrize('value', [123, True, ['x']], ids=['int', 'bool', 'list'])
+    def test_wrong_type_is_refused_by_name(self, value):
+        """A value that is not a path string raises ValueError naming the key."""
+        with pytest.raises(ValueError, match='debug_profile_dir'):
+            validate_config(_make_minimal_config(debug_profile_dir=value))
+        assert 'debug_profile_dir' not in _make_minimal_config()
+
+    def test_empty_string_is_refused_by_name(self):
+        """An empty string is not a folder: ValueError naming the key."""
+        with pytest.raises(ValueError, match='debug_profile_dir.*empty'):
+            validate_config(_make_minimal_config(debug_profile_dir=''))
+        assert validate_config(_make_minimal_config()) is None
+
+    def test_missing_folder_is_refused_by_name(self, tmp_path):
+        """A path that is not an existing folder raises ValueError naming it."""
+        missing = tmp_path / 'not_there'
+        with pytest.raises(ValueError, match='debug_profile_dir.*not_there'):
+            validate_config(_make_minimal_config(debug_profile_dir=str(missing)))
+        assert not missing.exists()
+
+    def test_existing_folder_and_absent_key_pass(self, tmp_path):
+        """An existing folder (str or Path) and a config without the key validate."""
+        assert validate_config(_make_minimal_config(debug_profile_dir=str(tmp_path))) is None
+        assert validate_config(_make_minimal_config(debug_profile_dir=tmp_path)) is None
