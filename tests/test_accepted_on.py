@@ -540,6 +540,7 @@ class TestRealSolve:
         assert np.flatnonzero(P > 0).tolist() == [0]  # no pressure solve in the cut pass
         assert not rho[1:].any() and not m.any()
         assert r['mass_error_at_accept'] == pytest.approx(1.0)
+        assert r['core'] is None  # the cut pass does not reach the core mass
 
     @pytest.mark.usefixtures('no_check')
     def test_restored_pass_keeps_its_convergence_flags(self, monkeypatch):

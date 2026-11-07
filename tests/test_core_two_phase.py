@@ -226,22 +226,23 @@ def test_the_liquidus_rule_is_refused_with_the_newton_outer_solver():
 
 
 @pytest.mark.parametrize(
-    ('layers', 'ok'),
+    ('layers', 'match'),
     [
-        ({'core': f'CoreAlloy:S:0.1385+{LIQ}:0.8615', 'inner_core': SOL}, True),
-        ({'core': f'PALEOS:iron:0.5+{LIQ}:0.5'}, False),
-        ({'core': f'PALEOS:iron:0.5+{LIQ}:0.5', 'inner_core': SOL}, False),
-        ({'core': LIQ, 'inner_core': f'CoreAlloy:Si:0.01+{SOL}:0.99'}, True),
+        ({'core': f'CoreAlloy:S:0.1385+{LIQ}:0.8615', 'inner_core': SOL}, None),
+        ({'core': f'PALEOS:iron:0.5+{LIQ}:0.5'}, "needs an 'inner_core'"),
+        ({'core': f'PALEOS:iron:0.5+{LIQ}:0.5', 'inner_core': SOL}, 'base alone'),
+        ({'core': LIQ, 'inner_core': f'CoreAlloy:Si:0.01+{SOL}:0.99'}, None),
+        ({'core': SOL, 'inner_core': LIQ}, "belongs in 'inner_core'"),
     ],
 )
-def test_the_side_of_a_core_layer_is_its_iron_base_in_any_order(layers, ok):
+def test_the_side_of_a_core_layer_is_its_iron_base_in_any_order(layers, match):
     """The base of a core layer is its iron component wherever it stands; a liquid side in a
-    core without an inner core, or a second iron base next to it, is refused."""
+    core without an inner core, a second iron base or the wrong side is refused."""
     layers = {'mantle': 'PALEOS:MgSiO3', **layers}
-    if ok:
+    if match is None:
         validate_layer_eos(layers)
     else:
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=match):
             validate_layer_eos(layers)
 
 
@@ -293,21 +294,22 @@ def test_a_node_just_below_the_core_mass_still_gives_a_cmb_node_at_the_core_mass
     radii keep rising."""
     res, rhs = _sphere_result(41, 1.0 / (1.0 - 5e-13))
     mix = {'core': LayerMixture(['PALEOS:iron'], [1.0])}
-    core = core_arrays(res, mix, rhs, lambda r, p: 5000.0, 0.0, 0.0, 0.0)
+    core = core_arrays(res, mix, rhs, lambda r, p: 5000.0, 0.0, 0.0)
     assert abs(core['m'][-1] / res['cmb_mass'] - 1) < 1e-12
     assert np.all(np.diff(core['r']) > 0)
 
 
 def test_core_arrays_without_a_node_past_the_core_mass_are_refused():
+    """A profile that ends below the core mass has no CMB node to build."""
     res, rhs = _sphere_result(41, 10.0)
     mix = {'core': LayerMixture(['PALEOS:iron'], [1.0])}
     with pytest.raises(ValueError, match='core mass'):
-        core_arrays(res, mix, rhs, lambda r, p: 5000.0, 0.0, 0.0, 0.0)
+        core_arrays(res, mix, rhs, lambda r, p: 5000.0, 0.0, 0.0)
 
 
 def test_the_phase_columns_label_the_inner_core_by_its_side():
     """Shells below the ICB mass take the inner-core EOS: the solid side is solid, the liquid
-    side liquid."""
+    side liquid; the shell at the ICB mass is outer core."""
     m = np.linspace(0.0, 10.0, 11)
     _, phases = compute_layer_phase_columns(
         pressure=np.full(11, 2e11),
@@ -322,6 +324,45 @@ def test_the_phase_columns_label_the_inner_core_by_its_side():
 
 
 def test_a_profile_without_core_nodes_is_refused():
+    """The ICB rule needs core nodes of positive pressure."""
     m, p, t = _profile(lambda p: 0 * p + 5000.0)
     with pytest.raises(ValueError, match='no core node'):
         icb_from_profile(m, 0 * p, t, 1e24, _liq)
+
+
+def test_core_arrays_refuse_a_core_mass_out_of_reach():
+    """An rhs 100 times lighter than the profile cannot reach the core mass within 2 segments."""
+    res, rhs = _sphere_result(41, 1.0)
+    mix = {'core': LayerMixture(['PALEOS:iron'], [1.0])}
+
+    def light(r_, y):
+        return [d / 100 if k == 0 else d for k, d in enumerate(rhs(r_, y))]
+
+    with pytest.raises(ValueError, match='not reached'):
+        core_arrays(res, mix, light, lambda r, p: 5000.0, 0.0, 0.0)
+
+
+@pytest.mark.parametrize('frac', [1.0, 0.5])
+def test_p_icb_is_the_pressure_of_the_core_arrays_at_m_ic(frac):
+    """P_icb is read on the core arrays at M_ic, as R_icb: at the core mass it is the pressure
+    of the CMB node."""
+    res, rhs = _sphere_result(41, 1.0)
+    mix = {'core': LayerMixture([LIQ], [1.0]), 'inner_core': LayerMixture([SOL], [1.0])}
+    core = core_arrays(res, mix, rhs, lambda r, p: 5000.0, frac * res['cmb_mass'], 0.0)
+    want = np.interp(core['M_ic'], core['m'], core['P'])
+    assert core['P_icb'] == pytest.approx(want, rel=1e-12)
+    if frac == 1.0:
+        assert core['P_icb'] == pytest.approx(core['P'][-1], rel=1e-12)
+
+
+def test_a_given_icb_mass_reports_its_pressure_and_the_solid_above_it():
+    """With a given ICB mass the rule reports it, the pressure there (to node resolution of the
+    exponential P(m) of _profile) and the mass of the cold segments above it."""
+    m, p, t = _profile(lambda p: np.where(p > 200e9, 7000.0, 3000.0))
+    m_icb = 0.4e24
+    got = icb_from_profile(m, p, t, 1e24, _liq, m_icb)
+    p_true = 360e9 * (136 / 360) ** (m_icb / 1e24)
+    below = p <= 200e9
+    seg = below[:-1] & below[1:] & (m[:-1] >= m_icb)
+    assert got[0] == m_icb and got[1] == pytest.approx(p_true, rel=1e-3)
+    assert got[2] == pytest.approx(float(np.sum(np.diff(m)[seg])), rel=1e-15) and got[2] > 0

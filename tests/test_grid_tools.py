@@ -1016,3 +1016,44 @@ def test_band_columns_are_not_sweep_parameters(module):
     mod = importlib.import_module(f'tools.plots.{module}')
     row = {'label': 'x', 'planet_mass': '1', 'converged_bands': 'True', 'band_excess_K': '56'}
     assert mod._detect_sweep_params([row]) == ['planet_mass']
+
+
+def test_the_profile_csv_takes_the_inner_core_and_a_missing_core(tmp_path):
+    """A pass without core arrays (core None) still writes its CSV; with an inner core the phase
+    column is solid below M_ic and liquid above it in the core."""
+    import csv
+
+    from tools.grids.run_grid import _write_profile_csv
+
+    n, liq, sol = 11, 'PALEOS-API-2phase:iron-liquid', 'PALEOS-API-2phase:iron-solid'
+    base = {
+        'radii': np.linspace(0.0, 6.4e6, n),
+        'density': np.full(n, 1e4),
+        'pressure': np.linspace(3e11, 1e5, n),
+        'temperature': np.full(n, 5000.0),
+        'gravity': np.linspace(0.0, 10.0, n),
+        'mass_enclosed': np.linspace(0.0, 10.0, n),
+        'cmb_mass': 6.0,
+        'core_mantle_mass': 10.0,
+        'converged': False,
+    }
+    layers = {'core': liq, 'inner_core': sol, 'mantle': 'Seager2007:MgSiO3', 'ice_layer': ''}
+    phases = {}
+    for name, core in (('none', None), ('icb', {'M_ic': 3.0})):
+        path = tmp_path / f'{name}.csv'
+        _write_profile_csv(
+            path,
+            label=name,
+            model_results={**base, 'core': core},
+            layer_eos=layers,
+            rock_solidus_id='Monteux16-solidus',
+            rock_liquidus_id='Monteux16-liquidus-A-chondritic',
+        )
+        rows = list(
+            csv.DictReader(
+                line for line in path.read_text().splitlines() if not line.startswith('#')
+            )
+        )
+        phases[name] = [r['phase'] for r in rows]
+    assert phases['icb'][:3] == ['solid'] * 3 and phases['icb'][3:6] == ['liquid'] * 3
+    assert phases['none'][:6] == ['liquid'] * 6

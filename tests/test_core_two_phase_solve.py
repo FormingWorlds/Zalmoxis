@@ -71,6 +71,30 @@ def _solve(setup, inner='', core=LIQ, **over):
     return res
 
 
+def _solve_raw(setup, inner='', core=LIQ, **over):
+    """As _solve, without the converged assert."""
+    from zalmoxis.config import load_solidus_liquidus_functions, validate_config
+    from zalmoxis.mixing import parse_all_layer_mixtures
+    from zalmoxis.solver import main
+
+    md, cfg, input_dir = setup
+    cfg = dict(cfg, **over)
+    cfg['layer_eos_config'] = dict(cfg['layer_eos_config'], core=core)
+    if inner:
+        cfg['layer_eos_config']['inner_core'] = inner
+    validate_config(cfg)
+    melt = load_solidus_liquidus_functions(
+        cfg['layer_eos_config'], cfg['rock_solidus'], cfg['rock_liquidus'], 1.0
+    )
+    return main(
+        cfg,
+        md,
+        melt,
+        input_dir,
+        layer_mixtures=parse_all_layer_mixtures(cfg['layer_eos_config']),
+    )
+
+
 def _anzellini_inverse(t):
     from zalmoxis.melting_curves import iron_melting_anzellini13
 
@@ -80,10 +104,11 @@ def _anzellini_inverse(t):
 
 
 @pytest.mark.physics_invariant
-def test_an_isothermal_core_has_its_icb_where_iron_melts(setup):
+def test_an_isothermal_core_has_its_icb_where_iron_melts(setup, caplog):
     """At 5000 K everywhere the ICB lies at the pressure where the Anzellini curve is 5000 K
     (206 GPa), inner-core nodes above it and outer-core nodes below it in pressure, and the ICB
     mass at that pressure on the final profile to the outer-loop tolerance."""
+    caplog.set_level('WARNING', logger='fwl.zalmoxis.solver')
     res = _solve(
         setup,
         inner=SOL,
@@ -94,7 +119,11 @@ def test_an_isothermal_core_has_its_icb_where_iron_melts(setup):
     core = res['core']
     p_icb = _anzellini_inverse(5000.0)
     # the ICB scalars belong to the solved layers: P_icb is the pressure at M_ic
-    assert core['P_icb'] == np.interp(core['M_ic'], core['m'], core['P'])
+    assert core['P_icb'] == pytest.approx(
+        np.interp(core['M_ic'], core['m'], core['P']), rel=1e-12
+    )
+    assert abs(core['P_icb'] / p_icb - 1) < 5e-3  # the liquidus root, to the outer tolerance
+    assert 'pure-iron curve' not in caplog.text  # a pure-iron outer core: no warning
     inner = core['phase'] == 1
     assert inner[0] and not inner[-1]
     assert np.all(core['P'][inner] > p_icb * (1 - 1e-3))
@@ -147,6 +176,40 @@ def test_a_two_layer_core_keeps_the_mass_limit_of_the_paleos_tables(setup):
         )
 
 
+def test_an_accept_with_an_icb_off_the_liquidus_is_not_converged(setup, caplog):
+    """2 outer passes end on the max_iter accept while the ICB still moves: the result is not
+    converged, and says why."""
+    res = _solve_raw(
+        setup,
+        inner=SOL,
+        temperature_mode='isothermal',
+        surface_temperature=5000.0,
+        core_liquidus='Anzellini13-iron',
+        max_iterations_outer=2,
+    )
+    assert res['converged'] is False and 'inner-core boundary' in caplog.text
+
+
+def test_main_refuses_an_icb_rule_without_an_inner_core(setup):
+    """main itself refuses core_liquidus without an inner core, and takes None as unset."""
+    from zalmoxis.mixing import parse_all_layer_mixtures
+    from zalmoxis.solver import main
+
+    md, cfg, input_dir = setup
+    cfg = dict(cfg, core_liquidus='Anzellini13-iron')
+    with pytest.raises(ValueError, match='need an inner_core layer'):
+        main(
+            cfg,
+            md,
+            None,
+            input_dir,
+            layer_mixtures=parse_all_layer_mixtures(cfg['layer_eos_config']),
+        )
+    from zalmoxis.config import _check_icb_rule
+
+    _check_icb_rule(dict(cfg, core_liquidus=None))
+
+
 def test_a_given_inner_core_mass_sets_the_icb(setup):
     res = _solve(setup, inner=SOL, core_liquidus='', inner_core_mass_fraction=0.05)
     core = res['core']
@@ -191,6 +254,7 @@ def test_solid_above_a_liquid_centre_is_reported(setup):
 
 @pytest.mark.physics_invariant
 def test_the_core_arrays_of_a_two_layer_core(setup, caplog):
+    caplog.set_level('WARNING', logger='fwl.zalmoxis.solver')
     """The core arrays hold r, m, P, rho, g, T, phase and w_S per node from the centre to a CMB
     node at the core mass; the outer core carries its S, the inner core none."""
     res = _solve(

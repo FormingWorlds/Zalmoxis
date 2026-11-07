@@ -160,6 +160,20 @@ def test_a_whole_layer_off_its_composition_breaks_core_element_mass(layer):
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize('fault', ['column without composition', 'nan'])
+def test_core_element_mass_reads_every_element_column(fault):
+    """An element column absent from w_layers, or a NaN node fraction, breaks the check."""
+    result, cfg = _sphere_with_core_arrays()
+    core = result['core']
+    if fault == 'nan':
+        core['w_S'][2] = np.nan
+    else:
+        core['w_O'] = np.full(len(core['m']), 0.05)
+    dev = deviations(result, cfg, 1e-3, RTOL, ATOL, box_at=_no_box)['core_element_mass'][0]
+    assert dev > 1e-10
+
+
+@pytest.mark.unit
 def test_a_core_node_outside_its_table_breaks_core_table_box():
     """One inner-core node that its table clamps is counted."""
     result, cfg = _sphere_with_core_arrays()
