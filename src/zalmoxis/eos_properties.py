@@ -115,6 +115,7 @@ def _build_registry() -> dict:
     from .eos.paleos_api import (
         make_default_grid_h2o,
         make_default_grid_iron,
+        make_default_grid_iron_2phase,
         make_default_grid_mgsio3,
     )
 
@@ -144,6 +145,15 @@ def _build_registry() -> dict:
         'material': 'mgsio3',
         'side': 'liquid',
         'grid_spec': make_default_grid_mgsio3(),
+    }
+    _paleos_api_iron_side = {
+        side: {
+            'format': 'paleos_api_2phase_side',
+            'material': 'iron',
+            'side': side,
+            'grid_spec': make_default_grid_iron_2phase(),
+        }
+        for side in ('solid', 'liquid')
     }
     _paleos_api_2ph_mgsio3_solid = {
         'format': 'paleos_api_2phase',
@@ -212,6 +222,9 @@ def _build_registry() -> dict:
             'melted_mantle': _paleos_api_2ph_mgsio3_melted,
             'solid_mantle': _paleos_api_2ph_mgsio3_solid,
         },
+        # Iron side tables of a two-layer core: liquid outer core, solid inner core
+        'PALEOS-API-2phase:iron-liquid': _paleos_api_iron_side['liquid'],
+        'PALEOS-API-2phase:iron-solid': _paleos_api_iron_side['solid'],
         # Chabrier+2019/2021 H/He tables (PALEOS-compatible 10-column format)
         'Chabrier:H': {
             'eos_file': os.path.join(

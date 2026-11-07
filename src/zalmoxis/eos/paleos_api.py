@@ -170,6 +170,12 @@ def make_default_grid_iron() -> GridSpec:
     return make_grid_at_resolution(1e5, 1e14, 300.0, 2.0e4)
 
 
+def make_default_grid_iron_2phase() -> GridSpec:
+    """Iron side tables: 1e5 to 1e14 Pa and 300 to 1e5 K, the box of the shipped unified iron
+    table, at 150 pts/decade."""
+    return make_grid_at_resolution(1e5, 1e14, 300.0, 1.0e5, 150)
+
+
 def make_default_grid_mgsio3() -> GridSpec:
     """Default MgSiO3 grid: 1e5 to 1e14 Pa, 300 to 11500 K at 600 pts/decade."""
     return make_grid_at_resolution(1e5, 1e14, 300.0, 1.15e4)
