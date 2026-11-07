@@ -414,3 +414,25 @@ def test_an_earth_core_against_prem(setup, validation_plot):
 
     validation_plot(lambda: figure('P', 1e-9, 'Pressure [GPa]'), 'core_two_phase_prem_pressure')
     validation_plot(lambda: figure('r', 1e-3, 'Radius [km]'), 'core_two_phase_prem_radius')
+
+
+@pytest.mark.reference_pinned
+def test_the_bulk_s_of_the_core_follows_the_icb(setup):
+    """The layer compositions are inputs, so the bulk S of a Fe-S core changes with the ICB: an
+    isothermal core at 5000 and 5500 K puts 0.480 and 0.159 of the core mass in the inner core
+    (pins to 0.01, 3 times the spread over 5 perturbed starts at 5000 K), and the bulk S falls
+    from 13.85 wt% of the outer core to 7.20 and 11.65 wt% of the core."""
+    w_oc = 0.1385
+    for t, f_pin, s_pin in ((5000.0, 0.480, 0.0720), (5500.0, 0.159, 0.1165)):
+        res = _solve(
+            setup,
+            inner=SOL,
+            core=f'{LIQ}:{1 - w_oc:.4f}+CoreAlloy:S:{w_oc:.4f}',
+            temperature_mode='isothermal',
+            surface_temperature=t,
+            core_liquidus='Anzellini13-iron',
+        )
+        core = res['core']
+        f = core['M_ic'] / res['cmb_mass']
+        assert f == pytest.approx(f_pin, abs=0.01)
+        assert (1 - f) * w_oc == pytest.approx(s_pin, abs=0.01 * w_oc)
