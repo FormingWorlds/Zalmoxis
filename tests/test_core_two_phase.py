@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import math
 import numbers
 
@@ -438,3 +439,34 @@ def test_main_returns_an_unconverged_icb_after_a_failed_retry(monkeypatch, caplo
     )
     assert len(calls) == 2 and res['call'] == 2 and res['converged'] is False
     assert 'did not converge after retry' in caplog.text
+
+
+def test_the_jax_path_refuses_an_inner_core():
+    """The JAX structure kernel holds one core table, so a two-layer core is refused before any
+    table is read."""
+    pytest.importorskip('jax')
+    from zalmoxis.jax_eos.wrapper import solve_structure_via_jax
+
+    mixes = {'core': LayerMixture([LIQ], [1.0]), 'inner_core': LayerMixture([SOL], [1.0])}
+    with pytest.raises(ValueError, match='one-layer core'):
+        solve_structure_via_jax(mixes, *([None] * 20))
+
+
+def test_outside_side_tables_flags_nodes_off_the_table(tmp_path):
+    """Nodes beyond the pressure box, at a non-positive temperature or clamped in their row are
+    flagged; a node inside the table and a mixture without a side table are not."""
+    if importlib.util.find_spec('paleos') is None:
+        pytest.skip('PALEOS not installed')
+    from zalmoxis.core_profile import outside_side_tables
+    from zalmoxis.eos import paleos_api as pa
+
+    grid = pa.GridSpec(p_lo=5e10, p_hi=2e11, n_p=4, t_lo=2000.0, t_hi=6000.0, n_t=5)
+    out = pa.generate_paleos_api_2phase_iron_tables(
+        tmp_path / 's.dat', tmp_path / 'l.dat', grid
+    )
+    md = {LIQ: {'eos_file': out['liquid']['path']}}
+    p, t = np.array([1e11, 1e12, 1e11, 1e11]), np.array([4000.0, 4000.0, 0.0, 9000.0])
+    got = outside_side_tables(p, t, LayerMixture([LIQ], [1.0]), md, {})
+    assert got.tolist() == [False, True, True, True]
+    none = outside_side_tables(p, t, LayerMixture(['PALEOS:iron'], [1.0]), md, {})
+    assert not none.any()
