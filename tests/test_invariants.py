@@ -136,6 +136,20 @@ def test_the_core_element_masses_close_against_the_layer_compositions(icb_frac):
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize('shift', [0.0, 5e-13])
+def test_the_element_mass_closes_with_the_icb_on_a_node(shift):
+    """An ICB mass on a node, or within 1e-12 above it, puts that node in the outer core by the
+    layer rule; the check corrects that segment too and passes."""
+    result, cfg = _sphere_with_core_arrays()
+    k = 7
+    m_ic = result['core']['m'][k] * (1 + shift)
+    result, cfg = _sphere_with_core_arrays(m_ic / result['cmb_mass'])
+    assert result['core']['phase'][k] == 0 and result['core']['phase'][k - 1] == 1
+    dev = deviations(result, cfg, 1e-3, RTOL, ATOL, box_at=_no_box)['core_element_mass'][0]
+    assert dev <= 1e-10
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize(('where', 'value'), [('cmb', 0.0), ('centre', 0.1), ('outer', 0.02)])
 def test_a_core_node_in_the_wrong_layer_breaks_core_element_mass(where, value):
     """A node with the fractions of another layer, as the node at the core mass in the mantle
