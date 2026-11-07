@@ -67,7 +67,7 @@ def _sphere(mmf=0.0):
     return result, cfg
 
 
-_CORE_CHECKS = ('core_cmb_node', 'core_table_box')
+_CORE_CHECKS = ('core_cmb_node', 'core_table_box', 'core_density_eos')
 
 
 def _sphere_with_core_arrays(icb_frac=0.4):
@@ -80,6 +80,7 @@ def _sphere_with_core_arrays(icb_frac=0.4):
     p_c = 2 / 3 * np.pi * G * RHO**2 * (result['radii'][-1] ** 2 - r_c**2)
     core = {'m': np.r_[m[:n], cmb], 'P': np.r_[result['pressure'][:n], p_c]}
     core['T'] = np.full(n + 1, 3000.0)
+    core['rho'] = np.full(n + 1, RHO)
     core['M_ic'] = icb_frac * cmb
     core['phase'] = (core['m'] < core['M_ic'] * (1.0 - _RTOL_LAYER)).astype(np.int8)
     result['core'] = core
@@ -104,6 +105,21 @@ def test_core_arrays_off_the_core_mass_break_core_cmb_node():
     result, cfg = _sphere_with_core_arrays()
     result['core']['m'][-1] *= 1.0 + 1e-9
     _raises(result, cfg, 'core_cmb_node')
+
+
+@pytest.mark.unit
+def test_a_core_array_density_off_its_layer_eos_breaks_core_density_eos():
+    """The node at the core mass with another density than the core EOS at its P and T, as a
+    mantle density there, breaks the check; so does an inner-core node off the inner-core EOS."""
+    result, cfg = _sphere_with_core_arrays()
+    result['core']['rho'][-1] = 0.5 * RHO
+    _raises(result, cfg, 'core_density_eos')
+    result, cfg = _sphere_with_core_arrays()
+    devs = deviations(
+        result, cfg, 1e-3, RTOL, ATOL, lambda P, T, lay: RHO * (1 + (lay == 'inner_core'))
+    )
+    dev, node, tol = devs['core_density_eos']
+    assert dev == pytest.approx(0.5) and result['core']['phase'][node] == 1 and tol == 1e-6
 
 
 @pytest.mark.unit
@@ -653,6 +669,7 @@ def test_the_tolerances_are_the_documented_values():
         'density_eos': 1e-6,
         'core_cmb_node': 1e-10,
         'core_table_box': 0,
+        'core_density_eos': 1e-6,
     }
     assert _RTOL_LAYER == 1e-12
 
@@ -1188,9 +1205,9 @@ def _spy_checks(monkeypatch):
     """Record the ``ice`` argument of every check that main runs."""
     seen, real = [], zs.check_accepted
 
-    def spy(result, cfg, rtol, atol, density_at=None, ice=False):
+    def spy(result, cfg, rtol, atol, density_at=None, ice=False, box_at=None):
         seen.append(ice)
-        return real(result, cfg, rtol, atol, density_at, ice)
+        return real(result, cfg, rtol, atol, density_at, ice, box_at)
 
     monkeypatch.setattr(zs, 'check_accepted', spy)
     return seen

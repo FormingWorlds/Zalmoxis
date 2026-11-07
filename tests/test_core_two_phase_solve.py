@@ -169,3 +169,11 @@ def test_the_core_arrays_of_a_two_layer_core(setup):
     inner = core['phase'] == 1
     assert np.all(core['w_S'][inner] == 0.0) and np.all(core['w_S'][~inner] == 0.1385)
     assert core['R_icb'] > 0.0 and core['P_icb'] > core['P'][-1]
+    # the node at the core mass takes the outer-core EOS, not the mantle one
+    from zalmoxis.mixing import LayerMixture, calculate_mixed_density
+
+    outer = LayerMixture([LIQ, 'CoreAlloy:S'], [0.8615, 0.1385])
+    rho_cmb = calculate_mixed_density(
+        core['P'][-1], core['T'][-1], outer, setup[0], None, None, {}
+    )
+    assert core['rho'][-1] == pytest.approx(rho_cmb, rel=1e-6) and core['phase'][-1] == 0
