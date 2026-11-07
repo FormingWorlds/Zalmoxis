@@ -317,18 +317,19 @@ def deviations(
 def _element_mass_deviation(core, cmb_mass):
     """Largest error, over cmb_mass times the largest fraction, of the light-element masses of
     the core arrays: the trapezoid of each ``w_<el>`` over ``m``, exact across the step at
-    ``M_ic``, against ``M_ic w_ic + (m_end - M_ic) w_oc`` with the median fraction of each layer."""
-    m, inner, m_ic = np.asarray(core['m'], float), np.asarray(core['phase']) == 1, core['M_ic']
+    ``M_ic``, against ``M_ic w_ic + (m_end - M_ic) w_oc`` with the layer compositions
+    ``w_layers``."""
+    m, m_ic, layers = np.asarray(core['m'], float), core['M_ic'], core.get('w_layers', {})
     dev = 0.0
-    for key in [k for k in core if k.startswith('w_')]:
-        w = np.asarray(core[key], float)
-        w_ic, w_oc = (float(np.median(w[sel])) if sel.any() else 0.0 for sel in (inner, ~inner))
+    for el in set().union(*layers.values()):
+        w = np.asarray(core[f'w_{el}'], float)
+        w_ic, w_oc = (layers.get(k, {}).get(el, 0.0) for k in ('inner_core', 'core'))
         got = float(np.sum(0.5 * (w[1:] + w[:-1]) * np.diff(m)))
         for j in np.flatnonzero((m[:-1] < m_ic) & (m[1:] > m_ic)):  # the step inside a segment
             exact = w_ic * (m_ic - m[j]) + w_oc * (m[j + 1] - m_ic)
             got += exact - 0.5 * (w[j] + w[j + 1]) * (m[j + 1] - m[j])
         want = m_ic * w_ic + (m[-1] - m_ic) * w_oc
-        dev = max(dev, abs(got - want) / (cmb_mass * max(float(np.abs(w).max()), 1e-300)))
+        dev = max(dev, abs(got - want) / (cmb_mass * max(w_ic, w_oc, float(np.abs(w).max()))))
     return dev
 
 

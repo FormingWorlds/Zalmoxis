@@ -148,6 +148,7 @@ def _write_profile_csv(
         core_mantle_mass=float(model_results['core_mantle_mass']),
         layer_eos_config=layer_eos,
         melting_curves_functions=melting_curves_functions,
+        icb_mass=float(model_results.get('core', {}).get('M_ic', 0.0)),
     )
 
     column_names = [*numeric_columns, 'main_component', 'phase']

@@ -235,6 +235,8 @@ def phase_for_component(
         return PHASE_UNKNOWN
 
     if isinstance(entry, dict):
+        if entry.get('side') in ('solid', 'liquid'):  # an iron side table holds one phase
+            return entry['side']
         fmt = entry.get('format')
         eos_file = entry.get('eos_file')
 
@@ -264,6 +266,7 @@ def compute_layer_phase_columns(
     core_mantle_mass: float,
     layer_eos_config: dict,
     melting_curves_functions=None,
+    icb_mass: float = 0.0,
 ) -> tuple[list[str], list[str]]:
     """Compute per-shell ``main_component`` and ``phase`` columns.
 
@@ -284,6 +287,8 @@ def compute_layer_phase_columns(
     melting_curves_functions : tuple or None
         ``(solidus_func, liquidus_func)`` for 2-phase silicate EOS;
         ignored for unified-PALEOS / Chabrier / Seager paths.
+    icb_mass : float
+        Inner-core mass [kg] of a two-layer core: shells below it take the ``inner_core`` EOS.
 
     Returns
     -------
@@ -294,7 +299,7 @@ def compute_layer_phase_columns(
     layer_eos_config = layer_eos_config or {}
 
     primary_eos: dict[str, str] = {}
-    for layer in ('core', 'mantle', 'ice_layer'):
+    for layer in ('inner_core', 'core', 'mantle', 'ice_layer'):
         eos_str = layer_eos_config.get(layer, '')
         if not eos_str:
             continue
@@ -309,13 +314,15 @@ def compute_layer_phase_columns(
     components = [PHASE_UNKNOWN] * n
     phases = [PHASE_UNKNOWN] * n
 
-    core_eos = primary_eos.get('core', '')
+    core_eos, inner_eos = primary_eos.get('core', ''), primary_eos.get('inner_core', '')
     mantle_eos = primary_eos.get('mantle', '')
     ice_eos = primary_eos.get('ice_layer', '')
 
     for i in range(n):
         m_i = float(mass_enclosed[i])
-        if m_i < cmb_mass and core_eos:
+        if m_i < icb_mass and inner_eos:
+            layer, eos_name = 'inner_core', inner_eos
+        elif m_i < cmb_mass and core_eos:
             layer, eos_name = 'core', core_eos
         elif m_i < core_mantle_mass and mantle_eos:
             layer, eos_name = 'mantle', mantle_eos

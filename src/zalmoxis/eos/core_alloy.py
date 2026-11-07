@@ -63,7 +63,6 @@ LINEAR_BETA = {
 }
 CARRIER = 'H-Luo'
 IRON_SIDES = ('PALEOS-API-2phase:iron-liquid', 'PALEOS-API-2phase:iron-solid')
-IRON_BASES = ('PALEOS:iron',) + IRON_SIDES
 ALLOY_ELEMENTS = frozenset(LINEAR_BETA) | {CARRIER}
 
 # Luo, Dorn & Deng 2024, Methods Eq. 14: K [GPa], V0 [A^3 per cell], a, b, c [GPa]
@@ -150,7 +149,7 @@ def split_alloy(mixture):
         w[el] = float(frac)
     if len(base) != 1:
         raise CoreAlloyError(f'a light-element core needs exactly one iron base, got {base!r}')
-    if base[0] not in IRON_BASES:
+    if base[0] != 'PALEOS:iron' and base[0] not in IRON_SIDES:
         raise CoreAlloyError(
             f'a light-element core needs the PALEOS:iron base or an iron side table, '
             f'got {base[0]!r}'

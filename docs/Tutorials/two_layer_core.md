@@ -11,7 +11,6 @@ Save this as `scripts/two_layer_core.py`. It starts from `input/default.toml`, p
 ```python
 # scripts/two_layer_core.py
 """Solve a 1 M_E planet with a two-layer core and print its inner-core boundary."""
-import copy
 import os
 
 import numpy as np
@@ -31,7 +30,6 @@ def solve(**rule):
     """The default 1 M_E planet with a liquid S-bearing outer core and a solid iron inner core."""
     root = get_zalmoxis_root()
     cfg = load_zalmoxis_config(os.path.join(root, 'input', 'default.toml'))
-    cfg = copy.deepcopy(cfg)
     cfg['layer_eos_config'].update(
         core='PALEOS-API-2phase:iron-liquid:0.8615+CoreAlloy:S:0.1385',
         inner_core='PALEOS-API-2phase:iron-solid',
@@ -60,7 +58,7 @@ if __name__ == '__main__':
         print(f"  solid above the ICB: {core['solid_above_icb_mass_fraction']:.3f} of the core mass")
 ```
 
-`inner_core_mass_fraction = 0.0508` is the inner-core mass fraction of PREM. `core_liquidus = "Anzellini13-iron"` puts the ICB where the temperature profile reaches the melting curve of pure iron of Anzellini et al. (2013). A two-layer core takes exactly one of the 2.
+`inner_core_mass_fraction = 0.0508` is the inner-core mass fraction of PREM. `core_liquidus = "Anzellini13-iron"` puts the ICB where the temperature profile reaches the melting curve of pure iron of Anzellini et al. (2013). A Fe-S outer core melts below that curve, so the solve warns that the inner core comes out too large; a caller with the liquidus of the alloy passes it as a callable. A two-layer core takes exactly one of the 2.
 
 ## Step 2: run it
 

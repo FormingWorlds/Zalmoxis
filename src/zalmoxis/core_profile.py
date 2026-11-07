@@ -22,7 +22,7 @@ from .eos.core_alloy import IRON_SIDES, is_alloy_mixture, split_alloy
 _RTOL_LAYER = 1e-12  # the layer rule of structure_model.get_layer_mixture
 
 
-def icb_from_profile(mass, pressure, temperature, cmb_mass, liquidus):
+def icb_from_profile(mass, pressure, temperature, cmb_mass, liquidus, icb_mass=None):
     """Inner-core boundary on a structure profile by the liquidus rule.
 
     Parameters
@@ -33,6 +33,9 @@ def icb_from_profile(mass, pressure, temperature, cmb_mass, liquidus):
         Core mass [kg].
     liquidus : callable
         ``T_liq(P)`` [K] of the outer core at pressure [Pa].
+    icb_mass : float or None
+        A given inner-core mass [kg]: the result then reports it, the pressure at it and the
+        core mass above it that lies below the liquidus.
 
     Returns
     -------
@@ -45,7 +48,13 @@ def icb_from_profile(mass, pressure, temperature, cmb_mass, liquidus):
     m, p, t = (np.asarray(a, dtype=float) for a in (mass, pressure, temperature))
     core = (m < cmb_mass * (1.0 - _RTOL_LAYER)) & (p > 0)
     m, p, t = m[core], p[core], t[core]
+    if not m.size:
+        raise ValueError('the profile has no core node with a positive pressure')
     f = t - np.array([float(liquidus(x)) for x in p])
+    if not np.all(np.isfinite(f)):
+        raise ValueError('the temperature or the core liquidus is not finite on the core nodes')
+    if icb_mass is not None:
+        return float(icb_mass), float(np.interp(icb_mass, m, p)), _solid_mass(m, f, icb_mass)
     above = np.flatnonzero(f >= 0.0)
     if above.size and above[0] == 0:
         return 0.0, float(p[0]), _solid_mass(m, f, 0.0)
@@ -95,7 +104,13 @@ def core_arrays(result, layer_mixtures, rhs, temperature_at, icb_mass, p_icb, so
         and ``M_ic`` [kg], ``R_icb`` [m], ``P_icb`` [Pa], ``solid_above_icb_mass_fraction`` and
         the flag ``solid_above_icb``.
         The node at the core mass takes the core side of the layer rule for its phase and
-        density.
+        density. ``w_layers`` maps each core layer to its light-element fractions.
+
+    Raises
+    ------
+    ValueError
+        When the profile has no node at or past the core mass, or the core mass is not reached
+        within 2 node segments.
     """
     r, m, g, p, rho, t = (
         np.asarray(result[k], dtype=float)
@@ -103,6 +118,8 @@ def core_arrays(result, layer_mixtures, rhs, temperature_at, icb_mass, p_icb, so
     )
     cmb_mass = float(result['cmb_mass'])
     n = int(np.count_nonzero(m < cmb_mass * (1.0 - _RTOL_LAYER)))
+    if n == len(m):
+        raise ValueError('the profile has no node at or past the core mass')
 
     def hit(r_, y):
         return y[0] - cmb_mass
@@ -110,16 +127,15 @@ def core_arrays(result, layer_mixtures, rhs, temperature_at, icb_mass, p_icb, so
     hit.terminal, hit.direction = True, 1
     sol = solve_ivp(
         rhs,
-        (r[n - 1], r[n]),
+        (r[n - 1], 2.0 * r[n] - r[n - 1]),  # one more segment: node n can lie 1e-12 short
         [m[n - 1], g[n - 1], p[n - 1]],
         events=hit,
         rtol=1e-12,
         atol=[1e-12 * cmb_mass, 1e-12, 1e-6],
     )
-    if sol.t_events[0].size:
-        r_c, (m_c, g_c, p_c) = float(sol.t_events[0][0]), sol.y_events[0][0]
-    else:  # the mass of the last core node rounds to the core mass
-        r_c, m_c, g_c, p_c = r[n - 1], m[n - 1], g[n - 1], p[n - 1]
+    if not sol.t_events[0].size:
+        raise ValueError(f'the core mass is not reached within 2 segments of node {n - 1}')
+    r_c, (m_c, g_c, p_c) = float(sol.t_events[0][0]), sol.y_events[0][0]
     t_c = float(temperature_at(r_c, p_c))
     m_in = min(m_c, cmb_mass * (1.0 - 4.0 * _RTOL_LAYER))  # the core side of the layer rule
     rho_c = float(rhs(r_c, [m_in, g_c, p_c])[0]) / (4.0 * np.pi * r_c**2)
@@ -139,6 +155,7 @@ def core_arrays(result, layer_mixtures, rhs, temperature_at, icb_mass, p_icb, so
         for layer, mix in layer_mixtures.items()
         if layer in ('core', 'inner_core')
     }
+    out['w_layers'] = comps
     for el in sorted(set().union(*comps.values())):
         w = [comps.get(layer, {}).get(el, 0.0) for layer in ('core', 'inner_core')]
         in_core = side_m < cmb_mass * (1.0 - _RTOL_LAYER)

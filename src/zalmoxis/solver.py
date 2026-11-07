@@ -23,6 +23,7 @@ import numpy as np
 from scipy.optimize import brentq
 
 from .config import (
+    NEWTON_LIQUIDUS,
     PALEOS_MAX_MASS_EARTH,
     PALEOS_UNIFIED_MAX_MASS_EARTH,
     RTPRESS100TPA_MAX_MASS_EARTH,
@@ -43,6 +44,7 @@ from .eos import (
     compute_adiabatic_temperature,
     create_pressure_density_files,
 )
+from .eos.core_alloy import IRON_SIDES, is_alloy_mixture
 from .eos.seager import _band_debug_seen
 from .invariants import check_accepted
 from .melting_curves import get_melting_curve_function
@@ -733,6 +735,11 @@ def main(
                 ', '.join(_trigger),
             )
     band_limit(config_params)  # a bad limit fails before the solve, not after it
+    two_layer_liq = config_params.get('layer_eos_config', {}).get(
+        'inner_core'
+    ) and config_params.get('core_liquidus')
+    if outer_solver == 'newton' and two_layer_liq:
+        raise ValueError(NEWTON_LIQUIDUS)
     bands = (config_params, material_dictionaries, melting_curves_functions, layer_mixtures)
     if outer_solver == 'newton':
         result = _solve_newton_outer(
@@ -1731,7 +1738,7 @@ def _solve(
                     'The Chabrier H table extends to 10^22 Pa but '
                     'has only been validated up to ~50 M_earth.'
                 )
-            elif eos_name in _PALEOS_UNIFIED_NAMES:
+            elif eos_name in _PALEOS_UNIFIED_NAMES or eos_name in IRON_SIDES:
                 max_mass = PALEOS_UNIFIED_MAX_MASS_EARTH
                 reason = 'The unified PALEOS tables extend to 100 TPa (P: 1 bar to 100 TPa).'
             else:
@@ -1757,6 +1764,12 @@ def _solve(
     two_layer = 'inner_core' in layer_mixtures
     core_liq = config_params.get('core_liquidus') or None
     if isinstance(core_liq, str):
+        if is_alloy_mixture(layer_mixtures['core']):
+            logger.warning(
+                'core_liquidus %s is a pure-iron curve; an alloy outer core melts below it, so '
+                'the inner core comes out too large: pass the alloy liquidus as a callable',
+                core_liq,
+            )
         core_liq = get_melting_curve_function(core_liq)
     icb_frac = config_params.get('inner_core_mass_fraction')
     icb_mass = icb_frac * cmb_mass if two_layer and icb_frac is not None else 0.0
@@ -2637,6 +2650,7 @@ def _solve(
                 'converged_pressure': converged_pressure,
                 'adiabat_computed': _adiabat_computed,
                 'adiabat_blend': _adiabat_blend,
+                'icb_mass': icb_mass,
             }
             oscillation_count = 0
         elif (
@@ -2732,6 +2746,8 @@ def _solve(
             )
 
     def _best_pass():
+        nonlocal icb_mass
+        icb_mass = best_profiles['icb_mass']  # the inner core that pass was solved with
         # fresh copies: the saved profiles can be read-only views of JAX buffers
         T = best_profiles['temperatures']
         return (
@@ -2908,38 +2924,42 @@ def _solve(
         'adiabat_computed': _adiabat_computed,
         'adiabat_blend': _adiabat_blend,
     }
-    model_results['core'] = _core_result(
-        model_results,
-        layer_mixtures,
-        core_liq,
-        icb_mass,
-        _temperature_func,
-        (interpolation_cache, material_dictionaries),
-        (
-            solidus_func,
-            liquidus_func,
-            mushy_zone_factors,
-            condensed_rho_min,
-            condensed_rho_scale,
+    m_end = mass_enclosed[-1] if len(mass_enclosed) else 0.0
+    reached = m_end >= cmb_mass * (1.0 - 1e-12) and np.all(np.isfinite(pressure))
+    model_results['core'] = (
+        None
+        if not reached
+        else _core_result(
+            model_results,
+            layer_mixtures,
+            core_liq,
+            icb_mass,
+            _temperature_func,
+            interpolation_cache=interpolation_cache,
+            material_dictionaries=material_dictionaries,
+            solidus_func=solidus_func,
+            liquidus_func=liquidus_func,
+            mushy_zone_factors=mushy_zone_factors,
+            condensed_rho_min=condensed_rho_min,
+            condensed_rho_scale=condensed_rho_scale,
+            binodal_T_scale=binodal_T_scale,
         )
-        + (binodal_T_scale,),
     )
     return model_results
 
 
-def _core_result(res, layer_mixtures, core_liq, icb_mass, temperature_func, head, tail):
+def _core_result(res, layer_mixtures, core_liq, icb_mass, temperature_func, **eos_args):
     """``core_profile.core_arrays`` of a finished solve: the core nodes, a CMB node and the ICB.
 
-    ``head`` and ``tail`` are the arguments of ``coupled_odes`` before and after the temperature.
+    ``eos_args`` are the EOS keyword arguments of ``coupled_odes``.
     """
     m, p, t = (
         np.asarray(res[k], dtype=float) for k in ('mass_enclosed', 'pressure', 'temperature')
     )
     cmb_mass = res['cmb_mass']
-    if core_liq is not None:
-        _, p_icb, solid_above = icb_from_profile(m, p, t, cmb_mass, core_liq)
-    else:
-        p_icb, solid_above = float(np.interp(icb_mass, m, p)), 0.0
+    p_icb, solid_above = float(np.interp(icb_mass, m, p)), 0.0
+    if core_liq is not None:  # the solid above the ICB of the solved layers
+        solid_above = icb_from_profile(m, p, t, cmb_mass, core_liq, icb_mass)[2]
 
     def t_at(r, pres):
         if temperature_func is not None:
@@ -2953,10 +2973,9 @@ def _core_result(res, layer_mixtures, core_liq, icb_mass, temperature_func, head
             cmb_mass,
             res['core_mantle_mass'],
             layer_mixtures,
-            *head,
-            t_at(r, y[2]),
-            *tail,
+            temperature=t_at(r, y[2]),
             icb_mass=icb_mass,
+            **eos_args,
         )
 
     return core_arrays(res, layer_mixtures, rhs, t_at, icb_mass, p_icb, solid_above)

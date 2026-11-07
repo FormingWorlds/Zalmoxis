@@ -70,6 +70,11 @@ VALID_TABULATED_EOS = {
     'Chabrier:H',
 } | set(IRON_SIDES)
 CORE_LAYERS = ('core', 'inner_core')
+NEWTON_LIQUIDUS = (
+    'core_liquidus needs the picard outer solver (the default): a newton probe solves one outer '
+    'pass, with no profile of a previous pass for the liquidus rule; use the default outer solver, '
+    'or inner_core_mass_fraction with newton'
+)
 
 # WolfBower2018 tables are valid up to ~1 TPa. The Brent pressure solver with
 # out-of-bounds clamping handles mantle pressures exceeding the table boundary
@@ -218,18 +223,27 @@ def validate_layer_eos(layer_eos_config):
 
 
 def _check_two_layer_core(layer_eos_config):
-    """An iron side in the core needs its partner layer: liquid outer core, solid inner core."""
+    """An iron side in the core needs its partner layer: the liquid side as the only iron base
+    of the outer core and the solid side as that of the inner core, in any component order."""
     bases = {
-        layer: parse_layer_components(layer_eos_config[layer]).components[0]
-        for layer in CORE_LAYERS
-        if layer_eos_config.get(layer)
+        layer: [
+            c for c in parse_layer_components(eos).components if not c.startswith(ALLOY_PREFIX)
+        ]
+        for layer, eos in layer_eos_config.items()
+        if layer in CORE_LAYERS and eos
     }
-    if 'inner_core' not in bases and bases.get('core') == IRON_SIDES[0]:
-        raise ValueError(f"a core on {IRON_SIDES[0]} needs an 'inner_core' on {IRON_SIDES[1]}")
-    if 'inner_core' in bases:
-        for (layer, base), side in zip(bases.items(), IRON_SIDES):
-            if base != side:
-                raise ValueError(f"the '{layer}' of a two-layer core needs the {side} base")
+    if 'inner_core' not in bases:
+        if IRON_SIDES[0] in bases.get('core', []):
+            raise ValueError(
+                f"a core on {IRON_SIDES[0]} needs an 'inner_core' on {IRON_SIDES[1]}"
+            )
+        return
+    for layer, side in zip(CORE_LAYERS, IRON_SIDES):
+        if bases.get(layer) != [side]:
+            raise ValueError(
+                f"the '{layer}' of a two-layer core needs the {side} base alone, "
+                f'got {bases.get(layer)}'
+            )
 
 
 def _check_icb_rule(config_params):
@@ -245,10 +259,7 @@ def _check_icb_rule(config_params):
             f'core_liquidus must be one of {sorted(VALID_IRON_MELTING)} or empty, got {liq!r}'
         )
     if frac is not None and (
-        isinstance(frac, bool)
-        or not isinstance(frac, (int, float))
-        or not math.isfinite(frac)
-        or not 0.0 <= frac <= 1.0
+        isinstance(frac, bool) or not isinstance(frac, (int, float)) or not 0.0 <= frac <= 1.0
     ):
         raise ValueError(f'inner_core_mass_fraction must be a number in [0, 1], got {frac!r}')
     if 'inner_core' in config_params['layer_eos_config']:
@@ -256,6 +267,8 @@ def _check_icb_rule(config_params):
             raise ValueError(
                 'a two-layer core needs exactly one of core_liquidus and inner_core_mass_fraction'
             )
+        if liq and config_params.get('outer_solver') == 'newton':
+            raise ValueError(NEWTON_LIQUIDUS)
     elif liq or frac is not None:
         raise ValueError('core_liquidus and inner_core_mass_fraction need an inner_core layer')
 
