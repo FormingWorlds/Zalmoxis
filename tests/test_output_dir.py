@@ -234,3 +234,23 @@ def test_cli_log_and_post_processing_follow_the_output_folder(
     assert 'loading the test config' in (folder / 'zalmoxis.log').read_text()
     other = root / 'output' if given_dir else run
     assert list(other.iterdir()) == []
+
+
+def test_cli_keeps_the_log_lines_of_a_refused_config(tmp_path, reset_logging):
+    """A config load that logs and then raises: the error propagates, the lines reach <root>/output."""
+    root = tmp_path / 'root'
+    (root / 'output').mkdir(parents=True)
+
+    def load():
+        logging.getLogger('zalmoxis.config').info('reading the refused config')
+        raise ValueError('output_dir must not be empty')
+
+    with patch('zalmoxis.get_zalmoxis_root', return_value=str(root)):
+        with patch('zalmoxis.config.load_zalmoxis_config', side_effect=load):
+            with patch('zalmoxis.output.post_processing') as post:
+                with pytest.raises(ValueError, match='must not be empty'):
+                    runpy.run_module('zalmoxis', run_name='__main__')
+    post.assert_not_called()
+    log = root / 'output' / 'zalmoxis.log'
+    assert log.is_file()
+    assert 'reading the refused config' in log.read_text()
