@@ -17,4 +17,5 @@ if __name__ == '__main__':
         filemode='w',
     )
     config_params = load_zalmoxis_config()
+    config_params.setdefault('debug_profile_dir', os.path.join(root, 'output'))
     post_processing(config_params)

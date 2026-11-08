@@ -1656,38 +1656,76 @@ class TestLoadMeltingCurve:
 class TestCreatePressureDensityFiles:
     """Tests for the output file creation function."""
 
-    def test_creates_files(self):
-        """Should create pressure and density profile files."""
+    def test_creates_files_in_the_given_folder_only(self, tmp_path):
+        """The profiles go to the folder passed, appended per call; the package tree gets none."""
         from zalmoxis.eos import create_pressure_density_files
 
         radii = np.array([0, 1e6, 2e6, 3e6])
         pressure = np.array([300e9, 200e9, 100e9, 1e5])
         density = np.array([13000, 10000, 5000, 3000], dtype=float)
+        from zalmoxis import get_zalmoxis_root
 
-        root = os.environ['ZALMOXIS_ROOT']
-        p_file = os.path.join(root, 'output', 'pressure_profiles.txt')
-        d_file = os.path.join(root, 'output', 'density_profiles.txt')
+        tree = os.path.join(get_zalmoxis_root(), 'output')
+        before = {
+            f: os.stat(os.path.join(tree, f)).st_mtime_ns
+            for f in ('pressure_profiles.txt', 'density_profiles.txt')
+            if os.path.exists(os.path.join(tree, f))
+        }
 
-        # Clean up any pre-existing files
-        for f in [p_file, d_file]:
-            if os.path.exists(f):
-                os.remove(f)
+        create_pressure_density_files(0, 0, 0, radii, pressure, density, str(tmp_path))
+        create_pressure_density_files(0, 0, 1, radii, pressure, density, str(tmp_path))
+        content = (tmp_path / 'pressure_profiles.txt').read_text()
+        assert 'Pressure iteration 0' in content and 'Pressure iteration 1' in content
+        assert (tmp_path / 'density_profiles.txt').read_text().count('radius density') == 2
+        after = {
+            f: os.stat(os.path.join(tree, f)).st_mtime_ns
+            for f in ('pressure_profiles.txt', 'density_profiles.txt')
+            if os.path.exists(os.path.join(tree, f))
+        }
+        assert after == before
 
-        try:
-            create_pressure_density_files(0, 0, 0, radii, pressure, density)
-            assert os.path.isfile(p_file)
-            assert os.path.isfile(d_file)
+    def test_first_call_of_a_run_replaces_old_dumps_in_the_given_folder(self, tmp_path):
+        """Old dump files in the folder go at (0, 0, 0); a later call of the run appends."""
+        from zalmoxis.eos import create_pressure_density_files
 
-            # Second call should append
-            create_pressure_density_files(0, 0, 1, radii, pressure, density)
-            with open(p_file) as f:
-                content = f.read()
-            assert 'Pressure iteration 0' in content
-            assert 'Pressure iteration 1' in content
-        finally:
-            for f in [p_file, d_file]:
-                if os.path.exists(f):
-                    os.remove(f)
+        radii, pressure, density = (
+            np.array([0, 1e6]),
+            np.array([3e11, 1e5]),
+            np.array([1.3e4, 3e3]),
+        )
+        for name in ('pressure_profiles.txt', 'density_profiles.txt'):
+            (tmp_path / name).write_text('stale\n')
+        create_pressure_density_files(0, 0, 0, radii, pressure, density, str(tmp_path))
+        create_pressure_density_files(0, 0, 1, radii, pressure, density, str(tmp_path))
+        for name in ('pressure_profiles.txt', 'density_profiles.txt'):
+            text = (tmp_path / name).read_text()
+            assert 'stale' not in text
+            assert (
+                text.count('# Pressure iteration 0')
+                == text.count('# Pressure iteration 1')
+                == 1
+            )
+
+    def test_only_the_first_call_of_a_structure_solve_starts_the_dumps_again(self, tmp_path):
+        """Calls (0, 0, 0), (0, 0, 1), (0, 1, 0) keep all 3 profiles: only (0, 0, 0) deletes old files."""
+        from zalmoxis.eos import create_pressure_density_files
+
+        radii, pressure, density = (
+            np.array([0, 1e6]),
+            np.array([3e11, 1e5]),
+            np.array([1.3e4, 3e3]),
+        )
+        for outer, inner, trial in ((0, 0, 0), (0, 0, 1), (0, 1, 0)):
+            create_pressure_density_files(
+                outer, inner, trial, radii, pressure, density, str(tmp_path)
+            )
+        for name, header in (
+            ('pressure_profiles.txt', 'radius pressure'),
+            ('density_profiles.txt', 'radius density'),
+        ):
+            text = (tmp_path / name).read_text()
+            assert text.count(header) == 3
+            assert text.count('# Pressure iteration 0') == 2
 
 
 # =====================================================================

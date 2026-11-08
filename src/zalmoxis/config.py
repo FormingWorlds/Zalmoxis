@@ -712,6 +712,18 @@ def validate_config(config_params):
                 f'fractions may converge but are outside the tested range.'
             )
 
+    # ── DEBUG profile dump folder ──────────────────────────────────
+    if 'debug_profile_dir' in config_params:
+        folder = config_params['debug_profile_dir']
+        if not isinstance(folder, str | os.PathLike):
+            raise ValueError(f'debug_profile_dir must be a folder path, got {folder!r}.')
+        if not os.fspath(folder) or (not isinstance(folder, str) and os.fspath(folder) == '.'):
+            raise ValueError('debug_profile_dir must not be empty; leave it out for no dump.')
+        if not os.path.isdir(folder):
+            raise ValueError(
+                f'debug_profile_dir {os.fspath(folder)!r} is not an existing folder.'
+            )
+
 
 def choose_config_file(temp_config_path=None):
     """
@@ -860,6 +872,9 @@ def load_zalmoxis_config(temp_config_path=None):
     for key in _optional_pres_keys:
         if key in _pres:
             config_params[key] = _pres[key]
+
+    if 'debug_profile_dir' in config['Output']:
+        config_params['debug_profile_dir'] = config['Output']['debug_profile_dir']
 
     # Validate all parameters for physical and logical consistency
     validate_config(config_params)

@@ -66,6 +66,22 @@ class TestZalmoxisCli:
                     mock_load.assert_called_once_with()
                     mock_post.assert_called_once_with(sentinel_config)
 
+    def test_main_passes_its_output_folder_for_the_debug_dump(self, tmp_path, reset_logging):
+        """The CLI keeps its DEBUG profile dump in {ZALMOXIS_ROOT}/output, unless the config names one."""
+        import os
+
+        (tmp_path / 'output').mkdir(exist_ok=True)
+        for loaded, want in (
+            ({}, os.path.join(str(tmp_path), 'output')),
+            ({'debug_profile_dir': 'x'}, 'x'),
+        ):
+            with patch('zalmoxis.get_zalmoxis_root', return_value=str(tmp_path)):
+                with patch('zalmoxis.config.load_zalmoxis_config', return_value=dict(loaded)):
+                    with patch('zalmoxis.output.post_processing') as mock_post:
+                        with patch('logging.basicConfig'):
+                            runpy.run_module('zalmoxis', run_name='__main__')
+            assert mock_post.call_args.args[0]['debug_profile_dir'] == want
+
     def test_main_configures_log_file_under_zalmoxis_root(self, tmp_path, reset_logging):
         """The log file path must be ``{ZALMOXIS_ROOT}/output/zalmoxis.log``,
         constructed via ``os.path.join`` with the resolved root.

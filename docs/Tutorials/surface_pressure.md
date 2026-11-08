@@ -84,15 +84,18 @@ A trial $P_c$ that is too low lets the pressure reach 0 before $R$: the integrat
 A trial $P_c$ whose integration reaches the outer radius gives a **reached** profile with $f = P(R) - P_t$.
 Two neighbouring trial pressures with a negative residual at the lower one and a positive residual at the higher one form a **sign pair**: the root lies between them, and the higher one is the reached end.
 
-The solver does not return its trials, but at the `DEBUG` log level it writes the pressure profile of every trial to `output/pressure_profiles.txt`.
+The solver does not return its trials, but at the `DEBUG` log level it writes the pressure profile of every trial to `pressure_profiles.txt` in the folder that the configuration key `debug_profile_dir` names.
 The first row of each profile is $P_c$ and the last row is $P(R)$.
-The block below solves the planet again at that level, which writes this file and `output/density_profiles.txt` (about 50 MB each), and reads the trials of the last pressure solve of the run.
+The block below solves the planet again at that level with a temporary folder as `debug_profile_dir`, which receives this file and `density_profiles.txt` (about 50 MB each), and reads the trials of the last pressure solve of the run.
 
 ```python
 import logging
+import shutil
+import tempfile
 
+dump = tempfile.mkdtemp()
 logging.getLogger('fwl.zalmoxis').setLevel(logging.DEBUG)
-cfg, result = solve()
+cfg, result = solve(debug_profile_dir=dump)
 logging.getLogger('fwl.zalmoxis').setLevel(logging.WARNING)
 
 
@@ -108,7 +111,8 @@ def last_pressure_solve(path):
     return np.array(sorted(solves[-1]))
 
 
-trials = last_pressure_solve(os.path.join(root, 'output', 'pressure_profiles.txt'))
+trials = last_pressure_solve(os.path.join(dump, 'pressure_profiles.txt'))
+shutil.rmtree(dump)  # the 2 dump files take about 100 MB
 P_t = cfg['target_surface_pressure']
 f = trials[:, 1] - P_t
 print(f'{len(trials)} trials; accepted P_c = {result["p_center"]:.6e} Pa')
