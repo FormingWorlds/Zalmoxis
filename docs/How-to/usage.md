@@ -50,7 +50,7 @@ For the full list of parameters (EOS selection, temperature modes, solver settin
 
 ## Output files
 
-All output files are written to the output folder: the existing folder that `[Output] output_dir` names, or else `output/` of the Zalmoxis root (created on the first run). The folder looks like:
+`python -m zalmoxis` writes all its files into its output folder: the existing folder that `[Output] output_dir` names, or else `output/` of the Zalmoxis root (created on the first run). The folder looks like:
 
 ```
 output/
@@ -60,12 +60,13 @@ output/
 ├── planet_profile.png            # 6-panel structure plot (if plots_enabled)
 ├── mantle_PT_profile.pdf         # mantle P-T plot (if plots_enabled and the mantle EOS uses melting curves)
 ├── zalmoxis.log                  # log of python -m zalmoxis
-├── grid_results/                 # grid runner output (if using run_grid)
-│   ├── grid_summary.csv
-│   └── *.json
 ├── pressure_profiles.txt         # iteration diagnostics (DEBUG, command-line run)
 └── density_profiles.txt          # iteration diagnostics (DEBUG, command-line run)
 ```
+
+The grid runner `tools/grids/run_grid.py` does not use `output_dir`. It writes `grid_summary.csv`, a `<label>.json` result per grid point and, with `[output] save_profiles = true`, a `<label>.csv` profile per grid point into the folder that `[output] dir` of the grid file names, relative to the Zalmoxis root, by default `output/grid_results/`. It loads its base config with `load_zalmoxis_config`, which checks `output_dir`, so a base config that sets `output_dir` must still name an existing, writable folder, although the grid runner writes nothing there.
+
+The EOS caches are written outside the output folder: the binary cache `<table>.cache.pkl` beside each unified PALEOS table file (under `data/` for the downloaded tables), and the PALEOS API cache in `data/EOS_PALEOS_API/` of the Zalmoxis root.
 
 ### Profile files
 
