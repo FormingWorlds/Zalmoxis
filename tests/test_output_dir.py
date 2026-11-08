@@ -254,3 +254,15 @@ def test_cli_keeps_the_log_lines_of_a_refused_config(tmp_path, reset_logging):
     log = root / 'output' / 'zalmoxis.log'
     assert log.is_file()
     assert 'reading the refused config' in log.read_text()
+
+
+def test_cli_creates_the_root_output_of_a_fresh_checkout(tmp_path, reset_logging):
+    """A root without output/: the CLI creates it for the log, and a refused config still raises."""
+    root = tmp_path / 'root'
+    root.mkdir()
+    with patch('zalmoxis.get_zalmoxis_root', return_value=str(root)):
+        with patch('zalmoxis.config.load_zalmoxis_config', side_effect=ValueError('refused')):
+            with pytest.raises(ValueError, match='refused'):
+                runpy.run_module('zalmoxis', run_name='__main__')
+    assert (root / 'output' / 'zalmoxis.log').is_file()
+    assert sorted(p.name for p in root.iterdir()) == ['output']
