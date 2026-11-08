@@ -39,4 +39,5 @@ if __name__ == '__main__':
             logging.getLogger('fwl.zalmoxis').warning(
                 f'{path} cannot be opened ({failed}); the log is written to stderr.'
             )
+    config_params.setdefault('debug_profile_dir', os.path.join(root, 'output'))
     post_processing(config_params)

@@ -134,8 +134,8 @@ Outputs (under `output/`, or the existing folder `[Output] output_dir` names):
 - `calculated_planet_mass_radius.txt`: appended one-line summary per run.
 - `zalmoxis.log`: per-run log (overwritten each invocation).
 - Optional debug: `density_profiles.txt`, `pressure_profiles.txt` per Picard
-  iteration when the Python logging level is `DEBUG`; these two files are
-  written into `<root>/output`, not into `output_dir`.
+  iteration when the Python logging level is `DEBUG`, into the folder that the
+  config key `debug_profile_dir` names (the command-line run uses `output/`).
 
 Recommended workflow:
 

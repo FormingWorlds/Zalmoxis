@@ -7,15 +7,13 @@ import os
 
 import numpy as np
 
-from .. import get_zalmoxis_root
-
 logger = logging.getLogger('fwl.' + __name__)
 
 
 def create_pressure_density_files(
-    outer_iter, inner_iter, pressure_iter, radii, pressure, density
+    outer_iter, inner_iter, pressure_iter, radii, pressure, density, output_dir
 ):
-    """Append pressure and density profiles to output files for a given iteration.
+    """Append pressure and density profiles to the dump files in ``output_dir``.
 
     Parameters
     ----------
@@ -31,14 +29,14 @@ def create_pressure_density_files(
         Pressure values corresponding to ``radii``, in Pa.
     density : numpy.ndarray
         Density values corresponding to ``radii``, in kg/m^3.
+    output_dir : str or os.PathLike
+        Existing folder for ``pressure_profiles.txt`` and ``density_profiles.txt``.
 
     Returns
     -------
     None
     """
 
-    output_dir = os.path.join(get_zalmoxis_root(), 'output')
-    os.makedirs(output_dir, exist_ok=True)
     pressure_file = os.path.join(output_dir, 'pressure_profiles.txt')
     density_file = os.path.join(output_dir, 'density_profiles.txt')
 
