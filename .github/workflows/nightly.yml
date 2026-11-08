@@ -24,10 +24,9 @@ jobs:
   nightly:
     name: Zalmoxis-nightly ${{ matrix.suite }} (ubuntu-latest)
     runs-on: ubuntu-latest
-    # The full solves on the Wolf & Bower tables, the full adiabatic PALEOS solves at 5 M_earth,
-    # the real accept solves (one job per file), the longest of them (2 whole-tree jobs) and the
-    # two-layer core solves run in their own jobs, beside the rest. The default solve against its
-    # bit-identity reference runs alone: beside other workers it does not finish in its wall clock.
+    # The Wolf & Bower solves, the adiabatic PALEOS solves at 5 M_earth, the accept solves (per file
+    # and 2 whole-tree jobs), the two-layer core solves and the default bit-identity solve (alone,
+    # to finish inside its wall clock) run in their own jobs, beside the rest.
     strategy:
       fail-fast: false
       matrix:
