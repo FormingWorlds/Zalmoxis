@@ -45,9 +45,9 @@ def solve_arrays():
 
     root = get_zalmoxis_root()
     cfg = load_zalmoxis_config(os.path.join(root, 'input', 'default.toml'))
-    # a cut breaks bit-identity; about 1.8 x the estimated 508 s under coverage on an EPYC 7763
-    # runner (205 s alone without coverage, coverage 2.48 x slower on macOS arm64)
-    cfg['wall_timeout'] = 900.0
+    # a cut breaks bit-identity; about 1.5 x the 419 s of this solve under coverage, alone on
+    # an EPYC 7763 runner (nightly job default_invariance)
+    cfg['wall_timeout'] = 630.0
     melt = load_solidus_liquidus_functions(
         cfg['layer_eos_config'],
         cfg['rock_solidus'],
