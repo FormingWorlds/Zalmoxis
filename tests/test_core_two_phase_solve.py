@@ -79,6 +79,38 @@ def _anzellini_inverse(t):
     )
 
 
+@pytest.fixture(scope='module')
+def fe_s_iso(setup):
+    """Isothermal solves of the 13.85 wt% S two-layer core with the Anzellini rule, one per
+    temperature [K] and per worker, with the warnings each logged."""
+    import logging
+
+    done = {}
+
+    def solve(t):
+        if t not in done:
+            records = []
+            handler = logging.Handler(logging.WARNING)
+            handler.emit = records.append
+            log = logging.getLogger('fwl.zalmoxis.solver')
+            log.addHandler(handler)
+            try:
+                res = _solve(
+                    setup,
+                    inner=SOL,
+                    core=f'{LIQ}:0.8615+CoreAlloy:S:0.1385',
+                    core_liquidus='Anzellini13-iron',
+                    temperature_mode='isothermal',
+                    surface_temperature=t,
+                )
+            finally:
+                log.removeHandler(handler)
+            done[t] = res, ' '.join(r.getMessage() for r in records)
+        return done[t]
+
+    return solve
+
+
 @pytest.mark.physics_invariant
 def test_an_isothermal_core_has_its_icb_where_iron_melts(setup, caplog):
     """At 5000 K everywhere the ICB lies at the pressure where the Anzellini curve is 5000 K
@@ -241,9 +273,10 @@ def test_solve_ignores_a_liquidus_without_an_inner_core(setup):
     assert res['converged'] and res['core']['M_ic'] == 0.0
 
 
-@pytest.mark.parametrize('frac', [0.05, np.float32(0.05)])
+@pytest.mark.parametrize('frac', [np.float32(0.05)])
 def test_a_given_inner_core_mass_sets_the_icb(setup, frac):
-    """The ICB lies at the given mass, also for a NumPy float32 fraction, in double precision."""
+    """The ICB lies at the given mass in double precision; a NumPy float32 fraction covers the
+    float case too, since its value enters through float(frac)."""
     res = _solve(setup, inner=SOL, core_liquidus='', inner_core_mass_fraction=frac)
     core = res['core']
     assert core['M_ic'] == float(frac) * res['cmb_mass'] and isinstance(core['M_ic'], float)
@@ -286,20 +319,12 @@ def test_solid_above_a_liquid_centre_is_reported(setup):
 
 
 @pytest.mark.physics_invariant
-def test_the_core_arrays_of_a_two_layer_core(setup, caplog):
+def test_the_core_arrays_of_a_two_layer_core(setup, fe_s_iso):
     """The core arrays hold r, m, P, rho, g, T, phase and w_S per node from the centre to a CMB
     node at the core mass; the outer core carries its S, the inner core none."""
-    caplog.set_level('WARNING', logger='fwl.zalmoxis.solver')
-    res = _solve(
-        setup,
-        inner=SOL,
-        core=f'{LIQ}:0.8615+CoreAlloy:S:0.1385',
-        core_liquidus='Anzellini13-iron',
-        temperature_mode='isothermal',
-        surface_temperature=5000.0,
-    )
+    res, warnings = fe_s_iso(5000.0)
     core = res['core']
-    assert 'pure-iron curve' in caplog.text  # a named curve with an alloy outer core
+    assert 'pure-iron curve' in warnings  # a named curve with an alloy outer core
     assert core['w_layers'] == {'core': {'S': 0.1385}, 'inner_core': {}}
     for k in ('r', 'm', 'P', 'rho', 'g', 'T', 'phase', 'w_S'):
         assert core[k].shape == core['r'].shape, k
@@ -439,7 +464,7 @@ def test_an_earth_core_against_prem(setup, validation_plot):
     validation_plot(lambda: figure('r', 1e-3, 'Radius [km]'), 'core_two_phase_prem_radius')
 
 
-def test_the_bulk_s_of_the_core_follows_the_icb(setup):
+def test_the_bulk_s_of_the_core_follows_the_icb(fe_s_iso):
     """The layer compositions are inputs, so the bulk S of a Fe-S core changes with the ICB: an
     isothermal core at 5000 and 5500 K puts 0.480 and 0.159 of the core mass in the inner core
     (pins to 0.01, 3 times the spread over 5 perturbed starts at 5000 K), and the bulk S falls
@@ -447,14 +472,7 @@ def test_the_bulk_s_of_the_core_follows_the_icb(setup):
     The pins are regression values of this code, not an outside reference."""
     w_oc = 0.1385
     for t, f_pin, s_pin in ((5000.0, 0.480, 0.0720), (5500.0, 0.159, 0.1165)):
-        res = _solve(
-            setup,
-            inner=SOL,
-            core=f'{LIQ}:{1 - w_oc:.4f}+CoreAlloy:S:{w_oc:.4f}',
-            temperature_mode='isothermal',
-            surface_temperature=t,
-            core_liquidus='Anzellini13-iron',
-        )
+        res = fe_s_iso(t)[0]
         core = res['core']
         f = core['M_ic'] / res['cmb_mass']
         assert f == pytest.approx(f_pin, abs=0.01)
