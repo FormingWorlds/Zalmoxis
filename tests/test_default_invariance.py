@@ -44,6 +44,7 @@ def off_tolerance(got, ref, tol=TOLERANCE_OUTER):
 
 
 @pytest.mark.integration
+@pytest.mark.default_invariance
 @pytest.mark.timeout(1800)
 def test_a_default_solve_is_bit_identical_to_main():
     key = cpu_key()

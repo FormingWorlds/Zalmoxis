@@ -17,7 +17,7 @@ on:
 permissions:
   contents: read
 
-# Nightly: unit + smoke + integration with coverage, as nine parallel jobs. Not on push or PR
+# Nightly: unit + smoke + integration with coverage, as ten parallel jobs. Not on push or PR
 # CI: each smoke or integration test runs a full solve (5-10 min on a 2-vCPU runner under
 # coverage), which adds no bug-finding signal to the unit suite.
 jobs:
@@ -26,13 +26,14 @@ jobs:
     runs-on: ubuntu-latest
     # The full solves on the Wolf & Bower tables, the full adiabatic PALEOS solves at 5 M_earth,
     # the real accept solves (one job per file), the longest of them (2 whole-tree jobs) and the
-    # two-layer core solves run in their own jobs, beside the rest.
+    # two-layer core solves run in their own jobs, beside the rest. The default solve against its
+    # bit-identity reference runs alone: beside other workers it does not finish in its wall clock.
     strategy:
       fail-fast: false
       matrix:
         include:
           - suite: main
-            select: (unit or smoke or integration) and not slow and not wolfbower and not paleos_adiabat and not accept_solves and not accept_solves_long and not accept_solves_newton_setups and not core_two_phase
+            select: (unit or smoke or integration) and not slow and not wolfbower and not paleos_adiabat and not accept_solves and not accept_solves_long and not accept_solves_newton_setups and not core_two_phase and not default_invariance
             args: --dist load --cov-fail-under=90
           - suite: wolfbower
             select: wolfbower
@@ -61,6 +62,9 @@ jobs:
           - suite: accept_solves_pressure_root
             select: accept_solves and not accept_solves_long and not accept_solves_newton_setups and not wolfbower and not paleos_adiabat
             args: --dist load --cov-fail-under=0 --durations=0 tests/test_pressure_root_solves.py
+          - suite: default_invariance
+            select: default_invariance and not wolfbower and not paleos_adiabat and not accept_solves and not accept_solves_long and not accept_solves_newton_setups and not core_two_phase
+            args: --cov-fail-under=0 --durations=0
     # 90 min per job; the longest solves have their own jobs with 120 and 170 min.
     timeout-minutes: ${{ matrix.job_timeout || 90 }}
     steps:

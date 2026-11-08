@@ -19,11 +19,11 @@ from scipy.optimize import brentq
 from tests import _paleos_mock
 from tools.default_solve_reference import cpu_key
 
-# the PREM test, 3 solves, takes 1404 s on a CI runner under coverage
+# the PREM test, 3 solves, takes 1404 s on a CI runner under coverage; the limit is about 1.5 x
 pytestmark = [pytest.mark.integration, pytest.mark.core_two_phase, pytest.mark.timeout(2100)]
 
 LIQ, SOL = 'PALEOS-API-2phase:iron-liquid', 'PALEOS-API-2phase:iron-solid'
-WALL = 1320.0  # solver wall clock [s], 1.5 x the slowest solve on a CI runner (875 s)
+WALL = 1320.0  # solver wall clock [s], about 1.5 x the slowest solve on a CI runner (875 s)
 PLOT_CPU = 'darwin-arm64'  # the PREM plots compare their data only on the CPU that made them
 
 
