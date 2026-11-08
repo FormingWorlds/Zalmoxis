@@ -50,6 +50,7 @@ def test_a_default_solve_is_bit_identical_to_main():
     key = cpu_key()
     ref_file = DATA / f'default_solve_reference_{key}.npz'
     got = solve_arrays()
+    assert not bool(got['stopped_on_wall_clock']), f'{key}: the solve stopped on its wall clock'
     if ref_file.is_file():
         ref = np.load(ref_file)
         assert set(got) == set(ref.files)
