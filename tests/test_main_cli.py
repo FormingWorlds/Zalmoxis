@@ -66,13 +66,16 @@ class TestZalmoxisCli:
                     mock_post.assert_called_once_with(sentinel_config)
 
     def test_main_passes_its_output_folder_for_the_debug_dump(self, tmp_path, reset_logging):
-        """The CLI keeps its DEBUG profile dump in {ZALMOXIS_ROOT}/output, unless the config names one."""
+        """The CLI writes its DEBUG profile dump into its output folder, unless the config names one."""
         import os
 
         (tmp_path / 'output').mkdir(exist_ok=True)
+        own = str(tmp_path / 'own')
         for loaded, want in (
             ({}, os.path.join(str(tmp_path), 'output')),
+            ({'output_dir': own}, own),
             ({'debug_profile_dir': 'x'}, 'x'),
+            ({'output_dir': own, 'debug_profile_dir': 'x'}, 'x'),
         ):
             with patch('zalmoxis.get_zalmoxis_root', return_value=str(tmp_path)):
                 with patch('zalmoxis.config.load_zalmoxis_config', return_value=dict(loaded)):
