@@ -496,3 +496,29 @@ def test_the_bulk_s_of_the_core_follows_the_icb(fe_s_iso):
         assert s_mass == pytest.approx(s_pin, abs=2e-3) and (1 - f) * w_oc == pytest.approx(
             s_pin, abs=0.01 * w_oc
         )
+
+
+def test_the_adiabat_of_a_converged_liquidus_solve_takes_its_icb(setup, monkeypatch):
+    """At 2510 K at the surface the Fe-S core on the adiabat holds a partial inner core; the
+    adiabat of the returned pass takes the inner-core mass of that pass to within the default
+    tolerance_outer (1e-3) of the core mass, as its densities do."""
+    from zalmoxis import solver
+
+    used = []
+    adiabat = solver.compute_adiabatic_temperature
+
+    def spy(*args, **kwargs):
+        used.append(kwargs['icb_mass'])
+        return adiabat(*args, **kwargs)
+
+    monkeypatch.setattr(solver, 'compute_adiabatic_temperature', spy)
+    res = _solve(
+        setup,
+        inner=SOL,
+        core=f'{LIQ}:0.8615+CoreAlloy:S:0.1385',
+        core_liquidus='Anzellini13-iron',
+        surface_temperature=2510.0,
+    )
+    m_ic, cmb = res['core']['M_ic'], res['cmb_mass']
+    assert 0.0 < m_ic < cmb and res['accepted_on'] == 'strict'
+    assert abs(used[-1] - m_ic) <= 1e-3 * cmb, (used[-1] / cmb, m_ic / cmb)
