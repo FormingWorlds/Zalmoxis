@@ -68,7 +68,7 @@ From the repository root:
 python scripts/two_layer_core.py
 ```
 
-The first run makes the 2 iron side tables in `data/EOS_PALEOS_API/`, once per PALEOS version: 1351 by 379 nodes per side. This took 82 s on 6 cores of an Apple M1 Ultra, next to other jobs. Later runs read the cached tables. The 2 solves then took 3 min 17 s together on the same machine.
+The first run makes the 2 iron side tables in `data/EOS_PALEOS_API/`, once per PALEOS version: 1351 by 379 nodes per side. Later runs read the cached tables. With the tables cached, the 2 solves took 3 min 12 s together on an Apple M1 Ultra, next to other jobs.
 
 The script prints, for each rule:
 
@@ -115,4 +115,4 @@ plt.show()
 
 - Put another light element in the outer core, for example `CoreAlloy:O:0.0865` with the liquid side at 0.9135.
 - Give the inner core light elements: `inner_core = "PALEOS-API-2phase:iron-solid:0.99+CoreAlloy:Si:0.01"`.
-- Pass a callable `T_liq(P)` [K] as `core_liquidus`, for example the liquidus of an alloy.
+- Pass a callable `T_liq(P)` \[K\] as `core_liquidus`, for example the liquidus of an alloy.
