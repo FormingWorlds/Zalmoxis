@@ -96,4 +96,6 @@ def test_the_tolerance_band_holds_the_2_linux_cpus_and_refuses_a_wider_gap():
         'mass_error_at_accept'
     ]
     assert off_tolerance(dict(epyc, converged=np.bool_(False)), mac) == ['converged']
+    cut = dict(epyc, stopped_on_wall_clock=np.bool_(True))
+    assert off_tolerance(cut, mac) == ['stopped_on_wall_clock']
     assert off_tolerance(dict(epyc, p_center=np.float64(np.nan)), mac) == ['p_center']
