@@ -456,7 +456,9 @@ def test_an_earth_core_against_prem(setup, request):
             )
         colours = plt.rcParams['axes.prop_cycle'].by_key()['color'][1:]
         for (name, core), colour in zip(cores.items(), colours):
-            ax.plot(core[x][:-1] * scale, core['rho'][:-1], lw=1.2, color=colour, label=name)
+            # the wide 1-layer line shows under the 2-layer line in the outer core
+            lw = 3.0 if name == 'Fe, 1 layer' else 1.2
+            ax.plot(core[x][:-1] * scale, core['rho'][:-1], lw=lw, color=colour, label=name)
         ax.set(xlabel=label, ylabel='Density [kg/m$^3$]')
         ax.xaxis.set_major_locator(plt.MaxNLocator(4))
         ax.grid(False)
