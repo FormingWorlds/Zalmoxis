@@ -8,32 +8,17 @@ the solve meets the nearest stored one within that tolerance instead, and the me
 
 from __future__ import annotations
 
-import platform
-import re
-import sys
 import warnings
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from tools.default_solve_reference import solve_arrays
+from tools.default_solve_reference import cpu_key, solve_arrays
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / 'tests' / 'data'
 TOLERANCE_OUTER = 1e-3  # the mass tolerance of the outer loop in the default solve
-
-
-def cpu_key(system=sys.platform, machine=platform.machine(), cpuinfo=None):
-    """Platform and machine; on Linux also the CPU model, e.g. linux-x86_64-AMD-EPYC-7763."""
-    key = f'{system}-{machine}'
-    if system != 'linux':
-        return key
-    if cpuinfo is None:
-        cpuinfo = Path('/proc/cpuinfo').read_text()
-    names = re.findall(r'^model name\s*:\s*(.+)$', cpuinfo, flags=re.M) or ['unknown']
-    model = re.sub(r'\s+\d+-Core Processor\s*$', '', names[0].strip())
-    return '-'.join([key, *re.findall(r'[A-Za-z0-9]+', model)])
 
 
 def off_tolerance(got, ref, tol=TOLERANCE_OUTER):

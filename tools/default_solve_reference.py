@@ -10,11 +10,26 @@ only on one CPU and library build.
 from __future__ import annotations
 
 import os
+import platform
+import re
 import sys
+from pathlib import Path
 
 import numpy as np
 
 SKIP = ('core', 'icb_converged', 'layer_eos_config', 'newton_history', 'total_time')
+
+
+def cpu_key(system=sys.platform, machine=platform.machine(), cpuinfo=None):
+    """Platform and machine; on Linux also the CPU model, e.g. linux-x86_64-AMD-EPYC-7763."""
+    key = f'{system}-{machine}'
+    if system != 'linux':
+        return key
+    if cpuinfo is None:
+        cpuinfo = Path('/proc/cpuinfo').read_text()
+    names = re.findall(r'^model name\s*:\s*(.+)$', cpuinfo, flags=re.M) or ['unknown']
+    model = re.sub(r'\s+\d+-Core Processor\s*$', '', names[0].strip())
+    return '-'.join([key, *re.findall(r'[A-Za-z0-9]+', model)])
 
 
 def solve_arrays():
