@@ -176,6 +176,7 @@ def plot_planet_profile_single(
     mass_enclosed,
     id_mass,
     layer_eos_config=None,
+    output_dir=None,
 ):
     """Generate a 6-panel interior structure plot.
 
@@ -207,6 +208,8 @@ def plot_planet_profile_single(
     layer_eos_config : dict or None
         Per-layer EOS config for phase lookup. If None, phase panel
         shows "unknown" throughout.
+    output_dir : str, os.PathLike or None
+        Folder of the PNG; None writes into ``<ZALMOXIS_ROOT>/output``.
     """
     radii_re = radii / earth_radius
     cmb_r = cmb_radius / earth_radius
@@ -317,7 +320,7 @@ def plot_planet_profile_single(
     fig.tight_layout(rect=[0, 0, 1, 0.96])
 
     fname = 'planet_profile.png' if id_mass is None else f'planet_profile{id_mass}.png'
-    fig.savefig(
-        os.path.join(get_zalmoxis_root(), 'output', fname), dpi=200, bbox_inches='tight'
-    )
+    if output_dir is None:
+        output_dir = os.path.join(get_zalmoxis_root(), 'output')
+    fig.savefig(os.path.join(output_dir, fname), dpi=200, bbox_inches='tight')
     plt.close(fig)

@@ -457,6 +457,7 @@ class TestPostProcessingPlotting:
             mass_enclosed,
             id_mass,
             layer_eos_config=None,
+            output_dir=None,
         ):
             profile_calls.append(
                 {
@@ -465,6 +466,7 @@ class TestPostProcessingPlotting:
                     'cmb_mass': float(cmb_mass),
                     'id_mass': id_mass,
                     'layer_eos_config': layer_eos_config,
+                    'output_dir': output_dir,
                 }
             )
 
@@ -486,6 +488,7 @@ class TestPostProcessingPlotting:
         c = profile_calls[0]
         assert c['radii_size'] == 60
         assert c['id_mass'] == 'earth'
+        assert c['output_dir'] == os.path.join(str(zalmoxis_tmp_root), 'output')
         assert c['cmb_mass'] == pytest.approx(1.97e24, rel=1e-12)
         # Negative branch: phase plot only fires when uses_phase_detection is True.
         assert phase_calls == []
@@ -510,8 +513,8 @@ class TestPostProcessingPlotting:
         fake_profiles.plot_planet_profile_single = lambda *a, **k: None
         fake_phase = types.ModuleType('zalmoxis.plots.plot_phase_vs_radius')
 
-        def _phase_mock(P, T, R, phases, cmb_radius):
-            phase_calls.append({'n_pts': P.size, 'cmb_radius': float(cmb_radius)})
+        def _phase_mock(P, T, R, phases, cmb_radius, id_mass=None, output_dir=None):
+            phase_calls.append({'n_pts': P.size, 'id_mass': id_mass, 'output_dir': output_dir})
 
         fake_phase.plot_PT_with_phases = _phase_mock
         monkeypatch.setitem(sys.modules, 'zalmoxis.plots.plot_profiles', fake_profiles)
@@ -524,10 +527,12 @@ class TestPostProcessingPlotting:
                 'mantle': 'PALEOS-2phase:MgSiO3',
             },
         )
-        output_mod.post_processing(cfg)
+        output_mod.post_processing(cfg, id_mass='2Me')
 
         assert len(phase_calls) == 1
         assert phase_calls[0]['n_pts'] > 0
+        assert phase_calls[0]['id_mass'] == '2Me'
+        assert phase_calls[0]['output_dir'] == os.path.join(str(zalmoxis_tmp_root), 'output')
 
 
 # ---------------------------------------------------------------------------
