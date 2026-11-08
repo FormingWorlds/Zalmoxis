@@ -712,6 +712,19 @@ def validate_config(config_params):
                 f'fractions may converge but are outside the tested range.'
             )
 
+    if 'output_dir' in config_params:
+        _check_folder('output_dir', config_params['output_dir'])
+
+
+def _check_folder(key, folder):
+    """Raise ValueError unless ``folder`` names an existing folder (a str or os.PathLike)."""
+    if not isinstance(folder, str | os.PathLike):
+        raise ValueError(f'{key} must be a folder path, got {folder!r}.')
+    if not os.fspath(folder) or (not isinstance(folder, str) and os.fspath(folder) == '.'):
+        raise ValueError(f'{key} must not be empty; leave it out for the default folder.')
+    if not os.path.isdir(folder):
+        raise ValueError(f'{key} {os.fspath(folder)!r} is not an existing folder.')
+
 
 def choose_config_file(temp_config_path=None):
     """
@@ -835,6 +848,8 @@ def load_zalmoxis_config(temp_config_path=None):
         'data_output_enabled': config['Output'].get('data_enabled', True),
         'plotting_enabled': config['Output'].get('plots_enabled', False),
     }
+    if 'output_dir' in config['Output']:
+        config_params['output_dir'] = config['Output']['output_dir']
 
     # Numerical solver params are optional in the TOML. If present, include
     # them so they override the mass-adaptive defaults in solver._solve().

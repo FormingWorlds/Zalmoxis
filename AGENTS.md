@@ -128,7 +128,7 @@ The `[project.scripts]` entry in `pyproject.toml` registers `zalmoxis` as
 `zalmoxis.solver:main`. This bypasses `load_zalmoxis_config()` and is useful
 mainly for in-process callers; humans should prefer `python -m zalmoxis`.
 
-Outputs (under `output/`):
+Outputs (under `output/`, or the existing folder `[Output] output_dir` names):
 
 - `planet_profile.txt`: six-column TSV with r, ρ, M(r), P(r), g(r), T(r).
 - `calculated_planet_mass_radius.txt`: appended one-line summary per run.

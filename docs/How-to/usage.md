@@ -14,7 +14,7 @@ Run the default configuration (1 Earth-mass planet with a PALEOS iron core and M
 python -m zalmoxis -c input/default.toml
 ```
 
-Output files appear in `output/`. The PALEOS data files must be downloaded first (see [installation](installation.md)).
+Output files appear in `output/`, or in the folder `[Output] output_dir` names. The PALEOS data files must be downloaded first (see [installation](installation.md)).
 
 ## What happens when you run Zalmoxis
 
@@ -50,7 +50,7 @@ For the full list of parameters (EOS selection, temperature modes, solver settin
 
 ## Output files
 
-All output files are written to the `output/` directory (created automatically on first run). The directory structure looks like:
+All output files are written to the output folder: the existing folder that `[Output] output_dir` names, or else `output/` of the Zalmoxis root (created on the first run). The folder looks like:
 
 ```
 output/
@@ -58,6 +58,8 @@ output/
 ├── planet_profile5.0.txt         # radial profiles (batch run, mass in filename)
 ├── calculated_planet_mass_radius.txt  # summary: mass and radius per run
 ├── planet_profile.png            # 6-panel structure plot (if plots_enabled)
+├── mantle_PT_profile.pdf         # mantle P-T plot (if plots_enabled and the mantle EOS uses melting curves)
+├── zalmoxis.log                  # log of python -m zalmoxis
 ├── grid_results/                 # grid runner output (if using run_grid)
 │   ├── grid_summary.csv
 │   └── *.json
@@ -115,7 +117,7 @@ When `plots_enabled = true` in the `[Output]` section, Zalmoxis automatically ge
 plots_enabled = true
 ```
 
-This produces a six-panel figure showing the radial profiles of density, pressure, temperature, gravity, phase state, and mass enclosed:
+With a batch run the plot files carry the mass in their names, as the profiles do (`planet_profile5.0.png`, `mantle_PT_profile5.0.pdf`). This produces a six-panel figure showing the radial profiles of density, pressure, temperature, gravity, phase state, and mass enclosed:
 
 ![Example profile plot](../img/example_profile_plot.png)
 

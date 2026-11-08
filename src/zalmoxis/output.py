@@ -43,6 +43,9 @@ def post_processing(config_params, id_mass=None, output_file=None, model_results
 
     data_output_enabled = config_params['data_output_enabled']
     plotting_enabled = config_params['plotting_enabled']
+    output_dir = config_params.get('output_dir')
+    if output_dir is None:
+        output_dir = os.path.join(get_zalmoxis_root(), 'output')
 
     if model_results is None:
         from .config import load_material_dictionaries
@@ -160,12 +163,7 @@ def post_processing(config_params, id_mass=None, output_file=None, model_results
             'Radius (m)\tDensity (kg/m^3)\tGravity (m/s^2)\t'
             'Pressure (Pa)\tTemperature (K)\tMass Enclosed (kg)'
         )
-        # Ensure the output directory exists. Local dev workstations
-        # typically have it from prior runs, but a fresh CI runner does
-        # not, and np.savetxt's writability probe fails there with
-        # FileNotFoundError. Creating it here keeps the writers
-        # independent of caller setup.
-        output_dir = os.path.join(get_zalmoxis_root(), 'output')
+        # A fresh checkout has no <root>/output; np.savetxt needs the folder.
         os.makedirs(output_dir, exist_ok=True)
         if id_mass is None:
             np.savetxt(
@@ -180,9 +178,7 @@ def post_processing(config_params, id_mass=None, output_file=None, model_results
                 header=header,
             )
         if output_file is None:
-            output_file = os.path.join(
-                get_zalmoxis_root(), 'output', 'calculated_planet_mass_radius.txt'
-            )
+            output_file = os.path.join(output_dir, 'calculated_planet_mass_radius.txt')
         if not os.path.exists(output_file):
             header = 'Calculated Mass (kg)\tCalculated Radius (m)'
             with open(output_file, 'w') as file:
@@ -206,6 +202,7 @@ def post_processing(config_params, id_mass=None, output_file=None, model_results
             mass_enclosed,
             id_mass,
             layer_eos_config=layer_eos_config,
+            output_dir=output_dir,
         )
 
         if uses_phase_detection:
@@ -215,4 +212,6 @@ def post_processing(config_params, id_mass=None, output_file=None, model_results
                 mantle_radii,
                 mantle_phases,
                 radii[cmb_index],
+                id_mass=id_mass,
+                output_dir=output_dir,
             )
