@@ -1855,6 +1855,7 @@ def _solve(
     mass_limit = tolerance_outer  # the mass test behind converged_mass
     restore_best = False  # an outer stop returns the best pass
     rho_eos = None  # rho_EOS(P, T) at the nodes of the current pressure profile
+    icb_adiabat = None  # the inner-core mass that the adiabat of the current pass took
 
     # Initialize arrays to safe defaults. These are overwritten on the
     # first outer iteration, but must exist in case the wall-clock timeout
@@ -1872,6 +1873,7 @@ def _solve(
         # a previous outer iteration masking failure in the current one).
         converged_pressure = False
         converged_density = False
+        icb_adiabat = None
 
         # Wall-clock timeout check
         if time.time() - wall_start > wall_timeout:
@@ -1976,6 +1978,7 @@ def _solve(
                 # and integrate inward (original behaviour).
                 _anchor = 'cmb' if temperature_mode == 'adiabatic_from_cmb' else 'surface'
                 _adiabat_computed = True
+                icb_adiabat = icb_mass
                 adiabat_T = compute_adiabatic_temperature(
                     prev_radii,
                     prev_pressure,
@@ -2648,6 +2651,7 @@ def _solve(
                 'adiabat_computed': _adiabat_computed,
                 'adiabat_blend': _adiabat_blend,
                 'icb_mass': icb_mass,
+                'icb_adiabat': icb_adiabat,
                 'temperature_func': _temperature_func,
             }
             oscillation_count = 0
@@ -2711,13 +2715,16 @@ def _solve(
         # convergence; the T output for T-independent EOS in adiabatic mode
         # falls back to the linear profile (see the T-independent branch
         # around the _temperature_func construction).
-        icb_moving = (
-            core_liq is not None
-            and abs(
+        icb_moving = core_liq is not None and (
+            abs(
                 icb_from_profile(mass_enclosed, pressure, temperatures, cmb_mass, core_liq)[0]
                 - icb_mass
             )
             > tolerance_outer * cmb_mass
+            or (
+                icb_adiabat is not None
+                and abs(icb_adiabat - icb_mass) > tolerance_outer * cmb_mass
+            )
         )
         if relative_diff_outer_mass < tolerance_outer and not icb_moving:
             if ramp_incomplete:
@@ -2744,9 +2751,11 @@ def _solve(
             )
 
     def _best_pass():
-        nonlocal icb_mass, _temperature_func  # the inner core and T profile of that pass
-        icb_mass, _temperature_func = (
+        # the inner core and T profile of that pass
+        nonlocal icb_mass, icb_adiabat, _temperature_func
+        icb_mass, icb_adiabat, _temperature_func = (
             best_profiles['icb_mass'],
+            best_profiles['icb_adiabat'],
             best_profiles['temperature_func'],
         )
         # fresh copies: the saved profiles can be read-only views of JAX buffers
@@ -2849,15 +2858,18 @@ def _solve(
             temperatures,
         ) = _best_pass()  # fmt: skip
 
-    icb_converged = True  # the ICB of the liquidus rule meets the root of the returned profile
+    icb_converged = True  # the ICB meets the liquidus root and the adiabat ICB of the pass
     if core_liq is not None and np.all(np.isfinite(pressure)) and pressure[0] > 0:
         moved = icb_from_profile(mass_enclosed, pressure, temperatures, cmb_mass, core_liq)[0]
-        icb_converged = abs(moved - icb_mass) <= tolerance_outer * cmb_mass
+        lag = 0.0 if icb_adiabat is None else abs(icb_adiabat - icb_mass)
+        icb_converged = max(abs(moved - icb_mass), lag) <= tolerance_outer * cmb_mass
         if converged and not icb_converged:  # an accept path that skipped the ICB test
             logger.warning(
                 'Not converged: the inner-core boundary lies %.3g of the core mass off the '
-                'liquidus root of the returned profile (accepted_on=%s).',
+                'liquidus root of the returned profile and %.3g off the ICB of its adiabat '
+                '(accepted_on=%s).',
                 abs(moved - icb_mass) / cmb_mass,
+                lag / cmb_mass,
                 accepted_on,
             )
             converged, converged_mass, accepted_on, accept_mass_limit = False, False, None, None
