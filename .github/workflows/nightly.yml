@@ -56,7 +56,7 @@ jobs:
             select: accept_solves and not accept_solves_long and not accept_solves_newton_setups and not wolfbower and not paleos_adiabat
             args: --dist load --cov-fail-under=0 --durations=0 tests/test_accepted_on.py
           - suite: core_two_phase
-            select: core_two_phase and not wolfbower and not paleos_adiabat
+            select: core_two_phase and not wolfbower and not paleos_adiabat and not accept_solves and not accept_solves_long and not accept_solves_newton_setups
             args: --dist load --cov-fail-under=0 --durations=0
             job_timeout: 150
           - suite: accept_solves_pressure_root

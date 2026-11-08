@@ -175,6 +175,7 @@ _MARKS = (
     'accept_solves',
     'accept_solves_long',
     'accept_solves_newton_setups',
+    'core_two_phase',
 )
 _SPECIAL = set(_MARKS) - {'unit', 'smoke', 'integration', 'slow'}
 
