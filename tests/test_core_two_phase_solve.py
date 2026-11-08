@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 from scipy.optimize import brentq
 
-pytestmark = [pytest.mark.integration, pytest.mark.timeout(900)]
+pytestmark = [pytest.mark.integration, pytest.mark.core_two_phase, pytest.mark.timeout(900)]
 
 LIQ, SOL = 'PALEOS-API-2phase:iron-liquid', 'PALEOS-API-2phase:iron-solid'
 
