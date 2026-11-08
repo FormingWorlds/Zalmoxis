@@ -131,7 +131,7 @@ This approximation is self-consistent within the model (the density and temperat
 ### Adiabatic gradient mixing
 
 The mixed $\nabla_{\mathrm{ad}}$ is computed as a suppression-weighted linear combination of the component adiabatic gradients.
-This is a simplification: even for ideal mixing, the true adiabatic coefficient of a multi-component system should be derived from the total entropy $S = \sum_i \chi_i S_i + S_{\mathrm{mix}}$ and its partial derivatives with respect to $P$ and $T$ ([Kempton et al. 2023, ApJ 953, 57, Appendix B](https://doi.org/10.3847/1538-4357/ace10d)).
+This is a simplification: even for ideal mixing, the true adiabatic coefficient of a multi-component system should be derived from the total entropy $S = \sum_i \chi_i S_i + S_{\mathrm{mix}}$ and its partial derivatives with respect to $P$ and $T$, as in Appendix B of Kempton et al. (2023) [^cite-kempton2023].
 The nonlinearity arises from the mixing entropy term and composition-dependent partial derivatives, and can produce deviations of hundreds of kelvin in deep temperature profiles for atmospheric gas mixtures.
 In the context of Zalmoxis, this primarily affects layers that mix condensed materials (e.g., silicate + dissolved H$_2$) via additive volumes, which is a different thermodynamic regime from the atmospheric gas mixtures (additive partial pressures) treated by Kempton et al.
 The linear approximation is standard in interior structure solvers for condensed-phase mixtures, but users should be aware that it does not capture composition-dependent corrections to the temperature gradient.
@@ -166,7 +166,7 @@ For the full physics, see the [binodal documentation](binodal.md).
 
 ### H$_2$-MgSiO$_3$ miscibility: Rogers+2025
 
-The H$_2$-MgSiO$_3$ binodal from [Rogers, Young & Schlichting (2025, MNRAS 544, 3496)](https://doi.org/10.1093/mnras/staf1940) defines the phase boundary between a miscible supercritical fluid (above) and immiscible gas + melt (below).
+The H$_2$-MgSiO$_3$ binodal from Rogers, Young & Schlichting (2025) [^cite-rogers2025] defines the phase boundary between a miscible supercritical fluid (above) and immiscible gas + melt (below).
 The binodal temperature varies with H$_2$ mole fraction and pressure:
 
 - At 1 GPa, the peak binodal temperature is ~4100 K (at the critical mole fraction $x_\mathrm{c} = 0.74$).
@@ -177,7 +177,7 @@ This model applies when `Chabrier:H` coexists with any MgSiO$_3$ EOS in the same
 
 ### H$_2$-H$_2$O miscibility: Gupta+2025
 
-The H$_2$-H$_2$O critical curve from [Gupta, Stixrude & Schlichting (2025, ApJL 982, L35)](https://doi.org/10.3847/2041-8213/adb631) uses an asymmetric Margules Gibbs free energy model.
+The H$_2$-H$_2$O critical curve from Gupta, Stixrude & Schlichting (2025) [^cite-gupta2025] uses an asymmetric Margules Gibbs free energy model.
 The critical temperature depends on pressure (via the interaction parameter $W(T, P)$).
 
 A floor of 647 K is imposed on the critical temperature.
@@ -245,9 +245,9 @@ Such a core does not use the harmonic mean and the vapour sigmoid above. `zalmox
 
 $$\rho_\mathrm{lin} = \rho_\mathrm{Fe}\,\Bigl(1 - \sum_i \beta_i\, w_i\Bigr),$$
 
-[Hirose et al. (2021)](https://doi.org/10.1038/s43017-021-00203-6), p. 3, give 4 outer cores with a single light element that each fit the seismic outer core: 13.3-14.4 wt% S, 9.3-9.8 wt% Si, 8.4-8.9 wt% O or 0.96-0.99 wt% H, at 4137 K at the core-mantle boundary and 5400 K at the inner-core boundary; each is 6 to 8 % less dense than pure liquid iron. Their source, [Umemoto & Hirose (2020)](https://doi.org/10.1016/j.epsl.2019.116009), gives each range for one inner-core boundary temperature, 5400 K: it is the spread of single-element compositions that fit the PREM density and P-wave velocity within the errors of their calculation and the 2$\sigma$ seismic uncertainties, not a change between the 2 boundaries; with 4800 K the H range is 1.05-1.12 wt%. $\beta$ gives 7 % at the midpoint of each range: $\beta$ = 7/13.85 = 0.505 (S), 7/9.55 = 0.733 (Si), 7/8.65 = 0.809 (O) and 7/0.975 = 7.18 (H), so the ends of each range lie at 6.7 to 7.3 %. This is a calibration against liquid iron at Earth core pressures; at other pressures the law keeps the same $\beta$, and how $\beta$ changes with pressure is not known here (for comparison, the Luo H law below lowers the density of the Luo liquid iron at 8000 K by 13.2 % at 136 GPa and 11.0 % at 330 GPa for 0.975 wt% H). The law scales the density of the iron base it is given. Where the PALEOS iron table is solid, below the melting curve of pure iron, the base is solid iron: 2.3 % denser at 136 GPa and 4137 K and 1.2 % at 330 GPa and 5400 K than the liquid iron of Luo et al. (2024, Eq. 14), extrapolated there below its 8000 K fit range, so these offsets are differences between 2 fits. There a calibrated core is 4.9 and 5.8 % less dense than that liquid iron, not 7 %. C keeps the liquid value 1.3 of [Li et al. (2019)](https://doi.org/10.1017/9781108677950.003), Table 3.3, and N, with no value there, does not change the density; neither is calibrated against the outer core.
+Hirose et al. (2021) [^cite-hirose2021], p. 3, give 4 outer cores with a single light element that each fit the seismic outer core: 13.3-14.4 wt% S, 9.3-9.8 wt% Si, 8.4-8.9 wt% O or 0.96-0.99 wt% H, at 4137 K at the core-mantle boundary and 5400 K at the inner-core boundary; each is 6 to 8 % less dense than pure liquid iron. Their source, Umemoto & Hirose (2020) [^cite-umemoto2020], gives each range for one inner-core boundary temperature, 5400 K: it is the spread of single-element compositions that fit the PREM density and P-wave velocity within the errors of their calculation and the 2$\sigma$ seismic uncertainties, not a change between the 2 boundaries; with 4800 K the H range is 1.05-1.12 wt%. $\beta$ gives 7 % at the midpoint of each range: $\beta$ = 7/13.85 = 0.505 (S), 7/9.55 = 0.733 (Si), 7/8.65 = 0.809 (O) and 7/0.975 = 7.18 (H), so the ends of each range lie at 6.7 to 7.3 %. This is a calibration against liquid iron at Earth core pressures; at other pressures the law keeps the same $\beta$, and how $\beta$ changes with pressure is not known here (for comparison, the Luo H law below lowers the density of the Luo liquid iron at 8000 K by 13.2 % at 136 GPa and 11.0 % at 330 GPa for 0.975 wt% H). The law scales the density of the iron base it is given. Where the PALEOS iron table is solid, below the melting curve of pure iron, the base is solid iron: 2.3 % denser at 136 GPa and 4137 K and 1.2 % at 330 GPa and 5400 K than the liquid iron of Luo et al. (2024, Eq. 14), extrapolated there below its 8000 K fit range, so these offsets are differences between 2 fits. There a calibrated core is 4.9 and 5.8 % less dense than that liquid iron, not 7 %. C keeps the liquid value 1.3 of Li et al. (2019) [^cite-li2019], Table 3.3, and N, with no value there, does not change the density; neither is calibrated against the outer core.
 
-**Fe-H-O member.** `CoreAlloy:H-Luo` uses the liquid Fe (64 Fe) and Fe-water (64 Fe + 8 H$_2$O) equations of state of [Luo et al. (2024)](https://doi.org/10.1038/s41550-024-02347-z), Methods Eq. 14. Their volume difference at the same $(P, T)$, per kg of water, is the excess specific volume $\Delta v_c$ of a water carrier in liquid iron. The core H enters as this carrier, mass fraction $w_c = w_\mathrm{H} M_{\mathrm{H_2O}} / (2 M_\mathrm{H}) = 8.94\, w_\mathrm{H}$. The carrier O, $w_c - w_\mathrm{H} = 7.94\, w_\mathrm{H}$, counts against the core O; the rest of the O, $w_\mathrm{O} - 7.94\, w_\mathrm{H}$, enters the linear law with $\beta_\mathrm{O}$, also when it is negative because the core holds less O than the carrier. The linear law then applies to the alloy without the carrier, with fractions $w_i / (1 - w_c)$, and
+**Fe-H-O member.** `CoreAlloy:H-Luo` uses the liquid Fe (64 Fe) and Fe-water (64 Fe + 8 H$_2$O) equations of state of Luo et al. (2024) [^cite-luo2024], Methods Eq. 14. Their volume difference at the same $(P, T)$, per kg of water, is the excess specific volume $\Delta v_c$ of a water carrier in liquid iron. The core H enters as this carrier, mass fraction $w_c = w_\mathrm{H} M_{\mathrm{H_2O}} / (2 M_\mathrm{H}) = 8.94\, w_\mathrm{H}$. The carrier O, $w_c - w_\mathrm{H} = 7.94\, w_\mathrm{H}$, counts against the core O; the rest of the O, $w_\mathrm{O} - 7.94\, w_\mathrm{H}$, enters the linear law with $\beta_\mathrm{O}$, also when it is negative because the core holds less O than the carrier. The linear law then applies to the alloy without the carrier, with fractions $w_i / (1 - w_c)$, and
 
 $$\frac{1}{\rho} = \frac{1 - w_c}{\rho_\mathrm{lin}} + w_c\, \Delta v_c(P, T).$$
 
@@ -356,3 +356,15 @@ The mixing framework supports several planned extensions without requiring chang
 [^cite-mori2017]: Y. Mori, H. Ozawa, K. Hirose, R. Sinmyo, S. Tateno, G. Morard, Y. Ohishi (2017). *[Melting experiments on Fe-Fe3S system to 254 GPa](https://doi.org/10.1016/j.epsl.2017.02.021)*. Earth and Planetary Science Letters, 464, 135-141.
 
 [^cite-oka2019]: K. Oka, K. Hirose, S. Tagawa, Y. Kidokoro, Y. Nakajima, Y. Kuwayama, G. Morard, N. Coudurier, G. Fiquet (2019). *[Melting in the Fe-FeO system to 204 GPa: Implications for oxygen in Earth's core](https://doi.org/10.2138/am-2019-7081)*. American Mineralogist, 104, 1603-1607.
+
+[^cite-gupta2025]: A. Gupta, L. Stixrude, H. E. Schlichting (2025). *[The Miscibility of Hydrogen and Water in Planetary Atmospheres and Interiors](https://doi.org/10.3847/2041-8213/adb631)*. The Astrophysical Journal Letters, 982, L35.
+
+[^cite-hirose2021]: K. Hirose, B. Wood, L. Vočadlo (2021). *[Light elements in the Earth's core](https://doi.org/10.1038/s43017-021-00203-6)*. Nature Reviews Earth & Environment, 2, 645-658.
+
+[^cite-kempton2023]: E. M.-R. Kempton, M. Lessard, M. Malik, L. A. Rogers, K. E. Futrowsky, J. Ih, N. Marounina, C. E. Muñoz-Romero (2023). *[Where are the Water Worlds?: Self-consistent Models of Water-rich Exoplanet Atmospheres](https://doi.org/10.3847/1538-4357/ace10d)*. The Astrophysical Journal, 953, 57.
+
+[^cite-li2019]: J. Li, B. Chen, M. Mookherjee, G. Morard (2019). *[Carbon versus Other Light Elements in Earth's Core](https://doi.org/10.1017/9781108677950.003)*. In Deep Carbon, eds. B. N. Orcutt, I. Daniel, R. Dasgupta, Cambridge University Press, 40-65.
+
+[^cite-rogers2025]: J. G. Rogers, E. D. Young, H. E. Schlichting (2025). *[Redefining interiors and envelopes: hydrogen-silicate miscibility and its consequences for the structure and evolution of sub-Neptunes](https://doi.org/10.1093/mnras/staf1940)*. Monthly Notices of the Royal Astronomical Society, 544, 3496-3511.
+
+[^cite-umemoto2020]: K. Umemoto, K. Hirose (2020). *[Chemical compositions of the outer core examined by first principles calculations](https://doi.org/10.1016/j.epsl.2019.116009)*. Earth and Planetary Science Letters, 531, 116009.

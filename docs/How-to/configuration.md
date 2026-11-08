@@ -103,24 +103,24 @@ Rules:
 
 | EOS string | Source | Composition | Temperature | Data files required | Notes |
 |---|---|---|---|---|---|
-| `Seager2007:iron` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | Fe (epsilon phase) | Fixed 300 K | Yes | Vinet EOS + DFT, tabulated $\rho(P)$. |
-| `Seager2007:MgSiO3` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | MgSiO3 perovskite | Fixed 300 K | Yes | 4th-order Birch-Murnaghan + DFT, tabulated $\rho(P)$. |
-| `Seager2007:H2O` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) | Water ice (phases VII, VIII, X) | Fixed 300 K | Yes | Experimental + DFT, tabulated $\rho(P)$. |
-| `WolfBower2018:MgSiO3` | [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) | MgSiO3 (melt + solid) | T-dependent | Yes | RTpress EOS with phase-aware melting (solid EOS derived from [Mosenfelder et al. 2009](https://doi.org/10.1029/2008JB005900)). **Limited to $\leq 7\,M_\oplus$** (table max ~1 TPa; out-of-bounds pressures clamped; $T$ outside 0 to 16500 K raises an error; beyond the valid $T$ band of a pressure the band-edge density, see EOS physics). Requires `temperature_mode` configuration. Uses [Monteux et al.](https://doi.org/10.1016/j.epsl.2016.05.010) solidus/liquidus curves. |
-| `RTPress100TPa:MgSiO3` | Extended RTpress melt table | MgSiO3 (melt + solid) | T-dependent | Yes | Extended melt EOS to 100 TPa ($P$: $10^3$ to $10^{14}$ Pa, $T$: 400 to 50000 K). Solid phase uses [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) table (clamped at 1 TPa, band-edge fill as for `WolfBower2018:MgSiO3`). **Limited to $\leq 50\,M_\oplus$**. Requires `temperature_mode` configuration. |
+| `Seager2007:iron` | Seager et al. (2007) [^cite-seager2007] | Fe (epsilon phase) | Fixed 300 K | Yes | Vinet EOS + DFT, tabulated $\rho(P)$. |
+| `Seager2007:MgSiO3` | Seager et al. (2007) [^cite-seager2007] | MgSiO3 perovskite | Fixed 300 K | Yes | 4th-order Birch-Murnaghan + DFT, tabulated $\rho(P)$. |
+| `Seager2007:H2O` | Seager et al. (2007) [^cite-seager2007] | Water ice (phases VII, VIII, X) | Fixed 300 K | Yes | Experimental + DFT, tabulated $\rho(P)$. |
+| `WolfBower2018:MgSiO3` | Wolf & Bower (2018) [^cite-wolf2018] | MgSiO3 (melt + solid) | T-dependent | Yes | RTpress EOS with phase-aware melting (solid EOS derived from Mosenfelder et al. (2009) [^cite-mosenfelder2009]). **Limited to $\leq 7\,M_\oplus$** (table max ~1 TPa; out-of-bounds pressures clamped; $T$ outside 0 to 16500 K raises an error; beyond the valid $T$ band of a pressure the band-edge density, see EOS physics). Requires `temperature_mode` configuration. Uses Monteux et al. (2016) [^cite-monteux2016] solidus/liquidus curves. |
+| `RTPress100TPa:MgSiO3` | Extended RTpress melt table | MgSiO3 (melt + solid) | T-dependent | Yes | Extended melt EOS to 100 TPa ($P$: $10^3$ to $10^{14}$ Pa, $T$: 400 to 50000 K). Solid phase uses Wolf & Bower (2018) [^cite-wolf2018] table (clamped at 1 TPa, band-edge fill as for `WolfBower2018:MgSiO3`). **Limited to $\leq 50\,M_\oplus$**. Requires `temperature_mode` configuration. |
 | `PALEOS-2phase:MgSiO3` | PALEOS (Zenodo 19680050, v1.1.0) | MgSiO3 (solid + liquid) | T-dependent | Yes | Separate solid and liquid tables providing density and $\nabla_{\mathrm{ad}}$ (P: 1 bar to 100 TPa, T: 300 to 100000 K, 150 ppd log-uniform grid). Enables phase-aware adiabatic temperature profiles using nabla_ad from both phases. **Limited to $\leq 50\,M_\oplus$**. Requires `temperature_mode` configuration. |
 | `PALEOS:iron` | PALEOS (Zenodo 22776069, v1.3.0) | Fe (5 phases) | T-dependent | Yes | Unified single-file table with all stable Fe phases (alpha-bcc, delta-bcc, gamma-fcc, epsilon-hcp, liquid). P: 1 bar to 100 TPa, T: 300 to 100000 K. Phase boundary encoded in table. **Limited to $\leq 50\,M_\oplus$**. Enables T-dependent core with its own adiabat. |
 | `PALEOS:MgSiO3` | PALEOS (Zenodo 22776069, v1.3.0) | MgSiO3 (6 phases) | T-dependent | Yes | Unified single-file table with all stable MgSiO3 phases (3 pyroxene, bridgmanite, postperovskite, liquid). P: 1 bar to 100 TPa, T: 300 to 100000 K. Phase boundary encoded in table. **Limited to $\leq 50\,M_\oplus$**. |
 | `PALEOS:H2O` | PALEOS (Zenodo 22776069, v1.3.0) | H2O (7 EOS) | T-dependent | Yes | Unified single-file table with all stable H2O phases (ice Ih to X, liquid, vapor, superionic). P: 1 bar to 100 TPa, T: 100 to 100000 K. Phase boundary encoded in table. **Limited to $\leq 50\,M_\oplus$**. Use as `ice_layer` for 3-layer models. |
 | `PALEOS-API-2phase:iron-solid` | PALEOS, made on first use from the installed package | Fe (solid phases) | T-dependent | No (needs the PALEOS package) | Solid iron of the PALEOS phase diagram on every node, the metastable solid above melting. P: 1 bar to 100 TPa, T: 300 to 100000 K, 150 points per decade. The base of the inner core of a two-layer core. |
 | `PALEOS-API-2phase:iron-liquid` | PALEOS, made on first use from the installed package | Fe (liquid, Luo et al. 2024) | T-dependent | No (needs the PALEOS package) | PALEOS liquid iron on every node, the metastable liquid below melting. Same box and grid as the solid side. The base of the outer core of a two-layer core; a core on it needs an `inner_core`. |
-| `Chabrier:H` | [Chabrier et al. (2019)](https://doi.org/10.3847/1538-4357/aaf99f), [Chabrier & Debras (2021)](https://doi.org/10.3847/1538-4357/abfc48) | Pure H$_2$ (molecular, atomic, ionized) | T-dependent | Yes | DirEOS2021 table for pure hydrogen. Grid: 121 $\times$ 441 ($\log T$, $\log P$), $T = 100$ to $10^8$ K, $P = 1$ Pa to $10^{22}$ Pa. Provides $\rho$, $\nabla_{\mathrm{ad}}$, $c_p$, $c_v$, $\alpha$, and phase identifier. Loaded through the same `paleos_unified` reader. Use as a mixing component in the mantle (e.g., `"PALEOS:MgSiO3:0.97+Chabrier:H:0.03"`) for sub-Neptune interiors. **No standalone mass limit** (pressure range far exceeds any planet). In H$_2$ dissociation zones ($T \sim 3000$ to $30000$ K), $\nabla_{\mathrm{ad}}$ is clamped at 0.100 in the source tables. |
-| `Analytic:iron` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) Table 3 | Fe (epsilon) | Fixed 300 K | No | Modified polytrope: $\rho(P) = \rho_0 + c \cdot P^n$. |
-| `Analytic:MgSiO3` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) Table 3 | MgSiO3 perovskite | Fixed 300 K | No | Modified polytrope. |
-| `Analytic:MgFeSiO3` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) Table 3 | (Mg,Fe)SiO3 | Fixed 300 K | No | Modified polytrope. |
-| `Analytic:H2O` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) Table 3 | Water ice | Fixed 300 K | No | Modified polytrope. |
-| `Analytic:graphite` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) Table 3 | C (graphite) | Fixed 300 K | No | Modified polytrope. |
-| `Analytic:SiC` | [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) Table 3 | Silicon carbide | Fixed 300 K | No | Modified polytrope. |
+| `Chabrier:H` | Chabrier et al. (2019) [^cite-chabrier2019], Chabrier & Debras (2021) [^cite-chabrier2021] | Pure H$_2$ (molecular, atomic, ionized) | T-dependent | Yes | DirEOS2021 table for pure hydrogen. Grid: 121 $\times$ 441 ($\log T$, $\log P$), $T = 100$ to $10^8$ K, $P = 1$ Pa to $10^{22}$ Pa. Provides $\rho$, $\nabla_{\mathrm{ad}}$, $c_p$, $c_v$, $\alpha$, and phase identifier. Loaded through the same `paleos_unified` reader. Use as a mixing component in the mantle (e.g., `"PALEOS:MgSiO3:0.97+Chabrier:H:0.03"`) for sub-Neptune interiors. **No standalone mass limit** (pressure range far exceeds any planet). In H$_2$ dissociation zones ($T \sim 3000$ to $30000$ K), $\nabla_{\mathrm{ad}}$ is clamped at 0.100 in the source tables. |
+| `Analytic:iron` | Seager et al. (2007) [^cite-seager2007] Table 3 | Fe (epsilon) | Fixed 300 K | No | Modified polytrope: $\rho(P) = \rho_0 + c \cdot P^n$. |
+| `Analytic:MgSiO3` | Seager et al. (2007) [^cite-seager2007] Table 3 | MgSiO3 perovskite | Fixed 300 K | No | Modified polytrope. |
+| `Analytic:MgFeSiO3` | Seager et al. (2007) [^cite-seager2007] Table 3 | (Mg,Fe)SiO3 | Fixed 300 K | No | Modified polytrope. |
+| `Analytic:H2O` | Seager et al. (2007) [^cite-seager2007] Table 3 | Water ice | Fixed 300 K | No | Modified polytrope. |
+| `Analytic:graphite` | Seager et al. (2007) [^cite-seager2007] Table 3 | C (graphite) | Fixed 300 K | No | Modified polytrope. |
+| `Analytic:SiC` | Seager et al. (2007) [^cite-seager2007] Table 3 | Silicon carbide | Fixed 300 K | No | Modified polytrope. |
 
 **Analytic EOS details.** The analytic options use the modified polytropic fit from Seager et al. (2007, Eq. 11, Table 3):
 
@@ -132,7 +132,7 @@ where $\rho_0$ is the zero-pressure density, $c$ and $n$ are fitted constants. T
 
 1. **Separate solid/liquid tables** (`WolfBower2018:MgSiO3`, `RTPress100TPa:MgSiO3`, `PALEOS-2phase:MgSiO3`): use separate $\rho(P, T)$ grids for solid and melt phases, with linear melt-fraction interpolation between external solidus and liquidus melting curves.
 2. **Unified PALEOS tables** (`PALEOS:iron`, `PALEOS:MgSiO3`, `PALEOS:H2O`): single file per material containing all stable phases. The thermodynamically stable phase at each $(P, T)$ is encoded in the table, and the phase boundary (liquidus) is extracted automatically. No external melting curves needed. A configurable `mushy_zone_factor` controls the width of an artificial mushy zone below the liquidus.
-3. **Chabrier H/He tables** (`Chabrier:H`): DirEOS2021 tables from [Chabrier et al. (2019)](https://doi.org/10.3847/1538-4357/aaf99f) and [Chabrier & Debras (2021)](https://doi.org/10.3847/1538-4357/abfc48). Same 10-column format as unified PALEOS. Intended for use as a mixing component in sub-Neptune mantles, combined with binodal (miscibility) suppression.
+3. **Chabrier H/He tables** (`Chabrier:H`): DirEOS2021 tables from Chabrier et al. (2019) [^cite-chabrier2019] and Chabrier & Debras (2021) [^cite-chabrier2021]. Same 10-column format as unified PALEOS. Intended for use as a mixing component in sub-Neptune mantles, combined with binodal (miscibility) suppression.
 
 When any T-dependent EOS is assigned to any layer, the `temperature_mode`, `surface_temperature`, and `center_temperature` parameters in `[AssumptionsAndInitialGuesses]` become active.
 
@@ -177,8 +177,8 @@ Both parameters must be positive. The validation rejects non-positive values at 
 When `Chabrier:H` is mixed with silicate or water components, an additional binodal (miscibility) suppression determines whether H$_2$ participates in the harmonic mean at each $(P, T)$ point.
 Two independent binodal models are evaluated automatically:
 
-- **H$_2$-MgSiO$_3$**: [Rogers, Young & Schlichting (2025)](https://doi.org/10.1093/mnras/staf1940) analytic binodal fit.
-- **H$_2$-H$_2$O**: [Gupta, Stixrude & Schlichting (2025)](https://doi.org/10.3847/2041-8213/adb631) Gibbs free energy model.
+- **H$_2$-MgSiO$_3$**: Rogers, Young & Schlichting (2025) [^cite-rogers2025] analytic binodal fit.
+- **H$_2$-H$_2$O**: Gupta, Stixrude & Schlichting (2025) [^cite-gupta2025] Gibbs free energy model.
 
 Above the binodal temperature, H$_2$ is miscible with its partner and participates fully in the density calculation.
 Below the binodal, H$_2$ is suppressed via a smooth sigmoid transition.
@@ -204,12 +204,12 @@ The `rock_solidus` and `rock_liquidus` fields control which melting curves are u
 
 | Identifier | Type | Source | Notes |
 |---|---|---|---|
-| `Monteux16-solidus` | Analytic | [Monteux et al. (2016)](https://doi.org/10.1016/j.epsl.2016.05.010) Eqs. 10/12 | Default. Piecewise Simon-Glatzel, valid to ~500 GPa. |
-| `Stixrude14-solidus` | Analytic | [Stixrude (2014)](https://doi.org/10.1098/rsta.2013.0076) Eqs. 1.9+1.10 | Power law with cryoscopic depression ($x_0 = 0.79$). Valid at all $P$. |
-| `Monteux16-liquidus-A-chondritic` | Analytic | [Monteux et al. (2016)](https://doi.org/10.1016/j.epsl.2016.05.010) Eqs. 11/13 | Default. A-chondritic composition. Valid to ~500 GPa. |
-| `Monteux16-liquidus-F-peridotitic` | Analytic | [Monteux et al. (2016)](https://doi.org/10.1016/j.epsl.2016.05.010) Eqs. 11/13 | F-peridotitic composition. Valid to ~660 GPa. |
-| `Stixrude14-liquidus` | Analytic | [Stixrude (2014)](https://doi.org/10.1098/rsta.2013.0076) Eq. 1.9 | Simon-like power law for pure MgSiO$_3$. Valid at all $P$. Liquidus always above solidus (constant ratio). |
-| `PALEOS-liquidus` | Analytic | [Belonoshko et al. (2005)](https://doi.org/10.1103/PhysRevB.72.104107) / [Fei et al. (2021)](https://doi.org/10.1103/PhysRevLett.127.135701) | Piecewise Simon-Glatzel fit: Belonoshko+2005 ($P < 2.55$ GPa) / Fei+2021 ($P \geq 2.55$ GPa). This is the melting curve used internally by the PALEOS unified MgSiO$_3$ table. Use it with `PALEOS-2phase:MgSiO3` for consistency with the unified table's phase boundary. Valid at all $P$. |
+| `Monteux16-solidus` | Analytic | Monteux et al. (2016) [^cite-monteux2016] Eqs. 10/12 | Default. Piecewise Simon-Glatzel, valid to ~500 GPa. |
+| `Stixrude14-solidus` | Analytic | Stixrude (2014) [^cite-stixrude2014] Eqs. 1.9+1.10 | Power law with cryoscopic depression ($x_0 = 0.79$). Valid at all $P$. |
+| `Monteux16-liquidus-A-chondritic` | Analytic | Monteux et al. (2016) [^cite-monteux2016] Eqs. 11/13 | Default. A-chondritic composition. Valid to ~500 GPa. |
+| `Monteux16-liquidus-F-peridotitic` | Analytic | Monteux et al. (2016) [^cite-monteux2016] Eqs. 11/13 | F-peridotitic composition. Valid to ~660 GPa. |
+| `Stixrude14-liquidus` | Analytic | Stixrude (2014) [^cite-stixrude2014] Eq. 1.9 | Simon-like power law for pure MgSiO$_3$. Valid at all $P$. Liquidus always above solidus (constant ratio). |
+| `PALEOS-liquidus` | Analytic | Belonoshko et al. (2005) [^cite-belonoshko2005] / Fei et al. (2021) [^cite-fei2021] | Piecewise Simon-Glatzel fit: Belonoshko+2005 ($P < 2.55$ GPa) / Fei+2021 ($P \geq 2.55$ GPa). This is the melting curve used internally by the PALEOS unified MgSiO$_3$ table. Use it with `PALEOS-2phase:MgSiO3` for consistency with the unified table's phase boundary. Valid at all $P$. |
 | `Monteux600-solidus-tabulated` | Tabulated | Monteux et al. (2016) with fixed 600 K gap | Legacy. Returns NaN outside table range ($P > 999$ GPa). |
 | `Monteux600-liquidus-tabulated` | Tabulated | Monteux et al. (2016) with fixed 600 K gap | Legacy. Returns NaN outside table range. |
 
@@ -491,3 +491,25 @@ Controls what the model writes after a run.
 | `plots_enabled` | bool | false | Generate profile plots after the run. |
 
 Convergence diagnostics are controlled by the Python logging level. Set `logging.getLogger('fwl.zalmoxis').setLevel(logging.DEBUG)` to see per-iteration convergence info and write iteration pressure/density profiles.
+
+[^cite-belonoshko2005]: A. B. Belonoshko, N. V. Skorodumova, A. Rosengren, R. Ahuja, B. Johansson, L. Burakovsky, D. L. Preston (2005). *[High-Pressure Melting of MgSiO3](https://doi.org/10.1103/PhysRevLett.94.195701)*. Physical Review Letters, 94, 195701.
+
+[^cite-chabrier2019]: G. Chabrier, S. Mazevet, F. Soubiran (2019). *[A New Equation of State for Dense Hydrogen-Helium Mixtures](https://doi.org/10.3847/1538-4357/aaf99f)*. The Astrophysical Journal, 872, 51.
+
+[^cite-chabrier2021]: G. Chabrier, F. Debras (2021). *[A New Equation of State for Dense Hydrogen-Helium Mixtures. II. Taking into Account Hydrogen-Helium Interactions](https://doi.org/10.3847/1538-4357/abfc48)*. The Astrophysical Journal, 917, 4.
+
+[^cite-fei2021]: Y. Fei, C. T. Seagle, J. P. Townsend, C. A. McCoy, A. Boujibar, P. Driscoll, L. Shulenburger, M. D. Furnish (2021). *[Melting and density of MgSiO3 determined by shock compression of bridgmanite to 1254GPa](https://doi.org/10.1038/s41467-021-21170-y)*. Nature Communications, 12, 876.
+
+[^cite-gupta2025]: A. Gupta, L. Stixrude, H. E. Schlichting (2025). *[The Miscibility of Hydrogen and Water in Planetary Atmospheres and Interiors](https://doi.org/10.3847/2041-8213/adb631)*. The Astrophysical Journal Letters, 982, L35.
+
+[^cite-monteux2016]: J. Monteux, D. Andrault, H. Samuel (2016). *[On the cooling of a deep terrestrial magma ocean](https://doi.org/10.1016/j.epsl.2016.05.010)*. Earth and Planetary Science Letters, 448, 140-149.
+
+[^cite-mosenfelder2009]: J. L. Mosenfelder, P. D. Asimow, D. J. Frost, D. C. Rubie, T. J. Ahrens (2009). *[The MgSiO3 system at high pressure: Thermodynamic properties of perovskite, postperovskite, and melt from global inversion of shock and static compression data](https://doi.org/10.1029/2008JB005900)*. Journal of Geophysical Research (Solid Earth), 114.
+
+[^cite-rogers2025]: J. G. Rogers, E. D. Young, H. E. Schlichting (2025). *[Redefining interiors and envelopes: hydrogen-silicate miscibility and its consequences for the structure and evolution of sub-Neptunes](https://doi.org/10.1093/mnras/staf1940)*. Monthly Notices of the Royal Astronomical Society, 544, 3496-3511.
+
+[^cite-seager2007]: S. Seager, M. Kuchner, C. A. Hier-Majumder, B. Militzer (2007). *[Mass-Radius Relationships for Solid Exoplanets](https://doi.org/10.1086/521346)*. The Astrophysical Journal, 669, 1279-1297.
+
+[^cite-stixrude2014]: L. Stixrude (2014). *[Melting in super-earths](https://doi.org/10.1098/rsta.2013.0076)*. Philosophical Transactions of the Royal Society A: Mathematical, Physical and Engineering Sciences, 372, 20130076.
+
+[^cite-wolf2018]: A. S. Wolf, D. J. Bower (2018). *[An equation of state for high pressure-temperature liquids (RTpress) with application to MgSiO3 melt](https://doi.org/10.1016/j.pepi.2018.02.004)*. Physics of the Earth and Planetary Interiors, 278, 59-74.
