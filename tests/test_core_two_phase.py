@@ -5,6 +5,8 @@ from __future__ import annotations
 import importlib.util
 import math
 import numbers
+import sys
+import types
 
 import numpy as np
 import pytest
@@ -471,6 +473,16 @@ def test_outside_side_tables_flags_nodes_off_the_table(tmp_path):
     assert got.tolist() == [False, True, True, True]
     none = outside_side_tables(p, t, LayerMixture(['PALEOS:iron'], [1.0]), md, {})
     assert not none.any()
+
+
+def test_a_test_of_the_real_paleos_skips_on_the_mock(monkeypatch):
+    """With the PALEOS mock of a runner without the package in place, a test that needs the
+    real package skips instead of failing in the import machinery."""
+    mock = types.ModuleType('paleos')
+    mock.__version__ = '0.0.0-mock'
+    monkeypatch.setitem(sys.modules, 'paleos', mock)
+    with pytest.raises(pytest.skip.Exception):
+        test_the_solid_picker_keeps_the_delta_boundary_of_paleos()
 
 
 def test_solid_above_counts_only_segments_cold_at_both_ends():
