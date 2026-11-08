@@ -14,13 +14,13 @@ iron; and the config checks of a light-element core.
 
 from __future__ import annotations
 
-import importlib.util
 import math
 import os
 
 import numpy as np
 import pytest
 
+from tests import _paleos_mock
 from zalmoxis.eos import core_alloy as ca
 from zalmoxis.mixing import LayerMixture, parse_layer_components
 
@@ -682,8 +682,7 @@ class TestHiroseCalibration:
         core is 7 % below it (1e-12) and the range ends 6-8 %. On the solid PALEOS base the same
         cores lie 4.890 and 5.845 % below that liquid (regression pins, table version dependent).
         """
-        if importlib.util.find_spec('paleos') is None:
-            pytest.skip('PALEOS not installed')
+        _paleos_mock.skip_unless_real()
         from zalmoxis.eos import paleos_api as pa
         from zalmoxis.mixing import calculate_mixed_density as rho
 

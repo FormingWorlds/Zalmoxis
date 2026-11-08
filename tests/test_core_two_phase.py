@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 import math
 import numbers
 import sys
@@ -13,6 +12,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from tests import _paleos_mock
 from zalmoxis.config import parse_eos_config, validate_config, validate_layer_eos
 from zalmoxis.constants import G
 from zalmoxis.core_profile import core_arrays, icb_from_profile
@@ -458,8 +458,7 @@ def test_the_jax_path_refuses_an_inner_core():
 def test_outside_side_tables_flags_nodes_off_the_table(tmp_path):
     """Nodes beyond the pressure box, at a non-positive temperature or clamped in their row are
     flagged; a node inside the table and a mixture without a side table are not."""
-    if importlib.util.find_spec('paleos') is None:
-        pytest.skip('PALEOS not installed')
+    _paleos_mock.skip_unless_real()
     from zalmoxis.core_profile import outside_side_tables
     from zalmoxis.eos import paleos_api as pa
 
@@ -510,8 +509,7 @@ def test_a_given_icb_mass_counts_no_solid_below_it():
 def test_the_solid_picker_keeps_the_delta_boundary_of_paleos():
     """PALEOS takes bcc delta iron up to and including 5.2 GPa above T_delta_gamma (1998 K
     there): the picker gives delta at exactly 5.2 GPa and gamma just above it."""
-    if importlib.util.find_spec('paleos') is None:
-        pytest.skip('PALEOS not installed')
+    _paleos_mock.skip_unless_real()
     from zalmoxis.eos.paleos_api import _get_iron_solid_phase
 
     assert _get_iron_solid_phase(5.2e9, 2000.0) == 'solid-delta'

@@ -77,6 +77,14 @@ def install_if_missing() -> bool:
     return True
 
 
+def skip_unless_real() -> None:
+    """Skip the calling test unless the real PALEOS package, not this mock, is importable."""
+    import pytest
+
+    if getattr(pytest.importorskip('paleos'), '__version__', '') == '0.0.0-mock':
+        pytest.skip('needs the real PALEOS package')
+
+
 def _register_paleos_root() -> None:
     """Build and register the top-level ``paleos`` mock package."""
     paleos = types.ModuleType('paleos')

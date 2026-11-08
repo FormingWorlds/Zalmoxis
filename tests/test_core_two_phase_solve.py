@@ -16,6 +16,7 @@ import numpy as np
 import pytest
 from scipy.optimize import brentq
 
+from tests import _paleos_mock
 from tools.default_solve_reference import cpu_key
 
 # one solve takes about 300 s on a 4-vCPU runner under coverage; a test holds up to 3
@@ -30,9 +31,7 @@ PLOT_CPU = 'darwin-arm64'  # the PREM plots compare their data only on the CPU t
 def setup(tmp_path_factory):
     """Material dictionaries with the 2 iron sides on a 40 pts/decade grid of 1e9-3e12 Pa and
     1000-2e4 K, generated once into a scratch cache root, and the default config."""
-    paleos = pytest.importorskip('paleos')
-    if getattr(paleos, '__version__', '') == '0.0.0-mock':
-        pytest.skip('needs the real PALEOS')
+    _paleos_mock.skip_unless_real()
     from zalmoxis import get_zalmoxis_root
     from zalmoxis.config import load_material_dictionaries, load_zalmoxis_config
     from zalmoxis.eos import paleos_api, paleos_api_cache
