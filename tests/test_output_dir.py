@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import runpy
 from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from tests.test_config_validators_extra import _make_minimal_config
@@ -161,19 +162,70 @@ def test_any_non_path_output_dir_is_refused(value):
         validate_config(_make_minimal_config(output_dir=value))
 
 
-@settings(
-    max_examples=60, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture]
+@pytest.mark.parametrize(
+    'name, ok',
+    [
+        ('a\0b', False),
+        ('trailing ', False),
+        ('~', False),
+        ('n' * 300, False),
+        ('link', True),
+        ('rel', True),
+    ],
+    ids=['NUL', 'trailing-space', 'tilde', 'long-name', 'symlink-to-folder', 'relative'],
 )
-@given(st.text(alphabet='abcXYZ019_- .', min_size=1, max_size=12))
-def test_any_output_dir_that_is_not_a_folder_is_refused(tmp_path, name):
-    """A name under a missing folder, and a regular file, raise ValueError; nothing is created."""
-    with pytest.raises(ValueError, match='is not an existing folder'):
-        validate_config(_make_minimal_config(output_dir=os.path.join(tmp_path, 'absent', name)))
-    afile = tmp_path / 'a_file.txt'
-    afile.write_text('x')
-    with pytest.raises(ValueError, match='is not an existing folder'):
-        validate_config(_make_minimal_config(output_dir=str(afile)))
-    assert sorted(p.name for p in tmp_path.iterdir()) == ['a_file.txt']
+def test_output_dir_names_at_the_edges(tmp_path, monkeypatch, name, ok):
+    """NUL, a trailing space, '~' (not expanded) and a long name are no folder; a symlink and a relative path are."""
+    (tmp_path / 'rel').mkdir()
+    (tmp_path / 'link').symlink_to(tmp_path / 'rel')
+    monkeypatch.chdir(tmp_path)
+    cfg = _make_minimal_config(output_dir=name)
+    if ok:
+        assert validate_config(cfg) is None
+    else:
+        with pytest.raises(ValueError, match='is not an existing folder'):
+            validate_config(cfg)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ['link', 'rel']
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason='root writes into a read-only folder')
+def test_output_dir_that_is_not_writable_is_refused(tmp_path):
+    """An existing folder without write permission raises ValueError naming it."""
+    ro = tmp_path / 'ro'
+    ro.mkdir()
+    ro.chmod(0o500)
+    try:
+        with pytest.raises(ValueError, match="output_dir .*ro' is not writable"):
+            validate_config(_make_minimal_config(output_dir=str(ro)))
+    finally:
+        ro.chmod(0o700)
+    assert validate_config(_make_minimal_config(output_dir=str(ro))) is None
+
+
+@pytest.mark.usefixtures('fake_solver')
+@pytest.mark.parametrize(
+    'value, match', [('', 'must not be empty'), ('missing/run', 'is not an existing folder')]
+)
+def test_post_processing_checks_a_given_output_dir(
+    fake_root, tmp_path, monkeypatch, value, match
+):
+    """A library dict that skipped validate_config: '' and a missing folder raise ValueError, nothing is made."""
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ValueError, match=match):
+        output_mod.post_processing(_base_config(output_dir=value))
+    assert not (tmp_path / 'missing').exists()
+    assert list((fake_root / 'output').iterdir()) == []
+
+
+@pytest.mark.usefixtures('fake_solver')
+def test_plots_alone_create_the_root_output_of_a_fresh_checkout(tmp_path, monkeypatch):
+    """data_enabled false, plots on, no <root>/output: the folder is made and holds the PNG."""
+    root = tmp_path / 'root'
+    root.mkdir()
+    for mod in (output_mod, plot_profiles, plot_phase_vs_radius):
+        monkeypatch.setattr(mod, 'get_zalmoxis_root', lambda: str(root))
+    output_mod.post_processing(_base_config(data_output_enabled=False, plotting_enabled=True))
+    assert sorted(p.name for p in (root / 'output').iterdir()) == ['planet_profile.png']
 
 
 def test_output_dir_set_in_the_toml_reaches_the_config(tmp_path):
@@ -266,3 +318,77 @@ def test_cli_creates_the_root_output_of_a_fresh_checkout(tmp_path, reset_logging
                 runpy.run_module('zalmoxis', run_name='__main__')
     assert (root / 'output' / 'zalmoxis.log').is_file()
     assert sorted(p.name for p in root.iterdir()) == ['output']
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason='root writes into a read-only folder')
+def test_cli_keeps_the_config_error_when_the_log_cannot_be_opened(tmp_path, reset_logging):
+    """A refused config with a read-only <root>/output: the config error escapes, not the log error."""
+    root = tmp_path / 'root'
+    (root / 'output').mkdir(parents=True)
+    (root / 'output').chmod(0o500)
+    try:
+        with patch('zalmoxis.get_zalmoxis_root', return_value=str(root)):
+            with patch(
+                'zalmoxis.config.load_zalmoxis_config', side_effect=ValueError('refused')
+            ):
+                with pytest.raises(Exception) as err:
+                    runpy.run_module('zalmoxis', run_name='__main__')
+    finally:
+        (root / 'output').chmod(0o700)
+    assert type(err.value) is ValueError
+    assert list((root / 'output').iterdir()) == []
+
+
+def test_cli_log_names_the_error_of_a_refused_config(tmp_path, reset_logging):
+    """The log of a refused config holds the error that stopped the run."""
+    root = tmp_path / 'root'
+    (root / 'output').mkdir(parents=True)
+    with patch('zalmoxis.get_zalmoxis_root', return_value=str(root)):
+        with patch('zalmoxis.config.load_zalmoxis_config', side_effect=KeyError('planet_mass')):
+            with pytest.raises(KeyError):
+                runpy.run_module('zalmoxis', run_name='__main__')
+    text = (root / 'output' / 'zalmoxis.log').read_text()
+    assert ' - ERROR - ' in text
+    assert 'planet_mass' in text
+
+
+def test_cli_log_is_overwritten_formatted_and_at_info(tmp_path, reset_logging):
+    """An old log is replaced; each line reads '<time> - <LEVEL> - <message>'; DEBUG lines are left out."""
+    root, run = tmp_path / 'root', tmp_path / 'run'
+    (root / 'output').mkdir(parents=True)
+    run.mkdir()
+    (run / 'zalmoxis.log').write_text('OLD LINE\n')
+
+    def load():
+        logging.getLogger('fwl.zalmoxis.config').debug('a debug line')
+        logging.getLogger('fwl.zalmoxis.config').info('an info line')
+        return {'output_dir': str(run)}
+
+    with patch('zalmoxis.get_zalmoxis_root', return_value=str(root)):
+        with patch('zalmoxis.config.load_zalmoxis_config', side_effect=load):
+            with patch('zalmoxis.output.post_processing'):
+                runpy.run_module('zalmoxis', run_name='__main__')
+    lines = (run / 'zalmoxis.log').read_text().splitlines()
+    assert lines == [lines[0]] and lines[0].endswith(' - INFO - an info line')
+    assert re.fullmatch(r'\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d{3} - INFO - an info line', lines[0])
+
+
+def test_cli_with_the_real_loader_logs_into_the_folder_of_the_toml(tmp_path, reset_logging):
+    """The real load_zalmoxis_config of a default.toml with output_dir: the log and the call go there."""
+    from zalmoxis import get_zalmoxis_root
+
+    root, run = tmp_path / 'root', tmp_path / 'run'
+    (root / 'input').mkdir(parents=True)
+    run.mkdir()
+    text = open(os.path.join(get_zalmoxis_root(), 'input', 'default.toml')).read()
+    (root / 'input' / 'default.toml').write_text(
+        text.replace('[Output]\n', f"[Output]\noutput_dir = '{run}'\n")
+    )
+    with patch('zalmoxis.get_zalmoxis_root', return_value=str(root)):
+        with patch('zalmoxis.config.get_zalmoxis_root', return_value=str(root)):
+            with patch('sys.argv', ['zalmoxis']):
+                with patch('zalmoxis.output.post_processing') as post:
+                    runpy.run_module('zalmoxis', run_name='__main__')
+    assert post.call_args.args[0]['output_dir'] == str(run)
+    assert 'Reading default config file' in (run / 'zalmoxis.log').read_text()
+    assert not (root / 'output').exists()
