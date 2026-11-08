@@ -16,7 +16,8 @@ import numpy as np
 import pytest
 from scipy.optimize import brentq
 
-pytestmark = [pytest.mark.integration, pytest.mark.core_two_phase, pytest.mark.timeout(900)]
+# one solve takes about 300 s on a 4-vCPU runner under coverage; a test holds up to 3
+pytestmark = [pytest.mark.integration, pytest.mark.core_two_phase, pytest.mark.timeout(2700)]
 
 LIQ, SOL = 'PALEOS-API-2phase:iron-liquid', 'PALEOS-API-2phase:iron-solid'
 
