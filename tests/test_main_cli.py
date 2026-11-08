@@ -37,7 +37,8 @@ def reset_logging():
     yield
     for h in list(logger.handlers):
         logger.removeHandler(h)
-        h.close()
+        if h not in saved_handlers:
+            h.close()
     for h in saved_handlers:
         logger.addHandler(h)
     logger.setLevel(saved_level)

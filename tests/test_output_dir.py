@@ -26,6 +26,7 @@ from zalmoxis.config import validate_config
 from zalmoxis.plots import plot_phase_vs_radius, plot_profiles
 
 pytestmark = [pytest.mark.unit, pytest.mark.timeout(30)]
+_ROOT_USER = getattr(os, 'geteuid', lambda: 1)() == 0
 
 
 @pytest.fixture
@@ -188,12 +189,13 @@ def test_output_dir_names_at_the_edges(tmp_path, monkeypatch, name, ok):
     assert sorted(p.name for p in tmp_path.iterdir()) == ['link', 'rel']
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason='root writes into a read-only folder')
-def test_output_dir_that_is_not_writable_is_refused(tmp_path):
-    """An existing folder without write permission raises ValueError naming it."""
+@pytest.mark.skipif(_ROOT_USER, reason='root writes into a read-only folder')
+@pytest.mark.parametrize('mode', [0o500, 0o600, 0o200], ids=['r-x', 'rw-', '-w-'])
+def test_output_dir_that_is_not_writable_is_refused(tmp_path, mode):
+    """A folder without write or search permission (no file can be made in it) raises ValueError."""
     ro = tmp_path / 'ro'
     ro.mkdir()
-    ro.chmod(0o500)
+    ro.chmod(mode)
     try:
         with pytest.raises(ValueError, match="output_dir .*ro' is not writable"):
             validate_config(_make_minimal_config(output_dir=str(ro)))
@@ -251,7 +253,8 @@ def reset_logging():
     yield
     for h in list(logger.handlers):
         logger.removeHandler(h)
-        h.close()
+        if h not in saved:
+            h.close()
     for h in saved:
         logger.addHandler(h)
     logger.setLevel(level)
@@ -320,7 +323,7 @@ def test_cli_creates_the_root_output_of_a_fresh_checkout(tmp_path, reset_logging
     assert sorted(p.name for p in root.iterdir()) == ['output']
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason='root writes into a read-only folder')
+@pytest.mark.skipif(_ROOT_USER, reason='root writes into a read-only folder')
 def test_cli_keeps_the_config_error_when_the_log_cannot_be_opened(tmp_path, reset_logging):
     """A refused config with a read-only <root>/output: the config error escapes, not the log error."""
     root = tmp_path / 'root'
@@ -380,7 +383,7 @@ def test_cli_with_the_real_loader_logs_into_the_folder_of_the_toml(tmp_path, res
     root, run = tmp_path / 'root', tmp_path / 'run'
     (root / 'input').mkdir(parents=True)
     run.mkdir()
-    text = open(os.path.join(get_zalmoxis_root(), 'input', 'default.toml')).read()
+    text = Path(get_zalmoxis_root(), 'input', 'default.toml').read_text()
     (root / 'input' / 'default.toml').write_text(
         text.replace('[Output]\n', f"[Output]\noutput_dir = '{run}'\n")
     )
@@ -392,3 +395,36 @@ def test_cli_with_the_real_loader_logs_into_the_folder_of_the_toml(tmp_path, res
     assert post.call_args.args[0]['output_dir'] == str(run)
     assert 'Reading default config file' in (run / 'zalmoxis.log').read_text()
     assert not (root / 'output').exists()
+
+
+@pytest.mark.usefixtures('fake_solver')
+@pytest.mark.skipif(_ROOT_USER, reason='root writes into a read-only folder')
+def test_post_processing_that_writes_nothing_needs_no_folder(tmp_path, monkeypatch):
+    """Data and plots off, a read-only root: no folder is made and nothing raises."""
+    root = tmp_path / 'root'
+    root.mkdir()
+    root.chmod(0o500)
+    for mod in (output_mod, plot_profiles, plot_phase_vs_radius):
+        monkeypatch.setattr(mod, 'get_zalmoxis_root', lambda: str(root))
+    try:
+        output_mod.post_processing(_base_config(data_output_enabled=False))
+    finally:
+        root.chmod(0o700)
+    assert list(root.iterdir()) == []
+
+
+def test_cli_warns_when_the_log_file_cannot_be_opened(tmp_path, reset_logging, capsys):
+    """A folder named zalmoxis.log in output_dir: the log goes to stderr with a warning that names the file."""
+    root, run = tmp_path / 'root', tmp_path / 'run'
+    (root / 'output').mkdir(parents=True)
+    (run / 'zalmoxis.log').mkdir(parents=True)
+    with patch('zalmoxis.get_zalmoxis_root', return_value=str(root)):
+        with patch(
+            'zalmoxis.config.load_zalmoxis_config', return_value={'output_dir': str(run)}
+        ):
+            with patch('zalmoxis.output.post_processing') as post:
+                runpy.run_module('zalmoxis', run_name='__main__')
+    post.assert_called_once()
+    err = capsys.readouterr().err
+    assert ' - WARNING - ' in err
+    assert 'zalmoxis.log' in err and 'is written to stderr' in err
