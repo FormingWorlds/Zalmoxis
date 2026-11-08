@@ -724,7 +724,7 @@ def _check_folder(key, folder):
         raise ValueError(f'{key} must not be empty; leave it out for the default folder.')
     if not os.path.isdir(folder):
         raise ValueError(f'{key} {os.fspath(folder)!r} is not an existing folder.')
-    if not os.access(folder, os.W_OK):
+    if not os.access(folder, os.W_OK | os.X_OK):  # a new file needs write and search
         raise ValueError(f'{key} {os.fspath(folder)!r} is not writable.')
 
 

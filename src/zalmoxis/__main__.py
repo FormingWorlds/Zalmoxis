@@ -24,14 +24,19 @@ if __name__ == '__main__':
         raise
     finally:  # a refused config logs into <root>/output, an unwritable folder to stderr
         output_dir = config_params.setdefault('output_dir', os.path.join(root, 'output'))
+        path, failed = os.path.join(output_dir, 'zalmoxis.log'), None
         try:
             os.makedirs(output_dir, exist_ok=True)
-            log_file = logging.FileHandler(os.path.join(output_dir, 'zalmoxis.log'), mode='w')
-        except OSError:
-            log_file = logging.StreamHandler()
+            log_file = logging.FileHandler(path, mode='w')
+        except OSError as err:
+            log_file, failed = logging.StreamHandler(), err
         log_file.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         early.setTarget(log_file)
         log.addHandler(log_file)
         log.removeHandler(early)
         early.close()
+        if failed:
+            logging.getLogger('fwl.zalmoxis').warning(
+                f'{path} cannot be opened ({failed}); the log is written to stderr.'
+            )
     post_processing(config_params)

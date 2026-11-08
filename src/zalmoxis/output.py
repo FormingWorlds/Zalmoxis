@@ -44,9 +44,10 @@ def post_processing(config_params, id_mass=None, output_file=None, model_results
     data_output_enabled = config_params['data_output_enabled']
     plotting_enabled = config_params['plotting_enabled']
     output_dir = config_params.get('output_dir')
-    if output_dir is None:  # a fresh checkout has no <root>/output
+    if output_dir is None:
         output_dir = os.path.join(get_zalmoxis_root(), 'output')
-        os.makedirs(output_dir, exist_ok=True)
+        if data_output_enabled or plotting_enabled:  # a fresh checkout has no <root>/output
+            os.makedirs(output_dir, exist_ok=True)
     else:
         _check_folder('output_dir', output_dir)
 
