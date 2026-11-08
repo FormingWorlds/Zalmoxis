@@ -28,6 +28,8 @@ def off_tolerance(got, ref, tol=TOLERANCE_OUTER):
     scale with the mass by powers below 1, so each differs by less than 2 tol in relative terms.
     """
     off = [k for k in ('converged', 'converged_mass') if not bool(got[k])]
+    if bool(got['stopped_on_wall_clock']):
+        off.append('stopped_on_wall_clock')
     if not abs(got['mass_enclosed'][-1] / ref['mass_enclosed'][-1] - 1) < 2 * tol:
         off.append('mass_enclosed')
     if not abs(got['mass_error_at_accept']) < tol:

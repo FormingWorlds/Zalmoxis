@@ -19,11 +19,11 @@ from scipy.optimize import brentq
 from tests import _paleos_mock
 from tools.default_solve_reference import cpu_key
 
-# one solve takes about 300 s on a 4-vCPU runner under coverage; a test holds up to 3
-pytestmark = [pytest.mark.integration, pytest.mark.core_two_phase, pytest.mark.timeout(2700)]
+# the PREM test, 3 solves, takes 1404 s on a CI runner under coverage
+pytestmark = [pytest.mark.integration, pytest.mark.core_two_phase, pytest.mark.timeout(2100)]
 
 LIQ, SOL = 'PALEOS-API-2phase:iron-liquid', 'PALEOS-API-2phase:iron-solid'
-WALL = 3000.0  # solver wall clock [s], so that a slow runner does not cut a solve
+WALL = 1320.0  # solver wall clock [s], 1.5 x the slowest solve on a CI runner (875 s)
 PLOT_CPU = 'darwin-arm64'  # the PREM plots compare their data only on the CPU that made them
 
 
@@ -72,9 +72,6 @@ def _solve(setup, inner='', core=LIQ, **over):
     mixes = parse_all_layer_mixtures(cfg['layer_eos_config'])
     res = main(cfg, md, melt, input_dir, layer_mixtures=mixes)
     assert res['converged'] and not res['stopped_on_wall_clock']
-    import warnings  # TEMP: CI solve times for the wall-clock limit
-
-    warnings.warn(f'TIMING solve {res["total_time"]:.1f} s {sorted(over)}')
     return res
 
 

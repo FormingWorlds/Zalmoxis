@@ -45,6 +45,8 @@ def solve_arrays():
 
     root = get_zalmoxis_root()
     cfg = load_zalmoxis_config(os.path.join(root, 'input', 'default.toml'))
+    # a cut at the default 300 s makes the result depend on the speed of the runner
+    cfg['wall_timeout'] = 600.0
     melt = load_solidus_liquidus_functions(
         cfg['layer_eos_config'],
         cfg['rock_solidus'],
