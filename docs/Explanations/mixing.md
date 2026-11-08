@@ -332,6 +332,7 @@ on the temperature profile of the previous outer pass, found by Brent's method o
     | 2525 K | 0.000 | 0.308 |
     | 2550 K | 0.000 | 0.000 |
 
+- **Tight outer tolerance.** With `core_liquidus`, the outer loop stops only when the total mass and the ICB mass both meet `tolerance_outer`, and in the last passes one pass moves the ICB by 0.45 to 2.1 times the change of the relative mass. Well below the default $10^{-3}$, both tests reach the jitter of the Picard iteration and can alternate, and the solve then returns `converged = False`. For the isothermal 5000 K core of the default 1 $M_\oplus$ planet, the tightened retry of `main` ($10^{-4}$, 4 passes) ends with the ICB $8.8 \times 10^{-5}$ of the core mass off the root on macOS arm64, a 12 % margin, and $1.38 \times 10^{-4}$ off on an AMD EPYC 7763; with 6 passes it does not converge on macOS arm64 either. A result with `converged = True` has its ICB within `tolerance_outer` of the root (`icb_converged`, `tests/test_core_two_phase_solve.py::test_an_accept_with_an_icb_off_the_liquidus_is_not_converged`).
 - **Non-finite liquidus.** A temperature or a liquidus that is not finite on a core node is refused with a `ValueError`.
 - **Outside a side table.** A core node outside the box of its side table, or where the table has no finite value, fails the accepted solve (`core_table_box`).
 - **JAX path.** The JAX structure path refuses an `inner_core` layer; a two-layer core is solved on the numpy path.
