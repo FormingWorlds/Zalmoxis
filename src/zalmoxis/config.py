@@ -717,13 +717,15 @@ def validate_config(config_params):
 
 
 def _check_folder(key, folder):
-    """Raise ValueError unless ``folder`` names an existing folder (a str or os.PathLike)."""
+    """Raise ValueError unless ``folder`` names an existing, writable folder (str or PathLike)."""
     if not isinstance(folder, str | os.PathLike):
         raise ValueError(f'{key} must be a folder path, got {folder!r}.')
     if not os.fspath(folder) or (not isinstance(folder, str) and os.fspath(folder) == '.'):
         raise ValueError(f'{key} must not be empty; leave it out for the default folder.')
     if not os.path.isdir(folder):
         raise ValueError(f'{key} {os.fspath(folder)!r} is not an existing folder.')
+    if not os.access(folder, os.W_OK):
+        raise ValueError(f'{key} {os.fspath(folder)!r} is not writable.')
 
 
 def choose_config_file(temp_config_path=None):

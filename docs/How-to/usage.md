@@ -63,7 +63,7 @@ output/
 ├── grid_results/                 # grid runner output (if using run_grid)
 │   ├── grid_summary.csv
 │   └── *.json
-└── pressure_profiles.txt         # iteration diagnostics (if enabled)
+└── pressure_profiles.txt         # iteration diagnostics (if enabled; always in output/ of the Zalmoxis root)
 ```
 
 ### Profile files
@@ -117,9 +117,11 @@ When `plots_enabled = true` in the `[Output]` section, Zalmoxis automatically ge
 plots_enabled = true
 ```
 
-With a batch run the plot files carry the mass in their names, as the profiles do (`planet_profile5.0.png`, `mantle_PT_profile5.0.pdf`). This produces a six-panel figure showing the radial profiles of density, pressure, temperature, gravity, phase state, and mass enclosed:
+The profile plot is a six-panel figure showing the radial profiles of density, pressure, temperature, gravity, phase state, and mass enclosed:
 
 ![Example profile plot](../img/example_profile_plot.png)
+
+A call of `post_processing` with `id_mass` puts the mass label into the names of the plot files, as it does for the profiles (`planet_profile5.0.png`, `mantle_PT_profile5.0.pdf`).
 
 **Example**: 1 $M_\oplus$ planet with a PALEOS iron core and MgSiO$_3$ mantle at $T_s$ = 3000 K (adiabatic mode). The dashed vertical line marks the core-mantle boundary (CMB).
 

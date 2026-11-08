@@ -37,6 +37,7 @@ def reset_logging():
     yield
     for h in list(logger.handlers):
         logger.removeHandler(h)
+        h.close()
     for h in saved_handlers:
         logger.addHandler(h)
     logger.setLevel(saved_level)
@@ -51,14 +52,12 @@ class TestZalmoxisCli:
         return value into ``post_processing``."""
         sentinel_config = {'sentinel': 'cli-test-config'}
 
-        # Fake root so basicConfig writes to a tmp file rather than the
-        # repo's output/ directory.
+        # Fake root so the CLI log goes to a tmp folder, not the repo's output/.
         with patch('zalmoxis.get_zalmoxis_root', return_value=str(tmp_path)):
             with patch(
                 'zalmoxis.config.load_zalmoxis_config', return_value=sentinel_config
             ) as mock_load:
                 with patch('zalmoxis.output.post_processing') as mock_post:
-                    # Ensure output/ exists for basicConfig's filename
                     (tmp_path / 'output').mkdir(exist_ok=True)
                     runpy.run_module('zalmoxis', run_name='__main__')
 

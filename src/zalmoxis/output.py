@@ -9,7 +9,7 @@ import os
 import numpy as np
 
 from . import get_zalmoxis_root
-from .config import _NEEDS_MELTING_CURVES, load_solidus_liquidus_functions
+from .config import _NEEDS_MELTING_CURVES, _check_folder, load_solidus_liquidus_functions
 from .constants import earth_mass, earth_radius
 from .eos import get_Tdep_material
 from .mixing import parse_layer_components
@@ -44,8 +44,11 @@ def post_processing(config_params, id_mass=None, output_file=None, model_results
     data_output_enabled = config_params['data_output_enabled']
     plotting_enabled = config_params['plotting_enabled']
     output_dir = config_params.get('output_dir')
-    if output_dir is None:
+    if output_dir is None:  # a fresh checkout has no <root>/output
         output_dir = os.path.join(get_zalmoxis_root(), 'output')
+        os.makedirs(output_dir, exist_ok=True)
+    else:
+        _check_folder('output_dir', output_dir)
 
     if model_results is None:
         from .config import load_material_dictionaries
@@ -163,8 +166,6 @@ def post_processing(config_params, id_mass=None, output_file=None, model_results
             'Radius (m)\tDensity (kg/m^3)\tGravity (m/s^2)\t'
             'Pressure (Pa)\tTemperature (K)\tMass Enclosed (kg)'
         )
-        # A fresh checkout has no <root>/output; np.savetxt needs the folder.
-        os.makedirs(output_dir, exist_ok=True)
         if id_mass is None:
             np.savetxt(
                 os.path.join(output_dir, 'planet_profile.txt'),

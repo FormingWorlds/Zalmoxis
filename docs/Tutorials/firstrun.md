@@ -104,7 +104,7 @@ Runtime on a recent laptop is roughly 30 to 90 seconds for this configuration.
 Most of that goes into the outermost mass-radius loop; it iterates a Picard step on the central pressure until the surface mass and pressure both match their targets.
 The solver has three nested loops: a structure ODE for `(M(r), g(r), P(r))` (innermost), a density Picard iteration that re-evaluates the EOS at the new `(P, T)`, and the outer mass-radius loop just mentioned.
 
-Progress goes to `output/zalmoxis.log` (the path is hard-coded in `src/zalmoxis/__main__.py`).
+Progress goes to `output/zalmoxis.log`, or to `zalmoxis.log` in the folder `[Output] output_dir` names.
 On a successful run you should see lines along the lines of:
 
 ```console
@@ -128,7 +128,7 @@ After a successful run the `output/` directory contains:
 
 | File | Contents |
 | --- | --- |
-| `zalmoxis.log` | Run log (overwritten on every run, `filemode='w'`). |
+| `zalmoxis.log` | Run log (overwritten on every run). |
 | `planet_profile.txt` | Radial profile. Six tab-separated columns: radius (m), density (kg m$^{-3}$), gravity (m s$^{-2}$), pressure (Pa), temperature (K), enclosed mass (kg). Header line begins with `#`. |
 | `calculated_planet_mass_radius.txt` | One row appended per run: total mass (kg) and total radius (m). |
 
