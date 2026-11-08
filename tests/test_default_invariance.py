@@ -96,7 +96,7 @@ def test_the_reference_key_names_the_cpu_model():
 
 @pytest.mark.unit
 def test_the_tolerance_band_holds_the_2_linux_cpus_and_refuses_a_wider_gap():
-    """The EPYC 7763 result meets the macOS one inside the band; a radius 2.1e-3 off fails."""
+    """The EPYC 7763 result meets the macOS one inside the band; 2.1e-3 off the macOS one fails."""
     epyc = dict(np.load(DATA / 'default_solve_reference_linux-x86_64-AMD-EPYC-7763.npz'))
     mac = np.load(DATA / 'default_solve_reference_darwin-arm64.npz')
     assert off_tolerance(epyc, mac) == []
@@ -105,7 +105,7 @@ def test_the_tolerance_band_holds_the_2_linux_cpus_and_refuses_a_wider_gap():
         ('p_center', 0.9979, ['p_center']),
         ('mass_enclosed', 1.0021, ['mass_enclosed']),
     ):
-        bad = dict(epyc, **{k: epyc[k] * scale})
+        bad = dict(epyc, **{k: mac[k] * scale})
         assert off_tolerance(bad, mac) == want, k
     assert off_tolerance(dict(epyc, mass_error_at_accept=np.float64(1.1e-3)), mac) == [
         'mass_error_at_accept'
