@@ -73,6 +73,9 @@ def _solve(setup, inner='', core=LIQ, **over):
     mixes = parse_all_layer_mixtures(cfg['layer_eos_config'])
     res = main(cfg, md, melt, input_dir, layer_mixtures=mixes)
     assert res['converged'] and not res['stopped_on_wall_clock']
+    import warnings  # TEMP: CI solve times for the wall-clock limit
+
+    warnings.warn(f'TIMING solve {res["total_time"]:.1f} s {sorted(over)}')
     return res
 
 
