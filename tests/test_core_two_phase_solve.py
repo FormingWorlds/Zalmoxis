@@ -16,10 +16,14 @@ import numpy as np
 import pytest
 from scipy.optimize import brentq
 
+from tools.default_solve_reference import cpu_key
+
 # one solve takes about 300 s on a 4-vCPU runner under coverage; a test holds up to 3
 pytestmark = [pytest.mark.integration, pytest.mark.core_two_phase, pytest.mark.timeout(2700)]
 
 LIQ, SOL = 'PALEOS-API-2phase:iron-liquid', 'PALEOS-API-2phase:iron-solid'
+WALL = 3000.0  # solver wall clock [s], so that a slow runner does not cut a solve
+PLOT_CPU = 'darwin-arm64'  # the PREM plots compare their data only on the CPU that made them
 
 
 @pytest.fixture(scope='module')
@@ -58,7 +62,7 @@ def _solve(setup, inner='', core=LIQ, **over):
     from zalmoxis.solver import main
 
     md, cfg, input_dir = setup
-    cfg = dict(cfg, **over)
+    cfg = dict(cfg, **{'wall_timeout': WALL, **over})
     cfg['layer_eos_config'] = dict(cfg['layer_eos_config'], core=core)
     if inner:
         cfg['layer_eos_config']['inner_core'] = inner
@@ -68,7 +72,7 @@ def _solve(setup, inner='', core=LIQ, **over):
     )
     mixes = parse_all_layer_mixtures(cfg['layer_eos_config'])
     res = main(cfg, md, melt, input_dir, layer_mixtures=mixes)
-    assert res['converged']
+    assert res['converged'] and not res['stopped_on_wall_clock']
     return res
 
 
@@ -213,6 +217,7 @@ def test_an_accept_with_an_icb_off_the_liquidus_is_not_converged(setup, caplog):
         surface_temperature=5000.0,
         core_liquidus='Anzellini13-iron',
         max_iterations_outer=2,
+        wall_timeout=WALL,
     )
     cfg['layer_eos_config'] = dict(cfg['layer_eos_config'], core=LIQ, inner_core=SOL)
     mixes = parse_all_layer_mixtures(cfg['layer_eos_config'])
@@ -263,6 +268,7 @@ def test_solve_ignores_a_liquidus_without_an_inner_core(setup):
         core_liquidus='Anzellini13-iron',
         temperature_mode='isothermal',
         surface_temperature=5000.0,
+        wall_timeout=WALL,
     )
     res = zs._solve(
         cfg,
@@ -271,7 +277,8 @@ def test_solve_ignores_a_liquidus_without_an_inner_core(setup):
         input_dir,
         layer_mixtures=parse_all_layer_mixtures(cfg['layer_eos_config']),
     )
-    assert res['converged'] and res['core']['M_ic'] == 0.0
+    assert res['converged'] and not res['stopped_on_wall_clock']
+    assert res['core']['M_ic'] == 0.0
 
 
 @pytest.mark.parametrize('frac', [np.float32(0.05)])
@@ -396,7 +403,7 @@ PREM_PINS = {
 
 @pytest.mark.physics_invariant
 @pytest.mark.reference_pinned
-def test_an_earth_core_against_prem(setup, validation_plot):
+def test_an_earth_core_against_prem(setup, request):
     """PREM (Dziewonski & Anderson 1981): the hydrostatic PREM core meets Table II, and the core
     of the default 1 M_E planet differs from it at equal pressure by the pinned medians and
     largest values per region. The 3 cores: one-layer PALEOS:iron, a two-layer pure-iron core
@@ -461,8 +468,11 @@ def test_an_earth_core_against_prem(setup, validation_plot):
         assert ax.get_legend().get_window_extent().x0 >= ax.get_window_extent().x1
         return fig
 
-    validation_plot(lambda: figure('P', 1e-9, 'Pressure [GPa]'), 'core_two_phase_prem_pressure')
-    validation_plot(lambda: figure('r', 1e-3, 'Radius [km]'), 'core_two_phase_prem_radius')
+    if cpu_key() != PLOT_CPU and request.config.getoption('validation_plots') is None:
+        return  # an iterative solve differs by about 5e-4 between CPUs; the pins above hold
+    plot = request.getfixturevalue('validation_plot')
+    plot(lambda: figure('P', 1e-9, 'Pressure [GPa]'), 'core_two_phase_prem_pressure')
+    plot(lambda: figure('r', 1e-3, 'Radius [km]'), 'core_two_phase_prem_radius')
 
 
 def test_the_bulk_s_of_the_core_follows_the_icb(fe_s_iso):
