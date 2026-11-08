@@ -1,7 +1,7 @@
 # First run
 
-This tutorial walks a 1 $M_\oplus$ rocky planet through Zalmoxis end to end.
-By the end you will have written a minimal config file, run the structure solver, plotted a radial density profile, and verified the result against the [Zeng et al. (2019)](https://ui.adsabs.harvard.edu/abs/2019PNAS..116.9723Z) Earth-like mass-radius curve and the [Seager et al. (2007)](https://ui.adsabs.harvard.edu/abs/2007ApJ...669.1279S) tabulated density profile.
+This tutorial takes a 1 $M_\oplus$ rocky planet through Zalmoxis from start to finish.
+By the end you will have written a minimal config file, run the structure solver, plotted a radial density profile, and verified the result against the Zeng et al. (2019)[^cite-zeng2019] Earth-like mass-radius curve and the Seager et al. (2007)[^cite-seager2007] tabulated density profile.
 
 You should already have Zalmoxis installed in a working conda environment.
 If not, follow [Installation](../How-to/installation.md) first; the steps below assume `python -m zalmoxis` runs without an `ImportError`.
@@ -31,7 +31,7 @@ export FWL_DATA=/path/to/fwl_data
 bash tools/setup/get_zalmoxis.sh
 ```
 
-This fetches the Seager+2007 lookups, PALEOS tables and Zeng+2019 reference curves into `$FWL_DATA`, links each folder of `data/` inside the repository to them, and creates an empty `output/` directory.
+This fetches the Seager et al. (2007)[^cite-seager2007] lookups, PALEOS tables and Zeng et al. (2019)[^cite-zeng2019] reference curves into `$FWL_DATA`, links each folder of `data/` inside the repository to them, and creates an empty `output/` directory.
 You should now see populated subdirectories under `data/`, for example `data/EOS_Seager2007/` and `data/EOS_PALEOS_iron/`.
 
 !!! note "Within PROTEUS"
@@ -81,7 +81,7 @@ A few notes on what each block does:
   `temperature_mode = "adiabatic"` integrates the layer adiabats with `surface_temperature` as the upper boundary and `center_temperature` as the initial guess for the inner boundary.
   Other choices are `"isothermal"`, `"linear"`, and `"prescribed"` (reads `temperature_profile_file`); see [Configuration](../How-to/configuration.md) for the full list.
 - `[EOS]` selects the per-layer equation of state.
-  `PALEOS:iron` and `PALEOS:MgSiO3` are unified multi-phase PALEOS tables ([Attia et al. (2026)](https://ui.adsabs.harvard.edu/abs/2026arXiv260503741A/abstract)) that handle pressures up to 100 TPa and masses up to 50 $M_\oplus$.
+  `PALEOS:iron` and `PALEOS:MgSiO3` are the unified multi-phase PALEOS tables of Attia et al. (2026)[^cite-attia2026]; they handle pressures up to 100 TPa and masses up to 50 $M_\oplus$.
   `ice_layer = ""` keeps the model two-layer (core + mantle).
 - `[Calculations]` controls the radial grid resolution.
   150 points is enough for a 3 % radius match; double it for tighter convergence at high mass.
@@ -117,7 +117,7 @@ INFO - Pressure at Center: 3.65e+11 Pa
 INFO - Overall Convergence Status: True with Pressure: True, Density: True, Mass: True
 ```
 
-Note that the "Earth radii" comparison uses Zalmoxis's reference value `earth_radius = 6.335e6` m (Seager+2007 volumetric mean), not the IAU 6.371e6 m.
+Note that the "Earth radii" comparison uses Zalmoxis's reference value `earth_radius = 6.335e6` m (the volumetric mean of Seager et al. (2007)[^cite-seager2007]), not the IAU 6.371e6 m.
 That convention is intentional and matches the Seager reference data shipped in `data/`.
 
 If the final line shows `Convergence Status: False`, see [Convergence failures](../How-to/installation.md#convergence-failures) for the standard remedies (looser tolerance, larger pressure bracket, or a different mantle EOS for high-mass configurations).
@@ -168,7 +168,7 @@ You should see a sharp density jump near $r \approx 3500$ km (the core-mantle bo
 The smoke test `tests/test_MR_rocky.py::test_rocky_1Mearth_vs_zeng_and_seager` exercises the same code path you just ran, with two reference checks bolted on.
 You can reproduce them by hand.
 
-**Mass-radius (Zeng+2019).**
+**Mass-radius after Zeng et al. (2019)[^cite-zeng2019].**
 The reference curve `data/mass_radius_curves/massradiusEarthlikeRocky.txt` is an Earth-like rocky composition (32.5 % iron core, 67.5 % MgSiO3 mantle, 300 K).
 Interpolate it at your computed mass and compare:
 
@@ -194,7 +194,7 @@ print(f'M = {m_e:.3f} M_earth, R = {r_e:.3f} R_earth, '
 The smoke test asserts `rtol = 0.03` (3 %).
 Your run should be well inside that envelope.
 
-**Density profile (Seager+2007).**
+**Density profile after Seager et al. (2007)[^cite-seager2007].**
 The file `data/radial_profiles/radiusdensitySeagerEarthbymass.txt` carries tabulated Earth-mass density profiles from the same paper.
 Loading the 1 $M_\oplus$ slice and overlaying it on your `planet_profile.txt` should match within 10 % everywhere except for a narrow band around the core-mantle boundary.
 The CMB lies between Seager's grid points, so interpolating across the discontinuity inflates the residual artificially; the smoke test masks $\pm 3$ grid points around any density jump greater than 2000 kg m$^{-3}$ before comparing.
@@ -234,7 +234,7 @@ Outputs land in `output/grid_firstrun/`:
 - `<label>.json`: per-run summary mirroring the CSV row;
 - `<label>.csv`: per-run radial profile (because `save_profiles = true`); a six-column body with SI-unit columns plus a `# key: value` comment header that records the EOS strings, melting-curve ids, and convergence flag.
 
-Filter to converged rows (`converged == True`) and overlay the three radii on the Zeng+2019 curve to check that you reproduce the expected shallow $R \propto M^{0.27}$ slope for rocky bodies in this mass range.
+Filter to converged rows (`converged == True`) and overlay the three radii on the Zeng et al. (2019)[^cite-zeng2019] curve to check that you reproduce the expected shallow $R \propto M^{0.27}$ slope for rocky bodies in this mass range.
 The `tools/grids/plot_grid.py` helper does this for you:
 
 ```console
@@ -249,3 +249,7 @@ Browse `input/grids/` for richer examples: `mass_radius.toml` is a 7-point versi
 - For the equations behind the structure ODE, the EOS dispatch, and the mushy-zone mixing model, read [Model overview](../Explanations/model.md) and [Equation of state physics](../Explanations/eos_physics.md).
 - For the function-call coupling used when Zalmoxis runs inside PROTEUS (the `python -m zalmoxis` invocation in this tutorial does *not* apply there), read [Coupling Zalmoxis to PROTEUS](../How-to/proteus_coupling.md) and [Coupling to PROTEUS (theory)](../Explanations/proteus_coupling.md).
 - For first-principles verification cases (analytic polytropes, hydrostatic equilibrium tests, mass conservation), read the [Validation](../Validation/index.md) tab.
+
+[^cite-zeng2019]: L. Zeng, S. B. Jacobsen, D. D. Sasselov, M. I. Petaev, A. Vanderburg, M. Lopez-Morales, J. Perez-Mercader, T. R. Mattsson, G. Li, M. Z. Heising, A. S. Bonomo, M. Damasso, T. A. Berger, H. Cao, A. Levi, R. D. Wordsworth, *[Growth model interpretation of planet size distribution](https://doi.org/10.1073/pnas.1812905116)*, Proceedings of the National Academy of Sciences, 116(20), 9723-9728, 2019. [SciX](https://scixplorer.org/abs/2019PNAS..116.9723Z/abstract).
+[^cite-seager2007]: S. Seager, M. Kuchner, C. A. Hier-Majumder, B. Militzer, *[Mass-Radius Relationships for Solid Exoplanets](https://doi.org/10.1086/521346)*, The Astrophysical Journal, 669(2), 1279-1297, 2007. [SciX](https://scixplorer.org/abs/2007ApJ...669.1279S/abstract).
+[^cite-attia2026]: M. Attia, T. Lichtenberg, E. Jungová, M. Sastre, *[PALEOS: Multiphase equations of state and mass-radius relations for exoplanet interiors](https://doi.org/10.1051/0004-6361/202660790)*, Astronomy and Astrophysics, 713, A225, 2026. [SciX](https://scixplorer.org/abs/2026A%26A...713A.225A/abstract).
