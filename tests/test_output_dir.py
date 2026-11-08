@@ -141,7 +141,10 @@ class TestOutputDirValidation:
     def test_existing_folder_and_absent_key_pass(self, tmp_path):
         """An existing folder (str or Path), '.' and a config without the key validate."""
         for value in (str(tmp_path), tmp_path, '.'):
-            assert validate_config(_make_minimal_config(output_dir=value)) is None
+            try:
+                assert validate_config(_make_minimal_config(output_dir=value)) is None
+            except ValueError as err:
+                pytest.fail(f'{value!r} refused: {err}')
         assert validate_config(_make_minimal_config()) is None
 
 
@@ -172,13 +175,27 @@ def test_any_non_path_output_dir_is_refused(value):
         ('n' * 300, False),
         ('link', True),
         ('rel', True),
+        ('a_file', False),
+        ('an_exe', False),
     ],
-    ids=['NUL', 'trailing-space', 'tilde', 'long-name', 'symlink-to-folder', 'relative'],
+    ids=[
+        'NUL',
+        'trailing-space',
+        'tilde',
+        'long-name',
+        'symlink-to-folder',
+        'relative',
+        'regular-file',
+        'executable-file',
+    ],
 )
 def test_output_dir_names_at_the_edges(tmp_path, monkeypatch, name, ok):
-    """NUL, a trailing space, '~' (not expanded) and a long name are no folder; a symlink and a relative path are."""
+    """NUL, a trailing space, '~', a long name and files are no folder; a symlink and a relative path are."""
     (tmp_path / 'rel').mkdir()
     (tmp_path / 'link').symlink_to(tmp_path / 'rel')
+    (tmp_path / 'a_file').write_text('x')
+    (tmp_path / 'an_exe').write_text('x')
+    (tmp_path / 'an_exe').chmod(0o755)
     monkeypatch.chdir(tmp_path)
     cfg = _make_minimal_config(output_dir=name)
     if ok:
@@ -186,7 +203,7 @@ def test_output_dir_names_at_the_edges(tmp_path, monkeypatch, name, ok):
     else:
         with pytest.raises(ValueError, match='is not an existing folder'):
             validate_config(cfg)
-    assert sorted(p.name for p in tmp_path.iterdir()) == ['link', 'rel']
+    assert sorted(p.name for p in tmp_path.iterdir()) == ['a_file', 'an_exe', 'link', 'rel']
 
 
 @pytest.mark.skipif(_ROOT_USER, reason='root writes into a read-only folder')
@@ -226,7 +243,12 @@ def test_plots_alone_create_the_root_output_of_a_fresh_checkout(tmp_path, monkey
     root.mkdir()
     for mod in (output_mod, plot_profiles, plot_phase_vs_radius):
         monkeypatch.setattr(mod, 'get_zalmoxis_root', lambda: str(root))
-    output_mod.post_processing(_base_config(data_output_enabled=False, plotting_enabled=True))
+    try:
+        output_mod.post_processing(
+            _base_config(data_output_enabled=False, plotting_enabled=True)
+        )
+    except OSError as err:
+        pytest.fail(f'the plot could not be written: {err!r}')
     assert sorted(p.name for p in (root / 'output').iterdir()) == ['planet_profile.png']
 
 
@@ -241,7 +263,7 @@ def test_output_dir_set_in_the_toml_reaches_the_config(tmp_path):
     run.mkdir()
     for line, name in ((f"output_dir = '{run}'", 'with.toml'), ('', 'without.toml')):
         (tmp_path / name).write_text(text.replace('[Output]\n', f'[Output]\n{line}\n'))
-    assert load_zalmoxis_config(str(tmp_path / 'with.toml'))['output_dir'] == str(run)
+    assert load_zalmoxis_config(str(tmp_path / 'with.toml')).get('output_dir') == str(run)
     assert 'output_dir' not in load_zalmoxis_config(str(tmp_path / 'without.toml'))
 
 
@@ -285,7 +307,7 @@ def test_cli_log_and_post_processing_follow_the_output_folder(
     config = {'output_dir': str(run)} if given_dir else {}
     post = _run_cli(root, config)
     folder = run if given_dir else root / 'output'
-    assert post.call_args.args[0]['output_dir'] == str(folder)
+    assert post.call_args.args[0].get('output_dir') == str(folder)
     assert 'loading the test config' in (folder / 'zalmoxis.log').read_text()
     other = root / 'output' if given_dir else run
     assert list(other.iterdir()) == []
@@ -392,7 +414,7 @@ def test_cli_with_the_real_loader_logs_into_the_folder_of_the_toml(tmp_path, res
             with patch('sys.argv', ['zalmoxis']):
                 with patch('zalmoxis.output.post_processing') as post:
                     runpy.run_module('zalmoxis', run_name='__main__')
-    assert post.call_args.args[0]['output_dir'] == str(run)
+    assert post.call_args.args[0].get('output_dir') == str(run)
     assert 'Reading default config file' in (run / 'zalmoxis.log').read_text()
     assert not (root / 'output').exists()
 
@@ -408,6 +430,8 @@ def test_post_processing_that_writes_nothing_needs_no_folder(tmp_path, monkeypat
         monkeypatch.setattr(mod, 'get_zalmoxis_root', lambda: str(root))
     try:
         output_mod.post_processing(_base_config(data_output_enabled=False))
+    except OSError as err:
+        pytest.fail(f'a call that writes nothing touched the folder: {err!r}')
     finally:
         root.chmod(0o700)
     assert list(root.iterdir()) == []
