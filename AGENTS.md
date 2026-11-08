@@ -135,7 +135,7 @@ Outputs (under `output/`, or the existing folder `[Output] output_dir` names):
 - `zalmoxis.log`: per-run log (overwritten each invocation).
 - Optional debug: `density_profiles.txt`, `pressure_profiles.txt` per Picard
   iteration when the Python logging level is `DEBUG`, into the folder that the
-  config key `debug_profile_dir` names (the command-line run uses `output/`).
+  config key `debug_profile_dir` names (the command-line run uses its output folder, `output_dir`).
 
 Recommended workflow:
 
