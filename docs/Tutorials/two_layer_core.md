@@ -2,7 +2,7 @@
 
 This tutorial solves a 1 $M_\oplus$ planet whose core has a solid inner core and a liquid outer core with sulfur. You set the inner-core boundary (ICB) in 2 ways, by a given inner-core mass and by an iron melting curve, and read the core arrays of the result. The [two-layer core](../Explanations/mixing.md#two-layer-core) explanation describes the model.
 
-You need a working Zalmoxis environment with the PALEOS tables ([First run](firstrun.md), Step 1) and the PALEOS Python package, which makes the 2 iron side tables.
+You need a working Zalmoxis environment with the PALEOS tables ([First run](firstrun.md), Step 1) and the PALEOS Python package, which makes the 2 iron side tables: one table of solid iron and one of liquid iron, each over the pressure and temperature range of the PALEOS iron table.
 
 ## Step 1: write the script
 
@@ -37,7 +37,7 @@ def solve(**rule):
     cfg.update(rule)
     validate_config(cfg)
     melt = load_solidus_liquidus_functions(
-        cfg['layer_eos_config'], cfg['rock_solidus'], cfg['rock_liquidus'], 1.0
+        cfg['layer_eos_config'], cfg['rock_solidus'], cfg['rock_liquidus'], mushy_zone_factor=1.0
     )
     mixes = parse_all_layer_mixtures(cfg['layer_eos_config'])
     return main(cfg, load_material_dictionaries(), melt, os.path.join(root, 'input'), layer_mixtures=mixes)
@@ -58,7 +58,12 @@ if __name__ == '__main__':
         print(f"  solid above the ICB: {core['solid_above_icb_mass_fraction']:.3f} of the core mass")
 ```
 
-`inner_core_mass_fraction = 0.0508` is the inner-core mass fraction of PREM. `core_liquidus = "Anzellini13-iron"` puts the ICB where the temperature profile reaches the melting curve of pure iron of Anzellini et al. (2013)[^cite-anzellini2013]. Mori et al. (2017)[^cite-mori2017] show that S lowers the melting point of iron, so a Fe-S outer core can melt below that curve and the solve warns that the inner core can come out too large; a caller with the liquidus of the alloy passes it as a callable. A two-layer core takes exactly one of the 2.
+The script sets the ICB with 2 rules. A two-layer core takes exactly one of the 2:
+
+- `inner_core_mass_fraction = 0.0508` gives the inner core this fraction of the core mass, the inner-core mass fraction of PREM, the Preliminary Reference Earth Model of Dziewonski & Anderson (1981)[^cite-dziewonski1981].
+- `core_liquidus = "Anzellini13-iron"` puts the ICB where the temperature profile reaches the melting curve of pure iron of Anzellini et al. (2013)[^cite-anzellini2013].
+
+Mori et al. (2017)[^cite-mori2017] show that S lowers the melting point of iron. A Fe-S outer core can therefore melt below the pure-iron curve, and the solve warns that the inner core can come out too large; a caller with the liquidus of the alloy passes it as a callable.
 
 ## Step 2: run it
 
@@ -88,20 +93,23 @@ The script prints, for each rule:
   solid above the ICB: 0.000 of the core mass
 ```
 
+With no inner core, `R_icb` is 0 and `P_icb` is the centre pressure.
+
 ## Step 3: read the result
 
 `result['core']` holds the core arrays: `r`, `m`, `P`, `rho`, `g` and `T` at the core nodes plus a node at the core mass, `phase` (1 inner core, 0 outer core), `w_S`, and the scalars `M_ic`, `R_icb`, `P_icb` and `solid_above_icb_mass_fraction`. The 2 runs differ as follows:
 
 1. With the inner-core mass of PREM, the ICB lies at 1211 km and 322 GPa. The density falls there by about 1100 kg/m$^3$, from the solid iron of the inner core to the liquid Fe-S of the outer core.
-2. With the melting curve, the core has no inner core. The adiabat from 3000 K at the surface reaches 7735 K at the centre, above the 6403 K of the Anzellini curve at 349 GPa.
+2. With the melting curve, the core has no inner core. The adiabat from 3000 K at the surface (the `surface_temperature` of `input/default.toml`) reaches 7735 K at the centre, above the 6403 K of the Anzellini curve at 349 GPa.
 3. The inner core of the first run is solid at 7708 K at the centre, above the melting curve. The mass rule sets where the boundary is; it does not check that iron is solid there.
 
-To see an inner core from the melting curve, cool the core: with `temperature_mode = "isothermal"` and `surface_temperature = 5000`, the ICB lies at 206 GPa, where the Anzellini curve is at 5000 K.
+To see an inner core from the melting curve, cool the core: `solve(core_liquidus='Anzellini13-iron', temperature_mode='isothermal', surface_temperature=5000)` puts the ICB at 206.6 GPa, next to the 206.4 GPa where the Anzellini curve is at 5000 K.
 
-To plot the density of the core:
+To plot the density of the core, run these lines from the `scripts/` folder, in a Python session or a second script; the import reads `solve` from Step 1:
 
 ```python
 import matplotlib.pyplot as plt
+from two_layer_core import solve
 
 res = solve(inner_core_mass_fraction=0.0508)
 core = res['core']
@@ -119,3 +127,4 @@ plt.show()
 
 [^cite-anzellini2013]: S. Anzellini, A. Dewaele, M. Mezouar, P. Loubeyre, G. Morard, *[Melting of Iron at Earth's Inner Core Boundary Based on Fast X-ray Diffraction](https://doi.org/10.1126/science.1233514)*, Science, 340, 464-466, 2013. [SciX](https://scixplorer.org/abs/2013Sci...340..464A/abstract).
 [^cite-mori2017]: Y. Mori, H. Ozawa, K. Hirose, R. Sinmyo, S. Tateno, G. Morard, Y. Ohishi, *[Melting experiments on Fe-Fe$_3$S system to 254 GPa](https://doi.org/10.1016/j.epsl.2017.02.021)*, Earth and Planetary Science Letters, 464, 135-141, 2017. [SciX](https://scixplorer.org/abs/2017E%26PSL.464..135M/abstract).
+[^cite-dziewonski1981]: A. M. Dziewonski, D. L. Anderson, *[Preliminary reference Earth model](https://doi.org/10.1016/0031-9201(81)90046-7)*, Physics of the Earth and Planetary Interiors, 25, 297-356, 1981. [SciX](https://scixplorer.org/abs/1981PEPI...25..297D/abstract).
