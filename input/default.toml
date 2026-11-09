@@ -153,3 +153,5 @@ target_surface_pressure    = 101325 	# Target surface pressure (Pa); default 1 a
 [Output]
 data_enabled               = true 		# Write radial profiles to output/
 plots_enabled              = false 		# Generate profile plots after the run
+# output_dir               = '/path/to/folder'	# Output folder (an existing folder); default output/ of the Zalmoxis root
+# debug_profile_dir        = '/path/to/folder'	# Existing folder (absolute, or relative to the working directory) for the per-iteration profiles of a DEBUG run

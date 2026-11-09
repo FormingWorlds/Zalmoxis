@@ -9,7 +9,9 @@ import numpy as np
 from zalmoxis import get_zalmoxis_root
 
 
-def plot_PT_with_phases(pressure, temperature, radii, mantle_phases, cmb_radius):
+def plot_PT_with_phases(
+    pressure, temperature, radii, mantle_phases, cmb_radius, id_mass=None, output_dir=None
+):
     """
     Plot pressure–temperature profile highlighting solid/mixed/melted mantle regions.
     Parameters:
@@ -18,6 +20,8 @@ def plot_PT_with_phases(pressure, temperature, radii, mantle_phases, cmb_radius)
     radii (array-like): Radial positions corresponding to the pressure and temperature profiles in meters.
     mantle_phases (array-like): List of mantle phases ("solid_mantle", "mixed_mantle", "melted_mantle") corresponding to each radial position.
     cmb_radius (float or None): Radius of the core-mantle boundary in meters. If None, CMB line is not plotted.
+    id_mass (str or None): Planet mass identifier, appended to the file name as for the profiles.
+    output_dir (str, os.PathLike or None): Folder of the PDF; None writes into <ZALMOXIS_ROOT>/output.
     """
 
     # Convert pressure to GPa and temperature to kK for readability
@@ -48,5 +52,8 @@ def plot_PT_with_phases(pressure, temperature, radii, mantle_phases, cmb_radius)
     ax.legend()
     ax.grid(alpha=0.3)
     plt.tight_layout()
-    plt.savefig(os.path.join(get_zalmoxis_root(), 'output', 'mantle_PT_profile.pdf'))
+    if output_dir is None:
+        output_dir = os.path.join(get_zalmoxis_root(), 'output')
+    name = 'mantle_PT_profile.pdf' if id_mass is None else f'mantle_PT_profile{id_mass}.pdf'
+    plt.savefig(os.path.join(output_dir, name))
     # plt.show()

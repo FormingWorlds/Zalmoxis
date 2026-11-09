@@ -2187,11 +2187,17 @@ def _solve(
                     surface_pressure=target_surface_pressure,
                     icb_mass=icb_mass,
                 )
-                if logger.isEnabledFor(
+                if config_params.get('debug_profile_dir') and logger.isEnabledFor(
                     logging.DEBUG
-                ):  # pragma: no cover - DEBUG-only file dump for diagnostics
+                ):
                     create_pressure_density_files(
-                        outer_iter, inner_iter, _state['n_evals'], radii, p, density
+                        outer_iter,
+                        inner_iter,
+                        _state['n_evals'],
+                        radii,
+                        p,
+                        density,
+                        config_params['debug_profile_dir'],
                     )
                 _require_finite(
                     radii,

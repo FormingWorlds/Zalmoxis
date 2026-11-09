@@ -14,7 +14,7 @@ Run the default configuration (1 Earth-mass planet with a PALEOS iron core and M
 python -m zalmoxis -c input/default.toml
 ```
 
-Output files appear in `output/`. The PALEOS data files must be downloaded first (see [installation](installation.md)).
+Output files appear in `output/`, or in the folder `[Output] output_dir` names. The PALEOS data files must be downloaded first (see [installation](installation.md)).
 
 ## What happens when you run Zalmoxis
 
@@ -50,7 +50,7 @@ For the full list of parameters (EOS selection, temperature modes, solver settin
 
 ## Output files
 
-All output files are written to the `output/` directory (created automatically on first run). The directory structure looks like:
+`python -m zalmoxis` writes all its files into its output folder: the existing folder that `[Output] output_dir` names, or else `output/` of the Zalmoxis root (created on the first run). The folder looks like:
 
 ```
 output/
@@ -58,11 +58,15 @@ output/
 ├── planet_profile5.0.txt         # radial profiles (batch run, mass in filename)
 ├── calculated_planet_mass_radius.txt  # summary: mass and radius per run
 ├── planet_profile.png            # 6-panel structure plot (if plots_enabled)
-├── grid_results/                 # grid runner output (if using run_grid)
-│   ├── grid_summary.csv
-│   └── *.json
-└── pressure_profiles.txt         # iteration diagnostics (if enabled)
+├── mantle_PT_profile.pdf         # mantle P-T plot (if plots_enabled and the mantle EOS uses melting curves)
+├── zalmoxis.log                  # log of python -m zalmoxis
+├── pressure_profiles.txt         # iteration diagnostics (DEBUG, command-line run)
+└── density_profiles.txt          # iteration diagnostics (DEBUG, command-line run)
 ```
+
+The grid runner `tools/grids/run_grid.py` does not use `output_dir`. It writes `grid_summary.csv`, a `<label>.json` result per grid point and, with `[output] save_profiles = true`, a `<label>.csv` profile per grid point into the folder that `[output] dir` of the grid file names, relative to the Zalmoxis root, by default `output/grid_results/`. It loads its base config with `load_zalmoxis_config`, which checks `output_dir`, so a base config that sets `output_dir` must still name an existing, writable folder, although the grid runner writes nothing there.
+
+The EOS caches are written outside the output folder: the binary cache `<table>.cache.pkl` beside each unified PALEOS table file (under `data/` for the downloaded tables), and the PALEOS API cache in `data/EOS_PALEOS_API/` of the Zalmoxis root.
 
 ### Profile files
 
@@ -97,12 +101,12 @@ The accept test passes a padded profile when the target is below `pressure_toler
 
 ### Iteration profiles (optional)
 
-When the Python logging level is set to `DEBUG`, the solver writes per-iteration profiles:
+When the Python logging level is set to `DEBUG` and the configuration names a folder in `debug_profile_dir`, the solver writes per-iteration profiles into that folder:
 
 - **`pressure_profiles.txt`**: Pressure vs. radius for every iteration of the pressure adjustment loop.
 - **`density_profiles.txt`**: Density vs. radius for every iteration.
 
-Enable with `logging.getLogger('fwl.zalmoxis').setLevel(logging.DEBUG)`. These files are useful for diagnosing convergence behavior. They grow large quickly and are overwritten at the start of each new run.
+Enable with `logging.getLogger('fwl.zalmoxis').setLevel(logging.DEBUG)`. Set `debug_profile_dir` in the `[Output]` table of the TOML file, or as a key of the configuration dict that you pass to `solver.main()`; it must name a folder that exists. `load_zalmoxis_config` checks the key; `solver.main()` does not, so call `validate_config` on a dict that you build yourself. The command-line run (`python -m zalmoxis`) sets the key to its output folder, `output_dir`, when it is not set; it logs at `INFO`, so it writes the files only when the level of `fwl.zalmoxis` is `DEBUG`. Without the key, a `DEBUG` solve logs and writes no profile file. These files are useful for diagnosing convergence behavior. They grow large quickly (about 50 MB each for a 1 Earth-mass planet). The files start again at the first pressure solve of each structure solve (each call of `_solve`, so each Newton step and each retry of `solver.main()`), so after a run they hold the last structure solve; a later run below `DEBUG` or without the key leaves them as they are.
 
 Adjust `tolerance_outer`, `tolerance_inner`, `max_iterations_outer`, `max_iterations_inner` in the `[IterativeProcess]` block (see [Configuration](configuration.md#iterativeprocess)) if convergence is slow.
 
@@ -115,9 +119,11 @@ When `plots_enabled = true` in the `[Output]` section, Zalmoxis automatically ge
 plots_enabled = true
 ```
 
-This produces a six-panel figure showing the radial profiles of density, pressure, temperature, gravity, phase state, and mass enclosed:
+The profile plot is a six-panel figure showing the radial profiles of density, pressure, temperature, gravity, phase state, and mass enclosed:
 
 ![Example profile plot](../img/example_profile_plot.png)
+
+A call of `post_processing` with `id_mass` puts the mass label into the names of the plot files, as it does for the profiles (`planet_profile5.0.png`, `mantle_PT_profile5.0.pdf`).
 
 **Example**: 1 $M_\oplus$ planet with a PALEOS iron core and MgSiO$_3$ mantle at $T_s$ = 3000 K (adiabatic mode). The dashed vertical line marks the core-mantle boundary (CMB).
 

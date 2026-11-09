@@ -9,7 +9,7 @@ import os
 import numpy as np
 
 from . import get_zalmoxis_root
-from .config import _NEEDS_MELTING_CURVES, load_solidus_liquidus_functions
+from .config import _NEEDS_MELTING_CURVES, _check_folder, load_solidus_liquidus_functions
 from .constants import earth_mass, earth_radius
 from .eos import get_Tdep_material
 from .mixing import parse_layer_components
@@ -43,6 +43,13 @@ def post_processing(config_params, id_mass=None, output_file=None, model_results
 
     data_output_enabled = config_params['data_output_enabled']
     plotting_enabled = config_params['plotting_enabled']
+    output_dir = config_params.get('output_dir')
+    if output_dir is None:
+        output_dir = os.path.join(get_zalmoxis_root(), 'output')
+        if data_output_enabled or plotting_enabled:  # a fresh checkout has no <root>/output
+            os.makedirs(output_dir, exist_ok=True)
+    else:
+        _check_folder('output_dir', output_dir)
 
     if model_results is None:
         from .config import load_material_dictionaries
@@ -160,13 +167,6 @@ def post_processing(config_params, id_mass=None, output_file=None, model_results
             'Radius (m)\tDensity (kg/m^3)\tGravity (m/s^2)\t'
             'Pressure (Pa)\tTemperature (K)\tMass Enclosed (kg)'
         )
-        # Ensure the output directory exists. Local dev workstations
-        # typically have it from prior runs, but a fresh CI runner does
-        # not, and np.savetxt's writability probe fails there with
-        # FileNotFoundError. Creating it here keeps the writers
-        # independent of caller setup.
-        output_dir = os.path.join(get_zalmoxis_root(), 'output')
-        os.makedirs(output_dir, exist_ok=True)
         if id_mass is None:
             np.savetxt(
                 os.path.join(output_dir, 'planet_profile.txt'),
@@ -180,9 +180,7 @@ def post_processing(config_params, id_mass=None, output_file=None, model_results
                 header=header,
             )
         if output_file is None:
-            output_file = os.path.join(
-                get_zalmoxis_root(), 'output', 'calculated_planet_mass_radius.txt'
-            )
+            output_file = os.path.join(output_dir, 'calculated_planet_mass_radius.txt')
         if not os.path.exists(output_file):
             header = 'Calculated Mass (kg)\tCalculated Radius (m)'
             with open(output_file, 'w') as file:
@@ -206,6 +204,7 @@ def post_processing(config_params, id_mass=None, output_file=None, model_results
             mass_enclosed,
             id_mass,
             layer_eos_config=layer_eos_config,
+            output_dir=output_dir,
         )
 
         if uses_phase_detection:
@@ -215,4 +214,6 @@ def post_processing(config_params, id_mass=None, output_file=None, model_results
                 mantle_radii,
                 mantle_phases,
                 radii[cmb_index],
+                id_mass=id_mass,
+                output_dir=output_dir,
             )
