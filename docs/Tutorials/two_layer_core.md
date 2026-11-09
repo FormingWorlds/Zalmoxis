@@ -58,7 +58,7 @@ if __name__ == '__main__':
         print(f"  solid above the ICB: {core['solid_above_icb_mass_fraction']:.3f} of the core mass")
 ```
 
-`inner_core_mass_fraction = 0.0508` is the inner-core mass fraction of PREM. `core_liquidus = "Anzellini13-iron"` puts the ICB where the temperature profile reaches the melting curve of pure iron of Anzellini et al. (2013) [^cite-anzellini2013]. Mori et al. (2017) [^cite-mori2017] show that S lowers the melting point of iron, so a Fe-S outer core can melt below that curve and the solve warns that the inner core can come out too large; a caller with the liquidus of the alloy passes it as a callable. A two-layer core takes exactly one of the 2.
+`inner_core_mass_fraction = 0.0508` is the inner-core mass fraction of PREM. `core_liquidus = "Anzellini13-iron"` puts the ICB where the temperature profile reaches the melting curve of pure iron of Anzellini et al. (2013)[^cite-anzellini2013]. Mori et al. (2017)[^cite-mori2017] show that S lowers the melting point of iron, so a Fe-S outer core can melt below that curve and the solve warns that the inner core can come out too large; a caller with the liquidus of the alloy passes it as a callable. A two-layer core takes exactly one of the 2.
 
 ## Step 2: run it
 
@@ -117,6 +117,5 @@ plt.show()
 - Give the inner core light elements: `inner_core = "PALEOS-API-2phase:iron-solid:0.99+CoreAlloy:Si:0.01"`.
 - Pass a callable `T_liq(P)` \[K\] as `core_liquidus`, for example the liquidus of an alloy.
 
-[^cite-anzellini2013]: S. Anzellini, A. Dewaele, M. Mezouar, P. Loubeyre, G. Morard (2013). *[Melting of Iron at Earth's Inner Core Boundary Based on Fast X-ray Diffraction](https://doi.org/10.1126/science.1233514)*. Science, 340, 464-466.
-
-[^cite-mori2017]: Y. Mori, H. Ozawa, K. Hirose, R. Sinmyo, S. Tateno, G. Morard, Y. Ohishi (2017). *[Melting experiments on Fe-Fe3S system to 254 GPa](https://doi.org/10.1016/j.epsl.2017.02.021)*. Earth and Planetary Science Letters, 464, 135-141.
+[^cite-anzellini2013]: S. Anzellini, A. Dewaele, M. Mezouar, P. Loubeyre, G. Morard, *[Melting of Iron at Earth's Inner Core Boundary Based on Fast X-ray Diffraction](https://doi.org/10.1126/science.1233514)*, Science, 340, 464-466, 2013. [SciX](https://scixplorer.org/abs/2013Sci...340..464A/abstract).
+[^cite-mori2017]: Y. Mori, H. Ozawa, K. Hirose, R. Sinmyo, S. Tateno, G. Morard, Y. Ohishi, *[Melting experiments on Fe-Fe$_3$S system to 254 GPa](https://doi.org/10.1016/j.epsl.2017.02.021)*, Earth and Planetary Science Letters, 464, 135-141, 2017. [SciX](https://scixplorer.org/abs/2017E%26PSL.464..135M/abstract).

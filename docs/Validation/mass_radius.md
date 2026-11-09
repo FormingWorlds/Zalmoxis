@@ -2,7 +2,7 @@
 
 ## What this page checks
 
-This page checks the full structure solver of Zalmoxis: the radius, the central pressure and the gravity of a planet of given mass and core mass fraction (CMF, the mass fraction of the iron core). The cases run the full solver with the Seager et al. (2007) [^cite-seager2007] analytic equation of state (EOS), the PREM case with the PALEOS tables, and compare the planet with the Earth, published scaling laws and physical trends. Validation means that a test runs the code on a case with a known right answer and checks the result within a stated tolerance. If the solver is wrong, every planet radius and interior profile of Zalmoxis is wrong. Each case below says why the check exists, what it tests, how we know the right answer and why it matters, and ends with a box "Test details". The [overview](index.md) lists every case of the tab.
+This page checks the full structure solver of Zalmoxis: the radius, the central pressure and the gravity of a planet of given mass and core mass fraction (CMF, the mass fraction of the iron core). The cases run the full solver with the Seager et al. (2007)[^cite-seager2007] analytic equation of state (EOS), the PREM case with the PALEOS tables, and compare the planet with the Earth, published scaling laws and physical trends. Validation means that a test runs the code on a case with a known right answer and checks the result within a stated tolerance. If the solver is wrong, every planet radius and interior profile of Zalmoxis is wrong. Each case below says why the check exists, what it tests, how we know the right answer and why it matters, and ends with a box "Test details". The [overview](index.md) lists every case of the tab.
 
 ## Earth benchmark
 
@@ -55,7 +55,7 @@ The test compares the radius with the Earth radius of `zalmoxis.constants`, 6335
 
 ### Mass-radius relation
 
-For rocky planets with Earth-like composition, the mass-radius relation follows an approximate power law $R \propto M^\alpha$ where $\alpha \approx 0.27$, after Seager et al. (2007) [^cite-seager2007]. The exponent is less than $1/3$ (the value for an incompressible sphere of constant density) because larger planets have higher internal pressures that compress the material, partially offsetting the volume increase from added mass.
+For rocky planets with Earth-like composition, the mass-radius relation follows an approximate power law $R \propto M^\alpha$ where $\alpha \approx 0.27$, after Seager et al. (2007)[^cite-seager2007]. The exponent is less than $1/3$ (the value for an incompressible sphere of constant density) because larger planets have higher internal pressures that compress the material, partially offsetting the volume increase from added mass.
 
 Running Zalmoxis from 0.3 to 10 $M_\oplus$ with $f_c = 0.325$ and fitting $\log R$ vs $\log M$ gives $\alpha = 0.293$ (the test fits 0.5 to 10 $M_\oplus$ and gets 0.289). The plot shows the solves of the test.
 
@@ -114,7 +114,7 @@ The smoke tests of `TestConservationLaws` also verify three conservation propert
 **Why it matters.** These trends are what a grid of Zalmoxis planets depends on.
 
 ??? info "Test details"
-    - Reference: `TestMassRadiusScaling`, $\alpha \approx 0.27$ for masses 0.5, 1, 2, 5 and 10 $M_\oplus$, and `TestPureIronPlanet`, $0.77\,R_\oplus$ for CMF = 1.0, both from Seager et al. (2007) [^cite-seager2007]; `TestCMFMonotonicity` (CMF 0.1 to 0.7) and `TestConservationLaws` check physical constraints with no published reference
+    - Reference: `TestMassRadiusScaling`, $\alpha \approx 0.27$ for masses 0.5, 1, 2, 5 and 10 $M_\oplus$, and `TestPureIronPlanet`, $0.77\,R_\oplus$ for CMF = 1.0, both from Seager et al. (2007)[^cite-seager2007]; `TestCMFMonotonicity` (CMF 0.1 to 0.7) and `TestConservationLaws` check physical constraints with no published reference
     - Tolerance: exponent to `abs=0.04` of 0.27; strictly decreasing radius with CMF; pure-iron radius to `abs=0.05` of $0.77\,R_\oplus$; mass within 1% (2% by trapezoidal integration); surface pressure at most 2e9 Pa from the target; Gauss's law `rtol=1e-3`
     - Test id: `tests/test_first_principles.py::TestMassRadiusScaling`, `tests/test_first_principles.py::TestCMFMonotonicity`, `tests/test_first_principles.py::TestPureIronPlanet`, `tests/test_first_principles.py::TestConservationLaws`
     - Command: `pytest -o "addopts=" tests/test_first_principles.py::TestMassRadiusScaling tests/test_first_principles.py::TestCMFMonotonicity tests/test_first_principles.py::TestPureIronPlanet tests/test_first_principles.py::TestConservationLaws`
@@ -127,11 +127,11 @@ The smoke tests of `TestConservationLaws` also verify three conservation propert
 
 1. `PALEOS:iron`, a one-layer iron core.
 2. A two-layer iron core: a solid inner core on `PALEOS-API-2phase:iron-solid` and a liquid outer core on `PALEOS-API-2phase:iron-liquid`.
-3. The same two-layer core with the 13.85 wt% S outer core of Hirose et al. (2021) [^cite-hirose2021].
+3. The same two-layer core with the 13.85 wt% S outer core of Hirose et al. (2021)[^cite-hirose2021].
 
 The two-layer cores take the inner-core mass fraction of PREM, 0.0508. At each core node the test compares the density with the PREM density at the same pressure in the same region, inner or outer core. It pins the median and the largest relative difference per region. It also checks the PREM reference against Table II of the paper.
 
-**How we know the right answer.** The PREM of Dziewonski & Anderson (1981) [^cite-dziewonski1981]: the core density polynomials of Table I. The pressure comes from a hydrostatic integral of that density inward from the CMB pressure of Table II, 135.751 GPa. It meets the centre and ICB pressures of Table II to $4.1 \times 10^{-4}$ and $3.9 \times 10^{-4}$ and the gravity at the CMB to $6.5 \times 10^{-4}$. The comparison is at equal pressure, since the radii of the planet and of its CMB differ from those of the Earth. There is no tolerance against PREM: the test pins the differences of the code as regression values. For comparison, Attia et al. (2026) [^cite-attia2026] find the iron core of their PALEOS Earth denser than PREM by a median of 10.6 % and at most 12.1 %, compared by radius (their Fig. 4, with 10 km around each CMB left out).
+**How we know the right answer.** The PREM of Dziewonski & Anderson (1981)[^cite-dziewonski1981]: the core density polynomials of Table I. The pressure comes from a hydrostatic integral of that density inward from the CMB pressure of Table II, 135.751 GPa. It meets the centre and ICB pressures of Table II to $4.1 \times 10^{-4}$ and $3.9 \times 10^{-4}$ and the gravity at the CMB to $6.5 \times 10^{-4}$. The comparison is at equal pressure, since the radii of the planet and of its CMB differ from those of the Earth. There is no tolerance against PREM: the test pins the differences of the code as regression values. For comparison, Attia et al. (2026)[^cite-attia2026] find the iron core of their PALEOS Earth denser than PREM by a median of 10.6 % and at most 12.1 %, compared by radius (their Fig. 4, with 10 km around each CMB left out).
 
 | Core | Inner core: median | Inner core: largest | Outer core: median | Outer core: largest |
 | --- | --- | --- | --- | --- |
@@ -145,7 +145,7 @@ The two-layer cores take the inner-core mass fraction of PREM, 0.0508. At each c
 | Fe, 1 layer | 6525 km | 3381 km | 135.5 GPa | 386.2 GPa | $+8.52$ %, $+8.66$ % |
 | Fe-S, 2 layers | 6562 km | 3477 km | 128.2 GPa | 358.5 GPa | $+0.39$ %, $+3.00$ % |
 
-The second table comes from the same 3 solves, on the side tables of 40 points per decade of the test (the tutorial prints 6561.4 km for the Fe-S planet on the default grid). By radius, each core node is compared with PREM at its radius, as Attia et al. (2026) [^cite-attia2026] do; nodes within 10 km of either CMB are left out. The node counts in the first table are the core nodes in each PREM region. The iron cores reach 386 GPa at the centre, above the 364 GPa of PREM, so only their nodes up to 364 GPa enter the inner-core numbers. The outer cores of the 2 iron cores are the same: on this adiabat the outer core lies above the melting curve of iron, where `PALEOS:iron` is the PALEOS liquid. The S, Si, O and H midpoint cores of Hirose et al. (2021) [^cite-hirose2021] have the same density by the calibration of the linear law ([case](equation_of_state.md#light-element-outer-cores-on-the-liquid-iron-side)), so the S core stands for all 4.
+The second table comes from the same 3 solves, on the side tables of 40 points per decade of the test (the tutorial prints 6561.4 km for the Fe-S planet on the default grid). By radius, each core node is compared with PREM at its radius, as Attia et al. (2026)[^cite-attia2026] do; nodes within 10 km of either CMB are left out. The node counts in the first table are the core nodes in each PREM region. The iron cores reach 386 GPa at the centre, above the 364 GPa of PREM, so only their nodes up to 364 GPa enter the inner-core numbers. The outer cores of the 2 iron cores are the same: on this adiabat the outer core lies above the melting curve of iron, where `PALEOS:iron` is the PALEOS liquid. The S, Si, O and H midpoint cores of Hirose et al. (2021)[^cite-hirose2021] have the same density by the calibration of the linear law ([case](equation_of_state.md#light-element-outer-cores-on-the-liquid-iron-side)), so the S core stands for all 4.
 
 **Why it matters.** The core density sets the core radius and the gravity of the planet. An iron outer core is 8 % denser than the core of the Earth, and its light elements close most of that gap.
 
@@ -160,7 +160,7 @@ The second table comes from the same 3 solves, on the side tables of 40 points p
 **Known limit.** The two-layer cores take the inner-core mass of PREM, not their own ICB. On this adiabat the centre is at 7710 to 8060 K, above the Anzellini melting curve (6403 K at 349 GPa), so the liquidus rule would give no inner core, and the solid inner core lies above the melting curve of iron. The test runs on side tables of 40 points per decade over $10^9$ to $3 \times 10^{12}$ Pa and $10^3$ to $2 \times 10^4$ K, made in a scratch folder, not on the default grid of 150 points per decade. The pins hold to $10^{-3}$, 28 times the largest change of a pinned value of the Fe-S core ($3.6 \times 10^{-5}$) over 5 starts with round-off changes of the planet mass and surface temperature.
 
 ??? info "Test details"
-    - Reference: the PREM of Dziewonski & Anderson (1981) [^cite-dziewonski1981], Table I (density) and Table II (pressure and gravity checks), `tests/validation/data/prem_core_polynomials.csv` and `prem_core_table2.csv`.
+    - Reference: the PREM of Dziewonski & Anderson (1981)[^cite-dziewonski1981], Table I (density) and Table II (pressure and gravity checks), `tests/validation/data/prem_core_polynomials.csv` and `prem_core_table2.csv`.
     - Tolerance: PREM against Table II, $10^{-3}$ in pressure and gravity and $10^{-5}$ in density; the medians and largest differences pinned to $10^{-3}$; at least 5 compared nodes per region.
     - Test id: `tests/test_core_two_phase_solve.py::test_an_earth_core_against_prem` (integration tier; needs PALEOS and the PALEOS tables under `data/`)
     - Command: `pytest -o "addopts=" tests/test_core_two_phase_solve.py -k prem`; the plots: `pytest -o "addopts=" tests/test_core_two_phase_solve.py -k prem --validation-plots`
@@ -175,10 +175,7 @@ pytest -o "addopts=" tests/test_first_principles.py tests/test_polytrope_verific
 
 Without `--validation-plots` the tests write nothing: each compares the data of its plot with the committed pair, and a missing or stale file fails the test.
 
-[^cite-attia2026]: M. Attia, T. Lichtenberg, E. Jungová, M. Sastre (2026). *[PALEOS: Multiphase equations of state and mass-radius relations for exoplanet interiors](https://doi.org/10.1051/0004-6361/202660790)*. Astronomy & Astrophysics, 713, A225.
-
-[^cite-dziewonski1981]: A. M. Dziewonski, D. L. Anderson (1981). *[Preliminary reference Earth model](https://doi.org/10.1016/0031-9201(81)90046-7)*. Physics of the Earth and Planetary Interiors, 25, 297-356.
-
-[^cite-hirose2021]: K. Hirose, B. Wood, L. Vočadlo (2021). *[Light elements in the Earth's core](https://doi.org/10.1038/s43017-021-00203-6)*. Nature Reviews Earth & Environment, 2, 645-658.
-
-[^cite-seager2007]: S. Seager, M. Kuchner, C. A. Hier-Majumder, B. Militzer (2007). *[Mass-Radius Relationships for Solid Exoplanets](https://doi.org/10.1086/521346)*. The Astrophysical Journal, 669, 1279-1297.
+[^cite-attia2026]: M. Attia, T. Lichtenberg, E. Jungová, M. Sastre, *[PALEOS: Multiphase equations of state and mass-radius relations for exoplanet interiors](https://doi.org/10.1051/0004-6361/202660790)*, Astronomy and Astrophysics, 713, A225, 2026. [SciX](https://scixplorer.org/abs/2026A%26A...713A.225A/abstract).
+[^cite-dziewonski1981]: A. M. Dziewonski, D. L. Anderson, *[Preliminary reference Earth model](https://doi.org/10.1016/0031-9201(81)90046-7)*, Physics of the Earth and Planetary Interiors, 25, 297-356, 1981. [SciX](https://scixplorer.org/abs/1981PEPI...25..297D/abstract).
+[^cite-hirose2021]: K. Hirose, B. Wood, L. Vočadlo, *[Light elements in the Earth's core](https://doi.org/10.1038/s43017-021-00203-6)*, Nature Reviews Earth & Environment, 2, 645-658, 2021. [SciX](https://scixplorer.org/abs/2021NRvEE...2..645H/abstract).
+[^cite-seager2007]: S. Seager, M. Kuchner, C. A. Hier-Majumder, B. Militzer, *[Mass-Radius Relationships for Solid Exoplanets](https://doi.org/10.1086/521346)*, The Astrophysical Journal, 669(2), 1279-1297, 2007. [SciX](https://scixplorer.org/abs/2007ApJ...669.1279S/abstract).
