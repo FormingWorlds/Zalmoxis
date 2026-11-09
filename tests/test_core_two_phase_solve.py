@@ -224,7 +224,7 @@ def test_an_accept_with_an_icb_off_the_liquidus_is_not_converged(setup, caplog):
     caplog.set_level('WARNING', logger='fwl.zalmoxis.solver')
     res = zs._solve(cfg, md, None, input_dir, layer_mixtures=mixes)
     assert res['converged'] is False and res['icb_converged'] is False
-    assert 'inner-core boundary' in caplog.text
+    assert 'inner-core boundary' in caplog.text and 'its adiabat' not in caplog.text
     assert res['converged_mass'] is False and res['accept_mass_limit'] is None
     assert res['accepted_on'] is None
     res = zs.main(cfg, md, None, input_dir, layer_mixtures=mixes)
@@ -232,6 +232,35 @@ def test_an_accept_with_an_icb_off_the_liquidus_is_not_converged(setup, caplog):
         res['accepted_on'] != 'retry_skip' and 'Retrying with tighter parameters' in caplog.text
     )
     assert res['icb_converged'] or not res['converged']  # never converged with the ICB off
+
+
+def test_an_accept_with_the_adiabat_icb_off_is_not_converged(setup, monkeypatch, caplog):
+    """With the liquidus root met and the ICB of the adiabat off by the core mass, no pass stops
+    on the strict test and the cap accept of the 2nd pass is returned as not converged."""
+    from zalmoxis import solver as zs
+    from zalmoxis.mixing import parse_all_layer_mixtures
+
+    monkeypatch.setattr(zs, 'icb_misses', lambda m, p, t, cmb, *_: (0.0, cmb))
+    md, cfg, input_dir = setup
+    cfg = dict(
+        cfg,
+        temperature_mode='isothermal',
+        surface_temperature=5000.0,
+        core_liquidus='Anzellini13-iron',
+        max_iterations_outer=2,
+        wall_timeout=WALL,
+    )
+    cfg['layer_eos_config'] = dict(cfg['layer_eos_config'], core=LIQ, inner_core=SOL)
+    caplog.set_level('WARNING', logger='fwl.zalmoxis.solver')
+    res = zs._solve(
+        cfg,
+        md,
+        None,
+        input_dir,
+        layer_mixtures=parse_all_layer_mixtures(cfg['layer_eos_config']),
+    )
+    assert res['converged'] is False and res['icb_converged'] is False
+    assert res['accepted_on'] is None and '1 off the ICB of its adiabat' in caplog.text
 
 
 def test_main_refuses_an_icb_rule_without_an_inner_core(setup):

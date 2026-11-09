@@ -199,6 +199,18 @@ def test_the_icb_is_where_the_profile_meets_the_liquidus():
     assert solid == 0.0
 
 
+def test_the_icb_misses_are_the_distances_to_the_root_and_to_the_adiabat_icb():
+    """The layer ICB against the liquidus root of the profile and against the ICB that the
+    adiabat took; without an adiabat the second distance is 0."""
+    from zalmoxis.core_profile import icb_misses
+
+    m, p, t = _profile(lambda p: 0 * p + 5000.0)
+    root = icb_from_profile(m, p, t, 1e24, _liq)[0]
+    miss = icb_misses(m, p, t, 1e24, _liq, root + 3e20, root - 2e20)
+    assert miss == (pytest.approx(3e20, rel=1e-9), pytest.approx(5e20, rel=1e-9))
+    assert icb_misses(m, p, t, 1e24, _liq, root + 3e20, None)[1] == 0.0
+
+
 def test_a_core_above_or_below_the_liquidus_everywhere():
     """A centre at or above the liquidus gives no inner core; a core below it everywhere is
     the inner core, with the pressure of its last core node."""
