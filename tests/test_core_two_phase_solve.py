@@ -260,6 +260,43 @@ def test_an_accept_with_the_adiabat_icb_off_is_not_converged(setup, monkeypatch,
     assert res['accepted_on'] is None and '1 off the ICB of its adiabat' in caplog.text
 
 
+def test_a_cap_accept_reads_the_adiabat_icb_of_the_restored_pass(setup, monkeypatch, caplog):
+    """10 outer passes of the 2510 K Fe-S core end on the max_iter accept, which restores the
+    best pass; the final ICB test reads the adiabat ICB of that pass, not None."""
+    from zalmoxis import solver as zs
+    from zalmoxis.config import load_solidus_liquidus_functions
+    from zalmoxis.core_profile import icb_misses
+    from zalmoxis.mixing import parse_all_layer_mixtures
+
+    miss = mock.Mock(wraps=icb_misses)
+    adiabat = mock.Mock(wraps=zs.compute_adiabatic_temperature)
+    monkeypatch.setattr(zs, 'icb_misses', miss)
+    monkeypatch.setattr(zs, 'compute_adiabatic_temperature', adiabat)
+    md, cfg, input_dir = setup
+    cfg = dict(
+        cfg,
+        core_liquidus='Anzellini13-iron',
+        surface_temperature=2510.0,
+        max_iterations_outer=10,
+        tolerance_outer=1e-3,
+        wall_timeout=WALL,
+    )
+    cfg['layer_eos_config'] = dict(
+        cfg['layer_eos_config'], core=f'{LIQ}:0.8615+CoreAlloy:S:0.1385', inner_core=SOL
+    )
+    melt = load_solidus_liquidus_functions(
+        cfg['layer_eos_config'], cfg['rock_solidus'], cfg['rock_liquidus'], 1.0
+    )
+    caplog.set_level('WARNING', logger='fwl.zalmoxis.solver')
+    mixes = parse_all_layer_mixtures(cfg['layer_eos_config'])
+    res = zs._solve(cfg, md, melt, input_dir, layer_mixtures=mixes)
+    assert 'Accepting max_iter solution' in caplog.text
+    args = miss.call_args.args  # the final ICB test
+    assert args[6] in [c.kwargs['icb_mass'] for c in adiabat.call_args_list]
+    tol = cfg['tolerance_outer'] * res['cmb_mass']
+    assert res['icb_converged'] == all(d <= tol for d in icb_misses(*args))
+
+
 def test_main_refuses_an_icb_rule_without_an_inner_core(setup):
     """main itself refuses core_liquidus without an inner core; the rule check takes None as
     unset and an empty inner_core as no inner core."""
