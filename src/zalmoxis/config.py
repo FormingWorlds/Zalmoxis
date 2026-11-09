@@ -271,7 +271,8 @@ def _check_icb_rule(config_params):
     if (config_params.get('layer_eos_config') or {}).get('inner_core'):
         if bool(liq) == (frac is not None):
             raise ValueError(
-                'a two-layer core needs exactly one of core_liquidus and inner_core_mass_fraction'
+                'a two-layer core needs exactly one of core_liquidus and '
+                'inner_core_mass_fraction'
             )
         if liq and config_params.get('outer_solver') == 'newton':
             raise ValueError(NEWTON_LIQUIDUS)

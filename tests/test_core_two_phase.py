@@ -1,4 +1,5 @@
-"""Two-layer core: the iron side tables in the registry and the configuration of an inner core."""
+"""Two-layer core: the iron side tables in the registry and the configuration of an inner
+core."""
 
 from __future__ import annotations
 
@@ -360,7 +361,8 @@ def test_a_profile_without_core_nodes_is_refused():
 
 
 def test_core_arrays_refuse_a_core_mass_out_of_reach():
-    """An rhs 100 times lighter than the profile cannot reach the core mass within 2 segments."""
+    """An rhs 100 times lighter than the profile cannot reach the core mass within 2
+    segments."""
     res, rhs = _sphere_result(41, 1.0)
     mix = {'core': LayerMixture(['PALEOS:iron'], [1.0])}
 
@@ -511,7 +513,10 @@ def test_a_test_of_the_real_paleos_skips_on_the_mock(monkeypatch):
 def test_solid_above_counts_only_segments_cold_at_both_ends():
     """A hot centre, a cold band, a hot band and a cold top: only the segments with both ends
     below the liquidus count, not those that end in the hot band."""
-    bands = lambda p: np.where((p > 300e9) | ((p > 200e9) & (p <= 250e9)), 7000.0, 3000.0)  # noqa: E731
+
+    def bands(p):
+        return np.where((p > 300e9) | ((p > 200e9) & (p <= 250e9)), 7000.0, 3000.0)
+
     m, p, t = _profile(bands)
     m_icb, _, solid = icb_from_profile(m, p, t, 1e24, _liq)
     cold = t < _liq(p)

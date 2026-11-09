@@ -73,6 +73,13 @@ def icb_from_profile(mass, pressure, temperature, cmb_mass, liquidus, icb_mass=N
     return m_icb, float(p_icb), _solid_mass(m, f, m_icb)
 
 
+def icb_misses(mass, pressure, temperature, cmb_mass, liquidus, icb_mass, icb_adiabat):
+    """Distances [kg] of the layer inner-core mass ``icb_mass`` from the liquidus root of the
+    profile and from ``icb_adiabat``, the inner-core mass that its adiabat took (0 if None)."""
+    root = icb_from_profile(mass, pressure, temperature, cmb_mass, liquidus)[0]
+    return abs(root - icb_mass), 0.0 if icb_adiabat is None else abs(icb_adiabat - icb_mass)
+
+
 def _solid_mass(m, f, m_icb):
     """Core mass above ``m_icb`` in node segments whose ends both lie below the liquidus."""
     seg = (m[:-1] >= m_icb) & (f[:-1] < 0.0) & (f[1:] < 0.0)

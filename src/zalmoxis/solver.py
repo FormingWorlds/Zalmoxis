@@ -38,7 +38,7 @@ from .constants import (
     earth_mass,
     earth_radius,
 )
-from .core_profile import core_arrays, icb_from_profile, outside_side_tables
+from .core_profile import core_arrays, icb_from_profile, icb_misses, outside_side_tables
 from .eos import (
     calculate_temperature_profile,
     compute_adiabatic_temperature,
@@ -1764,7 +1764,8 @@ def _solve(
         if is_alloy_mixture(layer_mixtures['core']):
             logger.warning(
                 'core_liquidus %s is a pure-iron curve; an alloy outer core can melt below it, '
-                'so the inner core can come out too large: pass the alloy liquidus as a callable',
+                'so the inner core can come out too large: pass the alloy liquidus as a '
+                'callable',
                 core_liq,
             )
         core_liq = get_melting_curve_function(core_liq)
@@ -2721,15 +2722,10 @@ def _solve(
         # convergence; the T output for T-independent EOS in adiabatic mode
         # falls back to the linear profile (see the T-independent branch
         # around the _temperature_func construction).
-        icb_moving = core_liq is not None and (
-            abs(
-                icb_from_profile(mass_enclosed, pressure, temperatures, cmb_mass, core_liq)[0]
-                - icb_mass
-            )
-            > tolerance_outer * cmb_mass
-            or (
-                icb_adiabat is not None
-                and abs(icb_adiabat - icb_mass) > tolerance_outer * cmb_mass
+        icb_moving = core_liq is not None and any(
+            d > tolerance_outer * cmb_mass
+            for d in icb_misses(
+                mass_enclosed, pressure, temperatures, cmb_mass, core_liq, icb_mass, icb_adiabat
             )
         )
         if relative_diff_outer_mass < tolerance_outer and not icb_moving:
@@ -2866,16 +2862,16 @@ def _solve(
 
     icb_converged = True  # the ICB meets the liquidus root and the adiabat ICB of the pass
     if core_liq is not None and np.all(np.isfinite(pressure)) and pressure[0] > 0:
-        moved = icb_from_profile(mass_enclosed, pressure, temperatures, cmb_mass, core_liq)[0]
-        lag = 0.0 if icb_adiabat is None else abs(icb_adiabat - icb_mass)
-        icb_converged = max(abs(moved - icb_mass), lag) <= tolerance_outer * cmb_mass
+        miss, lag = icb_misses(
+            mass_enclosed, pressure, temperatures, cmb_mass, core_liq, icb_mass, icb_adiabat
+        )
+        icb_converged = all(d <= tolerance_outer * cmb_mass for d in (miss, lag))
         if converged and not icb_converged:  # an accept path that skipped the ICB test
             logger.warning(
                 'Not converged: the inner-core boundary lies %.3g of the core mass off the '
-                'liquidus root of the returned profile and %.3g off the ICB of its adiabat '
-                '(accepted_on=%s).',
-                abs(moved - icb_mass) / cmb_mass,
-                lag / cmb_mass,
+                'liquidus root of the returned profile%s (accepted_on=%s).',
+                miss / cmb_mass,
+                f' and {lag / cmb_mass:.3g} off the ICB of its adiabat' if lag else '',
                 accepted_on,
             )
             converged, converged_mass, accepted_on, accept_mass_limit = False, False, None, None

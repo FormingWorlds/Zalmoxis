@@ -11,6 +11,7 @@ from __future__ import annotations
 import copy
 import os
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 import pytest
@@ -206,7 +207,8 @@ def test_a_two_layer_core_keeps_the_mass_limit_of_the_paleos_tables(setup):
 def test_an_accept_with_an_icb_off_the_liquidus_is_not_converged(setup, caplog):
     """2 outer passes end on the max_iter accept while the ICB still moves: _solve returns the
     result as not converged and says why, and main does not take it back by its retry skip.
-    Whether the tightened retry converges depends on the CPU, see docs/Validation/hydrostatic_structure.md."""
+    Whether the tightened retry converges depends on the CPU, see the ICB case of
+    docs/Validation/hydrostatic_structure.md."""
     from zalmoxis import solver as zs
     from zalmoxis.mixing import parse_all_layer_mixtures
 
@@ -533,13 +535,7 @@ def test_the_adiabat_of_a_converged_liquidus_solve_takes_its_icb(setup, monkeypa
     tolerance_outer (1e-3) of the core mass, as its densities do."""
     from zalmoxis import solver
 
-    used = []
-    adiabat = solver.compute_adiabatic_temperature
-
-    def spy(*args, **kwargs):
-        used.append(kwargs['icb_mass'])
-        return adiabat(*args, **kwargs)
-
+    spy = mock.Mock(wraps=solver.compute_adiabatic_temperature)
     monkeypatch.setattr(solver, 'compute_adiabatic_temperature', spy)
     res = _solve(
         setup,
@@ -550,4 +546,5 @@ def test_the_adiabat_of_a_converged_liquidus_solve_takes_its_icb(setup, monkeypa
     )
     m_ic, cmb = res['core']['M_ic'], res['cmb_mass']
     assert 0.0 < m_ic < cmb and res['accepted_on'] == 'strict'
-    assert abs(used[-1] - m_ic) <= 1e-3 * cmb, (used[-1] / cmb, m_ic / cmb)
+    used = spy.call_args.kwargs['icb_mass']  # the inner-core mass of the last adiabat
+    assert abs(used - m_ic) <= 1e-3 * cmb, (used / cmb, m_ic / cmb)
