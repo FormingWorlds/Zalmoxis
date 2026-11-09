@@ -229,6 +229,18 @@ def test_the_liquidus_rule_is_refused_with_the_newton_outer_solver():
     )
 
 
+def test_the_liquidus_rule_is_refused_with_the_cmb_anchored_adiabat():
+    """The CMB-anchored adiabat carries the surface temperature through the core, so the
+    liquidus rule would put the whole core in the inner core; the mass rule reads no core T."""
+    from zalmoxis.config import _check_icb_rule
+
+    cmb = {'temperature_mode': 'adiabatic_from_cmb', 'cmb_temperature': 4000.0}
+    for check in (validate_config, _check_icb_rule):  # main calls _check_icb_rule itself
+        with pytest.raises(ValueError, match='core_liquidus needs a core temperature'):
+            check(_params(**cmb))
+        check(_params(**cmb, core_liquidus='', inner_core_mass_fraction=0.05))
+
+
 @pytest.mark.parametrize(
     ('layers', 'match'),
     [
