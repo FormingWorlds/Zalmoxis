@@ -97,7 +97,7 @@ With no inner core, `R_icb` is 0 and `P_icb` is the centre pressure.
 
 ## Step 3: read the result
 
-`result['core']` holds the core arrays: `r`, `m`, `P`, `rho`, `g` and `T` at the core nodes plus a node at the core mass, `phase` (1 inner core, 0 outer core), `w_S`, and the scalars `M_ic`, `R_icb`, `P_icb` and `solid_above_icb_mass_fraction`. The 2 runs differ as follows:
+`res['core']` holds the core arrays. The script reads `r`, `P`, `T` and `rho` (m, Pa, K and kg/m$^3$) at the core nodes, whose last node is the core-mantle boundary (CMB); `phase` (1 inner core, 0 outer core); and the scalars `M_ic` \[kg\], `R_icb` \[m\], `P_icb` \[Pa\] and `solid_above_icb_mass_fraction`. `res['cmb_mass']` is the core mass. [Core arrays](../How-to/usage.md#core-arrays) lists every key with its unit. The 2 runs differ as follows:
 
 1. With the inner-core mass of PREM, the ICB lies at 1211 km and 322 GPa. The density falls there by about 1100 kg/m$^3$, from the solid iron of the inner core to the liquid Fe-S of the outer core.
 2. With the melting curve, the core has no inner core. The adiabat from 3000 K at the surface (the `surface_temperature` of `input/default.toml`) reaches 7735 K at the centre, above the 6403 K of the Anzellini curve at 349 GPa.

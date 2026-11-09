@@ -69,10 +69,10 @@ A case with a plot pair shows the tested values against their reference in a lig
 pytest -o "addopts=" -m reference_pinned tests --validation-plots
 ```
 
-The first-principles cases are not `reference_pinned`; this command writes their pairs:
+The first-principles cases and the scan of the ICB case are not `reference_pinned`; this command writes their pairs:
 
 ```console
-pytest -o "addopts=" tests/test_first_principles.py tests/test_polytrope_verification.py --validation-plots
+pytest -o "addopts=" tests/test_first_principles.py tests/test_polytrope_verification.py tests/test_core_two_phase.py --validation-plots
 ```
 
 Without `--validation-plots` the tests write nothing: each compares the data of its plot with the committed pair, and a missing or stale file fails the test. Two kinds of script figure appear too. The sweep over 26 setups is an SVG pair in `docs/assets/validation/` (`pressure_root_sweep*.svg`), which `tools/validation/pressure_root_sweep.py` writes through `proteus_mpl.validation.save` with its 60 kB cap; its tool test checks the plotting code on stand-in records, not the committed pair. The 4 thermal-state figures are PNG files in `docs/img/validation/`, made by scripts under `tools/validation/`; no test writes or checks them, and they are not limited to 60 kB.
