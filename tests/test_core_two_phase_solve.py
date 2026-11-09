@@ -253,14 +253,9 @@ def test_an_accept_with_the_adiabat_icb_off_is_not_converged(setup, monkeypatch,
         wall_timeout=WALL,
     )
     cfg['layer_eos_config'] = dict(cfg['layer_eos_config'], core=LIQ, inner_core=SOL)
+    mixes = parse_all_layer_mixtures(cfg['layer_eos_config'])
     caplog.set_level('WARNING', logger='fwl.zalmoxis.solver')
-    res = zs._solve(
-        cfg,
-        md,
-        None,
-        input_dir,
-        layer_mixtures=parse_all_layer_mixtures(cfg['layer_eos_config']),
-    )
+    res = zs._solve(cfg, md, None, input_dir, layer_mixtures=mixes)
     assert res['converged'] is False and res['icb_converged'] is False
     assert res['accepted_on'] is None and '1 off the ICB of its adiabat' in caplog.text
 

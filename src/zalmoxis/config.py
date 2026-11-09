@@ -78,8 +78,8 @@ NEWTON_LIQUIDUS = (
 )
 CMB_LIQUIDUS = (
     "core_liquidus needs a core temperature profile: temperature_mode = 'adiabatic_from_cmb' "
-    'carries the surface temperature through the core, so the liquidus rule would put the '
-    'whole core in the inner core; use inner_core_mass_fraction'
+    'carries the surface temperature through the core, so the liquidus rule would read the '
+    'surface temperature as the core temperature; use inner_core_mass_fraction'
 )
 
 # WolfBower2018 tables are valid up to ~1 TPa. The Brent pressure solver with

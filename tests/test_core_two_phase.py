@@ -244,7 +244,7 @@ def test_the_liquidus_rule_is_refused_with_the_newton_outer_solver():
 
 def test_the_liquidus_rule_is_refused_with_the_cmb_anchored_adiabat():
     """The CMB-anchored adiabat carries the surface temperature through the core, so the
-    liquidus rule would put the whole core in the inner core; the mass rule reads no core T."""
+    liquidus rule would read it as the core temperature; the mass rule reads no core T."""
     from zalmoxis.config import _check_icb_rule
 
     cmb = {'temperature_mode': 'adiabatic_from_cmb', 'cmb_temperature': 4000.0}
@@ -545,12 +545,10 @@ def test_the_solid_picker_keeps_the_delta_boundary_of_paleos():
     assert _get_iron_solid_phase(5.21e9, 2000.0) == 'solid-gamma'
 
 
-@pytest.mark.reference_pinned
 def test_the_start_dependence_scan_of_the_liquidus_rule(validation_plot):
-    """The stored walks down and up of tools/core_icb_scan.py (the Fe-S core of the ICB
-    validation case): every converged step meets both ICB tests, the walks agree outside 2500
-    to 2525 K, and inside it they give the table of the case. Reference: self-consistency of
-    the 2 walks (outside the band) and regression pins of this code (inside it)."""
+    """The scan of tools/core_icb_scan.py stored with its commit (the Fe-S core of the ICB
+    validation case; the test runs no solve): every converged step meets both ICB tests, the
+    walks agree outside 2500 to 2525 K and inside it give the table of the case."""
     import csv
     from pathlib import Path
 
@@ -562,7 +560,8 @@ def test_the_start_dependence_scan_of_the_liquidus_rule(validation_plot):
         for d in ('down', 'up')
     }
     temps = np.arange(2300.0, 2701.0, 25.0)
-    assert all(sorted(w) == list(temps) for w in walk.values())
+    order = [float(r['surface_temperature_K']) for r in rows]
+    assert order == list(temps[::-1]) + list(temps)  # walk down, then walk up
     frac = {
         d: {t: float(r['inner_core_mass_fraction']) for t, r in w.items()}
         for d, w in walk.items()
@@ -575,8 +574,11 @@ def test_the_start_dependence_scan_of_the_liquidus_rule(validation_plot):
             and ok['up'][t]
             and frac['down'][t] == pytest.approx(frac['up'][t], abs=1e-3)
         )
-    assert frac['down'][2500.0] == pytest.approx(0.882, abs=5e-4) and frac['up'][2500.0] == 1.0
-    assert ok['down'][2525.0] and frac['down'][2525.0] == 0.0 and not ok['up'][2525.0]
+    table = {2475.0: (1.0, 1.0), 2500.0: (0.882, 1.0), 2525.0: (0.0, None), 2550.0: (0.0, 0.0)}
+    for t, (down, up) in table.items():  # the table of the case; None: not converged
+        assert ok['down'][t] and frac['down'][t] == pytest.approx(down, abs=5e-4)
+        assert ok['up'][t] == (up is not None)
+        assert up is None or frac['up'][t] == pytest.approx(up, abs=5e-4)
 
     def figure():
         import matplotlib.pyplot as plt
