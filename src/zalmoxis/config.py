@@ -76,6 +76,11 @@ NEWTON_LIQUIDUS = (
     'newton and must set picard): a newton probe solves one outer pass, with no profile of a '
     'previous pass for the liquidus rule; with newton use inner_core_mass_fraction'
 )
+CMB_LIQUIDUS = (
+    "core_liquidus needs a core temperature profile: temperature_mode = 'adiabatic_from_cmb' "
+    'carries the surface temperature through the core, so the liquidus rule would put the '
+    'whole core in the inner core; use inner_core_mass_fraction'
+)
 
 # WolfBower2018 tables are valid up to ~1 TPa. The Brent pressure solver with
 # out-of-bounds clamping handles mantle pressures exceeding the table boundary
@@ -270,6 +275,8 @@ def _check_icb_rule(config_params):
             )
         if liq and config_params.get('outer_solver') == 'newton':
             raise ValueError(NEWTON_LIQUIDUS)
+        if liq and config_params.get('temperature_mode') == 'adiabatic_from_cmb':
+            raise ValueError(CMB_LIQUIDUS)
     elif liq or frac is not None:
         raise ValueError('core_liquidus and inner_core_mass_fraction need an inner_core layer')
 
