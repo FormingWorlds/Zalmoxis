@@ -1,5 +1,5 @@
 # Start-dependence scan of the liquidus rule: default 1 M_E planet, outer core PALEOS-API-2phase:iron-liquid:0.8615+CoreAlloy:S:0.1385, inner core PALEOS-API-2phase:iron-solid, core_liquidus Anzellini13-iron, adiabatic profile
-# made by: python tools/core_icb_scan.py <out> down and python tools/core_icb_scan.py <out> up (side tables of 40 points per decade), source commit fba343e16a5c6c01241b5fc80eb5d40aefbbe0ad, Apple M1 Ultra (darwin-arm64), 2026-11-08
+# made by: python tools/core_icb_scan.py <out> down and python tools/core_icb_scan.py <out> up (side tables of 40 points per decade), source commit 9f6d310a183caf3317a04ce5a8906bdee9549a22, Apple M1 Ultra (darwin-arm64), 2026-11-09; the scan at fba343e16a5c6c01241b5fc80eb5d40aefbbe0ad gave the same rows
 # each step starts from the state of the step before; converged and icb_converged as returned by main; inner_core_mass_fraction = M_ic / M_core of the returned result
 direction,surface_temperature_K,converged,icb_converged,inner_core_mass_fraction,centre_temperature_K
 down,2700.0,1,1,0.0,6973.431601677676
