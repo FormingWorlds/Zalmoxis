@@ -69,7 +69,7 @@ L'Hopital's rule gives the limit $dg/dr|_{r=0} = \frac{4}{3}\pi G \rho_c$, and `
 An equation of state $\rho = \rho(P, T)$ closes the system.
 The uniform-sphere, two-layer, conservation and binding-energy cases, and the uniform-sphere part of the grid and tolerance checks, fix $\rho$ to a constant.
 The n = 1 polytrope case uses $P = K\rho^2$.
-The full-solver part of the grid and tolerance checks, and the Earth benchmark and the mass-radius scaling on the [mass-radius page](mass_radius.md), use the Analytic EOS, the modified polytrope of Seager et al. (2007), $\rho(P) = \rho_0 + c P^n$, with fitted constants $\rho_0$, $c$ and $n$ for each material (this $n$ is not the index of the $n = 1$ polytrope).
+The full-solver part of the grid and tolerance checks, and the Earth benchmark and the mass-radius scaling on the [mass-radius page](mass_radius.md), use the Analytic EOS, the modified polytrope of Seager et al. (2007)[^cite-seager2007], $\rho(P) = \rho_0 + c P^n$, with fitted constants $\rho_0$, $c$ and $n$ for each material (this $n$ is not the index of the $n = 1$ polytrope).
 None of these needs table data; the JAX table cases, the PALEOS Newton setups and the PALEOS setups of the sweep figure use the PALEOS tables.
 
 ## Uniform-density sphere
@@ -218,7 +218,7 @@ The Earth benchmark and the mass-radius scaling are on the [mass-radius page](ma
 **How to read the plot.** The line is the Lane-Emden density $\sin\xi/\xi$ against $r/R_\oplus$ and gives context. The marks are the density that the test derives from the code pressure, over the central density, every 25th node, for 1 Earth mass. The test asserts the code surface radius (circle) against the exact radius $R_\oplus$ (square) to a relative tolerance of $10^{-4}$, too small to see. The cross is $\sqrt{2}\,R_\oplus$, the radius with $K$ off by a factor 2. A pass means that the circle sits in the square, far from the cross. The mass test and the mass-independence test are not drawn.
 
 ??? info "Test details"
-    - Reference: the analytic $n = 1$ Lane-Emden solution (Chandrasekhar 1939, reference named in the test docstring)
+    - Reference: the analytic $n = 1$ Lane-Emden solution (Chandrasekhar (1939)[^cite-chandrasekhar1939], reference named in the test docstring)
     - Tolerance: surface radius within `rel=1e-4` of $1\,R_\oplus$; integrated mass within `rel=1e-4` of the seeded $2\,M_\oplus$; radius at $1\,M_\oplus$ and $2\,M_\oplus$ equal within `rel=1e-4` and within `rel=1e-3` of $1\,R_\oplus$
     - Test id: `tests/test_polytrope_verification.py`
     - Command: `pytest -o "addopts=" tests/test_polytrope_verification.py`
@@ -353,6 +353,41 @@ On that path $P(R)$ varies irregularly from one trial central pressure to the ne
     - Test id: `tests/test_pressure_root_solves.py::test_every_newton_setup_meets_the_surface_boundary_condition`
     - Command: `pytest -o "addopts=" -m accept_solves_newton_setups tests/test_pressure_root_solves.py`; the figure: `python -m tools.validation.pressure_root_sweep run <dir> -j 2`, then `python -m tools.validation.pressure_root_sweep plot <dir> --assets <dir>`.
 
+## Inner-core boundary of a two-layer core
+
+**Why this check exists.** With `core_liquidus`, the inner-core boundary (ICB) of a [two-layer core](../Explanations/mixing.md#two-layer-core) comes from the temperature profile, and on an adiabat the temperature profile depends on the ICB, since each layer takes the adiabatic gradient of its own side. A solve whose layers and temperature profile hold different ICBs returns an inner core that does not end where its profile crosses the melting curve, with no error message.
+
+**What it tests.** The ICB pressure is the first root of $T(P) - T_\mathrm{liq}(P)$ from the centre outward, found by Brent's method on the profile interpolated in $\ln P$. With the liquidus rule, the outer loop stops only when 2 tests hold to `tolerance_outer` of the core mass: the liquidus root of the solved profile meets the inner-core mass of the layers, and the adiabat of the pass, which takes the inner-core mass of the pass before, has that same inner-core mass. An accept path that skips these tests (an iteration cap, a clock stop, an oscillation stop) returns `converged = False` and `icb_converged = False` when the ICB lies more than `tolerance_outer` of the core mass from the liquidus root of the returned profile or from the ICB of its adiabat, and `main` then retries instead of accepting it; such a retry can take minutes. The tests solve the default 1 $M_\oplus$ planet with a two-layer core and the Anzellini curve:
+
+- **Isothermal core.** At 5000 K the ICB lies at 206 GPa, where the Anzellini curve is at 5000 K: the ICB pressure at most $5 \times 10^{-3}$ from the root, and the inner-core mass at most `tolerance_outer` of the core mass from the mass at the root.
+- **Adiabat.** With the 13.85 wt% S outer core and 2510 K at the surface, the core holds a partial inner core, the solve stops on its strict test, and the adiabat of the returned pass takes the inner-core mass of that pass to $10^{-3}$ of the core mass.
+- **An accept with the ICB off the root.** An isothermal 5000 K core with `max_iterations_outer = 2` stops at its iteration cap while the ICB still moves: the result has `converged = False` and `icb_converged = False`, and `main` retries it.
+- **Bounds of the rule.** A centre above the liquidus (isothermal 8000 K) gives no inner core ($M_\mathrm{ic} = 0$), and a core wholly below it (3000 K) is all inner core. Nodes above the ICB that lie below the liquidus, as in a profile that crosses the liquidus more than once (a linear profile from 7000 K at the centre), stay in the outer core. Their mass, as a fraction of the core mass, is `solid_above_icb_mass_fraction`, and `solid_above_icb` is set.
+- **Bulk composition.** The light-element fractions of each layer are inputs, so the light-element mass of the core changes when the ICB moves. For the 13.85 wt% S outer core on an isothermal core, the inner core holds 0.480 of the core mass at 5000 K and 0.159 at 5500 K, so the bulk S of the core is 7.20 and 11.65 wt%. A caller that keeps the bulk composition, as an evolution model with element partitioning does, sets the layer fractions for each solve.
+
+**How we know the right answer.** For the isothermal core the test finds the root of the Anzellini curve at 5000 K itself, by Brent's method on the curve, not by the code of the solve. For the adiabat the test records the inner-core mass that each pass gives to the adiabat and compares the last one with the inner-core mass of the returned layers. The bulk S is summed over the core arrays and checked against $(1 - M_\mathrm{ic}/M_\mathrm{core})\,w_\mathrm{oc}$; the inner-core fractions are regression values of this code, not an outside reference, pinned to 0.01, 3 times their spread over 5 perturbed starts at 5000 K.
+
+**Why it matters.** The ICB sets the mass of the solid inner core and the density step between the 2 sides. A solve whose temperature profile and layers disagree on it returns a core that is not a solution of its own rule.
+
+**Known limit: start dependence.** With the liquidus rule on an adiabatic profile, the solve can hold 2 states near the surface temperature where the core starts to freeze ([temperature](../Explanations/mixing.md#two-layer-core)). For the 13.85 wt% S outer core of the default 1 $M_\oplus$ planet and the Anzellini curve, a scan in 25 K steps of the surface temperature, each solve started from the state of the step before, gives the inner-core mass fractions below. Inside this band the start (the density, radii and centre temperature that seed the solve) selects the state; outside it both directions agree.
+
+| Surface temperature | Walking down (from a liquid core) | Walking up (from a solid core) |
+| --- | --- | --- |
+| 2475 K | 1.000 | 1.000 |
+| 2500 K | 0.882 | 1.000 |
+| 2525 K | 0.000 | not converged |
+| 2550 K | 0.000 | 0.000 |
+
+Walking up, the solve at 2525 K finds no state whose adiabat and layers share one ICB: the ICB still moves between passes by 0.015 to 0.040 of the core mass when both wall clocks stop it, and the result has `converged = False`. A 2525 K solve from the default start does not converge either. `python tools/core_icb_scan.py <out> down` (or `up`) makes the table.
+
+**Known limit: tight outer tolerance.** With `core_liquidus`, the outer loop stops only when the total mass and the ICB mass both meet `tolerance_outer`, and near convergence one pass moves the ICB by about 0.4 to 2.1 times the change of the relative mass. Well below the default $10^{-3}$, both tests reach the jitter of the Picard iteration and can alternate, and the solve then returns `converged = False`. For the isothermal 5000 K core of the default 1 $M_\oplus$ planet with `max_iterations_outer = 2`, the first solve stops at its iteration cap and the tightened retry of `main` ($10^{-4}$, 4 passes, since the retry doubles the cap) ends with the ICB $8.8 \times 10^{-5}$ of the core mass off the root on macOS arm64, a 12 % margin, and $1.38 \times 10^{-4}$ off on an AMD EPYC 9V45. With `max_iterations_outer = 3` the retry runs 6 passes and does not converge on macOS arm64 either. The isothermal core has no adiabat, so only the root test applies to these passes. A result with `converged = True` has its ICB within `tolerance_outer` of the root and of the ICB of its adiabat (`icb_converged`).
+
+??? info "Test details"
+    - Reference: the root of $T - T_\mathrm{liq}$ on the returned profile and the inner-core mass of the last adiabat (self-consistency); regression pins for the bulk S.
+    - Tolerance: ICB pressure to $5 \times 10^{-3}$ of the root and inner-core mass to `tolerance_outer` ($10^{-3}$ of the core mass) of the mass at the root; the adiabat ICB to $10^{-3}$ of the core mass; inner-core fractions to 0.01 and bulk S to $2 \times 10^{-3}$.
+    - Test ids: `tests/test_core_two_phase_solve.py::test_an_isothermal_core_has_its_icb_where_iron_melts`, `::test_the_adiabat_of_a_converged_liquidus_solve_takes_its_icb`, `::test_an_accept_with_an_icb_off_the_liquidus_is_not_converged`, `::test_a_core_wholly_above_or_below_the_liquidus`, `::test_solid_above_a_liquid_centre_is_reported`, `::test_the_bulk_s_of_the_core_follows_the_icb` (integration tier; needs PALEOS and the PALEOS tables under `data/`)
+    - Command: `pytest -o "addopts=" tests/test_core_two_phase_solve.py -k "isothermal_core_has or adiabat_of or accept_with or wholly or solid_above or bulk_s"`
+
 ## Reproducing the results
 
 The tests draw the plots of these cases. This command writes them again to `docs/assets/validation/`:
@@ -362,3 +397,6 @@ pytest -o "addopts=" tests/test_first_principles.py tests/test_polytrope_verific
 ```
 
 Without `--validation-plots` the tests write nothing: each compares the data of its plot with the committed pair, and a missing or stale file fails the test.
+
+[^cite-seager2007]: S. Seager, M. Kuchner, C. A. Hier-Majumder, B. Militzer, *[Mass-Radius Relationships for Solid Exoplanets](https://doi.org/10.1086/521346)*, The Astrophysical Journal, 669(2), 1279-1297, 2007. [SciX](https://scixplorer.org/abs/2007ApJ...669.1279S/abstract).
+[^cite-chandrasekhar1939]: S. Chandrasekhar, *An Introduction to the Study of Stellar Structure*, University of Chicago Press, 1939. [SciX](https://scixplorer.org/abs/1939isss.book.....C/abstract).

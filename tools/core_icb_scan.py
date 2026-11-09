@@ -7,7 +7,7 @@ steps. Each solve starts from the density, radii and centre temperature of the s
 ``down`` walks from a liquid and ``up`` from a solid core. The side tables are made on a grid of
 40 points per decade (1e9 to 3e12 Pa, 1000 to 2e4 K) in ``<out>/cache40``. Each step prints one
 JSON row; ``<out>/scan_<direction>.json`` holds all rows. This makes the start-dependence table of
-docs/Explanations/mixing.md.
+docs/Validation/hydrostatic_structure.md.
 """
 
 from __future__ import annotations

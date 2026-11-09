@@ -32,7 +32,7 @@ Initial guesses and assumptions for the planetary structure.
 | `surface_temperature` | float | K | 300 to 5000 | Surface temperature. Used when `temperature_mode` is `"isothermal"`, `"linear"`, or `"adiabatic"`. Validated across 300-5000 K for all compositions. Values above 5000 K produce a warning. |
 | `center_temperature` | float | K | -- | Central temperature. Used when `temperature_mode` is `"linear"` or `"adiabatic"` (initial guess). The adiabat solver determines the actual center temperature self-consistently. |
 | `temperature_profile_file` | string | -- | -- | Filename (relative to `input/`) containing a prescribed radial temperature profile. Used when `temperature_mode` is `"prescribed"`. |
-| `inner_core_mass_fraction` | float | -- | 0 to 1 | Inner-core mass over core mass of a two-layer core (`inner_core` set). Exclusive with `core_liquidus`: a two-layer core takes exactly one of the 2. Unset by default. See [two-layer core](../Explanations/mixing.md#two-layer-core). |
+| `inner_core_mass_fraction` | float | -- | 0 to 1 | Inner-core mass over core mass of a two-layer core (`inner_core` set). Exclusive with `core_liquidus`: a two-layer core takes exactly one of the 2, a one-layer core neither. A value that is not a number in $[0, 1]$ is refused. Unset by default. See [two-layer core](../Explanations/mixing.md#two-layer-core). |
 
 #### Temperature profiles
 
@@ -63,8 +63,8 @@ ice_layer = ""  # Empty string = 2-layer model
 | `core` | Yes | EOS for the innermost layer (iron core). |
 | `mantle` | Yes | EOS for the mantle layer. |
 | `ice_layer` | No | EOS for an outer volatile layer. If empty or omitted, the model uses a 2-layer structure (core + mantle). If set, the model uses a 3-layer structure and `mantle_mass_fraction` must be > 0 in `[AssumptionsAndInitialGuesses]`. |
-| `inner_core` | No | EOS of the inner core of a two-layer core, on `PALEOS-API-2phase:iron-solid` with optional `CoreAlloy` components. If set, `core` is the outer core and must be on `PALEOS-API-2phase:iron-liquid`. Empty by default: a one-layer core. See [two-layer core](../Explanations/mixing.md#two-layer-core). |
-| `core_liquidus` | No | Iron melting curve that sets the inner-core boundary of a two-layer core on the temperature profile: `"Anzellini13-iron"` or `"Sinmyo19-iron"`. A caller can set a callable `T_liq(P)` \[K\] instead. Exclusive with `inner_core_mass_fraction`; needs `outer_solver = "picard"`, the Zalmoxis default (PROTEUS defaults to newton). Empty by default. |
+| `inner_core` | No | EOS of the inner core of a two-layer core, on `PALEOS-API-2phase:iron-solid` with optional `CoreAlloy` components. If set, `core` is the outer core, with `PALEOS-API-2phase:iron-liquid` as its only iron base, in any order of the components. A liquid side in a core without an inner core, a layer on the wrong side or a component other than the iron side and `CoreAlloy` elements is refused with a `ValueError`. The JAX structure path refuses an `inner_core` layer; a two-layer core is solved on the numpy path. Empty by default: a one-layer core. See [two-layer core](../Explanations/mixing.md#two-layer-core). |
+| `core_liquidus` | No | Iron melting curve that sets the inner-core boundary of a two-layer core on the temperature profile: `"Anzellini13-iron"` or `"Sinmyo19-iron"`. A caller can set a callable `T_liq(P)` \[K\] instead. Exclusive with `inner_core_mass_fraction`; needs `outer_solver = "picard"`, the Zalmoxis default (PROTEUS defaults to newton). A Newton probe solves 1 outer pass, with no profile of a previous pass, so `outer_solver = "newton"` is refused, also when a caller skips `validate_config`; a Newton solve takes `inner_core_mass_fraction` only. A named curve with `CoreAlloy` elements in the outer core gives a warning ([composition](../Explanations/mixing.md#two-layer-core)). A temperature or a liquidus that is not finite on a core node is refused with a `ValueError`. Empty by default. |
 
 #### Naming convention
 
@@ -112,7 +112,7 @@ Rules:
 | `PALEOS:iron` | PALEOS (Zenodo 22776069, v1.3.0) | Fe (5 phases) | T-dependent | Yes | Unified single-file table with all stable Fe phases (alpha-bcc, delta-bcc, gamma-fcc, epsilon-hcp, liquid). P: 1 bar to 100 TPa, T: 300 to 100000 K. Phase boundary encoded in table. **Limited to $\leq 50\,M_\oplus$**. Enables T-dependent core with its own adiabat. |
 | `PALEOS:MgSiO3` | PALEOS (Zenodo 22776069, v1.3.0) | MgSiO3 (6 phases) | T-dependent | Yes | Unified single-file table with all stable MgSiO3 phases (3 pyroxene, bridgmanite, postperovskite, liquid). P: 1 bar to 100 TPa, T: 300 to 100000 K. Phase boundary encoded in table. **Limited to $\leq 50\,M_\oplus$**. |
 | `PALEOS:H2O` | PALEOS (Zenodo 22776069, v1.3.0) | H2O (7 EOS) | T-dependent | Yes | Unified single-file table with all stable H2O phases (ice Ih to X, liquid, vapor, superionic). P: 1 bar to 100 TPa, T: 100 to 100000 K. Phase boundary encoded in table. **Limited to $\leq 50\,M_\oplus$**. Use as `ice_layer` for 3-layer models. |
-| `PALEOS-API-2phase:iron-solid` | PALEOS, made on first use from the installed package | Fe (solid phases) | T-dependent | No (needs the PALEOS package) | Solid iron of the PALEOS phase diagram on every node, the metastable solid above melting. P: 1 bar to 100 TPa, T: 300 to 100000 K, 150 points per decade. The base of the inner core of a two-layer core. |
+| `PALEOS-API-2phase:iron-solid` | PALEOS, made on first use from the installed package | Fe (solid phases) | T-dependent | No (needs the PALEOS package) | Solid iron of the PALEOS phase diagram on every node, the metastable solid above melting. P: 1 bar to 100 TPa, T: 300 to 100000 K, 150 points per decade, one pair per PALEOS version and build key, each side read as a unified table. The base of the inner core of a two-layer core. No value where the solid iron of PALEOS does not converge: on the default grid above about 2830 K below 0.1 GPa, 2960 K at 1 GPa, 3400 K at 5 GPa, 5310 K at 10 GPa and 6790 K at 20 GPa. A core node outside the box of its side table, or where the table has no finite value, fails the accepted solve (`core_table_box`); an inner core of a small, hot planet can lie there. |
 | `PALEOS-API-2phase:iron-liquid` | PALEOS, made on first use from the installed package | Fe (liquid, Luo et al. 2024) | T-dependent | No (needs the PALEOS package) | PALEOS liquid iron on every node, the metastable liquid below melting. Same box and grid as the solid side. The base of the outer core of a two-layer core; a core on it needs an `inner_core`. |
 | `Chabrier:H` | Chabrier et al. (2019)[^cite-chabrier2019], Chabrier & Debras (2021)[^cite-chabrier2021] | Pure H$_2$ (molecular, atomic, ionized) | T-dependent | Yes | DirEOS2021 table for pure hydrogen. Grid: 121 $\times$ 441 ($\log T$, $\log P$), $T = 100$ to $10^8$ K, $P = 1$ Pa to $10^{22}$ Pa. Provides $\rho$, $\nabla_{\mathrm{ad}}$, $c_p$, $c_v$, $\alpha$, and phase identifier. Loaded through the same `paleos_unified` reader. Use as a mixing component in the mantle (e.g., `"PALEOS:MgSiO3:0.97+Chabrier:H:0.03"`) for sub-Neptune interiors. **No standalone mass limit** (pressure range far exceeds any planet). In H$_2$ dissociation zones ($T \sim 3000$ to $30000$ K), $\nabla_{\mathrm{ad}}$ is clamped at 0.100 in the source tables. |
 | `Analytic:iron` | Seager et al. (2007)[^cite-seager2007] Table 3 | Fe (epsilon) | Fixed 300 K | No | Modified polytrope: $\rho(P) = \rho_0 + c \cdot P^n$. |
@@ -360,6 +360,15 @@ mantle    = "Analytic:iron"
 ice_layer = ""
 ```
 Both `core` and `mantle` must be set even for a single-composition model. The mantle EOS is still evaluated but occupies zero mass.
+
+**11. Two-layer core** (solid iron inner core, liquid Fe-S outer core, ICB on the Anzellini melting curve):
+```toml
+[EOS]
+core          = "PALEOS-API-2phase:iron-liquid:0.8615+CoreAlloy:S:0.1385"
+inner_core    = "PALEOS-API-2phase:iron-solid"
+core_liquidus = "Anzellini13-iron"
+```
+See [two-layer core](../Explanations/mixing.md#two-layer-core) for the physics and the [tutorial](../Tutorials/two_layer_core.md) for a run.
 
 #### Validated parameter ranges
 

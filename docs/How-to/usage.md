@@ -134,6 +134,10 @@ A call of `post_processing` with `id_mass` puts the mass label into the names of
 - **Phase state** (bottom center): colored bars showing the thermodynamically stable phase at each depth, read from the PALEOS table's phase column. Liquid iron in the core (at 3000 K surface temperature), bridgmanite (solid MgSiO$_3$) in the mantle, with a thin liquid layer near the surface.
 - **Mass enclosed** (bottom right): enclosed mass as a function of radius. The CMB is visible as the kink where the slope changes from the dense core to the lighter mantle.
 
+## Core arrays
+
+Every solve whose profile reaches the core mass returns `result['core']` (otherwise it is `None`, as for a pass cut before its pressure solve): `r`, `m`, `P`, `rho`, `g`, `T` (m, kg, Pa, kg/m$^3$, m/s$^2$, K) at the core nodes plus a node at the core mass, the core-mantle boundary (CMB); `phase` per node (1 inner core, 0 outer core); `w_<el>` per light element; and `M_ic` \[kg\], `R_icb` \[m\], `P_icb` \[Pa\], `solid_above_icb_mass_fraction` and the flag `solid_above_icb`, all at the inner-core mass of the solved layers (`P_icb` is the pressure at `M_ic`); `w_layers` holds the light-element fractions of each layer. The CMB node comes from an event of the structure integration at the core mass. Every accepted solve asserts that this node holds the core mass to $10^{-10}$ (`core_cmb_node`), that each core-array density is that of its layer EOS to $10^{-6}$ (`core_density_eos`), that the light-element masses of the nodes equal $M_\mathrm{ic} w_\mathrm{ic} + M_\mathrm{oc} w_\mathrm{oc}$ of the layer compositions to $10^{-10}$ (`core_element_mass`) and that no core node lies outside the table of its side (`core_table_box`). The node at the core mass takes the layer of the core just below it for its density and phase.
+
 ## Parameter grids
 
 To sweep over combinations of parameters and plot the results, see the [parameter grids](grids.md) guide.
