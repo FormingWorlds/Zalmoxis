@@ -543,3 +543,60 @@ def test_the_solid_picker_keeps_the_delta_boundary_of_paleos():
 
     assert _get_iron_solid_phase(5.2e9, 2000.0) == 'solid-delta'
     assert _get_iron_solid_phase(5.21e9, 2000.0) == 'solid-gamma'
+
+
+@pytest.mark.reference_pinned
+def test_the_start_dependence_scan_of_the_liquidus_rule(validation_plot):
+    """The stored walks down and up of tools/core_icb_scan.py (the Fe-S core of the ICB
+    validation case): every converged step meets both ICB tests, the walks agree outside 2500
+    to 2525 K, and inside it they give the table of the case. Reference: self-consistency of
+    the 2 walks (outside the band) and regression pins of this code (inside it)."""
+    import csv
+    from pathlib import Path
+
+    path = Path(__file__).parent / 'validation' / 'data' / 'core_icb_scan.csv'
+    with open(path) as f:
+        rows = list(csv.DictReader(line for line in f if not line.startswith('#')))
+    walk = {
+        d: {float(r['surface_temperature_K']): r for r in rows if r['direction'] == d}
+        for d in ('down', 'up')
+    }
+    temps = np.arange(2300.0, 2701.0, 25.0)
+    assert all(sorted(w) == list(temps) for w in walk.values())
+    frac = {
+        d: {t: float(r['inner_core_mass_fraction']) for t, r in w.items()}
+        for d, w in walk.items()
+    }
+    ok = {d: {t: r['converged'] == '1' for t, r in w.items()} for d, w in walk.items()}
+    assert all(r['icb_converged'] == '1' for r in rows if r['converged'] == '1')
+    for t in temps[(temps < 2500.0) | (temps > 2525.0)]:
+        assert (
+            ok['down'][t]
+            and ok['up'][t]
+            and frac['down'][t] == pytest.approx(frac['up'][t], abs=1e-3)
+        )
+    assert frac['down'][2500.0] == pytest.approx(0.882, abs=5e-4) and frac['up'][2500.0] == 1.0
+    assert ok['down'][2525.0] and frac['down'][2525.0] == 0.0 and not ok['up'][2525.0]
+
+    def figure():
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(figsize=(6.8, 3.2))
+        c = plt.rcParams['axes.prop_cycle'].by_key()['color']
+        ax.axvspan(2487.5, 2537.5, color=c[2], alpha=0.15, lw=0, label='start-dependent')
+        for d, colour, style in (('down', c[0], 'o-'), ('up', c[1], 's--')):
+            y = [frac[d][t] if ok[d][t] else np.nan for t in temps]
+            ax.plot(temps, y, style, color=colour, ms=4, mfc='none', label=f'walk {d}')
+        bad = [t for t in temps if not ok['up'][t]]
+        y_bad = [frac['up'][t] for t in bad]
+        ax.plot(bad, y_bad, 'x', color=c[1], ms=8, mew=1.5, label='up, not converged')
+        ax.set(xlabel='Surface temperature [K]', ylabel=r'$M_\mathrm{ic} / M_\mathrm{core}$')
+        ax.set(ylim=(-0.05, 1.05), xticks=temps[::8], yticks=(0.0, 0.5, 1.0))
+        ax.grid(False)
+        ax.legend(loc='upper left', bbox_to_anchor=(1.02, 1.0), frameon=False)
+        fig.tight_layout()
+        fig.canvas.draw()
+        assert ax.get_legend().get_window_extent().x0 >= ax.get_window_extent().x1
+        return fig
+
+    validation_plot(figure, 'core_two_phase_icb_start_dependence')
