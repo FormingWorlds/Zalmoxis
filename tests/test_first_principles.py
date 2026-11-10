@@ -225,6 +225,8 @@ def _run_analytic_eos_solver(
     Cached by argument tuple so multiple tests asserting different invariants
     on the same (mass, cmf, mmf, grid, tol) configuration share one solver
     run. Test code only reads the result dict, never mutates it.
+    Each solve runs without the solver wall clock (``wall_timeout`` 1e6 s); a
+    pass stopped on the wall clock fails the call instead of returning.
 
     Parameters
     ----------
@@ -279,6 +281,7 @@ def _run_analytic_eos_solver(
         'target_surface_pressure': 101325,
         'data_output_enabled': False,
         'plotting_enabled': False,
+        'wall_timeout': 1e6,
     }
 
     from zalmoxis import get_zalmoxis_root
@@ -292,6 +295,7 @@ def _run_analytic_eos_solver(
         melting_curves_functions=None,
         input_dir=input_dir,
     )
+    assert not results['stopped_on_wall_clock'], 'solve stopped on the wall clock'
     return results
 
 
