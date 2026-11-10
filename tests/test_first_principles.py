@@ -295,6 +295,23 @@ def _run_analytic_eos_solver(
     return results
 
 
+@pytest.mark.unit
+def test_the_analytic_solve_refuses_a_wall_clock_stop(monkeypatch):
+    """The helper runs without the solver wall clock and refuses a pass stopped on it."""
+    import zalmoxis.solver
+
+    seen = {}
+
+    def stopped(config_params, **kwargs):
+        seen.update(config_params)
+        return {'converged': True, 'stopped_on_wall_clock': True}
+
+    monkeypatch.setattr(zalmoxis.solver, 'main', stopped)
+    with pytest.raises(AssertionError, match='wall clock'):
+        _run_analytic_eos_solver.__wrapped__(1.0)
+    assert seen['wall_timeout'] >= 1e6
+
+
 # ============================================================================
 # Tier 1: Pure-Math ODE Verification
 # ============================================================================
