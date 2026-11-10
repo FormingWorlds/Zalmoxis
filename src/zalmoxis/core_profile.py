@@ -44,7 +44,8 @@ def icb_from_profile(mass, pressure, temperature, cmb_mass, liquidus, icb_mass=N
         the liquidus [kg], at node resolution. With the centre at or above the liquidus the
         inner-core mass is 0 and the pressure that of the centre; with the core below it to the
         core mass the inner core is the core and the pressure that at the core mass. A node past
-        the core mass adds a point at the core mass to the core nodes (``_cmb_point``).
+        the core mass adds a point at the core mass to the core nodes (``_cmb_point``). Nodes
+        that a failed stop fills with NaN are left out: the rule reads the finite core nodes.
     """
     m, p, t = (np.asarray(a, dtype=float) for a in (mass, pressure, temperature))
     below = m < cmb_mass * (1.0 - _RTOL_LAYER)

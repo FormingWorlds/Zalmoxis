@@ -226,14 +226,16 @@ def validate_layer_eos(layer_eos_config):
 def _check_two_layer_core(layer_eos_config):
     """Each iron side belongs in its core layer and needs its partner layer: the liquid side as
     the only iron base of the outer core and the solid side as that of the inner core, in any
-    component order; the light elements of a core layer pass ``split_alloy``. ``validate_config``
-    and ``main`` run it for callers that pass a dict."""
+    component order; light elements belong in a core layer and pass ``split_alloy``.
+    ``validate_config`` and ``main`` run it for callers that pass a dict."""
     mixes = {
         layer: parse_layer_components(eos) for layer, eos in layer_eos_config.items() if eos
     }
-    for layer in CORE_LAYERS:
-        if layer in mixes and is_alloy_mixture(mixes[layer]):
-            split_alloy(mixes[layer])
+    for layer, mix in mixes.items():
+        if is_alloy_mixture(mix):
+            if layer not in CORE_LAYERS:
+                raise ValueError(f"CoreAlloy components belong in the core, not in '{layer}'")
+            split_alloy(mix)
     comps = {layer: mix.components for layer, mix in mixes.items()}
     for layer, names in comps.items():
         for side, home in zip(IRON_SIDES, CORE_LAYERS):
