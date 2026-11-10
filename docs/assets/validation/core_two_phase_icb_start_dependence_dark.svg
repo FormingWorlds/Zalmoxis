@@ -6,7 +6,7 @@
   <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
    <cc:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
-    <dc:description>test: tests/test_core_two_phase.py::test_the_start_dependence_scan_of_the_liquidus_rule; command: pytest tests/test_core_two_phase.py::test_the_start_dependence_scan_of_the_liquidus_rule --validation-plots; summary: {"v": 1, "axes": [{"scales": ["linear", "linear"], "categories": [null, null], "lines": [[17, 2300.0, 2700.0, 2500.0, 74.99999999999994, 0.0, 1.0, 0.5224611666392733, -0.2647058823529412], [16, 2300.0, 2700.0, 2498.4375, 77.39583333333324, 0.0, 1.0, 0.5625, -0.2625], [1, 2525.0, 2525.0, 2525.0, 0.0, 0.21634607696543495, 0.21634607696543495, 0.21634607696543495, 0.0]], "collections": [], "values": [], "value_scales": [], "patches": [[5, 2487.5, 2537.5, 2507.5000000000005, -4.999999999999994, 0.0, 1.0, 0.4, 0.1]], "images": [], "image_scales": [], "extents": []}]}</dc:description>
+    <dc:description>test: tests/test_core_two_phase.py::test_the_start_dependence_scan_of_the_liquidus_rule; command: pytest tests/test_core_two_phase.py::test_the_start_dependence_scan_of_the_liquidus_rule --validation-plots; summary: {"v": 1, "axes": [{"scales": ["linear", "linear"], "categories": [null, null], "lines": [[17, 2300.0, 2700.0, 2500.0, 74.99999999999994, 0.0, 1.0, 0.5223291187555986, -0.2647058823529412], [16, 2300.0, 2700.0, 2498.4375, 77.39583333333324, 0.0, 1.0, 0.5624144752020264, -0.26250570165319825], [1, 2525.0, 2525.0, 2525.0, 0.0, 0.20358581363707273, 0.20358581363707273, 0.20358581363707273, 0.0]], "collections": [], "values": [], "value_scales": [], "patches": [[5, 2487.5, 2537.5, 2507.5000000000005, -4.999999999999994, 0.0, 1.0, 0.4, 0.1]], "images": [], "image_scales": [], "extents": []}]}</dc:description>
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <cc:Agent>
@@ -820,7 +820,7 @@ L 116.947122 14.320992
 L 129.257004 14.320992 
 L 141.566887 14.320992 
 L 153.876769 14.320992 
-L 166.186651 31.149343 
+L 166.186651 31.469049 
 L 178.496533 156.740826 
 L 190.806416 156.740826 
 L 203.116298 156.740826 
@@ -852,7 +852,7 @@ z
      <use xlink:href="#m5efca03033" x="129.257004" y="14.320992" style="fill-opacity: 0; stroke: #f2f5f7"/>
      <use xlink:href="#m5efca03033" x="141.566887" y="14.320992" style="fill-opacity: 0; stroke: #f2f5f7"/>
      <use xlink:href="#m5efca03033" x="153.876769" y="14.320992" style="fill-opacity: 0; stroke: #f2f5f7"/>
-     <use xlink:href="#m5efca03033" x="166.186651" y="31.149343" style="fill-opacity: 0; stroke: #f2f5f7"/>
+     <use xlink:href="#m5efca03033" x="166.186651" y="31.469049" style="fill-opacity: 0; stroke: #f2f5f7"/>
      <use xlink:href="#m5efca03033" x="178.496533" y="156.740826" style="fill-opacity: 0; stroke: #f2f5f7"/>
      <use xlink:href="#m5efca03033" x="190.806416" y="156.740826" style="fill-opacity: 0; stroke: #f2f5f7"/>
      <use xlink:href="#m5efca03033" x="203.116298" y="156.740826" style="fill-opacity: 0; stroke: #f2f5f7"/>
@@ -872,7 +872,7 @@ L 116.947122 14.320992
 L 129.257004 14.320992 
 L 141.566887 14.320992 
 L 153.876769 14.320992 
-L 166.186651 14.320992 
+L 166.186651 14.515879 
 M 190.806416 156.740826 
 L 203.116298 156.740826 
 L 215.42618 156.740826 
@@ -898,7 +898,7 @@ z
      <use xlink:href="#mc64122998d" x="129.257004" y="14.320992" style="fill-opacity: 0; stroke: #e23d28; stroke-linejoin: miter"/>
      <use xlink:href="#mc64122998d" x="141.566887" y="14.320992" style="fill-opacity: 0; stroke: #e23d28; stroke-linejoin: miter"/>
      <use xlink:href="#mc64122998d" x="153.876769" y="14.320992" style="fill-opacity: 0; stroke: #e23d28; stroke-linejoin: miter"/>
-     <use xlink:href="#mc64122998d" x="166.186651" y="14.320992" style="fill-opacity: 0; stroke: #e23d28; stroke-linejoin: miter"/>
+     <use xlink:href="#mc64122998d" x="166.186651" y="14.515879" style="fill-opacity: 0; stroke: #e23d28; stroke-linejoin: miter"/>
      <use xlink:href="#mc64122998d" x="190.806416" y="156.740826" style="fill-opacity: 0; stroke: #e23d28; stroke-linejoin: miter"/>
      <use xlink:href="#mc64122998d" x="203.116298" y="156.740826" style="fill-opacity: 0; stroke: #e23d28; stroke-linejoin: miter"/>
      <use xlink:href="#mc64122998d" x="215.42618" y="156.740826" style="fill-opacity: 0; stroke: #e23d28; stroke-linejoin: miter"/>
@@ -917,7 +917,7 @@ L 4 4
 " style="stroke: #e23d28; stroke-width: 1.5"/>
     </defs>
     <g clip-path="url(#pa1f272033b)">
-     <use xlink:href="#m4182136eee" x="178.496533" y="125.928854" style="fill: #e23d28; stroke: #e23d28; stroke-width: 1.5"/>
+     <use xlink:href="#m4182136eee" x="178.496533" y="127.746169" style="fill: #e23d28; stroke: #e23d28; stroke-width: 1.5"/>
     </g>
    </g>
    <g id="patch_4">

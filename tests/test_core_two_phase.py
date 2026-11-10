@@ -710,7 +710,12 @@ def test_the_start_dependence_scan_of_the_liquidus_rule(validation_plot):
             and ok['up'][t]
             and frac['down'][t] == pytest.approx(frac['up'][t], abs=1e-3)
         )
-    table = {2475.0: (1.0, 1.0), 2500.0: (0.882, 1.0), 2525.0: (0.0, None), 2550.0: (0.0, 0.0)}
+    table = {
+        2475.0: (1.0, 1.0),
+        2500.0: (0.880, 0.999),
+        2525.0: (0.0, None),
+        2550.0: (0.0, 0.0),
+    }
     for t, (down, up) in table.items():  # the table of the case; None: not converged
         assert ok['down'][t] and frac['down'][t] == pytest.approx(down, abs=5e-4)
         assert ok['up'][t] == (up is not None)

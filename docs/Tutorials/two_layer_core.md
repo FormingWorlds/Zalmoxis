@@ -2,11 +2,11 @@
 
 This tutorial solves a 1 $M_\oplus$ planet whose core has a solid inner core and a liquid outer core with sulfur. You set the inner-core boundary (ICB) in 2 ways, by a given inner-core mass and by an iron melting curve, and read the core arrays of the result. The [two-layer core](../Explanations/mixing.md#two-layer-core) explanation describes the model.
 
-You need a working Zalmoxis environment with the PALEOS tables ([First run](firstrun.md), Step 1) and the PALEOS Python package, which makes the 2 iron side tables: one table of solid iron and one of liquid iron, each over the pressure and temperature range of the PALEOS iron table.
+You need a working Zalmoxis environment with the PALEOS tables ([First run](firstrun.md), Step 1) and the PALEOS Python package, a git checkout that contains the tested PALEOS commit ([PALEOS-API live tabulation](../Reference/api/zalmoxis.eos.paleos_api.md)), which makes the 2 iron side tables: one table of solid iron and one of liquid iron, each over the pressure and temperature range of the PALEOS iron table.
 
 ## Step 1: write the script
 
-Save this as `scripts/two_layer_core.py`. It starts from `input/default.toml`, puts the outer core on the liquid iron side with 13.85 wt% S and the inner core on the solid iron side, and solves the planet once for each ICB rule.
+Make a folder `scripts/` in the repository root and save this script as `scripts/two_layer_core.py`. It starts from `input/default.toml`, puts the outer core on the liquid iron side with 13.85 wt% S and the inner core on the solid iron side, and solves the planet once for each ICB rule.
 
 ```python
 # scripts/two_layer_core.py
@@ -81,7 +81,7 @@ The script prints, for each rule:
 {'inner_core_mass_fraction': 0.0508}
   converged True, radius 6561.4 km
   CMB 3477.5 km, 128.22 GPa, 5045 K
-  ICB 1211.2 km, 322.19 GPa, M_ic/M_core 0.0508
+  ICB 1211.6 km, 322.18 GPa, M_ic/M_core 0.0508
   centre 358.54 GPa, 7708 K, 13439 kg/m^3
   density step at the ICB 13164 -> 12049 kg/m^3
   solid above the ICB: 0.000 of the core mass
@@ -99,7 +99,7 @@ With no inner core, `R_icb` is 0 and `P_icb` is the centre pressure.
 
 `res['core']` holds the core arrays. The script reads `r`, `P`, `T` and `rho` (m, Pa, K and kg/m$^3$) at the core nodes, whose last node is the core-mantle boundary (CMB); `phase` (1 inner core, 0 outer core); and the scalars `M_ic` \[kg\], `R_icb` \[m\], `P_icb` \[Pa\] and `solid_above_icb_mass_fraction`. `res['cmb_mass']` is the core mass. [Core arrays](../How-to/usage.md#core-arrays) lists every key with its unit. The 2 runs differ as follows:
 
-1. With the inner-core mass of PREM, the ICB lies at 1211 km and 322 GPa. The density falls there by about 1100 kg/m$^3$, from the solid iron of the inner core to the liquid Fe-S of the outer core.
+1. With the inner-core mass of PREM, the ICB lies at 1212 km and 322 GPa. The density falls there by about 1100 kg/m$^3$, from the solid iron of the inner core to the liquid Fe-S of the outer core.
 2. With the melting curve, the core has no inner core. The adiabat from 3000 K at the surface (the `surface_temperature` of `input/default.toml`) reaches 7735 K at the centre, above the 6403 K of the Anzellini curve at 349 GPa.
 3. The inner core of the first run is solid at 7708 K at the centre, above the melting curve. The mass rule sets where the boundary is; it does not check that iron is solid there.
 
@@ -122,7 +122,7 @@ plt.show()
 ## What to try next
 
 - Put another light element in the outer core, for example `CoreAlloy:O:0.0865` with the liquid side at 0.9135.
-- Give the inner core light elements: `inner_core = "PALEOS-API-2phase:iron-solid:0.99+CoreAlloy:Si:0.01"`.
+- Give the inner core light elements: `inner_core = "PALEOS-API-2phase:iron-solid:0.99+CoreAlloy:Si:0.01"`. The light-element laws are calibrated on liquid iron, so the solve warns once that it applies them to solid iron; `CoreAlloy:H-Luo` is refused on the solid side.
 - Pass a callable `T_liq(P)` \[K\] as `core_liquidus`, for example the liquidus of an alloy.
 
 [^cite-anzellini2013]: S. Anzellini, A. Dewaele, M. Mezouar, P. Loubeyre, G. Morard, *[Melting of Iron at Earth's Inner Core Boundary Based on Fast X-ray Diffraction](https://doi.org/10.1126/science.1233514)*, Science, 340, 464-466, 2013. [SciX](https://scixplorer.org/abs/2013Sci...340..464A/abstract).

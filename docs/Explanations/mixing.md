@@ -297,21 +297,37 @@ The fractions of a light-element core are given explicitly for every component, 
 
 ## Two-layer core
 
-Which part of the core is solid, and which density does each part take? With `inner_core` set, the core has 2 layers: a solid inner core and a liquid outer core. The inner-core boundary (ICB) between them comes from an iron melting curve on the temperature profile, or from a given inner-core mass.
+Which part of the core is solid, and which density does each part take? With the `[EOS]` key `inner_core` set, the core has 2 layers: a solid inner core and a liquid outer core. The inner-core boundary (ICB) between them comes from an iron melting curve on the temperature profile, or from a given inner-core mass.
 
-**The 2 sides of the iron table.** The inner core reads `PALEOS-API-2phase:iron-solid`, the solid iron of PALEOS on every node: the phase of the PALEOS phase diagram without its melting test, so above the melting curve it is the metastable solid. The outer core reads `PALEOS-API-2phase:iron-liquid`, the PALEOS liquid of Luo et al. (2024)[^cite-luo2024] on every node, below the melting curve its metastable extension. Each layer can carry `CoreAlloy` light elements on its side, as in the [light-element core](#light-element-core); an inner core without them is pure iron.
+### The 2 sides of the iron table
 
-**The ICB.** With `core_liquidus`, the ICB pressure $P_\mathrm{ICB}$ is the first root, from the centre outward, of
+The inner core reads `PALEOS-API-2phase:iron-solid`, the solid iron of PALEOS on every node. This table is the phase of the PALEOS phase diagram without its melting test. Above the melting curve it is therefore the metastable solid: a solid at a state where the stable phase is the liquid. The outer core reads `PALEOS-API-2phase:iron-liquid`, the PALEOS liquid of Luo et al. (2024)[^cite-luo2024] on every node. Below the melting curve it is the metastable extension of that liquid. Each layer can carry `CoreAlloy` light elements on its side, as in the [light-element core](#light-element-core); an inner core without them is pure iron.
+
+### The inner-core boundary
+
+With `core_liquidus`, the ICB pressure $P_\mathrm{ICB}$ is the first root, from the centre outward, of
 
 $$T(P) - T_\mathrm{liq}(P) = 0$$
 
-on the temperature profile of the previous outer pass. $T_\mathrm{liq}$ is a named iron melting curve or a callable `T_liq(P)` \[K\], such as an outer-core alloy liquidus from a caller like PROTEUS. Core shells with an enclosed mass below the mass at $P_\mathrm{ICB}$ take `inner_core`, the others `core`. With `inner_core_mass_fraction` $f$, the inner core is the mass $f M_\mathrm{core}$ instead. A liquidus solve converges only when its temperature profile and its layers share one ICB.
+on the temperature profile of the previous outer pass, the pass before the current one of the outer loop ([code architecture](code_architecture.md)). $T_\mathrm{liq}$ is a named iron melting curve or a callable `T_liq(P)` \[K\], such as an outer-core alloy liquidus from a caller like PROTEUS. Core shells whose enclosed mass is below the mass at $P_\mathrm{ICB}$ take `inner_core`; the others take `core`. With `inner_core_mass_fraction` $f$, the inner core is the mass $f M_\mathrm{core}$ instead. A liquidus solve converges only when its temperature profile and its layers share one ICB.
 
-**Temperature.** As in a one-layer core, each node takes the adiabatic gradient $\nabla_\mathrm{ad} = (\partial \ln T / \partial \ln P)_S$ of the side of its layer, and the temperature is continuous at the ICB, with no latent heat in the structure temperature. At core states $\nabla_\mathrm{ad}$ of the solid side is about half that of the liquid side: 0.19 against 0.38 at 140 GPa and 4500 K. This shallower adiabat is the likely cause of a band of surface temperatures, near the onset of core freezing, in which a liquidus solve on an adiabat can hold 2 states; the start selects one.
+### Temperature
 
-**Composition.** `Anzellini13-iron`, of Anzellini et al. (2013)[^cite-anzellini2013], and `Sinmyo19-iron`, of Sinmyo et al. (2019)[^cite-sinmyo2019], are melting curves of pure iron. S, O and C each form a eutectic with iron, which melts below pure iron. The Fe-S eutectic lies near 3550 K at 254 GPa, run 11 of Table 1 of Mori et al. (2017)[^cite-mori2017], and the Fe-C eutectic at about 3750 K at 330 GPa, extrapolated from data to 255 GPa in Sect. 4.1 of Mashino et al. (2019)[^cite-mashino2019]; the Anzellini curve gives 5497 K at 254 GPa and 6229 K at 330 GPa. Oka et al. (2019)[^cite-oka2019] measured the Fe-FeO eutectic to 204 GPa. An outer core with them can melt below these curves, so a named curve gives too large an inner core; pass the alloy liquidus as a callable. The light-element fractions of each layer are inputs: freezing does not move light elements from the inner to the outer core, so the light-element mass of the core, $M_\mathrm{ic} w_\mathrm{ic} + M_\mathrm{oc} w_\mathrm{oc}$ (layer masses times their light-element mass fractions), changes when the ICB moves. A caller that keeps the bulk composition sets the layer fractions for each solve.
+As in a one-layer core, each node takes the adiabatic gradient $\nabla_\mathrm{ad} = (\partial \ln T / \partial \ln P)_S$ of the side of its layer. The temperature is continuous at the ICB, and the structure temperature has no latent heat. In the 2 side tables at core states, $\nabla_\mathrm{ad}$ of the solid side is below that of the liquid side: 0.19 against 0.38 at 140 GPa and 4500 K, 0.30 against 0.46 at 330 GPa and 5500 K. These are values of the PALEOS tables, not compared here with published data for solid and liquid iron. The shallower adiabat of the solid side is a possible cause of a band of surface temperatures, near the onset of core freezing, in which a liquidus solve on an adiabat can hold 2 states. In that band, the start of the solve selects one state.
 
-**Where this is checked.** [ICB and start dependence](../Validation/hydrostatic_structure.md#inner-core-boundary-of-a-two-layer-core), [liquid iron side](../Validation/equation_of_state.md#light-element-outer-cores-on-the-liquid-iron-side), [PREM](../Validation/mass_radius.md#a-two-layer-earth-core-against-prem). Settings: [configuration](../How-to/configuration.md); core arrays: [usage](../How-to/usage.md#core-arrays); a run: [tutorial](../Tutorials/two_layer_core.md).
+### Composition
+
+`Anzellini13-iron`, of Anzellini et al. (2013)[^cite-anzellini2013], and `Sinmyo19-iron`, of Sinmyo et al. (2019)[^cite-sinmyo2019], are melting curves of pure iron. S, O and C each form a eutectic with iron, which melts below pure iron:
+
+- Fe-S: near 3550 K at 254 GPa, run 11 of Table 1 of Mori et al. (2017)[^cite-mori2017]. The Anzellini curve gives 5497 K at 254 GPa.
+- Fe-C: about 3750 K at 330 GPa, extrapolated from data to 255 GPa in Sect. 4.1 of Mashino et al. (2019)[^cite-mashino2019]. The Anzellini curve gives 6229 K at 330 GPa.
+- Fe-FeO: Oka et al. (2019)[^cite-oka2019] measured the eutectic to 204 GPa.
+
+An outer core with these elements can melt below the pure-iron curves, so a named curve gives too large an inner core. For such a core, pass the alloy liquidus as a callable. The light-element fractions of each layer are inputs. The model does not move light elements from the inner to the outer core when the core freezes. The light-element mass of the core, $M_\mathrm{ic} w_\mathrm{ic} + M_\mathrm{oc} w_\mathrm{oc}$ (layer masses times their light-element mass fractions), therefore changes when the ICB moves. A caller that keeps the bulk composition sets the layer fractions for each solve. The light-element laws are calibrated on liquid iron; on the solid side they apply that liquid calibration to solid iron, and `CoreAlloy:H-Luo`, a law of liquid iron with water, is refused there.
+
+### Where this is checked
+
+[ICB and start dependence](../Validation/hydrostatic_structure.md#inner-core-boundary-of-a-two-layer-core), [liquid iron side](../Validation/equation_of_state.md#light-element-outer-cores-on-the-liquid-iron-side), [a two-layer Earth core against PREM, the Preliminary Reference Earth Model](../Validation/mass_radius.md#a-two-layer-earth-core-against-prem). Settings: [configuration](../How-to/configuration.md); core arrays: [usage](../How-to/usage.md#core-arrays); a run: [tutorial](../Tutorials/two_layer_core.md).
 
 ---
 
