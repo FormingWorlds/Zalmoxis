@@ -131,9 +131,11 @@ def test_an_isothermal_core_has_its_icb_where_iron_melts(setup, caplog):
     )
     core = res['core']
     p_icb = _anzellini_inverse(5000.0)
-    # the ICB scalars belong to the solved layers: P_icb is the pressure at M_ic
+    # the ICB scalars belong to the solved layers: P_icb is the pressure at M_ic, P linear in
+    # m^(2/3) on its node segment
+    m23 = core['m'] ** (2.0 / 3.0)
     assert core['P_icb'] == pytest.approx(
-        np.interp(core['M_ic'], core['m'], core['P']), rel=1e-12
+        np.interp(core['M_ic'] ** (2.0 / 3.0), m23, core['P']), rel=1e-12
     )
     # M_ic is within tolerance_outer (1e-3 of the core mass) of the root and dlnP/d(m/M_core) is
     # about 1 here, so P_icb is within about 1e-3 of the root: 5e-3 keeps a factor 5
@@ -174,8 +176,8 @@ def test_main_refuses_the_liquidus_rule_with_the_newton_outer_solver(setup):
 
 def test_a_two_layer_core_keeps_the_mass_limit_of_the_paleos_tables(setup):
     """The side tables span the box of the unified iron table, so they take its 50 M_E limit;
-    the mantle has no limit here, so the refusal names a side table, also for the solid side
-    alone."""
+    the mantle has no limit here, so the refusal names a side table. The solid side alone, as a
+    one-layer core, is refused for its layer before the limit."""
     from zalmoxis.mixing import parse_all_layer_mixtures
     from zalmoxis.solver import main
 
@@ -190,11 +192,9 @@ def test_a_two_layer_core_keeps_the_mass_limit_of_the_paleos_tables(setup):
             input_dir,
             layer_mixtures=parse_all_layer_mixtures(cfg['layer_eos_config']),
         )
-    cfg = dict(cfg, inner_core_mass_fraction=None)  # the solid side alone, as a one-layer core
+    cfg = dict(cfg, inner_core_mass_fraction=None)
     cfg['layer_eos_config'] = {'core': SOL, 'mantle': 'Seager2007:MgSiO3'}
-    with pytest.raises(
-        ValueError, match='PALEOS-API-2phase:iron-solid EOS is limited to planets'
-    ):
+    with pytest.raises(ValueError, match="iron-solid belongs in 'inner_core', not in 'core'"):
         main(
             cfg,
             md,
