@@ -11,7 +11,7 @@ import types
 
 import numpy as np
 import pytest
-from hypothesis import given, settings
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
 from tests import _paleos_mock
@@ -317,6 +317,43 @@ def test_each_side_belongs_to_its_core_layer_in_any_order(layers, match):
         return
     for check in [*checks, lambda: main(params, None, None, '')]:
         _refused(check, match)
+
+
+@settings(max_examples=300, deadline=None)
+@given(
+    place=st.tuples(*[st.sampled_from(('core', 'inner_core', 'mantle'))] * 3),
+    element=st.sampled_from(('S', 'Si', 'O', 'H-Luo')),
+    flip=st.booleans(),
+)
+@example(place=('core', 'inner_core', 'mantle'), element='S', flip=False)
+@example(place=('core', 'inner_core', 'inner_core'), element='H-Luo', flip=True)
+@example(place=('inner_core', 'core', 'core'), element='Si', flip=False)
+def test_the_layer_check_follows_the_place_of_each_component(place, element, flip):
+    """A dict with the liquid side, the solid side and one light element, each in any layer and
+    in either component order: the loader check and validate_config accept it exactly when the
+    liquid side is in the core, the solid side in the inner core and the light element in a
+    core layer, with H-Luo not on the solid side; every other dict is refused by a ValueError."""
+    comps = {'mantle': ['PALEOS:MgSiO3']}
+    for name, layer in zip((LIQ, SOL, f'CoreAlloy:{element}'), place):
+        comps.setdefault(layer, []).append(name)
+    layers = {}
+    for layer, names in comps.items():
+        bases = [n for n in names if not n.startswith('CoreAlloy')]
+        w = {n: 0.005 if n.startswith('CoreAlloy') else 0.0 for n in names}
+        for n in bases:
+            w[n] = (1.0 - 0.005 * (len(names) - len(bases))) / len(bases)
+        order = names[::-1] if flip else names
+        layers[layer] = order[0] if len(names) == 1 else '+'.join(f'{n}:{w[n]}' for n in order)
+    sides_ok = place[:2] == ('core', 'inner_core')
+    match = '.' if not sides_ok else {'mantle': 'belong in the core'}.get(place[2])
+    if sides_ok and element == 'H-Luo' and place[2] == 'inner_core':
+        match = 'H-Luo is refused on'
+    params = _params(layer_eos_config=layers, core_liquidus='Anzellini13-iron')
+    for check in (lambda: validate_layer_eos(layers), lambda: validate_config(params)):
+        if match is None:
+            check()
+        else:
+            _refused(check, match)
 
 
 def test_the_liquidus_rule_needs_a_core_temperature():
