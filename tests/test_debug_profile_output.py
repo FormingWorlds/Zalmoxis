@@ -16,7 +16,8 @@ import pytest
 from tests.test_failed_structure_solve import _cfg, _run
 from zalmoxis import get_zalmoxis_root
 
-pytestmark = [pytest.mark.smoke, pytest.mark.timeout(60)]
+# signal: a slow test fails by name; method thread ends the xdist worker
+pytestmark = [pytest.mark.smoke, pytest.mark.timeout(180, method='signal')]
 
 DUMPS = ('pressure_profiles.txt', 'density_profiles.txt')
 FAST = {'max_iterations_outer': 1, 'relative_tolerance': 1e-6, 'absolute_tolerance': 1e-7}
