@@ -91,23 +91,6 @@ def test_the_eos_section_carries_the_inner_core():
     assert 'inner_core' not in parse_eos_config({**eos, 'inner_core': ''})
 
 
-@pytest.mark.parametrize(
-    ('layers', 'match'),
-    [
-        ({'core': LIQ, 'inner_core': LIQ}, 'inner_core'),
-        ({'core': SOL, 'inner_core': SOL}, "'core'"),
-        ({'core': 'PALEOS:iron', 'inner_core': SOL}, "'core'"),
-        ({'core': LIQ}, 'inner_core'),
-        ({'core': 'PALEOS:iron', 'mantle_extra': LIQ}, 'core'),
-        ({'core': LIQ, 'inner_core': 'PALEOS:iron:0.9+CoreAlloy:S:0.1'}, 'inner_core'),
-    ],
-)
-def test_each_side_belongs_to_its_core_layer(layers, match):
-    """The liquid side is the outer core of a two-layer core, the solid side its inner core."""
-    with pytest.raises(ValueError, match=match):
-        validate_layer_eos({'mantle': 'PALEOS:MgSiO3', **layers})
-
-
 def test_an_inner_core_takes_light_elements():
     validate_layer_eos(
         {'core': f'{LIQ}:0.9+CoreAlloy:S:0.1', 'inner_core': f'{SOL}:0.95+CoreAlloy:S:0.05'}
@@ -261,22 +244,61 @@ def test_the_liquidus_rule_is_refused_with_the_cmb_anchored_adiabat():
     ('layers', 'match'),
     [
         ({'core': f'CoreAlloy:S:0.1385+{LIQ}:0.8615', 'inner_core': SOL}, None),
+        ({'core': LIQ, 'inner_core': f'CoreAlloy:Si:0.01+{SOL}:0.99'}, None),
+        ({'core': LIQ, 'inner_core': LIQ}, 'inner_core'),
+        ({'core': SOL, 'inner_core': SOL}, "'core'"),
+        ({'core': SOL, 'inner_core': LIQ}, "belongs in 'inner_core'"),
+        ({'core': 'PALEOS:iron', 'inner_core': SOL}, "'core'"),
+        ({'core': 'PALEOS:iron', 'inner_core': 'PALEOS:iron'}, "'core'"),
+        ({'core': 'Analytic:iron', 'inner_core': 'Analytic:iron'}, "'core'"),
+        ({'core': LIQ}, "needs an 'inner_core'"),
+        ({'core': 'PALEOS:iron', 'mantle_extra': LIQ}, "belongs in 'core'"),
+        ({'core': LIQ, 'inner_core': 'PALEOS:iron:0.9+CoreAlloy:S:0.1'}, 'inner_core'),
         ({'core': f'PALEOS:iron:0.5+{LIQ}:0.5'}, "needs an 'inner_core'"),
         ({'core': f'PALEOS:iron:0.5+{LIQ}:0.5', 'inner_core': SOL}, 'base alone'),
         ({'core': f'{LIQ}:0.5+PALEOS:iron:0.5', 'inner_core': SOL}, 'base alone'),
-        ({'core': LIQ, 'inner_core': f'CoreAlloy:Si:0.01+{SOL}:0.99'}, None),
-        ({'core': SOL, 'inner_core': LIQ}, "belongs in 'inner_core'"),
     ],
 )
-def test_the_side_of_a_core_layer_is_its_iron_base_in_any_order(layers, match):
-    """The base of a core layer is its iron component wherever it stands; a liquid side in a
-    core without an inner core, a second iron base or the wrong side is refused."""
+def test_each_side_belongs_to_its_core_layer_in_any_order(layers, match):
+    """The liquid side is the iron base of the outer core of a two-layer core and the solid side
+    that of its inner core, wherever it stands; the loader check, validate_config and main
+    refuse a liquid side without an inner core, a second iron base or the wrong side."""
+    from zalmoxis.solver import main
+
     layers = {'mantle': 'PALEOS:MgSiO3', **layers}
+    frac = 0.05 if 'inner_core' in layers else None
+    params = _params(layer_eos_config=layers, core_liquidus='', inner_core_mass_fraction=frac)
+    checks = [lambda: validate_layer_eos(layers), lambda: validate_config(params)]
     if match is None:
-        validate_layer_eos(layers)
-    else:
+        for check in checks:
+            try:
+                check()
+            except ValueError as err:
+                pytest.fail(f'{layers} is refused: {err}')
+        return
+    for check in [*checks, lambda: main(params, None, None, '')]:
         with pytest.raises(ValueError, match=match):
-            validate_layer_eos(layers)
+            check()
+
+
+def test_the_liquidus_rule_needs_a_core_temperature():
+    """With no T-dependent EOS in any layer and no temperature function the liquidus rule has
+    no core temperature: _solve refuses it before the first pass."""
+    from zalmoxis import solver as zs
+    from zalmoxis.config import load_material_dictionaries
+    from zalmoxis.mixing import parse_all_layer_mixtures
+
+    layers = {
+        'core': 'Analytic:iron',
+        'inner_core': 'Analytic:iron',
+        'mantle': 'Analytic:MgSiO3',
+    }
+    params = _params(
+        layer_eos_config=layers, temperature_mode='isothermal', surface_temperature=5000.0
+    )
+    mixes = parse_all_layer_mixtures(layers)
+    with pytest.raises(ValueError, match='core_liquidus needs a core temperature'):
+        zs._solve(params, load_material_dictionaries(), None, '', layer_mixtures=mixes)
 
 
 @pytest.mark.parametrize('bad', ['liquidus', 'temperature'])
