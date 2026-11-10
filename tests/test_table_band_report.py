@@ -374,10 +374,9 @@ def test_gradient_nodes_are_the_adiabat_reads(mats, monkeypatch, mode, ice, surf
 
 @pytest.mark.unit
 @pytest.mark.parametrize('outer', ['picard', 'newton'])
-def test_main_checks_the_profile_with_the_mixtures_it_got(mats, monkeypatch, caplog, outer):
+def test_main_checks_the_profile_with_the_mixtures_it_got(mats, monkeypatch, outer):
     """main() runs the check on both outer solvers with the mixtures passed in; a band failure
-    leaves the numerical convergence flags and accepted_on as they are. A Newton solve that kept
-    the linear profile in an adiabatic mode logs a warning."""
+    leaves the numerical convergence flags and accepted_on as they are."""
     md, melt, grad, _ = mats
     res = {**_result(HOT, adiabat=True), 'converged_mass': True, 'converged_density': True}
     res['accepted_on'] = 'strict'
@@ -390,12 +389,9 @@ def test_main_checks_the_profile_with_the_mixtures_it_got(mats, monkeypatch, cap
         'outer_solver': outer,
     }
     mixtures = parse_all_layer_mixtures({'core': 'Seager2007:iron', 'mantle': 'X:MgSiO3'})
-    with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.solver'):
-        out = solver.main(cfg, md, _curves(500.0, 600.0), '/tmp', layer_mixtures=mixtures)
+    out = solver.main(cfg, md, _curves(500.0, 600.0), '/tmp', layer_mixtures=mixtures)
     tables = {melt, md['X:MgSiO3']['solid_mantle']['eos_file']}
     assert set(out['table_band_excess']) == (tables if outer == 'newton' else tables | {grad})
-    blend = [r for r in caplog.records if 'accepted a temperature profile' in r.getMessage()]
-    assert not blend  # the band check took the accept back, so no adiabat warning
     assert out['converged'] is False and out['converged_bands'] is False
     assert out['converged_mass'] is True and out['converged_density'] is True
     assert out['accepted_on'] == 'strict'

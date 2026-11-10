@@ -140,7 +140,7 @@ MAY_PAD = {'PALEOS 1 JAX'}
 def test_every_newton_setup_meets_the_surface_boundary_condition(monkeypatch):
     """Boundary condition P(R) = P_t on the 6 Newton setups (rtol 1e-9, 150 layers): each
     accepted profile outside ``MAY_PAD`` reaches the surface, the padded flag matches the
-    root of the last pressure solve (Newton accepts it), a padded one has no reached end of
+    root of the last pressure solve, a padded one has no reached end of
     its first sign pair within the cap, and a reached profile misses P_t by at most 1 P_t.
     A JAX setup takes T(r) from a numpy Picard solve at rtol 1e-5, as PROTEUS hands it the
     interior profile.
@@ -172,7 +172,12 @@ def test_every_newton_setup_meets_the_surface_boundary_condition(monkeypatch):
         calls.clear()
         r = zs.main(cfg, md, None, os.path.join(zroot, 'input'), temperature_arrays=tarr)
         P = np.asarray(r['pressure'], dtype=float)
-        assert r['converged'] and r['accepted_on'] == 'newton_tol', name
+        # numpy PALEOS (adiabatic, no external T): the Newton root seeds the Picard blend ramp
+        assert r['converged'], name
+        if eos is PALEOS and not jax:
+            assert r['adiabat_blend'] == 1.0 and r['accepted_on'] != 'newton_tol', name
+        else:
+            assert r['accepted_on'] == 'newton_tol', name
         first_pair, root, evals = calls[-1]
         assert P[-1] >= 0.0 and r['padded'] is bool(evals[root] == -P_T)
         if r['padded']:

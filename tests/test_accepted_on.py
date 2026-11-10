@@ -1271,29 +1271,42 @@ def test_newton_continues_with_the_blend_ramp_from_its_profile(
 ):
     """A converged Newton result of an adiabatic mode with a T-dependent EOS holds the linear
     first-guess temperature, so main continues with the Picard blend ramp seeded from its
-    profile: central pressure, density and radii. Otherwise main returns the Newton result."""
+    profile (radius, central pressure, density and radii) at the mass tolerance
+    min(tolerance_outer, newton_tol), and the result keeps the Newton bookkeeping. Otherwise
+    main returns the Newton result."""
     newton = {**_inner(7.0e6, accepted_on='newton_tol'), 'converged': converged}
     newton.update(pressure=np.array([3.6e11, 0.0]), density=np.array([1.2e4, 3.0e3]))
     newton.update(adiabat_computed=False, adiabat_blend=0.0)
+    books = {
+        'newton_n_iter': 4,
+        'newton_history': [(7.0e6, M_T, 0.0)],
+        'newton_used_brentq': False,
+    }
+    newton.update(books)
     picard = {**_inner(7.0e6, accepted_on='strict'), 'adiabat_computed': True}
     picard['adiabat_blend'] = 1.0
     seeds = []
 
-    def solve(*args, **kwargs):
-        seeds.append(kwargs)
+    def solve(cp, *args, **kwargs):
+        seeds.append((cp, kwargs))
         return dict(picard)
 
     monkeypatch.setattr(zs, '_solve_newton_outer', lambda *a, **k: newton)
     monkeypatch.setattr(zs, '_solve', solve)
     monkeypatch.setattr(zs, '_report_table_bands', lambda r, *a: r)
-    r = zs.main(_adiabatic_cfg(eos, outer_solver='newton'), {}, None, '/tmp')
+    cfg = _adiabatic_cfg(eos, outer_solver='newton', tolerance_outer=3e-3, newton_tol=2e-4)
+    r = zs.main(cfg, {}, None, '/tmp')
     if not ramp:
         assert not seeds and r is newton
         return
     assert len(seeds) == 1 and r['accepted_on'] == 'strict' and r['adiabat_blend'] == 1.0
-    assert seeds[0]['p_center_hint'] == 3.6e11
-    assert seeds[0]['initial_density'] is newton['density']
-    assert seeds[0]['initial_radii'] is newton['radii']
+    cp, kwargs = seeds[0]
+    assert cp['_initial_radius_guess'] == 7.0e6 and cp['tolerance_outer'] == 2e-4
+    assert kwargs['p_center_hint'] == 3.6e11
+    assert kwargs['initial_density'] is newton['density']
+    assert kwargs['initial_radii'] is newton['radii']
+    assert {k: r[k] for k in books} == books
+    assert cfg['tolerance_outer'] == 3e-3 and '_initial_radius_guess' not in cfg
 
 
 @pytest.mark.smoke
@@ -1721,7 +1734,7 @@ def test_a_tight_tolerance_starts_the_blend_ramp_and_accepts_only_the_adiabat():
     )
     r = zs.main(cfg, load_material_dictionaries(), melt, INPUT)
     assert r['adiabat_computed'] is True
-    assert not r['converged'] or r['adiabat_blend'] == 1.0
+    assert r['converged'] is True and r['adiabat_blend'] == 1.0
     assert r['temperature'][0] != cfg['center_temperature']
 
 
@@ -1802,6 +1815,76 @@ def test_newton_gives_the_mantle_adiabat_of_picard_on_the_proteus_initial_struct
     assert all(r['adiabat_computed'] and r['adiabat_blend'] == 1.0 for r in runs.values())
 
 
+def _analytic_ramp(linear=None, factor=None, clock_after=None, **kwargs):
+    """_solve on analytic densities through the adiabatic path: the EOS counts as T-dependent
+    and the adiabat is a fixed profile. Passes before the ramp starts end ``linear`` times the
+    target mass and passes after it ``factor`` times (unscaled when None); with ``clock_after``
+    the clock runs out once the adiabat was computed that many times. Returns the result and
+    the number of adiabat computations."""
+    adiabat, real, clock = [], zs.solve_structure, time.time
+
+    def adi(radii, pressure, mass, t_surf, *args, **kw):
+        adiabat.append(1)
+        return np.linspace(t_surf + 2000.0, t_surf, len(radii))
+
+    def solve(*args, **kw):
+        m, g, P = real(*args, **kw)
+        scale = factor if adiabat else linear
+        f = scale * earth_mass / m[-1] if scale else 1.0
+        return m * f, g * f, P
+
+    cfg = _cfg(
+        temperature_mode='adiabatic',
+        relative_tolerance=1e-5,
+        absolute_tolerance=1e-6,
+        num_layers=30,
+        **kwargs,
+    )
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(zs, 'any_component_is_tdep', lambda mixes: True)
+        mp.setattr(zs, 'compute_adiabatic_temperature', adi)
+        mp.setattr(zs, 'solve_structure', solve)
+        if clock_after:
+            stop = lambda: clock() + 1e9 * (len(adiabat) >= clock_after)  # noqa: E731
+            mp.setattr(zs, 'time', SimpleNamespace(time=stop))
+        r = zs._solve(cfg, load_material_dictionaries(), None, '/tmp')
+    return r, len(adiabat)
+
+
+@pytest.mark.smoke
+def test_a_linear_floor_above_a_tight_tolerance_starts_the_ramp_unaccepted_on_a_clock_stop():
+    """tolerance_outer 1e-7 and every linear pass 5e-4 off the mass: the blend ramp starts at
+    the 1e-3 trigger, and a clock stop once the adiabat was computed twice ends the solve in
+    the ramp, which is not accepted and keeps no met mass test."""
+    r, n_adiabat = _analytic_ramp(
+        linear=1.0005,
+        clock_after=2,
+        tolerance_outer=1e-7,
+        max_iterations_outer=40,
+        wall_timeout=WALL,
+    )
+    assert n_adiabat >= 2 and r['stopped_on_wall_clock'] is True
+    assert r['adiabat_blend'] < 1.0
+    assert r['converged'] is False and r['converged_mass'] is False
+    assert r['accepted_on'] is None and r['accept_mass_limit'] is None
+
+
+@pytest.mark.smoke
+def test_a_newton_probe_in_an_adiabatic_mode_refuses_its_linear_pass_at_debug(caplog):
+    """A Newton probe (one linear pass, near the root) is not accepted in an adiabatic mode;
+    the refusal is logged at DEBUG, as the other progress lines of a probe."""
+    with caplog.at_level(logging.DEBUG, logger='fwl.zalmoxis.solver'):
+        r, n_adiabat = _analytic_ramp(
+            max_iterations_outer=1,
+            wall_timeout=WALL,
+            _newton_probe=True,
+            _initial_radius_guess=6.12e6,
+        )
+    assert r['converged'] is False and n_adiabat == 0
+    refusals = [x for x in caplog.records if 'No accept of a pass' in x.getMessage()]
+    assert refusals and all(x.levelno == logging.DEBUG for x in refusals)
+
+
 _TOLERANCES = st.one_of(
     st.floats(1e-12, 0.1),
     st.sampled_from([float('nan'), float('inf'), 0.0, -1e-3, True, False]),
@@ -1816,35 +1899,16 @@ _TOLERANCES = st.one_of(
 @example(tol=1e-3, n=3, factor=None)  # the cap stops the ramp at blend 0.5
 @example(tol=1e-7, n=200, factor=1.02)  # the clock stops the ramp, 2 % under the 3 % ceiling
 @example(tol=float('nan'), n=200, factor=None)
+@example(tol=1e-2, n=50, factor=None)  # a loose tolerance must accept the full adiabat
 def test_no_tolerance_or_pass_cap_accepts_a_profile_short_of_the_adiabat(tol, n, factor):
     """Analytic densities on the adiabatic path (the EOS counts as T-dependent and the adiabat
     is a fixed profile), passes after the ramp starts scaled to ``factor`` times the mass,
     and a 20 s wall clock: for any tolerance_outer, including NaN, inf, 0, a negative value and
     a bool, and any max_iterations_outer from 1 to 200, an accepted result is the full
-    adiabat."""
-    adiabat, real = [], zs.solve_structure
-
-    def adi(radii, pressure, mass, t_surf, *args, **kwargs):
-        adiabat.append(1)
-        return np.linspace(t_surf + 2000.0, t_surf, len(radii))
-
-    def solve(*args, **kwargs):
-        m, g, P = real(*args, **kwargs)
-        f = factor * earth_mass / m[-1] if factor and adiabat else 1.0
-        return m * f, g * f, P
-
-    cfg = _cfg(
-        temperature_mode='adiabatic',
-        tolerance_outer=tol,
-        max_iterations_outer=n,
-        wall_timeout=20.0,
-        relative_tolerance=1e-5,
-        absolute_tolerance=1e-6,
-        num_layers=30,
+    adiabat, and the loose example accepts."""
+    r, _ = _analytic_ramp(
+        factor=factor, tolerance_outer=tol, max_iterations_outer=n, wall_timeout=20.0
     )
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(zs, 'any_component_is_tdep', lambda mixes: True)
-        mp.setattr(zs, 'compute_adiabatic_temperature', adi)
-        mp.setattr(zs, 'solve_structure', solve)
-        r = zs._solve(cfg, load_material_dictionaries(), None, '/tmp')
     assert not r['converged'] or (r['adiabat_computed'] and r['adiabat_blend'] == 1.0)
+    if (tol, n, factor) == (1e-2, 50, None):
+        assert r['converged'] is True
