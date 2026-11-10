@@ -251,7 +251,10 @@ def test_the_liquidus_rule_is_refused_with_the_cmb_anchored_adiabat():
     for check in (validate_config, _check_icb_rule):  # main calls _check_icb_rule itself
         with pytest.raises(ValueError, match='core_liquidus needs a core temperature'):
             check(_params(**cmb))
-        check(_params(**cmb, core_liquidus='', inner_core_mass_fraction=0.05))
+        try:
+            check(_params(**cmb, core_liquidus='', inner_core_mass_fraction=0.05))
+        except ValueError as err:
+            pytest.fail(f'the mass rule with the CMB-anchored adiabat is refused: {err}')
 
 
 @pytest.mark.parametrize(
