@@ -449,7 +449,8 @@ def _check_accepted(
     if _short_of_adiabat(result, adiabat_asked):
         raise StructureInvariantError(
             f'accepted_on={result.get("accepted_on")!r} at adiabat blend '
-            f'{result.get("adiabat_blend")} (adiabat_computed={result.get("adiabat_computed")}); '
+            f'{result.get("adiabat_blend")} '
+            f'(adiabat_computed={result.get("adiabat_computed")}); '
             f'temperature_mode={config_params["temperature_mode"]!r} asks for the full adiabat.'
         )
     defaults = _default_solver_params(config_params['planet_mass'])
@@ -661,13 +662,11 @@ def main(
         'oscillation', 'retry_skip', 'newton_tol' or 'brentq_best'; None when it
         was not accepted), and ``mass_error_at_accept`` is the relative mass error
         of the returned profile. 'timeout' replaces the other labels when the wall
-        clock stopped the solve of the returned profile. In an adiabatic temperature
-        mode with a T-dependent EOS and no external temperature only a profile on the
-        full adiabat (``adiabat_blend`` 1) is accepted; with ``outer_solver='newton'``
-        the Newton root then seeds the Picard blend ramp (its radius, central
-        pressure, density and radii, at the mass tolerance min(tolerance_outer,
-        newton_tol)), the result has a Picard label and keeps ``newton_n_iter``,
-        ``newton_history`` and ``newton_used_brentq``. A failed table band check
+        clock stopped the solve of the returned profile. In an adiabatic mode with a
+        T-dependent EOS and no external temperature only the full adiabat
+        (``adiabat_blend`` 1) is accepted; a Newton root there seeds the Picard blend
+        ramp at min(tolerance_outer, newton_tol), and the result keeps its ``newton_*``
+        keys and its time in ``total_time``. A failed table band check
         sets ``converged`` to False and leaves ``accepted_on`` as it is. A converged
         result has ``integration_tolerances``, the (rtol, atol) of the solve that
         returned, with rtol at least the RK45 floor of 100 eps, which the invariant
@@ -685,9 +684,8 @@ def main(
     StructureInvariantError
         An accepted result breaks a physical invariant of ``zalmoxis.invariants``:
         the layer masses, the padding, positive and monotone profiles, gravity, the
-        mass closure within ``accept_mass_limit``, or the EOS density; or, in an
-        adiabatic mode where the solve computes the temperature, the accepted profile is
-        not the full adiabat. It is not a
+        mass closure within ``accept_mass_limit``, or the EOS density; or, in such an
+        adiabatic mode, the accepted profile is not the full adiabat. It is not a
         RuntimeError, so a caller that keeps its structure after a failed solve does
         not catch it.
     """
@@ -736,7 +734,7 @@ def main(
     asked = _adiabat_asked(
         config_params, layer_mixtures, temperature_function, temperature_arrays
     )
-    newton_keys = {}
+    newton_keys, newton_time = {}, 0.0
     if outer_solver == 'newton':
         result = _solve_newton_outer(
             config_params,
@@ -761,6 +759,7 @@ def main(
         newton_keys = {
             k: result[k] for k in ('newton_n_iter', 'newton_history', 'newton_used_brentq')
         }
+        newton_time = result['total_time']
         tol = config_params.get(
             'tolerance_outer',
             _default_solver_params(config_params['planet_mass'])['tolerance_outer'],
@@ -825,6 +824,8 @@ def main(
             if key in config_params:
                 effective[key] = config_params[key]
         tightened = _tighten_solver_params(effective)
+        if newton_keys:  # the hand-off already runs at the Newton mass tolerance
+            tightened['tolerance_outer'] = config_params['tolerance_outer']
 
         logger.warning(
             'Structure solve did not converge (mass=%s, density=%s, pressure=%s). '
@@ -872,7 +873,8 @@ def main(
             )
 
     result = _report_table_bands(result, *bands)
-    result.update(newton_keys)
+    if newton_keys:
+        result.update(newton_keys, total_time=result['total_time'] + newton_time)
     return _check_accepted(result, run_params, *bands, volatile_profile, asked)
 
 
@@ -2804,7 +2806,9 @@ def _solve(
         converged_mass = True
         restore_best = True  # return the pass that the test read
         accepted_on, accept_mass_limit = stop_label or 'max_iter', _TIMEOUT_ACCEPT_MASS_ERR
-        logger.warning(
+        short = ramp_asked and best_profiles['adiabat_blend'] < 1.0  # refused below
+        logger.log(
+            logging.DEBUG if short else logging.WARNING,
             'Accepting %s solution: mass error %.4f%% (threshold %.1f%%), '
             'density_converged=%s, pressure_converged=%s.',
             accepted_on,

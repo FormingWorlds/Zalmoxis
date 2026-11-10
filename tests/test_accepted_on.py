@@ -1276,7 +1276,7 @@ def test_newton_continues_with_the_blend_ramp_from_its_profile(
     main returns the Newton result."""
     newton = {**_inner(7.0e6, accepted_on='newton_tol'), 'converged': converged}
     newton.update(pressure=np.array([3.6e11, 0.0]), density=np.array([1.2e4, 3.0e3]))
-    newton.update(adiabat_computed=False, adiabat_blend=0.0)
+    newton.update(adiabat_computed=False, adiabat_blend=0.0, total_time=1.0)
     books = {
         'newton_n_iter': 4,
         'newton_history': [(7.0e6, M_T, 0.0)],
@@ -1284,7 +1284,7 @@ def test_newton_continues_with_the_blend_ramp_from_its_profile(
     }
     newton.update(books)
     picard = {**_inner(7.0e6, accepted_on='strict'), 'adiabat_computed': True}
-    picard['adiabat_blend'] = 1.0
+    picard.update(adiabat_blend=1.0, total_time=1.0)
     seeds = []
 
     def solve(cp, *args, **kwargs):
