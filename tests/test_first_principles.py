@@ -228,8 +228,8 @@ def _run_analytic_eos_solver(
     Cached by argument tuple so multiple tests asserting different invariants
     on the same (mass, cmf, mmf, grid, tol) configuration share one solver
     run. Test code only reads the result dict, never mutates it.
-    Each solve runs without the solver wall clock (``wall_timeout`` 1e6 s); a
-    pass stopped on the wall clock fails the call instead of returning.
+    The solve runs with ``wall_timeout`` 1e6 s, and a pass stopped on a wall clock
+    fails the call (a retry inside ``main`` resets the clock to 600 s).
 
     Parameters
     ----------
@@ -305,15 +305,13 @@ def _run_analytic_eos_solver(
 @pytest.mark.unit
 def test_the_analytic_solve_refuses_a_wall_clock_stop(monkeypatch):
     """The helper runs without the solver wall clock and refuses a pass stopped on it."""
-    import zalmoxis.solver
-
     seen = {}
 
     def stopped(config_params, **kwargs):
         seen.update(config_params)
         return {'converged': True, 'stopped_on_wall_clock': True}
 
-    monkeypatch.setattr(zalmoxis.solver, 'main', stopped)
+    monkeypatch.setattr('zalmoxis.solver.main', stopped)
     with pytest.raises(AssertionError, match='wall clock'):
         _run_analytic_eos_solver.__wrapped__(1.0)
     assert seen.get('wall_timeout', 300.0) >= 1e6
@@ -1095,6 +1093,7 @@ class TestConservationLaws:
 
 
 @pytest.mark.slow
+@pytest.mark.timeout(3600, method='signal')
 class TestGridConvergence:
     """Verify ODE integration error decreases with grid resolution.
 
