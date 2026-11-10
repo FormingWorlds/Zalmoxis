@@ -214,7 +214,6 @@ def _two_layer_central_pressure(rho_core, rho_mantle, R_cmb, R_total, M_cmb):
     return float(np.trapezoid(integrand, r_fine))
 
 
-@lru_cache(maxsize=64)
 def _run_analytic_eos_solver(
     mass_earth,
     cmf=0.325,
@@ -223,11 +222,32 @@ def _run_analytic_eos_solver(
     relative_tolerance=1e-8,
     absolute_tolerance=1e-10,
 ):
+    """Return the cached result of `_solve_analytic`, or re-raise its cached failure.
+
+    Tests that assert different invariants on one (mass, cmf, mmf, grid, tol)
+    configuration share one solve, and a failed solve (a pytest timeout among
+    them) is not started again. Test code only reads the result dict.
+    """
+    results, error = _cached_analytic_solve(
+        mass_earth, cmf, mmf, num_layers, relative_tolerance, absolute_tolerance
+    )
+    if error is not None:
+        raise error
+    return results
+
+
+@lru_cache(maxsize=64)
+def _cached_analytic_solve(*args):
+    """Return ``(results, None)`` of `_solve_analytic`, or ``(None, error)`` on a failure."""
+    try:
+        return _solve_analytic(*args), None
+    except (Exception, pytest.fail.Exception) as error:
+        return None, error
+
+
+def _solve_analytic(mass_earth, cmf, mmf, num_layers, relative_tolerance, absolute_tolerance):
     """Run the full Zalmoxis solver with Analytic EOS.
 
-    Cached by argument tuple so multiple tests asserting different invariants
-    on the same (mass, cmf, mmf, grid, tol) configuration share one solver
-    run. Test code only reads the result dict, never mutates it.
     The solve runs with ``wall_timeout`` 1e6 s, and a pass stopped on a wall clock
     fails the call (a retry inside ``main`` resets the clock to 600 s).
 
@@ -313,7 +333,7 @@ def test_the_analytic_solve_refuses_a_wall_clock_stop(monkeypatch):
 
     monkeypatch.setattr('zalmoxis.solver.main', stopped)
     with pytest.raises(AssertionError, match='wall clock'):
-        _run_analytic_eos_solver.__wrapped__(1.0)
+        _solve_analytic(1.0, 0.325, 0, 200, 1e-8, 1e-10)
     assert seen.get('wall_timeout', 300.0) >= 1e6
 
 
