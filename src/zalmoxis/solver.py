@@ -410,6 +410,97 @@ def _eos_params(config_params):
     )
 
 
+_NEWTON_PROTO = os.environ.get('ZALMOXIS_NEWTON_ADIABAT', '')  # prototype: 'ramp' or 'outer'
+NEWTON_PROTO_LOG = []
+
+
+def _newton_adiabat_proto(result, cp, md, melt, input_dir, mixes, vp, tf_ext, t_arr):
+    """Prototype: give a Newton result the adiabat of its temperature mode. 'ramp': the Picard
+    blend ramp seeded from the Newton profile. 'outer': Newton again on T(P) of the adiabat of the
+    previous profile, until the adiabat changes by less than 0.5 K (at most 8 rounds)."""
+    mixes = mixes or parse_all_layer_mixtures(cp['layer_eos_config'])
+    asked = (
+        cp.get('temperature_mode') in ('adiabatic', 'adiabatic_from_cmb')
+        and tf_ext is None
+        and t_arr is None
+        and any_component_is_tdep(mixes)
+    )
+    if not _NEWTON_PROTO or not asked or not result.get('converged'):
+        return result
+    if _NEWTON_PROTO == 'ramp':
+        res = _solve(
+            dict(cp, outer_solver='picard'),
+            md,
+            melt,
+            input_dir,
+            layer_mixtures=mixes,
+            volatile_profile=vp,
+            p_center_hint=float(result['pressure'][0]),
+            initial_density=result['density'],
+            initial_radii=result['radii'],
+        )
+        NEWTON_PROTO_LOG.append(
+            dict(
+                stage='ramp', accepted_on=res.get('accepted_on'), blend=res.get('adiabat_blend')
+            )
+        )
+        return res
+    sol, liq = melt or (None, None)
+    eos = _eos_params(cp)
+    anchor = 'cmb' if cp['temperature_mode'] == 'adiabatic_from_cmb' else 'surface'
+    prev = None
+    for k in range(8):
+        T = compute_adiabatic_temperature(
+            result['radii'],
+            result['pressure'],
+            result['mass_enclosed'],
+            cp['surface_temperature'],
+            result['cmb_mass'],
+            result['core_mantle_mass'],
+            mixes,
+            md,
+            _interpolation_cache,
+            sol,
+            liq,
+            *eos,
+            anchor=anchor,
+            cmb_temperature=cp.get('cmb_temperature'),
+        )
+        P = np.asarray(result['pressure'], float)
+        ok = P > 0
+        o = np.argsort(P[ok])
+        lp, ts = np.log10(P[ok][o]), np.asarray(T, float)[ok][o]
+        dT = None if prev is None else float(np.max(np.abs(np.interp(lp, *prev) - ts)))
+        NEWTON_PROTO_LOG.append(
+            dict(stage='outer', round=k, max_dT=dT, R=float(result['radii'][-1]))
+        )
+        if dT is not None and dT < 0.5:
+            break
+        prev = (lp, ts)
+        t_surf = float(cp['surface_temperature'])
+
+        def tf(r, p, _lp=lp, _ts=ts, _t0=t_surf):
+            return _t0 if p <= 0 else float(np.interp(math.log10(p), _lp, _ts))
+
+        result = _solve_newton_outer(
+            cp,
+            md,
+            melt,
+            input_dir,
+            layer_mixtures=mixes,
+            volatile_profile=vp,
+            temperature_function=tf,
+            temperature_arrays=None,
+            initial_density=result['density'],
+            initial_radii=result['radii'],
+        )
+    result['adiabat_computed'], result['adiabat_blend'] = True, 1.0
+    result['temperature'] = np.array(
+        [tf(r_, p_) for r_, p_ in zip(result['radii'], result['pressure'])]
+    )
+    return result
+
+
 def _warn_adiabat(
     result, config_params, layer_mixtures, temperature_function, temperature_arrays
 ):
@@ -734,6 +825,17 @@ def main(
             p_center_hint=p_center_hint,
             initial_density=initial_density,
             initial_radii=initial_radii,
+        )
+        result = _newton_adiabat_proto(
+            result,
+            config_params,
+            material_dictionaries,
+            melting_curves_functions,
+            input_dir,
+            layer_mixtures,
+            volatile_profile,
+            temperature_function,
+            temperature_arrays,
         )
         result = _report_table_bands(result, *bands)
         _warn_adiabat(
