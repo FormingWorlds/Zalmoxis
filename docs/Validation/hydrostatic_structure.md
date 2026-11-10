@@ -41,7 +41,7 @@ The [overview](index.md) lists every case of the tab.
 - JAX path: an optional version of the structure integration in JAX, a Python library for compiled numerical code; it is off by default.
 - Picard outer solver: the default outer loop. It solves the structure for a trial radius, compares the computed mass with the planet mass, and rescales the radius.
 - Newton outer solver: the outer loop with Newton steps and a Brent fallback (`outer_solver = 'newton'`); PROTEUS uses it by default. It needs `relative_tolerance` at or below $10^{-7}$.
-- Newton tolerance (`newton_tol`, default $10^{-4}$): the Newton outer solver accepts a structure when its relative mass error is below this value and its pressure solve converged (`accepted_on = 'newton_tol'`).
+- Newton tolerance (`newton_tol`, default $10^{-4}$): the Newton outer solver accepts a structure when its relative mass error is below this value and its pressure solve converged (`accepted_on = 'newton_tol'`). In an adiabatic temperature mode where Zalmoxis computes the temperature itself, the Newton root holds the linear first guess, so it only seeds the Picard blend ramp to the adiabat, which runs at the mass tolerance `min(tolerance_outer, newton_tol)` and gives a Picard label.
 
 ## Governing equations
 
@@ -69,7 +69,7 @@ L'Hopital's rule gives the limit $dg/dr|_{r=0} = \frac{4}{3}\pi G \rho_c$, and `
 An equation of state $\rho = \rho(P, T)$ closes the system.
 The uniform-sphere, two-layer, conservation and binding-energy cases, and the uniform-sphere part of the grid and tolerance checks, fix $\rho$ to a constant.
 The n = 1 polytrope case uses $P = K\rho^2$.
-The full-solver part of the grid and tolerance checks, and the Earth benchmark and the mass-radius scaling on the [mass-radius page](mass_radius.md), use the Analytic EOS, the modified polytrope of Seager et al. (2007), $\rho(P) = \rho_0 + c P^n$, with fitted constants $\rho_0$, $c$ and $n$ for each material (this $n$ is not the index of the $n = 1$ polytrope).
+The full-solver part of the grid and tolerance checks, and the Earth benchmark and the mass-radius scaling on the [mass-radius page](mass_radius.md), use the Analytic EOS, the modified polytrope of Seager et al. (2007)[^cite-seager2007], $\rho(P) = \rho_0 + c P^n$, with fitted constants $\rho_0$, $c$ and $n$ for each material (this $n$ is not the index of the $n = 1$ polytrope).
 None of these needs table data; the JAX table cases, the PALEOS Newton setups and the PALEOS setups of the sweep figure use the PALEOS tables.
 
 ## Uniform-density sphere
@@ -218,7 +218,7 @@ The Earth benchmark and the mass-radius scaling are on the [mass-radius page](ma
 **How to read the plot.** The line is the Lane-Emden density $\sin\xi/\xi$ against $r/R_\oplus$ and gives context. The marks are the density that the test derives from the code pressure, over the central density, every 25th node, for 1 Earth mass. The test asserts the code surface radius (circle) against the exact radius $R_\oplus$ (square) to a relative tolerance of $10^{-4}$, too small to see. The cross is $\sqrt{2}\,R_\oplus$, the radius with $K$ off by a factor 2. A pass means that the circle sits in the square, far from the cross. The mass test and the mass-independence test are not drawn.
 
 ??? info "Test details"
-    - Reference: the analytic $n = 1$ Lane-Emden solution (Chandrasekhar 1939, reference named in the test docstring)
+    - Reference: the analytic $n = 1$ Lane-Emden solution of Chandrasekhar (1939)[^cite-chandrasekhar1939], named in the test docstring
     - Tolerance: surface radius within `rel=1e-4` of $1\,R_\oplus$; integrated mass within `rel=1e-4` of the seeded $2\,M_\oplus$; radius at $1\,M_\oplus$ and $2\,M_\oplus$ equal within `rel=1e-4` and within `rel=1e-3` of $1\,R_\oplus$
     - Test id: `tests/test_polytrope_verification.py`
     - Command: `pytest -o "addopts=" tests/test_polytrope_verification.py`
@@ -332,7 +332,7 @@ A second test checks the same rule with real structure solves. It uses the Analy
 
 **What it tests.** The test runs the 6 Newton setups: the Analytic EOS (equation of state) at 1 Earth mass, PALEOS at 1, 5 and 10 Earth masses, and PALEOS on the JAX path with $T(r)$ from a numpy Picard solve at 1 and 3 Earth masses.
 
-Every setup must accept on the Newton tolerance. Every reached profile must miss $P_t$ by at most $P_t$, and no profile may have a padded node, except on the JAX path at 1 Earth mass.
+The Analytic setup and the 2 JAX setups, which take $T(r)$ from the caller, must accept on the Newton tolerance. The 3 numpy PALEOS setups are adiabatic, so their Newton root seeds the Picard blend ramp, and they must accept on the full adiabat. Every reached profile must miss $P_t$ by at most $P_t$, and no profile may have a padded node, except on the JAX path at 1 Earth mass.
 
 On that path $P(R)$ varies irregularly from one trial central pressure to the next near the surface stop, where the integration ends before the outer radius, and the accepted profile can be padded. The case then requires one of 2 things: the reached end of the first sign pair of that pressure solve misses $P_t$ by more than $P_t$, or the solve has no sign pair.
 
@@ -349,7 +349,7 @@ On that path $P(R)$ varies irregularly from one trial central pressure to the ne
 
 ??? info "Test details"
     - Reference: the boundary condition $P(R) = P_t$.
-    - Tolerance: every setup accepts on the Newton tolerance; $\lvert P(R) - P_t \rvert \le P_t$ for every reached profile; no padded node except on the JAX path at 1 Earth mass; the padded flag matches the root of the last pressure solve.
+    - Tolerance: the Analytic and JAX setups accept on the Newton tolerance and the numpy PALEOS setups on the full adiabat; $\lvert P(R) - P_t \rvert \le P_t$ for every reached profile; no padded node except on the JAX path at 1 Earth mass; the padded flag matches the root of the last pressure solve.
     - Test id: `tests/test_pressure_root_solves.py::test_every_newton_setup_meets_the_surface_boundary_condition`
     - Command: `pytest -o "addopts=" -m accept_solves_newton_setups tests/test_pressure_root_solves.py`; the figure: `python -m tools.validation.pressure_root_sweep run <dir> -j 2`, then `python -m tools.validation.pressure_root_sweep plot <dir> --assets <dir>`.
 
@@ -362,3 +362,6 @@ pytest -o "addopts=" tests/test_first_principles.py tests/test_polytrope_verific
 ```
 
 Without `--validation-plots` the tests write nothing: each compares the data of its plot with the committed pair, and a missing or stale file fails the test.
+
+[^cite-seager2007]: S. Seager, M. Kuchner, C. A. Hier-Majumder, B. Militzer, *[Mass-Radius Relationships for Solid Exoplanets](https://doi.org/10.1086/521346)*, The Astrophysical Journal, 669(2), 1279-1297, 2007. [SciX](https://scixplorer.org/abs/2007ApJ...669.1279S/abstract).
+[^cite-chandrasekhar1939]: S. Chandrasekhar, *An Introduction to the Study of Stellar Structure*, Chicago, 1939. [SciX](https://scixplorer.org/abs/1939isss.book.....C/abstract).

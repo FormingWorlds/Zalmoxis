@@ -335,7 +335,7 @@ _VALID_OUTER_SOLVERS = ('picard', 'newton')
 # gate and the warning message both read this one value so the reported
 # threshold can never drift from the gate it describes.
 _TIMEOUT_ACCEPT_MASS_ERR = 0.03
-# The adiabat blend ramp starts once a linear-T pass is within max(tolerance_outer, this) of the mass
+# a linear-T pass within max(tolerance_outer, this) of the mass starts the adiabat blend ramp
 _ADIABAT_RAMP_TRIGGER = 1e-3
 
 
@@ -416,7 +416,7 @@ def _adiabat_asked(config_params, layer_mixtures, temperature_function, temperat
     """True when the solve computes the temperature itself in an adiabatic mode with a
     T-dependent EOS, so an accepted profile must be the full adiabat (blend 1)."""
     mixes = layer_mixtures or parse_all_layer_mixtures(config_params['layer_eos_config'])
-    return bool(
+    return (
         config_params.get('temperature_mode') in ('adiabatic', 'adiabatic_from_cmb')
         and temperature_function is None
         and not (config_params.get('use_jax', False) and temperature_arrays is not None)
@@ -661,7 +661,13 @@ def main(
         'oscillation', 'retry_skip', 'newton_tol' or 'brentq_best'; None when it
         was not accepted), and ``mass_error_at_accept`` is the relative mass error
         of the returned profile. 'timeout' replaces the other labels when the wall
-        clock stopped the solve of the returned profile. A failed table band check
+        clock stopped the solve of the returned profile. In an adiabatic temperature
+        mode with a T-dependent EOS and no external temperature only a profile on the
+        full adiabat (``adiabat_blend`` 1) is accepted; with ``outer_solver='newton'``
+        the Newton root then seeds the Picard blend ramp (its radius, central
+        pressure, density and radii, at the mass tolerance min(tolerance_outer,
+        newton_tol)), the result has a Picard label and keeps ``newton_n_iter``,
+        ``newton_history`` and ``newton_used_brentq``. A failed table band check
         sets ``converged`` to False and leaves ``accepted_on`` as it is. A converged
         result has ``integration_tolerances``, the (rtol, atol) of the solve that
         returned, with rtol at least the RK45 floor of 100 eps, which the invariant
@@ -679,7 +685,9 @@ def main(
     StructureInvariantError
         An accepted result breaks a physical invariant of ``zalmoxis.invariants``:
         the layer masses, the padding, positive and monotone profiles, gravity, the
-        mass closure within ``accept_mass_limit``, or the EOS density. It is not a
+        mass closure within ``accept_mass_limit``, or the EOS density; or, in an
+        adiabatic mode where the solve computes the temperature, the accepted profile is
+        not the full adiabat. It is not a
         RuntimeError, so a caller that keeps its structure after a failed solve does
         not catch it.
     """
@@ -728,6 +736,7 @@ def main(
     asked = _adiabat_asked(
         config_params, layer_mixtures, temperature_function, temperature_arrays
     )
+    newton_keys = {}
     if outer_solver == 'newton':
         result = _solve_newton_outer(
             config_params,
@@ -745,10 +754,22 @@ def main(
         if not (asked and result['converged']):
             result = _report_table_bands(result, *bands)
             return _check_accepted(result, config_params, *bands, volatile_profile, asked)
-        # Newton solves on the linear first-guess T; the blend ramp from its profile makes the adiabat
+        # the Newton root holds the linear first guess; the blend ramp from it makes the adiabat
         logger.info(
             'Newton root on the linear first guess; continuing with the adiabat blend ramp.'
         )
+        newton_keys = {
+            k: result[k] for k in ('newton_n_iter', 'newton_history', 'newton_used_brentq')
+        }
+        tol = config_params.get(
+            'tolerance_outer',
+            _default_solver_params(config_params['planet_mass'])['tolerance_outer'],
+        )
+        config_params = {
+            **config_params,
+            '_initial_radius_guess': float(result['radii'][-1]),
+            'tolerance_outer': min(tol, config_params.get('newton_tol', _NEWTON_DEFAULT_TOL)),
+        }
         p_center_hint = float(result['pressure'][0])
         initial_density, initial_radii = result['density'], result['radii']
 
@@ -851,6 +872,7 @@ def main(
             )
 
     result = _report_table_bands(result, *bands)
+    result.update(newton_keys)
     return _check_accepted(result, run_params, *bands, volatile_profile, asked)
 
 
@@ -1800,11 +1822,8 @@ def _solve(
     _adiabat_blend = 0.0
     _ADIABAT_BLEND_STEP = 0.25
     # the internal adiabat makes T: only a pass at blend 1 can be accepted
-    ramp_asked = (
-        temperature_mode in ('adiabatic', 'adiabatic_from_cmb')
-        and uses_Tdep
-        and temperature_function is None
-        and not arrays_give_T
+    ramp_asked = _adiabat_asked(
+        config_params, layer_mixtures, temperature_function, temperature_arrays
     )
 
     # For adiabatic mode, cap the initial center_temperature guess to
@@ -2809,14 +2828,16 @@ def _solve(
             temperatures,
         ) = _best_pass()  # fmt: skip
 
-    if converged and ramp_asked and not (_adiabat_computed and _adiabat_blend >= 1.0):
-        logger.warning(
+    if converged and ramp_asked and _adiabat_blend < 1.0:
+        logger.log(
+            logging.DEBUG if config_params.get('_newton_probe') else logging.WARNING,
             'No accept of a pass at adiabat blend %.2f: temperature_mode=%r asks for the full '
             'adiabat; the solve returns with converged=False.',
-            _adiabat_blend if _adiabat_computed else 0.0,
+            _adiabat_blend,
             temperature_mode,
         )
-        converged, accepted_on, accept_mass_limit = False, None, None
+        converged = converged_mass = False
+        accepted_on = accept_mass_limit = None
 
     # Return rho_EOS(P, T) at the returned nodes, not the damped Picard iterate.
     density_from_eos = rho_eos is not None
