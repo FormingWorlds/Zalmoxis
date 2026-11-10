@@ -31,6 +31,9 @@ from zalmoxis.structure_model import solve_structure
 # Seager et al. (2007): a 1 Earth-mass pure iron planet has R ~ 0.77 R_Earth.
 PURE_IRON_CMF, PURE_IRON_R, PURE_IRON_TOL = 1.0, 0.77, 0.05
 
+# Per-test limit [s] of the full analytic solves; signal fails a slow test by name.
+SOLVE_TIMEOUT = 1200
+
 # ============================================================================
 # Helpers
 # ============================================================================
@@ -211,7 +214,6 @@ def _two_layer_central_pressure(rho_core, rho_mantle, R_cmb, R_total, M_cmb):
     return float(np.trapezoid(integrand, r_fine))
 
 
-@lru_cache(maxsize=64)
 def _run_analytic_eos_solver(
     mass_earth,
     cmf=0.325,
@@ -220,11 +222,34 @@ def _run_analytic_eos_solver(
     relative_tolerance=1e-8,
     absolute_tolerance=1e-10,
 ):
+    """Return the cached result of `_solve_analytic`, or re-raise its cached failure.
+
+    Tests that assert different invariants on one (mass, cmf, mmf, grid, tol)
+    configuration share one solve, and a failed solve (a pytest timeout among
+    them) is not started again. Test code only reads the result dict.
+    """
+    results, error = _cached_analytic_solve(
+        mass_earth, cmf, mmf, num_layers, relative_tolerance, absolute_tolerance
+    )
+    if error is not None:
+        raise error
+    return results
+
+
+@lru_cache(maxsize=64)
+def _cached_analytic_solve(*args):
+    """Return ``(results, None)`` of `_solve_analytic`, or ``(None, error)`` on a failure."""
+    try:
+        return _solve_analytic(*args), None
+    except (Exception, pytest.fail.Exception) as error:
+        return None, error
+
+
+def _solve_analytic(mass_earth, cmf, mmf, num_layers, relative_tolerance, absolute_tolerance):
     """Run the full Zalmoxis solver with Analytic EOS.
 
-    Cached by argument tuple so multiple tests asserting different invariants
-    on the same (mass, cmf, mmf, grid, tol) configuration share one solver
-    run. Test code only reads the result dict, never mutates it.
+    The solve runs with ``wall_timeout`` 1e6 s, and a pass stopped on a wall clock
+    fails the call (a retry inside ``main`` resets the clock to 600 s).
 
     Parameters
     ----------
@@ -279,6 +304,7 @@ def _run_analytic_eos_solver(
         'target_surface_pressure': 101325,
         'data_output_enabled': False,
         'plotting_enabled': False,
+        'wall_timeout': 1e6,
     }
 
     from zalmoxis import get_zalmoxis_root
@@ -292,7 +318,50 @@ def _run_analytic_eos_solver(
         melting_curves_functions=None,
         input_dir=input_dir,
     )
+    assert not results['stopped_on_wall_clock'], 'solve stopped on the wall clock'
     return results
+
+
+@pytest.mark.unit
+def test_the_analytic_solve_refuses_a_wall_clock_stop(monkeypatch):
+    """The helper runs without the solver wall clock and refuses a pass stopped on it."""
+    seen = {}
+
+    def stopped(config_params, **kwargs):
+        seen.update(config_params)
+        return {'converged': True, 'stopped_on_wall_clock': True}
+
+    monkeypatch.setattr('zalmoxis.solver.main', stopped)
+    with pytest.raises(AssertionError, match='wall clock'):
+        _solve_analytic(1.0, 0.325, 0, 200, 1e-8, 1e-10)
+    assert seen.get('wall_timeout', 300.0) >= 1e6
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ('mass', 'fail'), [(0.0123, lambda: pytest.fail('Timeout')), (0.0124, lambda: 1 / 0)]
+)
+def test_the_analytic_solve_caches_a_failure(monkeypatch, mass, fail):
+    """A failed solve, a pytest timeout among them, is not started again for the same arguments."""
+    calls = []
+
+    def failing(config_params, **kwargs):
+        calls.append(1)
+        fail()
+
+    monkeypatch.setattr('zalmoxis.solver.main', failing)
+    for _ in range(2):
+        with pytest.raises((pytest.fail.Exception, ZeroDivisionError)):
+            _run_analytic_eos_solver(mass)
+    assert len(calls) == 1
+
+
+@pytest.mark.unit
+def test_the_analytic_solve_returns_a_converged_pass(monkeypatch):
+    """The helper returns a pass that the wall clock did not stop."""
+    passed = {'converged': True, 'stopped_on_wall_clock': False}
+    monkeypatch.setattr('zalmoxis.solver.main', lambda config_params, **kwargs: passed)
+    assert _run_analytic_eos_solver(0.0137) is passed
 
 
 # ============================================================================
@@ -662,6 +731,7 @@ class TestGravitationalBindingEnergy:
 
 
 @pytest.mark.smoke
+@pytest.mark.timeout(SOLVE_TIMEOUT, method='signal')
 class TestEarthBenchmark:
     """Verify the full solver against known Earth properties using Analytic EOS."""
 
@@ -785,6 +855,7 @@ class TestEarthBenchmark:
 
 
 @pytest.mark.smoke
+@pytest.mark.timeout(SOLVE_TIMEOUT, method='signal')
 class TestMassRadiusScaling:
     """Verify the mass-radius scaling exponent against Seager+2007."""
 
@@ -832,6 +903,7 @@ class TestMassRadiusScaling:
 
 
 @pytest.mark.smoke
+@pytest.mark.timeout(SOLVE_TIMEOUT, method='signal')
 class TestCMFMonotonicity:
     """Radius must decrease monotonically with increasing core mass fraction."""
 
@@ -866,6 +938,7 @@ class TestCMFMonotonicity:
 
 
 @pytest.mark.smoke
+@pytest.mark.timeout(SOLVE_TIMEOUT, method='signal')
 class TestPureIronPlanet:
     """Verify a pure iron planet (CMF=1.0) against Seager+2007."""
 
@@ -910,6 +983,7 @@ class TestPureIronPlanet:
 
 
 @pytest.mark.smoke
+@pytest.mark.timeout(SOLVE_TIMEOUT, method='signal')
 class TestConservationLaws:
     """Verify mass conservation and surface pressure boundary condition."""
 
@@ -1066,6 +1140,7 @@ class TestConservationLaws:
 
 
 @pytest.mark.slow
+@pytest.mark.timeout(3600, method='signal')
 class TestGridConvergence:
     """Verify ODE integration error decreases with grid resolution.
 
