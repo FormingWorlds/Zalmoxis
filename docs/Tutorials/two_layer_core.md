@@ -2,7 +2,12 @@
 
 This tutorial solves a 1 $M_\oplus$ planet whose core has a solid inner core and a liquid outer core with sulfur. You set the inner-core boundary (ICB) in 2 ways, by a given inner-core mass and by an iron melting curve, and read the core arrays of the result. The [two-layer core](../Explanations/mixing.md#two-layer-core) explanation describes the model.
 
-You need a working Zalmoxis environment with the PALEOS tables ([First run](firstrun.md), Step 1) and the PALEOS Python package, a git checkout that contains the tested PALEOS commit ([PALEOS-API live tabulation](../Reference/api/zalmoxis.eos.paleos_api.md)), which makes the 2 iron side tables: one table of solid iron and one of liquid iron, each over the pressure and temperature range of the PALEOS iron table.
+You need:
+
+- a working Zalmoxis environment with the PALEOS tables ([First run](firstrun.md), Step 1);
+- the PALEOS Python package, installed from a git checkout that contains the tested PALEOS commit ([PALEOS-API live tabulation](../Reference/api/zalmoxis.eos.paleos_api.md)).
+
+The PALEOS package makes the 2 iron side tables: one table of solid iron and one of liquid iron, each over the pressure and temperature range of the PALEOS iron table.
 
 ## Step 1: write the script
 
@@ -122,7 +127,7 @@ plt.show()
 ## What to try next
 
 - Put another light element in the outer core, for example `CoreAlloy:O:0.0865` with the liquid side at 0.9135.
-- Give the inner core light elements: `inner_core = "PALEOS-API-2phase:iron-solid:0.99+CoreAlloy:Si:0.01"`. The light-element laws are calibrated on liquid iron, so the solve warns once that it applies them to solid iron; `CoreAlloy:H-Luo` is refused on the solid side.
+- Give the inner core light elements: `inner_core = "PALEOS-API-2phase:iron-solid:0.99+CoreAlloy:Si:0.01"`. The light-element laws are calibrated on liquid iron, so the solve warns once per process that it applies them to solid iron; `CoreAlloy:H-Luo` is refused on the solid side.
 - Pass a callable `T_liq(P)` \[K\] as `core_liquidus`, for example the liquidus of an alloy.
 
 [^cite-anzellini2013]: S. Anzellini, A. Dewaele, M. Mezouar, P. Loubeyre, G. Morard, *[Melting of Iron at Earth's Inner Core Boundary Based on Fast X-ray Diffraction](https://doi.org/10.1126/science.1233514)*, Science, 340, 464-466, 2013. [SciX](https://scixplorer.org/abs/2013Sci...340..464A/abstract).

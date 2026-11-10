@@ -297,33 +297,46 @@ The fractions of a light-element core are given explicitly for every component, 
 
 ## Two-layer core
 
-Which part of the core is solid, and which density does each part take? With the `[EOS]` key `inner_core` set, the core has 2 layers: a solid inner core and a liquid outer core. The inner-core boundary (ICB) between them comes from an iron melting curve on the temperature profile, or from a given inner-core mass.
+Which part of the core is solid, and which density does each part take? With the `[EOS]` key `inner_core` set, the core has 2 layers: a solid inner core and a liquid outer core. The inner-core boundary (ICB) lies between them.
 
 ### The 2 sides of the iron table
 
-The inner core reads `PALEOS-API-2phase:iron-solid`, the solid iron of PALEOS on every node. This table is the phase of the PALEOS phase diagram without its melting test. Above the melting curve it is therefore the metastable solid: a solid at a state where the stable phase is the liquid. The outer core reads `PALEOS-API-2phase:iron-liquid`, the PALEOS liquid of Luo et al. (2024)[^cite-luo2024] on every node. Below the melting curve it is the metastable extension of that liquid. Each layer can carry `CoreAlloy` light elements on its side, as in the [light-element core](#light-element-core); an inner core without them is pure iron.
+Where PALEOS gives iron as one table of the stable phase, a two-layer core reads 2 side tables of one phase each, over the same range. The inner core reads the solid side, `PALEOS-API-2phase:iron-solid`: the solid phase of the PALEOS phase diagram with its melting test left out. Above the melting curve it is a metastable solid, where the stable phase is the liquid. The outer core reads the liquid side, `PALEOS-API-2phase:iron-liquid`: the PALEOS liquid of Luo et al. (2024)[^cite-luo2024], below the melting curve its metastable extension. Each layer can carry `CoreAlloy` light elements on its side, as in the [light-element core](#light-element-core); an inner core without them is pure iron.
 
 ### The inner-core boundary
 
-With `core_liquidus`, the ICB pressure $P_\mathrm{ICB}$ is the first root, from the centre outward, of
+A two-layer core takes exactly one of 2 ICB rules:
 
-$$T(P) - T_\mathrm{liq}(P) = 0$$
+- **Liquidus rule** (`core_liquidus`): the ICB pressure $P_\mathrm{ICB}$ is the first root, from the centre outward, of $T(P) - T_\mathrm{liq}(P) = 0$, with $T_\mathrm{liq}$ a named iron melting curve or a callable `T_liq(P)` \[K\], such as an outer-core alloy liquidus from PROTEUS.
+- **Mass rule** (`inner_core_mass_fraction` $f$): the inner core is the mass $f M_\mathrm{core}$.
 
-on the temperature profile of the previous outer pass, the pass before the current one of the outer loop ([code architecture](code_architecture.md)). $T_\mathrm{liq}$ is a named iron melting curve or a callable `T_liq(P)` \[K\], such as an outer-core alloy liquidus from a caller like PROTEUS. Core shells whose enclosed mass is below the mass at $P_\mathrm{ICB}$ take `inner_core`; the others take `core`. With `inner_core_mass_fraction` $f$, the inner core is the mass $f M_\mathrm{core}$ instead. A liquidus solve converges only when its temperature profile and its layers share one ICB.
+The structure equations place a shell in the inner core by its enclosed mass, as at the core-mantle boundary, so the liquidus rule reads the temperature profile of the previous outer pass ([code architecture](code_architecture.md)). Core shells below the mass at $P_\mathrm{ICB}$ take `inner_core`, the others `core`. A liquidus solve converges only when its temperature profile and its layers share one ICB.
 
 ### Temperature
 
-As in a one-layer core, each node takes the adiabatic gradient $\nabla_\mathrm{ad} = (\partial \ln T / \partial \ln P)_S$ of the side of its layer. The temperature is continuous at the ICB, and the structure temperature has no latent heat. In the 2 side tables at core states, $\nabla_\mathrm{ad}$ of the solid side is below that of the liquid side: 0.19 against 0.38 at 140 GPa and 4500 K, 0.30 against 0.46 at 330 GPa and 5500 K. These are values of the PALEOS tables, not compared here with published data for solid and liquid iron. The shallower adiabat of the solid side is a possible cause of a band of surface temperatures, near the onset of core freezing, in which a liquidus solve on an adiabat can hold 2 states. In that band, the start of the solve selects one state.
+As in a one-layer core, each node takes the adiabatic gradient $\nabla_\mathrm{ad} = (\partial \ln T / \partial \ln P)_S$ of the side of its layer. The temperature is continuous at the ICB, and the structure temperature has no latent heat. In the 2 side tables at core states, $\nabla_\mathrm{ad}$ of the solid side is below that of the liquid side: 0.19 against 0.38 at 140 GPa and 4500 K, 0.30 against 0.46 at 330 GPa and 5500 K. These are PALEOS table values, not compared here with published data for solid and liquid iron. The shallower adiabat of the solid side is a possible cause of a band of surface temperatures, near the onset of core freezing, in which the ICB of a liquidus solve on an adiabat depends on its start.
 
 ### Composition
 
 `Anzellini13-iron`, of Anzellini et al. (2013)[^cite-anzellini2013], and `Sinmyo19-iron`, of Sinmyo et al. (2019)[^cite-sinmyo2019], are melting curves of pure iron. S, O and C each form a eutectic with iron, which melts below pure iron:
 
-- Fe-S: near 3550 K at 254 GPa, run 11 of Table 1 of Mori et al. (2017)[^cite-mori2017]. The Anzellini curve gives 5497 K at 254 GPa.
-- Fe-C: about 3750 K at 330 GPa, extrapolated from data to 255 GPa in Sect. 4.1 of Mashino et al. (2019)[^cite-mashino2019]. The Anzellini curve gives 6229 K at 330 GPa.
+- Fe-S: near 3550 K at 254 GPa, run 11 of Table 1 of Mori et al. (2017)[^cite-mori2017], against 5497 K on the Anzellini curve.
+- Fe-C: about 3750 K at 330 GPa, extrapolated from data to 255 GPa in Sect. 4.1 of Mashino et al. (2019)[^cite-mashino2019], against 6229 K on the Anzellini curve.
 - Fe-FeO: Oka et al. (2019)[^cite-oka2019] measured the eutectic to 204 GPa.
 
-An outer core with these elements can melt below the pure-iron curves, so a named curve gives too large an inner core. For such a core, pass the alloy liquidus as a callable. The light-element fractions of each layer are inputs. The model does not move light elements from the inner to the outer core when the core freezes. The light-element mass of the core, $M_\mathrm{ic} w_\mathrm{ic} + M_\mathrm{oc} w_\mathrm{oc}$ (layer masses times their light-element mass fractions), therefore changes when the ICB moves. A caller that keeps the bulk composition sets the layer fractions for each solve. The light-element laws are calibrated on liquid iron; on the solid side they apply that liquid calibration to solid iron, and `CoreAlloy:H-Luo`, a law of liquid iron with water, is refused there.
+An outer core with these elements can melt below the pure-iron curves, so a named curve gives too large an inner core. For such a core, pass the alloy liquidus as a callable.
+
+### Light elements in each layer
+
+The light-element fractions of each layer are inputs: the model does not move light elements to the outer core when the core freezes. The light-element mass of the core, $M_\mathrm{ic} w_\mathrm{ic} + M_\mathrm{oc} w_\mathrm{oc}$ (layer masses times their light-element mass fractions), therefore changes when the ICB moves ([bulk composition](../Validation/hydrostatic_structure.md#inner-core-boundary-of-a-two-layer-core)). A caller that keeps the bulk composition sets the layer fractions for each solve.
+
+### Limits
+
+- The light-element laws, calibrated on liquid iron, apply to solid iron on the solid side, with one warning per process.
+- The solid side refuses `CoreAlloy:H-Luo` with `CoreAlloyError`, a `ValueError`: its carrier volume is that of a liquid of iron and water, from Luo et al. (2024)[^cite-luo2024].
+- A named curve with an alloy outer core gives a warning at each call of `main`.
+- A `ValueError` refuses the liquidus rule under `outer_solver = "newton"` or `temperature_mode = "adiabatic_from_cmb"`, and a non-finite temperature or liquidus on a core node.
+- On the JAX structure path, a two-layer core falls back to the numpy path.
 
 ### Where this is checked
 
