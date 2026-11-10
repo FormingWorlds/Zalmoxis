@@ -42,12 +42,17 @@ def icb_from_profile(mass, pressure, temperature, cmb_mass, liquidus, icb_mass=N
     tuple of float
         Inner-core mass [kg], ICB pressure [Pa] and the core mass above the ICB that lies below
         the liquidus [kg], at node resolution. With the centre at or above the liquidus the
-        inner-core mass is 0 and the pressure that of the centre; with every core node below it
-        the inner core is the core and the pressure that of the last core node.
+        inner-core mass is 0 and the pressure that of the centre; with the core below it to the
+        core mass the inner core is the core and the pressure that at the core mass. A node past
+        the core mass adds a point at the core mass to the core nodes (``_cmb_point``).
     """
     m, p, t = (np.asarray(a, dtype=float) for a in (mass, pressure, temperature))
-    core = (m < cmb_mass * (1.0 - _RTOL_LAYER)) & (p > 0)
+    below = m < cmb_mass * (1.0 - _RTOL_LAYER)
+    cmb = _cmb_point(m, p, t, cmb_mass, int(np.count_nonzero(below)))
+    core = below & (p > 0)
     m, p, t = m[core], p[core], t[core]
+    if cmb is not None:
+        m, p, t = np.r_[m, cmb[0]], np.r_[p, cmb[1]], np.r_[t, cmb[2]]
     if not m.size:
         raise ValueError('the profile has no core node with a positive pressure')
     f = t - np.array([float(liquidus(x)) for x in p])
@@ -71,6 +76,16 @@ def icb_from_profile(mass, pressure, temperature, cmb_mass, liquidus, icb_mass=N
     )
     m_icb = float(np.interp(math.log(p_icb), lp_up, m[::-1]))
     return m_icb, float(p_icb), _solid_mass(m, f, m_icb)
+
+
+def _cmb_point(m, p, t, cmb_mass, n):
+    """(m, P, T) at the core mass on the segment from the last core node n - 1 to node n, with
+    ln P linear in m and T linear in ln P (the adiabat steps that segment with the core
+    gradient); None without such a segment of positive pressure."""
+    if not 0 < n < len(m) or p[n] <= 0 or p[n - 1] <= 0:
+        return None
+    lp = float(np.interp(cmb_mass, m[n - 1 : n + 1], np.log(p[n - 1 : n + 1])))
+    return cmb_mass, math.exp(lp), float(np.interp(lp, np.log(p[[n, n - 1]]), t[[n, n - 1]]))
 
 
 def icb_misses(mass, pressure, temperature, cmb_mass, liquidus, icb_mass, icb_adiabat):
@@ -111,7 +126,9 @@ def core_arrays(result, layer_mixtures, rhs, temperature_at, icb_mass, solid_abo
         and ``M_ic`` [kg], ``R_icb`` [m], ``P_icb`` [Pa], ``solid_above_icb_mass_fraction`` and
         the flag ``solid_above_icb``.
         The node at the core mass takes the core side of the layer rule for its phase and
-        density. ``w_layers`` maps each core layer to its light-element fractions.
+        density. ``R_icb`` takes r^3 linear in m and ``P_icb`` P linear in m^(2/3) on the node
+        segment of M_ic, both exact for uniform density. ``w_layers`` maps each core layer to
+        its light-element fractions.
 
     Raises
     ------
@@ -168,8 +185,8 @@ def core_arrays(result, layer_mixtures, rhs, temperature_at, icb_mass, solid_abo
         in_core = side_m < cmb_mass * (1.0 - _RTOL_LAYER)
         out[f'w_{el}'] = np.where(out['phase'] == 1, w[1], np.where(in_core, w[0], 0.0))
     out['M_ic'] = float(icb_mass)
-    out['R_icb'] = float(np.interp(icb_mass, out['m'], out['r']))
-    out['P_icb'] = float(np.interp(icb_mass, out['m'], out['P']))
+    out['R_icb'] = float(np.interp(icb_mass, out['m'], out['r'] ** 3)) ** (1.0 / 3.0)
+    out['P_icb'] = float(np.interp(icb_mass ** (2.0 / 3.0), out['m'] ** (2.0 / 3.0), out['P']))
     out['solid_above_icb_mass_fraction'] = float(solid_above) / cmb_mass
     out['solid_above_icb'] = bool(solid_above > 0.0)
     return out
