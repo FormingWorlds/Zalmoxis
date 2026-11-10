@@ -316,7 +316,7 @@ def test_the_analytic_solve_refuses_a_wall_clock_stop(monkeypatch):
     monkeypatch.setattr(zalmoxis.solver, 'main', stopped)
     with pytest.raises(AssertionError, match='wall clock'):
         _run_analytic_eos_solver.__wrapped__(1.0)
-    assert seen['wall_timeout'] >= 1e6
+    assert seen.get('wall_timeout', 300.0) >= 1e6
 
 
 # ============================================================================
