@@ -317,6 +317,33 @@ def test_the_analytic_solve_refuses_a_wall_clock_stop(monkeypatch):
     assert seen.get('wall_timeout', 300.0) >= 1e6
 
 
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ('mass', 'fail'), [(0.0123, lambda: pytest.fail('Timeout')), (0.0124, lambda: 1 / 0)]
+)
+def test_the_analytic_solve_caches_a_failure(monkeypatch, mass, fail):
+    """A failed solve, a pytest timeout among them, is not started again for the same arguments."""
+    calls = []
+
+    def failing(config_params, **kwargs):
+        calls.append(1)
+        fail()
+
+    monkeypatch.setattr('zalmoxis.solver.main', failing)
+    for _ in range(2):
+        with pytest.raises((pytest.fail.Exception, ZeroDivisionError)):
+            _run_analytic_eos_solver(mass)
+    assert len(calls) == 1
+
+
+@pytest.mark.unit
+def test_the_analytic_solve_returns_a_converged_pass(monkeypatch):
+    """The helper returns a pass that the wall clock did not stop."""
+    passed = {'converged': True, 'stopped_on_wall_clock': False}
+    monkeypatch.setattr('zalmoxis.solver.main', lambda config_params, **kwargs: passed)
+    assert _run_analytic_eos_solver(0.0137) is passed
+
+
 # ============================================================================
 # Tier 1: Pure-Math ODE Verification
 # ============================================================================
