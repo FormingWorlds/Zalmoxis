@@ -43,7 +43,7 @@ from .eos import (
     create_pressure_density_files,
 )
 from .eos.seager import _band_debug_seen
-from .invariants import check_accepted
+from .invariants import StructureInvariantError, check_accepted
 from .mixing import (
     _PALEOS_2PHASE_NAMES,
     _PALEOS_UNIFIED_NAMES,
@@ -335,6 +335,8 @@ _VALID_OUTER_SOLVERS = ('picard', 'newton')
 # gate and the warning message both read this one value so the reported
 # threshold can never drift from the gate it describes.
 _TIMEOUT_ACCEPT_MASS_ERR = 0.03
+# The adiabat blend ramp starts once a linear-T pass is within max(tolerance_outer, this) of the mass
+_ADIABAT_RAMP_TRIGGER = 1e-3
 
 
 def _mass_error(mass_enclosed, planet_mass):
@@ -410,28 +412,22 @@ def _eos_params(config_params):
     )
 
 
-def _warn_adiabat(
-    result, config_params, layer_mixtures, temperature_function, temperature_arrays
-):
-    """Warn when an accepted result of an adiabatic temperature mode with a T-dependent EOS
-    has a temperature profile short of the full adiabat (``adiabat_blend`` below 1; 0 when the
-    blend ramp never started)."""
+def _adiabat_asked(config_params, layer_mixtures, temperature_function, temperature_arrays):
+    """True when the solve computes the temperature itself in an adiabatic mode with a
+    T-dependent EOS, so an accepted profile must be the full adiabat (blend 1)."""
     mixes = layer_mixtures or parse_all_layer_mixtures(config_params['layer_eos_config'])
-    asked = (
+    return bool(
         config_params.get('temperature_mode') in ('adiabatic', 'adiabatic_from_cmb')
         and temperature_function is None
         and not (config_params.get('use_jax', False) and temperature_arrays is not None)
         and any_component_is_tdep(mixes)
     )
-    blend = result.get('adiabat_blend', 0.0) if result.get('adiabat_computed') else 0.0
-    if asked and result.get('converged') and blend < 1.0:
-        logger.warning(
-            "outer_solver='%s' accepted a temperature profile at adiabat blend %.2f; "
-            "temperature_mode='%s' asks for the full adiabat.",
-            config_params.get('outer_solver', 'picard'),
-            blend,
-            config_params['temperature_mode'],
-        )
+
+
+def _short_of_adiabat(result, asked):
+    """True when ``asked`` and the profile of ``result`` is not the full adiabat."""
+    full = result.get('adiabat_computed') and result.get('adiabat_blend', 0.0) >= 1.0
+    return bool(asked and not full)
 
 
 def _check_accepted(
@@ -442,12 +438,20 @@ def _check_accepted(
     melting_curves_functions,
     layer_mixtures,
     volatile_profile,
+    adiabat_asked=False,
 ):
     """Run ``invariants.check_accepted`` on an accepted result, with the batch EOS call of
     the solve per layer as the density reference and the tolerances of ``run_params``, which
-    the result keeps as ``integration_tolerances`` (rtol, atol)."""
+    the result keeps as ``integration_tolerances`` (rtol, atol). With ``adiabat_asked`` an
+    accepted profile short of the full adiabat raises StructureInvariantError."""
     if not result.get('converged'):
         return result
+    if _short_of_adiabat(result, adiabat_asked):
+        raise StructureInvariantError(
+            f'accepted_on={result.get("accepted_on")!r} at adiabat blend '
+            f'{result.get("adiabat_blend")} (adiabat_computed={result.get("adiabat_computed")}); '
+            f'temperature_mode={config_params["temperature_mode"]!r} asks for the full adiabat.'
+        )
     defaults = _default_solver_params(config_params['planet_mass'])
     rtol, atol = (
         float(run_params.get(k, defaults[k]))
@@ -721,6 +725,9 @@ def main(
             )
     band_limit(config_params)  # a bad limit fails before the solve, not after it
     bands = (config_params, material_dictionaries, melting_curves_functions, layer_mixtures)
+    asked = _adiabat_asked(
+        config_params, layer_mixtures, temperature_function, temperature_arrays
+    )
     if outer_solver == 'newton':
         result = _solve_newton_outer(
             config_params,
@@ -735,11 +742,15 @@ def main(
             initial_density=initial_density,
             initial_radii=initial_radii,
         )
-        result = _report_table_bands(result, *bands)
-        _warn_adiabat(
-            result, config_params, layer_mixtures, temperature_function, temperature_arrays
+        if not (asked and result['converged']):
+            result = _report_table_bands(result, *bands)
+            return _check_accepted(result, config_params, *bands, volatile_profile, asked)
+        # Newton solves on the linear first-guess T; the blend ramp from its profile makes the adiabat
+        logger.info(
+            'Newton root on the linear first guess; continuing with the adiabat blend ramp.'
         )
-        return _check_accepted(result, config_params, *bands, volatile_profile)
+        p_center_hint = float(result['pressure'][0])
+        initial_density, initial_radii = result['density'], result['radii']
 
     result = _solve(
         config_params,
@@ -767,6 +778,7 @@ def main(
         and result.get('converged_pressure', False)
         and _first_mass_err is not None
         and _first_mass_err < _RETRY_SKIP_MASS_ERR
+        and not _short_of_adiabat(result, asked)
     )
     if _retry_skipped:
         logger.info(
@@ -839,10 +851,7 @@ def main(
             )
 
     result = _report_table_bands(result, *bands)
-    _warn_adiabat(
-        result, config_params, layer_mixtures, temperature_function, temperature_arrays
-    )
-    return _check_accepted(result, run_params, *bands, volatile_profile)
+    return _check_accepted(result, run_params, *bands, volatile_profile, asked)
 
 
 # Newton outer-loop defaults: 3-6 Newton iterations are typically
@@ -1790,6 +1799,13 @@ def _solve(
     _adiabat_computed = False  # the gradient table was read for the T profile
     _adiabat_blend = 0.0
     _ADIABAT_BLEND_STEP = 0.25
+    # the internal adiabat makes T: only a pass at blend 1 can be accepted
+    ramp_asked = (
+        temperature_mode in ('adiabatic', 'adiabatic_from_cmb')
+        and uses_Tdep
+        and temperature_function is None
+        and not arrays_give_T
+    )
 
     # For adiabatic mode, cap the initial center_temperature guess to
     # prevent the linear-T initial profile from being far above the
@@ -2622,13 +2638,7 @@ def _solve(
         _prev_mass_error = mass_error_signed
 
         # The internal adiabat blend is below 1: both stops wait for the end of the ramp
-        ramp_incomplete = (
-            temperature_mode in ('adiabatic', 'adiabatic_from_cmb')
-            and _adiabat_blend < 1.0
-            and uses_Tdep
-            and temperature_function is None
-            and not arrays_give_T
-        )
+        ramp_incomplete = ramp_asked and _adiabat_blend < 1.0
         # Bailout: if oscillating for 10+ iterations, accept best solution
         if (
             oscillation_count >= 10
@@ -2673,17 +2683,18 @@ def _solve(
         # convergence; the T output for T-independent EOS in adiabatic mode
         # falls back to the linear profile (see the T-independent branch
         # around the _temperature_func construction).
+        if ramp_incomplete and relative_diff_outer_mass < max(
+            _ADIABAT_RAMP_TRIGGER, tolerance_outer
+        ):
+            if not _using_adiabat:
+                _using_adiabat = True
+                logger.log(
+                    progress,
+                    f'Outer iter {outer_iter}: mass converged with linear T, '
+                    f'activating adiabat blend.',
+                )
+            continue  # the blend ramps up over the next passes
         if relative_diff_outer_mass < tolerance_outer:
-            if ramp_incomplete:
-                if not _using_adiabat:
-                    _using_adiabat = True
-                    logger.log(
-                        progress,
-                        f'Outer iter {outer_iter}: mass converged with linear T, '
-                        f'activating adiabat blend.',
-                    )
-                # Continue iterating to let the blend ramp up
-                continue
             logger.log(
                 progress,
                 f'Outer loop (total mass) converged after {outer_iter + 1} iterations.',
@@ -2797,6 +2808,15 @@ def _solve(
             converged_density, converged_pressure, _adiabat_computed, _adiabat_blend,
             temperatures,
         ) = _best_pass()  # fmt: skip
+
+    if converged and ramp_asked and not (_adiabat_computed and _adiabat_blend >= 1.0):
+        logger.warning(
+            'No accept of a pass at adiabat blend %.2f: temperature_mode=%r asks for the full '
+            'adiabat; the solve returns with converged=False.',
+            _adiabat_blend if _adiabat_computed else 0.0,
+            temperature_mode,
+        )
+        converged, accepted_on, accept_mass_limit = False, None, None
 
     # Return rho_EOS(P, T) at the returned nodes, not the damped Picard iterate.
     density_from_eos = rho_eos is not None
