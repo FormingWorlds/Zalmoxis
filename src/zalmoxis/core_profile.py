@@ -59,7 +59,8 @@ def icb_from_profile(mass, pressure, temperature, cmb_mass, liquidus, icb_mass=N
     if not np.all(np.isfinite(f)):
         raise ValueError('the temperature or the core liquidus is not finite on the core nodes')
     if icb_mass is not None:
-        return float(icb_mass), float(np.interp(icb_mass, m, p)), _solid_mass(m, f, icb_mass)
+        p_icb = np.interp(icb_mass ** (2.0 / 3.0), m ** (2.0 / 3.0), p)  # as in core_arrays
+        return float(icb_mass), float(p_icb), _solid_mass(m, f, icb_mass)
     above = np.flatnonzero(f >= 0.0)
     if above.size and above[0] == 0:
         return 0.0, float(p[0]), _solid_mass(m, f, 0.0)
@@ -81,8 +82,9 @@ def icb_from_profile(mass, pressure, temperature, cmb_mass, liquidus, icb_mass=N
 def _cmb_point(m, p, t, cmb_mass, n):
     """(m, P, T) at the core mass on the segment from the last core node n - 1 to node n, with
     ln P linear in m and T linear in ln P (the adiabat steps that segment with the core
-    gradient); None without such a segment of positive pressure."""
-    if not 0 < n < len(m) or p[n] <= 0 or p[n - 1] <= 0:
+    gradient); None without such a segment of positive, finite pressure. A temperature function
+    with a step at the CMB is mixed across that segment."""
+    if not 0 < n < len(m) or not (p[n] > 0 and p[n - 1] > 0):
         return None
     lp = float(np.interp(cmb_mass, m[n - 1 : n + 1], np.log(p[n - 1 : n + 1])))
     return cmb_mass, math.exp(lp), float(np.interp(lp, np.log(p[[n, n - 1]]), t[[n, n - 1]]))

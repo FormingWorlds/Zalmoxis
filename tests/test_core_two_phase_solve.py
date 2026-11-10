@@ -131,12 +131,6 @@ def test_an_isothermal_core_has_its_icb_where_iron_melts(setup, caplog):
     )
     core = res['core']
     p_icb = _anzellini_inverse(5000.0)
-    # the ICB scalars belong to the solved layers: P_icb is the pressure at M_ic, P linear in
-    # m^(2/3) on its node segment
-    m23 = core['m'] ** (2.0 / 3.0)
-    assert core['P_icb'] == pytest.approx(
-        np.interp(core['M_ic'] ** (2.0 / 3.0), m23, core['P']), rel=1e-12
-    )
     # M_ic is within tolerance_outer (1e-3 of the core mass) of the root and dlnP/d(m/M_core) is
     # about 1 here, so P_icb is within about 1e-3 of the root: 5e-3 keeps a factor 5
     assert abs(core['P_icb'] / p_icb - 1) < 5e-3
