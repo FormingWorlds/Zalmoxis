@@ -31,6 +31,9 @@ from zalmoxis.structure_model import solve_structure
 # Seager et al. (2007): a 1 Earth-mass pure iron planet has R ~ 0.77 R_Earth.
 PURE_IRON_CMF, PURE_IRON_R, PURE_IRON_TOL = 1.0, 0.77, 0.05
 
+# Per-test limit [s] of the full analytic solves; signal fails a slow test by name.
+SOLVE_TIMEOUT = 1200
+
 # ============================================================================
 # Helpers
 # ============================================================================
@@ -683,6 +686,7 @@ class TestGravitationalBindingEnergy:
 
 
 @pytest.mark.smoke
+@pytest.mark.timeout(SOLVE_TIMEOUT, method='signal')
 class TestEarthBenchmark:
     """Verify the full solver against known Earth properties using Analytic EOS."""
 
@@ -806,6 +810,7 @@ class TestEarthBenchmark:
 
 
 @pytest.mark.smoke
+@pytest.mark.timeout(SOLVE_TIMEOUT, method='signal')
 class TestMassRadiusScaling:
     """Verify the mass-radius scaling exponent against Seager+2007."""
 
@@ -853,6 +858,7 @@ class TestMassRadiusScaling:
 
 
 @pytest.mark.smoke
+@pytest.mark.timeout(SOLVE_TIMEOUT, method='signal')
 class TestCMFMonotonicity:
     """Radius must decrease monotonically with increasing core mass fraction."""
 
@@ -887,6 +893,7 @@ class TestCMFMonotonicity:
 
 
 @pytest.mark.smoke
+@pytest.mark.timeout(SOLVE_TIMEOUT, method='signal')
 class TestPureIronPlanet:
     """Verify a pure iron planet (CMF=1.0) against Seager+2007."""
 
@@ -931,6 +938,7 @@ class TestPureIronPlanet:
 
 
 @pytest.mark.smoke
+@pytest.mark.timeout(SOLVE_TIMEOUT, method='signal')
 class TestConservationLaws:
     """Verify mass conservation and surface pressure boundary condition."""
 
