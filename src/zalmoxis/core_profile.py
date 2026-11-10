@@ -99,20 +99,28 @@ def icb_misses(mass, pressure, temperature, cmb_mass, liquidus, icb_mass, icb_ad
 
 
 def icb_superheat(mass, pressure, temperature, cmb_mass, liquidus, icb_mass):
-    """Miss [K] of the zero-superheat condition at the layer ICB: |T - T_liq| at P_icb (T linear
-    in ln P on the node segment); at no inner core the undercooling of the centre, at a full one
-    the superheat of the core mass, each 0 when the side is right."""
+    """Miss [K] of the zero-superheat condition at the layer ICB: |T - T_liq| at P_icb, with T
+    of the liquid side (ln T linear in ln P through the 2 core nodes above the ICB); at no inner
+    core the undercooling of the centre, at a full one the superheat of the core mass, each 0
+    when the side is right."""
     m, p, t = (np.asarray(a, dtype=float) for a in (mass, pressure, temperature))
     core = (m < cmb_mass * (1.0 - _RTOL_LAYER)) & (p > 0)
     m, p, t = m[core], p[core], t[core]
     if icb_mass <= 0.0:
         return max(0.0, float(liquidus(p[0])) - float(t[0]))
+    full = icb_mass >= cmb_mass * (1.0 - _RTOL_LAYER)
     _, p_icb, _ = icb_from_profile(
         mass, pressure, temperature, cmb_mass, liquidus, min(icb_mass, cmb_mass)
     )
-    t_icb = float(np.interp(math.log(p_icb), np.log(p[::-1]), t[::-1]))
+    up = np.flatnonzero(m > icb_mass)[:2]
+    if full or up.size < 2:
+        t_icb = float(np.interp(math.log(p_icb), np.log(p[::-1]), t[::-1]))
+    else:
+        a, b = up
+        w = (math.log(p_icb) - math.log(p[a])) / (math.log(p[b]) - math.log(p[a]))
+        t_icb = math.exp(math.log(t[a]) + w * (math.log(t[b]) - math.log(t[a])))
     s = t_icb - float(liquidus(p_icb))
-    return max(0.0, s) if icb_mass >= cmb_mass * (1.0 - _RTOL_LAYER) else abs(s)
+    return max(0.0, s) if full else abs(s)
 
 
 def _solid_mass(m, f, m_icb):
