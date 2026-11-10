@@ -286,6 +286,7 @@ def test_the_liquidus_rule_is_refused_with_the_cmb_anchored_adiabat():
         ({'core': f'PALEOS:iron:0.5+{LIQ}:0.5'}, "needs an 'inner_core'"),
         ({'core': f'PALEOS:iron:0.5+{LIQ}:0.5', 'inner_core': SOL}, 'base alone'),
         ({'core': f'{LIQ}:0.5+PALEOS:iron:0.5', 'inner_core': SOL}, 'base alone'),
+        ({'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3:0.9+CoreAlloy:S:0.1'}, 'in the core'),
     ],
 )
 def test_each_side_belongs_to_its_core_layer_in_any_order(layers, match):
