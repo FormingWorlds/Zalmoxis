@@ -98,6 +98,29 @@ def test_an_inner_core_takes_light_elements():
     )
 
 
+def test_the_solid_side_refuses_the_luo_carrier_and_warns_once_on_the_other_laws(
+    monkeypatch, caplog
+):
+    """The light-element laws are calibrated on liquid iron: the Luo et al. (2024) carrier, a
+    liquid of iron and water, is refused on the solid side; the others warn once per process."""
+    from zalmoxis.eos import core_alloy as ca
+
+    monkeypatch.setattr(ca, '_SOLID_WARNED', [False], raising=False)
+    wet = {
+        'core': LIQ,
+        'inner_core': f'{SOL}:0.99+CoreAlloy:H-Luo:0.01',
+        'mantle': 'PALEOS:MgSiO3',
+    }
+    with pytest.raises(ValueError, match='H-Luo'):
+        validate_layer_eos(wet)
+    caplog.set_level('WARNING', logger='fwl.zalmoxis.eos.core_alloy')
+    for _ in range(2):
+        ca.split_alloy(LayerMixture([SOL, 'CoreAlloy:S'], [0.95, 0.05]))
+    warned = [r for r in caplog.records if 'calibrated on liquid iron' in r.getMessage()]
+    assert len(warned) == 1
+    assert ca.split_alloy(LayerMixture([LIQ, 'CoreAlloy:H-Luo'], [0.99, 0.01]))[0] == LIQ
+
+
 def test_the_icb_rule_is_the_liquidus_or_the_mass_never_both_nor_none():
     validate_config(_params())
     validate_config(_params(core_liquidus='', inner_core_mass_fraction=0.04))
