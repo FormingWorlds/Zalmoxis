@@ -111,8 +111,14 @@ def test_the_solid_side_refuses_the_luo_carrier_and_warns_once_on_the_other_laws
         'inner_core': f'{SOL}:0.99+CoreAlloy:H-Luo:0.01',
         'mantle': 'PALEOS:MgSiO3',
     }
-    with pytest.raises(ValueError, match='H-Luo'):
-        validate_layer_eos(wet)
+    from zalmoxis.solver import main
+
+    params = _params(layer_eos_config=wet, core_liquidus='', inner_core_mass_fraction=0.05)
+    for check in (lambda: validate_layer_eos(wet), lambda: validate_config(params)):
+        with pytest.raises(ValueError, match='H-Luo'):
+            check()
+    with pytest.raises(ValueError, match='H-Luo'):  # before the first solve, with no tables
+        main(params, None, None, '')
     caplog.set_level('WARNING', logger='fwl.zalmoxis.eos.core_alloy')
     for _ in range(2):
         ca.split_alloy(LayerMixture([SOL, 'CoreAlloy:S'], [0.95, 0.05]))
@@ -367,6 +373,14 @@ def test_the_icb_can_lie_between_the_last_core_node_and_the_cmb():
     assert m_icb == pytest.approx(1e24 * math.log(360 / 139) / math.log(360 / 136), rel=1e-12)
 
 
+def test_a_failed_node_past_the_core_mass_adds_no_cmb_point():
+    """Nodes past the core mass filled with NaN by a failed stop give no CMB point: the rule
+    reads the core nodes alone, as for a profile that ends at the last core node."""
+    m, p, t = _past_cmb(lambda p: 0 * p + 3000.0)
+    m[39:], p[39:] = np.nan, np.nan
+    assert icb_from_profile(m, p, t, 1e24, _liq) == (1e24, p[38], 0.0)
+
+
 def test_a_cold_top_counts_its_segment_to_the_cmb():
     """A core below the liquidus to the CMB is the inner core at the CMB pressure; with a hot
     centre, the cold mass above the ICB reaches the core mass."""
@@ -480,6 +494,18 @@ def test_r_icb_and_p_icb_of_a_small_inner_core_meet_the_uniform_sphere(frac):
     assert core['P_icb'] == pytest.approx(
         2 / 3 * np.pi * G * rho**2 * (big_r**2 - r**2), rel=1e-9
     )
+
+
+def test_a_given_icb_mass_in_the_first_segment_has_the_pressure_of_the_uniform_sphere():
+    """With a given ICB mass the rule takes P linear in m^(2/3), as core_arrays does: exact on
+    the uniform sphere, also inside the first node segment."""
+    res, _ = _sphere_result(41, 1.0)
+    m, p = res['mass_enclosed'], res['pressure']
+    m_ic = 0.01 * m[1]
+    r = (3 * m_ic / (4 * np.pi * 1.0e4)) ** (1 / 3)
+    want = 2 / 3 * np.pi * G * 1.0e8 * (4.0e6**2 - r**2)
+    got = icb_from_profile(m, p, res['temperature'], res['cmb_mass'], _liq, m_ic)[1]
+    assert got == pytest.approx(want, rel=1e-9)
 
 
 def test_a_given_icb_mass_reports_its_pressure_and_the_solid_above_it():
