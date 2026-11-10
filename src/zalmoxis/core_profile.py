@@ -182,8 +182,7 @@ def core_arrays(result, layer_mixtures, rhs, temperature_at, icb_mass, solid_abo
     out['w_layers'] = comps
     for el in sorted(set().union(*comps.values())):
         w = [comps.get(layer, {}).get(el, 0.0) for layer in ('core', 'inner_core')]
-        in_core = side_m < cmb_mass * (1.0 - _RTOL_LAYER)
-        out[f'w_{el}'] = np.where(out['phase'] == 1, w[1], np.where(in_core, w[0], 0.0))
+        out[f'w_{el}'] = np.where(out['phase'] == 1, w[1], w[0])
     out['M_ic'] = float(icb_mass)
     out['R_icb'] = float(np.interp(icb_mass, out['m'], out['r'] ** 3)) ** (1.0 / 3.0)
     out['P_icb'] = float(np.interp(icb_mass ** (2.0 / 3.0), out['m'] ** (2.0 / 3.0), out['P']))
