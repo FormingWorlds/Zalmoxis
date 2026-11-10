@@ -15,6 +15,8 @@ from unittest.mock import patch
 
 import numpy as np
 import pytest
+from hypothesis import example, given, settings
+from hypothesis import strategies as st
 
 import zalmoxis.solver as zs
 from tests.test_failed_structure_solve import ROOT, _cfg, _count_outer_iterations, _run
@@ -1796,3 +1798,51 @@ def test_newton_gives_the_mantle_adiabat_of_picard_on_the_proteus_initial_struct
     assert np.max(np.abs(T['newton'] - T['picard'])) < 5.0
     assert abs(P_cmb['newton'] - P_cmb['picard']) < 0.1e9
     assert all(r['adiabat_computed'] and r['adiabat_blend'] == 1.0 for r in runs.values())
+
+
+_TOLERANCES = st.one_of(
+    st.floats(1e-12, 0.1),
+    st.sampled_from([float('nan'), float('inf'), 0.0, -1e-3, True, False]),
+)
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves_long
+@pytest.mark.timeout(4800)
+@settings(max_examples=6, deadline=None, derandomize=True)
+@given(tol=_TOLERANCES, n=st.integers(1, 200), factor=st.sampled_from([None, 1.02, 1.05, 1.1]))
+@example(tol=1e-3, n=3, factor=None)  # the cap stops the ramp at blend 0.5
+@example(tol=1e-7, n=200, factor=1.02)  # the clock stops the ramp, 2 % under the 3 % ceiling
+@example(tol=float('nan'), n=200, factor=None)
+def test_no_tolerance_or_pass_cap_accepts_a_profile_short_of_the_adiabat(tol, n, factor):
+    """Analytic densities on the adiabatic path (the EOS counts as T-dependent and the adiabat
+    is a fixed profile), passes after the ramp starts scaled to ``factor`` times the mass,
+    and a 20 s wall clock: for any tolerance_outer, including NaN, inf, 0, a negative value and
+    a bool, and any max_iterations_outer from 1 to 200, an accepted result is the full
+    adiabat."""
+    adiabat, real = [], zs.solve_structure
+
+    def adi(radii, pressure, mass, t_surf, *args, **kwargs):
+        adiabat.append(1)
+        return np.linspace(t_surf + 2000.0, t_surf, len(radii))
+
+    def solve(*args, **kwargs):
+        m, g, P = real(*args, **kwargs)
+        f = factor * earth_mass / m[-1] if factor and adiabat else 1.0
+        return m * f, g * f, P
+
+    cfg = _cfg(
+        temperature_mode='adiabatic',
+        tolerance_outer=tol,
+        max_iterations_outer=n,
+        wall_timeout=20.0,
+        relative_tolerance=1e-5,
+        absolute_tolerance=1e-6,
+        num_layers=30,
+    )
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(zs, 'any_component_is_tdep', lambda mixes: True)
+        mp.setattr(zs, 'compute_adiabatic_temperature', adi)
+        mp.setattr(zs, 'solve_structure', solve)
+        r = zs._solve(cfg, load_material_dictionaries(), None, '/tmp')
+    assert not r['converged'] or (r['adiabat_computed'] and r['adiabat_blend'] == 1.0)
