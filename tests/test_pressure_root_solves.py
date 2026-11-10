@@ -66,8 +66,9 @@ PALEOS = {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'}
 @pytest.mark.physics_invariant
 def test_the_paleos_newton_planet_reaches_its_surface_within_the_cap(monkeypatch):
     """PALEOS adiabatic 1 M_earth with the Newton outer solver at rtol 1e-9, whose root
-    seeds the Picard blend ramp: the accepted profile is the full adiabat, is not padded and misses P_t by at most 1 P_t, the cap of a padded root replaced
-    by its reached end. Refinements (second solves and replacements) move more than half the
+    seeds the Picard blend ramp: the accepted profile is the full adiabat, is not padded and
+    misses P_t by at most 1 P_t, the cap of a padded root replaced by its reached end.
+    Refinements (second solves and replacements) move more than half the
     roots closer to P_t, and none further from it."""
     if not _has_paleos_data():
         pytest.skip('PALEOS tables not on disk')

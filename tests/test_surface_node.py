@@ -191,8 +191,8 @@ def test_a_padded_node_of_a_cmb_run_returned_mid_ramp_keeps_the_linear_profile_a
     monkeypatch, outer, blend
 ):
     """A pass returned before the adiabat blend reaches 1 is not a CMB-anchored adiabat: the
-    padded node keeps the linear profile at R (the configured surface_temperature), not a continuation
-    of the blended temperature below it."""
+    padded node keeps the linear profile at R (the configured surface_temperature), not a
+    continuation of the blended temperature below it."""
     import os
 
     from tests.test_spider_coupling_convergence import _has_paleos_data

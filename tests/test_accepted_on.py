@@ -1309,6 +1309,43 @@ def test_newton_continues_with_the_blend_ramp_from_its_profile(
     assert cfg['tolerance_outer'] == 3e-3 and '_initial_radius_guess' not in cfg
 
 
+@pytest.mark.unit
+@pytest.mark.usefixtures('no_check')
+@pytest.mark.parametrize(
+    'tols, expected',
+    [
+        ({'tolerance_outer': 3e-3, 'newton_tol': 2e-4}, 2e-4),
+        ({'tolerance_outer': 1e-5, 'newton_tol': 1e-4}, 1e-5),
+        ({}, 1e-4),  # the defaults: tolerance_outer 1e-3, newton_tol 1e-4
+    ],
+)
+def test_the_newton_hand_off_and_its_retry_run_at_the_newton_mass_tolerance(
+    monkeypatch, tols, expected
+):
+    """The Picard continuation after a Newton root and its retry both run at the mass
+    tolerance min(tolerance_outer, newton_tol): the retry does not tighten it again. The
+    result's total_time adds the Newton time to the time of the solve that returns."""
+    newton = {**_inner(7.0e6, accepted_on='newton_tol'), 'total_time': 200.0}
+    newton.update(pressure=np.array([3.6e11, 0.0]), density=np.array([1.2e4, 3.0e3]))
+    newton.update(newton_n_iter=4, newton_history=[], newton_used_brentq=False)
+    failed = {**_inner(7.1e6), 'converged': False, 'accepted_on': None, 'total_time': 50.0}
+    failed.update(converged_density=False, adiabat_computed=True, adiabat_blend=0.5)
+    picard = {**_inner(7.0e6, accepted_on='strict'), 'total_time': 30.0}
+    picard.update(adiabat_computed=True, adiabat_blend=1.0)
+    results, configs = [failed, picard], []
+
+    def solve(cp, *args, **kwargs):
+        configs.append(cp)
+        return dict(results.pop(0))
+
+    monkeypatch.setattr(zs, '_solve_newton_outer', lambda *a, **k: newton)
+    monkeypatch.setattr(zs, '_solve', solve)
+    monkeypatch.setattr(zs, '_report_table_bands', lambda r, *a: r)
+    r = zs.main(_adiabatic_cfg(outer_solver='newton', **tols), {}, None, '/tmp')
+    assert [cp['tolerance_outer'] for cp in configs] == [expected, expected]
+    assert r['accepted_on'] == 'strict' and r['total_time'] == 230.0
+
+
 @pytest.mark.smoke
 @pytest.mark.accept_solves
 @pytest.mark.timeout(2400)
@@ -1872,7 +1909,8 @@ def test_a_linear_floor_above_a_tight_tolerance_starts_the_ramp_unaccepted_on_a_
 @pytest.mark.smoke
 def test_a_newton_probe_in_an_adiabatic_mode_refuses_its_linear_pass_at_debug(caplog):
     """A Newton probe (one linear pass, near the root) is not accepted in an adiabatic mode;
-    the refusal is logged at DEBUG, as the other progress lines of a probe."""
+    the refusal is logged at DEBUG, as the other progress lines of a probe, and no accept of
+    that pass is logged as a warning."""
     with caplog.at_level(logging.DEBUG, logger='fwl.zalmoxis.solver'):
         r, n_adiabat = _analytic_ramp(
             max_iterations_outer=1,
@@ -1883,6 +1921,10 @@ def test_a_newton_probe_in_an_adiabatic_mode_refuses_its_linear_pass_at_debug(ca
     assert r['converged'] is False and n_adiabat == 0
     refusals = [x for x in caplog.records if 'No accept of a pass' in x.getMessage()]
     assert refusals and all(x.levelno == logging.DEBUG for x in refusals)
+    accepts = [x for x in caplog.records if x.getMessage().startswith('Accepting')]
+    assert all(
+        x.levelno < logging.WARNING for x in accepts
+    )  # no accept warning for a refused pass
 
 
 _TOLERANCES = st.one_of(
@@ -1899,16 +1941,24 @@ _TOLERANCES = st.one_of(
 @example(tol=1e-3, n=3, factor=None)  # the cap stops the ramp at blend 0.5
 @example(tol=1e-7, n=200, factor=1.02)  # the clock stops the ramp, 2 % under the 3 % ceiling
 @example(tol=float('nan'), n=200, factor=None)
-@example(tol=1e-2, n=50, factor=None)  # a loose tolerance must accept the full adiabat
 def test_no_tolerance_or_pass_cap_accepts_a_profile_short_of_the_adiabat(tol, n, factor):
     """Analytic densities on the adiabatic path (the EOS counts as T-dependent and the adiabat
     is a fixed profile), passes after the ramp starts scaled to ``factor`` times the mass,
     and a 20 s wall clock: for any tolerance_outer, including NaN, inf, 0, a negative value and
     a bool, and any max_iterations_outer from 1 to 200, an accepted result is the full
-    adiabat, and the loose example accepts."""
+    adiabat."""
     r, _ = _analytic_ramp(
         factor=factor, tolerance_outer=tol, max_iterations_outer=n, wall_timeout=20.0
     )
     assert not r['converged'] or (r['adiabat_computed'] and r['adiabat_blend'] == 1.0)
-    if (tol, n, factor) == (1e-2, 50, None):
-        assert r['converged'] is True
+
+
+@pytest.mark.smoke
+def test_a_loose_tolerance_without_a_clock_limit_accepts_the_full_adiabat():
+    """tolerance_outer 1e-2, 50 passes and no reachable wall clock on analytic densities
+    through the adiabatic path: the solve ramps to the adiabat and accepts it."""
+    r, n_adiabat = _analytic_ramp(
+        tolerance_outer=1e-2, max_iterations_outer=50, wall_timeout=WALL
+    )
+    assert r['converged'] is True and r['accepted_on'] == 'strict'
+    assert r['adiabat_computed'] is True and r['adiabat_blend'] == 1.0 and n_adiabat >= 4
