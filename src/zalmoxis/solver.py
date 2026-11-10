@@ -2759,6 +2759,19 @@ def _solve(
                 (outer_iter, icb_mass / cmb_mass, _sk, _adiabat_blend, relative_diff_outer_mass)
             )
         else:
+            if core_liq is not None:
+                _sk = icb_superheat(
+                    mass_enclosed, pressure, temperatures, cmb_mass, core_liq, icb_mass
+                )
+                _PROTO_TRACE.append(
+                    (
+                        outer_iter,
+                        icb_mass / cmb_mass,
+                        _sk,
+                        _adiabat_blend,
+                        relative_diff_outer_mass,
+                    )
+                )
             icb_moving = core_liq is not None and any(
                 d > tolerance_outer * cmb_mass
                 for d in icb_misses(
