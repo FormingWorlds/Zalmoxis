@@ -98,6 +98,23 @@ def icb_misses(mass, pressure, temperature, cmb_mass, liquidus, icb_mass, icb_ad
     return abs(root - icb_mass), 0.0 if icb_adiabat is None else abs(icb_adiabat - icb_mass)
 
 
+def icb_superheat(mass, pressure, temperature, cmb_mass, liquidus, icb_mass):
+    """Miss [K] of the zero-superheat condition at the layer ICB: |T - T_liq| at P_icb (T linear
+    in ln P on the node segment); at no inner core the undercooling of the centre, at a full one
+    the superheat of the core mass, each 0 when the side is right."""
+    m, p, t = (np.asarray(a, dtype=float) for a in (mass, pressure, temperature))
+    core = (m < cmb_mass * (1.0 - _RTOL_LAYER)) & (p > 0)
+    m, p, t = m[core], p[core], t[core]
+    if icb_mass <= 0.0:
+        return max(0.0, float(liquidus(p[0])) - float(t[0]))
+    _, p_icb, _ = icb_from_profile(
+        mass, pressure, temperature, cmb_mass, liquidus, min(icb_mass, cmb_mass)
+    )
+    t_icb = float(np.interp(math.log(p_icb), np.log(p[::-1]), t[::-1]))
+    s = t_icb - float(liquidus(p_icb))
+    return max(0.0, s) if icb_mass >= cmb_mass * (1.0 - _RTOL_LAYER) else abs(s)
+
+
 def _solid_mass(m, f, m_icb):
     """Core mass above ``m_icb`` in node segments whose ends both lie below the liquidus."""
     seg = (m[:-1] >= m_icb) & (f[:-1] < 0.0) & (f[1:] < 0.0)

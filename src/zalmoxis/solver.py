@@ -39,7 +39,19 @@ from .constants import (
     earth_mass,
     earth_radius,
 )
-from .core_profile import core_arrays, icb_from_profile, icb_misses, outside_side_tables
+from .core_profile import (
+    core_arrays,
+    icb_from_profile,
+    icb_misses,
+    icb_superheat,
+    outside_side_tables,
+)
+
+_ICB_RULE_B = (
+    os.environ.get('ZALMOXIS_ICB_RULE') == 'B'
+)  # prototype: liquid-branch root, test in K
+_ICB_S_TOL = float(os.environ.get('ZALMOXIS_ICB_S_TOL', '0.5'))
+_PROTO_TRACE = []
 from .eos import (
     calculate_temperature_profile,
     compute_adiabatic_temperature,
@@ -1990,7 +2002,7 @@ def _solve(
                 _anchor = 'cmb' if temperature_mode == 'adiabatic_from_cmb' else 'surface'
                 _adiabat_computed = True
                 icb_adiabat = icb_mass
-                adiabat_T = compute_adiabatic_temperature(
+                _adi_call = lambda icb_m: compute_adiabatic_temperature(  # noqa: E731
                     prev_radii,
                     prev_pressure,
                     prev_mass_enclosed,
@@ -2008,8 +2020,9 @@ def _solve(
                     binodal_T_scale,
                     anchor=_anchor,
                     cmb_temperature=cmb_temperature,
-                    icb_mass=icb_mass,
+                    icb_mass=icb_m,
                 )
+                adiabat_T = _adi_call(icb_mass)
 
                 # Build T(P) interpolator from the previous iteration's
                 # pressure profile.  This ensures that during the Brent
@@ -2090,6 +2103,8 @@ def _solve(
 
         if core_liq is not None and prev_pressure is not None:
             t_prev = [_temperature_func(r_, p_) for r_, p_ in zip(prev_radii, prev_pressure)]
+            if _ICB_RULE_B and icb_adiabat is not None and icb_mass > 0.0:
+                t_prev = np.asarray(t_prev) + _adiabat_blend * (_adi_call(0.0) - adiabat_T)
             icb_mass = icb_from_profile(
                 prev_mass_enclosed, prev_pressure, t_prev, cmb_mass, core_liq
             )[0]
@@ -2732,12 +2747,30 @@ def _solve(
         # convergence; the T output for T-independent EOS in adiabatic mode
         # falls back to the linear profile (see the T-independent branch
         # around the _temperature_func construction).
-        icb_moving = core_liq is not None and any(
-            d > tolerance_outer * cmb_mass
-            for d in icb_misses(
-                mass_enclosed, pressure, temperatures, cmb_mass, core_liq, icb_mass, icb_adiabat
+        if core_liq is not None and _ICB_RULE_B:
+            _sk = icb_superheat(
+                mass_enclosed, pressure, temperatures, cmb_mass, core_liq, icb_mass
             )
-        )
+            _lag = icb_misses(
+                mass_enclosed, pressure, temperatures, cmb_mass, core_liq, icb_mass, icb_adiabat
+            )[1]
+            icb_moving = _sk > _ICB_S_TOL or _lag > tolerance_outer * cmb_mass
+            _PROTO_TRACE.append(
+                (outer_iter, icb_mass / cmb_mass, _sk, _adiabat_blend, relative_diff_outer_mass)
+            )
+        else:
+            icb_moving = core_liq is not None and any(
+                d > tolerance_outer * cmb_mass
+                for d in icb_misses(
+                    mass_enclosed,
+                    pressure,
+                    temperatures,
+                    cmb_mass,
+                    core_liq,
+                    icb_mass,
+                    icb_adiabat,
+                )
+            )
         if relative_diff_outer_mass < tolerance_outer and not icb_moving:
             if ramp_incomplete:
                 if not _using_adiabat:
@@ -2876,6 +2909,12 @@ def _solve(
             mass_enclosed, pressure, temperatures, cmb_mass, core_liq, icb_mass, icb_adiabat
         )
         icb_converged = all(d <= tolerance_outer * cmb_mass for d in (miss, lag))
+        if _ICB_RULE_B:
+            miss = icb_superheat(
+                mass_enclosed, pressure, temperatures, cmb_mass, core_liq, icb_mass
+            )
+            icb_converged = miss <= _ICB_S_TOL and lag <= tolerance_outer * cmb_mass
+            miss *= cmb_mass  # the warning below prints miss / cmb_mass: here S in K
         if converged and not icb_converged:  # an accept path that skipped the ICB test
             logger.warning(
                 'Not converged: the inner-core boundary lies %.3g of the core mass off the '
