@@ -187,11 +187,11 @@ def test_a_padded_node_of_a_cmb_anchored_adiabat_takes_the_top_of_the_adiabat(mo
 @pytest.mark.timeout(2400)
 # blend 0.75 (max_iterations_outer 4) returns a best pass that is not padded
 @pytest.mark.parametrize('outer, blend', [(2, 0.25), (3, 0.5)])
-def test_a_padded_node_of_a_cmb_run_accepted_mid_ramp_keeps_the_linear_profile_at_r(
+def test_a_padded_node_of_a_cmb_run_returned_mid_ramp_keeps_the_linear_profile_at_r(
     monkeypatch, outer, blend
 ):
-    """An accept before the adiabat blend reaches 1 is not a CMB-anchored adiabat: the padded
-    node keeps the linear profile at R (the configured surface_temperature), not a continuation
+    """A pass returned before the adiabat blend reaches 1 is not a CMB-anchored adiabat: the
+    padded node keeps the linear profile at R (the configured surface_temperature), not a continuation
     of the blended temperature below it."""
     import os
 
@@ -218,9 +218,9 @@ def test_a_padded_node_of_a_cmb_run_accepted_mid_ramp_keeps_the_linear_profile_a
         cfg['mushy_zone_factor'],
     )
     misses = _stop_below_r(monkeypatch)
-    r = zs.main(cfg, load_material_dictionaries(), melt, os.path.join(root, 'input'))
+    r = zs._solve(cfg, load_material_dictionaries(), melt, os.path.join(root, 'input'))
     P, T = (np.asarray(r[k], float) for k in ('pressure', 'temperature'))
-    assert r['converged'] and r['adiabat_blend'] == blend and r['adiabat_computed']
+    assert not r['converged'] and r['adiabat_blend'] == blend and r['adiabat_computed']
     _assert_padded(P, misses)
     assert T[-1] == cfg['surface_temperature'] != T[-2]
 

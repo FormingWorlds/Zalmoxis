@@ -21,6 +21,7 @@ from tests.test_failed_structure_solve import ROOT, _cfg, _count_outer_iteration
 from tests.test_table_band_report import _need_wb_tables
 from zalmoxis.config import load_material_dictionaries
 from zalmoxis.constants import G, earth_mass, earth_radius
+from zalmoxis.invariants import StructureInvariantError
 from zalmoxis.mixing import calculate_mixed_density, parse_all_layer_mixtures
 
 INPUT = os.path.join(ROOT, 'input')
@@ -879,12 +880,14 @@ def _wb_blended(
 @pytest.mark.smoke
 @pytest.mark.wolfbower
 @pytest.mark.usefixtures('no_check')
-def test_a_clock_stop_keeps_a_blended_pass_that_its_mass_test_accepts(monkeypatch, caplog):
-    """tolerance_outer 0.05 and blended passes 4 % off: the mass test of the clock stop accepts
-    the newest pass above the 3 % ceiling, so it is returned, not the linear one."""
+def test_a_clock_stop_returns_the_blended_pass_its_mass_test_takes(monkeypatch, caplog):
+    """tolerance_outer 0.05 and blended passes 4 % off: the mass test of the clock stop takes
+    the newest pass above the 3 % ceiling, so it is returned, not the linear one; at blend 0.25
+    it is not accepted."""
     with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.solver'):
         r = _wb_blended(monkeypatch, 1.04, 0.05)
-    assert r['stopped_on_wall_clock'] is True and r['accepted_on'] == 'timeout'
+    assert r['stopped_on_wall_clock'] is True and r['accepted_on'] is None
+    assert r['converged'] is False
     assert r['adiabat_blend'] == 0.25
     assert r['mass_error_at_accept'] == pytest.approx(0.04, rel=1e-9)
     assert 'No pass of adiabat blend' not in caplog.text
@@ -895,12 +898,10 @@ def test_a_clock_stop_keeps_a_blended_pass_that_its_mass_test_accepts(monkeypatc
 @pytest.mark.usefixtures('no_check')
 def test_a_clock_stop_beyond_its_limit_returns_the_linear_pass_under_that_limit(monkeypatch):
     """The blended passes end 10 % off, beyond the 6 % limit of a clock stop: the linear pass
-    that started the ramp is returned, and its mass verdict is taken again, so the mass test of
-    tolerance_outer accepts it (its inner flags are not both converged), not the 3 % ceiling."""
+    that started the ramp is returned, not accepted, as its temperature is not the adiabat."""
     r = _wb_blended(monkeypatch, 1.10, 0.02)
-    assert r['stopped_on_wall_clock'] is True and r['accepted_on'] == 'timeout'
-    assert r['adiabat_blend'] == 0.0
-    assert r['accept_mass_limit'] == pytest.approx(0.02)
+    assert r['stopped_on_wall_clock'] is True and r['accepted_on'] is None
+    assert r['adiabat_blend'] == 0.0 and r['converged'] is False
     assert r['mass_error_at_accept'] < 0.02
 
 
@@ -910,9 +911,10 @@ def test_a_clock_stop_beyond_its_limit_returns_the_linear_pass_under_that_limit(
 def test_a_clock_stop_keeps_a_blended_pass_whose_inner_solves_converged(monkeypatch):
     """Blended passes 5 % off, inside the 6 % limit of a clock stop but above tolerance_outer
     0.02 and the 3 % ceiling: the first blended pass ran its inner solves to convergence, so
-    the strict test of the stop accepts it and no earlier pass replaces it."""
+    the strict test of the stop takes it and no earlier pass replaces it; at blend 0.25 it is
+    not accepted."""
     r = _wb_blended(monkeypatch, 1.05, 0.02, inner=100, clock_after=2)
-    assert r['accepted_on'] == 'timeout' and r['accept_mass_limit'] == pytest.approx(0.06)
+    assert r['accepted_on'] is None and r['converged'] is False
     assert r['converged_density'] and r['converged_pressure']
     assert r['adiabat_blend'] == 0.25
     assert r['mass_error_at_accept'] == pytest.approx(0.05, rel=1e-9)
@@ -929,7 +931,7 @@ def test_a_clock_stop_inside_its_limit_without_converged_inner_solves_falls_back
     names both blends and best_mass_error describes the returned pass."""
     with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.solver'):
         r = _wb_blended(monkeypatch, 1.05, 0.02)
-    assert r['stopped_on_wall_clock'] is True and r['accepted_on'] == 'timeout'
+    assert r['stopped_on_wall_clock'] is True and r['accepted_on'] is None
     assert r['adiabat_blend'] == 0.0
     assert r['mass_error_at_accept'] < 0.02
     assert r['best_mass_error'] == pytest.approx(r['mass_error_at_accept'], rel=1e-9)
@@ -967,10 +969,10 @@ def test_a_stop_that_cannot_return_a_better_earlier_pass_keeps_its_own(
 @pytest.mark.usefixtures('no_check')
 def test_an_inner_clock_stop_on_the_last_pass_returns_a_better_earlier_pass(monkeypatch):
     """tolerance_outer 0.05: the clock runs out in the inner loop of the last outer pass, the
-    blended pass is 4.5 % off and the linear pass 4 %: the linear pass is returned and the mass
-    test of the stop accepts it, although it is above the 3 % ceiling."""
+    blended pass is 4.5 % off and the linear pass 4 %: the linear pass is returned, not
+    accepted."""
     r = _wb_blended(monkeypatch, 1.045, 0.05, outer=3, clock_after=2, linear=1.04)
-    assert r['accepted_on'] == 'timeout' and r['adiabat_blend'] == 0.0
+    assert r['accepted_on'] is None and r['adiabat_blend'] == 0.0
     assert r['mass_error_at_accept'] == pytest.approx(0.04, rel=1e-9)
 
 
@@ -979,10 +981,10 @@ def test_an_inner_clock_stop_on_the_last_pass_returns_a_better_earlier_pass(monk
 @pytest.mark.usefixtures('no_check')
 def test_a_clock_stop_swap_returns_the_pass_its_mass_test_read(monkeypatch):
     """tolerance_outer 0.05, the clock runs out in the first blended pass, 6 % off, and the
-    linear pass is 4.5 % off: the swap returns the linear pass, and the accepted mass error is
-    the one of the returned pass, not of the blended pass."""
+    linear pass is 4.5 % off: the swap returns the linear pass, and the mass error of the
+    result is the one of the returned pass, not of the blended pass."""
     r = _wb_blended(monkeypatch, 1.06, 0.05, inner=5, outer=2, linear=1.045)
-    assert r['accepted_on'] == 'timeout' and r['adiabat_blend'] == 0.0
+    assert r['accepted_on'] is None and r['adiabat_blend'] == 0.0
     assert r['mass_error_at_accept'] == pytest.approx(r['best_mass_error'], rel=1e-9)
     assert r['mass_error_at_accept'] == pytest.approx(0.045, rel=1e-9)
 
@@ -1008,7 +1010,7 @@ def test_a_clock_stop_with_converged_density_but_not_pressure_falls_back(monkeyp
     monkeypatch.setattr(zs, 'compute_adiabatic_temperature', adi)
     monkeypatch.setattr(zs, 'brentq', brent)
     r = _wb_blended(monkeypatch, 1.05, 0.02, inner=100, clock_after=2)
-    assert r['accepted_on'] == 'timeout' and r['adiabat_blend'] == 0.0
+    assert r['accepted_on'] is None and r['adiabat_blend'] == 0.0
     assert r['mass_error_at_accept'] < 0.02
 
 
@@ -1032,8 +1034,8 @@ def test_an_accepted_mass_break_returns_its_own_pass_without_a_fallback(monkeypa
 def test_a_max_iter_stop_in_the_blend_ramp_returns_a_pass_on_the_adiabat(caplog, tmp_path):
     """PALEOS, adiabatic, 4 outer passes: the mass converges on the linear temperature, and
     the cap stops the solve in the blend ramp. The returned pass is on the newest blend the
-    solver logged, not the linear pass with the smallest mass error, and main warns about the
-    blend. Measured newest blend: 0.25 without the root refinement on macOS and Linux; with
+    solver logged, not the linear pass with the smallest mass error, and it is not accepted.
+    Measured newest blend: 0.25 without the root refinement on macOS and Linux; with
     it 0.5 on macOS and 0.25 on Linux."""
     from tests.test_spider_coupling_convergence import _has_paleos_data
 
@@ -1052,16 +1054,16 @@ def test_a_max_iter_stop_in_the_blend_ramp_returns_a_pass_on_the_adiabat(caplog,
         debug_profile_dir=str(tmp_path),
     )
     with patch.object(zs, 'create_pressure_density_files') as dump:
-        r = zs.main(cfg, load_material_dictionaries(), None, INPUT)
+        r = zs._solve(cfg, load_material_dictionaries(), None, INPUT)
     assert dump.called  # the DEBUG profile dump of the solve ran into the stub
     T = np.asarray(r['temperature'])
     off_linear = np.max(np.abs(T - np.linspace(6000.0, 3000.0, len(T))))
-    assert r['converged'] is True and r['accepted_on'] == 'max_iter'
+    assert r['converged'] is False and r['accepted_on'] is None
     assert r['adiabat_computed'] is True and off_linear > 100.0
     steps = [float(m.rsplit('= ', 1)[1]) for m in caplog.messages if 'adiabat blend = ' in m]
     assert steps and 0.0 < steps[-1] < 1.0, steps
     assert round(r['adiabat_blend'], 2) == steps[-1]  # the log prints %.2f
-    assert f'accepted a temperature profile at adiabat blend {steps[-1]:.2f}' in caplog.text
+    assert f'No accept of a pass at adiabat blend {steps[-1]:.2f}' in caplog.text
 
 
 @pytest.mark.smoke
@@ -1128,8 +1130,8 @@ def test_a_clock_stop_before_the_first_blended_pressure_solve_keeps_the_linear_p
     monkeypatch,
 ):
     """PALEOS, adiabatic: the clock runs out when the first blended pass computes the adiabat,
-    before its first pressure solve. The linear pass that met the mass test comes back, with
-    its EOS density and adiabat_blend 0, not an empty profile."""
+    before its first pressure solve. The linear pass that met the mass test comes back, not
+    accepted, with its EOS density and adiabat_blend 0, not an empty profile."""
     from tests.test_spider_coupling_convergence import _has_paleos_data
 
     if not _has_paleos_data():
@@ -1152,62 +1154,153 @@ def test_a_clock_stop_before_the_first_blended_pressure_solve_keeps_the_linear_p
     )
     r = zs._solve(cfg, load_material_dictionaries(), None, INPUT)
     assert adiabat and r['stopped_on_wall_clock'] is True
-    assert r['converged'] is True and r['density_from_eos'] is True
+    assert r['converged'] is False and r['density_from_eos'] is True
     assert r['adiabat_blend'] == 0.0 and r['mass_error_at_accept'] < 1e-3
+
+
+LABELS = (
+    'strict', 'mass_only', 'oscillation', 'max_iter', 'timeout', 'retry_skip', 'newton_tol',
+    'brentq_best',
+)  # fmt: skip
+
+
+def _adiabatic_cfg(eos='PALEOS', mode='adiabatic', **kwargs):
+    return {
+        'planet_mass': M_T,
+        'temperature_mode': mode,
+        'layer_eos_config': {'core': f'{eos}:iron', 'mantle': f'{eos}:MgSiO3'},
+        **kwargs,
+    }
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures('no_check')
+@pytest.mark.parametrize('label', LABELS)
+@pytest.mark.parametrize(
+    'eos, mode, computed, blend, raises',
+    [
+        ('PALEOS', 'adiabatic', False, 0.0, True),
+        ('PALEOS', 'adiabatic_from_cmb', True, 0.5, True),
+        ('PALEOS', 'adiabatic', True, 0.75, True),
+        ('PALEOS', 'adiabatic', True, float('nan'), True),
+        ('PALEOS', 'adiabatic', False, 1.0, True),  # a blend without a computed adiabat is 0
+        ('PALEOS', 'adiabatic', True, 1.0, False),
+        ('PALEOS', 'adiabatic_from_cmb', True, 1.0, False),
+        ('PALEOS', 'linear', False, 0.0, False),
+        ('Analytic', 'adiabatic', False, 0.0, False),  # no T-dependent component: no ramp
+    ],
+)
+def test_main_refuses_an_accepted_profile_short_of_the_adiabat(
+    monkeypatch, label, eos, mode, computed, blend, raises
+):
+    """Every accept label of a result whose profile is not the full adiabat raises, when the
+    solve computes the adiabat of the temperature mode itself."""
+    first = {**_inner(7.0e6, accepted_on=label), 'adiabat_computed': computed}
+    first['adiabat_blend'] = blend
+    monkeypatch.setattr(zs, '_solve', lambda *a, **k: dict(first))
+    monkeypatch.setattr(zs, '_report_table_bands', lambda r, *a: r)
+    cfg = _adiabatic_cfg(eos, mode)
+    if not raises:
+        assert zs.main(cfg, {}, None, '/tmp')['accepted_on'] == label
+        return
+    with pytest.raises(
+        StructureInvariantError, match=f"accepted_on='{label}' at adiabat blend"
+    ):
+        zs.main(cfg, {}, None, '/tmp')
 
 
 @pytest.mark.unit
 @pytest.mark.usefixtures('no_check')
 @pytest.mark.parametrize(
-    'eos, computed, blend, warned',
+    'kwargs',
     [
-        ('PALEOS', False, 0.0, True),
-        ('PALEOS', True, 0.5, True),
-        ('PALEOS', True, 1.0, False),
-        ('PALEOS', False, 1.0, True),  # a blend without a computed adiabat counts as 0
-        ('Analytic', False, 0.0, False),  # no T-dependent component: no ramp by design
+        {'temperature_function': lambda r, P: 3000.0},
+        {'temperature_arrays': (np.array([0.0, 7.0e6]), np.full(2, 3000.0)), 'use_jax': True},
     ],
+    ids=['temperature_function', 'temperature_arrays'],
 )
-def test_main_warns_on_an_accepted_profile_short_of_the_adiabat(
-    monkeypatch, caplog, eos, computed, blend, warned
-):
-    first = {**_inner(7.0e6, accepted_on='strict'), 'adiabat_computed': computed}
-    first['adiabat_blend'] = blend
+def test_an_external_temperature_profile_is_accepted_at_blend_0(monkeypatch, kwargs):
+    """With the temperature of the caller no adiabat is asked for, so blend 0 is accepted."""
+    first = {**_inner(7.0e6, accepted_on='strict'), 'adiabat_computed': False}
+    first['adiabat_blend'] = 0.0
     monkeypatch.setattr(zs, '_solve', lambda *a, **k: dict(first))
     monkeypatch.setattr(zs, '_report_table_bands', lambda r, *a: r)
-    cfg = {
-        'planet_mass': M_T,
-        'temperature_mode': 'adiabatic',
-        'layer_eos_config': {'core': f'{eos}:iron', 'mantle': f'{eos}:MgSiO3'},
-    }
-    zs.main(cfg, {}, None, '/tmp')
-    assert ('accepted a temperature profile at adiabat blend' in caplog.text) is warned
+    cfg = _adiabatic_cfg(use_jax=kwargs.pop('use_jax', False))
+    assert zs.main(cfg, {}, None, '/tmp', **kwargs)['accepted_on'] == 'strict'
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize('converged', [True, False])
-def test_only_an_accepted_result_gets_the_adiabat_warning(caplog, converged):
-    cfg = {
-        'temperature_mode': 'adiabatic',
-        'layer_eos_config': {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
-    }
-    result = {'converged': converged, 'adiabat_computed': True, 'adiabat_blend': 0.5}
-    zs._warn_adiabat(result, cfg, None, None, None)
-    assert ('at adiabat blend 0.50' in caplog.text) is converged
+def test_an_unaccepted_result_short_of_the_adiabat_passes_the_check():
+    result = {'converged': False, 'adiabat_computed': False, 'adiabat_blend': 0.0}
+    cfg = _adiabatic_cfg()
+    assert zs._check_accepted(result, cfg, cfg, {}, None, None, None, True) is result
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures('no_check')
+@pytest.mark.parametrize(
+    'computed, blend, solves, label',
+    [(False, 0.0, 2, 'strict'), (True, 0.5, 2, 'strict'), (True, 1.0, 1, 'retry_skip')],
+)
+def test_a_retry_skip_takes_only_the_full_adiabat(monkeypatch, computed, blend, solves, label):
+    """An unaccepted first solve with converged density and pressure and a mass error under
+    7 % skips the retry only when its profile is the full adiabat; otherwise main retries."""
+    first = {**_inner(7.0e6), 'converged': False, 'accepted_on': None}
+    first.update(mass_error_at_accept=0.01, adiabat_computed=computed, adiabat_blend=blend)
+    second = {**_inner(7.0e6, accepted_on='strict'), 'adiabat_computed': True}
+    second['adiabat_blend'] = 1.0
+    results = [first, second]
+    monkeypatch.setattr(zs, '_solve', lambda *a, **k: dict(results.pop(0)))
+    monkeypatch.setattr(zs, '_report_table_bands', lambda r, *a: r)
+    r = zs.main(_adiabatic_cfg(), {}, None, '/tmp')
+    assert 2 - len(results) == solves and r['accepted_on'] == label
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures('no_check')
+@pytest.mark.parametrize(
+    'eos, converged, ramp',
+    [('PALEOS', True, True), ('PALEOS', False, False), ('Analytic', True, False)],
+)
+def test_newton_continues_with_the_blend_ramp_from_its_profile(
+    monkeypatch, eos, converged, ramp
+):
+    """A converged Newton result of an adiabatic mode with a T-dependent EOS holds the linear
+    first-guess temperature, so main continues with the Picard blend ramp seeded from its
+    profile: central pressure, density and radii. Otherwise main returns the Newton result."""
+    newton = {**_inner(7.0e6, accepted_on='newton_tol'), 'converged': converged}
+    newton.update(pressure=np.array([3.6e11, 0.0]), density=np.array([1.2e4, 3.0e3]))
+    newton.update(adiabat_computed=False, adiabat_blend=0.0)
+    picard = {**_inner(7.0e6, accepted_on='strict'), 'adiabat_computed': True}
+    picard['adiabat_blend'] = 1.0
+    seeds = []
+
+    def solve(*args, **kwargs):
+        seeds.append(kwargs)
+        return dict(picard)
+
+    monkeypatch.setattr(zs, '_solve_newton_outer', lambda *a, **k: newton)
+    monkeypatch.setattr(zs, '_solve', solve)
+    monkeypatch.setattr(zs, '_report_table_bands', lambda r, *a: r)
+    r = zs.main(_adiabatic_cfg(eos, outer_solver='newton'), {}, None, '/tmp')
+    if not ramp:
+        assert not seeds and r is newton
+        return
+    assert len(seeds) == 1 and r['accepted_on'] == 'strict' and r['adiabat_blend'] == 1.0
+    assert seeds[0]['p_center_hint'] == 3.6e11
+    assert seeds[0]['initial_density'] is newton['density']
+    assert seeds[0]['initial_radii'] is newton['radii']
 
 
 @pytest.mark.smoke
 @pytest.mark.accept_solves
 @pytest.mark.timeout(2400)
-def test_an_iteration_cap_whose_newest_blend_step_diverges_returns_an_earlier_best_pass(
-    monkeypatch, caplog
-):
+def test_an_iteration_cap_whose_newest_blend_step_diverges_returns_an_earlier_best_pass(caplog):
     """3-layer PALEOS ice planet (cmf 0.3, mmf 0.4), adiabatic Picard, 20 outer passes and
     tolerance_outer 1e-2, so a linear pass starts the blend ramp also on the CI runner (whose
     linear passes end near 2.4e-3, above the default 1e-3): every pass of the newest blend step
     misses the mass by more than 3 %, so the cap returns the best pass of an earlier step (blend
-    0, R about 1.2978e7 m), the log names the ramp start and the fallback, and main does not
-    retry."""
+    0, R about 1.2978e7 m), not accepted, and the log names the ramp start and the fallback."""
     from tests.test_spider_coupling_convergence import _has_paleos_data
     from zalmoxis.config import load_solidus_liquidus_functions, load_zalmoxis_config
 
@@ -1235,20 +1328,11 @@ def test_an_iteration_cap_whose_newest_blend_step_diverges_returns_an_earlier_be
         'Stixrude14-liquidus',
         cfg['mushy_zone_factor'],
     )
-    calls, real = [], zs._solve
-
-    def once(*args, **kwargs):
-        if calls:
-            pytest.fail('main retried the solve')
-        calls.append(1)
-        return real(*args, **kwargs)
-
-    monkeypatch.setattr(zs, '_solve', once)
     with caplog.at_level(logging.INFO, logger='fwl.zalmoxis.solver'):
-        r = zs.main(cfg, load_material_dictionaries(), melt, os.path.join(ROOT, 'input'))
+        r = zs._solve(cfg, load_material_dictionaries(), melt, os.path.join(ROOT, 'input'))
     assert 'activating adiabat blend' in caplog.text
     assert 'No pass of adiabat blend' in caplog.text
-    assert r['converged'] and r['accepted_on'] == 'max_iter'
+    assert not r['converged'] and r['accepted_on'] is None
     assert r['adiabat_blend'] == 0.0
     assert r['mass_error_at_accept'] < 1e-2
     assert r['radii'][-1] == pytest.approx(1.2978e7, rel=1e-2)
@@ -1501,7 +1585,7 @@ def test_a_contracting_oscillation_is_not_stopped(monkeypatch, caplog):
 def test_the_oscillation_stop_waits_for_the_adiabat_blend_ramp(monkeypatch, caplog, mode):
     """PALEOS: pass 0 ends 0.2 % heavy, later passes 2 % off with alternating sign, so no
     pass reaches tolerance_outer and the blend ramp never starts. The stop must not return
-    the linear temperature pass; the loop ends at its cap on blend 0 as max_iter."""
+    the linear temperature pass; the loop ends at its cap on blend 0, not accepted."""
     _need_paleos()
     r, radius = _oscillating_solve(
         monkeypatch,
@@ -1513,7 +1597,7 @@ def test_the_oscillation_stop_waits_for_the_adiabat_blend_ramp(monkeypatch, capl
         layer_eos_config=PALEOS,
     )
     assert STOP not in caplog.text
-    assert r['accepted_on'] == 'max_iter' and r['adiabat_blend'] == pytest.approx(0.0)
+    assert r['accepted_on'] is None and r['adiabat_blend'] == pytest.approx(0.0)
     assert len(radius) == 14
 
 
@@ -1602,3 +1686,113 @@ def test_a_pass_cut_before_its_pressure_solve_does_not_stop_on_oscillation(monke
     assert r['accepted_on'] == 'timeout' and r['stopped_on_wall_clock']
     assert r['density_from_eos']
     assert r['mass_error_at_accept'] == pytest.approx(0.002, rel=1e-6)
+
+
+def _default_toml(**kwargs):
+    """Zalmoxis input/default.toml (PALEOS iron core, PALEOS MgSiO3 mantle, adiabatic) with
+    ``kwargs``, and its melting curves."""
+    from zalmoxis.config import load_solidus_liquidus_functions, load_zalmoxis_config
+
+    cfg = load_zalmoxis_config(os.path.join(INPUT, 'default.toml'))
+    cfg.update(data_output_enabled=False, plotting_enabled=False, wall_timeout=WALL, **kwargs)
+    melt = load_solidus_liquidus_functions(
+        cfg['layer_eos_config'], cfg['rock_solidus'], cfg['rock_liquidus'], 1.0
+    )
+    return cfg, melt
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves_long
+@pytest.mark.timeout(4800)
+def test_a_tight_tolerance_starts_the_blend_ramp_and_accepts_only_the_adiabat():
+    """default.toml at a 2515 K surface, tolerance_outer 1e-7 and 30 outer passes: no linear
+    pass reaches 1e-7, so the blend ramp starts at the 1e-3 trigger, and an accepted result is
+    the full adiabat, not the linear first guess with its 6000 K centre."""
+    from tests.test_spider_coupling_convergence import _has_paleos_data
+
+    if not _has_paleos_data():
+        pytest.skip('PALEOS tables not on disk')
+    cfg, melt = _default_toml(
+        surface_temperature=2515.0, tolerance_outer=1e-7, max_iterations_outer=30
+    )
+    r = zs.main(cfg, load_material_dictionaries(), melt, INPUT)
+    assert r['adiabat_computed'] is True
+    assert not r['converged'] or r['adiabat_blend'] == 1.0
+    assert r['temperature'][0] != cfg['center_temperature']
+
+
+# config_params of the PROTEUS initial structure solve (Time 0, liquidus_super), from
+# input/all_options.toml and input/dummy.toml of PROTEUS
+_PROTEUS_IC = {
+    'common': {
+        'absolute_tolerance': 1e-10,
+        'center_temperature': 6000.0,
+        'layer_eos_config': {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
+        'mantle_mass_fraction': 0.0,
+        'max_iterations_inner': 100,
+        'max_iterations_outer': 100,
+        'mushy_zone_factor': 0.8,
+        'mushy_zone_factors': {'PALEOS:MgSiO3': 0.8, 'PALEOS:iron': 0.8},
+        'newton_max_iter': 30,
+        'newton_tol': 1e-4,
+        'num_layers': 150,
+        'planet_mass': 5.972e24,
+        'relative_tolerance': 1e-9,
+        'temp_profile_file': None,
+        'temperature_mode': 'adiabatic_from_cmb',
+        'tolerance_inner': 1e-4,
+        'tolerance_outer': 3e-3,
+        'use_anderson': True,
+        'use_jax': True,
+        'wall_timeout': WALL,
+    },
+    'all_options': {
+        'cmb_temperature': 6121.257519593061,
+        'core_mass_fraction': 0.325,
+        'surface_temperature': 3936.1734971812284,
+        'target_surface_pressure': 5.0e6,
+    },
+    'dummy': {
+        'cmb_temperature': 6000.0,
+        'core_mass_fraction': 0.55,
+        'surface_temperature': 4000.0,
+        'target_surface_pressure': 101325.0,
+    },
+}
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves_long
+@pytest.mark.timeout(4800)
+@pytest.mark.parametrize('case', ['all_options', 'dummy'])
+def test_newton_gives_the_mantle_adiabat_of_picard_on_the_proteus_initial_structure(case):
+    """The PROTEUS initial structure solve (adiabatic_from_cmb, PALEOS, 1 Earth mass, the
+    PROTEUS solver settings): the Newton result has the mantle temperature of the Picard result
+    within 5 K at 39 mantle mass points between the CMB and the surface, and its CMB pressure
+    within 0.1 GPa. A Newton result on the linear first guess is up to 1200 K colder."""
+    from tests._paleos_helpers import _paleos_data_available
+    from zalmoxis.melting_curves import (
+        derive_solidus_from_liquidus,
+        get_solidus_liquidus_functions,
+    )
+
+    if not _paleos_data_available():
+        pytest.skip('PALEOS data files not found')
+    _, liquidus = get_solidus_liquidus_functions('Stixrude14-solidus', 'PALEOS-liquidus')
+    melt = (derive_solidus_from_liquidus(liquidus, 0.8), liquidus)
+    cfg = {**_PROTEUS_IC['common'], **_PROTEUS_IC[case]}
+    md = load_material_dictionaries()
+    runs = {
+        s: zs.main({**cfg, 'outer_solver': s}, md, melt, INPUT) for s in ('picard', 'newton')
+    }
+    cmb = runs['picard']['cmb_mass']
+    q = np.linspace(cmb, cfg['planet_mass'], 41)[1:-1]
+    T, P_cmb = {}, {}
+    for s, r in runs.items():
+        assert r['converged'], s
+        m, P = np.asarray(r['mass_enclosed'], float), np.asarray(r['pressure'], float)
+        T[s] = np.interp(q, m, np.asarray(r['temperature'], float))
+        P_cmb[s] = np.interp(r['cmb_mass'], m, P)
+    assert np.max(np.abs(T['newton'] - T['picard'])) < 5.0
+    assert abs(P_cmb['newton'] - P_cmb['picard']) < 0.1e9
+    assert all(r['adiabat_computed'] and r['adiabat_blend'] == 1.0 for r in runs.values())

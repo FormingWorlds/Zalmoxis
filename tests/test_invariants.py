@@ -1280,7 +1280,6 @@ def _newton_main(monkeypatch, result, cfg, melt):
 
     monkeypatch.setattr(zs, '_solve_newton_outer', lambda *a, **k: result)
     monkeypatch.setattr(zs, '_report_table_bands', lambda r, *a: r)
-    monkeypatch.setattr(zs, '_warn_adiabat', lambda *a, **k: None)
     monkeypatch.setattr(zs, 'calculate_mixed_density_batch', batch)
     config = {
         **cfg,
