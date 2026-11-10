@@ -306,6 +306,33 @@ def test_the_icb_on_a_profile_that_falls_outward():
     assert solid == 0.0
 
 
+def _past_cmb(t_of_p):
+    """Nodes from 360 to 130 GPa, mass linear in ln P with the core mass 1e24 kg at 136 GPa:
+    the last core node is at 141.5 GPa, the next node past the CMB."""
+    p = np.linspace(360e9, 130e9, 41)
+    return 1e24 * np.log(360e9 / p) / np.log(360 / 136), p, t_of_p(p)
+
+
+def test_the_icb_can_lie_between_the_last_core_node_and_the_cmb():
+    """An isothermal 4030 K core meets the liquidus at 139 GPa, past the last core node: the
+    rule finds the ICB on the segment to the CMB, not a core solid to the CMB."""
+    m, p, t = _past_cmb(lambda p: 0 * p + 4030.0)
+    m_icb, p_icb, solid = icb_from_profile(m, p, t, 1e24, _liq)
+    assert p_icb == pytest.approx(139e9, rel=1e-12) and solid == 0.0
+    assert m_icb == pytest.approx(1e24 * math.log(360 / 139) / math.log(360 / 136), rel=1e-12)
+
+
+def test_a_cold_top_counts_its_segment_to_the_cmb():
+    """A core below the liquidus to the CMB is the inner core at the CMB pressure; with a hot
+    centre, the cold mass above the ICB reaches the core mass."""
+    m, p, t = _past_cmb(lambda p: 0 * p + 3000.0)
+    m_icb, p_icb, solid = icb_from_profile(m, p, t, 1e24, _liq)
+    assert (m_icb, solid) == (1e24, 0.0) and p_icb == pytest.approx(136e9, rel=1e-12)
+    m, p, t = _past_cmb(lambda p: np.where(p > 200e9, 7000.0, 3000.0))
+    cold = m[np.argmax(p <= 200e9)]
+    assert icb_from_profile(m, p, t, 1e24, _liq)[2] == pytest.approx(1e24 - cold, rel=1e-12)
+
+
 def _sphere_result(n_nodes, cmb_scale):
     """A uniform 10000 kg/m^3 sphere on n_nodes nodes, its rhs, and a core mass of cmb_scale
     times the mass of node n_nodes // 2."""
@@ -392,6 +419,22 @@ def test_p_icb_is_the_pressure_of_the_core_arrays_at_m_ic(frac):
         assert all(abs(core['P'][k] / want - 1) > 5e-3 for k in (i - 1, i))
     else:
         assert core['P_icb'] == pytest.approx(core['P'][-1], rel=1e-12)
+
+
+@pytest.mark.parametrize('frac', [0.01, 0.1, 0.5, 4.0])
+def test_r_icb_and_p_icb_of_a_small_inner_core_meet_the_uniform_sphere(frac):
+    """R_icb and P_icb at M_ic of frac times the first node mass (4.0: in the 2nd segment) meet
+    the uniform sphere to 1e-9: r^3 is linear in m on a segment, P linear in m^(2/3)."""
+    res, rhs = _sphere_result(41, 1.0)
+    mix = {'core': LayerMixture([LIQ], [1.0]), 'inner_core': LayerMixture([SOL], [1.0])}
+    m_ic = frac * res['mass_enclosed'][1]
+    core = core_arrays(res, mix, rhs, lambda r, p: 5000.0, m_ic, 0.0)
+    rho, big_r = 1.0e4, 4.0e6
+    r = (3 * m_ic / (4 * np.pi * rho)) ** (1 / 3)
+    assert core['R_icb'] == pytest.approx(r, rel=1e-9)
+    assert core['P_icb'] == pytest.approx(
+        2 / 3 * np.pi * G * rho**2 * (big_r**2 - r**2), rel=1e-9
+    )
 
 
 def test_a_given_icb_mass_reports_its_pressure_and_the_solid_above_it():
