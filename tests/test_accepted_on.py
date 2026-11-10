@@ -777,9 +777,9 @@ class TestRealSolve:
 
 @pytest.mark.smoke
 @pytest.mark.wolfbower
-def test_wall_clock_in_the_adiabat_ramp_is_timeout(monkeypatch, caplog):
-    """The clock runs out after the mass converged, in the adiabat blend ramp: still
-    'timeout'."""
+def test_wall_clock_in_the_adiabat_ramp_is_retried_to_the_full_adiabat(monkeypatch, caplog):
+    """The clock runs out after the mass converged, in the adiabat blend ramp: the linear
+    pass is not accepted, main retries, and the retry returns the full adiabat."""
     from zalmoxis.eos import get_solidus_liquidus_functions
 
     _need_wb_tables()
@@ -798,16 +798,17 @@ def test_wall_clock_in_the_adiabat_ramp_is_timeout(monkeypatch, caplog):
     r = zs.main(cfg, load_material_dictionaries(), melt, '/tmp')
     _assert_eos_density(r, cfg['layer_eos_config'], melt)  # T-dependent mantle, restored pass
     assert 'Wall-clock timeout (1000000s)' in caplog.text
-    assert r['best_mass_error'] < 0.02  # below tolerance_outer: the chain alone says mass_only
-    assert r['converged'] is True and r['accepted_on'] == 'timeout'
-    assert r['accept_mass_limit'] == 0.02
+    assert 'No accept of a pass at adiabat blend 0.00' in caplog.text
+    assert 'Retrying with tighter parameters' in caplog.text
+    assert r['converged'] is True and r['accepted_on'] is not None
+    assert r['adiabat_computed'] is True and r['adiabat_blend'] == 1.0
 
 
 @pytest.mark.smoke
 @pytest.mark.wolfbower
-def test_wall_clock_in_the_adiabat_ramp_keeps_tolerance_outer_as_the_limit(monkeypatch, caplog):
-    """As above with tolerance_outer 0.05 and a 3.9 % mass error: accepted below
-    tolerance_outer, so the invariant check reads that limit and does not raise."""
+def test_wall_clock_in_the_adiabat_ramp_returns_the_linear_pass_unaccepted(monkeypatch, caplog):
+    """As above with tolerance_outer 0.05, in _solve: the clock stop returns the linear pass,
+    3 to 5 % off the mass, with no accept and no mass limit, as the start of a retry."""
     from zalmoxis.eos import get_solidus_liquidus_functions
 
     _need_wb_tables()
@@ -823,10 +824,11 @@ def test_wall_clock_in_the_adiabat_ramp_keeps_tolerance_outer_as_the_limit(monke
         wall_timeout=WALL,
         _initial_radius_guess=5.9e6,
     )
-    r = zs.main(cfg, load_material_dictionaries(), get_solidus_liquidus_functions(), '/tmp')
-    assert r['converged'] is True and r['accepted_on'] == 'timeout'
+    r = zs._solve(cfg, load_material_dictionaries(), get_solidus_liquidus_functions(), '/tmp')
+    assert r['stopped_on_wall_clock'] is True and r['adiabat_blend'] == 0.0
+    assert r['converged'] is False and r['accepted_on'] is None
+    assert r['accept_mass_limit'] is None
     assert 0.03 < r['mass_error_at_accept'] < 0.05
-    assert r['accept_mass_limit'] == 0.05
 
 
 def _wb_blended(

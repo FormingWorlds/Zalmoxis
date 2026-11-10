@@ -65,8 +65,8 @@ PALEOS = {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'}
 
 @pytest.mark.physics_invariant
 def test_the_paleos_newton_planet_reaches_its_surface_within_the_cap(monkeypatch):
-    """PALEOS adiabatic 1 M_earth with the Newton outer solver at rtol 1e-9: the accepted
-    profile is not padded and misses P_t by at most 1 P_t, the cap of a padded root replaced
+    """PALEOS adiabatic 1 M_earth with the Newton outer solver at rtol 1e-9, whose root
+    seeds the Picard blend ramp: the accepted profile is the full adiabat, is not padded and misses P_t by at most 1 P_t, the cap of a padded root replaced
     by its reached end. Refinements (second solves and replacements) move more than half the
     roots closer to P_t, and none further from it."""
     if not _has_paleos_data():
@@ -83,7 +83,7 @@ def test_the_paleos_newton_planet_reaches_its_surface_within_the_cap(monkeypatch
     cfg = _case(root, layer_eos_config=dict(PALEOS), planet_mass=5.972e24)
     r = zs.main(cfg, load_material_dictionaries(), None, os.path.join(root, 'input'))
     P = np.asarray(r['pressure'], dtype=float)
-    assert r['converged'] and r['accepted_on'] == 'newton_tol'
+    assert r['converged'] and r['adiabat_blend'] == 1.0
     assert r['padded'] is False and P[-1] > 0.0
     assert abs(P[-1] - P_T) <= CAP * P_T
     assert sum(m < 0.0 for m in moves) > len(moves) // 2 and max(moves) <= 0.0
