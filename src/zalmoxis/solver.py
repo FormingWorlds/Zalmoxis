@@ -28,6 +28,7 @@ from .config import (
     RTPRESS100TPA_MAX_MASS_EARTH,
     WOLFBOWER2018_MAX_MASS_EARTH,
     _check_icb_rule,
+    _check_two_layer_core,
     band_limit,
 )
 from .constants import (
@@ -735,7 +736,9 @@ def main(
                 ', '.join(_trigger),
             )
     band_limit(config_params)  # a bad limit fails before the solve, not after it
-    _check_icb_rule(config_params)  # also for callers that skip validate_config
+    # the layer and ICB checks also for callers that skip validate_config
+    _check_two_layer_core(config_params['layer_eos_config'])
+    _check_icb_rule(config_params)
     bands = (config_params, material_dictionaries, melting_curves_functions, layer_mixtures)
     if outer_solver == 'newton':
         result = _solve_newton_outer(
@@ -1769,6 +1772,13 @@ def _solve(
                 core_liq,
             )
         core_liq = get_melting_curve_function(core_liq)
+    if core_liq is not None and not (
+        uses_Tdep or arrays_give_T or temperature_function is not None
+    ):
+        raise ValueError(
+            'core_liquidus needs a core temperature: no layer has a T-dependent EOS and no '
+            'temperature function is given; use inner_core_mass_fraction'
+        )
     icb_frac = config_params.get('inner_core_mass_fraction')
     icb_mass = float(icb_frac) * cmb_mass if two_layer and icb_frac is not None else 0.0
 

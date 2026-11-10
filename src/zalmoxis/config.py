@@ -193,9 +193,6 @@ def validate_layer_eos(layer_eos_config):
         mixture = parse_layer_components(eos_str)
         if is_alloy_mixture(mixture):
             split_alloy(mixture)
-        for side, home in zip(IRON_SIDES, CORE_LAYERS):
-            if side in mixture.components and layer != home:
-                raise ValueError(f"{side} belongs in '{home}', not in '{layer}'")
         for comp in mixture.components:
             if comp in VALID_TABULATED_EOS or comp.startswith(ALLOY_PREFIX):
                 continue
@@ -229,14 +226,22 @@ def validate_layer_eos(layer_eos_config):
 
 
 def _check_two_layer_core(layer_eos_config):
-    """An iron side in the core needs its partner layer: the liquid side as the only iron base
-    of the outer core and the solid side as that of the inner core, in any component order."""
-    bases = {
-        layer: [
-            c for c in parse_layer_components(eos).components if not c.startswith(ALLOY_PREFIX)
-        ]
+    """Each iron side belongs in its core layer and needs its partner layer: the liquid side as
+    the only iron base of the outer core and the solid side as that of the inner core, in any
+    component order. ``validate_config`` and ``main`` run it for callers that pass a dict."""
+    comps = {
+        layer: parse_layer_components(eos).components
         for layer, eos in layer_eos_config.items()
-        if layer in CORE_LAYERS and eos
+        if eos
+    }
+    for layer, names in comps.items():
+        for side, home in zip(IRON_SIDES, CORE_LAYERS):
+            if side in names and layer != home:
+                raise ValueError(f"{side} belongs in '{home}', not in '{layer}'")
+    bases = {
+        layer: [c for c in names if not c.startswith(ALLOY_PREFIX)]
+        for layer, names in comps.items()
+        if layer in CORE_LAYERS
     }
     if 'inner_core' not in bases:
         if IRON_SIDES[0] in bases.get('core', []):
@@ -356,6 +361,7 @@ def validate_config(config_params):
     cmf = config_params['core_mass_fraction']
     mmf = config_params['mantle_mass_fraction']
     layer_eos_config = config_params['layer_eos_config']
+    _check_two_layer_core(layer_eos_config)
     _check_icb_rule(config_params)
 
     if cmf <= 0 or cmf > 1:
