@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import math
 import numbers
+import re
 import sys
 import types
 
@@ -26,6 +27,14 @@ from zalmoxis.phase_columns import compute_layer_phase_columns
 pytestmark = pytest.mark.unit
 
 LIQ, SOL = 'PALEOS-API-2phase:iron-liquid', 'PALEOS-API-2phase:iron-solid'
+
+
+def _refused(call, match):
+    """``call`` raises a ValueError that matches ``match``; any other outcome fails by
+    assertion, also another exception."""
+    with pytest.raises(Exception) as err:
+        call()
+    assert isinstance(err.value, ValueError) and re.search(match, str(err.value)), err.value
 
 
 def _params(**over):
@@ -307,8 +316,7 @@ def test_each_side_belongs_to_its_core_layer_in_any_order(layers, match):
                 pytest.fail(f'{layers} is refused: {err}')
         return
     for check in [*checks, lambda: main(params, None, None, '')]:
-        with pytest.raises(ValueError, match=match):
-            check()
+        _refused(check, match)
 
 
 def test_the_liquidus_rule_needs_a_core_temperature():
@@ -327,8 +335,11 @@ def test_the_liquidus_rule_needs_a_core_temperature():
         layer_eos_config=layers, temperature_mode='isothermal', surface_temperature=5000.0
     )
     mixes = parse_all_layer_mixtures(layers)
-    with pytest.raises(ValueError, match='core_liquidus needs a core temperature'):
-        zs._solve(params, load_material_dictionaries(), None, '', layer_mixtures=mixes)
+    md = load_material_dictionaries()
+    _refused(
+        lambda: zs._solve(params, md, None, '', layer_mixtures=mixes),
+        'needs a core temperature',
+    )
 
 
 @pytest.mark.parametrize('bad', ['liquidus', 'temperature'])
@@ -366,12 +377,15 @@ def _past_cmb(t_of_p):
 
 
 def test_the_icb_can_lie_between_the_last_core_node_and_the_cmb():
-    """An isothermal 4030 K core meets the liquidus at 139 GPa, past the last core node: the
-    rule finds the ICB on the segment to the CMB, not a core solid to the CMB."""
-    m, p, t = _past_cmb(lambda p: 0 * p + 4030.0)
-    m_icb, p_icb, solid = icb_from_profile(m, p, t, 1e24, _liq)
-    assert p_icb == pytest.approx(139e9, rel=1e-12) and solid == 0.0
-    assert m_icb == pytest.approx(1e24 * math.log(360 / 139) / math.log(360 / 136), rel=1e-12)
+    """A core at 4030 K at 139 GPa, isothermal or falling outward in ln P, meets the liquidus
+    there, past the last core node: the rule finds the ICB on the segment to the CMB, not a
+    core solid to the CMB."""
+    for t_of_p in (lambda p: 0 * p + 4030.0, lambda p: 4030.0 + 500.0 * np.log(p / 139e9)):
+        m, p, t = _past_cmb(t_of_p)  # the 2nd T is linear in ln P, as the rule interpolates
+        m_icb, p_icb, solid = icb_from_profile(m, p, t, 1e24, _liq)
+        assert p_icb == pytest.approx(139e9, rel=1e-12) and solid == 0.0
+        want = 1e24 * math.log(360 / 139) / math.log(360 / 136)
+        assert m_icb == pytest.approx(want, rel=1e-12)
 
 
 def test_a_failed_node_past_the_core_mass_adds_no_cmb_point():
@@ -379,7 +393,11 @@ def test_a_failed_node_past_the_core_mass_adds_no_cmb_point():
     reads the core nodes alone, as for a profile that ends at the last core node."""
     m, p, t = _past_cmb(lambda p: 0 * p + 3000.0)
     m[39:], p[39:] = np.nan, np.nan
-    assert icb_from_profile(m, p, t, 1e24, _liq) == (1e24, p[38], 0.0)
+    try:
+        got = icb_from_profile(m, p, t, 1e24, _liq)
+    except ValueError as err:
+        pytest.fail(f'the NaN nodes past the core mass are read: {err}')
+    assert got == (1e24, p[38], 0.0)
 
 
 def test_a_cold_top_counts_its_segment_to_the_cmb():
