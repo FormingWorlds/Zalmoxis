@@ -7,7 +7,7 @@ The `[EOS]` section is parsed by `parse_eos_config()` (also in `config.py`), whi
 
 ## Initial Parameter Setup
 
-The initial guess for the planet radius follows the scaling law from [Noack et al. (2020)](https://ui.adsabs.harvard.edu/abs/2020A%26A...638A.129N/abstract):
+The initial guess for the planet radius follows the scaling law from Noack & Lasbleis (2020)[^cite-noack2020]:
 
 $$
 R_p \; [\mathrm{m}] = 1000 \times (7030 - 1840 \times X_{\mathrm{CMF}}) \times \left( \frac{M_p}{M_{\oplus}} \right)^{0.282}
@@ -210,4 +210,4 @@ A trapezoid integral of the returned `density` differs from `mass_enclosed[-1]` 
 On convergence, the model returns radial profiles of gravity, pressure, density, temperature, and enclosed mass.
 Derived structural parameters include: core radius, CMB pressure, central pressure, average density, core mass fraction, core radius fraction, and (if applicable) mantle phase fractions.
 
-
+[^cite-noack2020]: L. Noack, M. Lasbleis, *[Parameterisations of interior properties of rocky planets. An investigation of planets with Earth-like compositions but variable iron content](https://doi.org/10.1051/0004-6361/202037723)*, Astronomy and Astrophysics, 638, A129, 2020. [SciX](https://scixplorer.org/abs/2020A%26A...638A.129N/abstract).
