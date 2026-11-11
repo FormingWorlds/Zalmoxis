@@ -64,6 +64,7 @@ PALEOS = {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'}
 
 
 @pytest.mark.physics_invariant
+@pytest.mark.timeout(4800)  # the Newton root plus the adiabat ramp at rtol 1e-9
 def test_the_paleos_newton_planet_meets_the_surface_condition_within_the_cap(monkeypatch):
     """PALEOS adiabatic 1 M_earth with the Newton outer solver at rtol 1e-9, whose root
     seeds the Picard blend ramp: the accepted profile is the full adiabat and either misses
