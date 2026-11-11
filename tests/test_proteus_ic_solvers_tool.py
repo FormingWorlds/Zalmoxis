@@ -89,7 +89,8 @@ def test_the_plot_draws_the_difference_of_each_setup_and_the_5_K_limit(tmp_path,
 
 
 def test_the_legend_covers_no_data_point(tmp_path, monkeypatch):
-    """The legend sits outside every line vertex in display coordinates."""
+    """The legend sits outside every line vertex and outside the axes with their tick and axis
+    labels, in display coordinates."""
     seen = _capture_save(monkeypatch)
     _write(tmp_path)
     tool.plot(str(tmp_path), str(tmp_path / 'assets'))
@@ -103,6 +104,8 @@ def test_the_legend_covers_no_data_point(tmp_path, monkeypatch):
             xy = ln.get_transform().transform(np.column_stack([ln.get_xdata(), ln.get_ydata()]))
             for b in boxes:
                 assert b.count_contains(xy) == 0, (ln.get_label(), b)
+        for b in boxes:
+            assert not b.overlaps(ax.get_tightbbox(r)), b
 
 
 def test_the_plot_stops_on_a_case_without_a_record(tmp_path):
