@@ -119,13 +119,15 @@ def run_zalmoxis_rocky_water(id_mass, config_type, cmf, immf, layer_eos_override
     return output_file, profile_output_file
 
 
-def run_zalmoxis_TdepEOS(id_mass):
+def run_zalmoxis_TdepEOS(id_mass, wall_timeout=None):
     """Run Zalmoxis with the default Tdep EOS config for a given mass.
 
     Parameters
     ----------
     id_mass : float
         Mass of the planet in Earth masses.
+    wall_timeout : float or None, optional
+        Wall-clock limit of the solve in s; None keeps the value of the config.
 
     Returns
     -------
@@ -138,6 +140,8 @@ def run_zalmoxis_TdepEOS(id_mass):
 
     # Modify the configuration parameters as needed
     config_params['planet_mass'] = id_mass * earth_mass
+    if wall_timeout is not None:
+        config_params['wall_timeout'] = wall_timeout
 
     # Create a temporary output file
     with tempfile.NamedTemporaryFile(delete=False, mode='w') as temp_output_file:
