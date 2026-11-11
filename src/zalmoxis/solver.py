@@ -426,7 +426,8 @@ def _adiabat_asked(config_params, layer_mixtures, temperature_function, temperat
 
 def _short_of_adiabat(result, asked):
     """True when ``asked`` and the profile of ``result`` is not the full adiabat."""
-    full = result.get('adiabat_computed') and result.get('adiabat_blend', 0.0) >= 1.0
+    blends = (result.get('adiabat_blend'), result.get('adiabat_table_blend'))
+    full = result.get('adiabat_computed') and all((b or 0.0) >= 1.0 for b in blends)
     return bool(asked and not full)
 
 
@@ -449,7 +450,8 @@ def _check_accepted(
     if _short_of_adiabat(result, adiabat_asked):
         raise StructureInvariantError(
             f'accepted_on={result.get("accepted_on")!r} at adiabat blend '
-            f'{result.get("adiabat_blend")} '
+            f'{result.get("adiabat_blend")} on a table of blend '
+            f'{result.get("adiabat_table_blend")} '
             f'(adiabat_computed={result.get("adiabat_computed")}); '
             f'temperature_mode={config_params["temperature_mode"]!r} asks for the full adiabat.'
         )
@@ -1822,11 +1824,34 @@ def _solve(
     _using_adiabat = False
     _adiabat_computed = False  # the gradient table was read for the T profile
     _adiabat_blend = 0.0
+    _table_blend = 0.0  # the blend of the pass whose pressure built the T(P) table
     _ADIABAT_BLEND_STEP = 0.25
-    # the internal adiabat makes T: only a pass at blend 1 can be accepted
+    # the internal adiabat makes T: accept only blend 1 on a table of a blend-1 pass
     ramp_asked = _adiabat_asked(
         config_params, layer_mixtures, temperature_function, temperature_arrays
     )
+
+    def _adiabat(radii, pressure, mass_enclosed):
+        # 'adiabatic_from_cmb' anchors at the CMB and integrates outward, 'adiabatic' inward
+        return compute_adiabatic_temperature(
+            radii,
+            pressure,
+            mass_enclosed,
+            surface_temperature,
+            cmb_mass,
+            core_mantle_mass,
+            layer_mixtures,
+            material_dictionaries,
+            interpolation_cache,
+            solidus_func,
+            liquidus_func,
+            mushy_zone_factors,
+            condensed_rho_min,
+            condensed_rho_scale,
+            binodal_T_scale,
+            anchor='cmb' if temperature_mode == 'adiabatic_from_cmb' else 'surface',
+            cmb_temperature=cmb_temperature,
+        )
 
     # For adiabatic mode, cap the initial center_temperature guess to
     # prevent the linear-T initial profile from being far above the
@@ -1853,7 +1878,7 @@ def _solve(
     # Outer-loop oscillation tracking (local to this call, not function-level).
     best_mass_error = float('inf')
     best_profiles = None
-    best_blend = None  # the adiabat blend of the best pass
+    best_blend = None  # the adiabat and table blends of the best pass
     earlier_best = None  # (mass error, profiles) of the best pass of the earlier blend steps
     oscillation_count = 0
     _prev_mass_error = None  # signed mass error of the previous outer pass
@@ -1968,7 +1993,8 @@ def _solve(
             )
 
             if _using_adiabat and prev_pressure is not None:
-                # Bump blend toward full adiabat
+                # Bump blend toward full adiabat; the table is built on the previous pass
+                _table_blend = _adiabat_blend
                 _adiabat_blend = min(1.0, _adiabat_blend + _ADIABAT_BLEND_STEP)
                 logger.debug(
                     'Outer iter %d: adiabat blend = %.2f',
@@ -1980,27 +2006,8 @@ def _solve(
                 # structure. For 'adiabatic_from_cmb', anchor at the CMB
                 # and integrate outward; otherwise anchor at the surface
                 # and integrate inward (original behaviour).
-                _anchor = 'cmb' if temperature_mode == 'adiabatic_from_cmb' else 'surface'
                 _adiabat_computed = True
-                adiabat_T = compute_adiabatic_temperature(
-                    prev_radii,
-                    prev_pressure,
-                    prev_mass_enclosed,
-                    surface_temperature,
-                    cmb_mass,
-                    core_mantle_mass,
-                    layer_mixtures,
-                    material_dictionaries,
-                    interpolation_cache,
-                    solidus_func,
-                    liquidus_func,
-                    mushy_zone_factors,
-                    condensed_rho_min,
-                    condensed_rho_scale,
-                    binodal_T_scale,
-                    anchor=_anchor,
-                    cmb_temperature=cmb_temperature,
-                )
+                adiabat_T = _adiabat(prev_radii, prev_pressure, prev_mass_enclosed)
 
                 # Build T(P) interpolator from the previous iteration's
                 # pressure profile.  This ensures that during the Brent
@@ -2630,12 +2637,14 @@ def _solve(
         # The best pass: the smallest error on the newest blend step. A pass without a
         # pressure solve never counts; the older best stays until a new-step pass has one.
         if rho_eos is not None and (
-            relative_diff_outer_mass < best_mass_error or _adiabat_blend != best_blend
+            relative_diff_outer_mass < best_mass_error
+            or (_adiabat_blend, _table_blend) != best_blend
         ):
-            if _adiabat_blend != best_blend and best_profiles is not None:
+            if (_adiabat_blend, _table_blend) != best_blend and best_profiles is not None:
                 if earlier_best is None or best_mass_error < earlier_best[0]:
                     earlier_best = (best_mass_error, best_profiles)
-            best_mass_error, best_blend = relative_diff_outer_mass, _adiabat_blend
+            best_mass_error = relative_diff_outer_mass
+            best_blend = (_adiabat_blend, _table_blend)
             best_profiles = {
                 'radii': radii.copy(),
                 'density': density.copy(),
@@ -2648,6 +2657,7 @@ def _solve(
                 'converged_pressure': converged_pressure,
                 'adiabat_computed': _adiabat_computed,
                 'adiabat_blend': _adiabat_blend,
+                'adiabat_table_blend': _table_blend,
             }
             oscillation_count = 0
         elif (
@@ -2659,7 +2669,7 @@ def _solve(
         _prev_mass_error = mass_error_signed
 
         # The internal adiabat blend is below 1: both stops wait for the end of the ramp
-        ramp_incomplete = ramp_asked and _adiabat_blend < 1.0
+        ramp_incomplete = ramp_asked and min(_adiabat_blend, _table_blend) < 1.0
         # Bailout: if oscillating for 10+ iterations, accept best solution
         if (
             oscillation_count >= 10
@@ -2738,6 +2748,7 @@ def _solve(
             *(best_profiles[k] for k in ('rho_eos', 'converged_density', 'converged_pressure')),
             best_profiles['adiabat_computed'],
             best_profiles['adiabat_blend'],
+            best_profiles['adiabat_table_blend'],
             temperatures if T is None else np.array(T),
         )
 
@@ -2764,7 +2775,7 @@ def _solve(
         logger.warning(
             'No pass of adiabat blend %.2f passes an accept test of this stop (mass error '
             '%.4f%%); returning the best pass of blend %.2f (mass error %.4f%%).',
-            best_blend,
+            best_blend[0],
             best_mass_error * 100,
             earlier_best[1]['adiabat_blend'],
             earlier_best[0] * 100,
@@ -2780,7 +2791,7 @@ def _solve(
         (
             radii, density, gravity, pressure, mass_enclosed, rho_eos,
             converged_density, converged_pressure, _adiabat_computed, _adiabat_blend,
-            temperatures,
+            _table_blend, temperatures,
         ) = _best_pass()  # fmt: skip
 
     accepted_on = accept_mass_limit = None
@@ -2806,7 +2817,8 @@ def _solve(
         converged_mass = True
         restore_best = True  # return the pass that the test read
         accepted_on, accept_mass_limit = stop_label or 'max_iter', _TIMEOUT_ACCEPT_MASS_ERR
-        short = ramp_asked and best_profiles['adiabat_blend'] < 1.0  # refused below
+        blends = best_profiles['adiabat_blend'], best_profiles['adiabat_table_blend']
+        short = ramp_asked and min(blends) < 1.0  # refused below
         logger.log(
             logging.DEBUG if short else logging.WARNING,
             'Accepting %s solution: mass error %.4f%% (threshold %.1f%%), '
@@ -2829,15 +2841,17 @@ def _solve(
         (
             radii, density, gravity, pressure, mass_enclosed, rho_eos,
             converged_density, converged_pressure, _adiabat_computed, _adiabat_blend,
-            temperatures,
+            _table_blend, temperatures,
         ) = _best_pass()  # fmt: skip
 
-    if converged and ramp_asked and _adiabat_blend < 1.0:
+    if converged and ramp_asked and min(_adiabat_blend, _table_blend) < 1.0:
         logger.log(
             logging.DEBUG if config_params.get('_newton_probe') else logging.WARNING,
-            'No accept of a pass at adiabat blend %.2f: temperature_mode=%r asks for the full '
-            'adiabat; the solve returns with converged=False.',
+            'No accept of a pass at adiabat blend %.2f on a table of blend %.2f: '
+            'temperature_mode=%r asks for the full adiabat; the solve returns with '
+            'converged=False.',
             _adiabat_blend,
+            _table_blend,
             temperature_mode,
         )
         converged = converged_mass = False
@@ -2893,6 +2907,12 @@ def _solve(
             volatile_profile,
         )
 
+    self_consistency = None  # largest |T - adiabat(P)| of the returned mantle, in K
+    if _adiabat_computed and _adiabat_blend >= 1.0:
+        keep = (np.asarray(mass_enclosed) >= cmb_mass) & (pressure > 0)
+        lag = np.abs(np.asarray(temperatures) - _adiabat(radii, pressure, mass_enclosed))[keep]
+        self_consistency = float(lag.max()) if lag.size else None
+
     model_results = {
         'layer_eos_config': layer_eos_config,
         'radii': radii,
@@ -2918,6 +2938,8 @@ def _solve(
         'padded': bool(pad.size and pad[-1]),
         'adiabat_computed': _adiabat_computed,
         'adiabat_blend': _adiabat_blend,
+        'adiabat_table_blend': _table_blend,
+        'adiabat_self_consistency': self_consistency,
     }
     return model_results
 
