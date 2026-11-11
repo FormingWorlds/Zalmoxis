@@ -668,12 +668,12 @@ def main(
         T-dependent EOS and no external temperature only the full adiabat on a table of a
         full-adiabat pass (``adiabat_blend`` and ``adiabat_table_blend`` 1) is accepted, and
         ``adiabat_self_consistency`` gives the largest difference in K between the returned
-        mantle T and the adiabat recomputed on the returned structure (None below blend 1); a Newton root there seeds the Picard blend
-        ramp at min(tolerance_outer, newton_tol), and the result keeps its ``newton_*``
-        keys and its time in ``total_time``. A failed table band check
-        sets ``converged`` to False and leaves ``accepted_on`` as it is. A converged
-        result has ``integration_tolerances``, the (rtol, atol) of the solve that
-        returned, with rtol at least the RK45 floor of 100 eps, which the invariant
+        mantle T and the adiabat recomputed on the returned structure (None below blend 1);
+        a Newton root there seeds the Picard blend ramp at min(tolerance_outer, newton_tol),
+        and the result keeps its ``newton_*`` keys and its time in ``total_time``. A failed
+        table band check sets ``converged`` to False and leaves ``accepted_on`` as it is. A
+        converged result has ``integration_tolerances``, the (rtol, atol) of the solve
+        that returned, with rtol at least the RK45 floor of 100 eps, which the invariant
         check used; an unconverged result has none. ``padded`` (bool) is True when
         the pressure at the outer radius is 0: the integration stopped at P = 0 before
         the outer radius, and the nodes past the stop hold P = 0. ``main`` logs one
