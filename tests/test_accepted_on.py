@@ -942,7 +942,8 @@ def test_a_clock_stop_inside_its_limit_without_converged_inner_solves_falls_back
     assert r['best_mass_error'] == pytest.approx(r['mass_error_at_accept'], rel=1e-9)
     assert 'No pass of adiabat blend 0.25' in caplog.text
     assert (
-        f'best pass of blend 0.00 (mass error {r["best_mass_error"] * 100:.4f}%)' in caplog.text
+        f'best pass of blend 0.00 on a table of blend 0.00 (mass error '
+        f'{r["best_mass_error"] * 100:.4f}%)' in caplog.text
     )
 
 
