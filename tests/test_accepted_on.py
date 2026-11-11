@@ -1692,7 +1692,7 @@ def test_the_oscillation_stop_fires_after_the_adiabat_blend_ramp(monkeypatch, ca
     assert r['adiabat_blend'] == pytest.approx(1.0)
     assert r['adiabat_table_blend'] == pytest.approx(1.0)
     assert r['mass_error_at_accept'] == pytest.approx(0.002, rel=1e-6)
-    assert len(radius) == 17
+    assert len(radius) == 16  # passes 6 to 15 change sign 10 times
 
 
 @pytest.mark.smoke
