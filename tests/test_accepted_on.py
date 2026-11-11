@@ -1916,7 +1916,7 @@ def test_a_linear_floor_above_a_tight_tolerance_starts_the_ramp_unaccepted_on_a_
         wall_timeout=WALL,
     )
     assert n_adiabat >= 2 and r['stopped_on_wall_clock'] is True
-    assert r['adiabat_blend'] < 1.0 and r['adiabat_self_consistency'] is None
+    assert r['adiabat_blend'] < 1.0
     assert r['converged'] is False and r['converged_mass'] is False
     assert r['accepted_on'] is None and r['accept_mass_limit'] is None
 
@@ -1955,6 +1955,18 @@ def test_an_iteration_cap_on_the_first_full_adiabat_pass_is_not_accepted():
     )
     assert r['converged'] is False and r['accepted_on'] is None
     assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 0.75)
+
+
+@pytest.mark.smoke
+@pytest.mark.usefixtures('no_check')
+def test_a_pass_below_blend_1_reports_no_self_consistency():
+    """The iteration cap ends the solve on the blend-0.75 pass, on the target mass: its T is
+    not the adiabat, so adiabat_self_consistency is None."""
+    r, _ = _analytic_ramp(
+        linear=1.0, factor=1.0, tolerance_outer=1e-3, max_iterations_outer=4, wall_timeout=WALL
+    )
+    assert r['converged'] is False and r['adiabat_blend'] == 0.75
+    assert np.all(np.asarray(r['pressure']) > 0) and r['adiabat_self_consistency'] is None
 
 
 @pytest.mark.smoke
