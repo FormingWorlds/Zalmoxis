@@ -104,14 +104,18 @@ def record(result, cfg):
     P, T = np.asarray(result['pressure'], float), np.asarray(result['temperature'], float)
     cmb, M = float(result['cmb_mass']), float(cfg['planet_mass'])
     x = np.linspace(0.0, 1.0, 41)[1:-1]
-    i = int(np.flatnonzero(m < cmb * (1 - 1e-12))[-1])
+    m_q = cmb + x * (M - cmb)
+    i = int(np.searchsorted(m, cmb)) - 1  # the core/mantle split of the adiabat
+    if i < 0:
+        raise ValueError(f'no node below the CMB mass {cmb:.6e} kg')
     branch, frac = last_core_branch(T[i], cfg['surface_temperature'], cfg['cmb_temperature'])
     return {
         'branch': branch,
         'frac': frac,
         'T_last': float(T[i]),
         'x_q': x.tolist(),
-        'T_q': np.interp(cmb + x * (M - cmb), m, T).tolist(),
+        'm_q': m_q.tolist(),
+        'T_q': np.interp(m_q, m, T).tolist(),
         'P_cmb': float(np.interp(cmb, m, P)),
         'converged': bool(result['converged']),
         'adiabat_computed': bool(result.get('adiabat_computed')),
@@ -134,17 +138,15 @@ def run_case(case):
     melt = (derive_solidus_from_liquidus(liquidus, 0.8), liquidus)
     cfg = {**PROTEUS_IC['common'], **PROTEUS_IC[case]}
     md, inp = load_material_dictionaries(), os.path.join(get_zalmoxis_root(), 'input')
-    out = {}
-    for s in ('picard', 'newton'):
-        out[s] = dict(
-            record(zs.main({**cfg, 'outer_solver': s}, md, melt, inp), cfg), case=case
-        )
-    return out
+    return {
+        s: {**record(zs.main({**cfg, 'outer_solver': s}, md, melt, inp), cfg), 'case': case}
+        for s in ('picard', 'newton')
+    }
 
 
 def compare(picard, newton):
     """Largest mantle T and CMB pressure difference of 2 records and the limits of their branches."""
-    if not np.array_equal(picard['x_q'], newton['x_q']):
+    if not np.array_equal(picard['m_q'], newton['m_q']):
         raise ValueError('the records hold different mass points')
     same = picard['branch'] == newton['branch']
     limit_T, limit_P = LIMITS[same]
@@ -201,7 +203,10 @@ def plot(outdir, assets):
             tag = f'{case}: Picard {c["branches"][0]}, Newton {c["branches"][1]}'
             (ln,) = ax.semilogy(r['picard']['x_q'], d, label=tag)
             ax.axhline(
-                c['limit_T'], ls=ls, color=ln.get_color(), label=f'{c["limit_T"]:g} K limit'
+                c['limit_T'],
+                ls=ls,
+                color=ln.get_color(),
+                label=f'{case}: {c["limit_T"]:g} K limit',
             )
         ax.set_ylim(5e-4, 100.0)
         ax.minorticks_off()
@@ -209,7 +214,7 @@ def plot(outdir, assets):
         ax.set_xticks([0.0, 0.5, 1.0])
         ax.set_xlabel('Mantle mass coordinate')
         ax.set_ylabel('|T difference| [K]')
-        fig.legend(loc='lower center', ncol=1, fontsize=plt.rcParams['axes.labelsize'])
+        fig.legend(loc='lower center', fontsize=plt.rcParams['axes.labelsize'])
         fig.tight_layout(rect=(0, 0.3, 1, 1))
         return fig
 
@@ -233,6 +238,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.cmd == 'plot':
         return plot(args.outdir, args.assets)
+    os.makedirs(args.outdir, exist_ok=True)
     for case in args.cases:
         recs = run_case(case)
         with open(os.path.join(args.outdir, f'case_{case}.json'), 'w') as f:

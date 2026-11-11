@@ -1787,11 +1787,11 @@ def test_newton_gives_the_mantle_adiabat_of_picard_on_the_proteus_initial_struct
     node of both results is on the same branch, and within the measured branch step, at most
     15 K and 0.2 GPa, when the branches differ. A Newton result on the linear first guess is off
     by up to 1200 K."""
-    from tests._paleos_helpers import _paleos_data_available
+    from tests.test_spider_coupling_convergence import _has_paleos_data
     from tools.validation import proteus_ic_branches as tool
 
-    if not _paleos_data_available():
-        pytest.skip('PALEOS data files not found')
+    if not _has_paleos_data():
+        pytest.skip('PALEOS iron and unified MgSiO3 tables not on disk')
     runs = tool.run_case(case)
     for s, rec in runs.items():
         assert rec['converged'] and rec['adiabat_computed'] and rec['blend'] == 1.0, s
