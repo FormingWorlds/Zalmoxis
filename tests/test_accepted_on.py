@@ -1673,11 +1673,12 @@ def test_the_oscillation_stop_waits_for_the_adiabat_blend_ramp(monkeypatch, capl
 @pytest.mark.smoke
 @pytest.mark.accept_solves
 def test_the_oscillation_stop_fires_after_the_adiabat_blend_ramp(monkeypatch, caplog):
-    """PALEOS, adiabatic: pass 0 reaches tolerance_outer and starts the ramp, pass 4 ends on
-    blend 1.0 0.2 % heavy, later passes 2 % off with alternating sign: the stop fires on
-    blend 1.0 and returns pass 4."""
+    """PALEOS, adiabatic: pass 0 reaches tolerance_outer and starts the ramp, pass 4 is the
+    first at blend 1.0 and reads the table of the blend-0.75 pass, pass 5 is the first on a
+    table of a blend-1.0 pass and ends 0.2 % heavy, later passes 2 % off with alternating
+    sign: the stop fires on blend 1.0 and returns pass 5."""
     _need_paleos()
-    sched = {0: 1.0005, 1: 1.05, 2: 1.05, 3: 1.05, 4: 1.002}
+    sched = {0: 1.0005, 1: 1.05, 2: 1.05, 3: 1.05, 4: 1.05, 5: 1.002}
     r, radius = _oscillating_solve(
         monkeypatch,
         caplog,
@@ -1689,8 +1690,9 @@ def test_the_oscillation_stop_fires_after_the_adiabat_blend_ramp(monkeypatch, ca
     )
     assert r['accepted_on'] == 'oscillation', (r['accepted_on'], len(radius))
     assert r['adiabat_blend'] == pytest.approx(1.0)
+    assert r['adiabat_table_blend'] == pytest.approx(1.0)
     assert r['mass_error_at_accept'] == pytest.approx(0.002, rel=1e-6)
-    assert len(radius) == 16
+    assert len(radius) == 17
 
 
 @pytest.mark.smoke
