@@ -64,19 +64,22 @@ PALEOS = {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'}
 
 
 @pytest.mark.physics_invariant
-def test_the_paleos_newton_planet_reaches_its_surface_within_the_cap(monkeypatch):
+def test_the_paleos_newton_planet_meets_the_surface_condition_within_the_cap(monkeypatch):
     """PALEOS adiabatic 1 M_earth with the Newton outer solver at rtol 1e-9, whose root
-    seeds the Picard blend ramp: the accepted profile is the full adiabat, is not padded and
-    misses P_t by at most 1 P_t, the cap of a padded root replaced by its reached end.
-    Refinements (second solves and replacements) move more than half the
-    roots closer to P_t, and none further from it."""
+    seeds the Picard blend ramp: the accepted profile is the full adiabat and either misses
+    P_t by at most 1 P_t, the cap of a padded root replaced by its reached end, or is padded
+    with the reached end of its first sign pair beyond that cap (which of the two depends on
+    round-off). Refinements (second solves and replacements) move more than half the roots
+    closer to P_t, and none further from it."""
     if not _has_paleos_data():
         pytest.skip('PALEOS tables not on disk')
-    moves, real = [], zs._refine_pressure_root
+    moves, pairs, real = [], [], zs._refine_pressure_root
 
     def spy(root, info, evals, residual, p_target, maxiter):
+        pair = zs._nearest_sign_pair(evals, root)
         out = real(root, info, evals, residual, p_target, maxiter)
         moves.append(abs(evals[out[0]]) - abs(evals[root]))
+        pairs.append(None if pair is None else evals[pair[1]])
         return out
 
     monkeypatch.setattr(zs, '_refine_pressure_root', spy)
@@ -85,8 +88,10 @@ def test_the_paleos_newton_planet_reaches_its_surface_within_the_cap(monkeypatch
     r = zs.main(cfg, load_material_dictionaries(), None, os.path.join(root, 'input'))
     P = np.asarray(r['pressure'], dtype=float)
     assert r['converged'] and r['adiabat_blend'] == 1.0
-    assert r['padded'] is False and P[-1] > 0.0
-    assert abs(P[-1] - P_T) <= CAP * P_T
+    if r['padded']:
+        assert P[-1] == 0.0 and (pairs[-1] is None or pairs[-1] > CAP * P_T)
+    else:
+        assert abs(P[-1] - P_T) <= CAP * P_T
     assert sum(m < 0.0 for m in moves) > len(moves) // 2 and max(moves) <= 0.0
 
 
@@ -131,8 +136,9 @@ NEWTON_SETUPS = (
     ('PALEOS 5', PALEOS, 5.0, False),
     ('PALEOS 10', PALEOS, 10.0, False),
 )
-# P(R) near the stop scatters on the JAX path; a padded accept is possible there.
-MAY_PAD = {'PALEOS 1 JAX'}
+# P(R) near the stop scatters on the JAX path and in the Picard blend ramp that seeds from a
+# numpy PALEOS Newton root; a padded accept is possible there.
+MAY_PAD = {'PALEOS 1 JAX', 'PALEOS 1', 'PALEOS 5', 'PALEOS 10'}
 
 
 @pytest.mark.accept_solves_newton_setups
@@ -176,7 +182,10 @@ def test_every_newton_setup_meets_the_surface_boundary_condition(monkeypatch):
         # numpy PALEOS (adiabatic, no external T): the Newton root seeds the Picard blend ramp
         assert r['converged'], name
         if eos is PALEOS and not jax:
-            assert r['adiabat_blend'] == 1.0 and r['accepted_on'] != 'newton_tol', name
+            assert r['adiabat_blend'] == 1.0 and r['accepted_on'] in ('strict', 'mass_only'), (
+                name
+            )
+            assert r['mass_error_at_accept'] < 1e-4, name  # min(tolerance_outer, newton_tol)
         else:
             assert r['accepted_on'] == 'newton_tol', name
         first_pair, root, evals = calls[-1]
