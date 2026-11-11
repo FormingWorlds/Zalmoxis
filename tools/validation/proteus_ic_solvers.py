@@ -144,9 +144,8 @@ def plot(outdir, assets):
             r = recs[case]
             d = np.maximum(np.abs(np.subtract(r['newton']['T_q'], r['picard']['T_q'])), 1e-3)
             ax.semilogy(r['picard']['x_q'], d, label=case)
-        ax.axhline(
-            LIMIT_T, ls='--', color=plt.rcParams['text.color'], label=f'{LIMIT_T:g} K limit'
-        )
+        kw = {'ls': '--', 'color': plt.rcParams['text.color'], 'alpha': 0.5}
+        ax.axhline(LIMIT_T, label=f'{LIMIT_T:g} K limit', **kw)
         ax.set_ylim(5e-4, 100.0)
         ax.minorticks_off()
         ax.set_yticks([1e-3, 1e-1, 1e1])
@@ -154,7 +153,7 @@ def plot(outdir, assets):
         ax.set_xlabel('Mantle mass coordinate')
         ax.set_ylabel('|T difference| [K]')
         fig.legend(loc='lower center', fontsize=plt.rcParams['axes.labelsize'])
-        fig.tight_layout(rect=(0, 0.3, 1, 1))
+        fig.tight_layout(rect=(0, 0.22, 1, 1))
         return fig
 
     mod = 'python -m tools.validation.proteus_ic_solvers'
