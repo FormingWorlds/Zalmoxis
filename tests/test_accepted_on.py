@@ -794,6 +794,9 @@ def test_wall_clock_in_the_adiabat_ramp_is_retried_to_the_full_adiabat(monkeypat
         tolerance_outer=0.02,
         max_iterations_inner=2,
         wall_timeout=WALL,
+        num_layers=30,  # the retry runs on the fixed 600 s retry clock
+        relative_tolerance=1e-5,
+        absolute_tolerance=1e-6,
     )
     melt = get_solidus_liquidus_functions()
     r = zs.main(cfg, load_material_dictionaries(), melt, '/tmp')
@@ -802,7 +805,9 @@ def test_wall_clock_in_the_adiabat_ramp_is_retried_to_the_full_adiabat(monkeypat
     assert 'No accept of a pass at adiabat blend 0.00' in caplog.text
     assert 'Retrying with tighter parameters' in caplog.text
     assert r['converged'] is True and r['accepted_on'] is not None
-    assert r['adiabat_computed'] is True and r['adiabat_blend'] == 1.0
+    assert (
+        r['adiabat_computed'] is True and r['adiabat_blend'] == r['adiabat_table_blend'] == 1.0
+    )
 
 
 @pytest.mark.smoke
