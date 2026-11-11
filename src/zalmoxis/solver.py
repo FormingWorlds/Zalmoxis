@@ -665,8 +665,10 @@ def main(
         was not accepted), and ``mass_error_at_accept`` is the relative mass error
         of the returned profile. 'timeout' replaces the other labels when the wall
         clock stopped the solve of the returned profile. In an adiabatic mode with a
-        T-dependent EOS and no external temperature only the full adiabat
-        (``adiabat_blend`` 1) is accepted; a Newton root there seeds the Picard blend
+        T-dependent EOS and no external temperature only the full adiabat on a table of a
+        full-adiabat pass (``adiabat_blend`` and ``adiabat_table_blend`` 1) is accepted, and
+        ``adiabat_self_consistency`` gives the largest difference in K between the returned
+        mantle T and the adiabat recomputed on the returned structure (None below blend 1); a Newton root there seeds the Picard blend
         ramp at min(tolerance_outer, newton_tol), and the result keeps its ``newton_*``
         keys and its time in ``total_time``. A failed table band check
         sets ``converged`` to False and leaves ``accepted_on`` as it is. A converged
@@ -2002,10 +2004,7 @@ def _solve(
                     _adiabat_blend,
                 )
 
-                # Recompute adiabat from previous iteration's converged
-                # structure. For 'adiabatic_from_cmb', anchor at the CMB
-                # and integrate outward; otherwise anchor at the surface
-                # and integrate inward (original behaviour).
+                # Recompute the adiabat on the previous pass's converged structure
                 _adiabat_computed = True
                 adiabat_T = _adiabat(prev_radii, prev_pressure, prev_mass_enclosed)
 
@@ -2773,11 +2772,13 @@ def _solve(
         )
     ):
         logger.warning(
-            'No pass of adiabat blend %.2f passes an accept test of this stop (mass error '
-            '%.4f%%); returning the best pass of blend %.2f (mass error %.4f%%).',
-            best_blend[0],
+            'No pass of adiabat blend %.2f on a table of blend %.2f passes an accept test of '
+            'this stop (mass error %.4f%%); returning the best pass of blend %.2f on a table '
+            'of blend %.2f (mass error %.4f%%).',
+            *best_blend,
             best_mass_error * 100,
             earlier_best[1]['adiabat_blend'],
+            earlier_best[1]['adiabat_table_blend'],
             earlier_best[0] * 100,
         )
         best_mass_error, best_profiles = earlier_best

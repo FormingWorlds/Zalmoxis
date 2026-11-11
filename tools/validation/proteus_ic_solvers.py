@@ -144,8 +144,8 @@ def plot(outdir, assets):
             r = recs[case]
             d = np.maximum(np.abs(np.subtract(r['newton']['T_q'], r['picard']['T_q'])), 1e-3)
             ax.semilogy(r['picard']['x_q'], d, label=case)
-        kw = {'ls': '--', 'color': plt.rcParams['text.color'], 'alpha': 0.5}
-        ax.axhline(LIMIT_T, label=f'{LIMIT_T:g} K limit', **kw)
+        c = plt.rcParams['text.color']
+        ax.axhline(LIMIT_T, ls='--', color=c, alpha=0.5, label=f'{LIMIT_T:g} K limit')
         ax.set_ylim(5e-4, 100.0)
         ax.minorticks_off()
         ax.set_yticks([1e-3, 1e-1, 1e1])
