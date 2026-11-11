@@ -6,7 +6,7 @@
   <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
    <cc:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
-    <dc:description>command: python -m tools.validation.pressure_root_sweep run OUTDIR &amp;&amp; python -m tools.validation.pressure_root_sweep plot OUTDIR; summary: {"v": 1, "axes": [{"scales": ["linear", "log"], "categories": [null, null], "lines": [[9, 0.0, 25.0, 9.666666666666666, 5.055555555555555, -2.4799441596448157, -0.4182118313183387, -1.3235675366954391, 0.3780854178253822], [16, 2.0, 23.0, 13.375, 3.95, 0.0, 0.0, 0.0, 0.0], [1, 24.0, 24.0, 24.0, 0.0, 0.47712125471966244, 0.47712125471966244, 0.47712125471966244, 0.0], [2, 0.0, 1.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0]], "collections": [], "values": [], "value_scales": [], "patches": [], "images": [], "image_scales": [], "extents": []}]}</dc:description>
+    <dc:description>command: python -m tools.validation.pressure_root_sweep run OUTDIR &amp;&amp; python -m tools.validation.pressure_root_sweep plot OUTDIR; summary: {"v": 1, "axes": [{"scales": ["linear", "log"], "categories": [null, null], "lines": [[8, 0.0, 25.0, 9.749999999999998, 5.392857142857142, -2.4799441596448157, -0.6009928519249733, -1.435603296720864, 0.3867417436748298], [17, 2.0, 23.0, 13.117647058823527, 3.8676470588235294, 0.0, 0.0, 0.0, 0.0], [1, 24.0, 24.0, 24.0, 0.0, 0.47712125471966244, 0.47712125471966244, 0.47712125471966244, 0.0], [2, 0.0, 1.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0]], "collections": [], "values": [], "value_scales": [], "patches": [], "images": [], "image_scales": [], "extents": []}]}</dc:description>
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <cc:Agent>
@@ -916,11 +916,10 @@ z
      <use xlink:href="#mcc07b83aa6" x="91.668135" y="151.481407" style="fill: #10151b; stroke: #10151b"/>
      <use xlink:href="#mcc07b83aa6" x="116.453143" y="146.48258" style="fill: #10151b; stroke: #10151b"/>
      <use xlink:href="#mcc07b83aa6" x="128.845647" y="98.388697" style="fill: #10151b; stroke: #10151b"/>
-     <use xlink:href="#mcc07b83aa6" x="190.808168" y="56.0422" style="fill: #10151b; stroke: #10151b"/>
      <use xlink:href="#mcc07b83aa6" x="240.378185" y="70.570003" style="fill: #10151b; stroke: #10151b"/>
-     <use xlink:href="#mcc07b83aa6" x="252.77069" y="88.105379" style="fill: #10151b; stroke: #10151b"/>
+     <use xlink:href="#mcc07b83aa6" x="252.77069" y="79.557065" style="fill: #10151b; stroke: #10151b"/>
      <use xlink:href="#mcc07b83aa6" x="302.340707" y="85.100714" style="fill: #10151b; stroke: #10151b"/>
-     <use xlink:href="#mcc07b83aa6" x="389.088236" y="55.675471" style="fill: #10151b; stroke: #10151b"/>
+     <use xlink:href="#mcc07b83aa6" x="389.088236" y="64.16906" style="fill: #10151b; stroke: #10151b"/>
     </g>
    </g>
    <g id="line2d_55">
@@ -938,6 +937,7 @@ z
      <use xlink:href="#m4cc2f1b43c" x="153.630656" y="36.241728" style="fill: #e23d28; stroke: #e23d28; stroke-linejoin: miter"/>
      <use xlink:href="#m4cc2f1b43c" x="166.02316" y="36.241728" style="fill: #e23d28; stroke: #e23d28; stroke-linejoin: miter"/>
      <use xlink:href="#m4cc2f1b43c" x="178.415664" y="36.241728" style="fill: #e23d28; stroke: #e23d28; stroke-linejoin: miter"/>
+     <use xlink:href="#m4cc2f1b43c" x="190.808168" y="36.241728" style="fill: #e23d28; stroke: #e23d28; stroke-linejoin: miter"/>
      <use xlink:href="#m4cc2f1b43c" x="203.200673" y="36.241728" style="fill: #e23d28; stroke: #e23d28; stroke-linejoin: miter"/>
      <use xlink:href="#m4cc2f1b43c" x="215.593177" y="36.241728" style="fill: #e23d28; stroke: #e23d28; stroke-linejoin: miter"/>
      <use xlink:href="#m4cc2f1b43c" x="227.985681" y="36.241728" style="fill: #e23d28; stroke: #e23d28; stroke-linejoin: miter"/>

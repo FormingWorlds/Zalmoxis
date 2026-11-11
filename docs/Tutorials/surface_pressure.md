@@ -209,8 +209,8 @@ The outer solver finds the radius at which the computed mass equals the planet m
 - The Picard outer solver, the default, rescales the radius after each structure solve.
 - The Newton outer solver uses Newton's method, which follows the slope of the mass error with the radius.
 - `relative_tolerance` is the relative tolerance of the integrator of the structure equations.
-- The label `newton_tol` means that the Newton outer solver accepted the structure on its mass error.
-Setup 9 takes about 4 minutes.
+- The label `newton_tol` means that the Newton outer solver accepted the structure on its mass error. In an adiabatic temperature mode, as in setup 9, the Newton root only seeds the Picard blend ramp to the adiabat, so the structure gets a Picard label such as `strict`.
+Setup 9 takes about 9 minutes.
 
 ```console
 mkdir -p output/sweep
@@ -236,16 +236,16 @@ On our run this printed:
 ```text
 setup 1 Analytic 1: strict, P(R) = 1.017e+05 Pa, miss 0.003 P_t, padded nodes 0
 setup 8 PALEOS 1 (default.toml): strict, P(R) = 0 Pa, miss 1.000 P_t, padded nodes 1
-setup 9 PALEOS 1, Newton: newton_tol, P(R) = 1.393e+05 Pa, miss 0.375 P_t, padded nodes 0
+setup 9 PALEOS 1, Newton: strict, P(R) = 0 Pa, miss 1.000 P_t, padded nodes 1
 ```
 
-The command `python -m tools.validation.pressure_root_sweep run <dir> -j 2` runs all 26 setups; their solves took 2718 s in total on a workstation, so about 23 minutes with 2 processes.
+The command `python -m tools.validation.pressure_root_sweep run <dir> -j 2` runs all 26 setups; their solves took 3554 s in total on a workstation, so about 30 minutes with 2 processes.
 The command `python -m tools.validation.pressure_root_sweep plot <dir> --assets <dir>` draws them into `<dir>`.
 It needs the `proteus_mpl` package and a record of every setup.
 Without `--assets` it writes over the figures under `docs/assets/validation/`.
 The figure of all 26 setups is on the [validation page](../Validation/hydrostatic_structure.md#surface-boundary-condition-in-every-newton-setup).
-In it, 15 of the 19 Picard setups that return a profile end padded, and 5 of the 6 Newton setups at `relative_tolerance` $10^{-9}$ reach the outer radius; setup 10 (PALEOS on the JAX path) ends padded.
-Reached means that the integration reaches $R$, not that $P(R) = P_t$: setup 9 above misses $P_t$ by 0.375 $P_t$.
+In it, 15 of the 19 Picard setups that return a profile end padded, and 4 of the 6 Newton setups at `relative_tolerance` $10^{-9}$ reach the outer radius; setup 9 (PALEOS, whose Newton root seeds the Picard blend ramp) and setup 10 (PALEOS on the JAX path) end padded; whether setup 9 ends padded depends on round-off.
+Reached means that the integration reaches $R$, not that $P(R) = P_t$: setup 25 (PALEOS at 5 $M_\oplus$, Newton) misses $P_t$ by 0.251 $P_t$.
 
 ## Step 5: what to do with a padded or missing surface pressure
 
