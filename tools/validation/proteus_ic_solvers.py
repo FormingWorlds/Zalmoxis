@@ -1,23 +1,20 @@
-"""Newton against Picard on the PROTEUS initial structure solve, with the branch of the last core node.
+"""Newton against Picard on the PROTEUS initial structure solve.
 
 The PROTEUS initial structure solve (``adiabatic_from_cmb``, PALEOS, 1 Earth mass, the PROTEUS
-solver settings of ``input/all_options.toml`` and ``input/dummy.toml``) carries T_surf on the core
-nodes, and the last core node takes one of 2 values: about T_surf (the ``T_surf`` branch) or about a
-third of the way from T_surf to T_cmb (the ``raised`` branch); which one a solve gives depends on
-the outer solver and its tolerance. The mantle temperature at 39 mantle mass points and the CMB pressure of the 2 solves
-must agree within 5 K and 0.1 GPa on the same branch, and within 15 K and 0.2 GPa across branches.
+solver settings of ``input/all_options.toml`` and ``input/dummy.toml``) gives the same mantle
+temperature at 39 mantle mass points within 5 K and the same CMB pressure within 0.1 GPa with
+the Newton and the Picard outer solver.
 
 Usage::
 
-    python -m tools.validation.proteus_ic_branches run <out dir> [case ...]
-    python -m tools.validation.proteus_ic_branches plot <out dir> [--assets <assets dir>]
+    python -m tools.validation.proteus_ic_solvers run <out dir> [case ...]
+    python -m tools.validation.proteus_ic_solvers plot <out dir> [--assets <assets dir>]
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
 
 import numpy as np
@@ -63,56 +60,17 @@ PROTEUS_IC = {
     },
 }
 
-# (T_last - T_surf) / (T_cmb - T_surf) of each branch; measured 4e-4 to 4e-3 and 0.34 to 0.35
-BRANCH_WINDOWS = {'T_surf': (-0.05, 0.05), 'raised': (0.2, 0.5)}
-LIMITS = {True: (5.0, 0.1e9), False: (15.0, 0.2e9)}  # same branch: (K, Pa)
-
-
-def last_core_branch(T_last, T_surf, T_cmb):
-    """Name the branch of the last core node.
-
-    Parameters
-    ----------
-    T_last : float
-        Temperature of the last node below the CMB mass, in K.
-    T_surf, T_cmb : float
-        Surface and CMB anchor temperatures of the solve, in K; T_cmb must exceed T_surf.
-
-    Returns
-    -------
-    tuple of (str, float)
-        The branch name and its fraction (T_last - T_surf) / (T_cmb - T_surf).
-
-    Raises
-    ------
-    ValueError
-        A temperature is not finite, T_cmb is not above T_surf, or the fraction lies in
-        neither branch window.
-    """
-    if not all(math.isfinite(t) for t in (T_last, T_surf, T_cmb)) or not T_cmb > T_surf:
-        raise ValueError(f'no branch for T_last {T_last}, T_surf {T_surf}, T_cmb {T_cmb}')
-    frac = (T_last - T_surf) / (T_cmb - T_surf)
-    for name, (lo, hi) in BRANCH_WINDOWS.items():
-        if lo <= frac < hi:
-            return name, frac
-    raise ValueError(f'last core node at fraction {frac:.4f} is on neither branch')
+LIMIT_T, LIMIT_P = 5.0, 0.1e9  # K, Pa
 
 
 def record(result, cfg):
-    """Mantle temperature at 39 mass points, CMB pressure and last-core-node branch of a result."""
+    """Mantle temperature at 39 mass points, CMB pressure and accept state of a result."""
     m = np.asarray(result['mass_enclosed'], float)
     P, T = np.asarray(result['pressure'], float), np.asarray(result['temperature'], float)
     cmb, M = float(result['cmb_mass']), float(cfg['planet_mass'])
     x = np.linspace(0.0, 1.0, 41)[1:-1]
     m_q = cmb + x * (M - cmb)
-    i = int(np.searchsorted(m, cmb)) - 1  # the core/mantle split of the adiabat
-    if i < 0:
-        raise ValueError(f'no node below the CMB mass {cmb:.6e} kg')
-    branch, frac = last_core_branch(T[i], cfg['surface_temperature'], cfg['cmb_temperature'])
     return {
-        'branch': branch,
-        'frac': frac,
-        'T_last': float(T[i]),
         'x_q': x.tolist(),
         'm_q': m_q.tolist(),
         'T_q': np.interp(m_q, m, T).tolist(),
@@ -120,6 +78,8 @@ def record(result, cfg):
         'converged': bool(result['converged']),
         'adiabat_computed': bool(result.get('adiabat_computed')),
         'blend': result.get('adiabat_blend'),
+        'table_blend': result.get('adiabat_table_blend'),
+        'self_consistency': result.get('adiabat_self_consistency'),
         'accepted_on': result.get('accepted_on'),
     }
 
@@ -148,36 +108,17 @@ def run_case(case):
 
 
 def compare(picard, newton):
-    """Largest mantle T and CMB pressure difference of 2 records and the limits of their branches."""
+    """Largest mantle T difference (K) and CMB pressure difference (Pa) of 2 records."""
     if not np.array_equal(picard['m_q'], newton['m_q']):
         raise ValueError('the records hold different mass points')
-    same = picard['branch'] == newton['branch']
-    limit_T, limit_P = LIMITS[same]
     return {
-        'branches': (picard['branch'], newton['branch']),
-        'same': same,
         'dT': float(np.max(np.abs(np.subtract(newton['T_q'], picard['T_q'])))),
         'dP': abs(newton['P_cmb'] - picard['P_cmb']),
-        'limit_T': limit_T,
-        'limit_P': limit_P,
     }
 
 
-def failures(c):
-    """One line per exceeded limit of a comparison, naming the branch of each solve."""
-    tag = 'Picard {}, Newton {}'.format(*c['branches'])
-    out = []
-    if not c['dT'] < c['limit_T']:
-        out.append(f'mantle T: differs by {c["dT"]:.3f} K, limit {c["limit_T"]} K ({tag})')
-    if not c['dP'] < c['limit_P']:
-        out.append(
-            f'P_cmb: differs by {c["dP"] / 1e9:.4f} GPa, limit {c["limit_P"] / 1e9} GPa ({tag})'
-        )
-    return out
-
-
 def plot(outdir, assets):
-    """Write the light and dark plot of |T_Newton - T_Picard| per setup with its branch limit."""
+    """Write the light and dark plot of |T_Newton - T_Picard| per setup with the 5 K limit."""
     from proteus_mpl.validation import save
 
     recs, missing = {}, []
@@ -192,25 +133,19 @@ def plot(outdir, assets):
         raise SystemExit('cases without a record:\n' + '\n'.join(missing))
     comp = {case: compare(r['picard'], r['newton']) for case, r in recs.items()}
     for case, c in comp.items():
-        print(
-            case, json.dumps({k: c[k] for k in ('branches', 'dT', 'dP', 'limit_T', 'limit_P')})
-        )
+        print(case, json.dumps(c))
 
     def figure():
         import matplotlib.pyplot as plt
 
         fig, ax = plt.subplots(figsize=(6, 5.4))
-        for case, ls in zip(CASES, ('--', ':')):
-            r, c = recs[case], comp[case]
+        for case in CASES:
+            r = recs[case]
             d = np.maximum(np.abs(np.subtract(r['newton']['T_q'], r['picard']['T_q'])), 1e-3)
-            tag = f'{case}: Picard {c["branches"][0]}, Newton {c["branches"][1]}'
-            (ln,) = ax.semilogy(r['picard']['x_q'], d, label=tag)
-            ax.axhline(
-                c['limit_T'],
-                ls=ls,
-                color=ln.get_color(),
-                label=f'{case}: {c["limit_T"]:g} K limit',
-            )
+            ax.semilogy(r['picard']['x_q'], d, label=case)
+        ax.axhline(
+            LIMIT_T, ls='--', color=plt.rcParams['text.color'], label=f'{LIMIT_T:g} K limit'
+        )
         ax.set_ylim(5e-4, 100.0)
         ax.minorticks_off()
         ax.set_yticks([1e-3, 1e-1, 1e1])
@@ -221,9 +156,9 @@ def plot(outdir, assets):
         fig.tight_layout(rect=(0, 0.3, 1, 1))
         return fig
 
-    mod = 'python -m tools.validation.proteus_ic_branches'
+    mod = 'python -m tools.validation.proteus_ic_solvers'
     for path in save(
-        figure, 'proteus_ic_branches', assets, command=f'{mod} run OUTDIR && {mod} plot OUTDIR'
+        figure, 'proteus_ic_solvers', assets, command=f'{mod} run OUTDIR && {mod} plot OUTDIR'
     ):
         print(path, os.path.getsize(path))
 

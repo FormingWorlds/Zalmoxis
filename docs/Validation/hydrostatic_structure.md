@@ -365,8 +365,8 @@ In this mode the core nodes carry $T_\mathrm{surf}$ (see [initial-condition anch
 
 **Why it matters.** PROTEUS uses the Newton outer solver by default, and the temperature and pressure of this structure set the initial state of the interior evolution.
 
-![Mantle temperature difference between the Newton and Picard results of 2 PROTEUS setups](../assets/validation/proteus_ic_branches.svg#only-light){ width="70%" }
-![Mantle temperature difference between the Newton and Picard results of 2 PROTEUS setups](../assets/validation/proteus_ic_branches_dark.svg#only-dark){ width="70%" }
+![Mantle temperature difference between the Newton and Picard results of 2 PROTEUS setups](../assets/validation/proteus_ic_solvers.svg#only-light){ width="70%" }
+![Mantle temperature difference between the Newton and Picard results of 2 PROTEUS setups](../assets/validation/proteus_ic_solvers_dark.svg#only-dark){ width="70%" }
 
 **How to read the plot.** The x-axis is the mantle mass coordinate, 0 at the CMB and 1 at the surface. The y-axis is the absolute difference between the Newton and the Picard mantle temperature in K, on a log scale; differences below $10^{-3}$ K are drawn at $10^{-3}$ K. Each setup has a solid line and its limit as a broken line in the same colour. The legend names the branch of each solve. A pass means that each line stays below its limit. The CMB pressures differ by 0.050 GPa in `all_options` and by 0.003 GPa in `dummy`, inside their limits of 0.2 and 0.1 GPa.
 
@@ -376,7 +376,7 @@ In this mode the core nodes carry $T_\mathrm{surf}$ (see [initial-condition anch
     - Reference: the Picard result of the same setup (cross-solver check).
     - Tolerance: same branch, 5 K at 39 mantle mass points and 0.1 GPa at the CMB; different branches, 15 K and 0.2 GPa.
     - Test id: `tests/test_accepted_on.py::test_newton_gives_the_mantle_adiabat_of_picard_on_the_proteus_initial_structure`
-    - Command: `pytest -o "addopts=" -m accept_solves_long tests/test_accepted_on.py -k proteus_initial_structure`; the figure: `python -m tools.validation.proteus_ic_branches run <dir>`, then `python -m tools.validation.proteus_ic_branches plot <dir> --assets <dir>`.
+    - Command: `pytest -o "addopts=" -m accept_solves_long tests/test_accepted_on.py -k proteus_initial_structure`; the figure: `python -m tools.validation.proteus_ic_solvers run <dir>`, then `python -m tools.validation.proteus_ic_solvers plot <dir> --assets <dir>`.
 
 ## Reproducing the results
 

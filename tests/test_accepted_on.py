@@ -1799,7 +1799,7 @@ def test_newton_gives_the_mantle_adiabat_of_picard_on_the_proteus_initial_struct
     PROTEUS solver settings): the Newton result has the mantle temperature of the Picard result
     at 39 mantle mass points within 5 K and its CMB pressure within 0.1 GPa."""
     from tests.test_spider_coupling_convergence import _has_paleos_data
-    from tools.validation import proteus_ic_branches as tool
+    from tools.validation import proteus_ic_solvers as tool
 
     if not _has_paleos_data():
         pytest.skip('PALEOS iron and unified MgSiO3 tables not on disk')
@@ -1823,7 +1823,7 @@ def test_the_returned_mantle_temperature_is_the_adiabat_of_the_returned_pressure
     the low-pressure step of the adiabat; adiabat_self_consistency is the largest mantle
     difference, top node included."""
     from tests.test_spider_coupling_convergence import _has_paleos_data
-    from tools.validation import proteus_ic_branches as tool
+    from tools.validation import proteus_ic_solvers as tool
 
     if not _has_paleos_data():
         pytest.skip('PALEOS iron and unified MgSiO3 tables not on disk')
