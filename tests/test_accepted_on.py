@@ -7,6 +7,7 @@ inner solve of its returned profile reports converged pressure and that density.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
@@ -1775,46 +1776,6 @@ def test_a_tight_tolerance_starts_the_blend_ramp_and_accepts_only_the_adiabat():
     assert r['temperature'][0] != cfg['center_temperature']
 
 
-# config_params of the PROTEUS initial structure solve (Time 0, liquidus_super), from
-# input/all_options.toml and input/dummy.toml of PROTEUS
-_PROTEUS_IC = {
-    'common': {
-        'absolute_tolerance': 1e-10,
-        'center_temperature': 6000.0,
-        'layer_eos_config': {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
-        'mantle_mass_fraction': 0.0,
-        'max_iterations_inner': 100,
-        'max_iterations_outer': 100,
-        'mushy_zone_factor': 0.8,
-        'mushy_zone_factors': {'PALEOS:MgSiO3': 0.8, 'PALEOS:iron': 0.8},
-        'newton_max_iter': 30,
-        'newton_tol': 1e-4,
-        'num_layers': 150,
-        'planet_mass': 5.972e24,
-        'relative_tolerance': 1e-9,
-        'temp_profile_file': None,
-        'temperature_mode': 'adiabatic_from_cmb',
-        'tolerance_inner': 1e-4,
-        'tolerance_outer': 3e-3,
-        'use_anderson': True,
-        'use_jax': True,
-        'wall_timeout': WALL,
-    },
-    'all_options': {
-        'cmb_temperature': 6121.257519593061,
-        'core_mass_fraction': 0.325,
-        'surface_temperature': 3936.1734971812284,
-        'target_surface_pressure': 5.0e6,
-    },
-    'dummy': {
-        'cmb_temperature': 6000.0,
-        'core_mass_fraction': 0.55,
-        'surface_temperature': 4000.0,
-        'target_surface_pressure': 101325.0,
-    },
-}
-
-
 @pytest.mark.smoke
 @pytest.mark.accept_solves_long
 @pytest.mark.timeout(4800)
@@ -1822,34 +1783,21 @@ _PROTEUS_IC = {
 def test_newton_gives_the_mantle_adiabat_of_picard_on_the_proteus_initial_structure(case):
     """The PROTEUS initial structure solve (adiabatic_from_cmb, PALEOS, 1 Earth mass, the
     PROTEUS solver settings): the Newton result has the mantle temperature of the Picard result
-    within 5 K at 39 mantle mass points between the CMB and the surface, and its CMB pressure
-    within 0.1 GPa. A Newton result on the linear first guess is up to 1200 K colder."""
+    at 39 mantle mass points and its CMB pressure within 5 K and 0.1 GPa when the last core
+    node of both results is on the same branch, and within the measured branch step, at most
+    15 K and 0.2 GPa, when the branches differ. A Newton result on the linear first guess is up
+    to 1200 K colder."""
     from tests._paleos_helpers import _paleos_data_available
-    from zalmoxis.melting_curves import (
-        derive_solidus_from_liquidus,
-        get_solidus_liquidus_functions,
-    )
+    from tools.validation import proteus_ic_branches as tool
 
     if not _paleos_data_available():
         pytest.skip('PALEOS data files not found')
-    _, liquidus = get_solidus_liquidus_functions('Stixrude14-solidus', 'PALEOS-liquidus')
-    melt = (derive_solidus_from_liquidus(liquidus, 0.8), liquidus)
-    cfg = {**_PROTEUS_IC['common'], **_PROTEUS_IC[case]}
-    md = load_material_dictionaries()
-    runs = {
-        s: zs.main({**cfg, 'outer_solver': s}, md, melt, INPUT) for s in ('picard', 'newton')
-    }
-    cmb = runs['picard']['cmb_mass']
-    q = np.linspace(cmb, cfg['planet_mass'], 41)[1:-1]
-    T, P_cmb = {}, {}
-    for s, r in runs.items():
-        assert r['converged'], s
-        m, P = np.asarray(r['mass_enclosed'], float), np.asarray(r['pressure'], float)
-        T[s] = np.interp(q, m, np.asarray(r['temperature'], float))
-        P_cmb[s] = np.interp(r['cmb_mass'], m, P)
-    assert np.max(np.abs(T['newton'] - T['picard'])) < 5.0
-    assert abs(P_cmb['newton'] - P_cmb['picard']) < 0.1e9
-    assert all(r['adiabat_computed'] and r['adiabat_blend'] == 1.0 for r in runs.values())
+    runs = tool.run_case(case)
+    for s, rec in runs.items():
+        assert rec['converged'] and rec['adiabat_computed'] and rec['blend'] == 1.0, s
+    c = tool.compare(runs['picard'], runs['newton'])
+    print(case, json.dumps({k: c[k] for k in ('branches', 'dT', 'dP', 'limit_T', 'limit_P')}))
+    assert tool.failures(c) == []
 
 
 def _analytic_ramp(linear=None, factor=None, clock_after=None, **kwargs):
