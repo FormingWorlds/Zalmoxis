@@ -23,28 +23,25 @@ def _rec(branch, dT=0.0, P_cmb=105.7e9, n=39):
     frac = {'T_surf': 4e-4, 'raised': 0.35}[branch]
     T_q = np.linspace(6100.0, 3950.0, n)
     T_q[n // 2] += dT
+    x = np.linspace(0.0, 1.0, n + 2)[1:-1]
     return {
         'case': 'all_options',
         'branch': branch,
         'frac': frac,
         'T_last': T_SURF + frac * (T_CMB - T_SURF),
-        'x_q': list(np.linspace(0.0, 1.0, n + 2)[1:-1]),
+        'x_q': list(x),
+        'm_q': list((0.325 + 0.675 * x) * 5.972e24),
         'T_q': list(T_q),
         'P_cmb': P_cmb,
     }
 
 
 @pytest.mark.parametrize(
-    ('T_last', 'want'),
-    [(3937.0, 'T_surf'), (T_SURF, 'T_surf'), (4705.34, 'raised'), (4678.88 + 1934.43, None)],
+    ('T_last', 'want'), [(3937.0, 'T_surf'), (T_SURF, 'T_surf'), (4705.34, 'raised')]
 )
 def test_the_last_core_node_is_named_by_its_branch(T_last, want):
     """3937 K (0.04 % of the way from T_surf to T_cmb) is the T_surf branch and 4705 K (35 %)
-    the raised branch; a node near T_cmb is neither and raises."""
-    if want is None:
-        with pytest.raises(ValueError, match='neither branch'):
-            tool.last_core_branch(T_last, T_SURF, T_CMB)
-        return
+    the raised branch."""
     name, frac = tool.last_core_branch(T_last, T_SURF, T_CMB)
     assert name == want
     assert frac == pytest.approx((T_last - T_SURF) / (T_CMB - T_SURF), rel=1e-12)
@@ -65,11 +62,13 @@ def test_a_node_between_the_branch_windows_raises(frac):
         (4000.0, T_CMB, T_CMB),
         (4000.0, T_CMB, T_SURF),
         (4000.0, math.nan, T_CMB),
+        (T_CMB, T_CMB, T_SURF),
     ],
 )
 def test_the_branch_needs_finite_temperatures_and_a_hotter_cmb(T_last, T_surf, T_cmb):
-    """A NaN or infinite temperature, or a CMB anchor not above T_surf, has no branch."""
-    with pytest.raises(ValueError):
+    """A NaN or infinite temperature, or a CMB anchor not above T_surf, has no branch, also when
+    the fraction would fall in a window (the reversed anchors give fraction 0)."""
+    with pytest.raises(ValueError, match='no branch for'):
         tool.last_core_branch(T_last, T_surf, T_cmb)
 
 
@@ -112,10 +111,19 @@ def test_a_same_branch_pair_meets_5_K_and_a_cross_branch_pair_15_K(bp, bn, dT, d
         assert f'Picard {bp}' in f and f'Newton {bn}' in f
 
 
+@pytest.mark.parametrize(('field', 'fails'), [('T_q', 'mantle T'), ('P_cmb', 'P_cmb')])
+def test_a_nan_difference_fails(field, fails):
+    """A NaN mantle T or CMB pressure in one solve fails the comparison."""
+    b = _rec('raised')
+    b[field] = [math.nan] * 39 if field == 'T_q' else math.nan
+    got = tool.failures(tool.compare(_rec('raised'), b))
+    assert [f.split(':')[0] for f in got] == [fails]
+
+
 def test_the_comparison_refuses_records_on_different_mass_points():
-    """The mantle T of the 2 solves is compared at the same mass points only."""
+    """The mantle T of the 2 solves is compared at the same absolute masses only."""
     a, b = _rec('raised'), _rec('raised')
-    b['x_q'] = list(np.asarray(b['x_q']) * 0.5)
+    b['m_q'] = list(np.asarray(b['m_q']) * 0.99)
     with pytest.raises(ValueError, match='mass points'):
         tool.compare(a, b)
 
@@ -152,17 +160,14 @@ def test_the_plot_draws_the_difference_and_the_limit_of_each_branch_pair(tmp_pat
     assert seen['command'].count('python -m tools.validation.proteus_ic_branches') == 2
     (ax,) = seen['fig'].axes
     lines = {ln.get_label(): ln for ln in ax.lines}
-    assert (
-        lines['15 K limit'].get_ydata()[0],
-        lines['5 K limit'].get_ydata()[0],
-    ) == (15.0, 5.0)
-    a, d = (
-        lines['all_options: Picard raised, Newton T_surf'],
-        lines['dummy: Picard raised, Newton raised'],
-    )
+    assert len(lines) == len(ax.lines) == 4
+    assert lines['all_options: 15 K limit'].get_ydata()[0] == 15.0
+    assert lines['dummy: 5 K limit'].get_ydata()[0] == 5.0
+    a = lines['all_options: Picard raised, Newton T_surf']
+    d = lines['dummy: Picard raised, Newton raised']
     assert max(a.get_ydata()) == pytest.approx(10.84, rel=1e-9)
     assert min(d.get_ydata()) == 1e-3
-    assert lines['5 K limit'].get_color() == d.get_color() != a.get_color()
+    assert lines['dummy: 5 K limit'].get_color() == d.get_color() != a.get_color()
 
 
 def test_the_legend_covers_no_data_point(tmp_path, monkeypatch):
@@ -179,13 +184,7 @@ def test_the_legend_covers_no_data_point(tmp_path, monkeypatch):
         for ln in ax.lines:
             xy = ln.get_transform().transform(np.column_stack([ln.get_xdata(), ln.get_ydata()]))
             for b in boxes:
-                inside = (
-                    (xy[:, 0] > b.x0)
-                    & (xy[:, 0] < b.x1)
-                    & (xy[:, 1] > b.y0)
-                    & (xy[:, 1] < b.y1)
-                )
-                assert not inside.any(), (ln.get_label(), b)
+                assert b.count_contains(xy) == 0, (ln.get_label(), b)
 
 
 def test_the_plot_stops_on_a_case_without_a_record(tmp_path):
@@ -217,21 +216,31 @@ def test_a_record_reads_the_last_node_below_the_cmb_mass(T_last, branch):
     rec = tool.record(res, cfg)
     assert (rec['branch'], rec['T_last']) == (branch, T_last)
     assert len(rec['T_q']) == 39 and rec['x_q'][0] == pytest.approx(0.025)
+    assert rec['m_q'][0] == pytest.approx(0.5125 * cfg['planet_mass'], rel=1e-12)
     assert rec['T_q'][0] == pytest.approx(T_CMB + 0.025 * (3000.0 - T_CMB), rel=1e-9)
     assert rec['P_cmb'] == pytest.approx(np.linspace(360e9, 5e6, 12)[6], rel=1e-12)
     assert rec['converged'] is True and rec['blend'] == 1.0
 
 
+def test_a_record_without_a_core_node_raises():
+    """A result with no node below the CMB mass has no last core node."""
+    res, cfg = _result(3937.0)
+    res['cmb_mass'] = 0.0
+    with pytest.raises(ValueError, match='no node below the CMB mass'):
+        tool.record(res, cfg)
+
+
 def test_run_writes_one_record_per_case_and_plot_reads_them(tmp_path, monkeypatch, capsys):
-    """``run`` stores the records of each named case and prints its comparison; ``plot`` reads
-    the directory."""
+    """``run`` makes the output directory, stores the records of each named case and prints
+    its comparison; ``plot`` reads the directory."""
     monkeypatch.setattr(
         tool,
         'run_case',
         lambda case: {'picard': _rec('raised'), 'newton': _rec('raised', dT=1.0)},
     )
-    tool.main(['run', str(tmp_path), 'dummy'])
-    assert [p.name for p in tmp_path.iterdir()] == ['case_dummy.json']
+    out = tmp_path / 'new'
+    tool.main(['run', str(out), 'dummy'])
+    assert [p.name for p in out.iterdir()] == ['case_dummy.json']
     assert '"dT": 1.0' in capsys.readouterr().out
     seen = {}
     monkeypatch.setattr(
