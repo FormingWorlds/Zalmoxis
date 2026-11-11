@@ -1810,7 +1810,8 @@ def test_newton_gives_the_mantle_adiabat_of_picard_on_the_proteus_initial_struct
         assert rec['converged'] and rec['adiabat_computed'] and rec['blend'] == 1.0, s
     c = tool.compare(runs['picard'], runs['newton'])
     print(case, json.dumps({k: c[k] for k in ('dT', 'dP')}))
-    assert c['dT'] < 5.0 and c['dP'] < 0.1e9
+    assert c['dT'] < tool.LIMIT_T, f'mantle T differs by {c["dT"]:.3f} K'
+    assert c['dP'] < tool.LIMIT_P, f'CMB pressure differs by {c["dP"] / 1e9:.4f} GPa'
 
 
 @pytest.mark.smoke
@@ -1851,24 +1852,25 @@ def test_the_returned_mantle_temperature_is_the_adiabat_of_the_returned_pressure
     fresh = real(r['radii'], r['pressure'], r['mass_enclosed'], *rest, **kwargs)
     lag = _mantle_lag(r, fresh)
     i_cmb = int(np.searchsorted(r['mass_enclosed'], r['cmb_mass']))
-    T_anchor = tool.PROTEUS_IC[case]['cmb_temperature']
-    dT_cmb = abs(r['temperature'][i_cmb] - T_anchor)
+    dT_cmb = abs(r['temperature'][i_cmb] - tool.PROTEUS_IC[case]['cmb_temperature'])
     print(
         case, solver, f'CMB {dT_cmb:.3f} K, top {lag[-1]:.3f} K, other {lag[1:-1].max():.3f} K'
     )
     assert lag[1:-1].max() <= 1.0
-    # P1: the core nodes carry T_surf, so the one T(P) table jumps by T_cmb - T_surf at the CMB
+    # the core nodes carry T_surf, so the one T(P) table jumps by T_cmb - T_surf at the CMB
     assert dT_cmb <= 6.0, f'CMB anchor node {dT_cmb:.3f} K off T_cmb: core/mantle T jump'
-    # plan B: the adiabat skips its step where a pressure is below 1e5 Pa
+    # the adiabat skips its step where a pressure is below 1e5 Pa
     assert lag[-1] <= 25.0, f'top node {lag[-1]:.3f} K off the adiabat: low-pressure skip'
     assert r['adiabat_table_blend'] == 1.0
     assert r['adiabat_self_consistency'] == pytest.approx(lag.max(), rel=1e-12)
+    assert r['adiabat_self_consistency'] >= max(dT_cmb, lag[-1])
 
 
 def _analytic_ramp(linear=None, factor=None, clock_after=None, **kwargs):
     """_solve on analytic densities through the adiabatic path: the EOS counts as T-dependent
     and the adiabat is a fixed profile. Passes before the ramp starts end ``linear`` times the
-    target mass and passes after it ``factor`` times (unscaled when None); with ``clock_after``
+    target mass and passes after it ``factor`` times (unscaled when None; a callable takes the
+    number of adiabat computations so far, 4 on the first pass at blend 1); with ``clock_after``
     the clock runs out once the adiabat was computed that many times. Returns the result and
     the number of adiabat computations."""
     adiabat, real, clock = [], zs.solve_structure, time.time
@@ -1879,7 +1881,7 @@ def _analytic_ramp(linear=None, factor=None, clock_after=None, **kwargs):
 
     def solve(*args, **kw):
         m, g, P = real(*args, **kw)
-        scale = factor if adiabat else linear
+        scale = (factor(len(adiabat)) if callable(factor) else factor) if adiabat else linear
         f = scale * earth_mass / m[-1] if scale else 1.0
         return m * f, g * f, P
 
@@ -1914,7 +1916,7 @@ def test_a_linear_floor_above_a_tight_tolerance_starts_the_ramp_unaccepted_on_a_
         wall_timeout=WALL,
     )
     assert n_adiabat >= 2 and r['stopped_on_wall_clock'] is True
-    assert r['adiabat_blend'] < 1.0
+    assert r['adiabat_blend'] < 1.0 and r['adiabat_self_consistency'] is None
     assert r['converged'] is False and r['converged_mass'] is False
     assert r['accepted_on'] is None and r['accept_mass_limit'] is None
 
@@ -1951,6 +1953,44 @@ def test_an_iteration_cap_on_the_first_full_adiabat_pass_is_not_accepted():
     r, _ = _analytic_ramp(
         linear=1.0, factor=1.0, tolerance_outer=1e-3, max_iterations_outer=5, wall_timeout=WALL
     )
+    assert r['converged'] is False and r['accepted_on'] is None
+    assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 0.75)
+
+
+@pytest.mark.smoke
+@pytest.mark.usefixtures('no_check')
+def test_an_iteration_cap_takes_the_best_pass_on_a_full_adiabat_table():
+    """The first pass at blend 1 (table of blend 0.75) ends 0.01 % off the mass, the passes on
+    a table of blend 1 0.5 % off: the iteration cap accepts the best pass of the newest step,
+    blend 1 on a table of blend 1, not the closer pass on the older table."""
+    r, _ = _analytic_ramp(
+        linear=1.0,
+        factor=lambda k: 1.0001 if k == 4 else 1.005,
+        tolerance_outer=1e-3,
+        max_iterations_outer=8,
+        wall_timeout=WALL,
+    )
+    assert r['converged'] is True and r['accepted_on'] == 'max_iter'
+    assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
+    assert r['mass_error_at_accept'] == pytest.approx(0.005, rel=1e-6)
+
+
+@pytest.mark.smoke
+@pytest.mark.usefixtures('no_check')
+def test_an_earlier_best_pass_on_an_older_table_is_named_and_refused(caplog):
+    """The passes on a table of blend 1 end 5 % off, above every accept limit of the iteration
+    cap; the first pass at blend 1 ends 0.01 % off. The stop returns that pass, the warning
+    names the blend and the table blend of both passes, and the pass is not accepted."""
+    with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.solver'):
+        r, _ = _analytic_ramp(
+            linear=1.0008,
+            factor=lambda k: 1.0001 if k == 4 else 1.05,
+            tolerance_outer=1e-3,
+            max_iterations_outer=8,
+            wall_timeout=WALL,
+        )
+    assert 'No pass of adiabat blend 1.00 on a table of blend 1.00 passes' in caplog.text
+    assert 'returning the best pass of blend 1.00 on a table of blend 0.75' in caplog.text
     assert r['converged'] is False and r['accepted_on'] is None
     assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 0.75)
 
