@@ -1835,12 +1835,13 @@ def test_the_returned_mantle_temperature_is_the_adiabat_of_the_returned_pressure
 
     monkeypatch.setattr(zs, 'compute_adiabatic_temperature', adiabat)
     r = tool.solve(case, solver)
-    assert r['converged'] and r['adiabat_blend'] == r['adiabat_table_blend'] == 1.0
+    assert r['converged'] and r['adiabat_blend'] == 1.0
     rest, kwargs = args[-1]
     fresh = real(r['radii'], r['pressure'], r['mass_enclosed'], *rest, **kwargs)
     lag = _mantle_lag(r, fresh)
     print(case, solver, f'top node {lag[-1]:.3f} K, below it {lag[:-1].max():.3f} K')
     assert lag[:-1].max() <= 1.0
+    assert r['adiabat_table_blend'] == 1.0
     assert r['adiabat_self_consistency'] == pytest.approx(lag.max(), rel=1e-12)
 
 
