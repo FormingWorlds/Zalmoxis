@@ -84,8 +84,9 @@ def record(result, cfg):
     }
 
 
-def solve(case, solver):
-    """The ``zalmoxis.solver.main`` result of one setup with the outer solver ``solver``."""
+def solve(case, solver, **overrides):
+    """The ``zalmoxis.solver.main`` result of one setup with the outer solver ``solver`` and
+    the config values of ``overrides``."""
     import zalmoxis.solver as zs
     from zalmoxis import get_zalmoxis_root
     from zalmoxis.config import load_material_dictionaries
@@ -96,7 +97,7 @@ def solve(case, solver):
 
     _, liquidus = get_solidus_liquidus_functions('Stixrude14-solidus', 'PALEOS-liquidus')
     melt = (derive_solidus_from_liquidus(liquidus, 0.8), liquidus)
-    cfg = {**PROTEUS_IC['common'], **PROTEUS_IC[case], 'outer_solver': solver}
+    cfg = {**PROTEUS_IC['common'], **PROTEUS_IC[case], 'outer_solver': solver, **overrides}
     md, inp = load_material_dictionaries(), os.path.join(get_zalmoxis_root(), 'input')
     return zs.main(cfg, md, melt, inp)
 

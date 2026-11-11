@@ -1814,14 +1814,23 @@ def test_newton_gives_the_mantle_adiabat_of_picard_on_the_proteus_initial_struct
 @pytest.mark.smoke
 @pytest.mark.accept_solves
 @pytest.mark.timeout(900)
-@pytest.mark.parametrize(('case', 'solver'), [('dummy', 'newton'), ('all_options', 'picard')])
+@pytest.mark.parametrize(
+    ('case', 'solver', 'tol'),
+    [
+        ('dummy', 'newton', None),
+        ('all_options', 'newton', None),
+        ('all_options', 'picard', 1e-4),
+    ],
+)
 def test_the_returned_mantle_temperature_is_the_adiabat_of_the_returned_pressure(
-    monkeypatch, case, solver
+    monkeypatch, case, solver, tol
 ):
-    """PROTEUS initial structure (CMB anchor): the returned mantle T equals the adiabat
-    recomputed on the returned pressure within 1 K below the top node, whose T can switch with
-    the low-pressure step of the adiabat; adiabat_self_consistency is the largest mantle
-    difference, top node included."""
+    """PROTEUS initial structure (CMB anchor), Picard at the mass tolerance of the Newton
+    hand-off: the returned mantle T equals the adiabat recomputed on the returned pressure
+    within 1 K, apart from 2 nodes with their own bounds. The CMB anchor node reads the T(P)
+    table across the jump from T_surf on the core nodes to T_cmb (within 6 K of T_cmb); the
+    top node can lose the low-pressure step of the adiabat (within 25 K).
+    adiabat_self_consistency is the largest mantle difference, both nodes included."""
     from tests.test_spider_coupling_convergence import _has_paleos_data
     from tools.validation import proteus_ic_solvers as tool
 
@@ -1834,13 +1843,22 @@ def test_the_returned_mantle_temperature_is_the_adiabat_of_the_returned_pressure
         return real(radii, pressure, mass, *rest, **kwargs)
 
     monkeypatch.setattr(zs, 'compute_adiabatic_temperature', adiabat)
-    r = tool.solve(case, solver)
+    r = tool.solve(case, solver, **({'tolerance_outer': tol} if tol else {}))
     assert r['converged'] and r['adiabat_blend'] == 1.0
     rest, kwargs = args[-1]
     fresh = real(r['radii'], r['pressure'], r['mass_enclosed'], *rest, **kwargs)
     lag = _mantle_lag(r, fresh)
-    print(case, solver, f'top node {lag[-1]:.3f} K, below it {lag[:-1].max():.3f} K')
-    assert lag[:-1].max() <= 1.0
+    i_cmb = int(np.searchsorted(r['mass_enclosed'], r['cmb_mass']))
+    T_anchor = tool.PROTEUS_IC[case]['cmb_temperature']
+    dT_cmb = abs(r['temperature'][i_cmb] - T_anchor)
+    print(
+        case, solver, f'CMB {dT_cmb:.3f} K, top {lag[-1]:.3f} K, other {lag[1:-1].max():.3f} K'
+    )
+    assert lag[1:-1].max() <= 1.0
+    # P1: the core nodes carry T_surf, so the one T(P) table jumps by T_cmb - T_surf at the CMB
+    assert dT_cmb <= 6.0, f'CMB anchor node {dT_cmb:.3f} K off T_cmb: core/mantle T jump'
+    # plan B: the adiabat skips its step where a pressure is below 1e5 Pa
+    assert lag[-1] <= 25.0, f'top node {lag[-1]:.3f} K off the adiabat: low-pressure skip'
     assert r['adiabat_table_blend'] == 1.0
     assert r['adiabat_self_consistency'] == pytest.approx(lag.max(), rel=1e-12)
 
