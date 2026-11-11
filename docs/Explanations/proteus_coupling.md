@@ -138,6 +138,7 @@ $$
 
 where $T_\mathrm{liq}^\mathrm{Fei2021}$ is the Belonoshko+2005 / Fei+2021 piecewise Simon-Glatzel liquidus exposed via `zalmoxis.melting_curves.paleos_liquidus`, and `delta_T_super` defaults to 500 K (set to 0 to anchor the IC adiabat exactly at the liquidus).
 Zalmoxis then integrates the adiabat *upward* from $(R_\mathrm{cmb}, T_\mathrm{cmb})$ rather than downward from a surface anchor.
+Only the mantle follows this adiabat: the core nodes carry the surface temperature $T_\mathrm{surf}$, because the energetics solver computes the core temperature itself.
 
 Why this matters: a surface-anchored adiabat gets the deep-mantle $T$ wrong by hundreds of K when the surface $T$ is uncertain (atmospheres at 2000 to 3500 K), but the deep-mantle $T_\mathrm{cmb}$ is well-constrained by the liquidus plus a physical excess.
 Anchoring upward fixes the well-known quantity and lets the surface $T$ float to whatever the radiative balance demands.

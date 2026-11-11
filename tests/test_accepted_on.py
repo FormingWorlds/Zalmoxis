@@ -1785,8 +1785,8 @@ def test_newton_gives_the_mantle_adiabat_of_picard_on_the_proteus_initial_struct
     PROTEUS solver settings): the Newton result has the mantle temperature of the Picard result
     at 39 mantle mass points and its CMB pressure within 5 K and 0.1 GPa when the last core
     node of both results is on the same branch, and within the measured branch step, at most
-    15 K and 0.2 GPa, when the branches differ. A Newton result on the linear first guess is up
-    to 1200 K colder."""
+    15 K and 0.2 GPa, when the branches differ. A Newton result on the linear first guess is off
+    by up to 1200 K."""
     from tests._paleos_helpers import _paleos_data_available
     from tools.validation import proteus_ic_branches as tool
 

@@ -4,7 +4,7 @@ The PROTEUS initial structure solve (``adiabatic_from_cmb``, PALEOS, 1 Earth mas
 solver settings of ``input/all_options.toml`` and ``input/dummy.toml``) carries T_surf on the core
 nodes, and the last core node takes one of 2 values: about T_surf (the ``T_surf`` branch) or about a
 third of the way from T_surf to T_cmb (the ``raised`` branch); which one a solve gives depends on
-round-off. The mantle temperature at 39 mantle mass points and the CMB pressure of the 2 solves
+the outer solver and its tolerance. The mantle temperature at 39 mantle mass points and the CMB pressure of the 2 solves
 must agree within 5 K and 0.1 GPa on the same branch, and within 15 K and 0.2 GPa across branches.
 
 Usage::
@@ -194,25 +194,23 @@ def plot(outdir, assets):
     def figure():
         import matplotlib.pyplot as plt
 
-        fig, axes = plt.subplots(1, len(CASES), figsize=(8, 3.6), sharey=True)
-        for ax, case in zip(axes, CASES):
+        fig, ax = plt.subplots(figsize=(6, 5.4))
+        for case, ls in zip(CASES, ('--', ':')):
             r, c = recs[case], comp[case]
             d = np.maximum(np.abs(np.subtract(r['newton']['T_q'], r['picard']['T_q'])), 1e-3)
-            ax.semilogy(
-                r['picard']['x_q'], d, 'o', ms=4, label='Newton minus Picard, floor 1e-3 K'
+            tag = f'{case}: Picard {c["branches"][0]}, Newton {c["branches"][1]}'
+            (ln,) = ax.semilogy(r['picard']['x_q'], d, label=tag)
+            ax.axhline(
+                c['limit_T'], ls=ls, color=ln.get_color(), label=f'{c["limit_T"]:g} K limit'
             )
-            ax.axhline(c['limit_T'], ls='--', label='Limit of the branch pair')
-            ax.set_ylim(5e-4, 100.0)
-            ax.set_xlabel('Mantle mass coordinate')
-            ax.set_title(
-                f'{case}: Picard {c["branches"][0]}, Newton {c["branches"][1]}\n'
-                f'CMB pressure differs by {c["dP"] / 1e9:.3f} GPa',
-                fontsize=9,
-            )
-        axes[0].set_ylabel('|T difference| [K]')
-        handles, labels = axes[0].get_legend_handles_labels()
-        fig.legend(handles, labels, loc='lower center', ncol=2, fontsize=9)
-        fig.tight_layout(rect=(0, 0.1, 1, 1))
+        ax.set_ylim(5e-4, 100.0)
+        ax.minorticks_off()
+        ax.set_yticks([1e-3, 1e-1, 1e1])
+        ax.set_xticks([0.0, 0.5, 1.0])
+        ax.set_xlabel('Mantle mass coordinate')
+        ax.set_ylabel('|T difference| [K]')
+        fig.legend(loc='lower center', ncol=1, fontsize=plt.rcParams['axes.labelsize'])
+        fig.tight_layout(rect=(0, 0.3, 1, 1))
         return fig
 
     mod = 'python -m tools.validation.proteus_ic_branches'

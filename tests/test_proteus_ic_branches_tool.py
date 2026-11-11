@@ -143,34 +143,37 @@ def _capture_save(monkeypatch):
 
 
 def test_the_plot_draws_the_difference_and_the_limit_of_each_branch_pair(tmp_path, monkeypatch):
-    """One panel per setup: |T_Newton - T_Picard| at the mantle points, floored at 1e-3 K, and
-    the limit of its branch pair; titles name both branches."""
+    """One series per setup: |T_Newton - T_Picard| at the mantle points, floored at 1e-3 K,
+    with the limit of its branch pair; the labels name both branches."""
     seen = _capture_save(monkeypatch)
     _write(tmp_path)
     tool.plot(str(tmp_path), str(tmp_path / 'assets'))
     assert seen['stem'] == 'proteus_ic_branches'
     assert seen['command'].count('python -m tools.validation.proteus_ic_branches') == 2
-    ax1, ax2 = seen['fig'].axes
-    lim = {ax: [ln for ln in ax.lines if ln.get_linestyle() == '--'][0] for ax in (ax1, ax2)}
-    assert (lim[ax1].get_ydata()[0], lim[ax2].get_ydata()[0]) == (15.0, 5.0)
-    diff = [ln for ln in ax1.lines if ln.get_linestyle() != '--'][0]
-    assert max(diff.get_ydata()) == pytest.approx(10.84, rel=1e-9)
-    assert min([ln for ln in ax2.lines if ln.get_linestyle() != '--'][0].get_ydata()) == 1e-3
-    assert 'Picard raised, Newton T_surf' in ax1.get_title()
-    assert 'Picard raised, Newton raised' in ax2.get_title()
+    (ax,) = seen['fig'].axes
+    lines = {ln.get_label(): ln for ln in ax.lines}
+    assert (
+        lines['15 K limit'].get_ydata()[0],
+        lines['5 K limit'].get_ydata()[0],
+    ) == (15.0, 5.0)
+    a, d = (
+        lines['all_options: Picard raised, Newton T_surf'],
+        lines['dummy: Picard raised, Newton raised'],
+    )
+    assert max(a.get_ydata()) == pytest.approx(10.84, rel=1e-9)
+    assert min(d.get_ydata()) == 1e-3
+    assert lines['5 K limit'].get_color() == d.get_color() != a.get_color()
 
 
-def test_no_legend_or_title_covers_a_data_point(tmp_path, monkeypatch):
-    """The legend and the titles sit outside every line vertex in display coordinates."""
+def test_the_legend_covers_no_data_point(tmp_path, monkeypatch):
+    """The legend sits outside every line vertex in display coordinates."""
     seen = _capture_save(monkeypatch)
     _write(tmp_path)
     tool.plot(str(tmp_path), str(tmp_path / 'assets'))
     fig = seen['fig']
     fig.canvas.draw()
     r = fig.canvas.get_renderer()
-    boxes = [lg.get_window_extent(r) for lg in fig.legends] + [
-        ax.title.get_window_extent(r) for ax in fig.axes
-    ]
+    boxes = [lg.get_window_extent(r) for lg in fig.legends]
     assert fig.legends
     for ax in fig.axes:
         for ln in ax.lines:
@@ -191,3 +194,48 @@ def test_the_plot_stops_on_a_case_without_a_record(tmp_path):
     (tmp_path / 'case_dummy.json').unlink()
     with pytest.raises(SystemExit, match='dummy: no record'):
         tool.plot(str(tmp_path), str(tmp_path / 'assets'))
+
+
+def _result(T_last):
+    """A 12-node result: 5 core nodes at T_surf, the last core node at ``T_last``, then a mantle
+    ramp from T_cmb down; mass in units of the planet mass, CMB at 0.5."""
+    cfg = {**tool.PROTEUS_IC['common'], **tool.PROTEUS_IC['all_options']}
+    M = cfg['planet_mass']
+    m = np.array([0.0, 0.1, 0.2, 0.3, 0.4, 0.49, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]) * M
+    T = np.r_[[T_SURF] * 5, T_last, np.linspace(T_CMB, 3000.0, 6)]
+    P = np.linspace(360e9, 5e6, 12)
+    res = {'mass_enclosed': m, 'pressure': P, 'temperature': T, 'cmb_mass': 0.5 * M}
+    res.update(converged=True, adiabat_computed=True, adiabat_blend=1.0, accepted_on='strict')
+    return res, cfg
+
+
+@pytest.mark.parametrize(('T_last', 'branch'), [(3937.0, 'T_surf'), (4705.3, 'raised')])
+def test_a_record_reads_the_last_node_below_the_cmb_mass(T_last, branch):
+    """The record takes its branch from the last node below the CMB mass, not from the first
+    mantle node at T_cmb, and interpolates the mantle T and the CMB pressure on the mass."""
+    res, cfg = _result(T_last)
+    rec = tool.record(res, cfg)
+    assert (rec['branch'], rec['T_last']) == (branch, T_last)
+    assert len(rec['T_q']) == 39 and rec['x_q'][0] == pytest.approx(0.025)
+    assert rec['T_q'][0] == pytest.approx(T_CMB + 0.025 * (3000.0 - T_CMB), rel=1e-9)
+    assert rec['P_cmb'] == pytest.approx(np.linspace(360e9, 5e6, 12)[6], rel=1e-12)
+    assert rec['converged'] is True and rec['blend'] == 1.0
+
+
+def test_run_writes_one_record_per_case_and_plot_reads_them(tmp_path, monkeypatch, capsys):
+    """``run`` stores the records of each named case and prints its comparison; ``plot`` reads
+    the directory."""
+    monkeypatch.setattr(
+        tool,
+        'run_case',
+        lambda case: {'picard': _rec('raised'), 'newton': _rec('raised', dT=1.0)},
+    )
+    tool.main(['run', str(tmp_path), 'dummy'])
+    assert [p.name for p in tmp_path.iterdir()] == ['case_dummy.json']
+    assert '"dT": 1.0' in capsys.readouterr().out
+    seen = {}
+    monkeypatch.setattr(
+        tool, 'plot', lambda outdir, assets: seen.update(outdir=outdir, assets=assets)
+    )
+    tool.main(['plot', str(tmp_path)])
+    assert seen == {'outdir': str(tmp_path), 'assets': 'docs/assets/validation'}

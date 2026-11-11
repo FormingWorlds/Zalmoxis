@@ -353,6 +353,31 @@ On these paths $P(R)$ varies irregularly from one trial central pressure to the 
     - Test id: `tests/test_pressure_root_solves.py::test_every_newton_setup_meets_the_surface_boundary_condition`
     - Command: `pytest -o "addopts=" -m accept_solves_newton_setups tests/test_pressure_root_solves.py`; the figure: `python -m tools.validation.pressure_root_sweep run <dir> -j 2`, then `python -m tools.validation.pressure_root_sweep plot <dir> --assets <dir>`.
 
+## Newton and Picard on the PROTEUS initial structure
+
+**Why this check exists.** PROTEUS starts a coupled run from a Zalmoxis structure solved with the Newton outer solver. If the Newton result kept the linear first guess of the temperature instead of the adiabat, its mantle temperature would be off the adiabat by up to 1200 K, and the start state of the run would be wrong.
+
+**What it tests.** The test solves the initial structure of 2 PROTEUS setups twice, once with the Picard and once with the Newton outer solver. Both setups have 1 Earth mass, the PALEOS iron core and PALEOS MgSiO$_3$ mantle, and the temperature mode `adiabatic_from_cmb`: the mantle follows the adiabat upward from a fixed CMB temperature $T_\mathrm{cmb}$. The setup `all_options` has a core mass fraction of 0.325 and anchors of $T_\mathrm{surf}$ = 3936 K and $T_\mathrm{cmb}$ = 6121 K; the setup `dummy` has 0.55, 4000 K and 6000 K. The test compares the mantle temperature at 39 mass points between the CMB and the surface, and the pressure at the CMB.
+
+In this mode the core nodes carry $T_\mathrm{surf}$ (see [initial-condition anchors](../Explanations/proteus_coupling.md#initial-condition-anchors)), and the last node below the CMB takes one of 2 values: about $T_\mathrm{surf}$ (the T_surf branch), or about a third of the way from $T_\mathrm{surf}$ to $T_\mathrm{cmb}$ (the raised branch). The test names the branch of each solve. When both solves are on the same branch, the mantle temperatures may differ by at most 5 K and the CMB pressures by at most 0.1 GPa. When the branches differ, the limits are 15 K and 0.2 GPa.
+
+**How we know the right answer.** The 2 outer solvers solve the same equations with the same adiabat, so their results must agree. The Picard result is the reference.
+
+**Why it matters.** PROTEUS uses the Newton outer solver by default, and the temperature and pressure of this structure set the initial state of the interior evolution.
+
+![Mantle temperature difference between the Newton and Picard results of 2 PROTEUS setups](../assets/validation/proteus_ic_branches.svg#only-light){ width="70%" }
+![Mantle temperature difference between the Newton and Picard results of 2 PROTEUS setups](../assets/validation/proteus_ic_branches_dark.svg#only-dark){ width="70%" }
+
+**How to read the plot.** The x-axis is the mantle mass coordinate, 0 at the CMB and 1 at the surface. The y-axis is the absolute difference between the Newton and the Picard mantle temperature in K, on a log scale; differences below $10^{-3}$ K are drawn at $10^{-3}$ K. Each setup has a solid line and its limit as a broken line in the same colour. The legend names the branch of each solve. A pass means that each line stays below its limit. The CMB pressures differ by 0.050 GPa in `all_options` and by 0.003 GPa in `dummy`, inside their limits of 0.2 and 0.1 GPa.
+
+**Known limit.** The 2 branches give mantle temperatures about 10 K apart: the step between them is 10.8 K and 0.050 GPa in `all_options` (Picard raised, Newton T_surf) and 9.8 K and 0.149 GPa in `dummy` with Picard at a mass tolerance of $10^{-4}$ (Picard T_surf, Newton raised). Which branch a solve takes depends on the outer solver and its tolerance. On the same branch the 2 solvers differ by at most 0.03 K. The last core node sits at the jump from $T_\mathrm{surf}$ on the core nodes to $T_\mathrm{cmb}$ at the CMB.
+
+??? info "Test details"
+    - Reference: the Picard result of the same setup (cross-solver check).
+    - Tolerance: same branch, 5 K at 39 mantle mass points and 0.1 GPa at the CMB; different branches, 15 K and 0.2 GPa.
+    - Test id: `tests/test_accepted_on.py::test_newton_gives_the_mantle_adiabat_of_picard_on_the_proteus_initial_structure`
+    - Command: `pytest -o "addopts=" -m accept_solves_long tests/test_accepted_on.py -k proteus_initial_structure`; the figure: `python -m tools.validation.proteus_ic_branches run <dir>`, then `python -m tools.validation.proteus_ic_branches plot <dir> --assets <dir>`.
+
 ## Reproducing the results
 
 The tests draw the plots of these cases. This command writes them again to `docs/assets/validation/`:
