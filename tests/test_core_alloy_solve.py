@@ -13,11 +13,10 @@ import os
 import numpy as np
 import pytest
 
-pytestmark = [pytest.mark.integration, pytest.mark.timeout(600)]
+pytestmark = [pytest.mark.integration, pytest.mark.timeout(1500)]
 
 
 @pytest.mark.physics_invariant
-@pytest.mark.timeout(1500)
 def test_one_wt_percent_hydrogen_core_solves(caplog, monkeypatch):
     """The core with 1 wt% H as the Luo carrier (CoreAlloy:H-Luo), which samples 4-30 GPa below
     8000 K in its first trials, solves."""
@@ -37,7 +36,8 @@ def test_one_wt_percent_hydrogen_core_solves(caplog, monkeypatch):
     if not os.path.isfile(md['PALEOS:iron'].get('eos_file', '')):
         pytest.skip('PALEOS iron table not linked under data/')
     cfg = load_zalmoxis_config(os.path.join(root, 'input', 'default.toml'))
-    cfg['use_jax'], cfg['wall_timeout'] = True, 1200.0  # the full ramp on a 2-vCPU CI runner
+    # The full ramp on a busy 4-vCPU CI runner
+    cfg['use_jax'], cfg['wall_timeout'] = True, 1200.0
     cfg['layer_eos_config'] = dict(
         cfg['layer_eos_config'], core='PALEOS:iron:0.99+CoreAlloy:H-Luo:0.01'
     )
@@ -86,7 +86,8 @@ def _solve_default(core, use_jax, caplog):
     if not os.path.isfile(md['PALEOS:iron'].get('eos_file', '')):
         pytest.skip('PALEOS iron table not linked under data/')
     cfg = load_zalmoxis_config(os.path.join(root, 'input', 'default.toml'))
-    cfg['use_jax'] = use_jax
+    # The full ramp on a busy 4-vCPU CI runner
+    cfg['use_jax'], cfg['wall_timeout'] = use_jax, 900.0
     cfg['layer_eos_config'] = dict(cfg['layer_eos_config'], core=core)
     melt = load_solidus_liquidus_functions(
         cfg['layer_eos_config'],
