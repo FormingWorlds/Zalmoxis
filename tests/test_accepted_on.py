@@ -1182,26 +1182,31 @@ def _adiabatic_cfg(eos='PALEOS', mode='adiabatic', **kwargs):
 @pytest.mark.usefixtures('no_check')
 @pytest.mark.parametrize('label', LABELS)
 @pytest.mark.parametrize(
-    'eos, mode, computed, blend, raises',
+    'eos, mode, computed, blend, table, raises',
     [
-        ('PALEOS', 'adiabatic', False, 0.0, True),
-        ('PALEOS', 'adiabatic_from_cmb', True, 0.5, True),
-        ('PALEOS', 'adiabatic', True, 0.75, True),
-        ('PALEOS', 'adiabatic', True, float('nan'), True),
-        ('PALEOS', 'adiabatic', False, 1.0, True),  # a blend without a computed adiabat is 0
-        ('PALEOS', 'adiabatic', True, 1.0, False),
-        ('PALEOS', 'adiabatic_from_cmb', True, 1.0, False),
-        ('PALEOS', 'linear', False, 0.0, False),
-        ('Analytic', 'adiabatic', False, 0.0, False),  # no T-dependent component: no ramp
+        ('PALEOS', 'adiabatic', False, 0.0, 0.0, True),
+        ('PALEOS', 'adiabatic_from_cmb', True, 0.5, 0.25, True),
+        ('PALEOS', 'adiabatic', True, 0.75, 0.5, True),
+        ('PALEOS', 'adiabatic', True, float('nan'), 1.0, True),
+        ('PALEOS', 'adiabatic', False, 1.0, 1.0, True),  # no computed adiabat: blend 0
+        ('PALEOS', 'adiabatic', True, 1.0, 0.75, True),  # its table is from the 0.75 pass
+        ('PALEOS', 'adiabatic_from_cmb', True, 1.0, 0.75, True),
+        ('PALEOS', 'adiabatic', True, 1.0, float('nan'), True),
+        ('PALEOS', 'adiabatic', True, 1.0, None, True),
+        ('PALEOS', 'adiabatic', True, 1.0, 1.0, False),
+        ('PALEOS', 'adiabatic_from_cmb', True, 1.0, 1.0, False),
+        ('PALEOS', 'linear', False, 0.0, 0.0, False),
+        ('Analytic', 'adiabatic', False, 0.0, 0.0, False),  # no T-dependent component: no ramp
     ],
 )
 def test_main_refuses_an_accepted_profile_short_of_the_adiabat(
-    monkeypatch, label, eos, mode, computed, blend, raises
+    monkeypatch, label, eos, mode, computed, blend, table, raises
 ):
-    """Every accept label of a result whose profile is not the full adiabat raises, when the
-    solve computes the adiabat of the temperature mode itself."""
+    """Every accept label of a result whose profile is not the full adiabat, or whose T table
+    was built on the pressure of a pass short of it, raises, when the solve computes the
+    adiabat of the temperature mode itself."""
     first = {**_inner(7.0e6, accepted_on=label), 'adiabat_computed': computed}
-    first['adiabat_blend'] = blend
+    first.update(adiabat_blend=blend, adiabat_table_blend=table)
     monkeypatch.setattr(zs, '_solve', lambda *a, **k: dict(first))
     monkeypatch.setattr(zs, '_report_table_bands', lambda r, *a: r)
     cfg = _adiabatic_cfg(eos, mode)
@@ -1244,16 +1249,25 @@ def test_an_unaccepted_result_short_of_the_adiabat_passes_the_check():
 @pytest.mark.unit
 @pytest.mark.usefixtures('no_check')
 @pytest.mark.parametrize(
-    'computed, blend, solves, label',
-    [(False, 0.0, 2, 'strict'), (True, 0.5, 2, 'strict'), (True, 1.0, 1, 'retry_skip')],
+    'computed, blend, table, solves, label',
+    [
+        (False, 0.0, 0.0, 2, 'strict'),
+        (True, 0.5, 0.25, 2, 'strict'),
+        (True, 1.0, 0.75, 2, 'strict'),
+        (True, 1.0, 1.0, 1, 'retry_skip'),
+    ],
 )
-def test_a_retry_skip_takes_only_the_full_adiabat(monkeypatch, computed, blend, solves, label):
+def test_a_retry_skip_takes_only_the_full_adiabat(
+    monkeypatch, computed, blend, table, solves, label
+):
     """An unaccepted first solve with converged density and pressure and a mass error under
-    7 % skips the retry only when its profile is the full adiabat; otherwise main retries."""
+    7 % skips the retry only when its profile is the full adiabat on a table of a full-adiabat
+    pass; otherwise main retries."""
     first = {**_inner(7.0e6), 'converged': False, 'accepted_on': None}
     first.update(mass_error_at_accept=0.01, adiabat_computed=computed, adiabat_blend=blend)
+    first['adiabat_table_blend'] = table
     second = {**_inner(7.0e6, accepted_on='strict'), 'adiabat_computed': True}
-    second['adiabat_blend'] = 1.0
+    second.update(adiabat_blend=1.0, adiabat_table_blend=1.0)
     results = [first, second]
     monkeypatch.setattr(zs, '_solve', lambda *a, **k: dict(results.pop(0)))
     monkeypatch.setattr(zs, '_report_table_bands', lambda r, *a: r)
@@ -1285,7 +1299,7 @@ def test_newton_continues_with_the_blend_ramp_from_its_profile(
     }
     newton.update(books)
     picard = {**_inner(7.0e6, accepted_on='strict'), 'adiabat_computed': True}
-    picard.update(adiabat_blend=1.0, total_time=1.0)
+    picard.update(adiabat_blend=1.0, adiabat_table_blend=1.0, total_time=1.0)
     seeds = []
 
     def solve(cp, *args, **kwargs):
@@ -1332,7 +1346,7 @@ def test_the_newton_hand_off_and_its_retry_run_at_the_newton_mass_tolerance(
     failed = {**_inner(7.1e6), 'converged': False, 'accepted_on': None, 'total_time': 50.0}
     failed.update(converged_density=False, adiabat_computed=True, adiabat_blend=0.5)
     picard = {**_inner(7.0e6, accepted_on='strict'), 'total_time': 30.0}
-    picard.update(adiabat_computed=True, adiabat_blend=1.0)
+    picard.update(adiabat_computed=True, adiabat_blend=1.0, adiabat_table_blend=1.0)
     results, configs = [failed, picard], []
 
     def solve(cp, *args, **kwargs):
@@ -1783,10 +1797,7 @@ def test_a_tight_tolerance_starts_the_blend_ramp_and_accepts_only_the_adiabat():
 def test_newton_gives_the_mantle_adiabat_of_picard_on_the_proteus_initial_structure(case):
     """The PROTEUS initial structure solve (adiabatic_from_cmb, PALEOS, 1 Earth mass, the
     PROTEUS solver settings): the Newton result has the mantle temperature of the Picard result
-    at 39 mantle mass points and its CMB pressure within 5 K and 0.1 GPa when the last core
-    node of both results is on the same branch, and within the measured branch step, at most
-    15 K and 0.2 GPa, when the branches differ. A Newton result on the linear first guess is off
-    by up to 1200 K."""
+    at 39 mantle mass points within 5 K and its CMB pressure within 0.1 GPa."""
     from tests.test_spider_coupling_convergence import _has_paleos_data
     from tools.validation import proteus_ic_branches as tool
 
@@ -1796,8 +1807,41 @@ def test_newton_gives_the_mantle_adiabat_of_picard_on_the_proteus_initial_struct
     for s, rec in runs.items():
         assert rec['converged'] and rec['adiabat_computed'] and rec['blend'] == 1.0, s
     c = tool.compare(runs['picard'], runs['newton'])
-    print(case, json.dumps({k: c[k] for k in ('branches', 'dT', 'dP', 'limit_T', 'limit_P')}))
-    assert tool.failures(c) == []
+    print(case, json.dumps({k: c[k] for k in ('dT', 'dP')}))
+    assert c['dT'] < 5.0 and c['dP'] < 0.1e9
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.timeout(900)
+@pytest.mark.parametrize(('case', 'solver'), [('dummy', 'newton'), ('all_options', 'picard')])
+def test_the_returned_mantle_temperature_is_the_adiabat_of_the_returned_pressure(
+    monkeypatch, case, solver
+):
+    """PROTEUS initial structure (CMB anchor): the returned mantle T equals the adiabat
+    recomputed on the returned pressure within 1 K below the top node, whose T can switch with
+    the low-pressure step of the adiabat; adiabat_self_consistency is the largest mantle
+    difference, top node included."""
+    from tests.test_spider_coupling_convergence import _has_paleos_data
+    from tools.validation import proteus_ic_branches as tool
+
+    if not _has_paleos_data():
+        pytest.skip('PALEOS iron and unified MgSiO3 tables not on disk')
+    real, args = zs.compute_adiabatic_temperature, []
+
+    def adiabat(radii, pressure, mass, *rest, **kwargs):
+        args.append((rest, kwargs))
+        return real(radii, pressure, mass, *rest, **kwargs)
+
+    monkeypatch.setattr(zs, 'compute_adiabatic_temperature', adiabat)
+    r = tool.solve(case, solver)
+    assert r['converged'] and r['adiabat_blend'] == r['adiabat_table_blend'] == 1.0
+    rest, kwargs = args[-1]
+    fresh = real(r['radii'], r['pressure'], r['mass_enclosed'], *rest, **kwargs)
+    lag = _mantle_lag(r, fresh)
+    print(case, solver, f'top node {lag[-1]:.3f} K, below it {lag[:-1].max():.3f} K')
+    assert lag[:-1].max() <= 1.0
+    assert r['adiabat_self_consistency'] == pytest.approx(lag.max(), rel=1e-12)
 
 
 def _analytic_ramp(linear=None, factor=None, clock_after=None, **kwargs):
@@ -1852,6 +1896,42 @@ def test_a_linear_floor_above_a_tight_tolerance_starts_the_ramp_unaccepted_on_a_
     assert r['adiabat_blend'] < 1.0
     assert r['converged'] is False and r['converged_mass'] is False
     assert r['accepted_on'] is None and r['accept_mass_limit'] is None
+
+
+def _mantle_lag(r, adiabat):
+    """|T - adiabat| at the mantle nodes of ``r`` with a positive pressure."""
+    m, P = np.asarray(r['mass_enclosed']), np.asarray(r['pressure'])
+    keep = (m >= r['cmb_mass']) & (P > 0)
+    return np.abs(np.asarray(r['temperature']) - adiabat)[keep]
+
+
+@pytest.mark.smoke
+def test_the_accept_waits_for_a_table_built_on_a_full_adiabat_pass():
+    """Every pass on the target mass: the first pass at blend 1 reads the T table built on the
+    pressure of the blend-0.75 pass, so the solve accepts the next pass, whose table comes
+    from a pass at blend 1. The adiabat is computed for the 5 passes of the ramp and once
+    more on the returned structure, for adiabat_self_consistency."""
+    r, n_adiabat = _analytic_ramp(
+        linear=1.0, factor=1.0, tolerance_outer=1e-3, wall_timeout=WALL
+    )
+    assert n_adiabat == 6
+    assert r['converged'] is True and r['accepted_on'] == 'strict'
+    assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
+    fixed = np.linspace(r['temperature'][-1] + 2000.0, r['temperature'][-1], len(r['radii']))
+    lag = _mantle_lag(r, fixed)
+    assert r['adiabat_self_consistency'] == pytest.approx(lag.max(), rel=1e-12)
+
+
+@pytest.mark.smoke
+@pytest.mark.usefixtures('no_check')
+def test_an_iteration_cap_on_the_first_full_adiabat_pass_is_not_accepted():
+    """The iteration cap ends the solve on the first pass at blend 1, on the target mass: its
+    T table comes from the blend-0.75 pass, so the pass is returned unaccepted."""
+    r, _ = _analytic_ramp(
+        linear=1.0, factor=1.0, tolerance_outer=1e-3, max_iterations_outer=5, wall_timeout=WALL
+    )
+    assert r['converged'] is False and r['accepted_on'] is None
+    assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 0.75)
 
 
 @pytest.mark.smoke

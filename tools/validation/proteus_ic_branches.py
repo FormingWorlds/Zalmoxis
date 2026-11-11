@@ -124,8 +124,8 @@ def record(result, cfg):
     }
 
 
-def run_case(case):
-    """Picard and Newton solve of one setup; returns their records keyed by solver."""
+def solve(case, solver):
+    """The ``zalmoxis.solver.main`` result of one setup with the outer solver ``solver``."""
     import zalmoxis.solver as zs
     from zalmoxis import get_zalmoxis_root
     from zalmoxis.config import load_material_dictionaries
@@ -136,12 +136,15 @@ def run_case(case):
 
     _, liquidus = get_solidus_liquidus_functions('Stixrude14-solidus', 'PALEOS-liquidus')
     melt = (derive_solidus_from_liquidus(liquidus, 0.8), liquidus)
-    cfg = {**PROTEUS_IC['common'], **PROTEUS_IC[case]}
+    cfg = {**PROTEUS_IC['common'], **PROTEUS_IC[case], 'outer_solver': solver}
     md, inp = load_material_dictionaries(), os.path.join(get_zalmoxis_root(), 'input')
-    return {
-        s: {**record(zs.main({**cfg, 'outer_solver': s}, md, melt, inp), cfg), 'case': case}
-        for s in ('picard', 'newton')
-    }
+    return zs.main(cfg, md, melt, inp)
+
+
+def run_case(case):
+    """Picard and Newton solve of one setup; returns their records keyed by solver."""
+    cfg = {**PROTEUS_IC['common'], **PROTEUS_IC[case]}
+    return {s: {**record(solve(case, s), cfg), 'case': case} for s in ('picard', 'newton')}
 
 
 def compare(picard, newton):
