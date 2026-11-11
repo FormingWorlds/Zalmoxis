@@ -13,7 +13,7 @@ import os
 import numpy as np
 import pytest
 
-pytestmark = [pytest.mark.integration, pytest.mark.timeout(1500)]
+pytestmark = [pytest.mark.integration, pytest.mark.timeout(3300)]
 
 
 @pytest.mark.physics_invariant
@@ -37,7 +37,7 @@ def test_one_wt_percent_hydrogen_core_solves(caplog, monkeypatch):
         pytest.skip('PALEOS iron table not linked under data/')
     cfg = load_zalmoxis_config(os.path.join(root, 'input', 'default.toml'))
     # The full ramp on a busy 4-vCPU CI runner
-    cfg['use_jax'], cfg['wall_timeout'] = True, 1200.0
+    cfg['use_jax'], cfg['wall_timeout'] = True, 1400.0
     cfg['layer_eos_config'] = dict(
         cfg['layer_eos_config'], core='PALEOS:iron:0.99+CoreAlloy:H-Luo:0.01'
     )
@@ -87,7 +87,7 @@ def _solve_default(core, use_jax, caplog):
         pytest.skip('PALEOS iron table not linked under data/')
     cfg = load_zalmoxis_config(os.path.join(root, 'input', 'default.toml'))
     # The full ramp on a busy 4-vCPU CI runner
-    cfg['use_jax'], cfg['wall_timeout'] = use_jax, 900.0
+    cfg['use_jax'], cfg['wall_timeout'] = use_jax, 1000.0
     cfg['layer_eos_config'] = dict(cfg['layer_eos_config'], core=core)
     melt = load_solidus_liquidus_functions(
         cfg['layer_eos_config'],

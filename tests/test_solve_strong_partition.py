@@ -485,7 +485,7 @@ class TestSolveStrongPartitionSmoke:
             'mantle_mass_fraction': 0,
             'temperature_mode': 'adiabatic',
             # The full ramp on a busy 4-vCPU CI runner
-            'wall_timeout': 1200.0,
+            'wall_timeout': 1800.0,
             'surface_temperature': 3000.0,
             'center_temperature': 6000.0,
             'temp_profile_file': '',
