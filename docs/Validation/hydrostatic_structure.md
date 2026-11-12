@@ -376,6 +376,7 @@ On these paths $P(R)$ varies irregularly from one trial central pressure to the 
 - The CMB anchor node reads one T(P) table that holds $T_\mathrm{surf}$ on the core nodes and $T_\mathrm{cmb}$ at the CMB, so its temperature takes a small part of that jump. It lies 5.41 K below $T_\mathrm{cmb}$ in `all_options` with Newton, 5.42 K with Picard at $10^{-4}$, and 0.23 K in `dummy` with Newton. The next node is at most 0.1 K off.
 - The adiabat takes no step from or to a node with a pressure below $10^5$ Pa, so the top node of a setup with a surface pressure near 1 bar (`dummy`) can lose its step, 17 to 22 K in the measured passes of this setup. In the solves of the second test the top node is 0.06 K (`dummy`) and 0.08 K (`all_options`) off the adiabat.
 - With the surface anchor (`temperature_mode = "adiabatic"`) the same skip moves the whole profile, since the adiabat is integrated inward from the surface. In `dummy` with 60 layers and the Newton outer solver, 2 of 26 starts whose planet mass differs by $k \times 10^{-12}$ skip the top step: their central temperature is 111 K lower, the mantle up to 51 K cooler and the radius 10 km smaller. Neither test uses this mode.
+- These bounds hold for these 2 setups. The start-up solves of the PROTEUS grid exceed them at 3 places, which [Secant tail and seeded re-solve on the PROTEUS grid start-up](#secant-tail-and-seeded-re-solve-on-the-proteus-grid-start-up) lists.
 - The first test runs Picard at the mass tolerance of the PROTEUS setups, $3 \times 10^{-3}$. There the `all_options` mantle lies on average 1.6 K below the adiabat of its own pressure. At $10^{-4}$ the difference is 0.1 K or less.
 
 ??? info "Test details"
@@ -384,6 +385,50 @@ On these paths $P(R)$ varies irregularly from one trial central pressure to the 
     - Test id: `tests/test_accepted_on.py::test_newton_gives_the_mantle_adiabat_of_picard_on_the_proteus_initial_structure`, `tests/test_accepted_on.py::test_the_returned_mantle_temperature_is_the_adiabat_of_the_returned_pressure`
     - Markers: `smoke` and `accept_solves_long` (first test), `smoke` and `accept_solves` (second test); both run in the nightly workflow. They carry no `reference_pinned` marker, since their reference is another solve, not a published value.
     - Command: `pytest -o "addopts=" -m accept_solves_long tests/test_accepted_on.py -k proteus_initial_structure` and `pytest -o "addopts=" -m accept_solves tests/test_accepted_on.py -k returned_mantle_temperature`; the figure: `python -m tools.validation.proteus_ic_solvers run <dir>`, then `python -m tools.validation.proteus_ic_solvers plot <dir> --assets <dir>`.
+
+## Secant tail and seeded re-solve on the PROTEUS grid start-up
+
+**Why this check exists.** Two rules cut the cost of the start-up structure solves of a PROTEUS run: secant steps on the radius at the end of the blend ramp, and a re-solve that starts from the structure of the solve before (`adiabat_seed`).
+A wrong secant step or a stale seed can give an accepted structure farther from the adiabat of its own planet than the plain ramp gives, and a seeded solve could accept a pass whose temperature table no pass of the solve built.
+The test fails in both cases.
+
+**What it tests.** The setup is the first structure solve of the PROTEUS grid test case with a core mass fraction of 0.95: 0.7 Earth masses, the PALEOS iron core and MgSiO$_3$ mantle, `temperature_mode = "adiabatic_from_cmb"`, 150 layers, the Newton outer solver on the numpy path.
+The first start-up re-solve follows, with the surface pressure of 51.3 MPa and the planet mass 0.07 % lower; it runs once with the first structure as `adiabat_seed` and once without it.
+Each solve is compared with the same solve at a mass tolerance of $10^{-6}$ (REF):
+
+- the mantle temperature at 39 mass points differs from REF by at most 1 K, and the outer radius and the central pressure by at most $2 \times 10^{-4}$;
+- the seeded and the unseeded re-solve differ by at most 2.5 K and $5 \times 10^{-4}$ in radius;
+- the first solve needs at most 3 passes on a full-adiabat table, and the seeded re-solve at most 4 passes and at most half the structure integrations of the unseeded one.
+
+**How we know the right answer.** REF is the same solve, run until its mass error is 100 times smaller than the tolerance of the setup.
+There 2 update rules give the same structure: on the input of the second re-solve, the cube-root and the secant rule at $10^{-6}$ agree within 0.02 K in mantle temperature and $2 \times 10^{-6}$ in outer radius.
+So REF stands for the converged structure; this is a convergence check, not an external reference.
+
+**Why it matters.** These solves set the radius, the core size and the initial mantle temperature of every PROTEUS run with Zalmoxis, and they take most of the start-up time of the PROTEUS grid test.
+
+![Relative mass error per outer pass of the first solve and of the re-solve with and without the seed](../assets/validation/grid_start_up_ramp.svg#only-light){ width="70%" }
+![Relative mass error per outer pass of the first solve and of the re-solve with and without the seed](../assets/validation/grid_start_up_ramp_dark.svg#only-dark){ width="70%" }
+
+**How to read the plot.** The x-axis counts the outer passes of the solve that returns, after the Newton root where there is one. The y-axis is the relative mass error $|M_n - M_p| / M_p$ of each pass, on a log scale. Circles show the first solve, open squares the re-solve without the seed and triangles the re-solve with it.
+The broken line is the mass tolerance $10^{-4}$, the dotted line the secant floor of 2 tolerances.
+Without the seed, pass 1 holds the Newton root and passes 2 to 5 blend in the adiabat, so the error rises to about $3 \times 10^{-3}$.
+From pass 6 the passes use a full-adiabat table: the cube-root rule reaches $1.7 \times 10^{-3}$ at pass 7, and the secant step $1.4 \times 10^{-5}$ at pass 8.
+The seeded re-solve starts on the adiabat and ends at pass 4.
+The first solve and the unseeded re-solve lie almost on top of each other.
+
+**Known limit.** The tests bound the lag of the returned temperature behind the adiabat of its own pressure only for the 2 setups of [Newton and Picard on the PROTEUS initial structure](#newton-and-picard-on-the-proteus-initial-structure): 1 K at the mantle nodes, 6 K at the CMB node and 25 K at the top node.
+Replays of the start-up solves of all 4 PROTEUS grid cases (core mass fraction 0.35 and 0.95, 1000 and 2000 ppmw H) meet these bounds, with 3 exceptions:
+
+- Core mass fraction 0.35, first solve: the CMB node lags 93.2 K and the mantle nodes 2.09 K, and the mantle lies 2.17 K from REF. The cube-root rule converges there in 2 full-adiabat passes, so the secant tail does not step and the result is the same as without it. The re-solves lag by up to 1.36 K and lie up to 1.47 K from REF without the seed, and 1.25 K with it.
+- Core mass fraction 0.95, first solve with a surface pressure of 1 bar: in 2 of 6 starts whose planet mass differs by $k \times 10^{-12}$, and in REF, the top node loses its adiabat step and lags 28.8 K (the skip below $10^5$ Pa of the case above).
+- The core nodes and the CMB node read one T(P) table with the mantle. The CMB node of a seeded re-solve lags by up to 5.4 K (core mass fraction 0.35, 2000 ppmw H). At core mass fraction 0.95 the last core node of the first solve lies 587 K from REF. The cell below the CMB holds 0.7 % of the planet mass, and the outer radius, the core radius and the CMB pressure stay within $10^{-4}$ of REF.
+
+??? info "Test details"
+    - Reference: the same solve at a mass tolerance of $10^{-6}$ (convergence check).
+    - Tolerance: 1 K at 39 mantle mass points, $2 \times 10^{-4}$ in outer radius and central pressure; seeded against unseeded 2.5 K and $5 \times 10^{-4}$; at most 3 full-adiabat passes in the first solve, at most 4 passes and half the integrations in the seeded re-solve.
+    - Test id: `tests/test_accepted_on.py::test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_start_up`; the rules alone on analytic densities: `tests/test_ramp_tail.py`, `tests/test_accepted_on.py::test_the_secant_tail_reaches_the_mass_in_3_full_adiabat_passes`, `::test_the_secant_steps_above_2_tolerances_until_a_step_does_not_shrink_the_error`, `::test_a_seeded_solve_accepts_its_second_pass`, `::test_the_first_seeded_pass_carries_the_seed_label_and_is_not_accepted`.
+    - Markers: `smoke`, `accept_solves_long` and `physics_invariant`; it runs in the nightly workflow. It writes its plot only with `--validation-plots`, because the number of passes can change with round-off, so a run without the option does not compare it with the committed pair.
+    - Command: `pytest -o "addopts=" -m accept_solves_long tests/test_accepted_on.py -k grid_start_up --validation-plots`.
 
 ## Reproducing the results
 

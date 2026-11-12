@@ -210,7 +210,7 @@ When a test would accept a result short of the full adiabat, the solve refuses i
 - `main` then retries, and does not skip the retry on `retry_skip`;
 - `main` raises `StructureInvariantError` on an accepted result in such a mode below blend 1 or on a table below blend 1.
 
-With `outer_solver = "newton"` in such a mode, the Newton root holds the linear first-guess temperature. So `main` continues with the Picard blend ramp, seeded with the radius, the central pressure, the density and the radii of the Newton profile, at the mass tolerance `min(tolerance_outer, newton_tol)`. The Picard tests then accept the result and give its label, and the result keeps `newton_n_iter`, `newton_history` and `newton_used_brentq`.
+With `outer_solver = "newton"` in such a mode, the Newton root holds the linear first-guess temperature. So `main` continues with the Picard blend ramp, seeded with the radius, the central pressure, the density and the radii of the Newton profile, at the mass tolerance `min(tolerance_outer, newton_tol)`. The Picard tests then accept the result and give its label, and the result keeps `newton_n_iter`, `newton_history` and `newton_used_brentq`. That ramp ends with secant steps on the radius, and a re-solve of the same planet can skip the Newton root and the ramp; see [Secant tail and seeded re-solve](#secant-tail-and-seeded-re-solve).
 
 | `accepted_on` | Outer solver | Test |
 |---|---|---|
@@ -230,9 +230,33 @@ After a wall-clock stop in the outer loop after at least one pass, accepted or n
 `cmb_mass` and `core_mantle_mass` are the enclosed masses at the core-mantle boundary and at the top of the mantle: `core_mass_fraction` and `core_mass_fraction + mantle_mass_fraction` times `planet_mass`. Every pass integrates the structure and looks up the density with these boundaries, so a node of the returned profile has the EOS density of the layer that `cmb_mass` and `core_mantle_mass` give it, and the core mass fraction of the returned profile is `cmb_mass` over the last value of `mass_enclosed`, `core_mass_fraction` times `planet_mass` over that value.
 `density_from_eos` is False only when no test passed and the returned pass has no pressure solve: the wall clock stopped the solve before its first pass, or before the first pressure solve of the first pass or of the pass at `max_iterations_outer`; a pass without a pressure solve is never the best pass. The result then has the radius of that pass (the initial guess before the first pass), a pressure and a `density` that are zero except at most at the centre node, and a `mass_enclosed` that is zero. A cut before the first pressure solve of any other pass leaves the outer loop running, and its next check returns the best pass with its EOS density.
 `converged_density` reports the inner Picard loop and does not bound the difference between the iterate and the EOS density.
-When the first solve is not accepted, `main` retries with tighter parameters, seeded with the returned outer radius when it lies between 0.2 and 5 times $R_\oplus (\max(M_p, 0.01\,M_\oplus)/M_\oplus)^{0.282}$, and hands the retry the returned `density` when a node of it is above zero; `_solve` uses that seed only when more than one node is above zero. After a pass with a pressure solve that seed is the EOS density; after an unaccepted result without a pressure solve only the radius seeds the retry. After an unaccepted wall-clock stop in the outer loop the seed radius is that of the best pass, not the newest radius guess of the outer loop. PROTEUS also seeds its next structure solve with the returned `density`.
+When the first solve is not accepted, `main` retries with tighter parameters, seeded with the returned outer radius when it lies between 0.2 and 5 times $R_\oplus (\max(M_p, 0.01\,M_\oplus)/M_\oplus)^{0.282}$, and hands the retry the returned `density` when a node of it is above zero; `_solve` uses that seed only when more than one node is above zero. After a pass with a pressure solve that seed is the EOS density; after an unaccepted result without a pressure solve only the radius seeds the retry. After an unaccepted wall-clock stop in the outer loop the seed radius is that of the best pass, not the newest radius guess of the outer loop. PROTEUS also seeds its next structure solve with the returned `density`, and passes the returned `radii`, `pressure` and `mass_enclosed` as `adiabat_seed` (see [Secant tail and seeded re-solve](#secant-tail-and-seeded-re-solve)).
 On the Newton path, a step whose mass test passes while its inner solve does not report converged pressure and the EOS density ends the search with `converged = False`, and `main` returns that result without a retry. PROTEUS then retries once, unless `best_mass_error` is above 5 %, with three times the `tolerance_outer`, twice the `max_iterations_outer`, a 600 s wall clock, and without the density seed and the central pressure hint of its first call. Each Newton step runs one outer pass, so the first two settings do not change the Newton test; the retry can pass only through its different start or the wall clock. PROTEUS stops the run when the retry also fails.
 A trapezoid integral of the returned `density` differs from `mass_enclosed[-1]` by the quadrature error of the grid, which is largest at density jumps such as the core-mantle boundary.
+
+### Secant tail and seeded re-solve
+
+How does a solve that returns the full adiabat avoid most of the cost of the blend ramp?
+Two rules shorten the ramp; neither changes which pass is accepted.
+
+**Secant tail.** The cube-root rule sets the next outer radius to $R_{n+1} = R_n (M_p / M_n)^{1/3}$, with $M_n$ the mass of pass $n$ at radius $R_n$ and $M_p$ the planet mass.
+When the mass grows more slowly than $R^3$, the mass error falls by a fixed factor per pass.
+In a ramp that `main` starts (after a Newton root or from a seed), a pass at blend 1 on a table of blend 1 takes the secant through the last 2 such passes:
+
+$$R_{n+1} = R_n - (M_n - M_p) \frac{R_n - R_{n-1}}{M_n - M_{n-1}}.$$
+
+- The secant steps only while the mass error is above 2 `tolerance_outer`, and by at most 2 % of $R_n$.
+- A slope that is not positive or not finite gives the cube-root radius, and so does every pass after a secant step that did not shrink the mass error.
+
+**Seeded re-solve.** `main` takes `adiabat_seed`: the `radii`, `pressure` and `mass_enclosed` of an earlier solve of the same planet.
+When the solve computes the adiabat itself, it skips the Newton root and the ramp, and its first pass reads the adiabat of the seed structure at blend 1.
+No pass of this solve built that table, so `adiabat_table_blend` is -1.0 and no test accepts the pass.
+A seed that fails its checks is refused with a warning; a seeded solve that does not converge runs again without it.
+
+For example, in the first solve of the PROTEUS grid case with a core mass fraction of 0.95, the cube-root rule takes 10 full-adiabat passes from a mass error of 0.24 % to below $10^{-4}$, and the secant tail 3.
+Its first re-solve takes 4 passes from the seed, against 12 for the Newton root and the ramp without it.
+
+**Where this is checked.** [Secant tail and seeded re-solve on the PROTEUS grid start-up](../Validation/hydrostatic_structure.md#secant-tail-and-seeded-re-solve-on-the-proteus-grid-start-up).
 
 ## Output
 
