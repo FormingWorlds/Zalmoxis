@@ -359,6 +359,16 @@ def _secant_radius(R, M, R_prev, M_prev, M_target, R_fallback):
     return min(max(root, (1.0 - _SECANT_CLAMP) * R), (1.0 + _SECANT_CLAMP) * R)
 
 
+def _ramp_tolerance(config_params):
+    """Mass tolerance of a ramp that main starts with the Newton outer solver:
+    min(tolerance_outer, newton_tol)."""
+    tol = config_params.get(
+        'tolerance_outer',
+        _default_solver_params(config_params['planet_mass'])['tolerance_outer'],
+    )
+    return min(tol, config_params.get('newton_tol', _NEWTON_DEFAULT_TOL))
+
+
 def _adiabat_seed(seed, config_params):
     """The ``_SEED_KEYS`` arrays of ``seed`` as float copies, or None, with a warning that names
     the fault, when they cannot seed a solve of ``config_params``: not readable, not 1-D of
@@ -807,11 +817,6 @@ def main(
         config_params, layer_mixtures, temperature_function, temperature_arrays
     )
     newton_keys, newton_time, result = {}, 0.0, None
-    tol = config_params.get(
-        'tolerance_outer',
-        _default_solver_params(config_params['planet_mass'])['tolerance_outer'],
-    )
-    ramp_tol = min(tol, config_params.get('newton_tol', _NEWTON_DEFAULT_TOL))
     seed = (
         _adiabat_seed(adiabat_seed, config_params)
         if asked and adiabat_seed is not None
@@ -822,8 +827,9 @@ def main(
             **config_params,
             '_initial_radius_guess': float(seed['radii'][-1]),
             '_secant_tail': True,
-            'tolerance_outer': ramp_tol if outer_solver == 'newton' else tol,
         }
+        if outer_solver == 'newton':
+            seeded_params['tolerance_outer'] = _ramp_tolerance(config_params)
         result = _solve(
             seeded_params,
             material_dictionaries,
@@ -874,7 +880,7 @@ def main(
             **config_params,
             '_initial_radius_guess': float(result['radii'][-1]),
             '_secant_tail': True,
-            'tolerance_outer': ramp_tol,
+            'tolerance_outer': _ramp_tolerance(config_params),
         }
         p_center_hint = float(result['pressure'][0])
         initial_density, initial_radii = result['density'], result['radii']
