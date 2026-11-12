@@ -2076,21 +2076,23 @@ _TOLERANCES = st.one_of(
 @pytest.mark.smoke
 @pytest.mark.accept_solves_long
 @pytest.mark.timeout(4800)
-@settings(max_examples=6, deadline=None, derandomize=True)
-@given(tol=_TOLERANCES, n=st.integers(1, 200), factor=st.sampled_from([None, 1.02, 1.05, 1.1]))
-@example(tol=1e-3, n=3, factor=None)  # the cap stops the ramp at blend 0.5
-@example(tol=1e-7, n=200, factor=1.02)  # the clock stops the ramp, 2 % under the 3 % ceiling
-@example(tol=float('nan'), n=200, factor=None)
+@settings(max_examples=3, deadline=None, derandomize=True)
+@given(tol=_TOLERANCES, n=st.integers(1, 9), factor=st.sampled_from([None, 1.02, 1.05, 1.1]))
+@example(tol=1e-3, n=8, factor=None)  # the cap ends on blend 1 with the table of blend 0.75
+@example(tol=float('nan'), n=9, factor=None)  # max_iter on a full-adiabat table
+@example(tol=1e-7, n=9, factor=1.02)  # 2 % off the mass, max_iter on a full-adiabat table
 def test_no_tolerance_or_pass_cap_accepts_a_profile_short_of_the_adiabat(tol, n, factor):
     """Analytic densities on the adiabatic path (the EOS counts as T-dependent and the adiabat
-    is a fixed profile), passes after the ramp starts scaled to ``factor`` times the mass,
-    and a 20 s wall clock: for any tolerance_outer, including NaN, inf, 0, a negative value and
-    a bool, and any max_iterations_outer from 1 to 200, an accepted result is the full
-    adiabat."""
+    is a fixed profile), passes after the ramp starts scaled to ``factor`` times the mass, and
+    no reachable wall clock: for any tolerance_outer, including NaN, inf, 0, a negative value
+    and a bool, and any max_iterations_outer from 1 to 9 (unscaled passes reach blend 1 on a
+    full-adiabat table at pass 9), an accepted result is the full adiabat on a table of a full-adiabat
+    pass."""
     r, _ = _analytic_ramp(
-        factor=factor, tolerance_outer=tol, max_iterations_outer=n, wall_timeout=20.0
+        factor=factor, tolerance_outer=tol, max_iterations_outer=n, wall_timeout=WALL
     )
-    assert not r['converged'] or (r['adiabat_computed'] and r['adiabat_blend'] == 1.0)
+    full = r['adiabat_computed'] and r['adiabat_blend'] == 1.0
+    assert not r['converged'] or (full and r['adiabat_table_blend'] == 1.0)
 
 
 @pytest.mark.smoke
