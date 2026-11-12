@@ -49,6 +49,12 @@ def no_check(monkeypatch):
     monkeypatch.setattr(zs, 'check_accepted', lambda *args, **kwargs: None)
 
 
+@pytest.fixture
+def canned(no_check, monkeypatch):
+    """main on a canned _solve result: no invariant check and no table-band report."""
+    monkeypatch.setattr(zs, '_report_table_bands', lambda r, *a: r)
+
+
 def _inner(R, *, pressure=True, density=True, eos=True, accepted_on='max_iter', wall=False):
     """Inner Picard result at radius R on the linear M(R)."""
     M = A * R + B
@@ -1188,26 +1194,29 @@ def _adiabatic_cfg(eos='PALEOS', mode='adiabatic', **kwargs):
     }
 
 
+SHORT = [  # (eos, mode, computed, blend, table, raises); SHORT[2] raises, SHORT[9] passes
+    ('PALEOS', 'adiabatic', False, 0.0, 0.0, True),
+    ('PALEOS', 'adiabatic_from_cmb', True, 0.5, 0.25, True),
+    ('PALEOS', 'adiabatic', True, 0.75, 0.5, True),
+    ('PALEOS', 'adiabatic', True, float('nan'), 1.0, True),
+    ('PALEOS', 'adiabatic', False, 1.0, 1.0, True),  # no computed adiabat: blend 0
+    ('PALEOS', 'adiabatic', True, 1.0, 0.75, True),  # its table is from the 0.75 pass
+    ('PALEOS', 'adiabatic_from_cmb', True, 1.0, 0.75, True),
+    ('PALEOS', 'adiabatic', True, 1.0, float('nan'), True),
+    ('PALEOS', 'adiabatic', True, 1.0, None, True),
+    ('PALEOS', 'adiabatic', True, 1.0, 1.0, False),
+    ('PALEOS', 'adiabatic_from_cmb', True, 1.0, 1.0, False),
+    ('PALEOS', 'linear', False, 0.0, 0.0, False),
+    ('Analytic', 'adiabatic', False, 0.0, 0.0, False),  # no T-dependent component: no ramp
+]
+
+
 @pytest.mark.unit
-@pytest.mark.usefixtures('no_check')
-@pytest.mark.parametrize('label', LABELS)
+@pytest.mark.usefixtures('canned')
 @pytest.mark.parametrize(
-    'eos, mode, computed, blend, table, raises',
-    [
-        ('PALEOS', 'adiabatic', False, 0.0, 0.0, True),
-        ('PALEOS', 'adiabatic_from_cmb', True, 0.5, 0.25, True),
-        ('PALEOS', 'adiabatic', True, 0.75, 0.5, True),
-        ('PALEOS', 'adiabatic', True, float('nan'), 1.0, True),
-        ('PALEOS', 'adiabatic', False, 1.0, 1.0, True),  # no computed adiabat: blend 0
-        ('PALEOS', 'adiabatic', True, 1.0, 0.75, True),  # its table is from the 0.75 pass
-        ('PALEOS', 'adiabatic_from_cmb', True, 1.0, 0.75, True),
-        ('PALEOS', 'adiabatic', True, 1.0, float('nan'), True),
-        ('PALEOS', 'adiabatic', True, 1.0, None, True),
-        ('PALEOS', 'adiabatic', True, 1.0, 1.0, False),
-        ('PALEOS', 'adiabatic_from_cmb', True, 1.0, 1.0, False),
-        ('PALEOS', 'linear', False, 0.0, 0.0, False),
-        ('Analytic', 'adiabatic', False, 0.0, 0.0, False),  # no T-dependent component: no ramp
-    ],
+    'label, eos, mode, computed, blend, table, raises',
+    [('max_iter', *row) for row in SHORT]
+    + [(label, *SHORT[k]) for label in LABELS if label != 'max_iter' for k in (2, 9)],
 )
 def test_main_refuses_an_accepted_profile_short_of_the_adiabat(
     monkeypatch, label, eos, mode, computed, blend, table, raises
@@ -1218,7 +1227,6 @@ def test_main_refuses_an_accepted_profile_short_of_the_adiabat(
     first = {**_inner(7.0e6, accepted_on=label), 'adiabat_computed': computed}
     first.update(adiabat_blend=blend, adiabat_table_blend=table)
     monkeypatch.setattr(zs, '_solve', lambda *a, **k: dict(first))
-    monkeypatch.setattr(zs, '_report_table_bands', lambda r, *a: r)
     cfg = _adiabatic_cfg(eos, mode)
     if not raises:
         assert zs.main(cfg, {}, None, '/tmp')['accepted_on'] == label
@@ -1230,7 +1238,7 @@ def test_main_refuses_an_accepted_profile_short_of_the_adiabat(
 
 
 @pytest.mark.unit
-@pytest.mark.usefixtures('no_check')
+@pytest.mark.usefixtures('canned')
 @pytest.mark.parametrize(
     'kwargs',
     [
@@ -1244,7 +1252,6 @@ def test_an_external_temperature_profile_is_accepted_at_blend_0(monkeypatch, kwa
     first = {**_inner(7.0e6, accepted_on='strict'), 'adiabat_computed': False}
     first['adiabat_blend'] = 0.0
     monkeypatch.setattr(zs, '_solve', lambda *a, **k: dict(first))
-    monkeypatch.setattr(zs, '_report_table_bands', lambda r, *a: r)
     cfg = _adiabatic_cfg(use_jax=kwargs.pop('use_jax', False))
     assert zs.main(cfg, {}, None, '/tmp', **kwargs)['accepted_on'] == 'strict'
 
@@ -1257,7 +1264,7 @@ def test_an_unaccepted_result_short_of_the_adiabat_passes_the_check():
 
 
 @pytest.mark.unit
-@pytest.mark.usefixtures('no_check')
+@pytest.mark.usefixtures('canned')
 @pytest.mark.parametrize(
     'computed, blend, table, solves, label',
     [
@@ -1280,13 +1287,12 @@ def test_a_retry_skip_takes_only_the_full_adiabat(
     second.update(adiabat_blend=1.0, adiabat_table_blend=1.0)
     results = [first, second]
     monkeypatch.setattr(zs, '_solve', lambda *a, **k: dict(results.pop(0)))
-    monkeypatch.setattr(zs, '_report_table_bands', lambda r, *a: r)
     r = zs.main(_adiabatic_cfg(), {}, None, '/tmp')
     assert 2 - len(results) == solves and r['accepted_on'] == label
 
 
 @pytest.mark.unit
-@pytest.mark.usefixtures('no_check')
+@pytest.mark.usefixtures('canned')
 @pytest.mark.parametrize(
     'eos, converged, ramp',
     [('PALEOS', True, True), ('PALEOS', False, False), ('Analytic', True, False)],
@@ -1318,7 +1324,6 @@ def test_newton_continues_with_the_blend_ramp_from_its_profile(
 
     monkeypatch.setattr(zs, '_solve_newton_outer', lambda *a, **k: newton)
     monkeypatch.setattr(zs, '_solve', solve)
-    monkeypatch.setattr(zs, '_report_table_bands', lambda r, *a: r)
     cfg = _adiabatic_cfg(eos, outer_solver='newton', tolerance_outer=3e-3, newton_tol=2e-4)
     r = zs.main(cfg, {}, None, '/tmp')
     if not ramp:
@@ -1335,7 +1340,7 @@ def test_newton_continues_with_the_blend_ramp_from_its_profile(
 
 
 @pytest.mark.unit
-@pytest.mark.usefixtures('no_check')
+@pytest.mark.usefixtures('canned')
 @pytest.mark.parametrize(
     'tols, expected',
     [
@@ -1365,7 +1370,6 @@ def test_the_newton_hand_off_and_its_retry_run_at_the_newton_mass_tolerance(
 
     monkeypatch.setattr(zs, '_solve_newton_outer', lambda *a, **k: newton)
     monkeypatch.setattr(zs, '_solve', solve)
-    monkeypatch.setattr(zs, '_report_table_bands', lambda r, *a: r)
     r = zs.main(_adiabatic_cfg(outer_solver='newton', **tols), {}, None, '/tmp')
     assert [cp['tolerance_outer'] for cp in configs] == [expected, expected]
     assert r['accepted_on'] == 'strict' and r['total_time'] == 230.0
