@@ -187,15 +187,20 @@ The reason this loop exists: the first CALLIOPE call needs $M_\mathrm{mantle}$ t
 The first Zalmoxis call needs $P_\mathrm{surf}$ and the dissolved-volatile inventory to solve structure, but those come from CALLIOPE.
 The two converge by iteration; with `equilibrate_tol = 0.01`, $R_\mathrm{int}$ and $P_\mathrm{surf}$ each change by less than 1% per iteration at the fixed point.
 
-Each Zalmoxis call of the loop solves the same planet again with a new surface pressure and volatile inventory, so the wrapper starts it from the structure of the call before.
-The returned `density` and `radii` start the density iteration, and the returned `radii`, `pressure` and `mass_enclosed` go to `main` as `adiabat_seed` when the installed Zalmoxis takes that argument.
-With the seed, a re-solve skips the Newton root and the adiabat blend ramp; [Secant tail and seeded re-solve](process_flow.md#secant-tail-and-seeded-re-solve) explains how.
-The wrapper keeps one structure per planet, identified by `planet.mass_tot`, `interior_struct.core_frac` and `interior_struct.zalmoxis.mantle_mass_fraction`.
-The re-solves of the main loop take the interior temperature of the energetics module, so Zalmoxis computes no adiabat there and does not use the seed.
-
 After equilibration, `generate_spider_tables()` regenerates the SPIDER P-S lookup tables against the final composition, so SPIDER's first time step (and, when Aragog is the energetics module, Aragog's `_verify_entropy_ic` path) reads tables consistent with the equilibrated structure. The mesh path is also published into `dirs['spider_mesh']`, with a `.prev` copy created so that the very first dynamic-update fall-back has a valid baseline if Zalmoxis fails on iteration 1 of the main loop.
 
 The equilibration loop runs only when `interior_struct.zalmoxis.equilibrate_init = true` (default). With `equilibrate_init = false`, the wrapper performs a single Zalmoxis call and trusts the user's TOML to be self-consistent. Practically, `equilibrate_init = false` is reserved for restart-style runs where the IC file already contains a converged structure and outgassing state, or for benchmark configs where bypassing the loop is part of the test protocol.
+
+### Starting each call from the previous structure
+
+Each Zalmoxis call of the loop solves the same planet again, with a new surface pressure and volatile inventory, so the wrapper (`proteus.interior_struct.zalmoxis`) starts it from the structure of the call before.
+The returned `density` and `radii` start the density iteration.
+The returned `radii`, `pressure` and `mass_enclosed` go to `main` as `adiabat_seed` when the installed Zalmoxis takes that argument.
+With the seed, a re-solve skips the Newton root and the adiabat blend ramp; [Secant tail and seeded re-solve](process_flow.md#secant-tail-and-seeded-re-solve) explains how.
+The wrapper keeps one structure per planet, which it identifies by `planet.mass_tot`, `interior_struct.core_frac` and `interior_struct.zalmoxis.mantle_mass_fraction`.
+The re-solves of the main loop take the interior temperature of the energetics module, so Zalmoxis computes no adiabat there and does not use the seed.
+
+### Equilibration pathologies
 
 Two convergence pathologies show up at the equilibration stage and indicate a deeper config problem rather than a tolerance issue.
 
