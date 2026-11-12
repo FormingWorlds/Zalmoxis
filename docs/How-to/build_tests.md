@@ -18,7 +18,7 @@ reachable wall clock gets `paleos_adiabat`, and a real solve of an accept label 
 structure invariants gets `accept_solves`; each runs in its own nightly job. Beside
 `accept_solves`, a real solve that takes longest also gets `accept_solves_long`, and the
 sweep over every Newton setup gets `accept_solves_newton_setups`; each of these runs in its
-own job too.
+own job too, and the Newton setup tests are split over several jobs by test id.
 
 | Use ... | When ... |
 |---|---|

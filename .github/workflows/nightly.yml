@@ -48,9 +48,21 @@ jobs:
             args: --dist load --cov-fail-under=0 --durations=0
             test_timeout: 4800
             job_timeout: 120
-          - suite: accept_solves_newton_setups
+          - suite: accept_solves_newton_setups_paleos_10
             select: accept_solves_newton_setups and not wolfbower and not paleos_adiabat
-            args: --dist load --cov-fail-under=0 --durations=0
+            args: --dist load --cov-fail-under=0 --durations=0 -k "paleos_10_numpy or analytic_1"
+            job_timeout: 170
+          - suite: accept_solves_newton_setups_paleos_1
+            select: accept_solves_newton_setups and not wolfbower and not paleos_adiabat
+            args: --dist load --cov-fail-under=0 --durations=0 -k "paleos_1_numpy or paleos_3_jax"
+            job_timeout: 170
+          - suite: accept_solves_newton_setups_paleos_5
+            select: accept_solves_newton_setups and not wolfbower and not paleos_adiabat
+            args: --dist load --cov-fail-under=0 --durations=0 -k "paleos_5_numpy or paleos_1_jax"
+            job_timeout: 170
+          - suite: accept_solves_newton_setups_within_the_cap
+            select: accept_solves_newton_setups and not wolfbower and not paleos_adiabat
+            args: --dist load --cov-fail-under=0 --durations=0 -k "within_the_cap"
             job_timeout: 170
           - suite: accept_solves_accepted_on
             select: accept_solves and not accept_solves_long and not accept_solves_newton_setups and not wolfbower and not paleos_adiabat
@@ -58,7 +70,8 @@ jobs:
           - suite: accept_solves_pressure_root
             select: accept_solves and not accept_solves_long and not accept_solves_newton_setups and not wolfbower and not paleos_adiabat
             args: --dist load --cov-fail-under=0 --durations=0 tests/test_pressure_root_solves.py
-    # 90 min per job; the longest solves have their own jobs with 120 and 170 min.
+    # 90 min per job; the longest solves have their own jobs with 120 and 170 min, and the
+    # Newton setup sweep is split over 4 jobs by test id (-k).
     timeout-minutes: ${{ matrix.job_timeout || 90 }}
     steps:
       - name: Checkout repository
