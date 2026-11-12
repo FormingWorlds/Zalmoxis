@@ -2265,3 +2265,187 @@ def test_the_first_seeded_pass_carries_the_seed_label_and_is_not_accepted(ramp_s
     assert r['converged'] is False and r['accepted_on'] is None and n_adiabat == 2
     assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, -1.0)
     assert r['adiabat_seeded'] is True
+
+
+# The first structure solve of the PROTEUS grid test case with core mass fraction 0.95
+# (tests/grid of PROTEUS: 0.7 Earth masses, H 1000 ppmw), and its first start-up re-solve.
+GRID_CMF95 = {
+    'planet_mass': 4.1804e24,
+    'core_mass_fraction': 0.95,
+    'mantle_mass_fraction': 0.0,
+    'temperature_mode': 'adiabatic_from_cmb',
+    'surface_temperature': 4000.0,
+    'cmb_temperature': 6000.0,
+    'center_temperature': 6000.0,
+    'temp_profile_file': None,
+    'layer_eos_config': {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
+    'mushy_zone_factor': 0.8,
+    'mushy_zone_factors': {'PALEOS:MgSiO3': 0.8, 'PALEOS:iron': 0.8},
+    'num_layers': 150,
+    'target_surface_pressure': 101325.0,
+    'tolerance_outer': 3e-3,
+    'tolerance_inner': 1e-4,
+    'max_iterations_outer': 100,
+    'max_iterations_inner': 100,
+    'use_jax': False,
+    'use_anderson': True,
+    'outer_solver': 'newton',
+    'newton_max_iter': 30,
+    'newton_tol': 1e-4,
+    'relative_tolerance': 1e-9,
+    'absolute_tolerance': 1e-10,
+    'wall_timeout': 1e6,
+}
+GRID_CMF95_RESOLVE = {
+    'planet_mass': 4.177602725330534e24,
+    'core_mass_fraction': 0.9505316225476148,
+    'target_surface_pressure': 51305541.15573382,
+}
+REF_TOL = {'tolerance_outer': 1e-6, 'newton_tol': 1e-6}  # the converged reference
+
+
+def _grid_main(cfg, **kwargs):
+    """main on a grid setup; returns the result and the (R, M) of each pass of the solve that
+    returned (consecutive solve_structure calls at one outer radius make one pass)."""
+    from zalmoxis.melting_curves import (
+        derive_solidus_from_liquidus,
+        get_solidus_liquidus_functions,
+    )
+
+    _, liquidus = get_solidus_liquidus_functions('Stixrude14-solidus', 'PALEOS-liquidus')
+    melt = (derive_solidus_from_liquidus(liquidus, 0.8), liquidus)
+    calls, starts, real_ss, real_solve = [], [], zs.solve_structure, zs._solve
+
+    def spy(*a, **k):
+        res = real_ss(*a, **k)
+        calls.append((float(a[3][-1]), float(np.asarray(res[0])[-1])))
+        return res
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(zs, 'solve_structure', spy)
+        mp.setattr(
+            zs, '_solve', lambda *a, **k: starts.append(len(calls)) or real_solve(*a, **k)
+        )
+        r = zs.main(cfg, load_material_dictionaries(), melt, INPUT, **kwargs)
+    passes = []
+    for R, M in calls[starts[-1] :]:
+        passes = passes[:-1] + [(R, M)] if passes and passes[-1][0] == R else passes + [(R, M)]
+    return r, passes, len(calls)
+
+
+def _off_ref(r, ref):
+    """Largest mantle T difference [K] on 39 mantle mass points (mantle nodes with P > 0 of
+    each), and the relative differences of the outer radius and the central pressure."""
+    keep = [
+        (np.asarray(x['mass_enclosed']) >= x['cmb_mass']) & (np.asarray(x['pressure']) > 0)
+        for x in (r, ref)
+    ]
+    m = [np.asarray(x['mass_enclosed'])[k] for x, k in zip((r, ref), keep)]
+    T = [np.asarray(x['temperature'])[k] for x, k in zip((r, ref), keep)]
+    lo, hi = max(m[0][0], m[1][0]), min(m[0][-1], m[1][-1])
+    q = lo + np.linspace(0.0, 1.0, 41)[1:-1] * (hi - lo)
+    dT = float(np.max(np.abs(np.interp(q, m[0], T[0]) - np.interp(q, m[1], T[1]))))
+    return (
+        dT,
+        r['radii'][-1] / ref['radii'][-1] - 1.0,
+        r['pressure'][0] / ref['pressure'][0] - 1.0,
+    )
+
+
+def _ramp_figure(runs):
+    """Relative mass error per outer pass of the first solve, the re-solve without and with the
+    seed (``runs``: (passes, planet mass) each), with the mass tolerance and the secant floor;
+    asserts that no legend or axis text box crosses a line vertex or another text box."""
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(5.5, 5.0))
+    for (passes, M), label, mark, ls in zip(
+        runs,
+        ('first solve', 're-solve without seed', 're-solve with seed'),
+        ('o', 's', '^'),
+        ('-', '--', '-'),
+    ):
+        err = [max(abs(m / M - 1.0), 1e-7) for _, m in passes]
+        mfc = 'none' if mark == 's' else None
+        ax.semilogy(range(1, len(err) + 1), err, ls=ls, marker=mark, ms=5, mfc=mfc, label=label)
+    c = plt.rcParams['text.color']
+    ax.axhline(1e-4, ls='--', color=c, alpha=0.5, label='mass tolerance')
+    ax.axhline(2e-4, ls=':', color=c, alpha=0.5, label='secant floor')
+    ax.minorticks_off()
+    ax.set_xlabel('Outer pass')
+    ax.set_ylabel('Relative mass error')
+    legend = fig.legend(loc='lower center', ncol=2, fontsize=plt.rcParams['axes.labelsize'])
+    fig.tight_layout(rect=(0, 0.3, 1, 1))
+    fig.canvas.draw()
+    rnd = fig.canvas.get_renderer()
+    texts = [ax.xaxis.label, ax.yaxis.label, *ax.get_xticklabels(), *ax.get_yticklabels()]
+    boxes = [legend.get_window_extent(rnd)] + [
+        t.get_window_extent(rnd) for t in texts if t.get_text()
+    ]
+    pts = np.vstack([ln.get_transform().transform(ln.get_xydata()) for ln in ax.get_lines()])
+    for k, b in enumerate(boxes):
+        inside = (
+            (pts[:, 0] > b.x0) & (pts[:, 0] < b.x1) & (pts[:, 1] > b.y0) & (pts[:, 1] < b.y1)
+        )
+        assert not inside.any(), f'text box {k} crosses a line vertex'
+    assert not any(boxes[0].overlaps(b) for b in boxes[1:]), 'the legend crosses an axis text'
+    return fig
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves_long
+@pytest.mark.physics_invariant
+@pytest.mark.timeout(4800)
+def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_start_up(request):
+    """The first solve and the first re-solve of the PROTEUS grid case with core mass fraction
+    0.95, against the same solves at a mass tolerance of 1e-6 (REF): the first solve (Newton
+    root, ramp with the secant tail), the seeded re-solve and the re-solve without the seed
+    keep the mantle temperature within 1 K of REF and the radius and central pressure within
+    2e-4; the seeded and the unseeded re-solve differ by at most 2.5 K and 5e-4. The secant
+    tail needs at most 3 passes on a full-adiabat table, and the seeded re-solve at most 4
+    passes and at most half the structure integrations of the unseeded one. With
+    ``--validation-plots`` it writes the plot of the mass error per pass; the pass count can
+    change with round-off, so a run without the option does not compare it with the committed
+    plot. See ``docs/Validation/hydrostatic_structure.md``."""
+    _need_paleos()
+    first, p1, _ = _grid_main(GRID_CMF95)
+    ref1 = _grid_main({**GRID_CMF95, **REF_TOL})[0]
+    resolve = {**GRID_CMF95, **GRID_CMF95_RESOLVE}
+    warm = dict(
+        initial_density=first['density'],
+        initial_radii=first['radii'],
+        p_center_hint=float(first['pressure'][0]),
+    )
+    seed = {k: first[k] for k in ('radii', 'pressure', 'mass_enclosed')}
+    seeded, p2, n_seeded = _grid_main(resolve, adiabat_seed=seed, **warm)
+    plain, p3, n_plain = _grid_main(resolve, **warm)
+    ref2 = _grid_main({**resolve, **REF_TOL})[0]
+    for r, flag in (
+        (first, False),
+        (ref1, False),
+        (seeded, True),
+        (plain, False),
+        (ref2, False),
+    ):
+        assert r['converged'] and r['accepted_on'] == 'strict' and r['adiabat_seeded'] is flag
+        assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
+    off = [_off_ref(first, ref1), _off_ref(seeded, ref2), _off_ref(plain, ref2)]
+    print('vs REF (dT K, dR, dPc):', off, 'seeded vs plain:', _off_ref(seeded, plain))
+    for dT, dR, dPc in off:
+        assert dT <= 1.0 and abs(dR) <= 2e-4 and abs(dPc) <= 2e-4
+    dT, dR, _ = _off_ref(seeded, plain)
+    assert dT <= 2.5 and abs(dR) <= 5e-4
+    assert len(p1) - 5 <= 3  # linear pass, 4 blend passes, then the full-adiabat passes
+    assert len(p2) <= 4 and n_seeded <= 0.5 * n_plain
+
+    def figure():
+        return _ramp_figure(
+            [
+                (p1, GRID_CMF95['planet_mass']),
+                (p3, resolve['planet_mass']),
+                (p2, resolve['planet_mass']),
+            ]
+        )
+
+    if request.config.getoption('validation_plots') is not None:
+        request.getfixturevalue('validation_plot')(figure, 'grid_start_up_ramp')
