@@ -1210,13 +1210,16 @@ SHORT = [  # (eos, mode, computed, blend, table, raises); SHORT[2] raises, SHORT
     ('Analytic', 'adiabatic', False, 0.0, 0.0, False),  # no T-dependent component: no ramp
 ]
 assert SHORT[2][-1] and not SHORT[9][-1]  # the rows of every label: one refused, one accepted
-EXTERNAL_T = pytest.mark.parametrize(
-    'kwargs',
+ARRAYS = {'temperature_arrays': (np.array([0.0, 7.0e6]), np.full(2, 3000.0))}
+EXTERNAL_T = pytest.mark.parametrize(  # the numpy path ignores temperature_arrays
+    'kwargs, use_jax, external',
     [
-        {'temperature_function': lambda r, P: 3000.0},
-        {'temperature_arrays': (np.array([0.0, 7.0e6]), np.full(2, 3000.0))},
+        ({'temperature_function': lambda r, P: 3000.0}, False, True),
+        ({'temperature_function': lambda r, P: 3000.0}, True, True),
+        (ARRAYS, True, True),
+        (ARRAYS, False, False),
     ],
-    ids=['temperature_function', 'temperature_arrays'],
+    ids=['function_numpy', 'function_jax', 'arrays_jax', 'arrays_numpy'],
 )
 
 
@@ -1249,28 +1252,45 @@ def test_main_refuses_an_accepted_profile_short_of_the_adiabat(
 @pytest.mark.unit
 @pytest.mark.usefixtures('canned')
 @EXTERNAL_T
-def test_an_external_temperature_profile_is_accepted_at_blend_0(monkeypatch, kwargs):
-    """With the temperature of the caller no adiabat is asked for, so blend 0 is accepted."""
+def test_an_external_temperature_profile_is_accepted_at_blend_0(
+    monkeypatch, kwargs, use_jax, external
+):
+    """With the temperature of the caller no adiabat is asked for, so blend 0 is accepted;
+    temperature arrays on the numpy path leave the adiabat asked, and blend 0 is refused."""
     first = {**_inner(7.0e6, accepted_on='strict'), 'adiabat_computed': False}
     first['adiabat_blend'] = 0.0
     monkeypatch.setattr(zs, '_solve', lambda *a, **k: dict(first))
-    cfg = _adiabatic_cfg(use_jax='temperature_arrays' in kwargs)
-    assert zs.main(cfg, {}, None, '/tmp', **kwargs)['accepted_on'] == 'strict'
+    cfg = _adiabatic_cfg(use_jax=use_jax)
+    if external:
+        assert zs.main(cfg, {}, None, '/tmp', **kwargs)['accepted_on'] == 'strict'
+        return
+    with pytest.raises(StructureInvariantError, match='at adiabat blend'):
+        zs.main(cfg, {}, None, '/tmp', **kwargs)
 
 
 @pytest.mark.unit
 @pytest.mark.usefixtures('canned')
 @EXTERNAL_T
-def test_newton_with_an_external_temperature_returns_the_newton_result(monkeypatch, kwargs):
+def test_newton_with_an_external_temperature_returns_the_newton_result(
+    monkeypatch, kwargs, use_jax, external
+):
     """With the temperature of the caller no adiabat is asked for, so main returns a converged
-    Newton result of an adiabatic mode with a T-dependent EOS without the blend ramp."""
+    Newton result of an adiabatic mode with a T-dependent EOS without the blend ramp; with the
+    adiabat asked, the Newton root seeds the ramp."""
     newton = {**_inner(7.0e6, accepted_on='newton_tol'), 'adiabat_computed': False}
-    newton['adiabat_blend'] = 0.0
+    newton.update(adiabat_blend=0.0, total_time=1.0, newton_n_iter=4, newton_history=[])
+    newton.update(
+        newton_used_brentq=False, pressure=np.array([3.6e11, 0.0]), density=np.ones(2)
+    )
+    picard = {**_inner(7.0e6, accepted_on='strict'), 'adiabat_computed': True}
+    picard.update(adiabat_blend=1.0, adiabat_table_blend=1.0, total_time=1.0)
+    ramps = []
     monkeypatch.setattr(zs, '_solve_newton_outer', lambda *a, **k: newton)
-    monkeypatch.setattr(zs, '_solve', lambda *a, **k: pytest.fail('the blend ramp started'))
-    cfg = _adiabatic_cfg(outer_solver='newton', use_jax='temperature_arrays' in kwargs)
+    monkeypatch.setattr(zs, '_solve', lambda *a, **k: ramps.append(1) or dict(picard))
+    cfg = _adiabatic_cfg(outer_solver='newton', use_jax=use_jax)
     r = zs.main(cfg, {}, None, '/tmp', **kwargs)
-    assert r is newton and r['accepted_on'] == 'newton_tol'
+    assert (r is newton, len(ramps)) == ((True, 0) if external else (False, 1))
+    assert r['accepted_on'] == ('newton_tol' if external else 'strict')
 
 
 @pytest.mark.unit
