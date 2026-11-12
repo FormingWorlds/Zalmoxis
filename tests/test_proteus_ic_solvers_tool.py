@@ -24,6 +24,9 @@ def _rec(dT=0.0, P_cmb=105.7e9, n=39):
         'm_q': list((0.325 + 0.675 * x) * 5.972e24),
         'T_q': list(T_q),
         'P_cmb': P_cmb,
+        'converged': True,
+        'blend': 1.0,
+        'table_blend': 1.0,
     }
 
 
@@ -50,6 +53,25 @@ def test_the_comparison_refuses_records_on_different_mass_points():
     b['m_q'] = list(np.asarray(b['m_q']) * 0.99)
     with pytest.raises(ValueError, match='mass points'):
         tool.compare(a, b)
+
+
+@pytest.mark.parametrize('side', ['picard', 'newton'])
+@pytest.mark.parametrize(
+    ('field', 'value'),
+    [
+        ('converged', False),
+        ('blend', 0.75),
+        ('table_blend', 0.75),
+        ('blend', math.nan),
+        ('table_blend', None),
+    ],
+)
+def test_a_record_short_of_a_converged_full_adiabat_is_refused(side, field, value):
+    """Only converged solves at the full adiabat (blend and table blend 1) are compared."""
+    recs = {'picard': _rec(), 'newton': _rec()}
+    recs[side][field] = value
+    with pytest.raises(ValueError, match=f'{side} record .*{field}'):
+        tool.compare(recs['picard'], recs['newton'])
 
 
 def _write(outdir):
@@ -114,6 +136,17 @@ def test_the_plot_stops_on_a_case_without_a_record(tmp_path):
     (tmp_path / 'case_dummy.json').unlink()
     with pytest.raises(SystemExit, match='dummy: no record'):
         tool.plot(str(tmp_path), str(tmp_path / 'assets'))
+
+
+def test_the_plot_refuses_a_record_short_of_the_full_adiabat(tmp_path):
+    """A refused solve in a stored record stops the plot before any figure is drawn."""
+    _write(tmp_path)
+    recs = json.loads((tmp_path / 'case_dummy.json').read_text())
+    recs['newton']['blend'] = 0.5
+    (tmp_path / 'case_dummy.json').write_text(json.dumps(recs))
+    with pytest.raises(ValueError, match='dummy newton record .*blend'):
+        tool.plot(str(tmp_path), str(tmp_path / 'assets'))
+    assert not (tmp_path / 'assets').exists()
 
 
 def test_a_record_interpolates_the_mantle_t_and_the_cmb_pressure_on_the_mass():
