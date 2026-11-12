@@ -870,6 +870,8 @@ def main(
         )
         if not (asked and result['converged']):
             result = _report_table_bands(result, *bands)
+            if seed_time:
+                result['total_time'] += seed_time
             return _check_accepted(result, config_params, *bands, volatile_profile, asked)
         # the Newton root holds the linear first guess; the blend ramp from it makes the adiabat
         logger.info(
@@ -2749,19 +2751,17 @@ def _solve(
             if _secant_err is not None and err >= _secant_err:
                 secant_tail = False  # a secant step that did not shrink the error ends the tail
             _secant_err = None
+            R_cube = radius_guess = R_pass * scale
             if (
                 full_table
                 and secant_tail
                 and _secant_prev
                 and err > _SECANT_FLOOR * tolerance_outer
             ):
-                R_cube = R_pass * scale
                 radius_guess = _secant_radius(
                     R_pass, calculated_mass, *_secant_prev, planet_mass, R_cube
                 )
                 _secant_err = err if radius_guess != R_cube else None  # a fallback arms nothing
-            else:
-                radius_guess = R_pass * scale
             _secant_prev = (R_pass, calculated_mass) if full_table else None
             assert np.isfinite(radius_guess) and radius_guess > 0, radius_guess
 
