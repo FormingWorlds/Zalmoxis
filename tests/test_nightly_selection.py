@@ -392,23 +392,40 @@ def test_the_newton_setup_sweep_is_split_over_its_jobs():
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
-    'old, new',
+    'old, new, kind',
     [
-        pytest.param('"paleos_5_numpy or paleos_1_jax"', '"paleos_5_numpy"', id='dropped_id'),
-        pytest.param('"within_the_cap"', '"within_the_cap or analytic_1"', id='id_in_2_jobs'),
+        pytest.param(
+            '"paleos_5_numpy or paleos_1_jax"', '"paleos_5_numpy"', 'runs in', id='dropped_id'
+        ),
+        pytest.param(
+            '"within_the_cap"', '"within_the_cap or analytic_1"', 'runs in', id='id_in_2_jobs'
+        ),
         pytest.param(
             '-k "paleos_1_numpy or paleos_3_jax"\n            job_timeout: 170',
-            '-k "paleos_1_numpy or paleos_3_jax"\n            job_timeout: 160',
+            '-k "paleos_1_numpy or paleos_3_jax"\n            job_timeout: 120',
+            'timeouts over the job limit',
             id='timeouts_over_limit',
+        ),
+        pytest.param(
+            '-k "within_the_cap"',
+            '-k "within_the_cap" tests/test_pressure_root_solves.py',
+            'selects over named files',
+            id='named_files',
+        ),
+        pytest.param(
+            '--durations=0 tests/test_pressure_root_solves.py',
+            '--durations=0 -k "smooth_kink" tests/test_pressure_root_solves.py',
+            '-k outside the Newton jobs',
+            id='k_outside_newton',
         ),
     ],
 )
-def test_a_fault_in_the_newton_split_is_found(old, new):
-    """A setup in no Newton job, a test in 2 of them, or a job whose tests' timeouts add up
-    to its limit or more is a fault."""
+def test_a_fault_in_the_newton_split_is_found(old, new, kind):
+    """A setup in no Newton job or in 2 of them, a job whose tests' timeouts add up to its
+    limit or more, a Newton job that names files, or a -k on any other job is a fault."""
     workflow = WORKFLOW.read_text()
     assert workflow.count(old) == 1
-    assert _newton_faults(workflow.replace(old, new))
+    assert kind in {f[0] for f in _newton_faults(workflow.replace(old, new))}
 
 
 @pytest.mark.smoke
