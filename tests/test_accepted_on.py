@@ -1293,6 +1293,31 @@ def test_a_retry_skip_takes_only_the_full_adiabat(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures('canned')
+@pytest.mark.parametrize('wall', [1000.0, WALL])
+def test_the_retry_runs_on_a_600_s_clock_whatever_the_configured_clock(monkeypatch, wall):
+    """The retry takes its clock from the solver defaults, 2 x 300 s, not from the configured
+    ``wall_timeout``."""
+    first = {
+        **_inner(7.0e6),
+        'converged': False,
+        'accepted_on': None,
+        'mass_error_at_accept': 0.5,
+    }
+    second = {**_inner(7.0e6, accepted_on='strict'), 'adiabat_computed': True}
+    second.update(adiabat_blend=1.0, adiabat_table_blend=1.0)
+    results, clocks = [first, second], []
+
+    def solve(cfg, *a, **k):
+        clocks.append(cfg['wall_timeout'])
+        return dict(results.pop(0))
+
+    monkeypatch.setattr(zs, '_solve', solve)
+    zs.main(_adiabatic_cfg(wall_timeout=wall), {}, None, '/tmp')
+    assert clocks == [wall, 600.0]
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures('canned')
 @pytest.mark.parametrize(
     'eos, converged, ramp',
     [('PALEOS', True, True), ('PALEOS', False, False), ('Analytic', True, False)],
