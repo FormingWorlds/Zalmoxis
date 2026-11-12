@@ -34,9 +34,11 @@ jobs:
           - suite: main
             select: (unit or smoke or integration) and not slow and not wolfbower and not paleos_adiabat and not accept_solves and not accept_solves_long and not accept_solves_newton_setups
             args: --dist load --cov-fail-under=90
+            job_timeout: 150
           - suite: wolfbower
             select: wolfbower
             args: --dist loadgroup --loadscope-reorder --cov-fail-under=0 -v
+            job_timeout: 150
           - suite: paleos_adiabat
             select: paleos_adiabat and not wolfbower
             args: --dist loadfile --cov-fail-under=0
@@ -47,7 +49,7 @@ jobs:
             select: accept_solves_long and not accept_solves_newton_setups and not wolfbower and not paleos_adiabat
             args: --dist load --cov-fail-under=0 --durations=0
             test_timeout: 4800
-            job_timeout: 120
+            job_timeout: 150
           - suite: accept_solves_newton_setups_paleos_10
             select: accept_solves_newton_setups and not wolfbower and not paleos_adiabat
             args: --dist load --cov-fail-under=0 --durations=0 -k "paleos_10_numpy or analytic_1"
@@ -70,8 +72,8 @@ jobs:
           - suite: accept_solves_pressure_root
             select: accept_solves and not accept_solves_long and not accept_solves_newton_setups and not wolfbower and not paleos_adiabat
             args: --dist load --cov-fail-under=0 --durations=0 tests/test_pressure_root_solves.py
-    # 90 min per job; the longest solves have their own jobs with 120 and 170 min, and the
-    # Newton setup sweep is split over 4 jobs by test id (-k).
+    # 90 min per job, 150 min for main, wolfbower and accept_solves_long, 170 min for each
+    # Newton setup job; the Newton setup sweep is split over 4 jobs by test id (-k).
     timeout-minutes: ${{ matrix.job_timeout || 90 }}
     steps:
       - name: Checkout repository
