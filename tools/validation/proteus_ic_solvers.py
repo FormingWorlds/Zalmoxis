@@ -109,7 +109,20 @@ def run_case(case):
 
 
 def compare(picard, newton):
-    """Largest mantle T difference (K) and CMB pressure difference (Pa) of 2 records."""
+    """Largest mantle T difference (K) and CMB pressure difference (Pa) of 2 records.
+
+    Raises ValueError unless both records are converged solves at the full adiabat (blend and
+    table blend 1)."""
+    for name, r in (('picard', picard), ('newton', newton)):
+        ok = {
+            k: r.get(k) == v
+            for k, v in (('converged', True), ('blend', 1.0), ('table_blend', 1.0))
+        }
+        if not all(ok.values()):
+            bad = [k for k, v in ok.items() if not v]
+            raise ValueError(
+                f'{r.get("case")} {name} record is not a converged solve at the full adiabat: {bad}'
+            )
     if not np.array_equal(picard['m_q'], newton['m_q']):
         raise ValueError('the records hold different mass points')
     return {
