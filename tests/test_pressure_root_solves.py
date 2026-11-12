@@ -183,7 +183,7 @@ def test_every_newton_setup_meets_the_surface_boundary_condition(
     if jax:
         pre = dict(cfg, outer_solver='picard', relative_tolerance=1e-5, absolute_tolerance=1e-6)
         r0 = zs.main(pre, md, None, os.path.join(zroot, 'input'))
-        assert r0['converged'] and r0['accepted_on'] != 'timeout', name
+        assert r0['converged'] and r0['accepted_on'] in ('strict', 'mass_only'), name
         tarr = (np.asarray(r0['radii'], float), np.asarray(r0['temperature'], float))
         cfg['use_jax'] = True
     calls.clear()
