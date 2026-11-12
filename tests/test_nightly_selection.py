@@ -8,6 +8,7 @@ from __future__ import annotations
 import ast
 import itertools
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -41,9 +42,16 @@ def _entry(job):
 
 
 def _keyword(job):
-    """The ``-k`` expression of one matrix entry, or None."""
-    k = re.search(r'-k\s+"([^"]*)"', job)
-    return k.group(1) if k else None
+    """The ``-k`` expression of one matrix entry (``-k expr``, ``-kexpr``, ``-k=expr`` or
+    ``--keyword``, quoted or not), or None."""
+    args = re.search(r'args:(.*)', job)
+    words = shlex.split(args.group(1)) if args else []
+    for i, word in enumerate(words):
+        if word in ('-k', '--keyword'):
+            return words[i + 1]
+        if word.startswith(('-k', '--keyword=')):
+            return word.split('=', 1)[1] if '=' in word else word[2:]
+    return None
 
 
 def _jobs(workflow):
@@ -330,23 +338,20 @@ def _newton_faults(workflow):
     """Faults of the jobs that take the Newton setup mark: each of its tests (in one file, see
     the smoke test below) runs in exactly one of them, each selects over the whole tree, no
     other job has a ``-k``, and the closest timeout markers of the tests of one job add up to
-    less than its limit. The tests of one job run at the same time on separate workers, so
-    the sum leaves room for the other steps of the job."""
+    less than its limit. The sum is the time of the tests run one after the other; they run
+    at the same time on separate workers, so the rest of the sum is room for the job steps."""
     suites = _suites(workflow)
-    split = {
-        name: job
-        for name, job in suites.items()
-        if re.search(rf'(?<!not )\b{NEWTON_MARK}\b', _entry(job)[0])
-    }
-    faults = [('selects over named files', n) for n, job in split.items() if _entry(job)[1]]
+    entries = {n: _entry(job) for n, job in suites.items()}
+    pattern = rf'(?<!not )\b{NEWTON_MARK}\b'
+    split = [n for n, (select, _) in entries.items() if re.search(pattern, select)]
+    faults = [('selects over named files', n) for n in split if entries[n][1]]
     faults += [
         ('-k outside the Newton jobs', n)
         for n, job in suites.items()
         if n not in split and _keyword(job) is not None
     ]
     marks = {
-        n: _timeouts(_entry(job)[0], _keyword(job), _entry(job)[1] or SOLVES)
-        for n, job in split.items()
+        n: _timeouts(entries[n][0], _keyword(suites[n]), entries[n][1] or SOLVES) for n in split
     }
     for node in sorted(_timeouts(NEWTON_MARK, files=SOLVES)):
         runs = [n for n, m in marks.items() if node in m]
@@ -355,7 +360,7 @@ def _newton_faults(workflow):
     for n, m in marks.items():
         if not m or None in m.values():
             faults.append(('no timeout marker', n, m))
-        elif sum(m.values()) >= 60 * _job_limit(split[n]):
+        elif sum(m.values()) >= 60 * _job_limit(suites[n]):
             faults.append(('timeouts over the job limit', n, sum(m.values())))
     return faults
 
@@ -425,15 +430,29 @@ def test_the_newton_setup_sweep_is_split_over_its_jobs():
 )
 def test_a_fault_in_the_newton_split_is_found(old, new, kind):
     """A setup in no Newton job or in 2 of them, a job whose tests' timeouts add up to its
-    limit or more, a Newton job that names files or runs no test, or a -k on any other job is a fault."""
+    limit or more, a Newton job that names files or runs no test, or a -k in any form on any
+    other job is a fault."""
     workflow = WORKFLOW.read_text()
     assert workflow.count(old) == 1
     assert kind in {f[0] for f in _newton_faults(workflow.replace(old, new))}
 
 
+@pytest.mark.unit
+def test_each_newton_setup_timeout_covers_its_clock_and_the_retry():
+    """The pytest timeout of each Newton setup ends after its own clock and the 600 s retry
+    clock of ``main``, and a setup whose timeout equals its clock is found."""
+    from tests.test_pressure_root_solves import NEWTON_SETUPS
+
+    def short(setups):
+        return [s[0] for s in setups if s[5] < s[4] + 600]
+
+    assert short(NEWTON_SETUPS) == []
+    assert short([s[:5] + (s[4],) for s in NEWTON_SETUPS]) == [s[0] for s in NEWTON_SETUPS]
+
+
 @pytest.mark.smoke
 def test_only_the_newton_setup_sweep_carries_its_mark():
-    """The Newton setup job selects over the whole tree (about 20 s to collect), and the
+    """The Newton setup jobs select over the whole tree (about 20 s to collect), and the
     mark is on one file only; the unit test above checks the tests of that file."""
     assert _marked(ROOT / 'tests', 'accept_solves_newton_setups') == {
         'test_pressure_root_solves.py'

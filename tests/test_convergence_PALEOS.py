@@ -57,7 +57,7 @@ def _run_paleos_mzf(mzf, mass_earth=1.0, temperature_mode='linear'):
     config_params['plotting_enabled'] = False
     config_params['rock_liquidus'] = 'PALEOS-liquidus'
     config_params['mushy_zone_factor'] = mzf
-    config_params['wall_timeout'] = 600.0  # 2x the slowest CI solve
+    config_params['wall_timeout'] = 600.0  # 2x or more the slowest CI solve
 
     melting_curves = load_solidus_liquidus_functions(
         config_params['layer_eos_config'],
