@@ -337,6 +337,59 @@ _VALID_OUTER_SOLVERS = ('picard', 'newton')
 _TIMEOUT_ACCEPT_MASS_ERR = 0.03
 # a linear-T pass within max(tolerance_outer, this) of the mass starts the adiabat blend ramp
 _ADIABAT_RAMP_TRIGGER = 1e-3
+# secant tail of a ramp that main starts: largest radius step, and the secant steps only while
+# the mass error is above _SECANT_FLOOR times tolerance_outer
+_SECANT_CLAMP = 0.02
+_SECANT_FLOOR = 2.0
+_SEED_KEYS = ('radii', 'pressure', 'mass_enclosed')
+_SEED_TABLE_BLEND = -1.0  # adiabat_table_blend of a pass whose T table comes from adiabat_seed
+
+
+def _secant_radius(R, M, R_prev, M_prev, M_target, R_fallback):
+    """Radius [m] of the next outer pass from the secant of M(R) - M_target through the passes
+    (R, M) and (R_prev, M_prev), clamped to ``_SECANT_CLAMP`` of R. Returns ``R_fallback``
+    when the secant is not usable: a non-finite input, R <= 0, equal radii, a slope that is
+    not positive (the mass grows with the radius) or a non-finite root."""
+    if not np.all(np.isfinite((R, M, R_prev, M_prev, M_target))) or R <= 0 or R == R_prev:
+        return R_fallback
+    slope = (M - M_prev) / (R - R_prev)
+    root = R - (M - M_target) / slope if np.isfinite(slope) and slope > 0 else np.nan
+    if not np.isfinite(root):
+        return R_fallback
+    return min(max(root, (1.0 - _SECANT_CLAMP) * R), (1.0 + _SECANT_CLAMP) * R)
+
+
+def _adiabat_seed(seed, config_params):
+    """The ``_SEED_KEYS`` arrays of ``seed`` as float copies, or None, with a warning that names
+    the fault, when they cannot seed a solve of ``config_params``: not readable, not 1-D of
+    length num_layers, not finite, radii not increasing from r >= 0, mass_enclosed decreasing
+    or not positive at the top, pressure increasing, negative or not positive at the centre,
+    or an outer radius outside 0.2 to 5 times the Seager et al. (2007) estimate."""
+    try:
+        arrays = {k: np.array(seed[k], dtype=float) for k in _SEED_KEYS}
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        fault = f'not readable ({exc!r})'
+    else:
+        r, P, m = (arrays[k] for k in _SEED_KEYS)
+        mass_in_earth = max(config_params['planet_mass'], 0.01 * earth_mass) / earth_mass
+        r_est = earth_radius * mass_in_earth**0.282
+        n = config_params['num_layers']
+        if any(a.shape != (n,) for a in arrays.values()):
+            fault = f'shapes {[a.shape for a in arrays.values()]}, not ({n},)'
+        elif not all(np.all(np.isfinite(a)) for a in arrays.values()):
+            fault = 'a value is not finite'
+        elif r[0] < 0 or np.any(np.diff(r) <= 0):
+            fault = 'radii do not increase from r >= 0'
+        elif np.any(np.diff(m) < 0) or m[-1] <= 0:
+            fault = 'mass_enclosed decreases or is not positive at the top'
+        elif np.any(np.diff(P) > 0) or P[-1] < 0 or P[0] <= 0:
+            fault = 'pressure increases, is negative or is not positive at the centre'
+        elif not 0.2 * r_est < r[-1] < 5.0 * r_est:
+            fault = f'outer radius {r[-1]:.4e} m outside 0.2 to 5 times {r_est:.4e} m'
+        else:
+            return arrays
+    logger.warning('adiabat_seed refused: %s; the solve starts without it.', fault)
+    return None
 
 
 def _mass_error(mass_enclosed, planet_mass):
@@ -603,6 +656,7 @@ def main(
     p_center_hint=None,
     initial_density=None,
     initial_radii=None,
+    adiabat_seed=None,
 ):
     """Run the exoplanet internal structure model with automatic retry.
 
@@ -654,6 +708,15 @@ def main(
         when the structure changes incrementally between coupling steps.
     initial_radii : numpy.ndarray or None, optional
         Radial grid corresponding to ``initial_density``.
+    adiabat_seed : mapping or None, optional
+        ``radii`` [m], ``pressure`` [Pa] and ``mass_enclosed`` [kg] of an earlier solve of
+        the same planet, each of length ``num_layers``. When the solve computes the adiabat
+        of its temperature mode, it skips the Newton root and the blend ramp: the first pass
+        reads the adiabat of the seed structure at blend 1 on a table labelled
+        ``adiabat_table_blend`` -1.0, which no accept test takes, and the solve runs at
+        min(tolerance_outer, newton_tol) with the Newton outer solver. A seed that fails the
+        checks of ``_adiabat_seed`` is refused with a warning; a seeded solve that does not
+        converge is repeated without the seed. Ignored with an external temperature.
 
     Returns
     -------
@@ -670,7 +733,12 @@ def main(
         ``adiabat_self_consistency`` gives the largest difference in K between the returned
         mantle T and the adiabat recomputed on the returned structure (None below blend 1);
         a Newton root there seeds the Picard blend ramp at min(tolerance_outer, newton_tol),
-        and the result keeps its ``newton_*`` keys and its time in ``total_time``. A failed
+        and the result keeps its ``newton_*`` keys and its time in ``total_time``. In a ramp
+        that main starts (after a Newton root or from ``adiabat_seed``), a pass on a
+        full-adiabat table more than 2 tolerance_outer off the mass takes the next radius from
+        the secant of the mass through the last 2 such passes, within 2 % of its radius; the
+        cube-root update takes over once a secant step does not shrink the mass error.
+        ``adiabat_seeded`` is True when the returned solve started from the seed. A failed
         table band check sets ``converged`` to False and leaves ``accepted_on`` as it is. A
         converged result has ``integration_tolerances``, the (rtol, atol) of the solve
         that returned, with rtol at least the RK45 floor of 100 eps, which the invariant
@@ -738,8 +806,46 @@ def main(
     asked = _adiabat_asked(
         config_params, layer_mixtures, temperature_function, temperature_arrays
     )
-    newton_keys, newton_time = {}, 0.0
-    if outer_solver == 'newton':
+    newton_keys, newton_time, result = {}, 0.0, None
+    tol = config_params.get(
+        'tolerance_outer',
+        _default_solver_params(config_params['planet_mass'])['tolerance_outer'],
+    )
+    ramp_tol = min(tol, config_params.get('newton_tol', _NEWTON_DEFAULT_TOL))
+    seed = (
+        _adiabat_seed(adiabat_seed, config_params)
+        if asked and adiabat_seed is not None
+        else None
+    )
+    if seed is not None:  # the ramp starts at blend 1 on the adiabat of the seed structure
+        seeded_params = {
+            **config_params,
+            '_initial_radius_guess': float(seed['radii'][-1]),
+            '_secant_tail': True,
+            'tolerance_outer': ramp_tol if outer_solver == 'newton' else tol,
+        }
+        result = _solve(
+            seeded_params,
+            material_dictionaries,
+            melting_curves_functions,
+            input_dir,
+            layer_mixtures=layer_mixtures,
+            volatile_profile=volatile_profile,
+            temperature_function=temperature_function,
+            temperature_arrays=temperature_arrays,
+            p_center_hint=float(seed['pressure'][0])
+            if p_center_hint is None
+            else p_center_hint,
+            initial_density=initial_density,
+            initial_radii=initial_radii,
+            adiabat_seed=seed,
+        )
+        if result['converged']:
+            config_params = seeded_params
+        else:
+            logger.info('The seeded solve did not converge; solving without the seed.')
+            result = None
+    if result is None and outer_solver == 'newton':
         result = _solve_newton_outer(
             config_params,
             material_dictionaries,
@@ -764,31 +870,30 @@ def main(
             k: result[k] for k in ('newton_n_iter', 'newton_history', 'newton_used_brentq')
         }
         newton_time = result['total_time']
-        tol = config_params.get(
-            'tolerance_outer',
-            _default_solver_params(config_params['planet_mass'])['tolerance_outer'],
-        )
         config_params = {
             **config_params,
             '_initial_radius_guess': float(result['radii'][-1]),
-            'tolerance_outer': min(tol, config_params.get('newton_tol', _NEWTON_DEFAULT_TOL)),
+            '_secant_tail': True,
+            'tolerance_outer': ramp_tol,
         }
         p_center_hint = float(result['pressure'][0])
         initial_density, initial_radii = result['density'], result['radii']
+        result = None
 
-    result = _solve(
-        config_params,
-        material_dictionaries,
-        melting_curves_functions,
-        input_dir,
-        layer_mixtures=layer_mixtures,
-        volatile_profile=volatile_profile,
-        temperature_function=temperature_function,
-        temperature_arrays=temperature_arrays,
-        p_center_hint=p_center_hint,
-        initial_density=initial_density,
-        initial_radii=initial_radii,
-    )
+    if result is None:
+        result = _solve(
+            config_params,
+            material_dictionaries,
+            melting_curves_functions,
+            input_dir,
+            layer_mixtures=layer_mixtures,
+            volatile_profile=volatile_profile,
+            temperature_function=temperature_function,
+            temperature_arrays=temperature_arrays,
+            p_center_hint=p_center_hint,
+            initial_density=initial_density,
+            initial_radii=initial_radii,
+        )
 
     # Skip the retry when density and pressure converged and the mass error of the returned
     # profile is within `_RETRY_SKIP_MASS_ERR`: on hot molten T(r) the retry takes 600+ s for
@@ -1594,6 +1699,7 @@ def _solve(
     p_center_hint=None,
     initial_density=None,
     initial_radii=None,
+    adiabat_seed=None,
 ):
     """Internal solver: single attempt at the structure solve.
 
@@ -1621,6 +1727,10 @@ def _solve(
         radial grid to accelerate Picard convergence.
     initial_radii : numpy.ndarray or None, optional
         Radial grid corresponding to ``initial_density``.
+    adiabat_seed : dict or None, optional
+        Checked seed arrays of ``main`` (``_adiabat_seed``); main passes them only when the
+        solve computes the adiabat itself. ``config_params['_secant_tail']`` turns on the secant
+        tail described in ``main``.
 
     Returns
     -------
@@ -1832,6 +1942,14 @@ def _solve(
     ramp_asked = _adiabat_asked(
         config_params, layer_mixtures, temperature_function, temperature_arrays
     )
+    seeded = adiabat_seed is not None
+    if seeded:  # the first pass reads the adiabat of the seed structure at blend 1
+        prev_radii, prev_pressure, prev_mass_enclosed = (adiabat_seed[k] for k in _SEED_KEYS)
+        _using_adiabat, _adiabat_blend = True, 1.0
+    _seed_table = seeded  # the T table of the next pass comes from the seed
+    secant_tail = bool(config_params.get('_secant_tail', False))
+    _secant_prev = None  # (radius, mass) of the last pass on a full-adiabat table
+    _secant_err = None  # mass error of the pass whose radius came from a secant step
 
     def _adiabat(radii, pressure, mass_enclosed):
         # 'adiabatic_from_cmb' anchors at the CMB and integrates outward, 'adiabatic' inward
@@ -1996,7 +2114,8 @@ def _solve(
 
             if _using_adiabat and prev_pressure is not None:
                 # Bump blend toward full adiabat; the table is built on the previous pass
-                _table_blend = _adiabat_blend
+                _table_blend = _SEED_TABLE_BLEND if _seed_table else _adiabat_blend
+                _seed_table = False
                 _adiabat_blend = min(1.0, _adiabat_blend + _ADIABAT_BLEND_STEP)
                 logger.debug(
                     'Outer iter %d: adiabat blend = %.2f',
@@ -2616,7 +2735,25 @@ def _solve(
         else:
             scale = (planet_mass / calculated_mass) ** (1.0 / 3.0)
             scale = max(0.5, min(scale, 2.0))
-            radius_guess *= scale
+            R_pass, err = radius_guess, abs(calculated_mass - planet_mass) / planet_mass
+            full_table = ramp_asked and min(_adiabat_blend, _table_blend) >= 1.0
+            if _secant_err is not None and err >= _secant_err:
+                secant_tail = False  # a secant step that did not shrink the error ends the tail
+            _secant_err = None
+            if (
+                full_table
+                and secant_tail
+                and _secant_prev
+                and err > _SECANT_FLOOR * tolerance_outer
+            ):
+                radius_guess = _secant_radius(
+                    R_pass, calculated_mass, *_secant_prev, planet_mass, R_pass * scale
+                )
+                _secant_err = err
+            else:
+                radius_guess = R_pass * scale
+            _secant_prev = (R_pass, calculated_mass) if full_table else None
+            assert np.isfinite(radius_guess) and radius_guess > 0, radius_guess
 
         relative_diff_outer_mass = np.abs((calculated_mass - planet_mass) / planet_mass)
 
@@ -2941,6 +3078,7 @@ def _solve(
         'adiabat_blend': _adiabat_blend,
         'adiabat_table_blend': _table_blend,
         'adiabat_self_consistency': self_consistency,
+        'adiabat_seeded': seeded,
     }
     return model_results
 
