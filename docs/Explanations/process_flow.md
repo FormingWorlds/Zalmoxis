@@ -237,7 +237,6 @@ A trapezoid integral of the returned `density` differs from `mass_enclosed[-1]` 
 ### Secant tail and seeded re-solve
 
 How does a solve that returns the full adiabat avoid most of the cost of the blend ramp?
-The blend ramp moves the temperature from the linear first guess to the adiabat over several outer passes.
 Two rules shorten it, and neither changes the accept tests above.
 
 **Secant tail.** Each outer pass integrates the structure at a trial outer radius $R_n$ and returns a mass $M_n$; $M_p$ is the planet mass.
@@ -250,11 +249,11 @@ $$R_{n+1} = R_n - (M_n - M_p) \frac{R_n - R_{n-1}}{M_n - M_{n-1}}.$$
 - A slope that is not positive or not finite gives the cube-root radius; after a secant step that did not shrink the mass error, every pass does.
 
 **Seeded re-solve.** `main` takes `adiabat_seed`: the `radii`, `pressure` and `mass_enclosed` of an earlier solve of the same planet.
-When the solve computes the adiabat itself, it skips the Newton root and the ramp, and its first pass reads the adiabat of the seed structure at blend 1.
+When the solve computes the adiabat itself, it skips the Newton root and the ramp; its first pass reads the adiabat of the seed at blend 1.
 No pass of this solve built that table, so `adiabat_table_blend` is -1.0 and no test accepts the pass.
+A seed that fails its checks (for example a top mass more than 5 % from `planet_mass`) is refused with a warning, and a seeded solve that does not converge runs again without it; `adiabat_seeded` marks a result from the seed.
 
-In the first solve of the PROTEUS grid case with a core mass fraction of 0.95, the secant tail brings a mass error of 0.24 % below $10^{-4}$ in 3 full-adiabat passes, against 10 with the cube-root rule.
-A re-solve takes 4 passes from the seed, against 8 after a Newton root.
+In the PROTEUS grid case with a core mass fraction of 0.95, the secant tail brings a mass error of 0.24 % below $10^{-4}$ in 3 full-adiabat passes; the cube-root rule needs 10.
 
 **Where this is checked.** [Secant tail and seeded re-solve on the PROTEUS grid start-up](../Validation/hydrostatic_structure.md#secant-tail-and-seeded-re-solve-on-the-proteus-grid-start-up).
 
