@@ -409,6 +409,18 @@ def test_the_newton_setup_sweep_is_split_over_its_jobs():
             '-k outside the Newton jobs',
             id='k_outside_newton',
         ),
+        pytest.param(
+            '--durations=0 tests/test_pressure_root_solves.py',
+            "--durations=0 -k 'smooth_kink' tests/test_pressure_root_solves.py",
+            '-k outside the Newton jobs',
+            id='k_single_quotes',
+        ),
+        pytest.param(
+            '--durations=0 tests/test_pressure_root_solves.py',
+            '--durations=0 -k=smooth_kink tests/test_pressure_root_solves.py',
+            '-k outside the Newton jobs',
+            id='k_equals',
+        ),
     ],
 )
 def test_a_fault_in_the_newton_split_is_found(old, new, kind):
