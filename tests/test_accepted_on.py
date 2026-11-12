@@ -51,7 +51,7 @@ def no_check(monkeypatch):
 
 @pytest.fixture
 def canned(no_check, monkeypatch):
-    """main on a canned _solve result: no invariant check and no table-band report."""
+    """main on a canned _solve result: no physics-invariant check and no table-band report."""
     monkeypatch.setattr(zs, '_report_table_bands', lambda r, *a: r)
 
 
@@ -1209,6 +1209,15 @@ SHORT = [  # (eos, mode, computed, blend, table, raises); SHORT[2] raises, SHORT
     ('PALEOS', 'linear', False, 0.0, 0.0, False),
     ('Analytic', 'adiabatic', False, 0.0, 0.0, False),  # no T-dependent component: no ramp
 ]
+assert SHORT[2][-1] and not SHORT[9][-1]  # the rows of every label: one refused, one accepted
+EXTERNAL_T = pytest.mark.parametrize(
+    'kwargs',
+    [
+        {'temperature_function': lambda r, P: 3000.0},
+        {'temperature_arrays': (np.array([0.0, 7.0e6]), np.full(2, 3000.0))},
+    ],
+    ids=['temperature_function', 'temperature_arrays'],
+)
 
 
 @pytest.mark.unit
@@ -1239,33 +1248,19 @@ def test_main_refuses_an_accepted_profile_short_of_the_adiabat(
 
 @pytest.mark.unit
 @pytest.mark.usefixtures('canned')
-@pytest.mark.parametrize(
-    'kwargs',
-    [
-        {'temperature_function': lambda r, P: 3000.0},
-        {'temperature_arrays': (np.array([0.0, 7.0e6]), np.full(2, 3000.0)), 'use_jax': True},
-    ],
-    ids=['temperature_function', 'temperature_arrays'],
-)
+@EXTERNAL_T
 def test_an_external_temperature_profile_is_accepted_at_blend_0(monkeypatch, kwargs):
     """With the temperature of the caller no adiabat is asked for, so blend 0 is accepted."""
     first = {**_inner(7.0e6, accepted_on='strict'), 'adiabat_computed': False}
     first['adiabat_blend'] = 0.0
     monkeypatch.setattr(zs, '_solve', lambda *a, **k: dict(first))
-    cfg = _adiabatic_cfg(use_jax=kwargs.pop('use_jax', False))
+    cfg = _adiabatic_cfg(use_jax='temperature_arrays' in kwargs)
     assert zs.main(cfg, {}, None, '/tmp', **kwargs)['accepted_on'] == 'strict'
 
 
 @pytest.mark.unit
 @pytest.mark.usefixtures('canned')
-@pytest.mark.parametrize(
-    'kwargs',
-    [
-        {'temperature_function': lambda r, P: 3000.0},
-        {'temperature_arrays': (np.array([0.0, 7.0e6]), np.full(2, 3000.0)), 'use_jax': True},
-    ],
-    ids=['temperature_function', 'temperature_arrays'],
-)
+@EXTERNAL_T
 def test_newton_with_an_external_temperature_returns_the_newton_result(monkeypatch, kwargs):
     """With the temperature of the caller no adiabat is asked for, so main returns a converged
     Newton result of an adiabatic mode with a T-dependent EOS without the blend ramp."""
@@ -1273,7 +1268,7 @@ def test_newton_with_an_external_temperature_returns_the_newton_result(monkeypat
     newton['adiabat_blend'] = 0.0
     monkeypatch.setattr(zs, '_solve_newton_outer', lambda *a, **k: newton)
     monkeypatch.setattr(zs, '_solve', lambda *a, **k: pytest.fail('the blend ramp started'))
-    cfg = _adiabatic_cfg(outer_solver='newton', use_jax=kwargs.pop('use_jax', False))
+    cfg = _adiabatic_cfg(outer_solver='newton', use_jax='temperature_arrays' in kwargs)
     r = zs.main(cfg, {}, None, '/tmp', **kwargs)
     assert r is newton and r['accepted_on'] == 'newton_tol'
 
@@ -1317,8 +1312,8 @@ def test_a_retry_skip_takes_only_the_full_adiabat(
 @pytest.mark.usefixtures('canned')
 @pytest.mark.parametrize('wall', [1000.0, WALL])
 def test_the_retry_runs_on_a_600_s_clock_whatever_the_configured_clock(monkeypatch, wall):
-    """The retry takes its clock from the solver defaults, 2 x 300 s, not from the configured
-    ``wall_timeout``."""
+    """The retry takes its clock from the solver defaults, 2 x 300 s: it does not read the
+    configured ``wall_timeout``, and this test fixes that current value."""
     first = {
         **_inner(7.0e6),
         'converged': False,
