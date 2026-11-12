@@ -25,6 +25,7 @@ def _rec(dT=0.0, P_cmb=105.7e9, n=39):
         'T_q': list(T_q),
         'P_cmb': P_cmb,
         'converged': True,
+        'adiabat_computed': True,
         'blend': 1.0,
         'table_blend': 1.0,
     }
@@ -60,6 +61,7 @@ def test_the_comparison_refuses_records_on_different_mass_points():
     ('field', 'value'),
     [
         ('converged', False),
+        ('adiabat_computed', False),
         ('blend', 0.75),
         ('table_blend', 0.75),
         ('blend', math.nan),
@@ -67,10 +69,10 @@ def test_the_comparison_refuses_records_on_different_mass_points():
     ],
 )
 def test_a_record_short_of_a_converged_full_adiabat_is_refused(side, field, value):
-    """Only converged solves at the full adiabat (blend and table blend 1) are compared."""
+    """Only converged solves on a computed adiabat at blend and table blend 1 are compared."""
     recs = {'picard': _rec(), 'newton': _rec()}
     recs[side][field] = value
-    with pytest.raises(ValueError, match=f'{side} record .*{field}'):
+    with pytest.raises(ValueError, match=f"{side} record .*'{field}'"):
         tool.compare(recs['picard'], recs['newton'])
 
 
