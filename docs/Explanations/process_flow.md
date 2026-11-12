@@ -186,7 +186,7 @@ The numerical solve is accepted when one of the tests below passes: the result t
 `stopped_on_wall_clock` is True when the wall clock stopped that solve, also when no test passed.
 The table band check (see [EOS physics](eos_physics.md)) runs after these tests: a band failure sets `converged = False` and keeps `accepted_on`, so read `converged` for the final verdict.
 
-With an adiabatic temperature mode (`adiabatic` or `adiabatic_from_cmb`), a T-dependent EOS and no external temperature profile, a test passes only on a result with the full adiabat:
+With an adiabatic temperature mode (`adiabatic` or `adiabatic_from_cmb`) and a T-dependent EOS, when the caller gives no `temperature_function` and, on the JAX path, no `temperature_arrays` (the numpy path ignores the arrays), a test passes only on a result with the full adiabat:
 
 - the solve computed the adiabat;
 - `adiabat_blend` is 1;
@@ -198,8 +198,8 @@ A pass on a table of blend 1 still reads the pressure of the pass before it. Its
 The top node is not bounded by the tolerance: the adiabat takes no step from or to a node below $10^5$ Pa, so with a surface pressure near 1 bar the top node can differ by one adiabatic step of the top shell.
 Two measured cases of the `dummy` setup of the [Validation page](../Validation/hydrostatic_structure.md#newton-and-picard-on-the-proteus-initial-structure) show the range:
 
-- With 150 layers this step is 17 to 22 K in the measured passes, and the returned top node of the Validation solves lies 0.06 K off the adiabat.
-- With 60 layers, `temperature_mode = "adiabatic"` and 32 starts whose planet mass differs by $k \times 10^{-12}$ (26 with the Newton and 6 with the Picard outer solver), the returned top node lies 56 to 57 K off the adiabat in 14 starts and at most 0.6 K off in the other 18. In 2 of the 26 Newton starts the whole profile also takes the skip, as the Validation page describes.
+- With 150 layers and `temperature_mode = "adiabatic_from_cmb"` (the Validation setups), this step is 17 to 22 K in the measured passes, and the returned top node of the Validation solves lies 0.06 K off the adiabat.
+- With 60 layers, `temperature_mode = "adiabatic"` and 32 starts whose planet mass differs by $k \times 10^{-12}$ (26 with the Newton and 6 with the Picard outer solver), the returned top node lies 56 to 57 K off the adiabat in 14 starts and at most 0.6 K off in the other 18. In 2 of the 26 Newton starts the adiabat also loses the step of the top shell for the whole profile, as the Validation page describes.
 
 `adiabat_self_consistency` gives the largest difference, in K, between the returned mantle temperature and the adiabat recomputed on the returned structure; it is None below blend 1 and when no mantle node has a positive pressure.
 
@@ -218,7 +218,7 @@ With `outer_solver = "newton"` in such a mode, the Newton root holds the linear 
 | `mass_only` | Picard | Mass converged and the smallest mass error is below `tolerance_outer`; density or pressure did not converge. |
 | `max_iter` | Picard | The outer loop stopped at `max_iterations_outer` with the mass error of the best pass below 3 %; the best pass is returned. |
 | `timeout` | Picard, Newton | The solve reached `wall_timeout` (in the outer or the inner loop) and one of the other tests passed; `timeout` replaces its label. On Picard the returned profile is the best pass, which can be an earlier, complete pass. |
-| `oscillation` | Picard | The mass error changed sign 10 times since the best pass last changed, each time with a magnitude at least 99 % of that of the pass before, and the mass error of the best pass is below `3 * tolerance_outer` and below 3 %. With an adiabatic temperature mode, a T-dependent EOS and no external temperature profile, the stop waits until the adiabat blend and its table blend reach 1. A pass the wall clock cut ends the solve as `timeout` instead. The best profile is returned and accepted on `3 * tolerance_outer`, or on the 3 % ceiling when its density or pressure did not converge. |
+| `oscillation` | Picard | The mass error changed sign 10 times since the best pass last changed, each time with a magnitude at least 99 % of that of the pass before, and the mass error of the best pass is below `3 * tolerance_outer` and below 3 %. With the full adiabat asked (see the rule above this table), the stop waits until the adiabat blend and its table blend reach 1. A pass the wall clock cut ends the solve as `timeout` instead. The best profile is returned and accepted on `3 * tolerance_outer`, or on the 3 % ceiling when its density or pressure did not converge. |
 | `retry_skip` | Picard | The first solve was not accepted, density and pressure converged and the mass error of the returned profile is below 7 %; `main` skips the retry. |
 | `newton_tol` | Newton | The smallest mass error of the Newton steps, or the mass error at the brentq root, is below `newton_tol`, and the inner solve of the returned profile reports converged pressure and the EOS density (`density_from_eos`). |
 | `brentq_best` | Newton | The bracket search or brentq stopped early with the smallest mass error of the evaluations below `newton_tol`; the returned profile is that of the evaluation with that error, and its inner solve reports converged pressure and the EOS density. |
