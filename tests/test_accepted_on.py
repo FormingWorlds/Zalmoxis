@@ -1905,24 +1905,30 @@ def test_the_returned_mantle_temperature_is_the_adiabat_of_the_returned_pressure
     assert r['adiabat_self_consistency'] >= max(dT_cmb, lag[-1])
 
 
-def _analytic_ramp(linear=None, factor=None, clock_after=None, **kwargs):
+def _fake_adiabat(pressure, t_surf):
+    """The adiabat of ``_analytic_ramp``: t_surf plus 2000 K times sqrt(P / 400 GPa)."""
+    return t_surf + 2000.0 * np.sqrt(np.clip(np.asarray(pressure, float), 0.0, None) / 4e11)
+
+
+def _analytic_ramp(linear=None, factor=None, clock_after=None, drift=0.0, **kwargs):
     """_solve on analytic densities through the adiabatic path: the EOS counts as T-dependent
-    and the adiabat is a fixed profile. Passes before the ramp starts end ``linear`` times the
-    target mass and passes after it ``factor`` times (unscaled when None; a callable takes the
-    number of adiabat computations so far, 4 on the first pass at blend 1); with ``clock_after``
-    the clock runs out once the adiabat was computed that many times. Returns the result and
-    the number of adiabat computations."""
+    and the adiabat is ``_fake_adiabat`` of the pressure. Passes before the ramp starts end
+    ``linear`` times the target mass and passes after it ``factor`` times (unscaled when None;
+    a callable takes the number of adiabat computations so far, 4 on the first pass at blend
+    1). With ``clock_after`` the clock runs out once the adiabat was computed that many times.
+    ``drift`` scales the pressure of each pass by 1 + drift times the number of adiabat
+    computations so far. Returns the result and the number of adiabat computations."""
     adiabat, real, clock = [], zs.solve_structure, time.time
 
     def adi(radii, pressure, mass, t_surf, *args, **kw):
         adiabat.append(1)
-        return np.linspace(t_surf + 2000.0, t_surf, len(radii))
+        return _fake_adiabat(pressure, t_surf)
 
     def solve(*args, **kw):
         m, g, P = real(*args, **kw)
         scale = (factor(len(adiabat)) if callable(factor) else factor) if adiabat else linear
         f = scale * earth_mass / m[-1] if scale else 1.0
-        return m * f, g * f, P
+        return m * f, g * f, P * (1.0 + drift * len(adiabat))
 
     cfg = _cfg(
         temperature_mode='adiabatic',
@@ -1972,15 +1978,17 @@ def test_the_accept_waits_for_a_table_built_on_a_full_adiabat_pass():
     """Every pass on the target mass: the first pass at blend 1 reads the T table built on the
     pressure of the blend-0.75 pass, so the solve accepts the next pass, whose table comes
     from a pass at blend 1. The adiabat is computed for the 5 passes of the ramp and once
-    more on the returned structure, for adiabat_self_consistency."""
+    more on the returned structure, for adiabat_self_consistency. The pressure drifts from
+    pass to pass, so the returned T, read from the table of the pass before, lags that
+    adiabat."""
     r, n_adiabat = _analytic_ramp(
-        linear=1.0, factor=1.0, tolerance_outer=1e-3, wall_timeout=WALL
+        linear=1.0, factor=1.0, drift=1e-4, tolerance_outer=1e-3, wall_timeout=WALL
     )
     assert n_adiabat == 6
     assert r['converged'] is True and r['accepted_on'] == 'strict'
     assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
-    fixed = np.linspace(r['temperature'][-1] + 2000.0, r['temperature'][-1], len(r['radii']))
-    lag = _mantle_lag(r, fixed)
+    lag = _mantle_lag(r, _fake_adiabat(r['pressure'], _cfg()['surface_temperature']))
+    assert lag.max() > 0.0
     assert r['adiabat_self_consistency'] == pytest.approx(lag.max(), rel=1e-12)
 
 
@@ -2083,11 +2091,11 @@ _TOLERANCES = st.one_of(
 @example(tol=1e-7, n=9, factor=1.02)  # 2 % off the mass, max_iter on a full-adiabat table
 def test_no_tolerance_or_pass_cap_accepts_a_profile_short_of_the_adiabat(tol, n, factor):
     """Analytic densities on the adiabatic path (the EOS counts as T-dependent and the adiabat
-    is a fixed profile), passes after the ramp starts scaled to ``factor`` times the mass, and
-    no reachable wall clock: for any tolerance_outer, including NaN, inf, 0, a negative value
-    and a bool, and any max_iterations_outer from 1 to 9 (unscaled passes reach blend 1 on a
-    full-adiabat table at pass 9), an accepted result is the full adiabat on a table of a full-adiabat
-    pass."""
+    is a function of the pressure), passes after the ramp starts scaled to ``factor`` times the
+    mass, and no reachable wall clock: for any tolerance_outer, including NaN, inf, 0, a
+    negative value and a bool, and any max_iterations_outer from 1 to 9 (unscaled passes reach
+    blend 1 on a full-adiabat table at pass 9), an accepted result is the full adiabat on a
+    table of a full-adiabat pass."""
     r, _ = _analytic_ramp(
         factor=factor, tolerance_outer=tol, max_iterations_outer=n, wall_timeout=WALL
     )
