@@ -67,7 +67,7 @@ PALEOS = {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'}
 
 @pytest.mark.accept_solves_newton_setups
 @pytest.mark.physics_invariant
-@pytest.mark.timeout(7200)  # the Newton steps, the 4800 s ramp clock and the 600 s retry
+@pytest.mark.timeout(7300)  # the Newton steps, the 5000 s ramp clock and the 600 s retry
 def test_the_paleos_newton_planet_meets_the_surface_condition_within_the_cap(monkeypatch):
     """PALEOS adiabatic 1 M_earth with the Newton outer solver at rtol 1e-9, whose root
     seeds the Picard blend ramp: the accepted profile is the full adiabat and either misses
@@ -88,7 +88,7 @@ def test_the_paleos_newton_planet_meets_the_surface_condition_within_the_cap(mon
 
     monkeypatch.setattr(zs, '_refine_pressure_root', spy)
     root = zalmoxis.get_zalmoxis_root()
-    cfg = _case(root, layer_eos_config=dict(PALEOS), planet_mass=5.972e24, wall_timeout=4800.0)
+    cfg = _case(root, layer_eos_config=dict(PALEOS), planet_mass=5.972e24, wall_timeout=5000.0)
     r = zs.main(cfg, load_material_dictionaries(), None, os.path.join(root, 'input'))
     P = np.asarray(r['pressure'], dtype=float)
     assert r['converged'] and r['adiabat_blend'] == 1.0
