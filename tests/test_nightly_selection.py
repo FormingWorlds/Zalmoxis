@@ -49,14 +49,11 @@ def _keyword(job):
 def _jobs(workflow):
     """(select, test files named in the job) of each nightly suite; the entries that split one
     select by ``-k`` count once (``_newton_faults`` checks that they split it)."""
-    jobs, split = [], set()
+    jobs = []
     for job in _suites(workflow).values():
-        sel, files = _entry(job)
-        if _keyword(job) is not None and (sel, tuple(files)) in split:
-            continue
-        if _keyword(job) is not None:
-            split.add((sel, tuple(files)))
-        jobs.append((sel, files))
+        entry = _entry(job)
+        if _keyword(job) is None or entry not in jobs:
+            jobs.append(entry)
     return jobs
 
 
@@ -294,24 +291,7 @@ def test_every_file_with_the_accept_solves_mark_is_named_in_the_workflow():
 
 
 NEWTON_MARK = 'accept_solves_newton_setups'
-
-
-def _solves_nodes(select, files, keyword=None):
-    """Node ids of tests/test_pressure_root_solves.py that a job with ``select`` runs."""
-    if files and 'test_pressure_root_solves.py' not in files:
-        return set()
-    done = subprocess.run(
-        [sys.executable, '-m', 'pytest', '--collect-only', '-q', '-m', select]
-        + (['-k', keyword] if keyword else [])
-        + ['-o', 'addopts=', '-p', 'no:cacheprovider', '--rootdir', str(ROOT / 'tests')]
-        + ['test_pressure_root_solves.py'],
-        cwd=ROOT / 'tests',
-        capture_output=True,
-        text=True,
-        timeout=600,
-    )
-    assert done.returncode in (0, 5), done.stdout[-2000:] + done.stderr[-2000:]
-    return {line for line in done.stdout.splitlines() if '::' in line}
+SOLVES = ['test_pressure_root_solves.py']
 
 
 # pytest-timeout applies the closest timeout marker of a test; this run prints it per test.
@@ -339,7 +319,7 @@ def _timeouts(select, keyword=None, files=()):
         text=True,
         timeout=600,
     )
-    assert done.returncode == 0, done.stdout[-2000:] + done.stderr[-2000:]
+    assert done.returncode in (0, 5), done.stdout[-2000:] + done.stderr[-2000:]
     rows = [
         line.split()[1:] for line in done.stdout.splitlines() if line.startswith('TIMEOUT ')
     ]
@@ -348,9 +328,10 @@ def _timeouts(select, keyword=None, files=()):
 
 def _newton_faults(workflow):
     """Faults of the jobs that take the Newton setup mark: each of its tests (in one file, see
-    the test below) runs in exactly one of them, each selects over the whole tree, and the
-    closest timeout markers of the tests of one job add up to less than its limit, so a slow
-    runner names the test before the job limit cancels the run."""
+    the smoke test below) runs in exactly one of them, each selects over the whole tree, no
+    other job has a ``-k``, and the closest timeout markers of the tests of one job add up to
+    less than its limit. The tests of one job run at the same time on separate workers, so
+    the sum leaves room for the other steps of the job."""
     suites = _suites(workflow)
     split = {
         name: job
@@ -358,17 +339,24 @@ def _newton_faults(workflow):
         if re.search(rf'(?<!not )\b{NEWTON_MARK}\b', _entry(job)[0])
     }
     faults = [('selects over named files', n) for n, job in split.items() if _entry(job)[1]]
-    nodes = {n: _solves_nodes(*_entry(job), _keyword(job)) for n, job in split.items()}
-    for node in sorted(_solves_nodes(NEWTON_MARK, [])):
-        runs = [n for n, ids in nodes.items() if node in ids]
+    faults += [
+        ('-k outside the Newton jobs', n)
+        for n, job in suites.items()
+        if n not in split and _keyword(job) is not None
+    ]
+    marks = {
+        n: _timeouts(_entry(job)[0], _keyword(job), _entry(job)[1] or SOLVES)
+        for n, job in split.items()
+    }
+    for node in sorted(_timeouts(NEWTON_MARK, files=SOLVES)):
+        runs = [n for n, m in marks.items() if node in m]
         if len(runs) != 1:
             faults.append(('runs in', node, runs))
-    for n, job in split.items():
-        marks = _timeouts(_entry(job)[0], _keyword(job), ['test_pressure_root_solves.py'])
-        if not marks or None in marks.values():
-            faults.append(('no timeout marker', n, marks))
-        elif sum(marks.values()) >= 60 * _job_limit(job):
-            faults.append(('timeouts over the job limit', n, sum(marks.values())))
+    for n, m in marks.items():
+        if not m or None in m.values():
+            faults.append(('no timeout marker', n, m))
+        elif sum(m.values()) >= 60 * _job_limit(split[n]):
+            faults.append(('timeouts over the job limit', n, sum(m.values())))
     return faults
 
 
@@ -413,6 +401,9 @@ def test_the_newton_setup_sweep_is_split_over_its_jobs():
             id='named_files',
         ),
         pytest.param(
+            '-k "within_the_cap"', '-k "no_such_test"', 'no timeout marker', id='empty_job'
+        ),
+        pytest.param(
             '--durations=0 tests/test_pressure_root_solves.py',
             '--durations=0 -k "smooth_kink" tests/test_pressure_root_solves.py',
             '-k outside the Newton jobs',
@@ -422,7 +413,7 @@ def test_the_newton_setup_sweep_is_split_over_its_jobs():
 )
 def test_a_fault_in_the_newton_split_is_found(old, new, kind):
     """A setup in no Newton job or in 2 of them, a job whose tests' timeouts add up to its
-    limit or more, a Newton job that names files, or a -k on any other job is a fault."""
+    limit or more, a Newton job that names files or runs no test, or a -k on any other job is a fault."""
     workflow = WORKFLOW.read_text()
     assert workflow.count(old) == 1
     assert kind in {f[0] for f in _newton_faults(workflow.replace(old, new))}
