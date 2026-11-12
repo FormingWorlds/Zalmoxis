@@ -185,6 +185,7 @@ Made with `python -m tools.validation.pressure_root_sweep run <dir> -j 2`, then 
 The numerical solve is accepted when one of the tests below passes: the result then has `converged = True`, and `accepted_on` names the test, or `timeout` when the wall clock stopped the solve of the returned profile; it is None when no test passes.
 `stopped_on_wall_clock` is True when the wall clock stopped that solve, also when no test passed.
 The table band check (see [EOS physics](eos_physics.md)) runs after these tests: a band failure sets `converged = False` and keeps `accepted_on`, so read `converged` for the final verdict.
+
 With an adiabatic temperature mode (`adiabatic` or `adiabatic_from_cmb`), a T-dependent EOS and no external temperature profile, a test passes only on a result with the full adiabat:
 
 - the solve computed the adiabat;
