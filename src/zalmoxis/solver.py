@@ -373,8 +373,9 @@ def _adiabat_seed(seed, config_params):
     """The ``_SEED_KEYS`` arrays of ``seed`` as float copies, or None, with a warning that names
     the fault, when they cannot seed a solve of ``config_params``: not readable, not 1-D of
     length num_layers, not finite, radii not increasing from r >= 0, mass_enclosed decreasing
-    or not positive at the top, pressure increasing, negative or not positive at the centre,
-    or an outer radius outside 0.2 to 5 times the Seager et al. (2007) estimate."""
+    or not positive at the top, pressure increasing, negative or not positive at the centre, a
+    top mass more than 5 % from planet_mass, or an outer radius outside 0.2 to 5 times the
+    estimate R_earth (M / M_earth)^0.282 of ``_default_solver_params``."""
     try:
         arrays = {k: np.array(seed[k], dtype=float) for k in _SEED_KEYS}
     except (KeyError, IndexError, TypeError, ValueError) as exc:
@@ -394,6 +395,8 @@ def _adiabat_seed(seed, config_params):
             fault = 'mass_enclosed decreases or is not positive at the top'
         elif np.any(np.diff(P) > 0) or P[-1] < 0 or P[0] <= 0:
             fault = 'pressure increases, is negative or is not positive at the centre'
+        elif abs(m[-1] / config_params['planet_mass'] - 1.0) > 0.05:
+            fault = f'top mass {m[-1]:.4e} kg more than 5 % from the planet mass'
         elif not 0.2 * r_est < r[-1] < 5.0 * r_est:
             fault = f'outer radius {r[-1]:.4e} m outside 0.2 to 5 times {r_est:.4e} m'
         else:
@@ -726,7 +729,8 @@ def main(
         ``adiabat_table_blend`` -1.0, which no accept test takes, and the solve runs at
         min(tolerance_outer, newton_tol) with the Newton outer solver. A seed that fails the
         checks of ``_adiabat_seed`` is refused with a warning; a seeded solve that does not
-        converge is repeated without the seed. Ignored with an external temperature.
+        converge is repeated without the seed, and its time counts in ``total_time``. A
+        seeded result has no ``newton_*`` keys. Ignored with an external temperature.
 
     Returns
     -------
@@ -745,9 +749,10 @@ def main(
         a Newton root there seeds the Picard blend ramp at min(tolerance_outer, newton_tol),
         and the result keeps its ``newton_*`` keys and its time in ``total_time``. In a ramp
         that main starts (after a Newton root or from ``adiabat_seed``), a pass on a
-        full-adiabat table more than 2 tolerance_outer off the mass takes the next radius from
-        the secant of the mass through the last 2 such passes, within 2 % of its radius; the
-        cube-root update takes over once a secant step does not shrink the mass error.
+        full-adiabat table more than 2 times the mass tolerance of the ramp off the mass takes
+        the next radius from the secant of the mass through the last 2 such passes, within 2 %
+        of its radius; the cube-root update takes over once a secant step does not shrink the
+        mass error.
         ``adiabat_seeded`` is True when the returned solve started from the seed. A failed
         table band check sets ``converged`` to False and leaves ``accepted_on`` as it is. A
         converged result has ``integration_tolerances``, the (rtol, atol) of the solve
@@ -816,7 +821,7 @@ def main(
     asked = _adiabat_asked(
         config_params, layer_mixtures, temperature_function, temperature_arrays
     )
-    newton_keys, newton_time, result = {}, 0.0, None
+    newton_keys, newton_time, seed_time, result = {}, 0.0, 0.0, None
     seed = (
         _adiabat_seed(adiabat_seed, config_params)
         if asked and adiabat_seed is not None
@@ -846,11 +851,9 @@ def main(
             initial_radii=initial_radii,
             adiabat_seed=seed,
         )
-        if result['converged']:
-            config_params = seeded_params
-        else:
+        if not result['converged']:
             logger.info('The seeded solve did not converge; solving without the seed.')
-            result = None
+            seed_time, result = result['total_time'], None
     if result is None and outer_solver == 'newton':
         result = _solve_newton_outer(
             config_params,
@@ -988,8 +991,8 @@ def main(
             )
 
     result = _report_table_bands(result, *bands)
-    if newton_keys:
-        result.update(newton_keys, total_time=result['total_time'] + newton_time)
+    if newton_keys or seed_time:
+        result.update(newton_keys, total_time=result['total_time'] + newton_time + seed_time)
     return _check_accepted(result, run_params, *bands, volatile_profile, asked)
 
 
@@ -2752,10 +2755,11 @@ def _solve(
                 and _secant_prev
                 and err > _SECANT_FLOOR * tolerance_outer
             ):
+                R_cube = R_pass * scale
                 radius_guess = _secant_radius(
-                    R_pass, calculated_mass, *_secant_prev, planet_mass, R_pass * scale
+                    R_pass, calculated_mass, *_secant_prev, planet_mass, R_cube
                 )
-                _secant_err = err
+                _secant_err = err if radius_guess != R_cube else None  # a fallback arms nothing
             else:
                 radius_guess = R_pass * scale
             _secant_prev = (R_pass, calculated_mass) if full_table else None
