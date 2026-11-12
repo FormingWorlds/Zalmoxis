@@ -290,7 +290,7 @@ condensed_rho_min   = 322.0    # still needed for any H2O components in other la
 condensed_rho_scale = 50.0
 binodal_T_scale     = 50.0     # H2-silicate miscibility sigmoid width (K)
 ```
-The mantle is 97% MgSiO$_3$ and 3% H$_2$ by mass, representing a sub-Neptune with a miscible interior where H$_2$ is dissolved into the magma. The binodal model of Rogers et al. (2025) ([binodal physics](../Explanations/binodal.md)) determines the miscibility boundary: above the binodal temperature (~4000 K at 1 GPa, decreasing to ~3000 K at 10 GPa), H$_2$ is miscible and contributes to the structural density. Below the binodal, H$_2$ is phase-separated and smoothly excluded. The per-component `condensed_rho_min` for H$_2$ (30 kg/m$^3$) is set automatically.
+The mantle is 97% MgSiO$_3$ and 3% H$_2$ by mass, representing a sub-Neptune with a miscible interior where H$_2$ is dissolved into the magma. The [binodal model](../Explanations/binodal.md) of Rogers et al. (2025) determines the miscibility boundary: above the binodal temperature (~4000 K at 1 GPa, decreasing to ~3000 K at 10 GPa), H$_2$ is miscible and contributes to the structural density. Below the binodal, H$_2$ is phase-separated and smoothly excluded. The per-component `condensed_rho_min` for H$_2$ (30 kg/m$^3$) is set automatically.
 
 **5. Earth-like rocky planet** (Seager cold model, iron core + silicate mantle, 2-layer):
 ```toml

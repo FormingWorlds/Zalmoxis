@@ -192,9 +192,15 @@ With an adiabatic temperature mode (`adiabatic` or `adiabatic_from_cmb`), a T-de
 - `adiabat_blend` is 1;
 - the T(P) table of that pass was built on the pressure of a pass at blend 1 (`adiabat_table_blend` is 1).
 
+The blend ramp moves the temperature from the linear first guess (`adiabat_blend` 0) to the adiabat (`adiabat_blend` 1) in steps of 0.25, one per outer pass.
 Each pass builds its table on the pressure of the pass before it, so the first pass at blend 1 reads the table of the blend-0.75 pass and is not accepted.
-A pass on a table of blend 1 still reads the pressure of the pass before it. So its mantle temperature differs from the adiabat of its own pressure by the change of the structure in the last pass, which the mass tolerance bounds at the inner mantle nodes.
-The top node is not bounded by the tolerance: the adiabat takes no step from or to a node below $10^5$ Pa, so with a surface pressure near 1 bar the top node can differ by one adiabatic step of the top shell. In `dummy` this step is 17 to 22 K with 150 layers. With 60 layers and the surface anchor, the returned top node lies 56 to 57 K off the adiabat in 14 of 32 starts and at most 0.6 K off in the others.
+A pass on a table of blend 1 still reads the pressure of the pass before it. Its mantle temperature therefore differs from the adiabat of its own pressure by the change of the structure in the last pass, which the mass tolerance bounds at the inner mantle nodes.
+The top node is not bounded by the tolerance: the adiabat takes no step from or to a node below $10^5$ Pa, so with a surface pressure near 1 bar the top node can differ by one adiabatic step of the top shell.
+Two measured cases of the `dummy` setup of the [Validation page](../Validation/hydrostatic_structure.md#newton-and-picard-on-the-proteus-initial-structure) show the range:
+
+- With 150 layers this step is 17 to 22 K in the measured passes, and the returned top node of the Validation solves lies 0.06 K off the adiabat.
+- With 60 layers, `temperature_mode = "adiabatic"` and 32 starts whose planet mass differs by $k \times 10^{-12}$ (26 with the Newton and 6 with the Picard outer solver), the returned top node lies 56 to 57 K off the adiabat in 14 starts and at most 0.6 K off in the other 18. In 2 of the 26 Newton starts the whole profile also takes the skip, as the Validation page describes.
+
 `adiabat_self_consistency` gives the largest difference, in K, between the returned mantle temperature and the adiabat recomputed on the returned structure; it is None below blend 1 and when no mantle node has a positive pressure.
 
 When a test would accept a result short of the full adiabat, the solve refuses it:
