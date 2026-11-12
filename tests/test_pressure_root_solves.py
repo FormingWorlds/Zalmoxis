@@ -131,18 +131,24 @@ def test_the_accepted_root_meets_the_surface_boundary_condition(monkeypatch):
 
 # The 6 Newton setups of the sweep (the PROTEUS default outer solver): id, EOS,
 # mass [M_earth], JAX, clock [s] (2x the slowest CI solve of the setup on the slowest runner
-# CPU) and timeout [s] (the Newton steps, the clock and the 600 s retry on that CPU).
+# CPU) and timeout [s] (the other solves at the CI factor of the clock, the clock and the
+# 600 s retry on that CPU).
 NEWTON_SETUPS = (
     ('analytic_1', ANALYTIC, 1.0, False, 600.0, 1800),
-    ('paleos_1_numpy', PALEOS, 1.0, False, 4900.0, 6900),
+    ('paleos_1_numpy', PALEOS, 1.0, False, 4900.0, 7100),
     ('paleos_1_jax', PALEOS, 1.0, True, 1300.0, 3000),
     ('paleos_3_jax', PALEOS, 3.0, True, 1300.0, 2800),
-    ('paleos_5_numpy', PALEOS, 5.0, False, 3500.0, 5500),
-    ('paleos_10_numpy', PALEOS, 10.0, False, 5600.0, 7700),
+    ('paleos_5_numpy', PALEOS, 5.0, False, 3500.0, 5900),
+    ('paleos_10_numpy', PALEOS, 10.0, False, 5600.0, 8200),
 )
 # P(R) near the stop scatters on the JAX path and in the Picard blend ramp that seeds from a
 # numpy PALEOS Newton root; a padded accept is possible there.
 MAY_PAD = {'paleos_1_jax', 'paleos_1_numpy', 'paleos_5_numpy', 'paleos_10_numpy'}
+
+
+@pytest.mark.unit
+def test_each_newton_setup_timeout_covers_its_clock_and_the_retry():
+    assert [s[0] for s in NEWTON_SETUPS if s[5] < s[4] + 600] == []
 
 
 @pytest.mark.accept_solves_newton_setups

@@ -19,6 +19,7 @@ from zalmoxis.constants import MAX_BAND_EXCESS_DEFAULT
 pytestmark = [pytest.mark.integration, pytest.mark.wolfbower]
 
 
+@pytest.mark.timeout(5300)  # the other solves, the 3600 s clock and the 600 s retry
 def test_newton_solve_at_500_k_leaves_the_gradient_table_band(tmp_path):
     """At a 500 K surface the adiabat of the Newton solve leaves the band of the Wolf & Bower
     gradient table by more than max_band_excess, so the structure is returned unconverged. The
