@@ -5,6 +5,7 @@ docs/How-to/build_tests.md for the test tiers."""
 
 from __future__ import annotations
 
+import argparse
 import ast
 import itertools
 import re
@@ -42,16 +43,19 @@ def _entry(job):
 
 
 def _keyword(job):
-    """The ``-k`` expression of one matrix entry (``-k expr``, ``-kexpr``, ``-k=expr`` or
-    ``--keyword``, quoted or not), or None."""
-    args = re.search(r'args:(.*)', job)
-    words = shlex.split(args.group(1)) if args else []
-    for i, word in enumerate(words):
-        if word in ('-k', '--keyword'):
-            return words[i + 1]
-        if word.startswith(('-k', '--keyword=')):
-            return word.split('=', 1)[1] if '=' in word else word[2:]
-    return None
+    """The ``-k`` expression that pytest reads from the args of one matrix entry (after the
+    YAML comment and quotes; the last ``-k``, also in a flag group such as ``-xk``), or None."""
+    args = re.search(r'^\s*args:(.*)$', job, re.M)
+    words = shlex.split(args.group(1), comments=True) if args else []
+    if len(words) == 1:
+        words = shlex.split(words[0])
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('-k')
+    for flag in 'lqsvx':
+        parser.add_argument(f'-{flag}', action='count')
+    for flag in 'cmnopr':
+        parser.add_argument(f'-{flag}')
+    return parser.parse_known_args(words)[0].k
 
 
 def _jobs(workflow):
