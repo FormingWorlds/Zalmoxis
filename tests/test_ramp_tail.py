@@ -285,10 +285,29 @@ def test_a_seeded_solve_that_fails_runs_the_newton_ramp_without_the_seed(spies, 
     (cp1, kw1), (cp2, kw2) = spies['solve']
     assert 'adiabat_seed' in kw1 and 'adiabat_seed' not in kw2
     assert cp2['_initial_radius_guess'] == 6.9e6 and cp2['_secant_tail'] is True
-    assert (
-        r['accepted_on'] == 'strict' and r['total_time'] == 46.0
-    )  # seeded 40 s, Newton 5 s, ramp 1 s
+    assert r['accepted_on'] == 'strict' and r['total_time'] == 46.0
     assert 'seeded solve did not converge' in caplog.text
+
+
+@pytest.mark.parametrize(
+    'solver, newton_converged, total',
+    [('newton', False, 45.0), ('picard', None, 41.0)],
+    ids=['newton_fails_too', 'picard'],
+)
+def test_the_time_of_a_failed_seeded_solve_counts_on_every_path(
+    spies, monkeypatch, solver, newton_converged, total
+):
+    """The seeded solve does not converge (40 s): its time counts when the Newton root after it
+    fails too (40 + 5 s, the Newton result returns) and on the Picard path (40 + 1 s)."""
+    spies['out'].append({**_full(t=40.0), 'converged': False, 'accepted_on': None})
+    if newton_converged is False:
+        monkeypatch.setattr(
+            zs, '_solve_newton_outer', lambda *a, **k: {**_newton(), 'converged': False}
+        )
+    cfg = _adiabatic_cfg(outer_solver=solver, num_layers=2)
+    r = zs.main(cfg, {}, None, '/tmp', adiabat_seed=_seed_main())
+    assert r['total_time'] == pytest.approx(total, rel=1e-12)
+    assert r['converged'] is (newton_converged is not False)
 
 
 def test_a_refused_seed_leaves_the_newton_ramp_as_without_a_seed(spies):
