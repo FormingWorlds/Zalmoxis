@@ -236,24 +236,25 @@ A trapezoid integral of the returned `density` differs from `mass_enclosed[-1]` 
 
 ### Secant tail and seeded re-solve
 
-How does a solve that returns the full adiabat avoid most of the cost of the blend ramp?
-Two rules shorten it, and neither changes the accept tests above.
+How does a full-adiabat solve avoid most of the cost of the blend ramp?
+Two rules shorten it without a change to the accept tests above.
 
 **Secant tail.** Each outer pass integrates the structure at a trial outer radius $R_n$ and returns a mass $M_n$; $M_p$ is the planet mass.
 The cube-root rule $R_{n+1} = R_n (M_p / M_n)^{1/3}$ cuts the mass error by a fixed factor per pass when the mass grows more slowly than $R^3$.
-In a ramp that `main` starts (after a Newton root or from a seed), a pass at blend 1 on a table of blend 1 takes the secant through the last 2 such passes:
+When `main` starts the solve itself (after a Newton root or from a seed), a pass at blend 1 on a table of blend 1 takes its next radius from the secant through the last 2 such passes:
 
 $$R_{n+1} = R_n - (M_n - M_p) \frac{R_n - R_{n-1}}{M_n - M_{n-1}}.$$
 
-- The secant steps only while the mass error is above 2 times the mass tolerance of the ramp (`min(tolerance_outer, newton_tol)` with the Newton outer solver), and by at most 2 % of $R_n$.
-- A slope that is not positive or not finite gives the cube-root radius; after a secant step that did not shrink the mass error, every pass does.
+- Secant steps run only while the mass error is above 2 times the mass tolerance of the ramp (`min(tolerance_outer, newton_tol)` for Newton, else `tolerance_outer`), and by at most 2 % of $R_n$.
+- If the slope $(M_n - M_{n-1}) / (R_n - R_{n-1})$ is not positive or not finite, the pass uses the cube-root radius, and so do all passes after a secant step that did not shrink the mass error.
 
 **Seeded re-solve.** `main` takes `adiabat_seed`: the `radii`, `pressure` and `mass_enclosed` of an earlier solve of the same planet.
-When the solve computes the adiabat itself, it skips the Newton root and the ramp; its first pass reads the adiabat of the seed at blend 1.
+When the solve computes the adiabat itself, it skips the Newton root and the blend steps below 1; its first pass reads the adiabat of the seed at blend 1.
 No pass of this solve built that table, so `adiabat_table_blend` is -1.0 and no test accepts the pass.
-A seed that fails its checks (for example a top mass more than 5 % from `planet_mass`) is refused with a warning, and a seeded solve that does not converge runs again without it; `adiabat_seeded` marks a result from the seed.
+A seed that fails its checks is refused with a warning, and a seeded solve that does not converge runs again without it.
+`adiabat_seeded` marks a result from the seed; that result has no `newton_*` keys.
 
-In the PROTEUS grid case with a core mass fraction of 0.95, the secant tail brings a mass error of 0.24 % below $10^{-4}$ in 3 full-adiabat passes; the cube-root rule needs 10.
+At a core mass fraction of 0.95 in the PROTEUS grid, the secant tail brings a mass error of 0.24 % below $10^{-4}$ in 3 full-adiabat passes; the cube-root rule needs 10.
 
 **Where this is checked.** [Secant tail and seeded re-solve on the PROTEUS grid start-up](../Validation/hydrostatic_structure.md#secant-tail-and-seeded-re-solve-on-the-proteus-grid-start-up).
 

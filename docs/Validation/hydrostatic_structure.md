@@ -396,14 +396,18 @@ The test fails when a returned structure is outside the tolerances below, when i
 
 **What it tests.** The setup is the first structure solve of the PROTEUS grid test case with a core mass fraction of 0.95: 0.7 Earth masses, the PALEOS iron core and MgSiO$_3$ mantle, `temperature_mode = "adiabatic_from_cmb"`, 150 layers, the Newton outer solver on the numpy path.
 The first start-up re-solve follows, with a surface pressure of 51.3 MPa and a planet mass 0.07 % lower; it runs once from the seed of the first solve and once without it.
+The first solve has a surface pressure of 1 bar.
 Each solve is compared with REF, the same solve at a mass tolerance of $10^{-6}$.
-The lag is the difference between the returned temperature and the adiabat computed again on the returned pressure, at one node.
+The lag of a node is the difference between the returned temperature at that node and the adiabat computed again on the returned pressure.
+Relative differences are $|x - x_\mathrm{REF}| / |x_\mathrm{REF}|$.
 
-- The mantle temperature at 39 mass points differs from REF by at most 1 K; the outer radius, the central pressure and the core radius by at most $2 \times 10^{-4}$.
-- The CMB pressure differs by at most $2\,\mathrm{tol}/(1 - \mathrm{cmf}) = 4 \times 10^{-3}$, with the mass tolerance tol $= 10^{-4}$: the core mass is fixed, so the mass error of a solve sits in the mantle and moves the CMB pressure by that error divided by the mantle mass fraction. The core radius and the CMB pressure are read at the core mass by interpolation in mass.
+- The mantle temperature at 39 mass points differs from REF by at most 1 K.
+- The outer radius, the central pressure and the core radius differ from REF by at most $2 \times 10^{-4}$ (relative).
+- The CMB pressure differs from REF by at most $4 \times 10^{-3}$ (relative). This is $2\,\mathrm{tol} / (1 - f_\mathrm{core})$, with the mass tolerance $\mathrm{tol} = 10^{-4}$ and the core mass fraction $f_\mathrm{core} = 0.95$: the core mass is fixed, so the mass error sits in the mantle and moves the CMB pressure by that error divided by the mantle mass fraction $1 - f_\mathrm{core}$. The core radius and the CMB pressure are read at the core mass by interpolation in mass.
 - The lag is at most 6 K at the CMB node and 1 K at the other mantle nodes in every solve, and at most 25 K at the top node in the 2 re-solves.
 - The seeded and the unseeded re-solve differ by at most 2.5 K and $5 \times 10^{-4}$ in radius.
-- The first solve needs at most 3 passes on a full-adiabat table, and the seeded re-solve at most 4 passes and at most half the structure integrations of the unseeded one.
+- The accept label of every solve is `strict`, and the accepted pass is on a table of blend 1.
+- The first solve needs at most 3 passes on a full-adiabat table. The seeded re-solve needs at most 4 passes and at most half the structure integrations of the unseeded one.
 
 **How we know the right answer.** REF runs until its mass error is 100 times smaller than the mass tolerance of the ramp, $10^{-4}$.
 So REF stands for the converged structure; this is a convergence check, not an external reference.
@@ -413,29 +417,34 @@ So REF stands for the converged structure; this is a convergence check, not an e
 ![Relative mass error per outer pass of the first solve and of the re-solve with and without the seed](../assets/validation/grid_start_up_ramp.svg#only-light){ width="70%" }
 ![Relative mass error per outer pass of the first solve and of the re-solve with and without the seed](../assets/validation/grid_start_up_ramp_dark.svg#only-dark){ width="70%" }
 
-**How to read the plot.** The x-axis is the outer pass of the solve that returns. Without the seed, pass 1 is the pass at the radius of the Newton root, passes 2 to 5 blend in the adiabat, and the passes on a full-adiabat table start at pass 6.
+**How to read the plot.** The x-axis is the outer pass of the solve that returns.
+In the first solve and in the re-solve without the seed, pass 1 is the pass at the radius of the Newton root.
+Passes 2 to 5 blend in the adiabat, and the passes on a full-adiabat table start at pass 6.
 The y-axis is the relative mass error $|M_n - M_p| / M_p$ on a log scale, with errors below $10^{-7}$ drawn at $10^{-7}$.
 Circles are the first solve, open squares the re-solve without the seed and triangles the re-solve with it.
 The broken line is the mass tolerance $10^{-4}$; the dotted line is twice that, below which the secant steps stop.
-The test asserts the pass counts: at most 3 full-adiabat passes in the first solve and at most 4 passes in the seeded re-solve; the error values are context.
+The test asserts the pass counts; the error values are context.
+A pass means that the first-solve curve ends below the broken line after at most 3 passes from pass 6, and the seeded curve ends below it within 4 passes.
 
 **Known limit.** The tests bound the lag for the 2 setups of [Newton and Picard on the PROTEUS initial structure](#newton-and-picard-on-the-proteus-initial-structure) and for the setup above, 1 of the 4 PROTEUS grid cases.
-Replays of the saved start-up inputs of all 4 grid cases (core mass fraction 0.35 and 0.95, 1000 and 2000 ppmw H) from a PROTEUS grid run, outside the tests of this repository, give these values beyond the bounds:
+Replays of the saved start-up inputs of all 4 grid cases (core mass fraction 0.35 and 0.95; 1000 and 2000 ppmw H, parts per million by weight of hydrogen), taken from a PROTEUS grid run and outside the tests of this repository, give these values.
+The first 5 rows exceed a bound; the other 4 are not bounded or lie inside one.
 
 | Case | Quantity | Value | Bound |
 |---|---|---|---|
 | Core mass fraction 0.35, first solve | lag at the CMB node | 93.2 K | 6 K |
-| same | lag at the other mantle nodes | 2.09 K | 1 K |
-| same | mantle temperature from REF | 2.17 K | 1 K |
+| Core mass fraction 0.35, first solve | lag at the other mantle nodes | 2.09 K | 1 K |
+| Core mass fraction 0.35, first solve | mantle temperature from REF | 2.17 K | 1 K |
 | Core mass fraction 0.35, re-solves | lag at the mantle nodes | up to 1.36 K | 1 K |
-| same | mantle temperature from REF, without the seed / with it | up to 1.47 K / 1.25 K | 1 K |
+| Core mass fraction 0.35, re-solves | mantle temperature from REF, without the seed / with it | up to 1.47 K / 1.25 K | 1 K |
 | Core mass fraction 0.95, first solve at 1 bar | lag at the top node | 28.8 K | none for this solve |
 | Core mass fraction 0.95, first solve | last core node from REF, secant tail / cube-root rule | 587 K / 17.6 K | none |
+| All 4 cases, every solve | CMB pressure from REF, secant tail / cube-root rule | up to $9.4 \times 10^{-4}$ / $1.9 \times 10^{-3}$ | $4 \times 10^{-3}$ at core mass fraction 0.95, inside |
+| Core mass fraction 0.35, 2000 ppmw H, seeded re-solve | lag at the CMB node | up to 5.4 K | 6 K, inside |
 
 - At core mass fraction 0.35 the cube-root rule converges in 2 full-adiabat passes, so the secant tail does not step and the first solve is the same as without it.
-- At 1 bar the top node loses its adiabat step (the skip below $10^5$ Pa of the case above) in 2 of 6 starts whose planet mass differs by $k \times 10^{-12}$, and in REF. The test therefore bounds the top node only in the re-solves.
-- The core nodes and the CMB node read one T(P) table with the mantle, and no test bounds the core nodes. The cell below the CMB holds 0.7 % of the planet mass; the core radius stays within $3 \times 10^{-5}$ of REF and the CMB pressure within $9.4 \times 10^{-4}$ ($1.9 \times 10^{-3}$ with the cube-root rule).
-- The CMB node of a seeded re-solve lags by up to 5.4 K (core mass fraction 0.35, 2000 ppmw H), inside its 6 K bound.
+- At 1 bar the top node loses its adiabat step (the skip below $10^5$ Pa described under [Newton and Picard on the PROTEUS initial structure](#newton-and-picard-on-the-proteus-initial-structure)) in 2 of 6 starts whose planet mass differs by $k \times 10^{-12}$, and in REF. The test therefore bounds the top node only in the re-solves.
+- The core nodes and the CMB node read one T(P) table with the mantle, and no test bounds the core nodes. The cell below the CMB holds 0.7 % of the planet mass, and the core radius stays within $3 \times 10^{-5}$ of REF.
 
 ??? info "Test details"
     - Reference: REF, the same solve at a mass tolerance of $10^{-6}$ (convergence check).
@@ -450,7 +459,7 @@ Replays of the saved start-up inputs of all 4 grid cases (core mass fraction 0.3
         - `tests/test_accepted_on.py::test_the_first_seeded_pass_carries_the_seed_label_and_is_not_accepted`
         - `tests/test_accepted_on.py::test_the_seed_table_pass_starts_no_secant`
     - Markers: `smoke`, `accept_solves_long` and `physics_invariant`; it runs in the nightly workflow. It writes its plot only with `--validation-plots` and does not compare it with the committed pair, because the number of passes can change with round-off.
-    - Plotted run (can change with round-off): without the seed the error rises to about $3 \times 10^{-3}$ in passes 2 to 5; from pass 6 the cube-root rule reaches $1.7 \times 10^{-3}$ at pass 7 and the secant step $1.4 \times 10^{-5}$ at pass 8; the re-solve takes 4 passes from the seed against 8 without it (1 at the Newton root, 4 blend passes, 3 full-adiabat passes).
+    - Plotted run (can change with round-off): in the first solve the error rises to about $3 \times 10^{-3}$ in passes 2 to 5 and is $2.4 \times 10^{-3}$ at pass 6; the cube-root rule reaches $1.7 \times 10^{-3}$ at pass 7 and the secant step $1.4 \times 10^{-5}$ at pass 8; the re-solve takes 4 passes from the seed against 8 without it (1 at the Newton root, 4 blend passes, 3 full-adiabat passes).
     - Command: `pytest -o "addopts=" -m accept_solves_long tests/test_accepted_on.py -k grid_start_up --validation-plots`.
 
 ## Reproducing the results
