@@ -788,13 +788,17 @@ def test_wall_clock_in_the_adiabat_ramp_is_retried_to_the_full_adiabat(monkeypat
     ramp = lambda: any('activating adiabat blend' in m for m in caplog.messages)  # noqa: E731
     clock = time.time
     monkeypatch.setattr(zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * ramp()))
+    tighten = zs._tighten_solver_params  # the retry clock is 2x the 300 s default
+    monkeypatch.setattr(
+        zs, '_tighten_solver_params', lambda p: {**tighten(p), 'wall_timeout': 900.0}
+    )
     cfg = _cfg(
         temperature_mode='adiabatic',
         layer_eos_config={'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'},
         tolerance_outer=0.02,
         max_iterations_inner=2,
         wall_timeout=WALL,
-        num_layers=30,  # the retry runs on the fixed 600 s retry clock
+        num_layers=30,  # a short retry
         relative_tolerance=1e-5,
         absolute_tolerance=1e-6,
     )

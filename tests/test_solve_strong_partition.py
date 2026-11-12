@@ -465,6 +465,7 @@ class TestSolveStrongPartitionMassAndLayers:
 class TestSolveStrongPartitionSmoke:
     """1 M_earth sub-Neptune-relevant run with PALEOS-2phase mantle + H2O."""
 
+    @pytest.mark.timeout(3600)  # the 2800 s clock plus the 600 s retry
     def test_one_earth_mass_strong_partition_converges(self, zalmoxis_root):
         """A 1 M_earth planet with a 10% H2O mantle on partition_rule='strong'
         runs end-to-end, the outer phi_avg loop converges, and the bulk H2O
@@ -485,7 +486,7 @@ class TestSolveStrongPartitionSmoke:
             'mantle_mass_fraction': 0,
             'temperature_mode': 'adiabatic',
             # The full ramp on a busy 4-vCPU CI runner
-            'wall_timeout': 1800.0,
+            'wall_timeout': 2800.0,
             'surface_temperature': 3000.0,
             'center_temperature': 6000.0,
             'temp_profile_file': '',

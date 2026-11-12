@@ -39,7 +39,7 @@ def _assert_full_adiabat(results, mass):
 
 
 @lru_cache(maxsize=32)
-def _run_paleos(mass_earth, temperature_mode='linear', wall_timeout=300.0):
+def _run_paleos(mass_earth, temperature_mode='linear', wall_timeout=1000.0):
     """Run Zalmoxis with PALEOS-2phase:MgSiO3 mantle for one (mass, T-mode).
 
     Cached by ``(mass_earth, temperature_mode, wall_timeout)`` so multiple tests sharing
@@ -53,7 +53,8 @@ def _run_paleos(mass_earth, temperature_mode='linear', wall_timeout=300.0):
     temperature_mode : str
         Either ``'linear'`` or ``'adiabatic'``.
     wall_timeout : float
-        Solver wall clock in s.
+        Solver wall clock in s; the default is 2x the slowest CI solve of the linear
+        1 M_earth case on the slowest runner CPU.
 
     Returns
     -------

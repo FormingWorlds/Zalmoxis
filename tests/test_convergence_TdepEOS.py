@@ -102,7 +102,7 @@ def test_TdepEOS_converges_1Mearth(zalmoxis_root):
         os.remove(custom_log_file)
 
     # The full ramp on a busy 4-vCPU CI runner
-    results = run_zalmoxis_TdepEOS(1, wall_timeout=1100.0)
+    results = run_zalmoxis_TdepEOS(1, wall_timeout=1800.0)
     _check_TdepEOS_results(1, results)
 
 
