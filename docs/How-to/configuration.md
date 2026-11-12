@@ -217,7 +217,7 @@ The Monteux et al. (2016)[^cite-monteux2016] piecewise parameterization has a so
 
     **PALEOS-2phase:MgSiO3**: Both solid and liquid tables extend to 100 TPa, limited to $\leq 50\,M_\oplus$. The tables have NaN gaps at certain (P, T) corners where the thermodynamic solver did not converge (53% fill for liquid, 75% for solid). Per-cell temperature clamping with nearest-neighbor fallback handles these gaps transparently. In adiabatic mode, the T(P) parameterization ensures the Brent pressure solver never queries outside the valid domain.
 
-    **Unified PALEOS** (`PALEOS:iron`, `PALEOS:MgSiO3`, `PALEOS:H2O`): All extend to 100 TPa, limited to $\leq 50\,M_\oplus$. These are unified single-file tables that contain all stable phases for each material. The phase boundary is extracted from the table's phase column at load time. The same per-cell clamping and nearest-neighbor fallback apply. `PALEOS:iron` makes the iron core T-dependent for the first time, following its own adiabat.
+    **Unified PALEOS** (`PALEOS:iron`, `PALEOS:MgSiO3`, `PALEOS:H2O`): All extend to 100 TPa, limited to $\leq 50\,M_\oplus$. These are unified single-file tables that contain all stable phases for each material. The phase boundary is extracted from the table's phase column at load time. The same per-cell clamping and nearest-neighbor fallback apply. `PALEOS:iron` makes the iron core T-dependent, following its own adiabat.
 
 For guidance on when to use tabulated vs. analytic EOS, see the [EOS physics explanation](../Explanations/eos_physics.md).
 
@@ -290,7 +290,7 @@ condensed_rho_min   = 322.0    # still needed for any H2O components in other la
 condensed_rho_scale = 50.0
 binodal_T_scale     = 50.0     # H2-silicate miscibility sigmoid width (K)
 ```
-The mantle is 97% MgSiO$_3$ and 3% H$_2$ by mass, representing a sub-Neptune with a miscible interior where H$_2$ is dissolved into the magma. The [Rogers+2025 binodal model](../Explanations/binodal.md) determines the miscibility boundary: above the binodal temperature (~4000 K at 1 GPa, decreasing to ~3000 K at 10 GPa), H$_2$ is miscible and contributes to the structural density. Below the binodal, H$_2$ is phase-separated and smoothly excluded. The per-component `condensed_rho_min` for H$_2$ (30 kg/m$^3$) is set automatically.
+The mantle is 97% MgSiO$_3$ and 3% H$_2$ by mass, representing a sub-Neptune with a miscible interior where H$_2$ is dissolved into the magma. The binodal model of Rogers et al. (2025) ([binodal physics](../Explanations/binodal.md)) determines the miscibility boundary: above the binodal temperature (~4000 K at 1 GPa, decreasing to ~3000 K at 10 GPa), H$_2$ is miscible and contributes to the structural density. Below the binodal, H$_2$ is phase-separated and smoothly excluded. The per-component `condensed_rho_min` for H$_2$ (30 kg/m$^3$) is set automatically.
 
 **5. Earth-like rocky planet** (Seager cold model, iron core + silicate mantle, 2-layer):
 ```toml

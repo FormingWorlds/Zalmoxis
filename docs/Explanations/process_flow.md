@@ -1,5 +1,9 @@
 # Process Flow
 
+How does Zalmoxis turn a configuration file into a planet structure?
+This page follows one run: the configuration, the initial guesses, the 3 nested loops that solve for the radius, the density and the central pressure, and the tests that decide when a result is accepted.
+Read it to see why a run returns a given structure, why a returned profile can have zero pressure at its outer node (a padded profile), and what each `accepted_on` label means.
+
 ## Configuration Loading
 
 The function `load_zalmoxis_config()` (in `config.py`) reads a TOML configuration file that specifies planet mass, layer mass fractions, per-layer EOS identifiers, temperature profile settings, solver tolerances, and output options.
@@ -181,7 +185,25 @@ Made with `python -m tools.validation.pressure_root_sweep run <dir> -j 2`, then 
 The numerical solve is accepted when one of the tests below passes: the result then has `converged = True`, and `accepted_on` names the test, or `timeout` when the wall clock stopped the solve of the returned profile; it is None when no test passes.
 `stopped_on_wall_clock` is True when the wall clock stopped that solve, also when no test passed.
 The table band check (see [EOS physics](eos_physics.md)) runs after these tests: a band failure sets `converged = False` and keeps `accepted_on`, so read `converged` for the final verdict.
-With an adiabatic temperature mode (`adiabatic` or `adiabatic_from_cmb`), a T-dependent EOS and no external temperature profile, a test passes only on a result with the full adiabat: the solve computed the adiabat, `adiabat_blend` is 1, and the T(P) table of that pass was built on the pressure of a pass at blend 1 (`adiabat_table_blend` is 1). Each pass builds its table on the pressure of the pass before it, so the first pass at blend 1 reads the table of the blend-0.75 pass and is not accepted. A pass on a table of blend 1 still reads the pressure of the pass before it, so its mantle temperature differs from the adiabat of its own pressure by the change of the structure in the last pass, which the mass tolerance bounds at the inner mantle nodes. The top node is not bounded by the tolerance: the adiabat takes no step from or to a node below $10^5$ Pa, so with a surface pressure near 1 bar the top node can differ by one adiabatic step of the top shell, 17 to 22 K with 150 layers and about 56 K with 60 layers in `dummy`. `adiabat_self_consistency` gives the largest difference, in K, between the returned mantle temperature and the adiabat recomputed on the returned structure; it is None below blend 1 and when no mantle node has a positive pressure. When a test would accept a result short of the full adiabat, the solve refuses it: the result has `converged = False`, `converged_mass = False` and `accepted_on` None, and the solve logs a warning (at DEBUG for a step of the Newton outer solver); `main` then retries, and does not skip the retry on `retry_skip`. `main` raises `StructureInvariantError` on an accepted result in such a mode below blend 1 or on a table below blend 1. With `outer_solver = "newton"` in such a mode, the Newton root holds the linear first-guess temperature, so `main` continues with the Picard blend ramp, seeded with the radius, the central pressure, the density and the radii of the Newton profile, at the mass tolerance `min(tolerance_outer, newton_tol)`; the Picard tests then accept the result and give its label, and the result keeps `newton_n_iter`, `newton_history` and `newton_used_brentq`.
+With an adiabatic temperature mode (`adiabatic` or `adiabatic_from_cmb`), a T-dependent EOS and no external temperature profile, a test passes only on a result with the full adiabat:
+
+- the solve computed the adiabat;
+- `adiabat_blend` is 1;
+- the T(P) table of that pass was built on the pressure of a pass at blend 1 (`adiabat_table_blend` is 1).
+
+Each pass builds its table on the pressure of the pass before it, so the first pass at blend 1 reads the table of the blend-0.75 pass and is not accepted.
+A pass on a table of blend 1 still reads the pressure of the pass before it. So its mantle temperature differs from the adiabat of its own pressure by the change of the structure in the last pass, which the mass tolerance bounds at the inner mantle nodes.
+The top node is not bounded by the tolerance: the adiabat takes no step from or to a node below $10^5$ Pa, so with a surface pressure near 1 bar the top node can differ by one adiabatic step of the top shell. In `dummy` this step is 17 to 22 K with 150 layers. With 60 layers and the surface anchor, the returned top node lies 56 to 57 K off the adiabat in 14 of 32 starts and at most 0.6 K off in the others.
+`adiabat_self_consistency` gives the largest difference, in K, between the returned mantle temperature and the adiabat recomputed on the returned structure; it is None below blend 1 and when no mantle node has a positive pressure.
+
+When a test would accept a result short of the full adiabat, the solve refuses it:
+
+- the result has `converged = False`, `converged_mass = False` and `accepted_on` None;
+- the solve logs a warning (at DEBUG for a step of the Newton outer solver);
+- `main` then retries, and does not skip the retry on `retry_skip`;
+- `main` raises `StructureInvariantError` on an accepted result in such a mode below blend 1 or on a table below blend 1.
+
+With `outer_solver = "newton"` in such a mode, the Newton root holds the linear first-guess temperature. So `main` continues with the Picard blend ramp, seeded with the radius, the central pressure, the density and the radii of the Newton profile, at the mass tolerance `min(tolerance_outer, newton_tol)`. The Picard tests then accept the result and give its label, and the result keeps `newton_n_iter`, `newton_history` and `newton_used_brentq`.
 
 | `accepted_on` | Outer solver | Test |
 |---|---|---|
