@@ -1257,6 +1257,28 @@ def test_an_external_temperature_profile_is_accepted_at_blend_0(monkeypatch, kwa
 
 
 @pytest.mark.unit
+@pytest.mark.usefixtures('canned')
+@pytest.mark.parametrize(
+    'kwargs',
+    [
+        {'temperature_function': lambda r, P: 3000.0},
+        {'temperature_arrays': (np.array([0.0, 7.0e6]), np.full(2, 3000.0)), 'use_jax': True},
+    ],
+    ids=['temperature_function', 'temperature_arrays'],
+)
+def test_newton_with_an_external_temperature_returns_the_newton_result(monkeypatch, kwargs):
+    """With the temperature of the caller no adiabat is asked for, so main returns a converged
+    Newton result of an adiabatic mode with a T-dependent EOS without the blend ramp."""
+    newton = {**_inner(7.0e6, accepted_on='newton_tol'), 'adiabat_computed': False}
+    newton['adiabat_blend'] = 0.0
+    monkeypatch.setattr(zs, '_solve_newton_outer', lambda *a, **k: newton)
+    monkeypatch.setattr(zs, '_solve', lambda *a, **k: pytest.fail('the blend ramp started'))
+    cfg = _adiabatic_cfg(outer_solver='newton', use_jax=kwargs.pop('use_jax', False))
+    r = zs.main(cfg, {}, None, '/tmp', **kwargs)
+    assert r is newton and r['accepted_on'] == 'newton_tol'
+
+
+@pytest.mark.unit
 def test_an_unaccepted_result_short_of_the_adiabat_passes_the_check():
     result = {'converged': False, 'adiabat_computed': False, 'adiabat_blend': 0.0}
     cfg = _adiabatic_cfg()
