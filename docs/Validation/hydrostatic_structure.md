@@ -345,7 +345,7 @@ On these paths $P(R)$ varies irregularly from one trial central pressure to the 
 
 **How to read the plot.** The x-axis is the number of the setup, for 26 setups built from `input/default.toml` and numbered from 0 to 25. The y-axis is $\lvert P(R) - P_t \rvert / P_t$ of the accepted profile, on a log scale. Circles are reached profiles, squares are padded profiles (at 1, since $P(R) = 0$), and a cross above the cap marks a setup without an accepted profile. The dashed line is the cap of $P_t$. Setups 4, 9, 10, 13, 14 and 25 use the Newton outer solver at `relative_tolerance` $10^{-9}$, and the test asserts only these 6; the other 20 setups are shown for comparison; [padded accepts](../Explanations/process_flow.md#padded-accepts) lists every setup. A pass means that every Newton setup is a circle at or below the dashed line. Only setups 9, 10, 14 and 25 may be squares, and only under the rule above.
 
-**Known limit.** The miss of a reached profile depends on round-off, so another platform gives other values. Over planet-mass changes of $k \times 10^{-13}$ ($k$ = 1 to 5), the PALEOS 1 Earth-mass Newton setup misses by 0.008 to 0.87 $P_t$. The test skips when the PALEOS tables are not under `data/`.
+**Known limit.** The miss of a reached profile depends on round-off, so another platform gives other values. In the plotted run the 4 reached Newton setups 4, 13, 14 and 25 miss by 0.046, 0.18, 0.12 and 0.25 $P_t$. The test skips when the PALEOS tables are not under `data/`.
 
 ??? info "Test details"
     - Reference: the boundary condition $P(R) = P_t$.
@@ -357,7 +357,7 @@ On these paths $P(R)$ varies irregularly from one trial central pressure to the 
 
 **Why this check exists.** PROTEUS starts a coupled run from a Zalmoxis structure solved with the Newton outer solver. The run starts from a wrong state if the Newton result keeps its linear first guess of the temperature, or if a solve returns a mantle temperature that is not the adiabat of its own pressure. Each of the 2 tests below catches one of these faults.
 
-**What it tests.** Each setup has 1 Earth mass, the PALEOS iron core and PALEOS MgSiO$_3$ mantle, and the temperature mode `adiabatic_from_cmb`: the mantle follows the adiabat upward from a fixed CMB temperature $T_\mathrm{cmb}$. The setup `all_options` has a core mass fraction of 0.325 and anchors of $T_\mathrm{surf}$ = 3936 K and $T_\mathrm{cmb}$ = 6121 K; the setup `dummy` has 0.55, 4000 K and 6000 K.
+**What it tests.** Each setup has 1 Earth mass, the PALEOS iron core and PALEOS MgSiO$_3$ mantle, and the temperature mode `adiabatic_from_cmb`: the mantle follows the adiabat upward from a fixed CMB temperature $T_\mathrm{cmb}$. The setup `all_options` has a core mass fraction of 0.325 and anchors of $T_\mathrm{surf}$ = 3936 K and $T_\mathrm{cmb}$ = 6121 K; the setup `dummy` has 0.55, 4000 K and 6000 K. Both run on the JAX path with 150 layers, `relative_tolerance` $10^{-9}$ and `absolute_tolerance` $10^{-10}$, the settings in `tools/validation/proteus_ic_solvers.py`.
 
 - The first test solves each setup twice, with the Picard and with the Newton outer solver. The mantle temperatures at 39 mass points between the CMB and the surface may differ by at most 5 K, and the CMB pressures by at most 0.1 GPa.
 - The second test solves `dummy` and `all_options` with Newton, and `all_options` with Picard at the Newton mass tolerance of $10^{-4}$. It computes the adiabat again on the returned pressure. At each mantle node the returned temperature may differ from it by at most 1 K. Two nodes have their own bounds (see the known limit below): 6 K from $T_\mathrm{cmb}$ at the first mantle node, the CMB anchor, and 25 K at the top node.
@@ -375,12 +375,14 @@ On these paths $P(R)$ varies irregularly from one trial central pressure to the 
 
 - The CMB anchor node reads one T(P) table that holds $T_\mathrm{surf}$ on the core nodes and $T_\mathrm{cmb}$ at the CMB, so its temperature takes a small part of that jump. It lies 5.41 K below $T_\mathrm{cmb}$ in `all_options` with Newton, 5.42 K with Picard at $10^{-4}$, and 0.23 K in `dummy` with Newton. The next node is at most 0.1 K off.
 - The adiabat takes no step from or to a node with a pressure below $10^5$ Pa, so the top node of a setup with a surface pressure near 1 bar (`dummy`) can lose its step, 17 to 22 K in the measured passes of this setup. In the solves of the second test the top node is 0.06 K (`dummy`) and 0.08 K (`all_options`) off the adiabat.
+- With the surface anchor (`temperature_mode = "adiabatic"`) the same skip moves the whole profile, since the adiabat is integrated inward from the surface. In `dummy` with 60 layers and the Newton outer solver, 2 of 26 starts whose planet mass differs by $k \times 10^{-12}$ skip the top step: their central temperature is 111 K lower, the mantle up to 51 K cooler and the radius 10 km smaller. Neither test uses this mode.
 - The first test runs Picard at the mass tolerance of the PROTEUS setups, $3 \times 10^{-3}$. There the `all_options` mantle lies on average 1.6 K below the adiabat of its own pressure. At $10^{-4}$ the difference is 0.1 K or less.
 
 ??? info "Test details"
     - Reference: the Picard result of the same setup (cross-solver check); the adiabat that the same `compute_adiabatic_temperature` gives on the returned pressure (internal consistency check).
     - Tolerance: 5 K at 39 mantle mass points and 0.1 GPa at the CMB; 1 K at the mantle nodes, 6 K from $T_\mathrm{cmb}$ at the CMB anchor node and 25 K at the top node.
     - Test id: `tests/test_accepted_on.py::test_newton_gives_the_mantle_adiabat_of_picard_on_the_proteus_initial_structure`, `tests/test_accepted_on.py::test_the_returned_mantle_temperature_is_the_adiabat_of_the_returned_pressure`
+    - Markers: `smoke` and `accept_solves_long` (first test), `smoke` and `accept_solves` (second test); both run in the nightly workflow. They carry no `reference_pinned` marker, since their reference is another solve, not a published value.
     - Command: `pytest -o "addopts=" -m accept_solves_long tests/test_accepted_on.py -k proteus_initial_structure` and `pytest -o "addopts=" -m accept_solves tests/test_accepted_on.py -k returned_mantle_temperature`; the figure: `python -m tools.validation.proteus_ic_solvers run <dir>`, then `python -m tools.validation.proteus_ic_solvers plot <dir> --assets <dir>`.
 
 ## Reproducing the results
@@ -394,4 +396,4 @@ pytest -o "addopts=" tests/test_first_principles.py tests/test_polytrope_verific
 Without `--validation-plots` the tests write nothing: each compares the data of its plot with the committed pair, and a missing or stale file fails the test.
 
 [^cite-seager2007]: S. Seager, M. Kuchner, C. A. Hier-Majumder, B. Militzer, *[Mass-Radius Relationships for Solid Exoplanets](https://doi.org/10.1086/521346)*, The Astrophysical Journal, 669(2), 1279-1297, 2007. [SciX](https://scixplorer.org/abs/2007ApJ...669.1279S/abstract).
-[^cite-chandrasekhar1939]: S. Chandrasekhar, *An Introduction to the Study of Stellar Structure*, Chicago, 1939. [SciX](https://scixplorer.org/abs/1939isss.book.....C/abstract).
+[^cite-chandrasekhar1939]: S. Chandrasekhar, *An Introduction to the Study of Stellar Structure*, book (no DOI), Chicago, 1939. [SciX](https://scixplorer.org/abs/1939isss.book.....C/abstract).

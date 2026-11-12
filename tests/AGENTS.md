@@ -40,7 +40,7 @@ A module-level constant read from an environment variable at import time does no
 
 This repository has no `tools/check_test_quality.py`; the marker check is `bash tools/validate_test_structure.sh`.
 
-- 2547 tests collected with the EOS data linked: 2356 unit, 126 smoke, 19 integration, 46 slow.
+- 2929 tests collected with the EOS data linked: 2695 unit, 165 smoke, 22 integration, 47 slow.
 - Unit tier: `pytest -o "addopts=" -m unit` (~1.5 min on the dev machine,
   ~1m54s ubuntu / ~2m29s macOS in CI).
 - Nightly tier: `pytest -o "addopts=" -m "(unit or smoke or integration) and not slow" -n auto`

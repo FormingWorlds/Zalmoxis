@@ -255,8 +255,8 @@ If you need $P(R) = P_t$, these settings matter:
 
 - **The outer solver.** `outer_solver = "newton"` needs `relative_tolerance` at or below `1e-7`; it raises `ValueError` otherwise.
   Setup 9 uses `relative_tolerance = 1e-9` and `absolute_tolerance = 1e-10`.
-  It reached the outer radius, where the default Picard solve ended padded, but it still missed $P_t$ by 0.375 $P_t$.
-  PROTEUS uses the Newton outer solver by default. It takes longer: about 4 minutes here against 1.5.
+  In this adiabatic setup its Newton root seeds the Picard blend ramp, and on our run it ended padded like the default Picard solve; whether it ends padded depends on round-off.
+  PROTEUS uses the Newton outer solver by default. It takes longer: about 9 minutes here against 1.4.
 - **`pressure_tolerance`.** This is the accept test of the pressure solve, $\lvert P(R) - P_t \rvert$ below it. A value below $P_t$ makes the test refuse a padded profile, but the outer loop can still accept the structure on its mass test, as the block below shows.
 - **The integration tolerances** (`relative_tolerance`, `absolute_tolerance`). They change where the integration stops, and so whether the trials near the root pad. Setup 9 changes them together with the outer solver, so this tutorial does not separate the two effects.
 
@@ -283,6 +283,6 @@ So check `padded` and $P(R)$ of every result whose surface values you use, as in
 - `result['pressure'][-1]` is $P(R)$; compare it with `target_surface_pressure`.
 - `result['padded']` is True when the outer node has $P = 0$; Zalmoxis then logs one warning.
 - The pressure solve refines a root that misses $P_t$ by more than $0.1 P_t$, and keeps the candidate closest to $P_t$.
-- The Newton outer solver at `relative_tolerance` $10^{-9}$ reached the outer radius in this tutorial, with a miss of 0.375 $P_t$; a lower `pressure_tolerance` alone did not reach it.
+- In this adiabatic tutorial setup the Newton outer solver at `relative_tolerance` $10^{-9}$ only seeds the Picard blend ramp and can still end padded; a lower `pressure_tolerance` alone did not reach the outer radius either.
 
 [Padded accepts](../Explanations/process_flow.md#padded-accepts) explains the full rule, and the [validation page](../Validation/hydrostatic_structure.md#surface-boundary-condition-of-the-pressure-solve) shows how it is tested.

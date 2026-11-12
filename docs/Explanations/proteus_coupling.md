@@ -91,7 +91,7 @@ Zalmoxis reads the current planet state from `hf_row`, runs its structure solve,
 | `M_int` | Interior mass [kg] | Used in fall-back accounting and mass-anchor check. |
 | `M_core` | Core mass [kg] | Same. |
 | `R_int` | Interior radius [m] | Equilibration convergence, scalar override for atmosphere BC. |
-| `P_cmb` | CMB pressure [Pa] | Resolves $T_\mathrm{cmb}$ in `liquidus_super` mode (Fei+2021 liquidus at $P_\mathrm{cmb}$). On the very first call uses a Noack & Lasbleis (2020)[^cite-noack2020] mass-aware fallback. |
+| `P_cmb` | CMB pressure [Pa] | Resolves $T_\mathrm{cmb}$ in `liquidus_super` mode (Fei et al. (2021)[^cite-fei2021] liquidus at $P_\mathrm{cmb}$). On the very first call uses a Noack & Lasbleis (2020)[^cite-noack2020] mass-aware fallback. |
 | `P_surf` | Surface pressure [bar in `hf_row`, scaled to Pa internally] | Atmospheric BC for the structure solve, when finite and positive. |
 | `H2O_kg_total`, `CO2_kg_total`, ... | Volatile inventory [kg] | Subtracted from `mass_tot * M_earth` to give the dry interior `planet_mass` passed to Zalmoxis. |
 | `H2O_kg_liquid`, `H2_kg_liquid` | Dissolved volatile masses [kg] | Build the `VolatileProfile` when `dry_mantle = false`. |
@@ -136,7 +136,7 @@ $$
 T_\mathrm{cmb} = T_\mathrm{liq}^\mathrm{Fei2021}(P_\mathrm{cmb}) + \Delta T_\mathrm{super}
 $$
 
-where $T_\mathrm{liq}^\mathrm{Fei2021}$ is the Belonoshko+2005 / Fei+2021 piecewise Simon-Glatzel liquidus exposed via `zalmoxis.melting_curves.paleos_liquidus`, and `delta_T_super` defaults to 500 K (set to 0 to anchor the IC adiabat exactly at the liquidus).
+where $T_\mathrm{liq}^\mathrm{Fei2021}$ is the Belonoshko et al. (2005)[^cite-belonoshko2005] / Fei et al. (2021) piecewise Simon-Glatzel liquidus exposed via `zalmoxis.melting_curves.paleos_liquidus`, and `delta_T_super` defaults to 500 K (set to 0 to anchor the IC adiabat exactly at the liquidus).
 Zalmoxis then integrates the adiabat *upward* from $(R_\mathrm{cmb}, T_\mathrm{cmb})$ rather than downward from a surface anchor.
 Only the mantle follows this adiabat: the core nodes carry the surface temperature $T_\mathrm{surf}$, because the energetics solver computes the core temperature itself.
 
@@ -357,3 +357,5 @@ The wrapper itself lives in the PROTEUS repository, not in Zalmoxis. The single 
 [^cite-white2025]: N. I. White, J. Li, *[Initial Thermal States of Super-Earth Exoplanets and Implications for Early Dynamos](https://doi.org/10.1029/2024JE008550)*, Journal of Geophysical Research (Planets), 130(2), e2024JE008550, 2025. [SciX](https://scixplorer.org/abs/2025JGRE..13008550W/abstract).
 [^cite-sokolova2022]: T. S. Sokolova, P. I. Dorogokupets, A. I. Filippova, *[Equations of state of clino- and orthoenstatite and phase relations in the MgSiO$_3$ system at pressures up to 12 GPa and high temperatures](https://doi.org/10.1007/s00269-022-01212-7)*, Physics and Chemistry of Minerals, 49(9), 37, 2022. [SciX](https://scixplorer.org/abs/2022PCM....49...37S/abstract).
 [^cite-stixrude2022]: L. Stixrude, C. Lithgow-Bertelloni, *[Thermal expansivity, heat capacity and bulk modulus of the mantle](https://doi.org/10.1093/gji/ggab394)*, Geophysical Journal International, 228(2), 1119-1149, 2022. [SciX](https://scixplorer.org/abs/2022GeoJI.228.1119S/abstract).
+[^cite-belonoshko2005]: A. B. Belonoshko, N. V. Skorodumova, A. Rosengren, R. Ahuja, B. Johansson, L. Burakovsky, D. L. Preston, *[High-pressure melting of MgSiO$_3$](https://doi.org/10.1103/PhysRevLett.94.195701)*, Physical Review Letters, 94(19), 195701, 2005. [SciX](https://scixplorer.org/abs/2005PhRvL..94s5701B/abstract).
+[^cite-fei2021]: Y. Fei, C. T. Seagle, J. P. Townsend, C. A. McCoy, A. Boujibar, P. Driscoll, L. Shulenburger, M. D. Furnish, *[Melting and density of MgSiO$_3$ determined by shock compression of bridgmanite to 1254 GPa](https://doi.org/10.1038/s41467-021-21170-y)*, Nature Communications, 12, 876, 2021. [SciX](https://scixplorer.org/abs/2021NatCo..12..876F/abstract).
