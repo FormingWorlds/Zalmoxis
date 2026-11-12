@@ -153,6 +153,8 @@ REFUSED = {
     'pressure rises': (_bad('pressure', _set(1, 4.0e11)), 'pressure increases'),
     'negative P': (_bad('pressure', _set(-1, -1.0)), 'pressure increases'),
     'zero P': (_bad('pressure', lambda a: 0.0 * a), 'pressure increases'),
+    'other planet mass': (_bad('mass_enclosed', lambda a: 1.2 * a), 'planet mass'),
+    'mass in Earth masses': (_bad('mass_enclosed', lambda a: a / earth_mass), 'planet mass'),
     'radius x0.1': (_seed(R=0.1 * earth_radius), 'outer radius'),
     'radius x10': (_seed(R=10.0 * earth_radius), 'outer radius'),
 }
@@ -173,6 +175,15 @@ def test_the_radius_window_is_open_at_0_2_and_5_times_the_estimate():
     r_est = earth_radius
     for f, ok in ((0.2 * 1.001, True), (0.2, False), (5.0 * 0.999, True), (5.0, False)):
         assert (zs._adiabat_seed(_seed(R=f * r_est), _cfg()) is not None) is ok, f
+
+
+def test_the_seed_mass_window_is_5_percent_of_the_planet_mass():
+    """The top of mass_enclosed must lie within 5 % of the planet mass: 4.9 % off on either
+    side passes, 5.1 % is refused."""
+    for f, ok in ((1.049, True), (0.951, True), (1.051, False), (0.949, False)):
+        assert (
+            zs._adiabat_seed(_bad('mass_enclosed', lambda a: f * a), _cfg()) is not None
+        ) is ok, f
 
 
 ARR = st.one_of(
@@ -264,7 +275,7 @@ def test_a_caller_hint_wins_over_the_seed_pressure_and_picard_keeps_its_toleranc
 
 def test_a_seeded_solve_that_fails_runs_the_newton_ramp_without_the_seed(spies, caplog):
     """The seeded solve does not converge: main solves again from the Newton root, without the
-    seed, and returns that ramp."""
+    seed, and returns that ramp; total_time adds the time of the seeded solve."""
     failed = {**_full(t=40.0), 'converged': False, 'accepted_on': None}
     spies['out'].append(failed)
     cfg = _adiabatic_cfg(outer_solver='newton', num_layers=2)
@@ -274,7 +285,9 @@ def test_a_seeded_solve_that_fails_runs_the_newton_ramp_without_the_seed(spies, 
     (cp1, kw1), (cp2, kw2) = spies['solve']
     assert 'adiabat_seed' in kw1 and 'adiabat_seed' not in kw2
     assert cp2['_initial_radius_guess'] == 6.9e6 and cp2['_secant_tail'] is True
-    assert r['accepted_on'] == 'strict' and r['total_time'] == 6.0  # ramp 1 s + Newton 5 s
+    assert (
+        r['accepted_on'] == 'strict' and r['total_time'] == 46.0
+    )  # seeded 40 s, Newton 5 s, ramp 1 s
     assert 'seeded solve did not converge' in caplog.text
 
 

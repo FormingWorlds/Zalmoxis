@@ -2191,34 +2191,66 @@ def test_the_secant_tail_reaches_the_mass_in_3_full_adiabat_passes():
     assert r['radii'][-1] == pytest.approx(R_star, rel=1e-4 / 0.9 * 1.01)
 
 
+def _secant_calls(monkeypatch, tol):
+    """Record (mass error in tolerances, real secant step) of each _secant_radius call."""
+    calls, real = [], zs._secant_radius
+
+    def spy(R, M, R_prev, M_prev, M_target, R_fallback):
+        got = real(R, M, R_prev, M_prev, M_target, R_fallback)
+        calls.append(
+            (pytest.approx(abs(M / M_target - 1.0) / tol, rel=1e-6), got != R_fallback)
+        )
+        return got
+
+    monkeypatch.setattr(zs, '_secant_radius', spy)
+    return calls
+
+
 @pytest.mark.smoke
 @pytest.mark.accept_solves
 @pytest.mark.usefixtures('no_check')
 @pytest.mark.timeout(900)
-def test_the_secant_steps_above_2_tolerances_until_a_step_does_not_shrink_the_error(
+def test_the_secant_steps_above_2_tolerances_until_a_secant_step_does_not_shrink_the_error(
     monkeypatch,
 ):
-    """The passes on a full-adiabat table end 1.5, 1.5, 3, 3, 3 tolerances off the mass,
-    whatever the radius: no secant step below 2 tolerances (the second pass), one step at the
-    third pass, and none after it, because that step did not shrink the error."""
-    tol, calls, real = 1e-4, [], zs._secant_radius
-    off = {5: 1.5, 6: 1.5, 7: 3.0, 8: 3.0, 9: 3.0}
-
-    def spy(R, M, R_prev, M_prev, M_target, R_fallback):
-        calls.append(abs(M / M_target - 1.0) / tol)
-        return real(R, M, R_prev, M_prev, M_target, R_fallback)
-
-    monkeypatch.setattr(zs, '_secant_radius', spy)
+    """The passes on a full-adiabat table end 5, 1.5, 5, 5.5, 4, 6 and 5 tolerances below the
+    mass, whatever the radius. The first pass has no earlier full-table pass and the second is
+    below the floor of 2 tolerances. Passes 3 and 4 have a mass that falls as the radius grows,
+    so the secant falls back to the cube-root rule, and a fallback does not end the tail. Pass
+    5 takes a real secant step; pass 6 ends 6 tolerances off, so the tail ends there."""
+    tol = 1e-4
+    off = {5: -5.0, 6: -1.5, 7: -5.0, 8: -5.5, 9: -4.0, 10: -6.0, 11: -5.0}
+    calls = _secant_calls(monkeypatch, tol)
     r, n_adiabat = _analytic_ramp(
         linear=1.0,
         factor=lambda k: 1.0 + off.get(k, 0.0) * tol,
         tolerance_outer=tol,
-        max_iterations_outer=10,
+        max_iterations_outer=12,
         wall_timeout=WALL,
         _secant_tail=True,
     )
-    assert n_adiabat - 5 == 5 and r['adiabat_table_blend'] == 1.0
-    assert calls == [pytest.approx(3.0, rel=1e-6)]
+    assert n_adiabat - 5 == 7 and r['adiabat_table_blend'] == 1.0
+    assert calls == [(5.0, False), (5.5, False), (4.0, True)]
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.usefixtures('no_check')
+@pytest.mark.timeout(900)
+def test_a_ramp_without_the_secant_key_takes_no_secant_step(monkeypatch):
+    """A Picard ramp that main did not start (no ``_secant_tail``) keeps the cube-root rule:
+    its full-adiabat passes 5, 5 and 4 tolerances off the mass call no secant."""
+    tol = 1e-4
+    off = {5: -5.0, 6: -5.0, 7: -4.0}
+    calls = _secant_calls(monkeypatch, tol)
+    r, n_adiabat = _analytic_ramp(
+        linear=1.0,
+        factor=lambda k: 1.0 + off.get(k, 0.0) * tol,
+        tolerance_outer=tol,
+        max_iterations_outer=8,
+        wall_timeout=WALL,
+    )
+    assert n_adiabat - 5 == 3 and r['adiabat_table_blend'] == 1.0 and calls == []
 
 
 @pytest.fixture(scope='module')
@@ -2267,6 +2299,30 @@ def test_the_first_seeded_pass_carries_the_seed_label_and_is_not_accepted(ramp_s
     assert r['adiabat_seeded'] is True
 
 
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.usefixtures('no_check')
+@pytest.mark.timeout(600)
+def test_the_seed_table_pass_starts_no_secant(monkeypatch, ramp_seed):
+    """A seeded solve with the secant tail whose passes end 5, 4 and 3 tolerances below the
+    mass: the first pass reads the seed table, so the second is the first full-adiabat pass and
+    the secant starts only at the third."""
+    tol = 1e-4
+    off = {1: -5.0, 2: -4.0, 3: -3.0}
+    calls = _secant_calls(monkeypatch, tol)
+    r, n_adiabat = _analytic_ramp(
+        linear=1.0,
+        factor=lambda k: 1.0 + off.get(k, 0.0) * tol,
+        tolerance_outer=tol,
+        max_iterations_outer=3,
+        wall_timeout=WALL,
+        seed=ramp_seed,
+        _secant_tail=True,
+    )
+    assert r['adiabat_seeded'] is True and n_adiabat == 4
+    assert [c[0] for c in calls] == [3.0]
+
+
 # The first structure solve of the PROTEUS grid test case with core mass fraction 0.95
 # (tests/grid of PROTEUS: 0.7 Earth masses, H 1000 ppmw), and its first start-up re-solve.
 GRID_CMF95 = {
@@ -2305,8 +2361,11 @@ REF_TOL = {'tolerance_outer': 1e-6, 'newton_tol': 1e-6}  # the converged referen
 
 
 def _grid_main(cfg, **kwargs):
-    """main on a grid setup; returns the result and the (R, M) of each pass of the solve that
-    returned (consecutive solve_structure calls at one outer radius make one pass)."""
+    """main on a grid setup; returns the result, the (R, M) of each pass of the solve that
+    returned (consecutive solve_structure calls at one outer radius make one pass), the number
+    of structure integrations, and the lag |T - adiabat(P)| at the CMB node, the largest at the
+    other mantle nodes and at the top node, from the last adiabat computation (that of the
+    returned structure)."""
     from zalmoxis.melting_curves import (
         derive_solidus_from_liquidus,
         get_solidus_liquidus_functions,
@@ -2314,15 +2373,25 @@ def _grid_main(cfg, **kwargs):
 
     _, liquidus = get_solidus_liquidus_functions('Stixrude14-solidus', 'PALEOS-liquidus')
     melt = (derive_solidus_from_liquidus(liquidus, 0.8), liquidus)
-    calls, starts, real_ss, real_solve = [], [], zs.solve_structure, zs._solve
+    calls, starts, last = [], [], {}
+    real_ss, real_solve, real_adi = (
+        zs.solve_structure,
+        zs._solve,
+        zs.compute_adiabatic_temperature,
+    )
 
     def spy(*a, **k):
         res = real_ss(*a, **k)
         calls.append((float(a[3][-1]), float(np.asarray(res[0])[-1])))
         return res
 
+    def adi(*a, **k):
+        last['T'] = np.asarray(real_adi(*a, **k))
+        return last['T']
+
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(zs, 'solve_structure', spy)
+        mp.setattr(zs, 'compute_adiabatic_temperature', adi)
         mp.setattr(
             zs, '_solve', lambda *a, **k: starts.append(len(calls)) or real_solve(*a, **k)
         )
@@ -2330,12 +2399,16 @@ def _grid_main(cfg, **kwargs):
     passes = []
     for R, M in calls[starts[-1] :]:
         passes = passes[:-1] + [(R, M)] if passes and passes[-1][0] == R else passes + [(R, M)]
-    return r, passes, len(calls)
+    m, P = np.asarray(r['mass_enclosed']), np.asarray(r['pressure'])
+    lag = np.abs(np.asarray(r['temperature']) - last['T'])[(m >= r['cmb_mass']) & (P > 0)]
+    assert lag.max() == pytest.approx(r['adiabat_self_consistency'], rel=1e-12)
+    return r, passes, len(calls), (lag[0], lag[1:-1].max(), lag[-1])
 
 
 def _off_ref(r, ref):
     """Largest mantle T difference [K] on 39 mantle mass points (mantle nodes with P > 0 of
-    each), and the relative differences of the outer radius and the central pressure."""
+    each), and the relative differences of the outer radius, the central pressure, the core
+    radius and the CMB pressure (at the first node with m >= cmb_mass)."""
     keep = [
         (np.asarray(x['mass_enclosed']) >= x['cmb_mass']) & (np.asarray(x['pressure']) > 0)
         for x in (r, ref)
@@ -2345,10 +2418,13 @@ def _off_ref(r, ref):
     lo, hi = max(m[0][0], m[1][0]), min(m[0][-1], m[1][-1])
     q = lo + np.linspace(0.0, 1.0, 41)[1:-1] * (hi - lo)
     dT = float(np.max(np.abs(np.interp(q, m[0], T[0]) - np.interp(q, m[1], T[1]))))
+    i, j = (int(np.argmax(np.asarray(x['mass_enclosed']) >= x['cmb_mass'])) for x in (r, ref))
     return (
         dT,
         r['radii'][-1] / ref['radii'][-1] - 1.0,
         r['pressure'][0] / ref['pressure'][0] - 1.0,
+        r['radii'][i] / ref['radii'][j] - 1.0,
+        r['pressure'][i] / ref['pressure'][j] - 1.0,
     )
 
 
@@ -2400,15 +2476,17 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
     """The first solve and the first re-solve of the PROTEUS grid case with core mass fraction
     0.95, against the same solves at a mass tolerance of 1e-6 (REF): the first solve (Newton
     root, ramp with the secant tail), the seeded re-solve and the re-solve without the seed
-    keep the mantle temperature within 1 K of REF and the radius and central pressure within
-    2e-4; the seeded and the unseeded re-solve differ by at most 2.5 K and 5e-4. The secant
+    keep the mantle temperature within 1 K of REF, the radius, central pressure and core
+    radius within 2e-4 and the CMB pressure within 5e-4; each lags the adiabat of its own
+    pressure by at most 6 K at the CMB node, 1 K at the other mantle nodes and 25 K at the top
+    node; the seeded and the unseeded re-solve differ by at most 2.5 K and 5e-4. The secant
     tail needs at most 3 passes on a full-adiabat table, and the seeded re-solve at most 4
     passes and at most half the structure integrations of the unseeded one. With
     ``--validation-plots`` it writes the plot of the mass error per pass; the pass count can
     change with round-off, so a run without the option does not compare it with the committed
     plot. See ``docs/Validation/hydrostatic_structure.md``."""
     _need_paleos()
-    first, p1, _ = _grid_main(GRID_CMF95)
+    first, p1, _, lag1 = _grid_main(GRID_CMF95)
     ref1 = _grid_main({**GRID_CMF95, **REF_TOL})[0]
     resolve = {**GRID_CMF95, **GRID_CMF95_RESOLVE}
     warm = dict(
@@ -2417,8 +2495,8 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
         p_center_hint=float(first['pressure'][0]),
     )
     seed = {k: first[k] for k in ('radii', 'pressure', 'mass_enclosed')}
-    seeded, p2, n_seeded = _grid_main(resolve, adiabat_seed=seed, **warm)
-    plain, p3, n_plain = _grid_main(resolve, **warm)
+    seeded, p2, n_seeded, lag2 = _grid_main(resolve, adiabat_seed=seed, **warm)
+    plain, p3, n_plain, lag3 = _grid_main(resolve, **warm)
     ref2 = _grid_main({**resolve, **REF_TOL})[0]
     for r, flag in (
         (first, False),
@@ -2430,10 +2508,14 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
         assert r['converged'] and r['accepted_on'] == 'strict' and r['adiabat_seeded'] is flag
         assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
     off = [_off_ref(first, ref1), _off_ref(seeded, ref2), _off_ref(plain, ref2)]
-    print('vs REF (dT K, dR, dPc):', off, 'seeded vs plain:', _off_ref(seeded, plain))
-    for dT, dR, dPc in off:
+    print('vs REF (dT, dR, dPc, dRc, dPcmb):', off, 'seeded vs plain:', _off_ref(seeded, plain))
+    print('lags (CMB node, mantle, top node) [K]:', lag1, lag2, lag3)
+    for dT, dR, dPc, dRc, dPcmb in off:
         assert dT <= 1.0 and abs(dR) <= 2e-4 and abs(dPc) <= 2e-4
-    dT, dR, _ = _off_ref(seeded, plain)
+        assert abs(dRc) <= 2e-4 and abs(dPcmb) <= 5e-4
+    for lag in (lag1, lag2, lag3):
+        assert lag[0] <= 6.0 and lag[1] <= 1.0 and lag[2] <= 25.0
+    dT, dR, *_ = _off_ref(seeded, plain)
     assert dT <= 2.5 and abs(dR) <= 5e-4
     assert len(p1) - 5 <= 3  # linear pass, 4 blend passes, then the full-adiabat passes
     assert len(p2) <= 4 and n_seeded <= 0.5 * n_plain
