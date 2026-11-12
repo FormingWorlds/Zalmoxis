@@ -1,6 +1,7 @@
 """The per-file nightly jobs that select ``accept_solves`` name their files, so a marked test
 elsewhere would run in no job; the ``accept_solves_long`` and ``accept_solves_newton_setups``
-jobs select over the whole tree. See docs/How-to/build_tests.md for the test tiers."""
+jobs select over the whole tree, the latter split by test id (``-k``) over several jobs. See
+docs/How-to/build_tests.md for the test tiers."""
 
 from __future__ import annotations
 
@@ -39,9 +40,24 @@ def _entry(job):
     return select.group(1).strip() if select else '', re.findall(r'tests/([\w/]+\.py)', job)
 
 
+def _keyword(job):
+    """The ``-k`` expression of one matrix entry, or None."""
+    k = re.search(r'-k\s+"([^"]*)"', job)
+    return k.group(1) if k else None
+
+
 def _jobs(workflow):
-    """(select, test files named in the job) of each nightly suite."""
-    return [_entry(job) for job in _suites(workflow).values()]
+    """(select, test files named in the job) of each nightly suite; the entries that split one
+    select by ``-k`` count once (``_newton_faults`` checks that they split it)."""
+    jobs, split = [], set()
+    for job in _suites(workflow).values():
+        sel, files = _entry(job)
+        if _keyword(job) is not None and (sel, tuple(files)) in split:
+            continue
+        if _keyword(job) is not None:
+            split.add((sel, tuple(files)))
+        jobs.append((sel, files))
+    return jobs
 
 
 def _accept_select(workflow):
@@ -277,17 +293,16 @@ def test_every_file_with_the_accept_solves_mark_is_named_in_the_workflow():
     assert [m for m in marked if m not in workflow] == []
 
 
-NEWTON = (
-    'test_pressure_root_solves.py::test_every_newton_setup_meets_the_surface_boundary_condition'
-)
+NEWTON_MARK = 'accept_solves_newton_setups'
 
 
-def _solves_nodes(select, files):
+def _solves_nodes(select, files, keyword=None):
     """Node ids of tests/test_pressure_root_solves.py that a job with ``select`` runs."""
     if files and 'test_pressure_root_solves.py' not in files:
         return set()
     done = subprocess.run(
         [sys.executable, '-m', 'pytest', '--collect-only', '-q', '-m', select]
+        + (['-k', keyword] if keyword else [])
         + ['-o', 'addopts=', '-p', 'no:cacheprovider', '--rootdir', str(ROOT / 'tests')]
         + ['test_pressure_root_solves.py'],
         cwd=ROOT / 'tests',
@@ -311,11 +326,14 @@ sys.exit(pytest.main(sys.argv[1:], plugins=[Closest()]))
 """
 
 
-def _timeouts(select):
-    """Closest timeout marker [s] of each test in the whole tree that ``select`` takes."""
+def _timeouts(select, keyword=None, files=()):
+    """Closest timeout marker [s] of each test in ``files`` (the whole tree if none) that
+    ``select`` and ``keyword`` take."""
     done = subprocess.run(
         [sys.executable, '-c', _TIMEOUTS, '--collect-only', '-q', '-m', select]
-        + ['-o', 'addopts=', '-p', 'no:cacheprovider', '--rootdir', str(ROOT / 'tests')],
+        + (['-k', keyword] if keyword else [])
+        + ['-o', 'addopts=', '-p', 'no:cacheprovider', '--rootdir', str(ROOT / 'tests')]
+        + list(files),
         cwd=ROOT / 'tests',
         capture_output=True,
         text=True,
@@ -328,29 +346,69 @@ def _timeouts(select):
     return {node: None if t == 'None' else float(t) for node, t in rows}
 
 
-@pytest.mark.unit
-def test_the_newton_setup_sweep_runs_alone_in_its_own_job():
-    """The sweep over every Newton setup is the longest real solve: it runs in one job, alone,
-    and the closest timeout marker of each test in the long and Newton setup jobs fires before
-    the job limit, so a slow runner names the test."""
+def _newton_faults(workflow):
+    """Faults of the jobs that take the Newton setup mark: each of its tests (in one file, see
+    the test below) runs in exactly one of them, each selects over the whole tree, and the
+    closest timeout markers of the tests of one job add up to less than its limit, so a slow
+    runner names the test before the job limit cancels the run."""
+    suites = _suites(workflow)
+    split = {
+        name: job
+        for name, job in suites.items()
+        if re.search(rf'(?<!not )\b{NEWTON_MARK}\b', _entry(job)[0])
+    }
+    faults = [('selects over named files', n) for n, job in split.items() if _entry(job)[1]]
+    nodes = {n: _solves_nodes(*_entry(job), _keyword(job)) for n, job in split.items()}
+    for node in sorted(_solves_nodes(NEWTON_MARK, [])):
+        runs = [n for n, ids in nodes.items() if node in ids]
+        if len(runs) != 1:
+            faults.append(('runs in', node, runs))
+    for n, job in split.items():
+        marks = _timeouts(_entry(job)[0], _keyword(job), ['test_pressure_root_solves.py'])
+        if not marks or None in marks.values():
+            faults.append(('no timeout marker', n, marks))
+        elif sum(marks.values()) >= 60 * _job_limit(job):
+            faults.append(('timeouts over the job limit', n, sum(marks.values())))
+    return faults
 
-    suites = _suites(WORKFLOW.read_text())
-    nodes = {name: _solves_nodes(*_entry(job)) for name, job in suites.items()}
-    assert [name for name, ids in nodes.items() if NEWTON in ids] == [
-        'accept_solves_newton_setups'
-    ]
-    assert nodes['accept_solves_newton_setups'] == {NEWTON}
-    assert (
-        not _entry(suites['accept_solves_newton_setups'])[1]
-        + _entry(suites['accept_solves_long'])[1]
-    ), 'the long and Newton setup jobs select over the whole tree'
+
+@pytest.mark.unit
+def test_the_newton_setup_sweep_is_split_over_its_jobs():
+    """The Newton setup sweep and the PALEOS solve within the cap are the longest real solves:
+    each of their tests runs in one Newton job, and in the long job each closest timeout
+    marker fires before the job limit. One matrix line sets the job limits."""
+    workflow = WORKFLOW.read_text()
+    assert _newton_faults(workflow) == []
+    suites = _suites(workflow)
+    assert len([n for n in suites if n.startswith(NEWTON_MARK)]) == 4
+    assert not _entry(suites['accept_solves_long'])[1], 'the long job selects over the tree'
     key = r'^( *)["\']?timeout-minutes["\']?:\s*(.*?)\s*(?:#.*)?$'
-    limits = re.findall(key, WORKFLOW.read_text(), re.M)
+    limits = re.findall(key, workflow, re.M)
     assert limits == [('    ', '${{ matrix.job_timeout || 90 }}')], limits
-    for name in ('accept_solves_newton_setups', 'accept_solves_long'):
-        marks = _timeouts(_entry(suites[name])[0])
-        assert marks and None not in marks.values(), (name, marks)
-        assert max(marks.values()) < 60 * _job_limit(suites[name]), (name, marks)
+    marks = _timeouts(_entry(suites['accept_solves_long'])[0])
+    assert marks and None not in marks.values(), marks
+    assert max(marks.values()) < 60 * _job_limit(suites['accept_solves_long']), marks
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    'old, new',
+    [
+        pytest.param('"paleos_5_numpy or paleos_1_jax"', '"paleos_5_numpy"', id='dropped_id'),
+        pytest.param('"within_the_cap"', '"within_the_cap or analytic_1"', id='id_in_2_jobs'),
+        pytest.param(
+            '-k "paleos_1_numpy or paleos_3_jax"\n            job_timeout: 170',
+            '-k "paleos_1_numpy or paleos_3_jax"\n            job_timeout: 160',
+            id='timeouts_over_limit',
+        ),
+    ],
+)
+def test_a_fault_in_the_newton_split_is_found(old, new):
+    """A setup in no Newton job, a test in 2 of them, or a job whose tests' timeouts add up
+    to its limit or more is a fault."""
+    workflow = WORKFLOW.read_text()
+    assert workflow.count(old) == 1
+    assert _newton_faults(workflow.replace(old, new))
 
 
 @pytest.mark.smoke
