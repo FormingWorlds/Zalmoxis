@@ -1947,14 +1947,18 @@ def _fake_adiabat(pressure, t_surf):
     return t_surf + 2000.0 * np.sqrt(np.clip(np.asarray(pressure, float), 0.0, None) / 4e11)
 
 
-def _analytic_ramp(linear=None, factor=None, clock_after=None, drift=0.0, **kwargs):
+def _analytic_ramp(
+    linear=None, factor=None, clock_after=None, drift=0.0, mass=None, seed=None, **kwargs
+):
     """_solve on analytic densities through the adiabatic path: the EOS counts as T-dependent
     and the adiabat is ``_fake_adiabat`` of the pressure. Passes before the ramp starts end
     ``linear`` times the target mass and passes after it ``factor`` times (unscaled when None;
     a callable takes the number of adiabat computations so far, 4 on the first pass at blend
     1). With ``clock_after`` the clock runs out once the adiabat was computed that many times.
     ``drift`` scales the pressure of each pass by 1 + drift times the number of adiabat
-    computations so far. Returns the result and the number of adiabat computations."""
+    computations so far. ``mass(R, k)`` replaces both scalings: the total mass of a pass at
+    outer radius R after k adiabat computations. ``seed`` goes to ``_solve`` as
+    ``adiabat_seed``. Returns the result and the number of adiabat computations."""
     adiabat, real, clock = [], zs.solve_structure, time.time
 
     def adi(radii, pressure, mass, t_surf, *args, **kw):
@@ -1965,6 +1969,8 @@ def _analytic_ramp(linear=None, factor=None, clock_after=None, drift=0.0, **kwar
         m, g, P = real(*args, **kw)
         scale = (factor(len(adiabat)) if callable(factor) else factor) if adiabat else linear
         f = scale * earth_mass / m[-1] if scale else 1.0
+        if mass is not None:
+            f = mass(args[3][-1], len(adiabat)) / m[-1]
         return m * f, g * f, P * (1.0 + drift * len(adiabat))
 
     cfg = _cfg(
@@ -1981,7 +1987,8 @@ def _analytic_ramp(linear=None, factor=None, clock_after=None, drift=0.0, **kwar
         if clock_after:
             stop = lambda: clock() + 1e9 * (len(adiabat) >= clock_after)  # noqa: E731
             mp.setattr(zs, 'time', SimpleNamespace(time=stop))
-        r = zs._solve(cfg, load_material_dictionaries(), None, '/tmp')
+        seeded = {} if seed is None else {'adiabat_seed': seed}
+        r = zs._solve(cfg, load_material_dictionaries(), None, '/tmp', **seeded)
     return r, len(adiabat)
 
 
@@ -2149,3 +2156,112 @@ def test_a_loose_tolerance_without_a_clock_limit_accepts_the_full_adiabat():
     )
     assert r['converged'] is True and r['accepted_on'] == 'strict'
     assert r['adiabat_computed'] is True and r['adiabat_blend'] == 1.0 and n_adiabat >= 4
+
+
+R_ROOT = 6.4e6  # [m] outer radius where the power-law mass of the secant tests meets the target
+
+
+def _power_mass(R, k):
+    """Total mass [kg] of a pass at outer radius R after k adiabat computations: earth_mass
+    (R / 6.4e6 m)^0.9, 0.3 % lower per blend step up to blend 1. The exponent 0.9 makes the
+    cube-root update shrink the mass error by 0.7 per pass, as on the cmf 0.95 PROTEUS grid."""
+    return earth_mass * (R / R_ROOT) ** 0.9 * (1.0 - 0.003 * min(k, 4))
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.timeout(600)
+def test_the_secant_tail_reaches_the_mass_in_3_full_adiabat_passes():
+    """A ramp started by main (``_secant_tail``) on a mass that grows as R^0.9: the passes on a
+    full-adiabat table reach tolerance_outer 1e-4 in 3 passes (the cube-root update alone
+    takes 13 on this mass) and the solve accepts the full adiabat. The adiabat is computed
+    on the 4 blend passes, on each full-table pass and once on the returned structure."""
+    r, n_adiabat = _analytic_ramp(
+        mass=_power_mass,
+        tolerance_outer=1e-4,
+        max_iterations_outer=40,
+        wall_timeout=WALL,
+        _secant_tail=True,
+        _initial_radius_guess=R_ROOT,
+    )
+    assert r['converged'] is True and r['accepted_on'] == 'strict'
+    assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
+    assert n_adiabat - 5 <= 3 and r['mass_error_at_accept'] < 1e-4
+    R_star = R_ROOT * (1.0 - 0.012) ** (-1.0 / 0.9)  # the root at blend 1
+    assert r['radii'][-1] == pytest.approx(R_star, rel=1e-4 / 0.9 * 1.01)
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.usefixtures('no_check')
+@pytest.mark.timeout(900)
+def test_the_secant_steps_above_2_tolerances_until_a_step_does_not_shrink_the_error(
+    monkeypatch,
+):
+    """The passes on a full-adiabat table end 1.5, 1.5, 3, 3, 3 tolerances off the mass,
+    whatever the radius: no secant step below 2 tolerances (the second pass), one step at the
+    third pass, and none after it, because that step did not shrink the error."""
+    tol, calls, real = 1e-4, [], zs._secant_radius
+    off = {5: 1.5, 6: 1.5, 7: 3.0, 8: 3.0, 9: 3.0}
+
+    def spy(R, M, R_prev, M_prev, M_target, R_fallback):
+        calls.append(abs(M / M_target - 1.0) / tol)
+        return real(R, M, R_prev, M_prev, M_target, R_fallback)
+
+    monkeypatch.setattr(zs, '_secant_radius', spy)
+    r, n_adiabat = _analytic_ramp(
+        linear=1.0,
+        factor=lambda k: 1.0 + off.get(k, 0.0) * tol,
+        tolerance_outer=tol,
+        max_iterations_outer=10,
+        wall_timeout=WALL,
+        _secant_tail=True,
+    )
+    assert n_adiabat - 5 == 5 and r['adiabat_table_blend'] == 1.0
+    assert calls == [pytest.approx(3.0, rel=1e-6)]
+
+
+@pytest.fixture(scope='module')
+def ramp_seed():
+    """The structure of a converged ramp on analytic densities (every pass on the target
+    mass), as an adiabat_seed."""
+    r, _ = _analytic_ramp(linear=1.0, factor=1.0, tolerance_outer=1e-3, wall_timeout=WALL)
+    assert r['converged'] and r['adiabat_table_blend'] == 1.0
+    return {k: np.array(r[k]) for k in ('radii', 'pressure', 'mass_enclosed')}
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.timeout(600)
+def test_a_seeded_solve_accepts_its_second_pass(ramp_seed):
+    """Seeded from an earlier structure, the solve starts at blend 1 on the adiabat of the
+    seed: its first pass is on the target mass but its table is not from a pass of this
+    solve, so the second pass, on the table of the first, is accepted. The adiabat is
+    computed for the 2 passes and once on the returned structure."""
+    r, n_adiabat = _analytic_ramp(
+        linear=1.0, factor=1.0, tolerance_outer=1e-3, wall_timeout=WALL, seed=ramp_seed
+    )
+    assert r['converged'] is True and r['accepted_on'] == 'strict'
+    assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
+    assert r['adiabat_seeded'] is True and n_adiabat == 3
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.usefixtures('no_check')
+@pytest.mark.timeout(600)
+def test_the_first_seeded_pass_carries_the_seed_label_and_is_not_accepted(ramp_seed):
+    """An iteration cap of 1 ends a seeded solve on its first pass, on the target mass: its
+    table is labelled -1.0 (from the seed), so the pass is returned unaccepted. The adiabat is
+    computed for that pass and once on the returned structure."""
+    r, n_adiabat = _analytic_ramp(
+        linear=1.0,
+        factor=1.0,
+        tolerance_outer=1e-3,
+        max_iterations_outer=1,
+        wall_timeout=WALL,
+        seed=ramp_seed,
+    )
+    assert r['converged'] is False and r['accepted_on'] is None and n_adiabat == 2
+    assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, -1.0)
+    assert r['adiabat_seeded'] is True
