@@ -111,15 +111,12 @@ def run_case(case):
 def compare(picard, newton):
     """Largest mantle T difference (K) and CMB pressure difference (Pa) of 2 records.
 
-    Raises ValueError unless both records are converged solves at the full adiabat (blend and
-    table blend 1)."""
+    Raises ValueError unless both records are converged solves on a computed adiabat at blend
+    and table blend 1."""
+    want = dict(converged=True, adiabat_computed=True, blend=1.0, table_blend=1.0)
     for name, r in (('picard', picard), ('newton', newton)):
-        ok = {
-            k: r.get(k) == v
-            for k, v in (('converged', True), ('blend', 1.0), ('table_blend', 1.0))
-        }
-        if not all(ok.values()):
-            bad = [k for k, v in ok.items() if not v]
+        bad = [k for k, v in want.items() if r.get(k) != v]
+        if bad:
             raise ValueError(
                 f'{r.get("case")} {name} record is not a converged solve at the full adiabat: {bad}'
             )
