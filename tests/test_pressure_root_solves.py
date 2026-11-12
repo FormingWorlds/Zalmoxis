@@ -129,10 +129,9 @@ def test_the_accepted_root_meets_the_surface_boundary_condition(monkeypatch):
     assert abs(evals[refined]) <= 0.1 * P_T
 
 
-# The 6 Newton setups of the sweep (the PROTEUS default outer solver): id, EOS,
-# mass [M_earth], JAX, clock [s] (2x the slowest CI solve of the setup on the slowest runner
-# CPU) and timeout [s] (the other solves at the CI factor of the clock, the clock and the
-# 600 s retry on that CPU).
+# The 6 Newton setups (the PROTEUS default outer solver): id, EOS, mass [M_earth], JAX, clock
+# [s] (2x the slowest CI solve of the setup on the slowest runner CPU), timeout [s] (the other
+# solves at the CI factor of the clock, the clock and the 600 s retry on that CPU).
 NEWTON_SETUPS = (
     ('analytic_1', ANALYTIC, 1.0, False, 600.0, 1800),
     ('paleos_1_numpy', PALEOS, 1.0, False, 4900.0, 7100),
