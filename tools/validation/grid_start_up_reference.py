@@ -104,16 +104,18 @@ def source_hash(files, root):
 
 def loaded_sources():
     """(package folder, sorted paths below it) of every zalmoxis module loaded now, without
-    the files the install generates."""
+    the files the install generates; a module from outside the package raises ValueError."""
     import zalmoxis
 
     pkg = Path(zalmoxis.__file__).resolve().parent
     files = {
         Path(m.__file__).resolve().relative_to(pkg).as_posix()
         for name, m in list(sys.modules.items())
-        if name.split('.')[0] == 'zalmoxis' and getattr(m, '__file__', None)
+        if name.split('.')[0] == 'zalmoxis'
+        and getattr(m, '__file__', None)
+        and Path(m.__file__).name not in GENERATED
     }
-    return pkg, sorted(files - GENERATED)
+    return pkg, sorted(files)
 
 
 def dump_compact(obj, path):
