@@ -2477,6 +2477,7 @@ def _ramp_figure(runs):
 @pytest.mark.smoke
 @pytest.mark.accept_solves_long
 @pytest.mark.physics_invariant
+@pytest.mark.reference_pinned
 @pytest.mark.timeout(4800)
 def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_start_up(request):
     """The first solve and the first re-solve of the PROTEUS grid case with core mass fraction
