@@ -238,3 +238,13 @@ def test_the_solve_passes_the_grid_melting_curves_and_input_folder(monkeypatch):
     P = np.array([1.0e9, 50.0e9])
     np.testing.assert_allclose(liquidus(P), paleos_liquidus(P))
     np.testing.assert_allclose(solidus(P), 0.8 * paleos_liquidus(P), rtol=1e-12)
+
+
+def test_the_source_list_leaves_out_the_generated_version_file():
+    """_version.py is written at install time with the commit in it and git ignores it, so it
+    is not part of the source the hash stands for."""
+    import zalmoxis._version  # noqa: F401
+
+    pkg, files = _tool().loaded_sources()
+    assert '_version.py' not in files and 'config.py' in files
+    assert all((pkg / f).is_file() for f in files)
