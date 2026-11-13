@@ -2014,6 +2014,13 @@ def test_a_linear_floor_above_a_tight_tolerance_starts_the_ramp_unaccepted_on_a_
     assert r['accepted_on'] is None and r['accept_mass_limit'] is None
 
 
+def _mean_core_T(r):
+    """Mass-weighted mean temperature [K] of the core nodes (mass below cmb_mass)."""
+    m, T = np.asarray(r['mass_enclosed']), np.asarray(r['temperature'])
+    core = m < r['cmb_mass']
+    return float(np.trapezoid(T[core], m[core]) / m[core][-1])
+
+
 def _mantle_lag(r, adiabat):
     """|T - adiabat| at the mantle nodes of ``r`` with a positive pressure."""
     m, P = np.asarray(r['mass_enclosed']), np.asarray(r['pressure'])
@@ -2521,6 +2528,9 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
     assert lag2[2] <= 25.0 and lag3[2] <= 25.0
     dT, dT_top, dR, *_ = _off_ref(seeded, plain)
     assert dT <= 2.5 and abs(dT_top) <= 2.5 and abs(dR) <= 5e-4
+    # the last core node reads the edge of the mantle T(P) table; the core mean stays bounded
+    for r, ref in ((first, ref1), (seeded, ref2), (plain, ref2)):
+        assert abs(_mean_core_T(r) - _mean_core_T(ref)) <= 10.0
     assert len(p1) - 5 <= 3  # linear pass, 4 blend passes, then the full-adiabat passes
     assert len(p2) <= 4 and n_seeded <= 0.5 * n_plain
 
@@ -2561,6 +2571,7 @@ def test_a_first_solve_at_a_planet_mass_2e12_higher_keeps_the_stored_reference()
     assert dT <= 1.0
     assert max(abs(dR), abs(dPc), abs(dRc)) <= 2e-4 and abs(dPcmb) <= bound
     assert lag[0] <= 6.0 and lag[1] <= 1.0
+    assert abs(_mean_core_T(r) - _mean_core_T(grid_ref.load()['first'])) <= 10.0
 
 
 @pytest.mark.slow
