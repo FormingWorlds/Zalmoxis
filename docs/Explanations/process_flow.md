@@ -37,7 +37,7 @@ where $P_{c,\oplus}$ is Earth's central pressure and $R_{\oplus}$ is Earth's rad
 
 The model uses three nested convergence loops:
 
-1. **Outer loop (mass convergence):** Updates the total planet radius estimate by comparing the calculated total mass against the target mass and rescaling: $R_p \leftarrow R_p \times (M_{\mathrm{target}} / M_{\mathrm{calculated}})^{1/3}$; at the end of an adiabat ramp this becomes a secant step (see [Secant tail and seeded re-solve](#secant-tail-and-seeded-re-solve)).
+1. **Outer loop (mass convergence):** Updates the total planet radius estimate by comparing the calculated total mass against the target mass and rescaling: $R_{n+1} = R_n (M_p / M_n)^{1/3}$, with the planet mass $M_p$ and the computed mass $M_n$ of pass $n$; at the end of a blend ramp this becomes a secant step (see [Secant tail and seeded re-solve](#secant-tail-and-seeded-re-solve)).
 
 2. **Inner loop (density profile convergence):** For each radial shell, recalculates the density from the local pressure (and temperature, if applicable) using the per-layer EOS returned by `get_layer_mixture()`.
    For multi-material layers, the density is computed via the phase-aware suppressed harmonic mean (see [multi-material mixing](mixing.md)): each component's contribution is weighted by a sigmoid function of its density, preventing non-condensed volatiles from inflating the mixture density.
@@ -104,7 +104,7 @@ For a padded or a reached root that misses the target by more than $0.1 P_{\math
 The solve then keeps the candidate that comes closest to the target.
 A sign pair is 2 neighbouring evaluated central pressures with a negative residual at the lower one and a positive residual at the higher one, its reached end (details below).
 For a padded root, the candidates also hold the reached ends of its first sign pair and of its nearest sign pair after the second solve that lie within $P_{\mathrm{target}}$ of the target.
-The Picard and Newton outer solvers, the JAX path and PALEOS are defined in the terms of the [hydrostatic structure validation page](../Validation/hydrostatic_structure.md#what-this-page-checks).
+The Picard and Newton outer solvers, the JAX path and PALEOS are defined in the terms of the [hydrostatic structure validation page](../Validation/hydrostatic_structure.md#terms-used-on-this-page).
 
 A padded profile is the result of a surface stop (see the Early termination handling paragraph above).
 The integration stopped before the outer radius $R$, and the remaining points, the padded nodes, have $P = 0$.
@@ -159,7 +159,7 @@ A padded first root and a failed second solve log at the DEBUG level, since a Pi
 
 The figure shows $\lvert P(R) - P_{\mathrm{target}} \rvert / P_{\mathrm{target}}$ of the accepted profile for 26 setups built from `input/default.toml`.
 4 of the 6 setups with the Newton outer solver at `relative_tolerance` $10^{-9}$ reach the outer radius.
-Setup 10 (PALEOS 1 on the JAX path) ends padded, since $P(R)$ near the stop scatters on that path, and so does setup 9 (PALEOS 1, whose Newton root seeds the Picard blend ramp), which ends padded or reached depending on round-off.
+Setup 10 (PALEOS 1 on the JAX path) ends padded, since $P(R)$ near the stop scatters on that path, and so does setup 9 (PALEOS 1, whose Newton root seeds the blend ramp), which ends padded or reached depending on round-off.
 15 of the 19 setups with the Picard outer solver at the tolerances of `input/default.toml` that return a profile end padded, `input/default.toml` itself (setup 8) among them.
 Every padded profile has one padded point, the outermost.
 Setup 24 (PALEOS 3-layer ice 1) returns no profile: a trial central pressure gives a non-finite profile, and the solve raises `StructureSolveError`.
@@ -186,39 +186,13 @@ The numerical solve is accepted when one of the tests below passes: the result t
 `stopped_on_wall_clock` is True when the wall clock stopped that solve, also when no test passed.
 The table band check (see [EOS physics](eos_physics.md)) runs after these tests: a band failure sets `converged = False` and keeps `accepted_on`, so read `converged` for the final verdict.
 
-With an adiabatic temperature mode (`adiabatic` or `adiabatic_from_cmb`) and a T-dependent EOS, when the caller gives no `temperature_function` and, on the JAX path, no `temperature_arrays` (the numpy path ignores the arrays), a test passes only on a result with the full adiabat:
-
-- the solve computed the adiabat;
-- `adiabat_blend` is 1;
-- the T(P) table of that pass was built on the pressure of a pass at blend 1 (`adiabat_table_blend` is 1).
-
-The blend ramp moves the temperature from the linear first guess (`adiabat_blend` 0) to the adiabat (`adiabat_blend` 1) in steps of 0.25, one per outer pass.
-Each pass builds its table on the pressure of the pass before it, so the first pass at blend 1 reads the table of the blend-0.75 pass and is not accepted.
-A pass on a table of blend 1 still reads the pressure of the pass before it. Its mantle temperature therefore differs from the adiabat of its own pressure by the change of the structure in the last pass, which the mass tolerance bounds at the inner mantle nodes.
-The top node is not bounded by the tolerance: the adiabat takes no step from or to a node below $10^5$ Pa, so with a surface pressure near 1 bar the top node can differ by one adiabatic step of the top shell.
-Two measured cases of the `dummy` setup of the [Validation page](../Validation/hydrostatic_structure.md#newton-and-picard-on-the-proteus-initial-structure) show the range:
-
-- With 150 layers and `temperature_mode = "adiabatic_from_cmb"` (the Validation setups), this step is 17 to 22 K in the measured passes, and the returned top node of the Validation solves lies 0.06 K off the adiabat.
-- With 60 layers, `temperature_mode = "adiabatic"` and 32 starts whose planet mass differs by $k \times 10^{-12}$ (26 with the Newton and 6 with the Picard outer solver), the returned top node lies 56 to 57 K off the adiabat in 14 starts and at most 0.6 K off in the other 18. In 2 of the 26 Newton starts the adiabat also loses the step of the top shell for the whole profile, as the Validation page describes.
-
-`adiabat_self_consistency` gives the largest difference, in K, between the returned mantle temperature and the adiabat recomputed on the returned structure; it is None below blend 1 and when no mantle node has a positive pressure.
-
-When a test would accept a result short of the full adiabat, the solve refuses it:
-
-- the result has `converged = False`, `converged_mass = False` and `accepted_on` None;
-- the solve logs a warning (at DEBUG for a step of the Newton outer solver);
-- `main` then retries, and does not skip the retry on `retry_skip`;
-- `main` raises `StructureInvariantError` on an accepted result in such a mode below blend 1 or on a table below blend 1.
-
-With `outer_solver = "newton"` in such a mode, the Newton root holds the linear first-guess temperature. So `main` continues with the Picard blend ramp, seeded with the radius, the central pressure, the density and the radii of the Newton profile, at the mass tolerance `min(tolerance_outer, newton_tol)`. The Picard tests then accept the result and give its label, and the result keeps `newton_n_iter`, `newton_history` and `newton_used_brentq`. That ramp ends with secant steps on the radius, and a re-solve of the same planet can skip the Newton root and the ramp; see [Secant tail and seeded re-solve](#secant-tail-and-seeded-re-solve).
-
 | `accepted_on` | Outer solver | Test |
 |---|---|---|
 | `strict` | Picard | The mass, density and pressure flags are True. Besides a change below `tolerance_inner`, the inner loop sets the density flag when it stops stuck or at `max_iterations_inner` with a relative density change below `max(100 * tolerance_inner, 0.1)`, or after 15 oscillations below `max(10 * tolerance_inner, 0.1)`. |
 | `mass_only` | Picard | Mass converged and the smallest mass error is below `tolerance_outer`; density or pressure did not converge. |
 | `max_iter` | Picard | The outer loop stopped at `max_iterations_outer` with the mass error of the best pass below 3 %; the best pass is returned. |
 | `timeout` | Picard, Newton | The solve reached `wall_timeout` (in the outer or the inner loop) and one of the other tests passed; `timeout` replaces its label. On Picard the returned profile is the best pass, which can be an earlier, complete pass. |
-| `oscillation` | Picard | The mass error changed sign 10 times since the best pass last changed, each time with a magnitude at least 99 % of that of the pass before, and the mass error of the best pass is below `3 * tolerance_outer` and below 3 %. With the full adiabat asked (see the rule above this table), the stop waits until the adiabat blend and its table blend reach 1. A pass the wall clock cut ends the solve as `timeout` instead. The best profile is returned and accepted on `3 * tolerance_outer`, or on the 3 % ceiling when its density or pressure did not converge. |
+| `oscillation` | Picard | The mass error changed sign 10 times since the best pass last changed, each time with a magnitude at least 99 % of that of the pass before, and the mass error of the best pass is below `3 * tolerance_outer` and below 3 %. With the full adiabat asked (see [Full-adiabat rule](#full-adiabat-rule)), the stop waits until the adiabat blend and its table blend reach 1. A pass the wall clock cut ends the solve as `timeout` instead. The best profile is returned and accepted on `3 * tolerance_outer`, or on the 3 % ceiling when its density or pressure did not converge. |
 | `retry_skip` | Picard | The first solve was not accepted, density and pressure converged and the mass error of the returned profile is below 7 %; `main` skips the retry. |
 | `newton_tol` | Newton | The smallest mass error of the Newton steps, or the mass error at the brentq root, is below `newton_tol`, and the inner solve of the returned profile reports converged pressure and the EOS density (`density_from_eos`). |
 | `brentq_best` | Newton | The bracket search or brentq stopped early with the smallest mass error of the evaluations below `newton_tol`; the returned profile is that of the evaluation with that error, and its inner solve reports converged pressure and the EOS density. |
@@ -226,13 +200,68 @@ With `outer_solver = "newton"` in such a mode, the Newton root holds the linear 
 `mass_error_at_accept` is the relative error $|M - M_p| / M_p$ of the last value of `mass_enclosed` in the returned profile, also when no test passed, and None when that value is not finite.
 It can differ from `best_mass_error`, because the returned profile is not always the one with that error. In the Picard solve `best_mass_error` is the mass error of the best pass (below); in the Newton solve it is the smallest error over the Newton evaluations, or the error at the root on the brentq root exit.
 The returned `density` is the EOS density $\rho_{\mathrm{EOS}}(P, T)$ at the returned pressure and temperature of each node, and not the damped Picard iterate.
-After a wall-clock stop in the outer loop after at least one pass, accepted or not, after a `max_iter` accept, after an `oscillation` stop, and after an accepted solve whose last pass the wall clock stopped before its first pressure solve, the best pass is returned, with its own gravity, `converged_density`, `converged_pressure`, `adiabat_blend` and `adiabat_table_blend`. The best pass is the pass with the smallest mass error among the passes with a pressure solve on the newest step of the blend ramp; a step is the adiabat blend (0, 0.25, 0.5, 0.75, 1) with the blend of its table, so the first pass at blend 1 is a step of its own; until a pass on a new blend step has a pressure solve, the best pass of the step before stays. When no accept test of the stop would take the newest best pass (the strict test, the mass test of `tolerance_outer` or the 3 % ceiling in the table above), the best pass of the earlier steps is returned instead if its mass error is smaller and the stop returns it: a restore of the best pass or a wall-clock stop does, an iteration cap only when the 3 % ceiling takes the earlier pass. It comes with its `adiabat_blend` and `adiabat_table_blend`, a warning that names the blend and the table blend of both passes, and its mass error as `best_mass_error`; that pass ended below `max(tolerance_outer, 1e-3)`, as the blend ramp starts only then, and a wall-clock stop takes its mass verdict again from it. Its blend or the blend of its table is below 1, so it is returned with `converged = False`, as the start of a retry. An accept of the newest pass by the mass test of the loop keeps that pass.
+
+**Which pass a stop returns.** These stops return the best pass, with its own gravity, `converged_density`, `converged_pressure`, `adiabat_blend` and `adiabat_table_blend`:
+
+- a wall-clock stop in the outer loop after at least one pass, accepted or not;
+- a `max_iter` accept;
+- an `oscillation` stop;
+- an accepted solve whose last pass the wall clock stopped before its first pressure solve.
+
+The best pass is the pass with the smallest mass error among the passes with a pressure solve on the newest step of the blend ramp.
+A step is the adiabat blend (0, 0.25, 0.5, 0.75, 1) together with the blend of its table, so the first pass at blend 1 is a step of its own.
+Until a pass on a new step has a pressure solve, the best pass of the step before stays.
+
+**When an earlier step comes back.** Sometimes no accept test of the stop would take the newest best pass (the strict test, the mass test of `tolerance_outer` or the 3 % ceiling in the table above).
+Then the best pass of the earlier steps is returned instead, if its mass error is smaller and the stop returns it: a restore of the best pass or a wall-clock stop does, and an iteration cap does only when the 3 % ceiling takes the earlier pass.
+That pass comes with its `adiabat_blend` and `adiabat_table_blend`, a warning that names the blend and the table blend of both passes, and its mass error as `best_mass_error`.
+It ended below `max(tolerance_outer, 1e-3)`, because the blend ramp starts only then, and a wall-clock stop takes its mass verdict again from it.
+Its blend or the blend of its table is below 1, so it is returned with `converged = False`, as the start of a retry.
+An accept of the newest pass by the mass test of the loop keeps that pass.
+
 `cmb_mass` and `core_mantle_mass` are the enclosed masses at the core-mantle boundary and at the top of the mantle: `core_mass_fraction` and `core_mass_fraction + mantle_mass_fraction` times `planet_mass`. Every pass integrates the structure and looks up the density with these boundaries, so a node of the returned profile has the EOS density of the layer that `cmb_mass` and `core_mantle_mass` give it, and the core mass fraction of the returned profile is `cmb_mass` over the last value of `mass_enclosed`, `core_mass_fraction` times `planet_mass` over that value.
 `density_from_eos` is False only when no test passed and the returned pass has no pressure solve: the wall clock stopped the solve before its first pass, or before the first pressure solve of the first pass or of the pass at `max_iterations_outer`; a pass without a pressure solve is never the best pass. The result then has the radius of that pass (the initial guess before the first pass), a pressure and a `density` that are zero except at most at the centre node, and a `mass_enclosed` that is zero. A cut before the first pressure solve of any other pass leaves the outer loop running, and its next check returns the best pass with its EOS density.
 `converged_density` reports the inner Picard loop and does not bound the difference between the iterate and the EOS density.
 When the first solve is not accepted, `main` retries with tighter parameters, seeded with the returned outer radius when it lies between 0.2 and 5 times $R_\oplus (\max(M_p, 0.01\,M_\oplus)/M_\oplus)^{0.282}$, and hands the retry the returned `density` when a node of it is above zero; `_solve` uses that seed only when more than one node is above zero. After a pass with a pressure solve that seed is the EOS density; after an unaccepted result without a pressure solve only the radius seeds the retry. After an unaccepted wall-clock stop in the outer loop the seed radius is that of the best pass, not the newest radius guess of the outer loop. PROTEUS also seeds its next structure solve with the returned `density`.
 On the Newton path, a step whose mass test passes while its inner solve does not report converged pressure and the EOS density ends the search with `converged = False`, and `main` returns that result without a retry. PROTEUS then retries once, unless `best_mass_error` is above 5 %, with three times the `tolerance_outer`, twice the `max_iterations_outer`, a 600 s wall clock, and without the density seed and the central pressure hint of its first call. Each Newton step runs one outer pass, so the first two settings do not change the Newton test; the retry can pass only through its different start or the wall clock. PROTEUS stops the run when the retry also fails.
 A trapezoid integral of the returned `density` differs from `mass_enclosed[-1]` by the quadrature error of the grid, which is largest at density jumps such as the core-mantle boundary.
+
+### Full-adiabat rule
+
+When must a result carry the full adiabat, and what happens when it does not?
+The rule applies when all of these hold:
+
+- the temperature mode is `adiabatic` or `adiabatic_from_cmb`;
+- a layer has a T-dependent EOS;
+- the caller gives no `temperature_function` and, on the JAX path, no `temperature_arrays` (the numpy path ignores the arrays).
+
+Then a test passes only on a result with the full adiabat:
+
+- the solve computed the adiabat;
+- `adiabat_blend` is 1;
+- the T(P) table of that pass was built on the pressure of a pass at blend 1 (`adiabat_table_blend` is 1).
+
+**The blend ramp.** The blend ramp moves the temperature from the linear first guess (`adiabat_blend` 0) to the adiabat (`adiabat_blend` 1) in steps of 0.25, one per outer pass.
+Each pass builds its table on the pressure of the pass before it.
+So the first pass at blend 1 reads the table of the blend-0.75 pass, and the solve does not accept it.
+
+**How far the result is from its own adiabat.** A pass on a table of blend 1 still reads the pressure of the pass before it.
+Its mantle temperature therefore differs from the adiabat of its own pressure by the change of the structure in the last pass, which the mass tolerance bounds at the inner mantle nodes.
+The tolerance does not bound the top node: the adiabat takes no step from or to a node below $10^5$ Pa, so with a surface pressure near 1 atm the top node can differ by one adiabatic step of the top shell.
+[Newton and Picard on the PROTEUS initial structure](../Validation/hydrostatic_structure.md#newton-and-picard-on-the-proteus-initial-structure) gives the measured size of this step.
+`adiabat_self_consistency` gives the largest difference, in K, between the returned mantle temperature and the adiabat recomputed on the returned structure; it is None below blend 1 and when no mantle node has a positive pressure.
+
+**A result short of the full adiabat.** When a test would accept such a result, the solve refuses it:
+
+- the result has `converged = False`, `converged_mass = False` and `accepted_on` None;
+- the solve logs a warning (at DEBUG for a step of the Newton outer solver);
+- `main` then retries, and does not skip the retry on `retry_skip`;
+- `main` raises `StructureInvariantError` on an accepted result in such a mode below blend 1 or on a table below blend 1.
+
+**With the Newton outer solver.** The Newton root holds the linear first-guess temperature.
+So `main` continues with the blend ramp, seeded with the radius, the central pressure, the density and the radii of the Newton profile, at the mass tolerance `min(tolerance_outer, newton_tol)`.
+The Picard tests then accept the result and give its label, and the result keeps `newton_n_iter`, `newton_history` and `newton_used_brentq`.
+The ramp ends with secant steps on the radius, and a re-solve of the same planet can skip the Newton root and the ramp (next section).
 
 ### Secant tail and seeded re-solve
 
@@ -245,7 +274,7 @@ When `main` starts the solve itself (after a Newton root or from a seed), a pass
 
 $$R_{n+1} = R_n - (M_n - M_p) \frac{R_n - R_{n-1}}{M_n - M_{n-1}}.$$
 
-- Secant steps run only while the mass error is above 2 times the mass tolerance of the ramp (`min(tolerance_outer, newton_tol)` for Newton, else `tolerance_outer`), and by at most 2 % of $R_n$.
+- Secant steps run only while the mass error is above 2 times the mass tolerance of the ramp (`min(tolerance_outer, newton_tol)` for Newton, else `tolerance_outer`). A secant step moves the radius by at most 2 % of $R_n$.
 - If the slope $(M_n - M_{n-1}) / (R_n - R_{n-1})$ is not positive or not finite, the pass uses the cube-root radius, and so do all passes after a secant step that did not shrink the mass error.
 
 **Seeded re-solve.** `main` takes `adiabat_seed`: the `radii`, `pressure` and `mass_enclosed` of an earlier solve of the same planet.

@@ -128,7 +128,7 @@ The full set of TOML-derived inputs the wrapper translates is in `load_zalmoxis_
 
 ## Initial-condition anchors
 
-A coupled run's first iteration is the hardest. The structure solve and the energetics initial entropy must agree on $T(r)$, $P(r)$, $R_\mathrm{cmb}$, and $M_\mathrm{core}$ before SPIDER or Aragog takes its first time step. PROTEUS supports several IC modes; the production default is `adiabatic_from_cmb` (Stage 1a lock for the UnifyCoupling paper), with `liquidus_super` as the most physically grounded option for hot magma-ocean ICs.
+A coupled run's first iteration is the hardest. The structure solve and the energetics initial entropy must agree on $T(r)$, $P(r)$, $R_\mathrm{cmb}$, and $M_\mathrm{core}$ before SPIDER or Aragog takes its first time step. PROTEUS supports several IC (initial condition) modes. The default is `liquidus_super`, the most physically grounded option for hot magma-ocean ICs; the `dummy` input and the grid test setup of PROTEUS use `adiabatic_from_cmb`.
 
 `liquidus_super` mode anchors the CMB temperature to the MgSiO$_3$ liquidus at the converged $P_\mathrm{cmb}$, plus a configurable excess representing super-liquidus thermal state:
 
@@ -154,7 +154,7 @@ The other modes (`adiabatic`, `adiabatic_from_cmb`, `accretion`, `isentropic`) f
 
 ## Initial-condition equilibration loop
 
-A coupled run's first iteration is the hardest. The structure solve and the energetics initial entropy must agree on $T(r)$, $P(r)$, $R_\mathrm{cmb}$, and $M_\mathrm{core}$ before SPIDER or Aragog takes its first time step, and the volatile partitioning must agree with the structure-derived $M_\mathrm{mantle}$. PROTEUS runs a CALLIOPE + Zalmoxis loop in `proteus.interior_energetics.wrapper.equilibrate_initial_state()`:
+The volatile partitioning must also agree with the structure-derived $M_\mathrm{mantle}$. PROTEUS runs a CALLIOPE + Zalmoxis loop in `proteus.interior_energetics.wrapper.equilibrate_initial_state()`:
 
 ```python
 for i in range(equilibrate_max_iter):
@@ -196,7 +196,7 @@ The equilibration loop runs only when `interior_struct.zalmoxis.equilibrate_init
 Each Zalmoxis call of the loop solves the same planet again, with a new surface pressure and volatile inventory, so the wrapper (`proteus.interior_struct.zalmoxis`) starts it from the structure of the call before.
 The returned `density` and `radii` start the density iteration.
 The returned `radii`, `pressure` and `mass_enclosed` go to `main` as `adiabat_seed` when the installed Zalmoxis takes that argument.
-With the seed, a re-solve skips the Newton root and the adiabat blend ramp; [Secant tail and seeded re-solve](process_flow.md#secant-tail-and-seeded-re-solve) explains how.
+With the seed, a re-solve skips the Newton root and the blend ramp; [Secant tail and seeded re-solve](process_flow.md#secant-tail-and-seeded-re-solve) explains how.
 The wrapper keeps one structure per planet, which it identifies by `planet.mass_tot`, `interior_struct.core_frac` and `interior_struct.zalmoxis.mantle_mass_fraction`.
 The re-solves of the main loop take the interior temperature of the energetics module, so Zalmoxis computes no adiabat there and does not use the seed.
 
@@ -307,9 +307,9 @@ When `global_miscibility = true`, the wrapper additionally calls `solve_miscible
 
 ## Outer solver and JAX path
 
-Zalmoxis offers two outer mass-radius solvers, `picard` and `newton`, with `newton` as the default in PROTEUS coupled runs. The Picard path is a damped fixed-point iteration $R_{n+1} = R_n \cdot (M_\mathrm{target} / M_n)^{1/3}$, clamped to $[0.5, 2.0]$ and damped by 0.5; it converges robustly on cool Earth-mass profiles but can hit a basin attractor on hot fully-molten profiles, where the iteration oscillates around the true $R$ without escaping. The Newton path uses a central-difference $\mathrm{d}M/\mathrm{d}R$ estimate combined with brentq bracketing on $f(R) = M(R) - M_\mathrm{target}$, and converges on the hot-profile cases that trap Picard. With the adiabatic temperature modes of the initial structure solve, the Newton root holds the linear first-guess temperature, so Zalmoxis continues with the Picard adiabat blend ramp from the Newton profile and returns the full adiabat (see [process flow](process_flow.md)).
+Zalmoxis offers two outer mass-radius solvers, `picard` and `newton`, with `newton` as the default in PROTEUS coupled runs. The Picard path is a fixed-point iteration $R_{n+1} = R_n \cdot (M_\mathrm{target} / M_n)^{1/3}$, with the scale factor clamped to $[0.5, 2.0]$ and the density update of each pass damped by a factor that starts at 0.5 and adapts to mass oscillations between 0.2 and 0.7; at the end of a blend ramp that `main` starts, the radius update takes secant steps instead (see [Secant tail and seeded re-solve](process_flow.md#secant-tail-and-seeded-re-solve)); it converges robustly on cool Earth-mass profiles but can hit a basin attractor on hot fully-molten profiles, where the iteration oscillates around the true $R$ without escaping. The Newton path uses a central-difference $\mathrm{d}M/\mathrm{d}R$ estimate combined with brentq bracketing on $f(R) = M(R) - M_\mathrm{target}$, and converges on the hot-profile cases that trap Picard. With the adiabatic temperature modes of the initial structure solve, the Newton root holds the linear first-guess temperature, so Zalmoxis continues with the blend ramp from the Newton profile and returns the full adiabat (see [process flow](process_flow.md)).
 
-Newton requires tighter integrator tolerances than Picard: the Picard default `relative_tolerance = 1e-5` produces $\sim 10^{-3}$ noise in $M(R)$ that swamps the central-difference estimate. The wrapper auto-applies `relative_tolerance = 1e-9` and `absolute_tolerance = 1e-10` whenever `outer_solver = "newton"` is selected, and only forwards the Newton-specific knobs to Zalmoxis when the Newton path is active, so a Picard run sees an unchanged config dict.
+Newton requires tighter integrator tolerances than Picard: the Picard default `relative_tolerance = 1e-5` produces $\sim 10^{-3}$ noise in $M(R)$ that swamps the central-difference estimate. The wrapper auto-applies `relative_tolerance = 1e-9` and `absolute_tolerance = 1e-10` whenever `outer_solver = "newton"` is selected, and forwards the Newton-specific settings to Zalmoxis only when the Newton path is active, so a Picard run sees an unchanged config dict.
 
 The structure solve runs through Zalmoxis's JAX + diffrax path by default (`use_jax = true`), with an opt-in Anderson Type-II Picard accelerator (`use_anderson = true`). The JAX path has a known subtlety in coupled mode: the JAX RHS is P-indexed for adiabat tabulation, but PROTEUS's `temperature_function(r, P)` ignores $P$ (it interpolates an interior-solver T(r) from r alone), and the P-indexed JAX path collapses on a P-ignoring callable. The wrapper detects two argument styles:
 
