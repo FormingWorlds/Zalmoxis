@@ -248,3 +248,21 @@ def test_the_source_list_leaves_out_the_generated_version_file():
     pkg, files = _tool().loaded_sources()
     assert '_version.py' not in files and 'config.py' in files
     assert all((pkg / f).is_file() for f in files)
+
+
+def test_a_generated_file_from_another_install_is_left_out(monkeypatch):
+    """A _version.py that another install serves (a checkout without its own) is left out
+    before its path is read; any other zalmoxis module from outside the package raises."""
+    import sys
+    from types import SimpleNamespace
+
+    monkeypatch.setitem(
+        sys.modules, 'zalmoxis._version', SimpleNamespace(__file__='/elsewhere/_version.py')
+    )
+    pkg, files = _tool().loaded_sources()
+    assert '_version.py' not in files and 'config.py' in files
+    monkeypatch.setitem(
+        sys.modules, 'zalmoxis.other', SimpleNamespace(__file__='/elsewhere/other.py')
+    )
+    with pytest.raises(ValueError, match='other.py'):
+        _tool().loaded_sources()
