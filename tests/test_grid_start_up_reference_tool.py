@@ -240,11 +240,17 @@ def test_the_solve_passes_the_grid_melting_curves_and_input_folder(monkeypatch):
     np.testing.assert_allclose(solidus(P), 0.8 * paleos_liquidus(P), rtol=1e-12)
 
 
-def test_the_source_list_leaves_out_the_generated_version_file():
+def test_the_source_list_leaves_out_the_generated_version_file(monkeypatch):
     """_version.py is written at install time with the commit in it and git ignores it, so it
-    is not part of the source the hash stands for."""
-    import zalmoxis._version  # noqa: F401
+    is not part of the source the hash stands for; a stand-in module inside the package keeps
+    the test valid in a checkout without the file."""
+    import sys
+    from types import SimpleNamespace
 
+    import zalmoxis
+
+    version = os.path.join(os.path.dirname(zalmoxis.__file__), '_version.py')
+    monkeypatch.setitem(sys.modules, 'zalmoxis._version', SimpleNamespace(__file__=version))
     pkg, files = _tool().loaded_sources()
     assert '_version.py' not in files and 'config.py' in files
     assert all((pkg / f).is_file() for f in files)
