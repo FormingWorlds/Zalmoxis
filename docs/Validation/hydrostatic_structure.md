@@ -413,6 +413,10 @@ Relative differences are $|x - x_\mathrm{REF}| / |x_\mathrm{REF}|$.
 
 **How we know the right answer.** REF runs until its mass error is 100 times smaller than the mass tolerance of the ramp, $10^{-4}$.
 So REF stands for the converged structure; this is a convergence check, not an external reference.
+REF is solved once and stored in `tests/data/grid_start_up_reference.json`, with the md5 of both EOS tables and a hash of the Zalmoxis source that solved it.
+The test stops when a table differs from the stored one.
+A separate nightly job solves REF again and fails when it moves by more than 0.1 K in the mantle, $10^{-5}$ in radius, central pressure or core radius, or $4 \times 10^{-5}$ in CMB pressure, or when the source hash differs.
+Then `python -m tools.validation.grid_start_up_reference` writes the file again.
 
 **Why it matters.** These solves set the radius, the core size and the initial mantle temperature of every PROTEUS run with Zalmoxis.
 
@@ -450,7 +454,7 @@ The first 5 rows exceed a bound; the other 5 are not bounded or lie inside one.
 - The core nodes and the CMB node read one T(P) table with the mantle, and no test bounds the core nodes. The cell below the CMB holds 0.7 % of the planet mass, and the core radius stays within $3 \times 10^{-5}$ of REF.
 
 ??? info "Test details"
-    - Reference: REF, the same solve at a mass tolerance of $10^{-6}$ (convergence check).
+    - Reference: REF, the same solve at a mass tolerance of $10^{-6}$ (convergence check), stored in `tests/data/grid_start_up_reference.json`.
     - Tolerance: 1 K at 39 mantle mass points up to the second-highest mantle node; top mantle node 1 K from REF in the re-solves and 30 K in the first solves; $2 \times 10^{-4}$ in outer radius, central pressure and core radius; $4 \times 10^{-3}$ in CMB pressure; lags of 6 K (CMB node) and 1 K (other mantle nodes) in every solve and 25 K (top node) in the re-solves; seeded against unseeded 2.5 K and $5 \times 10^{-4}$; at most 3 full-adiabat passes in the first solve, at most 4 passes and half the integrations in the seeded re-solve.
     - Test id: `tests/test_accepted_on.py::test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_start_up`
     - Tests of the rules alone, on analytic densities:
@@ -461,9 +465,10 @@ The first 5 rows exceed a bound; the other 5 are not bounded or lie inside one.
         - `tests/test_accepted_on.py::test_a_seeded_solve_accepts_its_second_pass`
         - `tests/test_accepted_on.py::test_the_first_seeded_pass_carries_the_seed_label_and_is_not_accepted`
         - `tests/test_accepted_on.py::test_the_seed_table_pass_starts_no_secant`
-    - Markers: `smoke`, `accept_solves_long` and `physics_invariant`; it runs in the nightly workflow. It writes its plot only with `--validation-plots` and does not compare it with the committed pair, because the number of passes can change with round-off.
+    - Markers: `smoke`, `accept_solves_long`, `physics_invariant` and `reference_pinned`; it runs in the nightly workflow. It writes its plot only with `--validation-plots` and does not compare it with the committed pair, because the number of passes can change with round-off.
     - Plotted run (can change with round-off): in the first solve the error rises to about $3 \times 10^{-3}$ in passes 2 to 5 and is $2.4 \times 10^{-3}$ at pass 6; the cube-root rule reaches $1.7 \times 10^{-3}$ at pass 7 and the secant step $1.4 \times 10^{-5}$ at pass 8; the re-solve takes 4 passes from the seed against 8 without it (1 at the Newton root, 4 blend passes, 3 full-adiabat passes).
     - Command: `pytest -o "addopts=" -m accept_solves_long tests/test_accepted_on.py -k grid_start_up --validation-plots`.
+    - Stored REF: `tests/test_accepted_on.py::test_the_stored_grid_start_up_reference_is_the_converged_solve_of_the_source` solves it again (markers `slow`, `accept_solves_reference` and `physics_invariant`; nightly job `accept_solves_reference`, 7800 s per test, 150 min per job). Tolerance: 0.1 K in the mantle up to the second-highest node, top node 30 K (first solve) and 1 K (re-solve), $10^{-5}$ in radius, central pressure and core radius, $2\,\mathrm{tol}_\mathrm{REF} / (1 - f_\mathrm{core}) = 4 \times 10^{-5}$ in CMB pressure, and the stored source hash. Command to write it again: `python -m tools.validation.grid_start_up_reference`.
 
 ## Reproducing the results
 

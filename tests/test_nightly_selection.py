@@ -200,6 +200,7 @@ _MARKS = (
     'accept_solves',
     'accept_solves_long',
     'accept_solves_newton_setups',
+    'accept_solves_reference',
 )
 _SPECIAL = set(_MARKS) - {'unit', 'smoke', 'integration', 'slow'}
 

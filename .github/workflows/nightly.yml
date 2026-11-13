@@ -25,14 +25,14 @@ jobs:
     name: Zalmoxis-nightly ${{ matrix.suite }} (ubuntu-latest)
     runs-on: ubuntu-latest
     # The full solves on the Wolf & Bower tables, the full adiabatic PALEOS solves at 5 M_earth,
-    # the real accept solves (one job per file) and the longest of them (5 whole-tree jobs)
-    # run in their own jobs, beside the rest.
+    # the real accept solves (one job per file), the longest of them (5 whole-tree jobs) and
+    # the solve of the stored grid start-up reference run in their own jobs, beside the rest.
     strategy:
       fail-fast: false
       matrix:
         include:
           - suite: main
-            select: (unit or smoke or integration) and not slow and not wolfbower and not paleos_adiabat and not accept_solves and not accept_solves_long and not accept_solves_newton_setups
+            select: (unit or smoke or integration) and not slow and not wolfbower and not paleos_adiabat and not accept_solves and not accept_solves_long and not accept_solves_newton_setups and not accept_solves_reference
             args: --dist load --cov-fail-under=90
             job_timeout: 170
           - suite: wolfbower
@@ -49,6 +49,11 @@ jobs:
             select: accept_solves_long and not accept_solves_newton_setups and not wolfbower and not paleos_adiabat
             args: --dist load --cov-fail-under=0 --durations=0
             test_timeout: 4800
+            job_timeout: 150
+          - suite: accept_solves_reference
+            select: accept_solves_reference and not accept_solves and not accept_solves_long and not accept_solves_newton_setups and not wolfbower and not paleos_adiabat
+            args: --dist load --cov-fail-under=0 --durations=0
+            test_timeout: 7800
             job_timeout: 150
           - suite: accept_solves_newton_setups_paleos_10
             select: accept_solves_newton_setups and not wolfbower and not paleos_adiabat
@@ -73,7 +78,8 @@ jobs:
             select: accept_solves and not accept_solves_long and not accept_solves_newton_setups and not wolfbower and not paleos_adiabat
             args: --dist load --cov-fail-under=0 --durations=0 tests/test_pressure_root_solves.py
     # 90 min per job, 170 min for main, wolfbower and each Newton setup job, 150 min for
-    # accept_solves_long; the Newton setup sweep is split over 4 jobs by test id (-k).
+    # accept_solves_long and accept_solves_reference; the Newton setup sweep is split over 4
+    # jobs by test id (-k).
     timeout-minutes: ${{ matrix.job_timeout || 90 }}
     steps:
       - name: Checkout repository

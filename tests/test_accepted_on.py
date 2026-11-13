@@ -22,6 +22,8 @@ from hypothesis import strategies as st
 import zalmoxis.solver as zs
 from tests.test_failed_structure_solve import ROOT, _cfg, _count_outer_iterations, _run
 from tests.test_table_band_report import _need_wb_tables
+from tools.validation import grid_start_up_reference as grid_ref
+from tools.validation.grid_start_up_reference import GRID_CMF95
 from zalmoxis.config import load_material_dictionaries
 from zalmoxis.constants import G, earth_mass, earth_radius
 from zalmoxis.invariants import StructureInvariantError
@@ -2323,56 +2325,12 @@ def test_the_seed_table_pass_starts_no_secant(monkeypatch, ramp_seed):
     assert [c[0] for c in calls] == [3.0]
 
 
-# The first structure solve of the PROTEUS grid test case with core mass fraction 0.95
-# (tests/grid of PROTEUS: 0.7 Earth masses, H 1000 ppmw), and its first start-up re-solve.
-GRID_CMF95 = {
-    'planet_mass': 4.1804e24,
-    'core_mass_fraction': 0.95,
-    'mantle_mass_fraction': 0.0,
-    'temperature_mode': 'adiabatic_from_cmb',
-    'surface_temperature': 4000.0,
-    'cmb_temperature': 6000.0,
-    'center_temperature': 6000.0,
-    'temp_profile_file': None,
-    'layer_eos_config': {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
-    'mushy_zone_factor': 0.8,
-    'mushy_zone_factors': {'PALEOS:MgSiO3': 0.8, 'PALEOS:iron': 0.8},
-    'num_layers': 150,
-    'target_surface_pressure': 101325.0,
-    'tolerance_outer': 3e-3,
-    'tolerance_inner': 1e-4,
-    'max_iterations_outer': 100,
-    'max_iterations_inner': 100,
-    'use_jax': False,
-    'use_anderson': True,
-    'outer_solver': 'newton',
-    'newton_max_iter': 30,
-    'newton_tol': 1e-4,
-    'relative_tolerance': 1e-9,
-    'absolute_tolerance': 1e-10,
-    'wall_timeout': 1e6,
-}
-GRID_CMF95_RESOLVE = {
-    'planet_mass': 4.177602725330534e24,
-    'core_mass_fraction': 0.9505316225476148,
-    'target_surface_pressure': 51305541.15573382,
-}
-REF_TOL = {'tolerance_outer': 1e-6, 'newton_tol': 1e-6}  # the converged reference
-
-
 def _grid_main(cfg, **kwargs):
     """main on a grid setup; returns the result, the (R, M) of each pass of the solve that
     returned (consecutive solve_structure calls at one outer radius make one pass), the number
     of structure integrations, and the lag |T - adiabat(P)| at the CMB node, the largest at the
     other mantle nodes and at the top node, from the last adiabat computation (that of the
     returned structure)."""
-    from zalmoxis.melting_curves import (
-        derive_solidus_from_liquidus,
-        get_solidus_liquidus_functions,
-    )
-
-    _, liquidus = get_solidus_liquidus_functions('Stixrude14-solidus', 'PALEOS-liquidus')
-    melt = (derive_solidus_from_liquidus(liquidus, 0.8), liquidus)
     calls, starts, last = [], [], {}
     real_ss, real_solve, real_adi = (
         zs.solve_structure,
@@ -2395,7 +2353,7 @@ def _grid_main(cfg, **kwargs):
         mp.setattr(
             zs, '_solve', lambda *a, **k: starts.append(len(calls)) or real_solve(*a, **k)
         )
-        r = zs.main(cfg, load_material_dictionaries(), melt, INPUT, **kwargs)
+        r = grid_ref.solve(cfg, **kwargs)
     passes = []
     for R, M in calls[starts[-1] :]:
         passes = passes[:-1] + [(R, M)] if passes and passes[-1][0] == R else passes + [(R, M)]
@@ -2481,7 +2439,9 @@ def _ramp_figure(runs):
 @pytest.mark.timeout(4800)
 def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_start_up(request):
     """The first solve and the first re-solve of the PROTEUS grid case with core mass fraction
-    0.95, against the same solves at a mass tolerance of 1e-6 (REF): the first solve (Newton
+    0.95, against the same solves at a mass tolerance of 1e-6 (REF, stored in
+    ``tests/data/grid_start_up_reference.json``; an EOS table with another md5 stops the test,
+    and the slow reference test solves REF again): the first solve (Newton
     root, ramp with the secant tail), a second first solve at a planet mass 2e-12 higher, the
     seeded re-solve and the re-solve without the seed keep the mantle temperature within 1 K of
     REF from the lowest to the second-highest of the 12 mantle nodes, the radius, central
@@ -2503,8 +2463,8 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
     first, p1, _, lag1 = _grid_main(GRID_CMF95)
     nudged = {**GRID_CMF95, 'planet_mass': GRID_CMF95['planet_mass'] * (1 + 2e-12)}
     first_nudged, _, _, lag_nudged = _grid_main(nudged)
-    ref1 = _grid_main({**GRID_CMF95, **REF_TOL})[0]
-    resolve = {**GRID_CMF95, **GRID_CMF95_RESOLVE}
+    stored = grid_ref.load()
+    ref1, ref2, resolve = stored['first'], stored['resolve'], grid_ref.CASES['resolve']
     warm = dict(
         initial_density=first['density'],
         initial_radii=first['radii'],
@@ -2513,14 +2473,11 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
     seed = {k: first[k] for k in ('radii', 'pressure', 'mass_enclosed')}
     seeded, p2, n_seeded, lag2 = _grid_main(resolve, adiabat_seed=seed, **warm)
     plain, p3, n_plain, lag3 = _grid_main(resolve, **warm)
-    ref2 = _grid_main({**resolve, **REF_TOL})[0]
     for r, flag in (
         (first, False),
         (first_nudged, False),
-        (ref1, False),
         (seeded, True),
         (plain, False),
-        (ref2, False),
     ):
         assert r['converged'] and r['accepted_on'] == 'strict' and r['adiabat_seeded'] is flag
         assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
@@ -2561,3 +2518,34 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
 
     if request.config.getoption('validation_plots') is not None:
         request.getfixturevalue('validation_plot')(figure, 'grid_start_up_ramp')
+
+
+@pytest.mark.slow
+@pytest.mark.accept_solves_reference
+@pytest.mark.physics_invariant
+@pytest.mark.timeout(7800)
+def test_the_stored_grid_start_up_reference_is_the_converged_solve_of_the_source():
+    """Both structures of ``tests/data/grid_start_up_reference.json`` solved again at the mass
+    tolerance 1e-6: strict on the full adiabat, the mantle temperature within 0.1 K of the
+    stored one up to the second-highest mantle node, the top node within 30 K in the first
+    solve (1 bar, its adiabat step flips with round-off) and 1 K in the re-solve, the radius,
+    central pressure and core radius within 1e-5 and the CMB pressure within
+    2 tol_REF / (1 - cmf) = 4e-5; then the sha256 of the stored list of Zalmoxis modules
+    equals the stored one. A failure means the source or a table moved the reference: run
+    ``python -m tools.validation.grid_start_up_reference`` and commit the file."""
+    _need_paleos()
+    import zalmoxis
+
+    stored = grid_ref.load()
+    for key, cfg in grid_ref.CASES.items():
+        r = grid_ref.solve({**cfg, **grid_ref.REF_TOL})
+        assert r['converged'] and r['accepted_on'] == 'strict', key
+        assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0), key
+        off = _off_ref(r, stored[key])
+        print(key, 'vs stored (dT, dT_top, dR, dPc, dRc, dPcmb):', off)
+        dT, dT_top, dR, dPc, dRc, dPcmb = off
+        bound = 2 * grid_ref.REF_TOL['newton_tol'] / (1.0 - cfg['core_mass_fraction'])
+        assert dT <= 0.1 and abs(dT_top) <= (30.0 if key == 'first' else 1.0), key
+        assert max(abs(dR), abs(dPc), abs(dRc)) <= 1e-5 and abs(dPcmb) <= bound, key
+    pkg = os.path.dirname(os.path.abspath(zalmoxis.__file__))
+    assert grid_ref.source_hash(stored['source']['files'], pkg) == stored['source']['sha256']
