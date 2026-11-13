@@ -18,8 +18,9 @@ reachable wall clock gets `paleos_adiabat`, and a real solve of an accept label 
 structure invariants gets `accept_solves`; each runs in its own nightly job. Beside
 `accept_solves`, a real solve that takes longest also gets `accept_solves_long`, and the
 sweep over every Newton setup and the PALEOS Newton solve within the cap get
-`accept_solves_newton_setups`; each of these runs in its
-own job too, and the Newton setup tests are split over several jobs by test id.
+`accept_solves_newton_setups`, and a solve of a stored reference gets `slow` and
+`accept_solves_reference`; each of these runs in its own job too, and the Newton setup
+tests are split over several jobs by test id.
 
 | Use ... | When ... |
 |---|---|
@@ -225,7 +226,8 @@ MARKERS (mandatory; CI-invisible without one):
   minutes per test. Manual only.
 Pick the strictest marker the test fits. Give a test one tier marker only;
 `wolfbower`, `paleos_adiabat`, `accept_solves`, `accept_solves_long`,
-`accept_solves_newton_setups`, `physics_invariant` and `reference_pinned` go beside it.
+`accept_solves_newton_setups`, `accept_solves_reference`, `physics_invariant` and
+`reference_pinned` go beside it.
 
 FLOAT COMPARISONS:
 - Always pytest.approx, never ==.

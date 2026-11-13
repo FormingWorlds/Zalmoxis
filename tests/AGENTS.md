@@ -44,10 +44,11 @@ This repository has no `tools/check_test_quality.py`; the marker check is `bash 
 - Unit tier: `pytest -o "addopts=" -m unit` (~1.5 min on the dev machine,
   ~1m54s ubuntu / ~2m29s macOS in CI).
 - Nightly tier: `pytest -o "addopts=" -m "(unit or smoke or integration) and not slow" -n auto`
-  with coverage; on ubuntu CI it runs as eleven jobs, the `wolfbower` solves, the
+  with coverage; on ubuntu CI it runs as parallel jobs, the `wolfbower` solves, the
   `paleos_adiabat` solves (5 M_earth with no reachable wall clock), the `accept_solves`
   (real solves of the structure invariants, the accept labels and the pressure root, one
-  job per test file, `accept_solves_long` for the longest of them and
+  job per test file, `accept_solves_long` for the longest of them,
+  `accept_solves_reference` for the solve of the stored grid start-up reference and
   4 `accept_solves_newton_setups` jobs that split the sweep over every Newton setup and the
   PALEOS Newton solve within the cap by test id) and the rest (90 min ceiling each, 170 min
   for `main`, `wolfbower` and each `accept_solves_newton_setups` job, 150 min for
@@ -72,7 +73,7 @@ This repository has no `tools/check_test_quality.py`; the marker check is `bash 
   points of headroom for small future additions before the gate trips.
 - `fail_under` in `[tool.coverage.report]` sets the 90% floor; in
   `.github/workflows/nightly.yml` the main job repeats it with
-  `--cov-fail-under=90` and the `wolfbower`, `paleos_adiabat` and the 8 `accept_solves` jobs
+  `--cov-fail-under=90` and the `wolfbower`, `paleos_adiabat` and the `accept_solves` jobs
   turn it off with `0`.
 - A pre-flight check in `.github/workflows/CI.yml` rejects PRs that lower
   `fail_under` below the value on `origin/main`, mirroring PROTEUS's
