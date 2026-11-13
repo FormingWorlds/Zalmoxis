@@ -187,3 +187,21 @@ def test_run_writes_one_record_per_case_and_plot_reads_them(tmp_path, monkeypatc
     )
     tool.main(['plot', str(tmp_path)])
     assert seen == {'outdir': str(tmp_path), 'assets': 'docs/assets/validation'}
+
+
+def test_the_solve_merges_the_case_the_solver_and_the_overrides(monkeypatch):
+    """solve hands the grid solve the common settings, those of the case, the outer solver
+    and the overrides, the later ones winning."""
+    from tools.validation import grid_start_up_reference
+
+    got = []
+    monkeypatch.setattr(grid_start_up_reference, 'solve', lambda cfg: got.append(cfg) or 'r')
+    assert tool.solve('dummy', 'picard', tolerance_outer=1e-3) == 'r'
+    (cfg,) = got
+    assert cfg == {
+        **tool.PROTEUS_IC['common'],
+        **tool.PROTEUS_IC['dummy'],
+        'outer_solver': 'picard',
+        'tolerance_outer': 1e-3,
+    }
+    assert cfg['core_mass_fraction'] == 0.55 and cfg['planet_mass'] == 5.972e24
