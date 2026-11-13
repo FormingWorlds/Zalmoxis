@@ -2491,9 +2491,10 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
     28.65 K off REF in the second first solve on this machine, 28.85 K lag on the CI runner.
     Each solve lags the adiabat of its own pressure by at most 6 K at the CMB node and 1 K at
     the other mantle nodes, and the re-solves by at most 25 K at the top node. The seeded and
-    the unseeded re-solve differ by at most 2.5 K at every mantle node and 5e-4. The secant
-    tail needs at most 3 passes on a full-adiabat table, and the seeded re-solve at most 4
-    passes and at most half the structure integrations of the unseeded one. With
+    the unseeded re-solve differ by at most 2.5 K at the 39 mass points and at the top node,
+    and 5e-4 in radius. The secant tail needs at most 3 passes on a full-adiabat table, and
+    the seeded re-solve at most 4 passes and at most half the structure integrations of the
+    unseeded one. With
     ``--validation-plots`` it writes the plot of the mass error per pass; the pass count can
     change with round-off, so a run without the option does not compare it with the committed
     plot. See ``docs/Validation/hydrostatic_structure.md``."""
