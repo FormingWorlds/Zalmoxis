@@ -86,12 +86,9 @@ def solve(cfg, **kwargs):
 
 
 def md5(path):
-    """md5 hex digest of a file, read in 16 MiB blocks."""
-    h = hashlib.md5()
+    """md5 hex digest of a file."""
     with open(path, 'rb') as f:
-        for block in iter(lambda: f.read(1 << 24), b''):
-            h.update(block)
-    return h.hexdigest()
+        return hashlib.file_digest(f, 'md5').hexdigest()
 
 
 def source_hash(files, root):
