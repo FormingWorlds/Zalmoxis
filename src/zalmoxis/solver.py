@@ -729,8 +729,9 @@ def main(
         ``adiabat_table_blend`` -1.0, which no accept test takes, and the solve runs at
         min(tolerance_outer, newton_tol) with the Newton outer solver. A seed that fails the
         checks of ``_adiabat_seed`` is refused with a warning; a seeded solve that does not
-        converge is repeated without the seed, and its time counts in ``total_time``. A
-        seeded result has no ``newton_*`` keys. Ignored with an external temperature.
+        converge or raises StructureSolveError is repeated without the seed, and its time
+        counts in ``total_time``. A seeded result has no ``newton_*`` keys. Ignored with an
+        external temperature.
 
     Returns
     -------
@@ -835,25 +836,31 @@ def main(
         }
         if outer_solver == 'newton':
             seeded_params['tolerance_outer'] = _ramp_tolerance(config_params)
-        result = _solve(
-            seeded_params,
-            material_dictionaries,
-            melting_curves_functions,
-            input_dir,
-            layer_mixtures=layer_mixtures,
-            volatile_profile=volatile_profile,
-            temperature_function=temperature_function,
-            temperature_arrays=temperature_arrays,
-            p_center_hint=float(seed['pressure'][0])
-            if p_center_hint is None
-            else p_center_hint,
-            initial_density=initial_density,
-            initial_radii=initial_radii,
-            adiabat_seed=seed,
-        )
-        if not result['converged']:
-            logger.info('The seeded solve did not converge; solving without the seed.')
-            seed_time, result = result['total_time'], None
+        seed_start = time.time()
+        try:
+            result = _solve(
+                seeded_params,
+                material_dictionaries,
+                melting_curves_functions,
+                input_dir,
+                layer_mixtures=layer_mixtures,
+                volatile_profile=volatile_profile,
+                temperature_function=temperature_function,
+                temperature_arrays=temperature_arrays,
+                p_center_hint=float(seed['pressure'][0])
+                if p_center_hint is None
+                else p_center_hint,
+                initial_density=initial_density,
+                initial_radii=initial_radii,
+                adiabat_seed=seed,
+            )
+        except StructureSolveError as err:
+            logger.info('The seeded solve raised (%s); solving without the seed.', err)
+            seed_time = time.time() - seed_start
+        else:
+            if not result['converged']:
+                logger.info('The seeded solve did not converge; solving without the seed.')
+                seed_time, result = result['total_time'], None
     if result is None and outer_solver == 'newton':
         result = _solve_newton_outer(
             config_params,
