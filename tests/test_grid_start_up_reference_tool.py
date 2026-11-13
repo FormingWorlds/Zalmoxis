@@ -195,7 +195,7 @@ def test_the_writer_refuses_a_reference_that_is_not_strict(tmp_path, monkeypatch
     tool = _tool()
     monkeypatch.setattr(tool, 'solve', _fake_solve('mass_only'))
     _fake_tables(tmp_path, monkeypatch)
-    with pytest.raises(AssertionError, match='first'):
+    with pytest.raises(RuntimeError, match="first: the reference solve accepted 'mass_only'"):
         tool.write(tmp_path / 'ref.json')
     assert not (tmp_path / 'ref.json').exists()
 

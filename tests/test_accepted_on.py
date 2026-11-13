@@ -2239,6 +2239,26 @@ def test_the_secant_steps_above_2_tolerances_until_a_secant_step_does_not_shrink
 @pytest.mark.accept_solves
 @pytest.mark.usefixtures('no_check')
 @pytest.mark.timeout(900)
+def test_a_radius_guess_that_is_not_finite_stops_the_solve(monkeypatch):
+    """A secant step that gives a NaN radius stops the solve with StructureSolveError that
+    names the outer iteration and the radius."""
+    tol = 1e-4
+    monkeypatch.setattr(zs, '_secant_radius', lambda *a: float('nan'))
+    with pytest.raises(zs.StructureSolveError, match=r'outer iteration \d+: radius guess nan'):
+        _analytic_ramp(
+            linear=1.0,
+            factor=lambda k: 1.0 - 5.0 * tol,
+            tolerance_outer=tol,
+            max_iterations_outer=8,
+            wall_timeout=WALL,
+            _secant_tail=True,
+        )
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.usefixtures('no_check')
+@pytest.mark.timeout(900)
 def test_a_ramp_without_the_secant_key_takes_no_secant_step(monkeypatch):
     """A Picard ramp that main did not start (no ``_secant_tail``) keeps the cube-root rule:
     its full-adiabat passes 5, 5 and 4 tolerances off the mass call no secant."""
