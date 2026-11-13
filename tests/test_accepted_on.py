@@ -2494,6 +2494,8 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
     plot. See ``docs/Validation/hydrostatic_structure.md``."""
     _need_paleos()
     first, p1, _, lag1 = _grid_main(GRID_CMF95)
+    nudged = {**GRID_CMF95, 'planet_mass': GRID_CMF95['planet_mass'] * (1 + 2e-12)}
+    first_nudged, _, _, lag_nudged = _grid_main(nudged)
     ref1 = _grid_main({**GRID_CMF95, **REF_TOL})[0]
     resolve = {**GRID_CMF95, **GRID_CMF95_RESOLVE}
     warm = dict(
@@ -2507,6 +2509,7 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
     ref2 = _grid_main({**resolve, **REF_TOL})[0]
     for r, flag in (
         (first, False),
+        (first_nudged, False),
         (ref1, False),
         (seeded, True),
         (plain, False),
@@ -2514,14 +2517,19 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
     ):
         assert r['converged'] and r['accepted_on'] == 'strict' and r['adiabat_seeded'] is flag
         assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
-    off = [_off_ref(first, ref1), _off_ref(seeded, ref2), _off_ref(plain, ref2)]
+    off = [
+        _off_ref(first, ref1),
+        _off_ref(first_nudged, ref1),
+        _off_ref(seeded, ref2),
+        _off_ref(plain, ref2),
+    ]
     print('vs REF (dT, dR, dPc, dRc, dPcmb):', off, 'seeded vs plain:', _off_ref(seeded, plain))
-    print('lags (CMB node, mantle, top node) [K]:', lag1, lag2, lag3)
+    print('lags (CMB node, mantle, top node) [K]:', lag1, lag_nudged, lag2, lag3)
     p_cmb_bound = 2 * GRID_CMF95['newton_tol'] / (1.0 - GRID_CMF95['core_mass_fraction'])
     for dT, dR, dPc, dRc, dPcmb in off:
         assert dT <= 1.0 and abs(dR) <= 2e-4 and abs(dPc) <= 2e-4
         assert abs(dRc) <= 2e-4 and abs(dPcmb) <= p_cmb_bound
-    for lag in (lag1, lag2, lag3):
+    for lag in (lag1, lag_nudged, lag2, lag3):
         assert lag[0] <= 6.0 and lag[1] <= 1.0
     assert lag2[2] <= 25.0 and lag3[2] <= 25.0
     dT, dR, *_ = _off_ref(seeded, plain)
