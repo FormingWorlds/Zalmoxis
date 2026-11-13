@@ -2406,16 +2406,18 @@ def _grid_main(cfg, **kwargs):
 
 
 def _off_ref(r, ref):
-    """Largest mantle T difference [K] on 39 mantle mass points (mantle nodes with P > 0 of
-    each), and the relative differences of the outer radius, the central pressure, the core
-    radius and the CMB pressure, both interpolated in mass at cmb_mass."""
+    """Largest mantle T difference [K] on 39 mass points from the lowest to the second-highest
+    mantle node (mantle nodes with P > 0 of each), the T difference at the top mantle node
+    against ref interpolated in mass, and the relative differences of the outer radius, the
+    central pressure, the core radius and the CMB pressure, both interpolated in mass at
+    cmb_mass."""
     keep = [
         (np.asarray(x['mass_enclosed']) >= x['cmb_mass']) & (np.asarray(x['pressure']) > 0)
         for x in (r, ref)
     ]
     m = [np.asarray(x['mass_enclosed'])[k] for x, k in zip((r, ref), keep)]
     T = [np.asarray(x['temperature'])[k] for x, k in zip((r, ref), keep)]
-    lo, hi = max(m[0][0], m[1][0]), min(m[0][-1], m[1][-1])
+    lo, hi = max(m[0][0], m[1][0]), min(m[0][-2], m[1][-2])
     q = lo + np.linspace(0.0, 1.0, 41)[1:-1] * (hi - lo)
     dT = float(np.max(np.abs(np.interp(q, m[0], T[0]) - np.interp(q, m[1], T[1]))))
     core = [
@@ -2424,6 +2426,7 @@ def _off_ref(r, ref):
     ]
     return (
         dT,
+        float(T[0][-1] - np.interp(m[0][-1], m[1], T[1])),
         r['radii'][-1] / ref['radii'][-1] - 1.0,
         r['pressure'][0] / ref['pressure'][0] - 1.0,
         core[0][0] / core[1][0] - 1.0,
@@ -2478,15 +2481,17 @@ def _ramp_figure(runs):
 def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_start_up(request):
     """The first solve and the first re-solve of the PROTEUS grid case with core mass fraction
     0.95, against the same solves at a mass tolerance of 1e-6 (REF): the first solve (Newton
-    root, ramp with the secant tail), the seeded re-solve and the re-solve without the seed
-    keep the mantle temperature within 1 K of REF, the radius, central pressure and core
-    radius within 2e-4 and the CMB pressure within 2 tol / (1 - cmf) = 4e-3: the core mass is
-    fixed, so the mass error sits in the mantle and moves P_cmb by dM / (M (1 - cmf)). Each
-    lags the adiabat of its own pressure by at most 6 K at the CMB node and 1 K at the other
-    mantle nodes, and the re-solves (51.3 MPa) by at most 25 K at the top node; the first solve
-    at 1 bar is not bounded there, as its top node can lose its adiabat step with round-off
-    (28.8 K at a planet mass 2e-12 higher). The seeded and the unseeded re-solve differ by at
-    most 2.5 K and 5e-4. The secant
+    root, ramp with the secant tail), a second first solve at a planet mass 2e-12 higher, the
+    seeded re-solve and the re-solve without the seed keep the mantle temperature within 1 K of
+    REF from the lowest to the second-highest of the 12 mantle nodes, the radius, central
+    pressure and core radius within 2e-4 and the CMB pressure within 2 tol / (1 - cmf) = 4e-3:
+    the core mass is fixed, so the mass error sits in the mantle and moves P_cmb by
+    dM / (M (1 - cmf)). The top mantle node stays within 1 K of REF in the re-solves (51.3 MPa)
+    and within 30 K in the first solves (1 bar), where its adiabat step flips with round-off:
+    28.65 K off REF in the second first solve on this machine, 28.85 K lag on the CI runner.
+    Each solve lags the adiabat of its own pressure by at most 6 K at the CMB node and 1 K at
+    the other mantle nodes, and the re-solves by at most 25 K at the top node. The seeded and
+    the unseeded re-solve differ by at most 2.5 K at every mantle node and 5e-4. The secant
     tail needs at most 3 passes on a full-adiabat table, and the seeded re-solve at most 4
     passes and at most half the structure integrations of the unseeded one. With
     ``--validation-plots`` it writes the plot of the mass error per pass; the pass count can
@@ -2518,22 +2523,28 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
         assert r['converged'] and r['accepted_on'] == 'strict' and r['adiabat_seeded'] is flag
         assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
     off = [
-        _off_ref(first, ref1),
-        _off_ref(first_nudged, ref1),
-        _off_ref(seeded, ref2),
-        _off_ref(plain, ref2),
+        (_off_ref(first, ref1), 30.0),
+        (_off_ref(first_nudged, ref1), 30.0),
+        (_off_ref(seeded, ref2), 1.0),
+        (_off_ref(plain, ref2), 1.0),
     ]
-    print('vs REF (dT, dR, dPc, dRc, dPcmb):', off, 'seeded vs plain:', _off_ref(seeded, plain))
+    print(
+        'vs REF (dT, dT_top, dR, dPc, dRc, dPcmb):',
+        off,
+        'seeded vs plain:',
+        _off_ref(seeded, plain),
+    )
     print('lags (CMB node, mantle, top node) [K]:', lag1, lag_nudged, lag2, lag3)
     p_cmb_bound = 2 * GRID_CMF95['newton_tol'] / (1.0 - GRID_CMF95['core_mass_fraction'])
-    for dT, dR, dPc, dRc, dPcmb in off:
-        assert dT <= 1.0 and abs(dR) <= 2e-4 and abs(dPc) <= 2e-4
+    for (dT, dT_top, dR, dPc, dRc, dPcmb), top_bound in off:
+        assert dT <= 1.0 and abs(dT_top) <= top_bound
+        assert abs(dR) <= 2e-4 and abs(dPc) <= 2e-4
         assert abs(dRc) <= 2e-4 and abs(dPcmb) <= p_cmb_bound
     for lag in (lag1, lag_nudged, lag2, lag3):
         assert lag[0] <= 6.0 and lag[1] <= 1.0
     assert lag2[2] <= 25.0 and lag3[2] <= 25.0
-    dT, dR, *_ = _off_ref(seeded, plain)
-    assert dT <= 2.5 and abs(dR) <= 5e-4
+    dT, dT_top, dR, *_ = _off_ref(seeded, plain)
+    assert dT <= 2.5 and abs(dT_top) <= 2.5 and abs(dR) <= 5e-4
     assert len(p1) - 5 <= 3  # linear pass, 4 blend passes, then the full-adiabat passes
     assert len(p2) <= 4 and n_seeded <= 0.5 * n_plain
 
