@@ -156,8 +156,12 @@ def write(path=REFERENCE):
     blocks = {}
     for key, cfg in CASES.items():
         r = solve({**cfg, **REF_TOL})
-        ok = r['converged'] and r['accepted_on'] == 'strict'
-        assert ok and (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0), key
+        blends = (r['adiabat_blend'], r['adiabat_table_blend'])
+        if not (r['converged'] and r['accepted_on'] == 'strict' and blends == (1.0, 1.0)):
+            raise RuntimeError(
+                f'{key}: the reference solve accepted {r["accepted_on"]!r} at blends {blends} '
+                f'(converged {r["converged"]}); a reference must be strict on the full adiabat'
+            )
         blocks[key] = {k: np.asarray(r[k], float).tolist() for k in KEYS}
         blocks[key]['cmb_mass'] = float(r['cmb_mass'])
     pkg, files = loaded_sources()

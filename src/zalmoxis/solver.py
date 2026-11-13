@@ -2770,7 +2770,11 @@ def _solve(
                 )
                 _secant_err = err if radius_guess != R_cube else None  # a fallback arms nothing
             _secant_prev = (R_pass, calculated_mass) if full_table else None
-            assert np.isfinite(radius_guess) and radius_guess > 0, radius_guess
+            if not (np.isfinite(radius_guess) and radius_guess > 0):
+                raise StructureSolveError(
+                    f'outer iteration {outer_iter}: radius guess {radius_guess} m is not a '
+                    'finite positive radius'
+                )
 
         relative_diff_outer_mass = np.abs((calculated_mass - planet_mass) / planet_mass)
 
