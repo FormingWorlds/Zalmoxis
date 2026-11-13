@@ -30,6 +30,7 @@ ROOT = Path(__file__).resolve().parents[2]
 REFERENCE = ROOT / 'tests' / 'data' / 'grid_start_up_reference.json'
 KEYS = ('radii', 'pressure', 'temperature', 'mass_enclosed')
 REFRESH = 'python -m tools.validation.grid_start_up_reference'
+GENERATED = {'_version.py'}  # written at install time with the commit in it
 
 GRID_CMF95 = {
     'planet_mass': 4.1804e24,
@@ -102,7 +103,8 @@ def source_hash(files, root):
 
 
 def loaded_sources():
-    """(package folder, sorted paths below it) of every zalmoxis module loaded now."""
+    """(package folder, sorted paths below it) of every zalmoxis module loaded now, without
+    the files the install generates."""
     import zalmoxis
 
     pkg = Path(zalmoxis.__file__).resolve().parent
@@ -111,7 +113,7 @@ def loaded_sources():
         for name, m in list(sys.modules.items())
         if name.split('.')[0] == 'zalmoxis' and getattr(m, '__file__', None)
     }
-    return pkg, sorted(files)
+    return pkg, sorted(files - GENERATED)
 
 
 def dump_compact(obj, path):
