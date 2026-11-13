@@ -2021,6 +2021,30 @@ def _mean_core_T(r):
     return float(np.trapezoid(T[core], m[core]) / m[core][-1])
 
 
+def _core_T_off(r, ref):
+    """(T - REF at the last core node, largest |T - REF| over the other core nodes) [K], REF
+    interpolated to the masses of the core nodes of ``r``."""
+    m, T = np.asarray(r['mass_enclosed']), np.asarray(r['temperature'])
+    core = np.flatnonzero(m < r['cmb_mass'])
+    dT = T[core] - np.interp(m[core], ref['mass_enclosed'], ref['temperature'])
+    return float(dT[-1]), float(np.abs(dT[:-1]).max())
+
+
+def _core_T_bounded(r, ref):
+    """The core bounds of the grid start-up tests: mean within 10 K of REF, last core node
+    within 700 K, the other core nodes within 1 K."""
+    last, other = _core_T_off(r, ref)
+    print(
+        'core vs REF (mean, last node, other nodes) [K]:',
+        _mean_core_T(r) - _mean_core_T(ref),
+        last,
+        other,
+    )
+    return (
+        abs(_mean_core_T(r) - _mean_core_T(ref)) <= 10.0 and abs(last) <= 700.0 and other <= 1.0
+    )
+
+
 def _mantle_lag(r, adiabat):
     """|T - adiabat| at the mantle nodes of ``r`` with a positive pressure."""
     m, P = np.asarray(r['mass_enclosed']), np.asarray(r['pressure'])
@@ -2481,7 +2505,9 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
     Each solve lags the adiabat of its own pressure by at most 6 K at the CMB node and 1 K at
     the other mantle nodes, and the re-solves by at most 25 K at the top node. The seeded and
     the unseeded re-solve differ by at most 2.5 K at the 39 mass points and at the top node,
-    and 5e-4 in radius. The secant tail needs at most 3 passes on a full-adiabat table, and
+    and 5e-4 in radius. In all 3 solves the mass-weighted mean core temperature stays within
+    10 K of REF, the last core node within 700 K (it reads the edge of the mantle T(P) table)
+    and the other core nodes within 1 K. The secant tail needs at most 3 passes on a full-adiabat table, and
     the seeded re-solve at most 4 passes and at most half the structure integrations of the
     unseeded one. With
     ``--validation-plots`` it writes the plot of the mass error per pass; the pass count can
@@ -2528,9 +2554,9 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
     assert lag2[2] <= 25.0 and lag3[2] <= 25.0
     dT, dT_top, dR, *_ = _off_ref(seeded, plain)
     assert dT <= 2.5 and abs(dT_top) <= 2.5 and abs(dR) <= 5e-4
-    # the last core node reads the edge of the mantle T(P) table; the core mean stays bounded
+    # the last core node reads the edge of the mantle T(P) table; the other core nodes do not
     for r, ref in ((first, ref1), (seeded, ref2), (plain, ref2)):
-        assert abs(_mean_core_T(r) - _mean_core_T(ref)) <= 10.0
+        assert _core_T_bounded(r, ref)
     assert len(p1) - 5 <= 3  # linear pass, 4 blend passes, then the full-adiabat passes
     assert len(p2) <= 4 and n_seeded <= 0.5 * n_plain
 
@@ -2557,8 +2583,9 @@ def test_a_first_solve_at_a_planet_mass_2e12_higher_keeps_the_stored_reference()
     the grid start-up test against the stored REF: strict on the full adiabat, mantle
     temperature within 1 K up to the second-highest mantle node (the 1-atm top node is not
     compared), radius, central pressure and core radius within 2e-4, CMB pressure within
-    2 tol / (1 - cmf) = 4e-3, and lags of at most 6 K at the CMB node and 1 K at the other
-    mantle nodes. It runs in the nightly job of the stored reference."""
+    2 tol / (1 - cmf) = 4e-3, lags of at most 6 K at the CMB node and 1 K at the other
+    mantle nodes, and the core bounds (mean 10 K, last core node 700 K, other core nodes
+    1 K). It runs in the nightly job of the stored reference."""
     _need_paleos()
     nudged = {**GRID_CMF95, 'planet_mass': GRID_CMF95['planet_mass'] * (1 + 2e-12)}
     r, _, _, lag = _grid_main(nudged)
@@ -2571,7 +2598,7 @@ def test_a_first_solve_at_a_planet_mass_2e12_higher_keeps_the_stored_reference()
     assert dT <= 1.0
     assert max(abs(dR), abs(dPc), abs(dRc)) <= 2e-4 and abs(dPcmb) <= bound
     assert lag[0] <= 6.0 and lag[1] <= 1.0
-    assert abs(_mean_core_T(r) - _mean_core_T(grid_ref.load()['first'])) <= 10.0
+    assert _core_T_bounded(r, grid_ref.load()['first'])
 
 
 @pytest.mark.slow
