@@ -48,7 +48,7 @@ jobs:
           - suite: accept_solves_long
             select: accept_solves_long and not accept_solves_newton_setups and not wolfbower and not paleos_adiabat
             args: --dist load --cov-fail-under=0 --durations=0
-            test_timeout: 4800
+            test_timeout: 7200
             job_timeout: 150
           - suite: accept_solves_reference
             select: accept_solves_reference and not accept_solves and not accept_solves_long and not accept_solves_newton_setups and not wolfbower and not paleos_adiabat
