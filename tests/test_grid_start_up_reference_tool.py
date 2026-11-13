@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 
 import numpy as np
 import pytest
@@ -130,3 +131,110 @@ def test_the_source_hash_follows_the_bytes_and_not_the_order(tmp_path):
     assert h == _tool().source_hash(['b.py', 'a.py'], tmp_path)
     (tmp_path / 'b.py').write_text('y = 3\n')
     assert _tool().source_hash(['a.py', 'b.py'], tmp_path) != h
+
+
+def _fake_solve(label='strict'):
+    """A stand-in for ``solve``: a 3-node structure with the accept label ``label``."""
+
+    def solve(cfg, **kwargs):
+        n = np.array([0.0, 0.5, 1.0])
+        return {
+            'converged': True,
+            'accepted_on': label,
+            'adiabat_blend': 1.0,
+            'adiabat_table_blend': 1.0,
+            'radii': n * 6.0e6,
+            'pressure': 3.0e11 * (1.0 - n) + 1.0e5,
+            'temperature': 6000.0 - 2000.0 * n,
+            'mass_enclosed': n * cfg['planet_mass'],
+            'cmb_mass': cfg['core_mass_fraction'] * cfg['planet_mass'],
+        }
+
+    return solve
+
+
+def _fake_tables(tmp_path, monkeypatch):
+    """Material dictionaries of the 2 case materials on small table files in ``tmp_path``."""
+    import zalmoxis.config
+
+    dicts = {}
+    for name in ('PALEOS:iron', 'PALEOS:MgSiO3'):
+        f = tmp_path / f'{name.split(":")[1]}.dat'
+        f.write_text(f'{name} table\n')
+        dicts[name] = {'eos_file': str(f), 'format': 'paleos_unified'}
+    monkeypatch.setattr(zalmoxis.config, 'load_material_dictionaries', lambda: dicts)
+    return dicts
+
+
+def test_the_writer_stores_both_structures_with_tables_and_source(tmp_path, monkeypatch):
+    """write solves both cases at REF_TOL and stores the structures, the table md5s, the
+    commit and the hash of the loaded modules; the reader reads the file back."""
+    tool = _tool()
+    seen = []
+    solve = _fake_solve()
+    monkeypatch.setattr(tool, 'solve', lambda cfg: seen.append(cfg) or solve(cfg))
+    dicts = _fake_tables(tmp_path, monkeypatch)
+    ref = tool.write(tmp_path / 'ref.json')
+    assert [c['tolerance_outer'] for c in seen] == [1e-6, 1e-6]
+    assert [c['planet_mass'] for c in seen] == [4.1804e24, 4.177602725330534e24]
+    assert (
+        ref['tables']['PALEOS:iron']['md5'] == hashlib.md5(b'PALEOS:iron table\n').hexdigest()
+    )
+    assert len(ref['commit']) == 40 and 'config.py' in ref['source']['files']
+    pkg, files = tool.loaded_sources()
+    assert ref['source']['sha256'] == tool.source_hash(ref['source']['files'], pkg)
+    back = tool.load(tmp_path / 'ref.json', dicts)
+    np.testing.assert_array_equal(
+        back['resolve']['mass_enclosed'], np.array([0.0, 0.5, 1.0]) * 4.177602725330534e24
+    )
+    assert back['first']['cmb_mass'] == 0.95 * 4.1804e24
+
+
+def test_the_writer_refuses_a_reference_that_is_not_strict(tmp_path, monkeypatch):
+    """A reference solve accepted on any other label stops the writer and writes no file."""
+    tool = _tool()
+    monkeypatch.setattr(tool, 'solve', _fake_solve('mass_only'))
+    _fake_tables(tmp_path, monkeypatch)
+    with pytest.raises(AssertionError, match='first'):
+        tool.write(tmp_path / 'ref.json')
+    assert not (tmp_path / 'ref.json').exists()
+
+
+def test_the_command_writes_the_file_it_names(tmp_path, monkeypatch, capsys):
+    """main --out writes there and prints the commit and the source hash."""
+    tool = _tool()
+    monkeypatch.setattr(tool, 'solve', _fake_solve())
+    _fake_tables(tmp_path, monkeypatch)
+    tool.main(['--out', str(tmp_path / 'cli.json')])
+    ref = json.loads((tmp_path / 'cli.json').read_text())
+    assert capsys.readouterr().out.split() == [ref['commit'], ref['source']['sha256']]
+
+
+def test_the_reader_takes_the_zalmoxis_dictionaries_by_default(tmp_path, monkeypatch):
+    """Without dictionaries the reader checks the tables that load_material_dictionaries
+    names."""
+    import zalmoxis.config
+
+    path, dicts = _write(tmp_path, stored_md5='f' * 32)
+    monkeypatch.setattr(zalmoxis.config, 'load_material_dictionaries', lambda: dicts)
+    with pytest.raises(ValueError, match='f' * 32):
+        _tool().load(path)
+
+
+def test_the_solve_passes_the_grid_melting_curves_and_input_folder(monkeypatch):
+    """solve calls main with the config, the PALEOS liquidus and 0.8 of it as the solidus
+    (the mushy zone factor of the case), the input folder and the extra keywords."""
+    import zalmoxis.solver as zs
+    from zalmoxis import get_zalmoxis_root
+    from zalmoxis.melting_curves import paleos_liquidus
+
+    got = {}
+    monkeypatch.setattr(zs, 'main', lambda *a, **k: got.update(a=a, k=k) or 'result')
+    cfg = {'planet_mass': 1.0}
+    assert _tool().solve(cfg, adiabat_seed='seed') == 'result'
+    c, _, (solidus, liquidus), inp = got['a']
+    assert c is cfg and got['k'] == {'adiabat_seed': 'seed'}
+    assert inp == os.path.join(get_zalmoxis_root(), 'input')
+    P = np.array([1.0e9, 50.0e9])
+    np.testing.assert_allclose(liquidus(P), paleos_liquidus(P))
+    np.testing.assert_allclose(solidus(P), 0.8 * paleos_liquidus(P), rtol=1e-12)
