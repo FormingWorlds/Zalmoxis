@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -308,6 +309,34 @@ def test_the_time_of_a_failed_seeded_solve_counts_on_every_path(
     r = zs.main(cfg, {}, None, '/tmp', adiabat_seed=_seed_main())
     assert r['total_time'] == pytest.approx(total, rel=1e-12)
     assert r['converged'] is (newton_converged is not False)
+
+
+@pytest.mark.parametrize(
+    'solver, total', [('newton', 46.0), ('picard', 41.0)], ids=['newton', 'picard']
+)
+def test_a_seeded_solve_that_raises_solves_again_without_the_seed(
+    spies, monkeypatch, caplog, solver, total
+):
+    """The seeded solve raises StructureSolveError after 40 s: main logs it at INFO, solves
+    again without the seed (Newton root and ramp, or Picard) and counts the 40 s."""
+    clock, plain = {'t': 100.0}, zs._solve
+
+    def solve(cp, *a, **k):
+        if 'adiabat_seed' not in k:
+            return plain(cp, *a, **k)
+        spies['solve'].append((cp, k))
+        clock['t'] += 40.0
+        raise zs.StructureSolveError('non-finite profile')
+
+    monkeypatch.setattr(zs, '_solve', solve)
+    monkeypatch.setattr(zs, 'time', SimpleNamespace(time=lambda: clock['t']))
+    cfg = _adiabatic_cfg(outer_solver=solver, num_layers=2)
+    with caplog.at_level(logging.INFO, logger='fwl.zalmoxis.solver'):
+        r = zs.main(cfg, {}, None, '/tmp', adiabat_seed=_seed_main())
+    assert len(spies['solve']) == 2 and 'adiabat_seed' not in spies['solve'][1][1]
+    assert len(spies['newton']) == (solver == 'newton')
+    assert r['accepted_on'] == 'strict' and r['total_time'] == pytest.approx(total, rel=1e-12)
+    assert 'seeded solve raised' in caplog.text and 'non-finite profile' in caplog.text
 
 
 def test_a_refused_seed_leaves_the_newton_ramp_as_without_a_seed(spies):
