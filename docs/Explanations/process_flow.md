@@ -164,7 +164,7 @@ Setup 10 (PALEOS 1 on the JAX path) ends padded, since $P(R)$ near the stop scat
 Every padded profile has one padded point, the outermost.
 Setup 24 (PALEOS 3-layer ice 1) returns no profile: a trial central pressure gives a non-finite profile, and the solve raises `StructureSolveError`.
 This setup fails in 2 of 6 starts whose planet mass differs by $k \times 10^{-13}$ of its value ($k$ = 0 to 5), with and without the root refinement.
-The 8 reached profiles miss $P_{\mathrm{target}}$ by at most $0.25 P_{\mathrm{target}}$ (median $0.067 P_{\mathrm{target}}$).
+The 8 reached profiles miss $P_{\mathrm{target}}$ by at most $0.25 P_{\mathrm{target}}$ (median $0.048 P_{\mathrm{target}}$).
 
 ![Surface pressure miss of the accepted profile for 26 solver setups](../assets/validation/pressure_root_sweep.svg#only-light){ width="80%" }
 ![Surface pressure miss of the accepted profile for 26 solver setups](../assets/validation/pressure_root_sweep_dark.svg#only-dark){ width="80%" }

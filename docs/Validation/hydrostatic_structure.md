@@ -347,7 +347,7 @@ On these paths $P(R)$ varies irregularly from one trial central pressure to the 
 
 **How to read the plot.** The x-axis is the number of the setup, for 26 setups built from `input/default.toml` and numbered from 0 to 25. The y-axis is $\lvert P(R) - P_t \rvert / P_t$ of the accepted profile, on a log scale. Circles are reached profiles, squares are padded profiles (at 1, since $P(R) = 0$), and a cross above the cap marks a setup without an accepted profile. The dashed line is the cap of $P_t$. Setups 4, 9, 10, 13, 14 and 25 use the Newton outer solver at `relative_tolerance` $10^{-9}$, and the test asserts only these 6; the other 20 setups are shown for comparison; [padded accepts](../Explanations/process_flow.md#padded-accepts) lists every setup. A pass means that every Newton setup is a circle at or below the dashed line. Only setups 9, 10, 14 and 25 may be squares, and only under the rule above.
 
-**Known limit.** Whether a profile ends padded depends on round-off, as the 3 starts above show. The miss of a reached profile can also change, so another platform can give other values. In the plotted run the 4 reached Newton setups 4, 13, 14 and 25 miss by 0.046, 0.18, 0.12 and 0.25 $P_t$. The test skips when the PALEOS tables are not under `data/`.
+**Known limit.** Whether a profile ends padded depends on round-off, as the 3 starts above show. The miss of a reached profile can also change, so another platform can give other values. In the plotted run the 4 reached Newton setups 4, 13, 14 and 25 miss by 0.046, 0.18, 0.050 and 0.25 $P_t$. The test skips when the PALEOS tables are not under `data/`.
 
 ??? info "Test details"
     - Reference: the boundary condition $P(R) = P_t$.

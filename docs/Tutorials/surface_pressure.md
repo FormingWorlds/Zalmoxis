@@ -211,7 +211,7 @@ The outer solver finds the radius at which the computed mass equals the planet m
 - `relative_tolerance` is the relative tolerance of the integrator of the structure equations.
 - The label `newton_tol` means that the Newton outer solver accepted the structure on its mass error. In an adiabatic temperature mode, as in setup 9, the Newton root only seeds the Picard blend ramp to the adiabat, so the structure gets a Picard label such as `strict`.
 
-Setup 9 takes about 9 minutes.
+Setup 9 takes 8 to 20 minutes, since its number of outer passes changes with round-off.
 
 ```console
 mkdir -p output/sweep
@@ -240,7 +240,7 @@ setup 8 PALEOS 1 (default.toml): strict, P(R) = 0 Pa, miss 1.000 P_t, padded nod
 setup 9 PALEOS 1, Newton: strict, P(R) = 0 Pa, miss 1.000 P_t, padded nodes 1
 ```
 
-The command `python -m tools.validation.pressure_root_sweep run <dir> -j 2` runs all 26 setups; their solves took 3554 s in total on a workstation, so about 30 minutes with 2 processes.
+The command `python -m tools.validation.pressure_root_sweep run <dir> -j 2` runs all 26 setups; their solves took 4391 s in total on a workstation, so about 37 minutes with 2 processes.
 The command `python -m tools.validation.pressure_root_sweep plot <dir> --assets <dir>` draws them into `<dir>`.
 It needs the `proteus_mpl` package and a record of every setup.
 Without `--assets` it writes over the figures under `docs/assets/validation/`.
@@ -257,7 +257,7 @@ If you need $P(R) = P_t$, these settings matter:
 - **The outer solver.** `outer_solver = "newton"` needs `relative_tolerance` at or below `1e-7`; it raises `ValueError` otherwise.
   Setup 9 uses `relative_tolerance = 1e-9` and `absolute_tolerance = 1e-10`.
   In this adiabatic setup its Newton root seeds the Picard blend ramp, and on our run it ended padded like the default Picard solve; whether it ends padded depends on round-off.
-  PROTEUS uses the Newton outer solver by default. It takes longer: about 9 minutes here, against 1.4 minutes for the default Picard solve.
+  PROTEUS uses the Newton outer solver by default. It takes longer: 8 to 20 minutes here, against 1.4 minutes for the default Picard solve.
 - **`pressure_tolerance`.** This is the accept test of the pressure solve, $\lvert P(R) - P_t \rvert$ below it. A value below $P_t$ makes the test refuse a padded profile, but the outer loop can still accept the structure on its mass test, as the block below shows.
 - **The integration tolerances** (`relative_tolerance`, `absolute_tolerance`). They change where the integration stops, and so whether the trials near the root pad. Setup 9 changes them together with the outer solver, so this tutorial does not separate the two effects.
 
