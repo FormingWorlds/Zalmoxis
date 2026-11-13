@@ -16,6 +16,7 @@ from tests.test_accepted_on import (  # noqa: F401
     EXTERNAL_T,
     M_T,
     _adiabatic_cfg,
+    _full,
     _inner,
     canned,
     no_check,
@@ -213,12 +214,6 @@ def test_any_seed_content_is_refused_or_valid(r, P, m, keep):
 
 
 # main: routing of a seed (canned _solve and _solve_newton_outer)
-
-
-def _full(R=7.0e6, t=1.0):
-    r = {**_inner(R, accepted_on='strict'), 'adiabat_computed': True, 'total_time': t}
-    r.update(adiabat_blend=1.0, adiabat_table_blend=1.0)
-    return r
 
 
 def _newton():

@@ -73,6 +73,13 @@ def _inner(R, *, pressure=True, density=True, eos=True, accepted_on='max_iter', 
     }
 
 
+def _full(R=7.0e6, t=1.0):
+    """A strict inner result at radius R on a full-adiabat table that took t seconds."""
+    r = {**_inner(R, accepted_on='strict'), 'adiabat_computed': True, 'total_time': t}
+    r.update(adiabat_blend=1.0, adiabat_table_blend=1.0)
+    return r
+
+
 def _newton(cp_over=(), **flags):
     cp = {
         'planet_mass': M_T,
@@ -1284,8 +1291,7 @@ def test_newton_with_an_external_temperature_returns_the_newton_result(
     newton.update(
         newton_used_brentq=False, pressure=np.array([3.6e11, 0.0]), density=np.ones(2)
     )
-    picard = {**_inner(7.0e6, accepted_on='strict'), 'adiabat_computed': True}
-    picard.update(adiabat_blend=1.0, adiabat_table_blend=1.0, total_time=1.0)
+    picard = _full()
     ramps = []
     monkeypatch.setattr(zs, '_solve_newton_outer', lambda *a, **k: newton)
     monkeypatch.setattr(zs, '_solve', lambda *a, **k: ramps.append(1) or dict(picard))
@@ -1322,8 +1328,7 @@ def test_a_retry_skip_takes_only_the_full_adiabat(
     first = {**_inner(7.0e6), 'converged': False, 'accepted_on': None}
     first.update(mass_error_at_accept=0.01, adiabat_computed=computed, adiabat_blend=blend)
     first['adiabat_table_blend'] = table
-    second = {**_inner(7.0e6, accepted_on='strict'), 'adiabat_computed': True}
-    second.update(adiabat_blend=1.0, adiabat_table_blend=1.0)
+    second = _full()
     results = [first, second]
     monkeypatch.setattr(zs, '_solve', lambda *a, **k: dict(results.pop(0)))
     r = zs.main(_adiabatic_cfg(), {}, None, '/tmp')
@@ -1342,8 +1347,7 @@ def test_the_retry_runs_on_a_600_s_clock_whatever_the_configured_clock(monkeypat
         'accepted_on': None,
         'mass_error_at_accept': 0.5,
     }
-    second = {**_inner(7.0e6, accepted_on='strict'), 'adiabat_computed': True}
-    second.update(adiabat_blend=1.0, adiabat_table_blend=1.0)
+    second = _full()
     results, clocks = [first, second], []
 
     def solve(cfg, *a, **k):
@@ -1378,8 +1382,7 @@ def test_newton_continues_with_the_blend_ramp_from_its_profile(
         'newton_used_brentq': False,
     }
     newton.update(books)
-    picard = {**_inner(7.0e6, accepted_on='strict'), 'adiabat_computed': True}
-    picard.update(adiabat_blend=1.0, adiabat_table_blend=1.0, total_time=1.0)
+    picard = _full()
     seeds = []
 
     def solve(cp, *args, **kwargs):
@@ -1424,8 +1427,7 @@ def test_the_newton_hand_off_and_its_retry_run_at_the_newton_mass_tolerance(
     newton.update(newton_n_iter=4, newton_history=[], newton_used_brentq=False)
     failed = {**_inner(7.1e6), 'converged': False, 'accepted_on': None, 'total_time': 50.0}
     failed.update(converged_density=False, adiabat_computed=True, adiabat_blend=0.5)
-    picard = {**_inner(7.0e6, accepted_on='strict'), 'total_time': 30.0}
-    picard.update(adiabat_computed=True, adiabat_blend=1.0, adiabat_table_blend=1.0)
+    picard = _full(t=30.0)
     results, configs = [failed, picard], []
 
     def solve(cp, *args, **kwargs):
@@ -2377,8 +2379,7 @@ def _grid_main(cfg, **kwargs):
     passes = []
     for R, M in calls[starts[-1] :]:
         passes = passes[:-1] + [(R, M)] if passes and passes[-1][0] == R else passes + [(R, M)]
-    m, P = np.asarray(r['mass_enclosed']), np.asarray(r['pressure'])
-    lag = np.abs(np.asarray(r['temperature']) - last['T'])[(m >= r['cmb_mass']) & (P > 0)]
+    lag = _mantle_lag(r, last['T'])
     assert lag.max() == pytest.approx(r['adiabat_self_consistency'], rel=1e-12)
     return r, passes, len(calls), (lag[0], lag[1:-1].max(), lag[-1])
 
