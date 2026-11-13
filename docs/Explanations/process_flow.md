@@ -229,6 +229,7 @@ A trapezoid integral of the returned `density` differs from `mass_enclosed[-1]` 
 ### Full-adiabat rule
 
 When must a result carry the full adiabat, and what happens when it does not?
+In short: in an adiabatic temperature mode the solve accepts a result only when its temperature is the full adiabat, read from a table built on a full-adiabat pass, and it refuses and retries a result short of that.
 The rule applies when all of these hold:
 
 - the temperature mode is `adiabatic` or `adiabatic_from_cmb`;
@@ -245,12 +246,6 @@ Then a test passes only on a result with the full adiabat:
 Each pass builds its table on the pressure of the pass before it.
 So the first pass at blend 1 reads the table of the blend-0.75 pass, and the solve does not accept it.
 
-**How far the result is from its own adiabat.** A pass on a table of blend 1 still reads the pressure of the pass before it.
-Its mantle temperature therefore differs from the adiabat of its own pressure by the change of the structure in the last pass, which the mass tolerance bounds at the inner mantle nodes.
-The tolerance does not bound the top node: the adiabat takes no step from or to a node below $10^5$ Pa, so with a surface pressure near 1 atm the top node can differ by one adiabatic step of the top shell.
-[Newton and Picard on the PROTEUS initial structure](../Validation/hydrostatic_structure.md#newton-and-picard-on-the-proteus-initial-structure) gives the measured size of this step.
-`adiabat_self_consistency` gives the largest difference, in K, between the returned mantle temperature and the adiabat recomputed on the returned structure; it is None below blend 1 and when no mantle node has a positive pressure.
-
 **A result short of the full adiabat.** When a test would accept such a result, the solve refuses it:
 
 - the result has `converged = False`, `converged_mass = False` and `accepted_on` None;
@@ -262,6 +257,15 @@ The tolerance does not bound the top node: the adiabat takes no step from or to 
 So `main` continues with the blend ramp, seeded with the radius, the central pressure, the density and the radii of the Newton profile, at the mass tolerance `min(tolerance_outer, newton_tol)`.
 The Picard tests then accept the result and give its label, and the result keeps `newton_n_iter`, `newton_history` and `newton_used_brentq`.
 The ramp ends with secant steps on the radius, and a re-solve of the same planet can skip the Newton root and the ramp (next section).
+
+### How close an accepted result is to its adiabat
+
+How far is the temperature of an accepted result from the adiabat of its own structure?
+A pass on a table of blend 1 still reads the pressure of the pass before it.
+Its mantle temperature therefore differs from the adiabat of its own pressure by the change of the structure in the last pass, which the mass tolerance bounds at the inner mantle nodes.
+The tolerance does not bound the top node: the adiabat takes no step from or to a node below $10^5$ Pa, so with a surface pressure near 1 atm the top node can differ by one adiabatic step of the top shell.
+[Newton and Picard on the PROTEUS initial structure](../Validation/hydrostatic_structure.md#newton-and-picard-on-the-proteus-initial-structure) gives the measured size of this step.
+`adiabat_self_consistency` gives the largest difference, in K, between the returned mantle temperature and the adiabat recomputed on the returned structure; it is None below blend 1 and when no mantle node has a positive pressure.
 
 ### Secant tail and seeded re-solve
 
@@ -280,7 +284,9 @@ $$R_{n+1} = R_n - (M_n - M_p) \frac{R_n - R_{n-1}}{M_n - M_{n-1}}.$$
 **Seeded re-solve.** `main` takes `adiabat_seed`: the `radii`, `pressure` and `mass_enclosed` of an earlier solve of the same planet.
 When the solve computes the adiabat itself, it skips the Newton root and the blend steps below 1; its first pass reads the adiabat of the seed at blend 1.
 No pass of this solve built that table, so `adiabat_table_blend` is -1.0 and no test accepts the pass.
-A seed that fails its checks is refused with a warning, and a seeded solve that does not converge runs again without it.
+A seed that fails its checks is refused with a warning.
+A seeded solve that does not converge, or that raises `StructureSolveError`, runs again without the seed, and its time counts in `total_time`.
+A radius step that gives a radius that is not finite and positive stops the solve with `StructureSolveError`, which names the outer pass and the radius.
 `adiabat_seeded` marks a result from the seed; that result has no `newton_*` keys.
 
 At a core mass fraction of 0.95 in the PROTEUS grid, the secant tail brings a mass error of 0.24 % below $10^{-4}$ in 3 full-adiabat passes; the cube-root rule needs 10.

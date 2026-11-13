@@ -67,7 +67,7 @@ The wrapper builds the Zalmoxis input dict fresh on every call from `config` and
 
 1. Build an interpolating `temperature_function(r, P)` from `interior_o.radius` and `interior_o.temp` (staggered-node T from the energetics solver), holding T constant at `T_cmb` for $r \le R_\mathrm{cmb}$ to cover the core region.
 2. Build a sorted r-indexed `temperature_arrays = (r_arr, T_arr)` tuple by reversing `interior_o.radius` to ascending order and applying an explicit `argsort` so `jnp.interp` sees a strictly increasing $r$.
-3. Atomically snapshot `zalmoxis_output.dat` to `.prev`, snapshot `dirs['spider_mesh']` to `.prev`, and snapshot the current `hf_row` structure scalars (`R_int`, `M_int`, `M_core`, `M_mantle`, `P_surf`, `R_core`, `P_center`, `rho_avg`) into a local `_saved_structure` dict.
+3. Atomically snapshot `zalmoxis_output.dat` to `.prev`, snapshot `dirs['spider_mesh']` to `.prev`, and snapshot the current `hf_row` structure scalars (`R_int`, `M_int`, `M_core`, `M_core_solve`, `M_mantle`, `P_surf`, `R_core`, `P_center`, `P_cmb`, `gravity`, `rho_avg`) into a local `_saved_structure` dict.
 4. Call `zalmoxis_solver(config, outdir, hf_row, num_spider_nodes=..., temperature_function=temperature_function, temperature_arrays=(r_arr, T_arr))`. `zalmoxis_solver` forwards the callable to Zalmoxis, or `None` in its place on JAX-viable EOS and volatile layouts with `use_jax = true`. With `use_jax = true`, Zalmoxis takes T from the arrays and ignores `temperature_function`; with `use_jax = false`, it ignores the arrays and uses `temperature_function` (see [Outer solver and JAX path](#outer-solver-and-jax-path)).
 5. On success, run the mass-anchor check `|M_int / M_int_target - 1| < 3e-3` (`_ZALMOXIS_MASS_ANCHOR_TOL`). The check tightens Zalmoxis's internal `solver_tol_outer` (default $3 \times 10^{-3}$, a numerical tolerance) to a coupling contract: the wrapper raises `RuntimeError` on violation and routes through the same fall-back path as a non-converged solve, so a too-loose-converged result never reaches the next iteration.
 6. Clear `hf_row['_structure_stale']` and update `interior_o.last_successful_struct_time` (the anchor for `update_stale_ceiling`).
@@ -104,13 +104,14 @@ Zalmoxis reads the current planet state from `hf_row`, runs its structure solve,
 | `R_int` | Top-of-mantle (interior surface) radius [m] |
 | `R_core` | CMB radius [m] |
 | `M_int` | Total interior mass [kg], reported by Zalmoxis |
-| `M_core` | Core mass enclosed at CMB [kg] |
+| `M_core` | Mass inside `R_core`, the first grid node at or above the core mass of the solve [kg] |
+| `M_core_solve` | Core mass of the solve (`cmb_mass`) [kg] |
 | `M_int_target` | The dry mass Zalmoxis was instructed to converge toward (= `mass_tot * M_earth - M_volatiles`) |
 | `gravity` | Surface gravity [m s$^{-2}$] |
 | `P_surf` | Atmospheric pressure at the structure-side top-of-mantle [bar] |
 | `P_center` | Center pressure [Pa] |
 | `P_cmb` | Core-mantle boundary pressure [Pa] |
-| `core_density` | Mass-enclosed-at-CMB / volume-enclosed-at-CMB [kg m$^{-3}$], the self-consistent core density |
+| `core_density` | `M_core` divided by the volume inside `R_core` [kg m$^{-3}$], the self-consistent core density |
 | `core_heatcap` | Either 450 J kg$^{-1}$ K$^{-1}$ (Dulong-Petit iron, when `core_heatcap = "self"`) or the configured numeric value |
 | `rho_avg` | Volume-averaged interior density [kg m$^{-3}$] |
 | `_structure_stale` | Flag consumed by `Aragog.setup_or_update_solver` to detect fall-back state |
@@ -246,10 +247,11 @@ This is the regime where the wall-time cost of Zalmoxis is most exposed; a too-t
 
 When `interior_energetics.module = "aragog"` (or `"spider"`) and `update_interval > 0`, Zalmoxis writes a fresh mesh file `zalmoxis_output.dat` (5-column TSV: `r`, `P`, `rho`, `g`, `T`) on each re-solve. Aragog reads this file inside `solver.reset()` to rebuild its mass-coordinate mesh. SPIDER reads a separately-written mesh file produced by `write_spider_mesh_file`, which includes the same columns sub-sampled to SPIDER's basic-node count.
 
-Two contracts must hold at the file handover boundary, enforced by `validate_zalmoxis_output_schema`:
+Three contracts must hold at the file handover boundary, enforced by `validate_zalmoxis_output_schema`:
 
 1. **Top-of-mantle radius equality**: `r_file[-1] == hf_row['R_int']` to relative tolerance $10^{-6}$. This is essentially exact because both come from the same `planet_radius` variable inside `zalmoxis_solver`; a violation indicates file corruption, column-swap, or truncation.
-2. **Mantle mass conservation**: $\int 4 \pi r^2 \rho \, dr$ over the mantle = `M_int - M_core` to relative tolerance $5 \times 10^{-2}$. The 5% tolerance is loose because two legitimate noise sources stack: the integrator-method gap (RK45-with-substeps versus shell-trapezoid post-write reintegration, $\sim 1$%), and `blend_mesh_files` post-modifying the file when the per-call radius shift exceeds `mesh_max_shift` (up to 5% drift between the on-disk file and the unblended scalars in `hf_row`). The tight $< 0.1$% conservation contract lives elsewhere in the wrapper's mass-anchor check.
+2. **Mantle mass**: `M_int - M_core` equals the mantle mass above `R_core` to relative tolerance $5 \times 10^{-2}$. `zalmoxis_solver` gives the accumulator value `mass_enclosed[-1] - mass_enclosed[cmb_index]` of the arrays it writes `M_int` and `M_core` from, so this contract checks those 2 writes, not the arrays or the choice of the CMB node. Without that value the check integrates $\int 4 \pi r^2 \rho \, dr$ over the file nodes. The 5% tolerance is loose because two legitimate noise sources stack: the integrator-method gap (RK45-with-substeps versus shell-trapezoid post-write reintegration, $\sim 1$%), and `blend_mesh_files` post-modifying the file when the per-call radius shift exceeds `mesh_max_shift` (up to 5% drift between the on-disk file and the unblended scalars in `hf_row`). The tight $< 0.1$% conservation contract lives elsewhere in the wrapper's mass-anchor check.
+3. **Bottom radius**: `r_file[0]` equals `hf_row['R_core']` within the mesh tolerance of Aragog, $\max(1\,\mathrm{m}, 10^{-9} (R_\mathrm{int} - R_\mathrm{core}))$.
 
 `mesh_max_shift` (default 0.05 = 5%) caps the fractional radius shift between consecutive Zalmoxis writes.
 The motivation is that SPIDER's BDF integrator and Aragog's CVODE integrator both penalise abrupt mesh changes; a 30% radius update from one iteration to the next during the rheological transition can spike `T_magma` and `Phi_global` discontinuously, kicking the entropy solver onto a wrong P-S branch.
@@ -307,7 +309,14 @@ When `global_miscibility = true`, the wrapper additionally calls `solve_miscible
 
 ## Outer solver and JAX path
 
-Zalmoxis offers two outer mass-radius solvers, `picard` and `newton`, with `newton` as the default in PROTEUS coupled runs. The Picard path is a fixed-point iteration $R_{n+1} = R_n \cdot (M_\mathrm{target} / M_n)^{1/3}$, with the scale factor clamped to $[0.5, 2.0]$ and the density update of each pass damped by a factor that starts at 0.5 and adapts to mass oscillations between 0.2 and 0.7; at the end of a blend ramp that `main` starts, the radius update takes secant steps instead (see [Secant tail and seeded re-solve](process_flow.md#secant-tail-and-seeded-re-solve)); it converges robustly on cool Earth-mass profiles but can hit a basin attractor on hot fully-molten profiles, where the iteration oscillates around the true $R$ without escaping. The Newton path uses a central-difference $\mathrm{d}M/\mathrm{d}R$ estimate combined with brentq bracketing on $f(R) = M(R) - M_\mathrm{target}$, and converges on the hot-profile cases that trap Picard. With the adiabatic temperature modes of the initial structure solve, the Newton root holds the linear first-guess temperature, so Zalmoxis continues with the blend ramp from the Newton profile and returns the full adiabat (see [process flow](process_flow.md)).
+Zalmoxis offers two outer mass-radius solvers, `picard` and `newton`, with `newton` as the default in PROTEUS coupled runs. The Picard path is a fixed-point iteration on the radius, $R_{n+1} = R_n (M_p / M_n)^{1/3}$, with the planet mass $M_p$ and the computed mass $M_n$ of pass $n$:
+
+- the scale factor $(M_p / M_n)^{1/3}$ is clamped to $[0.5, 2.0]$;
+- the density update of each pass is damped by the smaller of 2 factors, so by 0.1 to 0.5: one starts at 0.5 and adapts to mass oscillations between 0.2 and 0.7, the other starts at 0.5 and adapts to density oscillations between 0.1 and 0.5;
+- at the end of a blend ramp that `main` starts, the radius update takes secant steps instead (see [Secant tail and seeded re-solve](process_flow.md#secant-tail-and-seeded-re-solve)).
+
+It converges robustly on cool Earth-mass profiles but can hit a basin attractor on hot fully-molten profiles, where the iteration oscillates around the true $R$ without escaping.
+The Newton path uses a central-difference $\mathrm{d}M/\mathrm{d}R$ estimate combined with brentq bracketing on $f(R) = M(R) - M_p$, and converges on the hot-profile cases that trap Picard. With the adiabatic temperature modes of the initial structure solve, the Newton root holds the linear first-guess temperature, so Zalmoxis continues with the blend ramp from the Newton profile and returns the full adiabat (see [process flow](process_flow.md)).
 
 Newton requires tighter integrator tolerances than Picard: the Picard default `relative_tolerance = 1e-5` produces $\sim 10^{-3}$ noise in $M(R)$ that swamps the central-difference estimate. The wrapper auto-applies `relative_tolerance = 1e-9` and `absolute_tolerance = 1e-10` whenever `outer_solver = "newton"` is selected, and forwards the Newton-specific settings to Zalmoxis only when the Newton path is active, so a Picard run sees an unchanged config dict.
 

@@ -2476,7 +2476,7 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
     pressure and core radius within 2e-4 and the CMB pressure within 2 tol / (1 - cmf) = 4e-3:
     the core mass is fixed, so the mass error sits in the mantle and moves P_cmb by
     dM / (M (1 - cmf)). The top mantle node stays within 1 K of REF in the re-solves (51.3 MPa);
-    in the first solve (1 bar) it is not compared, since its adiabat step flips with round-off
+    in the first solve (1 atm) it is not compared, since its adiabat step flips with round-off
     between 2 states (about -0.15 K or 28.65 to 28.81 K from REF).
     Each solve lags the adiabat of its own pressure by at most 6 K at the CMB node and 1 K at
     the other mantle nodes, and the re-solves by at most 25 K at the top node. The seeded and
@@ -2507,7 +2507,7 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
         assert r['converged'] and r['accepted_on'] == 'strict' and r['adiabat_seeded'] is flag
         assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
     off = [
-        (_off_ref(first, ref1), np.inf),  # 1-bar top node: 2-state adiabat step flip
+        (_off_ref(first, ref1), np.inf),  # 1-atm top node: 2-state adiabat step flip
         (_off_ref(seeded, ref2), 1.0),
         (_off_ref(plain, ref2), 1.0),
     ]
@@ -2553,9 +2553,9 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
 @pytest.mark.timeout(3600)
 def test_a_first_solve_at_a_planet_mass_2e12_higher_keeps_the_stored_reference():
     """The first solve of the grid start-up case at a planet mass 2e-12 higher, a round-off
-    nudge that can flip the adiabat step of the top mantle node at 1 bar, keeps the bounds of
+    nudge that can flip the adiabat step of the top mantle node at 1 atm, keeps the bounds of
     the grid start-up test against the stored REF: strict on the full adiabat, mantle
-    temperature within 1 K up to the second-highest mantle node (the 1-bar top node is not
+    temperature within 1 K up to the second-highest mantle node (the 1-atm top node is not
     compared), radius, central pressure and core radius within 2e-4, CMB pressure within
     2 tol / (1 - cmf) = 4e-3, and lags of at most 6 K at the CMB node and 1 K at the other
     mantle nodes. It runs in the nightly job of the stored reference."""
@@ -2566,7 +2566,7 @@ def test_a_first_solve_at_a_planet_mass_2e12_higher_keeps_the_stored_reference()
     assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
     off = _off_ref(r, grid_ref.load()['first'])
     print('vs REF (dT, dT_top, dR, dPc, dRc, dPcmb):', off, 'lag:', lag)
-    dT, _, dR, dPc, dRc, dPcmb = off  # 1-bar top node: 2-state adiabat step flip
+    dT, _, dR, dPc, dRc, dPcmb = off  # 1-atm top node: 2-state adiabat step flip
     bound = 2 * GRID_CMF95['newton_tol'] / (1.0 - GRID_CMF95['core_mass_fraction'])
     assert dT <= 1.0
     assert max(abs(dR), abs(dPc), abs(dRc)) <= 2e-4 and abs(dPcmb) <= bound
@@ -2582,7 +2582,7 @@ def test_the_stored_grid_start_up_reference_is_the_converged_solve_of_the_source
     """Both structures of ``tests/data/grid_start_up_reference.json`` solved again at the mass
     tolerance 1e-6: strict on the full adiabat, the mantle temperature within 0.1 K of the
     stored one up to the second-highest mantle node, the top node within 1 K in the re-solve
-    (in the first solve at 1 bar it is not compared: its adiabat step flips with round-off
+    (in the first solve at 1 atm it is not compared: its adiabat step flips with round-off
     between 2 states), the radius,
     central pressure and core radius within 1e-5 and the CMB pressure within
     2 tol_REF / (1 - cmf) = 4e-5; then the sha256 of the stored list of Zalmoxis modules
@@ -2600,7 +2600,7 @@ def test_the_stored_grid_start_up_reference_is_the_converged_solve_of_the_source
         print(key, 'vs stored (dT, dT_top, dR, dPc, dRc, dPcmb):', off)
         dT, dT_top, dR, dPc, dRc, dPcmb = off
         bound = 2 * grid_ref.REF_TOL['newton_tol'] / (1.0 - cfg['core_mass_fraction'])
-        # 1-bar top node of the first solve: 2-state adiabat step flip, not compared
+        # 1-atm top node of the first solve: 2-state adiabat step flip, not compared
         assert dT <= 0.1 and (key == 'first' or abs(dT_top) <= 1.0), key
         assert max(abs(dR), abs(dPc), abs(dRc)) <= 1e-5 and abs(dPcmb) <= bound, key
     pkg = os.path.dirname(os.path.abspath(zalmoxis.__file__))

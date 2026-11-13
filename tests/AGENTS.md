@@ -52,7 +52,7 @@ This repository has no `tools/check_test_quality.py`; the marker check is `bash 
   4 `accept_solves_newton_setups` jobs that split the sweep over every Newton setup and the
   PALEOS Newton solve within the cap by test id) and the rest (90 min ceiling each, 170 min
   for `main`, `wolfbower` and each `accept_solves_newton_setups` job, 150 min for
-  `accept_solves_long`).
+  `accept_solves_long` and `accept_solves_reference`).
 - The `-o "addopts="` override is needed because `pyproject.toml` defaults to
   `-n auto --dist loadfile` for parallel execution; a single-marker filter run
   is faster without the parallel split.
