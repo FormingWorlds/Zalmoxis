@@ -1952,8 +1952,27 @@ def _fake_adiabat(pressure, t_surf):
     return t_surf + 2000.0 * np.sqrt(np.clip(np.asarray(pressure, float), 0.0, None) / 4e11)
 
 
+def _canned_structure(layer_mixtures, cmb_mass, core_mantle_mass, radii, *args, **kwargs):
+    """A structure in closed form for the outer radius R = radii[-1] and the central pressure
+    y0[2] (``args[6]``): mass M_E (R / R_E)^3 (r / R)^3, pressure P_c - P_0 (r / R)^2 with
+    P_0 = 360 GPa (R / R_E)^-4, gravity G m / r^2; a pass takes no integration."""
+    radii = np.asarray(radii, float)
+    R, p_c = radii[-1], float(args[6][2])
+    x = radii / R
+    m = earth_mass * (R / earth_radius) ** 3 * x**3
+    g = np.where(radii > 0, G * m / np.where(radii > 0, radii, 1.0) ** 2, 0.0)
+    return m, g, p_c - 3.6e11 * (R / earth_radius) ** -4 * x**2
+
+
 def _analytic_ramp(
-    linear=None, factor=None, clock_after=None, drift=0.0, mass=None, seed=None, **kwargs
+    linear=None,
+    factor=None,
+    clock_after=None,
+    drift=0.0,
+    mass=None,
+    seed=None,
+    structure=None,
+    **kwargs,
 ):
     """_solve on analytic densities through the adiabatic path: the EOS counts as T-dependent
     and the adiabat is ``_fake_adiabat`` of the pressure. Passes before the ramp starts end
@@ -1963,8 +1982,9 @@ def _analytic_ramp(
     ``drift`` scales the pressure of each pass by 1 + drift times the number of adiabat
     computations so far. ``mass(R, k)`` replaces both scalings: the total mass of a pass at
     outer radius R after k adiabat computations. ``seed`` goes to ``_solve`` as
-    ``adiabat_seed``. Returns the result and the number of adiabat computations."""
-    adiabat, real, clock = [], zs.solve_structure, time.time
+    ``adiabat_seed``; ``structure`` replaces ``solve_structure`` (``_canned_structure``).
+    Returns the result and the number of adiabat computations."""
+    adiabat, real, clock = [], structure or zs.solve_structure, time.time
 
     def adi(radii, pressure, mass, t_surf, *args, **kw):
         adiabat.append(1)
@@ -1997,22 +2017,27 @@ def _analytic_ramp(
     return r, len(adiabat)
 
 
-@pytest.mark.smoke
-def test_a_linear_floor_above_a_tight_tolerance_starts_the_ramp_unaccepted_on_a_clock_stop():
-    """tolerance_outer 1e-7 and every linear pass 5e-4 off the mass: the blend ramp starts at
-    the 1e-3 trigger, and a clock stop once the adiabat was computed twice ends the solve in
-    the ramp, which is not accepted and keeps no met mass test."""
+def _case_clock_stop(structure=None, **_):
     r, n_adiabat = _analytic_ramp(
         linear=1.0005,
         clock_after=2,
         tolerance_outer=1e-7,
         max_iterations_outer=40,
         wall_timeout=WALL,
+        structure=structure,
     )
     assert n_adiabat >= 2 and r['stopped_on_wall_clock'] is True
     assert r['adiabat_blend'] < 1.0
     assert r['converged'] is False and r['converged_mass'] is False
     assert r['accepted_on'] is None and r['accept_mass_limit'] is None
+
+
+@pytest.mark.smoke
+def test_a_linear_floor_above_a_tight_tolerance_starts_the_ramp_unaccepted_on_a_clock_stop():
+    """tolerance_outer 1e-7 and every linear pass 5e-4 off the mass: the blend ramp starts at
+    the 1e-3 trigger, and a clock stop once the adiabat was computed twice ends the solve in
+    the ramp, which is not accepted and keeps no met mass test."""
+    _case_clock_stop()
 
 
 def _mean_core_T(r):
@@ -2166,12 +2191,17 @@ def test_a_newton_probe_in_an_adiabatic_mode_refuses_its_linear_pass_at_debug(ca
     """A Newton probe (one linear pass, near the root) is not accepted in an adiabatic mode;
     the refusal is logged at DEBUG, as the other progress lines of a probe, and no accept of
     that pass is logged as a warning."""
+    _case_probe(caplog=caplog, guess=6.12e6)
+
+
+def _case_probe(caplog, structure=None, guess=earth_radius, **_):
     with caplog.at_level(logging.DEBUG, logger='fwl.zalmoxis.solver'):
         r, n_adiabat = _analytic_ramp(
             max_iterations_outer=1,
             wall_timeout=WALL,
             _newton_probe=True,
-            _initial_radius_guess=6.12e6,
+            _initial_radius_guess=guess,
+            structure=structure,
         )
     assert r['converged'] is False and n_adiabat == 0
     refusals = [x for x in caplog.records if 'No accept of a pass' in x.getMessage()]
@@ -2353,8 +2383,17 @@ def test_a_seeded_solve_accepts_its_second_pass(ramp_seed):
     seed: its first pass is on the target mass but its table is not from a pass of this
     solve, so the second pass, on the table of the first, is accepted. The adiabat is
     computed for the 2 passes and once on the returned structure."""
+    _case_seeded_second_pass(seed=ramp_seed)
+
+
+def _case_seeded_second_pass(seed, structure=None, **_):
     r, n_adiabat = _analytic_ramp(
-        linear=1.0, factor=1.0, tolerance_outer=1e-3, wall_timeout=WALL, seed=ramp_seed
+        linear=1.0,
+        factor=1.0,
+        tolerance_outer=1e-3,
+        wall_timeout=WALL,
+        seed=seed,
+        structure=structure,
     )
     assert r['converged'] is True and r['accepted_on'] == 'strict'
     assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
@@ -2369,13 +2408,18 @@ def test_the_first_seeded_pass_carries_the_seed_label_and_is_not_accepted(ramp_s
     """An iteration cap of 1 ends a seeded solve on its first pass, on the target mass: its
     table is labelled -1.0 (from the seed), so the pass is returned unaccepted. The adiabat is
     computed for that pass and once on the returned structure."""
+    _case_seed_label(seed=ramp_seed)
+
+
+def _case_seed_label(seed, structure=None, **_):
     r, n_adiabat = _analytic_ramp(
         linear=1.0,
         factor=1.0,
         tolerance_outer=1e-3,
         max_iterations_outer=1,
         wall_timeout=WALL,
-        seed=ramp_seed,
+        seed=seed,
+        structure=structure,
     )
     assert r['converged'] is False and r['accepted_on'] is None and n_adiabat == 2
     assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, -1.0)
@@ -2390,6 +2434,10 @@ def test_the_seed_table_pass_starts_no_secant(monkeypatch, ramp_seed):
     """A seeded solve with the secant tail whose passes end 5, 4 and 3 tolerances below the
     mass: the first pass reads the seed table, so the second is the first full-adiabat pass and
     the secant starts only at the third."""
+    _case_seed_table_secant(monkeypatch=monkeypatch, seed=ramp_seed)
+
+
+def _case_seed_table_secant(monkeypatch, seed, structure=None, **_):
     tol = 1e-4
     off = {1: -5.0, 2: -4.0, 3: -3.0}
     calls = _secant_calls(monkeypatch, tol)
@@ -2399,11 +2447,51 @@ def test_the_seed_table_pass_starts_no_secant(monkeypatch, ramp_seed):
         tolerance_outer=tol,
         max_iterations_outer=3,
         wall_timeout=WALL,
-        seed=ramp_seed,
+        seed=seed,
         _secant_tail=True,
+        structure=structure,
     )
     assert r['adiabat_seeded'] is True and n_adiabat == 4
     assert [c[0] for c in calls] == [3.0]
+
+
+@pytest.fixture(scope='module')
+def canned_seed():
+    """``ramp_seed`` on ``_canned_structure``."""
+    r, _ = _analytic_ramp(
+        linear=1.0,
+        factor=1.0,
+        tolerance_outer=1e-3,
+        wall_timeout=WALL,
+        structure=_canned_structure,
+    )
+    assert r['converged'] and r['adiabat_table_blend'] == 1.0
+    return {k: np.array(r[k]) for k in ('radii', 'pressure', 'mass_enclosed')}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    'case, checked',
+    [
+        (_case_clock_stop, True),
+        (_case_probe, True),
+        (_case_seeded_second_pass, True),
+        (_case_seed_label, False),
+        (_case_seed_table_secant, False),
+    ],
+    ids=['clock_stop', 'newton_probe', 'seeded_second_pass', 'seed_label', 'seed_table_secant'],
+)
+def test_the_ramp_cases_hold_on_a_structure_in_closed_form(
+    request, monkeypatch, caplog, canned_seed, case, checked
+):
+    """The 5 ramp cases of the smoke tests above (a clock stop in the ramp, a Newton probe, the
+    accept of the second seeded pass, the seed label of the first, no secant on the seed-table
+    pass) hold with the same asserts on ``_canned_structure``, a structure without integration,
+    with the invariant check where the smoke test runs it; the Newton probe starts at 1 Earth
+    radius, on the target mass of that structure."""
+    if not checked:
+        request.getfixturevalue('no_check')
+    case(structure=_canned_structure, seed=canned_seed, monkeypatch=monkeypatch, caplog=caplog)
 
 
 def _grid_main(cfg, **kwargs):
