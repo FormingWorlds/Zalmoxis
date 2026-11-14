@@ -449,6 +449,7 @@ The first 5 rows exceed a bound; the other 6 are not bounded or lie inside one.
 | Core mass fraction 0.95, first solve at 1 atm | lag at the top node | 28.8 K | none for this solve |
 | Core mass fraction 0.95, first solve at 1 atm | top node from REF | 28.65 to 28.81 K | not compared |
 | Core mass fraction 0.95, first solve | last core node from REF, secant tail / cube-root rule | 587 K / 17.6 K | 700 K, inside |
+| Core mass fraction 0.95, re-solves | last core node from REF, unseeded / seeded | 526 K / 0 K | 700 K, inside |
 | Core mass fraction 0.95, first solve | mass-weighted mean core temperature from REF, secant tail / cube-root rule | 4.5 K / 0.14 K | 10 K, inside |
 | All 4 cases, every solve | CMB pressure from REF, secant tail / cube-root rule | up to $9.4 \times 10^{-4}$ / $1.9 \times 10^{-3}$ | $4 \times 10^{-3}$ at core mass fraction 0.95, inside |
 | Core mass fraction 0.35, 2000 ppmw H, seeded re-solve | lag at the CMB node | up to 5.4 K | 6 K, inside |
@@ -457,11 +458,11 @@ The first 5 rows exceed a bound; the other 6 are not bounded or lie inside one.
 - At 1 atm the adiabat step of the top node flips with round-off (the skip below $10^5$ Pa described under [Newton and Picard on the PROTEUS initial structure](#newton-and-picard-on-the-proteus-initial-structure)). In 4 of 6 starts whose planet mass differs by $k \times 10^{-12}$ ($k$ = 0 to 5) the top node lies 28.65 K from REF; in 2 of them, and in REF, it also lags its own adiabat by 28.8 K. The node below it lies within 0.15 K of REF in all 6 starts. On a Linux runner (AMD EPYC 7763) the reference solved again lies 28.81 K from the stored one at this node. The top node of a first solve thus takes one of 2 states, about -0.15 K or 28.65 to 28.81 K from REF, and a bound there only tests whether the step flipped. The tests leave it out of the comparison with REF in the first solves and bound it in the re-solves: 1 K from REF and a lag of at most 25 K.
 - The core nodes and the CMB node read one T(P) table with the mantle, and the solve builds that table on the pressure of the pass before.
   The last core node (index 137, 0-based, of 150 nodes at core mass fraction 0.95) therefore reads the edge of that table.
-  With the secant tail, which moves the CMB pressure more from pass to pass, this node lies 587 K above REF; with the cube-root rule it lies 17.6 K above REF.
+  With the secant tail, which moves the CMB pressure more from pass to pass, this node lies 587 K above REF in the first solve, 526 K in the unseeded re-solve and 0 K in the seeded re-solve; with the cube-root rule it lies 17.6 K above REF in the first solve.
   REF has the core temperature at this node.
   The node is in the cell below the CMB, which holds 0.7 % of the planet mass.
   So the mass-weighted mean temperature of the core nodes lies only 4.5 K above REF, and the core radius stays within $3 \times 10^{-5}$ of REF.
-  The tests bound the mean at 10 K, this node at 700 K and the other core nodes at 1 K; the other core nodes lie 0 K from REF.
+  The tests bound the mean at 10 K, this node at 700 K and the other core nodes at 1 K; the other core nodes lie 0 K from REF in the 3 solves of the test.
   One more pass on the accepted structure gives this node the core temperature again (4000 K, measured); the solve does not do it.
 - In the `adiabatic_from_cmb` mode every core node has the surface temperature (4000 K here) and the energetics module computes the core temperature. A core at the CMB temperature (6000 K) gives a larger core radius and a lower mean core density inside it; [Zalmoxis issue 131](https://github.com/FormingWorlds/Zalmoxis/issues/131) gives their size in the first solve of this case.
 
