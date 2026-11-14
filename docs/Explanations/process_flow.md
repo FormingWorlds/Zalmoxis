@@ -193,7 +193,7 @@ The table band check (see [EOS physics](eos_physics.md)) runs after these tests:
 | `max_iter` | Picard | The outer loop stopped at `max_iterations_outer` with the mass error of the best pass below 3 %; the best pass is returned. |
 | `timeout` | Picard, Newton | The solve reached `wall_timeout` (in the outer or the inner loop) and one of the other tests passed; `timeout` replaces its label. On Picard the returned profile is the best pass, which can be an earlier, complete pass. |
 | `oscillation` | Picard | The mass error changed sign 10 times since the best pass last changed, each time with a magnitude at least 99 % of that of the pass before, and the mass error of the best pass is below `3 * tolerance_outer` and below 3 %. With the full adiabat asked (see [Full-adiabat rule](#full-adiabat-rule)), the stop waits until the adiabat blend and its table blend reach 1. A pass the wall clock cut ends the solve as `timeout` instead. The best profile is returned and accepted on `3 * tolerance_outer`, or on the 3 % ceiling when its density or pressure did not converge. |
-| `retry_skip` | Picard | The first solve was not accepted, density and pressure converged and the mass error of the returned profile is below 7 %; `main` skips the retry. |
+| `retry_skip` | Picard | The first solve was not accepted, density and pressure converged and the mass error of the returned profile is below 7 %; `main` skips the retry. A ramp that `main` starts after a Newton root does not take this test (see [Full-adiabat rule](#full-adiabat-rule)). |
 | `newton_tol` | Newton | The smallest mass error of the Newton steps, or the mass error at the brentq root, is below `newton_tol`, and the inner solve of the returned profile reports converged pressure and the EOS density (`density_from_eos`). |
 | `brentq_best` | Newton | The bracket search or brentq stopped early with the smallest mass error of the evaluations below `newton_tol`; the returned profile is that of the evaluation with that error, and its inner solve reports converged pressure and the EOS density. |
 
@@ -258,6 +258,7 @@ So the first pass at blend 1 reads the table of the blend-0.75 pass, and the sol
 **With the Newton outer solver.** The Newton root holds the linear first-guess temperature.
 So `main` continues with the blend ramp, seeded with the radius, the central pressure, the density and the radii of the Newton profile, at the mass tolerance `min(tolerance_outer, newton_tol)`.
 The Picard tests then accept the result and give its label, and the result keeps `newton_n_iter`, `newton_history` and `newton_used_brentq`.
+When no Picard test accepts the ramp, `main` retries at that tolerance: it does not skip the retry on `retry_skip`, also not after a wall-clock stop, since the retry skip allows a mass error up to 7 %.
 The ramp ends with secant steps on the radius, and a re-solve of the same planet can skip the Newton root and the ramp (next section).
 
 ### How close an accepted result is to its adiabat

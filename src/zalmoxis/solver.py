@@ -913,9 +913,9 @@ def main(
             initial_radii=initial_radii,
         )
 
-    # Skip the retry when density and pressure converged and the mass error of the returned
-    # profile is within `_RETRY_SKIP_MASS_ERR`: on hot molten T(r) the retry takes 600+ s for
-    # no better mass, and the next resolve of the caller corrects the residual.
+    # Skip the retry when density and pressure converged and the mass error is within
+    # `_RETRY_SKIP_MASS_ERR` (on hot molten T(r) the retry takes 600+ s for no better mass and the
+    # caller's next re-solve corrects it); a ramp after a Newton root always retries.
     _RETRY_SKIP_MASS_ERR = 0.07
     _first_mass_err = result.get('mass_error_at_accept')
     run_params = config_params  # the parameters of the solve that returns
@@ -926,6 +926,7 @@ def main(
         and _first_mass_err is not None
         and _first_mass_err < _RETRY_SKIP_MASS_ERR
         and not _short_of_adiabat(result, asked)
+        and not newton_keys
     )
     if _retry_skipped:
         logger.info(
