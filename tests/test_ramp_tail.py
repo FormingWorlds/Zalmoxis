@@ -150,6 +150,7 @@ REFUSED = {
     'NaN mass': (_bad('mass_enclosed', _set(-1, NAN)), 'not finite'),
     'radii fall': (_bad('radii', _set(5, 0.0)), 'radii do not increase'),
     'negative r[0]': (_bad('radii', _set(0, -1.0)), 'radii do not increase'),
+    'repeated radius': (_bad('radii', lambda a: _set(5, a[4])(a)), 'radii do not increase'),
     'mass falls': (_bad('mass_enclosed', _set(10, 0.0)), 'mass_enclosed decreases'),
     'zero mass': (_bad('mass_enclosed', lambda a: 0.0 * a), 'mass_enclosed decreases'),
     'pressure rises': (_bad('pressure', _set(1, 4.0e11)), 'pressure increases'),

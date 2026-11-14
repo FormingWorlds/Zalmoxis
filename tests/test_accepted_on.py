@@ -1987,6 +1987,7 @@ def _analytic_ramp(
     adiabat, real, clock = [], structure or zs.solve_structure, time.time
 
     def adi(radii, pressure, mass, t_surf, *args, **kw):
+        assert pressure[0] > pressure[-1] and np.all(np.diff(mass) >= 0)  # argument order
         adiabat.append(1)
         return _fake_adiabat(pressure, t_surf)
 
@@ -2492,6 +2493,76 @@ def test_the_ramp_cases_hold_on_a_structure_in_closed_form(
     if not checked:
         request.getfixturevalue('no_check')
     case(structure=_canned_structure, seed=canned_seed, monkeypatch=monkeypatch, caplog=caplog)
+
+
+def _ramp_off(off, linear=1.0, **kwargs):
+    """``_analytic_ramp`` on ``_canned_structure`` at tolerance 1e-4: the pass after k adiabat
+    computations ends 1 + off[k] times the target mass (the target mass when k is not in off),
+    a linear pass ``linear`` times."""
+    return _analytic_ramp(
+        linear=linear,
+        factor=lambda k: 1.0 + off.get(k, 0.0),
+        tolerance_outer=1e-4,
+        wall_timeout=WALL,
+        structure=_canned_structure,
+        **kwargs,
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures('no_check')
+@pytest.mark.parametrize(
+    'off, accepted_on, blends, err',
+    [
+        ({4: 1e-3, 5: 1e-2}, 'max_iter', (1.0, 1.0), 1e-2),
+        ({4: 1e-2, 5: 5e-2}, None, (0.0, 0.0), 0.0),
+    ],
+    ids=['newest_step', 'earlier_step'],
+)
+def test_an_iteration_cap_returns_the_best_pass_of_the_newest_blend_step_within_3_percent(
+    off, accepted_on, blends, err
+):
+    """A cap after the first pass on a blend-1 table returns that pass at 1 % mass error, also
+    when the pass on the blend-0.75 table before it is better; at 5 % it returns the best
+    earlier pass, the linear pass on the target mass, which is short of the adiabat."""
+    r, _ = _ramp_off(off, max_iterations_outer=6)
+    assert r['accepted_on'] == accepted_on and r['converged'] is (accepted_on is not None)
+    assert (r['adiabat_blend'], r['adiabat_table_blend']) == blends
+    assert r['mass_error_at_accept'] == pytest.approx(err, abs=1e-12)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures('no_check')
+def test_a_linear_pass_at_5_times_the_trigger_starts_no_ramp():
+    """Linear passes 0.5 % off the mass stay above ``_ADIABAT_RAMP_TRIGGER``: no adiabat."""
+    r, n_adiabat = _ramp_off({}, linear=1.005, max_iterations_outer=3)
+    assert n_adiabat == 0 and (r['adiabat_blend'], r['adiabat_table_blend']) == (0.0, 0.0)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures('no_check')
+@pytest.mark.parametrize(
+    'off, cap, calls',
+    [
+        ({1: -5, 2: -4, 3: -3, 4: -6, 5: -5.5}, 5, [(3.0, True)]),
+        ({1: -5, 2: -4, 3: -5, 4: -6}, 4, [(5.0, False), (6.0, False)]),
+    ],
+    ids=['no_shrink_ends_the_tail', 'fallback_arms_nothing'],
+)
+def test_the_secant_tail_ends_on_a_step_that_does_not_shrink_the_error(
+    monkeypatch, canned_seed, off, cap, calls
+):
+    """Seeded passes off the mass by the given tolerances: a secant step followed by a larger
+    error ends the tail; a fallback to the cube-root rule does not, so the next pass calls the
+    secant again."""
+    got = _secant_calls(monkeypatch, 1e-4)
+    _ramp_off(
+        {k: v * 1e-4 for k, v in off.items()},
+        max_iterations_outer=cap,
+        seed=canned_seed,
+        _secant_tail=True,
+    )
+    assert got == calls
 
 
 def _grid_main(cfg, **kwargs):
