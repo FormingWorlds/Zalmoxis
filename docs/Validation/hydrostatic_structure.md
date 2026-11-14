@@ -408,7 +408,9 @@ Relative differences are $|x - x_\mathrm{REF}| / |x_\mathrm{REF}|$.
 - The CMB pressure differs from REF by at most $4 \times 10^{-3}$ (relative). This is $2\,\mathrm{tol} / (1 - f_\mathrm{core})$, with the mass tolerance $\mathrm{tol} = 10^{-4}$ and the core mass fraction $f_\mathrm{core} = 0.95$: the core mass is fixed, so the mass error sits in the mantle and moves the CMB pressure by that error divided by the mantle mass fraction $1 - f_\mathrm{core}$. The core radius and the CMB pressure are read at the core mass by interpolation in mass.
 - The lag is at most 6 K at the CMB node and 1 K at the other mantle nodes in every solve, and at most 25 K at the top node in the 2 re-solves.
 - The seeded and the unseeded re-solve differ by at most 2.5 K at the 39 mass points and at the top node, and $5 \times 10^{-4}$ in radius.
-- The mass-weighted mean temperature of the core nodes differs from REF by at most 10 K in every solve, the last core node by at most 700 K and the other core nodes by at most 1 K.
+- The mass-weighted mean temperature of the core nodes differs from REF by at most 10 K in every solve.
+  The last core node, just below the CMB node, differs by at most 700 K: it reads the edge of the mantle temperature table (see the known limit below).
+  Every other core node differs by at most 1 K. Each core node is compared with REF interpolated in mass over the core nodes of REF, not across the temperature step at the CMB node of REF.
 - The accept label of every solve is `strict`, and the accepted pass is on a table of blend 1.
 - The first solve needs at most 3 passes on a full-adiabat table. The seeded re-solve needs at most 4 passes and at most half the structure integrations of the unseeded one.
 
@@ -454,14 +456,14 @@ The first 5 rows exceed a bound; the other 6 are not bounded or lie inside one.
 - At core mass fraction 0.35 the cube-root rule converges in 2 full-adiabat passes, so the secant tail does not step and the first solve is the same as without it.
 - At 1 atm the adiabat step of the top node flips with round-off (the skip below $10^5$ Pa described under [Newton and Picard on the PROTEUS initial structure](#newton-and-picard-on-the-proteus-initial-structure)). In 4 of 6 starts whose planet mass differs by $k \times 10^{-12}$ ($k$ = 0 to 5) the top node lies 28.65 K from REF; in 2 of them, and in REF, it also lags its own adiabat by 28.8 K. The node below it lies within 0.15 K of REF in all 6 starts. On a Linux runner (AMD EPYC 7763) the reference solved again lies 28.81 K from the stored one at this node. The top node of a first solve thus takes one of 2 states, about -0.15 K or 28.65 to 28.81 K from REF, and a bound there only tests whether the step flipped. The tests leave it out of the comparison with REF in the first solves and bound it in the re-solves: 1 K from REF and a lag of at most 25 K.
 - The core nodes and the CMB node read one T(P) table with the mantle, and the solve builds that table on the pressure of the pass before.
-  The last core node (node 137 of 150 at core mass fraction 0.95) therefore reads the edge of that table.
+  The last core node (index 137, 0-based, of 150 nodes at core mass fraction 0.95) therefore reads the edge of that table.
   With the secant tail, which moves the CMB pressure more from pass to pass, this node lies 587 K above REF; with the cube-root rule it lies 17.6 K above REF.
   REF has the core temperature at this node.
   The node is in the cell below the CMB, which holds 0.7 % of the planet mass.
   So the mass-weighted mean temperature of the core nodes lies only 4.5 K above REF, and the core radius stays within $3 \times 10^{-5}$ of REF.
   The tests bound the mean at 10 K, this node at 700 K and the other core nodes at 1 K; the other core nodes lie 0 K from REF.
   One more pass on the accepted structure gives this node the core temperature again (4000 K, measured); the solve does not do it.
-- In the `adiabatic_from_cmb` mode every core node has the surface temperature (4000 K here) and the energetics module computes the core temperature. A core at the CMB temperature (6000 K) would give a core radius 1.55 % larger and a mean core density 4.7 % lower in the first solve of this case.
+- In the `adiabatic_from_cmb` mode every core node has the surface temperature (4000 K here) and the energetics module computes the core temperature. A core at the CMB temperature (6000 K) gives a larger core radius and a lower mean core density inside it; [Zalmoxis issue 131](https://github.com/FormingWorlds/Zalmoxis/issues/131) gives their size in the first solve of this case.
 
 ??? info "Test details"
     - Reference: REF, the same solve at a mass tolerance of $10^{-6}$ (convergence check), stored in `tests/data/grid_start_up_reference.json`.

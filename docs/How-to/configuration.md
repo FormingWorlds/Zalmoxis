@@ -135,11 +135,17 @@ When any T-dependent EOS is assigned to any layer, the `temperature_mode`, `surf
 
 | Field | Required | Default | Description |
 |---|---|---|---|
-| `mushy_zone_factor` | No | `1.0` | Global default cryoscopic depression factor for all unified PALEOS tables. Controls the width of the artificial mushy (mixed solid+liquid) zone below the liquidus extracted from the table. Valid range: [0.7, 1.0]. `1.0` = no mushy zone (sharp phase boundary). `< 1.0` = solidus at this fraction of the liquidus temperature ($T_\mathrm{sol} = T_\mathrm{liq} \times f$). E.g., `0.8` gives a mushy zone similar to the Stixrude (2014)[^cite-stixrude2014] cryoscopic depression. Values below 0.7 are rejected (unphysically wide mushy zones cause solver instabilities). In the mushy zone, density is volume-averaged between solid-side and liquid-side table values. Relevant for `PALEOS:iron`, `PALEOS:MgSiO3`, `PALEOS:H2O`. For a two-phase mantle (`PALEOS-2phase:MgSiO3`) the factor applies only with `rock_liquidus = "PALEOS-liquidus"`, which sets the solidus to `mushy_zone_factor * liquidus`. With any other liquidus a value below 1.0 is rejected, unless a unified PALEOS table (for example a `PALEOS:iron` core) is also configured; the two-phase mantle then uses its configured curves and the factor has no effect on it. |
+| `mushy_zone_factor` | No | `1.0` | Global default cryoscopic depression factor for all unified PALEOS tables. Controls the width of the artificial mushy (mixed solid+liquid) zone below the liquidus extracted from the table. Valid range: [0.7, 1.0]. `1.0` = no mushy zone (sharp phase boundary). `< 1.0` = solidus at this fraction of the liquidus temperature ($T_\mathrm{sol} = T_\mathrm{liq} \times f$). Relevant for `PALEOS:iron`, `PALEOS:MgSiO3`, `PALEOS:H2O`, and for a two-phase mantle (below the table). |
 | `mushy_zone_factor_iron` | No | global value | Per-material override for `PALEOS:iron`. Same range and semantics as `mushy_zone_factor`. Only validated when `PALEOS:iron` is configured. |
 | `mushy_zone_factor_MgSiO3` | No | global value | Per-material override for `PALEOS:MgSiO3`. |
 | `mushy_zone_factor_H2O` | No | global value | Per-material override for `PALEOS:H2O`. |
 | `mushy_zone_factor_chabrier_H` | No | global value | Per-material override for the `Chabrier:H` component. Same range and semantics as `mushy_zone_factor`. Only validated when `Chabrier:H` is present as a mixing component of a layer (a pure `Chabrier:H` layer is not supported). |
+
+**What the factor does.** In the mushy zone, the density is volume-averaged between the solid-side and the liquid-side table values. A factor of `0.8` gives a mushy zone similar to the Stixrude (2014)[^cite-stixrude2014] cryoscopic depression. Values below 0.7 are rejected, because unphysically wide mushy zones cause solver instabilities.
+
+**Two-phase mantle.** For a two-phase mantle (`PALEOS-2phase:MgSiO3`, `PALEOS-2phase:MgSiO3-highres` or `PALEOS-API-2phase:MgSiO3`) the factor applies only with `rock_liquidus = "PALEOS-liquidus"`, which sets the solidus to `mushy_zone_factor * liquidus`.
+With any other liquidus a value below 1.0 is rejected, unless a unified PALEOS table (for example a `PALEOS:iron` core) is also configured.
+The two-phase mantle then uses its configured curves, and the factor has no effect on it.
 
 Per-material overrides take precedence over the global default. If a per-material key is absent, the global `mushy_zone_factor` is used for that material. This allows independent control of phase boundary widths, for example using a wider mushy zone for silicate (`0.8`) while keeping a sharp boundary for iron (`1.0`):
 

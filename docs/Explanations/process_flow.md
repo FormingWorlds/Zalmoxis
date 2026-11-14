@@ -229,7 +229,9 @@ A trapezoid integral of the returned `density` differs from `mass_enclosed[-1]` 
 ### Full-adiabat rule
 
 When must a result carry the full adiabat, and what happens when it does not?
-In short: in an adiabatic temperature mode the solve accepts a result only when its temperature is the full adiabat, read from a table built on a full-adiabat pass, and it refuses and retries a result short of that.
+In short: in an adiabatic temperature mode, when the solve computes the adiabat itself, it accepts a result only when its temperature is the full adiabat.
+That adiabat must come from a table that a full-adiabat pass built.
+The solve refuses a result short of that, and `main` retries.
 The rule applies when all of these hold:
 
 - the temperature mode is `adiabatic` or `adiabatic_from_cmb`;
@@ -284,10 +286,10 @@ $$R_{n+1} = R_n - (M_n - M_p) \frac{R_n - R_{n-1}}{M_n - M_{n-1}}.$$
 **Seeded re-solve.** `main` takes `adiabat_seed`: the `radii`, `pressure` and `mass_enclosed` of an earlier solve of the same planet.
 When the solve computes the adiabat itself, it skips the Newton root and the blend steps below 1; its first pass reads the adiabat of the seed at blend 1.
 No pass of this solve built that table, so `adiabat_table_blend` is -1.0 and no test accepts the pass.
-A seed that fails its checks is refused with a warning.
-A seeded solve that does not converge, or that raises `StructureSolveError`, runs again without the seed, and its time counts in `total_time`.
-A radius step that gives a radius that is not finite and positive stops the solve with `StructureSolveError`, which names the outer pass and the radius.
 `adiabat_seeded` marks a result from the seed; that result has no `newton_*` keys.
+`main` refuses a seed that fails its checks, with a warning.
+A radius step that gives a radius that is not finite and positive raises `StructureSolveError`, which names the outer pass and the radius; without a seed, this error stops the solve.
+A seeded solve that does not converge, or that raises `StructureSolveError`, runs again without the seed; the time of the seeded attempt counts in the `total_time` of the result.
 
 At a core mass fraction of 0.95 in the PROTEUS grid, the secant tail brings a mass error of 0.24 % below $10^{-4}$ in 3 full-adiabat passes; the cube-root rule needs 10.
 
