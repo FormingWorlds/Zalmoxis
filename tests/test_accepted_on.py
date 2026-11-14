@@ -2045,8 +2045,8 @@ def test_the_core_bounds_read_the_core_nodes_of_the_reference_only():
     bound of the grid test) keeps its core temperatures, so the 3 core bounds read 0 K; REF
     interpolated over all its nodes reads more than 100 K at the last core node, from the T
     step at the CMB node. A core 11 K off, a last core node 701 K off and another core node
-    1.5 K off, warmer or colder, each fail with the names of the bounds they break; 699 K
-    at the last core node and 0.9 K at another core node pass."""
+    1.5 K off (the core node below the last one), warmer or colder, each fail with the names of
+    the bounds they break; 699 K at the last core node and 0.9 K at that other node pass."""
     ref = grid_ref.load()['first']
     m = np.asarray(ref['mass_enclosed'])
     shifted = {**ref, 'mass_enclosed': m * (1 + 6e-4), 'cmb_mass': ref['cmb_mass'] * (1 + 6e-4)}
@@ -2058,7 +2058,7 @@ def test_the_core_bounds_read_the_core_nodes_of_the_reference_only():
     cases = (
         (slice(0, last + 1), 11.0, ['mean', 'other nodes']),
         (last, 701.0, ['last node']),
-        (50, 1.5, ['other nodes']),
+        (last - 1, 1.5, ['other nodes']),
     )
     for nodes, dT, failed in cases:
         for sign in (1.0, -1.0):
@@ -2066,7 +2066,7 @@ def test_the_core_bounds_read_the_core_nodes_of_the_reference_only():
             T[nodes] += sign * dT
             with pytest.raises(AssertionError, match=re.escape(f'core bound {failed} of')):
                 _core_T_bounded({**ref, 'temperature': T}, ref)
-    for nodes, dT in ((last, 699.0), (50, 0.9)):  # inside the bounds
+    for nodes, dT in ((last, 699.0), (last - 1, 0.9)):  # inside the bounds
         for sign in (1.0, -1.0):
             T = np.array(ref['temperature'], dtype=float)
             T[nodes] += sign * dT
