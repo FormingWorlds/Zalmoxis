@@ -101,7 +101,7 @@ Package layout and module responsibilities: `docs/Explanations/code_architecture
 
 Three nested fixed-point loops: outer mass-radius search, middle density Picard, inner structure ODE. `docs/Explanations/code_architecture.md` describes each loop, the Anderson mixing and the adiabat anchor; its JAX section names an older support envelope. The Newton tolerances and the current JAX envelope:
 
-- `outer_solver = 'newton'` (PROTEUS schema default, `proteus.config._struct`) auto-tightens the integrator tolerances (rel=1e-9, abs=1e-10) so the central-difference dM/dR is smooth.
+- `outer_solver = 'newton'` (PROTEUS schema default, `proteus.config._struct`) auto-tightens the integrator tolerances (rel=1e-9, abs=1e-10) so the central-difference dM/dR is smooth. In an adiabatic mode where Zalmoxis computes T, the Newton root seeds the Picard blend ramp (radius, central pressure, density, at `min(tolerance_outer, newton_tol)`); only the full adiabat is accepted.
 - **JAX path (opt-in, `use_jax = True`):** dispatches to `jax_eos/` for the
 inner ODE; the outer and middle loops are unchanged. x64 mode is enabled at
 module import to prevent float32 loss. Parity guarantee: `fast_bilinear_jax`

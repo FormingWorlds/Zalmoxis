@@ -5,7 +5,7 @@ You will run a 1 $M_\oplus$ planet, read the pressure at its outer radius, look 
 
 You need a working installation with the PALEOS tables under `data/` (see [First run](firstrun.md), Step 1).
 Run every block from the repository root, in one Python session, in the order of the steps.
-The whole tutorial took about 10 minutes on a workstation; Step 4 takes about 5.5 minutes of it.
+The whole tutorial takes 14 to 27 minutes on a workstation; Step 4 takes 10 to 22 minutes of it, since its setup 9 takes 8 to 20 minutes, and the other steps take about 5 minutes together.
 
 ## Step 1: solve a structure and read its surface pressure
 
@@ -209,8 +209,9 @@ The outer solver finds the radius at which the computed mass equals the planet m
 - The Picard outer solver, the default, rescales the radius after each structure solve.
 - The Newton outer solver uses Newton's method, which follows the slope of the mass error with the radius.
 - `relative_tolerance` is the relative tolerance of the integrator of the structure equations.
-- The label `newton_tol` means that the Newton outer solver accepted the structure on its mass error.
-Setup 9 takes about 4 minutes.
+- The label `newton_tol` means that the Newton outer solver accepted the structure on its mass error. In an adiabatic temperature mode, as in setup 9, the Newton root only seeds the blend ramp to the adiabat, so the structure gets a Picard label such as `strict`.
+
+Setup 9 takes 8 to 20 minutes, since its number of outer passes changes with round-off.
 
 ```console
 mkdir -p output/sweep
@@ -236,16 +237,16 @@ On our run this printed:
 ```text
 setup 1 Analytic 1: strict, P(R) = 1.017e+05 Pa, miss 0.003 P_t, padded nodes 0
 setup 8 PALEOS 1 (default.toml): strict, P(R) = 0 Pa, miss 1.000 P_t, padded nodes 1
-setup 9 PALEOS 1, Newton: newton_tol, P(R) = 1.393e+05 Pa, miss 0.375 P_t, padded nodes 0
+setup 9 PALEOS 1, Newton: strict, P(R) = 0 Pa, miss 1.000 P_t, padded nodes 1
 ```
 
-The command `python -m tools.validation.pressure_root_sweep run <dir> -j 2` runs all 26 setups; their solves took 2718 s in total on a workstation, so about 23 minutes with 2 processes.
+The command `python -m tools.validation.pressure_root_sweep run <dir> -j 2` runs all 26 setups; their solves took 4391 s in total on a workstation, so about 37 minutes with 2 processes.
 The command `python -m tools.validation.pressure_root_sweep plot <dir> --assets <dir>` draws them into `<dir>`.
 It needs the `proteus_mpl` package and a record of every setup.
 Without `--assets` it writes over the figures under `docs/assets/validation/`.
 The figure of all 26 setups is on the [validation page](../Validation/hydrostatic_structure.md#surface-boundary-condition-in-every-newton-setup).
-In it, 15 of the 19 Picard setups that return a profile end padded, and 5 of the 6 Newton setups at `relative_tolerance` $10^{-9}$ reach the outer radius; setup 10 (PALEOS on the JAX path) ends padded.
-Reached means that the integration reaches $R$, not that $P(R) = P_t$: setup 9 above misses $P_t$ by 0.375 $P_t$.
+In it, 15 of the 19 Picard setups that return a profile end padded, and 4 of the 6 Newton setups at `relative_tolerance` $10^{-9}$ reach the outer radius; setup 9 (PALEOS, whose Newton root seeds the blend ramp) and setup 10 (PALEOS on the JAX path) end padded; whether setup 9 ends padded depends on round-off.
+Reached means that the integration reaches $R$, not that $P(R) = P_t$: setup 25 (PALEOS at 5 $M_\oplus$, Newton) misses $P_t$ by 0.251 $P_t$.
 
 ## Step 5: what to do with a padded or missing surface pressure
 
@@ -255,8 +256,8 @@ If you need $P(R) = P_t$, these settings matter:
 
 - **The outer solver.** `outer_solver = "newton"` needs `relative_tolerance` at or below `1e-7`; it raises `ValueError` otherwise.
   Setup 9 uses `relative_tolerance = 1e-9` and `absolute_tolerance = 1e-10`.
-  It reached the outer radius, where the default Picard solve ended padded, but it still missed $P_t$ by 0.375 $P_t$.
-  PROTEUS uses the Newton outer solver by default. It takes longer: about 4 minutes here against 1.5.
+  In this adiabatic setup its Newton root seeds the blend ramp, and on our run it ended padded like the default Picard solve; whether it ends padded depends on round-off.
+  PROTEUS uses the Newton outer solver by default. It takes longer: 8 to 20 minutes here, against 1.4 minutes for the default Picard solve.
 - **`pressure_tolerance`.** This is the accept test of the pressure solve, $\lvert P(R) - P_t \rvert$ below it. A value below $P_t$ makes the test refuse a padded profile, but the outer loop can still accept the structure on its mass test, as the block below shows.
 - **The integration tolerances** (`relative_tolerance`, `absolute_tolerance`). They change where the integration stops, and so whether the trials near the root pad. Setup 9 changes them together with the outer solver, so this tutorial does not separate the two effects.
 
@@ -283,6 +284,6 @@ So check `padded` and $P(R)$ of every result whose surface values you use, as in
 - `result['pressure'][-1]` is $P(R)$; compare it with `target_surface_pressure`.
 - `result['padded']` is True when the outer node has $P = 0$; Zalmoxis then logs one warning.
 - The pressure solve refines a root that misses $P_t$ by more than $0.1 P_t$, and keeps the candidate closest to $P_t$.
-- The Newton outer solver at `relative_tolerance` $10^{-9}$ reached the outer radius in this tutorial, with a miss of 0.375 $P_t$; a lower `pressure_tolerance` alone did not reach it.
+- In this adiabatic tutorial setup the Newton outer solver at `relative_tolerance` $10^{-9}$ only seeds the blend ramp and can still end padded; a lower `pressure_tolerance` alone did not reach the outer radius either.
 
 [Padded accepts](../Explanations/process_flow.md#padded-accepts) explains the full rule, and the [validation page](../Validation/hydrostatic_structure.md#surface-boundary-condition-of-the-pressure-solve) shows how it is tested.

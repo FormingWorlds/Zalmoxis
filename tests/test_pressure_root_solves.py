@@ -24,14 +24,16 @@ P_T = 101325.0  # target surface pressure [Pa]
 
 
 def _case(root, **kw):
-    """A sweep setup from input/default.toml: 150 layers, Newton outer solver at rtol 1e-9."""
+    """A sweep setup from input/default.toml: 150 layers, Newton outer solver at rtol 1e-9,
+    a 600 s clock (2x or more the slowest CI solve of an Analytic setup on the slowest runner
+    CPU)."""
     cfg = load_zalmoxis_config(os.path.join(root, 'input', 'default.toml'))
     cfg.update(
         num_layers=150,
         outer_solver='newton',
         relative_tolerance=1e-9,
         absolute_tolerance=1e-10,
-        wall_timeout=1800.0,
+        wall_timeout=600.0,
         data_output_enabled=False,
         plotting_enabled=False,
     )
@@ -63,29 +65,37 @@ def test_the_smooth_kink_planet_reaches_its_surface(shift):
 PALEOS = {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'}
 
 
+@pytest.mark.accept_solves_newton_setups
 @pytest.mark.physics_invariant
-def test_the_paleos_newton_planet_reaches_its_surface_within_the_cap(monkeypatch):
-    """PALEOS adiabatic 1 M_earth with the Newton outer solver at rtol 1e-9: the accepted
-    profile is not padded and misses P_t by at most 1 P_t, the cap of a padded root replaced
-    by its reached end. Refinements (second solves and replacements) move more than half the
-    roots closer to P_t, and none further from it."""
+@pytest.mark.timeout(7300)  # the Newton steps, the 5000 s ramp clock and the 600 s retry
+def test_the_paleos_newton_planet_meets_the_surface_condition_within_the_cap(monkeypatch):
+    """PALEOS adiabatic 1 M_earth with the Newton outer solver at rtol 1e-9, whose root
+    seeds the Picard blend ramp: the accepted profile is the full adiabat and either misses
+    P_t by at most 1 P_t, the cap of a padded root replaced by its reached end, or is padded
+    with the reached end of its first sign pair beyond that cap (which of the two depends on
+    round-off). Refinements (second solves and replacements) move more than half the roots
+    closer to P_t, and none further from it."""
     if not _has_paleos_data():
         pytest.skip('PALEOS tables not on disk')
-    moves, real = [], zs._refine_pressure_root
+    moves, pairs, real = [], [], zs._refine_pressure_root
 
     def spy(root, info, evals, residual, p_target, maxiter):
+        pair = zs._nearest_sign_pair(evals, root)
         out = real(root, info, evals, residual, p_target, maxiter)
         moves.append(abs(evals[out[0]]) - abs(evals[root]))
+        pairs.append(None if pair is None else evals[pair[1]])
         return out
 
     monkeypatch.setattr(zs, '_refine_pressure_root', spy)
     root = zalmoxis.get_zalmoxis_root()
-    cfg = _case(root, layer_eos_config=dict(PALEOS), planet_mass=5.972e24)
+    cfg = _case(root, layer_eos_config=dict(PALEOS), planet_mass=5.972e24, wall_timeout=5000.0)
     r = zs.main(cfg, load_material_dictionaries(), None, os.path.join(root, 'input'))
     P = np.asarray(r['pressure'], dtype=float)
-    assert r['converged'] and r['accepted_on'] == 'newton_tol'
-    assert r['padded'] is False and P[-1] > 0.0
-    assert abs(P[-1] - P_T) <= CAP * P_T
+    assert r['converged'] and r['adiabat_blend'] == 1.0
+    if r['padded']:
+        assert P[-1] == 0.0 and (pairs[-1] is None or pairs[-1] > CAP * P_T)
+    else:
+        assert abs(P[-1] - P_T) <= CAP * P_T
     assert sum(m < 0.0 for m in moves) > len(moves) // 2 and max(moves) <= 0.0
 
 
@@ -120,32 +130,39 @@ def test_the_accepted_root_meets_the_surface_boundary_condition(monkeypatch):
     assert abs(evals[refined]) <= 0.1 * P_T
 
 
-# The 6 Newton setups of the sweep (the PROTEUS default outer solver):
-# name, EOS, mass [M_earth], JAX.
+# The 6 Newton setups (the PROTEUS default outer solver): id, EOS, mass [M_earth], JAX, clock
+# [s] (2x or more the slowest CI solve of the setup on the slowest runner CPU), timeout [s] (the
+# other solves at the CI factor of the clock, the clock and the 600 s retry on that CPU).
 NEWTON_SETUPS = (
-    ('Analytic 1', ANALYTIC, 1.0, False),
-    ('PALEOS 1', PALEOS, 1.0, False),
-    ('PALEOS 1 JAX', PALEOS, 1.0, True),
-    ('PALEOS 3 JAX', PALEOS, 3.0, True),
-    ('PALEOS 5', PALEOS, 5.0, False),
-    ('PALEOS 10', PALEOS, 10.0, False),
+    ('analytic_1', ANALYTIC, 1.0, False, 600.0, 1800),
+    ('paleos_1_numpy', PALEOS, 1.0, False, 4900.0, 7100),
+    ('paleos_1_jax', PALEOS, 1.0, True, 1300.0, 3600),
+    ('paleos_3_jax', PALEOS, 3.0, True, 1300.0, 2800),
+    ('paleos_5_numpy', PALEOS, 5.0, False, 3500.0, 5900),
+    ('paleos_10_numpy', PALEOS, 10.0, False, 5600.0, 8200),
 )
-# P(R) near the stop scatters on the JAX path; a padded accept is possible there.
-MAY_PAD = {'PALEOS 1 JAX'}
+# P(R) near the stop scatters on the JAX path and in the Picard blend ramp that seeds from a
+# numpy PALEOS Newton root; a padded accept is possible there.
+MAY_PAD = {'paleos_1_jax', 'paleos_1_numpy', 'paleos_5_numpy', 'paleos_10_numpy'}
 
 
 @pytest.mark.accept_solves_newton_setups
-@pytest.mark.timeout(9000)
 @pytest.mark.physics_invariant
-def test_every_newton_setup_meets_the_surface_boundary_condition(monkeypatch):
+@pytest.mark.parametrize(
+    'name, eos, mass, jax, clock',
+    [pytest.param(*s[:5], id=s[0], marks=pytest.mark.timeout(s[5])) for s in NEWTON_SETUPS],
+)
+def test_every_newton_setup_meets_the_surface_boundary_condition(
+    monkeypatch, name, eos, mass, jax, clock
+):
     """Boundary condition P(R) = P_t on the 6 Newton setups (rtol 1e-9, 150 layers): each
     accepted profile outside ``MAY_PAD`` reaches the surface, the padded flag matches the
-    root of the last pressure solve (Newton accepts it), a padded one has no reached end of
+    root of the last pressure solve, a padded one has no reached end of
     its first sign pair within the cap, and a reached profile misses P_t by at most 1 P_t.
     A JAX setup takes T(r) from a numpy Picard solve at rtol 1e-5, as PROTEUS hands it the
     interior profile.
     Without ``_refine_pressure_root`` the Analytic 1 and PALEOS 3 JAX setups end padded,
-    so the case fails. See ``docs/Validation/hydrostatic_structure.md``."""
+    so those 2 cases fail. See ``docs/Validation/hydrostatic_structure.md``."""
     if not _has_paleos_data():
         pytest.skip('PALEOS tables not on disk')
     calls, real = [], zs._refine_pressure_root
@@ -158,29 +175,34 @@ def test_every_newton_setup_meets_the_surface_boundary_condition(monkeypatch):
 
     monkeypatch.setattr(zs, '_refine_pressure_root', spy)
     zroot = zalmoxis.get_zalmoxis_root()
-    md, misses, padded = load_material_dictionaries(), [], []
-    for name, eos, mass, jax in NEWTON_SETUPS:
-        cfg = _case(zroot, layer_eos_config=dict(eos), planet_mass=5.972e24 * mass)
-        tarr = None
-        if jax:
-            pre = dict(
-                cfg, outer_solver='picard', relative_tolerance=1e-5, absolute_tolerance=1e-6
-            )
-            r0 = zs.main(pre, md, None, os.path.join(zroot, 'input'))
-            tarr = (np.asarray(r0['radii'], float), np.asarray(r0['temperature'], float))
-            cfg['use_jax'] = True
-        calls.clear()
-        r = zs.main(cfg, md, None, os.path.join(zroot, 'input'), temperature_arrays=tarr)
-        P = np.asarray(r['pressure'], dtype=float)
-        assert r['converged'] and r['accepted_on'] == 'newton_tol', name
-        first_pair, root, evals = calls[-1]
-        assert P[-1] >= 0.0 and r['padded'] is bool(evals[root] == -P_T)
-        if r['padded']:
-            assert name in MAY_PAD, name
-            assert first_pair is None or evals[first_pair[1]] > CAP * P_T, name
-        misses.append(abs(P[-1] - P_T) / P_T)
-        padded.append(r['padded'])
-    assert max(m for m, p in zip(misses, padded) if not p) <= CAP, misses
+    md = load_material_dictionaries()
+    cfg = _case(
+        zroot, layer_eos_config=dict(eos), planet_mass=5.972e24 * mass, wall_timeout=clock
+    )
+    tarr = None
+    if jax:
+        pre = dict(cfg, outer_solver='picard', relative_tolerance=1e-5, absolute_tolerance=1e-6)
+        r0 = zs.main(pre, md, None, os.path.join(zroot, 'input'))
+        assert r0['converged'] and r0['accepted_on'] in ('strict', 'mass_only'), name
+        tarr = (np.asarray(r0['radii'], float), np.asarray(r0['temperature'], float))
+        cfg['use_jax'] = True
+    calls.clear()
+    r = zs.main(cfg, md, None, os.path.join(zroot, 'input'), temperature_arrays=tarr)
+    P = np.asarray(r['pressure'], dtype=float)
+    # numpy PALEOS (adiabatic, no external T): the Newton root seeds the Picard blend ramp
+    assert r['converged'], name
+    if eos is PALEOS and not jax:
+        assert r['adiabat_blend'] == 1.0 and r['accepted_on'] in ('strict', 'mass_only'), name
+        assert r['mass_error_at_accept'] < 1e-4, name  # min(tolerance_outer, newton_tol)
+    else:
+        assert r['accepted_on'] == 'newton_tol', name
+    first_pair, root, evals = calls[-1]
+    assert P[-1] >= 0.0 and r['padded'] is bool(evals[root] == -P_T)
+    if r['padded']:
+        assert name in MAY_PAD, name
+        assert first_pair is None or evals[first_pair[1]] > CAP * P_T, name
+    else:
+        assert abs(P[-1] - P_T) <= CAP * P_T, (name, abs(P[-1] - P_T) / P_T)
 
 
 def test_a_jump_at_the_stop_returns_a_flagged_padded_profile(caplog):

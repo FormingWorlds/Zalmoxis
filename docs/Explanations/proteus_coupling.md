@@ -67,16 +67,16 @@ The wrapper builds the Zalmoxis input dict fresh on every call from `config` and
 
 1. Build an interpolating `temperature_function(r, P)` from `interior_o.radius` and `interior_o.temp` (staggered-node T from the energetics solver), holding T constant at `T_cmb` for $r \le R_\mathrm{cmb}$ to cover the core region.
 2. Build a sorted r-indexed `temperature_arrays = (r_arr, T_arr)` tuple by reversing `interior_o.radius` to ascending order and applying an explicit `argsort` so `jnp.interp` sees a strictly increasing $r$.
-3. Atomically snapshot `zalmoxis_output.dat` to `.prev`, snapshot `dirs['spider_mesh']` to `.prev`, and snapshot the current `hf_row` structure scalars (`R_int`, `M_int`, `M_core`, `M_mantle`, `P_surf`, `R_core`, `P_center`, `rho_avg`) into a local `_saved_structure` dict.
+3. Atomically snapshot `zalmoxis_output.dat` to `.prev`, snapshot `dirs['spider_mesh']` to `.prev`, and snapshot the current `hf_row` structure scalars (`R_int`, `M_int`, `M_core`, `M_core_solve`, `core_density`, `M_mantle`, `P_surf`, `R_core`, `P_center`, `P_cmb`, `gravity`, `rho_avg`) into a local `_saved_structure` dict.
 4. Call `zalmoxis_solver(config, outdir, hf_row, num_spider_nodes=..., temperature_function=temperature_function, temperature_arrays=(r_arr, T_arr))`. `zalmoxis_solver` forwards the callable to Zalmoxis, or `None` in its place on JAX-viable EOS and volatile layouts with `use_jax = true`. With `use_jax = true`, Zalmoxis takes T from the arrays and ignores `temperature_function`; with `use_jax = false`, it ignores the arrays and uses `temperature_function` (see [Outer solver and JAX path](#outer-solver-and-jax-path)).
-5. On success, run the mass-anchor check `|M_int / M_int_target - 1| < 3e-3` (`_ZALMOXIS_MASS_ANCHOR_TOL`). The check tightens Zalmoxis's internal `solver_tol_outer` (default $3 \times 10^{-3}$, a numerical tolerance) to a coupling contract: the wrapper raises `RuntimeError` on violation and routes through the same fall-back path as a non-converged solve, so a too-loose-converged result never reaches the next iteration.
+5. On success, run the mass-anchor check `|M_int / M_int_target - 1| < 3e-3` (`_ZALMOXIS_MASS_ANCHOR_TOL`). The limit equals the default of `solver_tol_outer` ($3 \times 10^{-3}$), the mass tolerance of the outer solve, and it also holds when `solver_tol_outer` is set looser. On a violation the wrapper raises `RuntimeError` and routes through the same fall-back path as a non-converged solve, so a too-loose-converged result never reaches the next iteration.
 6. Clear `hf_row['_structure_stale']` and update `interior_o.last_successful_struct_time` (the anchor for `update_stale_ceiling`).
 
 On any `RuntimeError` (Zalmoxis non-convergence, schema violation, mass-anchor violation), the wrapper restores the saved structure scalars, restores `zalmoxis_output.dat` and the SPIDER mesh from their `.prev` files, sets `hf_row['_structure_stale'] = True`, and increments a module-level `_zalmoxis_fail_count`. After 8 consecutive failures (`_ZALMOXIS_MAX_CONSECUTIVE_FAILS`) the run aborts. On the first success, the streak resets to 0 and is logged for post-hoc analysis.
 
 ### 4. Mesh blending
 
-After a successful re-solve, `blend_mesh_files` (in `interior_energetics/spider.py`, used for both SPIDER and Aragog mesh files) caps the per-update fractional radius shift at `mesh_max_shift` (default 0.05 = 5%). When the requested shift exceeds the cap, the file is post-modified in place to a partial blend, and `dirs['mesh_shift_active']` is set to `True` so the [mesh-convergence trigger](#dynamic-update-triggers) refires on the next iteration with the floor bypassed. See [Mesh handover and blending](#mesh-handover-and-blending).
+After a successful re-solve with SPIDER, `blend_mesh_files` (in `interior_energetics/spider.py`) caps the per-update fractional radius shift of the SPIDER mesh file at `mesh_max_shift` (default 0.05 = 5%). When the requested shift exceeds the cap, the file is post-modified in place to a partial blend, and `dirs['mesh_shift_active']` is set to `True` so the [mesh-convergence trigger](#dynamic-update-triggers) refires on the next iteration with the floor bypassed. With Aragog the solve writes no SPIDER mesh file, so no mesh is blended. See [Mesh handover and blending](#mesh-handover-and-blending).
 
 ## State exchange (`hf_row` reads and writes)
 
@@ -91,7 +91,7 @@ Zalmoxis reads the current planet state from `hf_row`, runs its structure solve,
 | `M_int` | Interior mass [kg] | Used in fall-back accounting and mass-anchor check. |
 | `M_core` | Core mass [kg] | Same. |
 | `R_int` | Interior radius [m] | Equilibration convergence, scalar override for atmosphere BC. |
-| `P_cmb` | CMB pressure [Pa] | Resolves $T_\mathrm{cmb}$ in `liquidus_super` mode (Fei+2021 liquidus at $P_\mathrm{cmb}$). On the very first call uses a Noack & Lasbleis (2020) mass-aware fallback. |
+| `P_cmb` | CMB pressure [Pa] | Resolves $T_\mathrm{cmb}$ in `liquidus_super` mode (Fei et al. (2021)[^cite-fei2021] liquidus at $P_\mathrm{cmb}$). On the very first call uses a Noack & Lasbleis (2020)[^cite-noack2020] mass-aware fallback. |
 | `P_surf` | Surface pressure [bar in `hf_row`, scaled to Pa internally] | Atmospheric BC for the structure solve, when finite and positive. |
 | `H2O_kg_total`, `CO2_kg_total`, ... | Volatile inventory [kg] | Subtracted from `mass_tot * M_earth` to give the dry interior `planet_mass` passed to Zalmoxis. |
 | `H2O_kg_liquid`, `H2_kg_liquid` | Dissolved volatile masses [kg] | Build the `VolatileProfile` when `dry_mantle = false`. |
@@ -104,13 +104,14 @@ Zalmoxis reads the current planet state from `hf_row`, runs its structure solve,
 | `R_int` | Top-of-mantle (interior surface) radius [m] |
 | `R_core` | CMB radius [m] |
 | `M_int` | Total interior mass [kg], reported by Zalmoxis |
-| `M_core` | Core mass enclosed at CMB [kg] |
+| `M_core` | Mass inside `R_core`, the first grid node at or above the core mass of the solve [kg] |
+| `M_core_solve` | Core mass of the solve (`cmb_mass`) [kg] |
 | `M_int_target` | The dry mass Zalmoxis was instructed to converge toward (= `mass_tot * M_earth - M_volatiles`) |
 | `gravity` | Surface gravity [m s$^{-2}$] |
 | `P_surf` | Atmospheric pressure at the structure-side top-of-mantle [bar] |
 | `P_center` | Center pressure [Pa] |
 | `P_cmb` | Core-mantle boundary pressure [Pa] |
-| `core_density` | Mass-enclosed-at-CMB / volume-enclosed-at-CMB [kg m$^{-3}$], the self-consistent core density |
+| `core_density` | `M_core` divided by the volume inside `R_core` [kg m$^{-3}$], the self-consistent core density |
 | `core_heatcap` | Either 450 J kg$^{-1}$ K$^{-1}$ (Dulong-Petit iron, when `core_heatcap = "self"`) or the configured numeric value |
 | `rho_avg` | Volume-averaged interior density [kg m$^{-3}$] |
 | `_structure_stale` | Flag consumed by `Aragog.setup_or_update_solver` to detect fall-back state |
@@ -128,7 +129,7 @@ The full set of TOML-derived inputs the wrapper translates is in `load_zalmoxis_
 
 ## Initial-condition anchors
 
-A coupled run's first iteration is the hardest. The structure solve and the energetics initial entropy must agree on $T(r)$, $P(r)$, $R_\mathrm{cmb}$, and $M_\mathrm{core}$ before SPIDER or Aragog takes its first time step. PROTEUS supports several IC modes; the production default is `adiabatic_from_cmb` (Stage 1a lock for the UnifyCoupling paper), with `liquidus_super` as the most physically grounded option for hot magma-ocean ICs.
+A coupled run's first iteration is the hardest. The structure solve and the energetics initial entropy must agree on $T(r)$, $P(r)$, $R_\mathrm{cmb}$, and $M_\mathrm{core}$ before SPIDER or Aragog takes its first time step. PROTEUS supports several IC (initial condition) modes. The default is `liquidus_super`, the most physically grounded option for hot magma-ocean ICs; the `dummy` input and the grid test setup of PROTEUS use `adiabatic_from_cmb`.
 
 `liquidus_super` mode anchors the CMB temperature to the MgSiO$_3$ liquidus at the converged $P_\mathrm{cmb}$, plus a configurable excess representing super-liquidus thermal state:
 
@@ -136,8 +137,9 @@ $$
 T_\mathrm{cmb} = T_\mathrm{liq}^\mathrm{Fei2021}(P_\mathrm{cmb}) + \Delta T_\mathrm{super}
 $$
 
-where $T_\mathrm{liq}^\mathrm{Fei2021}$ is the Belonoshko+2005 / Fei+2021 piecewise Simon-Glatzel liquidus exposed via `zalmoxis.melting_curves.paleos_liquidus`, and `delta_T_super` defaults to 500 K (set to 0 to anchor the IC adiabat exactly at the liquidus).
+where $T_\mathrm{liq}^\mathrm{Fei2021}$ is the Belonoshko et al. (2005)[^cite-belonoshko2005] / Fei et al. (2021) piecewise Simon-Glatzel liquidus exposed via `zalmoxis.melting_curves.paleos_liquidus`, and `delta_T_super` defaults to 500 K (set to 0 to anchor the IC adiabat exactly at the liquidus).
 Zalmoxis then integrates the adiabat *upward* from $(R_\mathrm{cmb}, T_\mathrm{cmb})$ rather than downward from a surface anchor.
+Only the mantle follows this adiabat: the core nodes carry the surface temperature $T_\mathrm{surf}$, because the energetics solver computes the core temperature itself.
 
 Why this matters: a surface-anchored adiabat gets the deep-mantle $T$ wrong by hundreds of K when the surface $T$ is uncertain (atmospheres at 2000 to 3500 K), but the deep-mantle $T_\mathrm{cmb}$ is well-constrained by the liquidus plus a physical excess.
 Anchoring upward fixes the well-known quantity and lets the surface $T$ float to whatever the radiative balance demands.
@@ -148,12 +150,12 @@ After one round-trip through Zalmoxis the converged $P_\mathrm{cmb}$ replaces th
 
 The other modes (`adiabatic`, `adiabatic_from_cmb`, `accretion`, `isentropic`) follow analogous strategies.
 `adiabatic` is surface-anchored from `tsurf_init`.
-`accretion` solves the structure adiabatically and then overlays White & Li (2025) accretion thermal state with `f_accretion`, `f_differentiation` partitioning, populating `T_cmb_initial`, `T_surf_accr`, `DeltaT_accretion`, `DeltaT_differentiation`, `DeltaT_adiabat`, and the `_initial_T_profile` array consumed by Aragog's `_set_entropy_ic`.
+`accretion` solves the structure adiabatically and then overlays White & Li (2025)[^cite-white2025] accretion thermal state with `f_accretion`, `f_differentiation` partitioning, populating `T_cmb_initial`, `T_surf_accr`, `DeltaT_accretion`, `DeltaT_differentiation`, `DeltaT_adiabat`, and the `_initial_T_profile` array consumed by Aragog's `_set_entropy_ic`.
 `isentropic` (CHILI protocol) means the energetics solver consumes `ini_entropy` directly, decoupling the structure-solve T(r) from the entropy IC.
 
 ## Initial-condition equilibration loop
 
-A coupled run's first iteration is the hardest. The structure solve and the energetics initial entropy must agree on $T(r)$, $P(r)$, $R_\mathrm{cmb}$, and $M_\mathrm{core}$ before SPIDER or Aragog takes its first time step, and the volatile partitioning must agree with the structure-derived $M_\mathrm{mantle}$. PROTEUS runs a CALLIOPE + Zalmoxis loop in `proteus.interior_energetics.wrapper.equilibrate_initial_state()`:
+The volatile partitioning must also agree with the structure-derived $M_\mathrm{mantle}$. PROTEUS runs a CALLIOPE + Zalmoxis loop in `proteus.interior_energetics.wrapper.equilibrate_initial_state()`:
 
 ```python
 for i in range(equilibrate_max_iter):
@@ -189,6 +191,17 @@ The two converge by iteration; with `equilibrate_tol = 0.01`, $R_\mathrm{int}$ a
 After equilibration, `generate_spider_tables()` regenerates the SPIDER P-S lookup tables against the final composition, so SPIDER's first time step (and, when Aragog is the energetics module, Aragog's `_verify_entropy_ic` path) reads tables consistent with the equilibrated structure. The mesh path is also published into `dirs['spider_mesh']`, with a `.prev` copy created so that the very first dynamic-update fall-back has a valid baseline if Zalmoxis fails on iteration 1 of the main loop.
 
 The equilibration loop runs only when `interior_struct.zalmoxis.equilibrate_init = true` (default). With `equilibrate_init = false`, the wrapper performs a single Zalmoxis call and trusts the user's TOML to be self-consistent. Practically, `equilibrate_init = false` is reserved for restart-style runs where the IC file already contains a converged structure and outgassing state, or for benchmark configs where bypassing the loop is part of the test protocol.
+
+### Starting each call from the previous structure
+
+Each Zalmoxis call of the loop solves the same planet again, with a new surface pressure and volatile inventory, so the wrapper (`proteus.interior_struct.zalmoxis`) starts it from the structure of the call before.
+The returned `density` and `radii` start the density iteration.
+The returned `radii`, `pressure` and `mass_enclosed` go to `main` as `adiabat_seed` when the installed Zalmoxis takes that argument.
+With the seed, a re-solve skips the Newton root and the blend ramp; [Secant tail and seeded re-solve](process_flow.md#secant-tail-and-seeded-re-solve) explains how.
+The wrapper keeps one structure per planet, which it identifies by `planet.mass_tot`, `interior_struct.core_frac` and `interior_struct.zalmoxis.mantle_mass_fraction`.
+The re-solves of the main loop take the interior temperature of the energetics module, so Zalmoxis computes no adiabat there and does not use the seed.
+
+### Equilibration pathologies
 
 Two convergence pathologies show up at the equilibration stage and indicate a deeper config problem rather than a tolerance issue.
 
@@ -234,18 +247,19 @@ This is the regime where the wall-time cost of Zalmoxis is most exposed; a too-t
 
 When `interior_energetics.module = "aragog"` (or `"spider"`) and `update_interval > 0`, Zalmoxis writes a fresh mesh file `zalmoxis_output.dat` (5-column TSV: `r`, `P`, `rho`, `g`, `T`) on each re-solve. Aragog reads this file inside `solver.reset()` to rebuild its mass-coordinate mesh. SPIDER reads a separately-written mesh file produced by `write_spider_mesh_file`, which includes the same columns sub-sampled to SPIDER's basic-node count.
 
-Two contracts must hold at the file handover boundary, enforced by `validate_zalmoxis_output_schema`:
+Three contracts must hold at the file handover boundary, enforced by `validate_zalmoxis_output_schema`:
 
 1. **Top-of-mantle radius equality**: `r_file[-1] == hf_row['R_int']` to relative tolerance $10^{-6}$. This is essentially exact because both come from the same `planet_radius` variable inside `zalmoxis_solver`; a violation indicates file corruption, column-swap, or truncation.
-2. **Mantle mass conservation**: $\int 4 \pi r^2 \rho \, dr$ over the mantle = `M_int - M_core` to relative tolerance $5 \times 10^{-2}$. The 5% tolerance is loose because two legitimate noise sources stack: the integrator-method gap (RK45-with-substeps versus shell-trapezoid post-write reintegration, $\sim 1$%), and `blend_mesh_files` post-modifying the file when the per-call radius shift exceeds `mesh_max_shift` (up to 5% drift between the on-disk file and the unblended scalars in `hf_row`). The tight $< 0.1$% conservation contract lives elsewhere in the wrapper's mass-anchor check.
+2. **Mantle mass**: `M_int - M_core` equals the mantle mass above `R_core` to relative tolerance $5 \times 10^{-2}$. `zalmoxis_solver` passes as the mantle mass `mass_enclosed[-1] - mass_enclosed[cmb_index]`, from the arrays that give `M_int` and `M_core`. So in a PROTEUS run this contract is an identity check of those 2 writes; it does not check the arrays or the choice of the CMB node. A call without the mantle mass integrates $\int 4 \pi r^2 \rho \, dr$ over the file nodes. No PROTEUS call path makes such a call; for it, the 5 % tolerance stops gross corruption (a column swap, a truncated file). `blend_mesh_files` writes only the SPIDER mesh file, after this check. The mass contract of the coupling is the mass-anchor check of the wrapper, $\lvert M_\mathrm{int} / M_\mathrm{int,target} - 1 \rvert < 3 \times 10^{-3}$ (`_ZALMOXIS_MASS_ANCHOR_TOL`).
+3. **Bottom radius**: `r_file[0]` equals `hf_row['R_core']` within the mesh tolerance of Aragog, $\max(1\,\mathrm{m}, 10^{-9} (R_\mathrm{int} - R_\mathrm{core}))$.
 
-`mesh_max_shift` (default 0.05 = 5%) caps the fractional radius shift between consecutive Zalmoxis writes.
-The motivation is that SPIDER's BDF integrator and Aragog's CVODE integrator both penalise abrupt mesh changes; a 30% radius update from one iteration to the next during the rheological transition can spike `T_magma` and `Phi_global` discontinuously, kicking the entropy solver onto a wrong P-S branch.
-Capping the per-update shift forces Zalmoxis and the energetics solver to converge across several iterations.
+With SPIDER, `mesh_max_shift` (default 0.05 = 5%) caps the fractional radius shift of the SPIDER mesh file between consecutive Zalmoxis writes; with Aragog no mesh is blended, so the cap does not act.
+The motivation is that SPIDER's BDF integrator penalises abrupt mesh changes; a 30% radius update from one iteration to the next during the rheological transition can spike `T_magma` and `Phi_global` discontinuously, kicking the entropy solver onto a wrong P-S branch.
+Capping the per-update shift forces Zalmoxis and SPIDER to converge across several iterations.
 The mesh-convergence trigger (above) ensures the unfinished blend gets refined on a fast cadence (default 10 yr) instead of waiting a full `update_interval`.
 
 !!! note "Resume + ULP radius drift"
-    Aragog's `_validate_eos_radius_range` in `aragog/src/aragog/solver/entropy_solver.py` (lines ~91-110) checks that the EOS-table radius range agrees with the live mesh `inner_radius` / `outer_radius`. The check uses a relative tolerance $\max(1\,\mathrm{m},\ 10^{-9} \cdot \mathrm{span})$ against floating-point comparisons. When resuming from a saved snapshot, Zalmoxis recomputes `inner` and `outer` from the live planet state while the EOS table radii are frozen at the launch-time mesh, so single-ULP drift between the two is possible. If you see `External EOS radius range [..., ...] m inconsistent with mesh bounds [..., ...] m` on a resume, regenerate the mesh by re-running Zalmoxis with the current planet radius rather than reusing the stale table.
+    Aragog's `_validate_eos_radius_range` in `aragog/src/aragog/solver/entropy_solver.py` (lines ~91-110) checks that the EOS-table radius range agrees with the live mesh `inner_radius` / `outer_radius`. The check uses the mesh tolerance of contract 3 above, $\max(1\,\mathrm{m}, 10^{-9} (R_\mathrm{int} - R_\mathrm{core}))$, in metres. When resuming from a saved snapshot, Zalmoxis recomputes `inner` and `outer` from the live planet state while the EOS table radii are frozen at the launch-time mesh, so single-ULP drift between the two is possible. If you see `External EOS radius range [..., ...] m inconsistent with mesh bounds [..., ...] m` on a resume, regenerate the mesh by re-running Zalmoxis with the current planet radius rather than reusing the stale table.
 
 ## EOS table generation
 
@@ -266,7 +280,7 @@ Aragog reads one table minimum $S_{\min}$ for all pressures, the lowest solid en
 
 On the rows above the last extension row (11.84 GPa), where the table still starts at 300 K, a floor at that margin holds cells only above its level, and a cell between it and the 300 K entropy of its row reads the value of the lowest inverted node of its column, at 300 to 374 K for these tables. For 1 Earth mass, in the lowest entropy interval (26.0 to 106.1 J kg$^{-1}$ K$^{-1}$, 67 to 104 K at 1 bar) Aragog's conductive gradient $(T/c_P)\,\partial S/\partial r$ differs at the two nodes from the slope of the table's own $T(S)$ by $-16$ and $+40$ % on the columns where both nodes are inverted (up to 6.75 GPa), and changes sign inside the interval: the table $T(S)$ has one slope over the interval, while $T/c_P$ falls by a factor of 1.7 across it at 1 bar. In the next interval the difference at the nodes is $-3.4$ to $+5.4$ % on these columns, and $-8$ to $+13$ % on the columns from 7.0 to 11.7 GPa and at 350 GPa, where that interval is the lowest inverted one. The deviations in the table hold for $T$, not for this gradient. Where the lowest node is filled (for 1 Earth mass, above 6.75 GPa), $T$ is flat in the lowest interval while $T/c_P$ is not zero, so there Aragog's conductive gradient does not follow the table. Without a floor, cells can reach this interval.
 
-Below 300 K the extension uses the two-mode Einstein heat capacity of the PALEOS clinoenstatite potentials (Sokolova et al. 2022). A Debye model with the parameters of Stixrude & Lithgow-Bertelloni (2022) agrees with it in $S(300\,\mathrm{K}) - S(T)$ within 9.5 % up to 5 GPa and 11 % at 10 GPa, and in density within 0.46 %, but its heat capacity is 30 to 52 % lower at and below 100 K; an entropy floor with a margin of 100 J kg$^{-1}$ K$^{-1}$ lies at the upper edge of that temperature range.
+Below 300 K the extension uses the two-mode Einstein heat capacity of the PALEOS clinoenstatite potentials of Sokolova et al. (2022)[^cite-sokolova2022]. A Debye model with the parameters of Stixrude & Lithgow-Bertelloni (2022)[^cite-stixrude2022] agrees with it in $S(300\,\mathrm{K}) - S(T)$ within 9.5 % up to 5 GPa and 11 % at 10 GPa, and in density within 0.46 %, but its heat capacity is 30 to 52 % lower at and below 100 K; an entropy floor with a margin of 100 J kg$^{-1}$ K$^{-1}$ lies at the upper edge of that temperature range.
 
 **Liquidus entropy plateau.** The written solidus and liquidus entropies come from a PCHIP fit through 20 anchors spread over the pressure range of the table, and each curve is then held at its running maximum in pressure, so it is non-decreasing and flat above its highest value. For MgSiO3 the liquid-table entropy along the liquidus peaks near 164 GPa and then falls while the liquidus temperature keeps rising, since $\mathrm{d}S_\mathrm{liq}/\mathrm{d}P = -\alpha/\rho + (c_p/T)\,\mathrm{d}T_\mathrm{liq}/\mathrm{d}P$. With the falling curve, the first solid in a cooling molten mantle forms in a thin layer at the peak above still molten material, and the time step of coupled SPIDER and Aragog runs of 3 and 5 Earth-mass planets collapses at that onset. The plateau is therefore a solver-stability choice, not a property of the tables: the whole range from the peak pressure to the core-mantle boundary reaches the liquidus together.
 
@@ -295,9 +309,16 @@ When `global_miscibility = true`, the wrapper additionally calls `solve_miscible
 
 ## Outer solver and JAX path
 
-Zalmoxis offers two outer mass-radius solvers, `picard` and `newton`, with `newton` as the default in PROTEUS coupled runs. The Picard path is a damped fixed-point iteration $R_{n+1} = R_n \cdot (M_\mathrm{target} / M_n)^{1/3}$, clamped to $[0.5, 2.0]$ and damped by 0.5; it converges robustly on cool Earth-mass profiles but can hit a basin attractor on hot fully-molten profiles, where the iteration oscillates around the true $R$ without escaping. The Newton path uses a central-difference $\mathrm{d}M/\mathrm{d}R$ estimate combined with brentq bracketing on $f(R) = M(R) - M_\mathrm{target}$, and converges on the hot-profile cases that trap Picard.
+Zalmoxis offers two outer mass-radius solvers, `picard` and `newton`, with `newton` as the default in PROTEUS coupled runs. The Picard path is a fixed-point iteration on the radius, $R_{n+1} = R_n (M_p / M_n)^{1/3}$, with the planet mass $M_p$ and the computed mass $M_n$ of pass $n$:
 
-Newton requires tighter integrator tolerances than Picard: the Picard default `relative_tolerance = 1e-5` produces $\sim 10^{-3}$ noise in $M(R)$ that swamps the central-difference estimate. The wrapper auto-applies `relative_tolerance = 1e-9` and `absolute_tolerance = 1e-10` whenever `outer_solver = "newton"` is selected, and only forwards the Newton-specific knobs to Zalmoxis when the Newton path is active, so a Picard run sees an unchanged config dict.
+- the scale factor $(M_p / M_n)^{1/3}$ is clamped to $[0.5, 2.0]$;
+- each density iteration sets the density to $\alpha \rho_\mathrm{EOS} + (1 - \alpha) \rho_\mathrm{old}$, with $\rho_\mathrm{EOS}$ the EOS density and $\rho_\mathrm{old}$ the density of the iteration before. $\alpha$ is 0.5 at the start of each outer pass; at a density oscillation (the mean density change flips sign) it falls by a factor 0.6, to at least 0.1, and otherwise it rises by a factor 1.05, to at most 0.5. A mass-oscillation factor changes after the last density iteration of a pass and is set to 0.5 again before the next pass, so it does not change $\alpha$. With `use_anderson = true` (the PROTEUS default) an Anderson step without damping replaces this blend at each density iteration that has a history and a finite Anderson step. The first density iteration of a pass, the one after a density oscillation and one whose number of nodes from the structure integration differs from that of the iteration before have no history, and they use the blend, as does an iteration with a residual or an Anderson step that is not finite. The Newton path runs the same density loop: each evaluation of $M(R)$ is one outer pass;
+- at the end of a blend ramp that `main` starts, the radius update takes secant steps instead (see [Secant tail and seeded re-solve](process_flow.md#secant-tail-and-seeded-re-solve)).
+
+It converges robustly on cool Earth-mass profiles but can hit a basin attractor on hot fully-molten profiles, where the iteration oscillates around the true $R$ without escaping.
+The Newton path uses a central-difference $\mathrm{d}M/\mathrm{d}R$ estimate combined with brentq bracketing on $f(R) = M(R) - M_p$, and converges on the hot-profile cases that trap Picard. With the adiabatic temperature modes of the initial structure solve, the Newton root holds the linear first-guess temperature, so Zalmoxis continues with the blend ramp from the Newton profile and returns the full adiabat (see [process flow](process_flow.md)).
+
+Newton requires tighter integrator tolerances than Picard: the Picard default `relative_tolerance = 1e-5` produces $\sim 10^{-3}$ noise in $M(R)$ that swamps the central-difference estimate. The wrapper auto-applies `relative_tolerance = 1e-9` and `absolute_tolerance = 1e-10` whenever `outer_solver = "newton"` is selected, and forwards the Newton-specific settings to Zalmoxis only when the Newton path is active, so a Picard run sees an unchanged config dict.
 
 The structure solve runs through Zalmoxis's JAX + diffrax path by default (`use_jax = true`), with an opt-in Anderson Type-II Picard accelerator (`use_anderson = true`). The JAX path has a known subtlety in coupled mode: the JAX RHS is P-indexed for adiabat tabulation, but PROTEUS's `temperature_function(r, P)` ignores $P$ (it interpolates an interior-solver T(r) from r alone), and the P-indexed JAX path collapses on a P-ignoring callable. The wrapper detects two argument styles:
 
@@ -351,3 +372,10 @@ The wrapper itself lives in the PROTEUS repository, not in Zalmoxis. The single 
 - [`proteus.interior_energetics.wrapper`](https://proteus-framework.org/PROTEUS/Reference/api/interior_energetics_wrapper.html): `equilibrate_initial_state`, `solve_structure`, `update_structure_from_interior`, the mass-anchor and fall-back logic.
 - [`proteus.config._struct`](https://proteus-framework.org/PROTEUS/Reference/api/config_struct.html): the attrs schema for `[interior_struct]` and `[interior_struct.zalmoxis]`. Every TOML key from the [coupling how-to](../How-to/proteus_coupling.md) maps to a field here.
 - [PROTEUS framework documentation](https://proteus-framework.org/PROTEUS): top-level entry.
+
+[^cite-noack2020]: L. Noack, M. Lasbleis, *[Parameterisations of interior properties of rocky planets. An investigation of planets with Earth-like compositions but variable iron content](https://doi.org/10.1051/0004-6361/202037723)*, Astronomy and Astrophysics, 638, A129, 2020. [SciX](https://scixplorer.org/abs/2020A%26A...638A.129N/abstract).
+[^cite-white2025]: N. I. White, J. Li, *[Initial Thermal States of Super-Earth Exoplanets and Implications for Early Dynamos](https://doi.org/10.1029/2024JE008550)*, Journal of Geophysical Research (Planets), 130(2), e2024JE008550, 2025. [SciX](https://scixplorer.org/abs/2025JGRE..13008550W/abstract).
+[^cite-sokolova2022]: T. S. Sokolova, P. I. Dorogokupets, A. I. Filippova, *[Equations of state of clino- and orthoenstatite and phase relations in the MgSiO$_3$ system at pressures up to 12 GPa and high temperatures](https://doi.org/10.1007/s00269-022-01212-7)*, Physics and Chemistry of Minerals, 49(9), 37, 2022. [SciX](https://scixplorer.org/abs/2022PCM....49...37S/abstract).
+[^cite-stixrude2022]: L. Stixrude, C. Lithgow-Bertelloni, *[Thermal expansivity, heat capacity and bulk modulus of the mantle](https://doi.org/10.1093/gji/ggab394)*, Geophysical Journal International, 228(2), 1119-1149, 2022. [SciX](https://scixplorer.org/abs/2022GeoJI.228.1119S/abstract).
+[^cite-belonoshko2005]: A. B. Belonoshko, N. V. Skorodumova, A. Rosengren, R. Ahuja, B. Johansson, L. Burakovsky, D. L. Preston, *[High-pressure melting of MgSiO$_3$](https://doi.org/10.1103/PhysRevLett.94.195701)*, Physical Review Letters, 94(19), 195701, 2005. [SciX](https://scixplorer.org/abs/2005PhRvL..94s5701B/abstract).
+[^cite-fei2021]: Y. Fei, C. T. Seagle, J. P. Townsend, C. A. McCoy, A. Boujibar, P. Driscoll, L. Shulenburger, M. D. Furnish, *[Melting and density of MgSiO$_3$ determined by shock compression of bridgmanite to 1254 GPa](https://doi.org/10.1038/s41467-021-21170-y)*, Nature Communications, 12, 876, 2021. [SciX](https://scixplorer.org/abs/2021NatCo..12..876F/abstract).

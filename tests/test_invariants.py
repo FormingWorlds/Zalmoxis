@@ -269,7 +269,9 @@ def test_cmb_mass_is_the_layer_boundary_of_the_returned_profile(monkeypatch):
     monkeypatch.setattr(
         zs, 'solve_structure', lambda *a, **k: (used.append(a[1]), real(*a, **k))[1]
     )
-    r = _run(_cfg(core_mass_fraction=0.3, num_layers=200, relative_tolerance=1e-8))
+    r = _run(
+        _cfg(core_mass_fraction=0.3, num_layers=200, relative_tolerance=1e-8, wall_timeout=600)
+    )
     m, P = np.asarray(r['mass_enclosed']), np.asarray(r['pressure'])
     target, last = 0.3 * earth_mass, 0.3 * m[-1]
     assert set(used) == {target}
@@ -1280,7 +1282,6 @@ def _newton_main(monkeypatch, result, cfg, melt):
 
     monkeypatch.setattr(zs, '_solve_newton_outer', lambda *a, **k: result)
     monkeypatch.setattr(zs, '_report_table_bands', lambda r, *a: r)
-    monkeypatch.setattr(zs, '_warn_adiabat', lambda *a, **k: None)
     monkeypatch.setattr(zs, 'calculate_mixed_density_batch', batch)
     config = {
         **cfg,
