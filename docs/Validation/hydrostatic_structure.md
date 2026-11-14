@@ -414,10 +414,11 @@ Relative differences are $|x - x_\mathrm{REF}| / |x_\mathrm{REF}|$.
   The REF core is at 4000 K at every core node, and its last core node has a weight of 0.78 % in the mass-weighted mean; so for a solve with the core node masses of REF, these 2 node bounds keep the mean within 6.5 K in the first solve and in the re-solve, and the 10 K bound of the mean follows from them. The measured mean lies 4.5 K from REF in the first solve and 4.1 K in the unseeded re-solve.
 - The accept label of every solve is `strict`, and the accepted pass is on a table of blend 1.
 - The first solve needs at most 3 passes on a full-adiabat table. The seeded re-solve needs at most 4 passes and at most half the structure integrations of the unseeded one.
+- On the JAX path (`use_jax = true`, the PROTEUS default) a second test runs the same 3 solves against REF solved on that path, with the same bounds for the first solve and the seeded re-solve. The unseeded re-solve is compared only with the seeded one (2.5 K, $5 \times 10^{-4}$ in radius): accepted at the mass tolerance $10^{-4}$, it lies 0.977 K from that REF in the mantle (0.253 K on the numpy path; measured on macOS with this repository's test). At the reference tolerance the JAX REF lies within 0.07 K in the mantle and $1.4 \times 10^{-5}$ in radius of the numpy REF.
 
 **How we know the right answer.** REF runs until its mass error is 100 times smaller than the mass tolerance of the ramp, $10^{-4}$.
 So REF stands for the converged structure; this is a convergence check, not an external reference.
-REF is solved once and stored in `tests/data/grid_start_up_reference.json`, with the md5 of both EOS tables and a hash of the Zalmoxis source that solved it (every Zalmoxis module the solve loads, without `_version.py`, which the install writes with the commit in it).
+REF is solved once on each path and stored in `tests/data/grid_start_up_reference.json`, with the md5 of both EOS tables and a hash of the Zalmoxis source that solved it (every Zalmoxis module the solve loads, without `_version.py`, which the install writes with the commit in it).
 The test stops when a table differs from the stored one.
 A separate nightly job solves REF again and fails when it moves by more than 0.1 K in the mantle, $10^{-5}$ in radius, central pressure or core radius, or $4 \times 10^{-5}$ in CMB pressure, or when the source hash differs.
 Then `python -m tools.validation.grid_start_up_reference` writes the file again.
