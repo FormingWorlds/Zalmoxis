@@ -285,6 +285,39 @@ def test_a_seeded_solve_that_fails_runs_the_newton_ramp_without_the_seed(spies, 
     assert 'seeded solve did not converge' in caplog.text
 
 
+def _five_percent(wall=False):
+    """A full-adiabat ramp pass with converged density and pressure, 5 % off the mass, not
+    accepted; ``wall`` marks a wall-clock stop."""
+    r = {**_full(t=20.0), 'converged': False, 'converged_mass': False, 'accepted_on': None}
+    r.update(mass_error_at_accept=0.05, stopped_on_wall_clock=wall)
+    return r
+
+
+@pytest.mark.parametrize('wall', [False, True], ids=['mass', 'wall_clock'])
+def test_a_ramp_after_a_newton_root_is_retried_and_not_skipped(spies, wall):
+    """The ramp after a Newton root ends 5 % off the mass with converged density and pressure,
+    also at a wall-clock stop: main accepts it neither as retry_skip nor as timeout, but retries
+    at the ramp tolerance and returns the retry."""
+    spies['out'].append(_five_percent(wall))
+    cfg = _adiabatic_cfg(outer_solver='newton', num_layers=2, tolerance_outer=3e-3)
+    r = zs.main(cfg, {}, None, '/tmp')
+    assert len(spies['newton']) == 1 and len(spies['solve']) == 2
+    assert [cp['tolerance_outer'] for cp, _ in spies['solve']] == [1e-4, 1e-4]
+    assert r['converged'] is True and r['accepted_on'] == 'strict'
+
+
+def test_a_seeded_solve_at_5_percent_and_the_ramp_after_it_are_not_skipped(spies):
+    """The seeded solve and the ramp from the Newton root after it both end 5 % off the mass with
+    converged density and pressure: main accepts neither as retry_skip and returns the retry."""
+    spies['out'] += [_five_percent(), _five_percent()]
+    cfg = _adiabatic_cfg(outer_solver='newton', num_layers=2, tolerance_outer=3e-3)
+    r = zs.main(cfg, {}, None, '/tmp', adiabat_seed=_seed_main())
+    assert len(spies['newton']) == 1 and len(spies['solve']) == 3
+    seeded = ['adiabat_seed' in kw for _, kw in spies['solve']]
+    assert seeded == [True, False, False]
+    assert r['converged'] is True and r['accepted_on'] == 'strict'
+
+
 @pytest.mark.parametrize(
     'solver, newton_converged, total',
     [('newton', False, 45.0), ('picard', None, 41.0)],
