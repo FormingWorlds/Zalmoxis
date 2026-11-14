@@ -76,7 +76,7 @@ On any `RuntimeError` (Zalmoxis non-convergence, schema violation, mass-anchor v
 
 ### 4. Mesh blending
 
-After a successful re-solve, `blend_mesh_files` (in `interior_energetics/spider.py`, used for both SPIDER and Aragog mesh files) caps the per-update fractional radius shift at `mesh_max_shift` (default 0.05 = 5%). When the requested shift exceeds the cap, the file is post-modified in place to a partial blend, and `dirs['mesh_shift_active']` is set to `True` so the [mesh-convergence trigger](#dynamic-update-triggers) refires on the next iteration with the floor bypassed. See [Mesh handover and blending](#mesh-handover-and-blending).
+After a successful re-solve with SPIDER, `blend_mesh_files` (in `interior_energetics/spider.py`) caps the per-update fractional radius shift of the SPIDER mesh file at `mesh_max_shift` (default 0.05 = 5%). When the requested shift exceeds the cap, the file is post-modified in place to a partial blend, and `dirs['mesh_shift_active']` is set to `True` so the [mesh-convergence trigger](#dynamic-update-triggers) refires on the next iteration with the floor bypassed. With Aragog the solve writes no SPIDER mesh file, so no mesh is blended. See [Mesh handover and blending](#mesh-handover-and-blending).
 
 ## State exchange (`hf_row` reads and writes)
 
