@@ -436,8 +436,8 @@ The test asserts the pass counts; the error values are context.
 A pass means that the first-solve curve ends below the broken line after at most 3 passes from pass 6, and the seeded curve ends below it within 4 passes.
 
 **Known limit.** The tests bound the lag for the 2 setups of [Newton and Picard on the PROTEUS initial structure](#newton-and-picard-on-the-proteus-initial-structure) and for the setup above, 1 of the 4 PROTEUS grid cases.
-Replays of the saved start-up inputs of all 4 grid cases (core mass fraction 0.35 and 0.95; 1000 and 2000 ppmw H, parts per million by weight of hydrogen), taken from a PROTEUS grid run and outside the tests of this repository, give these values.
-The first 5 rows exceed a bound; the other 6 are not bounded or lie inside one.
+Replays of the saved start-up inputs of all 4 grid cases (core mass fraction 0.35 and 0.95; 1000 and 2000 ppmw H, parts per million by weight of hydrogen), taken from a PROTEUS grid run and outside the tests of this repository, give these values; the row of the re-solves at core mass fraction 0.95 comes from the grid start-up test of this repository.
+The first 5 rows exceed a bound; the other 7 are not bounded or lie inside one.
 
 | Case | Quantity | Value | Bound |
 |---|---|---|---|
