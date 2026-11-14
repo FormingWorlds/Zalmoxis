@@ -2125,7 +2125,6 @@ def test_the_accept_waits_for_a_table_built_on_a_full_adiabat_pass():
 
 
 @pytest.mark.smoke
-@pytest.mark.usefixtures('no_check')
 def test_an_iteration_cap_on_the_first_full_adiabat_pass_is_not_accepted():
     """The iteration cap ends the solve on the first pass at blend 1, on the target mass: its
     T table comes from the blend-0.75 pass, so the pass is returned unaccepted."""
@@ -2137,7 +2136,6 @@ def test_an_iteration_cap_on_the_first_full_adiabat_pass_is_not_accepted():
 
 
 @pytest.mark.smoke
-@pytest.mark.usefixtures('no_check')
 def test_a_pass_below_blend_1_reports_no_self_consistency():
     """The iteration cap ends the solve on the blend-0.75 pass, on the target mass: its T is
     not the adiabat, so adiabat_self_consistency is None."""
@@ -2149,7 +2147,6 @@ def test_a_pass_below_blend_1_reports_no_self_consistency():
 
 
 @pytest.mark.smoke
-@pytest.mark.usefixtures('no_check')
 def test_an_iteration_cap_takes_the_best_pass_on_a_full_adiabat_table():
     """The first pass at blend 1 (table of blend 0.75) ends 0.01 % off the mass, the passes on
     a table of blend 1 0.5 % off: the iteration cap accepts the best pass of the newest step,
@@ -2167,7 +2164,6 @@ def test_an_iteration_cap_takes_the_best_pass_on_a_full_adiabat_table():
 
 
 @pytest.mark.smoke
-@pytest.mark.usefixtures('no_check')
 def test_an_earlier_best_pass_on_an_older_table_is_named_and_refused(caplog):
     """The passes on a table of blend 1 end 5 % off, above every accept limit of the iteration
     cap; the first pass at blend 1 ends 0.01 % off. The stop returns that pass, the warning
@@ -2301,7 +2297,6 @@ def _secant_calls(monkeypatch, tol):
 
 @pytest.mark.smoke
 @pytest.mark.accept_solves
-@pytest.mark.usefixtures('no_check')
 @pytest.mark.timeout(900)
 def test_the_secant_steps_above_2_tolerances_until_a_secant_step_does_not_shrink_the_error(
     monkeypatch,
@@ -2328,7 +2323,6 @@ def test_the_secant_steps_above_2_tolerances_until_a_secant_step_does_not_shrink
 
 @pytest.mark.smoke
 @pytest.mark.accept_solves
-@pytest.mark.usefixtures('no_check')
 @pytest.mark.timeout(900)
 def test_a_radius_guess_that_is_not_finite_stops_the_solve(monkeypatch):
     """A secant step that gives a NaN radius stops the solve with StructureSolveError that
@@ -2348,7 +2342,6 @@ def test_a_radius_guess_that_is_not_finite_stops_the_solve(monkeypatch):
 
 @pytest.mark.smoke
 @pytest.mark.accept_solves
-@pytest.mark.usefixtures('no_check')
 @pytest.mark.timeout(900)
 def test_a_ramp_without_the_secant_key_takes_no_secant_step(monkeypatch):
     """A Picard ramp that main did not start (no ``_secant_tail``) keeps the cube-root rule:
@@ -2402,7 +2395,6 @@ def _case_seeded_second_pass(seed, structure=None, **_):
 
 @pytest.mark.smoke
 @pytest.mark.accept_solves
-@pytest.mark.usefixtures('no_check')
 @pytest.mark.timeout(600)
 def test_the_first_seeded_pass_carries_the_seed_label_and_is_not_accepted(ramp_seed):
     """An iteration cap of 1 ends a seeded solve on its first pass, on the target mass: its
@@ -2428,7 +2420,6 @@ def _case_seed_label(seed, structure=None, **_):
 
 @pytest.mark.smoke
 @pytest.mark.accept_solves
-@pytest.mark.usefixtures('no_check')
 @pytest.mark.timeout(600)
 def test_the_seed_table_pass_starts_no_secant(monkeypatch, ramp_seed):
     """A seeded solve with the secant tail whose passes end 5, 4 and 3 tolerances below the
@@ -2528,9 +2519,9 @@ def test_an_iteration_cap_returns_the_best_pass_of_the_newest_blend_step_within_
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize('linear, ramp', [(1.005, False), (1.0015, False), (1.0009, True)])
+@pytest.mark.parametrize('linear, ramp', [(1.005, False), (1.0011, False), (1.0009, True)])
 def test_a_linear_pass_starts_the_ramp_only_within_the_trigger(linear, ramp):
-    """Linear passes 0.5 % and 0.15 % off the mass stay above ``_ADIABAT_RAMP_TRIGGER`` (1e-3)
+    """Linear passes 0.5 % and 0.11 % off the mass stay above ``_ADIABAT_RAMP_TRIGGER`` (1e-3)
     and compute no adiabat; at 0.09 % the next pass starts the blend ramp."""
     r, n_adiabat = _ramp_off({}, linear=linear, max_iterations_outer=3)
     assert (n_adiabat > 0) is ramp and (r['adiabat_blend'] > 0.0) is ramp
