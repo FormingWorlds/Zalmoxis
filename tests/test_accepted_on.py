@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -2021,28 +2022,48 @@ def _mean_core_T(r):
     return float(np.trapezoid(T[core], m[core]) / m[core][-1])
 
 
-def _core_T_off(r, ref):
-    """(T - REF at the last core node, largest |T - REF| over the other core nodes) [K], REF
-    interpolated to the masses of the core nodes of ``r``."""
-    m, T = np.asarray(r['mass_enclosed']), np.asarray(r['temperature'])
-    core = np.flatnonzero(m < r['cmb_mass'])
-    dT = T[core] - np.interp(m[core], ref['mass_enclosed'], ref['temperature'])
-    return float(dT[-1]), float(np.abs(dT[:-1]).max())
-
-
 def _core_T_bounded(r, ref):
-    """The core bounds of the grid start-up tests: mean within 10 K of REF, last core node
-    within 700 K, the other core nodes within 1 K."""
-    last, other = _core_T_off(r, ref)
-    print(
-        'core vs REF (mean, last node, other nodes) [K]:',
-        _mean_core_T(r) - _mean_core_T(ref),
-        last,
-        other,
+    """Assert the core bounds of the grid start-up tests and return (mean, last node, other
+    nodes) [K]: the mass-weighted mean core T within 10 K of REF, the last core node within
+    700 K, the other core nodes within 1 K. REF is interpolated in mass over its own core nodes
+    (mass below cmb_mass), never across the T step at its CMB node."""
+    m, T = np.asarray(r['mass_enclosed']), np.asarray(r['temperature'])
+    m_ref, T_ref = np.asarray(ref['mass_enclosed']), np.asarray(ref['temperature'])
+    core, core_ref = m < r['cmb_mass'], m_ref < ref['cmb_mass']
+    dT = T[core] - np.interp(m[core], m_ref[core_ref], T_ref[core_ref])
+    off = (_mean_core_T(r) - _mean_core_T(ref), float(dT[-1]), float(np.abs(dT[:-1]).max()))
+    print('core vs REF (mean, last node, other nodes) [K]:', *off)
+    bounds = dict(zip(('mean', 'last node', 'other nodes'), (10.0, 700.0, 1.0)))
+    failed = [k for (k, b), v in zip(bounds.items(), off) if abs(v) > b]
+    assert not failed, f'core bound {failed} of {bounds} K fails: {off} K'
+    return off
+
+
+@pytest.mark.unit
+def test_the_core_bounds_read_the_core_nodes_of_the_reference_only():
+    """REF with every mass 6e-4 higher (a radius 2e-4 larger at the same density, the radius
+    bound of the grid test) keeps its core temperatures, so the 3 core bounds read 0 K; REF
+    interpolated over all its nodes reads more than 100 K at the last core node, from the T
+    step at the CMB node. A core 11 K warmer, a last core node 701 K warmer and another core
+    node 1.5 K warmer each fail with the name of their bound."""
+    ref = grid_ref.load()['first']
+    m = np.asarray(ref['mass_enclosed'])
+    shifted = {**ref, 'mass_enclosed': m * (1 + 6e-4), 'cmb_mass': ref['cmb_mass'] * (1 + 6e-4)}
+    last = np.flatnonzero(m < ref['cmb_mass'])[-1]
+    assert (
+        np.interp(m[last] * (1 + 6e-4), m, ref['temperature']) - ref['temperature'][last] > 100
     )
-    return (
-        abs(_mean_core_T(r) - _mean_core_T(ref)) <= 10.0 and abs(last) <= 700.0 and other <= 1.0
+    assert _core_T_bounded(shifted, ref) == pytest.approx((0.0, 0.0, 0.0), abs=1e-9)
+    cases = (
+        (slice(0, last + 1), 11.0, 'mean'),
+        (last, 701.0, 'last node'),
+        (50, 1.5, 'other nodes'),
     )
+    for nodes, dT, bound in cases:
+        T = np.array(ref['temperature'], dtype=float)
+        T[nodes] += dT
+        with pytest.raises(AssertionError, match=re.escape(f"core bound ['{bound}'")):
+            _core_T_bounded({**ref, 'temperature': T}, ref)
 
 
 def _mantle_lag(r, adiabat):
@@ -2556,7 +2577,7 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
     assert dT <= 2.5 and abs(dT_top) <= 2.5 and abs(dR) <= 5e-4
     # the last core node reads the edge of the mantle T(P) table; the other core nodes do not
     for r, ref in ((first, ref1), (seeded, ref2), (plain, ref2)):
-        assert _core_T_bounded(r, ref)
+        _core_T_bounded(r, ref)
     assert len(p1) - 5 <= 3  # linear pass, 4 blend passes, then the full-adiabat passes
     assert len(p2) <= 4 and n_seeded <= 0.5 * n_plain
 
@@ -2598,7 +2619,7 @@ def test_a_first_solve_at_a_planet_mass_2e12_higher_keeps_the_stored_reference()
     assert dT <= 1.0
     assert max(abs(dR), abs(dPc), abs(dRc)) <= 2e-4 and abs(dPcmb) <= bound
     assert lag[0] <= 6.0 and lag[1] <= 1.0
-    assert _core_T_bounded(r, grid_ref.load()['first'])
+    _core_T_bounded(r, grid_ref.load()['first'])
 
 
 @pytest.mark.slow
