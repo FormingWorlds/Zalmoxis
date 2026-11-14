@@ -2512,6 +2512,41 @@ def _ramp_figure(runs):
     return fig
 
 
+def _assert_grid_bounds(first, seeded, plain, stored, lags, jax=False):
+    """Assert the bounds of the grid start-up tests on the first solve, the seeded and the
+    unseeded re-solve against the stored REF blocks (``_jax`` blocks with ``jax``); ``lags``
+    are the 3 lag triples of ``_grid_main``."""
+    ref1, ref2 = (stored[k + ('_jax' if jax else '')] for k in ('first', 'resolve'))
+    for r, flag in ((first, False), (seeded, True), (plain, False)):
+        assert r['converged'] and r['accepted_on'] == 'strict' and r['adiabat_seeded'] is flag
+        assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
+    off = [
+        (_off_ref(first, ref1), np.inf),  # 1-atm top node: 2-state adiabat step flip
+        (_off_ref(seeded, ref2), 1.0),
+        (_off_ref(plain, ref2), 1.0),
+    ]
+    print(
+        'vs REF (dT, dT_top, dR, dPc, dRc, dPcmb):',
+        off,
+        'seeded vs plain:',
+        _off_ref(seeded, plain),
+    )
+    print('lags (CMB node, mantle, top node) [K]:', *lags)
+    p_cmb_bound = 2 * GRID_CMF95['newton_tol'] / (1.0 - GRID_CMF95['core_mass_fraction'])
+    for (dT, dT_top, dR, dPc, dRc, dPcmb), top_bound in off:
+        assert dT <= 1.0 and abs(dT_top) <= top_bound
+        assert abs(dR) <= 2e-4 and abs(dPc) <= 2e-4
+        assert abs(dRc) <= 2e-4 and abs(dPcmb) <= p_cmb_bound
+    for lag in lags:
+        assert lag[0] <= 6.0 and lag[1] <= 1.0
+    assert lags[1][2] <= 25.0 and lags[2][2] <= 25.0
+    dT, dT_top, dR, *_ = _off_ref(seeded, plain)
+    assert dT <= 2.5 and abs(dT_top) <= 2.5 and abs(dR) <= 5e-4
+    # the last core node reads the edge of the mantle T(P) table; the other core nodes do not
+    for r, ref in ((first, ref1), (seeded, ref2), (plain, ref2)):
+        _core_T_bounded(r, ref)
+
+
 @pytest.mark.smoke
 @pytest.mark.accept_solves_long
 @pytest.mark.physics_invariant
@@ -2544,7 +2579,7 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
     _need_paleos()
     first, p1, _, lag1 = _grid_main(GRID_CMF95)
     stored = grid_ref.load()
-    ref1, ref2, resolve = stored['first'], stored['resolve'], grid_ref.CASES['resolve']
+    resolve = grid_ref.CASES['resolve']
     warm = dict(
         initial_density=first['density'],
         initial_radii=first['radii'],
@@ -2553,38 +2588,7 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
     seed = {k: first[k] for k in ('radii', 'pressure', 'mass_enclosed')}
     seeded, p2, n_seeded, lag2 = _grid_main(resolve, adiabat_seed=seed, **warm)
     plain, p3, n_plain, lag3 = _grid_main(resolve, **warm)
-    for r, flag in (
-        (first, False),
-        (seeded, True),
-        (plain, False),
-    ):
-        assert r['converged'] and r['accepted_on'] == 'strict' and r['adiabat_seeded'] is flag
-        assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
-    off = [
-        (_off_ref(first, ref1), np.inf),  # 1-atm top node: 2-state adiabat step flip
-        (_off_ref(seeded, ref2), 1.0),
-        (_off_ref(plain, ref2), 1.0),
-    ]
-    print(
-        'vs REF (dT, dT_top, dR, dPc, dRc, dPcmb):',
-        off,
-        'seeded vs plain:',
-        _off_ref(seeded, plain),
-    )
-    print('lags (CMB node, mantle, top node) [K]:', lag1, lag2, lag3)
-    p_cmb_bound = 2 * GRID_CMF95['newton_tol'] / (1.0 - GRID_CMF95['core_mass_fraction'])
-    for (dT, dT_top, dR, dPc, dRc, dPcmb), top_bound in off:
-        assert dT <= 1.0 and abs(dT_top) <= top_bound
-        assert abs(dR) <= 2e-4 and abs(dPc) <= 2e-4
-        assert abs(dRc) <= 2e-4 and abs(dPcmb) <= p_cmb_bound
-    for lag in (lag1, lag2, lag3):
-        assert lag[0] <= 6.0 and lag[1] <= 1.0
-    assert lag2[2] <= 25.0 and lag3[2] <= 25.0
-    dT, dT_top, dR, *_ = _off_ref(seeded, plain)
-    assert dT <= 2.5 and abs(dT_top) <= 2.5 and abs(dR) <= 5e-4
-    # the last core node reads the edge of the mantle T(P) table; the other core nodes do not
-    for r, ref in ((first, ref1), (seeded, ref2), (plain, ref2)):
-        _core_T_bounded(r, ref)
+    _assert_grid_bounds(first, seeded, plain, stored, (lag1, lag2, lag3))
     assert len(p1) - 5 <= 3  # linear pass, 4 blend passes, then the full-adiabat passes
     assert len(p2) <= 4 and n_seeded <= 0.5 * n_plain
 
@@ -2599,6 +2603,32 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
 
     if request.config.getoption('validation_plots') is not None:
         request.getfixturevalue('validation_plot')(figure, 'grid_start_up_ramp')
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves_long
+@pytest.mark.physics_invariant
+@pytest.mark.reference_pinned
+@pytest.mark.timeout(7200)
+def test_the_seed_keeps_the_converged_adiabat_of_the_grid_start_up_on_the_jax_path():
+    """The grid start-up solves of the test above on the JAX path (``use_jax``), against the
+    JAX blocks of the stored REF, with the same bounds: the first solve, the seeded re-solve
+    and the re-solve without the seed, and the seeded re-solve at most 4 passes and at most
+    half the structure integrations of the unseeded one."""
+    _need_paleos()
+    stored = grid_ref.load()
+    first, _, _, lag1 = _grid_main(grid_ref.CASES['first_jax'])
+    warm = dict(
+        initial_density=first['density'],
+        initial_radii=first['radii'],
+        p_center_hint=float(first['pressure'][0]),
+    )
+    seed = {k: first[k] for k in ('radii', 'pressure', 'mass_enclosed')}
+    resolve = grid_ref.CASES['resolve_jax']
+    seeded, p2, n_seeded, lag2 = _grid_main(resolve, adiabat_seed=seed, **warm)
+    plain, _, n_plain, lag3 = _grid_main(resolve, **warm)
+    _assert_grid_bounds(first, seeded, plain, stored, (lag1, lag2, lag3), jax=True)
+    assert len(p2) <= 4 and n_seeded <= 0.5 * n_plain
 
 
 @pytest.mark.slow
@@ -2634,11 +2664,11 @@ def test_a_first_solve_at_a_planet_mass_2e12_higher_keeps_the_stored_reference()
 @pytest.mark.physics_invariant
 @pytest.mark.timeout(7800)
 def test_the_stored_grid_start_up_reference_is_the_converged_solve_of_the_source():
-    """Both structures of ``tests/data/grid_start_up_reference.json`` solved again at the mass
-    tolerance 1e-6: strict on the full adiabat, the mantle temperature within 0.1 K of the
-    stored one up to the second-highest mantle node, the top node within 1 K in the re-solve
-    (in the first solve at 1 atm it is not compared: its adiabat step flips with round-off
-    between 2 states), the radius,
+    """The 4 structures of ``tests/data/grid_start_up_reference.json`` (first solve and re-solve,
+    numpy and JAX path) solved again at the mass tolerance 1e-6: strict on the full adiabat, the
+    mantle temperature within 0.1 K of the stored one up to the second-highest mantle node, the
+    top node within 1 K in the re-solves (in the first solves at 1 atm it is not compared: its
+    adiabat step flips with round-off between 2 states), the radius,
     central pressure and core radius within 1e-5 and the CMB pressure within
     2 tol_REF / (1 - cmf) = 4e-5; then the sha256 of the stored list of Zalmoxis modules
     equals the stored one. A failure means the source or a table moved the reference: run
@@ -2656,7 +2686,7 @@ def test_the_stored_grid_start_up_reference_is_the_converged_solve_of_the_source
         dT, dT_top, dR, dPc, dRc, dPcmb = off
         bound = 2 * grid_ref.REF_TOL['newton_tol'] / (1.0 - cfg['core_mass_fraction'])
         # 1-atm top node of the first solve: 2-state adiabat step flip, not compared
-        assert dT <= 0.1 and (key == 'first' or abs(dT_top) <= 1.0), key
+        assert dT <= 0.1 and (key.startswith('first') or abs(dT_top) <= 1.0), key
         assert max(abs(dR), abs(dPc), abs(dRc)) <= 1e-5 and abs(dPcmb) <= bound, key
     pkg = os.path.dirname(os.path.abspath(zalmoxis.__file__))
     assert grid_ref.source_hash(stored['source']['files'], pkg) == stored['source']['sha256']

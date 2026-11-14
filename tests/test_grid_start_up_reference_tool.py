@@ -42,8 +42,7 @@ def _write(tmp_path, table_bytes=b'P T rho\n1 2 3\n', stored_md5=_TRUE):
                 'md5': true if stored_md5 is _TRUE else stored_md5,
             }
         },
-        'first': block,
-        'resolve': block,
+        **{key: block for key in ('first', 'resolve', 'first_jax', 'resolve_jax')},
     }
     path = tmp_path / 'ref.json'
     _tool().dump_compact(ref, path)
@@ -78,10 +77,11 @@ def test_a_table_the_dictionaries_do_not_name_stops_the_reader(tmp_path):
 
 
 def test_the_reader_returns_the_stored_structures(tmp_path):
-    """With matching md5s the reader returns both structures as arrays, cmb_mass a float."""
+    """With matching md5s the reader returns the 4 structures as arrays, cmb_mass a float."""
     path, dicts = _write(tmp_path)
     ref = _tool().load(path, dicts)
-    assert set(ref) >= {'first', 'resolve'}
+    assert set(ref) >= {'first', 'resolve', 'first_jax', 'resolve_jax'}
+    assert isinstance(ref['resolve_jax']['pressure'], np.ndarray)
     np.testing.assert_array_equal(ref['first']['pressure'], [3.0e11, 1.0e10, 1.0e5])
     assert isinstance(ref['resolve']['radii'], np.ndarray)
     assert ref['resolve']['cmb_mass'] == 3.97e24
@@ -166,8 +166,8 @@ def _fake_tables(tmp_path, monkeypatch):
     return dicts
 
 
-def test_the_writer_stores_both_structures_with_tables_and_source(tmp_path, monkeypatch):
-    """write solves both cases at REF_TOL and stores the structures, the table md5s, the
+def test_the_writer_stores_the_4_structures_with_tables_and_source(tmp_path, monkeypatch):
+    """write solves the 4 cases at REF_TOL and stores the structures, the table md5s, the
     commit and the hash of the loaded modules; the reader reads the file back."""
     tool = _tool()
     seen = []
@@ -175,8 +175,9 @@ def test_the_writer_stores_both_structures_with_tables_and_source(tmp_path, monk
     monkeypatch.setattr(tool, 'solve', lambda cfg: seen.append(cfg) or solve(cfg))
     dicts = _fake_tables(tmp_path, monkeypatch)
     ref = tool.write(tmp_path / 'ref.json')
-    assert [c['tolerance_outer'] for c in seen] == [1e-6, 1e-6]
-    assert [c['planet_mass'] for c in seen] == [4.1804e24, 4.177602725330534e24]
+    assert [c['tolerance_outer'] for c in seen] == [1e-6] * 4
+    assert [c['planet_mass'] for c in seen] == [4.1804e24, 4.177602725330534e24] * 2
+    assert [c['use_jax'] for c in seen] == [False, False, True, True]
     assert (
         ref['tables']['PALEOS:iron']['md5'] == hashlib.md5(b'PALEOS:iron table\n').hexdigest()
     )
@@ -188,6 +189,7 @@ def test_the_writer_stores_both_structures_with_tables_and_source(tmp_path, monk
         back['resolve']['mass_enclosed'], np.array([0.0, 0.5, 1.0]) * 4.177602725330534e24
     )
     assert back['first']['cmb_mass'] == 0.95 * 4.1804e24
+    assert {'first', 'first_jax', 'resolve', 'resolve_jax'} <= set(back)
 
 
 def test_the_writer_refuses_a_reference_that_is_not_strict(tmp_path, monkeypatch):

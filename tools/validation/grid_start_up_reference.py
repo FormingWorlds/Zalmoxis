@@ -1,11 +1,11 @@
 """Stored reference of the PROTEUS grid start-up case at a mass tolerance of 1e-6.
 
 The case is the first structure solve of the PROTEUS grid test case with core mass fraction
-0.95 (0.7 Earth masses, H 1000 ppmw) and its first start-up re-solve. This script solves both
-at the reference tolerance and writes ``tests/data/grid_start_up_reference.json`` with the
+0.95 (0.7 Earth masses, H 1000 ppmw) and its first start-up re-solve, each on the numpy path
+and on the JAX path (``use_jax``). This script solves the 4 at the reference tolerance and writes ``tests/data/grid_start_up_reference.json`` with the
 commit, the md5 of each EOS table and the sha256 of the Zalmoxis modules the solves load. The
 grid start-up test compares its solves with the stored structures and stops when a table md5
-differs. The slow reference test solves both again and fails when they move or when the
+differs. The slow reference test solves the 4 again and fails when they move or when the
 source hash differs; then run this script again and commit the file.
 
 Usage::
@@ -66,6 +66,7 @@ GRID_CMF95_RESOLVE = {
 }
 REF_TOL = {'tolerance_outer': 1e-6, 'newton_tol': 1e-6}
 CASES = {'first': GRID_CMF95, 'resolve': {**GRID_CMF95, **GRID_CMF95_RESOLVE}}
+CASES.update({f'{k}_jax': {**cfg, 'use_jax': True} for k, cfg in tuple(CASES.items())})
 
 
 def solve(cfg, **kwargs):
