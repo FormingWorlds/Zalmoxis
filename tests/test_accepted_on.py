@@ -1971,7 +1971,6 @@ def _analytic_ramp(
     drift=0.0,
     mass=None,
     seed=None,
-    structure=None,
     **kwargs,
 ):
     """_solve on analytic densities through the adiabatic path: the EOS counts as T-dependent
@@ -1984,7 +1983,7 @@ def _analytic_ramp(
     outer radius R after k adiabat computations. ``seed`` goes to ``_solve`` as
     ``adiabat_seed``; ``structure`` replaces ``solve_structure`` (``_canned_structure``).
     Returns the result and the number of adiabat computations."""
-    adiabat, real, clock = [], structure or zs.solve_structure, time.time
+    adiabat, real, clock = [], kwargs.pop('structure', None) or zs.solve_structure, time.time
 
     def adi(radii, pressure, mass, t_surf, *args, **kw):
         assert pressure[0] > pressure[-1] and np.all(np.diff(mass) >= 0)  # argument order
@@ -2472,26 +2471,24 @@ def canned_seed():
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
-    'case, checked',
+    'case',
     [
-        (_case_clock_stop, True),
-        (_case_probe, True),
-        (_case_seeded_second_pass, True),
-        (_case_seed_label, False),
-        (_case_seed_table_secant, False),
+        _case_clock_stop,
+        _case_probe,
+        _case_seeded_second_pass,
+        _case_seed_label,
+        _case_seed_table_secant,
     ],
     ids=['clock_stop', 'newton_probe', 'seeded_second_pass', 'seed_label', 'seed_table_secant'],
 )
 def test_the_ramp_cases_hold_on_a_structure_in_closed_form(
-    request, monkeypatch, caplog, canned_seed, case, checked
+    monkeypatch, caplog, canned_seed, case
 ):
     """The 5 ramp cases of the smoke tests above (a clock stop in the ramp, a Newton probe, the
     accept of the second seeded pass, the seed label of the first, no secant on the seed-table
-    pass) hold with the same asserts on ``_canned_structure``, a structure without integration,
-    with the invariant check where the smoke test runs it; the Newton probe starts at 1 Earth
-    radius, on the target mass of that structure."""
-    if not checked:
-        request.getfixturevalue('no_check')
+    pass) hold with the same asserts on ``_canned_structure``, a structure without integration
+    (``_solve`` runs no invariant check); the Newton probe starts at 1 Earth radius, on the
+    target mass of that structure."""
     case(structure=_canned_structure, seed=canned_seed, monkeypatch=monkeypatch, caplog=caplog)
 
 
@@ -2510,7 +2507,6 @@ def _ramp_off(off, linear=1.0, **kwargs):
 
 
 @pytest.mark.unit
-@pytest.mark.usefixtures('no_check')
 @pytest.mark.parametrize(
     'off, accepted_on, blends, err',
     [
@@ -2532,15 +2528,15 @@ def test_an_iteration_cap_returns_the_best_pass_of_the_newest_blend_step_within_
 
 
 @pytest.mark.unit
-@pytest.mark.usefixtures('no_check')
-def test_a_linear_pass_at_5_times_the_trigger_starts_no_ramp():
-    """Linear passes 0.5 % off the mass stay above ``_ADIABAT_RAMP_TRIGGER``: no adiabat."""
-    r, n_adiabat = _ramp_off({}, linear=1.005, max_iterations_outer=3)
-    assert n_adiabat == 0 and (r['adiabat_blend'], r['adiabat_table_blend']) == (0.0, 0.0)
+@pytest.mark.parametrize('linear, ramp', [(1.005, False), (1.0015, False), (1.0009, True)])
+def test_a_linear_pass_starts_the_ramp_only_within_the_trigger(linear, ramp):
+    """Linear passes 0.5 % and 0.15 % off the mass stay above ``_ADIABAT_RAMP_TRIGGER`` (1e-3)
+    and compute no adiabat; at 0.09 % the next pass starts the blend ramp."""
+    r, n_adiabat = _ramp_off({}, linear=linear, max_iterations_outer=3)
+    assert (n_adiabat > 0) is ramp and (r['adiabat_blend'] > 0.0) is ramp
 
 
 @pytest.mark.unit
-@pytest.mark.usefixtures('no_check')
 @pytest.mark.parametrize(
     'off, cap, calls',
     [
@@ -2771,11 +2767,12 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
 @pytest.mark.reference_pinned
 @pytest.mark.timeout(7200)
 def test_the_seed_keeps_the_converged_adiabat_of_the_grid_start_up_on_the_jax_path():
-    """The grid start-up solves of the test above on the JAX path (``use_jax``), against the
-    JAX blocks of the stored REF, with the same bounds on the first solve and the seeded
-    re-solve; the re-solve without the seed is compared with the seeded one (2.5 K, 5e-4 in
-    radius), and the seeded re-solve takes at most 4 passes and at most half the structure
-    integrations of the unseeded one."""
+    """The grid start-up solves of the test above on the JAX path (``use_jax``), against the JAX
+    blocks of the stored REF, with the REF bounds of ``_assert_grid_bounds`` on the first
+    solve and the seeded re-solve (no pass bound on the first solve); the re-solve without
+    the seed is compared with the seeded one (2.5 K, 5e-4 in radius), and the seeded
+    re-solve takes at most 4 passes and at most half the structure integrations of the
+    unseeded one."""
     _need_paleos()
     stored = grid_ref.load()
     first, _, _, lag1 = _grid_main(grid_ref.CASES['first_jax'])
