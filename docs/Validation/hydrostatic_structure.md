@@ -411,6 +411,7 @@ Relative differences are $|x - x_\mathrm{REF}| / |x_\mathrm{REF}|$.
 - The mass-weighted mean temperature of the core nodes differs from REF by at most 10 K in every solve.
   The last core node, just below the CMB node, differs by at most 700 K: it reads the edge of the mantle temperature table (see the known limit below).
   Every other core node differs by at most 1 K. Each core node is compared with REF interpolated in mass over the core nodes of REF, not across the temperature step at the CMB node of REF.
+  With the mass weights of the core nodes of REF, these 2 node bounds already keep the mean within 6.4 K in the first solve and in the re-solve, so the 10 K bound of the mean follows from them; the measured mean lies 4.5 K and 4.1 K from REF.
 - The accept label of every solve is `strict`, and the accepted pass is on a table of blend 1.
 - The first solve needs at most 3 passes on a full-adiabat table. The seeded re-solve needs at most 4 passes and at most half the structure integrations of the unseeded one.
 
