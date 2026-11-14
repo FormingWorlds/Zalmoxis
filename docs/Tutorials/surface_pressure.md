@@ -5,7 +5,7 @@ You will run a 1 $M_\oplus$ planet, read the pressure at its outer radius, look 
 
 You need a working installation with the PALEOS tables under `data/` (see [First run](firstrun.md), Step 1).
 Run every block from the repository root, in one Python session, in the order of the steps.
-The whole tutorial took about 15 minutes on a workstation; Step 4 takes about 10.5 minutes of it.
+The whole tutorial takes 14 to 27 minutes on a workstation; Step 4 takes 10 to 22 minutes of it, since its setup 9 takes 8 to 20 minutes, and the other steps take about 5 minutes together.
 
 ## Step 1: solve a structure and read its surface pressure
 
