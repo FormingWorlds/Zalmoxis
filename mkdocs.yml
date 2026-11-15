@@ -21,10 +21,12 @@ nav:
   - Tutorials:
       - First run: Tutorials/firstrun.md
       - Surface pressure check: Tutorials/surface_pressure.md
+      - Adiabat integration: Tutorials/adiabat_integration.md
 
   - Explanations:
       - Model overview: Explanations/model.md
       - Equations of state: Explanations/eos_physics.md
+      - Adiabat integration: Explanations/adiabat_integration.md
       - Multi-material mixing: Explanations/mixing.md
       - Binodal suppression: Explanations/binodal.md
       - Process flow: Explanations/process_flow.md

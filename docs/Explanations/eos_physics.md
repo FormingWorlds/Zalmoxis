@@ -8,7 +8,7 @@ For configuration syntax and examples, see the [configuration guide](../How-to/c
 
 ## PALEOS (Iron, MgSiO3, H2O)
 
-The PALEOS tables (`PALEOS:iron`, `PALEOS:MgSiO3`, `PALEOS:H2O`) are the standard EOS in Zalmoxis. PALEOS is described in [Attia et al. (2026)](https://ui.adsabs.harvard.edu/abs/2026arXiv260503741A/abstract) and developed at [github.com/maraattia/PALEOS](https://github.com/maraattia/PALEOS); the tables used by Zalmoxis are distributed via [Zenodo record 10.5281/zenodo.19000315](https://doi.org/10.5281/zenodo.19000315), which resolves to the newest release; Zalmoxis pins the unified iron, MgSiO3 and H2O tables to v1.3.0 ([10.5281/zenodo.22776069](https://doi.org/10.5281/zenodo.22776069)) and the two-phase MgSiO3 tables to [10.5281/zenodo.19680050](https://doi.org/10.5281/zenodo.19680050) through the fwl-io shared manifest.
+The PALEOS tables (`PALEOS:iron`, `PALEOS:MgSiO3`, `PALEOS:H2O`) are the standard EOS in Zalmoxis. PALEOS is described in Attia et al. (2026)[^cite-attia2026] and developed at [github.com/maraattia/PALEOS](https://github.com/maraattia/PALEOS); the tables used by Zalmoxis are distributed via [Zenodo record 10.5281/zenodo.19000315](https://doi.org/10.5281/zenodo.19000315), which resolves to the newest release; Zalmoxis pins the unified iron, MgSiO3 and H2O tables to v1.3.0 ([10.5281/zenodo.22776069](https://doi.org/10.5281/zenodo.22776069)) and the two-phase MgSiO3 tables to [10.5281/zenodo.19680050](https://doi.org/10.5281/zenodo.19680050) through the fwl-io shared manifest.
 Each material is contained in a single file with all thermodynamically stable phases: iron has 5 phases (alpha-bcc, delta-bcc, gamma-fcc, epsilon-hcp, liquid), MgSiO$_3$ has 6 phases (3 pyroxene polymorphs, bridgmanite, postperovskite, liquid), and H$_2$O has 7 EOS (ice Ih through X, liquid, vapor, superionic).
 
 The tables provide 10 columns in SI units: $P$, $T$, $\rho$, $u$, $s$, $c_p$, $c_v$, $\alpha$, $\nabla_{\mathrm{ad}}$, and the stable phase identifier at each grid point.
@@ -18,7 +18,7 @@ The grid is log-uniform with 150 points per decade in both $P$ (1 bar to 100 TPa
 No external solidus/liquidus curves or separate solid/liquid files are needed.
 This eliminates the phase-routing complexity required by the two-phase and WolfBower EOS families.
 
-**Phase boundary.** The PALEOS MgSiO$_3$ liquidus has a well-defined analytic functional form: a piecewise Simon-Glatzel fit using [Belonoshko et al. (2005)](https://doi.org/10.1103/PhysRevB.72.104107) below 2.55 GPa and [Fei et al. (2021)](https://doi.org/10.1103/PhysRevLett.127.135701) above, with the crossover pressure chosen for continuity.
+**Phase boundary.** The PALEOS MgSiO$_3$ liquidus has a well-defined analytic functional form: a piecewise Simon-Glatzel fit using Belonoshko et al. (2005)[^cite-belonoshko2005] below 2.55 GPa and Fei et al. (2021)[^cite-fei2021] above, with the crossover pressure chosen for continuity.
 This analytic liquidus is implemented as `paleos_liquidus(P)` in `melting_curves.py` and is used in the vectorized density and $\nabla_{\mathrm{ad}}$ code paths.
 At load time, the code also extracts a discrete liquidus boundary from the phase column (for each pressure row, the lowest temperature where the phase is `liquid`); this serves as a consistency reference and is used in the scalar code path.
 
@@ -30,7 +30,7 @@ The liquidus serves as the basis for an optional mushy zone controlled by the `m
 Each PALEOS material can have its own mushy zone width. Per-material overrides take precedence over the global default. This is useful when mixing materials with different phase transition characteristics (e.g., a wider mushy zone for MgSiO$_3$ with a sharp boundary for iron).
 
 **Adiabatic gradient.** All three tables include the dimensionless adiabatic gradient $\nabla_{\mathrm{ad}} = (d \ln T / d \ln P)_S$.
-In adiabatic mode, the temperature profile is computed by integrating $dT/dP = \nabla_{\mathrm{ad}} \cdot T / P$ from the surface inward.
+In an adiabatic mode the temperature profile integrates $d \ln T / d \ln P = \nabla_{\mathrm{ad}}$ from the surface inward or from the CMB outward; [How the adiabat is integrated](adiabat_integration.md) describes the step and its accuracy.
 Each material follows its own adiabat: with `PALEOS:iron`, the iron core is temperature-dependent and follows its own adiabat using $\nabla_{\mathrm{ad}}$ from the iron table, instead of being isothermal at the CMB temperature.
 
 **Grid coverage.** Some cells at corners of the $P$-$T$ domain are missing where the thermodynamic solver did not converge.
@@ -43,7 +43,7 @@ In adiabatic mode, the temperature is parameterized as $T(P)$ rather than $T(r)$
 
 ## Chabrier H/He (Pure H$_2$)
 
-The `Chabrier:H` EOS provides temperature- and pressure-dependent properties for pure molecular hydrogen from the DirEOS2021 tables of [Chabrier et al. (2019, ApJ 872, 51)](https://doi.org/10.3847/1538-4357/aaf99f) and [Chabrier & Debras (2021, ApJ 917, 4)](https://doi.org/10.3847/1538-4357/abfc48).
+The `Chabrier:H` EOS provides temperature- and pressure-dependent properties for pure molecular hydrogen from the DirEOS2021 tables of Chabrier et al. (2019)[^cite-chabrier2019] and Chabrier & Debras (2021)[^cite-chabrierdebras2021].
 The table covers all H$_2$ regimes: molecular, dissociated atomic, and ionized.
 
 **Grid.** 121 $\times$ 441 points ($\log T$, $\log P$): $T = 100$ to $10^8$ K, $P = 1$ Pa to $10^{22}$ Pa (53,361 grid points).
@@ -73,7 +73,7 @@ These are not currently registered in the EOS registry but are available for fut
 
 ### PALEOS-2phase (MgSiO3 only)
 
-The `PALEOS-2phase:MgSiO3` EOS provides MgSiO$_3$ as separate solid and liquid table files generated by PALEOS ([Attia et al. (2026)](https://ui.adsabs.harvard.edu/abs/2026arXiv260503741A/abstract); [Zenodo record 19680050](https://zenodo.org/records/19680050), v1.1.0).
+The `PALEOS-2phase:MgSiO3` EOS provides MgSiO$_3$ as separate solid and liquid table files generated by PALEOS (Attia et al. (2026); [Zenodo record 19680050](https://zenodo.org/records/19680050), v1.1.0).
 The table format and grid structure are identical to the main PALEOS tables.
 
 Unlike the main PALEOS tables, `PALEOS-2phase` requires external melting curves for phase routing.
@@ -84,7 +84,7 @@ Configurable solidus and liquidus curves (see [Melting curve selection](../How-t
 
     The two-phase EOS families (`PALEOS-2phase:MgSiO3`, `WolfBower2018:MgSiO3`, `RTPress100TPa:MgSiO3`) ship as separate solid and liquid tables and **do** require external melting curves loaded via the configurable `rock_solidus` and `rock_liquidus` fields (or via `melting_dir` in the PROTEUS coupling layer). Phase routing uses these curves to compute melt fraction in the mushy zone.
 
-    The Seager (2007) and Analytic families are evaluated at fixed 300 K and have no phase boundary at all.
+    The Seager et al. (2007)[^cite-seager2007] and Analytic families are evaluated at fixed 300 K and have no phase boundary at all.
 Both density and $\nabla_{\mathrm{ad}}$ follow the same three-regime structure:
 
 - **Below the solidus** ($T \le T_{\mathrm{sol}}$): density and $\nabla_{\mathrm{ad}}$ from the solid table.
@@ -121,10 +121,10 @@ It is appropriate for cold, fully solidified structure models.
 
 ### Wolf & Bower (2018) Temperature-Dependent EOS
 
-The `WolfBower2018:MgSiO3` EOS implements the RTpress (Reciprocal Transform pressure) framework from [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449), providing $\rho(P, T)$ for MgSiO$_3$ in both the solid and liquid phases.
-The solid-phase EOS is derived from [Mosenfelder et al. (2009)](https://doi.org/10.1029/2008JB005900).
+The `WolfBower2018:MgSiO3` EOS implements the RTpress (Reciprocal Transform pressure) framework from Wolf & Bower (2018)[^cite-wolf2018], providing $\rho(P, T)$ for MgSiO$_3$ in both the solid and liquid phases.
+The solid-phase EOS is derived from Mosenfelder et al. (2009)[^cite-mosenfelder2009].
 
-Phase boundaries are defined using solidus and liquidus melting curves derived from [Monteux et al. (2016)](https://www.sciencedirect.com/science/article/pii/S0012821X16302199).
+Phase boundaries are defined using solidus and liquidus melting curves derived from Monteux et al. (2016)[^cite-monteux2016].
 At each radial shell, the code evaluates the local melt fraction:
 
 $$
@@ -168,10 +168,10 @@ For the melt table, 200 K above the hot edge is a density bias of about 4.7% at 
 
 The `RTPress100TPa:MgSiO3` EOS extends the WolfBower2018 melt phase coverage from 1 TPa to 100 TPa ($P$: $10^3$ to $10^{14}$ Pa, $T$: 400 to 50,000 K), enabling temperature-dependent modeling up to ~50 $M_\oplus$.
 
-The solid-phase EOS remains the [Wolf & Bower (2018)](https://www.sciencedirect.com/science/article/pii/S0031920117301449) table (valid to 1 TPa, clamped at boundary), with the band-edge fill and the band check described above.
+The solid-phase EOS remains the Wolf & Bower (2018) table (valid to 1 TPa, clamped at boundary), with the band-edge fill and the band check described above.
 The extended melt table is not a regular grid and has no fill cells; above its local maximum temperature a query takes that maximum.
 At the high internal temperatures typical of massive rocky planets, the mantle is predominantly molten, so the solid table limitation is less constraining.
-The same [Monteux et al. (2016)](https://www.sciencedirect.com/science/article/pii/S0012821X16302199) solidus/liquidus melting curves are used for phase determination.
+The same Monteux et al. (2016) solidus/liquidus melting curves are used for phase determination.
 
 **Mass limit.** 50 $M_\oplus$. Unlike WolfBower2018, the central pressure is not capped by `max_center_pressure_guess`.
 
@@ -201,3 +201,13 @@ Six materials are available:
 
 The analytic EOS assumes 300 K and no phase transitions.
 It is useful for quick exploration, testing, and exotic compositions (graphite, SiC, MgFeSiO$_3$) that have no tabulated counterpart.
+
+[^cite-attia2026]: M. Attia, T. Lichtenberg, E. Jungová, M. Sastre, *[PALEOS: Multiphase equations of state and mass-radius relations for exoplanet interiors](https://doi.org/10.1051/0004-6361/202660790)*, Astronomy & Astrophysics, 713, A225, 2026. [SciX](https://scixplorer.org/abs/2026A&A...713A.225A/abstract).
+[^cite-belonoshko2005]: A. B. Belonoshko, N. V. Skorodumova, A. Rosengren, R. Ahuja, B. Johansson, L. Burakovsky, D. L. Preston, *[High-pressure melting of MgSiO$_3$](https://doi.org/10.1103/PhysRevLett.94.195701)*, Physical Review Letters, 94, 195701, 2005. [SciX](https://scixplorer.org/abs/2005PhRvL..94s5701B/abstract).
+[^cite-chabrier2019]: G. Chabrier, S. Mazevet, F. Soubiran, *[A new equation of state for dense hydrogen-helium mixtures](https://doi.org/10.3847/1538-4357/aaf99f)*, The Astrophysical Journal, 872, 51, 2019. [SciX](https://scixplorer.org/abs/2019ApJ...872...51C/abstract).
+[^cite-chabrierdebras2021]: G. Chabrier, F. Debras, *[A new equation of state for dense hydrogen-helium mixtures. II. Taking into account hydrogen-helium interactions](https://doi.org/10.3847/1538-4357/abfc48)*, The Astrophysical Journal, 917, 4, 2021. [SciX](https://scixplorer.org/abs/2021ApJ...917....4C/abstract).
+[^cite-fei2021]: Y. Fei, C. T. Seagle, J. P. Townsend, C. A. McCoy, A. Boujibar, P. Driscoll, L. Shulenburger, M. D. Furnish, *[Melting and density of MgSiO$_3$ determined by shock compression of bridgmanite to 1254 GPa](https://doi.org/10.1038/s41467-021-21170-y)*, Nature Communications, 12, 876, 2021. [SciX](https://scixplorer.org/abs/2021NatCo..12..876F/abstract).
+[^cite-monteux2016]: J. Monteux, D. Andrault, H. Samuel, *[On the cooling of a deep terrestrial magma ocean](https://doi.org/10.1016/j.epsl.2016.05.010)*, Earth and Planetary Science Letters, 448, 140-149, 2016. [SciX](https://scixplorer.org/abs/2016E&PSL.448..140M/abstract).
+[^cite-mosenfelder2009]: J. L. Mosenfelder, P. D. Asimow, D. J. Frost, D. C. Rubie, T. J. Ahrens, *[The MgSiO$_3$ system at high pressure: thermodynamic properties of perovskite, postperovskite, and melt from global inversion of shock and static compression data](https://doi.org/10.1029/2008JB005900)*, Journal of Geophysical Research: Solid Earth, 114, B01203, 2009. [SciX](https://scixplorer.org/abs/2009JGRB..114.1203M/abstract).
+[^cite-seager2007]: S. Seager, M. Kuchner, C. A. Hier-Majumder, B. Militzer, *[Mass-radius relationships for solid exoplanets](https://doi.org/10.1086/521346)*, The Astrophysical Journal, 669, 1279-1297, 2007. [SciX](https://scixplorer.org/abs/2007ApJ...669.1279S/abstract).
+[^cite-wolf2018]: A. S. Wolf, D. J. Bower, *[An equation of state for high pressure-temperature liquids (RTpress) with application to MgSiO$_3$ melt](https://doi.org/10.1016/j.pepi.2018.02.004)*, Physics of the Earth and Planetary Interiors, 278, 59-74, 2018. [SciX](https://scixplorer.org/abs/2018PEPI..278...59W/abstract).

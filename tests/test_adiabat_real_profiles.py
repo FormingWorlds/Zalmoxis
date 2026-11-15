@@ -118,7 +118,7 @@ def _reference(kw):
 def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validation_plot):
     """On the 6 stored profiles the default call stays within 1 K of an RK45 integration of the
     same ODE (rtol 1e-10) at every node on the adiabat, with no nabla read that is missing or
-    not positive. The forward Euler step in P of the earlier routine, stored with each profile,
+    not positive. A forward Euler step in P per node, stored with each profile,
     is at least 5 times farther and more than 2 K from the reference on every profile. A padded
     top keeps its isothermal top shell."""
     from zalmoxis.eos.temperature import compute_adiabatic_temperature
@@ -138,7 +138,9 @@ def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validat
         if rec['padded']:
             assert kw['pressure'][-1] == 0.0 and T[-1] == T[-2]
         rows[case] = (kw['pressure'][keep], T[keep], ref[keep], rec['T'][keep], err, native)
-        print(f'{case}: midpoint {err:.4f} K, earlier step {native:.2f} K from the reference')
+        print(
+            f'{case}: midpoint {err:.4f} K, forward Euler step {native:.2f} K from the reference'
+        )
 
     def profile_figure():
         import matplotlib.pyplot as plt
@@ -150,7 +152,7 @@ def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validat
         top = P > 0
         gpa = P[top] / 1e9
         core = P >= p_cmb
-        ax.plot(gpa, native[top], ls='--', color='C2', label='earlier forward step')
+        ax.plot(gpa, native[top], ls='--', color='C2', label='forward Euler step')
         ax.plot(gpa, T[top], color='C1', label='midpoint, default')
         ax.plot(gpa, ref[top], ls=':', color=plt.rcParams['text.color'], label='RK45 reference')
         ax.plot(
@@ -194,7 +196,7 @@ def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validat
 def test_temperature_is_continuous_across_one_bar(profiles, anchor, request):
     """On the PROTEUS ``dummy`` structure (top near 1 atm) the top pressure is set to 41 values
     from 0.9e5 to 1.1e5 Pa: no node temperature changes by more than 0.01 K between neighbour
-    values, both anchors. The earlier rule, which skipped the top step once an end was below
+    values, both anchors. A rule that skips the top step once an end is below
     1e5 Pa, jumps by more than 10 K at the top node of the CMB anchor."""
     from zalmoxis.eos.temperature import compute_adiabatic_temperature
     from zalmoxis.mixing import get_mixed_nabla_ad
@@ -210,7 +212,7 @@ def test_temperature_is_continuous_across_one_bar(profiles, anchor, request):
         P = P0.copy()
         P[-1] = p
         T.append(compute_adiabatic_temperature(**{**kw, 'pressure': P}))
-        if anchor == 'cmb':  # the earlier top step, from the node below the top
+        if anchor == 'cmb':  # a top step skipped below 1 bar, from the node below the top
             mx = get_layer_mixture(
                 kw['mass_enclosed'][-1],
                 kw['cmb_mass'],
@@ -243,7 +245,10 @@ def test_temperature_is_continuous_across_one_bar(profiles, anchor, request):
 
             fig, ax = plt.subplots()
             ax.plot(
-                tops / 1e5, np.array(native_top) - native_top[-1], ls='--', label='earlier rule'
+                tops / 1e5,
+                np.array(native_top) - native_top[-1],
+                ls='--',
+                label='step skipped below 1 bar',
             )
             ax.plot(tops / 1e5, T[:, -1] - T[-1, -1], label='midpoint with the 1 bar floor')
             ax.set_xlabel('Top pressure [bar]')

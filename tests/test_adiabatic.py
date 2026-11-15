@@ -968,7 +968,7 @@ class TestMidpointAdiabat:
     def test_low_pressure_rule_follows_the_floored_adiabat(self, monkeypatch, anchor):
         """With a top pressure from 0.5e5 to 2e5 Pa the profile is the adiabat with T held below
         1e5 Pa (analytical for constant nabla 0.1), so it is continuous in the top pressure.
-        Skipping the whole top segment once an end is below 1e5 Pa, the earlier rule, jumps by
+        A rule that skips the whole top segment once an end is below 1e5 Pa jumps by
         more than 10 % at the next node."""
         _stub_adiabat(monkeypatch, lambda P, T: 0.1)
         _, P0, _ = _profile(n=21, p_top=2e5)

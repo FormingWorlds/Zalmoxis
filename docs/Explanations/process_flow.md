@@ -266,8 +266,8 @@ The ramp ends with secant steps on the radius, and a re-solve of the same planet
 How far is the temperature of an accepted result from the adiabat of its own structure?
 A pass on a table of blend 1 still reads the pressure of the pass before it.
 Its mantle temperature therefore differs from the adiabat of its own pressure by the change of the structure in the last pass, which the mass tolerance bounds at the inner mantle nodes.
-The tolerance does not bound the top node: the adiabat takes no step from or to a node below $10^5$ Pa, so with a surface pressure near 1 atm the top node can differ by one adiabatic step of the top shell.
-[Newton and Picard on the PROTEUS initial structure](../Validation/hydrostatic_structure.md#newton-and-picard-on-the-proteus-initial-structure) gives the measured size of this step.
+The adiabat holds $T$ below $10^5$ Pa ([How the adiabat is integrated](adiabat_integration.md#low-pressure-padded-tops-and-limits)), so the temperature of a top node near 1 atm changes continuously with the top pressure.
+[Newton and Picard on the PROTEUS initial structure](../Validation/hydrostatic_structure.md#newton-and-picard-on-the-proteus-initial-structure) gives the measured differences.
 `adiabat_self_consistency` gives the largest difference, in K, between the returned mantle temperature and the adiabat recomputed on the returned structure; it is None below blend 1 and when no mantle node has a positive pressure.
 
 ### Secant tail and seeded re-solve

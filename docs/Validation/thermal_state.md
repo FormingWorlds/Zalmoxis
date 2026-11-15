@@ -2,13 +2,86 @@
 
 ## What this page checks
 
-This page has no validated case: its figures come from scripts, no test asserts them and CI does not run the scripts. It shows how the initial thermal state of a planet depends on its mass and on the material properties. The initial thermal state is the temperature at the core-mantle boundary (CMB) and at the surface right after accretion, which `zalmoxis.energetics.initial_thermal_state` computes. Validation means that a test runs the code on a case with a known right answer and checks the result within a stated tolerance. Each case below says why the comparison exists, what it shows, what it compares with and why it matters, and ends with a box "Script details". The [overview](index.md) lists every case of the tab.
+This page covers the temperature profile of a planet in 2 parts.
+The first part checks how Zalmoxis integrates the adiabat, the temperature profile along which the entropy is constant: 3 cases, each run by tests with a plot pair.
+The second part shows how the initial thermal state depends on the planet mass and on the material properties. The initial thermal state is the temperature at the core-mantle boundary (CMB) and at the surface right after accretion, which `zalmoxis.energetics.initial_thermal_state` computes. Those figures come from scripts: no test asserts them and CI does not run the scripts.
+Validation means that a test runs the code on a case with a known right answer and checks the result within a stated tolerance.
+Each case below says why the check exists, what it tests, how we know the right answer and why it matters, and ends with a box of test or script details. The [overview](index.md) lists every case of the tab.
+[How the adiabat is integrated](../Explanations/adiabat_integration.md) explains the method that the first 3 cases check.
+
+## Adiabat integration on smooth gradients
+
+**Why this check exists.** A wrong step formula, a wrong number of substeps or a sign error in the outward integration gives an error that does not fall as the square of the step size. The test fails for a first-order step, which gives an order near 1.
+
+**What it tests.** `compute_adiabatic_temperature` runs on a stub planet of 31 nodes from 360 GPa to 2 bar, with the adiabatic gradient $\nabla_\mathrm{ad}$ given as a function. There are 3 cases: a constant $\nabla_\mathrm{ad} = 0.1$; $\nabla_\mathrm{ad} = a \sqrt{T_a / T}$, which depends on the temperature; and $\nabla_\mathrm{ad} = a + b \cos(\ln P)$, which depends on the pressure, with $a = 0.1$ and $b = 0.05$. $T_a$ and $P_a$ are the temperature and the pressure at the anchor node. Each case runs with the surface anchor and with the CMB anchor, at the substep limits $h$ = 0.04, 0.02, 0.01, 0.005 and 0.0025 in $\ln P$.
+
+**How we know the right answer.** Each case has an exact solution: $T = T_a (P/P_a)^{0.1}$; $T = T_a \left(1 + a \ln(P/P_a)/2\right)^2$; and $\ln T = \ln T_a + a \ln(P/P_a) + b (\sin \ln P - \sin \ln P_a)$.
+
+**Why it matters.** Every adiabatic structure of Zalmoxis, and every PROTEUS start-up, takes its temperature from this integration.
+
+![Largest relative temperature error against the substep size for 2 smooth gradients and 2 anchors, with a slope-2 guide](../assets/validation/adiabat_midpoint_order.svg#only-light){ width="80%" }
+![Largest relative temperature error against the substep size for 2 smooth gradients and 2 anchors, with a slope-2 guide](../assets/validation/adiabat_midpoint_order_dark.svg#only-dark){ width="80%" }
+
+**How to read the plot.** The x axis is the substep size in $\ln P$ and the y axis the largest relative error in $T$ over the nodes; both are logarithmic. Each line is one case with one anchor, and the dotted line has slope 2. The test asserts that each line has a slope from 1.9 to 2.1 between neighbour points. The constant case is exact to round-off and is not drawn. A pass means that every line runs parallel to the dotted line.
+
+??? info "Test details"
+    - Reference: the closed-form solutions above (analytical).
+    - Tolerance: order 1.9 to 2.1 between successive $h$; relative $10^{-12}$ for the constant gradient at every node.
+    - Test id: `tests/test_adiabatic.py::TestMidpointAdiabat::test_midpoint_is_second_order`, `::test_constant_nabla_is_exact`.
+    - Command: `pytest -o "addopts=" tests/test_adiabatic.py -k "second_order or constant_nabla"`.
+
+## Adiabat integration on real profiles
+
+**Why this check exists.** On the PALEOS tables $\nabla_\mathrm{ad}$ has kinks, so the order of the smooth cases does not carry over. A substep limit that is too large, or a wrong mixture for a segment, puts the temperature off by more than 1 K, and the test fails. A second test fails when a default call takes another number of substeps.
+
+**What it tests.** It uses 6 stored structures of real solves: 4 starts of `input/default.toml` at 2515 K, with the surface anchor and a padded top, and the PROTEUS initial structure setups `all_options` and `dummy`, with the CMB anchor. On each, the temperature of a default call is compared with an independent integration at every node on the adiabat. The second test counts the reads of $\nabla_\mathrm{ad}$ in a default call: 2 per substep, with $\lceil |\Delta \ln P| / 0.0025 \rceil$ substeps per segment.
+
+**How we know the right answer.** The reference integrates the same equation with `scipy.integrate.solve_ivp` (the adaptive RK45 method) at a relative tolerance of $10^{-10}$, on the same nodes and with the same rules: the mixture of each segment, the 1 bar floor, the padded top and the caps. It shares no step code with Zalmoxis.
+
+**Why it matters.** These are the temperature profiles of the default configuration and of the PROTEUS start-up.
+
+![Temperature against pressure for default start 0: forward Euler step, midpoint, RK45 reference and the iron melting curve in the core](../assets/validation/adiabat_real_profile.svg#only-light){ width="80%" }
+![Temperature against pressure for default start 0: forward Euler step, midpoint, RK45 reference and the iron melting curve in the core](../assets/validation/adiabat_real_profile_dark.svg#only-dark){ width="80%" }
+
+![Difference between the midpoint temperature and the RK45 reference against pressure on 6 profiles, with the 1 K bound](../assets/validation/adiabat_real_residual.svg#only-light){ width="80%" }
+![Difference between the midpoint temperature and the RK45 reference against pressure on 6 profiles, with the 1 K bound](../assets/validation/adiabat_real_residual_dark.svg#only-dark){ width="80%" }
+
+**How to read the plots.** The first plot shows $T$ against $P$ for default start 0. The midpoint line and the dotted reference lie on each other. The dashed line is a forward step in $P$ from node to node, stored with the profile; it is 278 K too hot at the centre. The grey line is the iron melting curve at core pressures. The second plot shows the absolute difference from the reference on a logarithmic axis for all 6 profiles; the dashed line is the 1 K bound that the test asserts. The jump near 140 to 155 GPa is where the default adiabat meets the iron melting boundary. A pass means that every line stays below the dashed line.
+
+**Known limit.** The test integrates on stored structures and runs no structure solve. The forward-step line is context: the test asserts only that it is at least 5 times, and more than 2 K, farther from the reference than the midpoint.
+
+??? info "Test details"
+    - Reference: `scipy.integrate.solve_ivp` (RK45), relative tolerance $10^{-10}$, absolute $10^{-12}$; profiles in `tests/data/adiabat_profiles.npz`, written by `python -m tools.validation.adiabat_profiles write`, which checks that the stored call gives the temperature of each solve bit for bit.
+    - Tolerance: 1 K at every node on the adiabat; no read of a missing or non-positive gradient; the exact read count of a default call.
+    - Test id: `tests/test_adiabat_real_profiles.py::test_midpoint_adiabat_meets_the_reference_on_real_profiles`, `tests/test_adiabatic.py::TestMidpointAdiabat::test_default_call_uses_the_0p0025_substeps`.
+    - Command: `pytest -o "addopts=" tests/test_adiabat_real_profiles.py -k reference_on_real_profiles`.
+
+## Temperature across 1 bar
+
+**Why this check exists.** If the integration skipped every segment with an end below $10^5$ Pa, the top temperature would jump when the surface pressure crosses 1 bar between passes, and with the surface anchor the whole profile would move. The test fails for any step larger than 0.01 K.
+
+**What it tests.** The stored `dummy` structure, whose top lies near 1 atm, gets 41 top pressures from 0.9 to 1.1 bar; the test runs both anchors on each. Unit tests on a stub planet check the same rule against the exact solution for a constant gradient, for top pressures from 0.5 to 2 bar, and check that a padded top ($P = 0$) leaves the top shell isothermal.
+
+**How we know the right answer.** For a solid or a liquid, $\nabla_\mathrm{ad}$ is close to zero below 1 bar, so the true adiabat changes the temperature there by about 0.002 K ([How the adiabat is integrated](../Explanations/adiabat_integration.md#low-pressure-padded-tops-and-limits)). A correct profile therefore changes smoothly with the top pressure.
+
+**Why it matters.** The PROTEUS `dummy` setup has a surface pressure of 1 atm. A jump at 1 bar moves its top node by about 22 K between passes and between starts that differ only by round-off.
+
+![Top node temperature against the top pressure from 0.9 to 1.1 bar, step skipped below 1 bar and midpoint with the 1 bar floor](../assets/validation/adiabat_low_pressure.svg#only-light){ width="80%" }
+![Top node temperature against the top pressure from 0.9 to 1.1 bar, step skipped below 1 bar and midpoint with the 1 bar floor](../assets/validation/adiabat_low_pressure_dark.svg#only-dark){ width="80%" }
+
+**How to read the plot.** The x axis is the top pressure in bar, and the y axis the top node temperature minus its value at 1.1 bar, with the CMB anchor. The dashed line is a step that is skipped below 1 bar, computed in the test: it jumps by about 22 K at 1 bar. The solid line is the midpoint integration with the 1 bar floor and stays flat. The test asserts that no node of the solid profile changes by more than 0.01 K between neighbour points, and that the dashed line jumps by more than 10 K. A pass means a flat solid line.
+
+??? info "Test details"
+    - Reference: continuity in the top pressure; the exact solution $T = T_a (P'/P'_a)^{0.1}$ with $P' = \max(P, 10^5\,\mathrm{Pa})$ for the stub planet.
+    - Tolerance: 0.01 K between neighbour top pressures at every node; relative $10^{-12}$ for the stub planet; exact equality for the padded top.
+    - Test id: `tests/test_adiabat_real_profiles.py::test_temperature_is_continuous_across_one_bar`, `tests/test_adiabatic.py::TestMidpointAdiabat::test_low_pressure_rule_follows_the_floored_adiabat`, `::test_padded_top_stays_isothermal`.
+    - Command: `pytest -o "addopts=" tests/test_adiabat_real_profiles.py tests/test_adiabatic.py -k "one_bar or floored_adiabat or padded_top"`.
 
 ## Mass dependence with the Seager et al. (2007) EOS
 
 **Why this comparison exists.** The initial temperatures depend on the planet mass through the gravitational energy released in accretion; the figures show that dependence.
 
-**What it shows.** `tools/validation/validate_thermal_state.py` runs Zalmoxis with the [Seager et al. (2007)](https://iopscience.iop.org/article/10.1086/521346) analytic EOS for 5 planet masses (0.5, 1, 2, 3, 5 $M_\oplus$) and computes the initial thermal state for each.
+**What it shows.** `tools/validation/validate_thermal_state.py` runs Zalmoxis with the Seager et al. (2007)[^cite-seager2007] analytic EOS for 5 planet masses (0.5, 1, 2, 3, 5 $M_\oplus$) and computes the initial thermal state for each.
 
 ![Initial thermal state against planet mass](../img/validation/validate_thermal_state_mass.png)
 
@@ -77,6 +150,8 @@ The script also highlights the surface temperature issue: for 1 $M_\oplus$ plane
 
 ## References
 
-[^cite-boujibar2020]: A. Boujibar, P. Driscoll, Y. Fei, Journal of Geophysical Research: Planets, 125, e2019JE006124, 2020. [doi:10.1029/2019JE006124](https://doi.org/10.1029/2019JE006124)
+[^cite-boujibar2020]: A. Boujibar, P. Driscoll, Y. Fei, *[Super-Earth internal structures and initial thermal states](https://doi.org/10.1029/2019JE006124)*, Journal of Geophysical Research: Planets, 125, e2019JE006124, 2020. [SciX](https://scixplorer.org/abs/2020JGRE..12506124B/abstract).
 
-[^cite-whiteli2025]: N. I. White, J. Li, Journal of Geophysical Research: Planets, 130, e2024JE008550, 2025. [doi:10.1029/2024JE008550](https://doi.org/10.1029/2024JE008550)
+[^cite-seager2007]: S. Seager, M. Kuchner, C. A. Hier-Majumder, B. Militzer, *[Mass-radius relationships for solid exoplanets](https://doi.org/10.1086/521346)*, The Astrophysical Journal, 669, 1279-1297, 2007. [SciX](https://scixplorer.org/abs/2007ApJ...669.1279S/abstract).
+
+[^cite-whiteli2025]: N. I. White, J. Li, *[Initial thermal states of super-Earth exoplanets and implications for early dynamos](https://doi.org/10.1029/2024JE008550)*, Journal of Geophysical Research: Planets, 130, e2024JE008550, 2025. [SciX](https://scixplorer.org/abs/2025JGRE..13008550W/abstract).
