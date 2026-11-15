@@ -146,8 +146,8 @@ def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validat
     same ODE (rtol 1e-10) at every node on the adiabat, with no nabla read that is missing or
     not positive. The forward Euler step in P per node, computed in the test from the stored
     structure, equals the stored temperature of each solve and is at least 5 times farther and
-    more than 2 K from the reference on every profile. A padded top keeps its isothermal top
-    shell."""
+    more than 2 K from the reference on every profile. A padded top gives the profile of a top
+    at 1 Pa within 1e-6 K."""
     from zalmoxis.eos.temperature import compute_adiabatic_temperature
 
     kw0 = profiles['default_k0'][1]
@@ -163,8 +163,11 @@ def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validat
         assert bad == 0, case
         assert err <= 1.0, (case, err)
         assert native > max(5 * err, 2.0), (case, native, err)
-        if rec['padded']:
-            assert kw['pressure'][-1] == 0.0 and T[-1] == T[-2]
+        if rec['padded']:  # a padded top integrates like a top at 1 Pa
+            P1 = np.asarray(kw['pressure'], float).copy()
+            P1[-1] = 1.0
+            T1 = compute_adiabatic_temperature(**{**kw, 'pressure': P1})
+            assert kw['pressure'][-1] == 0.0 and float(np.max(np.abs(T - T1))) <= 1e-6
         if case == 'default_k0':
             k0 = (kw['pressure'][keep], T[keep], ref[keep], euler[keep])
         print(

@@ -989,19 +989,24 @@ class TestMidpointAdiabat:
 
     @pytest.mark.physics_invariant
     @pytest.mark.parametrize('anchor', ['surface', 'cmb'])
-    def test_padded_top_stays_isothermal(self, monkeypatch, anchor):
-        """A padded top (P = 0 at the outer node) is a stop: the top shell is isothermal, so the
-        surface-anchored profile below it equals the one of a top at the next node."""
+    def test_padded_top_integrates_like_the_floor(self, monkeypatch, anchor):
+        """A padded top (P = 0 at the outer node) integrates like a top at 1e5 Pa: the profile
+        equals the one with the top at 1 Pa and at 1e5 Pa, bit for bit, and with the surface
+        anchor it is the constant-nabla law from 1e5 Pa (analytical), not an isothermal shell."""
         _stub_adiabat(monkeypatch, lambda P, T: 0.1)
         P = _profile(n=21)
-        P[-1] = 0.0
-        T = _call(P, anchor, 3000.0)
-        assert T[-1] == T[-2]
+        runs = {}
+        for top in (0.0, 1.0, 1e5):
+            P[-1] = top
+            runs[top] = _call(P, anchor, 3000.0)
+        np.testing.assert_array_equal(runs[0.0], runs[1.0])
+        np.testing.assert_array_equal(runs[0.0], runs[1e5])
+        T = runs[0.0]
         if anchor == 'surface':
-            assert T[-2] == 3000.0
-            np.testing.assert_allclose(T[:-1], 3000.0 * (P[:-1] / P[-2]) ** 0.1, rtol=1e-12)
+            assert T[-1] == 3000.0 and T[-2] > 3000.0
+            np.testing.assert_allclose(T[:-1], 3000.0 * (P[:-1] / 1e5) ** 0.1, rtol=1e-12)
         else:
-            assert T[-2] < T[1]
+            assert T[-1] < T[-2] < T[1]
 
     @pytest.mark.physics_invariant
     def test_negative_nabla_holds_the_rest_of_the_segment(self, monkeypatch):
