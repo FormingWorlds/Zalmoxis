@@ -1913,7 +1913,7 @@ def test_the_returned_mantle_temperature_is_the_adiabat_of_the_returned_pressure
     hand-off: the returned mantle T equals the adiabat recomputed on the returned pressure
     within 1 K, apart from 2 nodes with their own bounds. The CMB anchor node reads the T(P)
     table across the jump from T_surf on the core nodes to T_cmb (within 6 K of T_cmb); the
-    top node can lose the low-pressure step of the adiabat (within 25 K).
+    top node follows the adiabat within 1 K like the other nodes.
     adiabat_self_consistency is the largest mantle difference, both nodes included."""
     from tests.test_spider_coupling_convergence import _has_paleos_data
     from tools.validation import proteus_ic_solvers as tool
@@ -1940,8 +1940,7 @@ def test_the_returned_mantle_temperature_is_the_adiabat_of_the_returned_pressure
     assert lag[1:-1].max() <= 1.0
     # the core nodes carry T_surf, so the one T(P) table jumps by T_cmb - T_surf at the CMB
     assert dT_cmb <= 6.0, f'CMB anchor node {dT_cmb:.3f} K off T_cmb: core/mantle T jump'
-    # the adiabat skips its step where a pressure is below 1e5 Pa
-    assert lag[-1] <= 25.0, f'top node {lag[-1]:.3f} K off the adiabat: low-pressure skip'
+    assert lag[-1] <= 1.0, f'top node {lag[-1]:.3f} K off the adiabat'
     assert r['adiabat_table_blend'] == 1.0
     assert r['adiabat_self_consistency'] == pytest.approx(lag.max(), rel=1e-12)
     assert r['adiabat_self_consistency'] >= max(dT_cmb, lag[-1])
@@ -2668,7 +2667,7 @@ def _assert_grid_bounds(first, seeded, plain, stored, lags, jax=False):
         assert r['converged'] and r['accepted_on'] == 'strict' and r['adiabat_seeded'] is flag
         assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
     off = [
-        (_off_ref(first, ref1), np.inf),  # 1-atm top node: 2-state adiabat step flip
+        (_off_ref(first, ref1), 2.0),  # 1-atm top shell: lags the pressure of the pass before
         (_off_ref(seeded, ref2), 1.0),
         *(() if jax else ((_off_ref(plain, ref2), 1.0),)),
     ]
@@ -2686,7 +2685,7 @@ def _assert_grid_bounds(first, seeded, plain, stored, lags, jax=False):
         assert abs(dRc) <= 2e-4 and abs(dPcmb) <= p_cmb_bound
     for lag in lags:
         assert lag[0] <= 6.0 and lag[1] <= 1.0
-    assert lags[1][2] <= 25.0 and lags[2][2] <= 25.0
+    assert lags[0][2] <= 3.0 and lags[1][2] <= 1.0 and lags[2][2] <= 1.0
     dT, dT_top, dR, *_ = _off_ref(seeded, plain)
     assert dT <= 2.5 and abs(dT_top) <= 2.5 and abs(dR) <= 5e-4
     # the last core node reads the edge of the mantle T(P) table; the other core nodes do not
@@ -2709,11 +2708,11 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
     REF from the lowest to the second-highest of the 12 mantle nodes, the radius, central
     pressure and core radius within 2e-4 and the CMB pressure within 2 tol / (1 - cmf) = 4e-3:
     the core mass is fixed, so the mass error sits in the mantle and moves P_cmb by
-    dM / (M (1 - cmf)). The top mantle node stays within 1 K of REF in the re-solves (51.3 MPa);
-    in the first solve (1 atm) it is not compared, since its adiabat step flips with round-off
-    between 2 states (about -0.15 K or 28.65 to 28.81 K from REF).
-    Each solve lags the adiabat of its own pressure by at most 6 K at the CMB node and 1 K at
-    the other mantle nodes, and the re-solves by at most 25 K at the top node. The seeded and
+    dM / (M (1 - cmf)). The top mantle node stays within 1 K of REF in the re-solves (51.3 MPa)
+    and within 2 K in the first solve (1 atm), where the thin top shell lags the pressure of
+    the pass before. Each solve lags the adiabat of its own pressure by at most 6 K at the CMB
+    node and 1 K at the other mantle nodes, the first solve by at most 3 K and the re-solves
+    by at most 1 K at the top node. The seeded and
     the unseeded re-solve differ by at most 2.5 K at the 39 mass points and at the top node,
     and 5e-4 in radius. In all 3 solves the mass-weighted mean core temperature stays within
     10 K of REF, the last core node within 700 K (it reads the edge of the mantle T(P) table)
@@ -2786,13 +2785,12 @@ def test_the_seed_keeps_the_converged_adiabat_of_the_grid_start_up_on_the_jax_pa
 @pytest.mark.timeout(3600)
 def test_a_first_solve_at_a_planet_mass_2e12_higher_keeps_the_stored_reference():
     """The first solve of the grid start-up case at a planet mass 2e-12 higher, a round-off
-    nudge that can flip the adiabat step of the top mantle node at 1 atm, keeps the bounds of
-    the grid start-up test against the stored REF: strict on the full adiabat, mantle
-    temperature within 1 K up to the second-highest mantle node (the 1-atm top node is not
-    compared), radius, central pressure and core radius within 2e-4, CMB pressure within
-    2 tol / (1 - cmf) = 4e-3, lags of at most 6 K at the CMB node and 1 K at the other
-    mantle nodes, and the core bounds (mean 10 K, last core node 700 K, other core nodes
-    1 K). It runs in the nightly job of the stored reference."""
+    nudge, keeps the bounds of the grid start-up test against the stored REF: strict on the
+    full adiabat, mantle temperature within 1 K up to the second-highest mantle node and the
+    1-atm top node within 2 K, radius, central pressure and core radius within 2e-4, CMB
+    pressure within 2 tol / (1 - cmf) = 4e-3, lags of at most 6 K at the CMB node, 1 K at the
+    other mantle nodes and 3 K at the top node, and the core bounds (mean 10 K, last core node
+    700 K, other core nodes 1 K). It runs in the nightly job of the stored reference."""
     _need_paleos()
     nudged = {**GRID_CMF95, 'planet_mass': GRID_CMF95['planet_mass'] * (1 + 2e-12)}
     r, _, _, lag = _grid_main(nudged)
@@ -2800,11 +2798,11 @@ def test_a_first_solve_at_a_planet_mass_2e12_higher_keeps_the_stored_reference()
     assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
     off = _off_ref(r, grid_ref.load()['first'])
     print('vs REF (dT, dT_top, dR, dPc, dRc, dPcmb):', off, 'lag:', lag)
-    dT, _, dR, dPc, dRc, dPcmb = off  # 1-atm top node: 2-state adiabat step flip
+    dT, dT_top, dR, dPc, dRc, dPcmb = off
     bound = 2 * GRID_CMF95['newton_tol'] / (1.0 - GRID_CMF95['core_mass_fraction'])
-    assert dT <= 1.0
+    assert dT <= 1.0 and abs(dT_top) <= 2.0
     assert max(abs(dR), abs(dPc), abs(dRc)) <= 2e-4 and abs(dPcmb) <= bound
-    assert lag[0] <= 6.0 and lag[1] <= 1.0
+    assert lag[0] <= 6.0 and lag[1] <= 1.0 and lag[2] <= 3.0
     _core_T_bounded(r, grid_ref.load()['first'])
 
 
@@ -2816,8 +2814,7 @@ def test_the_stored_grid_start_up_reference_is_the_converged_solve_of_the_source
     """The 4 structures of ``tests/data/grid_start_up_reference.json`` (first solve and re-solve,
     numpy and JAX path) solved again at the mass tolerance 1e-6: strict on the full adiabat, the
     mantle temperature within 0.1 K of the stored one up to the second-highest mantle node, the
-    top node within 1 K in the re-solves (in the first solves at 1 atm it is not compared: its
-    adiabat step flips with round-off between 2 states), the radius,
+    top node within 1 K in the re-solves and 2 K in the first solves at 1 atm, the radius,
     central pressure and core radius within 1e-5 and the CMB pressure within
     2 tol_REF / (1 - cmf) = 4e-5; then the sha256 of the stored list of Zalmoxis modules
     equals the stored one. A failure means the source or a table moved the reference: run
@@ -2834,8 +2831,8 @@ def test_the_stored_grid_start_up_reference_is_the_converged_solve_of_the_source
         print(key, 'vs stored (dT, dT_top, dR, dPc, dRc, dPcmb):', off)
         dT, dT_top, dR, dPc, dRc, dPcmb = off
         bound = 2 * grid_ref.REF_TOL['newton_tol'] / (1.0 - cfg['core_mass_fraction'])
-        # 1-atm top node of the first solve: 2-state adiabat step flip, not compared
-        assert dT <= 0.1 and (key.startswith('first') or abs(dT_top) <= 1.0), key
+        # the 1-atm top shell of a first solve lags the pressure of the pass before
+        assert dT <= 0.1 and abs(dT_top) <= (2.0 if key.startswith('first') else 1.0), key
         assert max(abs(dR), abs(dPc), abs(dRc)) <= 1e-5 and abs(dPcmb) <= bound, key
     pkg = os.path.dirname(os.path.abspath(zalmoxis.__file__))
     assert grid_ref.source_hash(stored['source']['files'], pkg) == stored['source']['sha256']
