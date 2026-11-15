@@ -7,20 +7,27 @@ inner solve of its returned profile reports converged pressure and that density.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import re
 import time
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
 import pytest
+from hypothesis import example, given, settings
+from hypothesis import strategies as st
 
 import zalmoxis.solver as zs
 from tests.test_failed_structure_solve import ROOT, _cfg, _count_outer_iterations, _run
 from tests.test_table_band_report import _need_wb_tables
+from tools.validation import grid_start_up_reference as grid_ref
+from tools.validation.grid_start_up_reference import GRID_CMF95
 from zalmoxis.config import load_material_dictionaries
 from zalmoxis.constants import G, earth_mass, earth_radius
+from zalmoxis.invariants import StructureInvariantError
 from zalmoxis.mixing import calculate_mixed_density, parse_all_layer_mixtures
 
 INPUT = os.path.join(ROOT, 'input')
@@ -45,6 +52,12 @@ def no_check(monkeypatch):
     monkeypatch.setattr(zs, 'check_accepted', lambda *args, **kwargs: None)
 
 
+@pytest.fixture
+def canned(no_check, monkeypatch):
+    """main on a canned _solve result: no physics-invariant check and no table-band report."""
+    monkeypatch.setattr(zs, '_report_table_bands', lambda r, *a: r)
+
+
 def _inner(R, *, pressure=True, density=True, eos=True, accepted_on='max_iter', wall=False):
     """Inner Picard result at radius R on the linear M(R)."""
     M = A * R + B
@@ -59,6 +72,13 @@ def _inner(R, *, pressure=True, density=True, eos=True, accepted_on='max_iter', 
         'mass_error_at_accept': abs(M - M_T) / M_T,
         'stopped_on_wall_clock': wall,
     }
+
+
+def _full(R=7.0e6, t=1.0):
+    """A strict inner result at radius R on a full-adiabat table that took t seconds."""
+    r = {**_inner(R, accepted_on='strict'), 'adiabat_computed': True, 'total_time': t}
+    r.update(adiabat_blend=1.0, adiabat_table_blend=1.0)
+    return r
 
 
 def _newton(cp_over=(), **flags):
@@ -775,9 +795,9 @@ class TestRealSolve:
 
 @pytest.mark.smoke
 @pytest.mark.wolfbower
-def test_wall_clock_in_the_adiabat_ramp_is_timeout(monkeypatch, caplog):
-    """The clock runs out after the mass converged, in the adiabat blend ramp: still
-    'timeout'."""
+def test_wall_clock_in_the_adiabat_ramp_is_retried_to_the_full_adiabat(monkeypatch, caplog):
+    """The clock runs out after the mass converged, in the adiabat blend ramp: the linear
+    pass is not accepted, main retries, and the retry returns the full adiabat."""
     from zalmoxis.eos import get_solidus_liquidus_functions
 
     _need_wb_tables()
@@ -785,27 +805,37 @@ def test_wall_clock_in_the_adiabat_ramp_is_timeout(monkeypatch, caplog):
     ramp = lambda: any('activating adiabat blend' in m for m in caplog.messages)  # noqa: E731
     clock = time.time
     monkeypatch.setattr(zs, 'time', SimpleNamespace(time=lambda: clock() + 1e9 * ramp()))
+    tighten = zs._tighten_solver_params  # the retry clock is 2x the 300 s default
+    monkeypatch.setattr(
+        zs, '_tighten_solver_params', lambda p: {**tighten(p), 'wall_timeout': 900.0}
+    )
     cfg = _cfg(
         temperature_mode='adiabatic',
         layer_eos_config={'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3'},
         tolerance_outer=0.02,
         max_iterations_inner=2,
         wall_timeout=WALL,
+        num_layers=30,  # a short retry
+        relative_tolerance=1e-5,
+        absolute_tolerance=1e-6,
     )
     melt = get_solidus_liquidus_functions()
     r = zs.main(cfg, load_material_dictionaries(), melt, '/tmp')
     _assert_eos_density(r, cfg['layer_eos_config'], melt)  # T-dependent mantle, restored pass
     assert 'Wall-clock timeout (1000000s)' in caplog.text
-    assert r['best_mass_error'] < 0.02  # below tolerance_outer: the chain alone says mass_only
-    assert r['converged'] is True and r['accepted_on'] == 'timeout'
-    assert r['accept_mass_limit'] == 0.02
+    assert 'No accept of a pass at adiabat blend 0.00' in caplog.text
+    assert 'Retrying with tighter parameters' in caplog.text
+    assert r['converged'] is True and r['accepted_on'] is not None
+    assert (
+        r['adiabat_computed'] is True and r['adiabat_blend'] == r['adiabat_table_blend'] == 1.0
+    )
 
 
 @pytest.mark.smoke
 @pytest.mark.wolfbower
-def test_wall_clock_in_the_adiabat_ramp_keeps_tolerance_outer_as_the_limit(monkeypatch, caplog):
-    """As above with tolerance_outer 0.05 and a 3.9 % mass error: accepted below
-    tolerance_outer, so the invariant check reads that limit and does not raise."""
+def test_wall_clock_in_the_adiabat_ramp_returns_the_linear_pass_unaccepted(monkeypatch, caplog):
+    """As above with tolerance_outer 0.05, in _solve: the clock stop returns the linear pass,
+    3 to 5 % off the mass, with no accept and no mass limit, as the start of a retry."""
     from zalmoxis.eos import get_solidus_liquidus_functions
 
     _need_wb_tables()
@@ -821,10 +851,11 @@ def test_wall_clock_in_the_adiabat_ramp_keeps_tolerance_outer_as_the_limit(monke
         wall_timeout=WALL,
         _initial_radius_guess=5.9e6,
     )
-    r = zs.main(cfg, load_material_dictionaries(), get_solidus_liquidus_functions(), '/tmp')
-    assert r['converged'] is True and r['accepted_on'] == 'timeout'
+    r = zs._solve(cfg, load_material_dictionaries(), get_solidus_liquidus_functions(), '/tmp')
+    assert r['stopped_on_wall_clock'] is True and r['adiabat_blend'] == 0.0
+    assert r['converged'] is False and r['accepted_on'] is None
+    assert r['accept_mass_limit'] is None
     assert 0.03 < r['mass_error_at_accept'] < 0.05
-    assert r['accept_mass_limit'] == 0.05
 
 
 def _wb_blended(
@@ -880,12 +911,14 @@ def _wb_blended(
 @pytest.mark.smoke
 @pytest.mark.wolfbower
 @pytest.mark.usefixtures('no_check')
-def test_a_clock_stop_keeps_a_blended_pass_that_its_mass_test_accepts(monkeypatch, caplog):
-    """tolerance_outer 0.05 and blended passes 4 % off: the mass test of the clock stop accepts
-    the newest pass above the 3 % ceiling, so it is returned, not the linear one."""
+def test_a_clock_stop_returns_the_blended_pass_its_mass_test_takes(monkeypatch, caplog):
+    """tolerance_outer 0.05 and blended passes 4 % off: the mass test of the clock stop takes
+    the newest pass above the 3 % ceiling, so it is returned, not the linear one; at blend 0.25
+    it is not accepted."""
     with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.solver'):
         r = _wb_blended(monkeypatch, 1.04, 0.05)
-    assert r['stopped_on_wall_clock'] is True and r['accepted_on'] == 'timeout'
+    assert r['stopped_on_wall_clock'] is True and r['accepted_on'] is None
+    assert r['converged'] is False
     assert r['adiabat_blend'] == 0.25
     assert r['mass_error_at_accept'] == pytest.approx(0.04, rel=1e-9)
     assert 'No pass of adiabat blend' not in caplog.text
@@ -896,12 +929,10 @@ def test_a_clock_stop_keeps_a_blended_pass_that_its_mass_test_accepts(monkeypatc
 @pytest.mark.usefixtures('no_check')
 def test_a_clock_stop_beyond_its_limit_returns_the_linear_pass_under_that_limit(monkeypatch):
     """The blended passes end 10 % off, beyond the 6 % limit of a clock stop: the linear pass
-    that started the ramp is returned, and its mass verdict is taken again, so the mass test of
-    tolerance_outer accepts it (its inner flags are not both converged), not the 3 % ceiling."""
+    that started the ramp is returned, not accepted, as its temperature is not the adiabat."""
     r = _wb_blended(monkeypatch, 1.10, 0.02)
-    assert r['stopped_on_wall_clock'] is True and r['accepted_on'] == 'timeout'
-    assert r['adiabat_blend'] == 0.0
-    assert r['accept_mass_limit'] == pytest.approx(0.02)
+    assert r['stopped_on_wall_clock'] is True and r['accepted_on'] is None
+    assert r['adiabat_blend'] == 0.0 and r['converged'] is False
     assert r['mass_error_at_accept'] < 0.02
 
 
@@ -911,9 +942,10 @@ def test_a_clock_stop_beyond_its_limit_returns_the_linear_pass_under_that_limit(
 def test_a_clock_stop_keeps_a_blended_pass_whose_inner_solves_converged(monkeypatch):
     """Blended passes 5 % off, inside the 6 % limit of a clock stop but above tolerance_outer
     0.02 and the 3 % ceiling: the first blended pass ran its inner solves to convergence, so
-    the strict test of the stop accepts it and no earlier pass replaces it."""
+    the strict test of the stop takes it and no earlier pass replaces it; at blend 0.25 it is
+    not accepted."""
     r = _wb_blended(monkeypatch, 1.05, 0.02, inner=100, clock_after=2)
-    assert r['accepted_on'] == 'timeout' and r['accept_mass_limit'] == pytest.approx(0.06)
+    assert r['accepted_on'] is None and r['converged'] is False
     assert r['converged_density'] and r['converged_pressure']
     assert r['adiabat_blend'] == 0.25
     assert r['mass_error_at_accept'] == pytest.approx(0.05, rel=1e-9)
@@ -930,13 +962,14 @@ def test_a_clock_stop_inside_its_limit_without_converged_inner_solves_falls_back
     names both blends and best_mass_error describes the returned pass."""
     with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.solver'):
         r = _wb_blended(monkeypatch, 1.05, 0.02)
-    assert r['stopped_on_wall_clock'] is True and r['accepted_on'] == 'timeout'
+    assert r['stopped_on_wall_clock'] is True and r['accepted_on'] is None
     assert r['adiabat_blend'] == 0.0
     assert r['mass_error_at_accept'] < 0.02
     assert r['best_mass_error'] == pytest.approx(r['mass_error_at_accept'], rel=1e-9)
     assert 'No pass of adiabat blend 0.25' in caplog.text
     assert (
-        f'best pass of blend 0.00 (mass error {r["best_mass_error"] * 100:.4f}%)' in caplog.text
+        f'best pass of blend 0.00 on a table of blend 0.00 (mass error '
+        f'{r["best_mass_error"] * 100:.4f}%)' in caplog.text
     )
 
 
@@ -968,10 +1001,10 @@ def test_a_stop_that_cannot_return_a_better_earlier_pass_keeps_its_own(
 @pytest.mark.usefixtures('no_check')
 def test_an_inner_clock_stop_on_the_last_pass_returns_a_better_earlier_pass(monkeypatch):
     """tolerance_outer 0.05: the clock runs out in the inner loop of the last outer pass, the
-    blended pass is 4.5 % off and the linear pass 4 %: the linear pass is returned and the mass
-    test of the stop accepts it, although it is above the 3 % ceiling."""
+    blended pass is 4.5 % off and the linear pass 4 %: the linear pass is returned, not
+    accepted."""
     r = _wb_blended(monkeypatch, 1.045, 0.05, outer=3, clock_after=2, linear=1.04)
-    assert r['accepted_on'] == 'timeout' and r['adiabat_blend'] == 0.0
+    assert r['accepted_on'] is None and r['adiabat_blend'] == 0.0
     assert r['mass_error_at_accept'] == pytest.approx(0.04, rel=1e-9)
 
 
@@ -980,10 +1013,10 @@ def test_an_inner_clock_stop_on_the_last_pass_returns_a_better_earlier_pass(monk
 @pytest.mark.usefixtures('no_check')
 def test_a_clock_stop_swap_returns_the_pass_its_mass_test_read(monkeypatch):
     """tolerance_outer 0.05, the clock runs out in the first blended pass, 6 % off, and the
-    linear pass is 4.5 % off: the swap returns the linear pass, and the accepted mass error is
-    the one of the returned pass, not of the blended pass."""
+    linear pass is 4.5 % off: the swap returns the linear pass, and the mass error of the
+    result is the one of the returned pass, not of the blended pass."""
     r = _wb_blended(monkeypatch, 1.06, 0.05, inner=5, outer=2, linear=1.045)
-    assert r['accepted_on'] == 'timeout' and r['adiabat_blend'] == 0.0
+    assert r['accepted_on'] is None and r['adiabat_blend'] == 0.0
     assert r['mass_error_at_accept'] == pytest.approx(r['best_mass_error'], rel=1e-9)
     assert r['mass_error_at_accept'] == pytest.approx(0.045, rel=1e-9)
 
@@ -1009,7 +1042,7 @@ def test_a_clock_stop_with_converged_density_but_not_pressure_falls_back(monkeyp
     monkeypatch.setattr(zs, 'compute_adiabatic_temperature', adi)
     monkeypatch.setattr(zs, 'brentq', brent)
     r = _wb_blended(monkeypatch, 1.05, 0.02, inner=100, clock_after=2)
-    assert r['accepted_on'] == 'timeout' and r['adiabat_blend'] == 0.0
+    assert r['accepted_on'] is None and r['adiabat_blend'] == 0.0
     assert r['mass_error_at_accept'] < 0.02
 
 
@@ -1033,8 +1066,8 @@ def test_an_accepted_mass_break_returns_its_own_pass_without_a_fallback(monkeypa
 def test_a_max_iter_stop_in_the_blend_ramp_returns_a_pass_on_the_adiabat(caplog, tmp_path):
     """PALEOS, adiabatic, 4 outer passes: the mass converges on the linear temperature, and
     the cap stops the solve in the blend ramp. The returned pass is on the newest blend the
-    solver logged, not the linear pass with the smallest mass error, and main warns about the
-    blend. Measured newest blend: 0.25 without the root refinement on macOS and Linux; with
+    solver logged, not the linear pass with the smallest mass error, and it is not accepted.
+    Measured newest blend: 0.25 without the root refinement on macOS and Linux; with
     it 0.5 on macOS and 0.25 on Linux."""
     from tests.test_spider_coupling_convergence import _has_paleos_data
 
@@ -1053,16 +1086,16 @@ def test_a_max_iter_stop_in_the_blend_ramp_returns_a_pass_on_the_adiabat(caplog,
         debug_profile_dir=str(tmp_path),
     )
     with patch.object(zs, 'create_pressure_density_files') as dump:
-        r = zs.main(cfg, load_material_dictionaries(), None, INPUT)
+        r = zs._solve(cfg, load_material_dictionaries(), None, INPUT)
     assert dump.called  # the DEBUG profile dump of the solve ran into the stub
     T = np.asarray(r['temperature'])
     off_linear = np.max(np.abs(T - np.linspace(6000.0, 3000.0, len(T))))
-    assert r['converged'] is True and r['accepted_on'] == 'max_iter'
+    assert r['converged'] is False and r['accepted_on'] is None
     assert r['adiabat_computed'] is True and off_linear > 100.0
     steps = [float(m.rsplit('= ', 1)[1]) for m in caplog.messages if 'adiabat blend = ' in m]
     assert steps and 0.0 < steps[-1] < 1.0, steps
     assert round(r['adiabat_blend'], 2) == steps[-1]  # the log prints %.2f
-    assert f'accepted a temperature profile at adiabat blend {steps[-1]:.2f}' in caplog.text
+    assert f'No accept of a pass at adiabat blend {steps[-1]:.2f}' in caplog.text
 
 
 @pytest.mark.smoke
@@ -1129,8 +1162,8 @@ def test_a_clock_stop_before_the_first_blended_pressure_solve_keeps_the_linear_p
     monkeypatch,
 ):
     """PALEOS, adiabatic: the clock runs out when the first blended pass computes the adiabat,
-    before its first pressure solve. The linear pass that met the mass test comes back, with
-    its EOS density and adiabat_blend 0, not an empty profile."""
+    before its first pressure solve. The linear pass that met the mass test comes back, not
+    accepted, with its EOS density and adiabat_blend 0, not an empty profile."""
     from tests.test_spider_coupling_convergence import _has_paleos_data
 
     if not _has_paleos_data():
@@ -1153,62 +1186,272 @@ def test_a_clock_stop_before_the_first_blended_pressure_solve_keeps_the_linear_p
     )
     r = zs._solve(cfg, load_material_dictionaries(), None, INPUT)
     assert adiabat and r['stopped_on_wall_clock'] is True
-    assert r['converged'] is True and r['density_from_eos'] is True
+    assert r['converged'] is False and r['density_from_eos'] is True
     assert r['adiabat_blend'] == 0.0 and r['mass_error_at_accept'] < 1e-3
 
 
-@pytest.mark.unit
-@pytest.mark.usefixtures('no_check')
-@pytest.mark.parametrize(
-    'eos, computed, blend, warned',
+LABELS = (
+    'strict', 'mass_only', 'oscillation', 'max_iter', 'timeout', 'retry_skip', 'newton_tol',
+    'brentq_best',
+)  # fmt: skip
+
+
+def _adiabatic_cfg(eos='PALEOS', mode='adiabatic', **kwargs):
+    return {
+        'planet_mass': M_T,
+        'temperature_mode': mode,
+        'layer_eos_config': {'core': f'{eos}:iron', 'mantle': f'{eos}:MgSiO3'},
+        **kwargs,
+    }
+
+
+SHORT = [  # (eos, mode, computed, blend, table, raises); SHORT[2] raises, SHORT[9] passes
+    ('PALEOS', 'adiabatic', False, 0.0, 0.0, True),
+    ('PALEOS', 'adiabatic_from_cmb', True, 0.5, 0.25, True),
+    ('PALEOS', 'adiabatic', True, 0.75, 0.5, True),
+    ('PALEOS', 'adiabatic', True, float('nan'), 1.0, True),
+    ('PALEOS', 'adiabatic', False, 1.0, 1.0, True),  # no computed adiabat: blend 0
+    ('PALEOS', 'adiabatic', True, 1.0, 0.75, True),  # its table is from the 0.75 pass
+    ('PALEOS', 'adiabatic_from_cmb', True, 1.0, 0.75, True),
+    ('PALEOS', 'adiabatic', True, 1.0, float('nan'), True),
+    ('PALEOS', 'adiabatic', True, 1.0, None, True),
+    ('PALEOS', 'adiabatic', True, 1.0, 1.0, False),
+    ('PALEOS', 'adiabatic_from_cmb', True, 1.0, 1.0, False),
+    ('PALEOS', 'linear', False, 0.0, 0.0, False),
+    ('Analytic', 'adiabatic', False, 0.0, 0.0, False),  # no T-dependent component: no ramp
+]
+assert SHORT[2][-1] and not SHORT[9][-1]  # the rows of every label: one refused, one accepted
+ARRAYS = {'temperature_arrays': (np.array([0.0, 7.0e6]), np.full(2, 3000.0))}
+EXTERNAL_T = pytest.mark.parametrize(  # the numpy path ignores temperature_arrays
+    'kwargs, use_jax, external',
     [
-        ('PALEOS', False, 0.0, True),
-        ('PALEOS', True, 0.5, True),
-        ('PALEOS', True, 1.0, False),
-        ('PALEOS', False, 1.0, True),  # a blend without a computed adiabat counts as 0
-        ('Analytic', False, 0.0, False),  # no T-dependent component: no ramp by design
+        ({'temperature_function': lambda r, P: 3000.0}, False, True),
+        ({'temperature_function': lambda r, P: 3000.0}, True, True),
+        (ARRAYS, True, True),
+        (ARRAYS, False, False),
+    ],
+    ids=['function_numpy', 'function_jax', 'arrays_jax', 'arrays_numpy'],
+)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures('canned')
+@pytest.mark.parametrize(
+    'label, eos, mode, computed, blend, table, raises',
+    [('max_iter', *row) for row in SHORT]
+    + [(label, *SHORT[k]) for label in LABELS if label != 'max_iter' for k in (2, 9)],
+)
+def test_main_refuses_an_accepted_profile_short_of_the_adiabat(
+    monkeypatch, label, eos, mode, computed, blend, table, raises
+):
+    """Every accept label of a result whose profile is not the full adiabat, or whose T table
+    was built on the pressure of a pass short of it, raises, when the solve computes the
+    adiabat of the temperature mode itself."""
+    first = {**_inner(7.0e6, accepted_on=label), 'adiabat_computed': computed}
+    first.update(adiabat_blend=blend, adiabat_table_blend=table)
+    monkeypatch.setattr(zs, '_solve', lambda *a, **k: dict(first))
+    cfg = _adiabatic_cfg(eos, mode)
+    if not raises:
+        assert zs.main(cfg, {}, None, '/tmp')['accepted_on'] == label
+        return
+    with pytest.raises(
+        StructureInvariantError, match=f"accepted_on='{label}' at adiabat blend"
+    ):
+        zs.main(cfg, {}, None, '/tmp')
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures('canned')
+@EXTERNAL_T
+def test_an_external_temperature_profile_is_accepted_at_blend_0(
+    monkeypatch, kwargs, use_jax, external
+):
+    """With the temperature of the caller no adiabat is asked for, so blend 0 is accepted;
+    temperature arrays on the numpy path leave the adiabat asked, and blend 0 is refused."""
+    first = {**_inner(7.0e6, accepted_on='strict'), 'adiabat_computed': False}
+    first['adiabat_blend'] = 0.0
+    monkeypatch.setattr(zs, '_solve', lambda *a, **k: dict(first))
+    cfg = _adiabatic_cfg(use_jax=use_jax)
+    if external:
+        assert zs.main(cfg, {}, None, '/tmp', **kwargs)['accepted_on'] == 'strict'
+        return
+    with pytest.raises(StructureInvariantError, match='at adiabat blend'):
+        zs.main(cfg, {}, None, '/tmp', **kwargs)
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures('canned')
+@EXTERNAL_T
+def test_newton_with_an_external_temperature_returns_the_newton_result(
+    monkeypatch, kwargs, use_jax, external
+):
+    """With the temperature of the caller no adiabat is asked for, so main returns a converged
+    Newton result of an adiabatic mode with a T-dependent EOS without the blend ramp; with the
+    adiabat asked, the Newton root seeds the ramp."""
+    newton = {**_inner(7.0e6, accepted_on='newton_tol'), 'adiabat_computed': False}
+    newton.update(adiabat_blend=0.0, total_time=1.0, newton_n_iter=4, newton_history=[])
+    newton.update(
+        newton_used_brentq=False, pressure=np.array([3.6e11, 0.0]), density=np.ones(2)
+    )
+    picard = _full()
+    ramps = []
+    monkeypatch.setattr(zs, '_solve_newton_outer', lambda *a, **k: newton)
+    monkeypatch.setattr(zs, '_solve', lambda *a, **k: ramps.append(1) or dict(picard))
+    cfg = _adiabatic_cfg(outer_solver='newton', use_jax=use_jax)
+    r = zs.main(cfg, {}, None, '/tmp', **kwargs)
+    assert (r is newton, len(ramps)) == ((True, 0) if external else (False, 1))
+    assert r['accepted_on'] == ('newton_tol' if external else 'strict')
+
+
+@pytest.mark.unit
+def test_an_unaccepted_result_short_of_the_adiabat_passes_the_check():
+    result = {'converged': False, 'adiabat_computed': False, 'adiabat_blend': 0.0}
+    cfg = _adiabatic_cfg()
+    assert zs._check_accepted(result, cfg, cfg, {}, None, None, None, True) is result
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures('canned')
+@pytest.mark.parametrize(
+    'computed, blend, table, solves, label',
+    [
+        (False, 0.0, 0.0, 2, 'strict'),
+        (True, 0.5, 0.25, 2, 'strict'),
+        (True, 1.0, 0.75, 2, 'strict'),
+        (True, 1.0, 1.0, 1, 'retry_skip'),
     ],
 )
-def test_main_warns_on_an_accepted_profile_short_of_the_adiabat(
-    monkeypatch, caplog, eos, computed, blend, warned
+def test_a_retry_skip_takes_only_the_full_adiabat(
+    monkeypatch, computed, blend, table, solves, label
 ):
-    first = {**_inner(7.0e6, accepted_on='strict'), 'adiabat_computed': computed}
-    first['adiabat_blend'] = blend
-    monkeypatch.setattr(zs, '_solve', lambda *a, **k: dict(first))
-    monkeypatch.setattr(zs, '_report_table_bands', lambda r, *a: r)
-    cfg = {
-        'planet_mass': M_T,
-        'temperature_mode': 'adiabatic',
-        'layer_eos_config': {'core': f'{eos}:iron', 'mantle': f'{eos}:MgSiO3'},
-    }
-    zs.main(cfg, {}, None, '/tmp')
-    assert ('accepted a temperature profile at adiabat blend' in caplog.text) is warned
+    """An unaccepted first solve with converged density and pressure and a mass error under
+    7 % skips the retry only when its profile is the full adiabat on a table of a full-adiabat
+    pass; otherwise main retries."""
+    first = {**_inner(7.0e6), 'converged': False, 'accepted_on': None}
+    first.update(mass_error_at_accept=0.01, adiabat_computed=computed, adiabat_blend=blend)
+    first['adiabat_table_blend'] = table
+    second = _full()
+    results = [first, second]
+    monkeypatch.setattr(zs, '_solve', lambda *a, **k: dict(results.pop(0)))
+    r = zs.main(_adiabatic_cfg(), {}, None, '/tmp')
+    assert 2 - len(results) == solves and r['accepted_on'] == label
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize('converged', [True, False])
-def test_only_an_accepted_result_gets_the_adiabat_warning(caplog, converged):
-    cfg = {
-        'temperature_mode': 'adiabatic',
-        'layer_eos_config': {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3'},
+@pytest.mark.usefixtures('canned')
+@pytest.mark.parametrize('wall', [1000.0, WALL])
+def test_the_retry_runs_on_a_600_s_clock_whatever_the_configured_clock(monkeypatch, wall):
+    """The retry takes its clock from the solver defaults, 2 x 300 s: it does not read the
+    configured ``wall_timeout``, and this test fixes that current value."""
+    first = {
+        **_inner(7.0e6),
+        'converged': False,
+        'accepted_on': None,
+        'mass_error_at_accept': 0.5,
     }
-    result = {'converged': converged, 'adiabat_computed': True, 'adiabat_blend': 0.5}
-    zs._warn_adiabat(result, cfg, None, None, None)
-    assert ('at adiabat blend 0.50' in caplog.text) is converged
+    second = _full()
+    results, clocks = [first, second], []
+
+    def solve(cfg, *a, **k):
+        clocks.append(cfg['wall_timeout'])
+        return dict(results.pop(0))
+
+    monkeypatch.setattr(zs, '_solve', solve)
+    zs.main(_adiabatic_cfg(wall_timeout=wall), {}, None, '/tmp')
+    assert clocks == [wall, 600.0]
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures('canned')
+@pytest.mark.parametrize(
+    'eos, converged, ramp',
+    [('PALEOS', True, True), ('PALEOS', False, False), ('Analytic', True, False)],
+)
+def test_newton_continues_with_the_blend_ramp_from_its_profile(
+    monkeypatch, eos, converged, ramp
+):
+    """A converged Newton result of an adiabatic mode with a T-dependent EOS holds the linear
+    first-guess temperature, so main continues with the Picard blend ramp seeded from its
+    profile (radius, central pressure, density and radii) at the mass tolerance
+    min(tolerance_outer, newton_tol), and the result keeps the Newton bookkeeping. Otherwise
+    main returns the Newton result."""
+    newton = {**_inner(7.0e6, accepted_on='newton_tol'), 'converged': converged}
+    newton.update(pressure=np.array([3.6e11, 0.0]), density=np.array([1.2e4, 3.0e3]))
+    newton.update(adiabat_computed=False, adiabat_blend=0.0, total_time=1.0)
+    books = {
+        'newton_n_iter': 4,
+        'newton_history': [(7.0e6, M_T, 0.0)],
+        'newton_used_brentq': False,
+    }
+    newton.update(books)
+    picard = _full()
+    seeds = []
+
+    def solve(cp, *args, **kwargs):
+        seeds.append((cp, kwargs))
+        return dict(picard)
+
+    monkeypatch.setattr(zs, '_solve_newton_outer', lambda *a, **k: newton)
+    monkeypatch.setattr(zs, '_solve', solve)
+    cfg = _adiabatic_cfg(eos, outer_solver='newton', tolerance_outer=3e-3, newton_tol=2e-4)
+    r = zs.main(cfg, {}, None, '/tmp')
+    if not ramp:
+        assert not seeds and r is newton
+        return
+    assert len(seeds) == 1 and r['accepted_on'] == 'strict' and r['adiabat_blend'] == 1.0
+    cp, kwargs = seeds[0]
+    assert cp['_initial_radius_guess'] == 7.0e6 and cp['tolerance_outer'] == 2e-4
+    assert kwargs['p_center_hint'] == 3.6e11
+    assert kwargs['initial_density'] is newton['density']
+    assert kwargs['initial_radii'] is newton['radii']
+    assert {k: r[k] for k in books} == books
+    assert cfg['tolerance_outer'] == 3e-3 and '_initial_radius_guess' not in cfg
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures('canned')
+@pytest.mark.parametrize(
+    'tols, expected',
+    [
+        ({'tolerance_outer': 3e-3, 'newton_tol': 2e-4}, 2e-4),
+        ({'tolerance_outer': 1e-5, 'newton_tol': 1e-4}, 1e-5),
+        ({}, 1e-4),  # the defaults: tolerance_outer 1e-3, newton_tol 1e-4
+    ],
+)
+def test_the_newton_hand_off_and_its_retry_run_at_the_newton_mass_tolerance(
+    monkeypatch, tols, expected
+):
+    """The Picard continuation after a Newton root and its retry both run at the mass
+    tolerance min(tolerance_outer, newton_tol): the retry does not tighten it again. The
+    result's total_time adds the Newton time to the time of the solve that returns."""
+    newton = {**_inner(7.0e6, accepted_on='newton_tol'), 'total_time': 200.0}
+    newton.update(pressure=np.array([3.6e11, 0.0]), density=np.array([1.2e4, 3.0e3]))
+    newton.update(newton_n_iter=4, newton_history=[], newton_used_brentq=False)
+    failed = {**_inner(7.1e6), 'converged': False, 'accepted_on': None, 'total_time': 50.0}
+    failed.update(converged_density=False, adiabat_computed=True, adiabat_blend=0.5)
+    picard = _full(t=30.0)
+    results, configs = [failed, picard], []
+
+    def solve(cp, *args, **kwargs):
+        configs.append(cp)
+        return dict(results.pop(0))
+
+    monkeypatch.setattr(zs, '_solve_newton_outer', lambda *a, **k: newton)
+    monkeypatch.setattr(zs, '_solve', solve)
+    r = zs.main(_adiabatic_cfg(outer_solver='newton', **tols), {}, None, '/tmp')
+    assert [cp['tolerance_outer'] for cp in configs] == [expected, expected]
+    assert r['accepted_on'] == 'strict' and r['total_time'] == 230.0
 
 
 @pytest.mark.smoke
 @pytest.mark.accept_solves
 @pytest.mark.timeout(2400)
-def test_an_iteration_cap_whose_newest_blend_step_diverges_returns_an_earlier_best_pass(
-    monkeypatch, caplog
-):
+def test_an_iteration_cap_whose_newest_blend_step_diverges_returns_an_earlier_best_pass(caplog):
     """3-layer PALEOS ice planet (cmf 0.3, mmf 0.4), adiabatic Picard, 20 outer passes and
     tolerance_outer 1e-2, so a linear pass starts the blend ramp also on the CI runner (whose
     linear passes end near 2.4e-3, above the default 1e-3): every pass of the newest blend step
     misses the mass by more than 3 %, so the cap returns the best pass of an earlier step (blend
-    0, R about 1.2978e7 m), the log names the ramp start and the fallback, and main does not
-    retry."""
+    0, R about 1.2978e7 m), not accepted, and the log names the ramp start and the fallback."""
     from tests.test_spider_coupling_convergence import _has_paleos_data
     from zalmoxis.config import load_solidus_liquidus_functions, load_zalmoxis_config
 
@@ -1236,20 +1479,11 @@ def test_an_iteration_cap_whose_newest_blend_step_diverges_returns_an_earlier_be
         'Stixrude14-liquidus',
         cfg['mushy_zone_factor'],
     )
-    calls, real = [], zs._solve
-
-    def once(*args, **kwargs):
-        if calls:
-            pytest.fail('main retried the solve')
-        calls.append(1)
-        return real(*args, **kwargs)
-
-    monkeypatch.setattr(zs, '_solve', once)
     with caplog.at_level(logging.INFO, logger='fwl.zalmoxis.solver'):
-        r = zs.main(cfg, load_material_dictionaries(), melt, os.path.join(ROOT, 'input'))
+        r = zs._solve(cfg, load_material_dictionaries(), melt, os.path.join(ROOT, 'input'))
     assert 'activating adiabat blend' in caplog.text
     assert 'No pass of adiabat blend' in caplog.text
-    assert r['converged'] and r['accepted_on'] == 'max_iter'
+    assert not r['converged'] and r['accepted_on'] is None
     assert r['adiabat_blend'] == 0.0
     assert r['mass_error_at_accept'] < 1e-2
     assert r['radii'][-1] == pytest.approx(1.2978e7, rel=1e-2)
@@ -1502,7 +1736,7 @@ def test_a_contracting_oscillation_is_not_stopped(monkeypatch, caplog):
 def test_the_oscillation_stop_waits_for_the_adiabat_blend_ramp(monkeypatch, caplog, mode):
     """PALEOS: pass 0 ends 0.2 % heavy, later passes 2 % off with alternating sign, so no
     pass reaches tolerance_outer and the blend ramp never starts. The stop must not return
-    the linear temperature pass; the loop ends at its cap on blend 0 as max_iter."""
+    the linear temperature pass; the loop ends at its cap on blend 0, not accepted."""
     _need_paleos()
     r, radius = _oscillating_solve(
         monkeypatch,
@@ -1514,18 +1748,19 @@ def test_the_oscillation_stop_waits_for_the_adiabat_blend_ramp(monkeypatch, capl
         layer_eos_config=PALEOS,
     )
     assert STOP not in caplog.text
-    assert r['accepted_on'] == 'max_iter' and r['adiabat_blend'] == pytest.approx(0.0)
+    assert r['accepted_on'] is None and r['adiabat_blend'] == pytest.approx(0.0)
     assert len(radius) == 14
 
 
 @pytest.mark.smoke
 @pytest.mark.accept_solves
 def test_the_oscillation_stop_fires_after_the_adiabat_blend_ramp(monkeypatch, caplog):
-    """PALEOS, adiabatic: pass 0 reaches tolerance_outer and starts the ramp, pass 4 ends on
-    blend 1.0 0.2 % heavy, later passes 2 % off with alternating sign: the stop fires on
-    blend 1.0 and returns pass 4."""
+    """PALEOS, adiabatic: pass 0 reaches tolerance_outer and starts the ramp, pass 4 is the
+    first at blend 1.0 and reads the table of the blend-0.75 pass, pass 5 is the first on a
+    table of a blend-1.0 pass and ends 0.2 % heavy, later passes 2 % off with alternating
+    sign: the stop fires on blend 1.0 and returns pass 5."""
     _need_paleos()
-    sched = {0: 1.0005, 1: 1.05, 2: 1.05, 3: 1.05, 4: 1.002}
+    sched = {0: 1.0005, 1: 1.05, 2: 1.05, 3: 1.05, 4: 1.05, 5: 1.002}
     r, radius = _oscillating_solve(
         monkeypatch,
         caplog,
@@ -1537,8 +1772,9 @@ def test_the_oscillation_stop_fires_after_the_adiabat_blend_ramp(monkeypatch, ca
     )
     assert r['accepted_on'] == 'oscillation', (r['accepted_on'], len(radius))
     assert r['adiabat_blend'] == pytest.approx(1.0)
+    assert r['adiabat_table_blend'] == pytest.approx(1.0)
     assert r['mass_error_at_accept'] == pytest.approx(0.002, rel=1e-6)
-    assert len(radius) == 16
+    assert len(radius) == 16  # passes 6 to 15 change sign 10 times
 
 
 @pytest.mark.smoke
@@ -1603,3 +1839,1001 @@ def test_a_pass_cut_before_its_pressure_solve_does_not_stop_on_oscillation(monke
     assert r['accepted_on'] == 'timeout' and r['stopped_on_wall_clock']
     assert r['density_from_eos']
     assert r['mass_error_at_accept'] == pytest.approx(0.002, rel=1e-6)
+
+
+def _default_toml(**kwargs):
+    """Zalmoxis input/default.toml (PALEOS iron core, PALEOS MgSiO3 mantle, adiabatic) with
+    ``kwargs``, and its melting curves."""
+    from zalmoxis.config import load_solidus_liquidus_functions, load_zalmoxis_config
+
+    cfg = load_zalmoxis_config(os.path.join(INPUT, 'default.toml'))
+    cfg.update(data_output_enabled=False, plotting_enabled=False, wall_timeout=WALL, **kwargs)
+    melt = load_solidus_liquidus_functions(
+        cfg['layer_eos_config'], cfg['rock_solidus'], cfg['rock_liquidus'], 1.0
+    )
+    return cfg, melt
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves_long
+@pytest.mark.timeout(4800)
+def test_a_tight_tolerance_starts_the_blend_ramp_and_accepts_only_the_adiabat():
+    """default.toml at a 2515 K surface, tolerance_outer 1e-7 and 30 outer passes: no linear
+    pass reaches 1e-7, so the blend ramp starts at the 1e-3 trigger, and an accepted result is
+    the full adiabat, not the linear first guess with its 6000 K centre."""
+    from tests.test_spider_coupling_convergence import _has_paleos_data
+
+    if not _has_paleos_data():
+        pytest.skip('PALEOS tables not on disk')
+    cfg, melt = _default_toml(
+        surface_temperature=2515.0, tolerance_outer=1e-7, max_iterations_outer=30
+    )
+    r = zs.main(cfg, load_material_dictionaries(), melt, INPUT)
+    assert r['adiabat_computed'] is True
+    assert r['converged'] is True and r['adiabat_blend'] == 1.0
+    assert r['temperature'][0] != cfg['center_temperature']
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves_long
+@pytest.mark.timeout(4800)
+@pytest.mark.parametrize('case', ['all_options', 'dummy'])
+def test_newton_gives_the_mantle_adiabat_of_picard_on_the_proteus_initial_structure(case):
+    """The PROTEUS initial structure solve (adiabatic_from_cmb, PALEOS, 1 Earth mass, the
+    PROTEUS solver settings): the Newton result has the mantle temperature of the Picard result
+    at 39 mantle mass points within 5 K and its CMB pressure within 0.1 GPa."""
+    from tests.test_spider_coupling_convergence import _has_paleos_data
+    from tools.validation import proteus_ic_solvers as tool
+
+    if not _has_paleos_data():
+        pytest.skip('PALEOS iron and unified MgSiO3 tables not on disk')
+    runs = tool.run_case(case)
+    for s, rec in runs.items():
+        assert rec['converged'] and rec['adiabat_computed'] and rec['blend'] == 1.0, s
+    c = tool.compare(runs['picard'], runs['newton'])
+    print(case, json.dumps({k: c[k] for k in ('dT', 'dP')}))
+    assert c['dT'] < tool.LIMIT_T, f'mantle T differs by {c["dT"]:.3f} K'
+    assert c['dP'] < tool.LIMIT_P, f'CMB pressure differs by {c["dP"] / 1e9:.4f} GPa'
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.timeout(900)
+@pytest.mark.parametrize(
+    ('case', 'solver', 'tol'),
+    [
+        ('dummy', 'newton', None),
+        ('all_options', 'newton', None),
+        ('all_options', 'picard', 1e-4),
+    ],
+)
+def test_the_returned_mantle_temperature_is_the_adiabat_of_the_returned_pressure(
+    monkeypatch, case, solver, tol
+):
+    """PROTEUS initial structure (CMB anchor), Picard at the mass tolerance of the Newton
+    hand-off: the returned mantle T equals the adiabat recomputed on the returned pressure
+    within 1 K, apart from 2 nodes with their own bounds. The CMB anchor node reads the T(P)
+    table across the jump from T_surf on the core nodes to T_cmb (within 6 K of T_cmb); the
+    top node follows the adiabat within 1 K like the other nodes.
+    adiabat_self_consistency is the largest mantle difference, both nodes included."""
+    from tests.test_spider_coupling_convergence import _has_paleos_data
+    from tools.validation import proteus_ic_solvers as tool
+
+    if not _has_paleos_data():
+        pytest.skip('PALEOS iron and unified MgSiO3 tables not on disk')
+    real, args = zs.compute_adiabatic_temperature, []
+
+    def adiabat(radii, pressure, mass, *rest, **kwargs):
+        args.append((rest, kwargs))
+        return real(radii, pressure, mass, *rest, **kwargs)
+
+    monkeypatch.setattr(zs, 'compute_adiabatic_temperature', adiabat)
+    r = tool.solve(case, solver, **({'tolerance_outer': tol} if tol else {}))
+    assert r['converged'] and r['adiabat_blend'] == 1.0
+    rest, kwargs = args[-1]
+    fresh = real(r['radii'], r['pressure'], r['mass_enclosed'], *rest, **kwargs)
+    lag = _mantle_lag(r, fresh)
+    i_cmb = int(np.searchsorted(r['mass_enclosed'], r['cmb_mass']))
+    dT_cmb = abs(r['temperature'][i_cmb] - tool.PROTEUS_IC[case]['cmb_temperature'])
+    print(
+        case, solver, f'CMB {dT_cmb:.3f} K, top {lag[-1]:.3f} K, other {lag[1:-1].max():.3f} K'
+    )
+    assert lag[1:-1].max() <= 1.0
+    # the core nodes carry T_surf, so the one T(P) table jumps by T_cmb - T_surf at the CMB
+    assert dT_cmb <= 6.0, f'CMB anchor node {dT_cmb:.3f} K off T_cmb: core/mantle T jump'
+    assert lag[-1] <= 1.0, f'top node {lag[-1]:.3f} K off the adiabat'
+    assert r['adiabat_table_blend'] == 1.0
+    assert r['adiabat_self_consistency'] == pytest.approx(lag.max(), rel=1e-12)
+    assert r['adiabat_self_consistency'] >= max(dT_cmb, lag[-1])
+
+
+def _fake_adiabat(pressure, t_surf):
+    """The adiabat of ``_analytic_ramp``: t_surf plus 2000 K times sqrt(P / 400 GPa)."""
+    return t_surf + 2000.0 * np.sqrt(np.clip(np.asarray(pressure, float), 0.0, None) / 4e11)
+
+
+def _canned_structure(layer_mixtures, cmb_mass, core_mantle_mass, radii, *args, **kwargs):
+    """A structure in closed form for the outer radius R = radii[-1] and the central pressure
+    y0[2] (``args[6]``): mass M_E (R / R_E)^3 (r / R)^3, pressure P_c - P_0 (r / R)^2 with
+    P_0 = 360 GPa (R / R_E)^-4, gravity G m / r^2; a pass takes no integration."""
+    radii = np.asarray(radii, float)
+    R, p_c = radii[-1], float(args[6][2])
+    x = radii / R
+    m = earth_mass * (R / earth_radius) ** 3 * x**3
+    g = np.where(radii > 0, G * m / np.where(radii > 0, radii, 1.0) ** 2, 0.0)
+    return m, g, p_c - 3.6e11 * (R / earth_radius) ** -4 * x**2
+
+
+def _analytic_ramp(
+    linear=None,
+    factor=None,
+    clock_after=None,
+    drift=0.0,
+    mass=None,
+    seed=None,
+    **kwargs,
+):
+    """_solve on analytic densities through the adiabatic path: the EOS counts as T-dependent
+    and the adiabat is ``_fake_adiabat`` of the pressure. Passes before the ramp starts end
+    ``linear`` times the target mass and passes after it ``factor`` times (unscaled when None;
+    a callable takes the number of adiabat computations so far, 4 on the first pass at blend
+    1). With ``clock_after`` the clock runs out once the adiabat was computed that many times.
+    ``drift`` scales the pressure of each pass by 1 + drift times the number of adiabat
+    computations so far. ``mass(R, k)`` replaces both scalings: the total mass of a pass at
+    outer radius R after k adiabat computations. ``seed`` goes to ``_solve`` as
+    ``adiabat_seed``; ``structure`` replaces ``solve_structure`` (``_canned_structure``).
+    Returns the result and the number of adiabat computations."""
+    adiabat, real, clock = [], kwargs.pop('structure', None) or zs.solve_structure, time.time
+
+    def adi(radii, pressure, mass, t_surf, *args, **kw):
+        assert pressure[0] > pressure[-1] and np.all(np.diff(mass) >= 0)  # argument order
+        adiabat.append(1)
+        return _fake_adiabat(pressure, t_surf)
+
+    def solve(*args, **kw):
+        m, g, P = real(*args, **kw)
+        scale = (factor(len(adiabat)) if callable(factor) else factor) if adiabat else linear
+        f = scale * earth_mass / m[-1] if scale else 1.0
+        if mass is not None:
+            f = mass(args[3][-1], len(adiabat)) / m[-1]
+        return m * f, g * f, P * (1.0 + drift * len(adiabat))
+
+    cfg = _cfg(
+        temperature_mode='adiabatic',
+        relative_tolerance=1e-5,
+        absolute_tolerance=1e-6,
+        num_layers=30,
+        **kwargs,
+    )
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(zs, 'any_component_is_tdep', lambda mixes: True)
+        mp.setattr(zs, 'compute_adiabatic_temperature', adi)
+        mp.setattr(zs, 'solve_structure', solve)
+        if clock_after:
+            stop = lambda: clock() + 1e9 * (len(adiabat) >= clock_after)  # noqa: E731
+            mp.setattr(zs, 'time', SimpleNamespace(time=stop))
+        seeded = {} if seed is None else {'adiabat_seed': seed}
+        r = zs._solve(cfg, load_material_dictionaries(), None, '/tmp', **seeded)
+    return r, len(adiabat)
+
+
+def _case_clock_stop(structure=None, **_):
+    r, n_adiabat = _analytic_ramp(
+        linear=1.0005,
+        clock_after=2,
+        tolerance_outer=1e-7,
+        max_iterations_outer=40,
+        wall_timeout=WALL,
+        structure=structure,
+    )
+    assert n_adiabat >= 2 and r['stopped_on_wall_clock'] is True
+    assert r['adiabat_blend'] < 1.0
+    assert r['converged'] is False and r['converged_mass'] is False
+    assert r['accepted_on'] is None and r['accept_mass_limit'] is None
+
+
+@pytest.mark.smoke
+def test_a_linear_floor_above_a_tight_tolerance_starts_the_ramp_unaccepted_on_a_clock_stop():
+    """tolerance_outer 1e-7 and every linear pass 5e-4 off the mass: the blend ramp starts at
+    the 1e-3 trigger, and a clock stop once the adiabat was computed twice ends the solve in
+    the ramp, which is not accepted and keeps no met mass test."""
+    _case_clock_stop()
+
+
+def _mean_core_T(r):
+    """Mass-weighted mean temperature [K] of the core nodes (mass below cmb_mass)."""
+    m, T = np.asarray(r['mass_enclosed']), np.asarray(r['temperature'])
+    core = m < r['cmb_mass']
+    return float(np.trapezoid(T[core], m[core]) / m[core][-1])
+
+
+def _core_T_bounded(r, ref):
+    """Assert the core bounds of the grid start-up tests and return (mean, last node, other
+    nodes) [K]: the mass-weighted mean core T within 10 K of REF, the last core node within
+    700 K, the other core nodes within 1 K. REF is interpolated in mass over its own core nodes
+    (mass below cmb_mass), never across the T step at its CMB node."""
+    m, T = np.asarray(r['mass_enclosed']), np.asarray(r['temperature'])
+    m_ref, T_ref = np.asarray(ref['mass_enclosed']), np.asarray(ref['temperature'])
+    core, core_ref = m < r['cmb_mass'], m_ref < ref['cmb_mass']
+    dT = T[core] - np.interp(m[core], m_ref[core_ref], T_ref[core_ref])
+    off = (_mean_core_T(r) - _mean_core_T(ref), float(dT[-1]), float(np.abs(dT[:-1]).max()))
+    print('core vs REF (mean, last node, other nodes) [K]:', *off)
+    bounds = dict(zip(('mean', 'last node', 'other nodes'), (10.0, 700.0, 1.0)))
+    failed = [k for (k, b), v in zip(bounds.items(), off) if abs(v) > b]
+    assert not failed, f'core bound {failed} of {bounds} K fails: {off} K'
+    return off
+
+
+@pytest.mark.unit
+def test_the_core_bounds_read_the_core_nodes_of_the_reference_only():
+    """REF with every mass 6e-4 higher (a radius 2e-4 larger at the same density, the radius
+    bound of the grid test) keeps its core temperatures, so the 3 core bounds read 0 K; REF
+    interpolated over all its nodes reads more than 100 K at the last core node, from the T
+    step at the CMB node. A core 11 K off, a last core node 701 K off and another core node
+    1.5 K off (the core node below the last one), warmer or colder, each fail with the names of
+    the bounds they break; 699 K at the last core node and 0.9 K at that other node pass."""
+    ref = grid_ref.load()['first']
+    m = np.asarray(ref['mass_enclosed'])
+    shifted = {**ref, 'mass_enclosed': m * (1 + 6e-4), 'cmb_mass': ref['cmb_mass'] * (1 + 6e-4)}
+    last = np.flatnonzero(m < ref['cmb_mass'])[-1]
+    assert (
+        np.interp(m[last] * (1 + 6e-4), m, ref['temperature']) - ref['temperature'][last] > 100
+    )
+    assert _core_T_bounded(shifted, ref) == pytest.approx((0.0, 0.0, 0.0), abs=1e-9)
+    cases = (
+        (slice(0, last + 1), 11.0, ['mean', 'other nodes']),
+        (last, 701.0, ['last node']),
+        (last - 1, 1.5, ['other nodes']),
+    )
+    for nodes, dT, failed in cases:
+        for sign in (1.0, -1.0):
+            T = np.array(ref['temperature'], dtype=float)
+            T[nodes] += sign * dT
+            with pytest.raises(AssertionError, match=re.escape(f'core bound {failed} of')):
+                _core_T_bounded({**ref, 'temperature': T}, ref)
+    for nodes, dT in ((last, 699.0), (last - 1, 0.9)):  # inside the bounds
+        for sign in (1.0, -1.0):
+            T = np.array(ref['temperature'], dtype=float)
+            T[nodes] += sign * dT
+            _core_T_bounded({**ref, 'temperature': T}, ref)
+
+
+def _mantle_lag(r, adiabat):
+    """|T - adiabat| at the mantle nodes of ``r`` with a positive pressure."""
+    m, P = np.asarray(r['mass_enclosed']), np.asarray(r['pressure'])
+    keep = (m >= r['cmb_mass']) & (P > 0)
+    return np.abs(np.asarray(r['temperature']) - adiabat)[keep]
+
+
+@pytest.mark.smoke
+def test_the_accept_waits_for_a_table_built_on_a_full_adiabat_pass():
+    """Every pass on the target mass: the first pass at blend 1 reads the T table built on the
+    pressure of the blend-0.75 pass, so the solve accepts the next pass, whose table comes
+    from a pass at blend 1. The adiabat is computed for the 5 passes of the ramp and once
+    more on the returned structure, for adiabat_self_consistency. The pressure drifts from
+    pass to pass, so the returned T, read from the table of the pass before, lags that
+    adiabat."""
+    r, n_adiabat = _analytic_ramp(
+        linear=1.0, factor=1.0, drift=1e-4, tolerance_outer=1e-3, wall_timeout=WALL
+    )
+    assert n_adiabat == 6
+    assert r['converged'] is True and r['accepted_on'] == 'strict'
+    assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
+    lag = _mantle_lag(r, _fake_adiabat(r['pressure'], _cfg()['surface_temperature']))
+    assert lag.max() > 0.0
+    assert r['adiabat_self_consistency'] == pytest.approx(lag.max(), rel=1e-12)
+
+
+@pytest.mark.smoke
+def test_an_iteration_cap_on_the_first_full_adiabat_pass_is_not_accepted():
+    """The iteration cap ends the solve on the first pass at blend 1, on the target mass: its
+    T table comes from the blend-0.75 pass, so the pass is returned unaccepted."""
+    r, _ = _analytic_ramp(
+        linear=1.0, factor=1.0, tolerance_outer=1e-3, max_iterations_outer=5, wall_timeout=WALL
+    )
+    assert r['converged'] is False and r['accepted_on'] is None
+    assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 0.75)
+
+
+@pytest.mark.smoke
+def test_a_pass_below_blend_1_reports_no_self_consistency():
+    """The iteration cap ends the solve on the blend-0.75 pass, on the target mass: its T is
+    not the adiabat, so adiabat_self_consistency is None."""
+    r, _ = _analytic_ramp(
+        linear=1.0, factor=1.0, tolerance_outer=1e-3, max_iterations_outer=4, wall_timeout=WALL
+    )
+    assert r['converged'] is False and r['adiabat_blend'] == 0.75
+    assert np.all(np.asarray(r['pressure']) > 0) and r['adiabat_self_consistency'] is None
+
+
+@pytest.mark.smoke
+def test_an_iteration_cap_takes_the_best_pass_on_a_full_adiabat_table():
+    """The first pass at blend 1 (table of blend 0.75) ends 0.01 % off the mass, the passes on
+    a table of blend 1 0.5 % off: the iteration cap accepts the best pass of the newest step,
+    blend 1 on a table of blend 1, not the closer pass on the older table."""
+    r, _ = _analytic_ramp(
+        linear=1.0,
+        factor=lambda k: 1.0001 if k == 4 else 1.005,
+        tolerance_outer=1e-3,
+        max_iterations_outer=8,
+        wall_timeout=WALL,
+    )
+    assert r['converged'] is True and r['accepted_on'] == 'max_iter'
+    assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
+    assert r['mass_error_at_accept'] == pytest.approx(0.005, rel=1e-6)
+
+
+@pytest.mark.smoke
+def test_an_earlier_best_pass_on_an_older_table_is_named_and_refused(caplog):
+    """The passes on a table of blend 1 end 5 % off, above every accept limit of the iteration
+    cap; the first pass at blend 1 ends 0.01 % off. The stop returns that pass, the warning
+    names the blend and the table blend of both passes, and the pass is not accepted."""
+    with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.solver'):
+        r, _ = _analytic_ramp(
+            linear=1.0008,
+            factor=lambda k: 1.0001 if k == 4 else 1.05,
+            tolerance_outer=1e-3,
+            max_iterations_outer=8,
+            wall_timeout=WALL,
+        )
+    assert 'No pass of adiabat blend 1.00 on a table of blend 1.00 passes' in caplog.text
+    assert 'returning the best pass of blend 1.00 on a table of blend 0.75' in caplog.text
+    assert r['converged'] is False and r['accepted_on'] is None
+    assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 0.75)
+
+
+@pytest.mark.smoke
+def test_a_newton_probe_in_an_adiabatic_mode_refuses_its_linear_pass_at_debug(caplog):
+    """A Newton probe (one linear pass, near the root) is not accepted in an adiabatic mode;
+    the refusal is logged at DEBUG, as the other progress lines of a probe, and no accept of
+    that pass is logged as a warning."""
+    _case_probe(caplog=caplog, guess=6.12e6)
+
+
+def _case_probe(caplog, structure=None, guess=earth_radius, **_):
+    with caplog.at_level(logging.DEBUG, logger='fwl.zalmoxis.solver'):
+        r, n_adiabat = _analytic_ramp(
+            max_iterations_outer=1,
+            wall_timeout=WALL,
+            _newton_probe=True,
+            _initial_radius_guess=guess,
+            structure=structure,
+        )
+    assert r['converged'] is False and n_adiabat == 0
+    refusals = [x for x in caplog.records if 'No accept of a pass' in x.getMessage()]
+    assert refusals and all(x.levelno == logging.DEBUG for x in refusals)
+    accepts = [x for x in caplog.records if x.getMessage().startswith('Accepting')]
+    assert all(
+        x.levelno < logging.WARNING for x in accepts
+    )  # no accept warning for a refused pass
+
+
+_TOLERANCES = st.one_of(
+    st.floats(1e-12, 0.1),
+    st.sampled_from([float('nan'), float('inf'), 0.0, -1e-3, True, False]),
+)
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves_long
+@pytest.mark.timeout(4800)
+@settings(max_examples=3, deadline=None, derandomize=True)
+@given(tol=_TOLERANCES, n=st.integers(1, 9), factor=st.sampled_from([None, 1.02, 1.05, 1.1]))
+@example(tol=1e-3, n=8, factor=None)  # the cap ends on blend 1 with the table of blend 0.75
+@example(tol=float('nan'), n=9, factor=None)  # max_iter on a full-adiabat table
+@example(tol=1e-7, n=9, factor=1.02)  # 2 % off the mass, max_iter on a full-adiabat table
+def test_no_tolerance_or_pass_cap_accepts_a_profile_short_of_the_adiabat(tol, n, factor):
+    """Analytic densities on the adiabatic path (the EOS counts as T-dependent and the adiabat
+    is a function of the pressure), passes after the ramp starts scaled to ``factor`` times the
+    mass, and no reachable wall clock: for any tolerance_outer, including NaN, inf, 0, a
+    negative value and a bool, and any max_iterations_outer from 1 to 9 (unscaled passes reach
+    blend 1 on a full-adiabat table at pass 9), an accepted result is the full adiabat on a
+    table of a full-adiabat pass."""
+    r, _ = _analytic_ramp(
+        factor=factor, tolerance_outer=tol, max_iterations_outer=n, wall_timeout=WALL
+    )
+    full = r['adiabat_computed'] and r['adiabat_blend'] == 1.0
+    assert not r['converged'] or (full and r['adiabat_table_blend'] == 1.0)
+
+
+@pytest.mark.smoke
+def test_a_loose_tolerance_without_a_clock_limit_accepts_the_full_adiabat():
+    """tolerance_outer 1e-2, 50 passes and no reachable wall clock on analytic densities
+    through the adiabatic path: the solve ramps to the adiabat and accepts it."""
+    r, n_adiabat = _analytic_ramp(
+        tolerance_outer=1e-2, max_iterations_outer=50, wall_timeout=WALL
+    )
+    assert r['converged'] is True and r['accepted_on'] == 'strict'
+    assert r['adiabat_computed'] is True and r['adiabat_blend'] == 1.0 and n_adiabat >= 4
+
+
+R_ROOT = 6.4e6  # [m] outer radius where the power-law mass of the secant tests meets the target
+
+
+def _power_mass(R, k):
+    """Total mass [kg] of a pass at outer radius R after k adiabat computations: earth_mass
+    (R / 6.4e6 m)^0.9, 0.3 % lower per blend step up to blend 1. The exponent 0.9 makes the
+    cube-root update shrink the mass error by 0.7 per pass, as on the cmf 0.95 PROTEUS grid."""
+    return earth_mass * (R / R_ROOT) ** 0.9 * (1.0 - 0.003 * min(k, 4))
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.timeout(600)
+def test_the_secant_tail_reaches_the_mass_in_3_full_adiabat_passes():
+    """A ramp started by main (``_secant_tail``) on a mass that grows as R^0.9: the passes on a
+    full-adiabat table reach tolerance_outer 1e-4 in 3 passes (the cube-root update alone
+    takes 13 on this mass) and the solve accepts the full adiabat. The adiabat is computed
+    on the 4 blend passes, on each full-table pass and once on the returned structure."""
+    r, n_adiabat = _analytic_ramp(
+        mass=_power_mass,
+        tolerance_outer=1e-4,
+        max_iterations_outer=40,
+        wall_timeout=WALL,
+        _secant_tail=True,
+        _initial_radius_guess=R_ROOT,
+    )
+    assert r['converged'] is True and r['accepted_on'] == 'strict'
+    assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
+    assert n_adiabat - 5 <= 3 and r['mass_error_at_accept'] < 1e-4
+    R_star = R_ROOT * (1.0 - 0.012) ** (-1.0 / 0.9)  # the root at blend 1
+    assert r['radii'][-1] == pytest.approx(R_star, rel=1e-4 / 0.9 * 1.01)
+
+
+def _secant_calls(monkeypatch, tol):
+    """Record (mass error in tolerances, real secant step) of each _secant_radius call."""
+    calls, real = [], zs._secant_radius
+
+    def spy(R, M, R_prev, M_prev, M_target, R_fallback):
+        got = real(R, M, R_prev, M_prev, M_target, R_fallback)
+        calls.append(
+            (pytest.approx(abs(M / M_target - 1.0) / tol, rel=1e-6), got != R_fallback)
+        )
+        return got
+
+    monkeypatch.setattr(zs, '_secant_radius', spy)
+    return calls
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.timeout(900)
+def test_the_secant_steps_above_2_tolerances_until_a_secant_step_does_not_shrink_the_error(
+    monkeypatch,
+):
+    """The passes on a full-adiabat table end 5, 1.5, 5, 5.5, 4, 6 and 5 tolerances below the
+    mass, whatever the radius. The first pass has no earlier full-table pass and the second is
+    below the floor of 2 tolerances. Passes 3 and 4 have a mass that falls as the radius grows,
+    so the secant falls back to the cube-root rule, and a fallback does not end the tail. Pass
+    5 takes a real secant step; pass 6 ends 6 tolerances off, so the tail ends there."""
+    tol = 1e-4
+    off = {5: -5.0, 6: -1.5, 7: -5.0, 8: -5.5, 9: -4.0, 10: -6.0, 11: -5.0}
+    calls = _secant_calls(monkeypatch, tol)
+    r, n_adiabat = _analytic_ramp(
+        linear=1.0,
+        factor=lambda k: 1.0 + off.get(k, 0.0) * tol,
+        tolerance_outer=tol,
+        max_iterations_outer=12,
+        wall_timeout=WALL,
+        _secant_tail=True,
+    )
+    assert n_adiabat - 5 == 7 and r['adiabat_table_blend'] == 1.0
+    assert calls == [(5.0, False), (5.5, False), (4.0, True)]
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.timeout(900)
+def test_a_radius_guess_that_is_not_finite_stops_the_solve(monkeypatch):
+    """A secant step that gives a NaN radius stops the solve with StructureSolveError that
+    names the outer iteration and the radius."""
+    tol = 1e-4
+    monkeypatch.setattr(zs, '_secant_radius', lambda *a: float('nan'))
+    with pytest.raises(zs.StructureSolveError, match=r'outer iteration \d+: radius guess nan'):
+        _analytic_ramp(
+            linear=1.0,
+            factor=lambda k: 1.0 - 5.0 * tol,
+            tolerance_outer=tol,
+            max_iterations_outer=8,
+            wall_timeout=WALL,
+            _secant_tail=True,
+        )
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.timeout(900)
+def test_a_ramp_without_the_secant_key_takes_no_secant_step(monkeypatch):
+    """A Picard ramp that main did not start (no ``_secant_tail``) keeps the cube-root rule:
+    its full-adiabat passes 5, 5 and 4 tolerances off the mass call no secant."""
+    tol = 1e-4
+    off = {5: -5.0, 6: -5.0, 7: -4.0}
+    calls = _secant_calls(monkeypatch, tol)
+    r, n_adiabat = _analytic_ramp(
+        linear=1.0,
+        factor=lambda k: 1.0 + off.get(k, 0.0) * tol,
+        tolerance_outer=tol,
+        max_iterations_outer=8,
+        wall_timeout=WALL,
+    )
+    assert n_adiabat - 5 == 3 and r['adiabat_table_blend'] == 1.0 and calls == []
+
+
+@pytest.fixture(scope='module')
+def ramp_seed():
+    """The structure of a converged ramp on analytic densities (every pass on the target
+    mass), as an adiabat_seed."""
+    r, _ = _analytic_ramp(linear=1.0, factor=1.0, tolerance_outer=1e-3, wall_timeout=WALL)
+    assert r['converged'] and r['adiabat_table_blend'] == 1.0
+    return {k: np.array(r[k]) for k in ('radii', 'pressure', 'mass_enclosed')}
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.timeout(600)
+def test_a_seeded_solve_accepts_its_second_pass(ramp_seed):
+    """Seeded from an earlier structure, the solve starts at blend 1 on the adiabat of the
+    seed: its first pass is on the target mass but its table is not from a pass of this
+    solve, so the second pass, on the table of the first, is accepted. The adiabat is
+    computed for the 2 passes and once on the returned structure."""
+    _case_seeded_second_pass(seed=ramp_seed)
+
+
+def _case_seeded_second_pass(seed, structure=None, **_):
+    r, n_adiabat = _analytic_ramp(
+        linear=1.0,
+        factor=1.0,
+        tolerance_outer=1e-3,
+        wall_timeout=WALL,
+        seed=seed,
+        structure=structure,
+    )
+    assert r['converged'] is True and r['accepted_on'] == 'strict'
+    assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
+    assert r['adiabat_seeded'] is True and n_adiabat == 3
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.timeout(600)
+def test_the_first_seeded_pass_carries_the_seed_label_and_is_not_accepted(ramp_seed):
+    """An iteration cap of 1 ends a seeded solve on its first pass, on the target mass: its
+    table is labelled -1.0 (from the seed), so the pass is returned unaccepted. The adiabat is
+    computed for that pass and once on the returned structure."""
+    _case_seed_label(seed=ramp_seed)
+
+
+def _case_seed_label(seed, structure=None, **_):
+    r, n_adiabat = _analytic_ramp(
+        linear=1.0,
+        factor=1.0,
+        tolerance_outer=1e-3,
+        max_iterations_outer=1,
+        wall_timeout=WALL,
+        seed=seed,
+        structure=structure,
+    )
+    assert r['converged'] is False and r['accepted_on'] is None and n_adiabat == 2
+    assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, -1.0)
+    assert r['adiabat_seeded'] is True
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves
+@pytest.mark.timeout(600)
+def test_the_seed_table_pass_starts_no_secant(monkeypatch, ramp_seed):
+    """A seeded solve with the secant tail whose passes end 5, 4 and 3 tolerances below the
+    mass: the first pass reads the seed table, so the second is the first full-adiabat pass and
+    the secant starts only at the third."""
+    _case_seed_table_secant(monkeypatch=monkeypatch, seed=ramp_seed)
+
+
+def _case_seed_table_secant(monkeypatch, seed, structure=None, **_):
+    tol = 1e-4
+    off = {1: -5.0, 2: -4.0, 3: -3.0}
+    calls = _secant_calls(monkeypatch, tol)
+    r, n_adiabat = _analytic_ramp(
+        linear=1.0,
+        factor=lambda k: 1.0 + off.get(k, 0.0) * tol,
+        tolerance_outer=tol,
+        max_iterations_outer=3,
+        wall_timeout=WALL,
+        seed=seed,
+        _secant_tail=True,
+        structure=structure,
+    )
+    assert r['adiabat_seeded'] is True and n_adiabat == 4
+    assert [c[0] for c in calls] == [3.0]
+
+
+@pytest.fixture(scope='module')
+def canned_seed():
+    """``ramp_seed`` on ``_canned_structure``."""
+    r, _ = _analytic_ramp(
+        linear=1.0,
+        factor=1.0,
+        tolerance_outer=1e-3,
+        wall_timeout=WALL,
+        structure=_canned_structure,
+    )
+    assert r['converged'] and r['adiabat_table_blend'] == 1.0
+    return {k: np.array(r[k]) for k in ('radii', 'pressure', 'mass_enclosed')}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    'case',
+    [
+        _case_clock_stop,
+        _case_probe,
+        _case_seeded_second_pass,
+        _case_seed_label,
+        _case_seed_table_secant,
+    ],
+    ids=['clock_stop', 'newton_probe', 'seeded_second_pass', 'seed_label', 'seed_table_secant'],
+)
+def test_the_ramp_cases_hold_on_a_structure_in_closed_form(
+    monkeypatch, caplog, canned_seed, case
+):
+    """The 5 ramp cases of the smoke tests above (a clock stop in the ramp, a Newton probe, the
+    accept of the second seeded pass, the seed label of the first, no secant on the seed-table
+    pass) hold with the same asserts on ``_canned_structure``, a structure without integration
+    (``_solve`` runs no invariant check); the Newton probe starts at 1 Earth radius, on the
+    target mass of that structure."""
+    case(structure=_canned_structure, seed=canned_seed, monkeypatch=monkeypatch, caplog=caplog)
+
+
+def _ramp_off(off, linear=1.0, **kwargs):
+    """``_analytic_ramp`` on ``_canned_structure`` at tolerance 1e-4: the pass after k adiabat
+    computations ends 1 + off[k] times the target mass (the target mass when k is not in off),
+    a linear pass ``linear`` times."""
+    return _analytic_ramp(
+        linear=linear,
+        factor=lambda k: 1.0 + off.get(k, 0.0),
+        tolerance_outer=1e-4,
+        wall_timeout=WALL,
+        structure=_canned_structure,
+        **kwargs,
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    'off, accepted_on, blends, err',
+    [
+        ({4: 1e-3, 5: 1e-2}, 'max_iter', (1.0, 1.0), 1e-2),
+        ({4: 1e-2, 5: 5e-2}, None, (0.0, 0.0), 0.0),
+    ],
+    ids=['newest_step', 'earlier_step'],
+)
+def test_an_iteration_cap_returns_the_best_pass_of_the_newest_blend_step_within_3_percent(
+    off, accepted_on, blends, err
+):
+    """A cap after the first pass on a blend-1 table returns that pass at 1 % mass error, also
+    when the pass on the blend-0.75 table before it is better; at 5 % it returns the best
+    earlier pass, the linear pass on the target mass, which is short of the adiabat."""
+    r, _ = _ramp_off(off, max_iterations_outer=6)
+    assert r['accepted_on'] == accepted_on and r['converged'] is (accepted_on is not None)
+    assert (r['adiabat_blend'], r['adiabat_table_blend']) == blends
+    assert r['mass_error_at_accept'] == pytest.approx(err, abs=1e-12)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('linear, ramp', [(1.005, False), (1.0011, False), (1.0009, True)])
+def test_a_linear_pass_starts_the_ramp_only_within_the_trigger(linear, ramp):
+    """Linear passes 0.5 % and 0.11 % off the mass stay above ``_ADIABAT_RAMP_TRIGGER`` (1e-3)
+    and compute no adiabat; at 0.09 % the next pass starts the blend ramp."""
+    r, n_adiabat = _ramp_off({}, linear=linear, max_iterations_outer=3)
+    assert (n_adiabat > 0) is ramp and (r['adiabat_blend'] > 0.0) is ramp
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    'off, cap, calls',
+    [
+        ({1: -5, 2: -4, 3: -3, 4: -6, 5: -5.5}, 5, [(3.0, True)]),
+        ({1: -5, 2: -4, 3: -5, 4: -6}, 4, [(5.0, False), (6.0, False)]),
+    ],
+    ids=['no_shrink_ends_the_tail', 'fallback_arms_nothing'],
+)
+def test_the_secant_tail_ends_on_a_step_that_does_not_shrink_the_error(
+    monkeypatch, canned_seed, off, cap, calls
+):
+    """Seeded passes off the mass by the given tolerances: a secant step followed by a larger
+    error ends the tail; a fallback to the cube-root rule does not, so the next pass calls the
+    secant again."""
+    got = _secant_calls(monkeypatch, 1e-4)
+    _ramp_off(
+        {k: v * 1e-4 for k, v in off.items()},
+        max_iterations_outer=cap,
+        seed=canned_seed,
+        _secant_tail=True,
+    )
+    assert got == calls
+
+
+def _grid_main(cfg, **kwargs):
+    """main on a grid setup; returns the result, the (R, M) of each pass of the solve that
+    returned (consecutive solve_structure calls at one outer radius make one pass), the number
+    of structure integrations, and the lag |T - adiabat(P)| at the CMB node, the largest at the
+    other mantle nodes and at the top node, from the last adiabat computation (that of the
+    returned structure)."""
+    calls, starts, last = [], [], {}
+    real_ss, real_solve, real_adi = (
+        zs.solve_structure,
+        zs._solve,
+        zs.compute_adiabatic_temperature,
+    )
+
+    def spy(*a, **k):
+        res = real_ss(*a, **k)
+        calls.append((float(a[3][-1]), float(np.asarray(res[0])[-1])))
+        return res
+
+    def adi(*a, **k):
+        last['T'] = np.asarray(real_adi(*a, **k))
+        return last['T']
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(zs, 'solve_structure', spy)
+        mp.setattr(zs, 'compute_adiabatic_temperature', adi)
+        mp.setattr(
+            zs, '_solve', lambda *a, **k: starts.append(len(calls)) or real_solve(*a, **k)
+        )
+        r = grid_ref.solve(cfg, **kwargs)
+    passes = []
+    for R, M in calls[starts[-1] :]:
+        passes = passes[:-1] + [(R, M)] if passes and passes[-1][0] == R else passes + [(R, M)]
+    lag = _mantle_lag(r, last['T'])
+    assert lag.max() == pytest.approx(r['adiabat_self_consistency'], rel=1e-12)
+    return r, passes, len(calls), (lag[0], lag[1:-1].max(), lag[-1])
+
+
+def _off_ref(r, ref):
+    """Largest mantle T difference [K] on 39 mass points from the lowest to the second-highest
+    mantle node (mantle nodes with P > 0 of each), the T difference at the top mantle node
+    against ref interpolated in mass, and the relative differences of the outer radius, the
+    central pressure, the core radius and the CMB pressure, both interpolated in mass at
+    cmb_mass."""
+    keep = [
+        (np.asarray(x['mass_enclosed']) >= x['cmb_mass']) & (np.asarray(x['pressure']) > 0)
+        for x in (r, ref)
+    ]
+    m = [np.asarray(x['mass_enclosed'])[k] for x, k in zip((r, ref), keep)]
+    T = [np.asarray(x['temperature'])[k] for x, k in zip((r, ref), keep)]
+    lo, hi = max(m[0][0], m[1][0]), min(m[0][-2], m[1][-2])
+    q = lo + np.linspace(0.0, 1.0, 41)[1:-1] * (hi - lo)
+    dT = float(np.max(np.abs(np.interp(q, m[0], T[0]) - np.interp(q, m[1], T[1]))))
+    core = [
+        [np.interp(x['cmb_mass'], x['mass_enclosed'], x[k]) for k in ('radii', 'pressure')]
+        for x in (r, ref)
+    ]
+    return (
+        dT,
+        float(T[0][-1] - np.interp(m[0][-1], m[1], T[1])),
+        r['radii'][-1] / ref['radii'][-1] - 1.0,
+        r['pressure'][0] / ref['pressure'][0] - 1.0,
+        core[0][0] / core[1][0] - 1.0,
+        core[0][1] / core[1][1] - 1.0,
+    )
+
+
+def _ramp_figure(runs):
+    """Relative mass error per outer pass of the first solve, the re-solve without and with the
+    seed (``runs``: (passes, planet mass) each), with the mass tolerance and the secant floor;
+    asserts that no legend or axis text box crosses a line vertex or another text box."""
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(5.5, 5.0))
+    for (passes, M), label, mark, ls in zip(
+        runs,
+        ('first solve', 're-solve without seed', 're-solve with seed'),
+        ('o', 's', '^'),
+        ('-', '--', '-'),
+    ):
+        err = [max(abs(m / M - 1.0), 1e-7) for _, m in passes]
+        mfc = 'none' if mark == 's' else None
+        ax.semilogy(range(1, len(err) + 1), err, ls=ls, marker=mark, ms=5, mfc=mfc, label=label)
+    c = plt.rcParams['text.color']
+    ax.axhline(1e-4, ls='--', color=c, alpha=0.5, label='mass tolerance')
+    ax.axhline(2e-4, ls=':', color=c, alpha=0.5, label='secant floor')
+    ax.minorticks_off()
+    ax.set_xlabel('Outer pass')
+    ax.set_ylabel('Relative mass error')
+    legend = fig.legend(loc='lower center', ncol=2, fontsize=plt.rcParams['axes.labelsize'])
+    fig.tight_layout(rect=(0, 0.3, 1, 1))
+    fig.canvas.draw()
+    rnd = fig.canvas.get_renderer()
+    texts = [ax.xaxis.label, ax.yaxis.label, *ax.get_xticklabels(), *ax.get_yticklabels()]
+    boxes = [legend.get_window_extent(rnd)] + [
+        t.get_window_extent(rnd) for t in texts if t.get_text()
+    ]
+    pts = np.vstack([ln.get_transform().transform(ln.get_xydata()) for ln in ax.get_lines()])
+    for k, b in enumerate(boxes):
+        inside = (
+            (pts[:, 0] > b.x0) & (pts[:, 0] < b.x1) & (pts[:, 1] > b.y0) & (pts[:, 1] < b.y1)
+        )
+        assert not inside.any(), f'text box {k} crosses a line vertex'
+    assert not any(boxes[0].overlaps(b) for b in boxes[1:]), 'the legend crosses an axis text'
+    return fig
+
+
+def _assert_grid_bounds(first, seeded, plain, stored, lags, jax=False):
+    """Assert the bounds of the grid start-up tests on the first solve, the seeded and the
+    unseeded re-solve against the stored REF blocks (``_jax`` blocks with ``jax``); ``lags``
+    are the 3 lag triples of ``_grid_main``. With ``jax`` the unseeded re-solve is compared only
+    with the seeded one (2.5 K): at the 1e-4 accept it lies 0.977 K from REF."""
+    ref1, ref2 = (stored[k + ('_jax' if jax else '')] for k in ('first', 'resolve'))
+    for r, flag in ((first, False), (seeded, True), (plain, False)):
+        assert r['converged'] and r['accepted_on'] == 'strict' and r['adiabat_seeded'] is flag
+        assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
+    off = [
+        (_off_ref(first, ref1), 3.0),  # 1-atm top shell: lags the pressure of the pass before
+        (_off_ref(seeded, ref2), 1.0),
+        *(() if jax else ((_off_ref(plain, ref2), 1.0),)),
+    ]
+    print(
+        'vs REF (dT, dT_top, dR, dPc, dRc, dPcmb):',
+        off,
+        'seeded vs plain:',
+        _off_ref(seeded, plain),
+    )
+    print('lags (CMB node, mantle, top node) [K]:', *lags)
+    p_cmb_bound = 2 * GRID_CMF95['newton_tol'] / (1.0 - GRID_CMF95['core_mass_fraction'])
+    for (dT, dT_top, dR, dPc, dRc, dPcmb), top_bound in off:
+        assert dT <= 1.0 and abs(dT_top) <= top_bound
+        assert abs(dR) <= 2e-4 and abs(dPc) <= 2e-4
+        assert abs(dRc) <= 2e-4 and abs(dPcmb) <= p_cmb_bound
+    for lag in lags:
+        assert lag[0] <= 6.0 and lag[1] <= 1.0
+    assert lags[0][2] <= 3.0 and lags[1][2] <= 1.0 and lags[2][2] <= 1.0
+    dT, dT_top, dR, *_ = _off_ref(seeded, plain)
+    assert dT <= 2.5 and abs(dT_top) <= 2.5 and abs(dR) <= 5e-4
+    # the last core node reads the edge of the mantle T(P) table; the other core nodes do not
+    for r, ref in ((first, ref1), (seeded, ref2), *(() if jax else ((plain, ref2),))):
+        _core_T_bounded(r, ref)
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves_long
+@pytest.mark.physics_invariant
+@pytest.mark.reference_pinned
+@pytest.mark.timeout(7200)
+def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_start_up(request):
+    """The first solve and the first re-solve of the PROTEUS grid case with core mass fraction
+    0.95, against the same solves at a mass tolerance of 1e-6 (REF, stored in
+    ``tests/data/grid_start_up_reference.json``; an EOS table with another md5 stops the test,
+    and the slow reference test solves REF again): the first solve (Newton
+    root, ramp with the secant tail), the
+    seeded re-solve and the re-solve without the seed keep the mantle temperature within 1 K of
+    REF from the lowest to the second-highest of the 12 mantle nodes, the radius, central
+    pressure and core radius within 2e-4 and the CMB pressure within 2 tol / (1 - cmf) = 4e-3:
+    the core mass is fixed, so the mass error sits in the mantle and moves P_cmb by
+    dM / (M (1 - cmf)). The top mantle node stays within 1 K of REF in the re-solves (51.3 MPa)
+    and within 2 K in the first solve (1 atm), where the thin top shell lags the pressure of
+    the pass before. Each solve lags the adiabat of its own pressure by at most 6 K at the CMB
+    node and 1 K at the other mantle nodes, the first solve by at most 3 K and the re-solves
+    by at most 1 K at the top node. The seeded and
+    the unseeded re-solve differ by at most 2.5 K at the 39 mass points and at the top node,
+    and 5e-4 in radius. In all 3 solves the mass-weighted mean core temperature stays within
+    10 K of REF, the last core node within 700 K (it reads the edge of the mantle T(P) table)
+    and the other core nodes within 1 K. The secant tail needs at most 3 passes on a full-adiabat table, and
+    the seeded re-solve at most 4 passes and at most half the structure integrations of the
+    unseeded one. With
+    ``--validation-plots`` it writes the plot of the mass error per pass; the pass count can
+    change with round-off, so a run without the option does not compare it with the committed
+    plot. See ``docs/Validation/hydrostatic_structure.md``."""
+    _need_paleos()
+    first, p1, _, lag1 = _grid_main(GRID_CMF95)
+    stored = grid_ref.load()
+    resolve = grid_ref.CASES['resolve']
+    warm = dict(
+        initial_density=first['density'],
+        initial_radii=first['radii'],
+        p_center_hint=float(first['pressure'][0]),
+    )
+    seed = {k: first[k] for k in ('radii', 'pressure', 'mass_enclosed')}
+    seeded, p2, n_seeded, lag2 = _grid_main(resolve, adiabat_seed=seed, **warm)
+    plain, p3, n_plain, lag3 = _grid_main(resolve, **warm)
+    _assert_grid_bounds(first, seeded, plain, stored, (lag1, lag2, lag3))
+    assert len(p1) - 5 <= 3  # linear pass, 4 blend passes, then the full-adiabat passes
+    assert len(p2) <= 4 and n_seeded <= 0.5 * n_plain
+
+    def figure():
+        return _ramp_figure(
+            [
+                (p1, GRID_CMF95['planet_mass']),
+                (p3, resolve['planet_mass']),
+                (p2, resolve['planet_mass']),
+            ]
+        )
+
+    if request.config.getoption('validation_plots') is not None:
+        request.getfixturevalue('validation_plot')(figure, 'grid_start_up_ramp')
+
+
+@pytest.mark.smoke
+@pytest.mark.accept_solves_long
+@pytest.mark.physics_invariant
+@pytest.mark.reference_pinned
+@pytest.mark.timeout(7200)
+def test_the_seed_keeps_the_converged_adiabat_of_the_grid_start_up_on_the_jax_path():
+    """The grid start-up solves of the test above on the JAX path (``use_jax``), against the JAX
+    blocks of the stored REF, with the REF bounds of ``_assert_grid_bounds`` on the first
+    solve and the seeded re-solve (no pass bound on the first solve); the re-solve without
+    the seed is compared with the seeded one (2.5 K, 5e-4 in radius), and the seeded
+    re-solve takes at most 4 passes and at most half the structure integrations of the
+    unseeded one."""
+    _need_paleos()
+    stored = grid_ref.load()
+    first, _, _, lag1 = _grid_main(grid_ref.CASES['first_jax'])
+    warm = dict(
+        initial_density=first['density'],
+        initial_radii=first['radii'],
+        p_center_hint=float(first['pressure'][0]),
+    )
+    seed = {k: first[k] for k in ('radii', 'pressure', 'mass_enclosed')}
+    resolve = grid_ref.CASES['resolve_jax']
+    seeded, p2, n_seeded, lag2 = _grid_main(resolve, adiabat_seed=seed, **warm)
+    plain, _, n_plain, lag3 = _grid_main(resolve, **warm)
+    _assert_grid_bounds(first, seeded, plain, stored, (lag1, lag2, lag3), jax=True)
+    assert len(p2) <= 4 and n_seeded <= 0.5 * n_plain
+
+
+@pytest.mark.slow
+@pytest.mark.accept_solves_reference
+@pytest.mark.physics_invariant
+@pytest.mark.timeout(3600)
+def test_a_first_solve_at_a_planet_mass_2e12_higher_keeps_the_stored_reference():
+    """The first solve of the grid start-up case at a planet mass 2e-12 higher, a round-off
+    nudge, keeps the bounds of the grid start-up test against the stored REF: strict on the
+    full adiabat, mantle temperature within 1 K up to the second-highest mantle node and the
+    1-atm top node within 2 K, radius, central pressure and core radius within 2e-4, CMB
+    pressure within 2 tol / (1 - cmf) = 4e-3, lags of at most 6 K at the CMB node, 1 K at the
+    other mantle nodes and 3 K at the top node, and the core bounds (mean 10 K, last core node
+    700 K, other core nodes 1 K). It runs in the nightly job of the stored reference."""
+    _need_paleos()
+    nudged = {**GRID_CMF95, 'planet_mass': GRID_CMF95['planet_mass'] * (1 + 2e-12)}
+    r, _, _, lag = _grid_main(nudged)
+    assert r['converged'] and r['accepted_on'] == 'strict' and r['adiabat_seeded'] is False
+    assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
+    off = _off_ref(r, grid_ref.load()['first'])
+    print('vs REF (dT, dT_top, dR, dPc, dRc, dPcmb):', off, 'lag:', lag)
+    dT, dT_top, dR, dPc, dRc, dPcmb = off
+    bound = 2 * GRID_CMF95['newton_tol'] / (1.0 - GRID_CMF95['core_mass_fraction'])
+    assert dT <= 1.0 and abs(dT_top) <= 2.0
+    assert max(abs(dR), abs(dPc), abs(dRc)) <= 2e-4 and abs(dPcmb) <= bound
+    assert lag[0] <= 6.0 and lag[1] <= 1.0 and lag[2] <= 3.0
+    _core_T_bounded(r, grid_ref.load()['first'])
+
+
+@pytest.mark.slow
+@pytest.mark.accept_solves_reference
+@pytest.mark.physics_invariant
+@pytest.mark.timeout(7800)
+def test_the_stored_grid_start_up_reference_is_the_converged_solve_of_the_source():
+    """The 4 structures of ``tests/data/grid_start_up_reference.json`` (first solve and re-solve,
+    numpy and JAX path) solved again at the mass tolerance 1e-6: strict on the full adiabat, the
+    mantle temperature within 0.1 K of the stored one up to the second-highest mantle node, the
+    top node within 1 K in the re-solves and 2 K in the first solves at 1 atm, the radius,
+    central pressure and core radius within 1e-5 and the CMB pressure within
+    2 tol_REF / (1 - cmf) = 4e-5; then the sha256 of the stored list of Zalmoxis modules
+    equals the stored one. A failure means the source or a table moved the reference: run
+    ``python -m tools.validation.grid_start_up_reference`` and commit the file."""
+    _need_paleos()
+    import zalmoxis
+
+    stored = grid_ref.load()
+    for key, cfg in grid_ref.CASES.items():
+        r = grid_ref.solve({**cfg, **grid_ref.REF_TOL})
+        assert r['converged'] and r['accepted_on'] == 'strict', key
+        assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0), key
+        off = _off_ref(r, stored[key])
+        print(key, 'vs stored (dT, dT_top, dR, dPc, dRc, dPcmb):', off)
+        dT, dT_top, dR, dPc, dRc, dPcmb = off
+        bound = 2 * grid_ref.REF_TOL['newton_tol'] / (1.0 - cfg['core_mass_fraction'])
+        # the 1-atm top shell of a first solve lags the pressure of the pass before
+        assert dT <= 0.1 and abs(dT_top) <= (2.0 if key.startswith('first') else 1.0), key
+        assert max(abs(dR), abs(dPc), abs(dRc)) <= 1e-5 and abs(dPcmb) <= bound, key
+    pkg = os.path.dirname(os.path.abspath(zalmoxis.__file__))
+    assert grid_ref.source_hash(stored['source']['files'], pkg) == stored['source']['sha256']

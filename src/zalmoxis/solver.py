@@ -47,7 +47,8 @@ from .eos import (
 )
 from .eos.core_alloy import IRON_SIDES, is_alloy_mixture
 from .eos.seager import _band_debug_seen
-from .invariants import check_accepted
+from .eos.temperature import ADIABAT_P_FLOOR
+from .invariants import StructureInvariantError, check_accepted
 from .melting_curves import get_melting_curve_function
 from .mixing import (
     _PALEOS_2PHASE_NAMES,
@@ -345,6 +346,74 @@ _VALID_OUTER_SOLVERS = ('picard', 'newton')
 # gate and the warning message both read this one value so the reported
 # threshold can never drift from the gate it describes.
 _TIMEOUT_ACCEPT_MASS_ERR = 0.03
+# a linear-T pass within max(tolerance_outer, this) of the mass starts the adiabat blend ramp
+_ADIABAT_RAMP_TRIGGER = 1e-3
+# secant tail of a ramp that main starts: largest radius step, and the secant steps only while
+# the mass error is above _SECANT_FLOOR times tolerance_outer
+_SECANT_CLAMP = 0.02
+_SECANT_FLOOR = 2.0
+_SEED_KEYS = ('radii', 'pressure', 'mass_enclosed')
+_SEED_TABLE_BLEND = -1.0  # adiabat_table_blend of a pass whose T table comes from adiabat_seed
+
+
+def _secant_radius(R, M, R_prev, M_prev, M_target, R_fallback):
+    """Radius [m] of the next outer pass from the secant of M(R) - M_target through the passes
+    (R, M) and (R_prev, M_prev), clamped to ``_SECANT_CLAMP`` of R. Returns ``R_fallback``
+    when the secant is not usable: a non-finite input, R <= 0, equal radii, a slope that is
+    not positive (the mass grows with the radius) or a non-finite root."""
+    if not np.all(np.isfinite((R, M, R_prev, M_prev, M_target))) or R <= 0 or R == R_prev:
+        return R_fallback
+    slope = (M - M_prev) / (R - R_prev)
+    root = R - (M - M_target) / slope if np.isfinite(slope) and slope > 0 else np.nan
+    if not np.isfinite(root):
+        return R_fallback
+    return min(max(root, (1.0 - _SECANT_CLAMP) * R), (1.0 + _SECANT_CLAMP) * R)
+
+
+def _ramp_tolerance(config_params):
+    """Mass tolerance of a ramp that main starts with the Newton outer solver:
+    min(tolerance_outer, newton_tol)."""
+    tol = config_params.get(
+        'tolerance_outer',
+        _default_solver_params(config_params['planet_mass'])['tolerance_outer'],
+    )
+    return min(tol, config_params.get('newton_tol', _NEWTON_DEFAULT_TOL))
+
+
+def _adiabat_seed(seed, config_params):
+    """The ``_SEED_KEYS`` arrays of ``seed`` as float copies, or None, with a warning that names
+    the fault, when they cannot seed a solve of ``config_params``: not readable, not 1-D of
+    length num_layers, not finite, radii not increasing from r >= 0, mass_enclosed decreasing
+    or not positive at the top, pressure increasing, negative or not positive at the centre, a
+    top mass more than 5 % from planet_mass, or an outer radius outside 0.2 to 5 times the
+    estimate R_earth (M / M_earth)^0.282 of ``_default_solver_params``."""
+    try:
+        arrays = {k: np.array(seed[k], dtype=float) for k in _SEED_KEYS}
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        fault = f'not readable ({exc!r})'
+    else:
+        r, P, m = (arrays[k] for k in _SEED_KEYS)
+        mass_in_earth = max(config_params['planet_mass'], 0.01 * earth_mass) / earth_mass
+        r_est = earth_radius * mass_in_earth**0.282
+        n = config_params['num_layers']
+        if any(a.shape != (n,) for a in arrays.values()):
+            fault = f'shapes {[a.shape for a in arrays.values()]}, not ({n},)'
+        elif not all(np.all(np.isfinite(a)) for a in arrays.values()):
+            fault = 'a value is not finite'
+        elif r[0] < 0 or np.any(np.diff(r) <= 0):
+            fault = 'radii do not increase from r >= 0'
+        elif np.any(np.diff(m) < 0) or m[-1] <= 0:
+            fault = 'mass_enclosed decreases or is not positive at the top'
+        elif np.any(np.diff(P) > 0) or P[-1] < 0 or P[0] <= 0:
+            fault = 'pressure increases, is negative or is not positive at the centre'
+        elif abs(m[-1] / config_params['planet_mass'] - 1.0) > 0.05:
+            fault = f'top mass {m[-1]:.4e} kg more than 5 % from the planet mass'
+        elif not 0.2 * r_est < r[-1] < 5.0 * r_est:
+            fault = f'outer radius {r[-1]:.4e} m outside 0.2 to 5 times {r_est:.4e} m'
+        else:
+            return arrays
+    logger.warning('adiabat_seed refused: %s; the solve starts without it.', fault)
+    return None
 
 
 def _mass_error(mass_enclosed, planet_mass):
@@ -420,28 +489,23 @@ def _eos_params(config_params):
     )
 
 
-def _warn_adiabat(
-    result, config_params, layer_mixtures, temperature_function, temperature_arrays
-):
-    """Warn when an accepted result of an adiabatic temperature mode with a T-dependent EOS
-    has a temperature profile short of the full adiabat (``adiabat_blend`` below 1; 0 when the
-    blend ramp never started)."""
+def _adiabat_asked(config_params, layer_mixtures, temperature_function, temperature_arrays):
+    """True when the solve computes the temperature itself in an adiabatic mode with a
+    T-dependent EOS, so an accepted profile must be the full adiabat (blend 1)."""
     mixes = layer_mixtures or parse_all_layer_mixtures(config_params['layer_eos_config'])
-    asked = (
+    return (
         config_params.get('temperature_mode') in ('adiabatic', 'adiabatic_from_cmb')
         and temperature_function is None
         and not (config_params.get('use_jax', False) and temperature_arrays is not None)
         and any_component_is_tdep(mixes)
     )
-    blend = result.get('adiabat_blend', 0.0) if result.get('adiabat_computed') else 0.0
-    if asked and result.get('converged') and blend < 1.0:
-        logger.warning(
-            "outer_solver='%s' accepted a temperature profile at adiabat blend %.2f; "
-            "temperature_mode='%s' asks for the full adiabat.",
-            config_params.get('outer_solver', 'picard'),
-            blend,
-            config_params['temperature_mode'],
-        )
+
+
+def _short_of_adiabat(result, asked):
+    """True when ``asked`` and the profile of ``result`` is not the full adiabat."""
+    blends = (result.get('adiabat_blend'), result.get('adiabat_table_blend'))
+    full = result.get('adiabat_computed') and all((b or 0.0) >= 1.0 for b in blends)
+    return bool(asked and not full)
 
 
 def _check_accepted(
@@ -452,12 +516,22 @@ def _check_accepted(
     melting_curves_functions,
     layer_mixtures,
     volatile_profile,
+    adiabat_asked=False,
 ):
     """Run ``invariants.check_accepted`` on an accepted result, with the batch EOS call of
     the solve per layer as the density reference and the tolerances of ``run_params``, which
-    the result keeps as ``integration_tolerances`` (rtol, atol)."""
+    the result keeps as ``integration_tolerances`` (rtol, atol). With ``adiabat_asked`` an
+    accepted profile short of the full adiabat raises StructureInvariantError."""
     if not result.get('converged'):
         return result
+    if _short_of_adiabat(result, adiabat_asked):
+        raise StructureInvariantError(
+            f'accepted_on={result.get("accepted_on")!r} at adiabat blend '
+            f'{result.get("adiabat_blend")} on a table of blend '
+            f'{result.get("adiabat_table_blend")} '
+            f'(adiabat_computed={result.get("adiabat_computed")}); '
+            f'temperature_mode={config_params["temperature_mode"]!r} asks for the full adiabat.'
+        )
     defaults = _default_solver_params(config_params['planet_mass'])
     rtol, atol = (
         float(run_params.get(k, defaults[k]))
@@ -496,9 +570,11 @@ def _report_table_bands(
 
     A table counts at a mantle node when the solve read it there: the solid table at or
     below the solidus, below the liquidus, or where the melting curves are undefined; the
-    melt table above the solidus; the gradient table where the adiabat integration read
-    it, when the solve computed the adiabat. The check uses the final P and T, which are
-    the values the adiabat integration read only once its blend reached 1. Only tables in
+    melt table above the solidus; the gradient table at the start node of each segment the
+    adiabat integration stepped, when the solve computed the adiabat. Its midpoint substeps and
+    the read at 1e5 Pa of a segment whose start node lies below that pressure are between
+    nodes and are not checked. The check uses the final P and T, which are the values the
+    adiabat integration read only once its blend reached 1. Only tables in
     the interpolation cache are checked. A node with a non-finite P or T counts as
     infinitely far outside. One warning names the tables with a node outside their band,
     and a second one the limit when an excess exceeds it.
@@ -560,15 +636,16 @@ def _report_table_bands(
     t_sol[mantle] = [sol(p) for p in P[mantle]]
     t_liq[mantle] = [liq(p) for p in P[mantle]]
     undefined = ~(np.isfinite(t_sol) & np.isfinite(t_liq))
-    # The adiabat integration (eos/temperature.py) steps between nodes with P >= 1e5 at
-    # both ends: inward it reads the outer node of a mantle step, outward the inner one.
-    step = (P[:-1] >= 1e5) & (P[1:] >= 1e5)
+    # For P falling outward the adiabat (eos/temperature.py) reads nabla at the start node of
+    # each segment above ADIABAT_P_FLOOR: inward the outer node, outward the inner one.
+    inner, outer = P[:-1], P[1:]
     grad = np.zeros(len(P), bool)
     if config_params.get('temperature_mode') == 'adiabatic_from_cmb':
         cmb = max(1, min(int(np.searchsorted(m, result['cmb_mass'])), len(P) - 1))
+        step = (inner > ADIABAT_P_FLOOR) & (outer < np.inf)  # a NaN or inf end is not stepped
         grad[:-1] = mantle[1:] & step & (np.arange(1, len(P)) > cmb)
     else:
-        grad[1:] = mantle[:-1] & step
+        grad[1:] = mantle[:-1] & (inner >= ADIABAT_P_FLOOR) & (outer >= ADIABAT_P_FLOOR)
     bad = mantle & ~(np.isfinite(P) & np.isfinite(T))
     reads = {
         'solid': mantle & (undefined | (T <= t_sol) | (T < t_liq)),
@@ -612,6 +689,7 @@ def main(
     p_center_hint=None,
     initial_density=None,
     initial_radii=None,
+    adiabat_seed=None,
 ):
     """Run the exoplanet internal structure model with automatic retry.
 
@@ -663,6 +741,17 @@ def main(
         when the structure changes incrementally between coupling steps.
     initial_radii : numpy.ndarray or None, optional
         Radial grid corresponding to ``initial_density``.
+    adiabat_seed : mapping or None, optional
+        ``radii`` [m], ``pressure`` [Pa] and ``mass_enclosed`` [kg] of an earlier solve of
+        the same planet, each of length ``num_layers``. When the solve computes the adiabat
+        of its temperature mode, it skips the Newton root and the blend ramp: the first pass
+        reads the adiabat of the seed structure at blend 1 on a table labelled
+        ``adiabat_table_blend`` -1.0, which no accept test takes, and the solve runs at
+        min(tolerance_outer, newton_tol) with the Newton outer solver. A seed that fails the
+        checks of ``_adiabat_seed`` is refused with a warning; a seeded solve that does not
+        converge or raises StructureSolveError is repeated without the seed, and its time
+        counts in ``total_time``. A seeded result has no ``newton_*`` keys. Ignored with an
+        external temperature.
 
     Returns
     -------
@@ -673,10 +762,22 @@ def main(
         'oscillation', 'retry_skip', 'newton_tol' or 'brentq_best'; None when it
         was not accepted), and ``mass_error_at_accept`` is the relative mass error
         of the returned profile. 'timeout' replaces the other labels when the wall
-        clock stopped the solve of the returned profile. A failed table band check
-        sets ``converged`` to False and leaves ``accepted_on`` as it is. A converged
-        result has ``integration_tolerances``, the (rtol, atol) of the solve that
-        returned, with rtol at least the RK45 floor of 100 eps, which the invariant
+        clock stopped the solve of the returned profile. In an adiabatic mode with a
+        T-dependent EOS and no external temperature only the full adiabat on a table of a
+        full-adiabat pass (``adiabat_blend`` and ``adiabat_table_blend`` 1) is accepted, and
+        ``adiabat_self_consistency`` gives the largest difference in K between the returned
+        mantle T and the adiabat recomputed on the returned structure (None below blend 1);
+        a Newton root there seeds the Picard blend ramp at min(tolerance_outer, newton_tol),
+        and the result keeps its ``newton_*`` keys and its time in ``total_time``. In a ramp
+        that main starts (after a Newton root or from ``adiabat_seed``), a pass on a
+        full-adiabat table more than 2 times the mass tolerance of the ramp off the mass takes
+        the next radius from the secant of the mass through the last 2 such passes, within 2 %
+        of its radius; the cube-root update takes over once a secant step does not shrink the
+        mass error.
+        ``adiabat_seeded`` is True when the returned solve started from the seed. A failed
+        table band check sets ``converged`` to False and leaves ``accepted_on`` as it is. A
+        converged result has ``integration_tolerances``, the (rtol, atol) of the solve
+        that returned, with rtol at least the RK45 floor of 100 eps, which the invariant
         check used; an unconverged result has none. ``padded`` (bool) is True when
         the pressure at the outer radius is 0: the integration stopped at P = 0 before
         the outer radius, and the nodes past the stop hold P = 0. ``main`` logs one
@@ -691,7 +792,8 @@ def main(
     StructureInvariantError
         An accepted result breaks a physical invariant of ``zalmoxis.invariants``:
         the layer masses, the padding, positive and monotone profiles, gravity, the
-        mass closure within ``accept_mass_limit``, or the EOS density. It is not a
+        mass closure within ``accept_mass_limit``, or the EOS density; or, in such an
+        adiabatic mode, the accepted profile is not the full adiabat. It is not a
         RuntimeError, so a caller that keeps its structure after a failed solve does
         not catch it.
     """
@@ -740,7 +842,49 @@ def main(
     _check_two_layer_core(config_params['layer_eos_config'])
     _check_icb_rule(config_params)
     bands = (config_params, material_dictionaries, melting_curves_functions, layer_mixtures)
-    if outer_solver == 'newton':
+    asked = _adiabat_asked(
+        config_params, layer_mixtures, temperature_function, temperature_arrays
+    )
+    newton_keys, newton_time, seed_time, result = {}, 0.0, 0.0, None
+    seed = (
+        _adiabat_seed(adiabat_seed, config_params)
+        if asked and adiabat_seed is not None
+        else None
+    )
+    if seed is not None:  # the ramp starts at blend 1 on the adiabat of the seed structure
+        seeded_params = {
+            **config_params,
+            '_initial_radius_guess': float(seed['radii'][-1]),
+            '_secant_tail': True,
+        }
+        if outer_solver == 'newton':
+            seeded_params['tolerance_outer'] = _ramp_tolerance(config_params)
+        seed_start = time.time()
+        try:
+            result = _solve(
+                seeded_params,
+                material_dictionaries,
+                melting_curves_functions,
+                input_dir,
+                layer_mixtures=layer_mixtures,
+                volatile_profile=volatile_profile,
+                temperature_function=temperature_function,
+                temperature_arrays=temperature_arrays,
+                p_center_hint=float(seed['pressure'][0])
+                if p_center_hint is None
+                else p_center_hint,
+                initial_density=initial_density,
+                initial_radii=initial_radii,
+                adiabat_seed=seed,
+            )
+        except StructureSolveError as err:
+            logger.info('The seeded solve raised (%s); solving without the seed.', err)
+            seed_time = time.time() - seed_start
+        else:
+            if not result['converged']:
+                logger.info('The seeded solve did not converge; solving without the seed.')
+                seed_time, result = result['total_time'], None
+    if result is None and outer_solver == 'newton':
         result = _solve_newton_outer(
             config_params,
             material_dictionaries,
@@ -754,29 +898,47 @@ def main(
             initial_density=initial_density,
             initial_radii=initial_radii,
         )
-        result = _report_table_bands(result, *bands)
-        _warn_adiabat(
-            result, config_params, layer_mixtures, temperature_function, temperature_arrays
+        if not (asked and result['converged']):
+            result = _report_table_bands(result, *bands)
+            if seed_time:
+                result['total_time'] += seed_time
+            return _check_accepted(result, config_params, *bands, volatile_profile, asked)
+        # the Newton root holds the linear first guess; the blend ramp from it makes the adiabat
+        logger.info(
+            'Newton root on the linear first guess; continuing with the adiabat blend ramp.'
         )
-        return _check_accepted(result, config_params, *bands, volatile_profile)
+        newton_keys = {
+            k: result[k] for k in ('newton_n_iter', 'newton_history', 'newton_used_brentq')
+        }
+        newton_time = result['total_time']
+        config_params = {
+            **config_params,
+            '_initial_radius_guess': float(result['radii'][-1]),
+            '_secant_tail': True,
+            'tolerance_outer': _ramp_tolerance(config_params),
+        }
+        p_center_hint = float(result['pressure'][0])
+        initial_density, initial_radii = result['density'], result['radii']
+        result = None
 
-    result = _solve(
-        config_params,
-        material_dictionaries,
-        melting_curves_functions,
-        input_dir,
-        layer_mixtures=layer_mixtures,
-        volatile_profile=volatile_profile,
-        temperature_function=temperature_function,
-        temperature_arrays=temperature_arrays,
-        p_center_hint=p_center_hint,
-        initial_density=initial_density,
-        initial_radii=initial_radii,
-    )
+    if result is None:
+        result = _solve(
+            config_params,
+            material_dictionaries,
+            melting_curves_functions,
+            input_dir,
+            layer_mixtures=layer_mixtures,
+            volatile_profile=volatile_profile,
+            temperature_function=temperature_function,
+            temperature_arrays=temperature_arrays,
+            p_center_hint=p_center_hint,
+            initial_density=initial_density,
+            initial_radii=initial_radii,
+        )
 
-    # Skip the retry when density and pressure converged and the mass error of the returned
-    # profile is within `_RETRY_SKIP_MASS_ERR`: on hot molten T(r) the retry takes 600+ s for
-    # no better mass, and the next resolve of the caller corrects the residual.
+    # Skip the retry when density and pressure converged and the mass error is within
+    # `_RETRY_SKIP_MASS_ERR` (on hot molten T(r) the retry takes 600+ s for no better mass and the
+    # caller's next re-solve corrects it); a ramp after a Newton root always retries.
     _RETRY_SKIP_MASS_ERR = 0.07
     _first_mass_err = result.get('mass_error_at_accept')
     run_params = config_params  # the parameters of the solve that returns
@@ -787,6 +949,8 @@ def main(
         and result.get('converged_pressure', False)
         and _first_mass_err is not None
         and _first_mass_err < _RETRY_SKIP_MASS_ERR
+        and not _short_of_adiabat(result, asked)
+        and not newton_keys
     )
     if _retry_skipped:
         logger.info(
@@ -812,6 +976,8 @@ def main(
             if key in config_params:
                 effective[key] = config_params[key]
         tightened = _tighten_solver_params(effective)
+        if newton_keys:  # the hand-off already runs at the Newton mass tolerance
+            tightened['tolerance_outer'] = config_params['tolerance_outer']
 
         logger.warning(
             'Structure solve did not converge (mass=%s, density=%s, pressure=%s). '
@@ -859,10 +1025,9 @@ def main(
             )
 
     result = _report_table_bands(result, *bands)
-    _warn_adiabat(
-        result, config_params, layer_mixtures, temperature_function, temperature_arrays
-    )
-    return _check_accepted(result, run_params, *bands, volatile_profile)
+    if newton_keys or seed_time:
+        result.update(newton_keys, total_time=result['total_time'] + newton_time + seed_time)
+    return _check_accepted(result, run_params, *bands, volatile_profile, asked)
 
 
 # Newton outer-loop defaults: 3-6 Newton iterations are typically
@@ -1577,6 +1742,7 @@ def _solve(
     p_center_hint=None,
     initial_density=None,
     initial_radii=None,
+    adiabat_seed=None,
 ):
     """Internal solver: single attempt at the structure solve.
 
@@ -1604,6 +1770,10 @@ def _solve(
         radial grid to accelerate Picard convergence.
     initial_radii : numpy.ndarray or None, optional
         Radial grid corresponding to ``initial_density``.
+    adiabat_seed : dict or None, optional
+        Checked seed arrays of ``main`` (``_adiabat_seed``); main passes them only when the
+        solve computes the adiabat itself. ``config_params['_secant_tail']`` turns on the secant
+        tail described in ``main``.
 
     Returns
     -------
@@ -1831,7 +2001,43 @@ def _solve(
     _using_adiabat = False
     _adiabat_computed = False  # the gradient table was read for the T profile
     _adiabat_blend = 0.0
+    _table_blend = 0.0  # the blend of the pass whose pressure built the T(P) table
     _ADIABAT_BLEND_STEP = 0.25
+    # the internal adiabat makes T: accept only blend 1 on a table of a blend-1 pass
+    ramp_asked = _adiabat_asked(
+        config_params, layer_mixtures, temperature_function, temperature_arrays
+    )
+    seeded = adiabat_seed is not None
+    if seeded:  # the first pass reads the adiabat of the seed structure at blend 1
+        prev_radii, prev_pressure, prev_mass_enclosed = (adiabat_seed[k] for k in _SEED_KEYS)
+        _using_adiabat, _adiabat_blend = True, 1.0
+    _seed_table = seeded  # the T table of the next pass comes from the seed
+    secant_tail = bool(config_params.get('_secant_tail', False))
+    _secant_prev = None  # (radius, mass) of the last pass on a full-adiabat table
+    _secant_err = None  # mass error of the pass whose radius came from a secant step
+
+    def _adiabat(radii, pressure, mass_enclosed):
+        # 'adiabatic_from_cmb' anchors at the CMB and integrates outward, 'adiabatic' inward
+        return compute_adiabatic_temperature(
+            radii,
+            pressure,
+            mass_enclosed,
+            surface_temperature,
+            cmb_mass,
+            core_mantle_mass,
+            layer_mixtures,
+            material_dictionaries,
+            interpolation_cache,
+            solidus_func,
+            liquidus_func,
+            mushy_zone_factors,
+            condensed_rho_min,
+            condensed_rho_scale,
+            binodal_T_scale,
+            anchor='cmb' if temperature_mode == 'adiabatic_from_cmb' else 'surface',
+            cmb_temperature=cmb_temperature,
+            icb_mass=icb_mass,
+        )
 
     # For adiabatic mode, cap the initial center_temperature guess to
     # prevent the linear-T initial profile from being far above the
@@ -1858,7 +2064,7 @@ def _solve(
     # Outer-loop oscillation tracking (local to this call, not function-level).
     best_mass_error = float('inf')
     best_profiles = None
-    best_blend = None  # the adiabat blend of the best pass
+    best_blend = None  # the adiabat and table blends of the best pass
     earlier_best = None  # (mass error, profiles) of the best pass of the earlier blend steps
     oscillation_count = 0
     _prev_mass_error = None  # signed mass error of the previous outer pass
@@ -1975,7 +2181,9 @@ def _solve(
             )
 
             if _using_adiabat and prev_pressure is not None:
-                # Bump blend toward full adiabat
+                # Bump blend toward full adiabat; the table is built on the previous pass
+                _table_blend = _SEED_TABLE_BLEND if _seed_table else _adiabat_blend
+                _seed_table = False
                 _adiabat_blend = min(1.0, _adiabat_blend + _ADIABAT_BLEND_STEP)
                 logger.debug(
                     'Outer iter %d: adiabat blend = %.2f',
@@ -1983,33 +2191,10 @@ def _solve(
                     _adiabat_blend,
                 )
 
-                # Recompute adiabat from previous iteration's converged
-                # structure. For 'adiabatic_from_cmb', anchor at the CMB
-                # and integrate outward; otherwise anchor at the surface
-                # and integrate inward (original behaviour).
-                _anchor = 'cmb' if temperature_mode == 'adiabatic_from_cmb' else 'surface'
+                # Recompute the adiabat on the previous pass's converged structure
                 _adiabat_computed = True
                 icb_adiabat = icb_mass
-                adiabat_T = compute_adiabatic_temperature(
-                    prev_radii,
-                    prev_pressure,
-                    prev_mass_enclosed,
-                    surface_temperature,
-                    cmb_mass,
-                    core_mantle_mass,
-                    layer_mixtures,
-                    material_dictionaries,
-                    interpolation_cache,
-                    solidus_func,
-                    liquidus_func,
-                    mushy_zone_factors,
-                    condensed_rho_min,
-                    condensed_rho_scale,
-                    binodal_T_scale,
-                    anchor=_anchor,
-                    cmb_temperature=cmb_temperature,
-                    icb_mass=icb_mass,
-                )
+                adiabat_T = _adiabat(prev_radii, prev_pressure, prev_mass_enclosed)
 
                 # Build T(P) interpolator from the previous iteration's
                 # pressure profile.  This ensures that during the Brent
@@ -2629,7 +2814,28 @@ def _solve(
         else:
             scale = (planet_mass / calculated_mass) ** (1.0 / 3.0)
             scale = max(0.5, min(scale, 2.0))
-            radius_guess *= scale
+            R_pass, err = radius_guess, abs(calculated_mass - planet_mass) / planet_mass
+            full_table = ramp_asked and min(_adiabat_blend, _table_blend) >= 1.0
+            if _secant_err is not None and err >= _secant_err:
+                secant_tail = False  # a secant step that did not shrink the error ends the tail
+            _secant_err = None
+            R_cube = radius_guess = R_pass * scale
+            if (
+                full_table
+                and secant_tail
+                and _secant_prev
+                and err > _SECANT_FLOOR * tolerance_outer
+            ):
+                radius_guess = _secant_radius(
+                    R_pass, calculated_mass, *_secant_prev, planet_mass, R_cube
+                )
+                _secant_err = err if radius_guess != R_cube else None  # a fallback arms nothing
+            _secant_prev = (R_pass, calculated_mass) if full_table else None
+            if not (np.isfinite(radius_guess) and radius_guess > 0):
+                raise StructureSolveError(
+                    f'outer iteration {outer_iter}: radius guess {radius_guess} m is not a '
+                    'finite positive radius'
+                )
 
         relative_diff_outer_mass = np.abs((calculated_mass - planet_mass) / planet_mass)
 
@@ -2649,12 +2855,14 @@ def _solve(
         # The best pass: the smallest error on the newest blend step. A pass without a
         # pressure solve never counts; the older best stays until a new-step pass has one.
         if rho_eos is not None and (
-            relative_diff_outer_mass < best_mass_error or _adiabat_blend != best_blend
+            relative_diff_outer_mass < best_mass_error
+            or (_adiabat_blend, _table_blend) != best_blend
         ):
-            if _adiabat_blend != best_blend and best_profiles is not None:
+            if (_adiabat_blend, _table_blend) != best_blend and best_profiles is not None:
                 if earlier_best is None or best_mass_error < earlier_best[0]:
                     earlier_best = (best_mass_error, best_profiles)
-            best_mass_error, best_blend = relative_diff_outer_mass, _adiabat_blend
+            best_mass_error = relative_diff_outer_mass
+            best_blend = (_adiabat_blend, _table_blend)
             best_profiles = {
                 'radii': radii.copy(),
                 'density': density.copy(),
@@ -2670,6 +2878,7 @@ def _solve(
                 'icb_mass': icb_mass,
                 'icb_adiabat': icb_adiabat,
                 'temperature_func': _temperature_func,
+                'adiabat_table_blend': _table_blend,
             }
             oscillation_count = 0
         elif (
@@ -2681,13 +2890,7 @@ def _solve(
         _prev_mass_error = mass_error_signed
 
         # The internal adiabat blend is below 1: both stops wait for the end of the ramp
-        ramp_incomplete = (
-            temperature_mode in ('adiabatic', 'adiabatic_from_cmb')
-            and _adiabat_blend < 1.0
-            and uses_Tdep
-            and temperature_function is None
-            and not arrays_give_T
-        )
+        ramp_incomplete = ramp_asked and min(_adiabat_blend, _table_blend) < 1.0
         # Bailout: if oscillating for 10+ iterations, accept best solution
         if (
             oscillation_count >= 10
@@ -2732,6 +2935,17 @@ def _solve(
         # convergence; the T output for T-independent EOS in adiabatic mode
         # falls back to the linear profile (see the T-independent branch
         # around the _temperature_func construction).
+        if ramp_incomplete and relative_diff_outer_mass < max(
+            _ADIABAT_RAMP_TRIGGER, tolerance_outer
+        ):
+            if not _using_adiabat:
+                _using_adiabat = True
+                logger.log(
+                    progress,
+                    f'Outer iter {outer_iter}: mass converged with linear T, '
+                    f'activating adiabat blend.',
+                )
+            continue  # the blend ramps up over the next passes
         icb_moving = core_liq is not None and any(
             d > tolerance_outer * cmb_mass
             for d in icb_misses(
@@ -2739,16 +2953,6 @@ def _solve(
             )
         )
         if relative_diff_outer_mass < tolerance_outer and not icb_moving:
-            if ramp_incomplete:
-                if not _using_adiabat:
-                    _using_adiabat = True
-                    logger.log(
-                        progress,
-                        f'Outer iter {outer_iter}: mass converged with linear T, '
-                        f'activating adiabat blend.',
-                    )
-                # Continue iterating to let the blend ramp up
-                continue
             logger.log(
                 progress,
                 f'Outer loop (total mass) converged after {outer_iter + 1} iterations.',
@@ -2778,6 +2982,7 @@ def _solve(
             *(best_profiles[k] for k in ('rho_eos', 'converged_density', 'converged_pressure')),
             best_profiles['adiabat_computed'],
             best_profiles['adiabat_blend'],
+            best_profiles['adiabat_table_blend'],
             temperatures if T is None else np.array(T),
         )
 
@@ -2802,11 +3007,13 @@ def _solve(
         )
     ):
         logger.warning(
-            'No pass of adiabat blend %.2f passes an accept test of this stop (mass error '
-            '%.4f%%); returning the best pass of blend %.2f (mass error %.4f%%).',
-            best_blend,
+            'No pass of adiabat blend %.2f on a table of blend %.2f passes an accept test of '
+            'this stop (mass error %.4f%%); returning the best pass of blend %.2f on a table '
+            'of blend %.2f (mass error %.4f%%).',
+            *best_blend,
             best_mass_error * 100,
             earlier_best[1]['adiabat_blend'],
+            earlier_best[1]['adiabat_table_blend'],
             earlier_best[0] * 100,
         )
         best_mass_error, best_profiles = earlier_best
@@ -2820,7 +3027,7 @@ def _solve(
         (
             radii, density, gravity, pressure, mass_enclosed, rho_eos,
             converged_density, converged_pressure, _adiabat_computed, _adiabat_blend,
-            temperatures,
+            _table_blend, temperatures,
         ) = _best_pass()  # fmt: skip
 
     accepted_on = accept_mass_limit = None
@@ -2846,7 +3053,10 @@ def _solve(
         converged_mass = True
         restore_best = True  # return the pass that the test read
         accepted_on, accept_mass_limit = stop_label or 'max_iter', _TIMEOUT_ACCEPT_MASS_ERR
-        logger.warning(
+        blends = best_profiles['adiabat_blend'], best_profiles['adiabat_table_blend']
+        short = ramp_asked and min(blends) < 1.0  # refused below
+        logger.log(
+            logging.DEBUG if short else logging.WARNING,
             'Accepting %s solution: mass error %.4f%% (threshold %.1f%%), '
             'density_converged=%s, pressure_converged=%s.',
             accepted_on,
@@ -2867,9 +3077,21 @@ def _solve(
         (
             radii, density, gravity, pressure, mass_enclosed, rho_eos,
             converged_density, converged_pressure, _adiabat_computed, _adiabat_blend,
-            temperatures,
+            _table_blend, temperatures,
         ) = _best_pass()  # fmt: skip
 
+    if converged and ramp_asked and min(_adiabat_blend, _table_blend) < 1.0:
+        logger.log(
+            logging.DEBUG if config_params.get('_newton_probe') else logging.WARNING,
+            'No accept of a pass at adiabat blend %.2f on a table of blend %.2f: '
+            'temperature_mode=%r asks for the full adiabat; the solve returns with '
+            'converged=False.',
+            _adiabat_blend,
+            _table_blend,
+            temperature_mode,
+        )
+        converged = converged_mass = False
+        accepted_on = accept_mass_limit = None
     icb_converged = True  # the ICB meets the liquidus root and the adiabat ICB of the pass
     if core_liq is not None and np.all(np.isfinite(pressure)) and pressure[0] > 0:
         miss, lag = icb_misses(
@@ -2936,6 +3158,12 @@ def _solve(
             volatile_profile,
         )
 
+    self_consistency = None  # largest |T - adiabat(P)| of the returned mantle, in K
+    if _adiabat_computed and _adiabat_blend >= 1.0:
+        keep = (np.asarray(mass_enclosed) >= cmb_mass) & (pressure > 0)
+        lag = np.abs(np.asarray(temperatures) - _adiabat(radii, pressure, mass_enclosed))[keep]
+        self_consistency = float(lag.max()) if lag.size else None
+
     model_results = {
         'layer_eos_config': layer_eos_config,
         'radii': radii,
@@ -2962,6 +3190,9 @@ def _solve(
         'padded': bool(pad.size and pad[-1]),
         'adiabat_computed': _adiabat_computed,
         'adiabat_blend': _adiabat_blend,
+        'adiabat_table_blend': _table_blend,
+        'adiabat_self_consistency': self_consistency,
+        'adiabat_seeded': seeded,
     }
     m_end = mass_enclosed[-1] if len(mass_enclosed) else 0.0
     reached = m_end >= cmb_mass * (1.0 - 1e-12) and np.all(np.isfinite(pressure))

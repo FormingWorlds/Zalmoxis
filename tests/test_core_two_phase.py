@@ -632,7 +632,6 @@ def test_main_returns_an_unconverged_icb_after_a_failed_retry(monkeypatch, caplo
 
     monkeypatch.setattr(zs, '_solve', fake_solve)
     monkeypatch.setattr(zs, '_report_table_bands', lambda r, *a: r)
-    monkeypatch.setattr(zs, '_warn_adiabat', lambda *a: None)
     monkeypatch.setattr(zs, '_check_accepted', lambda r, *a: r)
     cfg = _params()
     caplog.set_level('WARNING', logger='fwl.zalmoxis.solver')

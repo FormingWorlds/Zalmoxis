@@ -68,7 +68,7 @@ Loads TOML, validates schema (per-layer and legacy global EOS strings, mass and 
 
 #### `solver.py`
 
-Houses `main()` (the user-facing entry), `_solve()` (damped-Picard outer loop, default), `_solve_newton_outer()` (Newton + brentq fallback), `_anderson_mix()` (Walker & Ni 2011 Type-II Anderson acceleration for the density Picard loop), `_refine_pressure_root()` and `_nearest_sign_pair()` (the refinement of the Brent root of the pressure solve, see [Padded accepts](process_flow.md#padded-accepts)), and the mass-adaptive `_default_solver_params` / `_tighten_solver_params` helpers used by the auto-retry path. See [`zalmoxis.solver`](../Reference/api/zalmoxis.solver.md).
+Houses `main()` (the user-facing entry), `_solve()` (damped-Picard outer loop, default), `_solve_newton_outer()` (Newton + brentq fallback), `_anderson_mix()` (the Type-II Anderson acceleration of Walker & Ni (2011)[^cite-walker2011] for the density Picard loop), `_refine_pressure_root()` and `_nearest_sign_pair()` (the refinement of the Brent root of the pressure solve, see [Padded accepts](process_flow.md#padded-accepts)), and the mass-adaptive `_default_solver_params` / `_tighten_solver_params` helpers used by the auto-retry path. See [`zalmoxis.solver`](../Reference/api/zalmoxis.solver.md).
 
 #### `structure_model.py`
 
@@ -80,7 +80,7 @@ Defines the hydrostatic ODE system $[dM/dr,\; dg/dr,\; dP/dr]$, the layer dispat
 
 #### `energetics.py`
 
-Computes gravitational binding energies (full integrand and the uniform-sphere reference $U = 3GM^2/5R$), the differentiation energy $U_d - U_u$, and the initial CMB temperature following White & Li (2025) Eq. 2: $T_{\mathrm{CMB}} = T_{\mathrm{eq}} + \Delta T_G + \Delta T_D + \Delta T_{\mathrm{ad}}$. Used by PROTEUS to seed a self-consistent post-accretion thermal state. See [`zalmoxis.energetics`](../Reference/api/zalmoxis.energetics.md).
+Computes gravitational binding energies (full integrand and the uniform-sphere reference $U = 3GM^2/5R$), the differentiation energy $U_d - U_u$, and the initial CMB temperature following White & Li (2025)[^cite-whiteli2025] Eq. 2: $T_{\mathrm{CMB}} = T_{\mathrm{eq}} + \Delta T_G + \Delta T_D + \Delta T_{\mathrm{ad}}$. Used by PROTEUS to seed a self-consistent post-accretion thermal state. See [`zalmoxis.energetics`](../Reference/api/zalmoxis.energetics.md).
 
 #### `mixing.py`
 
@@ -88,7 +88,7 @@ Computes gravitational binding energies (full integrand and the uniform-sphere r
 
 #### `binodal.py`
 
-H$_2$-silicate (Rogers et al. 2025) and H$_2$-H$_2$O (Gupta et al. 2025) miscibility models. Returns sigmoid suppression weights smoothly switched around the binodal temperature. See [`zalmoxis.binodal`](../Reference/api/zalmoxis.binodal.md).
+H$_2$-silicate miscibility model of Rogers et al. (2025)[^cite-rogers2025] and the H$_2$-H$_2$O model of Gupta et al. (2025)[^cite-gupta2025]. Returns sigmoid suppression weights smoothly switched around the binodal temperature. See [`zalmoxis.binodal`](../Reference/api/zalmoxis.binodal.md).
 
 #### `melting_curves.py`
 
@@ -96,7 +96,7 @@ Solidus and liquidus interpolators for EOS that need external melting curves (Wo
 
 #### `eos_analytic.py`
 
-The Seager et al. (2007) modified polytrope $\rho(P) = \rho_0 + c P^n$ for six materials (Fe, MgSiO$_3$, H$_2$O, two H$_2$O-ice variants, and a low-density envelope). Cheap, P-only, used as an initial guess and as a fallback. See [`zalmoxis.eos_analytic`](../Reference/api/zalmoxis.eos_analytic.md).
+The Seager et al. (2007)[^cite-seager2007] modified polytrope $\rho(P) = \rho_0 + c P^n$ for six materials (Fe, MgSiO$_3$, H$_2$O, two H$_2$O-ice variants, and a low-density envelope). Cheap, P-only, used as an initial guess and as a fallback. See [`zalmoxis.eos_analytic`](../Reference/api/zalmoxis.eos_analytic.md).
 
 #### `eos_properties.py`
 
@@ -170,8 +170,10 @@ Inside a fixed $R$, alternate between integrating the structure ODE (yielding $P
 
 `compute_adiabatic_temperature` in `eos/temperature.py` supports two anchor points (`anchor='surface'` or `anchor='cmb'`).
 
-- **Surface-anchored** (default, historic). Anchors $T(R) = T_{\mathrm{surf}}$ and integrates inward. This is the appropriate boundary condition when only the surface temperature is known.
-- **CMB-anchored** (new, energetics coupling). Anchors $T(r_{\mathrm{cmb}}) = T_{\mathrm{cmb}}$ at the first mantle shell and integrates outward through the mantle only; shells below the CMB carry the surface anchor through (the core adiabat is decoupled, and the energetics solver computes $T_{\mathrm{core}}$ from `core_heatcap` and the Bower+2018 ratio). This is the path used when an interior energy budget already constrains $T_{\mathrm{cmb}}$, for example when Zalmoxis is downstream of Aragog or SPIDER.
+- **Surface-anchored** (default). Anchors $T(R) = T_{\mathrm{surf}}$ and integrates inward. This is the appropriate boundary condition when only the surface temperature is known.
+- **CMB-anchored** (energetics coupling). Anchors $T(r_{\mathrm{cmb}}) = T_{\mathrm{cmb}}$ at the first mantle shell and integrates outward through the mantle only; shells below the CMB carry the surface anchor through (the core adiabat is decoupled, and the energetics solver computes $T_{\mathrm{core}}$ from `core_heatcap` and the Bower+2018 ratio). This is the path used when an interior energy budget already constrains $T_{\mathrm{cmb}}$, for example when Zalmoxis is downstream of Aragog or SPIDER.
+
+Both anchors integrate with the same midpoint step in $\ln P$; [How the adiabat is integrated](adiabat_integration.md) describes the step, the 1 bar floor and the checks.
 
 ## JAX path
 
@@ -220,3 +222,9 @@ Zalmoxis only ever produces a snapshot. The coupling layer in PROTEUS (`proteus/
 - [Model](model.md): physical assumptions, EOS hierarchy, mixing and melting choices.
 - [EOS physics](eos_physics.md): what each EOS family actually computes and where its tables come from.
 - [Process flow](process_flow.md): the exact sequence of calls from `python -m zalmoxis` through to file output.
+
+[^cite-gupta2025]: A. Gupta, L. Stixrude, H. E. Schlichting, *[The Miscibility of Hydrogen and Water in Planetary Atmospheres and Interiors](https://doi.org/10.3847/2041-8213/adb631)*, The Astrophysical Journal Letters, 982(2), L35, 2025. [SciX](https://scixplorer.org/abs/2025ApJ...982L..35G/abstract).
+[^cite-rogers2025]: J. G. Rogers, E. D. Young, H. E. Schlichting, *[Redefining interiors and envelopes: hydrogen-silicate miscibility and its consequences for the structure and evolution of sub-Neptunes](https://doi.org/10.1093/mnras/staf1940)*, Monthly Notices of the Royal Astronomical Society, 544(4), 3496-3511, 2025. [SciX](https://scixplorer.org/abs/2025MNRAS.544.3496R/abstract).
+[^cite-seager2007]: S. Seager, M. Kuchner, C. A. Hier-Majumder, B. Militzer, *[Mass-radius relationships for solid exoplanets](https://doi.org/10.1086/521346)*, The Astrophysical Journal, 669, 1279-1297, 2007. [SciX](https://scixplorer.org/abs/2007ApJ...669.1279S/abstract).
+[^cite-walker2011]: H. F. Walker, P. Ni, *[Anderson acceleration for fixed-point iterations](https://doi.org/10.1137/10078356X)*, SIAM Journal on Numerical Analysis, 49(4), 1715-1735, 2011.
+[^cite-whiteli2025]: N. I. White, J. Li, *[Initial thermal states of super-Earth exoplanets and implications for early dynamos](https://doi.org/10.1029/2024JE008550)*, Journal of Geophysical Research: Planets, 130, e2024JE008550, 2025. [SciX](https://scixplorer.org/abs/2025JGRE..13008550W/abstract).

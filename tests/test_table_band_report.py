@@ -321,17 +321,34 @@ class TestReportTableBands:
         ('adiabatic_from_cmb', '', 0.0),
         ('adiabatic_from_cmb', '', 1e5),
         ('adiabatic_from_cmb', 'Seager2007:H2O', 0.0),
+        ('adiabatic', '', 0.9e5),
+        ('adiabatic_from_cmb', '', 0.9e5),
+        ('adiabatic', '', (0.95e5, 0.9e5)),
+        ('adiabatic_from_cmb', '', (0.95e5, 0.9e5)),
     ],
-    ids=['surface', 'surface_ice', 'surface_1bar', 'cmb', 'cmb_1bar', 'cmb_ice'],
+    ids=[
+        'surface',
+        'surface_ice',
+        'surface_1bar',
+        'cmb',
+        'cmb_1bar',
+        'cmb_ice',
+        'surface_09bar',
+        'cmb_09bar',
+        'surface_2_below_1bar',
+        'cmb_2_below_1bar',
+    ],
 )
 def test_gradient_nodes_are_the_adiabat_reads(mats, monkeypatch, mode, ice, surface_p):
-    """The gradient entry covers exactly the nodes compute_adiabatic_temperature reads."""
+    """The gradient entry covers exactly the nodes where compute_adiabatic_temperature reads
+    nabla; its midpoint substeps read further pressures between those nodes."""
     md, _, grad, _ = mats
     md = {'WolfBower2018:MgSiO3': md['X:MgSiO3']}
     layers = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3', 'ice_layer': ice}
     mixtures = parse_all_layer_mixtures(layers)
     m = np.arange(1.0, 11.0)
-    P = np.append(np.linspace(9e9, 1e9, 9), surface_p)
+    top = np.atleast_1d(surface_p)  # 1 or 2 nodes at or below 1 bar
+    P = np.append(np.linspace(9e9, 1e9, 10 - len(top)), top)
     adiabat_reads, check_reads = [], []
     monkeypatch.setattr(
         mixing, 'get_mixed_nabla_ad', lambda p, *a: adiabat_reads.append(p) or 0.1
@@ -369,15 +386,16 @@ def test_gradient_nodes_are_the_adiabat_reads(mats, monkeypatch, mode, ice, surf
         _curves(100.0, 200.0),
         mixtures,
     )
-    assert sorted(check_reads) == sorted(adiabat_reads) and adiabat_reads
+    at_nodes = [p for p in adiabat_reads if p in set(P.tolist())]
+    assert sorted(check_reads) == sorted(at_nodes) and at_nodes
+    assert len(adiabat_reads) > len(at_nodes)
 
 
 @pytest.mark.unit
 @pytest.mark.parametrize('outer', ['picard', 'newton'])
-def test_main_checks_the_profile_with_the_mixtures_it_got(mats, monkeypatch, caplog, outer):
+def test_main_checks_the_profile_with_the_mixtures_it_got(mats, monkeypatch, outer):
     """main() runs the check on both outer solvers with the mixtures passed in; a band failure
-    leaves the numerical convergence flags and accepted_on as they are. A Newton solve that kept
-    the linear profile in an adiabatic mode logs a warning."""
+    leaves the numerical convergence flags and accepted_on as they are."""
     md, melt, grad, _ = mats
     res = {**_result(HOT, adiabat=True), 'converged_mass': True, 'converged_density': True}
     res['accepted_on'] = 'strict'
@@ -390,12 +408,9 @@ def test_main_checks_the_profile_with_the_mixtures_it_got(mats, monkeypatch, cap
         'outer_solver': outer,
     }
     mixtures = parse_all_layer_mixtures({'core': 'Seager2007:iron', 'mantle': 'X:MgSiO3'})
-    with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.solver'):
-        out = solver.main(cfg, md, _curves(500.0, 600.0), '/tmp', layer_mixtures=mixtures)
+    out = solver.main(cfg, md, _curves(500.0, 600.0), '/tmp', layer_mixtures=mixtures)
     tables = {melt, md['X:MgSiO3']['solid_mantle']['eos_file']}
     assert set(out['table_band_excess']) == (tables if outer == 'newton' else tables | {grad})
-    blend = [r for r in caplog.records if 'accepted a temperature profile' in r.getMessage()]
-    assert not blend  # the band check took the accept back, so no adiabat warning
     assert out['converged'] is False and out['converged_bands'] is False
     assert out['converged_mass'] is True and out['converged_density'] is True
     assert out['accepted_on'] == 'strict'
@@ -508,15 +523,22 @@ def wb_solves(tmp_path_factory):
 @pytest.mark.integration
 @pytest.mark.wolfbower
 @pytest.mark.xdist_group('wb_solves')  # one worker, so the module fixture solves once
+@pytest.mark.timeout(5500)  # 2 fixture solves, one at its 3600 s clock, and the 600 s retry
 class TestWolfBowerSolves:
     """Real solves: inside the limit the clamp stays, beyond it the solve fails."""
 
     def test_inside_the_limit_converges_and_reports(self, wb_solves):
-        """At 3871 K the molten mantle lies up to about 58 K beyond the melt band."""
+        """At 3871 K the molten mantle lies beyond the melt band, most near the last node above a
+        padded top, which the adiabat integrates from 1 bar (about 108 K, more than the 56 K of a
+        node at the surface temperature)."""
         res, msgs = wb_solves['3871']
-        n, excess = res['table_band_excess'][WB['melted_mantle']['eos_file']]
+        melt = WB['melted_mantle']['eos_file']
+        n, excess = res['table_band_excess'][melt]
+        P, T = np.asarray(res['pressure']), np.asarray(res['temperature'])
+        top = int(np.nonzero(P > 0)[0][-1])
+        at_top = seager.band_excess(solver._interpolation_cache[melt], P[top], T[top])
         assert res['converged'] is True and res['converged_bands'] is True
-        assert n > 0 and excess == pytest.approx(3871.0 - 3815.3, abs=1.0)  # the 1-bar node
+        assert n > 0 and excess >= at_top > 3871.0 - 3815.3 + 10.0
         assert res['adiabat_computed'] is True
         assert res['table_band_excess'][WB['melted_mantle']['adiabat_grad_file']][0] > 0
         assert len(msgs) == 1

@@ -17,26 +17,29 @@ on:
 permissions:
   contents: read
 
-# Nightly: unit + smoke + integration with coverage, as ten parallel jobs. Not on push or PR
+# Nightly: unit + smoke + integration with coverage, as parallel jobs. Not on push or PR
 # CI: each smoke or integration test runs a full solve (5-10 min on a 4-vCPU runner under
 # coverage), which adds no bug-finding signal to the unit suite.
 jobs:
   nightly:
     name: Zalmoxis-nightly ${{ matrix.suite }} (ubuntu-latest)
     runs-on: ubuntu-latest
-    # The Wolf & Bower solves, the adiabatic PALEOS solves at 5 M_earth, the accept solves (per file
-    # and 2 whole-tree jobs), the two-layer core solves and the default bit-identity solve (alone,
-    # to finish inside its wall clock) run in their own jobs, beside the rest.
+    # The full solves on the Wolf & Bower tables, the full adiabatic PALEOS solves at 5 M_earth,
+    # the real accept solves (one job per file), the longest of them (5 whole-tree jobs), the
+    # solve of the stored grid start-up reference, the two-layer core solves and the default
+    # bit-identity solve (alone, to finish inside its wall clock) run in their own jobs.
     strategy:
       fail-fast: false
       matrix:
         include:
           - suite: main
-            select: (unit or smoke or integration) and not slow and not wolfbower and not paleos_adiabat and not accept_solves and not accept_solves_long and not accept_solves_newton_setups and not core_two_phase and not default_invariance
+            select: (unit or smoke or integration) and not slow and not wolfbower and not paleos_adiabat and not accept_solves and not accept_solves_long and not accept_solves_newton_setups and not accept_solves_reference and not core_two_phase and not default_invariance
             args: --dist load --cov-fail-under=90
+            job_timeout: 170
           - suite: wolfbower
             select: wolfbower
             args: --dist loadgroup --loadscope-reorder --cov-fail-under=0 -v
+            job_timeout: 170
           - suite: paleos_adiabat
             select: paleos_adiabat and not wolfbower
             args: --dist loadfile --cov-fail-under=0
@@ -46,25 +49,44 @@ jobs:
           - suite: accept_solves_long
             select: accept_solves_long and not accept_solves_newton_setups and not wolfbower and not paleos_adiabat
             args: --dist load --cov-fail-under=0 --durations=0
-            test_timeout: 4800
-            job_timeout: 120
-          - suite: accept_solves_newton_setups
+            test_timeout: 7200
+            job_timeout: 150
+          - suite: accept_solves_reference
+            select: accept_solves_reference and not accept_solves and not accept_solves_long and not accept_solves_newton_setups and not wolfbower and not paleos_adiabat
+            args: --dist load --cov-fail-under=0 --durations=0 -rP
+            test_timeout: 7800
+            job_timeout: 150
+          - suite: accept_solves_newton_setups_paleos_10
             select: accept_solves_newton_setups and not wolfbower and not paleos_adiabat
-            args: --dist load --cov-fail-under=0 --durations=0
+            args: --dist load --cov-fail-under=0 --durations=0 -k "paleos_10_numpy or analytic_1"
+            job_timeout: 170
+          - suite: accept_solves_newton_setups_paleos_1
+            select: accept_solves_newton_setups and not wolfbower and not paleos_adiabat
+            args: --dist load --cov-fail-under=0 --durations=0 -k "paleos_1_numpy or paleos_3_jax"
+            job_timeout: 170
+          - suite: accept_solves_newton_setups_paleos_5
+            select: accept_solves_newton_setups and not wolfbower and not paleos_adiabat
+            args: --dist load --cov-fail-under=0 --durations=0 -k "paleos_5_numpy or paleos_1_jax"
+            job_timeout: 170
+          - suite: accept_solves_newton_setups_within_the_cap
+            select: accept_solves_newton_setups and not wolfbower and not paleos_adiabat
+            args: --dist load --cov-fail-under=0 --durations=0 -k "within_the_cap"
             job_timeout: 170
           - suite: accept_solves_accepted_on
             select: accept_solves and not accept_solves_long and not accept_solves_newton_setups and not wolfbower and not paleos_adiabat
             args: --dist load --cov-fail-under=0 --durations=0 tests/test_accepted_on.py
           - suite: core_two_phase
-            select: core_two_phase and not wolfbower and not paleos_adiabat and not accept_solves and not accept_solves_long and not accept_solves_newton_setups
+            select: core_two_phase and not wolfbower and not paleos_adiabat and not accept_solves and not accept_solves_long and not accept_solves_newton_setups and not accept_solves_reference
             args: --dist load --cov-fail-under=0 --durations=0
           - suite: accept_solves_pressure_root
             select: accept_solves and not accept_solves_long and not accept_solves_newton_setups and not wolfbower and not paleos_adiabat
             args: --dist load --cov-fail-under=0 --durations=0 tests/test_pressure_root_solves.py
           - suite: default_invariance
-            select: default_invariance and not wolfbower and not paleos_adiabat and not accept_solves and not accept_solves_long and not accept_solves_newton_setups and not core_two_phase
+            select: default_invariance and not wolfbower and not paleos_adiabat and not accept_solves and not accept_solves_long and not accept_solves_newton_setups and not core_two_phase and not accept_solves_reference
             args: --cov-fail-under=0 --durations=0
-    # 90 min per job; the longest solves have their own jobs with 120 and 170 min.
+    # 90 min per job, 170 min for main, wolfbower and each Newton setup job, 150 min for
+    # accept_solves_long and accept_solves_reference; the Newton setup sweep is split over 4
+    # jobs by test id (-k).
     timeout-minutes: ${{ matrix.job_timeout || 90 }}
     steps:
       - name: Checkout repository

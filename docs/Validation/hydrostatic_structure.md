@@ -11,7 +11,7 @@ Each case below says why the check exists, what it tests, how we know the right 
 The box "Test details" at the end of each case gives the reference, the tolerance, the test id and the command.
 The [overview](index.md) lists every case of the tab.
 
-**Terms of this page.**
+## Terms used on this page
 
 - $r$ and $R$: the radius, from 0 at the centre, and the outer radius of the planet.
 - $R_\oplus$: the Earth radius of `zalmoxis.constants`, 6335.4 km (the mean Earth radius is 6371 km); $M_\oplus$: the Earth mass, $5.972 \times 10^{24}$ kg.
@@ -41,7 +41,9 @@ The [overview](index.md) lists every case of the tab.
 - JAX path: an optional version of the structure integration in JAX, a Python library for compiled numerical code; it is off by default.
 - Picard outer solver: the default outer loop. It solves the structure for a trial radius, compares the computed mass with the planet mass, and rescales the radius.
 - Newton outer solver: the outer loop with Newton steps and a Brent fallback (`outer_solver = 'newton'`); PROTEUS uses it by default. It needs `relative_tolerance` at or below $10^{-7}$.
-- Newton tolerance (`newton_tol`, default $10^{-4}$): the Newton outer solver accepts a structure when its relative mass error is below this value and its pressure solve converged (`accepted_on = 'newton_tol'`).
+- Outer pass: one step of the outer loop, which integrates the structure at a trial outer radius $R_n$ and returns the mass $M_n$.
+- Blend ramp: the outer passes that move the temperature from the linear first guess (blend 0) to the adiabat (blend 1). A full-adiabat pass is a pass at blend 1 on a temperature table built on a pass at blend 1.
+- Newton tolerance (`newton_tol`, default $10^{-4}$): the Newton outer solver accepts a structure when its relative mass error is below this value and its pressure solve converged (`accepted_on = 'newton_tol'`). In an adiabatic temperature mode where Zalmoxis computes the temperature itself, the Newton root holds the linear first guess, so it only seeds the blend ramp to the adiabat, which runs at the mass tolerance `min(tolerance_outer, newton_tol)` and gives a Picard label.
 - ICB: the inner-core boundary of a two-layer core, between the solid inner core and the liquid outer core. $M_\mathrm{ic}$ and $M_\mathrm{core}$: the inner-core mass and the core mass; $w_\mathrm{oc}$: the mass fraction of a light element in the outer core.
 - Liquidus rule: the ICB lies where the temperature profile meets an iron melting curve $T_\mathrm{liq}(P)$ \[K\] (`core_liquidus`), here the pure-iron curve of Anzellini et al. (2013)[^cite-anzellini2013]; the mass rule sets it by an inner-core mass fraction (`inner_core_mass_fraction`).
 - `tolerance_outer`: the convergence tolerance of the outer loop, default $10^{-3}$. It limits the relative mass error $\lvert M_\mathrm{calc} - M_\mathrm{target} \rvert / M_\mathrm{target}$ and, with `core_liquidus`, the 2 ICB distances as a fraction of the core mass.
@@ -221,7 +223,7 @@ The Earth benchmark and the mass-radius scaling are on the [mass-radius page](ma
 **How to read the plot.** The line is the Lane-Emden density $\sin\xi/\xi$ against $r/R_\oplus$ and gives context. The marks are the density that the test derives from the code pressure, over the central density, every 25th node, for 1 Earth mass. The test asserts the code surface radius (circle) against the exact radius $R_\oplus$ (square) to a relative tolerance of $10^{-4}$, too small to see. The cross is $\sqrt{2}\,R_\oplus$, the radius with $K$ off by a factor 2. A pass means that the circle sits in the square, far from the cross. The mass test and the mass-independence test are not drawn.
 
 ??? info "Test details"
-    - Reference: the analytic $n = 1$ Lane-Emden solution (Chandrasekhar (1939)[^cite-chandrasekhar1939], reference named in the test docstring)
+    - Reference: the analytic $n = 1$ Lane-Emden solution of Chandrasekhar (1939)[^cite-chandrasekhar1939], named in the test docstring
     - Tolerance: surface radius within `rel=1e-4` of $1\,R_\oplus$; integrated mass within `rel=1e-4` of the seeded $2\,M_\oplus$; radius at $1\,M_\oplus$ and $2\,M_\oplus$ equal within `rel=1e-4` and within `rel=1e-3` of $1\,R_\oplus$
     - Test id: `tests/test_polytrope_verification.py`
     - Command: `pytest -o "addopts=" tests/test_polytrope_verification.py`
@@ -335,9 +337,9 @@ A second test checks the same rule with real structure solves. It uses the Analy
 
 **What it tests.** The test runs the 6 Newton setups: the Analytic EOS (equation of state) at 1 Earth mass, PALEOS at 1, 5 and 10 Earth masses, and PALEOS on the JAX path with $T(r)$ from a numpy Picard solve at 1 and 3 Earth masses.
 
-Every setup must accept on the Newton tolerance. Every reached profile must miss $P_t$ by at most $P_t$, and no profile may have a padded node, except on the JAX path at 1 Earth mass.
+The Analytic setup and the 2 JAX setups, which take $T(r)$ from the caller, must accept on the Newton tolerance. The 3 numpy PALEOS setups are adiabatic, so their Newton root seeds the blend ramp, and they must accept on the full adiabat with a strict or mass-only accept and a mass error below $10^{-4}$. Every reached profile must miss $P_t$ by at most $P_t$, and no profile may have a padded node, except on the JAX path at 1 Earth mass and in the 3 numpy PALEOS setups.
 
-On that path $P(R)$ varies irregularly from one trial central pressure to the next near the surface stop, where the integration ends before the outer radius, and the accepted profile can be padded. The case then requires one of 2 things: the reached end of the first sign pair of that pressure solve misses $P_t$ by more than $P_t$, or the solve has no sign pair.
+On these paths $P(R)$ varies irregularly from one trial central pressure to the next near the surface stop, where the integration ends before the outer radius, and the accepted profile can be padded; which of the 2 a solve gives depends on round-off: over planet-mass changes of $k \times 10^{-12}$ ($k$ = 0, 1, 2), the numpy PALEOS 1 Earth-mass setup is padded once and reaches $R$ twice. The case then requires one of 2 things: the reached end of the first sign pair of that pressure solve misses $P_t$ by more than $P_t$, or the solve has no sign pair.
 
 **How we know the right answer.** As in the case above, the boundary condition $P(R) = P_t$ gives the right answer.
 
@@ -346,15 +348,145 @@ On that path $P(R)$ varies irregularly from one trial central pressure to the ne
 ![Surface pressure miss of the accepted profile for 26 solver setups](../assets/validation/pressure_root_sweep.svg#only-light){ width="80%" }
 ![Surface pressure miss of the accepted profile for 26 solver setups](../assets/validation/pressure_root_sweep_dark.svg#only-dark){ width="80%" }
 
-**How to read the plot.** The x-axis is the number of the setup, for 26 setups built from `input/default.toml` and numbered from 0 to 25. The y-axis is $\lvert P(R) - P_t \rvert / P_t$ of the accepted profile, on a log scale. Circles are reached profiles, squares are padded profiles (at 1, since $P(R) = 0$), and a cross above the cap marks a setup without an accepted profile. The dashed line is the cap of $P_t$. Setups 4, 9, 10, 13, 14 and 25 use the Newton outer solver at `relative_tolerance` $10^{-9}$, and the test asserts only these 6; the other 20 setups are shown for comparison; [padded accepts](../Explanations/process_flow.md#padded-accepts) lists every setup. A pass means that every Newton setup is a circle at or below the dashed line. Only setup 10 may be a square, and only under the rule of the JAX path above.
+**How to read the plot.** The x-axis is the number of the setup, for 26 setups built from `input/default.toml` and numbered from 0 to 25. The y-axis is $\lvert P(R) - P_t \rvert / P_t$ of the accepted profile, on a log scale. Circles are reached profiles, squares are padded profiles (at 1, since $P(R) = 0$), and a cross above the cap marks a setup without an accepted profile. The dashed line is the cap of $P_t$. Setups 4, 9, 10, 13, 14 and 25 use the Newton outer solver at `relative_tolerance` $10^{-9}$, and the test asserts only these 6; the other 20 setups are shown for comparison; [padded accepts](../Explanations/process_flow.md#padded-accepts) lists every setup. A pass means that every Newton setup is a circle at or below the dashed line. Only setups 9, 10, 14 and 25 may be squares, and only under the rule above.
 
-**Known limit.** The miss of a reached profile depends on round-off, so another platform gives other values. Over planet-mass changes of $k \times 10^{-13}$ ($k$ = 1 to 5), the PALEOS 1 Earth-mass Newton setup misses by 0.008 to 0.87 $P_t$. The test skips when the PALEOS tables are not under `data/`.
+**Known limit.** Whether a profile ends padded depends on round-off, as the 3 starts above show. The miss of a reached profile can also change, so another platform can give other values. In the plotted run the 4 reached Newton setups 4, 13, 14 and 25 miss by 0.046, 0.18, 0.050 and 0.25 $P_t$. The test skips when the PALEOS tables are not under `data/`.
 
 ??? info "Test details"
     - Reference: the boundary condition $P(R) = P_t$.
-    - Tolerance: every setup accepts on the Newton tolerance; $\lvert P(R) - P_t \rvert \le P_t$ for every reached profile; no padded node except on the JAX path at 1 Earth mass; the padded flag matches the root of the last pressure solve.
+    - Tolerance: the Analytic and JAX setups accept on the Newton tolerance and the numpy PALEOS setups on the full adiabat; $\lvert P(R) - P_t \rvert \le P_t$ for every reached profile; no padded node except on the JAX path at 1 Earth mass and in the numpy PALEOS setups; the padded flag matches the root of the last pressure solve.
     - Test id: `tests/test_pressure_root_solves.py::test_every_newton_setup_meets_the_surface_boundary_condition`
-    - Command: `pytest -o "addopts=" -m accept_solves_newton_setups tests/test_pressure_root_solves.py`; the figure: `python -m tools.validation.pressure_root_sweep run <dir> -j 2`, then `python -m tools.validation.pressure_root_sweep plot <dir> --assets <dir>`.
+    - Command: `pytest -o "addopts=" -m accept_solves_newton_setups -k every_newton_setup tests/test_pressure_root_solves.py`; the figure: `python -m tools.validation.pressure_root_sweep run <dir> -j 2`, then `python -m tools.validation.pressure_root_sweep plot <dir> --assets <dir>`.
+
+## Newton and Picard on the PROTEUS initial structure
+
+**Why this check exists.** PROTEUS starts a coupled run from a Zalmoxis structure solved with the Newton outer solver. The run starts from a wrong state if the Newton result keeps its linear first guess of the temperature, or if a solve returns a mantle temperature that is not the adiabat of its own pressure. Each of the 2 tests below catches one of these faults.
+
+**What it tests.** Each setup has 1 Earth mass, the PALEOS iron core and PALEOS MgSiO$_3$ mantle, and the temperature mode `adiabatic_from_cmb`: the mantle follows the adiabat upward from a fixed CMB temperature $T_\mathrm{cmb}$. The setup `all_options` has a core mass fraction of 0.325 and anchors of $T_\mathrm{surf}$ = 3936 K and $T_\mathrm{cmb}$ = 6121 K; the setup `dummy` has 0.55, 4000 K and 6000 K. Both run on the JAX path with 150 layers, `relative_tolerance` $10^{-9}$ and `absolute_tolerance` $10^{-10}$, the settings in `tools/validation/proteus_ic_solvers.py`.
+
+- The first test solves each setup twice, with the Picard and with the Newton outer solver. The mantle temperatures at 39 mass points between the CMB and the surface may differ by at most 5 K, and the CMB pressures by at most 0.1 GPa.
+- The second test solves `dummy` and `all_options` with Newton, and `all_options` with Picard at the Newton mass tolerance of $10^{-4}$. It computes the adiabat again on the returned pressure. At each mantle node, the top node included, the returned temperature may differ from it by at most 1 K. One node has its own bound (see the known limit below): 6 K from $T_\mathrm{cmb}$ at the first mantle node, the CMB anchor.
+
+In the solves of the second test, the mantle nodes other than the CMB anchor node are at most 0.25 K off the adiabat; the top node is 0.09 K (`dummy`) and 0.08 K (`all_options`) off. Below $10^5$ Pa the adiabat holds the temperature, so a top node near 1 atm changes continuously with the surface pressure ([Temperature across 1 bar](thermal_state.md#temperature-across-1-bar)).
+
+**How we know the right answer.** The 2 outer solvers solve the same equations for the same adiabat, so 2 correct results differ only by the error that the mass tolerance of each solve allows. This is a cross-solver check with no reference solution. The second test is an internal consistency check, not an independent reference: the solve takes its temperature from the adiabat of its pressure, so the adiabat that the same `compute_adiabatic_temperature` gives on the returned structure is the temperature it must return.
+
+**Why it matters.** PROTEUS uses the Newton outer solver by default, and the temperature and pressure of this structure set the initial state of the interior evolution.
+
+![Mantle temperature difference between the Newton and Picard results of 2 PROTEUS setups](../assets/validation/proteus_ic_solvers.svg#only-light){ width="70%" }
+![Mantle temperature difference between the Newton and Picard results of 2 PROTEUS setups](../assets/validation/proteus_ic_solvers_dark.svg#only-dark){ width="70%" }
+
+**How to read the plot.** The x-axis is the mantle mass coordinate, 0 at the CMB and 1 at the surface. The y-axis is the absolute difference between the Newton and the Picard mantle temperature in K, on a log scale; differences below $10^{-3}$ K are drawn at $10^{-3}$ K. Each setup has a solid line, and the broken line is the 5 K limit. A pass means that both lines stay below the limit. The CMB pressures differ by 0.061 GPa in `all_options` and by 0.065 GPa in `dummy`, inside the limit of 0.1 GPa.
+
+**Known limit.** One node of the returned mantle does not follow the adiabat of its own pressure: the CMB anchor node. It reads one T(P) table that holds $T_\mathrm{surf}$ on the core nodes and $T_\mathrm{cmb}$ at the CMB, so its temperature takes a small part of that jump. It lies 5.46 K below $T_\mathrm{cmb}$ in `all_options` with Newton, 5.45 K with Picard at $10^{-4}$, and 0.25 K in `dummy` with Newton.
+
+- The Picard solve of the first test runs at the mass tolerance of the PROTEUS setups, $3 \times 10^{-3}$, and carries the error of that tolerance. There the `all_options` mantle lies on average 1.6 K below the adiabat of its own pressure. At $10^{-4}$ the difference is 0.1 K or less.
+- These bounds hold for these 2 setups. The start-up solves of the PROTEUS grid go beyond them in the places that [Secant tail and seeded re-solve on the PROTEUS grid start-up](#secant-tail-and-seeded-re-solve-on-the-proteus-grid-start-up) lists.
+
+??? info "Test details"
+    - Reference: the Picard result of the same setup (cross-solver check); the adiabat that the same `compute_adiabatic_temperature` gives on the returned pressure (internal consistency check).
+    - Tolerance: 5 K at 39 mantle mass points and 0.1 GPa at the CMB; 1 K at the mantle nodes, the top node included, and 6 K from $T_\mathrm{cmb}$ at the CMB anchor node.
+    - Test id: `tests/test_accepted_on.py::test_newton_gives_the_mantle_adiabat_of_picard_on_the_proteus_initial_structure`, `tests/test_accepted_on.py::test_the_returned_mantle_temperature_is_the_adiabat_of_the_returned_pressure`
+    - Markers: `smoke` and `accept_solves_long` (first test), `smoke` and `accept_solves` (second test); both run in the nightly workflow. They carry no `reference_pinned` marker, since their reference is another solve, not a published value.
+    - Command: `pytest -o "addopts=" -m accept_solves_long tests/test_accepted_on.py -k proteus_initial_structure` and `pytest -o "addopts=" -m accept_solves tests/test_accepted_on.py -k returned_mantle_temperature`; the figure: `python -m tools.validation.proteus_ic_solvers run <dir>`, then `python -m tools.validation.proteus_ic_solvers plot <dir> --assets <dir>`.
+
+## Secant tail and seeded re-solve on the PROTEUS grid start-up
+
+**Why this check exists.** Two rules cut the cost of the start-up structure solves of a PROTEUS run: secant steps on the radius at the end of the blend ramp, and a re-solve that starts from the seed, the `radii`, `pressure` and `mass_enclosed` of the solve before (`adiabat_seed`).
+A wrong secant step can leave the accepted structure farther from the adiabat of its own planet than the plain ramp does, and a seeded solve could accept a pass whose temperature table no pass of the solve built.
+The test fails when a returned structure is outside the tolerances below, when its accept label is not `strict`, or when its pass is not on a table of blend 1.
+
+**What it tests.** The setup is the first structure solve of the PROTEUS grid test case with a core mass fraction of 0.95: 0.7 Earth masses, the PALEOS iron core and MgSiO$_3$ mantle, `temperature_mode = "adiabatic_from_cmb"`, 150 layers, the Newton outer solver on the numpy path.
+The first start-up re-solve follows, with a surface pressure of 51.3 MPa, a planet mass 0.07 % lower and a core mass fraction of 0.9505316; it runs once from the seed of the first solve and once without it.
+The first solve has a surface pressure of 1 atm (101325 Pa).
+A repeat of the first solve at a planet mass $2 \times 10^{-12}$ higher runs in the nightly job of the stored reference; on the development machine its top node loses the adiabat step (see the known limit below).
+Each solve is compared with REF, the same solve at a mass tolerance of $10^{-6}$.
+The lag of a node is the difference between the returned temperature at that node and the adiabat computed again on the returned pressure.
+Relative differences are $|x - x_\mathrm{REF}| / |x_\mathrm{REF}|$.
+
+- The mantle temperature at 39 mass points, from the lowest to the second-highest of the 12 mantle nodes, differs from REF by at most 1 K.
+- The temperature of the top mantle node differs from REF by at most 1 K in the re-solves and 2 K in the first solves (see the known limit below).
+- The outer radius, the central pressure and the core radius differ from REF by at most $2 \times 10^{-4}$ (relative).
+- The CMB pressure differs from REF by at most $4 \times 10^{-3}$ (relative). This is $2\,\mathrm{tol} / (1 - f_\mathrm{core})$, with the mass tolerance $\mathrm{tol} = 10^{-4}$ and the core mass fraction $f_\mathrm{core} = 0.95$: the core mass is fixed, so the mass error sits in the mantle and moves the CMB pressure by that error divided by the mantle mass fraction $1 - f_\mathrm{core}$. The core radius and the CMB pressure are read at the core mass by interpolation in mass.
+- The lag is at most 6 K at the CMB node and 1 K at the other mantle nodes in every solve, and at the top node at most 3 K in the first solves and 1 K in the 2 re-solves.
+- The seeded and the unseeded re-solve differ by at most 2.5 K at the 39 mass points and at the top node, and $5 \times 10^{-4}$ in radius.
+- The mass-weighted mean temperature of the core nodes differs from REF by at most 10 K in every solve.
+  The last core node, just below the CMB node, differs by at most 700 K: it reads the edge of the mantle temperature table (see the known limit below).
+  Every other core node differs by at most 1 K. Each core node is compared with REF interpolated in mass over the core nodes of REF, not across the temperature step at the CMB node of REF.
+  The REF core is at 4000 K at every core node, and its last core node has a weight of 0.78 % in the mass-weighted mean; so for a solve with the core node masses of REF, these 2 node bounds keep the mean within 6.5 K in the first solve and in the re-solve, and the 10 K bound of the mean follows from them. The measured mean lies 4.5 K from REF in the first solve and 4.1 K in the unseeded re-solve.
+- The accept label of every solve is `strict`, and the accepted pass is on a table of blend 1.
+- The first solve needs at most 3 passes on a full-adiabat table. The seeded re-solve needs at most 4 passes and at most half the structure integrations of the unseeded one.
+- On the JAX path (`use_jax = true`, the PROTEUS default) a second test runs the same 3 solves against REF solved on that path, with the same REF bounds for the first solve and the seeded re-solve and the same pass bounds for the seeded re-solve; it does not bound the passes of the first solve. The unseeded re-solve is compared only with the seeded one (2.5 K, $5 \times 10^{-4}$ in radius): accepted at the mass tolerance $10^{-4}$, it lies 0.977 K from that REF in the mantle on macOS and 1.187 K on the Ubuntu runner of the nightly workflow (0.253 K on the numpy path on macOS; all from this repository's test), and 0.777 K from the seeded re-solve on Ubuntu. At the reference tolerance the JAX REF lies within 0.07 K in the mantle and $1.4 \times 10^{-5}$ in radius of the numpy REF.
+
+**How we know the right answer.** REF runs until its mass error is 100 times smaller than the mass tolerance of the ramp, $10^{-4}$.
+So REF stands for the converged structure; this is a convergence check, not an external reference.
+REF is solved once on each path and stored in `tests/data/grid_start_up_reference.json`, with the md5 of both EOS tables and a hash of the Zalmoxis source that solved it (every Zalmoxis module the solve loads, without `_version.py`, which the install writes with the commit in it).
+The test stops when a table differs from the stored one.
+A separate nightly job solves REF again and fails when it moves by more than 0.1 K in the mantle, $10^{-5}$ in radius, central pressure or core radius, or $4 \times 10^{-5}$ in CMB pressure, or when the source hash differs.
+Then `python -m tools.validation.grid_start_up_reference` writes the file again.
+
+**Why it matters.** These solves set the radius, the core size and the initial mantle temperature of every PROTEUS run with Zalmoxis.
+
+![Relative mass error per outer pass of the first solve and of the re-solve with and without the seed](../assets/validation/grid_start_up_ramp.svg#only-light){ width="70%" }
+![Relative mass error per outer pass of the first solve and of the re-solve with and without the seed](../assets/validation/grid_start_up_ramp_dark.svg#only-dark){ width="70%" }
+
+**How to read the plot.** The x-axis is the outer pass of the solve that returns.
+In the first solve and in the re-solve without the seed, pass 1 is the pass at the radius of the Newton root.
+Passes 2 to 5 blend in the adiabat, and the passes on a full-adiabat table start at pass 6.
+The y-axis is the relative mass error $|M_n - M_p| / M_p$ on a log scale, with errors below $10^{-7}$ drawn at $10^{-7}$.
+Circles are the first solve, open squares the re-solve without the seed and triangles the re-solve with it.
+The broken line is the mass tolerance $10^{-4}$; the dotted line is twice that, below which the secant steps stop.
+The test asserts the pass counts; the error values are context.
+A pass means that the first-solve curve ends below the broken line after at most 3 passes from pass 6, and the seeded curve ends below it within 4 passes.
+
+**Known limit.** The tests bound the lag for the 2 setups of [Newton and Picard on the PROTEUS initial structure](#newton-and-picard-on-the-proteus-initial-structure) and for the setup above, 1 of the 4 PROTEUS grid cases.
+Replays of the saved start-up inputs of all 4 grid cases (core mass fraction 0.35 and 0.95; 1000 and 2000 ppmw H, parts per million by weight of hydrogen), taken from a PROTEUS grid run and outside the tests of this repository, give these values; the row of the re-solves at core mass fraction 0.95 comes from the grid start-up test of this repository.
+The first 5 rows exceed a bound; the other 7 lie inside one.
+
+| Case | Quantity | Value | Bound |
+|---|---|---|---|
+| Core mass fraction 0.35, first solve | lag at the CMB node | 92.4 K | 6 K |
+| Core mass fraction 0.35, first solve | lag at the other mantle nodes | 2.09 K | 1 K |
+| Core mass fraction 0.35, first solve | mantle temperature from REF | 2.17 K | 1 K |
+| Core mass fraction 0.35, re-solves | lag at the mantle nodes, top node included | up to 1.26 K | 1 K |
+| Core mass fraction 0.35, re-solves | mantle temperature from REF, without the seed / with it | up to 1.29 K / 1.25 K | 1 K |
+| Core mass fraction 0.95, first solve at 1 atm | lag at the top node | 2.21 K | 3 K, inside |
+| Core mass fraction 0.95, first solve at 1 atm | top node from REF | 1.29 K | 2 K, inside |
+| Core mass fraction 0.95, first solve | last core node from REF | 586 K | 700 K, inside |
+| Core mass fraction 0.95, re-solves | last core node from REF, unseeded / seeded | 526 K / 0 K | 700 K, inside |
+| Core mass fraction 0.95, first solve | mass-weighted mean core temperature from REF | 4.5 K | 10 K, inside |
+| All 4 cases, every solve | CMB pressure from REF | up to $7.1 \times 10^{-4}$ on the numpy path, $1.7 \times 10^{-3}$ in the JAX first solve at core mass fraction 0.95 | $4 \times 10^{-3}$ at core mass fraction 0.95, inside |
+| Core mass fraction 0.35, 2000 ppmw H, seeded re-solve | lag at the CMB node | up to 5.4 K | 6 K, inside |
+
+- At core mass fraction 0.35 the cube-root rule converges in 2 full-adiabat passes, so the secant tail does not step and the first solve is the same as without it.
+- At 1 atm the first solve builds its temperature table on the pressure of the pass before, and its top node lags its own adiabat more than the other mantle nodes: 2.21 K on the numpy path and 2.03 K on the JAX path, against at most 0.1 K. It lies 1.29 K (numpy), 0.20 K (JAX) and 0.98 K (planet mass $2 \times 10^{-12}$ higher) from REF on macOS, and 2.23 K (JAX) on Linux in 2 CI nightly runs. The tests bound the top node of the first solves at 3 K from REF and a lag of 3 K, and that of the re-solves, at 51.3 MPa, at 1 K from REF and a lag of 1 K.
+- The core nodes and the CMB node read one T(P) table with the mantle, and the solve builds that table on the pressure of the pass before.
+  The last core node (index 137, 0-based, of 150 nodes at core mass fraction 0.95) therefore reads the edge of that table.
+  With the secant tail, which moves the CMB pressure more from pass to pass, this node lies 586 K above REF in the first solve, 526 K in the unseeded re-solve and 0 K in the seeded re-solve.
+  REF has the core temperature at this node.
+  The node is in the cell below the CMB, which holds 0.7 % of the planet mass.
+  So the mass-weighted mean temperature of the core nodes lies only 4.5 K above REF, and the core radius stays within $3 \times 10^{-5}$ of REF.
+  The tests bound the mean at 10 K, this node at 700 K and the other core nodes at 1 K; the other core nodes lie 0 K from REF in the 3 solves of the test.
+  One more pass on the accepted structure gives this node the core temperature again (4000 K, measured); the solve does not do it.
+- In the `adiabatic_from_cmb` mode every core node has the surface temperature (4000 K here) and the energetics module computes the core temperature. A core at the CMB temperature (6000 K) gives a larger core radius and a lower mean core density inside it; [Zalmoxis issue 131](https://github.com/FormingWorlds/Zalmoxis/issues/131) gives their size in the first solve of this case.
+
+??? info "Test details"
+    - Reference: REF, the same solve at a mass tolerance of $10^{-6}$ (convergence check), stored in `tests/data/grid_start_up_reference.json`.
+    - Tolerance: 1 K at 39 mantle mass points up to the second-highest mantle node; top mantle node 1 K from REF in the re-solves and 2 K in the first solves; $2 \times 10^{-4}$ in outer radius, central pressure and core radius; $4 \times 10^{-3}$ in CMB pressure; lags of 6 K (CMB node) and 1 K (other mantle nodes) in every solve, and at the top node 3 K in the first solves and 1 K in the re-solves; seeded against unseeded 2.5 K and $5 \times 10^{-4}$; mass-weighted mean core temperature 10 K, last core node 700 K and the other core nodes 1 K from REF; at most 3 full-adiabat passes in the first solve, at most 4 passes and half the integrations in the seeded re-solve.
+    - Test id: `tests/test_accepted_on.py::test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_start_up`
+    - Repeat of the first solve: `tests/test_accepted_on.py::test_a_first_solve_at_a_planet_mass_2e12_higher_keeps_the_stored_reference` (markers `slow`, `accept_solves_reference` and `physics_invariant`; nightly job `accept_solves_reference`, 3600 s per test).
+    - Tests of the rules alone, on analytic densities:
+        - `tests/test_ramp_tail.py`
+        - `tests/test_accepted_on.py::test_the_secant_tail_reaches_the_mass_in_3_full_adiabat_passes`
+        - `tests/test_accepted_on.py::test_the_secant_steps_above_2_tolerances_until_a_secant_step_does_not_shrink_the_error`
+        - `tests/test_accepted_on.py::test_a_ramp_without_the_secant_key_takes_no_secant_step`
+        - `tests/test_accepted_on.py::test_a_seeded_solve_accepts_its_second_pass`
+        - `tests/test_accepted_on.py::test_the_first_seeded_pass_carries_the_seed_label_and_is_not_accepted`
+        - `tests/test_accepted_on.py::test_the_seed_table_pass_starts_no_secant`
+    - Markers: `smoke`, `accept_solves_long`, `physics_invariant` and `reference_pinned`; it runs in the nightly workflow. It writes its plot only with `--validation-plots` and does not compare it with the committed pair, because the number of passes can change with round-off.
+    - Plotted run (can change with round-off): in the first solve the error rises to about $3 \times 10^{-3}$ in passes 2 to 5 and is $2.4 \times 10^{-3}$ at pass 6; the cube-root rule reaches $1.7 \times 10^{-3}$ at pass 7 and the secant step $1.4 \times 10^{-5}$ at pass 8. A replay of the same first solve with the cube-root rule alone, without the secant tail, takes 10 passes at blend 1, from $2.4 \times 10^{-3}$ to $8.5 \times 10^{-5}$. The re-solve takes 4 passes from the seed against 8 without it (1 at the Newton root, 4 blend passes, 3 full-adiabat passes).
+    - Command: `pytest -o "addopts=" -m accept_solves_long tests/test_accepted_on.py -k grid_start_up --validation-plots`.
+    - Stored REF: `tests/test_accepted_on.py::test_the_stored_grid_start_up_reference_is_the_converged_solve_of_the_source` solves it again (markers `slow`, `accept_solves_reference` and `physics_invariant`; nightly job `accept_solves_reference`, 7800 s per test, 150 min per job). Tolerance: 0.1 K in the mantle up to the second-highest node, top node 1 K in the re-solves and 2 K in the first solves, $10^{-5}$ in radius, central pressure and core radius, $2\,\mathrm{tol}_\mathrm{REF} / (1 - f_\mathrm{core}) = 4 \times 10^{-5}$ in CMB pressure, and the stored source hash. Command to write it again: `python -m tools.validation.grid_start_up_reference`; the hash leaves out the files in `GENERATED` of that script (`_version.py`).
 
 ## Inner-core boundary of a two-layer core
 
@@ -417,5 +549,5 @@ pytest -o "addopts=" tests/test_first_principles.py tests/test_polytrope_verific
 Without `--validation-plots` the tests write nothing: each compares the data of its plot with the committed pair, and a missing or stale file fails the test.
 
 [^cite-seager2007]: S. Seager, M. Kuchner, C. A. Hier-Majumder, B. Militzer, *[Mass-Radius Relationships for Solid Exoplanets](https://doi.org/10.1086/521346)*, The Astrophysical Journal, 669(2), 1279-1297, 2007. [SciX](https://scixplorer.org/abs/2007ApJ...669.1279S/abstract).
-[^cite-chandrasekhar1939]: S. Chandrasekhar, *An Introduction to the Study of Stellar Structure*, University of Chicago Press, 1939. [SciX](https://scixplorer.org/abs/1939isss.book.....C/abstract).
+[^cite-chandrasekhar1939]: S. Chandrasekhar, *An Introduction to the Study of Stellar Structure*, book (no DOI), Chicago, 1939. [SciX](https://scixplorer.org/abs/1939isss.book.....C/abstract).
 [^cite-anzellini2013]: S. Anzellini, A. Dewaele, M. Mezouar, P. Loubeyre, G. Morard, *[Melting of Iron at Earth's Inner Core Boundary Based on Fast X-ray Diffraction](https://doi.org/10.1126/science.1233514)*, Science, 340, 464-466, 2013. [SciX](https://scixplorer.org/abs/2013Sci...340..464A/abstract).

@@ -1,12 +1,15 @@
 """The per-file nightly jobs that select ``accept_solves`` name their files, so a marked test
 elsewhere would run in no job; the ``accept_solves_long`` and ``accept_solves_newton_setups``
-jobs select over the whole tree. See docs/How-to/build_tests.md for the test tiers."""
+jobs select over the whole tree, the latter split by test id (``-k``) over several jobs. See
+docs/How-to/build_tests.md for the test tiers."""
 
 from __future__ import annotations
 
+import argparse
 import ast
 import itertools
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -39,9 +42,31 @@ def _entry(job):
     return select.group(1).strip() if select else '', re.findall(r'tests/([\w/]+\.py)', job)
 
 
+def _keyword(job):
+    """The ``-k`` expression that pytest reads from the args of one matrix entry (after the
+    YAML comment and quotes; the last ``-k``, also in a flag group such as ``-xk``), or None."""
+    args = re.search(r'^\s*args:(.*)$', job, re.M)
+    words = shlex.split(args.group(1), comments=True) if args else []
+    if len(words) == 1:
+        words = shlex.split(words[0])
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('-k')
+    for flag in 'lqsvx':
+        parser.add_argument(f'-{flag}', action='count')
+    for flag in 'cmnopr':
+        parser.add_argument(f'-{flag}')
+    return parser.parse_known_args(words)[0].k
+
+
 def _jobs(workflow):
-    """(select, test files named in the job) of each nightly suite."""
-    return [_entry(job) for job in _suites(workflow).values()]
+    """(select, test files named in the job) of each nightly suite; the entries that split one
+    select by ``-k`` count once (``_newton_faults`` checks that they split it)."""
+    jobs = []
+    for job in _suites(workflow).values():
+        entry = _entry(job)
+        if _keyword(job) is None or entry not in jobs:
+            jobs.append(entry)
+    return jobs
 
 
 def _accept_select(workflow):
@@ -177,6 +202,7 @@ _MARKS = (
     'accept_solves_newton_setups',
     'core_two_phase',
     'default_invariance',
+    'accept_solves_reference',
 )
 _SPECIAL = set(_MARKS) - {'unit', 'smoke', 'integration', 'slow'}
 
@@ -279,26 +305,8 @@ def test_every_file_with_the_accept_solves_mark_is_named_in_the_workflow():
     assert [m for m in marked if m not in workflow] == []
 
 
-NEWTON = (
-    'test_pressure_root_solves.py::test_every_newton_setup_meets_the_surface_boundary_condition'
-)
-
-
-def _solves_nodes(select, files):
-    """Node ids of tests/test_pressure_root_solves.py that a job with ``select`` runs."""
-    if files and 'test_pressure_root_solves.py' not in files:
-        return set()
-    done = subprocess.run(
-        [sys.executable, '-m', 'pytest', '--collect-only', '-q', '-m', select]
-        + ['-o', 'addopts=', '-p', 'no:cacheprovider', '--rootdir', str(ROOT / 'tests')]
-        + ['test_pressure_root_solves.py'],
-        cwd=ROOT / 'tests',
-        capture_output=True,
-        text=True,
-        timeout=600,
-    )
-    assert done.returncode in (0, 5), done.stdout[-2000:] + done.stderr[-2000:]
-    return {line for line in done.stdout.splitlines() if '::' in line}
+NEWTON_MARK = 'accept_solves_newton_setups'
+SOLVES = ['test_pressure_root_solves.py']
 
 
 # pytest-timeout applies the closest timeout marker of a test; this run prints it per test.
@@ -313,51 +321,167 @@ sys.exit(pytest.main(sys.argv[1:], plugins=[Closest()]))
 """
 
 
-def _timeouts(select):
-    """Closest timeout marker [s] of each test in the whole tree that ``select`` takes."""
+def _timeouts(select, keyword=None, files=()):
+    """Closest timeout marker [s] of each test in ``files`` (the whole tree if none) that
+    ``select`` and ``keyword`` take."""
     done = subprocess.run(
         [sys.executable, '-c', _TIMEOUTS, '--collect-only', '-q', '-m', select]
-        + ['-o', 'addopts=', '-p', 'no:cacheprovider', '--rootdir', str(ROOT / 'tests')],
+        + (['-k', keyword] if keyword else [])
+        + ['-o', 'addopts=', '-p', 'no:cacheprovider', '--rootdir', str(ROOT / 'tests')]
+        + list(files),
         cwd=ROOT / 'tests',
         capture_output=True,
         text=True,
         timeout=600,
     )
-    assert done.returncode == 0, done.stdout[-2000:] + done.stderr[-2000:]
+    assert done.returncode in (0, 5), done.stdout[-2000:] + done.stderr[-2000:]
     rows = [
         line.split()[1:] for line in done.stdout.splitlines() if line.startswith('TIMEOUT ')
     ]
     return {node: None if t == 'None' else float(t) for node, t in rows}
 
 
-@pytest.mark.unit
-def test_the_newton_setup_sweep_runs_alone_in_its_own_job():
-    """The sweep over every Newton setup is the longest real solve: it runs in one job, alone,
-    and the closest timeout marker of each test in the long and Newton setup jobs fires before
-    the job limit, so a slow runner names the test."""
-
-    suites = _suites(WORKFLOW.read_text())
-    nodes = {name: _solves_nodes(*_entry(job)) for name, job in suites.items()}
-    assert [name for name, ids in nodes.items() if NEWTON in ids] == [
-        'accept_solves_newton_setups'
+def _newton_faults(workflow):
+    """Faults of the jobs that take the Newton setup mark: each of its tests (in one file, see
+    the smoke test below) runs in exactly one of them, each selects over the whole tree, no
+    other job has a ``-k``, and the closest timeout markers of the tests of one job add up to
+    less than its limit. The sum is the time of the tests run one after the other; they run
+    at the same time on separate workers, so the rest of the sum is room for the job steps."""
+    suites = _suites(workflow)
+    entries = {n: _entry(job) for n, job in suites.items()}
+    pattern = rf'(?<!not )\b{NEWTON_MARK}\b'
+    split = [n for n, (select, _) in entries.items() if re.search(pattern, select)]
+    faults = [('selects over named files', n) for n in split if entries[n][1]]
+    faults += [
+        ('-k outside the Newton jobs', n)
+        for n, job in suites.items()
+        if n not in split and _keyword(job) is not None
     ]
-    assert nodes['accept_solves_newton_setups'] == {NEWTON}
-    assert (
-        not _entry(suites['accept_solves_newton_setups'])[1]
-        + _entry(suites['accept_solves_long'])[1]
-    ), 'the long and Newton setup jobs select over the whole tree'
+    marks = {
+        n: _timeouts(entries[n][0], _keyword(suites[n]), entries[n][1] or SOLVES) for n in split
+    }
+    for node in sorted(_timeouts(NEWTON_MARK, files=SOLVES)):
+        runs = [n for n, m in marks.items() if node in m]
+        if len(runs) != 1:
+            faults.append(('runs in', node, runs))
+    for n, m in marks.items():
+        if not m or None in m.values():
+            faults.append(('no timeout marker', n, m))
+        elif sum(m.values()) >= 60 * _job_limit(suites[n]):
+            faults.append(('timeouts over the job limit', n, sum(m.values())))
+    return faults
+
+
+@pytest.mark.unit
+def test_the_newton_setup_sweep_is_split_over_its_jobs():
+    """The Newton setup sweep and the PALEOS solve within the cap are the longest real solves:
+    each of their tests runs in one Newton job, and in the long job each closest timeout
+    marker fires before the job limit. One matrix line sets the job limits."""
+    workflow = WORKFLOW.read_text()
+    assert _newton_faults(workflow) == []
+    suites = _suites(workflow)
+    assert len([n for n in suites if n.startswith(NEWTON_MARK)]) == 4
+    assert not _entry(suites['accept_solves_long'])[1], 'the long job selects over the tree'
     key = r'^( *)["\']?timeout-minutes["\']?:\s*(.*?)\s*(?:#.*)?$'
-    limits = re.findall(key, WORKFLOW.read_text(), re.M)
+    limits = re.findall(key, workflow, re.M)
     assert limits == [('    ', '${{ matrix.job_timeout || 90 }}')], limits
-    for name in ('accept_solves_newton_setups', 'accept_solves_long'):
-        marks = _timeouts(_entry(suites[name])[0])
-        assert marks and None not in marks.values(), (name, marks)
-        assert max(marks.values()) < 60 * _job_limit(suites[name]), (name, marks)
+    marks = _timeouts(_entry(suites['accept_solves_long'])[0])
+    assert marks and None not in marks.values(), marks
+    assert max(marks.values()) < 60 * _job_limit(suites['accept_solves_long']), marks
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    'old, new, kind',
+    [
+        pytest.param(
+            '"paleos_5_numpy or paleos_1_jax"', '"paleos_5_numpy"', 'runs in', id='dropped_id'
+        ),
+        pytest.param(
+            '"within_the_cap"', '"within_the_cap or analytic_1"', 'runs in', id='id_in_2_jobs'
+        ),
+        pytest.param(
+            '-k "paleos_1_numpy or paleos_3_jax"\n            job_timeout: 170',
+            '-k "paleos_1_numpy or paleos_3_jax"\n            job_timeout: 120',
+            'timeouts over the job limit',
+            id='timeouts_over_limit',
+        ),
+        pytest.param(
+            '-k "within_the_cap"',
+            '-k "within_the_cap" tests/test_pressure_root_solves.py',
+            'selects over named files',
+            id='named_files',
+        ),
+        pytest.param(
+            '-k "within_the_cap"', '-k "no_such_test"', 'no timeout marker', id='empty_job'
+        ),
+        pytest.param(
+            '--durations=0 tests/test_pressure_root_solves.py',
+            '--durations=0 -k "smooth_kink" tests/test_pressure_root_solves.py',
+            '-k outside the Newton jobs',
+            id='k_outside_newton',
+        ),
+        pytest.param(
+            '--durations=0 tests/test_pressure_root_solves.py',
+            "--durations=0 -k 'smooth_kink' tests/test_pressure_root_solves.py",
+            '-k outside the Newton jobs',
+            id='k_single_quotes',
+        ),
+        pytest.param(
+            '--durations=0 tests/test_pressure_root_solves.py',
+            '--durations=0 -k=smooth_kink tests/test_pressure_root_solves.py',
+            '-k outside the Newton jobs',
+            id='k_equals',
+        ),
+        pytest.param(
+            'args: --dist load --cov-fail-under=0 --durations=0 tests/test_pressure_root_solves.py',
+            'args: "--dist load --cov-fail-under=0 --durations=0 -k smooth_kink'
+            ' tests/test_pressure_root_solves.py"',
+            '-k outside the Newton jobs',
+            id='k_in_quoted_args',
+        ),
+        pytest.param(
+            '--durations=0 tests/test_pressure_root_solves.py',
+            '--durations=0 -xk smooth_kink tests/test_pressure_root_solves.py',
+            '-k outside the Newton jobs',
+            id='k_grouped',
+        ),
+        pytest.param(
+            '--durations=0 tests/test_pressure_root_solves.py',
+            "--durations=0 -k smooth_kink tests/test_pressure_root_solves.py  # the kink's tests",
+            '-k outside the Newton jobs',
+            id='k_and_comment',
+        ),
+        pytest.param(
+            '-k "within_the_cap"', '-k "within_the_cap" -k analytic_1', 'runs in', id='k_twice'
+        ),
+    ],
+)
+def test_a_fault_in_the_newton_split_is_found(old, new, kind):
+    """A setup in no Newton job or in 2 of them, a job whose tests' timeouts add up to its
+    limit or more, a Newton job that names files or runs no test, or a -k in any form on any
+    other job is a fault."""
+    workflow = WORKFLOW.read_text()
+    assert workflow.count(old) == 1
+    assert kind in {f[0] for f in _newton_faults(workflow.replace(old, new))}
+
+
+@pytest.mark.unit
+def test_each_newton_setup_timeout_covers_its_clock_and_the_retry():
+    """The pytest timeout of each Newton setup ends after its own clock and the 600 s retry
+    clock of ``main``, and a setup whose timeout equals its clock is found."""
+    from tests.test_pressure_root_solves import NEWTON_SETUPS
+
+    def short(setups):
+        return [s[0] for s in setups if s[5] < s[4] + 600]
+
+    assert short(NEWTON_SETUPS) == []
+    assert short([s[:5] + (s[4],) for s in NEWTON_SETUPS]) == [s[0] for s in NEWTON_SETUPS]
 
 
 @pytest.mark.smoke
 def test_only_the_newton_setup_sweep_carries_its_mark():
-    """The Newton setup job selects over the whole tree (about 20 s to collect), and the
+    """The Newton setup jobs select over the whole tree (about 20 s to collect), and the
     mark is on one file only; the unit test above checks the tests of that file."""
     assert _marked(ROOT / 'tests', 'accept_solves_newton_setups') == {
         'test_pressure_root_solves.py'

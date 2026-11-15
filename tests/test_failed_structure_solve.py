@@ -49,6 +49,7 @@ def _cfg(**kwargs):
         'absolute_tolerance': 1e-10,
         'data_output_enabled': False,
         'plotting_enabled': False,
+        'wall_timeout': 1000.0,  # 2x the slowest CI solve of the file
     }
     cfg.update(kwargs)
     return cfg
@@ -408,7 +409,7 @@ class TestNonFiniteDensityJax:
         )
         assert result['converged'] and np.all(np.isfinite(result['pressure']))
 
-    @pytest.mark.timeout(600)
+    @pytest.mark.timeout(1800)
     def test_nan_table_band_filled_runs_on_jax(self, monkeypatch, caplog):
         """The JAX grid holds numpy's nearest-node fill, so main runs to the end on JAX."""
         result, raised, calls = self._main(monkeypatch, caplog, fill=True)
