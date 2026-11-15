@@ -1048,15 +1048,69 @@ class TestMidpointAdiabat:
         with pytest.raises(StructureInvariantError, match='finite'):
             _call(P, 'cmb', 3000.0)
 
-    def test_non_positive_surface_temperature_raises(self, monkeypatch):
-        """A surface anchor at 0 K or below gives no positive profile and raises."""
-        from zalmoxis.invariants import StructureInvariantError
+    @pytest.mark.parametrize(
+        ('anchor', 'value'),
+        [
+            ('surface', 0.0),
+            ('surface', -10.0),
+            ('surface', np.nan),
+            ('surface', np.inf),
+            ('surface', 2e5),
+            ('cmb', 50.0),
+            ('cmb', 99.9),
+            ('cmb', 2e5),
+            ('cmb', np.nan),
+        ],
+    )
+    def test_anchor_temperature_outside_its_range_raises_value_error(
+        self, monkeypatch, anchor, value
+    ):
+        """The anchor temperature must be finite, positive and at most 1e5 K, and with the CMB
+        anchor at least 100 K (the node caps); outside that range the call raises ValueError
+        before any nabla read, not a profile invariant error from a capped node."""
+        calls = []
+        _stub_adiabat(monkeypatch, lambda P, T: 0.1, calls)
+        P = _profile(n=5)[1]
+        with pytest.raises(ValueError, match='temperature'):
+            _call(P, anchor, value)
+        assert calls == []
 
+    def test_non_finite_surface_temperature_with_the_cmb_anchor_raises(self, monkeypatch):
+        """With the CMB anchor the core nodes carry the surface temperature, so it must be finite
+        and positive too; NaN raises ValueError, while the edges 100 K and 1e5 K run."""
         _stub_adiabat(monkeypatch, lambda P, T: 0.1)
-        _, P, _ = _profile(n=5)
-        for t in (0.0, -10.0):
-            with pytest.raises(StructureInvariantError, match='positive'):
-                _call(P, 'surface', t)
+        P = _profile(n=5)[1]
+        r, m = np.linspace(0.0, 6.4e6, 5), np.linspace(0, M_E, 5)
+        kw = dict(
+            radii=r,
+            pressure=P,
+            mass_enclosed=m,
+            cmb_mass=0.5 * m[1],
+            core_mantle_mass=M_E,
+            layer_mixtures={'mantle': _StubTdepMixture()},
+            material_dictionaries={},
+            anchor='cmb',
+        )
+        with pytest.raises(ValueError, match='surface_temperature'):
+            compute_adiabatic_temperature(
+                surface_temperature=np.nan, cmb_temperature=3000.0, **kw
+            )
+        for t in (100.0, 1e5):
+            T = compute_adiabatic_temperature(
+                surface_temperature=2000.0, cmb_temperature=t, **kw
+            )
+            assert np.all(np.isfinite(T)) and T[1] == t
+
+    @pytest.mark.physics_invariant
+    @pytest.mark.parametrize('nabla', [1e6, np.inf])
+    def test_a_huge_nabla_caps_the_profile_at_the_table_top(self, monkeypatch, nabla):
+        """A nabla far above any table value (1e6, inf) drives T to the 1e5 K cap of each node
+        instead of an overflow; the anchor keeps its value and no node exceeds the cap."""
+        _stub_adiabat(monkeypatch, lambda P, T: nabla)
+        P = _profile(n=11)[1]
+        T = _call(P, 'surface', 3000.0)
+        assert T[-1] == 3000.0
+        np.testing.assert_array_equal(T[:-1], 1e5)
 
     @pytest.mark.physics_invariant
     def test_max_dlnp_property_over_its_domain(self, monkeypatch):
