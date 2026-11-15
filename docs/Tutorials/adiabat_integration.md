@@ -28,10 +28,10 @@ print(f'surface {T[-1]:.1f} K, centre {T[0]:.1f} K')
 
 ```text
 150 nodes, centre 406.9 GPa, top node 0 Pa
-surface 2515.0 K, centre 5486.9 K
+surface 2515.0 K, centre 6237.9 K
 ```
 
-The top node has $P = 0$: this structure ends in a padded top, so its top shell is isothermal.
+The top node has $P = 0$: this structure ends in a padded top, which the integration takes as a top at 1 bar.
 
 ## Step 2: change the substep limit
 
@@ -46,15 +46,15 @@ for h in (0.04, 0.02, 0.01, 0.005, 0.0025):
 ```
 
 ```text
-h = 0.04    centre 5474.05 K   largest difference 12.867 K
-h = 0.02    centre 5486.83 K   largest difference 0.325 K
-h = 0.01    centre 5487.30 K   largest difference 0.386 K
-h = 0.005   centre 5487.08 K   largest difference 0.164 K
-h = 0.0025  centre 5486.94 K   largest difference 0.027 K
+h = 0.04    centre 6223.08 K   largest difference 14.506 K
+h = 0.02    centre 6241.69 K   largest difference 4.297 K
+h = 0.01    centre 6239.08 K   largest difference 1.493 K
+h = 0.005   centre 6236.79 K   largest difference 0.799 K
+h = 0.0025  centre 6237.94 K   largest difference 0.355 K
 ```
 
-The difference does not fall evenly from 0.02 to 0.005: the PALEOS gradient has kinks at the table grid lines and a steep step at the iron melting boundary, and the errors of single substeps there partly cancel.
-At the default 0.0025 the profile is within 0.03 K of the finer run.
+The difference falls by a factor of 1.9 to 3.4 per halving of $h$, not 4: the PALEOS gradient has kinks at the table grid lines and a steep step at the iron melting boundary, where a substep loses part of its second-order accuracy.
+At the default 0.0025 the profile is within 0.36 K of the finer run.
 
 ## Step 3: move the top pressure around 1 bar
 
