@@ -1148,6 +1148,12 @@ class TestMidpointAdiabat:
                 assert t == pytest.approx(T0 * (P1 / P0) ** nabla, rel=1e-12)
 
         check()
+        reads = []  # dy 1 ulp below the cap, where T0 exp(dy) rounds above 1e5 K on macOS libm
+        k = iter([1e-9, 400.11264147477243])
+        _segment_temperature(
+            36789.5385, 1e9, 1e12, lambda P, T: reads.append(T) or next(k, 1e-9), 0.0025, True
+        )
+        assert len(reads) > 2 and max(reads) <= 1e5
 
     @pytest.mark.physics_invariant
     @pytest.mark.parametrize(

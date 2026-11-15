@@ -47,7 +47,7 @@ def _segment_temperature(T0, P_from, P_to, nabla_of, h, inward):
     segment is empty or does not run in the anchor direction (``inward``: towards higher P); T
     is held from the first substep where ``nabla_of(P, T)`` is None or not positive. Inward T
     stops at the node cap ``_T_MAX`` and outward T at the CMB-anchor floor ``_T_MIN_CMB``, in
-    every substep and every read of ``nabla_of``.
+    every substep and every read of ``nabla_of``; a segment that reaches it returns it exactly.
     """
     if not (0 < P_from < math.inf and 0 < P_to < math.inf and 0 < T0 < math.inf):
         return T0
@@ -68,9 +68,9 @@ def _segment_temperature(T0, P_from, P_to, nabla_of, h, inward):
         if k2 is None or not k2 > 0:
             break
         dy = clamp(dy + dx * k2, dy_lim)
+        if dy == dy_lim:  # T0 exp(dy_lim) can miss T_lim by 1 ulp
+            return T_lim
         p, t = math.exp(x0 + (k + 1) * dx), clamp(T0 * math.exp(dy), T_lim)
-        if dy == dy_lim:
-            break
     return t
 
 

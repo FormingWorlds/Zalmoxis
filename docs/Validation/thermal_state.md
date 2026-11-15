@@ -18,7 +18,7 @@ Each tested case says why the check exists, what it tests, how we know the right
 
 **How we know the right answer.** Each case has an exact solution: $T = T_a (P/P_a)^{0.1}$; $T = T_a \left(1 + a \ln(P/P_a)/2\right)^2$; and $\ln T = \ln T_a + a \ln(P/P_a) + b (\sin \ln P - \sin \ln P_a)$.
 
-**Why it matters.** This integration sets the temperature of every adiabatic structure (see above).
+**Why it matters.** This integration sets the temperature of every adiabatic structure of Zalmoxis, and of the first structure solve of a PROTEUS start-up with Zalmoxis in an adiabatic temperature mode.
 
 ![Largest relative temperature error against the substep size for 2 smooth gradients and 2 anchors, with a slope-2 guide](../assets/validation/adiabat_midpoint_order.svg#only-light){ width="80%" }
 ![Largest relative temperature error against the substep size for 2 smooth gradients and 2 anchors, with a slope-2 guide](../assets/validation/adiabat_midpoint_order_dark.svg#only-dark){ width="80%" }
