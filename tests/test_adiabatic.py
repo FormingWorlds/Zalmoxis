@@ -1060,7 +1060,7 @@ class TestMidpointAdiabat:
         P, lo = _profile(n=5), 0.0 if anchor == 'surface' else 100.0
         edges = [lo, np.nextafter(lo, 1.0), np.nextafter(lo, -1.0), 1e5, np.nextafter(1e5, 2e5)]
 
-        @settings(max_examples=200, deadline=None)
+        @settings(max_examples=200, deadline=None, derandomize=True)
         @given(st.one_of(st.floats(), st.booleans(), st.none(), st.sampled_from(edges)))
         def check(v):
             calls.clear()
@@ -1114,6 +1114,40 @@ class TestMidpointAdiabat:
             )
             assert t == lim and len(reads) == 2, (inward, t, len(reads))
             assert all(min(lim, T0) <= r <= max(lim, T0) for r in reads)
+
+    @pytest.mark.physics_invariant
+    def test_a_segment_stops_exactly_at_its_limit_property(self):
+        """Hypothesis over the anchor T0 from 100 K to 1e5 K, both directions and nabla 0.3, 50,
+        1e6 and inf: a segment that reaches the 1e5 K cap (inward) or the 100 K floor (outward)
+        returns that limit exactly, after the reads up to the substep that reaches it; one that
+        does not reach it gives T0 (P1/P0)^nabla; every read of nabla lies in [100, 1e5] K."""
+        from hypothesis import given, settings
+        from hypothesis import strategies as st
+
+        from zalmoxis.eos.temperature import _segment_temperature
+
+        @settings(max_examples=300, deadline=None, derandomize=True)
+        @given(
+            st.floats(100.0, 1e5),
+            st.booleans(),
+            st.sampled_from([0.3, 50.0, 1e6, math.inf]),
+        )
+        def check(T0, inward, nabla):
+            reads = []
+            (P0, P1), lim = ((1e9, 1e12), 1e5) if inward else ((1e10, 1e6), 100.0)
+            t = _segment_temperature(
+                T0, P0, P1, lambda P, T: reads.append(T) or nabla, 0.0025, inward
+            )
+            assert all(100.0 <= r <= 1e5 for r in reads), (T0, inward, nabla)
+            n = math.ceil(abs(math.log(P1 / P0)) / 0.0025)
+            dx, gap = math.log(P1 / P0) / n, math.log(lim / T0)  # ln T change to the limit
+            if abs(nabla * math.log(P1 / P0)) > abs(gap) * (1 + 1e-9):  # the limit is reached
+                assert t == lim, (T0, inward, nabla, t)
+                assert abs(len(reads) - 2 * math.ceil(gap / (nabla * dx))) <= 2
+            elif abs(nabla * math.log(P1 / P0)) < abs(gap) * (1 - 1e-9):
+                assert t == pytest.approx(T0 * (P1 / P0) ** nabla, rel=1e-12)
+
+        check()
 
     @pytest.mark.physics_invariant
     @pytest.mark.parametrize(

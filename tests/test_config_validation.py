@@ -147,6 +147,7 @@ class TestTemperatureValidation:
         [
             ('adiabatic', 'surface_temperature', 0.0, 1e5),
             ('adiabatic_from_cmb', 'cmb_temperature', 100.0, 1e5),
+            ('adiabatic_from_cmb', 'surface_temperature', 0.0, 1e5),
             ('linear', 'surface_temperature', 0.0, np.inf),
         ],
     )
@@ -163,7 +164,7 @@ class TestTemperatureValidation:
         edges = [lo, np.nextafter(lo, 1.0), np.nextafter(lo, -1.0), 1e5, np.nextafter(1e5, 2e5)]
         base = {'temperature_mode': mode, 'cmb_temperature': 4000.0}
 
-        @settings(max_examples=150, deadline=None)
+        @settings(max_examples=150, deadline=None, derandomize=True)
         @given(st.one_of(st.floats(), st.booleans(), st.sampled_from(edges)))
         def check(v):
             above_lo = lo < v if field == 'surface_temperature' else lo <= v
