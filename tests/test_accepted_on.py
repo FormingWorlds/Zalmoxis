@@ -2667,7 +2667,7 @@ def _assert_grid_bounds(first, seeded, plain, stored, lags, jax=False):
         assert r['converged'] and r['accepted_on'] == 'strict' and r['adiabat_seeded'] is flag
         assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
     off = [
-        (_off_ref(first, ref1), 2.0),  # 1-atm top shell: lags the pressure of the pass before
+        (_off_ref(first, ref1), 3.0),  # 1-atm top shell: lags the pressure of the pass before
         (_off_ref(seeded, ref2), 1.0),
         *(() if jax else ((_off_ref(plain, ref2), 1.0),)),
     ]

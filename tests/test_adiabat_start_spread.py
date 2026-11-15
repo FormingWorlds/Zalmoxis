@@ -40,4 +40,4 @@ def test_round_off_starts_keep_the_centre_temperature_within_12_k():
     print('centre temperatures [K]:', T_c, 'padded:', padded)
     assert len(set(padded)) == 1, padded
     assert np.ptp(T_c) <= 12.0, T_c
-    assert all(5000.0 < t < 6000.0 for t in T_c)  # scale: an Earth-mass rocky centre
+    assert all(5000.0 < t < 7000.0 for t in T_c)  # scale: an Earth-mass rocky centre

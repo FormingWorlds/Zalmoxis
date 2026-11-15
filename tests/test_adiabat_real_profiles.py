@@ -96,7 +96,8 @@ def _forward_euler(kw):
 def _reference(kw):
     """scipy ``solve_ivp`` (RK45, rtol 1e-10, atol 1e-12) of d ln T / d ln P = nabla over each
     node segment, with the rules of the routine: the mixture of the node the segment fills, T
-    held below 1e5 Pa, at a padded top (P = 0) and for a T-independent layer, and the node caps.
+    held below 1e5 Pa (a padded top, P = 0, counts as 1e5 Pa) and for a T-independent layer,
+    and the node caps.
     Returns (T, count of nabla reads that were None or not positive)."""
     from scipy.integrate import solve_ivp
 
@@ -122,8 +123,7 @@ def _reference(kw):
             m[i], kw['cmb_mass'], kw['core_mantle_mass'], kw['layer_mixtures']
         )
         x0, x1 = math.log(max(P[j], P_FLOOR)), math.log(max(P[i], P_FLOOR))
-        outer = P[j] if inward else P[i]
-        if not mx.has_tdep() or outer <= 0 or (x1 - x0) * (1 if inward else -1) <= 0:
+        if not mx.has_tdep() or (x1 - x0) * (1 if inward else -1) <= 0:
             T[i] = T[j]
             continue
 

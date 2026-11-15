@@ -626,7 +626,7 @@ def _report_table_bands(
     grad = np.zeros(len(P), bool)
     if config_params.get('temperature_mode') == 'adiabatic_from_cmb':
         cmb = max(1, min(int(np.searchsorted(m, result['cmb_mass'])), len(P) - 1))
-        step = (inner > ADIABAT_P_FLOOR) & (outer > 0)
+        step = (inner > ADIABAT_P_FLOOR) & (outer < np.inf)  # a NaN or inf end is not stepped
         grad[:-1] = mantle[1:] & step & (np.arange(1, len(P)) > cmb)
     else:
         grad[1:] = mantle[:-1] & (inner >= ADIABAT_P_FLOOR) & (outer >= ADIABAT_P_FLOOR)
