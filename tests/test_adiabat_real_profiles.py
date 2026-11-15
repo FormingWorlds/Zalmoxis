@@ -164,6 +164,7 @@ def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validat
         keep = _on_adiabat(kw)
         err = float(np.max(np.abs(T - ref)[keep]))
         euler = _forward_euler(kw)
+        np.testing.assert_array_equal(euler, rec['T'])  # the stored call of the Euler scheme
         native = float(np.max(np.abs(euler - ref)[keep]))
         assert bad == 0, case
         assert err <= 1.0, (case, err)

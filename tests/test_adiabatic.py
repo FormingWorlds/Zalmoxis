@@ -830,7 +830,9 @@ def _call(P, anchor, T_anchor, **kw):
         radii=r,
         pressure=P,
         mass_enclosed=m,
-        surface_temperature=T_anchor if anchor == 'surface' else 2000.0,
+        surface_temperature=kw.pop(
+            'surface_temperature', T_anchor if anchor == 'surface' else 2000.0
+        ),
         cmb_mass=0.5 * m[1],
         core_mantle_mass=M_E,
         layer_mixtures={'mantle': _StubTdepMixture()},
@@ -1045,69 +1047,73 @@ class TestMidpointAdiabat:
         with pytest.raises(StructureInvariantError, match='finite'):
             _call(P, 'cmb', 3000.0)
 
-    @pytest.mark.parametrize(
-        ('anchor', 'value'),
-        [
-            ('surface', 0.0),
-            ('surface', -10.0),
-            ('surface', np.nan),
-            ('surface', np.inf),
-            ('surface', 2e5),
-            ('cmb', 50.0),
-            ('cmb', 99.9),
-            ('cmb', 2e5),
-            ('cmb', np.nan),
-        ],
-    )
-    def test_anchor_temperature_outside_its_range_raises_value_error(
-        self, monkeypatch, anchor, value
-    ):
-        """The anchor temperature must be finite, positive and at most 1e5 K, and with the CMB
-        anchor at least 100 K (the node caps); outside that range the call raises ValueError
-        before any nabla read, not a profile invariant error from a capped node."""
+    @pytest.mark.parametrize('anchor', ['surface', 'cmb'])
+    def test_anchor_temperature_property_over_its_domain(self, monkeypatch, anchor):
+        """Hypothesis over floats, bools, None and the range edges: a real number from above 0
+        (surface) or from 100 K (CMB) to 1e5 K runs and the anchor node keeps it; anything else,
+        a TOML true included, raises ValueError that names the field, before any nabla read."""
+        from hypothesis import given, settings
+        from hypothesis import strategies as st
+
         calls = []
         _stub_adiabat(monkeypatch, lambda P, T: 0.1, calls)
-        P = _profile(n=5)
-        with pytest.raises(ValueError, match='temperature'):
-            _call(P, anchor, value)
-        assert calls == []
+        P, lo = _profile(n=5), 0.0 if anchor == 'surface' else 100.0
+        edges = [lo, np.nextafter(lo, 1.0), np.nextafter(lo, -1.0), 1e5, np.nextafter(1e5, 2e5)]
+
+        @settings(max_examples=200, deadline=None)
+        @given(st.one_of(st.floats(), st.booleans(), st.none(), st.sampled_from(edges)))
+        def check(v):
+            calls.clear()
+            ok = (
+                isinstance(v, float)
+                and (lo < v if anchor == 'surface' else lo <= v)
+                and v <= 1e5
+            )
+            if ok:
+                assert _call(P, anchor, v)[_anchor_node(anchor, 5)] == v
+            else:
+                with pytest.raises(ValueError, match=f'{anchor}_temperature'):
+                    _call(P, anchor, v)
+                assert calls == []
+
+        check()
 
     def test_non_finite_surface_temperature_with_the_cmb_anchor_raises(self, monkeypatch):
         """With the CMB anchor the core nodes carry the surface temperature, so it must be finite
-        and positive too; NaN raises ValueError, while the edges 100 K and 1e5 K run."""
+        and positive too: NaN and True raise ValueError."""
         _stub_adiabat(monkeypatch, lambda P, T: 0.1)
-        P = _profile(n=5)
-        r, m = np.linspace(0.0, 6.4e6, 5), np.linspace(0, M_E, 5)
-        kw = dict(
-            radii=r,
-            pressure=P,
-            mass_enclosed=m,
-            cmb_mass=0.5 * m[1],
-            core_mantle_mass=M_E,
-            layer_mixtures={'mantle': _StubTdepMixture()},
-            material_dictionaries={},
-            anchor='cmb',
-        )
-        with pytest.raises(ValueError, match='surface_temperature'):
-            compute_adiabatic_temperature(
-                surface_temperature=np.nan, cmb_temperature=3000.0, **kw
-            )
-        for t in (100.0, 1e5):
-            T = compute_adiabatic_temperature(
-                surface_temperature=2000.0, cmb_temperature=t, **kw
-            )
-            assert np.all(np.isfinite(T)) and T[1] == t
+        for v in (np.nan, True):
+            with pytest.raises(ValueError, match='surface_temperature'):
+                _call(_profile(n=5), 'cmb', 3000.0, surface_temperature=v)
 
     @pytest.mark.physics_invariant
     @pytest.mark.parametrize('nabla', [1e6, np.inf])
-    def test_a_huge_nabla_caps_the_profile_at_the_table_top(self, monkeypatch, nabla):
-        """A nabla far above any table value (1e6, inf) drives T to the 1e5 K cap of each node
-        instead of an overflow; the anchor keeps its value and no node exceeds the cap."""
-        _stub_adiabat(monkeypatch, lambda P, T: nabla)
+    def test_a_huge_nabla_stops_at_the_node_caps(self, monkeypatch, nabla):
+        """A nabla far above any table value (1e6, inf) gives no overflow: inward T stops at the
+        1e5 K cap and outward (CMB anchor) at the 100 K floor, in every substep and every read
+        of nabla, and the anchor keeps its value."""
+        from zalmoxis.eos.temperature import _segment_temperature
+
+        reads = []
+        _stub_adiabat(monkeypatch, lambda P, T: reads.append(T) or nabla)
         P = _profile(n=11)
         T = _call(P, 'surface', 3000.0)
-        assert T[-1] == 3000.0
+        assert T[-1] == 3000.0 and max(reads) <= 1e5
         np.testing.assert_array_equal(T[:-1], 1e5)
+        reads.clear()
+        T = _call(P, 'cmb', 3000.0)
+        assert T[1] == 3000.0 and min(reads) >= 100.0
+        np.testing.assert_array_equal(T[2:], 100.0)
+        for T0, P0, P1, inward, lim in [
+            (3000.0, 1e9, 1e12, True, 1e5),
+            (3000.0, 1e10, 1e6, False, 100.0),
+        ]:
+            reads.clear()
+            t = _segment_temperature(
+                T0, P0, P1, lambda P, T: reads.append(T) or nabla, 0.0025, inward
+            )
+            assert t == lim and len(reads) == 2, (inward, t, len(reads))
+            assert all(min(lim, T0) <= r <= max(lim, T0) for r in reads)
 
     @pytest.mark.physics_invariant
     @pytest.mark.parametrize(

@@ -17,6 +17,7 @@ References:
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 
@@ -140,6 +141,39 @@ class TestTemperatureValidation:
 
         with pytest.raises(ValueError, match='surface_temperature must be positive'):
             validate_config(_make_config(surface_temperature=-100))
+
+    @pytest.mark.parametrize(
+        ('mode', 'field', 'lo', 'hi'),
+        [
+            ('adiabatic', 'surface_temperature', 0.0, 1e5),
+            ('adiabatic_from_cmb', 'cmb_temperature', 100.0, 1e5),
+            ('linear', 'surface_temperature', 0.0, np.inf),
+        ],
+    )
+    def test_anchor_temperature_property_over_its_domain(self, mode, field, lo, hi):
+        """Hypothesis over floats, bools and the range edges: the config check takes the range
+        of the adiabat anchors (surface above 0 and at most 1e5 K, CMB from 100 K to 1e5 K, the
+        PALEOS table top), and a finite positive surface temperature in the other modes; NaN,
+        the infinities and a TOML true raise ValueError that names the field."""
+        from hypothesis import given, settings
+        from hypothesis import strategies as st
+
+        from zalmoxis.config import validate_config
+
+        edges = [lo, np.nextafter(lo, 1.0), np.nextafter(lo, -1.0), 1e5, np.nextafter(1e5, 2e5)]
+        base = {'temperature_mode': mode, 'cmb_temperature': 4000.0}
+
+        @settings(max_examples=150, deadline=None)
+        @given(st.one_of(st.floats(), st.booleans(), st.sampled_from(edges)))
+        def check(v):
+            above_lo = lo < v if field == 'surface_temperature' else lo <= v
+            if isinstance(v, float) and above_lo and v <= hi and np.isfinite(v):
+                validate_config(_make_config(**{**base, field: v}))
+            else:
+                with pytest.raises(ValueError, match=field):
+                    validate_config(_make_config(**{**base, field: v}))
+
+        check()
 
     def test_adiabatic_without_tdep_eos_raises(self):
         from zalmoxis.config import validate_config
