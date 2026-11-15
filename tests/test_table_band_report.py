@@ -321,11 +321,23 @@ class TestReportTableBands:
         ('adiabatic_from_cmb', '', 0.0),
         ('adiabatic_from_cmb', '', 1e5),
         ('adiabatic_from_cmb', 'Seager2007:H2O', 0.0),
+        ('adiabatic', '', 0.9e5),
+        ('adiabatic_from_cmb', '', 0.9e5),
     ],
-    ids=['surface', 'surface_ice', 'surface_1bar', 'cmb', 'cmb_1bar', 'cmb_ice'],
+    ids=[
+        'surface',
+        'surface_ice',
+        'surface_1bar',
+        'cmb',
+        'cmb_1bar',
+        'cmb_ice',
+        'surface_09bar',
+        'cmb_09bar',
+    ],
 )
 def test_gradient_nodes_are_the_adiabat_reads(mats, monkeypatch, mode, ice, surface_p):
-    """The gradient entry covers exactly the nodes compute_adiabatic_temperature reads."""
+    """The gradient entry covers exactly the nodes where compute_adiabatic_temperature reads
+    nabla; its midpoint substeps read further pressures between those nodes."""
     md, _, grad, _ = mats
     md = {'WolfBower2018:MgSiO3': md['X:MgSiO3']}
     layers = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3', 'ice_layer': ice}
@@ -369,7 +381,9 @@ def test_gradient_nodes_are_the_adiabat_reads(mats, monkeypatch, mode, ice, surf
         _curves(100.0, 200.0),
         mixtures,
     )
-    assert sorted(check_reads) == sorted(adiabat_reads) and adiabat_reads
+    at_nodes = [p for p in adiabat_reads if p in set(P.tolist())]
+    assert sorted(check_reads) == sorted(at_nodes) and at_nodes
+    assert len(adiabat_reads) > len(at_nodes)
 
 
 @pytest.mark.unit

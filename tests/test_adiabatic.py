@@ -16,7 +16,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from tests._plot_checks import assert_text_clear
+from tests._plot_checks import assert_text_clear, legend_below
 from zalmoxis.eos import (
     calculate_temperature_profile,
     compute_adiabatic_temperature,
@@ -682,15 +682,8 @@ class TestComputeAdiabaticTemperatureCmbAnchor:
             )
 
     def test_anchor_cmb_short_circuits_at_low_pressure_shells(self, monkeypatch):
-        """When the local or next-shell pressure is below 1e5 Pa, T is held constant.
-
-        Discriminating: the adiabat scaling ``T*nabla/P`` blows up at low P;
-        the short-circuit at lines 151-153 is what prevents NaN propagation
-        in the upper atmosphere. Place the second-to-last shell below 1e5
-        Pa and verify T[n-1] (computed with P_eval = pressure[n-2] < 1e5)
-        falls back to T[n-2] rather than integrating with the divergent
-        ratio.
-        """
+        """Below 1e5 Pa T is held: a segment with both ends below it keeps T, and a segment
+        that crosses it integrates only down to 1e5 Pa, so every T stays finite."""
         self._patch_helpers(monkeypatch, mixture=_StubTdepMixture(), nabla=0.3)
         n = 6
         radii = np.linspace(0.0, 6.371e6, n)
@@ -712,10 +705,8 @@ class TestComputeAdiabaticTemperatureCmbAnchor:
             cmb_temperature=4500.0,
         )
 
-        # The shell whose own pressure is below 1e5 Pa must inherit the prior
-        # shell's temperature, not integrate ``T_eval * nabla / P_eval`` which
-        # would diverge or overflow the [100, 100000] clamp.
-        assert T[-1] == pytest.approx(T[-2])
+        assert T[-1] == T[-2]  # 1e3 to 1e2 Pa: both ends below the floor
+        assert T[-2] == pytest.approx(max(T[-3] * (1e5 / 10e9) ** 0.3, 100.0), rel=1e-12)
         assert np.all(np.isfinite(T))
 
     def test_anchor_cmb_holds_temperature_when_dp_is_nonnegative(self, monkeypatch):
@@ -868,20 +859,20 @@ class TestMidpointAdiabat:
     @pytest.mark.reference_pinned
     @pytest.mark.parametrize('anchor', ['surface', 'cmb'])
     def test_constant_nabla_is_exact(self, monkeypatch, anchor):
-        """Constant nabla 0.3 gives T = T_a (P / P_a)^0.3 to round-off at every node (analytical
+        """Constant nabla 0.1 gives T = T_a (P / P_a)^0.1 to round-off at every node (analytical
         law; the midpoint rule in ln P is exact for a constant right-hand side). A forward
         Euler step in P per node, the plausible wrong scheme, misses it by more than 10 %."""
-        _stub_adiabat(monkeypatch, lambda P, T: 0.3)
+        _stub_adiabat(monkeypatch, lambda P, T: 0.1)
         _, P, _ = _profile()
         T = _call(P, anchor, 3000.0)
         a = _anchor_node(anchor, len(P))
         mantle = _integrated(anchor)
-        exact = 3000.0 * (P / P[a]) ** 0.3
+        exact = 3000.0 * (P / P[a]) ** 0.1
         np.testing.assert_allclose(T[mantle], exact[mantle], rtol=1e-12, atol=0)
         euler = np.empty(len(P))
         euler[-1] = 3000.0
         for i in range(len(P) - 2, -1, -1):
-            euler[i] = euler[i + 1] * (1 + 0.3 * (P[i] - P[i + 1]) / P[i + 1])
+            euler[i] = euler[i + 1] * (1 + 0.1 * (P[i] - P[i + 1]) / P[i + 1])
         if anchor == 'surface':
             assert abs(euler[0] / exact[0] - 1) > 0.1
 
@@ -938,7 +929,8 @@ class TestMidpointAdiabat:
             for (anchor, name), (dx, err) in rows.items():
                 ls = '-' if anchor == 'surface' else '--'
                 mk = 'o' if name == 'T-dependent' else 's'
-                ax.loglog(dx, err, ls=ls, marker=mk, label=f'{name}, {anchor} anchor')
+                where = 'surface' if anchor == 'surface' else 'CMB'
+                ax.loglog(dx, err, ls=ls, marker=mk, label=f'{name}, {where} anchor')
             d = np.array(rows[('surface', 'T-dependent')][0])
             ref = rows[('surface', 'T-dependent')][1][0] * (d / d[0]) ** 2
             ax.loglog(
@@ -947,8 +939,7 @@ class TestMidpointAdiabat:
             ax.minorticks_off()
             ax.set_xlabel(r'Substep $\Delta \ln P$')
             ax.set_ylabel('Largest relative error in T')
-            fig.legend(loc='lower center', ncol=2, fontsize=plt.rcParams['axes.labelsize'])
-            fig.tight_layout(rect=(0, 0.25, 1, 1))
+            legend_below(fig, ncol=2)
             return assert_text_clear(fig)
 
         validation_plot(figure, 'adiabat_midpoint_order')
@@ -976,10 +967,10 @@ class TestMidpointAdiabat:
     @pytest.mark.parametrize('anchor', ['surface', 'cmb'])
     def test_low_pressure_rule_follows_the_floored_adiabat(self, monkeypatch, anchor):
         """With a top pressure from 0.5e5 to 2e5 Pa the profile is the adiabat with T held below
-        1e5 Pa (analytical for constant nabla 0.3), so it is continuous in the top pressure.
+        1e5 Pa (analytical for constant nabla 0.1), so it is continuous in the top pressure.
         Skipping the whole top segment once an end is below 1e5 Pa, the earlier rule, jumps by
         more than 10 % at the next node."""
-        _stub_adiabat(monkeypatch, lambda P, T: 0.3)
+        _stub_adiabat(monkeypatch, lambda P, T: 0.1)
         _, P0, _ = _profile(n=21, p_top=2e5)
         a = _anchor_node(anchor, len(P0))
         prev = None
@@ -988,7 +979,7 @@ class TestMidpointAdiabat:
             P[-1] = p_top
             T = _call(P, anchor, 3000.0)
             Pf = np.maximum(P, P_FLOOR)
-            exact = 3000.0 * (Pf / Pf[a]) ** 0.3
+            exact = 3000.0 * (Pf / Pf[a]) ** 0.1
             done = _integrated(anchor)
             np.testing.assert_allclose(T[done], exact[done], rtol=1e-12, atol=0)
             if prev is not None:
@@ -1002,14 +993,14 @@ class TestMidpointAdiabat:
     def test_padded_top_stays_isothermal(self, monkeypatch, anchor):
         """A padded top (P = 0 at the outer node) is a stop: the top shell is isothermal, so the
         surface-anchored profile below it equals the one of a top at the next node."""
-        _stub_adiabat(monkeypatch, lambda P, T: 0.3)
+        _stub_adiabat(monkeypatch, lambda P, T: 0.1)
         _, P, _ = _profile(n=21)
         P[-1] = 0.0
         T = _call(P, anchor, 3000.0)
         assert T[-1] == T[-2]
         if anchor == 'surface':
             assert T[-2] == 3000.0
-            np.testing.assert_allclose(T[:-1], 3000.0 * (P[:-1] / P[-2]) ** 0.3, rtol=1e-12)
+            np.testing.assert_allclose(T[:-1], 3000.0 * (P[:-1] / P[-2]) ** 0.1, rtol=1e-12)
         else:
             assert T[-2] < T[1]
 
@@ -1017,7 +1008,7 @@ class TestMidpointAdiabat:
     def test_negative_nabla_holds_the_rest_of_the_segment(self, monkeypatch):
         """nabla <= 0 or None at a substep holds T for the rest of that segment; the next
         segment integrates again, so T never falls inward."""
-        _stub_adiabat(monkeypatch, lambda P, T: None if 1e9 < P < 1e10 else 0.3)
+        _stub_adiabat(monkeypatch, lambda P, T: None if 1e9 < P < 1e10 else 0.1)
         _, P, _ = _profile()
         T = _call(P, 'surface', 3000.0)
         assert np.all(np.diff(T) <= 0)
@@ -1046,7 +1037,7 @@ class TestMidpointAdiabat:
         import zalmoxis.eos.temperature as zt
         from zalmoxis.invariants import StructureInvariantError
 
-        _stub_adiabat(monkeypatch, lambda P, T: 0.3)
+        _stub_adiabat(monkeypatch, lambda P, T: 0.1)
         _, P, _ = _profile(n=11)
         good = _call(P, 'surface', 3000.0)
         assert np.all(np.diff(good) < 0)
@@ -1061,7 +1052,7 @@ class TestMidpointAdiabat:
         """A surface anchor at 0 K or below gives no positive profile and raises."""
         from zalmoxis.invariants import StructureInvariantError
 
-        _stub_adiabat(monkeypatch, lambda P, T: 0.3)
+        _stub_adiabat(monkeypatch, lambda P, T: 0.1)
         _, P, _ = _profile(n=5)
         for t in (0.0, -10.0):
             with pytest.raises(StructureInvariantError, match='positive'):
@@ -1075,9 +1066,9 @@ class TestMidpointAdiabat:
         from hypothesis import given, settings
         from hypothesis import strategies as st
 
-        _stub_adiabat(monkeypatch, lambda P, T: 0.3)
+        _stub_adiabat(monkeypatch, lambda P, T: 0.1)
         _, P, _ = _profile(n=6, p_center=1e7, p_top=2e5)
-        exact = 3000.0 * (P / P[-1]) ** 0.3
+        exact = 3000.0 * (P / P[-1]) ** 0.1
 
         @settings(max_examples=200, deadline=None)
         @given(st.floats(allow_nan=True, allow_infinity=True))

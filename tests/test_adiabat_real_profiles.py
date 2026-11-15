@@ -14,12 +14,17 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from tests._plot_checks import assert_text_clear
+from tests._plot_checks import assert_text_clear, legend_below
 from tools.validation import adiabat_profiles as ap
 
 pytestmark = [pytest.mark.smoke, pytest.mark.timeout(60)]
 
 DATA = Path(__file__).parent / 'data' / 'adiabat_profiles.npz'
+NAMES = {  # plot labels; the 4 default starts share one
+    'default_k0': 'default config, 4 starts',
+    'ic_all_options': 'PROTEUS all_options',
+    'ic_dummy': 'PROTEUS dummy',
+}
 P_FLOOR = 1e5  # Pa
 
 
@@ -119,6 +124,8 @@ def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validat
     from zalmoxis.eos.temperature import compute_adiabatic_temperature
 
     rows = {}
+    kw0 = profiles['default_k0'][1]
+    p_cmb = float(np.interp(kw0['cmb_mass'], kw0['mass_enclosed'], kw0['pressure']))
     for case, (rec, kw) in profiles.items():
         T = compute_adiabatic_temperature(**kw)
         ref, bad = _reference(kw)
@@ -133,38 +140,52 @@ def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validat
         rows[case] = (kw['pressure'][keep], T[keep], ref[keep], rec['T'][keep], err, native)
         print(f'{case}: midpoint {err:.4f} K, earlier step {native:.2f} K from the reference')
 
-    def figure():
+    def profile_figure():
         import matplotlib.pyplot as plt
 
         from zalmoxis.melting_curves import iron_melting_anzellini13
 
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(9, 4))
+        fig, ax = plt.subplots()
         P, T, ref, native = rows['default_k0'][:4]
         top = P > 0
         gpa = P[top] / 1e9
-        ax1.plot(gpa, native[top], ls='--', label='earlier forward step')
-        ax1.plot(gpa, T[top], label='midpoint, default')
-        ax1.plot(
-            gpa, ref[top], ls=':', color=plt.rcParams['text.color'], label='RK45 reference'
+        core = P >= p_cmb
+        ax.plot(gpa, native[top], ls='--', color='C2', label='earlier forward step')
+        ax.plot(gpa, T[top], color='C1', label='midpoint, default')
+        ax.plot(gpa, ref[top], ls=':', color=plt.rcParams['text.color'], label='RK45 reference')
+        ax.plot(
+            P[core] / 1e9,
+            iron_melting_anzellini13(P[core]),
+            alpha=0.5,
+            label='iron melting (core)',
         )
-        ax1.plot(gpa, iron_melting_anzellini13(P[top]), alpha=0.5, label='iron melting curve')
-        ax1.set_xlabel('Pressure [GPa]')
-        ax1.set_ylabel('Temperature [K]')
-        for case, (Pc, Tc, rc, _, _, _) in rows.items():
-            on = Pc > 0
-            ax2.semilogy(Pc[on] / 1e9, np.maximum(np.abs(Tc - rc)[on], 1e-6), label=case)
-        ax2.axhline(
-            1.0, ls='--', color=plt.rcParams['text.color'], alpha=0.5, label='1 K bound'
-        )
-        ax2.set_xlabel('Pressure [GPa]')
-        ax2.set_ylabel('|T - reference| [K]')
-        for ax in (ax1, ax2):
-            ax.minorticks_off()
-        fig.legend(loc='lower center', ncol=4, fontsize='small')
-        fig.tight_layout(rect=(0, 0.22, 1, 1))
+        ax.set_xlabel('Pressure [GPa]')
+        ax.set_ylabel('Temperature [K]')
+        ax.minorticks_off()
+        legend_below(fig, ncol=2)
         return assert_text_clear(fig)
 
-    validation_plot(figure, 'adiabat_real_profiles')
+    def residual_figure():
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots()
+        for case, (Pc, Tc, rc, _, _, _) in rows.items():
+            on = Pc > 0
+            ax.semilogy(
+                Pc[on] / 1e9,
+                np.maximum(np.abs(Tc - rc)[on], 1e-6),
+                color={'ic_all_options': 'C2', 'ic_dummy': 'C1'}.get(case, 'C0'),
+                label=NAMES.get(case),
+            )
+        ax.axhline(1.0, ls='--', color=plt.rcParams['text.color'], alpha=0.5, label='1 K bound')
+        ax.set_xlabel('Pressure [GPa]')
+        ax.set_ylabel('|T - reference| [K]')
+        ax.minorticks_off()
+        legend_below(fig, ncol=3)
+        return assert_text_clear(fig)
+
+    validation_plot(profile_figure, 'adiabat_real_profile')
+    validation_plot(residual_figure, 'adiabat_real_residual')
 
 
 @pytest.mark.physics_invariant
@@ -228,8 +249,7 @@ def test_temperature_is_continuous_across_one_bar(profiles, anchor, request):
             ax.set_xlabel('Top pressure [bar]')
             ax.set_ylabel('Top node T minus its value at 1.1 bar [K]')
             ax.minorticks_off()
-            fig.legend(loc='lower center', ncol=2, fontsize='small')
-            fig.tight_layout(rect=(0, 0.15, 1, 1))
+            legend_below(fig, ncol=2)
             return assert_text_clear(fig)
 
         request.getfixturevalue('validation_plot')(figure, 'adiabat_low_pressure')

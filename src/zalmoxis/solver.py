@@ -43,6 +43,7 @@ from .eos import (
     create_pressure_density_files,
 )
 from .eos.seager import _band_debug_seen
+from .eos.temperature import ADIABAT_P_FLOOR
 from .invariants import StructureInvariantError, check_accepted
 from .mixing import (
     _PALEOS_2PHASE_NAMES,
@@ -617,15 +618,16 @@ def _report_table_bands(
     t_sol[mantle] = [sol(p) for p in P[mantle]]
     t_liq[mantle] = [liq(p) for p in P[mantle]]
     undefined = ~(np.isfinite(t_sol) & np.isfinite(t_liq))
-    # The adiabat integration (eos/temperature.py) steps between nodes with P >= 1e5 at
-    # both ends: inward it reads the outer node of a mantle step, outward the inner one.
-    step = (P[:-1] >= 1e5) & (P[1:] >= 1e5)
+    # For P falling outward the adiabat (eos/temperature.py) reads nabla at the start node of
+    # each segment above ADIABAT_P_FLOOR: inward the outer node, outward the inner one.
+    inner, outer = P[:-1], P[1:]
     grad = np.zeros(len(P), bool)
     if config_params.get('temperature_mode') == 'adiabatic_from_cmb':
         cmb = max(1, min(int(np.searchsorted(m, result['cmb_mass'])), len(P) - 1))
+        step = (inner > ADIABAT_P_FLOOR) & (outer > 0)
         grad[:-1] = mantle[1:] & step & (np.arange(1, len(P)) > cmb)
     else:
-        grad[1:] = mantle[:-1] & step
+        grad[1:] = mantle[:-1] & (inner >= ADIABAT_P_FLOOR) & (outer >= ADIABAT_P_FLOOR)
     bad = mantle & ~(np.isfinite(P) & np.isfinite(T))
     reads = {
         'solid': mantle & (undefined | (T <= t_sol) | (T < t_liq)),

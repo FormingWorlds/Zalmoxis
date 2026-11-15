@@ -15,9 +15,11 @@ def assert_text_clear(fig):
     for ax in fig.axes:
         if ax.get_legend() is not None:
             legends.append(ax.get_legend().get_window_extent(rnd))
-        for t in (ax.xaxis.label, ax.yaxis.label, *ax.get_xticklabels(), *ax.get_yticklabels()):
-            if t.get_text() and t.get_visible():
-                texts.append(t.get_window_extent(rnd))
+        shown = [ax.xaxis.label, ax.yaxis.label]
+        for axis in (ax.xaxis, ax.yaxis):  # matplotlib also lays out labels outside the view
+            lo, hi = sorted(axis.get_view_interval())
+            shown += [t.label1 for t in axis.get_major_ticks() if lo <= t.get_loc() <= hi]
+        texts += [t.get_window_extent(rnd) for t in shown if t.get_text() and t.get_visible()]
         for line in ax.get_lines():
             xy = line.get_transform().transform(np.asarray(line.get_xydata(), float))
             pts.append(xy[np.all(np.isfinite(xy), axis=1)])
@@ -29,4 +31,13 @@ def assert_text_clear(fig):
         assert not inside.any(), f'text box {k} holds a line vertex'
     for lg in legends:
         assert not any(lg.overlaps(t) for t in texts), 'a legend crosses an axis text'
+    return fig
+
+
+def legend_below(fig, ncol=2, fontsize='small'):
+    """Put one figure legend below the axes, with the layout leaving room for its height."""
+    legend = fig.legend(loc='lower center', ncol=ncol, fontsize=fontsize)
+    fig.canvas.draw()
+    height = legend.get_window_extent(fig.canvas.get_renderer()).height / fig.bbox.height
+    fig.tight_layout(rect=(0, height + 0.03, 1, 1))
     return fig
