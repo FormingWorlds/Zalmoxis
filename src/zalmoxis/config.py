@@ -23,6 +23,7 @@ from .constants import (
 )
 from .eos import get_solidus_liquidus_functions
 from .eos.core_alloy import ALLOY_PREFIX, is_alloy_mixture, split_alloy
+from .eos.temperature import _T_MAX, _T_MIN_CMB, _is_real
 from .eos_analytic import USER_SELECTABLE_MATERIALS
 from .eos_properties import EOS_REGISTRY
 from .eos_vinet import VALID_VINET_KEYS
@@ -362,9 +363,13 @@ def validate_config(config_params):
     surface_temp = config_params['surface_temperature']
     center_temp = config_params['center_temperature']
 
-    if surface_temp <= 0:
+    adiabatic = temperature_mode in ('adiabatic', 'adiabatic_from_cmb')
+    if not (_is_real(surface_temp) and 0 < surface_temp < math.inf) or (
+        adiabatic and surface_temp > _T_MAX
+    ):
+        cap = f' and at most {_T_MAX:g} K in {temperature_mode!r} mode' if adiabatic else ''
         raise ValueError(
-            f'surface_temperature must be positive, got {surface_temp} K. '
+            f'surface_temperature must be positive and finite{cap}, got {surface_temp!r}. '
             f'Temperatures must be in Kelvin.'
         )
 
@@ -383,10 +388,11 @@ def validate_config(config_params):
 
     if temperature_mode == 'adiabatic_from_cmb':
         cmb_temp = config_params.get('cmb_temperature', 0)
-        if cmb_temp <= 0:
+        if not (_is_real(cmb_temp) and _T_MIN_CMB <= cmb_temp <= _T_MAX):
             raise ValueError(
-                "cmb_temperature must be positive (in K) for 'adiabatic_from_cmb' mode, "
-                f'got {cmb_temp}. Set planet.tcmb_init in PROTEUS config.'
+                f'cmb_temperature must be positive, from {_T_MIN_CMB:g} to {_T_MAX:g} K, for '
+                f"'adiabatic_from_cmb' mode, got {cmb_temp!r}. Set planet.tcmb_init in PROTEUS "
+                'config.'
             )
 
     if temperature_mode == 'linear' and center_temp <= surface_temp:

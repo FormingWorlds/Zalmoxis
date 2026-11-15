@@ -9,13 +9,13 @@ On the stored profiles of the default configuration and of the PROTEUS initial s
 
 ## The equation
 
-The adiabatic gradient $\nabla_\mathrm{ad} = (\partial \ln T / \partial \ln P)_S$ is a dimensionless column of each EOS table. On the 6 stored profiles of the [real-profile check](../Validation/thermal_state.md#adiabat-integration-on-real-profiles) it lies between 0.009 and 0.35 at pressures above 1 GPa.
+The adiabatic gradient $\nabla_\mathrm{ad} = (\partial \ln T / \partial \ln P)_S$ is dimensionless. The PALEOS tables hold it as a column; for `WolfBower2018:MgSiO3` Zalmoxis derives it from the tabulated $(dT/dP)_S$ ([Equations of state](eos_physics.md)). On the 6 stored profiles of the [real-profile check](../Validation/thermal_state.md#adiabat-integration-on-real-profiles) it lies between 0.009 and 0.35 at pressures above 1 GPa.
 $T$ is the temperature in K, $P$ the pressure in Pa and $S$ the entropy.
 With $x = \ln P$ and $y = \ln T$, an adiabat is the solution of
 
 $$\frac{dy}{dx} = \nabla_\mathrm{ad}(P, T).$$
 
-Between the anchor and the last integrated node, $\ln P$ changes by 5.9 to 15.2 on these profiles. Equal steps in $x$ give the same relative change of $P$ in every step, so $x$ is the natural step variable.
+Between the anchor and the last integrated node, $\ln P$ changes by 5.9 to 13.4 on these profiles. Equal steps in $x$ give the same relative change of $P$ in every step, so $x$ is the natural step variable.
 The integration starts at an anchor: the surface temperature at the top node (`anchor='surface'`, inward), or the CMB temperature at the first mantle node (`anchor='cmb'`, outward through the mantle). With the CMB anchor, the nodes below the CMB keep the surface temperature.
 [Code architecture](code_architecture.md#adiabat-anchor-surface-vs-cmb) describes the 2 anchors.
 For a mixture of materials, `get_mixed_nabla_ad` weights $\nabla_\mathrm{ad}$ of the components ([Multi-material mixing](mixing.md#adiabatic-gradient-mixing)); a segment takes the mixture of the node it fills.
@@ -31,7 +31,7 @@ For a constant $\nabla_\mathrm{ad}$ the step is exact: $T = T_a (P / P_a)^{\nabl
 
 A worked example: the default configuration at a surface temperature of 2515 K has its centre at 407 GPa and its CMB at 141 GPa.
 One call takes about 2400 substeps and reads $\nabla_\mathrm{ad}$ about 4800 times.
-Over 4 starts, solves whose planet mass differs only by $k \times 10^{-12}$ of its value ($k$ = 0 to 3), the centre lies at 5487 to 5501 K.
+The test stores 4 starts of this configuration. Their planet masses differ only by $k \times 10^{-12}$ of the value ($k$ = 0 to 3), and their centre lies at 5487 to 5501 K.
 A forward Euler step, one first-order step in $P$ per node, puts the centre at 5765 to 5832 K, 278 to 330 K too hot.
 
 ## Accuracy on the PALEOS tables
@@ -47,9 +47,10 @@ The checks therefore use 2 tests: the order on smooth $\nabla_\mathrm{ad}$ with 
 - **Below 1 bar.** Both ends of a segment are raised to `ADIABAT_P_FLOOR` = $10^5$ Pa before the integration, so $T$ is constant below 1 bar. The PALEOS rock and iron tables start at $10^5$ Pa. For a solid or a liquid, $\nabla_\mathrm{ad} = \alpha P / (\rho c_p)$, with $\alpha$ the thermal expansivity, $\rho$ the density and $c_p$ the heat capacity, so $\nabla_\mathrm{ad}$ vanishes as $P \to 0$; for $\alpha = 3 \times 10^{-5}$ 1/K, $\rho$ = 3000 kg/m$^3$, $c_p$ = 1200 J/(kg K) and 2500 K, the adiabat from 0 to 1 bar changes $T$ by about 0.002 K. For a top pressure above 0, the temperature is continuous in the top pressure.
 - **Padded top.** A node with $P = 0$ (a [padded accept](process_flow.md#padded-accepts)) ends the integration: the top shell is isothermal.
 - **Missing gradient.** Where $\nabla_\mathrm{ad}$ is missing or not positive, $T$ is held for the rest of that segment; the next segment integrates again.
-- **Caps.** Each node is capped at $10^5$ K, the top of the PALEOS tables; with the CMB anchor it is also kept at 100 K or above.
+- **Caps.** No node and no substep goes above $10^5$ K, the top of the PALEOS tables, so a very large or infinite $\nabla_\mathrm{ad}$ gives nodes at $10^5$ K. With the CMB anchor no node and no substep goes below 100 K.
+- **Range of the anchors.** The surface temperature must be a real number above 0 K and at most $10^5$ K. With `anchor='cmb'` the CMB temperature must be from 100 K to $10^5$ K. Any other value, a bool included, raises `ValueError`; `validate_config` checks the surface range in the temperature modes `adiabatic` and `adiabatic_from_cmb`, and the CMB range in `adiabatic_from_cmb`.
 - **Check.** Each call raises `StructureInvariantError` when $T$ is not finite and positive at every node, or when it rises outward from the anchor.
 - **Range of `max_dlnp`.** A real number from $10^{-4}$ to 1; any other value raises `ValueError`.
 - **Known limit.** A water layer, whose table reaches 0.1 Pa, is also isothermal below 1 bar.
 
-**Where this is checked.** [Adiabat integration on smooth gradients](../Validation/thermal_state.md#adiabat-integration-on-smooth-gradients), [Adiabat integration on real profiles](../Validation/thermal_state.md#adiabat-integration-on-real-profiles) and [Temperature across 1 bar](../Validation/thermal_state.md#temperature-across-1-bar).
+**Where this is checked.** [Adiabat integration on smooth gradients](../Validation/thermal_state.md#adiabat-integration-on-smooth-gradients), [Adiabat integration on real profiles](../Validation/thermal_state.md#adiabat-integration-on-real-profiles) and [Temperature across 1 bar](../Validation/thermal_state.md#temperature-across-1-bar). Unit tests in `tests/test_adiabatic.py` check the anchor ranges and the caps (`test_anchor_temperature_property_over_its_domain`, `test_a_huge_nabla_stops_at_the_node_caps`).

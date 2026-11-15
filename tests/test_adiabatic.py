@@ -952,7 +952,7 @@ class TestMidpointAdiabat:
         substeps per segment above 1e5 Pa: the count pins the default h (a call at h 0.02
         meets the 1 K bound of the real profiles too, so only the count tells them apart)."""
         calls = []
-        _stub_adiabat(monkeypatch, lambda P, T: 0.3, calls)
+        _stub_adiabat(monkeypatch, lambda P, T: 0.1, calls)  # T stays inside the node caps
         P = np.geomspace(3.6e11, 3e4, 40)  # the top segment crosses 1e5 Pa
         _call(P, anchor, 3000.0)
         lnp = np.log(np.maximum(P, P_FLOOR))

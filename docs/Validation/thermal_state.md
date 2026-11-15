@@ -4,7 +4,7 @@
 
 This page checks the temperature profile of a planet. It has 2 parts.
 The first part checks how Zalmoxis integrates the adiabat, the temperature profile along which the entropy is constant. Tests run each of its 3 cases, and each case has a plot pair.
-Every adiabatic structure of Zalmoxis, and the first structure solve of every PROTEUS start-up, takes its temperature from this integration.
+Every adiabatic structure of Zalmoxis takes its temperature from this integration, and so does the first structure solve of a PROTEUS start-up with Zalmoxis in an adiabatic temperature mode.
 The second part shows how the initial thermal state depends on the planet mass and on the material properties. The initial thermal state is the temperature at the core-mantle boundary (CMB) and at the surface right after accretion, which `zalmoxis.energetics.initial_thermal_state` computes. Those figures come from scripts: no test asserts them and CI does not run the scripts.
 Validation means that a test runs the code on a case with a known right answer and checks the result within a stated tolerance.
 Each tested case says why the check exists, what it tests, how we know the right answer and why it matters, and ends with a box "Test details". Each script case says why the comparison exists, what it shows, how we know the right answer and why it matters, and ends with a box "Script details". The [overview](index.md) lists every case of the tab.
@@ -18,7 +18,7 @@ Each tested case says why the check exists, what it tests, how we know the right
 
 **How we know the right answer.** Each case has an exact solution: $T = T_a (P/P_a)^{0.1}$; $T = T_a \left(1 + a \ln(P/P_a)/2\right)^2$; and $\ln T = \ln T_a + a \ln(P/P_a) + b (\sin \ln P - \sin \ln P_a)$.
 
-**Why it matters.** Every adiabatic structure of Zalmoxis, and the first structure solve of every PROTEUS start-up, takes its temperature from this integration.
+**Why it matters.** This integration sets the temperature of every adiabatic structure (see above).
 
 ![Largest relative temperature error against the substep size for 2 smooth gradients and 2 anchors, with a slope-2 guide](../assets/validation/adiabat_midpoint_order.svg#only-light){ width="80%" }
 ![Largest relative temperature error against the substep size for 2 smooth gradients and 2 anchors, with a slope-2 guide](../assets/validation/adiabat_midpoint_order_dark.svg#only-dark){ width="80%" }

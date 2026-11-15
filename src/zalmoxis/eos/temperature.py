@@ -26,9 +26,14 @@ ADIABAT_P_FLOOR = 1e5  # Pa: lower edge of the PALEOS rock and iron tables; T is
 _T_MAX, _T_MIN_CMB = 100000.0, 100.0  # node caps [K]: PALEOS table maximum, CMB-anchor floor
 
 
+def _is_real(x):
+    """True for a real number that is not a bool (a TOML ``true`` is not a number here)."""
+    return isinstance(x, numbers.Real) and not isinstance(x, bool)
+
+
 def _check_max_dlnp(h):
     """Return ``h`` as a float; raise ValueError unless it is a real number from 1e-4 to 1."""
-    if isinstance(h, bool) or not isinstance(h, numbers.Real) or not 1e-4 <= h <= 1.0:
+    if not _is_real(h) or not 1e-4 <= h <= 1.0:
         raise ValueError(f'max_dlnp must be a real number from 1e-4 to 1, got {h!r}.')
     return float(h)
 
@@ -40,8 +45,9 @@ def _segment_temperature(T0, P_from, P_to, nabla_of, h, inward):
     raising both pressures to ``ADIABAT_P_FLOOR``, so T is held below that pressure. Returns
     ``T0`` at a padded or non-finite end (P <= 0), for a non-positive ``T0``, and when the
     segment is empty or does not run in the anchor direction (``inward``: towards higher P); T
-    is held from the first substep where ``nabla_of(P, T)`` is None or not positive, and it
-    never rises above the node cap ``_T_MAX``.
+    is held from the first substep where ``nabla_of(P, T)`` is None or not positive. Inward T
+    stops at the node cap ``_T_MAX`` and outward T at the CMB-anchor floor ``_T_MIN_CMB``, in
+    every substep and every read of ``nabla_of``.
     """
     if not (0 < P_from < math.inf and 0 < P_to < math.inf and 0 < T0 < math.inf):
         return T0
@@ -51,18 +57,20 @@ def _segment_temperature(T0, P_from, P_to, nabla_of, h, inward):
         return T0
     n = math.ceil(abs(x1 - x0) / h)
     dx, dy = (x1 - x0) / n, 0.0  # dy: ln T change over the segment, summed from 0
-    dy_cap = math.log(_T_MAX / T0)  # the ln T change that reaches the node cap
+    T_lim, clamp = (_T_MAX, min) if inward else (_T_MIN_CMB, max)
+    dy_lim = math.log(T_lim / T0)  # the ln T change that reaches the cap or the floor
     for k in range(n):
         k1 = nabla_of(p, t)
         if k1 is None or not k1 > 0:
             break
-        k2 = nabla_of(
-            math.exp(x0 + (k + 0.5) * dx), t * math.exp(min(dx / 2 * k1, dy_cap - dy))
-        )
+        t_mid = clamp(t * math.exp(clamp(dx / 2 * k1, dy_lim - dy)), T_lim)
+        k2 = nabla_of(math.exp(x0 + (k + 0.5) * dx), t_mid)
         if k2 is None or not k2 > 0:
             break
-        dy = min(dy + dx * k2, dy_cap)
-        p, t = math.exp(x0 + (k + 1) * dx), T0 * math.exp(dy)
+        dy = clamp(dy + dx * k2, dy_lim)
+        p, t = math.exp(x0 + (k + 1) * dx), clamp(T0 * math.exp(dy), T_lim)
+        if dy == dy_lim:
+            break
     return t
 
 
@@ -205,9 +213,7 @@ def compute_adiabatic_temperature(
 
         return nabla
 
-    if not (
-        isinstance(surface_temperature, numbers.Real) and 0 < surface_temperature <= _T_MAX
-    ):
+    if not (_is_real(surface_temperature) and 0 < surface_temperature <= _T_MAX):
         raise ValueError(
             f'surface_temperature must be a temperature above 0 and at most {_T_MAX:g} K, '
             f'got {surface_temperature!r}.'
@@ -215,10 +221,7 @@ def compute_adiabatic_temperature(
     n = len(radii)
     T = np.zeros(n)
     if anchor == 'cmb':
-        if not (
-            isinstance(cmb_temperature, numbers.Real)
-            and _T_MIN_CMB <= cmb_temperature <= _T_MAX
-        ):
+        if not (_is_real(cmb_temperature) and _T_MIN_CMB <= cmb_temperature <= _T_MAX):
             raise ValueError(
                 f"anchor='cmb' requires a cmb_temperature from {_T_MIN_CMB:g} to {_T_MAX:g} K, "
                 f'got {cmb_temperature!r}.'

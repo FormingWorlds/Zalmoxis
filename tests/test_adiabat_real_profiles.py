@@ -71,8 +71,8 @@ def _eos(kw):
 
 
 def _forward_euler(kw):
-    """The forward Euler step in P per node segment of Zalmoxis main 6ab49d10, the comparison
-    scheme: nabla at the known node, no step where an end is below 1e5 Pa, the node caps."""
+    """The comparison scheme, one forward Euler step in P per node segment: nabla at the known
+    node, no step where an end is below 1e5 Pa, the node caps of 1e5 K and 100 K."""
     from zalmoxis.mixing import get_mixed_nabla_ad
     from zalmoxis.structure_model import get_layer_mixture
 
@@ -92,7 +92,7 @@ def _forward_euler(kw):
         if not mx.has_tdep() or P[j] < P_FLOOR or P[i] < P_FLOOR:
             continue
         nb = get_mixed_nabla_ad(P[j], T[j], mx, *_eos(kw))
-        if nb is not None and nb > 0 and P[j] > 0 and T[j] > 0 and (P[i] > P[j]) == inward:
+        if nb is not None and nb > 0 and (P[i] > P[j]) == inward:
             t = T[j] + nb * T[j] / P[j] * (P[i] - P[j])
             T[i] = min(t, 1e5) if inward else max(min(t, 1e5), 100.0)
     return T
@@ -149,10 +149,10 @@ def _reference(kw):
 def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validation_plot):
     """On the 6 stored profiles the default call stays within 1 K of an RK45 integration of the
     same ODE (rtol 1e-10) at every node on the adiabat, with no nabla read that is missing or
-    not positive. The forward Euler step in P per node of main, computed in the test from the
-    stored structure, is at least 5 times farther and more than 2 K from the reference on every
-    profile. A padded
-    top keeps its isothermal top shell."""
+    not positive. The forward Euler step in P per node, computed in the test from the stored
+    structure, equals the stored temperature of each solve and is at least 5 times farther and
+    more than 2 K from the reference on every profile. A padded top keeps its isothermal top
+    shell."""
     from zalmoxis.eos.temperature import compute_adiabatic_temperature
 
     rows = {}
@@ -230,7 +230,7 @@ def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validat
 def test_temperature_is_continuous_across_one_bar(profiles, anchor, request):
     """On the PROTEUS ``dummy`` structure (top near 1 atm) the top pressure is set to 41 values
     from 0.9e5 to 1.1e5 Pa: no node temperature changes by more than 0.01 K between neighbour
-    values, both anchors. The forward Euler step of main, which skips a step once an end is
+    values, both anchors. The forward Euler step, which skips a step once an end is
     below 1e5 Pa, jumps by more than 10 K at some node under both anchors."""
     from zalmoxis.eos.temperature import compute_adiabatic_temperature
 
@@ -251,7 +251,6 @@ def test_temperature_is_continuous_across_one_bar(profiles, anchor, request):
     native = np.array(native)
     assert float(np.max(np.abs(np.diff(native, axis=0)))) > 10.0
     if anchor == 'cmb':
-        native_top = native[:, -1]
 
         def figure():
             import matplotlib.pyplot as plt
@@ -259,7 +258,7 @@ def test_temperature_is_continuous_across_one_bar(profiles, anchor, request):
             fig, ax = plt.subplots()
             ax.plot(
                 tops / 1e5,
-                np.array(native_top) - native_top[-1],
+                native[:, -1] - native[-1, -1],
                 ls='--',
                 label='step skipped below 1 bar',
             )
