@@ -44,10 +44,17 @@ Each tested case says why the check exists, what it tests, how we know the right
 ![Temperature against pressure for default start 0: forward Euler step, midpoint, RK45 reference and the iron melting curve in the core](../assets/validation/adiabat_real_profile.svg#only-light){ width="80%" }
 ![Temperature against pressure for default start 0: forward Euler step, midpoint, RK45 reference and the iron melting curve in the core](../assets/validation/adiabat_real_profile_dark.svg#only-dark){ width="80%" }
 
-![Difference between the midpoint temperature and the RK45 reference against pressure on 6 profiles, with the 1 K bound](../assets/validation/adiabat_real_residual.svg#only-light){ width="80%" }
-![Difference between the midpoint temperature and the RK45 reference against pressure on 6 profiles, with the 1 K bound](../assets/validation/adiabat_real_residual_dark.svg#only-dark){ width="80%" }
+**How to read the plot.** The plot shows $T$ against $P$ for default start 0. The midpoint line and the dotted reference lie on each other. The dashed line is a forward Euler step, one first-order step in $P$ per node, computed in the test from the stored structure; it is 278 K too hot at the centre. The grey line is the iron melting curve at core pressures. A pass means that the midpoint line lies on the dotted reference.
 
-**How to read the plots.** The first plot shows $T$ against $P$ for default start 0. The midpoint line and the dotted reference lie on each other. The dashed line is a forward Euler step, one first-order step in $P$ per node, computed in the test from the stored structure; it is 278 K too hot at the centre. The grey line is the iron melting curve at core pressures. The second plot shows the absolute difference from the reference on a logarithmic axis for all 6 profiles; the dashed line is the 1 K bound that the test asserts. The jump near 140 to 155 GPa is where the default adiabat meets the iron melting boundary. A pass means that every line stays below the dashed line.
+The largest difference from the reference on each profile, against the test bound of 1 K:
+
+| Profile | macOS 26, arm64, Python 3.12 | Linux, x86_64, Python 3.12 (CI nightly) |
+|---|---|---|
+| default starts 0 to 3 | 0.0265, 0.0358, 0.0718, 0.0808 K | 0.0237, 0.0361, 0.0714, 0.0827 K |
+| PROTEUS `all_options` | 0.0004 K | 0.0004 K |
+| PROTEUS `dummy` | 0.0002 K | 0.0002 K |
+
+The values differ between the 2 platforms by up to 0.003 K, so a plot of them cannot match on both; the test asserts the 1 K bound and prints the values.
 
 **Known limit.** The test integrates on stored structures and runs no structure solve. The forward Euler line is context: the test asserts only that it is at least 5 times, and more than 2 K, farther from the reference than the midpoint.
 

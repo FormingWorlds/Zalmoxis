@@ -20,11 +20,6 @@ from tools.validation import adiabat_profiles as ap
 pytestmark = [pytest.mark.smoke, pytest.mark.timeout(60)]
 
 DATA = Path(__file__).parent / 'data' / 'adiabat_profiles.npz'
-NAMES = {  # plot labels; the 4 default starts share one
-    'default_k0': 'default config, 4 starts',
-    'ic_all_options': 'PROTEUS all_options',
-    'ic_dummy': 'PROTEUS dummy',
-}
 P_FLOOR = 1e5  # Pa
 
 
@@ -155,7 +150,6 @@ def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validat
     shell."""
     from zalmoxis.eos.temperature import compute_adiabatic_temperature
 
-    rows = {}
     kw0 = profiles['default_k0'][1]
     p_cmb = float(np.interp(kw0['cmb_mass'], kw0['mass_enclosed'], kw0['pressure']))
     for case, (rec, kw) in profiles.items():
@@ -171,7 +165,8 @@ def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validat
         assert native > max(5 * err, 2.0), (case, native, err)
         if rec['padded']:
             assert kw['pressure'][-1] == 0.0 and T[-1] == T[-2]
-        rows[case] = (kw['pressure'][keep], T[keep], ref[keep], euler[keep], err, native)
+        if case == 'default_k0':
+            k0 = (kw['pressure'][keep], T[keep], ref[keep], euler[keep])
         print(
             f'{case}: midpoint {err:.4f} K, forward Euler step {native:.2f} K from the reference'
         )
@@ -182,7 +177,7 @@ def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validat
         from zalmoxis.melting_curves import iron_melting_anzellini13
 
         fig, ax = plt.subplots()
-        P, T, ref, native = rows['default_k0'][:4]
+        P, T, ref, native = k0
         top = P > 0
         gpa = P[top] / 1e9
         core = P >= p_cmb
@@ -201,27 +196,7 @@ def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validat
         legend_below(fig, ncol=2)
         return assert_text_clear(fig)
 
-    def residual_figure():
-        import matplotlib.pyplot as plt
-
-        fig, ax = plt.subplots()
-        for case, (Pc, Tc, rc, _, _, _) in rows.items():
-            on = Pc > 0
-            ax.semilogy(
-                Pc[on] / 1e9,
-                np.maximum(np.abs(Tc - rc)[on], 1e-6),
-                color={'ic_all_options': 'C2', 'ic_dummy': 'C1'}.get(case, 'C0'),
-                label=NAMES.get(case),
-            )
-        ax.axhline(1.0, ls='--', color=plt.rcParams['text.color'], alpha=0.5, label='1 K bound')
-        ax.set_xlabel('Pressure [GPa]')
-        ax.set_ylabel('|T - reference| [K]')
-        ax.minorticks_off()
-        legend_below(fig, ncol=3)
-        return assert_text_clear(fig)
-
     validation_plot(profile_figure, 'adiabat_real_profile')
-    validation_plot(residual_figure, 'adiabat_real_residual')
 
 
 @pytest.mark.physics_invariant
