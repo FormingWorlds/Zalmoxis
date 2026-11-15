@@ -323,6 +323,8 @@ class TestReportTableBands:
         ('adiabatic_from_cmb', 'Seager2007:H2O', 0.0),
         ('adiabatic', '', 0.9e5),
         ('adiabatic_from_cmb', '', 0.9e5),
+        ('adiabatic', '', (0.95e5, 0.9e5)),
+        ('adiabatic_from_cmb', '', (0.95e5, 0.9e5)),
     ],
     ids=[
         'surface',
@@ -333,6 +335,8 @@ class TestReportTableBands:
         'cmb_ice',
         'surface_09bar',
         'cmb_09bar',
+        'surface_2_below_1bar',
+        'cmb_2_below_1bar',
     ],
 )
 def test_gradient_nodes_are_the_adiabat_reads(mats, monkeypatch, mode, ice, surface_p):
@@ -343,7 +347,8 @@ def test_gradient_nodes_are_the_adiabat_reads(mats, monkeypatch, mode, ice, surf
     layers = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3', 'ice_layer': ice}
     mixtures = parse_all_layer_mixtures(layers)
     m = np.arange(1.0, 11.0)
-    P = np.append(np.linspace(9e9, 1e9, 9), surface_p)
+    top = np.atleast_1d(surface_p)  # 1 or 2 nodes at or below 1 bar
+    P = np.append(np.linspace(9e9, 1e9, 10 - len(top)), top)
     adiabat_reads, check_reads = [], []
     monkeypatch.setattr(
         mixing, 'get_mixed_nabla_ad', lambda p, *a: adiabat_reads.append(p) or 0.1

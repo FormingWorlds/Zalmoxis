@@ -1043,6 +1043,9 @@ class TestMidpointAdiabat:
         monkeypatch.setattr(zt, '_segment_temperature', lambda T0, *a, **k: 0.5 * T0)
         with pytest.raises(StructureInvariantError, match='non-increasing'):
             _call(P, 'surface', 3000.0)
+        monkeypatch.setattr(zt, '_segment_temperature', lambda T0, *a, **k: T0 - 1e-6)
+        with pytest.raises(StructureInvariantError, match='non-increasing'):
+            _call(P, 'surface', 3000.0)  # a rise of 1e-6 K outward
         monkeypatch.setattr(zt, '_segment_temperature', lambda T0, *a, **k: np.nan)
         with pytest.raises(StructureInvariantError, match='finite'):
             _call(P, 'cmb', 3000.0)
@@ -1161,7 +1164,7 @@ class TestMidpointAdiabat:
     )
     def test_a_segment_holds_from_the_first_bad_nabla(self, bad):
         """_segment_temperature holds T from the first substep with a nabla that is missing or
-        not positive: a bad first read keeps T0; a bad midpoint read after 1 good substep keeps
+        not positive: a bad first read keeps T0, also when the reads after it are good; a bad midpoint read after 1 good substep keeps
         the T of that substep (T0 exp(0.1 dx)); a non-finite end pressure returns T0 unread."""
         from zalmoxis.eos.temperature import _segment_temperature
 
@@ -1177,6 +1180,11 @@ class TestMidpointAdiabat:
         assert T == pytest.approx(3000.0 * math.exp(0.1 * dx), rel=1e-12) and len(calls) == 4
         assert _segment_temperature(3000.0, 1e9, np.nan, nabla, 0.0025, True) == 3000.0
         assert len(calls) == 4
+        first = iter([bad])  # bad at the first read only, good after
+        assert (
+            _segment_temperature(3000.0, 1e9, 1e10, lambda P, T: next(first, 0.1), 0.0025, True)
+            == 3000.0
+        )
 
     @pytest.mark.physics_invariant
     def test_max_dlnp_property_over_its_domain(self, monkeypatch):
@@ -1191,7 +1199,12 @@ class TestMidpointAdiabat:
         exact = 3000.0 * (P / P[-1]) ** 0.1
 
         @settings(max_examples=200, deadline=None)
-        @given(st.floats(allow_nan=True, allow_infinity=True))
+        @given(
+            st.one_of(
+                st.floats(allow_nan=True, allow_infinity=True),
+                st.sampled_from([1e-4, np.nextafter(1e-4, 0.0), 1.0, np.nextafter(1.0, 2.0)]),
+            )
+        )
         def check(h):
             if 1e-4 <= h <= 1.0:
                 T = _call(P, 'surface', 3000.0, max_dlnp=h)
