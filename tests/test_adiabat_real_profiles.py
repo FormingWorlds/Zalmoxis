@@ -58,6 +58,46 @@ def _on_adiabat(kw):
     return keep
 
 
+def _eos(kw):
+    """The EOS arguments of ``get_mixed_nabla_ad`` from call kwargs, in their order."""
+    keys = ('material_dictionaries', 'interpolation_functions', 'solidus_func', 'liquidus_func')
+    keys += (
+        'mushy_zone_factors',
+        'condensed_rho_min',
+        'condensed_rho_scale',
+        'binodal_T_scale',
+    )
+    return tuple(kw[k] for k in keys)
+
+
+def _forward_euler(kw):
+    """The forward Euler step in P per node segment of Zalmoxis main 6ab49d10, the comparison
+    scheme: nabla at the known node, no step where an end is below 1e5 Pa, the node caps."""
+    from zalmoxis.mixing import get_mixed_nabla_ad
+    from zalmoxis.structure_model import get_layer_mixture
+
+    P, m = np.asarray(kw['pressure'], float), np.asarray(kw['mass_enclosed'], float)
+    n, T, inward = len(P), np.empty(len(P)), kw['anchor'] != 'cmb'
+    if inward:
+        T[-1], order = kw['surface_temperature'], [(i, i + 1) for i in range(n - 2, -1, -1)]
+    else:
+        ic = _cmb_index(kw)
+        T[:ic], T[ic] = kw['surface_temperature'], kw['cmb_temperature']
+        order = [(i, i - 1) for i in range(ic + 1, n)]
+    for i, j in order:
+        mx = get_layer_mixture(
+            m[i], kw['cmb_mass'], kw['core_mantle_mass'], kw['layer_mixtures']
+        )
+        T[i] = T[j]
+        if not mx.has_tdep() or P[j] < P_FLOOR or P[i] < P_FLOOR:
+            continue
+        nb = get_mixed_nabla_ad(P[j], T[j], mx, *_eos(kw))
+        if nb is not None and nb > 0 and P[j] > 0 and T[j] > 0 and (P[i] > P[j]) == inward:
+            t = T[j] + nb * T[j] / P[j] * (P[i] - P[j])
+            T[i] = min(t, 1e5) if inward else max(min(t, 1e5), 100.0)
+    return T
+
+
 def _reference(kw):
     """scipy ``solve_ivp`` (RK45, rtol 1e-10, atol 1e-12) of d ln T / d ln P = nabla over each
     node segment, with the rules of the routine: the mixture of the node the segment fills, T
@@ -69,16 +109,7 @@ def _reference(kw):
     from zalmoxis.structure_model import get_layer_mixture
 
     P, m = np.asarray(kw['pressure'], float), np.asarray(kw['mass_enclosed'], float)
-    eos = (
-        kw['material_dictionaries'],
-        kw['interpolation_functions'],
-        kw['solidus_func'],
-        kw['liquidus_func'],
-        kw['mushy_zone_factors'],
-        kw['condensed_rho_min'],
-        kw['condensed_rho_scale'],
-        kw['binodal_T_scale'],
-    )
+    eos = _eos(kw)
     n, T, bad = len(P), np.empty(len(P)), [0]
     inward = kw['anchor'] != 'cmb'
     if inward:
@@ -118,8 +149,9 @@ def _reference(kw):
 def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validation_plot):
     """On the 6 stored profiles the default call stays within 1 K of an RK45 integration of the
     same ODE (rtol 1e-10) at every node on the adiabat, with no nabla read that is missing or
-    not positive. A forward Euler step in P per node, stored with each profile,
-    is at least 5 times farther and more than 2 K from the reference on every profile. A padded
+    not positive. The forward Euler step in P per node of main, computed in the test from the
+    stored structure, is at least 5 times farther and more than 2 K from the reference on every
+    profile. A padded
     top keeps its isothermal top shell."""
     from zalmoxis.eos.temperature import compute_adiabatic_temperature
 
@@ -131,13 +163,14 @@ def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validat
         ref, bad = _reference(kw)
         keep = _on_adiabat(kw)
         err = float(np.max(np.abs(T - ref)[keep]))
-        native = float(np.max(np.abs(rec['T'] - ref)[keep]))
+        euler = _forward_euler(kw)
+        native = float(np.max(np.abs(euler - ref)[keep]))
         assert bad == 0, case
         assert err <= 1.0, (case, err)
         assert native > max(5 * err, 2.0), (case, native, err)
         if rec['padded']:
             assert kw['pressure'][-1] == 0.0 and T[-1] == T[-2]
-        rows[case] = (kw['pressure'][keep], T[keep], ref[keep], rec['T'][keep], err, native)
+        rows[case] = (kw['pressure'][keep], T[keep], ref[keep], euler[keep], err, native)
         print(
             f'{case}: midpoint {err:.4f} K, forward Euler step {native:.2f} K from the reference'
         )
@@ -196,49 +229,28 @@ def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validat
 def test_temperature_is_continuous_across_one_bar(profiles, anchor, request):
     """On the PROTEUS ``dummy`` structure (top near 1 atm) the top pressure is set to 41 values
     from 0.9e5 to 1.1e5 Pa: no node temperature changes by more than 0.01 K between neighbour
-    values, both anchors. A rule that skips the top step once an end is below
-    1e5 Pa, jumps by more than 10 K at the top node of the CMB anchor."""
+    values, both anchors. The forward Euler step of main, which skips a step once an end is
+    below 1e5 Pa, jumps by more than 10 K at some node under both anchors."""
     from zalmoxis.eos.temperature import compute_adiabatic_temperature
-    from zalmoxis.mixing import get_mixed_nabla_ad
-    from zalmoxis.structure_model import get_layer_mixture
 
     rec, kw = profiles['ic_dummy']
     kw = {**kw, 'anchor': anchor}
     P0 = np.asarray(kw['pressure'], float)
     assert P0[-1] > 0 and P0[-2] > 1.1e5
     tops = np.linspace(0.9e5, 1.1e5, 41)
-    T, native_top = [], []
+    T, native = [], []
     for p in tops:
         P = P0.copy()
         P[-1] = p
         T.append(compute_adiabatic_temperature(**{**kw, 'pressure': P}))
-        if anchor == 'cmb':  # a top step skipped below 1 bar, from the node below the top
-            mx = get_layer_mixture(
-                kw['mass_enclosed'][-1],
-                kw['cmb_mass'],
-                kw['core_mantle_mass'],
-                kw['layer_mixtures'],
-            )
-            Tb = T[-1][-2]
-            nb = get_mixed_nabla_ad(
-                P[-2],
-                Tb,
-                mx,
-                kw['material_dictionaries'],
-                kw['interpolation_functions'],
-                kw['solidus_func'],
-                kw['liquidus_func'],
-                kw['mushy_zone_factors'],
-                kw['condensed_rho_min'],
-                kw['condensed_rho_scale'],
-                kw['binodal_T_scale'],
-            )
-            native_top.append(Tb + nb * Tb / P[-2] * (p - P[-2]) if p >= P_FLOOR else Tb)
+        native.append(_forward_euler({**kw, 'pressure': P}))
     T = np.array(T)
     step = float(np.max(np.abs(np.diff(T, axis=0))))
     assert step <= 0.01, step
+    native = np.array(native)
+    assert float(np.max(np.abs(np.diff(native, axis=0)))) > 10.0
     if anchor == 'cmb':
-        assert float(np.max(np.abs(np.diff(native_top)))) > 10.0
+        native_top = native[:, -1]
 
         def figure():
             import matplotlib.pyplot as plt

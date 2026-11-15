@@ -40,7 +40,8 @@ def _segment_temperature(T0, P_from, P_to, nabla_of, h, inward):
     raising both pressures to ``ADIABAT_P_FLOOR``, so T is held below that pressure. Returns
     ``T0`` at a padded or non-finite end (P <= 0), for a non-positive ``T0``, and when the
     segment is empty or does not run in the anchor direction (``inward``: towards higher P); T
-    is held from the first substep where ``nabla_of(P, T)`` is None or not positive.
+    is held from the first substep where ``nabla_of(P, T)`` is None or not positive, and it
+    never rises above the node cap ``_T_MAX``.
     """
     if not (0 < P_from < math.inf and 0 < P_to < math.inf and 0 < T0 < math.inf):
         return T0
@@ -50,14 +51,17 @@ def _segment_temperature(T0, P_from, P_to, nabla_of, h, inward):
         return T0
     n = math.ceil(abs(x1 - x0) / h)
     dx, dy = (x1 - x0) / n, 0.0  # dy: ln T change over the segment, summed from 0
+    dy_cap = math.log(_T_MAX / T0)  # the ln T change that reaches the node cap
     for k in range(n):
         k1 = nabla_of(p, t)
         if k1 is None or not k1 > 0:
             break
-        k2 = nabla_of(math.exp(x0 + (k + 0.5) * dx), t * math.exp(dx / 2 * k1))
+        k2 = nabla_of(
+            math.exp(x0 + (k + 0.5) * dx), t * math.exp(min(dx / 2 * k1, dy_cap - dy))
+        )
         if k2 is None or not k2 > 0:
             break
-        dy += dx * k2
+        dy = min(dy + dx * k2, dy_cap)
         p, t = math.exp(x0 + (k + 1) * dx), T0 * math.exp(dy)
     return t
 
@@ -163,8 +167,9 @@ def compute_adiabatic_temperature(
     Raises
     ------
     ValueError
-        No T-dependent layer, ``max_dlnp`` outside its range, or ``anchor='cmb'`` without a
-        positive ``cmb_temperature``.
+        No T-dependent layer, ``max_dlnp`` outside its range, a ``surface_temperature`` that is
+        not above 0 K and at most 1e5 K, or ``anchor='cmb'`` without a ``cmb_temperature`` from
+        100 K to 1e5 K (the node caps).
     StructureInvariantError
         The profile is not finite and positive at every node, or rises outward from its anchor.
     """
@@ -200,12 +205,23 @@ def compute_adiabatic_temperature(
 
         return nabla
 
+    if not (
+        isinstance(surface_temperature, numbers.Real) and 0 < surface_temperature <= _T_MAX
+    ):
+        raise ValueError(
+            f'surface_temperature must be a temperature above 0 and at most {_T_MAX:g} K, '
+            f'got {surface_temperature!r}.'
+        )
     n = len(radii)
     T = np.zeros(n)
     if anchor == 'cmb':
-        if cmb_temperature is None or cmb_temperature <= 0:
+        if not (
+            isinstance(cmb_temperature, numbers.Real)
+            and _T_MIN_CMB <= cmb_temperature <= _T_MAX
+        ):
             raise ValueError(
-                f"anchor='cmb' requires a positive cmb_temperature, got {cmb_temperature}."
+                f"anchor='cmb' requires a cmb_temperature from {_T_MIN_CMB:g} to {_T_MAX:g} K, "
+                f'got {cmb_temperature!r}.'
             )
         # first mantle shell: mass_enclosed >= cmb_mass; the core carries the surface anchor
         first = max(1, min(int(np.searchsorted(mass_enclosed, cmb_mass)), n - 1))

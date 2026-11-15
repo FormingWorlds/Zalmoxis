@@ -2,6 +2,8 @@
 
 ## What this page checks
 
+This page lists the validation cases of Zalmoxis by process (hydrostatic structure, mass-radius relation, equation of state, thermal state), with the test id, the reference and the tier of each, and summarises the first-principles cases.
+
 Numerical codes for planetary interior structure involve several layers of approximation: the ODE integrator introduces truncation errors, the iterative density-pressure coupling (Picard iteration) may not fully converge, the Brent root-finder for the central pressure operates within a finite tolerance, and the equation of state tables introduce interpolation error. When these components are assembled into a coupled solver, it becomes difficult to attribute any discrepancy to a specific source. Validation means that a test runs the code on a case with a known right answer and checks the result within a stated tolerance.
 
 First-principles verification addresses this by testing each component against problems with known analytical solutions. If the code reproduces an exact result to the expected numerical precision, that component passes the check. If it does not, the test isolates where the error is introduced.
@@ -12,7 +14,7 @@ The verification has 3 steps, each in one pytest tier:
 2. **Full solver with the analytic EOS (smoke tier):** Test the full solver chain (ODE + Picard + Brent + mass-radius loop) using the Seager et al. (2007)[^cite-seager2007] analytic EOS, which is a closed-form formula requiring no tabulated data. Compare against known physical benchmarks (Earth's radius, gravity, central pressure) and scaling laws.
 3. **Grids and tolerances (slow tier):** Check the error over several grids and solver tolerances, and the full-solver radius on 3 grids.
 
-All tests are implemented in [`tests/test_first_principles.py`](https://github.com/FormingWorlds/Zalmoxis/blob/main/tests/test_first_principles.py) (25 pytest tests). The tests of these cases draw their own plot pairs.
+The first-principles cases of these 3 steps are in [`tests/test_first_principles.py`](https://github.com/FormingWorlds/Zalmoxis/blob/main/tests/test_first_principles.py) (25 pytest tests); the table below names the test of every case on the tab. The tests of these cases draw their own plot pairs.
 
 ## Cases by process
 

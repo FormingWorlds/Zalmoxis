@@ -13,6 +13,8 @@ References:
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pytest
 
@@ -816,8 +818,8 @@ def _stub_adiabat(monkeypatch, nabla, calls=None):
 
 
 def _profile(n=31, p_center=3.6e11, p_top=2e5):
-    """Radius, pressure (geometric, equal ln P steps) and mass of an n-node stub planet."""
-    return np.linspace(0.0, 6.4e6, n), np.geomspace(p_center, p_top, n), np.linspace(0, M_E, n)
+    """Pressure of an n-node stub planet, geometric (equal ln P steps) from centre to top."""
+    return np.geomspace(p_center, p_top, n)
 
 
 def _call(P, anchor, T_anchor, **kw):
@@ -863,18 +865,17 @@ class TestMidpointAdiabat:
         law; the midpoint rule in ln P is exact for a constant right-hand side). A forward
         Euler step in P per node, the plausible wrong scheme, misses it by more than 10 %."""
         _stub_adiabat(monkeypatch, lambda P, T: 0.1)
-        _, P, _ = _profile()
+        P = _profile()
         T = _call(P, anchor, 3000.0)
         a = _anchor_node(anchor, len(P))
         mantle = _integrated(anchor)
         exact = 3000.0 * (P / P[a]) ** 0.1
         np.testing.assert_allclose(T[mantle], exact[mantle], rtol=1e-12, atol=0)
-        euler = np.empty(len(P))
-        euler[-1] = 3000.0
-        for i in range(len(P) - 2, -1, -1):
-            euler[i] = euler[i + 1] * (1 + 0.1 * (P[i] - P[i + 1]) / P[i + 1])
-        if anchor == 'surface':
-            assert abs(euler[0] / exact[0] - 1) > 0.1
+        if anchor == 'surface':  # forward Euler step in P per node, inward from the top node
+            euler, end = 3000.0 * np.prod(1 + 0.1 * (P[:-1] / P[1:] - 1)), exact[0]
+        else:  # outward from the CMB node 1 to the top node
+            euler, end = 3000.0 * np.prod(1 + 0.1 * (P[2:] / P[1:-1] - 1)), exact[-1]
+        assert abs(euler / end - 1) > 0.1
 
     @pytest.mark.physics_invariant
     @pytest.mark.reference_pinned
@@ -884,10 +885,8 @@ class TestMidpointAdiabat:
         ln T_a)/2) with T = T_a (1 + a ln(P/P_a)/2)^2, and nabla = a + b cos(ln P) with
         ln T = ln T_a + a ln(P/P_a) + b (sin ln P - sin ln P_a); a = 0.1, b = 0.05. A first
         order scheme gives order 1, outside the band."""
-        import math
-
         hs = (0.04, 0.02, 0.01, 0.005, 0.0025)
-        _, P, _ = _profile()
+        P = _profile()
         T_a = 3000.0
         rows = {}
         for anchor in ('surface', 'cmb'):
@@ -950,8 +949,6 @@ class TestMidpointAdiabat:
         """A default call evaluates nabla twice per substep, with ceil(|d ln P| / 0.0025)
         substeps per segment above 1e5 Pa: the count pins the default h (a call at h 0.02
         meets the 1 K bound of the real profiles too, so only the count tells them apart)."""
-        import math
-
         calls = []
         _stub_adiabat(monkeypatch, lambda P, T: 0.3, calls)
         P = np.geomspace(3.6e11, 3e4, 40)  # the top segment crosses 1e5 Pa
@@ -971,7 +968,7 @@ class TestMidpointAdiabat:
         A rule that skips the whole top segment once an end is below 1e5 Pa jumps by
         more than 10 % at the next node."""
         _stub_adiabat(monkeypatch, lambda P, T: 0.1)
-        _, P0, _ = _profile(n=21, p_top=2e5)
+        P0 = _profile(n=21, p_top=2e5)
         a = _anchor_node(anchor, len(P0))
         prev = None
         for p_top in np.linspace(0.5e5, 2e5, 31):
@@ -994,7 +991,7 @@ class TestMidpointAdiabat:
         """A padded top (P = 0 at the outer node) is a stop: the top shell is isothermal, so the
         surface-anchored profile below it equals the one of a top at the next node."""
         _stub_adiabat(monkeypatch, lambda P, T: 0.1)
-        _, P, _ = _profile(n=21)
+        P = _profile(n=21)
         P[-1] = 0.0
         T = _call(P, anchor, 3000.0)
         assert T[-1] == T[-2]
@@ -1009,7 +1006,7 @@ class TestMidpointAdiabat:
         """nabla <= 0 or None at a substep holds T for the rest of that segment; the next
         segment integrates again, so T never falls inward."""
         _stub_adiabat(monkeypatch, lambda P, T: None if 1e9 < P < 1e10 else 0.1)
-        _, P, _ = _profile()
+        P = _profile()
         T = _call(P, 'surface', 3000.0)
         assert np.all(np.diff(T) <= 0)
         held = (P[:-1] < 1e10) & (P[1:] > 1e9)  # segments read only inside the gap
@@ -1025,7 +1022,7 @@ class TestMidpointAdiabat:
         before any nabla read."""
         calls = []
         _stub_adiabat(monkeypatch, lambda P, T: 0.3, calls)
-        _, P, _ = _profile(n=5)
+        P = _profile(n=5)
         with pytest.raises(ValueError, match='max_dlnp'):
             _call(P, 'surface', 3000.0, max_dlnp=bad)
         assert calls == []
@@ -1038,7 +1035,7 @@ class TestMidpointAdiabat:
         from zalmoxis.invariants import StructureInvariantError
 
         _stub_adiabat(monkeypatch, lambda P, T: 0.1)
-        _, P, _ = _profile(n=11)
+        P = _profile(n=11)
         good = _call(P, 'surface', 3000.0)
         assert np.all(np.diff(good) < 0)
         monkeypatch.setattr(zt, '_segment_temperature', lambda T0, *a, **k: 0.5 * T0)
@@ -1070,7 +1067,7 @@ class TestMidpointAdiabat:
         before any nabla read, not a profile invariant error from a capped node."""
         calls = []
         _stub_adiabat(monkeypatch, lambda P, T: 0.1, calls)
-        P = _profile(n=5)[1]
+        P = _profile(n=5)
         with pytest.raises(ValueError, match='temperature'):
             _call(P, anchor, value)
         assert calls == []
@@ -1079,7 +1076,7 @@ class TestMidpointAdiabat:
         """With the CMB anchor the core nodes carry the surface temperature, so it must be finite
         and positive too; NaN raises ValueError, while the edges 100 K and 1e5 K run."""
         _stub_adiabat(monkeypatch, lambda P, T: 0.1)
-        P = _profile(n=5)[1]
+        P = _profile(n=5)
         r, m = np.linspace(0.0, 6.4e6, 5), np.linspace(0, M_E, 5)
         kw = dict(
             radii=r,
@@ -1107,10 +1104,33 @@ class TestMidpointAdiabat:
         """A nabla far above any table value (1e6, inf) drives T to the 1e5 K cap of each node
         instead of an overflow; the anchor keeps its value and no node exceeds the cap."""
         _stub_adiabat(monkeypatch, lambda P, T: nabla)
-        P = _profile(n=11)[1]
+        P = _profile(n=11)
         T = _call(P, 'surface', 3000.0)
         assert T[-1] == 3000.0
         np.testing.assert_array_equal(T[:-1], 1e5)
+
+    @pytest.mark.physics_invariant
+    @pytest.mark.parametrize(
+        'bad', [None, 0.0, -1.0, np.nan], ids=['none', 'zero', 'neg', 'nan']
+    )
+    def test_a_segment_holds_from_the_first_bad_nabla(self, bad):
+        """_segment_temperature holds T from the first substep with a nabla that is missing or
+        not positive: a bad first read keeps T0; a bad midpoint read after 1 good substep keeps
+        the T of that substep (T0 exp(0.1 dx)); a non-finite end pressure returns T0 unread."""
+        from zalmoxis.eos.temperature import _segment_temperature
+
+        calls = []
+
+        def nabla(P, T):  # good for substep 1 and the start of substep 2, bad after
+            calls.append(P)
+            return 0.1 if len(calls) <= 3 else bad
+
+        assert _segment_temperature(3000.0, 1e9, 1e10, lambda P, T: bad, 0.0025, True) == 3000.0
+        dx = math.log(10.0) / math.ceil(math.log(10.0) / 0.0025)
+        T = _segment_temperature(3000.0, 1e9, 1e10, nabla, 0.0025, True)
+        assert T == pytest.approx(3000.0 * math.exp(0.1 * dx), rel=1e-12) and len(calls) == 4
+        assert _segment_temperature(3000.0, 1e9, np.nan, nabla, 0.0025, True) == 3000.0
+        assert len(calls) == 4
 
     @pytest.mark.physics_invariant
     def test_max_dlnp_property_over_its_domain(self, monkeypatch):
@@ -1121,7 +1141,7 @@ class TestMidpointAdiabat:
         from hypothesis import strategies as st
 
         _stub_adiabat(monkeypatch, lambda P, T: 0.1)
-        _, P, _ = _profile(n=6, p_center=1e7, p_top=2e5)
+        P = _profile(n=6, p_center=1e7, p_top=2e5)
         exact = 3000.0 * (P / P[-1]) ** 0.1
 
         @settings(max_examples=200, deadline=None)

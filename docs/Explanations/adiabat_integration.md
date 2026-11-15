@@ -2,21 +2,21 @@
 
 How does Zalmoxis turn the adiabatic gradient of an equation of state (EOS) table into a temperature profile, and how accurate is that profile?
 
-In the temperature modes `adiabatic` and `adiabatic_from_cmb`, the temperature follows an adiabat: it rises with pressure as fast as the EOS allows without heat exchange.
+In the temperature modes `adiabatic` and `adiabatic_from_cmb`, the temperature follows an adiabat: the temperature profile of material that is compressed without heat exchange, so that its entropy stays constant.
 `compute_adiabatic_temperature` in `zalmoxis.eos.temperature` integrates this adiabat from one node of the radial grid to the next.
 It uses the midpoint rule in $\ln P$ with substeps of at most 0.0025 in $\ln P$, and it holds the temperature constant below 1 bar.
-On the stored profiles of the default configuration and of the PROTEUS initial structure, the result lies within 0.1 K of a high-accuracy integration.
+On the stored profiles of the default configuration and of the PROTEUS initial structure, the result lies within 0.1 K of an independent high-accuracy integration; the test bound is 1 K.
 
 ## The equation
 
-The adiabatic gradient $\nabla_\mathrm{ad} = (\partial \ln T / \partial \ln P)_S$ is a dimensionless number of each EOS table; on the profiles below it lies between 0.009 and 0.35 at pressures above 1 GPa.
+The adiabatic gradient $\nabla_\mathrm{ad} = (\partial \ln T / \partial \ln P)_S$ is a dimensionless column of each EOS table. On the 6 stored profiles of the [real-profile check](../Validation/thermal_state.md#adiabat-integration-on-real-profiles) it lies between 0.009 and 0.35 at pressures above 1 GPa.
 $T$ is the temperature in K, $P$ the pressure in Pa and $S$ the entropy.
 With $x = \ln P$ and $y = \ln T$, an adiabat is the solution of
 
 $$\frac{dy}{dx} = \nabla_\mathrm{ad}(P, T).$$
 
-The pressure of a planet spans about 6 to 15 factors of $e$ (the profiles below span 5.9 to 15.2 in $\ln P$), so $x$ is the natural step variable.
-The integration starts at an anchor: the surface temperature at the top node (`anchor='surface'`, inward), or the CMB temperature at the first mantle node (`anchor='cmb'`, outward through the mantle).
+Between the anchor and the last integrated node, $\ln P$ changes by 5.9 to 15.2 on these profiles. Equal steps in $x$ give the same relative change of $P$ in every step, so $x$ is the natural step variable.
+The integration starts at an anchor: the surface temperature at the top node (`anchor='surface'`, inward), or the CMB temperature at the first mantle node (`anchor='cmb'`, outward through the mantle). With the CMB anchor, the nodes below the CMB keep the surface temperature.
 [Code architecture](code_architecture.md#adiabat-anchor-surface-vs-cmb) describes the 2 anchors.
 For a mixture of materials, `get_mixed_nabla_ad` weights $\nabla_\mathrm{ad}$ of the components ([Multi-material mixing](mixing.md#adiabatic-gradient-mixing)); a segment takes the mixture of the node it fills.
 
@@ -31,8 +31,8 @@ For a constant $\nabla_\mathrm{ad}$ the step is exact: $T = T_a (P / P_a)^{\nabl
 
 A worked example: the default configuration at a surface temperature of 2515 K has its centre at 407 GPa and its CMB at 141 GPa.
 One call takes about 2400 substeps and reads $\nabla_\mathrm{ad}$ about 4800 times.
-The centre then lies at 5487 to 5501 K over 4 starts.
-One forward step in $P$ per node, a first-order scheme, puts the centre at 5765 to 5832 K, 278 to 330 K too hot.
+Over 4 starts, solves whose planet mass differs only by $k \times 10^{-12}$ of its value ($k$ = 0 to 3), the centre lies at 5487 to 5501 K.
+A forward Euler step, one first-order step in $P$ per node, puts the centre at 5765 to 5832 K, 278 to 330 K too hot.
 
 ## Accuracy on the PALEOS tables
 
@@ -44,7 +44,7 @@ The checks therefore use 2 tests: the order on smooth $\nabla_\mathrm{ad}$ with 
 
 ## Low pressure, padded tops and limits
 
-- **Below 1 bar.** Both ends of a segment are raised to `ADIABAT_P_FLOOR` = $10^5$ Pa before the integration, so $T$ is constant below 1 bar. The PALEOS rock and iron tables start at $10^5$ Pa. For a solid or a liquid, $\nabla_\mathrm{ad} = \alpha P / (\rho c_p)$, with $\alpha$ the thermal expansivity, $\rho$ the density and $c_p$ the heat capacity, so $\nabla_\mathrm{ad}$ vanishes as $P \to 0$; for $\alpha = 3 \times 10^{-5}$ 1/K, $\rho$ = 3000 kg/m$^3$, $c_p$ = 1200 J/(kg K) and 2500 K, the adiabat from 0 to 1 bar changes $T$ by about 0.002 K. The temperature is continuous in the surface pressure.
+- **Below 1 bar.** Both ends of a segment are raised to `ADIABAT_P_FLOOR` = $10^5$ Pa before the integration, so $T$ is constant below 1 bar. The PALEOS rock and iron tables start at $10^5$ Pa. For a solid or a liquid, $\nabla_\mathrm{ad} = \alpha P / (\rho c_p)$, with $\alpha$ the thermal expansivity, $\rho$ the density and $c_p$ the heat capacity, so $\nabla_\mathrm{ad}$ vanishes as $P \to 0$; for $\alpha = 3 \times 10^{-5}$ 1/K, $\rho$ = 3000 kg/m$^3$, $c_p$ = 1200 J/(kg K) and 2500 K, the adiabat from 0 to 1 bar changes $T$ by about 0.002 K. For a top pressure above 0, the temperature is continuous in the top pressure.
 - **Padded top.** A node with $P = 0$ (a [padded accept](process_flow.md#padded-accepts)) ends the integration: the top shell is isothermal.
 - **Missing gradient.** Where $\nabla_\mathrm{ad}$ is missing or not positive, $T$ is held for the rest of that segment; the next segment integrates again.
 - **Caps.** Each node is capped at $10^5$ K, the top of the PALEOS tables; with the CMB anchor it is also kept at 100 K or above.
@@ -52,4 +52,4 @@ The checks therefore use 2 tests: the order on smooth $\nabla_\mathrm{ad}$ with 
 - **Range of `max_dlnp`.** A real number from $10^{-4}$ to 1; any other value raises `ValueError`.
 - **Known limit.** A water layer, whose table reaches 0.1 Pa, is also isothermal below 1 bar.
 
-**Where this is checked.** [Adiabat integration](../Validation/thermal_state.md#adiabat-integration-on-smooth-gradients) and the 2 cases after it on the Thermal state page.
+**Where this is checked.** [Adiabat integration on smooth gradients](../Validation/thermal_state.md#adiabat-integration-on-smooth-gradients), [Adiabat integration on real profiles](../Validation/thermal_state.md#adiabat-integration-on-real-profiles) and [Temperature across 1 bar](../Validation/thermal_state.md#temperature-across-1-bar).

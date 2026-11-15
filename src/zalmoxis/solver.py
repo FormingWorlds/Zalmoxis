@@ -554,8 +554,10 @@ def _report_table_bands(
 
     A table counts at a mantle node when the solve read it there: the solid table at or
     below the solidus, below the liquidus, or where the melting curves are undefined; the
-    melt table above the solidus; the gradient table where the adiabat integration read
-    it, when the solve computed the adiabat. The check uses the final P and T, which are
+    melt table above the solidus; the gradient table at the start node of each segment the
+    adiabat integration stepped, when the solve computed the adiabat. Its midpoint substeps and
+    the read at 1e5 Pa of a segment that ends below it lie between nodes and are not checked.
+    The check uses the final P and T, which are
     the values the adiabat integration read only once its blend reached 1. Only tables in
     the interpolation cache are checked. A node with a non-finite P or T counts as
     infinitely far outside. One warning names the tables with a node outside their band,
