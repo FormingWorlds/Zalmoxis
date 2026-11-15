@@ -528,11 +528,17 @@ class TestWolfBowerSolves:
     """Real solves: inside the limit the clamp stays, beyond it the solve fails."""
 
     def test_inside_the_limit_converges_and_reports(self, wb_solves):
-        """At 3871 K the molten mantle lies up to about 58 K beyond the melt band."""
+        """At 3871 K the molten mantle lies beyond the melt band, most near the last node above a
+        padded top, which the adiabat integrates from 1 bar (about 108 K, more than the 56 K of a
+        node at the surface temperature)."""
         res, msgs = wb_solves['3871']
-        n, excess = res['table_band_excess'][WB['melted_mantle']['eos_file']]
+        melt = WB['melted_mantle']['eos_file']
+        n, excess = res['table_band_excess'][melt]
+        P, T = np.asarray(res['pressure']), np.asarray(res['temperature'])
+        top = int(np.nonzero(P > 0)[0][-1])
+        at_top = seager.band_excess(solver._interpolation_cache[melt], P[top], T[top])
         assert res['converged'] is True and res['converged_bands'] is True
-        assert n > 0 and excess == pytest.approx(3871.0 - 3815.3, abs=1.0)  # the 1-bar node
+        assert n > 0 and excess >= at_top > 3871.0 - 3815.3 + 10.0
         assert res['adiabat_computed'] is True
         assert res['table_band_excess'][WB['melted_mantle']['adiabat_grad_file']][0] > 0
         assert len(msgs) == 1
