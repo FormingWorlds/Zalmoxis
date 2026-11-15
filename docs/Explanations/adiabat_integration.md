@@ -53,6 +53,7 @@ The checks therefore use 2 tests: the order on smooth $\nabla_\mathrm{ad}$ with 
     - with `anchor='cmb'`, the CMB temperature: from 100 K to $10^5$ K.
 
     The config check `validate_config` refuses these values before a solve starts. In every temperature mode it refuses a surface temperature that is not a positive, finite number. In the modes `adiabatic` and `adiabatic_from_cmb` it also refuses a surface temperature above $10^5$ K, and in `adiabatic_from_cmb` a CMB temperature outside 100 K to $10^5$ K. `solver.main` does not call `validate_config`, and PROTEUS calls `solver.main` with its own configuration dict, so on that path the anchors are checked only when the solve computes the adiabat itself, at its first call of `compute_adiabatic_temperature`.
+
 - **Surface anchor below 100 K.** The routine accepts it, but the solver floors the temperature that the density reads from the adiabat at 100 K, so below 100 K the density uses 100 K.
 - **Check.** Each call raises `StructureInvariantError` when $T$ is not finite and positive at every node, or when it rises outward from the anchor.
 - **Range of `max_dlnp`.** A real number from $10^{-4}$ to 1; any other value raises `ValueError`.
