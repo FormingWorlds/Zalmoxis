@@ -949,8 +949,8 @@ class TestMidpointAdiabat:
     @pytest.mark.parametrize('anchor', ['surface', 'cmb'])
     def test_default_call_uses_the_0p0025_substeps(self, monkeypatch, anchor):
         """A default call evaluates nabla twice per substep, with ceil(|d ln P| / 0.0025)
-        substeps per segment above 1e5 Pa: the count pins the default h (the 1 K bound of the
-        real profiles rejects h of 0.01 and above, but h 0.005 still passes it)."""
+        substeps per segment above 1e5 Pa: the count pins the default h, because the 1 K bound
+        of the real profiles does not decide h (0.0065 and 0.008 pass it, 0.0055 and 0.007 fail)."""
         calls = []
         _stub_adiabat(monkeypatch, lambda P, T: 0.1, calls)  # T stays inside the node caps
         P = np.geomspace(3.6e11, 3e4, 40)  # the top segment crosses 1e5 Pa
@@ -1109,21 +1109,55 @@ class TestMidpointAdiabat:
             T = _call(_profile(n=5), 'surface', t)
         assert T[-1] == t and np.all(T > 0)
 
-    @pytest.mark.parametrize('nabla', [0.1, 50.0, 1e6])
-    def test_a_tiny_anchor_with_a_large_nabla_reaches_the_cap(self, monkeypatch, nabla):
-        """Anchors of 5e-324 K and 1e-310 K with nabla up to 1e6 give no OverflowError; with a
-        nabla that reaches the cap every node below the anchor is exactly 1e5 K."""
+    @pytest.mark.physics_invariant
+    def test_a_tiny_anchor_follows_the_closed_form_or_stops_at_the_cap_property(self):
+        """Hypothesis over anchors T0 from 5e-324 K to 1e-290 K and a constant nabla from 0.1 to
+        inf, inward from 1e5 to 4e11 Pa: no OverflowError; the segment gives T0 (4e6)^nabla, also
+        where that needs the log-space product (nabla 47 and 48), and exactly 1e5 K where that
+        reaches the cap."""
+        from hypothesis import given, settings
+        from hypothesis import strategies as st
+
         from zalmoxis.eos.temperature import _segment_temperature
 
-        for T0 in (5e-324, 1e-310):
+        @settings(max_examples=300, deadline=None, derandomize=True)
+        @given(
+            st.floats(-323.3, -290.0),
+            st.sampled_from([0.1, 3.0, 47.0, 48.0, 50.0, 1e6, math.inf]),
+        )
+        def check(log10_T0, nabla):
+            T0 = 10.0**log10_T0
             try:
                 t = _segment_temperature(T0, 1e5, 4e11, lambda P, T: nabla, 0.0025, True)
             except OverflowError as e:
                 pytest.fail(f'T0 {T0}, nabla {nabla}: {e}')
-            if nabla > 1.0:
+            x = math.log(T0) + nabla * math.log(4e6) - math.log(1e5)  # ln(closed form / cap)
+            if x > 1e-6:
                 assert t == 1e5, (T0, nabla, t)
+            elif x < -1e-6:
+                assert t == pytest.approx(1e5 * math.exp(x), rel=1e-7), (T0, nabla, t)
             else:
-                assert 0 < t < 1e5, (T0, nabla, t)
+                assert t == pytest.approx(1e5, rel=1e-5), (T0, nabla, t)
+
+        check()
+
+    def test_segment_end_rule(self):
+        """A NaN or +inf end returns T0 exactly; a -inf, negative or zero end gives the result of
+        an end at 1e5 Pa, inward and outward."""
+        from zalmoxis.eos.temperature import _segment_temperature
+
+        def seg(P0, P1, inward):
+            try:
+                return _segment_temperature(3000.0, P0, P1, lambda P, T: 0.1, 0.0025, inward)
+            except Exception as e:  # noqa: BLE001
+                pytest.fail(f'{P0} -> {P1}: {e!r}')
+
+        for end in (math.nan, math.inf):
+            assert seg(end, 1e9, True) == seg(1e9, end, False) == 3000.0, end
+            assert seg(1e9, end, True) == seg(end, 1e9, False) == 3000.0, end
+        for end in (-math.inf, -5.0, 0.0):
+            assert seg(end, 1e9, True) == seg(1e5, 1e9, True) != 3000.0, end
+            assert seg(1e9, end, False) == seg(1e9, 1e5, False) != 3000.0, end
 
     def test_non_finite_surface_temperature_with_the_cmb_anchor_raises(self, monkeypatch):
         """With the CMB anchor the core nodes carry the surface temperature, so it too must be
