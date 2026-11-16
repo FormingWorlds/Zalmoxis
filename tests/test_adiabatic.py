@@ -1086,6 +1086,16 @@ class TestMidpointAdiabat:
 
         check()
 
+    @pytest.mark.parametrize('bad', ['CMB', 'Surface', 'bogus', '', None])
+    def test_an_unknown_anchor_raises_value_error(self, monkeypatch, bad):
+        """``anchor`` is 'surface' or 'cmb'; any other value raises ValueError before any nabla
+        read, instead of running the surface anchor."""
+        calls = []
+        _stub_adiabat(monkeypatch, lambda P, T: 0.1, calls)
+        with pytest.raises(ValueError, match='anchor'):
+            _call(_profile(n=5), bad, 3000.0, surface_temperature=3000.0)
+        assert calls == []
+
     def test_non_finite_surface_temperature_with_the_cmb_anchor_raises(self, monkeypatch):
         """With the CMB anchor the core nodes carry the surface temperature, so it must be finite
         and positive too: NaN and True raise ValueError."""
