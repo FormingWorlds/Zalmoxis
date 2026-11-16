@@ -7,6 +7,9 @@ PROTEUS initial structure setups of ``tools.validation.proteus_ic_solvers`` (New
 checks that the call rebuilt from the file gives the temperature of the solve bit for bit, so
 the file holds every input of the integration; it stores that call and ``T_euler``, the result of
 ``forward_euler`` on it, the comparison scheme of the real-profile test, not the temperature.
+The stored file holds the solves of the commit in its ``_source`` entry, whose structure solve
+used the forward Euler adiabat; a ``write`` at a later commit solves other structures, and the
+numbers that the docs take from the stored profiles change with them.
 
 Usage::
 
@@ -197,12 +200,11 @@ def write(path):
     for case in CASES:
         rec = _solve(case)
         again = compute_adiabatic_temperature(**call_kwargs(rec))
-        if not np.array_equal(again, rec['T']):
+        if not np.array_equal(again, rec.pop('T')):
             raise RuntimeError(
                 f'{case}: the rebuilt call does not give the temperature of the solve'
             )
         arrays[f'{case}/T_euler'] = forward_euler(call_kwargs(rec))
-        rec.pop('T')
         for k in ('radii', 'pressure', 'mass_enclosed'):
             arrays[f'{case}/{k}'] = np.asarray(rec.pop(k), float)
         meta[case] = {

@@ -32,7 +32,7 @@ def _is_real(x):
 
 
 def _times_exp(t, a):
-    """t exp(a); in log space for a >= 700, where exp(a) alone would overflow for a tiny t."""
+    """t exp(a); in log space for a >= 700 (exp overflows above about 709.78), for a tiny t."""
     return t * math.exp(a) if a < 700.0 else math.exp(math.log(t) + a)
 
 
