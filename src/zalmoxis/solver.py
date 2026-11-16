@@ -344,6 +344,22 @@ _SECANT_CLAMP = 0.02
 _SECANT_FLOOR = 2.0
 _SEED_KEYS = ('radii', 'pressure', 'mass_enclosed')
 _SEED_TABLE_BLEND = -1.0  # adiabat_table_blend of a pass whose T table comes from adiabat_seed
+# T table pressures from 1e5 Pa up to the last positive node of a padded top
+_TOP_SHELL_POINTS = 64
+
+
+def _adiabat_table(pressure, T, top_shell):
+    """log10 P and T of the adiabat ``T`` on the nodes at P > 0, sorted by P: the T(P) lookup
+    of the density solve. With a padded top (P <= 0 at the outer node) whose last positive node
+    lies above ``ADIABAT_P_FLOOR``, the shell gains ``_TOP_SHELL_POINTS`` geometric pressures q
+    from the floor up with T ``top_shell(q, T[-1])``, the adiabat inward from the padded node."""
+    s = np.argsort(pressure)
+    keep = pressure[s] > 0
+    P, Ts = pressure[s][keep], T[s][keep]
+    if pressure[-1] <= 0 and P.size and P[0] > ADIABAT_P_FLOOR:
+        q = np.geomspace(ADIABAT_P_FLOOR, P[0], _TOP_SHELL_POINTS + 1)[:-1]
+        P, Ts = np.concatenate([q, P]), np.concatenate([top_shell(q, T[-1]), Ts])
+    return np.log10(P), Ts
 
 
 def _secant_radius(R, M, R_prev, M_prev, M_target, R_fallback):
@@ -1974,13 +1990,14 @@ def _solve(
     _secant_prev = None  # (radius, mass) of the last pass on a full-adiabat table
     _secant_err = None  # mass error of the pass whose radius came from a secant step
 
-    def _adiabat(radii, pressure, mass_enclosed):
-        # 'adiabatic_from_cmb' anchors at the CMB and integrates outward, 'adiabatic' inward
+    def _adiabat(radii, pressure, mass_enclosed, top=None):
+        # 'adiabatic_from_cmb' anchors at the CMB and integrates outward, 'adiabatic' and a
+        # given outer-node T ``top`` inward
         return compute_adiabatic_temperature(
             radii,
             pressure,
             mass_enclosed,
-            surface_temperature,
+            surface_temperature if top is None else top,
             cmb_mass,
             core_mantle_mass,
             layer_mixtures,
@@ -1992,9 +2009,16 @@ def _solve(
             condensed_rho_min,
             condensed_rho_scale,
             binodal_T_scale,
-            anchor='cmb' if temperature_mode == 'adiabatic_from_cmb' else 'surface',
+            anchor='cmb'
+            if top is None and temperature_mode == 'adiabatic_from_cmb'
+            else 'surface',
             cmb_temperature=cmb_temperature,
         )
+
+    def _top_shell(q, T_top):
+        # the adiabat inward from T_top at q[0], in the layer of the last positive node
+        m = prev_mass_enclosed[prev_pressure > 0][-1]
+        return _adiabat(np.arange(q.size), q[::-1], np.full(q.size, m), top=T_top)[::-1]
 
     # For adiabatic mode, cap the initial center_temperature guess to
     # prevent the linear-T initial profile from being far above the
@@ -2156,14 +2180,7 @@ def _solve(
                 # ODE's actual pressure rather than a fixed radial mapping.
                 # This prevents unphysical (low P, high T) queries that
                 # hit NaN gaps in the PALEOS tables.
-                _sort = np.argsort(prev_pressure)
-                _P_sorted = prev_pressure[_sort]
-                _T_sorted = adiabat_T[_sort]
-                # Remove P <= 0 entries (surface padding)
-                _valid = _P_sorted > 0
-                _P_sorted = _P_sorted[_valid]
-                _T_sorted = _T_sorted[_valid]
-                _logP_sorted = np.log10(_P_sorted)
+                _logP_sorted, _T_sorted = _adiabat_table(prev_pressure, adiabat_T, _top_shell)
 
                 # Clamp adiabat T to a physically reasonable range.
                 # np.interp flat-extrapolates at the edges, but the Brent
