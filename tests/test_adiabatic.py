@@ -14,7 +14,6 @@ References:
 from __future__ import annotations
 
 import math
-import sys
 
 import numpy as np
 import pytest
@@ -1115,8 +1114,9 @@ class TestMidpointAdiabat:
         """Hypothesis over anchors T0 from 5e-324 K to 1e-290 K and a constant nabla from 0.1 to
         inf, inward from 1e5 to 4e11 Pa: no OverflowError and a positive result; ln T equals
         ln T0 + nabla ln(4e6) within 1e-6 where T is a normal float, also where that needs the
-        log-space product (nabla 47 and 48), within 1 for a subnormal T, and T is exactly 1e5 K
-        where the closed form reaches the cap."""
+        log-space product (nabla 47 and 48), within 0.2 for a subnormal T (one rounding to a
+        multiple of 5e-324 at T >= 2.3e-323), and T is exactly 1e5 K where the closed form
+        exceeds the cap by more than 1e-6 in ln T."""
         from hypothesis import given, settings
         from hypothesis import strategies as st
 
@@ -1138,7 +1138,7 @@ class TestMidpointAdiabat:
             if y > math.log(1e5) + 1e-6:
                 assert t == 1e5, (T0, nabla, t)
             else:  # a subnormal T keeps few bits
-                tol = 1e-6 if t >= sys.float_info.min else 1.0
+                tol = 1e-6 if t >= np.finfo(float).tiny else 0.2
                 assert abs(math.log(t) - min(y, math.log(1e5))) <= tol, (T0, nabla, t)
 
         check()
