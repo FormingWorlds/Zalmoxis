@@ -1109,6 +1109,19 @@ class TestMidpointAdiabat:
             T = _call(_profile(n=5), 'surface', t)
         assert T[-1] == t and np.all(T > 0)
 
+    @pytest.mark.parametrize('nabla', [0.1, 50.0, 1e6])
+    def test_a_tiny_anchor_with_a_large_nabla_reaches_the_cap(self, monkeypatch, nabla):
+        """Anchors of 5e-324 K and 1e-310 K with nabla up to 1e6 give no OverflowError; with a
+        nabla that reaches the cap every node below the anchor is exactly 1e5 K."""
+        from zalmoxis.eos.temperature import _segment_temperature
+
+        for T0 in (5e-324, 1e-310):
+            t = _segment_temperature(T0, 1e5, 4e11, lambda P, T: nabla, 0.0025, True)
+            if nabla > 1.0:
+                assert t == 1e5, (T0, nabla, t)
+            else:
+                assert 0 < t < 1e5, (T0, nabla, t)
+
     def test_non_finite_surface_temperature_with_the_cmb_anchor_raises(self, monkeypatch):
         """With the CMB anchor the core nodes carry the surface temperature, so it must be
         finite
