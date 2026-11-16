@@ -375,8 +375,9 @@ In the solves of the second test, the mantle nodes other than the CMB anchor nod
 
 **How to read the plot.** The x-axis is the mantle mass coordinate, 0 at the CMB and 1 at the surface. The y-axis is the absolute difference between the Newton and the Picard mantle temperature in K, on a log scale; differences below $10^{-3}$ K are drawn at $10^{-3}$ K. Each setup has a solid line, and the broken line is the 5 K limit. A pass means that both lines stay below the limit. The CMB pressures differ by 0.061 GPa in `all_options` and by 0.065 GPa in `dummy`, inside the limit of 0.1 GPa.
 
-**Known limit.** One node of the returned mantle does not follow the adiabat of its own pressure: the CMB anchor node. It reads one T(P) table that holds $T_\mathrm{surf}$ on the core nodes and $T_\mathrm{cmb}$ at the CMB, so its temperature takes a small part of that jump. It lies 5.46 K below $T_\mathrm{cmb}$ in `all_options` with Newton, 5.45 K with Picard at $10^{-4}$, and 0.25 K in `dummy` with Newton.
+**Known limit.** These bounds have 3 limits:
 
+- The CMB anchor node does not follow the adiabat of its own pressure. It reads one T(P) table that holds $T_\mathrm{surf}$ on the core nodes and $T_\mathrm{cmb}$ at the CMB, so its temperature takes a small part of that jump. It lies 5.46 K below $T_\mathrm{cmb}$ in `all_options` with Newton, 5.45 K with Picard at $10^{-4}$, and 0.25 K in `dummy` with Newton.
 - The Picard solve of the first test runs at the mass tolerance of the PROTEUS setups, $3 \times 10^{-3}$, and carries the error of that tolerance. There the `all_options` mantle lies on average 1.6 K below the adiabat of its own pressure. At $10^{-4}$ the difference is 0.1 K or less.
 - These bounds hold for these 2 setups. The start-up solves of the PROTEUS grid go beyond them in the places that [Secant tail and seeded re-solve on the PROTEUS grid start-up](#secant-tail-and-seeded-re-solve-on-the-proteus-grid-start-up) lists.
 

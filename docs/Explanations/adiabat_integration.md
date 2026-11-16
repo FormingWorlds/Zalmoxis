@@ -9,16 +9,15 @@ On the stored profiles of the default configuration and of the PROTEUS initial s
 
 ## The equation
 
-The adiabatic gradient $\nabla_\mathrm{ad} = (\partial \ln T / \partial \ln P)_S$ is dimensionless. The PALEOS tables hold it as a column. For `WolfBower2018:MgSiO3` and `RTPress100TPa:MgSiO3`, Zalmoxis computes it from the tabulated melt gradient $(dT/dP)_S$ as $\nabla_\mathrm{ad} = (dT/dP)_S\,P/T$ ([Equations of state](eos_physics.md#wolf-bower-2018-temperature-dependent-eos)). On the 6 stored profiles of the [real-profile check](../Validation/thermal_state.md#adiabat-integration-on-real-profiles) it lies between 0.009 and 0.43 at pressures above 1 GPa.
-$T$ is the temperature in K, $P$ the pressure in Pa and $S$ the entropy.
-With $x = \ln P$ and $y = \ln T$, an adiabat is the solution of
+$T$ is the temperature in K, $P$ the pressure in Pa and $S$ the entropy. The adiabatic gradient $\nabla_\mathrm{ad} = (\partial \ln T / \partial \ln P)_S$ is dimensionless. With $x = \ln P$ and $y = \ln T$, an adiabat is the solution of
 
 $$\frac{dy}{dx} = \nabla_\mathrm{ad}(P, T).$$
 
-Between the anchor and the last integrated node, $\ln P$ changes by 9.9 to 15.2 on these profiles. Equal steps in $x$ give the same relative change of $P$ in every step, so $x$ is the natural step variable.
-The integration starts at an anchor: the surface temperature at the top node (`anchor='surface'`, inward), or the CMB temperature at the first mantle node (`anchor='cmb'`, outward through the mantle). With the CMB anchor, the nodes below the CMB keep the surface temperature.
-[Code architecture](code_architecture.md#adiabat-anchor-surface-vs-cmb) describes the 2 anchors.
-For a mixture of materials, `get_mixed_nabla_ad` weights $\nabla_\mathrm{ad}$ of the components ([Multi-material mixing](mixing.md#adiabatic-gradient-mixing)); a segment takes the mixture of the node it fills.
+Equal steps in $x$ give the same relative change of $P$ in every step, so $x$ is the natural step variable. Between the anchor and the last integrated node, $\ln P$ changes by 9.9 to 15.2 on the 6 stored profiles of the [real-profile check](../Validation/thermal_state.md#adiabat-integration-on-real-profiles).
+
+**Where the gradient comes from.** The PALEOS tables hold $\nabla_\mathrm{ad}$ as a column. For `WolfBower2018:MgSiO3` and `RTPress100TPa:MgSiO3`, Zalmoxis computes it from the tabulated melt gradient $(dT/dP)_S$ as $\nabla_\mathrm{ad} = (dT/dP)_S\,P/T$ ([Equations of state](eos_physics.md#wolf-bower-2018-temperature-dependent-eos)). On the 6 stored profiles it lies between 0.009 and 0.43 at the nodes above 1 GPa, and between 0.0057 and 0.433 at all reads of the substeps above 1 GPa. For a mixture of materials, `get_mixed_nabla_ad` weights $\nabla_\mathrm{ad}$ of the components ([Multi-material mixing](mixing.md#adiabatic-gradient-mixing)); a segment takes the mixture of the node it fills.
+
+**Where the integration starts.** The integration starts at an anchor: the surface temperature at the top node (`anchor='surface'`, inward), or the CMB temperature at the first mantle node (`anchor='cmb'`, outward through the mantle). With the CMB anchor, the nodes below the CMB keep the surface temperature. [Code architecture](code_architecture.md#adiabat-anchor-surface-vs-cmb) describes the 2 anchors.
 
 ## The midpoint step
 
@@ -32,7 +31,7 @@ For a constant $\nabla_\mathrm{ad}$ the step is exact: $T = T_a (P / P_a)^{\nabl
 A worked example: the default configuration at a surface temperature of 2515 K has its centre at 407 GPa and its CMB at 141 GPa.
 One call takes about 6200 substeps and reads $\nabla_\mathrm{ad}$ about 12300 times.
 The test stores 4 starts of this configuration. Their planet masses differ only by $k \times 10^{-12}$ of the value ($k$ = 0 to 3), and their centre lies at 6238 to 6239 K.
-A forward Euler step, one first-order step in $P$ per node that also holds a padded top shell isothermal, puts the centre at 5765 to 5832 K, 407 to 473 K too cold.
+The comparison line of the Validation plot, one forward Euler step in $P$ per node with a padded top shell held isothermal, puts the centre at 5765 to 5832 K, 408 to 472 K below the reference. Most of that difference comes from the isothermal top shell and not from the step: with the padded top at 1 bar, the same Euler step puts the centre 631 to 644 K above the reference.
 
 ## Accuracy on the PALEOS tables
 
@@ -48,6 +47,15 @@ The checks therefore use 2 tests: the order on smooth $\nabla_\mathrm{ad}$ with 
 - **Padded top.** A node with $P = 0$ (a [padded accept](process_flow.md#padded-accepts)) counts as $10^5$ Pa, so a padded top gives the profile of a top at 1 bar.
 - **Missing gradient.** Where $\nabla_\mathrm{ad}$ is missing or not positive, $T$ is held for the rest of that segment; the next segment integrates again.
 - **Caps.** No node and no substep goes above $10^5$ K, the top of the PALEOS tables. With the CMB anchor, no node and no substep goes below 100 K either. A very large or infinite $\nabla_\mathrm{ad}$ therefore gives nodes at exactly $10^5$ K with the surface anchor, and nodes at exactly 100 K outward from the CMB anchor.
+- **Entropy across the iron melting crossing.** The integration follows the $\nabla_\mathrm{ad}$ column of the tables, not the entropy column. In the solid iron of the PALEOS iron table near 300 to 380 GPa the entropy column does not meet the Maxwell relation $(\partial s / \partial \ln P)_T = -\alpha P / \rho$ (at 302 GPa and 5605 K: +193 against -168 J/(kg K)), while it meets it at 100 GPa in the solid and at 161 GPa in the liquid. So across the iron melting crossing the integrated core does not hold the table entropy constant.
+- **Surface density of a padded node with the CMB anchor.** In `adiabatic_from_cmb` the solver takes the temperature of a padded node from a second integrator, `_adiabat_to_surface` in `solver.py`: 64 midpoint steps from the last node with positive pressure to the target surface pressure, with no 1 bar floor. On the `dummy` mantle from 5 GPa and 3500 K it gives 0.113 K more than the segment rule at 1 atm and 0.457 K more at 1 Pa.
+- **Known limit.** A water layer, whose table reaches 0.1 Pa, is also isothermal below 1 bar.
+
+## Ranges and checks of the inputs
+
+This section lists what the routine and the config check refuse, and the check that runs on every result.
+
+- **Anchor.** `anchor` must be `'surface'` or `'cmb'`; any other value raises `ValueError`.
 - **Range of the anchors.** `compute_adiabatic_temperature` raises `ValueError` for an anchor temperature outside its range, a bool included:
     - the surface temperature: a real number above 0 K and at most $10^5$ K;
     - with `anchor='cmb'`, the CMB temperature: from 100 K to $10^5$ K.
@@ -57,6 +65,5 @@ The checks therefore use 2 tests: the order on smooth $\nabla_\mathrm{ad}$ with 
 - **Surface anchor below 100 K.** The routine accepts it, but the solver floors the temperature that the density reads from the adiabat at 100 K, so below 100 K the density uses 100 K.
 - **Check.** Each call raises `StructureInvariantError` when $T$ is not finite and positive at every node, or when it rises outward from the anchor.
 - **Range of `max_dlnp`.** A real number from $10^{-4}$ to 1; any other value raises `ValueError`.
-- **Known limit.** A water layer, whose table reaches 0.1 Pa, is also isothermal below 1 bar.
 
-**Where this is checked.** [Adiabat integration on smooth gradients](../Validation/thermal_state.md#adiabat-integration-on-smooth-gradients), [Adiabat integration on real profiles](../Validation/thermal_state.md#adiabat-integration-on-real-profiles) and [Temperature across 1 bar](../Validation/thermal_state.md#temperature-across-1-bar). Unit tests check the anchor ranges and the caps: `tests/test_adiabatic.py::TestMidpointAdiabat::test_anchor_temperature_property_over_its_domain`, `::test_a_huge_nabla_stops_at_the_node_caps` and `::test_a_segment_stops_exactly_at_its_limit_property` for the routine, and `tests/test_config_validation.py::TestTemperatureValidation::test_anchor_temperature_property_over_its_domain` for the config check.
+**Where this is checked.** [Adiabat integration on smooth gradients](../Validation/thermal_state.md#adiabat-integration-on-smooth-gradients), [Adiabat integration on real profiles](../Validation/thermal_state.md#adiabat-integration-on-real-profiles) and [Temperature across 1 bar](../Validation/thermal_state.md#temperature-across-1-bar). Unit tests check the anchor ranges and the caps: `tests/test_adiabatic.py::TestMidpointAdiabat::test_anchor_temperature_property_over_its_domain`, `::test_a_huge_nabla_stops_at_the_node_caps`, `::test_a_segment_stops_exactly_at_its_limit_property` and `::test_an_unknown_anchor_raises_value_error` for the routine, and `tests/test_config_validation.py::TestTemperatureValidation::test_anchor_temperature_property_over_its_domain` for the config check.
