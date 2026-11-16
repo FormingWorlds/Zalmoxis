@@ -154,20 +154,27 @@ EOS_ARGS = (
 )
 
 
+def node_walk(kw):
+    """(P, mass, T with the anchor set, the (node, source node) pairs in the order of
+    ``compute_adiabatic_temperature``, inward) of the call ``kw``."""
+    P, m = np.asarray(kw['pressure'], float), np.asarray(kw['mass_enclosed'], float)
+    n, T, inward = len(P), np.empty(len(P)), kw['anchor'] != 'cmb'
+    if inward:
+        T[-1], order = kw['surface_temperature'], [(i, i + 1) for i in range(n - 2, -1, -1)]
+    else:
+        ic = max(1, min(int(np.searchsorted(m, kw['cmb_mass'])), n - 1))
+        T[:ic], T[ic] = kw['surface_temperature'], kw['cmb_temperature']
+        order = [(i, i - 1) for i in range(ic + 1, n)]
+    return P, m, T, order, inward
+
+
 def forward_euler(kw):
     """The comparison scheme, one forward Euler step in P per node segment: nabla at the known
     node, no step where an end is below 1e5 Pa, the node caps of 1e5 K and 100 K."""
     from zalmoxis.mixing import get_mixed_nabla_ad
     from zalmoxis.structure_model import get_layer_mixture
 
-    P, m = np.asarray(kw['pressure'], float), np.asarray(kw['mass_enclosed'], float)
-    n, T, inward = len(P), np.empty(len(P)), kw['anchor'] != 'cmb'
-    if inward:
-        T[-1], order = kw['surface_temperature'], [(i, i + 1) for i in range(n - 2, -1, -1)]
-    else:
-        ic = max(1, min(int(np.searchsorted(kw['mass_enclosed'], kw['cmb_mass'])), n - 1))
-        T[:ic], T[ic] = kw['surface_temperature'], kw['cmb_temperature']
-        order = [(i, i - 1) for i in range(ic + 1, n)]
+    P, m, T, order, inward = node_walk(kw)
     for i, j in order:
         mx = get_layer_mixture(
             m[i], kw['cmb_mass'], kw['core_mantle_mass'], kw['layer_mixtures']

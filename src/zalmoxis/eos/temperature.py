@@ -31,13 +31,6 @@ def _is_real(x):
     return isinstance(x, numbers.Real) and not isinstance(x, bool)
 
 
-def _check_max_dlnp(h):
-    """Return ``h`` as a float; raise ValueError unless it is a real number from 1e-4 to 1."""
-    if not _is_real(h) or not 1e-4 <= h <= 1.0:
-        raise ValueError(f'max_dlnp must be a real number from 1e-4 to 1, got {h!r}.')
-    return float(h)
-
-
 def _segment_temperature(T0, P_from, P_to, nabla_of, h, inward):
     """Temperature at ``P_to`` on the adiabat d ln T / d ln P = nabla through (``P_from``, ``T0``).
 
@@ -187,7 +180,9 @@ def compute_adiabatic_temperature(
 
     if interpolation_functions is None:
         interpolation_functions = {}
-    h = _check_max_dlnp(max_dlnp)
+    if not _is_real(max_dlnp) or not 1e-4 <= max_dlnp <= 1.0:
+        raise ValueError(f'max_dlnp must be a real number from 1e-4 to 1, got {max_dlnp!r}.')
+    h = float(max_dlnp)
 
     if not any_component_is_tdep(layer_mixtures):
         raise ValueError(
@@ -196,23 +191,19 @@ def compute_adiabatic_temperature(
             "Use 'linear' or 'isothermal' instead."
         )
 
-    def nabla_of(mixture):
-        def nabla(P, T):
-            return get_mixed_nabla_ad(
-                P,
-                T,
-                mixture,
-                material_dictionaries,
-                interpolation_functions,
-                solidus_func,
-                liquidus_func,
-                mushy_zone_factors,
-                condensed_rho_min,
-                condensed_rho_scale,
-                binodal_T_scale,
-            )
+    eos = (
+        material_dictionaries,
+        interpolation_functions,
+        solidus_func,
+        liquidus_func,
+        mushy_zone_factors,
+        condensed_rho_min,
+        condensed_rho_scale,
+        binodal_T_scale,
+    )
 
-        return nabla
+    def nabla_of(mixture):
+        return lambda P, T: get_mixed_nabla_ad(P, T, mixture, *eos)
 
     if anchor not in ('surface', 'cmb'):
         raise ValueError(f"anchor must be 'surface' or 'cmb', got {anchor!r}.")
@@ -233,10 +224,10 @@ def compute_adiabatic_temperature(
         first = max(1, min(int(np.searchsorted(mass_enclosed, cmb_mass)), n - 1))
         T[:first] = surface_temperature
         T[first] = cmb_temperature
-        steps, floor = [(i, i - 1) for i in range(first + 1, n)], _T_MIN_CMB
+        steps = [(i, i - 1) for i in range(first + 1, n)]
     else:
         T[n - 1] = surface_temperature
-        first, steps, floor = 0, [(i, i + 1) for i in range(n - 2, -1, -1)], -math.inf
+        first, steps = 0, [(i, i + 1) for i in range(n - 2, -1, -1)]
 
     for i, j in steps:  # node i takes its T from node j, with the mixture of node i
         mixture = get_layer_mixture(
@@ -245,10 +236,9 @@ def compute_adiabatic_temperature(
         if not mixture.has_tdep():
             T[i] = T[j]
             continue
-        T_new = _segment_temperature(
+        T[i] = _segment_temperature(
             T[j], pressure[j], pressure[i], nabla_of(mixture), h, anchor != 'cmb'
         )
-        T[i] = min(max(T_new, floor), _T_MAX)
     _check_profile(T, first)
     return T
 

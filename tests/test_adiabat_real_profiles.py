@@ -68,20 +68,8 @@ def _reference(kw, method='DOP853'):
     from zalmoxis.mixing import get_mixed_nabla_ad
     from zalmoxis.structure_model import get_layer_mixture
 
-    P, m = np.asarray(kw['pressure'], float), np.asarray(kw['mass_enclosed'], float)
-    eos = _eos(kw)
-    n, T, bad = len(P), np.empty(len(P)), [0]
-    inward = kw['anchor'] != 'cmb'
-    if inward:
-        T[-1], order, lo = (
-            kw['surface_temperature'],
-            [(i, i + 1) for i in range(n - 2, -1, -1)],
-            0.0,
-        )
-    else:
-        ic = _cmb_index(kw)
-        T[:ic], T[ic] = kw['surface_temperature'], kw['cmb_temperature']
-        order, lo = [(i, i - 1) for i in range(ic + 1, n)], 100.0
+    P, m, T, order, inward = ap.node_walk(kw)
+    eos, bad, lo = _eos(kw), [0], (0.0 if inward else 100.0)
     for i, j in order:
         mx = get_layer_mixture(
             m[i], kw['cmb_mass'], kw['core_mantle_mass'], kw['layer_mixtures']
