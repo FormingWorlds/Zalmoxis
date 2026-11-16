@@ -31,6 +31,11 @@ def _is_real(x):
     return isinstance(x, numbers.Real) and not isinstance(x, bool)
 
 
+def _times_exp(t, a):
+    """t exp(a); in log space for a >= 700, where exp(a) alone would overflow for a tiny t."""
+    return t * math.exp(a) if a < 700.0 else math.exp(math.log(t) + a)
+
+
 def _segment_temperature(T0, P_from, P_to, nabla_of, h, inward):
     """Temperature at ``P_to`` on the adiabat d ln T / d ln P = nabla through (``P_from``, ``T0``).
 
@@ -51,19 +56,19 @@ def _segment_temperature(T0, P_from, P_to, nabla_of, h, inward):
     n = math.ceil(abs(x1 - x0) / h)
     dx, dy = (x1 - x0) / n, 0.0  # dy: ln T change over the segment, summed from 0
     T_lim, clamp = (_T_MAX, min) if inward else (_T_MIN_CMB, max)
-    dy_lim = math.log(T_lim) - math.log(T0)  # ln T change to the cap or floor, no overflow
+    dy_lim = math.log(T_lim) - math.log(T0)  # ln T change to the cap or floor
     for k in range(n):
         k1 = nabla_of(p, t)
         if k1 is None or not k1 > 0:
             break
-        t_mid = clamp(t * math.exp(clamp(dx / 2 * k1, dy_lim - dy)), T_lim)
+        t_mid = clamp(_times_exp(t, clamp(dx / 2 * k1, dy_lim - dy)), T_lim)
         k2 = nabla_of(math.exp(x0 + (k + 0.5) * dx), t_mid)
         if k2 is None or not k2 > 0:
             break
         dy = clamp(dy + dx * k2, dy_lim)
         if dy == dy_lim:  # T0 exp(dy_lim) can miss T_lim by 1 ulp
             return T_lim
-        p, t = math.exp(x0 + (k + 1) * dx), clamp(T0 * math.exp(dy), T_lim)
+        p, t = math.exp(x0 + (k + 1) * dx), clamp(_times_exp(T0, dy), T_lim)
     return t
 
 
