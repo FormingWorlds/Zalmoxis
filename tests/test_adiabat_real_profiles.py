@@ -96,11 +96,10 @@ def _reference(kw, method='DOP853'):
 def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validation_plot):
     """On the 6 stored profiles the default call stays within 1 K of a DOP853 integration of the
     same ODE (rtol 1e-13), which agrees with RK45 at rtol 1e-13 to 0.01 K, at every node on the
-    adiabat, with no nabla read that is missing or
-    not positive. The forward Euler step in P per node, computed in the test from the stored
-    structure, equals the stored temperature of each solve and is at least 5 times farther and
-    more than 2 K from the reference on every profile. A padded top gives the profile of a top
-    at 1 Pa within 1e-6 K."""
+    adiabat, with no nabla read that is missing or not positive. The forward Euler step in P per
+    node, from ``forward_euler`` of the profile tool, equals the stored T_euler and is at least
+    5 times farther and more than 2 K from the reference on every profile. A padded top gives
+    the profile of a top at 1 Pa within 1e-6 K."""
     from zalmoxis.eos.temperature import compute_adiabatic_temperature
 
     kw0 = profiles['default_k0'][1]
@@ -124,9 +123,7 @@ def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validat
             assert kw['pressure'][-1] == 0.0 and float(np.max(np.abs(T - T1))) <= 1e-6
         if case == 'default_k0':
             k0 = (kw['pressure'][keep], T[keep], ref[keep], euler[keep])
-        print(
-            f'{case}: midpoint {err:.4f} K, forward Euler step {native:.2f} K from the reference'
-        )
+        print(f'{case}: midpoint {err:.4f} K, forward Euler {native:.2f} K from the reference')
 
     def profile_figure():
         import matplotlib.pyplot as plt

@@ -949,8 +949,8 @@ class TestMidpointAdiabat:
     @pytest.mark.parametrize('anchor', ['surface', 'cmb'])
     def test_default_call_uses_the_0p0025_substeps(self, monkeypatch, anchor):
         """A default call evaluates nabla twice per substep, with ceil(|d ln P| / 0.0025)
-        substeps per segment above 1e5 Pa: the count pins the default h (a call at h 0.02
-        meets the 1 K bound of the real profiles too, so only the count tells them apart)."""
+        substeps per segment above 1e5 Pa: the count pins the default h (the 1 K bound of the
+        real profiles rejects h of 0.01 and above, but h 0.005 still passes it)."""
         calls = []
         _stub_adiabat(monkeypatch, lambda P, T: 0.1, calls)  # T stays inside the node caps
         P = np.geomspace(3.6e11, 3e4, 40)  # the top segment crosses 1e5 Pa
@@ -1123,9 +1123,8 @@ class TestMidpointAdiabat:
                 assert 0 < t < 1e5, (T0, nabla, t)
 
     def test_non_finite_surface_temperature_with_the_cmb_anchor_raises(self, monkeypatch):
-        """With the CMB anchor the core nodes carry the surface temperature, so it must be
-        finite
-        and positive too: NaN and True raise ValueError."""
+        """With the CMB anchor the core nodes carry the surface temperature, so it too must be
+        finite and positive: NaN and True raise ValueError."""
         _stub_adiabat(monkeypatch, lambda P, T: 0.1)
         for v in (np.nan, True):
             with pytest.raises(ValueError, match='surface_temperature'):

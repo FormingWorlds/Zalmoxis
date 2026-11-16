@@ -37,16 +37,16 @@ def _times_exp(t, a):
 
 
 def _segment_temperature(T0, P_from, P_to, nabla_of, h, inward):
-    """Temperature at ``P_to`` on the adiabat d ln T / d ln P = nabla through (``P_from``, ``T0``).
+    """Temperature at ``P_to`` on the adiabat d ln T / d ln P = nabla through ``(P_from, T0)``.
 
     Integrates with the midpoint rule in ln P over ceil(|d ln P| / ``h``) equal substeps, after
     raising both pressures to ``ADIABAT_P_FLOOR``, so T is held below that pressure; a padded
-    end (P = 0) counts as the floor. Returns ``T0`` at a NaN or infinite end, for a non-positive
-    ``T0``, and when the segment is empty or does not run in the anchor direction (``inward``:
-    towards higher P); T is held from the first substep where ``nabla_of(P, T)`` is None or not
-    positive. Inward T stops at the node cap ``_T_MAX`` and outward T at the CMB-anchor floor
-    ``_T_MIN_CMB``, in every substep and every read of ``nabla_of``; a segment that reaches it
-    returns it exactly."""
+    end (P = 0) or a negative one counts as the floor. Returns ``T0`` at a NaN or +inf end, for
+    a non-positive ``T0``, and when the segment is empty or does not run in the anchor direction
+    (``inward``: towards higher P); T is held from the first substep where ``nabla_of(P, T)`` is
+    None or not positive. Inward T stops at the node cap ``_T_MAX`` and outward T at the
+    CMB-anchor floor ``_T_MIN_CMB``, in every substep and every read of ``nabla_of``; a segment
+    that reaches it returns it exactly."""
     if not (P_from < math.inf and P_to < math.inf and 0 < T0 < math.inf):
         return T0
     p, t = max(P_from, ADIABAT_P_FLOOR), T0  # the first read is at the start node itself
@@ -174,9 +174,8 @@ def compute_adiabatic_temperature(
     ------
     ValueError
         No T-dependent layer, ``max_dlnp`` outside its range, an ``anchor`` other than 'surface'
-        or 'cmb', a ``surface_temperature`` that is
-        not above 0 K and at most 1e5 K, or ``anchor='cmb'`` without a ``cmb_temperature`` from
-        100 K to 1e5 K (the node caps).
+        or 'cmb', a ``surface_temperature`` that is not above 0 K and at most 1e5 K, or
+        ``anchor='cmb'`` without a ``cmb_temperature`` from 100 K to 1e5 K (the node caps).
     StructureInvariantError
         The profile is not finite and positive at every node, or rises outward from its anchor.
     """
