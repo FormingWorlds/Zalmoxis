@@ -1096,6 +1096,18 @@ class TestMidpointAdiabat:
             _call(_profile(n=5), bad, 3000.0, surface_temperature=3000.0)
         assert calls == []
 
+    def test_a_subnormal_anchor_runs_without_a_warning(self, monkeypatch):
+        """The smallest positive anchor temperature (a subnormal float) is in range: the call
+        runs with no RuntimeWarning (an overflow in T_lim / T0) and the anchor node keeps it."""
+        import warnings
+
+        _stub_adiabat(monkeypatch, lambda P, T: 0.1)
+        t = np.nextafter(0.0, 1.0)
+        with warnings.catch_warnings():
+            warnings.simplefilter('error')
+            T = _call(_profile(n=5), 'surface', t)
+        assert T[-1] == t and np.all(T > 0)
+
     def test_non_finite_surface_temperature_with_the_cmb_anchor_raises(self, monkeypatch):
         """With the CMB anchor the core nodes carry the surface temperature, so it must be finite
         and positive too: NaN and True raise ValueError."""
