@@ -1407,6 +1407,7 @@ class TestAdiabatTable:
         @given(st.lists(node, min_size=1, max_size=12, unique=True))
         @example([1e10, float(np.nextafter(P_FLOOR, np.inf)), 0.0])
         @example([1e10, P_FLOOR * (1 + 1e-14), 0.0])
+        @example([1e10, P_FLOOR * (1 + 1e-7), 0.0])
         def check(P):
             P = np.array(P)
             T = 1000.0 + np.arange(P.size, dtype=float)
