@@ -4,9 +4,9 @@ Each case is the structure (radius, pressure, enclosed mass) and the arguments o
 ``compute_adiabatic_temperature`` call of one real solve: 4 starts of ``input/default.toml`` at
 2515 K and a mass tolerance of 1e-3 whose planet mass differs by k 1e-12 (k = 0 to 3), and the 2
 PROTEUS initial structure setups of ``tools.validation.proteus_ic_solvers`` (Newton). ``write``
-checks that the call rebuilt from the file gives the temperature ``T`` of the solve bit for bit,
-so the file holds every input of the integration, and stores ``T_euler``, the result of
-``forward_euler`` on the same call, the comparison scheme of the real-profile test.
+checks that the call rebuilt from the file gives the temperature of the solve bit for bit, so
+the file holds every input of the integration; it stores that call and ``T_euler``, the result of
+``forward_euler`` on it, the comparison scheme of the real-profile test, not the temperature.
 
 Usage::
 
@@ -202,7 +202,8 @@ def write(path):
                 f'{case}: the rebuilt call does not give the temperature of the solve'
             )
         arrays[f'{case}/T_euler'] = forward_euler(call_kwargs(rec))
-        for k in ('radii', 'pressure', 'mass_enclosed', 'T'):
+        rec.pop('T')
+        for k in ('radii', 'pressure', 'mass_enclosed'):
             arrays[f'{case}/{k}'] = np.asarray(rec.pop(k), float)
         meta[case] = {
             k: (float(v) if isinstance(v, np.floating) else v) for k, v in rec.items()
@@ -215,7 +216,7 @@ def write(path):
     np.savez_compressed(path, meta=np.array(json.dumps(meta, separators=(',', ':'))), **arrays)
 
 
-ARRAYS = ('radii', 'pressure', 'mass_enclosed', 'T', 'T_euler')
+ARRAYS = ('radii', 'pressure', 'mass_enclosed', 'T_euler')
 
 
 def load(path):
