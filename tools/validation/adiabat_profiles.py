@@ -4,8 +4,9 @@ Each case is the structure (radius, pressure, enclosed mass) and the arguments o
 ``compute_adiabatic_temperature`` call of one real solve: 4 starts of ``input/default.toml``
 at 2515 K and a mass tolerance of 1e-3 whose planet mass differs by k 1e-12 (k = 0 to 3), and
 the 2 PROTEUS initial structure setups of ``tools.validation.proteus_ic_solvers`` (Newton).
-``write`` checks that the call rebuilt from the file gives the temperature of the solve bit for
-bit, so the file holds every input of the integration.
+``write`` checks that the call rebuilt from the file gives the temperature ``T`` of the solve bit
+for bit, so the file holds every input of the integration, and stores ``T_euler``, the result of
+``forward_euler`` on the same call, the comparison scheme of the real-profile test.
 
 Usage::
 
@@ -141,6 +142,46 @@ def call_kwargs(rec):
     return kw
 
 
+EOS_ARGS = (
+    'material_dictionaries',
+    'interpolation_functions',
+    'solidus_func',
+    'liquidus_func',
+    'mushy_zone_factors',
+    'condensed_rho_min',
+    'condensed_rho_scale',
+    'binodal_T_scale',
+)
+
+
+def forward_euler(kw):
+    """The comparison scheme, one forward Euler step in P per node segment: nabla at the known
+    node, no step where an end is below 1e5 Pa, the node caps of 1e5 K and 100 K."""
+    from zalmoxis.mixing import get_mixed_nabla_ad
+    from zalmoxis.structure_model import get_layer_mixture
+
+    P, m = np.asarray(kw['pressure'], float), np.asarray(kw['mass_enclosed'], float)
+    n, T, inward = len(P), np.empty(len(P)), kw['anchor'] != 'cmb'
+    if inward:
+        T[-1], order = kw['surface_temperature'], [(i, i + 1) for i in range(n - 2, -1, -1)]
+    else:
+        ic = max(1, min(int(np.searchsorted(kw['mass_enclosed'], kw['cmb_mass'])), n - 1))
+        T[:ic], T[ic] = kw['surface_temperature'], kw['cmb_temperature']
+        order = [(i, i - 1) for i in range(ic + 1, n)]
+    for i, j in order:
+        mx = get_layer_mixture(
+            m[i], kw['cmb_mass'], kw['core_mantle_mass'], kw['layer_mixtures']
+        )
+        T[i] = T[j]
+        if not mx.has_tdep() or P[j] < 1e5 or P[i] < 1e5:
+            continue
+        nb = get_mixed_nabla_ad(P[j], T[j], mx, *(kw[k] for k in EOS_ARGS))
+        if nb is not None and nb > 0 and (P[i] > P[j]) == inward:
+            t = T[j] + nb * T[j] / P[j] * (P[i] - P[j])
+            T[i] = min(t, 1e5) if inward else max(min(t, 1e5), 100.0)
+    return T
+
+
 def write(path):
     """Solve every case, check the rebuilt call against each solve, write ``path``."""
     from zalmoxis.eos.temperature import compute_adiabatic_temperature
@@ -153,6 +194,7 @@ def write(path):
             raise RuntimeError(
                 f'{case}: the rebuilt call does not give the temperature of the solve'
             )
+        arrays[f'{case}/T_euler'] = forward_euler(call_kwargs(rec))
         for k in ('radii', 'pressure', 'mass_enclosed', 'T'):
             arrays[f'{case}/{k}'] = np.asarray(rec.pop(k), float)
         meta[case] = {
@@ -166,6 +208,9 @@ def write(path):
     np.savez_compressed(path, meta=np.array(json.dumps(meta, separators=(',', ':'))), **arrays)
 
 
+ARRAYS = ('radii', 'pressure', 'mass_enclosed', 'T', 'T_euler')
+
+
 def load(path):
     """{case: record} of a file written by ``write``; the source commit is under '_source'."""
     with np.load(path) as f:
@@ -174,7 +219,7 @@ def load(path):
         for case, rec in meta.items():
             out[case] = {
                 **rec,
-                **{k: f[f'{case}/{k}'] for k in ('radii', 'pressure', 'mass_enclosed', 'T')},
+                **{k: f[f'{case}/{k}'] for k in ARRAYS},
             }
     return out
 

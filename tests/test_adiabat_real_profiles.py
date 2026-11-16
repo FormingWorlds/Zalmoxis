@@ -55,42 +55,7 @@ def _on_adiabat(kw):
 
 def _eos(kw):
     """The EOS arguments of ``get_mixed_nabla_ad`` from call kwargs, in their order."""
-    keys = ('material_dictionaries', 'interpolation_functions', 'solidus_func', 'liquidus_func')
-    keys += (
-        'mushy_zone_factors',
-        'condensed_rho_min',
-        'condensed_rho_scale',
-        'binodal_T_scale',
-    )
-    return tuple(kw[k] for k in keys)
-
-
-def _forward_euler(kw):
-    """The comparison scheme, one forward Euler step in P per node segment: nabla at the known
-    node, no step where an end is below 1e5 Pa, the node caps of 1e5 K and 100 K."""
-    from zalmoxis.mixing import get_mixed_nabla_ad
-    from zalmoxis.structure_model import get_layer_mixture
-
-    P, m = np.asarray(kw['pressure'], float), np.asarray(kw['mass_enclosed'], float)
-    n, T, inward = len(P), np.empty(len(P)), kw['anchor'] != 'cmb'
-    if inward:
-        T[-1], order = kw['surface_temperature'], [(i, i + 1) for i in range(n - 2, -1, -1)]
-    else:
-        ic = _cmb_index(kw)
-        T[:ic], T[ic] = kw['surface_temperature'], kw['cmb_temperature']
-        order = [(i, i - 1) for i in range(ic + 1, n)]
-    for i, j in order:
-        mx = get_layer_mixture(
-            m[i], kw['cmb_mass'], kw['core_mantle_mass'], kw['layer_mixtures']
-        )
-        T[i] = T[j]
-        if not mx.has_tdep() or P[j] < P_FLOOR or P[i] < P_FLOOR:
-            continue
-        nb = get_mixed_nabla_ad(P[j], T[j], mx, *_eos(kw))
-        if nb is not None and nb > 0 and (P[i] > P[j]) == inward:
-            t = T[j] + nb * T[j] / P[j] * (P[i] - P[j])
-            T[i] = min(t, 1e5) if inward else max(min(t, 1e5), 100.0)
-    return T
+    return tuple(kw[k] for k in ap.EOS_ARGS)
 
 
 def _reference(kw, method='DOP853'):
@@ -159,8 +124,8 @@ def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validat
         keep = _on_adiabat(kw)
         assert float(np.max(np.abs(ref - _reference(kw, 'RK45')[0])[keep])) <= 0.01, case
         err = float(np.max(np.abs(T - ref)[keep]))
-        euler = _forward_euler(kw)
-        np.testing.assert_array_equal(euler, rec['T'])  # the stored call of the Euler scheme
+        euler = ap.forward_euler(kw)
+        np.testing.assert_array_equal(euler, rec['T_euler'])  # the stored comparison scheme
         native = float(np.max(np.abs(euler - ref)[keep]))
         assert bad == 0, case
         assert err <= 1.0, (case, err)
@@ -226,7 +191,7 @@ def test_temperature_is_continuous_across_one_bar(profiles, anchor, request):
         P = P0.copy()
         P[-1] = p
         T.append(compute_adiabatic_temperature(**{**kw, 'pressure': P}))
-        native.append(_forward_euler({**kw, 'pressure': P}))
+        native.append(ap.forward_euler({**kw, 'pressure': P}))
     T = np.array(T)
     step = float(np.max(np.abs(np.diff(T, axis=0))))
     assert step <= 0.01, step
