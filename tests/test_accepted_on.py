@@ -2709,8 +2709,8 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
     pressure and core radius within 2e-4 and the CMB pressure within 2 tol / (1 - cmf) = 4e-3:
     the core mass is fixed, so the mass error sits in the mantle and moves P_cmb by
     dM / (M (1 - cmf)). The top mantle node stays within 1 K of REF in the re-solves (51.3 MPa)
-    and within 2 K in the first solve (1 atm), where the thin top shell lags the pressure of
-    the pass before. Each solve lags the adiabat of its own pressure by at most 6 K at the CMB
+    and within 3 K in the first solve (1 atm), where the top shell lags the pressure of the
+    pass before. Each solve lags the adiabat of its own pressure by at most 6 K at the CMB
     node and 1 K at the other mantle nodes, the first solve by at most 3 K and the re-solves
     by at most 1 K at the top node. The seeded and
     the unseeded re-solve differ by at most 2.5 K at the 39 mass points and at the top node,

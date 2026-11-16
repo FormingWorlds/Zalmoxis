@@ -402,7 +402,7 @@ The lag of a node is the difference between the returned temperature at that nod
 Relative differences are $|x - x_\mathrm{REF}| / |x_\mathrm{REF}|$.
 
 - The mantle temperature at 39 mass points, from the lowest to the second-highest of the 12 mantle nodes, differs from REF by at most 1 K.
-- The temperature of the top mantle node differs from REF by at most 1 K in the re-solves and 2 K in the first solves (see the known limit below).
+- The temperature of the top mantle node differs from REF by at most 1 K in the re-solves and 3 K in the first solves (see the known limit below). The test of a first solve at a planet mass $2 \times 10^{-12}$ higher and the test of the stored REF keep 2 K for the first solves.
 - The outer radius, the central pressure and the core radius differ from REF by at most $2 \times 10^{-4}$ (relative).
 - The CMB pressure differs from REF by at most $4 \times 10^{-3}$ (relative). This is $2\,\mathrm{tol} / (1 - f_\mathrm{core})$, with the mass tolerance $\mathrm{tol} = 10^{-4}$ and the core mass fraction $f_\mathrm{core} = 0.95$: the core mass is fixed, so the mass error sits in the mantle and moves the CMB pressure by that error divided by the mantle mass fraction $1 - f_\mathrm{core}$. The core radius and the CMB pressure are read at the core mass by interpolation in mass.
 - The lag is at most 6 K at the CMB node and 1 K at the other mantle nodes in every solve, and at the top node at most 3 K in the first solves and 1 K in the 2 re-solves.
@@ -448,7 +448,7 @@ The first 5 rows exceed a bound; the other 7 lie inside one.
 | Core mass fraction 0.35, re-solves | lag at the mantle nodes, top node included | up to 1.26 K | 1 K |
 | Core mass fraction 0.35, re-solves | mantle temperature from REF, without the seed / with it | up to 1.29 K / 1.25 K | 1 K |
 | Core mass fraction 0.95, first solve at 1 atm | lag at the top node | 2.21 K | 3 K, inside |
-| Core mass fraction 0.95, first solve at 1 atm | top node from REF | 1.29 K | 2 K, inside |
+| Core mass fraction 0.95, first solve at 1 atm | top node from REF | 1.29 K | 3 K, inside |
 | Core mass fraction 0.95, first solve | last core node from REF | 586 K | 700 K, inside |
 | Core mass fraction 0.95, re-solves | last core node from REF, unseeded / seeded | 526 K / 0 K | 700 K, inside |
 | Core mass fraction 0.95, first solve | mass-weighted mean core temperature from REF | 4.5 K | 10 K, inside |
@@ -469,7 +469,7 @@ The first 5 rows exceed a bound; the other 7 lie inside one.
 
 ??? info "Test details"
     - Reference: REF, the same solve at a mass tolerance of $10^{-6}$ (convergence check), stored in `tests/data/grid_start_up_reference.json`.
-    - Tolerance: 1 K at 39 mantle mass points up to the second-highest mantle node; top mantle node 1 K from REF in the re-solves and 2 K in the first solves; $2 \times 10^{-4}$ in outer radius, central pressure and core radius; $4 \times 10^{-3}$ in CMB pressure; lags of 6 K (CMB node) and 1 K (other mantle nodes) in every solve, and at the top node 3 K in the first solves and 1 K in the re-solves; seeded against unseeded 2.5 K and $5 \times 10^{-4}$; mass-weighted mean core temperature 10 K, last core node 700 K and the other core nodes 1 K from REF; at most 3 full-adiabat passes in the first solve, at most 4 passes and half the integrations in the seeded re-solve.
+    - Tolerance: 1 K at 39 mantle mass points up to the second-highest mantle node; top mantle node 1 K from REF in the re-solves and 3 K in the first solves (2 K in the test at a planet mass $2 \times 10^{-12}$ higher); $2 \times 10^{-4}$ in outer radius, central pressure and core radius; $4 \times 10^{-3}$ in CMB pressure; lags of 6 K (CMB node) and 1 K (other mantle nodes) in every solve, and at the top node 3 K in the first solves and 1 K in the re-solves; seeded against unseeded 2.5 K and $5 \times 10^{-4}$; mass-weighted mean core temperature 10 K, last core node 700 K and the other core nodes 1 K from REF; at most 3 full-adiabat passes in the first solve, at most 4 passes and half the integrations in the seeded re-solve.
     - Test id: `tests/test_accepted_on.py::test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_start_up`
     - Repeat of the first solve: `tests/test_accepted_on.py::test_a_first_solve_at_a_planet_mass_2e12_higher_keeps_the_stored_reference` (markers `slow`, `accept_solves_reference` and `physics_invariant`; nightly job `accept_solves_reference`, 3600 s per test).
     - Tests of the rules alone, on analytic densities:
