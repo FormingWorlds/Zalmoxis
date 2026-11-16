@@ -31,13 +31,13 @@ For a constant $\nabla_\mathrm{ad}$ the step is exact: $T = T_a (P / P_a)^{\nabl
 A worked example: the default configuration at a surface temperature of 2515 K has its centre at 407 GPa and its CMB at 141 GPa.
 One call takes about 6200 substeps and reads $\nabla_\mathrm{ad}$ about 12300 times.
 The test stores 4 starts of this configuration. Their planet masses differ only by $k \times 10^{-12}$ of the value ($k$ = 0 to 3), and their centre lies at 6238 to 6239 K.
-The comparison line of the Validation plot, one forward Euler step in $P$ per node with a padded top shell held isothermal, puts the centre at 5765 to 5832 K, 408 to 472 K below the reference. Most of that difference comes from the isothermal top shell and not from the step: with the padded top at 1 bar, the same Euler step puts the centre 631 to 644 K above the reference.
+The comparison line of the Validation plot is one forward Euler step in $P$ per node with a padded top shell held isothermal; it puts the centre at 5765 to 5832 K, 408 to 472 K below the reference. That difference has 2 large parts of opposite sign: the first-order step alone, with the padded top at 1 bar, puts the centre 631 to 644 K above the reference, and holding the top shell isothermal lowers it by a further 1038 to 1116 K.
 
 ## Accuracy on the PALEOS tables
 
 PALEOS gives $\nabla_\mathrm{ad}$ by bilinear interpolation in $(\log_{10} P, \log_{10} T)$.
 This value is continuous, but its slope jumps at every grid line of the table.
-In the default core the adiabat also crosses the boundary between liquid and solid iron near 220 to 260 GPa, where $\nabla_\mathrm{ad}$ changes steeply.
+In the default core the adiabat also runs along the boundary between liquid and solid iron of the PALEOS iron table: on the 4 stored default profiles the phase of the table switches between liquid and solid several times from 226 to 252 GPa, and $\nabla_\mathrm{ad}$ changes steeply there.
 A substep that crosses such a kink or a steep step loses part of its second-order accuracy, so on the real tables the error does not fall exactly as $h^2$.
 The checks therefore use 2 tests: the order on smooth $\nabla_\mathrm{ad}$ with known solutions, and an error bound of 1 K on real profiles against an independent integration.
 
@@ -47,9 +47,12 @@ The checks therefore use 2 tests: the order on smooth $\nabla_\mathrm{ad}$ with 
 - **Padded top.** A node with $P = 0$ (a [padded accept](process_flow.md#padded-accepts)) counts as $10^5$ Pa, so a padded top gives the profile of a top at 1 bar.
 - **Missing gradient.** Where $\nabla_\mathrm{ad}$ is missing or not positive, $T$ is held for the rest of that segment; the next segment integrates again.
 - **Caps.** No node and no substep goes above $10^5$ K, the top of the PALEOS tables. With the CMB anchor, no node and no substep goes below 100 K either. A very large or infinite $\nabla_\mathrm{ad}$ therefore gives nodes at exactly $10^5$ K with the surface anchor, and nodes at exactly 100 K outward from the CMB anchor.
-- **Entropy across the iron melting crossing.** The integration follows the $\nabla_\mathrm{ad}$ column of the tables, not the entropy column. In the solid iron of the PALEOS iron table near 300 to 380 GPa the entropy column does not meet the Maxwell relation $(\partial s / \partial \ln P)_T = -\alpha P / \rho$ (at 302 GPa and 5605 K: +193 against -168 J/(kg K)), while it meets it at 100 GPa in the solid and at 161 GPa in the liquid. So across the iron melting crossing the integrated core does not hold the table entropy constant.
-- **Surface density of a padded node with the CMB anchor.** In `adiabatic_from_cmb` the solver takes the temperature of a padded node from a second integrator, `_adiabat_to_surface` in `solver.py`: 64 midpoint steps from the last node with positive pressure to the target surface pressure, with no 1 bar floor. On the `dummy` mantle from 5 GPa and 3500 K it gives 0.113 K more than the segment rule at 1 atm and 0.457 K more at 1 Pa.
-- **Known limit.** A water layer, whose table reaches 0.1 Pa, is also isothermal below 1 bar.
+
+## Known limits of the integration
+
+- **Water below 1 bar.** A water layer, whose table reaches 0.1 Pa, is also isothermal below 1 bar.
+- **Entropy of the integrated core.** The integration follows the $\nabla_\mathrm{ad}$ column of the tables, not the entropy column $s$ (J/(kg K)). Along the core of the stored default profile at 2515 K (start 0) the table entropy stays within 32 of 2011 in the liquid, from the core top at 144 GPa to 221 GPa. From 226 to 252 GPa the path switches between liquid and solid cells of the table, and the entropy falls to 1695: a path that follows $\nabla_\mathrm{ad}$ through a first-order phase change has no segment that takes up the melting entropy. In the solid it rises to 1834 at 407 GPa, a fault of the table: the Maxwell relation $(\partial s / \partial \ln P)_T = -\alpha P / \rho$, with $\alpha$ the thermal expansivity and $\rho$ the density, holds at 100 GPa in the solid and at 161 GPa in the liquid but not in the solid near 300 to 380 GPa (at 302 GPa and 5605 K the entropy column gives +193 against -168 from the relation), and at 285 GPa $\nabla_\mathrm{ad}$ is 0.2474 against $\alpha P / (\rho c_p)$ = 0.2641. A path at the constant table entropy of the core top would put the centre at 6941 K, 703 K above the integrated 6238 K; with the faults of the solid entropy column it is only an upper bound.
+- **Temperature of a padded node with the CMB anchor.** In `adiabatic_from_cmb` the solver does not take the temperature of a padded node from this routine. It uses `_adiabat_to_surface` in `solver.py`: 64 midpoint steps from the last node with positive pressure to the target surface pressure, with no 1 bar floor. Started at 5 GPa and 3500 K on the `dummy` mantle, it gives 0.113 K more than the segment rule at 1 atm and 0.457 K more at 1 Pa.
 
 ## Ranges and checks of the inputs
 
