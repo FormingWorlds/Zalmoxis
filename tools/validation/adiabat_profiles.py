@@ -7,8 +7,8 @@ PROTEUS initial structure setups of ``tools.validation.proteus_ic_solvers`` (New
 checks that the call rebuilt from the file gives the temperature of the solve bit for bit, so
 the file holds every input of the integration; it stores that call and ``T_euler``, the result of
 ``forward_euler`` on it, the comparison scheme of the real-profile test, not the temperature.
-``tests/data/adiabat_profiles.npz`` holds the solves of the commit in its ``_source`` entry,
-whose structure solve used the forward Euler adiabat; a ``write`` at a later commit solves other
+``tests/data/adiabat_profiles.npz`` holds the solves of the commit in ``meta['_source']['commit']``
+(``meta`` is a JSON string), whose structure solve used the forward Euler adiabat; a ``write`` at a later commit solves other
 structures, and the numbers that the docs take from the stored profiles change with them.
 
 Usage::
