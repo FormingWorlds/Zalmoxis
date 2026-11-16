@@ -1297,3 +1297,48 @@ class TestMidpointAdiabat:
                     _call(P, 'surface', 3000.0, max_dlnp=h)
 
         check()
+
+
+@pytest.mark.slow
+@pytest.mark.physics_invariant
+@pytest.mark.timeout(1800)
+def test_padded_top_shell_lookup_follows_the_adiabat(monkeypatch):
+    """A padded default solve (P = 0 at the outer node): the T(P) lookup that the last density
+    solve reads gives T_surf at 1e5 Pa, stays within 1 K of it up to 1e7 Pa (nabla near 1e-6
+    there) and does not fall with P up to the last positive node, instead of holding the T of
+    that node over the top shell."""
+    import inspect
+    import os
+
+    import zalmoxis.solver as zs
+    from tools.validation import adiabat_profiles as ap
+    from zalmoxis import get_zalmoxis_root
+    from zalmoxis.config import load_material_dictionaries
+
+    if not os.path.isdir(
+        os.path.join(get_zalmoxis_root(), 'data', 'EOS_PALEOS_MgSiO3_unified')
+    ):
+        pytest.skip('PALEOS tables not on disk')
+    seen, solve = [], zs.solve_structure
+    sig = inspect.signature(solve)
+
+    def spy(*a, **k):
+        seen.append(sig.bind(*a, **k).arguments['temperature_function'])
+        return solve(*a, **k)
+
+    monkeypatch.setattr(zs, 'solve_structure', spy)
+    cfg = ap._default_config(0)
+    res = zs.main(
+        cfg,
+        load_material_dictionaries(),
+        ap._melt('config', cfg),
+        os.path.join(get_zalmoxis_root(), 'input'),
+    )
+    r, P, T = (np.asarray(res[k], float) for k in ('radii', 'pressure', 'temperature'))
+    assert res['padded'] and P[-1] == 0.0 and T[-1] == 2515.0
+    top = int(np.flatnonzero(P > 0)[-1])
+    q = np.geomspace(P_FLOOR, P[top], 64)
+    look = np.array([seen[-1](r[top], p) for p in q])
+    assert look[0] == pytest.approx(T[-1], abs=1e-9)
+    assert np.all(np.abs(look[q <= 1e7] - T[-1]) < 1.0)
+    assert np.all(np.diff(look) >= 0)
