@@ -349,16 +349,18 @@ _TOP_SHELL_POINTS = 64
 
 
 def _adiabat_table(pressure, T, top_shell):
-    """log10 P and T of the adiabat ``T`` on the nodes at P > 0, sorted by P: the T(P) lookup
-    of the density solve. With a padded top (P <= 0 at the outer node) whose last positive node
-    lies above ``ADIABAT_P_FLOOR``, the shell gains ``_TOP_SHELL_POINTS`` geometric pressures q
-    from the floor up with T ``top_shell(q, T[-1])``, the adiabat inward from the padded node."""
+    """log10 P [Pa] and T [K] of the adiabat ``T`` on the nodes at P > 0, sorted by P: the T(P)
+    lookup of the density solve. With a padded top (P <= 0 at the outer node) whose last
+    positive node i lies more than 1e-9 (relative) above ``ADIABAT_P_FLOOR``, so that log10 P
+    stays strictly increasing, the shell gains ``_TOP_SHELL_POINTS`` geometric pressures q [Pa]
+    from the floor up with T ``top_shell(q, T[-1], i)``, the adiabat inward from the padded
+    node in the layer of node i."""
     s = np.argsort(pressure)
     keep = pressure[s] > 0
     P, Ts = pressure[s][keep], T[s][keep]
-    if pressure[-1] <= 0 and P.size and P[0] > ADIABAT_P_FLOOR:
+    if pressure[-1] <= 0 and P.size and P[0] > ADIABAT_P_FLOOR * (1 + 1e-9):
         q = np.geomspace(ADIABAT_P_FLOOR, P[0], _TOP_SHELL_POINTS + 1)[:-1]
-        P, Ts = np.concatenate([q, P]), np.concatenate([top_shell(q, T[-1]), Ts])
+        P, Ts = np.concatenate([q, P]), np.concatenate([top_shell(q, T[-1], s[keep][0]), Ts])
     return np.log10(P), Ts
 
 
@@ -2015,9 +2017,9 @@ def _solve(
             cmb_temperature=cmb_temperature,
         )
 
-    def _top_shell(q, T_top):
-        # the adiabat inward from T_top at q[0], in the layer of the last positive node
-        m = prev_mass_enclosed[prev_pressure > 0][-1]
+    def _top_shell(q, T_top, i):
+        # the adiabat inward from T_top at q[0], in the layer of node i
+        m = prev_mass_enclosed[i]
         return _adiabat(np.arange(q.size), q[::-1], np.full(q.size, m), top=T_top)[::-1]
 
     # For adiabatic mode, cap the initial center_temperature guess to

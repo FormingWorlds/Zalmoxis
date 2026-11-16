@@ -1304,42 +1304,32 @@ class TestMidpointAdiabat:
 @pytest.mark.timeout(1800)
 def test_padded_top_shell_lookup_follows_the_adiabat(monkeypatch):
     """A padded default solve (P = 0 at the outer node): the T(P) lookup that the last density
-    solve reads gives T_surf at 1e5 Pa and lies within 1 K of an independent explicit Euler
+    solve reads gives T_surf at 1e5 Pa and lies within 0.3 K of an independent explicit Euler
     adiabat (4000 steps in ln P) from there up to the last positive node, instead of holding
     the T of that node over the top shell."""
-    import inspect
     import os
 
     import zalmoxis.solver as zs
-    from tests.test_surface_node import euler_adiabat
+    from tests.test_surface_node import euler_adiabat, spy_temperature_function
     from tools.validation import adiabat_profiles as ap
     from zalmoxis import get_zalmoxis_root
     from zalmoxis.config import load_material_dictionaries
 
-    if not os.path.isdir(
-        os.path.join(get_zalmoxis_root(), 'data', 'EOS_PALEOS_MgSiO3_unified')
-    ):
+    root = get_zalmoxis_root()
+    if not os.path.isdir(os.path.join(root, 'data', 'EOS_PALEOS_MgSiO3_unified')):
         pytest.skip('PALEOS tables not on disk')
-    seen, solve = [], zs.solve_structure
-    sig = inspect.signature(solve)
-
-    def spy(*a, **k):
-        seen.append(sig.bind(*a, **k).arguments['temperature_function'])
-        return solve(*a, **k)
-
-    monkeypatch.setattr(zs, 'solve_structure', spy)
+    seen = spy_temperature_function(monkeypatch)
     cfg = ap._default_config(0)
     melt = ap._melt('config', cfg)
-    res = zs.main(
-        cfg, load_material_dictionaries(), melt, os.path.join(get_zalmoxis_root(), 'input')
-    )
+    res = zs.main(cfg, load_material_dictionaries(), melt, os.path.join(root, 'input'))
     r, P, T = (np.asarray(res[k], float) for k in ('radii', 'pressure', 'temperature'))
-    assert res['padded'] and P[-1] == 0.0 and T[-1] == 2515.0
+    assert res['padded'] and P[-1] == 0.0
+    assert T[-1] == pytest.approx(cfg['surface_temperature'])
     top = int(np.flatnonzero(P > 0)[-1])
     q, t_path = euler_adiabat(cfg, melt, P_FLOOR, T[-1], P[top])
     look = np.array([seen[-1](r[top], p) for p in q])
     assert look[0] == pytest.approx(T[-1], abs=1e-9)
-    assert np.max(np.abs(look - t_path)) < 1.0
+    assert np.max(np.abs(look - t_path)) < 0.3
 
 
 @pytest.mark.unit
@@ -1349,21 +1339,33 @@ class TestAdiabatTable:
 
     @staticmethod
     def _shell(calls):
-        def top_shell(q, T_top):
-            calls.append((q.copy(), T_top))
+        def top_shell(q, T_top, i):
+            calls.append((q.copy(), T_top, i))
             return T_top * (q / P_FLOOR) ** 0.1
 
         return top_shell
 
-    def test_unpadded_profile_is_the_sorted_nodes(self):
-        """A top at P > 0: the nodes sorted by P, bit for bit, and no shell call."""
+    @pytest.mark.parametrize(
+        'P',
+        [
+            np.geomspace(3.6e11, 2e5, 9),
+            [1e10, 1e8, P_FLOOR, 0.0],
+            [1e10, 1e8, 5e4, 0.0],
+            [1e10, P_FLOOR * (1 + 1e-10), 0.0],
+            np.zeros(3),
+        ],
+        ids=['unpadded', 'last_at_floor', 'last_below_floor', 'last_within_1e-9', 'all_padded'],
+    )
+    def test_no_shell_unless_a_padded_top_lies_above_the_floor(self, P):
+        """An unpadded top, a last positive node at, below or within 1e-9 of 1e5 Pa, or no node
+        at P > 0: the nodes at P > 0 sorted by P, bit for bit, and no shell call."""
         from zalmoxis.solver import _adiabat_table
 
-        calls, P = [], np.geomspace(3.6e11, 2e5, 9)
-        T = 3000.0 * (P / 2e5) ** 0.1
+        calls, P = [], np.asarray(P, float)
+        T = 3000.0 + np.arange(P.size, dtype=float)[::-1]
         lp, t = _adiabat_table(P, T, self._shell(calls))
-        np.testing.assert_array_equal(lp, np.log10(P[::-1]))
-        np.testing.assert_array_equal(t, T[::-1])
+        np.testing.assert_array_equal(lp, np.log10(P[P > 0][::-1]))
+        np.testing.assert_array_equal(t, T[P > 0][::-1])
         assert calls == []
 
     @pytest.mark.physics_invariant
@@ -1378,8 +1380,9 @@ class TestAdiabatTable:
         T = np.where(P > 0, 3000.0 * (np.maximum(P, P_FLOOR) / P_FLOOR) ** 0.1, 3000.0)
         lp, t = _adiabat_table(P, T, self._shell(calls))
         assert len(calls) == 1
-        ((q, T_top),) = calls
-        assert T_top == 3000.0 and q.size == _TOP_SHELL_POINTS and q[0] == P_FLOOR
+        ((q, T_top, i),) = calls
+        assert T_top == pytest.approx(3000.0) and i == 8
+        assert q.size == _TOP_SHELL_POINTS and q[0] == P_FLOOR
         np.testing.assert_allclose(q, np.geomspace(P_FLOOR, 1.1e9, q.size + 1)[:-1], rtol=1e-15)
         assert lp.size == q.size + 9 and np.all(np.diff(lp) > 0)
         np.testing.assert_array_equal(t[q.size :], T[:9][::-1])
@@ -1387,24 +1390,6 @@ class TestAdiabatTable:
         np.testing.assert_allclose(
             np.interp(np.log10(x), lp, t), 3000.0 * (x / P_FLOOR) ** 0.1, rtol=1e-4
         )
-
-    @pytest.mark.parametrize('p_last', [P_FLOOR, 5e4])
-    def test_no_shell_points_at_or_below_the_floor(self, p_last):
-        """A last positive node at or below 1e5 Pa: the adiabat holds T there, no shell."""
-        from zalmoxis.solver import _adiabat_table
-
-        calls, P = [], np.array([1e10, 1e8, p_last, 0.0])
-        lp, t = _adiabat_table(P, np.array([4e3, 3.5e3, 3e3, 3e3]), self._shell(calls))
-        np.testing.assert_array_equal(lp, np.log10(P[2::-1]))
-        assert calls == [] and t.size == 3
-
-    def test_all_padded_profile_is_empty(self):
-        """Every node at P <= 0: an empty table and no shell call."""
-        from zalmoxis.solver import _adiabat_table
-
-        calls = []
-        lp, t = _adiabat_table(np.zeros(3), np.full(3, 3e3), self._shell(calls))
-        assert lp.size == t.size == 0 and calls == []
 
     def test_table_property_over_profiles(self):
         """Hypothesis over node pressures (zero, negative, NaN, positive, just above 1e5 Pa)
@@ -1429,12 +1414,13 @@ class TestAdiabatTable:
             lp, t = _adiabat_table(P, T, self._shell(calls))
             assert np.all(np.isfinite(lp)) and np.all(np.diff(lp) > 0)
             pos = P[P > 0]
-            shell = P[-1] <= 0 and pos.size > 0 and pos.min() > P_FLOOR
+            shell = P[-1] <= 0 and pos.size > 0 and pos.min() > P_FLOOR * (1 + 1e-9)
             assert len(calls) == int(shell)
             k = calls[0][0].size if shell else 0
             assert lp.size == k + pos.size
             if shell:
-                assert lp[0] == 5.0 and t[0] == T[-1]
+                assert lp[0] == pytest.approx(5.0) and t[0] == T[-1]
+                assert P[calls[0][2]] == pos.min()
             np.testing.assert_array_equal(t[k:], T[np.argsort(P)][P[np.argsort(P)] > 0])
 
         check()
