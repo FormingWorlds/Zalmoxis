@@ -59,11 +59,10 @@ def _eos(kw):
 
 
 def _reference(kw, method='DOP853'):
-    """scipy ``solve_ivp`` (``method``, rtol 1e-13, atol 1e-15) of d ln T / d ln P = nabla over each
-    node segment, with the rules of the routine: the mixture of the node the segment fills, T
-    held below 1e5 Pa (a padded top, P = 0, counts as 1e5 Pa) and for a T-independent layer,
-    and the node caps.
-    Returns (T, count of nabla reads that were None or not positive)."""
+    """scipy ``solve_ivp`` (``method``, rtol 1e-13, atol 1e-15) of d ln T / d ln P = nabla over
+    each node segment, with the rules of the routine: the mixture of the node the segment fills,
+    T held below 1e5 Pa (a padded top, P = 0, counts as 1e5 Pa) and for a T-independent layer,
+    and the node caps. Returns (T, count of nabla reads that were None or not positive)."""
     from scipy.integrate import solve_ivp
 
     from zalmoxis.mixing import get_mixed_nabla_ad

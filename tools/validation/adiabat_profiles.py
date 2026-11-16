@@ -1,11 +1,11 @@
 """Structure profiles for the adiabat integration check.
 
 Each case is the structure (radius, pressure, enclosed mass) and the arguments of the last
-``compute_adiabatic_temperature`` call of one real solve: 4 starts of ``input/default.toml``
-at 2515 K and a mass tolerance of 1e-3 whose planet mass differs by k 1e-12 (k = 0 to 3), and
-the 2 PROTEUS initial structure setups of ``tools.validation.proteus_ic_solvers`` (Newton).
-``write`` checks that the call rebuilt from the file gives the temperature ``T`` of the solve bit
-for bit, so the file holds every input of the integration, and stores ``T_euler``, the result of
+``compute_adiabatic_temperature`` call of one real solve: 4 starts of ``input/default.toml`` at
+2515 K and a mass tolerance of 1e-3 whose planet mass differs by k 1e-12 (k = 0 to 3), and the 2
+PROTEUS initial structure setups of ``tools.validation.proteus_ic_solvers`` (Newton). ``write``
+checks that the call rebuilt from the file gives the temperature ``T`` of the solve bit for bit,
+so the file holds every input of the integration, and stores ``T_euler``, the result of
 ``forward_euler`` on the same call, the comparison scheme of the real-profile test.
 
 Usage::

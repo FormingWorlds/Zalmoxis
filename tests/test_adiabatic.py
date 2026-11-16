@@ -992,7 +992,8 @@ class TestMidpointAdiabat:
     def test_padded_top_integrates_like_the_floor(self, monkeypatch, anchor):
         """A padded top (P = 0 at the outer node) integrates like a top at 1e5 Pa: the profile
         equals the one with the top at 1 Pa and at 1e5 Pa, bit for bit, and with the surface
-        anchor it is the constant-nabla law from 1e5 Pa (analytical), not an isothermal shell."""
+        anchor it is the constant-nabla law from 1e5 Pa (analytical), not an isothermal
+        shell."""
         _stub_adiabat(monkeypatch, lambda P, T: 0.1)
         P = _profile(n=21)
         runs = {}
@@ -1109,7 +1110,8 @@ class TestMidpointAdiabat:
         assert T[-1] == t and np.all(T > 0)
 
     def test_non_finite_surface_temperature_with_the_cmb_anchor_raises(self, monkeypatch):
-        """With the CMB anchor the core nodes carry the surface temperature, so it must be finite
+        """With the CMB anchor the core nodes carry the surface temperature, so it must be
+        finite
         and positive too: NaN and True raise ValueError."""
         _stub_adiabat(monkeypatch, lambda P, T: 0.1)
         for v in (np.nan, True):
@@ -1191,8 +1193,9 @@ class TestMidpointAdiabat:
     )
     def test_a_segment_holds_from_the_first_bad_nabla(self, bad):
         """_segment_temperature holds T from the first substep with a nabla that is missing or
-        not positive: a bad first read keeps T0, also when the reads after it are good; a bad midpoint read after 1 good substep keeps
-        the T of that substep (T0 exp(0.1 dx)); a non-finite end pressure returns T0 unread."""
+        not positive: a bad first read keeps T0, also when the reads after it are good; a bad
+        midpoint read after 1 good substep keeps the T of that substep (T0 exp(0.1 dx)); a
+        non-finite end pressure returns T0 unread."""
         from zalmoxis.eos.temperature import _segment_temperature
 
         calls = []

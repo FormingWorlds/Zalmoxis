@@ -43,12 +43,12 @@ def _segment_temperature(T0, P_from, P_to, nabla_of, h, inward):
 
     Integrates with the midpoint rule in ln P over ceil(|d ln P| / ``h``) equal substeps, after
     raising both pressures to ``ADIABAT_P_FLOOR``, so T is held below that pressure; a padded
-    end (P = 0) counts as the floor. Returns ``T0`` at a NaN or infinite end, for a
-    non-positive ``T0``, and when the segment is empty or does not run in the anchor direction (``inward``: towards higher P); T
-    is held from the first substep where ``nabla_of(P, T)`` is None or not positive. Inward T
-    stops at the node cap ``_T_MAX`` and outward T at the CMB-anchor floor ``_T_MIN_CMB``, in
-    every substep and every read of ``nabla_of``; a segment that reaches it returns it exactly.
-    """
+    end (P = 0) counts as the floor. Returns ``T0`` at a NaN or infinite end, for a non-positive
+    ``T0``, and when the segment is empty or does not run in the anchor direction (``inward``:
+    towards higher P); T is held from the first substep where ``nabla_of(P, T)`` is None or not
+    positive. Inward T stops at the node cap ``_T_MAX`` and outward T at the CMB-anchor floor
+    ``_T_MIN_CMB``, in every substep and every read of ``nabla_of``; a segment that reaches it
+    returns it exactly."""
     if not (P_from < math.inf and P_to < math.inf and 0 < T0 < math.inf):
         return T0
     p, t = max(P_from, ADIABAT_P_FLOOR), T0  # the first read is at the start node itself
@@ -107,14 +107,14 @@ def compute_adiabatic_temperature(
 ):
     """Compute an adiabatic temperature profile using native EOS gradient tables.
 
-    Integrates d ln T / d ln P = nabla_ad(P, T) over each node segment with the midpoint rule
-    in ln P and ceil(|d ln P| / ``max_dlnp``) substeps. nabla_ad comes from
-    ``get_mixed_nabla_ad`` with the layer mixture of the node the segment fills; for a
-    multi-material layer it is mass-fraction-weighted across the components. T is held below
-    ``ADIABAT_P_FLOOR`` (1e5 Pa, where the PALEOS rock and iron tables start), and a padded
-    node (P = 0) counts as that floor. T is also held over a layer without a T-dependent
-    component and from the first substep where nabla_ad is missing or not positive. Each node is capped at
-    1e5 K, and with ``anchor='cmb'`` floored at 100 K.
+    Integrates d ln T / d ln P = nabla_ad(P, T) over each node segment with the midpoint rule in
+    ln P and ceil(|d ln P| / ``max_dlnp``) substeps. nabla_ad comes from ``get_mixed_nabla_ad``
+    with the layer mixture of the node the segment fills; for a multi-material layer it is
+    mass-fraction-weighted across the components. T is held below ``ADIABAT_P_FLOOR`` (1e5 Pa,
+    where the PALEOS rock and iron tables start), and a padded node (P = 0) counts as that
+    floor. T is also held over a layer without a T-dependent component and from the first
+    substep where nabla_ad is missing or not positive. Each node is capped at 1e5 K, and with
+    ``anchor='cmb'`` floored at 100 K.
 
     Parameters
     ----------

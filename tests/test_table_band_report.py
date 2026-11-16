@@ -528,9 +528,9 @@ class TestWolfBowerSolves:
     """Real solves: inside the limit the clamp stays, beyond it the solve fails."""
 
     def test_inside_the_limit_converges_and_reports(self, wb_solves):
-        """At 3871 K the molten mantle lies beyond the melt band, most near the last node above a
-        padded top, which the adiabat integrates from 1 bar (about 108 K, more than the 56 K of a
-        node at the surface temperature)."""
+        """At 3871 K the molten mantle lies beyond the melt band, most near the last node above
+        a padded top, which the adiabat integrates from 1 bar (about 108 K, more than the 56 K
+        of a node at the surface temperature)."""
         res, msgs = wb_solves['3871']
         melt = WB['melted_mantle']['eos_file']
         n, excess = res['table_band_excess'][melt]
