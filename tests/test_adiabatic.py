@@ -1393,9 +1393,9 @@ class TestAdiabatTable:
 
     def test_table_property_over_profiles(self):
         """Hypothesis over node pressures (zero, negative, NaN, positive, just above 1e5 Pa)
-        with a padded or an unpadded top: log10 P strictly increasing and finite, T paired with
-        its node, shell points only for a padded top above 1e5 Pa, starting at the T of the
-        padded node."""
+        with a padded or an unpadded top: log10 P finite and not decreasing, strictly increasing
+        over the shell points and the first node, T paired with its node, shell points only for
+        a padded top above 1e5 Pa, starting at the T of the padded node."""
         from hypothesis import example, given, settings
         from hypothesis import strategies as st
 
@@ -1408,16 +1408,18 @@ class TestAdiabatTable:
         @example([1e10, float(np.nextafter(P_FLOOR, np.inf)), 0.0])
         @example([1e10, P_FLOOR * (1 + 1e-14), 0.0])
         @example([1e10, P_FLOOR * (1 + 1e-7), 0.0])
+        @example([1e13, 9999999999999.984])
         def check(P):
             P = np.array(P)
             T = 1000.0 + np.arange(P.size, dtype=float)
             calls = []
             lp, t = _adiabat_table(P, T, self._shell(calls))
-            assert np.all(np.isfinite(lp)) and np.all(np.diff(lp) > 0)
+            assert np.all(np.isfinite(lp)) and np.all(np.diff(lp) >= 0)
             pos = P[P > 0]
             shell = P[-1] <= 0 and pos.size > 0 and pos.min() > P_FLOOR * (1 + 1e-9)
             assert len(calls) == int(shell)
             k = calls[0][0].size if shell else 0
+            assert np.all(np.diff(lp[: k + 1]) > 0)  # nodes closer than 1 ulp in log10 may tie
             assert lp.size == k + pos.size
             if shell:
                 assert lp[0] == pytest.approx(5.0) and t[0] == T[-1]
