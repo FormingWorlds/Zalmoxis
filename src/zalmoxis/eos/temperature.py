@@ -58,7 +58,7 @@ def _segment_temperature(T0, P_from, P_to, nabla_of, h, inward):
     n = math.ceil(abs(x1 - x0) / h)
     dx, dy = (x1 - x0) / n, 0.0  # dy: ln T change over the segment, summed from 0
     T_lim, clamp = (_T_MAX, min) if inward else (_T_MIN_CMB, max)
-    dy_lim = math.log(T_lim / T0)  # the ln T change that reaches the cap or the floor
+    dy_lim = math.log(T_lim) - math.log(T0)  # ln T change to the cap or floor, no overflow
     for k in range(n):
         k1 = nabla_of(p, t)
         if k1 is None or not k1 > 0:
