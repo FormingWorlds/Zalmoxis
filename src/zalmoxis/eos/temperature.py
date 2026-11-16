@@ -175,7 +175,8 @@ def compute_adiabatic_temperature(
     Raises
     ------
     ValueError
-        No T-dependent layer, ``max_dlnp`` outside its range, a ``surface_temperature`` that is
+        No T-dependent layer, ``max_dlnp`` outside its range, an ``anchor`` other than 'surface'
+        or 'cmb', a ``surface_temperature`` that is
         not above 0 K and at most 1e5 K, or ``anchor='cmb'`` without a ``cmb_temperature`` from
         100 K to 1e5 K (the node caps).
     StructureInvariantError
@@ -213,6 +214,8 @@ def compute_adiabatic_temperature(
 
         return nabla
 
+    if anchor not in ('surface', 'cmb'):
+        raise ValueError(f"anchor must be 'surface' or 'cmb', got {anchor!r}.")
     if not (_is_real(surface_temperature) and 0 < surface_temperature <= _T_MAX):
         raise ValueError(
             f'surface_temperature must be a temperature above 0 and at most {_T_MAX:g} K, '
