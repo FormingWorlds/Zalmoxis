@@ -21,6 +21,19 @@ from zalmoxis.mixing import calculate_mixed_density, parse_all_layer_mixtures
 pytestmark = pytest.mark.smoke
 
 
+def euler_adiabat(cfg, melt, p_from, t_from, p_to, n=4000):
+    """Pressures and T of n explicit Euler steps in ln P along the mantle adiabat of ``cfg``
+    from (``p_from``, ``t_from``) to ``p_to``, an integration independent of the solver."""
+    from zalmoxis.mixing import get_mixed_nabla_ad
+
+    mix = parse_all_layer_mixtures(cfg['layer_eos_config'])['mantle']
+    eos = (load_material_dictionaries(), {}, *(melt or (None, None)), *zs._eos_params(cfg))
+    lnp, t = np.linspace(np.log(p_from), np.log(p_to), n + 1), [t_from]
+    for lo, hi in zip(lnp[:-1], lnp[1:]):
+        t.append(t[-1] * np.exp(get_mixed_nabla_ad(np.exp(lo), t[-1], mix, *eos) * (hi - lo)))
+    return np.exp(lnp), np.array(t)
+
+
 def _stop_below_r(monkeypatch, target=101325.0):
     """Take each root of the central-pressure search (the brentq call with xtol 1e6), or lower
     it until the residual is that of a padded solve, and keep it from the root refinement;
@@ -106,7 +119,9 @@ def test_a_padded_node_of_a_cmb_anchored_adiabat_takes_the_top_of_the_adiabat(mo
     """With the adiabat integrated from the CMB, the configured surface_temperature is not the
     temperature at the surface: the padded node takes the adiabat continued from the node
     below to the target pressure (checked against a 4000-step integration), and its EOS
-    density there."""
+    density there; the T lookup of the last density solve follows that adiabat over the
+    padded top shell, from 1e5 Pa up to the last positive node."""
+    import inspect
     import os
 
     from tests.test_spider_coupling_convergence import _has_paleos_data
@@ -139,6 +154,14 @@ def test_a_padded_node_of_a_cmb_anchored_adiabat_takes_the_top_of_the_adiabat(mo
             return _real(*args)
 
         monkeypatch.setattr(zs, name, spy)
+    seen, solve = [], zs.solve_structure
+    sig = inspect.signature(solve)
+
+    def spy_solve(*a, **k):
+        seen.append(sig.bind(*a, **k).arguments['temperature_function'])
+        return solve(*a, **k)
+
+    monkeypatch.setattr(zs, 'solve_structure', spy_solve)
     misses = _stop_below_r(monkeypatch)
     r = zs.main(cfg, md, melt, os.path.join(root, 'input'))
     P, T, rho = (np.asarray(r[k], float) for k in ('pressure', 'temperature', 'density'))
@@ -149,28 +172,12 @@ def test_a_padded_node_of_a_cmb_anchored_adiabat_takes_the_top_of_the_adiabat(mo
     for name, i in (('_surface_density', 6), ('_adiabat_to_surface', 4)):
         assert len(spies[name][i]) == len(eos)
         assert all(x is y or x == y for x, y in zip(spies[name][i], eos)), name
-    from zalmoxis.mixing import get_mixed_nabla_ad
-
-    mixes = parse_all_layer_mixtures(cfg['layer_eos_config'])
-    mzf, rho_min, rho_scale, bts = zs._eos_params(cfg)
-    md, sol_liq, cache = load_material_dictionaries(), (melt or (None, None)), {}
-    t_ref, lnp = T[-2], np.linspace(np.log(P[-2]), np.log(cfg['target_surface_pressure']), 4001)
-    for lo, hi in zip(lnp[:-1], lnp[1:]):  # explicit Euler in ln P
-        nab = get_mixed_nabla_ad(
-            np.exp(lo),
-            t_ref,
-            mixes['mantle'],
-            md,
-            cache,
-            *sol_liq,
-            mzf,
-            rho_min,
-            rho_scale,
-            bts,
-        )
-        t_ref *= np.exp(nab * (hi - lo))
+    t_ref = euler_adiabat(cfg, melt, P[-2], T[-2], cfg['target_surface_pressure'])[1][-1]
     assert t_ref < T[-2] - 50.0
     assert T[-1] == pytest.approx(t_ref, abs=1.0)
+    q, t_path = euler_adiabat(cfg, melt, P[-2], T[-2], 1e5)
+    look = np.array([seen[-1](float(r['radii'][-2]), p) for p in q])
+    assert np.max(np.abs(look - t_path)) < 1.0
     mix = parse_all_layer_mixtures(cfg['layer_eos_config'])['mantle']
     ref = calculate_mixed_density(
         cfg['target_surface_pressure'],

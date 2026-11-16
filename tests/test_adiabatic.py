@@ -1304,13 +1304,14 @@ class TestMidpointAdiabat:
 @pytest.mark.timeout(1800)
 def test_padded_top_shell_lookup_follows_the_adiabat(monkeypatch):
     """A padded default solve (P = 0 at the outer node): the T(P) lookup that the last density
-    solve reads gives T_surf at 1e5 Pa, stays within 1 K of it up to 1e7 Pa (nabla near 1e-6
-    there) and rises with P up to the last positive node in steps below 1 K over 512 pressures,
-    instead of holding the T of that node over the top shell."""
+    solve reads gives T_surf at 1e5 Pa and lies within 1 K of an independent explicit Euler
+    adiabat (4000 steps in ln P) from there up to the last positive node, instead of holding
+    the T of that node over the top shell."""
     import inspect
     import os
 
     import zalmoxis.solver as zs
+    from tests.test_surface_node import euler_adiabat
     from tools.validation import adiabat_profiles as ap
     from zalmoxis import get_zalmoxis_root
     from zalmoxis.config import load_material_dictionaries
@@ -1328,20 +1329,17 @@ def test_padded_top_shell_lookup_follows_the_adiabat(monkeypatch):
 
     monkeypatch.setattr(zs, 'solve_structure', spy)
     cfg = ap._default_config(0)
+    melt = ap._melt('config', cfg)
     res = zs.main(
-        cfg,
-        load_material_dictionaries(),
-        ap._melt('config', cfg),
-        os.path.join(get_zalmoxis_root(), 'input'),
+        cfg, load_material_dictionaries(), melt, os.path.join(get_zalmoxis_root(), 'input')
     )
     r, P, T = (np.asarray(res[k], float) for k in ('radii', 'pressure', 'temperature'))
     assert res['padded'] and P[-1] == 0.0 and T[-1] == 2515.0
     top = int(np.flatnonzero(P > 0)[-1])
-    q = np.geomspace(P_FLOOR, P[top], 512)
+    q, t_path = euler_adiabat(cfg, melt, P_FLOOR, T[-1], P[top])
     look = np.array([seen[-1](r[top], p) for p in q])
     assert look[0] == pytest.approx(T[-1], abs=1e-9)
-    assert np.all(np.abs(look[q <= 1e7] - T[-1]) < 1.0)
-    assert np.all(np.diff(look) >= 0) and np.max(np.diff(look)) < 1.0  # no step at the node
+    assert np.max(np.abs(look - t_path)) < 1.0
 
 
 @pytest.mark.unit
