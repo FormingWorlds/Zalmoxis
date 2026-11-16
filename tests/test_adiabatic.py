@@ -14,6 +14,7 @@ References:
 from __future__ import annotations
 
 import math
+import sys
 
 import numpy as np
 import pytest
@@ -1112,9 +1113,10 @@ class TestMidpointAdiabat:
     @pytest.mark.physics_invariant
     def test_a_tiny_anchor_follows_the_closed_form_or_stops_at_the_cap_property(self):
         """Hypothesis over anchors T0 from 5e-324 K to 1e-290 K and a constant nabla from 0.1 to
-        inf, inward from 1e5 to 4e11 Pa: no OverflowError; the segment gives T0 (4e6)^nabla, also
-        where that needs the log-space product (nabla 47 and 48), and exactly 1e5 K where that
-        reaches the cap."""
+        inf, inward from 1e5 to 4e11 Pa: no OverflowError and a positive result; ln T equals
+        ln T0 + nabla ln(4e6) within 1e-6 where T is a normal float, also where that needs the
+        log-space product (nabla 47 and 48), within 1 for a subnormal T, and T is exactly 1e5 K
+        where the closed form reaches the cap."""
         from hypothesis import given, settings
         from hypothesis import strategies as st
 
@@ -1131,19 +1133,19 @@ class TestMidpointAdiabat:
                 t = _segment_temperature(T0, 1e5, 4e11, lambda P, T: nabla, 0.0025, True)
             except OverflowError as e:
                 pytest.fail(f'T0 {T0}, nabla {nabla}: {e}')
-            x = math.log(T0) + nabla * math.log(4e6) - math.log(1e5)  # ln(closed form / cap)
-            if x > 1e-6:
+            y = math.log(T0) + nabla * math.log(4e6)  # ln of the closed form
+            assert t > 0, (T0, nabla, t)
+            if y > math.log(1e5) + 1e-6:
                 assert t == 1e5, (T0, nabla, t)
-            elif x < -1e-6:
-                assert t == pytest.approx(1e5 * math.exp(x), rel=1e-7), (T0, nabla, t)
-            else:
-                assert t == pytest.approx(1e5, rel=1e-5), (T0, nabla, t)
+            else:  # a subnormal T keeps few bits
+                tol = 1e-6 if t >= sys.float_info.min else 1.0
+                assert abs(math.log(t) - min(y, math.log(1e5))) <= tol, (T0, nabla, t)
 
         check()
 
     def test_segment_end_rule(self):
         """A NaN or +inf end returns T0 exactly; a -inf, negative or zero end gives the result of
-        an end at 1e5 Pa, inward and outward."""
+        an end at 1e5 Pa, inward and outward; a segment against the anchor direction returns T0."""
         from zalmoxis.eos.temperature import _segment_temperature
 
         def seg(P0, P1, inward):
@@ -1155,6 +1157,7 @@ class TestMidpointAdiabat:
         for end in (math.nan, math.inf):
             assert seg(end, 1e9, True) == seg(1e9, end, False) == 3000.0, end
             assert seg(1e9, end, True) == seg(end, 1e9, False) == 3000.0, end
+        assert seg(1e9, 1e10, False) == seg(1e10, 1e9, True) == 3000.0
         for end in (-math.inf, -5.0, 0.0):
             assert seg(end, 1e9, True) == seg(1e5, 1e9, True) != 3000.0, end
             assert seg(1e9, end, False) == seg(1e9, 1e5, False) != 3000.0, end
