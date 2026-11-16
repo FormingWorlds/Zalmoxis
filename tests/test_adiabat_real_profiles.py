@@ -93,8 +93,8 @@ def _forward_euler(kw):
     return T
 
 
-def _reference(kw):
-    """scipy ``solve_ivp`` (RK45, rtol 1e-10, atol 1e-12) of d ln T / d ln P = nabla over each
+def _reference(kw, method='DOP853'):
+    """scipy ``solve_ivp`` (``method``, rtol 1e-13, atol 1e-15) of d ln T / d ln P = nabla over each
     node segment, with the rules of the routine: the mixture of the node the segment fills, T
     held below 1e5 Pa (a padded top, P = 0, counts as 1e5 Pa) and for a T-independent layer,
     and the node caps.
@@ -134,7 +134,7 @@ def _reference(kw):
                 return [0.0]
             return [v]
 
-        y = solve_ivp(rhs, (x0, x1), [math.log(T[j])], method='RK45', rtol=1e-10, atol=1e-12)
+        y = solve_ivp(rhs, (x0, x1), [math.log(T[j])], method=method, rtol=1e-13, atol=1e-15)
         T[i] = min(max(math.exp(y.y[0, -1]), lo), 1e5)
     return T, bad[0]
 
@@ -142,8 +142,9 @@ def _reference(kw):
 @pytest.mark.physics_invariant
 @pytest.mark.reference_pinned
 def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validation_plot):
-    """On the 6 stored profiles the default call stays within 1 K of an RK45 integration of the
-    same ODE (rtol 1e-10) at every node on the adiabat, with no nabla read that is missing or
+    """On the 6 stored profiles the default call stays within 1 K of a DOP853 integration of the
+    same ODE (rtol 1e-13), which agrees with RK45 at rtol 1e-13 to 0.01 K, at every node on the
+    adiabat, with no nabla read that is missing or
     not positive. The forward Euler step in P per node, computed in the test from the stored
     structure, equals the stored temperature of each solve and is at least 5 times farther and
     more than 2 K from the reference on every profile. A padded top gives the profile of a top
@@ -156,6 +157,7 @@ def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validat
         T = compute_adiabatic_temperature(**kw)
         ref, bad = _reference(kw)
         keep = _on_adiabat(kw)
+        assert float(np.max(np.abs(ref - _reference(kw, 'RK45')[0])[keep])) <= 0.01, case
         err = float(np.max(np.abs(T - ref)[keep]))
         euler = _forward_euler(kw)
         np.testing.assert_array_equal(euler, rec['T'])  # the stored call of the Euler scheme
@@ -186,7 +188,9 @@ def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validat
         core = P >= p_cmb
         ax.plot(gpa, native[top], ls='--', color='C2', label='forward Euler step')
         ax.plot(gpa, T[top], color='C1', label='midpoint, default')
-        ax.plot(gpa, ref[top], ls=':', color=plt.rcParams['text.color'], label='RK45 reference')
+        ax.plot(
+            gpa, ref[top], ls=':', color=plt.rcParams['text.color'], label='DOP853 reference'
+        )
         ax.plot(
             P[core] / 1e9,
             iron_melting_anzellini13(P[core]),

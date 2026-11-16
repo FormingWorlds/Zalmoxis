@@ -38,7 +38,7 @@ The first-principles cases of these 3 steps are in [`tests/test_first_principles
 | [Equation of state](equation_of_state.md) | Light-element core on PALEOS iron | `tests/test_core_alloy.py::TestPaleosCore::test_core_mixture_limits_on_paleos_iron` | volume-additive limits (analytical) | unit tier; plot pair |
 | [Equation of state](equation_of_state.md) | Light-element cores against the outer core | `tests/test_core_alloy.py::TestHiroseCalibration` | Hirose et al. (2021)[^cite-hirose2021], p. 3 (published estimate) | unit tier; plot pair |
 | [Thermal state](thermal_state.md) | Adiabat integration on smooth gradients | `tests/test_adiabatic.py::TestMidpointAdiabat::test_midpoint_is_second_order`, `::test_constant_nabla_is_exact` | closed-form adiabats (analytical) | unit tier; plot pair |
-| [Thermal state](thermal_state.md) | Adiabat integration on real profiles | `tests/test_adiabat_real_profiles.py::test_midpoint_adiabat_meets_the_reference_on_real_profiles` | `scipy.integrate.solve_ivp` RK45 on the same nodes (cross-code check) | smoke tier; plot pair |
+| [Thermal state](thermal_state.md) | Adiabat integration on real profiles | `tests/test_adiabat_real_profiles.py::test_midpoint_adiabat_meets_the_reference_on_real_profiles` | `scipy.integrate.solve_ivp` DOP853 on the same nodes (cross-code check) | smoke tier; plot pair |
 | [Thermal state](thermal_state.md) | Temperature across 1 bar | `tests/test_adiabat_real_profiles.py::test_temperature_is_continuous_across_one_bar` | continuity in the top pressure; constant-gradient adiabat with the 1 bar floor (analytical) | smoke and unit tiers; plot pair |
 | [Thermal state](thermal_state.md) | Initial thermal state | none | named in the script docstrings | script figure, no test, not run in CI |
 

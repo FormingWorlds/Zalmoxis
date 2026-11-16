@@ -37,22 +37,22 @@ Each tested case says why the check exists, what it tests, how we know the right
 
 **What it tests.** It uses 6 stored structures of real solves: 4 starts of `input/default.toml` at 2515 K, with the surface anchor and a padded top, and the PROTEUS initial structure setups `all_options` and `dummy`, with the CMB anchor. On each, the temperature of a default call is compared with an independent integration at every node that the integration sets: all nodes with the surface anchor, and the CMB node outward with the CMB anchor. The second test counts the reads of $\nabla_\mathrm{ad}$ in a default call: 2 per substep, with $\lceil |\Delta \ln P| / 0.0025 \rceil$ substeps per segment.
 
-**How we know the right answer.** The reference integrates the same equation with `scipy.integrate.solve_ivp` (the adaptive RK45 method) at a relative tolerance of $10^{-10}$, on the same nodes and with the same rules: the mixture of each segment, the 1 bar floor, the padded top and the caps. It shares no step code with Zalmoxis.
+**How we know the right answer.** The reference integrates the same equation with `scipy.integrate.solve_ivp` (the adaptive DOP853 method) at a relative tolerance of $10^{-13}$, on the same nodes and with the same rules: the mixture of each segment, the 1 bar floor, the padded top and the caps. It shares no step code with Zalmoxis, and the test checks it against a second integration, RK45 at the same tolerance, to 0.01 K.
 
 **Why it matters.** These are the temperature profiles of the default configuration and of the PROTEUS start-up.
 
-![Temperature against pressure for default start 0: forward Euler step, midpoint, RK45 reference and the iron melting curve in the core](../assets/validation/adiabat_real_profile.svg#only-light){ width="80%" }
-![Temperature against pressure for default start 0: forward Euler step, midpoint, RK45 reference and the iron melting curve in the core](../assets/validation/adiabat_real_profile_dark.svg#only-dark){ width="80%" }
+![Temperature against pressure for default start 0: forward Euler step, midpoint, DOP853 reference and the iron melting curve in the core](../assets/validation/adiabat_real_profile.svg#only-light){ width="80%" }
+![Temperature against pressure for default start 0: forward Euler step, midpoint, DOP853 reference and the iron melting curve in the core](../assets/validation/adiabat_real_profile_dark.svg#only-dark){ width="80%" }
 
-**How to read the plot.** The plot shows $T$ against $P$ for default start 0. The midpoint line and the dotted reference lie on each other. The dashed line is a forward Euler step, one first-order step in $P$ per node, computed in the test from the stored structure; it also holds the padded top shell isothermal and is 473 K too cold at the centre. The grey line is the iron melting curve at core pressures. A pass means that the midpoint line lies on the dotted reference.
+**How to read the plot.** The plot shows $T$ against $P$ for default start 0. The midpoint line and the dotted reference lie on each other. The dashed line is a forward Euler step, one first-order step in $P$ per node, computed in the test from the stored structure; it also holds the padded top shell isothermal and is 472 K too cold at the centre. The grey line is the iron melting curve at core pressures. A pass means that the midpoint line lies on the dotted reference.
 
 The largest difference from the reference on each profile, against the test bound of 1 K:
 
 | Profile | macOS 26, arm64, Python 3.12 |
 |---|---|
-| default starts 0 to 3 | 0.0767, 0.9338, 0.1303, 0.2541 K |
-| PROTEUS `all_options` | 0.0004 K |
-| PROTEUS `dummy` | 0.0002 K |
+| default starts 0 to 3 | 0.3373, 0.5382, 0.1978, 0.1586 K |
+| PROTEUS `all_options` | below 0.0001 K |
+| PROTEUS `dummy` | below 0.0001 K |
 
 The values depend on the platform at the level of round-off, so a plot of them cannot match on every platform; the test asserts the 1 K bound and prints the values.
 
@@ -61,7 +61,7 @@ The values depend on the platform at the level of round-off, so a plot of them c
 A structure solve returns core temperatures that are not on the adiabat of its own returned structure: the solve reads the core temperature from the T(P) table built on the pass before. In 4 starts of `input/default.toml` at 2515 K whose planet masses differ by $k \times 10^{-12}$ ($k$ = 0 to 3), the returned core temperature lies up to 20.6 K above that adiabat, and the difference grows across 239 to 264 GPa, where the core adiabat crosses the boundary between liquid and solid iron. Over the mantle the difference is at most 0.41 K, at the CMB node at most 1.18 K. The centre temperatures of the adiabats of the 4 returned structures lie within 6.9 K; the slow test `tests/test_adiabat_start_spread.py` bounds them at 12 K, and it does not bound the returned core temperature.
 
 ??? info "Test details"
-    - Reference: `scipy.integrate.solve_ivp` (RK45), relative tolerance $10^{-10}$, absolute $10^{-12}$; profiles in `tests/data/adiabat_profiles.npz`, written by `python -m tools.validation.adiabat_profiles write`, which checks that the stored call gives the temperature of each solve bit for bit.
+    - Reference: `scipy.integrate.solve_ivp` (DOP853), relative tolerance $10^{-13}$, absolute $10^{-15}$, checked against RK45 at the same tolerances to 0.01 K; profiles in `tests/data/adiabat_profiles.npz`, written by `python -m tools.validation.adiabat_profiles write`, which checks that the stored call gives the temperature of each solve bit for bit.
     - Tolerance: 1 K at every node that the integration sets; no read of a missing or non-positive gradient; the exact read count of a default call.
     - Test id: `tests/test_adiabat_real_profiles.py::test_midpoint_adiabat_meets_the_reference_on_real_profiles`, `tests/test_adiabatic.py::TestMidpointAdiabat::test_default_call_uses_the_0p0025_substeps`.
     - Command: `pytest -o "addopts=" tests/test_adiabat_real_profiles.py -k reference_on_real_profiles`.

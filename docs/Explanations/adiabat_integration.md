@@ -5,7 +5,7 @@ How does Zalmoxis turn the adiabatic gradient of an equation of state (EOS) tabl
 In the temperature modes `adiabatic` and `adiabatic_from_cmb`, the temperature follows an adiabat: the temperature profile of material that is compressed without heat exchange, so that its entropy stays constant.
 `compute_adiabatic_temperature` in `zalmoxis.eos.temperature` integrates this adiabat from one node of the radial grid to the next.
 It uses the midpoint rule in $\ln P$ with substeps of at most 0.0025 in $\ln P$, and it holds the temperature constant below 1 bar.
-On the stored profiles of the default configuration and of the PROTEUS initial structure, the result lies within 0.94 K of an independent high-accuracy integration on macOS ([the values per profile and platform](../Validation/thermal_state.md#adiabat-integration-on-real-profiles)); the test bound is 1 K.
+On the stored profiles of the default configuration and of the PROTEUS initial structure, the result lies within 0.54 K of an independent high-accuracy integration on macOS ([the values per profile and platform](../Validation/thermal_state.md#adiabat-integration-on-real-profiles)); the test bound is 1 K.
 
 ## The equation
 
