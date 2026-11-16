@@ -1116,7 +1116,10 @@ class TestMidpointAdiabat:
         from zalmoxis.eos.temperature import _segment_temperature
 
         for T0 in (5e-324, 1e-310):
-            t = _segment_temperature(T0, 1e5, 4e11, lambda P, T: nabla, 0.0025, True)
+            try:
+                t = _segment_temperature(T0, 1e5, 4e11, lambda P, T: nabla, 0.0025, True)
+            except OverflowError as e:
+                pytest.fail(f'T0 {T0}, nabla {nabla}: {e}')
             if nabla > 1.0:
                 assert t == 1e5, (T0, nabla, t)
             else:
