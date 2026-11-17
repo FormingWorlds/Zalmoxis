@@ -821,8 +821,9 @@ def test_the_solid_picker_keeps_the_delta_boundary_of_paleos():
 
 def test_the_start_dependence_scan_of_the_liquidus_rule(validation_plot):
     """The scan of tools/core_icb_scan.py stored with its commit (the Fe-S core of the ICB
-    validation case; the test runs no solve): every converged step meets both ICB tests, the
-    walks agree outside 2500 to 2525 K and inside it give the table of the case."""
+    validation case; the test runs no solve): every step converges and meets both ICB tests,
+    and the walk down from a liquid core and the walk up from a solid core give the same
+    inner-core mass fraction to 1e-3 at every step."""
     import csv
     from pathlib import Path
 
@@ -840,37 +841,26 @@ def test_the_start_dependence_scan_of_the_liquidus_rule(validation_plot):
         d: {t: float(r['inner_core_mass_fraction']) for t, r in w.items()}
         for d, w in walk.items()
     }
-    ok = {d: {t: r['converged'] == '1' for t, r in w.items()} for d, w in walk.items()}
-    assert all(r['icb_converged'] == '1' for r in rows if r['converged'] == '1')
-    for t in temps[(temps < 2500.0) | (temps > 2525.0)]:
-        assert (
-            ok['down'][t]
-            and ok['up'][t]
-            and frac['down'][t] == pytest.approx(frac['up'][t], abs=1e-3)
-        )
-    table = {
-        2475.0: (1.0, 1.0),
-        2500.0: (0.880, 0.999),
-        2525.0: (0.0, None),
-        2550.0: (0.0, 0.0),
-    }
-    for t, (down, up) in table.items():  # the table of the case; None: not converged
-        assert ok['down'][t] and frac['down'][t] == pytest.approx(down, abs=5e-4)
-        assert ok['up'][t] == (up is not None)
-        assert up is None or frac['up'][t] == pytest.approx(up, abs=5e-4)
+    assert all(r['converged'] == '1' and r['icb_converged'] == '1' for r in rows)
+    for t in temps:
+        assert frac['down'][t] == pytest.approx(frac['up'][t], abs=1e-3), t
+    assert frac['down'][temps[0]] == 1.0 and frac['down'][temps[-1]] == 0.0
 
     def figure():
         import matplotlib.pyplot as plt
 
         fig, ax = plt.subplots(figsize=(6.8, 3.2))
         c = plt.rcParams['axes.prop_cycle'].by_key()['color']
-        ax.axvspan(2487.5, 2537.5, color=c[2], alpha=0.15, lw=0, label='start-dependent')
         for d, colour, style in (('down', c[0], 'o-'), ('up', c[1], 's--')):
-            y = [frac[d][t] if ok[d][t] else np.nan for t in temps]
-            ax.plot(temps, y, style, color=colour, ms=4, mfc='none', label=f'walk {d}')
-        bad = [t for t in temps if not ok['up'][t]]
-        y_bad = [frac['up'][t] for t in bad]
-        ax.plot(bad, y_bad, 'x', color=c[1], ms=8, mew=1.5, label='up, not converged')
+            ax.plot(
+                temps,
+                [frac[d][t] for t in temps],
+                style,
+                color=colour,
+                ms=4,
+                mfc='none',
+                label=f'walk {d}',
+            )
         ax.set(xlabel='Surface temperature [K]', ylabel=r'$M_\mathrm{ic} / M_\mathrm{core}$')
         ax.set(ylim=(-0.05, 1.05), xticks=temps[::8], yticks=(0.0, 0.5, 1.0))
         ax.grid(False)
