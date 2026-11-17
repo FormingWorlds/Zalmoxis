@@ -552,6 +552,97 @@ def test_r_icb_and_p_icb_of_a_small_inner_core_meet_the_uniform_sphere(frac):
     )
 
 
+_P_TP, _T_TP, _Q = 98.5e9, 3712.0, 1 / 1.72  # triple point and 1/c of Anzellini et al. (2013)
+_RHO, _R = 1.0e4, 4.0e6  # the uniform sphere of _sphere_result
+
+
+def _simon(p):
+    """Eq. 3 of Anzellini et al. (2013), (P - P_TP)/a = (T/T_TP)^c - 1, with a = P_TP: the
+    power law T_TP (P/P_TP)^(1/c)."""
+    return _T_TP * (np.asarray(p) / _P_TP) ** _Q
+
+
+def _liquid(t0, n, p):
+    """Liquid branch at constant nabla_ad = dln T/dln P = n through T0 at 200 GPa."""
+    return t0 * (np.asarray(p) / 200e9) ** n
+
+
+def _sphere_nodes(extra_r=()):
+    """Mass and pressure of the uniform sphere on 41 radii and the radii extra_r; core mass the
+    mass at 2000 km (node 20). P is linear in m^(2/3), so the rule's P at a mass is exact."""
+    r = np.unique(np.r_[np.linspace(0.0, _R, 41), extra_r])
+    m = 4 / 3 * np.pi * _RHO * r**3
+    p = 2 / 3 * np.pi * G * _RHO**2 * (_R**2 - r**2)
+    return m, p, 4 / 3 * np.pi * _RHO * 2.0e6**3
+
+
+def _r_at(p):
+    return math.sqrt(_R**2 - p / (2 / 3 * np.pi * G * _RHO**2))
+
+
+def _root(t0, n):
+    """P_B of T0 (P/P0)^n = T_TP (P/P_TP)^q in closed form."""
+    return (_T_TP * 200e9**n / (t0 * _P_TP**_Q)) ** (1 / (n - _Q))
+
+
+@pytest.mark.physics_invariant
+def test_the_icb_superheat_is_0_at_the_closed_form_root():
+    """Case 2 of the ICB Validation. A liquid branch with constant nabla_ad = n meets the power
+    law liquidus at P_B = (T_TP P0^n / (T0 P_TP^q))^(1/(n - q)), q = 1/1.72. With a node at P_B
+    and the layer ICB at its mass, the miss is 0 to 1e-8 of T_liq(P_B)."""
+    from zalmoxis.core_profile import icb_superheat_miss
+
+    p_b = _root(5500.0, 0.4)
+    m, p, cmb = _sphere_nodes([_r_at(p_b)])
+    m_b = float(m[np.argmin(abs(p - p_b))])
+    assert 0.0 < m_b < cmb and _liquid(5500.0, 0.4, p_b) == pytest.approx(
+        _simon(p_b), rel=1e-12
+    )
+    got = icb_superheat_miss(m, p, _liquid(5500.0, 0.4, p), cmb, _simon, m_b)
+    assert got <= 1e-8 * float(_simon(p_b))
+
+
+@pytest.mark.physics_invariant
+@settings(max_examples=60, deadline=None)
+@given(n=st.floats(0.1, 0.5), frac=st.floats(0.0, 1.0), t0=st.floats(4500.0, 6500.0))
+@example(n=0.4, frac=0.97, t0=5500.0)  # the layer ICB in the top core segment
+def test_the_icb_superheat_off_the_root_meets_the_closed_form(n, frac, t0):
+    """At a layer ICB inside the core the miss is |T - T_liq| of the liquid branch there; the
+    rule interpolates T linearly in ln P, so it may differ from the power law by at most
+    (dln P)^2 / 8 n^2 T on the node segment of the ICB."""
+    from zalmoxis.core_profile import icb_superheat_miss
+
+    m, p, cmb = _sphere_nodes()
+    icb = frac * cmb
+    p_icb = icb_from_profile(m, p, _liquid(t0, n, p), cmb, _simon, icb)[1]
+    s = float(_liquid(t0, n, p_icb) - _simon(p_icb))
+    got = icb_superheat_miss(m, p, _liquid(t0, n, p), cmb, _simon, icb)
+    k = min(max(int(np.searchsorted(-p, -p_icb)), 1), 20)
+    bound = math.log(p[k - 1] / p[k]) ** 2 / 8 * n**2 * t0 * (p[0] / 200e9) ** n
+    if 0.0 < frac < 1.0:
+        assert abs(got - abs(s)) <= bound + 1e-9 * t0, (got, s, bound)
+    assert got >= 0.0 and math.isfinite(got)
+
+
+@pytest.mark.parametrize(('t0', 'hot'), [(4500.0, False), (9000.0, True)])
+def test_the_icb_superheat_of_no_or_a_full_inner_core_counts_the_wrong_side_only(t0, hot):
+    """No inner core: the miss is the undercooling of the liquid at the centre, 0 for a hot
+    core. A full inner core: the miss is the superheat of the liquid at the CMB, 0 for a cold
+    core."""
+    from zalmoxis.core_profile import icb_superheat_miss
+
+    m, p, cmb = _sphere_nodes()
+    t = _liquid(t0, 0.4, p)
+    none = icb_superheat_miss(m, p, t, cmb, _simon, 0.0)
+    full = icb_superheat_miss(m, p, t, cmb, _simon, cmb)
+    k = int(np.argmin(abs(m - cmb)))  # node 20 holds the core mass
+    if hot:
+        assert none == 0.0 and full == pytest.approx(t[k] - float(_simon(p[k])), rel=1e-12)
+    else:
+        assert full == 0.0 and none == pytest.approx(float(_simon(p[0]) - t[0]), rel=1e-12)
+        assert none > 0.0
+
+
 def test_a_given_icb_mass_in_the_first_segment_has_the_pressure_of_the_uniform_sphere():
     """With a given ICB mass the rule takes P linear in m^(2/3), as core_arrays does: exact on
     the uniform sphere, also inside the first node segment."""

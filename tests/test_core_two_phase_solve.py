@@ -574,3 +574,63 @@ def test_the_adiabat_of_a_converged_liquidus_solve_takes_its_icb(setup, monkeypa
     assert 0.0 < m_ic < cmb and res['accepted_on'] == 'strict'
     used = spy.call_args.kwargs['icb_mass']  # the inner-core mass of the last adiabat
     assert abs(used - m_ic) <= 1e-3 * cmb, (used / cmb, m_ic / cmb)
+
+
+def _liquid_branch(setup, res):
+    """Independent liquid branch: d ln T / d ln P = nabla_ad of the liquid side, integrated by
+    DOP853 (rtol 1e-13) from the first core node above the ICB of the returned profile to the
+    centre. Returns T(P) of the branch, the first node index and the liquidus."""
+    from scipy.integrate import solve_ivp
+
+    from zalmoxis.melting_curves import get_melting_curve_function
+    from zalmoxis.mixing import get_mixed_nabla_ad, parse_all_layer_mixtures
+
+    md = setup[0]
+    mix, cache = parse_all_layer_mixtures({'core': LIQ})['core'], {}
+    m, p, t = (np.asarray(res[k], float) for k in ('mass_enclosed', 'pressure', 'temperature'))
+    j = int(np.flatnonzero(m > res['core']['M_ic'])[0])
+    assert m[j] < res['cmb_mass']  # a core node of the liquid side
+    sol = solve_ivp(
+        lambda x, y: [get_mixed_nabla_ad(np.exp(x), np.exp(y[0]), mix, md, cache)],
+        (np.log(p[j]), np.log(p[0])),
+        [np.log(t[j])],
+        method='DOP853',
+        rtol=1e-13,
+        atol=1e-12,
+        dense_output=True,
+    )
+    assert sol.success, sol.message
+    return (
+        (lambda x: float(np.exp(sol.sol(np.log(x))[0]))),
+        j,
+        get_melting_curve_function('Anzellini13-iron'),
+    )
+
+
+@pytest.mark.physics_invariant
+@pytest.mark.reference_pinned
+def test_a_pure_iron_core_has_its_icb_where_its_liquid_adiabat_meets_iron_melting(setup):
+    """Cases 1 and 3 of the ICB Validation. A growing inner core has its outer-core liquid at
+    the liquidus at the ICB: the zero-superheat condition of Labrosse (2015, Phys. Earth Planet.
+    Inter. 247, 36, Sect. 2, doi:10.1016/j.pepi.2015.02.002) and Nimmo (2015, Treatise on
+    Geophysics 8.02, Fig. 2, doi:10.1016/B978-0-444-53802-4.00139-1). The pure-iron core of the
+    default 1 M_E planet at 2500 K holds a partial inner core. An independent DOP853 integration
+    of the liquid side nabla_ad from the first outer-core node gives the superheat S at the ICB
+    of the returned profile (|S| <= 0.5 K) and its liquidus root G_B (within 0.005 of the core
+    mass of the returned inner core)."""
+    from scipy.optimize import brentq
+
+    res = _solve(
+        setup, inner=SOL, core=LIQ, core_liquidus='Anzellini13-iron', surface_temperature=2500.0
+    )
+    core, cmb = res['core'], res['cmb_mass']
+    f = core['M_ic'] / cmb
+    branch, j, liq = _liquid_branch(setup, res)
+    s = branch(core['P_icb']) - float(liq(core['P_icb']))
+    p = np.asarray(res['pressure'], float)
+    p_b = brentq(lambda x: branch(x) - float(liq(x)), p[j], p[0], xtol=1e-3, rtol=1e-14)
+    g_b = float(np.interp(np.log(p_b), np.log(p[::-1]), np.asarray(res['mass_enclosed'])[::-1]))
+    print(f'f {f:.4f} S {s:+.3f} K G_B {g_b / cmb:.4f} accepted_on {res["accepted_on"]}')
+    assert 0.0 < f < 1.0 and abs(s) <= 0.5, (f, s)
+    assert abs(g_b / cmb - f) <= 0.005, (g_b / cmb, f)
+    assert res['icb_superheat'] <= 0.5
