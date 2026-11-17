@@ -578,8 +578,10 @@ def test_the_adiabat_of_a_converged_liquidus_solve_takes_its_icb(setup, monkeypa
 
 def _liquid_branch(setup, res):
     """Independent liquid branch: d ln T / d ln P = nabla_ad of the liquid side, integrated by
-    DOP853 (rtol 1e-13) from the first core node above the ICB of the returned profile to the
-    centre. Returns T(P) of the branch, the first node index and the liquidus."""
+    DOP853 (rtol 1e-13) from the second core node above the ICB of the returned profile to the
+    centre. The returned T comes from the T(P) table of the pass before; the first node above
+    the ICB can fall in a table segment that holds the ICB of that pass, and so read up to
+    about 1 K of the solid side. Returns T(P) of the branch, the start node and the liquidus."""
     from scipy.integrate import solve_ivp
 
     from zalmoxis.melting_curves import get_melting_curve_function
@@ -588,7 +590,7 @@ def _liquid_branch(setup, res):
     md = setup[0]
     mix, cache = parse_all_layer_mixtures({'core': LIQ})['core'], {}
     m, p, t = (np.asarray(res[k], float) for k in ('mass_enclosed', 'pressure', 'temperature'))
-    j = int(np.flatnonzero(m > res['core']['M_ic'])[0])
+    j = int(np.flatnonzero(m > res['core']['M_ic'])[0]) + 1
     assert m[j] < res['cmb_mass']  # a core node of the liquid side
     sol = solve_ivp(
         lambda x, y: [get_mixed_nabla_ad(np.exp(x), np.exp(y[0]), mix, md, cache)],
@@ -615,7 +617,7 @@ def test_a_pure_iron_core_has_its_icb_where_its_liquid_adiabat_meets_iron_meltin
     Inter. 247, 36, Sect. 2, doi:10.1016/j.pepi.2015.02.002) and Nimmo (2015, Treatise on
     Geophysics 8.02, Fig. 2, doi:10.1016/B978-0-444-53802-4.00139-1). The pure-iron core of the
     default 1 M_E planet at 2500 K holds a partial inner core. An independent DOP853 integration
-    of the liquid side nabla_ad from the first outer-core node gives the superheat S at the ICB
+    of the liquid side nabla_ad from the second outer-core node gives the superheat S at the ICB
     of the returned profile (|S| <= 0.5 K) and its liquidus root G_B (within 0.005 of the core
     mass of the returned inner core)."""
     from scipy.optimize import brentq
@@ -659,3 +661,46 @@ def test_a_liquid_branch_off_the_t_table_above_the_icb_stops_the_solve(setup, mo
             core_liquidus='Anzellini13-iron',
             surface_temperature=2500.0,
         )
+
+
+@pytest.mark.physics_invariant
+@pytest.mark.reference_pinned
+@pytest.mark.timeout(4800)  # 5 solves; inside the 90 min core_two_phase job
+def test_the_inner_core_of_a_pure_iron_core_grows_as_the_surface_cools(setup, validation_plot):
+    """Case 4 of the ICB Validation: the freezing band of the pure-iron core of the default
+    1 M_E planet. The inner-core mass fraction does not rise with the surface temperature (to
+    0.05); the core is solid to the CMB at 2470 K and liquid at 2530 K, outside the band edges
+    of about 2482 and 2521 K, where the fully solid core meets the liquidus at the CMB and the
+    fully liquid core at the centre (mass-rule solves at f = 1 and 0); each step passes the
+    zero-superheat test of case 1."""
+    temps = (2470.0, 2490.0, 2500.0, 2510.0, 2530.0)
+    frac = []
+    for t in temps:
+        res = _solve(
+            setup, inner=SOL, core=LIQ, core_liquidus='Anzellini13-iron', surface_temperature=t
+        )
+        assert res['icb_superheat'] <= 0.5, (t, res['icb_superheat'])
+        frac.append(res['core']['M_ic'] / res['cmb_mass'])
+    print(dict(zip(temps, frac)))
+    assert frac[0] == 1.0 and frac[-1] == 0.0
+    assert all(0.0 < f < 1.0 for f in frac[1:-1])
+    assert all(b <= a + 0.05 for a, b in zip(frac, frac[1:]))
+
+    def figure():
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(figsize=(6.8, 3.2))
+        c = plt.rcParams['axes.prop_cycle'].by_key()['color']
+        ax.plot(temps, frac, 'o-', color=c[0], ms=4, mfc='none', label='liquidus rule')
+        for edge, text in ((2482.0, 'solid to the CMB below'), (2521.0, 'liquid above')):
+            ax.axvline(edge, color=c[1], ls=':', lw=1.0, label=f'{text} ({edge:.0f} K)')
+        ax.set(xlabel='Surface temperature [K]', ylabel=r'$M_\mathrm{ic} / M_\mathrm{core}$')
+        ax.set(ylim=(-0.05, 1.05), yticks=(0.0, 0.5, 1.0))
+        ax.grid(False)
+        ax.legend(loc='upper left', bbox_to_anchor=(1.02, 1.0), frameon=False)
+        fig.tight_layout()
+        fig.canvas.draw()
+        assert ax.get_legend().get_window_extent().x0 >= ax.get_window_extent().x1
+        return fig
+
+    validation_plot(figure, 'core_two_phase_pure_iron_freezing_band')
