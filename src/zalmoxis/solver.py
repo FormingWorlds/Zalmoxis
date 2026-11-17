@@ -2028,7 +2028,6 @@ def _solve(
     _adiabat_computed = False  # the gradient table was read for the T profile
     _adiabat_blend = 0.0
     _table_blend = 0.0  # the blend of the pass whose pressure built the T(P) table
-    _liquid_func = None  # T(r, P) of the outer-core liquid branch on an adiabat
     _ADIABAT_BLEND_STEP = 0.25
     # the internal adiabat makes T: accept only blend 1 on a table of a blend-1 pass
     ramp_asked = _adiabat_asked(
@@ -2078,10 +2077,11 @@ def _solve(
         # (miss, bound) of the ICB tests: the superheat [K] of the liquid branch on an adiabat,
         # else the distance [kg] to the liquidus root of the profile; the adiabat ICB lag [kg]
         tol = tolerance_outer * cmb_mass
-        if _liquid_func is None:
+        liquid = getattr(_temperature_func, 'liquid', None)
+        if liquid is None:
             root, lag = icb_misses(m, p, t, cmb_mass, core_liq, icb_mass, icb_adiabat)
             return (root, tol), (lag, tol)
-        t_l = [_liquid_func(r_, p_) for r_, p_ in zip(r, p)]
+        t_l = [liquid(r_, p_) for r_, p_ in zip(r, p)]
         heat = icb_superheat_miss(m, p, t_l, cmb_mass, core_liq, icb_mass)
         return (heat, _ICB_SUPERHEAT_TOL), (
             0.0 if icb_adiabat is None else abs(icb_adiabat - icb_mass),
@@ -2285,19 +2285,24 @@ def _solve(
                     return t_of
 
                 _temperature_func = _table_t(_logP_sorted, _T_sorted)
-                if core_liq is not None:  # the outer-core liquid continued below the ICB
-                    _liquid_func = _temperature_func
+                if (
+                    core_liq is not None
+                ):  # T(r, P) of the outer-core liquid continued below the ICB
+                    _temperature_func.liquid = _temperature_func
                     if icb_mass > 0.0:
                         liquid_T = _adiabat(
                             prev_radii, prev_pressure, prev_mass_enclosed, icb=0.0
                         )
-                        _liquid_func = _table_t(
+                        _temperature_func.liquid = _table_t(
                             *_adiabat_table(prev_pressure, liquid_T, _top_shell)
                         )
                         up = np.asarray(prev_mass_enclosed) > icb_mass  # 1 adiabat there
                         dev = max(
                             (
-                                abs(_liquid_func(r_, p_) / _temperature_func(r_, p_) - 1.0)
+                                abs(
+                                    _temperature_func.liquid(r_, p_) / _temperature_func(r_, p_)
+                                    - 1
+                                )
                                 for r_, p_ in zip(prev_radii[up], prev_pressure[up])
                             ),
                             default=0.0,
@@ -2343,7 +2348,7 @@ def _solve(
             temperatures = np.asarray(_output_tf(radii), dtype=float)
 
         if core_liq is not None and prev_pressure is not None:
-            t_of = _temperature_func if _liquid_func is None else _liquid_func
+            t_of = getattr(_temperature_func, 'liquid', _temperature_func)
             t_prev = [t_of(r_, p_) for r_, p_ in zip(prev_radii, prev_pressure)]
             icb_mass = icb_from_profile(
                 prev_mass_enclosed, prev_pressure, t_prev, cmb_mass, core_liq
@@ -2948,7 +2953,6 @@ def _solve(
                 'icb_mass': icb_mass,
                 'icb_adiabat': icb_adiabat,
                 'temperature_func': _temperature_func,
-                'liquid_func': _liquid_func,
                 'adiabat_table_blend': _table_blend,
             }
             oscillation_count = 0
@@ -3036,12 +3040,11 @@ def _solve(
 
     def _best_pass():
         # the inner core and T profile of that pass
-        nonlocal icb_mass, icb_adiabat, _temperature_func, _liquid_func
-        icb_mass, icb_adiabat, _temperature_func, _liquid_func = (
+        nonlocal icb_mass, icb_adiabat, _temperature_func
+        icb_mass, icb_adiabat, _temperature_func = (
             best_profiles['icb_mass'],
             best_profiles['icb_adiabat'],
             best_profiles['temperature_func'],
-            best_profiles['liquid_func'],
         )
         # fresh copies: the saved profiles can be read-only views of JAX buffers
         T = best_profiles['temperatures']
@@ -3167,7 +3170,7 @@ def _solve(
             radii, mass_enclosed, pressure, temperatures
         )
         icb_converged = all(d <= b for d, b in tests)
-        icb_superheat = miss if _liquid_func is not None else None
+        icb_superheat = miss if getattr(_temperature_func, 'liquid', None) else None
         if converged and not icb_converged:  # an accept path that skipped the ICB test
             logger.warning(
                 'Not converged: the inner-core boundary misses %s%s (accepted_on=%s).',

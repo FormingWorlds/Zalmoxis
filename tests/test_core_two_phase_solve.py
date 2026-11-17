@@ -682,11 +682,10 @@ def test_a_liquid_branch_off_the_t_table_above_the_icb_stops_the_solve(setup, mo
 def test_the_inner_core_of_a_pure_iron_core_grows_as_the_surface_cools(setup, validation_plot):
     """Case 4 of the ICB Validation: the freezing band of the pure-iron core of the default
     1 M_E planet. The inner-core mass fraction does not rise with the surface temperature (to
-    0.05); the core is solid to the CMB at 2470 K and liquid at 2530 K, outside the band edges
-    of about 2482 and 2521 K, where the fully solid core meets the liquidus at the CMB and the
-    fully liquid core at the centre (mass-rule solves at f = 1 and 0); each step passes the
-    zero-superheat test of case 1."""
-    temps = (2470.0, 2490.0, 2500.0, 2510.0, 2530.0)
+    0.05); the core is solid to the CMB at 2460 K and liquid at 2530 K, about 9 K outside the
+    band of 2470 K (0.991) to 2520 K (0.005) on the default side-table grid; each step passes
+    the zero-superheat test of case 1."""
+    temps = (2460.0, 2480.0, 2500.0, 2510.0, 2530.0)
     frac = []
     for t in temps:
         res = _solve(
@@ -704,9 +703,7 @@ def test_the_inner_core_of_a_pure_iron_core_grows_as_the_surface_cools(setup, va
 
         fig, ax = plt.subplots(figsize=(6.8, 3.2))
         c = plt.rcParams['axes.prop_cycle'].by_key()['color']
-        ax.plot(temps, frac, 'o-', color=c[0], ms=4, mfc='none', label='liquidus rule')
-        for edge, text in ((2482.0, 'solid to the CMB below'), (2521.0, 'liquid above')):
-            ax.axvline(edge, color=c[1], ls=':', lw=1.0, label=f'{text} ({edge:.0f} K)')
+        ax.plot(temps, frac, 'o-', color=c[0], ms=4, mfc='none', label='pure-iron core')
         ax.set(xlabel='Surface temperature [K]', ylabel=r'$M_\mathrm{ic} / M_\mathrm{core}$')
         ax.set(ylim=(-0.05, 1.05), yticks=(0.0, 0.5, 1.0))
         ax.grid(False)
