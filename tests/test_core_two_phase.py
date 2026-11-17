@@ -17,7 +17,7 @@ from hypothesis import strategies as st
 from tests import _paleos_mock
 from zalmoxis.config import parse_eos_config, validate_config, validate_layer_eos
 from zalmoxis.constants import G
-from zalmoxis.core_profile import core_arrays, icb_from_profile
+from zalmoxis.core_profile import core_arrays, icb_from_profile, icb_superheat
 from zalmoxis.eos import core_alloy as ca
 from zalmoxis.eos.paleos_api import make_default_grid_iron_2phase
 from zalmoxis.eos_properties import EOS_REGISTRY
@@ -589,17 +589,28 @@ def _root(t0, n):
 def test_the_icb_superheat_is_0_at_the_closed_form_root():
     """Case 2 of the ICB Validation. A liquid branch with constant nabla_ad = n meets the power
     law liquidus at P_B = (T_TP P0^n / (T0 P_TP^q))^(1/(n - q)), q = 1/1.72. With a node at P_B
-    and the layer ICB at its mass, the miss is 0 to 1e-8 of T_liq(P_B)."""
-    from zalmoxis.core_profile import icb_superheat_miss
-
+    and the layer ICB at its mass, S and the miss are 0 to 1e-8 of T_liq(P_B)."""
     p_b = _root(5500.0, 0.4)
     m, p, cmb = _sphere_nodes([_r_at(p_b)])
     m_b = float(m[np.argmin(abs(p - p_b))])
-    assert 0.0 < m_b < cmb and _liquid(5500.0, 0.4, p_b) == pytest.approx(
-        _simon(p_b), rel=1e-12
-    )
-    got = icb_superheat_miss(m, p, _liquid(5500.0, 0.4, p), cmb, _simon, m_b)
-    assert got <= 1e-8 * float(_simon(p_b))
+    assert 0.0 < m_b < cmb
+    assert _liquid(5500.0, 0.4, p_b) == pytest.approx(_simon(p_b), rel=1e-12)
+    s, miss = icb_superheat(m, p, _liquid(5500.0, 0.4, p), cmb, _simon, m_b)
+    assert miss == abs(s) <= 1e-8 * float(_simon(p_b))
+
+
+@pytest.mark.physics_invariant
+@settings(max_examples=60, deadline=None)
+@given(n=st.floats(0.1, 0.5), t0=st.floats(4000.0, 9000.0))
+@example(n=0.4, t0=5500.0)
+def test_the_icb_superheat_is_0_at_the_rules_own_root(n, t0):
+    """The ICB update takes the first liquidus root of the liquid branch and its mass with m
+    linear in ln P; the test maps that mass back to P the same way, so at the rule's own root
+    on the same nodes the miss is 0 to 1e-9 of T, also with no or a full inner core."""
+    m, p, cmb = _sphere_nodes()
+    t = _liquid(t0, n, p)
+    icb = icb_from_profile(m, p, t, cmb, _simon)[0]
+    assert icb_superheat(m, p, t, cmb, _simon, icb)[1] <= 1e-9 * t0
 
 
 @pytest.mark.physics_invariant
@@ -607,51 +618,44 @@ def test_the_icb_superheat_is_0_at_the_closed_form_root():
 @given(n=st.floats(0.1, 0.5), frac=st.floats(-0.5, 1.5), t0=st.floats(4500.0, 6500.0))
 @example(n=0.4, frac=0.97, t0=5500.0)  # the layer ICB in the top core segment
 def test_the_icb_superheat_off_the_root_meets_the_closed_form(n, frac, t0):
-    """At a layer ICB inside the core the miss is |T - T_liq| of the liquid branch there; the
-    rule interpolates T linearly in ln P, so it may differ from the power law by at most
-    (dln P)^2 / 8 n^2 T on the node segment of the ICB."""
-    from zalmoxis.core_profile import icb_superheat_miss
-
+    """At a layer ICB inside the core, S is T - T_liq of the liquid branch at the pressure of
+    the ICB mass (ln P linear in m on the core nodes); T is linear in ln P, so S may differ
+    from the power law by at most (dln P)^2 / 8 n^2 T on the node segment of the ICB."""
     m, p, cmb = _sphere_nodes()
-    got = icb_superheat_miss(m, p, _liquid(t0, n, p), cmb, _simon, frac * cmb)
-    assert got >= 0.0 and math.isfinite(got)
+    s, miss = icb_superheat(m, p, _liquid(t0, n, p), cmb, _simon, frac * cmb)
+    assert miss >= 0.0 and math.isfinite(miss)
     if 0.0 < frac < 1.0:
-        p_icb = icb_from_profile(m, p, _liquid(t0, n, p), cmb, _simon, frac * cmb)[1]
-        s = float(_liquid(t0, n, p_icb) - _simon(p_icb))
+        core = m <= cmb
+        p_icb = math.exp(np.interp(frac * cmb, m[core], np.log(p[core])))
+        want = float(_liquid(t0, n, p_icb) - _simon(p_icb))
         k = min(max(int(np.searchsorted(-p, -p_icb)), 1), 20)
         bound = math.log(p[k - 1] / p[k]) ** 2 / 8 * n**2 * t0 * (p[0] / 200e9) ** n
-        assert abs(got - abs(s)) <= bound + 1e-9 * t0, (got, s, bound)
+        assert abs(s - want) <= bound + 1e-9 * t0 and miss == abs(s), (s, want, bound)
 
 
 @pytest.mark.parametrize('bad', [np.nan, np.inf])
 def test_a_non_finite_liquid_branch_at_the_icb_misses_by_inf(bad):
     """A liquid branch that is not finite at the ICB fails the test: the miss is inf, not a NaN
     that every bound comparison would pass."""
-    from zalmoxis.core_profile import icb_superheat_miss
-
     m, p, cmb = _sphere_nodes()
     t = _liquid(5500.0, 0.4, p)
     t[5:7] = bad
-    assert icb_superheat_miss(m, p, t, cmb, _simon, float(m[6])) == math.inf
+    assert icb_superheat(m, p, t, cmb, _simon, float(m[6]))[1] == math.inf
 
 
 @pytest.mark.parametrize(('t0', 'hot'), [(4500.0, False), (9000.0, True)])
 def test_the_icb_superheat_of_no_or_a_full_inner_core_counts_the_wrong_side_only(t0, hot):
-    """No inner core: the miss is the undercooling of the liquid at the centre, 0 for a hot
-    core. A full inner core: the miss is the superheat of the liquid at the CMB, 0 for a cold
-    core."""
-    from zalmoxis.core_profile import icb_superheat_miss
-
+    """No inner core: S at the centre, and the miss is the undercooling there, 0 for a hot
+    core. A full inner core: S at the core mass, and the miss is the superheat there, 0 for a
+    cold core."""
     m, p, cmb = _sphere_nodes()
     t = _liquid(t0, 0.4, p)
-    none = icb_superheat_miss(m, p, t, cmb, _simon, 0.0)
-    full = icb_superheat_miss(m, p, t, cmb, _simon, cmb)
+    s0, none = icb_superheat(m, p, t, cmb, _simon, 0.0)
+    s1, full = icb_superheat(m, p, t, cmb, _simon, cmb)
     k = int(np.argmin(abs(m - cmb)))  # node 20 holds the core mass
-    if hot:
-        assert none == 0.0 and full == pytest.approx(t[k] - float(_simon(p[k])), rel=1e-12)
-    else:
-        assert full == 0.0 and none == pytest.approx(float(_simon(p[0]) - t[0]), rel=1e-12)
-        assert none > 0.0
+    assert s0 == pytest.approx(t[0] - float(_simon(p[0])), rel=1e-12)
+    assert s1 == pytest.approx(t[k] - float(_simon(p[k])), rel=1e-12)
+    assert (none, full) == ((0.0, s1) if hot else (-s0, 0.0)) and s0 * s1 > 0.0
 
 
 def test_a_given_icb_mass_in_the_first_segment_has_the_pressure_of_the_uniform_sphere():
