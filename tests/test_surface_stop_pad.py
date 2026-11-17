@@ -582,3 +582,47 @@ class TestJaxStopState:
         assert np.all(np.isfinite(ys)) and ys[-1, 2] > 0
         assert y_end == pytest.approx(ys[-1], rel=1e-12)
         assert y_end[0] == pytest.approx(_mass(R_OUT), rel=1e-6)
+
+
+def _stall_first_solve(monkeypatch, node):
+    """Make the first solve_ivp call (from r = 0) end with status -1 after ``node``, as an
+    RK45 stall does: the state on the nodes up to ``node`` and no event."""
+    inner = sm.solve_ivp
+
+    def solve_ivp(fun, t_span, *args, **kwargs):
+        sol = inner(fun, t_span, *args, **kwargs)
+        if t_span[0] == 0.0 and sol.t.size > node + 1:
+            sol.t, sol.y, sol.status = sol.t[: node + 1], sol.y[:, : node + 1], -1
+            sol.y_events = [np.empty((0, 3))]
+        return sol
+
+    monkeypatch.setattr(sm, 'solve_ivp', solve_ivp)
+
+
+class TestStallInsideThePlanet:
+    """A step stall (status -1) with a finite RHS, after which the re-integration passes its
+    shell with P above the surface fraction: the integration goes on from that node."""
+
+    @pytest.mark.parametrize('tdep', [False, True])
+    def test_a_stall_goes_on_to_the_surface_stop(self, monkeypatch, tdep):
+        radii, r0, p_c = _setup(0.6)
+        _stall_first_solve(monkeypatch, 10)
+        m, g, p = _solve_numpy(monkeypatch, radii, p_c, 'zero', tdep)
+        i_stop = N - 1
+        assert np.all(np.isfinite(m)) and np.all(np.isfinite(p))
+        assert np.all(p[i_stop:] == 0.0) and np.all(p[:i_stop] > 0.0)
+        assert m[i_stop:] == pytest.approx(np.full(N - i_stop, _mass(r0)), rel=1e-6)
+        assert m[1:i_stop] == pytest.approx(_mass(radii[1:i_stop]), rel=1e-6)
+
+    def test_a_stall_before_a_nan_band_still_fails(self, monkeypatch):
+        """The continued integration meets a non-finite RHS further out: the solve fails."""
+        radii = np.linspace(0.0, R_OUT, N)
+        p_c = 1e12  # no surface inside R
+        band = _band_rhs(radii[30], radii[32])
+        _stall_first_solve(monkeypatch, 10)
+        monkeypatch.setattr(sm, 'coupled_odes', band)
+        monkeypatch.setattr(sm, 'any_component_is_tdep', lambda _: False)
+        m, g, p = sm.solve_structure(
+            {}, 0.0, 0.0, radii, 0.5, 1e-10, 1e-12, np.inf, {}, {}, [0.0, 0.0, p_c], None, None
+        )
+        assert np.all(np.isfinite(p[:31])) and np.isnan(p[-1])
