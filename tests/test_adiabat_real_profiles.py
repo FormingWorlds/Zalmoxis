@@ -326,7 +326,7 @@ def test_the_top_cell_shell_meets_the_next_node_across_a_layer_boundary(
     """An H2O layer (T-independent Seager2007 or T-dependent PALEOS) from the middle of the top
     cell outward, on both anchors: the table gives the shell the mass of the node whose mixture
     the adiabat takes over the cell (inner node inward, the node outside it outward), so the
-    shell integrated on to the inner node meets its T within 1e-4 K (1.2e-5 K measured for the
+    shell integrated on to the inner node meets its T within 1e-4 K (1.25e-5 K measured for the
     steep PALEOS H2O cells); with the mass of the other node it misses by more than 1 K."""
     kw = profiles[case][1]
     assert kw['anchor'] == ('cmb' if case == 'ic_dummy' else 'surface')

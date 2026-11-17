@@ -51,28 +51,26 @@ The checks therefore use 2 tests: the order on smooth $\nabla_\mathrm{ad}$ with 
 
 ## How the density solve reads the temperature over the top cell
 
-What temperature does the density solve use between the top node and the next node down?
-It reads the adiabat itself at 64 pressures over that interval, not a straight line between the 2 nodes.
+What temperature does the density solve use between the top of the planet and the first node below it?
+It reads the adiabat itself at 64 pressures, not a straight line between the 2 ends.
 
-The density solve reads $T$ from a table of this adiabat against $\log_{10} P$.
-The solve builds the table on the nodes of the pass before.
-The top cell is the interval between the top of the planet and the next node; it has no node inside.
-Its ends depend on the top:
+The density solve reads $T$ from a table of this adiabat against $\log_{10} P$, built on the nodes of the pass before.
+The top cell has no node inside. It runs:
 
-- **Padded top:** from 1 bar up to the last node with positive pressure.
-- **Unpadded top at or above 1 bar:** from the top node up to the next node.
-- **Unpadded top below 1 bar:** from 1 bar up to the next node; the top node keeps its own place in the table.
+- **Padded top:** from 1 bar to the outermost node with a positive pressure.
+- **Unpadded top at or above 1 bar:** from the top node to the next node.
+- **Unpadded top below 1 bar:** from 1 bar to the next node; the top node keeps its place in the table.
 
-The table gets 64 geometric pressures over the cell, the shell of the table.
-On the shell, the adiabat is integrated inward from the temperature at the top of the cell.
-It takes the mixture that the adiabat of the solve takes over the cell: that of the node at the upper end of the cell when the adiabat runs inward from the surface, and that of the node outside it when the adiabat runs outward from the CMB.
-So a layer boundary inside the top cell does not separate the shell from the adiabat.
-The lookup therefore follows the adiabat over the cell, not a straight line in $\log_{10} P$ between its ends.
-On the stored profiles the cell spans 2 to 4 decades of pressure, and such a straight line lies 9 to 28 K off the adiabat.
+The table gets 64 geometric pressures over the cell, the shell.
+The adiabat runs inward over it from the temperature at the top.
+The shell takes the mixture of the adiabat of the solve over the cell: that of the deeper node with the surface anchor, and that of the node just outside it (the top node or the first padded node) with the CMB anchor.
+Like the adiabat, it takes one mixture over the whole cell.
+So it does not resolve a layer boundary inside the cell, and it still ends at the temperature of the deeper node.
+The cell spans 2 to 4 decades on the stored profiles; a straight line in $\log_{10} P$ there lies 9 to 28 K off.
 
-With a padded top, against a table with 4096 shell points, the largest difference is about 0.08 K on `input/default.toml` at 2515 K, and about 0.1 K with a 3871 K WolfBower surface.
-On unpadded tops the lookup lies at most 0.083 K from an independent integration.
-The shell takes less than 1 % of the time of a structure solve (0.68 % and 0.53 % for the 2 PROTEUS initial structures).
+With a padded top, against 4096 shell points, the lookup differs by about 0.08 K on `input/default.toml` at 2515 K and 0.1 K with a 3871 K WolfBower surface.
+On unpadded tops it lies at most 0.083 K from an independent integration.
+The shell takes 0.53 to 0.68 % of a PROTEUS initial-structure solve.
 
 **Where this is checked.** [Temperature lookup over the top cell](../Validation/thermal_state.md#temperature-lookup-over-the-top-cell).
 
