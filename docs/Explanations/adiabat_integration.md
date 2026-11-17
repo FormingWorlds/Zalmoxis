@@ -5,7 +5,7 @@ How does Zalmoxis turn the adiabatic gradient of an equation of state (EOS) tabl
 In the temperature modes `adiabatic` and `adiabatic_from_cmb`, the temperature follows an adiabat: the temperature profile of material that is compressed without heat exchange, so that its entropy stays constant.
 `compute_adiabatic_temperature` in `zalmoxis.eos.temperature` integrates this adiabat from one node of the radial grid to the next.
 It uses the midpoint rule in $\ln P$ with substeps of at most 0.0025 in $\ln P$, and it holds the temperature constant below 1 bar.
-On the stored profiles of the default configuration and of the PROTEUS initial structure, the result lies within 0.54 K of an independent high-accuracy integration on macOS ([the values per profile and platform](../Validation/thermal_state.md#adiabat-integration-on-real-profiles)); the test bound is 1 K.
+On the stored profiles of the default configuration and of the PROTEUS initial structure, the result lies within 0.54 K of an independent high-accuracy integration on macOS ([the values per profile](../Validation/thermal_state.md#adiabat-integration-on-real-profiles)); the test bound is 1 K.
 
 ## The equation
 
@@ -46,9 +46,35 @@ The checks therefore use 2 tests: the order on smooth $\nabla_\mathrm{ad}$ with 
 
 - **Below 1 bar.** Both ends of a segment are raised to `ADIABAT_P_FLOOR` = $10^5$ Pa before the integration, so $T$ is constant below 1 bar. The PALEOS rock and iron tables start at $10^5$ Pa. For a solid or a liquid, $\nabla_\mathrm{ad} = \alpha P / (\rho c_p)$, with $\alpha$ the thermal expansivity, $\rho$ the density and $c_p$ the heat capacity, so $\nabla_\mathrm{ad}$ vanishes as $P \to 0$; for $\alpha = 3 \times 10^{-5}$ 1/K, $\rho$ = 3000 kg/m$^3$, $c_p$ = 1200 J/(kg K) and 2500 K, the adiabat from 0 to 1 bar changes $T$ by about 0.002 K. The temperature is continuous in the top pressure, down to a padded top.
 - **Padded top.** A node with $P = 0$ (a [padded accept](process_flow.md#padded-accepts)) counts as $10^5$ Pa, so a padded top gives the profile of a top at 1 bar.
-- **Density lookup over the top cell.** The density solve reads $T$ from a table of this adiabat against $\log_{10} P$. The table is built on the nodes of the pass before. The top cell has no node inside: with a padded top it runs from 1 bar up to the last node with positive pressure, and with an unpadded top from the top node, or from 1 bar when the top node lies below it, up to the next node. So the table gets 64 pressures there, geometric, with the adiabat integrated inward from the temperature at the top of the cell; a top node below 1 bar keeps its place. The lookup then follows the adiabat over the cell, not a straight line in $\log_{10} P$ between its ends. Against a table with 4096 shell points, the largest difference is about 0.08 K on `input/default.toml` at 2515 K, and about 0.1 K with a 3871 K WolfBower surface; on unpadded tops the lookup lies at most 0.083 K from an independent integration ([lookup over the top cell](../Validation/thermal_state.md#temperature-lookup-over-the-top-cell)).
 - **Missing gradient.** Where $\nabla_\mathrm{ad}$ is missing or not positive, $T$ is held for the rest of that segment; the next segment integrates again.
 - **Caps.** No node and no substep goes above $10^5$ K, the top of the PALEOS tables. With the CMB anchor, no node and no substep goes below 100 K either. A very large or infinite $\nabla_\mathrm{ad}$ therefore gives nodes at exactly $10^5$ K with the surface anchor, and nodes at exactly 100 K outward from the CMB anchor.
+
+## How the density solve reads the temperature over the top cell
+
+What temperature does the density solve use between the top node and the next node down?
+It reads the adiabat itself at 64 pressures over that interval, not a straight line between the 2 nodes.
+
+The density solve reads $T$ from a table of this adiabat against $\log_{10} P$.
+The solve builds the table on the nodes of the pass before.
+The top cell is the interval between the top of the planet and the next node; it has no node inside.
+Its ends depend on the top:
+
+- **Padded top:** from 1 bar up to the last node with positive pressure.
+- **Unpadded top at or above 1 bar:** from the top node up to the next node.
+- **Unpadded top below 1 bar:** from 1 bar up to the next node; the top node keeps its own place in the table.
+
+The table gets 64 geometric pressures over the cell, the shell of the table.
+On the shell, the adiabat is integrated inward from the temperature at the top of the cell.
+It takes the mixture that the adiabat of the solve takes over the cell: that of the node at the upper end of the cell when the adiabat runs inward from the surface, and that of the node outside it when the adiabat runs outward from the CMB.
+So a layer boundary inside the top cell does not separate the shell from the adiabat.
+The lookup therefore follows the adiabat over the cell, not a straight line in $\log_{10} P$ between its ends.
+On the stored profiles the cell spans 2 to 4 decades of pressure, and such a straight line lies 9 to 28 K off the adiabat.
+
+With a padded top, against a table with 4096 shell points, the largest difference is about 0.08 K on `input/default.toml` at 2515 K, and about 0.1 K with a 3871 K WolfBower surface.
+On unpadded tops the lookup lies at most 0.083 K from an independent integration.
+The shell takes less than 1 % of the time of a structure solve (0.68 % and 0.53 % for the 2 PROTEUS initial structures).
+
+**Where this is checked.** [Temperature lookup over the top cell](../Validation/thermal_state.md#temperature-lookup-over-the-top-cell).
 
 ## Known limits of the integration
 
@@ -71,4 +97,4 @@ This section lists what the routine and the config check refuse, and the check t
 - **Check.** Each call raises `StructureInvariantError` when $T$ is not finite and positive at every node, or when it rises outward from the anchor.
 - **Range of `max_dlnp`.** A real number from $10^{-4}$ to 1; any other value raises `ValueError`.
 
-**Where this is checked.** [Adiabat integration on smooth gradients](../Validation/thermal_state.md#adiabat-integration-on-smooth-gradients), [Adiabat integration on real profiles](../Validation/thermal_state.md#adiabat-integration-on-real-profiles) and [Temperature across 1 bar](../Validation/thermal_state.md#temperature-across-1-bar). Unit tests check the anchor ranges and the caps: `tests/test_adiabatic.py::TestMidpointAdiabat::test_anchor_temperature_property_over_its_domain`, `::test_a_huge_nabla_stops_at_the_node_caps`, `::test_a_segment_stops_exactly_at_its_limit_property` and `::test_an_unknown_anchor_raises_value_error` for the routine, and `tests/test_config_validation.py::TestTemperatureValidation::test_anchor_temperature_property_over_its_domain` for the config check.
+**Where this is checked.** [Adiabat integration on smooth gradients](../Validation/thermal_state.md#adiabat-integration-on-smooth-gradients), [Adiabat integration on real profiles](../Validation/thermal_state.md#adiabat-integration-on-real-profiles), [Temperature across 1 bar](../Validation/thermal_state.md#temperature-across-1-bar) and [Temperature lookup over the top cell](../Validation/thermal_state.md#temperature-lookup-over-the-top-cell). Unit tests check the anchor ranges and the caps: `tests/test_adiabatic.py::TestMidpointAdiabat::test_anchor_temperature_property_over_its_domain`, `::test_a_huge_nabla_stops_at_the_node_caps`, `::test_a_segment_stops_exactly_at_its_limit_property` and `::test_an_unknown_anchor_raises_value_error` for the routine, and `tests/test_config_validation.py::TestTemperatureValidation::test_anchor_temperature_property_over_its_domain` for the config check.

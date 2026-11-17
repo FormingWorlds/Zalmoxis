@@ -282,18 +282,31 @@ def test_the_lookup_follows_the_adiabat_over_an_unpadded_top_cell(
 
         fig, ax = plt.subplots(figsize=(7.2, 3.4))
         c = plt.rcParams['axes.prop_cycle'].by_key()['color']
-        p = np.exp(x)
-        chord = np.interp(x, x[[0, -1]], ref[[0, -1]])
-        ax.plot(p, chord, '--', color=c[1], lw=1.2, label='straight line in $\\log_{10} P$')
-        ax.plot(p, look, color=c[0], lw=2.4, label='lookup of the solve')
-        ax.plot(p, ref, ':', color=c[2], lw=1.6, zorder=3, label='DOP853 march')
+        k = np.r_[0 : x.size : 8, x.size - 1]  # every 8th point keeps the file small
+        p = np.exp(x[k])
+        ax.plot(
+            p[[0, -1]],
+            ref[[0, -1]],
+            '--',
+            color=c[1],
+            lw=1.2,
+            label='straight line',
+        )
+        ax.plot(p, look[k], color=c[0], lw=2.4, label='lookup')
+        ax.plot(
+            p,
+            ref[k],
+            ':',
+            color=c[2],
+            lw=1.6,
+            zorder=3,
+            label='DOP853 integration',
+        )
         ax.set(xscale='log', xlabel='Pressure [Pa]', ylabel='Temperature [K]')
+        ax.xaxis.set_major_locator(plt.LogLocator(numticks=3))  # 3 labels keep the file small
         ax.grid(False)
-        ax.legend(loc='upper left', bbox_to_anchor=(1.02, 1.0), frameon=False)
-        fig.tight_layout()
-        fig.canvas.draw()
-        assert ax.get_legend().get_window_extent().x0 >= ax.get_window_extent().x1
-        return fig
+        legend_below(fig, ncol=3)
+        return assert_text_clear(fig)
 
     # one plot pair, written only with --validation-plots
     request.getfixturevalue('validation_plot')(figure, 'adiabat_top_cell_lookup')
