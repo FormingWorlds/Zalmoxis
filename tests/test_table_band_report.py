@@ -439,11 +439,12 @@ def test_cut_logs_are_solver_messages():
 
 
 def _need_wb_tables():
-    """Skip without the Wolf & Bower tables; fail if ZALMOXIS_NEED_WOLFBOWER is non-empty."""
-    for phase in ('melted_mantle', 'solid_mantle'):
+    """Skip without the Wolf & Bower tables or the Seager2007 iron table of their core; fail if
+    ZALMOXIS_NEED_WOLFBOWER is non-empty."""
+    for phase in ('melted_mantle', 'solid_mantle', 'core'):
         if not os.path.isfile(WB[phase]['eos_file']):
             stop = pytest.fail if os.environ.get('ZALMOXIS_NEED_WOLFBOWER') else pytest.skip
-            stop(f'Wolf & Bower table missing: {WB[phase]["eos_file"]}')
+            stop(f'Wolf & Bower solve table missing: {WB[phase]["eos_file"]}')
 
 
 @pytest.mark.unit
