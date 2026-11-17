@@ -54,29 +54,32 @@ The checks therefore use 2 tests: the order on smooth $\nabla_\mathrm{ad}$ with 
 What temperature does the density solve use between the top of the planet and the first node below it?
 It reads the adiabat itself at 64 pressures, not a straight line between the 2 ends.
 
-The density solve reads $T$ from a table of this adiabat against $\log_{10} P$, built on the nodes of the pass before.
-The top cell has no node inside. It runs:
+The density solve reads $T$ from a table of this adiabat against $\log_{10} P$.
+The solve builds the table on the nodes of the previous outer pass ([Full-adiabat rule](process_flow.md#full-adiabat-rule)).
+The top cell is the pressure interval between the top of the planet and the first node below it; no node lies inside it.
+Its ends depend on the top:
 
 - **Padded top:** from 1 bar to the outermost node with a positive pressure.
 - **Unpadded top at or above 1 bar:** from the top node to the next node.
 - **Unpadded top below 1 bar:** from 1 bar to the next node; the top node keeps its place in the table.
 
-The table gets 64 geometric pressures over the cell, the shell.
-The adiabat runs inward over it from the temperature at the top.
-The shell takes the mixture of the adiabat of the solve over the cell: that of the deeper node with the surface anchor, and that of the node just outside it (the top node or the first padded node) with the CMB anchor.
-Like the adiabat, it takes one mixture over the whole cell.
-So it does not resolve a layer boundary inside the cell, and it still ends at the temperature of the deeper node.
-The cell spans 2 to 4 decades on the stored profiles; a straight line in $\log_{10} P$ there lies 9 to 28 K off.
+The solve adds 64 pressures over the cell to the table, evenly spaced in $\log P$: the shell.
+On the shell, the code integrates the adiabat inward from the temperature of the top node, for both anchors.
+The shell takes the mixture that the adiabat of the solve takes over the cell, because the adiabat gives each node its temperature with the mixture of that node:
 
-With a padded top, against 4096 shell points, the lookup differs by about 0.08 K on `input/default.toml` at 2515 K and 0.1 K with a 3871 K WolfBower surface.
-On unpadded tops it lies at most 0.083 K from an independent integration.
-The shell takes 0.53 to 0.68 % of a PROTEUS initial-structure solve.
+- **Surface anchor:** the mixture of the deeper node of the cell.
+- **CMB anchor:** the mixture of the next node outward from the deeper node, that is the top node or the first padded node.
+
+On the stored profiles the cell spans 2 to 4 factors of 10 in pressure; a straight line in $\log_{10} P$ there lies 9 to 28 K off.
+
+On the stored profiles the lookup lies at most 0.083 K from an independent integration.
 
 **Where this is checked.** [Temperature lookup over the top cell](../Validation/thermal_state.md#temperature-lookup-over-the-top-cell).
 
 ## Known limits of the integration
 
 - **Water below 1 bar.** A water layer, whose table reaches 0.1 Pa, is also isothermal below 1 bar.
+- **Layer boundary inside the top cell.** The adiabat and the shell of the density table take one mixture over the whole top cell, so a layer boundary inside the cell is not resolved. The shell still ends at the temperature of the deeper node of the cell ([How the density solve reads the temperature over the top cell](#how-the-density-solve-reads-the-temperature-over-the-top-cell)).
 - **Core at the iron melting curve.** Where the core adiabat meets the melting curve of the PALEOS iron table, the integration follows the $\nabla_\mathrm{ad}$ column of the table into the solid branch, while a core at constant entropy would stay at the melting curve. On 4 solves of `input/default.toml` at 2515 K with the midpoint adiabat, the integrated centre is 671 to 678 K colder than the path at the constant table entropy of the core top. That path reads the entropy between table nodes 84 to 106 K apart in temperature near these core states, so the difference is known to about that spacing, not to 1 K. In the solid near 300 to 380 GPa the entropy column of the table also does not meet the Maxwell relation $(\partial s / \partial \ln P)_T = -\alpha P / \rho$, with $\alpha$ the thermal expansivity and $\rho$ the density; which column is wrong there is not established.
 - **Temperature of a padded node with the CMB anchor.** In `adiabatic_from_cmb` the solver does not take the temperature of a padded node from this routine. It uses `_adiabat_to_surface` in `solver.py`: 64 midpoint steps from the last node with positive pressure to the target surface pressure, with no 1 bar floor. Started at 5 GPa and 3500 K on the `dummy` mantle, it gives 0.113 K more than the segment rule at 1 atm and 0.457 K more at 1 Pa.
 

@@ -273,7 +273,7 @@ The measured differences:
 - **PROTEUS initial structure:** see [Newton and Picard on the PROTEUS initial structure](../Validation/hydrostatic_structure.md#newton-and-picard-on-the-proteus-initial-structure).
 
 The adiabat holds $T$ below $10^5$ Pa ([How the adiabat is integrated](adiabat_integration.md#low-pressure-padded-tops-missing-gradients-and-caps)), so on a fixed structure the integrated adiabat changes continuously with the top pressure and does not jump at 1 bar.
-The table of the density solve takes the same adiabat over the top cell, padded or not ([How the density solve reads the temperature over the top cell](adiabat_integration.md#how-the-density-solve-reads-the-temperature-over-the-top-cell)), so its lookup above 1 bar also does not jump with the top pressure.
+The temperature table of the density solve takes the same adiabat over the top cell, padded or not ([How the density solve reads the temperature over the top cell](adiabat_integration.md#how-the-density-solve-reads-the-temperature-over-the-top-cell)), so its lookup above 1 bar also does not jump with the top pressure.
 The tests check this continuity on fixed structures only, not the lag of an accepted solve.
 
 `adiabat_self_consistency` gives the largest difference, in K, between the returned mantle temperature and the adiabat recomputed on the returned structure; it is None below blend 1 and when no mantle node has a positive pressure.
