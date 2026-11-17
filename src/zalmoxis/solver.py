@@ -361,6 +361,7 @@ _SECANT_FLOOR = 2.0
 _SEED_KEYS = ('radii', 'pressure', 'mass_enclosed')
 _SEED_TABLE_BLEND = -1.0  # adiabat_table_blend of a pass whose T table comes from adiabat_seed
 _ICB_SUPERHEAT_TOL = 0.5  # bound [K] of the zero-superheat ICB test on an adiabat
+_LIQUID_BRANCH_RTOL = 1e-12  # liquid branch against the T table above the ICB
 # T table pressures from 1e5 Pa up to the last positive node of a padded top
 _TOP_SHELL_POINTS = 64
 
@@ -2293,6 +2294,22 @@ def _solve(
                         _liquid_func = _table_t(
                             *_adiabat_table(prev_pressure, liquid_T, _top_shell)
                         )
+                        up = np.asarray(prev_mass_enclosed) > icb_mass  # 1 adiabat there
+                        dev = max(
+                            (
+                                abs(_liquid_func(r_, p_) / _temperature_func(r_, p_) - 1.0)
+                                for r_, p_ in zip(prev_radii[up], prev_pressure[up])
+                            ),
+                            default=0.0,
+                        )
+                        logger.debug(
+                            'Liquid branch above the ICB: relative difference %.3g', dev
+                        )
+                        if not dev <= _LIQUID_BRANCH_RTOL:
+                            raise RuntimeError(
+                                f'the liquid branch differs from the T table above the ICB by '
+                                f'{dev:.3g} (relative); both take one adiabat there'
+                            )
 
                 # Pre-compute temperatures array for the density update loop
                 # (uses the converged pressure from the previous iteration)
