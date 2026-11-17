@@ -1300,6 +1300,7 @@ class TestMidpointAdiabat:
 
 
 @pytest.mark.slow
+@pytest.mark.paleos_adiabat
 @pytest.mark.physics_invariant
 @pytest.mark.timeout(1800)
 def test_padded_top_shell_lookup_follows_the_adiabat(monkeypatch):
