@@ -66,7 +66,7 @@ if __name__ == '__main__':
 The script sets the ICB with 2 rules. A two-layer core takes exactly one of the 2:
 
 - `inner_core_mass_fraction = 0.0508` gives the inner core this fraction of the core mass, the inner-core mass fraction of PREM, the Preliminary Reference Earth Model of Dziewonski & Anderson (1981)[^cite-dziewonski1981].
-- `core_liquidus = "Anzellini13-iron"` puts the ICB where the temperature profile reaches the melting curve of pure iron of Anzellini et al. (2013)[^cite-anzellini2013].
+- `core_liquidus = "Anzellini13-iron"` puts the ICB where the liquid of the outer core reaches the melting curve of pure iron of Anzellini et al. (2013)[^cite-anzellini2013]. On an adiabat, the rule continues the outer-core adiabat below the ICB with the liquid side and finds where it meets the curve ([the inner-core boundary](../Explanations/mixing.md#the-inner-core-boundary)).
 
 Mori et al. (2017)[^cite-mori2017] show that S lowers the melting point of iron. A Fe-S outer core can therefore melt below the pure-iron curve, and the solve warns that the inner core can come out too large; a caller with the liquidus of the alloy passes it as a callable.
 
