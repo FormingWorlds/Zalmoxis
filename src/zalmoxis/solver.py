@@ -364,6 +364,13 @@ def _adiabat_table(pressure, T, top_shell):
     return np.log10(P), Ts
 
 
+def _shell_adiabat(adiabat, q, T_top, m):
+    """T [K] at the shell pressures ``q`` [Pa], ascending from the top: ``adiabat(radii,
+    pressure, mass, top=T_top)`` inward from ``T_top`` at ``q[0]``, with every shell point at the
+    enclosed mass ``m`` [kg], so in the layer of the node below the shell."""
+    return adiabat(np.arange(q.size), q[::-1], np.full(q.size, m), top=T_top)[::-1]
+
+
 def _secant_radius(R, M, R_prev, M_prev, M_target, R_fallback):
     """Radius [m] of the next outer pass from the secant of M(R) - M_target through the passes
     (R, M) and (R_prev, M_prev), clamped to ``_SECANT_CLAMP`` of R. Returns ``R_fallback``
@@ -2018,9 +2025,7 @@ def _solve(
         )
 
     def _top_shell(q, T_top, i):
-        # the adiabat inward from T_top at q[0], in the layer of node i
-        m = prev_mass_enclosed[i]
-        return _adiabat(np.arange(q.size), q[::-1], np.full(q.size, m), top=T_top)[::-1]
+        return _shell_adiabat(_adiabat, q, T_top, prev_mass_enclosed[i])
 
     # For adiabatic mode, cap the initial center_temperature guess to
     # prevent the linear-T initial profile from being far above the
