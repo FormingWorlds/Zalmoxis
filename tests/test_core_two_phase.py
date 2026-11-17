@@ -604,7 +604,7 @@ def test_the_icb_superheat_is_0_at_the_closed_form_root():
 
 @pytest.mark.physics_invariant
 @settings(max_examples=60, deadline=None)
-@given(n=st.floats(0.1, 0.5), frac=st.floats(0.0, 1.0), t0=st.floats(4500.0, 6500.0))
+@given(n=st.floats(0.1, 0.5), frac=st.floats(-0.5, 1.5), t0=st.floats(4500.0, 6500.0))
 @example(n=0.4, frac=0.97, t0=5500.0)  # the layer ICB in the top core segment
 def test_the_icb_superheat_off_the_root_meets_the_closed_form(n, frac, t0):
     """At a layer ICB inside the core the miss is |T - T_liq| of the liquid branch there; the
@@ -613,15 +613,26 @@ def test_the_icb_superheat_off_the_root_meets_the_closed_form(n, frac, t0):
     from zalmoxis.core_profile import icb_superheat_miss
 
     m, p, cmb = _sphere_nodes()
-    icb = frac * cmb
-    p_icb = icb_from_profile(m, p, _liquid(t0, n, p), cmb, _simon, icb)[1]
-    s = float(_liquid(t0, n, p_icb) - _simon(p_icb))
-    got = icb_superheat_miss(m, p, _liquid(t0, n, p), cmb, _simon, icb)
-    k = min(max(int(np.searchsorted(-p, -p_icb)), 1), 20)
-    bound = math.log(p[k - 1] / p[k]) ** 2 / 8 * n**2 * t0 * (p[0] / 200e9) ** n
-    if 0.0 < frac < 1.0:
-        assert abs(got - abs(s)) <= bound + 1e-9 * t0, (got, s, bound)
+    got = icb_superheat_miss(m, p, _liquid(t0, n, p), cmb, _simon, frac * cmb)
     assert got >= 0.0 and math.isfinite(got)
+    if 0.0 < frac < 1.0:
+        p_icb = icb_from_profile(m, p, _liquid(t0, n, p), cmb, _simon, frac * cmb)[1]
+        s = float(_liquid(t0, n, p_icb) - _simon(p_icb))
+        k = min(max(int(np.searchsorted(-p, -p_icb)), 1), 20)
+        bound = math.log(p[k - 1] / p[k]) ** 2 / 8 * n**2 * t0 * (p[0] / 200e9) ** n
+        assert abs(got - abs(s)) <= bound + 1e-9 * t0, (got, s, bound)
+
+
+@pytest.mark.parametrize('bad', [np.nan, np.inf])
+def test_a_non_finite_liquid_branch_at_the_icb_misses_by_inf(bad):
+    """A liquid branch that is not finite at the ICB fails the test: the miss is inf, not a NaN
+    that every bound comparison would pass."""
+    from zalmoxis.core_profile import icb_superheat_miss
+
+    m, p, cmb = _sphere_nodes()
+    t = _liquid(5500.0, 0.4, p)
+    t[5:7] = bad
+    assert icb_superheat_miss(m, p, t, cmb, _simon, float(m[6])) == math.inf
 
 
 @pytest.mark.parametrize(('t0', 'hot'), [(4500.0, False), (9000.0, True)])

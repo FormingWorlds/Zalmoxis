@@ -39,7 +39,13 @@ from .constants import (
     earth_mass,
     earth_radius,
 )
-from .core_profile import core_arrays, icb_from_profile, icb_misses, outside_side_tables
+from .core_profile import (
+    core_arrays,
+    icb_from_profile,
+    icb_misses,
+    icb_superheat_miss,
+    outside_side_tables,
+)
 from .eos import (
     calculate_temperature_profile,
     compute_adiabatic_temperature,
@@ -354,6 +360,7 @@ _SECANT_CLAMP = 0.02
 _SECANT_FLOOR = 2.0
 _SEED_KEYS = ('radii', 'pressure', 'mass_enclosed')
 _SEED_TABLE_BLEND = -1.0  # adiabat_table_blend of a pass whose T table comes from adiabat_seed
+_ICB_SUPERHEAT_TOL = 0.5  # bound [K] of the zero-superheat ICB test on an adiabat
 # T table pressures from 1e5 Pa up to the last positive node of a padded top
 _TOP_SHELL_POINTS = 64
 
@@ -2020,6 +2027,7 @@ def _solve(
     _adiabat_computed = False  # the gradient table was read for the T profile
     _adiabat_blend = 0.0
     _table_blend = 0.0  # the blend of the pass whose pressure built the T(P) table
+    _liquid_func = None  # T(r, P) of the outer-core liquid branch on an adiabat
     _ADIABAT_BLEND_STEP = 0.25
     # the internal adiabat makes T: accept only blend 1 on a table of a blend-1 pass
     ramp_asked = _adiabat_asked(
@@ -2034,9 +2042,9 @@ def _solve(
     _secant_prev = None  # (radius, mass) of the last pass on a full-adiabat table
     _secant_err = None  # mass error of the pass whose radius came from a secant step
 
-    def _adiabat(radii, pressure, mass_enclosed, top=None):
+    def _adiabat(radii, pressure, mass_enclosed, top=None, icb=None):
         # 'adiabatic_from_cmb' anchors at the CMB and integrates outward, 'adiabatic' and a
-        # given outer-node T ``top`` inward
+        # given outer-node T ``top`` inward; ``icb`` replaces the inner-core mass
         return compute_adiabatic_temperature(
             radii,
             pressure,
@@ -2057,13 +2065,27 @@ def _solve(
             if top is None and temperature_mode == 'adiabatic_from_cmb'
             else 'surface',
             cmb_temperature=cmb_temperature,
-            icb_mass=icb_mass,
+            icb_mass=icb_mass if icb is None else icb,
         )
 
     def _top_shell(q, T_top, i):
         # the adiabat inward from T_top at q[0], in the layer of node i
         m = prev_mass_enclosed[i]
         return _adiabat(np.arange(q.size), q[::-1], np.full(q.size, m), top=T_top)[::-1]
+
+    def _icb_misses(r, m, p, t):
+        # (miss, bound) of the ICB tests: the superheat [K] of the liquid branch on an adiabat,
+        # else the distance [kg] to the liquidus root of the profile; the adiabat ICB lag [kg]
+        tol = tolerance_outer * cmb_mass
+        if _liquid_func is None:
+            root, lag = icb_misses(m, p, t, cmb_mass, core_liq, icb_mass, icb_adiabat)
+            return (root, tol), (lag, tol)
+        t_l = [_liquid_func(r_, p_) for r_, p_ in zip(r, p)]
+        heat = icb_superheat_miss(m, p, t_l, cmb_mass, core_liq, icb_mass)
+        return (heat, _ICB_SUPERHEAT_TOL), (
+            0.0 if icb_adiabat is None else abs(icb_adiabat - icb_mass),
+            tol,
+        )
 
     # For adiabatic mode, cap the initial center_temperature guess to
     # prevent the linear-T initial profile from being far above the
@@ -2238,28 +2260,39 @@ def _solve(
                 _T_MAX_CLAMP = 100000.0
                 _T_MIN_CLAMP = 100.0
 
-                if _adiabat_blend < 1.0:
-                    _blend = _adiabat_blend
+                def _table_t(lp, ts, _b=_adiabat_blend, _ltf=_linear_tf):
+                    # T(r, P) of a T(P) table, blended with the linear guess below blend 1
+                    if _b < 1.0:
 
-                    def _temperature_func(
-                        r, P, _b=_blend, _lp=_logP_sorted, _ts=_T_sorted, _ltf=_linear_tf
-                    ):
-                        T_lin = _ltf(r)
-                        if P <= 0:
-                            return T_lin
-                        # W5: math.log10 avoids numpy scalar dispatch (~1 us/call)
-                        T_adi = float(np.interp(math.log10(P), _lp, _ts))
-                        T_adi = max(_T_MIN_CLAMP, min(T_adi, _T_MAX_CLAMP))
-                        return (1.0 - _b) * T_lin + _b * T_adi
+                        def t_of(r, P, _lp=lp, _ts=ts):
+                            T_lin = _ltf(r)
+                            if P <= 0:
+                                return T_lin
+                            # W5: math.log10 avoids numpy scalar dispatch (~1 us/call)
+                            T_adi = float(np.interp(math.log10(P), _lp, _ts))
+                            T_adi = max(_T_MIN_CLAMP, min(T_adi, _T_MAX_CLAMP))
+                            return (1.0 - _b) * T_lin + _b * T_adi
 
-                else:
+                    else:
 
-                    def _temperature_func(r, P, _lp=_logP_sorted, _ts=_T_sorted):
-                        if P <= 0:
-                            return surface_temperature
-                        # W5: math.log10 avoids numpy scalar dispatch (~1 us/call)
-                        T_val = float(np.interp(math.log10(P), _lp, _ts))
-                        return max(_T_MIN_CLAMP, min(T_val, _T_MAX_CLAMP))
+                        def t_of(r, P, _lp=lp, _ts=ts):
+                            if P <= 0:
+                                return surface_temperature
+                            T_val = float(np.interp(math.log10(P), _lp, _ts))
+                            return max(_T_MIN_CLAMP, min(T_val, _T_MAX_CLAMP))
+
+                    return t_of
+
+                _temperature_func = _table_t(_logP_sorted, _T_sorted)
+                if core_liq is not None:  # the outer-core liquid continued below the ICB
+                    _liquid_func = _temperature_func
+                    if icb_mass > 0.0:
+                        liquid_T = _adiabat(
+                            prev_radii, prev_pressure, prev_mass_enclosed, icb=0.0
+                        )
+                        _liquid_func = _table_t(
+                            *_adiabat_table(prev_pressure, liquid_T, _top_shell)
+                        )
 
                 # Pre-compute temperatures array for the density update loop
                 # (uses the converged pressure from the previous iteration)
@@ -2293,7 +2326,8 @@ def _solve(
             temperatures = np.asarray(_output_tf(radii), dtype=float)
 
         if core_liq is not None and prev_pressure is not None:
-            t_prev = [_temperature_func(r_, p_) for r_, p_ in zip(prev_radii, prev_pressure)]
+            t_of = _temperature_func if _liquid_func is None else _liquid_func
+            t_prev = [t_of(r_, p_) for r_, p_ in zip(prev_radii, prev_pressure)]
             icb_mass = icb_from_profile(
                 prev_mass_enclosed, prev_pressure, t_prev, cmb_mass, core_liq
             )[0]
@@ -2897,6 +2931,7 @@ def _solve(
                 'icb_mass': icb_mass,
                 'icb_adiabat': icb_adiabat,
                 'temperature_func': _temperature_func,
+                'liquid_func': _liquid_func,
                 'adiabat_table_blend': _table_blend,
             }
             oscillation_count = 0
@@ -2966,10 +3001,7 @@ def _solve(
                 )
             continue  # the blend ramps up over the next passes
         icb_moving = core_liq is not None and any(
-            d > tolerance_outer * cmb_mass
-            for d in icb_misses(
-                mass_enclosed, pressure, temperatures, cmb_mass, core_liq, icb_mass, icb_adiabat
-            )
+            d > b for d, b in _icb_misses(radii, mass_enclosed, pressure, temperatures)
         )
         if relative_diff_outer_mass < tolerance_outer and not icb_moving:
             logger.log(
@@ -2987,11 +3019,12 @@ def _solve(
 
     def _best_pass():
         # the inner core and T profile of that pass
-        nonlocal icb_mass, icb_adiabat, _temperature_func
-        icb_mass, icb_adiabat, _temperature_func = (
+        nonlocal icb_mass, icb_adiabat, _temperature_func, _liquid_func
+        icb_mass, icb_adiabat, _temperature_func, _liquid_func = (
             best_profiles['icb_mass'],
             best_profiles['icb_adiabat'],
             best_profiles['temperature_func'],
+            best_profiles['liquid_func'],
         )
         # fresh copies: the saved profiles can be read-only views of JAX buffers
         T = best_profiles['temperatures']
@@ -3111,18 +3144,21 @@ def _solve(
         )
         converged = converged_mass = False
         accepted_on = accept_mass_limit = None
-    icb_converged = True  # the ICB meets the liquidus root and the adiabat ICB of the pass
+    icb_converged, icb_superheat = True, None  # the ICB tests of the returned pass
     if core_liq is not None and np.all(np.isfinite(pressure)) and pressure[0] > 0:
-        miss, lag = icb_misses(
-            mass_enclosed, pressure, temperatures, cmb_mass, core_liq, icb_mass, icb_adiabat
+        (miss, bound), (lag, _) = tests = _icb_misses(
+            radii, mass_enclosed, pressure, temperatures
         )
-        icb_converged = all(d <= tolerance_outer * cmb_mass for d in (miss, lag))
+        icb_converged = all(d <= b for d, b in tests)
+        icb_superheat = miss if _liquid_func is not None else None
         if converged and not icb_converged:  # an accept path that skipped the ICB test
             logger.warning(
-                'Not converged: the inner-core boundary lies %.3g of the core mass off the '
-                'liquidus root of the returned profile%s (accepted_on=%s).',
-                miss / cmb_mass,
-                f' and {lag / cmb_mass:.3g} off the ICB of its adiabat' if lag else '',
+                'Not converged: the inner-core boundary misses %s%s (accepted_on=%s).',
+                f'the liquidus of its liquid by {miss:.3g} K'
+                if icb_superheat is not None
+                else f'the liquidus root of the returned profile by {miss / cmb_mass:.3g} of '
+                'the core mass',
+                f' and lies {lag / cmb_mass:.3g} off the ICB of its adiabat' if lag else '',
                 accepted_on,
             )
             converged, converged_mass, accepted_on, accept_mass_limit = False, False, None, None
@@ -3205,6 +3241,7 @@ def _solve(
         'accept_mass_limit': accept_mass_limit,
         'density_from_eos': density_from_eos,
         'icb_converged': bool(icb_converged),
+        'icb_superheat': icb_superheat,
         'p_center': pressure[0] if len(pressure) > 0 else None,
         'padded': bool(pad.size and pad[-1]),
         'adiabat_computed': _adiabat_computed,

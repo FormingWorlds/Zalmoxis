@@ -47,15 +47,7 @@ def icb_from_profile(mass, pressure, temperature, cmb_mass, liquidus, icb_mass=N
         the core mass adds a point at the core mass to the core nodes (``_cmb_point``). Nodes
         that a failed stop fills with NaN are left out: the rule reads the finite core nodes.
     """
-    m, p, t = (np.asarray(a, dtype=float) for a in (mass, pressure, temperature))
-    below = m < cmb_mass * (1.0 - _RTOL_LAYER)
-    cmb = _cmb_point(m, p, t, cmb_mass, int(np.count_nonzero(below)))
-    core = below & (p > 0)
-    m, p, t = m[core], p[core], t[core]
-    if cmb is not None:
-        m, p, t = np.r_[m, cmb[0]], np.r_[p, cmb[1]], np.r_[t, cmb[2]]
-    if not m.size:
-        raise ValueError('the profile has no core node with a positive pressure')
+    m, p, t = _core_nodes(mass, pressure, temperature, cmb_mass)
     f = t - np.array([float(liquidus(x)) for x in p])
     if not np.all(np.isfinite(f)):
         raise ValueError('the temperature or the core liquidus is not finite on the core nodes')
@@ -78,6 +70,54 @@ def icb_from_profile(mass, pressure, temperature, cmb_mass, liquidus, icb_mass=N
     )
     m_icb = float(np.interp(math.log(p_icb), lp_up, m[::-1]))
     return m_icb, float(p_icb), _solid_mass(m, f, m_icb)
+
+
+def _core_nodes(mass, pressure, temperature, cmb_mass):
+    """Core nodes of positive pressure, centre first, and a point at the core mass
+    (``_cmb_point``)."""
+    m, p, t = (np.asarray(a, dtype=float) for a in (mass, pressure, temperature))
+    below = m < cmb_mass * (1.0 - _RTOL_LAYER)
+    cmb = _cmb_point(m, p, t, cmb_mass, int(np.count_nonzero(below)))
+    core = below & (p > 0)
+    m, p, t = m[core], p[core], t[core]
+    if cmb is not None:
+        m, p, t = np.r_[m, cmb[0]], np.r_[p, cmb[1]], np.r_[t, cmb[2]]
+    if not m.size:
+        raise ValueError('the profile has no core node with a positive pressure')
+    return m, p, t
+
+
+def icb_superheat_miss(mass, pressure, liquid_temperature, cmb_mass, liquidus, icb_mass):
+    """Miss [K] of the zero-superheat condition of a growing inner core: the outer-core liquid
+    is at the liquidus at the ICB (Labrosse 2015, Sect. 2; Nimmo 2015, Fig. 2).
+
+    Parameters
+    ----------
+    mass, pressure : array-like
+        Enclosed mass [kg] and pressure [Pa] at the nodes, centre first.
+    liquid_temperature : array-like
+        Temperature [K] of the outer-core liquid branch at the nodes: the outer-core adiabat
+        continued below the ICB to the centre with the liquid side.
+    cmb_mass, icb_mass : float
+        Core mass and inner-core mass of the layers [kg].
+    liquidus : callable
+        ``T_liq(P)`` [K] of the outer core at pressure [Pa].
+
+    Returns
+    -------
+    float
+        With the superheat S = T_l(P_icb) - T_liq(P_icb), T_l linear in ln P on the core nodes
+        and P_icb as in ``icb_from_profile``: |S| for a partial inner core, the undercooling
+        max(0, -S) at the centre for no inner core, the superheat max(0, S) at the core mass
+        for a full one; inf when S is not finite.
+    """
+    m, p, t = _core_nodes(mass, pressure, liquid_temperature, cmb_mass)
+    full = icb_mass >= cmb_mass * (1.0 - _RTOL_LAYER)
+    p_icb = p[0] if icb_mass <= 0.0 else np.interp(icb_mass ** (2.0 / 3.0), m ** (2.0 / 3.0), p)
+    s = float(np.interp(math.log(p_icb), np.log(p[::-1]), t[::-1])) - float(liquidus(p_icb))
+    if not math.isfinite(s):
+        return math.inf
+    return max(0.0, -s) if icb_mass <= 0.0 else max(0.0, s) if full else abs(s)
 
 
 def _cmb_point(m, p, t, cmb_mass, n):
