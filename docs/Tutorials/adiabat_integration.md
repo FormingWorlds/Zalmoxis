@@ -53,7 +53,7 @@ h = 0.005   centre 6236.79 K   largest difference 0.799 K
 h = 0.0025  centre 6237.94 K   largest difference 0.355 K
 ```
 
-The difference falls by a factor of 1.9 to 3.4 per halving of $h$, not 4: the PALEOS gradient has kinks at the table grid lines and a steep step at the iron melting boundary, where a substep loses part of its second-order accuracy.
+On this profile the difference falls by a factor of 1.9 to 3.4 per halving of $h$, not 4: the PALEOS gradient has kinks at the table grid lines and a steep step at the iron melting boundary, where a substep loses part of its second-order accuracy.
 At the default 0.0025 the profile is within 0.36 K of the finer run. The finer run is close to the exact answer: it lies within 0.018 K of the DOP853 integration that [Adiabat integration on real profiles](../Validation/thermal_state.md#adiabat-integration-on-real-profiles) uses as its reference.
 
 ## Step 3: move the top pressure around 1 bar

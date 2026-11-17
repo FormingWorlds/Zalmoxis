@@ -362,24 +362,47 @@ _SEED_KEYS = ('radii', 'pressure', 'mass_enclosed')
 _SEED_TABLE_BLEND = -1.0  # adiabat_table_blend of a pass whose T table comes from adiabat_seed
 _ICB_SUPERHEAT_TOL = 0.5  # bound [K] of the zero-superheat ICB test on an adiabat
 _LIQUID_BRANCH_RTOL = 1e-12  # liquid branch against the T table above the ICB
-# T table pressures from 1e5 Pa up to the last positive node of a padded top
+# T table pressures over the top cell (the shell), see _adiabat_table
 _TOP_SHELL_POINTS = 64
 
 
-def _adiabat_table(pressure, T, top_shell):
+def _adiabat_table(pressure, T, mass, top_shell, outward=False):
     """log10 P [Pa] and T [K] of the adiabat ``T`` on the nodes at P > 0, sorted by P: the T(P)
-    lookup of the density solve. With a padded top (P <= 0 at the outer node) whose last
-    positive node i lies more than 1e-9 (relative) above ``ADIABAT_P_FLOOR``, so that log10 P
-    stays strictly increasing, the shell gains ``_TOP_SHELL_POINTS`` geometric pressures q [Pa]
-    from the floor up with T ``top_shell(q, T[-1], i)``, the adiabat inward from the padded
-    node in the layer of node i."""
+    lookup of the density solve. The top cell gains ``_TOP_SHELL_POINTS`` geometric pressures q
+    [Pa] when its upper end lies more than 1e-9 (relative) above its lower end, with T
+    ``top_shell(q, T_top, m)``: the adiabat inward from T_top at q[0] at the enclosed mass
+    m [kg] of the node whose mixture the adiabat of the solve takes over the cell. That is the
+    deeper node of the cell for an adiabat integrated inward, and the node outside it (next in
+    the node order, along which P falls) for one integrated ``outward`` from the CMB.
+
+    Padded top (P <= 0 at the outer node): the cell runs from ``ADIABAT_P_FLOOR`` to the lowest
+    positive node, from the T of the padded node. Unpadded top: from the top node (from the
+    floor when its log10 P lies below that of the floor, the node keeping its place) to the
+    next node, from the T of the top node. log10 P does not decrease, and it is strictly
+    increasing over the shell."""
     s = np.argsort(pressure)
     keep = pressure[s] > 0
     P, Ts = pressure[s][keep], T[s][keep]
-    if pressure[-1] <= 0 and P.size and P[0] > ADIABAT_P_FLOOR * (1 + 1e-9):
-        q = np.geomspace(ADIABAT_P_FLOOR, P[0], _TOP_SHELL_POINTS + 1)[:-1]
-        P, Ts = np.concatenate([q, P]), np.concatenate([top_shell(q, T[-1], s[keep][0]), Ts])
+    pad = pressure[-1] <= 0
+    j = 0 if pad else 1  # the deeper node of the cell
+    if P.size <= j:
+        return np.log10(P), Ts
+    lo = ADIABAT_P_FLOOR if pad else max(P[0], ADIABAT_P_FLOOR)
+    if P[j] > lo * (1 + 1e-9):
+        q = np.geomspace(lo, P[j], _TOP_SHELL_POINTS + 1)[:-1]
+        k = int(np.log10(P[0]) < np.log10(lo))  # a top node below the floor stays
+        # min: a guard if P is not in node order
+        node = min(s[keep][j] + int(outward), mass.size - 1)
+        shell = top_shell(q, T[-1] if pad else Ts[0], mass[node])
+        P, Ts = np.concatenate([P[:k], q, P[j:]]), np.concatenate([Ts[:k], shell, Ts[j:]])
     return np.log10(P), Ts
+
+
+def _shell_adiabat(adiabat, q, T_top, m):
+    """T [K] at the shell pressures ``q`` [Pa], ascending from the top: ``adiabat(radii,
+    pressure, mass, top=T_top)`` inward from ``T_top`` at ``q[0]``, with every shell point at
+    the enclosed mass ``m`` [kg], so in one layer."""
+    return adiabat(np.arange(q.size), q[::-1], np.full(q.size, m), top=T_top)[::-1]
 
 
 def _secant_radius(R, M, R_prev, M_prev, M_target, R_fallback):
@@ -2073,10 +2096,8 @@ def _solve(
             icb_mass=icb_mass if icb is None else icb,
         )
 
-    def _top_shell(q, T_top, i):
-        # the adiabat inward from T_top at q[0], in the layer of node i
-        m = prev_mass_enclosed[i]
-        return _adiabat(np.arange(q.size), q[::-1], np.full(q.size, m), top=T_top)[::-1]
+    def _top_shell(q, T_top, m):
+        return _shell_adiabat(_adiabat, q, T_top, m)
 
     def _icb_misses(r, m, p, t):
         # (miss, bound) of the ICB tests: the superheat miss [K] of the liquid branch on an
@@ -2255,7 +2276,13 @@ def _solve(
                 # ODE's actual pressure rather than a fixed radial mapping.
                 # This prevents unphysical (low P, high T) queries that
                 # hit NaN gaps in the PALEOS tables.
-                _logP_sorted, _T_sorted = _adiabat_table(prev_pressure, adiabat_T, _top_shell)
+                _logP_sorted, _T_sorted = _adiabat_table(
+                    prev_pressure,
+                    adiabat_T,
+                    prev_mass_enclosed,
+                    _top_shell,
+                    temperature_mode == 'adiabatic_from_cmb',
+                )
 
                 # Clamp adiabat T to a physically reasonable range.
                 # np.interp flat-extrapolates at the edges, but the Brent
@@ -2296,7 +2323,15 @@ def _solve(
                         liquid_T = _adiabat(
                             prev_radii, prev_pressure, prev_mass_enclosed, icb=0.0
                         )
-                        liquid = _table_t(*_adiabat_table(prev_pressure, liquid_T, _top_shell))
+                        liquid = _table_t(
+                            *_adiabat_table(
+                                prev_pressure,
+                                liquid_T,
+                                prev_mass_enclosed,
+                                _top_shell,
+                                temperature_mode == 'adiabatic_from_cmb',
+                            )
+                        )
                         up = np.asarray(prev_mass_enclosed) > icb_mass  # 1 adiabat there
                         dev = [
                             abs(liquid(r_, p_) / _temperature_func(r_, p_) - 1)

@@ -858,6 +858,21 @@ def test_wall_clock_in_the_adiabat_ramp_returns_the_linear_pass_unaccepted(monke
     assert 0.03 < r['mass_error_at_accept'] < 0.05
 
 
+def _shell_marked(shell):
+    """``zs._shell_adiabat`` that holds 1 in ``shell`` while it runs, so an adiabat stub
+    can tell a call on the padded top shell from the adiabat of a pass."""
+    real = zs._shell_adiabat
+
+    def marked(*args, **kwargs):
+        shell.append(1)
+        try:
+            return real(*args, **kwargs)
+        finally:
+            shell.pop()
+
+    return marked
+
+
 def _wb_blended(
     monkeypatch, factor, tol, clock_stop=True, inner=2, outer=100, clock_after=None, linear=None
 ):
@@ -868,12 +883,12 @@ def _wb_blended(
     from zalmoxis.eos import get_solidus_liquidus_functions
 
     _need_wb_tables()
-    adiabat, lookups = [], []
+    adiabat, lookups, shell = [], [], []
     real_adi, real, clock = zs.compute_adiabatic_temperature, zs.solve_structure, time.time
     real_lookup = zs.calculate_mixed_density_batch
 
     def adi(*args, **kwargs):
-        adiabat.append(1)
+        adiabat.extend([] if shell else [1])  # a pass, not the padded top shell
         return real_adi(*args, **kwargs)
 
     def solve(*args, **kwargs):
@@ -888,6 +903,7 @@ def _wb_blended(
 
     monkeypatch.setattr(zs, 'calculate_mixed_density_batch', lookup)
     monkeypatch.setattr(zs, 'compute_adiabatic_temperature', adi)
+    monkeypatch.setattr(zs, '_shell_adiabat', _shell_marked(shell))
     monkeypatch.setattr(zs, 'solve_structure', solve)
 
     def stopped():
@@ -1981,16 +1997,17 @@ def _analytic_ramp(
     ``drift`` scales the pressure of each pass by 1 + drift times the number of adiabat
     computations so far. ``mass(R, k)`` replaces both scalings: the total mass of a pass at
     outer radius R after k adiabat computations. ``seed`` goes to ``_solve`` as
-    ``adiabat_seed``; ``structure`` replaces ``solve_structure`` (``_canned_structure``).
-    Returns the result and the number of adiabat computations on the 30 nodes (the padded
-    top shell sub-grid of the T table is not counted)."""
-    adiabat, real, clock = [], kwargs.pop('structure', None) or zs.solve_structure, time.time
+    ``adiabat_seed``; ``structure`` replaces ``solve_structure`` (``_canned_structure``);
+    ``temperature_mode`` replaces 'adiabatic'.
+    Returns the result and the number of adiabat computations of the passes (a call on the
+    padded top shell of the T table is not counted)."""
+    adiabat, shell = [], []
+    real, clock = kwargs.pop('structure', None) or zs.solve_structure, time.time
     nodes = 30
 
     def adi(radii, pressure, mass, t_surf, *args, **kw):
         assert pressure[0] > pressure[-1] and np.all(np.diff(mass) >= 0)  # argument order
-        if len(pressure) == nodes:  # a call on the top shell sub-grid is not a pass
-            adiabat.append(1)
+        adiabat.extend([] if shell else [1])
         return _fake_adiabat(pressure, t_surf)
 
     def solve(*args, **kw):
@@ -2002,7 +2019,7 @@ def _analytic_ramp(
         return m * f, g * f, P * (1.0 + drift * len(adiabat))
 
     cfg = _cfg(
-        temperature_mode='adiabatic',
+        temperature_mode=kwargs.pop('temperature_mode', 'adiabatic'),
         relative_tolerance=1e-5,
         absolute_tolerance=1e-6,
         num_layers=nodes,
@@ -2011,6 +2028,7 @@ def _analytic_ramp(
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(zs, 'any_component_is_tdep', lambda mixes: True)
         mp.setattr(zs, 'compute_adiabatic_temperature', adi)
+        mp.setattr(zs, '_shell_adiabat', _shell_marked(shell))
         mp.setattr(zs, 'solve_structure', solve)
         if clock_after:
             stop = lambda: clock() + 1e9 * (len(adiabat) >= clock_after)  # noqa: E731
@@ -2018,6 +2036,34 @@ def _analytic_ramp(
         seeded = {} if seed is None else {'adiabat_seed': seed}
         r = zs._solve(cfg, load_material_dictionaries(), None, '/tmp', **seeded)
     return r, len(adiabat)
+
+
+@pytest.mark.smoke
+@pytest.mark.parametrize('mode', ['adiabatic', 'adiabatic_from_cmb'])
+def test_the_solve_gives_the_table_the_masses_and_the_direction_of_its_adiabat(
+    mode, monkeypatch
+):
+    """_solve builds the T table of a pass with the enclosed masses of the structure whose
+    pressure it reads (the same pair of arrays as one structure integration returned), and
+    marks the adiabat as integrated outward only in 'adiabatic_from_cmb', so the top shell takes
+    the mixture node of that adiabat."""
+    seen, real, made = [], zs._adiabat_table, []
+
+    def spy(pressure, T, mass, top_shell, outward=False):
+        seen.append((np.array(pressure), np.array(mass), outward))
+        return real(pressure, T, mass, top_shell, outward)
+
+    def structure(*args, **kwargs):
+        m, g, P = _canned_structure(*args, **kwargs)
+        made.append((m.copy(), P.copy()))
+        return m, g, P
+
+    monkeypatch.setattr(zs, '_adiabat_table', spy)
+    _analytic_ramp(structure=structure, temperature_mode=mode, max_iterations_outer=6)
+    assert seen
+    for P, m, outward in seen:
+        assert outward is (mode == 'adiabatic_from_cmb')
+        assert any(np.array_equal(m, mm) and np.array_equal(P, pp) for mm, pp in made)
 
 
 def _case_clock_stop(structure=None, **_):
@@ -2665,7 +2711,7 @@ def _assert_grid_bounds(first, seeded, plain, stored, lags, jax=False):
     """Assert the bounds of the grid start-up tests on the first solve, the seeded and the
     unseeded re-solve against the stored REF blocks (``_jax`` blocks with ``jax``); ``lags``
     are the 3 lag triples of ``_grid_main``. With ``jax`` the unseeded re-solve is compared only
-    with the seeded one (2.5 K): at the 1e-4 accept it lies 0.977 K from REF."""
+    with the seeded one (2.5 K): at the 1e-4 accept it lies 1.006 K from REF."""
     ref1, ref2 = (stored[k + ('_jax' if jax else '')] for k in ('first', 'resolve'))
     for r, flag in ((first, False), (seeded, True), (plain, False)):
         assert r['converged'] and r['accepted_on'] == 'strict' and r['adiabat_seeded'] is flag
