@@ -12,18 +12,24 @@ import os
 import numpy as np
 import pytest
 
+from tests._paleos_helpers import WALL_TIMEOUT
 from tools.validation import adiabat_profiles as ap
 
-pytestmark = [pytest.mark.slow, pytest.mark.paleos_adiabat, pytest.mark.timeout(3600)]
+pytestmark = [
+    pytest.mark.slow,
+    pytest.mark.paleos_adiabat,
+    pytest.mark.timeout(4200),  # inside the 90 min paleos_adiabat CI job, setup included
+]
 
 
 @pytest.mark.physics_invariant
 def test_round_off_starts_keep_the_centre_temperature_within_12_k(monkeypatch):
     """4 starts of input/default.toml at 2515 K and a mass tolerance of 1e-3, planet mass x
-    (1 + k 1e-12): all are accepted at blend 1 in the same padding state, and the adiabats of
-    their returned structures have centre temperatures within 12 K (a padding flip moves the
-    centre by tens of K, so the state is asserted first). The returned core T, read from the
-    T(P) table of the pass before, is printed and not bounded: it can lie 20 K off."""
+    (1 + k 1e-12), wall clock 2400 s: all are accepted at blend 1 within the mass tolerance, not
+    on the wall clock, in the same padding state, and the adiabats of their returned structures
+    have centre temperatures within 12 K (a padding flip moves the centre by tens of K, so the
+    state is asserted first). The returned core T, read from the T(P) table of the pass before,
+    is printed and not bounded: it can lie 20 K off."""
     import zalmoxis.solver as zs
     from tests.test_adiabat_real_profiles import _need_paleos
     from zalmoxis import get_zalmoxis_root
@@ -41,9 +47,12 @@ def test_round_off_starts_keep_the_centre_temperature_within_12_k(monkeypatch):
     inp = os.path.join(get_zalmoxis_root(), 'input')
     T_c, padded = [], []
     for k in ap.DEFAULT_STARTS:
-        cfg = ap._default_config(k)
+        cfg = dict(ap._default_config(k), wall_timeout=WALL_TIMEOUT)
         res = zs.main(cfg, md, ap._melt('config', cfg), inp)
-        assert res['converged'] and res['adiabat_blend'] == 1.0, (k, res.get('accepted_on'))
+        got = (res['converged'], res['adiabat_blend'], res['accepted_on'])
+        assert got[:2] == (True, 1.0) and got[2] != 'timeout', (k, got)
+        err = res['mass_error_at_accept']
+        assert err is not None and err <= cfg['tolerance_outer'], (k, err)
         own = native(
             *(res[x] for x in ('radii', 'pressure', 'mass_enclosed')),
             *last['a'][3:],

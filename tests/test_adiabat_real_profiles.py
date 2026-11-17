@@ -55,69 +55,21 @@ def _on_adiabat(kw):
 
 def _eos(kw):
     """The EOS arguments of ``get_mixed_nabla_ad`` from call kwargs, in their order."""
-    keys = ('material_dictionaries', 'interpolation_functions', 'solidus_func', 'liquidus_func')
-    keys += (
-        'mushy_zone_factors',
-        'condensed_rho_min',
-        'condensed_rho_scale',
-        'binodal_T_scale',
-    )
-    return tuple(kw[k] for k in keys)
+    return tuple(kw[k] for k in ap.EOS_ARGS)
 
 
-def _forward_euler(kw):
-    """The comparison scheme, one forward Euler step in P per node segment: nabla at the known
-    node, no step where an end is below 1e5 Pa, the node caps of 1e5 K and 100 K."""
-    from zalmoxis.mixing import get_mixed_nabla_ad
-    from zalmoxis.structure_model import get_layer_mixture
-
-    P, m = np.asarray(kw['pressure'], float), np.asarray(kw['mass_enclosed'], float)
-    n, T, inward = len(P), np.empty(len(P)), kw['anchor'] != 'cmb'
-    if inward:
-        T[-1], order = kw['surface_temperature'], [(i, i + 1) for i in range(n - 2, -1, -1)]
-    else:
-        ic = _cmb_index(kw)
-        T[:ic], T[ic] = kw['surface_temperature'], kw['cmb_temperature']
-        order = [(i, i - 1) for i in range(ic + 1, n)]
-    for i, j in order:
-        mx = get_layer_mixture(
-            m[i], kw['cmb_mass'], kw['core_mantle_mass'], kw['layer_mixtures']
-        )
-        T[i] = T[j]
-        if not mx.has_tdep() or P[j] < P_FLOOR or P[i] < P_FLOOR:
-            continue
-        nb = get_mixed_nabla_ad(P[j], T[j], mx, *_eos(kw))
-        if nb is not None and nb > 0 and (P[i] > P[j]) == inward:
-            t = T[j] + nb * T[j] / P[j] * (P[i] - P[j])
-            T[i] = min(t, 1e5) if inward else max(min(t, 1e5), 100.0)
-    return T
-
-
-def _reference(kw):
-    """scipy ``solve_ivp`` (RK45, rtol 1e-10, atol 1e-12) of d ln T / d ln P = nabla over each
-    node segment, with the rules of the routine: the mixture of the node the segment fills, T
-    held below 1e5 Pa (a padded top, P = 0, counts as 1e5 Pa) and for a T-independent layer,
-    and the node caps.
-    Returns (T, count of nabla reads that were None or not positive)."""
+def _reference(kw, method='DOP853'):
+    """scipy ``solve_ivp`` (``method``, rtol 1e-13, atol 1e-15) of d ln T / d ln P = nabla over
+    each node segment, with the rules of the routine: the mixture of the node the segment fills,
+    T held below 1e5 Pa (a padded top, P = 0, counts as 1e5 Pa) and for a T-independent layer,
+    and the node caps. Returns (T, count of nabla reads that were None or not positive)."""
     from scipy.integrate import solve_ivp
 
     from zalmoxis.mixing import get_mixed_nabla_ad
     from zalmoxis.structure_model import get_layer_mixture
 
-    P, m = np.asarray(kw['pressure'], float), np.asarray(kw['mass_enclosed'], float)
-    eos = _eos(kw)
-    n, T, bad = len(P), np.empty(len(P)), [0]
-    inward = kw['anchor'] != 'cmb'
-    if inward:
-        T[-1], order, lo = (
-            kw['surface_temperature'],
-            [(i, i + 1) for i in range(n - 2, -1, -1)],
-            0.0,
-        )
-    else:
-        ic = _cmb_index(kw)
-        T[:ic], T[ic] = kw['surface_temperature'], kw['cmb_temperature']
-        order, lo = [(i, i - 1) for i in range(ic + 1, n)], 100.0
+    P, m, T, order, inward = ap.node_walk(kw)
+    eos, bad, lo = _eos(kw), [0], (0.0 if inward else 100.0)
     for i, j in order:
         mx = get_layer_mixture(
             m[i], kw['cmb_mass'], kw['core_mantle_mass'], kw['layer_mixtures']
@@ -134,7 +86,7 @@ def _reference(kw):
                 return [0.0]
             return [v]
 
-        y = solve_ivp(rhs, (x0, x1), [math.log(T[j])], method='RK45', rtol=1e-10, atol=1e-12)
+        y = solve_ivp(rhs, (x0, x1), [math.log(T[j])], method=method, rtol=1e-13, atol=1e-15)
         T[i] = min(max(math.exp(y.y[0, -1]), lo), 1e5)
     return T, bad[0]
 
@@ -142,12 +94,12 @@ def _reference(kw):
 @pytest.mark.physics_invariant
 @pytest.mark.reference_pinned
 def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validation_plot):
-    """On the 6 stored profiles the default call stays within 1 K of an RK45 integration of the
-    same ODE (rtol 1e-10) at every node on the adiabat, with no nabla read that is missing or
-    not positive. The forward Euler step in P per node, computed in the test from the stored
-    structure, equals the stored temperature of each solve and is at least 5 times farther and
-    more than 2 K from the reference on every profile. A padded top gives the profile of a top
-    at 1 Pa within 1e-6 K."""
+    """On the 6 stored profiles the default call stays within 1 K of a DOP853 integration of the
+    same ODE (rtol 1e-13), which agrees with RK45 at rtol 1e-13 to 0.01 K, at every node on the
+    adiabat, with no nabla read that is missing or not positive. The forward Euler step in P per
+    node, from ``forward_euler`` of the profile tool, equals the stored T_euler and is at least
+    5 times farther and more than 2 K from the reference on every profile. A padded top gives
+    the profile of a top at 1 Pa within 1e-6 K."""
     from zalmoxis.eos.temperature import compute_adiabatic_temperature
 
     kw0 = profiles['default_k0'][1]
@@ -156,9 +108,10 @@ def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validat
         T = compute_adiabatic_temperature(**kw)
         ref, bad = _reference(kw)
         keep = _on_adiabat(kw)
+        assert float(np.max(np.abs(ref - _reference(kw, 'RK45')[0])[keep])) <= 0.01, case
         err = float(np.max(np.abs(T - ref)[keep]))
-        euler = _forward_euler(kw)
-        np.testing.assert_array_equal(euler, rec['T'])  # the stored call of the Euler scheme
+        euler = ap.forward_euler(kw)
+        np.testing.assert_array_equal(euler, rec['T_euler'])  # the stored comparison scheme
         native = float(np.max(np.abs(euler - ref)[keep]))
         assert bad == 0, case
         assert err <= 1.0, (case, err)
@@ -170,9 +123,7 @@ def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validat
             assert kw['pressure'][-1] == 0.0 and float(np.max(np.abs(T - T1))) <= 1e-6
         if case == 'default_k0':
             k0 = (kw['pressure'][keep], T[keep], ref[keep], euler[keep])
-        print(
-            f'{case}: midpoint {err:.4f} K, forward Euler step {native:.2f} K from the reference'
-        )
+        print(f'{case}: midpoint {err:.4f} K, forward Euler {native:.2f} K from the reference')
 
     def profile_figure():
         import matplotlib.pyplot as plt
@@ -186,7 +137,9 @@ def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validat
         core = P >= p_cmb
         ax.plot(gpa, native[top], ls='--', color='C2', label='forward Euler step')
         ax.plot(gpa, T[top], color='C1', label='midpoint, default')
-        ax.plot(gpa, ref[top], ls=':', color=plt.rcParams['text.color'], label='RK45 reference')
+        ax.plot(
+            gpa, ref[top], ls=':', color=plt.rcParams['text.color'], label='DOP853 reference'
+        )
         ax.plot(
             P[core] / 1e9,
             iron_melting_anzellini13(P[core]),
@@ -222,7 +175,7 @@ def test_temperature_is_continuous_across_one_bar(profiles, anchor, request):
         P = P0.copy()
         P[-1] = p
         T.append(compute_adiabatic_temperature(**{**kw, 'pressure': P}))
-        native.append(_forward_euler({**kw, 'pressure': P}))
+        native.append(ap.forward_euler({**kw, 'pressure': P}))
     T = np.array(T)
     step = float(np.max(np.abs(np.diff(T, axis=0))))
     assert step <= 0.01, step

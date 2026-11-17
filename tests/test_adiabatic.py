@@ -949,8 +949,8 @@ class TestMidpointAdiabat:
     @pytest.mark.parametrize('anchor', ['surface', 'cmb'])
     def test_default_call_uses_the_0p0025_substeps(self, monkeypatch, anchor):
         """A default call evaluates nabla twice per substep, with ceil(|d ln P| / 0.0025)
-        substeps per segment above 1e5 Pa: the count pins the default h (a call at h 0.02
-        meets the 1 K bound of the real profiles too, so only the count tells them apart)."""
+        substeps per segment above 1e5 Pa: the count pins the default h, because the 1 K bound
+        of the real profiles does not decide h (0.0065 and 0.008 pass it, 0.0055 and 0.007 fail)."""
         calls = []
         _stub_adiabat(monkeypatch, lambda P, T: 0.1, calls)  # T stays inside the node caps
         P = np.geomspace(3.6e11, 3e4, 40)  # the top segment crosses 1e5 Pa
@@ -992,7 +992,8 @@ class TestMidpointAdiabat:
     def test_padded_top_integrates_like_the_floor(self, monkeypatch, anchor):
         """A padded top (P = 0 at the outer node) integrates like a top at 1e5 Pa: the profile
         equals the one with the top at 1 Pa and at 1e5 Pa, bit for bit, and with the surface
-        anchor it is the constant-nabla law from 1e5 Pa (analytical), not an isothermal shell."""
+        anchor it is the constant-nabla law from 1e5 Pa (analytical), not an isothermal
+        shell."""
         _stub_adiabat(monkeypatch, lambda P, T: 0.1)
         P = _profile(n=21)
         runs = {}
@@ -1086,9 +1087,84 @@ class TestMidpointAdiabat:
 
         check()
 
+    @pytest.mark.parametrize('bad', ['CMB', 'Surface', 'bogus', '', None])
+    def test_an_unknown_anchor_raises_value_error(self, monkeypatch, bad):
+        """``anchor`` is 'surface' or 'cmb'; any other value raises ValueError before any nabla
+        read, instead of running the surface anchor."""
+        calls = []
+        _stub_adiabat(monkeypatch, lambda P, T: 0.1, calls)
+        with pytest.raises(ValueError, match='anchor'):
+            _call(_profile(n=5), bad, 3000.0, surface_temperature=3000.0)
+        assert calls == []
+
+    def test_a_subnormal_anchor_runs_without_a_warning(self, monkeypatch):
+        """The smallest positive anchor temperature (a subnormal float) is in range: the call
+        runs with no RuntimeWarning (an overflow in T_lim / T0) and the anchor node keeps it."""
+        import warnings
+
+        _stub_adiabat(monkeypatch, lambda P, T: 0.1)
+        t = np.nextafter(0.0, 1.0)
+        with warnings.catch_warnings():
+            warnings.simplefilter('error')
+            T = _call(_profile(n=5), 'surface', t)
+        assert T[-1] == t and np.all(T > 0)
+
+    @pytest.mark.physics_invariant
+    def test_a_tiny_anchor_follows_the_closed_form_or_stops_at_the_cap_property(self):
+        """Hypothesis over anchors T0 from 5e-324 K to 1e-290 K and a constant nabla from 0.1 to
+        inf, inward from 1e5 to 4e11 Pa: no OverflowError and a positive result; ln T equals
+        ln T0 + nabla ln(4e6) within 1e-6 where T is a normal float, also where that needs the
+        log-space product (nabla 47 and 48), within 0.2 for a subnormal T (one rounding to a
+        multiple of 5e-324 at T >= 2.3e-323), and T is exactly 1e5 K where the closed form
+        exceeds the cap by more than 1e-6 in ln T."""
+        from hypothesis import given, settings
+        from hypothesis import strategies as st
+
+        from zalmoxis.eos.temperature import _segment_temperature
+
+        @settings(max_examples=300, deadline=None, derandomize=True)
+        @given(
+            st.floats(-323.3, -290.0),
+            st.sampled_from([0.1, 3.0, 47.0, 48.0, 50.0, 1e6, math.inf]),
+        )
+        def check(log10_T0, nabla):
+            T0 = 10.0**log10_T0
+            try:
+                t = _segment_temperature(T0, 1e5, 4e11, lambda P, T: nabla, 0.0025, True)
+            except OverflowError as e:
+                pytest.fail(f'T0 {T0}, nabla {nabla}: {e}')
+            y = math.log(T0) + nabla * math.log(4e6)  # ln of the closed form
+            assert t > 0, (T0, nabla, t)
+            if y > math.log(1e5) + 1e-6:
+                assert t == 1e5, (T0, nabla, t)
+            else:  # a subnormal T keeps few bits
+                tol = 1e-6 if t >= np.finfo(float).tiny else 0.2
+                assert abs(math.log(t) - min(y, math.log(1e5))) <= tol, (T0, nabla, t)
+
+        check()
+
+    def test_segment_end_rule(self):
+        """A NaN or +inf end returns T0 exactly; a -inf, negative or zero end gives the result of
+        an end at 1e5 Pa, inward and outward; a segment against the anchor direction returns T0."""
+        from zalmoxis.eos.temperature import _segment_temperature
+
+        def seg(P0, P1, inward):
+            try:
+                return _segment_temperature(3000.0, P0, P1, lambda P, T: 0.1, 0.0025, inward)
+            except Exception as e:  # noqa: BLE001
+                pytest.fail(f'{P0} -> {P1}: {e!r}')
+
+        for end in (math.nan, math.inf):
+            assert seg(end, 1e9, True) == seg(1e9, end, False) == 3000.0, end
+            assert seg(1e9, end, True) == seg(end, 1e9, False) == 3000.0, end
+        assert seg(1e9, 1e10, False) == seg(1e10, 1e9, True) == 3000.0
+        for end in (-math.inf, -5.0, 0.0):
+            assert seg(end, 1e9, True) == seg(1e5, 1e9, True) != 3000.0, end
+            assert seg(1e9, end, False) == seg(1e9, 1e5, False) != 3000.0, end
+
     def test_non_finite_surface_temperature_with_the_cmb_anchor_raises(self, monkeypatch):
-        """With the CMB anchor the core nodes carry the surface temperature, so it must be finite
-        and positive too: NaN and True raise ValueError."""
+        """With the CMB anchor the core nodes carry the surface temperature, so it too must be
+        finite and positive: NaN and True raise ValueError."""
         _stub_adiabat(monkeypatch, lambda P, T: 0.1)
         for v in (np.nan, True):
             with pytest.raises(ValueError, match='surface_temperature'):
@@ -1169,8 +1245,9 @@ class TestMidpointAdiabat:
     )
     def test_a_segment_holds_from_the_first_bad_nabla(self, bad):
         """_segment_temperature holds T from the first substep with a nabla that is missing or
-        not positive: a bad first read keeps T0, also when the reads after it are good; a bad midpoint read after 1 good substep keeps
-        the T of that substep (T0 exp(0.1 dx)); a non-finite end pressure returns T0 unread."""
+        not positive: a bad first read keeps T0, also when the reads after it are good; a bad
+        midpoint read after 1 good substep keeps the T of that substep (T0 exp(0.1 dx)); a
+        non-finite end pressure returns T0 unread."""
         from zalmoxis.eos.temperature import _segment_temperature
 
         calls = []
@@ -1218,5 +1295,135 @@ class TestMidpointAdiabat:
             else:
                 with pytest.raises(ValueError, match='max_dlnp'):
                     _call(P, 'surface', 3000.0, max_dlnp=h)
+
+        check()
+
+
+@pytest.mark.slow
+@pytest.mark.physics_invariant
+@pytest.mark.timeout(1800)
+def test_padded_top_shell_lookup_follows_the_adiabat(monkeypatch):
+    """A padded default solve (P = 0 at the outer node): the T(P) lookup that the last density
+    solve reads gives T_surf at 1e5 Pa and lies within 0.3 K of an independent explicit Euler
+    adiabat (4000 steps in ln P) from there up to the last positive node, instead of holding
+    the T of that node over the top shell."""
+    import os
+
+    import zalmoxis.solver as zs
+    from tests.test_surface_node import euler_adiabat, spy_temperature_function
+    from tools.validation import adiabat_profiles as ap
+    from zalmoxis import get_zalmoxis_root
+    from zalmoxis.config import load_material_dictionaries
+
+    root = get_zalmoxis_root()
+    if not os.path.isdir(os.path.join(root, 'data', 'EOS_PALEOS_MgSiO3_unified')):
+        pytest.skip('PALEOS tables not on disk')
+    seen = spy_temperature_function(monkeypatch)
+    cfg = ap._default_config(0)
+    melt = ap._melt('config', cfg)
+    res = zs.main(cfg, load_material_dictionaries(), melt, os.path.join(root, 'input'))
+    r, P, T = (np.asarray(res[k], float) for k in ('radii', 'pressure', 'temperature'))
+    assert res['padded'] and P[-1] == 0.0
+    assert T[-1] == pytest.approx(cfg['surface_temperature'])
+    top = int(np.flatnonzero(P > 0)[-1])
+    q, t_path = euler_adiabat(cfg, melt, P_FLOOR, T[-1], P[top])
+    look = np.array([seen[-1](r[top], p) for p in q])
+    assert look[0] == pytest.approx(T[-1], abs=1e-9)
+    assert np.max(np.abs(look - t_path)) < 0.3
+
+
+@pytest.mark.unit
+class TestAdiabatTable:
+    """``_adiabat_table``: the sorted log10 P, T lookup of the density solve, with the adiabat
+    over a padded top shell from 1e5 Pa up to the last positive node."""
+
+    @staticmethod
+    def _shell(calls):
+        def top_shell(q, T_top, i):
+            calls.append((q.copy(), T_top, i))
+            return T_top * (q / P_FLOOR) ** 0.1
+
+        return top_shell
+
+    @pytest.mark.parametrize(
+        'P',
+        [
+            np.geomspace(3.6e11, 2e5, 9),
+            [1e10, 1e8, P_FLOOR, 0.0],
+            [1e10, 1e8, 5e4, 0.0],
+            [1e10, P_FLOOR * (1 + 1e-10), 0.0],
+            np.zeros(3),
+        ],
+        ids=['unpadded', 'last_at_floor', 'last_below_floor', 'last_within_1e-9', 'all_padded'],
+    )
+    def test_no_shell_unless_a_padded_top_lies_above_the_floor(self, P):
+        """An unpadded top, a last positive node at, below or within 1e-9 of 1e5 Pa, or no node
+        at P > 0: the nodes at P > 0 sorted by P, bit for bit, and no shell call."""
+        from zalmoxis.solver import _adiabat_table
+
+        calls, P = [], np.asarray(P, float)
+        T = 3000.0 + np.arange(P.size, dtype=float)[::-1]
+        lp, t = _adiabat_table(P, T, self._shell(calls))
+        np.testing.assert_array_equal(lp, np.log10(P[P > 0][::-1]))
+        np.testing.assert_array_equal(t, T[P > 0][::-1])
+        assert calls == []
+
+    @pytest.mark.physics_invariant
+    @pytest.mark.parametrize('n_pad', [1, 2])
+    def test_padded_top_shell_follows_the_adiabat(self, n_pad):
+        """P = 0 at the outer node(s): the table gains the shell points from 1e5 Pa (T of the
+        padded node there) up to below the last positive node, geometric, and the lookup is
+        the constant-nabla law over the shell instead of the T of that node."""
+        from zalmoxis.solver import _TOP_SHELL_POINTS, _adiabat_table
+
+        calls, P = [], np.concatenate([np.geomspace(3.6e11, 1.1e9, 9), np.zeros(n_pad)])
+        T = np.where(P > 0, 3000.0 * (np.maximum(P, P_FLOOR) / P_FLOOR) ** 0.1, 3000.0)
+        lp, t = _adiabat_table(P, T, self._shell(calls))
+        assert len(calls) == 1
+        ((q, T_top, i),) = calls
+        assert T_top == pytest.approx(3000.0) and i == 8
+        assert q.size == _TOP_SHELL_POINTS and q[0] == P_FLOOR
+        np.testing.assert_allclose(q, np.geomspace(P_FLOOR, 1.1e9, q.size + 1)[:-1], rtol=1e-15)
+        assert lp.size == q.size + 9 and np.all(np.diff(lp) > 0)
+        np.testing.assert_array_equal(t[q.size :], T[:9][::-1])
+        x = np.geomspace(P_FLOOR, 1.1e9, 200)
+        np.testing.assert_allclose(
+            np.interp(np.log10(x), lp, t), 3000.0 * (x / P_FLOOR) ** 0.1, rtol=1e-4
+        )
+
+    def test_table_property_over_profiles(self):
+        """Hypothesis over node pressures (zero, negative, NaN, positive, just above 1e5 Pa)
+        with a padded or an unpadded top: log10 P finite and not decreasing, strictly increasing
+        over the shell points and the first node, T paired with its node, shell points only for
+        a padded top above 1e5 Pa, starting at the T of the padded node."""
+        from hypothesis import example, given, settings
+        from hypothesis import strategies as st
+
+        from zalmoxis.solver import _adiabat_table
+
+        node = st.one_of(st.floats(1.0, 1e13), st.sampled_from([0.0, -1.0, np.nan, P_FLOOR]))
+
+        @settings(max_examples=200, deadline=None)
+        @given(st.lists(node, min_size=1, max_size=12, unique=True))
+        @example([1e10, float(np.nextafter(P_FLOOR, np.inf)), 0.0])
+        @example([1e10, P_FLOOR * (1 + 1e-14), 0.0])
+        @example([1e10, P_FLOOR * (1 + 1e-7), 0.0])
+        @example([1e13, 9999999999999.984])
+        def check(P):
+            P = np.array(P)
+            T = 1000.0 + np.arange(P.size, dtype=float)
+            calls = []
+            lp, t = _adiabat_table(P, T, self._shell(calls))
+            assert np.all(np.isfinite(lp)) and np.all(np.diff(lp) >= 0)
+            pos = P[P > 0]
+            shell = P[-1] <= 0 and pos.size > 0 and pos.min() > P_FLOOR * (1 + 1e-9)
+            assert len(calls) == int(shell)
+            k = calls[0][0].size if shell else 0
+            assert np.all(np.diff(lp[: k + 1]) > 0)  # nodes closer than 1 ulp in log10 may tie
+            assert lp.size == k + pos.size
+            if shell:
+                assert lp[0] == pytest.approx(5.0) and t[0] == T[-1]
+                assert P[calls[0][2]] == pos.min()
+            np.testing.assert_array_equal(t[k:], T[np.argsort(P)][P[np.argsort(P)] > 0])
 
         check()

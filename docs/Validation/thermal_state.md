@@ -2,13 +2,12 @@
 
 ## What this page checks
 
-This page checks the temperature profile of a planet. It has 2 parts.
-The first part checks how Zalmoxis integrates the adiabat, the temperature profile along which the entropy is constant. Tests run each of its 3 cases, and each case has a plot pair.
-Every adiabatic structure of Zalmoxis takes its temperature from this integration, and so does the first structure solve of a PROTEUS start-up with Zalmoxis in an adiabatic temperature mode.
-The second part shows how the initial thermal state depends on the planet mass and on the material properties. The initial thermal state is the temperature at the core-mantle boundary (CMB) and at the surface right after accretion, which `zalmoxis.energetics.initial_thermal_state` computes. Those figures come from scripts: no test asserts them and CI does not run the scripts.
-Validation means that a test runs the code on a case with a known right answer and checks the result within a stated tolerance.
-Each tested case says why the check exists, what it tests, how we know the right answer and why it matters, and ends with a box "Test details". Each script case says why the comparison exists, what it shows, how we know the right answer and why it matters, and ends with a box "Script details". The [overview](index.md) lists every case of the tab.
-[How the adiabat is integrated](../Explanations/adiabat_integration.md) explains the method that the first 3 cases check.
+This page checks the temperature profile of a planet. Validation means that a test runs the code on a case with a known right answer and checks the result within a stated tolerance. The page has 2 parts:
+
+- **Adiabat integration (3 tested cases).** Zalmoxis integrates the adiabat, the temperature profile along which the entropy is constant. Every adiabatic structure of Zalmoxis takes its temperature from this integration, and so does the first structure solve of a PROTEUS start-up with Zalmoxis in an adiabatic temperature mode. A test runs each case, and each case has a plot pair. [How the adiabat is integrated](../Explanations/adiabat_integration.md) explains the method.
+- **Initial thermal state (3 script cases).** The temperature at the core-mantle boundary (CMB) and at the surface right after accretion, which `zalmoxis.energetics.initial_thermal_state` computes, as a function of the planet mass and the material properties. These figures come from scripts: no test asserts them and CI does not run the scripts.
+
+Each tested case says why the check exists, what it tests, how we know the right answer and why it matters, and ends with a box "Test details". Each script case has the same parts for a comparison and ends with a box "Script details". The [overview](index.md) lists every case of the tab.
 
 ## Adiabat integration on smooth gradients
 
@@ -37,31 +36,35 @@ Each tested case says why the check exists, what it tests, how we know the right
 
 **What it tests.** It uses 6 stored structures of real solves: 4 starts of `input/default.toml` at 2515 K, with the surface anchor and a padded top, and the PROTEUS initial structure setups `all_options` and `dummy`, with the CMB anchor. On each, the temperature of a default call is compared with an independent integration at every node that the integration sets: all nodes with the surface anchor, and the CMB node outward with the CMB anchor. The second test counts the reads of $\nabla_\mathrm{ad}$ in a default call: 2 per substep, with $\lceil |\Delta \ln P| / 0.0025 \rceil$ substeps per segment.
 
-**How we know the right answer.** The reference integrates the same equation with `scipy.integrate.solve_ivp` (the adaptive RK45 method) at a relative tolerance of $10^{-10}$, on the same nodes and with the same rules: the mixture of each segment, the 1 bar floor, the padded top and the caps. It shares no step code with Zalmoxis.
+**How we know the right answer.** The reference integrates the same equation with `scipy.integrate.solve_ivp` (the adaptive DOP853 method) at a relative tolerance of $10^{-13}$, on the same nodes and with the same rules: the mixture of each segment, the 1 bar floor, the padded top and the caps. It shares no step code with Zalmoxis, and the test checks it against a second integration, RK45 at the same tolerance, to 0.01 K.
 
 **Why it matters.** These are the temperature profiles of the default configuration and of the PROTEUS start-up.
 
-![Temperature against pressure for default start 0: forward Euler step, midpoint, RK45 reference and the iron melting curve in the core](../assets/validation/adiabat_real_profile.svg#only-light){ width="80%" }
-![Temperature against pressure for default start 0: forward Euler step, midpoint, RK45 reference and the iron melting curve in the core](../assets/validation/adiabat_real_profile_dark.svg#only-dark){ width="80%" }
+![Temperature against pressure for default start 0: forward Euler step, midpoint, DOP853 reference and the iron melting curve in the core](../assets/validation/adiabat_real_profile.svg#only-light){ width="80%" }
+![Temperature against pressure for default start 0: forward Euler step, midpoint, DOP853 reference and the iron melting curve in the core](../assets/validation/adiabat_real_profile_dark.svg#only-dark){ width="80%" }
 
-**How to read the plot.** The plot shows $T$ against $P$ for default start 0. The midpoint line and the dotted reference lie on each other. The dashed line is a forward Euler step, one first-order step in $P$ per node, computed in the test from the stored structure; it also holds the padded top shell isothermal and is 473 K too cold at the centre. The grey line is the iron melting curve at core pressures. A pass means that the midpoint line lies on the dotted reference.
+**How to read the plot.** The plot shows $T$ against $P$ for default start 0. The midpoint line and the dotted DOP853 reference lie on each other. The dashed line is a forward Euler step: one first-order step in $P$ per node, from `forward_euler` in `tools/validation/adiabat_profiles.py`, with the padded top shell held isothermal. It lies 472 K below the reference at the centre. The grey line is the iron melting curve of Anzellini et al. (2013)[^cite-anzellini2013] at core pressures, `iron_melting_anzellini13`. A pass means that the midpoint line lies on the dotted reference.
 
 The largest difference from the reference on each profile, against the test bound of 1 K:
 
 | Profile | macOS 26, arm64, Python 3.12 |
 |---|---|
-| default starts 0 to 3 | 0.0767, 0.9338, 0.1303, 0.2541 K |
-| PROTEUS `all_options` | 0.0004 K |
-| PROTEUS `dummy` | 0.0002 K |
+| default starts 0 to 3 | 0.3373, 0.5382, 0.1978, 0.1586 K |
+| PROTEUS `all_options` | below 0.0001 K |
+| PROTEUS `dummy` | below 0.0001 K |
 
 The values depend on the platform at the level of round-off, so a plot of them cannot match on every platform; the test asserts the 1 K bound and prints the values.
 
-**Known limit.** The test integrates on stored structures and runs no structure solve. The forward Euler line is context: the test asserts only that it is at least 5 times, and more than 2 K, farther from the reference than the midpoint.
+**Known limit.**
 
-A structure solve returns core temperatures that are not on the adiabat of its own returned structure: the solve reads the core temperature from the T(P) table built on the pass before. In 4 starts of `input/default.toml` at 2515 K whose planet masses differ by $k \times 10^{-12}$ ($k$ = 0 to 3), the returned core temperature lies up to 20.6 K above that adiabat, and the difference grows across 239 to 264 GPa, where the core adiabat crosses the boundary between liquid and solid iron. Over the mantle the difference is at most 0.41 K, at the CMB node at most 1.18 K. The centre temperatures of the adiabats of the 4 returned structures lie within 6.9 K; the slow test `tests/test_adiabat_start_spread.py` bounds them at 12 K, and it does not bound the returned core temperature.
+- **What the test covers.** The test integrates on stored structures and runs no structure solve. They are the solves of the commit in `meta['_source']['commit']` of `tests/data/adiabat_profiles.npz` (a JSON string in the `meta` array), and their structure solve used the forward Euler adiabat. The forward Euler line is context: the test asserts only that it is at least 5 times, and more than 2 K, farther from the reference than the midpoint.
+- **The Euler line.** It differs from the reference by its first-order step error and by its isothermal top shell, and is a visual comparison only. Where the core meets the iron melting curve, the integration itself departs from a core at constant entropy ([known limits](../Explanations/adiabat_integration.md#known-limits-of-the-integration)).
+- **Core temperature of a returned structure.** A structure solve returns core temperatures that are not on the adiabat of its own returned structure, because the solve reads the core temperature from the T(P) table built on the pass before. In 4 solves of `input/default.toml` at 2515 K with the midpoint adiabat (no test makes them again) whose planet masses differ by $k \times 10^{-12}$ ($k$ = 0 to 3), the returned core temperature lies up to 20.6 K above that adiabat. The difference grows across 239 to 264 GPa; on these returned structures the phase of the iron table along the adiabat switches between liquid and solid from 234 to 254 GPa.
+- **Size of the lag elsewhere.** Over the mantle the difference is at most 0.41 K, and at the CMB node at most 1.18 K. The centre temperatures of the adiabats of the 4 returned structures lie within 6.9 K. The slow test `tests/test_adiabat_start_spread.py` bounds them at 12 K; it does not bound the returned core temperature.
+- **Sensitivity of the centre temperature.** On default start 1, a small change of $T$ at 47 to 172 GPa reaches the centre 14 to 21 times larger. The factor is 2.9 at 237 GPa and 1.1 at 285 GPa. At the CMB node it is 16, and a lag of 1 K there moves the centre by about 17 K.
 
 ??? info "Test details"
-    - Reference: `scipy.integrate.solve_ivp` (RK45), relative tolerance $10^{-10}$, absolute $10^{-12}$; profiles in `tests/data/adiabat_profiles.npz`, written by `python -m tools.validation.adiabat_profiles write`, which checks that the stored call gives the temperature of each solve bit for bit.
+    - Reference: `scipy.integrate.solve_ivp` (DOP853), relative tolerance $10^{-13}$, absolute $10^{-15}$, checked against RK45 at the same tolerances to 0.01 K; profiles in `tests/data/adiabat_profiles.npz`, written by `python -m tools.validation.adiabat_profiles write` at the commit in its `meta['_source']['commit']`, which checks that the stored call gives the temperature of each solve bit for bit and stores the result of `forward_euler` in the same module as `T_euler`; the test compares `forward_euler` with `T_euler`.
     - Tolerance: 1 K at every node that the integration sets; no read of a missing or non-positive gradient; the exact read count of a default call.
     - Test id: `tests/test_adiabat_real_profiles.py::test_midpoint_adiabat_meets_the_reference_on_real_profiles`, `tests/test_adiabatic.py::TestMidpointAdiabat::test_default_call_uses_the_0p0025_substeps`.
     - Command: `pytest -o "addopts=" tests/test_adiabat_real_profiles.py -k reference_on_real_profiles`.
@@ -159,6 +162,8 @@ The script also highlights the surface temperature issue: for 1 $M_\oplus$ plane
     - Command: `python tools/validation/validate_thermal_state_full_paleos.py`. Like the 2 scripts above, it reads the `T_surface` key, which the current `initial_thermal_state` does not return.
 
 ## References
+
+[^cite-anzellini2013]: S. Anzellini, A. Dewaele, M. Mezouar, P. Loubeyre, G. Morard, *[Melting of iron at Earth's inner core boundary based on fast X-ray diffraction](https://doi.org/10.1126/science.1233514)*, Science, 340, 464-466, 2013. [SciX](https://scixplorer.org/abs/2013Sci...340..464A/abstract).
 
 [^cite-boujibar2020]: A. Boujibar, P. Driscoll, Y. Fei, *[Super-Earth internal structures and initial thermal states](https://doi.org/10.1029/2019JE006124)*, Journal of Geophysical Research: Planets, 125, e2019JE006124, 2020. [SciX](https://scixplorer.org/abs/2020JGRE..12506124B/abstract).
 

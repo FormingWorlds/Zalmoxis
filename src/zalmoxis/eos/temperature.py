@@ -31,24 +31,22 @@ def _is_real(x):
     return isinstance(x, numbers.Real) and not isinstance(x, bool)
 
 
-def _check_max_dlnp(h):
-    """Return ``h`` as a float; raise ValueError unless it is a real number from 1e-4 to 1."""
-    if not _is_real(h) or not 1e-4 <= h <= 1.0:
-        raise ValueError(f'max_dlnp must be a real number from 1e-4 to 1, got {h!r}.')
-    return float(h)
+def _times_exp(t, a):
+    """t exp(a); in log space for a >= 700 (exp overflows above about 709.78), for a tiny t."""
+    return t * math.exp(a) if a < 700.0 else math.exp(math.log(t) + a)
 
 
 def _segment_temperature(T0, P_from, P_to, nabla_of, h, inward):
-    """Temperature at ``P_to`` on the adiabat d ln T / d ln P = nabla through (``P_from``, ``T0``).
+    """Temperature at ``P_to`` on the adiabat d ln T / d ln P = nabla through ``(P_from, T0)``.
 
     Integrates with the midpoint rule in ln P over ceil(|d ln P| / ``h``) equal substeps, after
     raising both pressures to ``ADIABAT_P_FLOOR``, so T is held below that pressure; a padded
-    end (P = 0) counts as the floor. Returns ``T0`` at a NaN or infinite end, for a
-    non-positive ``T0``, and when the segment is empty or does not run in the anchor direction (``inward``: towards higher P); T
-    is held from the first substep where ``nabla_of(P, T)`` is None or not positive. Inward T
-    stops at the node cap ``_T_MAX`` and outward T at the CMB-anchor floor ``_T_MIN_CMB``, in
-    every substep and every read of ``nabla_of``; a segment that reaches it returns it exactly.
-    """
+    end (P = 0) or a negative one counts as the floor. Returns ``T0`` at a NaN or +inf end, for
+    a non-positive ``T0``, and when the segment is empty or does not run in the anchor direction
+    (``inward``: towards higher P); T is held from the first substep where ``nabla_of(P, T)`` is
+    None or not positive. Inward T stops at the node cap ``_T_MAX`` and outward T at the
+    CMB-anchor floor ``_T_MIN_CMB``, in every substep and every read of ``nabla_of``; a segment
+    that reaches it returns it exactly."""
     if not (P_from < math.inf and P_to < math.inf and 0 < T0 < math.inf):
         return T0
     p, t = max(P_from, ADIABAT_P_FLOOR), T0  # the first read is at the start node itself
@@ -58,19 +56,19 @@ def _segment_temperature(T0, P_from, P_to, nabla_of, h, inward):
     n = math.ceil(abs(x1 - x0) / h)
     dx, dy = (x1 - x0) / n, 0.0  # dy: ln T change over the segment, summed from 0
     T_lim, clamp = (_T_MAX, min) if inward else (_T_MIN_CMB, max)
-    dy_lim = math.log(T_lim / T0)  # the ln T change that reaches the cap or the floor
+    dy_lim = math.log(T_lim) - math.log(T0)  # ln T change to the cap or floor
     for k in range(n):
         k1 = nabla_of(p, t)
         if k1 is None or not k1 > 0:
             break
-        t_mid = clamp(t * math.exp(clamp(dx / 2 * k1, dy_lim - dy)), T_lim)
+        t_mid = clamp(_times_exp(t, clamp(dx / 2 * k1, dy_lim - dy)), T_lim)
         k2 = nabla_of(math.exp(x0 + (k + 0.5) * dx), t_mid)
         if k2 is None or not k2 > 0:
             break
         dy = clamp(dy + dx * k2, dy_lim)
         if dy == dy_lim:  # T0 exp(dy_lim) can miss T_lim by 1 ulp
             return T_lim
-        p, t = math.exp(x0 + (k + 1) * dx), clamp(T0 * math.exp(dy), T_lim)
+        p, t = math.exp(x0 + (k + 1) * dx), clamp(_times_exp(T0, dy), T_lim)
     return t
 
 
@@ -108,14 +106,14 @@ def compute_adiabatic_temperature(
 ):
     """Compute an adiabatic temperature profile using native EOS gradient tables.
 
-    Integrates d ln T / d ln P = nabla_ad(P, T) over each node segment with the midpoint rule
-    in ln P and ceil(|d ln P| / ``max_dlnp``) substeps. nabla_ad comes from
-    ``get_mixed_nabla_ad`` with the layer mixture of the node the segment fills; for a
-    multi-material layer it is mass-fraction-weighted across the components. T is held below
-    ``ADIABAT_P_FLOOR`` (1e5 Pa, where the PALEOS rock and iron tables start), and a padded
-    node (P = 0) counts as that floor. T is also held over a layer without a T-dependent
-    component and from the first substep where nabla_ad is missing or not positive. Each node is capped at
-    1e5 K, and with ``anchor='cmb'`` floored at 100 K.
+    Integrates d ln T / d ln P = nabla_ad(P, T) over each node segment with the midpoint rule in
+    ln P and ceil(|d ln P| / ``max_dlnp``) substeps. nabla_ad comes from ``get_mixed_nabla_ad``
+    with the layer mixture of the node the segment fills; for a multi-material layer it is
+    mass-fraction-weighted across the components. T is held below ``ADIABAT_P_FLOOR`` (1e5 Pa,
+    where the PALEOS rock and iron tables start), and a padded node (P = 0) counts as that
+    floor. T is also held over a layer without a T-dependent component and from the first
+    substep where nabla_ad is missing or not positive. Each node is capped at 1e5 K, and with
+    ``anchor='cmb'`` floored at 100 K.
 
     Parameters
     ----------
@@ -178,9 +176,9 @@ def compute_adiabatic_temperature(
     Raises
     ------
     ValueError
-        No T-dependent layer, ``max_dlnp`` outside its range, a ``surface_temperature`` that is
-        not above 0 K and at most 1e5 K, or ``anchor='cmb'`` without a ``cmb_temperature`` from
-        100 K to 1e5 K (the node caps).
+        No T-dependent layer, ``max_dlnp`` outside its range, an ``anchor`` other than 'surface'
+        or 'cmb', a ``surface_temperature`` that is not above 0 K and at most 1e5 K, or
+        ``anchor='cmb'`` without a ``cmb_temperature`` from 100 K to 1e5 K (the node caps).
     StructureInvariantError
         The profile is not finite and positive at every node, or rises outward from its anchor.
     """
@@ -189,7 +187,9 @@ def compute_adiabatic_temperature(
 
     if interpolation_functions is None:
         interpolation_functions = {}
-    h = _check_max_dlnp(max_dlnp)
+    if not _is_real(max_dlnp) or not 1e-4 <= max_dlnp <= 1.0:
+        raise ValueError(f'max_dlnp must be a real number from 1e-4 to 1, got {max_dlnp!r}.')
+    h = float(max_dlnp)
 
     if not any_component_is_tdep(layer_mixtures):
         raise ValueError(
@@ -198,24 +198,22 @@ def compute_adiabatic_temperature(
             "Use 'linear' or 'isothermal' instead."
         )
 
+    eos = (
+        material_dictionaries,
+        interpolation_functions,
+        solidus_func,
+        liquidus_func,
+        mushy_zone_factors,
+        condensed_rho_min,
+        condensed_rho_scale,
+        binodal_T_scale,
+    )
+
     def nabla_of(mixture):
-        def nabla(P, T):
-            return get_mixed_nabla_ad(
-                P,
-                T,
-                mixture,
-                material_dictionaries,
-                interpolation_functions,
-                solidus_func,
-                liquidus_func,
-                mushy_zone_factors,
-                condensed_rho_min,
-                condensed_rho_scale,
-                binodal_T_scale,
-            )
+        return lambda P, T: get_mixed_nabla_ad(P, T, mixture, *eos)
 
-        return nabla
-
+    if anchor not in ('surface', 'cmb'):
+        raise ValueError(f"anchor must be 'surface' or 'cmb', got {anchor!r}.")
     if not (_is_real(surface_temperature) and 0 < surface_temperature <= _T_MAX):
         raise ValueError(
             f'surface_temperature must be a temperature above 0 and at most {_T_MAX:g} K, '
@@ -233,10 +231,10 @@ def compute_adiabatic_temperature(
         first = max(1, min(int(np.searchsorted(mass_enclosed, cmb_mass)), n - 1))
         T[:first] = surface_temperature
         T[first] = cmb_temperature
-        steps, floor = [(i, i - 1) for i in range(first + 1, n)], _T_MIN_CMB
+        steps = [(i, i - 1) for i in range(first + 1, n)]
     else:
         T[n - 1] = surface_temperature
-        first, steps, floor = 0, [(i, i + 1) for i in range(n - 2, -1, -1)], -math.inf
+        first, steps = 0, [(i, i + 1) for i in range(n - 2, -1, -1)]
 
     for i, j in steps:  # node i takes its T from node j, with the mixture of node i
         mixture = get_layer_mixture(
@@ -245,10 +243,9 @@ def compute_adiabatic_temperature(
         if not mixture.has_tdep():
             T[i] = T[j]
             continue
-        T_new = _segment_temperature(
+        T[i] = _segment_temperature(
             T[j], pressure[j], pressure[i], nabla_of(mixture), h, anchor != 'cmb'
         )
-        T[i] = min(max(T_new, floor), _T_MAX)
     _check_profile(T, first)
     return T
 
