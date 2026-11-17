@@ -4,7 +4,7 @@
 
 This page checks the temperature profile of a planet. Validation means that a test runs the code on a case with a known right answer and checks the result within a stated tolerance. The page has 2 parts:
 
-- **Adiabat integration (4 tested cases).** Zalmoxis integrates the adiabat, the temperature profile along which the entropy is constant. Every adiabatic structure of Zalmoxis takes its temperature from this integration, and so does the first structure solve of a PROTEUS start-up with Zalmoxis in an adiabatic temperature mode. A test runs each case, and each case has a plot pair. [How the adiabat is integrated](../Explanations/adiabat_integration.md) explains the method.
+- **Adiabat integration (5 tested cases).** Zalmoxis integrates the adiabat, the temperature profile along which the entropy is constant. Every adiabatic structure of Zalmoxis takes its temperature from this integration, and so does the first structure solve of a PROTEUS start-up with Zalmoxis in an adiabatic temperature mode. A test runs each case, and each case has a plot pair. [How the adiabat is integrated](../Explanations/adiabat_integration.md) explains the method.
 - **Initial thermal state (3 script cases).** The temperature at the core-mantle boundary (CMB) and at the surface right after accretion, which `zalmoxis.energetics.initial_thermal_state` computes, as a function of the planet mass and the material properties. These figures come from scripts: no test asserts them and CI does not run the scripts.
 
 Each tested case says why the check exists, what it tests, how we know the right answer and why it matters, and ends with a box "Test details". Each script case has the same parts for a comparison and ends with a box "Script details". The [overview](index.md) lists every case of the tab.
@@ -87,6 +87,29 @@ The values depend on the platform at the level of round-off, so a plot of them c
     - Tolerance: 0.01 K between neighbour top pressures at every node; relative $10^{-12}$ for the stub planet; exact equality for the padded top.
     - Test id: `tests/test_adiabat_real_profiles.py::test_temperature_is_continuous_across_one_bar`, `tests/test_adiabatic.py::TestMidpointAdiabat::test_low_pressure_rule_follows_the_floored_adiabat`, `::test_padded_top_integrates_like_the_floor`.
     - Command: `pytest -o "addopts=" tests/test_adiabat_real_profiles.py tests/test_adiabatic.py -k "one_bar or floored_adiabat or padded_top"`.
+
+## Temperature lookup over the top cell
+
+**Why this check exists.** The density solve reads the temperature from a table of the adiabat against $\log_{10} P$, built on the nodes of the pass before. The top cell, from the top of the planet to the next node, spans 2 to 4 decades in pressure with no node inside. If the table held only its 2 ends, the lookup would follow a straight line in $\log_{10} P$ there, 9 to 28 K off the adiabat, and a solve that pads or not by round-off would read different temperatures.
+
+**What it tests.** On stored structures, the test builds the table as the solve does and reads it over the top cell: the 2 PROTEUS profiles, with their own unpadded tops at $1.2 \times 10^5$ and $5 \times 10^6$ Pa, and default start 0 with its top node set to $1.2 \times 10^5$ and $9.09 \times 10^4$ Pa. A second test sets the top node of default start 0 to $P = 0$ (padded), 1 Pa, $10^5$ Pa and 1 atm and compares the lookups above 1 bar. Unit tests check where the shell of the table starts and ends, also at and within $10^{-9}$ of 1 bar, and that a padded top keeps its table bit for bit.
+
+**How we know the right answer.** An independent integration of $d \ln T / d \ln P = \nabla_\mathrm{ad}$ of the top layer (`scipy.integrate.solve_ivp`, DOP853, relative tolerance $10^{-12}$) from the top temperature over the cell. For a top below 1 bar the adiabat holds $T$ constant there, so the padded table and the tables of tops at 1 Pa and 1 bar must agree to round-off.
+
+**Why it matters.** The top-cell temperature sets the density of the outer mantle in every pass, and so the radius; the PROTEUS start-up solves have unpadded tops.
+
+![Temperature against pressure over the top cell of the PROTEUS dummy profile: lookup, independent march and a straight line in log10 P](../assets/validation/adiabat_top_cell_lookup.svg#only-light){ width="80%" }
+![Temperature against pressure over the top cell of the PROTEUS dummy profile: lookup, independent march and a straight line in log10 P](../assets/validation/adiabat_top_cell_lookup_dark.svg#only-dark){ width="80%" }
+
+**How to read the plot.** The x-axis is the pressure in Pa over the top cell of the PROTEUS `dummy` profile, and the y-axis the temperature in K. The solid line is the lookup of the solve and the dotted line the independent march; the test asserts that they lie at most 0.3 K apart, and they lie on each other. The dashed straight line in $\log_{10} P$ between the ends of the cell is context: the lookup without the shell, up to 14 K off here. A pass means that the solid and dotted lines meet. The test makes this plot only with `--validation-plots`.
+
+The largest difference of the lookup from the march: 0.047 K (`dummy`), 0.015 K (`all_options`), 0.080 K and 0.083 K (default start 0 with its top at $1.2 \times 10^5$ and $9.09 \times 10^4$ Pa). The shell, carried to the next node, meets the temperature of that node to $2 \times 10^{-7}$ K. Above 1 bar the lookups for a top at $P = 0$, 1 Pa and $10^5$ Pa are equal, and the one for a top at 1 atm differs by $1.6 \times 10^{-3}$ K.
+
+??? info "Test details"
+    - Reference: `scipy.integrate.solve_ivp` (DOP853), relative tolerance $10^{-12}$, of the top layer from the top temperature; the padded table for the tops at 1 Pa, $10^5$ Pa and 1 atm.
+    - Tolerance: 0.3 K over the top cell; the shell end to $10^{-5}$ K of the next node; $10^{-9}$ K for the tops at 1 Pa and $10^5$ Pa and 0.01 K for the top at 1 atm against the padded top.
+    - Test ids: `tests/test_adiabat_real_profiles.py::test_the_lookup_follows_the_adiabat_over_an_unpadded_top_cell`, `::test_the_top_cell_lookup_does_not_flip_with_the_padding`; `tests/test_adiabatic.py::TestAdiabatTable` (unit tier, among them `::test_an_unpadded_top_cell_gains_the_shell`, `::test_an_unpadded_top_at_or_near_the_floor` and `::test_a_padded_top_keeps_the_table_of_the_padded_rule`).
+    - Command: `pytest -o "addopts=" tests/test_adiabat_real_profiles.py -k "top_cell"`; add `--validation-plots` to write the plot.
 
 ## Centre temperature over round-off starts
 

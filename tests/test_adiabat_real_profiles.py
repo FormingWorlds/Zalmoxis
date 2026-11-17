@@ -247,7 +247,9 @@ def _top_cell(kw, p_top=None):
         ('default_k0', 9.09e4),
     ],
 )
-def test_the_lookup_follows_the_adiabat_over_an_unpadded_top_cell(profiles, case, p_top):
+def test_the_lookup_follows_the_adiabat_over_an_unpadded_top_cell(
+    profiles, case, p_top, request
+):
     """An unpadded top: the T(P) lookup over the top cell, from max(P_top, 1e5 Pa) to the next
     node (2 to 4 decades in P), lies within 0.3 K of an independent DOP853 march of that layer
     from the top T, with a top node above and below 1e5 Pa, on both anchors; a straight line in
@@ -256,6 +258,29 @@ def test_the_lookup_follows_the_adiabat_over_an_unpadded_top_cell(profiles, case
     x, look, ref, end = _top_cell(profiles[case][1], p_top)
     assert np.max(np.abs(look - ref)) < 0.3, np.max(np.abs(look - ref))
     assert abs(end) < 1e-5, end
+    if case != 'ic_dummy' or request.config.getoption('validation_plots') is None:
+        return
+
+    def figure():
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(figsize=(7.2, 3.4))
+        c = plt.rcParams['axes.prop_cycle'].by_key()['color']
+        p = np.exp(x)
+        chord = np.interp(x, x[[0, -1]], ref[[0, -1]])
+        ax.plot(p, chord, '--', color=c[1], lw=1.2, label='straight line in $\\log_{10} P$')
+        ax.plot(p, look, color=c[0], lw=2.4, label='lookup of the solve')
+        ax.plot(p, ref, ':', color=c[2], lw=1.6, zorder=3, label='DOP853 march')
+        ax.set(xscale='log', xlabel='Pressure [Pa]', ylabel='Temperature [K]')
+        ax.grid(False)
+        ax.legend(loc='upper left', bbox_to_anchor=(1.02, 1.0), frameon=False)
+        fig.tight_layout()
+        fig.canvas.draw()
+        assert ax.get_legend().get_window_extent().x0 >= ax.get_window_extent().x1
+        return fig
+
+    # one plot pair, written only with --validation-plots
+    request.getfixturevalue('validation_plot')(figure, 'adiabat_top_cell_lookup')
 
 
 @pytest.mark.physics_invariant
