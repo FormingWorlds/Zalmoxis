@@ -5,7 +5,7 @@ A two-layer core has an inner core on the solid iron side and an outer core on t
 given mass, ``inner_core_mass_fraction`` of the core mass, or where the liquid of the outer core
 reaches the liquidus ``T_liq(P)``: the first root, from the centre outward, of the temperature
 profile on a given profile, and of the liquid branch (the outer-core adiabat continued below
-the ICB with the liquid side) on an adiabat (``icb_superheat``). The structure
+the ICB with the liquid side) on an adiabat (``icb_from_profile``, ``icb_superheat``). The structure
 equations place a shell in the inner core by its enclosed mass, as they place the core-mantle
 boundary, so the liquidus rule is applied to the profile of the previous outer pass and the
 outer loop converges it with the structure.
@@ -24,7 +24,7 @@ from .eos.core_alloy import IRON_SIDES, is_alloy_mixture, split_alloy
 _RTOL_LAYER = 1e-12  # the layer rule of structure_model.get_layer_mixture
 
 
-def icb_from_profile(mass, pressure, temperature, cmb_mass, liquidus, icb_mass=None):
+def icb_from_profile(mass, pressure, temperature, cmb_mass, liquidus, icb_mass=None, m23=False):
     """Inner-core boundary on a structure profile by the liquidus rule.
 
     Parameters
@@ -38,6 +38,9 @@ def icb_from_profile(mass, pressure, temperature, cmb_mass, liquidus, icb_mass=N
     icb_mass : float or None
         A given inner-core mass [kg]: the result then reports it, the pressure at it and the
         core mass above it that lies below the liquidus.
+    m23 : bool
+        Take the mass of a root with m^(2/3) linear in P on its node segment, the inverse of the
+        pressure at a given mass (as in ``core_arrays``); else with m linear in ln P.
 
     Returns
     -------
@@ -70,7 +73,10 @@ def icb_from_profile(mass, pressure, temperature, cmb_mass, liquidus, icb_mass=N
         xtol=1e-3,
         rtol=4.0 * np.finfo(float).eps,
     )
-    m_icb = float(np.interp(math.log(p_icb), lp_up, m[::-1]))
+    if m23:
+        m_icb = float(np.interp(p_icb, p[::-1], m[::-1] ** (2.0 / 3.0))) ** 1.5
+    else:
+        m_icb = float(np.interp(math.log(p_icb), lp_up, m[::-1]))
     return m_icb, float(p_icb), _solid_mass(m, f, m_icb)
 
 
@@ -91,7 +97,7 @@ def _core_nodes(mass, pressure, temperature, cmb_mass):
 
 def icb_superheat(mass, pressure, liquid_temperature, cmb_mass, liquidus, icb_mass):
     """Superheat [K] of the outer-core liquid at the layer ICB and its miss of the zero-superheat
-    condition of a growing inner core (Labrosse 2015, Sect. 2; Nimmo 2015, Fig. 2).
+    condition of a growing inner core, after Labrosse (2015), Sect. 2, and Nimmo (2015), Fig. 2.
 
     Parameters
     ----------
@@ -109,18 +115,16 @@ def icb_superheat(mass, pressure, liquid_temperature, cmb_mass, liquidus, icb_ma
     -------
     tuple of float
         S = T_l(P_icb) - T_liq(P_icb), with T_l linear in ln P on the core nodes and P_icb the
-        pressure at ``icb_mass`` with ln P linear in m, the inverse of the mass that
-        ``icb_from_profile`` gives its root (at the centre for no inner core, at the core mass
-        for a full one); and the miss: |S| for a partial inner core, max(0, -S) for no inner core,
+        pressure at ``icb_mass`` with P linear in m^(2/3), as in ``core_arrays`` (at the centre
+        for no inner core, at the core mass for a full one); and the miss: |S| for a partial inner core, max(0, -S) for no inner core,
         max(0, S) for a full one, inf when S is not finite.
     """
     m, p, t = _core_nodes(mass, pressure, liquid_temperature, cmb_mass)
     full = icb_mass >= cmb_mass * (1.0 - _RTOL_LAYER)
-    p_icb = p[0] if icb_mass <= 0.0 else math.exp(np.interp(icb_mass, m, np.log(p)))
+    p_icb = p[0] if icb_mass <= 0.0 else np.interp(icb_mass ** (2.0 / 3.0), m ** (2.0 / 3.0), p)
     s = float(np.interp(math.log(p_icb), np.log(p[::-1]), t[::-1])) - float(liquidus(p_icb))
-    if not math.isfinite(s):
-        return s, math.inf
-    return s, max(0.0, -s) if icb_mass <= 0.0 else max(0.0, s) if full else abs(s)
+    miss = max(0.0, -s) if icb_mass <= 0.0 else max(0.0, s) if full else abs(s)
+    return s, miss if math.isfinite(s) else math.inf
 
 
 def _cmb_point(m, p, t, cmb_mass, n):

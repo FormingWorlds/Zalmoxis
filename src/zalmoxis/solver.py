@@ -2347,8 +2347,9 @@ def _solve(
         if core_liq is not None and prev_pressure is not None:
             t_of = getattr(_temperature_func, 'liquid', _temperature_func)
             t_prev = [t_of(r_, p_) for r_, p_ in zip(prev_radii, prev_pressure)]
+            m23 = hasattr(_temperature_func, 'liquid')  # the root mass of the superheat test
             icb_mass = icb_from_profile(
-                prev_mass_enclosed, prev_pressure, t_prev, cmb_mass, core_liq
+                prev_mass_enclosed, prev_pressure, t_prev, cmb_mass, core_liq, m23=m23
             )[0]
         pressure[0] = earth_center_pressure
 
@@ -3174,7 +3175,9 @@ def _solve(
                 if superheat is not None
                 else f'the liquidus root of the returned profile by {miss / cmb_mass:.3g} of '
                 'the core mass',
-                f' and lies {lag / cmb_mass:.3g} off the ICB of its adiabat' if lag else '',
+                f' and lies {lag / cmb_mass:.3g} off the ICB of its adiabat'
+                if lag > tol
+                else '',
                 accepted_on,
             )
             converged, converged_mass, accepted_on, accept_mass_limit = False, False, None, None
@@ -3258,7 +3261,7 @@ def _solve(
         'density_from_eos': density_from_eos,
         'icb_converged': bool(icb_converged),
         'icb_superheat': superheat,
-        'icb_adiabat': icb_adiabat,
+        'icb_adiabat': icb_adiabat if two_layer else None,
         'p_center': pressure[0] if len(pressure) > 0 else None,
         'padded': bool(pad.size and pad[-1]),
         'adiabat_computed': _adiabat_computed,
