@@ -254,7 +254,7 @@ def test_an_accept_with_the_adiabat_icb_off_is_not_converged(setup, monkeypatch,
     assert res['accepted_on'] is None and '1 off the ICB of its adiabat' in caplog.text
 
 
-def _fes_cap(setup, monkeypatch, caplog, **over):
+def _fes_cap(setup, caplog, **over):
     """_solve of the 2480 K Fe-S core, liquidus rule, 10 outer passes, warnings logged."""
     from zalmoxis import solver as zs
     from zalmoxis.config import load_solidus_liquidus_functions
@@ -264,7 +264,7 @@ def _fes_cap(setup, monkeypatch, caplog, **over):
     cfg = dict(
         cfg, core_liquidus='Anzellini13-iron', surface_temperature=2480.0, wall_timeout=WALL
     )
-    cfg.update(max_iterations_outer=10, tolerance_outer=1e-3, **over)
+    cfg.update({'max_iterations_outer': 10, 'tolerance_outer': 1e-3, **over})
     cfg['layer_eos_config'] = dict(
         cfg['layer_eos_config'], core=f'{LIQ}:0.8615+CoreAlloy:S:0.1385', inner_core=SOL
     )
@@ -288,7 +288,7 @@ def test_a_cap_accept_reads_the_liquid_branch_of_the_restored_pass(setup, monkey
 
     heat = mock.Mock(wraps=icb_superheat)
     monkeypatch.setattr(zs, 'icb_superheat', heat)
-    res = _fes_cap(setup, monkeypatch, caplog)
+    res = _fes_cap(setup, caplog)
     assert 'Accepting max_iter solution' in caplog.text
     m, p, t_l, cmb, _, icb = heat.call_args.args  # the final ICB test
     assert icb == res['core']['M_ic'] and res['icb_adiabat'] is not None
@@ -311,7 +311,7 @@ def test_an_accept_with_the_liquid_off_the_liquidus_is_not_converged(
     from zalmoxis import solver as zs
 
     monkeypatch.setattr(zs, 'icb_superheat', lambda *_: (10.0, 10.0))
-    res = _fes_cap(setup, monkeypatch, caplog, max_iterations_outer=8)
+    res = _fes_cap(setup, caplog)
     assert 'Accepting max_iter solution' in caplog.text
     assert res['converged'] is False and res['icb_converged'] is False
     assert res['icb_superheat'] == 10.0 and 'liquid by 10 K' in caplog.text
