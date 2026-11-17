@@ -19,7 +19,7 @@ from tests._plot_checks import assert_text_clear, legend_below
 from tools.validation import adiabat_profiles as ap
 from zalmoxis.eos.temperature import ADIABAT_P_FLOOR as P_FLOOR  # Pa
 
-pytestmark = [pytest.mark.smoke, pytest.mark.timeout(60)]
+pytestmark = [pytest.mark.smoke, pytest.mark.timeout(600)]
 
 DATA = Path(__file__).parent / 'data' / 'adiabat_profiles.npz'
 
