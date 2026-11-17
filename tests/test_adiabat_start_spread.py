@@ -43,7 +43,8 @@ def test_round_off_starts_keep_the_centre_temperature_within_12_k(monkeypatch):
     for k in ap.DEFAULT_STARTS:
         cfg = ap._default_config(k)
         res = zs.main(cfg, md, ap._melt('config', cfg), inp)
-        assert res['converged'] and res['adiabat_blend'] == 1.0, (k, res.get('accepted_on'))
+        got = (res['converged'], res['adiabat_blend'], res['accepted_on'])
+        assert got[:2] == (True, 1.0) and got[2] != 'timeout', (k, got)
         own = native(
             *(res[x] for x in ('radii', 'pressure', 'mass_enclosed')),
             *last['a'][3:],
