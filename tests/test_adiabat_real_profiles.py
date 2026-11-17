@@ -98,9 +98,9 @@ def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validat
     """On the 6 stored profiles the default call stays within 1 K of a DOP853 integration of the
     same ODE (rtol 1e-13), which agrees with RK45 at rtol 1e-13 to 0.01 K, at every node on the
     adiabat, with no nabla read that is missing or not positive. The forward Euler step in P per
-    node, from ``forward_euler`` of the profile tool, equals the stored T_euler and is at least
-    5 times farther and more than 2 K from the reference on every profile. A padded top gives
-    the profile of a top at 1 Pa within 1e-6 K."""
+    node, from ``forward_euler`` of the profile tool, equals the stored T_euler to a relative 1e-12
+    and is at least 5 times farther and more than 2 K from the reference on every profile. A
+    padded top gives the profile of a top at 1 Pa within 1e-6 K."""
     from zalmoxis.eos.temperature import compute_adiabatic_temperature
 
     kw0 = profiles['default_k0'][1]
@@ -112,7 +112,8 @@ def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validat
         assert float(np.max(np.abs(ref - _reference(kw, 'RK45')[0])[keep])) <= 0.01, case
         err = float(np.max(np.abs(T - ref)[keep]))
         euler = ap.forward_euler(kw)
-        np.testing.assert_array_equal(euler, rec['T_euler'])  # the stored comparison scheme
+        # the stored comparison scheme, to the round-off of the CPU
+        np.testing.assert_allclose(euler, rec['T_euler'], rtol=1e-12, atol=0)
         native = float(np.max(np.abs(euler - ref)[keep]))
         assert bad == 0, case
         assert err <= 1.0, (case, err)
