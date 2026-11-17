@@ -30,8 +30,7 @@ For a constant $\nabla_\mathrm{ad}$ the step is exact: $T = T_a (P / P_a)^{\nabl
 
 A worked example: the default configuration at a surface temperature of 2515 K has its centre at 407 GPa and its CMB at 141 GPa.
 One call takes about 6200 substeps and reads $\nabla_\mathrm{ad}$ about 12300 times.
-The test stores 4 starts of this configuration. Their planet masses differ only by $k \times 10^{-12}$ of the value ($k$ = 0 to 3), and their centre lies at 6238 to 6239 K.
-For comparison, the Validation plot also shows a forward Euler step, one first-order step in $P$ per node with the padded top shell held isothermal; it differs from this reference by its first-order step error and by its isothermal top shell, and serves as a visual comparison only.
+The real-profile test stores 4 starts of this configuration. Their planet masses differ only by $k \times 10^{-12}$ of the value ($k$ = 0 to 3), and their centre lies at 6238 to 6239 K.
 
 ## Accuracy on the PALEOS tables
 
@@ -39,13 +38,15 @@ PALEOS gives $\nabla_\mathrm{ad}$ by bilinear interpolation in $(\log_{10} P, \l
 This value is continuous, but its slope jumps at every grid line of the table.
 In the default core the adiabat also runs along the melting curve of the PALEOS iron table, its boundary between liquid and solid iron: on the 4 stored default profiles the integrated path switches between liquid and solid cells of the table 5 times from 226 to 252 GPa, and $\nabla_\mathrm{ad}$ changes steeply there.
 A substep that crosses such a kink or a steep step loses part of its second-order accuracy, so on the real tables the error does not fall exactly as $h^2$.
+It also does not fall with every smaller $h$: on the 6 stored profiles the largest error against the independent integration is 0.54 K at $h = 0.0025$, 1.46 K at 0.0055, 0.64 K at 0.0065 and 3.40 K at 0.007.
+The 1 K bound of the real-profile test is a measurement on these 6 profiles, with a margin of about 2 at the default $h$, not a bound for every profile.
 The checks therefore use 2 tests: the order on smooth $\nabla_\mathrm{ad}$ with known solutions, and an error bound of 1 K on real profiles against an independent integration.
 
-## Low pressure, padded tops and limits
+## Low pressure, padded tops, missing gradients and caps
 
 - **Below 1 bar.** Both ends of a segment are raised to `ADIABAT_P_FLOOR` = $10^5$ Pa before the integration, so $T$ is constant below 1 bar. The PALEOS rock and iron tables start at $10^5$ Pa. For a solid or a liquid, $\nabla_\mathrm{ad} = \alpha P / (\rho c_p)$, with $\alpha$ the thermal expansivity, $\rho$ the density and $c_p$ the heat capacity, so $\nabla_\mathrm{ad}$ vanishes as $P \to 0$; for $\alpha = 3 \times 10^{-5}$ 1/K, $\rho$ = 3000 kg/m$^3$, $c_p$ = 1200 J/(kg K) and 2500 K, the adiabat from 0 to 1 bar changes $T$ by about 0.002 K. The temperature is continuous in the top pressure, down to a padded top.
 - **Padded top.** A node with $P = 0$ (a [padded accept](process_flow.md#padded-accepts)) counts as $10^5$ Pa, so a padded top gives the profile of a top at 1 bar.
-- **Density lookup over a padded top shell.** The density solve reads $T$ from a table of this adiabat against $\log_{10} P$, built on the nodes of the pass before. A padded top shell, from 1 bar up to the last node with positive pressure, has no node inside, so the table gets 64 pressures there, geometric from $10^5$ Pa, with the adiabat integrated inward from the padded node. The lookup then follows the adiabat over the shell instead of the temperature of that node; on `input/default.toml` at 2515 K and with a 3871 K WolfBower surface, the largest difference from a table with 4096 shell points is about 0.08 K and 0.1 K.
+- **Density lookup over a padded top shell.** The density solve reads $T$ from a table of this adiabat against $\log_{10} P$. The table is built on the nodes of the pass before. A padded top shell runs from 1 bar up to the last node with positive pressure, and has no node inside. So the table gets 64 pressures there, geometric from $10^5$ Pa, with the adiabat integrated inward from the padded node. The lookup then follows the adiabat over the shell, not the temperature of that node. Against a table with 4096 shell points, the largest difference is about 0.08 K on `input/default.toml` at 2515 K, and about 0.1 K with a 3871 K WolfBower surface.
 - **Missing gradient.** Where $\nabla_\mathrm{ad}$ is missing or not positive, $T$ is held for the rest of that segment; the next segment integrates again.
 - **Caps.** No node and no substep goes above $10^5$ K, the top of the PALEOS tables. With the CMB anchor, no node and no substep goes below 100 K either. A very large or infinite $\nabla_\mathrm{ad}$ therefore gives nodes at exactly $10^5$ K with the surface anchor, and nodes at exactly 100 K outward from the CMB anchor.
 
