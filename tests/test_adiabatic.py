@@ -1393,6 +1393,21 @@ class TestAdiabatTable:
         )
 
     @pytest.mark.physics_invariant
+    def test_the_shell_points_bound_the_lookup_error_of_a_steep_wide_shell(self):
+        """A shell over 6 decades (1e5 to 1e11 Pa) with nabla 0.3: T linear in log10 P between
+        the 64 shell points errs by at most (nabla h)^2 / 8 = 5.2e-4 (relative), h the ln P
+        step; the window 4e-4 to 6e-4 holds from 60 to 72 points (6.9e-4 at 56, 1.3e-4 at 128).
+        """
+        from zalmoxis.solver import _adiabat_table
+
+        P = np.concatenate([np.geomspace(3.6e11, 1e11, 4), [0.0]])
+        T = np.where(P > 0, 3000.0 * (np.maximum(P, P_FLOOR) / P_FLOOR) ** 0.3, 3000.0)
+        lp, t = _adiabat_table(P, T, lambda q, T_top, i: T_top * (q / P_FLOOR) ** 0.3)
+        x = np.geomspace(P_FLOOR, 1e11, 4001)
+        err = np.interp(np.log10(x), lp, t) / (3000.0 * (x / P_FLOOR) ** 0.3) - 1.0
+        assert 4e-4 < np.max(np.abs(err)) <= 6e-4, np.max(np.abs(err))
+
+    @pytest.mark.physics_invariant
     def test_the_shell_adiabat_runs_inward_from_the_top_in_the_layer_of_its_node(self):
         """``_shell_adiabat``: the adiabat gets the shell pressures centre first, each point at
         the enclosed mass of the node below the shell, and the top T at the outer point; the T
