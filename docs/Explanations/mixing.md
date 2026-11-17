@@ -307,15 +307,21 @@ Where PALEOS gives iron as one table of the stable phase, a two-layer core reads
 
 A two-layer core takes exactly one of 2 ICB rules:
 
-- **Liquidus rule** (`core_liquidus`): the liquid of the outer core is at its liquidus $T_\mathrm{liq}$ at the ICB, with $T_\mathrm{liq}$ a named iron melting curve or a callable `T_liq(P)` \[K\], such as an outer-core alloy liquidus from PROTEUS. This is the condition that sets the ICB of a growing inner core in core thermal models: Labrosse (2015)[^cite-labrosse2015], Sect. 2, takes the ICB temperature as the liquidus temperature of the outer-core material, and Nimmo (2015)[^cite-nimmo2015], Fig. 2, defines the inner core by the intersection of the adiabat and the melting curve.
+- **Liquidus rule** (`core_liquidus`): the liquid of the outer core is at its liquidus $T_\mathrm{liq}$ at the ICB. $T_\mathrm{liq}$ is a named iron melting curve or a callable `T_liq(P)` \[K\], such as an alloy liquidus. Core thermal models use this condition to set the ICB of a growing inner core: Labrosse (2015)[^cite-labrosse2015], Sect. 2, takes the ICB temperature as the liquidus temperature of the outer-core material, and Nimmo (2015)[^cite-nimmo2015], Fig. 2, defines the inner core by the intersection of the adiabat and the melting curve.
 - **Mass rule** (`inner_core_mass_fraction` $f$): the inner core is the mass $f M_\mathrm{core}$.
 
 How the rule finds the ICB depends on the temperature profile:
 
-- **On an adiabat** (`temperature_mode = "adiabatic"`): the rule continues the outer-core adiabat below the ICB to the centre with the liquid side, the liquid branch $T_\mathrm{l}(P)$. The ICB pressure $P_\mathrm{ICB}$ is the first root, from the centre outward, of $T_\mathrm{l}(P) - T_\mathrm{liq}(P) = 0$. The solid side of the inner core does not enter the rule.
-- **On a given profile** (`isothermal`, `linear`, `prescribed`, or a temperature function): the profile does not depend on the phase, so its first root of $T(P) - T_\mathrm{liq}(P) = 0$ from the centre outward is the point where the liquid meets the liquidus, and the rule takes it.
+- **On an adiabat** (`temperature_mode = "adiabatic"`): the rule continues the outer-core adiabat below the ICB to the centre with the liquid side, the liquid branch $T_\mathrm{l}(P)$. The ICB pressure $P_\mathrm{ICB}$ is the first root, from the centre outward, of $T_\mathrm{l}(P) - T_\mathrm{liq}(P) = 0$. The solid side does not enter the rule.
+- **On a given profile** (`isothermal`, `linear`, `prescribed`, or a temperature function): the profile does not depend on the phase, so the rule takes its first root of $T(P) - T_\mathrm{liq}(P) = 0$ from the centre outward.
 
-The structure equations place a shell in the inner core by its enclosed mass, as at the core-mantle boundary, so the liquidus rule reads the temperature profile of the previous outer pass ([code architecture](code_architecture.md)). Core shells below the mass at $P_\mathrm{ICB}$ take `inner_core`, the others `core`. A liquidus solve converges only when its temperature profile and its layers share one ICB: on an adiabat, the superheat $S = T_\mathrm{l}(P_\mathrm{ICB}) - T_\mathrm{liq}(P_\mathrm{ICB})$ at the ICB of the layers is at most 0.5 K in size; the result reports $S$ as `icb_superheat` \[K\] ([tests](../Validation/hydrostatic_structure.md#inner-core-boundary-of-a-two-layer-core)).
+The structure equations place a shell in the inner core by its enclosed mass, as at the core-mantle boundary, so the liquidus rule uses the temperature profile of the previous outer pass ([code architecture](code_architecture.md)). Core shells below the mass at $P_\mathrm{ICB}$ take `inner_core`, the others `core`. A liquidus solve converges only when its temperature profile and its layers share one ICB:
+
+- on an adiabat, the superheat $S = T_\mathrm{l}(P_\mathrm{ICB}) - T_\mathrm{liq}(P_\mathrm{ICB})$ at the ICB of the layers is at most 0.5 K in size;
+- on a given profile, the ICB of the layers lies within `tolerance_outer` of the core mass from the root;
+- the ICB that the adiabat of the pass took lies within `tolerance_outer` of the core mass from the ICB of the layers.
+
+The result reports $S$ as `icb_superheat` \[K\] ([tests](../Validation/hydrostatic_structure.md#inner-core-boundary-of-a-two-layer-core)).
 
 ### Temperature
 

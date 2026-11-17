@@ -8,5 +8,7 @@ Inner-core boundary of a [two-layer core](../../Explanations/mixing.md#two-layer
       show_source: true
       members:
         - icb_from_profile
+        - icb_superheat
+        - icb_misses
         - core_arrays
         - outside_side_tables
