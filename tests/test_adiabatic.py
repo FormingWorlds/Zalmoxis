@@ -1573,19 +1573,20 @@ class TestAdiabatTable:
         node = st.one_of(st.floats(1.0, 1e13), st.sampled_from([0.0, -1.0, np.nan, P_FLOOR]))
 
         @settings(max_examples=200, deadline=None)
-        @given(st.lists(node, min_size=1, max_size=12, unique=True))
-        @example([1e10, float(np.nextafter(P_FLOOR, np.inf)), 0.0])
-        @example([1e10, P_FLOOR * (1 + 1e-14), 0.0])
-        @example([1e10, P_FLOOR * (1 + 1e-7), 0.0])
-        @example([1e13, 9999999999999.984])
-        @example([1e10, 1e8, 9.09e4])
-        @example([1e10, 9e4, 5e4])
-        @example([1e10, 1e8, P_FLOOR * (1 - 1e-9)])
-        def check(P):
+        @given(st.lists(node, min_size=1, max_size=12, unique=True), st.booleans())
+        @example([1e10, float(np.nextafter(P_FLOOR, np.inf)), 0.0], False)
+        @example([1e10, P_FLOOR * (1 + 1e-14), 0.0], False)
+        @example([1e10, P_FLOOR * (1 + 1e-7), 0.0], False)
+        @example([1e13, 9999999999999.984], False)
+        @example([1e10, 1e8, 9.09e4], False)
+        @example([1e10, 9e4, 5e4], False)
+        @example([1e10, 1e8, P_FLOOR * (1 - 1e-9)], False)
+        @example([1e10, 1e8, 2e5, 3e5], True)  # not in node order: the outer node is the last
+        def check(P, outward):
             P = np.array(P)
             T = 1000.0 + np.arange(P.size, dtype=float)
             calls = []
-            lp, t = _adiabat_table(P, T, np.arange(P.size), self._shell(calls))
+            lp, t = _adiabat_table(P, T, np.arange(P.size), self._shell(calls), outward)
             assert np.all(np.isfinite(lp)) and np.all(np.diff(lp) >= 0)
             order = np.argsort(P)
             srt, t_srt = P[order][P[order] > 0], T[order][P[order] > 0]
@@ -1599,8 +1600,9 @@ class TestAdiabatTable:
                 return
             q, t0, node = calls[0]
             assert q[0] == lo and t0 == (T[-1] if padded else t_srt[0])
-            assert node == order[P[order] > 0][0 if padded else 1]  # upper end of the cell
-            kept = int(np.log10(srt[0]) < 5.0)  # a top node below 1 bar
+            deeper = order[P[order] > 0][0 if padded else 1]  # deeper node of the cell
+            assert node == min(deeper + outward, P.size - 1)
+            kept = int(np.log10(srt[0]) < np.log10(P_FLOOR))  # a top node below 1 bar
             tail = t_srt if padded else t_srt[1:]
             assert lp.size == q.size + tail.size + kept
             assert np.all(np.diff(lp[kept : kept + q.size + 1]) > 0)

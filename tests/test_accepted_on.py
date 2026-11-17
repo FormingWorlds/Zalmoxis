@@ -2017,7 +2017,7 @@ def _analytic_ramp(
         return m * f, g * f, P * (1.0 + drift * len(adiabat))
 
     cfg = _cfg(
-        temperature_mode='adiabatic',
+        temperature_mode=kwargs.pop('temperature_mode', 'adiabatic'),
         relative_tolerance=1e-5,
         absolute_tolerance=1e-6,
         num_layers=nodes,
@@ -2034,6 +2034,29 @@ def _analytic_ramp(
         seeded = {} if seed is None else {'adiabat_seed': seed}
         r = zs._solve(cfg, load_material_dictionaries(), None, '/tmp', **seeded)
     return r, len(adiabat)
+
+
+@pytest.mark.smoke
+@pytest.mark.parametrize('mode', ['adiabatic', 'adiabatic_from_cmb'])
+def test_the_solve_gives_the_table_the_masses_and_the_direction_of_its_adiabat(mode):
+    """_solve builds the T table of a pass with the enclosed masses of the structure whose
+    pressure it reads, and marks the adiabat as integrated outward only in
+    'adiabatic_from_cmb', so the top shell takes the mixture node of that adiabat."""
+    seen, real = [], zs._adiabat_table
+
+    def spy(pressure, T, mass, top_shell, outward=False):
+        seen.append((np.array(pressure), np.array(mass), outward))
+        return real(pressure, T, mass, top_shell, outward)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(zs, '_adiabat_table', spy)
+        _analytic_ramp(
+            structure=_canned_structure, temperature_mode=mode, max_iterations_outer=6
+        )
+    assert seen
+    for P, m, outward in seen:
+        assert outward is (mode == 'adiabatic_from_cmb')
+        assert m.shape == P.shape and np.all(np.diff(m) >= 0) and m[-1] > 1e23  # kg, not m
 
 
 def _case_clock_stop(structure=None, **_):

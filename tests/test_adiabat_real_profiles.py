@@ -204,12 +204,16 @@ def test_temperature_is_continuous_across_one_bar(profiles, anchor, request):
         request.getfixturevalue('validation_plot')(figure, 'adiabat_low_pressure')
 
 
-def _top_cell(kw, p_top=None, ice=False):
+def _top_cell(kw, p_top=None, outer=None):
     """The T(P) lookup that the density solve builds on a stored profile, with its top node at
     p_top (None: as stored; 0: padded), over the top cell from max(P_top, 1e5 Pa) to the next
-    node, and a DOP853 march (rtol 1e-12, atol 1e-14 on ln T) of d ln T / d ln P = nabla of the layer of the shell
-    over the cell from the top T. With ``ice`` a Seager2007 H2O layer starts in the middle of
-    the top cell. Returns (ln P grid, lookup, march, shell to P[n-2] minus T[n-2])."""
+    node, and a DOP853 march (rtol 1e-12, atol 1e-14 on ln T) of d ln T / d ln P = nabla over
+    the cell from the top T. The march takes the mixture of the node that the adiabat gives
+    the cell (inner node inward, the node outside it outward from the CMB); in a layer without
+    a T-dependent EOS it holds T, as the adiabat does. With ``outer`` (an EOS name) a layer of
+    it starts in the middle of the top cell. Returns (ln P grid, lookup, march, shell end at
+    the inner node minus its T, the same with the mass of the other node, the mass the table
+    gave the shell, the mass of the node by the rule)."""
     from scipy.integrate import solve_ivp
 
     from zalmoxis.eos.temperature import compute_adiabatic_temperature as adiabat
@@ -221,8 +225,8 @@ def _top_cell(kw, p_top=None, ice=False):
     if p_top is not None:
         P[-1] = p_top
     kw = dict(kw, pressure=P)
-    if ice:
-        layers = dict(kw['layer_mixtures'], ice_layer=LayerMixture(['Seager2007:H2O'], [1.0]))
+    if outer:
+        layers = dict(kw['layer_mixtures'], ice_layer=LayerMixture([outer], [1.0]))
         kw.update(layer_mixtures=layers, core_mantle_mass=0.5 * (m[-1] + m[-2]))
     T = adiabat(**kw)
 
@@ -237,19 +241,22 @@ def _top_cell(kw, p_top=None, ice=False):
         return _shell_adiabat(shell, q, t_top, mass)
 
     lp, t = _adiabat_table(P, T, m, top_shell, kw['anchor'] == 'cmb')
-    q = np.geomspace(max(P[-1], P_FLOOR), P[-2], _TOP_SHELL_POINTS + 1)
-    end = _shell_adiabat(shell, q, T[-1], used[0])[-1] - T[-2]
+    inner = int(np.flatnonzero(P > 0)[-1 if P[-1] <= 0 else -2])  # deeper node of the cell
+    node, other = (inner + 1, inner) if kw['anchor'] == 'cmb' else (inner, inner + 1)
+    q = np.geomspace(max(P[-1], P_FLOOR), P[inner], _TOP_SHELL_POINTS + 1)
+    ends = [_shell_adiabat(shell, q, T[-1], m[k])[-1] - T[inner] for k in (node, other)]
     mx = get_layer_mixture(
-        used[0], kw['cmb_mass'], kw['core_mantle_mass'], kw['layer_mixtures']
+        m[node], kw['cmb_mass'], kw['core_mantle_mass'], kw['layer_mixtures']
     )
-    x = np.linspace(math.log(max(P[-1], P_FLOOR)), math.log(P[-2]), 400)
-    if not mx.has_tdep():  # the adiabat holds T in a layer without a T-dependent EOS
-        return x, np.interp(x / math.log(10), lp, t), np.full(x.size, T[-1]), end
+    x = np.linspace(math.log(max(P[-1], P_FLOOR)), math.log(P[inner]), 400)
+    look = np.interp(x / math.log(10), lp, t)
+    if not mx.has_tdep():
+        return x, look, np.full(x.size, T[-1]), *ends, used[0], m[node]
     nab = lambda x_, y: [get_mixed_nabla_ad(math.exp(x_), math.exp(y[0]), mx, *_eos(kw))]  # noqa: E731
     ref = solve_ivp(
         nab, x[[0, -1]], [math.log(T[-1])], 'DOP853', t_eval=x, rtol=1e-12, atol=1e-14
     )
-    return x, np.interp(x / math.log(10), lp, t), np.exp(ref.y[0]), end
+    return x, look, np.exp(ref.y[0]), *ends, used[0], m[node]
 
 
 @pytest.mark.physics_invariant
@@ -271,7 +278,8 @@ def test_the_lookup_follows_the_adiabat_over_an_unpadded_top_cell(
     from the top T, with a top node above and below 1e5 Pa, on both anchors; a straight line in
     log10 P over the cell lies 9 to 28 K off on these profiles. The shell, carried to the next
     node, meets the T of that node within 1e-5 K (at most 2e-7 K measured)."""
-    x, look, ref, end = _top_cell(profiles[case][1], p_top)
+    x, look, ref, end, _, got, want = _top_cell(profiles[case][1], p_top)
+    assert got == want  # the shell takes the node of the adiabat over the cell
     assert np.max(np.abs(look - ref)) < 0.3, np.max(np.abs(look - ref))
     assert abs(end) < 1e-5, end
     if case != 'ic_dummy' or request.config.getoption('validation_plots') is None:
@@ -314,17 +322,31 @@ def test_the_lookup_follows_the_adiabat_over_an_unpadded_top_cell(
 
 @pytest.mark.physics_invariant
 @pytest.mark.parametrize(
-    ('case', 'p_top'),
-    [('default_k0', 1.2e5), ('ic_dummy', 0.0), ('ic_dummy', None)],
-    ids=['surface_unpadded', 'cmb_padded', 'cmb_unpadded'],
+    ('case', 'p_top', 'eos'),
+    [
+        ('default_k0', 1.2e5, 'Seager2007:H2O'),
+        ('ic_dummy', 0.0, 'Seager2007:H2O'),
+        ('ic_dummy', None, 'Seager2007:H2O'),
+        ('default_k0', 1.2e5, 'PALEOS:H2O'),
+        ('ic_dummy', 0.0, 'PALEOS:H2O'),
+        ('ic_dummy', None, 'PALEOS:H2O'),
+    ],
+    ids=['surface_unpadded', 'cmb_padded', 'cmb_unpadded'] * 2,
 )
-def test_the_top_cell_shell_meets_the_next_node_across_a_layer_boundary(profiles, case, p_top):
-    """A Seager2007 H2O layer from the middle of the top cell outward, on both anchors: the shell
-    takes the mixture that the adiabat of the solve uses over the cell (the inner node with the
-    surface anchor, the outer node with the CMB anchor), so the shell carried to the next node
-    meets the T of that node within 1e-5 K."""
-    *_, end = _top_cell(profiles[case][1], p_top, ice=True)
-    assert abs(end) < 1e-5, end
+def test_the_top_cell_shell_meets_the_next_node_across_a_layer_boundary(
+    profiles, case, p_top, eos
+):
+    """An H2O layer (T-independent Seager2007 or T-dependent PALEOS) from the middle of the top
+    cell outward, on both anchors: the table gives the shell the mass of the node whose mixture
+    the adiabat takes over the cell (inner node inward, the node outside it outward), so the
+    shell integrated on to the inner node meets its T within 1e-4 K (1.2e-5 K measured for the
+    steep PALEOS H2O cells); with the mass of the other node it misses by more than 1 K."""
+    kw = profiles[case][1]
+    assert kw['anchor'] == ('cmb' if case == 'ic_dummy' else 'surface')
+    *_, end, wrong, got, want = _top_cell(kw, p_top, eos)
+    assert got == want
+    assert abs(end) < 1e-4, end
+    assert abs(wrong) > 1.0, wrong
 
 
 @pytest.mark.physics_invariant
