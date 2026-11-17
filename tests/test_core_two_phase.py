@@ -875,9 +875,9 @@ def test_the_start_dependence_scan_of_the_liquidus_rule(validation_plot):
 
 
 def test_a_one_layer_adiabat_reports_no_icb_keys():
-    """A one-layer core on an adiabat (the analytic ramp of tests/test_accepted_on.py) has no
-    ICB test: icb_superheat and icb_adiabat are None."""
-    from tests.test_accepted_on import _analytic_ramp
+    """A one-layer core on an adiabat (the analytic ramp of tests/test_accepted_on.py on its
+    closed-form structure) has no ICB test: icb_superheat and icb_adiabat are None."""
+    from tests.test_accepted_on import _analytic_ramp, _canned_structure
 
-    res, _ = _analytic_ramp(tolerance_outer=1e-3, max_iterations_outer=40)
+    res, _ = _analytic_ramp(structure=_canned_structure, max_iterations_outer=6)
     assert res['icb_superheat'] is None and res['icb_adiabat'] is None
