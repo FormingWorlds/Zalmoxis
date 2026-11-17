@@ -350,17 +350,27 @@ _TOP_SHELL_POINTS = 64
 
 def _adiabat_table(pressure, T, top_shell):
     """log10 P [Pa] and T [K] of the adiabat ``T`` on the nodes at P > 0, sorted by P: the T(P)
-    lookup of the density solve. With a padded top (P <= 0 at the outer node) whose last
-    positive node i lies more than 1e-9 (relative) above ``ADIABAT_P_FLOOR``, so that log10 P
-    stays strictly increasing, the shell gains ``_TOP_SHELL_POINTS`` geometric pressures q [Pa]
-    from the floor up with T ``top_shell(q, T[-1], i)``, the adiabat inward from the padded
-    node in the layer of node i."""
+    lookup of the density solve. The top cell gains ``_TOP_SHELL_POINTS`` geometric pressures q
+    [Pa] with T ``top_shell(q, T_top, i)``, the adiabat inward from T_top at q[0] in the layer of
+    the lowest positive node i, when its upper end lies more than 1e-9 (relative) above its
+    lower end, so that log10 P stays strictly increasing. With a padded top (P <= 0 at the outer
+    node) the cell runs from ``ADIABAT_P_FLOOR`` up to the lowest positive node, from the T of
+    the padded node; with an unpadded top it runs from the top node, or from the floor when the
+    top node lies below it, up to the next node, from the T of the top node. A top node below
+    the floor keeps its place, with the T that the adiabat holds below 1 bar."""
     s = np.argsort(pressure)
     keep = pressure[s] > 0
     P, Ts = pressure[s][keep], T[s][keep]
-    if pressure[-1] <= 0 and P.size and P[0] > ADIABAT_P_FLOOR * (1 + 1e-9):
-        q = np.geomspace(ADIABAT_P_FLOOR, P[0], _TOP_SHELL_POINTS + 1)[:-1]
-        P, Ts = np.concatenate([q, P]), np.concatenate([top_shell(q, T[-1], s[keep][0]), Ts])
+    pad = pressure[-1] <= 0
+    j = 0 if pad else 1  # the node at the upper end of the cell
+    if P.size <= j:
+        return np.log10(P), Ts
+    lo = ADIABAT_P_FLOOR if pad else max(P[0], ADIABAT_P_FLOOR)
+    if P[j] > lo * (1 + 1e-9):
+        q = np.geomspace(lo, P[j], _TOP_SHELL_POINTS + 1)[:-1]
+        k = int(not pad and P[0] < lo)  # a top node below the floor stays
+        shell = top_shell(q, T[-1] if pad else Ts[0], s[keep][0])
+        P, Ts = np.concatenate([P[:k], q, P[j:]]), np.concatenate([Ts[:k], shell, Ts[j:]])
     return np.log10(P), Ts
 
 

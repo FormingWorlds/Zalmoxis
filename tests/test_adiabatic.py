@@ -1366,16 +1366,24 @@ class TestAdiabatTable:
     @pytest.mark.parametrize(
         'P',
         [
+            [1e10, 9e4, 5e4],
             [1e10, 1e8, P_FLOOR, 0.0],
             [1e10, 1e8, 5e4, 0.0],
             [1e10, P_FLOOR * (1 + 1e-10), 0.0],
             np.zeros(3),
         ],
-        ids=['last_at_floor', 'last_below_floor', 'last_within_1e-9', 'all_padded'],
+        ids=[
+            'unpadded_2_below_floor',
+            'last_at_floor',
+            'last_below_floor',
+            'last_within_1e-9',
+            'all_padded',
+        ],
     )
-    def test_no_shell_without_a_padded_top_cell_above_the_floor(self, P):
-        """A padded top whose last positive node lies at, below or within 1e-9 of 1e5 Pa, or no
-        node at P > 0: the nodes at P > 0 sorted by P, bit for bit, and no shell call."""
+    def test_no_shell_without_a_top_cell_above_the_floor(self, P):
+        """An unpadded top whose next node also lies below 1e5 Pa, a padded top whose last
+        positive node lies at, below or within 1e-9 of 1e5 Pa, or no node at P > 0: the nodes
+        at P > 0 sorted by P, bit for bit, and no shell call."""
         from zalmoxis.solver import _adiabat_table
 
         calls, P = [], np.asarray(P, float)
@@ -1409,6 +1417,21 @@ class TestAdiabatTable:
         np.testing.assert_allclose(
             np.interp(np.log10(x), lp, t), T[-1] * (x / lo) ** 0.1, rtol=1e-4
         )
+
+    @pytest.mark.parametrize(
+        'p_top', [P_FLOOR, 101325.0, P_FLOOR * (1 + 1e-9), P_FLOOR * (1 - 1e-9)]
+    )
+    def test_an_unpadded_top_at_or_near_the_floor(self, p_top):
+        """A top node at, just above or just below 1e5 Pa: one shell from max(P_top, 1e5 Pa),
+        the top node first in the table (as the first shell point, or kept below the floor),
+        and log10 P strictly increasing."""
+        from zalmoxis.solver import _adiabat_table
+
+        calls, P = [], np.array([1e10, 1e8, p_top])
+        lp, t = _adiabat_table(P, np.array([5000.0, 3500.0, 3000.0]), self._shell(calls))
+        assert len(calls) == 1 and calls[0][0][0] == max(p_top, P_FLOOR)
+        assert lp[0] == math.log10(p_top) and t[0] == 3000.0
+        assert np.all(np.diff(lp) > 0)
 
     def test_a_padded_top_keeps_the_table_of_the_padded_rule(self):
         """Hypothesis over padded profiles (P = 0 at the outer node): the table is bit for bit
@@ -1524,6 +1547,8 @@ class TestAdiabatTable:
         @example([1e10, P_FLOOR * (1 + 1e-7), 0.0])
         @example([1e13, 9999999999999.984])
         @example([1e10, 1e8, 9.09e4])
+        @example([1e10, 9e4, 5e4])
+        @example([1e10, 1e8, P_FLOOR * (1 - 1e-9)])
         def check(P):
             P = np.array(P)
             T = 1000.0 + np.arange(P.size, dtype=float)
@@ -1542,7 +1567,7 @@ class TestAdiabatTable:
                 return
             q, t0, _ = calls[0]
             assert q[0] == lo and t0 == (T[-1] if padded else t_srt[0])
-            kept = not padded and srt[0] < P_FLOOR  # a top node below 1 bar
+            kept = int(not padded and srt[0] < P_FLOOR)  # a top node below 1 bar
             tail = t_srt if padded else t_srt[1:]
             assert lp.size == q.size + tail.size + kept
             assert np.all(np.diff(lp[kept : kept + q.size + 1]) > 0)

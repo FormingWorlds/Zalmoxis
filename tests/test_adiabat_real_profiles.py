@@ -207,7 +207,7 @@ def _top_cell(kw, p_top=None):
     """The T(P) lookup that the density solve builds on a stored profile, with its top node at
     p_top (None: as stored; 0: padded), over the top cell from max(P_top, 1e5 Pa) to the next
     node, and a DOP853 march (rtol 1e-12) of d ln T / d ln P = nabla of that layer over the
-    cell from the top T. Returns (ln P grid, lookup, march)."""
+    cell from the top T. Returns (ln P grid, lookup, march, shell to P[n-2] minus T[n-2])."""
     from scipy.integrate import solve_ivp
 
     from zalmoxis.eos.temperature import compute_adiabatic_temperature as adiabat
@@ -227,11 +227,13 @@ def _top_cell(kw, p_top=None):
 
     m = kw['mass_enclosed']
     lp, t = _adiabat_table(P, T, lambda q, t_top, i: _shell_adiabat(shell, q, t_top, m[i]))
+    q = np.geomspace(max(P[-1], P_FLOOR), P[-2], 65)
+    end = _shell_adiabat(shell, q, T[-1], m[-1])[-1] - T[-2]
     mx = get_layer_mixture(m[-2], kw['cmb_mass'], kw['core_mantle_mass'], kw['layer_mixtures'])
     x = np.linspace(math.log(max(P[-1], P_FLOOR)), math.log(P[-2]), 400)
     nab = lambda x_, y: [get_mixed_nabla_ad(math.exp(x_), math.exp(y[0]), mx, *_eos(kw))]  # noqa: E731
     ref = solve_ivp(nab, x[[0, -1]], [math.log(T[-1])], 'DOP853', t_eval=x, rtol=1e-12)
-    return x, np.interp(x / math.log(10), lp, t), np.exp(ref.y[0])
+    return x, np.interp(x / math.log(10), lp, t), np.exp(ref.y[0]), end
 
 
 @pytest.mark.physics_invariant
@@ -248,21 +250,24 @@ def _top_cell(kw, p_top=None):
 def test_the_lookup_follows_the_adiabat_over_an_unpadded_top_cell(profiles, case, p_top):
     """An unpadded top: the T(P) lookup over the top cell, from max(P_top, 1e5 Pa) to the next
     node (2 to 4 decades in P), lies within 0.3 K of an independent DOP853 march of that layer
-    from the top T, with a top node above and below 1e5 Pa; a straight line in log10 P over the
-    cell lies 9 to 28 K off on these profiles."""
-    x, look, ref = _top_cell(profiles[case][1], p_top)
+    from the top T, with a top node above and below 1e5 Pa, on both anchors; a straight line in
+    log10 P over the cell lies 9 to 28 K off on these profiles. The shell, carried to the next
+    node, meets the T of that node within 1e-5 K (at most 2e-7 K measured)."""
+    x, look, ref, end = _top_cell(profiles[case][1], p_top)
     assert np.max(np.abs(look - ref)) < 0.3, np.max(np.abs(look - ref))
+    assert abs(end) < 1e-5, end
 
 
 @pytest.mark.physics_invariant
 def test_the_top_cell_lookup_does_not_flip_with_the_padding(profiles):
     """One structure (default start 0) with its top node at P = 0 (padded), 1 Pa, 1e5 Pa and
-    1 atm: the lookups over 1e5 Pa to the next node agree within 0.3 K, so a solve that pads or
-    not by round-off reads the same temperatures there."""
+    1 atm: above 1e5 Pa the lookup is the padded one to round-off for a top at or below 1e5 Pa
+    (the adiabat holds T below 1 bar, so the shell is the same), and within 0.01 K for 1 atm
+    (1.6e-3 K measured); a solve that pads or not by round-off reads the same temperatures."""
     kw = profiles['default_k0'][1]
-    x, padded, _ = _top_cell(kw, 0.0)
-    for p_top in (1.0, P_FLOOR, 101325.0):
-        y, look, _ = _top_cell(kw, p_top)
+    x, padded, *_ = _top_cell(kw, 0.0)
+    for p_top, bound in ((1.0, 1e-9), (P_FLOOR, 1e-9), (101325.0, 0.01)):
+        y, look, *_ = _top_cell(kw, p_top)
         on = y >= math.log(P_FLOOR)
-        diff = np.abs(look[on] - np.interp(y[on], x, padded))
-        assert np.max(diff) < 0.3, (p_top, np.max(diff))
+        diff = np.max(np.abs(look[on] - np.interp(y[on], x, padded)))
+        assert diff <= bound, (p_top, diff)
