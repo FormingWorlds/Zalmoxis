@@ -352,9 +352,9 @@ def _adiabat_table(pressure, T, mass, top_shell, outward=False):
     """log10 P [Pa] and T [K] of the adiabat ``T`` on the nodes at P > 0, sorted by P: the T(P)
     lookup of the density solve. The top cell gains ``_TOP_SHELL_POINTS`` geometric pressures q
     [Pa] with T ``top_shell(q, T_top, m)``, the adiabat inward from T_top at q[0] at the enclosed
-    mass m [kg] of the node whose mixture the adiabat of the solve takes over the cell: the node
-    at its upper end for an adiabat integrated inward, the node outside that one for an
-    adiabat integrated ``outward`` from the CMB. The shell comes when the upper end of the cell
+    mass m [kg] of the node whose mixture the adiabat of the solve takes over the cell: the
+    deeper node of the cell for an adiabat integrated inward, the node outside it (next in the
+    node order, in which the pressure falls) for an adiabat integrated ``outward`` from the CMB. The shell comes when the upper end of the cell
     lies more than 1e-9 (relative) above its lower end, so that log10 P stays strictly
     increasing. With a padded top (P <= 0 at the outer node) the cell runs from
     ``ADIABAT_P_FLOOR`` up to the lowest positive node, from the T of the padded node; with an
@@ -372,7 +372,8 @@ def _adiabat_table(pressure, T, mass, top_shell, outward=False):
     if P[j] > lo * (1 + 1e-9):
         q = np.geomspace(lo, P[j], _TOP_SHELL_POINTS + 1)[:-1]
         k = int(np.log10(P[0]) < np.log10(lo))  # a top node below the floor stays
-        shell = top_shell(q, T[-1] if pad else Ts[0], mass[s[keep][j] + int(outward)])
+        node = min(s[keep][j] + int(outward), mass.size - 1)  # in range on any node order
+        shell = top_shell(q, T[-1] if pad else Ts[0], mass[node])
         P, Ts = np.concatenate([P[:k], q, P[j:]]), np.concatenate([Ts[:k], shell, Ts[j:]])
     return np.log10(P), Ts
 
