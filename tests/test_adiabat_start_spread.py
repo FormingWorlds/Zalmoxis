@@ -29,7 +29,7 @@ def test_round_off_starts_keep_the_centre_temperature_within_12_k(monkeypatch, r
     on the wall clock, in the same padding state, and the adiabats of their returned structures
     have centre temperatures within 12 K (a padding flip moves the centre by tens of K, so the
     state is asserted first). The returned core T, read from the T(P) table of the pass before,
-    is printed and not bounded: it can lie 20 K off."""
+    is printed and not bounded: it can lie 26 K off."""
     import zalmoxis.solver as zs
     from tests.test_adiabat_real_profiles import _need_paleos
     from zalmoxis import get_zalmoxis_root
