@@ -1419,12 +1419,19 @@ class TestAdiabatTable:
         )
 
     @pytest.mark.parametrize(
-        'p_top', [P_FLOOR, 101325.0, P_FLOOR * (1 + 1e-9), P_FLOOR * (1 - 1e-9)]
+        'p_top',
+        [
+            P_FLOOR,
+            101325.0,
+            P_FLOOR * (1 + 1e-9),
+            P_FLOOR * (1 - 1e-9),
+            np.nextafter(P_FLOOR, 0),
+        ],
     )
     def test_an_unpadded_top_at_or_near_the_floor(self, p_top):
-        """A top node at, just above or just below 1e5 Pa: one shell from max(P_top, 1e5 Pa),
-        the top node first in the table (as the first shell point, or kept below the floor),
-        and log10 P strictly increasing."""
+        """A top node at, just above or just below 1e5 Pa (down to 1 ULP): one shell from
+        max(P_top, 1e5 Pa), the top node first in the table (as the first shell point, or kept
+        below the floor when its log10 P lies below 5), and log10 P strictly increasing."""
         from zalmoxis.solver import _adiabat_table
 
         calls, P = [], np.array([1e10, 1e8, p_top])
