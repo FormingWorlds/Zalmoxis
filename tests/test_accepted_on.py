@@ -2681,7 +2681,7 @@ def _assert_grid_bounds(first, seeded, plain, stored, lags, jax=False):
     """Assert the bounds of the grid start-up tests on the first solve, the seeded and the
     unseeded re-solve against the stored REF blocks (``_jax`` blocks with ``jax``); ``lags``
     are the 3 lag triples of ``_grid_main``. With ``jax`` the unseeded re-solve is compared only
-    with the seeded one (2.5 K): at the 1e-4 accept it lies 0.977 K from REF."""
+    with the seeded one (2.5 K): at the 1e-4 accept it lies 1.006 K from REF."""
     ref1, ref2 = (stored[k + ('_jax' if jax else '')] for k in ('first', 'resolve'))
     for r, flag in ((first, False), (seeded, True), (plain, False)):
         assert r['converged'] and r['accepted_on'] == 'strict' and r['adiabat_seeded'] is flag

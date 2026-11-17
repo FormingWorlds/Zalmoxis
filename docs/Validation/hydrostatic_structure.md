@@ -397,7 +397,7 @@ The test fails when a returned structure is outside the tolerances below, when i
 **What it tests.** The setup is the first structure solve of the PROTEUS grid test case with a core mass fraction of 0.95: 0.7 Earth masses, the PALEOS iron core and MgSiO$_3$ mantle, `temperature_mode = "adiabatic_from_cmb"`, 150 layers, the Newton outer solver on the numpy path.
 The first start-up re-solve follows, with a surface pressure of 51.3 MPa, a planet mass 0.07 % lower and a core mass fraction of 0.9505316; it runs once from the seed of the first solve and once without it.
 The first solve has a surface pressure of 1 atm (101325 Pa).
-A repeat of the first solve at a planet mass $2 \times 10^{-12}$ higher runs in the nightly job of the stored reference; on the development machine its top node lies 0.98 K from REF (see the known limit below).
+A repeat of the first solve at a planet mass $2 \times 10^{-12}$ higher runs in the nightly job of the stored reference; on the development machine its top node lies 0.20 K from REF (see the known limit below).
 Each solve is compared with REF, the same solve at a mass tolerance of $10^{-6}$.
 The lag of a node is the difference between the returned temperature at that node and the adiabat computed again on the returned pressure.
 Relative differences are $|x - x_\mathrm{REF}| / |x_\mathrm{REF}|$.
@@ -414,7 +414,7 @@ Relative differences are $|x - x_\mathrm{REF}| / |x_\mathrm{REF}|$.
   The REF core is at 4000 K at every core node, and its last core node has a weight of 0.78 % in the mass-weighted mean; so for a solve with the core node masses of REF, these 2 node bounds keep the mean within 6.5 K in the first solve and in the re-solve, and the 10 K bound of the mean follows from them. The measured mean lies 4.5 K from REF in the first solve and 4.1 K in the unseeded re-solve.
 - The accept label of every solve is `strict`, and the accepted pass is on a table of blend 1.
 - The first solve needs at most 3 passes on a full-adiabat table. The seeded re-solve needs at most 4 passes and at most half the structure integrations of the unseeded one.
-- On the JAX path (`use_jax = true`, the PROTEUS default) a second test runs the same 3 solves against REF solved on that path, with the same REF bounds for the first solve and the seeded re-solve and the same pass bounds for the seeded re-solve; it does not bound the passes of the first solve. The unseeded re-solve is compared only with the seeded one (2.5 K, $5 \times 10^{-4}$ in radius): accepted at the mass tolerance $10^{-4}$, it lies 0.977 K from that REF in the mantle on macOS and 1.187 K on the Ubuntu runner of the nightly workflow (0.253 K on the numpy path on macOS; all from this repository's test), and 0.777 K from the seeded re-solve on Ubuntu. At the reference tolerance the JAX REF lies within 0.07 K in the mantle and $1.4 \times 10^{-5}$ in radius of the numpy REF.
+- On the JAX path (`use_jax = true`, the PROTEUS default) a second test runs the same 3 solves against REF solved on that path, with the same REF bounds for the first solve and the seeded re-solve and the same pass bounds for the seeded re-solve; it does not bound the passes of the first solve. The unseeded re-solve is compared only with the seeded one (2.5 K, $5 \times 10^{-4}$ in radius): accepted at the mass tolerance $10^{-4}$, it lies 1.006 K from that REF in the mantle on macOS (0.261 K on the numpy path; both from this repository's test helpers), and 0.757 K from the seeded re-solve. At the reference tolerance the JAX REF lies within 0.07 K in the mantle and $1.4 \times 10^{-5}$ in radius of the numpy REF.
 
 **How we know the right answer.** REF runs until its mass error is 100 times smaller than the mass tolerance of the ramp, $10^{-4}$.
 So REF stands for the converged structure; this is a convergence check, not an external reference.
@@ -448,8 +448,8 @@ The first 5 rows exceed a bound; the other 7 lie inside one.
 | Core mass fraction 0.35, first solve | mantle temperature from REF | 2.17 K | 1 K |
 | Core mass fraction 0.35, re-solves | lag at the mantle nodes, top node included | up to 1.26 K | 1 K |
 | Core mass fraction 0.35, re-solves | mantle temperature from REF, without the seed / with it | up to 1.29 K / 1.25 K | 1 K |
-| Core mass fraction 0.95, first solve at 1 atm | lag at the top node | 2.21 K | 3 K, inside |
-| Core mass fraction 0.95, first solve at 1 atm | top node from REF | 1.29 K | 3 K, inside |
+| Core mass fraction 0.95, first solve at 1 atm | lag at the top node | 0.07 K | 3 K, inside |
+| Core mass fraction 0.95, first solve at 1 atm | top node from REF | 0.20 K | 3 K, inside |
 | Core mass fraction 0.95, first solve | last core node from REF | 586 K | 700 K, inside |
 | Core mass fraction 0.95, re-solves | last core node from REF, unseeded / seeded | 526 K / 0 K | 700 K, inside |
 | Core mass fraction 0.95, first solve | mass-weighted mean core temperature from REF | 4.5 K | 10 K, inside |
@@ -457,7 +457,7 @@ The first 5 rows exceed a bound; the other 7 lie inside one.
 | Core mass fraction 0.35, 2000 ppmw H, seeded re-solve | lag at the CMB node | up to 5.4 K | 6 K, inside |
 
 - At core mass fraction 0.35 the cube-root rule converges in 2 full-adiabat passes, so the secant tail does not step and the first solve is the same as without it.
-- At 1 atm the first solve builds its temperature table on the pressure of the pass before, and its top node lags its own adiabat more than the other mantle nodes: 2.21 K on the numpy path and 2.03 K on the JAX path, against at most 0.1 K. It lies 1.29 K (numpy), 0.20 K (JAX) and 0.98 K (planet mass $2 \times 10^{-12}$ higher) from REF on macOS, and 2.23 K (JAX) on Linux in 2 CI nightly runs. The tests bound the top node of the first solves at 3 K from REF and a lag of 3 K; the repeat at a planet mass $2 \times 10^{-12}$ higher and the test of the stored REF use a bound of 2 K from REF. The re-solves, at 51.3 MPa, are bound at 1 K from REF and a lag of 1 K.
+- At 1 atm the first solve builds its temperature table on the pressure of the pass before; with the adiabat over the top cell of that table, its top node lags its own adiabat by 0.07 K on the numpy path and 0.003 K on the JAX path, against at most 0.1 K at the other mantle nodes. It lies 0.20 K (numpy), 0.88 K (JAX) and 0.20 K (planet mass $2 \times 10^{-12}$ higher) from REF on macOS. The tests bound the top node of the first solves at 3 K from REF and a lag of 3 K; the repeat at a planet mass $2 \times 10^{-12}$ higher and the test of the stored REF use a bound of 2 K from REF. The re-solves, at 51.3 MPa, are bound at 1 K from REF and a lag of 1 K.
 - The core nodes and the CMB node read one T(P) table with the mantle, and the solve builds that table on the pressure of the pass before.
   The last core node (index 137, 0-based, of 150 nodes at core mass fraction 0.95) therefore reads the edge of that table.
   With the secant tail, which moves the CMB pressure more from pass to pass, this node lies 586 K above REF in the first solve, 526 K in the unseeded re-solve and 0 K in the seeded re-solve.
