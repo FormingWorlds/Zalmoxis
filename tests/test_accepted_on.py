@@ -858,8 +858,8 @@ def test_wall_clock_in_the_adiabat_ramp_returns_the_linear_pass_unaccepted(monke
 
 
 def _shell_marked(shell):
-    """``zs._shell_adiabat`` that holds 1 in ``shell`` while it runs, so an adiabat stub can tell
-    a call on the padded top shell from the adiabat of a pass."""
+    """``zs._shell_adiabat`` that holds 1 in ``shell`` while it runs, so an adiabat stub
+    can tell a call on the padded top shell from the adiabat of a pass."""
     real = zs._shell_adiabat
 
     def marked(*args, **kwargs):

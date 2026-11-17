@@ -23,7 +23,7 @@ from zalmoxis.eos import (
     calculate_temperature_profile,
     compute_adiabatic_temperature,
 )
-from zalmoxis.eos.temperature import ADIABAT_P_FLOOR
+from zalmoxis.eos.temperature import ADIABAT_P_FLOOR as P_FLOOR  # Pa; T held below it
 from zalmoxis.mixing import parse_all_layer_mixtures
 
 
@@ -800,7 +800,6 @@ class TestComputeAdiabaticTemperatureCmbAnchor:
 
 M_E = 5.972e24
 H_DEFAULT = 0.0025  # largest ln P change of one substep of a default call
-P_FLOOR = ADIABAT_P_FLOOR  # Pa; below it the adiabat holds T
 
 
 def _stub_adiabat(monkeypatch, nabla, calls=None):
@@ -1350,7 +1349,8 @@ class TestAdiabatTable:
 
     @staticmethod
     def _padded_rule(pressure, T, mass, top_shell):
-        """The table with a shell on a padded top only, at the mass of the lowest positive node."""
+        """The table with a shell on a padded top only, at the mass of the lowest positive
+        node."""
         from zalmoxis.solver import _TOP_SHELL_POINTS
 
         s = np.argsort(pressure)
@@ -1398,9 +1398,9 @@ class TestAdiabatTable:
     @pytest.mark.parametrize('p_top', [1.2e5, 9.09e4])
     def test_an_unpadded_top_cell_gains_the_shell(self, p_top):
         """An unpadded top: the cell from max(P_top, 1e5 Pa) to the next node gains the shell
-        points, from the T of the top node, at the mass of the next node; a top node below 1e5 Pa stays in the table with its
-        T, which the adiabat holds below 1 bar, and the lookup over the cell is the
-        constant-nabla law from the start of the cell."""
+        points, from the T of the top node, at the mass of the next node; a top node below
+        1e5 Pa stays in the table with its T, which the adiabat holds below 1 bar, and the
+        lookup over the cell is the constant-nabla law from the start of the cell."""
         from zalmoxis.solver import _TOP_SHELL_POINTS, _adiabat_table
 
         calls, P = [], np.concatenate([np.geomspace(3.6e11, 1.1e9, 9), [p_top]])
@@ -1457,8 +1457,8 @@ class TestAdiabatTable:
         that one (the top node, or the first padded node)."""
         from zalmoxis.solver import _adiabat_table
 
-        calls, P = [], np.concatenate([np.geomspace(3.6e11, 1.1e9, 9), [1.2e5] * (n_pad == 0)])
-        P = np.concatenate([P, np.zeros(n_pad)])
+        nodes = [np.geomspace(3.6e11, 1.1e9, 9), [1.2e5] * (n_pad == 0), np.zeros(n_pad)]
+        calls, P = [], np.concatenate(nodes)
         mass = np.linspace(1e24, 6e24, P.size)
         _adiabat_table(P, np.full(P.size, 3000.0), mass, self._shell(calls), outward)
         assert [c[2] for c in calls] == [mass[node]]
@@ -1560,11 +1560,13 @@ class TestAdiabatTable:
 
     def test_table_property_over_profiles(self):
         """Hypothesis over node pressures (zero, negative, NaN, positive, just above 1e5 Pa)
-        with a padded or an unpadded top: log10 P finite and not decreasing, strictly increasing
-        over the shell points, T paired with its node, and shell points exactly when the top cell
-        (padded: 1e5 Pa to the lowest positive node; unpadded: the lowest positive node, at
-        least 1e5 Pa, to the next) is wider than 1e-9, starting at the T of the padded or the
-        top node; a top node below 1e5 Pa stays in the table."""
+        with a padded or an unpadded top: log10 P finite and not decreasing, strictly
+        increasing over the shell points, T paired with its node, and shell points exactly when
+        the top cell (padded: 1e5 Pa to the lowest positive node; unpadded: the lowest positive
+        node, at least 1e5 Pa, to the next) is wider than 1e-9, starting at the T of the padded
+        or the top node, at the mass of the deeper node of the cell or, ``outward``, of the next
+        node in the node order (the last node at most); a top node below 1e5 Pa stays in the
+        table."""
         from hypothesis import example, given, settings
         from hypothesis import strategies as st
 

@@ -351,16 +351,16 @@ _TOP_SHELL_POINTS = 64
 def _adiabat_table(pressure, T, mass, top_shell, outward=False):
     """log10 P [Pa] and T [K] of the adiabat ``T`` on the nodes at P > 0, sorted by P: the T(P)
     lookup of the density solve. The top cell gains ``_TOP_SHELL_POINTS`` geometric pressures q
-    [Pa] with T ``top_shell(q, T_top, m)``, the adiabat inward from T_top at q[0] at the enclosed
-    mass m [kg] of the node whose mixture the adiabat of the solve takes over the cell: the
-    deeper node of the cell for an adiabat integrated inward, the node outside it (next in the
-    node order, in which the pressure falls) for an adiabat integrated ``outward`` from the CMB. The shell comes when the upper end of the cell
-    lies more than 1e-9 (relative) above its lower end, so that log10 P stays strictly
-    increasing. With a padded top (P <= 0 at the outer node) the cell runs from
-    ``ADIABAT_P_FLOOR`` up to the lowest positive node, from the T of the padded node; with an
-    unpadded top it runs from the top node, or from the floor when log10 P of the top node lies
-    below that of the floor, up to the next node, from the T of the top node. A top node below
-    the floor keeps its place, with the T that the adiabat holds below 1 bar."""
+    [Pa] when its upper end lies more than 1e-9 (relative) above its lower end, with T
+    ``top_shell(q, T_top, m)``: the adiabat inward from T_top at q[0] at the enclosed mass
+    m [kg] of the node whose mixture the adiabat of the solve takes over the cell. That is the
+    deeper node of the cell for an adiabat integrated inward, and the node outside it (next in
+    the node order, along which P falls) for one integrated ``outward`` from the CMB.
+
+    Padded top (P <= 0 at the outer node): the cell runs from ``ADIABAT_P_FLOOR`` to the lowest
+    positive node, from the T of the padded node. Unpadded top: from the top node (from the
+    floor when its log10 P lies below that of the floor, the node keeping its place) to the
+    next node, from the T of the top node. log10 P is strictly increasing."""
     s = np.argsort(pressure)
     keep = pressure[s] > 0
     P, Ts = pressure[s][keep], T[s][keep]
@@ -380,8 +380,8 @@ def _adiabat_table(pressure, T, mass, top_shell, outward=False):
 
 def _shell_adiabat(adiabat, q, T_top, m):
     """T [K] at the shell pressures ``q`` [Pa], ascending from the top: ``adiabat(radii,
-    pressure, mass, top=T_top)`` inward from ``T_top`` at ``q[0]``, with every shell point at the
-    enclosed mass ``m`` [kg], so in one layer."""
+    pressure, mass, top=T_top)`` inward from ``T_top`` at ``q[0]``, with every shell point at
+    the enclosed mass ``m`` [kg], so in one layer."""
     return adiabat(np.arange(q.size), q[::-1], np.full(q.size, m), top=T_top)[::-1]
 
 

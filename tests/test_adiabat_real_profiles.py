@@ -16,12 +16,11 @@ import pytest
 
 from tests._plot_checks import assert_text_clear, legend_below
 from tools.validation import adiabat_profiles as ap
-from zalmoxis.eos.temperature import ADIABAT_P_FLOOR
+from zalmoxis.eos.temperature import ADIABAT_P_FLOOR as P_FLOOR  # Pa
 
 pytestmark = [pytest.mark.smoke, pytest.mark.timeout(60)]
 
 DATA = Path(__file__).parent / 'data' / 'adiabat_profiles.npz'
-P_FLOOR = ADIABAT_P_FLOOR  # Pa
 
 
 def _need_paleos():
@@ -252,7 +251,10 @@ def _top_cell(kw, p_top=None, outer=None):
     look = np.interp(x / math.log(10), lp, t)
     if not mx.has_tdep():
         return x, look, np.full(x.size, T[-1]), *ends, used[0], m[node]
-    nab = lambda x_, y: [get_mixed_nabla_ad(math.exp(x_), math.exp(y[0]), mx, *_eos(kw))]  # noqa: E731
+
+    def nab(x_, y):
+        return [get_mixed_nabla_ad(math.exp(x_), math.exp(y[0]), mx, *_eos(kw))]
+
     ref = solve_ivp(
         nab, x[[0, -1]], [math.log(T[-1])], 'DOP853', t_eval=x, rtol=1e-12, atol=1e-14
     )
@@ -292,24 +294,9 @@ def test_the_lookup_follows_the_adiabat_over_an_unpadded_top_cell(
         c = plt.rcParams['axes.prop_cycle'].by_key()['color']
         k = np.r_[0 : x.size : 8, x.size - 1]  # every 8th point keeps the file small
         p = np.exp(x[k])
-        ax.plot(
-            p[[0, -1]],
-            ref[[0, -1]],
-            '--',
-            color=c[1],
-            lw=1.2,
-            label='straight line',
-        )
+        ax.plot(p[[0, -1]], ref[[0, -1]], '--', color=c[1], lw=1.2, label='straight line')
         ax.plot(p, look[k], color=c[0], lw=2.4, label='lookup')
-        ax.plot(
-            p,
-            ref[k],
-            ':',
-            color=c[2],
-            lw=1.6,
-            zorder=3,
-            label='DOP853 integration',
-        )
+        ax.plot(p, ref[k], ':', color=c[2], lw=1.6, zorder=3, label='DOP853 integration')
         ax.set(xscale='log', xlabel='Pressure [Pa]', ylabel='Temperature [K]')
         ax.xaxis.set_major_locator(plt.LogLocator(numticks=3))  # 3 labels keep the file small
         ax.grid(False)
