@@ -203,34 +203,47 @@ def test_temperature_is_continuous_across_one_bar(profiles, anchor, request):
         request.getfixturevalue('validation_plot')(figure, 'adiabat_low_pressure')
 
 
-def _top_cell(kw, p_top=None):
+def _top_cell(kw, p_top=None, ice=False):
     """The T(P) lookup that the density solve builds on a stored profile, with its top node at
     p_top (None: as stored; 0: padded), over the top cell from max(P_top, 1e5 Pa) to the next
-    node, and a DOP853 march (rtol 1e-12) of d ln T / d ln P = nabla of that layer over the
-    cell from the top T. Returns (ln P grid, lookup, march, shell to P[n-2] minus T[n-2])."""
+    node, and a DOP853 march (rtol 1e-12) of d ln T / d ln P = nabla of the layer of the shell
+    over the cell from the top T. With ``ice`` a Seager2007 H2O layer starts in the middle of
+    the top cell. Returns (ln P grid, lookup, march, shell to P[n-2] minus T[n-2])."""
     from scipy.integrate import solve_ivp
 
     from zalmoxis.eos.temperature import compute_adiabatic_temperature as adiabat
-    from zalmoxis.mixing import get_mixed_nabla_ad
+    from zalmoxis.mixing import LayerMixture, get_mixed_nabla_ad
     from zalmoxis.solver import _adiabat_table, _shell_adiabat
     from zalmoxis.structure_model import get_layer_mixture
 
-    P = np.array(kw['pressure'], float)
+    P, m = np.array(kw['pressure'], float), kw['mass_enclosed']
     if p_top is not None:
         P[-1] = p_top
     kw = dict(kw, pressure=P)
+    if ice:
+        layers = dict(kw['layer_mixtures'], ice_layer=LayerMixture(['Seager2007:H2O'], [1.0]))
+        kw.update(layer_mixtures=layers, core_mantle_mass=0.5 * (m[-1] + m[-2]))
     T = adiabat(**kw)
 
     def shell(radii, pressure, mass, top):
         call = dict(kw, radii=radii, pressure=pressure, mass_enclosed=mass, anchor='surface')
         return adiabat(**dict(call, surface_temperature=top))
 
-    m = kw['mass_enclosed']
-    lp, t = _adiabat_table(P, T, lambda q, t_top, i: _shell_adiabat(shell, q, t_top, m[i]))
+    used = []
+
+    def top_shell(q, t_top, i):
+        used.append(m[i])
+        return _shell_adiabat(shell, q, t_top, m[i])
+
+    lp, t = _adiabat_table(P, T, top_shell)
     q = np.geomspace(max(P[-1], P_FLOOR), P[-2], 65)
-    end = _shell_adiabat(shell, q, T[-1], m[-1])[-1] - T[-2]
-    mx = get_layer_mixture(m[-2], kw['cmb_mass'], kw['core_mantle_mass'], kw['layer_mixtures'])
+    end = _shell_adiabat(shell, q, T[-1], used[0])[-1] - T[-2]
+    mx = get_layer_mixture(
+        used[0], kw['cmb_mass'], kw['core_mantle_mass'], kw['layer_mixtures']
+    )
     x = np.linspace(math.log(max(P[-1], P_FLOOR)), math.log(P[-2]), 400)
+    if not mx.has_tdep():  # the adiabat holds T in a layer without a T-dependent EOS
+        return x, np.interp(x / math.log(10), lp, t), np.full(x.size, T[-1]), end
     nab = lambda x_, y: [get_mixed_nabla_ad(math.exp(x_), math.exp(y[0]), mx, *_eos(kw))]  # noqa: E731
     ref = solve_ivp(nab, x[[0, -1]], [math.log(T[-1])], 'DOP853', t_eval=x, rtol=1e-12)
     return x, np.interp(x / math.log(10), lp, t), np.exp(ref.y[0]), end
@@ -281,6 +294,21 @@ def test_the_lookup_follows_the_adiabat_over_an_unpadded_top_cell(
 
     # one plot pair, written only with --validation-plots
     request.getfixturevalue('validation_plot')(figure, 'adiabat_top_cell_lookup')
+
+
+@pytest.mark.physics_invariant
+@pytest.mark.parametrize(
+    ('case', 'p_top'),
+    [('default_k0', 1.2e5), ('ic_dummy', 0.0), ('ic_dummy', None)],
+    ids=['surface_unpadded', 'cmb_padded', 'cmb_unpadded'],
+)
+def test_the_top_cell_shell_meets_the_next_node_across_a_layer_boundary(profiles, case, p_top):
+    """A Seager2007 H2O layer from the middle of the top cell outward, on both anchors: the shell
+    takes the mixture that the adiabat of the solve uses over the cell (the inner node with the
+    surface anchor, the outer node with the CMB anchor), so the shell carried to the next node
+    meets the T of that node within 1e-5 K."""
+    *_, end = _top_cell(profiles[case][1], p_top, ice=True)
+    assert abs(end) < 1e-5, end
 
 
 @pytest.mark.physics_invariant
