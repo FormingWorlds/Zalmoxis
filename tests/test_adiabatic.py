@@ -23,6 +23,7 @@ from zalmoxis.eos import (
     calculate_temperature_profile,
     compute_adiabatic_temperature,
 )
+from zalmoxis.eos.temperature import ADIABAT_P_FLOOR
 from zalmoxis.mixing import parse_all_layer_mixtures
 
 
@@ -799,7 +800,7 @@ class TestComputeAdiabaticTemperatureCmbAnchor:
 
 M_E = 5.972e24
 H_DEFAULT = 0.0025  # largest ln P change of one substep of a default call
-P_FLOOR = 1e5  # Pa; below it the adiabat holds T
+P_FLOOR = ADIABAT_P_FLOOR  # Pa; below it the adiabat holds T
 
 
 def _stub_adiabat(monkeypatch, nabla, calls=None):

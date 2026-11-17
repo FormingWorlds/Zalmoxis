@@ -16,11 +16,12 @@ import pytest
 
 from tests._plot_checks import assert_text_clear, legend_below
 from tools.validation import adiabat_profiles as ap
+from zalmoxis.eos.temperature import ADIABAT_P_FLOOR
 
 pytestmark = [pytest.mark.smoke, pytest.mark.timeout(60)]
 
 DATA = Path(__file__).parent / 'data' / 'adiabat_profiles.npz'
-P_FLOOR = 1e5  # Pa
+P_FLOOR = ADIABAT_P_FLOOR  # Pa
 
 
 def _need_paleos():
@@ -206,14 +207,14 @@ def test_temperature_is_continuous_across_one_bar(profiles, anchor, request):
 def _top_cell(kw, p_top=None, ice=False):
     """The T(P) lookup that the density solve builds on a stored profile, with its top node at
     p_top (None: as stored; 0: padded), over the top cell from max(P_top, 1e5 Pa) to the next
-    node, and a DOP853 march (rtol 1e-12) of d ln T / d ln P = nabla of the layer of the shell
+    node, and a DOP853 march (rtol 1e-12, atol 1e-14 on ln T) of d ln T / d ln P = nabla of the layer of the shell
     over the cell from the top T. With ``ice`` a Seager2007 H2O layer starts in the middle of
     the top cell. Returns (ln P grid, lookup, march, shell to P[n-2] minus T[n-2])."""
     from scipy.integrate import solve_ivp
 
     from zalmoxis.eos.temperature import compute_adiabatic_temperature as adiabat
     from zalmoxis.mixing import LayerMixture, get_mixed_nabla_ad
-    from zalmoxis.solver import _adiabat_table, _shell_adiabat
+    from zalmoxis.solver import _TOP_SHELL_POINTS, _adiabat_table, _shell_adiabat
     from zalmoxis.structure_model import get_layer_mixture
 
     P, m = np.array(kw['pressure'], float), kw['mass_enclosed']
@@ -236,7 +237,7 @@ def _top_cell(kw, p_top=None, ice=False):
         return _shell_adiabat(shell, q, t_top, mass)
 
     lp, t = _adiabat_table(P, T, m, top_shell, kw['anchor'] == 'cmb')
-    q = np.geomspace(max(P[-1], P_FLOOR), P[-2], 65)
+    q = np.geomspace(max(P[-1], P_FLOOR), P[-2], _TOP_SHELL_POINTS + 1)
     end = _shell_adiabat(shell, q, T[-1], used[0])[-1] - T[-2]
     mx = get_layer_mixture(
         used[0], kw['cmb_mass'], kw['core_mantle_mass'], kw['layer_mixtures']
@@ -245,7 +246,9 @@ def _top_cell(kw, p_top=None, ice=False):
     if not mx.has_tdep():  # the adiabat holds T in a layer without a T-dependent EOS
         return x, np.interp(x / math.log(10), lp, t), np.full(x.size, T[-1]), end
     nab = lambda x_, y: [get_mixed_nabla_ad(math.exp(x_), math.exp(y[0]), mx, *_eos(kw))]  # noqa: E731
-    ref = solve_ivp(nab, x[[0, -1]], [math.log(T[-1])], 'DOP853', t_eval=x, rtol=1e-12)
+    ref = solve_ivp(
+        nab, x[[0, -1]], [math.log(T[-1])], 'DOP853', t_eval=x, rtol=1e-12, atol=1e-14
+    )
     return x, np.interp(x / math.log(10), lp, t), np.exp(ref.y[0]), end
 
 
