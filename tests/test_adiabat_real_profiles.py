@@ -231,11 +231,11 @@ def _top_cell(kw, p_top=None, ice=False):
 
     used = []
 
-    def top_shell(q, t_top, i):
-        used.append(m[i])
-        return _shell_adiabat(shell, q, t_top, m[i])
+    def top_shell(q, t_top, mass):
+        used.append(mass)
+        return _shell_adiabat(shell, q, t_top, mass)
 
-    lp, t = _adiabat_table(P, T, top_shell)
+    lp, t = _adiabat_table(P, T, m, top_shell, kw['anchor'] == 'cmb')
     q = np.geomspace(max(P[-1], P_FLOOR), P[-2], 65)
     end = _shell_adiabat(shell, q, T[-1], used[0])[-1] - T[-2]
     mx = get_layer_mixture(

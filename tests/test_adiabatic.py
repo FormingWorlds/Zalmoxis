@@ -1341,15 +1341,15 @@ class TestAdiabatTable:
 
     @staticmethod
     def _shell(calls):
-        def top_shell(q, T_top, i):
-            calls.append((q.copy(), T_top, i))
+        def top_shell(q, T_top, m):
+            calls.append((q.copy(), T_top, m))
             return T_top * (q / q[0]) ** 0.1
 
         return top_shell
 
     @staticmethod
-    def _padded_rule(pressure, T, top_shell):
-        """The table with a shell on a padded top only (the padded branch of the rule)."""
+    def _padded_rule(pressure, T, mass, top_shell):
+        """The table with a shell on a padded top only, at the mass of the lowest positive node."""
         from zalmoxis.solver import _TOP_SHELL_POINTS
 
         s = np.argsort(pressure)
@@ -1359,7 +1359,7 @@ class TestAdiabatTable:
             q = np.geomspace(P_FLOOR, P[0], _TOP_SHELL_POINTS + 1)[:-1]
             P, Ts = (
                 np.concatenate([q, P]),
-                np.concatenate([top_shell(q, T[-1], s[keep][0]), Ts]),
+                np.concatenate([top_shell(q, T[-1], mass[s[keep][0]]), Ts]),
             )
         return np.log10(P), Ts
 
@@ -1388,7 +1388,7 @@ class TestAdiabatTable:
 
         calls, P = [], np.asarray(P, float)
         T = 3000.0 + np.arange(P.size, dtype=float)[::-1]
-        lp, t = _adiabat_table(P, T, self._shell(calls))
+        lp, t = _adiabat_table(P, T, np.arange(P.size), self._shell(calls))
         np.testing.assert_array_equal(lp, np.log10(P[P > 0][::-1]))
         np.testing.assert_array_equal(t, T[P > 0][::-1])
         assert calls == []
@@ -1397,7 +1397,7 @@ class TestAdiabatTable:
     @pytest.mark.parametrize('p_top', [1.2e5, 9.09e4])
     def test_an_unpadded_top_cell_gains_the_shell(self, p_top):
         """An unpadded top: the cell from max(P_top, 1e5 Pa) to the next node gains the shell
-        points, from the T of the top node; a top node below 1e5 Pa stays in the table with its
+        points, from the T of the top node, at the mass of the next node; a top node below 1e5 Pa stays in the table with its
         T, which the adiabat holds below 1 bar, and the lookup over the cell is the
         constant-nabla law from the start of the cell."""
         from zalmoxis.solver import _TOP_SHELL_POINTS, _adiabat_table
@@ -1405,9 +1405,9 @@ class TestAdiabatTable:
         calls, P = [], np.concatenate([np.geomspace(3.6e11, 1.1e9, 9), [p_top]])
         lo = max(p_top, P_FLOOR)
         T = 3000.0 * (np.maximum(P, P_FLOOR) / P_FLOOR) ** 0.1
-        lp, t = _adiabat_table(P, T, self._shell(calls))
+        lp, t = _adiabat_table(P, T, np.arange(P.size), self._shell(calls))
         ((q, T_top, i),) = calls
-        assert T_top == T[-1] and i == 9 and q.size == _TOP_SHELL_POINTS and q[0] == lo
+        assert T_top == T[-1] and i == 8 and q.size == _TOP_SHELL_POINTS and q[0] == lo
         below = p_top < P_FLOOR  # the node below 1 bar keeps its place in the table
         assert lp.size == q.size + 9 + below and np.all(np.diff(lp) > 0)
         assert (lp[0], t[0]) == (
@@ -1435,10 +1435,32 @@ class TestAdiabatTable:
         from zalmoxis.solver import _adiabat_table
 
         calls, P = [], np.array([1e10, 1e8, p_top])
-        lp, t = _adiabat_table(P, np.array([5000.0, 3500.0, 3000.0]), self._shell(calls))
+        lp, t = _adiabat_table(
+            P, np.array([5000.0, 3500.0, 3000.0]), np.arange(3), self._shell(calls)
+        )
         assert len(calls) == 1 and calls[0][0][0] == max(p_top, P_FLOOR)
         assert lp[0] == math.log10(p_top) and t[0] == 3000.0
         assert np.all(np.diff(lp) > 0)
+
+    @pytest.mark.physics_invariant
+    @pytest.mark.parametrize(
+        ('n_pad', 'outward', 'node'),
+        [(0, False, 8), (0, True, 9), (1, False, 8), (1, True, 9), (2, False, 8), (2, True, 9)],
+    )
+    def test_the_shell_takes_the_mass_of_the_node_of_the_adiabat_over_the_cell(
+        self, n_pad, outward, node
+    ):
+        """The adiabat gives node i its T from node j with the mixture of node i: integrated
+        inward, the cell takes the node at its upper end (the next node of an unpadded top, the
+        lowest positive node of a padded one); integrated outward from the CMB, the node outside
+        that one (the top node, or the first padded node)."""
+        from zalmoxis.solver import _adiabat_table
+
+        calls, P = [], np.concatenate([np.geomspace(3.6e11, 1.1e9, 9), [1.2e5] * (n_pad == 0)])
+        P = np.concatenate([P, np.zeros(n_pad)])
+        mass = np.linspace(1e24, 6e24, P.size)
+        _adiabat_table(P, np.full(P.size, 3000.0), mass, self._shell(calls), outward)
+        assert [c[2] for c in calls] == [mass[node]]
 
     def test_a_padded_top_keeps_the_table_of_the_padded_rule(self):
         """Hypothesis over padded profiles (P = 0 at the outer node): the table is bit for bit
@@ -1456,8 +1478,8 @@ class TestAdiabatTable:
         def check(nodes, n_pad):
             P = np.concatenate([np.sort(nodes)[::-1], np.zeros(n_pad)])
             T = 1000.0 + np.arange(P.size, dtype=float)
-            got = _adiabat_table(P, T, self._shell([]))
-            want = self._padded_rule(P, T, self._shell([]))
+            got = _adiabat_table(P, T, np.arange(P.size), self._shell([]))
+            want = self._padded_rule(P, T, np.arange(P.size), self._shell([]))
             for a, b in zip(got, want):
                 np.testing.assert_array_equal(a, b)
 
@@ -1473,7 +1495,7 @@ class TestAdiabatTable:
 
         calls, P = [], np.concatenate([np.geomspace(3.6e11, 1.1e9, 9), np.zeros(n_pad)])
         T = np.where(P > 0, 3000.0 * (np.maximum(P, P_FLOOR) / P_FLOOR) ** 0.1, 3000.0)
-        lp, t = _adiabat_table(P, T, self._shell(calls))
+        lp, t = _adiabat_table(P, T, np.arange(P.size), self._shell(calls))
         assert len(calls) == 1
         ((q, T_top, i),) = calls
         assert T_top == pytest.approx(3000.0) and i == 8
@@ -1496,7 +1518,9 @@ class TestAdiabatTable:
 
         P = np.concatenate([np.geomspace(3.6e11, 1e11, 4), [0.0]])
         T = np.where(P > 0, 3000.0 * (np.maximum(P, P_FLOOR) / P_FLOOR) ** 0.3, 3000.0)
-        lp, t = _adiabat_table(P, T, lambda q, T_top, i: T_top * (q / P_FLOOR) ** 0.3)
+        lp, t = _adiabat_table(
+            P, T, np.arange(P.size), lambda q, T_top, m: T_top * (q / P_FLOOR) ** 0.3
+        )
         x = np.geomspace(P_FLOOR, 1e11, 4001)
         err = np.interp(np.log10(x), lp, t) / (3000.0 * (x / P_FLOOR) ** 0.3) - 1.0
         assert 4e-4 < np.max(np.abs(err)) <= 6e-4, np.max(np.abs(err))
@@ -1519,7 +1543,7 @@ class TestAdiabatTable:
         mass = np.linspace(1e24, 6e24, P.size)
         T = np.where(P > 0, 3000.0 * (np.maximum(P, P_FLOOR) / P_FLOOR) ** 0.1, 3000.0)
         lp, t = _adiabat_table(
-            P, T, lambda q, T_top, i: _shell_adiabat(adiabat, q, T_top, mass[i])
+            P, T, mass, lambda q, T_top, m: _shell_adiabat(adiabat, q, T_top, m)
         )
         ((radii, pressure, m, top),) = seen
         assert pressure[0] > pressure[-1] == P_FLOOR and top == 3000.0
@@ -1560,7 +1584,7 @@ class TestAdiabatTable:
             P = np.array(P)
             T = 1000.0 + np.arange(P.size, dtype=float)
             calls = []
-            lp, t = _adiabat_table(P, T, self._shell(calls))
+            lp, t = _adiabat_table(P, T, np.arange(P.size), self._shell(calls))
             assert np.all(np.isfinite(lp)) and np.all(np.diff(lp) >= 0)
             order = np.argsort(P)
             srt, t_srt = P[order][P[order] > 0], T[order][P[order] > 0]
@@ -1572,9 +1596,10 @@ class TestAdiabatTable:
             if not shell:
                 np.testing.assert_array_equal(t, t_srt)
                 return
-            q, t0, _ = calls[0]
+            q, t0, node = calls[0]
             assert q[0] == lo and t0 == (T[-1] if padded else t_srt[0])
-            kept = int(not padded and srt[0] < P_FLOOR)  # a top node below 1 bar
+            assert node == order[P[order] > 0][0 if padded else 1]  # upper end of the cell
+            kept = int(np.log10(srt[0]) < 5.0)  # a top node below 1 bar
             tail = t_srt if padded else t_srt[1:]
             assert lp.size == q.size + tail.size + kept
             assert np.all(np.diff(lp[kept : kept + q.size + 1]) > 0)

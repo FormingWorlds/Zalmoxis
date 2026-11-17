@@ -344,19 +344,22 @@ _SECANT_CLAMP = 0.02
 _SECANT_FLOOR = 2.0
 _SEED_KEYS = ('radii', 'pressure', 'mass_enclosed')
 _SEED_TABLE_BLEND = -1.0  # adiabat_table_blend of a pass whose T table comes from adiabat_seed
-# T table pressures from 1e5 Pa up to the last positive node of a padded top
+# T table pressures over the top cell (the shell), see _adiabat_table
 _TOP_SHELL_POINTS = 64
 
 
-def _adiabat_table(pressure, T, top_shell):
+def _adiabat_table(pressure, T, mass, top_shell, outward=False):
     """log10 P [Pa] and T [K] of the adiabat ``T`` on the nodes at P > 0, sorted by P: the T(P)
     lookup of the density solve. The top cell gains ``_TOP_SHELL_POINTS`` geometric pressures q
-    [Pa] with T ``top_shell(q, T_top, i)``, the adiabat inward from T_top at q[0] in the layer of
-    the lowest positive node i, when its upper end lies more than 1e-9 (relative) above its
-    lower end, so that log10 P stays strictly increasing. With a padded top (P <= 0 at the outer
-    node) the cell runs from ``ADIABAT_P_FLOOR`` up to the lowest positive node, from the T of
-    the padded node; with an unpadded top it runs from the top node, or from the floor when the
-    top node lies below it, up to the next node, from the T of the top node. A top node below
+    [Pa] with T ``top_shell(q, T_top, m)``, the adiabat inward from T_top at q[0] at the enclosed
+    mass m [kg] of the node whose mixture the adiabat of the solve takes over the cell: the node
+    at its upper end for an adiabat integrated inward, the node outside that one for an
+    adiabat integrated ``outward`` from the CMB. The shell comes when the upper end of the cell
+    lies more than 1e-9 (relative) above its lower end, so that log10 P stays strictly
+    increasing. With a padded top (P <= 0 at the outer node) the cell runs from
+    ``ADIABAT_P_FLOOR`` up to the lowest positive node, from the T of the padded node; with an
+    unpadded top it runs from the top node, or from the floor when log10 P of the top node lies
+    below that of the floor, up to the next node, from the T of the top node. A top node below
     the floor keeps its place, with the T that the adiabat holds below 1 bar."""
     s = np.argsort(pressure)
     keep = pressure[s] > 0
@@ -368,8 +371,8 @@ def _adiabat_table(pressure, T, top_shell):
     lo = ADIABAT_P_FLOOR if pad else max(P[0], ADIABAT_P_FLOOR)
     if P[j] > lo * (1 + 1e-9):
         q = np.geomspace(lo, P[j], _TOP_SHELL_POINTS + 1)[:-1]
-        k = int(not pad and P[0] < lo)  # a top node below the floor stays
-        shell = top_shell(q, T[-1] if pad else Ts[0], s[keep][0])
+        k = int(np.log10(P[0]) < np.log10(lo))  # a top node below the floor stays
+        shell = top_shell(q, T[-1] if pad else Ts[0], mass[s[keep][j] + int(outward)])
         P, Ts = np.concatenate([P[:k], q, P[j:]]), np.concatenate([Ts[:k], shell, Ts[j:]])
     return np.log10(P), Ts
 
@@ -377,7 +380,7 @@ def _adiabat_table(pressure, T, top_shell):
 def _shell_adiabat(adiabat, q, T_top, m):
     """T [K] at the shell pressures ``q`` [Pa], ascending from the top: ``adiabat(radii,
     pressure, mass, top=T_top)`` inward from ``T_top`` at ``q[0]``, with every shell point at the
-    enclosed mass ``m`` [kg], so in the layer of the node below the shell."""
+    enclosed mass ``m`` [kg], so in one layer."""
     return adiabat(np.arange(q.size), q[::-1], np.full(q.size, m), top=T_top)[::-1]
 
 
@@ -2034,8 +2037,8 @@ def _solve(
             cmb_temperature=cmb_temperature,
         )
 
-    def _top_shell(q, T_top, i):
-        return _shell_adiabat(_adiabat, q, T_top, prev_mass_enclosed[i])
+    def _top_shell(q, T_top, m):
+        return _shell_adiabat(_adiabat, q, T_top, m)
 
     # For adiabatic mode, cap the initial center_temperature guess to
     # prevent the linear-T initial profile from being far above the
@@ -2197,7 +2200,13 @@ def _solve(
                 # ODE's actual pressure rather than a fixed radial mapping.
                 # This prevents unphysical (low P, high T) queries that
                 # hit NaN gaps in the PALEOS tables.
-                _logP_sorted, _T_sorted = _adiabat_table(prev_pressure, adiabat_T, _top_shell)
+                _logP_sorted, _T_sorted = _adiabat_table(
+                    prev_pressure,
+                    adiabat_T,
+                    prev_mass_enclosed,
+                    _top_shell,
+                    temperature_mode == 'adiabatic_from_cmb',
+                )
 
                 # Clamp adiabat T to a physically reasonable range.
                 # np.interp flat-extrapolates at the edges, but the Brent
