@@ -590,10 +590,11 @@ def _stall_first_solve(monkeypatch, node):
     inner = sm.solve_ivp
 
     def solve_ivp(fun, t_span, *args, **kwargs):
-        sol = inner(fun, t_span, *args, **kwargs)
-        if t_span[0] == 0.0 and sol.t.size > node + 1:
-            sol.t, sol.y, sol.status = sol.t[: node + 1], sol.y[:, : node + 1], -1
-            sol.y_events = [np.empty((0, 3))]
+        if t_span[0] != 0.0:
+            return inner(fun, t_span, *args, **kwargs)
+        t_eval = kwargs.pop('t_eval')[: node + 1]
+        sol = inner(fun, (t_span[0], t_eval[-1]), *args, t_eval=t_eval, **kwargs)
+        sol.status, sol.y_events = -1, [np.empty((0, 3))]
         return sol
 
     monkeypatch.setattr(sm, 'solve_ivp', solve_ivp)
@@ -625,4 +626,4 @@ class TestStallInsideThePlanet:
         m, g, p = sm.solve_structure(
             {}, 0.0, 0.0, radii, 0.5, 1e-10, 1e-12, np.inf, {}, {}, [0.0, 0.0, p_c], None, None
         )
-        assert np.all(np.isfinite(p[:31])) and np.isnan(p[-1])
+        assert np.all(np.isfinite(p[:30])) and np.all(np.isnan(p[30:]))  # band from radii[30]

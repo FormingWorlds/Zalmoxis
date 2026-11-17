@@ -528,13 +528,14 @@ def solve_structure(
     # Pad to full length if the integration stopped before the outermost radial
     # grid point (pressure-zero event, or a step-size failure).
     n = len(mass_enclosed)
-    if n < len(radii):
+    while n < len(radii):
         if sol_end.status == 1:
             y_stop = sol_end.y_events[0][-1]
         else:
             y_stop = [mass_enclosed[-1], gravity[-1], pressure[-1]] if n else y0
             # The failure lies between radii[n - 1] and radii[n]; re-integrate only that shell
             # to find where it stops (scipy never ends a step from a non-finite RHS).
+            stalled = nonfinite[0] == 0  # the solve ended with a finite RHS throughout
             nonfinite[0] = 0
             if n and np.all(np.isfinite(_ode_rhs(radii[n - 1], y_stop))):
                 tail = solve_ivp(
@@ -554,8 +555,32 @@ def solve_structure(
                         np.append(a, v)
                         for a, v in zip((mass_enclosed, gravity, pressure), y_stop)
                     )
+                passed = tail.status == 0 and stalled and nonfinite[0] == 0
+                if passed and not stop_is_surface(y_stop, y0[2], surface_pressure):
+                    # a step stall, not a stop: the shell passed, so go on from radii[n]
+                    nonfinite[0] = 0
+                    sol_end = solve_ivp(
+                        _ode_rhs,
+                        (radii[n], radii[-1]),
+                        y_stop,
+                        t_eval=radii[n:],
+                        rtol=relative_tolerance,
+                        atol=absolute_tolerance,
+                        max_step=max_step_end,
+                        method='RK45',
+                        events=_pressure_zero,
+                    )
+                    rest = np.reshape(sol_end.y, (3, -1))
+                    rest = rest if rest.size else np.reshape(y_stop, (3, 1))
+                    mass_enclosed, gravity, pressure = (
+                        np.concatenate([a, v])
+                        for a, v in zip((mass_enclosed, gravity, pressure), rest)
+                    )
+                    n = len(mass_enclosed)
+                    continue
         mass_enclosed, gravity, pressure = pad_after_stop(
             radii, mass_enclosed, gravity, pressure, y_stop, y0[2], surface_pressure
         )
+        break
 
     return mass_enclosed, gravity, pressure
