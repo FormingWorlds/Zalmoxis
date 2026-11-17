@@ -373,9 +373,8 @@ def _adiabat_table(pressure, T, mass, top_shell, outward=False):
     if P[j] > lo * (1 + 1e-9):
         q = np.geomspace(lo, P[j], _TOP_SHELL_POINTS + 1)[:-1]
         k = int(np.log10(P[0]) < np.log10(lo))  # a top node below the floor stays
-        node = min(
-            s[keep][j] + int(outward), mass.size - 1
-        )  # a guard if P is not in node order
+        # min: a guard if P is not in node order
+        node = min(s[keep][j] + int(outward), mass.size - 1)
         shell = top_shell(q, T[-1] if pad else Ts[0], mass[node])
         P, Ts = np.concatenate([P[:k], q, P[j:]]), np.concatenate([Ts[:k], shell, Ts[j:]])
     return np.log10(P), Ts
