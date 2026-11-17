@@ -629,8 +629,33 @@ def test_a_pure_iron_core_has_its_icb_where_its_liquid_adiabat_meets_iron_meltin
     s = branch(core['P_icb']) - float(liq(core['P_icb']))
     p = np.asarray(res['pressure'], float)
     p_b = brentq(lambda x: branch(x) - float(liq(x)), p[j], p[0], xtol=1e-3, rtol=1e-14)
-    g_b = float(np.interp(np.log(p_b), np.log(p[::-1]), np.asarray(res['mass_enclosed'])[::-1]))
+    ok = p > 0  # padded nodes past a surface stop have P = 0
+    m = np.asarray(res['mass_enclosed'], float)
+    g_b = float(np.interp(np.log(p_b), np.log(p[ok][::-1]), m[ok][::-1]))
     print(f'f {f:.4f} S {s:+.3f} K G_B {g_b / cmb:.4f} accepted_on {res["accepted_on"]}')
     assert 0.0 < f < 1.0 and abs(s) <= 0.5, (f, s)
     assert abs(g_b / cmb - f) <= 0.005, (g_b / cmb, f)
     assert res['icb_superheat'] <= 0.5
+
+
+def test_a_liquid_branch_off_the_t_table_above_the_icb_stops_the_solve(setup, monkeypatch):
+    """Above the ICB the liquid branch and the T table of a pass take one adiabat, so they agree
+    to round-off. A liquid branch 1 K warmer there (an adiabat with icb_mass 0 shifted by 1 K)
+    stops the solve with a RuntimeError at the first pass with an inner core."""
+    from zalmoxis import solver as zs
+
+    adiabat = zs.compute_adiabatic_temperature
+
+    def warm_liquid(*args, **kw):
+        t = adiabat(*args, **kw)
+        return t + 1.0 if kw.get('icb_mass') == 0.0 else t
+
+    monkeypatch.setattr(zs, 'compute_adiabatic_temperature', warm_liquid)
+    with pytest.raises(RuntimeError, match='liquid branch differs from the T table'):
+        _solve(
+            setup,
+            inner=SOL,
+            core=LIQ,
+            core_liquidus='Anzellini13-iron',
+            surface_temperature=2500.0,
+        )
