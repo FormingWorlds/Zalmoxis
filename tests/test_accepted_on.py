@@ -1996,7 +1996,8 @@ def _analytic_ramp(
     ``drift`` scales the pressure of each pass by 1 + drift times the number of adiabat
     computations so far. ``mass(R, k)`` replaces both scalings: the total mass of a pass at
     outer radius R after k adiabat computations. ``seed`` goes to ``_solve`` as
-    ``adiabat_seed``; ``structure`` replaces ``solve_structure`` (``_canned_structure``).
+    ``adiabat_seed``; ``structure`` replaces ``solve_structure`` (``_canned_structure``);
+    ``temperature_mode`` replaces 'adiabatic'.
     Returns the result and the number of adiabat computations of the passes (a call on the
     padded top shell of the T table is not counted)."""
     adiabat, shell = [], []
@@ -2038,25 +2039,30 @@ def _analytic_ramp(
 
 @pytest.mark.smoke
 @pytest.mark.parametrize('mode', ['adiabatic', 'adiabatic_from_cmb'])
-def test_the_solve_gives_the_table_the_masses_and_the_direction_of_its_adiabat(mode):
+def test_the_solve_gives_the_table_the_masses_and_the_direction_of_its_adiabat(
+    mode, monkeypatch
+):
     """_solve builds the T table of a pass with the enclosed masses of the structure whose
-    pressure it reads, and marks the adiabat as integrated outward only in
-    'adiabatic_from_cmb', so the top shell takes the mixture node of that adiabat."""
-    seen, real = [], zs._adiabat_table
+    pressure it reads (the same pair of arrays as one structure integration returned), and
+    marks the adiabat as integrated outward only in 'adiabatic_from_cmb', so the top shell takes
+    the mixture node of that adiabat."""
+    seen, real, made = [], zs._adiabat_table, []
 
     def spy(pressure, T, mass, top_shell, outward=False):
         seen.append((np.array(pressure), np.array(mass), outward))
         return real(pressure, T, mass, top_shell, outward)
 
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(zs, '_adiabat_table', spy)
-        _analytic_ramp(
-            structure=_canned_structure, temperature_mode=mode, max_iterations_outer=6
-        )
+    def structure(*args, **kwargs):
+        m, g, P = _canned_structure(*args, **kwargs)
+        made.append((m.copy(), P.copy()))
+        return m, g, P
+
+    monkeypatch.setattr(zs, '_adiabat_table', spy)
+    _analytic_ramp(structure=structure, temperature_mode=mode, max_iterations_outer=6)
     assert seen
     for P, m, outward in seen:
         assert outward is (mode == 'adiabatic_from_cmb')
-        assert m.shape == P.shape and np.all(np.diff(m) >= 0) and m[-1] > 1e23  # kg, not m
+        assert any(np.array_equal(m, mm) and np.array_equal(P, pp) for mm, pp in made)
 
 
 def _case_clock_stop(structure=None, **_):

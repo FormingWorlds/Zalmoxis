@@ -360,19 +360,22 @@ def _adiabat_table(pressure, T, mass, top_shell, outward=False):
     Padded top (P <= 0 at the outer node): the cell runs from ``ADIABAT_P_FLOOR`` to the lowest
     positive node, from the T of the padded node. Unpadded top: from the top node (from the
     floor when its log10 P lies below that of the floor, the node keeping its place) to the
-    next node, from the T of the top node. log10 P is strictly increasing."""
+    next node, from the T of the top node. log10 P does not decrease, and it is strictly
+    increasing over the shell."""
     s = np.argsort(pressure)
     keep = pressure[s] > 0
     P, Ts = pressure[s][keep], T[s][keep]
     pad = pressure[-1] <= 0
-    j = 0 if pad else 1  # the node at the upper end of the cell
+    j = 0 if pad else 1  # the deeper node of the cell
     if P.size <= j:
         return np.log10(P), Ts
     lo = ADIABAT_P_FLOOR if pad else max(P[0], ADIABAT_P_FLOOR)
     if P[j] > lo * (1 + 1e-9):
         q = np.geomspace(lo, P[j], _TOP_SHELL_POINTS + 1)[:-1]
         k = int(np.log10(P[0]) < np.log10(lo))  # a top node below the floor stays
-        node = min(s[keep][j] + int(outward), mass.size - 1)  # in range on any node order
+        node = min(
+            s[keep][j] + int(outward), mass.size - 1
+        )  # a guard if P is not in node order
         shell = top_shell(q, T[-1] if pad else Ts[0], mass[node])
         P, Ts = np.concatenate([P[:k], q, P[j:]]), np.concatenate([Ts[:k], shell, Ts[j:]])
     return np.log10(P), Ts
