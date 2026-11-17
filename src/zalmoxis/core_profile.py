@@ -2,8 +2,10 @@
 
 A two-layer core has an inner core on the solid iron side and an outer core on the liquid side
 (``layer_eos_config['inner_core']`` and ``['core']``). Its inner-core boundary (ICB) is either a
-given mass, ``inner_core_mass_fraction`` of the core mass, or the first point, from the centre
-outward, where the temperature of the profile reaches the liquidus ``T_liq(P)``. The structure
+given mass, ``inner_core_mass_fraction`` of the core mass, or where the liquid of the outer core
+reaches the liquidus ``T_liq(P)``: the first root, from the centre outward, of the temperature
+profile on a given profile, and of the liquid branch (the outer-core adiabat continued below
+the ICB with the liquid side) on an adiabat (``icb_superheat``). The structure
 equations place a shell in the inner core by its enclosed mass, as they place the core-mantle
 boundary, so the liquidus rule is applied to the profile of the previous outer pass and the
 outer loop converges it with the structure.
@@ -87,9 +89,9 @@ def _core_nodes(mass, pressure, temperature, cmb_mass):
     return m, p, t
 
 
-def icb_superheat_miss(mass, pressure, liquid_temperature, cmb_mass, liquidus, icb_mass):
-    """Miss [K] of the zero-superheat condition of a growing inner core: the outer-core liquid
-    is at the liquidus at the ICB (Labrosse 2015, Sect. 2; Nimmo 2015, Fig. 2).
+def icb_superheat(mass, pressure, liquid_temperature, cmb_mass, liquidus, icb_mass):
+    """Superheat [K] of the outer-core liquid at the layer ICB and its miss of the zero-superheat
+    condition of a growing inner core (Labrosse 2015, Sect. 2; Nimmo 2015, Fig. 2).
 
     Parameters
     ----------
@@ -105,19 +107,20 @@ def icb_superheat_miss(mass, pressure, liquid_temperature, cmb_mass, liquidus, i
 
     Returns
     -------
-    float
-        With the superheat S = T_l(P_icb) - T_liq(P_icb), T_l linear in ln P on the core nodes
-        and P_icb as in ``icb_from_profile``: |S| for a partial inner core, the undercooling
-        max(0, -S) at the centre for no inner core, the superheat max(0, S) at the core mass
-        for a full one; inf when S is not finite.
+    tuple of float
+        S = T_l(P_icb) - T_liq(P_icb), with T_l linear in ln P on the core nodes and P_icb the
+        pressure at ``icb_mass`` with ln P linear in m, the inverse of the mass that
+        ``icb_from_profile`` gives its root (at the centre for no inner core, at the core mass
+        for a full one); and the miss: |S| for a partial inner core, max(0, -S) for no inner core,
+        max(0, S) for a full one, inf when S is not finite.
     """
     m, p, t = _core_nodes(mass, pressure, liquid_temperature, cmb_mass)
     full = icb_mass >= cmb_mass * (1.0 - _RTOL_LAYER)
-    p_icb = p[0] if icb_mass <= 0.0 else np.interp(icb_mass ** (2.0 / 3.0), m ** (2.0 / 3.0), p)
+    p_icb = p[0] if icb_mass <= 0.0 else math.exp(np.interp(icb_mass, m, np.log(p)))
     s = float(np.interp(math.log(p_icb), np.log(p[::-1]), t[::-1])) - float(liquidus(p_icb))
     if not math.isfinite(s):
-        return math.inf
-    return max(0.0, -s) if icb_mass <= 0.0 else max(0.0, s) if full else abs(s)
+        return s, math.inf
+    return s, max(0.0, -s) if icb_mass <= 0.0 else max(0.0, s) if full else abs(s)
 
 
 def _cmb_point(m, p, t, cmb_mass, n):

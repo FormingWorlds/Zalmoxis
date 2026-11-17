@@ -43,7 +43,7 @@ from .core_profile import (
     core_arrays,
     icb_from_profile,
     icb_misses,
-    icb_superheat_miss,
+    icb_superheat,
     outside_side_tables,
 )
 from .eos import (
@@ -807,7 +807,12 @@ def main(
         check used; an unconverged result has none. ``padded`` (bool) is True when
         the pressure at the outer radius is 0: the integration stopped at P = 0 before
         the outer radius, and the nodes past the stop hold P = 0. ``main`` logs one
-        warning when it returns a converged padded result.
+        warning when it returns a converged padded result. With ``core_liquidus``,
+        ``icb_converged`` is True when the returned pass meets the ICB tests;
+        ``icb_superheat`` [K] is the superheat S of the outer-core liquid at the ICB on an
+        adiabat (at the centre with no inner core, at the core mass with a full one; None
+        on a given profile), and ``icb_adiabat`` [kg] the inner-core mass that the adiabat of
+        the returned pass took (None without an adiabat).
 
     Raises
     ------
@@ -2074,19 +2079,18 @@ def _solve(
         return _adiabat(np.arange(q.size), q[::-1], np.full(q.size, m), top=T_top)[::-1]
 
     def _icb_misses(r, m, p, t):
-        # (miss, bound) of the ICB tests: the superheat [K] of the liquid branch on an adiabat,
-        # else the distance [kg] to the liquidus root of the profile; the adiabat ICB lag [kg]
+        # (miss, bound) of the ICB tests: the superheat miss [K] of the liquid branch on an
+        # adiabat, else the distance [kg] to the liquidus root; the adiabat ICB lag [kg]; and S
         tol = tolerance_outer * cmb_mass
         liquid = getattr(_temperature_func, 'liquid', None)
         if liquid is None:
             root, lag = icb_misses(m, p, t, cmb_mass, core_liq, icb_mass, icb_adiabat)
-            return (root, tol), (lag, tol)
-        t_l = [liquid(r_, p_) for r_, p_ in zip(r, p)]
-        heat = icb_superheat_miss(m, p, t_l, cmb_mass, core_liq, icb_mass)
-        return (heat, _ICB_SUPERHEAT_TOL), (
-            0.0 if icb_adiabat is None else abs(icb_adiabat - icb_mass),
-            tol,
+            return (root, tol), (lag, tol), None
+        s, heat = icb_superheat(
+            m, p, [liquid(*x) for x in zip(r, p)], cmb_mass, core_liq, icb_mass
         )
+        lag = 0.0 if icb_adiabat is None else abs(icb_adiabat - icb_mass)
+        return (heat, _ICB_SUPERHEAT_TOL), (lag, tol), s
 
     # For adiabatic mode, cap the initial center_temperature guess to
     # prevent the linear-T initial profile from being far above the
@@ -2285,28 +2289,20 @@ def _solve(
                     return t_of
 
                 _temperature_func = _table_t(_logP_sorted, _T_sorted)
-                if (
-                    core_liq is not None
-                ):  # T(r, P) of the outer-core liquid continued below the ICB
-                    _temperature_func.liquid = _temperature_func
+                # T(r, P) of the outer-core liquid continued below the ICB to the centre
+                if core_liq is not None:
+                    liquid = _temperature_func
                     if icb_mass > 0.0:
                         liquid_T = _adiabat(
                             prev_radii, prev_pressure, prev_mass_enclosed, icb=0.0
                         )
-                        _temperature_func.liquid = _table_t(
-                            *_adiabat_table(prev_pressure, liquid_T, _top_shell)
-                        )
+                        liquid = _table_t(*_adiabat_table(prev_pressure, liquid_T, _top_shell))
                         up = np.asarray(prev_mass_enclosed) > icb_mass  # 1 adiabat there
-                        dev = max(
-                            (
-                                abs(
-                                    _temperature_func.liquid(r_, p_) / _temperature_func(r_, p_)
-                                    - 1
-                                )
-                                for r_, p_ in zip(prev_radii[up], prev_pressure[up])
-                            ),
-                            default=0.0,
-                        )
+                        dev = [
+                            abs(liquid(r_, p_) / _temperature_func(r_, p_) - 1)
+                            for r_, p_ in zip(prev_radii[up], prev_pressure[up])
+                        ]
+                        dev = float(np.max(dev, initial=0.0))  # NaN stays NaN
                         logger.debug(
                             'Liquid branch above the ICB: relative difference %.3g', dev
                         )
@@ -2315,6 +2311,7 @@ def _solve(
                                 f'the liquid branch differs from the T table above the ICB by '
                                 f'{dev:.3g} (relative); both take one adiabat there'
                             )
+                    _temperature_func.liquid = liquid
 
                 # Pre-compute temperatures array for the density update loop
                 # (uses the converged pressure from the previous iteration)
@@ -3022,7 +3019,7 @@ def _solve(
                 )
             continue  # the blend ramps up over the next passes
         icb_moving = core_liq is not None and any(
-            d > b for d, b in _icb_misses(radii, mass_enclosed, pressure, temperatures)
+            d > b for d, b in _icb_misses(radii, mass_enclosed, pressure, temperatures)[:2]
         )
         if relative_diff_outer_mass < tolerance_outer and not icb_moving:
             logger.log(
@@ -3164,18 +3161,17 @@ def _solve(
         )
         converged = converged_mass = False
         accepted_on = accept_mass_limit = None
-    icb_converged, icb_superheat = True, None  # the ICB tests of the returned pass
+    icb_converged, superheat = True, None  # the ICB tests of the returned pass
     if core_liq is not None and np.all(np.isfinite(pressure)) and pressure[0] > 0:
-        (miss, bound), (lag, _) = tests = _icb_misses(
+        (miss, bound), (lag, tol), superheat = _icb_misses(
             radii, mass_enclosed, pressure, temperatures
         )
-        icb_converged = all(d <= b for d, b in tests)
-        icb_superheat = miss if getattr(_temperature_func, 'liquid', None) else None
+        icb_converged = miss <= bound and lag <= tol
         if converged and not icb_converged:  # an accept path that skipped the ICB test
             logger.warning(
                 'Not converged: the inner-core boundary misses %s%s (accepted_on=%s).',
                 f'the liquidus of its liquid by {miss:.3g} K'
-                if icb_superheat is not None
+                if superheat is not None
                 else f'the liquidus root of the returned profile by {miss / cmb_mass:.3g} of '
                 'the core mass',
                 f' and lies {lag / cmb_mass:.3g} off the ICB of its adiabat' if lag else '',
@@ -3261,7 +3257,8 @@ def _solve(
         'accept_mass_limit': accept_mass_limit,
         'density_from_eos': density_from_eos,
         'icb_converged': bool(icb_converged),
-        'icb_superheat': icb_superheat,
+        'icb_superheat': superheat,
+        'icb_adiabat': icb_adiabat,
         'p_center': pressure[0] if len(pressure) > 0 else None,
         'padded': bool(pad.size and pad[-1]),
         'adiabat_computed': _adiabat_computed,

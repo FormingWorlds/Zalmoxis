@@ -17,7 +17,15 @@ from pathlib import Path
 
 import numpy as np
 
-SKIP = ('core', 'icb_converged', 'layer_eos_config', 'newton_history', 'total_time')
+SKIP = (
+    'core',
+    'icb_adiabat',
+    'icb_converged',
+    'icb_superheat',
+    'layer_eos_config',
+    'newton_history',
+    'total_time',
+)
 
 
 def cpu_key(system=sys.platform, machine=platform.machine(), cpuinfo=None):
