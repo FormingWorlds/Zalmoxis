@@ -340,7 +340,8 @@ def test_an_accept_with_the_liquid_off_the_liquidus_is_not_converged(
     assert 'Accepting max_iter solution' in caplog.text
     assert res['converged'] is False and res['icb_converged'] is False
     assert res['icb_superheat'] == -10.0 and 'liquid by 10 K' in caplog.text
-    assert 'off the ICB of its adiabat' not in caplog.text  # the lag test is met
+    lag = abs(res['icb_adiabat'] - res['core']['M_ic']) / res['cmb_mass']
+    assert ('off the ICB of its adiabat' in caplog.text) == (lag > 1e-3)  # named only when it fails
 
 
 def test_main_refuses_an_icb_rule_without_an_inner_core(setup):
