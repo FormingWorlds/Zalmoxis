@@ -18,7 +18,7 @@ from tools.validation import adiabat_profiles as ap
 pytestmark = [
     pytest.mark.slow,
     pytest.mark.paleos_adiabat,
-    pytest.mark.timeout(4 * WALL_TIMEOUT),
+    pytest.mark.timeout(4200),  # inside the 90 min paleos_adiabat CI job, setup included
 ]
 
 
@@ -52,7 +52,7 @@ def test_round_off_starts_keep_the_centre_temperature_within_12_k(monkeypatch):
         got = (res['converged'], res['adiabat_blend'], res['accepted_on'])
         assert got[:2] == (True, 1.0) and got[2] != 'timeout', (k, got)
         err = res['mass_error_at_accept']
-        assert err <= cfg['tolerance_outer'], (k, err)
+        assert err is not None and err <= cfg['tolerance_outer'], (k, err)
         own = native(
             *(res[x] for x in ('radii', 'pressure', 'mass_enclosed')),
             *last['a'][3:],
