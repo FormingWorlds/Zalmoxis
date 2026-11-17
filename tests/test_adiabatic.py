@@ -1392,6 +1392,38 @@ class TestAdiabatTable:
             np.interp(np.log10(x), lp, t), 3000.0 * (x / P_FLOOR) ** 0.1, rtol=1e-4
         )
 
+    @pytest.mark.physics_invariant
+    def test_the_shell_adiabat_runs_inward_from_the_top_in_the_layer_of_its_node(self):
+        """``_shell_adiabat``: the adiabat gets the shell pressures centre first, each point at
+        the enclosed mass of the node below the shell, and the top T at the outer point; the T
+        comes back in the order of q. With a constant-nabla adiabat (nabla 0.1) on a padded
+        structure, the table over the shell is T_top (P / 1e5 Pa)^0.1 from the padded node."""
+        from zalmoxis.solver import _adiabat_table, _shell_adiabat
+
+        seen = []
+
+        def adiabat(radii, pressure, mass, top):
+            seen.append((radii, pressure, mass, top))
+            return top * (pressure / pressure[-1]) ** 0.1
+
+        P = np.concatenate([np.geomspace(3.6e11, 1.1e9, 9), [0.0]])
+        mass = np.linspace(1e24, 6e24, P.size)
+        T = np.where(P > 0, 3000.0 * (np.maximum(P, P_FLOOR) / P_FLOOR) ** 0.1, 3000.0)
+        lp, t = _adiabat_table(
+            P, T, lambda q, T_top, i: _shell_adiabat(adiabat, q, T_top, mass[i])
+        )
+        ((radii, pressure, m, top),) = seen
+        assert pressure[0] > pressure[-1] == P_FLOOR and top == 3000.0
+        np.testing.assert_array_equal(radii, np.arange(pressure.size))
+        assert np.all(m == mass[8])  # the last node at P > 0
+        x = np.geomspace(P_FLOOR, 1.1e9, 200)
+        np.testing.assert_allclose(
+            np.interp(np.log10(x), lp, t), 3000.0 * (x / P_FLOOR) ** 0.1, rtol=1e-4
+        )
+        np.testing.assert_allclose(
+            t[: pressure.size], 3000.0 * (pressure[::-1] / P_FLOOR) ** 0.1
+        )
+
     def test_table_property_over_profiles(self):
         """Hypothesis over node pressures (zero, negative, NaN, positive, just above 1e5 Pa)
         with a padded or an unpadded top: log10 P finite and not decreasing, strictly increasing
