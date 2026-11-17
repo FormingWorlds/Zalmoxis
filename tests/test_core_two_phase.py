@@ -856,15 +856,8 @@ def test_the_start_dependence_scan_of_the_liquidus_rule(validation_plot):
         fig, ax = plt.subplots(figsize=(6.8, 3.2))
         c = plt.rcParams['axes.prop_cycle'].by_key()['color']
         for d, colour, style in (('down', c[0], 'o-'), ('up', c[1], 's--')):
-            ax.plot(
-                temps,
-                [frac[d][t] for t in temps],
-                style,
-                color=colour,
-                ms=4,
-                mfc='none',
-                label=f'walk {d}',
-            )
+            y = [frac[d][t] for t in temps]
+            ax.plot(temps, y, style, color=colour, ms=4, mfc='none', label=f'walk {d}')
         ax.set(xlabel='Surface temperature [K]', ylabel=r'$M_\mathrm{ic} / M_\mathrm{core}$')
         ax.set(ylim=(-0.05, 1.05), xticks=temps[::8], yticks=(0.0, 0.5, 1.0))
         ax.grid(False)
