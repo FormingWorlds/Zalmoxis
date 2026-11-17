@@ -447,7 +447,7 @@ def _need_wb_tables():
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize('phase', ['melted_mantle', 'solid_mantle'])
+@pytest.mark.parametrize('phase', ['melted_mantle', 'solid_mantle', 'core'])
 @pytest.mark.parametrize(
     'env, outcome',
     [
