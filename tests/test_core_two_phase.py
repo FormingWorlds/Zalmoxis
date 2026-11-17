@@ -569,7 +569,7 @@ def _liquid(t0, n, p):
 
 def _sphere_nodes(extra_r=()):
     """Mass and pressure of the uniform sphere on 41 radii and the radii extra_r; core mass the
-    mass at 2000 km (node 20). P is linear in m^(2/3), so the rule's P at a mass is exact."""
+    mass at 2000 km (node 20). P is linear in m^(2/3), so P at a given mass is exact."""
     r = np.unique(np.r_[np.linspace(0.0, _R, 41), extra_r])
     m = 4 / 3 * np.pi * _RHO * r**3
     p = 2 / 3 * np.pi * G * _RHO**2 * (_R**2 - r**2)
@@ -601,15 +601,20 @@ def test_the_icb_superheat_is_0_at_the_closed_form_root():
 
 @pytest.mark.physics_invariant
 @settings(max_examples=60, deadline=None)
-@given(n=st.floats(0.1, 0.5), t0=st.floats(4000.0, 9000.0))
-@example(n=0.4, t0=5500.0)
-def test_the_icb_superheat_is_0_at_the_rules_own_root(n, t0):
-    """The ICB update takes the first liquidus root of the liquid branch and its mass with m
-    linear in ln P; the test maps that mass back to P the same way, so at the rule's own root
-    on the same nodes the miss is 0 to 1e-9 of T, also with no or a full inner core."""
+@given(n=st.floats(0.1, 0.5), frac=st.floats(0.02, 0.98))
+@example(n=0.4, frac=0.678)
+def test_the_icb_superheat_is_0_at_the_rules_own_root(n, frac):
+    """The ICB update of an adiabat takes the first liquidus root of the liquid branch and its
+    mass with m^(2/3) linear in P (``m23``), the inverse of the pressure that the superheat test
+    and the core arrays take at a mass; at the rule's own root on the same nodes the miss is 0
+    to 1e-9 of T. T0 puts the root of the power law at frac of the core mass."""
     m, p, cmb = _sphere_nodes()
+    r_b = (3 * frac * cmb / (4 * np.pi * _RHO)) ** (1 / 3)
+    p_b = 2 / 3 * np.pi * G * _RHO**2 * (_R**2 - r_b**2)
+    t0 = float(_simon(p_b)) * (200e9 / p_b) ** n
     t = _liquid(t0, n, p)
-    icb = icb_from_profile(m, p, t, cmb, _simon)[0]
+    icb = icb_from_profile(m, p, t, cmb, _simon, m23=True)[0]
+    assert 0.0 < icb < cmb
     assert icb_superheat(m, p, t, cmb, _simon, icb)[1] <= 1e-9 * t0
 
 
@@ -619,14 +624,13 @@ def test_the_icb_superheat_is_0_at_the_rules_own_root(n, t0):
 @example(n=0.4, frac=0.97, t0=5500.0)  # the layer ICB in the top core segment
 def test_the_icb_superheat_off_the_root_meets_the_closed_form(n, frac, t0):
     """At a layer ICB inside the core, S is T - T_liq of the liquid branch at the pressure of
-    the ICB mass (ln P linear in m on the core nodes); T is linear in ln P, so S may differ
+    the ICB mass (P linear in m^(2/3), as the core arrays); T is linear in ln P, so S may differ
     from the power law by at most (dln P)^2 / 8 n^2 T on the node segment of the ICB."""
     m, p, cmb = _sphere_nodes()
     s, miss = icb_superheat(m, p, _liquid(t0, n, p), cmb, _simon, frac * cmb)
     assert miss >= 0.0 and math.isfinite(miss)
     if 0.0 < frac < 1.0:
-        core = m <= cmb
-        p_icb = math.exp(np.interp(frac * cmb, m[core], np.log(p[core])))
+        p_icb = icb_from_profile(m, p, _liquid(t0, n, p), cmb, _simon, frac * cmb)[1]
         want = float(_liquid(t0, n, p_icb) - _simon(p_icb))
         k = min(max(int(np.searchsorted(-p, -p_icb)), 1), 20)
         bound = math.log(p[k - 1] / p[k]) ** 2 / 8 * n**2 * t0 * (p[0] / 200e9) ** n
@@ -868,3 +872,12 @@ def test_the_start_dependence_scan_of_the_liquidus_rule(validation_plot):
         return fig
 
     validation_plot(figure, 'core_two_phase_icb_start_dependence')
+
+
+def test_a_one_layer_adiabat_reports_no_icb_keys():
+    """A one-layer core on an adiabat (the analytic ramp of tests/test_accepted_on.py) has no
+    ICB test: icb_superheat and icb_adiabat are None."""
+    from tests.test_accepted_on import _analytic_ramp
+
+    res, _ = _analytic_ramp(tolerance_outer=1e-3, max_iterations_outer=40)
+    assert res['icb_superheat'] is None and res['icb_adiabat'] is None

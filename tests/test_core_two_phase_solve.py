@@ -254,6 +254,28 @@ def test_an_accept_with_the_adiabat_icb_off_is_not_converged(setup, monkeypatch,
     assert res['accepted_on'] is None and '1 off the ICB of its adiabat' in caplog.text
 
 
+def _superheat_met(res, bound=0.5):
+    """Test 1 of the ICB on the reported signed S: |S| <= bound for a partial inner core,
+    S >= -bound at the centre with no inner core, S <= bound at the core mass with a full
+    one."""
+    s, f = res['icb_superheat'], res['core']['M_ic'] / res['cmb_mass']
+    return (s >= -bound) if f == 0.0 else (s <= bound) if f == 1.0 else abs(s) <= bound
+
+
+def _pass_adiabat_icbs(spy, res):
+    """icb_mass of each full adiabat of an outer pass with an inner core, in order: calls on the
+    structure of a pass before, so the self-consistency adiabat on the returned structure and
+    the liquid branch (icb_mass 0.0) are left out."""
+    r = np.asarray(res['radii'])
+    return [
+        c.kwargs['icb_mass']
+        for c in spy.call_args_list
+        if len(c.args[0]) == r.size
+        and c.kwargs['icb_mass'] != 0.0
+        and not np.array_equal(c.args[0], r)
+    ]
+
+
 def _fes_cap(setup, caplog, **over):
     """_solve of the 2480 K Fe-S core, liquidus rule, 10 outer passes, warnings logged."""
     from zalmoxis import solver as zs
@@ -287,8 +309,11 @@ def test_a_cap_accept_reads_the_liquid_branch_of_the_restored_pass(setup, monkey
     from zalmoxis.core_profile import icb_superheat
 
     heat = mock.Mock(wraps=icb_superheat)
+    adiabat = mock.Mock(wraps=zs.compute_adiabatic_temperature)
     monkeypatch.setattr(zs, 'icb_superheat', heat)
+    monkeypatch.setattr(zs, 'compute_adiabatic_temperature', adiabat)
     res = _fes_cap(setup, caplog)
+    assert res['icb_adiabat'] in _pass_adiabat_icbs(adiabat, res)  # the ICB of a real pass
     assert 'Accepting max_iter solution' in caplog.text
     m, p, t_l, cmb, _, icb = heat.call_args.args  # the final ICB test
     assert icb == res['core']['M_ic'] and res['icb_adiabat'] is not None
@@ -310,11 +335,12 @@ def test_an_accept_with_the_liquid_off_the_liquidus_is_not_converged(
     the miss in K."""
     from zalmoxis import solver as zs
 
-    monkeypatch.setattr(zs, 'icb_superheat', lambda *_: (10.0, 10.0))
+    monkeypatch.setattr(zs, 'icb_superheat', lambda *_: (-10.0, 10.0))
     res = _fes_cap(setup, caplog)
     assert 'Accepting max_iter solution' in caplog.text
     assert res['converged'] is False and res['icb_converged'] is False
-    assert res['icb_superheat'] == 10.0 and 'liquid by 10 K' in caplog.text
+    assert res['icb_superheat'] == -10.0 and 'liquid by 10 K' in caplog.text
+    assert 'off the ICB of its adiabat' not in caplog.text  # the lag test is met
 
 
 def test_main_refuses_an_icb_rule_without_an_inner_core(setup):
@@ -581,10 +607,15 @@ def test_the_bulk_s_of_the_core_follows_the_icb(fe_s_iso):
         )
 
 
-def test_the_adiabat_of_a_converged_liquidus_solve_takes_its_icb(setup):
+def test_the_adiabat_of_a_converged_liquidus_solve_takes_its_icb(setup, monkeypatch):
     """At 2480 K at the surface the Fe-S core on the adiabat holds a partial inner core; the
-    adiabat of the returned pass took the inner-core mass of that pass (icb_adiabat) to within
-    the default tolerance_outer (1e-3) of the core mass, as its densities do."""
+    adiabat of the returned pass (the last pass adiabat, recorded by a spy) took the inner-core
+    mass that the result reports as icb_adiabat, within the default tolerance_outer (1e-3) of
+    the core mass of the inner-core mass of the layers."""
+    from zalmoxis import solver
+
+    spy = mock.Mock(wraps=solver.compute_adiabatic_temperature)
+    monkeypatch.setattr(solver, 'compute_adiabatic_temperature', spy)
     res = _solve(
         setup,
         inner=SOL,
@@ -594,7 +625,9 @@ def test_the_adiabat_of_a_converged_liquidus_solve_takes_its_icb(setup):
     )
     m_ic, cmb = res['core']['M_ic'], res['cmb_mass']
     assert 0.0 < m_ic < cmb and res['accepted_on'] == 'strict'
-    assert abs(res['icb_adiabat'] - m_ic) <= 1e-3 * cmb, (res['icb_adiabat'] / cmb, m_ic / cmb)
+    used = _pass_adiabat_icbs(spy, res)
+    assert used and used[-1] == res['icb_adiabat']
+    assert abs(used[-1] - m_ic) <= 1e-3 * cmb, (used[-1] / cmb, m_ic / cmb)
 
 
 def _liquid_branch(setup, res):
@@ -656,7 +689,7 @@ def test_a_pure_iron_core_has_its_icb_where_its_liquid_adiabat_meets_iron_meltin
     print(f'f {f:.4f} S {s:+.3f} K G_B {g_b / cmb:.4f} accepted_on {res["accepted_on"]}')
     assert 0.0 < f < 1.0 and abs(s) <= 0.5, (f, s)
     assert abs(g_b / cmb - f) <= 0.005, (g_b / cmb, f)
-    assert res['icb_superheat'] <= 0.5
+    assert _superheat_met(res) and res['icb_converged']
 
 
 def test_a_liquid_branch_off_the_t_table_above_the_icb_stops_the_solve(setup, monkeypatch):
@@ -694,7 +727,7 @@ def test_the_inner_core_of_a_pure_iron_core_grows_as_the_surface_cools(setup, va
     frac = []
     for t in temps:
         res = _solve(setup, inner=SOL, core_liquidus='Anzellini13-iron', surface_temperature=t)
-        assert res['icb_superheat'] <= 0.5, (t, res['icb_superheat'])
+        assert _superheat_met(res) and res['icb_converged'], (t, res['icb_superheat'])
         frac.append(res['core']['M_ic'] / res['cmb_mass'])
     print(dict(zip(temps, frac)))
     assert frac[0] == 1.0 and frac[-1] == 0.0
