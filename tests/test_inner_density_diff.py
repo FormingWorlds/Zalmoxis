@@ -135,3 +135,40 @@ def test_the_recorder_prefixes_are_messages_of_the_solver():
     prefixes = ['Inner loop:', 'Maximum inner iterations', 'Wall-clock timeout in inner loop']
     assert all(f"'{p}" in src for p in prefixes + ['Inner loop converged'])
     assert src.count("'Inner loop:") == 3
+
+
+@pytest.mark.timeout(120)
+def test_a_density_that_flips_on_every_inner_pass_takes_the_oscillation_bail(
+    monkeypatch, caplog
+):
+    """In outer pass 0 the EOS density is scaled by 1 + 0.003 (-1)^k on inner pass k, so the mean
+    density change flips sign on every pass while the residual stays between tolerance_inner and
+    0.1: after 15 flips the inner loop takes the best density of the pass (its smallest residual
+    in the log) and stops; on the real EOS of the later passes the solve converges strict."""
+    import zalmoxis.solver as zs
+    from tests.test_failed_structure_solve import _cfg, _run
+
+    real, real_diff = zs.calculate_mixed_density_batch, zs._inner_density_diff
+    diffs, starts = [], []
+
+    def batch(*args, **kwargs):
+        rho = real(*args, **kwargs)
+        return rho * (1 + 3e-3 * (-1) ** len(diffs)) if len(starts) <= 1 else rho
+
+    def diff(density, old_density, pressure):
+        if not np.any(old_density):  # an outer pass starts from density 0
+            starts.append(len(diffs))
+        diffs.append(real_diff(density, old_density, pressure))
+        return diffs[-1]
+
+    monkeypatch.setattr(zs, 'calculate_mixed_density_batch', batch)
+    monkeypatch.setattr(zs, '_inner_density_diff', diff)
+    caplog.set_level(logging.INFO, logger='fwl.zalmoxis.solver')
+    r = _run(_cfg(max_iterations_outer=20, wall_timeout=1e6))
+    bails = [
+        x for x in caplog.records if x.msg.startswith('Inner loop: accepting best density')
+    ]
+    assert len(bails) == 1 and starts[:2] == [0, starts[1]] and starts[1] > 15
+    assert bails[0].args == (15, min(diffs[: starts[1]]), 1e-4)
+    assert 1e-4 < min(diffs[: starts[1]]) < 0.1
+    assert r['converged'] and r['accepted_on'] == 'strict'
