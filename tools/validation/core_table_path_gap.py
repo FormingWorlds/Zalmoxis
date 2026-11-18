@@ -1,6 +1,6 @@
 """JAX against numpy on the inputs of the core temperature table cases.
 
-Solves the 1 Earth-mass PALEOS planet of ``tests/test_core_temperature_arrays.py`` on the JAX
+Solves the 1 Earth-mass PALEOS planet of ``tests/_core_table_helpers.py`` on the JAX
 and on the numpy path, without and with the core table, at the ODE tolerance of its config
 (``relative_tolerance`` 1e-5) and at 1e-8, and prints the relative difference of the radius,
 the central pressure, the CMB pressure and the central density of the 2 paths.

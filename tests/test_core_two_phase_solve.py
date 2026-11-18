@@ -508,9 +508,9 @@ def _against_prem(core, prem, by_phase):
 
 # median and largest rho / rho_PREM - 1 per region at equal pressure, macOS arm64 reference
 PREM_PINS = {
-    'Fe, 1 layer': {'inner': (0.019907, 0.020867), 'outer': (0.080178, 0.098590)},
-    'Fe, 2 layers': {'inner': (0.029861, 0.030726), 'outer': (0.080178, 0.098595)},
-    'Fe-S, 2 layers': {'inner': (0.031174, 0.034236), 'outer': (0.004022, 0.020906)},
+    'Fe, 1 layer': {'inner': (0.019911, 0.020872), 'outer': (0.080188, 0.098603)},
+    'Fe, 2 layers': {'inner': (0.029859, 0.030722), 'outer': (0.080168, 0.098589)},
+    'Fe-S, 2 layers': {'inner': (0.031195, 0.034260), 'outer': (0.004044, 0.020929)},
 }
 
 

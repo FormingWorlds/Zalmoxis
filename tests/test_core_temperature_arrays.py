@@ -14,9 +14,14 @@ from tests.test_jax_temperature_arrays import _INPUT_DIR, _chili_like_profile, _
 from zalmoxis import solver as zs
 from zalmoxis.config import _check_icb_rule, load_material_dictionaries
 from zalmoxis.invariants import StructureInvariantError
-from zalmoxis.structure_model import check_core_temperature_arrays, core_temperature
+from zalmoxis.structure_model import (
+    check_core_temperature_arrays,
+    core_temperature,
+    get_layer_mixture,
+    is_core,
+)
 
-pytestmark = [pytest.mark.unit, pytest.mark.timeout(60)]
+pytestmark = [pytest.mark.unit, pytest.mark.timeout(30)]
 
 
 def test_core_temperature_is_linear_in_p_and_extends_with_the_end_slopes():
@@ -135,11 +140,11 @@ def test_the_checks_of_an_accepted_result_with_a_core_table(case, caplog):
     """On an accepted result core nodes carry table(P) and mantle nodes the mantle source; 1e-6
     off either fails, and a core node at T <= 0 fails with the table, the node pressure and the
     side of the table named. Nodes beyond the table are counted with their largest distance as
-    a fraction of the table range; above 0.1 of it the result is no longer accepted. An
+    a fraction of the table range; at 0.09 of it the result stays accepted, at 0.11 it is not. An
     unaccepted result is not checked; an unused table counts no node and logs no warning."""
     table = (np.array([2.0, 4.0]), np.array([100.0, 200.0]))
     m, r = np.arange(6.0), np.arange(6.0) * 10.0
-    p = np.array([5.0 if case == 'far' else 4.1, 3.0, 1.9, 1.0, 0.5, 0.0])
+    p = np.array([4.22 if case == 'far' else 4.18, 3.0, 1.9, 1.0, 0.5, 0.0])
     t = np.where(m < 3.0, core_temperature(p, table), 7.0 * r)
     res = {
         'mass_enclosed': m,
@@ -157,11 +162,11 @@ def test_the_checks_of_an_accepted_result_with_a_core_table(case, caplog):
             t[2] = -1.0
         match = 'below the table range' if case == 'cold' else f'a {case} node'
         with pytest.raises(StructureInvariantError, match=match):
-            zs._core_table_keys(res, table, used, lambda r_, p_: 7.0 * r_)
+            zs._check_core_table(res, table, used, lambda r_, p_: 7.0 * r_)
         return
     if case in ('not accepted', 'unused'):
         t[1] *= 2.0  # not checked
-    out = zs._core_table_keys(res, table, used, lambda r_, p_: 7.0 * r_)
+    out = zs._check_core_table(res, table, used, lambda r_, p_: 7.0 * r_)
     assert out['core_T_used'] is used
     if not used:
         assert out['core_T_nodes_outside'] == 0 and out['core_T_max_excess'] == 0.0
@@ -174,3 +179,12 @@ def test_the_checks_of_an_accepted_result_with_a_core_table(case, caplog):
     assert out['converged'] is not far
     assert out['accepted_on'] == (None if far or case == 'not accepted' else 'strict')
     assert any('Not accepted' in x.getMessage() for x in caplog.records) is far
+
+
+@pytest.mark.parametrize('k', [-2, -1, 0, 1, 2])
+def test_the_core_rule_of_the_table_picks_the_core_material(k):
+    """is_core, which places the table, gives the core at the masses where get_layer_mixture
+    gives the core material, also within round-off of the core mass."""
+    cmb, m = 3.0e24, 3.0e24 * (1.0 + k * 1e-12)
+    layers = {'core': 'core', 'mantle': 'mantle'}
+    assert bool(is_core(m, cmb)) is (get_layer_mixture(m, cmb, 2 * cmb, layers) == 'core')

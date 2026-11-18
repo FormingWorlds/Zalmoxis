@@ -571,7 +571,7 @@ def _short_of_adiabat(result, asked):
     return bool(asked and not full)
 
 
-def _core_table_keys(result, table, used, mantle_T):
+def _check_core_table(result, table, used, mantle_T):
     """Add ``core_T_used``, ``core_T_nodes_outside`` and ``core_T_max_excess`` (``main``) to
     ``result`` when a core table ``table`` is given; an unused table counts no node. With
     ``used``, an accepted result raises StructureInvariantError at a core node of T <= 0 or
@@ -602,8 +602,8 @@ def _core_table_keys(result, table, used, mantle_T):
         k = int(np.argmax(cold))
         raise StructureInvariantError(
             f'core_temperature_arrays gives T = {t[k]:.4g} K at the core node of P = '
-            f'{p[k]:.4g} Pa, {"below" if p[k] < lo else "above"} the table range '
-            f'[{lo:.4g}, {hi:.4g}] Pa, by its end-slope extension'
+            f'{p[k]:.4g} Pa, below the table range [{lo:.4g}, {hi:.4g}] Pa, by its end-slope '
+            'extension'
         )
     mantle = [mantle_T(r_, p_) for r_, p_ in zip(result['radii'], p)]
     want = np.where(core, core_temperature(p, table), mantle)
@@ -871,18 +871,20 @@ def main(
         external temperature.
     core_temperature_arrays : tuple[ndarray, ndarray] or None, optional
         Core temperature table ``(P_arr, T_arr)``: pressures [Pa], positive and strictly
-        increasing, and temperatures [K], positive; 2 one-dimensional arrays of equal length
-        >= 2. Every core node and core ODE evaluation (enclosed mass below ``cmb_mass``, outer
-        and inner core) takes T(P) from the table, linear in P and extended with the end
-        slopes outside it; the mantle keeps ``temperature_arrays`` or
-        ``temperature_function``: the function, or the arrays with ``use_jax``, must be
-        given. A core without a T-dependent
-        EOS ignores the table (one INFO line). The result then holds ``core_T_used`` (True
-        when the table set the core T), ``core_T_nodes_outside`` (core nodes with P outside
-        the table) and ``core_T_max_excess`` (their largest distance beyond the table as a
-        fraction of ``P_arr[-1] - P_arr[0]``, 0.0 for none; a WARNING when above 0).
-        With a table, ``core_liquidus`` and ``temperature_mode = 'adiabatic_from_cmb'`` are
-        accepted together.
+        increasing, and temperatures [K], positive and not falling with P; 2 one-dimensional
+        arrays of equal length >= 2 (else ValueError). Every core node and core ODE evaluation
+        (enclosed mass below ``cmb_mass``, outer and inner core) takes T(P) from the table,
+        linear in P and extended with the end slopes outside it; the mantle keeps
+        ``temperature_function``, or ``temperature_arrays`` with ``use_jax``, one of which must
+        be given (else ValueError). A core without a T-dependent EOS ignores the table (one
+        INFO line). The result then holds ``core_T_used`` (True when the table set the core
+        T), ``core_T_nodes_outside`` (core nodes with P outside the table) and
+        ``core_T_max_excess`` (their largest distance beyond the table as a fraction of
+        ``P_arr[-1] - P_arr[0]``, 0.0 for none; a WARNING when above 0). Above 0.1 the result
+        is not accepted (``converged`` False, ``accepted_on`` None). An accepted result with a
+        core node at T <= 0, or a node off its source by more than a relative 1e-9, raises
+        StructureInvariantError. With a table, ``core_liquidus`` and ``temperature_mode =
+        'adiabatic_from_cmb'`` are accepted together.
 
     Returns
     -------
@@ -1056,7 +1058,7 @@ def main(
             result = _report_table_bands(result, *bands)
             if seed_time:
                 result['total_time'] += seed_time
-            result = _core_table_keys(
+            result = _check_core_table(
                 result, table, core_temperature_arrays is not None, mantle_T
             )
             return _check_accepted(result, config_params, *bands, volatile_profile, asked)
@@ -1186,7 +1188,7 @@ def main(
     result = _report_table_bands(result, *bands)
     if newton_keys or seed_time:
         result.update(newton_keys, total_time=result['total_time'] + newton_time + seed_time)
-    result = _core_table_keys(result, table, core_temperature_arrays is not None, mantle_T)
+    result = _check_core_table(result, table, core_temperature_arrays is not None, mantle_T)
     return _check_accepted(result, run_params, *bands, volatile_profile, asked)
 
 

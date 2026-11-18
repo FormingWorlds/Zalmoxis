@@ -170,3 +170,15 @@ def test_the_core_adiabat_of_a_10_earth_mass_planet_is_accepted_as_a_table():
     assert res['converged'] and res['accepted_on'] is not None and res['core_T_used'] is True
     assert res['core_T_max_excess'] < zs._CORE_T_MAX_EXCESS
     _assert_node_rule(res, mantle, table)
+
+
+@pytest.mark.physics_invariant
+@pytest.mark.timeout(2400)  # Newton at rtol 1e-9: about 110 s on an Apple M1 Ultra
+def test_the_newton_outer_solver_takes_the_table():
+    """The Newton outer solver, the PROTEUS default, at the ODE tolerance it needs (1e-9) on
+    the JAX path: the core nodes carry the table and the core mass closes."""
+    ode = {'relative_tolerance': 1e-9, 'absolute_tolerance': 1e-10}
+    res, mantle = _solve(table=_table, outer_solver='newton', **ode)
+    assert res['core_T_used'] is True and 'newton_n_iter' in res
+    _assert_node_rule(res, mantle, _table(_chili_like_profile()[3]))
+    assert abs(_mass_closure(res)) < CLOSURE

@@ -1,6 +1,6 @@
 # Coupling to PROTEUS
 
-This page is the **theory** of how Zalmoxis plugs into a PROTEUS coupled run: where the structure solver sits in the per-iteration sequence, what the wrapper does on init and on every dynamic update, which `hf_row` keys it consumes and produces, and where the known landmines live. For the practical TOML recipe, see the [PROTEUS coupling how-to](../How-to/proteus_coupling.md).
+This page is the **theory** of how Zalmoxis plugs into a PROTEUS coupled run: where the structure solver sits in the per-iteration sequence, what the wrapper does on init and on every dynamic update, which `hf_row` keys it consumes and produces, and which known coupling problems a user can meet. For the practical TOML recipe, see the [PROTEUS coupling how-to](../How-to/proteus_coupling.md).
 
 When Zalmoxis runs inside PROTEUS, the coupling is at the **function-call level**, not at the file level. PROTEUS does not write a Zalmoxis TOML, does not invoke `python -m zalmoxis`, and does not read `output/planet_profile.txt`. The wrapper in `proteus/interior_struct/zalmoxis.py` builds a Python dict from the PROTEUS configuration and calls `zalmoxis.solver.main()` (or `solve_miscible_interior()` when the global-miscibility path is active). State exchange happens through the shared `hf_row` dictionary, plus one file (`zalmoxis_output.dat`) that Aragog reads back as its mantle mesh.
 
@@ -333,21 +333,21 @@ With `use_jax = true` and `temperature_arrays` supplied, Zalmoxis takes T from t
 
 How does a caller set the temperature of the core, not only of the mantle?
 
-`main` takes `core_temperature_arrays = (P_arr, T_arr)`, a table of the core temperature $T$ [K] against the pressure $P$ [Pa]. Each core node and each evaluation of the structure equations in the core then reads $T$ from the table; the mantle keeps `temperature_arrays` or `temperature_function`.
+`main` takes `core_temperature_arrays = (P_arr, T_arr)`, a table of the core temperature $T$ [K] against the pressure $P$ [Pa]. Each core node and each evaluation of the structure equations in the core then reads $T$ from the table; the mantle keeps its own temperature.
 
-A core node is a node whose enclosed mass is below the core mass, the rule that picks the core material. The table applies in the outer and the inner core, on the numpy and the JAX path, in the core arrays and in the ICB rule of a [two-layer core](mixing.md#two-layer-core).
+A core node is a node whose enclosed mass is below the core mass. This is the rule that picks the core material, so the temperature and the material change at the same node. The table applies in the outer and inner core, on both paths, in the core arrays and in the ICB rule of a [two-layer core](mixing.md#two-layer-core).
 
-Between the table points $T$ is linear in $P$. Outside it, $T$ continues with the slope of the end interval, since the central-pressure search tries pressures beyond the final profile.
+Between the table points $T$ is linear in $P$. Outside the table, $T$ continues with the slope of the end interval, since the central-pressure search tries pressures beyond the final profile.
 
 As an example, a pure-iron two-layer core of an Earth-mass planet, with the mantle at 2500 K and a table that meets the Anzellini iron melting curve at 330 GPa, gets its ICB there: the inner core holds 0.13 of the core mass.
 
 The limits:
 
-- The table is 2 one-dimensional arrays of equal length of at least 2, all finite, with positive, strictly increasing pressures and positive temperatures that do not fall with pressure. Any other table, or one without a mantle temperature (`temperature_function`, or `temperature_arrays` with `use_jax`), raises `ValueError` before the solve.
+- A table of another form than the [API reference](../Reference/api/zalmoxis.solver.md) gives, a temperature that falls with pressure, or a table without a mantle temperature (`temperature_function`, or `temperature_arrays` with `use_jax`) raises `ValueError` before the solve.
 - A core without a temperature-dependent equation of state ignores the table; the result has `core_T_used = False`.
-- Core nodes outside the table give a warning; beyond 0.1 of the table range the result is not accepted.
+- Core nodes outside the table give a warning. A node beyond the table by more than 0.1 of `P_arr[-1] - P_arr[0]` leaves the result not accepted (`converged` is False).
 - `main` accepts `core_liquidus` with `temperature_mode = 'adiabatic_from_cmb'` when a table is given. `validate_config` does not see the table and refuses that pair.
-- An accepted result with a core node at $T \le 0$, or a node off its source by more than a relative $10^{-9}$, raises `StructureInvariantError`.
+- An accepted result raises `StructureInvariantError` when a core node has $T \le 0$, or when a node differs from its source (the table or the mantle temperature) by more than a relative $10^{-9}$.
 
 **Where this is checked.** [Core temperature from a table given by the caller](../Validation/hydrostatic_structure.md#core-temperature-from-a-table-given-by-the-caller).
 
