@@ -1464,18 +1464,18 @@ def test_the_newton_hand_off_and_its_retry_run_at_the_newton_mass_tolerance(
 def test_an_iteration_cap_whose_newest_blend_step_diverges_returns_an_earlier_best_pass(
     caplog, monkeypatch
 ):
-    """3-layer PALEOS ice planet (cmf 0.3, mmf 0.4), adiabatic Picard, 13 outer passes and
-    tolerance_outer 0.1, with the 3 % cap accept threshold raised to 10 %: the linear error drops
-    from 0.12 to 0.056 at pass 7, so the ramp starts there on every round-off start, and every
-    pass of the newest blend step misses the mass by more than 20 %, so the cap returns the
-    linear pass (blend 0, R about 1.3094e7 m), not accepted, and the log names the ramp start
-    and the fallback. A trigger in the slow linear tail (1e-2) moves the ramp start by up to 8
-    passes with the round-off of the runner."""
+    """3-layer PALEOS ice planet (cmf 0.3, mmf 0.4), adiabatic Picard, 13 outer passes,
+    tolerance_outer and the cap accept threshold both 0.1: the linear error drops from 0.12 to
+    0.056 in one pass, so the ramp starts by pass 8 (pass 7 on 5 round-off starts) and reaches
+    blend 1 inside the cap; every blended pass misses the mass by more than 10 %, so the cap
+    returns the linear pass (blend 0, mass error near 0.056, R regression pin 1.3094e7 m), not
+    accepted, and the log names the ramp start and the fallback."""
     from tests.test_spider_coupling_convergence import _has_paleos_data
     from zalmoxis.config import load_solidus_liquidus_functions, load_zalmoxis_config
 
     if not _has_paleos_data():
         pytest.skip('PALEOS tables not on disk')
+    CAP_ACCEPT = 0.1  # tolerance_outer and the cap accept threshold
     cfg = load_zalmoxis_config(os.path.join(ROOT, 'input', 'default.toml'))
     cfg.update(
         data_output_enabled=False,
@@ -1489,9 +1489,9 @@ def test_an_iteration_cap_whose_newest_blend_step_diverges_returns_an_earlier_be
         },
         wall_timeout=WALL,
         max_iterations_outer=13,
-        tolerance_outer=0.1,
+        tolerance_outer=CAP_ACCEPT,
     )
-    monkeypatch.setattr(zs, '_TIMEOUT_ACCEPT_MASS_ERR', 0.1)
+    monkeypatch.setattr(zs, '_TIMEOUT_ACCEPT_MASS_ERR', CAP_ACCEPT)
     assert cfg['temperature_mode'] == 'adiabatic'
     melt = load_solidus_liquidus_functions(
         cfg['layer_eos_config'],
@@ -1506,8 +1506,8 @@ def test_an_iteration_cap_whose_newest_blend_step_diverges_returns_an_earlier_be
     assert 'No pass of adiabat blend 1.00' in caplog.text
     assert not r['converged'] and r['accepted_on'] is None
     assert r['adiabat_blend'] == 0.0
-    assert r['mass_error_at_accept'] < 0.1
-    assert r['radii'][-1] == pytest.approx(1.3094e7, rel=1e-2)
+    assert r['mass_error_at_accept'] == pytest.approx(0.056, abs=0.01)
+    assert r['radii'][-1] == pytest.approx(1.3094e7, rel=3e-3)
 
 
 @pytest.mark.smoke

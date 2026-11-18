@@ -39,14 +39,15 @@ def test_without_a_node_above_zero_pressure_every_node_counts():
 
 
 def test_a_padded_node_at_zero_density_gives_no_warning():
-    """A padded node whose old density is 0 (the EOS value at P <= 0) raises no RuntimeWarning
-    and does not set the residual; with no node at P > 0 and both densities 0 the residual is 0."""
+    """A padded node whose old density is 0 (the EOS value at P <= 0) and whose new density is
+    not raises no RuntimeWarning and does not set the residual; with no node at P > 0 and both
+    densities 0 the residual is 0."""
     import warnings
 
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter('always')
         r = _inner_density_diff(
-            np.array([1.1, 0.0]), np.array([1.0, 0.0]), np.array([1e9, 0.0])
+            np.array([1.1, 0.5]), np.array([1.0, 0.0]), np.array([1e9, 0.0])
         )
         r0 = _inner_density_diff(np.zeros(2), np.zeros(2), np.zeros(2))
     assert [str(x.message) for x in w] == []

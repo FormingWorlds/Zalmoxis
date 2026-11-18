@@ -1101,13 +1101,20 @@ class TestMidpointAdiabat:
     def test_the_binodal_scale_reaches_the_nabla_read(self, monkeypatch):
         """``binodal_T_scale`` is passed on to ``get_mixed_nabla_ad`` at every read, also when it
         differs from the default of that function."""
+        import inspect
+
         import zalmoxis.mixing as _mix
 
+        sig, scales = inspect.signature(_mix.get_mixed_nabla_ad), []
+
+        def nabla(P, T, *a, **k):
+            bound = sig.bind(P, T, *a, **k)
+            bound.apply_defaults()
+            scales.append(bound.arguments['binodal_T_scale'])
+            return 0.1
+
         _stub_adiabat(monkeypatch, lambda P, T: 0.1)
-        scales = []
-        monkeypatch.setattr(
-            _mix, 'get_mixed_nabla_ad', lambda P, T, *a, **k: scales.append(a[-1]) or 0.1
-        )
+        monkeypatch.setattr(_mix, 'get_mixed_nabla_ad', nabla)
         _call(_profile(n=5), 'surface', 3000.0, binodal_T_scale=75.0)
         assert scales and set(scales) == {75.0}
 
