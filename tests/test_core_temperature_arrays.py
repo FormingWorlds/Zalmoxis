@@ -131,15 +131,15 @@ def test_the_liquidus_rule_with_the_cmb_anchored_adiabat_needs_the_core_table(mo
         )
 
 
-_CASES = ['near', 'far', 'core', 'mantle', 'cold', 'not accepted', 'unused']
+_CASES = ['near', 'far', 'core', 'mantle', 'cold', 'cold inside', 'not accepted', 'unused']
 
 
 @pytest.mark.physics_invariant
 @pytest.mark.parametrize('case', _CASES)
 def test_the_checks_of_an_accepted_result_with_a_core_table(case, caplog):
     """On an accepted result core nodes carry table(P) and mantle nodes the mantle source; 1e-6
-    off either fails, and a core node at T <= 0 fails with the table, the node pressure and the
-    side of the table named. Nodes beyond the table are counted with their largest distance as
+    off either fails; a core node at T <= 0 below the table fails with the table and the node
+    pressure named, one inside the table as a node off its source. Nodes beyond the table are counted with their largest distance as
     a fraction of the table range; at 0.09 of it the result stays accepted, at 0.11 it is not. An
     unaccepted result is not checked; an unused table counts no node and logs no warning."""
     table = (np.array([2.0, 4.0]), np.array([100.0, 200.0]))
@@ -156,11 +156,13 @@ def test_the_checks_of_an_accepted_result_with_a_core_table(case, caplog):
         'accepted_on': None if case == 'not accepted' else 'strict',
     }
     used = case != 'unused'
-    if case in ('core', 'mantle', 'cold'):
+    if case in ('core', 'mantle', 'cold', 'cold inside'):
         t[1 if case == 'core' else 4] *= 1.0 + 1e-6
-        if case == 'cold':
-            t[2] = -1.0
-        match = 'below the table range' if case == 'cold' else f'a {case} node'
+        if case.startswith('cold'):
+            t[2 if case == 'cold' else 1] = -1.0
+        match = {'cold': 'below the table range', 'cold inside': 'a core node'}.get(
+            case, f'a {case} node'
+        )
         with pytest.raises(StructureInvariantError, match=match):
             zs._check_core_table(res, table, used, lambda r_, p_: 7.0 * r_)
         return
