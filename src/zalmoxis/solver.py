@@ -43,6 +43,7 @@ from .eos import (
     create_pressure_density_files,
 )
 from .eos.seager import _band_debug_seen
+from .eos.temperature import ADIABAT_P_FLOOR
 from .invariants import StructureInvariantError, check_accepted
 from .mixing import (
     _PALEOS_2PHASE_NAMES,
@@ -343,6 +344,56 @@ _SECANT_CLAMP = 0.02
 _SECANT_FLOOR = 2.0
 _SEED_KEYS = ('radii', 'pressure', 'mass_enclosed')
 _SEED_TABLE_BLEND = -1.0  # adiabat_table_blend of a pass whose T table comes from adiabat_seed
+# T table pressures over the top cell (the shell), see _adiabat_table
+_TOP_SHELL_POINTS = 64
+
+
+def _adiabat_table(pressure, T, mass, top_shell, outward=False):
+    """log10 P [Pa] and T [K] of the adiabat ``T`` on the nodes at P > 0, sorted by P: the T(P)
+    lookup of the density solve. The top cell gains ``_TOP_SHELL_POINTS`` geometric pressures q
+    [Pa] when its upper end lies more than 1e-9 (relative) above its lower end, with T
+    ``top_shell(q, T_top, m)``: the adiabat inward from T_top at q[0] at the enclosed mass
+    m [kg] of the node whose mixture the adiabat of the solve takes over the cell. That is the
+    deeper node of the cell for an adiabat integrated inward, and the node outside it (next in
+    the node order, along which P falls) for one integrated ``outward`` from the CMB.
+
+    Padded top (P <= 0 at the outer node): the cell runs from ``ADIABAT_P_FLOOR`` to the lowest
+    positive node, from the T of the padded node. Unpadded top: from the top node (from the
+    floor when its log10 P lies below that of the floor, the node keeping its place) to the
+    next node, from the T of the top node. log10 P does not decrease, and it is strictly
+    increasing over the shell."""
+    s = np.argsort(pressure)
+    keep = pressure[s] > 0
+    P, Ts = pressure[s][keep], T[s][keep]
+    pad = pressure[-1] <= 0
+    j = 0 if pad else 1  # the deeper node of the cell
+    if P.size <= j:
+        return np.log10(P), Ts
+    lo = ADIABAT_P_FLOOR if pad else max(P[0], ADIABAT_P_FLOOR)
+    if P[j] > lo * (1 + 1e-9):
+        q = np.geomspace(lo, P[j], _TOP_SHELL_POINTS + 1)[:-1]
+        k = int(np.log10(P[0]) < np.log10(lo))  # a top node below the floor stays
+        # min: a guard if P is not in node order
+        node = min(s[keep][j] + int(outward), mass.size - 1)
+        shell = top_shell(q, T[-1] if pad else Ts[0], mass[node])
+        P, Ts = np.concatenate([P[:k], q, P[j:]]), np.concatenate([Ts[:k], shell, Ts[j:]])
+    return np.log10(P), Ts
+
+
+def _shell_adiabat(adiabat, q, T_top, m):
+    """T [K] at the shell pressures ``q`` [Pa], ascending from the top: ``adiabat(radii,
+    pressure, mass, top=T_top)`` inward from ``T_top`` at ``q[0]``, with every shell point at
+    the enclosed mass ``m`` [kg], so in one layer."""
+    return adiabat(np.arange(q.size), q[::-1], np.full(q.size, m), top=T_top)[::-1]
+
+
+def _inner_density_diff(density, old_density, pressure):
+    """Largest relative density change [-] of an inner Picard iteration over the nodes with
+    P > 0, or over every node when none has P > 0. A padded node (P <= 0) takes density 0 from
+    the EOS, so damped Picard moves it by exactly alpha per iteration; it is left out."""
+    rd = np.abs((density - old_density) / (old_density + 1e-20))
+    live = np.asarray(pressure[: rd.size]) > 0
+    return float(np.max(rd[live] if live.any() else rd))
 
 
 def _secant_radius(R, M, R_prev, M_prev, M_target, R_fallback):
@@ -553,9 +604,11 @@ def _report_table_bands(
 
     A table counts at a mantle node when the solve read it there: the solid table at or
     below the solidus, below the liquidus, or where the melting curves are undefined; the
-    melt table above the solidus; the gradient table where the adiabat integration read
-    it, when the solve computed the adiabat. The check uses the final P and T, which are
-    the values the adiabat integration read only once its blend reached 1. Only tables in
+    melt table above the solidus; the gradient table at the start node of each segment the
+    adiabat integration stepped, when the solve computed the adiabat. Its midpoint substeps and
+    the read at 1e5 Pa of a segment whose start node lies below that pressure are between
+    nodes and are not checked. The check uses the final P and T, which are the values the
+    adiabat integration read only once its blend reached 1. Only tables in
     the interpolation cache are checked. A node with a non-finite P or T counts as
     infinitely far outside. One warning names the tables with a node outside their band,
     and a second one the limit when an excess exceeds it.
@@ -617,15 +670,16 @@ def _report_table_bands(
     t_sol[mantle] = [sol(p) for p in P[mantle]]
     t_liq[mantle] = [liq(p) for p in P[mantle]]
     undefined = ~(np.isfinite(t_sol) & np.isfinite(t_liq))
-    # The adiabat integration (eos/temperature.py) steps between nodes with P >= 1e5 at
-    # both ends: inward it reads the outer node of a mantle step, outward the inner one.
-    step = (P[:-1] >= 1e5) & (P[1:] >= 1e5)
+    # For P falling outward the adiabat (eos/temperature.py) reads nabla at the start node of
+    # each segment above ADIABAT_P_FLOOR: inward the outer node, outward the inner one.
+    inner, outer = P[:-1], P[1:]
     grad = np.zeros(len(P), bool)
     if config_params.get('temperature_mode') == 'adiabatic_from_cmb':
         cmb = max(1, min(int(np.searchsorted(m, result['cmb_mass'])), len(P) - 1))
+        step = (inner > ADIABAT_P_FLOOR) & (outer < np.inf)  # a NaN or inf end is not stepped
         grad[:-1] = mantle[1:] & step & (np.arange(1, len(P)) > cmb)
     else:
-        grad[1:] = mantle[:-1] & step
+        grad[1:] = mantle[:-1] & (inner >= ADIABAT_P_FLOOR) & (outer >= ADIABAT_P_FLOOR)
     bad = mantle & ~(np.isfinite(P) & np.isfinite(T))
     reads = {
         'solid': mantle & (undefined | (T <= t_sol) | (T < t_liq)),
@@ -1970,13 +2024,14 @@ def _solve(
     _secant_prev = None  # (radius, mass) of the last pass on a full-adiabat table
     _secant_err = None  # mass error of the pass whose radius came from a secant step
 
-    def _adiabat(radii, pressure, mass_enclosed):
-        # 'adiabatic_from_cmb' anchors at the CMB and integrates outward, 'adiabatic' inward
+    def _adiabat(radii, pressure, mass_enclosed, top=None):
+        # 'adiabatic_from_cmb' anchors at the CMB and integrates outward, 'adiabatic' and a
+        # given outer-node T ``top`` inward
         return compute_adiabatic_temperature(
             radii,
             pressure,
             mass_enclosed,
-            surface_temperature,
+            surface_temperature if top is None else top,
             cmb_mass,
             core_mantle_mass,
             layer_mixtures,
@@ -1988,9 +2043,14 @@ def _solve(
             condensed_rho_min,
             condensed_rho_scale,
             binodal_T_scale,
-            anchor='cmb' if temperature_mode == 'adiabatic_from_cmb' else 'surface',
+            anchor='cmb'
+            if top is None and temperature_mode == 'adiabatic_from_cmb'
+            else 'surface',
             cmb_temperature=cmb_temperature,
         )
+
+    def _top_shell(q, T_top, m):
+        return _shell_adiabat(_adiabat, q, T_top, m)
 
     # For adiabatic mode, cap the initial center_temperature guess to
     # prevent the linear-T initial profile from being far above the
@@ -2152,14 +2212,13 @@ def _solve(
                 # ODE's actual pressure rather than a fixed radial mapping.
                 # This prevents unphysical (low P, high T) queries that
                 # hit NaN gaps in the PALEOS tables.
-                _sort = np.argsort(prev_pressure)
-                _P_sorted = prev_pressure[_sort]
-                _T_sorted = adiabat_T[_sort]
-                # Remove P <= 0 entries (surface padding)
-                _valid = _P_sorted > 0
-                _P_sorted = _P_sorted[_valid]
-                _T_sorted = _T_sorted[_valid]
-                _logP_sorted = np.log10(_P_sorted)
+                _logP_sorted, _T_sorted = _adiabat_table(
+                    prev_pressure,
+                    adiabat_T,
+                    prev_mass_enclosed,
+                    _top_shell,
+                    temperature_mode == 'adiabatic_from_cmb',
+                )
 
                 # Clamp adiabat T to a physically reasonable range.
                 # np.interp flat-extrapolates at the edges, but the Brent
@@ -2611,9 +2670,7 @@ def _solve(
                 )
 
             # Check density convergence
-            relative_diff_inner = np.max(
-                np.abs((density - old_density) / (old_density + 1e-20))
-            )
+            relative_diff_inner = _inner_density_diff(density, old_density, pressure)
 
             # Inner-loop oscillation detection: track mean density change direction
             mean_change = np.mean(density[:n_valid] - old_density[:n_valid])

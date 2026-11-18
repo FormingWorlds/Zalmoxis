@@ -134,7 +134,7 @@ markers = [
     "integration: Real-physics integration tests against published references (PALEOS rocky 1 + 5 M_earth)",
     "slow: Slow convergence tests (minutes, full composition grids)",
     "wolfbower: Full solves on the Wolf & Bower mantle tables, run in their own nightly job",
-    "paleos_adiabat: Full adiabatic PALEOS solves at 5 M_earth with no reachable wall clock, run in their own nightly job",
+    "paleos_adiabat: Full adiabatic PALEOS solves (5 M_earth with no reachable wall clock, round-off starts of input/default.toml), run in their own nightly job",
     "accept_solves: Real solves of the accept labels and the structure invariants, run in their own nightly job",
     "accept_solves_long: The accept_solves real solves that take longest, run in their own nightly job with a longer per-test timeout",
     "accept_solves_reference: The solve of the stored grid start-up reference at its own tolerance, run in its own nightly job",

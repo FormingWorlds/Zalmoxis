@@ -8,6 +8,7 @@ instead of returning a result.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 
@@ -498,3 +499,47 @@ class TestFailedPicardIteration:
         with pytest.raises(StructureSolveError, match='outer iteration 1,') as exc:
             _run(cfg)
         assert f'at R = {radius[1]:.6e} m' in str(exc.value)
+
+
+@pytest.mark.smoke
+def test_a_density_that_flips_on_every_inner_pass_takes_the_oscillation_bail(
+    monkeypatch, caplog
+):
+    """Until the inner loop of outer pass 0 bails, the EOS density is scaled by 1 + 0.03 (-1)^k on
+    inner pass k, so the mean density change flips sign on every pass while the best residual
+    stays between 10 tolerance_inner and the 0.1 floor: after 15 flips the inner loop logs its
+    smallest residual and stops with the density marked converged (read on a 1-pass solve,
+    whose returned state is that pass); on the real EOS the full solve converges strict. Both
+    solves take the solver's default ODE tolerances."""
+    d = zs._default_solver_params(earth_mass)
+    tol = d['tolerance_inner']
+    ode = {k: d[k] for k in ('relative_tolerance', 'absolute_tolerance')}
+    real, real_diff = zs.calculate_mixed_density_batch, zs._inner_density_diff
+    diffs, starts = [], []
+
+    def bails():
+        return [x for x in caplog.records if x.msg.startswith('Inner loop: accepting best')]
+
+    def batch(*args, **kwargs):
+        rho = real(*args, **kwargs)
+        return rho if bails() or len(starts) > 1 else rho * (1 + 3e-2 * (-1) ** len(diffs))
+
+    def diff(density, old_density, pressure):
+        if not np.any(old_density):  # an outer pass starts from density 0
+            starts.append(len(diffs))
+        diffs.append(real_diff(density, old_density, pressure))
+        return diffs[-1]
+
+    monkeypatch.setattr(zs, 'calculate_mixed_density_batch', batch)
+    monkeypatch.setattr(zs, '_inner_density_diff', diff)
+    caplog.set_level(logging.INFO, logger='fwl.zalmoxis.solver')
+    r = _run(_cfg(max_iterations_outer=20, wall_timeout=1e6, **ode))
+    best = min(diffs[: starts[1]])
+    assert len(bails()) == 1 and starts[0] == 0 and starts[1] > 15
+    assert bails()[0].args == (15, best, tol) and 10 * tol < best < 0.1
+    assert r['converged'] and r['accepted_on'] == 'strict'
+    caplog.clear(), diffs.clear(), starts.clear()
+    monkeypatch.setattr(zs, 'check_accepted', lambda *a, **k: None)  # scaled EOS density
+    cfg = _cfg(max_iterations_outer=1, wall_timeout=1e6, **ode)
+    one = zs._solve(cfg, load_material_dictionaries(), None, os.path.join(ROOT, 'input'))
+    assert len(bails()) == 1 and one['converged_density'] is True

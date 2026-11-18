@@ -8,14 +8,79 @@ linear, prescribed, and adiabatic profiles).
 from __future__ import annotations
 
 import logging
+import math
+import numbers
 import os
 
 import numpy as np
 
 from ..constants import CONDENSED_RHO_MIN_DEFAULT, CONDENSED_RHO_SCALE_DEFAULT
+from ..invariants import StructureInvariantError
 from .tdep import _get_paleos_nabla_ad
 
 logger = logging.getLogger('fwl.' + __name__)
+
+
+ADIABAT_MAX_DLNP = 0.0025  # largest ln P change of one midpoint substep
+ADIABAT_P_FLOOR = 1e5  # Pa: lower edge of the PALEOS rock and iron tables; T is held below it
+_T_MAX, _T_MIN_CMB = 100000.0, 100.0  # node caps [K]: PALEOS table maximum, CMB-anchor floor
+
+
+def _is_real(x):
+    """True for a real number that is not a bool (a TOML ``true`` is not a number here)."""
+    return isinstance(x, numbers.Real) and not isinstance(x, bool)
+
+
+def _times_exp(t, a):
+    """t exp(a); in log space for a >= 700 (exp overflows above about 709.78), for a tiny t."""
+    return t * math.exp(a) if a < 700.0 else math.exp(math.log(t) + a)
+
+
+def _segment_temperature(T0, P_from, P_to, nabla_of, h, inward):
+    """Temperature at ``P_to`` on the adiabat d ln T / d ln P = nabla through ``(P_from, T0)``.
+
+    Integrates with the midpoint rule in ln P over ceil(|d ln P| / ``h``) equal substeps, after
+    raising both pressures to ``ADIABAT_P_FLOOR``, so T is held below that pressure; a padded
+    end (P = 0) or a negative one counts as the floor. Returns ``T0`` at a NaN or +inf end, for
+    a non-positive ``T0``, and when the segment is empty or does not run in the anchor direction
+    (``inward``: towards higher P); T is held from the first substep where ``nabla_of(P, T)`` is
+    None or not positive. Inward T stops at the node cap ``_T_MAX`` and outward T at the
+    CMB-anchor floor ``_T_MIN_CMB``, in every substep and every read of ``nabla_of``; a segment
+    that reaches it returns it exactly."""
+    if not (P_from < math.inf and P_to < math.inf and 0 < T0 < math.inf):
+        return T0
+    p, t = max(P_from, ADIABAT_P_FLOOR), T0  # the first read is at the start node itself
+    x0, x1 = math.log(p), math.log(max(P_to, ADIABAT_P_FLOOR))
+    if x1 == x0 or (x1 > x0) != inward:
+        return T0
+    n = math.ceil(abs(x1 - x0) / h)
+    dx, dy = (x1 - x0) / n, 0.0  # dy: ln T change over the segment, summed from 0
+    T_lim, clamp = (_T_MAX, min) if inward else (_T_MIN_CMB, max)
+    dy_lim = math.log(T_lim) - math.log(T0)  # ln T change to the cap or floor
+    for k in range(n):
+        k1 = nabla_of(p, t)
+        if k1 is None or not k1 > 0:
+            break
+        t_mid = clamp(_times_exp(t, clamp(dx / 2 * k1, dy_lim - dy)), T_lim)
+        k2 = nabla_of(math.exp(x0 + (k + 0.5) * dx), t_mid)
+        if k2 is None or not k2 > 0:
+            break
+        dy = clamp(dy + dx * k2, dy_lim)
+        if dy == dy_lim:  # T0 exp(dy_lim) can miss T_lim by 1 ulp
+            return T_lim
+        p, t = math.exp(x0 + (k + 1) * dx), clamp(_times_exp(T0, dy), T_lim)
+    return t
+
+
+def _check_profile(T, first):
+    """Raise StructureInvariantError unless ``T`` is finite and positive at every node and does
+    not rise outward from node ``first`` (the anchor side of the integrated nodes)."""
+    if not np.all(np.isfinite(T) & (T > 0)):
+        raise StructureInvariantError(
+            'adiabat temperature is not finite and positive at every node.'
+        )
+    if np.any(np.diff(T[first:]) > 0):
+        raise StructureInvariantError('adiabat temperature is not non-increasing outward.')
 
 
 def compute_adiabatic_temperature(
@@ -36,12 +101,18 @@ def compute_adiabatic_temperature(
     binodal_T_scale=50.0,
     anchor='surface',
     cmb_temperature=None,
+    max_dlnp=ADIABAT_MAX_DLNP,
 ):
     """Compute an adiabatic temperature profile using native EOS gradient tables.
 
-    Supports single-material and multi-material (volume-additive) layers.
-    For multi-material layers, nabla_ad is mass-fraction-weighted across
-    components.
+    Integrates d ln T / d ln P = nabla_ad(P, T) over each node segment with the midpoint rule in
+    ln P and ceil(|d ln P| / ``max_dlnp``) substeps. nabla_ad comes from ``get_mixed_nabla_ad``
+    with the layer mixture of the node the segment fills; for a multi-material layer it is
+    mass-fraction-weighted across the components. T is held below ``ADIABAT_P_FLOOR`` (1e5 Pa,
+    where the PALEOS rock and iron tables start), and a padded node (P = 0) counts as that
+    floor. T is also held over a layer without a T-dependent component and from the first
+    substep where nabla_ad is missing or not positive. Each node is capped at 1e5 K, and with
+    ``anchor='cmb'`` floored at 100 K.
 
     Parameters
     ----------
@@ -82,28 +153,40 @@ def compute_adiabatic_temperature(
     anchor : {'surface', 'cmb'}, optional
         Where the adiabat is anchored. ``'surface'`` (default) anchors
         ``T[n-1] = surface_temperature`` and integrates inward to the
-        center, the original behaviour. ``'cmb'`` anchors
-        ``T[i_cmb] = cmb_temperature`` at the first mantle shell and
-        integrates outward to the surface (mantle only); shells below
+        center. ``'cmb'`` anchors ``T[i_cmb] = cmb_temperature`` at the first
+        mantle shell and integrates outward to the surface (mantle only); shells below
         the CMB carry the surface anchor through, since the core
         adiabat is decoupled and the energetics solver computes T_core
         independently.
     cmb_temperature : float, optional
         Temperature at the core-mantle boundary, in K. Required when
         ``anchor='cmb'``.
+    max_dlnp : float, optional
+        Largest change of ln P in one substep, from 1e-4 to 1. Default
+        ``ADIABAT_MAX_DLNP`` (0.0025).
 
     Returns
     -------
     numpy.ndarray
         Temperature at each radial point, in K.
+
+    Raises
+    ------
+    ValueError
+        No T-dependent layer, ``max_dlnp`` outside its range, an ``anchor`` other than 'surface'
+        or 'cmb', a ``surface_temperature`` that is not above 0 K and at most 1e5 K, or
+        ``anchor='cmb'`` without a ``cmb_temperature`` from 100 K to 1e5 K (the node caps).
+    StructureInvariantError
+        The profile is not finite and positive at every node, or rises outward from its anchor.
     """
-    from ..mixing import get_mixed_nabla_ad
+    from ..mixing import any_component_is_tdep, get_mixed_nabla_ad
     from ..structure_model import get_layer_mixture
 
     if interpolation_functions is None:
         interpolation_functions = {}
-
-    from ..mixing import any_component_is_tdep
+    if not _is_real(max_dlnp) or not 1e-4 <= max_dlnp <= 1.0:
+        raise ValueError(f'max_dlnp must be a real number from 1e-4 to 1, got {max_dlnp!r}.')
+    h = float(max_dlnp)
 
     if not any_component_is_tdep(layer_mixtures):
         raise ValueError(
@@ -112,121 +195,55 @@ def compute_adiabatic_temperature(
             "Use 'linear' or 'isothermal' instead."
         )
 
+    eos = (
+        material_dictionaries,
+        interpolation_functions,
+        solidus_func,
+        liquidus_func,
+        mushy_zone_factors,
+        condensed_rho_min,
+        condensed_rho_scale,
+        binodal_T_scale,
+    )
+
+    def nabla_of(mixture):
+        return lambda P, T: get_mixed_nabla_ad(P, T, mixture, *eos)
+
+    if anchor not in ('surface', 'cmb'):
+        raise ValueError(f"anchor must be 'surface' or 'cmb', got {anchor!r}.")
+    if not (_is_real(surface_temperature) and 0 < surface_temperature <= _T_MAX):
+        raise ValueError(
+            f'surface_temperature must be a temperature above 0 and at most {_T_MAX:g} K, '
+            f'got {surface_temperature!r}.'
+        )
     n = len(radii)
     T = np.zeros(n)
-
     if anchor == 'cmb':
-        if cmb_temperature is None or cmb_temperature <= 0:
+        if not (_is_real(cmb_temperature) and _T_MIN_CMB <= cmb_temperature <= _T_MAX):
             raise ValueError(
-                f"anchor='cmb' requires a positive cmb_temperature, got {cmb_temperature}."
+                f"anchor='cmb' requires a cmb_temperature from {_T_MIN_CMB:g} to {_T_MAX:g} K, "
+                f'got {cmb_temperature!r}.'
             )
+        # first mantle shell: mass_enclosed >= cmb_mass; the core carries the surface anchor
+        first = max(1, min(int(np.searchsorted(mass_enclosed, cmb_mass)), n - 1))
+        T[:first] = surface_temperature
+        T[first] = cmb_temperature
+        steps = [(i, i - 1) for i in range(first + 1, n)]
+    else:
+        T[n - 1] = surface_temperature
+        first, steps = 0, [(i, i + 1) for i in range(n - 2, -1, -1)]
 
-        # Find the first mantle shell (index where mass_enclosed >= cmb_mass).
-        cmb_index = int(np.searchsorted(mass_enclosed, cmb_mass))
-        cmb_index = max(1, min(cmb_index, n - 1))
-
-        # Carry the surface anchor through the core (no integration);
-        # the energetics solver handles T_core via core_heatcap and the
-        # Bower+2018 adiabatic ratio. Anchor the mantle at CMB.
-        T[:cmb_index] = surface_temperature
-        T[cmb_index] = cmb_temperature
-
-        # Integrate upward from CMB to surface (i = cmb_index .. n-1).
-        for i in range(cmb_index + 1, n):
-            mixture = get_layer_mixture(
-                mass_enclosed[i],
-                cmb_mass,
-                core_mantle_mass,
-                layer_mixtures,
-            )
-
-            if not mixture.has_tdep():
-                T[i] = T[i - 1]
-                continue
-
-            P_eval = pressure[i - 1]
-            T_eval = T[i - 1]
-            dP = pressure[i] - pressure[i - 1]  # negative going outward
-
-            if P_eval < 1e5 or pressure[i] < 1e5:
-                T[i] = T[i - 1]
-                continue
-
-            nabla = get_mixed_nabla_ad(
-                P_eval,
-                T_eval,
-                mixture,
-                material_dictionaries,
-                interpolation_functions,
-                solidus_func,
-                liquidus_func,
-                mushy_zone_factors,
-                condensed_rho_min,
-                condensed_rho_scale,
-                binodal_T_scale,
-            )
-
-            if nabla is not None and nabla > 0 and P_eval > 0 and T_eval > 0 and dP < 0:
-                dtdp = nabla * T_eval / P_eval
-                T_new = T_eval + dtdp * dP  # dP<0 => T cools outward
-                T[i] = max(min(T_new, 100000.0), 100.0)
-            else:
-                T[i] = T_eval
-
-        return T
-
-    # anchor == 'surface' (original behaviour): integrate inward from
-    # T[n-1] = surface_temperature to the center.
-    T[n - 1] = surface_temperature
-
-    for i in range(n - 2, -1, -1):
+    for i, j in steps:  # node i takes its T from node j, with the mixture of node i
         mixture = get_layer_mixture(
-            mass_enclosed[i],
-            cmb_mass,
-            core_mantle_mass,
-            layer_mixtures,
+            mass_enclosed[i], cmb_mass, core_mantle_mass, layer_mixtures
         )
-
         if not mixture.has_tdep():
-            T[i] = T[i + 1]
+            T[i] = T[j]
             continue
-
-        P_eval = pressure[i + 1]
-        T_eval = T[i + 1]
-        dP = pressure[i] - pressure[i + 1]
-
-        # Skip at very low P to prevent T/P divergence
-        if P_eval < 1e5 or pressure[i] < 1e5:
-            T[i] = T[i + 1]
-            continue
-
-        # Get nabla_ad (handles single and multi-component mixtures)
-        nabla = get_mixed_nabla_ad(
-            P_eval,
-            T_eval,
-            mixture,
-            material_dictionaries,
-            interpolation_functions,
-            solidus_func,
-            liquidus_func,
-            mushy_zone_factors,
-            condensed_rho_min,
-            condensed_rho_scale,
-            binodal_T_scale,
+        T[i] = _segment_temperature(
+            T[j], pressure[j], pressure[i], nabla_of(mixture), h, anchor != 'cmb'
         )
-
-        if nabla is not None and nabla > 0 and P_eval > 0 and T_eval > 0 and dP > 0:
-            dtdp = nabla * T_eval / P_eval
-            T_new = T_eval + dtdp * dP
-            # Cap temperature to the PALEOS table maximum (100,000 K).
-            # Without this cap, numerical noise at low P or in mixed
-            # compositions can cause runaway T during the adiabat
-            # integration, which then pollutes the T(P) interpolator
-            # and prevents the Brent solver from bracketing.
-            T[i] = min(T_new, 100000.0)
-        else:
-            T[i] = T_eval
-
+    _check_profile(T, first)
     return T
 
 

@@ -2,6 +2,8 @@
 
 ## What this page checks
 
+This page lists the validation cases of Zalmoxis by process (hydrostatic structure, mass-radius relation, equation of state, thermal state), with the test id, the reference and the tier of each, and summarises the first-principles cases.
+
 Numerical codes for planetary interior structure involve several layers of approximation: the ODE integrator introduces truncation errors, the iterative density-pressure coupling (Picard iteration) may not fully converge, the Brent root-finder for the central pressure operates within a finite tolerance, and the equation of state tables introduce interpolation error. When these components are assembled into a coupled solver, it becomes difficult to attribute any discrepancy to a specific source. Validation means that a test runs the code on a case with a known right answer and checks the result within a stated tolerance.
 
 First-principles verification addresses this by testing each component against problems with known analytical solutions. If the code reproduces an exact result to the expected numerical precision, that component passes the check. If it does not, the test isolates where the error is introduced.
@@ -12,7 +14,7 @@ The verification has 3 steps, each in one pytest tier:
 2. **Full solver with the analytic EOS (smoke tier):** Test the full solver chain (ODE + Picard + Brent + mass-radius loop) using the Seager et al. (2007)[^cite-seager2007] analytic EOS, which is a closed-form formula requiring no tabulated data. Compare against known physical benchmarks (Earth's radius, gravity, central pressure) and scaling laws.
 3. **Grids and tolerances (slow tier):** Check the error over several grids and solver tolerances, and the full-solver radius on 3 grids.
 
-All tests are implemented in [`tests/test_first_principles.py`](https://github.com/FormingWorlds/Zalmoxis/blob/main/tests/test_first_principles.py) (25 pytest tests). The tests of these cases draw their own plot pairs.
+The first-principles cases of these 3 steps are in [`tests/test_first_principles.py`](https://github.com/FormingWorlds/Zalmoxis/blob/main/tests/test_first_principles.py) (25 pytest tests); the table below names the test of every case on the tab. The tests of these cases draw their own plot pairs.
 
 ## Cases by process
 
@@ -35,6 +37,11 @@ All tests are implemented in [`tests/test_first_principles.py`](https://github.c
 | [Equation of state](equation_of_state.md) | Liquid Fe and Fe-water members | `tests/test_core_alloy.py::TestLuoMembers::test_eq14_density_matches_an_independent_bisection` | Luo et al. (2024)[^cite-luo2024] Eq. 14 (analytical) | unit tier; plot pair |
 | [Equation of state](equation_of_state.md) | Light-element core on PALEOS iron | `tests/test_core_alloy.py::TestPaleosCore::test_core_mixture_limits_on_paleos_iron` | volume-additive limits (analytical) | unit tier; plot pair |
 | [Equation of state](equation_of_state.md) | Light-element cores against the outer core | `tests/test_core_alloy.py::TestHiroseCalibration` | Hirose et al. (2021)[^cite-hirose2021], p. 3 (published estimate) | unit tier; plot pair |
+| [Thermal state](thermal_state.md) | Adiabat integration on smooth gradients | `tests/test_adiabatic.py::TestMidpointAdiabat::test_midpoint_is_second_order`, `::test_constant_nabla_is_exact` | closed-form adiabats (analytical) | unit tier; plot pair |
+| [Thermal state](thermal_state.md) | Adiabat integration on real profiles | `tests/test_adiabat_real_profiles.py::test_midpoint_adiabat_meets_the_reference_on_real_profiles` | `scipy.integrate.solve_ivp` DOP853 on the same nodes (cross-code check) | smoke tier; plot pair |
+| [Thermal state](thermal_state.md) | Temperature across 1 bar | `tests/test_adiabat_real_profiles.py::test_temperature_is_continuous_across_one_bar` | continuity in the top pressure; constant-gradient adiabat with the 1 bar floor (analytical) | smoke and unit tiers; plot pair |
+| [Thermal state](thermal_state.md) | Temperature lookup over the top cell | `tests/test_adiabat_real_profiles.py::test_the_lookup_follows_the_adiabat_over_an_unpadded_top_cell` and 2 more, plus `tests/test_adiabatic.py::TestAdiabatTable` and `tests/test_accepted_on.py::test_the_solve_gives_the_table_the_masses_and_the_direction_of_its_adiabat` | `scipy.integrate.solve_ivp` (DOP853) of the top layer; the padded table | smoke and unit tiers; plot pair, made only with `--validation-plots` |
+| [Thermal state](thermal_state.md) | Centre temperature over round-off starts | `tests/test_adiabat_start_spread.py::test_round_off_starts_keep_the_centre_temperature_within_12_k` | the 4 starts against each other (reproducibility) | nightly job `paleos_adiabat`; plot pair, made only with `--validation-plots` |
 | [Thermal state](thermal_state.md) | Initial thermal state | none | named in the script docstrings | script figure, no test, not run in CI |
 
 ## Summary of the first-principles cases
@@ -74,7 +81,7 @@ The first-principles cases are not `reference_pinned`; this command writes their
 pytest -o "addopts=" tests/test_first_principles.py tests/test_polytrope_verification.py --validation-plots
 ```
 
-Without `--validation-plots` the tests write nothing: each compares the data of its plot with the committed pair, and a missing or stale file fails the test. The grid start-up test is the exception: its number of passes can change with round-off, so it makes its plot only with the option. Script figures appear too. The sweep over 26 setups and the Newton and Picard comparison on the PROTEUS initial structure are SVG pairs in `docs/assets/validation/` (`pressure_root_sweep*.svg`, `proteus_ic_solvers*.svg`), which `tools/validation/pressure_root_sweep.py` and `tools/validation/proteus_ic_solvers.py` write through `proteus_mpl.validation.save` with its 60 kB cap; their tool tests check the plotting code on stand-in records, not the committed pairs. The 4 thermal-state figures are PNG files in `docs/img/validation/`, made by scripts under `tools/validation/`; no test writes or checks them, and they are not limited to 60 kB.
+Without `--validation-plots` the tests write nothing: each compares the data of its plot with the committed pair, and a missing or stale file fails the test. The grid start-up test, the round-off start test and the top-cell lookup test are the exceptions: their numbers of passes, centre temperatures and lookups can change with round-off between platforms, so they make their plots only with the option. Script figures appear too. The sweep over 26 setups and the Newton and Picard comparison on the PROTEUS initial structure are SVG pairs in `docs/assets/validation/` (`pressure_root_sweep*.svg`, `proteus_ic_solvers*.svg`), which `tools/validation/pressure_root_sweep.py` and `tools/validation/proteus_ic_solvers.py` write through `proteus_mpl.validation.save` with its 60 kB cap; their tool tests check the plotting code on stand-in records, not the committed pairs. The 4 thermal-state figures are PNG files in `docs/img/validation/`, made by scripts under `tools/validation/`; no test writes or checks them, and they are not limited to 60 kB.
 
 [^cite-seager2007]: S. Seager, M. Kuchner, C. A. Hier-Majumder, B. Militzer, *[Mass-Radius Relationships for Solid Exoplanets](https://doi.org/10.1086/521346)*, The Astrophysical Journal, 669(2), 1279-1297, 2007. [SciX](https://scixplorer.org/abs/2007ApJ...669.1279S/abstract).
 [^cite-luo2024]: H. Luo, C. Dorn, J. Deng, *[The interior as the dominant water reservoir in super-Earths and sub-Neptunes](https://doi.org/10.1038/s41550-024-02347-z)*, Nature Astronomy, 8(11), 1399-1407, 2024. [SciX](https://scixplorer.org/abs/2024NatAs...8.1399L/abstract).

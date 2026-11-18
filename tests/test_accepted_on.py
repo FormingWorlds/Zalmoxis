@@ -857,6 +857,21 @@ def test_wall_clock_in_the_adiabat_ramp_returns_the_linear_pass_unaccepted(monke
     assert 0.03 < r['mass_error_at_accept'] < 0.05
 
 
+def _shell_marked(shell):
+    """``zs._shell_adiabat`` that holds 1 in ``shell`` while it runs, so an adiabat stub
+    can tell a call on the padded top shell from the adiabat of a pass."""
+    real = zs._shell_adiabat
+
+    def marked(*args, **kwargs):
+        shell.append(1)
+        try:
+            return real(*args, **kwargs)
+        finally:
+            shell.pop()
+
+    return marked
+
+
 def _wb_blended(
     monkeypatch, factor, tol, clock_stop=True, inner=2, outer=100, clock_after=None, linear=None
 ):
@@ -867,12 +882,12 @@ def _wb_blended(
     from zalmoxis.eos import get_solidus_liquidus_functions
 
     _need_wb_tables()
-    adiabat, lookups = [], []
+    adiabat, lookups, shell = [], [], []
     real_adi, real, clock = zs.compute_adiabatic_temperature, zs.solve_structure, time.time
     real_lookup = zs.calculate_mixed_density_batch
 
     def adi(*args, **kwargs):
-        adiabat.append(1)
+        adiabat.extend([] if shell else [1])  # a pass, not the padded top shell
         return real_adi(*args, **kwargs)
 
     def solve(*args, **kwargs):
@@ -887,6 +902,7 @@ def _wb_blended(
 
     monkeypatch.setattr(zs, 'calculate_mixed_density_batch', lookup)
     monkeypatch.setattr(zs, 'compute_adiabatic_temperature', adi)
+    monkeypatch.setattr(zs, '_shell_adiabat', _shell_marked(shell))
     monkeypatch.setattr(zs, 'solve_structure', solve)
 
     def stopped():
@@ -1445,17 +1461,21 @@ def test_the_newton_hand_off_and_its_retry_run_at_the_newton_mass_tolerance(
 @pytest.mark.smoke
 @pytest.mark.accept_solves
 @pytest.mark.timeout(2400)
-def test_an_iteration_cap_whose_newest_blend_step_diverges_returns_an_earlier_best_pass(caplog):
-    """3-layer PALEOS ice planet (cmf 0.3, mmf 0.4), adiabatic Picard, 20 outer passes and
-    tolerance_outer 1e-2, so a linear pass starts the blend ramp also on the CI runner (whose
-    linear passes end near 2.4e-3, above the default 1e-3): every pass of the newest blend step
-    misses the mass by more than 3 %, so the cap returns the best pass of an earlier step (blend
-    0, R about 1.2978e7 m), not accepted, and the log names the ramp start and the fallback."""
+def test_an_iteration_cap_whose_newest_blend_step_diverges_returns_an_earlier_best_pass(
+    caplog, monkeypatch
+):
+    """3-layer PALEOS ice planet (cmf 0.3, mmf 0.4), adiabatic Picard, 13 outer passes,
+    tolerance_outer and the cap accept threshold both 0.1: the linear error drops from 0.12 to
+    0.056 in one pass, so the ramp starts by pass 8 (pass 7 on 5 round-off starts) and reaches
+    blend 1 inside the cap; every blended pass misses the mass by more than 10 %, so the cap
+    returns the linear pass (blend 0, mass error near 0.056, R regression pin 1.3094e7 m), not
+    accepted, and the log names the ramp start and the fallback."""
     from tests.test_spider_coupling_convergence import _has_paleos_data
     from zalmoxis.config import load_solidus_liquidus_functions, load_zalmoxis_config
 
     if not _has_paleos_data():
         pytest.skip('PALEOS tables not on disk')
+    CAP_ACCEPT = 0.1  # tolerance_outer and the cap accept threshold
     cfg = load_zalmoxis_config(os.path.join(ROOT, 'input', 'default.toml'))
     cfg.update(
         data_output_enabled=False,
@@ -1468,9 +1488,10 @@ def test_an_iteration_cap_whose_newest_blend_step_diverges_returns_an_earlier_be
             'ice_layer': 'PALEOS:H2O',
         },
         wall_timeout=WALL,
-        max_iterations_outer=20,
-        tolerance_outer=1e-2,
+        max_iterations_outer=13,
+        tolerance_outer=CAP_ACCEPT,
     )
+    monkeypatch.setattr(zs, '_TIMEOUT_ACCEPT_MASS_ERR', CAP_ACCEPT)
     assert cfg['temperature_mode'] == 'adiabatic'
     melt = load_solidus_liquidus_functions(
         cfg['layer_eos_config'],
@@ -1480,12 +1501,13 @@ def test_an_iteration_cap_whose_newest_blend_step_diverges_returns_an_earlier_be
     )
     with caplog.at_level(logging.INFO, logger='fwl.zalmoxis.solver'):
         r = zs._solve(cfg, load_material_dictionaries(), melt, os.path.join(ROOT, 'input'))
-    assert 'activating adiabat blend' in caplog.text
-    assert 'No pass of adiabat blend' in caplog.text
+    start = re.search(r'Outer iter (\d+): mass converged with linear T', caplog.text)
+    assert start and int(start.group(1)) <= 8, f'ramp starts at pass {start and start.group(1)}'
+    assert 'No pass of adiabat blend 1.00' in caplog.text
     assert not r['converged'] and r['accepted_on'] is None
     assert r['adiabat_blend'] == 0.0
-    assert r['mass_error_at_accept'] < 1e-2
-    assert r['radii'][-1] == pytest.approx(1.2978e7, rel=1e-2)
+    assert r['mass_error_at_accept'] == pytest.approx(0.056, abs=0.01)
+    assert r['radii'][-1] == pytest.approx(1.3094e7, rel=3e-3)
 
 
 @pytest.mark.smoke
@@ -1913,7 +1935,7 @@ def test_the_returned_mantle_temperature_is_the_adiabat_of_the_returned_pressure
     hand-off: the returned mantle T equals the adiabat recomputed on the returned pressure
     within 1 K, apart from 2 nodes with their own bounds. The CMB anchor node reads the T(P)
     table across the jump from T_surf on the core nodes to T_cmb (within 6 K of T_cmb); the
-    top node can lose the low-pressure step of the adiabat (within 25 K).
+    top node follows the adiabat within 1 K like the other nodes.
     adiabat_self_consistency is the largest mantle difference, both nodes included."""
     from tests.test_spider_coupling_convergence import _has_paleos_data
     from tools.validation import proteus_ic_solvers as tool
@@ -1940,8 +1962,7 @@ def test_the_returned_mantle_temperature_is_the_adiabat_of_the_returned_pressure
     assert lag[1:-1].max() <= 1.0
     # the core nodes carry T_surf, so the one T(P) table jumps by T_cmb - T_surf at the CMB
     assert dT_cmb <= 6.0, f'CMB anchor node {dT_cmb:.3f} K off T_cmb: core/mantle T jump'
-    # the adiabat skips its step where a pressure is below 1e5 Pa
-    assert lag[-1] <= 25.0, f'top node {lag[-1]:.3f} K off the adiabat: low-pressure skip'
+    assert lag[-1] <= 1.0, f'top node {lag[-1]:.3f} K off the adiabat'
     assert r['adiabat_table_blend'] == 1.0
     assert r['adiabat_self_consistency'] == pytest.approx(lag.max(), rel=1e-12)
     assert r['adiabat_self_consistency'] >= max(dT_cmb, lag[-1])
@@ -1981,13 +2002,17 @@ def _analytic_ramp(
     ``drift`` scales the pressure of each pass by 1 + drift times the number of adiabat
     computations so far. ``mass(R, k)`` replaces both scalings: the total mass of a pass at
     outer radius R after k adiabat computations. ``seed`` goes to ``_solve`` as
-    ``adiabat_seed``; ``structure`` replaces ``solve_structure`` (``_canned_structure``).
-    Returns the result and the number of adiabat computations."""
-    adiabat, real, clock = [], kwargs.pop('structure', None) or zs.solve_structure, time.time
+    ``adiabat_seed``; ``structure`` replaces ``solve_structure`` (``_canned_structure``);
+    ``temperature_mode`` replaces 'adiabatic'.
+    Returns the result and the number of adiabat computations of the passes (a call on the
+    padded top shell of the T table is not counted)."""
+    adiabat, shell = [], []
+    real, clock = kwargs.pop('structure', None) or zs.solve_structure, time.time
+    nodes = 30
 
     def adi(radii, pressure, mass, t_surf, *args, **kw):
         assert pressure[0] > pressure[-1] and np.all(np.diff(mass) >= 0)  # argument order
-        adiabat.append(1)
+        adiabat.extend([] if shell else [1])
         return _fake_adiabat(pressure, t_surf)
 
     def solve(*args, **kw):
@@ -1999,15 +2024,16 @@ def _analytic_ramp(
         return m * f, g * f, P * (1.0 + drift * len(adiabat))
 
     cfg = _cfg(
-        temperature_mode='adiabatic',
+        temperature_mode=kwargs.pop('temperature_mode', 'adiabatic'),
         relative_tolerance=1e-5,
         absolute_tolerance=1e-6,
-        num_layers=30,
+        num_layers=nodes,
         **kwargs,
     )
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(zs, 'any_component_is_tdep', lambda mixes: True)
         mp.setattr(zs, 'compute_adiabatic_temperature', adi)
+        mp.setattr(zs, '_shell_adiabat', _shell_marked(shell))
         mp.setattr(zs, 'solve_structure', solve)
         if clock_after:
             stop = lambda: clock() + 1e9 * (len(adiabat) >= clock_after)  # noqa: E731
@@ -2015,6 +2041,34 @@ def _analytic_ramp(
         seeded = {} if seed is None else {'adiabat_seed': seed}
         r = zs._solve(cfg, load_material_dictionaries(), None, '/tmp', **seeded)
     return r, len(adiabat)
+
+
+@pytest.mark.smoke
+@pytest.mark.parametrize('mode', ['adiabatic', 'adiabatic_from_cmb'])
+def test_the_solve_gives_the_table_the_masses_and_the_direction_of_its_adiabat(
+    mode, monkeypatch
+):
+    """_solve builds the T table of a pass with the enclosed masses of the structure whose
+    pressure it reads (the same pair of arrays as one structure integration returned), and
+    marks the adiabat as integrated outward only in 'adiabatic_from_cmb', so the top shell takes
+    the mixture node of that adiabat."""
+    seen, real, made = [], zs._adiabat_table, []
+
+    def spy(pressure, T, mass, top_shell, outward=False):
+        seen.append((np.array(pressure), np.array(mass), outward))
+        return real(pressure, T, mass, top_shell, outward)
+
+    def structure(*args, **kwargs):
+        m, g, P = _canned_structure(*args, **kwargs)
+        made.append((m.copy(), P.copy()))
+        return m, g, P
+
+    monkeypatch.setattr(zs, '_adiabat_table', spy)
+    _analytic_ramp(structure=structure, temperature_mode=mode, max_iterations_outer=6)
+    assert seen
+    for P, m, outward in seen:
+        assert outward is (mode == 'adiabatic_from_cmb')
+        assert any(np.array_equal(m, mm) and np.array_equal(P, pp) for mm, pp in made)
 
 
 def _case_clock_stop(structure=None, **_):
@@ -2662,13 +2716,13 @@ def _assert_grid_bounds(first, seeded, plain, stored, lags, jax=False):
     """Assert the bounds of the grid start-up tests on the first solve, the seeded and the
     unseeded re-solve against the stored REF blocks (``_jax`` blocks with ``jax``); ``lags``
     are the 3 lag triples of ``_grid_main``. With ``jax`` the unseeded re-solve is compared only
-    with the seeded one (2.5 K): at the 1e-4 accept it lies 0.977 K from REF."""
+    with the seeded one (2.5 K): at the 1e-4 accept it lies 1.006 K from REF."""
     ref1, ref2 = (stored[k + ('_jax' if jax else '')] for k in ('first', 'resolve'))
     for r, flag in ((first, False), (seeded, True), (plain, False)):
         assert r['converged'] and r['accepted_on'] == 'strict' and r['adiabat_seeded'] is flag
         assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
     off = [
-        (_off_ref(first, ref1), np.inf),  # 1-atm top node: 2-state adiabat step flip
+        (_off_ref(first, ref1), 3.0),  # 1-atm top shell: lags the pressure of the pass before
         (_off_ref(seeded, ref2), 1.0),
         *(() if jax else ((_off_ref(plain, ref2), 1.0),)),
     ]
@@ -2686,7 +2740,7 @@ def _assert_grid_bounds(first, seeded, plain, stored, lags, jax=False):
         assert abs(dRc) <= 2e-4 and abs(dPcmb) <= p_cmb_bound
     for lag in lags:
         assert lag[0] <= 6.0 and lag[1] <= 1.0
-    assert lags[1][2] <= 25.0 and lags[2][2] <= 25.0
+    assert lags[0][2] <= 3.0 and lags[1][2] <= 1.0 and lags[2][2] <= 1.0
     dT, dT_top, dR, *_ = _off_ref(seeded, plain)
     assert dT <= 2.5 and abs(dT_top) <= 2.5 and abs(dR) <= 5e-4
     # the last core node reads the edge of the mantle T(P) table; the other core nodes do not
@@ -2709,11 +2763,11 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
     REF from the lowest to the second-highest of the 12 mantle nodes, the radius, central
     pressure and core radius within 2e-4 and the CMB pressure within 2 tol / (1 - cmf) = 4e-3:
     the core mass is fixed, so the mass error sits in the mantle and moves P_cmb by
-    dM / (M (1 - cmf)). The top mantle node stays within 1 K of REF in the re-solves (51.3 MPa);
-    in the first solve (1 atm) it is not compared, since its adiabat step flips with round-off
-    between 2 states (about -0.15 K or 28.65 to 28.81 K from REF).
-    Each solve lags the adiabat of its own pressure by at most 6 K at the CMB node and 1 K at
-    the other mantle nodes, and the re-solves by at most 25 K at the top node. The seeded and
+    dM / (M (1 - cmf)). The top mantle node stays within 1 K of REF in the re-solves (51.3 MPa)
+    and within 3 K in the first solve (1 atm), where the top shell lags the pressure of the
+    pass before. Each solve lags the adiabat of its own pressure by at most 6 K at the CMB
+    node and 1 K at the other mantle nodes, the first solve by at most 3 K and the re-solves
+    by at most 1 K at the top node. The seeded and
     the unseeded re-solve differ by at most 2.5 K at the 39 mass points and at the top node,
     and 5e-4 in radius. In all 3 solves the mass-weighted mean core temperature stays within
     10 K of REF, the last core node within 700 K (it reads the edge of the mantle T(P) table)
@@ -2786,13 +2840,12 @@ def test_the_seed_keeps_the_converged_adiabat_of_the_grid_start_up_on_the_jax_pa
 @pytest.mark.timeout(3600)
 def test_a_first_solve_at_a_planet_mass_2e12_higher_keeps_the_stored_reference():
     """The first solve of the grid start-up case at a planet mass 2e-12 higher, a round-off
-    nudge that can flip the adiabat step of the top mantle node at 1 atm, keeps the bounds of
-    the grid start-up test against the stored REF: strict on the full adiabat, mantle
-    temperature within 1 K up to the second-highest mantle node (the 1-atm top node is not
-    compared), radius, central pressure and core radius within 2e-4, CMB pressure within
-    2 tol / (1 - cmf) = 4e-3, lags of at most 6 K at the CMB node and 1 K at the other
-    mantle nodes, and the core bounds (mean 10 K, last core node 700 K, other core nodes
-    1 K). It runs in the nightly job of the stored reference."""
+    nudge, keeps the bounds of the grid start-up test against the stored REF: strict on the
+    full adiabat, mantle temperature within 1 K up to the second-highest mantle node and the
+    1-atm top node within 2 K, radius, central pressure and core radius within 2e-4, CMB
+    pressure within 2 tol / (1 - cmf) = 4e-3, lags of at most 6 K at the CMB node, 1 K at the
+    other mantle nodes and 3 K at the top node, and the core bounds (mean 10 K, last core node
+    700 K, other core nodes 1 K). It runs in the nightly job of the stored reference."""
     _need_paleos()
     nudged = {**GRID_CMF95, 'planet_mass': GRID_CMF95['planet_mass'] * (1 + 2e-12)}
     r, _, _, lag = _grid_main(nudged)
@@ -2800,11 +2853,11 @@ def test_a_first_solve_at_a_planet_mass_2e12_higher_keeps_the_stored_reference()
     assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
     off = _off_ref(r, grid_ref.load()['first'])
     print('vs REF (dT, dT_top, dR, dPc, dRc, dPcmb):', off, 'lag:', lag)
-    dT, _, dR, dPc, dRc, dPcmb = off  # 1-atm top node: 2-state adiabat step flip
+    dT, dT_top, dR, dPc, dRc, dPcmb = off
     bound = 2 * GRID_CMF95['newton_tol'] / (1.0 - GRID_CMF95['core_mass_fraction'])
-    assert dT <= 1.0
+    assert dT <= 1.0 and abs(dT_top) <= 2.0
     assert max(abs(dR), abs(dPc), abs(dRc)) <= 2e-4 and abs(dPcmb) <= bound
-    assert lag[0] <= 6.0 and lag[1] <= 1.0
+    assert lag[0] <= 6.0 and lag[1] <= 1.0 and lag[2] <= 3.0
     _core_T_bounded(r, grid_ref.load()['first'])
 
 
@@ -2816,8 +2869,7 @@ def test_the_stored_grid_start_up_reference_is_the_converged_solve_of_the_source
     """The 4 structures of ``tests/data/grid_start_up_reference.json`` (first solve and re-solve,
     numpy and JAX path) solved again at the mass tolerance 1e-6: strict on the full adiabat, the
     mantle temperature within 0.1 K of the stored one up to the second-highest mantle node, the
-    top node within 1 K in the re-solves (in the first solves at 1 atm it is not compared: its
-    adiabat step flips with round-off between 2 states), the radius,
+    top node within 1 K in the re-solves and 2 K in the first solves at 1 atm, the radius,
     central pressure and core radius within 1e-5 and the CMB pressure within
     2 tol_REF / (1 - cmf) = 4e-5; then the sha256 of the stored list of Zalmoxis modules
     equals the stored one. A failure means the source or a table moved the reference: run
@@ -2834,8 +2886,8 @@ def test_the_stored_grid_start_up_reference_is_the_converged_solve_of_the_source
         print(key, 'vs stored (dT, dT_top, dR, dPc, dRc, dPcmb):', off)
         dT, dT_top, dR, dPc, dRc, dPcmb = off
         bound = 2 * grid_ref.REF_TOL['newton_tol'] / (1.0 - cfg['core_mass_fraction'])
-        # 1-atm top node of the first solve: 2-state adiabat step flip, not compared
-        assert dT <= 0.1 and (key.startswith('first') or abs(dT_top) <= 1.0), key
+        # the 1-atm top shell of a first solve lags the pressure of the pass before
+        assert dT <= 0.1 and abs(dT_top) <= (2.0 if key.startswith('first') else 1.0), key
         assert max(abs(dR), abs(dPc), abs(dRc)) <= 1e-5 and abs(dPcmb) <= bound, key
     pkg = os.path.dirname(os.path.abspath(zalmoxis.__file__))
     assert grid_ref.source_hash(stored['source']['files'], pkg) == stored['source']['sha256']
