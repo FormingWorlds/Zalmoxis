@@ -50,15 +50,7 @@ from .paleos import get_paleos_unified_density_jax
 from .tdep import get_tdep_density_jax
 
 
-@partial(
-    jax.jit,
-    static_argnames=(
-        'T_axis_is_radius',
-        'has_volatile',
-        'mantle_is_unified',
-        'has_core_T_table',
-    ),
-)
+@partial(jax.jit, static_argnames=('T_axis_is_radius', 'has_volatile', 'mantle_is_unified'))
 def coupled_odes_jax(
     radius: jnp.ndarray,
     y: jnp.ndarray,  # shape (3,): [mass, gravity, pressure]
@@ -208,9 +200,8 @@ def coupled_odes_jax(
     # True: single unified PALEOS table through the same kernel the core
     # uses.
     mantle_is_unified: bool = False,
-    # Core temperature table flag (static). True: the core density reads T(P) of the table
-    # (core_T_P [Pa], core_T_values [K]) instead of the T profile.
-    has_core_T_table: bool = False,
+    # Core temperature table (core_T_P [Pa], core_T_values [K]): the core density reads T(P)
+    # of the table instead of the T profile; None (a separate trace) keeps the T profile.
     core_T_P: jnp.ndarray | None = None,
     core_T_values: jnp.ndarray | None = None,
 ):
@@ -245,9 +236,9 @@ def coupled_odes_jax(
 
     # Core density (paleos_unified)
     t_core = (
-        core_temperature(pressure, (core_T_P, core_T_values), xp=jnp)
-        if has_core_T_table
-        else temperature
+        temperature
+        if core_T_P is None
+        else core_temperature(pressure, (core_T_P, core_T_values), xp=jnp)
     )
     rho_core = get_paleos_unified_density_jax(
         pressure,

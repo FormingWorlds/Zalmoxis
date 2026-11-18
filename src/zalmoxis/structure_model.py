@@ -126,8 +126,8 @@ def check_core_temperature_arrays(core_temperature_arrays):
     ----------
     core_temperature_arrays : tuple of array_like
         ``(P_arr, T_arr)``: pressures [Pa], finite, positive and strictly increasing, and
-        temperatures [K], finite and positive; 2 one-dimensional numeric arrays of equal
-        length >= 2.
+        temperatures [K], finite, positive and not falling with P (an adiabat rises with P);
+        2 one-dimensional numeric arrays of equal length >= 2.
 
     Returns
     -------
@@ -156,9 +156,16 @@ def check_core_temperature_arrays(core_temperature_arrays):
     p, t = (a.astype(float) for a in raw)
     if not (np.all(np.isfinite(p)) and np.all(np.isfinite(t))):
         raise ValueError('core_temperature_arrays must be finite')
-    if p[0] <= 0 or np.any(np.diff(p) <= 0) or np.any(t <= 0):
-        raise ValueError('core_temperature_arrays needs P > 0 strictly increasing and T > 0')
+    if p[0] <= 0 or np.any(np.diff(p) <= 0) or np.any(t <= 0) or np.any(np.diff(t) < 0):
+        raise ValueError(
+            'core_temperature_arrays needs P > 0 strictly increasing and T > 0 not falling with P'
+        )
     return p, t
+
+
+def is_core(mass, cmb_mass):
+    """True at an enclosed mass [kg] of the core: the layer rule of ``get_layer_mixture``."""
+    return mass < cmb_mass * (1.0 - 1e-12)
 
 
 def core_temperature(pressure, core_temperature_arrays, xp=np):
@@ -499,7 +506,7 @@ def solve_structure(
     nonfinite = [0]  # non-finite right-hand sides in the current solve_ivp call
 
     def _temperature(r, y):
-        if core_temperature_arrays is not None and y[0] < cmb_mass * (1.0 - 1e-12):
+        if core_temperature_arrays is not None and is_core(y[0], cmb_mass):
             return float(core_temperature(y[2], core_temperature_arrays))
         return temperature_function(r, y[2]) if temperature_function else 300
 

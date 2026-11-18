@@ -34,10 +34,7 @@ from .rhs import coupled_odes_jax
 
 
 def _build_diffeqsolve_jit(
-    T_axis_is_radius: bool,
-    has_volatile: bool = False,
-    mantle_is_unified: bool = False,
-    has_core_T_table: bool = False,
+    T_axis_is_radius: bool, has_volatile: bool = False, mantle_is_unified: bool = False
 ):
     """Build a jitted diffeqsolve closure for one axis convention.
 
@@ -62,7 +59,6 @@ def _build_diffeqsolve_jit(
             T_axis_is_radius=T_axis_is_radius,
             has_volatile=has_volatile,
             mantle_is_unified=mantle_is_unified,
-            has_core_T_table=has_core_T_table,
             **args,
         )
 
@@ -110,18 +106,17 @@ def _build_diffeqsolve_jit(
 
 # Separate compiled closure per (temperature-axis, wet-mantle,
 # mantle-representation) triple.
-_SOLVE_CACHE: dict[tuple[bool, bool, bool, bool], object] = {}
+_SOLVE_CACHE: dict[tuple[bool, bool, bool], object] = {}
 
 
 def _get_solve(
-    T_axis_is_radius: bool,
-    has_volatile: bool = False,
-    mantle_is_unified: bool = False,
-    has_core_T_table: bool = False,
+    T_axis_is_radius: bool, has_volatile: bool = False, mantle_is_unified: bool = False
 ):
-    key = (T_axis_is_radius, has_volatile, mantle_is_unified, has_core_T_table)
+    key = (T_axis_is_radius, has_volatile, mantle_is_unified)
     if key not in _SOLVE_CACHE:
-        _SOLVE_CACHE[key] = _build_diffeqsolve_jit(*key)
+        _SOLVE_CACHE[key] = _build_diffeqsolve_jit(
+            T_axis_is_radius, has_volatile, mantle_is_unified
+        )
     return _SOLVE_CACHE[key]
 
 
@@ -133,7 +128,6 @@ def solve_structure_jax(
     T_axis_is_radius: bool = False,
     has_volatile: bool = False,
     mantle_is_unified: bool = False,
-    has_core_T_table: bool = False,
     **rhs_kwargs,
 ):
     """Integrate the structure ODE from radii[0] to radii[-1].
@@ -152,9 +146,6 @@ def solve_structure_jax(
         ``coupled_odes_jax``. False (default): ``T_axis_grid`` is
         ``log10(P)``. True: ``T_axis_grid`` is a radial grid. Routes to
         a separately-compiled diffeqsolve variant.
-    has_core_T_table : bool
-        True when ``rhs_kwargs`` holds the core temperature table (``core_T_P``,
-        ``core_T_values``); a separately-compiled variant.
     **rhs_kwargs :
         All the cache + adiabat + Stixrude14 parameters that
         coupled_odes_jax needs. Passed through as a dict pytree.
@@ -173,7 +164,7 @@ def solve_structure_jax(
     ``max_steps``; the solve then ends (``throw=False``) with ``y_end`` the last
     accepted state, and the later save points are not finite.
     """
-    solve = _get_solve(T_axis_is_radius, has_volatile, mantle_is_unified, has_core_T_table)
+    solve = _get_solve(T_axis_is_radius, has_volatile, mantle_is_unified)
     return solve(
         jnp.asarray(radii, dtype=jnp.float64),
         jnp.asarray(y0, dtype=jnp.float64),

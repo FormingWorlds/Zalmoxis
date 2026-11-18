@@ -596,7 +596,6 @@ def solve_structure_via_jax(
         T_axis_is_radius=T_axis_is_radius,
         has_volatile=has_volatile,
         mantle_is_unified=mantle_is_unified,
-        has_core_T_table=core_temperature_arrays is not None,
         **jax_args,
     )
     # np.asarray on a jnp.ndarray yields a read-only view of the JAX

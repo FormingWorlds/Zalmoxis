@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from tests.test_core_temperature_arrays import _key, _solve, _table
+from tests._core_table_helpers import _key, _solve, _table
 
 
 def main():

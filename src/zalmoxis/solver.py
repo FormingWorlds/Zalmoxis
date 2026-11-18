@@ -75,6 +75,7 @@ from .structure_model import (
     core_temperature,
     coupled_odes,
     get_layer_mixture,
+    is_core,
     solve_structure,
     temperature_from_arrays,
 )
@@ -364,6 +365,7 @@ _SECANT_FLOOR = 2.0
 _SEED_KEYS = ('radii', 'pressure', 'mass_enclosed')
 _SEED_TABLE_BLEND = -1.0  # adiabat_table_blend of a pass whose T table comes from adiabat_seed
 _ICB_SUPERHEAT_TOL = 0.5  # bound [K] of the zero-superheat ICB test on an adiabat
+_CORE_T_MAX_EXCESS = 0.1  # core nodes beyond core_temperature_arrays, as a part of its range
 _LIQUID_BRANCH_RTOL = 1e-12  # liquid branch against the T table above the ICB
 # T table pressures over the top cell (the shell), see _adiabat_table
 _TOP_SHELL_POINTS = 64
@@ -571,38 +573,54 @@ def _short_of_adiabat(result, asked):
 
 def _core_table_keys(result, table, used, mantle_T):
     """Add ``core_T_used``, ``core_T_nodes_outside`` and ``core_T_max_excess`` (``main``) to
-    ``result`` when a core table ``table`` is given; with ``used`` an accepted result whose
-    core node misses table(P), or whose mantle node misses ``mantle_T(r, P)``, raises
-    StructureInvariantError."""
+    ``result`` when a core table ``table`` is given; an unused table counts no node. With
+    ``used``, an accepted result raises StructureInvariantError at a core node of T <= 0 or
+    a node off its source (table(P) in the core, ``mantle_T(r, P)`` above), and is no longer
+    accepted when a core node lies more than ``_CORE_T_MAX_EXCESS`` of the table range
+    beyond it."""
     if table is None or 'mass_enclosed' not in result:
         return result
-    m = np.asarray(result['mass_enclosed'])
     p = np.asarray(result['pressure'], dtype=float)
-    core = m < result['cmb_mass'] * (1.0 - 1e-12)  # the layer rule of get_layer_mixture
+    core = is_core(np.asarray(result['mass_enclosed']), result['cmb_mass'])
     lo, hi = table[0][0], table[0][-1]
-    beyond = np.maximum(lo - p[core], p[core] - hi)
-    out = beyond > 0
+    beyond = np.maximum(np.maximum(lo - p[core], p[core] - hi), 0.0) if used else np.zeros(0)
     result['core_T_used'] = used
-    result['core_T_nodes_outside'] = int(out.sum())
-    result['core_T_max_excess'] = float(beyond[out].max() / (hi - lo)) if out.any() else 0.0
-    if out.any():
+    result['core_T_nodes_outside'] = int(np.count_nonzero(beyond))
+    result['core_T_max_excess'] = excess = float(beyond.max(initial=0.0) / (hi - lo))
+    if result['core_T_nodes_outside']:
         logger.warning(
             '%d core nodes lie outside the pressures of core_temperature_arrays, up to %.3g '
             'of its range beyond it.',
             result['core_T_nodes_outside'],
-            result['core_T_max_excess'],
+            excess,
         )
-    if used and result.get('accepted_on') is not None:
-        t = np.asarray(result['temperature'], dtype=float)
-        r = np.asarray(result['radii'], dtype=float)
-        want = np.array([mantle_T(r_, p_) for r_, p_ in zip(r, p)])
-        want[core] = core_temperature(p[core], table)
-        for name, sel in (('core', core), ('mantle', ~core)):
-            if not np.allclose(t[sel], want[sel], rtol=1e-9, atol=0.0):
-                raise StructureInvariantError(
-                    f'a {name} node of the accepted result misses its temperature source by '
-                    f'{np.max(np.abs(t[sel] / want[sel] - 1.0)):.3g} (relative)'
-                )
+    if not used or result.get('accepted_on') is None:
+        return result
+    t = np.asarray(result['temperature'], dtype=float)
+    cold = core & (t <= 0.0)
+    if cold.any():
+        k = int(np.argmax(cold))
+        raise StructureInvariantError(
+            f'core_temperature_arrays gives T = {t[k]:.4g} K at the core node of P = '
+            f'{p[k]:.4g} Pa, {"below" if p[k] < lo else "above"} the table range '
+            f'[{lo:.4g}, {hi:.4g}] Pa, by its end-slope extension'
+        )
+    mantle = [mantle_T(r_, p_) for r_, p_ in zip(result['radii'], p)]
+    want = np.where(core, core_temperature(p, table), mantle)
+    for name, sel in (('core', core), ('mantle', ~core)):
+        if not np.allclose(t[sel], want[sel], rtol=1e-9, atol=0.0):
+            raise StructureInvariantError(
+                f'a {name} node of the accepted result misses its temperature source by '
+                f'{np.max(np.abs(t[sel] / want[sel] - 1.0)):.3g} (relative)'
+            )
+    if excess > _CORE_T_MAX_EXCESS:
+        logger.warning(
+            'Not accepted: core nodes lie up to %.3g of the range of core_temperature_arrays '
+            'beyond it (limit %.3g); check the table and its units (P in Pa, T in K).',
+            excess,
+            _CORE_T_MAX_EXCESS,
+        )
+        result['converged'], result['accepted_on'] = False, None
     return result
 
 
@@ -958,7 +976,7 @@ def main(
     band_limit(config_params)  # a bad limit fails before the solve, not after it
     table = mantle_T = None
     if core_temperature_arrays is not None:
-        table = check_core_temperature_arrays(core_temperature_arrays)
+        core_temperature_arrays = table = check_core_temperature_arrays(core_temperature_arrays)
         jax_arrays = config_params.get('use_jax', False) and temperature_arrays is not None
         mantle_T = (
             temperature_from_arrays(temperature_arrays) if jax_arrays else temperature_function
@@ -972,8 +990,6 @@ def main(
         if not any_component_is_tdep({k: v for k, v in mixes.items() if k in CORE_LAYERS}):
             logger.info('The core EOS reads no temperature; core_temperature_arrays is unused.')
             core_temperature_arrays = None
-        else:
-            core_temperature_arrays = table
     # the layer and ICB checks also for callers that skip validate_config
     _check_two_layer_core(config_params['layer_eos_config'])
     _check_icb_rule(config_params, core_table=table is not None)
@@ -2145,14 +2161,11 @@ def _solve(
     _temperature_func = None
 
     def _node_T(r, p, m):
-        # node T [K]: the core table at core nodes (the layer rule of get_layer_mixture); before
-        # the first solve no node has a mass, so all keep the placeholder of the T function
+        # node T [K]: the core table at core nodes, the T function elsewhere
         t = np.array([_temperature_func(r_, p_) for r_, p_ in zip(r, p)])
-        if core_temperature_arrays is not None and np.any(m):
-            core = np.asarray(m) < cmb_mass * (1.0 - 1e-12)
-            t[core] = core_temperature(
-                np.asarray(p, dtype=float)[core], core_temperature_arrays
-            )
+        if core_temperature_arrays is not None:
+            core = is_core(m, cmb_mass)
+            t[core] = core_temperature(p[core], core_temperature_arrays)
         return t
 
     # Adiabat blending state.
@@ -2337,7 +2350,9 @@ def _solve(
             def _temperature_func(r, P, _f=_ext_tf):
                 return _f(r, P)
 
-            temperatures = _node_T(radii, pressure, mass_enclosed)
+            temperatures = np.array(
+                [_temperature_func(radii[i], pressure[i]) for i in range(num_layers)]
+            )
         elif uses_Tdep:
             # Build the radial temperature profile. For 'adiabatic' and
             # 'adiabatic_from_cmb' this is the linear initial guess; the

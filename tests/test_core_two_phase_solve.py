@@ -696,19 +696,20 @@ def test_a_pure_iron_core_has_its_icb_where_its_liquid_adiabat_meets_iron_meltin
     assert _superheat_met(res) and res['icb_converged']
 
 
+@pytest.mark.physics_invariant
 @pytest.mark.reference_pinned
 def test_a_two_layer_core_takes_its_icb_from_the_core_temperature_table(setup, request):
     """T2 of the core temperature table: a pure-iron two-layer core with the Anzellini liquidus
     and the CMB-anchored label of a coupled run, its core T from a table that crosses the
     liquidus at P_X and its mantle T from a function. Every outer and inner core node, and the
     CMB node of the core arrays, carries table(P); the ICB lies at the root of
-    table(P) = T_liq(P)."""
-    from zalmoxis import solver as zs
+    table(P) = T_liq(P), and the core mass closes on the returned density."""
+    from tests._core_table_helpers import CLOSURE, _mass_closure
     from zalmoxis.config import load_solidus_liquidus_functions
     from zalmoxis.melting_curves import iron_melting_anzellini13 as t_liq
     from zalmoxis.mixing import parse_all_layer_mixtures
-    from zalmoxis.solver import main
-    from zalmoxis.structure_model import core_temperature
+    from zalmoxis.solver import _default_solver_params, main
+    from zalmoxis.structure_model import core_temperature, is_core
 
     p_x = 3.3e11  # Pa: the table meets the liquidus here, inside the core
     slope = 0.5 * (t_liq(p_x * 1.001) - t_liq(p_x * 0.999)) / (0.002 * p_x)
@@ -738,7 +739,7 @@ def test_a_two_layer_core_takes_its_icb_from_the_core_temperature_table(setup, r
     )
     assert res['converged'] and res['icb_converged'] and res['core_T_used'] is True
     m, p = (np.asarray(res[k], float) for k in ('mass_enclosed', 'pressure'))
-    core = m < res['cmb_mass'] * (1.0 - 1e-12)
+    core = is_core(m, res['cmb_mass'])
     np.testing.assert_allclose(
         np.asarray(res['temperature'], float)[core], core_temperature(p[core], table), rtol=1e-9
     )
@@ -746,15 +747,13 @@ def test_a_two_layer_core_takes_its_icb_from_the_core_temperature_table(setup, r
     np.testing.assert_allclose(arr['T'], core_temperature(arr['P'], table), rtol=1e-9)
     p_b = brentq(lambda x: float(core_temperature(x, table)) - t_liq(x), 1.5e11, 4.4e11)
     m_b = np.interp(p_b, p[core][::-1], m[core][::-1] ** (2.0 / 3.0)) ** 1.5
-    cmb, m_ic = res['cmb_mass'], res['core']['M_ic']
-    print(
-        f'f {m_ic / cmb:.4f} P_icb {res["core"]["P_icb"]:.6e} P_B {p_b:.6e} G_B {m_b / cmb:.4f}'
-    )
+    cmb, m_ic = res['cmb_mass'], arr['M_ic']
     tol = (
         cfg.get('tolerance_outer')
-        or zs._default_solver_params(cfg['planet_mass'])['tolerance_outer']
+        or _default_solver_params(cfg['planet_mass'])['tolerance_outer']
     )
     assert 0.0 < m_ic < cmb and abs(m_b - m_ic) <= tol * cmb, (m_b / cmb, m_ic / cmb)
+    assert abs(_mass_closure(res)) < CLOSURE
 
     def figure():
         import matplotlib.pyplot as plt
