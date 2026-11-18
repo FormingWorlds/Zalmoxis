@@ -11,6 +11,7 @@ cache is per-worker, so it dedupes calls within a single test file.
 from __future__ import annotations
 
 import logging
+import math
 import os
 from functools import lru_cache
 
@@ -40,16 +41,28 @@ def _assert_full_adiabat(results, mass):
 
 
 class _InnerBails(logging.Filter):
-    """Records the best density diff of each inner-loop bail record; passes on only the records
-    at or above ``level``, the effective level of the logger before the solve."""
+    """Records the inner-loop exits of a solve: the best density diff [-] of each bail record
+    ('Inner loop:' and 'Maximum inner iterations'), inf for a wall-clock exit or a bail record
+    without its diff, and the count of converged inner loops. Passes on only the records at or
+    above ``level``, the effective level of the logger before the solve."""
+
+    _BAIL, _CLOCK = (
+        ('Inner loop:', 'Maximum inner iterations'),
+        'Wall-clock timeout in inner loop',
+    )
 
     def __init__(self, level):
         super().__init__()
-        self.level, self.diffs = level, []
+        self.level, self.diffs, self.converged = level, [], 0
 
     def filter(self, record):
-        if str(record.msg).startswith('Inner loop:'):
-            self.diffs.append(float(record.args[-2]))
+        msg, args = str(record.msg), record.args or ()
+        if msg.startswith(self._BAIL):
+            self.diffs.append(float(args[-2]) if len(args) >= 2 else math.inf)
+        elif msg.startswith(self._CLOCK):
+            self.diffs.append(math.inf)
+        elif msg.startswith('Inner loop converged'):
+            self.converged += 1
         return record.levelno >= self.level
 
 
@@ -74,8 +87,9 @@ def _run_paleos(mass_earth, temperature_mode='linear', wall_timeout=1000.0):
     Returns
     -------
     dict
-        Model results dictionary from ``zalmoxis.solver.main``, plus ``inner_bail_diffs``: the
-        best density diff [-] of each inner loop that ended on a bail.
+        Model results dictionary from ``zalmoxis.solver.main``, plus ``inner_bail_diffs`` (the
+        best density diff [-] of each inner loop that ended on a bail, inf for a wall-clock exit)
+        and ``inner_converged`` (the number of inner loops that converged).
     """
     from zalmoxis import get_zalmoxis_root
     from zalmoxis.config import (
@@ -122,4 +136,4 @@ def _run_paleos(mass_earth, temperature_mode='linear', wall_timeout=1000.0):
     finally:
         log.removeFilter(bails)
         log.setLevel(level)
-    return results | {'inner_bail_diffs': bails.diffs}
+    return results | {'inner_bail_diffs': bails.diffs, 'inner_converged': bails.converged}
