@@ -55,8 +55,9 @@ def setup(tmp_path_factory):
     return md, cfg, os.path.join(root_dir, 'input')
 
 
-def _solve(setup, inner='', core=LIQ, **over):
-    """Solve the default 1 M_E config with the given core layers and overrides."""
+def _solve(setup, inner='', core=LIQ, seed=None, **over):
+    """Solve the default 1 M_E config with the given core layers and overrides, from the
+    ``adiabat_seed`` ``seed`` when one is given."""
     from zalmoxis.config import load_solidus_liquidus_functions, validate_config
     from zalmoxis.mixing import parse_all_layer_mixtures
     from zalmoxis.solver import main
@@ -71,7 +72,8 @@ def _solve(setup, inner='', core=LIQ, **over):
         cfg['layer_eos_config'], cfg['rock_solidus'], cfg['rock_liquidus'], 1.0
     )
     mixes = parse_all_layer_mixtures(cfg['layer_eos_config'])
-    res = main(cfg, md, melt, input_dir, layer_mixtures=mixes)
+    seeded = {} if seed is None else {'adiabat_seed': seed}
+    res = main(cfg, md, melt, input_dir, layer_mixtures=mixes, **seeded)
     assert res['converged'] and not res['stopped_on_wall_clock']
     return res
 
@@ -341,7 +343,8 @@ def test_an_accept_with_the_liquid_off_the_liquidus_is_not_converged(
     assert res['converged'] is False and res['icb_converged'] is False
     assert res['icb_superheat'] == -10.0 and 'liquid by 10 K' in caplog.text
     lag = abs(res['icb_adiabat'] - res['core']['M_ic']) / res['cmb_mass']
-    assert ('off the ICB of its adiabat' in caplog.text) == (lag > 1e-3)  # named only when it fails
+    named = 'off the ICB of its adiabat' in caplog.text  # named only when it fails
+    assert named == (lag > 1e-3)
 
 
 def test_main_refuses_an_icb_rule_without_an_inner_core(setup):
@@ -717,19 +720,26 @@ def test_a_liquid_branch_off_the_t_table_above_the_icb_stops_the_solve(setup, mo
 
 @pytest.mark.physics_invariant
 @pytest.mark.reference_pinned
-@pytest.mark.timeout(4800)  # 5 solves; inside the 90 min core_two_phase job
+@pytest.mark.timeout(3000)  # 5 solves, 4 of them seeded
 def test_the_inner_core_of_a_pure_iron_core_grows_as_the_surface_cools(setup, validation_plot):
     """Case 4 of the ICB Validation: the freezing band of the pure-iron core of the default
     1 M_E planet. The inner-core mass fraction does not rise with the surface temperature (to
     0.05); the core is solid to the CMB at 2460 K and liquid at 2530 K, about 9 K outside the
     band of 2470 K (0.991) to 2520 K (0.005) on the default side-table grid; each step passes
-    the zero-superheat test of case 1."""
+    the zero-superheat test of case 1. Each solve after the first starts from the structure of
+    the one before (``adiabat_seed``: no Newton root, no blend ramp), as a cooling sequence
+    does; the unseeded path at 2500 K is case 1,
+    test_a_pure_iron_core_has_its_icb_where_its_liquid_adiabat_meets_iron_melting."""
     temps = (2460.0, 2480.0, 2500.0, 2510.0, 2530.0)
-    frac = []
+    frac, seed = [], None
     for t in temps:
-        res = _solve(setup, inner=SOL, core_liquidus='Anzellini13-iron', surface_temperature=t)
+        res = _solve(
+            setup, inner=SOL, seed=seed, core_liquidus='Anzellini13-iron', surface_temperature=t
+        )
+        assert res['adiabat_seeded'] is (seed is not None), t
         assert _superheat_met(res) and res['icb_converged'], (t, res['icb_superheat'])
         frac.append(res['core']['M_ic'] / res['cmb_mass'])
+        seed = {k: res[k] for k in ('radii', 'pressure', 'mass_enclosed')}
     print(dict(zip(temps, frac)))
     assert frac[0] == 1.0 and frac[-1] == 0.0
     assert all(0.0 < f < 1.0 for f in frac[1:-1])
