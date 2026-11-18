@@ -696,6 +696,63 @@ def test_a_pure_iron_core_has_its_icb_where_its_liquid_adiabat_meets_iron_meltin
     assert _superheat_met(res) and res['icb_converged']
 
 
+def test_a_two_layer_core_takes_its_icb_from_the_core_temperature_table(setup):
+    """T2 of the core temperature table: a pure-iron two-layer core with the Anzellini liquidus
+    and the CMB-anchored label of a coupled run, its core T from a table that crosses the
+    liquidus at P_X and its mantle T from a function. Every outer and inner core node carries
+    table(P), and the ICB lies at the root of table(P) = T_liq(P)."""
+    from zalmoxis import solver as zs
+    from zalmoxis.config import load_solidus_liquidus_functions
+    from zalmoxis.melting_curves import iron_melting_anzellini13 as t_liq
+    from zalmoxis.mixing import parse_all_layer_mixtures
+    from zalmoxis.solver import main
+    from zalmoxis.structure_model import core_temperature
+
+    p_x = 3.3e11  # Pa: the table meets the liquidus here, inside the core
+    slope = 0.5 * (t_liq(p_x * 1.001) - t_liq(p_x * 0.999)) / (0.002 * p_x)
+    p_tab = np.array([1.0e11, p_x, 4.5e11])
+    table = (p_tab, t_liq(p_x) + slope * (p_tab - p_x))
+    md, cfg, input_dir = setup
+    cfg = dict(
+        cfg,
+        wall_timeout=WALL,
+        temperature_mode='adiabatic_from_cmb',
+        cmb_temperature=4000.0,
+        core_liquidus='Anzellini13-iron',
+    )
+    cfg['layer_eos_config'] = dict(cfg['layer_eos_config'], core=LIQ, inner_core=SOL)
+    melt = load_solidus_liquidus_functions(
+        cfg['layer_eos_config'], cfg['rock_solidus'], cfg['rock_liquidus'], 1.0
+    )
+    mixes = parse_all_layer_mixtures(cfg['layer_eos_config'])
+    res = main(
+        cfg,
+        md,
+        melt,
+        input_dir,
+        layer_mixtures=mixes,
+        temperature_function=lambda r, p: 2500.0,
+        core_temperature_arrays=table,
+    )
+    assert res['converged'] and res['icb_converged'] and res['core_T_used'] is True
+    m, p = (np.asarray(res[k], float) for k in ('mass_enclosed', 'pressure'))
+    core = m < res['cmb_mass'] * (1.0 - 1e-12)
+    np.testing.assert_allclose(
+        np.asarray(res['temperature'], float)[core], core_temperature(p[core], table), rtol=1e-9
+    )
+    p_b = brentq(lambda x: float(core_temperature(x, table)) - t_liq(x), 1.5e11, 4.4e11)
+    m_b = np.interp(p_b, p[core][::-1], m[core][::-1] ** (2.0 / 3.0)) ** 1.5
+    cmb, m_ic = res['cmb_mass'], res['core']['M_ic']
+    print(
+        f'f {m_ic / cmb:.4f} P_icb {res["core"]["P_icb"]:.6e} P_B {p_b:.6e} G_B {m_b / cmb:.4f}'
+    )
+    tol = (
+        cfg.get('tolerance_outer')
+        or zs._default_solver_params(cfg['planet_mass'])['tolerance_outer']
+    )
+    assert 0.0 < m_ic < cmb and abs(m_b - m_ic) <= tol * cmb, (m_b / cmb, m_ic / cmb)
+
+
 def test_a_liquid_branch_off_the_t_table_above_the_icb_stops_the_solve(setup, monkeypatch):
     """Above the ICB the liquid branch and the T table of a pass take one adiabat, so they agree
     to round-off. A liquid branch 1 K warmer there (an adiabat with icb_mass 0 shifted by 1 K)

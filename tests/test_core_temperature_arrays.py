@@ -43,6 +43,12 @@ def _solve(jax=True, table=None, **over):
     return res, (r, t)
 
 
+def _key(res):
+    """R, P_c, P_cmb and rho_c of a result."""
+    p_cmb = np.interp(res['cmb_mass'], res['mass_enclosed'], res['pressure'])
+    return res['radii'][-1], res['pressure'][0], p_cmb, res['density'][0]
+
+
 def _layers(res):
     m = np.asarray(res['mass_enclosed'])
     core = m < res['cmb_mass'] * (1.0 - RTOL_LAYER)
@@ -193,12 +199,7 @@ def test_jax_and_numpy_agree_with_the_table():
     ode = {'relative_tolerance': 1e-8, 'absolute_tolerance': 1e-9}
     a, _ = _solve(jax=True, table=_table, **ode)
     b, _ = _solve(jax=False, table=_table, **ode)
-
-    def key(res):
-        p_cmb = np.interp(res['cmb_mass'], res['mass_enclosed'], res['pressure'])
-        return res['radii'][-1], res['pressure'][0], p_cmb, res['density'][0]
-
-    assert key(a) == pytest.approx(key(b), rel=1e-4)
+    assert _key(a) == pytest.approx(_key(b), rel=1e-4)
 
 
 @pytest.mark.integration
@@ -227,3 +228,52 @@ def test_a_core_without_a_t_dependent_eos_ignores_the_table():
     for k in ('radii', 'pressure', 'mass_enclosed', 'density', 'temperature'):
         assert np.array_equal(a[k], b[k]), k
     assert b['core_T_used'] is False
+
+
+@pytest.mark.integration
+def test_a_table_of_the_core_t_of_an_r_indexed_run_gives_its_structure():
+    """T4: r-indexed arrays that cover the core as well, continuous at the CMB of the arrays;
+    a table of the core (P, T) of that run adds no T change at the nodes, so the run with it
+    has the same R, P_c, P_cmb and rho_c within 1e-4, at an ODE tolerance (1e-8) below the
+    integration difference of the 2 runs."""
+    r_m, t_m, r_cmb, t_cmb = _chili_like_profile()
+    r_c = np.linspace(0.0, r_cmb, 40, endpoint=False)
+    arrays = (
+        np.concatenate([r_c, r_m]),
+        np.concatenate([t_cmb + 900.0 * (1.0 - (r_c / r_cmb) ** 2), t_m]),
+    )
+    cp, mat, mf = _load_fixtures()
+    cp.update(use_jax=True, relative_tolerance=1e-8, absolute_tolerance=1e-9)
+    a = zs.main(cp, mat, mf, _INPUT_DIR, temperature_arrays=arrays)
+    core, p, t = _layers(a)
+    table = (p[core][::-1], t[core][::-1])
+    b = zs.main(
+        cp, mat, mf, _INPUT_DIR, temperature_arrays=arrays, core_temperature_arrays=table
+    )
+    assert a['converged'] and b['converged'] and b['core_T_used'] is True
+    assert _key(b) == pytest.approx(_key(a), rel=1e-4)
+
+
+@pytest.mark.integration
+def test_the_numpy_fallback_of_a_jax_solve_keeps_the_table(monkeypatch):
+    """T6: the first JAX structure solve raises, so main goes on with numpy, which keeps the
+    core table: the T1 node rule holds on the result."""
+    import zalmoxis.jax_eos.wrapper as jw
+
+    real, raised = jw.solve_structure_via_jax, []
+
+    def once(*args, **kwargs):
+        if not raised:
+            raised.append(1)
+            raise ValueError('forced JAX failure')
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(jw, 'solve_structure_via_jax', once)
+    res, (r_arr, t_arr) = _solve(jax=True, table=_table)
+    assert raised and res['core_T_used'] is True
+    core, p, t = _layers(res)
+    np.testing.assert_allclose(
+        t[core], core_temperature(p[core], _table(_chili_like_profile()[3])), rtol=1e-9
+    )
+    r = np.asarray(res['radii'])
+    np.testing.assert_allclose(t[~core], np.interp(r[~core], r_arr, t_arr), rtol=1e-9)
