@@ -333,21 +333,21 @@ With `use_jax = true` and `temperature_arrays` supplied, Zalmoxis takes T from t
 
 How does a caller set the temperature of the core, not only of the mantle?
 
-`main` takes `core_temperature_arrays = (P_arr, T_arr)`, a table of the core temperature $T$ [K] against the pressure $P$ [Pa]. Each core node and each evaluation of the structure equations in the core then reads $T$ from the table; the mantle keeps its own temperature.
+`main` takes `core_temperature_arrays = (P_arr, T_arr)`, a table of the core temperature $T$ [K] against the pressure $P$ [Pa]. Each core node and each step of the structure integration in the core then reads $T$ from the table. The mantle keeps its own temperature: `temperature_function`, or `temperature_arrays` with `use_jax`.
 
-A core node is a node whose enclosed mass is below the core mass. This is the rule that picks the core material, so the temperature and the material change at the same node. The table applies in the outer and inner core, on both paths, in the core arrays and in the ICB rule of a [two-layer core](mixing.md#two-layer-core).
+A core node is a node whose enclosed mass is below the core mass. The same rule picks the core material, so the temperature and the material change at the same node. The table applies in the outer and the inner core, on the numpy and the JAX path, in the core arrays, and in the rule that places the inner-core boundary (ICB) of a [two-layer core](mixing.md#two-layer-core).
 
-Between the table points $T$ is linear in $P$. Outside the table, $T$ continues with the slope of the end interval, since the central-pressure search tries pressures beyond the final profile.
+Between the table points, $T$ is linear in $P$. Outside the table, $T$ continues with the slope of the end interval, since the central-pressure search tries pressures beyond the final profile.
 
-As an example, a pure-iron two-layer core of an Earth-mass planet, with the mantle at 2500 K and a table that meets the Anzellini iron melting curve at 330 GPa, gets its ICB there: the inner core holds 0.13 of the core mass.
+An example: a pure-iron two-layer core of an Earth-mass planet has its mantle at 2500 K. A table that meets the iron melting curve of Anzellini et al. (2013)[^cite-anzellini2013] at 330 GPa puts the ICB at that pressure, and the inner core then holds 0.13 of the core mass.
 
 The limits:
 
-- A table of another form than the [API reference](../Reference/api/zalmoxis.solver.md) gives, a temperature that falls with pressure, or a table without a mantle temperature (`temperature_function`, or `temperature_arrays` with `use_jax`) raises `ValueError` before the solve.
+- `main` raises `ValueError` before the solve unless the table has the form of the [API reference](../Reference/api/zalmoxis.solver.md): 2 one-dimensional arrays of equal length of at least 2, all finite, with positive, strictly increasing pressures and positive temperatures that do not fall with pressure. It also raises `ValueError` when the call has no mantle temperature.
 - A core without a temperature-dependent equation of state ignores the table; the result has `core_T_used = False`.
 - Core nodes outside the table give a warning. A node beyond the table by more than 0.1 of `P_arr[-1] - P_arr[0]` leaves the result not accepted (`converged` is False).
 - `main` accepts `core_liquidus` with `temperature_mode = 'adiabatic_from_cmb'` when a table is given. `validate_config` does not see the table and refuses that pair.
-- An accepted result raises `StructureInvariantError` when a core node has $T \le 0$, or when a node differs from its source (the table or the mantle temperature) by more than a relative $10^{-9}$.
+- An accepted result raises `StructureInvariantError` when a core node has $T \le 0$, or when a node differs from its source by more than a relative $10^{-9}$.
 
 **Where this is checked.** [Core temperature from a table given by the caller](../Validation/hydrostatic_structure.md#core-temperature-from-a-table-given-by-the-caller).
 
@@ -401,3 +401,4 @@ The wrapper itself lives in the PROTEUS repository, not in Zalmoxis. The single 
 [^cite-stixrude2022]: L. Stixrude, C. Lithgow-Bertelloni, *[Thermal expansivity, heat capacity and bulk modulus of the mantle](https://doi.org/10.1093/gji/ggab394)*, Geophysical Journal International, 228(2), 1119-1149, 2022. [SciX](https://scixplorer.org/abs/2022GeoJI.228.1119S/abstract).
 [^cite-belonoshko2005]: A. B. Belonoshko, N. V. Skorodumova, A. Rosengren, R. Ahuja, B. Johansson, L. Burakovsky, D. L. Preston, *[High-pressure melting of MgSiO$_3$](https://doi.org/10.1103/PhysRevLett.94.195701)*, Physical Review Letters, 94(19), 195701, 2005. [SciX](https://scixplorer.org/abs/2005PhRvL..94s5701B/abstract).
 [^cite-fei2021]: Y. Fei, C. T. Seagle, J. P. Townsend, C. A. McCoy, A. Boujibar, P. Driscoll, L. Shulenburger, M. D. Furnish, *[Melting and density of MgSiO$_3$ determined by shock compression of bridgmanite to 1254 GPa](https://doi.org/10.1038/s41467-021-21170-y)*, Nature Communications, 12, 876, 2021. [SciX](https://scixplorer.org/abs/2021NatCo..12..876F/abstract).
+[^cite-anzellini2013]: S. Anzellini, A. Dewaele, M. Mezouar, P. Loubeyre, G. Morard, *[Melting of Iron at Earth's Inner Core Boundary Based on Fast X-ray Diffraction](https://doi.org/10.1126/science.1233514)*, Science, 340, 464-466, 2013. [SciX](https://scixplorer.org/abs/2013Sci...340..464A/abstract).

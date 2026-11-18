@@ -597,7 +597,7 @@ def _check_core_table(result, table, used, mantle_T):
     if not used or result.get('accepted_on') is None:
         return result
     t = np.asarray(result['temperature'], dtype=float)
-    cold = core & (t <= 0.0)
+    cold = core & (p < lo) & (t <= 0.0)  # only the extension below the table goes cold
     if cold.any():
         k = int(np.argmax(cold))
         raise StructureInvariantError(
@@ -870,9 +870,9 @@ def main(
         counts in ``total_time``. A seeded result has no ``newton_*`` keys. Ignored with an
         external temperature.
     core_temperature_arrays : tuple[ndarray, ndarray] or None, optional
-        Core temperature table ``(P_arr, T_arr)``: pressures [Pa], positive and strictly
-        increasing, and temperatures [K], positive and not falling with P; 2 one-dimensional
-        arrays of equal length >= 2 (else ValueError). Every core node and core ODE evaluation
+        Core temperature table ``(P_arr, T_arr)``: pressures [Pa], finite, positive and
+        strictly increasing, and temperatures [K], finite, positive and not falling with P; 2
+        one-dimensional arrays of equal length >= 2 (else ValueError). Every core node and core ODE evaluation
         (enclosed mass below ``cmb_mass``, outer and inner core) takes T(P) from the table,
         linear in P and extended with the end slopes outside it; the mantle keeps
         ``temperature_function``, or ``temperature_arrays`` with ``use_jax``, one of which must

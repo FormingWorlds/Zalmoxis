@@ -3,13 +3,17 @@
 ## What this page checks
 
 This page checks how Zalmoxis computes the inside of a planet in hydrostatic equilibrium: the mass, the gravity and the pressure at each radius.
-Validation here means that we run the code on a case where another source gives the right answer.
-The test then checks that the code gives that answer within a stated tolerance.
-The right answer comes from closed-form solutions, from conservation laws, from a second implementation of the same equations, from the pressure that the planet must have at its surface, or, for a two-layer core, from the melting curve that the inner-core boundary must meet.
-If this part of the code is wrong, every structure that Zalmoxis returns is wrong. This holds also for the structures it gives to PROTEUS: the radius of the planet and the pressure and gravity at each depth.
-Each case below says why the check exists, what it tests, how we know the right answer and why it matters.
-The box "Test details" at the end of each case gives the reference, the tolerance, the test id and the command.
-The [overview](index.md) lists every case of the tab.
+Validation here means that we run the code on a case where another source gives the right answer, and check that the code gives that answer within a stated tolerance.
+If this part of the code is wrong, every structure that Zalmoxis returns is wrong, also the radius and the pressure and gravity at each depth that it gives to PROTEUS.
+The right answer comes from one of these sources:
+
+- a closed-form solution or a conservation law;
+- a second implementation of the same equations (the JAX and the numpy code, or the Newton and the Picard outer solver);
+- the same solve at a tighter tolerance;
+- a condition that the result must meet: the surface pressure, the iron melting curve at the inner-core boundary, or the core temperature table that the caller gives.
+
+Each case below says why the check exists, what it tests, how we know the right answer and why it matters, and ends with a box "Test details" with the reference, the tolerance, the test id and the command.
+The [overview](index.md) lists every case of the Validation tab.
 
 ## Terms used on this page
 
@@ -556,7 +560,7 @@ The cases:
 - **Pressures outside the table.** A table that leaves the lowest 5 % of the core pressures out. There the temperature continues with the slope of the end interval. The result counts these nodes, `core_T_nodes_outside`, and gives their largest distance beyond the table as a fraction of its range, `core_T_max_excess`.
 - **A table far from the core.** A table with $P$ in GPa instead of Pa puts every core node far beyond it. The solve converges on the extension, but with `core_T_max_excess` above 0.1 it is not accepted (`converged` is False, with a warning). A steep table whose extension reaches $T \le 0$ K at a core node stops with a `StructureInvariantError` that names the table and the node pressure.
 - **A realistic table at 10 Earth masses.** The core of the 10 $M_\oplus$ planet on its own adiabat, from 9646 K at 1.49 TPa to 15977 K at 4.62 TPa, given back as a table, with the mantle temperature of that solve: the result is accepted and the core nodes carry the table. The table ends at the first of the centre nodes of that solve, which hold one temperature, so the centre takes the rising end slope.
-- **The Newton outer solver.** The default outer solver of PROTEUS, at the ODE tolerance $10^{-9}$ it needs, on the JAX path: the node rule and the mass closure hold.
+- **The Newton outer solver.** The default outer solver of PROTEUS, on the JAX path, at the ODE tolerance that PROTEUS sets for it (`relative_tolerance` $10^{-9}$): the node rule and the mass closure hold.
 - **The ICB from the table.** A two-layer pure-iron core with the Anzellini melting curve as `core_liquidus` and `temperature_mode = 'adiabatic_from_cmb'`, the mode of a PROTEUS run; with the table, this mode does not set the core temperature. The table is linear in $P$, with half the slope of the melting curve at 330 GPa, and meets the curve there. All core nodes carry table($P$), also the nodes of the core arrays with their CMB node, and the core mass closes as in the node rule.
 - **The numpy fallback.** When every JAX structure solve fails and the solve runs on numpy, the numpy solve keeps the table: the node rule and the mass closure hold.
 - **A core that reads no temperature.** An Analytic iron core has no temperature-dependent equation of state. The table is then unused: the result equals the solve without it, bit for bit, `core_T_used` is False and no node is counted outside the table.
