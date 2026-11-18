@@ -2429,17 +2429,9 @@ def _solve(
                 icb_adiabat = icb_mass
                 adiabat_T = _adiabat(prev_radii, prev_pressure, prev_mass_enclosed)
 
-                # Build T(P) interpolator from the previous iteration's
-                # pressure profile.  This ensures that during the Brent
-                # bracket search, the adiabatic temperature tracks the
-                # ODE's actual pressure rather than a fixed radial mapping.
-                # This prevents unphysical (low P, high T) queries that
-                # hit NaN gaps in the PALEOS tables.
-                # Clamp adiabat T to a physically reasonable range.
-                # np.interp flat-extrapolates at the edges, but the Brent
-                # solver may query at extreme P values far beyond the
-                # converged profile, producing huge T. Cap at 100,000 K
-                # (PALEOS table maximum) and floor at 100 K.
+                # T(P) tables of the previous pass: the Brent search reads the T of its own P,
+                # not of a fixed radius (no low-P, high-T queries into PALEOS NaN gaps); T is
+                # capped at 1e5 K (the PALEOS table maximum) and floored at 100 K
                 _T_MAX_CLAMP = 100000.0
                 _T_MIN_CLAMP = 100.0
 
