@@ -696,7 +696,8 @@ def test_a_pure_iron_core_has_its_icb_where_its_liquid_adiabat_meets_iron_meltin
     assert _superheat_met(res) and res['icb_converged']
 
 
-def test_a_two_layer_core_takes_its_icb_from_the_core_temperature_table(setup):
+@pytest.mark.reference_pinned
+def test_a_two_layer_core_takes_its_icb_from_the_core_temperature_table(setup, request):
     """T2 of the core temperature table: a pure-iron two-layer core with the Anzellini liquidus
     and the CMB-anchored label of a coupled run, its core T from a table that crosses the
     liquidus at P_X and its mantle T from a function. Every outer and inner core node, and the
@@ -754,6 +755,38 @@ def test_a_two_layer_core_takes_its_icb_from_the_core_temperature_table(setup):
         or zs._default_solver_params(cfg['planet_mass'])['tolerance_outer']
     )
     assert 0.0 < m_ic < cmb and abs(m_b - m_ic) <= tol * cmb, (m_b / cmb, m_ic / cmb)
+
+    def figure():
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(figsize=(7.4, 3.4))
+        c = plt.rcParams['axes.prop_cycle'].by_key()['color']
+        pg = np.linspace(p[core].min(), p[core].max(), 20)
+        ax.plot(pg / 1e9, t_liq(pg), color=c[1], label='iron liquidus (Anzellini 2013)')
+        ax.plot(pg / 1e9, core_temperature(pg, table), color=c[0], lw=1, label='core T table')
+        sub = slice(None, None, 5)
+        ax.plot(
+            arr['P'][sub] / 1e9,
+            arr['T'][sub],
+            'o',
+            color=c[0],
+            ms=5,
+            mfc='none',
+            label='core nodes (every 5th)',
+        )
+        ax.axvline(arr['P_icb'] / 1e9, color=c[2], ls='--', lw=1, label='ICB of the solve')
+        ax.set(xlabel='Pressure [GPa]', ylabel='Temperature [K]')
+        ax.invert_xaxis()
+        ax.grid(False)
+        ax.legend(loc='upper left', bbox_to_anchor=(1.02, 1.0), frameon=False)
+        fig.tight_layout()
+        fig.canvas.draw()
+        assert ax.get_legend().get_window_extent().x0 >= ax.get_window_extent().x1
+        return fig
+
+    if cpu_key() != PLOT_CPU and request.config.getoption('validation_plots') is None:
+        return  # the node pressures differ between CPUs; the asserts hold
+    request.getfixturevalue('validation_plot')(figure, 'core_temperature_table_icb')
 
 
 def test_a_liquid_branch_off_the_t_table_above_the_icb_stops_the_solve(setup, monkeypatch):

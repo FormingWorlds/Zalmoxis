@@ -222,6 +222,7 @@ def test_core_nodes_take_the_table_and_mantle_nodes_the_mantle_source(jax):
 
 
 @pytest.mark.integration
+@pytest.mark.reference_pinned
 def test_jax_and_numpy_agree_with_the_table():
     """T3: the same inputs on 2 integrators and 2 T codes give R, P_c, P_cmb and rho_c within
     1e-4, at an ODE tolerance (1e-8) below the integration difference of the 2 paths."""
@@ -260,6 +261,7 @@ def test_a_core_without_a_t_dependent_eos_ignores_the_table():
 
 
 @pytest.mark.integration
+@pytest.mark.reference_pinned
 def test_a_table_of_the_core_t_of_an_r_indexed_run_gives_its_structure():
     """T4: r-indexed arrays that cover the core as well, continuous at the CMB of the arrays;
     a table of the core (P, T) of that run adds no T change at the nodes, so the run with it
