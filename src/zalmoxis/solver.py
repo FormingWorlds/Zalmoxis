@@ -23,6 +23,7 @@ import numpy as np
 from scipy.optimize import brentq
 
 from .config import (
+    CORE_LAYERS,
     PALEOS_MAX_MASS_EARTH,
     PALEOS_UNIFIED_MAX_MASS_EARTH,
     RTPRESS100TPA_MAX_MASS_EARTH,
@@ -70,6 +71,8 @@ from .mixing import (
     strong_partition_phi_floor,
 )
 from .structure_model import (
+    check_core_temperature_arrays,
+    core_temperature,
     coupled_odes,
     get_layer_mixture,
     solve_structure,
@@ -566,6 +569,43 @@ def _short_of_adiabat(result, asked):
     return bool(asked and not full)
 
 
+def _core_table_keys(result, table, used, mantle_T):
+    """Add ``core_T_used``, ``core_T_nodes_outside`` and ``core_T_max_excess`` (``main``) to
+    ``result`` when a core table ``table`` is given; with ``used`` an accepted result whose
+    core node misses table(P), or whose mantle node misses ``mantle_T(r, P)``, raises
+    StructureInvariantError."""
+    if table is None or 'mass_enclosed' not in result:
+        return result
+    m = np.asarray(result['mass_enclosed'])
+    p = np.asarray(result['pressure'], dtype=float)
+    core = m < result['cmb_mass'] * (1.0 - 1e-12)  # the layer rule of get_layer_mixture
+    lo, hi = table[0][0], table[0][-1]
+    beyond = np.maximum(lo - p[core], p[core] - hi)
+    out = beyond > 0
+    result['core_T_used'] = used
+    result['core_T_nodes_outside'] = int(out.sum())
+    result['core_T_max_excess'] = float(beyond[out].max() / (hi - lo)) if out.any() else 0.0
+    if out.any():
+        logger.warning(
+            '%d core nodes lie outside the pressures of core_temperature_arrays, up to %.3g '
+            'of its range beyond it.',
+            result['core_T_nodes_outside'],
+            result['core_T_max_excess'],
+        )
+    if used and result.get('accepted_on') is not None:
+        t = np.asarray(result['temperature'], dtype=float)
+        r = np.asarray(result['radii'], dtype=float)
+        want = np.array([mantle_T(r_, p_) for r_, p_ in zip(r, p)])
+        want[core] = core_temperature(p[core], table)
+        for name, sel in (('core', core), ('mantle', ~core)):
+            if not np.allclose(t[sel], want[sel], rtol=1e-9, atol=0.0):
+                raise StructureInvariantError(
+                    f'a {name} node of the accepted result misses its temperature source by '
+                    f'{np.max(np.abs(t[sel] / want[sel] - 1.0)):.3g} (relative)'
+                )
+    return result
+
+
 def _check_accepted(
     result,
     run_params,
@@ -748,6 +788,7 @@ def main(
     initial_density=None,
     initial_radii=None,
     adiabat_seed=None,
+    core_temperature_arrays=None,
 ):
     """Run the exoplanet internal structure model with automatic retry.
 
@@ -810,6 +851,20 @@ def main(
         converge or raises StructureSolveError is repeated without the seed, and its time
         counts in ``total_time``. A seeded result has no ``newton_*`` keys. Ignored with an
         external temperature.
+    core_temperature_arrays : tuple[ndarray, ndarray] or None, optional
+        Core temperature table ``(P_arr, T_arr)``: pressures [Pa], positive and strictly
+        increasing, and temperatures [K], positive; 2 one-dimensional arrays of equal length
+        >= 2. Every core node and core ODE evaluation (enclosed mass below ``cmb_mass``, outer
+        and inner core) takes T(P) from the table, linear in P and extended with the end
+        slopes outside it; the mantle keeps ``temperature_arrays`` or
+        ``temperature_function``: the function, or the arrays with ``use_jax``, must be
+        given. A core without a T-dependent
+        EOS ignores the table (one INFO line). The result then holds ``core_T_used`` (True
+        when the table set the core T), ``core_T_nodes_outside`` (core nodes with P outside
+        the table) and ``core_T_max_excess`` (their largest distance beyond the table as a
+        fraction of ``P_arr[-1] - P_arr[0]``, 0.0 for none; a WARNING when above 0).
+        With a table, ``core_liquidus`` and ``temperature_mode = 'adiabatic_from_cmb'`` are
+        accepted together.
 
     Returns
     -------
@@ -901,9 +956,27 @@ def main(
                 ', '.join(_trigger),
             )
     band_limit(config_params)  # a bad limit fails before the solve, not after it
+    table = mantle_T = None
+    if core_temperature_arrays is not None:
+        table = check_core_temperature_arrays(core_temperature_arrays)
+        jax_arrays = config_params.get('use_jax', False) and temperature_arrays is not None
+        mantle_T = (
+            temperature_from_arrays(temperature_arrays) if jax_arrays else temperature_function
+        )
+        if mantle_T is None:
+            raise ValueError(
+                'core_temperature_arrays needs a mantle temperature: temperature_function, or '
+                'temperature_arrays with use_jax'
+            )
+        mixes = layer_mixtures or parse_all_layer_mixtures(config_params['layer_eos_config'])
+        if not any_component_is_tdep({k: v for k, v in mixes.items() if k in CORE_LAYERS}):
+            logger.info('The core EOS reads no temperature; core_temperature_arrays is unused.')
+            core_temperature_arrays = None
+        else:
+            core_temperature_arrays = table
     # the layer and ICB checks also for callers that skip validate_config
     _check_two_layer_core(config_params['layer_eos_config'])
-    _check_icb_rule(config_params)
+    _check_icb_rule(config_params, core_table=table is not None)
     bands = (config_params, material_dictionaries, melting_curves_functions, layer_mixtures)
     asked = _adiabat_asked(
         config_params, layer_mixtures, temperature_function, temperature_arrays
@@ -933,6 +1006,7 @@ def main(
                 volatile_profile=volatile_profile,
                 temperature_function=temperature_function,
                 temperature_arrays=temperature_arrays,
+                core_temperature_arrays=core_temperature_arrays,
                 p_center_hint=float(seed['pressure'][0])
                 if p_center_hint is None
                 else p_center_hint,
@@ -957,6 +1031,7 @@ def main(
             volatile_profile=volatile_profile,
             temperature_function=temperature_function,
             temperature_arrays=temperature_arrays,
+            core_temperature_arrays=core_temperature_arrays,
             p_center_hint=p_center_hint,
             initial_density=initial_density,
             initial_radii=initial_radii,
@@ -965,6 +1040,9 @@ def main(
             result = _report_table_bands(result, *bands)
             if seed_time:
                 result['total_time'] += seed_time
+            result = _core_table_keys(
+                result, table, core_temperature_arrays is not None, mantle_T
+            )
             return _check_accepted(result, config_params, *bands, volatile_profile, asked)
         # the Newton root holds the linear first guess; the blend ramp from it makes the adiabat
         logger.info(
@@ -994,6 +1072,7 @@ def main(
             volatile_profile=volatile_profile,
             temperature_function=temperature_function,
             temperature_arrays=temperature_arrays,
+            core_temperature_arrays=core_temperature_arrays,
             p_center_hint=p_center_hint,
             initial_density=initial_density,
             initial_radii=initial_radii,
@@ -1076,6 +1155,7 @@ def main(
             volatile_profile=volatile_profile,
             temperature_function=temperature_function,
             temperature_arrays=temperature_arrays,
+            core_temperature_arrays=core_temperature_arrays,
             p_center_hint=p_center_hint,
             initial_density=retry_density,
             initial_radii=retry_radii,
@@ -1090,6 +1170,7 @@ def main(
     result = _report_table_bands(result, *bands)
     if newton_keys or seed_time:
         result.update(newton_keys, total_time=result['total_time'] + newton_time + seed_time)
+    result = _core_table_keys(result, table, core_temperature_arrays is not None, mantle_T)
     return _check_accepted(result, run_params, *bands, volatile_profile, asked)
 
 
@@ -1380,6 +1461,7 @@ def _solve_newton_outer(
     volatile_profile=None,
     temperature_function=None,
     temperature_arrays=None,
+    core_temperature_arrays=None,
     p_center_hint=None,
     initial_density=None,
     initial_radii=None,
@@ -1506,6 +1588,7 @@ def _solve_newton_outer(
             volatile_profile=volatile_profile,
             temperature_function=temperature_function,
             temperature_arrays=temperature_arrays,
+            core_temperature_arrays=core_temperature_arrays,
             p_center_hint=p_center_hint,
             initial_density=density_seed if density_seed is not None else initial_density,
             initial_radii=radii_seed if radii_seed is not None else initial_radii,
@@ -1802,6 +1885,7 @@ def _solve(
     volatile_profile=None,
     temperature_function=None,
     temperature_arrays=None,
+    core_temperature_arrays=None,
     p_center_hint=None,
     initial_density=None,
     initial_radii=None,
@@ -2060,6 +2144,17 @@ def _solve(
     prev_mass_enclosed = None
     _temperature_func = None
 
+    def _node_T(r, p, m):
+        # node T [K]: the core table at core nodes (the layer rule of get_layer_mixture); before
+        # the first solve no node has a mass, so all keep the placeholder of the T function
+        t = np.array([_temperature_func(r_, p_) for r_, p_ in zip(r, p)])
+        if core_temperature_arrays is not None and np.any(m):
+            core = np.asarray(m) < cmb_mass * (1.0 - 1e-12)
+            t[core] = core_temperature(
+                np.asarray(p, dtype=float)[core], core_temperature_arrays
+            )
+        return t
+
     # Adiabat blending state.
     _using_adiabat = False
     _adiabat_computed = False  # the gradient table was read for the T profile
@@ -2242,9 +2337,7 @@ def _solve(
             def _temperature_func(r, P, _f=_ext_tf):
                 return _f(r, P)
 
-            temperatures = np.array(
-                [_temperature_func(radii[i], pressure[i]) for i in range(num_layers)]
-            )
+            temperatures = _node_T(radii, pressure, mass_enclosed)
         elif uses_Tdep:
             # Build the radial temperature profile. For 'adiabatic' and
             # 'adiabatic_from_cmb' this is the linear initial guess; the
@@ -2390,7 +2483,11 @@ def _solve(
 
         if core_liq is not None and prev_pressure is not None:
             t_of = getattr(_temperature_func, 'liquid', _temperature_func)
-            t_prev = [t_of(r_, p_) for r_, p_ in zip(prev_radii, prev_pressure)]
+            t_prev = (
+                _node_T(prev_radii, prev_pressure, prev_mass_enclosed)
+                if core_temperature_arrays is not None
+                else [t_of(r_, p_) for r_, p_ in zip(prev_radii, prev_pressure)]
+            )
             m23 = hasattr(_temperature_func, 'liquid')  # the root mass of the superheat test
             icb_mass = icb_from_profile(
                 prev_mass_enclosed, prev_pressure, t_prev, cmb_mass, core_liq, m23=m23
@@ -2496,6 +2593,7 @@ def _solve(
                     binodal_T_scale,
                     use_jax=use_jax,
                     temperature_arrays=temperature_arrays,
+                    core_temperature_arrays=core_temperature_arrays,
                     volatile_profile=volatile_profile,
                     surface_pressure=target_surface_pressure,
                     icb_mass=icb_mass,
@@ -2624,6 +2722,7 @@ def _solve(
                     binodal_T_scale,
                     use_jax=use_jax,
                     temperature_arrays=temperature_arrays,
+                    core_temperature_arrays=core_temperature_arrays,
                     volatile_profile=volatile_profile,
                     surface_pressure=target_surface_pressure,
                     icb_mass=icb_mass,
@@ -2687,13 +2786,8 @@ def _solve(
 
             # Compute temperatures for valid shells
             if _temperature_func is not None:
-                T_arr = np.array(
-                    [
-                        _temperature_func(radii[i], pressure[i])
-                        for i in range(n_valid)
-                        if p_valid[i]
-                    ]
-                )
+                valid = np.flatnonzero(p_valid)
+                T_arr = _node_T(radii[valid], pressure[valid], mass_enclosed[valid])
             else:
                 T_arr = np.full(int(np.sum(p_valid)), 300.0)
 
@@ -2902,9 +2996,7 @@ def _solve(
         # Recompute the temperatures array from the converged pressure profile
         # so model_results['temperature'] reflects actual T(P), not the pre-Brent estimate.
         if _temperature_func is not None:
-            temperatures = np.array(
-                [_temperature_func(radii[i], pressure[i]) for i in range(num_layers)]
-            )
+            temperatures = _node_T(radii, pressure, mass_enclosed)
 
         # Save converged profiles for the next outer iteration's adiabat
         prev_radii = radii.copy()
@@ -3323,6 +3415,7 @@ def _solve(
             core_liq,
             icb_mass,
             _temperature_func,
+            core_temperature_arrays,
             interpolation_cache=interpolation_cache,
             material_dictionaries=material_dictionaries,
             solidus_func=solidus_func,
@@ -3336,10 +3429,13 @@ def _solve(
     return model_results
 
 
-def _core_result(res, layer_mixtures, core_liq, icb_mass, temperature_func, **eos_args):
+def _core_result(
+    res, layer_mixtures, core_liq, icb_mass, temperature_func, core_table, **eos_args
+):
     """``core_profile.core_arrays`` of a finished solve: the core nodes, a CMB node and the ICB.
 
-    ``eos_args`` are the EOS keyword arguments of ``coupled_odes``.
+    ``core_table`` is the core temperature table of ``main`` or None; ``eos_args`` are the EOS
+    keyword arguments of ``coupled_odes``.
     """
     m, p, t = (
         np.asarray(res[k], dtype=float) for k in ('mass_enclosed', 'pressure', 'temperature')
@@ -3350,6 +3446,8 @@ def _core_result(res, layer_mixtures, core_liq, icb_mass, temperature_func, **eo
         solid_above = icb_from_profile(m, p, t, cmb_mass, core_liq, icb_mass)[2]
 
     def t_at(r, pres):
+        if core_table is not None:
+            return float(core_temperature(pres, core_table))
         if temperature_func is not None:
             return temperature_func(r, pres)
         return float(np.interp(r, res['radii'], t))
@@ -3378,6 +3476,7 @@ def solve_miscible_interior(
     volatile_profile=None,
     temperature_function=None,
     temperature_arrays=None,
+    core_temperature_arrays=None,
     h2_mass_targets=None,
     max_iterations=10,
     mass_tolerance=0.01,
@@ -3440,6 +3539,7 @@ def solve_miscible_interior(
             volatile_profile,
             temperature_function=temperature_function,
             temperature_arrays=temperature_arrays,
+            core_temperature_arrays=core_temperature_arrays,
         )
         result['solvus_radius'] = None
         result['solvus_temperature'] = None
@@ -3468,6 +3568,7 @@ def solve_miscible_interior(
             volatile_profile,
             temperature_function=temperature_function,
             temperature_arrays=temperature_arrays,
+            core_temperature_arrays=core_temperature_arrays,
         )
 
         if not result.get('converged', False):

@@ -229,6 +229,7 @@ def solve_structure_via_jax(
     binodal_T_scale=None,
     volatile_profile=None,  # VolatileProfile: single-volatile wet mantle
     surface_pressure=0.0,  # target surface pressure [Pa], for pad_after_stop
+    core_temperature_arrays=None,  # (P_arr, T_arr): core T(P), checked by solver.main
 ):
     """Drop-in replacement for ``solve_structure`` using the JAX path.
 
@@ -579,6 +580,11 @@ def solve_structure_via_jax(
             }
         )
 
+    if core_temperature_arrays is not None:  # the core density reads T(P) of the table
+        jax_args['core_T_P'], jax_args['core_T_values'] = (
+            np.asarray(a, dtype=float) for a in core_temperature_arrays
+        )
+
     global _CALL_COUNT, _TOTAL_WALL
     _CALL_COUNT += 1
     _t0 = _time.perf_counter()
@@ -590,6 +596,7 @@ def solve_structure_via_jax(
         T_axis_is_radius=T_axis_is_radius,
         has_volatile=has_volatile,
         mantle_is_unified=mantle_is_unified,
+        has_core_T_table=core_temperature_arrays is not None,
         **jax_args,
     )
     # np.asarray on a jnp.ndarray yields a read-only view of the JAX

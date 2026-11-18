@@ -80,7 +80,8 @@ NEWTON_LIQUIDUS = (
 CMB_LIQUIDUS = (
     "core_liquidus needs a core temperature profile: temperature_mode = 'adiabatic_from_cmb' "
     'carries the surface temperature through the core, so the liquidus rule would read the '
-    'surface temperature as the core temperature; use inner_core_mass_fraction'
+    'surface temperature as the core temperature; use inner_core_mass_fraction or give the '
+    'core T as core_temperature_arrays'
 )
 
 # WolfBower2018 tables are valid up to ~1 TPa. The Brent pressure solver with
@@ -261,10 +262,11 @@ def _check_two_layer_core(layer_eos_config):
             )
 
 
-def _check_icb_rule(config_params):
+def _check_icb_rule(config_params, core_table=False):
     """An inner core takes its boundary from exactly one of core_liquidus (an iron melting curve
     name, or a callable T_liq(P) [K]) and inner_core_mass_fraction; a one-layer core takes
-    neither."""
+    neither. ``core_table`` is True when the caller gives the core T as a table
+    (``core_temperature_arrays``), which the CMB-anchored adiabat then does not set."""
     liq = config_params.get('core_liquidus') or ''
     frac = config_params.get('inner_core_mass_fraction')
     if callable(liq):  # T_liq(P) [K] of the outer core, from a caller such as PROTEUS
@@ -285,7 +287,8 @@ def _check_icb_rule(config_params):
             )
         if liq and config_params.get('outer_solver') == 'newton':
             raise ValueError(NEWTON_LIQUIDUS)
-        if liq and config_params.get('temperature_mode') == 'adiabatic_from_cmb':
+        cmb = config_params.get('temperature_mode') == 'adiabatic_from_cmb'
+        if liq and cmb and not core_table:
             raise ValueError(CMB_LIQUIDUS)
     elif liq or frac is not None:
         raise ValueError('core_liquidus and inner_core_mass_fraction need an inner_core layer')

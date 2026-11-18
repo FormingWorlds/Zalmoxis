@@ -119,6 +119,62 @@ def temperature_from_arrays(temperature_arrays):
     return temperature_function
 
 
+def check_core_temperature_arrays(core_temperature_arrays):
+    """Return the core temperature table as 2 float arrays, or raise ValueError.
+
+    Parameters
+    ----------
+    core_temperature_arrays : tuple of array_like
+        ``(P_arr, T_arr)``: pressures [Pa], finite, positive and strictly increasing, and
+        temperatures [K], finite and positive; 2 one-dimensional numeric arrays of equal
+        length >= 2.
+
+    Returns
+    -------
+    tuple of ndarray
+        ``(P_arr, T_arr)`` as float arrays.
+
+    Raises
+    ------
+    ValueError
+        For any other form or value.
+    """
+    form = (
+        'core_temperature_arrays must be (P_arr, T_arr): 2 one-dimensional numeric arrays '
+        'of equal length >= 2'
+    )
+    if (
+        not isinstance(core_temperature_arrays, (tuple, list))
+        or len(core_temperature_arrays) != 2
+    ):
+        raise ValueError(form)
+    raw = [np.asarray(a) for a in core_temperature_arrays]
+    if any(a.dtype.kind not in 'iuf' or a.ndim != 1 or a.size < 2 for a in raw):
+        raise ValueError(form)
+    if raw[0].shape != raw[1].shape:
+        raise ValueError(form)
+    p, t = (a.astype(float) for a in raw)
+    if not (np.all(np.isfinite(p)) and np.all(np.isfinite(t))):
+        raise ValueError('core_temperature_arrays must be finite')
+    if p[0] <= 0 or np.any(np.diff(p) <= 0) or np.any(t <= 0):
+        raise ValueError('core_temperature_arrays needs P > 0 strictly increasing and T > 0')
+    return p, t
+
+
+def core_temperature(pressure, core_temperature_arrays, xp=np):
+    """Core temperature [K] at ``pressure`` [Pa] from the table ``(P_arr, T_arr)``.
+
+    Linear in P inside the table and linear with the slope of the end interval outside it, so
+    a central pressure probed outside the table still has a temperature. The same formula
+    serves numpy (``xp=np``) and JAX (``xp=jax.numpy``).
+    """
+    p, t = core_temperature_arrays
+    below = t[0] + (t[1] - t[0]) / (p[1] - p[0]) * (pressure - p[0])
+    above = t[-1] + (t[-1] - t[-2]) / (p[-1] - p[-2]) * (pressure - p[-1])
+    inside = xp.interp(pressure, p, t)
+    return xp.where(pressure < p[0], below, xp.where(pressure > p[-1], above, inside))
+
+
 def get_layer_mixture(mass, cmb_mass, core_mantle_mass, layer_mixtures, icb_mass=0.0):
     """Determine the per-layer mixture based on enclosed mass (purely geometric).
 
@@ -300,6 +356,7 @@ def solve_structure(
     volatile_profile=None,
     surface_pressure=0.0,
     icb_mass=0.0,
+    core_temperature_arrays=None,
 ):
     """Solve the coupled ODEs for the planetary structure model.
 
@@ -346,6 +403,10 @@ def solve_structure(
         path, and by the numpy solve that replaces it after a fallback,
         which then ignores ``temperature_function``. See ``jax_eos.wrapper``
         docstring for when to prefer this over the callable form.
+    core_temperature_arrays : tuple[ndarray, ndarray] or None
+        Checked core temperature table ``(P_arr, T_arr)`` [Pa, K] of ``solver.main``: at
+        enclosed mass below ``cmb_mass`` the temperature is ``core_temperature(P)``, on the
+        JAX path and on numpy.
     mushy_zone_factors : dict or float or None
         Per-EOS mushy zone factors. Dict keyed by EOS name, a single
         float (applied to all), or None (default 1.0 for all).
@@ -407,6 +468,7 @@ def solve_structure(
                 liquidus_func=liquidus_func,
                 temperature_function=temperature_function,
                 temperature_arrays=temperature_arrays,
+                core_temperature_arrays=core_temperature_arrays,
                 mushy_zone_factors=mushy_zone_factors,
                 condensed_rho_min=condensed_rho_min,
                 condensed_rho_scale=condensed_rho_scale,
@@ -436,6 +498,11 @@ def solve_structure(
 
     nonfinite = [0]  # non-finite right-hand sides in the current solve_ivp call
 
+    def _temperature(r, y):
+        if core_temperature_arrays is not None and y[0] < cmb_mass * (1.0 - 1e-12):
+            return float(core_temperature(y[2], core_temperature_arrays))
+        return temperature_function(r, y[2]) if temperature_function else 300
+
     def _ode_rhs(r, y):
         if nonfinite[0] >= MAX_NONFINITE_RHS:
             return [np.nan, np.nan, np.nan]
@@ -447,7 +514,7 @@ def solve_structure(
             layer_mixtures,
             interpolation_cache,
             material_dictionaries,
-            temperature_function(r, y[2]) if temperature_function else 300,
+            _temperature(r, y),
             solidus_func,
             liquidus_func,
             mushy_zone_factors,

@@ -45,11 +45,20 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 
+from ..structure_model import core_temperature
 from .paleos import get_paleos_unified_density_jax
 from .tdep import get_tdep_density_jax
 
 
-@partial(jax.jit, static_argnames=('T_axis_is_radius', 'has_volatile', 'mantle_is_unified'))
+@partial(
+    jax.jit,
+    static_argnames=(
+        'T_axis_is_radius',
+        'has_volatile',
+        'mantle_is_unified',
+        'has_core_T_table',
+    ),
+)
 def coupled_odes_jax(
     radius: jnp.ndarray,
     y: jnp.ndarray,  # shape (3,): [mass, gravity, pressure]
@@ -199,6 +208,11 @@ def coupled_odes_jax(
     # True: single unified PALEOS table through the same kernel the core
     # uses.
     mantle_is_unified: bool = False,
+    # Core temperature table flag (static). True: the core density reads T(P) of the table
+    # (core_T_P [Pa], core_T_values [K]) instead of the T profile.
+    has_core_T_table: bool = False,
+    core_T_P: jnp.ndarray | None = None,
+    core_T_values: jnp.ndarray | None = None,
 ):
     """Return dy/dr = [dM/dr, dg/dr, dP/dr] at (radius, y)."""
     mass, gravity, pressure = y[0], y[1], y[2]
@@ -230,9 +244,14 @@ def coupled_odes_jax(
     T_sol = 10.0**log_T_sol
 
     # Core density (paleos_unified)
+    t_core = (
+        core_temperature(pressure, (core_T_P, core_T_values), xp=jnp)
+        if has_core_T_table
+        else temperature
+    )
     rho_core = get_paleos_unified_density_jax(
         pressure,
-        temperature,
+        t_core,
         mushy_zone_factor_core,
         core_density_grid,
         core_unique_log_p,

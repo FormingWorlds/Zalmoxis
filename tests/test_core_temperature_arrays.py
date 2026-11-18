@@ -122,7 +122,7 @@ def _no_solve(monkeypatch):
 
 @pytest.mark.unit
 def test_main_refuses_a_bad_table_and_a_table_without_a_mantle_source(monkeypatch):
-    """Both refusals come before any solve."""
+    """The refusals come before any solve; on numpy the mantle arrays alone set no T."""
     _no_solve(monkeypatch)
     cp, mat, mf = _load_fixtures()
     r, t, _, t_cmb = _chili_like_profile()
@@ -135,8 +135,9 @@ def test_main_refuses_a_bad_table_and_a_table_without_a_mantle_source(monkeypatc
             temperature_arrays=(r, t),
             core_temperature_arrays=(np.array([2.0, 1.0]), np.array([1.0, 2.0])),
         )
-    with pytest.raises(ValueError, match='mantle temperature'):
-        zs.main(cp, mat, mf, _INPUT_DIR, core_temperature_arrays=_table(t_cmb))
+    for kw in ({}, {'temperature_arrays': (r, t)}):
+        with pytest.raises(ValueError, match='mantle temperature'):
+            zs.main(cp, mat, mf, _INPUT_DIR, core_temperature_arrays=_table(t_cmb), **kw)
 
 
 @pytest.mark.unit
@@ -188,9 +189,10 @@ def test_core_nodes_take_the_table_and_mantle_nodes_the_mantle_source(jax):
 @pytest.mark.integration
 def test_jax_and_numpy_agree_with_the_table():
     """T3: the same inputs on 2 integrators and 2 T codes give R, P_c, P_cmb and rho_c within
-    1e-4."""
-    a, _ = _solve(jax=True, table=_table)
-    b, _ = _solve(jax=False, table=_table)
+    1e-4, at an ODE tolerance (1e-8) below the integration difference of the 2 paths."""
+    ode = {'relative_tolerance': 1e-8, 'absolute_tolerance': 1e-9}
+    a, _ = _solve(jax=True, table=_table, **ode)
+    b, _ = _solve(jax=False, table=_table, **ode)
 
     def key(res):
         p_cmb = np.interp(res['cmb_mass'], res['mass_enclosed'], res['pressure'])
