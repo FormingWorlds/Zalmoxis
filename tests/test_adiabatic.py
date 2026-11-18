@@ -1088,7 +1088,7 @@ class TestMidpointAdiabat:
 
         check()
 
-    @pytest.mark.parametrize('bad', ['CMB', 'Surface', 'bogus', '', None])
+    @pytest.mark.parametrize('bad', ['CMB', 'Surface', 'top', 'bottom', 'bogus', '', None])
     def test_an_unknown_anchor_raises_value_error(self, monkeypatch, bad):
         """``anchor`` is 'surface' or 'cmb'; any other value raises ValueError before any nabla
         read, instead of running the surface anchor."""
@@ -1097,6 +1097,19 @@ class TestMidpointAdiabat:
         with pytest.raises(ValueError, match='anchor'):
             _call(_profile(n=5), bad, 3000.0, surface_temperature=3000.0)
         assert calls == []
+
+    def test_the_binodal_scale_reaches_the_nabla_read(self, monkeypatch):
+        """``binodal_T_scale`` is passed on to ``get_mixed_nabla_ad`` at every read, also when it
+        differs from the default of that function."""
+        import zalmoxis.mixing as _mix
+
+        _stub_adiabat(monkeypatch, lambda P, T: 0.1)
+        scales = []
+        monkeypatch.setattr(
+            _mix, 'get_mixed_nabla_ad', lambda P, T, *a, **k: scales.append(a[-1]) or 0.1
+        )
+        _call(_profile(n=5), 'surface', 3000.0, binodal_T_scale=75.0)
+        assert scales and set(scales) == {75.0}
 
     def test_a_subnormal_anchor_runs_without_a_warning(self, monkeypatch):
         """The smallest positive anchor temperature (a subnormal float) is in range: the call
@@ -1183,11 +1196,18 @@ class TestMidpointAdiabat:
         reads = []
         _stub_adiabat(monkeypatch, lambda P, T: reads.append(T) or nabla)
         P = _profile(n=11)
-        T = _call(P, 'surface', 3000.0)
+
+        def call(anchor):
+            try:
+                return _call(P, anchor, 3000.0)
+            except OverflowError as e:
+                pytest.fail(f'nabla {nabla}, anchor {anchor}: {e}')
+
+        T = call('surface')
         assert T[-1] == 3000.0 and max(reads) <= 1e5
         np.testing.assert_array_equal(T[:-1], 1e5)
         reads.clear()
-        T = _call(P, 'cmb', 3000.0)
+        T = call('cmb')
         assert T[1] == 3000.0 and min(reads) >= 100.0
         np.testing.assert_array_equal(T[2:], 100.0)
         for T0, P0, P1, inward, lim in [
@@ -1195,9 +1215,12 @@ class TestMidpointAdiabat:
             (3000.0, 1e10, 1e6, False, 100.0),
         ]:
             reads.clear()
-            t = _segment_temperature(
-                T0, P0, P1, lambda P, T: reads.append(T) or nabla, 0.0025, inward
-            )
+            try:
+                t = _segment_temperature(
+                    T0, P0, P1, lambda P, T: reads.append(T) or nabla, 0.0025, inward
+                )
+            except OverflowError as e:
+                pytest.fail(f'nabla {nabla}, inward {inward}: {e}')
             assert t == lim and len(reads) == 2, (inward, t, len(reads))
             assert all(min(lim, T0) <= r <= max(lim, T0) for r in reads)
 
@@ -1291,7 +1314,10 @@ class TestMidpointAdiabat:
         )
         def check(h):
             if 1e-4 <= h <= 1.0:
-                T = _call(P, 'surface', 3000.0, max_dlnp=h)
+                try:
+                    T = _call(P, 'surface', 3000.0, max_dlnp=h)
+                except ValueError as e:
+                    pytest.fail(f'max_dlnp {h!r} is in range: {e}')
                 assert np.all(np.isfinite(T)) and np.all(np.diff(T) <= 0)
                 np.testing.assert_allclose(T, exact, rtol=1e-12)
             else:
