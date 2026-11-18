@@ -1341,8 +1341,9 @@ class TestMidpointAdiabat:
 def test_padded_top_shell_lookup_follows_the_adiabat(monkeypatch):
     """A padded default solve (P = 0 at the outer node): the T(P) lookup that the last density
     solve reads gives T_surf at 1e5 Pa and lies within 0.3 K of an independent explicit Euler
-    adiabat (4000 steps in ln P) from there up to the last positive node, instead of holding
-    the T of that node over the top shell."""
+    adiabat (4000 steps in ln P) from there up to the last positive node of the pass that built
+    the table, instead of holding the T of that node over the top shell. Above that node the
+    lookup joins the returned top node, which carries the one-pass table lag."""
     import os
 
     import zalmoxis.solver as zs
@@ -1354,7 +1355,13 @@ def test_padded_top_shell_lookup_follows_the_adiabat(monkeypatch):
     root = get_zalmoxis_root()
     if not os.path.isdir(os.path.join(root, 'data', 'EOS_PALEOS_MgSiO3_unified')):
         pytest.skip('PALEOS tables not on disk')
-    seen = spy_temperature_function(monkeypatch)
+    seen, tables, table = spy_temperature_function(monkeypatch), [], zs._adiabat_table
+
+    def spy_table(pressure, *args, **kwargs):
+        tables.append(np.asarray(pressure, float).copy())
+        return table(pressure, *args, **kwargs)
+
+    monkeypatch.setattr(zs, '_adiabat_table', spy_table)
     cfg = ap._default_config(0)
     melt = ap._melt('config', cfg)
     res = zs.main(cfg, load_material_dictionaries(), melt, os.path.join(root, 'input'))
@@ -1362,7 +1369,8 @@ def test_padded_top_shell_lookup_follows_the_adiabat(monkeypatch):
     assert res['padded'] and P[-1] == 0.0
     assert T[-1] == pytest.approx(cfg['surface_temperature'])
     top = int(np.flatnonzero(P > 0)[-1])
-    q, t_path = euler_adiabat(cfg, melt, P_FLOOR, T[-1], P[top])
+    assert tables, 'the solve built no T(P) table'
+    q, t_path = euler_adiabat(cfg, melt, P_FLOOR, T[-1], np.min(tables[-1][tables[-1] > 0]))
     look = np.array([seen[-1](r[top], p) for p in q])
     assert look[0] == pytest.approx(T[-1], abs=1e-9)
     assert np.max(np.abs(look - t_path)) < 0.3
