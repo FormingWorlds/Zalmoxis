@@ -371,6 +371,18 @@ _LIQUID_BRANCH_RTOL = 1e-12  # liquid branch against the T table above the ICB
 _TOP_SHELL_POINTS = 64
 
 
+def _table_top(lp, ts):
+    """T [K] above the top of a T(P) table (log10 P [Pa], T [K]): the adiabat of its last
+    interval, log10 T linear in log10 P with the slope of that interval, so a pass whose
+    central pressure lies above the pressures of the pass that built the table reads the
+    adiabat there instead of a constant T. A table of 1 point, or with a flat last interval,
+    holds its top T."""
+    if len(lp) < 2 or not lp[-1] > lp[-2]:
+        return lambda x: float(ts[-1])
+    s = math.log10(ts[-1] / ts[-2]) / (lp[-1] - lp[-2])
+    return lambda x: float(ts[-1] * 10.0 ** (s * (x - lp[-1])))
+
+
 def _adiabat_table(pressure, T, mass, top_shell, outward=False):
     """log10 P [Pa] and T [K] of the adiabat ``T`` on the nodes at P > 0, sorted by P: the T(P)
     lookup of the density solve. The top cell gains ``_TOP_SHELL_POINTS`` geometric pressures q
@@ -2413,24 +2425,25 @@ def _solve(
 
                 def _table_t(lp, ts, _b=_adiabat_blend, _ltf=_linear_tf):
                     # T(r, P) of a T(P) table, blended with the linear guess below blend 1
+                    top = _table_top(lp, ts)
+
+                    def t_adi(P, _lp=lp, _ts=ts):
+                        x = math.log10(
+                            P
+                        )  # math.log10 avoids numpy scalar dispatch (~1 us/call)
+                        T = top(x) if x > _lp[-1] else float(np.interp(x, _lp, _ts))
+                        return max(_T_MIN_CLAMP, min(T, _T_MAX_CLAMP))
+
                     if _b < 1.0:
 
-                        def t_of(r, P, _lp=lp, _ts=ts):
+                        def t_of(r, P):
                             T_lin = _ltf(r)
-                            if P <= 0:
-                                return T_lin
-                            # W5: math.log10 avoids numpy scalar dispatch (~1 us/call)
-                            T_adi = float(np.interp(math.log10(P), _lp, _ts))
-                            T_adi = max(_T_MIN_CLAMP, min(T_adi, _T_MAX_CLAMP))
-                            return (1.0 - _b) * T_lin + _b * T_adi
+                            return T_lin if P <= 0 else (1.0 - _b) * T_lin + _b * t_adi(P)
 
                     else:
 
-                        def t_of(r, P, _lp=lp, _ts=ts):
-                            if P <= 0:
-                                return surface_temperature
-                            T_val = float(np.interp(math.log10(P), _lp, _ts))
-                            return max(_T_MIN_CLAMP, min(T_val, _T_MAX_CLAMP))
+                        def t_of(r, P):
+                            return surface_temperature if P <= 0 else t_adi(P)
 
                     return t_of
 
