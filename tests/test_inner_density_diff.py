@@ -141,10 +141,11 @@ def test_the_recorder_prefixes_are_messages_of_the_solver():
 def test_a_density_that_flips_on_every_inner_pass_takes_the_oscillation_bail(
     monkeypatch, caplog
 ):
-    """In outer pass 0 the EOS density is scaled by 1 + 0.003 (-1)^k on inner pass k, so the mean
-    density change flips sign on every pass while the residual stays between tolerance_inner and
-    0.1: after 15 flips the inner loop takes the best density of the pass (its smallest residual
-    in the log) and stops; on the real EOS of the later passes the solve converges strict."""
+    """In outer pass 0 the EOS density is scaled by 1 + 0.03 (-1)^k on inner pass k, so the mean
+    density change flips sign on every pass while the best residual stays between
+    10 tolerance_inner and the 0.1 floor: after 15 flips the inner loop takes the best density of
+    the pass (its smallest residual in the log) and stops; on the real EOS of the later passes
+    the solve converges strict."""
     import zalmoxis.solver as zs
     from tests.test_failed_structure_solve import _cfg, _run
 
@@ -153,7 +154,7 @@ def test_a_density_that_flips_on_every_inner_pass_takes_the_oscillation_bail(
 
     def batch(*args, **kwargs):
         rho = real(*args, **kwargs)
-        return rho * (1 + 3e-3 * (-1) ** len(diffs)) if len(starts) <= 1 else rho
+        return rho * (1 + 3e-2 * (-1) ** len(diffs)) if len(starts) <= 1 else rho
 
     def diff(density, old_density, pressure):
         if not np.any(old_density):  # an outer pass starts from density 0
@@ -170,5 +171,5 @@ def test_a_density_that_flips_on_every_inner_pass_takes_the_oscillation_bail(
     ]
     assert len(bails) == 1 and starts[:2] == [0, starts[1]] and starts[1] > 15
     assert bails[0].args == (15, min(diffs[: starts[1]]), 1e-4)
-    assert 1e-4 < min(diffs[: starts[1]]) < 0.1
+    assert 1e-3 < min(diffs[: starts[1]]) < 0.1
     assert r['converged'] and r['accepted_on'] == 'strict'
