@@ -35,6 +35,7 @@ def test_PALEOS_adiabatic_5Mearth_converges():
     # a bail must end 10x below the bail threshold max(100 tol_inner, 0.1) = 0.1
     bails = results['inner_bail_diffs']
     assert results['inner_converged'] > 0, 'the inner exit recorder saw no solver record'
+    assert not results['stopped_on_wall_clock'], f'{mass} M_earth stopped on the wall clock'
     assert max(bails, default=0.0) < 0.01, f'{mass} M_earth inner bails at best diff {bails}'
 
     R = results['radii'][-1] / earth_radius

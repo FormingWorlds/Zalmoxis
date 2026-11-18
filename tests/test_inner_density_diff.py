@@ -28,10 +28,14 @@ def test_a_padded_node_at_the_alpha_floor_does_not_set_the_residual():
 
 def test_without_a_node_above_zero_pressure_every_node_counts():
     """With no node at P > 0 the residual is the largest change over every node; with one such
-    node it is the change of that node alone."""
+    node it is the change of that node alone; a negative or NaN pressure counts as padded."""
     old, new = np.array([100.0, 50.0]), np.array([90.0, 50.0])
     assert _inner_density_diff(new, old, np.zeros(2)) == pytest.approx(0.1)
     assert _inner_density_diff(new, old, np.array([0.0, 1.0])) == 0.0
+    big = np.array([1.0, 1.0, 1.0, 1.0]), np.array([1.01, 9.0, 9.0, 9.0])
+    assert _inner_density_diff(
+        big[1], big[0], np.array([1e9, -5.0, 0.0, np.nan])
+    ) == pytest.approx(0.01)
 
 
 @settings(max_examples=200, deadline=None)
@@ -49,7 +53,8 @@ def test_the_residual_is_the_largest_change_over_the_nodes_with_pressure(rho, n_
     pressure = np.r_[np.geomspace(3e11, 1e6, old.size - n_pad), np.zeros(n_pad)]
     want = np.max(np.abs((new[:-n_pad] - old[:-n_pad]) / old[:-n_pad]))
     assert _inner_density_diff(new, old, pressure) == pytest.approx(want, rel=1e-12)
-    assert want > 0
+    new[-n_pad:] = old[-n_pad:] * (2.0 - shrink)
+    assert _inner_density_diff(new, old, pressure) == pytest.approx(want, rel=1e-12)
 
 
 def test_the_inner_exit_recorder_reads_each_exit_record():
@@ -88,10 +93,29 @@ def test_the_inner_exit_recorder_reads_each_exit_record():
             0.2,
             0.1,
         ),
+        log(
+            20,
+            'Inner loop: max iterations, using best density (diff=%.2e, target=%.2e)',
+            0.09,
+            1e-4,
+        ),
         log(30, 'Wall-clock timeout in inner loop (outer=%d, inner=%d).', 3, 7),
-        log(20, 'Inner loop: timeout'),
+        log(20, 'Inner loop: no diff'),  # defensive: a bail record without its diff
         log(10, 'Inner loop converged after %d iterations.', 14),
     ]
-    assert rec.diffs == [0.3, 0.05, 0.2, math.inf, math.inf]
+    assert rec.diffs == [0.3, 0.05, 0.2, 0.09, math.inf, math.inf]
     assert rec.converged == 1
-    assert shown == [False, False, True, True, False, False]
+    assert shown == [False, False, True, False, True, False, False]
+
+
+def test_the_recorder_prefixes_are_messages_of_the_solver():
+    """Each message prefix that the inner exit recorder reads occurs in the solver source, so a
+    renamed solver message fails here instead of leaving the recorder silent."""
+    import inspect
+
+    import zalmoxis.solver
+
+    src = inspect.getsource(zalmoxis.solver)
+    prefixes = ['Inner loop:', 'Maximum inner iterations', 'Wall-clock timeout in inner loop']
+    assert all(f"'{p}" in src for p in prefixes + ['Inner loop converged'])
+    assert src.count("'Inner loop:") == 3

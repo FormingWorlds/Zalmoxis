@@ -41,15 +41,9 @@ def _assert_full_adiabat(results, mass):
 
 
 class _InnerBails(logging.Filter):
-    """Records the inner-loop exits of a solve: the best density diff [-] of each bail record
-    ('Inner loop:' and 'Maximum inner iterations'), inf for a wall-clock exit or a bail record
-    without its diff, and the count of converged inner loops. Passes on only the records at or
-    above ``level``, the effective level of the logger before the solve."""
-
-    _BAIL, _CLOCK = (
-        ('Inner loop:', 'Maximum inner iterations'),
-        'Wall-clock timeout in inner loop',
-    )
+    """Records the best density diff [-] of each inner-loop bail (inf for a wall-clock exit or a
+    bail record without its diff) and counts converged inner loops. Passes on only the records
+    at or above ``level``, the effective level of the logger before the solve."""
 
     def __init__(self, level):
         super().__init__()
@@ -57,9 +51,9 @@ class _InnerBails(logging.Filter):
 
     def filter(self, record):
         msg, args = str(record.msg), record.args or ()
-        if msg.startswith(self._BAIL):
+        if msg.startswith(('Inner loop:', 'Maximum inner iterations')):
             self.diffs.append(float(args[-2]) if len(args) >= 2 else math.inf)
-        elif msg.startswith(self._CLOCK):
+        elif msg.startswith('Wall-clock timeout in inner loop'):
             self.diffs.append(math.inf)
         elif msg.startswith('Inner loop converged'):
             self.converged += 1
