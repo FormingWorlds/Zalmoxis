@@ -313,7 +313,7 @@ A two-layer core takes exactly one of 2 ICB rules:
 How the rule finds the ICB depends on the temperature profile:
 
 - **On an adiabat** (`temperature_mode = "adiabatic"`): the rule continues the outer-core adiabat below the ICB to the centre with the liquid side, the liquid branch $T_\mathrm{l}(P)$. The ICB pressure $P_\mathrm{ICB}$ is the first root, from the centre outward, of $T_\mathrm{l}(P) - T_\mathrm{liq}(P) = 0$. The solid side does not enter the rule.
-- **On a given profile** (`isothermal`, `linear`, `prescribed`, or a temperature function): the profile does not depend on the phase, so the rule takes its first root of $T(P) - T_\mathrm{liq}(P) = 0$ from the centre outward.
+- **On a given profile** (`isothermal`, `linear`, `prescribed`, a temperature function, or a [core temperature table](proteus_coupling.md#core-temperature-from-the-caller)): the profile does not depend on the phase, so the rule takes its first root of $T(P) - T_\mathrm{liq}(P) = 0$ from the centre outward.
 
 The structure equations place a shell in the inner core by its enclosed mass, as at the core-mantle boundary, so the liquidus rule uses the temperature profile of the previous outer pass ([code architecture](code_architecture.md)). Core shells below the mass at $P_\mathrm{ICB}$ take `inner_core`, the others `core`. A liquidus solve converges only when its temperature profile and its layers share one ICB:
 
@@ -350,7 +350,7 @@ The light-element fractions of each layer are inputs: the model does not move li
 - The light-element laws, calibrated on liquid iron, apply to solid iron on the solid side, with one warning per process.
 - The solid side refuses `CoreAlloy:H-Luo` with `CoreAlloyError`, a `ValueError`: its carrier volume is that of a liquid of iron and water, from Luo et al. (2024)[^cite-luo2024].
 - A named curve with an alloy outer core gives a warning at each call of `main`.
-- A `ValueError` refuses the liquidus rule under `outer_solver = "newton"` or `temperature_mode = "adiabatic_from_cmb"`, and a non-finite temperature or liquidus on a core node.
+- A `ValueError` refuses the liquidus rule under `outer_solver = "newton"`, under `temperature_mode = "adiabatic_from_cmb"` without a [core temperature table](proteus_coupling.md#core-temperature-from-the-caller), and a non-finite temperature or liquidus on a core node.
 - On the JAX structure path, a two-layer core falls back to the numpy path.
 - On an adiabat, a `RuntimeError` stops the solve when the liquid branch and the temperature table of a pass differ by more than a relative $10^{-12}$ above the ICB, where both take one adiabat.
 

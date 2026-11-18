@@ -31,8 +31,9 @@ from zalmoxis.mixing import parse_all_layer_mixtures
 from zalmoxis.solver import main
 
 
-def solve(**rule):
-    """The default 1 M_E planet with a liquid S-bearing outer core and a solid iron inner core."""
+def solve(main_args=None, **rule):
+    """The default 1 M_E planet with a liquid S-bearing outer core and a solid iron inner core;
+    ``main_args`` holds more keyword arguments of ``main``."""
     root = get_zalmoxis_root()
     cfg = load_zalmoxis_config(os.path.join(root, 'input', 'default.toml'))
     cfg['layer_eos_config'].update(
@@ -45,7 +46,10 @@ def solve(**rule):
         cfg['layer_eos_config'], cfg['rock_solidus'], cfg['rock_liquidus'], mushy_zone_factor=1.0
     )
     mixes = parse_all_layer_mixtures(cfg['layer_eos_config'])
-    return main(cfg, load_material_dictionaries(), melt, os.path.join(root, 'input'), layer_mixtures=mixes)
+    return main(
+        cfg, load_material_dictionaries(), melt, os.path.join(root, 'input'), layer_mixtures=mixes,
+        **(main_args or {}),
+    )
 
 
 if __name__ == '__main__':
@@ -78,23 +82,23 @@ From the repository root:
 python scripts/two_layer_core.py
 ```
 
-The first run makes the 2 iron side tables in `data/EOS_PALEOS_API/`, once per PALEOS version: 1351 by 379 nodes per side. Later runs read the cached tables. With the tables cached, the 2 solves took 3 min 3 s together on an Apple M1 Ultra, next to other jobs.
+The first run makes the 2 iron side tables in `data/EOS_PALEOS_API/`, once per PALEOS version: 1351 by 379 nodes per side. Later runs read the cached tables. With the tables cached, the 2 solves took 2 min 45 s together on an Apple M1 Ultra, next to other jobs.
 
 The script prints, for each rule:
 
 ```console
 {'inner_core_mass_fraction': 0.0508}
-  converged True, radius 6570.8 km
-  CMB 3478.0 km, 128.19 GPa, 5074 K
-  ICB 1211.9 km, 322.01 GPa, M_ic/M_core 0.0508
-  centre 358.35 GPa, 7737 K, 13433 kg/m^3
-  density step at the ICB 13158 -> 12044 kg/m^3
+  converged True, radius 6569.5 km
+  CMB 3478.1 km, 128.14 GPa, 5072 K
+  ICB 1212.0 km, 321.93 GPa, M_ic/M_core 0.0508
+  centre 358.27 GPa, 7738 K, 13432 kg/m^3
+  density step at the ICB 13157 -> 12043 kg/m^3
   solid above the ICB: 0.000 of the core mass
 {'core_liquidus': 'Anzellini13-iron'}
-  converged True, radius 6573.5 km
-  CMB 3484.0 km, 127.79 GPa, 5066 K
-  ICB 0.0 km, 348.90 GPa, M_ic/M_core 0.0000
-  centre 348.90 GPa, 7774 K, 12277 kg/m^3
+  converged True, radius 6572.1 km
+  CMB 3484.1 km, 127.74 GPa, 5067 K
+  ICB 0.0 km, 348.82 GPa, M_ic/M_core 0.0000
+  centre 348.82 GPa, 7767 K, 12277 kg/m^3
   solid above the ICB: 0.000 of the core mass
 ```
 
@@ -105,10 +109,10 @@ With no inner core, `R_icb` is 0 and `P_icb` is the centre pressure.
 `res['core']` holds the core arrays. The script reads `r`, `P`, `T` and `rho` (m, Pa, K and kg/m$^3$) at the core nodes, whose last node is the core-mantle boundary (CMB); `phase` (1 inner core, 0 outer core); and the scalars `M_ic` \[kg\], `R_icb` \[m\], `P_icb` \[Pa\] and `solid_above_icb_mass_fraction`. `res['cmb_mass']` is the core mass. [Core arrays](../How-to/usage.md#core-arrays) lists every key with its unit. The 2 runs differ as follows:
 
 1. With the inner-core mass of PREM, the ICB lies at 1212 km and 322 GPa. The density falls there by about 1100 kg/m$^3$, from the solid iron of the inner core to the liquid Fe-S of the outer core.
-2. With the melting curve, the core has no inner core. The adiabat from 3000 K at the surface (the `surface_temperature` of `input/default.toml`) reaches 7774 K at the centre, above the 6402 K of the Anzellini curve at 349 GPa.
-3. The inner core of the first run is solid at 7737 K at the centre, above the melting curve. The mass rule sets where the boundary is; it does not check that iron is solid there.
+2. With the melting curve, the core has no inner core. The adiabat from 3000 K at the surface (the `surface_temperature` of `input/default.toml`) reaches 7767 K at the centre, above the 6401 K of the Anzellini curve at 349 GPa.
+3. The inner core of the first run is solid at 7738 K at the centre, above the melting curve. The mass rule sets where the boundary is; it does not check that iron is solid there.
 
-To see an inner core from the melting curve, cool the core: `solve(core_liquidus='Anzellini13-iron', temperature_mode='isothermal', surface_temperature=5000)` puts the ICB at 206.6 GPa, next to the 206.4 GPa where the Anzellini curve is at 5000 K.
+To see an inner core from the melting curve, cool the core: `solve(core_liquidus='Anzellini13-iron', temperature_mode='isothermal', surface_temperature=5000)` puts the ICB at 206.2 GPa, next to the 206.4 GPa where the Anzellini curve is at 5000 K.
 
 To plot the density of the core, run these lines from the `scripts/` folder, in a Python session or a second script; the import reads `solve` from Step 1:
 
@@ -123,6 +127,42 @@ plt.xlabel('Radius [km]')
 plt.ylabel('Density [kg/m$^3$]')
 plt.show()
 ```
+
+## Step 4: give the core temperature as a table
+
+A coupled model can set the core temperature itself and pass it as a table of $T$ \[K\] against $P$ \[Pa\], `core_temperature_arrays` ([core temperature from the caller](../Explanations/proteus_coupling.md#core-temperature-from-the-caller)). The table needs a mantle temperature next to it. Save this script as `scripts/core_table.py`; it uses `solve` from Step 1 with a mantle temperature that rises from 3000 K by 15 K per GPa, and a core table that meets the Anzellini curve at 330 GPa with half its slope:
+
+```python
+# scripts/core_table.py
+"""Give the core of Step 1 its temperature as a table and print its inner-core boundary."""
+import numpy as np
+
+from two_layer_core import solve
+from zalmoxis.melting_curves import iron_melting_anzellini13 as t_liq
+
+p_x = 3.3e11  # Pa: the table meets the Anzellini curve here
+slope = 0.5 * (t_liq(p_x + 1e9) - t_liq(p_x - 1e9)) / 2e9  # K/Pa, half the slope of the curve
+p_tab = np.array([1.0e11, p_x, 4.5e11])
+t_tab = t_liq(p_x) + slope * (p_tab - p_x)
+res = solve(
+    {'temperature_function': lambda r, p: 3000.0 + 1.5e-8 * p, 'core_temperature_arrays': (p_tab, t_tab)},
+    core_liquidus='Anzellini13-iron',
+)
+core = res['core']
+print(f"converged {res['converged']}, core_T_used {res['core_T_used']}, nodes outside the table {res['core_T_nodes_outside']}")
+print(f"ICB {core['P_icb'] / 1e9:.2f} GPa, M_ic/M_core {core['M_ic'] / res['cmb_mass']:.4f}")
+print(f"centre {core['P'][0] / 1e9:.2f} GPa, {core['T'][0]:.0f} K; CMB {core['P'][-1] / 1e9:.2f} GPa, {core['T'][-1]:.0f} K")
+```
+
+Run it from the `scripts/` folder with `python core_table.py`. With the tables cached it took 51 s on an Apple M1 Ultra, next to other jobs, and printed:
+
+```console
+converged True, core_T_used True, nodes outside the table 0
+ICB 330.16 GPa, M_ic/M_core 0.0423
+centre 363.08 GPa, 6382 K; CMB 129.61 GPa, 5305 K
+```
+
+The ICB lies at the pressure where the table meets the melting curve. The centre and CMB temperatures are the table values at those pressures, not the mantle temperature. The run also warns that the pure-iron curve can give too large an inner core for the Fe-S outer core, and that the profile ends in a padded surface stop ([check the surface pressure](../How-to/usage.md#check-the-surface-pressure-of-a-result)).
 
 ## What to try next
 

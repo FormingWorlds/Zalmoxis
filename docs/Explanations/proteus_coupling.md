@@ -329,6 +329,28 @@ The structure solve runs through Zalmoxis's JAX + diffrax path by default (`use_
 
 With `use_jax = true` and `temperature_arrays` supplied, Zalmoxis takes T from the arrays in every part of the solve: the JAX structure integration, its numpy fallback, the density update at the nodes inside `_solve`, and the output temperature profile. Zalmoxis then ignores `temperature_function`, and the wrapper withholds it on JAX-viable EOS and volatile layouts.
 
+## Core temperature from the caller
+
+How does a caller set the temperature of the core, not only of the mantle?
+
+`main` takes `core_temperature_arrays = (P_arr, T_arr)`, a table of the core temperature $T$ [K] against the pressure $P$ [Pa]. Each core node and each evaluation of the structure equations in the core then reads $T$ from the table; the mantle keeps `temperature_arrays` or `temperature_function`.
+
+A core node is a node whose enclosed mass is below the core mass. This is the same rule that picks the core material, so the temperature and the material always change at the same node. The rule holds in the outer and the inner core, on the numpy and the JAX path, in the core arrays and in the ICB rule of a [two-layer core](mixing.md#two-layer-core).
+
+Between the table points $T$ is linear in $P$. Outside the table, $T$ continues with the slope of the end interval, because the central-pressure search tries pressures beyond the final profile.
+
+As an example, a pure-iron core of an Earth-mass planet with a table that meets the Anzellini iron melting curve at 330 GPa gets its ICB there: the inner core holds 0.13 of the core mass.
+
+The limits:
+
+- A malformed table (see the `main` docstring), or a table without a mantle temperature that the solve reads, raises `ValueError` before the solve.
+- A core without a temperature-dependent equation of state ignores the table and logs one line; the result has `core_T_used = False`.
+- Core nodes outside the table give a warning and the result keys `core_T_nodes_outside` and `core_T_max_excess`.
+- With a table, `core_liquidus` is accepted with `temperature_mode = 'adiabatic_from_cmb'`, since the table, not the CMB temperature, sets the core.
+- An accepted result whose node misses its temperature source by more than a relative $10^{-9}$ raises `StructureInvariantError`.
+
+**Where this is checked.** [Core temperature from a table given by the caller](../Validation/hydrostatic_structure.md#core-temperature-from-a-table-given-by-the-caller).
+
 ## Coupling pitfalls
 
 The function-call coupling is robust at the file boundary, but several edges have known traps. New code paths should re-check these before claiming behavioural neutrality.

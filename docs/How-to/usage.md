@@ -144,6 +144,12 @@ Every result carries 3 keys of the inner-core boundary (ICB) test, which hold va
 - `icb_superheat` \[K\] is the superheat $S$ of the outer-core liquid at the ICB on an adiabat with `core_liquidus`: positive where the liquid lies above the melting curve and negative below it, taken at the centre with no inner core and at the core mass with a core solid to the core-mantle boundary. It is `None` on a given profile and without `core_liquidus`.
 - `icb_adiabat` \[kg\] is the inner-core mass that the adiabat of the returned pass took. It is `None` without an adiabat or without a two-layer core.
 
+A solve with a [core temperature table](../Explanations/proteus_coupling.md#core-temperature-from-the-caller) (`core_temperature_arrays`) carries 3 more keys:
+
+- `core_T_used` is True when the table set the core temperature, and False when the core has no temperature-dependent equation of state and the table is unused.
+- `core_T_nodes_outside` is the number of core nodes whose pressure lies outside the table.
+- `core_T_max_excess` is the largest distance of such a node beyond the table, as a fraction of the table range `P_arr[-1] - P_arr[0]`; 0.0 when no node lies outside.
+
 ## Parameter grids
 
 To sweep over combinations of parameters and plot the results, see the [parameter grids](grids.md) guide.
