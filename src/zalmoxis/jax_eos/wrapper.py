@@ -452,16 +452,23 @@ def solve_structure_via_jax(
     else:
         # One tabulation per temperature function (constant within an inner iteration).
         _adia_cache = interpolation_cache.setdefault('_jax_adiabat_cache', {})
-        _key = id(temperature_function)
-        _entry = _adia_cache.get(_key)
-        if _entry is None or _entry[0] is not temperature_function:
-            _entry = (temperature_function, *_tabulate_adiabat(radii_arr, temperature_function))
-            # Persists across main() calls (solver._interpolation_cache), so it fills to the cap.
-            if len(_adia_cache) > 64:
-                _adia_cache.pop(next(iter(_adia_cache)))
-            _adia_cache[_key] = _entry
-        _, T_axis_grid, T_values = _entry
+
+        def _tab(f):
+            _entry = _adia_cache.get(id(f))
+            if _entry is None or _entry[0] is not f:
+                _entry = (f, *_tabulate_adiabat(radii_arr, f))
+                # Persists across main() calls (solver._interpolation_cache): fills to the cap.
+                if len(_adia_cache) > 64:
+                    _adia_cache.pop(next(iter(_adia_cache)))
+                _adia_cache[id(f)] = _entry
+            return _entry[1:]
+
+        T_axis_grid, T_values = _tab(temperature_function)
         T_axis_is_radius = False
+        core_tf = getattr(temperature_function, 'core', None)  # a layered T: its core table
+        if core_temperature_arrays is None and core_tf is not None:
+            grid, values = _tab(core_tf)
+            core_temperature_arrays = (10.0**grid, values)
 
     if _PROFILE:  # pragma: no cover - dev profiling, gated on ZALMOXIS_JAX_PROFILE
         _PHASE_TIMES['adiabat_tab'] += _time.perf_counter() - _p_t0

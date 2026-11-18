@@ -371,16 +371,32 @@ _LIQUID_BRANCH_RTOL = 1e-12  # liquid branch against the T table above the ICB
 _TOP_SHELL_POINTS = 64
 
 
-def _table_top(lp, ts):
-    """T [K] above the top of a T(P) table (log10 P [Pa], T [K]): the adiabat of its last
-    interval, log10 T linear in log10 P with the slope of that interval, so a pass whose
-    central pressure lies above the pressures of the pass that built the table reads the
-    adiabat there instead of a constant T. A table of 1 point, or with a flat last interval,
-    holds its top T."""
-    if len(lp) < 2 or not lp[-1] > lp[-2]:
-        return lambda x: float(ts[-1])
-    s = math.log10(ts[-1] / ts[-2]) / (lp[-1] - lp[-2])
-    return lambda x: float(ts[-1] * 10.0 ** (s * (x - lp[-1])))
+def _table_end(lp, ts, top=True):
+    """T [K] past one end of a T(P) table (log10 P [Pa], T [K]): the adiabat of its end
+    interval, log10 T linear in log10 P with the slope of that interval, so a query past the
+    pressures of the pass that built the table reads the adiabat there instead of a constant T.
+    A table of 1 point, or with a flat end interval, holds its end T."""
+    i, j = (-1, -2) if top else (0, 1)
+    if len(lp) < 2 or not abs(lp[i] - lp[j]) > 0:
+        return lambda x: float(ts[i])
+    s = math.log10(ts[i] / ts[j]) / (lp[i] - lp[j])
+    return lambda x: float(ts[i] * 10.0 ** (s * (x - lp[i])))
+
+
+def _layer_tables(pressure, T, mass, cmb_mass, top_shell, outward=False):
+    """The T(P) table of the adiabat ``T`` on a pass (``_adiabat_table``) split at its CMB into
+    the table of the mantle nodes and that of the core nodes (``is_core``), so that a query
+    reads the adiabat of its own layer also where the CMB of the querying pass lies at another
+    pressure. The core part is None when either layer holds fewer than 2 nodes; the mantle part
+    is then the table of all nodes."""
+    pressure, T, mass = (np.asarray(a, dtype=float) for a in (pressure, T, mass))
+    in_core = is_core(mass, cmb_mass)
+    core = in_core & (pressure > 0)
+    if core.sum() < 2 or (~in_core).sum() < 2:
+        return _adiabat_table(pressure, T, mass, top_shell, outward), None
+    s = np.argsort(pressure[core])
+    mantle = _adiabat_table(pressure[~in_core], T[~in_core], mass[~in_core], top_shell, outward)
+    return mantle, (np.log10(pressure[core][s]), T[core][s])
 
 
 def _adiabat_table(pressure, T, mass, top_shell, outward=False):
@@ -772,8 +788,10 @@ def _report_table_bands(
         cmb = max(1, min(int(np.searchsorted(m, result['cmb_mass'])), len(P) - 1))
         step = (inner > ADIABAT_P_FLOOR) & (outer < np.inf)  # a NaN or inf end is not stepped
         grad[:-1] = mantle[1:] & step & (np.arange(1, len(P)) > cmb)
-    else:
-        grad[1:] = mantle[:-1] & (inner >= ADIABAT_P_FLOOR) & (outer >= ADIABAT_P_FLOOR)
+    else:  # the segment across the CMB also reads the mantle node above it
+        core = m < result['cmb_mass'] * (1.0 - rtol)
+        span = (inner >= ADIABAT_P_FLOOR) & (outer >= ADIABAT_P_FLOOR)
+        grad[1:] = (mantle[:-1] | (core[:-1] & mantle[1:])) & span
     bad = mantle & ~(np.isfinite(P) & np.isfinite(T))
     reads = {
         'solid': mantle & (undefined | (T <= t_sol) | (T < t_liq)),
@@ -909,7 +927,10 @@ def main(
         of the returned profile. 'timeout' replaces the other labels when the wall
         clock stopped the solve of the returned profile. In an adiabatic mode with a
         T-dependent EOS and no external temperature only the full adiabat on a table of a
-        full-adiabat pass (``adiabat_blend`` and ``adiabat_table_blend`` 1) is accepted, and
+        full-adiabat pass (``adiabat_blend`` and ``adiabat_table_blend`` 1) is accepted, on its
+        strict test only when the pass that built the table was itself within
+        ``tolerance_outer`` in mass; the table is read by layer (the core part at core masses)
+        and continued past its ends with the adiabat slope of its end intervals; and
         ``adiabat_self_consistency`` gives the largest difference in K between the returned
         mantle T and the adiabat recomputed on the returned structure (None below blend 1);
         a Newton root there seeds the Picard blend ramp at min(tolerance_outer, newton_tol),
@@ -2174,9 +2195,14 @@ def _solve(
     prev_mass_enclosed = None
     _temperature_func = None
 
+    def _T_at(f, r, p, m):
+        # T [K] of the T function f at a node of enclosed mass m: its core table in the core
+        core = getattr(f, 'core', None)
+        return core(r, p) if core is not None and is_core(m, cmb_mass) else f(r, p)
+
     def _node_T(r, p, m):
         # node T [K]: the core table at core nodes, the T function elsewhere
-        t = np.array([_temperature_func(r_, p_) for r_, p_ in zip(r, p)])
+        t = np.array([_T_at(_temperature_func, *x) for x in zip(r, p, m)])
         if core_temperature_arrays is not None:
             core = is_core(m, cmb_mass)
             t[core] = core_temperature(p[core], core_temperature_arrays)
@@ -2187,6 +2213,7 @@ def _solve(
     _adiabat_computed = False  # the gradient table was read for the T profile
     _adiabat_blend = 0.0
     _table_blend = 0.0  # the blend of the pass whose pressure built the T(P) table
+    _pass_err = _table_err = math.inf  # mass error of the last pass, of the table's pass
     _ADIABAT_BLEND_STEP = 0.25
     # the internal adiabat makes T: accept only blend 1 on a table of a blend-1 pass
     ramp_asked = _adiabat_asked(
@@ -2239,7 +2266,7 @@ def _solve(
             root, lag = icb_misses(m, p, t, cmb_mass, core_liq, icb_mass, icb_adiabat)
             return (root, tol), (lag, tol), None
         s, heat = icb_superheat(
-            m, p, [liquid(*x) for x in zip(r, p)], cmb_mass, core_liq, icb_mass
+            m, p, [_T_at(liquid, *x) for x in zip(r, p, m)], cmb_mass, core_liq, icb_mass
         )
         lag = 0.0 if icb_adiabat is None else abs(icb_adiabat - icb_mass)
         return (heat, _ICB_SUPERHEAT_TOL), (lag, tol), s
@@ -2388,6 +2415,7 @@ def _solve(
             if _using_adiabat and prev_pressure is not None:
                 # Bump blend toward full adiabat; the table is built on the previous pass
                 _table_blend = _SEED_TABLE_BLEND if _seed_table else _adiabat_blend
+                _table_err = math.inf if _seed_table else _pass_err
                 _seed_table = False
                 _adiabat_blend = min(1.0, _adiabat_blend + _ADIABAT_BLEND_STEP)
                 logger.debug(
@@ -2407,14 +2435,6 @@ def _solve(
                 # ODE's actual pressure rather than a fixed radial mapping.
                 # This prevents unphysical (low P, high T) queries that
                 # hit NaN gaps in the PALEOS tables.
-                _logP_sorted, _T_sorted = _adiabat_table(
-                    prev_pressure,
-                    adiabat_T,
-                    prev_mass_enclosed,
-                    _top_shell,
-                    temperature_mode == 'adiabatic_from_cmb',
-                )
-
                 # Clamp adiabat T to a physically reasonable range.
                 # np.interp flat-extrapolates at the edges, but the Brent
                 # solver may query at extreme P values far beyond the
@@ -2423,15 +2443,19 @@ def _solve(
                 _T_MAX_CLAMP = 100000.0
                 _T_MIN_CLAMP = 100.0
 
-                def _table_t(lp, ts, _b=_adiabat_blend, _ltf=_linear_tf):
-                    # T(r, P) of a T(P) table, blended with the linear guess below blend 1
-                    top = _table_top(lp, ts)
+                def _table_t(lp, ts, low=False, _b=_adiabat_blend, _ltf=_linear_tf):
+                    # T(r, P) of a T(P) table, blended with the linear guess below blend 1; past
+                    # the top, and with ``low`` past the bottom, the end slope goes on
+                    top, bottom = _table_end(lp, ts), _table_end(lp, ts, top=False)
 
                     def t_adi(P, _lp=lp, _ts=ts):
-                        x = math.log10(
-                            P
-                        )  # math.log10 avoids numpy scalar dispatch (~1 us/call)
-                        T = top(x) if x > _lp[-1] else float(np.interp(x, _lp, _ts))
+                        x = math.log10(P)  # math.log10 avoids numpy scalar dispatch
+                        if x > _lp[-1]:
+                            T = top(x)
+                        elif low and x < _lp[0]:
+                            T = bottom(x)
+                        else:
+                            T = float(np.interp(x, _lp, _ts))
                         return max(_T_MIN_CLAMP, min(T, _T_MAX_CLAMP))
 
                     if _b < 1.0:
@@ -2447,7 +2471,22 @@ def _solve(
 
                     return t_of
 
-                _temperature_func = _table_t(_logP_sorted, _T_sorted)
+                def _layered(T):
+                    # the mantle table, with .core the core table that the core nodes read
+                    mantle, core = _layer_tables(
+                        prev_pressure,
+                        T,
+                        prev_mass_enclosed,
+                        cmb_mass,
+                        _top_shell,
+                        temperature_mode == 'adiabatic_from_cmb',
+                    )
+                    f = _table_t(*mantle)
+                    if core is not None:
+                        f.core = _table_t(*core, low=True)
+                    return f
+
+                _temperature_func = _layered(adiabat_T)
                 # T(r, P) of the outer-core liquid continued below the ICB to the centre
                 if core_liq is not None:
                     liquid = _temperature_func
@@ -2455,19 +2494,13 @@ def _solve(
                         liquid_T = _adiabat(
                             prev_radii, prev_pressure, prev_mass_enclosed, icb=0.0
                         )
-                        liquid = _table_t(
-                            *_adiabat_table(
-                                prev_pressure,
-                                liquid_T,
-                                prev_mass_enclosed,
-                                _top_shell,
-                                temperature_mode == 'adiabatic_from_cmb',
-                            )
-                        )
+                        liquid = _layered(liquid_T)
                         up = np.asarray(prev_mass_enclosed) > icb_mass  # 1 adiabat there
                         dev = [
-                            abs(liquid(r_, p_) / _temperature_func(r_, p_) - 1)
-                            for r_, p_ in zip(prev_radii[up], prev_pressure[up])
+                            abs(_T_at(liquid, *x) / _T_at(_temperature_func, *x) - 1)
+                            for x in zip(
+                                prev_radii[up], prev_pressure[up], prev_mass_enclosed[up]
+                            )
                         ]
                         dev = float(np.max(dev, initial=0.0))  # NaN stays NaN
                         logger.debug(
@@ -2482,9 +2515,7 @@ def _solve(
 
                 # Pre-compute temperatures array for the density update loop
                 # (uses the converged pressure from the previous iteration)
-                temperatures = np.array(
-                    [_temperature_func(radii[i], prev_pressure[i]) for i in range(num_layers)]
-                )
+                temperatures = _node_T(radii, prev_pressure, prev_mass_enclosed)
             else:
 
                 def _temperature_func(r, P, _tf=_linear_tf):
@@ -2516,7 +2547,9 @@ def _solve(
             t_prev = (
                 _node_T(prev_radii, prev_pressure, prev_mass_enclosed)
                 if core_temperature_arrays is not None
-                else [t_of(r_, p_) for r_, p_ in zip(prev_radii, prev_pressure)]
+                else [
+                    _T_at(t_of, *x) for x in zip(prev_radii, prev_pressure, prev_mass_enclosed)
+                ]
             )
             m23 = hasattr(_temperature_func, 'liquid')  # the root mass of the superheat test
             icb_mass = icb_from_profile(
@@ -3075,6 +3108,7 @@ def _solve(
                 )
 
         relative_diff_outer_mass = np.abs((calculated_mass - planet_mass) / planet_mass)
+        _pass_err = float(relative_diff_outer_mass)
 
         # Adaptive Picard alpha: detect mass oscillation
         mass_error_signed = (calculated_mass - planet_mass) / planet_mass
@@ -3186,7 +3220,8 @@ def _solve(
         icb_moving = core_liq is not None and any(
             d > b for d, b in _icb_misses(radii, mass_enclosed, pressure, temperatures)[:2]
         )
-        if relative_diff_outer_mass < tolerance_outer and not icb_moving:
+        table_settled = not _adiabat_computed or _table_err < tolerance_outer
+        if relative_diff_outer_mass < tolerance_outer and not icb_moving and table_settled:
             logger.log(
                 progress,
                 f'Outer loop (total mass) converged after {outer_iter + 1} iterations.',
@@ -3478,8 +3513,8 @@ def _core_result(
     def t_at(r, pres):
         if core_table is not None:
             return float(core_temperature(pres, core_table))
-        if temperature_func is not None:
-            return temperature_func(r, pres)
+        if temperature_func is not None:  # the core side: the core table of a layered T
+            return getattr(temperature_func, 'core', temperature_func)(r, pres)
         return float(np.interp(r, res['radii'], t))
 
     def rhs(r, y):

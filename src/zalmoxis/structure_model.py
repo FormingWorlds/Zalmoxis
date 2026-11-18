@@ -505,9 +505,13 @@ def solve_structure(
 
     nonfinite = [0]  # non-finite right-hand sides in the current solve_ivp call
 
+    core_tf = getattr(temperature_function, 'core', None)  # the core table of a layered T
+
     def _temperature(r, y):
         if core_temperature_arrays is not None and is_core(y[0], cmb_mass):
             return float(core_temperature(y[2], core_temperature_arrays))
+        if core_tf is not None and is_core(y[0], cmb_mass):
+            return core_tf(r, y[2])
         return temperature_function(r, y[2]) if temperature_function else 300
 
     def _ode_rhs(r, y):
