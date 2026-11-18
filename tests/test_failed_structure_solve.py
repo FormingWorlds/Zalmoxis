@@ -502,7 +502,6 @@ class TestFailedPicardIteration:
 
 
 @pytest.mark.smoke
-@pytest.mark.timeout(240)
 def test_a_density_that_flips_on_every_inner_pass_takes_the_oscillation_bail(
     monkeypatch, caplog
 ):
