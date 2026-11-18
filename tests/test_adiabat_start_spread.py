@@ -26,10 +26,12 @@ pytestmark = [
 def test_round_off_starts_keep_the_centre_temperature_within_12_k(monkeypatch, request):
     """4 starts of input/default.toml at 2515 K and a mass tolerance of 1e-3, planet mass x
     (1 + k 1e-12), wall clock 2400 s: all are accepted at blend 1 within the mass tolerance, not
-    on the wall clock, in the same padding state, and the adiabats of their returned structures
-    have centre temperatures within 12 K (a padding flip moves the centre by tens of K, so the
-    state is asserted first). The returned core T, read from the T(P) table of the pass before,
-    is printed and not bounded: it can lie 26 K off."""
+    on the wall clock and without the retry with tighter parameters (a start sent there by the
+    wall clock returns another structure, 19.4 K off at the centre), in the same padding state,
+    and the adiabats of their returned structures have centre temperatures within 12 K (a
+    padding flip moves the centre by tens of K, so the state is asserted first). The returned
+    core T, read from the T(P) table of the pass before, is printed and not bounded: it lies up
+    to 26 K off at a core node near the centre on macOS arm64."""
     import zalmoxis.solver as zs
     from tests.test_adiabat_real_profiles import _need_paleos
     from zalmoxis import get_zalmoxis_root
@@ -43,6 +45,8 @@ def test_round_off_starts_keep_the_centre_temperature_within_12_k(monkeypatch, r
         return native(*a, **kw)
 
     monkeypatch.setattr(zs, 'compute_adiabatic_temperature', hook)
+    tight, retries = zs._tighten_solver_params, []
+    monkeypatch.setattr(zs, '_tighten_solver_params', lambda p: retries.append(p) or tight(p))
     md = load_material_dictionaries()
     inp = os.path.join(get_zalmoxis_root(), 'input')
     T_c, T_ret, padded = [], [], []
@@ -51,6 +55,7 @@ def test_round_off_starts_keep_the_centre_temperature_within_12_k(monkeypatch, r
         res = zs.main(cfg, md, ap._melt('config', cfg), inp)
         got = (res['converged'], res['adiabat_blend'], res['accepted_on'])
         assert got[:2] == (True, 1.0) and got[2] != 'timeout', (k, got)
+        assert not retries, (k, 'retry with tighter parameters')
         err = res['mass_error_at_accept']
         assert err is not None and err <= cfg['tolerance_outer'], (k, err)
         own = native(

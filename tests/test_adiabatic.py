@@ -950,7 +950,8 @@ class TestMidpointAdiabat:
     def test_default_call_uses_the_0p0025_substeps(self, monkeypatch, anchor):
         """A default call evaluates nabla twice per substep, with ceil(|d ln P| / 0.0025)
         substeps per segment above 1e5 Pa: the count pins the default h, because the 1 K bound
-        of the real profiles does not decide h (0.0065 and 0.008 pass it, 0.0055 and 0.007 fail)."""
+        of the real profiles does not decide h (0.0065 and 0.008 pass it, 0.0055 and 0.007
+        fail)."""
         calls = []
         _stub_adiabat(monkeypatch, lambda P, T: 0.1, calls)  # T stays inside the node caps
         P = np.geomspace(3.6e11, 3e4, 40)  # the top segment crosses 1e5 Pa
@@ -1087,7 +1088,7 @@ class TestMidpointAdiabat:
 
         check()
 
-    @pytest.mark.parametrize('bad', ['CMB', 'Surface', 'bogus', '', None])
+    @pytest.mark.parametrize('bad', ['CMB', 'Surface', 'top', 'bottom', 'bogus', '', None])
     def test_an_unknown_anchor_raises_value_error(self, monkeypatch, bad):
         """``anchor`` is 'surface' or 'cmb'; any other value raises ValueError before any nabla
         read, instead of running the surface anchor."""
@@ -1096,6 +1097,26 @@ class TestMidpointAdiabat:
         with pytest.raises(ValueError, match='anchor'):
             _call(_profile(n=5), bad, 3000.0, surface_temperature=3000.0)
         assert calls == []
+
+    def test_the_binodal_scale_reaches_the_nabla_read(self, monkeypatch):
+        """``binodal_T_scale`` is passed on to ``get_mixed_nabla_ad`` at every read, also when it
+        differs from the default of that function."""
+        import inspect
+
+        import zalmoxis.mixing as _mix
+
+        sig, scales = inspect.signature(_mix.get_mixed_nabla_ad), []
+
+        def nabla(P, T, *a, **k):
+            bound = sig.bind(P, T, *a, **k)
+            bound.apply_defaults()
+            scales.append(bound.arguments['binodal_T_scale'])
+            return 0.1
+
+        _stub_adiabat(monkeypatch, lambda P, T: 0.1)
+        monkeypatch.setattr(_mix, 'get_mixed_nabla_ad', nabla)
+        _call(_profile(n=5), 'surface', 3000.0, binodal_T_scale=75.0)
+        assert scales and set(scales) == {75.0}
 
     def test_a_subnormal_anchor_runs_without_a_warning(self, monkeypatch):
         """The smallest positive anchor temperature (a subnormal float) is in range: the call
@@ -1144,8 +1165,9 @@ class TestMidpointAdiabat:
         check()
 
     def test_segment_end_rule(self):
-        """A NaN or +inf end returns T0 exactly; a -inf, negative or zero end gives the result of
-        an end at 1e5 Pa, inward and outward; a segment against the anchor direction returns T0."""
+        """A NaN or +inf end returns T0 exactly; a -inf, negative or zero end gives the result
+        of an end at 1e5 Pa, inward and outward; a segment against the anchor direction returns
+        T0."""
         from zalmoxis.eos.temperature import _segment_temperature
 
         def seg(P0, P1, inward):
@@ -1181,11 +1203,18 @@ class TestMidpointAdiabat:
         reads = []
         _stub_adiabat(monkeypatch, lambda P, T: reads.append(T) or nabla)
         P = _profile(n=11)
-        T = _call(P, 'surface', 3000.0)
+
+        def call(anchor):
+            try:
+                return _call(P, anchor, 3000.0)
+            except OverflowError as e:
+                pytest.fail(f'nabla {nabla}, anchor {anchor}: {e}')
+
+        T = call('surface')
         assert T[-1] == 3000.0 and max(reads) <= 1e5
         np.testing.assert_array_equal(T[:-1], 1e5)
         reads.clear()
-        T = _call(P, 'cmb', 3000.0)
+        T = call('cmb')
         assert T[1] == 3000.0 and min(reads) >= 100.0
         np.testing.assert_array_equal(T[2:], 100.0)
         for T0, P0, P1, inward, lim in [
@@ -1193,9 +1222,12 @@ class TestMidpointAdiabat:
             (3000.0, 1e10, 1e6, False, 100.0),
         ]:
             reads.clear()
-            t = _segment_temperature(
-                T0, P0, P1, lambda P, T: reads.append(T) or nabla, 0.0025, inward
-            )
+            try:
+                t = _segment_temperature(
+                    T0, P0, P1, lambda P, T: reads.append(T) or nabla, 0.0025, inward
+                )
+            except OverflowError as e:
+                pytest.fail(f'nabla {nabla}, inward {inward}: {e}')
             assert t == lim and len(reads) == 2, (inward, t, len(reads))
             assert all(min(lim, T0) <= r <= max(lim, T0) for r in reads)
 
@@ -1289,7 +1321,10 @@ class TestMidpointAdiabat:
         )
         def check(h):
             if 1e-4 <= h <= 1.0:
-                T = _call(P, 'surface', 3000.0, max_dlnp=h)
+                try:
+                    T = _call(P, 'surface', 3000.0, max_dlnp=h)
+                except ValueError as e:
+                    pytest.fail(f'max_dlnp {h!r} is in range: {e}')
                 assert np.all(np.isfinite(T)) and np.all(np.diff(T) <= 0)
                 np.testing.assert_allclose(T, exact, rtol=1e-12)
             else:
@@ -1358,10 +1393,8 @@ class TestAdiabatTable:
         P, Ts = pressure[s][keep], T[s][keep]
         if pressure[-1] <= 0 and P.size and P[0] > P_FLOOR * (1 + 1e-9):
             q = np.geomspace(P_FLOOR, P[0], _TOP_SHELL_POINTS + 1)[:-1]
-            P, Ts = (
-                np.concatenate([q, P]),
-                np.concatenate([top_shell(q, T[-1], mass[s[keep][0]]), Ts]),
-            )
+            shell = top_shell(q, T[-1], mass[s[keep][0]])
+            P, Ts = np.concatenate([q, P]), np.concatenate([shell, Ts])
         return np.log10(P), Ts
 
     @pytest.mark.parametrize(
@@ -1411,9 +1444,7 @@ class TestAdiabatTable:
         assert T_top == T[-1] and i == 8 and q.size == _TOP_SHELL_POINTS and q[0] == lo
         below = p_top < P_FLOOR  # the node below 1 bar keeps its place in the table
         assert lp.size == q.size + 9 + below and np.all(np.diff(lp) > 0)
-        assert (lp[0], t[0]) == (
-            (math.log10(p_top), T[-1]) if below else (math.log10(lo), T[-1])
-        )
+        assert (lp[0], t[0]) == (math.log10(p_top), T[-1])  # lo is p_top at or above the floor
         x = np.geomspace(lo, 1.1e9, 200)
         np.testing.assert_allclose(
             np.interp(np.log10(x), lp, t), T[-1] * (x / lo) ** 0.1, rtol=1e-4
@@ -1464,9 +1495,9 @@ class TestAdiabatTable:
         assert [c[2] for c in calls] == [mass[node]]
 
     def test_a_padded_top_keeps_the_table_of_the_padded_rule(self):
-        """Hypothesis over padded profiles (P = 0 at the outer node): the table is bit for bit
-        the one of the rule that adds the shell to a padded top only, so padded solves keep
-        their temperatures."""
+        """Hypothesis over padded profiles (P = 0 at the outer node), inward (surface anchor):
+        the table is bit for bit the one of the rule that adds the shell to a padded top only,
+        so padded solves with the surface anchor keep their temperatures."""
         from hypothesis import given, settings
         from hypothesis import strategies as st
 

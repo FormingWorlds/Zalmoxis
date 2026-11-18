@@ -405,6 +405,15 @@ def _shell_adiabat(adiabat, q, T_top, m):
     return adiabat(np.arange(q.size), q[::-1], np.full(q.size, m), top=T_top)[::-1]
 
 
+def _inner_density_diff(density, old_density, pressure):
+    """Largest relative density change [-] of an inner Picard iteration over the nodes with
+    P > 0, or over every node when none has P > 0. A padded node (P <= 0) takes density 0 from
+    the EOS, so damped Picard moves it by exactly alpha per iteration; it is left out."""
+    rd = np.abs((density - old_density) / (old_density + 1e-20))
+    live = np.asarray(pressure[: rd.size]) > 0
+    return float(np.max(rd[live] if live.any() else rd))
+
+
 def _secant_radius(R, M, R_prev, M_prev, M_target, R_fallback):
     """Radius [m] of the next outer pass from the secant of M(R) - M_target through the passes
     (R, M) and (R_prev, M_prev), clamped to ``_SECANT_CLAMP`` of R. Returns ``R_fallback``
@@ -2779,9 +2788,7 @@ def _solve(
                 )
 
             # Check density convergence
-            relative_diff_inner = np.max(
-                np.abs((density - old_density) / (old_density + 1e-20))
-            )
+            relative_diff_inner = _inner_density_diff(density, old_density, pressure)
 
             # Inner-loop oscillation detection: track mean density change direction
             mean_change = np.mean(density[:n_valid] - old_density[:n_valid])

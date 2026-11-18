@@ -98,9 +98,9 @@ def test_midpoint_adiabat_meets_the_reference_on_real_profiles(profiles, validat
     """On the 6 stored profiles the default call stays within 1 K of a DOP853 integration of the
     same ODE (rtol 1e-13), which agrees with RK45 at rtol 1e-13 to 0.01 K, at every node on the
     adiabat, with no nabla read that is missing or not positive. The forward Euler step in P per
-    node, from ``forward_euler`` of the profile tool, equals the stored T_euler to a relative 1e-12
-    and is at least 5 times farther and more than 2 K from the reference on every profile. A
-    padded top gives the profile of a top at 1 Pa within 1e-6 K."""
+    node, from ``forward_euler`` of the profile tool, equals the stored T_euler to a relative
+    1e-12 and is at least 5 times farther and more than 2 K from the reference on every profile.
+    A padded top gives the profile of a top at 1 Pa within 1e-6 K."""
     from zalmoxis.eos.temperature import compute_adiabatic_temperature
 
     kw0 = profiles['default_k0'][1]
@@ -292,7 +292,7 @@ def test_the_lookup_follows_the_adiabat_over_an_unpadded_top_cell(
     node (2 to 4 decades in P), lies within 0.3 K of an independent DOP853 march of that layer
     from the top T, with a top node above and below 1e5 Pa, on both anchors; a straight line in
     log10 P over the cell lies 9 to 28 K off on these profiles. The shell, carried to the next
-    node, meets the T of that node within 1e-5 K (at most 2e-7 K measured)."""
+    node, meets the T of that node within 1e-5 K (at most 2e-7 K measured on these cases)."""
     x, look, ref, end, _, got, want, _ = _top_cell(profiles[case][1], p_top)
     assert got == want  # the same array element: the shell takes the node of the rule
     assert np.max(np.abs(look - ref)) < 0.3, np.max(np.abs(look - ref))
@@ -351,12 +351,14 @@ def test_the_top_cell_shell_meets_the_next_node_across_a_layer_boundary(
 
 
 @pytest.mark.physics_invariant
-def test_the_top_cell_lookup_does_not_flip_with_the_padding(profiles):
-    """One structure (default start 0) with its top node at P = 0 (padded), 1 Pa, 1e5 Pa and
-    1 atm: above 1e5 Pa the lookup is the padded one to round-off for a top at or below 1e5 Pa
-    (the adiabat holds T below 1 bar, so the shell is the same), and within 0.01 K for 1 atm
-    (1.6e-3 K measured); a solve that pads or not by round-off reads the same temperatures."""
-    kw = profiles['default_k0'][1]
+@pytest.mark.parametrize('case', ['default_k0', 'ic_dummy', 'ic_all_options'])
+def test_the_top_cell_lookup_does_not_flip_with_the_padding(profiles, case):
+    """One structure (default start 0, surface anchor; the 2 PROTEUS profiles, CMB anchor) with
+    its top node at P = 0 (padded), 1 Pa, 1e5 Pa and 1 atm: above 1e5 Pa the lookup is the
+    padded one to round-off for a top at or below 1e5 Pa (the adiabat holds T below 1 bar, so
+    the shell is the same), and within 0.01 K for 1 atm (at most 1.6e-3 K measured); a solve
+    that pads or not by round-off reads the same temperatures."""
+    kw = profiles[case][1]
     x, padded, *_ = _top_cell(kw, 0.0)
     for p_top, bound in ((1.0, 1e-9), (P_FLOOR, 1e-9), (101325.0, 0.01)):
         y, look, *_ = _top_cell(kw, p_top)

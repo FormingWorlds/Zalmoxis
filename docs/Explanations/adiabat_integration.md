@@ -51,8 +51,7 @@ The checks therefore use 2 tests: the order on smooth $\nabla_\mathrm{ad}$ with 
 
 ## How the density solve reads the temperature over the top cell
 
-What temperature does the density solve use between the top of the planet and the first node below it?
-It reads the adiabat itself at 64 pressures, not a straight line between the 2 ends.
+Between the top of the planet and the first node below it, the density solve reads the adiabat at 64 pressures, not a straight line between the 2 ends.
 
 The density solve reads $T$ from a table of this adiabat against $\log_{10} P$.
 The solve builds the table on the nodes of the previous outer pass ([Full-adiabat rule](process_flow.md#full-adiabat-rule)).
@@ -70,9 +69,8 @@ The shell takes the mixture that the adiabat of the solve takes over the cell, b
 - **Surface anchor:** the mixture of the deeper node of the cell.
 - **CMB anchor:** the mixture of the next node outward from the deeper node, that is the top node or the first padded node.
 
-On the stored profiles the cell spans 2 to 4 factors of 10 in pressure; a straight line in $\log_{10} P$ there lies 9 to 28 K off.
-
-On the stored profiles the lookup lies at most 0.083 K from an independent integration.
+On the stored profiles the cell spans 2 to 4 decades in pressure.
+A straight line in $\log_{10} P$ over it lies 9 to 14 K off on the 2 PROTEUS profiles and up to 28 K off on the default start with its top node near 1 bar; the lookup lies at most 0.083 K from an independent integration.
 
 **Where this is checked.** [Temperature lookup over the top cell](../Validation/thermal_state.md#temperature-lookup-over-the-top-cell).
 

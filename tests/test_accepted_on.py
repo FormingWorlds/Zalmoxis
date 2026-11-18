@@ -1462,17 +1462,21 @@ def test_the_newton_hand_off_and_its_retry_run_at_the_newton_mass_tolerance(
 @pytest.mark.smoke
 @pytest.mark.accept_solves
 @pytest.mark.timeout(2400)
-def test_an_iteration_cap_whose_newest_blend_step_diverges_returns_an_earlier_best_pass(caplog):
-    """3-layer PALEOS ice planet (cmf 0.3, mmf 0.4), adiabatic Picard, 20 outer passes and
-    tolerance_outer 1e-2, so a linear pass starts the blend ramp also on the CI runner (whose
-    linear passes end near 2.4e-3, above the default 1e-3): every pass of the newest blend step
-    misses the mass by more than 3 %, so the cap returns the best pass of an earlier step (blend
-    0, R about 1.2978e7 m), not accepted, and the log names the ramp start and the fallback."""
+def test_an_iteration_cap_whose_newest_blend_step_diverges_returns_an_earlier_best_pass(
+    caplog, monkeypatch
+):
+    """3-layer PALEOS ice planet (cmf 0.3, mmf 0.4), adiabatic Picard, 13 outer passes,
+    tolerance_outer and the cap accept threshold both 0.1: the linear error drops from 0.12 to
+    0.056 in one pass, so the ramp starts by pass 8 (pass 7 on 5 round-off starts) and reaches
+    blend 1 inside the cap; every blended pass misses the mass by more than 10 %, so the cap
+    returns the linear pass (blend 0, mass error near 0.056, R regression pin 1.3094e7 m), not
+    accepted, and the log names the ramp start and the fallback."""
     from tests.test_spider_coupling_convergence import _has_paleos_data
     from zalmoxis.config import load_solidus_liquidus_functions, load_zalmoxis_config
 
     if not _has_paleos_data():
         pytest.skip('PALEOS tables not on disk')
+    CAP_ACCEPT = 0.1  # tolerance_outer and the cap accept threshold
     cfg = load_zalmoxis_config(os.path.join(ROOT, 'input', 'default.toml'))
     cfg.update(
         data_output_enabled=False,
@@ -1485,9 +1489,10 @@ def test_an_iteration_cap_whose_newest_blend_step_diverges_returns_an_earlier_be
             'ice_layer': 'PALEOS:H2O',
         },
         wall_timeout=WALL,
-        max_iterations_outer=20,
-        tolerance_outer=1e-2,
+        max_iterations_outer=13,
+        tolerance_outer=CAP_ACCEPT,
     )
+    monkeypatch.setattr(zs, '_TIMEOUT_ACCEPT_MASS_ERR', CAP_ACCEPT)
     assert cfg['temperature_mode'] == 'adiabatic'
     melt = load_solidus_liquidus_functions(
         cfg['layer_eos_config'],
@@ -1497,12 +1502,13 @@ def test_an_iteration_cap_whose_newest_blend_step_diverges_returns_an_earlier_be
     )
     with caplog.at_level(logging.INFO, logger='fwl.zalmoxis.solver'):
         r = zs._solve(cfg, load_material_dictionaries(), melt, os.path.join(ROOT, 'input'))
-    assert 'activating adiabat blend' in caplog.text
-    assert 'No pass of adiabat blend' in caplog.text
+    start = re.search(r'Outer iter (\d+): mass converged with linear T', caplog.text)
+    assert start and int(start.group(1)) <= 8, f'ramp starts at pass {start and start.group(1)}'
+    assert 'No pass of adiabat blend 1.00' in caplog.text
     assert not r['converged'] and r['accepted_on'] is None
     assert r['adiabat_blend'] == 0.0
-    assert r['mass_error_at_accept'] < 1e-2
-    assert r['radii'][-1] == pytest.approx(1.2978e7, rel=1e-2)
+    assert r['mass_error_at_accept'] == pytest.approx(0.056, abs=0.01)
+    assert r['radii'][-1] == pytest.approx(1.3094e7, rel=3e-3)
 
 
 @pytest.mark.smoke
