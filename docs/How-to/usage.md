@@ -146,9 +146,9 @@ Every result carries 3 keys of the inner-core boundary (ICB) test, which hold va
 
 A solve with a [core temperature table](../Explanations/proteus_coupling.md#core-temperature-from-the-caller) (`core_temperature_arrays`) carries 3 more keys:
 
-- `core_T_used` is True when the table set the core temperature, and False when the core has no temperature-dependent equation of state and the table is unused.
+- `core_T_used` is True when the table set the core temperature, and False when the core has no temperature-dependent equation of state and the table is unused; an unused table counts no node in the next 2 keys.
 - `core_T_nodes_outside` is the number of core nodes whose pressure lies outside the table.
-- `core_T_max_excess` is the largest distance of such a node beyond the table, as a fraction of the table range `P_arr[-1] - P_arr[0]`; 0.0 when no node lies outside.
+- `core_T_max_excess` is the largest distance of such a node beyond the table, as a fraction of the table range `P_arr[-1] - P_arr[0]`; 0.0 when no node lies outside. Above 0.1 the result is not accepted (`converged` is False).
 
 ## Parameter grids
 

@@ -335,19 +335,19 @@ How does a caller set the temperature of the core, not only of the mantle?
 
 `main` takes `core_temperature_arrays = (P_arr, T_arr)`, a table of the core temperature $T$ [K] against the pressure $P$ [Pa]. Each core node and each evaluation of the structure equations in the core then reads $T$ from the table; the mantle keeps `temperature_arrays` or `temperature_function`.
 
-A core node is a node whose enclosed mass is below the core mass. This is the same rule that picks the core material, so the temperature and the material always change at the same node. The rule holds in the outer and the inner core, on the numpy and the JAX path, in the core arrays and in the ICB rule of a [two-layer core](mixing.md#two-layer-core).
+A core node is a node whose enclosed mass is below the core mass, the rule that picks the core material. The table applies in the outer and the inner core, on the numpy and the JAX path, in the core arrays and in the ICB rule of a [two-layer core](mixing.md#two-layer-core).
 
-Between the table points $T$ is linear in $P$. Outside the table, $T$ continues with the slope of the end interval, because the central-pressure search tries pressures beyond the final profile.
+Between the table points $T$ is linear in $P$. Outside it, $T$ continues with the slope of the end interval, since the central-pressure search tries pressures beyond the final profile.
 
-As an example, a pure-iron core of an Earth-mass planet with a table that meets the Anzellini iron melting curve at 330 GPa gets its ICB there: the inner core holds 0.13 of the core mass.
+As an example, a pure-iron two-layer core of an Earth-mass planet, with the mantle at 2500 K and a table that meets the Anzellini iron melting curve at 330 GPa, gets its ICB there: the inner core holds 0.13 of the core mass.
 
 The limits:
 
-- A malformed table (see the `main` docstring), or a table without a mantle temperature that the solve reads, raises `ValueError` before the solve.
-- A core without a temperature-dependent equation of state ignores the table and logs one line; the result has `core_T_used = False`.
-- Core nodes outside the table give a warning and the result keys `core_T_nodes_outside` and `core_T_max_excess`.
-- With a table, `core_liquidus` is accepted with `temperature_mode = 'adiabatic_from_cmb'`, since the table, not the CMB temperature, sets the core.
-- An accepted result whose node misses its temperature source by more than a relative $10^{-9}$ raises `StructureInvariantError`.
+- The table is 2 one-dimensional arrays of equal length of at least 2, all finite, with positive, strictly increasing pressures and positive temperatures that do not fall with pressure. Any other table, or one without a mantle temperature (`temperature_function`, or `temperature_arrays` with `use_jax`), raises `ValueError` before the solve.
+- A core without a temperature-dependent equation of state ignores the table; the result has `core_T_used = False`.
+- Core nodes outside the table give a warning; beyond 0.1 of the table range the result is not accepted.
+- `main` accepts `core_liquidus` with `temperature_mode = 'adiabatic_from_cmb'` when a table is given. `validate_config` does not see the table and refuses that pair.
+- An accepted result with a core node at $T \le 0$, or a node off its source by more than a relative $10^{-9}$, raises `StructureInvariantError`.
 
 **Where this is checked.** [Core temperature from a table given by the caller](../Validation/hydrostatic_structure.md#core-temperature-from-a-table-given-by-the-caller).
 
