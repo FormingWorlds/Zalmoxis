@@ -2,9 +2,9 @@
 
 ``python tools/default_solve_reference.py <tree> <out.npz>`` solves ``input/default.toml`` of the
 Zalmoxis tree ``<tree>`` (its ``src`` first on the path) and writes every numeric entry of the
-result, apart from the wall time, to a compressed npz. The references in ``tests/data`` come
-from the one-layer main commit, one per platform and CPU model, since the solve is bit-identical
-only on one CPU and library build.
+result, apart from the wall time, to a compressed npz. The references in ``tests/data`` pin
+the solve that ``tests/test_default_invariance.py`` describes, one per platform and CPU model,
+since the solve is bit-identical only on one CPU and library build.
 """
 
 from __future__ import annotations

@@ -1,9 +1,13 @@
-"""A default-configuration solve is bit-identical to the one-layer core before the two-layer
-core: every array and scalar of the result, against a reference that
-``tools/default_solve_reference.py`` wrote with the one-layer code, one per platform and CPU
-model (macOS arm64 locally, Linux x86_64 on an AMD EPYC 7763 runner). The converged radius
-depends on the CPU, within the mass tolerance of the outer loop. On a CPU with no reference
-the solve meets the nearest stored one within that tolerance instead, and the message says so.
+"""A default-configuration solve is bit-identical to its stored reference: every array and
+scalar of the result, against a reference that ``tools/default_solve_reference.py`` wrote, one
+per platform and CPU model (macOS arm64 locally, Linux x86_64 on an AMD EPYC 7763 runner). The
+references pin the adiabat with its T(P) table read by layer, the strict accept on a table of
+a converged pass, the end-slope continuation and the CMB split of the node segment; against
+the one-layer main solve these move the default solve: its 5 central nodes no longer share one
+temperature, the centre is 7.6 K cooler (8081.9 K), the radius 2.0e-4 and the central pressure
+4.5e-4 larger. The converged radius depends on the CPU, within the mass tolerance of the outer
+loop. On a CPU with no reference the solve meets the nearest stored one within that tolerance
+instead, and the message says so.
 """
 
 from __future__ import annotations
@@ -46,7 +50,7 @@ def off_tolerance(got, ref, tol=TOLERANCE_OUTER):
 @pytest.mark.integration
 @pytest.mark.default_invariance
 @pytest.mark.timeout(1800)
-def test_a_default_solve_is_bit_identical_to_main():
+def test_a_default_solve_is_bit_identical_to_its_reference():
     key = cpu_key()
     ref_file = DATA / f'default_solve_reference_{key}.npz'
     got = solve_arrays()
@@ -55,7 +59,7 @@ def test_a_default_solve_is_bit_identical_to_main():
         ref = np.load(ref_file)
         assert set(got) == set(ref.files)
         differ = [k for k in ref.files if got[k].tobytes() != ref[k].tobytes()]
-        assert not differ, f'{key}: entries not bit-identical to main: {differ}'
+        assert not differ, f'{key}: entries not bit-identical to the reference: {differ}'
         return
     stored = sorted(DATA.glob('default_solve_reference_*.npz'))
     near = min(stored, key=lambda f: abs(np.load(f)['radii'][-1] / got['radii'][-1] - 1))
