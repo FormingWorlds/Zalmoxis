@@ -165,6 +165,35 @@ def test_the_liquidus_rule_with_the_cmb_anchored_adiabat_needs_the_core_table(mo
         )
 
 
+@pytest.mark.unit
+@pytest.mark.parametrize('off', [None, 'core', 'mantle', 'not accepted'])
+def test_an_accepted_node_off_its_temperature_source_fails_the_solve(off):
+    """The invariant on an accepted result: core nodes carry table(P), mantle nodes the mantle
+    source; 1e-6 off either fails, an unaccepted result is not checked. The nodes beyond the
+    table are counted with their largest distance as a fraction of the table range."""
+    from zalmoxis.invariants import StructureInvariantError
+
+    table = (np.array([2.0, 4.0]), np.array([100.0, 200.0]))
+    m, p, r = np.arange(6.0), np.array([5.0, 3.0, 1.5, 1.0, 0.5, 0.0]), np.arange(6.0) * 10.0
+    t = np.where(m < 3.0, core_temperature(p, table), 7.0 * r)
+    res = {
+        'mass_enclosed': m,
+        'pressure': p,
+        'radii': r,
+        'cmb_mass': 3.0,
+        'temperature': t,
+        'accepted_on': None if off == 'not accepted' else 'strict',
+    }
+    if off in ('core', 'mantle'):
+        t[1 if off == 'core' else 4] *= 1.0 + 1e-6
+        with pytest.raises(StructureInvariantError, match=f'a {off} node'):
+            zs._core_table_keys(res, table, True, lambda r_, p_: 7.0 * r_)
+        return
+    out = zs._core_table_keys(res, table, True, lambda r_, p_: 7.0 * r_)
+    assert out['core_T_used'] is True and out['core_T_nodes_outside'] == 2
+    assert out['core_T_max_excess'] == pytest.approx((5.0 - 4.0) / (4.0 - 2.0), rel=1e-15)
+
+
 @pytest.mark.integration
 def test_no_table_gives_the_solve_of_today():
     """T0: core_temperature_arrays=None is the solve without the keyword, bit for bit."""
