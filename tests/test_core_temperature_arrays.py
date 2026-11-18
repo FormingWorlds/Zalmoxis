@@ -166,11 +166,12 @@ def test_the_liquidus_rule_with_the_cmb_anchored_adiabat_needs_the_core_table(mo
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize('off', [None, 'core', 'mantle', 'not accepted'])
-def test_an_accepted_node_off_its_temperature_source_fails_the_solve(off):
+@pytest.mark.parametrize('off', [None, 'core', 'mantle', 'not accepted', 'unused'])
+def test_an_accepted_node_off_its_temperature_source_fails_the_solve(off, caplog):
     """The invariant on an accepted result: core nodes carry table(P), mantle nodes the mantle
     source; 1e-6 off either fails, an unaccepted result is not checked. The nodes beyond the
-    table are counted with their largest distance as a fraction of the table range."""
+    table are counted with their largest distance as a fraction of the table range; a table
+    the solve did not use counts none and logs no warning."""
     from zalmoxis.invariants import StructureInvariantError
 
     table = (np.array([2.0, 4.0]), np.array([100.0, 200.0]))
@@ -188,6 +189,12 @@ def test_an_accepted_node_off_its_temperature_source_fails_the_solve(off):
         t[1 if off == 'core' else 4] *= 1.0 + 1e-6
         with pytest.raises(StructureInvariantError, match=f'a {off} node'):
             zs._core_table_keys(res, table, True, lambda r_, p_: 7.0 * r_)
+        return
+    if off == 'unused':
+        t[1] *= 2.0  # an unused table is not checked either
+        out = zs._core_table_keys(res, table, False, lambda r_, p_: 7.0 * r_)
+        assert out['core_T_used'] is False and out['core_T_nodes_outside'] == 0
+        assert out['core_T_max_excess'] == 0.0 and not caplog.records
         return
     out = zs._core_table_keys(res, table, True, lambda r_, p_: 7.0 * r_)
     assert out['core_T_used'] is True and out['core_T_nodes_outside'] == 2
