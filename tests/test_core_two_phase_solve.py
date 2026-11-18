@@ -699,8 +699,9 @@ def test_a_pure_iron_core_has_its_icb_where_its_liquid_adiabat_meets_iron_meltin
 def test_a_two_layer_core_takes_its_icb_from_the_core_temperature_table(setup):
     """T2 of the core temperature table: a pure-iron two-layer core with the Anzellini liquidus
     and the CMB-anchored label of a coupled run, its core T from a table that crosses the
-    liquidus at P_X and its mantle T from a function. Every outer and inner core node carries
-    table(P), and the ICB lies at the root of table(P) = T_liq(P)."""
+    liquidus at P_X and its mantle T from a function. Every outer and inner core node, and the
+    CMB node of the core arrays, carries table(P); the ICB lies at the root of
+    table(P) = T_liq(P)."""
     from zalmoxis import solver as zs
     from zalmoxis.config import load_solidus_liquidus_functions
     from zalmoxis.melting_curves import iron_melting_anzellini13 as t_liq
@@ -740,6 +741,8 @@ def test_a_two_layer_core_takes_its_icb_from_the_core_temperature_table(setup):
     np.testing.assert_allclose(
         np.asarray(res['temperature'], float)[core], core_temperature(p[core], table), rtol=1e-9
     )
+    arr = res['core']  # the core arrays end with a CMB node on the core side
+    np.testing.assert_allclose(arr['T'], core_temperature(arr['P'], table), rtol=1e-9)
     p_b = brentq(lambda x: float(core_temperature(x, table)) - t_liq(x), 1.5e11, 4.4e11)
     m_b = np.interp(p_b, p[core][::-1], m[core][::-1] ** (2.0 / 3.0)) ** 1.5
     cmb, m_ic = res['cmb_mass'], res['core']['M_ic']
