@@ -25,7 +25,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.core_two_phase, pytest.mark.t
 
 LIQ, SOL = 'PALEOS-API-2phase:iron-liquid', 'PALEOS-API-2phase:iron-solid'
 WALL = 1320.0  # solver wall clock [s], about 1.5 x the slowest solve on a CI runner (875 s)
-PLOT_CPU = 'darwin-arm64'  # the PREM plots compare their data only on the CPU that made them
+PLOT_CPU = 'darwin-arm64'  # the plots of the solves compare their data only on this CPU
 
 
 @pytest.fixture(scope='module')
@@ -721,7 +721,7 @@ def test_a_liquid_branch_off_the_t_table_above_the_icb_stops_the_solve(setup, mo
 @pytest.mark.physics_invariant
 @pytest.mark.reference_pinned
 @pytest.mark.timeout(3000)  # 5 solves, 4 of them seeded
-def test_the_inner_core_of_a_pure_iron_core_grows_as_the_surface_cools(setup, validation_plot):
+def test_the_inner_core_of_a_pure_iron_core_grows_as_the_surface_cools(setup, request):
     """Case 4 of the ICB Validation: the freezing band of the pure-iron core of the default
     1 M_E planet. The inner-core mass fraction does not rise with the surface temperature (to
     0.05); the core is solid to the CMB at 2460 K and liquid at 2530 K, about 9 K outside the
@@ -760,4 +760,6 @@ def test_the_inner_core_of_a_pure_iron_core_grows_as_the_surface_cools(setup, va
         assert ax.get_legend().get_window_extent().x0 >= ax.get_window_extent().x1
         return fig
 
-    validation_plot(figure, 'core_two_phase_pure_iron_freezing_band')
+    if cpu_key() != PLOT_CPU and request.config.getoption('validation_plots') is None:
+        return  # the inner-core fractions differ by up to 0.006 between CPUs; the asserts hold
+    request.getfixturevalue('validation_plot')(figure, 'core_two_phase_pure_iron_freezing_band')

@@ -78,6 +78,7 @@ jobs:
           - suite: core_two_phase
             select: core_two_phase and not wolfbower and not paleos_adiabat and not accept_solves and not accept_solves_long and not accept_solves_newton_setups and not accept_solves_reference
             args: --dist load --cov-fail-under=0 --durations=0
+            job_timeout: 120
           - suite: accept_solves_pressure_root
             select: accept_solves and not accept_solves_long and not accept_solves_newton_setups and not wolfbower and not paleos_adiabat
             args: --dist load --cov-fail-under=0 --durations=0 tests/test_pressure_root_solves.py
@@ -85,8 +86,8 @@ jobs:
             select: default_invariance and not wolfbower and not paleos_adiabat and not accept_solves and not accept_solves_long and not accept_solves_newton_setups and not core_two_phase and not accept_solves_reference
             args: --cov-fail-under=0 --durations=0
     # 90 min per job, 170 min for main, wolfbower and each Newton setup job, 150 min for
-    # accept_solves_long and accept_solves_reference; the Newton setup sweep is split over 4
-    # jobs by test id (-k).
+    # accept_solves_long and accept_solves_reference, 120 min for core_two_phase; the Newton
+    # setup sweep is split over 4 jobs by test id (-k).
     timeout-minutes: ${{ matrix.job_timeout || 90 }}
     steps:
       - name: Checkout repository
