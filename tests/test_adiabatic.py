@@ -1369,6 +1369,7 @@ def test_padded_top_shell_lookup_follows_the_adiabat(monkeypatch):
     assert res['padded'] and P[-1] == 0.0
     assert T[-1] == pytest.approx(cfg['surface_temperature'])
     top = int(np.flatnonzero(P > 0)[-1])
+    assert tables, 'the solve built no T(P) table'
     q, t_path = euler_adiabat(cfg, melt, P_FLOOR, T[-1], np.min(tables[-1][tables[-1] > 0]))
     look = np.array([seen[-1](r[top], p) for p in q])
     assert look[0] == pytest.approx(T[-1], abs=1e-9)
