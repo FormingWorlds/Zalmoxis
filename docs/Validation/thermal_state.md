@@ -145,7 +145,13 @@ Measured once and not asserted: with a padded top, against a table with 4096 she
 - the mantle on to the CMB pressure, then the core to the top core node;
 - the core from the returned top core node to the centre.
 
-The returned temperature may differ by at most 1.5 K from the first chain and 0.5 K from the third. At the top core node it may differ from the second chain by its own lag behind the adiabat recomputed on the returned structure plus 1 K. That lag is largest somewhere in the core; the solve reports the largest one as `adiabat_self_consistency_core`, which must equal the largest difference to the recomputed adiabat over the core nodes and be at most 10 K. The 3 innermost nodes must not share one temperature.
+The lag of a node is the absolute difference between its returned temperature and the adiabat that the code computes again on the returned structure. The test bounds these values:
+
+- first mantle node: at most 1.5 K from the first chain;
+- top core node: the recomputed adiabat at most 1 K from the second chain;
+- `adiabat_self_consistency_core`, the largest lag of the core nodes that the solve reports: equal to the largest lag that the test computes, and at most 10 K;
+- centre: at most 0.5 K from the third chain;
+- the 3 innermost nodes: not one shared temperature.
 
 **How we know the right answer.** Each chain is the adiabat of the returned structure itself, integrated by `scipy.integrate.solve_ivp` with DOP853 at a relative tolerance of $10^{-12}$ and an absolute tolerance of $10^{-14}$ on $\ln T$; the second chain changes from the mantle to the core mixture exactly at the CMB pressure, with $\ln P$ linear in the enclosed mass between the 2 nodes around the CMB. At a relative tolerance of $10^{-10}$ DOP853 steps over the kink of $\nabla_\mathrm{ad}$ where the adiabat meets the melting curve of the iron table: on a 2515 K default core it then misses the converged answer by 0.7 K. This is a cross-code check of the adiabat, not an external reference.
 
@@ -154,11 +160,11 @@ The returned temperature may differ by at most 1.5 K from the first chain and 0.
 ![Returned temperature minus the DOP853 chains against pressure for the 10 Earth-mass planet](../assets/validation/adiabat_cmb_centre.svg#only-light){ width="80%" }
 ![Returned temperature minus the DOP853 chains against pressure for the 10 Earth-mass planet](../assets/validation/adiabat_cmb_centre_dark.svg#only-dark){ width="80%" }
 
-**How to read the plot.** The x-axis is the pressure in GPa and the y-axis $\Delta T$, the returned temperature minus the DOP853 chain, in K, for the 10 $M_\oplus$ planet at $k$ = 0. The mantle line compares the mantle nodes below $10^{11}$ Pa with the first chain, and the core line compares the core nodes with the third chain. The filled circle, the filled square and the open diamond are the 3 nodes that the test bounds: the first mantle node (1.5 K), the top core node against the second chain through the CMB (its lag plus 1 K) and the centre (0.5 K). The dotted line marks the CMB pressure. A pass means that no marked point exceeds its bound in any of the 4 solves. In the 4 solves the largest differences are 0.55 K at the first mantle node, 1.60 K at the top core node and 0.07 K at the centre (macOS arm64); the lag of the top core node is 0.11 to 1.68 K and that of the whole core 0.18 to 2.96 K.
+**How to read the plot.** The x-axis is the pressure in GPa and the y-axis $\Delta T$, the returned temperature minus the DOP853 chain, in K, for the 10 $M_\oplus$ planet at $k$ = 0. The mantle line compares the mantle nodes below $10^{11}$ Pa with the first chain, and the core line compares the core nodes with the third chain. The filled circle, the filled square and the open diamond are the 3 nodes that the test bounds: the first mantle node (1.5 K), the returned top core node against the second chain through the CMB (the test bounds the recomputed adiabat there at 1 K; the returned value differs from it by its lag) and the centre (0.5 K). The dotted line marks the CMB pressure. A pass means that no marked point exceeds its bound in any of the 4 solves. In the 4 solves the largest differences are 0.55 K at the first mantle node, 1.60 K at the top core node and 0.07 K at the centre (macOS arm64); the recomputed adiabat at the top core node lies 0.01 to 0.56 K from the second chain, the lag of the top core node is 0.11 to 1.68 K and that of the whole core 0.18 to 2.96 K.
 
 ??? info "Test details"
     - Reference: DOP853 integrations of $\nabla_\mathrm{ad}$ on the returned structure (cross-code check).
-    - Tolerance: 1.5 K at the first mantle node; at the top core node its lag behind the recomputed adiabat plus 1 K; 0.5 K at the centre; `adiabat_self_consistency_core` equal to the largest core lag and at most 10 K; the 3 innermost nodes differ in temperature.
+    - Tolerance: 1.5 K at the first mantle node; 1 K for the recomputed adiabat at the top core node; 0.5 K at the centre; `adiabat_self_consistency_core` equal to the largest core lag and at most 10 K; the 3 innermost nodes differ in temperature.
     - Test id: `tests/test_adiabat_centre.py::test_the_adiabat_meets_independent_integrations_at_the_cmb_and_the_centre` (markers `integration`, `physics_invariant` and `reference_pinned`; nightly job `main`).
     - Command: `pytest -o "addopts=" tests/test_adiabat_centre.py -s`; add `--validation-plots` to write the plot.
 
