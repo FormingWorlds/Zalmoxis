@@ -952,7 +952,9 @@ def main(
         ``tolerance_outer`` in mass; the table is read by layer (the core part at core masses)
         and continued past its ends with the adiabat slope of its end intervals; and
         ``adiabat_self_consistency`` gives the largest difference in K between the returned
-        mantle T and the adiabat recomputed on the returned structure (None below blend 1);
+        mantle T and the adiabat recomputed on the returned structure (None below blend 1),
+        and ``adiabat_self_consistency_core`` the same at the core nodes, whose T comes from
+        the T table of the pass before;
         a Newton root there seeds the Picard blend ramp at min(tolerance_outer, newton_tol),
         and the result keeps its ``newton_*`` keys and its time in ``total_time``. In a ramp
         that main starts (after a Newton root or from ``adiabat_seed``), a pass on a
@@ -3435,11 +3437,13 @@ def _solve(
             volatile_profile,
         )
 
-    self_consistency = None  # largest |T - adiabat(P)| of the returned mantle, in K
+    self_consistency = core_lag = None  # largest |T - adiabat(P)| of mantle, core [K]
     if _adiabat_computed and _adiabat_blend >= 1.0:
-        keep = (np.asarray(mass_enclosed) >= cmb_mass) & (pressure > 0)
-        lag = np.abs(np.asarray(temperatures) - _adiabat(radii, pressure, mass_enclosed))[keep]
-        self_consistency = float(lag.max()) if lag.size else None
+        m_arr, up = np.asarray(mass_enclosed), pressure > 0
+        lag = np.abs(np.asarray(temperatures) - _adiabat(radii, pressure, mass_enclosed))
+        mantle, core = lag[(m_arr >= cmb_mass) & up], lag[is_core(m_arr, cmb_mass) & up]
+        self_consistency = float(mantle.max()) if mantle.size else None
+        core_lag = float(core.max()) if core.size else None
 
     model_results = {
         'layer_eos_config': layer_eos_config,
@@ -3471,6 +3475,7 @@ def _solve(
         'adiabat_blend': _adiabat_blend,
         'adiabat_table_blend': _table_blend,
         'adiabat_self_consistency': self_consistency,
+        'adiabat_self_consistency_core': core_lag,
         'adiabat_seeded': seeded,
     }
     m_end = mass_enclosed[-1] if len(mass_enclosed) else 0.0

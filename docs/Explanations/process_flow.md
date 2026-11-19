@@ -279,6 +279,7 @@ The temperature table of the density solve takes the same adiabat over the top c
 The tests check this continuity on fixed structures only, not the lag of an accepted solve.
 
 `adiabat_self_consistency` gives the largest difference, in K, between the returned mantle temperature and the adiabat recomputed on the returned structure; it is None below blend 1 and when no mantle node has a positive pressure.
+`adiabat_self_consistency_core` gives the same difference at the core nodes. Their temperature comes from the T table of the pass before, so it lags the adiabat of the returned structure, and the strict test bounds that lag only through the mass error of the pass that built the table; it is None below blend 1 and when no core node has a positive pressure.
 
 ### Secant tail and seeded re-solve
 
