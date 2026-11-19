@@ -610,6 +610,27 @@ def test_the_adiabat_cuts_its_segments_at_the_pressures_of_the_icb_readers(monke
     np.testing.assert_allclose(t, law, rtol=1e-12, atol=0)
 
 
+@pytest.mark.physics_invariant
+@pytest.mark.parametrize(
+    ('n', 'scale', 'frac'),
+    [(41, 1.1, 1.0), (41, 1.1, 0.999), (41, 1.9, 1.0), (11, 1.1, 1.0), (11, 1.9, 0.999)],
+)
+def test_p_icb_in_the_cmb_segment_lies_at_or_above_the_cmb_node(n, scale, frac):
+    """On the uniform sphere with the ICB in the node segment of the CMB, P_icb of the core
+    arrays meets the closed form P = 2/3 pi G rho^2 (R^2 - r^2) within the accuracy of the
+    CMB point with ln P linear in m (largest over 6 CMB positions: 5.5e-5 at 41 nodes,
+    1.0e-3 at 11 nodes; bound twice that), and never lies below the pressure of the CMB node
+    (scale 1.9: the unclamped value is 3.9e-5 and 1.0e-3 below it)."""
+    res, rhs = _sphere_result(n, scale)
+    mix = {'core': LayerMixture([LIQ], [1.0]), 'inner_core': LayerMixture([SOL], [1.0])}
+    icb = frac * res['cmb_mass']
+    core = core_arrays(res, mix, rhs, lambda r, p_: 5000.0, icb, 0.0)
+    r_icb = (3 * icb / (4 * np.pi * 1e4)) ** (1 / 3)
+    exact = 2 / 3 * np.pi * G * 1e8 * (4e6**2 - r_icb**2)
+    assert core['P_icb'] >= core['P'][-1]
+    assert core['P_icb'] == pytest.approx(exact, rel=1.1e-4 if n == 41 else 2e-3)
+
+
 _P_TP, _T_TP, _Q = 98.5e9, 3712.0, 1 / 1.72  # triple point and 1/c of Anzellini et al. (2013)
 _RHO, _R = 1.0e4, 4.0e6  # the uniform sphere of _sphere_result
 
