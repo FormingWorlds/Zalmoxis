@@ -116,13 +116,7 @@ def _figure(p, t, top, p_cmb, t_1e11, dop, t_top):
     ax.plot(p[mant] / 1e9, d_m, '-', color=c[0], label='mantle')
     ax.plot(p[core] / 1e9, d_c, '-', color=c[1], label='core')
     ax.plot(p[top + 1] / 1e9, d_m[-1], 'o', color=c[0], label='first mantle node')
-    ax.plot(
-        p[top] / 1e9,
-        t[top] - t_top,
-        's',
-        color=c[1],
-        label='top core node',
-    )
+    ax.plot(p[top] / 1e9, t[top] - t_top, 's', color=c[1], label='top core node')
     ax.plot(p[0] / 1e9, d_c[-1], 'D', color=c[1], mfc='none', label='centre')
     ax.axvline(p_cmb / 1e9, color=plt.rcParams['text.color'], lw=0.8, ls=':', label='CMB')
     ax.set(xlabel='Pressure [GPa]', ylabel='$\\Delta T$ [K]', xscale='log')

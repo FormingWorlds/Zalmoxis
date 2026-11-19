@@ -801,6 +801,7 @@ class TestLayeredTemperature:
 
         t_func.core = lambda r, p: 4000.0 + 1e-9 * p
         kw = self._call(t_func)
+        assert 'core_T_P' in kw
         np.testing.assert_allclose(kw['core_T_P'], np.logspace(5.0, 13.0, 4000), rtol=1e-12)
         np.testing.assert_allclose(
             kw['core_T_values'], 4000.0 + 1e-9 * kw['core_T_P'], rtol=1e-12

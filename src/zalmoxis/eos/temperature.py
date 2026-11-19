@@ -107,9 +107,12 @@ def compute_adiabatic_temperature(
     """Compute an adiabatic temperature profile using native EOS gradient tables.
 
     Integrates d ln T / d ln P = nabla_ad(P, T) over each node segment with the midpoint rule in
-    ln P and ceil(|d ln P| / ``max_dlnp``) substeps. nabla_ad comes from ``get_mixed_nabla_ad``
-    with the layer mixture of the node the segment fills; for a multi-material layer it is
-    mass-fraction-weighted across the components. T is held below ``ADIABAT_P_FLOOR`` (1e5 Pa,
+    ln P and ceil(|d ln P| / ``max_dlnp``) substeps per piece. nabla_ad comes from
+    ``get_mixed_nabla_ad`` with the layer mixture of the node the segment fills; for a
+    multi-material layer it is mass-fraction-weighted across the components. A segment that
+    holds the CMB or the ICB is cut there into pieces that each take the mixture of their own
+    layer: the CMB with ln P linear in the enclosed mass between the 2 nodes, the ICB at the
+    pressure of ``core_profile.icb_pressure``. T is held below ``ADIABAT_P_FLOOR`` (1e5 Pa,
     where the PALEOS rock and iron tables start), and a padded node (P = 0) counts as that
     floor. T is also held over a layer without a T-dependent component and from the first
     substep where nabla_ad is missing or not positive. Each node is capped at 1e5 K, and with

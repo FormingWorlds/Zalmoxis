@@ -1,12 +1,7 @@
 """A default-configuration solve is bit-identical to its stored reference: every array and
 scalar of the result, against a reference that ``tools/default_solve_reference.py`` wrote, one
 per platform and CPU model (macOS arm64 is stored; a CI runner has none, see below). The
-references pin the adiabat with its T(P) table read by layer, the strict accept on a table of
-a converged pass, the end-slope continuation and the CMB split of the node segment; against
-the one-layer main solve these move the default solve: its 5 central nodes no longer share one
-temperature, the centre is 7.6 K cooler (8081.9 K), the radius 2.0e-4 and the central pressure
-4.5e-4 larger. The converged radius depends on the CPU, within the mass tolerance of the outer
-loop. On a CPU with no reference, such as the Linux runners of the nightly job, the solve meets
+converged radius depends on the CPU, within the mass tolerance of the outer loop. On a CPU with no reference, such as the Linux runners of the nightly job, the solve meets
 the nearest stored one within that tolerance instead, and a warning says that bit-identity was
 not checked.
 """
@@ -90,14 +85,16 @@ def test_the_reference_key_names_the_cpu_model():
 
 @pytest.mark.unit
 def test_the_tolerance_band_holds_the_reference_and_refuses_a_wider_gap():
-    """The stored macOS result meets itself inside the band; 2.1e-3 off it fails."""
+    """A copy 1.9e-3 off the stored macOS result lies inside the band; 2.1e-3 off it fails."""
     mac = np.load(DATA / 'default_solve_reference_darwin-arm64.npz')
     got = dict(mac)  # the base of the changed copies below
-    assert off_tolerance(got, mac) == []
     for k, scale, want in (
         ('radii', 1.0021, ['radii']),
+        ('radii', 1.0019, []),
         ('p_center', 0.9979, ['p_center']),
+        ('p_center', 0.9981, []),
         ('mass_enclosed', 1.0021, ['mass_enclosed']),
+        ('mass_enclosed', 1.0019, []),
     ):
         bad = dict(got, **{k: mac[k] * scale})
         assert off_tolerance(bad, mac) == want, k

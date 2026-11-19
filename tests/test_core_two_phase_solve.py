@@ -725,11 +725,10 @@ ICB_CENTRE_BOUND = 1.5  # centre (largest 0.52 K)
 def test_the_adiabat_crosses_the_icb_at_its_pressure(setup, k):
     """The pure-iron core of the default 1 M_E planet at 2500 K (planet mass and surface
     temperature x (1 + k 1e-12)) against DOP853 integrations of nabla_ad (rtol 1e-12, atol
-    1e-14): of the liquid from the first outer-core node to the ICB pressure (ln P linear in
-    the enclosed mass between the 2 nodes around the ICB), then of the solid to the first
-    inner-core node, and of the solid from that node to the centre. At 258 GPa nabla_ad is
-    0.44 on the liquid side and 0.22 on the solid side, so a node segment that takes one side
-    over its whole length misses by about 20 K."""
+    1e-14): of the liquid from the first outer-core node to the ICB pressure of the core
+    arrays, then of the solid to the first inner-core node, and of the solid from that node to
+    the centre. At 258 GPa nabla_ad is 0.44 on the liquid side and 0.22 on the solid side, so a
+    node segment that takes one side over its whole length misses by up to 21 K."""
     from scipy.integrate import solve_ivp
 
     from zalmoxis.mixing import get_mixed_nabla_ad, parse_all_layer_mixtures
@@ -746,7 +745,7 @@ def test_the_adiabat_crosses_the_icb_at_its_pressure(setup, k):
     icb = res['core']['M_ic']
     i = int(np.flatnonzero(m < icb)[-1])  # first inner-core node below the ICB
     assert 0 < i and m[i + 1] < res['cmb_mass']
-    p_icb = math.exp(np.interp(icb, m[i : i + 2], np.log(p[i : i + 2])))
+    p_icb = res['core']['P_icb']
     mixes = parse_all_layer_mixtures(
         {**cfg['layer_eos_config'], 'core': LIQ, 'inner_core': SOL}
     )
@@ -770,6 +769,9 @@ def test_the_adiabat_crosses_the_icb_at_its_pressure(setup, k):
     t_centre = dop('inner_core', p[i], p[0], t[i])
     print(
         k, 'K off at the first inner-core node and the centre:', t[i] - t_inner, t[0] - t_centre
+    )
+    print(
+        f'k {k}: first inner-core node {t[i] - t_inner:+.3f} K, centre {t[0] - t_centre:+.3f} K'
     )
     assert abs(t[i] - t_inner) < ICB_NODE_BOUND, (t[i], t_inner)
     assert abs(t[0] - t_centre) < ICB_CENTRE_BOUND, (t[0], t_centre)
