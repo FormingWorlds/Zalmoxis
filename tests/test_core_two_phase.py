@@ -621,7 +621,7 @@ def test_the_adiabat_cuts_its_segments_at_the_pressures_of_the_icb_readers(monke
 def test_p_icb_in_the_cmb_segment_lies_at_or_above_the_cmb_node(n, scale, frac):
     """On the uniform sphere with the ICB in the node segment of the CMB, P_icb of the core
     arrays meets the closed form P = 2/3 pi G rho^2 (R^2 - r^2) within the accuracy of the
-    CMB point with ln P linear in m at these CMB positions (r/R 0.52 to 0.63: 5.5e-5 at 41
+    CMB point with ln P linear in m at these CMB positions (r/R 0.52 to 0.62: 5.5e-5 at 41
     nodes, 1.0e-3 at 11 nodes; the bounds 1.1e-4 and 2e-3), never lies below the pressure of
     the CMB node (scale 1.9: the reader value is 3.9e-5 and 5.9e-4 below it), and takes that
     pressure for a full inner core."""

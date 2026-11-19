@@ -323,7 +323,18 @@ The structure equations place a shell in the inner core by its enclosed mass, as
 
 The result reports $S$ as `icb_superheat` \[K\] ([tests](../Validation/hydrostatic_structure.md#inner-core-boundary-of-a-two-layer-core)).
 
-The rule, the superheat, the adiabat cut and the core arrays take one pressure for one ICB mass: $P$ linear in $m^{2/3}$ between the core nodes on either side of it, with $m$ the enclosed mass, which is exact for a uniform density. When the ICB lies in the node segment of the core-mantle boundary, the upper node is the point at the core mass with $\ln P$ linear in $m$, and the ICB pressure is as accurate as that point: on a uniform sphere to $5.5 \times 10^{-5}$ at 41 nodes and $1.0 \times 10^{-3}$ at 11 nodes. The core arrays keep `P_icb` at or above the pressure of their node at the core mass, so the ICB never lies above the core-mantle boundary; for the pure-iron core solid to the core-mantle boundary at 2460 K on 150 nodes, the point lies $3.0 \times 10^{-6}$ below that node, and `P_icb` takes the node pressure.
+
+### The pressure at the inner-core boundary
+
+The rule, the superheat and the adiabat cut take one pressure for one ICB mass: $P$ linear in $m^{2/3}$ between the core nodes on either side of it, with $m$ the enclosed mass, which is exact for a uniform density. When the ICB lies in the node segment of the core-mantle boundary, the upper node is the CMB point: the point at the core mass with $\ln P$ linear in $m$ between the 2 nodes of that segment. The ICB pressure is then as accurate as that point, and its error grows with the radius of the core-mantle boundary and falls with the node count. On a uniform sphere, over about 300 positions of the core-mantle boundary per band, the largest relative error of the CMB point is:
+
+| $r_\mathrm{CMB}/R$ | 11 nodes | 41 nodes | 150 nodes |
+|---|---|---|---|
+| 0.3 to 0.6 | $2.0 \times 10^{-3}$ | $1.4 \times 10^{-4}$ | $9.8 \times 10^{-6}$ |
+| 0.6 to 0.8 | $9.4 \times 10^{-3}$ | $9.3 \times 10^{-4}$ | $7.5 \times 10^{-5}$ |
+| 0.8 to 0.95 | 0.95 | $1.8 \times 10^{-2}$ | $2.0 \times 10^{-3}$ |
+
+The pressure of the uniform sphere falls to 0 at its surface, so the last row overstates a planet with a mantle above the core. The core arrays take the same pressure, with 2 exceptions: they never put `P_icb` below the pressure of their node at the core mass, which comes from the structure integration, and they give a full inner core that pressure. The ICB readers then differ from `P_icb` by that move, and a move above $10^{-3}$ of `P_icb` logs a warning. For the pure-iron core solid to the core-mantle boundary at 2460 K on 150 nodes, the CMB point lies a relative $3.0 \times 10^{-6}$ below that node.
 
 ### Temperature
 

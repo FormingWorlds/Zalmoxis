@@ -84,7 +84,7 @@ When the ICB or the CMB lies inside a segment, the routine cuts the segment at t
 The cut lies at the pressure of the boundary:
 
 - **CMB:** the pressure at the core mass, with $\ln P$ taken linear in the enclosed mass $m$ between the 2 nodes.
-- **ICB:** the pressure that the [inner-core boundary rule](mixing.md#the-inner-core-boundary) gives for the inner-core mass, with $P$ taken linear in $m^{2/3}$ between the core nodes on either side of it. When the ICB lies in the node segment of the CMB, the CMB point takes the place of the upper node.
+- **ICB:** the pressure that the [inner-core boundary rule](mixing.md#the-inner-core-boundary) gives for the inner-core mass, with $P$ taken linear in $m^{2/3}$ between the core nodes on either side of it. When the ICB lies in the node segment of the CMB, the point of the CMB cut takes the place of the upper node ([the pressure at the inner-core boundary](mixing.md#the-pressure-at-the-inner-core-boundary)).
 
 So the cut and the ICB rule take one pressure for one inner-core mass.
 Other segments take the mixture of the node they fill.
