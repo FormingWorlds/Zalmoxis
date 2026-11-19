@@ -6,7 +6,7 @@
   <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
    <cc:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
-    <dc:description>test: tests/test_core_two_phase_solve.py::test_the_inner_core_of_a_pure_iron_core_grows_as_the_surface_cools; command: pytest tests/test_core_two_phase_solve.py::test_the_inner_core_of_a_pure_iron_core_grows_as_the_surface_cools --validation-plots; summary: {"v": 1, "axes": [{"scales": ["linear", "linear"], "categories": [null, null], "lines": [[5, 2460.0, 2530.0, 2496.0, 17.000000000000014, 0.0, 1.0, 0.4541128363113545, -0.26555340878963507]], "collections": [], "values": [], "value_scales": [], "patches": [], "images": [], "image_scales": [], "extents": []}]}</dc:description>
+    <dc:description>test: tests/test_core_two_phase_solve.py::test_the_inner_core_of_a_pure_iron_core_grows_as_the_surface_cools; command: pytest tests/test_core_two_phase_solve.py::test_the_inner_core_of_a_pure_iron_core_grows_as_the_surface_cools --validation-plots; summary: {"v": 1, "axes": [{"scales": ["linear", "linear"], "categories": [null, null], "lines": [[5, 2460.0, 2530.0, 2496.0, 17.000000000000014, 0.0, 1.0, 0.47255985352777713, -0.2693901865735147]], "collections": [], "values": [], "value_scales": [], "patches": [], "images": [], "image_scales": [], "extents": []}]}</dc:description>
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <cc:Agent>
@@ -871,9 +871,9 @@ z
    </g>
    <g id="line2d_8">
     <path d="M 68.815858 14.320992 
-L 131.422545 43.461805 
-L 194.029232 108.984273 
-L 225.332576 136.822861 
+L 131.422545 35.861393 
+L 194.029232 105.584658 
+L 225.332576 134.686782 
 L 287.939263 156.740826 
 " clip-path="url(#p1986e8668a)" style="fill: none; stroke: #f2f5f7; stroke-width: 2.2; stroke-linecap: square"/>
     <defs>
@@ -891,9 +891,9 @@ z
     </defs>
     <g clip-path="url(#p1986e8668a)">
      <use xlink:href="#m5efca03033" x="68.815858" y="14.320992" style="fill-opacity: 0; stroke: #f2f5f7"/>
-     <use xlink:href="#m5efca03033" x="131.422545" y="43.461805" style="fill-opacity: 0; stroke: #f2f5f7"/>
-     <use xlink:href="#m5efca03033" x="194.029232" y="108.984273" style="fill-opacity: 0; stroke: #f2f5f7"/>
-     <use xlink:href="#m5efca03033" x="225.332576" y="136.822861" style="fill-opacity: 0; stroke: #f2f5f7"/>
+     <use xlink:href="#m5efca03033" x="131.422545" y="35.861393" style="fill-opacity: 0; stroke: #f2f5f7"/>
+     <use xlink:href="#m5efca03033" x="194.029232" y="105.584658" style="fill-opacity: 0; stroke: #f2f5f7"/>
+     <use xlink:href="#m5efca03033" x="225.332576" y="134.686782" style="fill-opacity: 0; stroke: #f2f5f7"/>
      <use xlink:href="#m5efca03033" x="287.939263" y="156.740826" style="fill-opacity: 0; stroke: #f2f5f7"/>
     </g>
    </g>
