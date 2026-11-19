@@ -9,6 +9,7 @@ scratch cache root, so no test writes the data cache.
 from __future__ import annotations
 
 import copy
+import math
 import os
 from pathlib import Path
 from unittest import mock
@@ -712,6 +713,64 @@ def test_a_pure_iron_core_has_its_icb_where_its_liquid_adiabat_meets_iron_meltin
     assert 0.0 < f < 1.0 and abs(s) <= 0.5, (f, s)
     assert abs(g_b / cmb - f) <= 0.005, (g_b / cmb, f)
     assert _superheat_met(res) and res['icb_converged']
+
+
+ICB_BOUND = 2.0  # K, at the first inner-core node and at the centre
+
+
+@pytest.mark.physics_invariant
+@pytest.mark.parametrize('k', range(5))
+def test_the_adiabat_crosses_the_icb_at_its_pressure(setup, k):
+    """The pure-iron core of the default 1 M_E planet at 2500 K (planet mass and surface
+    temperature x (1 + k 1e-12)) against DOP853 integrations of nabla_ad (rtol 1e-12, atol
+    1e-14): of the liquid from the first outer-core node to the ICB pressure (ln P linear in
+    the enclosed mass between the 2 nodes around the ICB), then of the solid to the first
+    inner-core node, and of the solid from that node to the centre. At 258 GPa nabla_ad is
+    0.44 on the liquid side and 0.22 on the solid side, so a node segment that takes one side
+    over its whole length misses by about 20 K."""
+    from scipy.integrate import solve_ivp
+
+    from zalmoxis.mixing import get_mixed_nabla_ad, parse_all_layer_mixtures
+
+    md, cfg, _ = setup
+    res = _solve(
+        setup,
+        inner=SOL,
+        core_liquidus='Anzellini13-iron',
+        surface_temperature=2500.0 * (1 + k * 1e-12),
+        planet_mass=cfg['planet_mass'] * (1 + k * 1e-12),
+    )
+    m, p, t = (np.asarray(res[x], float) for x in ('mass_enclosed', 'pressure', 'temperature'))
+    icb = res['core']['M_ic']
+    i = int(np.flatnonzero(m < icb)[-1])  # first inner-core node below the ICB
+    assert 0 < i and m[i + 1] < res['cmb_mass']
+    p_icb = math.exp(np.interp(icb, m[i : i + 2], np.log(p[i : i + 2])))
+    mixes = parse_all_layer_mixtures(
+        {**cfg['layer_eos_config'], 'core': LIQ, 'inner_core': SOL}
+    )
+
+    def dop(layer, p0, p1, t0):
+        def rhs(x, y):
+            return [get_mixed_nabla_ad(math.exp(x), math.exp(y[0]), mixes[layer], md, {})]
+
+        ivp = solve_ivp(
+            rhs,
+            (math.log(p0), math.log(p1)),
+            [math.log(t0)],
+            method='DOP853',
+            rtol=1e-12,
+            atol=1e-14,
+        )
+        assert ivp.status == 0
+        return math.exp(ivp.y[0, -1])
+
+    t_inner = dop('inner_core', p_icb, p[i], dop('core', p[i + 1], p_icb, t[i + 1]))
+    t_centre = dop('inner_core', p[i], p[0], t[i])
+    print(
+        k, 'K off at the first inner-core node and the centre:', t[i] - t_inner, t[0] - t_centre
+    )
+    assert abs(t[i] - t_inner) < ICB_BOUND, (t[i], t_inner)
+    assert abs(t[0] - t_centre) < ICB_BOUND, (t[0], t_centre)
 
 
 @pytest.mark.physics_invariant
