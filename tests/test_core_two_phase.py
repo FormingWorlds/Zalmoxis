@@ -552,6 +552,55 @@ def test_r_icb_and_p_icb_of_a_small_inner_core_meet_the_uniform_sphere(frac):
     )
 
 
+class _Layer:
+    """A T-dependent layer mixture with a constant adiabatic gradient ``n``."""
+
+    def __init__(self, n):
+        self.n = n
+
+    def has_tdep(self):
+        return True
+
+
+@pytest.mark.physics_invariant
+@pytest.mark.reference_pinned
+def test_the_adiabat_cuts_its_segments_at_the_pressures_of_the_icb_readers(monkeypatch):
+    """On the uniform sphere with the ICB and the CMB inside node segments and a constant
+    nabla per layer (0.1 inner core, 0.4 outer core, 0.2 mantle), every node meets the
+    piecewise power law T = T_a (P / P_a)^n to round-off (analytical law). The law breaks at
+    the CMB with ln P linear in the enclosed mass, and at the ICB at the one pressure that
+    core_arrays, icb_superheat and icb_from_profile give for the same mass (P linear in
+    m^(2/3), exact on this sphere). A cut with ln P linear in m, or none, misses the law."""
+    import zalmoxis.mixing as _mix
+    from zalmoxis.eos.temperature import compute_adiabatic_temperature
+
+    res, rhs = _sphere_result(41, 1.1)  # CMB at 0.65 of the segment above node 20
+    m, p = res['mass_enclosed'], res['pressure']
+    icb = 0.4 * m[9] + 0.6 * m[10]
+    layers = {'inner_core': _Layer(0.1), 'core': _Layer(0.4), 'mantle': _Layer(0.2)}
+    monkeypatch.setattr(_mix, 'get_mixed_nabla_ad', lambda P, T, mix, *a, **k: mix.n)
+    monkeypatch.setattr(_mix, 'any_component_is_tdep', lambda *a, **k: True)
+    t = compute_adiabatic_temperature(
+        res['radii'], p, m, 3000.0, res['cmb_mass'], m[-1], layers, {}, icb_mass=icb
+    )
+    mix = {'core': LayerMixture([LIQ], [1.0]), 'inner_core': LayerMixture([SOL], [1.0])}
+    p_icb = core_arrays(res, mix, rhs, lambda r, p_: 5000.0, icb, 0.0)['P_icb']
+    liq = lambda p_: p_ / 1e8  # noqa: E731
+    s = icb_superheat(m, p, np.full(len(p), 5000.0), res['cmb_mass'], liq, icb)[0]
+    assert (5000.0 - s) * 1e8 == pytest.approx(p_icb, rel=1e-12)
+    assert icb_from_profile(m, p, t, res['cmb_mass'], liq, icb_mass=icb)[1] == p_icb
+    k = int(np.searchsorted(m, res['cmb_mass']))
+    p_cmb = math.exp(np.interp(res['cmb_mass'], m[k - 1 : k + 1], np.log(p[k - 1 : k + 1])))
+    t_cmb = 3000.0 * (p_cmb / 1e5) ** 0.2  # the top node (P = 0) counts as 1e5 Pa
+    t_icb = t_cmb * (p_icb / p_cmb) ** 0.4
+    law = np.where(
+        m >= res['cmb_mass'],
+        3000.0 * (np.maximum(p, 1e5) / 1e5) ** 0.2,
+        np.where(m > icb, t_cmb * (p / p_cmb) ** 0.4, t_icb * (p / p_icb) ** 0.1),
+    )
+    np.testing.assert_allclose(t, law, rtol=1e-12, atol=0)
+
+
 _P_TP, _T_TP, _Q = 98.5e9, 3712.0, 1 / 1.72  # triple point and 1/c of Anzellini et al. (2013)
 _RHO, _R = 1.0e4, 4.0e6  # the uniform sphere of _sphere_result
 
