@@ -88,17 +88,17 @@ The script prints, for each rule:
 
 ```console
 {'inner_core_mass_fraction': 0.0508}
-  converged True, radius 6569.5 km
-  CMB 3478.1 km, 128.14 GPa, 5072 K
-  ICB 1212.0 km, 321.93 GPa, M_ic/M_core 0.0508
-  centre 358.27 GPa, 7738 K, 13432 kg/m^3
-  density step at the ICB 13157 -> 12043 kg/m^3
+  converged True, radius 6570.8 km
+  CMB 3477.6 km, 128.27 GPa, 5059 K
+  ICB 1211.6 km, 322.23 GPa, M_ic/M_core 0.0508
+  centre 358.58 GPa, 7729 K, 13436 kg/m^3
+  density step at the ICB 13162 -> 12047 kg/m^3
   solid above the ICB: 0.000 of the core mass
 {'core_liquidus': 'Anzellini13-iron'}
-  converged True, radius 6572.1 km
-  CMB 3484.1 km, 127.74 GPa, 5067 K
-  ICB 0.0 km, 348.82 GPa, M_ic/M_core 0.0000
-  centre 348.82 GPa, 7767 K, 12277 kg/m^3
+  converged True, radius 6573.0 km
+  CMB 3483.8 km, 127.77 GPa, 5053 K
+  ICB 0.0 km, 348.94 GPa, M_ic/M_core 0.0000
+  centre 348.94 GPa, 7759 K, 12279 kg/m^3
   solid above the ICB: 0.000 of the core mass
 ```
 
@@ -109,7 +109,7 @@ With no inner core, `R_icb` is 0 and `P_icb` is the centre pressure.
 `res['core']` holds the core arrays. The script reads `r`, `P`, `T` and `rho` (m, Pa, K and kg/m$^3$) at the core nodes, whose last node is the core-mantle boundary (CMB); `phase` (1 inner core, 0 outer core); and the scalars `M_ic` \[kg\], `R_icb` \[m\], `P_icb` \[Pa\] and `solid_above_icb_mass_fraction`. `res['cmb_mass']` is the core mass. [Core arrays](../How-to/usage.md#core-arrays) lists every key with its unit. The 2 runs differ as follows:
 
 1. With the inner-core mass of PREM, the ICB lies at 1212 km and 322 GPa. The density falls there by about 1100 kg/m$^3$, from the solid iron of the inner core to the liquid Fe-S of the outer core.
-2. With the melting curve, the core has no inner core. The adiabat from 3000 K at the surface (the `surface_temperature` of `input/default.toml`) reaches 7767 K at the centre, above the 6401 K of the Anzellini curve at 349 GPa.
+2. With the melting curve, the core has no inner core. The adiabat from 3000 K at the surface (the `surface_temperature` of `input/default.toml`) reaches 7759 K at the centre, above the 6402 K of the Anzellini curve at 349 GPa.
 3. The inner core of the first run is solid at 7738 K at the centre, above the melting curve. The mass rule sets where the boundary is; it does not check that iron is solid there.
 
 To see an inner core from the melting curve, cool the core: `solve(core_liquidus='Anzellini13-iron', temperature_mode='isothermal', surface_temperature=5000)` puts the ICB at 206.2 GPa, next to the 206.4 GPa where the Anzellini curve is at 5000 K.

@@ -30,8 +30,9 @@ def test_round_off_starts_keep_the_centre_temperature_within_12_k(monkeypatch, r
     wall clock returns another structure, 19.4 K off at the centre), in the same padding state,
     and the adiabats of their returned structures have centre temperatures within 12 K (a
     padding flip moves the centre by tens of K, so the state is asserted first). The returned
-    core T, read from the T(P) table of the pass before, is printed and not bounded: it lies up
-    to 26 K off at a core node near the centre on macOS arm64."""
+    core T, read from the T(P) table of the pass before, is printed and not bounded: the iron
+    mush band of the core multiplies its offset at the top core node by about 15, to up to 11.5 K
+    at the centre on macOS arm64."""
     import zalmoxis.solver as zs
     from tests.test_adiabat_real_profiles import _need_paleos
     from zalmoxis import get_zalmoxis_root

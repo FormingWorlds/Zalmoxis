@@ -47,7 +47,9 @@ def _config(case):
 def test_the_adiabat_meets_independent_integrations_at_the_cmb_and_the_centre(case, k):
     """A solve on its own adiabat (the 10 M_E planet of tests/data/bench_performance.toml from
     3000 K, numpy, planet mass x (1 + k 1e-12); the 1 M_E default) against DOP853 integrations
-    of d ln T / d ln P = nabla_ad with the same tables (a cache of its own): of the mantle from
+    of d ln T / d ln P = nabla_ad with the same tables (a cache of its own; rtol 1e-12 and atol
+    1e-14, since at rtol 1e-10 DOP853 steps over the kink of nabla_ad at the edge of the iron
+    mush band and misses the converged answer by 0.7 K on a 2515 K default core): of the mantle from
     1e11 Pa on the returned profile to the first mantle node above the CMB (MANTLE_BOUND) and
     on to the CMB, then of the core to the top core node (CORE_BOUND), and of the core from
     the top core node to the centre (CENTRE_BOUND); the centre nodes do not share one T.
@@ -71,7 +73,12 @@ def test_the_adiabat_meets_independent_integrations_at_the_cmb_and_the_centre(ca
             return [nabla]
 
         ivp = solve_ivp(
-            rhs, (math.log(p0), math.log(p1)), [math.log(t0)], method='DOP853', rtol=1e-10
+            rhs,
+            (math.log(p0), math.log(p1)),
+            [math.log(t0)],
+            method='DOP853',
+            rtol=1e-12,
+            atol=1e-14,
         )
         assert ivp.status == 0
         return math.exp(ivp.y[0, -1])
