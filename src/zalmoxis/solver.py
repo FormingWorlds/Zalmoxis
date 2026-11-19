@@ -383,6 +383,25 @@ def _table_end(lp, ts, top=True):
     return lambda x: float(ts[i] * 10.0 ** (s * (x - lp[i])))
 
 
+def _table_lookup(lp, ts, low=False):
+    """T [K] at P [Pa] of a T(P) table (log10 P [Pa] ascending, T [K]): linear in log10 P inside
+    it, the adiabat of the end interval (``_table_end``) past its top and, with ``low``, past its
+    bottom (else its bottom T); capped at 1e5 K (the PALEOS table maximum), floored at 100 K."""
+    top, bottom = _table_end(lp, ts), _table_end(lp, ts, top=False)
+
+    def t_adi(P):
+        x = math.log10(P)  # math.log10 avoids numpy scalar dispatch
+        if x > lp[-1]:
+            T = top(x)
+        elif low and x < lp[0]:
+            T = bottom(x)
+        else:
+            T = float(np.interp(x, lp, ts))
+        return max(100.0, min(T, 100000.0))
+
+    return t_adi
+
+
 def _layer_tables(pressure, T, mass, cmb_mass, top_shell, outward=False):
     """The T(P) table of the adiabat ``T`` on a pass (``_adiabat_table``) split at its CMB into
     the table of the mantle nodes and that of the core nodes (``is_core``), so that a query
@@ -2430,25 +2449,10 @@ def _solve(
                 adiabat_T = _adiabat(prev_radii, prev_pressure, prev_mass_enclosed)
 
                 # T(P) tables of the previous pass: the Brent search reads the T of its own P,
-                # not of a fixed radius (no low-P, high-T queries into PALEOS NaN gaps); T is
-                # capped at 1e5 K (the PALEOS table maximum) and floored at 100 K
-                _T_MAX_CLAMP = 100000.0
-                _T_MIN_CLAMP = 100.0
-
+                # not of a fixed radius (no low-P, high-T queries into PALEOS NaN gaps)
                 def _table_t(lp, ts, low=False, _b=_adiabat_blend, _ltf=_linear_tf):
-                    # T(r, P) of a T(P) table, blended with the linear guess below blend 1; past
-                    # the top, and with ``low`` past the bottom, the end slope goes on
-                    top, bottom = _table_end(lp, ts), _table_end(lp, ts, top=False)
-
-                    def t_adi(P, _lp=lp, _ts=ts):
-                        x = math.log10(P)  # math.log10 avoids numpy scalar dispatch
-                        if x > _lp[-1]:
-                            T = top(x)
-                        elif low and x < _lp[0]:
-                            T = bottom(x)
-                        else:
-                            T = float(np.interp(x, _lp, _ts))
-                        return max(_T_MIN_CLAMP, min(T, _T_MAX_CLAMP))
+                    # T(r, P) of a T(P) table, blended with the linear guess below blend 1
+                    t_adi = _table_lookup(lp, ts, low)
 
                     if _b < 1.0:
 

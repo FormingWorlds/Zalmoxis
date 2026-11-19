@@ -765,3 +765,47 @@ class TestNonPaleosTwoPhaseMantle:
         out = jw._extract_sub_args(_build_min_cache_dict(), 'liq')
         assert out['liq_n_p'] == 4
         assert out['liq_density_grid'].shape == (4, 4)
+
+
+class TestLayeredTemperature:
+    """A T function with a core table (``.core``) passes that table to the JAX core as
+    ``core_T_P``/``core_T_values``; a caller table takes precedence; no ``.core``, no table."""
+
+    @staticmethod
+    def _call(t_func, core_arrays=None):
+        layer_mixtures, mds, cache = _common_fixtures()
+        fake = mock.Mock(return_value=(np.zeros((20, 3)), np.zeros(3)))
+        with mock.patch.object(jw, 'solve_structure_jax', fake):
+            jw.solve_structure_via_jax(
+                layer_mixtures=layer_mixtures,
+                cmb_mass=2e23,
+                core_mantle_mass=4e23,
+                radii=np.linspace(1.0, 1e6, 20),
+                adaptive_radial_fraction=0.5,
+                relative_tolerance=1e-6,
+                absolute_tolerance=1e-8,
+                maximum_step=1e5,
+                material_dictionaries=mds,
+                interpolation_cache=cache,
+                y0=[0.0, 0.0, 1e12],
+                solidus_func=_solidus_func,
+                liquidus_func=_liquidus_func,
+                temperature_function=t_func,
+                core_temperature_arrays=core_arrays,
+            )
+        return fake.call_args.kwargs
+
+    def test_the_core_table_of_a_layered_t_reaches_the_jax_core(self):
+        def t_func(r, p):
+            return 3000.0
+
+        t_func.core = lambda r, p: 4000.0 + 1e-9 * p
+        kw = self._call(t_func)
+        np.testing.assert_allclose(kw['core_T_P'], np.logspace(5.0, 13.0, 4000), rtol=1e-12)
+        np.testing.assert_allclose(
+            kw['core_T_values'], 4000.0 + 1e-9 * kw['core_T_P'], rtol=1e-12
+        )
+        given = (np.array([1e9, 1e12]), np.array([5000.0, 6000.0]))
+        kw = self._call(t_func, given)
+        np.testing.assert_array_equal(kw['core_T_values'], given[1])
+        assert 'core_T_P' not in self._call(_t_func)
