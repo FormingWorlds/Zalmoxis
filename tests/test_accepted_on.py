@@ -2318,8 +2318,9 @@ def _power_mass(R, k):
 def test_the_secant_tail_reaches_the_mass_in_3_full_adiabat_passes():
     """A ramp started by main (``_secant_tail``) on a mass that grows as R^0.9: the passes on a
     full-adiabat table reach tolerance_outer 1e-4 in 3 passes (the cube-root update alone
-    takes 13 on this mass) and the solve accepts the full adiabat. The adiabat is computed
-    on the 4 blend passes, on each full-table pass and once on the returned structure."""
+    takes 13 on this mass) and the solve accepts the full adiabat one pass later, on a settled
+    table. The adiabat is computed on the 4 blend passes, on each full-table pass and once on
+    the returned structure."""
     r, n_adiabat = _analytic_ramp(
         mass=_power_mass,
         tolerance_outer=1e-4,
@@ -2330,7 +2331,7 @@ def test_the_secant_tail_reaches_the_mass_in_3_full_adiabat_passes():
     )
     assert r['converged'] is True and r['accepted_on'] == 'strict'
     assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
-    assert n_adiabat - 5 <= 3 and r['mass_error_at_accept'] < 1e-4
+    assert n_adiabat - 5 <= 4 and r['mass_error_at_accept'] < 1e-4
     R_star = R_ROOT * (1.0 - 0.012) ** (-1.0 / 0.9)  # the root at blend 1
     assert r['radii'][-1] == pytest.approx(R_star, rel=1e-4 / 0.9 * 1.01)
 
