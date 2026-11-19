@@ -2155,9 +2155,9 @@ def test_the_core_bounds_read_the_core_nodes_of_the_reference_only():
 
 
 def _mantle_lag(r, adiabat):
-    """|T - adiabat| at the mantle nodes of ``r`` with a positive pressure."""
+    """|T - adiabat| at the mantle nodes (not ``is_core``) of ``r`` with a positive pressure."""
     m, P = np.asarray(r['mass_enclosed']), np.asarray(r['pressure'])
-    keep = (m >= r['cmb_mass']) & (P > 0)
+    keep = ~is_core(m, r['cmb_mass']) & (P > 0)
     return np.abs(np.asarray(r['temperature']) - adiabat)[keep]
 
 

@@ -403,6 +403,14 @@ def _table_lookup(lp, ts, low=False):
     return t_adi
 
 
+def _layer_lags(T, adiabat, mass, pressure, cmb_mass):
+    """Largest |T - adiabat| [K] over the mantle nodes and over the core nodes (``is_core``)
+    with a positive pressure, each None for a layer without such a node; NaN propagates."""
+    lag = np.abs(np.asarray(T, dtype=float) - np.asarray(adiabat, dtype=float))
+    up, core = np.asarray(pressure) > 0, is_core(np.asarray(mass), cmb_mass)
+    return tuple(float(lag[k].max()) if k.any() else None for k in (~core & up, core & up))
+
+
 def _layer_tables(pressure, T, mass, cmb_mass, top_shell, outward=False):
     """The T(P) table of the adiabat ``T`` on a pass (``_adiabat_table``) split at its CMB into
     the table of the mantle nodes and that of the core nodes (``is_core``), so that a query
@@ -3439,11 +3447,10 @@ def _solve(
 
     self_consistency = core_lag = None  # largest |T - adiabat(P)| of mantle, core [K]
     if _adiabat_computed and _adiabat_blend >= 1.0:
-        m_arr, up = np.asarray(mass_enclosed), pressure > 0
-        lag = np.abs(np.asarray(temperatures) - _adiabat(radii, pressure, mass_enclosed))
-        mantle, core = lag[(m_arr >= cmb_mass) & up], lag[is_core(m_arr, cmb_mass) & up]
-        self_consistency = float(mantle.max()) if mantle.size else None
-        core_lag = float(core.max()) if core.size else None
+        adiabat = _adiabat(radii, pressure, mass_enclosed)
+        self_consistency, core_lag = _layer_lags(
+            temperatures, adiabat, mass_enclosed, pressure, cmb_mass
+        )
 
     model_results = {
         'layer_eos_config': layer_eos_config,
