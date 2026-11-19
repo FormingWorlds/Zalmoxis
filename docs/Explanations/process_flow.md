@@ -276,10 +276,16 @@ The measured differences:
 
 The adiabat holds $T$ below $10^5$ Pa ([How the adiabat is integrated](adiabat_integration.md#low-pressure-padded-tops-missing-gradients-and-caps)), so on a fixed structure the integrated adiabat changes continuously with the top pressure and does not jump at 1 bar.
 The temperature table of the density solve takes the same adiabat over the top cell, padded or not ([How the density solve reads the temperature over the top cell](adiabat_integration.md#how-the-density-solve-reads-the-temperature-over-the-top-cell)), so its lookup above 1 bar also does not jump with the top pressure.
-The tests check this continuity on fixed structures only, not the lag of an accepted solve.
+The tests check this continuity on fixed structures.
+The lag of an accepted solve behind the adiabat of its own structure is a separate quantity: [Newton and Picard on the PROTEUS initial structure](../Validation/hydrostatic_structure.md#newton-and-picard-on-the-proteus-initial-structure) bounds it in the mantle and [Temperature at the CMB and the centre](../Validation/thermal_state.md#temperature-at-the-cmb-and-the-centre) in the core.
 
-`adiabat_self_consistency` gives the largest difference, in K, between the returned mantle temperature and the adiabat recomputed on the returned structure; it is None below blend 1 and when no mantle node has a positive pressure.
-`adiabat_self_consistency_core` gives the same difference at the core nodes. Their temperature comes from the T table of the pass before, so it lags the adiabat of the returned structure, and the strict test bounds that lag only through the mass error of the pass that built the table; it is None below blend 1 and when no core node has a positive pressure.
+`adiabat_self_consistency` gives the largest difference, in K, between the returned mantle temperature and the adiabat recomputed on the returned structure.
+It is None below blend 1 and when no mantle node has a positive pressure.
+
+`adiabat_self_consistency_core` gives the same difference at the core nodes.
+The core nodes read their temperature from the T table of the pass before, so their temperature lags the adiabat of the returned structure.
+The strict test bounds this lag only through the mass error of the pass that built the table.
+The value is None below blend 1 and when no core node has a positive pressure.
 
 ### Secant tail and seeded re-solve
 

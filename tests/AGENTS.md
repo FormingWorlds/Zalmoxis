@@ -51,9 +51,11 @@ This repository has no `tools/check_test_quality.py`; the marker check is `bash 
   `accept_solves_reference` for the solve of the stored grid start-up reference and
   4 `accept_solves_newton_setups` jobs that split the sweep over every Newton setup and the
   PALEOS Newton solve within the cap by test id), the `core_two_phase` solves of the
-  two-layer core, the `default_invariance` solve alone and the rest (90 min ceiling each,
-  170 min for `main`, `wolfbower` and each `accept_solves_newton_setups` job, 150 min for
-  `accept_solves_long` and `accept_solves_reference`).
+  two-layer core (split by the test id `CORE_SPLIT`: `core_two_phase_icb_cross` runs the
+  ICB-cross starts on 2 workers, `core_two_phase` the rest), the `default_invariance` solve
+  alone and the rest (90 min ceiling each, 170 min for `main`, `wolfbower` and each
+  `accept_solves_newton_setups` job, 150 min for `accept_solves_long` and
+  `accept_solves_reference`, 120 min for each core job).
 - The `-o "addopts="` override is needed because `pyproject.toml` defaults to
   `-n auto --dist loadfile` for parallel execution; a single-marker filter run
   is faster without the parallel split.
@@ -75,7 +77,7 @@ This repository has no `tools/check_test_quality.py`; the marker check is `bash 
 - `fail_under` in `[tool.coverage.report]` sets the 90% floor; in
   `.github/workflows/nightly.yml` the main job repeats it with
   `--cov-fail-under=90` and the `wolfbower`, `paleos_adiabat`, the `accept_solves`,
-  `core_two_phase` and `default_invariance` jobs turn it off with `0`.
+  2 `core_two_phase` jobs and the `default_invariance` job turn it off with `0`.
 - A pre-flight check in `.github/workflows/CI.yml` rejects PRs that lower
   `fail_under` below the value on `origin/main`, mirroring PROTEUS's
   `.github/workflows/ci-pr-checks.yml` idiom.

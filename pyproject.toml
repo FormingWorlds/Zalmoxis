@@ -137,7 +137,7 @@ markers = [
     "paleos_adiabat: Full adiabatic PALEOS solves (5 M_earth with no reachable wall clock, round-off starts of input/default.toml), run in their own nightly job",
     "accept_solves: Real solves of the accept labels and the structure invariants, run in their own nightly job",
     "accept_solves_long: The accept_solves real solves that take longest, run in their own nightly job with a longer per-test timeout",
-    "core_two_phase: Full solves of the two-layer core, run in their own nightly job",
+    "core_two_phase: Full solves of the two-layer core, run in their own 2 nightly jobs",
     "default_invariance: The default solve against its bit-identity reference, alone in its own nightly job so that it finishes inside its wall clock",
     "accept_solves_reference: The solve of the stored grid start-up reference at its own tolerance, run in its own nightly job",
     "accept_solves_newton_setups: The sweep over every Newton setup of the pressure-root solves and the PALEOS Newton solve within the cap, split by test id over the Newton nightly jobs with the longest per-test timeouts",
