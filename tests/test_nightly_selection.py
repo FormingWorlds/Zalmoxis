@@ -69,6 +69,41 @@ def _jobs(workflow):
     return jobs
 
 
+def _split(job):
+    """The ``split`` field of one matrix entry (``deselect`` or ``only``: the job runs its select
+    without or with only the test id ``CORE_SPLIT`` of the workflow env), or None."""
+    split = re.search(r'^\s*split:\s*(\S+)', job, re.M)
+    return split.group(1) if split else None
+
+
+def _split_faults(workflow):
+    """Selects split by ``CORE_SPLIT`` whose entries are not exactly one ``deselect`` and one
+    ``only`` job, and a split without ``CORE_SPLIT`` in the workflow env."""
+    groups = {}
+    for job in _suites(workflow).values():
+        if _split(job) is not None:
+            groups.setdefault(_entry(job), []).append(_split(job))
+    faults = [
+        (sel, sorted(s)) for (sel, _), s in groups.items() if sorted(s) != ['deselect', 'only']
+    ]
+    if groups and not re.search(
+        r'^env:\n(\s+#.*\n)*\s+CORE_SPLIT: tests/\S+::\w+$', workflow, re.M
+    ):
+        faults.append(('CORE_SPLIT', None))
+    return faults
+
+
+@pytest.mark.unit
+def test_a_split_select_runs_in_one_deselect_and_one_only_job():
+    """The core tier is split over 2 jobs by one test id: the select of a split comes in exactly
+    one job without that id and one job with only it, and the workflow env names the id."""
+    workflow = WORKFLOW.read_text()
+    assert any(_split(job) for job in _suites(workflow).values())
+    assert _split_faults(workflow) == []
+    assert _split_faults(workflow.replace('split: only', 'split: deselect'))
+    assert _split_faults(workflow.replace('  CORE_SPLIT:', '  CORE_SPLITS:'))
+
+
 def _accept_select(workflow):
     """The one select of the jobs that name files and take accept_solves."""
     selects = {sel for sel, files in _jobs(workflow) if files and _takes_accept(sel)}
@@ -281,6 +316,7 @@ def test_the_nightly_jobs_select_each_marked_test_once():
             'select: accept_solves_long and',
             id='long_takes_newton',
         ),
+        pytest.param('            split: only\n', '', id='split_job_runs_the_whole_tier'),
     ],
 )
 def test_a_gap_in_the_nightly_partition_is_found(old, new):
