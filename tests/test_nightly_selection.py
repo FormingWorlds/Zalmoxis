@@ -60,11 +60,12 @@ def _keyword(job):
 
 def _jobs(workflow):
     """(select, test files named in the job) of each nightly suite; the entries that split one
-    select by ``-k`` count once (``_newton_faults`` checks that they split it)."""
+    select by ``-k`` or by ``split`` count once (``_newton_faults`` and ``_split_faults``
+    check that they split it)."""
     jobs = []
     for job in _suites(workflow).values():
         entry = _entry(job)
-        if _keyword(job) is None or entry not in jobs:
+        if (_keyword(job) is None and _split(job) is None) or entry not in jobs:
             jobs.append(entry)
     return jobs
 
@@ -82,7 +83,8 @@ def _split_faults(workflow):
     groups = {}
     for job in _suites(workflow).values():
         if _split(job) is not None:
-            groups.setdefault(_entry(job), []).append(_split(job))
+            sel, files = _entry(job)
+            groups.setdefault((sel, tuple(files)), []).append(_split(job))
     faults = [
         (sel, sorted(s)) for (sel, _), s in groups.items() if sorted(s) != ['deselect', 'only']
     ]

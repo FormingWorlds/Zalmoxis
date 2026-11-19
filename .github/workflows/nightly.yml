@@ -21,7 +21,7 @@ permissions:
 # CI: each smoke or integration test runs a full solve (5-10 min on a 4-vCPU runner under
 # coverage), which adds no bug-finding signal to the unit suite.
 env:
-  # the 5 ICB-cross starts run in the job core_two_phase_icb_cross, the other core tests in core_two_phase
+  # the test id that the matrix entries with split: deselect leave out and split: only run alone
   CORE_SPLIT: tests/test_core_two_phase_solve.py::test_the_adiabat_crosses_the_icb_at_its_pressure
 
 jobs:
@@ -83,11 +83,13 @@ jobs:
             args: --dist load --cov-fail-under=0 --durations=0
             job_timeout: 120
             threads: 1
+            split: deselect
           - suite: core_two_phase_icb_cross
             select: core_two_phase and not wolfbower and not paleos_adiabat and not accept_solves and not accept_solves_long and not accept_solves_newton_setups and not accept_solves_reference
             args: --dist load --cov-fail-under=0 --durations=0
             job_timeout: 120
             threads: 1
+            split: only
           - suite: accept_solves_pressure_root
             select: accept_solves and not accept_solves_long and not accept_solves_newton_setups and not wolfbower and not paleos_adiabat
             args: --dist load --cov-fail-under=0 --durations=0 tests/test_pressure_root_solves.py
@@ -160,7 +162,7 @@ jobs:
         run: nproc; lscpu | grep -E '^(Model name|CPU\(s\))' || true
 
       - name: Check that the 2 core jobs run each core test once
-        if: matrix.suite == 'core_two_phase_icb_cross'
+        if: matrix.split == 'only'
         run: |
           set -o pipefail
           ids() { pytest -m "${{ matrix.select }}" --collect-only -q -p no:xdist -o "addopts=" "$@" | grep '::' | sort; }
@@ -177,8 +179,8 @@ jobs:
             pip install -q threadpoolctl && python -m threadpoolctl -i numpy scipy
           fi
           split=''
-          [ "${{ matrix.suite }}" = core_two_phase ] && split="--deselect=$CORE_SPLIT"
-          [ "${{ matrix.suite }}" = core_two_phase_icb_cross ] && split="$CORE_SPLIT"
+          [ "${{ matrix.split }}" = deselect ] && split="--deselect=$CORE_SPLIT"
+          [ "${{ matrix.split }}" = only ] && split="$CORE_SPLIT"
           # --timeout names a hung test in the worker-crash report before the job limit
           # cancels the run; a timeout marker on a test takes precedence over it.
           pytest -m "${{ matrix.select }}" -n auto -o "addopts=" -rs \
