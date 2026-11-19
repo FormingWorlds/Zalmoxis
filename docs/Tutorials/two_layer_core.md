@@ -82,7 +82,7 @@ From the repository root:
 python scripts/two_layer_core.py
 ```
 
-The first run makes the 2 iron side tables in `data/EOS_PALEOS_API/`, once per PALEOS version: 1351 by 379 nodes per side. Later runs read the cached tables. With the tables cached, the 2 solves took 2 min 45 s together on an Apple M1 Ultra, next to other jobs.
+The first run makes the 2 iron side tables in `data/EOS_PALEOS_API/`, once per PALEOS version: 1351 by 379 nodes per side. Later runs read the cached tables. With the tables cached, the 2 solves took 3 min 2 s together on an Apple M1 Ultra, next to other jobs.
 
 The script prints, for each rule:
 
@@ -154,7 +154,7 @@ print(f"ICB {core['P_icb'] / 1e9:.2f} GPa, M_ic/M_core {core['M_ic'] / res['cmb_
 print(f"centre {core['P'][0] / 1e9:.2f} GPa, {core['T'][0]:.0f} K; CMB {core['P'][-1] / 1e9:.2f} GPa, {core['T'][-1]:.0f} K")
 ```
 
-Run it from the `scripts/` folder with `python core_table.py`. With the tables cached it took 51 s on an Apple M1 Ultra, next to other jobs, and printed:
+Run it from the `scripts/` folder with `python core_table.py`. With the tables cached it took 56 s on an Apple M1 Ultra, next to other jobs, and printed:
 
 ```console
 converged True, core_T_used True, nodes outside the table 0
