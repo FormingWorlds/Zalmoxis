@@ -1052,6 +1052,13 @@ def main(
     asked = _adiabat_asked(
         config_params, layer_mixtures, temperature_function, temperature_arrays
     )
+    if asked and 'ice_layer' in config_params['layer_eos_config']:
+        logger.warning(
+            'The boundary between the mantle and the ice layer is not cut: the adiabat gives '
+            'its node segment the mixture of the node it fills, which moves the temperature of '
+            'the nodes below it (known limit: docs/Explanations/adiabat_integration.md, The '
+            'uncut boundary of an ice layer).'
+        )
     newton_keys, newton_time, seed_time, result = {}, 0.0, 0.0, None
     seed = (
         _adiabat_seed(adiabat_seed, config_params)
