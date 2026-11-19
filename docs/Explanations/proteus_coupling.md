@@ -339,6 +339,8 @@ A core node is a node whose enclosed mass is below the core mass. The same rule 
 
 Between the table points, $T$ is linear in $P$. Outside the table, $T$ continues with the slope of the end interval, since the central-pressure search tries pressures beyond the final profile.
 
+In [Step 4 of the two-layer core tutorial](../Tutorials/two_layer_core.md#step-4-give-the-core-temperature-as-a-table), a table that meets the Anzellini melting curve at 330 GPa puts the inner-core boundary at 330.16 GPa and 0.0423 of the core mass inside it.
+
 The limits:
 
 - `main` raises `ValueError` before the solve for a table that does not have the form of the [API reference](../Reference/api/zalmoxis.solver.md), and for a call with no mantle temperature.
