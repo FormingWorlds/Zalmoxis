@@ -210,3 +210,25 @@ def test_main_warns_once_of_the_uncut_ice_boundary_on_an_adiabat(
     assert len(hits) == (1 if fires else 0)
     if fires:
         assert 'adiabat_integration.md' in hits[0].getMessage()
+
+
+@pytest.mark.unit
+def test_the_layer_lags_split_the_nodes_by_the_core_rule():
+    """_layer_lags gives the largest |T - adiabat| over the mantle and over the core nodes with
+    P > 0. A node in the 1e-12 band below the CMB mass is a mantle node (``is_core``), as is a
+    node at the CMB mass; a core node at P = 0 counts in no layer. Each node has its own
+    difference, so a wrong mask returns another value."""
+    import numpy as np
+
+    from zalmoxis.solver import _layer_lags
+
+    cmb = 1.0e24
+    m = np.array([0.0, 1e23, 2e23, cmb * (1 - 1e-13), cmb, 2 * cmb, 3 * cmb])
+    p = np.array([5.0, 0.0, 4.0, 3.0, 2.0, 1.0, 0.0])
+    adiabat = np.full(7, 1000.0)
+    T = adiabat + np.array([1.0, -64.0, 2.0, 16.0, -8.0, 4.0, 32.0])
+    assert _layer_lags(T, adiabat, m, p, cmb) == (16.0, 2.0)
+    assert _layer_lags(T, adiabat, m, p, 0.0) == (16.0, None)  # no core: P > 0 nodes only
+    assert _layer_lags(T, adiabat, m, np.zeros(7), cmb) == (None, None)
+    T[0] = np.nan
+    assert np.isnan(_layer_lags(T, adiabat, m, p, cmb)[1])
