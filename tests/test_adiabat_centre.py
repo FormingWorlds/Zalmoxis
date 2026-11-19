@@ -23,10 +23,10 @@ from zalmoxis.structure_model import is_core
 
 pytestmark = [pytest.mark.integration, pytest.mark.timeout(3000)]
 
-# K, from 3 round-off starts at 10 M_E and 3 of the 1 M_E default: about 3 x the largest miss
-MANTLE_BOUND = 1.5  # first mantle node (largest 0.50 K)
-CORE_BOUND = 3.0  # top core node (largest 1.40 K)
-CENTRE_BOUND = 0.5  # centre (largest 0.15 K)
+# K, from the 4 cases of the test (macOS arm64): 2.5 to 7 x the largest miss
+MANTLE_BOUND = 1.5  # first mantle node (largest 0.55 K)
+CORE_BOUND = 4.0  # top core node (largest 1.60 K)
+CENTRE_BOUND = 0.5  # centre (largest 0.07 K)
 
 
 def _config(case):
@@ -44,7 +44,7 @@ def _config(case):
 @pytest.mark.physics_invariant
 @pytest.mark.reference_pinned
 @pytest.mark.parametrize(('case', 'k'), [('10me', 0), ('10me', 1), ('10me', 2), ('default', 0)])
-def test_the_adiabat_meets_independent_integrations_at_the_cmb_and_the_centre(case, k):
+def test_the_adiabat_meets_independent_integrations_at_the_cmb_and_the_centre(case, k, request):
     """A solve on its own adiabat (the 10 M_E planet of tests/data/bench_performance.toml from
     3000 K, numpy, planet mass x (1 + k 1e-12); the 1 M_E default) against DOP853 integrations
     of d ln T / d ln P = nabla_ad with the same tables (a cache of its own; rtol 1e-12 and atol
@@ -65,7 +65,7 @@ def test_the_adiabat_meets_independent_integrations_at_the_cmb_and_the_centre(ca
     top = int(np.flatnonzero(is_core(m, cmb))[-1])
     mixes, cache = parse_all_layer_mixtures(cp['layer_eos_config']), {}
 
-    def dop(layer, p0, p1, t0):
+    def dop(layer, p0, p1, t0, at=None):
         def rhs(x, y):
             nabla = get_mixed_nabla_ad(
                 math.exp(x), math.exp(y[0]), mixes[layer], mat, cache, *(mf or (None, None))
@@ -79,9 +79,10 @@ def test_the_adiabat_meets_independent_integrations_at_the_cmb_and_the_centre(ca
             method='DOP853',
             rtol=1e-12,
             atol=1e-14,
+            t_eval=None if at is None else np.log(at),
         )
         assert ivp.status == 0
-        return math.exp(ivp.y[0, -1])
+        return np.exp(ivp.y[0]) if at is not None else math.exp(ivp.y[0, -1])
 
     ok = p > 0
     t_1e11 = math.exp(np.interp(math.log(1e11), np.log(p[ok][::-1]), np.log(t[ok][::-1])))
@@ -93,3 +94,42 @@ def test_the_adiabat_meets_independent_integrations_at_the_cmb_and_the_centre(ca
     assert abs(t[top] - t_top) < CORE_BOUND, (t[top], t_top)
     assert abs(t[0] - t_centre) < CENTRE_BOUND, (t[0], t_centre)
     assert len(set(t[:3])) == 3, t[:3]
+    print(case, k, 'K off:', t[top + 1] - t_first, t[top] - t_top, t[0] - t_centre)
+    if (case, k) == ('10me', 0) and request.config.getoption('validation_plots') is not None:
+        request.getfixturevalue('validation_plot')(
+            lambda: _figure(p, t, top, p_cmb, t_1e11, dop, t_top), 'adiabat_cmb_centre'
+        )
+
+
+def _figure(p, t, top, p_cmb, t_1e11, dop, t_top):
+    """Returned T minus DOP853: mantle nodes below 1e11 Pa against the mantle chain from 1e11 Pa,
+    core nodes against the core chain from the returned top core node; the 3 checked nodes are
+    marked, the top core node against the chain through the exact CMB."""
+    import matplotlib.pyplot as plt
+
+    mant = np.arange(top + 1, len(p))[p[top + 1 :] >= 1e11][::-1]  # inward: rising P
+    core = np.arange(top + 1)[::-1]
+    d_m = t[mant] - dop('mantle', 1e11, p[mant[-1]], t_1e11, at=p[mant])
+    d_c = t[core] - dop('core', p[top], p[0], t[top], at=p[core])
+    c = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    fig, ax = plt.subplots(figsize=(8.0, 3.4))
+    ax.plot(p[mant] / 1e9, d_m, '-', color=c[0], label='mantle')
+    ax.plot(p[core] / 1e9, d_c, '-', color=c[1], label='core')
+    ax.plot(p[top + 1] / 1e9, d_m[-1], 'o', color=c[0], label='first mantle node')
+    ax.plot(
+        p[top] / 1e9,
+        t[top] - t_top,
+        's',
+        color=c[1],
+        label='top core node',
+    )
+    ax.plot(p[0] / 1e9, d_c[-1], 'D', color=c[1], mfc='none', label='centre')
+    ax.axvline(p_cmb / 1e9, color=plt.rcParams['text.color'], lw=0.8, ls=':', label='CMB')
+    ax.set(xlabel='Pressure [GPa]', ylabel='$\\Delta T$ [K]', xscale='log')
+    ax.set_ylim(-2.0, 1.0)
+    ax.grid(False)
+    ax.legend(loc='upper left', bbox_to_anchor=(1.02, 1.0), frameon=False)
+    fig.tight_layout()
+    fig.canvas.draw()
+    assert ax.get_legend().get_window_extent().x0 >= ax.get_window_extent().x1
+    return fig

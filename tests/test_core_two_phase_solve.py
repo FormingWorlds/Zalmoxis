@@ -329,22 +329,40 @@ def test_a_cap_accept_reads_the_liquid_branch_of_the_restored_pass(setup, monkey
     assert res['icb_converged'] == (miss <= 0.5 and lag <= 1e-3 * cmb)
 
 
+@pytest.mark.parametrize(('miss', 'passes'), [(10.0, 10), (1.0, 25)])
 def test_an_accept_with_the_liquid_off_the_liquidus_is_not_converged(
-    setup, monkeypatch, caplog
+    setup, monkeypatch, caplog, miss, passes
 ):
-    """With the superheat test failing on every pass (|S| set to 10 K) and the adiabat ICB met,
-    the cap accept of the 2480 K Fe-S core is returned as not converged, and the warning gives
-    the miss in K."""
+    """With the superheat test failing on every pass (|S| set to 10 K, or 1 K, just above the
+    0.5 K bound), the cap accept of the 2480 K Fe-S core is returned as not converged, and the
+    warning gives the miss in K. With its own superheat the solve accepts on the strict test
+    after about 17 passes, so within 25 passes the superheat bound alone keeps the 1 K case
+    from a strict accept; the cap accept restores the best pass, whose adiabat ICB can be off."""
     from zalmoxis import solver as zs
 
-    monkeypatch.setattr(zs, 'icb_superheat', lambda *_: (-10.0, 10.0))
-    res = _fes_cap(setup, caplog)
+    monkeypatch.setattr(zs, 'icb_superheat', lambda *_: (-miss, miss))
+    res = _fes_cap(setup, caplog, max_iterations_outer=passes)
     assert 'Accepting max_iter solution' in caplog.text
     assert res['converged'] is False and res['icb_converged'] is False
-    assert res['icb_superheat'] == -10.0 and 'liquid by 10 K' in caplog.text
+    assert res['icb_superheat'] == -miss and f'liquid by {miss:.3g} K' in caplog.text
     lag = abs(res['icb_adiabat'] - res['core']['M_ic']) / res['cmb_mass']
     named = 'off the ICB of its adiabat' in caplog.text  # named only when it fails
     assert named == (lag > 1e-3)
+
+
+def test_the_icb_update_on_an_adiabat_takes_the_root_mass_of_the_superheat_test(
+    setup, monkeypatch, caplog
+):
+    """Once the adiabat has its liquid branch, every ICB update takes the liquidus root with
+    m^(2/3) linear in P (m23), the mass that the superheat test and the core arrays take at that
+    pressure; the passes before it take the root linear in m (8 passes of the 2480 K Fe-S core)."""
+    from zalmoxis import solver as zs
+
+    spy = mock.Mock(wraps=zs.icb_from_profile)
+    monkeypatch.setattr(zs, 'icb_from_profile', spy)
+    _fes_cap(setup, caplog, max_iterations_outer=8)
+    m23 = [c.kwargs['m23'] for c in spy.call_args_list if 'm23' in c.kwargs]  # the ICB updates
+    assert m23[-1] is True and m23 == sorted(m23), m23
 
 
 def test_main_refuses_an_icb_rule_without_an_inner_core(setup):
