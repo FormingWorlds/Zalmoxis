@@ -17,10 +17,11 @@ from __future__ import annotations
 
 import logging
 
+import numpy as np
 import pytest
 
 from zalmoxis.constants import earth_mass
-from zalmoxis.solver import _default_solver_params, _tighten_solver_params
+from zalmoxis.solver import _default_solver_params, _layer_lags, _tighten_solver_params
 
 pytestmark = pytest.mark.unit
 
@@ -218,10 +219,6 @@ def test_the_layer_lags_split_the_nodes_by_the_core_rule():
     P > 0. A node in the 1e-12 band below the CMB mass is a mantle node (``is_core``), as is a
     node at the CMB mass; a core node at P = 0 counts in no layer. Each node has its own
     difference, so a wrong mask returns another value."""
-    import numpy as np
-
-    from zalmoxis.solver import _layer_lags
-
     cmb = 1.0e24
     m = np.array([0.0, 1e23, 2e23, cmb * (1 - 1e-13), cmb, 2 * cmb, 3 * cmb])
     p = np.array([5.0, 0.0, 4.0, 3.0, 2.0, 1.0, 0.0])
@@ -231,4 +228,5 @@ def test_the_layer_lags_split_the_nodes_by_the_core_rule():
     assert _layer_lags(T, adiabat, m, p, 0.0) == (16.0, None)  # no core: P > 0 nodes only
     assert _layer_lags(T, adiabat, m, np.zeros(7), cmb) == (None, None)
     T[0] = np.nan
-    assert np.isnan(_layer_lags(T, adiabat, m, p, cmb)[1])
+    mantle, core = _layer_lags(T, adiabat, m, p, cmb)
+    assert mantle == 16.0 and np.isnan(core)
