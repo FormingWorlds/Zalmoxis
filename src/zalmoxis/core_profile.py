@@ -26,8 +26,9 @@ _RTOL_LAYER = 1e-12  # the layer rule of structure_model.get_layer_mixture
 
 def icb_pressure(mass, pressure, icb_mass):
     """Pressure [Pa] at ``icb_mass`` [kg] with P linear in m^(2/3) between the nodes of
-    ascending ``mass`` [kg], exact for a uniform density; every ICB reader and the adiabat cut
-    take it, so one ICB mass has one pressure."""
+    ascending ``mass`` [kg], exact for a uniform density. Every ICB reader and the adiabat cut
+    take it on the core nodes and the CMB point of ``_cmb_point``, so one ICB mass has one
+    pressure."""
     return float(np.interp(icb_mass ** (2.0 / 3.0), np.asarray(mass) ** (2.0 / 3.0), pressure))
 
 
@@ -182,9 +183,10 @@ def core_arrays(result, layer_mixtures, rhs, temperature_at, icb_mass, solid_abo
         and ``M_ic`` [kg], ``R_icb`` [m], ``P_icb`` [Pa], ``solid_above_icb_mass_fraction`` and
         the flag ``solid_above_icb``.
         The node at the core mass takes the core side of the layer rule for its phase and
-        density. ``R_icb`` takes r^3 linear in m and ``P_icb`` P linear in m^(2/3) on the node
-        segment of M_ic, both exact for uniform density. ``w_layers`` maps each core layer to
-        its light-element fractions.
+        density. ``R_icb`` takes r^3 linear in m on the node segment of M_ic and ``P_icb``
+        P linear in m^(2/3) on the core nodes and the CMB point of ``icb_from_profile``, both
+        exact for uniform density. ``w_layers`` maps each core layer to its light-element
+        fractions.
 
     Raises
     ------
@@ -241,7 +243,8 @@ def core_arrays(result, layer_mixtures, rhs, temperature_at, icb_mass, solid_abo
         out[f'w_{el}'] = np.where(out['phase'] == 1, w[1], w[0])
     out['M_ic'] = float(icb_mass)
     out['R_icb'] = float(np.interp(icb_mass, out['m'], out['r'] ** 3)) ** (1.0 / 3.0)
-    out['P_icb'] = icb_pressure(out['m'], out['P'], icb_mass)
+    m_core, p_core, _ = _core_nodes(m, p, t, cmb_mass)  # the CMB point of the other ICB readers
+    out['P_icb'] = icb_pressure(m_core, p_core, icb_mass)
     out['solid_above_icb_mass_fraction'] = float(solid_above) / cmb_mass
     out['solid_above_icb'] = bool(solid_above > 0.0)
     return out

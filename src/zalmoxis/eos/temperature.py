@@ -254,11 +254,12 @@ def compute_adiabatic_temperature(
         if pressure[i] > 0 and pressure[j] > 0:
             (m_lo, p_lo), (m_hi, p_hi) = sorted(ends)
             cut = sorted((b for b in bounds if m_lo < b < m_hi), reverse=ends[0][0] > m_i)
-            lp = (math.log(p_lo), math.log(p_hi))  # CMB: ln P linear in m; ICB: as its readers
+            # CMB: ln P linear in m; ICB: as its readers, on the core nodes and that CMB point
+            lp = (math.log(p_lo), math.log(p_hi))
+            p_cmb = math.exp(np.interp(cmb_mass, (m_lo, m_hi), lp))
+            top = (cmb_mass, p_cmb) if m_lo < cmb_mass < m_hi else (m_hi, p_hi)
             ends[1:1] = [
-                (b, icb_pressure((m_lo, m_hi), (p_lo, p_hi), b))
-                if b != cmb_mass
-                else (b, math.exp(np.interp(b, (m_lo, m_hi), lp)))
+                (b, p_cmb if b == cmb_mass else icb_pressure((m_lo, top[0]), (p_lo, top[1]), b))
                 for b in cut
             ]
         for (m_a, p_a), (m_b, p_b) in zip(ends, ends[1:]):
