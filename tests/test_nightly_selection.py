@@ -98,10 +98,14 @@ def _split_faults(workflow):
 @pytest.mark.unit
 def test_a_split_select_runs_in_one_deselect_and_one_only_job():
     """The core tier is split over 2 jobs by one test id: the select of a split comes in exactly
-    one job without that id and one job with only it, and the workflow env names the id."""
+    one job without that id and one job with only it, the workflow env names the id, and the
+    run step and the id check read the split of the matrix entry."""
     workflow = WORKFLOW.read_text()
     assert any(_split(job) for job in _suites(workflow).values())
     assert _split_faults(workflow) == []
+    assert '[ "${{ matrix.split }}" = deselect ] && split="--deselect=$CORE_SPLIT"' in workflow
+    assert '[ "${{ matrix.split }}" = only ] && split="$CORE_SPLIT"' in workflow
+    assert "if: matrix.split == 'only'" in workflow and '${{ matrix.args }} $split' in workflow
     assert _split_faults(workflow.replace('split: only', 'split: deselect'))
     assert _split_faults(workflow.replace('  CORE_SPLIT:', '  CORE_SPLITS:'))
 

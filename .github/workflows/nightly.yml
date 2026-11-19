@@ -174,7 +174,7 @@ jobs:
         env:
           ZALMOXIS_NEED_WOLFBOWER: ${{ matrix.suite == 'wolfbower' && '1' || '' }}
         run: |
-          # one thread per xdist worker in the core jobs: 4 workers share the 4 vCPUs
+          # one thread per xdist worker in the core jobs; the workers share the 4 vCPUs
           if [ -n "${{ matrix.threads }}" ]; then
             export OMP_NUM_THREADS=${{ matrix.threads }} OPENBLAS_NUM_THREADS=${{ matrix.threads }} MKL_NUM_THREADS=${{ matrix.threads }}
             pip install -q threadpoolctl && python -m threadpoolctl -i numpy scipy || echo 'thread pools not printed'
