@@ -384,9 +384,10 @@ def _table_end(lp, ts, top=True):
 
 
 def _table_lookup(lp, ts, low=False):
-    """T [K] at P [Pa] of a T(P) table (log10 P [Pa] ascending, T [K]): linear in log10 P inside
-    it, the adiabat of the end interval (``_table_end``) past its top and, with ``low``, past its
-    bottom (else its bottom T); capped at 1e5 K (the PALEOS table maximum), floored at 100 K."""
+    """T [K] at P [Pa] of a T(P) table (log10 P [Pa] ascending, T [K]): linear in log10 P
+    inside it, the adiabat of the end interval (``_table_end``) past its top and, with
+    ``low``, past its bottom (else its bottom T); capped at 1e5 K (the PALEOS table maximum),
+    floored at 100 K."""
     top, bottom = _table_end(lp, ts), _table_end(lp, ts, top=False)
 
     def t_adi(P):

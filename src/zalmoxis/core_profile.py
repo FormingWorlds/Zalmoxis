@@ -5,10 +5,10 @@ A two-layer core has an inner core on the solid iron side and an outer core on t
 given mass, ``inner_core_mass_fraction`` of the core mass, or where the liquid of the outer core
 reaches the liquidus ``T_liq(P)``: the first root, from the centre outward, of the temperature
 profile on a given profile, and of the liquid branch (the outer-core adiabat continued below
-the ICB with the liquid side) on an adiabat (``icb_from_profile``, ``icb_superheat``). The structure
-equations place a shell in the inner core by its enclosed mass, as they place the core-mantle
-boundary, so the liquidus rule is applied to the profile of the previous outer pass and the
-outer loop converges it with the structure.
+the ICB with the liquid side) on an adiabat (``icb_from_profile``, ``icb_superheat``). The
+structure equations place a shell in the inner core by its enclosed mass, as they place the
+core-mantle boundary, so the liquidus rule is applied to the profile of the previous outer
+pass and the outer loop converges it with the structure.
 """
 
 from __future__ import annotations
@@ -26,9 +26,10 @@ _RTOL_LAYER = 1e-12  # the layer rule of structure_model.get_layer_mixture
 
 def icb_pressure(mass, pressure, icb_mass):
     """Pressure [Pa] at ``icb_mass`` [kg] with P linear in m^(2/3) between the nodes of
-    ascending ``mass`` [kg], exact for a uniform density. Every ICB reader and the adiabat cut
-    take it on the core nodes and the CMB point of ``_cmb_point``, so one ICB mass has one
-    pressure."""
+    ascending ``mass`` [kg], exact for a uniform density between 2 core nodes. Every ICB
+    reader and the adiabat cut take it on the core nodes and the CMB point of ``_cmb_point``
+    (ln P linear in m), so one ICB mass has one pressure; in the node segment of the CMB it
+    is as accurate as that point (``core_arrays`` keeps it at or above its CMB node)."""
     return float(np.interp(icb_mass ** (2.0 / 3.0), np.asarray(mass) ** (2.0 / 3.0), pressure))
 
 
@@ -103,8 +104,9 @@ def _core_nodes(mass, pressure, temperature, cmb_mass):
 
 
 def icb_superheat(mass, pressure, liquid_temperature, cmb_mass, liquidus, icb_mass):
-    """Superheat [K] of the outer-core liquid at the layer ICB and its miss of the zero-superheat
-    condition of a growing inner core, after Labrosse (2015), Sect. 2, and Nimmo (2015), Fig. 2.
+    """Superheat [K] of the outer-core liquid at the layer ICB and its miss of the
+    zero-superheat condition of a growing inner core, after Labrosse (2015), Sect. 2, and
+    Nimmo (2015), Fig. 2.
 
     Parameters
     ----------
@@ -123,8 +125,9 @@ def icb_superheat(mass, pressure, liquid_temperature, cmb_mass, liquidus, icb_ma
     tuple of float
         S = T_l(P_icb) - T_liq(P_icb), with T_l linear in ln P on the core nodes and P_icb the
         pressure at ``icb_mass`` with P linear in m^(2/3), as in ``core_arrays`` (at the centre
-        for no inner core, at the core mass for a full one); and the miss: |S| for a partial inner core, max(0, -S) for no inner core,
-        max(0, S) for a full one, inf when S is not finite.
+        for no inner core, at the core mass for a full one); and the miss: |S| for a partial
+        inner core, max(0, -S) for no inner core, max(0, S) for a full one, inf when S is not
+        finite.
     """
     m, p, t = _core_nodes(mass, pressure, liquid_temperature, cmb_mass)
     full = icb_mass >= cmb_mass * (1.0 - _RTOL_LAYER)
@@ -183,10 +186,14 @@ def core_arrays(result, layer_mixtures, rhs, temperature_at, icb_mass, solid_abo
         and ``M_ic`` [kg], ``R_icb`` [m], ``P_icb`` [Pa], ``solid_above_icb_mass_fraction`` and
         the flag ``solid_above_icb``.
         The node at the core mass takes the core side of the layer rule for its phase and
-        density. ``R_icb`` takes r^3 linear in m on the node segment of M_ic and ``P_icb``
-        P linear in m^(2/3) on the core nodes and the CMB point of ``icb_from_profile``, both
-        exact for uniform density. ``w_layers`` maps each core layer to its light-element
-        fractions.
+        density. ``R_icb`` takes r^3 linear in m on the node segment of M_ic, exact for
+        uniform density. ``P_icb`` takes P linear in m^(2/3) on the core nodes and the CMB
+        point of ``icb_from_profile`` (ln P linear in m), and is never below the pressure of
+        the CMB node: exact for uniform density between 2 core nodes, and in the node segment
+        of the CMB as accurate as that CMB point (on a uniform sphere up to 5.5e-5 at 41 nodes
+        and 1.0e-3 at 11 nodes). Where that point lies below the CMB node, an ICB near the core
+        mass takes the CMB node pressure, which the ICB readers then miss by that difference.
+        ``w_layers`` maps each core layer to its light-element fractions.
 
     Raises
     ------
@@ -244,7 +251,9 @@ def core_arrays(result, layer_mixtures, rhs, temperature_at, icb_mass, solid_abo
     out['M_ic'] = float(icb_mass)
     out['R_icb'] = float(np.interp(icb_mass, out['m'], out['r'] ** 3)) ** (1.0 / 3.0)
     m_core, p_core, _ = _core_nodes(m, p, t, cmb_mass)  # the CMB point of the other ICB readers
-    out['P_icb'] = icb_pressure(m_core, p_core, icb_mass)
+    out['P_icb'] = max(
+        icb_pressure(m_core, p_core, icb_mass), float(p_c)
+    )  # P_icb >= P of the CMB node
     out['solid_above_icb_mass_fraction'] = float(solid_above) / cmb_mass
     out['solid_above_icb'] = bool(solid_above > 0.0)
     return out
