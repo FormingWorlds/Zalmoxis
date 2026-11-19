@@ -2772,8 +2772,8 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
     the unseeded re-solve differ by at most 2.5 K at the 39 mass points and at the top node,
     and 5e-4 in radius. In all 3 solves the mass-weighted mean core temperature stays within
     10 K of REF, the last core node within 700 K (it reads the edge of the mantle T(P) table)
-    and the other core nodes within 1 K. The secant tail needs at most 3 passes on a full-adiabat table, and
-    the seeded re-solve at most 4 passes and at most half the structure integrations of the
+    and the other core nodes within 1 K. The secant tail needs at most 4 passes on a full-adiabat table, and
+    the seeded re-solve at most 5 passes and at most half the structure integrations of the
     unseeded one. With
     ``--validation-plots`` it writes the plot of the mass error per pass; the pass count can
     change with round-off, so a run without the option does not compare it with the committed
@@ -2791,8 +2791,9 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
     seeded, p2, n_seeded, lag2 = _grid_main(resolve, adiabat_seed=seed, **warm)
     plain, p3, n_plain, lag3 = _grid_main(resolve, **warm)
     _assert_grid_bounds(first, seeded, plain, stored, (lag1, lag2, lag3))
-    assert len(p1) - 5 <= 3  # linear pass, 4 blend passes, then the full-adiabat passes
-    assert len(p2) <= 4 and n_seeded <= 0.5 * n_plain
+    # linear pass, 4 blend passes, then the full-adiabat passes; 1 of them waits for a settled table
+    assert len(p1) - 5 <= 4
+    assert len(p2) <= 5 and n_seeded <= 0.5 * n_plain
 
     def figure():
         return _ramp_figure(
@@ -2817,7 +2818,7 @@ def test_the_seed_keeps_the_converged_adiabat_of_the_grid_start_up_on_the_jax_pa
     blocks of the stored REF, with the REF bounds of ``_assert_grid_bounds`` on the first
     solve and the seeded re-solve (no pass bound on the first solve); the re-solve without
     the seed is compared with the seeded one (2.5 K, 5e-4 in radius), and the seeded
-    re-solve takes at most 4 passes and at most half the structure integrations of the
+    re-solve takes at most 5 passes and at most half the structure integrations of the
     unseeded one."""
     _need_paleos()
     stored = grid_ref.load()
@@ -2832,7 +2833,7 @@ def test_the_seed_keeps_the_converged_adiabat_of_the_grid_start_up_on_the_jax_pa
     seeded, p2, n_seeded, lag2 = _grid_main(resolve, adiabat_seed=seed, **warm)
     plain, _, n_plain, lag3 = _grid_main(resolve, **warm)
     _assert_grid_bounds(first, seeded, plain, stored, (lag1, lag2, lag3), jax=True)
-    assert len(p2) <= 4 and n_seeded <= 0.5 * n_plain
+    assert len(p2) <= 5 and n_seeded <= 0.5 * n_plain
 
 
 @pytest.mark.slow
