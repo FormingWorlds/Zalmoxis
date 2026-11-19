@@ -339,7 +339,7 @@ A core node is a node whose enclosed mass is below the core mass. The same rule 
 
 Between the table points, $T$ is linear in $P$. Outside the table, $T$ continues with the slope of the end interval, since the central-pressure search tries pressures beyond the final profile.
 
-In [Step 4 of the two-layer core tutorial](../Tutorials/two_layer_core.md#step-4-give-the-core-temperature-as-a-table), a table that meets the Anzellini melting curve at 330 GPa puts the inner-core boundary at 330.16 GPa and 0.0423 of the core mass inside it.
+In [Step 4 of the two-layer core tutorial](../Tutorials/two_layer_core.md#step-4-give-the-core-temperature-as-a-table), a table that meets the iron melting curve of Anzellini et al. (2013)[^cite-anzellini2013] at 330 GPa puts the inner-core boundary at 330.16 GPa and 0.0423 of the core mass inside it.
 
 The limits:
 
@@ -401,3 +401,4 @@ The wrapper itself lives in the PROTEUS repository, not in Zalmoxis. The single 
 [^cite-stixrude2022]: L. Stixrude, C. Lithgow-Bertelloni, *[Thermal expansivity, heat capacity and bulk modulus of the mantle](https://doi.org/10.1093/gji/ggab394)*, Geophysical Journal International, 228(2), 1119-1149, 2022. [SciX](https://scixplorer.org/abs/2022GeoJI.228.1119S/abstract).
 [^cite-belonoshko2005]: A. B. Belonoshko, N. V. Skorodumova, A. Rosengren, R. Ahuja, B. Johansson, L. Burakovsky, D. L. Preston, *[High-pressure melting of MgSiO$_3$](https://doi.org/10.1103/PhysRevLett.94.195701)*, Physical Review Letters, 94(19), 195701, 2005. [SciX](https://scixplorer.org/abs/2005PhRvL..94s5701B/abstract).
 [^cite-fei2021]: Y. Fei, C. T. Seagle, J. P. Townsend, C. A. McCoy, A. Boujibar, P. Driscoll, L. Shulenburger, M. D. Furnish, *[Melting and density of MgSiO$_3$ determined by shock compression of bridgmanite to 1254 GPa](https://doi.org/10.1038/s41467-021-21170-y)*, Nature Communications, 12, 876, 2021. [SciX](https://scixplorer.org/abs/2021NatCo..12..876F/abstract).
+[^cite-anzellini2013]: S. Anzellini, A. Dewaele, M. Mezouar, P. Loubeyre, G. Morard, *[Melting of Iron at Earth's Inner Core Boundary Based on Fast X-ray Diffraction](https://doi.org/10.1126/science.1233514)*, Science, 340, 464-466, 2013. [SciX](https://scixplorer.org/abs/2013Sci...340..464A/abstract).

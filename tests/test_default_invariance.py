@@ -1,9 +1,12 @@
 """A default-configuration solve is bit-identical to its stored reference: every array and
 scalar of the result, against a reference that ``tools/default_solve_reference.py`` wrote, one
 per platform and CPU model (macOS arm64 is stored; a CI runner has none, see below). The
-converged radius depends on the CPU, within the mass tolerance of the outer loop. On a CPU with no reference, such as the Linux runners of the nightly job, the solve meets
-the nearest stored one within that tolerance instead, and a warning says that bit-identity was
-not checked.
+references pin the adiabat with its T(P) table read by layer, the strict accept on a table of
+a converged pass, the end-slope continuation and the CMB split of the node segment. The
+converged radius depends on the CPU, within the mass tolerance of the outer loop. On a CPU
+with no reference, such as the Linux runners of the nightly job, the solve meets the nearest
+stored one within that tolerance instead, and a warning says that bit-identity was not
+checked.
 """
 
 from __future__ import annotations

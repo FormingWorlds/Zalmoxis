@@ -949,8 +949,9 @@ class TestMidpointAdiabat:
     @pytest.mark.parametrize('anchor', ['surface', 'cmb'])
     def test_default_call_uses_the_0p0025_substeps(self, monkeypatch, anchor):
         """A default call evaluates nabla twice per substep, with ceil(|d ln P| / 0.0025)
-        substeps per segment above 1e5 Pa: the count pins the default h, because the 1 K bound
-        of the real profiles also admits a larger h (0.005 gives 0.50 K, 0.0055 gives 1.29 K)."""
+        substeps per segment above 1e5 Pa: the count pins the default h, because the 1 K
+        bound of the real profiles also admits a larger h (0.005 gives 0.50 K, 0.0055 gives
+        1.29 K)."""
         calls = []
         _stub_adiabat(monkeypatch, lambda P, T: 0.1, calls)  # T stays inside the node caps
         P = np.geomspace(3.6e11, 3e4, 40)  # the top segment crosses 1e5 Pa
@@ -1663,8 +1664,8 @@ class TestLayerTables:
     @pytest.mark.reference_pinned
     def test_the_ends_follow_the_power_law_of_their_end_interval(self):
         """T = T_end (P / P_end)^n with n of the end interval (analytical law): 3200 K at
-        5e10 Pa below (1e11 Pa, 4000 K), (2e11 Pa, 5000 K), 6250 K at 4e11 Pa above it. A table of
-        1 point, or with a flat end interval, holds its end T."""
+        5e10 Pa below (1e11 Pa, 4000 K), (2e11 Pa, 5000 K), 6250 K at 4e11 Pa above it. A
+        table of 1 point, or with a flat end interval, holds its end T."""
         from zalmoxis.solver import _table_end
 
         assert _table_end(self.LP, self.TS, top=False)(math.log10(5e10)) == pytest.approx(
@@ -1673,7 +1674,7 @@ class TestLayerTables:
         assert _table_end(self.LP, self.TS)(math.log10(4e11)) == pytest.approx(
             6250.0, rel=1e-12
         )
-        assert _table_end(self.LP[:1], self.TS[:1])(13.0) == 4000.0
+        assert _table_end(self.LP[:1], self.TS[:1])(13.0) == pytest.approx(4000.0, rel=0)
         assert _table_end(np.array([11.0, 11.0]), self.TS)(13.0) == 5000.0
 
     def test_the_lookup_continues_past_the_bottom_only_when_asked(self):
@@ -1685,12 +1686,12 @@ class TestLayerTables:
         mid = 10 ** np.mean(self.LP)
         assert _table_lookup(self.LP, self.TS)(mid) == pytest.approx(4500.0, rel=1e-12)
         assert _table_lookup(self.LP, self.TS)(4e11) == pytest.approx(6250.0, rel=1e-12)
-        assert _table_lookup(self.LP, self.TS)(5e10) == 4000.0
+        assert _table_lookup(self.LP, self.TS)(5e10) == pytest.approx(4000.0, rel=0)
         assert _table_lookup(self.LP, self.TS, low=True)(5e10) == pytest.approx(
             3200.0, rel=1e-12
         )
-        assert _table_lookup(self.LP, self.TS, low=True)(1.0) == 100.0
-        assert _table_lookup(self.LP, self.TS)(1e30) == 100000.0
+        assert _table_lookup(self.LP, self.TS, low=True)(1.0) == pytest.approx(100.0, rel=0)
+        assert _table_lookup(self.LP, self.TS)(1e30) == pytest.approx(1e5, rel=0)
 
     def test_each_layer_reads_its_own_nodes_past_a_moved_cmb(self):
         """The mantle table holds the mantle nodes only, the core part the core nodes sorted by

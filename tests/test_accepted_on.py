@@ -2772,12 +2772,12 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
     the unseeded re-solve differ by at most 2.5 K at the 39 mass points and at the top node,
     and 5e-4 in radius. In all 3 solves the mass-weighted mean core temperature stays within
     10 K of REF, the last core node within 700 K (it reads the edge of the mantle T(P) table)
-    and the other core nodes within 1 K. The secant tail needs at most 4 passes on a full-adiabat table, and
-    the seeded re-solve at most 5 passes and at most half the structure integrations of the
-    unseeded one. With
-    ``--validation-plots`` it writes the plot of the mass error per pass; the pass count can
-    change with round-off, so a run without the option does not compare it with the committed
-    plot. See ``docs/Validation/hydrostatic_structure.md``."""
+    and the other core nodes within 1 K. The secant tail needs at most 4 passes on a
+    full-adiabat table, and the seeded re-solve at most 5 passes and at most half the structure
+    integrations of the unseeded one; 1 pass of each waits for a table of a converged pass.
+    With ``--validation-plots`` it writes the plot of the mass error per pass; the pass count
+    can change with round-off, so a run without the option does not compare it with the
+    committed plot. See ``docs/Validation/hydrostatic_structure.md``."""
     _need_paleos()
     first, p1, _, lag1 = _grid_main(GRID_CMF95)
     stored = grid_ref.load()
@@ -2791,7 +2791,7 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
     seeded, p2, n_seeded, lag2 = _grid_main(resolve, adiabat_seed=seed, **warm)
     plain, p3, n_plain, lag3 = _grid_main(resolve, **warm)
     _assert_grid_bounds(first, seeded, plain, stored, (lag1, lag2, lag3))
-    # linear pass, 4 blend passes, then the full-adiabat passes; 1 of them waits for a settled table
+    # linear pass, 4 blend passes, then the full-adiabat passes (1 waits for a settled table)
     assert len(p1) - 5 <= 4
     assert len(p2) <= 5 and n_seeded <= 0.5 * n_plain
 

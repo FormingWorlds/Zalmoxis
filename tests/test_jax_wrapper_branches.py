@@ -796,6 +796,10 @@ class TestLayeredTemperature:
         return fake.call_args.kwargs
 
     def test_the_core_table_of_a_layered_t_reaches_the_jax_core(self):
+        """A temperature function with a ``.core`` function gives the JAX solve its values on
+        4000 pressures from 1e5 to 1e13 Pa (``core_T_P``, ``core_T_values``); a core table of
+        the caller takes precedence, and a function without ``.core`` gives no core table."""
+
         def t_func(r, p):
             return 3000.0
 

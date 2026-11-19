@@ -768,9 +768,6 @@ def test_the_adiabat_crosses_the_icb_at_its_pressure(setup, k):
     t_inner = dop('inner_core', p_icb, p[i], dop('core', p[i + 1], p_icb, t[i + 1]))
     t_centre = dop('inner_core', p[i], p[0], t[i])
     print(
-        k, 'K off at the first inner-core node and the centre:', t[i] - t_inner, t[0] - t_centre
-    )
-    print(
         f'k {k}: first inner-core node {t[i] - t_inner:+.3f} K, centre {t[0] - t_centre:+.3f} K'
     )
     assert abs(t[i] - t_inner) < ICB_NODE_BOUND, (t[i], t_inner)

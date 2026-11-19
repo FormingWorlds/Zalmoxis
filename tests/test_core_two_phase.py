@@ -597,6 +597,9 @@ def test_the_adiabat_cuts_its_segments_at_the_pressures_of_the_icb_readers(monke
         p_icb, rel=1e-14
     )
     assert p_cmb < p_icb < p[k - 1 if where else 9]
+    if not where:  # between 2 core nodes of the uniform sphere the pressure is exact
+        r_icb = (3 * icb / (4 * np.pi * 1e4)) ** (1 / 3)
+        assert p_icb == pytest.approx(2 / 3 * np.pi * G * 1e8 * (4e6**2 - r_icb**2), rel=1e-12)
     t_cmb = 3000.0 * (p_cmb / 1e5) ** 0.2  # the top node (P = 0) counts as 1e5 Pa
     t_icb = t_cmb * (p_icb / p_cmb) ** 0.4
     law = np.where(
