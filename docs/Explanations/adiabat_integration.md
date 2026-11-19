@@ -118,9 +118,25 @@ The other accept tests do not wait for it, and the cap `max_iterations_outer` st
 ## Known limits of the integration
 
 - **Water below 1 bar.** A water layer, whose table reaches 0.1 Pa, is also isothermal below 1 bar.
-- **Boundary of a third layer inside a node segment.** The boundary between the mantle and an ice layer is not cut: its segment takes the mixture of the node it fills. In the top cell a cut would also need the shell of the density table to change mixture: with the nodes cut and the shell not, the shell misses the inner node of the cell by up to 3436 K (`PALEOS:H2O`, unpadded top, `tests/test_adiabat_real_profiles.py`).
+- **Boundary of a third layer inside a node segment.** The boundary between the mantle and an ice layer is not cut ([its size](#the-uncut-boundary-of-an-ice-layer)).
 - **Layer boundary inside the top cell.** The adiabat and the shell of the density table take one mixture over the top cell, so a layer boundary inside it is not resolved; the shell still ends at the temperature of the deeper node ([How the density solve reads the temperature over the top cell](#how-the-density-solve-reads-the-temperature-over-the-top-cell)).
 - **Core at the iron melting curve.** Where the core adiabat meets the melting curve of the PALEOS iron table, the integration follows the $\nabla_\mathrm{ad}$ column into the solid branch, while a core at constant entropy would stay on the melting curve. For 4 solves of `input/default.toml` at 2515 K the integrated centre is 724 to 732 K colder than the path at the constant table entropy of the core top, known to about the 84 to 106 K spacing of the table nodes. Near 300 to 380 GPa the solid entropy column also misses the Maxwell relation $(\partial s / \partial \ln P)_T = -\alpha P / \rho$ ($\alpha$ the thermal expansivity, $\rho$ the density); which column is wrong is not established.
+
+### The uncut boundary of an ice layer
+
+The boundary between the mantle and an ice layer is not cut: its node segment takes the mixture of the node it fills, so every node the adiabat reaches after that segment misses the layering. A solve with an ice layer that integrates the adiabat itself logs a warning that names this limit. In the top cell a cut also needs the shell of the density table to change mixture: with the nodes cut and the shell not, the shell misses the inner node of the cell by up to 3436 K (`PALEOS:H2O`, unpadded top, `tests/test_adiabat_real_profiles.py`).
+
+The table gives the largest change of a node temperature when the routine also cuts that boundary, and in brackets that change as a fraction of the node temperature. The profiles are the stored 2-layer structures of `tests/test_adiabat_real_profiles.py` (150 nodes; `default_k0` with the surface anchor, `ic_dummy` with the CMB anchor), with an H2O layer put above the boundary for the temperature integration only, not solved 3-layer planets. The cut values come from the same midpoint rule, not from an independent integration, and with `PALEOS:H2O` the deeper boundaries give centre temperatures of 15900 to 19300 K, far above a real planet.
+
+| H2O layer from the middle of | Anchor | `PALEOS:H2O` | `Seager2007:H2O` |
+|---|---|---|---|
+| the top cell, top at $1.2 \times 10^5$ Pa | surface | 8263 K (1.34) | 513 K (0.083) |
+| the top cell | CMB | 235 K (0.19) | 11.0 K (0.0025) |
+| the top cell, padded top | CMB | 0 K | 0 K |
+| the 2nd node segment from the top, 1.2 to 2.4 GPa | surface | 594 K (0.037) | 62 K (0.011) |
+| the 5th, 4.9 to 6.2 GPa | surface | 157 K (0.0088) | 48 K (0.0093) |
+| the 20th, 29.1 to 30.9 GPa | surface | 19 K ($9.9 \times 10^{-4}$) | 20 K ($4.6 \times 10^{-3}$) |
+| the 40th, 67.1 to 69.2 GPa | surface | 9.1 K ($4.7 \times 10^{-4}$) | 12 K ($3.1 \times 10^{-3}$) |
 
 ## Ranges and checks of the inputs
 
