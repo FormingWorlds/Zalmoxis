@@ -25,8 +25,8 @@ pytestmark = [pytest.mark.integration, pytest.mark.timeout(3000)]
 
 # K, from the 4 cases of the test (macOS arm64): 2.5 to 7 x the largest miss
 MANTLE_BOUND = 1.5  # first mantle node (largest 0.55 K)
-# top core node: the reported core lag of the returned T (0.18 to 6.2 K after a strict accept
-# at 1 to 10 M_E; 31 K without the table wait) plus the node discretization (up to 0.57 K)
+# top core node: its lag behind the recomputed adiabat plus the node discretization (up to
+# 0.57 K); core lag: 0.18 to 6.2 K after a strict accept at 1 to 10 M_E, 31 K without the wait
 LAG_BOUND, CORE_MARGIN = 10.0, 1.0
 CENTRE_BOUND = 0.5  # centre (largest 0.07 K)
 
@@ -46,15 +46,18 @@ def _config(case):
 @pytest.mark.physics_invariant
 @pytest.mark.reference_pinned
 @pytest.mark.parametrize(('case', 'k'), [('10me', 0), ('10me', 1), ('10me', 2), ('default', 0)])
-def test_the_adiabat_meets_independent_integrations_at_the_cmb_and_the_centre(case, k, request):
+def test_the_adiabat_meets_independent_integrations_at_the_cmb_and_the_centre(
+    case, k, request, monkeypatch
+):
     """A solve on its own adiabat (the 10 M_E planet of tests/data/bench_performance.toml from
     3000 K, numpy, planet mass x (1 + k 1e-12); the 1 M_E default) against DOP853 integrations
     of d ln T / d ln P = nabla_ad with the same tables (a cache of its own; rtol 1e-12 and atol
     1e-14, since at rtol 1e-10 DOP853 steps over the kink of nabla_ad at the edge of the iron
     mush band and misses the converged answer by 0.7 K on a 2515 K default core): of the mantle from
     1e11 Pa on the returned profile to the first mantle node above the CMB (MANTLE_BOUND) and
-    on to the CMB, then of the core to the top core node (``adiabat_self_consistency_core``,
-    at most LAG_BOUND, plus CORE_MARGIN), and of the core from the top core node to the
+    on to the CMB, then of the core to the top core node (its lag behind the adiabat recomputed
+    on the returned structure plus CORE_MARGIN; ``adiabat_self_consistency_core``, the largest
+    such lag of the core, at most LAG_BOUND), and of the core from the top core node to the
     centre (CENTRE_BOUND); the centre nodes do not share one T. The T(P) table of a pass is
     built on the pass before, so the returned core T lags the adiabat of the returned
     structure by up to the reported core lag; the checks need the lookup by own layer, the
@@ -62,9 +65,17 @@ def test_the_adiabat_meets_independent_integrations_at_the_cmb_and_the_centre(ca
     the table top and the split of the node segment at the CMB."""
     cp, mat, mf = _config(case)
     cp['planet_mass'] *= 1.0 + k * 1e-12
+    real, calls = zs.compute_adiabatic_temperature, []
+    monkeypatch.setattr(
+        zs,
+        'compute_adiabatic_temperature',
+        lambda *a, **kw: calls.append((a, real(*a, **kw))) or calls[-1][1],
+    )
     res = zs.main(cp, mat, mf, _INPUT_DIR)
     assert res['converged'] and res['adiabat_blend'] == 1.0
     m, p, t = (np.asarray(res[x], float) for x in ('mass_enclosed', 'pressure', 'temperature'))
+    (_, p_adi, m_adi, *_), adi = calls[-1]  # the adiabat recomputed on the returned structure
+    assert np.array_equal(p_adi, p) and np.array_equal(m_adi, m)
     cmb = res['cmb_mass']
     top = int(np.flatnonzero(is_core(m, cmb))[-1])
     mixes, cache = parse_all_layer_mixtures(cp['layer_eos_config']), {}
@@ -98,12 +109,25 @@ def test_the_adiabat_meets_independent_integrations_at_the_cmb_and_the_centre(ca
     keys = {
         x: res[x] for x in ('accepted_on', 'adiabat_self_consistency', 'mass_error_at_accept')
     }
-    lag = res['adiabat_self_consistency_core']
-    assert lag <= LAG_BOUND, (lag, keys)
-    assert abs(t[top] - t_top) <= lag + CORE_MARGIN, (t[top], t_top, lag, keys)
+    lag, lag_top = res['adiabat_self_consistency_core'], abs(t[top] - adi[top])
+    assert lag == np.abs(t - adi)[is_core(m, cmb) & (p > 0)].max() and lag <= LAG_BOUND, (
+        lag,
+        keys,
+    )
+    assert abs(t[top] - t_top) <= lag_top + CORE_MARGIN, (t[top], t_top, lag_top, keys)
     assert abs(t[0] - t_centre) < CENTRE_BOUND, (t[0], t_centre)
     assert len(set(t[:3])) == 3, t[:3]
-    print(case, k, 'K off:', t[top + 1] - t_first, t[top] - t_top, t[0] - t_centre)
+    print(
+        case,
+        k,
+        'K off:',
+        t[top + 1] - t_first,
+        t[top] - t_top,
+        t[0] - t_centre,
+        'lag',
+        lag,
+        lag_top,
+    )
     if (case, k) == ('10me', 0) and request.config.getoption('validation_plots') is not None:
         request.getfixturevalue('validation_plot')(
             lambda: _figure(p, t, top, p_cmb, t_1e11, dop, t_top), 'adiabat_cmb_centre'
