@@ -25,7 +25,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.timeout(3000)]
 
 # K, from the 4 cases of the test (macOS arm64): 2.5 to 7 x the largest miss
 MANTLE_BOUND = 1.5  # first mantle node (largest 0.55 K)
-CORE_BOUND = 4.0  # top core node (largest 1.60 K)
+CORE_MARGIN = 0.5  # top core node, past the reported core lag of the returned T
 CENTRE_BOUND = 0.5  # centre (largest 0.07 K)
 
 
@@ -51,11 +51,13 @@ def test_the_adiabat_meets_independent_integrations_at_the_cmb_and_the_centre(ca
     1e-14, since at rtol 1e-10 DOP853 steps over the kink of nabla_ad at the edge of the iron
     mush band and misses the converged answer by 0.7 K on a 2515 K default core): of the mantle from
     1e11 Pa on the returned profile to the first mantle node above the CMB (MANTLE_BOUND) and
-    on to the CMB, then of the core to the top core node (CORE_BOUND), and of the core from
-    the top core node to the centre (CENTRE_BOUND); the centre nodes do not share one T.
-    The T(P) table of a pass is built on the pass before; the checks need the lookup by own
-    layer, the accept on a table of a pass within the mass tolerance, the end-slope
-    continuation above the table top and the split of the node segment at the CMB."""
+    on to the CMB, then of the core to the top core node (``adiabat_self_consistency_core``
+    plus CORE_MARGIN), and of the core from the top core node to the centre (CENTRE_BOUND);
+    the centre nodes do not share one T. The T(P) table of a pass is built on the pass
+    before, so the returned core T lags the adiabat of the returned structure by up to the
+    reported core lag; the checks need the lookup by own layer, the accept on a table of a
+    pass within the mass tolerance, the end-slope continuation above the table top and the
+    split of the node segment at the CMB."""
     cp, mat, mf = _config(case)
     cp['planet_mass'] *= 1.0 + k * 1e-12
     res = zs.main(cp, mat, mf, _INPUT_DIR)
@@ -91,7 +93,11 @@ def test_the_adiabat_meets_independent_integrations_at_the_cmb_and_the_centre(ca
     t_top = dop('core', p_cmb, p[top], dop('mantle', 1e11, p_cmb, t_1e11))
     t_centre = dop('core', p[top], p[0], t[top])
     assert abs(t[top + 1] - t_first) < MANTLE_BOUND, (t[top + 1], t_first)
-    assert abs(t[top] - t_top) < CORE_BOUND, (t[top], t_top)
+    keys = {
+        x: res[x] for x in ('accepted_on', 'adiabat_self_consistency', 'mass_error_at_accept')
+    }
+    lag = res['adiabat_self_consistency_core']
+    assert abs(t[top] - t_top) <= lag + CORE_MARGIN, (t[top], t_top, lag, keys)
     assert abs(t[0] - t_centre) < CENTRE_BOUND, (t[0], t_centre)
     assert len(set(t[:3])) == 3, t[:3]
     print(case, k, 'K off:', t[top + 1] - t_first, t[top] - t_top, t[0] - t_centre)

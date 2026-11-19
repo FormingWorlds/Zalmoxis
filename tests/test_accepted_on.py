@@ -29,6 +29,7 @@ from zalmoxis.config import load_material_dictionaries
 from zalmoxis.constants import G, earth_mass, earth_radius
 from zalmoxis.invariants import StructureInvariantError
 from zalmoxis.mixing import calculate_mixed_density, parse_all_layer_mixtures
+from zalmoxis.structure_model import is_core
 
 INPUT = os.path.join(ROOT, 'input')
 M_T = 6.0e24
@@ -2160,23 +2161,32 @@ def _mantle_lag(r, adiabat):
     return np.abs(np.asarray(r['temperature']) - adiabat)[keep]
 
 
+def _core_lag(r, adiabat):
+    """|T - adiabat| at the core nodes of ``r`` (``is_core``) with a positive pressure."""
+    m, P = np.asarray(r['mass_enclosed']), np.asarray(r['pressure'])
+    keep = is_core(m, r['cmb_mass']) & (P > 0)
+    return np.abs(np.asarray(r['temperature']) - adiabat)[keep]
+
+
 @pytest.mark.smoke
 def test_the_accept_waits_for_a_table_built_on_a_full_adiabat_pass():
     """Every pass on the target mass: the first pass at blend 1 reads the T table built on the
     pressure of the blend-0.75 pass, so the solve accepts the next pass, whose table comes
     from a pass at blend 1. The adiabat is computed for the 5 passes of the ramp and once
-    more on the returned structure, for adiabat_self_consistency. The pressure drifts from
-    pass to pass, so the returned T, read from the table of the pass before, lags that
-    adiabat."""
+    more on the returned structure, for adiabat_self_consistency and
+    adiabat_self_consistency_core. The pressure drifts from pass to pass, so the returned T,
+    read from the table of the pass before, lags that adiabat in the mantle and in the core."""
     r, n_adiabat = _analytic_ramp(
         linear=1.0, factor=1.0, drift=1e-4, tolerance_outer=1e-3, wall_timeout=WALL
     )
     assert n_adiabat == 6
     assert r['converged'] is True and r['accepted_on'] == 'strict'
     assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
-    lag = _mantle_lag(r, _fake_adiabat(r['pressure'], _cfg()['surface_temperature']))
-    assert lag.max() > 0.0
+    adiabat = _fake_adiabat(r['pressure'], _cfg()['surface_temperature'])
+    lag, core = _mantle_lag(r, adiabat), _core_lag(r, adiabat)
+    assert lag.max() > 0.0 and core.size >= 2 and core.max() > 0.0
     assert r['adiabat_self_consistency'] == pytest.approx(lag.max(), rel=1e-12)
+    assert r['adiabat_self_consistency_core'] == pytest.approx(core.max(), rel=1e-12)
 
 
 @pytest.mark.smoke
@@ -2193,12 +2203,13 @@ def test_an_iteration_cap_on_the_first_full_adiabat_pass_is_not_accepted():
 @pytest.mark.smoke
 def test_a_pass_below_blend_1_reports_no_self_consistency():
     """The iteration cap ends the solve on the blend-0.75 pass, on the target mass: its T is
-    not the adiabat, so adiabat_self_consistency is None."""
+    not the adiabat, so adiabat_self_consistency and adiabat_self_consistency_core are None."""
     r, _ = _analytic_ramp(
         linear=1.0, factor=1.0, tolerance_outer=1e-3, max_iterations_outer=4, wall_timeout=WALL
     )
     assert r['converged'] is False and r['adiabat_blend'] == 0.75
     assert np.all(np.asarray(r['pressure']) > 0) and r['adiabat_self_consistency'] is None
+    assert r['adiabat_self_consistency_core'] is None
 
 
 @pytest.mark.smoke
