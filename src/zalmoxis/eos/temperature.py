@@ -183,7 +183,7 @@ def compute_adiabatic_temperature(
         The profile is not finite and positive at every node, or rises outward from its anchor.
     """
     from ..mixing import any_component_is_tdep, get_mixed_nabla_ad
-    from ..structure_model import get_layer_mixture, is_core
+    from ..structure_model import get_layer_mixture
 
     if interpolation_functions is None:
         interpolation_functions = {}
@@ -239,29 +239,24 @@ def compute_adiabatic_temperature(
     def mixture_at(m):
         return get_layer_mixture(m, cmb_mass, core_mantle_mass, layer_mixtures, icb_mass)
 
-    for i, j in steps:  # node i takes its T from node j, with the mixture of node i
-        mixture, t_j, p_j = mixture_at(mass_enclosed[i]), T[j], pressure[j]
-        if (
-            anchor != 'cmb'
-            and is_core(mass_enclosed[i], cmb_mass)
-            and not is_core(mass_enclosed[j], cmb_mass)
-            and pressure[i] > 0
-            and p_j > 0
-        ):  # the segment crosses the CMB: the mantle part takes the gradient of node j
-            m_ij = (mass_enclosed[i], mass_enclosed[j])
-            lp_ij = (math.log(pressure[i]), math.log(p_j))
-            p_cmb = math.exp(np.interp(cmb_mass, m_ij, lp_ij))  # ln P linear in m (m_i < m_j)
-            if mixture_at(mass_enclosed[j]).has_tdep():
-                t_j = _segment_temperature(
-                    t_j, p_j, p_cmb, nabla_of(mixture_at(mass_enclosed[j])), h, True
-                )
-            p_j = p_cmb
-        if not mixture.has_tdep():
-            T[i] = t_j
-            continue
-        T[i] = _segment_temperature(
-            t_j, p_j, pressure[i], nabla_of(mixture), h, anchor != 'cmb'
-        )
+    bounds = [
+        b
+        for b in sorted({icb_mass or 0.0, cmb_mass})  # the core boundaries
+        if b > 0 and mixture_at(b * (1 - 1e-9)) is not mixture_at(b * (1 + 1e-9))
+    ]
+    for i, j in steps:  # node i takes its T from node j, piece by piece across layer boundaries
+        m_i, t = mass_enclosed[i], T[j]
+        ends = [(mass_enclosed[j], pressure[j]), (m_i, pressure[i])]
+        if pressure[i] > 0 and pressure[j] > 0:
+            (m_lo, p_lo), (m_hi, p_hi) = sorted(ends)  # ln P linear in m between the 2 nodes
+            cut = sorted((b for b in bounds if m_lo < b < m_hi), reverse=ends[0][0] > m_i)
+            lp = (math.log(p_lo), math.log(p_hi))
+            ends[1:1] = [(b, math.exp(np.interp(b, (m_lo, m_hi), lp))) for b in cut]
+        for (m_a, p_a), (m_b, p_b) in zip(ends, ends[1:]):
+            mixture = mixture_at(m_i if m_b == m_i else 0.5 * (m_a + m_b))
+            if mixture.has_tdep():
+                t = _segment_temperature(t, p_a, p_b, nabla_of(mixture), h, anchor != 'cmb')
+        T[i] = t
     _check_profile(T, first)
     return T
 

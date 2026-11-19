@@ -715,7 +715,9 @@ def test_a_pure_iron_core_has_its_icb_where_its_liquid_adiabat_meets_iron_meltin
     assert _superheat_met(res) and res['icb_converged']
 
 
-ICB_BOUND = 2.0  # K, at the first inner-core node and at the centre
+# K, from the 5 starts of the test (macOS arm64): about 3 x the largest miss
+ICB_NODE_BOUND = 3.0  # first inner-core node (largest 1.06 K)
+ICB_CENTRE_BOUND = 1.5  # centre (largest 0.52 K)
 
 
 @pytest.mark.physics_invariant
@@ -769,8 +771,8 @@ def test_the_adiabat_crosses_the_icb_at_its_pressure(setup, k):
     print(
         k, 'K off at the first inner-core node and the centre:', t[i] - t_inner, t[0] - t_centre
     )
-    assert abs(t[i] - t_inner) < ICB_BOUND, (t[i], t_inner)
-    assert abs(t[0] - t_centre) < ICB_BOUND, (t[0], t_centre)
+    assert abs(t[i] - t_inner) < ICB_NODE_BOUND, (t[i], t_inner)
+    assert abs(t[0] - t_centre) < ICB_CENTRE_BOUND, (t[0], t_centre)
 
 
 @pytest.mark.physics_invariant
