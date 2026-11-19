@@ -24,6 +24,13 @@ from .eos.core_alloy import IRON_SIDES, is_alloy_mixture, split_alloy
 _RTOL_LAYER = 1e-12  # the layer rule of structure_model.get_layer_mixture
 
 
+def icb_pressure(mass, pressure, icb_mass):
+    """Pressure [Pa] at ``icb_mass`` [kg] with P linear in m^(2/3) between the nodes of
+    ascending ``mass`` [kg], exact for a uniform density; every ICB reader and the adiabat cut
+    take it, so one ICB mass has one pressure."""
+    return float(np.interp(icb_mass ** (2.0 / 3.0), np.asarray(mass) ** (2.0 / 3.0), pressure))
+
+
 def icb_from_profile(mass, pressure, temperature, cmb_mass, liquidus, icb_mass=None, m23=False):
     """Inner-core boundary on a structure profile by the liquidus rule.
 
@@ -57,8 +64,7 @@ def icb_from_profile(mass, pressure, temperature, cmb_mass, liquidus, icb_mass=N
     if not np.all(np.isfinite(f)):
         raise ValueError('the temperature or the core liquidus is not finite on the core nodes')
     if icb_mass is not None:
-        p_icb = np.interp(icb_mass ** (2.0 / 3.0), m ** (2.0 / 3.0), p)  # as in core_arrays
-        return float(icb_mass), float(p_icb), _solid_mass(m, f, icb_mass)
+        return float(icb_mass), icb_pressure(m, p, icb_mass), _solid_mass(m, f, icb_mass)
     above = np.flatnonzero(f >= 0.0)
     if above.size and above[0] == 0:
         return 0.0, float(p[0]), _solid_mass(m, f, 0.0)
@@ -121,7 +127,7 @@ def icb_superheat(mass, pressure, liquid_temperature, cmb_mass, liquidus, icb_ma
     """
     m, p, t = _core_nodes(mass, pressure, liquid_temperature, cmb_mass)
     full = icb_mass >= cmb_mass * (1.0 - _RTOL_LAYER)
-    p_icb = p[0] if icb_mass <= 0.0 else np.interp(icb_mass ** (2.0 / 3.0), m ** (2.0 / 3.0), p)
+    p_icb = p[0] if icb_mass <= 0.0 else icb_pressure(m, p, icb_mass)
     s = float(np.interp(math.log(p_icb), np.log(p[::-1]), t[::-1])) - float(liquidus(p_icb))
     miss = max(0.0, -s) if icb_mass <= 0.0 else max(0.0, s) if full else abs(s)
     return s, miss if math.isfinite(s) else math.inf
@@ -235,7 +241,7 @@ def core_arrays(result, layer_mixtures, rhs, temperature_at, icb_mass, solid_abo
         out[f'w_{el}'] = np.where(out['phase'] == 1, w[1], w[0])
     out['M_ic'] = float(icb_mass)
     out['R_icb'] = float(np.interp(icb_mass, out['m'], out['r'] ** 3)) ** (1.0 / 3.0)
-    out['P_icb'] = float(np.interp(icb_mass ** (2.0 / 3.0), out['m'] ** (2.0 / 3.0), out['P']))
+    out['P_icb'] = icb_pressure(out['m'], out['P'], icb_mass)
     out['solid_above_icb_mass_fraction'] = float(solid_above) / cmb_mass
     out['solid_above_icb'] = bool(solid_above > 0.0)
     return out

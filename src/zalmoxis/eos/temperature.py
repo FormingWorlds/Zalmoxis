@@ -182,6 +182,7 @@ def compute_adiabatic_temperature(
     StructureInvariantError
         The profile is not finite and positive at every node, or rises outward from its anchor.
     """
+    from ..core_profile import icb_pressure
     from ..mixing import any_component_is_tdep, get_mixed_nabla_ad
     from ..structure_model import get_layer_mixture
 
@@ -248,10 +249,15 @@ def compute_adiabatic_temperature(
         m_i, t = mass_enclosed[i], T[j]
         ends = [(mass_enclosed[j], pressure[j]), (m_i, pressure[i])]
         if pressure[i] > 0 and pressure[j] > 0:
-            (m_lo, p_lo), (m_hi, p_hi) = sorted(ends)  # ln P linear in m between the 2 nodes
+            (m_lo, p_lo), (m_hi, p_hi) = sorted(ends)
             cut = sorted((b for b in bounds if m_lo < b < m_hi), reverse=ends[0][0] > m_i)
-            lp = (math.log(p_lo), math.log(p_hi))
-            ends[1:1] = [(b, math.exp(np.interp(b, (m_lo, m_hi), lp))) for b in cut]
+            lp = (math.log(p_lo), math.log(p_hi))  # CMB: ln P linear in m; ICB: as its readers
+            ends[1:1] = [
+                (b, icb_pressure((m_lo, m_hi), (p_lo, p_hi), b))
+                if b != cmb_mass
+                else (b, math.exp(np.interp(b, (m_lo, m_hi), lp)))
+                for b in cut
+            ]
         for (m_a, p_a), (m_b, p_b) in zip(ends, ends[1:]):
             mixture = mixture_at(m_i if m_b == m_i else 0.5 * (m_a + m_b))
             if mixture.has_tdep():
