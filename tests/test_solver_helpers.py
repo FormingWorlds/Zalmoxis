@@ -15,6 +15,8 @@ Covers:
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from zalmoxis.constants import earth_mass
@@ -169,3 +171,42 @@ class TestTimeoutAcceptThreshold:
         # mismatch, 'threshold 2%' against a 3% gate, is the regressed bug).
         assert 'threshold 2%' not in src
         assert 'threshold 3%' not in src
+
+
+class _SolveReached(Exception):
+    """Raised by the stub solve, so main stops after its checks."""
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ('ice', 'asked', 'fires'),
+    [(True, True, True), (False, True, False), (True, False, False)],
+    ids=['three_layers_adiabat', 'two_layers_adiabat', 'three_layers_no_adiabat'],
+)
+def test_main_warns_once_of_the_uncut_ice_boundary_on_an_adiabat(
+    monkeypatch, caplog, ice, asked, fires
+):
+    """A solve that integrates the adiabat itself with an ice layer logs 1 warning that the
+    boundary between the mantle and the ice layer is not cut, naming the known limit and its
+    docs page; a 2-layer planet or a solve without the adiabat logs none."""
+    from zalmoxis import solver
+
+    def stop(*a, **k):
+        raise _SolveReached
+
+    monkeypatch.setattr(solver, '_adiabat_asked', lambda *a, **k: asked)
+    monkeypatch.setattr(solver, '_solve', stop)
+    monkeypatch.setattr(solver, '_solve_newton_outer', stop)
+    eos = {'core': 'Seager2007:iron', 'mantle': 'Seager2007:MgSiO3'}
+    if ice:
+        eos['ice_layer'] = 'Seager2007:H2O'
+    cfg = {'layer_eos_config': eos, 'temperature_mode': 'adiabatic', 'planet_mass': 5.97e24}
+    with (
+        caplog.at_level(logging.WARNING, logger='zalmoxis.solver'),
+        pytest.raises(_SolveReached),
+    ):
+        solver.main(cfg, {}, None, '/tmp')
+    hits = [r for r in caplog.records if 'ice layer is not cut' in r.getMessage()]
+    assert len(hits) == (1 if fires else 0)
+    if fires:
+        assert 'adiabat_integration.md' in hits[0].getMessage()
