@@ -82,11 +82,10 @@ What does the routine do when the inner-core boundary (ICB) or the core-mantle b
 
 The routine walks away from the anchor: each node takes its temperature from its neighbour on the anchor side, by the integration over the node segment between the 2 nodes.
 When the ICB or the CMB lies inside a segment, the routine cuts the segment at the boundary and integrates each piece with the mixture of its own layer.
-The CMB lies where $\ln P$, taken linear in the enclosed mass between the 2 nodes, reaches the core mass.
-The ICB lies at the pressure that the core arrays and the ICB rule give for the inner-core mass, with $P$ linear in $m^{2/3}$ between the 2 nodes, so one ICB mass has one pressure.
+The CMB lies where $\ln P$, taken linear in the enclosed mass between the 2 nodes, reaches the core mass, and the ICB at the pressure that the core arrays and the ICB rule give for the inner-core mass, with $P$ linear in $m^{2/3}$ between the 2 nodes, so that one ICB mass has one pressure in every part of the code.
 Other segments take the mixture of the node they fill.
 
-The cut matters where the 2 layers have very different gradients.
+The cut matters where the gradients differ.
 At the ICB of a pure-iron core at 258 GPa, $\nabla_\mathrm{ad}$ is 0.22 on the solid side and 0.44 on the liquid side.
 Without the cut, the segment that holds the ICB would take one of the 2 values over its whole length, and the first inner-core node would miss the adiabat by up to 21 K.
 
