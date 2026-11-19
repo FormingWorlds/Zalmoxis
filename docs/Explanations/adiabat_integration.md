@@ -30,7 +30,7 @@ For a constant $\nabla_\mathrm{ad}$ the step is exact: $T = T_a (P / P_a)^{\nabl
 
 A worked example: the default configuration at a surface temperature of 2515 K has its centre at 407 GPa and its CMB at 141 GPa.
 One call takes about 6200 substeps and reads $\nabla_\mathrm{ad}$ about 12300 times.
-The real-profile test stores 4 starts of this configuration. Their planet masses differ only by $k \times 10^{-12}$ of the value ($k$ = 0 to 3), and their centre lies at 6238 to 6239 K.
+The real-profile test stores 4 starts of this configuration. Their planet masses differ only by $k \times 10^{-12}$ of the value ($k$ = 0 to 3), and their centre lies at 6163 to 6168 K.
 
 ## Accuracy on the PALEOS tables
 
@@ -74,11 +74,36 @@ A straight line in $\log_{10} P$ over it lies 9 to 14 K off on the 2 PROTEUS pro
 
 **Where this is checked.** [Temperature lookup over the top cell](../Validation/thermal_state.md#temperature-lookup-over-the-top-cell).
 
+## Core boundaries inside a node segment
+
+Each node takes its temperature from the node next to it, in the direction away from the anchor.
+When the inner-core boundary (ICB) or the CMB lies between the 2 nodes, the routine cuts the segment there.
+It places the boundary at the pressure where $\ln P$, taken linear in the enclosed mass between the 2 nodes, reaches the boundary mass, and integrates each piece with the mixture of its own layer.
+Without the cut, the segment that holds the ICB of a pure-iron core at 258 GPa would take the solid gradient ($\nabla_\mathrm{ad}$ = 0.22) or the liquid one (0.44) over its whole length, and the first inner-core node would miss the adiabat by up to 21 K.
+Other segments take the mixture of the node they fill.
+
+**Where this is checked.** [Temperature at the CMB and the centre](../Validation/thermal_state.md#temperature-at-the-cmb-and-the-centre) for the CMB, and `tests/test_core_two_phase_solve.py::test_the_adiabat_crosses_the_icb_at_its_pressure` for the ICB.
+
+## How the density solve reads the core temperature
+
+The T(P) table of a pass is split at the CMB of the pass that built it: one part holds the mantle nodes, the other the core nodes.
+A node or a point of the density integration reads the core part when its enclosed mass lies below the core mass of the current pass, and the mantle part otherwise.
+The 2 parts share no node. A mantle point therefore never interpolates between a mantle and a core temperature, even when the CMB of the current pass lies at another pressure than that of the table, which happens on every pass whose structure still moves.
+Above the top of a part, and below the bottom of the core part, $\log_{10} T$ goes on linearly in $\log_{10} P$ with the slope of the end interval of that part.
+The centre of a pass with a higher central pressure than the table therefore takes a rising temperature, not the end value of the table.
+
+A table built on a pass far from the planet mass puts its CMB at the wrong pressure.
+The solve therefore accepts a pass on its strict test only when the pass that built its table also met the mass tolerance `tolerance_outer`; a table from a seed or from the first guess never counts.
+The cap `max_iterations_outer` still ends the outer loop.
+
+**Where this is checked.** [Temperature at the CMB and the centre](../Validation/thermal_state.md#temperature-at-the-cmb-and-the-centre).
+
 ## Known limits of the integration
 
 - **Water below 1 bar.** A water layer, whose table reaches 0.1 Pa, is also isothermal below 1 bar.
+- **Boundary of a third layer inside a node segment.** The boundary between the mantle and an ice layer is not cut: the segment that holds it takes the mixture of the node it fills. Where that segment is the top cell, the cut would also need the shell of the density table to change mixture at the boundary; in the `PALEOS:H2O` case with an unpadded top of `tests/test_adiabat_real_profiles.py`, a cut node alone ends 1371 K from the shell.
 - **Layer boundary inside the top cell.** The adiabat and the shell of the density table take one mixture over the whole top cell, so a layer boundary inside the cell is not resolved. The shell still ends at the temperature of the deeper node of the cell ([How the density solve reads the temperature over the top cell](#how-the-density-solve-reads-the-temperature-over-the-top-cell)).
-- **Core at the iron melting curve.** Where the core adiabat meets the melting curve of the PALEOS iron table, the integration follows the $\nabla_\mathrm{ad}$ column of the table into the solid branch, while a core at constant entropy would stay at the melting curve. On 4 solves of `input/default.toml` at 2515 K with the midpoint adiabat, the integrated centre is 671 to 678 K colder than the path at the constant table entropy of the core top. That path reads the entropy between table nodes 84 to 106 K apart in temperature near these core states, so the difference is known to about that spacing, not to 1 K. In the solid near 300 to 380 GPa the entropy column of the table also does not meet the Maxwell relation $(\partial s / \partial \ln P)_T = -\alpha P / \rho$, with $\alpha$ the thermal expansivity and $\rho$ the density; which column is wrong there is not established.
+- **Core at the iron melting curve.** Where the core adiabat meets the melting curve of the PALEOS iron table, the integration follows the $\nabla_\mathrm{ad}$ column of the table into the solid branch, while a core at constant entropy would stay at the melting curve. On 4 solves of `input/default.toml` at 2515 K with the midpoint adiabat, the integrated centre is 724 to 732 K colder than the path at the constant table entropy of the core top. That path reads the entropy between table nodes 84 to 106 K apart in temperature near these core states, so the difference is known to about that spacing, not to 1 K. In the solid near 300 to 380 GPa the entropy column of the table also does not meet the Maxwell relation $(\partial s / \partial \ln P)_T = -\alpha P / \rho$, with $\alpha$ the thermal expansivity and $\rho$ the density; which column is wrong there is not established.
 - **Temperature of a padded node with the CMB anchor.** In `adiabatic_from_cmb` the solver does not take the temperature of a padded node from this routine. It uses `_adiabat_to_surface` in `solver.py`: 64 midpoint steps from the last node with positive pressure to the target surface pressure, with no 1 bar floor. Started at 5 GPa and 3500 K on the `dummy` mantle, it gives 0.113 K more than the segment rule at 1 atm and 0.457 K more at 1 Pa.
 
 ## Ranges and checks of the inputs

@@ -4,7 +4,7 @@
 
 This page checks the temperature profile of a planet. Validation means that a test runs the code on a case with a known right answer and checks the result within a stated tolerance. The page has 2 parts:
 
-- **Adiabat integration (5 tested cases).** Zalmoxis integrates the adiabat, the temperature profile along which the entropy is constant. Every adiabatic structure of Zalmoxis takes its temperature from this integration, and so does the first structure solve of a PROTEUS start-up with Zalmoxis in an adiabatic temperature mode. A test runs each case, and each case has a plot pair. [How the adiabat is integrated](../Explanations/adiabat_integration.md) explains the method.
+- **Adiabat integration (6 tested cases).** Zalmoxis integrates the adiabat, the temperature profile along which the entropy is constant. Every adiabatic structure of Zalmoxis takes its temperature from this integration, and so does the first structure solve of a PROTEUS start-up with Zalmoxis in an adiabatic temperature mode. A test runs each case, and each case has a plot pair. [How the adiabat is integrated](../Explanations/adiabat_integration.md) explains the method.
 - **Initial thermal state (3 script cases).** The temperature at the core-mantle boundary (CMB) and at the surface right after accretion, which `zalmoxis.energetics.initial_thermal_state` computes, as a function of the planet mass and the material properties. These figures come from scripts: no test asserts them and CI does not run the scripts.
 
 Each tested case says why the check exists, what it tests, how we know the right answer and why it matters, and ends with a box "Test details". Each script case has the same parts for a comparison and ends with a box "Script details". The [overview](index.md) lists every case of the tab.
@@ -36,20 +36,20 @@ Each tested case says why the check exists, what it tests, how we know the right
 
 **What it tests.** It uses 6 stored structures of real solves: 4 starts of `input/default.toml` at 2515 K, with the surface anchor and a padded top, and the PROTEUS initial structure setups `all_options` and `dummy`, with the CMB anchor. On each, the temperature of a default call is compared with an independent integration at every node that the integration sets: all nodes with the surface anchor, and the CMB node outward with the CMB anchor. The second test counts the reads of $\nabla_\mathrm{ad}$ in a default call: 2 per substep, with $\lceil |\Delta \ln P| / 0.0025 \rceil$ substeps per segment.
 
-**How we know the right answer.** The reference integrates the same equation with `scipy.integrate.solve_ivp` (the adaptive DOP853 method) at a relative tolerance of $10^{-13}$, on the same nodes and with the same rules: the mixture of each segment, the 1 bar floor, the padded top and the caps. It shares no step code with Zalmoxis, and the test checks it against a second integration, RK45 at the same tolerance, to 0.01 K.
+**How we know the right answer.** The reference integrates the same equation with `scipy.integrate.solve_ivp` (the adaptive DOP853 method) at a relative tolerance of $10^{-13}$, on the same nodes and with the same rules: the mixture of each segment, the cut of a segment at the ICB or the CMB, the 1 bar floor, the padded top and the caps. It shares no step code with Zalmoxis, and the test checks it against a second integration, RK45 at the same tolerance, to 0.01 K.
 
 **Why it matters.** These are the temperature profiles of the default configuration and of the PROTEUS start-up.
 
 ![Temperature against pressure for default start 0: forward Euler step, midpoint, DOP853 reference and the iron melting curve in the core](../assets/validation/adiabat_real_profile.svg#only-light){ width="80%" }
 ![Temperature against pressure for default start 0: forward Euler step, midpoint, DOP853 reference and the iron melting curve in the core](../assets/validation/adiabat_real_profile_dark.svg#only-dark){ width="80%" }
 
-**How to read the plot.** The plot shows $T$ in K against $P$ for default start 0. The test asserts that the midpoint line lies within 1 K of the dotted DOP853 reference at every node; at this scale the 2 lines lie on each other. The dashed line is a forward Euler step: one first-order step in $P$ per node, from `forward_euler` in `tools/validation/adiabat_profiles.py`, with the padded top shell held isothermal. The test asserts only that it lies at least 5 times, and more than 2 K, farther from the reference than the midpoint line; at the centre it lies 472 K below. The grey line is context: the iron melting curve of Anzellini et al. (2013)[^cite-anzellini2013] at core pressures (`zalmoxis.melting_curves.iron_melting_anzellini13`). A pass means that the midpoint line lies on the dotted reference.
+**How to read the plot.** The plot shows $T$ in K against $P$ for default start 0. The test asserts that the midpoint line lies within 1 K of the dotted DOP853 reference at every node; at this scale the 2 lines lie on each other. The dashed line is a forward Euler step: one first-order step in $P$ per node, from `forward_euler` in `tools/validation/adiabat_profiles.py`, with the padded top shell held isothermal. The test asserts only that it lies at least 5 times, and more than 2 K, farther from the reference than the midpoint line; at the centre it lies 402 K below. The grey line is context: the iron melting curve of Anzellini et al. (2013)[^cite-anzellini2013] at core pressures (`zalmoxis.melting_curves.iron_melting_anzellini13`). A pass means that the midpoint line lies on the dotted reference.
 
 The largest difference from the reference on each profile, against the test bound of 1 K:
 
 | Profile | macOS 26, arm64, Python 3.12 |
 |---|---|
-| default starts 0 to 3 | 0.3373, 0.5382, 0.1978, 0.1586 K |
+| default starts 0 to 3 | 0.2536, 0.0362, 0.1795, 0.1678 K |
 | PROTEUS `all_options` | below 0.0001 K |
 | PROTEUS `dummy` | below 0.0001 K |
 
@@ -135,6 +135,33 @@ Measured once and not asserted: with a padded top, against a table with 4096 she
     - Unit-test checks: where the shell starts and ends, also at 1 bar, within $10^{-9}$ of it and 1 ULP (unit in the last place, the smallest step between 2 floating-point numbers) below it; the node whose mass the shell takes for each anchor, and that the table stays inside the node array on pressures out of node order (a guard; a solve gives pressures that fall outward); and that the table of a padded top with the surface anchor is, bit for bit, the nodes plus the shell from 1 bar. With the CMB anchor the padded shell takes the mass of the padded node; the table is the same when the 2 nodes of the top cell lie in one layer, as on both PROTEUS profiles. A smoke test checks that the solve gives the table the enclosed masses and the direction of its adiabat.
     - Command: `pytest -o "addopts=" tests/test_adiabat_real_profiles.py -k "top_cell"`; add `--validation-plots` to write the plot.
 
+## Temperature at the CMB and the centre
+
+**Why this check exists.** The density solve of a pass reads its temperature from the T(P) table of the pass before, and the CMB of that pass lies at another pressure. If the lookup ignored the layer of a node, a mantle node just above the CMB could read the core part of the table, and the core adiabat would start from the wrong temperature. If the table ended at its own central pressure, the centre nodes of a pass with a higher central pressure would all take the end value of the table. The test fails when a returned structure leaves its own adiabat near the CMB or at the centre.
+
+**What it tests.** It runs 4 full solves: the 10 $M_\oplus$ planet of `tests/data/bench_performance.toml` with 3000 K at the surface, at 3 planet masses that differ by $k \times 10^{-12}$ of the value ($k$ = 0 to 2), and the 1 $M_\oplus$ planet of `input/default.toml`. On each returned structure it integrates $\mathrm{d} \ln T / \mathrm{d} \ln P = \nabla_\mathrm{ad}$ with an independent integrator and the same EOS tables, in 3 chains:
+
+- the mantle from $10^{11}$ Pa, at the returned temperature there, to the first mantle node above the CMB;
+- the mantle on to the CMB pressure, then the core to the top core node;
+- the core from the returned top core node to the centre.
+
+The returned temperature may differ by at most 1.5 K from the first chain, 4 K from the second and 0.5 K from the third, and the 3 innermost nodes must not share one temperature.
+
+**How we know the right answer.** Each chain is the adiabat of the returned structure itself, integrated by `scipy.integrate.solve_ivp` with DOP853 at a relative tolerance of $10^{-12}$ and an absolute tolerance of $10^{-14}$ on $\ln T$; the second chain changes from the mantle to the core mixture exactly at the CMB pressure, with $\ln P$ linear in the enclosed mass between the 2 nodes around the CMB. At a relative tolerance of $10^{-10}$ DOP853 steps over the kink of $\nabla_\mathrm{ad}$ at the edge of the mush band of the iron table: on a 2515 K default core it then misses the converged answer by 0.7 K. This is a cross-code check of the adiabat, not an external reference.
+
+**Why it matters.** The CMB temperature and the centre temperature of a structure start the thermal evolution of the core in a coupled model.
+
+![Returned temperature minus the DOP853 chains against pressure for the 10 Earth-mass planet](../assets/validation/adiabat_cmb_centre.svg#only-light){ width="80%" }
+![Returned temperature minus the DOP853 chains against pressure for the 10 Earth-mass planet](../assets/validation/adiabat_cmb_centre_dark.svg#only-dark){ width="80%" }
+
+**How to read the plot.** The x-axis is the pressure in GPa and the y-axis $\Delta T$, the returned temperature minus the DOP853 chain, in K, for the 10 $M_\oplus$ planet at $k$ = 0. The mantle line compares the mantle nodes below $10^{11}$ Pa with the first chain, and the core line compares the core nodes with the third chain. The filled circle, the filled square and the open diamond are the 3 nodes that the test bounds: the first mantle node (1.5 K), the top core node against the second chain through the CMB (4 K) and the centre (0.5 K). The dotted line marks the CMB pressure. A pass means that no marked point exceeds its bound in any of the 4 solves. In the 4 solves the largest differences are 0.55 K at the first mantle node, 1.60 K at the top core node and 0.07 K at the centre (macOS arm64).
+
+??? info "Test details"
+    - Reference: DOP853 integrations of $\nabla_\mathrm{ad}$ on the returned structure (cross-code check).
+    - Tolerance: 1.5 K at the first mantle node, 4 K at the top core node, 0.5 K at the centre; the 3 innermost nodes differ in temperature.
+    - Test id: `tests/test_adiabat_centre.py::test_the_adiabat_meets_independent_integrations_at_the_cmb_and_the_centre` (markers `integration`, `physics_invariant` and `reference_pinned`; nightly job `main`).
+    - Command: `pytest -o "addopts=" tests/test_adiabat_centre.py -s`; add `--validation-plots` to write the plot.
+
 ## Centre temperature over round-off starts
 
 **Why this check exists.** If the temperature of a solve depended on round-off, 2 runs of the same planet would give different centre temperatures. The test fails when 4 starts that differ only by round-off end in different padding states, or when the centre temperatures of their adiabats spread by more than 12 K.
@@ -155,7 +182,7 @@ Measured once and not asserted: with a padded top, against a table with 4096 she
 - **Core temperature of a returned structure.** A structure solve reads its temperatures from the T(P) table of the pass before, split at the CMB of that pass, and that pass meets the mass tolerance of the outer loop, not the returned structure itself. In 8 solves of `input/default.toml` at 2515 K with the midpoint adiabat, whose planet masses differ by $k \times 10^{-12}$ ($k$ = 0 to 7), the returned temperature at the top core node (144 GPa) lies $-0.56$ to $+0.88$ K from the adiabat of the returned structure. The core adiabat crosses the mush band of the iron table, where $\nabla_\mathrm{ad}$ rises steeply with temperature (at 240 GPa from 0.208 at 5350 K to 0.368 at 5410 K), so the difference grows inward: 1 K more at the top core node gives 15.1 to 16.5 K more at the centre, and 10 to 90 % of this growth lies between 219 and 316 GPa. At the centre (403 GPa) the returned temperature lies $-8.3$ to $+12.8$ K from that adiabat. Each returned core profile lies at most 0.36 K from an integration of $\nabla_\mathrm{ad}$ from its own top core node (macOS arm64, Apple M1 Ultra). The slow test `tests/test_adiabat_start_spread.py` makes the first 4 of these solves again and prints the returned core temperature, but it does not bound it.
 - **Size of the lag elsewhere.** Over the mantle the difference is at most 0.87 K, on start 5 at the outermost node with a positive pressure (1.1 GPa), just below the padded top; on the other 7 starts it is 0.04 to 0.68 K. At the CMB node it is at most 0.004 K on all 8 starts. The T(P) lookup of the last density solve lies at most 0.13 K from an independent integration from 1 bar, up to the outermost node with a positive pressure of the pass that built its table. The returned top node can lie above or below that node; at the returned top node the lookup lies 0.12 to 0.92 K from the integration, the most on start 5. These 8 starts ran on macOS arm64. The centre temperatures of the adiabats of the first 4 returned structures span 8.7 K, and those of all 8 span 11.3 K. The slow test bounds the first 4 at 12 K.
 - **Retry on the wall clock.** A solve that passes its wall clock (`wall_timeout`, 300 s by default) before it converges starts again with tighter parameters, from its best pass, and is still accepted on the full adiabat. The same start then gives another structure: with `wall_timeout` set to 60 s, start 0 takes one retry and returns a core temperature at the centre of 6260.767 K, where the same start without a retry gives 6277.859 K (its open square in the plot). Its radius is 150 m smaller. The retry result depends on the pass where the wall clock stops the first attempt. The test gives each start 2400 s and fails on a retry, so a slow runner fails it instead of passing with another structure.
-- **Sensitivity of the centre temperature.** On default start 1, a small change of $T$ at 47 to 172 GPa reaches the centre 14 to 21 times larger. The factor is 2.9 at 237 GPa and 1.1 at 285 GPa. At the CMB node it is 16.0 for a change of 0.1 K. The response is not linear: a rise of 1 K there raises the centre by 16.7 K, and a fall of 1 K lowers it by 14.8 K.
+- **Sensitivity of the centre temperature.** On the stored default start 1, a change of 0.1 K in $T$ at 47 to 172 GPa reaches the centre 11 to 17 times larger. The factor is 1.4 at 237 GPa and 1.1 at 285 GPa. At the CMB node it is 13.0. A rise of 1 K there raises the centre by 12.5 K, and a fall of 1 K lowers it by 12.3 K.
 
 ??? info "Test details"
     - Reference: the 4 starts against each other (reproducibility).
