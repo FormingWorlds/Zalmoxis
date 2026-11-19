@@ -5,7 +5,7 @@ How does Zalmoxis turn the adiabatic gradient of an equation of state (EOS) tabl
 In the temperature modes `adiabatic` and `adiabatic_from_cmb`, the temperature follows an adiabat: the temperature profile of material that is compressed without heat exchange, so that its entropy stays constant.
 `compute_adiabatic_temperature` in `zalmoxis.eos.temperature` integrates this adiabat from one node of the radial grid to the next.
 It uses the midpoint rule in $\ln P$ with substeps of at most 0.0025 in $\ln P$, and it holds the temperature constant below 1 bar.
-On the stored profiles of the default configuration and of the PROTEUS initial structure, the result lies within 0.26 K of an independent high-accuracy integration on macOS ([the values per profile](../Validation/thermal_state.md#adiabat-integration-on-real-profiles)); the test bound is 1 K.
+On the stored profiles of the default configuration and of the PROTEUS initial structure, the result lies within 0.254 K of an independent high-accuracy integration on macOS ([the values per profile](../Validation/thermal_state.md#adiabat-integration-on-real-profiles)); the test bound is 1 K.
 
 ## The equation
 
@@ -81,10 +81,12 @@ What does the routine do when the inner-core boundary (ICB) or the core-mantle b
 
 The routine walks away from the anchor: each node takes its temperature from its neighbour on the anchor side, by the integration over the node segment between the 2 nodes.
 When the ICB or the CMB lies inside a segment, the routine cuts the segment at the boundary and integrates each piece with the mixture of its own layer.
-The cut lies at the boundary pressure.
-For the CMB, this is where $\ln P$, taken linear in the enclosed mass $m$ between the 2 nodes, reaches the core mass.
-For the ICB, it is the pressure that the core arrays and the [inner-core boundary rule](mixing.md#the-inner-core-boundary) give for the inner-core mass: $P$ linear in $m^{2/3}$ between the core nodes on either side of it, with the CMB point in place of the upper node when the ICB lies in the segment of the CMB.
-So one ICB mass has one pressure in every part of the code.
+The cut lies at the pressure of the boundary:
+
+- **CMB:** the pressure at the core mass, with $\ln P$ taken linear in the enclosed mass $m$ between the 2 nodes.
+- **ICB:** the pressure that the [inner-core boundary rule](mixing.md#the-inner-core-boundary) gives for the inner-core mass, with $P$ taken linear in $m^{2/3}$ between the core nodes on either side of it. When the ICB lies in the node segment of the CMB, the CMB point takes the place of the upper node.
+
+So the cut and the ICB rule take one pressure for one inner-core mass.
 Other segments take the mixture of the node they fill.
 
 The cut matters where the gradients differ.
@@ -108,7 +110,7 @@ Above the top of a part, and below the bottom of the core part, $\log_{10} T$ co
 So the centre of a pass with a higher central pressure than the table takes a rising temperature, not the end value of the table.
 
 A table built on a pass far from the planet mass puts its CMB at the wrong pressure.
-So the solve accepts a pass on its strict test ([Convergence checks](process_flow.md#convergence-checks)) only when the pass that built its table also met the mass tolerance `tolerance_outer`; a table from a seed or from the first guess never counts.
+So the solve accepts a pass on its strict test ([Convergence checks](process_flow.md#convergence-checks)) only when the pass that built its table also met the mass tolerance of the solve: `tolerance_outer`, or `min(tolerance_outer, newton_tol)` in a ramp that `main` starts with the Newton outer solver. A table from a seed or from the first guess never counts.
 The other accept tests do not wait for it, and the cap `max_iterations_outer` still ends the outer loop.
 
 **Where this is checked.** [Temperature at the CMB and the centre](../Validation/thermal_state.md#temperature-at-the-cmb-and-the-centre).

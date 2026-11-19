@@ -2,7 +2,7 @@
 
 ## What this page checks
 
-This page checks the full structure solver of Zalmoxis: the radius, the central pressure and the gravity of a planet of given mass and core mass fraction (CMF, the mass fraction of the iron core). The cases run the full solver with the Seager et al. (2007)[^cite-seager2007] analytic equation of state (EOS), the PREM case with the PALEOS tables, and compare the planet with the Earth, published scaling laws and physical trends. Validation means that a test runs the code on a case with a known right answer and checks the result within a stated tolerance. If the solver is wrong, every planet radius and interior profile of Zalmoxis is wrong. Each case below says why the check exists, what it tests, how we know the right answer and why it matters, and ends with a box "Test details". The [overview](index.md) lists every case of the tab.
+This page checks the full structure solver of Zalmoxis: the radius, the central pressure and the gravity of a planet of given mass and core mass fraction (CMF, the mass fraction of the iron core). Most cases run the full solver with the analytic equation of state (EOS) of Seager et al. (2007)[^cite-seager2007]; the PREM case uses the PALEOS tables. The cases compare the planet with the Earth, with published scaling laws and with physical trends. Validation means that a test runs the code on a case with a known right answer and checks the result within a stated tolerance. If the solver is wrong, every planet radius and interior profile of Zalmoxis is wrong. Each case below says why the check exists, what it tests, how we know the right answer and why it matters, and ends with a box "Test details". The [overview](index.md) lists every case of the tab.
 
 ## Earth benchmark
 
@@ -64,7 +64,7 @@ Running Zalmoxis from 0.3 to 10 $M_\oplus$ with $f_c = 0.325$ and fitting $\log 
 
 **How to read the plot.** Both axes are logarithmic. The circles are the code radii of the 5 solves at 0.5, 1, 2, 5 and 10 Earth masses. The solid line is their least-squares fit, with exponent $\alpha$ = 0.289. The dotted lines have the exponents 0.23 and 0.31, the edges of the asserted range $0.27 \pm 0.04$, drawn through the centre of the fit. A pass means that the exponent of the solid line lies between those of the dotted lines.
 
-The fitted exponent is slightly higher than the Seager et al. value of 0.27, which reflects the sensitivity of the power-law fit to the mass range used. Seager et al. fit over 1-10 $M_\oplus$, where Zalmoxis gives 0.284; including sub-Earth masses (0.3 $M_\oplus$) steepens the slope because low-mass planets are less compressed, making the $R(M)$ curve slightly steeper at the low-mass end.
+The fitted exponent is slightly higher than the value of 0.27 of Seager et al. (2007), which reflects the sensitivity of the power-law fit to the mass range used. Seager et al. (2007) fit over 1-10 $M_\oplus$, where Zalmoxis gives 0.284; including sub-Earth masses (0.3 $M_\oplus$) steepens the slope because low-mass planets are less compressed, making the $R(M)$ curve slightly steeper at the low-mass end.
 
 ### CMF monotonicity
 

@@ -323,6 +323,8 @@ The structure equations place a shell in the inner core by its enclosed mass, as
 
 The result reports $S$ as `icb_superheat` \[K\] ([tests](../Validation/hydrostatic_structure.md#inner-core-boundary-of-a-two-layer-core)).
 
+The rule, the superheat, the adiabat cut and the core arrays take one pressure for one ICB mass: $P$ linear in $m^{2/3}$ between the core nodes on either side of it, with $m$ the enclosed mass, which is exact for a uniform density. When the ICB lies in the node segment of the core-mantle boundary, the upper node is the point at the core mass with $\ln P$ linear in $m$, and the ICB pressure is as accurate as that point: on a uniform sphere to $5.5 \times 10^{-5}$ at 41 nodes and $1.0 \times 10^{-3}$ at 11 nodes. The core arrays keep `P_icb` at or above the pressure of their node at the core mass, so the ICB never lies above the core-mantle boundary; for the pure-iron core solid to the core-mantle boundary at 2460 K on 150 nodes, the point lies $3.0 \times 10^{-6}$ below that node, and `P_icb` takes the node pressure.
+
 ### Temperature
 
 As in a one-layer core, each node takes the adiabatic gradient $\nabla_\mathrm{ad} = (\partial \ln T / \partial \ln P)_S$ of the side of its layer. The temperature is continuous at the ICB, and the structure temperature has no latent heat. In the 2 side tables at core states, $\nabla_\mathrm{ad}$ of the solid side is below that of the liquid side: 0.19 against 0.38 at 140 GPa and 4500 K, 0.30 against 0.46 at 330 GPa and 5500 K. These are PALEOS table values, not compared here with published data for solid and liquid iron. This difference is why, on an adiabat, the liquidus rule uses the liquid branch and not the combined profile, liquid above the ICB and solid below it:

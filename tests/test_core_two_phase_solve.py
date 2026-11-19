@@ -897,9 +897,9 @@ def test_the_inner_core_of_a_pure_iron_core_grows_as_the_surface_cools(setup, re
     0.05); the core is solid to the CMB at 2460 K and liquid at 2530 K, about 9 K outside the
     band of 2470 K (0.991) to 2520 K (0.005) on the default side-table grid; each step passes
     the zero-superheat test of case 1, and its ICB pressure is not below its CMB node (at
-    2460 K the CMB point of the ICB readers lies 3.0e-6 below it). Each solve after the first starts from the structure of
-    the one before (``adiabat_seed``: no Newton root, no blend ramp), as a cooling sequence
-    does; the unseeded path at 2500 K is case 1,
+    2460 K the CMB point of the ICB readers lies 3.0e-6 below it). Each solve after the first
+    starts from the structure of the one before (``adiabat_seed``: no Newton root, no blend
+    ramp), as a cooling sequence does; the unseeded path at 2500 K is case 1,
     test_a_pure_iron_core_has_its_icb_where_its_liquid_adiabat_meets_iron_melting."""
     temps = (2460.0, 2480.0, 2500.0, 2510.0, 2530.0)
     frac, seed = [], None

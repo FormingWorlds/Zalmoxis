@@ -565,15 +565,16 @@ class _Layer:
 @pytest.mark.physics_invariant
 @pytest.mark.reference_pinned
 @pytest.mark.parametrize(
-    'where', [0.0, 0.3, 0.9999], ids=['core_nodes', 'cmb_segment', 'at_cmb']
+    'where', [None, 0.3, 0.9999], ids=['between_core_nodes', 'cmb_segment', 'next_to_cmb']
 )
 def test_the_adiabat_cuts_its_segments_at_the_pressures_of_the_icb_readers(monkeypatch, where):
     """On the uniform sphere with a constant nabla per layer (0.1 inner core, 0.4 outer core,
     0.2 mantle), every node meets the piecewise power law T = T_a (P / P_a)^n to round-off
     (analytical law). The law breaks at the CMB with ln P linear in the enclosed mass, and at
     the ICB at the one pressure that core_arrays, icb_superheat and icb_from_profile give for
-    the same mass, between the CMB and the last core node. The ICB lies between 2 core nodes,
-    or at 0.3 or 0.9999 of the way from the last core node to the CMB, in the CMB segment."""
+    the same mass. between_core_nodes: the ICB lies between nodes 9 and 10, at the closed-form
+    pressure of the sphere. cmb_segment, next_to_cmb: the ICB lies at 0.3 and 0.9999 of the
+    way from the last core node to the CMB, between the CMB and that node in pressure."""
     import zalmoxis.mixing as _mix
     from zalmoxis.eos.temperature import compute_adiabatic_temperature
 
@@ -581,7 +582,7 @@ def test_the_adiabat_cuts_its_segments_at_the_pressures_of_the_icb_readers(monke
     m, p, cmb = res['mass_enclosed'], res['pressure'], res['cmb_mass']
     k = int(np.searchsorted(m, cmb))
     p_cmb = math.exp(np.interp(cmb, m[k - 1 : k + 1], np.log(p[k - 1 : k + 1])))
-    icb = m[k - 1] + where * (cmb - m[k - 1]) if where else 0.4 * m[9] + 0.6 * m[10]
+    icb = 0.4 * m[9] + 0.6 * m[10] if where is None else m[k - 1] + where * (cmb - m[k - 1])
     layers = {'inner_core': _Layer(0.1), 'core': _Layer(0.4), 'mantle': _Layer(0.2)}
     monkeypatch.setattr(_mix, 'get_mixed_nabla_ad', lambda P, T, mix, *a, **k: mix.n)
     monkeypatch.setattr(_mix, 'any_component_is_tdep', lambda *a, **k: True)
@@ -593,13 +594,13 @@ def test_the_adiabat_cuts_its_segments_at_the_pressures_of_the_icb_readers(monke
     liq = lambda p_: p_ / 1e8  # noqa: E731
     s = icb_superheat(m, p, np.full(len(p), 5000.0), cmb, liq, icb)[0]
     assert (5000.0 - s) * 1e8 == pytest.approx(p_icb, rel=1e-12)
-    assert icb_from_profile(m, p, t, cmb, liq, icb_mass=icb)[1] == pytest.approx(
-        p_icb, rel=1e-14
-    )
-    assert p_cmb < p_icb < p[k - 1 if where else 9]
-    if not where:  # between 2 core nodes of the uniform sphere the pressure is exact
+    assert icb_from_profile(m, p, t, cmb, liq, icb_mass=icb)[1] == p_icb  # one call path
+    if where is None:  # between 2 core nodes of the uniform sphere the pressure is exact
+        assert p[10] < p_icb < p[9]
         r_icb = (3 * icb / (4 * np.pi * 1e4)) ** (1 / 3)
         assert p_icb == pytest.approx(2 / 3 * np.pi * G * 1e8 * (4e6**2 - r_icb**2), rel=1e-12)
+    else:
+        assert p_cmb < p_icb < p[k - 1]
     t_cmb = 3000.0 * (p_cmb / 1e5) ** 0.2  # the top node (P = 0) counts as 1e5 Pa
     t_icb = t_cmb * (p_icb / p_cmb) ** 0.4
     law = np.where(

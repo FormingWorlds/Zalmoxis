@@ -95,7 +95,7 @@ Zalmoxis reads the current planet state from `hf_row`, runs its structure solve,
 | `P_surf` | Surface pressure [bar in `hf_row`, scaled to Pa internally] | Atmospheric BC for the structure solve, when finite and positive. |
 | `H2O_kg_total`, `CO2_kg_total`, ... | Volatile inventory [kg] | Subtracted from `mass_tot * M_earth` to give the dry interior `planet_mass` passed to Zalmoxis. |
 | `H2O_kg_liquid`, `H2_kg_liquid` | Dissolved volatile masses [kg] | Build the `VolatileProfile` when `dry_mantle = false`. |
-| `T_eqm`, `f_accretion`, `f_differentiation` | Accretion-mode IC inputs | Drive White & Li initial thermal state when `temperature_mode = "accretion"`. |
+| `T_eqm`, `f_accretion`, `f_differentiation` | Accretion-mode IC inputs | Drive the initial thermal state of White & Li (2025)[^cite-white2025] when `temperature_mode = "accretion"`. |
 
 ### Writes to `hf_row`
 

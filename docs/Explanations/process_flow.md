@@ -244,7 +244,7 @@ Then a test passes only on a result with the full adiabat:
 - `adiabat_blend` is 1;
 - the T(P) table of that pass was built on the pressure of a pass at blend 1 (`adiabat_table_blend` is 1).
 
-The strict test also needs a table built on a pass that met `tolerance_outer` ([How the density solve reads the core temperature](adiabat_integration.md#how-the-density-solve-reads-the-core-temperature)).
+The strict test also needs a table built on a pass that met the mass tolerance of the solve: `tolerance_outer`, or `min(tolerance_outer, newton_tol)` in a ramp that `main` starts with the Newton outer solver ([How the density solve reads the core temperature](adiabat_integration.md#how-the-density-solve-reads-the-core-temperature)).
 
 **The blend ramp.** The blend ramp moves the temperature from the linear first guess (`adiabat_blend` 0) to the adiabat (`adiabat_blend` 1) in steps of 0.25, one per outer pass.
 Each pass builds its table on the pressure of the pass before it.
@@ -271,7 +271,7 @@ Its mantle temperature therefore differs from the adiabat of its own pressure by
 The measured differences:
 
 - **Mantle, first grid start-up solve at 1 atm:** 0.07 K at the top node and at most 0.1 K at the other mantle nodes ([Secant tail and seeded re-solve on the PROTEUS grid start-up](../Validation/hydrostatic_structure.md#secant-tail-and-seeded-re-solve-on-the-proteus-grid-start-up)).
-- **Core:** the core nodes read the core part of the same table. Where the core adiabat crosses the melting curve of the PALEOS iron table, $\nabla_\mathrm{ad}$ changes steeply ([Accuracy on the PALEOS tables](adiabat_integration.md#accuracy-on-the-paleos-tables)). A temperature difference from the adiabat at the top core node therefore grows about 15 times towards the centre. For `input/default.toml` at 2515 K on macOS arm64, the returned centre temperature lies $-8.3$ to $+12.8$ K from the adiabat of the returned structure ([Centre temperature over round-off starts](../Validation/thermal_state.md#centre-temperature-over-round-off-starts)).
+- **Core:** the core nodes read the core part of the same table. Where the core adiabat crosses the melting curve of the PALEOS iron table, $\nabla_\mathrm{ad}$ changes steeply ([Accuracy on the PALEOS tables](adiabat_integration.md#accuracy-on-the-paleos-tables)). There, a temperature difference from the adiabat at the top core node grows about 15 times towards the centre. For `input/default.toml` at 2515 K on macOS arm64, the returned centre temperature lies $-8.3$ to $+12.8$ K from the adiabat of the returned structure ([Centre temperature over round-off starts](../Validation/thermal_state.md#centre-temperature-over-round-off-starts)).
 - **PROTEUS initial structure:** see [Newton and Picard on the PROTEUS initial structure](../Validation/hydrostatic_structure.md#newton-and-picard-on-the-proteus-initial-structure).
 
 The adiabat holds $T$ below $10^5$ Pa ([How the adiabat is integrated](adiabat_integration.md#low-pressure-padded-tops-missing-gradients-and-caps)), so on a fixed structure the integrated adiabat changes continuously with the top pressure and does not jump at 1 bar.
@@ -302,7 +302,7 @@ No pass of this solve built that table, so `adiabat_table_blend` is -1.0 and no 
 A radius step that gives a radius that is not finite and positive raises `StructureSolveError`, which names the outer pass and the radius; without a seed, this error stops the solve.
 A seeded solve that does not converge, or that raises `StructureSolveError`, runs again without the seed; the time of the seeded attempt counts in the `total_time` of the result.
 
-At a core mass fraction of 0.95 in the PROTEUS grid, the secant tail brings a mass error of 0.24 % below $10^{-4}$ in 3 full-adiabat passes, and the strict test accepts on the 4th; the cube-root rule needs 10 to bring the error below $10^{-4}$.
+At a core mass fraction of 0.95 in the PROTEUS grid, the secant tail brings a mass error of 0.22 % below $10^{-4}$ in 3 full-adiabat passes, and the strict test accepts on the 4th; the cube-root rule needs 11 to bring the error below $10^{-4}$.
 
 **Where this is checked.** [Secant tail and seeded re-solve on the PROTEUS grid start-up](../Validation/hydrostatic_structure.md#secant-tail-and-seeded-re-solve-on-the-proteus-grid-start-up).
 

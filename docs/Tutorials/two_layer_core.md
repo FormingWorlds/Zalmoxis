@@ -109,10 +109,10 @@ With no inner core, `R_icb` is 0 and `P_icb` is the centre pressure.
 `res['core']` holds the core arrays. The script reads `r`, `P`, `T` and `rho` (m, Pa, K and kg/m$^3$) at the core nodes, whose last node is the core-mantle boundary (CMB); `phase` (1 inner core, 0 outer core); and the scalars `M_ic` \[kg\], `R_icb` \[m\], `P_icb` \[Pa\] and `solid_above_icb_mass_fraction`. `res['cmb_mass']` is the core mass. [Core arrays](../How-to/usage.md#core-arrays) lists every key with its unit. The 2 runs differ as follows:
 
 1. With the inner-core mass of PREM, the ICB lies at 1212 km and 322 GPa. The density falls there by about 1100 kg/m$^3$, from the solid iron of the inner core to the liquid Fe-S of the outer core.
-2. With the melting curve, the core has no inner core. The adiabat from 3000 K at the surface (the `surface_temperature` of `input/default.toml`) reaches 7759 K at the centre, above the 6402 K of the Anzellini curve at 348.9 GPa.
+2. With the melting curve, the core has no inner core. The adiabat from 3000 K at the surface (the `surface_temperature` of `input/default.toml`) reaches 7759 K at the centre, above the 6402 K of the melting curve at 348.9 GPa.
 3. The inner core of the first run is solid at 7733 K at the centre, above the melting curve. The mass rule sets where the boundary is; it does not check that iron is solid there.
 
-To see an inner core from the melting curve, cool the core: `solve(core_liquidus='Anzellini13-iron', temperature_mode='isothermal', surface_temperature=5000)` puts the ICB at 206.2 GPa, next to the 206.4 GPa where the Anzellini curve is at 5000 K.
+To see an inner core from the melting curve, cool the core: `solve(core_liquidus='Anzellini13-iron', temperature_mode='isothermal', surface_temperature=5000)` puts the ICB at 206.2 GPa, next to the 206.4 GPa where the melting curve is at 5000 K.
 
 To plot the density of the core, run these lines from the `scripts/` folder, in a Python session or a second script; the import reads `solve` from Step 1:
 
@@ -130,7 +130,7 @@ plt.show()
 
 ## Step 4: give the core temperature as a table
 
-A coupled model can set the core temperature itself and pass it as a table of $T$ \[K\] against $P$ \[Pa\], `core_temperature_arrays` ([core temperature from the caller](../Explanations/proteus_coupling.md#core-temperature-from-the-caller)). The table needs a mantle temperature next to it. Save this script as `scripts/core_table.py`; it uses `solve` from Step 1 with a mantle temperature that rises from 3000 K by 15 K per GPa, and a core table that meets the Anzellini curve at 330 GPa with half its slope:
+A coupled model can set the core temperature itself and pass it as a table of $T$ \[K\] against $P$ \[Pa\], `core_temperature_arrays` ([core temperature from the caller](../Explanations/proteus_coupling.md#core-temperature-from-the-caller)). The table needs a mantle temperature next to it. Save this script as `scripts/core_table.py`; it uses `solve` from Step 1 with a mantle temperature that rises from 3000 K by 15 K per GPa, and a core table that meets the melting curve at 330 GPa with half its slope:
 
 ```python
 # scripts/core_table.py

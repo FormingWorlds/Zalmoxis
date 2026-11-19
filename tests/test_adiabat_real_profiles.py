@@ -61,27 +61,23 @@ def _eos(kw):
 
 def _reference(kw, method='DOP853'):
     """scipy ``solve_ivp`` (``method``, rtol 1e-13, atol 1e-15) of d ln T / d ln P = nabla over
-    each node segment, with the rules of the routine: a segment that holds the ICB or the CMB
-    is cut there (the CMB with ln P linear in the enclosed mass between its nodes, the ICB with
-    P linear in m^(2/3) between the last core node below it and the CMB point or the next
-    node) and each piece takes its own mixture, else the mixture of the node the segment
-    fills; T held below 1e5 Pa (a padded top, P = 0, counts as 1e5 Pa) and for a
-    T-independent layer, and the node caps. The stored profiles hold no inner core, so only
-    the CMB cut runs on them. Returns (T, count of nabla reads that were None or not
-    positive)."""
+    each node segment, with the rules of the routine: a segment that holds the CMB is cut
+    there, with ln P linear in the enclosed mass between its nodes, and each piece takes its
+    own mixture, else the mixture of the node the segment fills; T held below 1e5 Pa (a
+    padded top, P = 0, counts as 1e5 Pa) and for a T-independent layer, and the node caps.
+    The stored profiles hold no inner core; the unit tests of tests/test_core_two_phase.py
+    check the ICB cut. Returns (T, count of nabla reads that were None or not positive)."""
     from scipy.integrate import solve_ivp
 
     from zalmoxis.mixing import get_mixed_nabla_ad
     from zalmoxis.structure_model import get_layer_mixture
 
+    assert not kw.get('icb_mass'), 'the reference has no ICB cut'
     P, m, T, order, inward = ap.node_walk(kw)
-    eos, bad, lo = _eos(kw), [0], (0.0 if inward else 100.0)
-    icb = kw.get('icb_mass') or 0.0
+    eos, bad, lo, cmb = _eos(kw), [0], (0.0 if inward else 100.0), kw['cmb_mass']
 
     def mixture(mass):
-        return get_layer_mixture(
-            mass, kw['cmb_mass'], kw['core_mantle_mass'], kw['layer_mixtures'], icb
-        )
+        return get_layer_mixture(mass, cmb, kw['core_mantle_mass'], kw['layer_mixtures'])
 
     def rhs(x, y, mx):
         v = get_mixed_nabla_ad(math.exp(x), math.exp(y[0]), mx, *eos)
@@ -93,22 +89,9 @@ def _reference(kw, method='DOP853'):
     for i, j in order:
         ends = [(m[j], P[j]), (m[i], P[i])]
         (m_lo, p_lo), (m_hi, p_hi) = sorted(ends)
-        cuts = (
-            sorted((icb, kw['cmb_mass']), reverse=m[j] > m[i]) if p_lo > 0 and p_hi > 0 else []
-        )
-        if cuts:
-            p_cmb = math.exp(np.interp(kw['cmb_mass'], (m_lo, m_hi), np.log((p_lo, p_hi))))
-            m_top, p_top = (
-                (kw['cmb_mass'], p_cmb) if m_lo < kw['cmb_mass'] < m_hi else (m_hi, p_hi)
-            )
-        for b in cuts:  # each boundary inside the segment, in the direction of the walk
-            if not (m_lo < b < m_hi and mixture(b * (1 - 1e-9)) is not mixture(b * (1 + 1e-9))):
-                continue
-            if b == kw['cmb_mass']:  # ln P linear in m
-                ends.insert(-1, (b, p_cmb))
-            else:  # P linear in m^(2/3) below the CMB point, as the ICB readers
-                a = (b ** (2 / 3) - m_lo ** (2 / 3)) / (m_top ** (2 / 3) - m_lo ** (2 / 3))
-                ends.insert(-1, (b, p_lo + a * (p_top - p_lo)))
+        step = mixture(cmb * (1 - 1e-9)) is not mixture(cmb * (1 + 1e-9))
+        if p_lo > 0 and p_hi > 0 and m_lo < cmb < m_hi and step:  # ln P linear in m
+            ends.insert(1, (cmb, math.exp(np.interp(cmb, (m_lo, m_hi), np.log((p_lo, p_hi))))))
         t = T[j]
         for (m_a, p_a), (m_b, p_b) in zip(ends, ends[1:]):
             mx = mixture(m[i] if m_b == m[i] else 0.5 * (m_a + m_b))
