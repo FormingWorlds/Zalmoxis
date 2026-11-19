@@ -86,7 +86,8 @@ jobs:
             split: deselect
           - suite: core_two_phase_icb_cross
             select: core_two_phase and not wolfbower and not paleos_adiabat and not accept_solves and not accept_solves_long and not accept_solves_newton_setups and not accept_solves_reference
-            args: --dist load --cov-fail-under=0 --durations=0
+            # 2 workers: the 5 ICB-cross solves in 3 waves, about 3 x 1000 s on the CI runner
+            args: --dist load --cov-fail-under=0 --durations=0 -n 2
             job_timeout: 120
             threads: 1
             split: only
@@ -176,7 +177,7 @@ jobs:
           # one thread per xdist worker in the core jobs: 4 workers share the 4 vCPUs
           if [ -n "${{ matrix.threads }}" ]; then
             export OMP_NUM_THREADS=${{ matrix.threads }} OPENBLAS_NUM_THREADS=${{ matrix.threads }} MKL_NUM_THREADS=${{ matrix.threads }}
-            pip install -q threadpoolctl && python -m threadpoolctl -i numpy scipy
+            pip install -q threadpoolctl && python -m threadpoolctl -i numpy scipy || echo 'thread pools not printed'
           fi
           split=''
           [ "${{ matrix.split }}" = deselect ] && split="--deselect=$CORE_SPLIT"
