@@ -13,6 +13,7 @@ pass and the outer loop converges it with the structure.
 
 from __future__ import annotations
 
+import logging
 import math
 
 import numpy as np
@@ -21,6 +22,8 @@ from scipy.optimize import brentq
 
 from .eos.core_alloy import IRON_SIDES, is_alloy_mixture, split_alloy
 
+logger = logging.getLogger(__name__)
+
 _RTOL_LAYER = 1e-12  # the layer rule of structure_model.get_layer_mixture
 
 
@@ -28,8 +31,9 @@ def icb_pressure(mass, pressure, icb_mass):
     """Pressure [Pa] at ``icb_mass`` [kg] with P linear in m^(2/3) between the nodes of
     ascending ``mass`` [kg], exact for a uniform density between 2 core nodes. Every ICB
     reader and the adiabat cut take it on the core nodes and the CMB point of ``_cmb_point``
-    (ln P linear in m), so one ICB mass has one pressure; in the node segment of the CMB it
-    is as accurate as that point (``core_arrays`` keeps it at or above its CMB node)."""
+    (ln P linear in m), so they share one pressure for one ICB mass; in the node segment of
+    the CMB it is as accurate as that point. ``core_arrays`` moves it to its CMB node where
+    it would lie below that node or the inner core is full."""
     return float(np.interp(icb_mass ** (2.0 / 3.0), np.asarray(mass) ** (2.0 / 3.0), pressure))
 
 
@@ -188,11 +192,11 @@ def core_arrays(result, layer_mixtures, rhs, temperature_at, icb_mass, solid_abo
         The node at the core mass takes the core side of the layer rule for its phase and
         density. ``R_icb`` takes r^3 linear in m on the node segment of M_ic, exact for
         uniform density. ``P_icb`` takes P linear in m^(2/3) on the core nodes and the CMB
-        point of ``icb_from_profile`` (ln P linear in m), and is never below the pressure of
-        the CMB node: exact for uniform density between 2 core nodes, and in the node segment
-        of the CMB as accurate as that CMB point (on a uniform sphere up to 5.5e-5 at 41 nodes
-        and 1.0e-3 at 11 nodes). Where that point lies below the CMB node, an ICB near the core
-        mass takes the CMB node pressure, which the ICB readers then miss by that difference.
+        point of ``icb_from_profile`` (ln P linear in m), exact for uniform density between 2
+        core nodes and in the node segment of the CMB as accurate as that point, which depends
+        on the CMB position (docs/Explanations/mixing.md). It is never below the pressure of
+        the CMB node, and a full inner core takes that pressure; the ICB readers then miss
+        ``P_icb`` by that move, and a move above 1e-3 relative logs a warning.
         ``w_layers`` maps each core layer to its light-element fractions.
 
     Raises
@@ -251,9 +255,17 @@ def core_arrays(result, layer_mixtures, rhs, temperature_at, icb_mass, solid_abo
     out['M_ic'] = float(icb_mass)
     out['R_icb'] = float(np.interp(icb_mass, out['m'], out['r'] ** 3)) ** (1.0 / 3.0)
     m_core, p_core, _ = _core_nodes(m, p, t, cmb_mass)  # the CMB point of the other ICB readers
-    out['P_icb'] = max(
-        icb_pressure(m_core, p_core, icb_mass), float(p_c)
-    )  # P_icb >= P of the CMB node
+    reader = icb_pressure(m_core, p_core, icb_mass)
+    full = icb_mass >= cmb_mass * (1.0 - _RTOL_LAYER)
+    out['P_icb'] = float(p_c) if full else max(reader, float(p_c))
+    if abs(out['P_icb'] / reader - 1.0) > 1e-3:
+        logger.warning(
+            'P_icb takes the CMB node pressure %.6g Pa, %.2g off the %.6g Pa of the ICB '
+            'readers: the CMB point of the readers is coarse on this grid.',
+            out['P_icb'],
+            out['P_icb'] / reader - 1.0,
+            reader,
+        )
     out['solid_above_icb_mass_fraction'] = float(solid_above) / cmb_mass
     out['solid_above_icb'] = bool(solid_above > 0.0)
     return out

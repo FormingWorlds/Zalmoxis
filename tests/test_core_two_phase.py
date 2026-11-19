@@ -572,9 +572,11 @@ def test_the_adiabat_cuts_its_segments_at_the_pressures_of_the_icb_readers(monke
     0.2 mantle), every node meets the piecewise power law T = T_a (P / P_a)^n to round-off
     (analytical law). The law breaks at the CMB with ln P linear in the enclosed mass, and at
     the ICB at the one pressure that core_arrays, icb_superheat and icb_from_profile give for
-    the same mass. between_core_nodes: the ICB lies between nodes 9 and 10, at the closed-form
-    pressure of the sphere. cmb_segment, next_to_cmb: the ICB lies at 0.3 and 0.9999 of the
-    way from the last core node to the CMB, between the CMB and that node in pressure."""
+    the same mass (at this CMB position the CMB point of the readers lies above the CMB node,
+    so core_arrays does not move P_icb). between_core_nodes: the ICB lies between nodes 9 and
+    10, at the closed-form pressure of the sphere. cmb_segment, next_to_cmb: the ICB lies at
+    0.3 and 0.9999 of the way from the last core node to the CMB, between the CMB and that
+    node in pressure."""
     import zalmoxis.mixing as _mix
     from zalmoxis.eos.temperature import compute_adiabatic_temperature
 
@@ -619,9 +621,10 @@ def test_the_adiabat_cuts_its_segments_at_the_pressures_of_the_icb_readers(monke
 def test_p_icb_in_the_cmb_segment_lies_at_or_above_the_cmb_node(n, scale, frac):
     """On the uniform sphere with the ICB in the node segment of the CMB, P_icb of the core
     arrays meets the closed form P = 2/3 pi G rho^2 (R^2 - r^2) within the accuracy of the
-    CMB point with ln P linear in m (largest over 6 CMB positions: 5.5e-5 at 41 nodes,
-    1.0e-3 at 11 nodes; bound twice that), and never lies below the pressure of the CMB node
-    (scale 1.9: the unclamped value is 3.9e-5 and 1.0e-3 below it)."""
+    CMB point with ln P linear in m at these CMB positions (r/R 0.52 to 0.63: 5.5e-5 at 41
+    nodes, 1.0e-3 at 11 nodes; the bounds 1.1e-4 and 2e-3), never lies below the pressure of
+    the CMB node (scale 1.9: the reader value is 3.9e-5 and 5.9e-4 below it), and takes that
+    pressure for a full inner core."""
     res, rhs = _sphere_result(n, scale)
     mix = {'core': LayerMixture([LIQ], [1.0]), 'inner_core': LayerMixture([SOL], [1.0])}
     icb = frac * res['cmb_mass']
