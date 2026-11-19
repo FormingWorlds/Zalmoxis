@@ -136,16 +136,16 @@ The two-layer cores take the inner-core mass fraction of PREM, 0.0508. At each c
 | Core | Inner core: median | Inner core: largest | Outer core: median | Outer core: largest |
 | --- | --- | --- | --- | --- |
 | Fe, 1 layer | $+2.01$ % (13 nodes) | $+2.11$ % | $+8.04$ % | $+9.88$ % |
-| Fe, 2 layers | $+3.00$ % (6 nodes) | $+3.08$ % | $+8.04$ % | $+9.88$ % |
+| Fe, 2 layers | $+3.00$ % (6 nodes) | $+3.09$ % | $+8.04$ % | $+9.88$ % |
 | Fe-S, 2 layers | $+3.13$ % | $+3.44$ % | $+0.43$ % | $+2.12$ % |
 
 | Core | Radius | CMB radius | CMB pressure | Centre pressure | By radius: median, largest |
 | --- | --- | --- | --- | --- | --- |
 | PREM | 6371 km | 3480 km | 135.75 GPa | 363.85 GPa | |
 | Fe, 1 layer | 6533 km | 3381 km | 135.3 GPa | 385.9 GPa | $+8.48$ %, $+8.62$ % |
-| Fe-S, 2 layers | 6570 km | 3478 km | 128.0 GPa | 358.3 GPa | $+0.36$ %, $+2.97$ % |
+| Fe-S, 2 layers | 6570 km | 3478 km | 128.1 GPa | 358.3 GPa | $+0.37$ %, $+2.98$ % |
 
-The second table comes from the same 3 solves, on the side tables of 40 points per decade of the test (the tutorial prints 6569.7 km for the Fe-S planet on the default grid). By radius, each core node is compared with PREM at its radius, as Attia et al. (2026)[^cite-attia2026] do; nodes within 10 km of either CMB are left out. The node counts in the first table are the core nodes in each PREM region. The iron cores reach 385.9 GPa (one layer) and 387.3 GPa (two layers) at the centre, above the 364 GPa of PREM, so only their nodes up to 364 GPa enter the inner-core numbers. The outer cores of the 2 iron cores are the same: on this adiabat the outer core lies above the melting curve of iron, where `PALEOS:iron` is the PALEOS liquid. The S, Si, O and H midpoint cores of Hirose et al. (2021)[^cite-hirose2021] have the same density by the calibration of the linear law ([case](equation_of_state.md#light-element-outer-cores-on-the-liquid-iron-side)), so the S core stands for all 4.
+The second table comes from the same 3 solves, on the side tables of 40 points per decade of the test (the tutorial prints 6569.2 km for the Fe-S planet on the default grid). By radius, each core node is compared with PREM at its radius, as Attia et al. (2026)[^cite-attia2026] do; nodes within 10 km of either CMB are left out. The node counts in the first table are the core nodes in each PREM region. The iron cores reach 385.9 GPa (one layer) and 387.1 GPa (two layers) at the centre, above the 364 GPa of PREM, so only their nodes up to 364 GPa enter the inner-core numbers. The outer cores of the 2 iron cores are the same: on this adiabat the outer core lies above the melting curve of iron, where `PALEOS:iron` is the PALEOS liquid. The S, Si, O and H midpoint cores of Hirose et al. (2021)[^cite-hirose2021] have the same density by the calibration of the linear law ([case](equation_of_state.md#light-element-outer-cores-on-the-liquid-iron-side)), so the S core stands for all 4.
 
 **Why it matters.** The core density sets the core radius and the gravity of the planet. An iron outer core is 8 % denser than the core of the Earth, and its light elements close most of that gap.
 
@@ -157,7 +157,7 @@ The second table comes from the same 3 solves, on the side tables of 40 points p
 
 **How to read the plots.** The first plot gives the core density against pressure, with the centre on the left; the test numbers come from it. The second plot gives the same densities against radius. The dashed line is PREM, with its density step at the ICB. The 2 iron cores are the same in the outer core: the wide line of the one-layer core shows under the line of the two-layer core there, and the Fe-S line lies close to PREM there. The two-layer cores step down at their ICB, from the solid to the liquid side.
 
-**Known limit.** The two-layer cores take the inner-core mass of PREM, not their own ICB. On this adiabat the centres of the 2 two-layer cores are at 7732 K and 358.3 GPa (Fe-S) and at 7998 K and 387.3 GPa (pure iron), above the Anzellini melting curve at those pressures (6486 and 6743 K), so the liquidus rule would give no inner core, and the solid inner core lies above the melting curve of iron.
+**Known limit.** The two-layer cores take the inner-core mass of PREM, not their own ICB. On this adiabat the centres of the 2 two-layer cores are at 7733 K and 358.3 GPa (Fe-S) and at 7996 K and 387.1 GPa (pure iron), above the Anzellini melting curve at those pressures (6487 and 6741 K), so the liquidus rule would give no inner core, and the solid inner core lies above the melting curve of iron.
 
 ??? info "Test details"
     - Reference: the PREM of Dziewonski & Anderson (1981)[^cite-dziewonski1981], Table I (density) and Table II (pressure and gravity checks), `tests/validation/data/prem_core_polynomials.csv` and `prem_core_table2.csv`.

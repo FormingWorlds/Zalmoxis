@@ -82,23 +82,23 @@ From the repository root:
 python scripts/two_layer_core.py
 ```
 
-The first run makes the 2 iron side tables in `data/EOS_PALEOS_API/`, once per PALEOS version: 1351 by 379 nodes per side. Later runs read the cached tables. With the tables cached, the 2 solves took 3 min 2 s together on an Apple M1 Ultra, next to other jobs.
+The first run makes the 2 iron side tables in `data/EOS_PALEOS_API/`, once per PALEOS version: 1351 by 379 nodes per side. Later runs read the cached tables. With the tables cached, the 2 solves took 3 min 16 s together on an Apple M1 Ultra, next to other jobs.
 
 The script prints, for each rule:
 
 ```console
 {'inner_core_mass_fraction': 0.0508}
-  converged True, radius 6569.7 km
-  CMB 3477.8 km, 128.14 GPa, 5057 K
-  ICB 1211.8 km, 322.03 GPa, M_ic/M_core 0.0508
-  centre 358.38 GPa, 7733 K, 13434 kg/m^3
+  converged True, radius 6569.2 km
+  CMB 3477.8 km, 128.09 GPa, 5056 K
+  ICB 1211.5 km, 322.04 GPa, M_ic/M_core 0.0508
+  centre 358.39 GPa, 7733 K, 13434 kg/m^3
   density step at the ICB 13160 -> 12046 kg/m^3
   solid above the ICB: 0.000 of the core mass
 {'core_liquidus': 'Anzellini13-iron'}
-  converged True, radius 6572.3 km
-  CMB 3483.9 km, 127.69 GPa, 5053 K
-  ICB 0.0 km, 348.83 GPa, M_ic/M_core 0.0000
-  centre 348.83 GPa, 7759 K, 12278 kg/m^3
+  converged True, radius 6571.5 km
+  CMB 3483.8 km, 127.75 GPa, 5054 K
+  ICB 0.0 km, 348.91 GPa, M_ic/M_core 0.0000
+  centre 348.91 GPa, 7759 K, 12279 kg/m^3
   solid above the ICB: 0.000 of the core mass
 ```
 
@@ -154,7 +154,7 @@ print(f"ICB {core['P_icb'] / 1e9:.2f} GPa, M_ic/M_core {core['M_ic'] / res['cmb_
 print(f"centre {core['P'][0] / 1e9:.2f} GPa, {core['T'][0]:.0f} K; CMB {core['P'][-1] / 1e9:.2f} GPa, {core['T'][-1]:.0f} K")
 ```
 
-Run it from the `scripts/` folder with `python core_table.py`. With the tables cached it took 56 s on an Apple M1 Ultra, next to other jobs, and printed:
+Run it from the `scripts/` folder with `python core_table.py`. With the tables cached it took 54 s on an Apple M1 Ultra, next to other jobs, and printed:
 
 ```console
 converged True, core_T_used True, nodes outside the table 0

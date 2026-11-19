@@ -6,7 +6,7 @@
   <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
    <cc:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
-    <dc:description>test: tests/test_core_two_phase.py::test_the_start_dependence_scan_of_the_liquidus_rule; command: pytest tests/test_core_two_phase.py::test_the_start_dependence_scan_of_the_liquidus_rule --validation-plots; summary: {"v": 1, "axes": [{"scales": ["linear", "linear"], "categories": [null, null], "lines": [[17, 2300.0, 2700.0, 2500.0, 74.99999999999994, 0.0, 1.0, 0.4659732662922965, -0.26412901122771354], [17, 2300.0, 2700.0, 2500.0, 74.99999999999994, 0.0, 1.0, 0.46588005709201863, -0.26411736007767883]], "collections": [], "values": [], "value_scales": [], "patches": [], "images": [], "image_scales": [], "extents": []}]}</dc:description>
+    <dc:description>test: tests/test_core_two_phase.py::test_the_start_dependence_scan_of_the_liquidus_rule; command: pytest tests/test_core_two_phase.py::test_the_start_dependence_scan_of_the_liquidus_rule --validation-plots; summary: {"v": 1, "axes": [{"scales": ["linear", "linear"], "categories": [null, null], "lines": [[17, 2300.0, 2700.0, 2500.0, 74.99999999999994, 0.0, 1.0, 0.4659671584974175, -0.2641282477533537], [17, 2300.0, 2700.0, 2500.0, 74.99999999999994, 0.0, 1.0, 0.466288792496001, -0.26416845200317657]], "collections": [], "values": [], "value_scales": [], "patches": [], "images": [], "image_scales": [], "extents": []}]}</dc:description>
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <cc:Agent>
@@ -811,7 +811,7 @@ L 115.678046 14.320992
 L 130.893403 14.320992 
 L 146.108761 14.320992 
 L 161.324118 14.320992 
-L 176.539476 25.494465 
+L 176.539476 25.509253 
 L 191.754833 156.740826 
 L 206.97019 156.740826 
 L 222.185548 156.740826 
@@ -843,7 +843,7 @@ z
      <use xlink:href="#m5efca03033" x="130.893403" y="14.320992" style="fill-opacity: 0; stroke: #f2f5f7"/>
      <use xlink:href="#m5efca03033" x="146.108761" y="14.320992" style="fill-opacity: 0; stroke: #f2f5f7"/>
      <use xlink:href="#m5efca03033" x="161.324118" y="14.320992" style="fill-opacity: 0; stroke: #f2f5f7"/>
-     <use xlink:href="#m5efca03033" x="176.539476" y="25.494465" style="fill-opacity: 0; stroke: #f2f5f7"/>
+     <use xlink:href="#m5efca03033" x="176.539476" y="25.509253" style="fill-opacity: 0; stroke: #f2f5f7"/>
      <use xlink:href="#m5efca03033" x="191.754833" y="156.740826" style="fill-opacity: 0; stroke: #f2f5f7"/>
      <use xlink:href="#m5efca03033" x="206.97019" y="156.740826" style="fill-opacity: 0; stroke: #f2f5f7"/>
      <use xlink:href="#m5efca03033" x="222.185548" y="156.740826" style="fill-opacity: 0; stroke: #f2f5f7"/>
@@ -863,7 +863,7 @@ L 115.678046 14.320992
 L 130.893403 14.320992 
 L 146.108761 14.320992 
 L 161.324118 14.320992 
-L 176.539476 25.720137 
+L 176.539476 24.730533 
 L 191.754833 156.740826 
 L 206.97019 156.740826 
 L 222.185548 156.740826 
@@ -890,7 +890,7 @@ z
      <use xlink:href="#mc64122998d" x="130.893403" y="14.320992" style="fill-opacity: 0; stroke: #e23d28; stroke-linejoin: miter"/>
      <use xlink:href="#mc64122998d" x="146.108761" y="14.320992" style="fill-opacity: 0; stroke: #e23d28; stroke-linejoin: miter"/>
      <use xlink:href="#mc64122998d" x="161.324118" y="14.320992" style="fill-opacity: 0; stroke: #e23d28; stroke-linejoin: miter"/>
-     <use xlink:href="#mc64122998d" x="176.539476" y="25.720137" style="fill-opacity: 0; stroke: #e23d28; stroke-linejoin: miter"/>
+     <use xlink:href="#mc64122998d" x="176.539476" y="24.730533" style="fill-opacity: 0; stroke: #e23d28; stroke-linejoin: miter"/>
      <use xlink:href="#mc64122998d" x="191.754833" y="156.740826" style="fill-opacity: 0; stroke: #e23d28; stroke-linejoin: miter"/>
      <use xlink:href="#mc64122998d" x="206.97019" y="156.740826" style="fill-opacity: 0; stroke: #e23d28; stroke-linejoin: miter"/>
      <use xlink:href="#mc64122998d" x="222.185548" y="156.740826" style="fill-opacity: 0; stroke: #e23d28; stroke-linejoin: miter"/>
