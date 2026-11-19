@@ -630,6 +630,27 @@ def test_p_icb_in_the_cmb_segment_lies_at_or_above_the_cmb_node(n, scale, frac):
     exact = 2 / 3 * np.pi * G * 1e8 * (4e6**2 - r_icb**2)
     assert core['P_icb'] >= core['P'][-1]
     assert core['P_icb'] == pytest.approx(exact, rel=1.1e-4 if n == 41 else 2e-3)
+    if frac == 1.0:  # an ICB at the CMB has the pressure of the CMB node
+        assert core['P_icb'] == core['P'][-1]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ('n', 'scale', 'frac', 'warns'),
+    [(11, 3.0, 0.999, True), (41, 1.9, 1.0, False), (11, 1.1, 1.0, False)],
+)
+def test_a_p_icb_moved_by_more_than_1e_3_logs_a_warning(caplog, n, scale, frac, warns):
+    """core_arrays logs 1 warning when it moves P_icb off the reader value by more than a
+    relative 1e-3, as on 11 nodes with the CMB at r/R 0.72 (the reader CMB point lies 5.3e-3
+    below the CMB node); a smaller move, or none, logs nothing."""
+    import logging
+
+    res, rhs = _sphere_result(n, scale)
+    mix = {'core': LayerMixture([LIQ], [1.0]), 'inner_core': LayerMixture([SOL], [1.0])}
+    with caplog.at_level(logging.WARNING, logger='zalmoxis.core_profile'):
+        core_arrays(res, mix, rhs, lambda r, p_: 5000.0, frac * res['cmb_mass'], 0.0)
+    hits = [r for r in caplog.records if 'P_icb' in r.getMessage()]
+    assert len(hits) == (1 if warns else 0)
 
 
 _P_TP, _T_TP, _Q = 98.5e9, 3712.0, 1 / 1.72  # triple point and 1/c of Anzellini et al. (2013)
