@@ -100,7 +100,7 @@ def _reference(kw, method='DOP853'):
                 a = (b ** (2 / 3) - m_lo ** (2 / 3)) / (m_hi ** (2 / 3) - m_lo ** (2 / 3))
                 ends.insert(-1, (b, p_lo + a * (p_hi - p_lo)))
             else:  # ln P linear in m
-                ends.insert(-1, (b, p_lo * (p_hi / p_lo) ** ((b - m_lo) / (m_hi - m_lo))))
+                ends.insert(-1, (b, math.exp(np.interp(b, (m_lo, m_hi), np.log((p_lo, p_hi))))))
         t = T[j]
         for (m_a, p_a), (m_b, p_b) in zip(ends, ends[1:]):
             mx = mixture(m[i] if m_b == m[i] else 0.5 * (m_a + m_b))

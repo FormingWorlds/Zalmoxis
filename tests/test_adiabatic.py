@@ -950,8 +950,7 @@ class TestMidpointAdiabat:
     def test_default_call_uses_the_0p0025_substeps(self, monkeypatch, anchor):
         """A default call evaluates nabla twice per substep, with ceil(|d ln P| / 0.0025)
         substeps per segment above 1e5 Pa: the count pins the default h, because the 1 K bound
-        of the real profiles does not decide h (0.0065 and 0.008 pass it, 0.0055 and 0.007
-        fail)."""
+        of the real profiles also admits a larger h (0.005 gives 0.50 K, 0.0055 gives 1.29 K)."""
         calls = []
         _stub_adiabat(monkeypatch, lambda P, T: 0.1, calls)  # T stays inside the node caps
         P = np.geomspace(3.6e11, 3e4, 40)  # the top segment crosses 1e5 Pa
