@@ -80,8 +80,9 @@ jobs:
             args: --dist load --cov-fail-under=0 --durations=0 tests/test_accepted_on.py
           - suite: core_two_phase
             select: core_two_phase and not wolfbower and not paleos_adiabat and not accept_solves and not accept_solves_long and not accept_solves_newton_setups and not accept_solves_reference
-            args: --dist load --cov-fail-under=0 --durations=0
-            job_timeout: 120
+            # 2 workers: on 4 the solves share the vCPUs and run 1.5 to 2.6 times longer
+            args: --dist load --cov-fail-under=0 --durations=0 -n 2
+            job_timeout: 170
             threads: 1
             split: deselect
           - suite: core_two_phase_icb_cross
@@ -98,7 +99,7 @@ jobs:
             select: default_invariance and not wolfbower and not paleos_adiabat and not accept_solves and not accept_solves_long and not accept_solves_newton_setups and not core_two_phase and not accept_solves_reference
             args: --cov-fail-under=0 --durations=0
     # 90 min per job, 170 min for main, wolfbower and each Newton setup job, 150 min for
-    # accept_solves_long and accept_solves_reference, 120 min for each core job; the Newton
+    # accept_solves_long and accept_solves_reference, 170 and 120 min for the 2 core jobs; the Newton
     # setup sweep is split over 4 jobs by test id (-k).
     timeout-minutes: ${{ matrix.job_timeout || 90 }}
     steps:
