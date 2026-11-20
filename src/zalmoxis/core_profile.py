@@ -22,7 +22,7 @@ from scipy.optimize import brentq
 
 from .eos.core_alloy import IRON_SIDES, is_alloy_mixture, split_alloy
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('fwl.' + __name__)
 
 _RTOL_LAYER = 1e-12  # the layer rule of structure_model.get_layer_mixture
 
