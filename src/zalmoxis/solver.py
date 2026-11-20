@@ -971,7 +971,8 @@ def main(
         ``adiabat_self_consistency`` gives the largest difference in K between the returned
         mantle T and the adiabat recomputed on the returned structure (None below blend 1),
         and ``adiabat_self_consistency_core`` the same at the core nodes, whose T comes from
-        the T table of the pass before;
+        the T table of the pass before (None with ``temperature_mode = 'adiabatic_from_cmb'``,
+        which integrates no core adiabat);
         a Newton root there seeds the Picard blend ramp at min(tolerance_outer, newton_tol),
         and the result keeps its ``newton_*`` keys and its time in ``total_time``. In a ramp
         that main starts (after a Newton root or from ``adiabat_seed``), a pass on a
@@ -3453,6 +3454,8 @@ def _solve(
         self_consistency, core_lag = _layer_lags(
             temperatures, adiabat, mass_enclosed, pressure, cmb_mass
         )
+        if temperature_mode == 'adiabatic_from_cmb':
+            core_lag = None  # no core adiabat below a CMB anchor
 
     model_results = {
         'layer_eos_config': layer_eos_config,

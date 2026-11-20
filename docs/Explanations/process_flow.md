@@ -288,7 +288,7 @@ It is None below blend 1 and when no mantle node has a positive pressure.
 `adiabat_self_consistency_core` gives the largest lag of the core nodes.
 The core nodes read their temperature from the T(P) table of the pass before, so their temperature lags the adiabat of the returned structure.
 The strict test bounds this lag only through the mass error of the pass that built the table.
-The value is None below blend 1 and when no core node has a positive pressure.
+The value is None below blend 1, with `temperature_mode = 'adiabatic_from_cmb'`, which integrates no adiabat below the CMB and gives the core nodes the surface temperature, and when no core node has a positive pressure.
 
 ### Secant tail and seeded re-solve
 
