@@ -344,6 +344,21 @@ No CMB point exists there, so the 11-node value of the last row covers the other
 With a surface pressure of $10^{-6}$ of the centre pressure in place of 0, the error in that segment is 0.99.
 The pressure of the uniform sphere falls to 0 at its surface, so the last row overstates a planet with a mantle above the core. The core arrays take the same pressure, with 2 exceptions: they never put `P_icb` below the pressure of their node at the core mass, which comes from the structure integration, and they give a full inner core that pressure. The ICB readers then differ from `P_icb` by that move, and a move above $10^{-3}$ of `P_icb` logs a warning. For the pure-iron core solid to the core-mantle boundary at 2460 K on 150 nodes, the CMB point lies a relative $3.0 \times 10^{-6}$ below that node.
 
+### The temperature at the CMB point
+
+The CMB point belongs to the core, so the ICB readers take its temperature from the core side of the temperature source of the pass:
+
+- on an adiabat, the core gradient stepped outward from the last core node to the pressure of the point, the step that the adiabat takes on that piece of the segment;
+- with a [core temperature table](proteus_coupling.md#core-temperature-from-the-caller), the table at that pressure;
+- with another temperature function, that function at the CMB radius, with $r^3$ linear in the enclosed mass.
+
+The pressure of the point is the one of the section above. $T$ linear in $\ln P$ between the last core node and the first mantle node mixes the mantle gradient into the point: on the 4 stored solves of `input/default.toml` it lies 3.7 to 3.9 K above the adiabat with a node at the core mass, while the core-side step meets it to $10^{-10}$ K. A caller of `icb_from_profile` that passes no rule (`cmb_temperature`) gets that interpolation.
+
+The point changes a result only through the node segment of the CMB, above the last core node at 0.983 to 0.987 of the core mass in the solves below. For the pure-iron core of the default planet, unseeded, the core-side rule against the interpolation:
+
+- from 2470.5 to 2474.0 K at the surface, the inner-core mass fraction moves by up to 0.011, and the inner core is full from 2471.5 to 2473.0 K, where the interpolation leaves a liquid shell;
+- at the 10 other surface temperatures from 2455 to 2480 K, the structure is bit-equal, and the superheat of a full inner core (2455 to 2470 K) is 3.4 to 3.9 K lower.
+
 ### Temperature
 
 As in a one-layer core, each node takes the adiabatic gradient $\nabla_\mathrm{ad} = (\partial \ln T / \partial \ln P)_s$, the gradient at constant specific entropy $s$, of the side of its layer. The temperature is continuous at the ICB, and the structure temperature has no latent heat. In the 2 side tables at core states, $\nabla_\mathrm{ad}$ of the solid side is below that of the liquid side: 0.19 against 0.38 at 140 GPa and 4500 K, 0.30 against 0.46 at 330 GPa and 5500 K. These are PALEOS table values, not compared here with published data for solid and liquid iron. This difference is why, on an adiabat, the liquidus rule uses the liquid branch and not the combined profile, liquid above the ICB and solid below it:
