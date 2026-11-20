@@ -151,7 +151,12 @@ Each grid run produces:
     - `main_component`: the dominant (highest mass-fraction) chemistry of the layer the shell sits in (`Fe`, `MgSiO3`, `H2O`, `H2`, ...). For multi-component layers (e.g. `mantle = "PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15"`) only the dominant component is reported.
     - `phase`: the phase of that component at the shell's (P, T). One of `solid`, `liquid`, `gas`, `supercritical`, `mixed` (mushy zone for 2-phase silicate EOS), or `unknown`. Phase is read directly from the unified PALEOS table's per-cell phase column for `PALEOS:iron`, `PALEOS:MgSiO3`, `PALEOS:H2O`; from the configured solidus & liquidus for `PALEOS-2phase:*`, `WolfBower2018:*`, `RTPress100TPa:*`; hardcoded to `supercritical` for `Chabrier:H` (always above the H2 critical point at planetary interior conditions); and `solid` for `Seager2007:*` (300 K static lookup tables for solid-phase Fe/silicate/water).
 
-    The comment header carries the scalar mass diagnostics (`cmb_mass`, `core_mantle_mass`), the `converged` flag, the run label, and the per-layer EOS and melting-curve identifiers (`core_eos`, `inner_core_eos` (empty for a one-layer core), `mantle_eos`, `ice_layer_eos`, `rock_solidus_id`, `rock_liquidus_id`).
+    The comment header carries:
+
+    - the scalar mass diagnostics `cmb_mass` and `core_mantle_mass`;
+    - the `converged` flag and the run label;
+    - the EOS of each layer: `core_eos`, `inner_core_eos` (empty for a one-layer core), `mantle_eos` and `ice_layer_eos`;
+    - the melting curves: `rock_solidus_id` and `rock_liquidus_id`.
 
     CSVs are written for non-converged grid points too (useful for debugging), but the last row of `radius_m` and `mass_enclosed_kg` in those cases is the last Picard iterate, not the planet's converged structure, and `density_kg_m3` can contain NaN in failed shells, and zero in the shells past a surface stop of a result without a pressure solve. The padded nodes of a converged profile have zero pressure but the EOS density at the target surface pressure. Filter on `converged == True` before plotting. A converged profile can still be padded: its last `pressure_Pa` row is 0 instead of the target surface pressure ([padded accepts](../Explanations/process_flow.md#padded-accepts)), so check that row when you use the surface values.
 

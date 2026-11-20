@@ -1,6 +1,11 @@
 # Interior Structure Model
 
-Zalmoxis solves the coupled ordinary differential equations (ODEs) of hydrostatic equilibrium for a differentiated planet with 2 to 4 compositionally distinct layers: an iron core, which can be split into a solid inner core and a liquid outer core ([two-layer core](mixing.md#two-layer-core)), a silicate mantle and an optional water/ice envelope.
+Zalmoxis solves the coupled ordinary differential equations (ODEs) of hydrostatic equilibrium for a differentiated planet with 2 to 4 layers of distinct composition:
+
+- an iron core, which can be split into a solid inner core and a liquid outer core ([two-layer core](mixing.md#two-layer-core));
+- a silicate mantle;
+- an optional water or ice envelope.
+
 Given a total planet mass, layer mass fractions, and a per-layer equation of state (EOS) specification, the code iteratively determines self-consistent radial profiles of pressure, density, gravity, and enclosed mass from the center to the surface.
 
 Several EOS families are supported (see [Equations of State](eos_physics.md) for detailed physics):
@@ -10,7 +15,7 @@ Several EOS families are supported (see [Equations of State](eos_physics.md) for
 - [Seager et al. (2007)](eos_physics.md#seager-et-al-2007-tabulated-eos)[^cite-seager2007]: merged tabulated EOS at 300 K
 - [Wolf & Bower (2018)](eos_physics.md#wolf-bower-2018-temperature-dependent-eos)[^cite-wolf2018]: temperature-dependent RTpress EOS ($\leq 7\,M_\oplus$)
 - [RTPress100TPa](eos_physics.md#rtpress100tpa-extended-melt-eos): extended melt table to 100 TPa
-- [Chabrier H/He](eos_physics.md#chabrier-hhe-pure-h2): pure H$_2$ EOS for sub-Neptune interiors (use as mixing component)
+- [Chabrier H/He](eos_physics.md#chabrier-hhe-pure-h_2): pure H$_2$ EOS for sub-Neptune interiors (use as mixing component)
 - [Analytic polytrope](eos_physics.md#analytic-modified-polytrope-seager-et-al-2007): fast closed-form approximation, no data files
 
 Layers can contain [multiple materials mixed by volume additivity](mixing.md), with phase-aware suppression of non-condensed volatiles.
@@ -63,7 +68,7 @@ With the `[EOS]` key `inner_core` set, the core has 2 layers: a shell belongs to
 The function `get_layer_mixture()` in `structure_model.py` maps the enclosed mass at each integration step to the appropriate per-layer EOS string, which is then dispatched to `calculate_density()`.
 
 The per-layer system allows arbitrary mixing of tabulated and analytic EOS across layers (for instance, an analytic iron core with a temperature-dependent silicate mantle) without modifying the solver.
-A legacy global-string format is still accepted for backward compatibility via `parse_eos_config()`.
+`parse_eos_config()` also reads the older format, one `choice` string for all layers.
 
 Each layer can also contain multiple materials mixed by volume additivity.
 The config format uses `+` to combine materials with mass fractions: `"PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15"`.
@@ -78,8 +83,8 @@ In the PROTEUS ecosystem, mixing fractions are set by CALLIOPE (solubility model
 | **`PALEOS:MgSiO3`** | **PALEOS** | **MgSiO$_3$ (6 phases)** | **$T$-dependent ($\leq 50\,M_\oplus$), includes $\nabla_{\mathrm{ad}}$** |
 | **`PALEOS:H2O`** | **PALEOS** | **H$_2$O (7 EOS)** | **$T$-dependent ($\leq 50\,M_\oplus$), includes $\nabla_{\mathrm{ad}}$** |
 | `PALEOS-2phase:MgSiO3` | PALEOS (2-phase variant) | MgSiO$_3$ (solid + liquid) | $T$-dependent ($\leq 50\,M_\oplus$), includes $\nabla_{\mathrm{ad}}$ |
-| `PALEOS-API-2phase:iron-solid` | PALEOS (made from the installed package) | Fe, solid phases | $T$-dependent ($\leq 50\,M_\oplus$), inner core only |
-| `PALEOS-API-2phase:iron-liquid` | PALEOS (made from the installed package) | Fe, liquid | $T$-dependent ($\leq 50\,M_\oplus$), the outer core of a two-layer core |
+| `PALEOS-API-2phase:iron-solid` | PALEOS, tabulated by `zalmoxis.eos.paleos_api` from the installed PALEOS package | Fe, solid phases | $T$-dependent ($\leq 50\,M_\oplus$), inner core only |
+| `PALEOS-API-2phase:iron-liquid` | PALEOS, tabulated by `zalmoxis.eos.paleos_api` from the installed PALEOS package | Fe, liquid | $T$-dependent ($\leq 50\,M_\oplus$), the outer core of a two-layer core |
 | `Seager2007:iron` | Tabulated | Fe ($\epsilon$) | 300 K |
 | `Seager2007:MgSiO3` | Tabulated | MgSiO$_3$ perovskite | 300 K |
 | `Seager2007:H2O` | Tabulated | Water ice (VII/VIII/X) | 300 K |
@@ -105,6 +110,7 @@ See [Equations of State](eos_physics.md) for detailed physics of each EOS family
 | `RTPress100TPa:MgSiO3` | $10^3$ to $10^{14}$ Pa (100 TPa) | 400 to 50,000 K | 50 $M_\oplus$ | Extended melt table; solid from WB2018 (clamped at 1 TPa, band-edge fill) |
 | `PALEOS-2phase:MgSiO3` | 1 bar to 100 TPa | 300 to 100,000 K | 50 $M_\oplus$ | Solid + liquid with $\nabla_{\mathrm{ad}}$; 75%/53% grid fill |
 | `PALEOS:iron` | 1 bar to 100 TPa | 300 to 100,000 K | 50 $M_\oplus$ | Unified 5-phase Fe with $\nabla_{\mathrm{ad}}$ |
+| `PALEOS-API-2phase:iron-solid`, `-liquid` | 1 bar to 100 TPa (default side grid) | 300 to 100,000 K | 50 $M_\oplus$ | Solid and liquid side of Fe for a two-layer core, with $\nabla_{\mathrm{ad}}$ |
 | `PALEOS:MgSiO3` | 1 bar to 100 TPa | 300 to 100,000 K | 50 $M_\oplus$ | Unified 6-phase MgSiO$_3$ with $\nabla_{\mathrm{ad}}$ |
 | `PALEOS:H2O` | 1 bar to 100 TPa | 100 to 100,000 K | 50 $M_\oplus$ | Unified 7-EOS H$_2$O with $\nabla_{\mathrm{ad}}$ |
 | `Chabrier:H` | 1 Pa to $10^{22}$ Pa | 100 to $10^8$ K | -- | Pure H$_2$; use as mixing component only |

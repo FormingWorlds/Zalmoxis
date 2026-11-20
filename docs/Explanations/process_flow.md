@@ -185,8 +185,13 @@ Made with `python -m tools.validation.pressure_root_sweep run <dir> -j 2`, then 
 The numerical solve is accepted when one of the tests below passes: the result then has `converged = True`, and `accepted_on` names the test, or `timeout` when the wall clock stopped the solve of the returned profile; it is None when no test passes.
 `stopped_on_wall_clock` is True when the wall clock stopped that solve, also when no test passed.
 The table band check (see [EOS physics](eos_physics.md)) runs after these tests: a band failure sets `converged = False` and keeps `accepted_on`, so read `converged` for the final verdict.
-Three later tests refuse a result that a test of the table below accepted: the refusal of a result short of the full adiabat ([below](#full-adiabat-rule)), the ICB tests of a two-layer core, and a `core_temperature_arrays` table that the core nodes leave by more than 0.1 of its pressure range.
-Each refusal sets `converged` and `converged_mass` False and `accepted_on` and `accept_mass_limit` None.
+3 later tests can refuse a result that a test of the table below accepted:
+
+- the [full-adiabat rule](#full-adiabat-rule), when the result does not carry the full adiabat;
+- the 2 ICB tests of a [two-layer core](mixing.md#the-inner-core-boundary);
+- the check of a [core temperature table](proteus_coupling.md#core-temperature-from-the-caller): a core node lies beyond the table by more than 0.1 of its pressure range.
+
+A refusal sets `converged` and `converged_mass` to False, and `accepted_on` and `accept_mass_limit` to None.
 
 | `accepted_on` | Outer solver | Test |
 |---|---|---|
@@ -247,6 +252,8 @@ Then a test passes only on a result with the full adiabat:
 - the T(P) table of that pass was built on the pressure of a pass at blend 1 (`adiabat_table_blend` is 1).
 
 The strict test also needs a table built on a pass that met the mass tolerance of the solve: `tolerance_outer`, or `min(tolerance_outer, newton_tol)` in a ramp that `main` starts with the Newton outer solver ([How the density solve reads the core temperature](adiabat_integration.md#how-the-density-solve-reads-the-core-temperature)).
+A table from a seed or from the first guess never counts.
+The other accept tests do not wait for this table, and the cap `max_iterations_outer` still ends the outer loop.
 
 **The blend ramp.** The blend ramp moves the temperature from the linear first guess (`adiabat_blend` 0) to the adiabat (`adiabat_blend` 1) in steps of 0.25, one per outer pass.
 Each pass builds its table on the pressure of the pass before it.
@@ -288,7 +295,11 @@ It is None below blend 1 and when no mantle node has a positive pressure.
 `adiabat_self_consistency_core` gives the largest lag of the core nodes.
 The core nodes read their temperature from the T(P) table of the pass before, so their temperature lags the adiabat of the returned structure.
 The strict test bounds this lag only through the mass error of the pass that built the table.
-The value is None below blend 1, with `temperature_mode = 'adiabatic_from_cmb'`, which integrates no adiabat below the CMB and gives the core nodes the surface temperature, and when no core node has a positive pressure.
+The value is None in 3 cases:
+
+- below blend 1;
+- with `temperature_mode = 'adiabatic_from_cmb'`, which integrates no adiabat below the CMB: the core nodes take the surface temperature, or the table of `core_temperature_arrays` when one is given;
+- when no core node has a positive pressure.
 
 ### Secant tail and seeded re-solve
 

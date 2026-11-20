@@ -75,6 +75,10 @@ Houses `main()` (the user-facing entry), `_solve()` (damped-Picard outer loop, d
 
 Defines the hydrostatic ODE system $[dM/dr,\; dg/dr,\; dP/dr]$, the layer dispatch helper `get_layer_mixture()`, and `solve_structure()`, which integrates the system from surface to centre via `scipy.integrate.solve_ivp` (RK45) with a terminal pressure-zero event. When `use_jax=True` it forwards to `jax_eos.wrapper.solve_structure_via_jax` instead. See [`zalmoxis.structure_model`](../Reference/api/zalmoxis.structure_model.md).
 
+#### `core_profile.py`
+
+The inner-core boundary (ICB) of a [two-layer core](mixing.md#two-layer-core) and the core arrays `result['core']` of a solve whose profile reaches the core mass. The ICB is either a given mass, `inner_core_mass_fraction` of the core mass, or the first root, from the centre outward, of the temperature (the liquid branch on an adiabat) minus the liquidus `T_liq(P)` (`icb_from_profile`, `icb_superheat`). The structure equations place a shell in the inner core by its enclosed mass, so the liquidus rule reads the profile of the previous outer pass.
+
 #### `output.py`
 
 `post_processing()` orchestrates a full run: it calls `solver.main()`, writes radial profiles and mass-radius scalars to the run directory, and (lazily) imports matplotlib only when plotting is enabled. See [`zalmoxis.output`](../Reference/api/zalmoxis.output.md).
