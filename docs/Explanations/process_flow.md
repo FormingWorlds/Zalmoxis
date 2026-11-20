@@ -7,7 +7,7 @@ Read it to see why a run returns a given structure, why a returned profile can h
 ## Configuration Loading
 
 The function `load_zalmoxis_config()` (in `config.py`) reads a TOML configuration file that specifies planet mass, layer mass fractions, per-layer EOS identifiers, temperature profile settings, solver tolerances, and output options.
-The `[EOS]` section is parsed by `parse_eos_config()` (also in `config.py`), which accepts both the new per-layer format and the legacy global-string format.
+The `[EOS]` section is parsed by `parse_eos_config()` (also in `config.py`), which reads the EOS of each layer, or a single `choice` key that sets the EOS of all layers at once.
 
 ## Initial Parameter Setup
 
@@ -298,7 +298,7 @@ The strict test bounds this lag only through the mass error of the pass that bui
 The value is None in 3 cases:
 
 - below blend 1;
-- with `temperature_mode = 'adiabatic_from_cmb'`, which integrates no adiabat below the CMB: the core nodes take the surface temperature, or the table of `core_temperature_arrays` when one is given;
+- with `temperature_mode = 'adiabatic_from_cmb'`, which integrates no adiabat below the CMB and gives the core nodes the surface temperature;
 - when no core node has a positive pressure.
 
 ### Secant tail and seeded re-solve

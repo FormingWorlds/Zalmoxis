@@ -99,23 +99,25 @@ Without the cut, the segment that holds the ICB would take one of the 2 values o
 
 Which temperature does a core node read while the structure still changes from one outer pass to the next?
 
+In short: each pass reads a T(P) table built on the pass before, split at the CMB of that pass.
+A core point reads only the core part and a mantle point only the mantle part, so a mantle point never interpolates between a mantle and a core temperature.
+
 An outer pass is one step of the outer loop ([Process flow](process_flow.md#iterative-solution)).
-The density solve of a pass reads $T$ from a T(P) table built on the pass before.
-The table is split at the CMB of the pass that built it: one part holds the mantle nodes, the other the core nodes.
+One part of the table holds the mantle nodes of the pass that built it, the other its core nodes.
 A node, or a point of the density integration, reads the core part when its enclosed mass lies below the core mass of the current pass, and the mantle part otherwise.
-
-The 2 parts share no node, so a mantle point never interpolates between a mantle and a core temperature.
 This also holds when the CMB of the current pass lies at another pressure than that of the table, which happens on every pass whose structure still moves.
-Outside the pressure range of a part, the table reads as follows:
-
-- past the high-pressure end of either part, $\log_{10} T$ continues linearly in $\log_{10} P$ with the slope of the end interval of that part, so the centre of a pass with a higher central pressure than the table takes a rising temperature, not the end value of the table;
-- past the low-pressure end of the core part, it continues in the same way;
-- past the low-pressure end of the mantle part, it holds the temperature of that end; at $P \le 0$ (a padded node) the solve takes the surface temperature, or the linear first guess below blend 1.
-
 When the core of the pass that built the table holds fewer than 2 nodes of positive pressure, or its mantle fewer than 2 nodes, the table is not split, and every point reads one table of all nodes.
 
+### Pressures outside a part of the table
+
+- Past the high-pressure end of either part, $\log_{10} T$ continues linearly in $\log_{10} P$ with the slope of the end interval of that part, so the centre of a pass with a higher central pressure than the table takes a rising temperature, not the end value of the table.
+- Past the low-pressure end of the core part, it continues in the same way.
+- Past the low-pressure end of the mantle part, it holds the temperature of that end. At $P \le 0$ (a padded node) the solve takes the surface temperature, or the linear first guess below blend 1.
+
+### Which table the strict test accepts
+
 A table built on a pass far from the planet mass puts its CMB at the wrong pressure.
-So the strict test accepts a pass only when the pass that built its table met the mass tolerance of the solve ([Full-adiabat rule](process_flow.md#full-adiabat-rule) gives the tolerance and the other accept tests).
+So the strict accept test (`accepted_on = 'strict'`) accepts a pass only when the pass that built its table met the mass tolerance of the solve ([Full-adiabat rule](process_flow.md#full-adiabat-rule) gives the tolerance and the other accept tests).
 
 **Where this is checked.** [Temperature at the CMB and the centre](../Validation/thermal_state.md#temperature-at-the-cmb-and-the-centre).
 

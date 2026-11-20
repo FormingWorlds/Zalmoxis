@@ -68,7 +68,7 @@ With the `[EOS]` key `inner_core` set, the core has 2 layers: a shell belongs to
 The function `get_layer_mixture()` in `structure_model.py` maps the enclosed mass at each integration step to the appropriate per-layer EOS string, which is then dispatched to `calculate_density()`.
 
 The per-layer system allows arbitrary mixing of tabulated and analytic EOS across layers (for instance, an analytic iron core with a temperature-dependent silicate mantle) without modifying the solver.
-`parse_eos_config()` also reads the older format, one `choice` string for all layers.
+`parse_eos_config()` also reads a single `choice` key that sets the EOS of all layers at once.
 
 Each layer can also contain multiple materials mixed by volume additivity.
 The config format uses `+` to combine materials with mass fractions: `"PALEOS:MgSiO3:0.85+PALEOS:H2O:0.15"`.

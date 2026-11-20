@@ -317,6 +317,8 @@ How the rule finds the ICB depends on the temperature profile:
 
 ### How a solve converges on one ICB
 
+How does a solve find an ICB that its temperature profile and its layers agree on?
+
 The structure equations put a shell in the inner core by its enclosed mass, as they do at the core-mantle boundary.
 So a pass must know its ICB before it integrates, and the liquidus rule takes the ICB from the temperature profile of the pass before ([How the density solve reads the core temperature](adiabat_integration.md#how-the-density-solve-reads-the-core-temperature)). Core shells below the mass at $P_\mathrm{ICB}$ take `inner_core`, the others `core`. A liquidus solve converges only when its temperature profile and its layers share one ICB:
 
@@ -324,7 +326,7 @@ So a pass must know its ICB before it integrates, and the liquidus rule takes th
 - on a given profile, the ICB of the layers lies within `tolerance_outer` of the core mass from the root;
 - the ICB that the adiabat of the pass took lies within `tolerance_outer` of the core mass from the ICB of the layers.
 
-The result reports $S$ as `icb_superheat` \[K\] ([tests](../Validation/hydrostatic_structure.md#inner-core-boundary-of-a-two-layer-core)).
+The result reports $S$ as `icb_superheat` \[K\] ([the ICB on an adiabat](../Validation/hydrostatic_structure.md#the-icb-on-an-adiabat)).
 
 
 ### The pressure at the inner-core boundary
@@ -378,7 +380,7 @@ The light-element fractions of each layer are inputs: the model does not move li
 
 ### Where this is checked
 
-[ICB, zero superheat and start scan](../Validation/hydrostatic_structure.md#inner-core-boundary-of-a-two-layer-core), [liquid iron side](../Validation/equation_of_state.md#light-element-outer-cores-on-the-liquid-iron-side), [a two-layer Earth core against PREM, the Preliminary Reference Earth Model](../Validation/mass_radius.md#a-two-layer-earth-core-against-prem). Settings: [configuration](../How-to/configuration.md); core arrays: [usage](../How-to/usage.md#core-arrays); a run: [tutorial](../Tutorials/two_layer_core.md).
+[Inner-core boundary of a two-layer core](../Validation/hydrostatic_structure.md#inner-core-boundary-of-a-two-layer-core), [liquid iron side](../Validation/equation_of_state.md#light-element-outer-cores-on-the-liquid-iron-side), [a two-layer Earth core against PREM, the Preliminary Reference Earth Model](../Validation/mass_radius.md#a-two-layer-earth-core-against-prem). Settings: [configuration](../How-to/configuration.md); core arrays: [usage](../How-to/usage.md#core-arrays); a run: [tutorial](../Tutorials/two_layer_core.md).
 
 ---
 

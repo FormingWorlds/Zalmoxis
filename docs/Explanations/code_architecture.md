@@ -77,7 +77,11 @@ Defines the hydrostatic ODE system $[dM/dr,\; dg/dr,\; dP/dr]$, the layer dispat
 
 #### `core_profile.py`
 
-The inner-core boundary (ICB) of a [two-layer core](mixing.md#two-layer-core) and the core arrays `result['core']` of a solve whose profile reaches the core mass. The ICB is either a given mass, `inner_core_mass_fraction` of the core mass, or the first root, from the centre outward, of the temperature (the liquid branch on an adiabat) minus the liquidus `T_liq(P)` (`icb_from_profile`, `icb_superheat`). The structure equations place a shell in the inner core by its enclosed mass, so the liquidus rule reads the profile of the previous outer pass.
+Finds the inner-core boundary (ICB) of a [two-layer core](mixing.md#two-layer-core) and builds the core arrays `result['core']` of a solve whose profile reaches the core mass.
+The ICB comes from one of 2 rules: the mass rule, `inner_core_mass_fraction` times the core mass, or the liquidus rule.
+The liquidus rule takes the first root, from the centre outward, of the temperature minus the liquidus `T_liq(P)`; on an adiabat the temperature is the liquid branch (`icb_from_profile`, `icb_superheat`).
+The structure equations place a shell in the inner core by its enclosed mass, so the liquidus rule reads the profile of the previous outer pass.
+See [`zalmoxis.core_profile`](../Reference/api/zalmoxis.core_profile.md).
 
 #### `output.py`
 
