@@ -1072,3 +1072,81 @@ def test_a_full_inner_core_takes_the_cmb_node_pressure_above_the_reader():
     reader = icb_from_profile(m, res['pressure'], res['temperature'], cmb, _liq, cmb)[1]
     assert reader > core['P'][-1] * (1.0 + 1e-6)  # the case that max(reader, P[-1]) gets wrong
     assert core['P_icb'] == core['P'][-1]
+
+
+def _two_gradient_sphere():
+    """The uniform sphere with the core mass at 2050 km, inside the node segment 20 to 21, and
+    the liquid branch with nabla 0.4 in the core and 0.2 outward of the CMB point."""
+    from zalmoxis.core_profile import _cmb_point
+
+    m, p, _ = _sphere_nodes()
+    cmb = 4 / 3 * np.pi * _RHO * 2.05e6**3
+    p_cmb = _cmb_point(m, p, np.ones_like(p), cmb, 21)[1]
+    t_cmb = float(_liquid(5500.0, 0.4, p_cmb))
+    t = np.where(m < cmb, _liquid(5500.0, 0.4, p), t_cmb * (p / p_cmb) ** 0.2)
+    return m, p, t, cmb, p_cmb, t_cmb
+
+
+@pytest.mark.physics_invariant
+def test_the_cmb_point_of_a_two_gradient_adiabat_takes_the_core_gradient():
+    """Case V1 of the CMB point. With the core gradient stepped from the last core node
+    (``cmb_point_temperature``), the superheat of a full inner core is the power law of the core
+    at the CMB point minus the liquidus there, to 1e-10 of T; T linear in ln P across the
+    segment, which mixes the mantle gradient in, misses it by more than 1 K."""
+    from zalmoxis.eos.temperature import cmb_point_temperature
+
+    m, p, t, cmb, p_cmb, t_cmb = _two_gradient_sphere()
+    want = t_cmb - float(_simon(p_cmb))
+    rule = cmb_point_temperature(lambda P, T: 0.4)
+    s, miss = icb_superheat(m, p, t, cmb, _simon, cmb, cmb_temperature=rule)
+    assert abs(s - want) <= 1e-10 * t_cmb and miss == max(0.0, s)
+    assert abs(icb_superheat(m, p, t, cmb, _simon, cmb)[0] - want) > 1.0
+
+
+@pytest.mark.physics_invariant
+def test_the_cmb_point_with_a_stepped_core_table_takes_the_table():
+    """Case V3 of the CMB point. A core table 150 K above the mantle T at the CMB point: the CMB
+    point of the readers takes table(P_cmb) to 1e-9 with the rule of the solver, and the
+    interpolation to the first mantle node misses it by more than 50 K."""
+    from zalmoxis.core_profile import _core_nodes
+    from zalmoxis.solver import _cmb_point_rule
+    from zalmoxis.structure_model import core_temperature
+
+    m, p, t_mantle, cmb, p_cmb, t_cmb = _two_gradient_sphere()
+    table = (np.array([p_cmb, 400e9]), np.array([t_cmb + 150.0, t_cmb + 450.0]))
+    t = np.where(m < cmb, core_temperature(p, table), t_mantle)
+    r = np.linspace(0.0, _R, 41)
+    rule = _cmb_point_rule(table, None, r, m, cmb, None)
+    got = _core_nodes(m, p, t, cmb, cmb_temperature=rule)
+    want = float(core_temperature(p_cmb, table))
+    assert got[1][-1] == p_cmb and got[2][-1] == pytest.approx(want, rel=1e-9)
+    assert abs(_core_nodes(m, p, t, cmb)[2][-1] - want) > 50.0
+
+
+def test_the_cmb_point_rule_takes_the_core_side_of_the_t_source():
+    """The rule of the solver for the CMB point: a core table first, else on an adiabat (a T
+    function with a liquid branch) the core gradient stepped from the last core node, else the
+    T function at the CMB radius (r^3 linear in m) and P_cmb; None without a T source."""
+    from zalmoxis.eos.temperature import cmb_point_temperature
+    from zalmoxis.solver import _cmb_point_rule
+
+    m, p, t, cmb, p_cmb, t_cmb = _two_gradient_sphere()
+    r = np.linspace(0.0, _R, 41)
+
+    def nabla(P, T):
+        return 0.4
+
+    def adiabat(r_, P):
+        return 1.0
+
+    adiabat.liquid = adiabat
+    step = cmb_point_temperature(nabla)(p_cmb, p[20], t[20])
+    assert _cmb_point_rule(None, adiabat, r, m, cmb, nabla)(p_cmb, p[20], t[20]) == step
+    assert step == pytest.approx(t_cmb, rel=1e-12)
+
+    def linear(r_, P):
+        return 6000.0 - 1e-3 * r_
+
+    got = _cmb_point_rule(None, linear, r, m, cmb, nabla)(p_cmb, p[20], t[20])
+    assert got == pytest.approx(6000.0 - 1e-3 * 2.05e6, rel=1e-12)
+    assert _cmb_point_rule(None, None, r, m, cmb, nabla) is None

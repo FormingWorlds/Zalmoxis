@@ -379,3 +379,31 @@ def test_the_top_cell_lookup_does_not_flip_with_the_padding(profiles, case):
         on = y >= math.log(P_FLOOR)
         diff = np.max(np.abs(look[on] - np.interp(y[on], x, padded)))
         assert diff <= bound, (p_top, diff)
+
+
+@pytest.mark.physics_invariant
+def test_the_cmb_point_of_the_icb_readers_is_on_the_core_adiabat(profiles):
+    """Case V2 of the CMB point. On the stored default_k0 profile the CMB point of the ICB
+    readers, with the core gradient stepped from the last core node (``cmb_point_temperature``),
+    lies within 0.1 K of the adiabat with a node inserted at the core mass; T linear in ln P
+    across the segment lies more than 3 K above it."""
+    from zalmoxis.core_profile import _core_nodes
+    from zalmoxis.eos.temperature import cmb_point_temperature, compute_adiabatic_temperature
+    from zalmoxis.mixing import get_mixed_nabla_ad
+
+    kw = profiles['default_k0'][1]
+    m, p, r = (np.asarray(kw[k], float) for k in ('mass_enclosed', 'pressure', 'radii'))
+    cmb, T = kw['cmb_mass'], compute_adiabatic_temperature(**kw)
+    n = int(np.count_nonzero(m < cmb * (1 - 1e-12)))
+    core = kw['layer_mixtures']['core']
+    rule = cmb_point_temperature(lambda P, t: get_mixed_nabla_ad(P, t, core, *_eos(kw)))
+    _, pc, tc = (a[-1] for a in _core_nodes(m, p, T, cmb, cmb_temperature=rule))
+    inserted = dict(
+        kw,
+        radii=np.insert(r, n, 0.5 * (r[n - 1] + r[n])),
+        pressure=np.insert(p, n, pc),
+        mass_enclosed=np.insert(m, n, cmb),
+    )
+    exact = compute_adiabatic_temperature(**inserted)[n]
+    assert abs(tc - exact) <= 0.1, (tc, exact)
+    assert _core_nodes(m, p, T, cmb)[2][-1] - exact > 3.0
