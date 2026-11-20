@@ -1347,7 +1347,12 @@ def test_padded_top_shell_lookup_follows_the_adiabat(monkeypatch):
     import os
 
     import zalmoxis.solver as zs
-    from tests.test_surface_node import euler_adiabat, spy_temperature_function
+    from tests.test_surface_node import (
+        _assert_padded,
+        _stop_below_r,
+        euler_adiabat,
+        spy_temperature_function,
+    )
     from tools.validation import adiabat_profiles as ap
     from zalmoxis import get_zalmoxis_root
     from zalmoxis.config import load_material_dictionaries
@@ -1362,11 +1367,13 @@ def test_padded_top_shell_lookup_follows_the_adiabat(monkeypatch):
         return table(pressure, *args, **kwargs)
 
     monkeypatch.setattr(zs, '_adiabat_table', spy_table)
-    cfg = ap._default_config(0)
+    cfg = dict(ap._default_config(0), wall_timeout=1e6)
     melt = ap._melt('config', cfg)
+    misses = _stop_below_r(monkeypatch)  # whether a solve pads depends on round-off
     res = zs.main(cfg, load_material_dictionaries(), melt, os.path.join(root, 'input'))
     r, P, T = (np.asarray(res[k], float) for k in ('radii', 'pressure', 'temperature'))
-    assert res['padded'] and P[-1] == 0.0
+    assert res['padded']
+    _assert_padded(P, misses)
     assert T[-1] == pytest.approx(cfg['surface_temperature'])
     top = int(np.flatnonzero(P > 0)[-1])
     assert tables, 'the solve built no T(P) table'
