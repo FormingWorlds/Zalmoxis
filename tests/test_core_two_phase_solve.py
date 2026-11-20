@@ -391,6 +391,20 @@ def test_the_icb_update_on_an_adiabat_takes_the_root_mass_of_the_superheat_test(
     assert abs(rules[-1](pc, p[n - 1], t[n - 1]) - exact) <= 1e-6, exact
 
 
+def test_a_cap_accept_on_the_blend_ramp_is_refused_before_its_cmb_point_is_read(setup, caplog):
+    """6 outer passes of the 2480 K Fe-S core end on the cap accept of a pass of the blend ramp
+    (blend 0.5). The full-adiabat rule refuses it, so no accepted pass reads its CMB point off
+    the full adiabat; an accept of that pass raises StructureInvariantError at its ICB test."""
+    from zalmoxis.invariants import StructureInvariantError
+
+    try:
+        res = _fes_cap(setup, caplog, max_iterations_outer=6)
+    except StructureInvariantError as err:
+        pytest.fail(f'a pass of the blend ramp was accepted: {err}')
+    assert res['adiabat_blend'] == 0.5 and res['converged'] is False
+    assert 'No accept of a pass at adiabat blend 0.50' in caplog.text
+
+
 def test_main_refuses_an_icb_rule_without_an_inner_core(setup):
     """main itself refuses core_liquidus without an inner core; the rule check takes None as
     unset and an empty inner_core as no inner core."""
