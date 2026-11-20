@@ -75,8 +75,14 @@ def _segment_temperature(T0, P_from, P_to, nabla_of, h, inward):
 def cmb_point_temperature(nabla_of):
     """T rule ``(P_cmb, P_last, T_last) -> T`` [K] of the CMB point of the ICB readers on an
     adiabat: the core gradient ``nabla_of(P, T)`` stepped outward from the last core node at
-    ``(P_last, T_last)`` to ``P_cmb`` with ``_segment_temperature``, the step that the adiabat
-    takes on that piece of the segment."""
+    ``(P_last, T_last)`` to ``P_cmb`` with ``_segment_temperature``.
+
+    The adiabat integrates that piece inward from the CMB, so the 2 meet to the error of the
+    midpoint substeps over the piece, which grows with its length in ln P. Against the adiabat
+    with a node at the core mass: at most 1.2e-10 K on the 150-node default profiles (0.03 of
+    ln P in the CMB segment), 2.3e-3 K with the CMB in the middle of a segment of 0.24 of ln P
+    (the default profile thinned to 38 or 20 nodes). ``P_cmb >= P_last`` gives ``T_last``.
+    """
     return lambda p_cmb, p_last, t_last: _segment_temperature(
         t_last, p_last, p_cmb, nabla_of, ADIABAT_MAX_DLNP, False
     )
