@@ -29,8 +29,10 @@ def off_tolerance(got, ref, tol=TOLERANCE_OUTER):
 
     Two converged solves have masses up to 2 tol apart; the radius and the central pressure
     scale with the mass by powers below 1, so each differs by less than 2 tol in relative terms.
+    A key in only one of the 2 results is off as well.
     """
-    off = [k for k in ('converged', 'converged_mass') if not bool(got[k])]
+    off = [f'keys {sorted(set(got) ^ set(ref))}'] if set(got) != set(ref) else []
+    off += [k for k in ('converged', 'converged_mass') if not bool(got[k])]
     if bool(got['stopped_on_wall_clock']):
         off.append('stopped_on_wall_clock')
     if not abs(got['mass_enclosed'][-1] / ref['mass_enclosed'][-1] - 1) < 2 * tol:
@@ -56,7 +58,7 @@ def test_a_default_solve_is_bit_identical_to_its_reference():
     assert not bool(got['stopped_on_wall_clock']), f'{key}: the solve stopped on its wall clock'
     if ref_file.is_file():
         ref = np.load(ref_file)
-        assert set(got) == set(ref.files)
+        assert set(got) == set(ref.files), sorted(set(got) ^ set(ref.files))
         differ = [k for k in ref.files if got[k].tobytes() != ref[k].tobytes()]
         assert not differ, f'{key}: entries not bit-identical to the reference: {differ}'
         return
