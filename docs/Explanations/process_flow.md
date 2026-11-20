@@ -7,7 +7,7 @@ Read it to see why a run returns a given structure, why a returned profile can h
 ## Configuration Loading
 
 The function `load_zalmoxis_config()` (in `config.py`) reads a TOML configuration file that specifies planet mass, layer mass fractions, per-layer EOS identifiers, temperature profile settings, solver tolerances, and output options.
-The `[EOS]` section is parsed by `parse_eos_config()` (also in `config.py`), which reads the EOS of each layer, or a single `choice` key that sets the EOS of all layers at once.
+The `[EOS]` section is parsed by `parse_eos_config()` (also in `config.py`), which reads the EOS of each layer, or a single `choice` key, a preset name that expands to the EOS of each layer ([legacy configuration](../How-to/configuration.md#legacy-configuration-backward-compatibility)).
 
 ## Initial Parameter Setup
 
@@ -251,7 +251,7 @@ Then a test passes only on a result with the full adiabat:
 - `adiabat_blend` is 1;
 - the T(P) table of that pass was built on the pressure of a pass at blend 1 (`adiabat_table_blend` is 1).
 
-The strict test also needs a table built on a pass that met the mass tolerance of the solve: `tolerance_outer`, or `min(tolerance_outer, newton_tol)` in a ramp that `main` starts with the Newton outer solver ([How the density solve reads the core temperature](adiabat_integration.md#how-the-density-solve-reads-the-core-temperature)).
+The strict test also needs a table built on a pass that met the mass tolerance of the solve: `tolerance_outer`, or `min(tolerance_outer, newton_tol)` in a ramp that `main` starts with the Newton outer solver ([Which table the strict test accepts](adiabat_integration.md#which-table-the-strict-test-accepts)).
 A table from a seed or from the first guess never counts.
 The other accept tests do not wait for this table, and the cap `max_iterations_outer` still ends the outer loop.
 
@@ -298,7 +298,7 @@ The strict test bounds this lag only through the mass error of the pass that bui
 The value is None in 3 cases:
 
 - below blend 1;
-- with `temperature_mode = 'adiabatic_from_cmb'`, which integrates no adiabat below the CMB and gives the core nodes the surface temperature;
+- with `temperature_mode = 'adiabatic_from_cmb'`, which integrates no adiabat below the CMB;
 - when no core node has a positive pressure.
 
 ### Secant tail and seeded re-solve

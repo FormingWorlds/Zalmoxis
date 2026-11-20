@@ -99,14 +99,16 @@ Without the cut, the segment that holds the ICB would take one of the 2 values o
 
 Which temperature does a core node read while the structure still changes from one outer pass to the next?
 
-In short: each pass reads a T(P) table built on the pass before, split at the CMB of that pass.
+An outer pass is one step of the outer loop ([Process flow](process_flow.md#iterative-solution)).
+In short: each pass reads a T(P) table built on the pass before, and the table is split at the CMB of the pass that built it, when its core holds at least 2 nodes of positive pressure and its mantle at least 2 nodes.
 A core point reads only the core part and a mantle point only the mantle part, so a mantle point never interpolates between a mantle and a core temperature.
 
-An outer pass is one step of the outer loop ([Process flow](process_flow.md#iterative-solution)).
-One part of the table holds the mantle nodes of the pass that built it, the other its core nodes.
+One part of the table holds the mantle nodes, the other the core nodes.
 A node, or a point of the density integration, reads the core part when its enclosed mass lies below the core mass of the current pass, and the mantle part otherwise.
 This also holds when the CMB of the current pass lies at another pressure than that of the table, which happens on every pass whose structure still moves.
 When the core of the pass that built the table holds fewer than 2 nodes of positive pressure, or its mantle fewer than 2 nodes, the table is not split, and every point reads one table of all nodes.
+
+**Where this is checked.** [Temperature at the CMB and the centre](../Validation/thermal_state.md#temperature-at-the-cmb-and-the-centre).
 
 ### Pressures outside a part of the table
 
@@ -117,9 +119,7 @@ When the core of the pass that built the table holds fewer than 2 nodes of posit
 ### Which table the strict test accepts
 
 A table built on a pass far from the planet mass puts its CMB at the wrong pressure.
-So the strict accept test (`accepted_on = 'strict'`) accepts a pass only when the pass that built its table met the mass tolerance of the solve ([Full-adiabat rule](process_flow.md#full-adiabat-rule) gives the tolerance and the other accept tests).
-
-**Where this is checked.** [Temperature at the CMB and the centre](../Validation/thermal_state.md#temperature-at-the-cmb-and-the-centre).
+So the strict accept test (the result key `accepted_on` is `'strict'`) accepts a pass only when the pass that built its table met the mass tolerance of the solve ([Full-adiabat rule](process_flow.md#full-adiabat-rule) gives the tolerance and the other accept tests).
 
 ## Known limits of the integration
 
