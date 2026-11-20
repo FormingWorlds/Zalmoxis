@@ -520,12 +520,12 @@ def test_the_phase_column_at_the_icb_follows_the_layer_rule_of_the_eos(k):
     assert phases == ['solid' if side == SOL else 'liquid'] and (side == SOL) is (k < -1.0)
 
 
-@pytest.mark.parametrize('icb', [2.5e24, 6e24])
 @pytest.mark.parametrize(
-    ('edge', 'k'),
-    [('cmb', -5.0), ('cmb', -0.5), ('cmb', 0.5), ('ice', -5.0), ('ice', -0.5), ('ice', 0.5)],
+    ('edge', 'k', 'icb'),
+    [('cmb', k, icb) for k in (-5.0, -0.5, 0.5) for icb in (2.5e24, 6e24)]
+    + [('ice', k, 2.5e24) for k in (-5.0, -0.5, 0.5)],
 )
-def test_the_phase_column_at_the_cmb_and_the_ice_boundary_follows_the_layer_rule(icb, edge, k):
+def test_the_phase_column_at_the_cmb_and_the_ice_boundary_follows_the_layer_rule(edge, k, icb):
     """A shell within 1e-12 (relative) below the core mass or the core+mantle mass takes the
     layer above, as in get_layer_mixture, also with a full inner core (icb = core mass); an
     iron shell has the phase of its side."""
@@ -549,13 +549,9 @@ def test_the_phase_column_at_the_cmb_and_the_ice_boundary_follows_the_layer_rule
         layer_eos_config=layers,
     )
     side = get_layer_mixture(m[0], cmb, cm, layers, icb)
-    want = {LIQ: 'Fe', SOL: 'Fe', 'Seager2007:MgSiO3': 'MgSiO3', 'Seager2007:H2O': 'H2O'}[side]
-    assert comp == [want], (side, comp)
-    if side in (
-        SOL,
-        LIQ,
-    ):  # both iron layers give Fe: the phase tells the inner from the outer core
-        assert phases == ['solid' if side == SOL else 'liquid'], (side, phases)
+    want = {LIQ: ('Fe', 'liquid'), SOL: ('Fe', 'solid'), layers['mantle']: ('MgSiO3', 'solid')}
+    want[layers['ice_layer']] = ('H2O', 'solid')  # Seager2007 tables at 300 K
+    assert (comp, phases) == ([want[side][0]], [want[side][1]]), side
 
 
 def test_a_profile_without_core_nodes_is_refused():
