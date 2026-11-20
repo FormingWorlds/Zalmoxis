@@ -315,7 +315,8 @@ How the rule finds the ICB depends on the temperature profile:
 - **On an adiabat** (`temperature_mode = "adiabatic"`): the rule continues the outer-core adiabat below the ICB to the centre with the liquid side, the liquid branch $T_\mathrm{l}(P)$. The ICB pressure $P_\mathrm{ICB}$ is the first root, from the centre outward, of $T_\mathrm{l}(P) - T_\mathrm{liq}(P) = 0$. The solid side does not enter the rule.
 - **On a given profile** (`isothermal`, `linear`, `prescribed`, a temperature function, or a [core temperature table](proteus_coupling.md#core-temperature-from-the-caller)): the profile does not depend on the phase, so the rule takes its first root of $T(P) - T_\mathrm{liq}(P) = 0$ from the centre outward.
 
-The structure equations place a shell in the inner core by its enclosed mass, as at the core-mantle boundary, so the liquidus rule uses the temperature profile of the previous outer pass ([code architecture](code_architecture.md)). Core shells below the mass at $P_\mathrm{ICB}$ take `inner_core`, the others `core`. A liquidus solve converges only when its temperature profile and its layers share one ICB:
+The structure equations put a shell in the inner core by its enclosed mass, as they do at the core-mantle boundary.
+So a pass must know its ICB before it integrates, and the liquidus rule takes the ICB from the temperature profile of the pass before ([How the density solve reads the core temperature](adiabat_integration.md#how-the-density-solve-reads-the-core-temperature)). Core shells below the mass at $P_\mathrm{ICB}$ take `inner_core`, the others `core`. A liquidus solve converges only when its temperature profile and its layers share one ICB:
 
 - on an adiabat, the superheat $S = T_\mathrm{l}(P_\mathrm{ICB}) - T_\mathrm{liq}(P_\mathrm{ICB})$ at the ICB of the layers is at most 0.5 K in size;
 - on a given profile, the ICB of the layers lies within `tolerance_outer` of the core mass from the root;
@@ -332,8 +333,9 @@ The rule, the superheat and the adiabat cut take one pressure for one ICB mass: 
 |---|---|---|---|
 | 0.3 to 0.6 | $2.0 \times 10^{-3}$ | $1.4 \times 10^{-4}$ | $9.8 \times 10^{-6}$ |
 | 0.6 to 0.8 | $9.4 \times 10^{-3}$ | $9.3 \times 10^{-4}$ | $7.5 \times 10^{-5}$ |
-| 0.8 to 0.95 | 0.95 | $1.8 \times 10^{-2}$ | $2.0 \times 10^{-3}$ |
+| 0.8 to 0.95 | $4.1 \times 10^{-2}$ | $1.8 \times 10^{-2}$ | $2.0 \times 10^{-3}$ |
 
+On 11 nodes a CMB above $r/R = 0.9$ lies in the top node segment, whose upper node has $P = 0$, so there is no CMB point there (100 of the 300 positions of the last band); with a surface pressure of $10^{-6}$ of the centre pressure the error in that segment is 0.99.
 The pressure of the uniform sphere falls to 0 at its surface, so the last row overstates a planet with a mantle above the core. The core arrays take the same pressure, with 2 exceptions: they never put `P_icb` below the pressure of their node at the core mass, which comes from the structure integration, and they give a full inner core that pressure. The ICB readers then differ from `P_icb` by that move, and a move above $10^{-3}$ of `P_icb` logs a warning. For the pure-iron core solid to the core-mantle boundary at 2460 K on 150 nodes, the CMB point lies a relative $3.0 \times 10^{-6}$ below that node.
 
 ### Temperature

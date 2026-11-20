@@ -14,6 +14,7 @@ Zalmoxis/
     datasets/               # fwl-io manifest of the Zalmoxis-only data + registry
     solver.py               # main(): 3-loop solver (Picard or Newton outer)
     structure_model.py      # Hydrostatic ODE system + RK45 / diffrax driver
+    core_profile.py         # Inner-core boundary rule and core arrays of a two-layer core
     output.py               # post_processing(), profile + summary file output
     energetics.py           # Gravitational binding energy, initial T_CMB (White & Li 2025)
     mixing.py               # LayerMixture, multi-component density, sigmoid suppression

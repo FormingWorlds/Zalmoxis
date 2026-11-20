@@ -1,6 +1,6 @@
 # Interior Structure Model
 
-Zalmoxis solves the coupled ordinary differential equations (ODEs) of hydrostatic equilibrium for a differentiated planet with 2 to 3 compositionally distinct layers (iron core, silicate mantle, and optional water/ice envelope).
+Zalmoxis solves the coupled ordinary differential equations (ODEs) of hydrostatic equilibrium for a differentiated planet with 2 to 4 compositionally distinct layers: an iron core, which can be split into a solid inner core and a liquid outer core ([two-layer core](mixing.md#two-layer-core)), a silicate mantle and an optional water/ice envelope.
 Given a total planet mass, layer mass fractions, and a per-layer equation of state (EOS) specification, the code iteratively determines self-consistent radial profiles of pressure, density, gravity, and enclosed mass from the center to the surface.
 
 Several EOS families are supported (see [Equations of State](eos_physics.md) for detailed physics):
@@ -59,6 +59,7 @@ ice_layer = ""   # empty = 2-layer model
 ```
 
 Layer boundaries are determined by cumulative mass fractions: a radial shell belongs to the core when $M(r) < M_{\mathrm{core}}$, to the mantle when $M_{\mathrm{core}} \le M(r) < M_{\mathrm{core}} + M_{\mathrm{mantle}}$, and to the outer ice layer (if present) otherwise.
+With the `[EOS]` key `inner_core` set, the core has 2 layers: a shell belongs to the inner core when $M(r) < M_\mathrm{ic}$, the inner-core mass. [Two-layer core](mixing.md#two-layer-core) explains where the inner-core boundary lies.
 The function `get_layer_mixture()` in `structure_model.py` maps the enclosed mass at each integration step to the appropriate per-layer EOS string, which is then dispatched to `calculate_density()`.
 
 The per-layer system allows arbitrary mixing of tabulated and analytic EOS across layers (for instance, an analytic iron core with a temperature-dependent silicate mantle) without modifying the solver.
@@ -77,6 +78,8 @@ In the PROTEUS ecosystem, mixing fractions are set by CALLIOPE (solubility model
 | **`PALEOS:MgSiO3`** | **PALEOS** | **MgSiO$_3$ (6 phases)** | **$T$-dependent ($\leq 50\,M_\oplus$), includes $\nabla_{\mathrm{ad}}$** |
 | **`PALEOS:H2O`** | **PALEOS** | **H$_2$O (7 EOS)** | **$T$-dependent ($\leq 50\,M_\oplus$), includes $\nabla_{\mathrm{ad}}$** |
 | `PALEOS-2phase:MgSiO3` | PALEOS (2-phase variant) | MgSiO$_3$ (solid + liquid) | $T$-dependent ($\leq 50\,M_\oplus$), includes $\nabla_{\mathrm{ad}}$ |
+| `PALEOS-API-2phase:iron-solid` | PALEOS (made from the installed package) | Fe, solid phases | $T$-dependent ($\leq 50\,M_\oplus$), inner core only |
+| `PALEOS-API-2phase:iron-liquid` | PALEOS (made from the installed package) | Fe, liquid | $T$-dependent ($\leq 50\,M_\oplus$), the outer core of a two-layer core |
 | `Seager2007:iron` | Tabulated | Fe ($\epsilon$) | 300 K |
 | `Seager2007:MgSiO3` | Tabulated | MgSiO$_3$ perovskite | 300 K |
 | `Seager2007:H2O` | Tabulated | Water ice (VII/VIII/X) | 300 K |

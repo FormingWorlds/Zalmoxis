@@ -90,7 +90,7 @@ So the cut and the ICB rule take one pressure for one inner-core mass.
 Other segments take the mixture of the node they fill.
 
 The cut matters where the gradients differ.
-At the ICB of a pure-iron core at 258 GPa, $\nabla_\mathrm{ad}$ is 0.22 on the solid side and 0.44 on the liquid side.
+At the ICB of a pure-iron core at 258 GPa and 5537 K (on the Anzellini curve), $\nabla_\mathrm{ad}$ of the default side tables is 0.22 on the solid side and 0.44 on the liquid side.
 Without the cut, the segment that holds the ICB would take one of the 2 values over its whole length, and the first inner-core node would miss the adiabat by up to 21 K.
 
 **Where this is checked.** [Temperature at the CMB and the centre](../Validation/thermal_state.md#temperature-at-the-cmb-and-the-centre) for the CMB, and the case "The adiabat across the ICB" of [Inner-core boundary of a two-layer core](../Validation/hydrostatic_structure.md#inner-core-boundary-of-a-two-layer-core) for the ICB.
@@ -108,6 +108,7 @@ The 2 parts share no node, so a mantle point never interpolates between a mantle
 This also holds when the CMB of the current pass lies at another pressure than that of the table, which happens on every pass whose structure still moves.
 Past the high-pressure end of a part, and past the low-pressure end of the core part, $\log_{10} T$ continues linearly in $\log_{10} P$ with the slope of the end interval of that part.
 Past its low-pressure end the mantle part holds the temperature of that end.
+When the core of the pass that built the table holds fewer than 2 nodes of positive pressure, or its mantle fewer than 2 nodes, the table is not split, and every point reads one table of all nodes.
 So the centre of a pass with a higher central pressure than the table takes a rising temperature, not the end value of the table.
 
 A table built on a pass far from the planet mass puts its CMB at the wrong pressure.
@@ -125,7 +126,7 @@ The other accept tests do not wait for it, and the cap `max_iterations_outer` st
 
 ### The uncut boundary of an ice layer
 
-The boundary between the mantle and an ice layer is not cut: its node segment takes the mixture of the node it fills, so every node the adiabat reaches after that segment misses the layering. A solve with an ice layer that integrates the adiabat itself logs a warning that names this limit. In the top cell a cut also needs the shell of the density table to change mixture: with the nodes cut and the shell not, the shell misses the inner node of the cell by up to 3436 K (`PALEOS:H2O`, unpadded top, `tests/test_adiabat_real_profiles.py`).
+The boundary between the mantle and an ice layer is not cut: its node segment takes the mixture of the node it fills, so every node the adiabat reaches after that segment misses the layering. A solve with an ice layer that integrates the adiabat itself logs a warning that names this limit. In the top cell a cut also needs the shell of the density table to change mixture: with the nodes cut and the shell not, the shell misses the inner node of the cell by up to 3436 K (`PALEOS:H2O`, unpadded top; a one-off measurement on the stored profiles of `tests/test_adiabat_real_profiles.py`, which itself asserts only a miss above 1 K).
 
 The table gives the largest change of a node temperature when the routine also cuts that boundary, and in brackets that change as a fraction of the node temperature. The profiles are the stored 2-layer structures of `tests/test_adiabat_real_profiles.py` (150 nodes; `default_k0` with the surface anchor, `ic_dummy` with the CMB anchor), with an H2O layer put above the boundary for the temperature integration only, not solved 3-layer planets. The cut values come from the same midpoint rule, not from an independent integration, and with `PALEOS:H2O` the deeper boundaries give centre temperatures of 15900 to 19300 K, far above a real planet.
 
@@ -138,6 +139,8 @@ The table gives the largest change of a node temperature when the routine also c
 | the 5th, 4.9 to 6.2 GPa | surface | 157 K (0.0088) | 48 K (0.0093) |
 | the 20th, 29.1 to 30.9 GPa | surface | 19 K ($9.9 \times 10^{-4}$) | 20 K ($4.6 \times 10^{-3}$) |
 | the 40th, 67.1 to 69.2 GPa | surface | 9.1 K ($4.7 \times 10^{-4}$) | 12 K ($3.1 \times 10^{-3}$) |
+
+These values come from a one-off measurement on the stored profiles; no test or tool of the repository writes them again.
 
 ## Ranges and checks of the inputs
 
