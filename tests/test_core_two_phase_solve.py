@@ -448,22 +448,17 @@ def test_a_caller_temperature_function_gives_the_cmb_point_its_value(
     calls, real = [], zs._cmb_point_rule
 
     def rule_spy(core_table, t_func, radii, mass, *rest, **kw):
-        calls.append(
-            (
-                t_func,
-                np.array(radii),
-                np.array(mass),
-                real(core_table, t_func, radii, mass, *rest, **kw),
-            )
-        )
-        return calls[-1][3]
+        rule = real(core_table, t_func, radii, mass, *rest, **kw)
+        calls.append((np.array(radii), np.array(mass), rule))
+        return rule
 
     monkeypatch.setattr(zs, '_cmb_point_rule', rule_spy)
     res = _fes_cap(setup, caplog, t_func=tf, max_iterations_outer=3)
     assert calls  # every reader site of every pass; the solver wraps tf in its own function
     cmb = res['cmb_mass']
-    for _, r, m, rule in calls:
+    for r, m, rule in calls:
         r_cmb = float(np.interp(cmb, m, r**3)) ** (1.0 / 3.0)
+        assert rule is not None
         assert rule(1.4e11, 1.5e11, 6000.0) == pytest.approx(tf(r_cmb, 1.4e11), rel=1e-12)
 
 
