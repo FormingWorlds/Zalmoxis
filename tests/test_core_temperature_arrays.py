@@ -153,6 +153,8 @@ def test_the_checks_of_an_accepted_result_with_a_core_table(case, caplog):
         'cmb_mass': 3.0,
         'temperature': t,
         'converged': True,
+        'converged_mass': True,
+        'accept_mass_limit': 1e-3,
         'accepted_on': None if case == 'not accepted' else 'strict',
     }
     used = case != 'unused'
@@ -178,7 +180,8 @@ def test_the_checks_of_an_accepted_result_with_a_core_table(case, caplog):
     excess = (p[0] - 4.0) / (4.0 - 2.0)
     assert out['core_T_max_excess'] == pytest.approx(excess, rel=1e-12)
     far = case == 'far'
-    assert out['converged'] is not far
+    assert out['converged'] is out['converged_mass'] is not far  # an un-accept clears both
+    assert out['accept_mass_limit'] == (None if far else 1e-3)
     assert out['accepted_on'] == (None if far or case == 'not accepted' else 'strict')
     assert any('Not accepted' in x.getMessage() for x in caplog.records) is far
 
