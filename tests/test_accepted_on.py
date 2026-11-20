@@ -1938,7 +1938,8 @@ def test_the_returned_mantle_temperature_is_the_adiabat_of_the_returned_pressure
     within 1 K, apart from 2 nodes with their own bounds. The CMB anchor node reads the T(P)
     table across the jump from T_surf on the core nodes to T_cmb (within 6 K of T_cmb); the
     top node follows the adiabat within 1 K like the other nodes.
-    adiabat_self_consistency is the largest mantle difference, both nodes included."""
+    adiabat_self_consistency is the largest mantle difference, both nodes included;
+    adiabat_self_consistency_core is None, since no core adiabat is integrated."""
     from tests.test_spider_coupling_convergence import _has_paleos_data
     from tools.validation import proteus_ic_solvers as tool
 
@@ -1968,6 +1969,7 @@ def test_the_returned_mantle_temperature_is_the_adiabat_of_the_returned_pressure
     assert r['adiabat_table_blend'] == 1.0
     assert r['adiabat_self_consistency'] == pytest.approx(lag.max(), rel=1e-12)
     assert r['adiabat_self_consistency'] >= max(dT_cmb, lag[-1])
+    assert r['adiabat_self_consistency_core'] is None  # no core adiabat below a CMB anchor
 
 
 def _fake_adiabat(pressure, t_surf):
