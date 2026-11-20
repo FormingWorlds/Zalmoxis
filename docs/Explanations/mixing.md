@@ -346,18 +346,24 @@ The pressure of the uniform sphere falls to 0 at its surface, so the last row ov
 
 ### The temperature at the CMB point
 
-The CMB point belongs to the core, so the ICB readers take its temperature from the core side of the temperature source of the pass:
+Which temperature does the ICB rule use at the core-mantle boundary?
+In short: the temperature of the core side of the profile, not a mix of the core and the mantle.
 
-- on an adiabat, the core gradient stepped outward from the last core node to the pressure of the point, the step that the adiabat takes on that piece of the segment;
+The CMB point is the point at the core mass between the last core node and the first mantle node; [the pressure at the inner-core boundary](#the-pressure-at-the-inner-core-boundary) gives its pressure.
+The ICB readers are the functions that find or test the ICB on a profile: `icb_from_profile`, `icb_superheat` and `icb_misses`.
+They need a temperature at the CMB point, and they take it from the core side of the temperature source of the outer pass, the profile that gives each node of the pass its temperature:
+
+- on the full adiabat, the core gradient stepped outward from the last core node to the pressure of the point, the step that the adiabat takes on that piece of the segment;
 - with a [core temperature table](proteus_coupling.md#core-temperature-from-the-caller), the table at that pressure;
 - with another temperature function, that function at the CMB radius, with $r^3$ linear in the enclosed mass.
 
-The pressure of the point is the one of the section above. $T$ linear in $\ln P$ between the last core node and the first mantle node mixes the mantle gradient into the point: on the 4 stored solves of `input/default.toml` it lies 3.7 to 3.9 K above the adiabat with a node at the core mass, while the core-side step meets it to $10^{-10}$ K. A caller of `icb_from_profile` that passes no rule (`cmb_point_rule`) gets that interpolation.
+$T$ linear in $\ln P$ between the last core node and the first mantle node mixes the mantle gradient into the point.
+The passes of an adiabatic solve before the full adiabat (the linear first guess and the blend ramp) keep that line: they are never accepted and only start the passes that follow.
+A caller of `icb_from_profile` that passes no rule (`cmb_point_rule`) also gets the line.
 
-The point changes a result only through the node segment of the CMB, above the last core node at 0.983 to 0.987 of the core mass in the solves below. For the pure-iron core of the default planet, unseeded, the core-side rule against the interpolation:
+**Worked example.** On the 4 stored solves of `input/default.toml` the line puts the point 3.7 to 3.9 K above the adiabat computed with a node at the core mass, and the core-side step meets that adiabat to $10^{-10}$ K.
 
-- from 2470.5 to 2474.0 K at the surface, the inner-core mass fraction moves by up to 0.011, and the inner core is full from 2471.5 to 2473.0 K, where the interpolation leaves a liquid shell;
-- at the 10 other surface temperatures from 2455 to 2480 K, the structure is bit-equal, and the superheat of a full inner core (2455 to 2470 K) is 3.4 to 3.9 K lower.
+**Where this is checked.** [Given profiles, refused accepts and bounds of the rule](../Validation/hydrostatic_structure.md#given-profiles-refused-accepts-and-bounds-of-the-rule) for the rule, and [Known limits of the ICB cases](../Validation/hydrostatic_structure.md#known-limits-of-the-icb-cases) for its effect on the solves of a freezing band.
 
 ### Temperature
 
