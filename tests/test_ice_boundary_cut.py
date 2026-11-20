@@ -159,8 +159,10 @@ def test_a_two_layer_profile_ignores_core_mantle_mass(frac, anchor):
 def test_a_thin_mantle_inside_one_segment_keeps_the_profile_monotone(eps, anchor):
     """The CMB and the ice boundary inside one node segment (a mantle thinner than one segment,
     ``core_mantle_mass`` at the fraction ``eps`` of the segment above the CMB): the profile is
-    finite and falls outward at every integrated node, and no piece runs against the pressure
-    order (the ice pressure is held at most at the CMB pressure)."""
+    finite and falls outward at every integrated node, no piece runs against the pressure
+    order, and both cuts lie at P linear in m (with ln P linear in m for the CMB, the clip that
+    holds the order would close the mantle piece for a mantle up to H/8 of the segment mass,
+    H its ln P width)."""
     import zalmoxis.eos.temperature as _t
     import zalmoxis.mixing as _mix
 
@@ -181,3 +183,7 @@ def test_a_thin_mantle_inside_one_segment_keeps_the_profile_monotone(eps, anchor
     on = slice(None) if anchor == 'surface' else slice(6, None)
     assert np.all(np.isfinite(T)) and np.all(np.diff(T[on]) <= 0), T
     assert pieces and all((b >= a) if inward else (b <= a) for a, b, inward in pieces), pieces
+    if anchor == 'surface':  # the CMB anchor starts above this segment
+        ends = np.array([p for a, b, _ in pieces for p in (a, b)])
+        for want in np.interp([cmb, cmm], m[5:7], P[5:7]):
+            assert np.min(np.abs(ends / want - 1)) < 1e-12, (want, pieces)
