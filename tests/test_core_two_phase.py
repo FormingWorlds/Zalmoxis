@@ -520,6 +520,37 @@ def test_the_phase_column_at_the_icb_follows_the_layer_rule_of_the_eos(k):
     assert phases == ['solid' if side == SOL else 'liquid'] and (side == SOL) is (k < -1.0)
 
 
+@pytest.mark.parametrize('icb', [2.5e24, 6e24])
+@pytest.mark.parametrize(
+    ('edge', 'k'), [('cmb', -5.0), ('cmb', -0.5), ('cmb', 0.5), ('ice', -0.5)]
+)
+def test_the_phase_column_at_the_cmb_and_the_ice_boundary_follows_the_layer_rule(icb, edge, k):
+    """A shell within 1e-12 (relative) below the core mass or the core+mantle mass takes the
+    layer above, as in get_layer_mixture, also with a full inner core (icb = core mass)."""
+    from zalmoxis.structure_model import get_layer_mixture
+
+    cmb, cm = 6e24, 10e24
+    m = np.array([(cmb if edge == 'cmb' else cm) * (1.0 + k * 1e-12)])
+    layers = {
+        'core': LIQ,
+        'inner_core': SOL,
+        'mantle': 'Seager2007:MgSiO3',
+        'ice_layer': 'Seager2007:H2O',
+    }
+    comp, _ = compute_layer_phase_columns(
+        pressure=np.full(1, 1e11),
+        temperature=np.full(1, 3000.0),
+        mass_enclosed=m,
+        cmb_mass=cmb,
+        core_mantle_mass=cm,
+        icb_mass=icb,
+        layer_eos_config=layers,
+    )
+    side = get_layer_mixture(m[0], cmb, cm, layers, icb)
+    want = {LIQ: 'Fe', SOL: 'Fe', 'Seager2007:MgSiO3': 'MgSiO3', 'Seager2007:H2O': 'H2O'}[side]
+    assert comp == [want], (side, comp)
+
+
 def test_a_profile_without_core_nodes_is_refused():
     """The ICB rule needs core nodes of positive pressure."""
     m, p, t = _profile(lambda p: 0 * p + 5000.0)
