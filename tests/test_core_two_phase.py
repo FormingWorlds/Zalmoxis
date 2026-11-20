@@ -498,6 +498,28 @@ def test_the_phase_columns_label_the_inner_core_by_its_side():
     assert phases[:3] == ['solid'] * 3 and phases[3:6] == ['liquid'] * 3
 
 
+@pytest.mark.parametrize('k', [-5.0, -0.5, 0.0, 0.5])
+def test_the_phase_column_at_the_icb_follows_the_layer_rule_of_the_eos(k):
+    """A shell within 1e-12 (relative) below the ICB mass takes the outer core, as in
+    get_layer_mixture, which picks its EOS; 5e-12 below it the inner core."""
+    from zalmoxis.structure_model import get_layer_mixture
+
+    icb = 2.5e24
+    m = np.array([icb * (1.0 + k * 1e-12)])
+    layers = {'core': LIQ, 'inner_core': SOL, 'mantle': 'Seager2007:MgSiO3'}
+    _, phases = compute_layer_phase_columns(
+        pressure=np.full(1, 2e11),
+        temperature=np.full(1, 5000.0),
+        mass_enclosed=m,
+        cmb_mass=6e24,
+        core_mantle_mass=10e24,
+        icb_mass=icb,
+        layer_eos_config=layers,
+    )
+    side = get_layer_mixture(m[0], 6e24, 10e24, layers, icb)
+    assert phases == ['solid' if side == SOL else 'liquid'] and (side == SOL) is (k < -1.0)
+
+
 def test_a_profile_without_core_nodes_is_refused():
     """The ICB rule needs core nodes of positive pressure."""
     m, p, t = _profile(lambda p: 0 * p + 5000.0)
