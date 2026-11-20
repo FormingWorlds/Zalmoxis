@@ -57,6 +57,7 @@ def test_a_default_solve_is_bit_identical_to_its_reference():
     ref_file = DATA / f'default_solve_reference_{key}.npz'
     got = solve_arrays()
     stored = sorted(DATA.glob('default_solve_reference_*.npz'))
+    assert stored, 'no stored default-solve reference'
     keys = set(np.load(ref_file if ref_file.is_file() else stored[0]).files)
     assert set(got) == keys, f'{key}: keys not in both results: {sorted(set(got) ^ keys)}'
     assert not bool(got['stopped_on_wall_clock']), f'{key}: the solve stopped on its wall clock'
@@ -130,13 +131,11 @@ def test_a_result_key_missing_from_the_reference_or_the_solve_is_off():
 def test_a_lost_key_fails_the_default_solve_test_by_name(monkeypatch):
     """On a host without a stored reference a solve that lost a key the test reads ('radii',
     'stopped_on_wall_clock') fails on the key report, not on a KeyError."""
-    import tests.test_default_invariance as mod
-
     mac = dict(np.load(DATA / 'default_solve_reference_darwin-arm64.npz'))
-    monkeypatch.setattr(mod, 'cpu_key', lambda: 'linux-x86_64-no-reference')
+    monkeypatch.setitem(globals(), 'cpu_key', lambda: 'linux-x86_64-no-reference')
     for lost in ('radii', 'stopped_on_wall_clock'):
-        monkeypatch.setattr(
-            mod, 'solve_arrays', lambda: {k: v for k, v in mac.items() if k != lost}
+        monkeypatch.setitem(
+            globals(), 'solve_arrays', lambda: {k: v for k, v in mac.items() if k != lost}
         )
         with pytest.raises(AssertionError, match=lost):
-            mod.test_a_default_solve_is_bit_identical_to_its_reference()
+            test_a_default_solve_is_bit_identical_to_its_reference()
