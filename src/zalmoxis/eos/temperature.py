@@ -72,6 +72,16 @@ def _segment_temperature(T0, P_from, P_to, nabla_of, h, inward):
     return t
 
 
+def cmb_point_temperature(nabla_of, h=ADIABAT_MAX_DLNP):
+    """T rule ``(P_cmb, P_last, T_last) -> T`` [K] of the CMB point of the ICB readers on an
+    adiabat: the core gradient ``nabla_of(P, T)`` stepped outward from the last core node at
+    ``(P_last, T_last)`` to ``P_cmb`` with ``_segment_temperature``, the step that the adiabat
+    takes on that piece of the segment."""
+    return lambda p_cmb, p_last, t_last: _segment_temperature(
+        t_last, p_last, p_cmb, nabla_of, h, False
+    )
+
+
 def _check_profile(T, first):
     """Raise StructureInvariantError unless ``T`` is finite and positive at every node and does
     not rise outward from node ``first`` (the anchor side of the integrated nodes)."""

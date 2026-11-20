@@ -38,7 +38,16 @@ def icb_pressure(mass, pressure, icb_mass):
     return float(np.interp(icb_mass ** (2.0 / 3.0), np.asarray(mass) ** (2.0 / 3.0), pressure))
 
 
-def icb_from_profile(mass, pressure, temperature, cmb_mass, liquidus, icb_mass=None, m23=False):
+def icb_from_profile(
+    mass,
+    pressure,
+    temperature,
+    cmb_mass,
+    liquidus,
+    icb_mass=None,
+    m23=False,
+    cmb_temperature=None,
+):
     """Inner-core boundary on a structure profile by the liquidus rule.
 
     Parameters
@@ -55,6 +64,10 @@ def icb_from_profile(mass, pressure, temperature, cmb_mass, liquidus, icb_mass=N
     m23 : bool
         Take the mass of a root with m^(2/3) linear in P on its node segment, the inverse of the
         pressure at a given mass (as in ``core_arrays``); else with m linear in ln P.
+    cmb_temperature : callable or None
+        T rule ``(P_cmb, P_last, T_last) -> T`` [K] of the point at the core mass, from the core
+        side of the temperature source (``eos.temperature.cmb_point_temperature`` on an
+        adiabat); None takes T linear in ln P between the last core node and the next node.
 
     Returns
     -------
@@ -66,7 +79,7 @@ def icb_from_profile(mass, pressure, temperature, cmb_mass, liquidus, icb_mass=N
         the core mass adds a point at the core mass to the core nodes (``_cmb_point``). Nodes
         that a failed stop fills with NaN are left out: the rule reads the finite core nodes.
     """
-    m, p, t = _core_nodes(mass, pressure, temperature, cmb_mass)
+    m, p, t = _core_nodes(mass, pressure, temperature, cmb_mass, cmb_temperature)
     f = t - np.array([float(liquidus(x)) for x in p])
     if not np.all(np.isfinite(f)):
         raise ValueError('the temperature or the core liquidus is not finite on the core nodes')
@@ -93,12 +106,12 @@ def icb_from_profile(mass, pressure, temperature, cmb_mass, liquidus, icb_mass=N
     return m_icb, float(p_icb), _solid_mass(m, f, m_icb)
 
 
-def _core_nodes(mass, pressure, temperature, cmb_mass):
+def _core_nodes(mass, pressure, temperature, cmb_mass, cmb_temperature=None):
     """Core nodes of positive pressure, centre first, and a point at the core mass
-    (``_cmb_point``)."""
+    (``_cmb_point`` with the T rule ``cmb_temperature``)."""
     m, p, t = (np.asarray(a, dtype=float) for a in (mass, pressure, temperature))
     below = m < cmb_mass * (1.0 - _RTOL_LAYER)
-    cmb = _cmb_point(m, p, t, cmb_mass, int(np.count_nonzero(below)))
+    cmb = _cmb_point(m, p, t, cmb_mass, int(np.count_nonzero(below)), cmb_temperature)
     core = below & (p > 0)
     m, p, t = m[core], p[core], t[core]
     if cmb is not None:
@@ -108,7 +121,9 @@ def _core_nodes(mass, pressure, temperature, cmb_mass):
     return m, p, t
 
 
-def icb_superheat(mass, pressure, liquid_temperature, cmb_mass, liquidus, icb_mass):
+def icb_superheat(
+    mass, pressure, liquid_temperature, cmb_mass, liquidus, icb_mass, cmb_temperature=None
+):
     """Superheat [K] of the outer-core liquid at the layer ICB and its miss of the
     zero-superheat condition of a growing inner core, after Labrosse (2015), Sect. 2, and
     Nimmo (2015), Fig. 2.
@@ -124,6 +139,8 @@ def icb_superheat(mass, pressure, liquid_temperature, cmb_mass, liquidus, icb_ma
         Core mass and inner-core mass of the layers [kg].
     liquidus : callable
         ``T_liq(P)`` [K] of the outer core at pressure [Pa].
+    cmb_temperature : callable or None
+        T rule of the point at the core mass, as in ``icb_from_profile``.
 
     Returns
     -------
@@ -134,7 +151,7 @@ def icb_superheat(mass, pressure, liquid_temperature, cmb_mass, liquidus, icb_ma
         inner core, max(0, -S) for no inner core, max(0, S) for a full one, inf when S is not
         finite.
     """
-    m, p, t = _core_nodes(mass, pressure, liquid_temperature, cmb_mass)
+    m, p, t = _core_nodes(mass, pressure, liquid_temperature, cmb_mass, cmb_temperature)
     full = icb_mass >= cmb_mass * (1.0 - _RTOL_LAYER)
     p_icb = p[0] if icb_mass <= 0.0 else icb_pressure(m, p, icb_mass)
     s = float(np.interp(math.log(p_icb), np.log(p[::-1]), t[::-1])) - float(liquidus(p_icb))
@@ -142,21 +159,28 @@ def icb_superheat(mass, pressure, liquid_temperature, cmb_mass, liquidus, icb_ma
     return s, miss if math.isfinite(s) else math.inf
 
 
-def _cmb_point(m, p, t, cmb_mass, n):
+def _cmb_point(m, p, t, cmb_mass, n, cmb_temperature=None):
     """(m, P, T) at the core mass on the segment from the last core node n - 1 to node n, with
-    ln P linear in m and T linear in ln P (the adiabat steps that segment with the core
-    gradient); None without such a segment of positive, finite pressure. A temperature function
-    with a step at the CMB is mixed across that segment."""
+    ln P linear in m and T from the rule ``cmb_temperature(P, p[n - 1], t[n - 1])``; None
+    without such a segment of positive, finite pressure. Without a rule T is linear in ln P
+    between the 2 nodes, which mixes the mantle side of the temperature source into the point."""
     if not 0 < n < len(m) or not (p[n] > 0 and p[n - 1] > 0):
         return None
     lp = float(np.interp(cmb_mass, m[n - 1 : n + 1], np.log(p[n - 1 : n + 1])))
+    if cmb_temperature is not None:
+        return cmb_mass, math.exp(lp), float(cmb_temperature(math.exp(lp), p[n - 1], t[n - 1]))
     return cmb_mass, math.exp(lp), float(np.interp(lp, np.log(p[[n, n - 1]]), t[[n, n - 1]]))
 
 
-def icb_misses(mass, pressure, temperature, cmb_mass, liquidus, icb_mass, icb_adiabat):
+def icb_misses(
+    mass, pressure, temperature, cmb_mass, liquidus, icb_mass, icb_adiabat, cmb_temperature=None
+):
     """Distances [kg] of the layer inner-core mass ``icb_mass`` from the liquidus root of the
-    profile and from ``icb_adiabat``, the inner-core mass that its adiabat took (0 if None)."""
-    root = icb_from_profile(mass, pressure, temperature, cmb_mass, liquidus)[0]
+    profile (CMB point from the rule ``cmb_temperature``, as in ``icb_from_profile``) and from
+    ``icb_adiabat``, the inner-core mass that its adiabat took (0 if None)."""
+    root = icb_from_profile(
+        mass, pressure, temperature, cmb_mass, liquidus, cmb_temperature=cmb_temperature
+    )[0]
     return abs(root - icb_mass), 0.0 if icb_adiabat is None else abs(icb_adiabat - icb_mass)
 
 

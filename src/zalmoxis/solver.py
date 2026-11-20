@@ -54,7 +54,7 @@ from .eos import (
 )
 from .eos.core_alloy import IRON_SIDES, is_alloy_mixture
 from .eos.seager import _band_debug_seen
-from .eos.temperature import ADIABAT_P_FLOOR
+from .eos.temperature import ADIABAT_P_FLOOR, cmb_point_temperature
 from .invariants import StructureInvariantError, check_accepted
 from .melting_curves import get_melting_curve_function
 from .mixing import (
@@ -635,6 +635,24 @@ _REFUSED = {
     'accepted_on': None,
     'accept_mass_limit': None,
 }
+
+
+def _cmb_point_rule(core_table, t_func, radii, mass, cmb_mass, core_nabla):
+    """T rule of the CMB point of the ICB readers (``core_profile.icb_from_profile``), from the
+    core side of the T source of a pass: the caller core table; on an adiabat (``t_func`` with
+    a liquid branch) the core gradient ``core_nabla(P, T)`` stepped from the last core node
+    (``cmb_point_temperature``); else ``t_func`` at the CMB radius, with r^3 linear in the
+    enclosed mass; None without a T function."""
+    if core_table is not None:
+        return lambda p, *_: float(core_temperature(p, core_table))
+    if hasattr(t_func, 'liquid'):
+        return cmb_point_temperature(core_nabla)
+    if t_func is None:
+        return None
+    r, m = np.asarray(radii, dtype=float), np.asarray(mass, dtype=float)
+    ok = np.isfinite(r) & np.isfinite(m)  # a failed stop fills the outer nodes with NaN
+    r_cmb = float(np.interp(cmb_mass, m[ok], r[ok] ** 3)) ** (1.0 / 3.0)
+    return lambda p, *_: float(t_func(r_cmb, p))
 
 
 def _check_core_table(result, table, used, mantle_T):
@@ -2258,6 +2276,28 @@ def _solve(
             t[core] = core_temperature(p[core], core_temperature_arrays)
         return t
 
+    def _core_nabla(P, T):
+        # nabla_ad of the outer core, as the adiabat reads it
+        return get_mixed_nabla_ad(
+            P,
+            T,
+            layer_mixtures['core'],
+            material_dictionaries,
+            interpolation_cache,
+            solidus_func,
+            liquidus_func,
+            mushy_zone_factors,
+            condensed_rho_min,
+            condensed_rho_scale,
+            binodal_T_scale,
+        )
+
+    def _cmb_T(r, m):
+        # T rule of the CMB point of the ICB readers on the profile (r, m) of this pass
+        return _cmb_point_rule(
+            core_temperature_arrays, _temperature_func, r, m, cmb_mass, _core_nabla
+        )
+
     # Adiabat blending state.
     _using_adiabat = False
     _adiabat_computed = False  # the gradient table was read for the T profile
@@ -2313,11 +2353,12 @@ def _solve(
         tol = tolerance_outer * cmb_mass
         liquid = getattr(_temperature_func, 'liquid', None)
         if liquid is None:
-            root, lag = icb_misses(m, p, t, cmb_mass, core_liq, icb_mass, icb_adiabat)
+            root, lag = icb_misses(
+                m, p, t, cmb_mass, core_liq, icb_mass, icb_adiabat, _cmb_T(r, m)
+            )
             return (root, tol), (lag, tol), None
-        s, heat = icb_superheat(
-            m, p, [_T_at(liquid, *x) for x in zip(r, p, m)], cmb_mass, core_liq, icb_mass
-        )
+        liquid_t = [_T_at(liquid, *x) for x in zip(r, p, m)]
+        s, heat = icb_superheat(m, p, liquid_t, cmb_mass, core_liq, icb_mass, _cmb_T(r, m))
         lag = 0.0 if icb_adiabat is None else abs(icb_adiabat - icb_mass)
         return (heat, _ICB_SUPERHEAT_TOL), (lag, tol), s
 
@@ -2574,7 +2615,13 @@ def _solve(
             )
             m23 = hasattr(_temperature_func, 'liquid')  # the root mass of the superheat test
             icb_mass = icb_from_profile(
-                prev_mass_enclosed, prev_pressure, t_prev, cmb_mass, core_liq, m23=m23
+                prev_mass_enclosed,
+                prev_pressure,
+                t_prev,
+                cmb_mass,
+                core_liq,
+                m23=m23,
+                cmb_temperature=_cmb_T(prev_radii, prev_mass_enclosed),
             )[0]
         pressure[0] = earth_center_pressure
 
@@ -3505,6 +3552,7 @@ def _solve(
             icb_mass,
             _temperature_func,
             core_temperature_arrays,
+            _cmb_T(model_results['radii'], mass_enclosed),
             interpolation_cache=interpolation_cache,
             material_dictionaries=material_dictionaries,
             solidus_func=solidus_func,
@@ -3519,12 +3567,13 @@ def _solve(
 
 
 def _core_result(
-    res, layer_mixtures, core_liq, icb_mass, temperature_func, core_table, **eos_args
+    res, layer_mixtures, core_liq, icb_mass, temperature_func, core_table, cmb_rule, **eos_args
 ):
     """``core_profile.core_arrays`` of a finished solve: the core nodes, a CMB node and the ICB.
 
-    ``core_table`` is the core temperature table of ``main`` or None; ``eos_args`` are the EOS
-    keyword arguments of ``coupled_odes``.
+    ``core_table`` is the core temperature table of ``main`` or None; ``cmb_rule`` the T rule
+    of the CMB point of the ICB readers (``_cmb_point_rule``); ``eos_args`` are the EOS keyword
+    arguments of ``coupled_odes``.
     """
     m, p, t = (
         np.asarray(res[k], dtype=float) for k in ('mass_enclosed', 'pressure', 'temperature')
@@ -3532,7 +3581,9 @@ def _core_result(
     cmb_mass = res['cmb_mass']
     solid_above = 0.0
     if core_liq is not None:  # the solid above the ICB of the solved layers
-        solid_above = icb_from_profile(m, p, t, cmb_mass, core_liq, icb_mass)[2]
+        solid_above = icb_from_profile(
+            m, p, t, cmb_mass, core_liq, icb_mass, cmb_temperature=cmb_rule
+        )[2]
 
     def t_at(r, pres):
         if core_table is not None:
