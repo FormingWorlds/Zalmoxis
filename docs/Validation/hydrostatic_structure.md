@@ -49,6 +49,10 @@ The [overview](index.md) lists every case of the Validation tab.
 - Blend ramp: the outer passes that move the temperature from the linear first guess (blend 0) to the adiabat (blend 1). A full-adiabat pass is a pass at blend 1 on a temperature table built on a pass at blend 1.
 - Newton tolerance (`newton_tol`, default $10^{-4}$): the Newton outer solver accepts a structure when its relative mass error is below this value and its pressure solve converged (`accepted_on = 'newton_tol'`). In an adiabatic temperature mode where Zalmoxis computes the temperature itself, the Newton root holds the linear first guess, so it only seeds the blend ramp to the adiabat, which runs at the mass tolerance `min(tolerance_outer, newton_tol)` and gives a Picard label.
 - ICB: the inner-core boundary of a two-layer core, between the solid inner core and the liquid outer core. $M_\mathrm{ic}$ and $M_\mathrm{core}$: the inner-core mass and the core mass; $w_\mathrm{oc}$: the mass fraction of a light element in the outer core.
+- Node segment: the stretch between 2 neighbouring grid nodes.
+- CMB point: the point at the core mass inside the node segment of the CMB, between the last core node and the first mantle node.
+- ICB readers: the functions that find or test the ICB on a profile (`icb_from_profile`, `icb_superheat`, `icb_misses`).
+- Interpolation rule: $T$ at the CMB point linear in $\ln P$ between the last core node and the first mantle node.
 - Liquidus rule: the ICB lies where the liquid of the outer core meets an iron melting curve $T_\mathrm{liq}(P)$ \[K\] (`core_liquidus`), here the pure-iron curve of Anzellini et al. (2013)[^cite-anzellini2013]. On an adiabat the rule uses the liquid branch; on a given profile (isothermal, linear, prescribed) it uses the profile. The mass rule sets the ICB by an inner-core mass fraction (`inner_core_mass_fraction`).
 - Liquid branch $T_\mathrm{l}(P)$: the outer-core adiabat continued below the ICB to the centre with the liquid side.
 - Superheat $S = T_\mathrm{l}(P_\mathrm{ICB}) - T_\mathrm{liq}(P_\mathrm{ICB})$ \[K\]: how far the liquid branch lies above the melting curve at the ICB pressure.

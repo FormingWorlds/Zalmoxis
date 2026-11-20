@@ -269,7 +269,7 @@ def _pass_adiabat_icbs(spy, res):
     ]
 
 
-def _fes_cap(setup, caplog, temperature_function=None, **over):
+def _fes_cap(setup, caplog, t_func=None, **over):
     """_solve of the 2480 K Fe-S core, liquidus rule, 10 outer passes, warnings logged."""
     from zalmoxis import solver as zs
     from zalmoxis.config import load_solidus_liquidus_functions
@@ -289,12 +289,7 @@ def _fes_cap(setup, caplog, temperature_function=None, **over):
     caplog.set_level('WARNING', logger='fwl.zalmoxis.solver')
     mixes = parse_all_layer_mixtures(cfg['layer_eos_config'])
     return zs._solve(
-        cfg,
-        md,
-        melt,
-        input_dir,
-        temperature_function=temperature_function,
-        layer_mixtures=mixes,
+        cfg, md, melt, input_dir, temperature_function=t_func, layer_mixtures=mixes
     )
 
 
@@ -450,7 +445,7 @@ def test_a_caller_temperature_function_gives_the_cmb_point_its_value(
         return calls[-1][3]
 
     monkeypatch.setattr(zs, '_cmb_point_rule', rule_spy)
-    res = _fes_cap(setup, caplog, temperature_function=tf, max_iterations_outer=3)
+    res = _fes_cap(setup, caplog, t_func=tf, max_iterations_outer=3)
     assert calls  # every reader site of every pass; the solver wraps tf in its own function
     cmb = res['cmb_mass']
     for _, r, m, rule in calls:

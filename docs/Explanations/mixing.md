@@ -347,22 +347,21 @@ The pressure of the uniform sphere falls to 0 at its surface, so the last row ov
 ### The temperature at the CMB point
 
 Which temperature do the ICB readers use at the core-mantle boundary (CMB)?
-In short: the temperature of the core side of the profile, not a mix of the core and the mantle.
+In short: the temperature of the core side of the profile, not a mix of core and mantle.
 The point changes the ICB only through passes whose ICB lies in the node segment of the CMB, above the last core node. It also sets whether that segment counts in `solid_above_icb_mass_fraction`, and for a full inner core it sets the superheat `icb_superheat` and its test.
 
 The ICB readers are the functions that find or test the ICB on a profile: `icb_from_profile`, `icb_superheat` and `icb_misses`.
-They need a temperature at the CMB point, the point at the core mass between the last core node and the first mantle node; [the pressure at the inner-core boundary](#the-pressure-at-the-inner-core-boundary) gives its pressure.
-They take it from the core side of the temperature source of the outer pass, the profile that gives each node of the pass its temperature:
+They need a temperature at the CMB point, the point at the core mass inside the node segment of the CMB; [the pressure at the inner-core boundary](#the-pressure-at-the-inner-core-boundary) gives its pressure.
+They take it from the core side of the temperature source of the outer pass:
 
 - on the full adiabat, the core gradient stepped outward from the last core node to the pressure of the point, the step that the adiabat takes on that piece of the segment;
 - with a [core temperature table](proteus_coupling.md#core-temperature-from-the-caller), the table at that pressure;
-- with another temperature function, such as one that a coupled model gives, that function at the CMB radius, with $r^3$ linear in the enclosed mass.
+- with another temperature function, that function at the CMB radius ($r^3$ linear in the enclosed mass).
 
-The simple alternative is the interpolation rule: $T$ linear in $\ln P$ between the last core node and the first mantle node, which mixes the mantle gradient into the point.
-The early passes of a solve that computes its own adiabat (the linear first guess and the blend ramp) use the interpolation rule; they are never accepted.
-A caller of `icb_from_profile` that passes no `cmb_point_rule` also gets it.
+The interpolation rule, $T$ linear in $\ln P$ between the last core node and the first mantle node, mixes the mantle gradient into the point.
+The early passes of a solve that computes its own adiabat (the linear first guess and the blend ramp), which are never accepted, use it, and so does a caller of `icb_from_profile` without a `cmb_point_rule`.
 
-**Worked example.** On the 4 stored solves of `input/default.toml`, the interpolation rule puts the point 3.7 to 3.9 K above the adiabat computed with an extra node at the core mass. The core-side step meets that adiabat to $10^{-10}$ K; the test asserts $10^{-6}$ K.
+**Worked example.** On the 4 stored solves of `input/default.toml`, the interpolation rule puts the point 3.7 to 3.9 K above the adiabat with an extra node at the core mass; the core-side step meets it to $10^{-10}$ K (the test asserts $10^{-6}$ K).
 
 **Where this is checked.** [The temperature at the CMB point](../Validation/hydrostatic_structure.md#the-temperature-at-the-cmb-point).
 
