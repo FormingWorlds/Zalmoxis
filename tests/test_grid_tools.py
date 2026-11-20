@@ -167,7 +167,7 @@ def test_mantle_external_curves_is_solver_source():
 # run_grid.run_single: serialisation contract
 # ---------------------------------------------------------------------------
 # Six radial-profile arrays that must appear as columns in the per-cell
-# CSV body, plus eight metadata fields that must appear in the comment
+# CSV body, plus nine metadata fields that must appear in the comment
 # header. ``label`` is added to the metadata header by the writer.
 _EXPECTED_PROFILE_KEYS = {
     'radii',
@@ -182,6 +182,7 @@ _EXPECTED_METADATA_KEYS = {
     'core_mantle_mass',
     'converged',
     'core_eos',
+    'inner_core_eos',
     'mantle_eos',
     'ice_layer_eos',
     'rock_solidus_id',
@@ -253,7 +254,7 @@ def _install_fake_solver(monkeypatch):
 
 def test_run_single_writes_csv_with_expected_keys(tmp_path, monkeypatch):
     """save_profiles=True: the .csv must contain the six profile columns
-    in its body and the eight metadata fields in its comment header."""
+    in its body and the nine metadata fields in its comment header."""
     from tools.grids.run_grid import run_single
     from tools.plots._grid_io import load_profile
 
